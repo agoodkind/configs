@@ -2,28 +2,71 @@
 
 require_relative '../ruby/parse_filterlog'
 
-# Mock Logstash event class for testing
+##
+# Mock Logstash event class for testing purposes.
+#
+# This class simulates the behavior of a Logstash event object,
+# providing methods to get and set event data fields.
+#
+# @example Creating and manipulating a mock event
+#   event = MockEvent.new('field' => 'value')
+#   event.get('field')  # => 'value'
+#   event.set('new_field', 'new_value')
+#
 class MockEvent
+  # @return [Hash] the internal data storage for the event
   attr_reader :data
 
+  ##
+  # Initializes a new mock event with optional data.
+  #
+  # @param data [Hash] initial event data
+  #
   def initialize(data = {})
     @data = data
   end
 
+  ##
+  # Retrieves the value of a field from the event data.
+  #
+  # @param key [String] the field name to retrieve
+  # @return [Object, nil] the value associated with the key, or nil if not found
+  #
   def get(key)
     @data[key]
   end
 
+  ##
+  # Sets the value of a field in the event data.
+  #
+  # @param key [String] the field name to set
+  # @param value [Object] the value to associate with the key
+  # @return [Object] the value that was set
+  #
   def set(key, value)
     @data[key] = value
   end
 
+  ##
+  # Converts the event data to a hash.
+  #
+  # @return [Hash] the event data as a hash
+  #
   def to_hash
     @data
   end
 end
 
-# Helper to load real log data
+##
+# Loads sample firewall log entries from a test data file.
+#
+# Reads the sample_logs.txt file located in the test_data directory
+# relative to the current file's location. Returns an empty array if
+# the file does not exist.
+#
+# @return [Array<String>] array of log lines with whitespace stripped
+#   and empty lines removed
+#
 def load_sample_logs
   file_path = File.join(__dir__, '..', 'test_data', 'sample_logs.txt')
   return [] unless File.exist?(file_path)
@@ -59,6 +102,13 @@ RSpec.describe 'parse_filterlog' do
       puts "\n✓ Loaded #{sample_logs.count} log entries from test_data/sample_logs.txt"
     end
 
+    ##
+    # Tests parsing of all sample firewall logs without errors.
+    #
+    # This test processes each log entry from the sample file and collects
+    # statistics about protocol types, IP versions, and actions. Any parsing
+    # errors are captured and reported.
+    #
     it 'parses all sample logs without errors' do
       skip 'No sample logs found' if sample_logs.empty?
 
@@ -108,6 +158,12 @@ RSpec.describe 'parse_filterlog' do
       puts "  Block: #{@parse_stats[:block]}"
     end
 
+    ##
+    # Tests extraction of basic fields from IPv4 TCP log entries.
+    #
+    # Verifies that IP version, protocol name, source/destination addresses,
+    # and port numbers are correctly parsed from TCP traffic logs.
+    #
     it 'extracts basic fields from first IPv4 TCP log' do
       skip 'No sample logs found' if sample_logs.empty?
 
@@ -125,6 +181,12 @@ RSpec.describe 'parse_filterlog' do
       expect(event.get('dstport')).not_to be_nil
     end
 
+    ##
+    # Tests extraction of basic fields from IPv6 log entries.
+    #
+    # Verifies that IPv6 addresses are correctly parsed and formatted
+    # according to IPv6 address notation standards.
+    #
     it 'extracts basic fields from first IPv6 log' do
       skip 'No sample logs found' if sample_logs.empty?
 
@@ -140,6 +202,12 @@ RSpec.describe 'parse_filterlog' do
       expect(event.get('dst')).to match(/[0-9a-f:]/)
     end
 
+    ##
+    # Tests protocol detection across all sample logs.
+    #
+    # Identifies all unique protocols present in the sample log file
+    # and displays them for verification.
+    #
     it 'correctly identifies all protocols' do
       skip 'No sample logs found' if sample_logs.empty?
 
@@ -153,6 +221,12 @@ RSpec.describe 'parse_filterlog' do
       puts "\n✓ Found protocols: #{protocols.join(', ')}"
     end
 
+    ##
+    # Tests interface detection across all sample logs.
+    #
+    # Identifies all unique network interfaces present in the sample
+    # log file and displays them for verification.
+    #
     it 'correctly identifies all interfaces' do
       skip 'No sample logs found' if sample_logs.empty?
 
@@ -166,6 +240,12 @@ RSpec.describe 'parse_filterlog' do
       puts "\n✓ Found interfaces: #{interfaces.join(', ')}"
     end
 
+    ##
+    # Validates presence of required fields in all log entries.
+    #
+    # Ensures that essential firewall log fields are present and non-empty
+    # in every parsed log entry. Reports any missing fields with context.
+    #
     it 'validates all entries have required fields' do
       skip 'No sample logs found' if sample_logs.empty?
 
@@ -197,6 +277,14 @@ RSpec.describe 'parse_filterlog' do
   # ========================================================================
 
   describe 'IPv4 TCP parsing - hardcoded tests' do
+    ##
+    # Tests complete parsing of an IPv4 TCP packet with all fields.
+    #
+    # Validates extraction of all three layers of firewall log data:
+    # - Layer 1: Packetfilter base fields (rule number, interface, action)
+    # - Layer 2: IPv4 header fields (TOS, TTL, flags)
+    # - Layer 3: TCP protocol fields (ports, flags, sequence numbers)
+    #
     it 'correctly parses IPv4 TCP packet with all fields' do
       message = '222,,,e0958e2cac30445acb9670fb7311313e,wg0,match,pass,in,4,0x0,,64,0,0,DF,6,tcp,64,10.250.10.8,10.250.0.4,59532,5601,0,SEC,780946964,,65535,,mss;nop;wscale'
 
@@ -229,6 +317,13 @@ RSpec.describe 'parse_filterlog' do
       expect(event.get('tcpopts')).to eq('mss;nop;wscale')
     end
 
+    ##
+    # Tests handling of empty TCP optional fields.
+    #
+    # Verifies that the parser correctly handles TCP packets where
+    # optional fields like ACK number, urgent pointer, and TCP options
+    # are empty or not present.
+    #
     it 'handles empty TCP fields correctly' do
       message = '100,,,label123,vtnet0,match,block,out,4,0x0,,64,12345,0,none,6,tcp,60,192.168.1.1,8.8.8.8,443,80,20,S,123456789,,1024,,'
 
@@ -242,6 +337,13 @@ RSpec.describe 'parse_filterlog' do
   end
 
   describe 'IPv4 UDP parsing - hardcoded tests' do
+    ##
+    # Tests parsing of an IPv4 UDP packet.
+    #
+    # Validates extraction of UDP-specific fields including source and
+    # destination ports and data length. Also verifies that TCP-specific
+    # fields are not incorrectly populated.
+    #
     it 'correctly parses IPv4 UDP packet' do
       message = '150,2,,dns-label,vtnet1,match,pass,in,4,0x0,,64,54321,0,none,17,udp,100,192.168.1.100,8.8.8.8,51234,53,80'
 
@@ -266,6 +368,13 @@ RSpec.describe 'parse_filterlog' do
   end
 
   describe 'IPv6 TCP parsing - hardcoded tests' do
+    ##
+    # Tests parsing of an IPv6 TCP packet.
+    #
+    # Validates extraction of IPv6-specific fields including traffic class,
+    # flow label, and hop limit, along with standard TCP fields like flags,
+    # sequence numbers, and acknowledgment numbers.
+    #
     it 'correctly parses IPv6 TCP packet' do
       message = '200,,,ipv6-label,wg1,match,pass,in,6,0x00,12345,64,tcp,6,60,2001:db8:a0b:12f0::1,2001:db8:85a3::8a2e:370:7334,443,59876,20,SA,987654321,123456789,8192,,mss;nop;wscale'
 
@@ -291,6 +400,12 @@ RSpec.describe 'parse_filterlog' do
   end
 
   describe 'IPv6 UDP parsing - hardcoded tests' do
+    ##
+    # Tests parsing of an IPv6 UDP packet.
+    #
+    # Validates extraction of IPv6 addresses in full colon notation
+    # along with UDP port and data length information.
+    #
     it 'correctly parses IPv6 UDP packet' do
       message = '175,,,udp6-label,vtnet0,match,pass,out,6,0x00,0,64,udp,17,120,fd00::1,fd00::2,54321,443,100'
 
@@ -308,6 +423,12 @@ RSpec.describe 'parse_filterlog' do
   end
 
   describe 'CARP protocol parsing - hardcoded tests' do
+    ##
+    # Tests parsing of CARP (Common Address Redundancy Protocol) packets.
+    #
+    # Validates extraction of CARP-specific fields including virtual host ID,
+    # advertisement skew, and base values used for high availability configurations.
+    #
     it 'correctly parses IPv4 CARP packet' do
       message = '300,,,carp-label,vtnet0,match,pass,in,4,0xc0,,255,0,0,none,112,carp,36,192.168.1.1,224.0.0.18,2,255,1,2,1,0'
 
@@ -327,6 +448,12 @@ RSpec.describe 'parse_filterlog' do
   end
 
   describe 'edge cases - hardcoded tests' do
+    ##
+    # Tests handling of minimal firewall log entries.
+    #
+    # Verifies that the parser correctly handles ICMP packets and
+    # block actions that do not include port information.
+    #
     it 'handles minimal firewall log (block without port info)' do
       message = '10,,,simple,em0,match,block,in,4,0x0,,64,0,0,none,1,icmp,60,1.2.3.4,5.6.7.8'
 
@@ -339,6 +466,12 @@ RSpec.describe 'parse_filterlog' do
       expect(event.get('srcport')).to be_nil
     end
 
+    ##
+    # Tests handling of empty anchorname and subrulenr fields.
+    #
+    # Verifies that the parser correctly processes log entries where
+    # optional fields like anchor name and sub-rule number are empty strings.
+    #
     it 'handles empty anchorname and subrulenr' do
       message = '5,,,test,wg0,match,pass,in,4,0x0,,64,0,0,none,6,tcp,40,10.0.0.1,10.0.0.2,80,443,0,S,1234,5678,1024,,'
 
