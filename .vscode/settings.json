@@ -11,5 +11,14 @@
         "**/*tsconfig.json": true,
         ".cache": true,
         "retool.config.json": true
+    },
+    "rubyLsp.rubyVersionManager": {
+        "rbenv": {}
+    },
+    "rubyLsp.enabledFeatures": {
+        "documentHighlights": true,
+        "documentSymbols": true,
+        "foldingRanges": true,
+        "formatting": true
     }
 }
