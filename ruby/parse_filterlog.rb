@@ -329,4 +329,6 @@ def filter(event)
   # @note Per specification caveats: Partial data may be returned by each
   #       parsing stage depending on forged packet integrity, snap length,
   #       and other factors such as hardware corruption of packets.
+  #
+  [event]
 end

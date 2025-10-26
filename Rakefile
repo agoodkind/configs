@@ -170,15 +170,24 @@ desc 'Backup current Logstash configs'
 task :backup do
   puts '→ Creating backups...'.blue
   timestamp = Time.now.strftime('%Y%m%d-%H%M%S')
-  backup_dir = "#{LOGSTASH_CONF_DIR}.backup.#{timestamp}"
+  conf_backup_dir = "#{LOGSTASH_CONF_DIR}.backup.#{timestamp}"
+  ruby_backup_dir = "#{LOGSTASH_RUBY_DIR}.backup.#{timestamp}"
 
-  run_cmd("sudo mkdir -p #{backup_dir}")
+  run_cmd("sudo mkdir -p #{conf_backup_dir}")
+  run_cmd("sudo mkdir -p #{ruby_backup_dir}")
 
   if Dir.exist?(LOGSTASH_CONF_DIR)
-    run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/* #{backup_dir}/")
-    puts "✓ Backup created: #{backup_dir}".green
+    run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/* #{conf_backup_dir}/")
+    puts "✓ Config backup created: #{conf_backup_dir}".green
   else
     puts '⚠ No configs to backup'.yellow
+  end
+
+  if Dir.exist?(LOGSTASH_RUBY_DIR)
+    run_cmd("sudo cp -r #{LOGSTASH_RUBY_DIR}/* #{ruby_backup_dir}/")
+    puts "✓ Ruby backup created: #{ruby_backup_dir}".green
+  else
+    puts '⚠ No Ruby filters to backup'.yellow
   end
 end
 
