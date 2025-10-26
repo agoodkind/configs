@@ -1,15 +1,10 @@
-
-require:
-  - rubocop-rake
-  - rubocop-rspec
-  
-AllCops:
-  NewCops: enable
-  TargetRubyVersion: 3.4.7
-
 plugins:
   - rubocop-rake
   - rubocop-rspec
+
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.4.7
 
 Metrics/BlockLength:
   Max: 40
