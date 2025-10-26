@@ -11,12 +11,14 @@ LOGSTASH_RUBY_DIR = '/etc/logstash/ruby'
 LOGSTASH_CONF_DIR = '/etc/logstash/conf.d'
 LOGSTASH_USER = 'logstash'
 LOGSTASH_GROUP = 'logstash'
+SYSLOG_PORT = 5140
 
 # Colors
 class String
   def green = "\e[32m#{self}\e[0m"
   def yellow = "\e[33m#{self}\e[0m"
   def blue = "\e[34m#{self}\e[0m"
+  def red = "\e[31m#{self}\e[0m"
 end
 
 # Dry-run support
@@ -41,19 +43,25 @@ task :help do
   puts 'Logstash Filterlog Parser'.blue
   puts ''
   puts 'Development:'.green
-  puts '  rake install      - Install dependencies'
-  puts '  rake test         - Run tests'
-  puts '  rake lint         - Run linter'
-  puts '  rake format       - Auto-format code'
-  puts '  rake dev          - Run format, lint, and test'
+  puts '  rake install       - Install dependencies'
+  puts '  rake test          - Run tests'
+  puts '  rake lint          - Run linter'
+  puts '  rake format        - Auto-format code'
+  puts '  rake dev           - Run format, lint, and test'
   puts ''
   puts 'Deployment:'.green
-  puts '  rake deploy       - Deploy to Logstash'
-  puts '  rake dry_run      - Show what deploy would do'
-  puts '  rake backup       - Backup current configs'
-  puts '  rake check        - Validate config'
-  puts '  rake restart      - Restart Logstash'
-  puts '  rake full_deploy  - Complete deployment pipeline'
+  puts '  rake deploy        - Deploy to Logstash'
+  puts '  rake dry_run       - Show what deploy would do'
+  puts '  rake backup        - Backup current configs'
+  puts '  rake check         - Validate config'
+  puts '  rake restart       - Restart Logstash'
+  puts '  rake full_deploy   - Complete deployment pipeline'
+  puts ''
+  puts 'Diagnostics:'.green
+  puts '  rake diagnose      - Check for common issues'
+  puts '  rake status        - Show Logstash status'
+  puts '  rake logs          - Tail Logstash logs'
+  puts '  rake check_port    - Check if port 5140 is in use'
   puts ''
   puts 'Examples:'.yellow
   puts '  DRY_RUN=1 rake deploy  - Dry-run deployment'
@@ -107,6 +115,56 @@ def set_permissions(path, mode)
   run_cmd("sudo chmod #{mode} #{path}")
 end
 
+# Diagnostics
+desc 'Check for common configuration issues'
+task :diagnose do
+  puts '→ Running diagnostics...'.blue
+  puts ''
+
+  # Check for duplicate inputs
+  puts 'Checking for duplicate input configurations:'.yellow
+  sh 'grep -r "port.*5140" /etc/logstash/conf.d/ || echo "  ✓ No duplicates found"'
+  puts ''
+
+  # Check port usage
+  puts 'Checking port 5140 usage:'.yellow
+  sh "sudo ss -lunp | grep :5140 || echo '  ✓ Port is free'"
+  puts ''
+
+  # List all config files
+  puts 'Logstash config files:'.yellow
+  sh 'ls -lh /etc/logstash/conf.d/*.conf'
+  puts ''
+
+  # Check for syntax errors
+  puts 'Checking Ruby filter syntax:'.yellow
+  if File.exist?("#{LOGSTASH_RUBY_DIR}/parse_filterlog.rb")
+    sh "ruby -c #{LOGSTASH_RUBY_DIR}/parse_filterlog.rb"
+  else
+    puts '  ⚠ Ruby filter not deployed yet'.yellow
+  end
+  puts ''
+
+  puts '✓ Diagnostics complete'.green
+end
+
+desc 'Check if port 5140 is in use'
+task :check_port do
+  puts '→ Checking port 5140...'.blue
+  sh "sudo ss -lunp | grep :#{SYSLOG_PORT} || echo '✓ Port #{SYSLOG_PORT} is available'"
+end
+
+desc 'Show Logstash service status'
+task :status do
+  sh 'sudo systemctl status logstash --no-pager'
+end
+
+desc 'Tail Logstash logs'
+task :logs do
+  puts 'Monitoring Logstash logs (Ctrl+C to stop)...'.blue
+  sh 'sudo journalctl -u logstash -f'
+end
+
 # Backup
 desc 'Backup current Logstash configs'
 task :backup do
@@ -115,9 +173,13 @@ task :backup do
   backup_dir = "#{LOGSTASH_CONF_DIR}.backup.#{timestamp}"
 
   run_cmd("sudo mkdir -p #{backup_dir}")
-  run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/* #{backup_dir}/") if Dir.exist?(LOGSTASH_CONF_DIR)
 
-  puts '✓ Backup created'.green
+  if Dir.exist?(LOGSTASH_CONF_DIR)
+    run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/* #{backup_dir}/")
+    puts "✓ Backup created: #{backup_dir}".green
+  else
+    puts '⚠ No configs to backup'.yellow
+  end
 end
 
 # Deploy Ruby filters
@@ -143,13 +205,14 @@ end
 
 # Main deploy task
 desc 'Deploy to Logstash'
-task deploy: %i[deploy_ruby deploy_conf] do
+task deploy: %i[backup deploy_ruby deploy_conf] do
   puts ''
   puts '✓ Deployment completed'.green
   puts ''
   puts 'Next steps:'.yellow
-  puts '  1. rake check    - Validate configuration'
-  puts '  2. rake restart  - Apply changes'
+  puts '  1. rake diagnose  - Check for issues'
+  puts '  2. rake check     - Validate configuration'
+  puts '  3. rake restart   - Apply changes'
 end
 
 # Dry-run
@@ -164,24 +227,45 @@ end
 desc 'Validate Logstash configuration'
 task :check do
   puts '→ Validating Logstash configuration...'.blue
-  sh 'sudo -u logstash /usr/share/logstash/bin/logstash --config.test_and_exit -f /etc/logstash/conf.d/'
-  puts '✓ Configuration is valid'.green
+
+  begin
+    sh 'sudo -u logstash /usr/share/logstash/bin/logstash --config.test_and_exit -f /etc/logstash/conf.d/'
+    puts '✓ Configuration is valid'.green
+  rescue StandardError => e
+    puts '✗ Configuration validation failed'.red
+    puts ''
+    puts 'Run "rake diagnose" to check for common issues'.yellow
+    raise e
+  end
 end
 
 # Restart Logstash
 desc 'Restart Logstash service'
 task :restart do
-  puts '→ Restarting Logstash...'.blue
-  run_cmd('sudo systemctl restart logstash')
+  puts '→ Stopping Logstash...'.blue
+  run_cmd('sudo systemctl stop logstash')
+
+  # Wait for port to be released
+  sleep 2
+
+  puts '→ Starting Logstash...'.blue
+  run_cmd('sudo systemctl start logstash')
+
+  # Wait for service to start
+  sleep 3
+
+  puts '→ Checking status...'.blue
+  sh 'sudo systemctl is-active logstash'
+
   puts '✓ Logstash restarted'.green
   puts ''
   puts 'Monitor logs:'.yellow
-  puts '  sudo journalctl -u logstash -f'
+  puts '  rake logs'
 end
 
 # Full deployment pipeline
 desc 'Complete deployment pipeline (format, lint, test, backup, deploy, check)'
-task full_deploy: %i[format lint test backup deploy check] do
+task full_deploy: %i[format lint test backup deploy diagnose check] do
   puts ''
   puts '✓ Full deployment pipeline completed'.green
   puts ''
@@ -209,4 +293,25 @@ task :install do
   puts '→ Installing dependencies...'.blue
   sh 'bundle install'
   puts '✓ Dependencies installed'.green
+end
+
+# Fix common issues
+desc 'Fix duplicate input configuration'
+task :fix_duplicates do
+  puts '→ Checking for duplicate input configurations...'.blue
+
+  # Find all files with port 5140
+  duplicate_files = []
+  Dir.glob("#{LOGSTASH_CONF_DIR}/*.conf").each do |file|
+    duplicate_files << file if File.read(file).match?(/port\s*=>\s*5140/)
+  end
+
+  if duplicate_files.length > 1
+    puts "⚠ Found #{duplicate_files.length} files with port 5140:".yellow
+    duplicate_files.each { |f| puts "  - #{f}" }
+    puts ''
+    puts 'To fix: Keep only one input file or use different ports'.yellow
+  else
+    puts '✓ No duplicates found'.green
+  end
 end
