@@ -1,15 +1,45 @@
+
+require:
+  - rubocop-rake
+  - rubocop-rspec
+  
 AllCops:
   NewCops: enable
-  TargetRubyVersion: 3.3
+  TargetRubyVersion: 3.4.7
 
-Style/StringLiterals:
-  EnforcedStyle: single_quotes
+plugins:
+  - rubocop-rake
+  - rubocop-rspec
 
-Style/Documentation:
-  Enabled: true
-
-Metrics/MethodLength:
-  Max: 30
+Metrics/BlockLength:
+  Max: 40
 
 Metrics/AbcSize:
+  Max: 40
+
+Metrics/CyclomaticComplexity:
+  Max: 15
+
+Metrics/MethodLength:
+  Max: 50
+
+Metrics/PerceivedComplexity:
+  Max: 15
+
+RSpec/ExampleLength:
+  Max: 30
+
+RSpec/MultipleExpectations:
   Max: 20
+
+Layout/LineLength:
+  Max: 200
+
+RSpec/InstanceVariable:
+  Enabled: false
+
+RSpec/DescribeClass:
+  Enabled: false
+
+RSpec/BeforeAfterAll:
+  Enabled: false

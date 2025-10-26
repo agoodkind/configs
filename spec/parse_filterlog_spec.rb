@@ -177,9 +177,7 @@ RSpec.describe 'parse_filterlog' do
 
         required_fields = %w[rulenr interface action dir ipversion src dst]
         required_fields.each do |field|
-          if event.get(field).nil? || event.get(field).to_s.empty?
-            missing_fields << { line: index + 1, field: field, log: log[0..60] }
-          end
+          missing_fields << { line: index + 1, field: field, log: log[0..60] } if event.get(field).nil? || event.get(field).to_s.empty?
         end
       end
 
