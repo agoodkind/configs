@@ -2,108 +2,211 @@
 
 require 'rspec/core/rake_task'
 require 'rubocop/rake_task'
+require 'fileutils'
+
+# Configuration
+RUBY_DIR = 'ruby'
+CONF_DIR = 'conf'
+LOGSTASH_RUBY_DIR = '/etc/logstash/ruby'
+LOGSTASH_CONF_DIR = '/etc/logstash/conf.d'
+LOGSTASH_USER = 'logstash'
+LOGSTASH_GROUP = 'logstash'
+
+# Colors
+class String
+  def green = "\e[32m#{self}\e[0m"
+  def yellow = "\e[33m#{self}\e[0m"
+  def blue = "\e[34m#{self}\e[0m"
+end
+
+# Dry-run support
+def dry_run?
+  ENV['DRY_RUN'] == '1'
+end
+
+def run_cmd(cmd)
+  if dry_run?
+    puts "[DRY-RUN] #{cmd}".yellow
+  else
+    sh cmd
+  end
+end
 
 # Default task
 task default: %i[format lint test]
 
-desc 'Run RSpec tests'
+# Help
+desc 'Show available tasks'
+task :help do
+  puts 'Logstash Filterlog Parser'.blue
+  puts ''
+  puts 'Development:'.green
+  puts '  rake install      - Install dependencies'
+  puts '  rake test         - Run tests'
+  puts '  rake lint         - Run linter'
+  puts '  rake format       - Auto-format code'
+  puts '  rake dev          - Run format, lint, and test'
+  puts ''
+  puts 'Deployment:'.green
+  puts '  rake deploy       - Deploy to Logstash'
+  puts '  rake dry_run      - Show what deploy would do'
+  puts '  rake backup       - Backup current configs'
+  puts '  rake check        - Validate config'
+  puts '  rake restart      - Restart Logstash'
+  puts '  rake full_deploy  - Complete deployment pipeline'
+  puts ''
+  puts 'Examples:'.yellow
+  puts '  DRY_RUN=1 rake deploy  - Dry-run deployment'
+  puts '  rake dev && rake deploy && rake restart'
+end
+
+# Tests
 RSpec::Core::RakeTask.new(:test) do |t|
   t.pattern = 'spec/**/*_spec.rb'
   t.rspec_opts = ['--format', 'documentation', '--color']
 end
 
-desc 'Run RuboCop linter'
+# Linting
 RuboCop::RakeTask.new(:lint) do |t|
   t.options = ['--display-cop-names']
+  t.fail_on_error = true
 end
 
-desc 'Auto-format code with RuboCop'
+# Formatting
 RuboCop::RakeTask.new(:format) do |t|
   t.options = ['--autocorrect-all']
+  t.fail_on_error = false
 end
 
+# Development workflow
+desc 'Run format, lint, and test'
+task dev: %i[format lint test] do
+  puts '✓ All development checks passed'.green
+end
+
+# Deployment helpers
+def copy_files(source_dir, dest_dir, pattern)
+  files = Dir.glob(File.join(source_dir, pattern))
+
+  if files.empty?
+    puts "  No #{pattern} files to deploy".yellow
+    return
+  end
+
+  files.each do |file|
+    puts "  Copying #{file} -> #{dest_dir}/"
+    run_cmd("sudo cp #{file} #{dest_dir}/")
+  end
+end
+
+def set_ownership(path, user, group)
+  run_cmd("sudo chown -R #{user}:#{group} #{path}")
+end
+
+def set_permissions(path, mode)
+  run_cmd("sudo chmod #{mode} #{path}")
+end
+
+# Backup
+desc 'Backup current Logstash configs'
+task :backup do
+  puts '→ Creating backups...'.blue
+  timestamp = Time.now.strftime('%Y%m%d-%H%M%S')
+  backup_dir = "#{LOGSTASH_CONF_DIR}.backup.#{timestamp}"
+
+  run_cmd("sudo mkdir -p #{backup_dir}")
+  run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/* #{backup_dir}/") if Dir.exist?(LOGSTASH_CONF_DIR)
+
+  puts '✓ Backup created'.green
+end
+
+# Deploy Ruby filters
+desc 'Deploy Ruby filters'
+task :deploy_ruby do
+  puts '→ Deploying Ruby filters...'.blue
+  run_cmd("sudo mkdir -p #{LOGSTASH_RUBY_DIR}")
+  copy_files(RUBY_DIR, LOGSTASH_RUBY_DIR, '*.rb')
+  set_ownership(LOGSTASH_RUBY_DIR, LOGSTASH_USER, LOGSTASH_GROUP)
+  set_permissions("#{LOGSTASH_RUBY_DIR}/*.rb", '644')
+end
+
+# Deploy configs
+desc 'Deploy Logstash configs'
+task :deploy_conf do
+  return unless Dir.exist?(CONF_DIR)
+
+  puts '→ Deploying Logstash configs...'.blue
+  copy_files(CONF_DIR, LOGSTASH_CONF_DIR, '*.conf')
+  set_ownership("#{LOGSTASH_CONF_DIR}/*.conf", LOGSTASH_USER, LOGSTASH_GROUP)
+  set_permissions("#{LOGSTASH_CONF_DIR}/*.conf", '644')
+end
+
+# Main deploy task
 desc 'Deploy to Logstash'
-task :deploy do
-  puts '→ Deploying to Logstash...'
-
-  # Backup existing Ruby filter
-  if File.exist?('/etc/logstash/ruby/parse_filterlog.rb')
-    puts '  Backing up existing Ruby filter...'
-    sh 'sudo cp /etc/logstash/ruby/parse_filterlog.rb /etc/logstash/ruby/parse_filterlog.rb.bak'
-  end
-  # Deploy Ruby filter
-  puts '  Copying Ruby filter...'
-  sh 'sudo cp ruby/parse_filterlog.rb /etc/logstash/ruby/'
-  sh 'sudo chown logstash:logstash /etc/logstash/ruby/parse_filterlog.rb'
-  sh 'sudo chmod 644 /etc/logstash/ruby/parse_filterlog.rb'
-
-  # Deploy config files if they exist
-  if Dir.exist?('conf')
-    puts '  Copying Logstash configs...'
-    Dir.glob('conf/*.conf').each do |conf_file|
-      conf_basename = File.basename(conf_file)
-      target_conf = "/etc/logstash/conf.d/#{conf_basename}"
-      # Backup existing config
-      if File.exist?(target_conf)
-        puts "    Backing up #{conf_basename}..."
-        sh "sudo cp #{target_conf} #{target_conf}.bak"
-      end
-      sh "sudo cp #{conf_file} /etc/logstash/conf.d/"
-    end
-    sh 'sudo chown logstash:logstash /etc/logstash/conf.d/*.conf'
-    sh 'sudo chmod 644 /etc/logstash/conf.d/*.conf'
-  end
-
-  puts '✓ Deployment completed'
+task deploy: %i[deploy_ruby deploy_conf] do
   puts ''
-  puts 'Next steps:'
-  puts '  1. Run: rake check'
-  puts '  2. Run: rake restart'
+  puts '✓ Deployment completed'.green
+  puts ''
+  puts 'Next steps:'.yellow
+  puts '  1. rake check    - Validate configuration'
+  puts '  2. rake restart  - Apply changes'
 end
 
+# Dry-run
+desc 'Preview deployment without making changes'
+task :dry_run do
+  puts 'Running deployment in dry-run mode...'.yellow
+  ENV['DRY_RUN'] = '1'
+  Rake::Task[:deploy].invoke
+end
+
+# Validate config
 desc 'Validate Logstash configuration'
 task :check do
-  puts '→ Validating Logstash configuration...'
+  puts '→ Validating Logstash configuration...'.blue
   sh 'sudo -u logstash /usr/share/logstash/bin/logstash --config.test_and_exit -f /etc/logstash/conf.d/'
-  puts '✓ Configuration is valid'
+  puts '✓ Configuration is valid'.green
 end
 
+# Restart Logstash
 desc 'Restart Logstash service'
 task :restart do
-  puts '→ Restarting Logstash...'
-  sh 'sudo systemctl restart logstash'
-  puts '✓ Logstash restarted'
+  puts '→ Restarting Logstash...'.blue
+  run_cmd('sudo systemctl restart logstash')
+  puts '✓ Logstash restarted'.green
   puts ''
-  puts 'Monitor logs with: sudo journalctl -u logstash -f'
+  puts 'Monitor logs:'.yellow
+  puts '  sudo journalctl -u logstash -f'
 end
 
-desc 'Full deployment pipeline'
-task full_deploy: %i[format lint test deploy check] do
+# Full deployment pipeline
+desc 'Complete deployment pipeline (format, lint, test, backup, deploy, check)'
+task full_deploy: %i[format lint test backup deploy check] do
   puts ''
-  puts '✓ Full deployment pipeline completed'
-  puts 'Run: rake restart'
+  puts '✓ Full deployment pipeline completed'.green
+  puts ''
+  puts 'Final step:'.yellow
+  puts '  rake restart'
 end
 
-desc 'Clean temporary files'
+# Clean temporary files
+desc 'Remove temporary files'
 task :clean do
-  puts '→ Cleaning temporary files...'
+  puts '→ Cleaning temporary files...'.blue
   FileUtils.rm_rf('.bundle')
   FileUtils.rm_rf('vendor/bundle')
-  Dir.glob('**/*.swp').each { |f| File.delete(f) }
-  Dir.glob('**/*.swo').each { |f| File.delete(f) }
-  Dir.glob('**/*~').each { |f| File.delete(f) }
-  puts '✓ Cleanup completed'
+
+  ['.swp', '.swo', '~', '.DS_Store'].each do |ext|
+    Dir.glob("**/*#{ext}").each { |f| FileUtils.rm_f(f) }
+  end
+
+  puts '✓ Cleanup completed'.green
 end
 
-desc 'Show available tasks'
-task :help do
-  puts 'Available Rake tasks:'
-  puts '  rake test          - Run RSpec tests'
-  puts '  rake lint          - Run RuboCop linter'
-  puts '  rake format        - Auto-format Ruby code'
-  puts '  rake deploy        - Deploy to Logstash'
-  puts '  rake check         - Validate Logstash config'
-  puts '  rake restart       - Restart Logstash service'
-  puts '  rake full_deploy   - Full deployment pipeline'
-  puts '  rake clean         - Remove temporary files'
+# Install dependencies
+desc 'Install Ruby dependencies'
+task :install do
+  puts '→ Installing dependencies...'.blue
+  sh 'bundle install'
+  puts '✓ Dependencies installed'.green
 end
