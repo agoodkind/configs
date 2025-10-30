@@ -35,20 +35,6 @@ Backups are created for existing files during deploy.
 
 Create data views via Kibana Dev Tools Console for querying logs.
 
-### Legacy Index Data View
-For existing `opnsense-*` indices:
-
-```json
-POST kbn:/api/data_views/data_view
-{
-  "data_view": {
-    "title": "opnsense-*",
-    "name": "OPNsense Legacy",
-    "timeFieldName": "@timestamp"
-  }
-}
-```
-
 ### Data Stream Data View
 For new `logs-opnsense.*` data streams:
 
