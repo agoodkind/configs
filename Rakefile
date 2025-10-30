@@ -12,6 +12,7 @@ LOGSTASH_CONF_DIR = '/etc/logstash/conf.d'
 LOGSTASH_USER = 'logstash'
 LOGSTASH_GROUP = 'logstash'
 SYSLOG_PORT = 5140
+REMOTE_HOST = 'root@10.250.0.4'
 
 # Colors
 class String
@@ -21,16 +22,31 @@ class String
   def red = "\e[31m#{self}\e[0m"
 end
 
-# Dry-run support
+# Dry-run and remote support
 def dry_run?
   ENV['DRY_RUN'] == '1'
 end
 
+def remote_enabled?
+  ENV['REMOTE'] == '1'
+end
+
 def run_cmd(cmd)
-  if dry_run?
+  if remote_enabled?
+    remote_cmd(cmd)
+  elsif dry_run?
     puts "[DRY-RUN] #{cmd}".yellow
   else
     sh cmd
+  end
+end
+
+def remote_cmd(cmd)
+  full_cmd = "ssh #{REMOTE_HOST} '#{cmd}'"
+  if dry_run?
+    puts "[DRY-RUN] #{full_cmd}".yellow
+  else
+    sh full_cmd
   end
 end
 
@@ -64,7 +80,9 @@ task :help do
   puts '  rake check_port    - Check if port 5140 is in use'
   puts ''
   puts 'Examples:'.yellow
-  puts '  DRY_RUN=1 rake deploy  - Dry-run deployment'
+  puts '  DRY_RUN=1 rake deploy       - Dry-run deployment'
+  puts '  REMOTE=1 rake deploy        - Deploy to root@logs via SSH'
+  puts '  REMOTE=1 rake restart       - Restart Logstash on remote host'
   puts '  rake dev && rake deploy && rake restart'
 end
 
@@ -102,8 +120,17 @@ def copy_files(source_dir, dest_dir, pattern)
   end
 
   files.each do |file|
-    puts "  Copying #{file} -> #{dest_dir}/"
-    run_cmd("sudo cp #{file} #{dest_dir}/")
+    if remote_enabled?
+      puts "  Copying #{file} -> #{REMOTE_HOST}:#{dest_dir}/"
+      if dry_run?
+        puts "[DRY-RUN] scp #{file} #{REMOTE_HOST}:#{dest_dir}/".yellow
+      else
+        sh "scp #{file} #{REMOTE_HOST}:#{dest_dir}/"
+      end
+    else
+      puts "  Copying #{file} -> #{dest_dir}/"
+      run_cmd("sudo cp #{file} #{dest_dir}/")
+    end
   end
 end
 
@@ -123,26 +150,22 @@ task :diagnose do
 
   # Check for duplicate inputs
   puts 'Checking for duplicate input configurations:'.yellow
-  sh 'grep -r "port.*5140" /etc/logstash/conf.d/ || echo "  ✓ No duplicates found"'
+  run_cmd('grep -r "port.*5140" /etc/logstash/conf.d/ || echo "  ✓ No duplicates found"')
   puts ''
 
   # Check port usage
   puts 'Checking port 5140 usage:'.yellow
-  sh "sudo ss -lunp | grep :5140 || echo '  ✓ Port is free'"
+  run_cmd("sudo ss -lunp | grep :5140 || echo '  ✓ Port is free'")
   puts ''
 
   # List all config files
   puts 'Logstash config files:'.yellow
-  sh 'ls -lh /etc/logstash/conf.d/*.conf'
+  run_cmd('ls -lh /etc/logstash/conf.d/*.conf')
   puts ''
 
   # Check for syntax errors
   puts 'Checking Ruby filter syntax:'.yellow
-  if File.exist?("#{LOGSTASH_RUBY_DIR}/parse_filterlog.rb")
-    sh "ruby -c #{LOGSTASH_RUBY_DIR}/parse_filterlog.rb"
-  else
-    puts '  ⚠ Ruby filter not deployed yet'.yellow
-  end
+  run_cmd("test -f #{LOGSTASH_RUBY_DIR}/parse_filterlog.rb && ruby -c #{LOGSTASH_RUBY_DIR}/parse_filterlog.rb || echo '  ⚠ Ruby filter not deployed yet'")
   puts ''
 
   puts '✓ Diagnostics complete'.green
@@ -151,18 +174,22 @@ end
 desc 'Check if port 5140 is in use'
 task :check_port do
   puts '→ Checking port 5140...'.blue
-  sh "sudo ss -lunp | grep :#{SYSLOG_PORT} || echo '✓ Port #{SYSLOG_PORT} is available'"
+  run_cmd("sudo ss -lunp | grep :#{SYSLOG_PORT} || echo '✓ Port #{SYSLOG_PORT} is available'")
 end
 
 desc 'Show Logstash service status'
 task :status do
-  sh 'sudo systemctl status logstash --no-pager'
+  run_cmd('sudo systemctl status logstash --no-pager')
 end
 
 desc 'Tail Logstash logs'
 task :logs do
   puts 'Monitoring Logstash logs (Ctrl+C to stop)...'.blue
-  sh 'sudo journalctl -u logstash -f'
+  if remote_enabled?
+    sh "ssh #{REMOTE_HOST} 'sudo journalctl -u logstash -f'"
+  else
+    run_cmd('sudo journalctl -u logstash -f')
+  end
 end
 
 # Backup
@@ -238,7 +265,7 @@ task :check do
   puts '→ Validating Logstash configuration...'.blue
 
   begin
-    sh 'sudo -u logstash /usr/share/logstash/bin/logstash --config.test_and_exit -f /etc/logstash/conf.d/'
+    run_cmd('sudo -u logstash /usr/share/logstash/bin/logstash --config.test_and_exit -f /etc/logstash/conf.d/')
     puts '✓ Configuration is valid'.green
   rescue StandardError => e
     puts '✗ Configuration validation failed'.red
@@ -264,7 +291,7 @@ task :restart do
   sleep 3
 
   puts '→ Checking status...'.blue
-  sh 'sudo systemctl is-active logstash'
+  run_cmd('sudo systemctl is-active logstash')
 
   puts '✓ Logstash restarted'.green
   puts ''
