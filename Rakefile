@@ -4,6 +4,16 @@ require 'rspec/core/rake_task'
 require 'rubocop/rake_task'
 require 'fileutils'
 
+##
+# Logstash Filterlog Parser Rakefile
+#
+# This Rakefile provides comprehensive deployment and management tasks for
+# a custom Logstash Ruby filter and pipeline configurations. It supports
+# local, remote (SSH), and Proxmox LXC container deployments.
+#
+# @author Alex Goodkind
+# @version 1.0
+
 # Configuration
 RUBY_DIR = 'ruby'
 CONF_DIR = 'conf'
@@ -12,27 +22,63 @@ LOGSTASH_CONF_DIR = '/etc/logstash/conf.d'
 LOGSTASH_USER = 'logstash'
 LOGSTASH_GROUP = 'logstash'
 SYSLOG_PORT = 5140
-REMOTE_HOST = 'root@10.250.0.4'
+REMOTE_HOST = ENV['REMOTE_HOST'] || 'root@10.250.0.4'
+PROXMOX_HOST = ENV.fetch('PROXMOX_HOST', nil)
+PROXMOX_VMID = ENV.fetch('PROXMOX_VMID', nil)
 
-# Colors
+##
+# String class extensions for colored terminal output
 class String
+  # @return [String] the string wrapped in ANSI green color codes
   def green = "\e[32m#{self}\e[0m"
+
+  # @return [String] the string wrapped in ANSI yellow color codes
   def yellow = "\e[33m#{self}\e[0m"
+
+  # @return [String] the string wrapped in ANSI blue color codes
   def blue = "\e[34m#{self}\e[0m"
+
+  # @return [String] the string wrapped in ANSI red color codes
   def red = "\e[31m#{self}\e[0m"
 end
 
-# Dry-run and remote support
+##
+# Check if dry-run mode is enabled
+#
+# @return [Boolean] true if DRY_RUN environment variable is set to '1'
 def dry_run?
   ENV['DRY_RUN'] == '1'
 end
 
+##
+# Check if remote SSH deployment is enabled
+#
+# @return [Boolean] true if REMOTE environment variable is set to '1'
 def remote_enabled?
   ENV['REMOTE'] == '1'
 end
 
+##
+# Check if Proxmox container deployment is enabled
+#
+# @return [Boolean] true if both PROXMOX_HOST and PROXMOX_VMID are set
+def proxmox_enabled?
+  PROXMOX_HOST && PROXMOX_VMID
+end
+
+##
+# Execute a command based on deployment mode (local, remote, or Proxmox)
+#
+# Routes command execution to the appropriate handler based on environment
+# variables. Priority: Proxmox > Remote > Local
+#
+# @param cmd [String] the command to execute
+# @return [void]
+# @raise [RuntimeError] if command execution fails
 def run_cmd(cmd)
-  if remote_enabled?
+  if proxmox_enabled?
+    proxmox_cmd(cmd)
+  elsif remote_enabled?
     remote_cmd(cmd)
   elsif dry_run?
     puts "[DRY-RUN] #{cmd}".yellow
@@ -41,8 +87,32 @@ def run_cmd(cmd)
   end
 end
 
+##
+# Execute a command on a remote host via SSH
+#
+# @param cmd [String] the command to execute on the remote host
+# @return [void]
+# @raise [RuntimeError] if SSH command fails
 def remote_cmd(cmd)
   full_cmd = "ssh #{REMOTE_HOST} '#{cmd}'"
+  if dry_run?
+    puts "[DRY-RUN] #{full_cmd}".yellow
+  else
+    sh full_cmd
+  end
+end
+
+##
+# Execute a command in a Proxmox LXC container
+#
+# Uses 'pct exec' to run commands inside the specified container on a
+# Proxmox host via SSH.
+#
+# @param cmd [String] the command to execute inside the container
+# @return [void]
+# @raise [RuntimeError] if pct exec command fails
+def proxmox_cmd(cmd)
+  full_cmd = "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- #{cmd}'"
   if dry_run?
     puts "[DRY-RUN] #{full_cmd}".yellow
   else
@@ -53,7 +123,11 @@ end
 # Default task
 task default: %i[format lint test]
 
-# Help
+##
+# Display help information for all available rake tasks
+#
+# Shows organized list of development, deployment, and diagnostic tasks
+# with usage examples.
 desc 'Show available tasks'
 task :help do
   puts 'Logstash Filterlog Parser'.blue
@@ -80,37 +154,64 @@ task :help do
   puts '  rake check_port    - Check if port 5140 is in use'
   puts ''
   puts 'Examples:'.yellow
-  puts '  DRY_RUN=1 rake deploy       - Dry-run deployment'
-  puts '  REMOTE=1 rake deploy        - Deploy to root@logs via SSH'
-  puts '  REMOTE=1 rake restart       - Restart Logstash on remote host'
+  puts '  DRY_RUN=1 rake deploy                    - Dry-run deployment'
+  puts '  REMOTE=1 rake deploy                     - Deploy to default remote host'
+  puts '  REMOTE=1 REMOTE_HOST=user@host rake deploy - Deploy to custom remote host'
+  puts '  REMOTE=1 rake restart                    - Restart Logstash on remote host'
+  puts '  PROXMOX_HOST=root@pve PROXMOX_VMID=100 rake deploy - Deploy via Proxmox pct'
   puts '  rake dev && rake deploy && rake restart'
 end
 
-# Tests
+##
+# Configure and run RSpec tests
+#
+# Runs all test files matching the pattern spec/**/*_spec.rb with
+# colored documentation output.
 RSpec::Core::RakeTask.new(:test) do |t|
   t.pattern = 'spec/**/*_spec.rb'
   t.rspec_opts = ['--format', 'documentation', '--color']
 end
 
-# Linting
+##
+# Configure and run RuboCop linter
+#
+# Runs RuboCop with cop names displayed and fails on any violations.
 RuboCop::RakeTask.new(:lint) do |t|
   t.options = ['--display-cop-names']
   t.fail_on_error = true
 end
 
-# Formatting
+##
+# Configure and run RuboCop auto-formatter
+#
+# Runs RuboCop with auto-correct to automatically fix style violations.
+# Does not fail on errors to allow fixing of problematic code.
 RuboCop::RakeTask.new(:format) do |t|
   t.options = ['--autocorrect-all']
   t.fail_on_error = false
 end
 
-# Development workflow
+##
+# Run complete development workflow
+#
+# Executes format, lint, and test tasks in sequence. Useful for
+# pre-deployment validation.
 desc 'Run format, lint, and test'
 task dev: %i[format lint test] do
   puts '✓ All development checks passed'.green
 end
 
-# Deployment helpers
+##
+# Copy files to deployment destination
+#
+# Handles file copying for local, remote SSH, and Proxmox deployments.
+# For Proxmox, files are first copied to the host, then pushed into
+# the container using 'pct push'.
+#
+# @param source_dir [String] source directory containing files
+# @param dest_dir [String] destination directory path
+# @param pattern [String] glob pattern for file matching (e.g., '*.rb')
+# @return [void]
 def copy_files(source_dir, dest_dir, pattern)
   files = Dir.glob(File.join(source_dir, pattern))
 
@@ -120,7 +221,18 @@ def copy_files(source_dir, dest_dir, pattern)
   end
 
   files.each do |file|
-    if remote_enabled?
+    if proxmox_enabled?
+      puts "  Copying #{file} -> #{PROXMOX_HOST}(#{PROXMOX_VMID}):#{dest_dir}/"
+      if dry_run?
+        puts "[DRY-RUN] pct push #{PROXMOX_VMID} #{file} #{dest_dir}/".yellow
+      else
+        # Copy to Proxmox host temp, then push into container
+        temp_file = "/tmp/#{File.basename(file)}"
+        sh "scp #{file} #{PROXMOX_HOST}:#{temp_file}"
+        sh "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} #{temp_file} #{dest_dir}/#{File.basename(file)}'"
+        sh "ssh #{PROXMOX_HOST} 'rm #{temp_file}'"
+      end
+    elsif remote_enabled?
       puts "  Copying #{file} -> #{REMOTE_HOST}:#{dest_dir}/"
       if dry_run?
         puts "[DRY-RUN] scp #{file} #{REMOTE_HOST}:#{dest_dir}/".yellow
@@ -134,15 +246,61 @@ def copy_files(source_dir, dest_dir, pattern)
   end
 end
 
+##
+# Set ownership of files or directories
+#
+# Handles ownership setting for local, remote, and Proxmox deployments.
+# For Proxmox with glob patterns, uses 'find' command to avoid shell
+# expansion issues inside containers.
+#
+# @param path [String] path to file/directory (may contain glob patterns)
+# @param user [String] owner username
+# @param group [String] owner group name
+# @return [void]
 def set_ownership(path, user, group)
-  run_cmd("sudo chown -R #{user}:#{group} #{path}")
+  if proxmox_enabled?
+    # For Proxmox, use find to handle glob patterns
+    if path.include?('*')
+      run_cmd("find #{File.dirname(path)} -name '#{File.basename(path)}' -exec chown #{user}:#{group} {} \\;")
+    else
+      run_cmd("sudo chown -R #{user}:#{group} #{path}")
+    end
+  else
+    run_cmd("sudo chown -R #{user}:#{group} #{path}")
+  end
 end
 
+##
+# Set permissions on files or directories
+#
+# Handles permission setting for local, remote, and Proxmox deployments.
+# For Proxmox with glob patterns, uses 'find' command to avoid shell
+# expansion issues inside containers.
+#
+# @param path [String] path to file/directory (may contain glob patterns)
+# @param mode [String] octal permission mode (e.g., '644')
+# @return [void]
 def set_permissions(path, mode)
-  run_cmd("sudo chmod #{mode} #{path}")
+  if proxmox_enabled?
+    # For Proxmox, use find to handle glob patterns
+    if path.include?('*')
+      run_cmd("find #{File.dirname(path)} -name '#{File.basename(path)}' -exec chmod #{mode} {} \\;")
+    else
+      run_cmd("sudo chmod #{mode} #{path}")
+    end
+  else
+    run_cmd("sudo chmod #{mode} #{path}")
+  end
 end
 
-# Diagnostics
+##
+# Run diagnostic checks on Logstash configuration
+#
+# Performs comprehensive checks including:
+# - Duplicate input port configurations
+# - Port 5140 usage status
+# - List of deployed config files
+# - Ruby filter syntax validation
 desc 'Check for common configuration issues'
 task :diagnose do
   puts '→ Running diagnostics...'.blue
@@ -160,7 +318,11 @@ task :diagnose do
 
   # List all config files
   puts 'Logstash config files:'.yellow
-  run_cmd('ls -lh /etc/logstash/conf.d/*.conf')
+  if proxmox_enabled?
+    run_cmd("find #{LOGSTASH_CONF_DIR} -name '*.conf' -exec ls -lh {} \\;")
+  else
+    run_cmd('ls -lh /etc/logstash/conf.d/*.conf')
+  end
   puts ''
 
   # Check for syntax errors
@@ -171,28 +333,47 @@ task :diagnose do
   puts '✓ Diagnostics complete'.green
 end
 
+##
+# Check if syslog port 5140 is in use
+#
+# Uses 'ss' command to check if UDP port 5140 is currently bound.
 desc 'Check if port 5140 is in use'
 task :check_port do
   puts '→ Checking port 5140...'.blue
   run_cmd("sudo ss -lunp | grep :#{SYSLOG_PORT} || echo '✓ Port #{SYSLOG_PORT} is available'")
 end
 
+##
+# Display Logstash service status
+#
+# Shows systemd service status for the Logstash daemon.
 desc 'Show Logstash service status'
 task :status do
   run_cmd('sudo systemctl status logstash --no-pager')
 end
 
+##
+# Tail Logstash service logs in real-time
+#
+# Monitors journalctl logs for the Logstash service. Press Ctrl+C to stop.
+# Handles local, remote SSH, and Proxmox deployments.
 desc 'Tail Logstash logs'
 task :logs do
   puts 'Monitoring Logstash logs (Ctrl+C to stop)...'.blue
-  if remote_enabled?
+  if proxmox_enabled?
+    sh "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- journalctl -u logstash -f'"
+  elsif remote_enabled?
     sh "ssh #{REMOTE_HOST} 'sudo journalctl -u logstash -f'"
   else
     run_cmd('sudo journalctl -u logstash -f')
   end
 end
 
-# Backup
+##
+# Create timestamped backups of current Logstash configuration
+#
+# Backs up both config files and Ruby filters to timestamped directories.
+# Backup format: /etc/logstash/conf.d.backup.YYYYMMDD-HHMMSS
 desc 'Backup current Logstash configs'
 task :backup do
   puts '→ Creating backups...'.blue
@@ -218,7 +399,11 @@ task :backup do
   end
 end
 
-# Deploy Ruby filters
+##
+# Deploy Ruby filter scripts to Logstash
+#
+# Copies Ruby filter files from ruby/ directory to /etc/logstash/ruby/
+# and sets appropriate ownership and permissions.
 desc 'Deploy Ruby filters'
 task :deploy_ruby do
   puts '→ Deploying Ruby filters...'.blue
@@ -228,7 +413,11 @@ task :deploy_ruby do
   set_permissions("#{LOGSTASH_RUBY_DIR}/*.rb", '644')
 end
 
-# Deploy configs
+##
+# Deploy Logstash pipeline configuration files
+#
+# Copies config files from conf/ directory to /etc/logstash/conf.d/
+# and sets appropriate ownership and permissions.
 desc 'Deploy Logstash configs'
 task :deploy_conf do
   return unless Dir.exist?(CONF_DIR)
@@ -239,7 +428,15 @@ task :deploy_conf do
   set_permissions("#{LOGSTASH_CONF_DIR}/*.conf", '644')
 end
 
-# Main deploy task
+##
+# Main deployment task
+#
+# Executes complete deployment workflow:
+# 1. Backup existing configs
+# 2. Deploy Ruby filters
+# 3. Deploy configuration files
+#
+# After completion, suggests running diagnose, check, and restart tasks.
 desc 'Deploy to Logstash'
 task deploy: %i[backup deploy_ruby deploy_conf] do
   puts ''
@@ -251,7 +448,11 @@ task deploy: %i[backup deploy_ruby deploy_conf] do
   puts '  3. rake restart   - Apply changes'
 end
 
-# Dry-run
+##
+# Preview deployment without making changes
+#
+# Runs deployment in dry-run mode by setting DRY_RUN=1 environment variable.
+# Shows all commands that would be executed without actually running them.
 desc 'Preview deployment without making changes'
 task :dry_run do
   puts 'Running deployment in dry-run mode...'.yellow
@@ -259,7 +460,11 @@ task :dry_run do
   Rake::Task[:deploy].invoke
 end
 
-# Validate config
+##
+# Validate Logstash configuration
+#
+# Runs Logstash's built-in config validation tool to check for syntax
+# errors and configuration issues. Fails if validation doesn't pass.
 desc 'Validate Logstash configuration'
 task :check do
   puts '→ Validating Logstash configuration...'.blue
@@ -275,7 +480,15 @@ task :check do
   end
 end
 
-# Restart Logstash
+##
+# Restart Logstash service
+#
+# Performs graceful restart of Logstash:
+# 1. Stops the service
+# 2. Waits for port release
+# 3. Starts the service
+# 4. Waits for startup
+# 5. Verifies service is active
 desc 'Restart Logstash service'
 task :restart do
   puts '→ Stopping Logstash...'.blue
@@ -299,7 +512,19 @@ task :restart do
   puts '  rake logs'
 end
 
-# Full deployment pipeline
+##
+# Complete deployment pipeline
+#
+# Runs full deployment workflow in sequence:
+# 1. Format code
+# 2. Lint code
+# 3. Run tests
+# 4. Backup existing configs
+# 5. Deploy files
+# 6. Run diagnostics
+# 7. Validate configuration
+#
+# Does not automatically restart - suggests manual restart as final step.
 desc 'Complete deployment pipeline (format, lint, test, backup, deploy, check)'
 task full_deploy: %i[format lint test backup deploy diagnose check] do
   puts ''
@@ -309,7 +534,15 @@ task full_deploy: %i[format lint test backup deploy diagnose check] do
   puts '  rake restart'
 end
 
-# Clean temporary files
+##
+# Remove temporary files and build artifacts
+#
+# Cleans up:
+# - .bundle directory
+# - vendor/bundle directory
+# - Vim swap files (.swp, .swo)
+# - Backup files (~)
+# - macOS .DS_Store files
 desc 'Remove temporary files'
 task :clean do
   puts '→ Cleaning temporary files...'.blue
@@ -323,7 +556,10 @@ task :clean do
   puts '✓ Cleanup completed'.green
 end
 
-# Install dependencies
+##
+# Install Ruby dependencies
+#
+# Runs 'bundle install' to install all gems specified in Gemfile.
 desc 'Install Ruby dependencies'
 task :install do
   puts '→ Installing dependencies...'.blue
@@ -331,7 +567,12 @@ task :install do
   puts '✓ Dependencies installed'.green
 end
 
-# Fix common issues
+##
+# Check for duplicate syslog input configurations
+#
+# Scans deployed config files for multiple instances of port 5140
+# configuration, which would cause conflicts. Suggests fixes if
+# duplicates are found.
 desc 'Fix duplicate input configuration'
 task :fix_duplicates do
   puts '→ Checking for duplicate input configurations...'.blue
