@@ -282,8 +282,8 @@ def copy_files(source_dir, dest_dir, pattern)
   puts "  Copying #{files.length} #{pattern} file(s)...".blue unless verbose?
 
   files.each do |file|
+    puts "    #{File.basename(file)}" if verbose?
     if proxmox_enabled?
-      puts "    #{File.basename(file)}" if verbose?
       if dry_run?
         puts "[DRY-RUN] pct push #{PROXMOX_VMID} " \
              "#{file} #{dest_dir}/".yellow
@@ -298,14 +298,12 @@ def copy_files(source_dir, dest_dir, pattern)
            "ssh #{PROXMOX_HOST} 'rm #{temp_file}' >/dev/null 2>&1")
       end
     elsif remote_enabled?
-      puts "    #{File.basename(file)}" if verbose?
       if dry_run?
         puts "[DRY-RUN] scp #{file} #{REMOTE_HOST}:#{dest_dir}/".yellow
       else
         sh 'scp', '-q', file, "#{REMOTE_HOST}:#{dest_dir}/"
       end
     else
-      puts "    #{File.basename(file)}" if verbose?
       run_cmd("sudo cp #{file} #{dest_dir}/")
     end
   end
@@ -402,12 +400,10 @@ task :diagnose do
     puts '  ⚠️️ No Ruby files found'.yellow
   else
     ruby_files.each do |file|
-      begin
-        sh "ruby -c #{file}", verbose: false
-        puts "  ✅ #{File.basename(file)}".green
-      rescue StandardError
-        puts "  ❌ #{File.basename(file)} has syntax errors".red
-      end
+      sh "ruby -c #{file}", verbose: false
+      puts "  ✅ #{File.basename(file)}".green
+    rescue StandardError
+      puts "  ❌ #{File.basename(file)} has syntax errors".red
     end
   end
   puts ''
