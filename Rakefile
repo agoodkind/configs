@@ -30,16 +30,24 @@ PROXMOX_VMID = ENV.fetch('PROXMOX_VMID', nil)
 # String class extensions for colored terminal output
 class String
   # @return [String] the string wrapped in ANSI green color codes
-  def green = "\e[32m#{self}\e[0m"
+  def green
+    "\e[32m#{self}\e[0m"
+  end
 
   # @return [String] the string wrapped in ANSI yellow color codes
-  def yellow = "\e[33m#{self}\e[0m"
+  def yellow
+    "\e[33m#{self}\e[0m"
+  end
 
   # @return [String] the string wrapped in ANSI blue color codes
-  def blue = "\e[34m#{self}\e[0m"
+  def blue
+    "\e[34m#{self}\e[0m"
+  end
 
   # @return [String] the string wrapped in ANSI red color codes
-  def red = "\e[31m#{self}\e[0m"
+  def red
+    "\e[31m#{self}\e[0m"
+  end
 end
 
 ##
@@ -48,6 +56,14 @@ end
 # @return [Boolean] true if DRY_RUN environment variable is set to '1'
 def dry_run?
   ENV['DRY_RUN'] == '1'
+end
+
+##
+# Check if verbose mode is enabled
+#
+# @return [Boolean] true if VERBOSE environment variable is set to '1'
+def verbose?
+  ENV['VERBOSE'] == '1'
 end
 
 ##
@@ -106,17 +122,60 @@ end
 # Execute a command in a Proxmox LXC container
 #
 # Uses 'pct exec' to run commands inside the specified container on a
-# Proxmox host via SSH.
+# Proxmox host via SSH. Creates a temporary shell script to avoid
+# complex quoting/escaping issues through multiple SSH layers.
 #
 # @param cmd [String] the command to execute inside the container
 # @return [void]
 # @raise [RuntimeError] if pct exec command fails
 def proxmox_cmd(cmd)
-  full_cmd = "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- #{cmd}'"
   if dry_run?
-    puts "[DRY-RUN] #{full_cmd}".yellow
-  else
-    sh full_cmd
+    puts "[DRY-RUN] pct exec #{PROXMOX_VMID} -- #{cmd}".yellow
+    return
+  end
+
+  # Create temporary script to avoid escaping issues
+  timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
+  local_script = "/tmp/logstash_cmd_#{timestamp}.sh"
+  host_script = "/tmp/logstash_cmd_#{timestamp}.sh"
+  container_script = "/tmp/logstash_cmd_#{timestamp}.sh"
+
+  begin
+    # Write command to local temp script
+    File.write(local_script, "#!/bin/bash\nset -e\n#{cmd}\n")
+    FileUtils.chmod(0o755, local_script)
+
+    verbose_flag = verbose? ? {} : { verbose: false }
+
+    # Copy script to Proxmox host
+    sh 'scp', '-q', local_script, "#{PROXMOX_HOST}:#{host_script}", **verbose_flag
+
+    # Push script into container
+    sh('bash', '-c',
+       "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} " \
+       "#{host_script} #{container_script}' >/dev/null 2>&1", **verbose_flag)
+
+    # Execute script in container
+    sh('bash', '-c',
+       "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- " \
+       "bash #{container_script}'", **verbose_flag)
+  ensure
+    # Cleanup
+    FileUtils.rm_f(local_script)
+    begin
+      sh('bash', '-c',
+         "ssh #{PROXMOX_HOST} 'rm -f #{host_script}' >/dev/null 2>&1",
+         verbose: false)
+    rescue StandardError
+      nil
+    end
+    begin
+      sh('bash', '-c',
+         "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- " \
+         "rm -f #{container_script}' >/dev/null 2>&1", verbose: false)
+    rescue StandardError
+      nil
+    end
   end
 end
 
@@ -198,7 +257,7 @@ end
 # pre-deployment validation.
 desc 'Run format, lint, and test'
 task dev: %i[format lint test] do
-  puts '✓ All development checks passed'.green
+  puts '✅ All development checks passed'.green
 end
 
 ##
@@ -220,27 +279,33 @@ def copy_files(source_dir, dest_dir, pattern)
     return
   end
 
+  puts "  Copying #{files.length} #{pattern} file(s)...".blue unless verbose?
+
   files.each do |file|
     if proxmox_enabled?
-      puts "  Copying #{file} -> #{PROXMOX_HOST}(#{PROXMOX_VMID}):#{dest_dir}/"
+      puts "    #{File.basename(file)}" if verbose?
       if dry_run?
-        puts "[DRY-RUN] pct push #{PROXMOX_VMID} #{file} #{dest_dir}/".yellow
+        puts "[DRY-RUN] pct push #{PROXMOX_VMID} " \
+             "#{file} #{dest_dir}/".yellow
       else
         # Copy to Proxmox host temp, then push into container
         temp_file = "/tmp/#{File.basename(file)}"
-        sh "scp #{file} #{PROXMOX_HOST}:#{temp_file}"
-        sh "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} #{temp_file} #{dest_dir}/#{File.basename(file)}'"
-        sh "ssh #{PROXMOX_HOST} 'rm #{temp_file}'"
+        sh 'scp', '-q', file, "#{PROXMOX_HOST}:#{temp_file}"
+        sh('bash', '-c',
+           "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} " \
+           "#{temp_file} #{dest_dir}/#{File.basename(file)}' >/dev/null 2>&1")
+        sh('bash', '-c',
+           "ssh #{PROXMOX_HOST} 'rm #{temp_file}' >/dev/null 2>&1")
       end
     elsif remote_enabled?
-      puts "  Copying #{file} -> #{REMOTE_HOST}:#{dest_dir}/"
+      puts "    #{File.basename(file)}" if verbose?
       if dry_run?
         puts "[DRY-RUN] scp #{file} #{REMOTE_HOST}:#{dest_dir}/".yellow
       else
-        sh "scp #{file} #{REMOTE_HOST}:#{dest_dir}/"
+        sh 'scp', '-q', file, "#{REMOTE_HOST}:#{dest_dir}/"
       end
     else
-      puts "  Copying #{file} -> #{dest_dir}/"
+      puts "    #{File.basename(file)}" if verbose?
       run_cmd("sudo cp #{file} #{dest_dir}/")
     end
   end
@@ -261,7 +326,9 @@ def set_ownership(path, user, group)
   if proxmox_enabled?
     # For Proxmox, use find to handle glob patterns
     if path.include?('*')
-      run_cmd("find #{File.dirname(path)} -name '#{File.basename(path)}' -exec chown #{user}:#{group} {} \\;")
+      run_cmd("find #{File.dirname(path)} -name " \
+              "'#{File.basename(path)}' -exec chown " \
+              "#{user}:#{group} {} \\;")
     else
       run_cmd("sudo chown -R #{user}:#{group} #{path}")
     end
@@ -284,7 +351,9 @@ def set_permissions(path, mode)
   if proxmox_enabled?
     # For Proxmox, use find to handle glob patterns
     if path.include?('*')
-      run_cmd("find #{File.dirname(path)} -name '#{File.basename(path)}' -exec chmod #{mode} {} \\;")
+      run_cmd("find #{File.dirname(path)} -name " \
+              "'#{File.basename(path)}' -exec chmod " \
+              "#{mode} {} \\;")
     else
       run_cmd("sudo chmod #{mode} #{path}")
     end
@@ -303,17 +372,18 @@ end
 # - Ruby filter syntax validation
 desc 'Check for common configuration issues'
 task :diagnose do
-  puts '→ Running diagnostics...'.blue
+  puts '▶️ Running diagnostics...'.blue
   puts ''
 
   # Check for duplicate inputs
   puts 'Checking for duplicate input configurations:'.yellow
-  run_cmd('grep -r "port.*5140" /etc/logstash/conf.d/ || echo "  ✓ No duplicates found"')
+  run_cmd('grep -r "port.*5140" /etc/logstash/conf.d/ || ' \
+          'echo "  ✅ No duplicates found"')
   puts ''
 
   # Check port usage
   puts 'Checking port 5140 usage:'.yellow
-  run_cmd("sudo ss -lunp | grep :5140 || echo '  ✓ Port is free'")
+  run_cmd("sudo ss -lunp | grep :5140 || echo '  ✅ Port is free'")
   puts ''
 
   # List all config files
@@ -325,12 +395,24 @@ task :diagnose do
   end
   puts ''
 
-  # Check for syntax errors
-  puts 'Checking Ruby filter syntax:'.yellow
-  run_cmd("test -f #{LOGSTASH_RUBY_DIR}/parse_filterlog.rb && ruby -c #{LOGSTASH_RUBY_DIR}/parse_filterlog.rb || echo '  ⚠ Ruby filter not deployed yet'")
+  # Check for syntax errors (locally)
+  puts 'Checking Ruby filter syntax (local):'.yellow
+  ruby_files = Dir.glob(File.join(RUBY_DIR, '*.rb'))
+  if ruby_files.empty?
+    puts '  ⚠️️ No Ruby files found'.yellow
+  else
+    ruby_files.each do |file|
+      begin
+        sh "ruby -c #{file}", verbose: false
+        puts "  ✅ #{File.basename(file)}".green
+      rescue StandardError
+        puts "  ❌ #{File.basename(file)} has syntax errors".red
+      end
+    end
+  end
   puts ''
 
-  puts '✓ Diagnostics complete'.green
+  puts '✅ Diagnostics complete'.green
 end
 
 ##
@@ -339,8 +421,9 @@ end
 # Uses 'ss' command to check if UDP port 5140 is currently bound.
 desc 'Check if port 5140 is in use'
 task :check_port do
-  puts '→ Checking port 5140...'.blue
-  run_cmd("sudo ss -lunp | grep :#{SYSLOG_PORT} || echo '✓ Port #{SYSLOG_PORT} is available'")
+  puts '▶️ Checking port 5140...'.blue
+  run_cmd("sudo ss -lunp | grep :#{SYSLOG_PORT} || " \
+          "echo '✅ Port #{SYSLOG_PORT} is available'")
 end
 
 ##
@@ -361,9 +444,12 @@ desc 'Tail Logstash logs'
 task :logs do
   puts 'Monitoring Logstash logs (Ctrl+C to stop)...'.blue
   if proxmox_enabled?
-    sh "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- journalctl -u logstash -f'"
+    sh('bash', '-c',
+       "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- " \
+       "journalctl -u logstash -f'")
   elsif remote_enabled?
-    sh "ssh #{REMOTE_HOST} 'sudo journalctl -u logstash -f'"
+    sh('bash', '-c',
+       "ssh #{REMOTE_HOST} 'sudo journalctl -u logstash -f'")
   else
     run_cmd('sudo journalctl -u logstash -f')
   end
@@ -376,7 +462,7 @@ end
 # Backup format: /etc/logstash/conf.d.backup.YYYYMMDD-HHMMSS
 desc 'Backup current Logstash configs'
 task :backup do
-  puts '→ Creating backups...'.blue
+  puts '▶️ Creating backups...'.blue
   timestamp = Time.now.strftime('%Y%m%d-%H%M%S')
   conf_backup_dir = "#{LOGSTASH_CONF_DIR}.backup.#{timestamp}"
   ruby_backup_dir = "#{LOGSTASH_RUBY_DIR}.backup.#{timestamp}"
@@ -384,18 +470,26 @@ task :backup do
   run_cmd("sudo mkdir -p #{conf_backup_dir}")
   run_cmd("sudo mkdir -p #{ruby_backup_dir}")
 
-  if Dir.exist?(LOGSTASH_CONF_DIR)
-    run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/* #{conf_backup_dir}/")
-    puts "✓ Config backup created: #{conf_backup_dir}".green
-  else
-    puts '⚠ No configs to backup'.yellow
+  # Backup configs - suppress error if nothing to backup
+  begin
+    run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/*.conf #{conf_backup_dir}/ " \
+            '2>/dev/null || true')
+    # Check if backup dir has files using ls exit code
+    run_cmd("sudo ls #{conf_backup_dir}/*.conf >/dev/null 2>&1")
+    puts "✅ Config backup created: #{conf_backup_dir}".green
+  rescue StandardError
+    puts '⚠️️ No configs to backup'.yellow
   end
 
-  if Dir.exist?(LOGSTASH_RUBY_DIR)
-    run_cmd("sudo cp -r #{LOGSTASH_RUBY_DIR}/* #{ruby_backup_dir}/")
-    puts "✓ Ruby backup created: #{ruby_backup_dir}".green
-  else
-    puts '⚠ No Ruby filters to backup'.yellow
+  # Backup Ruby filters - suppress error if nothing to backup
+  begin
+    run_cmd("sudo cp -r #{LOGSTASH_RUBY_DIR}/*.rb #{ruby_backup_dir}/ " \
+            '2>/dev/null || true')
+    # Check if backup dir has files using ls exit code
+    run_cmd("sudo ls #{ruby_backup_dir}/*.rb >/dev/null 2>&1")
+    puts "✅ Ruby backup created: #{ruby_backup_dir}".green
+  rescue StandardError
+    puts '⚠️️ No Ruby filters to backup'.yellow
   end
 end
 
@@ -406,7 +500,7 @@ end
 # and sets appropriate ownership and permissions.
 desc 'Deploy Ruby filters'
 task :deploy_ruby do
-  puts '→ Deploying Ruby filters...'.blue
+  puts '▶️ Deploying Ruby filters...'.blue
   run_cmd("sudo mkdir -p #{LOGSTASH_RUBY_DIR}")
   copy_files(RUBY_DIR, LOGSTASH_RUBY_DIR, '*.rb')
   set_ownership(LOGSTASH_RUBY_DIR, LOGSTASH_USER, LOGSTASH_GROUP)
@@ -422,7 +516,7 @@ desc 'Deploy Logstash configs'
 task :deploy_conf do
   return unless Dir.exist?(CONF_DIR)
 
-  puts '→ Deploying Logstash configs...'.blue
+  puts '▶️ Deploying Logstash configs...'.blue
   copy_files(CONF_DIR, LOGSTASH_CONF_DIR, '*.conf')
   set_ownership("#{LOGSTASH_CONF_DIR}/*.conf", LOGSTASH_USER, LOGSTASH_GROUP)
   set_permissions("#{LOGSTASH_CONF_DIR}/*.conf", '644')
@@ -440,7 +534,7 @@ end
 desc 'Deploy to Logstash'
 task deploy: %i[backup deploy_ruby deploy_conf] do
   puts ''
-  puts '✓ Deployment completed'.green
+  puts '✅ Deployment completed'.green
   puts ''
   puts 'Next steps:'.yellow
   puts '  1. rake diagnose  - Check for issues'
@@ -467,13 +561,14 @@ end
 # errors and configuration issues. Fails if validation doesn't pass.
 desc 'Validate Logstash configuration'
 task :check do
-  puts '→ Validating Logstash configuration...'.blue
+  puts '▶️ Validating Logstash configuration...'.blue
 
   begin
-    run_cmd('sudo -u logstash /usr/share/logstash/bin/logstash --config.test_and_exit -f /etc/logstash/conf.d/')
-    puts '✓ Configuration is valid'.green
+    run_cmd('sudo -u logstash /usr/share/logstash/bin/logstash ' \
+            '--config.test_and_exit -f /etc/logstash/conf.d/')
+    puts '✅ Configuration is valid'.green
   rescue StandardError => e
-    puts '✗ Configuration validation failed'.red
+    puts '❌ Configuration validation failed'.red
     puts ''
     puts 'Run "rake diagnose" to check for common issues'.yellow
     raise e
@@ -491,22 +586,22 @@ end
 # 5. Verifies service is active
 desc 'Restart Logstash service'
 task :restart do
-  puts '→ Stopping Logstash...'.blue
+  puts '▶️ Stopping Logstash...'.blue
   run_cmd('sudo systemctl stop logstash')
 
   # Wait for port to be released
   sleep 2
 
-  puts '→ Starting Logstash...'.blue
+  puts '▶️ Starting Logstash...'.blue
   run_cmd('sudo systemctl start logstash')
 
   # Wait for service to start
   sleep 3
 
-  puts '→ Checking status...'.blue
+  puts '▶️ Checking status...'.blue
   run_cmd('sudo systemctl is-active logstash')
 
-  puts '✓ Logstash restarted'.green
+  puts '✅ Logstash restarted'.green
   puts ''
   puts 'Monitor logs:'.yellow
   puts '  rake logs'
@@ -525,10 +620,11 @@ end
 # 7. Validate configuration
 #
 # Does not automatically restart - suggests manual restart as final step.
-desc 'Complete deployment pipeline (format, lint, test, backup, deploy, check)'
+desc 'Complete deployment pipeline ' \
+     '(format, lint, test, backup, deploy, check)'
 task full_deploy: %i[format lint test backup deploy diagnose check] do
   puts ''
-  puts '✓ Full deployment pipeline completed'.green
+  puts '✅ Full deployment pipeline completed'.green
   puts ''
   puts 'Final step:'.yellow
   puts '  rake restart'
@@ -545,7 +641,7 @@ end
 # - macOS .DS_Store files
 desc 'Remove temporary files'
 task :clean do
-  puts '→ Cleaning temporary files...'.blue
+  puts '▶️ Cleaning temporary files...'.blue
   FileUtils.rm_rf('.bundle')
   FileUtils.rm_rf('vendor/bundle')
 
@@ -553,7 +649,7 @@ task :clean do
     Dir.glob("**/*#{ext}").each { |f| FileUtils.rm_f(f) }
   end
 
-  puts '✓ Cleanup completed'.green
+  puts '✅ Cleanup completed'.green
 end
 
 ##
@@ -562,9 +658,9 @@ end
 # Runs 'bundle install' to install all gems specified in Gemfile.
 desc 'Install Ruby dependencies'
 task :install do
-  puts '→ Installing dependencies...'.blue
+  puts '▶️ Installing dependencies...'.blue
   sh 'bundle install'
-  puts '✓ Dependencies installed'.green
+  puts '✅ Dependencies installed'.green
 end
 
 ##
@@ -575,20 +671,47 @@ end
 # duplicates are found.
 desc 'Fix duplicate input configuration'
 task :fix_duplicates do
-  puts '→ Checking for duplicate input configurations...'.blue
+  puts '▶️ Checking for duplicate input configurations...'.blue
 
-  # Find all files with port 5140
-  duplicate_files = []
-  Dir.glob("#{LOGSTASH_CONF_DIR}/*.conf").each do |file|
-    duplicate_files << file if File.read(file).match?(/port\s*=>\s*5140/)
-  end
+  # For remote/Proxmox, use grep to find duplicates
+  if proxmox_enabled? || remote_enabled?
+    puts 'Scanning remote config files for port 5140...'.yellow
+    begin
+      # Use grep to find files with port 5140, count them
+      ssh_prefix = if proxmox_enabled?
+                     "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} --"
+                   else
+                     "ssh #{REMOTE_HOST} '"
+                   end
+      result = `#{ssh_prefix} grep -l "port.*5140" "\
+               "#{LOGSTASH_CONF_DIR}/*.conf 2>/dev/null' 2>&1`
+      duplicate_files = result.split("\n")
 
-  if duplicate_files.length > 1
-    puts "⚠ Found #{duplicate_files.length} files with port 5140:".yellow
-    duplicate_files.each { |f| puts "  - #{f}" }
-    puts ''
-    puts 'To fix: Keep only one input file or use different ports'.yellow
+      if duplicate_files.length > 1
+        puts "⚠️️ Found #{duplicate_files.length} files with port 5140:".yellow
+        duplicate_files.each { |f| puts "  - #{f}" }
+        puts ''
+        puts 'To fix: Keep only one input file or use different ports'.yellow
+      else
+        puts '✅ No duplicates found'.green
+      end
+    rescue StandardError => e
+      puts "⚠️️ Could not check for duplicates: #{e.message}".yellow
+    end
   else
-    puts '✓ No duplicates found'.green
+    # Local check
+    duplicate_files = []
+    Dir.glob("#{LOGSTASH_CONF_DIR}/*.conf").each do |file|
+      duplicate_files << file if File.read(file).match?(/port\s*=>\s*5140/)
+    end
+
+    if duplicate_files.length > 1
+      puts "⚠️️ Found #{duplicate_files.length} files with port 5140:".yellow
+      duplicate_files.each { |f| puts "  - #{f}" }
+      puts ''
+      puts 'To fix: Keep only one input file or use different ports'.yellow
+    else
+      puts '✅ No duplicates found'.green
+    end
   end
 end
