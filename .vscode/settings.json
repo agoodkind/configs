@@ -13,8 +13,11 @@
         "retool.config.json": true
     },
     "rubyLsp.rubyVersionManager": {
-        "rbenv": {}
+        "rbenv": {
+            "versionFile": ".ruby-version"
+        }
     },
+    "ruby.rubocop.useBundler": true,
     "rubyLsp.enabledFeatures": {
         "documentHighlights": true,
         "documentSymbols": true,
