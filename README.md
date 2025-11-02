@@ -4,25 +4,53 @@
 
 Custom Ruby filter and Logstash pipeline configuration for parsing and enriching firewall logs (pfSense/OPNsense filterlog format).
 
+## Environment Configuration
+
+Project supports environment variables via `.env` file. See `.env.example` for required and optional variables.
+
+Ruby version is managed via `.ruby-version` (set to `3.4.7`).
+
 ## Prerequisites
 
-- Ruby >= 2.7.0
-- Bundler ~> 2.4
-- Logstash instance with appropriate permissions
+## Quickstart
+
+1. Copy `.env.example` to `.env` and update values as needed.
+2. Ensure Ruby version matches `.ruby-version` (3.4.7).
+3. Install dependencies and run tasks as below.
 
 ## Structure
 
 ```
-ruby/parse_filterlog.rb          # Custom Ruby filter for filterlog parsing
+ruby/
+  parse_filterlog.rb             # Custom Ruby filter for filterlog parsing
 conf/
-  01-inputs.logstash.conf        # Input configuration (syslog on port 5140)
+  01-inputs.logstash.conf        # Input configuration (syslog, http)
   10-syslog-header.logstash.conf # Syslog header parsing
   20-fw-filterlog.logstash.conf  # Firewall filterlog parsing
   21-unbound.logstash.conf       # Unbound DNS log parsing
-  30-enrichment.logstash.conf    # GeoIP and enrichment
-  99-outputs.logstash.conf       # Output configuration
-spec/                            # RSpec test suite
-test_data/                       # Sample log data
+  22-bind.logstash.conf          # BIND DNS log parsing
+  30-enrichment.logstash.conf    # Timestamp enrichment
+  99-outputs.logstash.conf       # Output configuration (Elasticsearch)
+spec/
+  parse_filterlog_spec.rb        # RSpec test suite for filterlog parser
+test_data/
+  sample_logs.txt                # Sample log data
+.env.example                     # Example environment variable file
+.env                             # Local environment variable file
+.ruby-version                    # Ruby version file
+Gemfile                          # Ruby dependencies
+Gemfile.lock                     # Dependency lock file
+Makefile                         # Ruby environment initialization
+Rakefile                         # Project tasks and deployment
+LICENSE                          # License
+README.md                        # Project documentation
+packetfilter_description.txt      # Filterlog field reference
+.rubocop.yml                     # RuboCop linting configuration
+.gitignore                       # Git ignore rules
+.vscode/
+  settings.json                  # VSCode editor settings
+  extensions.json                # VSCode recommended extensions
+.ruby-lsp/                       # Ruby LSP configuration (if present)
 ```
 
 ## Setup
@@ -226,7 +254,6 @@ rake logs
 - Requires SSH access to Proxmox host
 - Proxmox host must have access to the specified container VMID
 
-
 ### How Remote Deployment Works
 
 - Uses `scp` to copy files to remote server
@@ -239,15 +266,6 @@ rake logs
 - SSH access configured (password or key-based auth)
 - Appropriate sudo permissions on remote host
 - Remote paths must exist: `/etc/logstash/ruby/` and `/etc/logstash/conf.d/`
-
-## Configuration
-
-Deployment paths (configured in `Rakefile`):
-
-- Ruby filters: `/etc/logstash/ruby/`
-- Pipeline configs: `/etc/logstash/conf.d/`
-- Default syslog port: `5140`
-- Default Elasticsearch: `https://localhost:9200`
 
 ## Notes
 
