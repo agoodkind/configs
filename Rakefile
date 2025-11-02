@@ -28,6 +28,20 @@ PROXMOX_HOST = ENV.fetch('PROXMOX_HOST', nil)
 PROXMOX_VMID = ENV.fetch('PROXMOX_VMID', nil)
 
 ##
+# Module to track Proxmox container validation state
+module ProxmoxValidation
+  @validated = false
+
+  def self.validated?
+    @validated
+  end
+
+  def self.mark_validated
+    @validated = true
+  end
+end
+
+##
 # String class extensions for colored terminal output
 class String
   # @return [String] the string wrapped in ANSI green color codes
@@ -125,7 +139,7 @@ end
 # @return [void]
 # @raise [RuntimeError] if container doesn't exist or isn't running
 def validate_proxmox_container
-  # Check if container exists and get its status
+  return if ProxmoxValidation.validated?
 
   result = `ssh #{PROXMOX_HOST} 'pct list' 2>/dev/null`
   container_line = result.lines.find { |line| line.start_with?(PROXMOX_VMID.to_s) }
@@ -135,6 +149,7 @@ def validate_proxmox_container
   status = container_line.split[1]
   raise "Container #{PROXMOX_VMID} is not running (status: #{status})" unless status == 'running'
 
+  ProxmoxValidation.mark_validated
   puts "✅ Container #{PROXMOX_VMID} is running".green if verbose?
 rescue StandardError => e
   puts "❌ Proxmox container validation failed: #{e.message}".red
@@ -305,106 +320,6 @@ task dev: %i[format lint test] do
 end
 
 ##
-# Copy files to deployment destination
-#
-# Handles file copying for local, remote SSH, and Proxmox deployments.
-# For Proxmox, files are first copied to the host, then pushed into
-# the container using 'pct push'.
-#
-# @param source_dir [String] source directory containing files
-# @param dest_dir [String] destination directory path
-# @param pattern [String] glob pattern for file matching (e.g., '*.rb')
-# @return [void]
-def copy_files(source_dir, dest_dir, pattern)
-  files = Dir.glob(File.join(source_dir, pattern))
-
-  if files.empty?
-    puts "  No #{pattern} files to deploy".yellow
-    return
-  end
-
-  puts "  Copying #{files.length} #{pattern} file(s)...".blue unless verbose?
-
-  files.each do |file|
-    puts "    #{File.basename(file)}" if verbose?
-    if proxmox_enabled?
-      if dry_run?
-        puts "[DRY-RUN] pct push #{PROXMOX_VMID} " \
-             "#{file} #{dest_dir}/".yellow
-      else
-        # Copy to Proxmox host temp, then push into container
-        temp_file = "/tmp/#{File.basename(file)}"
-        sh 'scp', '-q', file, "#{PROXMOX_HOST}:#{temp_file}"
-        sh('bash', '-c',
-           "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} " \
-           "#{temp_file} #{dest_dir}/#{File.basename(file)}' >/dev/null 2>&1")
-        sh('bash', '-c',
-           "ssh #{PROXMOX_HOST} 'rm #{temp_file}' >/dev/null 2>&1")
-      end
-    elsif remote_enabled?
-      if dry_run?
-        puts "[DRY-RUN] scp #{file} #{REMOTE_HOST}:#{dest_dir}/".yellow
-      else
-        sh 'scp', '-q', file, "#{REMOTE_HOST}:#{dest_dir}/"
-      end
-    else
-      run_cmd("sudo cp #{file} #{dest_dir}/")
-    end
-  end
-end
-
-##
-# Set ownership of files or directories
-#
-# Handles ownership setting for local, remote, and Proxmox deployments.
-# For Proxmox with glob patterns, uses 'find' command to avoid shell
-# expansion issues inside containers.
-#
-# @param path [String] path to file/directory (may contain glob patterns)
-# @param user [String] owner username
-# @param group [String] owner group name
-# @return [void]
-def set_ownership(path, user, group)
-  if proxmox_enabled?
-    # For Proxmox, use find to handle glob patterns
-    if path.include?('*')
-      run_cmd("find #{File.dirname(path)} -name " \
-              "'#{File.basename(path)}' -exec chown " \
-              "#{user}:#{group} {} \\;")
-    else
-      run_cmd("sudo chown -R #{user}:#{group} #{path}")
-    end
-  else
-    run_cmd("sudo chown -R #{user}:#{group} #{path}")
-  end
-end
-
-##
-# Set permissions on files or directories
-#
-# Handles permission setting for local, remote, and Proxmox deployments.
-# For Proxmox with glob patterns, uses 'find' command to avoid shell
-# expansion issues inside containers.
-#
-# @param path [String] path to file/directory (may contain glob patterns)
-# @param mode [String] octal permission mode (e.g., '644')
-# @return [void]
-def set_permissions(path, mode)
-  if proxmox_enabled?
-    # For Proxmox, use find to handle glob patterns
-    if path.include?('*')
-      run_cmd("find #{File.dirname(path)} -name " \
-              "'#{File.basename(path)}' -exec chmod " \
-              "#{mode} {} \\;")
-    else
-      run_cmd("sudo chmod #{mode} #{path}")
-    end
-  else
-    run_cmd("sudo chmod #{mode} #{path}")
-  end
-end
-
-##
 # Run diagnostic checks on Logstash configuration
 #
 # Performs comprehensive checks including:
@@ -493,29 +408,69 @@ task :backup do
   conf_backup_dir = "#{LOGSTASH_CONF_DIR}.backup.#{timestamp}"
   ruby_backup_dir = "#{LOGSTASH_RUBY_DIR}.backup.#{timestamp}"
 
-  run_cmd("sudo mkdir -p #{conf_backup_dir}")
-  run_cmd("sudo mkdir -p #{ruby_backup_dir}")
+  # Create single backup command that does everything
+  backup_cmd = <<~SCRIPT
+    if [ -d #{LOGSTASH_CONF_DIR} ] && [ "$(ls -A #{LOGSTASH_CONF_DIR}/*.conf 2>/dev/null)" ]; then
+      sudo cp -r #{LOGSTASH_CONF_DIR} #{conf_backup_dir}
+      echo "CONFIG_BACKUP_OK"
+    else
+      echo "CONFIG_BACKUP_SKIP"
+    fi
+    if [ -d #{LOGSTASH_RUBY_DIR} ] && [ "$(ls -A #{LOGSTASH_RUBY_DIR}/*.rb 2>/dev/null)" ]; then
+      sudo cp -r #{LOGSTASH_RUBY_DIR} #{ruby_backup_dir}
+      echo "RUBY_BACKUP_OK"
+    else
+      echo "RUBY_BACKUP_SKIP"
+    fi
+  SCRIPT
 
-  # Backup configs - suppress error if nothing to backup
-  begin
-    run_cmd("sudo cp -r #{LOGSTASH_CONF_DIR}/*.conf #{conf_backup_dir}/ " \
-            '2>/dev/null || true')
-    # Check if backup dir has files using ls exit code
-    run_cmd("sudo ls #{conf_backup_dir}/*.conf >/dev/null 2>&1")
-    puts "✅ Config backup created: #{conf_backup_dir}".green
-  rescue StandardError
-    puts '⚠️️ No configs to backup'.yellow
+  if dry_run?
+    puts '[DRY-RUN] Backup directories'.yellow
+    output = "CONFIG_BACKUP_OK\nRUBY_BACKUP_OK"
+  elsif proxmox_enabled?
+    output = exec_in_container(backup_cmd)
+  elsif remote_enabled?
+    output = `ssh #{REMOTE_HOST} 'bash -c "#{backup_cmd.gsub('"', '\"')}"'`
+  else
+    output = `#{backup_cmd}`
   end
 
-  # Backup Ruby filters - suppress error if nothing to backup
+  puts "✅ Config backup created: #{conf_backup_dir}".green if output.include?('CONFIG_BACKUP_OK')
+  puts '⚠️️ No configs to backup'.yellow if output.include?('CONFIG_BACKUP_SKIP')
+  puts "✅ Ruby backup created: #{ruby_backup_dir}".green if output.include?('RUBY_BACKUP_OK')
+  puts '⚠️️ No Ruby filters to backup'.yellow if output.include?('RUBY_BACKUP_SKIP')
+end
+
+##
+# Execute command in Proxmox container and return output
+#
+# @param cmd [String] command to execute
+# @return [String] command output
+def exec_in_container(cmd)
+  timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
+  local_script = "/tmp/logstash_exec_#{timestamp}.sh"
+  host_script = "/tmp/logstash_exec_#{timestamp}.sh"
+  container_script = "/tmp/logstash_exec_#{timestamp}.sh"
+
   begin
-    run_cmd("sudo cp -r #{LOGSTASH_RUBY_DIR}/*.rb #{ruby_backup_dir}/ " \
-            '2>/dev/null || true')
-    # Check if backup dir has files using ls exit code
-    run_cmd("sudo ls #{ruby_backup_dir}/*.rb >/dev/null 2>&1")
-    puts "✅ Ruby backup created: #{ruby_backup_dir}".green
-  rescue StandardError
-    puts '⚠️️ No Ruby filters to backup'.yellow
+    File.write(local_script, "#!/bin/bash\n#{cmd}\n")
+    FileUtils.chmod(0o755, local_script)
+
+    sh 'scp', '-q', local_script, "#{PROXMOX_HOST}:#{host_script}", verbose: false
+    sh('bash', '-c',
+       "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} #{host_script} #{container_script}'", verbose: false)
+
+    output = `ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- bash #{container_script}'`
+
+    FileUtils.rm_f(local_script)
+    sh('bash', '-c', "ssh #{PROXMOX_HOST} 'rm -f #{host_script}'", verbose: false)
+    sh('bash', '-c',
+       "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- rm -f #{container_script}'", verbose: false)
+
+    output
+  rescue StandardError => e
+    FileUtils.rm_f(local_script)
+    raise e
   end
 end
 
@@ -527,11 +482,7 @@ end
 desc 'Deploy Ruby filters'
 task :deploy_ruby do
   puts '▶️ Deploying Ruby filters...'.blue
-  run_cmd("sudo rm -rf #{LOGSTASH_RUBY_DIR}/*.rb")
-  run_cmd("sudo mkdir -p #{LOGSTASH_RUBY_DIR}")
-  copy_files(RUBY_DIR, LOGSTASH_RUBY_DIR, '*.rb')
-  set_ownership(LOGSTASH_RUBY_DIR, LOGSTASH_USER, LOGSTASH_GROUP)
-  set_permissions("#{LOGSTASH_RUBY_DIR}/*.rb", '644')
+  deploy_files(RUBY_DIR, LOGSTASH_RUBY_DIR, '*.rb')
 end
 
 ##
@@ -544,10 +495,131 @@ task :deploy_conf do
   return unless Dir.exist?(CONF_DIR)
 
   puts '▶️ Deploying Logstash configs...'.blue
-  run_cmd("sudo rm -rf #{LOGSTASH_CONF_DIR}/*.conf")
-  copy_files(CONF_DIR, LOGSTASH_CONF_DIR, '*.conf')
-  set_ownership("#{LOGSTASH_CONF_DIR}/*.conf", LOGSTASH_USER, LOGSTASH_GROUP)
-  set_permissions("#{LOGSTASH_CONF_DIR}/*.conf", '644')
+  deploy_files(CONF_DIR, LOGSTASH_CONF_DIR, '*.conf')
+end
+
+##
+# Deploy files with all setup in single batch
+#
+# @param source_dir [String] source directory containing files
+# @param dest_dir [String] destination directory path
+# @param pattern [String] glob pattern for file matching (e.g., '*.rb')
+# @return [void]
+def deploy_files(source_dir, dest_dir, pattern)
+  files = Dir.glob(File.join(source_dir, pattern))
+
+  if files.empty?
+    puts "  No #{pattern} files to deploy".yellow
+    return
+  end
+
+  puts "  Deploying #{files.length} #{pattern} file(s)...".blue unless verbose?
+  files.each { |file| puts "    #{File.basename(file)}" } if verbose?
+
+  if proxmox_enabled?
+    deploy_files_proxmox_batch(files, dest_dir, pattern)
+  elsif remote_enabled?
+    deploy_files_remote_batch(files, dest_dir, pattern)
+  else
+    deploy_files_local_batch(files, dest_dir, pattern)
+  end
+end
+
+##
+# Deploy files to Proxmox container in single operation
+#
+# @param files [Array<String>] array of file paths to copy
+# @param dest_dir [String] destination directory path
+# @param pattern [String] file pattern for cleanup
+# @return [void]
+def deploy_files_proxmox_batch(files, dest_dir, pattern)
+  if dry_run?
+    puts "[DRY-RUN] Deploy #{files.length} files to #{dest_dir}".yellow
+    return
+  end
+
+  timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
+  temp_dir = "/tmp/logstash_deploy_#{timestamp}"
+  push_script = "#{temp_dir}/push_all.sh"
+
+  begin
+    # Create temp directory on Proxmox host
+    sh('bash', '-c', "ssh #{PROXMOX_HOST} 'mkdir -p #{temp_dir}'", verbose: verbose?)
+
+    # Copy all files to Proxmox host
+    sh('scp', '-q', *files, "#{PROXMOX_HOST}:#{temp_dir}/")
+
+    # Create comprehensive deployment script
+    push_commands = files.map do |file|
+      "pct push #{PROXMOX_VMID} #{temp_dir}/#{File.basename(file)} #{dest_dir}/#{File.basename(file)}"
+    end
+
+    script_content = <<~SCRIPT
+      #!/bin/bash
+      set -e
+      # Prepare destination
+      pct exec #{PROXMOX_VMID} -- bash -c "sudo mkdir -p #{dest_dir} && sudo rm -rf #{dest_dir}/#{pattern}"
+      # Push all files
+      #{push_commands.join("\n")}
+      # Set ownership and permissions
+      pct exec #{PROXMOX_VMID} -- bash -c "sudo chown -R #{LOGSTASH_USER}:#{LOGSTASH_GROUP} #{dest_dir} && sudo chmod 644 #{dest_dir}/#{pattern}"
+    SCRIPT
+
+    # Write and execute deployment script on Proxmox host
+    local_script = "/tmp/logstash_push_#{timestamp}.sh"
+    File.write(local_script, script_content)
+    FileUtils.chmod(0o755, local_script)
+
+    sh('scp', '-q', local_script, "#{PROXMOX_HOST}:#{push_script}")
+    sh('bash', '-c', "ssh #{PROXMOX_HOST} 'bash #{push_script}'", verbose: verbose?)
+
+    FileUtils.rm_f(local_script)
+  ensure
+    # Cleanup temp directory on host
+    begin
+      sh('bash', '-c', "ssh #{PROXMOX_HOST} 'rm -rf #{temp_dir}'", verbose: verbose?)
+    rescue StandardError => e
+      puts "⚠️ Warning: Could not clean up temp directory: #{e.message}".yellow if verbose?
+    end
+  end
+end
+
+##
+# Deploy files to remote host in single operation
+#
+# @param files [Array<String>] array of file paths to copy
+# @param dest_dir [String] destination directory path
+# @param pattern [String] file pattern for cleanup
+# @return [void]
+def deploy_files_remote_batch(files, dest_dir, pattern)
+  if dry_run?
+    puts "[DRY-RUN] Deploy #{files.length} files to #{dest_dir}".yellow
+    return
+  end
+
+  # Prepare destination
+  sh 'ssh', REMOTE_HOST, "sudo mkdir -p #{dest_dir} && sudo rm -rf #{dest_dir}/#{pattern}"
+
+  # Copy all files
+  sh 'scp', '-q', *files, "#{REMOTE_HOST}:#{dest_dir}/"
+
+  # Set ownership and permissions
+  sh 'ssh', REMOTE_HOST,
+     "sudo chown -R #{LOGSTASH_USER}:#{LOGSTASH_GROUP} #{dest_dir} && sudo chmod 644 #{dest_dir}/#{pattern}"
+end
+
+##
+# Deploy files locally in single operation
+#
+# @param files [Array<String>] array of file paths to copy
+# @param dest_dir [String] destination directory path
+# @param pattern [String] file pattern for cleanup
+# @return [void]
+def deploy_files_local_batch(files, dest_dir, pattern)
+  file_list = files.join(' ')
+  sh "sudo mkdir -p #{dest_dir} && sudo rm -rf #{dest_dir}/#{pattern}"
+  sh "sudo cp #{file_list} #{dest_dir}/"
+  sh "sudo chown -R #{LOGSTASH_USER}:#{LOGSTASH_GROUP} #{dest_dir} && sudo chmod 644 #{dest_dir}/#{pattern}"
 end
 
 ##
