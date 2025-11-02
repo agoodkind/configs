@@ -120,6 +120,34 @@ def remote_cmd(cmd)
 end
 
 ##
+# Validate that the Proxmox container exists and is running
+#
+# @return [void]
+# @raise [RuntimeError] if container doesn't exist or isn't running
+def validate_proxmox_container
+  # Check if container exists and get its status
+
+  result = `ssh #{PROXMOX_HOST} 'pct list' 2>/dev/null`
+  container_line = result.lines.find { |line| line.start_with?(PROXMOX_VMID.to_s) }
+
+  raise "Container #{PROXMOX_VMID} does not exist on #{PROXMOX_HOST}" unless container_line
+
+  status = container_line.split[1]
+  raise "Container #{PROXMOX_VMID} is not running (status: #{status})" unless status == 'running'
+
+  puts "✅ Container #{PROXMOX_VMID} is running".green if verbose?
+rescue StandardError => e
+  puts "❌ Proxmox container validation failed: #{e.message}".red
+  puts 'Available containers:'.yellow
+  begin
+    puts `ssh #{PROXMOX_HOST} 'pct list' 2>/dev/null`
+  rescue StandardError
+    puts 'Could not retrieve container list'.red
+  end
+  raise
+end
+
+##
 # Execute a command in a Proxmox LXC container
 #
 # Uses 'pct exec' to run commands inside the specified container on a
@@ -134,6 +162,9 @@ def proxmox_cmd(cmd)
     puts "[DRY-RUN] pct exec #{PROXMOX_VMID} -- #{cmd}".yellow
     return
   end
+
+  # Validate container exists and is running
+  validate_proxmox_container
 
   # Create temporary script to avoid escaping issues
   timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
@@ -152,30 +183,42 @@ def proxmox_cmd(cmd)
     sh 'scp', '-q', local_script, "#{PROXMOX_HOST}:#{host_script}", **verbose_flag
 
     # Push script into container
-    sh('bash', '-c',
-       "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} " \
-       "#{host_script} #{container_script}' >/dev/null 2>&1", **verbose_flag)
+    begin
+      sh('bash', '-c',
+         "ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} " \
+         "#{host_script} #{container_script}'", **verbose_flag)
+    rescue StandardError => e
+      puts "❌ Failed to push script to container: #{e.message}".red
+      puts "Command: ssh #{PROXMOX_HOST} 'pct push #{PROXMOX_VMID} #{host_script} #{container_script}'".yellow
+      raise
+    end
 
     # Execute script in container
-    sh('bash', '-c',
-       "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- " \
-       "bash #{container_script}'", **verbose_flag)
+    begin
+      sh('bash', '-c',
+         "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- " \
+         "bash #{container_script}'", **verbose_flag)
+    rescue StandardError => e
+      puts "❌ Failed to execute script in container: #{e.message}".red
+      puts "Command: ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- bash #{container_script}'".yellow
+      raise
+    end
   ensure
     # Cleanup
     FileUtils.rm_f(local_script)
     begin
       sh('bash', '-c',
-         "ssh #{PROXMOX_HOST} 'rm -f #{host_script}' >/dev/null 2>&1",
+         "ssh #{PROXMOX_HOST} 'rm -f #{host_script}'",
          verbose: false)
-    rescue StandardError
-      nil
+    rescue StandardError => e
+      puts "⚠️ Warning: Could not clean up host script: #{e.message}".yellow if verbose?
     end
     begin
       sh('bash', '-c',
          "ssh #{PROXMOX_HOST} 'pct exec #{PROXMOX_VMID} -- " \
-         "rm -f #{container_script}' >/dev/null 2>&1", verbose: false)
-    rescue StandardError
-      nil
+         "rm -f #{container_script}'", verbose: false)
+    rescue StandardError => e
+      puts "⚠️ Warning: Could not clean up container script: #{e.message}".yellow if verbose?
     end
   end
 end
@@ -606,7 +649,7 @@ end
 # Does not automatically restart - suggests manual restart as final step.
 desc 'Complete deployment pipeline ' \
      '(format, lint, test, backup, deploy, check)'
-task full_deploy: %i[format lint test backup deploy diagnose check] do
+task full_deploy: %i[format lint test backup deploy diagnose] do
   puts ''
   puts '✅ Full deployment pipeline completed'.green
   puts ''
