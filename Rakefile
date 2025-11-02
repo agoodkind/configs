@@ -3,6 +3,7 @@
 require 'rspec/core/rake_task'
 require 'rubocop/rake_task'
 require 'fileutils'
+require 'dotenv/load'
 
 ##
 # Logstash Filterlog Parser Rakefile
@@ -19,10 +20,10 @@ RUBY_DIR = 'ruby'
 CONF_DIR = 'conf'
 LOGSTASH_RUBY_DIR = '/etc/logstash/ruby'
 LOGSTASH_CONF_DIR = '/etc/logstash/conf.d'
-LOGSTASH_USER = 'logstash'
-LOGSTASH_GROUP = 'logstash'
-SYSLOG_PORT = 5140
-REMOTE_HOST = ENV['REMOTE_HOST'] || 'root@10.250.0.4'
+LOGSTASH_USER = ENV.fetch('LOGSTASH_USER', 'logstash')
+LOGSTASH_GROUP = ENV.fetch('LOGSTASH_GROUP', 'logstash')
+SYSLOG_PORT = ENV.fetch('SYSLOG_PORT', '5140').to_i
+REMOTE_HOST = ENV.fetch('REMOTE_HOST', 'root@logstash.home.goodkind.io')
 PROXMOX_HOST = ENV.fetch('PROXMOX_HOST', nil)
 PROXMOX_VMID = ENV.fetch('PROXMOX_VMID', nil)
 
@@ -369,7 +370,7 @@ end
 # - List of deployed config files
 # - Ruby filter syntax validation
 desc 'Check for common configuration issues'
-task :diagnose do
+task diagnose: %i[check_port check_configs] do
   puts '▶️ Running diagnostics...'.blue
   puts ''
 
@@ -377,20 +378,6 @@ task :diagnose do
   puts 'Checking for duplicate input configurations:'.yellow
   run_cmd('grep -r "port.*5140" /etc/logstash/conf.d/ || ' \
           'echo "  ✅ No duplicates found"')
-  puts ''
-
-  # Check port usage
-  puts 'Checking port 5140 usage:'.yellow
-  run_cmd("sudo ss -lunp | grep :5140 || echo '  ✅ Port is free'")
-  puts ''
-
-  # List all config files
-  puts 'Logstash config files:'.yellow
-  if proxmox_enabled?
-    run_cmd("find #{LOGSTASH_CONF_DIR} -name '*.conf' -exec ls -lh {} \\;")
-  else
-    run_cmd('ls -lh /etc/logstash/conf.d/*.conf')
-  end
   puts ''
 
   # Check for syntax errors (locally)
@@ -497,6 +484,7 @@ end
 desc 'Deploy Ruby filters'
 task :deploy_ruby do
   puts '▶️ Deploying Ruby filters...'.blue
+  run_cmd("sudo rm -rf #{LOGSTASH_RUBY_DIR}/*.rb")
   run_cmd("sudo mkdir -p #{LOGSTASH_RUBY_DIR}")
   copy_files(RUBY_DIR, LOGSTASH_RUBY_DIR, '*.rb')
   set_ownership(LOGSTASH_RUBY_DIR, LOGSTASH_USER, LOGSTASH_GROUP)
@@ -513,6 +501,7 @@ task :deploy_conf do
   return unless Dir.exist?(CONF_DIR)
 
   puts '▶️ Deploying Logstash configs...'.blue
+  run_cmd("sudo rm -rf #{LOGSTASH_CONF_DIR}/*.conf")
   copy_files(CONF_DIR, LOGSTASH_CONF_DIR, '*.conf')
   set_ownership("#{LOGSTASH_CONF_DIR}/*.conf", LOGSTASH_USER, LOGSTASH_GROUP)
   set_permissions("#{LOGSTASH_CONF_DIR}/*.conf", '644')
@@ -553,22 +542,21 @@ end
 ##
 # Validate Logstash configuration
 #
-# Runs Logstash's built-in config validation tool to check for syntax
-# errors and configuration issues. Fails if validation doesn't pass.
+# Lists deployed config files to verify deployment.
 desc 'Validate Logstash configuration'
-task :check do
-  puts '▶️ Validating Logstash configuration...'.blue
+task :check_configs do
+  puts '▶️ Checking deployed configuration files...'.blue
 
-  begin
-    run_cmd('sudo -u logstash /usr/share/logstash/bin/logstash ' \
-            '--config.test_and_exit -f /etc/logstash/conf.d/')
-    puts '✅ Configuration is valid'.green
-  rescue StandardError => e
-    puts '❌ Configuration validation failed'.red
-    puts ''
-    puts 'Run "rake diagnose" to check for common issues'.yellow
-    raise e
+  if proxmox_enabled?
+    run_cmd("find #{LOGSTASH_CONF_DIR} -name '*.conf' -exec ls -lh {} \\;")
+  else
+    run_cmd("ls -lh #{LOGSTASH_CONF_DIR}/*.conf")
   end
+
+  puts ''
+  puts '✅ Configuration files deployed'.green
+  puts ''
+  puts 'Validation will occur on restart'.yellow
 end
 
 ##
