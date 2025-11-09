@@ -1,0 +1,12 @@
+[all:vars]
+ansible_user=root
+
+[local]
+localhost ansible_connection=local
+
+[ansible_server]
+ansible.home.goodkind.io
+
+[homelab]
+# Add your homelab hosts here
+

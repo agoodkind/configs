@@ -3,8 +3,8 @@
 require 'dotenv/load'
 require 'fileutils'
 
-PROXMOX_HOST = ENV.fetch('PROXMOX_HOST')
-PROXMOX_VMID = ENV.fetch('PROXMOX_VMID')
+PROXMOX_HOST = ENV.fetch('PROXMOX_HOST', nil)
+PROXMOX_VMID = ENV.fetch('PROXMOX_VMID', nil)
 ROUTER_USER = ENV.fetch('ROUTER_USER', 'agoodkind')
 ROUTER_HOST = ENV.fetch('ROUTER_HOST', 'router.home.goodkind.io')
 CONFIG_FILE = 'kea/kea-dhcp-ddns.conf'
