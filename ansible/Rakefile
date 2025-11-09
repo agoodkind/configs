@@ -1,0 +1,259 @@
+# frozen_string_literal: true
+
+require 'dotenv/load'
+require 'fileutils'
+
+ANSIBLE_HOST = ENV.fetch('ANSIBLE_HOST', 'ansible.home.goodkind.io')
+ANSIBLE_USER = ENV.fetch('ANSIBLE_USER', 'root')
+ANSIBLE_DIR = '/root/ansible'
+LOCAL_PLAYBOOKS_DIR = 'playbooks'
+LOCAL_ROLES_DIR = 'roles'
+LOCAL_INVENTORY_DIR = 'inventory'
+
+##
+# Check if verbose mode is enabled
+#
+# @return [Boolean] true if VERBOSE environment variable is set to '1'
+def verbose?
+  ENV['VERBOSE'] == '1'
+end
+
+##
+# Execute command on ansible host and return output
+#
+# @param args [Array] command and arguments
+# @return [String] command output
+def ssh_ansible(*args)
+  IO.popen(['ssh', "#{ANSIBLE_USER}@#{ANSIBLE_HOST}"] + args, &:read).strip
+end
+
+##
+# Execute command on ansible host with error handling
+#
+# @param args [Array] command and arguments
+# @return [void]
+def ssh_ansible_sh(*)
+  sh('ssh', "#{ANSIBLE_USER}@#{ANSIBLE_HOST}", *, verbose: verbose?)
+end
+
+##
+# Upload files to ansible host
+#
+# @param local_path [String] local file or directory path
+# @param remote_path [String] remote destination path
+# @return [void]
+def scp_to_ansible(local_path, remote_path)
+  sh 'scp', '-r', '-q', local_path, "#{ANSIBLE_USER}@#{ANSIBLE_HOST}:#{remote_path}", verbose: verbose?
+end
+
+desc 'Show Ansible version and status'
+task :status do
+  puts '▶️  Checking Ansible status...'
+  ssh_ansible_sh('ansible', '--version')
+  puts '✅ Status retrieved'
+end
+
+desc 'List deployed playbooks'
+task :list do
+  puts '▶️  Listing deployed playbooks...'
+  ssh_ansible_sh('find', ANSIBLE_DIR, '-name', '*.yml', '-o', '-name', '*.yaml')
+end
+
+desc 'Backup current Ansible configs'
+task :backup do
+  puts '▶️  Creating backup...'
+  timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
+  backup_dir = "#{ANSIBLE_DIR}.backup.#{timestamp}"
+
+  ssh_ansible_sh('sudo', 'cp', '-r', ANSIBLE_DIR, backup_dir)
+  puts "✅ Backup created: #{backup_dir}".green
+end
+
+desc 'Deploy playbooks to Ansible host'
+task :deploy_playbooks do
+  if Dir.empty?(LOCAL_PLAYBOOKS_DIR)
+    puts '⚠️  No playbooks to deploy'.yellow
+    return
+  end
+
+  puts '▶️  Deploying playbooks...'
+  
+  # Create temp directory on remote host
+  temp_dir = "/tmp/ansible_deploy_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+  ssh_ansible_sh('mkdir', '-p', temp_dir)
+
+  # Upload playbooks
+  scp_to_ansible("#{LOCAL_PLAYBOOKS_DIR}/*", "#{temp_dir}/")
+
+  # Move to final location
+  ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/playbooks")
+  ssh_ansible_sh('sudo', 'cp', '-r', "#{temp_dir}/*", "#{ANSIBLE_DIR}/playbooks/")
+  ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/playbooks")
+  ssh_ansible_sh('rm', '-rf', temp_dir)
+
+  puts '✅ Playbooks deployed'
+end
+
+desc 'Deploy roles to Ansible host'
+task :deploy_roles do
+  if Dir.empty?(LOCAL_ROLES_DIR)
+    puts '⚠️  No roles to deploy'.yellow
+    return
+  end
+
+  puts '▶️  Deploying roles...'
+  
+  # Create temp directory on remote host
+  temp_dir = "/tmp/ansible_roles_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+  ssh_ansible_sh('mkdir', '-p', temp_dir)
+
+  # Upload roles
+  scp_to_ansible("#{LOCAL_ROLES_DIR}/*", "#{temp_dir}/")
+
+  # Move to final location
+  ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/roles")
+  ssh_ansible_sh('sudo', 'cp', '-r', "#{temp_dir}/*", "#{ANSIBLE_DIR}/roles/")
+  ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/roles")
+  ssh_ansible_sh('rm', '-rf', temp_dir)
+
+  puts '✅ Roles deployed'
+end
+
+desc 'Deploy inventory to Ansible host'
+task :deploy_inventory do
+  if Dir.empty?(LOCAL_INVENTORY_DIR)
+    puts '⚠️  No inventory files to deploy'.yellow
+    return
+  end
+
+  puts '▶️  Deploying inventory...'
+  
+  # Create temp directory on remote host
+  temp_dir = "/tmp/ansible_inventory_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+  ssh_ansible_sh('mkdir', '-p', temp_dir)
+
+  # Upload inventory
+  scp_to_ansible("#{LOCAL_INVENTORY_DIR}/*", "#{temp_dir}/")
+
+  # Move to final location
+  ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/inventory")
+  ssh_ansible_sh('sudo', 'cp', '-r', "#{temp_dir}/*", "#{ANSIBLE_DIR}/inventory/")
+  ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/inventory")
+  ssh_ansible_sh('rm', '-rf', temp_dir)
+
+  puts '✅ Inventory deployed'
+end
+
+desc 'Run ansible-lint on local playbooks'
+task :lint do
+  puts '▶️  Linting playbooks...'
+  playbooks = Dir.glob("#{LOCAL_PLAYBOOKS_DIR}/*.{yml,yaml}")
+  
+  if playbooks.empty?
+    puts '⚠️  No playbooks to lint'.yellow
+    return
+  end
+
+  playbooks.each do |playbook|
+    puts "  Checking #{File.basename(playbook)}..."
+    sh 'ansible-lint', playbook, verbose: verbose?
+  end
+
+  puts '✅ Linting complete'
+end
+
+desc 'Validate playbook syntax'
+task :validate, [:playbook] do |_t, args|
+  playbook = args[:playbook]
+  
+  unless playbook
+    puts '❌ Please specify a playbook: rake validate[playbook.yml]'.red
+    exit 1
+  end
+
+  puts "▶️  Validating #{playbook}..."
+  
+  # Upload playbook to temp location
+  temp_file = "/tmp/ansible_validate_#{Time.now.strftime('%Y%m%d_%H%M%S')}.yml"
+  scp_to_ansible("#{LOCAL_PLAYBOOKS_DIR}/#{playbook}", temp_file)
+  
+  # Run syntax check
+  ssh_ansible_sh('ansible-playbook', '--syntax-check', temp_file)
+  ssh_ansible_sh('rm', '-f', temp_file)
+  
+  puts '✅ Syntax valid'
+end
+
+desc 'Run a playbook on Ansible host'
+task :run, [:playbook] do |_t, args|
+  playbook = args[:playbook]
+  
+  unless playbook
+    puts '❌ Please specify a playbook: rake run[playbook.yml]'.red
+    exit 1
+  end
+
+  puts "▶️  Running playbook: #{playbook}..."
+  ssh_ansible_sh('ansible-playbook', "#{ANSIBLE_DIR}/playbooks/#{playbook}")
+  puts '✅ Playbook execution complete'
+end
+
+desc 'Deploy all Ansible configurations'
+task deploy: %i[backup deploy_playbooks deploy_roles deploy_inventory] do
+  puts ''
+  puts '✅ Deployment complete'
+  puts ''
+  puts 'Next steps:'.yellow
+  puts '  1. rake list        - List deployed files'
+  puts '  2. rake run[name]   - Run a playbook'
+end
+
+desc 'Run complete workflow (lint, validate, deploy)'
+task full_deploy: %i[lint deploy] do
+  puts ''
+  puts '✅ Full deployment complete'
+end
+
+desc 'Show help'
+task :help do
+  puts 'Ansible Configuration Management'.blue
+  puts ''
+  puts 'Available tasks:'.green
+  puts '  rake status              - Show Ansible version and status'
+  puts '  rake list                - List deployed playbooks'
+  puts '  rake backup              - Backup current configs'
+  puts '  rake lint                - Lint local playbooks'
+  puts '  rake validate[playbook]  - Validate playbook syntax'
+  puts '  rake deploy              - Deploy all configurations'
+  puts '  rake full_deploy         - Lint and deploy'
+  puts '  rake run[playbook]       - Run a playbook'
+  puts ''
+  puts 'Examples:'.yellow
+  puts '  rake deploy'
+  puts '  rake validate[site.yml]'
+  puts '  rake run[site.yml]'
+  puts '  ANSIBLE_HOST=other.host rake deploy'
+end
+
+task default: :help
+
+##
+# String class extensions for colored terminal output
+class String
+  def green
+    "\e[32m#{self}\e[0m"
+  end
+
+  def yellow
+    "\e[33m#{self}\e[0m"
+  end
+
+  def blue
+    "\e[34m#{self}\e[0m"
+  end
+
+  def red
+    "\e[31m#{self}\e[0m"
+  end
+end
+

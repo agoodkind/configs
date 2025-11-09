@@ -1,0 +1,11 @@
+---
+- name: Deploy SSH keys to containers
+  hosts: proxmox_all_lxc
+  gather_facts: false
+  tasks:
+    - name: Add SSH key to root
+      authorized_key:
+        user: root
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+

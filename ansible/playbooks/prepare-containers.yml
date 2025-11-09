@@ -1,0 +1,89 @@
+- name: Prepare all LXC containers
+  hosts: proxmox_all_lxc
+  gather_facts: no
+  tasks:
+    - name: Remove Python EXTERNALLY-MANAGED block
+      file:
+        path: /usr/lib/python3.*/EXTERNALLY-MANAGED
+        state: absent
+
+    - name: Disable networkd wait service
+      systemd:
+        name: systemd-networkd-wait-online.service
+        enabled: no
+        state: stopped
+
+    - name: Update package lists
+      apt:
+        update_cache: yes
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+
+    - name: Install essential packages
+      apt:
+        name:
+          - neovim
+          - htop
+          - curl
+          - wget
+          - net-tools
+        state: present
+
+    - name: Set timezone to host timezone
+      command: timedatectl set-timezone "{{ lookup('pipe', 'timedatectl show -p Timezone --value') }}"
+      ignore_errors: yes
+
+    - name: Configure rsyslog for local time
+      copy:
+        dest: /etc/rsyslog.d/50-default-local.conf
+        content: |
+          # Use local time instead of UTC
+          $ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
+          $template TraditionalFormatWithLocalTime,"%timegenerated% %HOSTNAME% %syslogtag%%msg:::drop-last-lf%\n"
+          $ActionFileDefaultTemplate TraditionalFormatWithLocalTime
+      notify: restart rsyslog
+
+    - name: Set 256-color terminal for root
+      lineinfile:
+        path: /root/.bashrc
+        line: 'export TERM="xterm-256color"'
+        state: present
+
+    - name: Disable default MOTD scripts
+      file:
+        path: /etc/update-motd.d/
+        recurse: yes
+        mode: 'u-x,g-x,o-x'
+
+    - name: Configure auto-login for root
+      blockinfile:
+        path: /etc/systemd/system/container-getty@1.service.d/override.conf
+        create: yes
+        block: |
+          [Service]
+          ExecStart=
+          ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart getty service
+      systemd:
+        name: container-getty@1.service
+        state: restarted
+
+    - name: Fetch and install authorized_keys from URL
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/agoodkind/.dotfiles/refs/heads/main/home/.ssh/authorized_keys"
+        dest: /root/.ssh/authorized_keys
+        mode: '0600'
+
+  handlers:
+    - name: restart rsyslog
+      systemd:
+        name: rsyslog
+        state: restarted
+
