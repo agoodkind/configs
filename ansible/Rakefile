@@ -1,7 +1,14 @@
 # frozen_string_literal: true
 
-require 'dotenv/load'
+require 'dotenv'
 require 'fileutils'
+require_relative '../lib/rake_common'
+
+# Load .env from current directory and parent directory
+Dotenv.load('.env', '../.env')
+
+# Include common helpers
+include RakeCommon
 
 ANSIBLE_HOST = ENV.fetch('ANSIBLE_HOST', 'ansible.home.goodkind.io')
 ANSIBLE_USER = ENV.fetch('ANSIBLE_USER', 'root')
@@ -11,11 +18,11 @@ LOCAL_ROLES_DIR = 'roles'
 LOCAL_INVENTORY_DIR = 'inventory'
 
 ##
-# Check if verbose mode is enabled
+# Get full Ansible host string (user@host)
 #
-# @return [Boolean] true if VERBOSE environment variable is set to '1'
-def verbose?
-  ENV['VERBOSE'] == '1'
+# @return [String] Ansible host connection string
+def ansible_host_string
+  "#{ANSIBLE_USER}@#{ANSIBLE_HOST}"
 end
 
 ##
@@ -24,7 +31,7 @@ end
 # @param args [Array] command and arguments
 # @return [String] command output
 def ssh_ansible(*args)
-  IO.popen(['ssh', "#{ANSIBLE_USER}@#{ANSIBLE_HOST}"] + args, &:read).strip
+  ssh_exec(ansible_host_string, *args)
 end
 
 ##
@@ -33,7 +40,7 @@ end
 # @param args [Array] command and arguments
 # @return [void]
 def ssh_ansible_sh(*)
-  sh('ssh', "#{ANSIBLE_USER}@#{ANSIBLE_HOST}", *, verbose: verbose?)
+  ssh_exec_sh(ansible_host_string, *)
 end
 
 ##
@@ -43,7 +50,7 @@ end
 # @param remote_path [String] remote destination path
 # @return [void]
 def scp_to_ansible(local_path, remote_path)
-  sh 'scp', '-r', '-q', local_path, "#{ANSIBLE_USER}@#{ANSIBLE_HOST}:#{remote_path}", verbose: verbose?
+  sh 'scp', '-r', '-q', local_path, "#{ansible_host_string}:#{remote_path}", verbose: verbose?
 end
 
 ##
@@ -54,12 +61,7 @@ end
 # @param delete [Boolean] delete files on remote that don't exist locally
 # @return [void]
 def rsync_to_ansible(local_path, remote_path, delete: false)
-  args = ['-az', '--rsync-path=sudo rsync']
-  args << '--delete' if delete
-  args << "#{local_path}/"
-  args << "#{ANSIBLE_USER}@#{ANSIBLE_HOST}:#{remote_path}/"
-  
-  sh 'rsync', *args, verbose: verbose?
+  rsync_to_host(local_path, ansible_host_string, remote_path, delete: delete)
 end
 
 desc 'Show Ansible version and status'
@@ -228,24 +230,4 @@ task :help do
 end
 
 task default: :help
-
-##
-# String class extensions for colored terminal output
-class String
-  def green
-    "\e[32m#{self}\e[0m"
-  end
-
-  def yellow
-    "\e[33m#{self}\e[0m"
-  end
-
-  def blue
-    "\e[34m#{self}\e[0m"
-  end
-
-  def red
-    "\e[31m#{self}\e[0m"
-  end
-end
 

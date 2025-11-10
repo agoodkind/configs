@@ -13,6 +13,14 @@ configs/
 ├── LICENSE              # Apache 2.0 License
 ├── .rubocop.yml         # Shared RuboCop configuration
 ├── .gitignore           # Shared Git ignore patterns
+├── .env.example         # Example environment variables
+├── lib/                 # Shared Rake utilities
+│   ├── rake_common.rb   # Common deployment functions
+│   └── README.md        # Library documentation
+├── ansible/             # Ansible configuration management
+│   ├── Rakefile         # Project-specific tasks
+│   ├── playbooks/       # Ansible playbooks
+│   └── roles/           # Ansible roles
 ├── bind-kea/            # Kea DHCP and BIND DNS configuration
 │   ├── Rakefile         # Project-specific tasks
 │   └── kea/             # Configuration files
@@ -25,17 +33,26 @@ configs/
 
 ## Quick Start
 
-Install dependencies:
+1. Copy `.env.example` to `.env` and configure your hosts:
+
+```bash
+cp .env.example .env
+# Edit .env with your actual host values
+```
+
+2. Install dependencies:
 
 ```bash
 rake install
 ```
 
-View available commands:
+3. View available commands:
 
 ```bash
 rake help
 ```
+
+**Note:** The `.env` file in the configs/ directory is automatically loaded by all subdirectory Rakefiles.
 
 ## Common Commands
 
@@ -70,16 +87,9 @@ Run tasks directly on the local system.
 Deploy to a remote host via SSH:
 
 ```bash
-REMOTE=1 rake deploy_all
-REMOTE=1 REMOTE_HOST=user@host rake logstash:deploy
-```
-
-### Proxmox Container
-
-Deploy to a Proxmox LXC container:
-
-```bash
-PROXMOX_HOST=root@pve PROXMOX_VMID=100 rake deploy_all
+LOGSTASH_HOST=root@logstash.example.com rake logstash:deploy
+KEA_HOST=root@kea.example.com rake bind_kea:kea:deploy
+ANSIBLE_HOST=root@ansible.example.com rake ansible:deploy
 ```
 
 ## Development
@@ -113,11 +123,11 @@ cd <project> && bundle exec rubocop -a
 
 ### bind-kea
 
-Kea DHCP and BIND DNS configuration management for router and Proxmox container.
+Kea DHCP and BIND DNS configuration management for router and remote Kea/BIND host.
 
 Tasks:
 - Deploy Kea DHCP4/DHCP6 configurations to router
-- Deploy Kea DHCP-DDNS to Proxmox container
+- Deploy Kea DHCP-DDNS to remote host
 - Manage BIND DNS records
 
 ### logstash
