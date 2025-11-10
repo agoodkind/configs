@@ -1,6 +1,6 @@
 - name: Prepare all LXC containers
   hosts: proxmox_all_lxc
-  gather_facts: no
+  gather_facts: false
   tasks:
     - name: Remove Python EXTERNALLY-MANAGED block
       file:
@@ -15,7 +15,7 @@
 
     - name: Update package lists
       apt:
-        update_cache: yes
+        update_cache: true
 
     - name: Upgrade all packages
       apt:
@@ -33,7 +33,7 @@
 
     - name: Set timezone to host timezone
       command: timedatectl set-timezone "{{ lookup('pipe', 'timedatectl show -p Timezone --value') }}"
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Configure rsyslog for local time
       copy:
@@ -54,13 +54,13 @@
     - name: Disable default MOTD scripts
       file:
         path: /etc/update-motd.d/
-        recurse: yes
+        recurse: true
         mode: 'u-x,g-x,o-x'
 
     - name: Configure auto-login for root
       blockinfile:
         path: /etc/systemd/system/container-getty@1.service.d/override.conf
-        create: yes
+        create: true
         block: |
           [Service]
           ExecStart=
