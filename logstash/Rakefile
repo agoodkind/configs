@@ -10,7 +10,9 @@ require_relative '../lib/rake_common'
 Dotenv.load('.env', '../.env')
 
 # Include common helpers
-include RakeCommon
+# rubocop:disable Style/MixinUsage
+extend RakeCommon
+# rubocop:enable Style/MixinUsage
 
 ##
 # Logstash Filterlog Parser Rakefile
@@ -197,7 +199,7 @@ end
 desc 'Check if port 5140 is in use'
 task :check_port do
   puts '▶️ Checking port 5140...'.blue
-  run_cmd("sudo ss -lunp | grep :#{SYSLOG_PORT} || " \
+  run_cmd("ss -lunp | grep :#{SYSLOG_PORT} || " \
           "echo '✅ Port #{SYSLOG_PORT} is available'")
 end
 
@@ -207,7 +209,7 @@ end
 # Shows systemd service status for the Logstash daemon.
 desc 'Show Logstash service status'
 task :status do
-  run_cmd('sudo systemctl status logstash --no-pager')
+  run_cmd('systemctl status logstash --no-pager')
 end
 
 ##
@@ -220,7 +222,7 @@ task :logs do
   puts 'Monitoring Logstash logs (Ctrl+C to stop)...'.blue
   if remote_enabled?
     sh('bash', '-c',
-       "ssh #{LOGSTASH_HOST} 'sudo journalctl -u logstash -f'")
+       "ssh #{LOGSTASH_HOST} 'journalctl -u logstash -f'")
   else
     run_cmd('sudo journalctl -u logstash -f')
   end
@@ -241,13 +243,13 @@ task :backup do
   # Create single backup command that does everything
   backup_cmd = <<~SCRIPT
     if [ -d #{LOGSTASH_CONF_DIR} ] && [ "$(ls -A #{LOGSTASH_CONF_DIR}/*.conf 2>/dev/null)" ]; then
-      sudo cp -r #{LOGSTASH_CONF_DIR} #{conf_backup_dir}
+      cp -r #{LOGSTASH_CONF_DIR} #{conf_backup_dir}
       echo "CONFIG_BACKUP_OK"
     else
       echo "CONFIG_BACKUP_SKIP"
     fi
     if [ -d #{LOGSTASH_RUBY_DIR} ] && [ "$(ls -A #{LOGSTASH_RUBY_DIR}/*.rb 2>/dev/null)" ]; then
-      sudo cp -r #{LOGSTASH_RUBY_DIR} #{ruby_backup_dir}
+      cp -r #{LOGSTASH_RUBY_DIR} #{ruby_backup_dir}
       echo "RUBY_BACKUP_OK"
     else
       echo "RUBY_BACKUP_SKIP"
@@ -290,7 +292,7 @@ task :deploy_conf do
   return unless Dir.exist?(CONF_DIR)
 
   puts '▶️ Deploying Logstash configs...'.blue
-  deploy_files(CONF_DIR, LOGSTASH_CONF_DIR, '*.conf')
+  deploy_files(CONF_DIR, LOGSTASH_CONF_DIR, '*.logstash.conf')
 end
 
 ##
@@ -332,7 +334,7 @@ def deploy_files_remote_batch(files, dest_dir, pattern)
     dest_dir,
     pattern,
     owner: "#{LOGSTASH_USER}:#{LOGSTASH_GROUP}",
-    mode: '644'
+    mode: '755'
   )
 end
 
@@ -347,7 +349,8 @@ def deploy_files_local_batch(files, dest_dir, pattern)
   file_list = files.join(' ')
   sh "sudo mkdir -p #{dest_dir} && sudo rm -rf #{dest_dir}/#{pattern}"
   sh "sudo cp #{file_list} #{dest_dir}/"
-  sh "sudo chown -R #{LOGSTASH_USER}:#{LOGSTASH_GROUP} #{dest_dir} && sudo chmod 644 #{dest_dir}/#{pattern}"
+  sh "sudo chmod 755 #{dest_dir} && sudo chmod 755 #{dest_dir}/#{pattern}"
+  sh "sudo chown -R #{LOGSTASH_USER}:#{LOGSTASH_GROUP} #{dest_dir}"
 end
 
 ##
@@ -409,19 +412,19 @@ end
 desc 'Restart Logstash service'
 task :restart do
   puts '▶️ Stopping Logstash...'.blue
-  run_cmd('sudo systemctl stop logstash')
+  run_cmd('systemctl stop logstash')
 
   # Wait for port to be released
   sleep 2
 
   puts '▶️ Starting Logstash...'.blue
-  run_cmd('sudo systemctl start logstash')
+  run_cmd('systemctl start logstash')
 
   # Wait for service to start
   sleep 3
 
   puts '▶️ Checking status...'.blue
-  run_cmd('sudo systemctl is-active logstash')
+  run_cmd('systemctl is-active logstash')
 
   puts '✅ Logstash restarted'.green
   puts ''
@@ -444,7 +447,7 @@ end
 # Does not automatically restart - suggests manual restart as final step.
 desc 'Complete deployment pipeline ' \
      '(format, lint, test, backup, deploy, check)'
-task full_deploy: %i[format lint test backup deploy diagnose] do
+task full_deploy: %i[format lint test backup deploy diagnose restart] do
   puts ''
   puts '✅ Full deployment pipeline completed'.green
   puts ''
