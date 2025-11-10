@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'lib/rake_common'
+
 ##
 # Parent Rakefile for managing multiple configuration projects
 #
@@ -11,30 +13,6 @@
 
 # Discover all subdirectories with Rakefiles
 CONFIG_PROJECTS = Dir.glob('*/Rakefile').map { |f| File.dirname(f) }.sort.freeze
-
-##
-# String class extensions for colored terminal output
-class String
-  # @return [String] the string wrapped in ANSI green color codes
-  def green
-    "\e[32m#{self}\e[0m"
-  end
-
-  # @return [String] the string wrapped in ANSI yellow color codes
-  def yellow
-    "\e[33m#{self}\e[0m"
-  end
-
-  # @return [String] the string wrapped in ANSI blue color codes
-  def blue
-    "\e[34m#{self}\e[0m"
-  end
-
-  # @return [String] the string wrapped in ANSI red color codes
-  def red
-    "\e[31m#{self}\e[0m"
-  end
-end
 
 ##
 # Execute rake task in specific project directory
