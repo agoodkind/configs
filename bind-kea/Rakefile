@@ -8,13 +8,16 @@ require_relative '../lib/rake_common'
 Dotenv.load('.env', '../.env')
 
 # Include common helpers
-include RakeCommon
+# rubocop:disable Style/MixinUsage
+extend RakeCommon
+# rubocop:enable Style/MixinUsage
 
 KEA_HOST = ENV.fetch('KEA_HOST', nil)
 ROUTER_USER = ENV.fetch('ROUTER_USER', 'agoodkind')
 ROUTER_HOST = ENV.fetch('ROUTER_HOST', 'router.home.goodkind.io')
 CONFIG_FILE = 'kea/kea-dhcp-ddns.conf'
 DEST_PATH = '/etc/kea/kea-dhcp-ddns.conf'
+
 
 ##
 # Execute command on Kea host and return output

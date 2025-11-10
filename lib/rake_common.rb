@@ -67,8 +67,8 @@ module RakeCommon
   # @param host [String] SSH host (user@hostname)
   # @param args [Array] command and arguments
   # @return [void]
-  def ssh_exec_sh(host, *args)
-    sh('ssh', host, *args, verbose: verbose?)
+  def ssh_exec_sh(host, *)
+    sh('ssh', host, *, verbose: verbose?)
   end
 
   ##
@@ -112,7 +112,7 @@ module RakeCommon
   # @param delete [Boolean] delete files on remote that don't exist locally
   # @return [void]
   def rsync_to_host(local_path, host, remote_path, delete: false)
-    args = ['-az', '--rsync-path=sudo rsync']
+    args = ['-az']
     args << '--delete' if delete
     args << "#{local_path}/"
     args << "#{host}:#{remote_path}/"
@@ -134,7 +134,7 @@ module RakeCommon
 
     # Check if source exists and create backup
     ssh_exec_sh(host, 'bash', '-c',
-                "if [ -f #{source_path} ]; then sudo cp #{source_path} #{backup_path}; fi")
+                "if [ -f #{source_path} ]; then cp #{source_path} #{backup_path}; fi")
 
     backup_path
   end
@@ -151,23 +151,23 @@ module RakeCommon
   # @param owner [String] file owner (e.g., 'user:group')
   # @param mode [String] file permissions (e.g., '644')
   # @return [void]
-  def deploy_files_to_host(files, host, dest_dir, pattern, owner: nil, mode: '644')
+  def deploy_files_to_host(files, host, dest_dir, pattern, owner: nil, mode: '755')
     if dry_run?
       puts "[DRY-RUN] Deploy #{files.length} files to #{host}:#{dest_dir}".yellow
       return
     end
 
-    # Prepare destination
-    ssh_exec_sh(host, 'sudo', 'mkdir', '-p', dest_dir)
-    ssh_exec_sh(host, 'bash', '-c', "sudo rm -rf #{dest_dir}/#{pattern}")
+    # Prepare destination - remove and recreate to start fresh
+    ssh_exec_sh(host, 'rm', '-rf', dest_dir)
+    ssh_exec_sh(host, 'mkdir', '-p', dest_dir)
 
     # Copy all files
     scp_files_to_host(files, host, dest_dir)
 
-    # Set ownership and permissions
-    chown_cmd = owner ? "sudo chown -R #{owner} #{dest_dir} && " : ''
-    ssh_exec_sh(host, 'bash', '-c',
-                "#{chown_cmd}sudo chmod #{mode} #{dest_dir}/#{pattern}")
+    # Set permissions and ownership
+    ssh_exec_sh(host, 'chmod', '755', dest_dir)
+    ssh_exec_sh(host, 'chmod', mode, "#{dest_dir}/*")
+    ssh_exec_sh(host, 'chown', '-R', owner, dest_dir) if owner
   end
 
   ##
@@ -189,8 +189,7 @@ module RakeCommon
     scp_to_host(local_file, host, remote_file)
 
     # Set ownership and permissions
-    ssh_exec_sh(host, 'sudo', 'chown', owner, remote_file) if owner
-    ssh_exec_sh(host, 'sudo', 'chmod', mode, remote_file)
+    ssh_exec_sh(host, 'chown', owner, remote_file) if owner
+    ssh_exec_sh(host, 'chmod', mode, remote_file)
   end
 end
-
