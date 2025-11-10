@@ -1,6 +1,6 @@
 ---
 - name: Test connectivity to hosts
-  hosts: all
+  hosts: proxmox_all_lxc
   gather_facts: false
   
   tasks:
