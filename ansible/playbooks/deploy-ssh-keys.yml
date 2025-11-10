@@ -1,11 +1,33 @@
 ---
-- name: Deploy SSH keys to containers
+- name: Gather LXC container information
   hosts: proxmox_all_lxc
   gather_facts: false
   tasks:
-    - name: Add SSH key to root
-      authorized_key:
-        user: root
-        state: present
-        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    - name: Store container info on each host
+      set_fact:
+        container_info:
+          vmid: "{{ ansible_proxmox_vmid }}"
+          host: "{{ ansible_proxmox_host }}"
+          name: "{{ inventory_hostname }}"
+
+- name: Deploy SSH keys to containers via Proxmox
+  hosts: localhost
+  gather_facts: false
+  vars:
+    ssh_key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    containers: "{{ groups['proxmox_all_lxc'] | map('extract', hostvars, 'container_info') | list }}"
+  tasks:
+    - name: Deploy SSH key to container
+      delegate_to: "{{ item.host }}"
+      shell: |
+        pct exec {{ item.vmid }} -- sh -c '
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+          echo "{{ ssh_key }}" >> /root/.ssh/authorized_keys
+          chmod 600 /root/.ssh/authorized_keys
+          chown -R root:root /root/.ssh
+        '
+      loop: "{{ containers }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
 

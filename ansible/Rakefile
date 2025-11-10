@@ -46,6 +46,22 @@ def scp_to_ansible(local_path, remote_path)
   sh 'scp', '-r', '-q', local_path, "#{ANSIBLE_USER}@#{ANSIBLE_HOST}:#{remote_path}", verbose: verbose?
 end
 
+##
+# Sync files to ansible host using rsync
+#
+# @param local_path [String] local directory path
+# @param remote_path [String] remote destination path
+# @param delete [Boolean] delete files on remote that don't exist locally
+# @return [void]
+def rsync_to_ansible(local_path, remote_path, delete: false)
+  args = ['-az', '--rsync-path=sudo rsync']
+  args << '--delete' if delete
+  args << "#{local_path}/"
+  args << "#{ANSIBLE_USER}@#{ANSIBLE_HOST}:#{remote_path}/"
+  
+  sh 'rsync', *args, verbose: verbose?
+end
+
 desc 'Show Ansible version and status'
 task :status do
   puts '▶️  Checking Ansible status...'
@@ -69,28 +85,26 @@ task :backup do
   puts "✅ Backup created: #{backup_dir}".green
 end
 
+desc 'Clean remote Ansible configs'
+task :clean do
+  puts '▶️  Cleaning remote configs...'
+  ssh_ansible_sh('sudo', 'rm', '-rf', "#{ANSIBLE_DIR}/playbooks")
+  ssh_ansible_sh('sudo', 'rm', '-rf', "#{ANSIBLE_DIR}/roles")
+  ssh_ansible_sh('sudo', 'rm', '-rf', "#{ANSIBLE_DIR}/inventory")
+  puts '✅ Remote configs cleaned'
+end
+
 desc 'Deploy playbooks to Ansible host'
 task :deploy_playbooks do
   if Dir.empty?(LOCAL_PLAYBOOKS_DIR)
     puts '⚠️  No playbooks to deploy'.yellow
-    return
+    next
   end
 
   puts '▶️  Deploying playbooks...'
-  
-  # Create temp directory on remote host
-  temp_dir = "/tmp/ansible_deploy_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
-  ssh_ansible_sh('mkdir', '-p', temp_dir)
-
-  # Upload playbooks
-  scp_to_ansible("#{LOCAL_PLAYBOOKS_DIR}/*", "#{temp_dir}/")
-
-  # Move to final location
   ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/playbooks")
-  ssh_ansible_sh('sudo', 'cp', '-r', "#{temp_dir}/*", "#{ANSIBLE_DIR}/playbooks/")
+  rsync_to_ansible(LOCAL_PLAYBOOKS_DIR, "#{ANSIBLE_DIR}/playbooks", delete: true)
   ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/playbooks")
-  ssh_ansible_sh('rm', '-rf', temp_dir)
-
   puts '✅ Playbooks deployed'
 end
 
@@ -98,24 +112,13 @@ desc 'Deploy roles to Ansible host'
 task :deploy_roles do
   if Dir.empty?(LOCAL_ROLES_DIR)
     puts '⚠️  No roles to deploy'.yellow
-    return
+    next
   end
 
   puts '▶️  Deploying roles...'
-  
-  # Create temp directory on remote host
-  temp_dir = "/tmp/ansible_roles_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
-  ssh_ansible_sh('mkdir', '-p', temp_dir)
-
-  # Upload roles
-  scp_to_ansible("#{LOCAL_ROLES_DIR}/*", "#{temp_dir}/")
-
-  # Move to final location
   ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/roles")
-  ssh_ansible_sh('sudo', 'cp', '-r', "#{temp_dir}/*", "#{ANSIBLE_DIR}/roles/")
+  rsync_to_ansible(LOCAL_ROLES_DIR, "#{ANSIBLE_DIR}/roles", delete: true)
   ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/roles")
-  ssh_ansible_sh('rm', '-rf', temp_dir)
-
   puts '✅ Roles deployed'
 end
 
@@ -123,24 +126,13 @@ desc 'Deploy inventory to Ansible host'
 task :deploy_inventory do
   if Dir.empty?(LOCAL_INVENTORY_DIR)
     puts '⚠️  No inventory files to deploy'.yellow
-    return
+    next
   end
 
   puts '▶️  Deploying inventory...'
-  
-  # Create temp directory on remote host
-  temp_dir = "/tmp/ansible_inventory_#{Time.now.strftime('%Y%m%d_%H%M%S')}"
-  ssh_ansible_sh('mkdir', '-p', temp_dir)
-
-  # Upload inventory
-  scp_to_ansible("#{LOCAL_INVENTORY_DIR}/*", "#{temp_dir}/")
-
-  # Move to final location
   ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/inventory")
-  ssh_ansible_sh('sudo', 'cp', '-r', "#{temp_dir}/*", "#{ANSIBLE_DIR}/inventory/")
+  rsync_to_ansible(LOCAL_INVENTORY_DIR, "#{ANSIBLE_DIR}/inventory", delete: true)
   ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/inventory")
-  ssh_ansible_sh('rm', '-rf', temp_dir)
-
   puts '✅ Inventory deployed'
 end
 
@@ -151,7 +143,7 @@ task :lint do
   
   if playbooks.empty?
     puts '⚠️  No playbooks to lint'.yellow
-    return
+    next
   end
 
   playbooks.each do |playbook|
