@@ -6,7 +6,11 @@ Custom Ruby filter and Logstash pipeline configuration for parsing and enriching
 
 ## Environment Configuration
 
-Project supports environment variables via `.env` file. See `.env.example` for required and optional variables.
+Project supports environment variables via `.env` file. Environment variables are loaded from both the current directory and parent directory (if they exist):
+1. `.env` in current directory (logstash/)
+2. `../.env` in parent directory (configs/)
+
+Variables in the current directory take precedence. See `../.env.example` for required and optional variables.
 
 Ruby version is managed via `.ruby-version` (set to `3.4.7`).
 
@@ -14,7 +18,7 @@ Ruby version is managed via `.ruby-version` (set to `3.4.7`).
 
 ## Quickstart
 
-1. Copy `.env.example` to `.env` and update values as needed.
+1. Copy `../.env.example` to `../.env` (in parent configs/ directory) and update values as needed.
 2. Ensure Ruby version matches `.ruby-version` (3.4.7).
 3. Install dependencies and run tasks as below.
 
@@ -35,8 +39,8 @@ spec/
   parse_filterlog_spec.rb        # RSpec test suite for filterlog parser
 test_data/
   sample_logs.txt                # Sample log data
-.env.example                     # Example environment variable file
-.env                             # Local environment variable file
+../.env.example                  # Example environment variable file (in parent configs/)
+../.env                          # Local environment variable file (in parent configs/)
 .ruby-version                    # Ruby version file
 Gemfile                          # Ruby dependencies
 Gemfile.lock                     # Dependency lock file
@@ -134,40 +138,38 @@ DRY_RUN=1 rake deploy
 
 ## Remote Deployment
 
-Deploy to a remote Logstash server via SSH using the `REMOTE=1` environment variable.
+Deploy to a remote Logstash server via SSH using the `LOGSTASH_HOST` environment variable.
 
 ### Configuration
 
-Set the remote host via environment variable or edit the default in `Rakefile`:
+Set the remote host via environment variable or `.env` file:
 
 ```bash
-# Option 1: Use environment variable (recommended)
-export REMOTE_HOST='user@hostname'
+# Option 1: Use environment variable
+export LOGSTASH_HOST='root@logstash.example.com'
 
-# Option 2: Edit default in Rakefile
-REMOTE_HOST = ENV['REMOTE_HOST'] || 'root@10.250.0.4'
+# Option 2: Create .env file from .env.example
+cp .env.example .env
+# Edit .env and set LOGSTASH_HOST
 ```
 
 ### Remote Deployment Commands
 
 ```bash
-# Deploy to default remote server
-REMOTE=1 rake deploy
-
-# Deploy to custom remote host
-REMOTE=1 REMOTE_HOST='user@192.168.1.100' rake deploy
+# Deploy to remote server
+LOGSTASH_HOST='root@logstash.example.com' rake deploy
 
 # Restart Logstash on remote host
-REMOTE=1 rake restart
+LOGSTASH_HOST='root@logstash.example.com' rake restart
 
 # Run diagnostics on remote server
-REMOTE=1 rake diagnose
+LOGSTASH_HOST='root@logstash.example.com' rake diagnose
 
 # Check remote configuration
-REMOTE=1 rake check
+LOGSTASH_HOST='root@logstash.example.com' rake check
 
 # View remote logs
-REMOTE=1 rake logs
+LOGSTASH_HOST='root@logstash.example.com' rake logs
 ```
 
 ### Remote Deployment Workflow
@@ -177,89 +179,27 @@ REMOTE=1 rake logs
 rake dev
 
 # 2. Preview remote deployment
-REMOTE=1 DRY_RUN=1 rake deploy
+DRY_RUN=1 LOGSTASH_HOST='root@logstash.example.com' rake deploy
 
-# 3. Deploy to custom remote server
-REMOTE=1 REMOTE_HOST='user@logstash.example.com' rake deploy
+# 3. Deploy to remote server
+LOGSTASH_HOST='root@logstash.example.com' rake deploy
 
 # 4. Validate remote configuration
-REMOTE=1 rake check
+LOGSTASH_HOST='root@logstash.example.com' rake check
 
 # 5. Restart remote service
-REMOTE=1 rake restart
+LOGSTASH_HOST='root@logstash.example.com' rake restart
 
 # 6. Monitor remote logs
-REMOTE=1 rake logs
+LOGSTASH_HOST='root@logstash.example.com' rake logs
 ```
-
-## Proxmox LXC Deployment
-
-Deploy to a Proxmox LXC container using `pct` commands via SSH to the Proxmox host.
-
-### Configuration
-
-Set both Proxmox host and container VMID:
-
-```bash
-export PROXMOX_HOST='root@proxmox.example.com'
-export PROXMOX_VMID='100'
-```
-
-### Proxmox Deployment Commands
-
-```bash
-# Deploy to Proxmox LXC container
-PROXMOX_HOST='root@pve' PROXMOX_VMID='100' rake deploy
-
-# Restart Logstash in container
-PROXMOX_HOST='root@pve' PROXMOX_VMID='100' rake restart
-
-# View logs from container
-PROXMOX_HOST='root@pve' PROXMOX_VMID='100' rake logs
-
-# Run diagnostics in container
-PROXMOX_HOST='root@pve' PROXMOX_VMID='100' rake diagnose
-```
-
-### Proxmox Deployment Workflow
-
-```bash
-# Set environment variables
-export PROXMOX_HOST='root@pve.home'
-export PROXMOX_VMID='100'
-
-# 1. Run local tests
-rake dev
-
-# 2. Preview deployment
-DRY_RUN=1 rake deploy
-
-# 3. Deploy to container
-rake deploy
-
-# 4. Validate configuration
-rake check
-
-# 5. Restart service
-rake restart
-
-# 6. Monitor logs
-rake logs
-```
-
-### How Proxmox Deployment Works
-
-- Files are copied to Proxmox host via `scp`, then pushed into container with `pct push`
-- Commands execute inside container via `pct exec VMID -- command`
-- Requires SSH access to Proxmox host
-- Proxmox host must have access to the specified container VMID
 
 ### How Remote Deployment Works
 
 - Uses `scp` to copy files to remote server
 - Executes commands via `ssh` on remote host
 - Supports all rake tasks (deploy, diagnose, check, restart, logs, etc.)
-- Works with dry-run mode: `REMOTE=1 DRY_RUN=1 rake deploy`
+- Works with dry-run mode: `DRY_RUN=1 rake deploy`
 
 ### Requirements
 
