@@ -8,7 +8,9 @@ require_relative '../lib/rake_common'
 Dotenv.load('.env', '../.env')
 
 # Include common helpers
-include RakeCommon
+# rubocop:disable Style/MixinUsage
+extend RakeCommon
+# rubocop:enable Style/MixinUsage
 
 ANSIBLE_HOST = ENV.fetch('ANSIBLE_HOST', 'ansible.home.goodkind.io')
 ANSIBLE_USER = ENV.fetch('ANSIBLE_USER', 'root')
@@ -24,6 +26,7 @@ LOCAL_INVENTORY_DIR = 'inventory'
 def ansible_host_string
   "#{ANSIBLE_USER}@#{ANSIBLE_HOST}"
 end
+
 
 ##
 # Execute command on ansible host and return output
@@ -83,16 +86,16 @@ task :backup do
   timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
   backup_dir = "#{ANSIBLE_DIR}.backup.#{timestamp}"
 
-  ssh_ansible_sh('sudo', 'cp', '-r', ANSIBLE_DIR, backup_dir)
+  ssh_ansible_sh('bash', '-c', "cp -r #{ANSIBLE_DIR} #{backup_dir}")
   puts "✅ Backup created: #{backup_dir}".green
 end
 
 desc 'Clean remote Ansible configs'
 task :clean do
   puts '▶️  Cleaning remote configs...'
-  ssh_ansible_sh('sudo', 'rm', '-rf', "#{ANSIBLE_DIR}/playbooks")
-  ssh_ansible_sh('sudo', 'rm', '-rf', "#{ANSIBLE_DIR}/roles")
-  ssh_ansible_sh('sudo', 'rm', '-rf', "#{ANSIBLE_DIR}/inventory")
+  ssh_ansible_sh('bash', '-c',
+                 "rm -rf #{ANSIBLE_DIR}/playbooks " \
+                 "#{ANSIBLE_DIR}/roles #{ANSIBLE_DIR}/inventory")
   puts '✅ Remote configs cleaned'
 end
 
@@ -104,9 +107,9 @@ task :deploy_playbooks do
   end
 
   puts '▶️  Deploying playbooks...'
-  ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/playbooks")
+  ssh_ansible_sh('mkdir', '-p', "#{ANSIBLE_DIR}/playbooks")
   rsync_to_ansible(LOCAL_PLAYBOOKS_DIR, "#{ANSIBLE_DIR}/playbooks", delete: true)
-  ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/playbooks")
+  ssh_ansible_sh('chown', '-R', 'root:root', "#{ANSIBLE_DIR}/playbooks")
   puts '✅ Playbooks deployed'
 end
 
@@ -118,9 +121,9 @@ task :deploy_roles do
   end
 
   puts '▶️  Deploying roles...'
-  ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/roles")
+  ssh_ansible_sh('mkdir', '-p', "#{ANSIBLE_DIR}/roles")
   rsync_to_ansible(LOCAL_ROLES_DIR, "#{ANSIBLE_DIR}/roles", delete: true)
-  ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/roles")
+  ssh_ansible_sh('chown', '-R', 'root:root', "#{ANSIBLE_DIR}/roles")
   puts '✅ Roles deployed'
 end
 
@@ -132,9 +135,9 @@ task :deploy_inventory do
   end
 
   puts '▶️  Deploying inventory...'
-  ssh_ansible_sh('sudo', 'mkdir', '-p', "#{ANSIBLE_DIR}/inventory")
+  ssh_ansible_sh('mkdir', '-p', "#{ANSIBLE_DIR}/inventory")
   rsync_to_ansible(LOCAL_INVENTORY_DIR, "#{ANSIBLE_DIR}/inventory", delete: true)
-  ssh_ansible_sh('sudo', 'chown', '-R', 'root:root', "#{ANSIBLE_DIR}/inventory")
+  ssh_ansible_sh('chown', '-R', 'root:root', "#{ANSIBLE_DIR}/inventory")
   puts '✅ Inventory deployed'
 end
 
