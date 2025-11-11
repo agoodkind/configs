@@ -14,7 +14,10 @@
   hosts: localhost
   gather_facts: false
   vars:
-    ssh_key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    # Option 1: Read from file
+    # ssh_key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    # Option 2: Read from URL
+    ssh_key: "{{ lookup('url', 'https://github.com/USERNAME.keys') }}"
     containers: "{{ groups['proxmox_all_lxc'] | map('extract', hostvars, 'container_info') | list }}"
   tasks:
     - name: Deploy SSH key to container
