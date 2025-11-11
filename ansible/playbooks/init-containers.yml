@@ -1,19 +1,42 @@
-- name: Prepare all LXC containers
+- name: Initialize all LXC containers
   hosts: proxmox_all_lxc
   gather_facts: false
   tasks:
-    - name: Remove Python EXTERNALLY-MANAGED block
-      file:
-        path: /usr/lib/python3.*/EXTERNALLY-MANAGED
-        state: absent
-
-    - name: Disable networkd wait service
-      systemd:
-        name: systemd-networkd-wait-online.service
-        enabled: no
-        state: stopped
-
     - name: Update package lists
+      apt:
+        update_cache: true
+
+    - name: Install locales package
+      apt:
+        name: locales
+        state: present
+
+    - name: Uncomment en_US.UTF-8 in locale.gen
+      lineinfile:
+        path: /etc/locale.gen
+        regexp: '^# *en_US.UTF-8'
+        line: 'en_US.UTF-8 UTF-8'
+        state: present
+
+    - name: Generate en_US.UTF-8 locale
+      command: locale-gen
+
+    - name: Update system locale
+      command: update-locale LANG=en_US.UTF-8
+
+    - name: Add LANG export to .bashrc
+      lineinfile:
+        path: /root/.bashrc
+        line: 'export LANG="en_US.UTF-8"'
+        state: present
+
+    - name: Add LC_ALL export to .bashrc
+      lineinfile:
+        path: /root/.bashrc
+        line: 'export LC_ALL="en_US.UTF-8"'
+        state: present
+
+    - name: Update package lists again
       apt:
         update_cache: true
 
@@ -29,7 +52,24 @@
           - curl
           - wget
           - net-tools
+          - gpg
+          - rsyslog
         state: present
+
+    - name: Remove unnecessary packages
+      apt:
+        autoremove: yes
+
+    - name: Remove Python EXTERNALLY-MANAGED block
+      file:
+        path: /usr/lib/python3.*/EXTERNALLY-MANAGED
+        state: absent
+
+    - name: Disable networkd wait service
+      systemd:
+        name: systemd-networkd-wait-online.service
+        enabled: no
+        state: stopped
 
     - name: Set timezone to host timezone
       command: timedatectl set-timezone "{{ lookup('pipe', 'timedatectl show -p Timezone --value') }}"
@@ -51,6 +91,12 @@
         line: 'export TERM="xterm-256color"'
         state: present
 
+    - name: Remove '[ -z "$PS1" ] && return' from .bashrc
+      lineinfile:
+        path: /root/.bashrc
+        regexp: '^\[ -z "\$PS1" \] && return'
+        state: absent
+
     - name: Disable default MOTD scripts
       file:
         path: /etc/update-motd.d/
@@ -65,6 +111,13 @@
           [Service]
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
+
+    - name: Lower systemctl shutdown timeout to 15 seconds
+      copy:
+        dest: /etc/systemd/system.conf.d/timeout.conf
+        content: |
+          [Manager]
+          DefaultTimeoutStopSec=15s
 
     - name: Reload systemd daemon
       systemd:
