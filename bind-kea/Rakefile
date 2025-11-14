@@ -18,14 +18,13 @@ ROUTER_HOST = ENV.fetch('ROUTER_HOST', 'router.home.goodkind.io')
 CONFIG_FILE = 'kea/kea-dhcp-ddns.conf'
 DEST_PATH = '/etc/kea/kea-dhcp-ddns.conf'
 
-
 ##
 # Execute command on Kea host and return output
 #
 # @param args [Array] command and arguments
 # @return [String] command output
-def ssh_kea(*args)
-  ssh_exec(KEA_HOST, *args)
+def ssh_kea(*)
+  ssh_exec(KEA_HOST, *)
 end
 
 ##
@@ -42,8 +41,8 @@ end
 #
 # @param args [Array] command and arguments
 # @return [String] command output
-def ssh_router(*args)
-  ssh_exec("#{ROUTER_USER}@#{ROUTER_HOST}", *args)
+def ssh_router(*)
+  ssh_exec("#{ROUTER_USER}@#{ROUTER_HOST}", *)
 end
 
 ##
@@ -347,5 +346,12 @@ namespace :kea do
   end
 end
 
-desc 'Default task - deploy kea-dhcp-ddns.conf to Kea host'
-task default: 'kea:deploy'
+desc 'Show available tasks'
+task :help do
+  puts 'Available tasks:'
+  puts ''
+  system('rake --tasks')
+end
+
+desc 'Default task - show available tasks'
+task default: 'help'
