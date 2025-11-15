@@ -57,6 +57,7 @@
           - git
           - gh
           - git-lfs
+          - jq
         state: present
 
     - name: Remove unnecessary packages
