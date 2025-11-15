@@ -14,7 +14,7 @@ extend RakeCommon
 
 ANSIBLE_HOST = ENV.fetch('ANSIBLE_HOST', 'ansible.home.goodkind.io')
 ANSIBLE_USER = ENV.fetch('ANSIBLE_USER', 'root')
-ANSIBLE_DIR = '/root/ansible'
+ANSIBLE_DIR = '/usr/share/ansible'
 LOCAL_PLAYBOOKS_DIR = 'playbooks'
 LOCAL_ROLES_DIR = 'roles'
 LOCAL_INVENTORY_DIR = 'inventory'
@@ -27,14 +27,13 @@ def ansible_host_string
   "#{ANSIBLE_USER}@#{ANSIBLE_HOST}"
 end
 
-
 ##
 # Execute command on ansible host and return output
 #
 # @param args [Array] command and arguments
 # @return [String] command output
-def ssh_ansible(*args)
-  ssh_exec(ansible_host_string, *args)
+def ssh_ansible(*)
+  ssh_exec(ansible_host_string, *)
 end
 
 ##
@@ -145,7 +144,7 @@ desc 'Run ansible-lint on local playbooks'
 task :lint do
   puts '▶️  Linting playbooks...'
   playbooks = Dir.glob("#{LOCAL_PLAYBOOKS_DIR}/*.{yml,yaml}")
-  
+
   if playbooks.empty?
     puts '⚠️  No playbooks to lint'.yellow
     next
@@ -162,29 +161,29 @@ end
 desc 'Validate playbook syntax'
 task :validate, [:playbook] do |_t, args|
   playbook = args[:playbook]
-  
+
   unless playbook
     puts '❌ Please specify a playbook: rake validate[playbook.yml]'.red
     exit 1
   end
 
   puts "▶️  Validating #{playbook}..."
-  
+
   # Upload playbook to temp location
   temp_file = "/tmp/ansible_validate_#{Time.now.strftime('%Y%m%d_%H%M%S')}.yml"
   scp_to_ansible("#{LOCAL_PLAYBOOKS_DIR}/#{playbook}", temp_file)
-  
+
   # Run syntax check
   ssh_ansible_sh('ansible-playbook', '--syntax-check', temp_file)
   ssh_ansible_sh('rm', '-f', temp_file)
-  
+
   puts '✅ Syntax valid'
 end
 
 desc 'Run a playbook on Ansible host'
 task :run, [:playbook] do |_t, args|
   playbook = args[:playbook]
-  
+
   unless playbook
     puts '❌ Please specify a playbook: rake run[playbook.yml]'.red
     exit 1
@@ -233,4 +232,3 @@ task :help do
 end
 
 task default: :help
-
