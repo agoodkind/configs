@@ -54,6 +54,9 @@
           - net-tools
           - gpg
           - rsyslog
+          - git
+          - gh
+          - git-lfs
         state: present
 
     - name: Remove unnecessary packages
