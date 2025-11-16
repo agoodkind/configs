@@ -81,7 +81,8 @@
 
     - name: Set VMID if not provided
       set_fact:
-        actual_vmid: "{{ vmid if vmid else omit }}"
+        actual_vmid: "{{ vmid }}"
+      when: vmid != ""
 
     - name: Build network interface configuration
       set_fact:
@@ -92,7 +93,7 @@
           }}{{ ',gw6=' + ipv6_gateway if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
 
     - name: Create LXC container
-      community.general.proxmox:
+      community.proxmox.proxmox:
         api_host: "{{ proxmox_api_host }}"
         api_user: "{{ proxmox_api_user }}"
         api_token_id: "{{ proxmox_token_id }}"
@@ -100,7 +101,7 @@
         validate_certs: false
         node: "{{ target_node }}"
         hostname: "{{ container_hostname }}"
-        vmid: "{{ actual_vmid }}"
+        vmid: "{{ actual_vmid | default(omit) }}"
         ostemplate: "{{ template_storage }}:vztmpl/{{ template_name }}"
         password: "{{ actual_password }}"
         disk: "{{ disk_size }}"
@@ -124,7 +125,7 @@
           - "Root password: {{ actual_password }}"
 
     - name: Start container
-      community.general.proxmox:
+      community.proxmox.proxmox:
         api_host: "{{ proxmox_api_host }}"
         api_user: "{{ proxmox_api_user }}"
         api_token_id: "{{ proxmox_token_id }}"
