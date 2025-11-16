@@ -8,6 +8,10 @@
     traefik_user: traefik
     traefik_group: traefik
     repo_root: /usr/share/configs
+    cloudflare_ips_v4_url: "https://www.cloudflare.com/ips-v4"
+    cloudflare_ips_v6_url: "https://www.cloudflare.com/ips-v6"
+    cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url) | splitlines() }}"
+    cloudflare_ipv6_ranges: "{{ lookup('url', cloudflare_ips_v6_url) | splitlines() }}"
 
   tasks:
     - name: Validate required variables
@@ -25,6 +29,21 @@
           Or in Semaphore Environment settings:
             CLOUDFLARE_API_TOKEN: your-token-here
         success_msg: "✓ Cloudflare API token is configured"
+
+    - name: Ensure Cloudflare IP ranges were retrieved
+      assert:
+        that:
+          - cloudflare_ipv4_ranges is defined
+          - cloudflare_ipv4_ranges | length > 0
+          - cloudflare_ipv6_ranges is defined
+          - cloudflare_ipv6_ranges | length > 0
+        fail_msg: |
+          ERROR: Unable to download Cloudflare IP ranges.
+
+          Check controller connectivity to:
+            - {{ cloudflare_ips_v4_url }}
+            - {{ cloudflare_ips_v6_url }}
+        success_msg: "✓ Cloudflare IPv4/IPv6 ranges downloaded"
 
     - name: Pull latest configs from git
       git:

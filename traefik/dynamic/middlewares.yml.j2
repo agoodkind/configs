@@ -19,12 +19,12 @@ http:
           Server: ""
 
     # Dashboard Authentication
-    # Generate with: htpasswd -nb admin password
-    # Default: admin / changeme123
+    # Uses external auth file for better security
+    # File is generated from TRAEFIK_DASHBOARD_USER and TRAEFIK_DASHBOARD_PASS env vars
+    # Generate with: htpasswd -nb $TRAEFIK_DASHBOARD_USER $TRAEFIK_DASHBOARD_PASS > /etc/traefik/auth/dashboard-users
     dashboard-auth:
       basicAuth:
-        users:
-          - "admin:$apr1$H6uskkkW$IgXLP6ewTrSuBkTrqE8wj/"
+        usersFile: "/etc/traefik/auth/dashboard-users"
 
     # IP Whitelist for Internal Services Only
     # Use this for services that should only be accessible from your internal network
@@ -32,9 +32,9 @@ http:
       ipWhiteList:
         sourceRange:
           - "127.0.0.1/32"
-          - "10.250.0.0/24"
+          - "10.0.0.0/8"
           - "::1/128"                    # IPv6 localhost
-          - "3d06:bad:b01:0::/64"          # IPv6 private network
+          - "3d06:bad:b01::/56"          # IPv6 private network
 
     # Cloudflare IP Whitelist - Only allow Cloudflare proxied traffic
     # This ensures all public traffic comes through Cloudflare
@@ -42,30 +42,12 @@ http:
     cloudflare-only:
       ipWhiteList:
         sourceRange:
-          # Cloudflare IPv4
-          - "173.245.48.0/20"
-          - "103.21.244.0/22"
-          - "103.22.200.0/22"
-          - "103.31.4.0/22"
-          - "141.101.64.0/18"
-          - "108.162.192.0/18"
-          - "190.93.240.0/20"
-          - "188.114.96.0/20"
-          - "197.234.240.0/22"
-          - "198.41.128.0/17"
-          - "162.158.0.0/15"
-          - "104.16.0.0/13"
-          - "104.24.0.0/14"
-          - "172.64.0.0/13"
-          - "131.0.72.0/22"
-          # Cloudflare IPv6 (prioritized)
-          - "2400:cb00::/32"
-          - "2606:4700::/32"
-          - "2803:f800::/32"
-          - "2405:b500::/32"
-          - "2405:8100::/32"
-          - "2a06:98c0::/29"
-          - "2c0f:f248::/32"
+        {% for cidr in cloudflare_ipv4_ranges %}
+          - "{{ cidr }}"
+        {% endfor %}
+        {% for cidr in cloudflare_ipv6_ranges %}
+          - "{{ cidr }}"
+        {% endfor %}
 
     # Rate Limiting
     rate-limit:

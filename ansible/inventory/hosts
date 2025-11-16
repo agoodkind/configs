@@ -8,8 +8,7 @@ localhost ansible_connection=local
 ansible.home.goodkind.io
 
 [traefik_servers]
-# Add your Traefik/reverse proxy host here
-# Example: proxy.home.goodkind.io
+proxy.home.goodkind.io
 
 [homelab]
 # Add your homelab hosts here
