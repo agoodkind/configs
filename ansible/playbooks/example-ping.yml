@@ -2,7 +2,6 @@
 - name: Test connectivity to hosts
   hosts: proxmox
   gather_facts: false
-  strategy: free
   vars:
     ansible_timeout: 10
     ansible_ssh_timeout: 10
@@ -12,4 +11,8 @@
       ansible.builtin.ping:
       ignore_errors: true
       ignore_unreachable: true
+      
+    - name: Report result
+      ansible.builtin.debug:
+        msg: "Ping completed for {{ inventory_hostname }}"
 
