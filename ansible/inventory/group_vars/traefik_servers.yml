@@ -10,8 +10,8 @@ traefik_internal_domain: "home.goodkind.io"
 traefik_acme_email: "admin@goodkind.io"
 
 # Cloudflare API token for DNS-01 challenge
-# IMPORTANT: Override this with your actual token or use ansible-vault
-cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') | default('CHANGE_ME') }}"
+# REQUIRED: Set CLOUDFLARE_API_TOKEN environment variable
+cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') }}"
 
 # Traefik version
 traefik_version: "3.0.0"
