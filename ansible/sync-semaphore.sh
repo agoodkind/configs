@@ -9,8 +9,14 @@ REPOSITORY_ID=1
 INVENTORY_ID=1
 ENVIRONMENT_ID=2  # Changed from 0 to 2 to match your working template
 
-REPO_ROOT="/usr/share/configs"                # local clone of configs.git
-PLAYBOOK_ROOT="$REPO_ROOT/ansible/playbooks"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+PLAYBOOK_ROOT="${PLAYBOOK_ROOT:-$SCRIPT_DIR/playbooks}"
+
+if [ ! -d "$PLAYBOOK_ROOT" ]; then
+  echo "❌ Playbook directory not found: $PLAYBOOK_ROOT"
+  exit 1
+fi
 
 # Check authentication
 echo "=== Checking authentication ==="
