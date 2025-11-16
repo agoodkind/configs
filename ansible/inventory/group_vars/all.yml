@@ -1,0 +1,7 @@
+---
+# Proxmox API credentials (shared across all playbooks)
+proxmox_api_host: vault.home.goodkind.io
+proxmox_api_user: ansible@pam
+proxmox_token_id: ansible-token
+proxmox_token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
+
