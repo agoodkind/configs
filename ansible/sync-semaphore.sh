@@ -7,6 +7,7 @@ TOKEN="${SEMAPHORE_TOKEN:-}"
 PROJECT_ID=1
 REPOSITORY_ID=1
 INVENTORY_ID=1
+DEFAULT_ENVIRONMENT_ID=2  # Used only when creating new templates
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -38,8 +39,7 @@ fi
 echo "✓ Authentication successful"
 echo
 
-# Skip debug/test playbooks
-SKIP_PATTERNS="debug|dump|test"
+SKIP_PATTERNS=""
 
 # Build list of valid playbook names
 declare -a valid_playbooks=()
@@ -47,7 +47,6 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
   [ -e "$f" ] || continue
   name="$(basename "${f%.yml}")"
 
-  # Skip debug/test playbooks
   if echo "$name" | grep -qE "$SKIP_PATTERNS"; then
     continue
   fi
@@ -119,6 +118,7 @@ EOF
   "playbook": "$rel",
   "inventory_id": $INVENTORY_ID,
   "repository_id": $REPOSITORY_ID,
+  "environment_id": $DEFAULT_ENVIRONMENT_ID,
   "app": "ansible"
 }
 EOF
