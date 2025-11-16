@@ -11,6 +11,4 @@ repos:
         args: ['--maxkb=500']
       - id: check-yaml
         exclude: ^ansible/playbooks/requirements\.yml$  # Allow ansible-galaxy format
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
       - id: detect-private-key
