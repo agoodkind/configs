@@ -1,0 +1,174 @@
+---
+- name: Deploy and Configure Traefik
+  hosts: traefik_servers
+  become: true
+
+  vars:
+    traefik_version: "3.0.0"
+    traefik_user: traefik
+    traefik_group: traefik
+    traefik_config_dir: /etc/traefik
+    traefik_log_dir: /var/log/traefik
+    repo_root: /usr/share/configs
+
+  tasks:
+    - name: Create Traefik user
+      user:
+        name: "{{ traefik_user }}"
+        system: yes
+        shell: /bin/false
+        home: "{{ traefik_config_dir }}"
+        create_home: no
+
+    - name: Create Traefik directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0750'
+      loop:
+        - "{{ traefik_config_dir }}"
+        - "{{ traefik_config_dir }}/dynamic"
+        - "{{ traefik_log_dir }}"
+
+    - name: Check if Traefik is installed
+      stat:
+        path: /usr/local/bin/traefik
+      register: traefik_binary
+
+    - name: Get installed Traefik version
+      command: /usr/local/bin/traefik version
+      register: traefik_installed_version
+      when: traefik_binary.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Download and install Traefik
+      block:
+        - name: Download Traefik
+          get_url:
+            url: "https://github.com/traefik/traefik/releases/download/v{{ traefik_version }}/traefik_v{{ traefik_version }}_linux_amd64.tar.gz"
+            dest: /tmp/traefik.tar.gz
+            mode: '0644'
+
+        - name: Extract Traefik binary
+          unarchive:
+            src: /tmp/traefik.tar.gz
+            dest: /tmp
+            remote_src: yes
+
+        - name: Install Traefik binary
+          copy:
+            src: /tmp/traefik
+            dest: /usr/local/bin/traefik
+            owner: root
+            group: root
+            mode: '0755'
+            remote_src: yes
+
+        - name: Cleanup download files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/traefik.tar.gz
+            - /tmp/traefik
+            - /tmp/LICENSE.md
+            - /tmp/CHANGELOG.md
+      when: not traefik_binary.stat.exists or traefik_version not in traefik_installed_version.stdout
+
+    - name: Set CAP_NET_BIND_SERVICE capability
+      capabilities:
+        path: /usr/local/bin/traefik
+        capability: cap_net_bind_service+ep
+        state: present
+
+    - name: Template Traefik static configuration
+      template:
+        src: "{{ repo_root }}/traefik/traefik.yml.j2"
+        dest: "{{ traefik_config_dir }}/traefik.yml"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0644'
+      notify: restart traefik
+
+    - name: Template Traefik dynamic routes
+      template:
+        src: "{{ repo_root }}/traefik/dynamic/routes.yml.j2"
+        dest: "{{ traefik_config_dir }}/dynamic/routes.yml"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0644'
+      notify: reload traefik
+
+    - name: Template Traefik dynamic middlewares
+      template:
+        src: "{{ repo_root }}/traefik/dynamic/middlewares.yml.j2"
+        dest: "{{ traefik_config_dir }}/dynamic/middlewares.yml"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0644'
+      notify: reload traefik
+
+    - name: Set ownership of config files
+      file:
+        path: "{{ traefik_config_dir }}"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        recurse: yes
+
+    - name: Create acme.json file
+      file:
+        path: "{{ traefik_config_dir }}/acme.json"
+        state: touch
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0600'
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Install Traefik systemd service
+      template:
+        src: traefik.service.j2
+        dest: /etc/systemd/system/traefik.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - reload systemd
+        - restart traefik
+
+    - name: Create Cloudflare credentials file
+      copy:
+        content: |
+          CF_DNS_API_TOKEN={{ cloudflare_api_token }}
+        dest: "{{ traefik_config_dir }}/.cloudflare.env"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0600'
+      when: cloudflare_api_token is defined
+      no_log: true
+
+    - name: Enable and start Traefik service
+      systemd:
+        name: traefik
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: reload traefik
+      systemd:
+        name: traefik
+        state: reloaded
+      failed_when: false
+
+    - name: restart traefik
+      systemd:
+        name: traefik
+        state: restarted

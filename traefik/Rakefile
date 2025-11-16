@@ -1,0 +1,48 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative '../lib/rake_common'
+
+desc 'Validate Traefik configuration files'
+task :validate do
+  require 'yaml'
+
+  puts 'Validating Traefik configuration...'
+
+  # Validate main config
+  validate_yaml('traefik.yml')
+
+  # Validate dynamic configs
+  Dir.glob('dynamic/*.yml').each do |file|
+    validate_yaml(file)
+  end
+
+  puts '✅ All Traefik configuration files are valid'
+end
+
+desc 'Deploy Traefik configuration'
+task :deploy do
+  sh 'ansible-playbook ../ansible/playbooks/deploy-traefik.yml'
+end
+
+desc 'Update Traefik configuration only'
+task :update do
+  sh 'ansible-playbook ../ansible/playbooks/update-traefik-config.yml'
+end
+
+desc 'Check Traefik status'
+task :status do
+  sh 'ansible traefik_servers -m systemd -a "name=traefik state=status"'
+end
+
+task default: :validate
+
+def validate_yaml(file)
+  print "  Checking #{file}... "
+  YAML.load_file(file)
+  puts '✓'
+rescue Psych::SyntaxError => e
+  puts '✗'
+  puts "  Error: #{e.message}"
+  exit 1
+end
