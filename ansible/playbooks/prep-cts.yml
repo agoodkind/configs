@@ -134,7 +134,7 @@
 
     - name: Fetch and install authorized_keys from URL
       ansible.builtin.get_url:
-        url: "https://raw.githubusercontent.com/agoodkind/.dotfiles/refs/heads/main/home/.ssh/authorized_keys"
+        url: "https://github.com/agoodkind.keys"
         dest: /root/.ssh/authorized_keys
         mode: '0600'
 
@@ -143,4 +143,3 @@
       systemd:
         name: rsyslog
         state: restarted
-
