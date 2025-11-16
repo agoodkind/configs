@@ -63,12 +63,17 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
   echo "Checking if template '$name' exists..."
 
   # Check if template already exists
-  existing=$(curl -s "$SEMHOST/api/project/$PROJECT_ID/templates" \
+  existing_template=$(curl -s "$SEMHOST/api/project/$PROJECT_ID/templates" \
     -H "Authorization: Bearer $TOKEN" \
-    | jq -r ".[] | select(.name == \"$name\") | .id")
+    | jq -r ".[] | select(.name == \"$name\")")
+  
+  existing=$(echo "$existing_template" | jq -r '.id // empty')
 
   if [ -n "$existing" ]; then
     echo "  Template '$name' already exists (ID: $existing), updating..."
+    
+    # Preserve existing environment_id
+    existing_env_id=$(echo "$existing_template" | jq -r '.environment_id // empty')
 
     update_response=$(curl -s -w "\n%{http_code}" -X PUT "$SEMHOST/api/project/$PROJECT_ID/templates/$existing" \
       -H "Authorization: Bearer $TOKEN" \
@@ -81,6 +86,7 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
   "playbook": "$rel",
   "inventory_id": $INVENTORY_ID,
   "repository_id": $REPOSITORY_ID,
+  "environment_id": $existing_env_id,
   "app": "ansible"
 }
 EOF
