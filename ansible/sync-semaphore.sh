@@ -83,6 +83,7 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
       -d @- <<EOF
 {
   "id": $existing,
+  "project_id": $PROJECT_ID,
   "name": "$name",
   "playbook": "$rel",
   "inventory_id": $INVENTORY_ID,
@@ -109,6 +110,7 @@ EOF
       -H "Content-Type: application/json" \
       -d @- <<EOF
 {
+  "project_id": $PROJECT_ID,
   "name": "$name",
   "playbook": "$rel",
   "inventory_id": $INVENTORY_ID,
