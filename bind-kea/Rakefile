@@ -177,7 +177,7 @@ namespace :router do
   end
 
   desc 'Deploy kea-dhcp4.conf to router'
-  task deploy_dhcp4: %i[push_dhcp4 test_dhcp4 install_dhcp4]
+  task deploy_dhcp4: %i[push_dhcp4 test_dhcp4 install_dhcp4 restart]
 
   desc 'Push kea-dhcp6.conf to router'
   task :push_dhcp6 do
@@ -201,7 +201,7 @@ namespace :router do
   end
 
   desc 'Deploy kea-dhcp6.conf to router'
-  task deploy_dhcp6: %i[push_dhcp6 test_dhcp6 install_dhcp6]
+  task deploy_dhcp6: %i[push_dhcp6 test_dhcp6 install_dhcp6 restart]
 
   desc 'Restart Kea DHCP services on router'
   task :restart do
