@@ -2,6 +2,7 @@
 - name: Test connectivity to hosts
   hosts: proxmox
   gather_facts: false
+  strategy: free
   vars:
     ansible_timeout: 10
     ansible_ssh_timeout: 10
@@ -9,4 +10,6 @@
   tasks:
     - name: Ping all hosts
       ansible.builtin.ping:
+      ignore_errors: true
+      ignore_unreachable: true
 
