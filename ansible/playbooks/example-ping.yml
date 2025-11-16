@@ -2,17 +2,23 @@
 - name: Test connectivity to hosts
   hosts: proxmox
   gather_facts: false
+  any_errors_fatal: false
   vars:
     ansible_timeout: 10
     ansible_ssh_timeout: 10
   
   tasks:
-    - name: Ping all hosts
-      ansible.builtin.ping:
+    - name: Test connection
+      ansible.builtin.wait_for_connection:
+        timeout: 10
       ignore_errors: true
       ignore_unreachable: true
+      register: connection_result
       
     - name: Report result
       ansible.builtin.debug:
-        msg: "Ping completed for {{ inventory_hostname }}"
+        msg: "Connection {{ 'successful' if connection_result is succeeded else 'failed' }} for {{ inventory_hostname }}"
+      
+    - name: End play
+      ansible.builtin.meta: end_host
 
