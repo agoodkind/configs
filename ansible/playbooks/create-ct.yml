@@ -59,7 +59,6 @@
         netif: "{{ {'net0': net0_config} }}"
         features:
           - nesting=1
-          - keyctl=1
         onboot: true
         unprivileged: true
         state: present
