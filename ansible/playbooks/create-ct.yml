@@ -92,6 +92,7 @@
         netif: "{{ {'net0': 'name=eth0,bridge=' + network_bridge + ',ip=' + ip_address + (',gw=' + gateway if gateway and ip_address != 'dhcp' else '')} }}"
         features:
           - nesting=1
+          - keyctl=1
         onboot: true
         unprivileged: true
         state: present
