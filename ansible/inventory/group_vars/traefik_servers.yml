@@ -1,0 +1,24 @@
+---
+# Traefik Configuration Variables
+# Override these in your own environment or use ansible-vault for sensitive values
+
+# Domain configuration
+traefik_public_domain: "public.home.goodkind.io"
+traefik_internal_domain: "home.goodkind.io"
+
+# ACME/Let's Encrypt configuration
+traefik_acme_email: "admin@goodkind.io"
+
+# Cloudflare API token for DNS-01 challenge
+# IMPORTANT: Override this with your actual token or use ansible-vault
+cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') | default('CHANGE_ME') }}"
+
+# Traefik version
+traefik_version: "3.0.0"
+
+# Directory configuration
+traefik_user: traefik
+traefik_group: traefik
+traefik_config_dir: /etc/traefik
+traefik_log_dir: /var/log/traefik
+repo_root: /usr/share/configs

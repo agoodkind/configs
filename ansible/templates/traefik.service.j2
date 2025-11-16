@@ -1,0 +1,38 @@
+[Unit]
+Description=Traefik
+Documentation=https://doc.traefik.io/traefik/
+After=network-online.target
+Wants=network-online.target
+AssertFileIsExecutable={{ traefik_config_dir }}/../../usr/local/bin/traefik
+AssertPathExists={{ traefik_config_dir }}/traefik.yml
+
+[Service]
+Type=notify
+User={{ traefik_user }}
+Group={{ traefik_group }}
+
+# Load Cloudflare credentials
+EnvironmentFile=-{{ traefik_config_dir }}/.cloudflare.env
+
+ExecStart=/usr/local/bin/traefik --configFile={{ traefik_config_dir }}/traefik.yml
+ExecReload=/bin/kill -USR1 $MAINPID
+
+Restart=on-abnormal
+RestartSec=5s
+WatchdogSec=1s
+
+# Sandboxing
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=false
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths={{ traefik_config_dir }} {{ traefik_log_dir }}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=traefik
+
+[Install]
+WantedBy=multi-user.target
