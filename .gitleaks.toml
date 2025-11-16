@@ -1,0 +1,27 @@
+title = "gitleaks config"
+
+[extend]
+# Use default gitleaks rules
+useDefault = true
+
+[allowlist]
+description = "Allowlist for false positives"
+
+# Allow example/dummy values in documentation
+regexes = [
+  '''example\.com''',
+  '''SEMAPHORE_TOKEN''',  # Variable names are OK, not actual tokens
+  '''YOUR_TOKEN_HERE''',
+]
+
+# Paths to ignore
+paths = [
+  '''README\.md''',
+  '''\.pre-commit-config\.yaml''',
+]
+
+# Add any custom rules here if needed
+# [[rules]]
+# id = "custom-rule"
+# description = "Custom secret pattern"
+# regex = '''your-pattern-here'''
