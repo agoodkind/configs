@@ -9,6 +9,4 @@
   tasks:
     - name: Ping all hosts
       ansible.builtin.ping:
-      async: 15
-      poll: 1
 
