@@ -1,0 +1,17 @@
+---
+- name: Debug Proxmox inventory variables
+  hosts: proxmox
+  gather_facts: false
+  
+  tasks:
+    - name: Display all hostvars for this host
+      ansible.builtin.debug:
+        msg: |
+          Hostname: {{ inventory_hostname }}
+          All variables starting with 'proxmox_':
+          {% for key, value in hostvars[inventory_hostname].items() if key.startswith('proxmox_') %}
+            {{ key }}: {{ value }}
+          {% endfor %}
+      delegate_to: localhost
+      run_once: false
+
