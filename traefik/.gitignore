@@ -1,0 +1,15 @@
+# Ignore rendered/generated files (keep only templates in git)
+traefik.yml
+dynamic/routes.yml
+dynamic/middlewares.yml
+dynamic/tls.yml
+
+# Keep templates
+!*.j2
+
+# Docker runtime
+docker-compose.override.yml
+acme.json
+
+# Logs
+*.log

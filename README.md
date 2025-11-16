@@ -24,11 +24,15 @@ configs/
 ├── bind-kea/            # Kea DHCP and BIND DNS configuration
 │   ├── Rakefile         # Project-specific tasks
 │   └── kea/             # Configuration files
-└── logstash/            # Logstash pipeline configuration
+├── logstash/            # Logstash pipeline configuration
+│   ├── Rakefile         # Project-specific tasks
+│   ├── conf/            # Logstash configuration files
+│   ├── ruby/            # Ruby filter scripts
+│   └── spec/            # RSpec tests
+└── traefik/             # Traefik reverse proxy configuration
     ├── Rakefile         # Project-specific tasks
-    ├── conf/            # Logstash configuration files
-    ├── ruby/            # Ruby filter scripts
-    └── spec/            # RSpec tests
+    ├── traefik.yml      # Static configuration
+    └── dynamic/         # Dynamic routing configuration
 ```
 
 ## Quick Start
@@ -140,7 +144,18 @@ Tasks:
 - Run diagnostics and tests
 - Monitor logs
 
+### traefik
+
+Traefik reverse proxy configuration for public service access.
+
+Tasks:
+- Manage routing rules for `*.public.home.goodkind.io`
+- Deploy SSL/TLS certificates via Let's Encrypt
+- Configure security middlewares
+- Update configurations via Git workflow
+
+See [traefik/README.md](traefik/README.md) and [traefik/WORKFLOW.md](traefik/WORKFLOW.md) for detailed documentation.
+
 ## License
 
 Apache License 2.0
-
