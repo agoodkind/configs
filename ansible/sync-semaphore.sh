@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SEMHOST="${SEMAPHORE_HOST:-http://ansible.home.goodkind.io:3000}"
-TOKEN="${SEMAPHORE_TOKEN:-gun8h1ugmrepllnio2qlcypjcomac2vxsmfrfwbvzue=}"
+TOKEN="${SEMAPHORE_TOKEN:-}"
 
 PROJECT_ID=1
 REPOSITORY_ID=1
