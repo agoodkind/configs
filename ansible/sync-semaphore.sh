@@ -7,7 +7,6 @@ TOKEN="${SEMAPHORE_TOKEN:-}"
 PROJECT_ID=1
 REPOSITORY_ID=1
 INVENTORY_ID=1
-ENVIRONMENT_ID=2  # Changed from 0 to 2 to match your working template
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -94,7 +93,6 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
   "playbook": "$rel",
   "inventory_id": $INVENTORY_ID,
   "repository_id": $REPOSITORY_ID,
-  "environment_id": $ENVIRONMENT_ID,
   "app": "ansible"
 }
 EOF
@@ -121,7 +119,6 @@ EOF
   "playbook": "$rel",
   "inventory_id": $INVENTORY_ID,
   "repository_id": $REPOSITORY_ID,
-  "environment_id": $ENVIRONMENT_ID,
   "app": "ansible"
 }
 EOF
