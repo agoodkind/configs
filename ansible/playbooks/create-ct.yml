@@ -59,6 +59,16 @@
       private: false
       default: ""
     
+    - name: ipv6_address
+      prompt: "IPv6 address (CIDR format, e.g., 2001:db8::1/64, or 'dhcp')"
+      private: false
+      default: "dhcp"
+    
+    - name: ipv6_gateway
+      prompt: "IPv6 Gateway (leave empty if using DHCP)"
+      private: false
+      default: ""
+    
     - name: container_tags
       prompt: "Tags (comma-separated, e.g., 'lxc,debian')"
       private: false
@@ -72,6 +82,14 @@
     - name: Set VMID if not provided
       set_fact:
         actual_vmid: "{{ vmid if vmid else omit }}"
+
+    - name: Build network interface configuration
+      set_fact:
+        net0_config: >-
+          name=eth0,bridge={{ network_bridge }},ip={{ ip_address
+          }}{{ ',gw=' + gateway if gateway and ip_address != 'dhcp' else ''
+          }},ip6={{ ipv6_address
+          }}{{ ',gw6=' + ipv6_gateway if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
 
     - name: Create LXC container
       community.general.proxmox:
@@ -89,7 +107,7 @@
         memory: "{{ memory }}"
         cores: "{{ cores }}"
         storage: "{{ storage }}"
-        netif: "{{ {'net0': 'name=eth0,bridge=' + network_bridge + ',ip=' + ip_address + (',gw=' + gateway if gateway and ip_address != 'dhcp' else '')} }}"
+        netif: "{{ {'net0': net0_config} }}"
         features:
           - nesting=1
           - keyctl=1
