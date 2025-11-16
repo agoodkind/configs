@@ -39,17 +39,11 @@ fi
 echo "✓ Authentication successful"
 echo
 
-SKIP_PATTERNS=""
-
 # Build list of valid playbook names
 declare -a valid_playbooks=()
 for f in "$PLAYBOOK_ROOT"/*.yml; do
   [ -e "$f" ] || continue
   name="$(basename "${f%.yml}")"
-
-  if echo "$name" | grep -qE "$SKIP_PATTERNS"; then
-    continue
-  fi
 
   valid_playbooks+=("$name")
 done
@@ -63,11 +57,6 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
 
   name="$(basename "${f%.yml}")"           # e.g. site
 
-  # Skip debug/test playbooks
-  if echo "$name" | grep -qE "$SKIP_PATTERNS"; then
-    echo "Skipping $name (matches skip pattern)"
-    continue
-  fi
 
   rel="${f#"$REPO_ROOT"/}"                    # e.g. ansible/playbooks/site.yml
 
