@@ -4,18 +4,65 @@
   gather_facts: false
   vars:
     target_node: vault
-    container_hostname: ""
-    vmid: ""
-    template_storage: "storage"
-    template_name: "debian-13-standard_13.1-2_amd64.tar.zst"
-    disk_size: "8"
-    memory: "512"
-    cores: "1"
-    storage: "local-lvm"
-    network_bridge: "vmbr0"
-    ip_address: "dhcp"
-    gateway: ""
-    container_tags: "lxc"
+  vars_prompt:
+    - name: container_hostname
+      prompt: "Container hostname"
+      private: false
+    
+    - name: vmid
+      prompt: "VMID (leave empty for auto)"
+      private: false
+      default: ""
+    
+    - name: template_storage
+      prompt: "Template storage"
+      private: false
+      default: "storage"
+    
+    - name: template_name
+      prompt: "Template name (e.g., debian-13-standard_13.1-2_amd64.tar.zst)"
+      private: false
+      default: "debian-13-standard_13.1-2_amd64.tar.zst"
+    
+    - name: disk_size
+      prompt: "Disk size (GB)"
+      private: false
+      default: "8"
+    
+    - name: memory
+      prompt: "Memory (MB)"
+      private: false
+      default: "512"
+    
+    - name: cores
+      prompt: "CPU cores"
+      private: false
+      default: "1"
+    
+    - name: storage
+      prompt: "Storage location"
+      private: false
+      default: "local-lvm"
+    
+    - name: network_bridge
+      prompt: "Network bridge"
+      private: false
+      default: "vmbr0"
+    
+    - name: ip_address
+      prompt: "IP address (CIDR format, e.g., 192.168.1.100/24, or 'dhcp')"
+      private: false
+      default: "dhcp"
+    
+    - name: gateway
+      prompt: "Gateway (leave empty if using DHCP)"
+      private: false
+      default: ""
+    
+    - name: container_tags
+      prompt: "Tags (comma-separated, e.g., 'lxc,debian')"
+      private: false
+      default: "lxc"
 
   tasks:
     - name: Generate random password
