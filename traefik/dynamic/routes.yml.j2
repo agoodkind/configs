@@ -28,10 +28,9 @@ http:
       tls:
         certResolver: letsencrypt
 
-    # Proxmox (example) - Public service via Cloudflare
-    proxmox-public:
-      rule: "Host(`proxmox.{{ traefik_public_domain }}`)"
-      service: proxmox
+    vault-public:
+      rule: "Host(`vault.{{ traefik_public_domain }}`)"
+      service: vault
       middlewares:
         - cloudflare-only  # Only accept Cloudflare IPs
         - secure-headers
@@ -39,8 +38,6 @@ http:
         - websecure
       tls:
         certResolver: letsencrypt
-
-    # Add more services as needed...
 
   services:
     ansible:
@@ -52,11 +49,10 @@ http:
           interval: 30s
           timeout: 5s
 
-    proxmox:
+    vault:
       loadBalancer:
         servers:
-          - url: "https://proxmox.{{ traefik_internal_domain }}:8006"
-        serversTransport: insecure-transport
+          - url: "https://vault.{{ traefik_internal_domain }}:8006"
 
   serversTransports:
     insecure-transport:
