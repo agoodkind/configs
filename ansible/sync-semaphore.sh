@@ -72,8 +72,11 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
   if [ -n "$existing" ]; then
     echo "  Template '$name' already exists (ID: $existing), updating..."
     
-    # Preserve existing environment_id
+    # Preserve existing environment_id, or use default if empty/null
     existing_env_id=$(echo "$existing_template" | jq -r '.environment_id // empty')
+    if [ -z "$existing_env_id" ] || [ "$existing_env_id" == "null" ]; then
+      existing_env_id=$DEFAULT_ENVIRONMENT_ID
+    fi
 
     update_response=$(curl -s -w "\n%{http_code}" -X PUT "$SEMHOST/api/project/$PROJECT_ID/templates/$existing" \
       -H "Authorization: Bearer $TOKEN" \
