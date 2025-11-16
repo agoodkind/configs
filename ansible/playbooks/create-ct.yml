@@ -1,0 +1,152 @@
+---
+- name: Create new LXC container
+  hosts: localhost
+  gather_facts: false
+  vars:
+    target_node: vault
+  vars_prompt:
+    - name: container_hostname
+      prompt: "Container hostname"
+      private: false
+    
+    - name: vmid
+      prompt: "VMID (leave empty for auto)"
+      private: false
+      default: ""
+    
+    - name: template_storage
+      prompt: "Template storage"
+      private: false
+      default: "storage"
+    
+    - name: template_name
+      prompt: "Template name (e.g., debian-13-standard_13.1-2_amd64.tar.zst)"
+      private: false
+      default: "debian-13-standard_13.1-2_amd64.tar.zst"
+    
+    - name: disk_size
+      prompt: "Disk size (GB)"
+      private: false
+      default: "8"
+    
+    - name: memory
+      prompt: "Memory (MB)"
+      private: false
+      default: "512"
+    
+    - name: cores
+      prompt: "CPU cores"
+      private: false
+      default: "1"
+    
+    - name: storage
+      prompt: "Storage location"
+      private: false
+      default: "local-lvm"
+    
+    - name: network_bridge
+      prompt: "Network bridge"
+      private: false
+      default: "vmbr0"
+    
+    - name: ip_address
+      prompt: "IP address (CIDR format, e.g., 192.168.1.100/24, or 'dhcp')"
+      private: false
+      default: "dhcp"
+    
+    - name: gateway
+      prompt: "Gateway (leave empty if using DHCP)"
+      private: false
+      default: ""
+    
+    - name: container_tags
+      prompt: "Tags (comma-separated, e.g., 'lxc,debian')"
+      private: false
+      default: "lxc"
+
+  tasks:
+    - name: Generate random password
+      set_fact:
+        actual_password: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
+
+    - name: Set VMID if not provided
+      set_fact:
+        actual_vmid: "{{ vmid if vmid else omit }}"
+
+    - name: Create LXC container
+      community.general.proxmox:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_token_id }}"
+        api_token_secret: "{{ proxmox_token_secret }}"
+        validate_certs: false
+        node: "{{ target_node }}"
+        hostname: "{{ container_hostname }}"
+        vmid: "{{ actual_vmid }}"
+        ostemplate: "{{ template_storage }}:vztmpl/{{ template_name }}"
+        password: "{{ actual_password }}"
+        disk: "{{ disk_size }}"
+        memory: "{{ memory }}"
+        cores: "{{ cores }}"
+        storage: "{{ storage }}"
+        netif: "{{ {'net0': 'name=eth0,bridge=' + network_bridge + ',ip=' + ip_address + (',gw=' + gateway if gateway and ip_address != 'dhcp' else '')} }}"
+        features:
+          - nesting=1
+        onboot: true
+        unprivileged: true
+        state: present
+        tags: "{{ container_tags.split(',') }}"
+      register: container_result
+
+    - name: Display container info
+      debug:
+        msg: 
+          - "Container created with VMID: {{ container_result.vmid }}"
+          - "Root password: {{ actual_password }}"
+
+    - name: Start container
+      community.general.proxmox:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_token_id }}"
+        api_token_secret: "{{ proxmox_token_secret }}"
+        validate_certs: false
+        vmid: "{{ container_result.vmid }}"
+        state: started
+
+    - name: Wait for container to be accessible
+      wait_for:
+        timeout: 30
+      delegate_to: localhost
+
+    - name: Add container to in-memory inventory
+      add_host:
+        name: "{{ container_hostname }}"
+        groups: new_containers
+        ansible_host: "{{ ip_address.split('/')[0] if ip_address != 'dhcp' else container_hostname }}"
+        ansible_user: root
+        ansible_proxmox_vmid: "{{ container_result.vmid }}"
+        ansible_proxmox_host: "{{ target_node }}"
+
+- name: Initialize new container
+  hosts: new_containers
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH to be ready
+      wait_for_connection:
+        timeout: 60
+        delay: 5
+
+- name: Run prep-cts on new container
+  import_playbook: prep-cts.yml
+  vars:
+    target_hosts: new_containers
+
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      debug:
+        msg: "✅ Container {{ hostvars[groups['new_containers'][0]].inventory_hostname }} created and prepped successfully!"
+

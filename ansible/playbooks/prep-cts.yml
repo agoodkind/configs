@@ -1,5 +1,5 @@
 - name: Initialize all LXC containers
-  hosts: proxmox_all_lxc
+  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
   gather_facts: false
   tasks:
     - name: Update package lists

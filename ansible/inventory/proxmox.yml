@@ -11,6 +11,10 @@ compose:
   ansible_host: (proxmox_ipconfig0.ip | default(proxmox_net0.ip) | ansible.utils.ipaddr('address')) | default(inventory_hostname, true)
   ansible_proxmox_host: proxmox_node
   ansible_proxmox_vmid: proxmox_vmid
+  proxmox_api_host: vault.home.goodkind.io
+  proxmox_api_user: ansible@pam
+  proxmox_token_id: ansible-token
+  proxmox_token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
 keyed_groups:
   - key: proxmox_tags_parsed
     separator: ""
