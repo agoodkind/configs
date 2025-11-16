@@ -10,7 +10,6 @@ description = "Allowlist for false positives"
 # Allow example/dummy values in documentation
 regexes = [
   '''example\.com''',
-  '''SEMAPHORE_TOKEN''',  # Variable names are OK, not actual tokens
   '''YOUR_TOKEN_HERE''',
 ]
 
