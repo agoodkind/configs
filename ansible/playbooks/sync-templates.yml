@@ -1,0 +1,17 @@
+---
+- name: Sync Semaphore templates from playbooks
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  
+  tasks:
+    - name: Run sync script
+      ansible.builtin.shell:
+        cmd: ./sync-semaphore.sh
+        chdir: "{{ playbook_dir | dirname }}"
+      register: sync_result
+      
+    - name: Show sync output
+      ansible.builtin.debug:
+        var: sync_result.stdout_lines
+
