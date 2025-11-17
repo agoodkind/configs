@@ -50,7 +50,7 @@
         node: "{{ target_node }}"
         hostname: "{{ container_hostname }}"
         vmid: "{{ actual_vmid | default(omit) }}"
-        ostemplate: "{{ template_storage }}:vztmpl/{{ template_name }}"
+        ostemplate: "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
         password: "{{ actual_password }}"
         disk: "{{ disk_size }}"
         memory: "{{ memory }}"
