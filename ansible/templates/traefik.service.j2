@@ -11,8 +11,9 @@ Type=notify
 User={{ traefik_user }}
 Group={{ traefik_group }}
 
-# Load Cloudflare credentials
+# Load DNS challenge credentials
 EnvironmentFile=-{{ traefik_config_dir }}/.cloudflare.env
+EnvironmentFile=-{{ traefik_config_dir }}/.rfc2136.env
 
 # Allow binding to privileged ports as non-root user
 AmbientCapabilities=CAP_NET_BIND_SERVICE
