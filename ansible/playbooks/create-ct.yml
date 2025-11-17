@@ -120,7 +120,7 @@
       set_fact:
         all_ips: "{{ container_ip.stdout.split() }}"
         ipv4_address: "{{ container_ip.stdout.split() | select('match', '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$') | first | default('N/A') }}"
-        ipv6_address: "{{ container_ip.stdout.split() | select('match', ':') | first | default('N/A') }}"
+        ipv6_address: "{{ container_ip.stdout.split() | select('search', ':') | first | default('N/A') }}"
 
     - name: Display container info
       debug:
