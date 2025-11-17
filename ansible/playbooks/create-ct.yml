@@ -78,6 +78,8 @@
         api_token_id: "{{ proxmox_token_id }}"
         api_token_secret: "{{ proxmox_token_secret }}"
         validate_certs: false
+        node: "{{ target_node }}"
+        hostname: "{{ container_hostname }}"
         vmid: "{{ container_result.vmid }}"
         state: started
       delegate_to: ansible.home.goodkind.io
