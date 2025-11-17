@@ -40,6 +40,13 @@
           }},ip6={{ ipv6_address
           }}{{ ',gw6=' + ipv6_gateway if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
 
+    - name: Get SSH public key from GitHub
+      uri:
+        url: https://github.com/agoodkind.keys
+        return_content: yes
+      register: github_keys
+      delegate_to: localhost
+
     - name: Create LXC container
       community.proxmox.proxmox:
         api_host: "{{ proxmox_api_host }}"
@@ -52,6 +59,7 @@
         vmid: "{{ actual_vmid | default(omit) }}"
         ostemplate: "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
         password: "{{ actual_password }}"
+        pubkey: "{{ github_keys.content }}"
         disk: "local-lvm:8"
         memory: 512
         cores: 1
@@ -102,7 +110,6 @@
         groups: new_containers
         ansible_host: "{{ container_ip.stdout | trim if ip_address == 'dhcp' else ip_address.split('/')[0] }}"
         ansible_user: root
-        ansible_password: "{{ actual_password }}"
         ansible_proxmox_vmid: "{{ container_result.vmid }}"
         ansible_proxmox_host: "{{ target_node }}"
 
@@ -112,8 +119,8 @@
   tasks:
     - name: Wait for SSH to be ready
       wait_for_connection:
-        timeout: 60
-        delay: 5
+        timeout: 30
+        delay: 2
 
 - name: Run prep-cts on new container
   import_playbook: prep-cts.yml
