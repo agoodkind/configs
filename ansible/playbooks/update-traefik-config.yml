@@ -10,8 +10,8 @@
     repo_root: /usr/share/configs
     cloudflare_ips_v4_url: "https://www.cloudflare.com/ips-v4"
     cloudflare_ips_v6_url: "https://www.cloudflare.com/ips-v6"
-    cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url) | splitlines() }}"
-    cloudflare_ipv6_ranges: "{{ lookup('url', cloudflare_ips_v6_url) | splitlines() }}"
+    cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url).split('\n') }}"
+    cloudflare_ipv6_ranges: "{{ lookup('url', cloudflare_ips_v6_url).split('\n') }}"
 
   tasks:
     - name: Validate required variables
