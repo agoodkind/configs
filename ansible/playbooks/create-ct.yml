@@ -75,12 +75,12 @@
         node: "{{ target_node }}"
         hostname: "{{ container_hostname }}"
         vmid: "{{ actual_vmid | default(omit) }}"
-        ostemplate: "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+        ostemplate: "storage:vztmpl/{{ template_name }}"
         password: "{{ actual_password }}"
         pubkey: "{{ all_ssh_keys }}"
-        disk: "local-lvm:8"
-        memory: 512
-        cores: 1
+        disk: "local-lvm:{{ disk_size }}"
+        memory: "{{ memory }}"
+        cores: "{{ cores }}"
         netif: "{{ {'net0': net0_config} }}"
         features:
           - nesting=1
