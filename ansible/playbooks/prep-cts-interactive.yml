@@ -1,0 +1,19 @@
+---
+- name: Interactive CT Prep - Get Container ID
+  hosts: localhost
+  gather_facts: false
+  vars_prompt:
+    - name: container_id
+      prompt: "Enter container ID (leave empty for all containers)"
+      private: false
+      default: ""
+  tasks:
+    - name: Set variables for prep-cts
+      set_fact:
+        prep_container_id: "{{ container_id }}"
+
+- name: Run prep-cts playbook
+  import_playbook: prep-cts.yml
+  vars:
+    container_id: "{{ hostvars['localhost']['prep_container_id'] | default('') }}"
+
