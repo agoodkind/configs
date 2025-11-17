@@ -3,7 +3,7 @@
 # Override these in your own environment or use ansible-vault for sensitive values
 
 # Domain configuration
-traefik_public_domain: "home.public.goodkind.io"
+traefik_public_domain: "home.goodkind.io"
 traefik_internal_domain: "home.goodkind.io"
 
 # ACME/Let's Encrypt configuration
