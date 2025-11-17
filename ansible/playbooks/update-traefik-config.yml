@@ -82,6 +82,37 @@
         group: "{{ traefik_group }}"
         mode: '0644'
 
+    - name: Flush handlers to ensure Traefik is restarted
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for Traefik to start
+      ansible.builtin.wait_for:
+        timeout: 5
+      delegate_to: localhost
+
+    - name: Verify Traefik service status
+      ansible.builtin.systemd:
+        name: traefik
+      register: traefik_status
+
+    - name: Display Traefik service status
+      ansible.builtin.debug:
+        msg: "✓ Traefik service is {{ traefik_status.status.ActiveState }}"
+
+    - name: Check Traefik health endpoint
+      ansible.builtin.uri:
+        url: "http://localhost:80"
+        status_code: [200, 301, 302, 308]
+        timeout: 5
+      register: health_check
+      retries: 3
+      delay: 2
+      until: health_check.status is defined
+
+    - name: Report health check result
+      ansible.builtin.debug:
+        msg: "✓ Traefik is responding (HTTP {{ health_check.status }})"
+
   handlers:
     - name: Restart traefik
       ansible.builtin.systemd:
