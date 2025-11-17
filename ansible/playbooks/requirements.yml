@@ -1,4 +1,5 @@
 ---
 collections:
   - name: community.proxmox
+  - name: community.general
   - name: ansible.utils
