@@ -1,6 +1,12 @@
-- name: Initialize all LXC containers
-  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
+- name: Prepare CT Container(s)
+  hosts: "{{ ('ct_' + container_id) if (container_id | default('') | length > 0) else 'proxmox_all_lxc' }}"
   gather_facts: false
+  vars_prompt:
+    - name: container_id
+      prompt: "Enter container ID (leave empty for all containers)"
+      private: false
+      default: ""
+
   tasks:
     - name: Update package lists
       apt:
@@ -62,7 +68,7 @@
 
     - name: Remove unnecessary packages
       apt:
-        autoremove: yes
+        autoremove: true
 
     - name: Remove Python EXTERNALLY-MANAGED block
       file:
@@ -72,7 +78,7 @@
     - name: Disable networkd wait service
       systemd:
         name: systemd-networkd-wait-online.service
-        enabled: no
+        enabled: false
         state: stopped
 
     - name: Set timezone to host timezone
@@ -115,6 +121,12 @@
           [Service]
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
+
+    - name: Create systemd system.conf.d directory
+      file:
+        path: /etc/systemd/system.conf.d
+        state: directory
+        mode: '0755'
 
     - name: Lower systemctl shutdown timeout to 15 seconds
       copy:
