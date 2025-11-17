@@ -20,13 +20,6 @@
       ansible.builtin.set_fact:
         cloudflare_ipv6_ranges: "{{ lookup('url', cloudflare_ips_v6_url, wantlist=True) }}"
 
-    - name: Debug Cloudflare IP ranges type
-      ansible.builtin.debug:
-        msg:
-          - "IPv4 type: {{ cloudflare_ipv4_ranges | type_debug }}"
-          - "IPv4 first item: {{ cloudflare_ipv4_ranges[0] }}"
-          - "IPv4 length: {{ cloudflare_ipv4_ranges | length }}"
-
     - name: Validate required variables
       ansible.builtin.assert:
         that:
