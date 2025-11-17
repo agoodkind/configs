@@ -12,6 +12,17 @@
     cloudflare_ips_v6_url: "https://www.cloudflare.com/ips-v6"
 
   tasks:
+    - name: Fetch Cloudflare IPv4 raw
+      ansible.builtin.set_fact:
+        cf_ipv4_raw: "{{ lookup('url', cloudflare_ips_v4_url) }}"
+
+    - name: Debug raw content
+      ansible.builtin.debug:
+        msg:
+          - "Raw contains newlines: {{ '\n' in cf_ipv4_raw }}"
+          - "Raw length: {{ cf_ipv4_raw | length }}"
+          - "First 100 chars: {{ cf_ipv4_raw[:100] }}"
+
     - name: Fetch Cloudflare IPv4 ranges
       ansible.builtin.set_fact:
         cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url).split('\n') | reject('equalto', '') | list }}"
@@ -24,9 +35,9 @@
       ansible.builtin.debug:
         msg:
           - "IPv4 type: {{ cloudflare_ipv4_ranges | type_debug }}"
-          - "IPv4 first item: {{ cloudflare_ipv4_ranges[0] if cloudflare_ipv4_ranges is iterable and cloudflare_ipv4_ranges is not string else 'NOT A LIST' }}"
+          - "IPv4 first item: {{ cloudflare_ipv4_ranges[0] }}"
           - "IPv4 length: {{ cloudflare_ipv4_ranges | length }}"
-          - "IPv6 type: {{ cloudflare_ipv6_ranges | type_debug }}"
+          - "Split test: {{ cf_ipv4_raw.split('\n') | length }}"
 
     - name: Validate required variables
       ansible.builtin.assert:
