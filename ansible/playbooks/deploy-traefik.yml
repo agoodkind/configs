@@ -177,6 +177,11 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
+    - name: Restart traefik
+      ansible.builtin.systemd:
+        name: traefik
+        state: restarted
+
 # Deploy Traefik configuration by calling update playbook
 - name: Deploy Traefik Configuration
   ansible.builtin.import_playbook: update-traefik-config.yml
