@@ -18,6 +18,7 @@
         return_content: true
       register: cf_ipv4
       delegate_to: localhost
+      become: false
 
     - name: Fetch Cloudflare IPv6 ranges
       ansible.builtin.uri:
@@ -25,6 +26,7 @@
         return_content: true
       register: cf_ipv6
       delegate_to: localhost
+      become: false
 
     - name: Set Cloudflare IP ranges as facts
       ansible.builtin.set_fact:
