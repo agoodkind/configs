@@ -7,7 +7,7 @@
     traefik_config_dir: /etc/traefik
     traefik_user: traefik
     traefik_group: traefik
-    repo_root: /usr/share/configs
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
     cloudflare_ips_v4_url: "https://www.cloudflare.com/ips-v4"
     cloudflare_ips_v6_url: "https://www.cloudflare.com/ips-v6"
     cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url).split('\n') }}"
@@ -44,16 +44,6 @@
             - {{ cloudflare_ips_v4_url }}
             - {{ cloudflare_ips_v6_url }}
         success_msg: "✓ Cloudflare IPv4/IPv6 ranges downloaded"
-
-    - name: Pull latest configs from git
-      ansible.builtin.git:
-        repo: https://github.com/agoodkind/configs.git
-        dest: "{{ repo_root }}"
-        version: main
-        force: true
-      become: false
-      delegate_to: localhost
-      run_once: true  # noqa: run-once[task]
 
     - name: Template Traefik static configuration
       ansible.builtin.template:
