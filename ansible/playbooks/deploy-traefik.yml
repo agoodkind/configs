@@ -94,11 +94,14 @@
             - /tmp/CHANGELOG.md
       when: not traefik_binary.stat.exists or traefik_version not in traefik_installed_version.stdout
 
-    - name: Set CAP_NET_BIND_SERVICE capability
-      community.general.capabilities:
-        path: /usr/local/bin/traefik
-        capability: cap_net_bind_service+ep
+    - name: Install libcap2-bin for setcap
+      ansible.builtin.apt:
+        name: libcap2-bin
         state: present
+
+    - name: Set CAP_NET_BIND_SERVICE capability
+      ansible.builtin.command: setcap cap_net_bind_service=+ep /usr/local/bin/traefik
+      changed_when: false
 
     - name: Template Traefik static configuration
       ansible.builtin.template:
