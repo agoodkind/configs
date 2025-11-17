@@ -91,12 +91,6 @@
       delegate_to: ansible.home.goodkind.io
       register: container_result
 
-    - name: Display container info
-      debug:
-        msg: 
-          - "Container created with VMID: {{ container_result.vmid }}"
-          - "Root password: {{ actual_password }}"
-
     - name: Start container
       community.proxmox.proxmox:
         api_host: "{{ proxmox_api_host }}"
@@ -115,18 +109,31 @@
         seconds: 15
 
     - name: Get container IP address
-      shell: "pct exec {{ container_result.vmid }} -- hostname -I | awk '{print $1}'"
+      shell: "pct exec {{ container_result.vmid }} -- hostname -I"
       register: container_ip
       delegate_to: "{{ target_node }}"
       retries: 6
       delay: 5
       until: container_ip.stdout != ""
 
+    - name: Parse IP addresses
+      set_fact:
+        all_ips: "{{ container_ip.stdout.split() }}"
+        ipv4_address: "{{ container_ip.stdout.split() | select('match', '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$') | first | default('N/A') }}"
+        ipv6_address: "{{ container_ip.stdout.split() | select('match', ':') | first | default('N/A') }}"
+
+    - name: Display container info
+      debug:
+        msg: 
+          - "Container {{ container_hostname }} created with VMID: {{ container_result.vmid }}"
+          - "IPv4: {{ ipv4_address }}"
+          - "IPv6: {{ ipv6_address }}"
+
     - name: Add container to in-memory inventory
       add_host:
         name: "{{ container_hostname }}"
         groups: new_containers
-        ansible_host: "{{ container_ip.stdout | trim if ip_address == 'dhcp' else ip_address.split('/')[0] }}"
+        ansible_host: "{{ ipv4_address if ip_address == 'dhcp' else ip_address.split('/')[0] }}"
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
         ansible_proxmox_vmid: "{{ container_result.vmid }}"
@@ -142,11 +149,22 @@
         delay: 3
         sleep: 2
 
+    - name: SSH connection established
+      debug:
+        msg: "✓ SSH connection to {{ inventory_hostname }} is ready"
+
+- name: Pre-flight check before prep-cts
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Announce prep-cts start
+      debug:
+        msg: "Starting container preparation (prep-cts) on new container(s)..."
+
 - name: Run prep-cts on new container
   import_playbook: prep-cts.yml
   vars:
     target_hosts: new_containers
-    container_id: ""
 
 - name: Summary
   hosts: localhost

@@ -1,12 +1,6 @@
 - name: Prepare CT Container(s)
   hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
   gather_facts: false
-  vars_prompt:
-    - name: container_id
-      prompt: "Enter container ID (leave empty for all containers)"
-      private: false
-      default: ""
-
   tasks:
     - name: Filter by container ID if specified
       meta: end_host
