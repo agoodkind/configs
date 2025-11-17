@@ -7,7 +7,7 @@ traefik_public_domain: "home.public.goodkind.io"
 traefik_internal_domain: "home.goodkind.io"
 
 # ACME/Let's Encrypt configuration
-traefik_acme_email: "admin@goodkind.io"
+traefik_acme_email: "alex@goodkind.io"
 
 # Cloudflare API token for DNS-01 challenge
 # REQUIRED: Set CLOUDFLARE_API_TOKEN environment variable
