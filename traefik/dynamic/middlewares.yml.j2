@@ -42,12 +42,12 @@ http:
     cloudflare-only:
       ipWhiteList:
         sourceRange:
-          {% for cidr in cloudflare_ipv4_ranges %}
+{% for cidr in cloudflare_ipv4_ranges %}
           - "{{ cidr }}"
-          {% endfor %}
-          {% for cidr in cloudflare_ipv6_ranges %}
+{% endfor %}
+{% for cidr in cloudflare_ipv6_ranges %}
           - "{{ cidr }}"
-          {% endfor %}
+{% endfor %}
 
     # Rate Limiting
     rate-limit:
