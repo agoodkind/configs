@@ -20,9 +20,9 @@
   hosts: localhost
   gather_facts: false
   vars:
-    ssh_key_from_file: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    ssh_key_from_file: "{{ lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') | default('') }}"
     ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys') }}"
-    ssh_key: "{{ ssh_key_from_file }}\n{{ ssh_key_from_url }}"
+    ssh_key: "{{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url }}"
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
     containers: "{{ groups[target_group] | map('extract', hostvars, 'container_info') | select('defined') | list }}"
   tasks:
