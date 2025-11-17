@@ -26,7 +26,6 @@
           - "IPv4 type: {{ cloudflare_ipv4_ranges | type_debug }}"
           - "IPv4 first item: {{ cloudflare_ipv4_ranges[0] }}"
           - "IPv4 length: {{ cloudflare_ipv4_ranges | length }}"
-          - "Split test: {{ cf_ipv4_raw.split('\n') | length }}"
 
     - name: Validate required variables
       ansible.builtin.assert:
