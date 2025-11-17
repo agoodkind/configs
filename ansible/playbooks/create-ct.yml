@@ -40,12 +40,22 @@
           }},ip6={{ ipv6_address
           }}{{ ',gw6=' + ipv6_gateway if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
 
-    - name: Get SSH public key from GitHub
+    - name: Get SSH public keys from GitHub
       uri:
         url: https://github.com/agoodkind.keys
         return_content: yes
       register: github_keys
       delegate_to: localhost
+
+    - name: Get ansible server's SSH public key
+      slurp:
+        src: "{{ lookup('fileglob', '~/.ssh/id_*.pub', wantlist=True) | first }}"
+      register: ansible_key
+      delegate_to: ansible.home.goodkind.io
+
+    - name: Combine all SSH keys
+      set_fact:
+        all_ssh_keys: "{{ github_keys.content }}{{ ansible_key.content | b64decode }}"
 
     - name: Create LXC container
       community.proxmox.proxmox:
@@ -59,7 +69,7 @@
         vmid: "{{ actual_vmid | default(omit) }}"
         ostemplate: "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
         password: "{{ actual_password }}"
-        pubkey: "{{ github_keys.content }}"
+        pubkey: "{{ all_ssh_keys }}"
         disk: "local-lvm:8"
         memory: 512
         cores: 1
