@@ -1,11 +1,12 @@
 - name: Prepare CT Container(s)
-  hosts: "{{ ('ct_' + container_id) if (container_id | default('') | length > 0) else 'proxmox_all_lxc' }}"
+  hosts: "{{ target_hosts | default(('ct_' + container_id) if (container_id | default('') | length > 0) else 'proxmox_all_lxc') }}"
   gather_facts: false
   vars_prompt:
     - name: container_id
       prompt: "Enter container ID (leave empty for all containers)"
       private: false
       default: ""
+      when: target_hosts is not defined
 
   tasks:
     - name: Update package lists
