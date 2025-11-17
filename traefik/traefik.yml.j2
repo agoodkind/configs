@@ -54,7 +54,9 @@ certificatesResolvers:
       storage: /etc/traefik/acme.json
       dnsChallenge:
         provider: rfc2136
-        delayBeforeCheck: 5
+        resolvers:
+          - "[3d06:bad:b01::6]:53"
+        delayBeforeCheck: 10
 
 providers:
   file:
