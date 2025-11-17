@@ -1,10 +1,16 @@
 ---
 - name: Gather LXC container information
-  hosts: proxmox_all_lxc
+  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
   gather_facts: false
   tasks:
+    - name: Filter by container ID if specified
+      ansible.builtin.meta: end_host
+      when:
+        - container_id | default('') | length > 0
+        - ansible_proxmox_vmid | default('') | string != container_id | string
+
     - name: Store container info on each host
-      set_fact:
+      ansible.builtin.set_fact:
         container_info:
           vmid: "{{ ansible_proxmox_vmid }}"
           host: "{{ ansible_proxmox_host }}"
@@ -14,15 +20,19 @@
   hosts: localhost
   gather_facts: false
   vars:
-    # Option 1: Read from file
-    # ssh_key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
-    # Option 2: Read from URL
-    ssh_key: "{{ lookup('url', 'https://github.com/agoodkind.keys') }}"
-    containers: "{{ groups['proxmox_all_lxc'] | map('extract', hostvars, 'container_info') | list }}"
+    ssh_key_from_file: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys') }}"
+    ssh_key: "{{ ssh_key_from_file }}\n{{ ssh_key_from_url }}"
+    target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
+    containers: "{{ groups[target_group] | map('extract', hostvars, 'container_info') | select('defined') | list }}"
   tasks:
+    - name: Display target containers
+      ansible.builtin.debug:
+        msg: "Deploying SSH keys to {{ containers | length }} container(s): {{ containers | map(attribute='name') | join(', ') }}"
+
     - name: Deploy SSH key to container
       delegate_to: "{{ item.host }}"
-      shell: |
+      ansible.builtin.shell: |
         pct exec {{ item.vmid }} -- sh -c '
           mkdir -p /root/.ssh
           chmod 700 /root/.ssh
@@ -33,3 +43,8 @@
       loop: "{{ containers }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+      changed_when: true
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "✅ SSH keys deployed to {{ containers | length }} container(s)"
