@@ -149,7 +149,7 @@
 
     - name: Install Traefik systemd service
       ansible.builtin.template:
-        src: traefik.service.j2
+        src: "{{ repo_root }}/ansible/templates/traefik.service.j2"
         dest: /etc/systemd/system/traefik.service
         owner: root
         group: root
