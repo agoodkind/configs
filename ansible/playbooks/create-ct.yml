@@ -83,17 +83,25 @@
         state: started
       delegate_to: ansible.home.goodkind.io
 
-    - name: Wait for container to be accessible
-      wait_for:
-        timeout: 30
-      delegate_to: localhost
+    - name: Wait for container to start
+      pause:
+        seconds: 10
+
+    - name: Get container IP address
+      shell: "pct exec {{ container_result.vmid }} -- hostname -I | awk '{print $1}'"
+      register: container_ip
+      delegate_to: "{{ target_node }}"
+      retries: 6
+      delay: 5
+      until: container_ip.stdout != ""
 
     - name: Add container to in-memory inventory
       add_host:
         name: "{{ container_hostname }}"
         groups: new_containers
-        ansible_host: "{{ ip_address.split('/')[0] if ip_address != 'dhcp' else container_hostname }}"
+        ansible_host: "{{ container_ip.stdout | trim if ip_address == 'dhcp' else ip_address.split('/')[0] }}"
         ansible_user: root
+        ansible_password: "{{ actual_password }}"
         ansible_proxmox_vmid: "{{ container_result.vmid }}"
         ansible_proxmox_host: "{{ target_node }}"
 
