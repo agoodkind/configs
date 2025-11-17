@@ -16,6 +16,16 @@ http:
       tls:
         certResolver: letsencrypt
 
+    router-ingress:
+      rule: "Host(`router.{{ traefik_ingress_domain }}`)"
+      service: router-service
+      middlewares:
+        - secure-headers
+      entryPoints:
+        - web
+      tls:
+        certResolver: letsencrypt
+
     # Ansible/Semaphore - Public service via Cloudflare
     ansible-ingress:
       rule: "Host(`ansible.{{ traefik_ingress_domain }}`)"
@@ -53,6 +63,11 @@ http:
       loadBalancer:
         servers:
           - url: "https://vault.{{ traefik_upstream_domain }}:8006"
+
+    router-service:
+      loadBalancer:
+        servers:
+          - url: "https://router.{{ traefik_upstream_domain }}"
 
   serversTransports:
     insecure-transport:
