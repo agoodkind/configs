@@ -138,6 +138,7 @@
   import_playbook: prep-cts.yml
   vars:
     target_hosts: new_containers
+    container_id: ""
 
 - name: Summary
   hosts: localhost

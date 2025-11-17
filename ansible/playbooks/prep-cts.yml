@@ -6,7 +6,6 @@
       prompt: "Enter container ID (leave empty for all containers)"
       private: false
       default: ""
-      when: target_hosts is not defined
 
   tasks:
     - name: Update package lists
