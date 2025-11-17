@@ -61,6 +61,7 @@
       failed_when: false
 
     - name: Download and install Traefik
+      when: not traefik_binary.stat.exists or traefik_version not in traefik_installed_version.stdout
       block:
         - name: Download Traefik
           ansible.builtin.get_url:
@@ -92,7 +93,6 @@
             - /tmp/traefik
             - /tmp/LICENSE.md
             - /tmp/CHANGELOG.md
-      when: not traefik_binary.stat.exists or traefik_version not in traefik_installed_version.stdout
 
     - name: Install libcap2-bin for setcap
       ansible.builtin.apt:
@@ -110,7 +110,7 @@
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
         mode: '0644'
-      notify: restart traefik
+      notify: Restart traefik
 
     - name: Template Traefik dynamic routes
       ansible.builtin.template:
@@ -119,7 +119,7 @@
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
         mode: '0644'
-      notify: reload traefik
+      notify: Reload traefik
 
     - name: Template Traefik dynamic middlewares
       ansible.builtin.template:
@@ -128,7 +128,7 @@
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
         mode: '0644'
-      notify: reload traefik
+      notify: Reload traefik
 
     - name: Set ownership of config files
       ansible.builtin.file:
@@ -155,8 +155,8 @@
         group: root
         mode: '0644'
       notify:
-        - reload systemd
-        - restart traefik
+        - Reload systemd
+        - Restart traefik
 
     - name: Create Cloudflare credentials file
       ansible.builtin.copy:
@@ -177,17 +177,17 @@
         daemon_reload: true
 
   handlers:
-    - name: reload systemd
+    - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: reload traefik
+    - name: Reload traefik
       ansible.builtin.systemd:
         name: traefik
         state: reloaded
       failed_when: false
 
-    - name: restart traefik
+    - name: Restart traefik
       ansible.builtin.systemd:
         name: traefik
         state: restarted
