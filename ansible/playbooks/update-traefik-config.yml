@@ -10,17 +10,15 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
     cloudflare_ips_v4_url: "https://www.cloudflare.com/ips-v4"
     cloudflare_ips_v6_url: "https://www.cloudflare.com/ips-v6"
-  
+
   tasks:
     - name: Fetch Cloudflare IPv4 ranges
       ansible.builtin.set_fact:
         cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url).splitlines() | select('match', '^[0-9]') | list }}"
-      run_once: true
 
     - name: Fetch Cloudflare IPv6 ranges
       ansible.builtin.set_fact:
         cloudflare_ipv6_ranges: "{{ lookup('url', cloudflare_ips_v6_url).splitlines() | select('match', '^[0-9a-f]') | list }}"
-      run_once: true
 
     - name: Validate required variables
       ansible.builtin.assert:
