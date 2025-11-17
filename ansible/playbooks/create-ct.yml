@@ -92,9 +92,9 @@
         state: started
       delegate_to: ansible.home.goodkind.io
 
-    - name: Wait for container to start
+    - name: Wait for container to start and get IP from DHCP
       pause:
-        seconds: 10
+        seconds: 15
 
     - name: Get container IP address
       shell: "pct exec {{ container_result.vmid }} -- hostname -I | awk '{print $1}'"
@@ -110,6 +110,7 @@
         groups: new_containers
         ansible_host: "{{ container_ip.stdout | trim if ip_address == 'dhcp' else ip_address.split('/')[0] }}"
         ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
         ansible_proxmox_vmid: "{{ container_result.vmid }}"
         ansible_proxmox_host: "{{ target_node }}"
 
@@ -119,8 +120,9 @@
   tasks:
     - name: Wait for SSH to be ready
       wait_for_connection:
-        timeout: 30
-        delay: 2
+        timeout: 45
+        delay: 3
+        sleep: 2
 
 - name: Run prep-cts on new container
   import_playbook: prep-cts.yml
