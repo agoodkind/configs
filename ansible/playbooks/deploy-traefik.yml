@@ -10,45 +10,10 @@
     traefik_config_dir: /etc/traefik
     traefik_log_dir: /var/log/traefik
     repo_root: "{{ playbook_dir | dirname | dirname }}"
+    cloudflare_ips_v4_url: "https://www.cloudflare.com/ips-v4"
+    cloudflare_ips_v6_url: "https://www.cloudflare.com/ips-v6"
 
   tasks:
-    - name: Fetch Cloudflare IPv4 ranges
-      ansible.builtin.uri:
-        url: https://www.cloudflare.com/ips-v4
-        return_content: true
-      register: cf_ipv4
-      delegate_to: localhost
-      become: false
-
-    - name: Fetch Cloudflare IPv6 ranges
-      ansible.builtin.uri:
-        url: https://www.cloudflare.com/ips-v6
-        return_content: true
-      register: cf_ipv6
-      delegate_to: localhost
-      become: false
-
-    - name: Set Cloudflare IP ranges as facts
-      ansible.builtin.set_fact:
-        cloudflare_ipv4_ranges: "{{ cf_ipv4.content.splitlines() }}"
-        cloudflare_ipv6_ranges: "{{ cf_ipv6.content.splitlines() }}"
-
-    - name: Validate required variables
-      ansible.builtin.assert:
-        that:
-          - cloudflare_api_token is defined
-          - cloudflare_api_token | length > 0
-          - cloudflare_api_token != ""
-        fail_msg: |
-          ERROR: CLOUDFLARE_API_TOKEN is not set!
-
-          Set the environment variable:
-            export CLOUDFLARE_API_TOKEN="your-token-here"
-
-          Or in Semaphore Environment settings:
-            CLOUDFLARE_API_TOKEN: your-token-here
-        success_msg: "✓ Cloudflare API token is configured"
-
     - name: Create Traefik user
       ansible.builtin.user:
         name: "{{ traefik_user }}"
@@ -124,33 +89,6 @@
       ansible.builtin.command: setcap cap_net_bind_service=+ep /usr/local/bin/traefik
       changed_when: false
 
-    - name: Template Traefik static configuration
-      ansible.builtin.template:
-        src: "{{ repo_root }}/traefik/traefik.yml.j2"
-        dest: "{{ traefik_config_dir }}/traefik.yml"
-        owner: "{{ traefik_user }}"
-        group: "{{ traefik_group }}"
-        mode: '0644'
-      notify: Restart traefik
-
-    - name: Template Traefik dynamic routes
-      ansible.builtin.template:
-        src: "{{ repo_root }}/traefik/dynamic/routes.yml.j2"
-        dest: "{{ traefik_config_dir }}/dynamic/routes.yml"
-        owner: "{{ traefik_user }}"
-        group: "{{ traefik_group }}"
-        mode: '0644'
-      notify: Reload traefik
-
-    - name: Template Traefik dynamic middlewares
-      ansible.builtin.template:
-        src: "{{ repo_root }}/traefik/dynamic/middlewares.yml.j2"
-        dest: "{{ traefik_config_dir }}/dynamic/middlewares.yml"
-        owner: "{{ traefik_user }}"
-        group: "{{ traefik_group }}"
-        mode: '0644'
-      notify: Reload traefik
-
     - name: Set ownership of config files
       ansible.builtin.file:
         path: "{{ traefik_config_dir }}"
@@ -213,6 +151,11 @@
         - traefik_dashboard_pass is defined
       no_log: true
       changed_when: true
+
+    # Deploy Traefik configuration files
+    # Note: For updates only (without reinstall), use update-traefik-config.yml
+    - name: Include Traefik configuration deployment tasks
+      ansible.builtin.include_tasks: tasks/deploy-traefik-config.yml
 
     - name: Enable and start Traefik service
       ansible.builtin.systemd:
