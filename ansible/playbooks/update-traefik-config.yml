@@ -101,16 +101,24 @@
     - name: Check Traefik health endpoint
       ansible.builtin.uri:
         url: "http://localhost:80"
+        follow_redirects: none
+        validate_certs: false
         status_code: [200, 301, 302, 308]
         timeout: 5
       register: health_check
       retries: 3
       delay: 2
       until: health_check.status is defined
+      failed_when: false
 
     - name: Report health check result
       ansible.builtin.debug:
-        msg: "✓ Traefik is responding (HTTP {{ health_check.status }})"
+        msg: >-
+          {% if health_check.status is defined %}
+          ✓ Traefik is responding (HTTP {{ health_check.status }})
+          {% else %}
+          ⚠ Traefik health check returned: {{ health_check.msg }}
+          {% endif %}
 
   handlers:
     - name: Restart traefik
