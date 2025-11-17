@@ -52,14 +52,8 @@ certificatesResolvers:
     acme:
       email: {{ traefik_acme_email }}
       storage: /etc/traefik/acme.json
-      dnsChallenge:
-        provider: cloudflare
-        resolvers:
-          - "2606:4700:4700::1111"  # Cloudflare IPv6
-          - "2001:4860:4860::8888"  # Google IPv6
-          - "1.1.1.1:53"            # Cloudflare IPv4
-          - "8.8.8.8:53"            # Google IPv4
-        delayBeforeCheck: 30
+      httpChallenge:
+        entryPoint: web
 
 providers:
   file:
