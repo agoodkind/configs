@@ -1,0 +1,105 @@
+---
+- name: Update Semaphore
+  hosts: ansible_server
+  become: true
+
+  vars:
+    semaphore_version: "latest"
+    semaphore_user: semaphore
+    semaphore_group: semaphore
+    semaphore_install_dir: /usr/local/bin
+    semaphore_config_dir: /etc/semaphore
+    semaphore_data_dir: /var/lib/semaphore
+
+  tasks:
+    - name: Check if Semaphore is installed
+      ansible.builtin.stat:
+        path: "{{ semaphore_install_dir }}/semaphore"
+      register: semaphore_binary
+
+    - name: Get installed Semaphore version
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ semaphore_install_dir }}/semaphore version | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+'
+      register: semaphore_installed_version
+      when: semaphore_binary.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Display current version
+      ansible.builtin.debug:
+        msg: "Current Semaphore version: {{ semaphore_installed_version.stdout | default('Not installed') }}"
+
+    - name: Download and install Semaphore
+      when: not semaphore_binary.stat.exists or (semaphore_version == "latest") or (semaphore_version != semaphore_installed_version.stdout)
+      block:
+        - name: Display update message
+          ansible.builtin.debug:
+            msg: "Updating Semaphore to version {{ semaphore_version }}"
+
+        - name: Stop Semaphore service
+          ansible.builtin.systemd:
+            name: semaphore
+            state: stopped
+          when: semaphore_binary.stat.exists
+
+        - name: Set download URL
+          ansible.builtin.set_fact:
+            semaphore_download_url: >-
+              {% if semaphore_version == 'latest' %}
+              https://github.com/semaphoreui/semaphore/releases/latest/download/semaphore_linux_amd64.tar.gz
+              {% else %}
+              https://github.com/semaphoreui/semaphore/releases/download/v{{ semaphore_version }}/semaphore_{{ semaphore_version }}_linux_amd64.tar.gz
+              {% endif %}
+
+        - name: Download Semaphore binary
+          ansible.builtin.get_url:
+            url: "{{ semaphore_download_url }}"
+            dest: /tmp/semaphore.tar.gz
+            mode: '0644'
+
+        - name: Extract Semaphore binary
+          ansible.builtin.unarchive:
+            src: /tmp/semaphore.tar.gz
+            dest: /tmp
+            remote_src: true
+
+        - name: Install Semaphore binary
+          ansible.builtin.copy:
+            src: /tmp/semaphore
+            dest: "{{ semaphore_install_dir }}/semaphore"
+            owner: root
+            group: root
+            mode: '0755'
+            remote_src: true
+
+        - name: Cleanup download files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/semaphore.tar.gz
+            - /tmp/semaphore
+
+        - name: Start Semaphore service
+          ansible.builtin.systemd:
+            name: semaphore
+            state: started
+            daemon_reload: true
+
+    - name: Verify installation
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ semaphore_install_dir }}/semaphore version | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+'
+      register: semaphore_new_version
+      changed_when: false
+
+    - name: Display installed version
+      ansible.builtin.debug:
+        msg: "Semaphore version {{ semaphore_new_version.stdout }} is now installed"
+
+    - name: Ensure Semaphore service is running
+      ansible.builtin.systemd:
+        name: semaphore
+        state: started
+        enabled: true
