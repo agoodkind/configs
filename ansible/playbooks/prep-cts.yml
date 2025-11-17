@@ -3,54 +3,56 @@
   gather_facts: false
   tasks:
     - name: Filter by container ID if specified
-      meta: end_host
+      ansible.builtin.meta: end_host
       when:
         - container_id | default('') | length > 0
         - ansible_proxmox_vmid | default('') | string != container_id | string
     - name: Update package lists
-      apt:
+      ansible.builtin.apt:
         update_cache: true
 
     - name: Install locales package
-      apt:
+      ansible.builtin.apt:
         name: locales
         state: present
 
     - name: Uncomment en_US.UTF-8 in locale.gen
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/locale.gen
         regexp: '^# *en_US.UTF-8'
         line: 'en_US.UTF-8 UTF-8'
         state: present
 
     - name: Generate en_US.UTF-8 locale
-      command: locale-gen
+      ansible.builtin.command: locale-gen
+      changed_when: false
 
     - name: Update system locale
-      command: update-locale LANG=en_US.UTF-8
+      ansible.builtin.command: update-locale LANG=en_US.UTF-8
+      changed_when: false
 
     - name: Add LANG export to .bashrc
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /root/.bashrc
         line: 'export LANG="en_US.UTF-8"'
         state: present
 
     - name: Add LC_ALL export to .bashrc
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /root/.bashrc
         line: 'export LC_ALL="en_US.UTF-8"'
         state: present
 
     - name: Update package lists again
-      apt:
+      ansible.builtin.apt:
         update_cache: true
 
     - name: Upgrade all packages
-      apt:
+      ansible.builtin.apt:
         upgrade: dist
 
     - name: Install essential packages
-      apt:
+      ansible.builtin.apt:
         name:
           - neovim
           - htop
@@ -66,80 +68,84 @@
         state: present
 
     - name: Remove unnecessary packages
-      apt:
+      ansible.builtin.apt:
         autoremove: true
 
     - name: Remove Python EXTERNALLY-MANAGED block
-      file:
+      ansible.builtin.file:
         path: /usr/lib/python3.*/EXTERNALLY-MANAGED
         state: absent
 
     - name: Disable networkd wait service
-      systemd:
+      ansible.builtin.systemd:
         name: systemd-networkd-wait-online.service
         enabled: false
         state: stopped
 
     - name: Set timezone to host timezone
-      command: timedatectl set-timezone "{{ lookup('pipe', 'timedatectl show -p Timezone --value') }}"
-      ignore_errors: true
+      ansible.builtin.command: timedatectl set-timezone "{{ lookup('pipe', 'timedatectl show -p Timezone --value') }}"
+      changed_when: false
+      failed_when: false
 
     - name: Configure rsyslog for local time
-      copy:
+      ansible.builtin.copy:
         dest: /etc/rsyslog.d/50-default-local.conf
         content: |
           # Use local time instead of UTC
           $ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
           $template TraditionalFormatWithLocalTime,"%timegenerated% %HOSTNAME% %syslogtag%%msg:::drop-last-lf%\n"
           $ActionFileDefaultTemplate TraditionalFormatWithLocalTime
-      notify: restart rsyslog
+        mode: '0644'
+      notify: Restart rsyslog
 
     - name: Set 256-color terminal for root
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /root/.bashrc
         line: 'export TERM="xterm-256color"'
         state: present
 
     - name: Remove '[ -z "$PS1" ] && return' from .bashrc
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /root/.bashrc
         regexp: '^\[ -z "\$PS1" \] && return'
         state: absent
 
     - name: Disable default MOTD scripts
-      file:
+      ansible.builtin.file:
         path: /etc/update-motd.d/
         recurse: true
         mode: 'u-x,g-x,o-x'
 
     - name: Configure auto-login for root
-      blockinfile:
+      ansible.builtin.blockinfile:
         path: /etc/systemd/system/container-getty@1.service.d/override.conf
         create: true
+        mode: '0644'
         block: |
           [Service]
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
 
     - name: Create systemd system.conf.d directory
-      file:
+      ansible.builtin.file:
         path: /etc/systemd/system.conf.d
         state: directory
         mode: '0755'
 
     - name: Lower systemctl shutdown timeout to 15 seconds
-      copy:
+      ansible.builtin.copy:
         dest: /etc/systemd/system.conf.d/timeout.conf
         content: |
           [Manager]
           DefaultTimeoutStopSec=15s
+        mode: '0644'
 
     - name: Reload systemd daemon
-      systemd:
-        daemon_reload: yes
+      ansible.builtin.systemd:
+        daemon_reload: true
 
     - name: Restart getty service
-      systemd:
+      ansible.builtin.systemd:
         name: container-getty@1.service
         state: restarted
 
@@ -150,7 +156,7 @@
         mode: '0600'
 
   handlers:
-    - name: restart rsyslog
-      systemd:
+    - name: Restart rsyslog
+      ansible.builtin.systemd:
         name: rsyslog
         state: restarted
