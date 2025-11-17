@@ -30,6 +30,12 @@
       ansible.builtin.debug:
         msg: "Deploying SSH keys to {{ containers | length }} container(s): {{ containers | map(attribute='name') | join(', ') }}"
 
+    - name: Display SSH keys being deployed
+      ansible.builtin.debug:
+        msg: |
+          SSH Keys to deploy ({{ ssh_key.splitlines() | length }} keys):
+          {{ ssh_key }}
+
     - name: Write SSH keys to temp file
       ansible.builtin.copy:
         content: "{{ ssh_key }}"
