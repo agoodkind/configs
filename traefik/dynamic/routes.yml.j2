@@ -21,7 +21,7 @@ http:
       rule: "Host(`ansible.{{ traefik_public_domain }}`)"
       service: ansible
       middlewares:
-        - cloudflare-only  # Only accept Cloudflare IPs
+        {# - cloudflare-only  # Only accept Cloudflare IPs #}
         - secure-headers
       entryPoints:
         - websecure
@@ -32,7 +32,7 @@ http:
       rule: "Host(`vault.{{ traefik_public_domain }}`)"
       service: vault
       middlewares:
-        - cloudflare-only  # Only accept Cloudflare IPs
+        {# - cloudflare-only  # Only accept Cloudflare IPs #}
         - secure-headers
       entryPoints:
         - websecure

@@ -36,6 +36,10 @@ entryPoints:
     # Trust Cloudflare IPs for real client IP (X-Forwarded-For)
     forwardedHeaders:
       trustedIPs:
+          - "127.0.0.1/32"
+          - "10.0.0.0/8"
+          - "::1/128"
+          - "3d06:bad:b01:0::/56"
 {% for cidr in cloudflare_ipv6_ranges %}
           - "{{ cidr }}"
 {% endfor %}
