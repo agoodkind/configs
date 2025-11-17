@@ -6,7 +6,7 @@
     target_node: vault
     vmid: ""
     template_storage: "storage"
-    template_name: "debian-13-standard_13.1-2_amd64.tar.zst"
+    template_name: "ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
     disk_size: "8"
     memory: "512"
     cores: "1"
