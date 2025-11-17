@@ -9,7 +9,7 @@
     traefik_group: traefik
     traefik_config_dir: /etc/traefik
     traefik_log_dir: /var/log/traefik
-    repo_root: /usr/share/configs
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
     - name: Fetch Cloudflare IPv4 ranges
