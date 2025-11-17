@@ -3,7 +3,7 @@ Description=Traefik
 Documentation=https://doc.traefik.io/traefik/
 After=network-online.target
 Wants=network-online.target
-AssertFileIsExecutable={{ traefik_config_dir }}/../../usr/local/bin/traefik
+AssertFileIsExecutable=/usr/local/bin/traefik
 AssertPathExists={{ traefik_config_dir }}/traefik.yml
 
 [Service]
