@@ -86,9 +86,8 @@
       ansible.builtin.meta: flush_handlers
 
     - name: Wait for Traefik to start
-      ansible.builtin.wait_for:
-        timeout: 5
-      delegate_to: localhost
+      ansible.builtin.pause:
+        seconds: 5
 
     - name: Verify Traefik service status
       ansible.builtin.systemd:
