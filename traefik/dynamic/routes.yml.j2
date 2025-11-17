@@ -6,7 +6,7 @@ http:
   routers:
     # Traefik Dashboard
     traefik-dashboard:
-      rule: "Host(`traefik.{{ traefik_public_domain }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      rule: "Host(`traefik.{{ traefik_ingress_domain }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
       service: api@internal
       middlewares:
         - dashboard-auth
@@ -17,9 +17,9 @@ http:
         certResolver: letsencrypt
 
     # Ansible/Semaphore - Public service via Cloudflare
-    ansible-public:
-      rule: "Host(`ansible.{{ traefik_public_domain }}`)"
-      service: ansible
+    ansible-ingress:
+      rule: "Host(`ansible.{{ traefik_ingress_domain }}`)"
+      service: ansible-service
       middlewares:
         {# - cloudflare-only  # Only accept Cloudflare IPs #}
         - secure-headers
@@ -28,9 +28,9 @@ http:
       tls:
         certResolver: letsencrypt
 
-    vault-public:
-      rule: "Host(`vault.{{ traefik_public_domain }}`)"
-      service: vault
+    vault-ingress:
+      rule: "Host(`vault.{{ traefik_ingress_domain }}`)"
+      service: vault-service
       middlewares:
         {# - cloudflare-only  # Only accept Cloudflare IPs #}
         - secure-headers
@@ -40,19 +40,19 @@ http:
         certResolver: letsencrypt
 
   services:
-    ansible:
+    ansible-service:
       loadBalancer:
         servers:
-          - url: "http://ansible.{{ traefik_internal_domain }}:3000"
+          - url: "http://ansible.{{ traefik_upstream_domain }}:3000"
         healthCheck:
           path: /api/ping
           interval: 30s
           timeout: 5s
 
-    vault:
+    vault-service:
       loadBalancer:
         servers:
-          - url: "https://vault.{{ traefik_internal_domain }}:8006"
+          - url: "https://vault.{{ traefik_upstream_domain }}:8006"
 
   serversTransports:
     insecure-transport:
