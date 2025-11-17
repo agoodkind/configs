@@ -52,7 +52,6 @@
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
         mode: '0644'
-        validate: '/usr/local/bin/traefik version || true'
       notify: Restart traefik
 
     - name: Template Traefik dynamic routes
@@ -70,10 +69,6 @@
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
         mode: '0644'
-
-    - name: Validate Traefik configuration
-      ansible.builtin.command: /usr/local/bin/traefik version
-      changed_when: false
 
   handlers:
     - name: Restart traefik
