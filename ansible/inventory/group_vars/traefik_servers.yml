@@ -14,6 +14,11 @@ traefik_acme_email: "alex@goodkind.io"
 # Or set CLOUDFLARE_API_KEY environment variable
 cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
 
+# Traefik Dashboard Authentication
+# Set TRAEFIK_DASHBOARD_USER and TRAEFIK_DASHBOARD_PASS environment variables
+traefik_dashboard_user: "{{ lookup('env', 'TRAEFIK_DASHBOARD_USER', default='') }}"
+traefik_dashboard_pass: "{{ lookup('env', 'TRAEFIK_DASHBOARD_PASS', default='') }}"
+
 # Cloudflare IP ranges for trusted proxies (X-Forwarded-For)
 # Fetched dynamically in the playbook from Cloudflare's official IP list
 # https://www.cloudflare.com/ips/

@@ -190,6 +190,30 @@
       when: cloudflare_api_token is defined
       no_log: true
 
+    - name: Install apache2-utils for htpasswd
+      ansible.builtin.apt:
+        name: apache2-utils
+        state: present
+
+    - name: Create Traefik auth directory
+      ansible.builtin.file:
+        path: "{{ traefik_config_dir }}/auth"
+        state: directory
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0750'
+
+    - name: Generate dashboard authentication file
+      ansible.builtin.shell: |
+        htpasswd -nb "{{ traefik_dashboard_user }}" "{{ traefik_dashboard_pass }}" > {{ traefik_config_dir }}/auth/dashboard-users
+        chown {{ traefik_user }}:{{ traefik_group }} {{ traefik_config_dir }}/auth/dashboard-users
+        chmod 600 {{ traefik_config_dir }}/auth/dashboard-users
+      when:
+        - traefik_dashboard_user is defined
+        - traefik_dashboard_pass is defined
+      no_log: true
+      changed_when: true
+
     - name: Enable and start Traefik service
       ansible.builtin.systemd:
         name: traefik
