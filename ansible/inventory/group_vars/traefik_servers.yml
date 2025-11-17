@@ -10,8 +10,9 @@ traefik_internal_domain: "home.goodkind.io"
 traefik_acme_email: "alex@goodkind.io"
 
 # Cloudflare API token for DNS-01 challenge
-# REQUIRED: Set CLOUDFLARE_API_TOKEN environment variable
-cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') }}"
+# REQUIRED: Pass as extra variable 'cloudflare_api_token' in Semaphore
+# Or set CLOUDFLARE_API_TOKEN environment variable
+cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN', default='') }}"
 
 # Traefik version
 traefik_version: "3.0.0"
