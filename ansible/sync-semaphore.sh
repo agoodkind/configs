@@ -57,7 +57,6 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
 
   name="$(basename "${f%.yml}")"           # e.g. site
 
-
   rel="${f#"$REPO_ROOT"/}"                    # e.g. ansible/playbooks/site.yml
 
   echo "Checking if template '$name' exists..."
@@ -72,28 +71,26 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
   if [ -n "$existing" ]; then
     echo "  Template '$name' already exists (ID: $existing), updating..."
     
-    # Preserve existing environment_id, or use default if empty/null
-    existing_env_id=$(echo "$existing_template" | jq -r '.environment_id // empty')
-    if [ -z "$existing_env_id" ] || [ "$existing_env_id" == "null" ]; then
-      existing_env_id=$DEFAULT_ENVIRONMENT_ID
-    fi
+    # Preserve ALL existing fields and only update specific ones
+    echo "  Preserving all existing settings (surveys, CLI args, etc.)"
+    
+    # Build update payload by merging existing template with our updates
+    update_payload=$(echo "$existing_template" | jq -c \
+      --arg name "$name" \
+      --arg playbook "$rel" \
+      --argjson inventory_id "$INVENTORY_ID" \
+      --argjson repository_id "$REPOSITORY_ID" \
+      '. + {
+        "name": $name,
+        "playbook": $playbook,
+        "inventory_id": $inventory_id,
+        "repository_id": $repository_id
+      }')
 
     update_response=$(curl -s -w "\n%{http_code}" -X PUT "$SEMHOST/api/project/$PROJECT_ID/templates/$existing" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
-      -d @- <<EOF
-{
-  "id": $existing,
-  "project_id": $PROJECT_ID,
-  "name": "$name",
-  "playbook": "$rel",
-  "inventory_id": $INVENTORY_ID,
-  "repository_id": $REPOSITORY_ID,
-  "environment_id": $existing_env_id,
-  "app": "ansible"
-}
-EOF
-)
+      -d "$update_payload")
     update_http_code=$(echo "$update_response" | tail -n1)
     update_body=$(echo "$update_response" | sed '$d')
 
