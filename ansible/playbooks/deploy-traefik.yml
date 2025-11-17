@@ -152,16 +152,10 @@
       no_log: true
       changed_when: true
 
-    # Deploy Traefik configuration files
-    # Note: For updates only (without reinstall), use update-traefik-config.yml
-    - name: Include Traefik configuration deployment tasks
-      ansible.builtin.include_tasks: tasks/deploy-traefik-config.yml
-
-    - name: Enable and start Traefik service
+    - name: Enable Traefik service
       ansible.builtin.systemd:
         name: traefik
         enabled: true
-        state: started
         daemon_reload: true
 
   handlers:
@@ -169,13 +163,6 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: Reload traefik
-      ansible.builtin.systemd:
-        name: traefik
-        state: reloaded
-      failed_when: false
-
-    - name: Restart traefik
-      ansible.builtin.systemd:
-        name: traefik
-        state: restarted
+# Deploy Traefik configuration by calling update playbook
+- name: Deploy Traefik Configuration
+  ansible.builtin.import_playbook: update-traefik-config.yml
