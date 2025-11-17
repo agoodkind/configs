@@ -1,5 +1,5 @@
 - name: Prepare CT Container(s)
-  hosts: "{{ target_hosts | default(('ct_' + container_id) if (container_id | default('') | length > 0) else 'proxmox_all_lxc') }}"
+  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
   gather_facts: false
   vars_prompt:
     - name: container_id
@@ -8,6 +8,11 @@
       default: ""
 
   tasks:
+    - name: Filter by container ID if specified
+      meta: end_host
+      when:
+        - container_id | default('') | length > 0
+        - ansible_proxmox_vmid | default('') | string != container_id | string
     - name: Update package lists
       apt:
         update_cache: true
