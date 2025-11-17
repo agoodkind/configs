@@ -36,19 +36,6 @@ http:
           - "::1/128"                    # IPv6 localhost
           - "3d06:bad:b01::/56"          # IPv6 private network
 
-    # Cloudflare IP Whitelist - Only allow Cloudflare proxied traffic
-    # This ensures all public traffic comes through Cloudflare
-    # Updated automatically from: https://www.cloudflare.com/ips/
-    cloudflare-only:
-      ipWhiteList:
-        sourceRange:
-{% for cidr in cloudflare_ipv4_ranges %}
-          - "{{ cidr }}"
-{% endfor %}
-{% for cidr in cloudflare_ipv6_ranges %}
-          - "{{ cidr }}"
-{% endfor %}
-
     # Rate Limiting
     rate-limit:
       rateLimit:
