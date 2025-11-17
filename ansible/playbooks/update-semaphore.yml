@@ -43,14 +43,22 @@
             state: stopped
           when: semaphore_binary.stat.exists
 
+        - name: Get latest release version from GitHub API
+          ansible.builtin.uri:
+            url: https://api.github.com/repos/semaphoreui/semaphore/releases/latest
+            return_content: true
+          register: github_release
+          when: semaphore_version == 'latest'
+
+        - name: Set version fact
+          ansible.builtin.set_fact:
+            semaphore_target_version: "{{ github_release.json.tag_name | regex_replace('^v', '') if semaphore_version == 'latest' else semaphore_version }}"
+
         - name: Set download URL
           ansible.builtin.set_fact:
             semaphore_download_url: >-
-              {% if semaphore_version == 'latest' %}
-              https://github.com/semaphoreui/semaphore/releases/latest/download/semaphore_linux_amd64.tar.gz
-              {% else %}
-              https://github.com/semaphoreui/semaphore/releases/download/v{{ semaphore_version }}/semaphore_{{ semaphore_version }}_linux_amd64.tar.gz
-              {% endif %}
+              https://github.com/semaphoreui/semaphore/releases/download/v{{ semaphore_target_version }}/
+              semaphore_{{ semaphore_target_version }}_linux_amd64.tar.gz
 
         - name: Download Semaphore binary
           ansible.builtin.get_url:
