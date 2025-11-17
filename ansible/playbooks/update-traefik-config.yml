@@ -26,6 +26,14 @@
              | reject('equalto', '')
              | list }}
 
+    - name: Debug Cloudflare IP ranges type
+      ansible.builtin.debug:
+        msg:
+          - "IPv4 type: {{ cloudflare_ipv4_ranges | type_debug }}"
+          - "IPv4 first item: {{ cloudflare_ipv4_ranges[0] if cloudflare_ipv4_ranges is iterable and cloudflare_ipv4_ranges is not string else 'NOT A LIST' }}"
+          - "IPv4 length: {{ cloudflare_ipv4_ranges | length }}"
+          - "IPv6 type: {{ cloudflare_ipv6_ranges | type_debug }}"
+
     - name: Validate required variables
       ansible.builtin.assert:
         that:
