@@ -24,16 +24,16 @@
 
   tasks:
     - name: Generate random password
-      set_fact:
+      ansible.builtin.set_fact:
         actual_password: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
 
     - name: Set VMID if not provided
-      set_fact:
+      ansible.builtin.set_fact:
         actual_vmid: "{{ vmid }}"
       when: vmid != ""
 
     - name: Build network interface configuration
-      set_fact:
+      ansible.builtin.set_fact:
         net0_config: >-
           name=eth0,bridge={{ network_bridge }},ip={{ ip_address
           }}{{ ',gw=' + gateway if gateway and ip_address != 'dhcp' else ''
@@ -41,28 +41,28 @@
           }}{{ ',gw6=' + ipv6_gateway if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
 
     - name: Get SSH public keys from GitHub
-      uri:
+      ansible.builtin.uri:
         url: https://github.com/agoodkind.keys
-        return_content: yes
+        return_content: true
       register: github_keys
       delegate_to: localhost
 
     - name: Find ansible server's SSH public key
-      find:
+      ansible.builtin.find:
         paths: ~/.ssh
         patterns: "id_*.pub"
       register: ssh_key_files
       delegate_to: ansible.home.goodkind.io
 
     - name: Get ansible server's SSH public key
-      slurp:
+      ansible.builtin.slurp:
         src: "{{ ssh_key_files.files[0].path }}"
       register: ansible_key
       delegate_to: ansible.home.goodkind.io
       when: ssh_key_files.files | length > 0
 
     - name: Combine all SSH keys
-      set_fact:
+      ansible.builtin.set_fact:
         all_ssh_keys: "{{ github_keys.content }}{{ (ansible_key.content | b64decode) if (ssh_key_files.files | length > 0) else '' }}"
 
     - name: Create LXC container
@@ -105,32 +105,33 @@
       delegate_to: ansible.home.goodkind.io
 
     - name: Wait for container to start and get IP from DHCP
-      pause:
+      ansible.builtin.pause:
         seconds: 15
 
     - name: Get container IP address
-      shell: "pct exec {{ container_result.vmid }} -- hostname -I"
+      ansible.builtin.command: pct exec {{ container_result.vmid }} -- hostname -I
       register: container_ip
       delegate_to: "{{ target_node }}"
       retries: 6
       delay: 5
       until: container_ip.stdout != ""
+      changed_when: false
 
     - name: Parse IP addresses
-      set_fact:
+      ansible.builtin.set_fact:
         all_ips: "{{ container_ip.stdout.split() }}"
         ipv4_address: "{{ container_ip.stdout.split() | select('match', '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$') | first | default('N/A') }}"
         ipv6_address: "{{ container_ip.stdout.split() | select('search', ':') | first | default('N/A') }}"
 
     - name: Display container info
-      debug:
-        msg: 
+      ansible.builtin.debug:
+        msg:
           - "Container {{ container_hostname }} created with VMID: {{ container_result.vmid }}"
           - "IPv4: {{ ipv4_address }}"
           - "IPv6: {{ ipv6_address }}"
 
     - name: Add container to in-memory inventory
-      add_host:
+      ansible.builtin.add_host:
         name: "{{ container_hostname }}"
         groups: new_containers
         ansible_host: "{{ ipv4_address if ip_address == 'dhcp' else ip_address.split('/')[0] }}"
@@ -144,13 +145,13 @@
   gather_facts: false
   tasks:
     - name: Wait for SSH to be ready
-      wait_for_connection:
+      ansible.builtin.wait_for_connection:
         timeout: 45
         delay: 3
         sleep: 2
 
     - name: SSH connection established
-      debug:
+      ansible.builtin.debug:
         msg: "✓ SSH connection to {{ inventory_hostname }} is ready"
 
 - name: Pre-flight check before prep-cts
@@ -158,7 +159,7 @@
   gather_facts: false
   tasks:
     - name: Announce prep-cts start
-      debug:
+      ansible.builtin.debug:
         msg: "Starting container preparation (prep-cts) on new container(s)..."
 
 - name: Run prep-cts on new container
@@ -171,6 +172,5 @@
   gather_facts: false
   tasks:
     - name: Display completion message
-      debug:
+      ansible.builtin.debug:
         msg: "✅ Container {{ hostvars[groups['new_containers'][0]].inventory_hostname }} created and prepped successfully!"
-

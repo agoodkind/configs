@@ -15,7 +15,7 @@
 
   tasks:
     - name: Validate required variables
-      assert:
+      ansible.builtin.assert:
         that:
           - cloudflare_api_token is defined
           - cloudflare_api_token | length > 0
@@ -31,7 +31,7 @@
         success_msg: "✓ Cloudflare API token is configured"
 
     - name: Ensure Cloudflare IP ranges were retrieved
-      assert:
+      ansible.builtin.assert:
         that:
           - cloudflare_ipv4_ranges is defined
           - cloudflare_ipv4_ranges | length > 0
@@ -46,27 +46,27 @@
         success_msg: "✓ Cloudflare IPv4/IPv6 ranges downloaded"
 
     - name: Pull latest configs from git
-      git:
+      ansible.builtin.git:
         repo: https://github.com/agoodkind/configs.git
         dest: "{{ repo_root }}"
         version: main
-        force: yes
-      become: no
+        force: true
+      become: false
       delegate_to: localhost
-      run_once: true
+      run_once: true  # noqa: run-once[task]
 
     - name: Template Traefik static configuration
-      template:
+      ansible.builtin.template:
         src: "{{ repo_root }}/traefik/traefik.yml.j2"
         dest: "{{ traefik_config_dir }}/traefik.yml"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
         mode: '0644'
         validate: '/usr/local/bin/traefik version || true'
-      notify: restart traefik
+      notify: Restart traefik
 
     - name: Template Traefik dynamic routes
-      template:
+      ansible.builtin.template:
         src: "{{ repo_root }}/traefik/dynamic/routes.yml.j2"
         dest: "{{ traefik_config_dir }}/dynamic/routes.yml"
         owner: "{{ traefik_user }}"
@@ -74,7 +74,7 @@
         mode: '0644'
 
     - name: Template Traefik dynamic middlewares
-      template:
+      ansible.builtin.template:
         src: "{{ repo_root }}/traefik/dynamic/middlewares.yml.j2"
         dest: "{{ traefik_config_dir }}/dynamic/middlewares.yml"
         owner: "{{ traefik_user }}"
@@ -82,11 +82,11 @@
         mode: '0644'
 
     - name: Validate Traefik configuration
-      command: /usr/local/bin/traefik version
+      ansible.builtin.command: /usr/local/bin/traefik version
       changed_when: false
 
   handlers:
-    - name: restart traefik
-      systemd:
+    - name: Restart traefik
+      ansible.builtin.systemd:
         name: traefik
         state: restarted
