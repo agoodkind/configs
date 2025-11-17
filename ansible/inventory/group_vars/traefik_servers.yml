@@ -15,10 +15,8 @@ traefik_acme_email: "alex@goodkind.io"
 cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
 
 # Cloudflare IP ranges for trusted proxies (X-Forwarded-For)
-# Fetched dynamically from Cloudflare's official IP list
+# Fetched dynamically in the playbook from Cloudflare's official IP list
 # https://www.cloudflare.com/ips/
-cloudflare_ipv4_ranges: "{{ lookup('url', 'https://www.cloudflare.com/ips-v4').splitlines() }}"
-cloudflare_ipv6_ranges: "{{ lookup('url', 'https://www.cloudflare.com/ips-v6').splitlines() }}"
 
 # Traefik version
 traefik_version: "3.0.0"
