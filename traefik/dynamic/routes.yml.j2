@@ -6,7 +6,7 @@ http:
   routers:
     # Traefik Dashboard
     traefik-dashboard:
-      rule: "Host(`traefik.{{ traefik_ingress_domain }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      rule: "Host(`proxy.{{ traefik_ingress_domain }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
       service: api@internal
       middlewares:
         - dashboard-auth
