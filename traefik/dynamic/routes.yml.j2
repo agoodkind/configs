@@ -83,6 +83,7 @@ http:
       loadBalancer:
         servers:
           - url: "https://unifi.{{ traefik_upstream_domain }}:8443"
+      serversTransport: insecure-transport
 
   serversTransports:
     insecure-transport:
