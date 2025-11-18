@@ -26,6 +26,16 @@ http:
       tls:
         certResolver: letsencrypt
 
+    unifi-ingress:
+      rule: "Host(`unifi.{{ traefik_ingress_domain }}`)"
+      service: unifi-service
+      middlewares:
+        - secure-headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
     # Ansible/Semaphore - Public service via Cloudflare
     ansible-ingress:
       rule: "Host(`ansible.{{ traefik_ingress_domain }}`)"
@@ -68,6 +78,11 @@ http:
       loadBalancer:
         servers:
           - url: "https://router.{{ traefik_upstream_domain }}"
+
+    unifi-service:
+      loadBalancer:
+        servers:
+          - url: "https://unifi.{{ traefik_upstream_domain }}:8443"
 
   serversTransports:
     insecure-transport:
