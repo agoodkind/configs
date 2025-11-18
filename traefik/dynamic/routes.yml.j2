@@ -73,13 +73,11 @@ http:
       loadBalancer:
         servers:
           - url: "https://vault.{{ traefik_upstream_domain }}:8006"
-      serversTransport: insecure-transport
 
     router-service:
       loadBalancer:
         servers:
           - url: "https://router.{{ traefik_upstream_domain }}"
-      serversTransport: insecure-transport
 
     unifi-service:
       loadBalancer:
