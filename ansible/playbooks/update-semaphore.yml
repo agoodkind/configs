@@ -75,9 +75,9 @@
             mode: '0644'
 
         - name: Cleanup any existing extracted binary
-          ansible.builtin.file:
-            path: /tmp/semaphore
-            state: absent
+          ansible.builtin.shell: rm -f /tmp/semaphore
+          changed_when: false
+          failed_when: false
 
         - name: Extract Semaphore binary
           ansible.builtin.unarchive:
