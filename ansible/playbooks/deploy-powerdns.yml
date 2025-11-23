@@ -5,13 +5,14 @@
   vars:
     postgres_db: powerdns
     postgres_user: pdns
-    # Override bind_primary_ip to prefer IPv6 (group_vars already defines both bind_primary_ip (IPv4) and bind_primary_ipv6)
-    bind_primary_ip: "{{ bind_primary_ipv6 | default(bind_primary_ip | default('10.250.0.6')) }}"
     tsig_key_name: powerdns-xfr
     tsig_algorithm: hmac-sha256
     zone_name: home.goodkind.io
 
   tasks:
+    - name: Set bind_primary_ip to prefer IPv6
+      set_fact:
+        bind_primary_ip: "{{ bind_primary_ipv6 | default(bind_primary_ip | default('10.250.0.6')) }}"
     - name: Manage secrets - check env vars, generate if needed, write to file
       block:
         - name: Check for environment variables from Semaphore
