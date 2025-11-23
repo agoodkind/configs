@@ -24,5 +24,8 @@
         "foldingRanges": true,
         "formatting": true
     },
-    "ansible.lightspeed.enabled": false
+    "ansible.lightspeed.enabled": false,
+    "ansible.ansible.configFile": "${workspaceFolder}/ansible/ansible.cfg",
+    "ansible.ansible.useFullyQualifiedCollectionNames": true,
+    "ansible.ansible.requirementsFile": "${workspaceFolder}/ansible/playbooks/requirements.yml"
 }

@@ -1,0 +1,7 @@
+---
+# Ansible-lint configuration
+# See https://ansible-lint.readthedocs.io/en/latest/configuring.html
+
+# Line length limit
+line-length: 90
+
