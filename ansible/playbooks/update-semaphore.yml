@@ -74,20 +74,33 @@
             dest: /tmp/semaphore.tar.gz
             mode: '0644'
 
-        - name: Cleanup any existing extracted binary
-          ansible.builtin.shell: rm -f /tmp/semaphore
+        - name: Cleanup any existing extracted files
+          ansible.builtin.shell: rm -rf /tmp/semaphore_extract
           changed_when: false
           failed_when: false
 
         - name: Extract Semaphore binary
           ansible.builtin.unarchive:
             src: /tmp/semaphore.tar.gz
-            dest: /tmp
+            dest: /tmp/semaphore_extract
             remote_src: true
+
+        - name: Find Semaphore binary in extracted files
+          ansible.builtin.find:
+            paths: /tmp/semaphore_extract
+            patterns: semaphore
+            file_type: file
+            recurse: true
+          register: semaphore_binary_file
+
+        - name: Fail if binary not found
+          ansible.builtin.fail:
+            msg: "Semaphore binary not found in extracted archive"
+          when: semaphore_binary_file.files | length == 0
 
         - name: Install Semaphore binary
           ansible.builtin.copy:
-            src: /tmp/semaphore
+            src: "{{ semaphore_binary_file.files[0].path }}"
             dest: "{{ semaphore_install_dir }}/semaphore"
             owner: root
             group: root
@@ -95,12 +108,9 @@
             remote_src: true
 
         - name: Cleanup download files
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /tmp/semaphore.tar.gz
-            - /tmp/semaphore
+          ansible.builtin.shell: rm -rf /tmp/semaphore.tar.gz /tmp/semaphore_extract
+          changed_when: false
+          failed_when: false
 
         - name: Start Semaphore service
           ansible.builtin.systemd:
