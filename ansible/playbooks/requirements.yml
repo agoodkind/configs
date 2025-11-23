@@ -2,4 +2,5 @@
 collections:
   - name: community.proxmox
   - name: community.general
+  - name: community.postgresql
   - name: ansible.utils
