@@ -23,5 +23,6 @@
         "documentSymbols": true,
         "foldingRanges": true,
         "formatting": true
-    }
+    },
+    "ansible.lightspeed.enabled": false
 }

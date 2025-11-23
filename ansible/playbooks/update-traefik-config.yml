@@ -23,18 +23,18 @@
     - name: Validate RFC2136 credentials are configured
       ansible.builtin.assert:
         that:
-          - rfc2136_tsig_key is defined
-          - rfc2136_tsig_key | length > 0
-          - rfc2136_tsig_secret is defined
-          - rfc2136_tsig_secret | length > 0
+          - traefik_rfc2136_tsig_key is defined
+          - traefik_rfc2136_tsig_key | length > 0
+          - traefik_rfc2136_tsig_secret is defined
+          - traefik_rfc2136_tsig_secret | length > 0
         fail_msg: |
           ERROR: RFC2136 TSIG credentials are not set!
 
           Set the environment variables in Semaphore:
-            RFC2136_TSIG_KEY: "letsencrypt"
-            RFC2136_TSIG_SECRET: "your-tsig-secret-here"
-            RFC2136_NAMESERVER: "ns1.home.goodkind.io:53" (optional, defaults to this)
-            RFC2136_TSIG_ALGORITHM: "hmac-sha256." (optional, defaults to this)
+            TRAEFIK_RFC2136_TSIG_KEY: "letsencrypt"
+            TRAEFIK_RFC2136_TSIG_SECRET: "your-tsig-secret-here"
+            TRAEFIK_RFC2136_NAMESERVER: "ns1.home.goodkind.io:53" (optional, defaults to this)
+            TRAEFIK_RFC2136_TSIG_ALGORITHM: "hmac-sha256." (optional, defaults to this)
         success_msg: "✓ RFC2136 TSIG credentials are configured"
 
     - name: Ensure Cloudflare IP ranges were retrieved

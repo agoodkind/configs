@@ -13,11 +13,11 @@ traefik_acme_email: "alex@goodkind.io"
 
 # DNS Challenge Configuration
 # For RFC2136 (BIND/nsupdate with TSIG):
-# Set RFC2136_* environment variables in Semaphore
-rfc2136_nameserver: "{{ lookup('env', 'RFC2136_NAMESERVER', default='[3d06:bad:b01::6]:53') }}"
-rfc2136_tsig_algorithm: "{{ lookup('env', 'RFC2136_TSIG_ALGORITHM', default='hmac-sha256.') }}"
-rfc2136_tsig_key: "{{ lookup('env', 'RFC2136_TSIG_KEY', default='') }}"
-rfc2136_tsig_secret: "{{ lookup('env', 'RFC2136_TSIG_SECRET', default='') }}"
+# Set TRAEFIK_RFC2136_* environment variables in Semaphore
+traefik_rfc2136_nameserver: "{{ lookup('env', 'TRAEFIK_RFC2136_NAMESERVER', default='[3d06:bad:b01::6]:53') }}"
+traefik_rfc2136_tsig_algorithm: "{{ lookup('env', 'TRAEFIK_RFC2136_TSIG_ALGORITHM', default='hmac-sha256.') }}"
+traefik_rfc2136_tsig_key: "{{ lookup('env', 'TRAEFIK_RFC2136_TSIG_KEY', default='') }}"
+traefik_rfc2136_tsig_secret: "{{ lookup('env', 'TRAEFIK_RFC2136_TSIG_SECRET', default='') }}"
 
 # Cloudflare API token (legacy, not used with RFC2136)
 cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"

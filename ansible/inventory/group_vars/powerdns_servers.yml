@@ -1,0 +1,33 @@
+---
+# PowerDNS Server Configuration Variables
+
+# Server details
+powerdns_servers:
+  - pdns.home.goodkind.io
+
+# Network configuration
+powerdns_ipv4: 10.250.0.11
+powerdns_ipv6: 3d06:bad:b01::b
+
+# BIND9 Primary server
+bind_primary_server: ns.home.goodkind.io
+bind_primary_ip: 10.250.0.6
+bind_primary_ipv6: 3d06:bad:b01::6
+
+# Zone configuration
+managed_zones:
+  - home.goodkind.io
+
+# PostgreSQL configuration
+postgres_db: powerdns
+postgres_user: pdns
+# postgres_password stored in vault
+
+# TSIG configuration
+tsig_key_name: powerdns-xfr
+tsig_algorithm: hmac-sha256
+# tsig_secret stored in vault
+
+# API configuration
+# pdns_api_key stored in vault
+

@@ -10,5 +10,8 @@ ansible.home.goodkind.io
 [traefik_servers]
 proxy.home.goodkind.io
 
+[powerdns_servers]
+pdns.home.goodkind.io ansible_host=3d06:bad:b01::b
+
 [homelab]
 # Add your homelab hosts here
