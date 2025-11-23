@@ -131,15 +131,15 @@
     - name: Create RFC2136 credentials file
       ansible.builtin.copy:
         content: |
-          RFC2136_NAMESERVER={{ rfc2136_nameserver }}
-          RFC2136_TSIG_ALGORITHM={{ rfc2136_tsig_algorithm }}
-          RFC2136_TSIG_KEY={{ rfc2136_tsig_key }}
-          RFC2136_TSIG_SECRET={{ rfc2136_tsig_secret }}
+          RFC2136_NAMESERVER={{ traefik_rfc2136_nameserver }}
+          RFC2136_TSIG_ALGORITHM={{ traefik_rfc2136_tsig_algorithm }}
+          RFC2136_TSIG_KEY={{ traefik_rfc2136_tsig_key }}
+          RFC2136_TSIG_SECRET={{ traefik_rfc2136_tsig_secret }}
         dest: "{{ traefik_config_dir }}/.rfc2136.env"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
         mode: '0600'
-      when: rfc2136_tsig_key is defined and rfc2136_tsig_key | length > 0
+      when: traefik_rfc2136_tsig_key is defined and traefik_rfc2136_tsig_key | length > 0
       no_log: true
 
     - name: Install apache2-utils for htpasswd
