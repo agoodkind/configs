@@ -74,6 +74,15 @@
             dest: /tmp/semaphore.tar.gz
             mode: '0644'
 
+        - name: Cleanup any existing extracted files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/semaphore.tar.gz
+            - /tmp/semaphore
+          ignore_errors: true
+
         - name: Extract Semaphore binary
           ansible.builtin.unarchive:
             src: /tmp/semaphore.tar.gz
