@@ -314,8 +314,8 @@
     - name: Get PowerDNS-Admin secrets from environment
       set_fact:
         env_pdns_admin_db_password: "{{ lookup('env', 'PDNS_ADMIN_DB_PASSWORD', default='') }}"
-        env_pdns_admin_secret_key: "{{ lookup('env', 'PDNS_ADMIN_SECRET_KEY', default('')) }}"
-        no_log: true
+        env_pdns_admin_secret_key: "{{ lookup('env', 'PDNS_ADMIN_SECRET_KEY', default='') }}"
+      no_log: true
 
     - name: Generate PowerDNS-Admin secrets if not provided
       set_fact:
