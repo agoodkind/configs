@@ -384,6 +384,8 @@
           - libpq-dev
           - git
           - build-essential
+          - pkg-config
+          - default-libmysqlclient-dev
         state: present
 
     - name: Create PowerDNS-Admin group
