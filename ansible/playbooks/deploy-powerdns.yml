@@ -446,7 +446,6 @@
         repo: "{{ powerdns_admin_repo }}"
         version: "{{ powerdns_admin_version }}"
         dest: "{{ powerdns_admin_home }}"
-      become_user: "{{ powerdns_admin_user }}"
 
     - name: Ensure PowerDNS-Admin home directory has correct ownership
       file:
