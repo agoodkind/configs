@@ -174,7 +174,7 @@
         owner: root
         group: pdns
         mode: '0640'
-        notify: restart pdns
+      notify: restart pdns
 
     - name: Create PowerDNS TSIG key directory
       file:
@@ -464,8 +464,8 @@
         owner: "{{ powerdns_admin_user }}"
         group: "{{ powerdns_admin_group }}"
         mode: '0640'
-        no_log: true
-        notify: restart powerdns-admin
+      no_log: true
+      notify: restart powerdns-admin
 
     - name: Check if PowerDNS-Admin database is initialized
       become_user: postgres
@@ -494,7 +494,7 @@
         owner: root
         group: root
         mode: '0644'
-        notify: restart powerdns-admin
+      notify: restart powerdns-admin
 
     - name: Enable and start PowerDNS-Admin service
       systemd:
