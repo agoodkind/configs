@@ -97,7 +97,7 @@
           when: not (secrets_were_generated | default(false))
     - name: Update apt cache
       apt:
-        update_cache: yes
+        update_cache: true
         cache_valid_time: 3600
 
     - name: Install PostgreSQL
@@ -112,7 +112,7 @@
       systemd:
         name: postgresql
         state: started
-        enabled: yes
+        enabled: true
 
     - name: Create PowerDNS database
       become_user: postgres
@@ -252,7 +252,7 @@
         path: /etc/systemd/resolved.conf
         regexp: '^DNS='
         state: absent
-        backup: yes
+        backup: true
 
     - name: Restart systemd-resolved to apply changes
       systemd:
@@ -264,7 +264,7 @@
       systemd:
         name: pdns
         state: started
-        enabled: yes
+        enabled: true
 
     - name: Wait for PowerDNS to be ready
       wait_for:
@@ -428,6 +428,11 @@
         path: "{{ powerdns_admin_home }}/app"
       register: pdns_admin_installed
 
+    - name: Check if PowerDNS-Admin directory exists
+      stat:
+        path: "{{ powerdns_admin_home }}"
+      register: pdns_admin_dir_exists
+
     - name: Check if PowerDNS-Admin directory is a git repository
       stat:
         path: "{{ powerdns_admin_home }}/.git"
@@ -438,8 +443,8 @@
         path: "{{ powerdns_admin_home }}"
         state: absent
       when: >
-        pdns_admin_installed.stat.exists == false and
-        pdns_admin_git_repo.stat.exists == false
+        pdns_admin_dir_exists.stat.exists and
+        not pdns_admin_git_repo.stat.exists
 
     - name: Ensure PowerDNS-Admin home directory exists with correct ownership
       file:
@@ -448,7 +453,7 @@
         owner: "{{ powerdns_admin_user }}"
         group: "{{ powerdns_admin_group }}"
         mode: '0755'
-      when: not pdns_admin_installed.stat.exists
+      when: not pdns_admin_dir_exists.stat.exists or (pdns_admin_dir_exists.stat.exists and not pdns_admin_git_repo.stat.exists)
 
     - name: Clone PowerDNS-Admin repository
       git:
@@ -458,7 +463,6 @@
         update: true
         force: true
       become_user: "{{ powerdns_admin_user }}"
-      when: not pdns_admin_installed.stat.exists
 
     - name: Create Python virtual environment
       command: python3 -m venv venv
@@ -529,9 +533,9 @@
     - name: Enable and start PowerDNS-Admin service
       systemd:
         name: powerdns-admin
-        enabled: yes
+        enabled: true
         state: started
-        daemon_reload: yes
+        daemon_reload: true
 
     - name: Wait for PowerDNS-Admin to be ready
       wait_for:
@@ -608,7 +612,7 @@
       copy:
         src: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
         dest: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed.backup-{{ ansible_date_time.epoch }}
-        remote_src: yes
+        remote_src: true
 
     - name: Remove existing allow-transfer directives (will be re-added by managed block)
       delegate_to: "{{ bind_server }}"
