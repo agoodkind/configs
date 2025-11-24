@@ -4,3 +4,7 @@ collections:
   - name: community.general
   - name: community.postgresql
   - name: ansible.utils
+
+roles:
+  - name: PowerDNS.pdns
+    src: https://github.com/PowerDNS/pdns-ansible

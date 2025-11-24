@@ -44,16 +44,3 @@ tsig_algorithm: hmac-sha256
 
 # API configuration
 # pdns_api_key stored in vault
-
-# PowerDNS-Admin Web UI configuration
-powerdns_admin_enabled: true
-powerdns_admin_user: pdnsadmin
-powerdns_admin_group: pdnsadmin
-powerdns_admin_home: /opt/powerdns-admin
-powerdns_admin_port: 9191
-powerdns_admin_db: powerdnsadmin
-powerdns_admin_db_user: pdnsadmin
-# powerdns_admin_db_password stored in vault or env var PDNS_ADMIN_DB_PASSWORD
-# powerdns_admin_secret_key stored in vault or env var PDNS_ADMIN_SECRET_KEY
-powerdns_admin_domain: "pdns-admin.{{ managed_zones[0] }}"
-
