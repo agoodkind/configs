@@ -473,6 +473,16 @@
       become_user: "{{ powerdns_admin_user }}"
       when: not pdns_admin_installed.stat.exists
 
+    - name: Upgrade pip and install setuptools in venv
+      pip:
+        name:
+          - pip
+          - setuptools
+        state: latest
+        virtualenv: "{{ powerdns_admin_home }}/venv"
+        virtualenv_python: python3
+      become_user: "{{ powerdns_admin_user }}"
+
     - name: Install PowerDNS-Admin Python dependencies
       pip:
         requirements: "{{ powerdns_admin_home }}/requirements.txt"
