@@ -349,10 +349,10 @@
         dest: "/tmp/pdns-admin-secrets.txt"
         owner: "{{ ansible_ssh_user | default('root') }}"
         mode: '0600'
-        no_log: true
-        when: secrets_were_generated | default(false)
-        delegate_to: localhost
-        run_once: true
+      no_log: true
+      when: secrets_were_generated | default(false)
+      delegate_to: localhost
+      run_once: true
 
     - name: Notify about generated PowerDNS-Admin secrets file location
       debug:
@@ -364,14 +364,14 @@
           - "To view secrets: cat /tmp/pdns-admin-secrets.txt"
           - ""
           - "After adding secrets to Semaphore, delete the file for security."
-        when: secrets_were_generated | default(false)
+      when: secrets_were_generated | default(false)
 
     - name: Confirm using existing PowerDNS-Admin environment variables
       debug:
         msg:
           - "✓ Using PowerDNS-Admin secrets from Semaphore environment variables"
           - "All required environment variables are set: PDNS_ADMIN_DB_PASSWORD, PDNS_ADMIN_SECRET_KEY"
-        when: not (secrets_were_generated | default(false))
+      when: not (secrets_were_generated | default(false))
 
     - name: Install Python dependencies for PowerDNS-Admin
       apt:
@@ -427,8 +427,8 @@
         version: "{{ powerdns_admin_version }}"
         dest: "{{ powerdns_admin_home }}"
         update: yes
-        become_user: "{{ powerdns_admin_user }}"
-        when: not pdns_admin_installed.stat.exists
+      become_user: "{{ powerdns_admin_user }}"
+      when: not pdns_admin_installed.stat.exists
 
     - name: Create Python virtual environment
       command: python3 -m venv venv
@@ -442,7 +442,7 @@
         requirements: "{{ powerdns_admin_home }}/requirements.txt"
         virtualenv: "{{ powerdns_admin_home }}/venv"
         virtualenv_python: python3
-        become_user: "{{ powerdns_admin_user }}"
+      become_user: "{{ powerdns_admin_user }}"
 
     - name: Check if PowerDNS-Admin config exists
       stat:
