@@ -1,0 +1,43 @@
+# PowerDNS-Admin Configuration
+# Managed by Ansible - Do not edit manually
+
+import os
+
+# Flask settings
+SECRET_KEY = '{{ pdns_admin_secret_key }}'
+BIND_ADDRESS = '127.0.0.1'
+PORT = {{ powerdns_admin_port }}
+
+# Database
+SQLALCHEMY_DATABASE_URI = 'postgresql://{{ powerdns_admin_db_user }}:{{ pdns_admin_db_password }}@localhost/{{ powerdns_admin_db }}'
+SQLALCHEMY_TRACK_MODIFICATIONS = True
+SQLALCHEMY_ECHO = False
+
+# PowerDNS API
+PDNS_STATS_URL = 'http://127.0.0.1:8081'
+PDNS_API_KEY = '{{ pdns_api_key }}'
+PDNS_VERSION = '4.0.0'
+
+# Session
+SESSION_TYPE = 'filesystem'
+SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+# Logging
+LOG_LEVEL = 'INFO'
+LOG_FILE = '{{ powerdns_admin_home }}/logs/powerdns-admin.log'
+
+# Security
+CSRF_ENABLED = True
+WTF_CSRF_ENABLED = True
+
+# Local authentication
+LOCAL_DB_ENABLED = True
+
+# LDAP (disabled by default)
+LDAP_ENABLED = False
+
+# User settings
+USER_TIMEZONE = 'UTC'
+
