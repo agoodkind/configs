@@ -347,11 +347,10 @@
           PDNS_ADMIN_DB_PASSWORD={{ pdns_admin_db_password }}
           PDNS_ADMIN_SECRET_KEY={{ pdns_admin_secret_key }}
         dest: "/tmp/pdns-admin-secrets.txt"
-        owner: "{{ ansible_ssh_user | default('root') }}"
         mode: '0600'
-      no_log: true
       when: secrets_were_generated | default(false)
       delegate_to: localhost
+      become: false
       run_once: true
 
     - name: Notify about generated PowerDNS-Admin secrets file location
