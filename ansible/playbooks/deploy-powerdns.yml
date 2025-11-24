@@ -27,74 +27,74 @@
   tasks:
     - name: Set bind_primary_ip to prefer IPv6
       set_fact:
-      bind_primary_ip: "{{ bind_primary_ipv6 | default(bind_primary_ip | default('10.250.0.6')) }}"
+        bind_primary_ip: "{{ bind_primary_ipv6 | default(bind_primary_ip | default('10.250.0.6')) }}"
     - name: Manage secrets - check env vars, generate if needed, write to file
       block:
-      - name: Check for environment variables from Semaphore
-        set_fact:
-          env_pdns_postgres_password: "{{ lookup('env', 'PDNS_POSTGRES_PASSWORD', default='') }}"
-          env_pdns_api_key: "{{ lookup('env', 'PDNS_API_KEY', default='') }}"
-          env_pdns_tsig_secret: "{{ lookup('env', 'PDNS_TSIG_SECRET', default='') }}"
+        - name: Check for environment variables from Semaphore
+          set_fact:
+            env_pdns_postgres_password: "{{ lookup('env', 'PDNS_POSTGRES_PASSWORD', default='') }}"
+            env_pdns_api_key: "{{ lookup('env', 'PDNS_API_KEY', default='') }}"
+            env_pdns_tsig_secret: "{{ lookup('env', 'PDNS_TSIG_SECRET', default='') }}"
 
-      - name: Generate secrets if not provided via environment variables
-        set_fact:
-          generated_postgres_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
-          generated_pdns_api_key: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
-          generated_tsig_secret: "{{ lookup('password', '/dev/null length=44 chars=ascii_letters,digits,+,/=') }}"
-        when: >
-          env_pdns_postgres_password == '' or
-          env_pdns_api_key == '' or
-          env_pdns_tsig_secret == ''
-        no_log: true
+        - name: Generate secrets if not provided via environment variables
+          set_fact:
+            generated_postgres_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+            generated_pdns_api_key: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+            generated_tsig_secret: "{{ lookup('password', '/dev/null length=44 chars=ascii_letters,digits,+,/=') }}"
+          when: >
+            env_pdns_postgres_password == '' or
+            env_pdns_api_key == '' or
+            env_pdns_tsig_secret == ''
+          no_log: true
 
-      - name: Set final secret values (use env vars if available, otherwise generated)
-        set_fact:
-          postgres_password: "{{ env_pdns_postgres_password | default(generated_postgres_password | default('changeme')) }}"
-          pdns_api_key: "{{ env_pdns_api_key | default(generated_pdns_api_key | default('')) }}"
-          tsig_secret: "{{ env_pdns_tsig_secret | default(generated_tsig_secret | default('')) }}"
-          secrets_were_generated: "{{ env_pdns_postgres_password == '' or env_pdns_api_key == '' or env_pdns_tsig_secret == '' }}"
-        no_log: true
+        - name: Set final secret values (use env vars if available, otherwise generated)
+          set_fact:
+            postgres_password: "{{ env_pdns_postgres_password | default(generated_postgres_password | default('changeme')) }}"
+            pdns_api_key: "{{ env_pdns_api_key | default(generated_pdns_api_key | default('')) }}"
+            tsig_secret: "{{ env_pdns_tsig_secret | default(generated_tsig_secret | default('')) }}"
+            secrets_were_generated: "{{ env_pdns_postgres_password == '' or env_pdns_api_key == '' or env_pdns_tsig_secret == '' }}"
+          no_log: true
 
-      - name: Write generated secrets to secure file (not logged)
-        copy:
-          content: |
-            # Generated PowerDNS secrets - Add these to Semaphore Environment Variables
-            # Generated at: {{ ansible_date_time.iso8601 | default('unknown') }}
-            # 
-            # IMPORTANT: Add these to Semaphore before the next playbook run:
-            # 1. Go to Environments → Select your environment
-            # 2. Add these as Environment Variables
-            # 3. Save and re-run this playbook
-            #
-            PDNS_POSTGRES_PASSWORD={{ postgres_password }}
-            PDNS_API_KEY={{ pdns_api_key }}
-            PDNS_TSIG_SECRET={{ tsig_secret }}
-          dest: "/tmp/pdns-secrets.txt"
-          owner: "{{ ansible_ssh_user | default('root') }}"
-          mode: '0600'
-        no_log: true
-        when: secrets_were_generated | default(false)
-        delegate_to: localhost
-        run_once: true
+        - name: Write generated secrets to secure file (not logged)
+          copy:
+            content: |
+              # Generated PowerDNS secrets - Add these to Semaphore Environment Variables
+              # Generated at: {{ ansible_date_time.iso8601 | default('unknown') }}
+              # 
+              # IMPORTANT: Add these to Semaphore before the next playbook run:
+              # 1. Go to Environments → Select your environment
+              # 2. Add these as Environment Variables
+              # 3. Save and re-run this playbook
+              #
+              PDNS_POSTGRES_PASSWORD={{ postgres_password }}
+              PDNS_API_KEY={{ pdns_api_key }}
+              PDNS_TSIG_SECRET={{ tsig_secret }}
+            dest: "/tmp/pdns-secrets.txt"
+            owner: "{{ ansible_ssh_user | default('root') }}"
+            mode: '0600'
+          no_log: true
+          when: secrets_were_generated | default(false)
+          delegate_to: localhost
+          run_once: true
 
-      - name: Notify about generated secrets file location
-        debug:
-          msg:
-            - "⚠️  Secrets were generated and written to a secure file"
-            - "File location: /tmp/pdns-secrets.txt (on control machine)"
-            - "Permissions: 0600 (readable only by owner)"
-            - ""
-            - "To view secrets: cat /tmp/pdns-secrets.txt"
-            - ""
-            - "After adding secrets to Semaphore, delete the file for security."
-        when: secrets_were_generated | default(false)
+        - name: Notify about generated secrets file location
+          debug:
+            msg:
+              - "⚠️  Secrets were generated and written to a secure file"
+              - "File location: /tmp/pdns-secrets.txt (on control machine)"
+              - "Permissions: 0600 (readable only by owner)"
+              - ""
+              - "To view secrets: cat /tmp/pdns-secrets.txt"
+              - ""
+              - "After adding secrets to Semaphore, delete the file for security."
+          when: secrets_were_generated | default(false)
 
-      - name: Confirm using existing environment variables
-        debug:
-          msg:
-            - "✓ Using secrets from Semaphore environment variables"
-            - "All required environment variables are set: PDNS_POSTGRES_PASSWORD, PDNS_API_KEY, PDNS_TSIG_SECRET"
-        when: not (secrets_were_generated | default(false))
+        - name: Confirm using existing environment variables
+          debug:
+            msg:
+              - "✓ Using secrets from Semaphore environment variables"
+              - "All required environment variables are set: PDNS_POSTGRES_PASSWORD, PDNS_API_KEY, PDNS_TSIG_SECRET"
+          when: not (secrets_were_generated | default(false))
     - name: Update apt cache
       apt:
         update_cache: yes
@@ -150,17 +150,17 @@
     - name: Check if PowerDNS schema is initialized
       become_user: postgres
       community.postgresql.postgresql_query:
-      db: "{{ postgres_db }}"
-      query: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='domains'"
+        db: "{{ postgres_db }}"
+        query: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='domains'"
       register: schema_check
       ignore_errors: yes
 
     - name: Download PowerDNS PostgreSQL schema
       get_url:
-      url: https://raw.githubusercontent.com/PowerDNS/pdns/master/modules/gpgsqlbackend/schema.pgsql.sql
-      dest: /tmp/pdns-schema.sql
-      mode: '0644'
-      when: schema_check.query_result is not defined or schema_check.query_result[0].count == 0
+        url: https://raw.githubusercontent.com/PowerDNS/pdns/master/modules/gpgsqlbackend/schema.pgsql.sql
+        dest: /tmp/pdns-schema.sql
+        mode: '0644'
+        when: schema_check.query_result is not defined or schema_check.query_result[0].count == 0
 
     - name: Initialize PowerDNS database schema
       become_user: postgres
@@ -169,39 +169,39 @@
 
     - name: Configure PowerDNS
       template:
-      src: ../templates/pdns.conf.j2
-      dest: /etc/powerdns/pdns.conf
-      owner: root
-      group: pdns
-      mode: '0640'
-      notify: restart pdns
+        src: ../templates/pdns.conf.j2
+        dest: /etc/powerdns/pdns.conf
+        owner: root
+        group: pdns
+        mode: '0640'
+        notify: restart pdns
 
     - name: Create PowerDNS TSIG key directory
       file:
-      path: /etc/powerdns/tsig
-      state: directory
-      owner: pdns
-      group: pdns
-      mode: '0750'
+        path: /etc/powerdns/tsig
+        state: directory
+        owner: pdns
+        group: pdns
+        mode: '0750'
 
     - name: Store TSIG key for reference
       copy:
-      content: |
-        # TSIG Key for zone transfers from BIND9
-        # Key name: {{ tsig_key_name }}
-        # Algorithm: {{ tsig_algorithm }}
-        # Secret: {{ tsig_secret }}
-      dest: /etc/powerdns/tsig/{{ tsig_key_name }}.info
-      owner: pdns
-      group: pdns
-      mode: '0640'
-      no_log: true
+        content: |
+          # TSIG Key for zone transfers from BIND9
+          # Key name: {{ tsig_key_name }}
+          # Algorithm: {{ tsig_algorithm }}
+          # Secret: {{ tsig_secret }}
+        dest: /etc/powerdns/tsig/{{ tsig_key_name }}.info
+        owner: pdns
+        group: pdns
+        mode: '0640'
+        no_log: true
 
     - name: Check if zone already exists
       become_user: postgres
       community.postgresql.postgresql_query:
-      db: "{{ postgres_db }}"
-      query: "SELECT COUNT(*) FROM domains WHERE name='{{ zone_name }}'"
+        db: "{{ postgres_db }}"
+        query: "SELECT COUNT(*) FROM domains WHERE name='{{ zone_name }}'"
       register: zone_exists
 
     # TODO: For future migration to PowerDNS primary, change type from 'SLAVE' to 'NATIVE'
@@ -209,50 +209,50 @@
     - name: Add slave zone to PowerDNS
       become_user: postgres
       community.postgresql.postgresql_query:
-      db: "{{ postgres_db }}"
-      query: |
-        INSERT INTO domains (name, master, type, account)
-        VALUES ('{{ zone_name }}', '{{ bind_primary_ip }}', 'SLAVE', 'BIND9 Primary');
+        db: "{{ postgres_db }}"
+        query: |
+          INSERT INTO domains (name, master, type, account)
+          VALUES ('{{ zone_name }}', '{{ bind_primary_ip }}', 'SLAVE', 'BIND9 Primary');
       when: zone_exists.query_result[0].count == 0
 
     - name: Check if TSIG key exists in database
       become_user: postgres
       community.postgresql.postgresql_query:
-      db: "{{ postgres_db }}"
-      query: "SELECT COUNT(*) FROM tsigkeys WHERE name='{{ tsig_key_name }}'"
+        db: "{{ postgres_db }}"
+        query: "SELECT COUNT(*) FROM tsigkeys WHERE name='{{ tsig_key_name }}'"
       register: tsig_exists
 
     - name: Add TSIG key to PowerDNS database
       become_user: postgres
       community.postgresql.postgresql_query:
-      db: "{{ postgres_db }}"
-      query: |
-        INSERT INTO tsigkeys (name, algorithm, secret)
-        VALUES ('{{ tsig_key_name }}', '{{ tsig_algorithm }}', '{{ tsig_secret }}');
+        db: "{{ postgres_db }}"
+        query: |
+          INSERT INTO tsigkeys (name, algorithm, secret)
+          VALUES ('{{ tsig_key_name }}', '{{ tsig_algorithm }}', '{{ tsig_secret }}');
       when: tsig_exists.query_result[0].count == 0
       no_log: true
 
     - name: Link TSIG key to domain
       become_user: postgres
       community.postgresql.postgresql_query:
-      db: "{{ postgres_db }}"
-      query: |
-        UPDATE domains SET master='{{ bind_primary_ip }}' WHERE name='{{ zone_name }}';
+        db: "{{ postgres_db }}"
+        query: |
+          UPDATE domains SET master='{{ bind_primary_ip }}' WHERE name='{{ zone_name }}';
       when: zone_exists.query_result[0].count > 0
 
     - name: Configure systemd-resolved to not bind to port 53
       lineinfile:
-      path: /etc/systemd/resolved.conf
-      regexp: '^#?DNSStubListener='
-      line: 'DNSStubListener=no'
-      backup: yes
+        path: /etc/systemd/resolved.conf
+        regexp: '^#?DNSStubListener='
+        line: 'DNSStubListener=no'
+        backup: yes
 
     - name: Ensure systemd-resolved uses DHCP-provided DNS (remove any static DNS config)
       lineinfile:
-      path: /etc/systemd/resolved.conf
-      regexp: '^DNS='
-      state: absent
-      backup: yes
+        path: /etc/systemd/resolved.conf
+        regexp: '^DNS='
+        state: absent
+        backup: yes
 
     - name: Restart systemd-resolved to apply changes
       systemd:
@@ -268,25 +268,25 @@
 
     - name: Wait for PowerDNS to be ready
       wait_for:
-      port: 53
-      delay: 2
-      timeout: 30
+        port: 53
+        delay: 2
+        timeout: 30
 
     - name: Display PowerDNS configuration summary (no secrets)
       debug:
-      msg:
-        - "================================================================================"
-        - "✅ PowerDNS Secondary Server Configuration Complete"
-        - "================================================================================"
-        - ""
-        - "Zone: {{ zone_name }}"
-        - "BIND9 Primary: {{ bind_primary_ip }}"
-        - ""
-        - "TSIG key configuration (already applied by second playbook):"
-        - "  Key name: {{ tsig_key_name }}"
-        - "  Algorithm: {{ tsig_algorithm }}"
-        - ""
-        - "================================================================================"
+        msg:
+          - "================================================================================"
+          - "✅ PowerDNS Secondary Server Configuration Complete"
+          - "================================================================================"
+          - ""
+          - "Zone: {{ zone_name }}"
+          - "BIND9 Primary: {{ bind_primary_ip }}"
+          - ""
+          - "TSIG key configuration (already applied by second playbook):"
+          - "  Key name: {{ tsig_key_name }}"
+          - "  Algorithm: {{ tsig_algorithm }}"
+          - ""
+          - "================================================================================"
 
   handlers:
     - name: restart pdns
@@ -305,7 +305,7 @@
   tasks:
     - name: Check if PowerDNS-Admin is enabled
       set_fact:
-      pdns_admin_enabled: "{{ powerdns_admin_enabled | default(false) }}"
+        pdns_admin_enabled: "{{ powerdns_admin_enabled | default(false) }}"
 
     - name: Skip PowerDNS-Admin installation if disabled
       meta: end_play
@@ -313,9 +313,9 @@
 
     - name: Get PowerDNS-Admin secrets from environment
       set_fact:
-      env_pdns_admin_db_password: "{{ lookup('env', 'PDNS_ADMIN_DB_PASSWORD', default='') }}"
-      env_pdns_admin_secret_key: "{{ lookup('env', 'PDNS_ADMIN_SECRET_KEY', default('')) }}"
-      no_log: true
+        env_pdns_admin_db_password: "{{ lookup('env', 'PDNS_ADMIN_DB_PASSWORD', default='') }}"
+        env_pdns_admin_secret_key: "{{ lookup('env', 'PDNS_ADMIN_SECRET_KEY', default('')) }}"
+        no_log: true
 
     - name: Generate PowerDNS-Admin secrets if not provided
       set_fact:
@@ -331,7 +331,7 @@
         pdns_admin_db_password: "{{ env_pdns_admin_db_password | default(generated_pdns_admin_db_password | default('changeme')) }}"
         pdns_admin_secret_key: "{{ env_pdns_admin_secret_key | default(generated_pdns_admin_secret_key | default('')) }}"
         secrets_were_generated: "{{ env_pdns_admin_db_password == '' or env_pdns_admin_secret_key == '' }}"
-      no_log: true
+        no_log: true
 
     - name: Write generated PowerDNS-Admin secrets to secure file (not logged)
       copy:
@@ -349,10 +349,10 @@
         dest: "/tmp/pdns-admin-secrets.txt"
         owner: "{{ ansible_ssh_user | default('root') }}"
         mode: '0600'
-      no_log: true
-      when: secrets_were_generated | default(false)
-      delegate_to: localhost
-      run_once: true
+        no_log: true
+        when: secrets_were_generated | default(false)
+        delegate_to: localhost
+        run_once: true
 
     - name: Notify about generated PowerDNS-Admin secrets file location
       debug:
@@ -364,14 +364,14 @@
           - "To view secrets: cat /tmp/pdns-admin-secrets.txt"
           - ""
           - "After adding secrets to Semaphore, delete the file for security."
-      when: secrets_were_generated | default(false)
+        when: secrets_were_generated | default(false)
 
     - name: Confirm using existing PowerDNS-Admin environment variables
       debug:
         msg:
           - "✓ Using PowerDNS-Admin secrets from Semaphore environment variables"
           - "All required environment variables are set: PDNS_ADMIN_DB_PASSWORD, PDNS_ADMIN_SECRET_KEY"
-      when: not (secrets_were_generated | default(false))
+        when: not (secrets_were_generated | default(false))
 
     - name: Install Python dependencies for PowerDNS-Admin
       apt:
@@ -427,8 +427,8 @@
         version: "{{ powerdns_admin_version }}"
         dest: "{{ powerdns_admin_home }}"
         update: yes
-      become_user: "{{ powerdns_admin_user }}"
-      when: not pdns_admin_installed.stat.exists
+        become_user: "{{ powerdns_admin_user }}"
+        when: not pdns_admin_installed.stat.exists
 
     - name: Create Python virtual environment
       command: python3 -m venv venv
@@ -442,7 +442,7 @@
         requirements: "{{ powerdns_admin_home }}/requirements.txt"
         virtualenv: "{{ powerdns_admin_home }}/venv"
         virtualenv_python: python3
-      become_user: "{{ powerdns_admin_user }}"
+        become_user: "{{ powerdns_admin_user }}"
 
     - name: Check if PowerDNS-Admin config exists
       stat:
@@ -464,8 +464,8 @@
         owner: "{{ powerdns_admin_user }}"
         group: "{{ powerdns_admin_group }}"
         mode: '0640'
-      no_log: true
-      notify: restart powerdns-admin
+        no_log: true
+        notify: restart powerdns-admin
 
     - name: Check if PowerDNS-Admin database is initialized
       become_user: postgres
@@ -494,7 +494,7 @@
         owner: root
         group: root
         mode: '0644'
-      notify: restart powerdns-admin
+        notify: restart powerdns-admin
 
     - name: Enable and start PowerDNS-Admin service
       systemd:
@@ -545,72 +545,72 @@
   tasks:
     - name: Set PowerDNS IPs from group_vars (prefer IPv6)
       set_fact:
-      powerdns_ipv6: "{{ powerdns_ipv6 | default('3d06:bad:b01::b') }}"
-      powerdns_ipv4: "{{ powerdns_ipv4 | default('10.250.0.11') }}"
-      powerdns_ip: "{{ powerdns_ipv6 | default(powerdns_ipv4) }}"
+        powerdns_ipv6: "{{ powerdns_ipv6 | default('3d06:bad:b01::b') }}"
+        powerdns_ipv4: "{{ powerdns_ipv4 | default('10.250.0.11') }}"
+        powerdns_ip: "{{ powerdns_ipv6 | default(powerdns_ipv4) }}"
 
     - name: Get TSIG secret from environment or first play facts (not logged)
       set_fact:
-      tsig_secret: "{{ lookup('env', 'PDNS_TSIG_SECRET', default='') | default(hostvars[groups['powerdns_servers'][0]]['tsig_secret'] | default('')) }}"
-      no_log: true
+        tsig_secret: "{{ lookup('env', 'PDNS_TSIG_SECRET', default='') | default(hostvars[groups['powerdns_servers'][0]]['tsig_secret'] | default('')) }}"
+        no_log: true
 
     - name: Validate TSIG secret is available
       fail:
-      msg: "TSIG secret is not set. Ensure PDNS_TSIG_SECRET environment variable is set in Semaphore, or check that the first play completed successfully."
+        msg: "TSIG secret is not set. Ensure PDNS_TSIG_SECRET environment variable is set in Semaphore, or check that the first play completed successfully."
       when: tsig_secret == ''
 
     - name: Create TSIG key file on BIND9 server
       delegate_to: "{{ bind_server }}"
       copy:
-      content: |
-        key "{{ tsig_key_name }}" {
-            algorithm {{ tsig_algorithm }};
-            secret "{{ tsig_secret }}";
-        };
-      dest: /etc/bind/keys/{{ tsig_key_name }}.key
-      owner: root
-      group: bind
-      mode: '0640'
-      no_log: true
+        content: |
+          key "{{ tsig_key_name }}" {
+              algorithm {{ tsig_algorithm }};
+              secret "{{ tsig_secret }}";
+          };
+        dest: /etc/bind/keys/{{ tsig_key_name }}.key
+        owner: root
+        group: bind
+        mode: '0640'
+        no_log: true
 
     - name: Backup current zone configuration
       delegate_to: "{{ bind_server }}"
       copy:
-      src: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
-      dest: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed.backup-{{ ansible_date_time.epoch }}
-      remote_src: yes
+        src: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        dest: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed.backup-{{ ansible_date_time.epoch }}
+        remote_src: yes
 
     - name: Remove existing allow-transfer directives (will be re-added by managed block)
       delegate_to: "{{ bind_server }}"
       lineinfile:
-      path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
-      regexp: '^\s+allow-transfer\s+.*;\s*$'
-      state: absent
+        path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        regexp: '^\s+allow-transfer\s+.*;\s*$'
+        state: absent
 
     - name: Remove existing also-notify directives (will be re-added by managed block)
       delegate_to: "{{ bind_server }}"
       lineinfile:
-      path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
-      regexp: '^\s+also-notify\s+.*;\s*$'
-      state: absent
+        path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        regexp: '^\s+also-notify\s+.*;\s*$'
+        state: absent
 
     - name: Update zone configuration to allow transfers
       delegate_to: "{{ bind_server }}"
       blockinfile:
-      path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
-      marker: "    # {mark} ANSIBLE MANAGED - PowerDNS zone transfer"
-      insertafter: "^zone \"{{ zone_name }}\""
-      block: |2
+        path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        marker: "    # {mark} ANSIBLE MANAGED - PowerDNS zone transfer"
+        insertafter: "^zone \"{{ zone_name }}\""
+        block: |2
             allow-transfer { key {{ tsig_key_name }}; };
             also-notify { {{ powerdns_ipv6 | default(powerdns_ipv4) }}; };
 
     - name: Include TSIG key in named.conf.local
       delegate_to: "{{ bind_server }}"
       lineinfile:
-      path: /etc/bind/named.conf.local
-      line: 'include "/etc/bind/keys/{{ tsig_key_name }}.key";'
-      insertafter: '^include "/etc/bind/keys/'
-      state: present
+        path: /etc/bind/named.conf.local
+        line: 'include "/etc/bind/keys/{{ tsig_key_name }}.key";'
+        insertafter: '^include "/etc/bind/keys/'
+        state: present
 
     - name: Check BIND9 configuration
       delegate_to: "{{ bind_server }}"
@@ -621,11 +621,11 @@
     - name: Add PowerDNS TSIG key grant to update-policy
       delegate_to: "{{ bind_server }}"
       lineinfile:
-      path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
-      regexp: '^\s+grant {{ tsig_key_name }}\s+.*;'
-      line: '\tgrant {{ tsig_key_name }} name pdns.{{ zone_name }} A AAAA NS;'
-      insertafter: '^\s+grant letsencrypt zonesub TXT;'
-      state: present
+        path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        regexp: '^\s+grant {{ tsig_key_name }}\s+.*;'
+        line: '\tgrant {{ tsig_key_name }} name pdns.{{ zone_name }} A AAAA NS;'
+        insertafter: '^\s+grant letsencrypt zonesub TXT;'
+        state: present
 
     - name: Reload BIND9
       delegate_to: "{{ bind_server }}"
@@ -697,7 +697,7 @@
 
     - name: Display zone transfer result
       debug:
-      msg: "{{ zone_transfer.stdout_lines }}"
+        msg: "{{ zone_transfer.stdout_lines }}"
 
     - name: Test DNS resolution from PowerDNS
       delegate_to: "{{ groups['powerdns_servers'][0] }}"
@@ -707,7 +707,7 @@
 
     - name: Display DNS test result
       debug:
-      msg:
+        msg:
         - "DNS Resolution Test:"
         - "{{ dns_test.stdout_lines }}"
         - ""
