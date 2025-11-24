@@ -279,7 +279,7 @@
 
 - name: Configure BIND9 to allow zone transfers
   hosts: localhost
-  gather_facts: false
+  gather_facts: true
   vars:
     bind_server: ns.home.goodkind.io
     tsig_key_name: powerdns-xfr
