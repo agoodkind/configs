@@ -645,7 +645,7 @@
         send
         EOF
       args:
-      executable: /bin/bash
+        executable: /bin/bash
       register: nsupdate_ns
       failed_when: nsupdate_ns.rc != 0
       changed_when: nsupdate_ns.rc == 0
@@ -661,7 +661,7 @@
         send
         EOF
       args:
-      executable: /bin/bash
+        executable: /bin/bash
       register: nsupdate_aaaa
       failed_when: nsupdate_aaaa.rc != 0
       changed_when: nsupdate_aaaa.rc == 0
@@ -677,7 +677,7 @@
         send
         EOF
       args:
-      executable: /bin/bash
+        executable: /bin/bash
       register: nsupdate_a
       failed_when: nsupdate_a.rc != 0
       changed_when: nsupdate_a.rc == 0
