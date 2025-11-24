@@ -1,4 +1,19 @@
 ---
+# PowerDNS Deployment Playbook
+#
+# CURRENT SETUP: PowerDNS as SLAVE, BIND as PRIMARY
+# - PowerDNS receives zone transfers from BIND
+# - Updates go to BIND via nsupdate
+# - PowerDNS syncs from BIND automatically
+#
+# FUTURE MIGRATION PLAN: PowerDNS as PRIMARY, BIND as SECONDARY
+# To migrate, update powerdns_role: "primary" in group_vars and:
+# 1. Change zone type from SLAVE to NATIVE in database (line ~197)
+# 2. Update pdns.conf.j2: master=yes, slave=no
+# 3. Configure BIND as secondary of PowerDNS
+# 4. Update nsupdate targets to use PowerDNS API instead of BIND
+# 5. Reverse zone transfer direction (PowerDNS -> BIND)
+#
 - name: Deploy PowerDNS Secondary Server
   hosts: powerdns_servers
   become: true
@@ -189,6 +204,8 @@
         query: "SELECT COUNT(*) FROM domains WHERE name='{{ zone_name }}'"
       register: zone_exists
 
+    # TODO: For future migration to PowerDNS primary, change type from 'SLAVE' to 'NATIVE'
+    # and remove the master field (or set to NULL)
     - name: Add slave zone to PowerDNS
       become_user: postgres
       community.postgresql.postgresql_query:
@@ -365,12 +382,76 @@
       register: checkconf
       changed_when: false
 
+    - name: Add PowerDNS TSIG key grant to update-policy
+      delegate_to: "{{ bind_server }}"
+      lineinfile:
+        path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        regexp: '^\s+grant {{ tsig_key_name }}\s+.*;'
+        line: '\tgrant {{ tsig_key_name }} name pdns.{{ zone_name }} A AAAA NS;'
+        insertafter: '^\s+grant letsencrypt zonesub TXT;'
+        state: present
+
     - name: Reload BIND9
       delegate_to: "{{ bind_server }}"
       systemd:
         name: named
         state: reloaded
       when: checkconf.rc == 0
+
+    - name: Add NS record for pdns.{{ zone_name }} using nsupdate
+      delegate_to: "{{ bind_server }}"
+      shell: |
+        nsupdate -k /etc/bind/keys/{{ tsig_key_name }}.key <<EOF
+        server ::1
+        zone {{ zone_name }}
+        update delete pdns.{{ zone_name }} NS
+        update add pdns.{{ zone_name }} 300 NS pdns.{{ zone_name }}
+        send
+        EOF
+      args:
+        executable: /bin/bash
+      register: nsupdate_ns
+      failed_when: nsupdate_ns.rc != 0
+      changed_when: nsupdate_ns.rc == 0
+
+    - name: Add AAAA record for pdns.{{ zone_name }} using nsupdate
+      delegate_to: "{{ bind_server }}"
+      shell: |
+        nsupdate -k /etc/bind/keys/{{ tsig_key_name }}.key <<EOF
+        server ::1
+        zone {{ zone_name }}
+        update delete pdns.{{ zone_name }} AAAA
+        update add pdns.{{ zone_name }} 300 AAAA {{ powerdns_ipv6 }}
+        send
+        EOF
+      args:
+        executable: /bin/bash
+      register: nsupdate_aaaa
+      failed_when: nsupdate_aaaa.rc != 0
+      changed_when: nsupdate_aaaa.rc == 0
+
+    - name: Add A record for pdns.{{ zone_name }} using nsupdate
+      delegate_to: "{{ bind_server }}"
+      shell: |
+        nsupdate -k /etc/bind/keys/{{ tsig_key_name }}.key <<EOF
+        server ::1
+        zone {{ zone_name }}
+        update delete pdns.{{ zone_name }} A
+        update add pdns.{{ zone_name }} 300 A {{ powerdns_ipv4 }}
+        send
+        EOF
+      args:
+        executable: /bin/bash
+      register: nsupdate_a
+      failed_when: nsupdate_a.rc != 0
+      changed_when: nsupdate_a.rc == 0
+
+    - name: Verify DNS records were added
+      delegate_to: "{{ bind_server }}"
+      command: dig @::1 pdns.{{ zone_name }} NS +short
+      register: verify_ns
+      changed_when: false
+      failed_when: false
 
     - name: Trigger zone transfer from PowerDNS
       delegate_to: "{{ groups['powerdns_servers'][0] }}"
@@ -394,9 +475,11 @@
           - "DNS Resolution Test:"
           - "{{ dns_test.stdout_lines }}"
           - ""
-          - "Next steps:"
-          - "1. Add NS record for pns.{{ zone_name }}"
-          - "2. Add AAAA record: pns.{{ zone_name }} -> {{ powerdns_ipv6 }}"
-          - "3. Add A record: pns.{{ zone_name }} -> {{ powerdns_ipv4 }}"
-          - "4. Update DHCP to include {{ powerdns_ipv6 }} and {{ powerdns_ipv4 }} in DNS servers (IPv6 first)"
+          - "✅ PowerDNS DNS records added:"
+          - "  - NS record: pdns.{{ zone_name }}"
+          - "  - AAAA record: pdns.{{ zone_name }} -> {{ powerdns_ipv6 }}"
+          - "  - A record: pdns.{{ zone_name }} -> {{ powerdns_ipv4 }}"
+          - ""
+          - "Next step:"
+          - "  - Update DHCP to include {{ powerdns_ipv6 }} and {{ powerdns_ipv4 }} in DNS servers (IPv6 first)"
 

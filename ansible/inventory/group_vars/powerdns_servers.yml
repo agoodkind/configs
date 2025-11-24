@@ -1,5 +1,19 @@
 ---
 # PowerDNS Server Configuration Variables
+#
+# MIGRATION PLAN:
+# Currently: PowerDNS = SLAVE, BIND = PRIMARY
+# Future: PowerDNS = PRIMARY, BIND = SECONDARY (deprecated)
+#
+# To migrate:
+# 1. Set powerdns_role: "primary" (currently "slave")
+# 2. Update BIND to be secondary of PowerDNS
+# 3. Change zone type in PowerDNS from SLAVE to NATIVE
+# 4. Update pdns.conf.j2: master=yes, slave=no
+# 5. Update update-policy grants to use PowerDNS as target
+
+# PowerDNS role: "slave" (current) or "primary" (future migration)
+powerdns_role: "slave"
 
 # Server details
 powerdns_servers:
@@ -9,7 +23,7 @@ powerdns_servers:
 powerdns_ipv4: 10.250.0.11
 powerdns_ipv6: 3d06:bad:b01::b
 
-# BIND9 Primary server
+# BIND9 Primary server (will become secondary in future migration)
 bind_primary_server: ns.home.goodkind.io
 bind_primary_ip: 10.250.0.6
 bind_primary_ipv6: 3d06:bad:b01::6
