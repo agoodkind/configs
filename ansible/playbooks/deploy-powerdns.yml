@@ -286,17 +286,14 @@
     tsig_algorithm: hmac-sha256
     zone_name: home.goodkind.io
 
-  tasks:
-    - name: Gather facts for PowerDNS servers to load group_vars
-      setup:
-      delegate_to: "{{ item }}"
-      loop: "{{ groups['powerdns_servers'] }}"
-      run_once: true
+  vars_files:
+    - "{{ playbook_dir }}/../inventory/group_vars/powerdns_servers.yml"
 
+  tasks:
     - name: Set PowerDNS IPs from group_vars (prefer IPv6)
       set_fact:
-        powerdns_ipv6: "{{ hostvars[groups['powerdns_servers'][0]]['powerdns_ipv6'] | default('3d06:bad:b01::b') }}"
-        powerdns_ipv4: "{{ hostvars[groups['powerdns_servers'][0]]['powerdns_ipv4'] | default('10.250.0.11') }}"
+        powerdns_ipv6: "{{ powerdns_ipv6 | default('3d06:bad:b01::b') }}"
+        powerdns_ipv4: "{{ powerdns_ipv4 | default('10.250.0.11') }}"
         powerdns_ip: "{{ powerdns_ipv6 | default(powerdns_ipv4) }}"
 
     - name: Get TSIG secret from environment or first play facts (not logged)
