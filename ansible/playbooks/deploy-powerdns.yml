@@ -386,6 +386,12 @@
           - build-essential
         state: present
 
+    - name: Create PowerDNS-Admin group
+      group:
+        name: "{{ powerdns_admin_group }}"
+        system: true
+        state: present
+
     - name: Create PowerDNS-Admin user
       user:
         name: "{{ powerdns_admin_user }}"
