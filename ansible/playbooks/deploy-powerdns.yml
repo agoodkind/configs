@@ -386,6 +386,14 @@
           - build-essential
           - pkg-config
           - default-libmysqlclient-dev
+          - libffi-dev
+          - libldap2-dev
+          - libsasl2-dev
+          - libssl-dev
+          - libxml2-dev
+          - libxmlsec1-dev
+          - libxslt1-dev
+          - zlib1g-dev
         state: present
 
     - name: Create PowerDNS-Admin group
