@@ -145,7 +145,7 @@
       systemd:
         name: pdns
         state: stopped
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Check if PowerDNS schema is initialized
       become_user: postgres
@@ -153,7 +153,7 @@
         db: "{{ postgres_db }}"
         query: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='domains'"
       register: schema_check
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Download PowerDNS PostgreSQL schema
       get_url:
@@ -245,7 +245,7 @@
         path: /etc/systemd/resolved.conf
         regexp: '^#?DNSStubListener='
         line: 'DNSStubListener=no'
-        backup: yes
+        backup: true
 
     - name: Ensure systemd-resolved uses DHCP-provided DNS (remove any static DNS config)
       lineinfile:
@@ -258,7 +258,7 @@
       systemd:
         name: systemd-resolved
         state: restarted
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Enable and start PowerDNS
       systemd:
@@ -441,13 +441,22 @@
         pdns_admin_installed.stat.exists == false and
         pdns_admin_git_repo.stat.exists == false
 
+    - name: Ensure PowerDNS-Admin home directory exists with correct ownership
+      file:
+        path: "{{ powerdns_admin_home }}"
+        state: directory
+        owner: "{{ powerdns_admin_user }}"
+        group: "{{ powerdns_admin_group }}"
+        mode: '0755'
+      when: not pdns_admin_installed.stat.exists
+
     - name: Clone PowerDNS-Admin repository
       git:
         repo: "{{ powerdns_admin_repo }}"
         version: "{{ powerdns_admin_version }}"
         dest: "{{ powerdns_admin_home }}"
-        update: yes
-        force: yes
+        update: true
+        force: true
       become_user: "{{ powerdns_admin_user }}"
       when: not pdns_admin_installed.stat.exists
 
@@ -494,7 +503,7 @@
         db: "{{ powerdns_admin_db }}"
         query: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='user'"
       register: pdns_admin_db_check
-      ignore_errors: yes
+      ignore_errors: true
       changed_when: false
 
     - name: Initialize PowerDNS-Admin database
