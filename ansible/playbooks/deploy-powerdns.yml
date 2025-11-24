@@ -440,7 +440,6 @@
       when: >
         pdns_admin_installed.stat.exists == false and
         pdns_admin_git_repo.stat.exists == false
-      become_user: "{{ powerdns_admin_user }}"
 
     - name: Clone PowerDNS-Admin repository
       git:
