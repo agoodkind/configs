@@ -428,41 +428,34 @@
         path: "{{ powerdns_admin_home }}/app"
       register: pdns_admin_installed
 
-    - name: Check if PowerDNS-Admin directory exists
-      stat:
-        path: "{{ powerdns_admin_home }}"
-      register: pdns_admin_dir_exists
-
-    - name: Check if PowerDNS-Admin directory is a git repository
-      stat:
-        path: "{{ powerdns_admin_home }}/.git"
-      register: pdns_admin_git_repo
-
-    - name: Remove PowerDNS-Admin directory if it exists but is not a git repo
+    - name: Remove PowerDNS-Admin directory to ensure clean state
       file:
         path: "{{ powerdns_admin_home }}"
         state: absent
-      when: >
-        pdns_admin_dir_exists.stat.exists and
-        not pdns_admin_git_repo.stat.exists
 
-    - name: Ensure PowerDNS-Admin home directory exists with correct ownership
+    - name: Ensure PowerDNS-Admin home directory parent exists
       file:
-        path: "{{ powerdns_admin_home }}"
+        path: "{{ powerdns_admin_home | dirname }}"
         state: directory
-        owner: "{{ powerdns_admin_user }}"
-        group: "{{ powerdns_admin_group }}"
+        owner: root
+        group: root
         mode: '0755'
-      when: not pdns_admin_dir_exists.stat.exists or (pdns_admin_dir_exists.stat.exists and not pdns_admin_git_repo.stat.exists)
 
     - name: Clone PowerDNS-Admin repository
       git:
         repo: "{{ powerdns_admin_repo }}"
         version: "{{ powerdns_admin_version }}"
         dest: "{{ powerdns_admin_home }}"
-        update: true
-        force: true
       become_user: "{{ powerdns_admin_user }}"
+
+    - name: Ensure PowerDNS-Admin home directory has correct ownership
+      file:
+        path: "{{ powerdns_admin_home }}"
+        state: directory
+        owner: "{{ powerdns_admin_user }}"
+        group: "{{ powerdns_admin_group }}"
+        mode: '0755'
+        recurse: true
 
     - name: Create Python virtual environment
       command: python3 -m venv venv
