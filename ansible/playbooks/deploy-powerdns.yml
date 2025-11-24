@@ -160,7 +160,7 @@
         url: https://raw.githubusercontent.com/PowerDNS/pdns/master/modules/gpgsqlbackend/schema.pgsql.sql
         dest: /tmp/pdns-schema.sql
         mode: '0644'
-        when: schema_check.query_result is not defined or schema_check.query_result[0].count == 0
+      when: schema_check.query_result is not defined or schema_check.query_result[0].count == 0
 
     - name: Initialize PowerDNS database schema
       become_user: postgres
