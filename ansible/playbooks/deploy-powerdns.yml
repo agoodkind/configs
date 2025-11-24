@@ -428,12 +428,27 @@
         path: "{{ powerdns_admin_home }}/app"
       register: pdns_admin_installed
 
+    - name: Check if PowerDNS-Admin directory is a git repository
+      stat:
+        path: "{{ powerdns_admin_home }}/.git"
+      register: pdns_admin_git_repo
+
+    - name: Remove PowerDNS-Admin directory if it exists but is not a git repo
+      file:
+        path: "{{ powerdns_admin_home }}"
+        state: absent
+      when: >
+        pdns_admin_installed.stat.exists == false and
+        pdns_admin_git_repo.stat.exists == false
+      become_user: "{{ powerdns_admin_user }}"
+
     - name: Clone PowerDNS-Admin repository
       git:
         repo: "{{ powerdns_admin_repo }}"
         version: "{{ powerdns_admin_version }}"
         dest: "{{ powerdns_admin_home }}"
         update: yes
+        force: yes
       become_user: "{{ powerdns_admin_user }}"
       when: not pdns_admin_installed.stat.exists
 
