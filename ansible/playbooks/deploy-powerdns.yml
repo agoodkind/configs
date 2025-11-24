@@ -223,6 +223,26 @@
           UPDATE domains SET master='{{ bind_primary_ip }}' WHERE name='{{ zone_name }}';
       when: zone_exists.query_result[0].count > 0
 
+    - name: Configure systemd-resolved to not bind to port 53
+      lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^#?DNSStubListener='
+        line: 'DNSStubListener=no'
+        backup: yes
+
+    - name: Ensure systemd-resolved uses DHCP-provided DNS (remove any static DNS config)
+      lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^DNS='
+        state: absent
+        backup: yes
+
+    - name: Restart systemd-resolved to apply changes
+      systemd:
+        name: systemd-resolved
+        state: restarted
+      ignore_errors: yes
+
     - name: Enable and start PowerDNS
       systemd:
         name: pdns
