@@ -330,6 +330,20 @@
         dest: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed.backup-{{ ansible_date_time.epoch }}
         remote_src: yes
 
+    - name: Remove existing allow-transfer directives (will be re-added by managed block)
+      delegate_to: "{{ bind_server }}"
+      lineinfile:
+        path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        regexp: '^\s+allow-transfer\s+.*;\s*$'
+        state: absent
+
+    - name: Remove existing also-notify directives (will be re-added by managed block)
+      delegate_to: "{{ bind_server }}"
+      lineinfile:
+        path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
+        regexp: '^\s+also-notify\s+.*;\s*$'
+        state: absent
+
     - name: Update zone configuration to allow transfers
       delegate_to: "{{ bind_server }}"
       blockinfile:
