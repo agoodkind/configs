@@ -315,6 +315,8 @@
       set_fact:
         env_pdns_admin_db_password: "{{ lookup('env', 'PDNS_ADMIN_DB_PASSWORD', default='') }}"
         env_pdns_admin_secret_key: "{{ lookup('env', 'PDNS_ADMIN_SECRET_KEY', default='') }}"
+        generated_pdns_admin_db_password: ""
+        generated_pdns_admin_secret_key: ""
       no_log: true
 
     - name: Generate PowerDNS-Admin secrets if not provided
@@ -328,10 +330,10 @@
 
     - name: Set final PowerDNS-Admin secret values
       set_fact:
-        pdns_admin_db_password: "{{ env_pdns_admin_db_password | default(generated_pdns_admin_db_password | default('changeme')) }}"
-        pdns_admin_secret_key: "{{ env_pdns_admin_secret_key | default(generated_pdns_admin_secret_key | default('')) }}"
+        pdns_admin_db_password: "{{ env_pdns_admin_db_password if env_pdns_admin_db_password != '' else generated_pdns_admin_db_password }}"
+        pdns_admin_secret_key: "{{ env_pdns_admin_secret_key if env_pdns_admin_secret_key != '' else generated_pdns_admin_secret_key }}"
         secrets_were_generated: "{{ env_pdns_admin_db_password == '' or env_pdns_admin_secret_key == '' }}"
-        no_log: true
+      no_log: true
 
     - name: Write generated PowerDNS-Admin secrets to secure file (not logged)
       copy:
