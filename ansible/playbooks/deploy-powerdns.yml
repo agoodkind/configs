@@ -377,10 +377,10 @@
     - name: Install Python dependencies for PowerDNS-Admin
       apt:
         name:
-          - python3
-          - python3-pip
-          - python3-venv
-          - python3-dev
+          - python3.11
+          - python3.11-pip
+          - python3.11-venv
+          - python3.11-dev
           - libpq-dev
           - git
           - build-essential
@@ -467,7 +467,7 @@
         recurse: true
 
     - name: Create Python virtual environment
-      command: python3 -m venv venv
+      command: python3.11 -m venv venv
       args:
         chdir: "{{ powerdns_admin_home }}"
       become_user: "{{ powerdns_admin_user }}"
@@ -480,14 +480,14 @@
           - setuptools
         state: latest
         virtualenv: "{{ powerdns_admin_home }}/venv"
-        virtualenv_python: python3
+        virtualenv_python: python3.11
       become_user: "{{ powerdns_admin_user }}"
 
     - name: Install PowerDNS-Admin Python dependencies
       pip:
         requirements: "{{ powerdns_admin_home }}/requirements.txt"
         virtualenv: "{{ powerdns_admin_home }}/venv"
-        virtualenv_python: python3
+        virtualenv_python: python3.11
       become_user: "{{ powerdns_admin_user }}"
 
     - name: Check if PowerDNS-Admin config exists
