@@ -12,3 +12,4 @@
 - Make PowerDNS primary:
 - pdnsutil zone load to migrate from BIND
 - create a very minimal UI to interact with the API https://raw.githubusercontent.com/PowerDNS/pdns/master/docs/http-api/swagger/authoritative-api-swagger.yaml (in svelte?)
+- might need an API gateway depending on how frontend-friendly these APIs 
