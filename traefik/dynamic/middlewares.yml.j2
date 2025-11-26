@@ -49,6 +49,22 @@ http:
           - "{{ cidr }}"
 {% endfor %}
 
+    # Combined: Cloudflare + Internal IPs
+    # Allows traffic from Cloudflare (public) OR internal network (direct access)
+    cloudflare-or-internal:
+      ipWhiteList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "10.0.0.0/8"
+          - "::1/128"                    # IPv6 localhost
+          - "3d06:bad:b01::/56"          # IPv6 private network
+{% for cidr in cloudflare_ipv4_ranges %}
+          - "{{ cidr }}"
+{% endfor %}
+{% for cidr in cloudflare_ipv6_ranges %}
+          - "{{ cidr }}"
+{% endfor %}
+
     # Rate Limiting
     rate-limit:
       rateLimit:

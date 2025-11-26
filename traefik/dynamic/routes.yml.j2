@@ -41,7 +41,6 @@ http:
       rule: "Host(`ansible.{{ traefik_ingress_domain }}`)"
       service: ansible-service
       middlewares:
-        {# - cloudflare-only  # Only accept Cloudflare IPs #}
         - secure-headers
       entryPoints:
         - websecure
@@ -52,7 +51,16 @@ http:
       rule: "Host(`vault.{{ traefik_ingress_domain }}`)"
       service: vault-service
       middlewares:
-        {# - cloudflare-only  # Only accept Cloudflare IPs #}
+        - secure-headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
+    nas-ingress:
+      rule: "Host(`nas.{{ traefik_ingress_domain }}`)"
+      service: nas-service
+      middlewares:
         - secure-headers
       entryPoints:
         - websecure
@@ -86,6 +94,12 @@ http:
         servers:
           - url: "https://unifi.{{ traefik_upstream_domain }}:8443"
         serversTransport: unifi-transport
+
+    nas-service:
+      loadBalancer:
+        servers:
+          - url: "https://nas.{{ traefik_upstream_domain }}:8443"
+        serversTransport: insecure-transport
 
   serversTransports:
     insecure-transport:
