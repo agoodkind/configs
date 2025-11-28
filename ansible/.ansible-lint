@@ -3,11 +3,11 @@
 # See https://ansible-lint.readthedocs.io/en/latest/configuring.html
 #
 # Note: Collections must be installed before linting:
-#   ansible-galaxy collection install -r playbooks/requirements.yml
+#   ansible-galaxy collection install -r requirements.yml
 
 enable_list:
   - fqcn[action]
 
 exclude_paths:
-  - playbooks/requirements.yml # Not a playbook, it's a requirements file
+  - requirements.yml  # Not a playbook, it's an ansible-galaxy requirements file
 
