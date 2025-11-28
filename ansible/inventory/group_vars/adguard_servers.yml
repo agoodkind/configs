@@ -111,7 +111,7 @@ adguard_log_file: "{{ adguard_data_dir }}/adguard.log"
 adguard_verbose: false
 
 # Schema version (do not change unless upgrading AdGuard Home)
-adguard_schema_version: 15
+adguard_schema_version: 31
 
 # Directory configuration (using AdGuard Home defaults)
 adguard_user: adguard

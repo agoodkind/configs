@@ -2,77 +2,111 @@
 # Managed by Git - configs repo
 # Templated by Ansible - variables defined in group_vars/adguard_servers.yml
 
-bind_host: {{ adguard_bind_host }}
-bind_port: {{ adguard_port }}
 users: []
 auth_attempts: {{ adguard_auth_attempts }}
 block_auth_min: {{ adguard_block_auth_min }}
 http_proxy: "{{ adguard_http_proxy }}"
 language: "{{ adguard_language }}"
-rlimit_nofile: {{ adguard_rlimit_nofile }}
+http:
+  address: "{{ adguard_bind_host }}:{{ adguard_port }}"
 dns:
   bind_hosts:
 {% for host in adguard_dns_bind_hosts %}
     - {{ host }}
 {% endfor %}
   port: {{ adguard_dns_port }}
-  protection_enabled: {{ adguard_protection_enabled | lower }}
-  filtering_enabled: {{ adguard_filtering_enabled | lower }}
-  blocking_mode: {{ adguard_blocking_mode }}
-  blocking_ipv4: "{{ adguard_blocking_ipv4 }}"
-  blocking_ipv6: "{{ adguard_blocking_ipv6 }}"
-  blocked_response_ttl: {{ adguard_blocked_response_ttl }}
-  ratelimit: {{ adguard_ratelimit }}
-  ratelimit_whitelist: {{ adguard_ratelimit_whitelist | to_json }}
-  refuse_any: {{ adguard_refuse_any | lower }}
   upstream_dns:
 {% for upstream in adguard_upstream_dns %}
     - {{ upstream }}
 {% endfor %}
+{% if adguard_upstream_dns_file != "" %}
   upstream_dns_file: "{{ adguard_upstream_dns_file }}"
+{% endif %}
   bootstrap_dns:
 {% for bootstrap in adguard_bootstrap_dns %}
     - {{ bootstrap }}
 {% endfor %}
+  ratelimit: {{ adguard_ratelimit }}
+{% if adguard_ratelimit_whitelist | length > 0 %}
+  ratelimit_whitelist: {{ adguard_ratelimit_whitelist | to_json }}
+{% endif %}
+  refuse_any: {{ adguard_refuse_any | lower }}
+{% if adguard_edns_client_subnet %}
+  edns_client_subnet:
+    enabled: {{ adguard_edns_client_subnet | lower }}
+{% endif %}
+{% if adguard_allowed_clients | length > 0 %}
+  allowed_clients: {{ adguard_allowed_clients | to_json }}
+{% endif %}
+{% if adguard_disallowed_clients | length > 0 %}
+  disallowed_clients: {{ adguard_disallowed_clients | to_json }}
+{% endif %}
+{% if adguard_blocked_hosts | length > 0 %}
+  blocked_hosts: {{ adguard_blocked_hosts | to_json }}
+{% endif %}
+  parental_sensitivity: {{ adguard_parental_sensitivity }}
   all_servers: {{ adguard_all_servers | lower }}
   fastest_addr: {{ adguard_fastest_addr | lower }}
   fastest_timeout: {{ adguard_fastest_timeout }}
-  allowed_clients: {{ adguard_allowed_clients | to_json }}
-  disallowed_clients: {{ adguard_disallowed_clients | to_json }}
-  blocked_hosts: {{ adguard_blocked_hosts | to_json }}
-  parental_sensitivity: {{ adguard_parental_sensitivity }}
-  parental_enabled: {{ adguard_parental_enabled | lower }}
-  safesearch_enabled: {{ adguard_safesearch_enabled | lower }}
-  safebrowsing_enabled: {{ adguard_safebrowsing_enabled | lower }}
-  safebrowsing_cache_size: {{ adguard_safebrowsing_cache_size }}
-  safesearch_cache_size: {{ adguard_safesearch_cache_size }}
-  parental_cache_size: {{ adguard_parental_cache_size }}
   cache_time: {{ adguard_cache_time }}
   cache_optimistic: {{ adguard_cache_optimistic | lower }}
+{% if adguard_bogus_nxdomain | length > 0 %}
   bogus_nxdomain: {{ adguard_bogus_nxdomain | to_json }}
+{% endif %}
   aaaa_disabled: {{ adguard_aaaa_disabled | lower }}
   enable_dnssec: {{ adguard_enable_dnssec | lower }}
-  edns_client_subnet: {{ adguard_edns_client_subnet | lower }}
   max_goroutines: {{ adguard_max_goroutines }}
   handle_ddr: {{ adguard_handle_ddr | lower }}
+{% if adguard_ipset | length > 0 %}
   ipset: {{ adguard_ipset | to_json }}
-  filters_update_interval: {{ adguard_filters_update_interval }}
+{% endif %}
+filtering:
+  filtering_enabled: {{ adguard_filtering_enabled | lower }}
+  protection_enabled: {{ adguard_protection_enabled | lower }}
+  parental_enabled: {{ adguard_parental_enabled | lower }}
+  safebrowsing_enabled: {{ adguard_safebrowsing_enabled | lower }}
+  blocked_response_ttl: {{ adguard_blocked_response_ttl }}
+{% if adguard_blocking_mode != "default" %}
+  blocking_mode: {{ adguard_blocking_mode }}
+{% endif %}
+{% if adguard_blocking_ipv4 != "" %}
+  blocking_ipv4: "{{ adguard_blocking_ipv4 }}"
+{% endif %}
+{% if adguard_blocking_ipv6 != "" %}
+  blocking_ipv6: "{{ adguard_blocking_ipv6 }}"
+{% endif %}
+  safe_search:
+    enabled: {{ adguard_safesearch_enabled | lower }}
+{% if adguard_rewrites | length > 0 %}
   rewrites: {{ adguard_rewrites | to_json }}
+{% endif %}
+{% if adguard_blocked_services | length > 0 %}
   blocked_services: {{ adguard_blocked_services | to_json }}
+{% endif %}
+filters: {{ adguard_filters | to_json }}
+whitelist_filters: {{ adguard_whitelist_filters | to_json }}
+user_rules: {{ adguard_user_rules | to_json }}
 tls:
   enabled: {{ adguard_tls_enabled | lower }}
-  server_name: "{{ adguard_tls_server_name }}"
+{% if adguard_tls_server_name != "" %}
+  server_name: "{{ adguard_tls_server_name | default(adguard_hostname) }}"
+{% endif %}
   force_https: {{ adguard_tls_force_https | lower }}
   port_https: {{ adguard_tls_port_https }}
   port_dns_over_tls: {{ adguard_tls_port_dns_over_tls }}
   port_dns_over_quic: {{ adguard_tls_port_dns_over_quic }}
+{% if adguard_tls_certificate_chain != "" %}
   certificate_chain: "{{ adguard_tls_certificate_chain }}"
+{% endif %}
+{% if adguard_tls_private_key != "" %}
   private_key: "{{ adguard_tls_private_key }}"
+{% endif %}
+{% if adguard_tls_certificate_path != "" %}
   certificate_path: "{{ adguard_tls_certificate_path }}"
+{% endif %}
+{% if adguard_tls_private_key_path != "" %}
   private_key_path: "{{ adguard_tls_private_key_path }}"
-filters: {{ adguard_filters | to_json }}
-whitelist_filters: {{ adguard_whitelist_filters | to_json }}
-user_rules: {{ adguard_user_rules | to_json }}
+{% endif %}
 dhcp:
   enabled: {{ adguard_dhcp_enabled | lower }}
 clients:
@@ -83,7 +117,13 @@ clients:
     dhcp: {{ adguard_clients_dhcp | lower }}
     hosts: {{ adguard_clients_hosts | lower }}
   persistent: {{ adguard_clients_persistent | to_json }}
-log_file: "{{ adguard_log_file }}"
-verbose: {{ adguard_verbose | lower }}
+querylog:
+  enabled: true
+statistics:
+  enabled: true
+log:
+  file: "{{ adguard_log_file }}"
+  verbose: {{ adguard_verbose | lower }}
+os:
+  rlimit_nofile: {{ adguard_rlimit_nofile }}
 schema_version: {{ adguard_schema_version }}
-
