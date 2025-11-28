@@ -78,16 +78,6 @@
         ansible_proxmox_host: "{{ target_node }}"
       when: container_exists | default(false) and not container_just_created | default(false)
 
-- name: Prepare container (only if it wasn't just created)
-  hosts: adguard_servers
-  gather_facts: false
-  tasks:
-    - name: Import prep-cts playbook
-      ansible.builtin.import_playbook: prep-cts.yml
-      vars:
-        target_hosts: adguard_servers
-  when: not container_just_created | default(false)
-
 - name: Deploy and Configure AdGuard Home
   hosts: adguard_servers
   become: true
