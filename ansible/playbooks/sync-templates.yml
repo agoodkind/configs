@@ -6,7 +6,7 @@
 
   tasks:
     - name: Run sync script
-      ansible.builtin.shell:
+      ansible.builtin.command:
         cmd: ./sync-semaphore.sh
         chdir: "{{ playbook_dir | dirname }}"
       register: sync_result
