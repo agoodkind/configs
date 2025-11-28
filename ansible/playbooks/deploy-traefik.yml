@@ -87,15 +87,10 @@
         ansible_proxmox_host: "{{ target_node }}"
       when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
 
-- name: Prepare container (only if it wasn't just created)
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Import prep-cts playbook for existing containers
-      ansible.builtin.import_playbook: prep-cts.yml
-      vars:
-        target_hosts: traefik_servers
-      when: not container_just_created | default(false)
+- name: Prepare container
+  ansible.builtin.import_playbook: prep-cts.yml
+  vars:
+    target_hosts: traefik_servers
 
 - name: Deploy and Configure Traefik
   hosts: traefik_servers
