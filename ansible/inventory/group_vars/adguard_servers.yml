@@ -113,10 +113,10 @@ adguard_verbose: false
 # Schema version (do not change unless upgrading AdGuard Home)
 adguard_schema_version: 15
 
-# Directory configuration
+# Directory configuration (using AdGuard Home defaults)
 adguard_user: adguard
 adguard_group: adguard
-adguard_config_dir: /opt/adguardhome
-adguard_work_dir: /opt/adguardhome/work
-adguard_data_dir: /opt/adguardhome/data
+adguard_work_dir: /opt/AdGuardHome
+adguard_config_dir: /opt/AdGuardHome
+adguard_data_dir: /opt/AdGuardHome/data
 
