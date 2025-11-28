@@ -43,7 +43,7 @@
 
     - name: Get container hostname from group_vars
       ansible.builtin.set_fact:
-        service_hostname: "{{ hostvars['localhost'][hostname_var] }}"
+        service_hostname: "{{ lookup('vars', hostname_var) }}"
       changed_when: false
 
     - name: List all LXC containers on Proxmox node
