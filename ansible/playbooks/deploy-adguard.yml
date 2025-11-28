@@ -150,6 +150,25 @@
         mode: '0640'
       notify: Restart AdGuardHome
 
+    - name: Create resolved.conf.d directory
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Disable systemd-resolved stub listener (free port 53)
+      ansible.builtin.copy:
+        dest: /etc/systemd/resolved.conf.d/adguard.conf
+        content: |
+          [Resolve]
+          DNS=127.0.0.1
+          DNSStubListener=no
+        mode: '0644'
+      notify: Restart systemd-resolved
+
+    - name: Flush handlers to free port 53 before starting AdGuard
+      ansible.builtin.meta: flush_handlers
+
     - name: Enable AdGuard Home service
       ansible.builtin.systemd:
         name: AdGuardHome
@@ -203,6 +222,11 @@
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
+
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
 
     - name: Restart AdGuardHome
       ansible.builtin.systemd:
