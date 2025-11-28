@@ -560,4 +560,4 @@
       ansible.builtin.debug:
         msg: >-
           ✅ PowerDNS deployed successfully on
-          {{ hostvars['localhost']['powerdns_hostname_fact'] }}
+          {{ hostvars['localhost']['service_hostname_fact'] }}
