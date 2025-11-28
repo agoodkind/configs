@@ -2,8 +2,9 @@
 - name: Check if Traefik container exists
   hosts: localhost
   gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../inventory/group_vars/traefik_servers.yml"
   vars:
-    traefik_hostname: proxy.home.goodkind.io
     target_node: vault
     container_vmid: ""
   tasks:
