@@ -36,8 +36,8 @@ adguard_upstream_dns_file: ""
 
 # Bootstrap DNS servers
 adguard_bootstrap_dns:
-  - "3d06:bad:b01::1"
-  - "10.250.0.1"
+  - "2606:4700:4700::1111"
+  - "1.1.1.1"
 
 # DNS performance settings
 adguard_all_servers: false
