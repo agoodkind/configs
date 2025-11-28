@@ -103,14 +103,14 @@
       when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
 
 - name: Prepare container (only if it wasn't just created)
-  hosts: powerdns_servers
+  hosts: localhost
   gather_facts: false
   tasks:
-    - name: Import prep-cts playbook
+    - name: Import prep-cts playbook for existing containers
       ansible.builtin.import_playbook: prep-cts.yml
       vars:
         target_hosts: powerdns_servers
-  when: not container_just_created | default(false)
+      when: not container_just_created | default(false)
 
 - name: Deploy PowerDNS Secondary Server
   hosts: powerdns_servers

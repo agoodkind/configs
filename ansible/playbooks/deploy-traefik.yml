@@ -88,14 +88,14 @@
       when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
 
 - name: Prepare container (only if it wasn't just created)
-  hosts: traefik_servers
+  hosts: localhost
   gather_facts: false
   tasks:
-    - name: Import prep-cts playbook
+    - name: Import prep-cts playbook for existing containers
       ansible.builtin.import_playbook: prep-cts.yml
       vars:
         target_hosts: traefik_servers
-  when: not container_just_created | default(false)
+      when: not container_just_created | default(false)
 
 - name: Deploy and Configure Traefik
   hosts: traefik_servers
