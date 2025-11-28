@@ -116,32 +116,12 @@
       loop: "{{ externally_managed_files.files }}"
       when: externally_managed_files.files | length > 0
 
-    - name: Check if networkd wait service is disabled
-      ansible.builtin.systemd:
-        name: systemd-networkd-wait-online.service
-      register: networkd_wait_status
-      changed_when: false
-      failed_when: false
-      ignore_errors: true
-
-    - name: Set networkd wait enabled fact
-      ansible.builtin.set_fact:
-        networkd_wait_enabled:
-          rc: "{{ 0 if networkd_wait_status.status is defined and networkd_wait_status.status.EnabledState == 'disabled' else 1 }}"
-          stdout: "{{ networkd_wait_status.status.EnabledState | default('unknown') }}"
-      when: networkd_wait_status.status is defined
-      changed_when: false
-
     - name: Disable networkd wait service
       ansible.builtin.systemd:
         name: systemd-networkd-wait-online.service
         enabled: false
         state: stopped
-      changed_when: true
-      when: >-
-        networkd_wait_enabled.rc is not defined or
-        networkd_wait_enabled.rc != 0 or
-        networkd_wait_enabled.stdout != 'disabled'
+      failed_when: false
 
     - name: Get host timezone
       ansible.builtin.command: timedatectl show -p Timezone --value
