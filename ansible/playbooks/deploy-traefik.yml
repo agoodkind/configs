@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    traefik_hostname: traefik.home.goodkind.io
+    traefik_hostname: proxy.home.goodkind.io
     target_node: vault
     container_vmid: ""
   tasks:
