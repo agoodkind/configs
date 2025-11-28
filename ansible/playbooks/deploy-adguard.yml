@@ -118,11 +118,11 @@
 
     - name: Check if AdGuard Home is installed
       ansible.builtin.stat:
-        path: /usr/local/bin/AdGuardHome
+        path: /opt/AdGuardHome/AdGuardHome
       register: adguard_binary
 
     - name: Get installed AdGuard Home version
-      ansible.builtin.command: /usr/local/bin/AdGuardHome --version
+      ansible.builtin.command: /opt/AdGuardHome/AdGuardHome --version
       register: adguard_installed_version
       when: adguard_binary.stat.exists
       changed_when: false
@@ -159,7 +159,7 @@
 
         - name: Verify AdGuard Home binary was installed
           ansible.builtin.stat:
-            path: /usr/local/bin/AdGuardHome
+            path: /opt/AdGuardHome/AdGuardHome
           register: verify_binary
 
         - name: Assert AdGuard Home binary exists
@@ -168,13 +168,19 @@
               - verify_binary.stat.exists
             fail_msg: "AdGuard Home binary was not installed successfully"
 
+        - name: Create symlink to /usr/local/bin for systemd service
+          ansible.builtin.file:
+            src: /opt/AdGuardHome/AdGuardHome
+            dest: /usr/local/bin/AdGuardHome
+            state: link
+
     - name: Install libcap2-bin for setcap
       ansible.builtin.apt:
         name: libcap2-bin
         state: present
 
     - name: Set CAP_NET_BIND_SERVICE capability for DNS port
-      ansible.builtin.command: setcap cap_net_bind_service=+ep /usr/local/bin/AdGuardHome
+      ansible.builtin.command: setcap cap_net_bind_service=+ep /opt/AdGuardHome/AdGuardHome
       changed_when: false
 
     - name: Install AdGuard Home systemd service
