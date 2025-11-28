@@ -4,6 +4,7 @@
   gather_facts: false
   vars:
     target_node: vault
+    container_hostname: ""
     vmid: ""
     template_storage: "storage"
     template_name: "ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
@@ -17,10 +18,6 @@
     ipv6_address: "dhcp"
     ipv6_gateway: ""
     container_tags: "lxc"
-  vars_prompt:
-    - name: container_hostname
-      prompt: "Container hostname"
-      private: false
 
   tasks:
     - name: Validate container hostname is set
@@ -28,7 +25,9 @@
         that:
           - container_hostname != ""
           - container_hostname is defined
-        fail_msg: "container_hostname must be provided"
+        fail_msg: >-
+          container_hostname must be provided as a variable
+          (use -e container_hostname=hostname or pass via vars in import_playbook)
         success_msg: "✓ Container hostname: {{ container_hostname }}"
     - name: Generate random password
       ansible.builtin.set_fact:
