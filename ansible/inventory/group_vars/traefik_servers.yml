@@ -2,6 +2,9 @@
 # Traefik Configuration Variables
 # Override these in your own environment or use ansible-vault for sensitive values
 
+# Container hostname
+traefik_hostname: proxy.home.goodkind.io
+
 # Domain configuration
 # ingress_domain: client-facing URLs in Traefik route rules (what users access)
 # upstream_domain: backend service URLs in loadBalancer targets (where services actually run)
