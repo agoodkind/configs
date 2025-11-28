@@ -1,4 +1,102 @@
 ---
+- name: Check if Traefik container exists
+  hosts: localhost
+  gather_facts: false
+  vars:
+    traefik_hostname: traefik.home.goodkind.io
+    target_node: vault
+    container_vmid: ""
+  tasks:
+    - name: List all LXC containers on Proxmox node
+      ansible.builtin.command: pct list
+      register: proxmox_containers_list
+      delegate_to: "{{ target_node }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Find Traefik container by hostname
+      ansible.builtin.set_fact:
+        traefik_container_line: "{{ proxmox_containers_list.stdout_lines | select('search', traefik_hostname) | list | first | default('') }}"
+      changed_when: false
+
+    - name: Extract VMID from container line
+      ansible.builtin.set_fact:
+        existing_vmid: "{{ traefik_container_line.split()[0] | default('') }}"
+      when: traefik_container_line != ""
+      changed_when: false
+
+    - name: Check if container exists
+      ansible.builtin.set_fact:
+        container_exists: "{{ existing_vmid | default('') | length > 0 }}"
+        existing_vmid: "{{ existing_vmid | default('') }}"
+      changed_when: false
+
+    - name: Display container status
+      ansible.builtin.debug:
+        msg: "Container {{ traefik_hostname }} {{ 'exists' if container_exists else 'does not exist' }}{{ ' with VMID ' + existing_vmid if container_exists else '' }}"
+
+    - name: Set variables for container creation
+      ansible.builtin.set_fact:
+        traefik_hostname_fact: "{{ traefik_hostname }}"
+        target_node_fact: "{{ target_node }}"
+        container_vmid_fact: "{{ container_vmid }}"
+
+- name: Create Traefik container if it doesn't exist
+  ansible.builtin.import_playbook: create-ct.yml
+  vars:
+    container_hostname: "{{ hostvars['localhost']['traefik_hostname_fact'] }}"
+    target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+    vmid: "{{ hostvars['localhost']['container_vmid_fact'] }}"
+    disk_size: "8"
+    memory: "2048"
+    cores: "2"
+    container_tags: "lxc,traefik"
+  when: not container_exists | default(false)
+
+- name: Set up container inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set local variables from hostvars
+      ansible.builtin.set_fact:
+        traefik_hostname: "{{ hostvars['localhost']['traefik_hostname_fact'] }}"
+        target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+
+    - name: Check if container was just created (in new_containers group)
+      ansible.builtin.set_fact:
+        container_just_created: "{{ groups['new_containers'] is defined and groups['new_containers'] | length > 0 and traefik_hostname in groups['new_containers'] }}"
+      changed_when: false
+
+    - name: Add container from new_containers to traefik_servers group
+      ansible.builtin.add_host:
+        name: "{{ traefik_hostname }}"
+        groups: traefik_servers
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: "{{ hostvars[traefik_hostname].ansible_proxmox_vmid | default('') }}"
+        ansible_proxmox_host: "{{ hostvars[traefik_hostname].ansible_proxmox_host | default(target_node) }}"
+      when: container_just_created | default(false)
+
+    - name: Add existing container to traefik_servers group
+      ansible.builtin.add_host:
+        name: "{{ traefik_hostname }}"
+        groups: traefik_servers
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: "{{ hostvars['localhost']['existing_vmid'] | default('') }}"
+        ansible_proxmox_host: "{{ target_node }}"
+      when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
+
+- name: Prepare container (only if it wasn't just created)
+  hosts: traefik_servers
+  gather_facts: false
+  tasks:
+    - name: Import prep-cts playbook
+      ansible.builtin.import_playbook: prep-cts.yml
+      vars:
+        target_hosts: traefik_servers
+  when: not container_just_created | default(false)
+
 - name: Deploy and Configure Traefik
   hosts: traefik_servers
   become: true
@@ -166,11 +264,116 @@
       no_log: true
       changed_when: true
 
+    - name: Fetch Cloudflare IPv4 ranges
+      ansible.builtin.set_fact:
+        cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url, wantlist=True) }}"
+
+    - name: Fetch Cloudflare IPv6 ranges
+      ansible.builtin.set_fact:
+        cloudflare_ipv6_ranges: "{{ lookup('url', cloudflare_ips_v6_url, wantlist=True) }}"
+
+    - name: Validate RFC2136 credentials are configured
+      ansible.builtin.assert:
+        that:
+          - traefik_rfc2136_tsig_key is defined
+          - traefik_rfc2136_tsig_key | length > 0
+          - traefik_rfc2136_tsig_secret is defined
+          - traefik_rfc2136_tsig_secret | length > 0
+        fail_msg: |
+          ERROR: RFC2136 TSIG credentials are not set!
+
+          Set the environment variables in Semaphore:
+            TRAEFIK_RFC2136_TSIG_KEY: "letsencrypt"
+            TRAEFIK_RFC2136_TSIG_SECRET: "your-tsig-secret-here"
+            TRAEFIK_RFC2136_NAMESERVER: "ns1.home.goodkind.io:53" (optional, defaults to this)
+            TRAEFIK_RFC2136_TSIG_ALGORITHM: "hmac-sha256." (optional, defaults to this)
+        success_msg: "✓ RFC2136 TSIG credentials are configured"
+
+    - name: Ensure Cloudflare IP ranges were retrieved
+      ansible.builtin.assert:
+        that:
+          - cloudflare_ipv4_ranges is defined
+          - cloudflare_ipv4_ranges | length > 0
+          - cloudflare_ipv6_ranges is defined
+          - cloudflare_ipv6_ranges | length > 0
+        fail_msg: |
+          ERROR: Unable to download Cloudflare IP ranges.
+
+          Check controller connectivity to:
+            - {{ cloudflare_ips_v4_url }}
+            - {{ cloudflare_ips_v6_url }}
+        success_msg: "✓ Cloudflare IPv4/IPv6 ranges downloaded"
+
+    - name: Template Traefik static configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/traefik/traefik.yml.j2"
+        dest: "{{ traefik_config_dir }}/traefik.yml"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0644'
+      notify: Restart traefik
+
+    - name: Template Traefik dynamic routes
+      ansible.builtin.template:
+        src: "{{ repo_root }}/traefik/dynamic/routes.yml.j2"
+        dest: "{{ traefik_config_dir }}/dynamic/routes.yml"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0644'
+      notify: Restart traefik
+
+    - name: Template Traefik dynamic middlewares
+      ansible.builtin.template:
+        src: "{{ repo_root }}/traefik/dynamic/middlewares.yml.j2"
+        dest: "{{ traefik_config_dir }}/dynamic/middlewares.yml"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0644'
+      notify: Restart traefik
+
     - name: Enable Traefik service
       ansible.builtin.systemd:
         name: traefik
         enabled: true
         daemon_reload: true
+
+    - name: Flush handlers to ensure Traefik is restarted
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for Traefik to start
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Verify Traefik service status
+      ansible.builtin.systemd:
+        name: traefik
+      register: traefik_status
+
+    - name: Display Traefik service status
+      ansible.builtin.debug:
+        msg: "✓ Traefik service is {{ traefik_status.status.ActiveState }}"
+
+    - name: Check Traefik health endpoint
+      ansible.builtin.uri:
+        url: "http://localhost:80"
+        follow_redirects: none
+        validate_certs: false
+        status_code: [200, 301, 302, 308]
+        timeout: 5
+      register: health_check
+      retries: 3
+      delay: 2
+      until: health_check.status is defined
+      failed_when: false
+
+    - name: Report health check result
+      ansible.builtin.debug:
+        msg: >-
+          {% if health_check.status is defined %}
+          ✓ Traefik is responding (HTTP {{ health_check.status }})
+          {% else %}
+          ⚠ Traefik health check returned: {{ health_check.msg }}
+          {% endif %}
 
   handlers:
     - name: Reload systemd
@@ -182,6 +385,10 @@
         name: traefik
         state: restarted
 
-# Deploy Traefik configuration by calling update playbook
-- name: Deploy Traefik Configuration
-  ansible.builtin.import_playbook: update-traefik-config.yml
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: "✅ Traefik deployed successfully on {{ hostvars['localhost']['traefik_hostname_fact'] }}"
