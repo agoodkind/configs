@@ -1,0 +1,236 @@
+---
+- name: Check if AdGuard container exists
+  hosts: localhost
+  gather_facts: false
+  vars:
+    adguard_hostname: adguard.home.goodkind.io
+    target_node: vault
+    container_vmid: ""
+  tasks:
+    - name: List all LXC containers on Proxmox node
+      ansible.builtin.command: pct list
+      register: proxmox_containers_list
+      delegate_to: "{{ target_node }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Find AdGuard container by hostname
+      ansible.builtin.set_fact:
+        adguard_container_line: "{{ proxmox_containers_list.stdout_lines | select('search', adguard_hostname) | list | first | default('') }}"
+      changed_when: false
+
+    - name: Extract VMID from container line
+      ansible.builtin.set_fact:
+        existing_vmid: "{{ adguard_container_line.split()[0] | default('') }}"
+      when: adguard_container_line != ""
+      changed_when: false
+
+    - name: Check if container exists
+      ansible.builtin.set_fact:
+        container_exists: "{{ existing_vmid | default('') | length > 0 }}"
+        existing_vmid: "{{ existing_vmid | default('') }}"
+      changed_when: false
+
+    - name: Display container status
+      ansible.builtin.debug:
+        msg: "Container {{ adguard_hostname }} {{ 'exists' if container_exists else 'does not exist' }}{{ ' with VMID ' + existing_vmid if container_exists else '' }}"
+
+- name: Create AdGuard container if it doesn't exist
+  ansible.builtin.import_playbook: create-ct.yml
+  vars:
+    container_hostname: "{{ adguard_hostname }}"
+    target_node: "{{ target_node }}"
+    vmid: "{{ container_vmid }}"
+    disk_size: "8"
+    memory: "2048"
+    cores: "2"
+    container_tags: "lxc,adguard"
+  when: not container_exists | default(false)
+
+- name: Set up container inventory
+  hosts: localhost
+  gather_facts: false
+  vars:
+    adguard_hostname: adguard.home.goodkind.io
+  tasks:
+    - name: Check if container was just created (in new_containers group)
+      ansible.builtin.set_fact:
+        container_just_created: "{{ groups['new_containers'] is defined and groups['new_containers'] | length > 0 and adguard_hostname in groups['new_containers'] }}"
+      changed_when: false
+
+    - name: Add container from new_containers to adguard_servers group
+      ansible.builtin.add_host:
+        name: "{{ adguard_hostname }}"
+        groups: adguard_servers
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: "{{ hostvars[adguard_hostname].ansible_proxmox_vmid | default('') }}"
+        ansible_proxmox_host: "{{ hostvars[adguard_hostname].ansible_proxmox_host | default(target_node) }}"
+      when: container_just_created | default(false)
+
+    - name: Add existing container to adguard_servers group
+      ansible.builtin.add_host:
+        name: "{{ adguard_hostname }}"
+        groups: adguard_servers
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: "{{ existing_vmid | default('') }}"
+        ansible_proxmox_host: "{{ target_node }}"
+      when: container_exists | default(false) and not container_just_created | default(false)
+
+- name: Prepare container (only if it wasn't just created)
+  hosts: adguard_servers
+  gather_facts: false
+  tasks:
+    - name: Import prep-cts playbook
+      ansible.builtin.import_playbook: prep-cts.yml
+      vars:
+        target_hosts: adguard_servers
+  when: not container_just_created | default(false)
+
+- name: Deploy and Configure AdGuard Home
+  hosts: adguard_servers
+  become: true
+
+  vars:
+    adguard_version: "0.108.0"
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Create AdGuard user
+      ansible.builtin.user:
+        name: "{{ adguard_user }}"
+        system: true
+        shell: /bin/false
+        home: "{{ adguard_config_dir }}"
+        create_home: false
+
+    - name: Create AdGuard directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ adguard_user }}"
+        group: "{{ adguard_group }}"
+        mode: '0750'
+      loop:
+        - "{{ adguard_config_dir }}"
+        - "{{ adguard_work_dir }}"
+        - "{{ adguard_data_dir }}"
+
+    - name: Check if AdGuard Home is installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/AdGuardHome
+      register: adguard_binary
+
+    - name: Get installed AdGuard Home version
+      ansible.builtin.command: /usr/local/bin/AdGuardHome --version
+      register: adguard_installed_version
+      when: adguard_binary.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Download and install AdGuard Home
+      when: not adguard_binary.stat.exists or adguard_version not in adguard_installed_version.stdout | default('')
+      block:
+        - name: Download AdGuard Home
+          ansible.builtin.get_url:
+            url: "https://github.com/AdguardTeam/AdGuardHome/releases/download/v{{ adguard_version }}/AdGuardHome_linux_amd64.tar.gz"
+            dest: /tmp/AdGuardHome.tar.gz
+            mode: '0644'
+
+        - name: Extract AdGuard Home
+          ansible.builtin.unarchive:
+            src: /tmp/AdGuardHome.tar.gz
+            dest: /tmp
+            remote_src: true
+
+        - name: Install AdGuard Home binary
+          ansible.builtin.copy:
+            src: /tmp/AdGuardHome/AdGuardHome
+            dest: /usr/local/bin/AdGuardHome
+            owner: root
+            group: root
+            mode: '0755'
+            remote_src: true
+
+        - name: Cleanup download files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/AdGuardHome.tar.gz
+            - /tmp/AdGuardHome
+
+    - name: Install libcap2-bin for setcap
+      ansible.builtin.apt:
+        name: libcap2-bin
+        state: present
+
+    - name: Set CAP_NET_BIND_SERVICE capability for DNS port
+      ansible.builtin.command: setcap cap_net_bind_service=+ep /usr/local/bin/AdGuardHome
+      changed_when: false
+
+    - name: Install AdGuard Home systemd service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/adguard.service.j2"
+        dest: /etc/systemd/system/adguard.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Reload systemd
+        - Restart adguard
+
+    - name: Template AdGuard Home configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/adguard/AdGuardHome.yaml.j2"
+        dest: "{{ adguard_config_dir }}/AdGuardHome.yaml"
+        owner: "{{ adguard_user }}"
+        group: "{{ adguard_group }}"
+        mode: '0640'
+      notify: Restart adguard
+
+    - name: Set ownership of config directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ adguard_user }}"
+        group: "{{ adguard_group }}"
+        recurse: true
+      loop:
+        - "{{ adguard_config_dir }}"
+        - "{{ adguard_work_dir }}"
+        - "{{ adguard_data_dir }}"
+
+    - name: Enable AdGuard Home service
+      ansible.builtin.systemd:
+        name: adguard
+        enabled: true
+        daemon_reload: true
+
+    - name: Ensure AdGuard Home service is running
+      ansible.builtin.systemd:
+        name: adguard
+        state: started
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart adguard
+      ansible.builtin.systemd:
+        name: adguard
+        state: restarted
+
+# Deploy AdGuard Home configuration by calling update playbook
+- name: Deploy AdGuard Home Configuration
+  ansible.builtin.import_playbook: update-adguard-config.yml
+
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: "✅ AdGuard Home deployed successfully on {{ adguard_hostname }}"
+
