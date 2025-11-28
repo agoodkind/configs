@@ -1,7 +1,13 @@
 ---
 # Ansible-lint configuration
 # See https://ansible-lint.readthedocs.io/en/latest/configuring.html
+#
+# Note: Collections must be installed before linting:
+#   ansible-galaxy collection install -r playbooks/requirements.yml
 
-# Line length limit
-line-length: 90
+enable_list:
+  - fqcn[action]
+
+exclude_paths:
+  - playbooks/requirements.yml # Not a playbook, it's a requirements file
 

@@ -3,15 +3,15 @@
   hosts: localhost
   gather_facts: false
   connection: local
-  
+
   tasks:
     - name: Run sync script
       ansible.builtin.shell:
         cmd: ./sync-semaphore.sh
         chdir: "{{ playbook_dir | dirname }}"
       register: sync_result
-      
+      changed_when: sync_result.rc == 0
+
     - name: Show sync output
       ansible.builtin.debug:
         var: sync_result.stdout_lines
-
