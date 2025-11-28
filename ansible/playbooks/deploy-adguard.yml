@@ -92,7 +92,7 @@
   become: true
 
   vars:
-    adguard_version: "0.108.0"
+    adguard_version: "release"
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
@@ -128,37 +128,41 @@
       changed_when: false
       failed_when: false
 
-    - name: Download and install AdGuard Home
-      when: not adguard_binary.stat.exists or adguard_version not in adguard_installed_version.stdout | default('')
+    - name: Parse installed version number
+      ansible.builtin.set_fact:
+        installed_version: "{{ adguard_installed_version.stdout | regex_search('v[0-9]+\\.[0-9]+\\.[0-9]+') | first | default('') }}"
+      when: adguard_binary.stat.exists and adguard_installed_version.stdout is defined
+
+    - name: Get available version from release channel
+      ansible.builtin.uri:
+        url: "https://static.adtidy.org/adguardhome/{{ adguard_version }}/version.json"
+        return_content: true
+      register: version_info
+      changed_when: false
+      failed_when: false
+
+    - name: Parse available version from version.json
+      ansible.builtin.set_fact:
+        available_version: "{{ version_info.json.version | default('') }}"
+      when: version_info.json is defined and version_info.json.version is defined
+
+    - name: Install or update AdGuard Home using official install script
+      when: >-
+        not adguard_binary.stat.exists or
+        (installed_version is defined and available_version is defined and installed_version != available_version)
       block:
-        - name: Download AdGuard Home
-          ansible.builtin.get_url:
-            url: "https://github.com/AdguardTeam/AdGuardHome/releases/download/v{{ adguard_version }}/AdGuardHome_linux_amd64.tar.gz"
-            dest: /tmp/AdGuardHome.tar.gz
-            mode: '0644'
+        - name: Download and run AdGuard Home install script
+          ansible.builtin.shell: |
+            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_version }}
+          register: install_result
+          changed_when: install_result.rc == 0
 
-        - name: Extract AdGuard Home
-          ansible.builtin.unarchive:
-            src: /tmp/AdGuardHome.tar.gz
-            dest: /tmp
-            remote_src: true
-
-        - name: Install AdGuard Home binary
-          ansible.builtin.copy:
-            src: /tmp/AdGuardHome/AdGuardHome
-            dest: /usr/local/bin/AdGuardHome
-            owner: root
-            group: root
-            mode: '0755'
-            remote_src: true
-
-        - name: Cleanup download files
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /tmp/AdGuardHome.tar.gz
-            - /tmp/AdGuardHome
+        - name: Verify AdGuard Home binary was installed
+          ansible.builtin.stat:
+            path: /usr/local/bin/AdGuardHome
+          register: verify_binary
+          failed_when: not verify_binary.stat.exists
+          failed_msg: "AdGuard Home binary was not installed successfully"
 
     - name: Install libcap2-bin for setcap
       ansible.builtin.apt:
