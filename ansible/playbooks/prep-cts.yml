@@ -17,7 +17,7 @@
         state: present
 
     - name: Check if en_US.UTF-8 locale is already uncommented
-      ansible.builtin.shell: grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen
+      ansible.builtin.command: grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen
       register: locale_uncommented
       changed_when: false
       failed_when: false
@@ -31,18 +31,22 @@
       when: not locale_uncommented.rc == 0
 
     - name: Check if en_US.UTF-8 locale is already generated
-      ansible.builtin.shell: locale -a | grep -q '^en_US.utf8$'
+      ansible.builtin.shell: |
+        set -o pipefail
+        locale -a | grep -q '^en_US.utf8$'
       register: locale_generated
       changed_when: false
       failed_when: false
 
     - name: Generate en_US.UTF-8 locale
       ansible.builtin.command: locale-gen
+      changed_when: true
       when: not locale_generated.rc == 0 or locale_uncommented.changed | default(false)
 
     - name: Check current system locale
       ansible.builtin.shell: |
-        (localectl status 2>/dev/null | grep -q 'LANG=en_US.UTF-8') || 
+        set -o pipefail
+        (localectl status 2>/dev/null | grep -q 'LANG=en_US.UTF-8') ||
         (grep -q '^LANG=en_US.UTF-8' /etc/default/locale 2>/dev/null)
       register: locale_set
       changed_when: false
@@ -50,6 +54,7 @@
 
     - name: Update system locale
       ansible.builtin.command: update-locale LANG=en_US.UTF-8
+      changed_when: true
       when: not locale_set.rc == 0
 
     - name: Add LANG export to .bashrc
@@ -90,6 +95,7 @@
           - tree
           - tzdata
           - yq
+          - apache2-utils
         state: present
 
     - name: Remove unnecessary packages
@@ -116,13 +122,26 @@
       register: networkd_wait_status
       changed_when: false
       failed_when: false
+      ignore_errors: true
+
+    - name: Set networkd wait enabled fact
+      ansible.builtin.set_fact:
+        networkd_wait_enabled:
+          rc: "{{ 0 if networkd_wait_status.status is defined and networkd_wait_status.status.EnabledState == 'disabled' else 1 }}"
+          stdout: "{{ networkd_wait_status.status.EnabledState | default('unknown') }}"
+      when: networkd_wait_status.status is defined
+      changed_when: false
 
     - name: Disable networkd wait service
       ansible.builtin.systemd:
         name: systemd-networkd-wait-online.service
         enabled: false
         state: stopped
-      when: networkd_wait_status.status is defined and networkd_wait_status.status.EnabledState != 'disabled'
+      changed_when: true
+      when: >-
+        networkd_wait_enabled.rc is not defined or
+        networkd_wait_enabled.rc != 0 or
+        networkd_wait_enabled.stdout != 'disabled'
 
     - name: Get host timezone
       ansible.builtin.command: timedatectl show -p Timezone --value
@@ -139,6 +158,7 @@
 
     - name: Set timezone to host timezone
       ansible.builtin.command: timedatectl set-timezone "{{ host_timezone.stdout }}"
+      changed_when: true
       when: container_timezone.stdout != host_timezone.stdout
 
     - name: Configure rsyslog for local time
@@ -147,7 +167,8 @@
         content: |
           # Use local time instead of UTC
           $ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
-          $template TraditionalFormatWithLocalTime,"%timegenerated% %HOSTNAME% %syslogtag%%msg:::drop-last-lf%\n"
+          $template TraditionalFormatWithLocalTime, >-
+            "%timegenerated% %HOSTNAME% %syslogtag%%msg:::drop-last-lf%\n"
           $ActionFileDefaultTemplate TraditionalFormatWithLocalTime
         mode: '0644'
       notify: Restart rsyslog
@@ -186,7 +207,7 @@
         mode: 'u-x,g-x,o-x'
       when: >
         motd_scripts.files | default([]) | length > 0 and
-        (motd_script_stats.results | selectattr('stat.exists') | 
+        (motd_script_stats.results | selectattr('stat.exists') |
          selectattr('stat.mode', 'match', '.*x.*') | list | length > 0)
 
     - name: Configure auto-login for root
@@ -197,8 +218,10 @@
         block: |
           [Service]
           ExecStart=
-          ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
+          ExecStart=-/sbin/agetty >-
+            --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
       register: configure_auto_login
+      notify: Restart getty service
 
     - name: Create systemd system.conf.d directory
       ansible.builtin.file:
@@ -222,13 +245,12 @@
         (configure_auto_login.changed | default(false)) or
         (lower_shutdown_timeout.changed | default(false))
 
-    - name: Restart getty service (if config changed)
+  handlers:
+    - name: Restart getty service
       ansible.builtin.systemd:
         name: container-getty@1.service
         state: restarted
-      when: configure_auto_login.changed | default(false)
 
-  handlers:
     - name: Restart rsyslog
       ansible.builtin.systemd:
         name: rsyslog
