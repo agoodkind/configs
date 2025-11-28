@@ -94,6 +94,7 @@
   vars:
     adguard_version: "release"
     repo_root: "{{ playbook_dir | dirname | dirname }}"
+    adguard_hostname: "{{ hostvars['localhost']['adguard_hostname_fact'] }}"
 
   tasks:
     - name: Create AdGuard user
