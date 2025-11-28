@@ -2,7 +2,7 @@
 - name: Dump all variables for debugging
   hosts: proxmox
   gather_facts: false
-  
+
   tasks:
     - name: Dump all hostvars
       ansible.builtin.debug:

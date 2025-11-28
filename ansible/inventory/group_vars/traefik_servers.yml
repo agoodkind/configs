@@ -7,7 +7,8 @@ traefik_hostname: proxy.home.goodkind.io
 
 # Domain configuration
 # ingress_domain: client-facing URLs in Traefik route rules (what users access)
-# upstream_domain: backend service URLs in loadBalancer targets (where services actually run)
+# upstream_domain: backend service URLs in loadBalancer targets
+#   (where services actually run)
 traefik_ingress_domain: "home.goodkind.io"
 traefik_upstream_domain: "home.goodkind.io"
 
@@ -17,10 +18,16 @@ traefik_acme_email: "alex@goodkind.io"
 # DNS Challenge Configuration
 # For RFC2136 (BIND/nsupdate with TSIG):
 # Set TRAEFIK_RFC2136_* environment variables in Semaphore
-traefik_rfc2136_nameserver: "{{ lookup('env', 'TRAEFIK_RFC2136_NAMESERVER', default='[3d06:bad:b01::6]:53') }}"
-traefik_rfc2136_tsig_algorithm: "{{ lookup('env', 'TRAEFIK_RFC2136_TSIG_ALGORITHM', default='hmac-sha256.') }}"
-traefik_rfc2136_tsig_key: "{{ lookup('env', 'TRAEFIK_RFC2136_TSIG_KEY', default='') }}"
-traefik_rfc2136_tsig_secret: "{{ lookup('env', 'TRAEFIK_RFC2136_TSIG_SECRET', default='') }}"
+traefik_rfc2136_nameserver: >-
+  {{ lookup('env', 'TRAEFIK_RFC2136_NAMESERVER',
+     default='[3d06:bad:b01::6]:53') }}
+traefik_rfc2136_tsig_algorithm: >-
+  {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_ALGORITHM',
+     default='hmac-sha256.') }}
+traefik_rfc2136_tsig_key: >-
+  {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_KEY', default='') }}
+traefik_rfc2136_tsig_secret: >-
+  {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_SECRET', default='') }}
 
 # Cloudflare API token (legacy, not used with RFC2136)
 cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
