@@ -161,8 +161,12 @@
           ansible.builtin.stat:
             path: /usr/local/bin/AdGuardHome
           register: verify_binary
-          failed_when: not verify_binary.stat.exists
-          failed_msg: "AdGuard Home binary was not installed successfully"
+
+        - name: Assert AdGuard Home binary exists
+          ansible.builtin.assert:
+            that:
+              - verify_binary.stat.exists
+            fail_msg: "AdGuard Home binary was not installed successfully"
 
     - name: Install libcap2-bin for setcap
       ansible.builtin.apt:
