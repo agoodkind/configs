@@ -1,0 +1,146 @@
+---
+# Reusable playbook for setting up a service container
+# Checks if container exists, creates it if needed, and sets up inventory
+#
+# Required variables:
+#   container_group: Inventory group name (e.g., adguard_servers)
+#   group_vars_file: Path to group_vars file (relative to playbook_dir)
+#   hostname_var: Variable name in group_vars containing the hostname
+#     (e.g., adguard_hostname)
+#
+# Optional variables:
+#   target_node: Proxmox node (default: vault)
+#   container_vmid: Specific VMID to use (default: "")
+#   disk_size: Container disk size in GB (default: "8")
+#   memory: Container memory in MB (default: "2048")
+#   cores: Container CPU cores (default: "2")
+#   container_tags: Container tags
+#     (default: "lxc,{{ container_group | replace('_servers', '') }}")
+
+- name: Check if container exists
+  hosts: localhost
+  gather_facts: false
+  vars:
+    target_node: vault
+    container_vmid: ""
+    disk_size: "8"
+    memory: "2048"
+    cores: "2"
+    container_tags: >-
+      lxc,{{ container_group | replace('_servers', '') }}
+  vars_files:
+    - "{{ group_vars_file }}"
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - container_group is defined
+          - group_vars_file is defined
+          - hostname_var is defined
+        fail_msg: >-
+          container_group, group_vars_file, and hostname_var must be
+          provided when importing setup-service-container.yml
+
+    - name: Get container hostname from group_vars
+      ansible.builtin.set_fact:
+        service_hostname: "{{ hostvars['localhost'][hostname_var] }}"
+      changed_when: false
+
+    - name: List all LXC containers on Proxmox node
+      ansible.builtin.command: pct list
+      register: proxmox_containers_list
+      delegate_to: "{{ target_node }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Find container by hostname
+      ansible.builtin.set_fact:
+        container_line: >-
+          {{ proxmox_containers_list.stdout_lines |
+             select('search', service_hostname) |
+             list | first | default('') }}
+      changed_when: false
+
+    - name: Extract VMID from container line
+      ansible.builtin.set_fact:
+        existing_vmid: "{{ container_line.split()[0] | default('') }}"
+      when: container_line != ""
+      changed_when: false
+
+    - name: Check if container exists
+      ansible.builtin.set_fact:
+        container_exists: "{{ existing_vmid | default('') | length > 0 }}"
+        existing_vmid: "{{ existing_vmid | default('') }}"
+      changed_when: false
+
+    - name: Display container status
+      ansible.builtin.debug:
+        msg: >-
+          Container {{ service_hostname }}
+          {{ 'exists' if container_exists else 'does not exist' }}
+          {{ ' with VMID ' + existing_vmid
+             if container_exists else '' }}
+
+    - name: Set variables for container creation
+      ansible.builtin.set_fact:
+        service_hostname_fact: "{{ service_hostname }}"
+        target_node_fact: "{{ target_node }}"
+        container_vmid_fact: "{{ container_vmid }}"
+        disk_size_fact: "{{ disk_size }}"
+        memory_fact: "{{ memory }}"
+        cores_fact: "{{ cores }}"
+        container_tags_fact: "{{ container_tags }}"
+
+- name: Create container if it doesn't exist
+  ansible.builtin.import_playbook: create-ct.yml
+  vars:
+    container_hostname: "{{ hostvars['localhost']['service_hostname_fact'] }}"
+    target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+    vmid: "{{ hostvars['localhost']['container_vmid_fact'] }}"
+    disk_size: "{{ hostvars['localhost']['disk_size_fact'] }}"
+    memory: "{{ hostvars['localhost']['memory_fact'] }}"
+    cores: "{{ hostvars['localhost']['cores_fact'] }}"
+    container_tags: "{{ hostvars['localhost']['container_tags_fact'] }}"
+  when: not hostvars['localhost']['container_exists'] | default(false)
+
+- name: Set up container inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set local variables from hostvars
+      ansible.builtin.set_fact:
+        service_hostname: "{{ hostvars['localhost']['service_hostname_fact'] }}"
+        target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+
+    - name: Check if container was just created (in new_containers group)
+      ansible.builtin.set_fact:
+        container_just_created: >-
+          {{ groups['new_containers'] is defined and
+             groups['new_containers'] | length > 0 and
+             service_hostname in groups['new_containers'] }}
+      changed_when: false
+
+    - name: Add container from new_containers to service group
+      ansible.builtin.add_host:
+        name: "{{ service_hostname }}"
+        groups: "{{ container_group }}"
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: >-
+          {{ hostvars[service_hostname].ansible_proxmox_vmid | default('') }}
+        ansible_proxmox_host: >-
+          {{ hostvars[service_hostname].ansible_proxmox_host | default(target_node) }}
+      when: container_just_created | default(false)
+
+    - name: Add existing container to service group
+      ansible.builtin.add_host:
+        name: "{{ service_hostname }}"
+        groups: "{{ container_group }}"
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: >-
+          {{ hostvars['localhost']['existing_vmid'] | default('') }}
+        ansible_proxmox_host: "{{ target_node }}"
+      when: >-
+        hostvars['localhost']['container_exists'] | default(false) and
+        not container_just_created | default(false)

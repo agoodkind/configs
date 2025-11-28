@@ -1,92 +1,16 @@
 ---
-- name: Check if Traefik container exists
-  hosts: localhost
-  gather_facts: false
-  vars_files:
-    - "{{ playbook_dir }}/../inventory/group_vars/traefik_servers.yml"
+- name: Setup Traefik container
+  ansible.builtin.import_playbook: setup-service-container.yml
   vars:
+    container_group: traefik_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/traefik_servers.yml"
+    hostname_var: traefik_hostname
     target_node: vault
     container_vmid: ""
-  tasks:
-    - name: List all LXC containers on Proxmox node
-      ansible.builtin.command: pct list
-      register: proxmox_containers_list
-      delegate_to: "{{ target_node }}"
-      changed_when: false
-      failed_when: false
-
-    - name: Find Traefik container by hostname
-      ansible.builtin.set_fact:
-        traefik_container_line: "{{ proxmox_containers_list.stdout_lines | select('search', traefik_hostname) | list | first | default('') }}"
-      changed_when: false
-
-    - name: Extract VMID from container line
-      ansible.builtin.set_fact:
-        existing_vmid: "{{ traefik_container_line.split()[0] | default('') }}"
-      when: traefik_container_line != ""
-      changed_when: false
-
-    - name: Check if container exists
-      ansible.builtin.set_fact:
-        container_exists: "{{ existing_vmid | default('') | length > 0 }}"
-        existing_vmid: "{{ existing_vmid | default('') }}"
-      changed_when: false
-
-    - name: Display container status
-      ansible.builtin.debug:
-        msg: "Container {{ traefik_hostname }} {{ 'exists' if container_exists else 'does not exist' }}{{ ' with VMID ' + existing_vmid if container_exists else '' }}"
-
-    - name: Set variables for container creation
-      ansible.builtin.set_fact:
-        traefik_hostname_fact: "{{ traefik_hostname }}"
-        target_node_fact: "{{ target_node }}"
-        container_vmid_fact: "{{ container_vmid }}"
-
-- name: Create Traefik container if it doesn't exist
-  ansible.builtin.import_playbook: create-ct.yml
-  vars:
-    container_hostname: "{{ hostvars['localhost']['traefik_hostname_fact'] }}"
-    target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
-    vmid: "{{ hostvars['localhost']['container_vmid_fact'] }}"
     disk_size: "8"
     memory: "2048"
     cores: "2"
     container_tags: "lxc,traefik"
-  when: not container_exists | default(false)
-
-- name: Set up container inventory
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Set local variables from hostvars
-      ansible.builtin.set_fact:
-        traefik_hostname: "{{ hostvars['localhost']['traefik_hostname_fact'] }}"
-        target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
-
-    - name: Check if container was just created (in new_containers group)
-      ansible.builtin.set_fact:
-        container_just_created: "{{ groups['new_containers'] is defined and groups['new_containers'] | length > 0 and traefik_hostname in groups['new_containers'] }}"
-      changed_when: false
-
-    - name: Add container from new_containers to traefik_servers group
-      ansible.builtin.add_host:
-        name: "{{ traefik_hostname }}"
-        groups: traefik_servers
-        ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-        ansible_proxmox_vmid: "{{ hostvars[traefik_hostname].ansible_proxmox_vmid | default('') }}"
-        ansible_proxmox_host: "{{ hostvars[traefik_hostname].ansible_proxmox_host | default(target_node) }}"
-      when: container_just_created | default(false)
-
-    - name: Add existing container to traefik_servers group
-      ansible.builtin.add_host:
-        name: "{{ traefik_hostname }}"
-        groups: traefik_servers
-        ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-        ansible_proxmox_vmid: "{{ hostvars['localhost']['existing_vmid'] | default('') }}"
-        ansible_proxmox_host: "{{ target_node }}"
-      when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
 
 - name: Prepare container
   ansible.builtin.import_playbook: prep-cts.yml
@@ -141,11 +65,15 @@
       failed_when: false
 
     - name: Download and install Traefik
-      when: not traefik_binary.stat.exists or traefik_version not in traefik_installed_version.stdout
+      when: >-
+        not traefik_binary.stat.exists or
+        traefik_version not in traefik_installed_version.stdout
       block:
         - name: Download Traefik
           ansible.builtin.get_url:
-            url: "https://github.com/traefik/traefik/releases/download/v{{ traefik_version }}/traefik_v{{ traefik_version }}_linux_amd64.tar.gz"
+            url: >-
+              https://github.com/traefik/traefik/releases/download/
+              v{{ traefik_version }}/traefik_v{{ traefik_version }}_linux_amd64.tar.gz
             dest: /tmp/traefik.tar.gz
             mode: '0644'
 
@@ -251,8 +179,13 @@
 
     - name: Generate dashboard authentication file
       ansible.builtin.shell: |
-        htpasswd -nb "{{ traefik_dashboard_user }}" "{{ traefik_dashboard_pass }}" > {{ traefik_config_dir }}/auth/dashboard-users
-        chown {{ traefik_user }}:{{ traefik_group }} {{ traefik_config_dir }}/auth/dashboard-users
+        htpasswd -nb >-
+          "{{ traefik_dashboard_user }}" >-
+          "{{ traefik_dashboard_pass }}" >-
+          {{ traefik_config_dir }}/auth/dashboard-users
+        chown >-
+          {{ traefik_user }}:{{ traefik_group }} >-
+          {{ traefik_config_dir }}/auth/dashboard-users
         chmod 600 {{ traefik_config_dir }}/auth/dashboard-users
       when:
         - traefik_dashboard_user is defined
@@ -262,11 +195,13 @@
 
     - name: Fetch Cloudflare IPv4 ranges
       ansible.builtin.set_fact:
-        cloudflare_ipv4_ranges: "{{ lookup('url', cloudflare_ips_v4_url, wantlist=True) }}"
+        cloudflare_ipv4_ranges: >-
+          {{ lookup('url', cloudflare_ips_v4_url, wantlist=True) }}
 
     - name: Fetch Cloudflare IPv6 ranges
       ansible.builtin.set_fact:
-        cloudflare_ipv6_ranges: "{{ lookup('url', cloudflare_ips_v6_url, wantlist=True) }}"
+        cloudflare_ipv6_ranges: >-
+          {{ lookup('url', cloudflare_ips_v6_url, wantlist=True) }}
 
     - name: Validate RFC2136 credentials are configured
       ansible.builtin.assert:
@@ -281,7 +216,8 @@
           Set the environment variables in Semaphore:
             TRAEFIK_RFC2136_TSIG_KEY: "letsencrypt"
             TRAEFIK_RFC2136_TSIG_SECRET: "your-tsig-secret-here"
-            TRAEFIK_RFC2136_NAMESERVER: "ns1.home.goodkind.io:53" (optional, defaults to this)
+            TRAEFIK_RFC2136_NAMESERVER: >-
+              "ns1.home.goodkind.io:53" (optional, defaults to this)
             TRAEFIK_RFC2136_TSIG_ALGORITHM: "hmac-sha256." (optional, defaults to this)
         success_msg: "✓ RFC2136 TSIG credentials are configured"
 
@@ -387,4 +323,6 @@
   tasks:
     - name: Display completion message
       ansible.builtin.debug:
-        msg: "✅ Traefik deployed successfully on {{ hostvars['localhost']['traefik_hostname_fact'] }}"
+        msg: >-
+          ✅ Traefik deployed successfully on
+          {{ hostvars['localhost']['traefik_hostname_fact'] }}
