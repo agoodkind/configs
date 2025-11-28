@@ -13,7 +13,105 @@
 # 3. Configure BIND as secondary of PowerDNS
 # 4. Update nsupdate targets to use PowerDNS API instead of BIND
 # 5. Reverse zone transfer direction (PowerDNS -> BIND)
-#
+
+- name: Check if PowerDNS container exists
+  hosts: localhost
+  gather_facts: false
+  vars:
+    powerdns_hostname: pdns.home.goodkind.io
+    target_node: vault
+    container_vmid: ""
+  tasks:
+    - name: List all LXC containers on Proxmox node
+      ansible.builtin.command: pct list
+      register: proxmox_containers_list
+      delegate_to: "{{ target_node }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Find PowerDNS container by hostname
+      ansible.builtin.set_fact:
+        powerdns_container_line: "{{ proxmox_containers_list.stdout_lines | select('search', powerdns_hostname) | list | first | default('') }}"
+      changed_when: false
+
+    - name: Extract VMID from container line
+      ansible.builtin.set_fact:
+        existing_vmid: "{{ powerdns_container_line.split()[0] | default('') }}"
+      when: powerdns_container_line != ""
+      changed_when: false
+
+    - name: Check if container exists
+      ansible.builtin.set_fact:
+        container_exists: "{{ existing_vmid | default('') | length > 0 }}"
+        existing_vmid: "{{ existing_vmid | default('') }}"
+      changed_when: false
+
+    - name: Display container status
+      ansible.builtin.debug:
+        msg: "Container {{ powerdns_hostname }} {{ 'exists' if container_exists else 'does not exist' }}{{ ' with VMID ' + existing_vmid if container_exists else '' }}"
+
+    - name: Set variables for container creation
+      ansible.builtin.set_fact:
+        powerdns_hostname_fact: "{{ powerdns_hostname }}"
+        target_node_fact: "{{ target_node }}"
+        container_vmid_fact: "{{ container_vmid }}"
+
+- name: Create PowerDNS container if it doesn't exist
+  ansible.builtin.import_playbook: create-ct.yml
+  vars:
+    container_hostname: "{{ hostvars['localhost']['powerdns_hostname_fact'] }}"
+    target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+    vmid: "{{ hostvars['localhost']['container_vmid_fact'] }}"
+    disk_size: "8"
+    memory: "2048"
+    cores: "2"
+    container_tags: "lxc,powerdns"
+  when: not container_exists | default(false)
+
+- name: Set up container inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set local variables from hostvars
+      ansible.builtin.set_fact:
+        powerdns_hostname: "{{ hostvars['localhost']['powerdns_hostname_fact'] }}"
+        target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+
+    - name: Check if container was just created (in new_containers group)
+      ansible.builtin.set_fact:
+        container_just_created: "{{ groups['new_containers'] is defined and groups['new_containers'] | length > 0 and powerdns_hostname in groups['new_containers'] }}"
+      changed_when: false
+
+    - name: Add container from new_containers to powerdns_servers group
+      ansible.builtin.add_host:
+        name: "{{ powerdns_hostname }}"
+        groups: powerdns_servers
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: "{{ hostvars[powerdns_hostname].ansible_proxmox_vmid | default('') }}"
+        ansible_proxmox_host: "{{ hostvars[powerdns_hostname].ansible_proxmox_host | default(target_node) }}"
+      when: container_just_created | default(false)
+
+    - name: Add existing container to powerdns_servers group
+      ansible.builtin.add_host:
+        name: "{{ powerdns_hostname }}"
+        groups: powerdns_servers
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_proxmox_vmid: "{{ hostvars['localhost']['existing_vmid'] | default('') }}"
+        ansible_proxmox_host: "{{ target_node }}"
+      when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
+
+- name: Prepare container (only if it wasn't just created)
+  hosts: powerdns_servers
+  gather_facts: false
+  tasks:
+    - name: Import prep-cts playbook
+      ansible.builtin.import_playbook: prep-cts.yml
+      vars:
+        target_hosts: powerdns_servers
+  when: not container_just_created | default(false)
+
 - name: Deploy PowerDNS Secondary Server
   hosts: powerdns_servers
   become: true
@@ -490,3 +588,10 @@
         - "Next step:"
         - "  - Update DHCP to include {{ powerdns_ipv6 }} and {{ powerdns_ipv4 }} in DNS servers (IPv6 first)"
 
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: "✅ PowerDNS deployed successfully on {{ hostvars['localhost']['powerdns_hostname_fact'] }}"
