@@ -92,7 +92,7 @@
   become: true
 
   vars:
-    adguard_version: "release"
+    adguard_channel: "release"
     repo_root: "{{ playbook_dir | dirname | dirname }}"
     adguard_hostname: "{{ hostvars['localhost']['adguard_hostname_fact'] }}"
 
@@ -133,9 +133,13 @@
         installed_version: "{{ adguard_installed_version.stdout | regex_search('v[0-9]+\\.[0-9]+\\.[0-9]+') | first | default('') }}"
       when: adguard_binary.stat.exists and adguard_installed_version.stdout is defined
 
+    # Check available version using AdGuard Home's version.json endpoint
+    # Reference: internal/updater/updater.go:DefaultVersionURL() and internal/updater/check.go
+    # URL format: https://static.adtidy.org/adguardhome/{channel}/version.json
+    # The version.json contains: version, announcement, announcement_url, and download URLs
     - name: Get available version from release channel
       ansible.builtin.uri:
-        url: "https://static.adtidy.org/adguardhome/{{ adguard_version }}/version.json"
+        url: "https://static.adtidy.org/adguardhome/{{ adguard_channel }}/version.json"
         return_content: true
       register: version_info
       changed_when: false
@@ -146,16 +150,32 @@
         available_version: "{{ version_info.json.version | default('') }}"
       when: version_info.json is defined and version_info.json.version is defined
 
+    - name: Determine if installation or update is needed
+      ansible.builtin.set_fact:
+        needs_install: "{{ not adguard_binary.stat.exists }}"
+        needs_update: >-
+          {{ adguard_binary.stat.exists and
+             installed_version is defined and
+             available_version is defined and
+             installed_version != available_version }}
+      changed_when: false
+
     - name: Install or update AdGuard Home using official install script
-      when: >-
-        not adguard_binary.stat.exists or
-        (installed_version is defined and available_version is defined and installed_version != available_version)
+      when: needs_install | default(false) or needs_update | default(false)
       block:
-        - name: Download and run AdGuard Home install script
+        - name: Download and run AdGuard Home install script (new installation)
           ansible.builtin.shell: |
-            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_version }} -o /opt
+            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_channel }} -o /opt
           register: install_result
           changed_when: install_result.rc == 0
+          when: needs_install | default(false)
+
+        - name: Download and run AdGuard Home install script (reinstall for update)
+          ansible.builtin.shell: |
+            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_channel }} -r -o /opt
+          register: install_result
+          changed_when: install_result.rc == 0
+          when: needs_update | default(false)
 
         - name: Verify AdGuard Home binary was installed
           ansible.builtin.stat:
