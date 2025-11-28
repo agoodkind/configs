@@ -35,12 +35,18 @@
       ansible.builtin.debug:
         msg: "Container {{ adguard_hostname }} {{ 'exists' if container_exists else 'does not exist' }}{{ ' with VMID ' + existing_vmid if container_exists else '' }}"
 
+    - name: Set variables for container creation
+      ansible.builtin.set_fact:
+        adguard_hostname_fact: "{{ adguard_hostname }}"
+        target_node_fact: "{{ target_node }}"
+        container_vmid_fact: "{{ container_vmid }}"
+
 - name: Create AdGuard container if it doesn't exist
   ansible.builtin.import_playbook: create-ct.yml
   vars:
-    container_hostname: "{{ adguard_hostname }}"
-    target_node: "{{ target_node }}"
-    vmid: "{{ container_vmid }}"
+    container_hostname: "{{ hostvars['localhost']['adguard_hostname_fact'] }}"
+    target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+    vmid: "{{ hostvars['localhost']['container_vmid_fact'] }}"
     disk_size: "8"
     memory: "2048"
     cores: "2"
@@ -50,9 +56,12 @@
 - name: Set up container inventory
   hosts: localhost
   gather_facts: false
-  vars:
-    adguard_hostname: adguard.home.goodkind.io
   tasks:
+    - name: Set local variables from hostvars
+      ansible.builtin.set_fact:
+        adguard_hostname: "{{ hostvars['localhost']['adguard_hostname_fact'] }}"
+        target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
+
     - name: Check if container was just created (in new_containers group)
       ansible.builtin.set_fact:
         container_just_created: "{{ groups['new_containers'] is defined and groups['new_containers'] | length > 0 and adguard_hostname in groups['new_containers'] }}"
@@ -74,9 +83,9 @@
         groups: adguard_servers
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-        ansible_proxmox_vmid: "{{ existing_vmid | default('') }}"
+        ansible_proxmox_vmid: "{{ hostvars['localhost']['existing_vmid'] | default('') }}"
         ansible_proxmox_host: "{{ target_node }}"
-      when: container_exists | default(false) and not container_just_created | default(false)
+      when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
 
 - name: Deploy and Configure AdGuard Home
   hosts: adguard_servers
@@ -256,5 +265,5 @@
   tasks:
     - name: Display completion message
       ansible.builtin.debug:
-        msg: "✅ AdGuard Home deployed successfully on {{ adguard_hostname }}"
+        msg: "✅ AdGuard Home deployed successfully on {{ hostvars['localhost']['adguard_hostname_fact'] }}"
 
