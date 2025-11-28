@@ -96,9 +96,7 @@
         - name: Download and run AdGuard Home install script (new installation)
           ansible.builtin.shell: |
             set -o pipefail
-            curl -s -S -L >-
-              https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
-              | bash -s -- -v -c {{ adguard_channel }} -o /opt
+            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | bash -s -- -v -c {{ adguard_channel }} -o /opt
           args:
             executable: /bin/bash
           register: install_result
@@ -108,9 +106,7 @@
         - name: Download and run AdGuard Home install script (reinstall for update)
           ansible.builtin.shell: |
             set -o pipefail
-            curl -s -S -L >-
-              https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
-              | bash -s -- -v -c {{ adguard_channel }} -r -o /opt
+            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | bash -s -- -v -c {{ adguard_channel }} -r -o /opt
           args:
             executable: /bin/bash
           register: install_result
