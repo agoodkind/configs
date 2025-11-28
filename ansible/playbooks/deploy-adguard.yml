@@ -98,7 +98,9 @@
             set -o pipefail
             curl -s -S -L >-
               https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
-              | sh -s -- -v -c {{ adguard_channel }} -o /opt
+              | bash -s -- -v -c {{ adguard_channel }} -o /opt
+          args:
+            executable: /bin/bash
           register: install_result
           changed_when: install_result.rc == 0
           when: needs_install | default(false)
@@ -108,7 +110,9 @@
             set -o pipefail
             curl -s -S -L >-
               https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
-              | sh -s -- -v -c {{ adguard_channel }} -r -o /opt
+              | bash -s -- -v -c {{ adguard_channel }} -r -o /opt
+          args:
+            executable: /bin/bash
           register: install_result
           changed_when: install_result.rc == 0
           when: needs_update | default(false)
