@@ -1,4 +1,7 @@
 ---
+# Container hostname
+adguard_hostname: adguard.home.goodkind.io
+
 # AdGuard Home Configuration Variables
 # Override these in your own environment or use ansible-vault for sensitive values
 
@@ -119,4 +122,3 @@ adguard_group: adguard
 adguard_work_dir: /opt/AdGuardHome
 adguard_config_dir: /opt/AdGuardHome
 adguard_data_dir: /opt/AdGuardHome/data
-

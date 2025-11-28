@@ -12,6 +12,9 @@
 # 4. Update pdns.conf.j2: master=yes, slave=no
 # 5. Update update-policy grants to use PowerDNS as target
 
+# Container hostname
+powerdns_hostname: pdns.home.goodkind.io
+
 # PowerDNS role: "slave" (current) or "primary" (future migration)
 powerdns_role: "slave"
 

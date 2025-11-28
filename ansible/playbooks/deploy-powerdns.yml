@@ -14,93 +14,18 @@
 # 4. Update nsupdate targets to use PowerDNS API instead of BIND
 # 5. Reverse zone transfer direction (PowerDNS -> BIND)
 
-- name: Check if PowerDNS container exists
-  hosts: localhost
-  gather_facts: false
+- name: Setup PowerDNS container
+  ansible.builtin.import_playbook: setup-service-container.yml
   vars:
-    powerdns_hostname: pdns.home.goodkind.io
+    container_group: powerdns_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/powerdns_servers.yml"
+    hostname_var: powerdns_hostname
     target_node: vault
     container_vmid: ""
-  tasks:
-    - name: List all LXC containers on Proxmox node
-      ansible.builtin.command: pct list
-      register: proxmox_containers_list
-      delegate_to: "{{ target_node }}"
-      changed_when: false
-      failed_when: false
-
-    - name: Find PowerDNS container by hostname
-      ansible.builtin.set_fact:
-        powerdns_container_line: "{{ proxmox_containers_list.stdout_lines | select('search', powerdns_hostname) | list | first | default('') }}"
-      changed_when: false
-
-    - name: Extract VMID from container line
-      ansible.builtin.set_fact:
-        existing_vmid: "{{ powerdns_container_line.split()[0] | default('') }}"
-      when: powerdns_container_line != ""
-      changed_when: false
-
-    - name: Check if container exists
-      ansible.builtin.set_fact:
-        container_exists: "{{ existing_vmid | default('') | length > 0 }}"
-        existing_vmid: "{{ existing_vmid | default('') }}"
-      changed_when: false
-
-    - name: Display container status
-      ansible.builtin.debug:
-        msg: "Container {{ powerdns_hostname }} {{ 'exists' if container_exists else 'does not exist' }}{{ ' with VMID ' + existing_vmid if container_exists else '' }}"
-
-    - name: Set variables for container creation
-      ansible.builtin.set_fact:
-        powerdns_hostname_fact: "{{ powerdns_hostname }}"
-        target_node_fact: "{{ target_node }}"
-        container_vmid_fact: "{{ container_vmid }}"
-
-- name: Create PowerDNS container if it doesn't exist
-  ansible.builtin.import_playbook: create-ct.yml
-  vars:
-    container_hostname: "{{ hostvars['localhost']['powerdns_hostname_fact'] }}"
-    target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
-    vmid: "{{ hostvars['localhost']['container_vmid_fact'] }}"
     disk_size: "8"
     memory: "2048"
     cores: "2"
     container_tags: "lxc,powerdns"
-  when: not container_exists | default(false)
-
-- name: Set up container inventory
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Set local variables from hostvars
-      ansible.builtin.set_fact:
-        powerdns_hostname: "{{ hostvars['localhost']['powerdns_hostname_fact'] }}"
-        target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
-
-    - name: Check if container was just created (in new_containers group)
-      ansible.builtin.set_fact:
-        container_just_created: "{{ groups['new_containers'] is defined and groups['new_containers'] | length > 0 and powerdns_hostname in groups['new_containers'] }}"
-      changed_when: false
-
-    - name: Add container from new_containers to powerdns_servers group
-      ansible.builtin.add_host:
-        name: "{{ powerdns_hostname }}"
-        groups: powerdns_servers
-        ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-        ansible_proxmox_vmid: "{{ hostvars[powerdns_hostname].ansible_proxmox_vmid | default('') }}"
-        ansible_proxmox_host: "{{ hostvars[powerdns_hostname].ansible_proxmox_host | default(target_node) }}"
-      when: container_just_created | default(false)
-
-    - name: Add existing container to powerdns_servers group
-      ansible.builtin.add_host:
-        name: "{{ powerdns_hostname }}"
-        groups: powerdns_servers
-        ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-        ansible_proxmox_vmid: "{{ hostvars['localhost']['existing_vmid'] | default('') }}"
-        ansible_proxmox_host: "{{ target_node }}"
-      when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
 
 - name: Prepare container
   ansible.builtin.import_playbook: prep-cts.yml
@@ -110,6 +35,8 @@
 - name: Deploy PowerDNS Secondary Server
   hosts: powerdns_servers
   become: true
+  collections:
+    - community.postgresql
   vars:
     postgres_db: powerdns
     postgres_user: pdns
@@ -120,21 +47,30 @@
   tasks:
     - name: Set bind_primary_ip to prefer IPv6
       set_fact:
-        bind_primary_ip: "{{ bind_primary_ipv6 | default(bind_primary_ip | default('10.250.0.6')) }}"
+        bind_primary_ip: >-
+          {{ bind_primary_ipv6 |
+             default(bind_primary_ip | default('10.250.0.6')) }}
 
     - name: Manage secrets - check env vars, generate if needed, write to file
       block:
         - name: Check for environment variables from Semaphore
           set_fact:
-            env_pdns_postgres_password: "{{ lookup('env', 'PDNS_POSTGRES_PASSWORD', default='') }}"
+            env_pdns_postgres_password: >-
+              {{ lookup('env', 'PDNS_POSTGRES_PASSWORD', default='') }}
             env_pdns_api_key: "{{ lookup('env', 'PDNS_API_KEY', default='') }}"
             env_pdns_tsig_secret: "{{ lookup('env', 'PDNS_TSIG_SECRET', default='') }}"
 
         - name: Generate secrets if not provided via environment variables
           set_fact:
-            generated_postgres_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
-            generated_pdns_api_key: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
-            generated_tsig_secret: "{{ lookup('password', '/dev/null length=44 chars=ascii_letters,digits,+,/=') }}"
+            generated_postgres_password: >-
+              {{ lookup('password',
+                 '/dev/null length=32 chars=ascii_letters,digits') }}
+            generated_pdns_api_key: >-
+              {{ lookup('password',
+                 '/dev/null length=32 chars=ascii_letters,digits') }}
+            generated_tsig_secret: >-
+              {{ lookup('password',
+                 '/dev/null length=44 chars=ascii_letters,digits,+,/=') }}
           when: >
             env_pdns_postgres_password == '' or
             env_pdns_api_key == '' or
@@ -143,10 +79,19 @@
 
         - name: Set final secret values (use env vars if available, otherwise generated)
           set_fact:
-            postgres_password: "{{ env_pdns_postgres_password | default(generated_postgres_password | default('changeme')) }}"
-            pdns_api_key: "{{ env_pdns_api_key | default(generated_pdns_api_key | default('')) }}"
-            tsig_secret: "{{ env_pdns_tsig_secret | default(generated_tsig_secret | default('')) }}"
-            secrets_were_generated: "{{ env_pdns_postgres_password == '' or env_pdns_api_key == '' or env_pdns_tsig_secret == '' }}"
+            postgres_password: >-
+              {{ env_pdns_postgres_password |
+                 default(generated_postgres_password | default('changeme')) }}
+            pdns_api_key: >-
+              {{ env_pdns_api_key |
+                 default(generated_pdns_api_key | default('')) }}
+            tsig_secret: >-
+              {{ env_pdns_tsig_secret |
+                 default(generated_tsig_secret | default('')) }}
+            secrets_were_generated: >-
+              {{ env_pdns_postgres_password == '' or
+                 env_pdns_api_key == '' or
+                 env_pdns_tsig_secret == '' }}
           no_log: true
 
         - name: Write generated secrets to secure file (not logged)
@@ -154,7 +99,7 @@
             content: |
               # Generated PowerDNS secrets - Add these to Semaphore Environment Variables
               # Generated at: {{ ansible_date_time.iso8601 | default('unknown') }}
-              # 
+              #
               # IMPORTANT: Add these to Semaphore before the next playbook run:
               # 1. Go to Environments → Select your environment
               # 2. Add these as Environment Variables
@@ -187,7 +132,9 @@
           debug:
             msg:
               - "✓ Using secrets from Semaphore environment variables"
-              - "All required environment variables are set: PDNS_POSTGRES_PASSWORD, PDNS_API_KEY, PDNS_TSIG_SECRET"
+              - >-
+                All required environment variables are set:
+                PDNS_POSTGRES_PASSWORD, PDNS_API_KEY, PDNS_TSIG_SECRET
           when: not (secrets_were_generated | default(false))
 
     - name: Update apt cache
@@ -227,27 +174,40 @@
       become_user: postgres
       community.postgresql.postgresql_query:
         db: "{{ postgres_db }}"
-        query: "GRANT ALL PRIVILEGES ON DATABASE {{ postgres_db }} TO {{ postgres_user }}; GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ postgres_user }}; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ postgres_user }};"
+        query: >-
+          GRANT ALL PRIVILEGES ON DATABASE {{ postgres_db }}
+          TO {{ postgres_user }};
+          GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public
+          TO {{ postgres_user }};
+          GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public
+          TO {{ postgres_user }};
 
     - name: Check if PowerDNS schema is initialized
       become_user: postgres
       community.postgresql.postgresql_query:
         db: "{{ postgres_db }}"
-        query: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='domains'"
+        query: >-
+          SELECT COUNT(*) FROM information_schema.tables
+          WHERE table_schema='public' AND table_name='domains'
       register: schema_check
       ignore_errors: true
 
     - name: Download PowerDNS PostgreSQL schema
       get_url:
-        url: https://raw.githubusercontent.com/PowerDNS/pdns/master/modules/gpgsqlbackend/schema.pgsql.sql
+        url: >-
+          https://raw.githubusercontent.com/PowerDNS/pdns/master/modules/gpgsqlbackend/schema.pgsql.sql
         dest: /tmp/pdns-schema.sql
         mode: '0644'
-      when: schema_check.query_result is not defined or schema_check.query_result[0].count == 0
+      when: >-
+        schema_check.query_result is not defined or
+        schema_check.query_result[0].count == 0
 
     - name: Initialize PowerDNS database schema
       become_user: postgres
       shell: psql -d {{ postgres_db }} -f /tmp/pdns-schema.sql
-      when: schema_check.query_result is not defined or schema_check.query_result[0].count == 0
+      when: >-
+        schema_check.query_result is not defined or
+        schema_check.query_result[0].count == 0
 
     - name: Configure PowerDNS using official role
       include_role:
@@ -415,12 +375,18 @@
 
     - name: Get TSIG secret from environment or first play facts (not logged)
       set_fact:
-        tsig_secret: "{{ lookup('env', 'PDNS_TSIG_SECRET', default='') | default(hostvars[groups['powerdns_servers'][0]]['tsig_secret'] | default('')) }}"
+        tsig_secret: >-
+          {{ lookup('env', 'PDNS_TSIG_SECRET', default='') |
+             default(hostvars[groups['powerdns_servers'][0]]['tsig_secret'] |
+             default('')) }}
         no_log: true
 
     - name: Validate TSIG secret is available
       fail:
-        msg: "TSIG secret is not set. Ensure PDNS_TSIG_SECRET environment variable is set in Semaphore, or check that the first play completed successfully."
+        msg: >-
+          TSIG secret is not set. Ensure PDNS_TSIG_SECRET environment
+          variable is set in Semaphore, or check that the first play
+          completed successfully.
       when: tsig_secret == ''
 
     - name: Create TSIG key file on BIND9 server
@@ -441,7 +407,8 @@
       delegate_to: "{{ bind_server }}"
       copy:
         src: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
-        dest: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed.backup-{{ ansible_date_time.epoch }}
+        dest: >-
+          /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed.backup-{{ ansible_date_time.epoch }}
         remote_src: true
 
     - name: Remove existing allow-transfer directives (will be re-added by managed block)
@@ -581,7 +548,9 @@
         - "  - A record: pdns.{{ zone_name }} -> {{ powerdns_ipv4 }}"
         - ""
         - "Next step:"
-        - "  - Update DHCP to include {{ powerdns_ipv6 }} and {{ powerdns_ipv4 }} in DNS servers (IPv6 first)"
+        - >-
+           - Update DHCP to include {{ powerdns_ipv6 }} and
+             {{ powerdns_ipv4 }} in DNS servers (IPv6 first)
 
 - name: Summary
   hosts: localhost
@@ -589,4 +558,6 @@
   tasks:
     - name: Display completion message
       ansible.builtin.debug:
-        msg: "✅ PowerDNS deployed successfully on {{ hostvars['localhost']['powerdns_hostname_fact'] }}"
+        msg: >-
+          ✅ PowerDNS deployed successfully on
+          {{ hostvars['localhost']['powerdns_hostname_fact'] }}

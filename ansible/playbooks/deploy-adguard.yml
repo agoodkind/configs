@@ -1,91 +1,16 @@
 ---
-- name: Check if AdGuard container exists
-  hosts: localhost
-  gather_facts: false
+- name: Setup AdGuard container
+  ansible.builtin.import_playbook: setup-service-container.yml
   vars:
-    adguard_hostname: adguard.home.goodkind.io
+    container_group: adguard_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/adguard_servers.yml"
+    hostname_var: adguard_hostname
     target_node: vault
     container_vmid: ""
-  tasks:
-    - name: List all LXC containers on Proxmox node
-      ansible.builtin.command: pct list
-      register: proxmox_containers_list
-      delegate_to: "{{ target_node }}"
-      changed_when: false
-      failed_when: false
-
-    - name: Find AdGuard container by hostname
-      ansible.builtin.set_fact:
-        adguard_container_line: "{{ proxmox_containers_list.stdout_lines | select('search', adguard_hostname) | list | first | default('') }}"
-      changed_when: false
-
-    - name: Extract VMID from container line
-      ansible.builtin.set_fact:
-        existing_vmid: "{{ adguard_container_line.split()[0] | default('') }}"
-      when: adguard_container_line != ""
-      changed_when: false
-
-    - name: Check if container exists
-      ansible.builtin.set_fact:
-        container_exists: "{{ existing_vmid | default('') | length > 0 }}"
-        existing_vmid: "{{ existing_vmid | default('') }}"
-      changed_when: false
-
-    - name: Display container status
-      ansible.builtin.debug:
-        msg: "Container {{ adguard_hostname }} {{ 'exists' if container_exists else 'does not exist' }}{{ ' with VMID ' + existing_vmid if container_exists else '' }}"
-
-    - name: Set variables for container creation
-      ansible.builtin.set_fact:
-        adguard_hostname_fact: "{{ adguard_hostname }}"
-        target_node_fact: "{{ target_node }}"
-        container_vmid_fact: "{{ container_vmid }}"
-
-- name: Create AdGuard container if it doesn't exist
-  ansible.builtin.import_playbook: create-ct.yml
-  vars:
-    container_hostname: "{{ hostvars['localhost']['adguard_hostname_fact'] }}"
-    target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
-    vmid: "{{ hostvars['localhost']['container_vmid_fact'] }}"
     disk_size: "8"
     memory: "2048"
     cores: "2"
     container_tags: "lxc,adguard"
-  when: not container_exists | default(false)
-
-- name: Set up container inventory
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Set local variables from hostvars
-      ansible.builtin.set_fact:
-        adguard_hostname: "{{ hostvars['localhost']['adguard_hostname_fact'] }}"
-        target_node: "{{ hostvars['localhost']['target_node_fact'] }}"
-
-    - name: Check if container was just created (in new_containers group)
-      ansible.builtin.set_fact:
-        container_just_created: "{{ groups['new_containers'] is defined and groups['new_containers'] | length > 0 and adguard_hostname in groups['new_containers'] }}"
-      changed_when: false
-
-    - name: Add container from new_containers to adguard_servers group
-      ansible.builtin.add_host:
-        name: "{{ adguard_hostname }}"
-        groups: adguard_servers
-        ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-        ansible_proxmox_vmid: "{{ hostvars[adguard_hostname].ansible_proxmox_vmid | default('') }}"
-        ansible_proxmox_host: "{{ hostvars[adguard_hostname].ansible_proxmox_host | default(target_node) }}"
-      when: container_just_created | default(false)
-
-    - name: Add existing container to adguard_servers group
-      ansible.builtin.add_host:
-        name: "{{ adguard_hostname }}"
-        groups: adguard_servers
-        ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-        ansible_proxmox_vmid: "{{ hostvars['localhost']['existing_vmid'] | default('') }}"
-        ansible_proxmox_host: "{{ target_node }}"
-      when: hostvars['localhost']['container_exists'] | default(false) and not container_just_created | default(false)
 
 - name: Deploy and Configure AdGuard Home
   hosts: adguard_servers
@@ -94,7 +19,7 @@
   vars:
     adguard_channel: "release"
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    adguard_hostname: "{{ hostvars['localhost']['adguard_hostname_fact'] }}"
+    adguard_hostname: "{{ hostvars['localhost']['service_hostname_fact'] }}"
 
   tasks:
     - name: Create AdGuard user
@@ -130,13 +55,19 @@
 
     - name: Parse installed version number
       ansible.builtin.set_fact:
-        installed_version: "{{ adguard_installed_version.stdout | regex_search('v[0-9]+\\.[0-9]+\\.[0-9]+') | first | default('') }}"
+        installed_version: >-
+          {{ adguard_installed_version.stdout |
+             regex_search('v[0-9]+\\.[0-9]+\\.[0-9]+') |
+             first | default('') }}
       when: adguard_binary.stat.exists and adguard_installed_version.stdout is defined
 
     # Check available version using AdGuard Home's version.json endpoint
-    # Reference: internal/updater/updater.go:DefaultVersionURL() and internal/updater/check.go
-    # URL format: https://static.adtidy.org/adguardhome/{channel}/version.json
-    # The version.json contains: version, announcement, announcement_url, and download URLs
+    # Reference: internal/updater/updater.go:DefaultVersionURL() and
+    #   internal/updater/check.go
+    # URL format:
+    #   https://static.adtidy.org/adguardhome/{channel}/version.json
+    # The version.json contains: version, announcement,
+    #   announcement_url, and download URLs
     - name: Get available version from release channel
       ansible.builtin.uri:
         url: "https://static.adtidy.org/adguardhome/{{ adguard_channel }}/version.json"
@@ -165,14 +96,20 @@
       block:
         - name: Download and run AdGuard Home install script (new installation)
           ansible.builtin.shell: |
-            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_channel }} -o /opt
+            set -o pipefail
+            curl -s -S -L >-
+              https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+              | sh -s -- -v -c {{ adguard_channel }} -o /opt
           register: install_result
           changed_when: install_result.rc == 0
           when: needs_install | default(false)
 
         - name: Download and run AdGuard Home install script (reinstall for update)
           ansible.builtin.shell: |
-            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_channel }} -r -o /opt
+            set -o pipefail
+            curl -s -S -L >-
+              https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+              | sh -s -- -v -c {{ adguard_channel }} -r -o /opt
           register: install_result
           changed_when: install_result.rc == 0
           when: needs_update | default(false)
@@ -189,7 +126,8 @@
             fail_msg: "AdGuard Home binary was not installed successfully"
 
     - name: Set CAP_NET_BIND_SERVICE capability for DNS port
-      ansible.builtin.command: setcap cap_net_bind_service=+ep /opt/AdGuardHome/AdGuardHome
+      ansible.builtin.command: >-
+        setcap cap_net_bind_service=+ep /opt/AdGuardHome/AdGuardHome
       changed_when: false
 
     - name: Set ownership of AdGuard directories (after install)
@@ -277,5 +215,6 @@
   tasks:
     - name: Display completion message
       ansible.builtin.debug:
-        msg: "✅ AdGuard Home deployed successfully on {{ hostvars['localhost']['adguard_hostname_fact'] }}"
-
+        msg: >-
+          ✅ AdGuard Home deployed successfully on
+          {{ hostvars['localhost']['service_hostname_fact'] }}
