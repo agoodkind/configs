@@ -101,7 +101,7 @@
         name: "{{ adguard_user }}"
         system: true
         shell: /bin/false
-        home: "{{ adguard_config_dir }}"
+        home: "{{ adguard_work_dir }}"
         create_home: false
 
     - name: Create AdGuard directories
@@ -112,7 +112,6 @@
         group: "{{ adguard_group }}"
         mode: '0750'
       loop:
-        - "{{ adguard_config_dir }}"
         - "{{ adguard_work_dir }}"
         - "{{ adguard_data_dir }}"
 
@@ -153,7 +152,7 @@
       block:
         - name: Download and run AdGuard Home install script
           ansible.builtin.shell: |
-            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_version }}
+            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v -c {{ adguard_version }} -o /opt
           register: install_result
           changed_when: install_result.rc == 0
 
@@ -168,61 +167,39 @@
               - verify_binary.stat.exists
             fail_msg: "AdGuard Home binary was not installed successfully"
 
-        - name: Create symlink to /usr/local/bin for systemd service
-          ansible.builtin.file:
-            src: /opt/AdGuardHome/AdGuardHome
-            dest: /usr/local/bin/AdGuardHome
-            state: link
-
-    - name: Install libcap2-bin for setcap
-      ansible.builtin.apt:
-        name: libcap2-bin
-        state: present
-
     - name: Set CAP_NET_BIND_SERVICE capability for DNS port
       ansible.builtin.command: setcap cap_net_bind_service=+ep /opt/AdGuardHome/AdGuardHome
       changed_when: false
 
-    - name: Install AdGuard Home systemd service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/adguard.service.j2"
-        dest: /etc/systemd/system/adguard.service
-        owner: root
-        group: root
-        mode: '0644'
-      notify:
-        - Reload systemd
-        - Restart adguard
-
-    - name: Set ownership of config directories
+    - name: Set ownership of AdGuard directories (after install)
       ansible.builtin.file:
         path: "{{ item }}"
         owner: "{{ adguard_user }}"
         group: "{{ adguard_group }}"
         recurse: true
       loop:
-        - "{{ adguard_config_dir }}"
         - "{{ adguard_work_dir }}"
         - "{{ adguard_data_dir }}"
+      when: adguard_binary.stat.exists
 
     - name: Template AdGuard Home configuration
       ansible.builtin.template:
         src: "{{ repo_root }}/adguard/AdGuardHome.yaml.j2"
-        dest: "{{ adguard_config_dir }}/AdGuardHome.yaml"
+        dest: "{{ adguard_work_dir }}/AdGuardHome.yaml"
         owner: "{{ adguard_user }}"
         group: "{{ adguard_group }}"
         mode: '0640'
-      notify: Restart adguard
+      notify: Restart AdGuardHome
 
     - name: Enable AdGuard Home service
       ansible.builtin.systemd:
-        name: adguard
+        name: AdGuardHome
         enabled: true
         daemon_reload: true
 
     - name: Ensure AdGuard Home service is running
       ansible.builtin.systemd:
-        name: adguard
+        name: AdGuardHome
         state: started
 
     - name: Flush handlers to ensure AdGuard Home is restarted
@@ -234,7 +211,7 @@
 
     - name: Verify AdGuard Home service status
       ansible.builtin.systemd:
-        name: adguard
+        name: AdGuardHome
       register: adguard_status
 
     - name: Display AdGuard Home service status
@@ -268,9 +245,9 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: Restart adguard
+    - name: Restart AdGuardHome
       ansible.builtin.systemd:
-        name: adguard
+        name: AdGuardHome
         state: restarted
 
 - name: Summary
