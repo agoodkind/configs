@@ -4,22 +4,21 @@
   become: true
   tasks:
     - name: Update apt cache
-      apt:
+      ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
 
     - name: Upgrade all packages
-      apt:
+      ansible.builtin.apt:
         upgrade: dist
         autoremove: true
         autoclean: true
 
     - name: Check if reboot required
-      stat:
+      ansible.builtin.stat:
         path: /var/run/reboot-required
       register: reboot_required
 
     - name: Display reboot status
-      debug:
+      ansible.builtin.debug:
         msg: "Reboot required: {{ reboot_required.stat.exists }}"
-

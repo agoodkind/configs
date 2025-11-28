@@ -31,7 +31,9 @@
         success_msg: "✓ Container hostname: {{ container_hostname }}"
     - name: Generate random password
       ansible.builtin.set_fact:
-        actual_password: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
+        actual_password: >-
+          {{ lookup('password',
+             '/dev/null length=20 chars=ascii_letters,digits') }}
 
     - name: Set VMID if not provided
       ansible.builtin.set_fact:
@@ -44,7 +46,8 @@
           name=eth0,bridge={{ network_bridge }},ip={{ ip_address
           }}{{ ',gw=' + gateway if gateway and ip_address != 'dhcp' else ''
           }},ip6={{ ipv6_address
-          }}{{ ',gw6=' + ipv6_gateway if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
+          }}{{ ',gw6=' + ipv6_gateway
+            if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
 
     - name: Get SSH public keys from GitHub
       ansible.builtin.uri:
@@ -69,7 +72,9 @@
 
     - name: Combine all SSH keys
       ansible.builtin.set_fact:
-        all_ssh_keys: "{{ github_keys.content }}{{ (ansible_key.content | b64decode) if (ssh_key_files.files | length > 0) else '' }}"
+        all_ssh_keys: >-
+          {{ github_keys.content }}{{ (ansible_key.content | b64decode)
+             if (ssh_key_files.files | length > 0) else '' }}
 
     - name: Create LXC container
       community.proxmox.proxmox:
@@ -117,7 +122,9 @@
     - name: Display container info
       ansible.builtin.debug:
         msg:
-          - "Container {{ container_hostname }} created with VMID: {{ container_result.vmid }}"
+          - >-
+            Container {{ container_hostname }} created with VMID:
+            {{ container_result.vmid }}
           - "Ansible will connect using hostname: {{ container_hostname }}"
 
     - name: Add container to in-memory inventory
@@ -162,4 +169,7 @@
   tasks:
     - name: Display completion message
       ansible.builtin.debug:
-        msg: "✅ Container {{ hostvars[groups['new_containers'][0]].inventory_hostname }} created and prepped successfully!"
+        msg: >-
+          ✅ Container
+          {{ hostvars[groups['new_containers'][0]].inventory_hostname }}
+          created and prepped successfully!
