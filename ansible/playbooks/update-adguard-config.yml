@@ -1,0 +1,62 @@
+---
+- name: Update AdGuard Home Configuration
+  hosts: adguard_servers
+  become: true
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Template AdGuard Home configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/adguard/AdGuardHome.yaml.j2"
+        dest: "{{ adguard_config_dir }}/AdGuardHome.yaml"
+        owner: "{{ adguard_user }}"
+        group: "{{ adguard_group }}"
+        mode: '0640'
+      notify: Restart adguard
+
+    - name: Flush handlers to ensure AdGuard Home is restarted
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for AdGuard Home to start
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Verify AdGuard Home service status
+      ansible.builtin.systemd:
+        name: adguard
+      register: adguard_status
+
+    - name: Display AdGuard Home service status
+      ansible.builtin.debug:
+        msg: "✓ AdGuard Home service is {{ adguard_status.status.ActiveState }}"
+
+    - name: Check AdGuard Home web interface
+      ansible.builtin.uri:
+        url: "http://localhost:{{ adguard_port }}"
+        follow_redirects: none
+        validate_certs: false
+        status_code: [200, 301, 302, 308]
+        timeout: 5
+      register: health_check
+      retries: 3
+      delay: 2
+      until: health_check.status is defined
+      failed_when: false
+
+    - name: Report health check result
+      ansible.builtin.debug:
+        msg: >-
+          {% if health_check.status is defined %}
+          ✓ AdGuard Home is responding (HTTP {{ health_check.status }})
+          {% else %}
+          ⚠ AdGuard Home health check returned: {{ health_check.msg }}
+          {% endif %}
+
+  handlers:
+    - name: Restart adguard
+      ansible.builtin.systemd:
+        name: adguard
+        state: restarted
+

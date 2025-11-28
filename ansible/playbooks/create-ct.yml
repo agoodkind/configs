@@ -23,6 +23,13 @@
       private: false
 
   tasks:
+    - name: Validate container hostname is set
+      ansible.builtin.assert:
+        that:
+          - container_hostname != ""
+          - container_hostname is defined
+        fail_msg: "container_hostname must be provided"
+        success_msg: "✓ Container hostname: {{ container_hostname }}"
     - name: Generate random password
       ansible.builtin.set_fact:
         actual_password: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
@@ -104,37 +111,20 @@
         state: started
       delegate_to: ansible.home.goodkind.io
 
-    - name: Wait for container to start and get IP from DHCP
+    - name: Wait for container to start
       ansible.builtin.pause:
         seconds: 15
-
-    - name: Get container IP address
-      ansible.builtin.command: pct exec {{ container_result.vmid }} -- hostname -I
-      register: container_ip
-      delegate_to: "{{ target_node }}"
-      retries: 6
-      delay: 5
-      until: container_ip.stdout != ""
-      changed_when: false
-
-    - name: Parse IP addresses
-      ansible.builtin.set_fact:
-        all_ips: "{{ container_ip.stdout.split() }}"
-        ipv4_address: "{{ container_ip.stdout.split() | select('match', '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$') | first | default('N/A') }}"
-        ipv6_address: "{{ container_ip.stdout.split() | select('search', ':') | first | default('N/A') }}"
 
     - name: Display container info
       ansible.builtin.debug:
         msg:
           - "Container {{ container_hostname }} created with VMID: {{ container_result.vmid }}"
-          - "IPv4: {{ ipv4_address }}"
-          - "IPv6: {{ ipv6_address }}"
+          - "Ansible will connect using hostname: {{ container_hostname }}"
 
     - name: Add container to in-memory inventory
       ansible.builtin.add_host:
         name: "{{ container_hostname }}"
         groups: new_containers
-        ansible_host: "{{ ipv4_address if ip_address == 'dhcp' else ip_address.split('/')[0] }}"
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
         ansible_proxmox_vmid: "{{ container_result.vmid }}"

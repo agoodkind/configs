@@ -1,0 +1,40 @@
+[Unit]
+Description=AdGuard Home
+Documentation=https://github.com/AdguardTeam/AdGuardHome
+After=network-online.target
+Wants=network-online.target
+AssertFileIsExecutable=/usr/local/bin/AdGuardHome
+
+[Service]
+Type=simple
+User={{ adguard_user }}
+Group={{ adguard_group }}
+
+# Allow binding to privileged ports (53) as non-root user
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+ExecStart=/usr/local/bin/AdGuardHome \
+  -c {{ adguard_config_dir }}/AdGuardHome.yaml \
+  -w {{ adguard_work_dir }} \
+  -l {{ adguard_data_dir }}/adguard.log \
+  --no-check-update
+
+Restart=on-failure
+RestartSec=5s
+
+# Sandboxing
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=false
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths={{ adguard_config_dir }} {{ adguard_work_dir }} {{ adguard_data_dir }}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=adguard
+
+[Install]
+WantedBy=multi-user.target
+
