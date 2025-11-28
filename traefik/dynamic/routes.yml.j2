@@ -67,6 +67,17 @@ http:
       tls:
         certResolver: letsencrypt
 
+    adguard-ingress:
+      rule: "Host(`adguard.{{ traefik_ingress_domain }}`)"
+      service: adguard-service
+      middlewares:
+        - secure-headers
+        - internal-only
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
   services:
     ansible-service:
       loadBalancer:
@@ -100,6 +111,11 @@ http:
         servers:
           - url: "https://nas.{{ traefik_upstream_domain }}:8443"
         serversTransport: insecure-transport
+    
+    adguard-service:
+      loadBalancer:
+        servers:
+          - url: "http://adguard.{{ traefik_upstream_domain }}:3000"
 
   serversTransports:
     insecure-transport:
