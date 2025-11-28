@@ -8,11 +8,12 @@ block_auth_min: {{ adguard_block_auth_min }}
 http_proxy: "{{ adguard_http_proxy }}"
 language: "{{ adguard_language }}"
 http:
-  address: "{{ adguard_bind_host }}:{{ adguard_port }}"
+  address: "{% if ':' in adguard_bind_host and not adguard_bind_host.startswith('[') %}[{{ adguard_bind_host }}]{% else %}{{ adguard_bind_host }}{% endif %}:{{ adguard_port }}"
 dns:
   bind_hosts:
 {% for host in adguard_dns_bind_hosts %}
-    - {{ host }}
+    - {% if ':' in host %}"{{ host }}"{% else %}{{ host }}{% endif %}
+
 {% endfor %}
   port: {{ adguard_dns_port }}
   upstream_dns:
@@ -24,7 +25,8 @@ dns:
 {% endif %}
   bootstrap_dns:
 {% for bootstrap in adguard_bootstrap_dns %}
-    - {{ bootstrap }}
+    - {% if ':' in bootstrap and not bootstrap.startswith('http') %}"{{ bootstrap }}"{% else %}{{ bootstrap }}{% endif %}
+
 {% endfor %}
   ratelimit: {{ adguard_ratelimit }}
 {% if adguard_ratelimit_whitelist | length > 0 %}
