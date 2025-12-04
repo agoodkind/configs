@@ -1,0 +1,48 @@
+# frozen_string_literal: true
+
+require_relative '../lib/rake_common'
+
+PROXMOX_HOST = 'root@vault'
+
+namespace :wan_monitor do
+  desc 'Deploy wan-monitor script and systemd units to vault'
+  task :deploy do
+    # Deploy the script
+    sh "scp #{File.expand_path('../../scripts/wan-monitor.sh', __dir__)} #{PROXMOX_HOST}:/opt/scripts/wan-monitor"
+    sh "ssh #{PROXMOX_HOST} 'chmod +x /opt/scripts/wan-monitor'"
+
+    # Deploy systemd units
+    sh "scp systemd/wan-monitor.service #{PROXMOX_HOST}:/etc/systemd/system/"
+    sh "scp systemd/wan-monitor.timer #{PROXMOX_HOST}:/etc/systemd/system/"
+    sh "scp systemd/wan-monitor-notify.service #{PROXMOX_HOST}:/etc/systemd/system/"
+
+    # Deploy dhclient hook
+    sh "scp dhclient-hooks/vmbr1-metric #{PROXMOX_HOST}:/etc/dhcp/dhclient-exit-hooks.d/"
+    sh "ssh #{PROXMOX_HOST} 'chmod +x /etc/dhcp/dhclient-exit-hooks.d/vmbr1-metric'"
+
+    # Reload and enable
+    sh "ssh #{PROXMOX_HOST} 'systemctl daemon-reload'"
+    sh "ssh #{PROXMOX_HOST} 'systemctl enable --now wan-monitor-notify.service'"
+    sh "ssh #{PROXMOX_HOST} 'systemctl enable --now wan-monitor.timer'"
+  end
+
+  desc 'Check wan-monitor status on vault'
+  task :status do
+    sh "ssh #{PROXMOX_HOST} 'systemctl status wan-monitor.timer wan-monitor.service --no-pager'"
+  end
+
+  desc 'View wan-monitor logs'
+  task :logs do
+    sh "ssh #{PROXMOX_HOST} 'journalctl -u wan-monitor -n 50 --no-pager'"
+  end
+
+  desc 'View wan-monitor stats and journal'
+  task :stats do
+    sh "ssh #{PROXMOX_HOST} '/opt/scripts/wan-monitor --stats'"
+  end
+end
+
+desc 'Deploy all proxmox configs'
+task deploy: ['wan_monitor:deploy']
+
+task default: :deploy
