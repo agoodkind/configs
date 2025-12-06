@@ -1,0 +1,234 @@
+#!/bin/bash
+# Multi-WAN health check and failover daemon
+# Monitors WAN connectivity and updates routing on failure
+
+set -e
+
+STATE_FILE="/var/run/mwan-health.state"
+LOG_FILE="/var/log/mwan-health.log"
+DAEMON_MODE=false
+
+# WAN health check configuration
+# Format: wan_name:interface:ping_count:success_threshold:interval:failure_threshold
+WAN_CONFIGS=(
+    "att:eth0.3242:3:2:10:2"
+    "webpass:eth1:3:2:10:2"
+    # "monkeybrains:eth3:5:1:30:5"  # Uncomment for Phase 3
+)
+
+# Health check targets - IPv6 FIRST (P0 priority)
+TARGETS_V6=(
+    "2606:4700:4700::1111"  # Cloudflare (checked first)
+    "2001:4860:4860::8888"  # Google
+)
+
+TARGETS_V4=(
+    "1.1.1.1"     # Cloudflare (fallback)
+    "8.8.8.8"     # Google
+)
+
+log() {
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    echo "$msg" | tee -a "$LOG_FILE"
+    logger -t mwan-health "$1"
+}
+
+get_state() {
+    local wan="$1"
+    grep "^${wan}:" "$STATE_FILE" 2>/dev/null | cut -d: -f2 || echo "unknown"
+}
+
+set_state() {
+    local wan="$1"
+    local state="$2"
+    
+    # Remove old state
+    sed -i "/^${wan}:/d" "$STATE_FILE" 2>/dev/null || true
+    
+    # Add new state
+    echo "${wan}:${state}" >> "$STATE_FILE"
+}
+
+check_wan_health() {
+    local wan_name="$1"
+    local interface="$2"
+    local ping_count="$3"
+    local success_threshold="$4"
+    
+    local success_v4=0
+    local success_v6=0
+    
+    # Check if interface exists and is up
+    if ! ip link show "$interface" >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    if ! ip link show "$interface" | grep -q "state UP"; then
+        return 1
+    fi
+    
+    # IPv6 health check FIRST (P0 priority)
+    local has_ipv6=false
+    if ip -6 addr show dev "$interface" | grep -q "scope global"; then
+        has_ipv6=true
+        for target in "${TARGETS_V6[@]}"; do
+            if ping6 -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
+                success_v6=$((success_v6 + 1))
+            fi
+        done
+    fi
+    
+    # IPv4 health check (secondary)
+    for target in "${TARGETS_V4[@]}"; do
+        if ping -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
+            success_v4=$((success_v4 + 1))
+        fi
+    done
+    
+    # WAN is healthy if IPv6 meets threshold (preferred)
+    # or IPv4 meets threshold (fallback)
+    # IPv6 is checked first and preferred
+    if [ $success_v6 -ge $success_threshold ]; then
+        return 0
+    elif [ $success_v4 -ge $success_threshold ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+handle_wan_failure() {
+    local wan_name="$1"
+    
+    log "WAN $wan_name failed health check"
+    
+    local old_state
+    old_state=$(get_state "$wan_name")
+    
+    if [ "$old_state" != "down" ]; then
+        set_state "$wan_name" "down"
+        log "Marking $wan_name as DOWN (was $old_state)"
+        
+        # Update routing to remove failed WAN
+        /usr/local/bin/update-routes.sh
+        
+        # Send notification if configured
+        # send_notification "$wan_name" "down"
+    fi
+}
+
+handle_wan_recovery() {
+    local wan_name="$1"
+    
+    local old_state
+    old_state=$(get_state "$wan_name")
+    
+    if [ "$old_state" != "up" ]; then
+        log "WAN $wan_name health check passed"
+        set_state "$wan_name" "up"
+        log "Marking $wan_name as UP (was $old_state)"
+        
+        # Update routing to add recovered WAN
+        /usr/local/bin/update-routes.sh
+        
+        # Send notification if configured
+        # send_notification "$wan_name" "up"
+    fi
+}
+
+run_health_checks() {
+    for config in "${WAN_CONFIGS[@]}"; do
+        # Skip commented configs
+        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        
+        IFS=':' read -r wan_name interface ping_count success_threshold interval failure_threshold <<< "$config"
+        
+        local consecutive_failures=0
+        local consecutive_successes=0
+        
+        if check_wan_health "$wan_name" "$interface" "$ping_count" "$success_threshold"; then
+            consecutive_successes=$((consecutive_successes + 1))
+            consecutive_failures=0
+            
+            # Need 2 consecutive successes to mark as up (prevents flapping)
+            if [ $consecutive_successes -ge 2 ]; then
+                handle_wan_recovery "$wan_name"
+            fi
+        else
+            consecutive_failures=$((consecutive_failures + 1))
+            consecutive_successes=0
+            
+            if [ $consecutive_failures -ge "$failure_threshold" ]; then
+                handle_wan_failure "$wan_name"
+            fi
+        fi
+    done
+}
+
+daemon_loop() {
+    log "Starting mwan-health daemon"
+    
+    # Initialize state file
+    : > "$STATE_FILE"
+    
+    while true; do
+        run_health_checks
+        
+        # Sleep interval (use minimum interval from configs)
+        sleep 10
+    done
+}
+
+show_status() {
+    echo "=== MWAN Health Status ==="
+    echo ""
+    
+    if [ ! -f "$STATE_FILE" ]; then
+        echo "No state file found. Daemon may not be running."
+        exit 1
+    fi
+    
+    for config in "${WAN_CONFIGS[@]}"; do
+        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        
+        IFS=':' read -r wan_name interface _ _ _ _ <<< "$config"
+        
+        local state
+        state=$(get_state "$wan_name")
+        
+        printf "%-15s %-15s %s\n" "$wan_name" "$interface" "$state"
+    done
+    
+    echo ""
+    echo "=== Recent Log Entries ==="
+    tail -20 "$LOG_FILE" 2>/dev/null || echo "(no log entries)"
+}
+
+# Parse arguments
+case "${1:-}" in
+    --daemon)
+        DAEMON_MODE=true
+        daemon_loop
+        ;;
+    --status)
+        show_status
+        ;;
+    --check)
+        run_health_checks
+        ;;
+    --help|-h)
+        echo "Usage: $0 [--daemon|--status|--check|--help]"
+        echo ""
+        echo "Options:"
+        echo "  --daemon    Run in daemon mode (background monitoring)"
+        echo "  --status    Show current WAN status"
+        echo "  --check     Run one health check cycle"
+        echo "  --help      Show this help message"
+        exit 0
+        ;;
+    *)
+        echo "Usage: $0 [--daemon|--status|--check|--help]"
+        exit 1
+        ;;
+esac
+
