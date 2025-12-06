@@ -7,6 +7,10 @@ attauth_vmid: 133 # Update to actual VMID after VM creation
 attauth_mgmt_ipv4: "10.250.0.{{ attauth_vmid }}/24"
 attauth_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(attauth_vmid) }}/64"
 
+# DNS configuration (IPv6 first)
+attauth_dns_domain: "home.goodkind.io"
+attauth_dns_servers: "3d06:bad:b01::6 10.250.0.6"
+
 # Proxmox bridges
 attauth_mgmt_bridge: vmbr0 # Management network for SSH
 attauth_att_output_bridge: att # AT&T authenticated output to Proxmox

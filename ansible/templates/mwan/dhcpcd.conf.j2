@@ -39,10 +39,12 @@ require dhcp_server_identifier
 # OR generate Stable Private IPv6 Addresses based from the DUID
 slaac private
 
-# Management interface - allow default DHCP behavior
-# (gets IP from vmbr0 for SSH access)
+# Management interface - configured by cloud-init with static IP
+# Don't let dhcpcd manage it
 interface {{ mwan_mgmt_iface }}
-    # Use default DHCP settings - no special config needed
+    nogateway
+    noipv4
+    noipv6
 
 # Static IP for internal interface (to OPNsense)
 interface {{ mwan_internal_iface }}
