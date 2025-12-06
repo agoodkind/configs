@@ -1,0 +1,19 @@
+# wpa_supplicant configuration for AT&T 802.1X
+# Runs on attauth VM
+
+eapol_version=1
+openssl_ciphers=DEFAULT@SECLEVEL=0
+ap_scan=0
+fast_reauth=1
+
+network={
+    key_mgmt=IEEE8021X
+    eap=TLS
+    identity="{{ attauth_eap_identity }}"
+    ca_cert="/etc/wpa_supplicant/ca_cert.pem"
+    client_cert="/etc/wpa_supplicant/client_cert.pem"
+    private_key="/etc/wpa_supplicant/private_key.pem"
+    phase1="allow_canned_success=1 allow_unsafe_renegotiation=1"
+    eapol_flags=0
+}
+

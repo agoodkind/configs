@@ -1,0 +1,48 @@
+# Debian network interfaces for attauth VM
+# Handles AT&T 802.1X authentication and bridges both X710 ports back to Proxmox
+
+auto lo
+iface lo inet loopback
+
+# Management interface (static IP based on VMID)
+auto {{ attauth_mgmt_iface }}
+iface {{ attauth_mgmt_iface }} inet static
+address {{ attauth_mgmt_ipv4 }}
+netmask 255.255.255.0
+gateway 10.250.0.1
+
+iface {{ attauth_mgmt_iface }} inet6 static
+address {{ attauth_mgmt_ipv6 }}
+netmask 64
+gateway 3d06:bad:b01::1
+
+# X710 Port 1 - AT&T WAN (physical passthrough)
+auto {{ attauth_att_port }}
+iface {{ attauth_att_port }} inet manual
+pre-up ip link set {{ attauth_att_port }} up
+
+# AT&T VLAN 3242 (created after wpa_supplicant authenticates)
+# Note: VLAN is created by wpa_supplicant.service after auth
+auto {{ attauth_att_port }}.{{ attauth_vlan_id }}
+iface {{ attauth_att_port }}.{{ attauth_vlan_id }} inet manual
+vlan-raw-device {{ attauth_att_port }}
+
+# X710 Port 2 - OPNsense LAN (physical passthrough)
+auto {{ attauth_lan_port }}
+iface {{ attauth_lan_port }} inet manual
+pre-up ip link set {{ attauth_lan_port }} up
+
+# Bridge: AT&T VLAN → Proxmox "att" bridge (virtio)
+auto br-att
+iface br-att inet manual
+bridge_ports {{ attauth_att_bridge_iface }}
+bridge_stp off
+bridge_fd 0
+post-up brctl addif br-att {{ attauth_att_port }}.{{ attauth_vlan_id }} 2>/dev/null || true
+
+# Bridge: X710 Port 2 → Proxmox "lan" bridge (virtio)
+auto br-lan
+iface br-lan inet manual
+bridge_ports {{ attauth_lan_bridge_iface }} {{ attauth_lan_port }}
+bridge_stp off
+bridge_fd 0

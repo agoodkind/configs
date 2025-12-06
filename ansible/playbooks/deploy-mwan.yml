@@ -1,0 +1,200 @@
+---
+# ============================================================================
+# MWAN Multi-WAN Load Balancer Deployment
+# ============================================================================
+# Deploys mwan VM for multi-WAN load balancing
+# All NICs are virtio (no PCIe passthrough)
+# Receives authenticated AT&T traffic from attauth VM via "att" bridge
+# ============================================================================
+
+- name: Setup mwan VM
+  ansible.builtin.import_playbook: setup-debian-vm.yml
+  vars:
+    vm_group: mwan_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/mwan_servers.yml"
+    hostname_var: mwan_hostname
+    target_node: vault
+    disk_size: "16"
+    memory: "2048"
+    cores: "2"
+    network_interfaces:
+      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_mgmt_bridge'] | default('vmbr0') }}"
+      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_att_bridge'] | default('att') }}"
+      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_webpass_bridge'] | default('webpass') }}"
+      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_bridge_name'] | default('mwanbr') }}"
+    hostpci_devices: []
+    vm_tags: "vm,mwan,network"
+
+- name: Configure MWAN VM
+  hosts: mwan_servers
+  become: true
+
+  vars:
+    mwan_config_dir: /etc/mwan
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Wait for VM
+      ansible.builtin.wait_for_connection:
+        timeout: 60
+      register: connection_check
+      failed_when: false
+
+    - name: Gather facts
+      ansible.builtin.setup:
+      when: connection_check.failed is not defined or not connection_check.failed
+
+    - name: Verify Debian
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == "Debian"
+        fail_msg: "This playbook requires Debian. Found: {{ ansible_os_family | default('unknown') }}"
+        success_msg: "✓ {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - dhcpcd5
+          - nftables
+          - iproute2
+          - iptables
+          - bash
+          - curl
+          - vlan
+          - bridge-utils
+          - ifupdown
+        state: present
+
+    - name: Create configuration directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ mwan_config_dir }}"
+        - /etc/sysctl.d
+        - /etc/iproute2
+        - /usr/local/bin
+
+    - name: Deploy network interfaces
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/interfaces.j2"
+        dest: /etc/network/interfaces
+        mode: '0644'
+        backup: true
+      notify: Restart networking
+
+    - name: Deploy sysctl config
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/etc/sysctl.d/99-mwan.conf"
+        dest: /etc/sysctl.d/99-mwan.conf
+        mode: '0644'
+      notify: Apply sysctl
+
+    - name: Deploy routing tables
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/etc/iproute2/rt_tables"
+        dest: /etc/iproute2/rt_tables
+        mode: '0644'
+
+    - name: Deploy dhcpcd config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/dhcpcd.conf.j2"
+        dest: /etc/dhcpcd.conf
+        mode: '0644'
+        backup: true
+      notify: Restart dhcpcd
+
+    - name: Deploy dhcpcd exit hook
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/etc/dhcpcd.exit-hook"
+        dest: /etc/dhcpcd.exit-hook
+        mode: '0755'
+      notify: Restart dhcpcd
+
+    - name: Deploy nftables config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/nftables.conf.j2"
+        dest: /etc/nftables.conf
+        mode: '0644'
+        backup: true
+      notify: Reload nftables
+
+    - name: Deploy helper scripts
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/usr/local/bin/{{ item }}"
+        dest: /usr/local/bin/{{ item }}
+        mode: '0755'
+      loop:
+        - update-npt.sh
+        - update-routes.sh
+        - health-check.sh
+
+    - name: Deploy mwan-health systemd service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/mwan-health.service.j2"
+        dest: /etc/systemd/system/mwan-health.service
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - dhcpcd
+        - nftables
+        - mwan-health
+
+    - name: Start services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - dhcpcd
+        - nftables
+        - mwan-health
+      failed_when: false
+
+    - name: Check health status
+      ansible.builtin.command: /usr/local/bin/health-check.sh --status
+      register: health_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display status
+      ansible.builtin.debug:
+        msg: "{{ health_status.stdout_lines | default(['Run /usr/local/bin/health-check.sh --status']) }}"
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart networking
+      ansible.builtin.systemd:
+        name: networking
+        state: restarted
+
+    - name: Apply sysctl
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-mwan.conf
+      changed_when: true
+
+    - name: Restart dhcpcd
+      ansible.builtin.systemd:
+        name: dhcpcd
+        state: restarted
+
+    - name: Reload nftables
+      ansible.builtin.systemd:
+        name: nftables
+        state: reloaded

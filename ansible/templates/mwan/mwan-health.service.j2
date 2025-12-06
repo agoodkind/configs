@@ -1,0 +1,13 @@
+[Unit]
+Description=MWAN health check and failover daemon
+After=network-online.target dhcpcd.service nftables.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/health-check.sh --daemon
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+---
+# AT&T Authentication VM Configuration Variables
+
+# VM hostname and management IP
+attauth_hostname: attauth.home.goodkind.io
+attauth_vmid: 133 # Update to actual VMID after VM creation
+attauth_mgmt_ipv4: "10.250.0.{{ attauth_vmid }}/24"
+attauth_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(attauth_vmid) }}/64"
+
+# Proxmox bridges
+attauth_mgmt_bridge: vmbr0 # Management network for SSH
+attauth_att_output_bridge: att # AT&T authenticated output to Proxmox
+attauth_lan_output_bridge: lan # X710 port 2 passthrough to Proxmox
+
+# Interface names (update after VM creation)
+# Run: ssh root@attauth.home.goodkind.io "ip link show"
+attauth_mgmt_iface: "eth0" # virtio on vmbr0 (management/SSH)
+attauth_att_bridge_iface: "eth1" # virtio to Proxmox "att" bridge
+attauth_lan_bridge_iface: "eth2" # virtio to Proxmox "lan" bridge
+attauth_att_port: "eth3" # X710 port 1 (update after VM creation)
+attauth_lan_port: "eth4" # X710 port 2 (update after VM creation)
+
+# AT&T configuration
+attauth_vlan_id: 3242
+attauth_eap_identity: "D0:FC:D0:7C:85:30"
+# Certificates must be manually uploaded to /etc/wpa_supplicant/ on attauth VM
+# Extract from OPNsense:
+#   scp agoodkind@router:/conf/opnatt/wpa/*.pem root@attauth.home.goodkind.io:/etc/wpa_supplicant/
+#   ssh root@attauth.home.goodkind.io "chmod 600 /etc/wpa_supplicant/*.pem"
+
