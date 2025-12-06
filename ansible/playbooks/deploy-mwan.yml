@@ -10,23 +10,21 @@
 - name: Setup mwan VM
   ansible.builtin.import_playbook: setup-debian-vm.yml
   vars:
-    vm_group: mwan_servers
-    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/mwan_servers.yml"
-    hostname_var: mwan_hostname
+    hostname: "{{ mwan_hostname }}"
     target_node: vault
     disk_size: "16"
     memory: "2048"
     cores: "2"
     network_interfaces:
-      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_mgmt_bridge'] | default('vmbr0') }}"
-      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_att_bridge'] | default('att') }}"
-      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_webpass_bridge'] | default('webpass') }}"
-      - "{{ hostvars[groups['mwan_servers'][0]]['mwan_bridge_name'] | default('mwanbr') }}"
+      - "{{ mwan_mgmt_bridge | default('vmbr0') }}"
+      - "{{ mwan_att_bridge | default('att') }}"
+      - "{{ mwan_webpass_bridge | default('webpass') }}"
+      - "{{ mwan_bridge_name | default('mwanbr') }}"
     hostpci_devices: []
     vm_tags: "vm,mwan,network"
-    mgmt_ip_config: "ip={{ hostvars[groups['mwan_servers'][0]]['mwan_mgmt_ipv4'] }},gw=10.250.0.1,ip6={{ hostvars[groups['mwan_servers'][0]]['mwan_mgmt_ipv6'] }},gw6=3d06:bad:b01::1"
-    dns_domain: "{{ hostvars[groups['mwan_servers'][0]]['mwan_dns_domain'] }}"
-    dns_servers: "{{ hostvars[groups['mwan_servers'][0]]['mwan_dns_servers'] }}"
+    mgmt_ip_config: "ip={{ mwan_mgmt_ipv4 }},gw=10.250.0.1,ip6={{ mwan_mgmt_ipv6 }},gw6=3d06:bad:b01::1"
+    dns_domain: "{{ mwan_dns_domain }}"
+    dns_servers: "{{ mwan_dns_servers }}"
     enable_serial: true
     enable_qemu_agent: true
 
