@@ -181,7 +181,7 @@
       loop:
         - update-routes.sh
         - health-check.sh
-    
+
     - name: Deploy static helper scripts
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/usr/local/bin/{{ item }}"
