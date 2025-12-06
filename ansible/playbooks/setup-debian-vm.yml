@@ -151,6 +151,10 @@
     ssh_keys: "{{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url }}"
 
   tasks:
+    - name: Debug - show all extra vars
+      ansible.builtin.debug:
+        msg: "hostname={{ hostname | default('NOT SET') }}, all vars={{ vars.keys() | list | sort }}"
+
     - name: Skip VM creation if hostname not provided
       ansible.builtin.debug:
         msg: "No hostname provided - template-only mode. Pass -e hostname=<fqdn> to create a VM."
