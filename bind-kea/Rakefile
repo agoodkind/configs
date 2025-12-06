@@ -14,7 +14,7 @@ extend RakeCommon
 
 KEA_HOST = ENV.fetch('KEA_HOST', nil)
 ROUTER_USER = ENV.fetch('ROUTER_USER', 'agoodkind')
-ROUTER_HOST = ENV.fetch('ROUTER_HOST', 'router.home.goodkind.io')
+ROUTER_HOST = ENV.fetch('ROUTER_HOST', '10.250.0.1')
 CONFIG_FILE = 'kea/kea-dhcp-ddns.conf'
 DEST_PATH = '/etc/kea/kea-dhcp-ddns.conf'
 
