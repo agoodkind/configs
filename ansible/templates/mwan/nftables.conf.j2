@@ -146,6 +146,8 @@ table inet mangle {
 {% endfor %}
         
         # Pin latency-sensitive traffic to AT&T (mark 1)
+        # Failover: If AT&T down, update-routes.sh removes the fwmark rule,
+        # and traffic falls through to main table (which uses Webpass)
 {% if mwan_att_pinned_dests is defined %}
 {% for dest in mwan_att_pinned_dests %}
         ip daddr {{ dest }} meta mark set 1
