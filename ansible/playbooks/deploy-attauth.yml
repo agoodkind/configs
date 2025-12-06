@@ -13,23 +13,21 @@
 - name: Setup attauth VM
   ansible.builtin.import_playbook: setup-debian-vm.yml
   vars:
-    vm_group: attauth_servers
-    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/attauth_servers.yml"
-    hostname_var: attauth_hostname
+    hostname: "{{ attauth_hostname }}"
     target_node: vault
     disk_size: "4"
     memory: "512"
     cores: "1"
     network_interfaces:
-      - "{{ hostvars[groups['attauth_servers'][0]]['attauth_mgmt_bridge'] | default('vmbr0') }}"
-      - "{{ hostvars[groups['attauth_servers'][0]]['attauth_att_output_bridge'] | default('att') }}"
-      - "{{ hostvars[groups['attauth_servers'][0]]['attauth_lan_output_bridge'] | default('lan') }}"
+      - "{{ attauth_mgmt_bridge | default('vmbr0') }}"
+      - "{{ attauth_att_output_bridge | default('att') }}"
+      - "{{ attauth_lan_output_bridge | default('lan') }}"
     hostpci_devices:
       - "{{ pci_x710 | default('') }}"
     vm_tags: "vm,attauth,network"
-    mgmt_ip_config: "ip={{ hostvars[groups['attauth_servers'][0]]['attauth_mgmt_ipv4'] }},gw=10.250.0.1,ip6={{ hostvars[groups['attauth_servers'][0]]['attauth_mgmt_ipv6'] }},gw6=3d06:bad:b01::1"
-    dns_domain: "{{ hostvars[groups['attauth_servers'][0]]['attauth_dns_domain'] }}"
-    dns_servers: "{{ hostvars[groups['attauth_servers'][0]]['attauth_dns_servers'] }}"
+    mgmt_ip_config: "ip={{ attauth_mgmt_ipv4 }},gw=10.250.0.1,ip6={{ attauth_mgmt_ipv6 }},gw6=3d06:bad:b01::1"
+    dns_domain: "{{ attauth_dns_domain }}"
+    dns_servers: "{{ attauth_dns_servers }}"
     enable_serial: true
     enable_qemu_agent: true
 
