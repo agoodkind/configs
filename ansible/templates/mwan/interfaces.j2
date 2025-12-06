@@ -5,7 +5,6 @@ auto lo
 iface lo inet loopback
 
 # Management interface - configured by cloud-init, don't override
-# Cloud-init sets static IP: 10.250.0.{{ mwan_vmid }} and 3d06:bad:b01::{{ mwan_vmid }}
 
 # AT&T WAN - X710 VF passthrough (iavf driver)
 # wpa_supplicant authenticates on raw interface, traffic appears on VLAN 3242
