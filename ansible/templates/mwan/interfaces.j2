@@ -9,35 +9,35 @@ iface lo inet loopback
 
 # AT&T WAN - X710 VF passthrough (iavf driver)
 # wpa_supplicant authenticates on raw interface, traffic appears on VLAN 3242
-auto {{ mwan_att_iface }}
-iface {{ mwan_att_iface }} inet manual
-pre-up ip link set {{ mwan_att_iface }} up
+        auto {{ mwan_att_iface }}
+        iface {{ mwan_att_iface }} inet manual
+        pre-up ip link set {{ mwan_att_iface }} up
 
 # AT&T VLAN 3242 (created after wpa_supplicant authenticates)
 auto {{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
 iface {{ mwan_att_iface }}.{{ mwan_att_vlan_id }} inet manual
 vlan-raw-device {{ mwan_att_iface }}
-# DHCPv4 and DHCPv6-PD handled by dhcpcd
+        # DHCPv4 and DHCPv6-PD handled by dhcpcd
 
 # Webpass WAN - I226-V NIC passthrough (igc driver)
 # Direct passthrough uses real NIC MAC (no spoofing needed)
-auto {{ mwan_webpass_iface }}
-iface {{ mwan_webpass_iface }} inet manual
-pre-up ip link set {{ mwan_webpass_iface }} up
-# DHCPv4 and DHCPv6-PD handled by dhcpcd
+        auto {{ mwan_webpass_iface }}
+        iface {{ mwan_webpass_iface }} inet manual
+        pre-up ip link set {{ mwan_webpass_iface }} up
+        # DHCPv4 and DHCPv6-PD handled by dhcpcd
 
-# Internal link (to OPNsense) - virtio on mwanbr
-auto {{ mwan_internal_iface }}
-iface {{ mwan_internal_iface }} inet static
-address {{ mwan_internal_ipv4 }}
+        # Internal link (to OPNsense) - virtio on mwanbr
+        auto {{ mwan_internal_iface }}
+        iface {{ mwan_internal_iface }} inet static
+        address {{ mwan_internal_ipv4 }}
 
-iface {{ mwan_internal_iface }} inet6 static
-address {{ mwan_internal_ipv6 }}
+        iface {{ mwan_internal_iface }} inet6 static
+        address {{ mwan_internal_ipv6 }}
 
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
-# Monkeybrains WAN - virtio on mbrains bridge (optional)
-auto {{ mwan_monkeybrains_iface }}
-iface {{ mwan_monkeybrains_iface }} inet manual
-pre-up ip link set {{ mwan_monkeybrains_iface }} up
-# DHCPv4 and DHCPv6-PD handled by dhcpcd
-{% endif %}
+        {% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+        # Monkeybrains WAN - virtio on mbrains bridge (optional)
+        auto {{ mwan_monkeybrains_iface }}
+        iface {{ mwan_monkeybrains_iface }} inet manual
+        pre-up ip link set {{ mwan_monkeybrains_iface }} up
+        # DHCPv4 and DHCPv6-PD handled by dhcpcd
+        {% endif %}
