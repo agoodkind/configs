@@ -404,42 +404,34 @@
             state: started
           delegate_to: ansible.home.goodkind.io
 
-        - name: Scan network to populate neighbor table (IPv6)
-          ansible.builtin.command: nmap -6 -sn 3d06:bad:b01::/64
-          delegate_to: "{{ target_node }}"
-          changed_when: false
-          failed_when: false
-
-        - name: Scan network to populate neighbor table (IPv4)
-          ansible.builtin.command: nmap -sn 10.250.0.0/24
-          delegate_to: "{{ target_node }}"
-          changed_when: false
-
-        - name: Get VM IP from neighbor table by MAC (IPv6 preferred)
-          ansible.builtin.shell: |
-            set -o pipefail
-            MAC=$(qm config {{ new_vmid }} | grep 'net0:' | grep -oP 'virtio=\K[^,]+')
-            # Try IPv6 first
-            ip -6 neigh | grep -i "$MAC" | awk '{print $1}' | head -1 || \
-            # Fall back to IPv4
-            ip -4 neigh | grep -i "$MAC" | awk '{print $1}' | head -1
-          delegate_to: "{{ target_node }}"
-          register: vm_ip_lookup
-          changed_when: false
-
-        - name: Set VM IP fact
+        - name: Calculate VM static IP address (IPv6 preferred)
           ansible.builtin.set_fact:
-            vm_ip_address: "{{ vm_ip_lookup.stdout | default('') }}"
+            vm_ip_address: "3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}"
+            vm_ip_address_v4: "10.250.0.{{ new_vmid }}"
 
-        - name: Wait for VM to be reachable via SSH (using IP)
+        - name: Wait for VM to be reachable via SSH (IPv6)
           ansible.builtin.wait_for:
             host: "{{ vm_ip_address }}"
             port: 22
             timeout: 120
             state: started
-          register: ssh_wait
-          when: vm_ip_address | length > 0
+          register: ssh_wait_v6
           failed_when: false
+
+        - name: Wait for VM to be reachable via SSH (IPv4 fallback)
+          ansible.builtin.wait_for:
+            host: "{{ vm_ip_address_v4 }}"
+            port: 22
+            timeout: 30
+            state: started
+          register: ssh_wait_v4
+          when: ssh_wait_v6.failed | default(false)
+          failed_when: false
+
+        - name: Use IPv4 if IPv6 failed
+          ansible.builtin.set_fact:
+            vm_ip_address: "{{ vm_ip_address_v4 }}"
+          when: ssh_wait_v6.failed | default(false) and not (ssh_wait_v4.failed | default(true))
 
         - name: Set facts for subsequent playbooks
           ansible.builtin.set_fact:
