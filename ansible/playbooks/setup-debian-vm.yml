@@ -1,10 +1,8 @@
 ---
 # Reusable playbook for setting up a Debian 13 VM with cloud-init
 #
-# Required variables:
-#   vm_group: Inventory group name (e.g., mwan_servers)
-#   group_vars_file: Path to group_vars file
-#   hostname_var: Variable name containing the hostname
+# Required variables (for VM creation):
+#   hostname: VM hostname (e.g., mwan.home.goodkind.io)
 #
 # Optional variables:
 #   target_node: Proxmox node (default: vault)
@@ -12,9 +10,14 @@
 #   disk_size: Disk size in GB (default: "8")
 #   memory: Memory in MB (default: "1024")
 #   cores: CPU cores (default: "1")
-#   vm_tags: VM tags (default: "vm,debian,{{ vm_group }}")
+#   vm_tags: VM tags (default: "vm,debian")
 #   network_interfaces: List of bridge names (default: ["vmbr0"])
 #   hostpci_devices: List of PCI devices to pass through (default: [])
+#   mgmt_ip_config: Cloud-init IP config (default: "ip=dhcp,ip6=auto")
+#   dns_domain: DNS search domain
+#   dns_servers: DNS server IPs
+#
+# If hostname is not provided, only the template will be created/verified
 
 - name: Setup Debian cloud image template
   hosts: localhost
@@ -127,7 +130,7 @@
     memory: "1024"
     cores: "1"
     storage: "local-lvm"
-    vm_tags: "vm,debian,{{ vm_group | replace('_servers', '') }}"
+    vm_tags: "vm,debian"
 
     # Network (caller should override)
     network_interfaces: ["vmbr0"]
@@ -147,21 +150,15 @@
     ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys', errors='ignore') | default('') }}"
     ssh_keys: "{{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url }}"
 
-  vars_files:
-    - "{{ group_vars_file }}"
-
   tasks:
-    - name: Validate required variables
-      ansible.builtin.assert:
-        that:
-          - vm_group is defined
-          - group_vars_file is defined
-          - hostname_var is defined
-        fail_msg: "vm_group, group_vars_file, and hostname_var must be provided"
+    - name: Skip VM creation if hostname not provided
+      ansible.builtin.debug:
+        msg: "No hostname provided - template-only mode. Pass -e hostname=<fqdn> to create a VM."
+      when: hostname is not defined
 
-    - name: Get VM hostname from group_vars
-      ansible.builtin.set_fact:
-        vm_hostname: "{{ lookup('vars', hostname_var) }}"
+    - name: End play if no hostname
+      ansible.builtin.meta: end_play
+      when: hostname is not defined
 
     - name: Check if VM already exists
       community.proxmox.proxmox_kvm:
@@ -171,7 +168,7 @@
         api_token_secret: "{{ proxmox_token_secret }}"
         validate_certs: false
         node: "{{ target_node }}"
-        name: "{{ vm_hostname }}"
+        name: "{{ hostname }}"
         state: current
       delegate_to: ansible.home.goodkind.io
       register: vm_check
@@ -179,7 +176,7 @@
 
     - name: Display VM status
       ansible.builtin.debug:
-        msg: "VM {{ vm_hostname }}: {{ 'exists (VMID ' + (vm_check.vmid | string) + ')' if vm_check.vmid is defined else 'will be created' }}"
+        msg: "VM {{ hostname }}: {{ 'exists (VMID ' + (vm_check.vmid | string) + ')' if vm_check.vmid is defined else 'will be created' }}"
 
     - name: VM creation block
       when: vm_check.vmid is not defined
@@ -198,7 +195,7 @@
         - name: Clone template to new VM
           ansible.builtin.command: >
             qm clone {{ template_vmid }} {{ new_vmid }}
-            --name {{ vm_hostname }}
+            --name {{ hostname }}
             --full 1
             --target {{ target_node }}
           delegate_to: "{{ target_node }}"
@@ -290,7 +287,7 @@
 
         - name: Wait for VM to be reachable via SSH
           ansible.builtin.wait_for:
-            host: "{{ vm_hostname }}"
+            host: "{{ hostname }}"
             port: 22
             timeout: 120
             state: started
@@ -299,14 +296,14 @@
 
         - name: Set facts for subsequent playbooks
           ansible.builtin.set_fact:
-            vm_hostname_fact: "{{ vm_hostname }}"
+            hostname_fact: "{{ hostname }}"
             vm_created_fact: true
             vm_vmid_fact: "{{ new_vmid }}"
 
         - name: Display result
           ansible.builtin.debug:
             msg:
-              - "✅ VM {{ vm_hostname }} created (VMID: {{ new_vmid }})"
+              - "✅ VM {{ hostname }} created (VMID: {{ new_vmid }})"
               - "{{ '✅ SSH available' if ssh_wait.state is defined and ssh_wait.state == 'started' else '⚠️  SSH not yet available - check DNS/DHCP' }}"
               - ""
               - "Cloud-init configured with:"
@@ -317,7 +314,7 @@
 
     - name: Set facts if VM already exists
       ansible.builtin.set_fact:
-        vm_hostname_fact: "{{ vm_hostname }}"
+        hostname_fact: "{{ hostname }}"
         vm_created_fact: false
         vm_vmid_fact: "{{ vm_check.vmid }}"
       when: vm_check.vmid is defined
