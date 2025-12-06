@@ -22,11 +22,11 @@ attauth_att_output_bridge: att # AT&T authenticated output to Proxmox
 # See mwan/README.md for VF setup instructions
 pci_x710_vf: "02:02.0"
 
-# Interface names (update after VM creation)
+# Interface names INSIDE the VM (update after VM creation if different)
 # Run: ssh root@attauth.home.goodkind.io "ip link show"
 attauth_mgmt_iface: "eth0" # virtio on vmbr0 (management/SSH)
 attauth_att_bridge_iface: "eth1" # virtio to Proxmox "att" bridge
-attauth_vf_iface: "eth2" # X710 VF (update after VM creation)
+attauth_vf_iface: "eth2" # X710 VF passthrough (iavf driver in guest)
 
 # AT&T configuration
 attauth_vlan_id: 3242
