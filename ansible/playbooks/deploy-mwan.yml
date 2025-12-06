@@ -24,6 +24,11 @@
       - "{{ hostvars[groups['mwan_servers'][0]]['mwan_bridge_name'] | default('mwanbr') }}"
     hostpci_devices: []
     vm_tags: "vm,mwan,network"
+    mgmt_ip_config: "ip={{ hostvars[groups['mwan_servers'][0]]['mwan_mgmt_ipv4'] }},gw=10.250.0.1,ip6={{ hostvars[groups['mwan_servers'][0]]['mwan_mgmt_ipv6'] }},gw6=3d06:bad:b01::1"
+    dns_domain: "{{ hostvars[groups['mwan_servers'][0]]['mwan_dns_domain'] }}"
+    dns_servers: "{{ hostvars[groups['mwan_servers'][0]]['mwan_dns_servers'] }}"
+    enable_serial: true
+    enable_qemu_agent: true
 
 - name: Configure MWAN VM
   hosts: mwan_servers

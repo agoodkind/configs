@@ -4,17 +4,8 @@
 auto lo
 iface lo inet loopback
 
-# Management interface (static IP based on VMID)
-auto {{ attauth_mgmt_iface }}
-iface {{ attauth_mgmt_iface }} inet static
-address {{ attauth_mgmt_ipv4 }}
-netmask 255.255.255.0
-gateway 10.250.0.1
-
-iface {{ attauth_mgmt_iface }} inet6 static
-address {{ attauth_mgmt_ipv6 }}
-netmask 64
-gateway 3d06:bad:b01::1
+# Management interface - configured by cloud-init, don't override
+# Cloud-init sets static IP based on VMID
 
 # X710 Port 1 - AT&T WAN (physical passthrough)
 auto {{ attauth_att_port }}

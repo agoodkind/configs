@@ -67,12 +67,11 @@
             --name debian-13-cloud-template
             --memory 512
             --cores 1
-            --net0 virtio,bridge=vmbr0
+            --net0 virtio,bridge={{ template_bridge }}
             --scsihw virtio-scsi-pci
-            --serial0 socket
-            --vga serial0
+            {% if enable_serial %}--serial0 socket --vga serial0{% endif %}
             --ostype l26
-            --agent enabled=1
+            {% if enable_qemu_agent %}--agent enabled=1{% endif %}
           changed_when: true
 
         - name: Import cloud image as disk
@@ -113,16 +112,34 @@
   gather_facts: false
 
   vars:
+    # Proxmox configuration
     target_node: vault
     template_vmid: 9000
+    template_storage: "storage"
+    template_bridge: "vmbr0"
+
+    # VM specifications (defaults - caller overrides)
     vmid: ""
     disk_size: "8"
     memory: "1024"
     cores: "1"
     storage: "local-lvm"
     vm_tags: "vm,debian,{{ vm_group | replace('_servers', '') }}"
+
+    # Network (caller should override)
     network_interfaces: ["vmbr0"]
     hostpci_devices: []
+
+    # Cloud-init (caller should override for static IPs)
+    mgmt_ip_config: "ip=dhcp,ip6=auto"
+    dns_domain: "home.goodkind.io"
+    dns_servers: "3d06:bad:b01::6 10.250.0.6"
+
+    # Serial console & guest agent
+    enable_serial: true
+    enable_qemu_agent: true
+
+    # SSH keys
     ssh_key_from_file: "{{ lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') | default('') }}"
     ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys', errors='ignore') | default('') }}"
     ssh_keys: "{{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url }}"
@@ -239,7 +256,9 @@
             qm set {{ new_vmid }}
             --ciuser root
             --sshkeys /tmp/sshkeys_{{ new_vmid }}.pub
-            --ipconfig0 ip=dhcp,ip6=auto
+            --ipconfig0 {{ mgmt_ip_config }}
+            --searchdomain {{ dns_domain }}
+            --nameserver '{{ dns_servers }}'
           delegate_to: "{{ target_node }}"
           changed_when: true
 

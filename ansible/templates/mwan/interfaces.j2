@@ -5,19 +5,10 @@
 auto lo
 iface lo inet loopback
 
-# Management interface (static IP based on VMID)
-# IPv4: 10.250.0.<vmid_decimal>
+# Management interface - configured by cloud-init, don't override
+# Cloud-init sets static IP based on VMID:
+# IPv4: 10.250.0.<vmid>
     # IPv6: 3d06:bad:b01::<vmid_hex>
-        auto {{ mwan_mgmt_iface }}
-        iface {{ mwan_mgmt_iface }} inet static
-        address {{ mwan_mgmt_ipv4 }}
-        netmask 255.255.255.0
-        gateway 10.250.0.1
-
-        iface {{ mwan_mgmt_iface }} inet6 static
-        address {{ mwan_mgmt_ipv6 }}
-        netmask 64
-        gateway 3d06:bad:b01::1
 
         # AT&T WAN - virtio on att bridge (authenticated by attauth VM)
         auto {{ mwan_att_iface }}
