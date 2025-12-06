@@ -8,9 +8,9 @@ mwan_vmid: 134 # Update to actual VMID after VM creation
 # mwan_mgmt_ip_config can be overridden for static IP if needed:
 # mwan_mgmt_ip_config: "ip=10.250.0.134/24,gw=10.250.0.1,ip6=3d06:bad:b01::86/64,gw6=3d06:bad:b01::1"
 
-# DNS configuration (IPv6 first)
+# DNS configuration (IPv6 first) - use OPNsense as DNS
 mwan_dns_domain: "home.goodkind.io"
-mwan_dns_servers: "3d06:bad:b01::6 10.250.0.6"
+mwan_dns_servers: "3d06:bad:b01::1 10.250.0.1"
 
 # Proxmox bridge names
 mwan_mgmt_bridge: vmbr0 # Management network for SSH access
