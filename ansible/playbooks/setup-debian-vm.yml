@@ -282,7 +282,55 @@
           delegate_to: "{{ target_node }}"
           when: github_keys.content is defined and github_keys.content | trim | length > 0
 
-        - name: Configure cloud-init with SSH keys
+        - name: Create user-data config for qemu-guest-agent and hostname
+          ansible.builtin.copy:
+            content: |
+              #cloud-config
+              # Skip package upgrade - prep-cts will do dist-upgrade later
+              package_upgrade: false
+              # Install qemu-guest-agent immediately for IP detection
+              packages:
+                - qemu-guest-agent
+            dest: "/tmp/user-data_{{ new_vmid }}.yml"
+            mode: '0644'
+          delegate_to: "{{ target_node }}"
+
+        - name: Copy user-data to snippets
+          ansible.builtin.copy:
+            src: "/tmp/user-data_{{ new_vmid }}.yml"
+            dest: "/var/lib/vz/snippets/user-data_{{ new_vmid }}.yml"
+            remote_src: true
+            mode: '0644'
+          delegate_to: "{{ target_node }}"
+
+        - name: Create network config to send hostname via DHCP
+          ansible.builtin.copy:
+            content: |
+              version: 2
+              ethernets:
+                eth0:
+                  dhcp4: true
+                  dhcp6: true
+                  dhcp-identifier: mac
+                  dhcp4-overrides:
+                    send-hostname: true
+                    hostname: {{ hostname }}
+                  dhcp6-overrides:
+                    send-hostname: true
+                    hostname: {{ hostname }}
+            dest: "/tmp/network-config_{{ new_vmid }}.yml"
+            mode: '0644'
+          delegate_to: "{{ target_node }}"
+
+        - name: Copy network config to snippets
+          ansible.builtin.copy:
+            src: "/tmp/network-config_{{ new_vmid }}.yml"
+            dest: "/var/lib/vz/snippets/network-config_{{ new_vmid }}.yml"
+            remote_src: true
+            mode: '0644'
+          delegate_to: "{{ target_node }}"
+
+        - name: Configure cloud-init with SSH keys, user-data, and network config
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --ciuser root
@@ -290,17 +338,19 @@
             --ipconfig0 {{ mgmt_ip_config }}
             --searchdomain {{ dns_domain }}
             --nameserver '{{ dns_servers }}'
+            --cicustom "user=local:snippets/user-data_{{ new_vmid }}.yml,network=local:snippets/network-config_{{ new_vmid }}.yml"
           delegate_to: "{{ target_node }}"
           changed_when: true
           when: github_keys.content is defined and github_keys.content | trim | length > 0
 
-        - name: Configure cloud-init without SSH keys
+        - name: Configure cloud-init without SSH keys (fallback)
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --ciuser root
             --ipconfig0 {{ mgmt_ip_config }}
             --searchdomain {{ dns_domain }}
             --nameserver '{{ dns_servers }}'
+            --cicustom "user=local:snippets/user-data_{{ new_vmid }}.yml,network=local:snippets/network-config_{{ new_vmid }}.yml"
           delegate_to: "{{ target_node }}"
           changed_when: true
           when: github_keys.content is not defined or github_keys.content | trim | length == 0
@@ -309,11 +359,15 @@
         # TODO: Merge SSH keys properly into custom user-data or configure serial post-boot
         # Issue: --cicustom overrides --sshkeys, breaking SSH access
 
-        - name: Clean up SSH keys temp file
+        - name: Clean up temp files
           ansible.builtin.file:
-            path: "/tmp/sshkeys_{{ new_vmid }}.pub"
+            path: "{{ item }}"
             state: absent
           delegate_to: "{{ target_node }}"
+          loop:
+            - "/tmp/sshkeys_{{ new_vmid }}.pub"
+            - "/tmp/user-data_{{ new_vmid }}.yml"
+            - "/tmp/network-config_{{ new_vmid }}.yml"
           failed_when: false
 
         - name: Regenerate cloud-init image
@@ -333,13 +387,41 @@
             state: started
           delegate_to: ansible.home.goodkind.io
 
-        - name: Wait for VM to be reachable via SSH
+        - name: Scan network to populate neighbor table (IPv6)
+          ansible.builtin.command: nmap -6 -sn 3d06:bad:b01::/64
+          delegate_to: "{{ target_node }}"
+          changed_when: false
+          failed_when: false
+
+        - name: Scan network to populate neighbor table (IPv4)
+          ansible.builtin.command: nmap -sn 10.250.0.0/24
+          delegate_to: "{{ target_node }}"
+          changed_when: false
+
+        - name: Get VM IP from neighbor table by MAC (IPv6 preferred)
+          ansible.builtin.shell: |
+            set -o pipefail
+            MAC=$(qm config {{ new_vmid }} | grep 'net0:' | grep -oP 'virtio=\K[^,]+')
+            # Try IPv6 first
+            ip -6 neigh | grep -i "$MAC" | awk '{print $1}' | head -1 || \
+            # Fall back to IPv4
+            ip -4 neigh | grep -i "$MAC" | awk '{print $1}' | head -1
+          delegate_to: "{{ target_node }}"
+          register: vm_ip_lookup
+          changed_when: false
+
+        - name: Set VM IP fact
+          ansible.builtin.set_fact:
+            vm_ip_address: "{{ vm_ip_lookup.stdout | default('') }}"
+
+        - name: Wait for VM to be reachable via SSH (using IP)
           ansible.builtin.wait_for:
-            host: "{{ hostname }}"
+            host: "{{ vm_ip_address }}"
             port: 22
             timeout: 120
             state: started
           register: ssh_wait
+          when: vm_ip_address | length > 0
           failed_when: false
 
         - name: Set facts for subsequent playbooks
@@ -348,14 +430,16 @@
             vm_created_fact: true
             vm_vmid_fact: "{{ new_vmid }}"
 
-        - name: Add VM to new_vms group for prep-cts
+        - name: Add VM to new_vms group for prep-cts (connect via IP initially)
           ansible.builtin.add_host:
             name: "{{ hostname }}"
             groups: new_vms
+            ansible_host: "{{ vm_ip_address }}"
             ansible_user: root
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
             ansible_proxmox_vmid: "{{ new_vmid }}"
             ansible_proxmox_host: "{{ target_node }}"
+          when: vm_ip_address | default('') | length > 0
 
         - name: Display result
           ansible.builtin.debug:
