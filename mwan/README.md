@@ -1,9 +1,12 @@
 # Multi-WAN Load Balancer (mwan)
 
-Two-VM Debian 13 configuration for dual-WAN (AT&T + Webpass) load balancing.
+Single-VM Debian 13 configuration for dual-WAN (AT&T + Webpass) load balancing with PCI passthrough.
 
-**attauth VM**: AT&T 802.1X auth (X710 VF with trust mode) → bridges to Proxmox
-**mwan VM**: Load balancing, 1:1 NAT, NPT, health monitoring (virtio only)
+**mwan VM**: All-in-one solution:
+
+- AT&T 802.1X authentication (X710 VF with trust mode)
+- Webpass WAN (I226-V full passthrough)
+- Load balancing, 1:1 NAT, NPT, health monitoring
 
 ## Quick Start
 
@@ -19,25 +22,21 @@ exit
 
 cd ansible
 
-# 1. Deploy attauth VM (AT&T 802.1X auth)
-ansible-playbook -i inventory playbooks/deploy-attauth.yml -e pci_x710="02:02.0"
-# → Creates VM with cloud-init, SSH keys auto-deployed, assigns X710 VF
-
-# Upload AT&T certs and re-run to configure:
-scp agoodkind@router:/conf/opnatt/wpa/*.pem root@attauth.home.goodkind.io:/etc/wpa_supplicant/
-ansible-playbook -i inventory playbooks/deploy-attauth.yml
-# → Configures wpa_supplicant, starts services
-
-# 2. Deploy mwan VM (load balancer)
+# 1. Deploy mwan VM (all-in-one: auth + load balancing)
 ansible-playbook -i inventory playbooks/deploy-mwan.yml
-# → Creates VM with cloud-init, configures routing, NAT, health monitoring
+# → Creates VM with PCI passthrough (VF 02:02.0 + Webpass NIC 06:00.0)
+
+# 2. Upload AT&T certificates
+scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
+ansible-playbook -i inventory playbooks/deploy-mwan.yml
+# → Starts wpa_supplicant for AT&T authentication
 
 # Verify interface names after deployment:
 ssh root@mwan.home.goodkind.io "ip link show"
 # Update group_vars/mwan_servers.yml if needed, re-run playbook
 ```
 
-**Both playbooks are idempotent** - re-run anytime to apply config changes.
+**Playbook is idempotent** - re-run anytime to apply config changes.
 
 ## X710 VF Setup (Proxmox Host)
 
@@ -108,47 +107,36 @@ systemctl start x710-vf-setup.service
 
 ## Architecture
 
-**attauth VM** (X710 VF + virtio, 512MB):
+**mwan VM** (PCI passthrough + virtio, 2GB):
 
-- X710 VF (trust mode) → wpa_supplicant → VLAN 3242 → bridge to Proxmox "att"
-- virtio NICs → management and bridging
-
-**mwan VM** (virtio only, 2GB):
-
-- eth0 ← Proxmox vmbr0 (management)
-- eth1 ← Proxmox "att" bridge (authenticated AT&T)
-- eth2 ← Proxmox "webpass" bridge
-- eth3 → Proxmox "mwanbr" bridge → OPNsense WAN
-- eth4 ← Proxmox "mbrains" bridge (optional)
+- eth0: virtio → vmbr0 (management)
+- eth1: **X710 VF** (02:02.0, trust mode) → wpa_supplicant → VLAN 3242 → AT&T WAN
+- eth2: **I226-V NIC** (06:00.0, full passthrough) → Webpass WAN
+- eth3: virtio → mwanbr → OPNsense WAN
+- eth4: virtio → mbrains (Monkeybrains, optional)
 
 **OPNsense sees:** Single WAN at 10.250.250.1 (mwan gateway)
 
 **Key Points:**
 
-- **AT&T 802.1X**: wpa_supplicant runs in attauth VM (X710 VF with trust mode)
-- **mwan VM**: virtio only (no passthrough, can migrate)
-- **X710 VF**: Single VF from port 1, trust mode required for EAPOL frames
+- **AT&T 802.1X**: wpa_supplicant runs in mwan VM (X710 VF with trust mode)
+- **Webpass**: Full I226-V NIC passthrough (avoids MAC conflicts with Webpass ISP)
+- **X710 VF**: Trust mode required for EAPOL (802.1X) frames
+- **Single VM**: Simpler architecture - all WAN logic in one place
 - **Cloud-init**: SSH keys auto-deployed, no manual bootstrap needed
-- **VF trust mode**: Allows EAPOL (802.1X) frames and MAC changes
 
 ## Configuration Files
 
-### attauth VM (AT&T Authentication)
+### mwan VM
 
 File | Purpose
 -----|--------
-/etc/network/interfaces | X710 port config, VLAN 3242, bridges to Proxmox
+/etc/network/interfaces | PCI passthrough devices + VLAN 3242 config
 /etc/wpa_supplicant/wpa_supplicant.conf | AT&T 802.1X authentication
-
-### mwan VM (Load Balancer)
-
-File | Purpose
------|--------
-/etc/network/interfaces | Interface config with MAC spoofing for Webpass
 /etc/dhcpcd.conf | DHCPv4/v6 + Prefix Delegation with DUID
 /etc/dhcpcd.exit-hook | Dynamic prefix handling and NPT updates
 /etc/nftables.conf | NAT, NPT, connection marking, and filtering
-/etc/sysctl.d/99-mwan.conf | Kernel parameters (forwarding, etc.)
+/etc/sysctl.d/99-mwan.conf | Kernel parameters (generated from template with interface names)
 /etc/iproute2/rt_tables | Custom routing tables (att, webpass, monkeybrains)
 /usr/local/bin/update-npt.sh | Dynamic NPT rule updates
 /usr/local/bin/update-routes.sh | Policy routing table updates
@@ -159,14 +147,10 @@ File | Purpose
 ### Verify Services
 
 ```bash
-# Check wpa_supplicant (AT&T 802.1X) on attauth
-ssh root@attauth.home.goodkind.io
-wpa_cli status
-systemctl status wpa_supplicant-attauth
-
-# Check services on mwan
+# Check all services on mwan
 ssh root@mwan.home.goodkind.io
-systemctl status dhcpcd nftables mwan-health
+wpa_cli status  # AT&T 802.1X authentication
+systemctl status wpa_supplicant-mwan dhcpcd nftables mwan-health
 
 # Check interfaces
 ip addr show
@@ -190,16 +174,18 @@ nft list ruleset
 - **On Proxmox host**, verify VF trust mode: `ssh root@vault "ip link show enp2s0f0np0"`
   - Must show: `vf 0 ... spoof checking off, trust on`
   - If not: `ip link set enp2s0f0np0 vf 0 trust on && ip link set enp2s0f0np0 vf 0 spoof off`
-- Check wpa_supplicant logs: `journalctl -u wpa_supplicant-attauth -f`
+- Check wpa_supplicant logs: `journalctl -u wpa_supplicant-mwan -f`
 - Verify certificates are present: `ls -la /etc/wpa_supplicant/*.pem`
-- Check Debian wpa_supplicant version supports legacy options
-- Verify VF is assigned to VM: `qm config <VMID> | grep hostpci`
+- Check VF is assigned to VM: `qm config <VMID> | grep hostpci`
+- Verify VLAN 3242 interface exists: `ip link show | grep 3242`
 
 **Webpass not getting DHCP:**
 
-- Verify MAC spoofing: `ip link show eth2` (should show `00:e2:69:66:8b:5a`)
+- With full PCI passthrough, VM uses real NIC MAC (no spoofing)
+- Verify Webpass NIC is assigned: `lspci | grep I226`
 - Check DUID in dhcpcd.conf matches: `grep duid /etc/dhcpcd.conf`
 - Check dhcpcd logs: `journalctl -u dhcpcd -f`
+- Webpass is MAC-sensitive - using real hardware MAC avoids conflicts
 
 **NPT not working:**
 
@@ -251,26 +237,25 @@ nft list ruleset
 - **Phase 4**: Dynamic DNS for Monkeybrains public IPv4
 - **Go Rewrite**: Single binary orchestrator for better state management
 
-## Notes on X710 VF for 802.1X
+## Architecture Notes
 
-**Advantages over full PCI passthrough:**
+**Why PCI Passthrough:**
 
-- X710 remains available for other uses (can create more VFs)
-- attauth VM can potentially migrate (though may break auth session)
-- Only assigns needed resources to VM
+- **X710 VF (AT&T)**: Trust mode required for EAPOL (802.1X) frames - can't do this over virtio bridge
+- **I226-V (Webpass)**: Full passthrough avoids MAC address conflicts - Webpass is MAC-sensitive
+- **Performance**: Direct hardware access, no bridge overhead
+- **Simplicity**: Single VM handles everything - no complex bridging between VMs
 
-**Potential issues:**
+**Trade-offs:**
 
-- **Experimental**: VF + 802.1X is not a common configuration
-- **Trust mode required**: Without it, EAPOL frames are filtered
-- **Driver support**: Requires `iavf` driver in guest (included in Debian)
-- **Random MAC**: VF gets random MAC on creation (can be set with `ip link set vf 0 mac`)
-- **Interface naming**: VF appears as `enp2s0f0v0` on Proxmox host, different name in VM
-- **Fallback**: If VF approach fails, revert to full passthrough of `02:00.0`
+- **VM Migration**: Cannot migrate mwan VM (PCI devices are bound to hardware)
+- **X710 Usage**: VF consumes one function, but host can still create more VFs from remaining capacity
+- **Dependencies**: Requires VF setup on Proxmox host before VM deployment
 
-**Testing checklist before production:**
+**Testing checklist:**
 
 1. Verify VF trust mode persists after Proxmox host reboot
-2. Verify 802.1X authentication succeeds through VF
-3. Test auth recovery after attauth VM reboot
-4. Monitor for any EAPOL frame drops in logs
+2. Verify AT&T 802.1X authentication succeeds
+3. Verify Webpass DHCP works with real NIC MAC
+4. Test WAN failover between AT&T and Webpass
+5. Verify NPT and 1:1 NAT mappings work correctly

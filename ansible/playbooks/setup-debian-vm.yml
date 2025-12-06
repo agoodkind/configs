@@ -18,7 +18,6 @@
 #   dns_servers: DNS server IPs
 #
 # If hostname is not provided, only the template will be created/verified
-
 - name: Setup Debian cloud image template
   hosts: localhost
   gather_facts: false
@@ -396,6 +395,15 @@
             vm_created_fact: true
             vm_vmid_fact: "{{ new_vmid }}"
 
+        - name: Add VM to new_vms group for prep-cts
+          ansible.builtin.add_host:
+            name: "{{ hostname }}"
+            groups: new_vms
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+            ansible_proxmox_vmid: "{{ new_vmid }}"
+            ansible_proxmox_host: "{{ target_node }}"
+
         - name: Display result
           ansible.builtin.debug:
             msg:
@@ -405,8 +413,6 @@
               - "Cloud-init configured with:"
               - "  - Root SSH keys from ~/.ssh/id_ed25519.pub + GitHub"
               - "  - DHCP on first interface"
-              - ""
-              - "Next: Re-run deployment playbook to configure services"
 
     - name: Set facts if VM already exists
       ansible.builtin.set_fact:
@@ -414,3 +420,9 @@
         vm_created_fact: false
         vm_vmid_fact: "{{ vm_check.vmid }}"
       when: vm_check.vmid is defined
+
+- name: Prepare newly created VMs
+  import_playbook: prep-cts.yml
+  vars:
+    target_hosts: new_vms
+  when: groups['new_vms'] is defined and groups['new_vms'] | length > 0

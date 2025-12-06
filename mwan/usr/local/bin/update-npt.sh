@@ -93,3 +93,5 @@ nft list ruleset > /etc/nftables.conf.dynamic
 
 log "NPT update complete for $WAN_NAME"
 
+
+

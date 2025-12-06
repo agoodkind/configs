@@ -134,15 +134,31 @@ table inet mangle {
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
         
-        # Mark connections for policy routing
-        ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        # Mark traffic from static 1:1 NAT IPs to use specific WAN
+        # AT&T static IPs (mark 1 = use AT&T WAN)
+{% for mapping in mwan_static_mappings.att %}
+        ip saddr {{ mapping.internal }} meta mark set 1
+{% endfor %}
+        
+        # Webpass static IPs (mark 2 = use Webpass WAN)
+{% for mapping in mwan_static_mappings.webpass %}
+        ip saddr {{ mapping.internal }} meta mark set 2
+{% endfor %}
         
         # Pin latency-sensitive traffic to AT&T (mark 1)
+{% if mwan_att_pinned_dests is defined %}
 {% for dest in mwan_att_pinned_dests %}
         ip daddr {{ dest }} meta mark set 1
 {% endfor %}
+{% endif %}
         
-        # Restore mark for established connections
+        # General traffic (no mark): Uses main table's multipath routing
+        # Kernel automatically:
+        #   - Load balances 50/50 when both WANs up
+        #   - Fails over to single WAN when one is down
+        # update-routes.sh manages the multipath route based on health
+        
+        # Restore mark for established connections (session affinity)
         ct state established,related meta mark set ct mark
     }
     

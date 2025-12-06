@@ -6,6 +6,8 @@ mwan_hostname: mwan.home.goodkind.io
 mwan_vmid: 134 # Update to actual VMID after VM creation
 mwan_mgmt_ipv4: "10.250.0.{{ mwan_vmid }}/24"
 mwan_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(mwan_vmid) }}/64"
+mwan_mgmt_gw: "10.250.0.1"
+mwan_mgmt_gw6: "3d06:bad:b01::1"
 
 # DNS configuration (IPv6 first)
 mwan_dns_domain: "home.goodkind.io"
@@ -13,39 +15,33 @@ mwan_dns_servers: "3d06:bad:b01::6 10.250.0.6"
 
 # Proxmox bridge names
 mwan_mgmt_bridge: vmbr0 # Management network for SSH access
-mwan_att_bridge: att # AT&T WAN bridge (from attauth VM)
-mwan_webpass_bridge: webpass # Webpass WAN bridge
 mwan_bridge_name: mwanbr # mwan <-> OPNsense internal link
-mwan_monkeybrains_bridge: mbrains # Monkeybrains WAN (optional, for Phase 3)
 
-# PCI device identification (for finding passthrough device)
-# Update based on your hardware - grep pattern for lspci output
-mwan_att_pci_pattern: "ixl" # AT&T NIC driver/model (e.g., "ixl", "Intel.*X710", "Ethernet")
+# PCI Passthrough devices
+# X710 VF for AT&T 802.1X authentication (created on Proxmox host via x710-vf-setup.service)
+pci_x710_vf: "02:02.0"
+# Webpass I226-V NIC (full passthrough to avoid MAC issues)
+pci_webpass_nic: "06:00.0"
 
-# Interface names on mwan VM (update after VM creation)
+# Interface names INSIDE mwan VM (update after VM creation)
 # Run: ssh root@mwan.home.goodkind.io "ip link show"
-#
-# NOTE: AT&T traffic comes from attauth VM via "att" bridge (already authenticated)
 mwan_mgmt_iface: "eth0" # virtio on vmbr0 (management/SSH)
-mwan_att_iface: "eth1" # virtio on att bridge
-mwan_webpass_iface: "eth2" # virtio on webpass bridge
+mwan_att_iface: "eth1" # X710 VF passthrough (iavf driver) - for AT&T 802.1X + WAN
+mwan_webpass_iface: "eth2" # I226-V passthrough (igc driver) - for Webpass WAN
 mwan_internal_iface: "eth3" # virtio on mwanbr (to OPNsense)
-mwan_monkeybrains_iface: "eth4" # virtio on mbrains (optional, Phase 3)
+
+# AT&T 802.1X authentication (via X710 VF passthrough)
+mwan_att_vlan_id: 3242
+mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
+# Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
+# Extract from OPNsense:
+#   scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
+#   ssh root@mwan.home.goodkind.io "chmod 600 /etc/wpa_supplicant/*.pem"
 
 # Webpass identity spoofing (CRITICAL - must match current OPNsense)
-mwan_webpass_mac: "00:e2:69:66:8b:5a"
+# NOTE: With direct PCI passthrough, the VM gets the real NIC MAC (64:62:66:23:f9:84)
+#       so we don't need to spoof MAC - Webpass sees the registered hardware MAC
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
-
-# AT&T 802.1X authentication
-mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
-
-# NOTE: AT&T 802.1X certificates should be placed on the PROXMOX HOST (not mwan VM)
-#       wpa_supplicant runs on Proxmox to authenticate AT&T before bridging to mwan VM.
-# Certificates are NOT stored in git for security.
-#
-# Extract from OPNsense and upload to Proxmox host:
-#   scp agoodkind@router:/conf/opnatt/wpa/*.pem root@{{ proxmox_api_host }}:/etc/wpa_supplicant/
-#   ssh root@{{ proxmox_api_host }} "chmod 600 /etc/wpa_supplicant/*.pem"
 
 # Internal link (to OPNsense) addressing
 mwan_internal_ipv4: "10.250.250.1/29"
@@ -91,25 +87,25 @@ mwan_health_checks:
     targets:
       - "1.1.1.1"
       - "8.8.8.8"
-  monkeybrains:
-    enabled: false # Enable for Phase 3
-    ping_count: 5
-    success_threshold: 1 # Lax - it's lossy
-    check_interval: 30
-    failure_threshold: 5
-    recovery_threshold: 3
-    targets:
-      - "1.1.1.1"
-      - "8.8.8.8"
+  # monkeybrains:
+  #   enabled: false # Enable for Phase 3
+  #   ping_count: 5
+  #   success_threshold: 1 # Lax - it's lossy
+  #   check_interval: 30
+  #   failure_threshold: 5
+  #   recovery_threshold: 3
+  #   targets:
+  #     - "1.1.1.1"
+  #     - "8.8.8.8"
 
 # Latency-sensitive services pinned to AT&T
 # Add destination IPs/subnets here
-mwan_att_pinned_dests:
-  - "8.8.8.8/32" # Example - Google DNS for testing
-  # Add Zoom, Google Meet, WiFi Calling ranges here
+# mwan_att_pinned_dests:
+#   - "8.8.8.8/32" # Example - Google DNS for testing
+# Add Zoom, Google Meet, WiFi Calling ranges here
 
 # Email notifications (optional)
-mwan_email_enabled: false
+mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
 
