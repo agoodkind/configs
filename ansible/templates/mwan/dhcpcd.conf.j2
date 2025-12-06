@@ -52,9 +52,9 @@ interface {{ mwan_internal_iface }}
     noipv6rs
     noipv6
 
-# AT&T interface - DHCPv4 + DHCPv6-PD
-# Note: VLAN 3242 handled by Proxmox host, we receive plain traffic
-interface {{ mwan_att_iface }}
+# AT&T interface - DHCPv4 + DHCPv6-PD on VLAN 3242
+# wpa_supplicant authenticates on raw interface, traffic appears on VLAN
+interface {{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
     ipv4
     ipv6rs
     ia_na 1
