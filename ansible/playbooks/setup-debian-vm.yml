@@ -32,6 +32,7 @@
     template_bridge: "vmbr0"
     enable_serial: true
     enable_qemu_agent: true
+    recreate_template: true  # Set to false to skip template recreation if it exists
 
   tasks:
     - name: Check if Debian cloud image exists on Proxmox
@@ -62,11 +63,17 @@
       register: template_check
       failed_when: false
       changed_when: false
-      # Note: If upgrading existing template to Q35/UEFI, manually delete VM 9000 first:
-      #   qm destroy 9000
+
+    - name: Destroy existing template if recreate_template is true
+      ansible.builtin.command: qm destroy {{ template_vmid }} --purge
+      delegate_to: "{{ target_node }}"
+      when:
+        - recreate_template | default(true) | bool
+        - template_check.rc == 0
+      changed_when: true
 
     - name: Create Debian cloud-init template
-      when: template_check.rc != 0
+      when: (template_check.rc != 0) or (recreate_template | default(true) | bool)
       delegate_to: "{{ target_node }}"
       block:
         - name: Create template VM
@@ -79,7 +86,8 @@
             --cores 1
             --net0 virtio,bridge={{ template_bridge }}
             --scsihw virtio-scsi-pci
-            {% if enable_serial %}--serial0 socket --vga serial0{% endif %}
+            {% if enable_serial %}--serial0 socket{% endif %}
+            --vga virtio
             --ostype l26
             {% if enable_qemu_agent %}--agent enabled=1{% endif %}
           changed_when: true
@@ -306,9 +314,10 @@
               write_files:
                 - path: /etc/default/grub.d/50-cloudimg-settings.cfg
                   content: |
-                    # Cloud-init serial console configuration
+                    # Cloud-init VGA + serial console configuration
                     GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyS0,115200"
-                    GRUB_TERMINAL="console serial"
+                    GRUB_TERMINAL_INPUT="console serial"
+                    GRUB_TERMINAL_OUTPUT="gfxterm serial"
                     GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
                   permissions: '0644'
               runcmd:

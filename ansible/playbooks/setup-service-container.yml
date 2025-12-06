@@ -16,7 +16,7 @@
 #   cores: Container CPU cores (default: "2")
 #   container_tags: Container tags
 #     (default: "lxc,{{ container_group | replace('_servers', '') }}")
-
+# TODO this playbook should not exist and instead the playbooks depending on it should use create-ct directly
 - name: Check if container exists
   hosts: localhost
   gather_facts: false
