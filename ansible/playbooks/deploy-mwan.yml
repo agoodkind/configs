@@ -10,24 +10,41 @@
 # Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
+- name: Load mwan configuration and setup VM
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/mwan_servers.yml
+  tasks:
+    - name: Set variables for VM creation
+      ansible.builtin.set_fact:
+        vm_hostname: "{{ mwan_hostname }}"
+        vm_mgmt_bridge: "{{ mwan_mgmt_bridge | default('vmbr0') }}"
+        vm_internal_bridge: "{{ mwan_bridge_name | default('mwanbr') }}"
+        vm_x710_vf: "{{ pci_x710_vf | default('') }}"
+        vm_webpass_nic: "{{ pci_webpass_nic | default('') }}"
+        vm_dns_domain: "{{ mwan_dns_domain }}"
+        vm_dns_servers: "{{ mwan_dns_servers }}"
+        vm_mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
+
 - name: Setup mwan VM
   ansible.builtin.import_playbook: setup-debian-vm.yml
   vars:
-    hostname: "{{ mwan_hostname }}"
+    hostname: "{{ hostvars['localhost']['vm_hostname'] }}"
     target_node: vault
     disk_size: "16"
     memory: "2048"
     cores: "2"
     network_interfaces:
-      - "{{ mwan_mgmt_bridge | default('vmbr0') }}"
-      - "{{ mwan_bridge_name | default('mwanbr') }}"
+      - "{{ hostvars['localhost']['vm_mgmt_bridge'] }}"
+      - "{{ hostvars['localhost']['vm_internal_bridge'] }}"
     hostpci_devices:
-      - "{{ pci_x710_vf | default('') }}"
-      - "{{ pci_webpass_nic | default('') }}"
+      - "{{ hostvars['localhost']['vm_x710_vf'] }}"
+      - "{{ hostvars['localhost']['vm_webpass_nic'] }}"
     vm_tags: "vm,mwan,network"
-    mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
-    dns_domain: "{{ mwan_dns_domain }}"
-    dns_servers: "{{ mwan_dns_servers }}"
+    mgmt_ip_config: "{{ hostvars['localhost']['vm_mgmt_ip_config'] }}"
+    dns_domain: "{{ hostvars['localhost']['vm_dns_domain'] }}"
+    dns_servers: "{{ hostvars['localhost']['vm_dns_servers'] }}"
     enable_serial: true
     enable_qemu_agent: true
 
