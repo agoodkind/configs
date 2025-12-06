@@ -1,13 +1,9 @@
 ---
 collections:
   - name: community.proxmox
-    version: ">=8.0.0"
   - name: community.general
-    version: ">=8.0.0"
   - name: community.postgresql
-    version: ">=3.0.0"
   - name: ansible.utils
-    version: ">=3.0.0"
 
 roles:
   - name: PowerDNS.pdns
