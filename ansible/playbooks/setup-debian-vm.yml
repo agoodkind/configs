@@ -298,11 +298,61 @@
           changed_when: true
           when: github_keys.content is not defined or github_keys.content | trim | length == 0
 
-        - name: Clean up SSH keys temp file
+        - name: Create cloud-init user-data for serial console
+          ansible.builtin.copy:
+            content: |
+              #cloud-config
+              # Configure serial console for UEFI/GRUB
+              write_files:
+                - path: /etc/default/grub.d/50-cloudimg-settings.cfg
+                  content: |
+                    # Cloud-init serial console configuration
+                    GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyS0,115200"
+                    GRUB_TERMINAL="console serial"
+                    GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
+                  permissions: '0644'
+              runcmd:
+                - update-grub
+            dest: "/tmp/user-data_{{ new_vmid }}.yml"
+            mode: '0644'
+          delegate_to: "{{ target_node }}"
+          when: enable_serial
+
+        - name: Configure cloud-init custom user-data
+          ansible.builtin.command: >
+            qm set {{ new_vmid }}
+            --cicustom "user=local:snippets/user-data_{{ new_vmid }}.yml"
+          delegate_to: "{{ target_node }}"
+          changed_when: true
+          when: enable_serial
+          register: cicustom_result
+          failed_when: false
+
+        - name: Copy user-data to snippets directory if cicustom failed
+          ansible.builtin.copy:
+            src: "/tmp/user-data_{{ new_vmid }}.yml"
+            dest: "/var/lib/vz/snippets/user-data_{{ new_vmid }}.yml"
+            remote_src: true
+            mode: '0644'
+          delegate_to: "{{ target_node }}"
+          when: enable_serial and cicustom_result.rc != 0
+
+        - name: Retry cicustom after copying to snippets
+          ansible.builtin.command: >
+            qm set {{ new_vmid }}
+            --cicustom "user=local:snippets/user-data_{{ new_vmid }}.yml"
+          delegate_to: "{{ target_node }}"
+          changed_when: true
+          when: enable_serial and cicustom_result.rc != 0
+
+        - name: Clean up SSH keys and user-data temp files
           ansible.builtin.file:
-            path: "/tmp/sshkeys_{{ new_vmid }}.pub"
+            path: "{{ item }}"
             state: absent
           delegate_to: "{{ target_node }}"
+          loop:
+            - "/tmp/sshkeys_{{ new_vmid }}.pub"
+            - "/tmp/user-data_{{ new_vmid }}.yml"
           failed_when: false
 
         - name: Regenerate cloud-init image
