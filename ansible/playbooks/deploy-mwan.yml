@@ -2,9 +2,12 @@
 # ============================================================================
 # MWAN Multi-WAN Load Balancer Deployment
 # ============================================================================
-# Deploys mwan VM for multi-WAN load balancing
-# All NICs are virtio (no PCIe passthrough)
-# Receives authenticated AT&T traffic from attauth VM via "att" bridge
+# Deploys mwan VM for multi-WAN load balancing with PCI passthrough
+#   - X710 VF (trust mode) for AT&T 802.1X authentication
+#   - I226-V NIC for Webpass (full passthrough to avoid MAC issues)
+#   - Virtio for management and OPNsense link
+#
+# Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
 - name: Setup mwan VM
@@ -17,12 +20,15 @@
     cores: "2"
     network_interfaces:
       - "{{ mwan_mgmt_bridge | default('vmbr0') }}"
-      - "{{ mwan_att_bridge | default('att') }}"
-      - "{{ mwan_webpass_bridge | default('webpass') }}"
       - "{{ mwan_bridge_name | default('mwanbr') }}"
-    hostpci_devices: []
+    hostpci_devices:
+      - "{{ pci_x710_vf | default('') }}"
+      - "{{ pci_webpass_nic | default('') }}"
     vm_tags: "vm,mwan,network"
-    mgmt_ip_config: "ip={{ mwan_mgmt_ipv4 }},gw=10.250.0.1,ip6={{ mwan_mgmt_ipv6 }},gw6=3d06:bad:b01::1"
+    mgmt_ip_config: >-
+      {{ mwan_mgmt_ip_config | default('ip=' + mwan_mgmt_ipv4 +
+      ',gw=' + mwan_mgmt_gw + ',ip6=' + mwan_mgmt_ipv6 +
+      ',gw6=' + mwan_mgmt_gw6) }}
     dns_domain: "{{ mwan_dns_domain }}"
     dns_servers: "{{ mwan_dns_servers }}"
     enable_serial: true
@@ -62,6 +68,7 @@
     - name: Install required packages
       ansible.builtin.apt:
         name:
+          - wpasupplicant
           - dhcpcd5
           - nftables
           - iproute2
@@ -83,6 +90,44 @@
         - /etc/sysctl.d
         - /etc/iproute2
         - /usr/local/bin
+        - /etc/wpa_supplicant
+
+    - name: Deploy wpa_supplicant config for AT&T 802.1X
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/wpa_supplicant.conf.j2"
+        dest: /etc/wpa_supplicant/wpa_supplicant.conf
+        mode: '0600'
+      notify: Restart wpa_supplicant
+
+    - name: Check for AT&T certificates
+      ansible.builtin.stat:
+        path: "/etc/wpa_supplicant/{{ item }}"
+      loop:
+        - ca_cert.pem
+        - client_cert.pem
+        - private_key.pem
+      register: cert_check
+
+    - name: Warn if certificates missing
+      ansible.builtin.debug:
+        msg: |
+          ⚠️  Certificate {{ item.item }} missing!
+          Upload: scp agoodkind@router:/conf/opnatt/wpa/*.pem root@{{ inventory_hostname }}:/etc/wpa_supplicant/
+      when: not item.stat.exists
+      loop: "{{ cert_check.results }}"
+
+    - name: Deploy wpa_supplicant systemd service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/wpa_supplicant.service.j2"
+        dest: /etc/systemd/system/wpa_supplicant-mwan.service
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Enable wpa_supplicant service
+      ansible.builtin.systemd:
+        name: wpa_supplicant-mwan
+        enabled: true
+        daemon_reload: true
 
     - name: Deploy network interfaces
       ansible.builtin.template:
@@ -93,8 +138,8 @@
       notify: Restart networking
 
     - name: Deploy sysctl config
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/etc/sysctl.d/99-mwan.conf"
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/sysctl-mwan.conf.j2"
         dest: /etc/sysctl.d/99-mwan.conf
         mode: '0644'
       notify: Apply sysctl
@@ -128,15 +173,22 @@
         backup: true
       notify: Reload nftables
 
-    - name: Deploy helper scripts
+    - name: Deploy templated helper scripts
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/{{ item }}.j2"
+        dest: /usr/local/bin/{{ item }}
+        mode: '0755'
+      loop:
+        - update-routes.sh
+        - health-check.sh
+    
+    - name: Deploy static helper scripts
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/usr/local/bin/{{ item }}"
         dest: /usr/local/bin/{{ item }}
         mode: '0755'
       loop:
         - update-npt.sh
-        - update-routes.sh
-        - health-check.sh
 
     - name: Deploy mwan-health systemd service
       ansible.builtin.template:
@@ -154,9 +206,17 @@
         enabled: true
         daemon_reload: true
       loop:
+        - wpa_supplicant-mwan
         - dhcpcd
         - nftables
         - mwan-health
+
+    - name: Start wpa_supplicant (if certs present)
+      ansible.builtin.systemd:
+        name: wpa_supplicant-mwan
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
 
     - name: Start services
       ansible.builtin.systemd:
@@ -186,6 +246,11 @@
     - name: Restart networking
       ansible.builtin.systemd:
         name: networking
+        state: restarted
+
+    - name: Restart wpa_supplicant
+      ansible.builtin.systemd:
+        name: wpa_supplicant-mwan
         state: restarted
 
     - name: Apply sysctl

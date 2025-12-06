@@ -1,0 +1,15 @@
+[Unit]
+Description=WPA Supplicant for AT&T 802.1X
+After=network.target
+Before=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 2
+ExecStartPre=/sbin/ip link set {{ mwan_att_iface }} up
+ExecStart=/sbin/wpa_supplicant -Dwired -c /etc/wpa_supplicant/wpa_supplicant.conf -i {{ mwan_att_iface }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

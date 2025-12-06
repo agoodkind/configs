@@ -1,5 +1,7 @@
 ---
 # AT&T Authentication VM Configuration Variables
+# ⚠️  DEPRECATED: attauth VM is no longer used in current architecture
+# See mwan_servers.yml - mwan VM now handles AT&T authentication via PCI VF
 
 # VM hostname and management IP
 attauth_hostname: attauth.home.goodkind.io
