@@ -305,7 +305,7 @@
           changed_when: true
           when: github_keys.content is not defined or github_keys.content | trim | length == 0
 
-        - name: Create cloud-init user-data for serial console
+        - name: Create serial console user-data (temp file)
           ansible.builtin.copy:
             content: |
               #cloud-config
@@ -326,7 +326,7 @@
           delegate_to: "{{ target_node }}"
           when: enable_serial
 
-        - name: Copy user-data to snippets directory
+        - name: Copy serial console user-data to Proxmox snippets
           ansible.builtin.copy:
             src: "/tmp/user-data_{{ new_vmid }}.yml"
             dest: "/var/lib/vz/snippets/user-data_{{ new_vmid }}.yml"
@@ -335,7 +335,7 @@
           delegate_to: "{{ target_node }}"
           when: enable_serial
 
-        - name: Configure cloud-init custom user-data
+        - name: Apply serial console user-data via cicustom
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --cicustom "user=local:snippets/user-data_{{ new_vmid }}.yml"
