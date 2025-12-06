@@ -1,5 +1,5 @@
 ---
-# Reusable playbook for setting up a Debian 12 VM with cloud-init
+# Reusable playbook for setting up a Debian 13 VM with cloud-init
 #
 # Required variables:
 #   vm_group: Inventory group name (e.g., mwan_servers)
