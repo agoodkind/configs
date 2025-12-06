@@ -62,6 +62,8 @@
       register: template_check
       failed_when: false
       changed_when: false
+      # Note: If upgrading existing template to Q35/UEFI, manually delete VM 9000 first:
+      #   qm destroy 9000
 
     - name: Create Debian cloud-init template
       when: template_check.rc != 0
@@ -71,6 +73,8 @@
           ansible.builtin.command: >
             qm create {{ template_vmid }}
             --name debian-13-cloud-template
+            --machine q35
+            --bios ovmf
             --memory 512
             --cores 1
             --net0 virtio,bridge={{ template_bridge }}
@@ -91,6 +95,12 @@
           ansible.builtin.command: >
             qm set {{ template_vmid }}
             --scsi0 {{ storage }}:vm-{{ template_vmid }}-disk-0
+          changed_when: true
+
+        - name: Add EFI disk
+          ansible.builtin.command: >
+            qm set {{ template_vmid }}
+            --efidisk0 {{ storage }}:1,efitype=4m,pre-enrolled-keys=1
           changed_when: true
 
         - name: Add cloud-init drive
