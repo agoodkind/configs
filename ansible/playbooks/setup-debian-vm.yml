@@ -26,6 +26,9 @@
     debian_cloud_image: "debian-13-generic-amd64.qcow2"
     debian_cloud_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
     storage: "local-lvm"
+    template_bridge: "vmbr0"
+    enable_serial: true
+    enable_qemu_agent: true
 
   tasks:
     - name: Check if Debian cloud image exists on Proxmox
