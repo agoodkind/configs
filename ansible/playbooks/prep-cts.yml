@@ -1,12 +1,17 @@
-- name: Prepare CT Container(s)
+- name: Prepare CT Container(s) or VM(s)
   hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
-  gather_facts: false
+  gather_facts: true
   tasks:
-    - name: Filter by container ID if specified
+    - name: Filter by container/VM ID if specified
       ansible.builtin.meta: end_host
       when:
         - container_id | default('') | length > 0
         - ansible_proxmox_vmid | default('') | string != container_id | string
+
+    - name: Detect if running in LXC container or VM
+      ansible.builtin.set_fact:
+        is_lxc: "{{ ansible_virtualization_type | default('') == 'lxc' }}"
+        is_vm: "{{ ansible_virtualization_type | default('') in ['kvm', 'qemu'] }}"
     - name: Update package lists
       ansible.builtin.apt:
         update_cache: true
@@ -190,7 +195,7 @@
         (motd_script_stats.results | selectattr('stat.exists') |
          selectattr('stat.mode', 'match', '.*x.*') | list | length > 0)
 
-    - name: Configure auto-login for root
+    - name: Configure auto-login for root (LXC only)
       ansible.builtin.blockinfile:
         path: /etc/systemd/system/container-getty@1.service.d/override.conf
         create: true
@@ -201,6 +206,7 @@
           ExecStart=-/sbin/agetty >-
             --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
       register: configure_auto_login
+      when: is_lxc | default(false)
       notify: Restart getty service
 
     - name: Create systemd system.conf.d directory
@@ -230,6 +236,7 @@
       ansible.builtin.systemd:
         name: container-getty@1.service
         state: restarted
+      when: is_lxc | default(false)
 
     - name: Restart rsyslog
       ansible.builtin.systemd:
