@@ -326,6 +326,15 @@
           delegate_to: "{{ target_node }}"
           when: enable_serial
 
+        - name: Copy user-data to snippets directory
+          ansible.builtin.copy:
+            src: "/tmp/user-data_{{ new_vmid }}.yml"
+            dest: "/var/lib/vz/snippets/user-data_{{ new_vmid }}.yml"
+            remote_src: true
+            mode: '0644'
+          delegate_to: "{{ target_node }}"
+          when: enable_serial
+
         - name: Configure cloud-init custom user-data
           ansible.builtin.command: >
             qm set {{ new_vmid }}
@@ -333,25 +342,6 @@
           delegate_to: "{{ target_node }}"
           changed_when: true
           when: enable_serial
-          register: cicustom_result
-          failed_when: false
-
-        - name: Copy user-data to snippets directory if cicustom failed
-          ansible.builtin.copy:
-            src: "/tmp/user-data_{{ new_vmid }}.yml"
-            dest: "/var/lib/vz/snippets/user-data_{{ new_vmid }}.yml"
-            remote_src: true
-            mode: '0644'
-          delegate_to: "{{ target_node }}"
-          when: enable_serial and cicustom_result.rc != 0
-
-        - name: Retry cicustom after copying to snippets
-          ansible.builtin.command: >
-            qm set {{ new_vmid }}
-            --cicustom "user=local:snippets/user-data_{{ new_vmid }}.yml"
-          delegate_to: "{{ target_node }}"
-          changed_when: true
-          when: enable_serial and cicustom_result.rc != 0
 
         - name: Clean up SSH keys and user-data temp files
           ansible.builtin.file:
