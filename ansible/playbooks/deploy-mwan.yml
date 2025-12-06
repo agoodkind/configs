@@ -25,10 +25,7 @@
       - "{{ pci_x710_vf | default('') }}"
       - "{{ pci_webpass_nic | default('') }}"
     vm_tags: "vm,mwan,network"
-    mgmt_ip_config: >-
-      {{ mwan_mgmt_ip_config | default('ip=' + mwan_mgmt_ipv4 +
-      ',gw=' + mwan_mgmt_gw + ',ip6=' + mwan_mgmt_ipv6 +
-      ',gw6=' + mwan_mgmt_gw6) }}
+    mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
     dns_domain: "{{ mwan_dns_domain }}"
     dns_servers: "{{ mwan_dns_servers }}"
     enable_serial: true
