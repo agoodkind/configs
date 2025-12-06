@@ -303,19 +303,36 @@
             mode: '0644'
           delegate_to: "{{ target_node }}"
 
-        - name: Create network config to send hostname via DHCP
+        - name: Create network config with static IP and DHCP hostname
           ansible.builtin.copy:
             content: |
               version: 2
               ethernets:
                 eth0:
+                  # Static IP based on VMID for predictable addressing
+                  addresses:
+                    - 10.250.0.{{ new_vmid }}/24
+                    - 3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}/64
+                  routes:
+                    - to: default
+                      via: 10.250.0.1
+                    - to: default
+                      via: 3d06:bad:b01::1
+                  nameservers:
+                    search: [{{ dns_domain }}]
+                    addresses: [{{ dns_servers.split() | join(', ') }}]
+                  # Also run DHCP to register hostname in DNS
                   dhcp4: true
                   dhcp6: true
                   dhcp-identifier: mac
                   dhcp4-overrides:
+                    use-dns: false
+                    use-routes: false
                     send-hostname: true
                     hostname: {{ hostname }}
                   dhcp6-overrides:
+                    use-dns: false
+                    use-routes: false
                     send-hostname: true
                     hostname: {{ hostname }}
             dest: "/tmp/network-config_{{ new_vmid }}.yml"
