@@ -7,6 +7,10 @@ mwan_vmid: 134 # Update to actual VMID after VM creation
 mwan_mgmt_ipv4: "10.250.0.{{ mwan_vmid }}/24"
 mwan_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(mwan_vmid) }}/64"
 
+# DNS configuration (IPv6 first)
+mwan_dns_domain: "home.goodkind.io"
+mwan_dns_servers: "3d06:bad:b01::6 10.250.0.6"
+
 # Proxmox bridge names
 mwan_mgmt_bridge: vmbr0 # Management network for SSH access
 mwan_att_bridge: att # AT&T WAN bridge (from attauth VM)
