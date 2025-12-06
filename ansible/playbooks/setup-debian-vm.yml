@@ -254,7 +254,7 @@
         - name: Add PCIe passthrough devices
           ansible.builtin.command: >
             qm set {{ new_vmid }}
-            --hostpci{{ idx }} {{ item }},pcie=1{{ ',multifunction=on' if idx == 0 else '' }}
+            --hostpci{{ idx }} {{ item }}
           delegate_to: "{{ target_node }}"
           loop: "{{ hostpci_devices | select() | list }}"
           loop_control:
