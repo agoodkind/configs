@@ -145,10 +145,7 @@
     enable_serial: true
     enable_qemu_agent: true
 
-    # SSH keys
-    ssh_key_from_file: "{{ lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') | default('') }}"
-    ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys', errors='ignore') | default('') }}"
-    ssh_keys: "{{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url }}"
+    # SSH keys fetched at runtime from GitHub
 
   tasks:
     - name: Debug - show all extra vars
@@ -248,14 +245,27 @@
           when: hostpci_devices | select() | list | length > 0
           changed_when: true
 
+        - name: Fetch SSH keys from GitHub
+          ansible.builtin.uri:
+            url: "https://github.com/agoodkind.keys"
+            return_content: true
+          register: github_keys
+          delegate_to: "{{ target_node }}"
+          failed_when: false
+
+        - name: Debug SSH keys
+          ansible.builtin.debug:
+            msg: "GitHub keys: {{ github_keys.content | default('FAILED TO FETCH') | length }} bytes"
+
         - name: Write SSH keys to temp file
           ansible.builtin.copy:
-            content: "{{ ssh_keys }}"
+            content: "{{ github_keys.content | trim }}"
             dest: "/tmp/sshkeys_{{ new_vmid }}.pub"
             mode: '0644'
           delegate_to: "{{ target_node }}"
+          when: github_keys.content is defined and github_keys.content | trim | length > 0
 
-        - name: Configure cloud-init
+        - name: Configure cloud-init with SSH keys
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --ciuser root
@@ -265,12 +275,25 @@
             --nameserver '{{ dns_servers }}'
           delegate_to: "{{ target_node }}"
           changed_when: true
+          when: github_keys.content is defined and github_keys.content | trim | length > 0
+
+        - name: Configure cloud-init without SSH keys
+          ansible.builtin.command: >
+            qm set {{ new_vmid }}
+            --ciuser root
+            --ipconfig0 {{ mgmt_ip_config }}
+            --searchdomain {{ dns_domain }}
+            --nameserver '{{ dns_servers }}'
+          delegate_to: "{{ target_node }}"
+          changed_when: true
+          when: github_keys.content is not defined or github_keys.content | trim | length == 0
 
         - name: Clean up SSH keys temp file
           ansible.builtin.file:
             path: "/tmp/sshkeys_{{ new_vmid }}.pub"
             state: absent
           delegate_to: "{{ target_node }}"
+          failed_when: false
 
         - name: Regenerate cloud-init image
           ansible.builtin.command: qm cloudinit update {{ new_vmid }}
