@@ -81,9 +81,9 @@
             mode: '0644'
 
         - name: Cleanup any existing extracted files
-          ansible.builtin.shell: rm -rf /tmp/semaphore_extract
-          changed_when: false
-          failed_when: false
+          ansible.builtin.file:
+            path: /tmp/semaphore_extract
+            state: absent
 
         - name: Extract Semaphore binary
           ansible.builtin.unarchive:
@@ -114,9 +114,12 @@
             remote_src: true
 
         - name: Cleanup download files
-          ansible.builtin.shell: rm -rf /tmp/semaphore.tar.gz /tmp/semaphore_extract
-          changed_when: false
-          failed_when: false
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/semaphore.tar.gz
+            - /tmp/semaphore_extract
 
         - name: Start Semaphore service
           ansible.builtin.systemd:
