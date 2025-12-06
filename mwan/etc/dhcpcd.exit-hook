@@ -1,0 +1,81 @@
+#!/bin/sh
+# dhcpcd exit hook for mwan
+# Handles DHCPv6 Prefix Delegation and dynamic NPT updates
+
+# This hook is called by dhcpcd when DHCP events occur
+# Available variables: $interface, $reason, $new_*, $old_*
+
+log() {
+    logger -t dhcpcd-mwan "$1"
+    echo "[dhcpcd-mwan] $1"
+}
+
+# Only process DHCPv6 events
+case "$reason" in
+    BOUND6|REBIND6|RENEW6)
+        log "DHCPv6 event on $interface: $reason"
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+
+# Extract delegated prefix based on interface
+# AT&T uses ia_pd 2, Webpass uses ia_pd 4, Monkeybrains uses ia_pd 6
+case "$interface" in
+    *3242)
+        # AT&T VLAN interface
+        prefix_var="new_dhcp6_ia_pd2_prefix1"
+        wan_name="att"
+        ;;
+    eth1|igc0)
+        # Webpass interface
+        prefix_var="new_dhcp6_ia_pd4_prefix1"
+        wan_name="webpass"
+        ;;
+    eth3)
+        # Monkeybrains interface (optional)
+        prefix_var="new_dhcp6_ia_pd6_prefix1"
+        wan_name="monkeybrains"
+        ;;
+    *)
+        log "Unknown interface $interface, skipping"
+        exit 0
+        ;;
+esac
+
+# Get the delegated prefix
+eval delegated_prefix=\$$prefix_var
+
+if [ -z "$delegated_prefix" ]; then
+    log "No delegated prefix found for $interface"
+    exit 0
+fi
+
+log "Delegated prefix for $wan_name: $delegated_prefix"
+
+# Extract prefix and length (e.g., "2600:1700:2f71:c80::/60")
+prefix_base="${delegated_prefix%::/*}"
+prefix_len="${delegated_prefix#*/}"
+
+# Calculate :a subnet for WAN address (e.g., 2600:1700:2f71:c8a::1/64)
+# For /60, the :a subnet is at position 0xa
+# For /56, the :a subnet is at position 0xa
+wan_subnet="${prefix_base%0}a"
+wan_address="${wan_subnet}::1/64"
+
+# Assign WAN address to interface
+log "Assigning WAN address $wan_address to $interface"
+ip -6 addr flush dev "$interface" scope global
+ip -6 addr add "$wan_address" dev "$interface"
+
+# Update NPT rules with new prefix
+log "Updating NPT rules for $wan_name with prefix $delegated_prefix"
+/usr/local/bin/update-npt.sh "$wan_name" "$delegated_prefix" "$wan_address"
+
+# Update routing tables
+log "Updating routing tables"
+/usr/local/bin/update-routes.sh
+
+log "DHCPv6-PD processing complete for $wan_name"
+
