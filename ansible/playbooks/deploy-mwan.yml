@@ -427,6 +427,7 @@
         mode: '0644'
         backup: true
       vars:
+        actual_mgmt_iface: "{{ interface_mapping.eth0 }}"
         actual_att_iface: "{{ interface_mapping.eth1 }}"
         actual_webpass_iface: "{{ interface_mapping.eth2 }}"
         actual_internal_iface: "{{ interface_mapping.eth3 }}"

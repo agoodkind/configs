@@ -13,11 +13,11 @@ net.ipv6.conf.all.accept_ra = 0
 net.ipv6.conf.default.accept_ra = 0
 
 # Disable SLAAC on Webpass interface (prevents unwanted autoconf addresses)
-net.ipv6.conf.{{ mwan_webpass_iface }}.accept_ra = 0
-net.ipv6.conf.{{ mwan_webpass_iface }}.autoconf = 0
+net.ipv6.conf.{{ interface_mapping.eth2 }}.accept_ra = 0
+net.ipv6.conf.{{ interface_mapping.eth2 }}.autoconf = 0
 
 # Enable router advertisements on internal interface (to OPNsense)
-net.ipv6.conf.{{ mwan_internal_iface }}.accept_ra = 2
+net.ipv6.conf.{{ interface_mapping.eth3 }}.accept_ra = 2
 
 # Increase connection tracking table size for multi-WAN
 net.netfilter.nf_conntrack_max = 262144
@@ -27,8 +27,8 @@ net.ipv4.conf.all.rp_filter = 2
 net.ipv4.conf.default.rp_filter = 2
 
 # Disable source validation on WAN interfaces (needed for policy routing)
-net.ipv4.conf.{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}.rp_filter = 0
-net.ipv4.conf.{{ mwan_webpass_iface }}.rp_filter = 0
+net.ipv4.conf.{{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}.rp_filter = 0
+net.ipv4.conf.{{ interface_mapping.eth2 }}.rp_filter = 0
 
 # IPv6 specific optimizations
 net.ipv6.conf.all.use_tempaddr = 0  # Don't use temporary addresses

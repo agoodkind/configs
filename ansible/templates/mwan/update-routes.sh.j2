@@ -13,10 +13,10 @@ log() {
 log "Updating policy routing tables"
 
 # Interface names from Ansible template
-MGMT_IFACE="{{ mwan_mgmt_iface }}"
-ATT_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"  # AT&T uses VLAN subinterface
-WEBPASS_IFACE="{{ mwan_webpass_iface }}"
-INTERNAL_IFACE="{{ mwan_internal_iface }}"
+MGMT_IFACE="{{ interface_mapping.eth0 }}"
+ATT_IFACE="{{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}"  # AT&T uses VLAN subinterface
+WEBPASS_IFACE="{{ interface_mapping.eth2 }}"
+INTERNAL_IFACE="{{ interface_mapping.eth3 }}"
 
 # Get IPv4 gateways
 if [ -n "$ATT_IFACE" ]; then
