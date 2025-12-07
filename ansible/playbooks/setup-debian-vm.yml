@@ -175,22 +175,27 @@
     # SSH keys fetched at runtime from GitHub
 
   tasks:
+    - name: Generate hostname if not provided
+      ansible.builtin.command: date +%Y%m%d-%H%M%S
+      register: generated_hostname_suffix
+      changed_when: false
+      when: hostname is not defined
+
+    - name: Set generated hostname
+      ansible.builtin.set_fact:
+        hostname: "{{ generated_hostname_suffix.stdout }}.home.goodkind.io"
+      when: hostname is not defined
+
+    - name: Debug - show generated hostname
+      ansible.builtin.debug:
+        msg: "Auto-generated hostname: {{ hostname }}"
+      when: generated_hostname_suffix is defined
+
     - name: Debug - show all extra vars
       ansible.builtin.debug:
         msg: >-
-          hostname={{ hostname | default('NOT SET') }},
+          hostname={{ hostname }},
           all vars={{ vars.keys() | list | sort }}
-
-    - name: Skip VM creation if hostname not provided
-      ansible.builtin.debug:
-        msg: >-
-          No hostname provided - template-only mode.
-          Pass -e hostname=<fqdn> to create a VM.
-      when: hostname is not defined
-
-    - name: End play if no hostname
-      ansible.builtin.meta: end_play
-      when: hostname is not defined
 
     - name: Check if VM already exists
       community.proxmox.proxmox_kvm:
