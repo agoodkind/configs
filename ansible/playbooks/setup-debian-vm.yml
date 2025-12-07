@@ -538,15 +538,48 @@
                 ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
               failed_when: false
 
-        - name: Enable and restart systemd-networkd
-          ansible.builtin.systemd:
-            name: systemd-networkd
-            enabled: true
-            state: restarted
+        - name: Debug - Check network files before restart
+          ansible.builtin.shell: >
+            ls -la /etc/systemd/network/10-mgmt.* 2>&1 || echo "Files not found"
           delegate_to: "{{ vm_ip_address }}"
           vars:
             ansible_user: root
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          register: network_files_check
+          changed_when: false
+
+        - name: Debug - Check systemd-networkd status before restart
+          ansible.builtin.command: systemctl status systemd-networkd --no-pager
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          register: networkd_status_before
+          changed_when: false
+          failed_when: false
+
+        - name: Debug - Show network files and systemd-networkd status
+          ansible.builtin.debug:
+            msg:
+              - "Network files check: {{ network_files_check.stdout }}"
+              - "VM IP: {{ vm_ip_address }}"
+              - "systemd-networkd status before restart:"
+              - "{{ networkd_status_before.stdout_lines | default([]) }}"
+              - "About to restart systemd-networkd..."
+
+        # - name: Enable and restart systemd-networkd
+        #   ansible.builtin.systemd:
+        #     name: systemd-networkd
+        #     enabled: true
+        #     state: restarted
+        #   delegate_to: "{{ vm_ip_address }}"
+        #   vars:
+        #     ansible_user: root
+        #     ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Debug - Show systemd-networkd status
+          ansible.builtin.debug:
+            msg: "{{ networkd_status.stdout_lines }}"
 
         - name: Reboot VM to apply network changes
           ansible.builtin.reboot:
@@ -555,6 +588,16 @@
           vars:
             ansible_user: root
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Debug - Check systemd-networkd status after restart
+          ansible.builtin.command: systemctl status systemd-networkd --no-pager
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          register: networkd_status
+          changed_when: false
+          failed_when: false
 
         - name: Set facts for subsequent playbooks
           ansible.builtin.set_fact:
