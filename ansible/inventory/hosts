@@ -13,9 +13,6 @@ proxy.home.goodkind.io
 [powerdns_servers]
 pdns.home.goodkind.io ansible_host=3d06:bad:b01::b
 
-[attauth_servers]
-attauth.home.goodkind.io
-
 [mwan_servers]
 mwan.home.goodkind.io
 

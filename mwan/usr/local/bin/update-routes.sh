@@ -14,7 +14,7 @@ log "Updating policy routing tables"
 # Get WAN interface names and gateways
 # Note: Interface detection is heuristic - update if your setup differs
 MGMT_IFACE="eth0"  # Management interface (typically first, on vmbr0)
-ATT_IFACE="eth1"  # AT&T (from attauth VM via "att" bridge)
+ATT_IFACE="eth1"  # AT&T (X710 VF passthrough, VLAN 3242)
 WEBPASS_IFACE="eth2"  # Webpass
 INTERNAL_IFACE="eth3"  # To OPNsense
 
