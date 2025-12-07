@@ -216,15 +216,20 @@
           eth1: "{{ iface_eth1_result.stdout | default('') }}"
           eth2: "{{ iface_eth2_result.stdout | default('') }}"
           eth3: "{{ iface_eth3_result.stdout | default('') }}"
+        friendly_name_mapping:
+          eth0: mgmt
+          eth1: att
+          eth2: webpass
+          eth3: mwanbr
 
     - name: Display interface mapping
       ansible.builtin.debug:
         msg: |
           Interface mapping:
-            eth0 (mgmt/vmbr0):      {{ interface_mapping.eth0 }}
-            eth1 (AT&T/X710 VF):    {{ interface_mapping.eth1 }}
-            eth2 (Webpass/I226-V):  {{ interface_mapping.eth2 }}
-            eth3 (internal/mwanbr): {{ interface_mapping.eth3 }}
+            eth0 (mgmt/vmbr0):      {{ interface_mapping.eth0 }} -> altname: {{ friendly_name_mapping.eth0 }}
+            eth1 (AT&T/X710 VF):    {{ interface_mapping.eth1 }} -> altname: {{ friendly_name_mapping.eth1 }}
+            eth2 (Webpass/I226-V):  {{ interface_mapping.eth2 }} -> altname: {{ friendly_name_mapping.eth2 }}
+            eth3 (internal/mwanbr): {{ interface_mapping.eth3 }} -> altname: {{ friendly_name_mapping.eth3 }}
 
     - name: Verify all interfaces were found
       ansible.builtin.assert:
@@ -297,6 +302,60 @@
       register: altname_add_result
       loop_control:
         label: "{{ item.item.key }} -> {{ item.item.value }}"
+
+    - name: Check if friendly altnames already exist
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ip link property show dev "{{ interface_mapping[item.key] }}" 2>/dev/null |
+            grep -q "altname {{ item.value }}"
+        executable: /bin/bash
+      loop: "{{ friendly_name_mapping | dict2items }}"
+      register: friendly_altname_check
+      changed_when: false
+      failed_when: false
+
+    - name: Add friendly altnames to interfaces
+      ansible.builtin.shell:
+        cmd: |
+          set -eo pipefail
+          current="{{ interface_mapping[item.item.key] }}"
+          altname="{{ item.item.value }}"
+
+          # Check if altname already exists on this interface
+          if ip link property show dev "$current" 2>/dev/null | \
+             grep -q "altname $altname"; then
+            echo "already_exists"
+            exit 0
+          fi
+
+          # Check if altname is used by another interface
+          if ip link show "$altname" >/dev/null 2>&1; then
+            other=$(ip -o link show "$altname" | awk '{print $2}' | sed 's/:$//')
+            if [ "$other" != "$current" ]; then
+              echo "ERROR: altname $altname already in use by $other"
+              exit 1
+            fi
+          fi
+
+          # Try to add altname (ignore "File exists" error)
+          output=$(ip link property add dev "$current" altname "$altname" 2>&1) || rc=$?
+          if [ ${rc:-0} -eq 0 ]; then
+            echo "changed"
+          elif echo "$output" | grep -q "File exists"; then
+            # "File exists" means altname already exists - that's OK!
+            echo "already_exists"
+          else
+            echo "ERROR: Failed to add altname: $output"
+            exit 1
+          fi
+        executable: /bin/bash
+      loop: "{{ friendly_altname_check.results }}"
+      changed_when: "'changed' in friendly_altname_add_result.stdout"
+      failed_when: "'ERROR:' in friendly_altname_add_result.stdout"
+      register: friendly_altname_add_result
+      loop_control:
+        label: "{{ item.item.value }} -> {{ interface_mapping[item.item.key] }}"
 
     - name: Create udev rules for persistent interface naming
       ansible.builtin.copy:
@@ -487,6 +546,12 @@
         cmd: |
           set -o pipefail
           for iface in eth0 eth1 eth2 eth3; do
+            if ! ip link show $iface >/dev/null 2>&1; then
+              echo "ERROR: Interface $iface not accessible"
+              exit 1
+            fi
+          done
+          for iface in mgmt att webpass mwanbr; do
             if ! ip link show $iface >/dev/null 2>&1; then
               echo "ERROR: Interface $iface not accessible"
               exit 1
