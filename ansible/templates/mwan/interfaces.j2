@@ -19,7 +19,7 @@ iface {{ mwan_mgmt_iface }} inet static
     pre-down killall dhcpcd 2>/dev/null || true
 
 iface {{ mwan_mgmt_iface }} inet6 static
-    address 3d06:bad:b01::{{ '%x' | format(mwan_vmid) }}
+    address 3d06:bad:b01::{{ '%x' | format(mwan_vmid | int) }}
     netmask 64
     gateway 3d06:bad:b01::1
     # Run DHCPv6 client to register hostname in DNS
