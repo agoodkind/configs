@@ -352,6 +352,8 @@
             openssl rand -base64 12 | tr -d "=+/" | cut -c1-16
           register: temp_password_result
           changed_when: false
+          args:
+            executable: /bin/bash
           when: temp_password | default('') | length == 0
 
         - name: Set temporary password
@@ -705,6 +707,8 @@
         openssl rand -base64 12 | tr -d "=+/" | cut -c1-16
       register: new_password_result
       changed_when: false
+      args:
+        executable: /bin/bash
       when: should_reset | default(false) | bool
 
     - name: Set new random password
