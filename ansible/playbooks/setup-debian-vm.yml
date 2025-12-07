@@ -385,6 +385,20 @@
               if not (ssh_wait_v6.failed | default(false))
               else vm_static_ipv4 }}
 
+        - name: Run DHCP on management interface for DNS registration
+          ansible.builtin.shell: |
+            dhclient -4 -nw {{ mwan_mgmt_iface }} || true
+            dhclient -6 -nw {{ mwan_mgmt_iface }} || true
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          when: >-
+            not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true))
+          failed_when: false
+          changed_when: false
+
         - name: Set facts for subsequent playbooks
           ansible.builtin.set_fact:
             hostname_fact: "{{ hostname }}"
