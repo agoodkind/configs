@@ -289,10 +289,12 @@
           ansible.builtin.set_fact:
             vm_static_ipv4: "10.250.0.{{ new_vmid }}"
             vm_static_ipv6: "3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}"
-            vm_ipconfig: >-
-              ip=10.250.0.{{ new_vmid }}/24,gw=10.250.0.1,
-              ip6=3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}/64,
-              gw6=3d06:bad:b01::1
+
+        - name: Build ipconfig string (DRY composition)
+          ansible.builtin.set_fact:
+            vm_ipconfig_str: >-
+              {{ 'ip=' + vm_static_ipv4 + '/24,gw=10.250.0.1,' +
+                 'ip6=' + vm_static_ipv6 + '/64,gw6=3d06:bad:b01::1' }}
 
         - name: Write SSH keys to temp file
           ansible.builtin.copy:
@@ -307,7 +309,7 @@
             qm set {{ new_vmid }}
             --ciuser root
             --sshkeys /tmp/sshkeys_{{ new_vmid }}.pub
-            --ipconfig0 {{ vm_ipconfig }}
+            --ipconfig0 "{{ vm_ipconfig_str }}"
             --searchdomain {{ dns_domain }}
             --nameserver '{{ dns_servers }}'
           delegate_to: "{{ target_node }}"
@@ -318,7 +320,7 @@
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --ciuser root
-            --ipconfig0 {{ vm_ipconfig }}
+            --ipconfig0 "{{ vm_ipconfig_str }}"
             --searchdomain {{ dns_domain }}
             --nameserver '{{ dns_servers }}'
           delegate_to: "{{ target_node }}"
@@ -416,9 +418,7 @@
                 {{ '✅ SSH available at ' + vm_ip_address
                 if ssh_available else '⚠️  SSH not yet available' }}
               - ""
-              - "Cloud-init configured with:"
-              - "  - Root SSH keys from GitHub"
-              - "  - Static IP based on VMID"
+              - "Next: Run deployment playbook to configure services"
 
     - name: Set facts if VM already exists
       ansible.builtin.set_fact:
