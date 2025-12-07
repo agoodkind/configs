@@ -468,13 +468,6 @@
           changed_when: false
           failed_when: false
 
-        - name: Eject cloud-init CD
-          ansible.builtin.command: >
-            qm set {{ new_vmid }} --delete ide2
-          delegate_to: "{{ proxmox_host }}"
-          changed_when: true
-          failed_when: false
-
         - name: Remove cloud-init generated networkd configs
           ansible.builtin.file:
             path: "{{ item }}"
@@ -497,6 +490,22 @@
         - name: Remove cloud-init network-config.json (all instances)
           ansible.builtin.shell: >
             rm -f /var/lib/cloud/instances/*/network-config.json
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
+          failed_when: false
+          changed_when: false
+
+        - name: Disable cloud-init network management
+          ansible.builtin.lineinfile:
+            path: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+            line: "network: {config: disabled}"
+            create: true
+            mode: '0644'
           delegate_to: "{{ vm_ip_address }}"
           vars:
             ansible_user: root
@@ -622,13 +631,65 @@
               - "Status before (would-be) restart:"
               - "{{ networkd_status_before.stdout_lines | default([]) }}"
 
-        - name: Reboot VM to apply network changes
-          ansible.builtin.reboot:
-            reboot_timeout: 300
-          delegate_to: "{{ vm_ip_address }}"
-          vars:
-            ansible_user: root
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        - name: Shut down VM to remove cloud-init CD
+          community.proxmox.proxmox_kvm:
+            api_host: "{{ proxmox_api_host }}"
+            api_user: "{{ proxmox_api_user }}"
+            api_token_id: "{{ proxmox_token_id }}"
+            api_token_secret: "{{ proxmox_token_secret }}"
+            validate_certs: false
+            node: "{{ proxmox_host }}"
+            vmid: "{{ new_vmid }}"
+            state: stopped
+          delegate_to: ansible.home.goodkind.io
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
+
+        - name: Wait for VM to fully stop
+          ansible.builtin.pause:
+            seconds: 5
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
+
+        - name: Remove cloud-init CD drive
+          ansible.builtin.command: >
+            qm set {{ new_vmid }} --delete ide2
+          delegate_to: "{{ proxmox_host }}"
+          changed_when: true
+          failed_when: false
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
+
+        - name: Start VM after CD removal
+          community.proxmox.proxmox_kvm:
+            api_host: "{{ proxmox_api_host }}"
+            api_user: "{{ proxmox_api_user }}"
+            api_token_id: "{{ proxmox_token_id }}"
+            api_token_secret: "{{ proxmox_token_secret }}"
+            validate_certs: false
+            node: "{{ proxmox_host }}"
+            vmid: "{{ new_vmid }}"
+            state: started
+          delegate_to: ansible.home.goodkind.io
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
+
+        - name: Wait for VM to be reachable via SSH after restart
+          ansible.builtin.wait_for:
+            host: "{{ vm_ip_address }}"
+            port: 22
+            timeout: 120
+            state: started
+            msg: "Waiting for SSH on {{ vm_ip_address }}:22 after restart..."
+          register: ssh_wait_after_restart
+          failed_when: false
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
 
         - name: Debug - Check systemd-networkd status after restart
           ansible.builtin.command: systemctl status systemd-networkd --no-pager
@@ -729,6 +790,5 @@
       ansible.builtin.debug:
         msg:
           - "🔒 Password for root@{{ reset_hostname }} has been reset"
-          - "  New password: {{ new_random_password }}"
           - "  (Previous temporary password is no longer valid)"
       when: should_reset | default(false) | bool
