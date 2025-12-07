@@ -32,7 +32,7 @@
     template_bridge: "vmbr0"
     enable_serial: true
     enable_qemu_agent: true
-    recreate_template: true  # Set to false to skip template recreation if it exists
+    recreate_template: false  # Set to true to force template recreation
 
   tasks:
     - name: Check if Debian cloud image exists on Proxmox
@@ -68,12 +68,12 @@
       ansible.builtin.command: qm destroy {{ template_vmid }} --purge
       delegate_to: "{{ target_node }}"
       when:
-        - recreate_template | default(true) | bool
+        - recreate_template | default(false) | bool
         - template_check.rc == 0
       changed_when: true
 
     - name: Create Debian cloud-init template
-      when: (template_check.rc != 0) or (recreate_template | default(true) | bool)
+      when: (template_check.rc != 0) or (recreate_template | default(false) | bool)
       delegate_to: "{{ target_node }}"
       block:
         - name: Create template VM
