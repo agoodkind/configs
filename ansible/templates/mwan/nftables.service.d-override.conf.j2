@@ -1,0 +1,10 @@
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Allow nftables to start even if some interfaces are DOWN
+# Rules will simply not match until interfaces come up
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
