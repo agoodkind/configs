@@ -194,3 +194,4 @@ warn "To test from internal network (OPNsense side):"
 warn "  IPv4: curl -4 https://api.ipify.org (should show 104.57.226.x or 136.25.91.x)"
 warn "  IPv6: curl -6 https://api64.ipify.org (should show delegated prefix)"
 
+
