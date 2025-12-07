@@ -17,7 +17,6 @@
 #   dns_domain: DNS search domain
 #   dns_servers: DNS server IPs
 #
-# If hostname is not provided, only the template will be created/verified
 - name: Setup Debian cloud image template
   hosts: localhost
   gather_facts: false
@@ -531,7 +530,6 @@
         - name: Configure GRUB for serial console
           when:
             - enable_serial | default(true)
-            - serial_only | default(false)
           block:
             - name: Update GRUB config for serial console
               ansible.builtin.lineinfile:
