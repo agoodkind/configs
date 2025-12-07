@@ -30,9 +30,7 @@
       https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2
     storage: "local-lvm"
     template_bridge: "vmbr0"
-    enable_serial: true
-    enable_qemu_agent: true
-    recreate_template: false  # Set to true to force template recreation
+    recreate_template: true  # Set to true to force template recreation
 
   tasks:
     - name: Check if Debian cloud image exists on Proxmox
@@ -86,14 +84,10 @@
             --cores 1
             --net0 virtio,bridge={{ template_bridge }}
             --scsihw virtio-scsi-pci
-            {% if enable_serial %}--serial0 socket{% endif %}
-            {% if serial_only | default(false) %}
-            --vga serial0
-            {% else %}
+            --serial0 socket
             --vga virtio
-            {% endif %}
             --ostype l26
-            {% if enable_qemu_agent %}--agent enabled=1{% endif %}
+            --agent enabled=1
           changed_when: true
 
         - name: Import cloud image as disk
@@ -159,7 +153,7 @@
     hostpci_devices: []
 
     # Cloud-init (caller should override for static IPs)
-    mgmt_ip_config: "ip=dhcp,ip6=auto"
+    mgmt_ip_config: "ip=dhcp,ip6=dhcp"
     dns_domain: "home.goodkind.io"
     dns_servers: "3d06:bad:b01::6 10.250.0.6"
 
@@ -420,7 +414,6 @@
           when: >-
             (not (ssh_wait_v6.failed | default(true))
             or not (ssh_wait_v4.failed | default(true)))
-            and (enable_dns_registration | default(true))
 
         - name: Trigger DHCP to register hostname in DNS
           ansible.builtin.shell: |
@@ -434,7 +427,6 @@
           when: >-
             (not (ssh_wait_v6.failed | default(true))
             or not (ssh_wait_v4.failed | default(true)))
-            and (enable_dns_registration | default(true))
           failed_when: false
           changed_when: false
 
