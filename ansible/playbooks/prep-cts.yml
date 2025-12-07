@@ -103,6 +103,12 @@
           - apache2-utils
         state: present
 
+    - name: Install qemu-guest-agent (VMs only)
+      ansible.builtin.apt:
+        name: qemu-guest-agent
+        state: present
+      when: is_vm | default(false)
+
     - name: Remove unnecessary packages
       ansible.builtin.apt:
         autoremove: true
