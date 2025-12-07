@@ -53,7 +53,8 @@ iface {{ interface_mapping.eth2 }} inet static
     # CRITICAL: Set MAC to Webpass-registered address BEFORE bringing up
     pre-up ip link set dev {{ interface_mapping.eth2 }} address {{ mwan_webpass_mac }}
     address {{ mwan_webpass_ipv4 }}
-    # Add gateway route to webpass routing table (policy routing)
+    gateway {{ mwan_webpass_gateway }}
+    # Also add gateway to webpass routing table for policy routing
     post-up ip route add default via {{ mwan_webpass_gateway }} dev {{ interface_mapping.eth2 }} table webpass || true
     post-up ip rule add from {{ mwan_webpass_ipv4 | regex_replace('/.*$', '') }} table webpass priority 200 || true
     pre-down ip rule del from {{ mwan_webpass_ipv4 | regex_replace('/.*$', '') }} table webpass priority 200 || true
