@@ -253,17 +253,47 @@
     - name: Add altnames to interfaces
       ansible.builtin.shell:
         cmd: |
-          set -eo pipefail
-          if ! ip link property show dev "{{ item.item.value }}" 2>/dev/null |
-               grep -q "altname {{ item.item.key }}"; then
-            ip link property add dev "{{ item.item.value }}" \
-              altname "{{ item.item.key }}"
+          set -e
+          current="{{ item.item.value }}"
+          altname="{{ item.item.key }}"
+          
+          # Skip if already using desired name
+          if [ "$current" = "$altname" ]; then
+            exit 0
+          fi
+          
+          # Check if altname already exists on this interface
+          if ip link property show dev "$current" 2>/dev/null | \
+             grep -q "altname $altname"; then
+            echo "already_exists"
+            exit 0
+          fi
+          
+          # Check if altname is used by another interface
+          if ip link show "$altname" >/dev/null 2>&1; then
+            other=$(ip -o link show "$altname" | awk '{print $2}' | sed 's/:$//')
+            if [ "$other" != "$current" ]; then
+              echo "ERROR: altname $altname already in use by $other"
+              exit 1
+            fi
+          fi
+
+          # Try to add altname (ignore "File exists" error)
+          output=$(ip link property add dev "$current" altname "$altname" 2>&1) || rc=$?
+          if [ ${rc:-0} -eq 0 ]; then
             echo "changed"
+          elif echo "$output" | grep -q "File exists"; then
+            # "File exists" means altname already exists - that's OK!
+            echo "already_exists"
+          else
+            echo "ERROR: Failed to add altname: $output"
+            exit 1
           fi
         executable: /bin/bash
       loop: "{{ altname_check.results }}"
       when: item.item.value != item.item.key
       changed_when: "'changed' in altname_add_result.stdout"
+      failed_when: "'ERROR:' in altname_add_result.stdout"
       register: altname_add_result
       loop_control:
         label: "{{ item.item.key }} -> {{ item.item.value }}"
@@ -478,7 +508,7 @@
         msg: |
           ⚠️  IMPORTANT: Network configuration deployed but NOT fully applied
           The VM should be rebooted to apply all changes cleanly:
-            - udev rules for persistent interface names  
+            - udev rules for persistent interface names
             - Complete network interface configuration
             - MAC spoofing for Webpass
 
