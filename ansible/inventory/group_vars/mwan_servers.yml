@@ -1,9 +1,8 @@
 ---
 # MWAN (Multi-WAN) Configuration Variables
 
-# VM hostname and management IP
+# VM hostname
 mwan_hostname: mwan.home.goodkind.io
-mwan_vmid: 134 # Update to actual VMID after VM creation
 # Management interface uses DHCP - IP assigned by KEA and registered in DNS automatically
 # mwan_mgmt_ip_config can be overridden for static IP if needed:
 # mwan_mgmt_ip_config: "ip=10.250.0.134/24,gw=10.250.0.1,ip6=3d06:bad:b01::86/64,gw6=3d06:bad:b01::1"
