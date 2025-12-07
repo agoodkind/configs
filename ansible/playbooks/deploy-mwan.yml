@@ -45,10 +45,6 @@
     mgmt_ip_config: "{{ hostvars['localhost']['vm_mgmt_ip_config'] }}"
     dns_domain: "{{ hostvars['localhost']['vm_dns_domain'] }}"
     dns_servers: "{{ hostvars['localhost']['vm_dns_servers'] }}"
-    enable_serial: true
-    serial_only: true  # Use serial console only, no VGA (saves VRAM)
-    enable_qemu_agent: true
-    enable_dns_registration: false  # MWAN handles DNS via interfaces config
 
 - name: Configure MWAN VM
   hosts: mwan_servers
