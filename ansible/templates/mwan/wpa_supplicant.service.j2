@@ -6,8 +6,8 @@ Before=network-online.target
 [Service]
 Type=simple
 ExecStartPre=/bin/sleep 2
-ExecStartPre=/sbin/ip link set {{ mwan_att_iface }} up
-ExecStart=/sbin/wpa_supplicant -Dwired -c /etc/wpa_supplicant/wpa_supplicant.conf -i {{ mwan_att_iface }}
+ExecStartPre=/sbin/ip link set {{ interface_mapping.eth1 }} up
+ExecStart=/sbin/wpa_supplicant -Dwired -c /etc/wpa_supplicant/wpa_supplicant.conf -i {{ interface_mapping.eth1 }}
 Restart=always
 RestartSec=5
 
