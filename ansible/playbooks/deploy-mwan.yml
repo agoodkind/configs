@@ -509,7 +509,7 @@
       ansible.builtin.wait_for:
         path: /sys/class/net/{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
         state: present
-        timeout: 90
+        timeout: 15
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
       failed_when: false
       register: vlan_interface_check
