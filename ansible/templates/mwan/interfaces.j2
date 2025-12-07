@@ -14,16 +14,14 @@ iface {{ mwan_mgmt_iface }} inet static
     gateway 10.250.0.1
     dns-nameservers {{ mwan_dns_servers }}
     dns-search {{ mwan_dns_domain }}
-    # Run DHCP client to register hostname in DNS (dhcpcd auto-sends hostname)
-    post-up dhcpcd -n {{ mwan_mgmt_iface }} || true
-    pre-down killall dhcpcd 2>/dev/null || true
+    # Note: dhcpcd will also request a DHCP IP on this interface
+    # Result: Interface will have both static and dynamic IPs
 
 iface {{ mwan_mgmt_iface }} inet6 static
     address 3d06:bad:b01::{{ '%x' | format(mwan_vmid | int) }}
     netmask 64
     gateway 3d06:bad:b01::1
-    # Run DHCPv6 client to register hostname in DNS
-    post-up dhcpcd -n -6 {{ mwan_mgmt_iface }} || true
+    # Note: dhcpcd will also request DHCPv6 addresses
 
 # ==============================================================================
 # AT&T WAN - X710 VF passthrough (iavf driver)

@@ -452,12 +452,37 @@
       register: duid_check
       failed_when: duid_check.rc != 0
 
+    - name: Verify altnames are accessible
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          for iface in eth0 eth1 eth2 eth3; do
+            if ! ip link show $iface >/dev/null 2>&1; then
+              echo "ERROR: Interface $iface not accessible"
+              exit 1
+            fi
+          done
+          echo "All altnames accessible"
+        executable: /bin/bash
+      changed_when: false
+
     - name: Flush handlers (restarts networking with dhcpcd config in place)
       ansible.builtin.meta: flush_handlers
 
-    - name: Wait for interfaces to settle after networking restart
+    - name: Wait for WAN interfaces to settle
       ansible.builtin.pause:
-        seconds: 3
+        seconds: 5
+
+    - name: Schedule reboot to apply all network changes cleanly
+      ansible.builtin.debug:
+        msg: |
+          ⚠️  IMPORTANT: Network configuration deployed but NOT fully applied
+          The VM should be rebooted to apply all changes cleanly:
+            - udev rules for persistent interface names  
+            - Complete network interface configuration
+            - MAC spoofing for Webpass
+
+          Run: ssh root@mwan.home.goodkind.io reboot
 
     - name: Verify Webpass MAC spoofing succeeded
       ansible.builtin.shell:
@@ -496,12 +521,27 @@
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
       failed_when: false
 
-    - name: Start services
+    - name: Start dhcpcd service (will send hostname via DHCP INFORM)
+      ansible.builtin.systemd:
+        name: dhcpcd
+        state: restarted
+      failed_when: false
+
+    - name: Verify dhcpcd is running
+      ansible.builtin.systemd:
+        name: dhcpcd
+        state: started
+      register: dhcpcd_status
+
+    - name: Display dhcpcd status
+      ansible.builtin.debug:
+        msg: "dhcpcd service: {{ dhcpcd_status.status.ActiveState }}"
+
+    - name: Start other services
       ansible.builtin.systemd:
         name: "{{ item }}"
         state: started
       loop:
-        - dhcpcd
         - nftables
         - mwan-health
       failed_when: false
@@ -529,9 +569,19 @@
         state: reloaded
 
     - name: Restart networking
-      ansible.builtin.systemd:
-        name: networking
-        state: restarted
+      ansible.builtin.shell: |
+        # Don't bring down management interface (would kill SSH)
+        # Just bring up the WAN interfaces with new config
+        for iface in eth1 eth2 eth3; do
+          ifdown $iface 2>/dev/null || true
+        done
+        sleep 2
+        for iface in eth1 eth2 eth3; do
+          ifup $iface 2>/dev/null || true
+        done
+      failed_when: false
+      async: 30
+      poll: 0
 
     - name: Restart wpa_supplicant
       ansible.builtin.systemd:
