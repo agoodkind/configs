@@ -37,6 +37,8 @@ auto {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}
 iface {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }} inet manual
     vlan-raw-device {{ interface_mapping.eth1 }}
     # DHCPv4 and DHCPv6-PD handled by dhcpcd
+    # Disable reverse path filtering for policy routing
+    post-up sysctl -w net.ipv4.conf.{{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}.rp_filter=0 || true
 
 # ==============================================================================
 # Webpass WAN - I226-V NIC passthrough (igc driver)

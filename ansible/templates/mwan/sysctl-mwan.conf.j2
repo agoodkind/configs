@@ -20,15 +20,16 @@ net.ipv6.conf.{{ interface_mapping.eth2 }}.autoconf = 0
 net.ipv6.conf.{{ interface_mapping.eth3 }}.accept_ra = 2
 
 # Increase connection tracking table size for multi-WAN
+# Note: nf_conntrack module must be loaded first (done in handler)
 net.netfilter.nf_conntrack_max = 262144
 
 # Enable reverse path filtering (helps with multi-path routing)
 net.ipv4.conf.all.rp_filter = 2
 net.ipv4.conf.default.rp_filter = 2
 
-# Disable source validation on WAN interfaces (needed for policy routing)
-net.ipv4.conf.{{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}.rp_filter = 0
+# Disable source validation on Webpass WAN (needed for policy routing)
 net.ipv4.conf.{{ interface_mapping.eth2 }}.rp_filter = 0
+# Note: AT&T VLAN rp_filter set in /etc/network/interfaces post-up
 
 # IPv6 specific optimizations
 net.ipv6.conf.all.use_tempaddr = 0  # Don't use temporary addresses
