@@ -542,19 +542,6 @@
             'Interface not yet up - may need more time for authentication') }}
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
 
-    - name: Schedule reboot to apply all network changes cleanly
-      ansible.builtin.debug:
-        msg: |
-          ⚠️  IMPORTANT: Network configuration deployed but NOT fully applied
-          The VM should be rebooted to apply all changes cleanly:
-            - udev rules for persistent interface names
-            - Complete network interface configuration
-            - MAC spoofing for Webpass
-            - AT&T VLAN interface will be automatically brought up
-              after 802.1X authentication
-
-          Run: ssh root@mwan.home.goodkind.io reboot
-
     - name: Verify Webpass MAC spoofing succeeded
       ansible.builtin.shell:
         cmd: |
