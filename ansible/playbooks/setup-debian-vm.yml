@@ -87,7 +87,11 @@
             --net0 virtio,bridge={{ template_bridge }}
             --scsihw virtio-scsi-pci
             {% if enable_serial %}--serial0 socket{% endif %}
+            {% if serial_only | default(false) %}
+            --vga serial0
+            {% else %}
             --vga virtio
+            {% endif %}
             --ostype l26
             {% if enable_qemu_agent %}--agent enabled=1{% endif %}
           changed_when: true
@@ -399,6 +403,58 @@
             and (enable_dns_registration | default(true))
           failed_when: false
           changed_when: false
+
+        - name: Configure GRUB for serial console
+          when:
+            - enable_serial | default(true)
+            - serial_only | default(false)
+            - >-
+              not (ssh_wait_v6.failed | default(true)) or
+              not (ssh_wait_v4.failed | default(true))
+          block:
+            - name: Update GRUB config for serial console
+              ansible.builtin.lineinfile:
+                path: /etc/default/grub
+                regexp: '^GRUB_CMDLINE_LINUX='
+                line: 'GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200n8"'
+                backup: true
+              delegate_to: "{{ vm_ip_address }}"
+              vars:
+                ansible_user: root
+                ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+            - name: Enable GRUB serial terminal
+              ansible.builtin.blockinfile:
+                path: /etc/default/grub
+                marker: "# {mark} ANSIBLE MANAGED - Serial Console"
+                insertafter: '^GRUB_CMDLINE_LINUX='
+                block: |
+                  GRUB_TERMINAL="console serial"
+                  GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 \
+                  --word=8 --parity=no --stop=1"
+              delegate_to: "{{ vm_ip_address }}"
+              vars:
+                ansible_user: root
+                ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+            - name: Update GRUB
+              ansible.builtin.command: update-grub
+              delegate_to: "{{ vm_ip_address }}"
+              vars:
+                ansible_user: root
+                ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+              changed_when: true
+
+            - name: Configure getty for serial console
+              ansible.builtin.systemd:
+                name: serial-getty@ttyS0.service
+                enabled: true
+                state: started
+              delegate_to: "{{ vm_ip_address }}"
+              vars:
+                ansible_user: root
+                ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+              failed_when: false
 
         - name: Set facts for subsequent playbooks
           ansible.builtin.set_fact:
