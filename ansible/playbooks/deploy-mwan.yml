@@ -664,8 +664,15 @@
         state: restarted
 
     - name: Apply sysctl
-      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-mwan.conf
+      ansible.builtin.shell: |
+        # Load nf_conntrack module if not loaded
+        modprobe nf_conntrack 2>/dev/null || true
+        # Apply sysctl settings
+        sysctl -p /etc/sysctl.d/99-mwan.conf
+      args:
+        executable: /bin/bash
       changed_when: true
+      failed_when: false
 
     - name: Restart dhcpcd
       ansible.builtin.systemd:
