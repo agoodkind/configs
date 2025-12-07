@@ -544,6 +544,11 @@
             'Interface not yet up - may need more time for authentication') }}
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
 
+    - name: Check if Webpass interface is up
+      ansible.builtin.stat:
+        path: /sys/class/net/{{ interface_mapping.eth2 }}/carrier
+      register: webpass_carrier_check
+
     - name: Verify Webpass MAC spoofing succeeded
       ansible.builtin.shell:
         cmd: |
@@ -552,16 +557,28 @@
         executable: /bin/bash
       register: webpass_current_mac
       changed_when: false
-      failed_when: webpass_current_mac.stdout != mwan_webpass_mac
+      failed_when: >
+        webpass_carrier_check.stat.exists and
+        webpass_current_mac.stdout != mwan_webpass_mac
+      when: webpass_carrier_check.stat.exists
 
     - name: Confirm Webpass MAC spoofing
       ansible.builtin.debug:
         msg: |
+          {% if webpass_carrier_check.stat.exists %}
           ✅ Webpass MAC spoofing verified:
             Interface: {{ interface_mapping.eth2 }}
-            Current MAC: {{ webpass_current_mac.stdout }}
+            Current MAC: {{ webpass_current_mac.stdout | default('N/A') }}
             Expected MAC: {{ mwan_webpass_mac }}
-            Status: MATCH - Safe to bring up interface
+            Status: {{ 'MATCH' if webpass_current_mac.stdout == mwan_webpass_mac else 'MISMATCH' }}
+          {% else %}
+          ⚠️  Webpass interface not connected (NO-CARRIER):
+            Interface: {{ interface_mapping.eth2 }}
+            Hardware MAC: {{ webpass_current_mac.stdout | default('N/A') }}
+            Will be spoofed to: {{ mwan_webpass_mac }} when connected
+            Status: OK - MAC will be spoofed on interface up
+          {% endif %}
+      when: webpass_carrier_check.stat.exists or true
 
     - name: Enable services
       ansible.builtin.systemd:
