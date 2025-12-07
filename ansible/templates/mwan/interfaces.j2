@@ -45,11 +45,12 @@ iface {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }} inet manual
 # CRITICAL: I226-V hardware MAC is wrong, MUST spoof to registered MAC
 # ==============================================================================
 auto {{ interface_mapping.eth2 }}
-iface {{ interface_mapping.eth2 }} inet manual
+iface {{ interface_mapping.eth2 }} inet static
     # CRITICAL: Set MAC to Webpass-registered address BEFORE bringing up
     pre-up ip link set dev {{ interface_mapping.eth2 }} address {{ mwan_webpass_mac }}
-    pre-up ip link set {{ interface_mapping.eth2 }} up
-    # DHCPv4 and DHCPv6-PD handled by dhcpcd
+    address {{ mwan_webpass_ipv4 }}
+    gateway {{ mwan_webpass_gateway }}
+    # DHCPv6-PD handled by dhcpcd (IPv6 ONLY)
 
 # ==============================================================================
 # Internal Link (to OPNsense) - virtio on mwanbr
