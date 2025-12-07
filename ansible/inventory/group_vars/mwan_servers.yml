@@ -25,9 +25,9 @@ pci_webpass_nic: "06:00.0"
 # Interface names INSIDE mwan VM (update after VM creation)
 # Run: ssh root@mwan.home.goodkind.io "ip link show"
 mwan_mgmt_iface: "eth0" # virtio on vmbr0 (management/SSH)
-mwan_att_iface: "eth1" # X710 VF passthrough (iavf driver) - for AT&T 802.1X + WAN
-mwan_webpass_iface: "eth2" # I226-V passthrough (igc driver) - for Webpass WAN
-mwan_internal_iface: "eth3" # virtio on mwanbr (to OPNsense)
+mwan_att_iface: "ens16" # X710 VF passthrough (iavf driver) - for AT&T 802.1X + WAN
+mwan_webpass_iface: "ens17" # I226-V passthrough (igc driver) - for Webpass WAN
+mwan_internal_iface: "ens19" # virtio on mwanbr (to OPNsense)
 
 # AT&T 802.1X authentication (via X710 VF passthrough)
 mwan_att_vlan_id: 3242
