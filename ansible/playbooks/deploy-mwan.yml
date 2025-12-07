@@ -145,37 +145,37 @@
             | lower
           }}
 
-    - name: Gather network interface facts
-      ansible.builtin.setup:
-        gather_subset:
-          - network
-      when: ansible_interfaces is not defined
-
     - name: Find interface by MAC (eth0 - management on vmbr0)
-      ansible.builtin.set_fact:
-        iface_eth0: >-
-          {{
-            ansible_interfaces
-            | map('extract', hostvars[inventory_hostname], 'ansible_')
-            | selectattr('macaddress', 'defined')
-            | selectattr('macaddress', 'equalto', mwan_net0_mac)
-            | map(attribute='device')
-            | first
-            | default('')
-          }}
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          for iface in /sys/class/net/*; do
+            if [ -f "$iface/address" ] &&
+               [ "$(cat "$iface/address")" = "{{ mwan_net0_mac }}" ]; then
+              basename "$iface"
+              exit 0
+            fi
+          done
+        executable: /bin/bash
+      register: iface_eth0_result
+      changed_when: false
+      failed_when: false
 
     - name: Find interface by MAC (eth3 - internal on mwanbr)
-      ansible.builtin.set_fact:
-        iface_eth3: >-
-          {{
-            ansible_interfaces
-            | map('extract', hostvars[inventory_hostname], 'ansible_')
-            | selectattr('macaddress', 'defined')
-            | selectattr('macaddress', 'equalto', mwan_net1_mac)
-            | map(attribute='device')
-            | first
-            | default('')
-          }}
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          for iface in /sys/class/net/*; do
+            if [ -f "$iface/address" ] &&
+               [ "$(cat "$iface/address")" = "{{ mwan_net1_mac }}" ]; then
+              basename "$iface"
+              exit 0
+            fi
+          done
+        executable: /bin/bash
+      register: iface_eth3_result
+      changed_when: false
+      failed_when: false
 
     - name: Find interface by driver (eth1 - X710 VF with iavf)
       ansible.builtin.shell:
@@ -212,10 +212,10 @@
     - name: Build interface mapping
       ansible.builtin.set_fact:
         interface_mapping:
-          eth0: "{{ iface_eth0 }}"
+          eth0: "{{ iface_eth0_result.stdout | default('') }}"
           eth1: "{{ iface_eth1_result.stdout | default('') }}"
           eth2: "{{ iface_eth2_result.stdout | default('') }}"
-          eth3: "{{ iface_eth3 }}"
+          eth3: "{{ iface_eth3_result.stdout | default('') }}"
 
     - name: Display interface mapping
       ansible.builtin.debug:
