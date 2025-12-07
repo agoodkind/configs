@@ -71,8 +71,12 @@
       ansible.builtin.assert:
         that:
           - ansible_os_family == "Debian"
-        fail_msg: "This playbook requires Debian. Found: {{ ansible_os_family | default('unknown') }}"
-        success_msg: "✓ {{ ansible_distribution }} {{ ansible_distribution_version }}"
+        fail_msg: >-
+          This playbook requires Debian.
+          Found: {{ ansible_os_family | default('unknown') }}
+        success_msg: >-
+          ✓ {{ ansible_distribution }}
+          {{ ansible_distribution_version }}
 
     - name: Update apt cache
       ansible.builtin.apt:
@@ -93,6 +97,183 @@
           - bridge-utils
           - ifupdown
         state: present
+
+    - name: Get VM network config from Proxmox
+      delegate_to: vault.home.goodkind.io
+      ansible.builtin.command:
+        cmd: qm config {{ mwan_vmid }}
+      register: vm_config
+      changed_when: false
+
+    - name: Parse virtio MAC addresses from VM config
+      delegate_to: localhost
+      ansible.builtin.set_fact:
+        mwan_net0_mac: >-
+          {{
+            vm_config.stdout_lines
+            | select('match', '^net0:.*virtio')
+            | first
+            | regex_search('virtio=([0-9A-Fa-f:]+)', '\1')
+            | first
+            | lower
+          }}
+        mwan_net1_mac: >-
+          {{
+            vm_config.stdout_lines
+            | select('match', '^net1:.*virtio')
+            | first
+            | regex_search('virtio=([0-9A-Fa-f:]+)', '\1')
+            | first
+            | lower
+          }}
+
+    - name: Gather network interface facts
+      ansible.builtin.setup:
+        gather_subset:
+          - network
+      when: ansible_interfaces is not defined
+
+    - name: Find interface by MAC (eth0 - management on vmbr0)
+      ansible.builtin.set_fact:
+        iface_eth0: >-
+          {{
+            ansible_interfaces
+            | map('extract', hostvars[inventory_hostname], 'ansible_')
+            | selectattr('macaddress', 'defined')
+            | selectattr('macaddress', 'equalto', mwan_net0_mac)
+            | map(attribute='device')
+            | first
+            | default('')
+          }}
+
+    - name: Find interface by MAC (eth3 - internal on mwanbr)
+      ansible.builtin.set_fact:
+        iface_eth3: >-
+          {{
+            ansible_interfaces
+            | map('extract', hostvars[inventory_hostname], 'ansible_')
+            | selectattr('macaddress', 'defined')
+            | selectattr('macaddress', 'equalto', mwan_net1_mac)
+            | map(attribute='device')
+            | first
+            | default('')
+          }}
+
+    - name: Find interface by driver (eth1 - X710 VF with iavf)
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          for iface in /sys/class/net/*; do
+            if [ -L "$iface/device/driver" ] &&
+               readlink "$iface/device/driver" | grep -q '/iavf$'; then
+              basename "$iface"
+              exit 0
+            fi
+          done
+        executable: /bin/bash
+      register: iface_eth1_result
+      changed_when: false
+      failed_when: false
+
+    - name: Find interface by driver (eth2 - I226-V with igc)
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          for iface in /sys/class/net/*; do
+            if [ -L "$iface/device/driver" ] &&
+               readlink "$iface/device/driver" | grep -q '/igc$'; then
+              basename "$iface"
+              exit 0
+            fi
+          done
+        executable: /bin/bash
+      register: iface_eth2_result
+      changed_when: false
+      failed_when: false
+
+    - name: Build interface mapping
+      ansible.builtin.set_fact:
+        interface_mapping:
+          eth0: "{{ iface_eth0 }}"
+          eth1: "{{ iface_eth1_result.stdout | default('') }}"
+          eth2: "{{ iface_eth2_result.stdout | default('') }}"
+          eth3: "{{ iface_eth3 }}"
+
+    - name: Display interface mapping
+      ansible.builtin.debug:
+        msg: |
+          Interface mapping:
+            eth0 (mgmt/vmbr0):      {{ interface_mapping.eth0 }}
+            eth1 (AT&T/X710 VF):    {{ interface_mapping.eth1 }}
+            eth2 (Webpass/I226-V):  {{ interface_mapping.eth2 }}
+            eth3 (internal/mwanbr): {{ interface_mapping.eth3 }}
+
+    - name: Verify all interfaces were found
+      ansible.builtin.assert:
+        that:
+          - interface_mapping[item] | length > 0
+        fail_msg: "Could not find physical interface for {{ item }}"
+        success_msg: "{{ item }} mapped to {{ interface_mapping[item] }}"
+      loop:
+        - eth0
+        - eth1
+        - eth2
+        - eth3
+
+    - name: Check if altnames already exist
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ip link property show dev "{{ item.value }}" 2>/dev/null |
+            grep -q "altname {{ item.key }}"
+        executable: /bin/bash
+      loop: "{{ interface_mapping | dict2items }}"
+      register: altname_check
+      changed_when: false
+      failed_when: false
+
+    - name: Add altnames to interfaces
+      ansible.builtin.shell:
+        cmd: |
+          set -eo pipefail
+          if ! ip link property show dev "{{ item.item.value }}" 2>/dev/null |
+               grep -q "altname {{ item.item.key }}"; then
+            ip link property add dev "{{ item.item.value }}" \
+              altname "{{ item.item.key }}"
+            echo "changed"
+          fi
+        executable: /bin/bash
+      loop: "{{ altname_check.results }}"
+      when: item.item.value != item.item.key
+      changed_when: "'changed' in altname_add_result.stdout"
+      register: altname_add_result
+      loop_control:
+        label: "{{ item.item.key }} -> {{ item.item.value }}"
+
+    - name: Create udev rules for persistent interface naming
+      ansible.builtin.template:
+        dest: /etc/udev/rules.d/70-mwan-interface-names.rules
+        mode: '0644'
+        content: |
+          # Persistent network interface naming for MWAN
+          # Generated by Ansible - do not edit manually
+
+          # eth0: Management (virtio on vmbr0)
+          SUBSYSTEM=="net", ACTION=="add", \
+          ATTR{address}=="{{ mwan_net0_mac }}", NAME="eth0"
+
+          # eth1: AT&T WAN (X710 VF passthrough - iavf driver)
+          SUBSYSTEM=="net", ACTION=="add", \
+          DRIVERS=="iavf", NAME="eth1"
+
+          # eth2: Webpass WAN (I226-V passthrough - igc driver)
+          SUBSYSTEM=="net", ACTION=="add", \
+          DRIVERS=="igc", NAME="eth2"
+
+          # eth3: Internal link to OPNsense (virtio on mwanbr)
+          SUBSYSTEM=="net", ACTION=="add", \
+          ATTR{address}=="{{ mwan_net1_mac }}", NAME="eth3"
+      notify: Reload udev
 
     - name: Create configuration directories
       ansible.builtin.file:
@@ -126,7 +307,10 @@
       ansible.builtin.debug:
         msg: |
           ⚠️  Certificate {{ item.item }} missing!
-          Upload: scp agoodkind@router:/conf/opnatt/wpa/*.pem root@{{ inventory_hostname }}:/etc/wpa_supplicant/
+          Upload after deploy:
+          scp agoodkind@router:/conf/opnatt/wpa/*.pem \
+            root@{{ inventory_hostname }}:/etc/wpa_supplicant/
+          Then restart: systemctl restart wpa_supplicant-mwan
       when: not item.stat.exists
       loop: "{{ cert_check.results }}"
 
@@ -250,12 +434,19 @@
 
     - name: Display status
       ansible.builtin.debug:
-        msg: "{{ health_status.stdout_lines | default(['Run /usr/local/bin/health-check.sh --status']) }}"
+        msg: >-
+          {{ health_status.stdout_lines |
+          default(['Run /usr/local/bin/health-check.sh --status']) }}
 
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
+
+    - name: Reload udev
+      ansible.builtin.systemd:
+        name: systemd-udevd
+        state: reloaded
 
     - name: Restart networking
       ansible.builtin.systemd:
