@@ -109,6 +109,13 @@
         state: present
       when: is_vm | default(false)
 
+    - name: Enable and start qemu-guest-agent (VMs only)
+      ansible.builtin.systemd:
+        name: qemu-guest-agent
+        enabled: true
+        state: started
+      when: is_vm | default(false)
+
     - name: Remove unnecessary packages
       ansible.builtin.apt:
         autoremove: true
