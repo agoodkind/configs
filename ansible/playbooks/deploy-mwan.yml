@@ -47,6 +47,7 @@
     dns_servers: "{{ hostvars['localhost']['vm_dns_servers'] }}"
     enable_serial: true
     enable_qemu_agent: true
+    enable_dns_registration: false  # MWAN handles DNS via interfaces config
 
 - name: Configure MWAN VM
   hosts: mwan_servers
