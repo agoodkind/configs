@@ -30,13 +30,16 @@ iface {{ interface_mapping.eth0 }} inet6 static
 # ==============================================================================
 auto {{ interface_mapping.eth1 }}
 iface {{ interface_mapping.eth1 }} inet manual
+    # CRITICAL: Set MAC for AT&T authentication BEFORE bringing up
+    pre-up ip link set {{ interface_mapping.eth1 }} address {{ mwan_att_mac }}
     pre-up ip link set {{ interface_mapping.eth1 }} up
 
 # AT&T VLAN 3242 (created after wpa_supplicant authenticates)
 auto {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}
 iface {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }} inet manual
     vlan-raw-device {{ interface_mapping.eth1 }}
-    pre-up ip link set {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }} address {{ mwan_att_mac }}
+    # CRITICAL: Set MAC for AT&T DHCP authentication AFTER VLAN is created
+    post-up ip link set {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }} address {{ mwan_att_mac }}
     # DHCPv4 and DHCPv6-PD handled by dhcpcd
     # Disable reverse path filtering for policy routing
     post-up sysctl -w net.ipv4.conf.{{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}.rp_filter=0 || true

@@ -91,19 +91,27 @@ else
     sleep 2
 fi
 
+# CRITICAL: Set MAC address for AT&T DHCP authentication
+# Must be done BEFORE dhcpcd sends DISCOVER packets
+log "Setting MAC address to {{ mwan_att_mac }} for AT&T DHCP"
+ip link set "${VLAN_IFACE}" address {{ mwan_att_mac }} || {
+    log "ERROR: Failed to set MAC address on ${VLAN_IFACE}"
+    exit 1
+}
+
 # Verify interface is up
 if ! ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
     log "ERROR: ${VLAN_IFACE} is not UP after bringup"
     exit 1
 fi
 
-log "VLAN interface ${VLAN_IFACE} is now UP"
+log "VLAN interface ${VLAN_IFACE} is now UP with correct MAC"
 
-# Ensure dhcpcd is managing this interface
-# The main dhcpcd service should handle it, but verify
-if ! systemctl is-active --quiet dhcpcd; then
-    log "WARNING: dhcpcd service is not active"
-fi
+# Restart dhcpcd to pick up the new MAC and trigger fresh DHCP discovery
+log "Restarting dhcpcd to trigger DHCP with correct MAC"
+systemctl restart dhcpcd || {
+    log "WARNING: Failed to restart dhcpcd"
+}
 
 log "AT&T VLAN bringup completed successfully"
 exit 0
