@@ -624,13 +624,6 @@
         #     ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
         #   register: networkd_status
 
-        - name: Debug - Show systemd-networkd status (skipped restart)
-          ansible.builtin.debug:
-            msg:
-              - "systemd-networkd restart was skipped"
-              - "Status before (would-be) restart:"
-              - "{{ networkd_status_before.stdout_lines | default([]) }}"
-
         - name: Shut down VM to remove cloud-init CD
           community.proxmox.proxmox_kvm:
             api_host: "{{ proxmox_api_host }}"
