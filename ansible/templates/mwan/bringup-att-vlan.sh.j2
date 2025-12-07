@@ -1,118 +1,70 @@
 #!/bin/bash
 # Bring up AT&T VLAN interface after 802.1X authentication
-# This script waits for wpa_supplicant to successfully authenticate,
-# then brings up the VLAN interface
+# For systemd-networkd - waits for auth file, creates VLAN, sets MAC
 
 set -euo pipefail
 
-ATT_IFACE="{{ interface_mapping.eth1 }}"
-VLAN_IFACE="{{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}"
-WPA_SERVICE="wpa_supplicant-mwan"
-MAX_WAIT=60  # Maximum seconds to wait for authentication
-CHECK_INTERVAL=2  # Check every 2 seconds
+ATT_IFACE="{{ mwan_att_iface }}"
+VLAN_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
+AUTH_FILE="/run/wpa_supplicant-mwan.authenticated"
+MAX_WAIT=60
+CHECK_INTERVAL=2
 
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | systemd-cat -t bringup-att-vlan
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | \
+        systemd-cat -t bringup-att-vlan
 }
 
 log "Starting AT&T VLAN bringup script"
-log "Waiting for wpa_supplicant authentication on ${ATT_IFACE}..."
 
-# Wait for wpa_supplicant service to be active
-for i in $(seq 1 30); do
-    if systemctl is-active --quiet "${WPA_SERVICE}"; then
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        log "ERROR: ${WPA_SERVICE} service not active after 60 seconds"
-        exit 1
-    fi
-    sleep 2
-done
-
-# Wait for EAP authentication to succeed
+# Wait for authentication file
 elapsed=0
-authenticated=false
-
 while [ $elapsed -lt $MAX_WAIT ]; do
-    # Check journalctl for EAP-SUCCESS message
-    # (check last 60 seconds to catch recent auths)
-    if journalctl -u "${WPA_SERVICE}" --since "60 seconds ago" \
-       --no-pager | grep -q "CTRL-EVENT-EAP-SUCCESS"; then
-        authenticated=true
-        log "EAP authentication success detected in logs"
+    if [ -f "$AUTH_FILE" ]; then
+        log "Authentication success file detected"
         break
     fi
-    
-    # Also check if VLAN interface already exists and is up
-    # (might have been brought up manually or on restart)
-    if ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
-        if ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
-            log "VLAN interface ${VLAN_IFACE} already up"
-            authenticated=true
-            break
-        fi
-    fi
-    
     sleep $CHECK_INTERVAL
     elapsed=$((elapsed + CHECK_INTERVAL))
 done
 
-if [ "$authenticated" != "true" ]; then
-    log "ERROR: Authentication not detected after ${MAX_WAIT} seconds"
+if [ ! -f "$AUTH_FILE" ]; then
+    log "ERROR: Authentication file not found after ${MAX_WAIT}s"
     exit 1
 fi
 
-log "Authentication successful, bringing up VLAN interface ${VLAN_IFACE}"
+log "Authentication successful, bringing up VLAN ${VLAN_IFACE}"
 
-# Check if interface is already up
-if ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
-    if ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
-        log "VLAN interface ${VLAN_IFACE} is already UP"
-    else
-        # Interface exists but is down, bring it up
-        log "VLAN interface ${VLAN_IFACE} exists but is DOWN, " \
-            "bringing it up"
-        ip link set "${VLAN_IFACE}" up || {
-            log "ERROR: Failed to set ${VLAN_IFACE} up"
-            exit 1
-        }
-        sleep 2
-    fi
-else
-    # Interface doesn't exist, create it via ifup
-    log "Creating and bringing up VLAN interface ${VLAN_IFACE}"
-    ifup "${VLAN_IFACE}" 2>&1 | \
-        while read line; do log "$line"; done || {
-        log "ERROR: Failed to bring up ${VLAN_IFACE}"
+# Create VLAN interface if it doesn't exist
+if ! ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
+    log "Creating VLAN interface ${VLAN_IFACE}"
+    ip link add link "${ATT_IFACE}" name "${VLAN_IFACE}" \
+        type vlan id {{ mwan_att_vlan_id }} || {
+        log "ERROR: Failed to create VLAN interface"
         exit 1
     }
-    # Wait a moment for interface to settle
-    sleep 2
 fi
 
-# CRITICAL: Set MAC address for AT&T DHCP authentication
-# Must be done BEFORE dhcpcd sends DISCOVER packets
-log "Setting MAC address to {{ mwan_att_mac }} for AT&T DHCP"
+# Set MAC address BEFORE bringing up (critical for AT&T DHCP)
+log "Setting MAC address to {{ mwan_att_mac }}"
 ip link set "${VLAN_IFACE}" address {{ mwan_att_mac }} || {
-    log "ERROR: Failed to set MAC address on ${VLAN_IFACE}"
+    log "ERROR: Failed to set MAC address"
     exit 1
 }
 
-# Verify interface is up
+# Bring up the interface
 if ! ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
-    log "ERROR: ${VLAN_IFACE} is not UP after bringup"
-    exit 1
+    log "Bringing up VLAN interface"
+    ip link set "${VLAN_IFACE}" up || {
+        log "ERROR: Failed to bring up interface"
+        exit 1
+    }
 fi
 
-log "VLAN interface ${VLAN_IFACE} is now UP with correct MAC"
+# Disable reverse path filtering for policy routing
+sysctl -w net.ipv4.conf."${VLAN_IFACE}".rp_filter=0 || true
 
-# Restart dhcpcd to pick up the new MAC and trigger fresh DHCP discovery
-# TODO: figure out how to do this with systemd-networkd
-# log "Restarting dhcpcd to trigger DHCP with correct MAC"
-# systemctl restart dhcpcd || {
-#     log "WARNING: Failed to restart dhcpcd"
-# }
+log "VLAN interface ${VLAN_IFACE} is UP with correct MAC"
+log "systemd-networkd will now configure DHCP"
 
-log "AT&T VLAN bringup completed successfully"
 exit 0
