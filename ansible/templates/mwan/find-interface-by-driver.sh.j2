@@ -1,0 +1,20 @@
+#!/bin/bash
+# Find network interface by driver name
+# Usage: find-interface-by-driver.sh <driver_name>
+set -o pipefail
+
+DRIVER="$1"
+if [ -z "$DRIVER" ]; then
+    echo "Usage: $0 <driver_name>" >&2
+    exit 1
+fi
+
+for iface in /sys/class/net/*; do
+    if [ -L "$iface/device/driver" ] &&
+       readlink "$iface/device/driver" | grep -q "/${DRIVER}$"; then
+        basename "$iface"
+        exit 0
+    fi
+done
+
+exit 1
