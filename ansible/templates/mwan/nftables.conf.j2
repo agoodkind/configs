@@ -18,8 +18,7 @@ define MB_IFACE = "{{ mwan_monkeybrains_iface }}"
 {% endif %}
 
 # Internal network (mwan <-> OPNsense link)
-define INTERNAL_NET = "10.250.250.0/29"
-define INTERNAL_V6_NET = "{{ mwan_internal_prefix }}"
+define INTERNAL_NET = 10.250.250.0/29
 
 table inet filter {
     chain input {
