@@ -148,12 +148,12 @@
     - name: Deploy interface discovery scripts
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/{{ item }}.j2"
-        dest: /usr/local/bin/{{ item | replace('.j2', '') }}
+        dest: /usr/local/bin/{{ item }}
         mode: '0755'
       loop:
-        - find-interface-by-mac.sh.j2
-        - find-interface-by-driver.sh.j2
-        - add-interface-altname.sh.j2
+        - find-interface-by-mac.sh
+        - find-interface-by-driver.sh
+        - add-interface-altname.sh
 
     - name: Find interface by MAC (eth0 - management on vmbr0)
       ansible.builtin.command:
