@@ -43,6 +43,13 @@ mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
 
+# Webpass static IPv4 (Google Fiber)
+# Network: 136.25.91.240/29
+# Gateway: 136.25.91.241
+# Usable: 136.25.91.242 - 136.25.91.246
+mwan_webpass_ipv4: "136.25.91.242/29"
+mwan_webpass_gateway: "136.25.91.241"
+
 # Internal link (to OPNsense) addressing
 mwan_internal_ipv4: "10.250.250.1/29"
 mwan_internal_ipv6: "3d06:bad:b01:fe::1/64"
@@ -59,11 +66,12 @@ mwan_static_mappings:
     - { internal: "10.250.250.5", external: "104.57.226.196" }
     - { internal: "10.250.250.6", external: "104.57.226.197" }
   webpass:
-    - { internal: "10.250.250.2", external: "136.25.91.241" }
-    - { internal: "10.250.250.3", external: "136.25.91.242" }
-    - { internal: "10.250.250.4", external: "136.25.91.243" }
-    - { internal: "10.250.250.5", external: "136.25.91.244" }
-    - { internal: "10.250.250.6", external: "136.25.91.245" }
+    # Note: .242 is also interface IP (dual-purpose)
+    - { internal: "10.250.250.2", external: "136.25.91.242" }
+    - { internal: "10.250.250.3", external: "136.25.91.243" }
+    - { internal: "10.250.250.4", external: "136.25.91.244" }
+    - { internal: "10.250.250.5", external: "136.25.91.245" }
+    - { internal: "10.250.250.6", external: "136.25.91.246" }
 
 # Health check configuration
 mwan_health_checks:
