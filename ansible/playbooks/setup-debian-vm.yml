@@ -208,8 +208,15 @@
           {{ 'exists (VMID ' + (vm_check.vmid | string) + ')'
           if vm_check.vmid is defined else 'will be created' }}
 
+    - name: Delete existing VM (temporary - for clean redeploy)
+      ansible.builtin.command: qm stop {{ vm_check.vmid }} && qm destroy {{ vm_check.vmid }} --purge
+      delegate_to: "{{ target_node }}"
+      when: vm_check.vmid is defined
+      changed_when: true
+      failed_when: false
+
     - name: VM creation block
-      when: vm_check.vmid is not defined
+      when: true  # Always create after deletion
       block:
         - name: Get next available VMID
           ansible.builtin.command: pvesh get /cluster/nextid
