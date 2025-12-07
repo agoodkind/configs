@@ -43,8 +43,8 @@ require dhcp_server_identifier
 slaac private
 
 # Deny interfaces that should not be managed by dhcpcd
-# Only manage specific interfaces explicitly configured below
-denyinterfaces {{ interface_mapping.eth1 }} {{ interface_mapping.eth2 }}
+# eth1 (AT&T base VF): Only VLAN 3242 should be managed, not base
+denyinterfaces {{ interface_mapping.eth1 }}
 
 # Management interface - request DHCP IP for DNS registration
 # Static IP also configured via /etc/network/interfaces
