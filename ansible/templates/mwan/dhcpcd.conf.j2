@@ -42,12 +42,17 @@ require dhcp_server_identifier
 # OR generate Stable Private IPv6 Addresses based from the DUID
 slaac private
 
-# Management interface - configured by cloud-init with static IP
-# Don't let dhcpcd manage it
+# Management interface - request DHCP IP for DNS registration
+# Static IP also configured via /etc/network/interfaces
+# Result: Interface will have BOTH static (10.250.0.X) and dynamic IP
 interface {{ mwan_mgmt_iface }}
+    # Request IPv4 via DHCP (hostname sent automatically)
+    ipv4
+    # Request IPv6 via DHCPv6  
+    ipv6rs
+    ia_na 3
+    # Don't let DHCP change the default gateway
     nogateway
-    noipv4
-    noipv6
 
 # Static IP for internal interface (to OPNsense)
 interface {{ mwan_internal_iface }}
