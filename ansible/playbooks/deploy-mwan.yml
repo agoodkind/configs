@@ -538,16 +538,16 @@
         name: systemd-networkd
         state: restarted
 
-    - name: Apply sysctl
-      ansible.builtin.shell: |
-        # Load nf_conntrack module if not loaded
-        modprobe nf_conntrack 2>/dev/null || true
-        # Apply sysctl settings
-        sysctl -p /etc/sysctl.d/99-mwan.conf
-      args:
-        executable: /bin/bash
-      changed_when: true
+    - name: Load nf_conntrack module
+      ansible.builtin.command:
+        cmd: modprobe nf_conntrack
       failed_when: false
+      changed_when: false
+
+    - name: Apply sysctl
+      ansible.builtin.command:
+        cmd: sysctl -p /etc/sysctl.d/99-mwan.conf
+      changed_when: true
 
     - name: Reload nftables
       ansible.builtin.systemd:
