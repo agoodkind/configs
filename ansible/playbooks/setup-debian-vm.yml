@@ -5,7 +5,7 @@
 #   hostname: VM hostname (e.g., mwan.home.goodkind.io)
 #
 # Optional variables:
-#   target_node: Proxmox node (default: vault)
+#   proxmox_host: Proxmox node (default: vault)
 #   vmid: Specific VMID (default: auto-assign)
 #   disk_size: Disk size in GB (default: "8")
 #   memory: Memory in MB (default: "1024")
@@ -23,7 +23,7 @@
   gather_facts: false
 
   vars:
-    target_node: vault
+    proxmox_host: vault
     template_vmid: 9000
     debian_cloud_image: "debian-13-generic-amd64.qcow2"
     debian_cloud_url: >-
@@ -36,7 +36,7 @@
     - name: Check if Debian cloud image exists on Proxmox
       ansible.builtin.stat:
         path: "/var/lib/vz/template/qemu/{{ debian_cloud_image }}"
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       register: image_check
 
     - name: Create template directory if missing
@@ -44,7 +44,7 @@
         path: /var/lib/vz/template/qemu
         state: directory
         mode: '0755'
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       when: not image_check.stat.exists
 
     - name: Download Debian cloud image
@@ -52,19 +52,19 @@
         url: "{{ debian_cloud_url }}"
         dest: "/var/lib/vz/template/qemu/{{ debian_cloud_image }}"
         mode: '0644'
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       when: not image_check.stat.exists
 
     - name: Check if template VM exists
       ansible.builtin.command: qm status {{ template_vmid }}
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       register: template_check
       failed_when: false
       changed_when: false
 
     - name: Destroy existing template if recreate_template is true
       ansible.builtin.command: qm destroy {{ template_vmid }} --purge
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       when:
         - recreate_template | default(false) | bool
         - template_check.rc == 0
@@ -72,7 +72,7 @@
 
     - name: Create Debian cloud-init template
       when: (template_check.rc != 0) or (recreate_template | default(false) | bool)
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       block:
         - name: Create template VM
           ansible.builtin.command: >
@@ -135,7 +135,7 @@
 
   vars:
     # Proxmox configuration
-    target_node: vault
+    proxmox_host: vault
     template_vmid: 9000
     template_storage: "storage"
     template_bridge: "vmbr0"
@@ -152,10 +152,15 @@
     network_interfaces: ["vmbr0"]
     hostpci_devices: []
 
-    # Cloud-init (caller should override for static IPs)
+    # Cloud-init & Network config
     mgmt_ip_config: "ip=dhcp,ip6=dhcp"
-    dns_domain: "home.goodkind.io"
-    dns_servers: "3d06:bad:b01::6 10.250.0.6"
+    vm_mgmt_iface: "enmgmt0"
+    vm_mgmt_ipv4_prefix: "24"
+    vm_mgmt_ipv6_prefix: "64"
+    vm_mgmt_gateway_ipv4: "10.250.0.1"
+    vm_mgmt_gateway_ipv6: "3d06:bad:b01::1"
+    vm_mgmt_dns_servers: "3d06:bad:b01::6 10.250.0.6"
+    vm_mgmt_dns_domain: "home.goodkind.io"
 
     # Serial console & guest agent
     enable_serial: true
@@ -188,7 +193,7 @@
         api_token_id: "{{ proxmox_token_id }}"
         api_token_secret: "{{ proxmox_token_secret }}"
         validate_certs: false
-        node: "{{ target_node }}"
+        node: "{{ proxmox_host }}"
         name: "{{ hostname }}"
         state: current
       delegate_to: ansible.home.goodkind.io
@@ -204,7 +209,7 @@
 
     - name: Stop existing VM (temporary - for clean redeploy)
       ansible.builtin.command: qm stop {{ vm_check.vmid }}
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       when: vm_check.vmid is defined
       changed_when: true
       failed_when: false
@@ -216,7 +221,7 @@
 
     - name: Destroy existing VM (temporary - for clean redeploy)
       ansible.builtin.command: qm destroy {{ vm_check.vmid }} --purge
-      delegate_to: "{{ target_node }}"
+      delegate_to: "{{ proxmox_host }}"
       when: vm_check.vmid is defined
       changed_when: true
 
@@ -225,7 +230,7 @@
       block:
         - name: Get next available VMID
           ansible.builtin.command: pvesh get /cluster/nextid
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           register: next_vmid
           changed_when: false
           when: not vmid
@@ -239,14 +244,14 @@
             qm clone {{ template_vmid }} {{ new_vmid }}
             --name {{ hostname }}
             --full 1
-            --target {{ target_node }}
-          delegate_to: "{{ target_node }}"
+            --target {{ proxmox_host }}
+          delegate_to: "{{ proxmox_host }}"
           changed_when: true
 
         - name: Resize disk
           ansible.builtin.command: >
             qm resize {{ new_vmid }} scsi0 {{ disk_size }}G
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           changed_when: true
 
         - name: Configure VM resources
@@ -257,29 +262,45 @@
             --cpu host
             --onboot 1
             --tags {{ vm_tags }}
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           changed_when: true
 
         - name: Remove default network interface
           ansible.builtin.command: qm set {{ new_vmid }} --delete net0
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           changed_when: true
 
         - name: Add network interfaces
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --net{{ idx }} virtio,bridge={{ item }}
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           loop: "{{ network_interfaces }}"
           loop_control:
             index_var: idx
           changed_when: true
 
+        - name: Get MAC address of net0 for .link file
+          ansible.builtin.shell: >
+            set -o pipefail &&
+            qm config {{ new_vmid }} |
+            grep '^net0:' |
+            sed -n 's/.*virtio=\([^,]*\).*/\1/p'
+          delegate_to: "{{ proxmox_host }}"
+          register: net0_mac_result
+          changed_when: false
+          args:
+            executable: /bin/bash
+
+        - name: Set vm_mgmt_mac variable
+          ansible.builtin.set_fact:
+            vm_mgmt_mac: "{{ net0_mac_result.stdout | trim }}"
+
         - name: Add PCIe passthrough devices
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --hostpci{{ idx }} {{ item }}
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           loop: "{{ hostpci_devices | select() | list }}"
           loop_control:
             index_var: idx
@@ -291,7 +312,7 @@
             url: "https://github.com/agoodkind.keys"
             return_content: true
           register: github_keys
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           failed_when: false
 
         - name: Debug SSH keys
@@ -305,6 +326,8 @@
           ansible.builtin.set_fact:
             vm_static_ipv4: "10.250.0.{{ new_vmid }}"
             vm_static_ipv6: "3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}"
+            vm_mgmt_ipv4: "10.250.0.{{ new_vmid }}"
+            vm_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}"
 
         - name: Build ipconfig string (DRY composition)
           ansible.builtin.set_fact:
@@ -317,7 +340,7 @@
             content: "{{ github_keys.content | trim }}"
             dest: "/tmp/sshkeys_{{ new_vmid }}.pub"
             mode: '0644'
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           when: github_keys.content is defined and github_keys.content | trim | length > 0
 
         - name: Configure cloud-init with static IP and SSH keys
@@ -326,41 +349,22 @@
             --ciuser root
             --sshkeys /tmp/sshkeys_{{ new_vmid }}.pub
             --ipconfig0 "{{ vm_ipconfig_str }}"
-            --searchdomain {{ dns_domain }}
-            --nameserver '{{ dns_servers }}'
-          delegate_to: "{{ target_node }}"
+            --searchdomain {{ vm_mgmt_dns_domain }}
+            --nameserver '{{ vm_mgmt_dns_servers }}'
+          delegate_to: "{{ proxmox_host }}"
           changed_when: true
           when: github_keys.content is defined and github_keys.content | trim | length > 0
-
-        - name: Configure cloud-init with static IP without SSH keys (fallback)
-          ansible.builtin.command: >
-            qm set {{ new_vmid }}
-            --ciuser root
-            --ipconfig0 "{{ vm_ipconfig_str }}"
-            --searchdomain {{ dns_domain }}
-            --nameserver '{{ dns_servers }}'
-          delegate_to: "{{ target_node }}"
-          changed_when: true
-          when: >-
-            github_keys.content is not defined or
-            github_keys.content | trim | length == 0
-
-        # Serial console configuration via cicustom disabled for now
-        # TODO: Merge SSH keys properly into custom user-data
-        # or configure serial post-boot
-        # Issue: --cicustom overrides --sshkeys,
-        # breaking SSH access
 
         - name: Clean up SSH keys temp file
           ansible.builtin.file:
             path: "/tmp/sshkeys_{{ new_vmid }}.pub"
             state: absent
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           failed_when: false
 
         - name: Regenerate cloud-init image
           ansible.builtin.command: qm cloudinit update {{ new_vmid }}
-          delegate_to: "{{ target_node }}"
+          delegate_to: "{{ proxmox_host }}"
           changed_when: true
 
         - name: Start VM
@@ -370,10 +374,14 @@
             api_token_id: "{{ proxmox_token_id }}"
             api_token_secret: "{{ proxmox_token_secret }}"
             validate_certs: false
-            node: "{{ target_node }}"
+            node: "{{ proxmox_host }}"
             vmid: "{{ new_vmid }}"
             state: started
           delegate_to: ansible.home.goodkind.io
+
+        - name: Attempting SSH connection via IPv6
+          ansible.builtin.debug:
+            msg: "Waiting for VM to be reachable via SSH at {{ vm_static_ipv6 }}:22 (timeout: 120s)"
 
         - name: Wait for VM to be reachable via SSH (IPv6 first)
           ansible.builtin.wait_for:
@@ -381,8 +389,14 @@
             port: 22
             timeout: 120
             state: started
+            msg: "Waiting for SSH on {{ vm_static_ipv6 }}:22..."
           register: ssh_wait_v6
           failed_when: false
+
+        - name: Attempting SSH connection via IPv4 (fallback)
+          ansible.builtin.debug:
+            msg: "IPv6 connection failed, trying IPv4 at {{ vm_static_ipv4 }}:22 (timeout: 30s)"
+          when: ssh_wait_v6.failed | default(false)
 
         - name: Wait for VM to be reachable via SSH (IPv4 fallback)
           ansible.builtin.wait_for:
@@ -390,6 +404,7 @@
             port: 22
             timeout: 30
             state: started
+            msg: "Waiting for SSH on {{ vm_static_ipv4 }}:22..."
           register: ssh_wait_v4
           when: ssh_wait_v6.failed | default(false)
           failed_when: false
@@ -416,32 +431,32 @@
         - name: Eject cloud-init CD
           ansible.builtin.command: >
             qm set {{ new_vmid }} --delete ide2
-          delegate_to: "{{ target_node }}"
-          when: >-
-            (not (ssh_wait_v6.failed | default(true))
-            or not (ssh_wait_v4.failed | default(true)))
+          delegate_to: "{{ proxmox_host }}"
           changed_when: true
           failed_when: false
 
-        - name: Configure dhcpcd to send hostname permanently
-          ansible.builtin.lineinfile:
-            path: /etc/dhcpcd.conf
-            line: "hostname"
-            create: true
-            mode: '0644'
+        - name: Remove cloud-init generated networkd configs
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
           delegate_to: "{{ vm_ip_address }}"
           vars:
             ansible_user: root
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          loop:
+            - /etc/systemd/network/10-cloud-init-eth0.network
+            - /etc/systemd/network/10-cloud-init-ens3.network
+            - /run/systemd/network/10-netplan-eth0.network
+            - /run/systemd/network/10-netplan-ens3.network
+            - /etc/netplan/50-cloud-init.yaml
           when: >-
             (not (ssh_wait_v6.failed | default(true))
             or not (ssh_wait_v4.failed | default(true)))
+          failed_when: false
 
-        - name: Trigger DHCP to register hostname in DNS
-          ansible.builtin.shell: |
-            # Restart dhcpcd to send hostname immediately
-            systemctl restart dhcpcd 2>/dev/null || \
-            dhcpcd -n {{ mgmt_iface | default('eth0') }} || true
+        - name: Remove cloud-init network-config.json (all instances)
+          ansible.builtin.shell: >
+            rm -f /var/lib/cloud/instances/*/network-config.json
           delegate_to: "{{ vm_ip_address }}"
           vars:
             ansible_user: root
@@ -452,13 +467,30 @@
           failed_when: false
           changed_when: false
 
+        - name: Deploy systemd-networkd link file for consistent naming
+          ansible.builtin.template:
+            src: vm/10-mgmt.link.j2
+            dest: /etc/systemd/network/10-mgmt.link
+            mode: '0644'
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Deploy systemd-networkd config for hostname registration
+          ansible.builtin.template:
+            src: vm/10-mgmt.network.j2
+            dest: /etc/systemd/network/10-mgmt.network
+            mode: '0644'
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
         - name: Configure GRUB for serial console
           when:
             - enable_serial | default(true)
             - serial_only | default(false)
-            - >-
-              not (ssh_wait_v6.failed | default(true)) or
-              not (ssh_wait_v4.failed | default(true))
           block:
             - name: Update GRUB config for serial console
               ansible.builtin.lineinfile:
@@ -504,6 +536,24 @@
                 ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
               failed_when: false
 
+        - name: Enable and restart systemd-networkd
+          ansible.builtin.systemd:
+            name: systemd-networkd
+            enabled: true
+            state: restarted
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Reboot VM to apply network changes
+          ansible.builtin.reboot:
+            reboot_timeout: 300
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
         - name: Set facts for subsequent playbooks
           ansible.builtin.set_fact:
             hostname_fact: "{{ hostname }}"
@@ -518,7 +568,7 @@
             ansible_user: root
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
             ansible_proxmox_vmid: "{{ new_vmid }}"
-            ansible_proxmox_host: "{{ target_node }}"
+            ansible_proxmox_host: "{{ proxmox_host }}"
           when: vm_ip_address | default('') | length > 0
 
         - name: Check if SSH is available
