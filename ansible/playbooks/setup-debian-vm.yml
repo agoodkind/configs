@@ -401,6 +401,28 @@
               if not (ssh_wait_v6.failed | default(false))
               else vm_static_ipv4 }}
 
+        - name: Wait for cloud-init to complete
+          ansible.builtin.command: cloud-init status --wait
+          delegate_to: "{{ vm_ip_address }}"
+          vars:
+            ansible_user: root
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
+          changed_when: false
+          failed_when: false
+
+        - name: Eject cloud-init CD
+          ansible.builtin.command: >
+            qm set {{ new_vmid }} --delete ide2
+          delegate_to: "{{ target_node }}"
+          when: >-
+            (not (ssh_wait_v6.failed | default(true))
+            or not (ssh_wait_v4.failed | default(true)))
+          changed_when: true
+          failed_when: false
+
         - name: Configure dhcpcd to send hostname permanently
           ansible.builtin.lineinfile:
             path: /etc/dhcpcd.conf
