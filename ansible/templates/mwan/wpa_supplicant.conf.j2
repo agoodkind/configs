@@ -1,6 +1,10 @@
 # wpa_supplicant configuration for AT&T 802.1X
 # Runs on mwan VM with X710 VF passthrough
 
+ctrl_interface=/run/wpa_supplicant
+ctrl_interface_group=root
+update_config=1
+
 eapol_version=1
 openssl_ciphers=DEFAULT@SECLEVEL=0
 ap_scan=0

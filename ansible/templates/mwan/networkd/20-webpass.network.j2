@@ -3,7 +3,7 @@
 # I226-V NIC passthrough (igc driver) with MAC spoofing
 
 [Match]
-Name=enwebpass0
+Name={{ mwan_webpass_iface }}
 
 [Network]
 # Static IPv4 configuration
@@ -17,8 +17,7 @@ IPForward=yes
 [DHCPv6]
 # CRITICAL: Preserve Webpass DUID - changing this breaks service
 DUIDType=link-layer-time
-# Strip leading 00:01 (type bytes) from full DUID
-DUIDRawData={{ mwan_webpass_duid | regex_replace('^00:01:', '') }}
+DUIDRawData={{ mwan_webpass_duid_raw_data }}
 # Request /56 prefix delegation
 PrefixDelegationHint=::/56
 

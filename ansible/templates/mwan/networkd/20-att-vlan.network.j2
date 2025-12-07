@@ -1,0 +1,16 @@
+[Match]
+Name={{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
+
+[Network]
+DHCP=ipv4
+DHCPv6=yes
+IPv6AcceptRA=yes
+# Needed for policy routing
+IPForward=yes
+
+[DHCPv6]
+UseDelegatedPrefix=yes
+PrefixDelegationHint=::/60
+
+[IPv6PrefixDelegation]
+RouterLifetimeSec=1800

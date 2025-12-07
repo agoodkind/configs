@@ -1,6 +1,10 @@
 ---
 # MWAN (Multi-WAN) Configuration Variables
 
+# Path to AT&T certificates on Ansible controller (persistent across Semaphore runs)
+# Certificates should be placed here: /var/lib/semaphore/certs/mwan/wpa/
+mwan_att_certs_path: "/var/lib/semaphore/certs/mwan/wpa"
+
 # VM hostname
 mwan_hostname: mwan.home.goodkind.io
 # Management interface uses DHCP - IP assigned by KEA and registered in DNS automatically
@@ -23,10 +27,10 @@ pci_webpass_nic: "06:00.0"
 
 # Interface names are DETECTED at deploy time and stored as facts
 # These defaults are overridden by deploy-mwan.yml after detection
-mwan_mgmt_iface: "eth0" # Always eth0
-mwan_att_iface: "{{ detected_att_iface | default('eth1') }}"
-mwan_webpass_iface: "{{ detected_webpass_iface | default('eth2') }}"
-mwan_internal_iface: "{{ detected_internal_iface | default('eth3') }}"
+mwan_mgmt_iface: "enmgmt0"
+mwan_att_iface: "{{ detected_att_iface | default('enatt0') }}"
+mwan_webpass_iface: "{{ detected_webpass_iface | default('enwebpass0') }}"
+mwan_internal_iface: "{{ detected_internal_iface | default('enmwanbr0') }}"
 
 # AT&T 802.1X authentication (via X710 VF passthrough)
 mwan_att_vlan_id: 3242
@@ -42,6 +46,8 @@ mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
 # DUID format: 00:01:00:01:<timestamp>:<mac_address>
 # MAC extracted from DUID: 00:e2:69:66:8b:5a
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
+# Raw DUID data (without leading 00:01 type bytes) for systemd-networkd
+mwan_webpass_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
 
 # Webpass static IPv4 (Google Fiber)
