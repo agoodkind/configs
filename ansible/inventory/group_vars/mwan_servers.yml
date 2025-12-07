@@ -37,9 +37,11 @@ mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
 #   ssh root@mwan.home.goodkind.io "chmod 600 /etc/wpa_supplicant/*.pem"
 
 # Webpass identity spoofing (CRITICAL - must match current OPNsense)
-# NOTE: With direct PCI passthrough, the VM gets the real NIC MAC (64:62:66:23:f9:84)
-#       so we don't need to spoof MAC - Webpass sees the registered hardware MAC
+# The I226-V NIC has wrong hardware MAC, so we MUST spoof it
+# DUID format: 00:01:00:01:<timestamp>:<mac_address>
+# MAC extracted from DUID: 00:e2:69:66:8b:5a
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
+mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
 
 # Internal link (to OPNsense) addressing
 mwan_internal_ipv4: "10.250.250.1/29"
