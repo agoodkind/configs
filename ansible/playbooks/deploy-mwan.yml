@@ -606,16 +606,11 @@
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
       failed_when: false
 
-    - name: Start dhcpcd service (will send hostname via DHCP INFORM)
-      ansible.builtin.systemd:
-        name: dhcpcd
-        state: restarted
-      failed_when: false
-
-    - name: Verify dhcpcd is running
+    - name: Ensure dhcpcd service is running
       ansible.builtin.systemd:
         name: dhcpcd
         state: started
+        enabled: true
       register: dhcpcd_status
 
     - name: Display dhcpcd status
