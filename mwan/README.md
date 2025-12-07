@@ -27,7 +27,7 @@ ansible-playbook -i inventory playbooks/deploy-mwan.yml
 # → Creates VM with PCI passthrough (VF 02:02.0 + Webpass NIC 06:00.0)
 
 # 2. Upload AT&T certificates
-scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
+scp 'agoodkind@router:/conf/opnatt/wpa/*.pem' root@mwan.home.goodkind.io:/etc/wpa_supplicant/
 ansible-playbook -i inventory playbooks/deploy-mwan.yml
 # → Starts wpa_supplicant for AT&T authentication
 
