@@ -253,22 +253,22 @@
     - name: Add altnames to interfaces
       ansible.builtin.shell:
         cmd: |
-          set -e
+          set -eo pipefail
           current="{{ item.item.value }}"
           altname="{{ item.item.key }}"
-          
+
           # Skip if already using desired name
           if [ "$current" = "$altname" ]; then
             exit 0
           fi
-          
+
           # Check if altname already exists on this interface
           if ip link property show dev "$current" 2>/dev/null | \
              grep -q "altname $altname"; then
             echo "already_exists"
             exit 0
           fi
-          
+
           # Check if altname is used by another interface
           if ip link show "$altname" >/dev/null 2>&1; then
             other=$(ip -o link show "$altname" | awk '{print $2}' | sed 's/:$//')
