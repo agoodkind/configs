@@ -1,0 +1,109 @@
+#!/bin/bash
+# Bring up AT&T VLAN interface after 802.1X authentication
+# This script waits for wpa_supplicant to successfully authenticate,
+# then brings up the VLAN interface
+
+set -euo pipefail
+
+ATT_IFACE="{{ mwan_att_iface }}"
+VLAN_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
+WPA_SERVICE="wpa_supplicant-mwan"
+MAX_WAIT=60  # Maximum seconds to wait for authentication
+CHECK_INTERVAL=2  # Check every 2 seconds
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | systemd-cat -t bringup-att-vlan
+}
+
+log "Starting AT&T VLAN bringup script"
+log "Waiting for wpa_supplicant authentication on ${ATT_IFACE}..."
+
+# Wait for wpa_supplicant service to be active
+for i in $(seq 1 30); do
+    if systemctl is-active --quiet "${WPA_SERVICE}"; then
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        log "ERROR: ${WPA_SERVICE} service not active after 60 seconds"
+        exit 1
+    fi
+    sleep 2
+done
+
+# Wait for EAP authentication to succeed
+elapsed=0
+authenticated=false
+
+while [ $elapsed -lt $MAX_WAIT ]; do
+    # Check journalctl for EAP-SUCCESS message
+    # (check last 60 seconds to catch recent auths)
+    if journalctl -u "${WPA_SERVICE}" --since "60 seconds ago" \
+       --no-pager | grep -q "CTRL-EVENT-EAP-SUCCESS"; then
+        authenticated=true
+        log "EAP authentication success detected in logs"
+        break
+    fi
+    
+    # Also check if VLAN interface already exists and is up
+    # (might have been brought up manually or on restart)
+    if ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
+        if ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
+            log "VLAN interface ${VLAN_IFACE} already up"
+            authenticated=true
+            break
+        fi
+    fi
+    
+    sleep $CHECK_INTERVAL
+    elapsed=$((elapsed + CHECK_INTERVAL))
+done
+
+if [ "$authenticated" != "true" ]; then
+    log "ERROR: Authentication not detected after ${MAX_WAIT} seconds"
+    exit 1
+fi
+
+log "Authentication successful, bringing up VLAN interface ${VLAN_IFACE}"
+
+# Check if interface is already up
+if ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
+    if ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
+        log "VLAN interface ${VLAN_IFACE} is already UP"
+    else
+        # Interface exists but is down, bring it up
+        log "VLAN interface ${VLAN_IFACE} exists but is DOWN, " \
+            "bringing it up"
+        ip link set "${VLAN_IFACE}" up || {
+            log "ERROR: Failed to set ${VLAN_IFACE} up"
+            exit 1
+        }
+        sleep 2
+    fi
+else
+    # Interface doesn't exist, create it via ifup
+    log "Creating and bringing up VLAN interface ${VLAN_IFACE}"
+    ifup "${VLAN_IFACE}" 2>&1 | \
+        while read line; do log "$line"; done || {
+        log "ERROR: Failed to bring up ${VLAN_IFACE}"
+        exit 1
+    }
+    # Wait a moment for interface to settle
+    sleep 2
+fi
+
+# Verify interface is up
+if ! ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
+    log "ERROR: ${VLAN_IFACE} is not UP after bringup"
+    exit 1
+fi
+
+log "VLAN interface ${VLAN_IFACE} is now UP"
+
+# Ensure dhcpcd is managing this interface
+# The main dhcpcd service should handle it, but verify
+if ! systemctl is-active --quiet dhcpcd; then
+    log "WARNING: dhcpcd service is not active"
+fi
+
+log "AT&T VLAN bringup completed successfully"
+exit 0
