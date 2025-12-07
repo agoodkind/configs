@@ -14,17 +14,16 @@ iface {{ mwan_mgmt_iface }} inet static
     gateway 10.250.0.1
     dns-nameservers {{ mwan_dns_servers }}
     dns-search {{ mwan_dns_domain }}
-    # Run DHCP client to register hostname in DNS
-    post-up dhclient -4 -nw -cf /dev/null -sf /bin/true -lf /dev/null {{ mwan_mgmt_iface }} || true
-    pre-down dhclient -4 -r {{ mwan_mgmt_iface }} || true
+    # Run DHCP client to register hostname in DNS (dhcpcd auto-sends hostname)
+    post-up dhcpcd -n {{ mwan_mgmt_iface }} || true
+    pre-down killall dhcpcd 2>/dev/null || true
 
 iface {{ mwan_mgmt_iface }} inet6 static
     address 3d06:bad:b01::{{ '%x' | format(mwan_vmid) }}
     netmask 64
     gateway 3d06:bad:b01::1
     # Run DHCPv6 client to register hostname in DNS
-    post-up dhclient -6 -nw -cf /dev/null -sf /bin/true -lf /dev/null {{ mwan_mgmt_iface }} || true
-    pre-down dhclient -6 -r {{ mwan_mgmt_iface }} || true
+    post-up dhcpcd -n -6 {{ mwan_mgmt_iface }} || true
 
 # ==============================================================================
 # AT&T WAN - X710 VF passthrough (iavf driver)
@@ -42,10 +41,12 @@ iface {{ mwan_att_iface }}.{{ mwan_att_vlan_id }} inet manual
 
 # ==============================================================================
 # Webpass WAN - I226-V NIC passthrough (igc driver)
-# Direct passthrough uses real NIC MAC (no spoofing needed)
+# CRITICAL: I226-V hardware MAC is wrong, MUST spoof to registered MAC
 # ==============================================================================
 auto {{ mwan_webpass_iface }}
 iface {{ mwan_webpass_iface }} inet manual
+    # CRITICAL: Set MAC to Webpass-registered address BEFORE bringing up
+    pre-up ip link set dev {{ mwan_webpass_iface }} address {{ mwan_webpass_mac }}
     pre-up ip link set {{ mwan_webpass_iface }} up
     # DHCPv4 and DHCPv6-PD handled by dhcpcd
 
