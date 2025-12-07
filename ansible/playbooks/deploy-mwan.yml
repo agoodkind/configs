@@ -570,8 +570,6 @@
 
     - name: Restart networking
       ansible.builtin.shell: |
-        # Don't bring down management interface (would kill SSH)
-        # Just bring up the WAN interfaces with new config
         for iface in eth1 eth2 eth3; do
           ifdown $iface 2>/dev/null || true
         done
@@ -579,6 +577,8 @@
         for iface in eth1 eth2 eth3; do
           ifup $iface 2>/dev/null || true
         done
+      args:
+        executable: /bin/bash
       failed_when: false
       async: 30
       poll: 0
