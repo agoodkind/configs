@@ -107,6 +107,3 @@ mwan_health_checks:
 mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
-
-# Repo root for config files
-repo_root: /usr/share/configs
