@@ -235,7 +235,11 @@
 
     - name: Add altnames to interfaces
       ansible.builtin.command:
-        cmd: /usr/local/bin/add-interface-altname.sh "{{ item.item.value }}" "{{ item.item.key }}" true
+        cmd: >-
+          /usr/local/bin/add-interface-altname.sh
+          "{{ item.item.value }}"
+          "{{ item.item.key }}"
+          true
       loop: "{{ altname_check.results }}"
       when: item.item.value != item.item.key
       changed_when: "'changed' in altname_add_result.stdout"
@@ -258,7 +262,11 @@
 
     - name: Add friendly altnames to interfaces
       ansible.builtin.command:
-        cmd: /usr/local/bin/add-interface-altname.sh "{{ interface_mapping[item.item.key] }}" "{{ item.item.value }}" false
+        cmd: >-
+          /usr/local/bin/add-interface-altname.sh
+          "{{ interface_mapping[item.item.key] }}"
+          "{{ item.item.value }}"
+          false
       loop: "{{ friendly_altname_check.results }}"
       changed_when: "'changed' in friendly_altname_add_result.stdout"
       failed_when: "'ERROR:' in friendly_altname_add_result.stdout"
@@ -418,10 +426,10 @@
         dest: /etc/nftables.conf
         mode: '0644'
         backup: true
-        vars:
-          actual_att_iface: "{{ interface_mapping.eth1 }}"
-          actual_webpass_iface: "{{ interface_mapping.eth2 }}"
-          actual_internal_iface: "{{ interface_mapping.eth3 }}"
+      vars:
+        actual_att_iface: "{{ interface_mapping.eth1 }}"
+        actual_webpass_iface: "{{ interface_mapping.eth2 }}"
+        actual_internal_iface: "{{ interface_mapping.eth3 }}"
       notify: Reload nftables
 
     - name: Create systemd override for nftables
