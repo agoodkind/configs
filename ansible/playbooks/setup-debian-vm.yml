@@ -26,7 +26,8 @@
     target_node: vault
     template_vmid: 9000
     debian_cloud_image: "debian-13-generic-amd64.qcow2"
-    debian_cloud_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+    debian_cloud_url: >-
+      https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2
     storage: "local-lvm"
     template_bridge: "vmbr0"
     enable_serial: true
@@ -167,11 +168,15 @@
   tasks:
     - name: Debug - show all extra vars
       ansible.builtin.debug:
-        msg: "hostname={{ hostname | default('NOT SET') }}, all vars={{ vars.keys() | list | sort }}"
+        msg: >-
+          hostname={{ hostname | default('NOT SET') }},
+          all vars={{ vars.keys() | list | sort }}
 
     - name: Skip VM creation if hostname not provided
       ansible.builtin.debug:
-        msg: "No hostname provided - template-only mode. Pass -e hostname=<fqdn> to create a VM."
+        msg: >-
+          No hostname provided - template-only mode.
+          Pass -e hostname=<fqdn> to create a VM.
       when: hostname is not defined
 
     - name: End play if no hostname
@@ -194,7 +199,10 @@
 
     - name: Display VM status
       ansible.builtin.debug:
-        msg: "VM {{ hostname }}: {{ 'exists (VMID ' + (vm_check.vmid | string) + ')' if vm_check.vmid is defined else 'will be created' }}"
+        msg: >-
+          VM {{ hostname }}:
+          {{ 'exists (VMID ' + (vm_check.vmid | string) + ')'
+          if vm_check.vmid is defined else 'will be created' }}
 
     - name: VM creation block
       when: vm_check.vmid is not defined
@@ -272,13 +280,19 @@
 
         - name: Debug SSH keys
           ansible.builtin.debug:
-            msg: "GitHub keys: {{ github_keys.content | default('FAILED TO FETCH') | length }} bytes"
+            msg: >-
+              GitHub keys:
+              {{ github_keys.content | default('FAILED TO FETCH') | length }}
+              bytes
 
         - name: Calculate static IP addresses based on VMID
           ansible.builtin.set_fact:
             vm_static_ipv4: "10.250.0.{{ new_vmid }}"
             vm_static_ipv6: "3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}"
-            vm_ipconfig: "ip=10.250.0.{{ new_vmid }}/24,gw=10.250.0.1,ip6=3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}/64,gw6=3d06:bad:b01::1"
+            vm_ipconfig: >-
+              ip=10.250.0.{{ new_vmid }}/24,gw=10.250.0.1,
+              ip6=3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}/64,
+              gw6=3d06:bad:b01::1
 
         - name: Write SSH keys to temp file
           ansible.builtin.copy:
@@ -309,11 +323,15 @@
             --nameserver '{{ dns_servers }}'
           delegate_to: "{{ target_node }}"
           changed_when: true
-          when: github_keys.content is not defined or github_keys.content | trim | length == 0
+          when: >-
+            github_keys.content is not defined or
+            github_keys.content | trim | length == 0
 
         # Serial console configuration via cicustom disabled for now
-        # TODO: Merge SSH keys properly into custom user-data or configure serial post-boot
-        # Issue: --cicustom overrides --sshkeys, breaking SSH access
+        # TODO: Merge SSH keys properly into custom user-data
+        # or configure serial post-boot
+        # Issue: --cicustom overrides --sshkeys,
+        # breaking SSH access
 
         - name: Clean up SSH keys temp file
           ansible.builtin.file:
@@ -360,7 +378,10 @@
 
         - name: Set connection IP (IPv6 preferred, IPv4 fallback)
           ansible.builtin.set_fact:
-            vm_ip_address: "{{ vm_static_ipv6 if not (ssh_wait_v6.failed | default(false)) else vm_static_ipv4 }}"
+            vm_ip_address: >-
+              {{ vm_static_ipv6
+              if not (ssh_wait_v6.failed | default(false))
+              else vm_static_ipv4 }}
 
         - name: Set facts for subsequent playbooks
           ansible.builtin.set_fact:
@@ -381,7 +402,9 @@
 
         - name: Check if SSH is available
           ansible.builtin.set_fact:
-            ssh_available: "{{ not (ssh_wait_v6.failed | default(true)) or not (ssh_wait_v4.failed | default(true)) }}"
+            ssh_available: >-
+              {{ not (ssh_wait_v6.failed | default(true)) or
+              not (ssh_wait_v4.failed | default(true)) }}
 
         - name: Display result
           ansible.builtin.debug:
@@ -389,7 +412,9 @@
               - "✅ VM {{ hostname }} created (VMID: {{ new_vmid }})"
               - "  - IPv4: {{ vm_static_ipv4 }}/24"
               - "  - IPv6: {{ vm_static_ipv6 }}/64"
-              - "{{ '✅ SSH available at ' + vm_ip_address if ssh_available else '⚠️  SSH not yet available' }}"
+              - >-
+                {{ '✅ SSH available at ' + vm_ip_address
+                if ssh_available else '⚠️  SSH not yet available' }}
               - ""
               - "Cloud-init configured with:"
               - "  - Root SSH keys from GitHub"
