@@ -50,7 +50,8 @@ denyinterfaces {{ interface_mapping.eth1 }}
 # Management interface - request DHCP IP for DNS registration
 # Static IP also configured via /etc/network/interfaces
 # Result: Interface will have BOTH static (10.250.0.X) and dynamic IP
-interface {{ mwan_mgmt_iface }}
+# Use actual interface name so dhcpcd recognizes it
+interface {{ interface_mapping.eth0 }}
     # Request IPv4 via DHCP (hostname sent automatically)
     ipv4
     # Request IPv6 via DHCPv6  
@@ -60,21 +61,24 @@ interface {{ mwan_mgmt_iface }}
     nogateway
 
 # Static IP for internal interface (to OPNsense)
-interface {{ mwan_internal_iface }}
+# Use actual interface name so dhcpcd recognizes it
+interface {{ interface_mapping.eth3 }}
     noipv4
     noipv6rs
     noipv6
 
 # AT&T interface - DHCPv4 + DHCPv6-PD on VLAN 3242
 # wpa_supplicant authenticates on raw interface, traffic appears on VLAN
-interface {{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
+# Use actual interface name so dhcpcd recognizes it
+interface {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}
     ipv4
     ipv6rs
     ia_na 1
     ia_pd 2/::/60 {{ interface_mapping.eth3 }}/0
 
 # Webpass interface - DHCPv4 + DHCPv6-PD, NO SLAAC
-interface {{ mwan_webpass_iface }}
+# Use actual interface name so dhcpcd recognizes it
+interface {{ interface_mapping.eth2 }}
     ipv4
     noipv6rs  # Don't accept router advertisements (prevents SLAAC)
     ipv6only  # DHCPv6 only
