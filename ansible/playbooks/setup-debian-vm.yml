@@ -134,6 +134,8 @@
   gather_facts: false
 
   vars:
+    # Repository root for template paths
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
     # Proxmox configuration
     proxmox_host: vault
     template_vmid: 9000
@@ -469,7 +471,7 @@
 
         - name: Deploy systemd-networkd link file for consistent naming
           ansible.builtin.template:
-            src: vm/10-mgmt.link.j2
+            src: "{{ repo_root }}/ansible/templates/vm/10-mgmt.link.j2"
             dest: /etc/systemd/network/10-mgmt.link
             mode: '0644'
           delegate_to: "{{ vm_ip_address }}"
@@ -477,9 +479,9 @@
             ansible_user: root
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
 
-        - name: Deploy systemd-networkd config for hostname registration
+        - name: Deploy systemd-networkd network file
           ansible.builtin.template:
-            src: vm/10-mgmt.network.j2
+            src: "{{ repo_root }}/ansible/templates/vm/10-mgmt.network.j2"
             dest: /etc/systemd/network/10-mgmt.network
             mode: '0644'
           delegate_to: "{{ vm_ip_address }}"
