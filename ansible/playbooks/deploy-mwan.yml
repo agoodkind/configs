@@ -85,7 +85,6 @@
       ansible.builtin.apt:
         name:
           - wpasupplicant
-          - dhcpcd5
           - nftables
           - iproute2
           - iptables
@@ -93,7 +92,7 @@
           - curl
           - vlan
           - bridge-utils
-          - ifupdown
+          - networkd-dispatcher
         state: present
 
     - name: Get actual VMID from Proxmox
@@ -122,15 +121,6 @@
     - name: Parse virtio MAC addresses from VM config
       delegate_to: localhost
       ansible.builtin.set_fact:
-        mwan_net0_mac: >-
-          {{
-            vm_config.stdout_lines
-            | select('match', '^net0:.*virtio')
-            | first
-            | regex_search('virtio=([0-9A-Fa-f:]+)', '\1')
-            | first
-            | lower
-          }}
         mwan_net1_mac: >-
           {{
             vm_config.stdout_lines
@@ -140,142 +130,6 @@
             | first
             | lower
           }}
-
-    - name: Deploy interface discovery scripts
-      ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/mwan/{{ item }}.j2"
-        dest: /usr/local/bin/{{ item }}
-        mode: '0755'
-      loop:
-        - find-interface-by-mac.sh
-        - find-interface-by-driver.sh
-        - add-interface-altname.sh
-
-    - name: Find interface by MAC (eth0 - management on vmbr0)
-      ansible.builtin.command:
-        cmd: /usr/local/bin/find-interface-by-mac.sh {{ mwan_net0_mac }}
-      register: iface_eth0_result
-      changed_when: false
-      failed_when: false
-
-    - name: Find interface by MAC (eth3 - internal on mwanbr)
-      ansible.builtin.command:
-        cmd: /usr/local/bin/find-interface-by-mac.sh {{ mwan_net1_mac }}
-      register: iface_eth3_result
-      changed_when: false
-      failed_when: false
-
-    - name: Find interface by driver (eth1 - X710 VF with iavf)
-      ansible.builtin.command:
-        cmd: /usr/local/bin/find-interface-by-driver.sh iavf
-      register: iface_eth1_result
-      changed_when: false
-      failed_when: false
-
-    - name: Find interface by driver (eth2 - I226-V with igc)
-      ansible.builtin.command:
-        cmd: /usr/local/bin/find-interface-by-driver.sh igc
-      register: iface_eth2_result
-      changed_when: false
-      failed_when: false
-
-    - name: Build interface mapping
-      ansible.builtin.set_fact:
-        interface_mapping:
-          eth0: "{{ iface_eth0_result.stdout | default('') }}"
-          eth1: "{{ iface_eth1_result.stdout | default('') }}"
-          eth2: "{{ iface_eth2_result.stdout | default('') }}"
-          eth3: "{{ iface_eth3_result.stdout | default('') }}"
-        friendly_name_mapping:
-          eth0: mgmt
-          eth1: att
-          eth2: webpass
-          eth3: mwanbr
-
-    - name: Display interface mapping
-      ansible.builtin.debug:
-        msg: |
-          Interface mapping:
-            eth0 (mgmt/vmbr0): {{ interface_mapping.eth0 }} ->
-              altname: {{ friendly_name_mapping.eth0 }}
-            eth1 (AT&T/X710 VF): {{ interface_mapping.eth1 }} ->
-              altname: {{ friendly_name_mapping.eth1 }}
-            eth2 (Webpass/I226-V): {{ interface_mapping.eth2 }} ->
-              altname: {{ friendly_name_mapping.eth2 }}
-            eth3 (internal/mwanbr): {{ interface_mapping.eth3 }} ->
-              altname: {{ friendly_name_mapping.eth3 }}
-
-    - name: Verify all interfaces were found
-      ansible.builtin.assert:
-        that:
-          - interface_mapping[item] | length > 0
-        fail_msg: "Could not find physical interface for {{ item }}"
-        success_msg: "{{ item }} mapped to {{ interface_mapping[item] }}"
-      loop:
-        - eth0
-        - eth1
-        - eth2
-        - eth3
-
-    - name: Check if altnames already exist
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          ip link property show dev "{{ item.value }}" 2>/dev/null |
-            grep -q "altname {{ item.key }}"
-        executable: /bin/bash
-      loop: "{{ interface_mapping | dict2items }}"
-      register: altname_check
-      changed_when: false
-      failed_when: false
-
-    - name: Add altnames to interfaces
-      ansible.builtin.command:
-        cmd: >-
-          /usr/local/bin/add-interface-altname.sh
-          "{{ item.item.value }}"
-          "{{ item.item.key }}"
-          true
-      loop: "{{ altname_check.results }}"
-      when: item.item.value != item.item.key
-      changed_when: "'changed' in altname_add_result.stdout"
-      failed_when: "'ERROR:' in altname_add_result.stdout"
-      register: altname_add_result
-      loop_control:
-        label: "{{ item.item.key }} -> {{ item.item.value }}"
-
-    - name: Check if friendly altnames already exist
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          ip link property show dev "{{ interface_mapping[item.key] }}" 2>/dev/null |
-            grep -q "altname {{ item.value }}"
-        executable: /bin/bash
-      loop: "{{ friendly_name_mapping | dict2items }}"
-      register: friendly_altname_check
-      changed_when: false
-      failed_when: false
-
-    - name: Add friendly altnames to interfaces
-      ansible.builtin.command:
-        cmd: >-
-          /usr/local/bin/add-interface-altname.sh
-          "{{ interface_mapping[item.item.key] }}"
-          "{{ item.item.value }}"
-          false
-      loop: "{{ friendly_altname_check.results }}"
-      changed_when: "'changed' in friendly_altname_add_result.stdout"
-      failed_when: "'ERROR:' in friendly_altname_add_result.stdout"
-      register: friendly_altname_add_result
-      loop_control:
-        label: "{{ item.item.value }} -> {{ interface_mapping[item.item.key] }}"
-
-    - name: Deploy udev rules for persistent interface naming
-      ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/mwan/70-mwan-interface-names.rules.j2"
-        dest: /etc/udev/rules.d/70-mwan-interface-names.rules
-        mode: '0644'
-      notify: Reload udev
 
     - name: Create configuration directories
       ansible.builtin.file:
@@ -289,13 +143,8 @@
         - /usr/local/bin
         - /etc/wpa_supplicant
         - /etc/dhcp
-
-    - name: Configure dhcpcd to send hostname
-      ansible.builtin.lineinfile:
-        path: /etc/dhcpcd.conf
-        line: "hostname"
-        create: true
-        mode: '0644'
+        - /etc/systemd/network
+        - /etc/networkd-dispatcher/routable.d
 
     - name: Deploy wpa_supplicant config for AT&T 802.1X
       ansible.builtin.template:
@@ -304,7 +153,28 @@
         mode: '0600'
       notify: Restart wpa_supplicant
 
-    - name: Check for AT&T certificates
+    - name: Check for AT&T certificates on Ansible host
+      delegate_to: localhost
+      ansible.builtin.stat:
+        path: "{{ mwan_att_certs_path }}/{{ item }}"
+      loop:
+        - ca_cert.pem
+        - client_cert.pem
+        - private_key.pem
+      register: local_cert_check
+
+    - name: Copy AT&T certificates from Ansible host
+      ansible.builtin.copy:
+        src: "{{ mwan_att_certs_path }}/{{ item.item }}"
+        dest: "/etc/wpa_supplicant/{{ item.item }}"
+        mode: '0600'
+        owner: root
+        group: root
+      when: item.stat.exists
+      loop: "{{ local_cert_check.results }}"
+      notify: Restart wpa_supplicant
+
+    - name: Check for AT&T certificates on target
       ansible.builtin.stat:
         path: "/etc/wpa_supplicant/{{ item }}"
       loop:
@@ -317,9 +187,11 @@
       ansible.builtin.debug:
         msg: |
           ⚠️  Certificate {{ item.item }} missing!
-          Upload after deploy:
-          scp 'agoodkind@router:/conf/opnatt/wpa/*.pem' \
-            root@{{ inventory_hostname }}:/etc/wpa_supplicant/
+          Place certificates on Ansible controller at:
+            {{ mwan_att_certs_path }}/
+          Or manually upload to target:
+            scp 'agoodkind@router:/conf/opnatt/wpa/*.pem' \
+              root@{{ inventory_hostname }}:/etc/wpa_supplicant/
           Then restart: systemctl restart wpa_supplicant-mwan
       when: not item.stat.exists
       loop: "{{ cert_check.results }}"
@@ -334,6 +206,25 @@
     - name: Enable wpa_supplicant service
       ansible.builtin.systemd:
         name: wpa_supplicant-mwan
+        enabled: true
+        daemon_reload: true
+
+    - name: Deploy wpa_supplicant action script
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/wpa-action.sh.j2"
+        dest: /usr/local/bin/wpa-action.sh
+        mode: '0755'
+
+    - name: Deploy wpa-authenticated path unit
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/wpa-authenticated.path.j2"
+        dest: /etc/systemd/system/wpa-authenticated.path
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Enable wpa-authenticated path unit
+      ansible.builtin.systemd:
+        name: wpa-authenticated.path
         enabled: true
         daemon_reload: true
 
@@ -356,11 +247,43 @@
         enabled: true
         daemon_reload: true
 
+    - name: Deploy systemd-networkd configuration files
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/networkd/{{ item }}.j2"
+        dest: /etc/systemd/network/{{ item }}
+        mode: '0644'
+      loop:
+        - 20-att.link
+        - 20-att-vlan.netdev
+        - 20-att-vlan.network
+        - 20-webpass.network
+        - 30-webpass.link
+        - 40-mwanbr.link
+      notify: Restart systemd-networkd
+
+    - name: Deploy networkd-dispatcher hook for route updates
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/50-update-routes.sh.j2"
+        dest: /etc/networkd-dispatcher/routable.d/50-update-routes.sh
+        mode: '0755'
+
+    - name: Enable systemd-networkd
+      ansible.builtin.systemd:
+        name: systemd-networkd
+        enabled: true
+        daemon_reload: true
+
+    - name: Enable networkd-dispatcher
+      ansible.builtin.systemd:
+        name: networkd-dispatcher
+        enabled: true
+        daemon_reload: true
+
     - name: Get Webpass I226-V hardware MAC address
       ansible.builtin.shell:
         cmd: |
           set -o pipefail
-          cat /sys/class/net/{{ interface_mapping.eth2 }}/address
+          cat /sys/class/net/{{ mwan_webpass_iface }}/address
         executable: /bin/bash
       register: webpass_hardware_mac
       changed_when: false
@@ -368,32 +291,13 @@
     - name: Display Webpass NIC spoofing info
       ansible.builtin.debug:
         msg: |
-          Webpass I226-V NIC ({{ interface_mapping.eth2 }}):
+          Webpass I226-V NIC (enwebpass0):
             Hardware MAC: {{ webpass_hardware_mac.stdout }}
             Spoofed MAC:  {{ mwan_webpass_mac }}
             DUID:         {{ mwan_webpass_duid }}
             ⚠️  CRITICAL: MAC will be spoofed to {{ mwan_webpass_mac }}
               before interface up
             ⚠️  Webpass will REJECT any other MAC address!
-
-    - name: Deploy dhcpcd config (MUST be before interfaces come up!)
-      ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/mwan/dhcpcd.conf.j2"
-        dest: /etc/dhcpcd.conf
-        mode: '0644'
-        backup: true
-
-    - name: Deploy dhcpcd exit hook
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/etc/dhcpcd.exit-hook"
-        dest: /etc/dhcpcd.exit-hook
-        mode: '0755'
-
-    - name: Stop dhcpcd before interface reconfiguration
-      ansible.builtin.systemd:
-        name: dhcpcd
-        state: stopped
-      failed_when: false
 
     - name: Deploy sysctl config
       ansible.builtin.template:
@@ -408,14 +312,6 @@
         dest: /etc/iproute2/rt_tables
         mode: '0644'
 
-    - name: Deploy network interfaces
-      ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/mwan/interfaces.j2"
-        dest: /etc/network/interfaces
-        mode: '0644'
-        backup: true
-      notify: Restart networking
-
     - name: Deploy nftables config
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/nftables.conf.j2"
@@ -423,10 +319,10 @@
         mode: '0644'
         backup: true
       vars:
-        actual_mgmt_iface: "{{ interface_mapping.eth0 }}"
-        actual_att_iface: "{{ interface_mapping.eth1 }}"
-        actual_webpass_iface: "{{ interface_mapping.eth2 }}"
-        actual_internal_iface: "{{ interface_mapping.eth3 }}"
+        actual_mgmt_iface: "{{ mwan_mgmt_iface }}"
+        actual_att_iface: "{{ mwan_att_iface }}"
+        actual_webpass_iface: "{{ mwan_webpass_iface }}"
+        actual_internal_iface: "{{ mwan_internal_iface }}"
       notify: Reload nftables
 
     - name: Create systemd override for nftables
@@ -467,34 +363,7 @@
         mode: '0644'
       notify: Reload systemd
 
-    - name: Verify dhcpcd configuration before interface restart
-      ansible.builtin.command:
-        cmd: grep -q "^duid {{ mwan_webpass_duid }}" /etc/dhcpcd.conf
-      changed_when: false
-      register: duid_check
-      failed_when: duid_check.rc != 0
-
-    - name: Verify altnames are accessible
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          for iface in eth0 eth1 eth2 eth3; do
-            if ! ip link show $iface >/dev/null 2>&1; then
-              echo "ERROR: Interface $iface not accessible"
-              exit 1
-            fi
-          done
-          for iface in mgmt att webpass mwanbr; do
-            if ! ip link show $iface >/dev/null 2>&1; then
-              echo "ERROR: Interface $iface not accessible"
-              exit 1
-            fi
-          done
-          echo "All altnames accessible"
-        executable: /bin/bash
-      changed_when: false
-
-    - name: Flush handlers (restarts networking with dhcpcd config in place)
+    - name: Flush handlers (apply systemd-networkd config)
       ansible.builtin.meta: flush_handlers
 
     - name: Wait for WAN interfaces to settle
@@ -543,7 +412,7 @@
     - name: Check Webpass interface carrier status
       ansible.builtin.shell:
         cmd: |
-          cat /sys/class/net/{{ interface_mapping.eth2 }}/carrier 2>/dev/null || echo "0"
+          cat /sys/class/net/{{ mwan_webpass_iface }}/carrier 2>/dev/null || echo "0"
         executable: /bin/bash
       register: webpass_carrier_check
       changed_when: false
@@ -553,7 +422,7 @@
       ansible.builtin.shell:
         cmd: |
           set -o pipefail
-          cat /sys/class/net/{{ interface_mapping.eth2 }}/address
+          cat /sys/class/net/{{ mwan_webpass_iface }}/address
         executable: /bin/bash
       register: webpass_current_mac
       changed_when: false
@@ -575,12 +444,12 @@
         msg: |
           {% if webpass_carrier_check.stdout == "1" %}
           ✅ Webpass connected and MAC verified:
-            Interface: {{ interface_mapping.eth2 }}
+            Interface: {{ mwan_webpass_iface }}
             Current MAC: {{ webpass_current_mac.stdout }}
             Expected MAC: {{ mwan_webpass_mac }}
           {% else %}
           ⚠️  Webpass not connected (NO-CARRIER):
-            Interface: {{ interface_mapping.eth2 }}
+            Interface: {{ mwan_webpass_iface }}
             Hardware MAC: {{ webpass_current_mac.stdout }}
             Will spoof to: {{ mwan_webpass_mac }} when connected
             Status: OK - MAC spoofing configured in /etc/network/interfaces
@@ -593,8 +462,10 @@
         daemon_reload: true
       loop:
         - wpa_supplicant-mwan
+        - wpa-authenticated.path
         - bringup-att-vlan
-        - dhcpcd
+        - systemd-networkd
+        - networkd-dispatcher
         - nftables
         - mwan-health
 
@@ -612,16 +483,24 @@
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
       failed_when: false
 
-    - name: Ensure dhcpcd service is running
+    - name: Start wpa-authenticated path unit (if certs present)
       ansible.builtin.systemd:
-        name: dhcpcd
+        name: wpa-authenticated.path
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+
+    - name: Ensure systemd-networkd is running
+      ansible.builtin.systemd:
+        name: systemd-networkd
         state: started
         enabled: true
-      register: dhcpcd_status
 
-    - name: Display dhcpcd status
-      ansible.builtin.debug:
-        msg: "dhcpcd service: {{ dhcpcd_status.status.ActiveState }}"
+    - name: Ensure networkd-dispatcher is running
+      ansible.builtin.systemd:
+        name: networkd-dispatcher
+        state: started
+        enabled: true
 
     - name: Start other services
       ansible.builtin.systemd:
@@ -649,37 +528,14 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: Reload udev
-      ansible.builtin.systemd:
-        name: systemd-udevd
-        state: reloaded
-
-    - name: Restart networking
-      # Maybe should be systemctl restart networking
-      ansible.builtin.shell: |
-        set -o pipefail
-        for iface in eth1 eth2 eth3; do
-          if ip link show "$iface" 2>/dev/null | grep -q "state UP"; then
-            ifdown "$iface" 2>/dev/null || true
-          fi
-        done
-        sleep 2
-        for iface in eth1 eth2 eth3; do
-          if ip link show "$iface" 2>/dev/null | \
-             grep -q "state DOWN\|state UNKNOWN"; then
-            ifup "$iface" 2>/dev/null || true
-          fi
-        done
-      args:
-        executable: /bin/bash
-      changed_when: true
-      failed_when: false
-      async: 30
-      poll: 0
-
     - name: Restart wpa_supplicant
       ansible.builtin.systemd:
         name: wpa_supplicant-mwan
+        state: restarted
+
+    - name: Restart systemd-networkd
+      ansible.builtin.systemd:
+        name: systemd-networkd
         state: restarted
 
     - name: Apply sysctl
@@ -692,11 +548,6 @@
         executable: /bin/bash
       changed_when: true
       failed_when: false
-
-    - name: Restart dhcpcd
-      ansible.builtin.systemd:
-        name: dhcpcd
-        state: restarted
 
     - name: Reload nftables
       ansible.builtin.systemd:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for wpa_supplicant authentication success
+After=wpa_supplicant-mwan.service
+BindsTo=wpa_supplicant-mwan.service
+
+[Path]
+PathExists=/run/wpa_supplicant-mwan.authenticated
+MakeDirectory=false
+
+[Install]
+WantedBy=multi-user.target
