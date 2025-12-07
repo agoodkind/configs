@@ -108,10 +108,11 @@ fi
 log "VLAN interface ${VLAN_IFACE} is now UP with correct MAC"
 
 # Restart dhcpcd to pick up the new MAC and trigger fresh DHCP discovery
-log "Restarting dhcpcd to trigger DHCP with correct MAC"
-systemctl restart dhcpcd || {
-    log "WARNING: Failed to restart dhcpcd"
-}
+# TODO: figure out how to do this with systemd-networkd
+# log "Restarting dhcpcd to trigger DHCP with correct MAC"
+# systemctl restart dhcpcd || {
+#     log "WARNING: Failed to restart dhcpcd"
+# }
 
 log "AT&T VLAN bringup completed successfully"
 exit 0
