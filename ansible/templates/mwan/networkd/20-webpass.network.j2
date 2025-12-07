@@ -3,11 +3,7 @@
 # I226-V NIC passthrough (igc driver) with MAC spoofing
 
 [Match]
-Name={{ interface_mapping.eth2 }}
-
-[Link]
-# CRITICAL: Set MAC to Webpass-registered address
-MACAddress={{ mwan_webpass_mac }}
+Name=enwebpass0
 
 [Network]
 # Static IPv4 configuration

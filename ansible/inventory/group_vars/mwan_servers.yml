@@ -31,7 +31,7 @@ mwan_internal_iface: "{{ detected_internal_iface | default('eth3') }}"
 # AT&T 802.1X authentication (via X710 VF passthrough)
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
-mwan_att_mac: "3c:8b:cd:66:45:d6"  # MAC for DHCP (different from EAP identity)
+mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
 # Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
 # Extract from OPNsense:
 #   scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
