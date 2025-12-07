@@ -22,18 +22,19 @@ esac
 
 # Extract delegated prefix based on interface
 # AT&T uses ia_pd 2, Webpass uses ia_pd 4, Monkeybrains uses ia_pd 6
+# Matches real kernel interface names
 case "$interface" in
     *3242)
-        # AT&T VLAN interface
+        # AT&T VLAN interface (ens16.3242)
         prefix_var="new_dhcp6_ia_pd2_prefix1"
         wan_name="att"
         ;;
-    eth1|igc0)
-        # Webpass interface
+    ens17)
+        # Webpass interface (I226-V with igc driver)
         prefix_var="new_dhcp6_ia_pd4_prefix1"
         wan_name="webpass"
         ;;
-    eth3)
+    ens20)
         # Monkeybrains interface (optional)
         prefix_var="new_dhcp6_ia_pd6_prefix1"
         wan_name="monkeybrains"

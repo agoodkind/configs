@@ -69,7 +69,7 @@ interface {{ interface_mapping.eth3 }}
 
 # AT&T interface - DHCPv4 + DHCPv6-PD on VLAN 3242
 # wpa_supplicant authenticates on raw interface, traffic appears on VLAN
-# Use actual interface name so dhcpcd recognizes it
+# Use real kernel interface name
 interface {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}
     ipv4
     ipv6rs
