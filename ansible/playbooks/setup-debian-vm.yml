@@ -168,6 +168,10 @@
     enable_serial: true
     enable_qemu_agent: true
 
+    # Temporary password (can be overridden via -e)
+    # ciuser is always root
+    temp_password: ""  # If empty, will be auto-generated
+
     # SSH keys fetched at runtime from GitHub
 
   tasks:
@@ -337,6 +341,21 @@
               {{ 'ip=' + vm_static_ipv4 + '/24,gw=10.250.0.1,' +
                  'ip6=' + vm_static_ipv6 + '/64,gw6=3d06:bad:b01::1' }}
 
+        - name: Generate temporary password if not provided
+          ansible.builtin.shell: |
+            set -o pipefail
+            openssl rand -base64 12 | tr -d "=+/" | cut -c1-16
+          register: temp_password_result
+          changed_when: false
+          when: temp_password | default('') | length == 0
+
+        - name: Set temporary password
+          ansible.builtin.set_fact:
+            temp_password: >-
+              {{ temp_password
+              if temp_password | default('') | length > 0
+              else temp_password_result.stdout }}
+
         - name: Write SSH keys to temp file
           ansible.builtin.copy:
             content: "{{ github_keys.content | trim }}"
@@ -349,6 +368,7 @@
           ansible.builtin.command: >
             qm set {{ new_vmid }}
             --ciuser root
+            --cipassword {{ temp_password }}
             --sshkeys /tmp/sshkeys_{{ new_vmid }}.pub
             --ipconfig0 "{{ vm_ipconfig_str }}"
             --searchdomain {{ vm_mgmt_dns_domain }}
@@ -356,6 +376,16 @@
           delegate_to: "{{ proxmox_host }}"
           changed_when: true
           when: github_keys.content is defined and github_keys.content | trim | length > 0
+
+        - name: Display temporary credentials
+          ansible.builtin.debug:
+            msg:
+              - "🔑 TEMPORARY CREDENTIALS (will be reset at end):"
+              - "  Username: root"
+              - "  Password: {{ temp_password }}"
+              - "  VM: {{ hostname }} ({{ vm_ip_address }})"
+              - ""
+              - "⚠️  Password will be randomly reset at the end of the playbook"
 
         - name: Clean up SSH keys temp file
           ansible.builtin.file:
@@ -646,3 +676,46 @@
   vars:
     target_hosts: new_vms
   when: groups['new_vms'] is defined and groups['new_vms'] | length > 0
+
+- name: Reset temporary passwords at end of playbook
+  hosts: localhost
+  gather_facts: false
+  vars:
+    proxmox_host: vault
+  tasks:
+    - name: Check if VM was created in this run
+      ansible.builtin.set_fact:
+        should_reset: "{{ hostvars['localhost']['vm_created_fact'] | default(false) | bool }}"
+        reset_vmid: "{{ hostvars['localhost']['vm_vmid_fact'] | default('') }}"
+        reset_hostname: "{{ hostvars['localhost']['hostname_fact'] | default('') }}"
+      when: hostvars['localhost']['vm_created_fact'] is defined
+
+    - name: Generate new random password for reset
+      ansible.builtin.shell: |
+        set -o pipefail
+        openssl rand -base64 12 | tr -d "=+/" | cut -c1-16
+      register: new_password_result
+      changed_when: false
+      when: should_reset | default(false) | bool
+
+    - name: Set new random password
+      ansible.builtin.set_fact:
+        new_random_password: "{{ new_password_result.stdout }}"
+      when: should_reset | default(false) | bool
+
+    - name: Reset password randomly at end of playbook
+      ansible.builtin.command: >
+        qm set {{ reset_vmid }}
+        --cipassword {{ new_random_password }}
+      delegate_to: "{{ proxmox_host }}"
+      changed_when: true
+      failed_when: false
+      when: should_reset | default(false) | bool
+
+    - name: Display password reset confirmation
+      ansible.builtin.debug:
+        msg:
+          - "🔒 Password for root@{{ reset_hostname }} has been reset"
+          - "  New password: {{ new_random_password }}"
+          - "  (Previous temporary password is no longer valid)"
+      when: should_reset | default(false) | bool
