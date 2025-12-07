@@ -19,8 +19,9 @@ hostname
 # Persist interface configuration when dhcpcd exits
 persistent
 
-# Rapid commit support
-option rapid_commit
+# Rapid commit support - DISABLED for IPv6-PD compatibility
+# AT&T DHCPv6 server doesn't support rapid commit with delegation
+#option rapid_commit
 
 # A list of options to request from the DHCP server
 option domain_name_servers, domain_name, domain_search, host_name
