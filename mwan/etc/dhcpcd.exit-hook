@@ -26,17 +26,17 @@ esac
 case "$interface" in
     *3242)
         # AT&T VLAN interface (ens16.3242)
-        prefix_var="new_dhcp6_ia_pd2_prefix1"
+        prefix_var="new_dhcp6_ia_pd1_prefix1"
         wan_name="att"
         ;;
     ens17)
         # Webpass interface (I226-V with igc driver)
-        prefix_var="new_dhcp6_ia_pd4_prefix1"
+        prefix_var="new_dhcp6_ia_pd1_prefix1"
         wan_name="webpass"
         ;;
     ens20)
         # Monkeybrains interface (optional)
-        prefix_var="new_dhcp6_ia_pd6_prefix1"
+        prefix_var="new_dhcp6_ia_pd1_prefix1"
         wan_name="monkeybrains"
         ;;
     *)
@@ -55,24 +55,7 @@ fi
 
 log "Delegated prefix for $wan_name: $delegated_prefix"
 
-# Extract prefix and length (e.g., "2600:1700:2f71:c80::/60")
-prefix_base="${delegated_prefix%::/*}"
-prefix_len="${delegated_prefix#*/}"
-
-# Calculate :a subnet for WAN address (e.g., 2600:1700:2f71:c8a::1/64)
-# For /60, the :a subnet is at position 0xa
-# For /56, the :a subnet is at position 0xa
-wan_subnet="${prefix_base%0}a"
-wan_address="${wan_subnet}::1/64"
-
-# Assign WAN address to interface
-log "Assigning WAN address $wan_address to $interface"
-ip -6 addr flush dev "$interface" scope global
-ip -6 addr add "$wan_address" dev "$interface"
-
-# Update NPT rules with new prefix
-log "Updating NPT rules for $wan_name with prefix $delegated_prefix"
-/usr/local/bin/update-npt.sh "$wan_name" "$delegated_prefix" "$wan_address"
+/usr/local/bin/update-npt.sh "$interface" "$delegated_prefix"
 
 # Update routing tables
 log "Updating routing tables"

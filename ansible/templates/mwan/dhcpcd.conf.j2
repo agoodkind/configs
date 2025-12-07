@@ -35,7 +35,7 @@ option interface_mtu
 #option ntp_servers
 
 # A ServerID is required by RFC2131
-require dhcp_server_identifier
+#require dhcp_server_identifier
 
 # Generate SLAAC address using the Hardware Address of the interface
 #slaac hwaddr
@@ -80,7 +80,7 @@ interface {{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}
 # Use actual interface name so dhcpcd recognizes it
 interface {{ interface_mapping.eth2 }}
     noipv4    # Static IPv4 configured in /etc/network/interfaces
-    noipv6rs  # Don't accept router advertisements (prevents SLAAC)
+    ipv6rs  # Don't accept router advertisements (prevents SLAAC, which breaks webpass for some reason)
     ipv6only  # DHCPv6-PD only
     ia_na 3
     ia_pd 4/::/56 {{ interface_mapping.eth3 }}/0
