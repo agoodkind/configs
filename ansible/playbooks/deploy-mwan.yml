@@ -322,7 +322,7 @@
         msg: |
           ⚠️  Certificate {{ item.item }} missing!
           Upload after deploy:
-          scp agoodkind@router:/conf/opnatt/wpa/*.pem \
+          scp 'agoodkind@router:/conf/opnatt/wpa/*.pem' \
             root@{{ inventory_hostname }}:/etc/wpa_supplicant/
           Then restart: systemctl restart wpa_supplicant-mwan
       when: not item.stat.exists
@@ -659,6 +659,7 @@
         state: reloaded
 
     - name: Restart networking
+      # Maybe should be systemctl restart networking
       ansible.builtin.shell: |
         set -o pipefail
         for iface in eth1 eth2 eth3; do

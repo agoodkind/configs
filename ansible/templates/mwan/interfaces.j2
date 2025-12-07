@@ -9,20 +9,28 @@ iface lo inet loopback
 # Management Interface - static IP + DHCP for hostname registration
 # ==============================================================================
 auto {{ interface_mapping.eth0 }}
-iface {{ interface_mapping.eth0 }} inet static
+
+iface {{ interface_mapping.eth0 }} inet manual
+    # TODO: figure out why this isn't sending a DHCP release
+    pre-down dhcpcd -4 --release {{ interface_mapping.eth0 }}
+    post-up dhcpcd -4 --rebind {{ interface_mapping.eth0 }}
+
+iface {{ interface_mapping.eth0 }}:0 inet static
     address 10.250.0.{{ mwan_vmid }}
     netmask 255.255.255.0
     gateway 10.250.0.1
     dns-nameservers {{ mwan_dns_servers }}
     dns-search {{ mwan_dns_domain }}
-    # Note: dhcpcd will also request a DHCP IP on this interface
-    # Result: Interface will have both static and dynamic IPs
 
-iface {{ interface_mapping.eth0 }} inet6 static
+iface {{ interface_mapping.eth0 }} inet6 manual
+    # TODO: figure out why this isn't sending a DHCP release
+    pre-down dhcpcd -6 --release {{ interface_mapping.eth0 }}
+    post-up dhcpcd -6 --rebind {{ interface_mapping.eth0 }}
+
+iface {{ interface_mapping.eth0 }}:0 inet6 static
     address 3d06:bad:b01::{{ '%x' | format(mwan_vmid | int) }}
     netmask 64
     gateway 3d06:bad:b01::1
-    # Note: dhcpcd will also request DHCPv6 addresses
 
 # ==============================================================================
 # AT&T WAN - X710 VF passthrough (iavf driver)
@@ -54,6 +62,8 @@ iface {{ interface_mapping.eth2 }} inet static
     pre-up ip link set dev {{ interface_mapping.eth2 }} address {{ mwan_webpass_mac }}
     address {{ mwan_webpass_ipv4 }}
     gateway {{ mwan_webpass_gateway }}
+    # Specify metric so that this default route doesn't conflict with the one defined for the management interface.
+    metric 10
     # Also add gateway to webpass routing table for policy routing
     post-up ip route add default via {{ mwan_webpass_gateway }} dev {{ interface_mapping.eth2 }} table webpass || true
     post-up ip rule add from {{ mwan_webpass_ipv4 | regex_replace('/.*$', '') }} table webpass priority 200 || true
@@ -70,13 +80,3 @@ iface {{ interface_mapping.eth3 }} inet static
 
 iface {{ interface_mapping.eth3 }} inet6 static
     address {{ mwan_internal_ipv6 }}
-
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
-# ==============================================================================
-# Monkeybrains WAN - virtio on mbrains bridge (optional)
-# ==============================================================================
-auto {{ mwan_monkeybrains_iface }}
-iface {{ mwan_monkeybrains_iface }} inet manual
-    pre-up ip link set {{ mwan_monkeybrains_iface }} up
-    # DHCPv4 and DHCPv6-PD handled by dhcpcd
-{% endif %}
