@@ -269,7 +269,7 @@
         label: "{{ item.item.key }} -> {{ item.item.value }}"
 
     - name: Create udev rules for persistent interface naming
-      ansible.builtin.template:
+      ansible.builtin.copy:
         dest: /etc/udev/rules.d/70-mwan-interface-names.rules
         mode: '0644'
         content: |
@@ -285,6 +285,7 @@
           DRIVERS=="iavf", NAME="eth1"
 
           # eth2: Webpass WAN (I226-V passthrough - igc driver)
+          # Note: Driver match only - MAC will be spoofed via /etc/network/interfaces
           SUBSYSTEM=="net", ACTION=="add", \
           DRIVERS=="igc", NAME="eth2"
 
@@ -304,6 +305,14 @@
         - /etc/iproute2
         - /usr/local/bin
         - /etc/wpa_supplicant
+        - /etc/dhcp
+
+    - name: Configure dhcpcd to send hostname
+      ansible.builtin.lineinfile:
+        path: /etc/dhcpcd.conf
+        line: "hostname"
+        create: true
+        mode: '0644'
 
     - name: Deploy wpa_supplicant config for AT&T 802.1X
       ansible.builtin.template:
@@ -345,13 +354,43 @@
         enabled: true
         daemon_reload: true
 
-    - name: Deploy network interfaces
+    - name: Get Webpass I226-V hardware MAC address
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          cat /sys/class/net/{{ interface_mapping.eth2 }}/address
+        executable: /bin/bash
+      register: webpass_hardware_mac
+      changed_when: false
+
+    - name: Display Webpass NIC spoofing info
+      ansible.builtin.debug:
+        msg: |
+          Webpass I226-V NIC ({{ interface_mapping.eth2 }}):
+            Hardware MAC: {{ webpass_hardware_mac.stdout }}
+            Spoofed MAC:  {{ mwan_webpass_mac }}
+            DUID:         {{ mwan_webpass_duid }}
+            ⚠️  CRITICAL: MAC will be spoofed to {{ mwan_webpass_mac }} before interface up
+            ⚠️  Webpass will REJECT any other MAC address!
+
+    - name: Deploy dhcpcd config (MUST be before interfaces come up!)
       ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/mwan/interfaces.j2"
-        dest: /etc/network/interfaces
+        src: "{{ repo_root }}/ansible/templates/mwan/dhcpcd.conf.j2"
+        dest: /etc/dhcpcd.conf
         mode: '0644'
         backup: true
-      notify: Restart networking
+
+    - name: Deploy dhcpcd exit hook
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/etc/dhcpcd.exit-hook"
+        dest: /etc/dhcpcd.exit-hook
+        mode: '0755'
+
+    - name: Stop dhcpcd before interface reconfiguration
+      ansible.builtin.systemd:
+        name: dhcpcd
+        state: stopped
+      failed_when: false
 
     - name: Deploy sysctl config
       ansible.builtin.template:
@@ -366,20 +405,13 @@
         dest: /etc/iproute2/rt_tables
         mode: '0644'
 
-    - name: Deploy dhcpcd config
+    - name: Deploy network interfaces
       ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/mwan/dhcpcd.conf.j2"
-        dest: /etc/dhcpcd.conf
+        src: "{{ repo_root }}/ansible/templates/mwan/interfaces.j2"
+        dest: /etc/network/interfaces
         mode: '0644'
         backup: true
-      notify: Restart dhcpcd
-
-    - name: Deploy dhcpcd exit hook
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/etc/dhcpcd.exit-hook"
-        dest: /etc/dhcpcd.exit-hook
-        mode: '0755'
-      notify: Restart dhcpcd
+      notify: Restart networking
 
     - name: Deploy nftables config
       ansible.builtin.template:
@@ -413,8 +445,38 @@
         mode: '0644'
       notify: Reload systemd
 
-    - name: Flush handlers
+    - name: Verify dhcpcd configuration before interface restart
+      ansible.builtin.command:
+        cmd: grep -q "^duid {{ mwan_webpass_duid }}" /etc/dhcpcd.conf
+      changed_when: false
+      register: duid_check
+      failed_when: duid_check.rc != 0
+
+    - name: Flush handlers (restarts networking with dhcpcd config in place)
       ansible.builtin.meta: flush_handlers
+
+    - name: Wait for interfaces to settle after networking restart
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Verify Webpass MAC spoofing succeeded
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          cat /sys/class/net/{{ interface_mapping.eth2 }}/address
+        executable: /bin/bash
+      register: webpass_current_mac
+      changed_when: false
+      failed_when: webpass_current_mac.stdout != mwan_webpass_mac
+
+    - name: Confirm Webpass MAC spoofing
+      ansible.builtin.debug:
+        msg: |
+          ✅ Webpass MAC spoofing verified:
+            Interface: {{ interface_mapping.eth2 }}
+            Current MAC: {{ webpass_current_mac.stdout }}
+            Expected MAC: {{ mwan_webpass_mac }}
+            Status: MATCH - Safe to bring up interface
 
     - name: Enable services
       ansible.builtin.systemd:
