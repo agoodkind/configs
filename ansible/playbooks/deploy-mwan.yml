@@ -145,66 +145,40 @@
             | lower
           }}
 
+    - name: Deploy interface discovery scripts
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/{{ item }}.j2"
+        dest: /usr/local/bin/{{ item | replace('.j2', '') }}
+        mode: '0755'
+      loop:
+        - find-interface-by-mac.sh.j2
+        - find-interface-by-driver.sh.j2
+        - add-interface-altname.sh.j2
+
     - name: Find interface by MAC (eth0 - management on vmbr0)
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          for iface in /sys/class/net/*; do
-            if [ -f "$iface/address" ] &&
-               [ "$(cat "$iface/address")" = "{{ mwan_net0_mac }}" ]; then
-              basename "$iface"
-              exit 0
-            fi
-          done
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: /usr/local/bin/find-interface-by-mac.sh {{ mwan_net0_mac }}
       register: iface_eth0_result
       changed_when: false
       failed_when: false
 
     - name: Find interface by MAC (eth3 - internal on mwanbr)
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          for iface in /sys/class/net/*; do
-            if [ -f "$iface/address" ] &&
-               [ "$(cat "$iface/address")" = "{{ mwan_net1_mac }}" ]; then
-              basename "$iface"
-              exit 0
-            fi
-          done
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: /usr/local/bin/find-interface-by-mac.sh {{ mwan_net1_mac }}
       register: iface_eth3_result
       changed_when: false
       failed_when: false
 
     - name: Find interface by driver (eth1 - X710 VF with iavf)
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          for iface in /sys/class/net/*; do
-            if [ -L "$iface/device/driver" ] &&
-               readlink "$iface/device/driver" | grep -q '/iavf$'; then
-              basename "$iface"
-              exit 0
-            fi
-          done
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: /usr/local/bin/find-interface-by-driver.sh iavf
       register: iface_eth1_result
       changed_when: false
       failed_when: false
 
     - name: Find interface by driver (eth2 - I226-V with igc)
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          for iface in /sys/class/net/*; do
-            if [ -L "$iface/device/driver" ] &&
-               readlink "$iface/device/driver" | grep -q '/igc$'; then
-              basename "$iface"
-              exit 0
-            fi
-          done
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: /usr/local/bin/find-interface-by-driver.sh igc
       register: iface_eth2_result
       changed_when: false
       failed_when: false
@@ -260,45 +234,8 @@
       failed_when: false
 
     - name: Add altnames to interfaces
-      ansible.builtin.shell:
-        cmd: |
-          set -eo pipefail
-          current="{{ item.item.value }}"
-          altname="{{ item.item.key }}"
-
-          # Skip if already using desired name
-          if [ "$current" = "$altname" ]; then
-            exit 0
-          fi
-
-          # Check if altname already exists on this interface
-          if ip link property show dev "$current" 2>/dev/null | \
-             grep -q "altname $altname"; then
-            echo "already_exists"
-            exit 0
-          fi
-
-          # Check if altname is used by another interface
-          if ip link show "$altname" >/dev/null 2>&1; then
-            other=$(ip -o link show "$altname" | awk '{print $2}' | sed 's/:$//')
-            if [ "$other" != "$current" ]; then
-              echo "ERROR: altname $altname already in use by $other"
-              exit 1
-            fi
-          fi
-
-          # Try to add altname (ignore "File exists" error)
-          output=$(ip link property add dev "$current" altname "$altname" 2>&1) || rc=$?
-          if [ ${rc:-0} -eq 0 ]; then
-            echo "changed"
-          elif echo "$output" | grep -q "File exists"; then
-            # "File exists" means altname already exists - that's OK!
-            echo "already_exists"
-          else
-            echo "ERROR: Failed to add altname: $output"
-            exit 1
-          fi
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: /usr/local/bin/add-interface-altname.sh "{{ item.item.value }}" "{{ item.item.key }}" true
       loop: "{{ altname_check.results }}"
       when: item.item.value != item.item.key
       changed_when: "'changed' in altname_add_result.stdout"
@@ -320,40 +257,8 @@
       failed_when: false
 
     - name: Add friendly altnames to interfaces
-      ansible.builtin.shell:
-        cmd: |
-          set -eo pipefail
-          current="{{ interface_mapping[item.item.key] }}"
-          altname="{{ item.item.value }}"
-
-          # Check if altname already exists on this interface
-          if ip link property show dev "$current" 2>/dev/null | \
-             grep -q "altname $altname"; then
-            echo "already_exists"
-            exit 0
-          fi
-
-          # Check if altname is used by another interface
-          if ip link show "$altname" >/dev/null 2>&1; then
-            other=$(ip -o link show "$altname" | awk '{print $2}' | sed 's/:$//')
-            if [ "$other" != "$current" ]; then
-              echo "ERROR: altname $altname already in use by $other"
-              exit 1
-            fi
-          fi
-
-          # Try to add altname (ignore "File exists" error)
-          output=$(ip link property add dev "$current" altname "$altname" 2>&1) || rc=$?
-          if [ ${rc:-0} -eq 0 ]; then
-            echo "changed"
-          elif echo "$output" | grep -q "File exists"; then
-            # "File exists" means altname already exists - that's OK!
-            echo "already_exists"
-          else
-            echo "ERROR: Failed to add altname: $output"
-            exit 1
-          fi
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: /usr/local/bin/add-interface-altname.sh "{{ interface_mapping[item.item.key] }}" "{{ item.item.value }}" false
       loop: "{{ friendly_altname_check.results }}"
       changed_when: "'changed' in friendly_altname_add_result.stdout"
       failed_when: "'ERROR:' in friendly_altname_add_result.stdout"
@@ -361,30 +266,11 @@
       loop_control:
         label: "{{ item.item.value }} -> {{ interface_mapping[item.item.key] }}"
 
-    - name: Create udev rules for persistent interface naming
-      ansible.builtin.copy:
+    - name: Deploy udev rules for persistent interface naming
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/70-mwan-interface-names.rules.j2"
         dest: /etc/udev/rules.d/70-mwan-interface-names.rules
         mode: '0644'
-        content: |
-          # Persistent network interface naming for MWAN
-          # Generated by Ansible - do not edit manually
-
-          # eth0: Management (virtio on vmbr0)
-          SUBSYSTEM=="net", ACTION=="add", \
-          ATTR{address}=="{{ mwan_net0_mac }}", NAME="eth0"
-
-          # eth1: AT&T WAN (X710 VF passthrough - iavf driver)
-          SUBSYSTEM=="net", ACTION=="add", \
-          DRIVERS=="iavf", NAME="eth1"
-
-          # eth2: Webpass WAN (I226-V passthrough - igc driver)
-          # Note: Driver match only - MAC will be spoofed via /etc/network/interfaces
-          SUBSYSTEM=="net", ACTION=="add", \
-          DRIVERS=="igc", NAME="eth2"
-
-          # eth3: Internal link to OPNsense (virtio on mwanbr)
-          SUBSYSTEM=="net", ACTION=="add", \
-          ATTR{address}=="{{ mwan_net1_mac }}", NAME="eth3"
       notify: Reload udev
 
     - name: Create configuration directories
@@ -532,7 +418,24 @@
         dest: /etc/nftables.conf
         mode: '0644'
         backup: true
+        vars:
+          actual_att_iface: "{{ interface_mapping.eth1 }}"
+          actual_webpass_iface: "{{ interface_mapping.eth2 }}"
+          actual_internal_iface: "{{ interface_mapping.eth3 }}"
       notify: Reload nftables
+
+    - name: Create systemd override for nftables
+      ansible.builtin.file:
+        path: /etc/systemd/system/nftables.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Deploy nftables systemd override
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/nftables.service.d-override.conf.j2"
+        dest: /etc/systemd/system/nftables.service.d/override.conf
+        mode: '0644'
+      notify: Reload systemd
 
     - name: Deploy templated helper scripts
       ansible.builtin.template:
@@ -776,3 +679,6 @@
       ansible.builtin.systemd:
         name: nftables
         state: reloaded
+      failed_when: false
+      # nftables will load even if interfaces are DOWN
+      # Rules simply won't match until interfaces come up
