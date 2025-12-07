@@ -1,0 +1,18 @@
+[Unit]
+Description=Bring up AT&T VLAN interface after 802.1X authentication
+After=wpa_supplicant-mwan.service network-pre.target
+Wants=wpa_supplicant-mwan.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bringup-att-vlan.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+# Restart if wpa_supplicant restarts
+# (in case of re-authentication)
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

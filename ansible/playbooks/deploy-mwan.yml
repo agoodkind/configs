@@ -226,10 +226,14 @@
       ansible.builtin.debug:
         msg: |
           Interface mapping:
-            eth0 (mgmt/vmbr0):      {{ interface_mapping.eth0 }} -> altname: {{ friendly_name_mapping.eth0 }}
-            eth1 (AT&T/X710 VF):    {{ interface_mapping.eth1 }} -> altname: {{ friendly_name_mapping.eth1 }}
-            eth2 (Webpass/I226-V):  {{ interface_mapping.eth2 }} -> altname: {{ friendly_name_mapping.eth2 }}
-            eth3 (internal/mwanbr): {{ interface_mapping.eth3 }} -> altname: {{ friendly_name_mapping.eth3 }}
+            eth0 (mgmt/vmbr0): {{ interface_mapping.eth0 }} ->
+              altname: {{ friendly_name_mapping.eth0 }}
+            eth1 (AT&T/X710 VF): {{ interface_mapping.eth1 }} ->
+              altname: {{ friendly_name_mapping.eth1 }}
+            eth2 (Webpass/I226-V): {{ interface_mapping.eth2 }} ->
+              altname: {{ friendly_name_mapping.eth2 }}
+            eth3 (internal/mwanbr): {{ interface_mapping.eth3 }} ->
+              altname: {{ friendly_name_mapping.eth3 }}
 
     - name: Verify all interfaces were found
       ansible.builtin.assert:
@@ -443,6 +447,25 @@
         enabled: true
         daemon_reload: true
 
+    - name: Deploy AT&T VLAN bringup script
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/bringup-att-vlan.sh.j2"
+        dest: /usr/local/bin/bringup-att-vlan.sh
+        mode: '0755'
+
+    - name: Deploy AT&T VLAN bringup systemd service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/bringup-att-vlan.service.j2"
+        dest: /etc/systemd/system/bringup-att-vlan.service
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Enable AT&T VLAN bringup service
+      ansible.builtin.systemd:
+        name: bringup-att-vlan
+        enabled: true
+        daemon_reload: true
+
     - name: Get Webpass I226-V hardware MAC address
       ansible.builtin.shell:
         cmd: |
@@ -459,7 +482,8 @@
             Hardware MAC: {{ webpass_hardware_mac.stdout }}
             Spoofed MAC:  {{ mwan_webpass_mac }}
             DUID:         {{ mwan_webpass_duid }}
-            ⚠️  CRITICAL: MAC will be spoofed to {{ mwan_webpass_mac }} before interface up
+            ⚠️  CRITICAL: MAC will be spoofed to {{ mwan_webpass_mac }}
+              before interface up
             ⚠️  Webpass will REJECT any other MAC address!
 
     - name: Deploy dhcpcd config (MUST be before interfaces come up!)
@@ -568,6 +592,45 @@
       ansible.builtin.pause:
         seconds: 5
 
+    - name: Verify AT&T VLAN interface is up (if certs present)
+      ansible.builtin.wait_for:
+        path: /sys/class/net/{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
+        state: present
+        timeout: 90
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+      register: vlan_interface_check
+
+    - name: Check AT&T VLAN interface status
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          vlan_iface="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
+          if ip link show "$vlan_iface" 2>/dev/null | \
+             grep -q "state UP"; then
+            echo "UP"
+            ip -4 addr show dev "$vlan_iface" | grep "inet " || \
+              echo "No IPv4 yet"
+          else
+            echo "DOWN or not found"
+            exit 1
+          fi
+        executable: /bin/bash
+      when:
+        - cert_check.results | selectattr('stat.exists') | list | length == 3
+        - vlan_interface_check.failed is not defined or not vlan_interface_check.failed
+      register: vlan_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display AT&T VLAN status
+      ansible.builtin.debug:
+        msg: |
+          AT&T VLAN Interface Status:
+          {{ vlan_status.stdout | default(
+            'Interface not yet up - may need more time for authentication') }}
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+
     - name: Schedule reboot to apply all network changes cleanly
       ansible.builtin.debug:
         msg: |
@@ -576,6 +639,8 @@
             - udev rules for persistent interface names
             - Complete network interface configuration
             - MAC spoofing for Webpass
+            - AT&T VLAN interface will be automatically brought up
+              after 802.1X authentication
 
           Run: ssh root@mwan.home.goodkind.io reboot
 
@@ -605,6 +670,7 @@
         daemon_reload: true
       loop:
         - wpa_supplicant-mwan
+        - bringup-att-vlan
         - dhcpcd
         - nftables
         - mwan-health
@@ -612,6 +678,13 @@
     - name: Start wpa_supplicant (if certs present)
       ansible.builtin.systemd:
         name: wpa_supplicant-mwan
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+
+    - name: Start AT&T VLAN bringup service (if certs present)
+      ansible.builtin.systemd:
+        name: bringup-att-vlan
         state: started
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
       failed_when: false
@@ -665,15 +738,22 @@
 
     - name: Restart networking
       ansible.builtin.shell: |
+        set -o pipefail
         for iface in eth1 eth2 eth3; do
-          ifdown $iface 2>/dev/null || true
+          if ip link show "$iface" 2>/dev/null | grep -q "state UP"; then
+            ifdown "$iface" 2>/dev/null || true
+          fi
         done
         sleep 2
         for iface in eth1 eth2 eth3; do
-          ifup $iface 2>/dev/null || true
+          if ip link show "$iface" 2>/dev/null | \
+             grep -q "state DOWN\|state UNKNOWN"; then
+            ifup "$iface" 2>/dev/null || true
+          fi
         done
       args:
         executable: /bin/bash
+      changed_when: true
       failed_when: false
       async: 30
       poll: 0
