@@ -20,12 +20,13 @@ Domains={{ vm_mgmt_dns_domain }}
 DHCP=yes
 # Accept IPv6 router advertisements
 IPv6AcceptRA=yes
-Hostname={{ hostname.split('.')[0] }}
 
 [DHCPv4]
 # Send hostname to DHCP server for DNS registration
 SendHostname=yes
+Hostname={{ hostname.split('.')[0] }}
 
 [DHCPv6]
 # Send hostname for DHCPv6 if supported
 SendHostname=yes
+Hostname={{ hostname.split('.')[0] }}

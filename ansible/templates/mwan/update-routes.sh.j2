@@ -39,45 +39,45 @@ log "AT&T: $ATT_IFACE (v6: $ATT_GW6, v4: $ATT_GW4)"
 log "Webpass: $WEBPASS_IFACE (v6: $WEBPASS_GW6, v4: $WEBPASS_GW4)"
 
 # Clear existing policy routing rules (except main table)
-ip rule del table att 2>/dev/null || true
-ip rule del table webpass 2>/dev/null || true
-ip rule del table monkeybrains 2>/dev/null || true
-ip -6 rule del table att 2>/dev/null || true
-ip -6 rule del table webpass 2>/dev/null || true
-ip -6 rule del table monkeybrains 2>/dev/null || true
+ip rule del table {{ mwan_rt_tables.att }} 2>/dev/null || true
+ip rule del table {{ mwan_rt_tables.webpass }} 2>/dev/null || true
+ip rule del table {{ mwan_rt_tables.monkeybrains }} 2>/dev/null || true
+ip -6 rule del table {{ mwan_rt_tables.att }} 2>/dev/null || true
+ip -6 rule del table {{ mwan_rt_tables.webpass }} 2>/dev/null || true
+ip -6 rule del table {{ mwan_rt_tables.monkeybrains }} 2>/dev/null || true
 
 # Flush routing tables
-ip route flush table att 2>/dev/null || true
-ip route flush table webpass 2>/dev/null || true
-ip route flush table monkeybrains 2>/dev/null || true
-ip -6 route flush table att 2>/dev/null || true
-ip -6 route flush table webpass 2>/dev/null || true
-ip -6 route flush table monkeybrains 2>/dev/null || true
+ip route flush table {{ mwan_rt_tables.att }} 2>/dev/null || true
+ip route flush table {{ mwan_rt_tables.webpass }} 2>/dev/null || true
+ip route flush table {{ mwan_rt_tables.monkeybrains }} 2>/dev/null || true
+ip -6 route flush table {{ mwan_rt_tables.att }} 2>/dev/null || true
+ip -6 route flush table {{ mwan_rt_tables.webpass }} 2>/dev/null || true
+ip -6 route flush table {{ mwan_rt_tables.monkeybrains }} 2>/dev/null || true
 
-# Set up AT&T routing table (table 100) - IPv6 FIRST (P0 priority)
+# Set up AT&T routing table (table {{ mwan_rt_tables.att }}) - IPv6 FIRST (P0 priority)
 if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW6" ]; then
     log "Setting up AT&T IPv6 routing table (priority)"
-    ip -6 route add default via "$ATT_GW6" dev "$ATT_IFACE" table att
-    ip -6 rule add fwmark 1 table att priority 100
+    ip -6 route add default via "$ATT_GW6" dev "$ATT_IFACE" table {{ mwan_rt_tables.att }}
+    ip -6 rule add fwmark 1 table {{ mwan_rt_tables.att }} priority 100
 fi
 
 if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW4" ]; then
     log "Setting up AT&T IPv4 routing table"
-    ip route add default via "$ATT_GW4" dev "$ATT_IFACE" table att
-    ip rule add fwmark 1 table att priority 100
+    ip route add default via "$ATT_GW4" dev "$ATT_IFACE" table {{ mwan_rt_tables.att }}
+    ip rule add fwmark 1 table {{ mwan_rt_tables.att }} priority 100
 fi
 
-# Set up Webpass routing table (table 200) - IPv6 FIRST
+# Set up Webpass routing table (table {{ mwan_rt_tables.webpass }}) - IPv6 FIRST
 if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW6" ]; then
     log "Setting up Webpass IPv6 routing table (priority)"
-    ip -6 route add default via "$WEBPASS_GW6" dev "$WEBPASS_IFACE" table webpass
-    ip -6 rule add fwmark 2 table webpass priority 200
+    ip -6 route add default via "$WEBPASS_GW6" dev "$WEBPASS_IFACE" table {{ mwan_rt_tables.webpass }}
+    ip -6 rule add fwmark 2 table {{ mwan_rt_tables.webpass }} priority 200
 fi
 
 if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW4" ]; then
     log "Setting up Webpass IPv4 routing table"
-    ip route add default via "$WEBPASS_GW4" dev "$WEBPASS_IFACE" table webpass
-    ip rule add fwmark 2 table webpass priority 200
+    ip route add default via "$WEBPASS_GW4" dev "$WEBPASS_IFACE" table {{ mwan_rt_tables.webpass }}
+    ip rule add fwmark 2 table {{ mwan_rt_tables.webpass }} priority 200
 fi
 
 # Set main table default route with automatic failover
@@ -113,7 +113,7 @@ elif [ -n "$WEBPASS_GW4" ]; then
 fi
 
 # Add local network routes to all tables (so WANs can reach internal subnet)
-for table in att webpass; do
+for table in {{ mwan_rt_tables.att }} {{ mwan_rt_tables.webpass }}; do
     ip route add 10.250.250.0/29 dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
     ip -6 route add 3d06:bad:b01:fe::/64 dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
 done

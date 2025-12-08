@@ -12,7 +12,8 @@ Address={{ mwan_webpass_ipv4 }}
 DHCP=ipv6
 IPv6AcceptRA=yes
 # Needed for policy routing
-IPForward=yes
+IPv4Forwarding=yes
+IPv6Forwarding=yes
 
 [DHCPv6]
 # CRITICAL: Preserve Webpass DUID - changing this breaks service
@@ -29,11 +30,11 @@ Metric=10
 [Route]
 # Default route in webpass routing table for policy routing
 Gateway={{ mwan_webpass_gateway }}
-Table=webpass
+Table={{ mwan_rt_tables.webpass }}
 
 [RoutingPolicyRule]
 # Route traffic FROM webpass IP via webpass table
 From={{ mwan_webpass_ipv4 | regex_replace('/.*$', '') }}
-Table=webpass
+Table={{ mwan_rt_tables.webpass }}
 Priority=200
 
