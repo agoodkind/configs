@@ -209,7 +209,7 @@
       delegate_to: ansible.home.goodkind.io
       register: vm_check
       failed_when: false
-  
+
     # - name: Set facts if VM already exists
     #   ansible.builtin.set_fact:
     #     hostname_fact: "{{ hostname }}"
