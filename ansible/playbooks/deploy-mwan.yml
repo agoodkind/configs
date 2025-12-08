@@ -57,13 +57,13 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
-    - name: Reboot VM to apply initial network configuration
-      ansible.builtin.reboot:
-        msg: "Rebooting VM to apply initial network configuration"
-        connect_timeout: 5
-        pre_reboot_delay: 0
-        post_reboot_delay: 0
-      when: not ansible_check_mode
+    # - name: Reboot VM to apply initial network configuration
+    #   ansible.builtin.reboot:
+    #     msg: "Rebooting VM to apply initial network configuration"
+    #     connect_timeout: 5
+    #     pre_reboot_delay: 0
+    #     post_reboot_delay: 0
+    #   when: not ansible_check_mode
 
     - name: Wait for VM
       ansible.builtin.wait_for_connection:
@@ -416,14 +416,14 @@
         - wpa-cli-action
         - wpa-authenticated.path
 
-    - name: Reboot VM
-      ansible.builtin.reboot:
-        msg: "Rebooting VM to apply network configuration"
-        connect_timeout: 5
-        pre_reboot_delay: 0
-        post_reboot_delay: 0
+    # - name: Reboot VM
+    #   ansible.builtin.reboot:
+    #     msg: "Rebooting VM to apply network configuration"
+    #     connect_timeout: 5
+    #     pre_reboot_delay: 0
+    #     post_reboot_delay: 0
 
-    - name: Wait for VM to be reachable via SSH after restart
+    - name: Wait for VM to be reachable via SSH
       ansible.builtin.wait_for_connection:
         timeout: 120
       register: ssh_wait_after_restart
