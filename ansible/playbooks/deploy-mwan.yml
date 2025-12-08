@@ -127,7 +127,6 @@
             | select('match', '^net1:.*virtio')
             | first
             | regex_search('virtio=([0-9A-Fa-f:]+)', '\1')
-            | first
             | lower
           }}
 
@@ -263,6 +262,21 @@
 
     - name: Block on restarting systemd-networkd to apply new configuration
       ansible.builtin.meta: flush_handlers
+
+    - name: Wait for AT&T interface to be created by systemd-networkd
+      ansible.builtin.wait_for:
+        path: /sys/class/net/{{ mwan_att_iface }}
+        timeout: 10
+      failed_when: >
+        att_iface_wait.failed is defined and att_iface_wait.failed
+      register: att_iface_wait
+
+    - name: Verify AT&T interface exists
+      ansible.builtin.fail:
+        msg: >
+          AT&T interface {{ mwan_att_iface }} not found after
+          systemd-networkd restart. Check PCI passthrough and iavf driver.
+      when: att_iface_wait.failed is defined and att_iface_wait.failed
 
     - name: Deploy networkd-dispatcher hook for route updates
       ansible.builtin.template:

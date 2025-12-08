@@ -1,10 +1,16 @@
 [Unit]
 Description=WPA Supplicant for AT&T 802.1X
-After=network.target
+After=systemd-networkd.service
+Wants=systemd-networkd.service
 Before=network-online.target
 
 [Service]
 Type=simple
+ExecStartPre=/bin/bash -c 'for i in {1..30}; \
+    do if ip link show {{ mwan_att_iface }} >/dev/null 2>&1; then exit 0; fi; \
+    sleep 1; done; \
+    echo "Interface {{ mwan_att_iface }} not found after 30s"; \
+    exit 1'
 ExecStartPre=/bin/sleep 2
 ExecStartPre=/sbin/ip link set {{ mwan_att_iface }} up
 ExecStart=/sbin/wpa_supplicant -Dwired \
