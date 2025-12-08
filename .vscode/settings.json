@@ -12,6 +12,9 @@
         ".cache": true,
         "retool.config.json": true
     },
+    "files.associations": {
+        "*.sh.j2": "jinja-shell"
+    },
     "rubyLsp.rubyVersionManager": {
         "rbenv": {
             "versionFile": ".ruby-version"

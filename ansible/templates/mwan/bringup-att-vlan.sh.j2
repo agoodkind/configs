@@ -67,9 +67,6 @@ if ! ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
     }
 fi
 
-# Apply sysctl settings (rp_filter is also in sysctl.d, but ensure it's set)
-sysctl -w net.ipv4.conf."${VLAN_IFACE}".rp_filter=0 || true
-
 # Trigger systemd-networkd to start DHCP on VLAN interface
 # AT&T won't respond to DHCP until parent interface is authenticated
 log "Triggering systemd-networkd DHCP on ${VLAN_IFACE}"
