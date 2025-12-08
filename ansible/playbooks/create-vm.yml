@@ -29,7 +29,6 @@
       https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2
     storage: "local-lvm"
     template_bridge: "vmbr0"
-    recreate_template: true  # Set to true to force template recreation
 
   tasks:
     - name: Check if Debian cloud image exists on Proxmox
@@ -61,16 +60,8 @@
       failed_when: false
       changed_when: false
 
-    - name: Destroy existing template if recreate_template is true
-      ansible.builtin.command: qm destroy {{ template_vmid }} --purge
-      delegate_to: "{{ proxmox_host }}"
-      when:
-        - recreate_template | default(false) | bool
-        - template_check.rc == 0
-      changed_when: true
-
     - name: Create Debian cloud-init template
-      when: (template_check.rc != 0) or (recreate_template | default(false) | bool)
+      when: template_check.rc != 0
       delegate_to: "{{ proxmox_host }}"
       block:
         - name: Create template VM
