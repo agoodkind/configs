@@ -5,7 +5,7 @@ BindsTo=wpa_supplicant-mwan.service
 
 [Service]
 Type=simple
-ExecStart=/sbin/wpa_cli -a /usr/local/bin/wpa-action.sh -B
+ExecStart=/sbin/wpa_cli -i {{ mwan_att_iface }} -a /usr/local/bin/wpa-action.sh
 Restart=always
 RestartSec=5
 
