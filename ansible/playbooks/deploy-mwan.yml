@@ -59,8 +59,6 @@
       ansible.builtin.reboot:
         msg: "Rebooting VM to apply initial network configuration"
         connect_timeout: 5
-        retries: 3
-        delay: 0
         pre_reboot_delay: 0
         post_reboot_delay: 0
       when: not ansible_check_mode
@@ -372,8 +370,6 @@
       ansible.builtin.reboot:
         msg: "Rebooting VM to apply network configuration"
         connect_timeout: 5
-        retries: 3
-        delay: 0
         pre_reboot_delay: 0
         post_reboot_delay: 0
 
