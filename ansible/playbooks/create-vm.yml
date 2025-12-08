@@ -17,6 +17,7 @@
 #   dns_domain: DNS search domain
 #   dns_servers: DNS server IPs
 #   delete_existing_vm: Destroy existing VM before recreation (default: false)
+#   skip_password_reset: Skip password reset at end of playbook (default: false)
 #
 - name: Setup Debian cloud image template
   hosts: localhost
@@ -164,6 +165,7 @@
     # Temporary password (can be overridden via -e)
     # ciuser is always root
     temp_password: ""  # If empty, will be auto-generated
+    skip_password_reset: false  # Skip password reset at end
 
     # SSH keys fetched at runtime from GitHub
 
@@ -222,7 +224,7 @@
       ansible.builtin.command: qm stop {{ vm_check.vmid }}
       delegate_to: "{{ proxmox_host }}"
       when:
-        - delete_existing_vm
+        - delete_existing_vm | default(false) | bool
         - vm_check.vmid is defined
       changed_when: true
       failed_when: false
@@ -231,19 +233,19 @@
       ansible.builtin.pause:
         seconds: 3
       when:
-        - delete_existing_vm
+        - delete_existing_vm | default(false) | bool
         - vm_check.vmid is defined
 
     - name: Destroy existing VM (temporary - for clean redeploy)
       ansible.builtin.command: qm destroy {{ vm_check.vmid }} --purge
       delegate_to: "{{ proxmox_host }}"
       when:
-        - delete_existing_vm
+        - delete_existing_vm | default(false) | bool
         - vm_check.vmid is defined
       changed_when: true
 
     - name: VM creation block
-      when: vm_check.vmid is not defined or vm_check.vmid == '' or delete_existing_vm
+      when: vm_check.vmid is not defined or vm_check.vmid == '' or (delete_existing_vm | default(false) | bool)
       # when: true
       block:
         - name: Get next available VMID
@@ -724,12 +726,16 @@
       changed_when: false
       args:
         executable: /bin/bash
-      when: should_reset | default(false) | bool
+      when:
+        - should_reset | default(false) | bool
+        - not skip_password_reset | default(false) | bool
 
     - name: Set new random password
       ansible.builtin.set_fact:
         new_random_password: "{{ new_password_result.stdout }}"
-      when: should_reset | default(false) | bool
+      when:
+        - should_reset | default(false) | bool
+        - not skip_password_reset | default(false) | bool
 
     - name: Reset password randomly at end of playbook
       ansible.builtin.command: >
@@ -738,12 +744,15 @@
       delegate_to: "{{ proxmox_host }}"
       changed_when: true
       failed_when: false
-      when: should_reset | default(false) | bool
+      when:
+        - should_reset | default(false) | bool
+        - not skip_password_reset | default(false) | bool
 
     - name: Display password reset confirmation
       ansible.builtin.debug:
         msg:
           - "🔒 Password for root@{{ reset_hostname }} has been reset"
           - "  (Previous temporary password is no longer valid)"
-          - "  New password: {{ new_random_password }}"
-      when: should_reset | default(false) | bool
+      when:
+        - should_reset | default(false) | bool
+        - not skip_password_reset | default(false) | bool
