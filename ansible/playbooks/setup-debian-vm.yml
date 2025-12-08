@@ -236,7 +236,7 @@
     #   changed_when: true
 
     - name: VM creation block
-      when: true  # Always create after deletion
+      when: vm_check.vmid is not defined
       block:
         - name: Get next available VMID
           ansible.builtin.command: pvesh get /cluster/nextid
