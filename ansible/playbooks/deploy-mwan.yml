@@ -45,6 +45,8 @@
     mgmt_ip_config: "{{ hostvars['localhost']['vm_mgmt_ip_config'] }}"
     dns_domain: "{{ hostvars['localhost']['vm_dns_domain'] }}"
     dns_servers: "{{ hostvars['localhost']['vm_dns_servers'] }}"
+    delete_existing_vm: "{{ delete_existing_vm | default(false) | bool }}"
+    skip_password_reset: "{{ skip_password_reset | default(false) | bool }}"
 
 - name: Configure MWAN VM
   hosts: mwan_servers
