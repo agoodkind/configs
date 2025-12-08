@@ -139,6 +139,14 @@
             | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
             | upper
           }}
+        vm_mgmt_mac: >-
+          {{
+            vm_config.stdout_lines
+            | select('match', '^net0:.*virtio')
+            | first
+            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
+            | upper
+          }}
 
     - name: Create configuration directories
       ansible.builtin.file:
@@ -273,6 +281,28 @@
         path: /etc/systemd/network
         state: directory
         mode: '0755'
+
+    - name: Set variables for management interface templates
+      ansible.builtin.set_fact:
+        vm_mgmt_iface: "{{ mwan_mgmt_iface }}"
+        vm_mgmt_ipv4_prefix: "24"
+        vm_mgmt_ipv6_prefix: "64"
+        vm_mgmt_gateway_ipv4: "10.250.0.1"
+        vm_mgmt_gateway_ipv6: "3d06:bad:b01::1"
+        vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
+        vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
+        vm_mgmt_ipv4: "10.250.0.{{ actual_vmid }}"
+        vm_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(actual_vmid | int) }}"
+        hostname: "{{ mwan_hostname }}"
+
+    - name: Deploy management interface networkd configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/vm/{{ item }}.j2"
+        dest: /etc/systemd/network/{{ item }}
+        mode: '0644'
+      loop:
+        - 10-mgmt.link
+        - 10-mgmt.network
 
     - name: Deploy systemd-networkd configuration files
       ansible.builtin.template:
