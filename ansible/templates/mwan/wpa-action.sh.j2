@@ -1,17 +1,18 @@
 #!/bin/bash
 # wpa_supplicant action script - writes auth status file
+# wpa_cli -a passes "CONNECTED" or "DISCONNECTED" as $2
 
 AUTH_FILE="/run/wpa_supplicant-mwan.authenticated"
 WPA_CLI="/sbin/wpa_cli"
 
 case "$2" in
-    CTRL-EVENT-EAP-SUCCESS)
-        echo "$(date '+%Y-%m-%d %H:%M:%S') EAP-SUCCESS" | \
+    CONNECTED)
+        echo "$(date '+%Y-%m-%d %H:%M:%S') CONNECTED" | \
             systemd-cat -t wpa-action
         touch "$AUTH_FILE"
         ;;
-    CTRL-EVENT-EAP-FAILURE|CTRL-EVENT-DISCONNECTED)
-        echo "$(date '+%Y-%m-%d %H:%M:%S') EAP-FAILURE/DISCONNECT" | \
+    DISCONNECTED)
+        echo "$(date '+%Y-%m-%d %H:%M:%S') DISCONNECTED" | \
             systemd-cat -t wpa-action
         rm -f "$AUTH_FILE"
         ;;
