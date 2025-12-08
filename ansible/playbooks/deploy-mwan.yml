@@ -134,7 +134,7 @@
             vm_config.stdout_lines
             | select('match', '^net1:.*virtio')
             | first
-            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\\1')
+            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
             | upper
           }}
 
@@ -261,6 +261,17 @@
         enabled: true
         daemon_reload: true
 
+    - name: Empty systemd-networkd directory
+      ansible.builtin.file:
+        path: /etc/systemd/network
+        state: absent
+
+    - name: Ensure systemd-networkd directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/network
+        state: directory
+        mode: '0755'
+
     - name: Deploy systemd-networkd configuration files
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/networkd/{{ item }}.j2"
@@ -268,10 +279,10 @@
         mode: '0644'
       loop:
         - 20-att.link
-        - 20-att-vlan.netdev
-        - 20-att-vlan.network
+        - 20-webpass.link
         - 20-webpass.network
-        - 30-webpass.link
+        - 21-att-vlan.netdev
+        - 21-att-vlan.network
         - 40-mwanbr.link
         - 40-mwanbr.network
 
