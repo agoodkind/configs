@@ -205,6 +205,18 @@
         enabled: true
         daemon_reload: true
 
+    - name: Deploy wpa-cli-action service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/wpa-cli-action.service.j2"
+        dest: /etc/systemd/system/wpa-cli-action.service
+        mode: '0644'
+
+    - name: Enable wpa-cli-action service
+      ansible.builtin.systemd:
+        name: wpa-cli-action
+        enabled: true
+        daemon_reload: true
+
     - name: Deploy wpa_supplicant action script
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/wpa-action.sh.j2"
@@ -253,6 +265,7 @@
         - 20-webpass.network
         - 30-webpass.link
         - 40-mwanbr.link
+        - 40-mwanbr.network
 
     - name: Deploy networkd-dispatcher hook for route updates
       ansible.builtin.template:
@@ -357,34 +370,14 @@
         enabled: true
         daemon_reload: true
       loop:
-        - wpa_supplicant-mwan
-        - wpa-authenticated.path
         - bringup-att-vlan
         - systemd-networkd
         - networkd-dispatcher
         - nftables
         - mwan-health
-
-    - name: Start wpa_supplicant (if certs present)
-      ansible.builtin.systemd:
-        name: wpa_supplicant-mwan
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Start AT&T VLAN bringup service (if certs present)
-      ansible.builtin.systemd:
-        name: bringup-att-vlan
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Start wpa-authenticated path unit (if certs present)
-      ansible.builtin.systemd:
-        name: wpa-authenticated.path
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
+        - wpa_supplicant-mwan
+        - wpa-cli-action
+        - wpa-authenticated.path
 
     - name: Ensure systemd-networkd is running
       ansible.builtin.systemd:
@@ -453,6 +446,27 @@
           AT&T interface {{ mwan_att_iface }} not found after
           systemd-networkd restart. Check PCI passthrough and iavf driver.
       when: att_iface_wait.failed is defined and att_iface_wait.failed
+
+    - name: Start wpa_supplicant (if certs present)
+      ansible.builtin.systemd:
+        name: wpa_supplicant-mwan
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+
+    - name: Start AT&T VLAN bringup service (if certs present)
+      ansible.builtin.systemd:
+        name: bringup-att-vlan
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+
+    - name: Start wpa-authenticated path unit (if certs present)
+      ansible.builtin.systemd:
+        name: wpa-authenticated.path
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
 
     - name: Verify AT&T VLAN interface is up (if certs present)
       ansible.builtin.wait_for:

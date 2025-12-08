@@ -16,8 +16,7 @@ ExecStartPre=/sbin/ip link set {{ mwan_att_iface }} up
 ExecStart=/sbin/wpa_supplicant -Dwired \
     -c /etc/wpa_supplicant/wpa_supplicant.conf \
     -i {{ mwan_att_iface }} \
-    -P /run/wpa_supplicant-mwan.pid \
-    -a /usr/local/bin/wpa-action.sh
+    -P /run/wpa_supplicant-mwan.pid
 Restart=always
 RestartSec=5
 
