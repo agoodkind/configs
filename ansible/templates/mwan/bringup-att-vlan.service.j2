@@ -1,7 +1,10 @@
 [Unit]
-Description=Bring up AT&T VLAN interface after 802.1X authentication
-After=wpa-authenticated.service
-Before=systemd-networkd.service
+Description=Post-authentication actions for AT&T VLAN interface
+Description=VLAN is created declaratively by systemd-networkd via .netdev file
+After=systemd-networkd.service
+Wants=systemd-networkd.service
+# Don't require wpa-authenticated.service to avoid circular dependency
+# This service is triggered by wpa-authenticated.service but doesn't depend on it
 
 [Service]
 Type=oneshot

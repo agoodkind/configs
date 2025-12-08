@@ -1,13 +1,17 @@
 [Unit]
-Description=Trigger AT&T VLAN bringup after authentication
+Description=Trigger AT&T VLAN post-authentication actions
+Description=VLAN is created declaratively by systemd-networkd
 After=wpa-authenticated.path
 Requires=wpa-authenticated.path
 
 [Service]
 Type=oneshot
+# Start bringup service - it will wait for VLAN interface to exist
+# No circular dependency since bringup-att-vlan doesn't depend on this service
 ExecStart=/bin/systemctl start bringup-att-vlan.service
 StandardOutput=journal
 StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+

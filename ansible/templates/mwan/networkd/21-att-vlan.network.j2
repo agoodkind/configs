@@ -5,6 +5,11 @@
 # and then the static IPv4s we were given can be routed through it.
 #
 # AT&T Assigns a /60 prefix via DHCPv6-PD
+#
+# IMPORTANT: AT&T will not respond to DHCP until after 802.1X authentication
+# on the parent interface (enatt0). The VLAN interface is created declaratively
+# by systemd-networkd, but DHCP is triggered by bringup-att-vlan.service
+# after authentication succeeds.
 
 [Match]
 Name={{ mwan_att_iface }}.{{ mwan_att_vlan_id }}

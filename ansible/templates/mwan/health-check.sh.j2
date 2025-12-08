@@ -19,7 +19,7 @@ WAN_CONFIGS=(
 {% endif %}
 )
 
-# Health check targets from group_vars - IPv6 FIRST (P0 priority)
+# Health check targets from group_vars
 TARGETS_V6=(
 {% for target in mwan_health_checks.att.targets %}
 {% if ':' in target %}

@@ -1,12 +1,14 @@
 #!/bin/bash
-# Bring up AT&T VLAN interface after 802.1X authentication
-# For systemd-networkd - waits for auth file, creates VLAN, sets MAC
+# Post-authentication actions for AT&T VLAN interface
+# For systemd-networkd - VLAN is created declaratively via .netdev file
+# AT&T requires 802.1X authentication on parent before DHCP on VLAN works
+# This script waits for authentication, then triggers DHCP on VLAN interface
 
 set -euo pipefail
 
 ATT_IFACE="{{ mwan_att_iface }}"
 VLAN_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
-AUTH_FILE="/run/wpa_supplicant-mwan.authenticated"
+WPA_CLI="/sbin/wpa_cli"
 MAX_WAIT=60
 CHECK_INTERVAL=2
 
@@ -15,56 +17,71 @@ log() {
         systemd-cat -t bringup-att-vlan
 }
 
-log "Starting AT&T VLAN bringup script"
+log "Starting AT&T VLAN post-authentication script"
 
-# Wait for authentication file
+# Wait for 802.1X authentication via wpa_supplicant control socket
+log "Waiting for 802.1X authentication on ${ATT_IFACE}"
 elapsed=0
+authenticated=false
 while [ $elapsed -lt $MAX_WAIT ]; do
-    if [ -f "$AUTH_FILE" ]; then
-        log "Authentication success file detected"
+    # Check authentication state via wpa_cli
+    if $WPA_CLI -i "${ATT_IFACE}" status 2>/dev/null | \
+       grep -q "Supplicant PAE state=AUTHENTICATED"; then
+        log "802.1X authentication successful"
+        authenticated=true
         break
     fi
     sleep $CHECK_INTERVAL
     elapsed=$((elapsed + CHECK_INTERVAL))
 done
 
-if [ ! -f "$AUTH_FILE" ]; then
-    log "ERROR: Authentication file not found after ${MAX_WAIT}s"
+if [ "$authenticated" != "true" ]; then
+    log "ERROR: 802.1X authentication not completed after ${MAX_WAIT}s"
     exit 1
 fi
 
-log "Authentication successful, bringing up VLAN ${VLAN_IFACE}"
+log "Authentication successful, waiting for VLAN interface"
 
-# Create VLAN interface if it doesn't exist
+# Wait for VLAN interface to be created by systemd-networkd
+elapsed=0
+while [ $elapsed -lt $MAX_WAIT ]; do
+    if ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
+        log "VLAN interface ${VLAN_IFACE} detected"
+        break
+    fi
+    sleep $CHECK_INTERVAL
+    elapsed=$((elapsed + CHECK_INTERVAL))
+done
+
 if ! ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
-    log "Creating VLAN interface ${VLAN_IFACE}"
-    ip link add link "${ATT_IFACE}" name "${VLAN_IFACE}" \
-        type vlan id {{ mwan_att_vlan_id }} || {
-        log "ERROR: Failed to create VLAN interface"
-        exit 1
-    }
+    log "ERROR: VLAN interface not found after ${MAX_WAIT}s"
+    exit 1
 fi
 
-# Set MAC address BEFORE bringing up (critical for AT&T DHCP)
-log "Setting MAC address to {{ mwan_att_mac }}"
-ip link set "${VLAN_IFACE}" address {{ mwan_att_mac }} || {
-    log "ERROR: Failed to set MAC address"
-    exit 1
-}
-
-# Bring up the interface
+# Ensure VLAN interface is up
 if ! ip link show "${VLAN_IFACE}" | grep -q "state UP"; then
     log "Bringing up VLAN interface"
     ip link set "${VLAN_IFACE}" up || {
-        log "ERROR: Failed to bring up interface"
+        log "ERROR: Failed to bring up VLAN interface"
         exit 1
     }
 fi
 
-# Disable reverse path filtering for policy routing
+# Apply sysctl settings (rp_filter is also in sysctl.d, but ensure it's set)
 sysctl -w net.ipv4.conf."${VLAN_IFACE}".rp_filter=0 || true
 
-log "VLAN interface ${VLAN_IFACE} is UP with correct MAC"
-log "systemd-networkd will now configure DHCP"
+# Trigger systemd-networkd to start DHCP on VLAN interface
+# AT&T won't respond to DHCP until parent interface is authenticated
+log "Triggering systemd-networkd DHCP on ${VLAN_IFACE}"
+networkctl renew "${VLAN_IFACE}" || {
+    log "WARNING: networkctl renew failed, trying reconfigure"
+    networkctl reconfigure "${VLAN_IFACE}" || {
+        log "ERROR: Failed to trigger DHCP on VLAN interface"
+        exit 1
+    }
+}
+
+log "VLAN interface ${VLAN_IFACE} is ready and DHCP triggered"
+log "systemd-networkd will now obtain IP address from AT&T"
 
 exit 0
