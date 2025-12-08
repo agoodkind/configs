@@ -317,6 +317,7 @@
         mode: '0644'
       loop:
         - 20-att.link
+        - 20-att.network
         - 20-webpass.link
         - 20-webpass.network
         - 21-att-vlan.netdev
@@ -516,91 +517,6 @@
         state: started
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
       failed_when: false
-
-    - name: Verify AT&T VLAN interface is up (if certs present)
-      ansible.builtin.wait_for:
-        path: /sys/class/net/{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
-        state: present
-        timeout: 15
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-      register: vlan_interface_check
-
-    - name: Check AT&T VLAN interface status
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          vlan_iface="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
-          if ip link show "$vlan_iface" 2>/dev/null | \
-             grep -q "state UP"; then
-            echo "UP"
-            ip -4 addr show dev "$vlan_iface" | grep "inet " || \
-              echo "No IPv4 yet"
-          else
-            echo "DOWN or not found"
-            exit 1
-          fi
-        executable: /bin/bash
-      when:
-        - cert_check.results | selectattr('stat.exists') | list | length == 3
-        - vlan_interface_check.failed is not defined or not vlan_interface_check.failed
-      register: vlan_status
-      changed_when: false
-      failed_when: false
-
-    - name: Display AT&T VLAN status
-      ansible.builtin.debug:
-        msg: |
-          AT&T VLAN Interface Status:
-          {{ vlan_status.stdout | default(
-            'Interface not yet up - may need more time for authentication') }}
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-
-    - name: Check Webpass interface carrier status
-      ansible.builtin.shell:
-        cmd: |
-          cat /sys/class/net/{{ mwan_webpass_iface }}/carrier 2>/dev/null || echo "0"
-        executable: /bin/bash
-      register: webpass_carrier_check
-      changed_when: false
-      failed_when: false
-
-    - name: Get Webpass MAC address
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          cat /sys/class/net/{{ mwan_webpass_iface }}/address
-        executable: /bin/bash
-      register: webpass_current_mac
-      changed_when: false
-      failed_when: false
-
-    - name: Verify Webpass MAC spoofing
-      ansible.builtin.assert:
-        that:
-          - webpass_current_mac.stdout == mwan_webpass_mac
-        fail_msg: >-
-          Webpass MAC mismatch: {{ webpass_current_mac.stdout }}
-          != {{ mwan_webpass_mac }}
-        success_msg: "Webpass MAC correct: {{ mwan_webpass_mac }}"
-      when: webpass_carrier_check.stdout == "1"
-      failed_when: false
-
-    - name: Display Webpass status
-      ansible.builtin.debug:
-        msg: |
-          {% if webpass_carrier_check.stdout == "1" %}
-          ✅ Webpass connected and MAC verified:
-            Interface: {{ mwan_webpass_iface }}
-            Current MAC: {{ webpass_current_mac.stdout }}
-            Expected MAC: {{ mwan_webpass_mac }}
-          {% else %}
-          ⚠️  Webpass not connected (NO-CARRIER):
-            Interface: {{ mwan_webpass_iface }}
-            Hardware MAC: {{ webpass_current_mac.stdout }}
-            Will spoof to: {{ mwan_webpass_mac }} when connected
-            Status: OK - MAC spoofing configured in /etc/network/interfaces
-          {% endif %}
 
     - name: Display status
       ansible.builtin.debug:

@@ -29,7 +29,8 @@ net.ipv4.conf.default.rp_filter = 2
 
 # Disable source validation on Webpass WAN (needed for policy routing)
 net.ipv4.conf.{{ mwan_webpass_iface }}.rp_filter = 0
-# Note: AT&T VLAN rp_filter set in /etc/network/interfaces post-up
+# Disable source validation on AT&T VLAN (needed for policy routing)
+net.ipv4.conf.{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}.rp_filter = 0
 
 # IPv6 specific optimizations
 net.ipv6.conf.all.use_tempaddr = 0  # Don't use temporary addresses

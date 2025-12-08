@@ -1,6 +1,8 @@
 [NetDev]
 Name={{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
 Kind=vlan
+# Set MAC address for AT&T DHCP
+MACAddress={{ mwan_att_mac }}
 
 [VLAN]
 Id={{ mwan_att_vlan_id }}
