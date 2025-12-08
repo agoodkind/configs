@@ -287,6 +287,7 @@
         executable: /bin/bash
       register: webpass_hardware_mac
       changed_when: false
+      failed_when: false
 
     - name: Display Webpass NIC spoofing info
       ansible.builtin.debug:
