@@ -55,9 +55,19 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
+    - name: Reboot VM to apply initial network configuration
+      ansible.builtin.reboot:
+        msg: "Rebooting VM to apply initial network configuration"
+        connect_timeout: 5
+        retries: 3
+        delay: 0
+        pre_reboot_delay: 0
+        post_reboot_delay: 0
+      when: not ansible_check_mode
+
     - name: Wait for VM
       ansible.builtin.wait_for_connection:
-        timeout: 60
+        timeout: 120
       register: connection_check
       failed_when: false
 
@@ -279,27 +289,6 @@
         enabled: true
         daemon_reload: true
 
-    - name: Get Webpass I226-V hardware MAC address
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          cat /sys/class/net/{{ mwan_webpass_iface }}/address
-        executable: /bin/bash
-      register: webpass_hardware_mac
-      changed_when: false
-      failed_when: false
-
-    - name: Display Webpass NIC spoofing info
-      ansible.builtin.debug:
-        msg: |
-          Webpass I226-V NIC (enwebpass0):
-            Hardware MAC: {{ webpass_hardware_mac.stdout }}
-            Spoofed MAC:  {{ mwan_webpass_mac }}
-            DUID:         {{ mwan_webpass_duid }}
-            ⚠️  CRITICAL: MAC will be spoofed to {{ mwan_webpass_mac }}
-              before interface up
-            ⚠️  Webpass will REJECT any other MAC address!
-
     - name: Deploy sysctl config
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/sysctl-mwan.conf.j2"
@@ -379,6 +368,21 @@
         - wpa-cli-action
         - wpa-authenticated.path
 
+    - name: Reboot VM
+      ansible.builtin.reboot:
+        msg: "Rebooting VM to apply network configuration"
+        connect_timeout: 5
+        retries: 3
+        delay: 0
+        pre_reboot_delay: 0
+        post_reboot_delay: 0
+
+    - name: Wait for VM to be reachable via SSH after restart
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+      register: ssh_wait_after_restart
+      failed_when: false
+
     - name: Ensure systemd-networkd is running
       ansible.builtin.systemd:
         name: systemd-networkd
@@ -390,15 +394,6 @@
         name: networkd-dispatcher
         state: started
         enabled: true
-
-    - name: Start other services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        state: started
-      loop:
-        - nftables
-        - mwan-health
-      failed_when: false
 
     - name: Reload systemd
       ansible.builtin.systemd:
