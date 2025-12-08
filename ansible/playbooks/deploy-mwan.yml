@@ -28,7 +28,7 @@
         vm_mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
 
 - name: Setup mwan VM
-  ansible.builtin.import_playbook: setup-debian-vm.yml
+  ansible.builtin.import_playbook: deploy-vm.yml
   vars:
     hostname: "{{ hostvars['localhost']['vm_hostname'] }}"
     target_node: vault
@@ -134,8 +134,8 @@
             vm_config.stdout_lines
             | select('match', '^net1:.*virtio')
             | first
-            | regex_search('virtio=([0-9A-Fa-f:]+)', '\1')
-            | lower
+            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\\1')
+            | upper
           }}
 
     - name: Create configuration directories
@@ -400,6 +400,13 @@
         name: systemd-networkd
         state: restarted
 
+    - name: Wait for internal interface to be created by systemd-networkd
+      ansible.builtin.wait_for:
+        path: /sys/class/net/{{ mwan_internal_iface }}
+        timeout: 10
+      failed_when: false
+      register: internal_iface_wait
+
     - name: Load nf_conntrack module
       ansible.builtin.command:
         cmd: modprobe nf_conntrack
@@ -409,7 +416,9 @@
     - name: Apply sysctl
       ansible.builtin.command:
         cmd: sysctl -p /etc/sysctl.d/99-mwan.conf
-      changed_when: true
+      changed_when: false
+      failed_when: false
+      register: sysctl_result
 
     - name: Reload nftables
       ansible.builtin.systemd:

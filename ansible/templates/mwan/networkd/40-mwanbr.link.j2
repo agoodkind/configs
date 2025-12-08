@@ -3,7 +3,7 @@
 # Matches on MAC address, assigns name eth3
 
 [Match]
-MACAddress={{ mwan_net1_mac }}
+MACAddress={{ mwan_net1_mac | lower }}
 
 [Link]
 Name=enmwanbr0
