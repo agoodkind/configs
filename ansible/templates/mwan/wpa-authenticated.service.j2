@@ -1,0 +1,13 @@
+[Unit]
+Description=Trigger AT&T VLAN bringup after authentication
+After=wpa-authenticated.path
+Requires=wpa-authenticated.path
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl start bringup-att-vlan.service
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
