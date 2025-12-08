@@ -48,7 +48,7 @@
 
 - name: Configure MWAN VM
   hosts: mwan_servers
-  become: true
+  become: false
 
   vars:
     mwan_config_dir: /etc/mwan
