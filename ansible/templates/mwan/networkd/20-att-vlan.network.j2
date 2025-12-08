@@ -2,11 +2,11 @@
 Name={{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
 
 [Network]
-DHCP=ipv4
-DHCPv6=yes
+DHCP=yes
 IPv6AcceptRA=yes
 # Needed for policy routing
-IPForward=yes
+IPv4Forwarding=yes # figure out if needed because AT&T assigns a dhcpv4 address that we then are able to route our static IPv4s through
+IPv6Forwarding=yes
 
 [DHCPv6]
 UseDelegatedPrefix=yes
