@@ -150,7 +150,6 @@
         src: "{{ repo_root }}/ansible/templates/mwan/wpa_supplicant.conf.j2"
         dest: /etc/wpa_supplicant/wpa_supplicant.conf
         mode: '0600'
-      notify: Restart wpa_supplicant
 
     - name: Check for AT&T certificates on Ansible host
       delegate_to: localhost
@@ -171,7 +170,6 @@
         group: root
       when: item.stat.exists
       loop: "{{ local_cert_check.results }}"
-      notify: Restart wpa_supplicant
 
     - name: Check for AT&T certificates on target
       ansible.builtin.stat:
@@ -200,7 +198,6 @@
         src: "{{ repo_root }}/ansible/templates/mwan/wpa_supplicant.service.j2"
         dest: /etc/systemd/system/wpa_supplicant-mwan.service
         mode: '0644'
-      notify: Reload systemd
 
     - name: Enable wpa_supplicant service
       ansible.builtin.systemd:
@@ -219,7 +216,6 @@
         src: "{{ repo_root }}/ansible/templates/mwan/wpa-authenticated.path.j2"
         dest: /etc/systemd/system/wpa-authenticated.path
         mode: '0644'
-      notify: Reload systemd
 
     - name: Enable wpa-authenticated path unit
       ansible.builtin.systemd:
@@ -238,7 +234,6 @@
         src: "{{ repo_root }}/ansible/templates/mwan/bringup-att-vlan.service.j2"
         dest: /etc/systemd/system/bringup-att-vlan.service
         mode: '0644'
-      notify: Reload systemd
 
     - name: Enable AT&T VLAN bringup service
       ansible.builtin.systemd:
@@ -258,25 +253,6 @@
         - 20-webpass.network
         - 30-webpass.link
         - 40-mwanbr.link
-      notify: Restart systemd-networkd
-
-    - name: Block on restarting systemd-networkd to apply new configuration
-      ansible.builtin.meta: flush_handlers
-
-    - name: Wait for AT&T interface to be created by systemd-networkd
-      ansible.builtin.wait_for:
-        path: /sys/class/net/{{ mwan_att_iface }}
-        timeout: 10
-      failed_when: >
-        att_iface_wait.failed is defined and att_iface_wait.failed
-      register: att_iface_wait
-
-    - name: Verify AT&T interface exists
-      ansible.builtin.fail:
-        msg: >
-          AT&T interface {{ mwan_att_iface }} not found after
-          systemd-networkd restart. Check PCI passthrough and iavf driver.
-      when: att_iface_wait.failed is defined and att_iface_wait.failed
 
     - name: Deploy networkd-dispatcher hook for route updates
       ansible.builtin.template:
@@ -316,7 +292,6 @@
         src: "{{ repo_root }}/ansible/templates/mwan/sysctl-mwan.conf.j2"
         dest: /etc/sysctl.d/99-mwan.conf
         mode: '0644'
-      notify: Apply sysctl
 
     - name: Deploy routing tables
       ansible.builtin.template:
@@ -335,7 +310,6 @@
         actual_att_iface: "{{ mwan_att_iface }}"
         actual_webpass_iface: "{{ mwan_webpass_iface }}"
         actual_internal_iface: "{{ mwan_internal_iface }}"
-      notify: Reload nftables
 
     - name: Create systemd override for nftables
       ansible.builtin.file:
@@ -348,7 +322,6 @@
         src: "{{ repo_root }}/ansible/templates/mwan/nftables.service.d-override.conf.j2"
         dest: /etc/systemd/system/nftables.service.d/override.conf
         mode: '0644'
-      notify: Reload systemd
 
     - name: Deploy templated helper scripts
       ansible.builtin.template:
@@ -373,14 +346,113 @@
         src: "{{ repo_root }}/ansible/templates/mwan/mwan-health.service.j2"
         dest: /etc/systemd/system/mwan-health.service
         mode: '0644'
-      notify: Reload systemd
-
-    - name: Flush handlers (apply systemd-networkd config)
-      ansible.builtin.meta: flush_handlers
 
     - name: Wait for WAN interfaces to settle
       ansible.builtin.pause:
         seconds: 5
+
+    - name: Enable services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - wpa_supplicant-mwan
+        - wpa-authenticated.path
+        - bringup-att-vlan
+        - systemd-networkd
+        - networkd-dispatcher
+        - nftables
+        - mwan-health
+
+    - name: Start wpa_supplicant (if certs present)
+      ansible.builtin.systemd:
+        name: wpa_supplicant-mwan
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+
+    - name: Start AT&T VLAN bringup service (if certs present)
+      ansible.builtin.systemd:
+        name: bringup-att-vlan
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+
+    - name: Start wpa-authenticated path unit (if certs present)
+      ansible.builtin.systemd:
+        name: wpa-authenticated.path
+        state: started
+      when: cert_check.results | selectattr('stat.exists') | list | length == 3
+      failed_when: false
+
+    - name: Ensure systemd-networkd is running
+      ansible.builtin.systemd:
+        name: systemd-networkd
+        state: started
+        enabled: true
+
+    - name: Ensure networkd-dispatcher is running
+      ansible.builtin.systemd:
+        name: networkd-dispatcher
+        state: started
+        enabled: true
+
+    - name: Start other services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - nftables
+        - mwan-health
+      failed_when: false
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart systemd-networkd
+      ansible.builtin.systemd:
+        name: systemd-networkd
+        state: restarted
+
+    - name: Load nf_conntrack module
+      ansible.builtin.command:
+        cmd: modprobe nf_conntrack
+      failed_when: false
+      changed_when: false
+
+    - name: Apply sysctl
+      ansible.builtin.command:
+        cmd: sysctl -p /etc/sysctl.d/99-mwan.conf
+      changed_when: true
+
+    - name: Reload nftables
+      ansible.builtin.systemd:
+        name: nftables
+        state: reloaded
+      failed_when: false
+
+    - name: Check health status
+      ansible.builtin.command: /usr/local/bin/health-check.sh --status
+      register: health_status
+      changed_when: false
+      failed_when: false
+
+    - name: Wait for AT&T interface to be created by systemd-networkd
+      ansible.builtin.wait_for:
+        path: /sys/class/net/{{ mwan_att_iface }}
+        timeout: 10
+      failed_when: >
+        att_iface_wait.failed is defined and att_iface_wait.failed
+      register: att_iface_wait
+
+    - name: Verify AT&T interface exists
+      ansible.builtin.fail:
+        msg: >
+          AT&T interface {{ mwan_att_iface }} not found after
+          systemd-networkd restart. Check PCI passthrough and iavf driver.
+      when: att_iface_wait.failed is defined and att_iface_wait.failed
 
     - name: Verify AT&T VLAN interface is up (if certs present)
       ansible.builtin.wait_for:
@@ -467,104 +539,8 @@
             Status: OK - MAC spoofing configured in /etc/network/interfaces
           {% endif %}
 
-    - name: Enable services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        enabled: true
-        daemon_reload: true
-      loop:
-        - wpa_supplicant-mwan
-        - wpa-authenticated.path
-        - bringup-att-vlan
-        - systemd-networkd
-        - networkd-dispatcher
-        - nftables
-        - mwan-health
-
-    - name: Start wpa_supplicant (if certs present)
-      ansible.builtin.systemd:
-        name: wpa_supplicant-mwan
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Start AT&T VLAN bringup service (if certs present)
-      ansible.builtin.systemd:
-        name: bringup-att-vlan
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Start wpa-authenticated path unit (if certs present)
-      ansible.builtin.systemd:
-        name: wpa-authenticated.path
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Ensure systemd-networkd is running
-      ansible.builtin.systemd:
-        name: systemd-networkd
-        state: started
-        enabled: true
-
-    - name: Ensure networkd-dispatcher is running
-      ansible.builtin.systemd:
-        name: networkd-dispatcher
-        state: started
-        enabled: true
-
-    - name: Start other services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        state: started
-      loop:
-        - nftables
-        - mwan-health
-      failed_when: false
-
-    - name: Check health status
-      ansible.builtin.command: /usr/local/bin/health-check.sh --status
-      register: health_status
-      changed_when: false
-      failed_when: false
-
     - name: Display status
       ansible.builtin.debug:
         msg: >-
           {{ health_status.stdout_lines |
           default(['Run /usr/local/bin/health-check.sh --status']) }}
-
-  handlers:
-    - name: Reload systemd
-      ansible.builtin.systemd:
-        daemon_reload: true
-
-    - name: Restart wpa_supplicant
-      ansible.builtin.systemd:
-        name: wpa_supplicant-mwan
-        state: restarted
-
-    - name: Restart systemd-networkd
-      ansible.builtin.systemd:
-        name: systemd-networkd
-        state: restarted
-
-    - name: Load nf_conntrack module
-      ansible.builtin.command:
-        cmd: modprobe nf_conntrack
-      failed_when: false
-      changed_when: false
-
-    - name: Apply sysctl
-      ansible.builtin.command:
-        cmd: sysctl -p /etc/sysctl.d/99-mwan.conf
-      changed_when: true
-
-    - name: Reload nftables
-      ansible.builtin.systemd:
-        name: nftables
-        state: reloaded
-      failed_when: false
-      # nftables will load even if interfaces are DOWN
-      # Rules simply won't match until interfaces come up
