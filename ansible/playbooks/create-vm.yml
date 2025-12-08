@@ -399,11 +399,10 @@
               - "🔑 TEMPORARY CREDENTIALS (will be reset at end):"
               - "  Username: root"
               - "  Password: {{ temp_password }}"
-              - "  VM: {{ hostname }}"
+              - "  VMID: {{ new_vmid }}"
+              - "  Hostname: {{ hostname }}"
               - "  IPv4: {{ vm_static_ipv4 }}/24"
               - "  IPv6: {{ vm_static_ipv6 }}/64"
-              - ""
-              - "⚠️  Password will be randomly reset at the end of the playbook"
 
         - name: Clean up SSH keys temp file
           ansible.builtin.file:
