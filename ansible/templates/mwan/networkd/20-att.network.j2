@@ -10,6 +10,12 @@ Name={{ mwan_att_iface }}
 # Declare VLAN interface - systemd-networkd will create it
 # The VLAN is configured in 21-att-vlan.network
 VLAN={{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
-# No IP configuration on parent interface
-# It's only used for 802.1X authentication via wpa_supplicant
+# Static IP for SFP module access (192.168.1.1)
+Address=192.168.1.2/24
+# Parent interface is primarily used for 802.1X authentication via wpa_supplicant
+
+[Route]
+# Route to SFP module management interface
+Destination=192.168.1.1/32
+Scope=link
 
