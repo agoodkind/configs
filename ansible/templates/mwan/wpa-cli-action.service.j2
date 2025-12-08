@@ -1,0 +1,13 @@
+[Unit]
+Description=WPA CLI Action Script Monitor
+After=wpa_supplicant-mwan.service
+BindsTo=wpa_supplicant-mwan.service
+
+[Service]
+Type=simple
+ExecStart=/sbin/wpa_cli -a /usr/local/bin/wpa-action.sh -B
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
