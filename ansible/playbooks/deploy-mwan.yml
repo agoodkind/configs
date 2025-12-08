@@ -261,17 +261,14 @@
         - 40-mwanbr.link
       notify: Restart systemd-networkd
 
+    - name: Block on restarting systemd-networkd to apply new configuration
+      ansible.builtin.meta: flush_handlers
+
     - name: Deploy networkd-dispatcher hook for route updates
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/50-update-routes.sh.j2"
         dest: /etc/networkd-dispatcher/routable.d/50-update-routes.sh
         mode: '0755'
-
-    - name: Enable systemd-networkd
-      ansible.builtin.systemd:
-        name: systemd-networkd
-        enabled: true
-        daemon_reload: true
 
     - name: Enable networkd-dispatcher
       ansible.builtin.systemd:
@@ -308,8 +305,8 @@
       notify: Apply sysctl
 
     - name: Deploy routing tables
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/etc/iproute2/rt_tables"
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/rt_tables.j2"
         dest: /etc/iproute2/rt_tables
         mode: '0644'
 

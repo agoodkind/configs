@@ -119,6 +119,13 @@ mwan_health_checks:
 #   - "8.8.8.8/32" # Example - Google DNS for testing
 # Add Zoom, Google Meet, WiFi Calling ranges here
 
+# Routing Table IDs
+# Used in /etc/iproute2/rt_tables and systemd-networkd configs
+mwan_rt_tables:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+
 # Email notifications (optional)
 mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
