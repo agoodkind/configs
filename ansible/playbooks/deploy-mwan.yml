@@ -28,7 +28,7 @@
         vm_mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
 
 - name: Setup mwan VM
-  ansible.builtin.import_playbook: deploy-vm.yml
+  ansible.builtin.import_playbook: create-vm.yml
   vars:
     hostname: "{{ hostvars['localhost']['vm_hostname'] }}"
     target_node: vault
