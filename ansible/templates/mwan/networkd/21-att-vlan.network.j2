@@ -21,9 +21,14 @@ IPv6AcceptRA=yes
 IPv4Forwarding=yes 
 IPv6Forwarding=yes
 
+[DHCPv4]
+# DHCPv4 configuration
+
 [DHCPv6]
 UseDelegatedPrefix=yes
 PrefixDelegationHint=::/60
+DUIDType=link-layer-time
+DUIDRawData={{ mwan_webpass_duid_raw_data }}
 
 [IPv6PrefixDelegation]
 RouterLifetimeSec=1800
