@@ -381,6 +381,7 @@
       loop:
         - update-routes.sh
         - health-check.sh
+        - update-npt.sh
 
     - name: Deploy static helper scripts
       ansible.builtin.copy:
@@ -388,7 +389,6 @@
         dest: /usr/local/bin/{{ item }}
         mode: '0755'
       loop:
-        - update-npt.sh
         - test-wan-connectivity.sh
 
     - name: Deploy mwan-health systemd service
