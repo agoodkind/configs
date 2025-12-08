@@ -209,6 +209,13 @@
       delegate_to: ansible.home.goodkind.io
       register: vm_check
       failed_when: false
+  
+    # - name: Set facts if VM already exists
+    #   ansible.builtin.set_fact:
+    #     hostname_fact: "{{ hostname }}"
+    #     vm_created_fact: false
+    #     vm_vmid_fact: "{{ vm_check.vmid }}"
+    #   when: vm_check.vmid is defined
 
     - name: Display VM status
       ansible.builtin.debug:
@@ -718,13 +725,6 @@
                 if ssh_available else '⚠️  SSH not yet available' }}
               - ""
               - "Next: Run deployment playbook to configure services"
-
-    - name: Set facts if VM already exists
-      ansible.builtin.set_fact:
-        hostname_fact: "{{ hostname }}"
-        vm_created_fact: false
-        vm_vmid_fact: "{{ vm_check.vmid }}"
-      when: vm_check.vmid is defined
 
 - name: Prepare newly created VMs
   import_playbook: prep-cts.yml
