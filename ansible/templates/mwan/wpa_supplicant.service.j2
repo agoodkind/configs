@@ -13,9 +13,8 @@ ExecStartPre=/bin/bash -c 'for i in {1..30}; \
     exit 1'
 ExecStartPre=/bin/sleep 2
 ExecStartPre=/sbin/ip link set {{ mwan_att_iface }} up
-ExecStart=/sbin/wpa_supplicant -Dwired \
+ExecStart=/sbin/wpa_supplicant -Dwired -i {{ mwan_att_iface }} -dd \
     -c /etc/wpa_supplicant/wpa_supplicant.conf \
-    -i {{ mwan_att_iface }} \
     -P /run/wpa_supplicant-mwan.pid
 Restart=always
 RestartSec=5
