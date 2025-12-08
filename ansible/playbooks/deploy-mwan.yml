@@ -103,6 +103,7 @@
           - vlan
           - bridge-utils
           - networkd-dispatcher
+          - telnet
         state: present
 
     - name: Get actual VMID from Proxmox
@@ -518,8 +519,37 @@
       when: cert_check.results | selectattr('stat.exists') | list | length == 3
       failed_when: false
 
+    - name: Get service statuses
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+      register: service_statuses
+      loop:
+        - bringup-att-vlan
+        - systemd-networkd
+        - networkd-dispatcher
+        - nftables
+        - mwan-health
+        - wpa_supplicant-mwan
+        - wpa-cli-action
+        - wpa-authenticated.path
+      changed_when: false
+      failed_when: false
+
     - name: Display status
       ansible.builtin.debug:
-        msg: >-
-          {{ health_status.stdout_lines |
-          default(['Run /usr/local/bin/health-check.sh --status']) }}
+        msg: |
+
+          ╔══════════════════════════════════════════════════════════════╗
+          ║                    Service Status Summary                    ║
+          ╠══════════════════════════════════════════════════════════════╣
+          ║ Service                      │ ActiveState │ SubState      ║
+          ╠══════════════════════════════════════════════════════════════╣
+          {% for result in service_statuses.results %}
+          ║ {{ "%-28s" | format(result.item) }} │ {{ "%-11s" | format(result.status.ActiveState | default('unknown')) }} │ {{ "%-13s" | format(result.status.SubState | default('unknown')) }} ║
+          {% endfor %}
+          ╚══════════════════════════════════════════════════════════════╝
+
+          Legend:
+            ActiveState: active = running, inactive = stopped, 
+                         failed = error, activating = starting
+            SubState:    running, dead, exited, etc. 
