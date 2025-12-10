@@ -13,11 +13,11 @@ net.ipv6.conf.all.accept_ra = 0
 net.ipv6.conf.default.accept_ra = 0
 
 # Disable SLAAC on Webpass interface (prevents unwanted autoconf addresses)
-net.ipv6.conf.{{ interface_mapping.eth2 }}.accept_ra = 0
-net.ipv6.conf.{{ interface_mapping.eth2 }}.autoconf = 0
+net.ipv6.conf.ens17.accept_ra = 0
+net.ipv6.conf.ens17.autoconf = 0
 
 # Enable router advertisements on internal interface (to OPNsense)
-net.ipv6.conf.{{ interface_mapping.eth3 }}.accept_ra = 2
+net.ipv6.conf.ens19.accept_ra = 2
 
 # Increase connection tracking table size for multi-WAN
 # Note: nf_conntrack module must be loaded first (done in handler)
@@ -28,7 +28,7 @@ net.ipv4.conf.all.rp_filter = 2
 net.ipv4.conf.default.rp_filter = 2
 
 # Disable source validation on Webpass WAN (needed for policy routing)
-net.ipv4.conf.{{ interface_mapping.eth2 }}.rp_filter = 0
+net.ipv4.conf.ens17.rp_filter = 0
 # Note: AT&T VLAN rp_filter set in /etc/network/interfaces post-up
 
 # IPv6 specific optimizations

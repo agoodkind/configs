@@ -5,8 +5,8 @@
 
 set -euo pipefail
 
-ATT_IFACE="{{ interface_mapping.eth1 }}"
-VLAN_IFACE="{{ interface_mapping.eth1 }}.{{ mwan_att_vlan_id }}"
+ATT_IFACE="ens16"
+VLAN_IFACE="ens16.{{ mwan_att_vlan_id }}"
 WPA_SERVICE="wpa_supplicant-mwan"
 MAX_WAIT=60  # Maximum seconds to wait for authentication
 CHECK_INTERVAL=2  # Check every 2 seconds
