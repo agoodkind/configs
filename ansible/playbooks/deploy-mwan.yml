@@ -212,6 +212,13 @@
       when: not item.stat.exists
       loop: "{{ cert_check.results }}"
 
+    - name: Deploy OpenSSL config for legacy provider support
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/openssl.cnf.j2"
+        dest: /etc/wpa_supplicant/openssl.cnf
+        mode: '0644'
+      notify: Restart wpa_supplicant
+
     - name: Deploy wpa_supplicant systemd service
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/wpa_supplicant.service.j2"
