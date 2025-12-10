@@ -30,7 +30,7 @@
 - name: Setup mwan VM
   ansible.builtin.import_playbook: setup-debian-vm.yml
   vars:
-    hostname: mwanold.home.goodkind.io
+    hostname: "{{ hostvars['localhost']['vm_hostname'] }}"
     target_node: vault
     disk_size: "16"
     memory: "2048"
