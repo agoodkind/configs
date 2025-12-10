@@ -2,7 +2,7 @@
 # MWAN (Multi-WAN) Configuration Variables
 
 # VM hostname
-mwan_hostname: mwan.home.goodkind.io
+mwan_hostname: mwanold.home.goodkind.io
 # Management interface uses DHCP - IP assigned by KEA and registered in DNS automatically
 # mwan_mgmt_ip_config can be overridden for static IP if needed:
 # mwan_mgmt_ip_config: "ip=10.250.0.134/24,gw=10.250.0.1,ip6=3d06:bad:b01::86/64,gw6=3d06:bad:b01::1"
@@ -31,7 +31,7 @@ mwan_internal_iface: "{{ detected_internal_iface | default('eth3') }}"
 # AT&T 802.1X authentication (via X710 VF passthrough)
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
-mwan_att_mac: "3c:8b:cd:66:45:d6"  # MAC for DHCP (different from EAP identity)
+mwan_att_mac: "3c:8b:cd:66:45:d6" # MAC for DHCP (different from EAP identity)
 # Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
 # Extract from OPNsense:
 #   scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
