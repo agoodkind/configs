@@ -8,11 +8,11 @@
 
 flush ruleset
 
-# Define variables - use actual kernel interface names
-define MGMT_IFACE = "{{ actual_mgmt_iface | default(interface_mapping.eth0) }}"
-define ATT_IFACE = "{{ actual_att_iface | default(interface_mapping.eth1) }}.{{ mwan_att_vlan_id }}"
-define WEBPASS_IFACE = "{{ actual_webpass_iface | default(interface_mapping.eth2) }}"
-define INTERNAL_IFACE = "{{ actual_internal_iface | default(interface_mapping.eth3) }}"
+# Define variables - hardcoded interface names
+define MGMT_IFACE = "eth0"
+define ATT_IFACE = "ens16.{{ mwan_att_vlan_id }}"
+define WEBPASS_IFACE = "ens17"
+define INTERNAL_IFACE = "ens19"
 {% if mwan_health_checks.monkeybrains.enabled | default(false) %}
 define MB_IFACE = "{{ mwan_monkeybrains_iface }}"
 {% endif %}
