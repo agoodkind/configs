@@ -545,11 +545,13 @@
           ║ Service                      │ ActiveState │ SubState      ║
           ╠══════════════════════════════════════════════════════════════╣
           {% for result in service_statuses.results %}
-          ║ {{ "%-28s" | format(result.item) }} │ {{ "%-11s" | format(result.status.ActiveState | default('unknown')) }} │ {{ "%-13s" | format(result.status.SubState | default('unknown')) }} ║
+          ║ {{ ("%-28s" | format(result.item)) ~ " │ " ~
+            ("%-11s" | format(result.status.ActiveState | default('unknown'))) ~ " │ " ~
+            ("%-13s" | format(result.status.SubState | default('unknown'))) }} ║
           {% endfor %}
           ╚══════════════════════════════════════════════════════════════╝
 
           Legend:
-            ActiveState: active = running, inactive = stopped, 
+            ActiveState: active = running, inactive = stopped,
                          failed = error, activating = starting
-            SubState:    running, dead, exited, etc. 
+            SubState:    running, dead, exited, etc.
