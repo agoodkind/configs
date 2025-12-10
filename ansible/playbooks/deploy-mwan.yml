@@ -16,6 +16,10 @@
   vars_files:
     - ../inventory/group_vars/mwan_servers.yml
   tasks:
+    - name: Store mwan hostname for later plays
+      ansible.builtin.set_fact:
+        mwan_hostname_fact: "{{ mwan_hostname }}"
+    
     - name: Set variables for VM creation
       ansible.builtin.set_fact:
         vm_hostname: "{{ mwan_hostname }}"
@@ -26,6 +30,59 @@
         vm_dns_domain: "{{ mwan_dns_domain }}"
         vm_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
+
+    - name: Get actual VMID from Proxmox
+      delegate_to: vault.home.goodkind.io
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          qm list | awk '$2 == "{{ mwan_hostname }}" {print $1}'
+        executable: /bin/bash
+      register: vmid_lookup
+      changed_when: false
+      failed_when: vmid_lookup.stdout | length == 0
+
+    - name: Set actual VMID
+      ansible.builtin.set_fact:
+        actual_vmid: "{{ vmid_lookup.stdout | trim }}"
+        mwan_vmid: "{{ vmid_lookup.stdout | trim }}"
+
+    - name: Get VM IP address from Proxmox guest agent
+      delegate_to: vault.home.goodkind.io
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          qm guest cmd {{ actual_vmid }} network-get-interfaces 2>/dev/null | \
+            jq -r '.[] | select(.name=="eth0") | 
+                   .["ip-addresses"][] | select(.["ip-address-type"]=="ipv4") | 
+                   .["ip-address"]' | head -1 || echo ""
+        executable: /bin/bash
+      register: vm_ip_lookup
+      changed_when: false
+      failed_when: false
+
+    - name: Get VM IP from static config if guest agent failed
+      delegate_to: vault.home.goodkind.io
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          qm config {{ actual_vmid }} | grep -oP 'ipconfig0=.*?ip=\K[^,]+' | head -1 || echo ""
+        executable: /bin/bash
+      register: vm_ip_static
+      when: vm_ip_lookup.stdout | trim | length == 0
+      changed_when: false
+      failed_when: false
+
+    - name: Set mwan IP address
+      ansible.builtin.set_fact:
+        mwan_ip: "{{ (vm_ip_lookup.stdout | trim) | default(vm_ip_static.stdout | trim | default('', true), true) }}"
+
+    - name: Add mwan host dynamically
+      ansible.builtin.add_host:
+        name: "{{ mwan_hostname }}"
+        groups: mwan_servers
+        ansible_host: "{{ mwan_ip | default(mwan_hostname, true) }}"
+        ansible_user: root
 
 - name: Setup mwan VM
   ansible.builtin.import_playbook: setup-debian-vm.yml
@@ -51,7 +108,7 @@
     enable_dns_registration: false  # MWAN handles DNS via interfaces config
 
 - name: Configure MWAN VM
-  hosts: "{{ mwan_hostname }}"
+  hosts: mwan_servers
   become: true
 
   vars:
@@ -105,7 +162,7 @@
       ansible.builtin.shell:
         cmd: |
           set -o pipefail
-          qm list | awk '$2 == "{{ mwan_hostname }}" {print $1}'
+          qm list | awk '$2 == "{{ hostvars['localhost']['mwan_hostname_fact'] }}" {print $1}'
         executable: /bin/bash
       register: vmid_lookup
       changed_when: false
@@ -115,43 +172,6 @@
       ansible.builtin.set_fact:
         actual_vmid: "{{ vmid_lookup.stdout | trim }}"
         mwan_vmid: "{{ vmid_lookup.stdout | trim }}"  # Override group_vars
-
-    - name: Get VM IP address from Proxmox guest agent
-      delegate_to: vault.home.goodkind.io
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          qm guest cmd {{ actual_vmid }} network-get-interfaces 2>/dev/null | \
-            jq -r '.[] | select(.name=="eth0") | 
-                   .["ip-addresses"][] | select(.["ip-address-type"]=="ipv4") | 
-                   .["ip-address"]' | head -1 || echo ""
-        executable: /bin/bash
-      register: vm_ip_lookup
-      changed_when: false
-      failed_when: false
-
-    - name: Get VM IP from static config if guest agent failed
-      delegate_to: vault.home.goodkind.io
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          qm config {{ actual_vmid }} | grep -oP 'ipconfig0=.*?ip=\K[^,]+' | head -1 || echo ""
-        executable: /bin/bash
-      register: vm_ip_static
-      when: vm_ip_lookup.stdout | trim | length == 0
-      changed_when: false
-      failed_when: false
-
-    - name: Set mwan IP address
-      ansible.builtin.set_fact:
-        mwan_ip: "{{ (vm_ip_lookup.stdout | trim) | default(vm_ip_static.stdout | trim | default('', true), true) }}"
-
-    - name: Add mwan host dynamically
-      ansible.builtin.add_host:
-        name: "{{ mwan_hostname }}"
-        groups: mwan_servers
-        ansible_host: "{{ mwan_ip | default(mwan_hostname, true) }}"
-        ansible_user: root
 
     - name: Create configuration directories
       ansible.builtin.file:
