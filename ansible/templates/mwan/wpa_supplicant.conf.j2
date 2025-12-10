@@ -17,7 +17,7 @@ network={
     ca_cert="/etc/wpa_supplicant/ca_cert.pem"
     client_cert="/etc/wpa_supplicant/client_cert.pem"
     private_key="/etc/wpa_supplicant/private_key.pem"
-    phase1="allow_canned_success=1 allow_unsafe_renegotiation=1"
+    phase1="allow_canned_success=1 allow_unsafe_renegotiation=1 tls_disable_tlsv1_0=0 tls_disable_tlsv1_1=0"
     eapol_flags=0
 }
 

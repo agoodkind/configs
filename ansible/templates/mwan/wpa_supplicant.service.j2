@@ -6,6 +6,7 @@ Before=network-online.target
 
 [Service]
 Type=simple
+Environment="OPENSSL_CONF=/etc/wpa_supplicant/openssl.cnf"
 ExecStartPre=/bin/bash -c 'for i in {1..30}; \
     do if ip link show {{ mwan_att_iface }} >/dev/null 2>&1; then exit 0; fi; \
     sleep 1; done; \
