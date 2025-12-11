@@ -108,6 +108,7 @@ run_curl6() {
     done
 }
 
+{% raw %}
 run_lb4() {
     for i in $(seq 1 "$LB_ITER"); do
         tgt="${CURL_TARGETS[$(( (i-1) % ${#CURL_TARGETS[@]} ))]}"
@@ -145,6 +146,7 @@ run_lb6_ifaces() {
         echo
     done
 }
+{% endraw %}
 
 show_policy() {
     echo "== ip rule =="
