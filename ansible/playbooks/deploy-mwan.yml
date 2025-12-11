@@ -582,23 +582,12 @@
     - name: Display status
       ansible.builtin.debug:
         msg: |
-
-          ╔══════════════════════════════════════════════════════════════╗
-          ║                    Service Status Summary                    ║
-          ╠══════════════════════════════════════════════════════════════╣
-          ║ Service                      │ ActiveState │ SubState      ║
-          ╠══════════════════════════════════════════════════════════════╣
+          Service status summary:
           {% for result in service_statuses.results %}
-          ║ {{ ("%-28s" | format(result.item)) ~ " │ " ~
-            ("%-11s" | format(result.status.ActiveState | default('unknown'))) ~ " │ " ~
-            ("%-13s" | format(result.status.SubState | default('unknown'))) }} ║
+          - {{ result.item }}:
+              state={{ result.status.ActiveState | default('unknown') }},
+              sub={{ result.status.SubState | default('unknown') }}
           {% endfor %}
-          ╚══════════════════════════════════════════════════════════════╝
-
-          Legend:
-            ActiveState: active = running, inactive = stopped,
-                         failed = error, activating = starting
-            SubState:    running, dead, exited, etc.
 
   handlers:
     - name: Restart wpa_supplicant
