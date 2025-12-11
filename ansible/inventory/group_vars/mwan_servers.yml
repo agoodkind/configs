@@ -48,6 +48,8 @@ mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 # Raw DUID data (without leading 00:01 type bytes) for systemd-networkd
 mwan_webpass_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
+mwan_att_duid: "00:02:00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
+mwan_att_duid_raw_data: "00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
 mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
 
 # Webpass static IPv4 (Google Fiber)

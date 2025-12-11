@@ -125,23 +125,6 @@ systemctl start x710-vf-setup.service
 - **Single VM**: Simpler architecture - all WAN logic in one place
 - **Cloud-init**: SSH keys auto-deployed, no manual bootstrap needed
 
-## Configuration Files
-
-### mwan VM
-
-File | Purpose
------|--------
-/etc/network/interfaces | PCI passthrough devices + VLAN 3242 config
-/etc/wpa_supplicant/wpa_supplicant.conf | AT&T 802.1X authentication
-/etc/dhcpcd.conf | DHCPv4/v6 + Prefix Delegation with DUID
-/etc/dhcpcd.exit-hook | Dynamic prefix handling and NPT updates
-/etc/nftables.conf | NAT, NPT, connection marking, and filtering
-/etc/sysctl.d/99-mwan.conf | Kernel parameters (generated from template with interface names)
-/etc/iproute2/rt_tables | Custom routing tables (att, webpass, monkeybrains)
-/usr/local/bin/update-npt.sh | Dynamic NPT rule updates
-/usr/local/bin/update-routes.sh | Policy routing table updates
-/usr/local/bin/health-check.sh | WAN health monitoring daemon
-
 ## Post-Deployment
 
 ### Verify Services

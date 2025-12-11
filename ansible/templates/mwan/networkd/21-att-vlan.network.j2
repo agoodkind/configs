@@ -27,8 +27,9 @@ IPv6Forwarding=yes
 [DHCPv6]
 UseDelegatedPrefix=yes
 PrefixDelegationHint=::/60
-DUIDType=link-layer-time
-DUIDRawData={{ mwan_webpass_duid_raw_data }}
+DUIDType=vendor
+DUIDRawData={{ mwan_att_duid_raw_data }}
+WithoutRA=solicit
 
 [IPv6PrefixDelegation]
 RouterLifetimeSec=1800
