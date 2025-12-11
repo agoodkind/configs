@@ -580,3 +580,10 @@
             ActiveState: active = running, inactive = stopped,
                          failed = error, activating = starting
             SubState:    running, dead, exited, etc.
+
+  handlers:
+    - name: Restart wpa_supplicant
+      ansible.builtin.systemd:
+        name: wpa_supplicant-mwan
+        state: restarted
+        daemon_reload: true
