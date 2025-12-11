@@ -22,7 +22,7 @@ log() {
 }
 
 #region agent log
-LOG_PATH="/Users/agoodkind/Sites/scripts/.cursor/debug.log"
+LOG_PATH="/var/log/mwan-debug.log"
 log_json() {
     local hid="$1"; shift
     local loc="$1"; shift
@@ -46,12 +46,25 @@ log "DHCPv6 proto dhcp routes:\n$ROUTE_OUTPUT"
 log_json "H1" "55-update-npt.sh:ROUTES" "dhcp_routes" \
     "{\"routes\":\"$ROUTE_OUTPUT\"}"
 
-# Try to extract prefixes by iface name from journal if routes lack dev info
+# Try to extract prefixes
+STATE_DIR="/var/lib/mwan"
+mkdir -p "$STATE_DIR"
+STATE_FILE="$STATE_DIR/pd-$IFACE"
+
+# 1) proto dhcp routes
 PREFIXES=$(printf '%s\n' "$ROUTE_OUTPUT" | awk '/\\//{print $1}' | grep '/')
+
+# 2) networkctl status (delegated prefix)
 if [ -z "$PREFIXES" ]; then
-    PREFIXES=$(journalctl -u systemd-networkd -b -n 200 | \
-        awk -v ifc="$IFACE" '$0 ~ ifc && /delegated prefix/ {print $NF}')
+    PREFIXES=$(networkctl status "$IFACE" --no-pager 2>/dev/null | \
+        sed -n 's/.*delegated prefix \\([^ ]*\\).*/\\1/p')
 fi
+
+# 3) state file fallback
+if [ -z "$PREFIXES" ] && [ -f "$STATE_FILE" ]; then
+    PREFIXES=$(cat "$STATE_FILE")
+fi
+
 log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" \
     "{\"prefixes\":\"$PREFIXES\"}"
 
@@ -59,6 +72,9 @@ if [ -z "$PREFIXES" ]; then
     log "No DHCPv6-PD prefix found on $IFACE; skipping NPT update"
     exit 0
 fi
+
+# Persist latest prefixes
+echo "$PREFIXES" > "$STATE_FILE"
 
 log "Found prefixes: $PREFIXES"
 log_json "H3" "55-update-npt.sh:FOUND" "prefixes_nonempty" \
