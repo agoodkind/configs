@@ -333,6 +333,16 @@
         - 40-mwanbr.link
         - 40-mwanbr.network
 
+    - name: Reload udev rules
+      ansible.builtin.command: udevadm control --reload
+      changed_when: false
+      failed_when: false
+
+    - name: Trigger net udev events
+      ansible.builtin.command: udevadm trigger --action=add --subsystem-match=net
+      changed_when: false
+      failed_when: false
+
     - name: Deploy networkd-dispatcher hook for route updates
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/50-update-routes.sh.j2"
@@ -447,9 +457,6 @@
         dest: /etc/systemd/system/mwan-health.service
         mode: '0644'
 
-    - name: Wait for WAN interfaces to settle
-      ansible.builtin.pause:
-        seconds: 5
 
     - name: Enable services
       ansible.builtin.systemd:
@@ -466,12 +473,12 @@
         - wpa-cli-action
         - wpa-authenticated.path
 
-    # - name: Reboot VM
-    #   ansible.builtin.reboot:
-    #     msg: "Rebooting VM to apply network configuration"
-    #     connect_timeout: 5
-    #     pre_reboot_delay: 0
-    #     post_reboot_delay: 0
+    - name: Reboot VM
+      ansible.builtin.reboot:
+        msg: "Rebooting VM to apply network configuration"
+        connect_timeout: 5
+        pre_reboot_delay: 0
+        post_reboot_delay: 0
 
     - name: Wait for VM to be reachable via SSH
       ansible.builtin.wait_for_connection:
@@ -503,7 +510,7 @@
     - name: Wait for internal interface to be created by systemd-networkd
       ansible.builtin.wait_for:
         path: /sys/class/net/{{ mwan_internal_iface }}
-        timeout: 10
+        timeout: 60
       failed_when: false
       register: internal_iface_wait
 
@@ -534,21 +541,6 @@
       register: health_status
       changed_when: false
       failed_when: false
-
-    - name: Wait for AT&T interface to be created by systemd-networkd
-      ansible.builtin.wait_for:
-        path: /sys/class/net/{{ mwan_att_iface }}
-        timeout: 10
-      failed_when: >
-        att_iface_wait.failed is defined and att_iface_wait.failed
-      register: att_iface_wait
-
-    - name: Verify AT&T interface exists
-      ansible.builtin.fail:
-        msg: >
-          AT&T interface {{ mwan_att_iface }} not found after
-          systemd-networkd restart. Check PCI passthrough and iavf driver.
-      when: att_iface_wait.failed is defined and att_iface_wait.failed
 
     - name: Start wpa_supplicant (if certs present)
       ansible.builtin.systemd:
