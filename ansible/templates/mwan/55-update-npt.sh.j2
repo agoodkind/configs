@@ -21,15 +21,53 @@ log() {
     echo "[update-npt] $*"
 }
 
-PREFIXES=$(ip -6 route show proto dhcp dev "$IFACE" | awk '{print $1}' | grep '/')
+#region agent log
+LOG_PATH="/Users/agoodkind/Sites/scripts/.cursor/debug.log"
+log_json() {
+    local hid="$1"; shift
+    local loc="$1"; shift
+    local msg="$1"; shift
+    local data="$1"; shift
+    printf '{"sessionId":"debug-session","runId":"run1",' \
+           '"hypothesisId":"%s","location":"%s","message":"%s",' \
+           '"data":%s,"timestamp":%s}\n' \
+           "$hid" "$loc" "$msg" "$data" "$(date +%s%3N)" \
+           >> "$LOG_PATH"
+}
+#endregion
+
+log "Event iface=$IFACE state=$STATE"
+log_json "H1" "55-update-npt.sh:EVENT" "hook_event" \
+    "{\"iface\":\"$IFACE\",\"state\":\"$STATE\"}"
+
+# Capture DHCPv6-PD routes (systemd installs PD routes as proto dhcp, dev lo)
+ROUTE_OUTPUT=$(ip -6 route show proto dhcp)
+log "DHCPv6 proto dhcp routes:\n$ROUTE_OUTPUT"
+log_json "H1" "55-update-npt.sh:ROUTES" "dhcp_routes" \
+    "{\"routes\":\"$ROUTE_OUTPUT\"}"
+
+# Try to extract prefixes by iface name from journal if routes lack dev info
+PREFIXES=$(printf '%s\n' "$ROUTE_OUTPUT" | awk '/\\//{print $1}' | grep '/')
+if [ -z "$PREFIXES" ]; then
+    PREFIXES=$(journalctl -u systemd-networkd -b -n 200 | \
+        awk -v ifc="$IFACE" '$0 ~ ifc && /delegated prefix/ {print $NF}')
+fi
+log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" \
+    "{\"prefixes\":\"$PREFIXES\"}"
 
 if [ -z "$PREFIXES" ]; then
     log "No DHCPv6-PD prefix found on $IFACE; skipping NPT update"
     exit 0
 fi
 
+log "Found prefixes: $PREFIXES"
+log_json "H3" "55-update-npt.sh:FOUND" "prefixes_nonempty" \
+    "{\"prefixes\":\"$PREFIXES\"}"
+
 for prefix in $PREFIXES; do
     log "Updating NPT for $IFACE with prefix $prefix"
+    log_json "H4" "55-update-npt.sh:CALL" "calling_update_npt" \
+        "{\"iface\":\"$IFACE\",\"prefix\":\"$prefix\"}"
     /usr/local/bin/update-npt.sh "$IFACE" "$prefix" || \
         log "NPT update failed for $IFACE prefix $prefix"
 done
