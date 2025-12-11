@@ -26,13 +26,22 @@ if [ -n "$WEBPASS_IFACE" ]; then
     WEBPASS_GW4="$(ip -4 route show dev "$WEBPASS_IFACE" | grep default | awk '{print $3}' | head -1)"
 fi
 
-# Get IPv6 gateways
+# Get IPv6 gateways (parse link-local via field, ignore nhid)
+parse_gw6() {
+    ip -6 route show dev "$1" default 2>/dev/null | \
+        awk '{
+            for (i=1;i<=NF;i++) {
+                if ($i=="via" && (i+1)<=NF) {print $(i+1); exit}
+            }
+        }'
+}
+
 if [ -n "$ATT_IFACE" ]; then
-    ATT_GW6="$(ip -6 route show dev "$ATT_IFACE" | grep default | awk '{print $3}' | head -1)"
+    ATT_GW6="$(parse_gw6 "$ATT_IFACE")"
 fi
 
 if [ -n "$WEBPASS_IFACE" ]; then
-    WEBPASS_GW6="$(ip -6 route show dev "$WEBPASS_IFACE" | grep default | awk '{print $3}' | head -1)"
+    WEBPASS_GW6="$(parse_gw6 "$WEBPASS_IFACE")"
 fi
 
 log "AT&T: $ATT_IFACE (v6: $ATT_GW6, v4: $ATT_GW4)"
