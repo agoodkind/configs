@@ -357,6 +357,12 @@
         dest: /etc/sysctl.d/99-mwan.conf
         mode: '0644'
 
+    - name: Deploy quiet console sysctl config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/99-quiet-console.conf.j2"
+        dest: /etc/sysctl.d/99-quiet-console.conf
+        mode: '0644'
+
     - name: Deploy routing tables
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/mwan/rt_tables.j2"
@@ -507,9 +513,12 @@
       failed_when: false
       changed_when: false
 
-    - name: Apply sysctl
+    - name: Apply sysctl configs
       ansible.builtin.command:
-        cmd: sysctl -p /etc/sysctl.d/99-mwan.conf
+        cmd: sysctl -p {{ item }}
+      loop:
+        - /etc/sysctl.d/99-mwan.conf
+        - /etc/sysctl.d/99-quiet-console.conf
       changed_when: false
       failed_when: false
       register: sysctl_result

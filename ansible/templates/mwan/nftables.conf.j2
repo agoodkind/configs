@@ -52,8 +52,8 @@ table inet filter {
         iif $MB_IFACE udp sport 547 udp dport 546 accept
 {% endif %}
         
-        # Log dropped packets
-        log prefix "nftables input drop: " drop
+        # Log dropped packets (rate limited)
+        limit rate 1/second log prefix "nftables input drop: " drop
     }
     
     chain forward {
@@ -76,8 +76,8 @@ table inet filter {
 {% endif %}
         } oif $INTERNAL_IFACE accept
         
-        # Log dropped packets
-        log prefix "nftables forward drop: " drop
+        # Log dropped packets (rate limited)
+        limit rate 1/second log prefix "nftables forward drop: " drop
     }
     
     chain output {
