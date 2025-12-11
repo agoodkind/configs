@@ -1,0 +1,11 @@
+ [Unit]
+ Description=Rebuild MWAN policy routing tables at boot
+ After=network-online.target systemd-networkd.service networkd-dispatcher.service
+ Wants=network-online.target
+
+ [Service]
+ Type=oneshot
+ ExecStart=/usr/local/bin/update-routes.sh
+
+ [Install]
+ WantedBy=multi-user.target
