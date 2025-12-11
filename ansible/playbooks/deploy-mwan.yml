@@ -409,6 +409,12 @@
         - health-check.sh
         - update-npt.sh
 
+    - name: Deploy mwan debug helper (single entrypoint)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/mwan/mwan-debug.sh.j2"
+        dest: /usr/local/bin/mwan
+        mode: '0755'
+
     - name: Deploy static helper scripts
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/usr/local/bin/{{ item }}"
