@@ -67,15 +67,12 @@ mwan_internal_ipv6: "3d06:bad:b01:fe::1/64"
 # Keep LAN /64 on the bridge, but NPT the broader /60
 mwan_internal_prefix: "3d06:bad:b01::/60"
 
-# Explicit NPT targets (lower /60 from each PD)
+# NPT targets: lower /60 from each PD
+# The ::1 address from each PD is added to WAN interfaces and used for:
+# - SNAT of fe::1 and fe::2 (single /128 translation)
+# - Source for NPT'd traffic from broader /60
 mwan_npt_att_prefix: "2600:1700:2f71:c80::/60"
 mwan_npt_webpass_prefix: "2604:5500:c271:be00::/60"
-
-# Interface GUAs (non-PD) for WAN masquerade
-# Note: masquerade auto-selects interface's primary address
-# Webpass uses SLAAC address (not the /128 DHCPv6)
-mwan_att_wan_ipv6: "2001:506:72f7:108c::1"
-mwan_webpass_wan_ipv6: "2604:5500:c271:8000:2e2:69ff:fe66:8b5a"
 
 # Static IP mappings (1:1 NAT)
 mwan_static_mappings:
