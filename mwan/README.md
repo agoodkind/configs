@@ -170,6 +170,59 @@ For hosts using `3d06:bad:b01::/60`, repeated *new* outbound connections should 
 
 Each individual TCP session stays pinned to the chosen WAN for the duration (session affinity via conntrack mark restore), while new sessions can be distributed 50/50.
 
+### Nuances / gotchas (read this first when debugging IPv6)
+
+- **OPNsense WAN is link-local-only (by design)**:
+  - OPNsense has only `fe80::/64` on its WAN interface toward MWAN.
+  - Any MWAN routes “back toward LAN” must use the **OPNsense WAN link-local as next-hop**.
+
+- **The internal `/60` is not on-link from MWAN’s perspective**:
+  - If MWAN has `3d06:bad:b01::/60 dev enmwanbr0` in table 100/200, MWAN will attempt neighbor discovery for each internal host on the OPNsense↔MWAN link.
+  - This commonly shows up as: `curl -6` sometimes works but `ping -6` fails (ICMPv6 echo replies are stateless and can take a path that does not reliably re-use conntrack marks).
+  - Correct shape is:
+    - `3d06:bad:b01::/60 via <opnsense_wan_linklocal> dev enmwanbr0` in **table 100**, **table 200**, and **main**.
+
+- **IPv6 default routes may be multipath**:
+  - When both WANs are up, MWAN can have a multipath default (`default nexthop via … dev …`).
+  - Any scripts that “discover” a WAN gateway must handle both the single-path and multipath formats.
+
+- **IPv6 NPT rules are programmed at runtime**:
+  - `nftables.conf` contains *empty* `table ip6 nat { prerouting/postrouting }` chains.
+  - `update-npt.sh` (triggered by `55-update-npt.sh`) adds the actual NPT rules and assigns PD `::1/128` to each WAN.
+  - If the nftables ruleset is flushed/reloaded after interfaces are already “routable”, NPT rules may disappear until `update-npt.sh` is run again.
+    - Quick recovery: run `/usr/local/bin/update-npt.sh enatt0.3242 <prefix>` and `/usr/local/bin/update-npt.sh enwebpass0 <prefix>`.
+
+### Nuances / gotchas (read this first when debugging IPv4 load balancing)
+
+- **Do not override IPv4 fwmarks in `inet mangle prerouting` for `10.250.250.2-10.250.250.6`**:
+  - IPv4 load balancing is driven by the per-flow random fwmark assignment for *new* connections.
+  - If you set `meta mark` based only on `ip saddr 10.250.250.x`, you will pin that host to a single WAN and `watch curl -4 ifconfig.co` will stop alternating.
+
+#### Quick IPv6 sanity checks
+
+On MWAN:
+
+```bash
+# Policy routing tables should send the internal /60 back to OPNsense (via link-local)
+ip -6 route show table 100
+ip -6 route show table 200
+ip -6 route show | grep -F '3d06:bad:b01::/60'
+
+# Confirm fwmark policy rules exist
+ip -6 rule show
+
+# Confirm NPT rules exist for both WANs
+nft -a list chain ip6 nat postrouting
+nft -a list chain ip6 nat prerouting
+```
+
+On OPNsense:
+
+```bash
+# Confirm OPNsense can reach MWAN via link-local (this should always work)
+ping -6 <mwan_internal_linklocal>%<wan_if>
+```
+
 ## IPv4 (OPNsense NATs downstream → MWAN load-balances + maps to public /29s)
 
 For IPv4, **OPNsense only “sees” the MWAN internal link** (`10.250.250.0/29`). OPNsense is responsible for NATing all downstream RFC1918 networks (e.g. VLAN100/VLAN200) into that internal /29. MWAN then:

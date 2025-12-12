@@ -91,7 +91,7 @@ table ip nat {
         type nat hook prerouting priority dstnat; policy accept;
         
         # Mark new connections for load balancing (fwmark)
-        ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        iif $INTERNAL_IFACE ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
     }
     
     chain postrouting {
@@ -137,16 +137,8 @@ table inet mangle {
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
         
-        # Mark traffic from static 1:1 NAT IPs to use specific WAN
-        # AT&T static IPs (mark 1 = use AT&T WAN)
-{% for mapping in mwan_static_mappings.att %}
-        ip saddr {{ mapping.internal }} meta mark set 1
-{% endfor %}
-        
-        # Webpass static IPs (mark 2 = use Webpass WAN)
-{% for mapping in mwan_static_mappings.webpass %}
-        ip saddr {{ mapping.internal }} meta mark set 2
-{% endfor %}
+        # NOTE: IPv4 load balancing is driven by the per-flow random mark in `table ip nat prerouting`.
+        # Do NOT override marks for 10.250.250.2-10.250.250.6 here, or IPv4 will pin to one WAN.
         
         # Pin latency-sensitive traffic to AT&T (mark 1)
         # Failover: If AT&T down, update-routes.sh removes the fwmark rule,
