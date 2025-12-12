@@ -112,11 +112,6 @@ table ip nat {
         
         # Default SNAT for other LAN traffic via Webpass (mark 2)
         oif $WEBPASS_IFACE meta mark 2 ip saddr $INTERNAL_NET masquerade
-        
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
-        # Monkeybrains SNAT (mark 3 or failover)
-        oif $MB_IFACE ip saddr $INTERNAL_NET masquerade
-{% endif %}
     }
 }
 
