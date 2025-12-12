@@ -38,13 +38,9 @@ done
 case "$WAN_IFACE" in
     "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}")
         TARGET_PREFIX="{{ mwan_npt_att_prefix }}"
-        WAN_GUA="{{ mwan_att_wan_ipv6 }}"
-        MARK=1
         ;;
     "{{ mwan_webpass_iface }}")
         TARGET_PREFIX="{{ mwan_npt_webpass_prefix }}"
-        WAN_GUA="{{ mwan_webpass_wan_ipv6 }}"
-        MARK=2
         ;;
     *)
         log "Unknown WAN iface $WAN_IFACE; skipping"
@@ -53,12 +49,18 @@ case "$WAN_IFACE" in
 esac
 
 # Postrouting: 
-# - Masquerade bridge /64 to WAN GUA (uses interface's primary v6)
-# - NPT LAN /60 to PD /60 (for downstream, excluding bridge /64)
-nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "{{ mwan_internal_ipv6 | regex_replace('/64','') }}/64" masquerade
-nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" ip6 saddr != "{{ mwan_internal_ipv6 | regex_replace('/64','') }}/64" snat ip6 prefix to "$TARGET_PREFIX"
+# - SNAT specific /128s (fe::1, fe::2) to PD ::1
+# - NPT broader /60 to PD /60
+# Add PD ::1 address to interface first
+ip -6 addr replace "${TARGET_PREFIX%/*}1/128" dev "$WAN_IFACE" nodad || true
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr 3d06:bad:b01:fe::2/128 snat to "${TARGET_PREFIX%/*}1"
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr 3d06:bad:b01:fe::1/128 snat to "${TARGET_PREFIX%/*}1"
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" snat ip6 prefix to "$TARGET_PREFIX"
 
-# Prerouting: NPT PD /60 back to LAN /60
+# Prerouting: 
+# - DNAT PD ::1 back to fe::2
+# - NPT broader PD /60 back to LAN /60
+nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "${TARGET_PREFIX%/*}1/128" dnat to 3d06:bad:b01:fe::2
 nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$TARGET_PREFIX" dnat ip6 prefix to "$INTERNAL_PREFIX"
 
 # Save current nftables config
