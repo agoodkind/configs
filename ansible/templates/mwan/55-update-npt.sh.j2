@@ -52,12 +52,12 @@ mkdir -p "$STATE_DIR"
 STATE_FILE="$STATE_DIR/pd-$IFACE"
 
 # 1) proto dhcp routes
-PREFIXES=$(printf '%s\n' "$ROUTE_OUTPUT" | awk '/\\//{print $1}' | grep '/')
+PREFIXES=$(printf '%s\n' "$ROUTE_OUTPUT" | awk '/\\//{print $1}' | grep '/' || true)
 
 # 2) networkctl status (delegated prefix)
 if [ -z "$PREFIXES" ]; then
     PREFIXES=$(networkctl status "$IFACE" --no-pager 2>/dev/null | \
-        sed -n 's/.*delegated prefix \\([^ ]*\\).*/\\1/p')
+        sed -n 's/.*delegated prefix \\([^ ]*\\).*/\\1/p' || true)
 fi
 
 # 3) state file fallback
@@ -69,7 +69,18 @@ log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" \
     "{\"prefixes\":\"$PREFIXES\"}"
 
 if [ -z "$PREFIXES" ]; then
-    log "No DHCPv6-PD prefix found on $IFACE; skipping NPT update"
+    # Fallback mode:
+    # Some deployments intentionally use fixed per-WAN /60 targets (NPT) rather than
+    # relying on dynamically-discovered DHCPv6-PD routes.
+    case "$IFACE" in
+        "$ATT_IFACE") PREFIXES="{{ mwan_npt_att_prefix }}" ;;
+        "$WEBPASS_IFACE") PREFIXES="{{ mwan_npt_webpass_prefix }}" ;;
+        *) PREFIXES="" ;;
+    esac
+fi
+
+if [ -z "$PREFIXES" ]; then
+    log "No prefix found for $IFACE; skipping NPT update"
     exit 0
 fi
 

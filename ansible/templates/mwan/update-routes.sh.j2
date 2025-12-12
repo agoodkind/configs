@@ -23,17 +23,27 @@ get_gw4() {
 }
 
 get_gw6() {
-    # Works with both single-path and multipath defaults:
+    # Extract v6 gateway for a specific dev from `ip -6 route show default`.
     #
-    # Single-path:
-    #   default via fe80::... dev <if>
-    #
-    # Multipath:
-    #   default
+    # Handles:
+    # - default via fe80::... dev <if>
+    # - default nhid <id> via fe80::... dev <if> ...
+    # - default
     #     nexthop via fe80::... dev <if> weight 1
     ip -6 route show default 2>/dev/null | awk -v dev="$1" '
-        ($1=="default" && $2=="via" && $5==dev) { print $3; exit }
-        ($1=="nexthop" && $2=="via" && $5==dev) { print $3; exit }
+        $1=="default" {
+            gw=""; d="";
+            for (i=1; i<=NF; i++) {
+                if ($i=="via") gw=$(i+1);
+                if ($i=="dev") d=$(i+1);
+            }
+            if (d==dev && gw!="") { print gw; exit }
+        }
+        $1=="nexthop" && $2=="via" {
+            gw=$3;
+            for (i=1; i<=NF; i++) if ($i=="dev") d=$(i+1);
+            if (d==dev && gw!="") { print gw; exit }
+        }
     '
 }
 
