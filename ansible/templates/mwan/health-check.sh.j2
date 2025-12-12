@@ -20,21 +20,91 @@ WAN_CONFIGS=(
 )
 
 # Health check targets from group_vars
-TARGETS_V6=(
-{% for target in mwan_health_checks.att.targets %}
+ATT_TARGETS_V4=(
+{% for target in mwan_health_checks.att.targets_v4 | default([]) %}
+    "{{ target }}"
+{% endfor %}
+{% for target in mwan_health_checks.att.targets | default([]) %}
+{% if ':' not in target %}
+    "{{ target }}"
+{% endif %}
+{% endfor %}
+)
+
+ATT_TARGETS_V6=(
+{% for target in mwan_health_checks.att.targets_v6 | default([]) %}
+    "{{ target }}"
+{% endfor %}
+{% for target in mwan_health_checks.att.targets | default([]) %}
 {% if ':' in target %}
     "{{ target }}"
 {% endif %}
 {% endfor %}
 )
 
-TARGETS_V4=(
-{% for target in mwan_health_checks.att.targets %}
+ATT_HTTP_TARGETS=(
+{% for target in mwan_health_checks.att.http_targets | default([]) %}
+    "{{ target }}"
+{% endfor %}
+)
+
+WEBPASS_TARGETS_V4=(
+{% for target in mwan_health_checks.webpass.targets_v4 | default([]) %}
+    "{{ target }}"
+{% endfor %}
+{% for target in mwan_health_checks.webpass.targets | default([]) %}
 {% if ':' not in target %}
     "{{ target }}"
 {% endif %}
 {% endfor %}
 )
+
+WEBPASS_TARGETS_V6=(
+{% for target in mwan_health_checks.webpass.targets_v6 | default([]) %}
+    "{{ target }}"
+{% endfor %}
+{% for target in mwan_health_checks.webpass.targets | default([]) %}
+{% if ':' in target %}
+    "{{ target }}"
+{% endif %}
+{% endfor %}
+)
+
+WEBPASS_HTTP_TARGETS=(
+{% for target in mwan_health_checks.webpass.http_targets | default([]) %}
+    "{{ target }}"
+{% endfor %}
+)
+
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+MB_TARGETS_V4=(
+{% for target in mwan_health_checks.monkeybrains.targets_v4 | default([]) %}
+    "{{ target }}"
+{% endfor %}
+{% for target in mwan_health_checks.monkeybrains.targets | default([]) %}
+{% if ':' not in target %}
+    "{{ target }}"
+{% endif %}
+{% endfor %}
+)
+
+MB_TARGETS_V6=(
+{% for target in mwan_health_checks.monkeybrains.targets_v6 | default([]) %}
+    "{{ target }}"
+{% endfor %}
+{% for target in mwan_health_checks.monkeybrains.targets | default([]) %}
+{% if ':' in target %}
+    "{{ target }}"
+{% endif %}
+{% endfor %}
+)
+
+MB_HTTP_TARGETS=(
+{% for target in mwan_health_checks.monkeybrains.http_targets | default([]) %}
+    "{{ target }}"
+{% endfor %}
+)
+{% endif %}
 
 log() {
     local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -66,6 +136,37 @@ check_wan_health() {
     
     local success_v4=0
     local success_v6=0
+    local success_http4=0
+    local success_http6=0
+
+    local -a targets_v4
+    local -a targets_v6
+    local -a http_targets
+
+    case "$wan_name" in
+        att)
+            targets_v4=("${ATT_TARGETS_V4[@]}")
+            targets_v6=("${ATT_TARGETS_V6[@]}")
+            http_targets=("${ATT_HTTP_TARGETS[@]}")
+            ;;
+        webpass)
+            targets_v4=("${WEBPASS_TARGETS_V4[@]}")
+            targets_v6=("${WEBPASS_TARGETS_V6[@]}")
+            http_targets=("${WEBPASS_HTTP_TARGETS[@]}")
+            ;;
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+        monkeybrains)
+            targets_v4=("${MB_TARGETS_V4[@]}")
+            targets_v6=("${MB_TARGETS_V6[@]}")
+            http_targets=("${MB_HTTP_TARGETS[@]}")
+            ;;
+{% endif %}
+        *)
+            targets_v4=()
+            targets_v6=()
+            http_targets=()
+            ;;
+    esac
     
     # Check if interface exists and is up
     if ! ip link show "$interface" >/dev/null 2>&1; then
@@ -80,26 +181,40 @@ check_wan_health() {
     local has_ipv6=false
     if ip -6 addr show dev "$interface" | grep -q "scope global"; then
         has_ipv6=true
-        for target in "${TARGETS_V6[@]}"; do
+        for target in "${targets_v6[@]}"; do
+            [ -n "$target" ] || continue
             if ping6 -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
                 success_v6=$((success_v6 + 1))
+            fi
+        done
+        for url in "${http_targets[@]}"; do
+            [ -n "$url" ] || continue
+            if curl -6 -sS --connect-timeout 2 --max-time 5 --interface "$interface" "$url" >/dev/null 2>&1; then
+                success_http6=$((success_http6 + 1))
             fi
         done
     fi
     
     # IPv4 health check (secondary)
-    for target in "${TARGETS_V4[@]}"; do
+    for target in "${targets_v4[@]}"; do
+        [ -n "$target" ] || continue
         if ping -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
             success_v4=$((success_v4 + 1))
+        fi
+    done
+    for url in "${http_targets[@]}"; do
+        [ -n "$url" ] || continue
+        if curl -4 -sS --connect-timeout 2 --max-time 5 --interface "$interface" "$url" >/dev/null 2>&1; then
+            success_http4=$((success_http4 + 1))
         fi
     done
     
     # WAN is healthy if IPv6 meets threshold (preferred)
     # or IPv4 meets threshold (fallback)
     # IPv6 is checked first and preferred
-    if [ $success_v6 -ge $success_threshold ]; then
+    if [ $success_v6 -ge $success_threshold ] || [ $success_http6 -ge 1 ]; then
         return 0
-    elif [ $success_v4 -ge $success_threshold ]; then
+    elif [ $success_v4 -ge $success_threshold ] || [ $success_http4 -ge 1 ]; then
         return 0
     else
         return 1
@@ -146,32 +261,58 @@ handle_wan_recovery() {
 }
 
 run_health_checks() {
+    declare -gA FAIL_COUNTS=()
+    declare -gA OK_COUNTS=()
+    local min_interval=999999
+
+    for config in "${WAN_CONFIGS[@]}"; do
+        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        IFS=':' read -r _ _ _ _ interval _ <<< "$config"
+        if [ -n "$interval" ] && [ "$interval" -lt "$min_interval" ]; then
+            min_interval="$interval"
+        fi
+    done
+
     for config in "${WAN_CONFIGS[@]}"; do
         # Skip commented configs
         [[ "$config" =~ ^[[:space:]]*# ]] && continue
         
         IFS=':' read -r wan_name interface ping_count success_threshold interval failure_threshold <<< "$config"
-        
-        local consecutive_failures=0
-        local consecutive_successes=0
+        local recovery_threshold=2
+
+        # Pull per-WAN recovery_threshold from group_vars (fallback 2)
+        case "$wan_name" in
+            att) recovery_threshold={{ mwan_health_checks.att.recovery_threshold | default(2) }} ;;
+            webpass) recovery_threshold={{ mwan_health_checks.webpass.recovery_threshold | default(2) }} ;;
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+            monkeybrains) recovery_threshold={{ mwan_health_checks.monkeybrains.recovery_threshold | default(2) }} ;;
+{% endif %}
+            *) recovery_threshold=2 ;;
+        esac
+
+        FAIL_COUNTS["$wan_name"]="${FAIL_COUNTS["$wan_name"]:-0}"
+        OK_COUNTS["$wan_name"]="${OK_COUNTS["$wan_name"]:-0}"
         
         if check_wan_health "$wan_name" "$interface" "$ping_count" "$success_threshold"; then
-            consecutive_successes=$((consecutive_successes + 1))
-            consecutive_failures=0
+            OK_COUNTS["$wan_name"]=$((OK_COUNTS["$wan_name"] + 1))
+            FAIL_COUNTS["$wan_name"]=0
             
-            # Need 2 consecutive successes to mark as up (prevents flapping)
-            if [ $consecutive_successes -ge 2 ]; then
+            # Need N consecutive successes to mark as up (prevents flapping)
+            if [ "${OK_COUNTS["$wan_name"]}" -ge "$recovery_threshold" ]; then
                 handle_wan_recovery "$wan_name"
             fi
         else
-            consecutive_failures=$((consecutive_failures + 1))
-            consecutive_successes=0
+            FAIL_COUNTS["$wan_name"]=$((FAIL_COUNTS["$wan_name"] + 1))
+            OK_COUNTS["$wan_name"]=0
             
-            if [ $consecutive_failures -ge "$failure_threshold" ]; then
+            if [ "${FAIL_COUNTS["$wan_name"]}" -ge "$failure_threshold" ]; then
                 handle_wan_failure "$wan_name"
             fi
         fi
     done
+
+    # Store computed minimum interval for daemon sleep
+    echo "$min_interval" > /var/run/mwan-health.interval 2>/dev/null || true
 }
 
 daemon_loop() {
@@ -184,7 +325,8 @@ daemon_loop() {
         run_health_checks
         
         # Sleep interval (use minimum interval from configs)
-        sleep 10
+        interval="$(cat /var/run/mwan-health.interval 2>/dev/null || echo 10)"
+        sleep "${interval:-10}"
     done
 }
 
