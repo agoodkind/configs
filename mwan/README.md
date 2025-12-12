@@ -125,6 +125,80 @@ systemctl start x710-vf-setup.service
 - **Single VM**: Simpler architecture - all WAN logic in one place
 - **Cloud-init**: SSH keys auto-deployed, no manual bootstrap needed
 
+## IPv6 NPT (How it’s intended to work)
+
+### Internal-only prefix (treated like ULA)
+
+Downstream LANs use `3d06:bad:b01::/60` on purpose. For all intents and purposes, this prefix should be treated as **internal-only** (ULA-like): it is **not** meant to be globally routed on the Internet.
+
+The only point where traffic becomes Internet-routable is **on `mwan`**, where NPT (stateless prefix translation) swaps the internal /60 to one of the WAN delegated /60 prefixes.
+
+### Flow examples
+
+#### Example 1: VLAN100 client → OPNsense → MWAN → AT&T (mark 1) → Internet
+
+- **Client (VLAN100)**: `3d06:bad:b01:1::100`
+- **GW (OPNsense VLAN100)**: `3d06:bad:b01:1::1`
+- **OPNsense WAN next-hop**: MWAN link-local on the OPNsense↔MWAN link (e.g. `fe80::be24:11ff:fe72:c1%<opnsense_wan_if>`)
+- **On MWAN**:
+  - MWAN marks the new flow: **mark=1**
+  - Policy routing sends it out AT&T (fwmark 1 → table `att`)
+  - **Outbound NPT** swaps the prefix:
+    - `3d06:bad:b01:1::100` → `2600:1700:2f71:c81::100`
+  - Return traffic arriving on AT&T gets **reverse NPT** back to:
+    - `3d06:bad:b01:1::100`
+
+#### Example 2: VLAN200 client → OPNsense → MWAN → Webpass (mark 2) → Internet
+
+- **Client (VLAN200)**: `3d06:bad:b01:2::50`
+- **GW (OPNsense VLAN200)**: `3d06:bad:b01:2::1`
+- **On MWAN**:
+  - New flow gets marked: **mark=2**
+  - Policy routing sends it out Webpass (fwmark 2 → table `webpass`)
+  - **Outbound NPT** swaps the prefix:
+    - `3d06:bad:b01:2::50` → `2604:5500:c271:be02::50`
+  - Return traffic gets reverse-translated back to:
+    - `3d06:bad:b01:2::50`
+
+### What load-balanced IPv6 should look like
+
+For hosts using `3d06:bad:b01::/60`, repeated *new* outbound connections should alternate between the two ISP prefixes. For example:
+
+- `watch curl -6 ifconfig.co` should alternate between:
+  - `2600:1700:2f71:c8x::…` (AT&T /60)
+  - `2604:5500:c271:be0x::…` (Webpass /60)
+
+Each individual TCP session stays pinned to the chosen WAN for the duration (session affinity via conntrack mark restore), while new sessions can be distributed 50/50.
+
+## IPv4 (OPNsense NATs downstream → MWAN load-balances + maps to public /29s)
+
+For IPv4, **OPNsense only “sees” the MWAN internal link** (`10.250.250.0/29`). OPNsense is responsible for NATing all downstream RFC1918 networks (e.g. VLAN100/VLAN200) into that internal /29. MWAN then:
+
+- **Load-balances flows** across AT&T vs Webpass (mark 1 / mark 2)
+- **Maps the internal /29 to each WAN’s public /29** (dual 1:1 mapping: one external mapping per WAN)
+
+### Flow examples
+
+#### Example 1: VLAN100 client → OPNsense NAT to `10.250.250.2` → MWAN chooses AT&T → Internet
+
+1. Client on VLAN100 (e.g. `10.250.1.45`) sends traffic to OPNsense.
+2. OPNsense SNATs source to an internal MWAN address (e.g. `10.250.250.2`) and forwards it to MWAN (`10.250.250.1`).
+3. MWAN marks the new flow **mark=1** (AT&T) and policy-routes it out AT&T.
+4. MWAN maps `10.250.250.2` to the AT&T public /29 (e.g. `10.250.250.2` → `104.57.226.193`) and sends it out AT&T.
+5. Return traffic to `104.57.226.193` arrives on AT&T at MWAN, is mapped back to `10.250.250.2`, then forwarded to OPNsense, which de-NATs back to `10.250.1.45`.
+
+#### Example 2: VLAN100 client → OPNsense NAT to `10.250.250.2` → MWAN chooses Webpass → Internet
+
+Same as above, except MWAN marks the new flow **mark=2** (Webpass) and maps `10.250.250.2` to the Webpass public /29 (e.g. `10.250.250.2` → `136.25.91.242`).
+
+### What load-balanced IPv4 should look like
+
+From a downstream host (e.g. VLAN100), repeated *new* outbound requests should alternate between the two WAN public IPv4s for the chosen internal mapping:
+
+- `watch curl -4 ifconfig.co` should alternate between:
+  - `104.57.226.19x` (AT&T public /29)
+  - `136.25.91.24x` (Webpass public /29)
+
 ## Post-Deployment
 
 ### Verify Services
@@ -166,21 +240,7 @@ nft list ruleset
 
 - With full PCI passthrough, VM uses real NIC MAC (no spoofing)
 - Verify Webpass NIC is assigned: `lspci | grep I226`
-- Check DUID in dhcpcd.conf matches: `grep duid /etc/dhcpcd.conf`
-- Check dhcpcd logs: `journalctl -u dhcpcd -f`
 - Webpass is MAC-sensitive - using real hardware MAC avoids conflicts
-
-**NPT not working:**
-
-- Check delegated prefix: `ip -6 addr show | grep inet6 | grep -v fe80`
-- Check nftables rules: `nft list table ip6 nat`
-- Run dhcpcd hook manually: `/etc/dhcpcd.exit-hook`
-
-**Health check not failing over:**
-
-- Check health status: `/usr/local/bin/health-check.sh --status`
-- Check logs: `journalctl -u mwan-health -f`
-- Run manual check: `/usr/local/bin/health-check.sh --check`
 
 ## OPNsense Migration
 
@@ -189,7 +249,7 @@ nft list ruleset
 1. **Add vNIC to OPNsense** on vmbr_mwan
 2. **Configure new interface**:
    - IPv4: `10.250.250.2/29`
-   - IPv6: `3d06:bad:b01:fe::2/64`
+   - IPv6: Link-local with mwanbr LL as gateway
    - Gateway: `10.250.250.1`
 3. **Test connectivity** through mwan gateway
 4. **Point test firewall rule** to use mwan gateway
