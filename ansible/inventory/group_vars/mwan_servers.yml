@@ -105,9 +105,14 @@ mwan_health_checks:
     check_interval: 10
     failure_threshold: 2
     recovery_threshold: 2
-    targets:
+    targets_v4:
       - "1.1.1.1" # Cloudflare
       - "8.8.8.8" # Google
+    targets_v6:
+      - "2606:4700:4700::1111" # Cloudflare
+      - "2001:4860:4860::8888" # Google
+    http_targets:
+      - "https://ifconfig.co/ip"
   webpass:
     enabled: true
     ping_count: 3
@@ -115,9 +120,14 @@ mwan_health_checks:
     check_interval: 10
     failure_threshold: 2
     recovery_threshold: 2
-    targets:
+    targets_v4:
       - "1.1.1.1"
       - "8.8.8.8"
+    targets_v6:
+      - "2606:4700:4700::1111"
+      - "2001:4860:4860::8888"
+    http_targets:
+      - "https://ifconfig.co/ip"
   # monkeybrains:
   #   enabled: false # Enable for Phase 3
   #   ping_count: 5
@@ -125,9 +135,14 @@ mwan_health_checks:
   #   check_interval: 30
   #   failure_threshold: 5
   #   recovery_threshold: 3
-  #   targets:
+  #   targets_v4:
   #     - "1.1.1.1"
   #     - "8.8.8.8"
+  #   targets_v6:
+  #     - "2606:4700:4700::1111"
+  #     - "2001:4860:4860::8888"
+  #   http_targets:
+  #     - "https://ifconfig.co/ip"
 
 # Latency-sensitive services pinned to AT&T
 # Add destination IPs/subnets here
