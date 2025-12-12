@@ -53,10 +53,10 @@ case "$WAN_IFACE" in
 esac
 
 # Postrouting: 
-# - NPT LAN /60 to PD /60 (per WAN)
-# - SNAT bridge /64 to WAN GUA (per WAN)
-nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" meta mark $MARK snat ip6 prefix to "$TARGET_PREFIX"
-nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "{{ mwan_internal_ipv6 | regex_replace('/64','') }}/64" meta mark $MARK snat to "$WAN_GUA"
+# - Masquerade bridge /64 to WAN GUA (uses interface's primary v6)
+# - NPT LAN /60 to PD /60 (for downstream, excluding bridge /64)
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "{{ mwan_internal_ipv6 | regex_replace('/64','') }}/64" masquerade
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" ip6 saddr != "{{ mwan_internal_ipv6 | regex_replace('/64','') }}/64" snat ip6 prefix to "$TARGET_PREFIX"
 
 # Prerouting: NPT PD /60 back to LAN /60
 nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$TARGET_PREFIX" dnat ip6 prefix to "$INTERNAL_PREFIX"
