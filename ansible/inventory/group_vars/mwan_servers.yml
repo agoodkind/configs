@@ -161,3 +161,9 @@ mwan_rt_tables:
 mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
+
+# Debug logging for MWAN helper scripts
+# When enabled, scripts emit additional structured logs to:
+# - syslog (tagged per script)
+# - /var/log/mwan-debug.log (JSON lines)
+mwan_debug_logging: true
