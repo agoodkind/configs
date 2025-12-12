@@ -23,6 +23,19 @@ fi
 logger -t networkd-dispatcher \
     "Interface $IFACE is now routable, updating policy routing"
 
+# Session-style debug logging (JSON lines)
+DEBUG="{{ mwan_debug_logging | default(false) | ternary('1','0') }}"
+DEBUG_LOG="/var/log/mwan-debug.log"
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
+if [ "$DEBUG" = "1" ]; then
+    printf '{"traceId":"%s","component":"50-update-routes","location":"EVENT","message":"hook_event","data":{"iface":"%s","state":"%s"},"timestamp":%s}\n' \
+        "${MWAN_TRACE_ID:-}" "$IFACE" "$STATE" "$(date +%s%3N)" >> "$DEBUG_LOG"
+fi
+
 # Call update-routes.sh to rebuild routing tables
 /usr/local/bin/update-routes.sh
 

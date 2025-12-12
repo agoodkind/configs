@@ -25,6 +25,9 @@ usage() {
     cat <<'EOT'
 Usage: mwan-debug.sh [command] [args...]
 Commands:
+  trace-start  Start an end-to-end trace session (prints traceId)
+  trace-tail   Tail the JSON debug log (optionally filter by traceId)
+  trace-stop   Stop background trace tools started by trace-start
   prefixes     Show PDs (routes + journal)
   routes       Show proto dhcp routes
   npt          Show ip6 nat NPT rules
@@ -43,6 +46,49 @@ Commands:
   sim4         Route-get IPv4 from LAN src (incl. marks 1/2)
   sim6         Route-get IPv6 from LAN src (incl. marks 1/2)
 EOT
+}
+
+trace_id() {
+    # short-ish, readable trace ID for correlating events across scripts
+    date +"%Y%m%d-%H%M%S-$$"
+}
+
+trace_start() {
+    local id="${1:-$(trace_id)}"
+    export MWAN_TRACE_ID="$id"
+    echo "traceId=$MWAN_TRACE_ID"
+    echo "Writing JSON lines to /var/log/mwan-debug.log"
+    echo
+    echo "== snapshot =="
+    ip -4 route show default || true
+    ip -6 route show default || true
+    ip rule show || true
+    ip -6 rule show || true
+    nft list ruleset | sed -n '1,220p' || true
+    echo
+    echo "== run helpers (with traceId) =="
+    MWAN_TRACE_ID="$MWAN_TRACE_ID" /usr/local/bin/update-routes.sh || true
+    MWAN_TRACE_ID="$MWAN_TRACE_ID" /usr/local/bin/health-check.sh --check || true
+    # If PD is not discoverable, 55-update-npt.sh has a static-prefix fallback.
+    MWAN_TRACE_ID="$MWAN_TRACE_ID" /etc/networkd-dispatcher/routable.d/55-update-npt.sh "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}" routable || true
+    MWAN_TRACE_ID="$MWAN_TRACE_ID" /etc/networkd-dispatcher/routable.d/55-update-npt.sh "{{ mwan_webpass_iface }}" routable || true
+    echo
+    echo "== hint =="
+    echo "mwan trace-tail $MWAN_TRACE_ID"
+}
+
+trace_tail() {
+    local id="${1:-}"
+    if [ -z "$id" ]; then
+        tail -n 200 -f /var/log/mwan-debug.log
+    else
+        tail -n 500 -f /var/log/mwan-debug.log | grep -F "\"traceId\":\"$id\""
+    fi
+}
+
+trace_stop() {
+    # placeholder for future background collectors; keep command for UX consistency
+    echo "No background collectors to stop."
 }
 
 show_pd() {
@@ -335,6 +381,9 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
+    trace-start) trace_start "${1:-}" ;;
+    trace-tail) trace_tail "${1:-}" ;;
+    trace-stop) trace_stop ;;
     prefixes) show_pd ;;
     routes) show_routes ;;
     npt) show_nft ;;
