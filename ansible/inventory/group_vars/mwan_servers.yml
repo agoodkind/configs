@@ -63,8 +63,17 @@ mwan_webpass_gateway: "136.25.91.241"
 mwan_internal_ipv4: "10.250.250.1/29"
 mwan_internal_ipv6: "3d06:bad:b01:fe::1/64"
 
-# Internal prefix for NPT
-mwan_internal_prefix: "3d06:bad:b01::/56"
+# Internal prefix for NPT (LAN -> PD)
+# Keep LAN /64 on the bridge, but NPT the broader /60
+mwan_internal_prefix: "3d06:bad:b01::/60"
+
+# Explicit NPT targets (lower /60 from each PD)
+mwan_npt_att_prefix: "2600:1700:2f71:c80::/60"
+mwan_npt_webpass_prefix: "2604:5500:c271:be00::/60"
+
+# Interface GUAs (non-PD) for WAN SNAT
+mwan_att_wan_ipv6: "2001:506:72f7:108c::1"
+mwan_webpass_wan_ipv6: "2604:5500:c271:8000::72b"
 
 # Static IP mappings (1:1 NAT)
 mwan_static_mappings:

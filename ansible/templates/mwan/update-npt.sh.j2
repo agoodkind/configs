@@ -24,21 +24,42 @@ log() {
 log "Updating NPT rules for $WAN_IFACE"
 log "  Delegated prefix: $DELEGATED_PREFIX"
 
-# Delete existing postrouting rules
+# Delete existing postrouting rules for this iface
 for handle in $(nft -a list chain ip6 nat postrouting | grep "oif \"$WAN_IFACE\".*# handle" | sed -e 's/^.* handle //'); do
     nft delete rule ip6 nat postrouting handle "$handle"
 done
 
-# Delete existing prerouting rules
+# Delete existing prerouting rules for this iface
 for handle in $(nft -a list chain ip6 nat prerouting | grep "iif \"$WAN_IFACE\".*# handle" | sed -e 's/^.* handle //'); do
     nft delete rule ip6 nat prerouting handle "$handle"
 done
 
-# Postrouting (outbound): NPT internal prefix to ISP prefix
-nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" snat ip6 prefix to "$DELEGATED_PREFIX"
+# Decide target /60 for this iface
+case "$WAN_IFACE" in
+    "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}")
+        TARGET_PREFIX="{{ mwan_npt_att_prefix }}"
+        WAN_GUA="{{ mwan_att_wan_ipv6 }}"
+        MARK=1
+        ;;
+    "{{ mwan_webpass_iface }}")
+        TARGET_PREFIX="{{ mwan_npt_webpass_prefix }}"
+        WAN_GUA="{{ mwan_webpass_wan_ipv6 }}"
+        MARK=2
+        ;;
+    *)
+        log "Unknown WAN iface $WAN_IFACE; skipping"
+        exit 0
+        ;;
+esac
 
-# Prerouting (inbound): NPT ISP prefix back to internal prefix
-nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$DELEGATED_PREFIX" dnat ip6 prefix to "$INTERNAL_PREFIX"
+# Postrouting: 
+# - NPT LAN /60 to PD /60 (per WAN)
+# - SNAT bridge /64 to WAN GUA (per WAN)
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" meta mark $MARK snat ip6 prefix to "$TARGET_PREFIX"
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "{{ mwan_internal_ipv6 | regex_replace('/64','') }}/64" meta mark $MARK snat to "$WAN_GUA"
+
+# Prerouting: NPT PD /60 back to LAN /60
+nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$TARGET_PREFIX" dnat ip6 prefix to "$INTERNAL_PREFIX"
 
 # Save current nftables config
 nft list ruleset > /etc/nftables.conf.dynamic

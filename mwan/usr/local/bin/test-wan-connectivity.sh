@@ -197,3 +197,6 @@ warn "  IPv6: curl -6 https://api64.ipify.org (should show delegated prefix)"
 
 
 
+
+
+

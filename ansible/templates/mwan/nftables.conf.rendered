@@ -9,13 +9,13 @@
 flush ruleset
 
 # Define variables - use actual kernel interface names
-define MGMT_IFACE = "{{ actual_mgmt_iface | default(mwan_mgmt_iface) }}"
-define ATT_IFACE = "{{ actual_att_iface | default(mwan_att_iface) }}.{{ mwan_att_vlan_id }}"
-define WEBPASS_IFACE = "{{ actual_webpass_iface | default(mwan_webpass_iface) }}"
-define INTERNAL_IFACE = "{{ actual_internal_iface | default(mwan_internal_iface) }}"
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
-define MB_IFACE = "{{ mwan_monkeybrains_iface }}"
-{% endif %}
+define MGMT_IFACE = "enmgmt0"
+define ATT_IFACE = "enatt0.3242"
+define WEBPASS_IFACE = "enwebpass0"
+define INTERNAL_IFACE = "enmwanbr0"
+
+define MB_IFACE = ""
+
 
 # Internal network (mwan <-> OPNsense link)
 define INTERNAL_NET = 10.250.250.0/29
@@ -47,10 +47,10 @@ table inet filter {
         iif $WEBPASS_IFACE udp sport 67 udp dport 68 accept
         iif $ATT_IFACE udp sport 547 udp dport 546 accept
         iif $WEBPASS_IFACE udp sport 547 udp dport 546 accept
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+
         iif $MB_IFACE udp sport 67 udp dport 68 accept
         iif $MB_IFACE udp sport 547 udp dport 546 accept
-{% endif %}
+
         
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables input drop: " drop
@@ -64,16 +64,16 @@ table inet filter {
         
         # Allow forwarding from internal to WANs
         iif $INTERNAL_IFACE oif { $ATT_IFACE, $WEBPASS_IFACE
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+
             , $MB_IFACE
-{% endif %}
+
         } accept
         
         # Allow forwarding from WANs to internal (for inbound services)
         iif { $ATT_IFACE, $WEBPASS_IFACE
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+
             , $MB_IFACE
-{% endif %}
+
         } oif $INTERNAL_IFACE accept
         
         # Log dropped packets (rate limited)
@@ -98,14 +98,14 @@ table ip nat {
         type nat hook postrouting priority srcnat; policy accept;
         
         # 1:1 NAT for static IPs - AT&T
-{% for mapping in mwan_static_mappings.att %}
-        oif $ATT_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
-{% endfor %}
+
+        oif $ATT_IFACE ip saddr  snat to 
+
         
         # 1:1 NAT for static IPs - Webpass
-{% for mapping in mwan_static_mappings.webpass %}
-        oif $WEBPASS_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
-{% endfor %}
+
+        oif $WEBPASS_IFACE ip saddr  snat to 
+
         
         # Default SNAT for other LAN traffic via AT&T (mark 1)
         oif $ATT_IFACE meta mark 1 ip saddr $INTERNAL_NET masquerade
@@ -113,10 +113,10 @@ table ip nat {
         # Default SNAT for other LAN traffic via Webpass (mark 2)
         oif $WEBPASS_IFACE meta mark 2 ip saddr $INTERNAL_NET masquerade
         
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+
         # Monkeybrains SNAT (mark 3 or failover)
         oif $MB_IFACE ip saddr $INTERNAL_NET masquerade
-{% endif %}
+
     }
 }
 
@@ -125,17 +125,17 @@ table ip6 nat {
         type nat hook prerouting priority dstnat; policy accept;
         
         # Inbound NPT - translate ISP prefix to internal
-        # These will be dynamically set by update-npt.sh when PDs arrive
-        # Called by 55-update-npt.sh (networkd-dispatcher hook)
+        # These will be set at runtime based on delegated PDs
+        # (programmed by update-npt.sh)
     }
     
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
         
         # Outbound NPT / SNAT for IPv6 (programmed at runtime):
-        # - LAN {{ mwan_internal_prefix }} -> PD /60 (per mark, via NPT)
-        # - Bridge {{ mwan_internal_ipv6 | regex_replace('/64','') }}/64 -> WAN GUA (per mark, via SNAT)
-        # Called by 55-update-npt.sh (networkd-dispatcher hook)
+        # - LAN /60 -> PD lower /60 (per mark)
+        # - Bridge /64 -> WAN GUA (per mark)
+        # See update-npt.sh for runtime population
     }
 }
 
@@ -145,26 +145,26 @@ table inet mangle {
         
         # Mark traffic from static 1:1 NAT IPs to use specific WAN
         # AT&T static IPs (mark 1 = use AT&T WAN)
-{% for mapping in mwan_static_mappings.att %}
-        ip saddr {{ mapping.internal }} meta mark set 1
-{% endfor %}
+
+        ip saddr  meta mark set 1
+
         
         # Webpass static IPs (mark 2 = use Webpass WAN)
-{% for mapping in mwan_static_mappings.webpass %}
-        ip saddr {{ mapping.internal }} meta mark set 2
-{% endfor %}
+
+        ip saddr  meta mark set 2
+
         
         # Pin latency-sensitive traffic to AT&T (mark 1)
         # Failover: If AT&T down, update-routes.sh removes the fwmark rule,
         # and traffic falls through to main table (which uses Webpass)
-{% if mwan_att_pinned_dests is defined %}
-{% for dest in mwan_att_pinned_dests %}
-        ip daddr {{ dest }} meta mark set 1
-{% endfor %}
-{% endif %}
+
+
+        ip daddr  meta mark set 1
+
+
         
-        # Load-balance IPv6 from internal LAN (broader /60 + bridge /64)
-        ip6 saddr {{ mwan_internal_prefix }} meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        # Load-balance IPv6 from internal LAN (no static pins yet)
+        ip6 saddr 3d06:bad:b01:fe::/64 meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
         
         # General traffic (no mark): Uses main table's multipath routing
         # Kernel automatically:
