@@ -507,6 +507,12 @@
         name: systemd-networkd
         state: restarted
 
+    - name: Rebuild policy routing tables after networkd restart
+      ansible.builtin.systemd:
+        name: mwan-update-routes
+        state: started
+      failed_when: false
+
     - name: Wait for internal interface to be created by systemd-networkd
       ansible.builtin.wait_for:
         path: /sys/class/net/{{ mwan_internal_iface }}
@@ -534,6 +540,15 @@
       ansible.builtin.systemd:
         name: nftables
         state: reloaded
+      failed_when: false
+
+    - name: Reapply IPv6 NPT rules after nftables reload
+      ansible.builtin.command: >
+        /usr/local/bin/update-npt.sh {{ item.iface }} {{ item.prefix }}
+      loop:
+        - { iface: "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}", prefix: "{{ mwan_npt_att_prefix }}" }
+        - { iface: "{{ mwan_webpass_iface }}", prefix: "{{ mwan_npt_webpass_prefix }}" }
+      changed_when: false
       failed_when: false
 
     - name: Check health status
