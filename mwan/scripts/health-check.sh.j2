@@ -8,6 +8,22 @@ set -e
 STATE_FILE="/var/run/mwan-health.state"
 LOG_FILE="/var/log/mwan-health.log"
 DAEMON_MODE=false
+DEBUG="{{ mwan_debug_logging | default(false) | ternary('1','0') }}"
+DEBUG_LOG="/var/log/mwan-debug.log"
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
+
+debug_json() {
+    [ "$DEBUG" = "1" ] || return 0
+    local loc="$1"; shift
+    local msg="$1"; shift
+    local data="${1:-{}}"; shift || true
+    printf '{"traceId":"%s","component":"mwan-health","location":"%s","message":"%s","data":%s,"timestamp":%s}\n' \
+        "${MWAN_TRACE_ID:-}" "$loc" "$msg" "$data" "$(date +%s%3N)" >> "$DEBUG_LOG"
+}
 
 # WAN health check configuration from Ansible group_vars
 # Format: wan_name:interface:ping_count:success_threshold:interval:failure_threshold
@@ -209,14 +225,31 @@ check_wan_health() {
         fi
     done
     
+    [ "$DEBUG" = "1" ] && debug_json "CHECK" "probe_results" "$(python3 - <<'PY'
+import json,os
+print(json.dumps({
+  "wan": os.environ.get("wan_name",""),
+  "iface": os.environ.get("interface",""),
+  "success_v6": os.environ.get("success_v6",""),
+  "success_http6": os.environ.get("success_http6",""),
+  "success_v4": os.environ.get("success_v4",""),
+  "success_http4": os.environ.get("success_http4",""),
+  "threshold": os.environ.get("success_threshold",""),
+}))
+PY
+)"
+
     # WAN is healthy if IPv6 meets threshold (preferred)
     # or IPv4 meets threshold (fallback)
     # IPv6 is checked first and preferred
     if [ $success_v6 -ge $success_threshold ] || [ $success_http6 -ge 1 ]; then
+        [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_up" "{\"wan\":\"$wan_name\",\"iface\":\"$interface\",\"reason\":\"v6\"}"
         return 0
     elif [ $success_v4 -ge $success_threshold ] || [ $success_http4 -ge 1 ]; then
+        [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_up" "{\"wan\":\"$wan_name\",\"iface\":\"$interface\",\"reason\":\"v4\"}"
         return 0
     else
+        [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_down" "{\"wan\":\"$wan_name\",\"iface\":\"$interface\"}"
         return 1
     fi
 }

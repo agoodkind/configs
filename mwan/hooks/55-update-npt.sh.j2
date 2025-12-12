@@ -21,6 +21,23 @@ log() {
     echo "[update-npt] $*"
 }
 
+# Session-style debug logging (JSON lines)
+DEBUG="{{ mwan_debug_logging | default(false) | ternary('1','0') }}"
+DEBUG_LOG="/var/log/mwan-debug.log"
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
+debug_json_line() {
+    [ "$DEBUG" = "1" ] || return 0
+    local loc="$1"; shift
+    local msg="$1"; shift
+    local data="${1:-{}}"; shift || true
+    printf '{"traceId":"%s","component":"55-update-npt","location":"%s","message":"%s","data":%s,"timestamp":%s}\n' \
+        "${MWAN_TRACE_ID:-}" "$loc" "$msg" "$data" "$(date +%s%3N)" >> "$DEBUG_LOG"
+}
+
 #region agent log
 LOG_PATH="/var/log/mwan-debug.log"
 log_json() {
@@ -39,12 +56,14 @@ log_json() {
 log "Event iface=$IFACE state=$STATE"
 log_json "H1" "55-update-npt.sh:EVENT" "hook_event" \
     "{\"iface\":\"$IFACE\",\"state\":\"$STATE\"}"
+debug_json_line "EVENT" "hook_event" "{\"iface\":\"$IFACE\",\"state\":\"$STATE\"}"
 
 # Capture DHCPv6-PD routes (systemd installs PD routes as proto dhcp, dev lo)
 ROUTE_OUTPUT=$(ip -6 route show proto dhcp)
 log "DHCPv6 proto dhcp routes:\n$ROUTE_OUTPUT"
 log_json "H1" "55-update-npt.sh:ROUTES" "dhcp_routes" \
     "{\"routes\":\"$ROUTE_OUTPUT\"}"
+debug_json_line "ROUTES" "dhcp_routes" "{\"routes\":\"$ROUTE_OUTPUT\"}"
 
 # Try to extract prefixes
 STATE_DIR="/var/lib/mwan"
@@ -67,6 +86,7 @@ fi
 
 log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" \
     "{\"prefixes\":\"$PREFIXES\"}"
+debug_json_line "PREFIXES" "prefixes_found" "{\"prefixes\":\"$PREFIXES\"}"
 
 if [ -z "$PREFIXES" ]; then
     # Fallback mode:
@@ -77,6 +97,7 @@ if [ -z "$PREFIXES" ]; then
         "$WEBPASS_IFACE") PREFIXES="{{ mwan_npt_webpass_prefix }}" ;;
         *) PREFIXES="" ;;
     esac
+    [ -n "$PREFIXES" ] && debug_json_line "FALLBACK" "using_static_prefix" "{\"iface\":\"$IFACE\",\"prefixes\":\"$PREFIXES\"}"
 fi
 
 if [ -z "$PREFIXES" ]; then
@@ -90,11 +111,13 @@ echo "$PREFIXES" > "$STATE_FILE"
 log "Found prefixes: $PREFIXES"
 log_json "H3" "55-update-npt.sh:FOUND" "prefixes_nonempty" \
     "{\"prefixes\":\"$PREFIXES\"}"
+debug_json_line "FOUND" "prefixes_nonempty" "{\"prefixes\":\"$PREFIXES\"}"
 
 for prefix in $PREFIXES; do
     log "Updating NPT for $IFACE with prefix $prefix"
     log_json "H4" "55-update-npt.sh:CALL" "calling_update_npt" \
         "{\"iface\":\"$IFACE\",\"prefix\":\"$prefix\"}"
+    debug_json_line "CALL" "calling_update_npt" "{\"iface\":\"$IFACE\",\"prefix\":\"$prefix\"}"
     /usr/local/bin/update-npt.sh "$IFACE" "$prefix" || \
         log "NPT update failed for $IFACE prefix $prefix"
 done

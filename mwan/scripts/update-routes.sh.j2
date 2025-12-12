@@ -8,6 +8,23 @@ log() {
     echo "[update-routes] $1"
 }
 
+DEBUG="{{ mwan_debug_logging | default(false) | ternary('1','0') }}"
+DEBUG_LOG="/var/log/mwan-debug.log"
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
+
+debug_json() {
+    [ "$DEBUG" = "1" ] || return 0
+    local loc="$1"; shift
+    local msg="$1"; shift
+    local data="${1:-{}}"; shift || true
+    printf '{"traceId":"%s","component":"update-routes","location":"%s","message":"%s","data":%s,"timestamp":%s}\n' \
+        "${MWAN_TRACE_ID:-}" "$loc" "$msg" "$data" "$(date +%s%3N)" >> "$DEBUG_LOG"
+}
+
 log "Updating policy routing tables"
 
 # Interface names from Ansible template
@@ -47,6 +64,14 @@ get_gw6() {
     '
 }
 
+[ "$DEBUG" = "1" ] && debug_json "DEFAULTS" "ip_default_routes" "$(python3 - <<'PY'
+import json,subprocess
+out = subprocess.run(["ip","-4","route","show","default"], capture_output=True, text=True).stdout.strip()
+out6 = subprocess.run(["ip","-6","route","show","default"], capture_output=True, text=True).stdout.strip()
+print(json.dumps({"v4": out, "v6": out6}))
+PY
+)"
+
 [ -n "$ATT_IFACE" ] && ATT_GW4="$(get_gw4 "$ATT_IFACE")"
 [ -n "$WEBPASS_IFACE" ] && WEBPASS_GW4="$(get_gw4 "$WEBPASS_IFACE")"
 [ -n "$ATT_IFACE" ] && ATT_GW6="$(get_gw6 "$ATT_IFACE")"
@@ -54,6 +79,19 @@ get_gw6() {
 
 log "AT&T: $ATT_IFACE (v6: $ATT_GW6, v4: $ATT_GW4)"
 log "Webpass: $WEBPASS_IFACE (v6: $WEBPASS_GW6, v4: $WEBPASS_GW4)"
+
+[ "$DEBUG" = "1" ] && debug_json "GW" "parsed_gateways" "$(python3 - <<'PY'
+import json,os
+print(json.dumps({
+  "att_iface": os.environ.get("ATT_IFACE",""),
+  "webpass_iface": os.environ.get("WEBPASS_IFACE",""),
+  "att_gw4": os.environ.get("ATT_GW4",""),
+  "webpass_gw4": os.environ.get("WEBPASS_GW4",""),
+  "att_gw6": os.environ.get("ATT_GW6",""),
+  "webpass_gw6": os.environ.get("WEBPASS_GW6",""),
+}))
+PY
+)"
 
 # Clear existing policy routing rules (except main table)
 ip rule del table {{ mwan_rt_tables.att }} 2>/dev/null || true
@@ -77,6 +115,12 @@ if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW6" ]; then
     ip -6 route replace default \
         via "$ATT_GW6" dev "$ATT_IFACE" table {{ mwan_rt_tables.att }}
     ip -6 rule add fwmark 1 table {{ mwan_rt_tables.att }} priority 100
+else
+    [ "$DEBUG" = "1" ] && debug_json "ATT" "skipped_ipv6_table" "$(python3 - <<'PY'
+import json,os
+print(json.dumps({"iface": os.environ.get("ATT_IFACE",""), "gw6": os.environ.get("ATT_GW6","")}))
+PY
+)"
 fi
 
 if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW4" ]; then
@@ -93,6 +137,12 @@ if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW6" ]; then
         via "$WEBPASS_GW6" dev "$WEBPASS_IFACE" \
         table {{ mwan_rt_tables.webpass }}
     ip -6 rule add fwmark 2 table {{ mwan_rt_tables.webpass }} priority 200
+else
+    [ "$DEBUG" = "1" ] && debug_json "WEBPASS" "skipped_ipv6_table" "$(python3 - <<'PY'
+import json,os
+print(json.dumps({"iface": os.environ.get("WEBPASS_IFACE",""), "gw6": os.environ.get("WEBPASS_GW6","")}))
+PY
+)"
 fi
 
 if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW4" ]; then
@@ -123,4 +173,19 @@ ip -6 route replace {{ mwan_internal_prefix }} via "$OPNSENSE_WAN_LL" dev "$INTE
 # This ensures SSH access works regardless of WAN state
 
 log "Policy routing update complete"
+
+[ "$DEBUG" = "1" ] && debug_json "FINAL" "rules_and_routes" "$(python3 - <<'PY'
+import json,subprocess
+def cmd(*a):
+    return subprocess.run(list(a), capture_output=True, text=True).stdout.strip()
+print(json.dumps({
+  "ip_rule": cmd("ip","rule","show"),
+  "ip6_rule": cmd("ip","-6","rule","show"),
+  "t100_v4": cmd("ip","route","show","table","{{ mwan_rt_tables.att }}"),
+  "t200_v4": cmd("ip","route","show","table","{{ mwan_rt_tables.webpass }}"),
+  "t100_v6": cmd("ip","-6","route","show","table","{{ mwan_rt_tables.att }}"),
+  "t200_v6": cmd("ip","-6","route","show","table","{{ mwan_rt_tables.webpass }}"),
+}))
+PY
+)"
 
