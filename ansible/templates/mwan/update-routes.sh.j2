@@ -15,6 +15,7 @@ MGMT_IFACE="{{ mwan_mgmt_iface }}"
 ATT_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"  # AT&T uses VLAN subinterface
 WEBPASS_IFACE="{{ mwan_webpass_iface }}"
 INTERNAL_IFACE="{{ mwan_internal_iface }}"
+OPNSENSE_WAN_LL="{{ mwan_opnsense_wan_ll }}"
 
 # Get gateways
 get_gw4() {
@@ -22,8 +23,18 @@ get_gw4() {
 }
 
 get_gw6() {
-    ip -6 route show dev "$1" default 2>/dev/null | \
-        sed -n 's/.*via \([^ ]*\).*/\1/p' | head -1
+    # Works with both single-path and multipath defaults:
+    #
+    # Single-path:
+    #   default via fe80::... dev <if>
+    #
+    # Multipath:
+    #   default
+    #     nexthop via fe80::... dev <if> weight 1
+    ip -6 route show default 2>/dev/null | awk -v dev="$1" '
+        ($1=="default" && $2=="via" && $5==dev) { print $3; exit }
+        ($1=="nexthop" && $2=="via" && $5==dev) { print $3; exit }
+    '
 }
 
 [ -n "$ATT_IFACE" ] && ATT_GW4="$(get_gw4 "$ATT_IFACE")"
@@ -84,11 +95,19 @@ fi
 
 # Main table is intentionally untouched to avoid disrupting management
 
-# Add local network routes to all tables (so WANs can reach internal subnet)
+# Add internal network routes to all tables (so WANs can reach internal subnets)
 for table in {{ mwan_rt_tables.att }} {{ mwan_rt_tables.webpass }}; do
     ip route add 10.250.250.0/29 dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
-    ip -6 route add {{ mwan_internal_prefix }} dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
+    # IMPORTANT:
+    # The internal IPv6 prefix is routed *behind* OPNsense. Using "dev $INTERNAL_IFACE"
+    # causes MWAN to attempt neighbor discovery for each internal host and will break
+    # stateless return traffic (e.g. ICMPv6 echo replies) because those packets won't
+    # reliably use conntrack marks.
+    ip -6 route replace {{ mwan_internal_prefix }} via "$OPNSENSE_WAN_LL" dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
 done
+
+# Ensure the main table can also reach the internal IPv6 /60 (for locally-generated traffic).
+ip -6 route replace {{ mwan_internal_prefix }} via "$OPNSENSE_WAN_LL" dev "$INTERNAL_IFACE" metric 1024 2>/dev/null || true
 
 # Management interface should use main routing table only (not policy routed)
 # This ensures SSH access works regardless of WAN state

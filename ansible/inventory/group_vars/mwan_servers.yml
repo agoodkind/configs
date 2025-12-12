@@ -67,6 +67,12 @@ mwan_internal_ipv6: "3d06:bad:b01:fe::1/64"
 # Keep LAN /64 on the bridge, but NPT the broader /60
 mwan_internal_prefix: "3d06:bad:b01::/60"
 
+# OPNsense WAN link-local (next-hop on the MWAN internal link).
+# Used for correct routing of the internal IPv6 /60 in MWAN policy tables.
+# NOTE: This is derived from OPNsense WAN MAC (EUI-64). If the WAN MAC changes,
+# update this value accordingly.
+mwan_opnsense_wan_ll: "fe80::be24:11ff:fe77:500c"
+
 # NPT targets: lower /60 from each PD
 # The ::1 address from each PD is added to WAN interfaces and used for:
 # - SNAT of fe::1 and fe::2 (single /128 translation)
