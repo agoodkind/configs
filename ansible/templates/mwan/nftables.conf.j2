@@ -127,10 +127,9 @@ table ip6 nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
         
-        # Outbound NPT / SNAT for IPv6 (programmed at runtime):
-        # - LAN {{ mwan_internal_prefix }} -> PD /60 (per mark, via NPT)
-        # - Bridge {{ mwan_internal_ipv6 | regex_replace('/64','') }}/64 -> WAN GUA (per mark, via SNAT)
-        # Called by 55-update-npt.sh (networkd-dispatcher hook)
+        # Outbound NPT for IPv6 (programmed at runtime): 
+        # - /60 NPT to PD /60
+        # Called by update-npt.sh via 55-update-npt.sh hook
     }
 }
 
@@ -158,7 +157,7 @@ table inet mangle {
 {% endfor %}
 {% endif %}
         
-        # Load-balance IPv6 from internal LAN (broader /60 + bridge /64)
+        # Load-balance IPv6 from internal /60 prefix
         ip6 saddr {{ mwan_internal_prefix }} meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
         
         # General traffic (no mark): Uses main table's multipath routing
