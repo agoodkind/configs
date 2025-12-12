@@ -87,7 +87,7 @@ fi
 # Add local network routes to all tables (so WANs can reach internal subnet)
 for table in {{ mwan_rt_tables.att }} {{ mwan_rt_tables.webpass }}; do
     ip route add 10.250.250.0/29 dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
-    ip -6 route add 3d06:bad:b01:fe::/64 dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
+    ip -6 route add {{ mwan_internal_prefix }} dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
 done
 
 # Management interface should use main routing table only (not policy routed)

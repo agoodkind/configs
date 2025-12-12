@@ -13,6 +13,14 @@ CURL_TARGETS=("https://ifconfig.co" "https://api.ipify.org")
 LB_ITER=${LB_ITER:-6}
 PING4_TARGETS=("1.1.1.1" "8.8.8.8")
 
+# Basic color helpers (honor NO_COLOR)
+if [ -z "${NO_COLOR:-}" ]; then
+  C_BOLD="\033[1m"; C_DIM="\033[2m"; C_RED="\033[31m"
+  C_GRN="\033[32m"; C_CYN="\033[36m"; C_RST="\033[0m"
+else
+  C_BOLD=""; C_DIM=""; C_RED=""; C_GRN=""; C_CYN=""; C_RST=""
+fi
+
 usage() {
     cat <<'EOT'
 Usage: mwan-debug.sh [command] [args...]
@@ -22,6 +30,7 @@ Commands:
   npt          Show ip6 nat NPT rules
   status       Show networkctl status for WAN ifaces
   stats        Show link stats for WAN ifaces
+  pd-test      Verify PD egress after removing proto dhcp routes
   ping4 [if]   Ping IPv4 targets from iface (default first WAN)
   ping6 [if]   Ping IPv6 targets from iface (default first WAN)
   curl4 [if]   curl -4 from iface to ifconfig.co/api.ipify.org
@@ -106,6 +115,144 @@ run_curl6() {
         CURL_IFACE="$ifc" CURL_IP_VERSION=6 curl -6 --interface "$ifc" -s "$tgt" || true
         echo
     done
+}
+
+get_pd() {
+    local ifc="$1" pd
+    pd=$(ip -6 route show proto dhcp dev "$ifc" | awk '{print $1; exit}')
+    if [ -z "$pd" ] && [ -f "/var/lib/mwan/pd-$ifc" ]; then
+        pd=$(head -1 "/var/lib/mwan/pd-$ifc")
+    fi
+    if [ -z "$pd" ]; then
+        pd=$(journalctl -u systemd-networkd -b |
+            grep "$ifc: DHCP: received delegated prefix" | tail -1 | awk '{print $NF}')
+    fi
+    echo "$pd"
+}
+
+confirm_pd_test() {
+    echo "WARNING: this test will SPLINTER the PD (temp addrs, drop proto-dhcp"
+    echo "routes) and may disrupt downstream IPv6 briefly until renew."
+    echo "It also curls a far endpoint to confirm seen IP is in-prefix."
+    read -r -p "Proceed? [y/N] " ans
+    case "${ans:-n}" in
+        y|Y) ;;
+        *) echo "Aborted."; exit 1 ;;
+    esac
+}
+
+run_pd_test() {
+    confirm_pd_test
+
+    local tgt="https://ifconfig.co"
+    declare -a ADDR_PREFS IFCS PDS EXISTED
+    declare -a PING_OK FAR_IP PREFIX_OK
+    local sep="────────────────────────────────────────────────────────────"
+
+    echo "╔════════════════════════════════════════════════════════════╗"
+    printf "║ %-58s ║\n" "PD EGRESS VERIFICATION (splinters PD; temporary disruption)"
+    printf "║ %-58s ║\n" "Target: $tgt"
+    echo "╚════════════════════════════════════════════════════════════╝"
+
+    echo "Deleting proto dhcp PD routes to prove PD egress without them."
+    echo "(They will reappear on the next DHCPv6 renew.)"
+    for r in $(ip -6 route show proto dhcp | awk '{print $1}'); do
+        ip -6 route del "$r" proto dhcp || true
+    done
+    ip -6 route show proto dhcp || true
+
+    for ifc in "${IFACES[@]}"; do
+        pd=$(get_pd "$ifc")
+        if [ -z "$pd" ]; then
+            echo "$ifc: no PD found; skipping"
+            continue
+        fi
+        addr="${pd%/*}2"
+        pref="${pd#*/}"
+        already=$(ip -6 addr show dev "$ifc" | awk -v a="$addr" '$2 ~ "/" && $2 ~ a"/"{print "yes"}')
+        echo "$ifc: PD=$pd addr=$addr/$pref (existing=${already:-no})"
+        if [ -z "$already" ]; then
+            ip -6 addr add "$addr/$pref" dev "$ifc" nodad || true
+        fi
+        ADDR_PREFS+=("$addr/$pref")
+        IFCS+=("$ifc")
+        PDS+=("$pd")
+        EXISTED+=("${already:-no}")
+    done
+    sleep 1
+
+    for i in "${!ADDR_PREFS[@]}"; do
+        addr_pref="${ADDR_PREFS[$i]}"
+        ifc="${IFCS[$i]}"
+        pd="${PDS[$i]}"
+        addr="${addr_pref%/*}"
+        pref="${addr_pref#*/}"
+        echo
+        echo "$sep"
+        printf "%-11s %s\n" "IFACE" "$ifc"
+        printf "%-11s %s\n" "PD" "$pd"
+        printf "%-11s %s/%s\n" "TEST ADDR" "$addr" "$pref"
+        echo "$sep"
+        ip -6 route get 2606:4700:4700::1111 from "$addr" oif "$ifc" || true
+        printf "%-11s %s%s%s\n" "PING" "$ifc from " "$addr" ""
+        if ping -6 -c 3 -W 5 -I "${addr}%${ifc}" 2606:4700:4700::1111 >/tmp/mwan_ping.$$ 2>&1; then
+            PING_OK[$i]="ok"
+        elif ping -6 -c 3 -W 5 -I "$ifc" 2606:4700:4700::1111 >/tmp/mwan_ping.$$ 2>&1; then
+            PING_OK[$i]="ok"
+        else
+            PING_OK[$i]="fail"
+        fi
+        cat /tmp/mwan_ping.$$ || true
+        rm -f /tmp/mwan_ping.$$
+        resp=$(curl -6 --interface "$ifc" --max-time 8 -s "$tgt" || true)
+        printf "%-11s %s\n" "FAR IP" "${resp:-<empty>}"
+        FAR_IP[$i]="$resp"
+        if [ -n "$resp" ]; then
+            tmpres=$(mktemp)
+            python3 - "$resp" "$pd" <<'PY' >"$tmpres"
+import ipaddress, sys
+ip=sys.argv[1]; net=sys.argv[2]
+try:
+    ok=ipaddress.IPv6Address(ip) in ipaddress.IPv6Network(net, strict=False)
+    print(f"In-prefix : {ok}")
+    print(f"_RESULT:{ok}")
+except Exception as e:
+    print(f"in_prefix=error:{e}")
+PY
+            PREFIX_OK[$i]=$(grep '^_RESULT:' "$tmpres" 2>/dev/null | tail -1)
+            grep -v '^_RESULT:' "$tmpres" || true
+            rm -f "$tmpres"
+        fi
+    done
+
+    # Summary table
+    echo
+    echo "$sep"
+    printf "%-11s %-20s %-7s %-7s %-32s\n" "IFACE" "PD" "PING" "PREFIX" "FAR IP"
+    echo "$sep"
+    for i in "${!IFCS[@]}"; do
+        pi="${PING_OK[$i]:-fail}"
+        pr="${PREFIX_OK[$i]:-false}"
+        far="${FAR_IP[$i]:-<empty>}"
+        pd="${PDS[$i]}"
+        ifc="${IFCS[$i]}"
+        [ "$pi" = "ok" ] && pi="OK" || pi="FAIL"
+        [ "$pr" = "_RESULT:True" ] && pr="OK" || pr="FAIL"
+        printf "%-11s %-20s %-7s %-7s %-32s\n" "$ifc" "$pd" "$pi" "$pr" "$far"
+    done
+    echo "$sep"
+
+    echo
+    echo "Cleanup: removing temp PD addrs that were added by this test."
+    for i in "${!ADDR_PREFS[@]}"; do
+        addr_pref="${ADDR_PREFS[$i]}"
+        ifc="${IFCS[$i]}"
+        existed="${EXISTED[$i]}"
+        if [ "$existed" = "no" ]; then
+            ip -6 addr del "$addr_pref" dev "$ifc" || true
+        fi
+    done
+    echo "Done."
 }
 
 {% raw %}
@@ -201,6 +348,7 @@ case "$cmd" in
     lb6) run_lb6 ;;
     lb4-ifaces) run_lb4_ifaces ;;
     lb6-ifaces) run_lb6_ifaces ;;
+    pd-test) run_pd_test ;;
     policy) show_policy ;;
     sim4) sim4 ;;
     sim6) sim6 ;;
