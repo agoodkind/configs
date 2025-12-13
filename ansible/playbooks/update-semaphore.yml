@@ -43,9 +43,9 @@
       ansible.builtin.set_fact:
         semaphore_target_version: >-
           {% if semaphore_version == 'latest' and github_release is defined %}
-          {{ github_release.json.tag_name | regex_replace('^v', '') }}
+          {{ github_release.json.tag_name | regex_replace('^v', '') | trim }}
           {% else %}
-          {{ semaphore_version }}
+          {{ semaphore_version | trim }}
           {% endif %}
 
     - name: Check if update is needed
@@ -73,12 +73,12 @@
         - name: Set download base URL
           ansible.builtin.set_fact:
             semaphore_base_url: >-
-              https://github.com/semaphoreui/semaphore/releases/download/v{{ semaphore_target_version }}/
+              https://github.com/semaphoreui/semaphore/releases/download/
+              v{{ semaphore_target_version }}/
 
         - name: Set download filename
           ansible.builtin.set_fact:
-            semaphore_filename: >-
-              semaphore_{{ semaphore_target_version }}_linux_amd64.tar.gz
+            semaphore_filename: "semaphore_{{ semaphore_target_version }}_linux_amd64.tar.gz"
 
         - name: Set download URL
           ansible.builtin.set_fact:
