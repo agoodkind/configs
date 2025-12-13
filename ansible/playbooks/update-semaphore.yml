@@ -18,9 +18,11 @@
       register: semaphore_binary
 
     - name: Get installed Semaphore version
-      ansible.builtin.shell: |
-        set -o pipefail
-        {{ semaphore_install_dir }}/semaphore version | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+'
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          {{ semaphore_install_dir }}/semaphore version | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+'
+        executable: /bin/bash
       register: semaphore_installed_version
       when: semaphore_binary.stat.exists
       changed_when: false
@@ -136,6 +138,8 @@
       ansible.builtin.shell: |
         set -o pipefail
         {{ semaphore_install_dir }}/semaphore version | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+'
+      args:
+        executable: /bin/bash
       register: semaphore_new_version
       changed_when: false
 
