@@ -191,7 +191,7 @@ What MWAN runs automatically:
 
 `systemd-networkd` configures interfaces based on files under `/etc/systemd/network/`. A “device appears” when the kernel creates a netdevice (physical NIC, virtio NIC, VLAN netdev, bridge, etc) and it shows up in `ip link` and `/sys/class/net/…`; `systemd-networkd` is notified via netlink and matches it to `.network/.netdev` config.
 
-`networkd-dispatcher` is **event-driven via D-Bus signals from `systemd-networkd`** (no polling) and runs scripts when an interface changes operational state (e.g. becomes `routable`).
+`networkd-dispatcher` is **event-driven via D-Bus signals from `systemd-networkd`** (no polling) and runs scripts when an interface changes operational state (e.g. becomes `routable`). If `networkd-dispatcher` starts after an interface has already reached a steady state, it may not replay past transitions unless it is configured to run startup triggers (package feature: `--run-startup-triggers`).
 
 - **`mwan-trace-boot.service`** → writes `/run/mwan-trace-id` early in boot
 - **`systemd-networkd.service`** → creates/links netdevs, configures addresses/routes/DHCP from `.network/.netdev`
@@ -370,7 +370,16 @@ So an empty `table ip6 nat` is not “healthy” — it means runtime programmin
 Common reasons:
 
 - **Deploy ordering / reloads**: `nftables` reload flushes the ruleset. If WANs were already “routable”, `networkd-dispatcher` may not fire again (no state change), so NPT isn’t re-applied automatically.
-- **Boot races**: `update-npt.sh` can run before VLAN/NIC devices exist (or before PD is present) and exit early.
+- **Boot races (why they happen at all)**: at boot, multiple things are happening asynchronously and systemd starts many units in parallel. The exact timing varies run-to-run:
+  - PCI/virtio devices can appear slightly later (driver load timing).
+  - AT&T needs 802.1X before DHCPv6-PD on the VLAN will succeed (so PD can be “late”).
+  - `networkd-dispatcher` and `nftables` are independent services; it is possible for a “routable” event to occur before `nftables` has loaded the base ruleset.
+  - If `update-npt.sh` runs before the target interface exists *or* before the base `table ip6 nat` exists, it can fail/exit early (it uses `set -e` and calls `nft`).
+
+Two different “empty” symptoms to distinguish:
+
+- **`nft list ruleset` is empty / tiny**: `nftables` didn’t load successfully. Our config begins with `flush ruleset`, so a load error after that can leave you with very few/no rules.
+- **Only `table ip6 nat` is empty**: base rules loaded, but the runtime NPT programming (via `update-npt.sh`) didn’t happen or was flushed after it happened.
 
 Manual recovery (no guessing), on MWAN:
 
