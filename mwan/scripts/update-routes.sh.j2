@@ -172,12 +172,23 @@ ip -6 route replace {{ mwan_internal_prefix }} via "$OPNSENSE_WAN_LL" dev "$INTE
 
 log "Policy routing update complete"
 
-[ "$DEBUG" = "1" ] && debug_json "FINAL" "rules_and_routes" "$(jq -cn \
-  --arg ip_rule "$(ip rule show || true)" \
-  --arg ip6_rule "$(ip -6 rule show || true)" \
-  --arg t100_v4 "$(ip route show table {{ mwan_rt_tables.att }} || true)" \
-  --arg t200_v4 "$(ip route show table {{ mwan_rt_tables.webpass }} || true)" \
-  --arg t100_v6 "$(ip -6 route show table {{ mwan_rt_tables.att }} || true)" \
-  --arg t200_v6 "$(ip -6 route show table {{ mwan_rt_tables.webpass }} || true)" \
-  '{ip_rule:$ip_rule, ip6_rule:$ip6_rule, t100_v4:$t100_v4, t200_v4:$t200_v4, t100_v6:$t100_v6, t200_v6:$t200_v6}')"
+final_json() {
+  jq -cn \
+    --arg ip_rule "$(ip rule show || true)" \
+    --arg ip6_rule "$(ip -6 rule show || true)" \
+    --arg t100_v4 "$(ip route show table {{ mwan_rt_tables.att }} || true)" \
+    --arg t200_v4 "$(ip route show table {{ mwan_rt_tables.webpass }} || true)" \
+    --arg t100_v6 "$(ip -6 route show table {{ mwan_rt_tables.att }} || true)" \
+    --arg t200_v6 "$(ip -6 route show table {{ mwan_rt_tables.webpass }} || true)" \
+    '{
+      ip_rule: $ip_rule,
+      ip6_rule: $ip6_rule,
+      t100_v4: $t100_v4,
+      t200_v4: $t200_v4,
+      t100_v6: $t100_v6,
+      t200_v6: $t200_v6
+    }'
+}
+
+[ "$DEBUG" = "1" ] && debug_json "FINAL" "rules_and_routes" "$(final_json)"
 
