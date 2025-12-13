@@ -44,9 +44,23 @@ log "Updating policy routing tables"
 MGMT_IFACE="{{ mwan_mgmt_iface }}"
 ATT_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"  # AT&T uses VLAN subinterface
 WEBPASS_IFACE="{{ mwan_webpass_iface }}"
+MB_IFACE="{{ mwan_monkeybrains_iface | default('enmbrains0') }}"
 INTERNAL_IFACE="{{ mwan_internal_iface }}"
 OPNSENSE_WAN_LL="{{ mwan_opnsense_wan_ll }}"
 OPNSENSE_EDGE_V6="{{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}"
+
+# Health state (soft failures) from mwan-health
+# Format: wan_name:state (e.g. "att:up", "webpass:down")
+STATE_FILE="/var/run/mwan-health.state"
+wan_state() {
+    local wan="$1"
+    [ -r "$STATE_FILE" ] || { echo "unknown"; return 0; }
+    grep "^${wan}:" "$STATE_FILE" 2>/dev/null | tail -n1 | cut -d: -f2 || echo "unknown"
+}
+# Treat unknown as up to avoid cutting traffic during daemon warmup.
+wan_is_up() {
+    [ "$(wan_state "$1")" != "down" ]
+}
 
 # Get gateways
 get_gw4() {
@@ -89,27 +103,40 @@ defaults_json() {
 
 [ -n "$ATT_IFACE" ] && ATT_GW4="$(get_gw4 "$ATT_IFACE")"
 [ -n "$WEBPASS_IFACE" ] && WEBPASS_GW4="$(get_gw4 "$WEBPASS_IFACE")"
+[ -n "$MB_IFACE" ] && MB_GW4="$(get_gw4 "$MB_IFACE")"
 [ -n "$ATT_IFACE" ] && ATT_GW6="$(get_gw6 "$ATT_IFACE")"
 [ -n "$WEBPASS_IFACE" ] && WEBPASS_GW6="$(get_gw6 "$WEBPASS_IFACE")"
+[ -n "$MB_IFACE" ] && MB_GW6="$(get_gw6 "$MB_IFACE")"
 
 log "AT&T: $ATT_IFACE (v6: $ATT_GW6, v4: $ATT_GW4)"
 log "Webpass: $WEBPASS_IFACE (v6: $WEBPASS_GW6, v4: $WEBPASS_GW4)"
+log "Monkeybrains: $MB_IFACE (v6: $MB_GW6, v4: $MB_GW4)"
 
 gateways_json() {
   jq -cn \
     --arg att_iface "${ATT_IFACE:-}" \
     --arg webpass_iface "${WEBPASS_IFACE:-}" \
+    --arg mb_iface "${MB_IFACE:-}" \
     --arg att_gw4 "${ATT_GW4:-}" \
     --arg webpass_gw4 "${WEBPASS_GW4:-}" \
+    --arg mb_gw4 "${MB_GW4:-}" \
     --arg att_gw6 "${ATT_GW6:-}" \
     --arg webpass_gw6 "${WEBPASS_GW6:-}" \
+    --arg mb_gw6 "${MB_GW6:-}" \
+    --arg att_state "$(wan_state att)" \
+    --arg webpass_state "$(wan_state webpass)" \
+    --arg mb_state "$(wan_state monkeybrains)" \
     '{
       att_iface: $att_iface,
       webpass_iface: $webpass_iface,
+      mb_iface: $mb_iface,
       att_gw4: $att_gw4,
       webpass_gw4: $webpass_gw4,
+      mb_gw4: $mb_gw4,
       att_gw6: $att_gw6,
-      webpass_gw6: $webpass_gw6
+      webpass_gw6: $webpass_gw6,
+      mb_gw6: $mb_gw6,
+      health: {att: $att_state, webpass: $webpass_state, monkeybrains: $mb_state}
     }'
 }
 
@@ -132,7 +159,7 @@ ip -6 route flush table {{ mwan_rt_tables.webpass }} 2>/dev/null || true
 ip -6 route flush table {{ mwan_rt_tables.monkeybrains }} 2>/dev/null || true
 
 # Set up AT&T routing table (table {{ mwan_rt_tables.att }}) - IPv6 FIRST (P0 priority)
-if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW6" ]; then
+if wan_is_up att && [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW6" ]; then
     log "Setting up AT&T IPv6 routing table (priority)"
     ip -6 route replace default \
         via "$ATT_GW6" dev "$ATT_IFACE" table {{ mwan_rt_tables.att }}
@@ -144,7 +171,7 @@ else
       '{iface:$iface, gw6:$gw6}')"
 fi
 
-if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW4" ]; then
+if wan_is_up att && [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW4" ]; then
     log "Setting up AT&T IPv4 routing table"
     ip route replace default \
         via "$ATT_GW4" dev "$ATT_IFACE" table {{ mwan_rt_tables.att }}
@@ -152,7 +179,7 @@ if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW4" ]; then
 fi
 
 # Set up Webpass routing table (table {{ mwan_rt_tables.webpass }}) - IPv6 FIRST
-if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW6" ]; then
+if wan_is_up webpass && [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW6" ]; then
     log "Setting up Webpass IPv6 routing table (priority)"
     ip -6 route replace default \
         via "$WEBPASS_GW6" dev "$WEBPASS_IFACE" \
@@ -165,7 +192,7 @@ else
       '{iface:$iface, gw6:$gw6}')"
 fi
 
-if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW4" ]; then
+if wan_is_up webpass && [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW4" ]; then
     log "Setting up Webpass IPv4 routing table"
     ip route replace default \
         via "$WEBPASS_GW4" dev "$WEBPASS_IFACE" \
@@ -173,10 +200,24 @@ if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW4" ]; then
     ip rule add fwmark 2 table {{ mwan_rt_tables.webpass }} priority 200
 fi
 
+# Set up Monkeybrains routing table (table {{ mwan_rt_tables.monkeybrains }}) - fallback only
+if wan_is_up monkeybrains && [ -n "$MB_IFACE" ] && [ -n "$MB_GW6" ]; then
+    log "Setting up Monkeybrains IPv6 routing table (fallback)"
+    ip -6 route replace default \
+        via "$MB_GW6" dev "$MB_IFACE" table {{ mwan_rt_tables.monkeybrains }}
+    ip -6 rule add fwmark 3 table {{ mwan_rt_tables.monkeybrains }} priority 300
+fi
+if wan_is_up monkeybrains && [ -n "$MB_IFACE" ] && [ -n "$MB_GW4" ]; then
+    log "Setting up Monkeybrains IPv4 routing table (fallback)"
+    ip route replace default \
+        via "$MB_GW4" dev "$MB_IFACE" table {{ mwan_rt_tables.monkeybrains }}
+    ip rule add fwmark 3 table {{ mwan_rt_tables.monkeybrains }} priority 300
+fi
+
 # Main table is intentionally untouched to avoid disrupting management
 
 # Add internal network routes to all tables (so WANs can reach internal subnets)
-for table in {{ mwan_rt_tables.att }} {{ mwan_rt_tables.webpass }}; do
+for table in {{ mwan_rt_tables.att }} {{ mwan_rt_tables.webpass }} {{ mwan_rt_tables.monkeybrains }}; do
     ip route add 10.250.250.0/29 dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
 
     # Hairpin DNAT targets (e.g. WAN /128 interface addresses) are forwarded to OPNsense over the MWAN link.
@@ -194,6 +235,13 @@ done
 
 # Ensure the main table can also reach the internal IPv6 /60 (for locally-generated traffic).
 ip -6 route replace {{ mwan_internal_prefix }} via "$OPNSENSE_WAN_LL" dev "$INTERNAL_IFACE" metric 1024 2>/dev/null || true
+
+# Deterministic fallback: if BOTH primary WANs are health-down and Monkeybrains is up,
+# route forwarded traffic (coming from OPNsense) via Monkeybrains table for new flows.
+if ! wan_is_up att && ! wan_is_up webpass && wan_is_up monkeybrains; then
+    [ -n "${MB_GW4:-}" ] && ip rule add iif "$INTERNAL_IFACE" table {{ mwan_rt_tables.monkeybrains }} priority 50 2>/dev/null || true
+    [ -n "${MB_GW6:-}" ] && ip -6 rule add iif "$INTERNAL_IFACE" table {{ mwan_rt_tables.monkeybrains }} priority 50 2>/dev/null || true
+fi
 
 # Management interface should use main routing table only (not policy routed)
 # This ensures SSH access works regardless of WAN state
