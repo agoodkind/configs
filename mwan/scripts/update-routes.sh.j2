@@ -21,8 +21,21 @@ debug_json() {
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
-    printf '{"traceId":"%s","component":"update-routes","location":"%s","message":"%s","data":%s,"timestamp":%s}\n' \
-        "${MWAN_TRACE_ID:-}" "$loc" "$msg" "$data" "$(date +%s%3N)" >> "$DEBUG_LOG"
+    jq -cn \
+      --arg traceId "${MWAN_TRACE_ID:-}" \
+      --arg component "update-routes" \
+      --arg location "$loc" \
+      --arg message "$msg" \
+      --arg data "${data:-{}}" \
+      --argjson timestamp "$(date +%s%3N)" \
+      '{
+        traceId: $traceId,
+        component: $component,
+        location: $location,
+        message: $message,
+        data: (try ($data | fromjson) catch {}),
+        timestamp: $timestamp
+      }' >> "$DEBUG_LOG"
 }
 
 log "Updating policy routing tables"
@@ -65,10 +78,14 @@ get_gw6() {
     '
 }
 
-[ "$DEBUG" = "1" ] && debug_json "DEFAULTS" "ip_default_routes" "$(jq -cn \
-  --arg v4 "$(ip -4 route show default || true)" \
-  --arg v6 "$(ip -6 route show default || true)" \
-  '{v4:$v4, v6:$v6}')"
+defaults_json() {
+  jq -cn \
+    --arg v4 "$(ip -4 route show default || true)" \
+    --arg v6 "$(ip -6 route show default || true)" \
+    '{v4:$v4, v6:$v6}'
+}
+
+[ "$DEBUG" = "1" ] && debug_json "DEFAULTS" "ip_default_routes" "$(defaults_json)"
 
 [ -n "$ATT_IFACE" ] && ATT_GW4="$(get_gw4 "$ATT_IFACE")"
 [ -n "$WEBPASS_IFACE" ] && WEBPASS_GW4="$(get_gw4 "$WEBPASS_IFACE")"
@@ -78,14 +95,25 @@ get_gw6() {
 log "AT&T: $ATT_IFACE (v6: $ATT_GW6, v4: $ATT_GW4)"
 log "Webpass: $WEBPASS_IFACE (v6: $WEBPASS_GW6, v4: $WEBPASS_GW4)"
 
-[ "$DEBUG" = "1" ] && debug_json "GW" "parsed_gateways" "$(jq -cn \
-  --arg att_iface "${ATT_IFACE:-}" \
-  --arg webpass_iface "${WEBPASS_IFACE:-}" \
-  --arg att_gw4 "${ATT_GW4:-}" \
-  --arg webpass_gw4 "${WEBPASS_GW4:-}" \
-  --arg att_gw6 "${ATT_GW6:-}" \
-  --arg webpass_gw6 "${WEBPASS_GW6:-}" \
-  '{att_iface:$att_iface, webpass_iface:$webpass_iface, att_gw4:$att_gw4, webpass_gw4:$webpass_gw4, att_gw6:$att_gw6, webpass_gw6:$webpass_gw6}')" 
+gateways_json() {
+  jq -cn \
+    --arg att_iface "${ATT_IFACE:-}" \
+    --arg webpass_iface "${WEBPASS_IFACE:-}" \
+    --arg att_gw4 "${ATT_GW4:-}" \
+    --arg webpass_gw4 "${WEBPASS_GW4:-}" \
+    --arg att_gw6 "${ATT_GW6:-}" \
+    --arg webpass_gw6 "${WEBPASS_GW6:-}" \
+    '{
+      att_iface: $att_iface,
+      webpass_iface: $webpass_iface,
+      att_gw4: $att_gw4,
+      webpass_gw4: $webpass_gw4,
+      att_gw6: $att_gw6,
+      webpass_gw6: $webpass_gw6
+    }'
+}
+
+[ "$DEBUG" = "1" ] && debug_json "GW" "parsed_gateways" "$(gateways_json)"
 
 # Clear existing policy routing rules (except main table)
 ip rule del table {{ mwan_rt_tables.att }} 2>/dev/null || true
