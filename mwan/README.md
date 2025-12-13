@@ -307,6 +307,9 @@ Why this is required:
 
 - When DNATing WAN interface /128s to `3d06:bad:b01:fe::2`, ensure MWAN’s SNAT rules do not override conntrack’s
   reverse-NAT for the return traffic.
+- Because inbound flows are fwmarked by ingress WAN, MWAN’s policy routing tables must also include an explicit
+  route for the DNAT target (`3d06:bad:b01:fe::2/128`) via the MWAN↔OPNsense link; otherwise the fwmark default
+  route will try to send the packet back out the WAN instead of toward OPNsense.
 
 ## Post-Deployment
 
