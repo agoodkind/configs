@@ -40,12 +40,6 @@
           ansible.builtin.debug:
             msg: "Updating Semaphore to version {{ semaphore_version }}"
 
-        - name: Stop Semaphore service
-          ansible.builtin.systemd:
-            name: semaphore
-            state: stopped
-          when: semaphore_binary.stat.exists
-
         - name: Get latest release version from GitHub API
           ansible.builtin.uri:
             url: https://api.github.com/repos/semaphoreui/semaphore/releases/latest
@@ -121,12 +115,6 @@
             - /tmp/semaphore.tar.gz
             - /tmp/semaphore_extract
 
-        - name: Start Semaphore service
-          ansible.builtin.systemd:
-            name: semaphore
-            state: started
-            daemon_reload: true
-
     - name: Verify installation
       ansible.builtin.shell: |
         set -o pipefail
@@ -138,8 +126,9 @@
       ansible.builtin.debug:
         msg: "Semaphore version {{ semaphore_new_version.stdout }} is now installed"
 
-    - name: Ensure Semaphore service is running
+    - name: Restart Semaphore service
       ansible.builtin.systemd:
         name: semaphore
-        state: started
+        state: restarted
         enabled: true
+        daemon_reload: true
