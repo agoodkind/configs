@@ -466,6 +466,12 @@
         dest: /etc/systemd/system/mwan-update-routes.service
         mode: '0644'
 
+    - name: Deploy mwan update-npt oneshot service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/services/mwan-update-npt.service.j2"
+        dest: /etc/systemd/system/mwan-update-npt.service
+        mode: '0644'
+
     - name: Deploy mwan boot trace service
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/services/mwan-trace-boot.service.j2"
@@ -500,6 +506,7 @@
         daemon_reload: true
       loop:
         - mwan-trace-boot
+        - mwan-update-npt
         - bringup-att-vlan
         - systemd-networkd
         - networkd-dispatcher
@@ -579,12 +586,9 @@
       failed_when: false
 
     - name: Reapply IPv6 NPT rules after nftables reload
-      ansible.builtin.command: >
-        /usr/local/bin/update-npt.sh {{ item.iface }} {{ item.prefix }}
-      loop:
-        - { iface: "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}", prefix: "{{ mwan_npt_att_prefix }}" }
-        - { iface: "{{ mwan_webpass_iface }}", prefix: "{{ mwan_npt_webpass_prefix }}" }
-      changed_when: false
+      ansible.builtin.systemd:
+        name: mwan-update-npt
+        state: started
       failed_when: false
 
     - name: Run deploy trace (routes, NPT hooks, health)
