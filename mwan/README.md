@@ -280,7 +280,7 @@ This keeps replies **symmetric** (return path uses the same WAN the flow came in
 Inbound IPv6 relies on **reverse-NPT (DNPT)** on MWAN:
 
 - Traffic to the WAN delegated `/60` (e.g. `2604:...:be00::/60` or `2600:...:c80::/60`) is translated back to the internal-only `3d06:bad:b01::/60` and forwarded to OPNsense.
-- The per-WAN `::1/128` (e.g. `2604:...:be00::1`) is reserved for the MWAN↔OPNsense “edge”.
+- The per-WAN `::1/128` (e.g. `2604:...:be00::1`) is reserved as the MWAN↔OPNsense “edge” on that WAN.
 
 Additionally, `update-npt.sh` DNATs any other global IPv6 address assigned to the WAN interface back to OPNsense so those addresses don’t terminate on MWAN unexpectedly.
 
@@ -310,6 +310,52 @@ Why this is required:
 - Because inbound flows are fwmarked by ingress WAN, MWAN’s policy routing tables must also include an explicit
   route for the DNAT target (`3d06:bad:b01:fe::2/128`) via the MWAN↔OPNsense link; otherwise the fwmark default
   route will try to send the packet back out the WAN instead of toward OPNsense.
+
+#### Reality check: AT&T inbound to the DHCPv6 /128 is blocked
+
+In practice, AT&T does **not** deliver inbound traffic to the DHCPv6 /128 “interface address”
+(`2001:506:72f7:108c::1/128`). We confirmed this by capturing on MWAN’s AT&T interface while probing from an
+external host: **no packets arrived**.
+
+So, AT&T inbound hosting should target the **delegated /60** instead.
+
+#### Recommended inbound “edge” addresses (symmetric across WANs)
+
+To keep behavior consistent across providers and avoid extra carve-outs:
+
+- **AT&T edge**: `2600:1700:2f71:c80::1` (PD `::1/128`)
+- **Webpass edge**: `2604:5500:c271:be00::1` (PD `::1/128`)
+
+Both are DNAT’d on MWAN to the same OPNsense MWAN-link address: `3d06:bad:b01:fe::2`.
+
+## NPT rule persistence (why `ip6 nat` chains can be empty)
+
+The IPv6 NPT/DNPT rules live in `table ip6 nat` and are **programmed at runtime** by `update-npt.sh`.
+It’s possible to end up with empty chains after a deploy/reboot if:
+
+- `nftables` is reloaded (which flushes/replaces the ruleset) **after** the WAN interfaces were already “routable”, and
+  the `networkd-dispatcher` hook won’t re-run automatically, or
+- `update-npt.sh` runs while an interface isn’t present yet (it exits due to `set -e`), and the deploy ignores the failure.
+
+### How to recover (manual, no guessing)
+
+On MWAN:
+
+```bash
+/usr/local/bin/update-npt.sh enatt0.3242 2600:1700:2f71:c80::/60
+/usr/local/bin/update-npt.sh enwebpass0 2604:5500:c271:be00::/60
+```
+
+After that, the rules appear immediately (example):
+
+- `iif "enatt0.3242" ip6 daddr 2001:506:72f7:108c::1 dnat to 3d06:bad:b01:fe::2`
+- `oif "enatt0.3242" ip6 saddr 3d06:bad:b01:fe::2 ct status dnat return`
+
+### How to ensure it runs on deploy and reboot
+
+- **Deploy**: the playbook reloads `nftables` and then re-applies NPT rules.
+- **Boot**: enable and run `mwan-update-npt.service` (oneshot) so NPT rules are applied even if hooks don’t fire in the
+  right order.
 
 ## Post-Deployment
 
