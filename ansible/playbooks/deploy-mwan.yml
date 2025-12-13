@@ -188,6 +188,16 @@
             | upper
           }}
 
+    - name: Ensure Monkeybrains NIC exists when enabled
+      ansible.builtin.fail:
+        msg: >-
+          Monkeybrains fallback is enabled, but no virtio net2 interface was found in Proxmox
+          config for VM {{ actual_vmid }}. Add net2 (virtio) attached to the Monkeybrains network
+          or disable mwan_health_checks.monkeybrains.enabled.
+      when:
+        - mwan_health_checks.monkeybrains.enabled | default(false)
+        - (mwan_net2_mac | default('') | length) == 0
+
     - name: Create configuration directories
       ansible.builtin.file:
         path: "{{ item }}"
