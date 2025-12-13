@@ -56,7 +56,7 @@ Notes:
 
 ### IPv4 data-plane diagram
 
-```
+```text
 Downstream RFC1918
    |
    |  (OPNsense SNAT) src 10.250.X.Y -> 10.250.250.2-10.250.250.6
@@ -83,7 +83,7 @@ Internet -> (MWAN DNAT public -> 10.250.250.X) -> OPNsense -> internal services
 
 ### IPv6 data-plane diagram
 
-```
+```text
 Downstream IPv6 (internal-only)
    - 3d06:bad:b01::/60
    |
