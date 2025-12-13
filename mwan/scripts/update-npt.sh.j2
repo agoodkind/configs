@@ -23,6 +23,7 @@ fi
 
 readonly INTERNAL_PREFIX="{{ mwan_internal_prefix }}"
 readonly OPNSENSE_EDGE_V6="{{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}"
+readonly MB_STATIC_PREFIX="{{ mwan_npt_monkeybrains_prefix | default('') }}"
 
 log() {
     local msg="$1"
@@ -54,7 +55,8 @@ for handle in $(nft -a list chain ip6 nat prerouting | grep "iif \"$WAN_IFACE\".
     nft delete rule ip6 nat prerouting handle "$handle"
 done
 
-# Decide target /60 for this iface
+# Decide target /60 for this iface.
+# NOTE: NPT is stateless and requires internal/external prefixes to be the same length (/60 here).
 case "$WAN_IFACE" in
     "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}")
         TARGET_PREFIX="{{ mwan_npt_att_prefix }}"
@@ -62,15 +64,42 @@ case "$WAN_IFACE" in
     "{{ mwan_webpass_iface }}")
         TARGET_PREFIX="{{ mwan_npt_webpass_prefix }}"
         ;;
+    "{{ mwan_monkeybrains_iface }}")
+        if [ -n "$MB_STATIC_PREFIX" ]; then
+            TARGET_PREFIX="$MB_STATIC_PREFIX"
+        else
+            # Monkeybrains may delegate a /56; pick the first /60 from the delegated prefix.
+            # If it already delegated a /60, use it as-is.
+            TARGET_PREFIX="$(python3 - "$DELEGATED_PREFIX" <<'PY'
+import ipaddress, sys
+pd = sys.argv[1]
+net = ipaddress.IPv6Network(pd, strict=False)
+if net.prefixlen == 60:
+    print(str(net))
+elif net.prefixlen < 60:
+    # only need a small number of subnets; /56 -> /60 yields 16
+    print(str(next(net.subnets(new_prefix=60))))
+else:
+    # delegated prefix is smaller than /60; can't do stateless NPT from /60
+    print("")
+PY
+)"
+            if [ -z "$TARGET_PREFIX" ]; then
+                log "Delegated prefix $DELEGATED_PREFIX is not usable for /60 NPT; skipping"
+                exit 0
+            fi
+        fi
+        ;;
     *)
         log "Unknown WAN iface $WAN_IFACE; skipping"
         exit 0
         ;;
 esac
 
-[ "$DEBUG" = "1" ] && debug_json "SELECT" "target_prefix_selected" "$(python3 - <<'PY'
-import json,os
-print(json.dumps({"iface": os.environ.get("WAN_IFACE",""), "delegated": os.environ.get("DELEGATED_PREFIX",""), "target": os.environ.get("TARGET_PREFIX","")}))
+[ "$DEBUG" = "1" ] && debug_json "SELECT" "target_prefix_selected" "$(python3 - "$WAN_IFACE" "$DELEGATED_PREFIX" "$TARGET_PREFIX" <<'PY'
+import json, sys
+iface, delegated, target = sys.argv[1], sys.argv[2], sys.argv[3]
+print(json.dumps({"iface": iface, "delegated": delegated, "target": target}))
 PY
 )"
 
