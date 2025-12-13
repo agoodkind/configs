@@ -21,7 +21,7 @@
       ansible.builtin.shell:
         cmd: |
           set -o pipefail
-          {{ semaphore_install_dir }}/semaphore version | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+'
+          {{ semaphore_install_dir }}/semaphore version | grep -oP '^[0-9]+\.[0-9]+\.[0-9]+'
         executable: /bin/bash
       register: semaphore_installed_version
       when: semaphore_binary.stat.exists
@@ -137,7 +137,7 @@
     - name: Verify installation
       ansible.builtin.shell: |
         set -o pipefail
-        {{ semaphore_install_dir }}/semaphore version | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+'
+        {{ semaphore_install_dir }}/semaphore version | grep -oP '^[0-9]+\.[0-9]+\.[0-9]+'
       args:
         executable: /bin/bash
       register: semaphore_new_version
