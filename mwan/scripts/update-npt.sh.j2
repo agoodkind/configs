@@ -22,6 +22,7 @@ if [ -z "$WAN_IFACE" ] || [ -z "$DELEGATED_PREFIX" ]; then
 fi
 
 readonly INTERNAL_PREFIX="{{ mwan_internal_prefix }}"
+readonly OPNSENSE_EDGE_V6="{{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}"
 
 log() {
     logger -t update-npt "$1"
@@ -75,14 +76,17 @@ PY
 # - NPT broader /60 to PD /60
 # Add PD ::1 address to interface first
 ip -6 addr replace "${TARGET_PREFIX%/*}1/128" dev "$WAN_IFACE" nodad || true
-nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr 3d06:bad:b01:fe::2/128 snat to "${TARGET_PREFIX%/*}1"
+# If this packet is part of a DNAT'd flow to the OPNsense edge address, do NOT clobber
+# conntrack's reverse-NAT with an unconditional SNAT rule.
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$OPNSENSE_EDGE_V6/128" ct status dnat return
+nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$OPNSENSE_EDGE_V6/128" snat to "${TARGET_PREFIX%/*}1"
 nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr 3d06:bad:b01:fe::1/128 snat to "${TARGET_PREFIX%/*}1"
 nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" snat ip6 prefix to "$TARGET_PREFIX"
 
 # Prerouting: 
 # - DNAT PD ::1 back to fe::2
 # - NPT broader PD /60 back to LAN /60
-nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "${TARGET_PREFIX%/*}1/128" dnat to 3d06:bad:b01:fe::2
+nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "${TARGET_PREFIX%/*}1/128" dnat to "$OPNSENSE_EDGE_V6"
 nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$TARGET_PREFIX" dnat ip6 prefix to "$INTERNAL_PREFIX"
 
 # Also DNAT any other global IPv6 address that is currently assigned to the WAN interface
@@ -91,11 +95,15 @@ nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$TARGET_PREFIX" dnat
 # This prevents confusion where a "WAN interface address" is reachable from the Internet,
 # but would otherwise terminate on MWAN and never be seen by OPNsense.
 for ip6_cidr in $(ip -6 addr show dev "$WAN_IFACE" scope global | awk '/inet6/{print $2}' || true); do
+    # Only hairpin /128 interface addresses.
+    [ "${ip6_cidr#*/}" = "128" ] || continue
+
     # Skip the PD ::1/128 alias we intentionally manage above.
     [ "$ip6_cidr" = "${TARGET_PREFIX%/*}1/128" ] && continue
+
     ip6_addr="${ip6_cidr%/*}"
     [ -n "$ip6_addr" ] || continue
-    nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$ip6_addr" dnat to 3d06:bad:b01:fe::2
+    nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$ip6_addr/128" dnat to "$OPNSENSE_EDGE_V6"
 done
 
 # Save current nftables config
