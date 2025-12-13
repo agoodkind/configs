@@ -64,33 +64,15 @@ lspci | grep "Virtual Function"
 
 ### Make VF Configuration Persistent
 
-Create systemd service to configure VF on boot:
+Create a small systemd oneshot unit on the Proxmox host (vault) that runs at boot.
 
-```bash
-cat > /etc/systemd/system/x710-vf-setup.service << 'EOF'
-[Unit]
-Description=Configure X710 VFs for 802.1X
-After=network-pre.target
-Before=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash -c 'echo 1 > /sys/bus/pci/devices/0000:02:00.0/sriov_numvfs'
-ExecStart=/usr/bin/sleep 1
-ExecStart=/usr/sbin/ip link set enp2s0f0np0 vf 0 trust on
-ExecStart=/usr/sbin/ip link set enp2s0f0np0 vf 0 spoof off
-# Optional: Set specific MAC address for VF
-# ExecStart=/usr/sbin/ip link set enp2s0f0np0 vf 0 mac D0:FC:D0:7C:85:30
-ExecStop=/bin/bash -c 'echo 0 > /sys/bus/pci/devices/0000:02:00.0/sriov_numvfs'
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl enable x710-vf-setup.service
-systemctl start x710-vf-setup.service
-```
+- **Where**: `/etc/systemd/system/x710-vf-setup.service`
+- **What it must do**:
+  - Create the VF (`echo 1 > /sys/bus/pci/devices/0000:02:00.0/sriov_numvfs`)
+  - Enable VF trust mode (`ip link set enp2s0f0np0 vf 0 trust on`)
+  - Disable spoof checking (`ip link set enp2s0f0np0 vf 0 spoof off`)
+  - Optional: set a stable VF MAC (`ip link set enp2s0f0np0 vf 0 mac ...`)
+- **Enable it**: `systemctl enable --now x710-vf-setup.service`
 
 **Why trust mode is required:**
 
@@ -135,6 +117,48 @@ systemctl start x710-vf-setup.service
 - **Outbound IPv6**: downstream uses internal-only `3d06:bad:b01::/60`; MWAN load-balances new flows and performs NPT to each WAN’s delegated /60.
 - **Inbound services**: inbound IPv4/IPv6 to either WAN’s public space is translated on MWAN (DNAT / reverse-NPT) and forwarded to OPNsense so OPNsense rules/port-forwards can handle services.
 - **Failover**: when a WAN is unhealthy, new flows stop using it; existing sessions drain naturally; recovery restores balancing.
+
+## How the networking stack works (systemd-networkd + networkd-dispatcher)
+
+This project uses **systemd’s network “ecosystem”**, which is a different mental model than `ifupdown`:
+
+- `ifupdown`: imperative “bring interface up/down” actions, typically keyed off explicit `ifup` / `ifdown`.
+- `systemd-networkd`: declarative config (`.netdev` / `.network`) that is applied whenever a device appears and matches.
+
+### Core components
+
+- **`systemd-networkd`**: configures links, VLANs, bridges, addresses, and routes from files under `/etc/systemd/network/`.
+- **`networkd-dispatcher`**: watches `systemd-networkd` state changes and runs hook scripts in state directories under `/etc/networkd-dispatcher/` (e.g. `routable.d/`).
+- **Systemd targets (ordering)**:
+  - `network-pre.target`: very early networking prep
+  - `network.target`: “basic networking is configured”
+  - `network-online.target`: “network is usable” (often via `systemd-networkd-wait-online.service`)
+
+### What MWAN runs automatically
+
+- **Routing policy + marks**: `/usr/local/bin/update-routes.sh` (also invoked by health checks)
+- **IPv6 NPT/DNPT runtime rules**: `/usr/local/bin/update-npt.sh`
+- **Event glue**:
+  - `networkd-dispatcher` “routable” hooks call `update-routes.sh` and `update-npt.sh`
+  - `mwan-health` continuously probes WANs and calls `update-routes.sh` on failure/recovery
+  - `mwan-update-npt.service` exists because `nftables` reloads can flush dynamic NPT rules without generating a new networkd event
+
+### Typical state flows
+
+- **Boot**
+  - NICs appear → `systemd-networkd` applies `.netdev/.network`
+  - AT&T auth happens (wpa_supplicant + VLAN) → WAN addresses/routes appear
+  - When a WAN becomes **routable**, `networkd-dispatcher` runs the “routable” hooks → `update-routes.sh` + `update-npt.sh`
+  - `mwan-health` starts and begins continuous checks (and can re-run `update-routes.sh` when conditions change)
+
+- **Deploy / reboot**
+  - Reloading `nftables` can flush runtime-programmed IPv6 NPT rules.
+  - If the WAN is already “routable”, `networkd-dispatcher` may **not** re-run automatically (no state transition happened).
+  - That’s why we also run `mwan-update-npt.service` to reapply NPT rules after boot and after deploy-time reloads.
+
+- **Link down / link up**
+  - Hard link events (carrier loss / return) change `systemd-networkd` state and can trigger `networkd-dispatcher` hooks.
+  - Soft failures (link stays up but upstream is broken) are handled by `mwan-health`, which marks the WAN down/up and calls `update-routes.sh` to remove/add it for *new* flows.
 
 ## IPv6 (NPT + inbound DNPT)
 
