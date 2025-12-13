@@ -192,6 +192,14 @@ Typical state flows:
 - **Boot**: devices appear → networkd config applies → WAN becomes routable → dispatcher triggers hooks → NPT/routes applied → health loop begins.
 - **Deploy / reboot**: an `nftables` reload can flush runtime NPT rules; if the WAN was already routable, dispatcher may not fire again, so we run `mwan-update-npt.service` to reapply.
 - **Link down/up**: hard carrier changes can trigger dispatcher; “soft failures” are handled by health checks.
+  - **What is a “soft failure”?** The interface stays `UP` (carrier present) but upstream connectivity is broken or degraded (routing blackhole, PD missing/expired, ISP outage, DNS issues, etc).
+  - **How we detect it** (`mwan-health` / `health-check.sh`):
+    - Probes multiple targets per WAN over that WAN interface (IPv6 first, then IPv4; optional HTTP checks).
+    - Marks a WAN **down** after **N consecutive failed check cycles** (`failure_threshold`) to avoid flapping.
+  - **How we detect recovery**:
+    - A WAN is marked **up** only after **M consecutive successful check cycles** (`recovery_threshold`) — this hysteresis prevents oscillation during partial recovery.
+  - **What happens on down/up**:
+    - `mwan-health` calls `update-routes.sh` to remove/add the WAN for *new* flows (existing sessions drain naturally via conntrack).
 
 ## IPv6 (NPT + inbound DNPT)
 
