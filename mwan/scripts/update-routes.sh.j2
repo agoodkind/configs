@@ -5,7 +5,11 @@
 set -e
 
 log() {
-    echo "[update-routes] $1"
+    local msg="$1"
+    local prefix=""
+    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    echo "[update-routes] ${prefix}${msg}"
+    logger -t update-routes "${prefix}${msg}" || true
 }
 
 DEBUG="{{ mwan_debug_logging | default(false) | ternary('1','0') }}"

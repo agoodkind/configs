@@ -11,9 +11,16 @@ VLAN_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
 WPA_CLI="/sbin/wpa_cli"
 MAX_WAIT=60
 CHECK_INTERVAL=2
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
 
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | \
+    local prefix=""
+    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ${prefix}$*" | \
         systemd-cat -t bringup-att-vlan
 }
 

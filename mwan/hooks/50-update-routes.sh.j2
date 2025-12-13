@@ -11,6 +11,15 @@ if [ "$STATE" != "routable" ]; then
     exit 0
 fi
 
+# Session-style debug logging (JSON lines)
+DEBUG="{{ mwan_debug_logging | default(false) | ternary('1','0') }}"
+DEBUG_LOG="/var/log/mwan-debug.log"
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
+
 # Only run for WAN interfaces (AT&T VLAN or Webpass)
 ATT_VLAN="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
 WEBPASS_IFACE="{{ mwan_webpass_iface }}"
@@ -20,17 +29,11 @@ if [ "$IFACE" != "$ATT_VLAN" ] && [ "$IFACE" != "$WEBPASS_IFACE" ]; then
     exit 0
 fi
 
+prefix=""
+[ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
 logger -t networkd-dispatcher \
-    "Interface $IFACE is now routable, updating policy routing"
+    "${prefix}Interface $IFACE is now routable, updating policy routing"
 
-# Session-style debug logging (JSON lines)
-DEBUG="{{ mwan_debug_logging | default(false) | ternary('1','0') }}"
-DEBUG_LOG="/var/log/mwan-debug.log"
-TRACE_FILE="/run/mwan-trace-id"
-MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
-if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
-    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
-fi
 if [ "$DEBUG" = "1" ]; then
     printf '{"traceId":"%s","component":"50-update-routes","location":"EVENT","message":"hook_event","data":{"iface":"%s","state":"%s"},"timestamp":%s}\n' \
         "${MWAN_TRACE_ID:-}" "$IFACE" "$STATE" "$(date +%s%3N)" >> "$DEBUG_LOG"
