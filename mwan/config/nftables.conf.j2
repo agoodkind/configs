@@ -121,6 +121,11 @@ table ip nat {
         
         # Default SNAT for other LAN traffic via Webpass (mark 2)
         oif $WEBPASS_IFACE meta mark 2 ip saddr $INTERNAL_NET masquerade
+
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+        # Emergency fallback SNAT via Monkeybrains (mark 3 or any mark if routed out MB)
+        oif $MB_IFACE ip saddr $INTERNAL_NET masquerade
+{% endif %}
     }
 }
 
@@ -139,6 +144,11 @@ table ip6 nat {
         # Outbound NPT for IPv6 (programmed at runtime): 
         # - /60 NPT to PD /60
         # Called by update-npt.sh via 55-update-npt.sh hook
+
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+        # Emergency fallback NAT66 via Monkeybrains (stateful; only used when routing chooses MB).
+        oif $MB_IFACE ip6 saddr {{ mwan_internal_prefix }} masquerade
+{% endif %}
     }
 }
 

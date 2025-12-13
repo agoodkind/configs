@@ -169,6 +169,16 @@
             | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
             | upper
           }}
+        mwan_net2_mac: >-
+          {{
+            vm_config.stdout_lines
+            | select('match', '^net2:.*virtio')
+            | list
+            | first
+            | default('')
+            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
+            | upper
+          }}
         vm_mgmt_mac: >-
           {{
             vm_config.stdout_lines
@@ -357,6 +367,8 @@
         - 20-att.network
         - 20-webpass.link
         - 20-webpass.network
+        - 30-monkeybrains.link
+        - 30-monkeybrains.network
         - 21-att-vlan.netdev
         - 21-att-vlan.network
         - 40-mwanbr.link
