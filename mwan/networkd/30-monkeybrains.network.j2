@@ -17,5 +17,13 @@ IPv6Forwarding=yes
 # Prefer primary WAN routes when multiple exist
 RouteMetric=50
 
+[DHCPv6]
+# Request prefix delegation so MWAN can NPT the internal /60 onto Monkeybrains when needed.
+UseDelegatedPrefix=yes
+PrefixDelegationHint=::/56
+
+[IPv6PrefixDelegation]
+RouterLifetimeSec=1800
+
 [IPv6AcceptRA]
 RouteMetric=50

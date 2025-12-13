@@ -10,9 +10,10 @@ STATE="$2"
 
 ATT_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
 WEBPASS_IFACE="{{ mwan_webpass_iface }}"
+MB_IFACE="{{ mwan_monkeybrains_iface }}"
 
-# Only handle AT&T VLAN or Webpass
-if [ "$IFACE" != "$ATT_IFACE" ] && [ "$IFACE" != "$WEBPASS_IFACE" ]; then
+# Only handle WAN interfaces (AT&T VLAN, Webpass, Monkeybrains)
+if [ "$IFACE" != "$ATT_IFACE" ] && [ "$IFACE" != "$WEBPASS_IFACE" ] && [ "$IFACE" != "$MB_IFACE" ]; then
     exit 0
 fi
 
@@ -72,13 +73,13 @@ STATE_DIR="/var/lib/mwan"
 mkdir -p "$STATE_DIR"
 STATE_FILE="$STATE_DIR/pd-$IFACE"
 
-# 1) proto dhcp routes
-PREFIXES=$(printf '%s\n' "$ROUTE_OUTPUT" | awk '/\\//{print $1}' | grep '/' || true)
+# 1) networkctl status (delegated prefix) - best per-iface signal
+PREFIXES=$(networkctl status "$IFACE" --no-pager 2>/dev/null | \
+    sed -n 's/.*delegated prefix \\([^ ]*\\).*/\\1/p' || true)
 
-# 2) networkctl status (delegated prefix)
+# 2) proto dhcp routes (coarse; may include prefixes from other ifaces)
 if [ -z "$PREFIXES" ]; then
-    PREFIXES=$(networkctl status "$IFACE" --no-pager 2>/dev/null | \
-        sed -n 's/.*delegated prefix \\([^ ]*\\).*/\\1/p' || true)
+    PREFIXES=$(printf '%s\n' "$ROUTE_OUTPUT" | awk '/\\//{print $1}' | grep '/' || true)
 fi
 
 # 3) state file fallback
@@ -97,6 +98,7 @@ if [ -z "$PREFIXES" ]; then
     case "$IFACE" in
         "$ATT_IFACE") PREFIXES="{{ mwan_npt_att_prefix }}" ;;
         "$WEBPASS_IFACE") PREFIXES="{{ mwan_npt_webpass_prefix }}" ;;
+        "$MB_IFACE") PREFIXES="{{ mwan_npt_monkeybrains_prefix | default('') }}" ;;
         *) PREFIXES="" ;;
     esac
     [ -n "$PREFIXES" ] && debug_json_line "FALLBACK" "using_static_prefix" "{\"iface\":\"$IFACE\",\"prefixes\":\"$PREFIXES\"}"
