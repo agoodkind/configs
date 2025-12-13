@@ -65,13 +65,10 @@ get_gw6() {
     '
 }
 
-[ "$DEBUG" = "1" ] && debug_json "DEFAULTS" "ip_default_routes" "$(python3 - <<'PY'
-import json,subprocess
-out = subprocess.run(["ip","-4","route","show","default"], capture_output=True, text=True).stdout.strip()
-out6 = subprocess.run(["ip","-6","route","show","default"], capture_output=True, text=True).stdout.strip()
-print(json.dumps({"v4": out, "v6": out6}))
-PY
-)"
+[ "$DEBUG" = "1" ] && debug_json "DEFAULTS" "ip_default_routes" "$(jq -cn \
+  --arg v4 "$(ip -4 route show default || true)" \
+  --arg v6 "$(ip -6 route show default || true)" \
+  '{v4:$v4, v6:$v6}')"
 
 [ -n "$ATT_IFACE" ] && ATT_GW4="$(get_gw4 "$ATT_IFACE")"
 [ -n "$WEBPASS_IFACE" ] && WEBPASS_GW4="$(get_gw4 "$WEBPASS_IFACE")"
@@ -81,18 +78,14 @@ PY
 log "AT&T: $ATT_IFACE (v6: $ATT_GW6, v4: $ATT_GW4)"
 log "Webpass: $WEBPASS_IFACE (v6: $WEBPASS_GW6, v4: $WEBPASS_GW4)"
 
-[ "$DEBUG" = "1" ] && debug_json "GW" "parsed_gateways" "$(python3 - <<'PY'
-import json,os
-print(json.dumps({
-  "att_iface": os.environ.get("ATT_IFACE",""),
-  "webpass_iface": os.environ.get("WEBPASS_IFACE",""),
-  "att_gw4": os.environ.get("ATT_GW4",""),
-  "webpass_gw4": os.environ.get("WEBPASS_GW4",""),
-  "att_gw6": os.environ.get("ATT_GW6",""),
-  "webpass_gw6": os.environ.get("WEBPASS_GW6",""),
-}))
-PY
-)"
+[ "$DEBUG" = "1" ] && debug_json "GW" "parsed_gateways" "$(jq -cn \
+  --arg att_iface "${ATT_IFACE:-}" \
+  --arg webpass_iface "${WEBPASS_IFACE:-}" \
+  --arg att_gw4 "${ATT_GW4:-}" \
+  --arg webpass_gw4 "${WEBPASS_GW4:-}" \
+  --arg att_gw6 "${ATT_GW6:-}" \
+  --arg webpass_gw6 "${WEBPASS_GW6:-}" \
+  '{att_iface:$att_iface, webpass_iface:$webpass_iface, att_gw4:$att_gw4, webpass_gw4:$webpass_gw4, att_gw6:$att_gw6, webpass_gw6:$webpass_gw6}')" 
 
 # Clear existing policy routing rules (except main table)
 ip rule del table {{ mwan_rt_tables.att }} 2>/dev/null || true
@@ -117,11 +110,10 @@ if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW6" ]; then
         via "$ATT_GW6" dev "$ATT_IFACE" table {{ mwan_rt_tables.att }}
     ip -6 rule add fwmark 1 table {{ mwan_rt_tables.att }} priority 100
 else
-    [ "$DEBUG" = "1" ] && debug_json "ATT" "skipped_ipv6_table" "$(python3 - <<'PY'
-import json,os
-print(json.dumps({"iface": os.environ.get("ATT_IFACE",""), "gw6": os.environ.get("ATT_GW6","")}))
-PY
-)"
+    [ "$DEBUG" = "1" ] && debug_json "ATT" "skipped_ipv6_table" "$(jq -cn \
+      --arg iface "${ATT_IFACE:-}" \
+      --arg gw6 "${ATT_GW6:-}" \
+      '{iface:$iface, gw6:$gw6}')"
 fi
 
 if [ -n "$ATT_IFACE" ] && [ -n "$ATT_GW4" ]; then
@@ -139,11 +131,10 @@ if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW6" ]; then
         table {{ mwan_rt_tables.webpass }}
     ip -6 rule add fwmark 2 table {{ mwan_rt_tables.webpass }} priority 200
 else
-    [ "$DEBUG" = "1" ] && debug_json "WEBPASS" "skipped_ipv6_table" "$(python3 - <<'PY'
-import json,os
-print(json.dumps({"iface": os.environ.get("WEBPASS_IFACE",""), "gw6": os.environ.get("WEBPASS_GW6","")}))
-PY
-)"
+    [ "$DEBUG" = "1" ] && debug_json "WEBPASS" "skipped_ipv6_table" "$(jq -cn \
+      --arg iface "${WEBPASS_IFACE:-}" \
+      --arg gw6 "${WEBPASS_GW6:-}" \
+      '{iface:$iface, gw6:$gw6}')"
 fi
 
 if [ -n "$WEBPASS_IFACE" ] && [ -n "$WEBPASS_GW4" ]; then
@@ -181,18 +172,12 @@ ip -6 route replace {{ mwan_internal_prefix }} via "$OPNSENSE_WAN_LL" dev "$INTE
 
 log "Policy routing update complete"
 
-[ "$DEBUG" = "1" ] && debug_json "FINAL" "rules_and_routes" "$(python3 - <<'PY'
-import json,subprocess
-def cmd(*a):
-    return subprocess.run(list(a), capture_output=True, text=True).stdout.strip()
-print(json.dumps({
-  "ip_rule": cmd("ip","rule","show"),
-  "ip6_rule": cmd("ip","-6","rule","show"),
-  "t100_v4": cmd("ip","route","show","table","{{ mwan_rt_tables.att }}"),
-  "t200_v4": cmd("ip","route","show","table","{{ mwan_rt_tables.webpass }}"),
-  "t100_v6": cmd("ip","-6","route","show","table","{{ mwan_rt_tables.att }}"),
-  "t200_v6": cmd("ip","-6","route","show","table","{{ mwan_rt_tables.webpass }}"),
-}))
-PY
-)"
+[ "$DEBUG" = "1" ] && debug_json "FINAL" "rules_and_routes" "$(jq -cn \
+  --arg ip_rule "$(ip rule show || true)" \
+  --arg ip6_rule "$(ip -6 rule show || true)" \
+  --arg t100_v4 "$(ip route show table {{ mwan_rt_tables.att }} || true)" \
+  --arg t200_v4 "$(ip route show table {{ mwan_rt_tables.webpass }} || true)" \
+  --arg t100_v6 "$(ip -6 route show table {{ mwan_rt_tables.att }} || true)" \
+  --arg t200_v6 "$(ip -6 route show table {{ mwan_rt_tables.webpass }} || true)" \
+  '{ip_rule:$ip_rule, ip6_rule:$ip6_rule, t100_v4:$t100_v4, t200_v4:$t200_v4, t100_v6:$t100_v6, t200_v6:$t200_v6}')"
 
