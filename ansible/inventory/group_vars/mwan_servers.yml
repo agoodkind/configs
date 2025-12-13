@@ -33,6 +33,9 @@ mwan_webpass_iface: "{{ detected_webpass_iface | default('enwebpass0') }}"
 mwan_internal_iface: "{{ detected_internal_iface | default('enmwanbr0') }}"
 # Monkeybrains fallback WAN (virtio, optional)
 mwan_monkeybrains_iface: "{{ detected_monkeybrains_iface | default('enmbrains0') }}"
+# If you want a stable `enmbrains0` name, set a fixed Proxmox net2 MAC and match on it.
+# Proxmox example: net2: virtio=BC:24:11:E6:58:31,bridge=vmbrX
+mwan_net2_mac: "BC:24:11:E6:58:31"
 
 # AT&T 802.1X authentication (via X710 VF passthrough)
 mwan_att_vlan_id: 3242
