@@ -123,9 +123,11 @@ MB_HTTP_TARGETS=(
 {% endif %}
 
 log() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    local prefix=""
+    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] ${prefix}$1"
     echo "$msg" | tee -a "$LOG_FILE"
-    logger -t mwan-health "$1"
+    logger -t mwan-health "${prefix}$1"
 }
 
 get_state() {

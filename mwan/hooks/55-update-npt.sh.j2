@@ -17,8 +17,10 @@ if [ "$IFACE" != "$ATT_IFACE" ] && [ "$IFACE" != "$WEBPASS_IFACE" ]; then
 fi
 
 log() {
-    logger -t networkd-dispatcher "[update-npt] $*"
-    echo "[update-npt] $*"
+    local prefix=""
+    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    logger -t networkd-dispatcher "${prefix}[update-npt] $*"
+    echo "[update-npt] ${prefix}$*"
 }
 
 # Session-style debug logging (JSON lines)
@@ -45,10 +47,10 @@ log_json() {
     local loc="$1"; shift
     local msg="$1"; shift
     local data="$1"; shift
-    printf '{"sessionId":"debug-session","runId":"run1",' \
+    printf '{"traceId":"%s","sessionId":"debug-session","runId":"run1",' \
            '"hypothesisId":"%s","location":"%s","message":"%s",' \
            '"data":%s,"timestamp":%s}\n' \
-           "$hid" "$loc" "$msg" "$data" "$(date +%s%3N)" \
+           "${MWAN_TRACE_ID:-}" "$hid" "$loc" "$msg" "$data" "$(date +%s%3N)" \
            >> "$LOG_PATH"
 }
 #endregion
