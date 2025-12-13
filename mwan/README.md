@@ -393,6 +393,16 @@ How to ensure it runs on deploy and reboot:
 - **Deploy**: the playbook reloads `nftables` and then re-applies NPT rules.
 - **Boot**: enable and run `mwan-update-npt.service` (oneshot) so NPT rules are applied even if hooks don’t fire in the right order.
 
+### Deterministic convergence (make sure rules eventually exist)
+
+This is not meant to be “best effort”. We intentionally have **multiple layers** so the system converges even when events are missed or ordering differs across boots:
+
+- **Primary (event-driven)**: `networkd-dispatcher` `routable.d/55-update-npt.sh` runs when a WAN becomes `routable`.
+- **Safety net (boot)**: `mwan-update-npt.service` re-applies NPT rules at boot. It waits for WAN interfaces and the base `ip6 nat` table to exist, and retries on failure.
+- **Safety net (deploy)**: after deploy-time `nftables` reloads, the playbook starts `mwan-update-npt` so runtime-programmed rules are reinstalled.
+
+If you ever see **`nft list ruleset`** mostly empty, that’s a different failure mode (nftables config didn’t load successfully) and must be fixed first; otherwise no amount of retrying `update-npt.sh` will make the firewall correct.
+
 ## Tracing (deploy + boot)
 
 MWAN scripts can emit **structured JSON logs** to `/var/log/mwan-debug.log` when `mwan_debug_logging: true`.
