@@ -42,11 +42,11 @@
     - name: Set target version fact
       ansible.builtin.set_fact:
         semaphore_target_version: >-
-          {% if semaphore_version == 'latest' and github_release is defined %}
-          {{ github_release.json.tag_name | regex_replace('^v', '') | trim }}
-          {% else %}
-          {{ semaphore_version | trim }}
-          {% endif %}
+          {%- if semaphore_version == 'latest' and github_release is defined -%}
+          {{- github_release.json.tag_name | regex_replace('^v', '') | trim -}}
+          {%- else -%}
+          {{- semaphore_version | trim -}}
+          {%- endif -%}
 
     - name: Check if update is needed
       ansible.builtin.set_fact:
@@ -73,8 +73,9 @@
         - name: Set download base URL
           ansible.builtin.set_fact:
             semaphore_base_url: >-
-              https://github.com/semaphoreui/semaphore/releases/download/
-              v{{ semaphore_target_version }}/
+              {{- 'https://github.com/semaphoreui/semaphore/releases/download/v' -}}
+              {{- semaphore_target_version -}}
+              {{- '/' -}}
 
         - name: Set download filename
           ansible.builtin.set_fact:
