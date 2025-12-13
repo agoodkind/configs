@@ -489,6 +489,7 @@
         - scripts/health-check.sh
         - scripts/update-npt.sh
         - scripts/mwan-wait-npt-prereqs.sh
+        - scripts/mwan-wait-routes-prereqs.sh
         - scripts/mwan-trace-boot.sh
 
     - name: Deploy mwan debug helper (single entrypoint)
