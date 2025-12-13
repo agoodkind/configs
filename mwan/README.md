@@ -140,7 +140,7 @@ Downstream LANs use `3d06:bad:b01::/60` on purpose. For all intents and purposes
 
 The only point where traffic becomes Internet-routable is **on `mwan`**, where NPT (stateless prefix translation) swaps the internal /60 to one of the WAN delegated /60 prefixes.
 
-### IPv4 flow examples
+### IPv6 flow examples
 
 #### Example 1: VLAN100 client → OPNsense → MWAN → AT&T (mark 1) → Internet
 
@@ -275,6 +275,15 @@ Additionally, MWAN marks **inbound NEW flows** based on ingress WAN:
 
 This keeps replies **symmetric** (return path uses the same WAN the flow came in on).
 
+### Inbound IPv6 (hosting services)
+
+Inbound IPv6 relies on **reverse-NPT (DNPT)** on MWAN:
+
+- Traffic to the WAN delegated `/60` (e.g. `2604:...:be00::/60` or `2600:...:c80::/60`) is translated back to the internal-only `3d06:bad:b01::/60` and forwarded to OPNsense.
+- The per-WAN `::1/128` (e.g. `2604:...:be00::1`) is reserved for the MWAN↔OPNsense “edge” and is DNAT’d to `3d06:bad:b01:fe::2` (OPNsense on the MWAN link).
+
+Additionally, `update-npt.sh` DNATs any other global IPv6 address assigned to the WAN interface back to OPNsense so those addresses don’t terminate on MWAN unexpectedly.
+
 ## Post-Deployment
 
 ### Verify Services
@@ -346,6 +355,7 @@ tcpdump -ni enmwanbr0 host 10.250.250.2
 
 - Verify public v6 for the service reaches MWAN and is reverse-translated toward internal `3d06:bad:b01::/60`.
   - Check `nft list chain ip6 nat prerouting` / `postrouting` on MWAN and validate OPNsense sees the internal destination.
+  - Note: some providers block ICMPv6 to CPEs; prefer a TCP check (e.g. `nc -vz <v6> 443`).
 
 ### Troubleshooting
 
