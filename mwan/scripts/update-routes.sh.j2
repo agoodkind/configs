@@ -33,6 +33,7 @@ ATT_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"  # AT&T uses VLAN subint
 WEBPASS_IFACE="{{ mwan_webpass_iface }}"
 INTERNAL_IFACE="{{ mwan_internal_iface }}"
 OPNSENSE_WAN_LL="{{ mwan_opnsense_wan_ll }}"
+OPNSENSE_EDGE_V6="{{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}"
 
 # Get gateways
 get_gw4() {
@@ -158,6 +159,12 @@ fi
 # Add internal network routes to all tables (so WANs can reach internal subnets)
 for table in {{ mwan_rt_tables.att }} {{ mwan_rt_tables.webpass }}; do
     ip route add 10.250.250.0/29 dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
+
+    # Hairpin DNAT targets (e.g. WAN /128 interface addresses) are forwarded to OPNsense over the MWAN link.
+    # Inbound flows are fwmarked by ingress WAN; without an explicit route in the policy tables, the fwmark
+    # default route would try to send these packets back out the WAN instead of toward OPNsense.
+    ip -6 route replace "$OPNSENSE_EDGE_V6/128" dev "$INTERNAL_IFACE" table $table 2>/dev/null || true
+
     # IMPORTANT:
     # The internal IPv6 prefix is routed *behind* OPNsense. Using "dev $INTERNAL_IFACE"
     # causes MWAN to attempt neighbor discovery for each internal host and will break
