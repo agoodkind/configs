@@ -25,6 +25,10 @@ debug_json() {
         "${MWAN_TRACE_ID:-}" "$loc" "$msg" "$data" "$(date +%s%3N)" >> "$DEBUG_LOG"
 }
 
+# Hysteresis counters (persist across daemon iterations)
+declare -gA FAIL_COUNTS=()
+declare -gA OK_COUNTS=()
+
 # WAN health check configuration from Ansible group_vars
 # Format: wan_name:interface:ping_count:success_threshold:interval:failure_threshold
 WAN_CONFIGS=(
@@ -296,8 +300,6 @@ handle_wan_recovery() {
 }
 
 run_health_checks() {
-    declare -gA FAIL_COUNTS=()
-    declare -gA OK_COUNTS=()
     local min_interval=999999
 
     for config in "${WAN_CONFIGS[@]}"; do

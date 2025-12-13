@@ -14,8 +14,8 @@ IPv4Forwarding=yes
 IPv6Forwarding=yes
 
 [DHCPv4]
-# Prefer primary WAN routes when multiple exist
-RouteMetric=50
+# Monkeybrains is tertiary. Make its defaults less preferred than primary WANs.
+RouteMetric=5000
 
 [DHCPv6]
 # Request prefix delegation so MWAN can NPT the internal /60 onto Monkeybrains when needed.
@@ -26,4 +26,5 @@ PrefixDelegationHint=::/56
 RouterLifetimeSec=1800
 
 [IPv6AcceptRA]
-RouteMetric=50
+# Monkeybrains is tertiary. Make its defaults less preferred than primary WANs.
+RouteMetric=5000

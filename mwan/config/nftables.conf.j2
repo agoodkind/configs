@@ -175,8 +175,16 @@ table inet mangle {
 {% endfor %}
 {% endif %}
         
+        # Load-balance outbound IPv6 from OPNsense-edge /128 as well.
+        #
+        # Why:
+        # - Hairpinned inbound flows DNAT to OPNsense at {{ mwan_opnsense_edge_ipv6 }}.
+        # - Replies sourced from that address MUST be marked so policy routing sends them
+        #   back out the same WAN (and so postrouting SNAT selects the correct WAN ::1).
+        ip6 saddr {{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}/128 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+
         # Load-balance IPv6 from internal /60 prefix
-        ip6 saddr {{ mwan_internal_prefix }} meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        ip6 saddr {{ mwan_internal_prefix }} ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
         
         # General traffic (no mark): Uses main table's multipath routing
         # Kernel automatically:
