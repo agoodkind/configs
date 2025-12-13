@@ -9,11 +9,7 @@ Type=oneshot
 Restart=on-failure
 RestartSec=5
 
-# Wait for WAN interfaces to exist (avoid running before VLAN/NICs appear)
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do [ -d "/sys/class/net/{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}" ] && [ -d "/sys/class/net/{{ mwan_webpass_iface }}" ] && exit 0; sleep 1; done; echo "WAN interfaces not present yet"; exit 1'
-
-# Ensure base nftables ruleset is loaded (table ip6 nat must exist before update-npt can add rules)
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do nft list table ip6 nat >/dev/null 2>&1 && exit 0; sleep 1; done; echo "nftables ip6 nat table not ready"; exit 1'
+ExecStartPre=/usr/local/bin/mwan-wait-npt-prereqs.sh
 
 ExecStart=/usr/local/bin/update-npt.sh {{ mwan_att_iface }}.{{ mwan_att_vlan_id }} {{ mwan_npt_att_prefix }}
 ExecStart=/usr/local/bin/update-npt.sh {{ mwan_webpass_iface }} {{ mwan_npt_webpass_prefix }}
