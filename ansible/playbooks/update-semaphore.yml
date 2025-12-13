@@ -79,6 +79,12 @@
             path: /tmp/semaphore_extract
             state: absent
 
+        - name: Create extraction directory
+          ansible.builtin.file:
+            path: /tmp/semaphore_extract
+            state: directory
+            mode: '0755'
+
         - name: Extract Semaphore binary
           ansible.builtin.unarchive:
             src: /tmp/semaphore.tar.gz
