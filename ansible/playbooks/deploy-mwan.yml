@@ -169,7 +169,7 @@
             | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
             | upper
           }}
-        mwan_net2_mac: >-
+        parsed_mwan_net2_mac: >-
           {{
             vm_config.stdout_lines
             | select('match', '^net2:.*virtio')
@@ -178,6 +178,10 @@
             | default('')
             | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
             | upper
+          }}
+        mwan_net2_present: >-
+          {{
+            (vm_config.stdout_lines | select('match', '^net2:.*') | list | length) > 0
           }}
         vm_mgmt_mac: >-
           {{
@@ -188,6 +192,15 @@
             | upper
           }}
 
+    - name: Select Monkeybrains MAC (prefer inventory override)
+      delegate_to: localhost
+      ansible.builtin.set_fact:
+        mwan_net2_mac: >-
+          {{
+            ((mwan_net2_mac | default('')) | length > 0)
+            | ternary(mwan_net2_mac, parsed_mwan_net2_mac)
+          }}
+
     - name: Ensure Monkeybrains NIC exists when enabled
       ansible.builtin.fail:
         msg: >-
@@ -196,7 +209,7 @@
           or disable mwan_health_checks.monkeybrains.enabled.
       when:
         - mwan_health_checks.monkeybrains.enabled | default(false)
-        - (mwan_net2_mac | default('') | length) == 0
+        - not mwan_net2_present
 
     - name: Create configuration directories
       ansible.builtin.file:
