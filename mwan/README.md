@@ -125,6 +125,13 @@ systemctl start x710-vf-setup.service
 - **Single VM**: Simpler architecture - all WAN logic in one place
 - **Cloud-init**: SSH keys auto-deployed, no manual bootstrap needed
 
+## Goal (end state)
+
+- **Outbound IPv4**: OPNsense NATs all downstream RFC1918 to `10.250.250.2-10.250.250.6`; MWAN load-balances new flows across AT&T/Webpass and performs 1:1 SNAT to each WAN’s public /29.
+- **Outbound IPv6**: downstream uses internal-only `3d06:bad:b01::/60`; MWAN load-balances new flows and performs NPT to each WAN’s delegated /60.
+- **Inbound services**: inbound IPv4/IPv6 to either WAN’s public space is translated on MWAN (DNAT / reverse-NPT) and forwarded to OPNsense so OPNsense rules/port-forwards can handle services.
+- **Failover**: when a WAN is unhealthy, new flows stop using it; existing sessions drain naturally; recovery restores balancing.
+
 ## IPv6 NPT (How it’s intended to work)
 
 ### Internal-only prefix (treated like ULA)
@@ -292,6 +299,53 @@ nft list ruleset
 # Check health status
 /usr/local/bin/health-check.sh --status
 ```
+
+### Test plan (what “working” looks like)
+
+#### Outbound (from a downstream LAN host)
+
+```bash
+# IPv4 should alternate between WANs across NEW connections
+watch -n 1 'curl -4 -s ifconfig.co; echo'
+
+# IPv6 should alternate between PD prefixes across NEW connections
+watch -n 1 'curl -6 -s ifconfig.co; echo'
+```
+
+#### Failover
+
+- Simulate a WAN down (unplug or block health targets) and confirm:
+  - New outbound sessions stop using the failed WAN.
+  - Traffic continues via the remaining WAN.
+- When restored, confirm balancing returns.
+
+#### External inbound IPv4 (from a host on a different network)
+
+- Pick a mapped public IP (example: Webpass `136.25.91.242` → internal `10.250.250.2`).
+
+```bash
+ping -c 3 136.25.91.242
+
+# For TCP services, prefer an explicit port check:
+nc -vz 136.25.91.242 443
+```
+
+Where to observe:
+
+- **On MWAN** (confirm packet arrives on WAN and is forwarded to OPNsense):
+
+```bash
+tcpdump -ni enwebpass0 host 136.25.91.242
+tcpdump -ni enmwanbr0 host 10.250.250.2
+```
+
+- **On OPNsense**:
+  - Firewall live view on the MWAN-facing WAN should show traffic to `10.250.250.2` (after MWAN DNAT).
+
+#### External inbound IPv6
+
+- Verify public v6 for the service reaches MWAN and is reverse-translated toward internal `3d06:bad:b01::/60`.
+  - Check `nft list chain ip6 nat prerouting` / `postrouting` on MWAN and validate OPNsense sees the internal destination.
 
 ### Troubleshooting
 
