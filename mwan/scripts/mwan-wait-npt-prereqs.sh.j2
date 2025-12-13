@@ -9,10 +9,18 @@ WEBPASS_IFACE="{{ mwan_webpass_iface }}"
 
 IFACE_WAIT_SECS="${IFACE_WAIT_SECS:-60}"
 NFT_WAIT_SECS="${NFT_WAIT_SECS:-30}"
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+  MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
 
 log() {
-  logger -t mwan-wait-npt-prereqs "$1"
-  echo "[mwan-wait-npt-prereqs] $1"
+  local msg="$1"
+  local prefix=""
+  [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+  logger -t mwan-wait-npt-prereqs "${prefix}${msg}"
+  echo "[mwan-wait-npt-prereqs] ${prefix}${msg}"
 }
 
 wait_for_iface() {

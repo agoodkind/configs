@@ -25,8 +25,11 @@ readonly INTERNAL_PREFIX="{{ mwan_internal_prefix }}"
 readonly OPNSENSE_EDGE_V6="{{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}"
 
 log() {
-    logger -t update-npt "$1"
-    echo "[update-npt] $1"
+    local msg="$1"
+    local prefix=""
+    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    logger -t update-npt "${prefix}${msg}"
+    echo "[update-npt] ${prefix}${msg}"
 }
 
 debug_json() {

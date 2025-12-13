@@ -4,16 +4,26 @@
 
 AUTH_FILE="/run/wpa_supplicant-mwan.authenticated"
 WPA_CLI="/sbin/wpa_cli"
+TRACE_FILE="/run/mwan-trace-id"
+MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
+if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+fi
+
+log() {
+    local msg="$1"
+    local prefix=""
+    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${prefix}${msg}" | systemd-cat -t wpa-action
+}
 
 case "$2" in
     CONNECTED)
-        echo "$(date '+%Y-%m-%d %H:%M:%S') CONNECTED" | \
-            systemd-cat -t wpa-action
+        log "CONNECTED"
         touch "$AUTH_FILE"
         ;;
     DISCONNECTED)
-        echo "$(date '+%Y-%m-%d %H:%M:%S') DISCONNECTED" | \
-            systemd-cat -t wpa-action
+        log "DISCONNECTED"
         rm -f "$AUTH_FILE"
         ;;
 esac
