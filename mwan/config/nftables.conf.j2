@@ -92,6 +92,15 @@ table ip nat {
         
         # Mark new connections for load balancing (fwmark)
         iif $INTERNAL_IFACE ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+
+        # Inbound 1:1 NAT (DNAT) for static IPs
+        # Map external /29s back to the internal /29 so OPNsense (and downstream) can receive inbound traffic.
+{% for mapping in mwan_static_mappings.att %}
+        iif $ATT_IFACE ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
+{% endfor %}
+{% for mapping in mwan_static_mappings.webpass %}
+        iif $WEBPASS_IFACE ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
+{% endfor %}
     }
     
     chain postrouting {
@@ -137,6 +146,13 @@ table inet mangle {
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
         
+        # Mark inbound NEW flows by ingress WAN (keeps replies symmetric via policy routing tables)
+        iif $ATT_IFACE ct state new meta mark set 1
+        iif $WEBPASS_IFACE ct state new meta mark set 2
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+        iif $MB_IFACE ct state new meta mark set 3
+{% endif %}
+
         # NOTE: IPv4 load balancing is driven by the per-flow random mark in `table ip nat prerouting`.
         # Do NOT override marks for 10.250.250.2-10.250.250.6 here, or IPv4 will pin to one WAN.
         
