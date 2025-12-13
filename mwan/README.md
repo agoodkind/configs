@@ -187,6 +187,26 @@ What MWAN runs automatically:
   - `mwan-health` continuously probes WANs and calls `update-routes.sh` on failure/recovery
   - `mwan-update-npt.service` exists because `nftables` reloads can flush dynamic NPT rules without generating a new networkd event
 
+### Services + hooks (who calls what)
+
+`systemd-networkd` configures interfaces based on files under `/etc/systemd/network/`. A “device appears” when the kernel creates a netdevice (physical NIC, virtio NIC, VLAN netdev, bridge, etc) and it shows up in `ip link` and `/sys/class/net/…`; `systemd-networkd` is notified via netlink and matches it to `.network/.netdev` config.
+
+`networkd-dispatcher` is **event-driven via D-Bus signals from `systemd-networkd`** (no polling) and runs scripts when an interface changes operational state (e.g. becomes `routable`).
+
+- **`mwan-trace-boot.service`** → writes `/run/mwan-trace-id` early in boot
+- **`systemd-networkd.service`** → creates/links netdevs, configures addresses/routes/DHCP from `.network/.netdev`
+- **`networkd-dispatcher.service`** → on `routable`, runs:
+  - `/etc/networkd-dispatcher/routable.d/50-update-routes.sh` → `/usr/local/bin/update-routes.sh` (updates `ip rule`/`ip route` policy tables)
+  - `/etc/networkd-dispatcher/routable.d/55-update-npt.sh` → `/usr/local/bin/update-npt.sh` (programs `nft` `table ip6 nat` runtime rules + adds PD `::1/128`)
+- **`nftables.service`** → loads the base `/etc/nftables.conf` ruleset (includes *empty* `table ip6 nat` chains; NPT rules are added later)
+- **`wpa_supplicant-mwan.service`** → runs AT&T 802.1X (EAPOL) on the parent interface
+  - **`wpa-cli-action.service`** → `wpa_cli -a /usr/local/bin/wpa-action.sh` → creates/removes `/run/wpa_supplicant-mwan.authenticated`
+  - **`wpa-authenticated.path`** → triggers **`wpa-authenticated.service`** → starts **`bringup-att-vlan.service`**
+    - **`bringup-att-vlan.service`** → `/usr/local/bin/bringup-att-vlan.sh` → `networkctl renew/reconfigure` to trigger DHCP on the VLAN after auth
+- **`mwan-update-routes.service`** → one-shot safety net at boot: runs `update-routes.sh`
+- **`mwan-update-npt.service`** → one-shot safety net at boot (and after deploy-time reload): runs `update-npt.sh` for each WAN
+- **`mwan-health.service`** → runs `/usr/local/bin/health-check.sh --daemon` → `ping`/`ping6` + optional `curl` checks; calls `update-routes.sh` when a WAN is marked down/up
+
 Typical state flows:
 
 - **Boot**: devices appear → networkd config applies → WAN becomes routable → dispatcher triggers hooks → NPT/routes applied → health loop begins.
