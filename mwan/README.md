@@ -2,11 +2,7 @@
 
 Single-VM Debian 13 configuration for dual-WAN (AT&T + Webpass) load balancing with PCI passthrough.
 
-**mwan VM**: All-in-one solution:
-
-- AT&T 802.1X authentication (X710 VF with trust mode)
-- Webpass WAN (I226-V full passthrough)
-- Load balancing, 1:1 NAT, NPT, health monitoring
+**mwan VM**: All-in-one solution for AT&T 802.1X + Webpass WAN + load balancing + 1:1 NAT + NPT + health monitoring.
 
 ## Quick Start
 
@@ -70,9 +66,6 @@ lspci | grep "Virtual Function"
 
 Create systemd service to configure VF on boot:
 
-TODO: put this in a jinja file and add to the deploy system (jinja to set mac address)
-TODO: update ansible playbook to use the VF
-
 ```bash
 cat > /etc/systemd/system/x710-vf-setup.service << 'EOF'
 [Unit]
@@ -117,26 +110,45 @@ systemctl start x710-vf-setup.service
 
 **OPNsense sees:** Single WAN at 10.250.250.1 (mwan gateway)
 
-**Key Points:**
+### Why PCI passthrough
 
-- **AT&T 802.1X**: wpa_supplicant runs in mwan VM (X710 VF with trust mode)
-- **Webpass**: Full I226-V NIC passthrough (avoids MAC conflicts with Webpass ISP)
-- **X710 VF**: Trust mode required for EAPOL (802.1X) frames
-- **Single VM**: Simpler architecture - all WAN logic in one place
-- **Cloud-init**: SSH keys auto-deployed, no manual bootstrap needed
+- **X710 VF (AT&T)**: trust mode required for EAPOL (802.1X) frames (does not work reliably over a virtio bridge)
+- **I226-V (Webpass)**: full passthrough avoids MAC address conflicts (Webpass is MAC-sensitive)
+- **Performance / simplicity**: direct NIC access; one VM owns all WAN logic
+
+### Trade-offs
+
+- **VM migration**: cannot live-migrate while PCI devices are attached
+- **Hardware dependencies**: VF setup on Proxmox host is a prerequisite
+
+### Testing checklist
+
+1. Verify VF trust mode persists after Proxmox host reboot
+2. Verify AT&T 802.1X authentication succeeds
+3. Verify Webpass DHCP works with the real NIC MAC
+4. Test WAN failover between AT&T and Webpass
+5. Verify NPT and 1:1 NAT mappings work correctly
 
 ## Goal (end state)
 
-- **Outbound IPv4**: OPNsense NATs all downstream RFC1918 to `10.250.250.2-10.250.250.6`; MWAN load-balances new flows across AT&T/Webpass and performs 1:1 SNAT to each WAN’s public /29.
+- **Outbound IPv4**: OPNsense SNATs all downstream RFC1918 to `10.250.250.2-10.250.250.6`; MWAN load-balances *new* flows across AT&T/Webpass and performs 1:1 SNAT to the corresponding public /29 on the chosen WAN (see the static mapping table below).
 - **Outbound IPv6**: downstream uses internal-only `3d06:bad:b01::/60`; MWAN load-balances new flows and performs NPT to each WAN’s delegated /60.
 - **Inbound services**: inbound IPv4/IPv6 to either WAN’s public space is translated on MWAN (DNAT / reverse-NPT) and forwarded to OPNsense so OPNsense rules/port-forwards can handle services.
 - **Failover**: when a WAN is unhealthy, new flows stop using it; existing sessions drain naturally; recovery restores balancing.
 
-## IPv6 NPT (How it’s intended to work)
+## IPv6 (NPT + inbound DNPT)
+
+This section describes how MWAN does **stateless outbound NPT** and **inbound reverse-NPT (DNPT)** while keeping downstream addressing stable.
 
 ### Internal-only prefix (treated like ULA)
 
 Downstream LANs use `3d06:bad:b01::/60` on purpose. For all intents and purposes, this prefix should be treated as **internal-only** (ULA-like): it is **not** meant to be globally routed on the Internet.
+
+**Why this is not a ULA (`fd00::/8`):**
+
+- Modern OSes decide “IPv6 is probably globally useful” largely based on whether the source address is a **GUA** vs a **ULA** (RFC 6724-ish behavior).
+- If you use a ULA internally, many clients will deprioritize it vs IPv4 (or choose it only for destinations they already believe are “local”), even though *we know* it will work globally once MWAN does NPT.
+- Using a “fake” GUA-shaped internal prefix keeps clients preferring IPv6, while MWAN is the only place where that prefix becomes Internet-routable via NPT.
 
 The only point where traffic becomes Internet-routable is **on `mwan`**, where NPT (stateless prefix translation) swaps the internal /60 to one of the WAN delegated /60 prefixes.
 
@@ -237,6 +249,20 @@ For IPv4, **OPNsense only “sees” the MWAN internal link** (`10.250.250.0/29`
 - **Load-balances flows** across AT&T vs Webpass (mark 1 / mark 2)
 - **Maps the internal /29 to each WAN’s public /29** (dual 1:1 mapping: one external mapping per WAN)
 
+### Static IP mappings (internal /29 ↔ public /29s)
+
+| Internal | AT&T | Webpass | Purpose |
+|----------|------|---------|---------|
+| 10.250.250.2 | 104.57.226.193 | 136.25.91.242 | OPNsense primary |
+| 10.250.250.3 | 104.57.226.194 | 136.25.91.243 | Service 1 |
+| 10.250.250.4 | 104.57.226.195 | 136.25.91.244 | Service 2 |
+| 10.250.250.5 | 104.57.226.196 | 136.25.91.245 | Service 3 |
+| 10.250.250.6 | 104.57.226.197 | 136.25.91.246 | Service 4 |
+
+Notes:
+
+- Webpass gateway is `136.25.91.241` (not part of the static mapping set).
+
 ### Flow examples
 
 #### Example 1: VLAN100 client → OPNsense NAT to `10.250.250.2` → MWAN chooses AT&T → Internet
@@ -282,9 +308,25 @@ Inbound IPv6 relies on **reverse-NPT (DNPT)** on MWAN:
 - Traffic to the WAN delegated `/60` (e.g. `2604:...:be00::/60` or `2600:...:c80::/60`) is translated back to the internal-only `3d06:bad:b01::/60` and forwarded to OPNsense.
 - The per-WAN `::1/128` (e.g. `2604:...:be00::1`) is reserved as the MWAN↔OPNsense “edge” on that WAN.
 
-Additionally, `update-npt.sh` DNATs any other global IPv6 address assigned to the WAN interface back to OPNsense so those addresses don’t terminate on MWAN unexpectedly.
+Additionally, `update-npt.sh` can DNAT other global IPv6 addresses assigned to a WAN interface back to OPNsense so those addresses don’t terminate on MWAN unexpectedly — **but this only helps if your ISP actually delivers inbound traffic to those addresses.**
 
-#### Hairpin WAN interface /128s to OPNsense (optional but recommended for hosting)
+#### Reality check (AT&T): inbound to the DHCPv6 /128 “interface address” is blocked
+
+In practice, AT&T (and many residential ISPs) do **not** reliably deliver inbound traffic to the DHCPv6 /128 “interface address”
+(`2001:506:72f7:108c::1/128`). We confirmed this by capturing on MWAN’s AT&T interface while probing from an external host: **no packets arrived**.
+
+So for inbound hosting, treat the WAN “interface /128” path as **best-effort / ISP-dependent**.
+
+#### Recommended inbound IPv6 “edge” addresses (symmetric across WANs)
+
+To keep behavior consistent across providers and avoid extra carve-outs, prefer a single, predictable inbound address per WAN taken from the **delegated /60**:
+
+- **AT&T edge**: `2600:1700:2f71:c80::1` (PD `::1/128`)
+- **Webpass edge**: `2604:5500:c271:be00::1` (PD `::1/128`)
+
+Both are DNAT’d on MWAN to the same OPNsense MWAN-link address: `3d06:bad:b01:fe::2`.
+
+#### Optional: hairpin extra WAN interface /128s to OPNsense (ISP-dependent)
 
 MWAN’s WAN interfaces will often have additional globally-routable IPv6 **/128 “interface addresses”** (for example:
 Webpass `2604:5500:c271:8000::72b/128` or AT&T `2001:506:72f7:108c::1/128`).
@@ -311,35 +353,24 @@ Why this is required:
   route for the DNAT target (`3d06:bad:b01:fe::2/128`) via the MWAN↔OPNsense link; otherwise the fwmark default
   route will try to send the packet back out the WAN instead of toward OPNsense.
 
-#### Reality check: AT&T inbound to the DHCPv6 /128 is blocked
-
-In practice, AT&T does **not** deliver inbound traffic to the DHCPv6 /128 “interface address”
-(`2001:506:72f7:108c::1/128`). We confirmed this by capturing on MWAN’s AT&T interface while probing from an
-external host: **no packets arrived**.
-
-So, AT&T inbound hosting should target the **delegated /60** instead.
-
-#### Recommended inbound “edge” addresses (symmetric across WANs)
-
-To keep behavior consistent across providers and avoid extra carve-outs:
-
-- **AT&T edge**: `2600:1700:2f71:c80::1` (PD `::1/128`)
-- **Webpass edge**: `2604:5500:c271:be00::1` (PD `::1/128`)
-
-Both are DNAT’d on MWAN to the same OPNsense MWAN-link address: `3d06:bad:b01:fe::2`.
-
 ## NPT rule persistence (why `ip6 nat` chains can be empty)
 
-The IPv6 NPT/DNPT rules live in `table ip6 nat` and are **programmed at runtime** by `update-npt.sh`.
-It’s possible to end up with empty chains after a deploy/reboot if:
+The IPv6 NPT/DNPT rules live in `table ip6 nat` and are **programmed at runtime** by `update-npt.sh` (not baked into the static `nftables.conf`).
 
-- `nftables` is reloaded (which flushes/replaces the ruleset) **after** the WAN interfaces were already “routable”, and
-  the `networkd-dispatcher` hook won’t re-run automatically, or
-- `update-npt.sh` runs while an interface isn’t present yet (it exits due to `set -e`), and the deploy ignores the failure.
+So an empty `table ip6 nat` is not “healthy” — it just means the runtime programming didn’t happen (or was flushed after it happened).
 
-### How to recover (manual, no guessing)
+Common reasons this happens:
 
-On MWAN:
+- **Deploy ordering / reloads**: Ansible reloads `nftables`, which flushes the ruleset. If the WAN links are already in a steady “routable” state, the `networkd-dispatcher` “routable” event may not fire again, so `update-npt.sh` doesn’t get re-triggered automatically.
+- **Boot races**: `update-npt.sh` can run before VLAN/NIC devices exist (or before PD is present) and exit early (it uses `set -e`).
+
+How `networkd-dispatcher` fits in:
+
+- `systemd-networkd` tracks link/address state.
+- `networkd-dispatcher` watches those state transitions and runs scripts in `/etc/networkd-dispatcher/<state>/` (e.g. “routable”).
+- It is event-driven; it does not continuously re-apply rules after an unrelated `nftables` reload.
+
+Manual recovery (no guessing), on MWAN:
 
 ```bash
 /usr/local/bin/update-npt.sh enatt0.3242 2600:1700:2f71:c80::/60
@@ -435,7 +466,8 @@ tcpdump -ni enmwanbr0 host 10.250.250.2
 Example targets:
 
 - Webpass interface /128: `2604:5500:c271:8000::72b`
-- AT&T interface /128: `2001:506:72f7:108c::1`
+- AT&T interface /128: `2001:506:72f7:108c::1` (**often blocked by AT&T; you may see zero packets on MWAN**)
+- Preferred “works everywhere” targets: the per-WAN PD `::1` addresses (e.g. `2600:1700:2f71:c80::1` and `2604:5500:c271:be00::1`)
 
 Where to observe:
 
@@ -489,20 +521,6 @@ tcpdump -ni enmwanbr0 host 3d06:bad:b01:fe::2
    - Remove AT&T and Webpass interfaces
    - Remove opnatt scripts
 
-## Static IP Mappings
-
-| Internal | AT&T | Webpass | Purpose |
-|----------|------|---------|---------|
-| 10.250.250.2 | 104.57.226.193 | 136.25.91.242 | OPNsense primary |
-| 10.250.250.3 | 104.57.226.194 | 136.25.91.243 | Service 1 |
-| 10.250.250.4 | 104.57.226.195 | 136.25.91.244 | Service 2 |
-| 10.250.250.5 | 104.57.226.196 | 136.25.91.245 | Service 3 |
-| 10.250.250.6 | 104.57.226.197 | 136.25.91.246 | Service 4 |
-
-Notes:
-
-- Webpass gateway is `136.25.91.241` (not part of the static mapping set).
-
 ## Tracing (deploy + boot)
 
 MWAN scripts can emit **structured JSON logs** to `/var/log/mwan-debug.log` when `mwan_debug_logging: true`.
@@ -530,26 +548,3 @@ journalctl -b --no-pager | grep -F 'traceId=' | tail -n 50
 - **Phase 3**: Add Monkeybrains as failover WAN
 - **Phase 4**: Dynamic DNS for Monkeybrains public IPv4
 - **Go Rewrite**: Single binary orchestrator for better state management
-
-## Architecture Notes
-
-**Why PCI Passthrough:**
-
-- **X710 VF (AT&T)**: Trust mode required for EAPOL (802.1X) frames - can't do this over virtio bridge
-- **I226-V (Webpass)**: Full passthrough avoids MAC address conflicts - Webpass is MAC-sensitive
-- **Performance**: Direct hardware access, no bridge overhead
-- **Simplicity**: Single VM handles everything - no complex bridging between VMs
-
-**Trade-offs:**
-
-- **VM Migration**: Cannot migrate mwan VM (PCI devices are bound to hardware)
-- **X710 Usage**: VF consumes one function, but host can still create more VFs from remaining capacity
-- **Dependencies**: Requires VF setup on Proxmox host before VM deployment
-
-**Testing checklist:**
-
-1. Verify VF trust mode persists after Proxmox host reboot
-2. Verify AT&T 802.1X authentication succeeds
-3. Verify Webpass DHCP works with real NIC MAC
-4. Test WAN failover between AT&T and Webpass
-5. Verify NPT and 1:1 NAT mappings work correctly
