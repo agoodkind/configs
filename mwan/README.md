@@ -133,7 +133,7 @@ Downstream LANs use `3d06:bad:b01::/60` on purpose. For all intents and purposes
 
 The only point where traffic becomes Internet-routable is **on `mwan`**, where NPT (stateless prefix translation) swaps the internal /60 to one of the WAN delegated /60 prefixes.
 
-### Flow examples
+### IPv4 flow examples
 
 #### Example 1: VLAN100 client → OPNsense → MWAN → AT&T (mark 1) → Internet
 
@@ -252,6 +252,22 @@ From a downstream host (e.g. VLAN100), repeated *new* outbound requests should a
   - `104.57.226.19x` (AT&T public /29)
   - `136.25.91.24x` (Webpass public /29)
 
+### Inbound IPv4 (hosting services)
+
+Inbound traffic to the public /29s must be **DNAT’d on MWAN** back to the internal /29 so OPNsense can see it.
+
+- **Example**: external host pings `136.25.91.242`
+  - Packet arrives at MWAN on `enwebpass0` with `dst=136.25.91.242`
+  - MWAN **DNATs** it to `dst=10.250.250.2` and forwards it to OPNsense over `enmwanbr0`
+  - OPNsense then applies its own inbound rules/port-forwards (if any)
+
+Additionally, MWAN marks **inbound NEW flows** based on ingress WAN:
+
+- `iif enatt0.3242` → **mark=1** (AT&T)
+- `iif enwebpass0` → **mark=2** (Webpass)
+
+This keeps replies **symmetric** (return path uses the same WAN the flow came in on).
+
 ## Post-Deployment
 
 ### Verify Services
@@ -321,11 +337,37 @@ nft list ruleset
 
 | Internal | AT&T | Webpass | Purpose |
 |----------|------|---------|---------|
-| 10.250.250.2 | 104.57.226.193 | 136.25.91.241 | OPNsense primary |
-| 10.250.250.3 | 104.57.226.194 | 136.25.91.242 | Service 1 |
-| 10.250.250.4 | 104.57.226.195 | 136.25.91.243 | Service 2 |
-| 10.250.250.5 | 104.57.226.196 | 136.25.91.244 | Service 3 |
-| 10.250.250.6 | 104.57.226.197 | 136.25.91.245 | Service 4 |
+| 10.250.250.2 | 104.57.226.193 | 136.25.91.242 | OPNsense primary |
+| 10.250.250.3 | 104.57.226.194 | 136.25.91.243 | Service 1 |
+| 10.250.250.4 | 104.57.226.195 | 136.25.91.244 | Service 2 |
+| 10.250.250.5 | 104.57.226.196 | 136.25.91.245 | Service 3 |
+| 10.250.250.6 | 104.57.226.197 | 136.25.91.246 | Service 4 |
+
+Notes:
+
+- Webpass gateway is `136.25.91.241` (not part of the static mapping set).
+
+## Tracing (deploy + boot)
+
+MWAN scripts can emit **structured JSON logs** to `/var/log/mwan-debug.log` when `mwan_debug_logging: true`.
+Each log line includes a **traceId** so you can correlate events across:
+
+- `systemd-networkd` / `networkd-dispatcher` hooks
+- `update-routes.sh`, `update-npt.sh`
+- `health-check.sh`
+
+Trace ID sources:
+
+- **Boot trace**: `mwan-trace-boot.service` writes `/run/mwan-trace-id` and `/var/lib/mwan/trace-id`
+- **Deploy trace**: `deploy-mwan.yml` writes the same files at the start of deploy
+
+Quick usage on MWAN:
+
+```bash
+cat /run/mwan-trace-id
+tail -n 200 /var/log/mwan-debug.log
+journalctl -b --no-pager | grep -F 'traceId=' | tail -n 50
+```
 
 ## Future Enhancements
 
