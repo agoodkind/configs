@@ -162,21 +162,12 @@
       ansible.builtin.debug:
         msg: "Semaphore version {{ semaphore_new_version.stdout }} is now installed"
 
-    - name: Reload systemd daemon
-      ansible.builtin.systemd:
-        daemon_reload: true
-
-    - name: Restart Semaphore service
-      ansible.builtin.systemd:
-        name: semaphore
-        state: restarted
-
-    - name: Ensure Semaphore service is enabled
-      ansible.builtin.systemd:
-        name: semaphore
-        enabled: true
-
-    - name: Verify Semaphore service is running
-      ansible.builtin.systemd:
-        name: semaphore
-        state: started
+    # Reboot is required to apply binary update; systemctl is appropriate here
+    - name: Reboot system to apply Semaphore update  # noqa: command-instead-of-module noqa: shell
+      ansible.builtin.command:
+        cmd: systemctl reboot
+      async: 1
+      poll: 0
+      changed_when: true
+      failed_when: false
+      when: update_needed | bool
