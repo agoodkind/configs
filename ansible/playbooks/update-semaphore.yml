@@ -7,7 +7,7 @@
     semaphore_version: "latest"
     semaphore_user: semaphore
     semaphore_group: semaphore
-    semaphore_install_dir: /usr/local/bin
+    semaphore_install_dir: /usr/bin
     semaphore_config_dir: /etc/semaphore
     semaphore_data_dir: /var/lib/semaphore
 
@@ -103,6 +103,17 @@
           ansible.builtin.fail:
             msg: "Semaphore binary not found in extracted archive"
           when: semaphore_binary_file.files | length == 0
+
+        - name: Check if semaphore path exists and is a directory
+          ansible.builtin.stat:
+            path: "{{ semaphore_install_dir }}/semaphore"
+          register: semaphore_path_stat
+
+        - name: Remove existing semaphore directory if present
+          ansible.builtin.file:
+            path: "{{ semaphore_install_dir }}/semaphore"
+            state: absent
+          when: semaphore_path_stat.stat.exists and semaphore_path_stat.stat.isdir
 
         - name: Install Semaphore binary
           ansible.builtin.copy:
