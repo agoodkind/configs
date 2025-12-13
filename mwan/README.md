@@ -280,9 +280,33 @@ This keeps replies **symmetric** (return path uses the same WAN the flow came in
 Inbound IPv6 relies on **reverse-NPT (DNPT)** on MWAN:
 
 - Traffic to the WAN delegated `/60` (e.g. `2604:...:be00::/60` or `2600:...:c80::/60`) is translated back to the internal-only `3d06:bad:b01::/60` and forwarded to OPNsense.
-- The per-WAN `::1/128` (e.g. `2604:...:be00::1`) is reserved for the MWAN↔OPNsense “edge” and is DNAT’d to `3d06:bad:b01:fe::2` (OPNsense on the MWAN link).
+- The per-WAN `::1/128` (e.g. `2604:...:be00::1`) is reserved for the MWAN↔OPNsense “edge”.
 
 Additionally, `update-npt.sh` DNATs any other global IPv6 address assigned to the WAN interface back to OPNsense so those addresses don’t terminate on MWAN unexpectedly.
+
+#### Hairpin WAN interface /128s to OPNsense (optional but recommended for hosting)
+
+MWAN’s WAN interfaces will often have additional globally-routable IPv6 **/128 “interface addresses”** (for example:
+Webpass `2604:5500:c271:8000::72b/128` or AT&T `2001:506:72f7:108c::1/128`).
+
+If you want packets sent to those **interface /128s** to be handled by **OPNsense** (instead of terminating on MWAN),
+MWAN can DNAT them to a stable IPv6 address on the MWAN↔OPNsense link.
+
+**Requirement on OPNsense (MWAN-facing WAN interface):**
+
+- **IPv6 address**: `3d06:bad:b01:fe::2/64`
+- **IPv6 gateway**: MWAN’s link-local on the MWAN link (e.g. `fe80::be24:11ff:fe72:c1`)
+
+Why this is required:
+
+- OPNsense can be link-local-only for normal NPT routing and still work.
+- But DNAT cannot practically target a link-local address (it is interface-scoped), so OPNsense needs a stable on-link IPv6
+  address for MWAN to DNAT to.
+
+**Caution (don’t break replies):**
+
+- When DNATing WAN interface /128s to `3d06:bad:b01:fe::2`, ensure MWAN’s SNAT rules do not override conntrack’s
+  reverse-NAT for the return traffic.
 
 ## Post-Deployment
 
@@ -357,6 +381,25 @@ tcpdump -ni enmwanbr0 host 10.250.250.2
   - Check `nft list chain ip6 nat prerouting` / `postrouting` on MWAN and validate OPNsense sees the internal destination.
   - Note: some providers block ICMPv6 to CPEs; prefer a TCP check (e.g. `nc -vz <v6> 443`).
 
+##### External inbound IPv6 to WAN interface /128 (hairpin validation)
+
+Example targets:
+
+- Webpass interface /128: `2604:5500:c271:8000::72b`
+- AT&T interface /128: `2001:506:72f7:108c::1`
+
+Where to observe:
+
+- **On MWAN** (confirm packet arrives on WAN and is forwarded to OPNsense over the MWAN link):
+
+```bash
+tcpdump -ni enwebpass0 host 2604:5500:c271:8000::72b
+tcpdump -ni enmwanbr0 host 3d06:bad:b01:fe::2
+```
+
+- **On OPNsense**:
+  - Firewall live view on the MWAN-facing WAN should show traffic with destination `3d06:bad:b01:fe::2` (after MWAN DNAT).
+
 ### Troubleshooting
 
 **AT&T 802.1X not authenticating:**
@@ -382,8 +425,8 @@ tcpdump -ni enmwanbr0 host 10.250.250.2
 1. **Add vNIC to OPNsense** on vmbr_mwan
 2. **Configure new interface**:
    - IPv4: `10.250.250.2/29`
-   - IPv6: Link-local with mwanbr LL as gateway
-   - Gateway: `10.250.250.1`
+   - IPv6: `3d06:bad:b01:fe::2/64` with MWAN link-local as gateway
+   - Gateway: `10.250.250.1` (IPv4), `fe80::be24:11ff:fe72:c1` (IPv6)
 3. **Test connectivity** through mwan gateway
 4. **Point test firewall rule** to use mwan gateway
 
