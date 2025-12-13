@@ -192,19 +192,18 @@ Typical state flows:
 - **Boot**: devices appear → networkd config applies → WAN becomes routable → dispatcher triggers hooks → NPT/routes applied → health loop begins.
 - **Deploy / reboot**: an `nftables` reload can flush runtime NPT rules; if the WAN was already routable, dispatcher may not fire again, so we run `mwan-update-npt.service` to reapply.
   - **Why dispatcher doesn’t fire**: `networkd-dispatcher` is event-driven off `systemd-networkd` **state transitions** (e.g. “configuring” → “routable”). Reloading `nftables` does not change link/address state, so there’s no new transition to trigger hooks.
-- **Link down/up**: hard carrier changes can trigger dispatcher; “soft failures” are handled by health checks.
+- **Link down / up (hard failure)**: carrier loss/return changes `systemd-networkd` state and can trigger `networkd-dispatcher` hooks.
+- **Soft failure / recovery (health state)**: the interface stays `UP`, but upstream connectivity is broken/degraded.
   - **Important**: “down” here means **MWAN health state**, not necessarily `ip link state DOWN`.
     - If the kernel link is `DOWN`, MWAN can’t send probes and will treat it as down immediately.
-    - If the kernel link is `UP` but upstream is broken, that’s a “soft failure”.
-  - **What is a “soft failure”?** The interface stays `UP` (carrier present) but upstream connectivity is broken or degraded (routing blackhole, PD missing/expired, ISP outage, DNS issues, etc).
-  - **How we detect it** (`mwan-health` / `health-check.sh`):
+  - **How we detect a soft failure** (`mwan-health` / `health-check.sh`):
     - Probes multiple targets per WAN over that WAN interface (IPv6 first, then IPv4; optional HTTP checks).
-    - Today those probes are: `ping6` / `ping` plus optional `curl -6` / `curl -4` to configured HTTP endpoints (no `nc` in the current health checks).
+    - Probes used today: `ping6` / `ping` plus optional `curl -6` / `curl -4` to configured HTTP endpoints (no `nc`).
     - Marks a WAN **down** after **N consecutive failed check cycles** (`failure_threshold`) to avoid flapping.
   - **How we detect recovery**:
-    - A WAN is marked **up** only after **M consecutive successful check cycles** (`recovery_threshold`) — this hysteresis prevents oscillation during partial recovery.
+    - Marks a WAN **up** only after **M consecutive successful check cycles** (`recovery_threshold`) — hysteresis to prevent oscillation during partial recovery.
   - **What happens on down/up**:
-    - `mwan-health` calls `update-routes.sh` to remove/add the WAN for *new* flows (existing sessions drain naturally via conntrack).
+    - Calls `update-routes.sh` to remove/add the WAN for *new* flows (existing sessions drain via conntrack).
 
 ## IPv6 (NPT + inbound DNPT)
 
