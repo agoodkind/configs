@@ -85,6 +85,19 @@ nft add rule ip6 nat postrouting oif "$WAN_IFACE" ip6 saddr "$INTERNAL_PREFIX" s
 nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "${TARGET_PREFIX%/*}1/128" dnat to 3d06:bad:b01:fe::2
 nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$TARGET_PREFIX" dnat ip6 prefix to "$INTERNAL_PREFIX"
 
+# Also DNAT any other global IPv6 address that is currently assigned to the WAN interface
+# (e.g., SLAAC /64 address or other provider-assigned /128) back to OPNsense.
+#
+# This prevents confusion where a "WAN interface address" is reachable from the Internet,
+# but would otherwise terminate on MWAN and never be seen by OPNsense.
+for ip6_cidr in $(ip -6 addr show dev "$WAN_IFACE" scope global | awk '/inet6/{print $2}' || true); do
+    # Skip the PD ::1/128 alias we intentionally manage above.
+    [ "$ip6_cidr" = "${TARGET_PREFIX%/*}1/128" ] && continue
+    ip6_addr="${ip6_cidr%/*}"
+    [ -n "$ip6_addr" ] || continue
+    nft add rule ip6 nat prerouting iif "$WAN_IFACE" ip6 daddr "$ip6_addr" dnat to 3d06:bad:b01:fe::2
+done
+
 # Save current nftables config
 nft list ruleset > /etc/nftables.conf.dynamic
 
