@@ -46,6 +46,48 @@ readonly INTERNAL_PREFIX="{{ mwan_internal_prefix }}"
 readonly OPNSENSE_EDGE_V6="{{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}"
 readonly MB_STATIC_PREFIX="{{ mwan_npt_monkeybrains_prefix | default('') }}"
 
+ipv6_to_hextets() {
+    # Expand an IPv6 address into 8 numeric hextets (global array H[0..7]).
+    # Supports :: compression.
+    local addr="$1"
+    local left right
+    local -a left_arr=() right_arr=() all=()
+
+    if [[ "$addr" == *"::"* ]]; then
+        left="${addr%%::*}"
+        right="${addr##*::}"
+        if [ -n "$left" ]; then IFS=':' read -r -a left_arr <<<"$left"; fi
+        if [ -n "$right" ]; then IFS=':' read -r -a right_arr <<<"$right"; fi
+        local missing=$((8 - ${#left_arr[@]} - ${#right_arr[@]}))
+        all=("${left_arr[@]}")
+        for ((i=0; i<missing; i++)); do all+=("0"); done
+        all+=("${right_arr[@]}")
+    else
+        IFS=':' read -r -a all <<<"$addr"
+    fi
+
+    while ((${#all[@]} < 8)); do all+=("0"); done
+
+    H=()
+    for i in {0..7}; do
+        local v="${all[$i]:-0}"
+        H+=($((16#$v)))
+    done
+}
+
+first_60_of_prefix() {
+    # Given an IPv6 prefix like 2607:f598:d3e0:131::/56, return the first /60 inside it.
+    local cidr="$1"
+    local addr="${cidr%/*}"
+    local plen="${cidr##*/}"
+    [[ "$plen" =~ ^[0-9]+$ ]] || return 1
+    [ "$plen" -le 60 ] || return 1
+    ipv6_to_hextets "$addr"
+    # /60 keeps 12 bits of hextet4, zeroes the remaining 4 bits.
+    local h4=$(( H[3] & 0xfff0 ))
+    printf '%x:%x:%x:%x::/60\n' "${H[0]}" "${H[1]}" "${H[2]}" "$h4"
+}
+
 log() {
     local msg="$1"
     local prefix=""
@@ -97,21 +139,7 @@ case "$WAN_IFACE" in
             TARGET_PREFIX="$MB_STATIC_PREFIX"
         else
             # Monkeybrains may delegate a /56; pick the first /60 from the delegated prefix.
-            # If it already delegated a /60, use it as-is.
-            TARGET_PREFIX="$(python3 - "$DELEGATED_PREFIX" <<'PY'
-import ipaddress, sys
-pd = sys.argv[1]
-net = ipaddress.IPv6Network(pd, strict=False)
-if net.prefixlen == 60:
-    print(str(net))
-elif net.prefixlen < 60:
-    # only need a small number of subnets; /56 -> /60 yields 16
-    print(str(next(net.subnets(new_prefix=60))))
-else:
-    # delegated prefix is smaller than /60; can't do stateless NPT from /60
-    print("")
-PY
-)"
+            TARGET_PREFIX="$(first_60_of_prefix "$DELEGATED_PREFIX" 2>/dev/null || true)"
             if [ -z "$TARGET_PREFIX" ]; then
                 log "Delegated prefix $DELEGATED_PREFIX is not usable for /60 NPT; skipping"
                 exit 0
@@ -124,12 +152,11 @@ PY
         ;;
 esac
 
-[ "$DEBUG" = "1" ] && debug_json "SELECT" "target_prefix_selected" "$(python3 - "$WAN_IFACE" "$DELEGATED_PREFIX" "$TARGET_PREFIX" <<'PY'
-import json, sys
-iface, delegated, target = sys.argv[1], sys.argv[2], sys.argv[3]
-print(json.dumps({"iface": iface, "delegated": delegated, "target": target}))
-PY
-)"
+[ "$DEBUG" = "1" ] && debug_json "SELECT" "target_prefix_selected" "$(jq -cn \
+  --arg iface "$WAN_IFACE" \
+  --arg delegated "$DELEGATED_PREFIX" \
+  --arg target "$TARGET_PREFIX" \
+  '{iface:$iface, delegated:$delegated, target:$target}')"
 
 # Postrouting: 
 # - SNAT specific /128s (fe::1, fe::2) to PD ::1
@@ -174,15 +201,9 @@ rm -f "$tmp"
 # Save current nftables config
 nft list ruleset > /etc/nftables.conf.dynamic
 
-[ "$DEBUG" = "1" ] && debug_json "NFT" "ip6_nat_chains" "$(python3 - <<'PY'
-import json,subprocess
-def cmd(*a):
-    return subprocess.run(list(a), capture_output=True, text=True).stdout.strip()
-print(json.dumps({
-  "prerouting": cmd("nft","-a","list","chain","ip6","nat","prerouting"),
-  "postrouting": cmd("nft","-a","list","chain","ip6","nat","postrouting"),
-}))
-PY
-)"
+[ "$DEBUG" = "1" ] && debug_json "NFT" "ip6_nat_chains" "$(jq -cn \
+  --arg prerouting "$(nft -a list chain ip6 nat prerouting 2>/dev/null || true)" \
+  --arg postrouting "$(nft -a list chain ip6 nat postrouting 2>/dev/null || true)" \
+  '{prerouting:$prerouting, postrouting:$postrouting}')"
 
 log "NPT update complete for $WAN_IFACE"
