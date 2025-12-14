@@ -7,12 +7,12 @@
     # Keep targeting logic in sync with the main play below.
     effective_target: >-
       {{
-        (target_hostname | default('') | trim)
-        if (target_hostname | default('') | trim) | length > 0
+        (target_hosts | default('') | trim)
+        if (target_hosts | default('') | trim) | length > 0
         else (
           (hostname | default('') | trim)
           if (hostname | default('') | trim) | length > 0
-          else (target_hosts | default('proxmox_all_lxc'))
+          else 'proxmox_all_lxc'
         )
       }}
     selected_hosts: >-
@@ -23,39 +23,52 @@
       }}
 
   tasks:
-    - name: Ensure guest is running on Proxmox (pct/qm)
-      vars:
-        proxmox_host: "{{ hostvars[item].ansible_proxmox_host | default('') }}"
-        vmid: "{{ hostvars[item].ansible_proxmox_vmid | default('') }}"
-      when:
-        - item in hostvars
-        - (proxmox_host | trim) | length > 0
-        - (vmid | string | trim) | length > 0
+    - name: Build Proxmox start target list
+      ansible.builtin.set_fact:
+        guest_start_targets: >-
+          {{
+            (guest_start_targets | default([])) + [
+              {
+                'name': item,
+                'proxmox_host': (hostvars[item].ansible_proxmox_host | default('') | trim),
+                'vmid': (hostvars[item].ansible_proxmox_vmid | default('') | string | trim)
+              }
+            ]
+          }}
       loop: "{{ selected_hosts }}"
       loop_control:
         label: "{{ item }}"
-      delegate_to: "{{ proxmox_host }}"
+      when:
+        - item in hostvars
+        - (hostvars[item].ansible_proxmox_host | default('') | trim) | length > 0
+        - (hostvars[item].ansible_proxmox_vmid | default('') | string | trim) | length > 0
+
+    - name: Ensure guest is running on Proxmox (pct/qm)
+      loop: "{{ guest_start_targets | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
+      delegate_to: "{{ item.proxmox_host }}"
       ansible.builtin.shell: |
         # Best-effort start: pct for LXCs, qm for VMs.
         # Treat as idempotent: do not fail if already running.
-        pct start {{ vmid }} >/dev/null 2>&1 || qm start {{ vmid }} >/dev/null 2>&1 || true
+        pct start {{ item.vmid }} >/dev/null 2>&1 || qm start {{ item.vmid }} >/dev/null 2>&1 || true
       register: guest_start_attempt
       changed_when: false
       failed_when: false
 
 - name: Prepare CT Container(s) or VM(s)
   # Semaphore-friendly targeting:
-  # - preferred: pass `target_hostname=<inventory host>` (single host)
-  # - alias:     pass `hostname=<inventory host>` (for UI consistency with create-vm)
-  # - fallback:  pass `target_hosts=<group>` (default: proxmox_all_lxc)
+  # - single host: pass `hostname=<inventory host>`
+  # - group:       pass `target_hosts=<group>` (used by other playbooks importing this one)
+  # - fallback:    proxmox_all_lxc
   hosts: >-
     {{
-      (target_hostname | default('') | trim)
-      if (target_hostname | default('') | trim) | length > 0
+      (target_hosts | default('') | trim)
+      if (target_hosts | default('') | trim) | length > 0
       else (
         (hostname | default('') | trim)
         if (hostname | default('') | trim) | length > 0
-        else (target_hosts | default('proxmox_all_lxc'))
+        else 'proxmox_all_lxc'
       )
     }}
   gather_facts: false
