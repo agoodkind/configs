@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # wpa_supplicant action script - writes auth status file
 # wpa_cli -a passes "CONNECTED" or "DISCONNECTED" as $2
 #
@@ -14,11 +14,10 @@
 # - Triggers: `wpa-authenticated.path` which starts the AT&T VLAN bringup service/script.
 
 AUTH_FILE="/run/wpa_supplicant-mwan.authenticated"
-WPA_CLI="/sbin/wpa_cli"
-TRACE_FILE="/run/mwan-trace-id"
+TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
 if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
-    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
 log() {

@@ -326,13 +326,16 @@ Caution (don’t break replies):
 
 - **Good to know: DHCPv6-PD “leases” aren’t fully visible via `ip route`**:
   - `ip -6 route show proto dhcp` shows the routes that happen to be installed, but it does **not** reliably tell you “what PD did we get on each WAN?”.
-  - `systemd-networkd` keeps DHCPv6-PD lease state in memory and does not provide a stable “dump active PD leases” CLI.
-  - The most reliable way to recover/confirm the delegated prefix is to read the `systemd-networkd` journal and grab the last PD event per interface, e.g.:
+  - On systemd v257+, `systemd-networkd` exposes the in-memory DHCPv6 client state (including **all tracked PD prefixes**) via the D-Bus method `org.freedesktop.network1.Link.Describe()` as JSON.
+  - Prefer reading PD prefixes from `Describe()` over scraping journald.
 
 ```bash
-journalctl -u systemd-networkd -b | grep "DHCP: received delegated prefix"
-# or per iface:
-journalctl -u systemd-networkd -b | grep "enatt0.3242: DHCP: received delegated prefix" | tail -1
+# Example: show delegated prefixes for enatt0.3242 from networkd D-Bus
+path="$(busctl -j --system call org.freedesktop.network1 /org/freedesktop/network1 \
+  org.freedesktop.network1.Manager GetLinkByName s enatt0.3242 | jq -r '.data[1]')"
+busctl -j --system call org.freedesktop.network1 "$path" org.freedesktop.network1.Link Describe \
+  | jq -r '.data[0]' \
+  | jq '.DHCPv6Client.Prefixes'
 ```
 
 ## IPv4 (OPNsense NATs downstream → MWAN load-balances + maps to public /29s)
