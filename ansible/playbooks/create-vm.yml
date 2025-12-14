@@ -32,6 +32,7 @@
     storage: "local-lvm"
     template_bridge: "vmbr0"
     delete_existing_vm: false  # allow clean redeploy when true
+    preserve_nic_macs: false  # if recreating, preserve existing virtio MACs (net0/net1/net2)
 
   tasks:
     - name: Check if Debian cloud image exists on Proxmox
@@ -220,6 +221,34 @@
           {{ 'exists (VMID ' + (vm_check.vmid | string) + ')'
           if vm_check.vmid is defined else 'will be created' }}
 
+    - name: Capture existing virtio NIC specs (MAC + bridge) for recreation
+      ansible.builtin.shell: |
+        set -o pipefail
+        qm config {{ vm_check.vmid }} |
+          awk -F': ' '
+            /^net[0-9]+:/ {
+              idx=$1; sub(/^net/, "", idx);
+              spec=$2;
+              # Preserve the full netX spec, as long as it has an explicit MAC and bridge.
+              if (spec ~ /virtio=/ && spec ~ /bridge=/) {
+                printf("%s\t%s\n", idx, spec);
+              }
+            }
+          '
+      delegate_to: "{{ proxmox_host }}"
+      register: preserved_nic_specs
+      changed_when: false
+      when:
+        - delete_existing_vm | default(false) | bool
+        - preserve_nic_macs | default(false) | bool
+        - vm_check.vmid is defined
+
+    - name: Set preserved NIC specs fact
+      ansible.builtin.set_fact:
+        preserved_nic_specs_lines: "{{ preserved_nic_specs.stdout_lines | default([]) }}"
+      when:
+        - preserved_nic_specs is defined
+
     - name: Stop existing VM (temporary - for clean redeploy)
       ansible.builtin.command: qm stop {{ vm_check.vmid }}
       delegate_to: "{{ proxmox_host }}"
@@ -290,6 +319,17 @@
           delegate_to: "{{ proxmox_host }}"
           changed_when: true
 
+        - name: Add preserved network interfaces (explicit MACs)
+          ansible.builtin.command: >
+            qm set {{ new_vmid }}
+            --net{{ item.split('\t')[0] }} {{ item.split('\t')[1] }}
+          delegate_to: "{{ proxmox_host }}"
+          loop: "{{ preserved_nic_specs_lines }}"
+          when:
+            - preserved_nic_specs_lines is defined
+            - preserved_nic_specs_lines | length > 0
+          changed_when: true
+
         - name: Add network interfaces
           ansible.builtin.command: >
             qm set {{ new_vmid }}
@@ -298,6 +338,8 @@
           loop: "{{ network_interfaces }}"
           loop_control:
             index_var: idx
+          when:
+            - preserved_nic_specs_lines is not defined or preserved_nic_specs_lines | length == 0
           changed_when: true
 
         - name: Get MAC address of net0 for .link file
