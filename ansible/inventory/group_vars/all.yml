@@ -4,3 +4,21 @@ proxmox_api_host: vault.home.goodkind.io
 proxmox_api_user: ansible@pam
 proxmox_token_id: ansible-token
 proxmox_token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
+
+# ----------------------------------------------------------------------------
+# SMTP (outbound) defaults for all CTs/VMs (via prep-cts)
+# ----------------------------------------------------------------------------
+smtp_enabled: "{{ lookup('env', 'SMTP_ENABLED', default='1') }}"
+# If SMTP_FROM is unset, we derive sender as "<hostname>@<domain>" in prep-cts.
+smtp_from: "{{ lookup('env', 'SMTP_FROM', default='') }}"
+smtp_from_domain: "{{ lookup('env', 'SMTP_FROM_DOMAIN', default='goodkind.io') }}"
+smtp_sender_name: "{{ lookup('env', 'SMTP_SENDER_NAME', default='') }}"
+
+# SMTP2GO (preferred): provide a single API key, Ansible provisions per-host SMTP users.
+smtp2go_api_key: "{{ lookup('env', 'SMTP2GO_API_KEY', default='') }}"
+smtp_host: "{{ lookup('env', 'SMTP2GO_SMTP_HOST', default='mail.smtp2go.com') }}"
+smtp_port: "{{ lookup('env', 'SMTP2GO_SMTP_PORT', default='587') }}"
+
+# Optional manual override (skip API provisioning)
+smtp_user: "{{ lookup('env', 'SMTP2GO_SMTP_USER', default='') }}"
+smtp_pass: "{{ lookup('env', 'SMTP2GO_SMTP_PASS', default='') }}"

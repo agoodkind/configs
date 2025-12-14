@@ -111,6 +111,25 @@ log() {
     logger -t mwan-health "${prefix}$1"
 }
 
+send_email_notification() {
+    [ "${MWAN_EMAIL_ENABLED:-0}" = "1" ] || return 0
+    [ -n "${MWAN_EMAIL_RECIPIENT:-}" ] || return 0
+    [ -n "${MWAN_EMAIL_SCRIPT:-}" ] || return 0
+    [ -x "${MWAN_EMAIL_SCRIPT:-}" ] || return 0
+
+    local subject="$1"
+    local message="$2"
+
+    local -a args
+    args=(-t "${MWAN_EMAIL_RECIPIENT}" -s "${subject}" -m "${message}")
+    [ -n "${MWAN_EMAIL_FROM:-}" ] && args+=(-f "${MWAN_EMAIL_FROM}")
+    [ -n "${MWAN_EMAIL_SENDER_NAME:-}" ] && args+=(-n "${MWAN_EMAIL_SENDER_NAME}")
+
+    if ! "${MWAN_EMAIL_SCRIPT}" "${args[@]}" >/dev/null 2>&1; then
+        log "Email notification failed (subject=${subject})"
+    fi
+}
+
 get_health() {
     local wan="$1"
     grep "^${wan}:" "$STATE_FILE" 2>/dev/null | cut -d: -f2 || echo "unknown"
@@ -274,8 +293,9 @@ handle_wan_failure() {
         # Update routing to remove failed WAN
         /usr/local/bin/update-routes.sh
         
-        # Send notification if configured
-        # send_notification "$wan_name" "down"
+        send_email_notification \
+          "MWAN: ${wan_name} UNHEALTHY" \
+          "WAN ${wan_name} became UNHEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
     fi
 }
 
@@ -293,8 +313,9 @@ handle_wan_recovery() {
         # Update routing to add recovered WAN
         /usr/local/bin/update-routes.sh
         
-        # Send notification if configured
-        # send_notification "$wan_name" "up"
+        send_email_notification \
+          "MWAN: ${wan_name} HEALTHY" \
+          "WAN ${wan_name} became HEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
     fi
 }
 
