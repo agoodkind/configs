@@ -51,7 +51,7 @@ mwan_monkeybrains_iface: "{{ detected_monkeybrains_iface | default('enmbrains0')
 # Path to AT&T certificates on Ansible controller (persistent across Semaphore runs)
 mwan_att_certs_path: "/var/lib/semaphore/certs/mwan/wpa"
 mwan_att_vlan_id: 3242
-mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
+mwan_att_eap_identity: "d0:fc:d0:7c:85:30"
 
 # Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
 
@@ -65,19 +65,19 @@ mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
 # MAC extracted from DUID: 00:e2:69:66:8b:5a
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
-mwan_webpass_mac: "00:E2:69:66:8B:5A" # MAC registered with Webpass
+mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
 
 # Monkeybrains identity spoofing
 # Monkeybrains is currently tied to the *same* DHCPv6 identity as Webpass.
 # Keep these values in sync unless Monkeybrains provisioning changes.
 mwan_monkeybrains_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_monkeybrains_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
-mwan_mbrains_mac: "BC:24:11:E6:58:31"
+mwan_mbrains_mac: "bc:24:11:e6:58:31"
 
 # DUID generated from the PFAtt Script
 mwan_att_duid: "00:02:00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
 mwan_att_duid_raw_data: "00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
-mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
+mwan_att_mac: "d0:fc:d0:7c:85:30" # MAC for DHCP (different from EAP identity)
 
 # ----------------------------------------------------------------------------
 # WAN addressing
