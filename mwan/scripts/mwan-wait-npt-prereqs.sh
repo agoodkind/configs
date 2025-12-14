@@ -42,6 +42,7 @@ log() {
 
 wait_for_iface() {
   local iface="$1"
+  [ -n "${iface:-}" ] || return 1
   for _ in $(seq 1 "$IFACE_WAIT_SECS"); do
     [ -d "/sys/class/net/$iface" ] && return 0
     sleep 1
@@ -58,23 +59,16 @@ wait_for_nft_table() {
 }
 
 log "Waiting for WAN interfaces to exist: $ATT_VLAN, $WEBPASS_IFACE, $MB_IFACE (timeout=${IFACE_WAIT_SECS}s)"
-wait_for_iface "$ATT_VLAN" || {
-  log "WAN interface not present: $ATT_VLAN"
-  exit 1
-}
-wait_for_iface "$WEBPASS_IFACE" || {
-  log "WAN interface not present: $WEBPASS_IFACE"
-  exit 1
-}
-wait_for_iface "$MB_IFACE" || {
-  log "WAN interface not present: $MB_IFACE"
-  exit 1
-}
+
+[ -n "${ATT_VLAN:-}" ] || { log "Missing MWAN_ATT_VLAN_IFACE"; exit 1; }
+[ -n "${WEBPASS_IFACE:-}" ] || { log "Missing MWAN_WEBPASS_IFACE"; exit 1; }
+[ -n "${MB_IFACE:-}" ] || { log "Missing MWAN_MONKEYBRAINS_IFACE"; exit 1; }
+
+wait_for_iface "$ATT_VLAN" || { log "WAN interface not present: $ATT_VLAN"; exit 1; }
+wait_for_iface "$WEBPASS_IFACE" || { log "WAN interface not present: $WEBPASS_IFACE"; exit 1; }
+wait_for_iface "$MB_IFACE" || { log "WAN interface not present: $MB_IFACE"; exit 1; }
 
 log "Waiting for nftables table to exist: ip6 nat (timeout=${NFT_WAIT_SECS}s)"
-wait_for_nft_table || {
-  log "nftables table not ready: ip6 nat"
-  exit 1
-}
+wait_for_nft_table || { log "nftables table not ready: ip6 nat"; exit 1; }
 
 log "Prerequisites satisfied"
