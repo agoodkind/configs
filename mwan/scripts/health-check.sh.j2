@@ -58,11 +58,26 @@ declare -gA OK_COUNTS=()
 
 # WAN health check configuration from Ansible group_vars
 # Format: wan_name:interface:ping_count:success_threshold:interval:failure_threshold
+ATT_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
+WEBPASS_IFACE="{{ mwan_webpass_iface }}"
+MB_IFACE="{{ mwan_monkeybrains_iface }}"
 WAN_CONFIGS=(
-    "att:{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}:{{ mwan_health_checks.att.ping_count }}:{{ mwan_health_checks.att.success_threshold }}:{{ mwan_health_checks.att.check_interval }}:{{ mwan_health_checks.att.failure_threshold }}"
-    "webpass:{{ mwan_webpass_iface }}:{{ mwan_health_checks.webpass.ping_count }}:{{ mwan_health_checks.webpass.success_threshold }}:{{ mwan_health_checks.webpass.check_interval }}:{{ mwan_health_checks.webpass.failure_threshold }}"
+    "att:${ATT_IFACE}:"\
+"{{ mwan_health_checks.att.ping_count }}:"\
+"{{ mwan_health_checks.att.success_threshold }}:"\
+"{{ mwan_health_checks.att.check_interval }}:"\
+"{{ mwan_health_checks.att.failure_threshold }}"
+    "webpass:${WEBPASS_IFACE}:"\
+"{{ mwan_health_checks.webpass.ping_count }}:"\
+"{{ mwan_health_checks.webpass.success_threshold }}:"\
+"{{ mwan_health_checks.webpass.check_interval }}:"\
+"{{ mwan_health_checks.webpass.failure_threshold }}"
 {% if mwan_health_checks.monkeybrains.enabled | default(false) %}
-    "monkeybrains:{{ mwan_monkeybrains_iface }}:{{ mwan_health_checks.monkeybrains.ping_count }}:{{ mwan_health_checks.monkeybrains.success_threshold }}:{{ mwan_health_checks.monkeybrains.check_interval }}:{{ mwan_health_checks.monkeybrains.failure_threshold }}"
+    "monkeybrains:${MB_IFACE}:"\
+"{{ mwan_health_checks.monkeybrains.ping_count }}:"\
+"{{ mwan_health_checks.monkeybrains.success_threshold }}:"\
+"{{ mwan_health_checks.monkeybrains.check_interval }}:"\
+"{{ mwan_health_checks.monkeybrains.failure_threshold }}"
 {% endif %}
 )
 
@@ -284,20 +299,31 @@ check_wan_health() {
           --arg wan "$wan_name" \
           --arg iface "$interface" \
           --arg reason "v6" \
-          '{wan:$wan, iface:$iface, reason:$reason}')"
+          '{
+            wan: $wan,
+            iface: $iface,
+            reason: $reason
+          }')"
         return 0
     elif [ $success_v4 -ge $success_threshold ] || [ $success_http4 -ge 1 ]; then
         [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_healthy" "$(jq -cn \
           --arg wan "$wan_name" \
           --arg iface "$interface" \
           --arg reason "v4" \
-          '{wan:$wan, iface:$iface, reason:$reason}')"
+          '{
+            wan: $wan,
+            iface: $iface,
+            reason: $reason
+          }')"
         return 0
     else
         [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_unhealthy" "$(jq -cn \
           --arg wan "$wan_name" \
           --arg iface "$interface" \
-          '{wan:$wan, iface:$iface}')"
+          '{
+            wan: $wan,
+            iface: $iface
+          }')"
         return 1
     fi
 }

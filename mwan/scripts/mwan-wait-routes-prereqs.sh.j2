@@ -88,7 +88,8 @@ for i in $(seq 1 "$((WAIT_SECS / SLEEP_SECS))"); do
     mb_gw6="$(gw6_for_dev "$MB_IFACE" || true)"
     if [ -n "$mb_gw4" ] || [ -n "$mb_gw6" ]; then
       log "No primary WAN interfaces found; proceeding with Monkeybrains gateways."
-      log "Primary WANs will continue to be monitored; when AT&T/Webpass become available and healthy, the health daemon and routable hooks will trigger /usr/local/bin/update-routes.sh to converge."
+      log "Primary WANs will continue to be monitored; when AT&T/Webpass become available and healthy, "\
+"the health daemon and routable hooks will trigger /usr/local/bin/update-routes.sh to converge."
       exit 0
     fi
   fi
