@@ -238,8 +238,14 @@ run_pd_test() {
         }
 
         local net_of_cidr net_of_ip
-        net_of_cidr="$(ipcalc-ng --all-info -j "$cidr" 2>/dev/null | jq -r '.NETWORK // empty' 2>/dev/null || true)"
-        net_of_ip="$(ipcalc-ng --all-info -j "$ip/$plen" 2>/dev/null | jq -r '.NETWORK // empty' 2>/dev/null || true)"
+        net_of_cidr="$(
+            ipcalc-ng --all-info -j "$cidr" 2>/dev/null |
+                jq -r '.NETWORK // empty' 2>/dev/null || true
+        )"
+        net_of_ip="$(
+            ipcalc-ng --all-info -j "$ip/$plen" 2>/dev/null |
+                jq -r '.NETWORK // empty' 2>/dev/null || true
+        )"
 
         if [ -n "$net_of_cidr" ] && [ -n "$net_of_ip" ] && [ "$net_of_cidr" = "$net_of_ip" ]; then
             echo "True"
