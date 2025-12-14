@@ -22,8 +22,10 @@ RouteMetric=5000
 UseDelegatedPrefix=yes
 PrefixDelegationHint=::/56
 WithoutRA=solicit
-# Let Monkeybrains use its own DHCPv6 identity (do NOT reuse Webpass DUID).
+# use webpass DUID for now as that was what was used on opnsense for mbrains
+# and that is what the /56 is tied to, please do not edit this
 DUIDType=link-layer-time
+DUIDRawData={{ mwan_webpass_duid_raw_data }}
 
 [IPv6PrefixDelegation]
 RouterLifetimeSec=1800
