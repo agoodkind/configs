@@ -324,15 +324,15 @@
       loop: "{{ cert_check.results }}"
 
     - name: Deploy OpenSSL config for legacy provider support
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/openssl.cnf.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/config/openssl.cnf"
         dest: /etc/wpa_supplicant/openssl.cnf
         mode: '0644'
       notify: Restart wpa_supplicant
 
     - name: Deploy wpa_supplicant systemd service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/wpa_supplicant.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/wpa_supplicant.service"
         dest: /etc/systemd/system/wpa_supplicant-mwan.service
         mode: '0644'
 
@@ -343,8 +343,8 @@
         daemon_reload: true
 
     - name: Deploy wpa-cli-action service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/wpa-cli-action.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/wpa-cli-action.service"
         dest: /etc/systemd/system/wpa-cli-action.service
         mode: '0644'
 
@@ -355,20 +355,20 @@
         daemon_reload: true
 
     - name: Deploy wpa_supplicant action script
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/scripts/wpa-action.sh.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/wpa-action.sh"
         dest: /usr/local/bin/wpa-action.sh
         mode: '0755'
 
     - name: Deploy wpa-authenticated path unit
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/wpa-authenticated.path.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/paths/wpa-authenticated.path"
         dest: /etc/systemd/system/wpa-authenticated.path
         mode: '0644'
 
     - name: Deploy wpa-authenticated service unit
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/wpa-authenticated.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/wpa-authenticated.service"
         dest: /etc/systemd/system/wpa-authenticated.service
         mode: '0644'
 
@@ -379,14 +379,14 @@
         daemon_reload: true
 
     - name: Deploy AT&T VLAN bringup script
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/scripts/bringup-att-vlan.sh.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/bringup-att-vlan.sh"
         dest: /usr/local/bin/bringup-att-vlan.sh
         mode: '0755'
 
     - name: Deploy AT&T VLAN bringup systemd service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/bringup-att-vlan.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/bringup-att-vlan.service"
         dest: /etc/systemd/system/bringup-att-vlan.service
         mode: '0644'
 
@@ -406,6 +406,18 @@
         path: /etc/systemd/network
         state: directory
         mode: '0755'
+
+    - name: Create MWAN runtime config directory
+      ansible.builtin.file:
+        path: /etc/mwan
+        state: directory
+        mode: '0755'
+
+    - name: Deploy MWAN runtime environment file
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/mwan.env.j2"
+        dest: /etc/mwan/mwan.env
+        mode: '0644'
 
     - name: Set variables for management interface templates
       ansible.builtin.set_fact:
@@ -457,14 +469,14 @@
       failed_when: false
 
     - name: Deploy networkd-dispatcher hook for route updates
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/hooks/50-update-routes.sh.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/hooks/50-update-routes.sh"
         dest: /etc/networkd-dispatcher/routable.d/50-update-routes.sh
         mode: '0755'
 
     - name: Deploy networkd-dispatcher hook for NPT updates
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/hooks/55-update-npt.sh.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/hooks/55-update-npt.sh"
         dest: /etc/networkd-dispatcher/routable.d/55-update-npt.sh
         mode: '0755'
 
@@ -481,8 +493,8 @@
         mode: '0644'
 
     - name: Deploy quiet console sysctl config
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/99-quiet-console.conf.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/config/99-quiet-console.conf"
         dest: /etc/sysctl.d/99-quiet-console.conf
         mode: '0644'
 
@@ -511,8 +523,8 @@
         mode: '0755'
 
     - name: Deploy nftables systemd override
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/overrides/nftables.service.d-override.conf.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/overrides/nftables.service.d-override.conf"
         dest: /etc/systemd/system/nftables.service.d/override.conf
         mode: '0644'
 
@@ -523,8 +535,8 @@
         mode: '0755'
 
     - name: Deploy systemd-networkd debug override
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/overrides/systemd-networkd.service.d-override.conf.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/overrides/systemd-networkd.service.d-override.conf"
         dest: /etc/systemd/system/systemd-networkd.service.d/override.conf
         mode: '0644'
 
@@ -533,53 +545,68 @@
         src: "{{ repo_root }}/mwan/{{ item }}.j2"
         dest: /usr/local/bin/{{ item | basename }}
         mode: '0755'
+      loop: []
+
+    - name: Deploy static helper scripts
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/{{ item }}"
+        dest: /usr/local/bin/{{ item | basename }}
+        mode: '0755'
       loop:
         - scripts/update-routes.sh
         - scripts/health-check.sh
         - scripts/update-npt.sh
+        - scripts/mwan-update-npt-all.sh
         - scripts/mwan-wait-npt-prereqs.sh
         - scripts/mwan-wait-routes-prereqs.sh
         - scripts/mwan-trace-boot.sh
+        - scripts/wpa-wait-att-iface.sh
 
     - name: Deploy mwan debug helper (single entrypoint)
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/scripts/mwan-debug.sh.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/mwan-debug.sh"
         dest: /usr/local/bin/mwan
         mode: '0755'
 
+    - name: Deploy DHCPv6-PD prefix finder helper
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/find-pd-prefixes.sh"
+        dest: /usr/local/bin/find-pd-prefixes.sh
+        mode: '0755'
+
     - name: Deploy pinned destination refresher (nft set)
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/scripts/update-att-pinned-dests.sh.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/update-att-pinned-dests.sh"
         dest: /usr/local/bin/update-att-pinned-dests.sh
         mode: '0755'
 
     - name: Deploy pinned destination updater service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/mwan-update-att-pinned-dests.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/mwan-update-att-pinned-dests.service"
         dest: /etc/systemd/system/mwan-update-att-pinned-dests.service
         mode: '0644'
 
     - name: Deploy pinned destination updater timer
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/mwan-update-att-pinned-dests.timer.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/timers/mwan-update-att-pinned-dests.timer"
         dest: /etc/systemd/system/mwan-update-att-pinned-dests.timer
         mode: '0644'
 
     - name: Deploy mwan update-routes oneshot service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/mwan-update-routes.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/mwan-update-routes.service"
         dest: /etc/systemd/system/mwan-update-routes.service
         mode: '0644'
 
     - name: Deploy mwan update-npt oneshot service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/mwan-update-npt.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/mwan-update-npt.service"
         dest: /etc/systemd/system/mwan-update-npt.service
         mode: '0644'
 
     - name: Deploy mwan boot trace service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/mwan-trace-boot.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/mwan-trace-boot.service"
         dest: /etc/systemd/system/mwan-trace-boot.service
         mode: '0644'
 
@@ -589,23 +616,15 @@
         enabled: true
         daemon_reload: true
 
-    - name: Deploy static helper scripts
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/files/usr/local/bin/{{ item }}"
-        dest: /usr/local/bin/{{ item }}
-        mode: '0755'
-      loop:
-        - test-wan-connectivity.sh
-
     - name: Deploy mwan-health systemd service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/mwan-health.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/mwan-health.service"
         dest: /etc/systemd/system/mwan-health.service
         mode: '0644'
 
     - name: Deploy cloudflared systemd service
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/services/cloudflared.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/cloudflared.service"
         dest: /etc/systemd/system/cloudflared.service
         mode: '0644'
 
