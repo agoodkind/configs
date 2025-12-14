@@ -59,8 +59,21 @@ debug_json() {
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
-    printf '{"traceId":"%s","component":"update-npt","location":"%s","message":"%s","data":%s,"timestamp":%s}\n' \
-        "${MWAN_TRACE_ID:-}" "$loc" "$msg" "$data" "$(date +%s%3N)" >> "$DEBUG_LOG"
+    jq -cn \
+      --arg traceId "${MWAN_TRACE_ID:-}" \
+      --arg component "update-npt" \
+      --arg location "$loc" \
+      --arg message "$msg" \
+      --arg data "${data:-{}}" \
+      --argjson timestamp "$(date +%s%3N)" \
+      '{
+        traceId: $traceId,
+        component: $component,
+        location: $location,
+        message: $message,
+        data: (try ($data | fromjson) catch {}),
+        timestamp: $timestamp
+      }' >> "$DEBUG_LOG"
 }
 
 log "Updating NPT rules for $WAN_IFACE"
