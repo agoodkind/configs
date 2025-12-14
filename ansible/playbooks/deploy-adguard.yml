@@ -19,7 +19,7 @@
   vars:
     adguard_channel: "release"
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    adguard_hostname: "{{ hostvars['localhost']['service_hostname_fact'] }}"
+    adguard_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
 
   tasks:
     - name: Create AdGuard user
@@ -348,4 +348,4 @@
       ansible.builtin.debug:
         msg: >-
           ✅ AdGuard Home deployed successfully on
-          {{ hostvars['localhost']['service_hostname_fact'] }}
+          {{ hostvars['localhost']['service_hostname'] }}
