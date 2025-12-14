@@ -122,8 +122,18 @@ log "Updating NPT rules for $WAN_IFACE"
 log "  Delegated prefix: $DELEGATED_PREFIX"
 
 # Collect existing per-iface rule handles (we delete them in the same nft batch as we add replacements).
-POST_HANDLES="$(nft -a list chain ip6 nat postrouting 2>/dev/null | awk -v ifc="$WAN_IFACE" '$0 ~ "oif \\\""ifc"\\\"" && $0 ~ /# handle/ {print $NF}')"
-PRE_HANDLES="$(nft -a list chain ip6 nat prerouting 2>/dev/null | awk -v ifc="$WAN_IFACE" '$0 ~ "iif \\\""ifc"\\\"" && $0 ~ /# handle/ {print $NF}')"
+POST_HANDLES="$(
+  nft -a list chain ip6 nat postrouting 2>/dev/null |
+    awk -v ifc="$WAN_IFACE" '
+      $0 ~ ("oif \\\"" ifc "\\\"") && $0 ~ /# handle/ { print $NF }
+    '
+)"
+PRE_HANDLES="$(
+  nft -a list chain ip6 nat prerouting 2>/dev/null |
+    awk -v ifc="$WAN_IFACE" '
+      $0 ~ ("iif \\\"" ifc "\\\"") && $0 ~ /# handle/ { print $NF }
+    '
+)"
 
 # Decide target /60 for this iface.
 # NOTE: NPT is stateless and requires internal/external prefixes to be the same length (/60 here).
@@ -156,7 +166,11 @@ esac
   --arg iface "$WAN_IFACE" \
   --arg delegated "$DELEGATED_PREFIX" \
   --arg target "$TARGET_PREFIX" \
-  '{iface:$iface, delegated:$delegated, target:$target}')"
+  '{
+    iface: $iface,
+    delegated: $delegated,
+    target: $target
+  }')"
 
 # Postrouting: 
 # - SNAT specific /128s (fe::1, fe::2) to PD ::1
@@ -204,6 +218,9 @@ nft list ruleset > /etc/nftables.conf.dynamic
 [ "$DEBUG" = "1" ] && debug_json "NFT" "ip6_nat_chains" "$(jq -cn \
   --arg prerouting "$(nft -a list chain ip6 nat prerouting 2>/dev/null || true)" \
   --arg postrouting "$(nft -a list chain ip6 nat postrouting 2>/dev/null || true)" \
-  '{prerouting:$prerouting, postrouting:$postrouting}')"
+  '{
+    prerouting: $prerouting,
+    postrouting: $postrouting
+  }')"
 
 log "NPT update complete for $WAN_IFACE"

@@ -99,14 +99,24 @@ log_json() {
 #endregion
 
 log "Event iface=$IFACE state=$STATE"
-EVENT_DATA="$(jq -cn --arg iface "$IFACE" --arg state "$STATE" '{iface:$iface,state:$state}')"
+EVENT_DATA="$(jq -cn \
+    --arg iface "$IFACE" \
+    --arg state "$STATE" \
+    '{
+      iface: $iface,
+      state: $state
+    }')"
 log_json "H1" "55-update-npt.sh:EVENT" "hook_event" "$EVENT_DATA"
 debug_json_line "EVENT" "hook_event" "$EVENT_DATA"
 
 # Capture DHCPv6-PD routes (systemd installs PD routes as proto dhcp, dev lo)
 ROUTE_OUTPUT=$(ip -6 route show proto dhcp)
 log "DHCPv6 proto dhcp routes:\n$ROUTE_OUTPUT"
-ROUTE_DATA="$(jq -cn --arg routes "$ROUTE_OUTPUT" '{routes:$routes}')"
+ROUTE_DATA="$(jq -cn \
+    --arg routes "$ROUTE_OUTPUT" \
+    '{
+      routes: $routes
+    }')"
 log_json "H1" "55-update-npt.sh:ROUTES" "dhcp_routes" \
     "$ROUTE_DATA"
 debug_json_line "ROUTES" "dhcp_routes" "$ROUTE_DATA"
@@ -130,7 +140,11 @@ if [ -z "$PREFIXES" ] && [ -f "$STATE_FILE" ]; then
     PREFIXES=$(cat "$STATE_FILE")
 fi
 
-PREFIX_DATA="$(jq -cn --arg prefixes "$PREFIXES" '{prefixes:$prefixes}')"
+PREFIX_DATA="$(jq -cn \
+    --arg prefixes "$PREFIXES" \
+    '{
+      prefixes: $prefixes
+    }')"
 log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" "$PREFIX_DATA"
 debug_json_line "PREFIXES" "prefixes_found" "$PREFIX_DATA"
 
@@ -145,7 +159,13 @@ if [ -z "$PREFIXES" ]; then
         *) PREFIXES="" ;;
     esac
     if [ -n "$PREFIXES" ]; then
-        FALLBACK_DATA="$(jq -cn --arg iface "$IFACE" --arg prefixes "$PREFIXES" '{iface:$iface,prefixes:$prefixes}')"
+        FALLBACK_DATA="$(jq -cn \
+            --arg iface "$IFACE" \
+            --arg prefixes "$PREFIXES" \
+            '{
+              iface: $iface,
+              prefixes: $prefixes
+            }')"
         debug_json_line "FALLBACK" "using_static_prefix" "$FALLBACK_DATA"
     fi
 fi
@@ -159,13 +179,23 @@ fi
 echo "$PREFIXES" > "$STATE_FILE"
 
 log "Found prefixes: $PREFIXES"
-FOUND_DATA="$(jq -cn --arg prefixes "$PREFIXES" '{prefixes:$prefixes}')"
+FOUND_DATA="$(jq -cn \
+    --arg prefixes "$PREFIXES" \
+    '{
+      prefixes: $prefixes
+    }')"
 log_json "H3" "55-update-npt.sh:FOUND" "prefixes_nonempty" "$FOUND_DATA"
 debug_json_line "FOUND" "prefixes_nonempty" "$FOUND_DATA"
 
 for prefix in $PREFIXES; do
     log "Updating NPT for $IFACE with prefix $prefix"
-    CALL_DATA="$(jq -cn --arg iface "$IFACE" --arg prefix "$prefix" '{iface:$iface,prefix:$prefix}')"
+    CALL_DATA="$(jq -cn \
+        --arg iface "$IFACE" \
+        --arg prefix "$prefix" \
+        '{
+          iface: $iface,
+          prefix: $prefix
+        }')"
     log_json "H4" "55-update-npt.sh:CALL" "calling_update_npt" "$CALL_DATA"
     debug_json_line "CALL" "calling_update_npt" "$CALL_DATA"
     /usr/local/bin/update-npt.sh "$IFACE" "$prefix" || \
