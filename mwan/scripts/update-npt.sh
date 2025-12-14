@@ -187,14 +187,26 @@ tmp="$(mktemp)"
     echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr $TARGET_PREFIX dnat ip6 prefix to $INTERNAL_PREFIX"
 
     # Also DNAT any other global /128 address currently assigned to the WAN interface back to OPNsense.
-    while read -r ip6_cidr; do
-        [ -n "$ip6_cidr" ] || continue
-        [ "${ip6_cidr#*/}" = "128" ] || continue
-        [ "$ip6_cidr" = "${TARGET_PREFIX%/*}1/128" ] && continue
-        ip6_addr="${ip6_cidr%/*}"
-        [ -n "$ip6_addr" ] || continue
-        echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr $ip6_addr/128 dnat to $OPNSENSE_EDGE_V6"
-    done < <(ip -6 addr show dev "$WAN_IFACE" scope global | awk '/inet6/{print $2}' || true)
+    emit_extra_prerouting_dnat_rules() {
+        # For any additional global /128s on the WAN interface (besides PD ::1),
+        # DNAT them to the OPNsense edge so inbound traffic doesn't terminate on MWAN.
+        local ifc="$1"
+        local keep_cidr="$2" # e.g. "<pd>::1/128"
+
+        ip -6 addr show dev "$ifc" scope global 2>/dev/null \
+          | awk '
+                $1 == "inet6" { print $2 }
+            ' \
+          | awk -v keep="$keep_cidr" '
+                $0 ~ /\/128$/ && $0 != keep { sub(/\/128$/, "", $0); print }
+            ' \
+          | while read -r ip6_addr; do
+                [ -n "${ip6_addr:-}" ] || continue
+                echo "add rule ip6 nat prerouting iif \"$ifc\" ip6 daddr ${ip6_addr}/128 dnat to $OPNSENSE_EDGE_V6"
+            done
+    }
+
+    emit_extra_prerouting_dnat_rules "$WAN_IFACE" "${TARGET_PREFIX%/*}1/128" || true
 } >"$tmp"
 nft -f "$tmp"
 rm -f "$tmp"
@@ -202,12 +214,19 @@ rm -f "$tmp"
 # Save current nftables config
 nft list ruleset > /etc/nftables.conf.dynamic
 
-[ "$DEBUG" = "1" ] && debug_json "NFT" "ip6_nat_chains" "$(jq -cn \
-  --arg prerouting "$(nft -a list chain ip6 nat prerouting || true)" \
-  --arg postrouting "$(nft -a list chain ip6 nat postrouting || true)" \
-  '{
-    prerouting: $prerouting,
-    postrouting: $postrouting
-  }')"
+if [ "$DEBUG" = "1" ]; then
+    prerouting_chain="$(nft -a list chain ip6 nat prerouting || true)"
+    postrouting_chain="$(nft -a list chain ip6 nat postrouting || true)"
+
+    debug_json "NFT" "ip6_nat_chains" "$(
+        jq -cn \
+            --arg prerouting "$prerouting_chain" \
+            --arg postrouting "$postrouting_chain" \
+            '{
+              prerouting: $prerouting,
+              postrouting: $postrouting
+            }'
+    )"
+fi
 
 log "NPT update complete for $WAN_IFACE"
