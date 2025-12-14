@@ -68,11 +68,17 @@ log_json() {
     local loc="$1"; shift
     local msg="$1"; shift
     local data="$1"; shift
-    printf '{"traceId":"%s","sessionId":"debug-session","runId":"run1",' \
-           '"hypothesisId":"%s","location":"%s","message":"%s",' \
-           '"data":%s,"timestamp":%s}\n' \
-           "${MWAN_TRACE_ID:-}" "$hid" "$loc" "$msg" "$data" "$(date +%s%3N)" \
-           >> "$LOG_PATH"
+    jq -cn \
+        --arg traceId "${MWAN_TRACE_ID:-}" \
+        --arg sessionId "debug-session" \
+        --arg runId "run1" \
+        --arg hypothesisId "$hid" \
+        --arg location "$loc" \
+        --arg message "$msg" \
+        --arg data "$data" \
+        --argjson timestamp "$(date +%s%3N)" \
+        '{traceId:$traceId,sessionId:$sessionId,runId:$runId,hypothesisId:$hypothesisId,location:$location,message:$message,data:(try ($data|fromjson) catch {"_raw":$data}),timestamp:$timestamp}' \
+        >>"$LOG_PATH"
 }
 #endregion
 
