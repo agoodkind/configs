@@ -3,6 +3,19 @@
 # For systemd-networkd - VLAN is created declaratively via .netdev file
 # AT&T requires 802.1X authentication on parent before DHCP on VLAN works
 # This script waits for authentication, then triggers DHCP on VLAN interface
+#
+# What it does (symptoms):
+# - Fixes the “AT&T never gets DHCP/PD after reboot” class of issues by ensuring DHCP is only triggered
+#   after 802.1X authentication is actually complete.
+#
+# What it does (technical):
+# - Polls `wpa_cli status` until the supplicant reaches AUTHENTICATED.
+# - Waits for the VLAN netdevice to exist, brings it UP if needed.
+# - Triggers `networkctl renew/reconfigure` on the VLAN so systemd-networkd runs DHCP on it.
+#
+# Dependency graph:
+# - Triggered by: `wpa-authenticated.path` → `wpa-authenticated.service` → `bringup-att-vlan.service`.
+# - Depends on: `wpa_supplicant-mwan.service` running and systemd-networkd managing the VLAN netdev.
 
 set -euo pipefail
 
