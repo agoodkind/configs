@@ -48,7 +48,7 @@ flock 9
 
 readonly INTERNAL_PREFIX="${MWAN_INTERNAL_PREFIX:-}"
 readonly OPNSENSE_EDGE_V6="${MWAN_OPNSENSE_EDGE_IPV6:-}"
-readonly MWAN_EDGE_V6="${MWAN_MWANBR_EDGE_IPV6:-}"
+readonly MWANBR_EDGE_V6="${MWAN_MWANBR_EDGE_IPV6:-}"
 readonly MB_STATIC_PREFIX="${MWAN_NPT_MONKEYBRAINS_PREFIX:-}"
 
 ipcalc_field() {
@@ -179,7 +179,7 @@ tmp="$(mktemp)"
     # conntrack's reverse-NAT with an unconditional SNAT rule.
     echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 ct status dnat return"
     echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $MWAN_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
+    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $MWANBR_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
     echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $INTERNAL_PREFIX snat ip6 prefix to $TARGET_PREFIX"
 
     # Prerouting:

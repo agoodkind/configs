@@ -161,6 +161,18 @@
           - cloudflared
         state: present
 
+    - name: Create MWAN runtime config directory
+      ansible.builtin.file:
+        path: /etc/mwan
+        state: directory
+        mode: '0755'
+
+    - name: Deploy MWAN runtime environment file
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/mwan.env.j2"
+        dest: /etc/mwan/mwan.env
+        mode: '0644'
+
     - name: Ensure cloudflared user exists (for UID-based policy routing)
       ansible.builtin.user:
         name: cloudflared
@@ -406,18 +418,6 @@
         path: /etc/systemd/network
         state: directory
         mode: '0755'
-
-    - name: Create MWAN runtime config directory
-      ansible.builtin.file:
-        path: /etc/mwan
-        state: directory
-        mode: '0755'
-
-    - name: Deploy MWAN runtime environment file
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/mwan.env.j2"
-        dest: /etc/mwan/mwan.env
-        mode: '0644'
 
     - name: Set variables for management interface templates
       ansible.builtin.set_fact:
