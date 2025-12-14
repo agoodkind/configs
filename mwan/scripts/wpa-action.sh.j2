@@ -1,6 +1,17 @@
 #!/bin/bash
 # wpa_supplicant action script - writes auth status file
 # wpa_cli -a passes "CONNECTED" or "DISCONNECTED" as $2
+#
+# What it does (symptoms):
+# - Provides a simple “auth complete” signal so AT&T VLAN DHCP can be triggered only after 802.1X succeeds.
+#
+# What it does (technical):
+# - On CONNECTED: writes a journal line and `touch`es `/run/wpa_supplicant-mwan.authenticated`.
+# - On DISCONNECTED: logs and removes that file.
+#
+# Dependency graph:
+# - Called by: `wpa-cli-action.service` (runs `wpa_cli -a /usr/local/bin/wpa-action.sh`).
+# - Triggers: `wpa-authenticated.path` which starts the AT&T VLAN bringup service/script.
 
 AUTH_FILE="/run/wpa_supplicant-mwan.authenticated"
 WPA_CLI="/sbin/wpa_cli"

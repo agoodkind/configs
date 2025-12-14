@@ -395,7 +395,7 @@ Two different “empty” symptoms to distinguish:
 - **`nft list ruleset` is empty / tiny**: `nftables` didn’t load successfully. Our config begins with `flush ruleset`, so a load error after that can leave you with very few/no rules.
 - **Only `table ip6 nat` is empty**: base rules loaded, but the runtime NPT programming (via `update-npt.sh`) didn’t happen or was flushed after it happened.
 
-Manual recovery (no guessing), on MWAN:
+Manual recovery on MWAN:
 
 ```bash
 /usr/local/bin/update-npt.sh enatt0.3242 2600:1700:2f71:c80::/60

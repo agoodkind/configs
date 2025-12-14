@@ -1,6 +1,17 @@
 #!/bin/bash
 # Test WAN connectivity for mwan multi-WAN setup
 # Tests IPv4 static NAT, IPv6-PD delegation, and NPT
+#
+# What it does (symptoms):
+# - Quick “is the WAN stack basically alive?” smoke test when you don’t want to reason about the full system.
+# - Useful when things feel broken after boot/deploy: shows whether WAN IPs exist and whether NPT rules exist.
+#
+# What it does (technical):
+# - Reads interface addresses/routes, pings known targets, and inspects nftables NPT rules.
+# - NOTE: This is a legacy helper and may need interface-name updates depending on the current MWAN naming.
+#
+# Dependency graph:
+# - Manual tool only (not invoked by systemd). Safe to run anytime for diagnostics.
 
 set -e
 
@@ -12,7 +23,6 @@ NC='\033[0m' # No Color
 
 ATT_IFACE="eth1.3242"
 WEBPASS_IFACE="eth2"
-INTERNAL_PREFIX="3d06:bad:b01::/56"
 
 log() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -129,7 +139,6 @@ echo ""
 log "5. Testing IPv6 connectivity..."
 
 if [ -n "$att_v6" ]; then
-    att_addr="${att_v6%/*}"
     if ping6 -c 2 -W 2 -I "$ATT_IFACE" 2001:4860:4860::8888 >/dev/null 2>&1; then
         log "  AT&T IPv6: PASS (via $ATT_IFACE)"
     else
@@ -140,7 +149,6 @@ else
 fi
 
 if [ -n "$webpass_v6" ]; then
-    webpass_addr="${webpass_v6%/*}"
     if ping6 -c 2 -W 2 -I "$WEBPASS_IFACE" 2001:4860:4860::8888 >/dev/null 2>&1; then
         log "  Webpass IPv6: PASS (via $WEBPASS_IFACE)"
     else
