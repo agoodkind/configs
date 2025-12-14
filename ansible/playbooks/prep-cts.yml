@@ -1,3 +1,48 @@
+---
+- name: Ensure targeted CT/VM is running (best-effort)
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # Keep targeting logic in sync with the main play below.
+    effective_target: >-
+      {{
+        (target_hostname | default('') | trim)
+        if (target_hostname | default('') | trim) | length > 0
+        else (
+          (hostname | default('') | trim)
+          if (hostname | default('') | trim) | length > 0
+          else (target_hosts | default('proxmox_all_lxc'))
+        )
+      }}
+    selected_hosts: >-
+      {{
+        groups[effective_target]
+        if effective_target in groups
+        else [effective_target]
+      }}
+
+  tasks:
+    - name: Ensure guest is running on Proxmox (pct/qm)
+      vars:
+        proxmox_host: "{{ hostvars[item].ansible_proxmox_host | default('') }}"
+        vmid: "{{ hostvars[item].ansible_proxmox_vmid | default('') }}"
+      when:
+        - item in hostvars
+        - (proxmox_host | trim) | length > 0
+        - (vmid | string | trim) | length > 0
+      loop: "{{ selected_hosts }}"
+      loop_control:
+        label: "{{ item }}"
+      delegate_to: "{{ proxmox_host }}"
+      ansible.builtin.shell: |
+        # Best-effort start: pct for LXCs, qm for VMs.
+        # Treat as idempotent: do not fail if already running.
+        pct start {{ vmid }} >/dev/null 2>&1 || qm start {{ vmid }} >/dev/null 2>&1 || true
+      register: guest_start_attempt
+      changed_when: false
+      failed_when: false
+
 - name: Prepare CT Container(s) or VM(s)
   # Semaphore-friendly targeting:
   # - preferred: pass `target_hostname=<inventory host>` (single host)
@@ -13,8 +58,17 @@
         else (target_hosts | default('proxmox_all_lxc'))
       )
     }}
-  gather_facts: true
+  gather_facts: false
   tasks:
+    - name: Wait for SSH to be ready (after starting)
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+        delay: 2
+        sleep: 2
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
     - name: Filter by container/VM ID if specified
       ansible.builtin.meta: end_host
       when:
