@@ -26,6 +26,8 @@
         vm_dns_domain: "{{ mwan_dns_domain }}"
         vm_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
+        vm_delete_existing_vm: "{{ delete_existing_vm | default(false) | bool }}"
+        vm_skip_password_reset: "{{ skip_password_reset | default(false) | bool }}"
 
 - name: Setup mwan VM
   ansible.builtin.import_playbook: create-vm.yml
@@ -45,9 +47,9 @@
     mgmt_ip_config: "{{ hostvars['localhost']['vm_mgmt_ip_config'] }}"
     dns_domain: "{{ hostvars['localhost']['vm_dns_domain'] }}"
     dns_servers: "{{ hostvars['localhost']['vm_dns_servers'] }}"
-    delete_existing_vm: "{{ delete_existing_vm | default(false) | bool }}"
+    delete_existing_vm: "{{ hostvars['localhost']['vm_delete_existing_vm'] }}"
     preserve_nic_macs: true
-    skip_password_reset: "{{ skip_password_reset | default(false) | bool }}"
+    skip_password_reset: "{{ hostvars['localhost']['vm_skip_password_reset'] }}"
 
 - name: Configure MWAN VM
   hosts: mwan_servers
