@@ -84,7 +84,16 @@ log_json() {
         --arg message "$msg" \
         --arg data "$data" \
         --argjson timestamp "$(date +%s%3N)" \
-        '{traceId:$traceId,sessionId:$sessionId,runId:$runId,hypothesisId:$hypothesisId,location:$location,message:$message,data:(try ($data|fromjson) catch {"_raw":$data}),timestamp:$timestamp}' \
+        '{
+          traceId:$traceId,
+          sessionId:$sessionId,
+          runId:$runId,
+          hypothesisId:$hypothesisId,
+          location:$location,
+          message:$message,
+          data:(try ($data|fromjson) catch {"_raw":$data}),
+          timestamp:$timestamp
+        }' \
         >>"$LOG_PATH"
 }
 #endregion
