@@ -37,20 +37,33 @@ iface_exists() {
 
 gw4_for_dev() {
   local dev="$1"
-  ip -4 route show default dev "$dev" 2>/dev/null | sed -n 's/^default via \\([^ ]*\\).*/\\1/p' | head -n 1
+  ip -j -4 route show default 2>/dev/null | jq -r --arg dev "$dev" '
+    [
+      .[] |
+      if (.dev? == $dev and (.gateway? != null) and (.gateway? != "")) then
+        .gateway
+      elif (.nexthops? != null) then
+        (.nexthops[]? | select(.dev? == $dev) | .gateway? // empty)
+      else
+        empty
+      end
+    ] | map(select(. != "")) | .[0] // empty
+  '
 }
 
 gw6_for_dev() {
   local dev="$1"
-  # Handles:
-  # - default via fe80::... dev <if>
-  # - default nhid <id> via fe80::... dev <if> ...
-  ip -6 route show default 2>/dev/null | awk -v d="$dev" '
-    $1=="default" {
-      gw=""; dev="";
-      for (i=1; i<=NF; i++) { if ($i=="via") gw=$(i+1); if ($i=="dev") dev=$(i+1); }
-      if (dev==d && gw!="") { print gw; exit }
-    }
+  ip -j -6 route show default 2>/dev/null | jq -r --arg dev "$dev" '
+    [
+      .[] |
+      if (.dev? == $dev and (.gateway? != null) and (.gateway? != "")) then
+        .gateway
+      elif (.nexthops? != null) then
+        (.nexthops[]? | select(.dev? == $dev) | .gateway? // empty)
+      else
+        empty
+      end
+    ] | map(select(. != "")) | .[0] // empty
   '
 }
 
