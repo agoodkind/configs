@@ -58,9 +58,13 @@ debug_json_line() {
         --arg data "$data" \
         --argjson timestamp "$(date +%s%3N)" \
         '{
-        traceId:$traceId,
-        component:$component,
-        location:$location,message:$message,data:(try ($data|fromjson) catch {"_raw":$data}),timestamp:$timestamp}' \
+          traceId:$traceId,
+          component:$component,
+          location:$location,
+          message:$message,
+          data:(try ($data|fromjson) catch {"_raw":$data}),
+          timestamp:$timestamp
+        }' \
         >>"$DEBUG_LOG"
 }
 
@@ -117,7 +121,6 @@ if [ -z "$PREFIXES" ] && [ -f "$STATE_FILE" ]; then
     PREFIXES=$(cat "$STATE_FILE")
 fi
 
-log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" \
 PREFIX_DATA="$(jq -cn --arg prefixes "$PREFIXES" '{prefixes:$prefixes}')"
 log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" "$PREFIX_DATA"
 debug_json_line "PREFIXES" "prefixes_found" "$PREFIX_DATA"
@@ -132,7 +135,10 @@ if [ -z "$PREFIXES" ]; then
         "$MB_IFACE") PREFIXES="{{ mwan_npt_monkeybrains_prefix | default('') }}" ;;
         *) PREFIXES="" ;;
     esac
-    [ -n "$PREFIXES" ] && debug_json_line "FALLBACK" "using_static_prefix" "{\"iface\":\"$IFACE\",\"prefixes\":\"$PREFIXES\"}"
+    if [ -n "$PREFIXES" ]; then
+        FALLBACK_DATA="$(jq -cn --arg iface "$IFACE" --arg prefixes "$PREFIXES" '{iface:$iface,prefixes:$prefixes}')"
+        debug_json_line "FALLBACK" "using_static_prefix" "$FALLBACK_DATA"
+    fi
 fi
 
 if [ -z "$PREFIXES" ]; then
@@ -144,15 +150,15 @@ fi
 echo "$PREFIXES" > "$STATE_FILE"
 
 log "Found prefixes: $PREFIXES"
-log_json "H3" "55-update-npt.sh:FOUND" "prefixes_nonempty" \
-    "{\"prefixes\":\"$PREFIXES\"}"
-debug_json_line "FOUND" "prefixes_nonempty" "{\"prefixes\":\"$PREFIXES\"}"
+FOUND_DATA="$(jq -cn --arg prefixes "$PREFIXES" '{prefixes:$prefixes}')"
+log_json "H3" "55-update-npt.sh:FOUND" "prefixes_nonempty" "$FOUND_DATA"
+debug_json_line "FOUND" "prefixes_nonempty" "$FOUND_DATA"
 
 for prefix in $PREFIXES; do
     log "Updating NPT for $IFACE with prefix $prefix"
-    log_json "H4" "55-update-npt.sh:CALL" "calling_update_npt" \
-        "{\"iface\":\"$IFACE\",\"prefix\":\"$prefix\"}"
-    debug_json_line "CALL" "calling_update_npt" "{\"iface\":\"$IFACE\",\"prefix\":\"$prefix\"}"
+    CALL_DATA="$(jq -cn --arg iface "$IFACE" --arg prefix "$prefix" '{iface:$iface,prefix:$prefix}')"
+    log_json "H4" "55-update-npt.sh:CALL" "calling_update_npt" "$CALL_DATA"
+    debug_json_line "CALL" "calling_update_npt" "$CALL_DATA"
     /usr/local/bin/update-npt.sh "$IFACE" "$prefix" || \
         log "NPT update failed for $IFACE prefix $prefix"
 done
