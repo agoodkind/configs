@@ -136,6 +136,10 @@
           - sipcalc
           - ipcalc-ng
           - ipcalc
+          - ipv6calc
+          - ripcalc
+          - iproute2
+          - fping
         state: present
 
     - name: Get actual VMID from Proxmox
