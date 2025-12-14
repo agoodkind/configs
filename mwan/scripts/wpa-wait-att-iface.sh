@@ -5,8 +5,9 @@
 # - Prevents wpa_supplicant from starting before the AT&T NIC exists.
 #
 # What it does (technical):
-# - Waits up to WAIT_SECS for `ip link show $MWAN_ATT_IFACE` to succeed.
-# - Sources `/etc/mwan/mwan.env` for MWAN_ATT_IFACE when available.
+# - Waits up to WAIT_SECS for `ip link show <iface>` to succeed.
+# - Sources `/etc/mwan/mwan.env` for MWAN_ATT_IFACE.
+# - Optional arg: pass an explicit iface to override MWAN_ATT_IFACE for debugging.
 #
 # Dependency graph:
 # - Called by: wpa_supplicant-mwan.service ExecStartPre.
@@ -16,10 +17,13 @@ set -euo pipefail
 # shellcheck disable=SC1091
 . /etc/mwan/mwan.env
 
-IFACE="${MWAN_ATT_IFACE:-${1:-}}"
+IFACE="${1:-${MWAN_ATT_IFACE:-}}"
 WAIT_SECS="${WAIT_SECS:-30}"
 
-[ -n "$IFACE" ] || { echo "usage: wpa-wait-att-iface.sh [iface]" >&2; exit 2; }
+[ -n "$IFACE" ] || {
+  echo "usage: wpa-wait-att-iface.sh [iface]" >&2
+  exit 2
+}
 
 for _ in $(seq 1 "$WAIT_SECS"); do
   ip link show "$IFACE" >/dev/null 2>&1 && exit 0
