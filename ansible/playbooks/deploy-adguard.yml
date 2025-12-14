@@ -40,6 +40,87 @@
       loop:
         - "{{ adguard_work_dir }}"
         - "{{ adguard_data_dir }}"
+        - "{{ adguard_work_dir }}/certs"
+
+    - name: Validate Cloudflare token is present when TLS is enabled
+      ansible.builtin.assert:
+        that:
+          - cloudflare_api_token is defined
+          - cloudflare_api_token | length > 0
+        fail_msg: >-
+          cloudflare_api_token is empty. Set CLOUDFLARE_API_KEY in your
+          automation environment (same env var used for Traefik).
+      when: adguard_tls_enabled | default(false)
+
+    - name: Install certbot + Cloudflare DNS plugin
+      ansible.builtin.apt:
+        name:
+          - certbot
+          - python3-certbot-dns-cloudflare
+        state: present
+        update_cache: true
+      when: adguard_tls_enabled | default(false)
+
+    - name: Create Cloudflare credentials file for certbot
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/cloudflare.ini
+        mode: '0600'
+        content: |
+          dns_cloudflare_api_token = {{ cloudflare_api_token }}
+      when: adguard_tls_enabled | default(false)
+
+    - name: Install AdGuard cert sync hook
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/adguard-sync-le-certs.sh.j2"
+        dest: /usr/local/sbin/adguard-sync-le-certs
+        owner: root
+        group: root
+        mode: '0755'
+      when: adguard_tls_enabled | default(false)
+
+    - name: Obtain/ensure Let's Encrypt certificate for AdGuardHome (DNS-01)
+      ansible.builtin.command: >-
+        certbot certonly
+        --non-interactive
+        --agree-tos
+        --email {{ adguard_acme_email }}
+        --preferred-challenges dns
+        --dns-cloudflare
+        --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+        --keep-until-expiring
+        -d {{ adguard_hostname }}
+        --deploy-hook /usr/local/sbin/adguard-sync-le-certs
+      args:
+        creates: "/etc/letsencrypt/live/{{ adguard_hostname }}/fullchain.pem"
+      when: adguard_tls_enabled | default(false)
+
+    - name: Install certbot renew systemd unit
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/adguard-certbot-renew.service.j2"
+        dest: /etc/systemd/system/adguard-certbot-renew.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload systemd
+      when: adguard_tls_enabled | default(false)
+
+    - name: Install certbot renew systemd timer
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/adguard-certbot-renew.timer.j2"
+        dest: /etc/systemd/system/adguard-certbot-renew.timer
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload systemd
+      when: adguard_tls_enabled | default(false)
+
+    - name: Enable and start certbot renewal timer
+      ansible.builtin.systemd:
+        name: adguard-certbot-renew.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: adguard_tls_enabled | default(false)
 
     - name: Check if AdGuard Home is installed
       ansible.builtin.stat:
