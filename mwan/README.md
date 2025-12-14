@@ -1,4 +1,4 @@
-# Multi-WAN Load Balancer (mwan)
+# Bespoke Multi-WAN Load Balancer (mwan)
 
 Single-VM Debian 13 configuration for dual-WAN (AT&T + Webpass) load balancing with PCI passthrough.
 
