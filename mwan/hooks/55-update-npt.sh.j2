@@ -99,9 +99,9 @@ log_json() {
 #endregion
 
 log "Event iface=$IFACE state=$STATE"
-log_json "H1" "55-update-npt.sh:EVENT" "hook_event" \
-    "{\"iface\":\"$IFACE\",\"state\":\"$STATE\"}"
-debug_json_line "EVENT" "hook_event" "{\"iface\":\"$IFACE\",\"state\":\"$STATE\"}"
+EVENT_DATA="$(jq -cn --arg iface "$IFACE" --arg state "$STATE" '{iface:$iface,state:$state}')"
+log_json "H1" "55-update-npt.sh:EVENT" "hook_event" "$EVENT_DATA"
+debug_json_line "EVENT" "hook_event" "$EVENT_DATA"
 
 # Capture DHCPv6-PD routes (systemd installs PD routes as proto dhcp, dev lo)
 ROUTE_OUTPUT=$(ip -6 route show proto dhcp)
