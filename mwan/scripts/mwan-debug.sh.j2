@@ -215,7 +215,7 @@ run_pd_test() {
     ipv6_in_prefix() {
         # Return "True" if IPv6 address is in IPv6 prefix CIDR; otherwise "False".
         #
-        # Use `sipcalc` to compute canonical network addresses and compare them.
+        # Prefer `ipcalc-ng` JSON output (parse with jq); fallback to `sipcalc` if needed.
         local ip_in="$1"
         local cidr="$2"
 
@@ -228,8 +228,13 @@ run_pd_test() {
         [ "$plen" -ge 0 ] && [ "$plen" -le 128 ] || { echo "False"; return 0; }
 
         local net_of_cidr net_of_ip
-        net_of_cidr="$(sipcalc -q "$cidr" 2>/dev/null | awk -F ' - ' '/Network address/ {print $2; exit}')"
-        net_of_ip="$(sipcalc -q "$ip/$plen" 2>/dev/null | awk -F ' - ' '/Network address/ {print $2; exit}')"
+        if command -v ipcalc-ng >/dev/null 2>&1; then
+            net_of_cidr="$(ipcalc-ng --all-info -j "$cidr" 2>/dev/null | jq -r '.NETWORK // empty')"
+            net_of_ip="$(ipcalc-ng --all-info -j "$ip/$plen" 2>/dev/null | jq -r '.NETWORK // empty')"
+        else
+            net_of_cidr="$(sipcalc -q "$cidr" 2>/dev/null | awk -F ' - ' '/Network address/ {print $2; exit}')"
+            net_of_ip="$(sipcalc -q "$ip/$plen" 2>/dev/null | awk -F ' - ' '/Network address/ {print $2; exit}')"
+        fi
 
         if [ -n "$net_of_cidr" ] && [ -n "$net_of_ip" ] && [ "$net_of_cidr" = "$net_of_ip" ]; then
             echo "True"
