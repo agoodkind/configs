@@ -19,6 +19,7 @@ set -euo pipefail
 
 ATT_VLAN="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
 WEBPASS_IFACE="{{ mwan_webpass_iface }}"
+MB_IFACE="{{ mwan_monkeybrains_iface }}"
 
 IFACE_WAIT_SECS="${IFACE_WAIT_SECS:-60}"
 NFT_WAIT_SECS="${NFT_WAIT_SECS:-30}"
@@ -55,13 +56,17 @@ wait_for_nft_table() {
   return 1
 }
 
-log "Waiting for WAN interfaces to exist: $ATT_VLAN, $WEBPASS_IFACE (timeout=${IFACE_WAIT_SECS}s)"
+log "Waiting for WAN interfaces to exist: $ATT_VLAN, $WEBPASS_IFACE, $MB_IFACE (timeout=${IFACE_WAIT_SECS}s)"
 wait_for_iface "$ATT_VLAN" || {
   log "WAN interface not present: $ATT_VLAN"
   exit 1
 }
 wait_for_iface "$WEBPASS_IFACE" || {
   log "WAN interface not present: $WEBPASS_IFACE"
+  exit 1
+}
+wait_for_iface "$MB_IFACE" || {
+  log "WAN interface not present: $MB_IFACE"
   exit 1
 }
 

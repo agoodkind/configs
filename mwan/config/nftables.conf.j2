@@ -13,9 +13,7 @@ define MGMT_IFACE = "{{ actual_mgmt_iface | default(mwan_mgmt_iface) }}"
 define ATT_IFACE = "{{ actual_att_iface | default(mwan_att_iface) }}.{{ mwan_att_vlan_id }}"
 define WEBPASS_IFACE = "{{ actual_webpass_iface | default(mwan_webpass_iface) }}"
 define INTERNAL_IFACE = "{{ actual_internal_iface | default(mwan_internal_iface) }}"
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
 define MB_IFACE = "{{ mwan_monkeybrains_iface }}"
-{% endif %}
 
 # Internal network (mwan <-> OPNsense link)
 define INTERNAL_NET = 10.250.250.0/29
@@ -47,10 +45,8 @@ table inet filter {
         iif $WEBPASS_IFACE udp sport 67 udp dport 68 accept
         iif $ATT_IFACE udp sport 547 udp dport 546 accept
         iif $WEBPASS_IFACE udp sport 547 udp dport 546 accept
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
         iif $MB_IFACE udp sport 67 udp dport 68 accept
         iif $MB_IFACE udp sport 547 udp dport 546 accept
-{% endif %}
         
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables input drop: " drop
@@ -64,16 +60,12 @@ table inet filter {
         
         # Allow forwarding from internal to WANs
         iif $INTERNAL_IFACE oif { $ATT_IFACE, $WEBPASS_IFACE
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
             , $MB_IFACE
-{% endif %}
         } accept
         
         # Allow forwarding from WANs to internal (for inbound services)
         iif { $ATT_IFACE, $WEBPASS_IFACE
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
             , $MB_IFACE
-{% endif %}
         } oif $INTERNAL_IFACE accept
         
         # Log dropped packets (rate limited)
@@ -122,10 +114,8 @@ table ip nat {
         # Default SNAT for other LAN traffic via Webpass (mark 2)
         oif $WEBPASS_IFACE meta mark 2 ip saddr $INTERNAL_NET masquerade
 
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
         # Emergency fallback SNAT via Monkeybrains (mark 3 or any mark if routed out MB)
         oif $MB_IFACE ip saddr $INTERNAL_NET masquerade
-{% endif %}
     }
 }
 
@@ -145,10 +135,10 @@ table ip6 nat {
         # - /60 NPT to PD /60
         # Called by update-npt.sh via 55-update-npt.sh hook
 
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
-        # Emergency fallback NAT66 via Monkeybrains (stateful; only used when routing chooses MB).
-        oif $MB_IFACE ip6 saddr {{ mwan_internal_prefix }} masquerade
-{% endif %}
+        # NOTE:
+        # Avoid NAT66 on Monkeybrains. IPv6 should use the same /60 NPT mechanism as other WANs
+        # (programmed at runtime by update-npt.sh). Keeping a static masquerade here can override
+        # the NPT rules due to rule order.
     }
 }
 
@@ -159,9 +149,7 @@ table inet mangle {
         # Mark inbound NEW flows by ingress WAN (keeps replies symmetric via policy routing tables)
         iif $ATT_IFACE ct state new meta mark set 1
         iif $WEBPASS_IFACE ct state new meta mark set 2
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
         iif $MB_IFACE ct state new meta mark set 3
-{% endif %}
 
         # NOTE: IPv4 load balancing is driven by the per-flow random mark in `table ip nat prerouting`.
         # Do NOT override marks for 10.250.250.2-10.250.250.6 here, or IPv4 will pin to one WAN.

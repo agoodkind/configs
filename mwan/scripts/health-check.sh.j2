@@ -72,13 +72,11 @@ WAN_CONFIGS=(
 "{{ mwan_health_checks.webpass.success_threshold }}:"\
 "{{ mwan_health_checks.webpass.check_interval }}:"\
 "{{ mwan_health_checks.webpass.failure_threshold }}"
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
     "monkeybrains:${MB_IFACE}:"\
 "{{ mwan_health_checks.monkeybrains.ping_count }}:"\
 "{{ mwan_health_checks.monkeybrains.success_threshold }}:"\
 "{{ mwan_health_checks.monkeybrains.check_interval }}:"\
 "{{ mwan_health_checks.monkeybrains.failure_threshold }}"
-{% endif %}
 )
 
 # Health check targets from group_vars
@@ -138,7 +136,6 @@ WEBPASS_HTTP_TARGETS=(
 {% endfor %}
 )
 
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
 MB_TARGETS_V4=(
 {% for target in mwan_health_checks.monkeybrains.targets_v4 | default([]) %}
     "{{ target }}"
@@ -166,7 +163,6 @@ MB_HTTP_TARGETS=(
     "{{ target }}"
 {% endfor %}
 )
-{% endif %}
 
 log() {
     local prefix=""
@@ -218,13 +214,11 @@ check_wan_health() {
             targets_v6=("${WEBPASS_TARGETS_V6[@]}")
             http_targets=("${WEBPASS_HTTP_TARGETS[@]}")
             ;;
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
         monkeybrains)
             targets_v4=("${MB_TARGETS_V4[@]}")
             targets_v6=("${MB_TARGETS_V6[@]}")
             http_targets=("${MB_HTTP_TARGETS[@]}")
             ;;
-{% endif %}
         *)
             targets_v4=()
             targets_v6=()
@@ -400,9 +394,7 @@ run_health_checks() {
         case "$wan_name" in
             att) recovery_threshold={{ mwan_health_checks.att.recovery_threshold | default(2) }} ;;
             webpass) recovery_threshold={{ mwan_health_checks.webpass.recovery_threshold | default(2) }} ;;
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
             monkeybrains) recovery_threshold={{ mwan_health_checks.monkeybrains.recovery_threshold | default(2) }} ;;
-{% endif %}
             *) recovery_threshold=2 ;;
         esac
 

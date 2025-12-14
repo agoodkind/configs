@@ -19,9 +19,7 @@ set -euo pipefail
 IFACES=(
   "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
   "{{ mwan_webpass_iface }}"
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
   "{{ mwan_monkeybrains_iface }}"
-{% endif %}
 )
 PING6_TARGETS=("2606:4700:4700::1111" "2620:fe::9")
 CURL_TARGETS=("https://ifconfig.co" "https://api.ipify.org")
@@ -113,9 +111,7 @@ show_pd() {
     echo "== Delegated prefixes (configured vars) =="
     echo "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}: {{ mwan_att_pd_prefix | default('none') }}"
     echo "{{ mwan_webpass_iface }}: {{ mwan_webpass_pd_prefix | default('none') }}"
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
     echo "{{ mwan_monkeybrains_iface }}: {{ mwan_monkeybrains_pd_prefix | default('none') }}"
-{% endif %}
     echo
     echo "== Delegated prefixes from journal (last per iface) =="
     for ifc in "${IFACES[@]}"; do
@@ -194,11 +190,9 @@ get_pd() {
         "{{ mwan_webpass_iface }}")
             pd="{{ mwan_webpass_pd_prefix | default('') }}"
             ;;
-{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
         "{{ mwan_monkeybrains_iface }}")
             pd="{{ mwan_monkeybrains_pd_prefix | default('') }}"
             ;;
-{% endif %}
         *)
             pd=""
             ;;
