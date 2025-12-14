@@ -1,5 +1,18 @@
 - name: Prepare CT Container(s) or VM(s)
-  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
+  # Semaphore-friendly targeting:
+  # - preferred: pass `target_hostname=<inventory host>` (single host)
+  # - alias:     pass `hostname=<inventory host>` (for UI consistency with create-vm)
+  # - fallback:  pass `target_hosts=<group>` (default: proxmox_all_lxc)
+  hosts: >-
+    {{
+      (target_hostname | default('') | trim)
+      if (target_hostname | default('') | trim) | length > 0
+      else (
+        (hostname | default('') | trim)
+        if (hostname | default('') | trim) | length > 0
+        else (target_hosts | default('proxmox_all_lxc'))
+      )
+    }}
   gather_facts: true
   tasks:
     - name: Filter by container/VM ID if specified
