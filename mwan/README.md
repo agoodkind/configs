@@ -414,6 +414,9 @@ This is not meant to be “best effort”. We intentionally have **multiple laye
 - **Primary (event-driven)**: `networkd-dispatcher` `routable.d/55-update-npt.sh` runs when a WAN becomes `routable`.
 - **Safety net (boot)**: `mwan-update-npt.service` re-applies NPT rules at boot. It waits for WAN interfaces and the base `ip6 nat` table to exist, and retries on failure.
 - **Safety net (deploy)**: after deploy-time `nftables` reloads, the playbook starts `mwan-update-npt` so runtime-programmed rules are reinstalled.
+- **Routing convergence (boot + events)**:
+  - `mwan-update-routes.service` waits for primary WAN gateways (v4+v6) before running `update-routes.sh` so we don’t “succeed early” and accidentally prefer Monkeybrains.
+  - `update-routes.sh` and `update-npt.sh` use file locks to avoid concurrent edits from boot safety nets + dispatcher hooks + the health daemon.
 
 If you ever see **`nft list ruleset`** mostly empty, that’s a different failure mode (nftables config didn’t load successfully) and must be fixed first; otherwise no amount of retrying `update-npt.sh` will make the firewall correct.
 

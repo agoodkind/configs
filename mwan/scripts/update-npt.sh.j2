@@ -36,8 +36,9 @@ if [ -z "$WAN_IFACE" ] || [ -z "$DELEGATED_PREFIX" ]; then
     exit 1
 fi
 
-# Serialize per-interface updates to avoid concurrent partial nftables state.
-LOCK_FILE="/run/mwan-update-npt.${WAN_IFACE}.lock"
+# Serialize updates to avoid concurrent partial nftables state.
+# This script edits shared chains (`ip6 nat`), so use a global lock.
+LOCK_FILE="/run/mwan-update-npt.lock"
 exec 9>"$LOCK_FILE"
 flock 9
 
@@ -66,8 +67,8 @@ log "Updating NPT rules for $WAN_IFACE"
 log "  Delegated prefix: $DELEGATED_PREFIX"
 
 # Collect existing per-iface rule handles (we delete them in the same nft batch as we add replacements).
-POST_HANDLES="$(nft -a list chain ip6 nat postrouting 2>/dev/null | awk -v ifc="$WAN_IFACE" '$0 ~ "oif \047"ifc"\047" && $0 ~ /# handle/ {print $NF}')"
-PRE_HANDLES="$(nft -a list chain ip6 nat prerouting 2>/dev/null | awk -v ifc="$WAN_IFACE" '$0 ~ "iif \047"ifc"\047" && $0 ~ /# handle/ {print $NF}')"
+POST_HANDLES="$(nft -a list chain ip6 nat postrouting 2>/dev/null | awk -v ifc="$WAN_IFACE" '$0 ~ "oif \\\""ifc"\\\"" && $0 ~ /# handle/ {print $NF}')"
+PRE_HANDLES="$(nft -a list chain ip6 nat prerouting 2>/dev/null | awk -v ifc="$WAN_IFACE" '$0 ~ "iif \\\""ifc"\\\"" && $0 ~ /# handle/ {print $NF}')"
 
 # Decide target /60 for this iface.
 # NOTE: NPT is stateless and requires internal/external prefixes to be the same length (/60 here).
