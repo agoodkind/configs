@@ -21,6 +21,9 @@ RouteMetric=5000
 # Request prefix delegation so MWAN can NPT the internal /60 onto Monkeybrains when needed.
 UseDelegatedPrefix=yes
 PrefixDelegationHint=::/56
+WithoutRA=solicit
+DUIDType=link-layer-time
+DUIDRawData={{ mwan_webpass_duid_raw_data }}
 
 [IPv6PrefixDelegation]
 RouterLifetimeSec=1800
