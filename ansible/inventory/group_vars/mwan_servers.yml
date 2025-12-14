@@ -169,9 +169,27 @@ mwan_health_checks:
 
 # Latency-sensitive services pinned to AT&T
 # Add destination IPs/subnets here
-# mwan_att_pinned_dests:
-#   - "8.8.8.8/32" # Example - Google DNS for testing
-# Add Zoom, Google Meet, WiFi Calling ranges here
+# Seed CIDRs for the nftables set used to pin IPv4 traffic to AT&T.
+# This should be kept small and stable; dynamic sources (Zoom, Verizon DNS) are handled by a timer.
+mwan_att_pinned_v4_seed_cidrs:
+  # Google Meet TURN (Workspace + consumer)
+  - "74.125.250.0/24"
+  - "74.125.247.128/32"
+  - "142.250.82.0/24"
+
+  # T-Mobile Wi‑Fi Calling ePDG (official corporate network guidance)
+  - "208.54.0.0/16"
+  - "66.94.0.0/19"
+
+# Verizon Wi‑Fi Calling: resolve these FQDNs periodically and pin their A records to AT&T.
+mwan_att_pinned_v4_fqdns:
+  - "wo.vzwwo.com"
+  - "spg.vzw.com"
+  - "sg.vzwfemto.com"
+
+# Zoom: pull published IPv4 prefixes periodically and pin to AT&T.
+# This is a plain-text list of prefixes (one per line).
+mwan_zoom_ipranges_url: "https://assets.zoom.us/docs/ipranges/ZoomMeetings.txt"
 
 # Routing Table IDs
 # Used in /etc/iproute2/rt_tables and systemd-networkd configs

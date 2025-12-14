@@ -547,6 +547,24 @@
         dest: /usr/local/bin/mwan
         mode: '0755'
 
+    - name: Deploy pinned destination refresher (nft set)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/scripts/update-att-pinned-dests.sh.j2"
+        dest: /usr/local/bin/update-att-pinned-dests.sh
+        mode: '0755'
+
+    - name: Deploy pinned destination updater service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/services/mwan-update-att-pinned-dests.service.j2"
+        dest: /etc/systemd/system/mwan-update-att-pinned-dests.service
+        mode: '0644'
+
+    - name: Deploy pinned destination updater timer
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/services/mwan-update-att-pinned-dests.timer.j2"
+        dest: /etc/systemd/system/mwan-update-att-pinned-dests.timer
+        mode: '0644'
+
     - name: Deploy mwan update-routes oneshot service
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/services/mwan-update-routes.service.j2"
@@ -600,6 +618,7 @@
       loop:
         - mwan-trace-boot
         - mwan-update-npt
+        - mwan-update-att-pinned-dests.timer
         - bringup-att-vlan
         - cloudflared
         - systemd-networkd
@@ -640,6 +659,12 @@
     - name: Rebuild policy routing tables after networkd restart
       ansible.builtin.systemd:
         name: mwan-update-routes
+        state: started
+      failed_when: false
+
+    - name: Refresh pinned destination set
+      ansible.builtin.systemd:
+        name: mwan-update-att-pinned-dests
         state: started
       failed_when: false
 
