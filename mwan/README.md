@@ -321,6 +321,17 @@ Caution (don’t break replies):
 - **IPv6 default routes may be multipath**:
   - Gateway discovery must handle both single-path and multipath formats.
 
+- **Good to know: DHCPv6-PD “leases” aren’t fully visible via `ip route`**:
+  - `ip -6 route show proto dhcp` shows the routes that happen to be installed, but it does **not** reliably tell you “what PD did we get on each WAN?”.
+  - `systemd-networkd` keeps DHCPv6-PD lease state in memory and does not provide a stable “dump active PD leases” CLI.
+  - The most reliable way to recover/confirm the delegated prefix is to read the `systemd-networkd` journal and grab the last PD event per interface, e.g.:
+
+```bash
+journalctl -u systemd-networkd -b | grep "DHCP: received delegated prefix"
+# or per iface:
+journalctl -u systemd-networkd -b | grep "enatt0.3242: DHCP: received delegated prefix" | tail -1
+```
+
 ## IPv4 (OPNsense NATs downstream → MWAN load-balances + maps to public /29s)
 
 For IPv4, **OPNsense only “sees” the MWAN internal link** (`10.250.250.0/29`). OPNsense is responsible for NATing all downstream RFC1918 networks into that internal /29. MWAN then:
