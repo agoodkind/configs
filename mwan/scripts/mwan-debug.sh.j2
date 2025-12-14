@@ -207,6 +207,68 @@ run_pd_test() {
     declare -a PING_OK FAR_IP PREFIX_OK
     local sep="────────────────────────────────────────────────────────────"
 
+    ipv6_to_hextets() {
+        # Expand an IPv6 address into 8 numeric hextets (global array H[0..7]).
+        # Supports :: compression.
+        local addr="$1"
+        local left right
+        local -a left_arr=() right_arr=() all=()
+
+        if [[ "$addr" == *"::"* ]]; then
+            left="${addr%%::*}"
+            right="${addr##*::}"
+            if [ -n "$left" ]; then IFS=':' read -r -a left_arr <<<"$left"; fi
+            if [ -n "$right" ]; then IFS=':' read -r -a right_arr <<<"$right"; fi
+            local missing=$((8 - ${#left_arr[@]} - ${#right_arr[@]}))
+            all=("${left_arr[@]}")
+            for ((i=0; i<missing; i++)); do all+=("0"); done
+            all+=("${right_arr[@]}")
+        else
+            IFS=':' read -r -a all <<<"$addr"
+        fi
+
+        while ((${#all[@]} < 8)); do all+=("0"); done
+
+        H=()
+        for i in {0..7}; do
+            local v="${all[$i]:-0}"
+            [[ "$v" =~ ^[0-9A-Fa-f]{0,4}$ ]] || return 1
+            v="${v:-0}"
+            H+=($((16#$v)))
+        done
+    }
+
+    ipv6_in_prefix() {
+        # Return "True" if IPv6 address is in IPv6 prefix CIDR; otherwise "False".
+        local ip_in="$1"
+        local cidr="$2"
+        local ip="${ip_in%%[[:space:]]*}"
+        local net="${cidr%/*}"
+        local plen="${cidr##*/}"
+        [[ "$plen" =~ ^[0-9]+$ ]] || { echo "False"; return 0; }
+        [ "$plen" -ge 0 ] && [ "$plen" -le 128 ] || { echo "False"; return 0; }
+
+        ipv6_to_hextets "$ip" || { echo "False"; return 0; }
+        local -a IP_H=("${H[@]}")
+        ipv6_to_hextets "$net" || { echo "False"; return 0; }
+        local -a NET_H=("${H[@]}")
+
+        local i bits_left mask
+        for i in {0..7}; do
+            bits_left=$((plen - (i * 16)))
+            if [ "$bits_left" -le 0 ]; then
+                break
+            elif [ "$bits_left" -ge 16 ]; then
+                [ "${IP_H[$i]}" -eq "${NET_H[$i]}" ] || { echo "False"; return 0; }
+            else
+                mask=$(( (0xFFFF << (16 - bits_left)) & 0xFFFF ))
+                [ $((IP_H[$i] & mask)) -eq $((NET_H[$i] & mask)) ] || { echo "False"; return 0; }
+                break
+            fi
+        done
+        echo "True"
+    }
+
     echo "╔════════════════════════════════════════════════════════════╗"
     printf "║ %-58s ║\n" "PD EGRESS VERIFICATION (splinters PD; temporary disruption)"
     printf "║ %-58s ║\n" "Target: $tgt"
@@ -267,16 +329,11 @@ run_pd_test() {
         FAR_IP[$i]="$resp"
         if [ -n "$resp" ]; then
             tmpres=$(mktemp)
-            python3 - "$resp" "$pd" <<'PY' >"$tmpres"
-import ipaddress, sys
-ip=sys.argv[1]; net=sys.argv[2]
-try:
-    ok=ipaddress.IPv6Address(ip) in ipaddress.IPv6Network(net, strict=False)
-    print(f"In-prefix : {ok}")
-    print(f"_RESULT:{ok}")
-except Exception as e:
-    print(f"in_prefix=error:{e}")
-PY
+            ok="$(ipv6_in_prefix "$resp" "$pd" 2>/dev/null || echo "False")"
+            {
+                echo "In-prefix : $ok"
+                echo "_RESULT:$ok"
+            } >"$tmpres"
             PREFIX_OK[$i]=$(grep '^_RESULT:' "$tmpres" 2>/dev/null | tail -1)
             grep -v '^_RESULT:' "$tmpres" || true
             rm -f "$tmpres"
