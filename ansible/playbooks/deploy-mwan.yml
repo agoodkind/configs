@@ -166,6 +166,22 @@
           - cloudflared
         state: present
 
+    - name: Ensure cloudflared token directory exists
+      ansible.builtin.file:
+        path: /etc/cloudflared
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Copy cloudflared tunnel token to MWAN
+      ansible.builtin.copy:
+        src: /var/lib/semaphore/tokens/mwan/cloudflared/token
+        dest: /etc/cloudflared/token
+        owner: root
+        group: root
+        mode: '0600'
+
     - name: Get actual VMID from Proxmox
       delegate_to: vault.home.goodkind.io
       ansible.builtin.shell:
@@ -574,16 +590,10 @@
         create_home: false
         shell: /usr/sbin/nologin
 
-    - name: Ensure systemd override dir for cloudflared exists
-      ansible.builtin.file:
-        path: /etc/systemd/system/cloudflared.service.d
-        state: directory
-        mode: '0755'
-
-    - name: Deploy cloudflared systemd override (run as cloudflared user)
+    - name: Deploy cloudflared systemd service
       ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/overrides/cloudflared.service.d-override.conf.j2"
-        dest: /etc/systemd/system/cloudflared.service.d/override.conf
+        src: "{{ repo_root }}/mwan/services/cloudflared.service.j2"
+        dest: /etc/systemd/system/cloudflared.service
         mode: '0644'
 
 
