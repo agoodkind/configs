@@ -13,6 +13,7 @@ ExecStartPre=/usr/local/bin/mwan-wait-npt-prereqs.sh
 
 ExecStart=/usr/local/bin/update-npt.sh {{ mwan_att_iface }}.{{ mwan_att_vlan_id }} {{ mwan_npt_att_prefix }}
 ExecStart=/usr/local/bin/update-npt.sh {{ mwan_webpass_iface }} {{ mwan_npt_webpass_prefix }}
+ExecStart=/usr/local/bin/update-npt.sh {{ mwan_monkeybrains_iface }} {{ mwan_npt_monkeybrains_prefix }}
 
 [Install]
 WantedBy=multi-user.target
