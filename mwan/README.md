@@ -22,11 +22,16 @@ High-level goals:
 
 **mwan VM** (PCI passthrough + virtio, 2GB):
 
-- eth0: virtio → vmbr0 (management)
-- eth1: **X710 VF** (trust mode) → wpa_supplicant → VLAN 3242 → AT&T WAN
-- eth2: **I226-V NIC** (full passthrough) → Webpass WAN
-- eth3: virtio → mwanbr → OPNsense WAN
-- eth4: virtio → mbrains (Monkeybrains, optional)
+- The exact kernel names (`enp…`, `ens…`, etc.) vary by platform, so we pin stable names with `systemd-networkd` `.link` files.
+- The canonical names are also exported via `/etc/mwan/mwan.env` (`MWAN_*_IFACE`).
+
+Interfaces (logical):
+
+- management (virtio → vmbr0)
+- AT&T parent (X710 VF; 802.1X via `wpa_supplicant`) + AT&T VLAN 3242 (DHCPv4 + DHCPv6-PD)
+- Webpass WAN (I226-V passthrough; DHCPv4 + DHCPv6-PD)
+- MWAN↔OPNsense internal link (virtio bridge)
+- Monkeybrains WAN (optional)
 
 **OPNsense sees:** single upstream at `10.250.250.1` (mwan gateway)
 
@@ -471,8 +476,9 @@ tail -n 200 /var/log/mwan-debug.log
 ```bash
 ssh root@mwan.home.goodkind.io
 wpa_cli status
-systemctl status wpa_supplicant-mwan dhcpcd nftables mwan-health
+systemctl status wpa_supplicant-mwan systemd-networkd networkd-dispatcher nftables mwan-health cloudflared
 /usr/local/bin/health-check.sh --status
+/usr/local/bin/mwan connectivity
 ```
 
 ### Quick IPv6 sanity checks
