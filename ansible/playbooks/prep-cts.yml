@@ -291,9 +291,9 @@
         body_format: json
         body:
           username: "{{ smtp_effective_user }}"
-          password: "{{ smtp_generated_pass }}"
+          email_password: "{{ smtp_generated_pass }}"
           description: "Host {{ inventory_hostname }}"
-          status: active
+          status: allowed
         return_content: true
         status_code: [200, 409]
       register: smtp2go_add_user
@@ -315,7 +315,7 @@
         body:
           username: "{{ smtp_effective_user }}"
           email_password: "{{ smtp_generated_pass }}"
-          status: active
+          status: allowed
         return_content: true
         status_code: [200]
       when:
