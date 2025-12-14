@@ -127,7 +127,10 @@ defaults_json() {
   jq -cn \
     --arg v4 "$(ip -4 route show default || true)" \
     --arg v6 "$(ip -6 route show default || true)" \
-    '{v4:$v4, v6:$v6}'
+    '{
+      "v4": $v4,
+      "v6": $v6
+    }'
 }
 
 [ "$DEBUG" = "1" ] && debug_json "DEFAULTS" "ip_default_routes" "$(defaults_json)"
@@ -167,7 +170,11 @@ gateways_json() {
       att_gw6: $att_gw6,
       webpass_gw6: $webpass_gw6,
       mb_gw6: $mb_gw6,
-      health: {att: $att_state, webpass: $webpass_state, monkeybrains: $mb_state}
+      health: {
+        "att": $att_state,
+        "webpass": $webpass_state,
+        "monkeybrains": $mb_state
+        }
     }'
 }
 
