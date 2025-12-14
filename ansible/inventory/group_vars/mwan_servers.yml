@@ -1,12 +1,17 @@
 ---
 # MWAN (Multi-WAN) Configuration Variables
 
+# ----------------------------------------------------------------------------
+# Controller / host identity
+# ----------------------------------------------------------------------------
+
 # Path to AT&T certificates on Ansible controller (persistent across Semaphore runs)
 # Certificates should be placed here: /var/lib/semaphore/certs/mwan/wpa/
 mwan_att_certs_path: "/var/lib/semaphore/certs/mwan/wpa"
 
 # VM hostname
 mwan_hostname: mwan.home.goodkind.io
+
 # Management interface uses DHCP - IP assigned by KEA and registered in DNS automatically
 # mwan_mgmt_ip_config can be overridden for static IP if needed:
 # mwan_mgmt_ip_config: "ip=10.250.0.134/24,gw=10.250.0.1,ip6=3d06:bad:b01::86/64,gw6=3d06:bad:b01::1"
@@ -14,6 +19,10 @@ mwan_hostname: mwan.home.goodkind.io
 # DNS configuration (IPv6 first) - use OPNsense as DNS
 mwan_dns_domain: "home.goodkind.io"
 mwan_dns_servers: "3d06:bad:b01::1 10.250.0.1"
+
+# ----------------------------------------------------------------------------
+# Proxmox / VM hardware
+# ----------------------------------------------------------------------------
 
 # Proxmox bridge names
 mwan_mgmt_bridge: vmbr0 # Management network for SSH access
@@ -25,13 +34,18 @@ pci_x710_vf: "02:02.0"
 # Webpass I226-V NIC (full passthrough to avoid MAC issues)
 pci_webpass_nic: "06:00.0"
 
+# ----------------------------------------------------------------------------
+# Interfaces (logical names) + stable naming
+# ----------------------------------------------------------------------------
+
 # Interface names are DETECTED at deploy time and stored as facts
 # These defaults are overridden by deploy-mwan.yml after detection
 mwan_mgmt_iface: "enmgmt0"
 mwan_att_iface: "{{ detected_att_iface | default('enatt0') }}"
 mwan_webpass_iface: "{{ detected_webpass_iface | default('enwebpass0') }}"
 mwan_internal_iface: "{{ detected_internal_iface | default('enmwanbr0') }}"
-# Monkeybrains fallback WAN (virtio, optional)
+
+# Monkeybrains fallback WAN (virtio)
 mwan_monkeybrains_iface: "{{ detected_monkeybrains_iface | default('enmbrains0') }}"
 # If you want a stable `enmbrains0` name, set a fixed Proxmox net2 MAC and match on it.
 # Proxmox example: net2: virtio=BC:24:11:E6:58:31,bridge=vmbrX
@@ -39,25 +53,44 @@ mwan_mbrains_mac: "BC:24:11:E6:58:31"
 # Back-compat alias (deprecated): older templates used this name.
 mwan_net2_mac: "{{ mwan_mbrains_mac }}"
 
+# ----------------------------------------------------------------------------
 # AT&T 802.1X authentication (via X710 VF passthrough)
+# ----------------------------------------------------------------------------
+
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
 mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
+
 # Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
 # Extract from OPNsense:
 #   scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
 #   ssh root@mwan.home.goodkind.io "chmod 600 /etc/wpa_supplicant/*.pem"
+
+# ----------------------------------------------------------------------------
+# DHCP identity spoofing / DUIDs
+# ----------------------------------------------------------------------------
 
 # Webpass identity spoofing (CRITICAL - must match current OPNsense)
 # The I226-V NIC has wrong hardware MAC, so we MUST spoof it
 # DUID format: 00:01:00:01:<timestamp>:<mac_address>
 # MAC extracted from DUID: 00:e2:69:66:8b:5a
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
-# Raw DUID data (without leading 00:01 type bytes) for systemd-networkd
 mwan_webpass_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
+mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
+
+# Monkeybrains identity spoofing
+# Monkeybrains is currently tied to the *same* DHCPv6 identity as Webpass.
+# Keep these values in sync unless Monkeybrains provisioning changes.
+mwan_monkeybrains_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
+mwan_monkeybrains_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
+
+# DUID generated from the PFAtt Script
 mwan_att_duid: "00:02:00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
 mwan_att_duid_raw_data: "00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
-mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
+
+# ----------------------------------------------------------------------------
+# WAN addressing
+# ----------------------------------------------------------------------------
 
 # Webpass static IPv4 (Google Fiber)
 # Network: 136.25.91.240/29
@@ -67,9 +100,13 @@ mwan_webpass_ipv4: "136.25.91.242/29"
 mwan_webpass_ipv4_addr: "136.25.91.242"
 mwan_webpass_gateway: "136.25.91.241"
 
-# Internal link (to OPNsense) addressing
+# ----------------------------------------------------------------------------
+# Internal link (to OPNsense)
+# ----------------------------------------------------------------------------
+
 mwan_internal_ipv4: "10.250.250.1/29"
 mwan_internal_ipv6: "3d06:bad:b01:fe::1/64"
+
 # MWAN IPv6 address on the MWAN↔OPNsense link (used as a /128 in some SNAT cases).
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::1"
 
@@ -86,6 +123,10 @@ mwan_opnsense_wan_ll: "fe80::be24:11ff:fe77:500c"
 # OPNsense IPv6 address on the MWAN link (DNAT target for "hairpinned" WAN /128 interface addresses).
 # This does not need to be globally routable; it is only used on the MWAN↔OPNsense link.
 mwan_opnsense_edge_ipv6: "3d06:bad:b01:fe::2"
+
+# ----------------------------------------------------------------------------
+# IPv6 prefixes
+# ----------------------------------------------------------------------------
 
 # NPT targets: lower /60 from each PD
 # The ::1 address from each PD is added to WAN interfaces and used for:
@@ -104,7 +145,10 @@ mwan_webpass_pd_prefix: "2604:5500:c271:be00::/56"
 # Hardcoded to avoid unreliable per-iface PD discovery. Update if Monkeybrains changes the PD.
 mwan_monkeybrains_pd_prefix: "2607:f598:d3e8:3100::/56"
 
+# ----------------------------------------------------------------------------
 # Static IP mappings (1:1 NAT)
+# ----------------------------------------------------------------------------
+
 mwan_static_mappings:
   att:
     - { internal: "10.250.250.2", external: "104.57.226.193" }
@@ -119,7 +163,10 @@ mwan_static_mappings:
     - { internal: "10.250.250.5", external: "136.25.91.245" }
     - { internal: "10.250.250.6", external: "136.25.91.246" }
 
+# ----------------------------------------------------------------------------
 # Health check configuration
+# ----------------------------------------------------------------------------
+
 mwan_health_checks:
   att:
     enabled: true
@@ -167,8 +214,10 @@ mwan_health_checks:
     http_targets:
       - "https://ifconfig.co/ip"
 
+# ----------------------------------------------------------------------------
 # Latency-sensitive services pinned to AT&T
-# Add destination IPs/subnets here
+# ----------------------------------------------------------------------------
+
 # Seed CIDRs for the nftables set used to pin IPv4 traffic to AT&T.
 # This should be kept small and stable; dynamic sources (Zoom, Verizon DNS) are handled by a timer.
 mwan_att_pinned_v4_seed_cidrs:
@@ -191,7 +240,10 @@ mwan_att_pinned_v4_fqdns:
 # This is a plain-text list of prefixes (one per line).
 mwan_zoom_ipranges_url: "https://assets.zoom.us/docs/ipranges/ZoomMeetings.txt"
 
-# Routing Table IDs
+# ----------------------------------------------------------------------------
+# Routing table IDs
+# ----------------------------------------------------------------------------
+
 # Used in /etc/iproute2/rt_tables and systemd-networkd configs
 mwan_rt_tables:
   att: 100
@@ -199,10 +251,18 @@ mwan_rt_tables:
   monkeybrains: 300
   cloudflared: 400
 
+# ----------------------------------------------------------------------------
+# Notifications
+# ----------------------------------------------------------------------------
+
 # Email notifications (optional)
 mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
+
+# ----------------------------------------------------------------------------
+# Debug
+# ----------------------------------------------------------------------------
 
 # Debug logging for MWAN helper scripts
 # When enabled, scripts emit additional structured logs to:
