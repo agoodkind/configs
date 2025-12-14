@@ -203,15 +203,19 @@ run_pd_test() {
     confirm_pd_test
 
     local tgt="https://ifconfig.co"
-    declare -a ADDR_PREFS IFCS PDS EXISTED
-    declare -a PING_OK FAR_IP PREFIX_OK
+    declare -a IFCS=()
+    declare -A PD_BY_IFACE=()
+    declare -A ADDR_PREF_BY_IFACE=()
+    declare -A EXISTED_BY_IFACE=()
+    declare -A PING_OK_BY_IFACE=()
+    declare -A FAR_IP_BY_IFACE=()
+    declare -A IN_PREFIX_BY_IFACE=()
     local sep="────────────────────────────────────────────────────────────"
 
     ipv6_in_prefix() {
         # Return "True" if IPv6 address is in IPv6 prefix CIDR; otherwise "False".
         #
-        # Uses `sipcalc` (installed by MWAN deploy) to compute canonical network addresses and compare them.
-        # This keeps the script dependency-light and avoids embedded Python.
+        # Use `sipcalc` to compute canonical network addresses and compare them.
         local ip_in="$1"
         local cidr="$2"
 
@@ -234,6 +238,94 @@ run_pd_test() {
         fi
     }
 
+    ensure_test_addr() {
+        local ifc="$1"
+        local pd="$2"
+
+        local addr="${pd%/*}2"
+        local pref="${pd#*/}"
+        local addr_pref="$addr/$pref"
+
+        local existed="no"
+        if ip -6 addr show dev "$ifc" | awk -v a="$addr" '$2 ~ "/" && $2 ~ a"/"{print "yes"; exit}' >/dev/null; then
+            existed="yes"
+        fi
+
+        echo "$ifc: PD=$pd addr=$addr_pref (existing=$existed)"
+        if [ "$existed" = "no" ]; then
+            ip -6 addr add "$addr_pref" dev "$ifc" nodad || true
+        fi
+
+        IFCS+=("$ifc")
+        PD_BY_IFACE["$ifc"]="$pd"
+        ADDR_PREF_BY_IFACE["$ifc"]="$addr_pref"
+        EXISTED_BY_IFACE["$ifc"]="$existed"
+    }
+
+    ping6_probe() {
+        # Print ping output; return 0 on success, 1 on failure.
+        local ifc="$1"
+        local src_addr="$2"
+        local dst="$3"
+
+        local out=""
+        if out="$(ping -6 -c 3 -W 5 -I "${src_addr}%${ifc}" "$dst" 2>&1)"; then
+            printf '%s\n' "$out"
+            return 0
+        fi
+        if out="$(ping -6 -c 3 -W 5 -I "$ifc" "$dst" 2>&1)"; then
+            printf '%s\n' "$out"
+            return 0
+        fi
+        printf '%s\n' "$out"
+        return 1
+    }
+
+    print_pd_test_header() {
+        local ifc="$1"
+        local pd="$2"
+        local addr_pref="$3"
+        local addr="${addr_pref%/*}"
+        local pref="${addr_pref#*/}"
+
+        echo
+        echo "$sep"
+        printf "%-11s %s\n" "IFACE" "$ifc"
+        printf "%-11s %s\n" "PD" "$pd"
+        printf "%-11s %s/%s\n" "TEST ADDR" "$addr" "$pref"
+        echo "$sep"
+    }
+
+    print_pd_test_summary() {
+        echo
+        echo "$sep"
+        printf "%-11s %-20s %-7s %-7s %-32s\n" "IFACE" "PD" "PING" "PREFIX" "FAR IP"
+        echo "$sep"
+        for ifc in "${IFCS[@]}"; do
+            local pd="${PD_BY_IFACE[$ifc]}"
+            local ping_ok="${PING_OK_BY_IFACE[$ifc]:-fail}"
+            local in_prefix="${IN_PREFIX_BY_IFACE[$ifc]:-False}"
+            local far="${FAR_IP_BY_IFACE[$ifc]:-<empty>}"
+
+            [ "$ping_ok" = "ok" ] && ping_ok="OK" || ping_ok="FAIL"
+            [ "$in_prefix" = "True" ] && in_prefix="OK" || in_prefix="FAIL"
+
+            printf "%-11s %-20s %-7s %-7s %-32s\n" "$ifc" "$pd" "$ping_ok" "$in_prefix" "$far"
+        done
+        echo "$sep"
+    }
+
+    cleanup_pd_test_addrs() {
+        echo
+        echo "Cleanup: removing temp PD addrs that were added by this test."
+        for ifc in "${IFCS[@]}"; do
+            if [ "${EXISTED_BY_IFACE[$ifc]:-no}" = "no" ]; then
+                ip -6 addr del "${ADDR_PREF_BY_IFACE[$ifc]}" dev "$ifc" || true
+            fi
+        done
+        echo "Done."
+    }
+
     echo "╔════════════════════════════════════════════════════════════╗"
     printf "║ %-58s ║\n" "PD EGRESS VERIFICATION (splinters PD; temporary disruption)"
     printf "║ %-58s ║\n" "Target: $tgt"
@@ -247,92 +339,42 @@ run_pd_test() {
     ip -6 route show proto dhcp || true
 
     for ifc in "${IFACES[@]}"; do
-        pd=$(get_pd "$ifc")
+        pd="$(get_pd "$ifc")"
         if [ -z "$pd" ]; then
             echo "$ifc: no PD found; skipping"
             continue
         fi
-        addr="${pd%/*}2"
-        pref="${pd#*/}"
-        already=$(ip -6 addr show dev "$ifc" | awk -v a="$addr" '$2 ~ "/" && $2 ~ a"/"{print "yes"}')
-        echo "$ifc: PD=$pd addr=$addr/$pref (existing=${already:-no})"
-        if [ -z "$already" ]; then
-            ip -6 addr add "$addr/$pref" dev "$ifc" nodad || true
-        fi
-        ADDR_PREFS+=("$addr/$pref")
-        IFCS+=("$ifc")
-        PDS+=("$pd")
-        EXISTED+=("${already:-no}")
+        ensure_test_addr "$ifc" "$pd"
     done
     sleep 1
 
-    for i in "${!ADDR_PREFS[@]}"; do
-        addr_pref="${ADDR_PREFS[$i]}"
-        ifc="${IFCS[$i]}"
-        pd="${PDS[$i]}"
+    for ifc in "${IFCS[@]}"; do
+        pd="${PD_BY_IFACE[$ifc]}"
+        addr_pref="${ADDR_PREF_BY_IFACE[$ifc]}"
         addr="${addr_pref%/*}"
-        pref="${addr_pref#*/}"
-        echo
-        echo "$sep"
-        printf "%-11s %s\n" "IFACE" "$ifc"
-        printf "%-11s %s\n" "PD" "$pd"
-        printf "%-11s %s/%s\n" "TEST ADDR" "$addr" "$pref"
-        echo "$sep"
+
+        print_pd_test_header "$ifc" "$pd" "$addr_pref"
         ip -6 route get 2606:4700:4700::1111 from "$addr" oif "$ifc" || true
         printf "%-11s %s%s%s\n" "PING" "$ifc from " "$addr" ""
-        if ping -6 -c 3 -W 5 -I "${addr}%${ifc}" 2606:4700:4700::1111 >/tmp/mwan_ping.$$ 2>&1; then
-            PING_OK[$i]="ok"
-        elif ping -6 -c 3 -W 5 -I "$ifc" 2606:4700:4700::1111 >/tmp/mwan_ping.$$ 2>&1; then
-            PING_OK[$i]="ok"
+
+        if ping6_probe "$ifc" "$addr" 2606:4700:4700::1111; then
+            PING_OK_BY_IFACE["$ifc"]="ok"
         else
-            PING_OK[$i]="fail"
+            PING_OK_BY_IFACE["$ifc"]="fail"
         fi
-        cat /tmp/mwan_ping.$$ || true
-        rm -f /tmp/mwan_ping.$$
+
         resp=$(curl -6 --interface "$ifc" --max-time 8 -s "$tgt" || true)
         printf "%-11s %s\n" "FAR IP" "${resp:-<empty>}"
-        FAR_IP[$i]="$resp"
+        FAR_IP_BY_IFACE["$ifc"]="$resp"
         if [ -n "$resp" ]; then
-            tmpres=$(mktemp)
             ok="$(ipv6_in_prefix "$resp" "$pd" 2>/dev/null || echo "False")"
-            {
-                echo "In-prefix : $ok"
-                echo "_RESULT:$ok"
-            } >"$tmpres"
-            PREFIX_OK[$i]=$(grep '^_RESULT:' "$tmpres" 2>/dev/null | tail -1)
-            grep -v '^_RESULT:' "$tmpres" || true
-            rm -f "$tmpres"
+            printf "In-prefix : %s\n" "$ok"
+            IN_PREFIX_BY_IFACE["$ifc"]="$ok"
         fi
     done
 
-    # Summary table
-    echo
-    echo "$sep"
-    printf "%-11s %-20s %-7s %-7s %-32s\n" "IFACE" "PD" "PING" "PREFIX" "FAR IP"
-    echo "$sep"
-    for i in "${!IFCS[@]}"; do
-        pi="${PING_OK[$i]:-fail}"
-        pr="${PREFIX_OK[$i]:-false}"
-        far="${FAR_IP[$i]:-<empty>}"
-        pd="${PDS[$i]}"
-        ifc="${IFCS[$i]}"
-        [ "$pi" = "ok" ] && pi="OK" || pi="FAIL"
-        [ "$pr" = "_RESULT:True" ] && pr="OK" || pr="FAIL"
-        printf "%-11s %-20s %-7s %-7s %-32s\n" "$ifc" "$pd" "$pi" "$pr" "$far"
-    done
-    echo "$sep"
-
-    echo
-    echo "Cleanup: removing temp PD addrs that were added by this test."
-    for i in "${!ADDR_PREFS[@]}"; do
-        addr_pref="${ADDR_PREFS[$i]}"
-        ifc="${IFCS[$i]}"
-        existed="${EXISTED[$i]}"
-        if [ "$existed" = "no" ]; then
-            ip -6 addr del "$addr_pref" dev "$ifc" || true
-        fi
-    done
-    echo "Done."
+    print_pd_test_summary
+    cleanup_pd_test_addrs
 }
 
 {% raw %}
