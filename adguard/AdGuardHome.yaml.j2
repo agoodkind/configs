@@ -79,8 +79,9 @@ filtering:
 {% endif %}
   safe_search:
     enabled: {{ adguard_safesearch_enabled | lower }}
-{% if adguard_rewrites | length > 0 %}
-  rewrites: {{ adguard_rewrites | to_json }}
+{% set rewrites = adguard_rewrites_effective | default(adguard_rewrites) %}
+{% if rewrites | length > 0 %}
+  rewrites: {{ rewrites | to_json }}
 {% endif %}
 {% if adguard_blocked_services | length > 0 %}
   blocked_services: {{ adguard_blocked_services | to_json }}

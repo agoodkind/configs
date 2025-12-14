@@ -177,7 +177,9 @@
         - name: Download and run AdGuard Home install script (new installation)
           ansible.builtin.shell: |
             set -o pipefail
-            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | bash -s -- -v -c {{ adguard_channel }} -o /opt
+            curl -s -S -L \
+              https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh \
+              | bash -s -- -v -c {{ adguard_channel }} -o /opt
           args:
             executable: /bin/bash
           register: install_result
@@ -187,7 +189,9 @@
         - name: Download and run AdGuard Home install script (reinstall for update)
           ansible.builtin.shell: |
             set -o pipefail
-            curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | bash -s -- -v -c {{ adguard_channel }} -r -o /opt
+            curl -s -S -L \
+              https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh \
+              | bash -s -- -v -c {{ adguard_channel }} -r -o /opt
           args:
             executable: /bin/bash
           register: install_result
@@ -220,6 +224,29 @@
         - "{{ adguard_work_dir }}"
         - "{{ adguard_data_dir }}"
       when: adguard_binary.stat.exists
+
+    - name: Build AdGuard self-hostname DNS rewrites (avoid loopback)
+      ansible.builtin.set_fact:
+        adguard_rewrites_effective: >-
+          {{
+            (adguard_rewrites | default([]))
+            +
+            (
+              ([{'domain': adguard_hostname, 'answer': ansible_default_ipv4.address, 'enabled': true}]
+               if (ansible_default_ipv4 is defined and
+                   ansible_default_ipv4.address is defined and
+                   ansible_default_ipv4.address != '127.0.0.1')
+               else [])
+            )
+            +
+            (
+              ([{'domain': adguard_hostname, 'answer': ansible_default_ipv6.address, 'enabled': true}]
+               if (ansible_default_ipv6 is defined and
+                   ansible_default_ipv6.address is defined and
+                   ansible_default_ipv6.address != '::1')
+               else [])
+            )
+          }}
 
     - name: Template AdGuard Home configuration
       ansible.builtin.template:
