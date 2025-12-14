@@ -1,10 +1,6 @@
 ---
 description: MWAN/OPNsense multi-WAN conventions (routing, logging, SSH, formatting)
-globs:
-  - "**/mwan/**"
-  - "**/deploy-mwan.yml"
-  - "**/.cursor/rules/mwan.mdc"
-alwaysApply: false
+alwaysApply: true
 ---
 
 # MWAN / OPNsense Working Rules
