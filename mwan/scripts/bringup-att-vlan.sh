@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Post-authentication actions for AT&T VLAN interface
 # For systemd-networkd - VLAN is created declaratively via .netdev file
 # AT&T requires 802.1X authentication on parent before DHCP on VLAN works
@@ -19,16 +19,28 @@
 
 set -euo pipefail
 
-ATT_IFACE="{{ mwan_att_iface }}"
-VLAN_IFACE="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
+# shellcheck disable=SC1091
+. /etc/mwan/mwan.env
+
+ATT_IFACE="${MWAN_ATT_IFACE:-}"
+VLAN_IFACE="${MWAN_ATT_VLAN_IFACE:-}"
 WPA_CLI="/sbin/wpa_cli"
 MAX_WAIT=60
 CHECK_INTERVAL=2
-TRACE_FILE="/run/mwan-trace-id"
+TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
 if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
-    MWAN_TRACE_ID="$(cat "$TRACE_FILE" 2>/dev/null || true)"
+    MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
+
+[ -n "$ATT_IFACE" ] || { 
+	echo "Missing MWAN_ATT_IFACE in /etc/mwan/mwan.env" >&2;
+	exit 1; 
+}
+[ -n "$VLAN_IFACE" ] || { 
+	echo "Missing MWAN_ATT_VLAN_IFACE in /etc/mwan/mwan.env" >&2;
+	exit 1;
+}
 
 log() {
     local prefix=""
@@ -102,3 +114,4 @@ log "VLAN interface ${VLAN_IFACE} is ready and DHCP triggered"
 log "systemd-networkd will now obtain IP address from AT&T"
 
 exit 0
+

@@ -1,0 +1,94 @@
+---
+description: MWAN/OPNsense multi-WAN conventions (routing, logging, SSH, formatting)
+globs:
+  - "**/mwan/**"
+  - "**/deploy-mwan.yml"
+  - "**/.cursor/rules/mwan.mdc"
+alwaysApply: false
+---
+
+# MWAN / OPNsense Working Rules
+
+## SSH + host access patterns
+
+- Use **jump hosts explicitly** when required by the environment.
+  - Typical chain we used: `ssh agoodkind@10.250.0.1` (OPNsense) → `ssh root@10.250.0.254` (Proxmox host) → VM/host.
+- When instructed, disable strict host key checking for automation/diagnostics only:
+
+```bash
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ...
+```
+
+- Prefer **non-disruptive actions** on the MWAN VM (avoid `systemctl restart systemd-networkd` unless necessary).
+
+## Deterministic convergence (no races)
+
+- Scripts/services must be **idempotent** and tolerate partial boot ordering.
+- Any script that mutates shared kernel state must be **serialized** with a lock:
+  - `flock` lock in `/run/...` for `ip rule/ip route` writers and `nft` writers.
+- When a service can run before prerequisites are ready, gate it with an `ExecStartPre` wait script and add retries (`Restart=on-failure`).
+
+## Jinja / templating strategy
+
+- Do **not** keep a `.j2` file if it contains **no Jinja** (`{{`, `{%`, `{#}`).
+  - Use a normal file extension and deploy with `ansible.builtin.copy`.
+- If a shell script/hook/service only uses templating to inject variables:
+  - Prefer a single templated env file (e.g. `/etc/mwan/mwan.env`) and
+  - Make the script/hook **static** and source env via `. /etc/mwan/mwan.env`.
+  - For systemd units, prefer `EnvironmentFile=/etc/mwan/mwan.env`.
+
+## WAN state terminology
+
+- Use **healthy / unhealthy / unknown** for WAN health.
+- Do not use **up/down** for health (confusable with `ip link` state).
+
+## Logging + JSON
+
+- Prefer **structured JSON logs** to `/var/log/mwan-debug.log`.
+- Use `jq -cn` for JSON generation; avoid `printf`-built JSON.
+- Avoid embedded Python for JSON or parsing.
+- Include `traceId` in logs when available (`MWAN_TRACE_ID`).
+
+## Parsing + tooling preferences
+
+- Prefer machine-readable outputs:
+  - `ip -j ... | jq` over `ip ... | awk/sed`
+  - `networkctl ... --json=short | jq` over text parsing
+  - `ipcalc-ng --all-info -j ... | jq` over bespoke IPv6 math
+  - `nft -j` for inspection where feasible
+- Prefer readability:
+  - Avoid long pipe trains like `... | grep ... | tail -1 | awk ... | awk ...`.
+  - Prefer a single-pass `awk` program (track `last=...` and print in `END`) or capture output to local vars.
+- Keep scripts portable across Debian base utilities (avoid GNU-only flags unless already assumed/installed).
+
+## jq usage
+
+- Use `jq` for **selection/extraction** and light reshaping.
+- Avoid algorithmic formatting in `jq` (e.g. byte-array → IPv6 conversion). Move that to a small shell helper.
+
+## ipcalc-ng helper patterns
+
+- If you repeat `ipcalc-ng ... | jq -r '.NETWORK'` or similar, factor it into a helper:
+  - `ipcalc_field <cidr> <jq_field>` / `ipcalc6_field <cidr> <jq_field>`
+  - Keep long command substitutions readable (multi-line `$( ... )`).
+
+## Shell style + safety
+
+- Use `set -euo pipefail` for scripts that mutate state.
+- Use `|| true` only at **expected** failure points (best-effort probes/cleanup).
+- Source constant paths directly (`. /etc/mwan/mwan.env`) to keep shellcheck happy; avoid unused `ENV_FILE` variables.
+- Keep lines reasonably short; wrap long `{ ... }` blocks with newlines after `{`.
+- For every MWAN script/hook, include a top comment block describing:
+  - what it does (symptoms + technical)
+  - where it sits in the dependency graph
+
+## nftables + runtime rules
+
+- Assume `nftables` reload flushes runtime rules. Any dynamic runtime rule programming (e.g. NPT) must be re-applied via:
+  - `networkd-dispatcher` hooks, and
+  - a boot/deploy safety-net systemd unit.
+
+## Documentation constraints
+
+- Do not add new docs unless asked.
+- When updating existing docs, avoid giant pasted code blocks; prefer short excerpts and direct pointers to files.

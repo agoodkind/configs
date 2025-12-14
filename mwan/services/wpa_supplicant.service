@@ -1,0 +1,19 @@
+[Unit]
+Description=WPA Supplicant for AT&T 802.1X
+After=systemd-networkd.service
+Wants=systemd-networkd.service
+Before=network-online.target
+
+[Service]
+Type=simple
+Environment="OPENSSL_CONF=/etc/wpa_supplicant/openssl.cnf"
+EnvironmentFile=/etc/mwan/mwan.env
+ExecStartPre=/usr/local/bin/wpa-wait-att-iface.sh
+ExecStartPre=/bin/sleep 2
+ExecStartPre=/sbin/ip link set ${MWAN_ATT_IFACE} up
+ExecStart=/sbin/wpa_supplicant -Dwired -i ${MWAN_ATT_IFACE} -dd -c /etc/wpa_supplicant/wpa_supplicant.conf -P /run/wpa_supplicant-mwan.pid
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
