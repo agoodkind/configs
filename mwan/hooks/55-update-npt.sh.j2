@@ -143,9 +143,24 @@ PREFIXES="$(networkctl status "$IFACE" --json=short --no-pager 2>/dev/null | jq 
   | .[]
 ' 2>/dev/null | tr '\n' ' ' | xargs || true)"
 
-# 2) proto dhcp routes (coarse; may include prefixes from other ifaces)
-if [ -z "$PREFIXES" ]; then
-    PREFIXES="$(jq -r '.[].dst // empty' <<<"$ROUTE_JSON" 2>/dev/null | tr '\n' ' ' | xargs || true)"
+# IMPORTANT:
+# `ip -6 route show proto dhcp` is not reliably per-interface (often shows PD routes without an iface
+# association, e.g. dev lo). Using it here can accidentally attribute Webpass PD to AT&T (or vice versa).
+# For AT&T + Webpass, prefer the configured static /60 targets; for Monkeybrains, allow dynamic discovery.
+case "$IFACE" in
+    "$ATT_IFACE") PREFIXES="{{ mwan_npt_att_prefix }}" ;;
+    "$WEBPASS_IFACE") PREFIXES="{{ mwan_npt_webpass_prefix }}" ;;
+    *)
+        # 2) proto dhcp routes (coarse; may include prefixes from other ifaces)
+        if [ -z "$PREFIXES" ]; then
+            PREFIXES="$(jq -r '.[].dst // empty' <<<"$ROUTE_JSON" 2>/dev/null | tr '\n' ' ' | xargs || true)"
+        fi
+        ;;
+esac
+
+# Monkeybrains: optionally hardcode a /60 target to avoid unreliable discovery.
+if [ "$IFACE" = "$MB_IFACE" ] && [ -n "{{ mwan_npt_monkeybrains_prefix | default('') }}" ]; then
+    PREFIXES="{{ mwan_npt_monkeybrains_prefix }}"
 fi
 
 # 3) state file fallback
