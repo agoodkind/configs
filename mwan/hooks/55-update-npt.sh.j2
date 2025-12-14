@@ -57,7 +57,10 @@ debug_json_line() {
         --arg message "$msg" \
         --arg data "$data" \
         --argjson timestamp "$(date +%s%3N)" \
-        '{traceId:$traceId,component:$component,location:$location,message:$message,data:(try ($data|fromjson) catch {"_raw":$data}),timestamp:$timestamp}' \
+        '{
+        traceId:$traceId,
+        component:$component,
+        location:$location,message:$message,data:(try ($data|fromjson) catch {"_raw":$data}),timestamp:$timestamp}' \
         >>"$DEBUG_LOG"
 }
 
@@ -115,8 +118,9 @@ if [ -z "$PREFIXES" ] && [ -f "$STATE_FILE" ]; then
 fi
 
 log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" \
-    "{\"prefixes\":\"$PREFIXES\"}"
-debug_json_line "PREFIXES" "prefixes_found" "{\"prefixes\":\"$PREFIXES\"}"
+PREFIX_DATA="$(jq -cn --arg prefixes "$PREFIXES" '{prefixes:$prefixes}')"
+log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" "$PREFIX_DATA"
+debug_json_line "PREFIXES" "prefixes_found" "$PREFIX_DATA"
 
 if [ -z "$PREFIXES" ]; then
     # Fallback mode:
