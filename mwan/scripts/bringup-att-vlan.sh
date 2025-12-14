@@ -33,13 +33,13 @@ if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
     MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
-[ -n "$ATT_IFACE" ] || { 
-	echo "Missing MWAN_ATT_IFACE in /etc/mwan/mwan.env" >&2;
-	exit 1; 
+[ -n "$ATT_IFACE" ] || {
+    echo "Missing MWAN_ATT_IFACE in /etc/mwan/mwan.env" >&2
+    exit 1
 }
-[ -n "$VLAN_IFACE" ] || { 
-	echo "Missing MWAN_ATT_VLAN_IFACE in /etc/mwan/mwan.env" >&2;
-	exit 1;
+[ -n "$VLAN_IFACE" ] || {
+    echo "Missing MWAN_ATT_VLAN_IFACE in /etc/mwan/mwan.env" >&2
+    exit 1
 }
 
 log() {

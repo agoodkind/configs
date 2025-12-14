@@ -130,33 +130,19 @@ STATE_DIR="/var/lib/mwan"
 mkdir -p "$STATE_DIR"
 STATE_FILE="$STATE_DIR/pd-$IFACE"
 
-# Discover PD prefixes via a single canonical helper (Describe/networkctl/routes/journal/statefile).
-PREFIXES="$(/usr/local/bin/find-pd-prefixes.sh "$IFACE" | tr '\n' ' ' | xargs)"
+# Select the configured per-WAN /60 NPT target.
+PREFIXES=""
 
 # IMPORTANT:
 # `ip -6 route show proto dhcp` is not reliably per-interface (often shows PD routes without an iface
 # association, e.g. dev lo). Using it here can accidentally attribute Webpass PD to AT&T (or vice versa).
-# For AT&T + Webpass, prefer the configured static /60 targets; for Monkeybrains, allow dynamic discovery.
+# Prefer the configured per-WAN /60 targets (NPT) for all WANs.
 case "$IFACE" in
     "$ATT_IFACE") PREFIXES="${MWAN_NPT_ATT_PREFIX:-}" ;;
     "$WEBPASS_IFACE") PREFIXES="${MWAN_NPT_WEBPASS_PREFIX:-}" ;;
-    *)
-        # 2) proto dhcp routes (coarse; may include prefixes from other ifaces)
-        if [ -z "$PREFIXES" ]; then
-            PREFIXES="$(jq -r '.[].dst // empty' <<<"$ROUTE_JSON" | tr '\n' ' ' | xargs)"
-        fi
-        ;;
+    "$MB_IFACE") PREFIXES="${MWAN_NPT_MONKEYBRAINS_PREFIX:-}" ;;
+    *) ;;
 esac
-
-# Monkeybrains: optionally hardcode a /60 target to avoid unreliable discovery.
-if [ "$IFACE" = "$MB_IFACE" ] && [ -n "${MWAN_NPT_MONKEYBRAINS_PREFIX:-}" ]; then
-    PREFIXES="${MWAN_NPT_MONKEYBRAINS_PREFIX}"
-fi
-
-# 3) state file fallback
-if [ -z "$PREFIXES" ] && [ -f "$STATE_FILE" ]; then
-    PREFIXES=$(cat "$STATE_FILE")
-fi
 
 PREFIX_DATA="$(jq -cn \
     --arg prefixes "$PREFIXES" \
@@ -165,28 +151,6 @@ PREFIX_DATA="$(jq -cn \
     }')"
 log_json "H2" "55-update-npt.sh:PREFIXES" "prefixes_found" "$PREFIX_DATA"
 debug_json_line "PREFIXES" "prefixes_found" "$PREFIX_DATA"
-
-if [ -z "$PREFIXES" ]; then
-    # Fallback mode:
-    # Some deployments intentionally use fixed per-WAN /60 targets (NPT) rather than
-    # relying on dynamically-discovered DHCPv6-PD routes.
-    case "$IFACE" in
-        "$ATT_IFACE") PREFIXES="${MWAN_NPT_ATT_PREFIX:-}" ;;
-        "$WEBPASS_IFACE") PREFIXES="${MWAN_NPT_WEBPASS_PREFIX:-}" ;;
-        "$MB_IFACE") PREFIXES="${MWAN_NPT_MONKEYBRAINS_PREFIX:-}" ;;
-        *) PREFIXES="" ;;
-    esac
-    if [ -n "$PREFIXES" ]; then
-        FALLBACK_DATA="$(jq -cn \
-            --arg iface "$IFACE" \
-            --arg prefixes "$PREFIXES" \
-            '{
-              iface: $iface,
-              prefixes: $prefixes
-            }')"
-        debug_json_line "FALLBACK" "using_static_prefix" "$FALLBACK_DATA"
-    fi
-fi
 
 if [ -z "$PREFIXES" ]; then
     log "No prefix found for $IFACE; skipping NPT update"

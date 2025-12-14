@@ -317,21 +317,7 @@ get_pd() {
     fi
     pd="$(/usr/local/bin/find-pd-prefixes.sh "$ifc" --one || true)"
     [ -n "$pd" ] && { echo "$pd"; return 0; }
-
-    pd=$(ip -6 route show proto dhcp dev "$ifc" | awk '{print $1; exit}')
-    if [ -z "$pd" ] && [ -f "/var/lib/mwan/pd-$ifc" ]; then
-        pd=$(head -1 "/var/lib/mwan/pd-$ifc")
-    fi
-    if [ -z "$pd" ]; then
-        pd=$(
-            journalctl -u systemd-networkd -b 2>/dev/null |
-              awk -v ifc="$ifc" '
-                $0 ~ (ifc ": DHCP: received delegated prefix") { last = $NF }
-                END { if (last != "") print last }
-              '
-        )
-    fi
-    echo "$pd"
+    echo ""
 }
 
 confirm_pd_test() {

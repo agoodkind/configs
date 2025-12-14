@@ -88,7 +88,7 @@ STATE_FILE="/var/run/mwan-health.state"
 wan_health_state() {
     local wan="$1"
     [ -r "$STATE_FILE" ] || { echo "unknown"; return 0; }
-    grep "^${wan}:" "$STATE_FILE" 2>/dev/null | tail -n1 | cut -d: -f2 || echo "unknown"
+    grep "^${wan}:" "$STATE_FILE" | tail -n1 | cut -d: -f2 || echo "unknown"
 }
 # Treat unknown as healthy to avoid cutting traffic during daemon warmup.
 wan_is_healthy() {
@@ -96,9 +96,15 @@ wan_is_healthy() {
 }
 
 # Get gateways
+ip_route_default_json() {
+    # Print JSON array of default routes (or [] if not present yet).
+    local family_flag="$1" # -4 or -6
+    ip -j "$family_flag" route show default 2>/dev/null || echo '[]'
+}
+
 get_gw4() {
     local dev="$1"
-    ip -j -4 route show default 2>/dev/null | jq -r --arg dev "$dev" '
+    ip_route_default_json -4 | jq -r --arg dev "$dev" '
       [
         .[] |
         if (.dev? == $dev and (.gateway? != null) and (.gateway? != "")) then
@@ -114,7 +120,7 @@ get_gw4() {
 
 get_gw6() {
     local dev="$1"
-    ip -j -6 route show default 2>/dev/null | jq -r --arg dev "$dev" '
+    ip_route_default_json -6 | jq -r --arg dev "$dev" '
       [
         .[] |
         if (.dev? == $dev and (.gateway? != null) and (.gateway? != "")) then
@@ -291,10 +297,7 @@ ensure_fwmark_rule_v6 3 "$MB_TABLE" 300 "$mb_v6_enable"
 # Cloudflared carve-out:
 # - Route cloudflared traffic via a dedicated table that prefers AT&T, then Webpass, then Monkeybrains.
 # - Scoped by UID (does not interfere with fwmark-based forwarding logic).
-cloudflared_uid=""
-if id -u cloudflared >/dev/null 2>&1; then
-    cloudflared_uid="$(id -u cloudflared)"
-fi
+cloudflared_uid="$(id -u cloudflared)"
 
 cloud_v4_enable=0
 cloud_v6_enable=0
@@ -303,44 +306,36 @@ cloud_if4=""
 cloud_gw6=""
 cloud_if6=""
 
-if [ -n "$cloudflared_uid" ]; then
-    if [ "$att_v4_enable" = "1" ]; then
-        cloud_v4_enable=1; cloud_gw4="$ATT_GW4"; cloud_if4="$ATT_IFACE"
-    elif [ "$web_v4_enable" = "1" ]; then
-        cloud_v4_enable=1; cloud_gw4="$WEBPASS_GW4"; cloud_if4="$WEBPASS_IFACE"
-    elif [ "$mb_v4_enable" = "1" ]; then
-        cloud_v4_enable=1; cloud_gw4="$MB_GW4"; cloud_if4="$MB_IFACE"
-    fi
+if [ "$att_v4_enable" = "1" ]; then
+    cloud_v4_enable=1; cloud_gw4="$ATT_GW4"; cloud_if4="$ATT_IFACE"
+elif [ "$web_v4_enable" = "1" ]; then
+    cloud_v4_enable=1; cloud_gw4="$WEBPASS_GW4"; cloud_if4="$WEBPASS_IFACE"
+elif [ "$mb_v4_enable" = "1" ]; then
+    cloud_v4_enable=1; cloud_gw4="$MB_GW4"; cloud_if4="$MB_IFACE"
+fi
 
-    if [ "$att_v6_enable" = "1" ]; then
-        cloud_v6_enable=1; cloud_gw6="$ATT_GW6"; cloud_if6="$ATT_IFACE"
-    elif [ "$web_v6_enable" = "1" ]; then
-        cloud_v6_enable=1; cloud_gw6="$WEBPASS_GW6"; cloud_if6="$WEBPASS_IFACE"
-    elif [ "$mb_v6_enable" = "1" ]; then
-        cloud_v6_enable=1; cloud_gw6="$MB_GW6"; cloud_if6="$MB_IFACE"
-    fi
+if [ "$att_v6_enable" = "1" ]; then
+    cloud_v6_enable=1; cloud_gw6="$ATT_GW6"; cloud_if6="$ATT_IFACE"
+elif [ "$web_v6_enable" = "1" ]; then
+    cloud_v6_enable=1; cloud_gw6="$WEBPASS_GW6"; cloud_if6="$WEBPASS_IFACE"
+elif [ "$mb_v6_enable" = "1" ]; then
+    cloud_v6_enable=1; cloud_gw6="$MB_GW6"; cloud_if6="$MB_IFACE"
+fi
 
-    if [ "$cloud_v4_enable" = "1" ]; then
-        ip route replace default via "$cloud_gw4" dev "$cloud_if4" table "$CLOUDFLARED_TABLE" || true
-    else
-        ip route del default table "$CLOUDFLARED_TABLE" || true
-    fi
-
-    if [ "$cloud_v6_enable" = "1" ]; then
-        ip -6 route replace default via "$cloud_gw6" dev "$cloud_if6" table "$CLOUDFLARED_TABLE" || true
-    else
-        ip -6 route del default table "$CLOUDFLARED_TABLE" || true
-    fi
-
-    ensure_uid_rule_v4 "$cloudflared_uid" "$CLOUDFLARED_TABLE" 10 "$cloud_v4_enable"
-    ensure_uid_rule_v6 "$cloudflared_uid" "$CLOUDFLARED_TABLE" 10 "$cloud_v6_enable"
+if [ "$cloud_v4_enable" = "1" ]; then
+    ip route replace default via "$cloud_gw4" dev "$cloud_if4" table "$CLOUDFLARED_TABLE" || true
 else
-    # If cloudflared isn't installed on this host, don't install uid-based rules.
-    del_rule_v4 priority 10 table "$CLOUDFLARED_TABLE"
-    del_rule_v6 priority 10 table "$CLOUDFLARED_TABLE"
     ip route del default table "$CLOUDFLARED_TABLE" || true
+fi
+
+if [ "$cloud_v6_enable" = "1" ]; then
+    ip -6 route replace default via "$cloud_gw6" dev "$cloud_if6" table "$CLOUDFLARED_TABLE" || true
+else
     ip -6 route del default table "$CLOUDFLARED_TABLE" || true
 fi
+
+ensure_uid_rule_v4 "$cloudflared_uid" "$CLOUDFLARED_TABLE" 10 "$cloud_v4_enable"
+ensure_uid_rule_v6 "$cloudflared_uid" "$CLOUDFLARED_TABLE" 10 "$cloud_v6_enable"
 
 # Deterministic fallback: if BOTH primary WANs are unhealthy and Monkeybrains is healthy,
 # route forwarded traffic (coming from OPNsense) via Monkeybrains table for new flows.
