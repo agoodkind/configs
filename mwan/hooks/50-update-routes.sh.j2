@@ -46,8 +46,22 @@ logger -t networkd-dispatcher \
     "${prefix}Interface $IFACE is now routable, updating policy routing"
 
 if [ "$DEBUG" = "1" ]; then
-    printf '{"traceId":"%s","component":"50-update-routes","location":"EVENT","message":"hook_event","data":{"iface":"%s","state":"%s"},"timestamp":%s}\n' \
-        "${MWAN_TRACE_ID:-}" "$IFACE" "$STATE" "$(date +%s%3N)" >> "$DEBUG_LOG"
+    jq -cn \
+        --arg traceId "${MWAN_TRACE_ID:-}" \
+        --arg component "50-update-routes" \
+        --arg location "EVENT" \
+        --arg message "hook_event" \
+        --arg iface "$IFACE" \
+        --arg state "$STATE" \
+        --argjson timestamp "$(date +%s%3N)" \
+        '{
+            traceId: $traceId,
+            component: $component,
+            location: $location,
+            message: $message,
+            data: {iface: $iface, state: $state},
+            timestamp: $timestamp
+        }' >> "$DEBUG_LOG"
 fi
 
 # Call update-routes.sh to rebuild routing tables
