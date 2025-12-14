@@ -251,6 +251,19 @@ mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
 
+# Sender identity (must be allowed by SMTP2GO/domain config)
+mwan_email_from: "alerts@goodkind.io"
+mwan_email_sender_name: "MWAN"
+
+# SMTP2GO configuration (do not store secrets in git; use env vars in Semaphore)
+mwan_smtp2go_api_key: "{{ lookup('env', 'SMTP2GO_API_KEY', default='') }}"
+mwan_smtp_host: "{{ lookup('env', 'SMTP2GO_SMTP_HOST', default='mail.smtp2go.com') }}"
+mwan_smtp_port: "{{ lookup('env', 'SMTP2GO_SMTP_PORT', default='587') }}"
+
+# Optional manual override (if you don't want API-provisioned SMTP users)
+mwan_smtp_user: "{{ lookup('env', 'SMTP2GO_SMTP_USER', default='') }}"
+mwan_smtp_pass: "{{ lookup('env', 'SMTP2GO_SMTP_PASS', default='') }}"
+
 # ----------------------------------------------------------------------------
 # Debug
 # ----------------------------------------------------------------------------

@@ -101,7 +101,205 @@
           - tzdata
           - yq
           - apache2-utils
+          - msmtp
+          - msmtp-mta
         state: present
+
+    # ------------------------------------------------------------------------
+    # /opt/scripts (shared scripts repo)
+    # ------------------------------------------------------------------------
+
+    - name: Ensure /opt/scripts exists (git checkout)
+      ansible.builtin.git:
+        repo: https://github.com/agoodkind/scripts.git
+        dest: /opt/scripts
+        version: main
+        update: true
+        force: true
+
+    - name: Ensure /opt/scripts is executable
+      ansible.builtin.file:
+        path: /opt/scripts
+        state: directory
+        mode: '0755'
+        recurse: true
+
+    - name: Install scripts-updater systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/scripts-updater.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Update /opt/scripts from git
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/git -C /opt/scripts pull --ff-only
+          TimeoutStartSec=300
+
+    - name: Install scripts-updater systemd timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/scripts-updater.timer
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Run scripts-updater daily
+
+          [Timer]
+          OnCalendar=daily
+          RandomizedDelaySec=3600
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Ensure /opt/scripts is in system PATH
+      ansible.builtin.copy:
+        dest: /etc/profile.d/opt-scripts.sh
+        mode: '0644'
+        content: |
+          export PATH="/opt/scripts:$PATH"
+
+    - name: Enable scripts-updater timer
+      ansible.builtin.systemd:
+        name: scripts-updater.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    # ------------------------------------------------------------------------
+    # SMTP2GO via msmtp (sendmail-compatible) for all hosts
+    # ------------------------------------------------------------------------
+
+    - name: Compute SMTP username for this host
+      ansible.builtin.set_fact:
+        smtp_effective_user: >-
+          {{
+            (smtp_user | default('') | trim)
+            if (smtp_user | default('') | trim) | length > 0
+            else (
+              'host-' ~
+              (
+                inventory_hostname
+                | lower
+                | regex_replace('[^a-z0-9]+','-')
+                | regex_replace('(^-+|-+$)','')
+              )
+            )
+          }}
+      when: (smtp_enabled | default('1') | string) != '0'
+
+    - name: Generate random SMTP password (used if SMTP2GO API key is set)
+      ansible.builtin.set_fact:
+        smtp_generated_pass: >-
+          {{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}
+      when:
+        - (smtp_enabled | default('1') | string) != '0'
+        - (smtp_pass | default('') | trim) | length == 0
+        - (smtp2go_api_key | default('') | trim) | length > 0
+      no_log: true
+
+    - name: Ensure SMTP2GO SMTP user exists (API add)
+      ansible.builtin.uri:
+        url: https://api.smtp2go.com/v3/users/smtp/add
+        method: POST
+        headers:
+          Content-Type: application/json
+          X-Smtp2go-Api-Key: "{{ smtp2go_api_key }}"
+        body_format: json
+        body:
+          username: "{{ smtp_effective_user }}"
+          password: "{{ smtp_generated_pass }}"
+          description: "Host {{ inventory_hostname }}"
+          status: active
+        return_content: true
+        status_code: [200, 400, 409]
+      register: smtp2go_add_user
+      when:
+        - (smtp_enabled | default('1') | string) != '0'
+        - (smtp_user | default('') | trim) | length == 0
+        - (smtp_pass | default('') | trim) | length == 0
+        - (smtp2go_api_key | default('') | trim) | length > 0
+      no_log: true
+
+    - name: Update SMTP2GO SMTP user password if user already exists (API edit)
+      ansible.builtin.uri:
+        url: https://api.smtp2go.com/v3/users/smtp/edit
+        method: PATCH
+        headers:
+          Content-Type: application/json
+          X-Smtp2go-Api-Key: "{{ smtp2go_api_key }}"
+        body_format: json
+        body:
+          username: "{{ smtp_effective_user }}"
+          password: "{{ smtp_generated_pass }}"
+          status: active
+        return_content: true
+        status_code: [200]
+      when:
+        - (smtp_enabled | default('1') | string) != '0'
+        - (smtp_user | default('') | trim) | length == 0
+        - (smtp_pass | default('') | trim) | length == 0
+        - (smtp2go_api_key | default('') | trim) | length > 0
+        - smtp2go_add_user is defined
+        - (smtp2go_add_user.status | default(0)) != 200
+      no_log: true
+
+    - name: Set effective SMTP password (manual or generated)
+      ansible.builtin.set_fact:
+        smtp_effective_pass: >-
+          {{
+            (smtp_pass | trim)
+            if (smtp_pass | default('') | trim) | length > 0
+            else (smtp_generated_pass | default(''))
+          }}
+      when: (smtp_enabled | default('1') | string) != '0'
+      no_log: true
+
+    - name: Compute SMTP From address and sender name (defaults to hostname)
+      ansible.builtin.set_fact:
+        smtp_effective_from: >-
+          {{
+            (smtp_from | trim)
+            if (smtp_from | default('') | trim) | length > 0
+            else (ansible_hostname ~ '@' ~ (smtp_from_domain | default('goodkind.io') | trim))
+          }}
+        smtp_effective_sender_name: >-
+          {{
+            (smtp_sender_name | trim)
+            if (smtp_sender_name | default('') | trim) | length > 0
+            else (ansible_hostname | default(inventory_hostname))
+          }}
+      when: (smtp_enabled | default('1') | string) != '0'
+
+    - name: Deploy /etc/msmtprc
+      ansible.builtin.copy:
+        dest: /etc/msmtprc
+        mode: '0600'
+        content: |
+          defaults
+          auth           on
+          tls            on
+          tls_starttls   on
+          tls_trust_file /etc/ssl/certs/ca-certificates.crt
+          logfile        /var/log/msmtp.log
+
+          account smtp2go
+          host {{ smtp_host }}
+          port {{ smtp_port }}
+          user {{ smtp_effective_user }}
+          password {{ smtp_effective_pass }}
+          from {{ smtp_effective_from }}
+
+          account default : smtp2go
+      when:
+        - (smtp_enabled | default('1') | string) != '0'
+        - (smtp_effective_user | default('') | trim) | length > 0
+        - (smtp_effective_pass | default('') | trim) | length > 0
+        - (smtp_effective_from | default('') | trim) | length > 0
+      no_log: true
 
     - name: Install qemu-guest-agent (VMs only)
       ansible.builtin.apt:
