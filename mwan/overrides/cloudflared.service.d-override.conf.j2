@@ -1,9 +1,0 @@
-[Service]
-# Run as a dedicated user so we can policy-route by UID.
-User=cloudflared
-Group=cloudflared
-
-# Ensure cloudflared starts after MWAN policy routing convergence.
-After=mwan-update-routes.service
-Wants=mwan-update-routes.service
-
