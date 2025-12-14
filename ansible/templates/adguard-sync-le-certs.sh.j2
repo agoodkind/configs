@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Sync Let's Encrypt certs into AdGuard-readable paths.
+# This runs as root (certbot deploy-hook), copies cert/key to the AdGuard work dir
+# with restricted permissions, then restarts AdGuardHome to pick up the new cert.
+
+DOMAIN="{{ adguard_hostname }}"
+
+SRC_DIR="/etc/letsencrypt/live/${DOMAIN}"
+DST_DIR="{{ adguard_work_dir }}/certs"
+
+if [[ ! -d "${SRC_DIR}" ]]; then
+  echo "ERROR: missing ${SRC_DIR} (cert not issued yet?)" >&2
+  exit 1
+fi
+
+install -d -o {{ adguard_user }} -g {{ adguard_group }} -m 0750 "${DST_DIR}"
+install -o {{ adguard_user }} -g {{ adguard_group }} -m 0640 "${SRC_DIR}/fullchain.pem" "${DST_DIR}/fullchain.pem"
+install -o {{ adguard_user }} -g {{ adguard_group }} -m 0640 "${SRC_DIR}/privkey.pem" "${DST_DIR}/privkey.pem"
+
+systemctl restart AdGuardHome

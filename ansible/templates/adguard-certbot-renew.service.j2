@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Let's Encrypt certificate for AdGuardHome
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot renew --non-interactive --deploy-hook /usr/local/sbin/adguard-sync-le-certs

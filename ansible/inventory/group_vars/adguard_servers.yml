@@ -5,6 +5,11 @@ adguard_hostname: adguard.home.goodkind.io
 # AdGuard Home Configuration Variables
 # Override these in your own environment or use ansible-vault for sensitive values
 
+# ACME / Let's Encrypt (certbot DNS-01 via Cloudflare)
+# Note: Token is sourced from the same env var pattern as traefik_servers.yml
+adguard_acme_email: "alex@goodkind.io"
+cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
+
 # Web interface configuration
 adguard_bind_host: "::"
 adguard_port: 3000
@@ -87,16 +92,16 @@ adguard_rewrites: []
 adguard_blocked_services: []
 
 # TLS configuration
-adguard_tls_enabled: false
-adguard_tls_server_name: ""
+adguard_tls_enabled: true
+adguard_tls_server_name: "{{ adguard_hostname }}"
 adguard_tls_force_https: false
 adguard_tls_port_https: 443
 adguard_tls_port_dns_over_tls: 853
 adguard_tls_port_dns_over_quic: 784
 adguard_tls_certificate_chain: ""
 adguard_tls_private_key: ""
-adguard_tls_certificate_path: ""
-adguard_tls_private_key_path: ""
+adguard_tls_certificate_path: "{{ adguard_work_dir }}/certs/fullchain.pem"
+adguard_tls_private_key_path: "{{ adguard_work_dir }}/certs/privkey.pem"
 
 # DHCP
 adguard_dhcp_enabled: false
