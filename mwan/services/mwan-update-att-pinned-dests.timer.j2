@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic refresh of nftables AT&T pinned destination set
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

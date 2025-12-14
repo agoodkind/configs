@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh nftables AT&T pinned destination set
+After=network-online.target nftables.service
+Wants=network-online.target nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update-att-pinned-dests.sh
+
+[Install]
+WantedBy=multi-user.target
+
