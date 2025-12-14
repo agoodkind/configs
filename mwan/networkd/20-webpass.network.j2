@@ -34,7 +34,7 @@ Table={{ mwan_rt_tables.webpass }}
 
 [RoutingPolicyRule]
 # Route traffic FROM webpass IP via webpass table
-From={{ mwan_webpass_ipv4 | regex_replace('/.*$', '') }}
+From={{ mwan_webpass_ipv4_addr }}
 Table={{ mwan_rt_tables.webpass }}
 Priority=200
 

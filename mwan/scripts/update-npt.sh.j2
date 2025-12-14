@@ -44,6 +44,7 @@ flock 9
 
 readonly INTERNAL_PREFIX="{{ mwan_internal_prefix }}"
 readonly OPNSENSE_EDGE_V6="{{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}"
+readonly MWAN_EDGE_V6="{{ mwan_mwanbr_edge_ipv6 }}"
 readonly MB_STATIC_PREFIX="{{ mwan_npt_monkeybrains_prefix | default('') }}"
 
 first_60_of_prefix() {
@@ -163,14 +164,14 @@ tmp="$(mktemp)"
 
     # If this packet is part of a DNAT'd flow to the OPNsense edge address, do NOT clobber
     # conntrack's reverse-NAT with an unconditional SNAT rule.
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr \"$OPNSENSE_EDGE_V6/128\" ct status dnat return"
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr \"$OPNSENSE_EDGE_V6/128\" snat to \"${TARGET_PREFIX%/*}1\""
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr 3d06:bad:b01:fe::1/128 snat to \"${TARGET_PREFIX%/*}1\""
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr \"$INTERNAL_PREFIX\" snat ip6 prefix to \"$TARGET_PREFIX\""
+    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 ct status dnat return"
+    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
+    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $MWAN_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
+    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $INTERNAL_PREFIX snat ip6 prefix to $TARGET_PREFIX"
 
     # Prerouting:
-    echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr \"${TARGET_PREFIX%/*}1/128\" dnat to \"$OPNSENSE_EDGE_V6\""
-    echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr \"$TARGET_PREFIX\" dnat ip6 prefix to \"$INTERNAL_PREFIX\""
+    echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr ${TARGET_PREFIX%/*}1/128 dnat to $OPNSENSE_EDGE_V6"
+    echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr $TARGET_PREFIX dnat ip6 prefix to $INTERNAL_PREFIX"
 
     # Also DNAT any other global /128 address currently assigned to the WAN interface back to OPNsense.
     while read -r ip6_cidr; do
@@ -179,7 +180,7 @@ tmp="$(mktemp)"
         [ "$ip6_cidr" = "${TARGET_PREFIX%/*}1/128" ] && continue
         ip6_addr="${ip6_cidr%/*}"
         [ -n "$ip6_addr" ] || continue
-        echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr \"$ip6_addr/128\" dnat to \"$OPNSENSE_EDGE_V6\""
+        echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr $ip6_addr/128 dnat to $OPNSENSE_EDGE_V6"
     done < <(ip -6 addr show dev "$WAN_IFACE" scope global | awk '/inet6/{print $2}' || true)
 } >"$tmp"
 nft -f "$tmp"

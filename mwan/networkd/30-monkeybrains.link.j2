@@ -3,7 +3,7 @@
 # Matches on virtio MAC address from Proxmox config, assigns stable name.
 
 [Match]
-MACAddress={{ mwan_net2_mac | lower }}
+MACAddress={{ mwan_mbrains_mac | lower }}
 
 [Link]
 Name={{ mwan_monkeybrains_iface }}

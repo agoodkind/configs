@@ -46,6 +46,7 @@
     dns_domain: "{{ hostvars['localhost']['vm_dns_domain'] }}"
     dns_servers: "{{ hostvars['localhost']['vm_dns_servers'] }}"
     delete_existing_vm: "{{ delete_existing_vm | default(false) | bool }}"
+    preserve_nic_macs: true
     skip_password_reset: "{{ skip_password_reset | default(false) | bool }}"
 
 - name: Configure MWAN VM
@@ -60,14 +61,6 @@
     - name: Generate deploy trace ID (early)
       ansible.builtin.set_fact:
         mwan_deploy_trace_id: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}-deploy-{{ 999999 | random }}"
-
-    # - name: Reboot VM to apply initial network configuration
-    #   ansible.builtin.reboot:
-    #     msg: "Rebooting VM to apply initial network configuration"
-    #     connect_timeout: 5
-    #     pre_reboot_delay: 0
-    #     post_reboot_delay: 0
-    #   when: not ansible_check_mode
 
     - name: Wait for VM
       ansible.builtin.wait_for_connection:
@@ -166,21 +159,28 @@
           - cloudflared
         state: present
 
+    - name: Ensure cloudflared user exists (for UID-based policy routing)
+      ansible.builtin.user:
+        name: cloudflared
+        system: true
+        create_home: false
+        shell: /usr/sbin/nologin
+
     - name: Ensure cloudflared token directory exists
       ansible.builtin.file:
         path: /etc/cloudflared
         state: directory
         owner: root
-        group: root
-        mode: '0700'
+        group: cloudflared
+        mode: '0750'
 
     - name: Copy cloudflared tunnel token to MWAN
       ansible.builtin.copy:
         src: /var/lib/semaphore/tokens/mwan/cloudflared/token
         dest: /etc/cloudflared/token
         owner: root
-        group: root
-        mode: '0600'
+        group: cloudflared
+        mode: '0640'
 
     - name: Get actual VMID from Proxmox
       delegate_to: vault.home.goodkind.io
@@ -242,10 +242,10 @@
     - name: Select Monkeybrains MAC (prefer inventory override)
       delegate_to: localhost
       ansible.builtin.set_fact:
-        mwan_net2_mac: >-
+        mwan_mbrains_mac: >-
           {{
-            ((mwan_net2_mac | default('')) | length > 0)
-            | ternary(mwan_net2_mac, parsed_mwan_net2_mac)
+            ((mwan_mbrains_mac | default('')) | length > 0)
+            | ternary(mwan_mbrains_mac, parsed_mwan_net2_mac)
           }}
 
     - name: Ensure Monkeybrains NIC exists when enabled
@@ -583,13 +583,6 @@
         dest: /etc/systemd/system/mwan-health.service
         mode: '0644'
 
-    - name: Ensure cloudflared user exists (for UID-based policy routing)
-      ansible.builtin.user:
-        name: cloudflared
-        system: true
-        create_home: false
-        shell: /usr/sbin/nologin
-
     - name: Deploy cloudflared systemd service
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/services/cloudflared.service.j2"
@@ -614,19 +607,6 @@
         - wpa_supplicant-mwan
         - wpa-cli-action
         - wpa-authenticated.path
-
-    # - name: Reboot VM
-    #   ansible.builtin.reboot:
-    #     msg: "Rebooting VM to apply network configuration"
-    #     connect_timeout: 5
-    #     pre_reboot_delay: 0
-    #     post_reboot_delay: 0
-
-    # - name: Wait for VM to be reachable via SSH
-    #   ansible.builtin.wait_for_connection:
-    #     timeout: 120
-    #   register: ssh_wait_after_restart
-    #   failed_when: false
 
     - name: Ensure systemd-networkd is running
       ansible.builtin.systemd:

@@ -19,6 +19,9 @@ set -euo pipefail
 IFACES=(
   "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
   "{{ mwan_webpass_iface }}"
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+  "{{ mwan_monkeybrains_iface }}"
+{% endif %}
 )
 PING6_TARGETS=("2606:4700:4700::1111" "2620:fe::9")
 CURL_TARGETS=("https://ifconfig.co" "https://api.ipify.org")
@@ -107,6 +110,13 @@ show_pd() {
     echo "== Proto dhcp routes =="
     ip -6 route show proto dhcp || true
     echo
+    echo "== Delegated prefixes (configured vars) =="
+    echo "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}: {{ mwan_att_pd_prefix | default('none') }}"
+    echo "{{ mwan_webpass_iface }}: {{ mwan_webpass_pd_prefix | default('none') }}"
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+    echo "{{ mwan_monkeybrains_iface }}: {{ mwan_monkeybrains_pd_prefix | default('none') }}"
+{% endif %}
+    echo
     echo "== Delegated prefixes from journal (last per iface) =="
     for ifc in "${IFACES[@]}"; do
         pref=$(journalctl -u systemd-networkd -b |
@@ -177,6 +187,26 @@ run_curl6() {
 
 get_pd() {
     local ifc="$1" pd
+    case "$ifc" in
+        "{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}")
+            pd="{{ mwan_att_pd_prefix | default('') }}"
+            ;;
+        "{{ mwan_webpass_iface }}")
+            pd="{{ mwan_webpass_pd_prefix | default('') }}"
+            ;;
+{% if mwan_health_checks.monkeybrains.enabled | default(false) %}
+        "{{ mwan_monkeybrains_iface }}")
+            pd="{{ mwan_monkeybrains_pd_prefix | default('') }}"
+            ;;
+{% endif %}
+        *)
+            pd=""
+            ;;
+    esac
+    if [ -n "$pd" ]; then
+        echo "$pd"
+        return 0
+    fi
     pd=$(ip -6 route show proto dhcp dev "$ifc" | awk '{print $1; exit}')
     if [ -z "$pd" ] && [ -f "/var/lib/mwan/pd-$ifc" ]; then
         pd=$(head -1 "/var/lib/mwan/pd-$ifc")
