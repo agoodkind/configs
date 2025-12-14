@@ -210,7 +210,7 @@ run_pd_test() {
     ipv6_in_prefix() {
         # Return "True" if IPv6 address is in IPv6 prefix CIDR; otherwise "False".
         #
-        # Uses `sipcalc` (present on MWAN) to compute canonical network addresses and compare them.
+        # Uses `sipcalc` (installed by MWAN deploy) to compute canonical network addresses and compare them.
         # This keeps the script dependency-light and avoids embedded Python.
         local ip_in="$1"
         local cidr="$2"
