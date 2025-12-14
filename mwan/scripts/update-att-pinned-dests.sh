@@ -23,6 +23,10 @@ if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
     MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
+LOCK_FILE="/run/mwan-update-att-pinned.lock"
+exec 9>"$LOCK_FILE"
+flock 9
+
 log() {
     local prefix=""
     [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
@@ -54,17 +58,6 @@ debug_json() {
 
 ensure_set_exists() {
     nft list set $TABLE $NFT_TABLE $SET_NAME >/dev/null 2>&1
-}
-
-set_flush() {
-    nft flush set $TABLE $NFT_TABLE $SET_NAME
-}
-
-set_add() {
-    # Add one element at a time to avoid oversized commands.
-    local elem="$1"
-    [ -n "$elem" ] || return 0
-    nft add element $TABLE $NFT_TABLE $SET_NAME "{ $elem }"
 }
 
 resolve_v4() {
@@ -128,29 +121,34 @@ main() {
         exit 1
     fi
 
-    # Build element list in a temp file (one element per line)
-    tmp="$(mktemp)"
-    trap 'rm -f "$tmp"' EXIT
+    # Build element list and apply in one nft transaction (atomic).
+    tmp_elems="$(mktemp)"
+    tmp_sorted="$(mktemp)"
+    tmp_nft="$(mktemp)"
+    trap 'rm -f "$tmp_elems" "$tmp_sorted" "$tmp_nft"' EXIT
 
-    append_seed_cidrs "$tmp"
-    append_fqdn_lists "$tmp"
+    append_seed_cidrs "$tmp_elems"
+    append_fqdn_lists "$tmp_elems"
 
     # Zoom feed (optional)
     while read -r cidr; do
         [ -n "$cidr" ] || continue
-        echo "$cidr" >>"$tmp"
+        echo "$cidr" >>"$tmp_elems"
     done < <(zoom_v4_prefixes || true)
 
-    # De-dupe and apply
-    set_flush
+    sort -u "$tmp_elems" >"$tmp_sorted"
 
-    # Add elements (one-per-line)
     count=0
-    while read -r elem; do
-        [ -n "$elem" ] || continue
-        set_add "$elem"
-        count=$((count + 1))
-    done < <(sort -u "$tmp")
+    {
+        echo "flush set $TABLE $NFT_TABLE $SET_NAME"
+        while read -r elem; do
+            [ -n "$elem" ] || continue
+            echo "add element $TABLE $NFT_TABLE $SET_NAME { $elem }"
+            count=$((count + 1))
+        done <"$tmp_sorted"
+    } >"$tmp_nft"
+
+    nft -f "$tmp_nft"
 
     [ "$DEBUG" = "1" ] && debug_json "APPLY" "elements_applied" "$(jq -cn --argjson count "$count" '{count: $count}')"
 
