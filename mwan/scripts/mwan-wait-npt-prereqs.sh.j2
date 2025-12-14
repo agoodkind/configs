@@ -56,10 +56,19 @@ wait_for_nft_table() {
 }
 
 log "Waiting for WAN interfaces to exist: $ATT_VLAN, $WEBPASS_IFACE (timeout=${IFACE_WAIT_SECS}s)"
-wait_for_iface "$ATT_VLAN" || { log "WAN interface not present: $ATT_VLAN"; exit 1; }
-wait_for_iface "$WEBPASS_IFACE" || { log "WAN interface not present: $WEBPASS_IFACE"; exit 1; }
+wait_for_iface "$ATT_VLAN" || {
+  log "WAN interface not present: $ATT_VLAN"
+  exit 1
+}
+wait_for_iface "$WEBPASS_IFACE" || {
+  log "WAN interface not present: $WEBPASS_IFACE"
+  exit 1
+}
 
 log "Waiting for nftables table to exist: ip6 nat (timeout=${NFT_WAIT_SECS}s)"
-wait_for_nft_table || { log "nftables table not ready: ip6 nat"; exit 1; }
+wait_for_nft_table || {
+  log "nftables table not ready: ip6 nat"
+  exit 1
+}
 
 log "Prerequisites satisfied"
