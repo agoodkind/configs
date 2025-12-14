@@ -134,20 +134,20 @@ log() {
     logger -t mwan-health "${prefix}$1"
 }
 
-get_state() {
+get_health() {
     local wan="$1"
     grep "^${wan}:" "$STATE_FILE" 2>/dev/null | cut -d: -f2 || echo "unknown"
 }
 
-set_state() {
+set_health() {
     local wan="$1"
-    local state="$2"
+    local health="$2"
     
     # Remove old state
     sed -i "/^${wan}:/d" "$STATE_FILE" 2>/dev/null || true
     
     # Add new state
-    echo "${wan}:${state}" >> "$STATE_FILE"
+    echo "${wan}:${health}" >> "$STATE_FILE"
 }
 
 check_wan_health() {
@@ -266,11 +266,11 @@ handle_wan_failure() {
     log "WAN $wan_name failed health check"
     
     local old_state
-    old_state=$(get_state "$wan_name")
+    old_state=$(get_health "$wan_name")
     
-    if [ "$old_state" != "down" ]; then
-        set_state "$wan_name" "down"
-        log "Marking $wan_name as DOWN (was $old_state)"
+    if [ "$old_state" != "unhealthy" ]; then
+        set_health "$wan_name" "unhealthy"
+        log "Marking $wan_name as UNHEALTHY (was $old_state)"
         
         # Update routing to remove failed WAN
         /usr/local/bin/update-routes.sh
@@ -284,12 +284,12 @@ handle_wan_recovery() {
     local wan_name="$1"
     
     local old_state
-    old_state=$(get_state "$wan_name")
+    old_state=$(get_health "$wan_name")
     
-    if [ "$old_state" != "up" ]; then
+    if [ "$old_state" != "healthy" ]; then
         log "WAN $wan_name health check passed"
-        set_state "$wan_name" "up"
-        log "Marking $wan_name as UP (was $old_state)"
+        set_health "$wan_name" "healthy"
+        log "Marking $wan_name as HEALTHY (was $old_state)"
         
         # Update routing to add recovered WAN
         /usr/local/bin/update-routes.sh
@@ -301,6 +301,17 @@ handle_wan_recovery() {
 
 run_health_checks() {
     local min_interval=999999
+
+    # Ensure the state file exists even in one-shot mode.
+    if [ ! -f "$STATE_FILE" ]; then
+        : > "$STATE_FILE"
+        for config in "${WAN_CONFIGS[@]}"; do
+            [[ "$config" =~ ^[[:space:]]*# ]] && continue
+            IFS=':' read -r wan_name _ _ _ _ _ <<< "$config"
+            [ -n "${wan_name:-}" ] || continue
+            echo "${wan_name}:unknown" >> "$STATE_FILE"
+        done
+    fi
 
     for config in "${WAN_CONFIGS[@]}"; do
         [[ "$config" =~ ^[[:space:]]*# ]] && continue
@@ -357,6 +368,13 @@ daemon_loop() {
     
     # Initialize state file
     : > "$STATE_FILE"
+    # Write initial states so other components never see an empty file.
+    for config in "${WAN_CONFIGS[@]}"; do
+        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        IFS=':' read -r wan_name _ _ _ _ _ <<< "$config"
+        [ -n "${wan_name:-}" ] || continue
+        echo "${wan_name}:unknown" >> "$STATE_FILE"
+    done
     
     while true; do
         run_health_checks
@@ -381,10 +399,10 @@ show_status() {
         
         IFS=':' read -r wan_name interface _ _ _ _ <<< "$config"
         
-        local state
-        state=$(get_state "$wan_name")
+        local health
+        health=$(get_health "$wan_name")
         
-        printf "%-15s %-15s %s\n" "$wan_name" "$interface" "$state"
+        printf "%-15s %-15s %s\n" "$wan_name" "$interface" "$health"
     done
     
     echo ""

@@ -205,7 +205,10 @@ What MWAN runs automatically:
     - **`bringup-att-vlan.service`** → `/usr/local/bin/bringup-att-vlan.sh` → `networkctl renew/reconfigure` to trigger DHCP on the VLAN after auth
 - **`mwan-update-routes.service`** → one-shot safety net at boot: runs `update-routes.sh`
 - **`mwan-update-npt.service`** → one-shot safety net at boot (and after deploy-time reload): runs `update-npt.sh` for each WAN
-- **`mwan-health.service`** → runs `/usr/local/bin/health-check.sh --daemon` → `ping`/`ping6` + optional `curl` checks; calls `update-routes.sh` when a WAN is marked down/up
+- **`mwan-health.service`** → runs `/usr/local/bin/health-check.sh --daemon` → `ping`/`ping6` + optional `curl` checks; calls `update-routes.sh` when a WAN is marked unhealthy/healthy
+- **Terminology note**: `mwan-health` uses **healthy/unhealthy** to avoid confusion with `ip link` administrative state.
+  - The health state file is `/var/run/mwan-health.state` and is always initialized with `wan:unknown` entries at daemon start.
+  - Health transitions trigger `update-routes.sh`, so the system converges back to AT&T/Webpass automatically when they recover, even if Monkeybrains was the only usable WAN early in boot.
 
 Typical state flows:
 
@@ -214,15 +217,15 @@ Typical state flows:
   - **Why dispatcher doesn’t fire**: `networkd-dispatcher` is event-driven off `systemd-networkd` **state transitions** (e.g. “configuring” → “routable”). Reloading `nftables` does not change link/address state, so there’s no new transition to trigger hooks.
 - **Link down / up (hard failure)**: carrier loss/return changes `systemd-networkd` state and can trigger `networkd-dispatcher` hooks.
 - **Soft failure / recovery (health state)**: the interface stays `UP`, but upstream connectivity is broken/degraded.
-  - **Important**: “down” here means **MWAN health state**, not necessarily `ip link state DOWN`.
-    - If the kernel link is `DOWN`, MWAN can’t send probes and will treat it as down immediately.
+  - **Important**: “unhealthy” here means **MWAN health state**, not necessarily `ip link state DOWN`.
+    - If the kernel link is `DOWN`, MWAN can’t send probes and will treat it as unhealthy immediately.
   - **How we detect a soft failure** (`mwan-health` / `health-check.sh`):
     - Probes multiple targets per WAN over that WAN interface (IPv6 first, then IPv4; optional HTTP checks).
     - Probes used today: `ping6` / `ping` plus optional `curl -6` / `curl -4` to configured HTTP endpoints (no `nc`).
-    - Marks a WAN **down** after **N consecutive failed check cycles** (`failure_threshold`) to avoid flapping.
+    - Marks a WAN **unhealthy** after **N consecutive failed check cycles** (`failure_threshold`) to avoid flapping.
   - **How we detect recovery**:
-    - Marks a WAN **up** only after **M consecutive successful check cycles** (`recovery_threshold`) — hysteresis to prevent oscillation during partial recovery.
-  - **What happens on down/up**:
+    - Marks a WAN **healthy** only after **M consecutive successful check cycles** (`recovery_threshold`) — hysteresis to prevent oscillation during partial recovery.
+  - **What happens on unhealthy/healthy**:
     - Calls `update-routes.sh` to remove/add the WAN for *new* flows (existing sessions drain via conntrack).
 
 ## IPv6 (NPT + inbound DNPT)
