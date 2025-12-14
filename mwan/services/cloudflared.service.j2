@@ -10,7 +10,7 @@ User=cloudflared
 Group=cloudflared
 
 # Token is copied to disk by Ansible (root-owned, mode 0600).
-ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run --token-file /etc/cloudflared/token
+ExecStart=/usr/bin/cloudflared tunnel run --token-file /etc/cloudflared/token
 
 Restart=on-failure
 RestartSec=5s
