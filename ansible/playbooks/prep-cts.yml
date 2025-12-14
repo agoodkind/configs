@@ -279,7 +279,7 @@
         - (smtp_enabled | default('1') | string) != '0'
         - (smtp_pass | default('') | trim) | length == 0
         - (smtp2go_api_key | default('') | trim) | length > 0
-      no_log: true
+      # no_log: true
 
     - name: Ensure SMTP2GO SMTP user exists (API add)
       ansible.builtin.uri:
@@ -295,26 +295,26 @@
           description: "Host {{ inventory_hostname }}"
           status: active
         return_content: true
-        status_code: [200, 400, 409]
+        status_code: [200, 409]
       register: smtp2go_add_user
       when:
         - (smtp_enabled | default('1') | string) != '0'
         - (smtp_user | default('') | trim) | length == 0
         - (smtp_pass | default('') | trim) | length == 0
         - (smtp2go_api_key | default('') | trim) | length > 0
-      no_log: true
+      # no_log: true
 
     - name: Update SMTP2GO SMTP user password if user already exists (API edit)
       ansible.builtin.uri:
         url: https://api.smtp2go.com/v3/users/smtp/edit
-        method: PATCH
+        method: POST
         headers:
           Content-Type: application/json
           X-Smtp2go-Api-Key: "{{ smtp2go_api_key }}"
         body_format: json
         body:
           username: "{{ smtp_effective_user }}"
-          password: "{{ smtp_generated_pass }}"
+          email_password: "{{ smtp_generated_pass }}"
           status: active
         return_content: true
         status_code: [200]
@@ -324,8 +324,8 @@
         - (smtp_pass | default('') | trim) | length == 0
         - (smtp2go_api_key | default('') | trim) | length > 0
         - smtp2go_add_user is defined
-        - (smtp2go_add_user.status | default(0)) != 200
-      no_log: true
+        - (smtp2go_add_user.status | default(0)) == 409
+      # no_log: true
 
     - name: Set effective SMTP password (manual or generated)
       ansible.builtin.set_fact:
@@ -336,7 +336,7 @@
             else (smtp_generated_pass | default(''))
           }}
       when: (smtp_enabled | default('1') | string) != '0'
-      no_log: true
+      # no_log: true
 
     - name: Compute SMTP From address and sender name (defaults to hostname)
       ansible.builtin.set_fact:
@@ -379,7 +379,7 @@
         - (smtp_effective_user | default('') | trim) | length > 0
         - (smtp_effective_pass | default('') | trim) | length > 0
         - (smtp_effective_from | default('') | trim) | length > 0
-      no_log: true
+      # no_log: true
 
     - name: Install qemu-guest-agent (VMs only)
       ansible.builtin.apt:
