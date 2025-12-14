@@ -295,14 +295,57 @@
           description: "Host {{ inventory_hostname }}"
           status: allowed
         return_content: true
-        status_code: [200, 409]
+        # SMTP2GO sometimes returns 400 for "already exists".
+        status_code: [200, 400, 409]
       register: smtp2go_add_user
+      changed_when: (smtp2go_add_user.status | default(0)) == 200
+      failed_when: >-
+        (smtp2go_add_user.status | default(0)) not in [200, 400, 409]
+        or
+        (
+          (smtp2go_add_user.status | default(0)) == 400
+          and
+          (
+            (
+              (smtp2go_add_user.json.data.error | default('') | lower)
+              | regex_search('already have smtp user')
+            ) == none
+          )
+        )
       when:
         - (smtp_enabled | default('1') | string) != '0'
         - (smtp_user | default('') | trim) | length == 0
         - (smtp_pass | default('') | trim) | length == 0
         - (smtp2go_api_key | default('') | trim) | length > 0
       # no_log: true
+
+    - name: Detect if SMTP2GO SMTP user already exists (API semantics vary)
+      ansible.builtin.set_fact:
+        smtp2go_user_exists: >-
+          {{
+            (smtp2go_add_user is defined)
+            and
+            (
+              (smtp2go_add_user.status | default(0)) == 409
+              or
+              (
+                (smtp2go_add_user.status | default(0)) == 400
+                and
+                (
+                  (
+                    (smtp2go_add_user.json.data.error | default('') | lower)
+                    | regex_search('already have smtp user')
+                  ) != none
+                )
+              )
+            )
+          }}
+      when:
+        - (smtp_enabled | default('1') | string) != '0'
+        - (smtp_user | default('') | trim) | length == 0
+        - (smtp_pass | default('') | trim) | length == 0
+        - (smtp2go_api_key | default('') | trim) | length > 0
+        - smtp2go_add_user is defined
 
     - name: Update SMTP2GO SMTP user password if user already exists (API edit)
       ansible.builtin.uri:
@@ -323,8 +366,7 @@
         - (smtp_user | default('') | trim) | length == 0
         - (smtp_pass | default('') | trim) | length == 0
         - (smtp2go_api_key | default('') | trim) | length > 0
-        - smtp2go_add_user is defined
-        - (smtp2go_add_user.status | default(0)) == 409
+        - smtp2go_user_exists | default(false)
       # no_log: true
 
     - name: Set effective SMTP password (manual or generated)
