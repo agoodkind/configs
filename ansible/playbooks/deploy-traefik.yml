@@ -325,4 +325,4 @@
       ansible.builtin.debug:
         msg: >-
           ✅ Traefik deployed successfully on
-          {{ hostvars['localhost']['service_hostname_fact'] }}
+          {{ hostvars['localhost']['service_hostname'] }}
