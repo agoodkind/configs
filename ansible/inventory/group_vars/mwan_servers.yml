@@ -47,11 +47,6 @@ mwan_internal_iface: "{{ detected_internal_iface | default('enmwanbr0') }}"
 
 # Monkeybrains fallback WAN (virtio)
 mwan_monkeybrains_iface: "{{ detected_monkeybrains_iface | default('enmbrains0') }}"
-# If you want a stable `enmbrains0` name, set a fixed Proxmox net2 MAC and match on it.
-# Proxmox example: net2: virtio=BC:24:11:E6:58:31,bridge=vmbrX
-mwan_mbrains_mac: "BC:24:11:E6:58:31"
-# Back-compat alias (deprecated): older templates used this name.
-mwan_net2_mac: "{{ mwan_mbrains_mac }}"
 
 # ----------------------------------------------------------------------------
 # AT&T 802.1X authentication (via X710 VF passthrough)
@@ -59,12 +54,8 @@ mwan_net2_mac: "{{ mwan_mbrains_mac }}"
 
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "D0:FC:D0:7C:85:30"
-mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
 
 # Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
-# Extract from OPNsense:
-#   scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
-#   ssh root@mwan.home.goodkind.io "chmod 600 /etc/wpa_supplicant/*.pem"
 
 # ----------------------------------------------------------------------------
 # DHCP identity spoofing / DUIDs
@@ -76,17 +67,19 @@ mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
 # MAC extracted from DUID: 00:e2:69:66:8b:5a
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
-mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
+mwan_webpass_mac: "00:E2:69:66:8B:5A" # MAC registered with Webpass
 
 # Monkeybrains identity spoofing
 # Monkeybrains is currently tied to the *same* DHCPv6 identity as Webpass.
 # Keep these values in sync unless Monkeybrains provisioning changes.
 mwan_monkeybrains_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_monkeybrains_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
+mwan_mbrains_mac: "BC:24:11:E6:58:31"
 
 # DUID generated from the PFAtt Script
 mwan_att_duid: "00:02:00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
 mwan_att_duid_raw_data: "00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
+mwan_att_mac: "D0:FC:D0:7C:85:30" # MAC for DHCP (different from EAP identity)
 
 # ----------------------------------------------------------------------------
 # WAN addressing
