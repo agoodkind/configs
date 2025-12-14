@@ -207,66 +207,31 @@ run_pd_test() {
     declare -a PING_OK FAR_IP PREFIX_OK
     local sep="────────────────────────────────────────────────────────────"
 
-    ipv6_to_hextets() {
-        # Expand an IPv6 address into 8 numeric hextets (global array H[0..7]).
-        # Supports :: compression.
-        local addr="$1"
-        local left right
-        local -a left_arr=() right_arr=() all=()
-
-        if [[ "$addr" == *"::"* ]]; then
-            left="${addr%%::*}"
-            right="${addr##*::}"
-            if [ -n "$left" ]; then IFS=':' read -r -a left_arr <<<"$left"; fi
-            if [ -n "$right" ]; then IFS=':' read -r -a right_arr <<<"$right"; fi
-            local missing=$((8 - ${#left_arr[@]} - ${#right_arr[@]}))
-            all=("${left_arr[@]}")
-            for ((i=0; i<missing; i++)); do all+=("0"); done
-            all+=("${right_arr[@]}")
-        else
-            IFS=':' read -r -a all <<<"$addr"
-        fi
-
-        while ((${#all[@]} < 8)); do all+=("0"); done
-
-        H=()
-        for i in {0..7}; do
-            local v="${all[$i]:-0}"
-            [[ "$v" =~ ^[0-9A-Fa-f]{0,4}$ ]] || return 1
-            v="${v:-0}"
-            H+=($((16#$v)))
-        done
-    }
-
     ipv6_in_prefix() {
         # Return "True" if IPv6 address is in IPv6 prefix CIDR; otherwise "False".
+        #
+        # Uses `sipcalc` (present on MWAN) to compute canonical network addresses and compare them.
+        # This keeps the script dependency-light and avoids embedded Python.
         local ip_in="$1"
         local cidr="$2"
+
         local ip="${ip_in%%[[:space:]]*}"
-        local net="${cidr%/*}"
+        ip="${ip%%\%*}" # drop zone id if any (e.g. fe80::1%eth0)
+
+        [[ "$cidr" == */* ]] || { echo "False"; return 0; }
         local plen="${cidr##*/}"
         [[ "$plen" =~ ^[0-9]+$ ]] || { echo "False"; return 0; }
         [ "$plen" -ge 0 ] && [ "$plen" -le 128 ] || { echo "False"; return 0; }
 
-        ipv6_to_hextets "$ip" || { echo "False"; return 0; }
-        local -a IP_H=("${H[@]}")
-        ipv6_to_hextets "$net" || { echo "False"; return 0; }
-        local -a NET_H=("${H[@]}")
+        local net_of_cidr net_of_ip
+        net_of_cidr="$(sipcalc -q "$cidr" 2>/dev/null | awk -F ' - ' '/Network address/ {print $2; exit}')"
+        net_of_ip="$(sipcalc -q "$ip/$plen" 2>/dev/null | awk -F ' - ' '/Network address/ {print $2; exit}')"
 
-        local i bits_left mask
-        for i in {0..7}; do
-            bits_left=$((plen - (i * 16)))
-            if [ "$bits_left" -le 0 ]; then
-                break
-            elif [ "$bits_left" -ge 16 ]; then
-                [ "${IP_H[$i]}" -eq "${NET_H[$i]}" ] || { echo "False"; return 0; }
-            else
-                mask=$(( (0xFFFF << (16 - bits_left)) & 0xFFFF ))
-                [ $((IP_H[$i] & mask)) -eq $((NET_H[$i] & mask)) ] || { echo "False"; return 0; }
-                break
-            fi
-        done
-        echo "True"
+        if [ -n "$net_of_cidr" ] && [ -n "$net_of_ip" ] && [ "$net_of_cidr" = "$net_of_ip" ]; then
+            echo "True"
+        else
+            echo "False"
+        fi
     }
 
     echo "╔════════════════════════════════════════════════════════════╗"
