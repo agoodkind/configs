@@ -165,6 +165,7 @@ mwan_rt_tables:
   att: 100
   webpass: 200
   monkeybrains: 300
+  cloudflared: 400
 
 # Email notifications (optional)
 mwan_email_enabled: true

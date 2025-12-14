@@ -543,6 +543,25 @@
         dest: /etc/systemd/system/mwan-health.service
         mode: '0644'
 
+    - name: Ensure cloudflared user exists (for UID-based policy routing)
+      ansible.builtin.user:
+        name: cloudflared
+        system: true
+        create_home: false
+        shell: /usr/sbin/nologin
+
+    - name: Ensure systemd override dir for cloudflared exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/cloudflared.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Deploy cloudflared systemd override (run as cloudflared user)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/overrides/cloudflared.service.d-override.conf.j2"
+        dest: /etc/systemd/system/cloudflared.service.d/override.conf
+        mode: '0644'
+
 
     - name: Enable services
       ansible.builtin.systemd:
@@ -553,6 +572,7 @@
         - mwan-trace-boot
         - mwan-update-npt
         - bringup-att-vlan
+        - cloudflared
         - systemd-networkd
         - networkd-dispatcher
         - nftables
@@ -589,6 +609,12 @@
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
+
+    - name: Restart cloudflared (apply User= and routing dependency ordering)
+      ansible.builtin.systemd:
+        name: cloudflared
+        state: restarted
+      failed_when: false
 
     - name: Restart systemd-networkd
       ansible.builtin.systemd:
