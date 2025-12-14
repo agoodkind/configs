@@ -92,31 +92,34 @@ wan_is_healthy() {
 
 # Get gateways
 get_gw4() {
-    ip -4 route show dev "$1" | sed -n 's/^default via \([^ ]*\).*/\1/p' | head -1
+    local dev="$1"
+    ip -j -4 route show default 2>/dev/null | jq -r --arg dev "$dev" '
+      [
+        .[] |
+        if (.dev? == $dev and (.gateway? != null) and (.gateway? != "")) then
+          .gateway
+        elif (.nexthops? != null) then
+          (.nexthops[]? | select(.dev? == $dev) | .gateway? // empty)
+        else
+          empty
+        end
+      ] | map(select(. != "")) | .[0] // empty
+    '
 }
 
 get_gw6() {
-    # Extract v6 gateway for a specific dev from `ip -6 route show default`.
-    #
-    # Handles:
-    # - default via fe80::... dev <if>
-    # - default nhid <id> via fe80::... dev <if> ...
-    # - default
-    #     nexthop via fe80::... dev <if> weight 1
-    ip -6 route show default 2>/dev/null | awk -v dev="$1" '
-        $1=="default" {
-            gw=""; d="";
-            for (i=1; i<=NF; i++) {
-                if ($i=="via") gw=$(i+1);
-                if ($i=="dev") d=$(i+1);
-            }
-            if (d==dev && gw!="") { print gw; exit }
-        }
-        $1=="nexthop" && $2=="via" {
-            gw=$3;
-            for (i=1; i<=NF; i++) if ($i=="dev") d=$(i+1);
-            if (d==dev && gw!="") { print gw; exit }
-        }
+    local dev="$1"
+    ip -j -6 route show default 2>/dev/null | jq -r --arg dev "$dev" '
+      [
+        .[] |
+        if (.dev? == $dev and (.gateway? != null) and (.gateway? != "")) then
+          .gateway
+        elif (.nexthops? != null) then
+          (.nexthops[]? | select(.dev? == $dev) | .gateway? // empty)
+        else
+          empty
+        end
+      ] | map(select(. != "")) | .[0] // empty
     '
 }
 

@@ -110,10 +110,11 @@ log_json "H1" "55-update-npt.sh:EVENT" "hook_event" "$EVENT_DATA"
 debug_json_line "EVENT" "hook_event" "$EVENT_DATA"
 
 # Capture DHCPv6-PD routes (systemd installs PD routes as proto dhcp, dev lo)
-ROUTE_OUTPUT=$(ip -6 route show proto dhcp)
+ROUTE_JSON="$(ip -j -6 route show proto dhcp 2>/dev/null || echo '[]')"
+ROUTE_OUTPUT="$(ip -6 route show proto dhcp 2>/dev/null || true)"
 log "DHCPv6 proto dhcp routes:\n$ROUTE_OUTPUT"
 ROUTE_DATA="$(jq -cn \
-    --arg routes "$ROUTE_OUTPUT" \
+    --argjson routes "$ROUTE_JSON" \
     '{
       routes: $routes
     }')"
@@ -127,12 +128,24 @@ mkdir -p "$STATE_DIR"
 STATE_FILE="$STATE_DIR/pd-$IFACE"
 
 # 1) networkctl status (delegated prefix) - best per-iface signal
-PREFIXES=$(networkctl status "$IFACE" --no-pager 2>/dev/null | \
-    sed -n 's/.*delegated prefix \\([^ ]*\\).*/\\1/p' || true)
+PREFIXES="$(networkctl status "$IFACE" --json=short --no-pager 2>/dev/null | jq -r '
+  [
+    # First try any obvious structured key names (varies by systemd version)
+    (.. | objects | .DelegatedPrefixes? // empty),
+    (.. | objects | .DelegatedPrefix? // empty),
+
+    # Fallback: find any IPv6 CIDR strings with prefixlen <= 60 (PD is typically /56 or /60).
+    (.. | strings | select(test("^[0-9A-Fa-f:]+::?/[0-9]{1,3}$")) | select((split("/")[1] | tonumber) <= 60))
+  ]
+  | flatten
+  | map(select(type=="string"))
+  | unique
+  | .[]
+' 2>/dev/null | tr '\n' ' ' | xargs || true)"
 
 # 2) proto dhcp routes (coarse; may include prefixes from other ifaces)
 if [ -z "$PREFIXES" ]; then
-    PREFIXES=$(printf '%s\n' "$ROUTE_OUTPUT" | awk '/\\//{print $1}' | grep '/' || true)
+    PREFIXES="$(jq -r '.[].dst // empty' <<<"$ROUTE_JSON" 2>/dev/null | tr '\n' ' ' | xargs || true)"
 fi
 
 # 3) state file fallback
