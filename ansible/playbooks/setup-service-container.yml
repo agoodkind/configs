@@ -14,6 +14,9 @@
 #   disk_size: Container disk size in GB (default: "8")
 #   memory: Container memory in MB (default: "2048")
 #   cores: Container CPU cores (default: "2")
+#   mac_var: Variable name in group_vars containing a stable MAC address
+#     (e.g., traefik_mac_address). Used to keep DHCP reservations stable
+#     across container recreation.
 #   container_tags: Container tags
 #     (default: "lxc,{{ container_group | replace('_servers', '') }}")
 - name: Load service configuration and create/setup container
@@ -44,6 +47,13 @@
       ansible.builtin.set_fact:
         service_hostname: "{{ lookup('vars', hostname_var) }}"
 
+    - name: Get container MAC address from group_vars (optional)
+      ansible.builtin.set_fact:
+        service_mac_address: "{{ lookup('vars', mac_var) }}"
+      when:
+        - mac_var is defined
+        - mac_var | string | trim | length > 0
+
 - name: Create or ensure container exists
   ansible.builtin.import_playbook: create-ct.yml
   vars:
@@ -54,6 +64,7 @@
     memory: "{{ hostvars['localhost']['memory'] | default('2048') }}"
     cores: "{{ hostvars['localhost']['cores'] | default('2') }}"
     container_tags: "{{ hostvars['localhost']['container_tags'] }}"
+    mac_address: "{{ hostvars['localhost']['service_mac_address'] | default('') }}"
 
 - name: Add container to service group
   hosts: localhost
@@ -63,6 +74,11 @@
       ansible.builtin.add_host:
         name: "{{ hostvars['localhost']['service_hostname'] }}"
         groups: "{{ container_group }}"
+        ansible_host: >-
+          {{
+            hostvars['localhost']['container_primary_ip']
+            | default(hostvars['localhost']['service_hostname'], true)
+          }}
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
         ansible_proxmox_vmid: >-
