@@ -219,8 +219,9 @@
 
     - name: Debug raw container interfaces API response
       ansible.builtin.debug:
-        var: container_interfaces.json
-      when: container_interfaces.json is defined
+        msg:
+          - "Container interfaces API response:"
+          - "{{ container_interfaces.json | default('NOT_DEFINED') }}"
 
     - name: Gather container IP candidates (v4/v6)
       ansible.builtin.set_fact:
