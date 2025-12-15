@@ -345,6 +345,53 @@
     - name: Flush handlers to ensure AdGuard Home is restarted
       ansible.builtin.meta: flush_handlers
 
+    - name: Ensure AdGuard TLS certs exist and HTTPS responds
+      when: adguard_tls_enabled | default(false)
+      block:
+        - name: Sync Let's Encrypt certs into AdGuardHome cert path
+          ansible.builtin.command: /usr/local/sbin/adguard-sync-le-certs
+          changed_when: false
+
+        - name: Check AdGuardHome cert files exist
+          ansible.builtin.stat:
+            path: "{{ item }}"
+          loop:
+            - "{{ adguard_tls_certificate_path }}"
+            - "{{ adguard_tls_private_key_path }}"
+          register: adguard_tls_cert_stats
+          changed_when: false
+
+        - name: Assert AdGuardHome cert files are present
+          ansible.builtin.assert:
+            that:
+              - adguard_tls_cert_stats.results[0].stat.exists
+              - adguard_tls_cert_stats.results[1].stat.exists
+              - adguard_tls_cert_stats.results[0].stat.size | int > 0
+              - adguard_tls_cert_stats.results[1].stat.size | int > 0
+            fail_msg: >-
+              AdGuardHome TLS is enabled but cert files are missing/empty.
+              Expected:
+              {{ adguard_tls_certificate_path }} and
+              {{ adguard_tls_private_key_path }}.
+
+        - name: Wait for HTTPS port to be listening
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: "{{ adguard_tls_port_https }}"
+            timeout: 30
+
+        - name: Verify AdGuard Home HTTPS endpoint responds locally
+          ansible.builtin.uri:
+            url: "https://localhost:{{ adguard_tls_port_https }}"
+            follow_redirects: none
+            validate_certs: false
+            status_code: [200, 301, 302, 303, 307, 308, 401, 403]
+            timeout: 5
+          register: adguard_https_health_check
+          retries: 6
+          delay: 2
+          until: adguard_https_health_check.status is defined
+
     - name: Wait for AdGuard Home to start
       ansible.builtin.pause:
         seconds: 5
@@ -370,6 +417,20 @@
       delay: 2
       until: health_check.status is defined
       failed_when: false
+
+    - name: Assert AdGuard Home HTTPS is reachable when TLS is enabled
+      ansible.builtin.assert:
+        that:
+          - >-
+            (not (adguard_tls_enabled | default(false)))
+            or
+            (
+              (adguard_https_health_check.status | default(0) | int)
+              in [200, 301, 302, 303, 307, 308, 401, 403]
+            )
+        fail_msg: >-
+          AdGuardHome TLS is enabled but HTTPS did not respond on
+          https://localhost:{{ adguard_tls_port_https }}.
 
     - name: Report health check result
       ansible.builtin.debug:
