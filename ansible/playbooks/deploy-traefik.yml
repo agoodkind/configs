@@ -72,9 +72,7 @@
       block:
         - name: Download Traefik
           ansible.builtin.get_url:
-            url: >-
-              https://github.com/traefik/traefik/releases/download/
-              v{{ traefik_version }}/traefik_v{{ traefik_version }}_linux_amd64.tar.gz
+            url: "https://github.com/traefik/traefik/releases/download/v{{ traefik_version }}/traefik_v{{ traefik_version }}_linux_amd64.tar.gz"
             dest: /tmp/traefik.tar.gz
             mode: '0644'
 
