@@ -176,21 +176,45 @@
         group: "{{ traefik_group }}"
         mode: '0750'
 
-    - name: Generate dashboard authentication file
-      ansible.builtin.shell: |
-        htpasswd -nb >-
-          "{{ traefik_dashboard_user }}" >-
-          "{{ traefik_dashboard_pass }}" >-
-          {{ traefik_config_dir }}/auth/dashboard-users
-        chown >-
-          {{ traefik_user }}:{{ traefik_group }} >-
-          {{ traefik_config_dir }}/auth/dashboard-users
-        chmod 600 {{ traefik_config_dir }}/auth/dashboard-users
+    - name: Validate Traefik dashboard credentials are configured
+      ansible.builtin.assert:
+        that:
+          - (traefik_dashboard_user | default('') | trim) | length > 0
+          - (traefik_dashboard_pass | default('') | trim) | length > 0
+        fail_msg: |
+          ERROR: Traefik dashboard credentials are not set!
+
+          Set the environment variables in Semaphore:
+            TRAEFIK_DASHBOARD_USER
+            TRAEFIK_DASHBOARD_PASS
       when:
-        - traefik_dashboard_user is defined
-        - traefik_dashboard_pass is defined
+        - traefik_dashboard_user is defined or traefik_dashboard_pass is defined
+
+    - name: Generate dashboard htpasswd entry
+      ansible.builtin.command:
+        argv:
+          - htpasswd
+          - -nbB
+          - "{{ traefik_dashboard_user }}"
+          - "{{ traefik_dashboard_pass }}"
+      register: traefik_dashboard_htpasswd
+      when:
+        - (traefik_dashboard_user | default('') | trim) | length > 0
+        - (traefik_dashboard_pass | default('') | trim) | length > 0
       no_log: true
-      changed_when: true
+      changed_when: false
+
+    - name: Write dashboard authentication file
+      ansible.builtin.copy:
+        dest: "{{ traefik_config_dir }}/auth/dashboard-users"
+        content: "{{ traefik_dashboard_htpasswd.stdout }}\n"
+        owner: "{{ traefik_user }}"
+        group: "{{ traefik_group }}"
+        mode: '0600'
+      when:
+        - traefik_dashboard_htpasswd.stdout is defined
+        - (traefik_dashboard_htpasswd.stdout | trim) | length > 0
+      no_log: true
 
     - name: Fetch Cloudflare IPv4 ranges
       ansible.builtin.set_fact:
