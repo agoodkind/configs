@@ -461,6 +461,18 @@
         state: stopped
       failed_when: false
 
+    - name: Configure DHCPv4 client identifier to use MAC address
+      ansible.builtin.blockinfile:
+        path: /etc/systemd/network/eth0.network
+        create: true
+        mode: '0644'
+        marker: "# {mark} ANSIBLE MANAGED BLOCK: DHCPv4 ClientIdentifier"
+        block: |
+          [DHCPv4]
+          ClientIdentifier=mac
+      register: configure_dhcp_client_id
+      notify: Restart systemd-networkd
+
     - name: Get host timezone
       ansible.builtin.command: timedatectl show -p Timezone --value
       register: host_timezone
@@ -536,8 +548,7 @@
         block: |
           [Service]
           ExecStart=
-          ExecStart=-/sbin/agetty >-
-            --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
+          ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
       register: configure_auto_login
       when: is_lxc | default(false)
       notify: Restart getty service
@@ -570,6 +581,11 @@
         name: container-getty@1.service
         state: restarted
       when: is_lxc | default(false)
+
+    - name: Restart systemd-networkd
+      ansible.builtin.systemd:
+        name: systemd-networkd
+        state: restarted
 
     - name: Restart rsyslog
       ansible.builtin.systemd:
