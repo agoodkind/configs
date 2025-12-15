@@ -1,0 +1,150 @@
+---
+description: Ansible playbook quality checks and common pitfalls
+glob: **/*.yml
+alwaysApply: true
+---
+
+# Ansible Quality Checks
+
+## Line Length Limits
+
+- **Prefer**: Stay below 80 columns for readability
+- **Acceptable**: Up to 90 columns is okay
+- **Hard Limit**: 120 columns is the absolute maximum - use only when unavoidable
+- **Check**: All YAML files should respect these limits
+- **Fix**: Break long lines using:
+  - YAML block scalars (`>-`, `|`) with proper Jinja2 whitespace control (`{{-`, `-}}`)
+  - Jinja2 string concatenation
+  - Variable extraction for repeated long strings
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - exceeds 120 columns
+  url: "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node }}/lxc/{{ container_result.vmid }}/interfaces"
+  
+  # ❌ BAD - `>-` converts newline to space, creating `/lxc/ {{-` with unwanted space
+  url: >-
+    "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node }}/lxc/
+    {{- container_result.vmid }}/interfaces"
+  
+  # ✅ GOOD - uses `-}}` to strip trailing whitespace and `{{-` on same line
+  url: >-
+    "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
+    container_result.vmid }}/interfaces"
+  ```
+
+## YAML Formatting Issues
+
+### Folded Block Scalars (`>-`) with URLs
+
+- **Problem**: YAML `>-` folded block scalars replace newlines with spaces, breaking URLs split across lines.
+- **Check**: Any `url:` field using `>-` with multi-line URLs.
+- **Fix**:
+  - For simple URLs: Use single-line quoted strings
+  - For long URLs that must be broken: Use `-}}` on the previous variable to strip trailing whitespace, and place `{{-` on the same line as the preceding text to avoid newline spaces
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - inserts space in URL
+  url: >-
+    https://github.com/user/repo/releases/download/
+    v{{ version }}/file.tar.gz
+  
+  # ✅ GOOD - single line
+  url: "https://github.com/user/repo/releases/download/v{{ version }}/file.tar.gz"
+  
+  # ✅ GOOD - broken line with proper Jinja2 whitespace control
+  url: >-
+    "https://{{ host }}/api/nodes/{{ node -}}/lxc/{{-
+    vmid }}/interfaces"
+  ```
+
+### Blockinfile with ExecStart
+
+- **Problem**: YAML `>-` in `blockinfile` content can be included literally in output files (e.g., systemd service files).
+- **Check**: Any `blockinfile` task with `block: |` or `block: >-` containing `ExecStart` or other commands.
+- **Fix**: Use `block: |` (literal block) and ensure no `>-` appears in the block content itself.
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - `>-` appears in output
+  block: |
+    ExecStart=-/sbin/agetty >-
+      --autologin root tty%I 115200 $TERM
+  
+  # ✅ GOOD
+  block: |
+    ExecStart=-/sbin/agetty --autologin root tty%I 115200 $TERM
+  ```
+
+### Systemd-networkd Section Merging
+
+- **Fact**: systemd-networkd does NOT merge duplicate sections. Only the first `[Section]` is processed.
+- **Check**: Any `blockinfile` that might create duplicate sections (e.g., `[DHCPv6]`).
+- **Fix**: Use `lineinfile` with `regexp` and `insertafter` to add lines to existing sections, or ensure section doesn't exist before using `blockinfile`.
+
+## Variable Safety
+
+### Undefined Variable References
+
+- **Problem**: Referencing variables in `set_fact` that are defined in the same task fails (variables are set concurrently).
+- **Check**: Any `set_fact` task where one variable references another variable defined in the same task.
+- **Fix**: Split into multiple sequential `set_fact` tasks.
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - variables set concurrently
+  - set_fact:
+      var1: "value"
+      var2: "{{ var1 }}-suffix"  # var1 not available yet
+  
+  # ✅ GOOD
+  - set_fact:
+      var1: "value"
+  - set_fact:
+      var2: "{{ var1 }}-suffix"
+  ```
+
+### Jinja2 Filter Safety
+
+- **Problem**: Using `.first` filter on empty lists causes "No first item, sequence was empty" error.
+- **Check**: Any Jinja2 expression using `.first` without checking list length.
+- **Fix**: Use array indexing with length checks: `(list | length > 0) and list[0]` or `list[0] if (list | length > 0) else default`.
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - fails on empty list
+  ip: "{{ ip_list | first }}"
+  
+  # ✅ GOOD
+  ip: "{{ ip_list[0] if (ip_list | length > 0) else '' }}"
+  ```
+
+## KEA DHCP Configuration
+
+### Mutual Exclusivity
+
+- **DHCPv4**: `hw-address` and `client-id` are mutually exclusive in reservations.
+- **DHCPv6**: `hw-address` and `duid` are mutually exclusive in reservations.
+- **Check**: Any reservation with both identifiers.
+- **Fix**: Use only one identifier per reservation. Prefer `hw-address` when MAC is pinned.
+
+## Linting and Verification
+
+### Ansible-lint Timing
+
+- **Important**: `ansible-lint` is NOT instant - wait 2-5 seconds after making changes before checking linter output
+- The linter needs time to analyze YAML syntax, Jinja2 templates, and Ansible module usage
+- If linter errors appear immediately after a fix, wait a few seconds and re-check
+
+## Pre-commit Checklist
+
+Before committing Ansible changes, verify:
+
+1. ✅ Line length: prefer <80, acceptable ≤90, hard limit ≤120 columns
+2. ✅ No `url:` fields use `>-` with multi-line URLs (unless using proper Jinja2 whitespace control: `-}}` and `{{-` on same line)
+3. ✅ No `blockinfile` blocks contain literal `>-` in command output
+4. ✅ No `set_fact` tasks reference variables defined in the same task
+5. ✅ No `.first` filter used without empty list checks
+6. ✅ No KEA reservations with mutually exclusive identifiers
+7. ✅ No `blockinfile` creating duplicate systemd-networkd sections (use `lineinfile` instead)
