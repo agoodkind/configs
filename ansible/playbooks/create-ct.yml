@@ -29,6 +29,39 @@
           container_hostname must be provided as a variable
           (use -e container_hostname=hostname or pass via vars in import_playbook)
         success_msg: "✓ Container hostname: {{ container_hostname }}"
+
+    - name: Lookup existing CT VMID by hostname (best-effort)
+      ansible.builtin.uri:
+        url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/resources?type=vm"
+        method: GET
+        headers:
+          Authorization: >-
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}
+        validate_certs: false
+        return_content: true
+        status_code: [200]
+      register: proxmox_cluster_resources
+      changed_when: false
+      failed_when: false
+
+    - name: Set existing VMID fact (if found)
+      ansible.builtin.set_fact:
+        existing_vmid: >-
+          {{
+            (
+              proxmox_cluster_resources.json.data
+              | default([])
+              | selectattr('type', 'equalto', 'lxc')
+              | selectattr('name', 'equalto', container_hostname)
+              | selectattr('node', 'equalto', target_node)
+              | map(attribute='vmid')
+              | list
+              | first
+            )
+            | default('', true)
+          }}
+      when: proxmox_cluster_resources.json is defined
+
     - name: Generate random password
       ansible.builtin.set_fact:
         actual_password: >-
@@ -37,8 +70,8 @@
 
     - name: Set VMID if not provided
       ansible.builtin.set_fact:
-        actual_vmid: "{{ vmid }}"
-      when: vmid != ""
+        actual_vmid: "{{ (vmid if vmid != '' else (existing_vmid | default(''))) }}"
+      when: (vmid != "") or ((existing_vmid | default('')) | string | length > 0)
 
     - name: Build network interface configuration
       ansible.builtin.set_fact:
