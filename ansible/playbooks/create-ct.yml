@@ -223,7 +223,7 @@
           - "Container interfaces API response:"
           - "{{ container_interfaces.json | default('NOT_DEFINED') }}"
 
-    - name: Gather container IP candidates (v4/v6)
+    - name: Extract non-loopback IP addresses
       ansible.builtin.set_fact:
         all_ip_addresses: >-
           {{
@@ -235,6 +235,9 @@
             | flatten
             | list
           }}
+
+    - name: Gather container IP candidates (v4/v6)
+      ansible.builtin.set_fact:
         container_ipv4_candidates: >-
           {{
             all_ip_addresses
