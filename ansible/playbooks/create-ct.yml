@@ -13,6 +13,7 @@
     cores: "1"
     storage: "local-lvm"
     network_bridge: "vmbr0"
+    mac_address: ""
     ip_address: "dhcp"
     gateway: ""
     ipv6_address: "dhcp"
@@ -76,7 +77,9 @@
     - name: Build network interface configuration
       ansible.builtin.set_fact:
         net0_config: >-
-          name=eth0,bridge={{ network_bridge }},ip={{ ip_address
+          name=eth0,bridge={{ network_bridge
+          }}{{ ',hwaddr=' + mac_address if (mac_address | default('') | trim) | length > 0 else ''
+          }},ip={{ ip_address
           }}{{ ',gw=' + gateway if gateway and ip_address != 'dhcp' else ''
           }},ip6={{ ipv6_address
           }}{{ ',gw6=' + ipv6_gateway
@@ -152,18 +155,104 @@
       ansible.builtin.pause:
         seconds: 15
 
+    - name: Fetch container network interfaces (discover IPs)
+      ansible.builtin.uri:
+        url: >-
+          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{
+          target_node }}/lxc/{{ container_result.vmid }}/interfaces
+        method: GET
+        headers:
+          Authorization: >-
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}
+        validate_certs: false
+        return_content: true
+        status_code: [200]
+      register: container_interfaces
+      delegate_to: ansible.home.goodkind.io
+      changed_when: false
+      retries: 20
+      delay: 3
+      until: >-
+        container_interfaces.json is defined and
+        container_interfaces.json.data is defined and
+        (container_interfaces.json.data | length) > 0
+
+    - name: Select container IP for SSH (prefer global IPv6)
+      ansible.builtin.set_fact:
+        container_ipv4_candidates: >-
+          {{
+            (
+              container_interfaces.json.data
+              | default([])
+              | map(attribute='inet')
+              | select('defined')
+              | list
+              | flatten
+              | map(attribute='address')
+              | select('defined')
+              | list
+            )
+          }}
+        container_ipv6_candidates: >-
+          {{
+            (
+              container_interfaces.json.data
+              | default([])
+              | map(attribute='inet6')
+              | select('defined')
+              | list
+              | flatten
+              | map(attribute='address')
+              | select('defined')
+              | list
+            )
+          }}
+        container_primary_ip: >-
+          {{
+            (
+              container_ipv6_candidates
+              | reject('match', '^fe80:')
+              | reject('equalto', '::1')
+              | list
+              | first
+            )
+            | default(
+              (
+                container_ipv4_candidates
+                | reject('equalto', '127.0.0.1')
+                | list
+                | first
+              ),
+              true
+            )
+          }}
+
+    - name: Ensure container IP was discovered
+      ansible.builtin.assert:
+        that:
+          - container_primary_ip is defined
+          - container_primary_ip | string | trim | length > 0
+        fail_msg: >-
+          Unable to discover an IP address for {{ container_hostname }}
+          (VMID {{ container_result.vmid }}) from Proxmox.
+          This usually means DHCP hasn't assigned an address yet or the CT
+          is not attached to the expected bridge ({{ network_bridge }}).
+
     - name: Display container info
       ansible.builtin.debug:
         msg:
           - >-
             Container {{ container_hostname }} created with VMID:
             {{ container_result.vmid }}
-          - "Ansible will connect using hostname: {{ container_hostname }}"
+          - >-
+            Ansible will connect to {{ container_hostname }} via
+            {{ container_primary_ip }}
 
     - name: Add container to in-memory inventory
       ansible.builtin.add_host:
         name: "{{ container_hostname }}"
         groups: new_containers
+        ansible_host: "{{ container_primary_ip }}"
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
         ansible_proxmox_vmid: "{{ container_result.vmid }}"

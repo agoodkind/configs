@@ -1,0 +1,53 @@
+---
+description: SSH into hosts/containers - normal, DNS-down, and emergency jump-host paths
+glob:
+alwaysApply: true
+---
+
+# SSH / Host Access Rules
+
+## Default (DNS working)
+
+- Prefer hostnames when available:
+
+```bash
+ssh root@container-hostname
+```
+
+- For non-root users, use the correct login:
+
+```bash
+ssh agoodkind@host-name
+```
+
+## DNS-down fallback
+
+- If DNS is down / hostname lookup fails, use the IP directly:
+
+```bash
+ssh root@10.0.0.123
+```
+
+## Emergency jump-host chain (when required)
+
+- Use jump hosts explicitly when the environment requires it.
+- Typical chain we used:
+  - `ssh agoodkind@10.250.0.1` (OPNsense)
+  - then `ssh root@10.250.0.254` (Proxmox host)
+  - then `ssh root@<vm-or-container-hostname>` (or `ssh root@<ip>`)
+
+## Environment notes (OPNsense + Vault/Proxmox)
+
+- **OPNsense**: `10.250.0.1`
+  - SSH user: `agoodkind` (not `root`)
+  - For privileged tasks, use `sudo` after login.
+- **Vault / Proxmox host**: `10.250.0.254`
+  - SSH user: `root`
+
+## Diagnostics-only SSH options
+
+- When instructed, disable strict host key checking for automation/diagnostics only:
+
+```bash
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@10.0.0.123
+```

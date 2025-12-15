@@ -5,6 +5,7 @@
     container_group: traefik_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/traefik_servers.yml"
     hostname_var: traefik_hostname
+    mac_var: traefik_mac_address
     target_node: vault
     container_vmid: ""
     disk_size: "8"
