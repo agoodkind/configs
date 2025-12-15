@@ -176,7 +176,7 @@
           - gh
           - git-lfs
           - jq
-          - rg
+          - ripgrep
           - unzip
           - tree
           - tzdata
