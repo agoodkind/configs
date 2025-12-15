@@ -94,7 +94,7 @@ adguard_blocked_services: []
 # TLS configuration
 adguard_tls_enabled: true
 adguard_tls_server_name: "{{ adguard_hostname }}"
-adguard_tls_force_https: false
+adguard_tls_force_https: true
 adguard_tls_port_https: 443
 adguard_tls_port_dns_over_tls: 853
 adguard_tls_port_dns_over_quic: 784
