@@ -94,6 +94,20 @@
         creates: "/etc/letsencrypt/live/{{ adguard_hostname }}/fullchain.pem"
       when: adguard_tls_enabled | default(false)
 
+    - name: Check for existing Let's Encrypt cert on disk
+      ansible.builtin.stat:
+        path: "/etc/letsencrypt/live/{{ adguard_hostname }}/fullchain.pem"
+      register: adguard_le_fullchain
+      changed_when: false
+      when: adguard_tls_enabled | default(false)
+
+    - name: Sync Let's Encrypt certs into AdGuardHome cert path
+      ansible.builtin.command: /usr/local/sbin/adguard-sync-le-certs
+      changed_when: false
+      when:
+        - adguard_tls_enabled | default(false)
+        - adguard_le_fullchain.stat.exists | default(false)
+
     - name: Install certbot renew systemd unit
       ansible.builtin.copy:
         src: "{{ repo_root }}/adguard/services/adguard-certbot-renew.service"
