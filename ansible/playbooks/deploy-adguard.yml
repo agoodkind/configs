@@ -152,8 +152,12 @@
     - name: Parse installed version number
       ansible.builtin.set_fact:
         installed_version: >-
-          {{ adguard_installed_version.stdout |
-             regex_search('v[0-9]+\\.[0-9]+\\.[0-9]+') | default('', true) }}
+          {{
+            adguard_installed_version.stdout
+            | regex_search('v?[0-9]+\\.[0-9]+\\.[0-9]+')
+            | default('', true)
+          }}
+        installed_version_norm: "{{ installed_version | regex_replace('^v', '') }}"
       when: adguard_binary.stat.exists and adguard_installed_version.stdout is defined
 
     # Check available version using AdGuard Home's version.json endpoint
@@ -174,21 +178,59 @@
     - name: Parse available version from version.json
       ansible.builtin.set_fact:
         available_version: "{{ version_info.json.version | default('') }}"
+        available_version_norm: "{{ (version_info.json.version | default('')) | regex_replace('^v', '') }}"
       when: version_info.json is defined and version_info.json.version is defined
 
     - name: Determine if installation or update is needed
       ansible.builtin.set_fact:
         needs_install: "{{ not adguard_binary.stat.exists }}"
         needs_update: >-
-          {{ adguard_binary.stat.exists and
-             installed_version is defined and
-             available_version is defined and
-             installed_version != available_version }}
+          {{
+            adguard_binary.stat.exists
+            and (installed_version_norm | default('') | trim) | length > 0
+            and (available_version_norm | default('') | trim) | length > 0
+            and (installed_version_norm | default('')) != (available_version_norm | default(''))
+          }}
       changed_when: false
 
     - name: Install or update AdGuard Home using official install script
       when: needs_install | default(false) or needs_update | default(false)
       block:
+        - name: Check if AdGuardHome config exists (pre-update backup)
+          ansible.builtin.stat:
+            path: "{{ adguard_work_dir }}/AdGuardHome.yaml"
+          register: adguard_cfg_preupdate
+          changed_when: false
+
+        - name: Ensure backup directory exists (pre-update backup)
+          ansible.builtin.file:
+            path: /var/backups/adguardhome
+            state: directory
+            mode: "0700"
+
+        - name: Backup AdGuardHome config+data before update
+          ansible.builtin.command:
+            argv:
+              - tar
+              - -C
+              - /
+              - -czf
+              - "/var/backups/adguardhome/pre-update-{{ ansible_date_time.iso8601_basic_short }}.tgz"
+              - "opt/AdGuardHome/AdGuardHome.yaml"
+              - "opt/AdGuardHome/data"
+          register: adguard_preupdate_backup
+          changed_when: true
+          when:
+            - needs_update | default(false)
+            - adguard_cfg_preupdate.stat.exists | default(false)
+
+        - name: Record backup archive path (pre-update)
+          ansible.builtin.set_fact:
+            adguard_preupdate_archive_path: "{{ adguard_preupdate_backup.argv[4] }}"
+          when:
+            - adguard_preupdate_backup is defined
+            - adguard_preupdate_backup.rc | default(1) == 0
+
         - name: Download and run AdGuard Home install script (new installation)
           ansible.builtin.shell: |
             set -o pipefail
@@ -212,6 +254,19 @@
           register: install_result
           changed_when: install_result.rc == 0
           when: needs_update | default(false)
+
+        - name: Restore AdGuardHome config+data after update (if backed up)
+          ansible.builtin.command:
+            argv:
+              - tar
+              - -C
+              - /
+              - -xzf
+              - "{{ adguard_preupdate_archive_path }}"
+          changed_when: true
+          when:
+            - needs_update | default(false)
+            - adguard_preupdate_archive_path is defined
 
         - name: Verify AdGuard Home binary was installed
           ansible.builtin.stat:
