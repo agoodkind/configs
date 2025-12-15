@@ -72,7 +72,9 @@
       block:
         - name: Download Traefik
           ansible.builtin.get_url:
-            url: "https://github.com/traefik/traefik/releases/download/v{{ traefik_version }}/traefik_v{{ traefik_version }}_linux_amd64.tar.gz"
+            url: >-
+              https://github.com/traefik/traefik/releases/download/v{{ traefik_version }}/traefik_v{{-
+              traefik_version }}_linux_amd64.tar.gz
             dest: /tmp/traefik.tar.gz
             mode: '0644'
 
@@ -176,21 +178,20 @@
         group: "{{ traefik_group }}"
         mode: '0750'
 
-    - name: Validate Traefik dashboard credentials are configured
+    - name: Validate Traefik dashboard credentials are configured (if dashboard enabled)
       ansible.builtin.assert:
         that:
           - (traefik_dashboard_user | default('') | trim) | length > 0
           - (traefik_dashboard_pass | default('') | trim) | length > 0
         fail_msg: |
-          ERROR: Traefik dashboard credentials are not set!
+          ERROR: Traefik dashboard is enabled but credentials are not set!
 
           Set the environment variables in Semaphore:
             TRAEFIK_DASHBOARD_USER
             TRAEFIK_DASHBOARD_PASS
-      when:
-        - traefik_dashboard_user is defined or traefik_dashboard_pass is defined
+      when: traefik_dashboard_enabled | default(false)
 
-    - name: Generate dashboard htpasswd entry
+    - name: Generate dashboard htpasswd entry (dashboard enabled)
       ansible.builtin.command:
         argv:
           - htpasswd
@@ -198,13 +199,11 @@
           - "{{ traefik_dashboard_user }}"
           - "{{ traefik_dashboard_pass }}"
       register: traefik_dashboard_htpasswd
-      when:
-        - (traefik_dashboard_user | default('') | trim) | length > 0
-        - (traefik_dashboard_pass | default('') | trim) | length > 0
+      when: traefik_dashboard_enabled | default(false)
       no_log: true
       changed_when: false
 
-    - name: Write dashboard authentication file
+    - name: Write dashboard authentication file (dashboard enabled)
       ansible.builtin.copy:
         dest: "{{ traefik_config_dir }}/auth/dashboard-users"
         content: "{{ traefik_dashboard_htpasswd.stdout }}\n"
@@ -212,6 +211,7 @@
         group: "{{ traefik_group }}"
         mode: '0600'
       when:
+        - traefik_dashboard_enabled | default(false)
         - traefik_dashboard_htpasswd.stdout is defined
         - (traefik_dashboard_htpasswd.stdout | trim) | length > 0
       no_log: true

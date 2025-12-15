@@ -4,6 +4,7 @@
 
 http:
   routers:
+{% if traefik_dashboard_enabled | default(false) %}
     # Traefik Dashboard
     traefik-dashboard:
       rule: "Host(`proxy.{{ traefik_ingress_domain }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
@@ -15,6 +16,7 @@ http:
         - websecure
       tls:
         certResolver: letsencrypt
+{% endif %}
 
     router-ingress:
       rule: "Host(`router.{{ traefik_ingress_domain }}`)"
