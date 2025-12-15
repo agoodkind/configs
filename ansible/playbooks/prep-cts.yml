@@ -473,6 +473,27 @@
       register: configure_dhcp_client_id
       notify: Restart systemd-networkd
 
+    - name: Ensure DHCPv6 section exists
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/network/eth0.network
+        create: true
+        mode: '0644'
+        line: '[DHCPv6]'
+        insertafter: '^\\[DHCPv4\\]'
+        state: present
+      register: ensure_dhcp6_section
+
+    - name: Configure DHCPv6 DUID type to use link-layer address
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/network/eth0.network
+        mode: '0644'
+        regexp: '^DUIDType='
+        line: 'DUIDType=link-layer'
+        insertafter: '^\\[DHCPv6\\]'
+        state: present
+      register: configure_dhcp6_duid
+      notify: Restart systemd-networkd
+
     - name: Get host timezone
       ansible.builtin.command: timedatectl show -p Timezone --value
       register: host_timezone
