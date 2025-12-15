@@ -1,5 +1,6 @@
 ---
 description: MWAN/OPNsense multi-WAN conventions (routing, logging, SSH, formatting)
+glob: **/*
 alwaysApply: true
 ---
 
