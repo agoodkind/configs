@@ -51,8 +51,7 @@
         url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/resources?type=vm"
         method: GET
         headers:
-          Authorization: >-
-            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}
+          Authorization: "PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}"
         validate_certs: false
         return_content: true
         status_code: [200]
@@ -60,9 +59,9 @@
       changed_when: false
       failed_when: false
 
-    - name: Set existing VMID fact (if found)
+    - name: Set VMID list fact (if found)
       ansible.builtin.set_fact:
-        existing_vmid: >-
+        vmid_list: >-
           {{
             (
               proxmox_cluster_resources.json.data
@@ -72,11 +71,17 @@
               | selectattr('node', 'equalto', target_node)
               | map(attribute='vmid')
               | list
-              | first
             )
-            | default('', true)
+            | default([])
           }}
-      when: proxmox_cluster_resources.json is defined
+      when: proxmox_cluster_resources.json.data is defined
+
+    - name: Select VMID from filtered results
+      ansible.builtin.set_fact:
+        existing_vmid: "{{ (vmid_list | default([]))[0] if ((vmid_list | default([])) | length > 0) else '' }}"
+      when:
+        - proxmox_cluster_resources.json.data is defined
+        - vmid_list is defined
 
     - name: Debug existing VMID lookup
       ansible.builtin.debug:
@@ -194,12 +199,12 @@
     - name: Wait for container to get network interfaces
       ansible.builtin.uri:
         url: >-
-          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{
-          target_node }}/lxc/{{ container_result.vmid }}/interfaces
+          "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
+          container_result.vmid }}/interfaces"
         method: GET
         headers:
           Authorization: >-
-            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}
+            "PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}"
         validate_certs: false
         return_content: true
         status_code: [200]
@@ -218,12 +223,12 @@
     - name: Fetch container network interfaces (discover IPs)
       ansible.builtin.uri:
         url: >-
-          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{
-          target_node }}/lxc/{{ container_result.vmid }}/interfaces
+          "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
+          container_result.vmid }}/interfaces"
         method: GET
         headers:
           Authorization: >-
-            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}
+            "PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}"
         validate_certs: false
         return_content: true
         status_code: [200]
