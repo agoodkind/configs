@@ -210,12 +210,17 @@
       register: container_interfaces
       delegate_to: ansible.home.goodkind.io
       changed_when: false
-      retries: 20
-      delay: 3
+      retries: 30
+      delay: 5
       until: >-
         container_interfaces.json is defined and
         container_interfaces.json.data is defined and
         (container_interfaces.json.data | length) > 0
+
+    - name: Debug raw container interfaces API response
+      ansible.builtin.debug:
+        var: container_interfaces.json
+      when: container_interfaces.json is defined
 
     - name: Gather container IP candidates (v4/v6)
       ansible.builtin.set_fact:
