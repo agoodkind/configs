@@ -47,7 +47,7 @@
       ansible.builtin.debug:
         msg: "Container name candidates: {{ container_name_candidates }}"
 
-    - name: Lookup existing CT VMID by hostname (best-effort)
+    - name: Lookup existing CT VMID by hostname
       ansible.builtin.uri:
         url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/resources?type=vm"
         method: GET
@@ -88,13 +88,13 @@
       ansible.builtin.debug:
         msg: "Existing VMID found: {{ existing_vmid | default('none') }}"
 
-    - name: Extract MAC address from existing container (if MAC not provided)
-      ansible.builtin.shell: |
-        set -o pipefail
-        pct config {{ existing_vmid }} | grep '^net0:' | sed -n 's/.*hwaddr=\([^,]*\).*/\1/p' || echo ''
-      args:
-        executable: /bin/bash
-      register: existing_mac_output
+    - name: Read existing container config (if MAC not provided)
+      ansible.builtin.command:
+        argv:
+          - pct
+          - config
+          - "{{ existing_vmid }}"
+      register: existing_pct_config
       delegate_to: "{{ target_node }}"
       when:
         - existing_vmid is defined
@@ -105,13 +105,19 @@
 
     - name: Set MAC address from existing container if not provided
       ansible.builtin.set_fact:
-        mac_address: "{{ existing_mac_output.stdout | default('') | trim }}"
+        mac_address: >-
+          {{
+            (existing_pct_config.stdout | default(''))
+            | regex_search('(?m)^net0:.*hwaddr=([^,\\n]+)', '\\1')
+            | default('')
+            | trim
+          }}
       when:
         - existing_vmid is defined
         - (existing_vmid | default('') | string | trim) | length > 0
         - (mac_address | default('') | trim) | length == 0
-        - existing_mac_output.stdout is defined
-        - (existing_mac_output.stdout | default('') | trim) | length > 0
+        - existing_pct_config.stdout is defined
+        - (existing_pct_config.stdout | default('') | trim) | length > 0
 
     - name: Debug MAC address preservation
       ansible.builtin.debug:
@@ -243,6 +249,71 @@
         state: started
       delegate_to: ansible.home.goodkind.io
 
+    - name: Wait for pct exec to be ready
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ container_result.vmid }}"
+          - --
+          - /bin/true
+      delegate_to: "{{ target_node }}"
+      register: pct_exec_ready
+      changed_when: false
+      retries: 30
+      delay: 1
+      until: pct_exec_ready is succeeded
+
+    - name: Configure DHCPv6 DUID type to use link-layer address before IP discovery
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ container_result.vmid }}"
+          - --
+          - /bin/bash
+          - -lc
+          - |
+            set -euo pipefail
+
+            f="/etc/systemd/network/eth0.network"
+            install -d -m 0755 /etc/systemd/network
+            touch "${f}"
+
+            grep -qxF "[DHCPv6]" "${f}" || printf "\n[DHCPv6]\n" >> "${f}"
+
+            # DUIDType is specific enough that a global replace is OK here.
+            if grep -q "^DUIDType=link-layer$" "${f}"; then
+              exit 0
+            fi
+
+            if grep -q "^DUIDType=" "${f}"; then
+              sed -i "s/^DUIDType=.*/DUIDType=link-layer/" "${f}"
+            else
+              sed -i "/^\[DHCPv6\]$/a DUIDType=link-layer" "${f}"
+            fi
+
+            chmod 0644 "${f}"
+      delegate_to: "{{ target_node }}"
+      changed_when: false
+
+    - name: Renew container DHCP leases to pick up new DUID type
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ container_result.vmid }}"
+          - --
+          - /bin/bash
+          - -lc
+          - |
+            set -euo pipefail
+            networkctl reload || true
+            networkctl renew eth0 || systemctl restart systemd-networkd
+      delegate_to: "{{ target_node }}"
+      changed_when: false
+      failed_when: false
+
     - name: Wait for container to get network interfaces
       ansible.builtin.uri:
         url: >-
@@ -337,7 +408,7 @@
           - "IPv4 candidates: {{ container_ipv4_candidates }}"
           - "IPv6 candidates: {{ container_ipv6_candidates }}"
 
-    - name: Select container IP for SSH (prefer IPv6)
+    - name: Select container IP for SSH (first global IPv6, else IPv4)
       ansible.builtin.set_fact:
         filtered_ipv6: >-
           {{
@@ -352,19 +423,14 @@
             | reject('equalto', '127.0.0.1')
             | list
           }}
-
-    - name: Select container primary IP from filtered candidates
-      ansible.builtin.set_fact:
         container_primary_ip: >-
           {{
-            (
-              filtered_ipv6[0]
-              if (filtered_ipv6 | length > 0)
-              else (
-                filtered_ipv4[0]
-                if (filtered_ipv4 | length > 0)
-                else ''
-              )
+            filtered_ipv6[0]
+            if (filtered_ipv6 | length > 0)
+            else (
+              filtered_ipv4[0]
+              if (filtered_ipv4 | length > 0)
+              else ''
             )
           }}
 
