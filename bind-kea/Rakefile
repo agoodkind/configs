@@ -346,6 +346,394 @@ namespace :kea do
   end
 end
 
+namespace :lease do
+  ##
+  # Execute kea-ctrl-agent command on router
+  #
+  # @param command [String] command name (e.g., "lease4-del")
+  # @param arguments [Hash] command arguments
+  # @return [Hash] parsed JSON response
+  def kea_ctrl_command(command, arguments = {})
+    payload = {
+      command: command,
+      service: ['dhcp4'],
+      arguments: arguments
+    }.to_json
+
+    output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                        '-H', 'Content-Type: application/json',
+                        '-d', payload,
+                        'http://localhost:8080/api/servers/localhost/leases')
+    JSON.parse(output)
+  rescue JSON::ParserError, StandardError => e
+    puts "   Error: #{e.message}" if verbose?
+    { 'result' => 1, 'text' => e.message }
+  end
+
+  desc 'Delete IPv4 lease by IP address'
+  task :delete_by_ip, [:ip_address] do |_t, args|
+    ip_address = args[:ip_address]
+    if ip_address.nil? || ip_address.empty?
+      puts '❌ Error: IP address required'
+      puts '   Usage: rake lease:delete_by_ip[10.250.0.10]'
+      exit 1
+    end
+
+    puts "▶️  Deleting lease for IP #{ip_address}..."
+    result = kea_ctrl_command('lease4-del', { 'ip-address' => ip_address })
+    if result['result'] == 0
+      puts "✅ Lease deleted: #{result['text']}"
+    elsif result['result'] == 3
+      puts "⚠️  No lease found: #{result['text']}"
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  end
+
+  desc 'Delete IPv4 lease by MAC address'
+  task :delete_by_mac, [:mac_address, :subnet_id] do |_t, args|
+    mac_address = args[:mac_address]
+    subnet_id = args[:subnet_id] || '10'
+
+    if mac_address.nil? || mac_address.empty?
+      puts '❌ Error: MAC address required'
+      puts '   Usage: rake lease:delete_by_mac[bc:24:11:1d:2c:0f,10]'
+      exit 1
+    end
+
+    puts "▶️  Deleting lease for MAC #{mac_address} in subnet #{subnet_id}..."
+    result = kea_ctrl_command('lease4-del', {
+                                'subnet-id' => subnet_id.to_i,
+                                'identifier-type' => 'hw-address',
+                                'identifier' => mac_address
+                              })
+    if result['result'] == 0
+      puts "✅ Lease deleted: #{result['text']}"
+    elsif result['result'] == 3
+      puts "⚠️  No lease found: #{result['text']}"
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  end
+
+  desc 'Delete IPv4 lease by client-id'
+  task :delete_by_client_id, [:client_id, :subnet_id] do |_t, args|
+    client_id = args[:client_id]
+    subnet_id = args[:subnet_id] || '10'
+
+    if client_id.nil? || client_id.empty?
+      puts '❌ Error: Client ID required'
+      puts '   Usage: rake lease:delete_by_client_id[ff:b2:86:34:f1:00:02:00:00:ab:11:ca:fb:28:d4:fd:77:a5:93,10]'
+      exit 1
+    end
+
+    puts "▶️  Deleting lease for client-id #{client_id} in subnet #{subnet_id}..."
+    result = kea_ctrl_command('lease4-del', {
+                                'subnet-id' => subnet_id.to_i,
+                                'identifier-type' => 'client-id',
+                                'identifier' => client_id
+                              })
+    if result['result'] == 0
+      puts "✅ Lease deleted: #{result['text']}"
+    elsif result['result'] == 3
+      puts "⚠️  No lease found: #{result['text']}"
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  end
+
+  desc 'Get IPv4 lease by IP address'
+  task :get_by_ip, [:ip_address] do |_t, args|
+    ip_address = args[:ip_address]
+    if ip_address.nil? || ip_address.empty?
+      puts '❌ Error: IP address required'
+      puts '   Usage: rake lease:get_by_ip[10.250.0.10]'
+      exit 1
+    end
+
+    puts "▶️  Getting lease for IP #{ip_address}..."
+    result = kea_ctrl_command('lease4-get', { 'ip-address' => ip_address })
+    if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
+      lease = result['arguments']['leases'].first
+      if lease
+        puts '✅ Lease found:'
+        puts "   IP: #{lease['ip-address']}"
+        puts "   MAC: #{lease['hw-address']}"
+        puts "   Client-ID: #{lease['client-id'] || '(none)'}"
+        puts "   Hostname: #{lease['hostname'] || '(none)'}"
+        puts "   State: #{lease['state']}"
+        puts "   Valid lifetime: #{lease['valid-lft']}s"
+      else
+        puts '⚠️  No lease found'
+      end
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  end
+
+  desc 'List all active IPv4 leases for a MAC address'
+  task :list_by_mac, [:mac_address] do |_t, args|
+    mac_address = args[:mac_address]
+    if mac_address.nil? || mac_address.empty?
+      puts '❌ Error: MAC address required'
+      puts '   Usage: rake lease:list_by_mac[bc:24:11:1d:2c:0f]'
+      exit 1
+    end
+
+    puts "▶️  Listing leases for MAC #{mac_address}..."
+    result = kea_ctrl_command('lease4-get-all', {})
+    if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
+      leases = result['arguments']['leases'].select { |l| l['hw-address']&.downcase == mac_address.downcase }
+      if leases.empty?
+        puts "⚠️  No leases found for MAC #{mac_address}"
+      else
+        puts "✅ Found #{leases.length} lease(s):"
+        leases.each do |lease|
+          puts "   IP: #{lease['ip-address']}, State: #{lease['state']}, Client-ID: #{lease['client-id'] || '(none)'}"
+        end
+      end
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  end
+
+  desc 'Clean up conflicting leases for a MAC address (keeps only active lease)'
+  task :cleanup_conflicts, [:mac_address, :subnet_id] do |_t, args|
+    mac_address = args[:mac_address]
+    subnet_id = args[:subnet_id] || '10'
+
+    if mac_address.nil? || mac_address.empty?
+      puts '❌ Error: MAC address required'
+      puts '   Usage: rake lease:cleanup_conflicts[bc:24:11:1d:2c:0f,10]'
+      exit 1
+    end
+
+    puts "▶️  Cleaning up conflicting leases for MAC #{mac_address}..."
+    result = kea_ctrl_command('lease4-get-all', {})
+    if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
+      leases = result['arguments']['leases'].select do |l|
+        l['hw-address']&.downcase == mac_address.downcase &&
+          l['subnet-id'] == subnet_id.to_i &&
+          l['state'] == 0 # Active leases only
+      end
+
+      if leases.length <= 1
+        puts "✅ No conflicts found (found #{leases.length} active lease(s))"
+      else
+        puts "⚠️  Found #{leases.length} active leases, keeping most recent..."
+        # Sort by cltt (client last transmission time) descending
+        leases.sort_by! { |l| -(l['cltt'] || 0) }
+        leases_to_delete = leases[1..-1] # Keep first (most recent), delete rest
+
+        leases_to_delete.each do |lease|
+          puts "   Deleting lease for IP #{lease['ip-address']}..."
+          del_result = kea_ctrl_command('lease4-del', { 'ip-address' => lease['ip-address'] })
+          if del_result['result'] == 0
+            puts "   ✅ Deleted lease for #{lease['ip-address']}"
+          else
+            puts "   ⚠️  Failed to delete lease for #{lease['ip-address']}: #{del_result['text']}"
+          end
+        end
+        puts '✅ Cleanup complete'
+      end
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  end
+
+  desc 'Delete IPv6 lease by IP address'
+  task :delete6_by_ip, [:ip_address] do |_t, args|
+    ip_address = args[:ip_address]
+    if ip_address.nil? || ip_address.empty?
+      puts '❌ Error: IP address required'
+      puts '   Usage: rake lease:delete6_by_ip[3d06:bad:b01::66]'
+      exit 1
+    end
+
+    puts "▶️  Deleting IPv6 lease for IP #{ip_address}..."
+    payload = {
+      command: 'lease6-del',
+      service: ['dhcp6'],
+      arguments: { 'ip-address' => ip_address }
+    }.to_json
+
+    output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                        '-H', 'Content-Type: application/json',
+                        '-d', payload,
+                        'http://localhost:8080/api/servers/localhost/leases')
+    result = JSON.parse(output)
+    if result['result'] == 0
+      puts "✅ Lease deleted: #{result['text']}"
+    elsif result['result'] == 3
+      puts "⚠️  No lease found: #{result['text']}"
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  rescue JSON::ParserError, StandardError => e
+    puts "❌ Error: #{e.message}"
+    exit 1
+  end
+
+  desc 'Delete IPv6 lease by DUID'
+  task :delete6_by_duid, [:duid, :subnet_id, :iaid] do |_t, args|
+    duid = args[:duid]
+    subnet_id = args[:subnet_id] || '10'
+    iaid = args[:iaid] || '0'
+
+    if duid.nil? || duid.empty?
+      puts '❌ Error: DUID required'
+      puts '   Usage: rake lease:delete6_by_duid[00:02:00:00:ab:11:87:e8:a6:25:af:c9:82:df,10,0]'
+      exit 1
+    end
+
+    puts "▶️  Deleting IPv6 lease for DUID #{duid} in subnet #{subnet_id}..."
+    payload = {
+      command: 'lease6-del',
+      service: ['dhcp6'],
+      arguments: {
+        'subnet-id' => subnet_id.to_i,
+        'identifier-type' => 'duid',
+        'identifier' => duid,
+        'iaid' => iaid.to_i
+      }
+    }.to_json
+
+    output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                        '-H', 'Content-Type: application/json',
+                        '-d', payload,
+                        'http://localhost:8080/api/servers/localhost/leases')
+    result = JSON.parse(output)
+    if result['result'] == 0
+      puts "✅ Lease deleted: #{result['text']}"
+    elsif result['result'] == 3
+      puts "⚠️  No lease found: #{result['text']}"
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  rescue JSON::ParserError, StandardError => e
+    puts "❌ Error: #{e.message}"
+    exit 1
+  end
+
+  desc 'Get IPv6 lease by IP address'
+  task :get6_by_ip, [:ip_address] do |_t, args|
+    ip_address = args[:ip_address]
+    if ip_address.nil? || ip_address.empty?
+      puts '❌ Error: IP address required'
+      puts '   Usage: rake lease:get6_by_ip[3d06:bad:b01::c]'
+      exit 1
+    end
+
+    puts "▶️  Getting IPv6 lease for IP #{ip_address}..."
+    payload = {
+      command: 'lease6-get',
+      service: ['dhcp6'],
+      arguments: { 'ip-address' => ip_address }
+    }.to_json
+
+    output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                        '-H', 'Content-Type: application/json',
+                        '-d', payload,
+                        'http://localhost:8080/api/servers/localhost/leases')
+    result = JSON.parse(output)
+    if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
+      lease = result['arguments']['leases'].first
+      if lease
+        puts '✅ Lease found:'
+        puts "   IP: #{lease['ip-address']}"
+        puts "   DUID: #{lease['duid']}"
+        puts "   MAC: #{lease['hw-address'] || '(none)'}"
+        puts "   Hostname: #{lease['hostname'] || '(none)'}"
+        puts "   State: #{lease['state']}"
+        puts "   IAID: #{lease['iaid']}"
+      else
+        puts '⚠️  No lease found'
+      end
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  rescue JSON::ParserError, StandardError => e
+    puts "❌ Error: #{e.message}"
+    exit 1
+  end
+
+  desc 'Clean up conflicting IPv6 leases for a DUID (keeps only active lease)'
+  task :cleanup6_conflicts, [:duid, :subnet_id] do |_t, args|
+    duid = args[:duid]
+    subnet_id = args[:subnet_id] || '10'
+
+    if duid.nil? || duid.empty?
+      puts '❌ Error: DUID required'
+      puts '   Usage: rake lease:cleanup6_conflicts[00:02:00:00:ab:11:87:e8:a6:25:af:c9:82:df,10]'
+      exit 1
+    end
+
+    puts "▶️  Cleaning up conflicting IPv6 leases for DUID #{duid}..."
+    payload = {
+      command: 'lease6-get-all',
+      service: ['dhcp6'],
+      arguments: {}
+    }.to_json
+
+    output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                        '-H', 'Content-Type: application/json',
+                        '-d', payload,
+                        'http://localhost:8080/api/servers/localhost/leases')
+    result = JSON.parse(output)
+    if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
+      leases = result['arguments']['leases'].select do |l|
+        l['duid']&.downcase == duid.downcase &&
+          l['subnet-id'] == subnet_id.to_i &&
+          l['state'] == 0 # Active leases only
+      end
+
+      if leases.length <= 1
+        puts "✅ No conflicts found (found #{leases.length} active lease(s))"
+      else
+        puts "⚠️  Found #{leases.length} active leases, keeping most recent..."
+        # Sort by cltt (client last transmission time) descending
+        leases.sort_by! { |l| -(l['cltt'] || 0) }
+        leases_to_delete = leases[1..-1] # Keep first (most recent), delete rest
+
+        leases_to_delete.each do |lease|
+          puts "   Deleting lease for IP #{lease['ip-address']}..."
+          del_payload = {
+            command: 'lease6-del',
+            service: ['dhcp6'],
+            arguments: { 'ip-address' => lease['ip-address'] }
+          }.to_json
+          del_output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                                  '-H', 'Content-Type: application/json',
+                                  '-d', del_payload,
+                                  'http://localhost:8080/api/servers/localhost/leases')
+          del_result = JSON.parse(del_output)
+          if del_result['result'] == 0
+            puts "   ✅ Deleted lease for #{lease['ip-address']}"
+          else
+            puts "   ⚠️  Failed to delete lease for #{lease['ip-address']}: #{del_result['text']}"
+          end
+        end
+        puts '✅ Cleanup complete'
+      end
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  rescue JSON::ParserError, StandardError => e
+    puts "❌ Error: #{e.message}"
+    exit 1
+  end
+end
+
 desc 'Show available tasks'
 task :help do
   puts 'Available tasks:'
