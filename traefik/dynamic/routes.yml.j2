@@ -117,7 +117,7 @@ http:
     adguard-service:
       loadBalancer:
         servers:
-          - url: "https://adguard.{{ traefik_upstream_domain }}:3000"
+          - url: "https://adguard.{{ traefik_upstream_domain }}"
         serversTransport: insecure-transport
 
   serversTransports:
