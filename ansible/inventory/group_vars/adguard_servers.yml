@@ -2,6 +2,10 @@
 # Container hostname
 adguard_hostname: adguard.home.goodkind.io
 
+# Stable MAC address for DHCP reservations (KEA: hostname "adguard")
+# IPv6 reservation: 3d06:bad:b01::10 -> BC:24:11:EE:F9:50
+adguard_mac_address: "bc:24:11:ee:f9:50"
+
 # AdGuard Home Configuration Variables
 # Override these in your own environment or use ansible-vault for sensitive values
 

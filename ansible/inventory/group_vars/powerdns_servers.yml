@@ -26,6 +26,10 @@ powerdns_servers:
 powerdns_ipv4: 10.250.0.11
 powerdns_ipv6: 3d06:bad:b01::b
 
+# Stable MAC address for DHCP reservations (KEA: hostname "pdns")
+# IPv4 reservation: 10.250.0.11 -> BC:24:11:30:4F:D2
+powerdns_mac_address: "bc:24:11:30:4f:d2"
+
 # BIND9 Primary server (will become secondary in future migration)
 bind_primary_server: ns.home.goodkind.io
 bind_primary_ip: 10.250.0.6

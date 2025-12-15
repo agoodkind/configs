@@ -15,6 +15,7 @@
     network_bridge: "vmbr0"
     mac_address: ""
     ip_address: "dhcp"
+    # Note: If using DHCP, mac_address should be set to ensure stable reservations
     gateway: ""
     ipv6_address: "dhcp"
     ipv6_gateway: ""
@@ -87,6 +88,39 @@
       ansible.builtin.debug:
         msg: "Existing VMID found: {{ existing_vmid | default('none') }}"
 
+    - name: Extract MAC address from existing container (if MAC not provided)
+      ansible.builtin.shell: |
+        pct config {{ existing_vmid }} | grep '^net0:' | sed -n 's/.*hwaddr=\([^,]*\).*/\1/p' || echo ''
+      register: existing_mac_output
+      delegate_to: "{{ target_node }}"
+      when:
+        - existing_vmid is defined
+        - (existing_vmid | default('') | string | trim) | length > 0
+        - (mac_address | default('') | trim) | length == 0
+      changed_when: false
+      failed_when: false
+
+    - name: Set MAC address from existing container if not provided
+      ansible.builtin.set_fact:
+        mac_address: "{{ existing_mac_output.stdout | default('') | trim }}"
+      when:
+        - existing_vmid is defined
+        - (existing_vmid | default('') | string | trim) | length > 0
+        - (mac_address | default('') | trim) | length == 0
+        - existing_mac_output.stdout is defined
+        - (existing_mac_output.stdout | default('') | trim) | length > 0
+
+    - name: Debug MAC address preservation
+      ansible.builtin.debug:
+        msg: >-
+          MAC address: {{ mac_address | default('not set') }}
+          {% if existing_vmid is defined and (existing_vmid | default('') | string | trim) | length > 0 %}
+          (preserved from existing container {{ existing_vmid }})
+          {% endif %}
+      when:
+        - existing_vmid is defined
+        - (existing_vmid | default('') | string | trim) | length > 0
+
     - name: Generate random password
       ansible.builtin.set_fact:
         actual_password: >-
@@ -101,6 +135,16 @@
     - name: Debug VMID selection
       ansible.builtin.debug:
         msg: "Selected VMID: {{ actual_vmid | default('auto-assign') }}"
+
+    - name: Warn if DHCP is used without MAC address
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: Using DHCP without a pinned MAC address. This may cause
+          IP address changes if the container is recreated. Consider setting
+          mac_address variable for stable DHCP reservations.
+      when:
+        - (ip_address == 'dhcp' or ipv6_address == 'dhcp')
+        - (mac_address | default('') | trim) | length == 0
 
     - name: Build network interface configuration
       ansible.builtin.set_fact:

@@ -1,0 +1,292 @@
+---
+description: IPv6 and DHCP diagnosis guidelines - prefer IPv6, diagnose DHCP issues systematically
+glob: **/*.yml
+alwaysApply: true
+---
+
+# IPv6 and DHCP Diagnosis Guidelines
+
+## Priority: IPv6 is P0
+
+- **IPv6 connectivity issues are RED ALERT** - treat as critical priority
+- Always prefer IPv6 addresses when available
+- When diagnosing network issues, check IPv6 first, then IPv4
+
+## DHCPv6 Reservation Matching in KEA
+
+### Root Cause: DUID Instability
+
+**Problem**: Containers/VMs getting different IPv6 addresses despite MAC-based reservations.
+
+**Why it happens**:
+
+1. **DUID changes**: systemd-networkd generates DUIDs that can change:
+   - `DUIDType=vendor` (default): Based on `/etc/machine-id` - changes when container is recreated
+   - `DUIDType=link-layer`: Based on MAC address - stable if MAC is pinned
+   - `DUIDType=uuid`: Based on product UUID - may change
+
+2. **Multiple active leases**: When DUID changes, KEA creates new leases but old ones remain active, causing conflicts
+
+3. **Reservation matching fails**: Without proper configuration, KEA may not prioritize MAC-based matching
+
+### KEA Configuration Principles
+
+**Key Configuration Parameters**:
+
+1. **`mac-sources`**: How KEA extracts MAC addresses from DHCPv6 packets
+   - `"duid"`: Extract MAC from DUID-LL format (only works if client uses DUID-LL, format `00:03:00:01:XX:XX:XX:XX:XX:XX`)
+   - `"ipv6-link-local"`: Extract MAC from link-local IPv6 address (EUI-64 format)
+   - `"client-link-addr-option"`: Use option 79 if provided by relay agent
+   - **Diagnostic**: Check if MAC extraction method matches client's DUID format
+
+2. **`host-reservation-identifiers`**: Order of identifier types to check for reservations
+   - Must include the identifier type used in your reservations
+   - Order matters: KEA checks in order until match found
+   - **Diagnostic**: If reservation uses `duid` but `host-reservation-identifiers` only has `["hw-address"]`, reservation won't match
+
+3. **Reservation identifier types**:
+   - `duid`: Match by DUID (most direct, requires stable DUID)
+   - `hw-address`: Match by MAC (requires MAC extraction to work)
+   - **Diagnostic**: Choose based on what's stable in your environment
+
+**Configuration Decision Tree**:
+
+1. **Is DUID stable?** (Check lease history for same MAC)
+
+   - **Yes, DUID-LL**: Use `duid` in reservation, `host-reservation-identifiers: ["duid", "hw-address"]`
+   - **No, DUID changes**: Use `hw-address` in reservation, ensure `mac-sources` can extract MAC
+
+2. **Can MAC be extracted?** (Check client's DUID format)
+
+   - **DUID-LL** (`00:03:00:01:...`): `mac-sources: ["duid"]` works
+   - **DUID-EN** (`00:02:...`): `mac-sources: ["duid"]` won't work, need `["ipv6-link-local"]` or `["client-link-addr-option"]`
+   - **Other formats**: May need `["ipv6-link-local"]` or relay agent support
+
+### Required systemd-networkd Configuration
+
+For stable DUID generation:
+
+```ini
+[DHCPv6]
+DUIDType=link-layer
+```
+
+This generates DUID-LL format: `00:03:00:01:XX:XX:XX:XX:XX:XX` where the last 6 bytes are the MAC address.
+
+**Important**: DUID-LL is stable as long as MAC address is pinned. If MAC changes, DUID changes.
+
+## Diagnosis Workflow
+
+### 1. Check Current Container/VM State
+
+```bash
+# Check IPv6 addresses assigned
+ssh root@<host> "ip -6 addr show eth0"
+
+# Check systemd-networkd status
+ssh root@<host> "networkctl status eth0 | grep -i duid"
+
+# Check MAC address
+ssh root@<host> "ip link show eth0 | grep -i link/ether"
+```
+
+### 2. Check KEA Lease Database
+
+```bash
+# List all leases for a MAC address
+ssh agoodkind@10.250.0.1 "sudo cat /var/db/kea/kea-leases6.csv | grep -i '<mac>'"
+
+# Check via KEA API (if available)
+# Use rake tasks: rake lease:get6_by_ip[<ip>] or rake lease:cleanup6_by_mac[<mac>]
+```
+
+### 3. Identify DUID Instability
+
+Look for multiple different DUIDs for the same MAC:
+
+- DUID-EN format: `00:02:00:00:XX:XX:...` (machine-id based, unstable)
+- DUID-LL format: `00:03:00:01:XX:XX:XX:XX:XX:XX` (MAC based, stable)
+
+### 4. Check KEA Configuration
+
+```bash
+# Verify host-reservation-identifiers is set
+grep -A 2 "host-reservation-identifiers" /path/to/kea-dhcp6.conf
+
+# Verify mac-sources includes "duid"
+grep "mac-sources" /path/to/kea-dhcp6.conf
+```
+
+### 5. Clean Up Stale Leases
+
+**By MAC address** (recommended when DUID has changed):
+
+```bash
+cd /path/to/bind-kea
+rake lease:cleanup6_by_mac[bc:24:11:1d:2c:0f,10]
+```
+
+**By DUID** (if you know the specific DUID):
+
+```bash
+rake lease:cleanup6_conflicts[00:03:00:01:bc:24:11:1d:2c:0f,10]
+```
+
+**By IP address** (if you know the wrong IP):
+
+```bash
+rake lease:delete6_by_ip[3d06:bad:b01::66]
+```
+
+### 6. Renew DHCP on Container/VM
+
+```bash
+# Restart systemd-networkd
+ssh root@<host> "systemctl restart systemd-networkd"
+
+# Or trigger DHCP renewal
+ssh root@<host> "networkctl renew eth0"
+```
+
+### 7. Verify Reservation is Honored
+
+```bash
+# Check assigned IP matches reservation
+ssh root@<host> "ip -6 addr show eth0 | grep 'scope global'"
+
+# Check KEA lease database for correct IP
+ssh agoodkind@10.250.0.1 "sudo cat /var/db/kea/kea-leases6.csv | grep '<expected-ip>'"
+```
+
+## Common Issues and Fixes
+
+### Issue: Container gets different IP each time
+
+**Diagnostic Steps**:
+
+1. **Check DUID stability**:
+
+   ```bash
+   # Get current DUID
+   ssh root@<host> "networkctl status eth0 | grep -i 'DUID:'"
+   
+   # Check lease database for multiple DUIDs for same MAC
+   ssh <kea-host> "cat /var/db/kea/kea-leases6.csv | grep '<mac>' | awk -F',' '{print \$2}' | sort -u"
+   ```
+
+2. **Identify DUID format**:
+   - `00:02:...` = DUID-EN (machine-id based, unstable across recreations)
+   - `00:03:00:01:...` = DUID-LL (MAC based, stable if MAC is pinned)
+   - `00:04:...` = DUID-UUID (may change)
+
+3. **Determine root cause**:
+   - If DUID changes: Check `DUIDType` in systemd-networkd config
+   - If MAC changes: Check Proxmox/VM config for MAC pinning
+   - If multiple DUIDs exist: Old leases from previous DUID format
+
+4. **Fix based on findings**:
+   - **DUID instability**: Configure `DUIDType=link-layer` (if MAC is stable) or `DUIDType=vendor` with persistent machine-id
+   - **MAC instability**: Pin MAC address in hypervisor config
+   - **Multiple leases**: Clean up old leases for the MAC/DUID
+
+### Issue: Reservation exists but not honored
+
+**Diagnostic Steps**:
+
+1. **Check reservation configuration**:
+
+   ```bash
+   # Verify reservation exists in KEA config
+   grep -A 5 "reservations" /path/to/kea-dhcp6.conf
+   
+   # Check what identifier type is used (duid vs hw-address)
+   grep "host-reservation-identifiers" /path/to/kea-dhcp6.conf
+   ```
+
+2. **Check client's actual identifier**:
+
+   ```bash
+   # Get client's DUID
+   ssh root@<host> "networkctl status eth0 | grep -i 'DUID:'"
+   
+   # Get client's MAC
+   ssh root@<host> "ip link show eth0 | grep -i link/ether"
+   ```
+
+3. **Check active leases**:
+
+   ```bash
+   # See what IPs are actually assigned
+   ssh <kea-host> "cat /var/db/kea/kea-leases6.csv | grep '<mac-or-duid>'"
+   ```
+
+4. **Identify mismatch**:
+   - Reservation uses `hw-address` but client sends DUID-EN (no MAC extractable)
+   - Reservation uses `duid` but DUID format changed
+   - Multiple active leases with different identifiers for same MAC
+   - `host-reservation-identifiers` doesn't include the identifier type used in reservation
+
+5. **Fix based on findings**:
+
+   - **Identifier mismatch**: Update reservation to match client's actual identifier, OR update `host-reservation-identifiers` to check the right type first
+   - **Multiple leases**: Clean up conflicting leases
+   - **MAC extraction failing**: Ensure `mac-sources` includes method that works (e.g., `"duid"` only works for DUID-LL)
+   - **Reservation not checked**: Ensure `host-reservation-identifiers` includes the identifier type used in reservation
+
+### Issue: Multiple active leases for same MAC
+
+**Root Cause**: DUID changed over time, creating multiple lease entries
+
+**Fix**:
+
+```bash
+# Clean up all but the most recent lease
+rake lease:cleanup6_by_mac[<mac>,<subnet_id>]
+```
+
+## Last Resort: Hardcode DUID
+
+> **Warning**: Only use if root cause cannot be fixed.
+
+If DUID continues to change despite `DUIDType=link-layer`, you can hardcode it:
+
+1. **Get current DUID**:
+
+   ```bash
+   ssh root@<host> "networkctl status eth0 | grep -i 'DUID:'"
+   # Output: DUID-LL:0001bc24111d2c0f
+   ```
+
+2. **Extract raw DUID** (without type prefix):
+   - DUID-LL format: `00:03:00:01:bc:24:11:1d:2c:0f`
+   - Raw data: `bc:24:11:1d:2c:0f` (last 6 bytes for MAC-based DUID-LL)
+
+3. **Configure in systemd-networkd**:
+
+   ```ini
+   [DHCPv6]
+   DUIDType=link-layer
+   DUIDRawData=bc:24:11:1d:2c:0f
+   ```
+
+   **Note**: `DUIDType` specifies the format prefix (`00:03:00:01` for DUID-LL), `DUIDRawData` is the raw identifier without the prefix.
+
+4. **Update KEA reservation** to use DUID instead of MAC:
+
+   ```json
+   {
+     "duid": "00:03:00:01:bc:24:11:1d:2c:0f",
+     "ip-addresses": ["3d06:bad:b01::c"]
+   }
+   ```
+
+**Note**: This is a workaround. The proper fix is to ensure DUID stability through MAC pinning and `DUIDType=link-layer`.
+
+## Pre-commit Checklist for IPv6/DHCP Changes
+
+1. ✅ Verify `host-reservation-identifiers: ["hw-address"]` in KEA config
+2. ✅ Verify `mac-sources` includes `"duid"` in KEA config
+3. ✅ Verify `DUIDType=link-layer` in systemd-networkd config
+4. ✅ Verify MAC address is pinned in Proxmox/VM config
+5. ✅ Check for stale leases before deploying changes
+6. ✅ Test reservation matching after deployment
