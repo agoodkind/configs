@@ -56,21 +56,145 @@
       changed_when: false
       failed_when: false
 
+    - name: Query Proxmox LXC runtime interfaces (best-effort)
+      ansible.builtin.uri:
+        url: >-
+          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ item.proxmox_host -}}/lxc/{{-
+          item.vmid }}/interfaces
+        method: GET
+        headers:
+          Authorization: >-
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
+            proxmox_token_secret }}
+        validate_certs: false
+        return_content: true
+        status_code: [200, 401, 403, 404]
+      loop: "{{ guest_start_targets | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
+      register: proxmox_lxc_interfaces
+      changed_when: false
+      failed_when: false
+
+    - name: Query Proxmox QEMU guest-agent runtime interfaces (best-effort)
+      ansible.builtin.uri:
+        url: >-
+          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ item.proxmox_host -}}/qemu/{{-
+          item.vmid }}/agent/network-get-interfaces
+        method: GET
+        headers:
+          Authorization: >-
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
+            proxmox_token_secret }}
+        validate_certs: false
+        return_content: true
+        status_code: [200, 401, 403, 404, 500]
+      loop: "{{ guest_start_targets | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
+      register: proxmox_qemu_agent_interfaces
+      changed_when: false
+      failed_when: false
+
+    - name: Add API-resolved targets to in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ item.name }}"
+        groups: proxmox_api_targets
+        ansible_host: "{{ selected_ip }}"
+        ansible_user: root
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+        ansible_proxmox_vmid: "{{ item.vmid }}"
+        ansible_proxmox_host: "{{ item.proxmox_host }}"
+      vars:
+        lxc_result: >-
+          {{
+            (
+              proxmox_lxc_interfaces.results
+              | default([])
+              | selectattr('item.name', 'equalto', item.name)
+              | list
+            )[0] | default({})
+          }}
+        qemu_result: >-
+          {{
+            (
+              proxmox_qemu_agent_interfaces.results
+              | default([])
+              | selectattr('item.name', 'equalto', item.name)
+              | list
+            )[0] | default({})
+          }}
+        interfaces_entries: >-
+          {{
+            (
+              lxc_result.json.data
+              if (
+                (lxc_result.status | default(0)) == 200
+                and lxc_result.json is defined
+                and lxc_result.json.data is defined
+              )
+              else (
+                qemu_result.json.data.result
+                if (
+                  qemu_result.json is defined
+                  and qemu_result.json.data is defined
+                  and qemu_result.json.data.result is defined
+                )
+                else []
+              )
+            )
+            | default([])
+          }}
+        ip_objs: >-
+          {{
+            interfaces_entries
+            | map(attribute='ip-addresses')
+            | select('defined')
+            | flatten
+            | list
+          }}
+        ipv6: >-
+          {{
+            ip_objs
+            | selectattr('ip-address-type', 'equalto', 'inet6')
+            | map(attribute='ip-address')
+            | reject('match', '^fe80:')
+            | reject('equalto', '::1')
+            | list
+            | unique
+          }}
+        ipv4: >-
+          {{
+            ip_objs
+            | selectattr('ip-address-type', 'equalto', 'inet')
+            | map(attribute='ip-address')
+            | reject('equalto', '127.0.0.1')
+            | list
+            | unique
+          }}
+        selected_ip: >-
+          {{
+            ipv6[0]
+            if (ipv6 | length > 0)
+            else (
+              ipv4[0]
+              if (ipv4 | length > 0)
+              else ''
+            )
+          }}
+      loop: "{{ guest_start_targets | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} -> {{ selected_ip | default('') | trim }}"
+      when:
+        - item is defined
+        - (selected_ip | default('') | trim) | length > 0
+
 - name: Prepare CT Container(s) or VM(s)
   # Semaphore-friendly targeting:
   # - single host: pass `hostname=<inventory host>`
   # - group:       pass `target_hosts=<group>` (used by other playbooks importing this one)
   # - fallback:    proxmox_all_lxc
-  hosts: >-
-    {{
-      (target_hosts | default('') | trim)
-      if (target_hosts | default('') | trim) | length > 0
-      else (
-        (hostname | default('') | trim)
-        if (hostname | default('') | trim) | length > 0
-        else 'proxmox_all_lxc'
-      )
-    }}
+  hosts: proxmox_api_targets
   gather_facts: false
   tasks:
     - name: Wait for SSH to be ready (after starting)
@@ -92,6 +216,29 @@
       ansible.builtin.set_fact:
         is_lxc: "{{ ansible_virtualization_type | default('') == 'lxc' }}"
         is_vm: "{{ ansible_virtualization_type | default('') in ['kvm', 'qemu'] }}"
+
+    - name: Ensure eth0.network exists
+      ansible.builtin.file:
+        path: /etc/systemd/network/eth0.network
+        state: touch
+        mode: '0644'
+
+    - name: Ensure [DHCPv6] section exists in eth0.network
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/network/eth0.network
+        line: "[DHCPv6]"
+        state: present
+        insertafter: EOF
+
+    - name: Configure DHCPv6 DUID type to use link-layer address (stable, MAC-based)
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/network/eth0.network
+        regexp: '^DUIDType='
+        line: 'DUIDType=link-layer'
+        insertafter: '^\[DHCPv6\]$'
+      register: configure_dhcp6_duid
+      notify: Restart systemd-networkd
+
     - name: Update package lists
       ansible.builtin.apt:
         update_cache: true
@@ -461,18 +608,6 @@
         enabled: false
         state: stopped
       failed_when: false
-
-    - name: Configure DHCPv6 DUID type to use link-layer address (stable, MAC-based)
-      ansible.builtin.blockinfile:
-        path: /etc/systemd/network/eth0.network
-        create: true
-        mode: '0644'
-        marker: "# {mark} ANSIBLE MANAGED BLOCK: DHCPv6 DUIDType"
-        block: |
-          [DHCPv6]
-          DUIDType=link-layer
-      register: configure_dhcp6_duid
-      notify: Restart systemd-networkd
 
     - name: Get host timezone
       ansible.builtin.command: timedatectl show -p Timezone --value
