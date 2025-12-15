@@ -98,6 +98,40 @@ alwaysApply: true
     ExecStart=-/sbin/agetty --autologin root tty%I 115200 $TERM
   ```
 
+### YAML Operators Inside `shell:` Blocks (become literal arguments)
+
+- **Problem**: YAML block scalar operators like `>-` are **only** meaningful in YAML. If you put `>-` inside a `shell: |` command block, it is passed to the program as a **literal argument** and can cause confusing runtime failures (e.g., `exit status 2` from `htpasswd`).
+- **Check**:
+  - Any `shell: |` / `ansible.builtin.shell: |` block that contains `>-` or `|` as part of the command text
+  - Especially when used as “line continuation” for commands (e.g., `htpasswd -nb >- "{{ user }}" ...`)
+- **Fix**:
+  - Use YAML formatting for YAML (`url: >-`, `Authorization: >-`), not inside shell command text
+  - Prefer `ansible.builtin.command` with `argv:` (or a dedicated Ansible module) instead of `shell`
+  - If you truly need multi-line shell, use shell line continuations (`\`) or a heredoc
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - `>-` is a literal shell argument
+  - ansible.builtin.shell: |
+      htpasswd -nb >-
+        "{{ user }}" >-
+        "{{ pass }}" >-
+        /etc/traefik/auth/dashboard-users
+
+  # ✅ GOOD - command argv, output captured and written via copy
+  - ansible.builtin.command:
+      argv: ["htpasswd", "-nbB", "{{ user }}", "{{ pass }}"]
+    register: htpasswd_out
+    changed_when: false
+    no_log: true
+
+  - ansible.builtin.copy:
+      dest: /etc/traefik/auth/dashboard-users
+      content: "{{ htpasswd_out.stdout }}\n"
+      mode: "0600"
+    no_log: true
+  ```
+
 ### Systemd-networkd Section Merging
 
 - **Fact**: systemd-networkd does NOT merge duplicate sections. Only the first `[Section]` is processed.
@@ -165,8 +199,9 @@ Before committing Ansible changes, verify:
 1. ✅ Line length: prefer <80, acceptable ≤90, hard limit ≤120 columns
 2. ✅ No `url:` fields use `>-` with multi-line URLs (unless using proper Jinja2 whitespace control: `-}}` and `{{-` on same line)
 3. ✅ No `url: >-` / `Authorization: >-` values contain surrounding quotes (`"..."`)
-4. ✅ No `blockinfile` blocks contain literal `>-` in command output
-5. ✅ No `set_fact` tasks reference variables defined in the same task
-6. ✅ No `.first` filter used without empty list checks
-7. ✅ No KEA reservations with mutually exclusive identifiers
-8. ✅ No `blockinfile` creating duplicate systemd-networkd sections (use `lineinfile` instead)
+4. ✅ No `shell: |` blocks contain YAML operators like `>-` used as “line continuation”
+5. ✅ No `blockinfile` blocks contain literal `>-` in command output
+6. ✅ No `set_fact` tasks reference variables defined in the same task
+7. ✅ No `.first` filter used without empty list checks
+8. ✅ No KEA reservations with mutually exclusive identifiers
+9. ✅ No `blockinfile` creating duplicate systemd-networkd sections (use `lineinfile` instead)
