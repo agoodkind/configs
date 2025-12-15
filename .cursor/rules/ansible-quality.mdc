@@ -59,6 +59,27 @@ alwaysApply: true
     vmid }}/interfaces"
   ```
 
+### Quoted Strings Inside Folded Scalars (breaks `uri` URLs)
+
+- **Problem**: When using `>-`, surrounding the value in quotes makes the quotes part of the string. This can produce errors like `unknown url type: "https` when used with `ansible.builtin.uri`.
+- **Check**:
+  - `url: >-` (or `Authorization: >-`) where the folded block contains a leading `"` or trailing `"`
+  - Ansible errors containing `unknown url type: \"https` or a URL that begins with `"https`
+- **Fix**:
+  - If you use `>-`, **do not** add surrounding quotes inside the block
+  - Keep whitespace control (`{{-`, `-}}`) when you must wrap long templated values
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - quotes become literal characters in the URL
+  url: >-
+    "https://example.com/path"
+
+  # ✅ GOOD - no embedded quotes
+  url: >-
+    https://example.com/path
+  ```
+
 ### Blockinfile with ExecStart
 
 - **Problem**: YAML `>-` in `blockinfile` content can be included literally in output files (e.g., systemd service files).
@@ -143,8 +164,9 @@ Before committing Ansible changes, verify:
 
 1. ✅ Line length: prefer <80, acceptable ≤90, hard limit ≤120 columns
 2. ✅ No `url:` fields use `>-` with multi-line URLs (unless using proper Jinja2 whitespace control: `-}}` and `{{-` on same line)
-3. ✅ No `blockinfile` blocks contain literal `>-` in command output
-4. ✅ No `set_fact` tasks reference variables defined in the same task
-5. ✅ No `.first` filter used without empty list checks
-6. ✅ No KEA reservations with mutually exclusive identifiers
-7. ✅ No `blockinfile` creating duplicate systemd-networkd sections (use `lineinfile` instead)
+3. ✅ No `url: >-` / `Authorization: >-` values contain surrounding quotes (`"..."`)
+4. ✅ No `blockinfile` blocks contain literal `>-` in command output
+5. ✅ No `set_fact` tasks reference variables defined in the same task
+6. ✅ No `.first` filter used without empty list checks
+7. ✅ No KEA reservations with mutually exclusive identifiers
+8. ✅ No `blockinfile` creating duplicate systemd-networkd sections (use `lineinfile` instead)

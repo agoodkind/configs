@@ -589,6 +589,21 @@
         mode: '0644'
       register: lower_shutdown_timeout
 
+    - name: Disable SSH password authentication (keys only)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+        mode: '0644'
+        content: |
+          # Managed by Ansible (prep-cts.yml)
+          #
+          # Enforce key-based SSH authentication.
+          # Keep root login behavior unchanged; only disable password prompts.
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          ChallengeResponseAuthentication no
+      register: sshd_disable_password_auth
+      notify: Restart ssh
+
     - name: Reload systemd daemon (if config changed)
       ansible.builtin.systemd:
         daemon_reload: true
@@ -611,4 +626,9 @@
     - name: Restart rsyslog
       ansible.builtin.systemd:
         name: rsyslog
+        state: restarted
+
+    - name: Restart ssh
+      ansible.builtin.systemd:
+        name: ssh
         state: restarted
