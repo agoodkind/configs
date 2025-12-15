@@ -145,6 +145,7 @@ alwaysApply: true
 - **Problem**: Referencing variables in `set_fact` that are defined in the same task fails (variables are set concurrently).
 - **Check**: Any `set_fact` task where one variable references another variable defined in the same task.
 - **Fix**: Split into multiple sequential `set_fact` tasks.
+- **Common gotcha**: “Pipeline” facts like `filtered_ipv6` → `container_primary_ip` must be split; later keys in the same `set_fact` cannot see earlier keys.
 - **Example**:
 
   ```yaml
@@ -152,12 +153,23 @@ alwaysApply: true
   - set_fact:
       var1: "value"
       var2: "{{ var1 }}-suffix"  # var1 not available yet
+
+  # ❌ BAD - derived facts in the same task
+  - set_fact:
+      filtered_ipv6: "{{ ipv6_candidates | reject('match','^fe80:') | list }}"
+      primary_ip: "{{ filtered_ipv6[0] if (filtered_ipv6 | length > 0) else '' }}"
   
   # ✅ GOOD
   - set_fact:
       var1: "value"
   - set_fact:
       var2: "{{ var1 }}-suffix"
+
+  # ✅ GOOD
+  - set_fact:
+      filtered_ipv6: "{{ ipv6_candidates | reject('match','^fe80:') | list }}"
+  - set_fact:
+      primary_ip: "{{ filtered_ipv6[0] if (filtered_ipv6 | length > 0) else '' }}"
   ```
 
 ### Jinja2 Filter Safety
