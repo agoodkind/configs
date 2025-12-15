@@ -176,6 +176,7 @@
           - gh
           - git-lfs
           - jq
+          - rg
           - unzip
           - tree
           - tzdata
@@ -461,36 +462,15 @@
         state: stopped
       failed_when: false
 
-    - name: Configure DHCPv4 client identifier to use MAC address
+    - name: Configure DHCPv6 DUID type to use link-layer address (stable, MAC-based)
       ansible.builtin.blockinfile:
         path: /etc/systemd/network/eth0.network
         create: true
         mode: '0644'
-        marker: "# {mark} ANSIBLE MANAGED BLOCK: DHCPv4 ClientIdentifier"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK: DHCPv6 DUIDType"
         block: |
-          [DHCPv4]
-          ClientIdentifier=mac
-      register: configure_dhcp_client_id
-      notify: Restart systemd-networkd
-
-    - name: Ensure DHCPv6 section exists
-      ansible.builtin.lineinfile:
-        path: /etc/systemd/network/eth0.network
-        create: true
-        mode: '0644'
-        line: '[DHCPv6]'
-        insertafter: '^\\[DHCPv4\\]'
-        state: present
-      register: ensure_dhcp6_section
-
-    - name: Configure DHCPv6 DUID type to use link-layer address
-      ansible.builtin.lineinfile:
-        path: /etc/systemd/network/eth0.network
-        mode: '0644'
-        regexp: '^DUIDType='
-        line: 'DUIDType=link-layer'
-        insertafter: '^\\[DHCPv6\\]'
-        state: present
+          [DHCPv6]
+          DUIDType=link-layer
       register: configure_dhcp6_duid
       notify: Restart systemd-networkd
 
@@ -622,6 +602,16 @@
       ansible.builtin.systemd:
         name: systemd-networkd
         state: restarted
+      async: 45
+      poll: 0
+      register: networkd_restart_job
+      changed_when: true
+
+    - name: Wait for SSH after networkd restart
+      ansible.builtin.wait_for_connection:
+        delay: 1
+        timeout: 180
+      when: networkd_restart_job is defined
 
     - name: Restart rsyslog
       ansible.builtin.systemd:
