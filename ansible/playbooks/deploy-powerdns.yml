@@ -20,6 +20,7 @@
     container_group: powerdns_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/powerdns_servers.yml"
     hostname_var: powerdns_hostname
+    mac_var: powerdns_mac_address
     target_node: vault
     container_vmid: ""
     disk_size: "8"
