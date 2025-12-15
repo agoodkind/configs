@@ -42,6 +42,10 @@
             | unique
           }}
 
+    - name: Debug container name candidates
+      ansible.builtin.debug:
+        msg: "Container name candidates: {{ container_name_candidates }}"
+
     - name: Lookup existing CT VMID by hostname (best-effort)
       ansible.builtin.uri:
         url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/resources?type=vm"
@@ -74,6 +78,10 @@
           }}
       when: proxmox_cluster_resources.json is defined
 
+    - name: Debug existing VMID lookup
+      ansible.builtin.debug:
+        msg: "Existing VMID found: {{ existing_vmid | default('none') }}"
+
     - name: Generate random password
       ansible.builtin.set_fact:
         actual_password: >-
@@ -85,6 +93,10 @@
         actual_vmid: "{{ (vmid if vmid != '' else (existing_vmid | default(''))) }}"
       when: (vmid != "") or ((existing_vmid | default('')) | string | length > 0)
 
+    - name: Debug VMID selection
+      ansible.builtin.debug:
+        msg: "Selected VMID: {{ actual_vmid | default('auto-assign') }}"
+
     - name: Build network interface configuration
       ansible.builtin.set_fact:
         net0_config: >-
@@ -95,6 +107,15 @@
           }},ip6={{ ipv6_address
           }}{{ ',gw6=' + ipv6_gateway
             if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
+
+    - name: Debug network interface configuration
+      ansible.builtin.debug:
+        msg:
+          - "Network bridge: {{ network_bridge }}"
+          - "MAC address: {{ mac_address | default('auto') }}"
+          - "IPv4: {{ ip_address }}"
+          - "IPv6: {{ ipv6_address }}"
+          - "net0 config: {{ net0_config }}"
 
     - name: Get SSH public keys from GitHub
       ansible.builtin.uri:
@@ -148,6 +169,14 @@
         tags: "{{ container_tags.split(',') }}"
       delegate_to: ansible.home.goodkind.io
       register: container_result
+
+    - name: Debug container creation result
+      ansible.builtin.debug:
+        msg:
+          - "Container created/updated: {{ container_result.changed | default(false) }}"
+          - "Container VMID: {{ container_result.vmid }}"
+          - "Container hostname: {{ container_hostname }}"
+          - "Container tags: {{ container_tags.split(',') }}"
 
     - name: Start container
       community.proxmox.proxmox:
@@ -219,6 +248,12 @@
             )
           }}
 
+    - name: Debug IP candidates
+      ansible.builtin.debug:
+        msg:
+          - "IPv4 candidates: {{ container_ipv4_candidates }}"
+          - "IPv6 candidates: {{ container_ipv6_candidates }}"
+
     - name: Select container IP for SSH (prefer global IPv6)
       ansible.builtin.set_fact:
         filtered_ipv6: >-
@@ -249,6 +284,13 @@
               )
             )
           }}
+
+    - name: Debug filtered IP candidates and selection
+      ansible.builtin.debug:
+        msg:
+          - "Filtered IPv6 candidates: {{ filtered_ipv6 }}"
+          - "Filtered IPv4 candidates: {{ filtered_ipv4 }}"
+          - "Selected primary IP: {{ container_primary_ip }}"
 
     - name: Ensure container IP was discovered
       ansible.builtin.assert:
