@@ -7,7 +7,7 @@ global:
   sendAnonymousUsage: false
 
 api:
-  dashboard: true
+  dashboard: {{ 'true' if (traefik_dashboard_enabled | default(false)) else 'false' }}
   insecure: false
 
 log:
