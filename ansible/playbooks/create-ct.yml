@@ -221,23 +221,32 @@
 
     - name: Select container IP for SSH (prefer global IPv6)
       ansible.builtin.set_fact:
+        filtered_ipv6: >-
+          {{
+            container_ipv6_candidates
+            | reject('match', '^fe80:')
+            | reject('equalto', '::1')
+            | list
+          }}
+        filtered_ipv4: >-
+          {{
+            container_ipv4_candidates
+            | reject('equalto', '127.0.0.1')
+            | list
+          }}
+
+    - name: Select container primary IP from filtered candidates
+      ansible.builtin.set_fact:
         container_primary_ip: >-
           {{
             (
-              container_ipv6_candidates
-              | reject('match', '^fe80:')
-              | reject('equalto', '::1')
-              | list
-              | first
-            )
-            | default(
-              (
-                container_ipv4_candidates
-                | reject('equalto', '127.0.0.1')
-                | list
-                | first
-              ),
-              true
+              filtered_ipv6[0]
+              if (filtered_ipv6 | length > 0)
+              else (
+                filtered_ipv4[0]
+                if (filtered_ipv4 | length > 0)
+                else ''
+              )
             )
           }}
 
