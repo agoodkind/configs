@@ -423,6 +423,9 @@
             | reject('equalto', '127.0.0.1')
             | list
           }}
+
+    - name: Select container primary IP from filtered candidates
+      ansible.builtin.set_fact:
         container_primary_ip: >-
           {{
             filtered_ipv6[0]
