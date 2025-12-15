@@ -337,7 +337,7 @@
           - "IPv4 candidates: {{ container_ipv4_candidates }}"
           - "IPv6 candidates: {{ container_ipv6_candidates }}"
 
-    - name: Select container IP for SSH (prefer global IPv6)
+    - name: Select container IP for SSH (prefer IPv6)
       ansible.builtin.set_fact:
         filtered_ipv6: >-
           {{
