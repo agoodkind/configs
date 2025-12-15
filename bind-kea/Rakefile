@@ -732,6 +732,73 @@ namespace :lease do
     puts "❌ Error: #{e.message}"
     exit 1
   end
+
+  desc 'Clean up conflicting IPv6 leases for a MAC address (keeps only active lease)'
+  task :cleanup6_by_mac, [:mac_address, :subnet_id] do |_t, args|
+    mac_address = args[:mac_address]
+    subnet_id = args[:subnet_id] || '10'
+
+    if mac_address.nil? || mac_address.empty?
+      puts '❌ Error: MAC address required'
+      puts '   Usage: rake lease:cleanup6_by_mac[bc:24:11:1d:2c:0f,10]'
+      exit 1
+    end
+
+    puts "▶️  Cleaning up conflicting IPv6 leases for MAC #{mac_address}..."
+    payload = {
+      command: 'lease6-get-all',
+      service: ['dhcp6'],
+      arguments: {}
+    }.to_json
+
+    output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                        '-H', 'Content-Type: application/json',
+                        '-d', payload,
+                        'http://localhost:8080/api/servers/localhost/leases')
+    result = JSON.parse(output)
+    if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
+      leases = result['arguments']['leases'].select do |l|
+        l['hw-address']&.downcase == mac_address.downcase &&
+          l['subnet-id'] == subnet_id.to_i &&
+          l['state'] == 0 # Active leases only
+      end
+
+      if leases.length <= 1
+        puts "✅ No conflicts found (found #{leases.length} active lease(s))"
+      else
+        puts "⚠️  Found #{leases.length} active leases, keeping most recent..."
+        # Sort by cltt (client last transmission time) descending
+        leases.sort_by! { |l| -(l['cltt'] || 0) }
+        leases_to_delete = leases[1..-1] # Keep first (most recent), delete rest
+
+        leases_to_delete.each do |lease|
+          puts "   Deleting lease for IP #{lease['ip-address']} (DUID: #{lease['duid']})..."
+          del_payload = {
+            command: 'lease6-del',
+            service: ['dhcp6'],
+            arguments: { 'ip-address' => lease['ip-address'] }
+          }.to_json
+          del_output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
+                                  '-H', 'Content-Type: application/json',
+                                  '-d', del_payload,
+                                  'http://localhost:8080/api/servers/localhost/leases')
+          del_result = JSON.parse(del_output)
+          if del_result['result'] == 0
+            puts "   ✅ Deleted lease for #{lease['ip-address']}"
+          else
+            puts "   ⚠️  Failed to delete lease for #{lease['ip-address']}: #{del_result['text']}"
+          end
+        end
+        puts '✅ Cleanup complete'
+      end
+    else
+      puts "❌ Error: #{result['text']}"
+      exit 1
+    end
+  rescue JSON::ParserError, StandardError => e
+    puts "❌ Error: #{e.message}"
+    exit 1
+  end
 end
 
 desc 'Show available tasks'
