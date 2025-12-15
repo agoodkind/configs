@@ -31,6 +31,17 @@
           (use -e container_hostname=hostname or pass via vars in import_playbook)
         success_msg: "✓ Container hostname: {{ container_hostname }}"
 
+    - name: Build container name candidates (FQDN + short)
+      ansible.builtin.set_fact:
+        container_name_candidates: >-
+          {{
+            [
+              container_hostname,
+              (container_hostname.split('.')[0] if ('.' in container_hostname) else container_hostname)
+            ]
+            | unique
+          }}
+
     - name: Lookup existing CT VMID by hostname (best-effort)
       ansible.builtin.uri:
         url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/resources?type=vm"
@@ -53,7 +64,7 @@
               proxmox_cluster_resources.json.data
               | default([])
               | selectattr('type', 'equalto', 'lxc')
-              | selectattr('name', 'equalto', container_hostname)
+              | selectattr('name', 'in', container_name_candidates)
               | selectattr('node', 'equalto', target_node)
               | map(attribute='vmid')
               | list
