@@ -191,9 +191,29 @@
         state: started
       delegate_to: ansible.home.goodkind.io
 
-    - name: Wait for container to start
-      ansible.builtin.pause:
-        seconds: 15
+    - name: Wait for container to get network interfaces
+      ansible.builtin.uri:
+        url: >-
+          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{
+          target_node }}/lxc/{{ container_result.vmid }}/interfaces
+        method: GET
+        headers:
+          Authorization: >-
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}
+        validate_certs: false
+        return_content: true
+        status_code: [200]
+      register: container_boot_check
+      delegate_to: ansible.home.goodkind.io
+      changed_when: false
+      failed_when: false
+      retries: 20
+      delay: 1
+      until: >-
+        container_boot_check.json is defined and
+        container_boot_check.json.data is defined and
+        (container_boot_check.json.data | length) > 1 and
+        (container_boot_check.json.data | selectattr('name', 'equalto', 'eth0') | list | length) > 0
 
     - name: Fetch container network interfaces (discover IPs)
       ansible.builtin.uri:
