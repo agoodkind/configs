@@ -2,6 +2,9 @@
 
 require 'dotenv'
 require 'fileutils'
+require 'json'
+require 'base64'
+require 'shellwords'
 require_relative '../lib/rake_common'
 
 # Load .env from current directory and parent directory
@@ -154,6 +157,74 @@ def router_install(config_file, dest_path)
   ssh_router_sh('sudo', 'chmod', '640', dest_path)
 end
 
+KEA_CTRL_URL = 'http://127.0.0.1:8000/'
+
+##
+# Call Kea Control Agent on the router (via SSH) and return parsed JSON.
+#
+# @param payload [Hash] Kea control agent JSON payload
+# @return [Array<Hash>] response array from Kea control agent
+def kea_api(payload)
+  json = JSON.generate(payload)
+  b64 = Base64.strict_encode64(json)
+
+  pipeline = "echo #{b64.shellescape} | base64 -d | " \
+             "curl -sS -X POST -H 'Content-Type: application/json' --data-binary @- #{KEA_CTRL_URL.shellescape}"
+
+  # IMPORTANT: ssh concatenates arguments with spaces.  We must pass the whole
+  # pipeline as a single remote argument to keep it intact for /bin/sh -lc.
+  raw = ssh_router("sudo /bin/sh -lc #{pipeline.shellescape}")
+
+  JSON.parse(raw)
+end
+
+def kea_ok?(resp)
+  resp.is_a?(Array) && resp[0].is_a?(Hash) && resp[0]['result'] == 0
+end
+
+def kea_leases(resp)
+  return [] unless kea_ok?(resp)
+
+  leases = resp.dig(0, 'arguments', 'leases')
+  leases.is_a?(Array) ? leases : []
+end
+
+def kea_single_lease(resp)
+  return nil unless kea_ok?(resp)
+
+  lease = resp[0]['arguments']
+  lease.is_a?(Hash) ? lease : nil
+end
+
+def load_reservations4(subnet_id)
+  data = JSON.parse(File.read('kea/kea-dhcp4.conf'))
+  subnet = data.fetch('Dhcp4').fetch('subnet4').find { |s| s['id'] == subnet_id }
+  raise "subnet4 id=#{subnet_id} not found" if subnet.nil?
+
+  (subnet['reservations'] || []).map do |r|
+    {
+      hwaddr: (r['hw-address'] || '').downcase,
+      ip: r['ip-address'],
+      hostname: r['hostname']
+    }
+  end
+end
+
+def load_reservations6(subnet_id)
+  data = JSON.parse(File.read('kea/kea-dhcp6.conf'))
+  subnet = data.fetch('Dhcp6').fetch('subnet6').find { |s| s['id'] == subnet_id }
+  raise "subnet6 id=#{subnet_id} not found" if subnet.nil?
+
+  (subnet['reservations'] || []).map do |r|
+    ips = r['ip-addresses'] || []
+    {
+      duid: (r['duid'] || '').downcase,
+      ip: ips[0],
+      hostname: r['hostname']
+    }
+  end
+end
+
 namespace :router do
   desc 'Push kea-dhcp4.conf to router'
   task :push_dhcp4 do
@@ -214,6 +285,144 @@ namespace :router do
   task deploy: %i[deploy_dhcp4 deploy_dhcp6 restart] do
     puts ''
     puts '✅ Router deployment complete'
+  end
+end
+
+namespace :lease do
+  desc 'Delete DHCPv4 lease by IP on router (example: rake lease:delete4_by_ip[10.250.0.24])'
+  task :delete4_by_ip, [:ip] do |_t, args|
+    ip = args[:ip].to_s.strip
+    raise 'ip is required' if ip.empty?
+
+    resp = kea_api(
+      'command' => 'lease4-del',
+      'service' => ['dhcp4'],
+      'arguments' => { 'ip-address' => ip }
+    )
+    puts JSON.pretty_generate(resp)
+  end
+
+  desc 'Delete DHCPv6 lease by IP on router (example: rake lease:delete6_by_ip[3d06:bad:b01::28])'
+  task :delete6_by_ip, [:ip] do |_t, args|
+    ip = args[:ip].to_s.strip
+    raise 'ip is required' if ip.empty?
+
+    resp = kea_api(
+      'command' => 'lease6-del',
+      'service' => ['dhcp6'],
+      'arguments' => { 'ip-address' => ip }
+    )
+    puts JSON.pretty_generate(resp)
+  end
+
+  desc 'Enforce DHCPv4+DHCPv6 reservations by deleting conflicting leases (default subnet id: 10)'
+  task :enforce_reservations, [:subnet_id] do |_t, args|
+    subnet_id = (args[:subnet_id] || '10').to_i
+
+    puts "▶️  Enforcing reservations for subnet id #{subnet_id} (v4 + v6)"
+
+    # DHCPv4
+    r4 = load_reservations4(subnet_id)
+    by_hw = r4.to_h { |r| [r[:hwaddr], r] }
+    by_ip = r4.to_h { |r| [r[:ip], r] }
+
+    # 1) Remove extra leases per hwaddr that aren't the reserved IP.
+    by_hw.each_value do |r|
+      next if r[:hwaddr].to_s.empty? || r[:ip].to_s.empty?
+
+      resp = kea_api(
+        'command' => 'lease4-get-by-hw-address',
+        'service' => ['dhcp4'],
+        'arguments' => { 'hw-address' => r[:hwaddr] }
+      )
+      kea_leases(resp).each do |lease|
+        ip = lease['ip-address']
+        next if ip == r[:ip]
+
+        puts "🧹 DHCP4: deleting extra lease #{ip} for #{r[:hostname]} (#{r[:hwaddr]})"
+        kea_api(
+          'command' => 'lease4-del',
+          'service' => ['dhcp4'],
+          'arguments' => { 'ip-address' => ip }
+        )
+      end
+    end
+
+    # 2) Ensure reserved IP isn't held by the wrong hwaddr.
+    by_ip.each_value do |r|
+      next if r[:ip].to_s.empty?
+
+      resp = kea_api(
+        'command' => 'lease4-get',
+        'service' => ['dhcp4'],
+        'arguments' => { 'ip-address' => r[:ip] }
+      )
+      lease = kea_single_lease(resp)
+      next if lease.nil?
+
+      got = lease['hw-address'].to_s.downcase
+      next if got.empty? || got == r[:hwaddr]
+
+      puts "🧹 DHCP4: deleting conflicting lease #{r[:ip]} held by #{got} (wanted #{r[:hwaddr]} #{r[:hostname]})"
+      kea_api(
+        'command' => 'lease4-del',
+        'service' => ['dhcp4'],
+        'arguments' => { 'ip-address' => r[:ip] }
+      )
+    end
+
+    # DHCPv6
+    r6 = load_reservations6(subnet_id)
+    by_duid = r6.to_h { |r| [r[:duid], r] }
+    by_ip6 = r6.to_h { |r| [r[:ip], r] }
+
+    # 1) Remove extra leases per DUID that aren't the reserved IP.
+    by_duid.each_value do |r|
+      next if r[:duid].to_s.empty? || r[:ip].to_s.empty?
+
+      resp = kea_api(
+        'command' => 'lease6-get-by-duid',
+        'service' => ['dhcp6'],
+        'arguments' => { 'duid' => r[:duid] }
+      )
+      kea_leases(resp).each do |lease|
+        ip = lease['ip-address']
+        next if ip == r[:ip]
+
+        puts "🧹 DHCP6: deleting extra lease #{ip} for #{r[:hostname]} (#{r[:duid]})"
+        kea_api(
+          'command' => 'lease6-del',
+          'service' => ['dhcp6'],
+          'arguments' => { 'ip-address' => ip }
+        )
+      end
+    end
+
+    # 2) Ensure reserved IP isn't held by the wrong DUID.
+    by_ip6.each_value do |r|
+      next if r[:ip].to_s.empty?
+
+      resp = kea_api(
+        'command' => 'lease6-get',
+        'service' => ['dhcp6'],
+        'arguments' => { 'ip-address' => r[:ip] }
+      )
+      lease = kea_single_lease(resp)
+      next if lease.nil?
+
+      got = lease['duid'].to_s.downcase
+      next if got.empty? || got == r[:duid]
+
+      puts "🧹 DHCP6: deleting conflicting lease #{r[:ip]} held by #{got} (wanted #{r[:duid]} #{r[:hostname]})"
+      kea_api(
+        'command' => 'lease6-del',
+        'service' => ['dhcp6'],
+        'arguments' => { 'ip-address' => r[:ip] }
+      )
+    end
+
+    puts '✅ Reservation enforcement completed'
+    puts 'Next: renew clients (e.g. restart networkd or networkctl renew eth0) on affected containers.'
   end
 end
 
