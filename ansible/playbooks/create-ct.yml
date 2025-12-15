@@ -225,33 +225,33 @@
 
     - name: Gather container IP candidates (v4/v6)
       ansible.builtin.set_fact:
+        all_ip_addresses: >-
+          {{
+            container_interfaces.json.data
+            | default([])
+            | rejectattr('name', 'equalto', 'lo')
+            | map(attribute='ip-addresses')
+            | select('defined')
+            | flatten
+            | list
+          }}
         container_ipv4_candidates: >-
           {{
-            (
-              container_interfaces.json.data
-              | default([])
-              | map(attribute='inet')
-              | select('defined')
-              | list
-              | flatten
-              | map(attribute='address')
-              | select('defined')
-              | list
-            )
+            all_ip_addresses
+            | selectattr('ip-address-type', 'equalto', 'inet')
+            | map(attribute='ip-address')
+            | reject('equalto', '127.0.0.1')
+            | list
+            | unique
           }}
         container_ipv6_candidates: >-
           {{
-            (
-              container_interfaces.json.data
-              | default([])
-              | map(attribute='inet6')
-              | select('defined')
-              | list
-              | flatten
-              | map(attribute='address')
-              | select('defined')
-              | list
-            )
+            all_ip_addresses
+            | selectattr('ip-address-type', 'equalto', 'inet6')
+            | map(attribute='ip-address')
+            | reject('equalto', '::1')
+            | list
+            | unique
           }}
 
     - name: Debug IP candidates
