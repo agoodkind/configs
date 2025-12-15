@@ -90,7 +90,10 @@
 
     - name: Extract MAC address from existing container (if MAC not provided)
       ansible.builtin.shell: |
+        set -o pipefail
         pct config {{ existing_vmid }} | grep '^net0:' | sed -n 's/.*hwaddr=\([^,]*\).*/\1/p' || echo ''
+      args:
+        executable: /bin/bash
       register: existing_mac_output
       delegate_to: "{{ target_node }}"
       when:
@@ -243,12 +246,13 @@
     - name: Wait for container to get network interfaces
       ansible.builtin.uri:
         url: >-
-          "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
-          container_result.vmid }}/interfaces"
+          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
+          container_result.vmid }}/interfaces
         method: GET
         headers:
           Authorization: >-
-            "PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}"
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
+            proxmox_token_secret }}
         validate_certs: false
         return_content: true
         status_code: [200]
@@ -267,12 +271,13 @@
     - name: Fetch container network interfaces (discover IPs)
       ansible.builtin.uri:
         url: >-
-          "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
-          container_result.vmid }}/interfaces"
+          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
+          container_result.vmid }}/interfaces
         method: GET
         headers:
           Authorization: >-
-            "PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}"
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
+            proxmox_token_secret }}
         validate_certs: false
         return_content: true
         status_code: [200]
