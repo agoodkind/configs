@@ -71,7 +71,7 @@
 
     - name: Install AdGuard cert sync hook
       ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/adguard-sync-le-certs.sh.j2"
+        src: "{{ repo_root }}/adguard/scripts/adguard-sync-le-certs.sh.j2"
         dest: /usr/local/sbin/adguard-sync-le-certs
         owner: root
         group: root
@@ -95,8 +95,8 @@
       when: adguard_tls_enabled | default(false)
 
     - name: Install certbot renew systemd unit
-      ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/adguard-certbot-renew.service.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/adguard/services/adguard-certbot-renew.service"
         dest: /etc/systemd/system/adguard-certbot-renew.service
         owner: root
         group: root
@@ -105,8 +105,8 @@
       when: adguard_tls_enabled | default(false)
 
     - name: Install certbot renew systemd timer
-      ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/adguard-certbot-renew.timer.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/adguard/timers/adguard-certbot-renew.timer"
         dest: /etc/systemd/system/adguard-certbot-renew.timer
         owner: root
         group: root
@@ -248,14 +248,54 @@
             )
           }}
 
-    - name: Template AdGuard Home configuration
+    - name: Check if AdGuardHome config already exists
+      ansible.builtin.stat:
+        path: "{{ adguard_work_dir }}/AdGuardHome.yaml"
+      register: adguard_config_file
+
+    - name: Template AdGuardHome config (first install only)
       ansible.builtin.template:
         src: "{{ repo_root }}/adguard/AdGuardHome.yaml.j2"
         dest: "{{ adguard_work_dir }}/AdGuardHome.yaml"
         owner: "{{ adguard_user }}"
         group: "{{ adguard_group }}"
         mode: '0640'
+        backup: true
       notify: Restart AdGuardHome
+      when: not (adguard_config_file.stat.exists | default(false))
+
+    - name: Install AdGuardHome config merge helper (yq)
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/adguard/scripts/adguard-merge-config.sh"
+        dest: /usr/local/sbin/adguard-merge-config
+        owner: root
+        group: root
+        mode: '0755'
+      when: adguard_config_file.stat.exists | default(false)
+
+    - name: Merge TLS and hostname rewrites into existing AdGuardHome config
+      ansible.builtin.command: /usr/local/sbin/adguard-merge-config
+      register: adguard_merge_result
+      changed_when: adguard_merge_result.stdout is search('changed=1')
+      notify: Restart AdGuardHome
+      environment:
+        ADGUARD_CONFIG_PATH: "{{ adguard_work_dir }}/AdGuardHome.yaml"
+        ADGUARD_MANAGED_DOMAIN_LC: "{{ adguard_hostname | lower }}"
+        ADGUARD_TLS_JSON: >-
+          {{
+            {
+              'enabled': (adguard_tls_enabled | default(false)),
+              'server_name': (adguard_tls_server_name | default(adguard_hostname) | default('')),
+              'force_https': (adguard_tls_force_https | default(false)),
+              'port_https': (adguard_tls_port_https | default(0)),
+              'port_dns_over_tls': (adguard_tls_port_dns_over_tls | default(0)),
+              'port_dns_over_quic': (adguard_tls_port_dns_over_quic | default(0)),
+              'certificate_path': (adguard_tls_certificate_path | default('')),
+              'private_key_path': (adguard_tls_private_key_path | default(''))
+            } | to_json
+          }}
+        ADGUARD_REWRITES_JSON: "{{ adguard_rewrites_effective | default([]) | to_json }}"
+      when: adguard_config_file.stat.exists | default(false)
 
     - name: Create resolved.conf.d directory
       ansible.builtin.file:
