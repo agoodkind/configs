@@ -188,7 +188,7 @@
         container_interfaces.json.data is defined and
         (container_interfaces.json.data | length) > 0
 
-    - name: Select container IP for SSH (prefer global IPv6)
+    - name: Gather container IP candidates (v4/v6)
       ansible.builtin.set_fact:
         container_ipv4_candidates: >-
           {{
@@ -218,6 +218,9 @@
               | list
             )
           }}
+
+    - name: Select container IP for SSH (prefer global IPv6)
+      ansible.builtin.set_fact:
         container_primary_ip: >-
           {{
             (
