@@ -1,5 +1,5 @@
 plugin: community.proxmox.proxmox
-url: https://vault.home.goodkind.io:8006
+url: https://vault.home.goodkind.io
 user: ansible@pam
 token_id: ansible-token
 token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
