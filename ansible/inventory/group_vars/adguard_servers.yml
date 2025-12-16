@@ -15,86 +15,178 @@ adguard_mac_address: "bc:24:11:ee:f9:50"
 adguard_acme_email: "alex@goodkind.io"
 cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
 
-# Web interface configuration
+# Web interface configuration (non-default: IPv6 bind address)
 adguard_bind_host: "::"
 adguard_port: 3000
 
-# Authentication
-adguard_auth_attempts: 5
-adguard_block_auth_min: 15
-
-# HTTP proxy (empty for direct connection)
-adguard_http_proxy: ""
-adguard_language: ""
-adguard_rlimit_nofile: 0
-
-# DNS configuration
+# DNS configuration (non-default values only)
+# Default bind_hosts is [IPv4Unspecified]; we use IPv6
 adguard_dns_bind_hosts:
   - "::"
-adguard_dns_port: 53
-adguard_protection_enabled: true
-adguard_filtering_enabled: true
-adguard_blocking_mode: "default"
-adguard_blocking_ipv4: ""
-adguard_blocking_ipv6: ""
-adguard_blocked_response_ttl: 10
-adguard_ratelimit: 20
-adguard_ratelimit_whitelist: []
-adguard_refuse_any: true
 
-# Upstream DNS servers
+# Upstream DNS servers (non-default)
 adguard_upstream_dns:
+  - "2606:4700:4700::1111"
+  - "1.1.1.1"
   - "https://cloudflare-dns.com/dns-query"
-adguard_upstream_dns_file: ""
+  - "2001:4860:4860::8888"
+  - "8.8.8.8"
 
-# Bootstrap DNS servers
+# Bootstrap DNS servers (non-default)
 adguard_bootstrap_dns:
   - "2606:4700:4700::1111"
   - "1.1.1.1"
 
-# DNS performance settings
-adguard_all_servers: false
-adguard_fastest_addr: false
-adguard_fastest_timeout: "1s"
+# Fallback DNS servers (non-default)
+adguard_fallback_dns:
+  - "2606:4700:4700::1111"
+  - "1.1.1.1"
 
-# Access control
-adguard_allowed_clients: []
-adguard_disallowed_clients: []
-adguard_blocked_hosts: []
+# Upstream mode (default is load_balance, we use parallel)
+adguard_upstream_mode: parallel
 
-# Parental controls
-adguard_parental_sensitivity: 0
-adguard_parental_enabled: false
+# DNS security (non-default: DNSSEC enabled, ECS enabled)
+adguard_enable_dnssec: true
+adguard_edns_client_subnet: true
 
-# Safe search and browsing
-adguard_safesearch_enabled: false
-adguard_safebrowsing_enabled: false
-adguard_safebrowsing_cache_size: 1048576
-adguard_safesearch_cache_size: 1048576
-adguard_parental_cache_size: 1048576
+# Filtering (non-default: blocking_mode and safebrowsing)
+adguard_blocking_mode: nxdomain
+adguard_safebrowsing_enabled: true
 
-# DNS cache settings
-adguard_cache_time: 30
-adguard_cache_optimistic: false
+# Client detection (non-default: RDNS disabled)
+adguard_clients_rdns: false
 
-# DNS security
-adguard_bogus_nxdomain: []
-adguard_aaaa_disabled: false
-adguard_enable_dnssec: false
-adguard_edns_client_subnet: false
+# Statistics interval (non-default: 2160h instead of 24h)
+adguard_stats_interval: 2160h
 
-# Performance
-adguard_max_goroutines: 300
-adguard_handle_ddr: true
-adguard_ipset: []
-
-# Filters
-adguard_filters_update_interval: 24
-adguard_filters: []
-adguard_whitelist_filters: []
-adguard_user_rules: []
-adguard_rewrites: []
-adguard_blocked_services: []
+# Filters (non-default list)
+adguard_filters:
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_24.txt
+    name: 1Hosts (Lite)
+    id: 1765787746
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_70.txt
+    name: 1Hosts (Xtra)
+    id: 1765787747
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt
+    name: AdGuard DNS filter
+    id: 1765787748
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_59.txt
+    name: AdGuard DNS Popup Hosts filter
+    id: 1765787749
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_53.txt
+    name: AWAvenue Ads Rule
+    id: 1765787750
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_4.txt
+    name: Dan Pollock's List
+    id: 1765787751
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_34.txt
+    name: HaGeZi's Normal Blocklist
+    id: 1765787752
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt
+    name: HaGeZi's Pro Blocklist
+    id: 1765787753
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_51.txt
+    name: HaGeZi's Pro++ Blocklist
+    id: 1765787754
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_49.txt
+    name: HaGeZi's Ultimate Blocklist
+    id: 1765787755
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_5.txt
+    name: OISD Blocklist Small
+    id: 1765787756
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_27.txt
+    name: OISD Blocklist Big
+    id: 1765787757
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_3.txt
+    name: Peter Lowe's Blocklist
+    id: 1765787758
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_69.txt
+    name: ShadowWhisperer Tracking List
+    id: 1765787759
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_33.txt
+    name: Steven Black's List
+    id: 1765787760
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_61.txt
+    name: HaGeZi's Samsung Tracker Blocklist
+    id: 1765848073
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_65.txt
+    name: HaGeZi's Vivo Tracker Blocklist
+    id: 1765848074
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_63.txt
+    name: HaGeZi's Windows/Office Tracker Blocklist
+    id: 1765848075
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_60.txt
+    name: HaGeZi's Xiaomi Tracker Blocklist
+    id: 1765848076
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_30.txt
+    name: Phishing URL Blocklist (PhishTank and OpenPhish)
+    id: 1765848077
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_12.txt
+    name: Dandelion Sprout's Anti-Malware List
+    id: 1765848078
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_55.txt
+    name: HaGeZi's Badware Hoster Blocklist
+    id: 1765848079
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_56.txt
+    name: HaGeZi's The World's Most Abused TLDs
+    id: 1765848080
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_8.txt
+    name: NoCoin Filter List
+    id: 1765848081
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_18.txt
+    name: Phishing Army
+    id: 1765848082
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_10.txt
+    name: Scam Blocklist by DurableNapkin
+    id: 1765848083
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_42.txt
+    name: ShadowWhisperer's Malware List
+    id: 1765848084
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_31.txt
+    name: Stalkerware Indicators List
+    id: 1765848085
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_9.txt
+    name: The Big List of Hacked Malware Web Sites
+    id: 1765848086
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_50.txt
+    name: uBlock₀ filters – Badware risks
+    id: 1765848087
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_11.txt
+    name: Malicious URL Blocklist (URLHaus)
+    id: 1765848088
+adguard_user_rules:
+  - "@@||drd.sh^"
 
 # TLS configuration
 adguard_tls_enabled: true
@@ -103,28 +195,11 @@ adguard_tls_force_https: true
 adguard_tls_port_https: 443
 adguard_tls_port_dns_over_tls: 853
 adguard_tls_port_dns_over_quic: 784
-adguard_tls_certificate_chain: ""
-adguard_tls_private_key: ""
 adguard_tls_certificate_path: "{{ adguard_work_dir }}/certs/fullchain.pem"
 adguard_tls_private_key_path: "{{ adguard_work_dir }}/certs/privkey.pem"
 
-# DHCP
-adguard_dhcp_enabled: false
-
-# Client detection
-adguard_clients_whois: true
-adguard_clients_arp: true
-adguard_clients_rdns: true
-adguard_clients_dhcp: true
-adguard_clients_hosts: true
-adguard_clients_persistent: []
-
-# Logging
+# Logging (non-default: log to file instead of stdout)
 adguard_log_file: "{{ adguard_data_dir }}/adguard.log"
-adguard_verbose: false
-
-# Schema version (do not change unless upgrading AdGuard Home)
-adguard_schema_version: 31
 
 # Directory configuration (using AdGuard Home defaults)
 adguard_user: adguard
@@ -132,3 +207,6 @@ adguard_group: adguard
 adguard_work_dir: /opt/AdGuardHome
 adguard_config_dir: /opt/AdGuardHome
 adguard_data_dir: /opt/AdGuardHome/data
+
+# Container login directory (prep-cts.yml)
+login_dir: /opt/AdGuardHome

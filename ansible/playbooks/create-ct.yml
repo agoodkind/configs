@@ -140,8 +140,17 @@
              '/dev/null length=20 chars=ascii_letters,digits') }}
 
     - name: Get next available VMID (if not provided and container not found)
-      ansible.builtin.command: pvesh get /cluster/nextid
-      delegate_to: "{{ target_node }}"
+      ansible.builtin.uri:
+        url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/nextid"
+        method: GET
+        headers:
+          Authorization: >-
+            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
+            proxmox_token_secret }}
+        validate_certs: false
+        return_content: true
+        status_code: [200]
+      delegate_to: localhost
       register: next_vmid
       changed_when: false
       when:
@@ -157,7 +166,7 @@
             else (
               (existing_vmid | string | trim)
               if (existing_vmid | default('') | string | trim) | length > 0
-              else (next_vmid.stdout | trim)
+              else (next_vmid.json.data | default('') | string | trim)
             )
           }}
 
@@ -284,13 +293,13 @@
         paths: ~/.ssh
         patterns: "id_*.pub"
       register: ssh_key_files
-      delegate_to: ansible.home.goodkind.io
+      delegate_to: localhost
 
     - name: Get ansible server's SSH public key
       ansible.builtin.slurp:
         src: "{{ ssh_key_files.files[0].path }}"
       register: ansible_key
-      delegate_to: ansible.home.goodkind.io
+      delegate_to: localhost
       when: ssh_key_files.files | length > 0
 
     - name: Combine all SSH keys
@@ -322,7 +331,7 @@
         unprivileged: true
         state: present
         tags: "{{ container_tags.split(',') }}"
-      delegate_to: ansible.home.goodkind.io
+      delegate_to: localhost
       register: container_result
 
     - name: Debug container creation result
@@ -344,7 +353,7 @@
         hostname: "{{ container_hostname }}"
         vmid: "{{ container_result.vmid }}"
         state: started
-      delegate_to: ansible.home.goodkind.io
+      delegate_to: localhost
 
     - name: Wait for pct exec to be ready
       ansible.builtin.command:
@@ -361,56 +370,6 @@
       delay: 1
       until: pct_exec_ready is succeeded
 
-    - name: Configure DHCPv6 DUID type to use link-layer address before IP discovery
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ container_result.vmid }}"
-          - --
-          - /bin/bash
-          - -lc
-          - |
-            set -euo pipefail
-
-            f="/etc/systemd/network/eth0.network"
-            install -d -m 0755 /etc/systemd/network
-            touch "${f}"
-
-            grep -qxF "[DHCPv6]" "${f}" || printf "\n[DHCPv6]\n" >> "${f}"
-
-            # DUIDType is specific enough that a global replace is OK here.
-            if grep -q "^DUIDType=link-layer$" "${f}"; then
-              exit 0
-            fi
-
-            if grep -q "^DUIDType=" "${f}"; then
-              sed -i "s/^DUIDType=.*/DUIDType=link-layer/" "${f}"
-            else
-              sed -i "/^\[DHCPv6\]$/a DUIDType=link-layer" "${f}"
-            fi
-
-            chmod 0644 "${f}"
-      delegate_to: "{{ target_node }}"
-      changed_when: false
-
-    - name: Renew container DHCP leases to pick up new DUID type
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ container_result.vmid }}"
-          - --
-          - /bin/bash
-          - -lc
-          - |
-            set -euo pipefail
-            networkctl reload || true
-            networkctl renew eth0 || systemctl restart systemd-networkd
-      delegate_to: "{{ target_node }}"
-      changed_when: false
-      failed_when: false
-
     - name: Wait for container to get network interfaces
       ansible.builtin.uri:
         url: >-
@@ -425,7 +384,7 @@
         return_content: true
         status_code: [200]
       register: container_boot_check
-      delegate_to: ansible.home.goodkind.io
+      delegate_to: localhost
       changed_when: false
       failed_when: false
       retries: 20
@@ -450,7 +409,7 @@
         return_content: true
         status_code: [200]
       register: container_interfaces
-      delegate_to: ansible.home.goodkind.io
+      delegate_to: localhost
       changed_when: false
       retries: 30
       delay: 5

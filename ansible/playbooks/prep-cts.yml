@@ -1,5 +1,5 @@
 ---
-- name: Ensure targeted CT/VM is running (best-effort)
+- name: Ensure targeted CT/VM is running
   hosts: localhost
   gather_facts: false
 
@@ -43,60 +43,79 @@
         - (hostvars[item].ansible_proxmox_host | default('') | trim) | length > 0
         - (hostvars[item].ansible_proxmox_vmid | default('') | string | trim) | length > 0
 
-    - name: Ensure guest is running on Proxmox (pct/qm)
+    - name: Ensure LXC guest is running on Proxmox (API best-effort)
       loop: "{{ guest_start_targets | default([]) }}"
       loop_control:
         label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
-      delegate_to: "{{ item.proxmox_host }}"
-      ansible.builtin.shell: |
-        # Best-effort start: pct for LXCs, qm for VMs.
-        # Treat as idempotent: do not fail if already running.
-        pct start {{ item.vmid }} >/dev/null 2>&1 || qm start {{ item.vmid }} >/dev/null 2>&1 || true
-      register: guest_start_attempt
-      changed_when: false
-      failed_when: false
-
-    - name: Query Proxmox LXC runtime interfaces (best-effort)
       ansible.builtin.uri:
         url: >-
           https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ item.proxmox_host -}}/lxc/{{-
-          item.vmid }}/interfaces
-        method: GET
+          item.vmid }}/status/start
+        method: POST
         headers:
           Authorization: >-
             PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
             proxmox_token_secret }}
         validate_certs: false
         return_content: true
-        status_code: [200, 401, 403, 404]
-      loop: "{{ guest_start_targets | default([]) }}"
-      loop_control:
-        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
-      register: proxmox_lxc_interfaces
+        # 404: not an LXC on this node/vmid
+        # 500: already running / not startable
+        status_code: [200, 401, 403, 404, 500]
+      delegate_to: localhost
+      register: guest_start_lxc
       changed_when: false
       failed_when: false
 
-    - name: Query Proxmox QEMU guest-agent runtime interfaces (best-effort)
+    - name: Ensure QEMU guest is running on Proxmox (API best-effort)
+      loop: "{{ guest_start_targets | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
       ansible.builtin.uri:
         url: >-
           https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ item.proxmox_host -}}/qemu/{{-
-          item.vmid }}/agent/network-get-interfaces
-        method: GET
+          item.vmid }}/status/start
+        method: POST
         headers:
           Authorization: >-
             PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
             proxmox_token_secret }}
         validate_certs: false
         return_content: true
+        # 404: not a VM on this node/vmid
+        # 500: already running / not startable
         status_code: [200, 401, 403, 404, 500]
-      loop: "{{ guest_start_targets | default([]) }}"
-      loop_control:
-        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
-      register: proxmox_qemu_agent_interfaces
+      delegate_to: localhost
+      register: guest_start_qemu
       changed_when: false
       failed_when: false
 
-    - name: Add API-resolved targets to in-memory inventory
+    - name: Probe SSH on VMID IPv6
+      ansible.builtin.wait_for:
+        host: "3d06:bad:b01::{{ item.vmid | string | trim }}"
+        port: 22
+        timeout: 2
+        state: started
+      loop: "{{ guest_start_targets | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} -> 3d06:bad:b01::{{ item.vmid | string | trim }}"
+      register: ssh_probe_v6
+      changed_when: false
+      failed_when: false
+
+    - name: Probe SSH on VMID IPv4
+      ansible.builtin.wait_for:
+        host: "10.250.0.{{ item.vmid | string | trim }}"
+        port: 22
+        timeout: 2
+        state: started
+      loop: "{{ guest_start_targets | default([]) }}"
+      loop_control:
+        label: "{{ item.name }} -> 10.250.0.{{ item.vmid | string | trim }}"
+      register: ssh_probe_v4
+      changed_when: false
+      failed_when: false
+
+    - name: Add VMID-derived targets to in-memory inventory
       ansible.builtin.add_host:
         name: "{{ item.name }}"
         groups: proxmox_api_targets
@@ -105,670 +124,52 @@
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         ansible_proxmox_vmid: "{{ item.vmid }}"
         ansible_proxmox_host: "{{ item.proxmox_host }}"
+        prep_ct_target_group: "{{ effective_target }}"
+        prep_ct_service: >-
+          {{
+            (
+              effective_target
+              | regex_replace('_servers$','')
+              | trim
+            )
+            if (effective_target | default('') | trim) | length > 0
+            else ''
+          }}
       vars:
-        lxc_result: >-
-          {{
-            (
-              proxmox_lxc_interfaces.results
-              | default([])
-              | selectattr('item.name', 'equalto', item.name)
-              | list
-            )[0] | default({})
-          }}
-        qemu_result: >-
-          {{
-            (
-              proxmox_qemu_agent_interfaces.results
-              | default([])
-              | selectattr('item.name', 'equalto', item.name)
-              | list
-            )[0] | default({})
-          }}
-        interfaces_entries: >-
-          {{
-            (
-              lxc_result.json.data
-              if (
-                (lxc_result.status | default(0)) == 200
-                and lxc_result.json is defined
-                and lxc_result.json.data is defined
-              )
-              else (
-                qemu_result.json.data.result
-                if (
-                  qemu_result.json is defined
-                  and qemu_result.json.data is defined
-                  and qemu_result.json.data.result is defined
-                )
-                else []
-              )
-            )
-            | default([])
-          }}
-        ip_objs: >-
-          {{
-            interfaces_entries
-            | map(attribute='ip-addresses')
-            | select('defined')
-            | flatten
-            | list
-          }}
-        ipv6: >-
-          {{
-            ip_objs
-            | selectattr('ip-address-type', 'equalto', 'inet6')
-            | map(attribute='ip-address')
-            | reject('match', '^fe80:')
-            | reject('equalto', '::1')
-            | list
-            | unique
-          }}
-        ipv4: >-
-          {{
-            ip_objs
-            | selectattr('ip-address-type', 'equalto', 'inet')
-            | map(attribute='ip-address')
-            | reject('equalto', '127.0.0.1')
-            | list
-            | unique
-          }}
-        selected_ip: >-
-          {{
-            ipv6[0]
-            if (ipv6 | length > 0)
-            else (
-              ipv4[0]
-              if (ipv4 | length > 0)
-              else ''
-            )
-          }}
         vmid_ip_v6: "3d06:bad:b01::{{ item.vmid | string | trim }}"
         vmid_ip_v4: "10.250.0.{{ item.vmid | string | trim }}"
-        ansible_host_final: >-
+        inv_host_override: >-
           {{
             (hostvars[item.name].ansible_host | default('') | trim)
             if (
               item.name in hostvars
               and (hostvars[item.name].ansible_host | default('') | trim) | length > 0
             )
+            else ''
+          }}
+        ansible_host_final: >-
+          {{
+            inv_host_override
+            if (inv_host_override | default('') | trim) | length > 0
             else (
               vmid_ip_v6
-              if (vmid_ip_v6 | default('') | trim) | length > 0
-              else selected_ip
+              if not (ssh_probe_v6.results[idx].failed | default(true))
+              else (
+                vmid_ip_v4
+                if not (ssh_probe_v4.results[idx].failed | default(true))
+                else vmid_ip_v6
+              )
             )
           }}
       loop: "{{ guest_start_targets | default([]) }}"
       loop_control:
+        index_var: idx
         label: "{{ item.name }} -> {{ ansible_host_final | default('') | trim }}"
       when:
         - item is defined
         - (ansible_host_final | default('') | trim) | length > 0
 
-- name: Prepare CT Container(s) or VM(s)
-  # Semaphore-friendly targeting:
-  # - single host: pass `hostname=<inventory host>`
-  # - group:       pass `target_hosts=<group>` (used by other playbooks importing this one)
-  # - fallback:    proxmox_all_lxc
-  hosts: proxmox_api_targets
-  gather_facts: false
-  tasks:
-    - name: Wait for SSH to be ready (after starting)
-      ansible.builtin.wait_for_connection:
-        timeout: 120
-        delay: 2
-        sleep: 2
-
-    - name: Gather facts
-      ansible.builtin.setup:
-
-    - name: Filter by container/VM ID if specified
-      ansible.builtin.meta: end_host
-      when:
-        - container_id | default('') | length > 0
-        - ansible_proxmox_vmid | default('') | string != container_id | string
-
-    - name: Detect if running in LXC container or VM
-      ansible.builtin.set_fact:
-        is_lxc: "{{ ansible_virtualization_type | default('') == 'lxc' }}"
-        is_vm: "{{ ansible_virtualization_type | default('') in ['kvm', 'qemu'] }}"
-
-    - name: Ensure eth0.network exists
-      ansible.builtin.file:
-        path: /etc/systemd/network/eth0.network
-        state: touch
-        mode: '0644'
-
-    - name: Ensure [DHCPv6] section exists in eth0.network
-      ansible.builtin.lineinfile:
-        path: /etc/systemd/network/eth0.network
-        line: "[DHCPv6]"
-        state: present
-        insertafter: EOF
-
-    - name: Configure DHCPv6 DUID type to use link-layer address (stable, MAC-based)
-      ansible.builtin.lineinfile:
-        path: /etc/systemd/network/eth0.network
-        regexp: '^DUIDType='
-        line: 'DUIDType=link-layer'
-        insertafter: '^\[DHCPv6\]$'
-      register: configure_dhcp6_duid
-      notify: Restart systemd-networkd
-
-    - name: Update package lists
-      ansible.builtin.apt:
-        update_cache: true
-
-    - name: Install locales package
-      ansible.builtin.apt:
-        name: locales
-        state: present
-
-    - name: Check if en_US.UTF-8 locale is already uncommented
-      ansible.builtin.command: grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen
-      register: locale_uncommented
-      changed_when: false
-      failed_when: false
-
-    - name: Uncomment en_US.UTF-8 in locale.gen
-      ansible.builtin.lineinfile:
-        path: /etc/locale.gen
-        regexp: '^# *en_US.UTF-8'
-        line: 'en_US.UTF-8 UTF-8'
-        state: present
-      when: not locale_uncommented.rc == 0
-
-    - name: Check if en_US.UTF-8 locale is already generated
-      ansible.builtin.shell: |
-        set -o pipefail
-        locale -a | grep -q '^en_US.utf8$'
-      register: locale_generated
-      changed_when: false
-      failed_when: false
-
-    - name: Generate en_US.UTF-8 locale
-      ansible.builtin.command: locale-gen
-      changed_when: true
-      when: not locale_generated.rc == 0 or locale_uncommented.changed | default(false)
-
-    - name: Check current system locale
-      ansible.builtin.shell: |
-        set -o pipefail
-        (localectl status 2>/dev/null | grep -q 'LANG=en_US.UTF-8') ||
-        (grep -q '^LANG=en_US.UTF-8' /etc/default/locale 2>/dev/null)
-      register: locale_set
-      changed_when: false
-      failed_when: false
-
-    - name: Update system locale
-      ansible.builtin.command: update-locale LANG=en_US.UTF-8
-      changed_when: true
-      when: not locale_set.rc == 0
-
-    - name: Add LANG export to .bashrc
-      ansible.builtin.lineinfile:
-        path: /root/.bashrc
-        line: 'export LANG="en_US.UTF-8"'
-        state: present
-
-    - name: Add LC_ALL export to .bashrc
-      ansible.builtin.lineinfile:
-        path: /root/.bashrc
-        line: 'export LC_ALL="en_US.UTF-8"'
-        state: present
-
-    - name: Update package lists again
-      ansible.builtin.apt:
-        update_cache: true
-
-    - name: Upgrade all packages
-      ansible.builtin.apt:
-        upgrade: dist
-
-    - name: Install essential packages
-      ansible.builtin.apt:
-        name:
-          - neovim
-          - htop
-          - curl
-          - wget
-          - net-tools
-          - gpg
-          - rsyslog
-          - git
-          - gh
-          - git-lfs
-          - jq
-          - ripgrep
-          - unzip
-          - tree
-          - tzdata
-          - yq
-          - apache2-utils
-          - msmtp
-          - msmtp-mta
-        state: present
-
-    # ------------------------------------------------------------------------
-    # /opt/scripts (shared scripts repo)
-    # ------------------------------------------------------------------------
-
-    - name: Ensure /opt/scripts exists (git checkout)
-      ansible.builtin.git:
-        repo: https://github.com/agoodkind/scripts.git
-        dest: /opt/scripts
-        version: main
-        update: true
-        force: true
-
-    - name: Ensure /opt/scripts is executable
-      ansible.builtin.file:
-        path: /opt/scripts
-        state: directory
-        mode: '0755'
-        recurse: true
-
-    - name: Install scripts-updater systemd service
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/scripts-updater.service
-        mode: '0644'
-        content: |
-          [Unit]
-          Description=Update /opt/scripts from git
-          After=network-online.target
-          Wants=network-online.target
-
-          [Service]
-          Type=oneshot
-          ExecStart=/usr/bin/git -C /opt/scripts pull --ff-only
-          TimeoutStartSec=300
-
-    - name: Install scripts-updater systemd timer
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/scripts-updater.timer
-        mode: '0644'
-        content: |
-          [Unit]
-          Description=Run scripts-updater daily
-
-          [Timer]
-          OnCalendar=daily
-          RandomizedDelaySec=3600
-          Persistent=true
-
-          [Install]
-          WantedBy=timers.target
-
-    - name: Ensure /opt/scripts is in system PATH
-      ansible.builtin.copy:
-        dest: /etc/profile.d/opt-scripts.sh
-        mode: '0644'
-        content: |
-          export PATH="/opt/scripts:$PATH"
-
-    - name: Enable scripts-updater timer
-      ansible.builtin.systemd:
-        name: scripts-updater.timer
-        enabled: true
-        state: started
-        daemon_reload: true
-
-    # ------------------------------------------------------------------------
-    # SMTP2GO via msmtp (sendmail-compatible) for all hosts
-    # ------------------------------------------------------------------------
-
-    - name: Compute SMTP username for this host
-      ansible.builtin.set_fact:
-        smtp_effective_user: >-
-          {{
-            (smtp_user | default('') | trim)
-            if (smtp_user | default('') | trim) | length > 0
-            else (
-              'host-' ~
-              (
-                inventory_hostname
-                | lower
-                | regex_replace('[^a-z0-9]+','-')
-                | regex_replace('(^-+|-+$)','')
-              )
-            )
-          }}
-      when: (smtp_enabled | default('1') | string) != '0'
-
-    - name: Generate random SMTP password (used if SMTP2GO API key is set)
-      ansible.builtin.set_fact:
-        smtp_generated_pass: >-
-          {{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_pass | default('') | trim) | length == 0
-        - (smtp2go_api_key | default('') | trim) | length > 0
-      # no_log: true
-
-    - name: Ensure SMTP2GO SMTP user exists (API add)
-      ansible.builtin.uri:
-        url: https://api.smtp2go.com/v3/users/smtp/add
-        method: POST
-        headers:
-          Content-Type: application/json
-          X-Smtp2go-Api-Key: "{{ smtp2go_api_key }}"
-        body_format: json
-        body:
-          username: "{{ smtp_effective_user }}"
-          email_password: "{{ smtp_generated_pass }}"
-          description: "Host {{ inventory_hostname }}"
-          status: allowed
-        return_content: true
-        # SMTP2GO sometimes returns 400 for "already exists".
-        status_code: [200, 400, 409]
-      register: smtp2go_add_user
-      changed_when: (smtp2go_add_user.status | default(0)) == 200
-      failed_when: >-
-        (smtp2go_add_user.status | default(0)) not in [200, 400, 409]
-        or
-        (
-          (smtp2go_add_user.status | default(0)) == 400
-          and
-          (
-            (
-              (smtp2go_add_user.json.data.error | default('') | lower)
-              | regex_search('already have smtp user')
-            ) == none
-          )
-        )
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_user | default('') | trim) | length == 0
-        - (smtp_pass | default('') | trim) | length == 0
-        - (smtp2go_api_key | default('') | trim) | length > 0
-      # no_log: true
-
-    - name: Detect if SMTP2GO SMTP user already exists (API semantics vary)
-      ansible.builtin.set_fact:
-        smtp2go_user_exists: >-
-          {{
-            (smtp2go_add_user is defined)
-            and
-            (
-              (smtp2go_add_user.status | default(0)) == 409
-              or
-              (
-                (smtp2go_add_user.status | default(0)) == 400
-                and
-                (
-                  (
-                    (smtp2go_add_user.json.data.error | default('') | lower)
-                    | regex_search('already have smtp user')
-                  ) != none
-                )
-              )
-            )
-          }}
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_user | default('') | trim) | length == 0
-        - (smtp_pass | default('') | trim) | length == 0
-        - (smtp2go_api_key | default('') | trim) | length > 0
-        - smtp2go_add_user is defined
-
-    - name: Update SMTP2GO SMTP user password if user already exists (API edit)
-      ansible.builtin.uri:
-        url: https://api.smtp2go.com/v3/users/smtp/edit
-        method: POST
-        headers:
-          Content-Type: application/json
-          X-Smtp2go-Api-Key: "{{ smtp2go_api_key }}"
-        body_format: json
-        body:
-          username: "{{ smtp_effective_user }}"
-          email_password: "{{ smtp_generated_pass }}"
-          status: allowed
-        return_content: true
-        status_code: [200]
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_user | default('') | trim) | length == 0
-        - (smtp_pass | default('') | trim) | length == 0
-        - (smtp2go_api_key | default('') | trim) | length > 0
-        - smtp2go_user_exists | default(false)
-      # no_log: true
-
-    - name: Set effective SMTP password (manual or generated)
-      ansible.builtin.set_fact:
-        smtp_effective_pass: >-
-          {{
-            (smtp_pass | trim)
-            if (smtp_pass | default('') | trim) | length > 0
-            else (smtp_generated_pass | default(''))
-          }}
-      when: (smtp_enabled | default('1') | string) != '0'
-      # no_log: true
-
-    - name: Compute SMTP From address and sender name (defaults to hostname)
-      ansible.builtin.set_fact:
-        smtp_effective_from: >-
-          {{
-            (smtp_from | trim)
-            if (smtp_from | default('') | trim) | length > 0
-            else (ansible_hostname ~ '@' ~ (smtp_from_domain | default('goodkind.io') | trim))
-          }}
-        smtp_effective_sender_name: >-
-          {{
-            (smtp_sender_name | trim)
-            if (smtp_sender_name | default('') | trim) | length > 0
-            else (ansible_hostname | default(inventory_hostname))
-          }}
-      when: (smtp_enabled | default('1') | string) != '0'
-
-    - name: Deploy /etc/msmtprc
-      ansible.builtin.copy:
-        dest: /etc/msmtprc
-        mode: '0600'
-        content: |
-          defaults
-          auth           on
-          tls            on
-          tls_starttls   on
-          tls_trust_file /etc/ssl/certs/ca-certificates.crt
-          logfile        /var/log/msmtp.log
-
-          account smtp2go
-          host {{ smtp_host }}
-          port {{ smtp_port }}
-          user {{ smtp_effective_user }}
-          password {{ smtp_effective_pass }}
-          from {{ smtp_effective_from }}
-
-          account default : smtp2go
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_effective_user | default('') | trim) | length > 0
-        - (smtp_effective_pass | default('') | trim) | length > 0
-        - (smtp_effective_from | default('') | trim) | length > 0
-      # no_log: true
-
-    - name: Install qemu-guest-agent (VMs only)
-      ansible.builtin.apt:
-        name: qemu-guest-agent
-        state: present
-      when: is_vm | default(false)
-
-    - name: Enable and start qemu-guest-agent (VMs only)
-      ansible.builtin.systemd:
-        name: qemu-guest-agent
-        enabled: true
-        state: started
-      when: is_vm | default(false)
-
-    - name: Remove unnecessary packages
-      ansible.builtin.apt:
-        autoremove: true
-
-    - name: Find Python EXTERNALLY-MANAGED files
-      ansible.builtin.find:
-        paths: /usr/lib
-        patterns: "python3.*/EXTERNALLY-MANAGED"
-        file_type: file
-      register: externally_managed_files
-
-    - name: Remove Python EXTERNALLY-MANAGED block
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ externally_managed_files.files }}"
-      when: externally_managed_files.files | length > 0
-
-    - name: Disable networkd wait service
-      ansible.builtin.systemd:
-        name: systemd-networkd-wait-online.service
-        enabled: false
-        state: stopped
-      failed_when: false
-
-    - name: Get host timezone
-      ansible.builtin.command: timedatectl show -p Timezone --value
-      register: host_timezone
-      changed_when: false
-      failed_when: false
-      delegate_to: localhost
-
-    - name: Get current container timezone
-      ansible.builtin.command: timedatectl show -p Timezone --value
-      register: container_timezone
-      changed_when: false
-      failed_when: false
-
-    - name: Set timezone to host timezone
-      ansible.builtin.command: timedatectl set-timezone "{{ host_timezone.stdout }}"
-      changed_when: true
-      when: container_timezone.stdout != host_timezone.stdout
-
-    - name: Configure rsyslog for local time
-      ansible.builtin.copy:
-        dest: /etc/rsyslog.d/50-default-local.conf
-        content: |
-          # Use local time instead of UTC
-          $ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
-          $template TraditionalFormatWithLocalTime, >-
-            "%timegenerated% %HOSTNAME% %syslogtag%%msg:::drop-last-lf%\n"
-          $ActionFileDefaultTemplate TraditionalFormatWithLocalTime
-        mode: '0644'
-      notify: Restart rsyslog
-
-    - name: Set 256-color terminal for root
-      ansible.builtin.lineinfile:
-        path: /root/.bashrc
-        line: 'export TERM="xterm-256color"'
-        state: present
-
-    - name: Remove '[ -z "$PS1" ] && return' from .bashrc
-      ansible.builtin.lineinfile:
-        path: /root/.bashrc
-        regexp: '^\[ -z "\$PS1" \] && return'
-        state: absent
-
-    - name: Check if any MOTD script is executable
-      ansible.builtin.find:
-        paths: /etc/update-motd.d
-        file_type: file
-        patterns: "*.sh"
-      register: motd_scripts
-      changed_when: false
-
-    - name: Check executable status of MOTD scripts
-      ansible.builtin.stat:
-        path: "{{ item.path }}"
-      register: motd_script_stats
-      loop: "{{ motd_scripts.files | default([]) }}"
-      changed_when: false
-
-    - name: Disable default MOTD scripts
-      ansible.builtin.file:
-        path: /etc/update-motd.d/
-        recurse: true
-        mode: 'u-x,g-x,o-x'
-      when: >
-        motd_scripts.files | default([]) | length > 0 and
-        (motd_script_stats.results | selectattr('stat.exists') |
-         selectattr('stat.mode', 'match', '.*x.*') | list | length > 0)
-
-    - name: Configure auto-login for root (LXC only)
-      ansible.builtin.blockinfile:
-        path: /etc/systemd/system/container-getty@1.service.d/override.conf
-        create: true
-        mode: '0644'
-        block: |
-          [Service]
-          ExecStart=
-          ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
-      register: configure_auto_login
-      when: is_lxc | default(false)
-      notify: Restart getty service
-
-    - name: Create systemd system.conf.d directory
-      ansible.builtin.file:
-        path: /etc/systemd/system.conf.d
-        state: directory
-        mode: '0755'
-
-    - name: Lower systemctl shutdown timeout to 15 seconds
-      ansible.builtin.copy:
-        dest: /etc/systemd/system.conf.d/timeout.conf
-        content: |
-          [Manager]
-          DefaultTimeoutStopSec=15s
-        mode: '0644'
-      register: lower_shutdown_timeout
-
-    - name: Disable SSH password authentication (keys only)
-      ansible.builtin.copy:
-        dest: /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
-        mode: '0644'
-        content: |
-          # Managed by Ansible (prep-cts.yml)
-          #
-          # Enforce key-based SSH authentication.
-          # Keep root login behavior unchanged; only disable password prompts.
-          PasswordAuthentication no
-          KbdInteractiveAuthentication no
-          ChallengeResponseAuthentication no
-      register: sshd_disable_password_auth
-      notify: Restart ssh
-
-    - name: Reload systemd daemon (if config changed)
-      ansible.builtin.systemd:
-        daemon_reload: true
-      when: >
-        (configure_auto_login.changed | default(false)) or
-        (lower_shutdown_timeout.changed | default(false))
-
-  handlers:
-    - name: Restart getty service
-      ansible.builtin.systemd:
-        name: container-getty@1.service
-        state: restarted
-      when: is_lxc | default(false)
-
-    - name: Restart systemd-networkd
-      ansible.builtin.systemd:
-        name: systemd-networkd
-        state: restarted
-      async: 45
-      poll: 0
-      register: networkd_restart_job
-      changed_when: true
-
-    - name: Wait for SSH after networkd restart
-      ansible.builtin.wait_for_connection:
-        delay: 1
-        timeout: 180
-      when: networkd_restart_job is defined
-
-    - name: Restart rsyslog
-      ansible.builtin.systemd:
-        name: rsyslog
-        state: restarted
-
-    - name: Restart ssh
-      ansible.builtin.systemd:
-        name: ssh
-        state: restarted
+- name: Prepare CT/VM guests (common)
+  ansible.builtin.import_playbook: prep-host-common.yml
+  vars:
+    target_hosts: proxmox_api_targets

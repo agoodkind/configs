@@ -70,15 +70,19 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    - name: Ensure container primary IP is available
+      ansible.builtin.assert:
+        that:
+          - hostvars['localhost']['container_primary_ip'] is defined
+          - (hostvars['localhost']['container_primary_ip'] | default('') | trim) | length > 0
+        fail_msg: >-
+          container_primary_ip was not discovered for {{ hostvars['localhost']['service_hostname'] }}.
+
     - name: Add container to service-specific inventory group
       ansible.builtin.add_host:
         name: "{{ hostvars['localhost']['service_hostname'] }}"
         groups: "{{ container_group }}"
-        ansible_host: >-
-          {{
-            hostvars['localhost']['container_primary_ip']
-            | default(hostvars['localhost']['service_hostname'], true)
-          }}
+        ansible_host: "{{ hostvars['localhost']['container_primary_ip'] }}"
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
         ansible_proxmox_vmid: >-
