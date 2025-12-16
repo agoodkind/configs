@@ -19,6 +19,12 @@ traefik_upstream_domain: "home.goodkind.io"
 # ACME/Let's Encrypt configuration
 traefik_acme_email: "alex@goodkind.io"
 
+# ACME DNS challenge provider
+# - cloudflare: uses CF_DNS_API_TOKEN
+# - rfc2136: uses RFC2136_* (nsupdate/TSIG)
+traefik_acme_dns_provider: >-
+  {{ lookup('env', 'TRAEFIK_ACME_DNS_PROVIDER', default='cloudflare') }}
+
 # DNS Challenge Configuration
 # For RFC2136 (BIND/nsupdate with TSIG):
 # Set TRAEFIK_RFC2136_* environment variables in Semaphore
@@ -33,8 +39,12 @@ traefik_rfc2136_tsig_key: >-
 traefik_rfc2136_tsig_secret: >-
   {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_SECRET', default='') }}
 
-# Cloudflare API token (legacy, not used with RFC2136)
-cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
+# Cloudflare API token
+# Traefik expects CF_DNS_API_TOKEN. Support common env var names.
+cloudflare_api_token: >-
+  {{ lookup('env', 'CLOUDFLARE_API_TOKEN',
+     default=lookup('env', 'CF_DNS_API_TOKEN',
+     default=lookup('env', 'CLOUDFLARE_API_KEY', default=''))) }}
 
 # Traefik Dashboard Authentication
 # Set TRAEFIK_DASHBOARD_USER and TRAEFIK_DASHBOARD_PASS environment variables
