@@ -23,12 +23,12 @@
   hosts: localhost
   gather_facts: false
   vars:
-    target_node: vault
-    container_vmid: ""
-    disk_size: "8"
-    memory: "2048"
-    cores: "2"
-    container_tags: >-
+    target_node_default: vault
+    container_vmid_default: ""
+    disk_size_default: "8"
+    memory_default: "2048"
+    cores_default: "2"
+    container_tags_default: >-
       lxc,{{ container_group | replace('_servers', '') }}
   vars_files:
     - "{{ group_vars_file }}"
@@ -47,6 +47,45 @@
       ansible.builtin.set_fact:
         service_hostname: "{{ lookup('vars', hostname_var) }}"
 
+    - name: Compute effective container settings (caller overrides defaults)
+      ansible.builtin.set_fact:
+        service_target_node: >-
+          {{
+            (target_node | default('') | trim)
+            if (target_node | default('') | trim) | length > 0
+            else (target_node_default | string)
+          }}
+        service_container_vmid: >-
+          {{
+            (container_vmid | default('') | string | trim)
+            if (container_vmid | default('') | string | trim) | length > 0
+            else (container_vmid_default | default('') | string | trim)
+          }}
+        service_disk_size: >-
+          {{
+            (disk_size | default('') | string | trim)
+            if (disk_size | default('') | string | trim) | length > 0
+            else (disk_size_default | string)
+          }}
+        service_memory: >-
+          {{
+            (memory | default('') | string | trim)
+            if (memory | default('') | string | trim) | length > 0
+            else (memory_default | string)
+          }}
+        service_cores: >-
+          {{
+            (cores | default('') | string | trim)
+            if (cores | default('') | string | trim) | length > 0
+            else (cores_default | string)
+          }}
+        service_container_tags: >-
+          {{
+            (container_tags | default('') | string | trim)
+            if (container_tags | default('') | string | trim) | length > 0
+            else (container_tags_default | string)
+          }}
+
     - name: Get container MAC address from group_vars (optional)
       ansible.builtin.set_fact:
         service_mac_address: "{{ lookup('vars', mac_var) }}"
@@ -58,12 +97,12 @@
   ansible.builtin.import_playbook: create-ct.yml
   vars:
     container_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
-    target_node: "{{ hostvars['localhost']['target_node'] | default('vault') }}"
-    vmid: "{{ hostvars['localhost']['container_vmid'] | default('') }}"
-    disk_size: "{{ hostvars['localhost']['disk_size'] | default('8') }}"
-    memory: "{{ hostvars['localhost']['memory'] | default('2048') }}"
-    cores: "{{ hostvars['localhost']['cores'] | default('2') }}"
-    container_tags: "{{ hostvars['localhost']['container_tags'] }}"
+    target_node: "{{ hostvars['localhost']['service_target_node'] | default('vault') }}"
+    vmid: "{{ hostvars['localhost']['service_container_vmid'] | default('') }}"
+    disk_size: "{{ hostvars['localhost']['service_disk_size'] | default('8') }}"
+    memory: "{{ hostvars['localhost']['service_memory'] | default('2048') }}"
+    cores: "{{ hostvars['localhost']['service_cores'] | default('2') }}"
+    container_tags: "{{ hostvars['localhost']['service_container_tags'] }}"
     mac_address: "{{ hostvars['localhost']['service_mac_address'] | default('') }}"
 
 - name: Add container to service group

@@ -2,6 +2,11 @@
 # Container hostname
 adguard_hostname: adguard.home.goodkind.io
 
+# Static addressing (VMID-derived)
+adguard_vmid: "53"
+adguard_ipv4: "10.250.0.53/24"
+adguard_ipv6: "3d06:bad:b01::53/64"
+
 # Stable MAC address for DHCP reservations (KEA: hostname "adguard")
 # IPv4 reservation: 10.250.0.53 -> BC:24:11:EE:F9:50
 # IPv6 reservation: 3d06:bad:b01::53 -> BC:24:11:EE:F9:50
