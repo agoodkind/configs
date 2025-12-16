@@ -49,6 +49,9 @@ logger -t networkd-dispatcher \
     "${prefix}Interface $IFACE is now routable, updating policy routing"
 
 if [ "$DEBUG" = "1" ]; then
+    exec 9>>"$DEBUG_LOG"
+    flock -w 2 9 || true
+
     jq -cn \
         --arg traceId "${MWAN_TRACE_ID:-}" \
         --arg component "50-update-routes" \
@@ -64,7 +67,10 @@ if [ "$DEBUG" = "1" ]; then
             message: $message,
             data: {iface: $iface, state: $state},
             timestamp: $timestamp
-        }' >> "$DEBUG_LOG"
+        }' >&9
+
+    flock -u 9 || true
+    exec 9>&-
 fi
 
 # Call update-routes.sh to rebuild routing tables

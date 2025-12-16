@@ -360,6 +360,19 @@ run_health_checks() {
         IFS=':' read -r wan_name interface ping_count success_threshold interval failure_threshold recovery_threshold <<< "$config"
         recovery_threshold="${recovery_threshold:-2}"
 
+        if [ -z "${wan_name:-}" ] || [ -z "${interface:-}" ]; then
+            [ "$DEBUG" = "1" ] && debug_json "CONFIG" "skipped_wan_config" "$(jq -cn \
+              --arg wan "${wan_name:-}" \
+              --arg iface "${interface:-}" \
+              --arg reason "missing_wan_or_interface" \
+              '{
+                wan: $wan,
+                iface: $iface,
+                reason: $reason
+              }')"
+            continue
+        fi
+
         FAIL_COUNTS["$wan_name"]="${FAIL_COUNTS["$wan_name"]:-0}"
         OK_COUNTS["$wan_name"]="${OK_COUNTS["$wan_name"]:-0}"
         
