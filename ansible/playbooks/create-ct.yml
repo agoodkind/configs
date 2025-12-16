@@ -288,25 +288,38 @@
       register: github_keys
       delegate_to: localhost
 
-    - name: Find ansible server's SSH public key
+    - name: Check if controller ~/.ssh exists
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'HOME') }}/.ssh"
+      register: controller_ssh_dir
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Find controller SSH public keys
       ansible.builtin.find:
-        paths: ~/.ssh
+        paths: "{{ lookup('env', 'HOME') }}/.ssh"
         patterns: "id_*.pub"
       register: ssh_key_files
       delegate_to: localhost
+      when:
+        - controller_ssh_dir.stat.exists | default(false)
+        - controller_ssh_dir.stat.isdir | default(false)
 
-    - name: Get ansible server's SSH public key
+    - name: Get controller SSH public key
       ansible.builtin.slurp:
         src: "{{ ssh_key_files.files[0].path }}"
       register: ansible_key
       delegate_to: localhost
-      when: ssh_key_files.files | length > 0
+      when:
+        - ssh_key_files is defined
+        - ssh_key_files.files | default([]) | length > 0
 
     - name: Combine all SSH keys
       ansible.builtin.set_fact:
         all_ssh_keys: >-
           {{ github_keys.content }}{{ (ansible_key.content | b64decode)
-             if (ssh_key_files.files | length > 0) else '' }}
+             if (ssh_key_files is defined and (ssh_key_files.files | default([]) | length > 0))
+             else '' }}
 
     - name: Create LXC container
       community.proxmox.proxmox:
