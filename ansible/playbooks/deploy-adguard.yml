@@ -6,8 +6,9 @@
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/adguard_servers.yml"
     hostname_var: adguard_hostname
     mac_var: adguard_mac_address
+    ipv4_var: adguard_ipv4
+    ipv6_var: adguard_ipv6
     target_node: vault
-    container_vmid: "53"
     disk_size: "8"
     memory: "2048"
     cores: "2"
