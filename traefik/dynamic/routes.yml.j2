@@ -84,7 +84,7 @@ http:
     ansible-service:
       loadBalancer:
         servers:
-          - url: "http://ansible.{{ traefik_upstream_domain }}:3000"
+          - url: "http://[3d06:bad:b01::107]:3000"
         healthCheck:
           path: /api/ping
           interval: 30s
@@ -93,19 +93,19 @@ http:
     vault-service:
       loadBalancer:
         servers:
-          - url: "https://vault.{{ traefik_upstream_domain }}:8006"
+          - url: "https://[3d06:bad:b01::fe]:8006"
         serversTransport: insecure-transport
 
     router-service:
       loadBalancer:
         servers:
-          - url: "https://router.{{ traefik_upstream_domain }}"
+          - url: "https://[3d06:bad:b01::1]"
         serversTransport: insecure-transport
 
     unifi-service:
       loadBalancer:
         servers:
-          - url: "https://unifi.{{ traefik_upstream_domain }}:8443"
+          - url: "https://[3d06:bad:b01::102]:8443"
         serversTransport: unifi-transport
 
     nas-service:
@@ -117,7 +117,7 @@ http:
     adguard-service:
       loadBalancer:
         servers:
-          - url: "https://adguard.{{ traefik_upstream_domain }}"
+          - url: "https://[3d06:bad:b01::53]"
         serversTransport: insecure-transport
 
   serversTransports:

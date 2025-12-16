@@ -97,11 +97,10 @@ trace_start() {
 
 trace_tail() {
     local id="${1:-}"
-    if [ -z "$id" ]; then
-        tail -n 200 -f /var/log/mwan-debug.log
-    else
-        tail -n 500 -f /var/log/mwan-debug.log | grep -F "\"traceId\":\"$id\""
-    fi
+    # Robust tail: tolerate malformed/partial lines and filter in jq (not grep).
+    # Output: one readable line per event.
+    tail -n 500 -f /var/log/mwan-debug.log \
+      | jq -Rcr --arg id "$id" -f /usr/local/share/mwan/trace-tail.jq
 }
 
 trace_stop() {

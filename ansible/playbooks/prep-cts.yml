@@ -100,7 +100,7 @@
       ansible.builtin.add_host:
         name: "{{ item.name }}"
         groups: proxmox_api_targets
-        ansible_host: "{{ selected_ip }}"
+        ansible_host: "{{ ansible_host_final }}"
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         ansible_proxmox_vmid: "{{ item.vmid }}"
@@ -182,12 +182,27 @@
               else ''
             )
           }}
+        vmid_ip_v6: "3d06:bad:b01::{{ item.vmid | string | trim }}"
+        vmid_ip_v4: "10.250.0.{{ item.vmid | string | trim }}"
+        ansible_host_final: >-
+          {{
+            (hostvars[item.name].ansible_host | default('') | trim)
+            if (
+              item.name in hostvars
+              and (hostvars[item.name].ansible_host | default('') | trim) | length > 0
+            )
+            else (
+              vmid_ip_v6
+              if (vmid_ip_v6 | default('') | trim) | length > 0
+              else selected_ip
+            )
+          }}
       loop: "{{ guest_start_targets | default([]) }}"
       loop_control:
-        label: "{{ item.name }} -> {{ selected_ip | default('') | trim }}"
+        label: "{{ item.name }} -> {{ ansible_host_final | default('') | trim }}"
       when:
         - item is defined
-        - (selected_ip | default('') | trim) | length > 0
+        - (ansible_host_final | default('') | trim) | length > 0
 
 - name: Prepare CT Container(s) or VM(s)
   # Semaphore-friendly targeting:

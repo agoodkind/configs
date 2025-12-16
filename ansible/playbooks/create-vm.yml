@@ -282,11 +282,22 @@
           delegate_to: "{{ proxmox_host }}"
           register: next_vmid
           changed_when: false
-          when: not vmid
+          when:
+            - not vmid
+            - not (delete_existing_vm | default(false) | bool and vm_check.vmid is defined)
 
-        - name: Set VMID
+        - name: Re-use existing VMID or set next
           ansible.builtin.set_fact:
-            new_vmid: "{{ vmid if vmid else next_vmid.stdout | trim }}"
+            new_vmid: >-
+              {{
+                vmid
+                if vmid
+                else (
+                  (vm_check.vmid | string | trim)
+                  if (delete_existing_vm | default(false) | bool and vm_check.vmid is defined)
+                  else (next_vmid.stdout | trim)
+                )
+              }}
 
         - name: Clone template to new VM
           ansible.builtin.command: >
@@ -384,12 +395,32 @@
               {{ github_keys.content | default('FAILED TO FETCH') | length }}
               bytes
 
-        - name: Calculate static IP addresses based on VMID
+        - name: Calculate static IP addresses based on VMID (defaults, override-able)
           ansible.builtin.set_fact:
-            vm_static_ipv4: "10.250.0.{{ new_vmid }}"
-            vm_static_ipv6: "3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}"
-            vm_mgmt_ipv4: "10.250.0.{{ new_vmid }}"
-            vm_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(new_vmid | int) }}"
+            vm_static_ipv4: >-
+              {{
+                (vm_static_ipv4 | default('') | trim)
+                if (vm_static_ipv4 | default('') | trim) | length > 0
+                else ('10.250.0.' ~ (new_vmid | string | trim))
+              }}
+            vm_static_ipv6: >-
+              {{
+                (vm_static_ipv6 | default('') | trim)
+                if (vm_static_ipv6 | default('') | trim) | length > 0
+                else ('3d06:bad:b01::' ~ (new_vmid | string | trim))
+              }}
+            vm_mgmt_ipv4: >-
+              {{
+                (vm_mgmt_ipv4 | default('') | trim)
+                if (vm_mgmt_ipv4 | default('') | trim) | length > 0
+                else ('10.250.0.' ~ (new_vmid | string | trim))
+              }}
+            vm_mgmt_ipv6: >-
+              {{
+                (vm_mgmt_ipv6 | default('') | trim)
+                if (vm_mgmt_ipv6 | default('') | trim) | length > 0
+                else ('3d06:bad:b01::' ~ (new_vmid | string | trim))
+              }}
 
         - name: Build ipconfig string (DRY composition)
           ansible.builtin.set_fact:
