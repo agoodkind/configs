@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "service=adguard"
+echo
+
+echo "### host"
+hostnamectl 2>/dev/null || true
+echo
+
+echo "### time"
+date
+echo
+
+echo "### networking"
+ip -br addr || true
+ss -lntup || true
+echo
+
+echo "### AdGuardHome status"
+systemctl status AdGuardHome --no-pager || true
+echo
+
+echo "### AdGuardHome logs (journal)"
+journalctl -u AdGuardHome -n 100 --no-pager || true
+echo
+
+echo "### AdGuardHome log file"
+if [ -f "{{ adguard_log_file }}" ]; then
+  tail -n 200 "{{ adguard_log_file }}" || true
+else
+  echo "Log file not found: {{ adguard_log_file }}"
+fi
+echo
+
+echo "### AdGuardHome directory"
+ls -lah {{ adguard_work_dir }} 2>/dev/null || true
+echo
+
+echo "### AdGuardHome data directory"
+ls -lah {{ adguard_data_dir }} 2>/dev/null || true

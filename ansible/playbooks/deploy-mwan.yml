@@ -197,7 +197,7 @@
         mode: '0640'
 
     - name: Get actual VMID from Proxmox
-      delegate_to: vault.home.goodkind.io
+      delegate_to: vault
       ansible.builtin.shell:
         cmd: |
           set -o pipefail
@@ -213,7 +213,7 @@
         mwan_vmid: "{{ vmid_lookup.stdout | trim }}"  # Override group_vars
 
     - name: Get VM network config from Proxmox
-      delegate_to: vault.home.goodkind.io
+      delegate_to: vault
       ansible.builtin.command:
         cmd: qm config {{ actual_vmid }}
       register: vm_config

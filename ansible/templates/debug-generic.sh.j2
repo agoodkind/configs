@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "service={{ prep_ct_service_effective | default('unknown') }}"
+echo
+
+echo "### host"
+hostnamectl 2>/dev/null || true
+echo
+
+echo "### time"
+date
+echo
+
+echo "### networking"
+ip -br addr || true
+ss -lntup || true
+echo
+
+echo "### systemd failed units"
+systemctl --failed --no-pager || true
+echo
+
+echo "### recent system logs"
+journalctl -n 200 --no-pager || true
+echo
+
+echo "### syslog (if present)"
+if [ -f "/var/log/syslog" ]; then
+  tail -n 100 /var/log/syslog || true
+elif [ -f "/var/log/messages" ]; then
+  tail -n 100 /var/log/messages || true
+fi

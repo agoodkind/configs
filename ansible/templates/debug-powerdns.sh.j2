@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "service=powerdns"
+echo
+
+echo "### host"
+hostnamectl 2>/dev/null || true
+echo
+
+echo "### time"
+date
+echo
+
+echo "### networking"
+ip -br addr || true
+ss -lntup || true
+echo
+
+echo "### pdns status"
+systemctl status pdns --no-pager || systemctl status pdns.service --no-pager || true
+echo
+
+echo "### pdns logs (journal)"
+journalctl -u pdns -n 200 --no-pager || journalctl -u pdns.service -n 200 --no-pager || true
+echo
+
+echo "### pdns syslog (if present)"
+if [ -f "/var/log/syslog" ]; then
+  grep -i pdns /var/log/syslog | tail -n 100 || true
+elif [ -f "/var/log/messages" ]; then
+  grep -i pdns /var/log/messages | tail -n 100 || true
+fi
+echo
+
+echo "### postgres status"
+systemctl status postgresql --no-pager || true
+echo
+
+echo "### postgres logs (recent)"
+journalctl -u postgresql -n 100 --no-pager || true
+echo
+
+echo "### powerdns config directory"
+ls -lah /etc/powerdns 2>/dev/null || true
+echo
+
+echo "### powerdns database info"
+if command -v psql >/dev/null 2>&1; then
+  sudo -u postgres psql -d {{ postgres_db }} -c "SELECT name, type, master FROM domains;" 2>/dev/null || true
+fi

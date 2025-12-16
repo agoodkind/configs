@@ -64,3 +64,6 @@ traefik_group: traefik
 traefik_config_dir: /etc/traefik
 traefik_log_dir: /var/log/traefik
 repo_root: /usr/share/configs
+
+# Container login directory (prep-cts.yml)
+login_dir: /etc/traefik
