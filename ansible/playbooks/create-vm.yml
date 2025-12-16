@@ -203,7 +203,7 @@
         node: "{{ proxmox_host }}"
         name: "{{ hostname }}"
         state: current
-      delegate_to: ansible.home.goodkind.io
+      delegate_to: localhost
       register: vm_check
       failed_when: false
 
@@ -278,8 +278,17 @@
       # when: true
       block:
         - name: Get next available VMID
-          ansible.builtin.command: pvesh get /cluster/nextid
-          delegate_to: "{{ proxmox_host }}"
+          ansible.builtin.uri:
+            url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/nextid"
+            method: GET
+            headers:
+              Authorization: >-
+                PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
+                proxmox_token_secret }}
+            validate_certs: false
+            return_content: true
+            status_code: [200]
+          delegate_to: localhost
           register: next_vmid
           changed_when: false
           when:
@@ -295,7 +304,7 @@
                 else (
                   (vm_check.vmid | string | trim)
                   if (delete_existing_vm | default(false) | bool and vm_check.vmid is defined)
-                  else (next_vmid.stdout | trim)
+                  else (next_vmid.json.data | default('') | string | trim)
                 )
               }}
 
@@ -499,7 +508,7 @@
             node: "{{ proxmox_host }}"
             vmid: "{{ new_vmid }}"
             state: started
-          delegate_to: ansible.home.goodkind.io
+          delegate_to: localhost
 
         - name: Attempting SSH connection via IPv6
           ansible.builtin.debug:
@@ -676,7 +685,7 @@
             node: "{{ proxmox_host }}"
             vmid: "{{ new_vmid }}"
             state: stopped
-          delegate_to: ansible.home.goodkind.io
+          delegate_to: localhost
           when: >-
             (not (ssh_wait_v6.failed | default(true))
             or not (ssh_wait_v4.failed | default(true)))
@@ -708,7 +717,7 @@
             node: "{{ proxmox_host }}"
             vmid: "{{ new_vmid }}"
             state: started
-          delegate_to: ansible.home.goodkind.io
+          delegate_to: localhost
           when: >-
             (not (ssh_wait_v6.failed | default(true))
             or not (ssh_wait_v4.failed | default(true)))

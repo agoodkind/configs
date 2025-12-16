@@ -1,6 +1,6 @@
 ---
 # Proxmox API credentials (shared across all playbooks)
-proxmox_api_host: vault.home.goodkind.io
+proxmox_api_host: 10.250.0.254
 proxmox_api_user: ansible@pam
 proxmox_token_id: ansible-token
 proxmox_token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
@@ -22,3 +22,9 @@ smtp_port: "{{ lookup('env', 'SMTP2GO_SMTP_PORT', default='587') }}"
 # Optional manual override (skip API provisioning)
 smtp_user: "{{ lookup('env', 'SMTP2GO_SMTP_USER', default='') }}"
 smtp_pass: "{{ lookup('env', 'SMTP2GO_SMTP_PASS', default='') }}"
+
+# ----------------------------------------------------------------------------
+# Cloudflare DNS (automatic DNS record updates)
+# ----------------------------------------------------------------------------
+cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
+cloudflare_dns_update_enabled: true

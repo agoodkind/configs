@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "service=traefik"
+echo
+
+echo "### host"
+hostnamectl 2>/dev/null || true
+echo
+
+echo "### time"
+date
+echo
+
+echo "### networking"
+ip -br addr || true
+ss -lntup || true
+echo
+
+echo "### traefik status"
+systemctl status traefik --no-pager || true
+echo
+
+echo "### traefik logs (journal)"
+journalctl -u traefik -n 100 --no-pager || true
+echo
+
+echo "### traefik access log"
+if [ -f "{{ traefik_log_dir }}/access.log" ]; then
+  tail -n 100 "{{ traefik_log_dir }}/access.log" || true
+else
+  echo "Access log not found: {{ traefik_log_dir }}/access.log"
+fi
+echo
+
+echo "### traefik log directory"
+ls -lah {{ traefik_log_dir }} 2>/dev/null || true
+echo
+
+echo "### traefik config directory"
+ls -lah {{ traefik_config_dir }} 2>/dev/null || true
+echo
+
+echo "### traefik dynamic config"
+ls -lah {{ traefik_config_dir }}/dynamic 2>/dev/null || true
