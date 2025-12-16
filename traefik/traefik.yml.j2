@@ -53,10 +53,12 @@ certificatesResolvers:
       email: {{ traefik_acme_email }}
       storage: /etc/traefik/acme.json
       dnsChallenge:
-        provider: rfc2136
+        provider: {{ traefik_acme_dns_provider | default('cloudflare') }}
+{% if (traefik_acme_dns_provider | default('cloudflare')) == 'rfc2136' %}
         resolvers:
-          - "[3d06:bad:b01::6]:53"
+          - "{{ traefik_rfc2136_nameserver }}"
         delayBeforeCheck: 10
+{% endif %}
 
 providers:
   file:
