@@ -53,6 +53,9 @@ debug_json_line() {
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
+    exec 9>>"$DEBUG_LOG"
+    flock -w 2 9 || true
+
     jq -cn \
         --arg traceId "${MWAN_TRACE_ID:-}" \
         --arg component "55-update-npt" \
@@ -68,7 +71,10 @@ debug_json_line() {
           data:(try ($data|fromjson) catch {"_raw":$data}),
           timestamp:$timestamp
         }' \
-        >>"$DEBUG_LOG"
+        >&9
+
+    flock -u 9 || true
+    exec 9>&-
 }
 
 #region agent log
@@ -78,6 +84,9 @@ log_json() {
     local loc="$1"; shift
     local msg="$1"; shift
     local data="$1"; shift
+    exec 9>>"$LOG_PATH"
+    flock -w 2 9 || true
+
     jq -cn \
         --arg traceId "${MWAN_TRACE_ID:-}" \
         --arg sessionId "debug-session" \
@@ -97,7 +106,10 @@ log_json() {
           data:(try ($data|fromjson) catch {"_raw":$data}),
           timestamp:$timestamp
         }' \
-        >>"$LOG_PATH"
+        >&9
+
+    flock -u 9 || true
+    exec 9>&-
 }
 #endregion
 
