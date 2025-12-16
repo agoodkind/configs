@@ -11,6 +11,8 @@
 # Optional variables:
 #   target_node: Proxmox node (default: vault)
 #   container_vmid: Specific VMID to use (default: "")
+#   ipv4_var: Variable name in group_vars containing IPv4 CIDR (e.g., adguard_ipv4)
+#   ipv6_var: Variable name in group_vars containing IPv6 CIDR (e.g., adguard_ipv6)
 #   disk_size: Container disk size in GB (default: "8")
 #   memory: Container memory in MB (default: "2048")
 #   cores: Container CPU cores (default: "2")
@@ -46,6 +48,20 @@
     - name: Get container hostname from group_vars
       ansible.builtin.set_fact:
         service_hostname: "{{ lookup('vars', hostname_var) }}"
+
+    - name: Get static IPs from group_vars (optional)
+      ansible.builtin.set_fact:
+        service_ip_address: "{{ lookup('vars', ipv4_var) }}"
+      when:
+        - ipv4_var is defined
+        - (ipv4_var | default('') | trim) | length > 0
+
+    - name: Get static IPv6 from group_vars (optional)
+      ansible.builtin.set_fact:
+        service_ipv6_address: "{{ lookup('vars', ipv6_var) }}"
+      when:
+        - ipv6_var is defined
+        - (ipv6_var | default('') | trim) | length > 0
 
     - name: Compute effective container settings (caller overrides defaults)
       ansible.builtin.set_fact:
@@ -99,6 +115,8 @@
     container_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
     target_node: "{{ hostvars['localhost']['service_target_node'] | default('vault') }}"
     vmid: "{{ hostvars['localhost']['service_container_vmid'] | default('') }}"
+    ip_address: "{{ hostvars['localhost']['service_ip_address'] | default('') }}"
+    ipv6_address: "{{ hostvars['localhost']['service_ipv6_address'] | default('') }}"
     disk_size: "{{ hostvars['localhost']['service_disk_size'] | default('8') }}"
     memory: "{{ hostvars['localhost']['service_memory'] | default('2048') }}"
     cores: "{{ hostvars['localhost']['service_cores'] | default('2') }}"
