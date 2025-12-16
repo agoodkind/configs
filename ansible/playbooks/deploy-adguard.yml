@@ -7,7 +7,7 @@
     hostname_var: adguard_hostname
     mac_var: adguard_mac_address
     target_node: vault
-    container_vmid: ""
+    container_vmid: "53"
     disk_size: "8"
     memory: "2048"
     cores: "2"

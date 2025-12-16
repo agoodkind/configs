@@ -38,6 +38,10 @@ debug_json() {
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
+    # Serialize writers to keep JSON lines intact.
+    exec 9>>"$DEBUG_LOG"
+    flock -w 2 9 || true
+
     jq -cn \
       --arg traceId "${MWAN_TRACE_ID:-}" \
       --arg component "mwan-health" \
@@ -45,14 +49,22 @@ debug_json() {
       --arg message "$msg" \
       --arg data "${data:-{}}" \
       --argjson timestamp "$(date +%s%3N)" \
-      '{
+      '
+      def parsed($s): (try ($s | fromjson) catch null);
+      def p: parsed($data);
+      {
         traceId: $traceId,
         component: $component,
         location: $location,
         message: $message,
-        data: (try ($data | fromjson) catch {}),
+        data: (p // {}),
+        dataParseError: (p == null),
+        dataRaw: (if (p == null) then $data else null end),
         timestamp: $timestamp
-      }' >> "$DEBUG_LOG"
+      }' >&9
+
+    flock -u 9 || true
+    exec 9>&-
 }
 
 # Hysteresis counters (persist across daemon iterations)
