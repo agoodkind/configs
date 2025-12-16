@@ -2,8 +2,7 @@
 # Container hostname
 adguard_hostname: adguard.home.goodkind.io
 
-# Static addressing (VMID-derived)
-adguard_vmid: "53"
+# Static addressing (pinned; independent of VMID)
 adguard_ipv4: "10.250.0.53/24"
 adguard_ipv6: "3d06:bad:b01::53/64"
 
