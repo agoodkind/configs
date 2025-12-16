@@ -14,12 +14,15 @@
     storage: "local-lvm"
     network_bridge: "vmbr0"
     mac_address: ""
-    ip_address: "dhcp"
+    ip_address: ""
     # Note: If using DHCP, mac_address should be set to ensure stable reservations
     gateway: ""
-    ipv6_address: "dhcp"
+    ipv6_address: ""
     ipv6_gateway: ""
+    ipv4_prefix: "24"
+    ipv6_prefix: "64"
     container_tags: "lxc"
+    allow_dhcp: false
 
   tasks:
     - name: Validate container hostname is set
@@ -136,14 +139,99 @@
           {{ lookup('password',
              '/dev/null length=20 chars=ascii_letters,digits') }}
 
-    - name: Set VMID if not provided
+    - name: Get next available VMID (if not provided and container not found)
+      ansible.builtin.command: pvesh get /cluster/nextid
+      delegate_to: "{{ target_node }}"
+      register: next_vmid
+      changed_when: false
+      when:
+        - (vmid | default('') | string | trim) | length == 0
+        - (existing_vmid | default('') | string | trim) | length == 0
+
+    - name: Set effective VMID (provided, existing, or nextid)
       ansible.builtin.set_fact:
-        actual_vmid: "{{ (vmid if vmid != '' else (existing_vmid | default(''))) }}"
-      when: (vmid != "") or ((existing_vmid | default('')) | string | length > 0)
+        actual_vmid: >-
+          {{
+            (vmid | string | trim)
+            if (vmid | default('') | string | trim) | length > 0
+            else (
+              (existing_vmid | string | trim)
+              if (existing_vmid | default('') | string | trim) | length > 0
+              else (next_vmid.stdout | trim)
+            )
+          }}
 
     - name: Debug VMID selection
       ansible.builtin.debug:
         msg: "Selected VMID: {{ actual_vmid | default('auto-assign') }}"
+
+    - name: Compute default management IPs from VMID (decimal string, not hex)
+      ansible.builtin.set_fact:
+        default_ipv4_host: "10.250.0.{{ actual_vmid | string | trim }}"
+        default_ipv6_host: "3d06:bad:b01::{{ actual_vmid | string | trim }}"
+
+    - name: Set effective IP configuration (defaults, override-able via input vars)
+      ansible.builtin.set_fact:
+        effective_ipv4_value: >-
+          {{
+            (ip_address | trim)
+            if (ip_address | default('') | trim) | length > 0
+            else default_ipv4_host
+          }}
+        effective_ipv6_value: >-
+          {{
+            (ipv6_address | trim)
+            if (ipv6_address | default('') | trim) | length > 0
+            else default_ipv6_host
+          }}
+
+    - name: Enforce static addressing for containers (no DHCP by default)
+      ansible.builtin.assert:
+        that:
+          - allow_dhcp | bool or (effective_ipv4_value | lower) != 'dhcp'
+          - allow_dhcp | bool or (effective_ipv6_value | lower) != 'dhcp'
+        fail_msg: >-
+          DHCP is disabled for containers. Provide a static ip_address/ipv6_address
+          (or omit them to use the VMID-derived defaults).
+          To explicitly allow DHCP for this container, set allow_dhcp=true.
+
+    - name: Normalize effective IPs (add prefixes unless DHCP or already CIDR)
+      ansible.builtin.set_fact:
+        effective_ipv4_cidr: >-
+          {{
+            'dhcp'
+            if (effective_ipv4_value | default('') | lower) == 'dhcp'
+            else (
+              effective_ipv4_value
+              if '/' in (effective_ipv4_value | default(''))
+              else (effective_ipv4_value ~ '/' ~ (ipv4_prefix | default('24') | string))
+            )
+          }}
+        effective_ipv6_cidr: >-
+          {{
+            'dhcp'
+            if (effective_ipv6_value | default('') | lower) == 'dhcp'
+            else (
+              effective_ipv6_value
+              if '/' in (effective_ipv6_value | default(''))
+              else (effective_ipv6_value ~ '/' ~ (ipv6_prefix | default('64') | string))
+            )
+          }}
+
+    - name: Set effective gateways (defaults, override-able via input vars)
+      ansible.builtin.set_fact:
+        effective_gateway_v4: >-
+          {{
+            (gateway | trim)
+            if (gateway | default('') | trim) | length > 0
+            else ('10.250.0.1' if effective_ipv4_cidr != 'dhcp' else '')
+          }}
+        effective_gateway_v6: >-
+          {{
+            (ipv6_gateway | trim)
+            if (ipv6_gateway | default('') | trim) | length > 0
+            else ('3d06:bad:b01::1' if effective_ipv6_cidr != 'dhcp' else '')
+          }}
 
     - name: Warn if DHCP is used without MAC address
       ansible.builtin.debug:
@@ -152,27 +240,36 @@
           IP address changes if the container is recreated. Consider setting
           mac_address variable for stable DHCP reservations.
       when:
-        - (ip_address == 'dhcp' or ipv6_address == 'dhcp')
+        - allow_dhcp | default(false) | bool
+        - (effective_ipv4_cidr == 'dhcp' or effective_ipv6_cidr == 'dhcp')
         - (mac_address | default('') | trim) | length == 0
 
     - name: Build network interface configuration
       ansible.builtin.set_fact:
         net0_config: >-
-          name=eth0,bridge={{ network_bridge
-          }}{{ ',hwaddr=' + mac_address if (mac_address | default('') | trim) | length > 0 else ''
-          }},ip={{ ip_address
-          }}{{ ',gw=' + gateway if gateway and ip_address != 'dhcp' else ''
-          }},ip6={{ ipv6_address
-          }}{{ ',gw6=' + ipv6_gateway
-            if ipv6_gateway and ipv6_address != 'dhcp' else '' }}
+          name=eth0,bridge={{ network_bridge -}}
+          {{- ',hwaddr=' + mac_address
+              if (mac_address | default('') | trim) | length > 0 else '' -}}
+          ,ip={{ effective_ipv4_cidr -}}
+          {{- ',gw=' + effective_gateway_v4
+              if (
+                (effective_gateway_v4 | default('') | trim) | length > 0
+                and effective_ipv4_cidr != 'dhcp'
+              ) else '' -}}
+          ,ip6={{ effective_ipv6_cidr -}}
+          {{- ',gw6=' + effective_gateway_v6
+              if (
+                (effective_gateway_v6 | default('') | trim) | length > 0
+                and effective_ipv6_cidr != 'dhcp'
+              ) else '' -}}
 
     - name: Debug network interface configuration
       ansible.builtin.debug:
         msg:
           - "Network bridge: {{ network_bridge }}"
           - "MAC address: {{ mac_address | default('auto') }}"
-          - "IPv4: {{ ip_address }}"
-          - "IPv6: {{ ipv6_address }}"
+          - "IPv4: {{ effective_ipv4_cidr }}"
+          - "IPv6: {{ effective_ipv6_cidr }}"
           - "net0 config: {{ net0_config }}"
 
     - name: Get SSH public keys from GitHub

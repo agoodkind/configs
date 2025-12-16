@@ -429,7 +429,7 @@
         vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
         vm_mgmt_ipv4: "10.250.0.{{ actual_vmid }}"
-        vm_mgmt_ipv6: "3d06:bad:b01::{{ '%x' | format(actual_vmid | int) }}"
+        vm_mgmt_ipv6: "3d06:bad:b01::{{ actual_vmid | string | trim }}"
         hostname: "{{ mwan_hostname }}"
 
     - name: Deploy management interface networkd configuration
@@ -561,6 +561,18 @@
         - scripts/mwan-wait-routes-prereqs.sh
         - scripts/mwan-trace-boot.sh
         - scripts/wpa-wait-att-iface.sh
+
+    - name: Ensure /usr/local/share/mwan exists
+      ansible.builtin.file:
+        path: /usr/local/share/mwan
+        state: directory
+        mode: '0755'
+
+    - name: Deploy jq helper for `mwan trace-tail`
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/trace-tail.jq"
+        dest: /usr/local/share/mwan/trace-tail.jq
+        mode: '0644'
 
     - name: Deploy mwan debug helper (single entrypoint)
       ansible.builtin.copy:
