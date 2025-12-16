@@ -157,7 +157,15 @@
             | regex_search('v?[0-9]+\\.[0-9]+\\.[0-9]+')
             | default('', true)
           }}
-        installed_version_norm: "{{ installed_version | regex_replace('^v', '') }}"
+        installed_version_norm: >-
+          {{
+            (
+              adguard_installed_version.stdout
+              | regex_search('v?[0-9]+\\.[0-9]+\\.[0-9]+')
+              | default('', true)
+            )
+            | regex_replace('^v', '')
+          }}
       when: adguard_binary.stat.exists and adguard_installed_version.stdout is defined
 
     # Check available version using AdGuard Home's version.json endpoint
