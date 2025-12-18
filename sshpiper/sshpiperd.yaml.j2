@@ -1,6 +1,14 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/tg123/sshpiper/master/plugin/yaml/schema.json
 version: "1.0"
 pipes:
+  # Self-route: "proxy" username routes back to this container on port 2222
+  - from:
+      - username: "proxy"
+        authorized_keys: /etc/sshpiper/authorized_keys
+    to:
+      host: "127.0.0.1:2222"
+      username: root
+      ignore_hostkey: true
 {% for host in groups['proxmox_all_lxc'] | default([]) %}
 {% set short_name = host.split('.')[0] %}
 {% set target_ip = hostvars[host]['ansible_host'] | default('') %}
