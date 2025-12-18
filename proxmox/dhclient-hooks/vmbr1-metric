@@ -1,6 +1,0 @@
-# Set higher metric for vmbr1 (backup WAN) so vmbr0 is preferred
-if [ "$interface" = "vmbr1" ] && [ "$reason" = "BOUND" -o "$reason" = "RENEW" -o "$reason" = "REBIND" -o "$reason" = "REBOOT" ]; then
-    ip route del default via "$new_routers" dev vmbr1 2>/dev/null
-    ip route add default via "$new_routers" dev vmbr1 metric 199
-fi
-
