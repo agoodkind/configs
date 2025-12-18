@@ -155,8 +155,6 @@
           - ipcalc-ng
           - ipcalc
           - ipv6calc
-          - ripcalc
-          - iproute2
           - fping
           - cloudflared
         state: present

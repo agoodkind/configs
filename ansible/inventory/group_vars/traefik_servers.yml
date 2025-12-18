@@ -76,14 +76,9 @@ sshpiper_group: sshpiper
 sshpiper_config_dir: /etc/sshpiper
 
 # Ansible SSH configuration
-# After sshpiper is deployed, sshd runs on port 2222
-# Ansible needs to connect on this port to manage the proxy container directly
-#
-# NOTE: Uncomment AFTER initial deployment of sshpiper:
-ansible_port: 2222
-#
-# For initial deployment, use default port 22:
-#   ansible-playbook deploy-traefik.yml
-# For subsequent runs after sshpiper is active:
-#   ansible-playbook deploy-traefik.yml -e "ansible_port=2222"
-# Or uncomment the line above after initial deployment
+# Connection method is auto-detected by deploy-proxy.yml playbook
+# The playbook tries (in order):
+#   1. proxy@<host>:22 (sshpiper route → localhost:2222 as root)
+#   2. root@<host>:2222 (direct sshd access)
+#   3. root@<host>:22 (initial deployment, sshpiper not running yet)
+# No manual configuration needed!
