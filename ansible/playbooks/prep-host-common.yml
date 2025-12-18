@@ -595,7 +595,7 @@
 
     - name: Install debug helper command (service-specific)
       ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/debug-{{ prep_ct_service_effective | lower }}.sh.j2"
+        src: "{{ repo_root }}/{{ prep_ct_service_effective | lower }}/debug-{{ prep_ct_service_effective | lower }}.sh.j2"
         dest: /usr/local/bin/debug
         mode: '0755'
       when:
@@ -605,7 +605,7 @@
 
     - name: Install debug helper command (generic fallback)
       ansible.builtin.template:
-        src: "{{ repo_root }}/ansible/templates/debug-generic.sh.j2"
+        src: "{{ repo_root }}/ansible/templates/debug/debug-generic.sh.j2"
         dest: /usr/local/bin/debug
         mode: '0755'
       when: >-

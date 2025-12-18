@@ -1,0 +1,30 @@
+[Unit]
+Description=SSH Piper - SSH Reverse Proxy
+After=network.target
+Documentation=https://github.com/tg123/sshpiper
+
+[Service]
+Type=simple
+User=sshpiper
+Group=sshpiper
+ExecStart=/usr/local/bin/sshpiperd \
+  --port 22 \
+  --server-key /etc/sshpiper/ssh_host_ed25519_key \
+  --server-key-generate-mode notexist \
+  --log-level info \
+  /usr/local/bin/plugins/yaml --config /etc/sshpiper/sshpiperd.yaml
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+TimeoutStopSec=5s
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/sshpiper
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
