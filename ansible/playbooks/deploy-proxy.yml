@@ -1,4 +1,15 @@
 ---
+# Deploy Traefik + SSHPiper on the proxy container
+#
+# NOTE: After initial deployment, sshpiper runs on port 22 and sshd moves to 2222.
+# For subsequent runs, you'll need to connect to the proxy container on port 2222:
+#   ansible-playbook deploy-proxy.yml -e "ansible_port=2222"
+# Or uncomment `ansible_port: 2222` in inventory/group_vars/traefik_servers.yml
+#
+# To manually SSH to the proxy container after deployment:
+#   ssh -p 2222 root@proxy.home.goodkind.io
+#   (or ssh -p 2222 root@10.250.0.10)
+
 - name: Setup Traefik container
   ansible.builtin.import_playbook: setup-service-container.yml
   vars:
@@ -370,7 +381,6 @@
   become: true
 
   vars:
-    sshpiper_version: "1.3.6"
     sshpiper_user: sshpiper
     sshpiper_group: sshpiper
     sshpiper_config_dir: /etc/sshpiper
@@ -395,6 +405,19 @@
       loop:
         - "{{ sshpiper_config_dir }}"
 
+    - name: Get latest sshpiper release version
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/tg123/sshpiper/releases/latest
+        return_content: true
+      register: sshpiper_latest_release
+      delegate_to: localhost
+      run_once: true
+
+    - name: Set sshpiper version to latest
+      ansible.builtin.set_fact:
+        sshpiper_version_resolved: >-
+          {{ sshpiper_latest_release.json.tag_name | regex_replace('^v', '') }}
+
     - name: Check if sshpiper is installed
       ansible.builtin.stat:
         path: /usr/local/bin/sshpiperd
@@ -410,13 +433,13 @@
     - name: Download and install sshpiper
       when: >-
         not sshpiper_binary.stat.exists or
-        sshpiper_version not in sshpiper_installed_version.stdout | default('')
+        sshpiper_version_resolved not in sshpiper_installed_version.stdout | default('')
       block:
         - name: Download sshpiper
           ansible.builtin.get_url:
             url: >-
               https://github.com/tg123/sshpiper/releases/download/v{{-
-              sshpiper_version }}/sshpiperd_with_plugins_linux_x86_64.tar.gz
+              sshpiper_version_resolved }}/sshpiperd_with_plugins_linux_x86_64.tar.gz
             dest: /tmp/sshpiper.tar.gz
             mode: '0644'
 

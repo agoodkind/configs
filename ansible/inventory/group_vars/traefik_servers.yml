@@ -69,7 +69,21 @@ repo_root: /usr/share/configs
 login_dir: /etc/traefik
 
 # SSHPiper configuration
-sshpiper_version: "1.3.6"
+# Version is auto-detected from GitHub latest release
+# You can override by setting sshpiper_version: "x.y.z" if needed
 sshpiper_user: sshpiper
 sshpiper_group: sshpiper
 sshpiper_config_dir: /etc/sshpiper
+
+# Ansible SSH configuration
+# After sshpiper is deployed, sshd runs on port 2222
+# Ansible needs to connect on this port to manage the proxy container directly
+#
+# NOTE: Uncomment AFTER initial deployment of sshpiper:
+ansible_port: 2222
+#
+# For initial deployment, use default port 22:
+#   ansible-playbook deploy-traefik.yml
+# For subsequent runs after sshpiper is active:
+#   ansible-playbook deploy-traefik.yml -e "ansible_port=2222"
+# Or uncomment the line above after initial deployment
