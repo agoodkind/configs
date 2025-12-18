@@ -32,8 +32,8 @@ PING4_TARGETS=("1.1.1.1" "8.8.8.8")
 # Basic color helpers (honor NO_COLOR)
 # shellcheck disable=SC2034
 if [ -z "${NO_COLOR:-}" ]; then
-  C_BOLD="\033[1m"; C_DIM="\033[2m"; C_RED="\033[31m"
-  C_GRN="\033[32m"; C_CYN="\033[36m"; C_RST="\033[0m"
+  C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'; C_RED=$'\033[31m'
+  C_GRN=$'\033[32m'; C_CYN=$'\033[36m'; C_RST=$'\033[0m'
 else
   C_BOLD=""; C_DIM=""; C_RED=""; C_GRN=""; C_CYN=""; C_RST=""
 fi
@@ -528,18 +528,20 @@ run_pd_test() {
 run_lb4() {
     for i in $(seq 1 "$LB_ITER"); do
         tgt="${CURL_TARGETS[$(( (i-1) % ${#CURL_TARGETS[@]} ))]}"
-        echo "lb4 iter $i -> $tgt (no iface hint)"
-        curl -4 -s "$tgt" || true
-        echo
+        printf "lb4 iter %d -> %s: " "$i" "$tgt"
+        result="$(curl -4 -s --max-time 5 "$tgt" 2>&1)" && \
+            printf "%s%s%s\n" "$C_GRN" "$result" "$C_RST" || \
+            printf "%sFAIL%s\n" "$C_RED" "$C_RST"
     done
 }
 
 run_lb6() {
     for i in $(seq 1 "$LB_ITER"); do
         tgt="${CURL_TARGETS[$(( (i-1) % ${#CURL_TARGETS[@]} ))]}"
-        echo "lb6 iter $i -> $tgt (no iface hint)"
-        curl -6 -s "$tgt" || true
-        echo
+        printf "lb6 iter %d -> %s: " "$i" "$tgt"
+        result="$(curl -6 -s --max-time 5 "$tgt" 2>&1)" && \
+            printf "%s%s%s\n" "$C_GRN" "$result" "$C_RST" || \
+            printf "%sFAIL%s\n" "$C_RED" "$C_RST"
     done
 }
 
@@ -547,9 +549,10 @@ run_lb4_ifaces() {
     for i in $(seq 1 "$LB_ITER"); do
         ifc="${IFACES[$(( (i-1) % ${#IFACES[@]} ))]}"
         tgt="${CURL_TARGETS[$(( (i-1) % ${#CURL_TARGETS[@]} ))]}"
-        echo "lb4-ifaces iter $i via $ifc -> $tgt"
-        curl -4 --interface "$ifc" -s "$tgt" || true
-        echo
+        printf "lb4-ifaces iter %d via %s -> %s: " "$i" "$ifc" "$tgt"
+        result="$(curl -4 --interface "$ifc" -s --max-time 5 "$tgt" 2>&1)" && \
+            printf "%s%s%s\n" "$C_GRN" "$result" "$C_RST" || \
+            printf "%sFAIL%s\n" "$C_RED" "$C_RST"
     done
 }
 
@@ -557,9 +560,10 @@ run_lb6_ifaces() {
     for i in $(seq 1 "$LB_ITER"); do
         ifc="${IFACES[$(( (i-1) % ${#IFACES[@]} ))]}"
         tgt="${CURL_TARGETS[$(( (i-1) % ${#CURL_TARGETS[@]} ))]}"
-        echo "lb6-ifaces iter $i via $ifc -> $tgt"
-        curl -6 --interface "$ifc" -s "$tgt" || true
-        echo
+        printf "lb6-ifaces iter %d via %s -> %s: " "$i" "$ifc" "$tgt"
+        result="$(curl -6 --interface "$ifc" -s --max-time 5 "$tgt" 2>&1)" && \
+            printf "%s%s%s\n" "$C_GRN" "$result" "$C_RST" || \
+            printf "%sFAIL%s\n" "$C_RED" "$C_RST"
     done
 }
 

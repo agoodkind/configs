@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/tg123/sshpiper/master/plugin/yaml/schema.json
+version: "1.0"
+pipes:
+{% for host in groups['proxmox_all_lxc'] | default([]) %}
+{% set short_name = host.split('.')[0] %}
+{% set target_ip = hostvars[host]['ansible_host'] | default('') %}
+{% if target_ip | length > 0 %}
+  - from:
+      - username: "{{ short_name }}"
+        authorized_keys: /etc/sshpiper/authorized_keys
+    to:
+      host: "{{ '[' + target_ip + ']' if ':' in target_ip else target_ip }}:22"
+      username: root
+      private_key: /etc/sshpiper/upstream_id_ed25519
+      ignore_hostkey: true
+{% endif %}
+{% endfor %}

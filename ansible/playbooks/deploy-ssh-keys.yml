@@ -22,7 +22,11 @@
   vars:
     ssh_key_from_file: "{{ lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') | default('') }}"
     ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys') }}"
-    ssh_key: "{{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url }}"
+    sshpiper_upstream_key: >-
+      {{ lookup('file', '/etc/sshpiper/upstream_id_ed25519.pub', errors='ignore') | default('') }}
+    ssh_key: >-
+      {{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url +
+      ('\n' + sshpiper_upstream_key if sshpiper_upstream_key else '') }}
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
     containers: "{{ groups[target_group] | map('extract', hostvars, 'container_info') | select('defined') | list }}"
   tasks:
@@ -34,7 +38,8 @@
       ansible.builtin.debug:
         msg: |
           SSH Keys to deploy ({{ ssh_key.splitlines() | length }} keys):
-          {{ ssh_key }}
+          - Personal keys (file + GitHub)
+          {{ '  - SSHPiper upstream key' if sshpiper_upstream_key else '' }}
 
     - name: Write SSH keys to temp file
       ansible.builtin.copy:

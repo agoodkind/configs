@@ -67,3 +67,9 @@ repo_root: /usr/share/configs
 
 # Container login directory (prep-cts.yml)
 login_dir: /etc/traefik
+
+# SSHPiper configuration
+sshpiper_version: "1.3.6"
+sshpiper_user: sshpiper
+sshpiper_group: sshpiper
+sshpiper_config_dir: /etc/sshpiper
