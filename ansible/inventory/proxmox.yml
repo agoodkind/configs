@@ -1,5 +1,5 @@
 plugin: community.proxmox.proxmox
-url: https://10.250.0.254
+url: https://10.250.0.254:8006
 user: ansible@pam
 token_id: ansible-token
 token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
