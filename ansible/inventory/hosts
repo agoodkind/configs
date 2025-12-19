@@ -5,7 +5,7 @@ ansible_user=root
 localhost ansible_connection=local
 
 [ansible_server]
-ansible.home.goodkind.io
+ansible.home.goodkind.io ansible_host=3d06:bad:b01::c
 
 [proxmox_nodes]
 vault ansible_host=10.250.0.254 ansible_user=root
