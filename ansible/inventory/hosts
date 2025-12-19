@@ -5,7 +5,7 @@ ansible_user=root
 localhost ansible_connection=local
 
 [ansible_server]
-ansible.home.goodkind.io ansible_host=3d06:bad:b01::c
+ansible.home.goodkind.io
 
 [proxmox_nodes]
 vault ansible_host=10.250.0.254 ansible_user=root
@@ -14,10 +14,10 @@ vault ansible_host=10.250.0.254 ansible_user=root
 proxy.home.goodkind.io
 
 [powerdns_servers]
-pdns.home.goodkind.io ansible_host=3d06:bad:b01::b
+pdns.home.goodkind.io
 
 [mwan_servers]
-mwan.home.goodkind.io ansible_host=3d06:bad:b01::86
+mwan.home.goodkind.io
 
 [homelab]
 # Add your homelab hosts here

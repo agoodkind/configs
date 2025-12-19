@@ -8,7 +8,7 @@ want_facts: true
 # Include stopped guests too so playbooks can start them (e.g. prep-cts).
 # (We rely on best-effort start + wait_for_connection to handle boot time.)
 compose:
-  ansible_host: (proxmox_ipconfig0.ip | default(proxmox_net0.ip) | ansible.utils.ipaddr('address')) | default(inventory_hostname, true)
+  ansible_host: (proxmox_ipconfig0.ip | default(proxmox_net0.ip) | ansible.utils.ipaddr('address'))
   ansible_proxmox_host: proxmox_node
   ansible_proxmox_vmid: proxmox_vmid
 keyed_groups:
