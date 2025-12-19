@@ -1,53 +1,84 @@
 ---
-description: SSH into hosts/containers - normal, DNS-down, and emergency jump-host paths
+description: SSH access patterns using sshpiper routing and direct IP access
 glob:
 alwaysApply: true
 ---
 
 # SSH / Host Access Rules
 
-## Default (DNS working)
+## Primary Method: SSHPiper Routing
 
-- Prefer hostnames when available:
+All `*.home.goodkind.io` DNS points to `10.250.0.10` (proxy VM) where sshpiper routes by username:
 
 ```bash
-ssh root@container-hostname
+ssh adguard@home.goodkind.io    # → routes to root@adguard-container-ip
+ssh pdns@home.goodkind.io       # → routes to root@pdns-container-ip
+ssh mwan@home.goodkind.io       # → routes to root@mwan-container-ip
 ```
 
-- For non-root users, use the correct login:
+**Pattern**: `ssh <short-hostname>@home.goodkind.io`
+
+The short hostname is extracted from the full container name (e.g., `adguard` from `adguard.home.goodkind.io`).
+
+## Direct IP Access (Bypass SSHPiper)
+
+When sshpiper is unavailable or for troubleshooting, use IPs directly:
 
 ```bash
-ssh agoodkind@host-name
+ssh root@10.250.0.107    # direct to container IP
 ```
 
-## DNS-down fallback
+### Finding Container IPs
 
-- If DNS is down / hostname lookup fails, use the IP directly:
+If the IP is unknown, look it up via Proxmox:
 
 ```bash
-ssh root@10.0.0.123
+# 1. SSH into Proxmox host
+ssh root@10.250.0.254
+
+# 2. Find the container/VM by name
+pct list | grep -i <name>    # for containers
+qm list | grep -i <name>     # for VMs
+
+# 3. Get the IP address
+pct exec <VMID> -- ip -4 addr show eth0 | grep inet    # for containers
+qm guest cmd <VMID> network-get-interfaces              # for VMs
+
+# 4. SSH directly to the IP
+ssh root@<ip-address>
 ```
 
-## Emergency jump-host chain (when required)
+## Jump Host Access (Last Resort)
 
-- Use jump hosts explicitly when the environment requires it.
-- Typical chain we used:
-  - `ssh agoodkind@10.250.0.1` (OPNsense)
-  - then `ssh root@10.250.0.254` (Proxmox host)
-  - then `ssh root@<vm-or-container-hostname>` (or `ssh root@<ip>`)
-
-## Environment notes (OPNsense + Vault/Proxmox)
-
-- **OPNsense**: `10.250.0.1`
-  - SSH user: `agoodkind` (not `root`)
-  - For privileged tasks, use `sudo` after login.
-- **Vault / Proxmox host**: `10.250.0.254`
-  - SSH user: `root`
-
-## Diagnostics-only SSH options
-
-- When instructed, disable strict host key checking for automation/diagnostics only:
+If direct IP access fails, use jump hosts:
 
 ```bash
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@10.0.0.123
+# Via OPNsense
+ssh agoodkind@10.250.0.1
+# then from there:
+ssh root@10.250.0.254    # to Proxmox
+ssh root@<container-ip>   # to target container
+```
+
+## Known Infrastructure IPs
+
+- **Proxy VM (sshpiper)**: `10.250.0.10` - sshd on port 2222, sshpiper on port 22
+- **OPNsense**: `10.250.0.1` - SSH user: `agoodkind` (use `sudo` for privileged tasks)
+- **Proxmox host**: `10.250.0.254` - SSH user: `root`
+- **Ansible container**: `10.250.0.107` (CT 107) - has `PROXMOX_API_TOKEN` set
+
+## Direct Access to Proxy VM
+
+To access the proxy VM itself (bypassing sshpiper):
+
+```bash
+ssh -p 2222 root@10.250.0.10    # sshd on port 2222
+```
+
+## Diagnostics-only SSH Options
+
+Disable strict host key checking for automation/diagnostics:
+
+```bash
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>
 ```
