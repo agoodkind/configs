@@ -17,7 +17,7 @@ proxy.home.goodkind.io
 pdns.home.goodkind.io ansible_host=3d06:bad:b01::b
 
 [mwan_servers]
-mwan.home.goodkind.io
+mwan.home.goodkind.io ansible_host=3d06:bad:b01::86
 
 [homelab]
 # Add your homelab hosts here
