@@ -8,6 +8,7 @@ pipes:
     to:
       host: "127.0.0.1:2222"
       username: root
+      private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
 {% for host in groups['proxmox_all_lxc'] | default([]) %}
 {% set short_name = host.split('.')[0] %}
