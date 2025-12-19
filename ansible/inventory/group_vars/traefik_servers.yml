@@ -76,9 +76,14 @@ sshpiper_group: sshpiper
 sshpiper_config_dir: /etc/sshpiper
 
 # Ansible SSH configuration
-# Connection method is auto-detected by deploy-proxy.yml playbook
-# The playbook tries (in order):
-#   1. proxy@<host>:22 (sshpiper route → localhost:2222 as root)
-#   2. root@<host>:2222 (direct sshd access)
-#   3. root@<host>:22 (initial deployment, sshpiper not running yet)
-# No manual configuration needed!
+# Ansible connects as root@<host>:22
+# Before sshpiper: connects directly to sshd on port 22
+# After sshpiper: sshpiper rejects "root" user (no route), must use port 2222
+#
+# After initial deployment, uncomment to use direct sshd access:
+# ansible_port: 2222
+#
+# Manual SSH access patterns after deployment:
+#   ssh -p 2222 root@proxy.home.goodkind.io  → direct sshd
+#   ssh proxy@home.goodkind.io               → sshpiper route to localhost:2222 as root
+#   ssh adguard@home.goodkind.io             → sshpiper route to adguard container

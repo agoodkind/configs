@@ -29,49 +29,24 @@
   vars:
     target_hosts: traefik_servers
 
-- name: Probe connection methods for proxy container
+- name: Configure connection method for proxy container
   hosts: localhost
   gather_facts: false
   vars:
     proxy_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
     proxy_ip: "{{ hostvars[proxy_hostname]['ansible_host'] | default('') }}"
   tasks:
-    - name: Probe sshpiper route (proxy user on port 22)
-      ansible.builtin.wait_for:
-        host: "{{ proxy_ip }}"
-        port: 22
-        timeout: 2
-        state: started
-      register: port_22_probe
-      failed_when: false
-      when: proxy_ip | length > 0
-
-    - name: Probe direct sshd (port 2222)
-      ansible.builtin.wait_for:
-        host: "{{ proxy_ip }}"
-        port: 2222
-        timeout: 2
-        state: started
-      register: port_2222_probe
-      failed_when: false
-      when: proxy_ip | length > 0
-
-    - name: Set connection method for proxy container
-      ansible.builtin.set_fact:
-        proxy_connection_user: >-
-          {{ 'proxy' if (port_22_probe.failed | default(true)) == false else 'root' }}
-        proxy_connection_port: >-
-          {{ 22 if (port_22_probe.failed | default(true)) == false
-          else (2222 if (port_2222_probe.failed | default(true)) == false else 22) }}
-
-    - name: Update proxy container connection in inventory
+    - name: Update proxy container with multi-port SSH config
       ansible.builtin.add_host:
         name: "{{ proxy_hostname }}"
         groups: traefik_servers
         ansible_host: "{{ proxy_ip }}"
-        ansible_user: "{{ proxy_connection_user }}"
-        ansible_port: "{{ proxy_connection_port }}"
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_user: root
+        ansible_ssh_common_args: >-
+          -o StrictHostKeyChecking=no
+          -o ConnectTimeout=5
+          -o ConnectionAttempts=3
+          -o Port=22
       when: proxy_ip | length > 0
 
 - name: Deploy and Configure Traefik
