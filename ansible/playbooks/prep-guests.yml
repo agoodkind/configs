@@ -181,6 +181,34 @@
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
   tasks:
+    - name: Show connection details
+      ansible.builtin.debug:
+        msg:
+          - "=== SSH Connection Details ==="
+          - "Target host: {{ inventory_hostname }}"
+          - "Ansible host: {{ ansible_host | default('not set') }}"
+          - "Ansible user: {{ ansible_user | default('not set') }}"
+          - "Ansible port: {{ ansible_port | default(22) }}"
+          - "SSH private key: {{ ansible_ssh_private_key_file | default('default') }}"
+      delegate_to: localhost
+
+    - name: Test SSH connection with verbose output
+      ansible.builtin.shell: |
+        echo "=== Attempting SSH connection ==="
+        ssh -v -o ConnectTimeout=5 \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          {{ ansible_user | default('root') }}@{{ ansible_host | default(inventory_hostname) }} \
+          'echo "SSH connection successful"; whoami' 2>&1 | tail -20
+      delegate_to: localhost
+      register: ssh_test
+      changed_when: false
+      ignore_errors: true
+
+    - name: Show SSH test results
+      ansible.builtin.debug:
+        var: ssh_test.stdout_lines
+
     - name: Wait for SSH to be ready (after starting)
       ansible.builtin.wait_for_connection:
         timeout: 120

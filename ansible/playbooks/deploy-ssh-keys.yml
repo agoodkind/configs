@@ -30,11 +30,39 @@
       vars:
         guest_list: "{{ guests }}"
 
+    - name: Check controller SSH keys
+      ansible.builtin.shell: |
+        echo "=== Public keys on controller ==="
+        ls -la ~/.ssh/id_*.pub 2>/dev/null || echo "No id_*.pub files found"
+        echo ""
+        echo "=== SSH agent keys ==="
+        ssh-add -L 2>/dev/null || echo "No SSH agent keys"
+        echo ""
+        echo "=== Default SSH key that will be used ==="
+        ssh -G localhost 2>/dev/null | grep "^identityfile" || echo "No default"
+      register: ssh_key_debug
+      changed_when: false
+
+    - name: Show SSH key debug info
+      ansible.builtin.debug:
+        var: ssh_key_debug.stdout_lines
+
     - name: Build authorized_keys bundle on controller
       ansible.builtin.command:
         cmd: "{{ deploy_authorized_keys_script }}"
       register: authorized_keys_content
       changed_when: false
+
+    - name: Show bundle preview
+      ansible.builtin.debug:
+        msg: "Bundle contains {{ authorized_keys_content.stdout_lines | length }} keys"
+
+    - name: Show actual keys in bundle
+      ansible.builtin.debug:
+        msg: "{{ item }}"
+      loop: "{{ authorized_keys_content.stdout_lines }}"
+      loop_control:
+        label: "Key {{ ansible_loop.index }}: {{ item.split()[0:2] | join(' ') }}... ({{ item.split()[-1] | default('no-comment') }})"
 
     - name: Copy bundle to Proxmox hosts
       ansible.builtin.copy:
@@ -93,6 +121,29 @@
         - item.type == 'lxc'
         - (item.name | lower) == 'proxy.home.goodkind.io'
       changed_when: true
+
+    - name: Verify deployed keys on proxy
+      ansible.builtin.shell: |
+        echo "=== /root/.ssh/authorized_keys ==="
+        pct exec {{ item.vmid }} -- wc -l /root/.ssh/authorized_keys
+        pct exec {{ item.vmid }} -- ls -la /root/.ssh/authorized_keys
+        echo ""
+        echo "=== First key preview ==="
+        pct exec {{ item.vmid }} -- head -1 /root/.ssh/authorized_keys | cut -c1-80
+      delegate_to: "{{ item.host }}"
+      loop: "{{ guests_with_type }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }})"
+      when:
+        - item.type == 'lxc'
+        - (item.name | lower) == 'proxy.home.goodkind.io'
+      register: verify_keys
+      changed_when: false
+
+    - name: Show verification
+      ansible.builtin.debug:
+        var: verify_keys.results[0].stdout_lines
+      when: verify_keys.results | length > 0
 
     - name: Deploy authorized_keys to QEMU guest
       ansible.builtin.shell: |
