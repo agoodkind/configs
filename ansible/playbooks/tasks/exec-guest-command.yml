@@ -1,0 +1,125 @@
+---
+# Abstracted guest command execution
+#
+# Automatically chooses the correct method based on guest type:
+#   - LXC: pct exec
+#   - QEMU: qm guest exec (parses JSON)
+#   - ssh: For remote execution (fallback when not in Proxmox)
+#
+# Input variables (required):
+#   - exec_command: Command to execute
+#
+# Optional:
+#   - exec_vmid: Guest VMID (for Proxmox guests)
+#   - exec_host: Proxmox host (defaults to inventory_hostname)
+#   - exec_type: Guest type ('lxc', 'qemu', or 'ssh'), auto-detected if omitted
+#   - exec_method: Force method ('pct', 'qm', or 'ssh'), overrides exec_type
+#   - exec_ssh_host: SSH target (defaults to inventory_hostname)
+#
+# Output (registered as exec_result):
+#   - stdout: Command output
+#   - stderr: Command errors
+#   - rc: Exit code
+
+- name: Set default exec_host if not provided
+  ansible.builtin.set_fact:
+    exec_host: "{{ exec_host | default(inventory_hostname) }}"
+  when: exec_method is not defined and exec_type is not defined
+
+- name: Detect guest type if not specified (check LXC)
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      pct list | awk -v vmid="{{ exec_vmid }}"
+      '$1 == vmid {print "lxc"; exit}'
+  delegate_to: "{{ exec_host }}"
+  register: detect_lxc
+  changed_when: false
+  failed_when: false
+  when:
+    - exec_method is not defined
+    - exec_type is not defined
+    - exec_vmid is defined
+
+- name: Detect guest type if not specified (check QEMU)
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      qm list | awk -v vmid="{{ exec_vmid }}"
+      '$1 == vmid {print "qemu"; exit}'
+  delegate_to: "{{ exec_host }}"
+  register: detect_qemu
+  changed_when: false
+  failed_when: false
+  when:
+    - exec_method is not defined
+    - exec_type is not defined
+    - exec_vmid is defined
+    - detect_lxc.stdout | default('') == ''
+
+- name: Set detected or fallback exec_type
+  ansible.builtin.set_fact:
+    exec_type: "{{
+      detect_lxc.stdout | default('') if (detect_lxc.stdout | default('') != '')
+      else (detect_qemu.stdout | default('') if (detect_qemu.stdout | default('') != '')
+      else 'ssh')
+      }}"
+  when:
+    - exec_method is not defined
+    - exec_type is not defined
+
+- name: Set default SSH host if needed
+  ansible.builtin.set_fact:
+    exec_ssh_host: "{{ exec_ssh_host | default(inventory_hostname) }}"
+  when: (exec_method | default(exec_type)) == 'ssh'
+
+- name: Execute command via pct exec (LXC)
+  ansible.builtin.command:
+    cmd: pct exec {{ exec_vmid }} -- {{ exec_command }}
+  delegate_to: "{{ exec_host }}"
+  register: exec_result_pct
+  failed_when: false
+  changed_when: false
+  when: (exec_method | default(exec_type)) == 'lxc' or (exec_method | default('')) == 'pct'
+
+- name: Execute command via qm guest exec (QEMU)
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      qm guest exec {{ exec_vmid }} -- {{ exec_command }} | jq -r '.["out-data"]'
+  delegate_to: "{{ exec_host }}"
+  register: exec_result_qm
+  failed_when: false
+  changed_when: false
+  when: (exec_method | default(exec_type)) == 'qemu' or (exec_method | default('')) == 'qm'
+
+- name: Execute command via SSH
+  ansible.builtin.command:
+    cmd: "{{ exec_command }}"
+  delegate_to: "{{ exec_ssh_host }}"
+  register: exec_result_ssh
+  failed_when: false
+  changed_when: false
+  when: (exec_method | default(exec_type)) == 'ssh'
+
+- name: Normalize execution result
+  ansible.builtin.set_fact:
+    exec_result:
+      stdout: "{{
+        exec_result_pct.stdout if exec_result_pct is defined and not exec_result_pct.skipped | default(false)
+        else (exec_result_qm.stdout if exec_result_qm is defined and not exec_result_qm.skipped | default(false)
+        else (exec_result_ssh.stdout if exec_result_ssh is defined and not exec_result_ssh.skipped | default(false)
+        else ''))
+        }}"
+      stderr: "{{
+        exec_result_pct.stderr if exec_result_pct is defined and not exec_result_pct.skipped | default(false)
+        else (exec_result_qm.stderr if exec_result_qm is defined and not exec_result_qm.skipped | default(false)
+        else (exec_result_ssh.stderr if exec_result_ssh is defined and not exec_result_ssh.skipped | default(false)
+        else ''))
+        }}"
+      rc: "{{
+        exec_result_pct.rc if exec_result_pct is defined and not exec_result_pct.skipped | default(false)
+        else (exec_result_qm.rc if exec_result_qm is defined and not exec_result_qm.skipped | default(false)
+        else (exec_result_ssh.rc if exec_result_ssh is defined and not exec_result_ssh.skipped | default(false)
+        else -1))
+        }}"

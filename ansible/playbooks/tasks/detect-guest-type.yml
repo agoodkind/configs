@@ -1,0 +1,33 @@
+---
+# Reusable tasks to detect guest type (LXC or QEMU)
+#
+# Input variables (required):
+#   - guest_list: List of guests with 'vmid' and 'host' attributes
+#
+# Output variable:
+#   - guests_with_type: Same list with 'type' attribute added
+
+- name: Detect guest type (LXC or QEMU) for each guest
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      pct list | awk -v vmid="{{ item.vmid }}"
+      '$1 == vmid {print "lxc"; exit}
+      END {if (NR == 0 || $1 != vmid) print "qemu"}'
+  delegate_to: "{{ item.host }}"
+  loop: "{{ guest_list }}"
+  loop_control:
+    label: "{{ item.name | default(item.vmid) }} (VMID: {{ item.vmid }})"
+  register: guest_type_result
+  changed_when: false
+
+- name: Build guest list with detected types
+  ansible.builtin.set_fact:
+    guests_with_type: "{{
+      guests_with_type | default([]) +
+      [guest_list[idx] | combine({'type': guest_type_result.results[idx].stdout | trim})]
+      }}"
+  loop: "{{ guest_list }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.name | default(item.vmid) }}"
