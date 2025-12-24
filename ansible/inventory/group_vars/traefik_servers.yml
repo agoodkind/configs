@@ -2,6 +2,11 @@
 # Traefik Configuration Variables
 # Override these in your own environment or use ansible-vault for sensitive values
 
+# SSH Configuration
+# Port 22: SSHPiper (routes by username)
+# Port 2222: Direct sshd (for Ansible root access)
+ansible_port: 2222
+
 # Container hostname
 traefik_hostname: proxy.home.goodkind.io
 
@@ -74,7 +79,6 @@ login_dir: /etc/traefik
 sshpiper_user: sshpiper
 sshpiper_group: sshpiper
 sshpiper_config_dir: /etc/sshpiper
-
 # Ansible SSH configuration
 # Ansible connects as root@<host>:22
 # Before sshpiper: connects directly to sshd on port 22
