@@ -92,7 +92,7 @@
     - name: Probe SSH on VMID IPv6
       ansible.builtin.wait_for:
         host: "3d06:bad:b01::{{ item.vmid | string | trim }}"
-        port: 22
+        port: "{{ hostvars[item.name].ansible_port | default(22) }}"
         timeout: 2
         state: started
       loop: "{{ guest_start_targets | default([]) }}"
@@ -105,7 +105,7 @@
     - name: Probe SSH on VMID IPv4
       ansible.builtin.wait_for:
         host: "10.250.0.{{ item.vmid | string | trim }}"
-        port: 22
+        port: "{{ hostvars[item.name].ansible_port | default(22) }}"
         timeout: 2
         state: started
       loop: "{{ guest_start_targets | default([]) }}"
@@ -121,6 +121,7 @@
         groups: proxmox_api_targets
         ansible_host: "{{ ansible_host_final }}"
         ansible_user: root
+        ansible_port: "{{ hostvars[item.name].ansible_port | default(22) }}"
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         ansible_proxmox_vmid: "{{ item.vmid }}"
         ansible_proxmox_host: "{{ item.proxmox_host }}"
@@ -766,7 +767,9 @@
 
     - name: Install debug helper command (service-specific)
       ansible.builtin.template:
-        src: "{{ repo_root }}/{{ prep_ct_service_effective | lower }}/debug-{{ prep_ct_service_effective | lower }}.sh.j2"
+        src: >-
+          {{ repo_root }}/{{ prep_ct_service_effective | lower -}}/debug-{{-
+          prep_ct_service_effective | lower }}.sh.j2
         dest: /usr/local/bin/debug
         mode: '0755'
       when:
