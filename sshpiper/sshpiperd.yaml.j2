@@ -10,10 +10,11 @@ pipes:
       username: root
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
-{% for host in groups['proxmox_all_lxc'] | default([]) %}
+{% set lxc_hosts = groups['proxmox_all_lxc'] | default(groups['taglxc'] | default([])) %}
+{% for host in lxc_hosts %}
 {% set short_name = host.split('.')[0] %}
-{% set target_ip = hostvars[host]['ansible_host'] | default('') %}
-{% if target_ip | length > 0 %}
+{% set target_ip = hostvars[host].ansible_host | default('') %}
+{% if (short_name != 'proxy') and (target_ip | length > 0) %}
   - from:
       - username: "{{ short_name }}"
         authorized_keys: /etc/sshpiper/authorized_keys
