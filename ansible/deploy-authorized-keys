@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+deploy-authorized-keys
+
+Generate an authorized_keys bundle (newline-separated).
+
+Bundle sources:
+- All local ~/.ssh/id_*.pub files
+- GitHub keys for a username (default: agoodkind)
+- Optional extra public key file
+
+Usage:
+  deploy-authorized-keys [--out <path>] [--github-user <user>] [--extra-pubkey <path>]
+
+Examples:
+  deploy-authorized-keys --out /tmp/authorized_keys.bundle
+  deploy-authorized-keys --github-user agoodkind > /tmp/authorized_keys.bundle
+USAGE
+}
+
+die() {
+  echo "deploy-authorized-keys: $*" >&2
+  exit 1
+}
+
+OUT_PATH=""
+GITHUB_USER="agoodkind"
+EXTRA_PUBKEY=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --out) OUT_PATH="${2:-}"; shift 2;;
+    --github-user) GITHUB_USER="${2:-}"; shift 2;;
+    --extra-pubkey) EXTRA_PUBKEY="${2:-}"; shift 2;;
+    -h|--help) usage; exit 0;;
+    *) die "unknown arg: $1";;
+  esac
+done
+
+[ -n "$GITHUB_USER" ] || die "--github-user must be non-empty"
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+bundle_tmp="$tmpdir/authorized_keys"
+
+{
+  for f in "$HOME"/.ssh/id_*.pub; do
+    [ -f "$f" ] || continue
+    awk 'NF {print}' "$f"
+  done
+
+  curl -fsSL "https://github.com/${GITHUB_USER}.keys" | awk 'NF {print}'
+
+  if [ -n "$EXTRA_PUBKEY" ]; then
+    [ -f "$EXTRA_PUBKEY" ] || die "extra pubkey not found: $EXTRA_PUBKEY"
+    awk 'NF {print}' "$EXTRA_PUBKEY"
+  fi
+} | tr -d '\r' | awk 'NF {print}' >"$bundle_tmp"
+
+if [ -n "$OUT_PATH" ]; then
+  cp "$bundle_tmp" "$OUT_PATH"
+else
+  cat "$bundle_tmp"
+fi
