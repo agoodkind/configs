@@ -62,7 +62,7 @@ bundle_tmp="$tmpdir/authorized_keys"
 } | tr -d '\r' | awk 'NF {print}' >"$bundle_tmp"
 
 if [ -n "$OUT_PATH" ]; then
-  cp "$bundle_tmp" "$OUT_PATH"
+  mv "$bundle_tmp" "$OUT_PATH"
 else
   cat "$bundle_tmp"
 fi
