@@ -212,5 +212,5 @@ adguard_work_dir: /opt/AdGuardHome
 adguard_config_dir: /opt/AdGuardHome
 adguard_data_dir: /opt/AdGuardHome/data
 
-# Container login directory (prep-cts.yml)
+# Container login directory (prep-guests.yml)
 login_dir: /opt/AdGuardHome

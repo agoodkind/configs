@@ -6,10 +6,10 @@ proxmox_token_id: ansible-token
 proxmox_token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
 
 # ----------------------------------------------------------------------------
-# SMTP (outbound) defaults for all CTs/VMs (via prep-cts)
+# SMTP (outbound) defaults for all CTs/VMs (via prep-guests)
 # ----------------------------------------------------------------------------
 smtp_enabled: "{{ lookup('env', 'SMTP_ENABLED', default='1') }}"
-# If SMTP_FROM is unset, we derive sender as "<hostname>@<domain>" in prep-cts.
+# If SMTP_FROM is unset, we derive sender as "<hostname>@<domain>" in prep-guests.
 smtp_from: "{{ lookup('env', 'SMTP_FROM', default='') }}"
 smtp_from_domain: "{{ lookup('env', 'SMTP_FROM_DOMAIN', default='goodkind.io') }}"
 smtp_sender_name: "{{ lookup('env', 'SMTP_SENDER_NAME', default='') }}"

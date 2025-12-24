@@ -570,16 +570,16 @@
       ansible.builtin.debug:
         msg: "✓ SSH connection to {{ inventory_hostname }} is ready"
 
-- name: Pre-flight check before prep-cts
+- name: Pre-flight check before prep-guests
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Announce prep-cts start
+    - name: Announce prep-guests start
       ansible.builtin.debug:
-        msg: "Starting container preparation (prep-cts) on new container(s)..."
+        msg: "Starting guest preparation (prep-guests) on new container(s)..."
 
-- name: Run prep-cts on new container
-  import_playbook: prep-cts.yml
+- name: Run prep-guests on new container
+  import_playbook: prep-guests.yml
   vars:
     target_hosts: new_containers
 
