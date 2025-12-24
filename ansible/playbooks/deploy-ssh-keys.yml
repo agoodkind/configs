@@ -15,7 +15,6 @@
           vmid: "{{ ansible_proxmox_vmid }}"
           host: "{{ ansible_proxmox_host }}"
           name: "{{ inventory_hostname }}"
-          type: "{{ 'lxc' if (ansible_virtualization_type | default('') == 'lxc') else 'qemu' }}"
 
 - name: Deploy SSH keys to containers/VMs via Proxmox
   hosts: localhost
@@ -28,6 +27,11 @@
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
     guests: "{{ groups[target_group] | map('extract', hostvars, 'guest_info') | select('defined') | list }}"
   tasks:
+    - name: Detect guest types
+      ansible.builtin.include_tasks: tasks/detect-guest-type.yml
+      vars:
+        guest_list: "{{ guests }}"
+
     - name: Look up proxy container VMID
       ansible.builtin.shell:
         cmd: set -o pipefail && pct list | awk '/proxy\.home\.goodkind\.io/ {print $1}'
@@ -61,8 +65,8 @@
 
     - name: Display target guests
       ansible.builtin.debug:
-        msg: "Deploying to {{ guests | length }} guest(s): {{
-          guests | map(attribute='name') | join(', ') }}"
+        msg: "Deploying to {{ guests_with_type | length }} guest(s): {{
+          guests_with_type | map(attribute='name') | join(', ') }}"
 
     - name: Display SSH keys being deployed
       ansible.builtin.debug:
@@ -77,7 +81,7 @@
         dest: "/tmp/ssh_keys_{{ item.vmid }}.pub"
         mode: '0644'
       delegate_to: "{{ item.host }}"
-      loop: "{{ guests }}"
+      loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
 
@@ -94,7 +98,7 @@
           chown -R root:root /root/.ssh
         '
         rm /tmp/ssh_keys_{{ item.vmid }}.pub
-      loop: "{{ guests }}"
+      loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when:
@@ -119,7 +123,7 @@
           rm /tmp/new_keys.pub
         '
         rm /tmp/ssh_keys_{{ item.vmid }}.pub
-      loop: "{{ guests }}"
+      loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when:
@@ -141,7 +145,7 @@
           chown -R root:root /root/.ssh
         " | jq -r '.["out-data"]'
         rm /tmp/ssh_keys_{{ item.vmid }}.pub /tmp/ssh_keys_{{ item.vmid }}.b64
-      loop: "{{ guests }}"
+      loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when: item.type == 'qemu'
@@ -151,4 +155,4 @@
 
     - name: Summary
       ansible.builtin.debug:
-        msg: "✅ SSH keys deployed to {{ guests | length }} guest(s)"
+        msg: "✅ SSH keys deployed to {{ guests_with_type | length }} guest(s)"
