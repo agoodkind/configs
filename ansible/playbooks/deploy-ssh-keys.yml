@@ -20,19 +20,48 @@
   hosts: localhost
   gather_facts: false
   vars:
-    ssh_key_from_file: "{{ lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') | default('') }}"
+    ssh_key_from_file: "{{
+      lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') |
+      default('') }}"
     ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys') }}"
-    sshpiper_upstream_key: >-
-      {{ lookup('file', '/etc/sshpiper/upstream_id_ed25519.pub', errors='ignore') | default('') }}
-    ssh_key: >-
-      {{ (ssh_key_from_file + '\n' if ssh_key_from_file else '') + ssh_key_from_url +
-      ('\n' + sshpiper_upstream_key if sshpiper_upstream_key else '') }}
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
     containers: "{{ groups[target_group] | map('extract', hostvars, 'container_info') | select('defined') | list }}"
   tasks:
+    - name: Look up proxy container VMID
+      ansible.builtin.shell:
+        cmd: set -o pipefail && pct list | awk '/proxy\.home\.goodkind\.io/ {print $1}'
+      delegate_to: 10.250.0.254
+      register: proxy_vmid_result
+      failed_when: false
+      changed_when: false
+
+    - name: Fetch sshpiper upstream key from proxy VM via pct
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ proxy_vmid_result.stdout }} --
+          cat /etc/sshpiper/upstream_id_ed25519.pub
+      delegate_to: 10.250.0.254
+      register: sshpiper_key_result
+      failed_when: false
+      changed_when: false
+      when: proxy_vmid_result.stdout | length > 0
+
+    - name: Build combined SSH key list
+      ansible.builtin.set_fact:
+        sshpiper_upstream_key: "{{
+          sshpiper_key_result.stdout | trim
+          if sshpiper_key_result.stdout is defined else '' }}"
+        ssh_key: "{{
+          (ssh_key_from_file + '\n' if ssh_key_from_file else '') +
+          ssh_key_from_url +
+          ('\n' + (sshpiper_key_result.stdout | trim)
+          if sshpiper_key_result.stdout is defined else '')
+          }}"
+
     - name: Display target containers
       ansible.builtin.debug:
-        msg: "Deploying SSH keys to {{ containers | length }} container(s): {{ containers | map(attribute='name') | join(', ') }}"
+        msg: "Deploying to {{ containers | length }} container(s): {{
+          containers | map(attribute='name') | join(', ') }}"
 
     - name: Display SSH keys being deployed
       ansible.builtin.debug:
@@ -58,8 +87,7 @@
         pct exec {{ item.vmid }} -- sh -c '
           mkdir -p /root/.ssh
           chmod 700 /root/.ssh
-          # Split comma-separated keys and reformat properly
-          tr "," "\n" < /tmp/new_keys.pub > /root/.ssh/authorized_keys
+          tr -d '\''\r'\'' < /tmp/new_keys.pub > /root/.ssh/authorized_keys
           rm /tmp/new_keys.pub
           chmod 600 /root/.ssh/authorized_keys
           chown -R root:root /root/.ssh
