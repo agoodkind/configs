@@ -53,13 +53,15 @@ bundle_tmp="$tmpdir/authorized_keys"
     awk 'NF {print}' "$f"
   done
 
+  ssh-add -L 2>/dev/null || true
+
   curl -fsSL "https://github.com/${GITHUB_USER}.keys" | awk 'NF {print}'
 
   if [ -n "$EXTRA_PUBKEY" ]; then
     [ -f "$EXTRA_PUBKEY" ] || die "extra pubkey not found: $EXTRA_PUBKEY"
     awk 'NF {print}' "$EXTRA_PUBKEY"
   fi
-} | tr -d '\r' | awk 'NF {print}' >"$bundle_tmp"
+} | tr -d '\r' | awk 'NF {print}' | sort -u >"$bundle_tmp"
 
 if [ -n "$OUT_PATH" ]; then
   cp "$bundle_tmp" "$OUT_PATH"

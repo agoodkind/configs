@@ -59,10 +59,10 @@
 
     - name: Show actual keys in bundle
       ansible.builtin.debug:
-        msg: "{{ item }}"
+        msg: "Key type: {{ item.split()[0] }}, Comment: {{ item.split()[-1] | default('no-comment') }}"
       loop: "{{ authorized_keys_content.stdout_lines }}"
       loop_control:
-        label: "Key {{ ansible_loop.index }}: {{ item.split()[0:2] | join(' ') }}... ({{ item.split()[-1] | default('no-comment') }})"
+        index_var: key_idx
 
     - name: Copy bundle to Proxmox hosts
       ansible.builtin.copy:
