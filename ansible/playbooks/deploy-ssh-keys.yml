@@ -32,6 +32,7 @@
 
     - name: Check controller SSH keys
       ansible.builtin.shell: |
+        set -o pipefail
         echo "=== Public keys on controller ==="
         ls -la ~/.ssh/id_*.pub 2>/dev/null || echo "No id_*.pub files found"
         echo ""
@@ -70,12 +71,14 @@
         dest: "/tmp/authorized_keys_{{ item.vmid }}.pub"
         mode: '0644'
       delegate_to: "{{ item.host }}"
-      loop: "{{ guests_with_type }}"
+      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
 
     - name: Deploy authorized_keys to LXC guest
       ansible.builtin.shell: |
+        set -e
+        [ -f /tmp/authorized_keys_{{ item.vmid }}.pub ] || exit 0
         pct push {{ item.vmid }} /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
         pct exec {{ item.vmid }} -- sh -c '
           set -e
@@ -88,7 +91,7 @@
         '
         rm /tmp/authorized_keys_{{ item.vmid }}.pub
       delegate_to: "{{ item.host }}"
-      loop: "{{ guests_with_type }}"
+      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when:
@@ -98,6 +101,8 @@
 
     - name: Deploy authorized_keys to proxy guest (root + sshpiper)
       ansible.builtin.shell: |
+        set -e
+        [ -f /tmp/authorized_keys_{{ item.vmid }}.pub ] || exit 0
         pct push {{ item.vmid }} /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
         pct exec {{ item.vmid }} -- sh -c '
           set -e
@@ -114,7 +119,7 @@
         '
         rm /tmp/authorized_keys_{{ item.vmid }}.pub
       delegate_to: "{{ item.host }}"
-      loop: "{{ guests_with_type }}"
+      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when:
@@ -124,6 +129,7 @@
 
     - name: Verify deployed keys on proxy
       ansible.builtin.shell: |
+        set -o pipefail
         echo "=== /root/.ssh/authorized_keys ==="
         pct exec {{ item.vmid }} -- wc -l /root/.ssh/authorized_keys
         pct exec {{ item.vmid }} -- ls -la /root/.ssh/authorized_keys
@@ -131,7 +137,7 @@
         echo "=== First key preview ==="
         pct exec {{ item.vmid }} -- head -1 /root/.ssh/authorized_keys | cut -c1-80
       delegate_to: "{{ item.host }}"
-      loop: "{{ guests_with_type }}"
+      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }})"
       when:
@@ -147,7 +153,8 @@
 
     - name: Deploy authorized_keys to QEMU guest
       ansible.builtin.shell: |
-        set -o pipefail
+        set -eo pipefail
+        [ -f /tmp/authorized_keys_{{ item.vmid }}.pub ] || exit 0
         cat /tmp/authorized_keys_{{ item.vmid }}.pub | base64 -w0 > /tmp/authorized_keys_{{ item.vmid }}.b64
         KEY_B64=$(cat /tmp/authorized_keys_{{ item.vmid }}.b64)
         qm guest exec {{ item.vmid }} -- sh -c "
@@ -160,7 +167,7 @@
         " | jq -r '.["out-data"]'
         rm /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/authorized_keys_{{ item.vmid }}.b64
       delegate_to: "{{ item.host }}"
-      loop: "{{ guests_with_type }}"
+      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when: item.type == 'qemu'
