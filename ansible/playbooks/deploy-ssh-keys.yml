@@ -41,6 +41,8 @@
         echo ""
         echo "=== Default SSH key that will be used ==="
         ssh -G localhost 2>/dev/null | grep "^identityfile" || echo "No default"
+      args:
+        executable: /bin/bash
       register: ssh_key_debug
       changed_when: false
 
@@ -136,6 +138,8 @@
         echo ""
         echo "=== First key preview ==="
         pct exec {{ item.vmid }} -- head -1 /root/.ssh/authorized_keys | cut -c1-80
+      args:
+        executable: /bin/bash
       delegate_to: "{{ item.host }}"
       loop: "{{ guests_with_type | unique(attribute='vmid') }}"
       loop_control:
