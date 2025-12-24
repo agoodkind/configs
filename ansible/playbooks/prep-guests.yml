@@ -169,6 +169,11 @@
         - item is defined
         - (ansible_host_final | default('') | trim) | length > 0
 
+- name: Deploy SSH keys to CT/VM guests
+  ansible.builtin.import_playbook: deploy-ssh-keys.yml
+  vars:
+    target_hosts: proxmox_api_targets
+
 - name: Prepare CT/VM guests (common)
   ansible.builtin.import_playbook: prep-host-common.yml
   vars:

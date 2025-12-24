@@ -25,7 +25,7 @@
     container_tags: "lxc,traefik"
 
 - name: Prepare container
-  ansible.builtin.import_playbook: prep-cts.yml
+  ansible.builtin.import_playbook: prep-guests.yml
   vars:
     target_hosts: traefik_servers
 

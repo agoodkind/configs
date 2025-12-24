@@ -758,7 +758,7 @@
             vm_created_fact: true
             vm_vmid_fact: "{{ new_vmid }}"
 
-        - name: Add VM to new_vms group for prep-cts (connect via IP initially)
+        - name: Add VM to new_vms group for prep-guests (connect via IP initially)
           ansible.builtin.add_host:
             name: "{{ hostname }}"
             groups: new_vms
@@ -789,7 +789,7 @@
               - "Next: Run deployment playbook to configure services"
 
 - name: Prepare newly created VMs
-  import_playbook: prep-cts.yml
+  import_playbook: prep-guests.yml
   vars:
     target_hosts: new_vms
   when: groups['new_vms'] is defined and groups['new_vms'] | length > 0

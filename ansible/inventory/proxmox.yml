@@ -5,7 +5,7 @@ token_id: ansible-token
 token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
 validate_certs: false
 want_facts: true
-# Include stopped guests too so playbooks can start them (e.g. prep-cts).
+# Include stopped guests too so playbooks can start them (e.g. prep-guests).
 # (We rely on best-effort start + wait_for_connection to handle boot time.)
 compose:
   ansible_host: (proxmox_ipconfig0.ip | default(proxmox_net0.ip) | ansible.utils.ipaddr('address'))

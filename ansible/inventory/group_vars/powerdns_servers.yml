@@ -52,5 +52,5 @@ tsig_algorithm: hmac-sha256
 # API configuration
 # pdns_api_key stored in vault
 
-# Container login directory (prep-cts.yml)
+# Container login directory (prep-guests.yml)
 login_dir: /etc/powerdns

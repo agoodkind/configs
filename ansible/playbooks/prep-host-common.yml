@@ -3,7 +3,7 @@
   # Common host preparation after we can SSH to the guest.
   #
   # Callers should provide `target_hosts` (group or host pattern). When omitted,
-  # defaults to `proxmox_api_targets` (the in-memory group built by prep-cts.yml).
+  # defaults to `proxmox_api_targets` (the in-memory group built by prep-guests.yml).
   hosts: "{{ target_hosts | default('proxmox_api_targets') }}"
   gather_facts: false
   vars:
@@ -29,7 +29,7 @@
         is_lxc: "{{ ansible_virtualization_type | default('') == 'lxc' }}"
         is_vm: "{{ ansible_virtualization_type | default('') in ['kvm', 'qemu'] }}"
 
-    - name: Compute effective prep-cts service name and login directory
+    - name: Compute effective prep-guests service name and login directory
       ansible.builtin.set_fact:
         prep_ct_service_effective: >-
           {{
@@ -577,10 +577,10 @@
 
     - name: Install login directory helper (service-aware)
       ansible.builtin.copy:
-        dest: /etc/profile.d/99-prep-cts-login-dir.sh
+        dest: /etc/profile.d/99-prep-guests-login-dir.sh
         mode: '0644'
         content: |
-          # Managed by Ansible (prep-cts.yml)
+          # Managed by Ansible (prep-guests.yml)
           #
           # Set a service-oriented default working directory for interactive shells.
           # Override per-container with `login_dir` in the vars file.
@@ -670,7 +670,7 @@
         dest: /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
         mode: '0644'
         content: |
-          # Managed by Ansible (prep-cts.yml)
+          # Managed by Ansible (prep-guests.yml)
           #
           # Enforce key-based SSH authentication.
           # Keep root login behavior unchanged; only disable password prompts.
