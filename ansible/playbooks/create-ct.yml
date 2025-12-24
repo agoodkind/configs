@@ -551,7 +551,8 @@
         groups: new_containers
         ansible_host: "{{ container_primary_ip }}"
         ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_ssh_common_args: >-
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
         ansible_proxmox_vmid: "{{ container_result.vmid }}"
         ansible_proxmox_host: "{{ target_node }}"
 

@@ -44,6 +44,7 @@
         ansible_user: root
         ansible_ssh_common_args: >-
           -o StrictHostKeyChecking=no
+          -o UserKnownHostsFile=/dev/null
           -o ConnectTimeout=5
           -o ConnectionAttempts=3
           -o Port=22
