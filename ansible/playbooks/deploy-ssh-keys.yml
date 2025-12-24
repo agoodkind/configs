@@ -20,12 +20,8 @@
   hosts: localhost
   gather_facts: false
   vars:
-    ssh_key_from_file: "{{
-      lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') |
-      default('') }}"
-    ssh_key_from_url: "{{
-      lookup('url', 'https://github.com/agoodkind.keys', split_lines=False) |
-      default('') }}"
+    deploy_authorized_keys_script: "{{ playbook_dir }}/../deploy-authorized-keys"
+    authorized_keys_bundle_path: /tmp/authorized_keys.bundle
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
     guests: "{{ groups[target_group] | map('extract', hostvars, 'guest_info') | select('defined') | list }}"
   tasks:
@@ -34,126 +30,91 @@
       vars:
         guest_list: "{{ guests }}"
 
-    - name: Look up proxy container VMID
-      ansible.builtin.shell:
-        cmd: set -o pipefail && pct list | awk '/proxy\.home\.goodkind\.io/ {print $1}'
-      delegate_to: 10.250.0.254
-      register: proxy_vmid_result
-      failed_when: false
-      changed_when: false
-
-    - name: Fetch sshpiper upstream key from proxy VM via pct
+    - name: Build authorized_keys bundle on controller
       ansible.builtin.command:
         cmd: >-
-          pct exec {{ proxy_vmid_result.stdout }} --
-          cat /etc/sshpiper/upstream_id_ed25519.pub
-      delegate_to: 10.250.0.254
-      register: sshpiper_key_result
-      failed_when: false
-      changed_when: false
-      when: proxy_vmid_result.stdout | length > 0
+          {{ deploy_authorized_keys_script }} --out
+          {{ authorized_keys_bundle_path }}
+      changed_when: true
 
-    - name: Build combined SSH key list
-      ansible.builtin.set_fact:
-        sshpiper_upstream_key: "{{
-          sshpiper_key_result.stdout | trim
-          if sshpiper_key_result.stdout is defined else '' }}"
-        ssh_key: "{{
-          (ssh_key_from_file + '\n' if ssh_key_from_file else '') +
-          ssh_key_from_url +
-          ('\n' + (sshpiper_key_result.stdout | trim)
-          if sshpiper_key_result.stdout is defined else '')
-          }}"
-
-    - name: Display target guests
-      ansible.builtin.debug:
-        msg: "Deploying to {{ guests_with_type | length }} guest(s): {{
-          guests_with_type | map(attribute='name') | join(', ') }}"
-
-    - name: Display SSH keys being deployed
-      ansible.builtin.debug:
-        msg: |
-          SSH Keys to deploy ({{ ssh_key.splitlines() | length }} keys):
-          - Personal keys (file + GitHub)
-          {{ '  - SSHPiper upstream key' if sshpiper_upstream_key else '' }}
-
-    - name: Write SSH keys to temp file
+    - name: Copy bundle to Proxmox hosts
       ansible.builtin.copy:
-        content: "{{ ssh_key }}\n"
-        dest: "/tmp/ssh_keys_{{ item.vmid }}.pub"
+        src: "{{ authorized_keys_bundle_path }}"
+        dest: "/tmp/authorized_keys_{{ item.vmid }}.pub"
         mode: '0644'
       delegate_to: "{{ item.host }}"
       loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
 
-    - name: Deploy SSH key to LXC container
-      delegate_to: "{{ item.host }}"
+    - name: Deploy authorized_keys to LXC guest
       ansible.builtin.shell: |
-        pct push {{ item.vmid }} /tmp/ssh_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
+        pct push {{ item.vmid }} /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
         pct exec {{ item.vmid }} -- sh -c '
+          set -e
           mkdir -p /root/.ssh
           chmod 700 /root/.ssh
-          tr -d '\''\r'\'' < /tmp/new_keys.pub > /root/.ssh/authorized_keys
-          rm /tmp/new_keys.pub
+          cat /tmp/new_keys.pub > /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
-          chown -R root:root /root/.ssh
+          chown root:root /root/.ssh/authorized_keys
+          rm /tmp/new_keys.pub
         '
-        rm /tmp/ssh_keys_{{ item.vmid }}.pub
+        rm /tmp/authorized_keys_{{ item.vmid }}.pub
+      delegate_to: "{{ item.host }}"
       loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when:
         - item.type == 'lxc'
-        - "'proxy' not in item.name"
+        - (item.name | lower) != 'proxy.home.goodkind.io'
       changed_when: true
 
-    - name: Deploy SSH key (with special handling for proxy container)
-      delegate_to: "{{ item.host }}"
+    - name: Deploy authorized_keys to proxy guest (root + sshpiper)
       ansible.builtin.shell: |
-        pct push {{ item.vmid }} /tmp/ssh_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
+        pct push {{ item.vmid }} /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
         pct exec {{ item.vmid }} -- sh -c '
+          set -e
           mkdir -p /root/.ssh
           chmod 700 /root/.ssh
-          tr -d '\''\r'\'' < /tmp/new_keys.pub > /root/.ssh/authorized_keys
+          cat /tmp/new_keys.pub > /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
           chown root:root /root/.ssh/authorized_keys
           mkdir -p /etc/sshpiper
-          tr -d '\''\r'\'' < /tmp/new_keys.pub > /etc/sshpiper/authorized_keys
+          cat /tmp/new_keys.pub > /etc/sshpiper/authorized_keys
           chmod 600 /etc/sshpiper/authorized_keys
           chown sshpiper:sshpiper /etc/sshpiper/authorized_keys
           rm /tmp/new_keys.pub
         '
-        rm /tmp/ssh_keys_{{ item.vmid }}.pub
+        rm /tmp/authorized_keys_{{ item.vmid }}.pub
+      delegate_to: "{{ item.host }}"
       loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when:
         - item.type == 'lxc'
-        - "'proxy' in item.name"
+        - (item.name | lower) == 'proxy.home.goodkind.io'
       changed_when: true
 
-    - name: Deploy SSH key to QEMU VM
-      delegate_to: "{{ item.host }}"
+    - name: Deploy authorized_keys to QEMU guest
       ansible.builtin.shell: |
         set -o pipefail
-        cat /tmp/ssh_keys_{{ item.vmid }}.pub | base64 -w0 > /tmp/ssh_keys_{{ item.vmid }}.b64
-        KEY_B64=$(cat /tmp/ssh_keys_{{ item.vmid }}.b64)
+        cat /tmp/authorized_keys_{{ item.vmid }}.pub | base64 -w0 > /tmp/authorized_keys_{{ item.vmid }}.b64
+        KEY_B64=$(cat /tmp/authorized_keys_{{ item.vmid }}.b64)
         qm guest exec {{ item.vmid }} -- sh -c "
+          set -e
           mkdir -p /root/.ssh
           chmod 700 /root/.ssh
-          echo '$KEY_B64' | base64 -d | tr -d '\r' > /root/.ssh/authorized_keys
+          echo '$KEY_B64' | base64 -d > /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
-          chown -R root:root /root/.ssh
+          chown root:root /root/.ssh/authorized_keys
         " | jq -r '.["out-data"]'
-        rm /tmp/ssh_keys_{{ item.vmid }}.pub /tmp/ssh_keys_{{ item.vmid }}.b64
+        rm /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/authorized_keys_{{ item.vmid }}.b64
+      delegate_to: "{{ item.host }}"
       loop: "{{ guests_with_type }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
       when: item.type == 'qemu'
       changed_when: true
-      register: qm_result
-      failed_when: qm_result.rc != 0
 
     - name: Summary
       ansible.builtin.debug:
