@@ -1,22 +1,23 @@
 ---
-- name: Gather LXC container information
+- name: Gather container/VM information
   hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
   gather_facts: false
   tasks:
-    - name: Filter by container ID if specified
+    - name: Filter by container/VM ID if specified
       ansible.builtin.meta: end_host
       when:
         - container_id | default('') | length > 0
         - ansible_proxmox_vmid | default('') | string != container_id | string
 
-    - name: Store container info on each host
+    - name: Store container/VM info on each host
       ansible.builtin.set_fact:
-        container_info:
+        guest_info:
           vmid: "{{ ansible_proxmox_vmid }}"
           host: "{{ ansible_proxmox_host }}"
           name: "{{ inventory_hostname }}"
+          type: "{{ 'lxc' if (ansible_virtualization_type | default('') == 'lxc') else 'qemu' }}"
 
-- name: Deploy SSH keys to containers via Proxmox
+- name: Deploy SSH keys to containers/VMs via Proxmox
   hosts: localhost
   gather_facts: false
   vars:
@@ -25,7 +26,7 @@
       default('') }}"
     ssh_key_from_url: "{{ lookup('url', 'https://github.com/agoodkind.keys') }}"
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
-    containers: "{{ groups[target_group] | map('extract', hostvars, 'container_info') | select('defined') | list }}"
+    guests: "{{ groups[target_group] | map('extract', hostvars, 'guest_info') | select('defined') | list }}"
   tasks:
     - name: Look up proxy container VMID
       ansible.builtin.shell:
@@ -58,10 +59,10 @@
           if sshpiper_key_result.stdout is defined else '')
           }}"
 
-    - name: Display target containers
+    - name: Display target guests
       ansible.builtin.debug:
-        msg: "Deploying to {{ containers | length }} container(s): {{
-          containers | map(attribute='name') | join(', ') }}"
+        msg: "Deploying to {{ guests | length }} guest(s): {{
+          guests | map(attribute='name') | join(', ') }}"
 
     - name: Display SSH keys being deployed
       ansible.builtin.debug:
@@ -76,11 +77,11 @@
         dest: "/tmp/ssh_keys_{{ item.vmid }}.pub"
         mode: '0644'
       delegate_to: "{{ item.host }}"
-      loop: "{{ containers }}"
+      loop: "{{ guests }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
 
-    - name: Deploy SSH key to container (overwrite to fix formatting)
+    - name: Deploy SSH key to LXC container
       delegate_to: "{{ item.host }}"
       ansible.builtin.shell: |
         pct push {{ item.vmid }} /tmp/ssh_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
@@ -93,11 +94,34 @@
           chown -R root:root /root/.ssh
         '
         rm /tmp/ssh_keys_{{ item.vmid }}.pub
-      loop: "{{ containers }}"
+      loop: "{{ guests }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+      when: item.type == 'lxc'
       changed_when: true
+
+    - name: Deploy SSH key to QEMU VM
+      delegate_to: "{{ item.host }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+        cat /tmp/ssh_keys_{{ item.vmid }}.pub | base64 -w0 > /tmp/ssh_keys_{{ item.vmid }}.b64
+        KEY_B64=$(cat /tmp/ssh_keys_{{ item.vmid }}.b64)
+        qm guest exec {{ item.vmid }} -- sh -c "
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+          echo '$KEY_B64' | base64 -d | tr -d '\r' > /root/.ssh/authorized_keys
+          chmod 600 /root/.ssh/authorized_keys
+          chown -R root:root /root/.ssh
+        " | jq -r '.["out-data"]'
+        rm /tmp/ssh_keys_{{ item.vmid }}.pub /tmp/ssh_keys_{{ item.vmid }}.b64
+      loop: "{{ guests }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+      when: item.type == 'qemu'
+      changed_when: true
+      register: qm_result
+      failed_when: qm_result.rc != 0
 
     - name: Summary
       ansible.builtin.debug:
-        msg: "✅ SSH keys deployed to {{ containers | length }} container(s)"
+        msg: "✅ SSH keys deployed to {{ guests | length }} guest(s)"

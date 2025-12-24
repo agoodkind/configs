@@ -29,7 +29,7 @@
     container_tags: "lxc,powerdns"
 
 - name: Prepare container
-  ansible.builtin.import_playbook: prep-cts.yml
+  ansible.builtin.import_playbook: prep-guests.yml
   vars:
     target_hosts: powerdns_servers
 
