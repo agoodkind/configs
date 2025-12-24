@@ -141,7 +141,8 @@
         groups: "{{ container_group }}"
         ansible_host: "{{ hostvars['localhost']['container_primary_ip'] }}"
         ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_ssh_common_args: >-
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
         ansible_proxmox_vmid: >-
           {{ hostvars[hostvars['localhost']['service_hostname']].ansible_proxmox_vmid | default('') }}
         ansible_proxmox_host: >-
