@@ -24,11 +24,6 @@
     cores: "2"
     container_tags: "lxc,traefik"
 
-- name: Prepare container
-  ansible.builtin.import_playbook: prep-guests.yml
-  vars:
-    target_hosts: traefik_servers
-
 - name: Configure connection method for proxy container
   hosts: localhost
   gather_facts: false
