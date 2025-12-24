@@ -556,29 +556,7 @@
         ansible_proxmox_vmid: "{{ container_result.vmid }}"
         ansible_proxmox_host: "{{ target_node }}"
 
-- name: Initialize new container
-  hosts: new_containers
-  gather_facts: false
-  tasks:
-    - name: Wait for SSH to be ready
-      ansible.builtin.wait_for_connection:
-        timeout: 45
-        delay: 3
-        sleep: 2
-
-    - name: SSH connection established
-      ansible.builtin.debug:
-        msg: "✓ SSH connection to {{ inventory_hostname }} is ready"
-
-- name: Pre-flight check before prep-guests
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Announce prep-guests start
-      ansible.builtin.debug:
-        msg: "Starting guest preparation (prep-guests) on new container(s)..."
-
-- name: Run prep-guests on new container
+- name: Prepare new container (deploy keys and initialize)
   import_playbook: prep-guests.yml
   vars:
     target_hosts: new_containers
