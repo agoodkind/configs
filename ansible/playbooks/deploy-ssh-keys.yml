@@ -32,14 +32,13 @@
 
     - name: Build authorized_keys bundle on controller
       ansible.builtin.command:
-        cmd: >-
-          {{ deploy_authorized_keys_script }} --out
-          {{ authorized_keys_bundle_path }}
-      changed_when: true
+        cmd: "{{ deploy_authorized_keys_script }}"
+      register: authorized_keys_content
+      changed_when: false
 
     - name: Copy bundle to Proxmox hosts
       ansible.builtin.copy:
-        src: "{{ authorized_keys_bundle_path }}"
+        content: "{{ authorized_keys_content.stdout }}"
         dest: "/tmp/authorized_keys_{{ item.vmid }}.pub"
         mode: '0644'
       delegate_to: "{{ item.host }}"
