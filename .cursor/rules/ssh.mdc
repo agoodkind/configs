@@ -8,7 +8,7 @@ alwaysApply: true
 
 ## Primary Method: SSHPiper Routing
 
-All `*.home.goodkind.io` DNS points to `10.250.0.10` (proxy VM) where sshpiper routes by username:
+All `*.home.goodkind.io` DNS points to `10.250.0.110` (proxy VM) where sshpiper routes by username:
 
 ```bash
 ssh adguard@home.goodkind.io    # → routes to root@adguard-container-ip
@@ -62,7 +62,7 @@ ssh root@<container-ip>   # to target container
 
 ## Known Infrastructure IPs
 
-- **Proxy VM (sshpiper)**: `10.250.0.10` - sshd on port 2222, sshpiper on port 22
+- **Proxy VM (sshpiper)**: `10.250.0.110` - sshd on port 2222, sshpiper on port 22
 - **OPNsense**: `10.250.0.1` - SSH user: `agoodkind` (use `sudo` for privileged tasks)
 - **Proxmox host**: `10.250.0.254` - SSH user: `root`
 - **Ansible container**: `10.250.0.107` (CT 107) - has `PROXMOX_API_TOKEN` set
@@ -72,7 +72,7 @@ ssh root@<container-ip>   # to target container
 To access the proxy VM itself (bypassing sshpiper):
 
 ```bash
-ssh -p 2222 root@10.250.0.10    # sshd on port 2222
+ssh -p 2222 root@10.250.0.110    # sshd on port 2222
 ```
 
 ## Diagnostics-only SSH Options
