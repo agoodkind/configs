@@ -11,7 +11,7 @@ ansible.home.goodkind.io
 vault ansible_host=10.250.0.254 ansible_user=root
 
 [traefik_servers]
-proxy.home.goodkind.io
+proxy.home.goodkind.io ansible_port=2222
 
 [powerdns_servers]
 pdns.home.goodkind.io
