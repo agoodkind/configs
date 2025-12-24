@@ -97,7 +97,34 @@
       loop: "{{ guests }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
-      when: item.type == 'lxc'
+      when:
+        - item.type == 'lxc'
+        - "'proxy' not in item.name"
+      changed_when: true
+
+    - name: Deploy SSH key (with special handling for proxy container)
+      delegate_to: "{{ item.host }}"
+      ansible.builtin.shell: |
+        pct push {{ item.vmid }} /tmp/ssh_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
+        pct exec {{ item.vmid }} -- sh -c '
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+          tr -d '\''\r'\'' < /tmp/new_keys.pub > /root/.ssh/authorized_keys
+          chmod 600 /root/.ssh/authorized_keys
+          chown root:root /root/.ssh/authorized_keys
+          mkdir -p /etc/sshpiper
+          tr -d '\''\r'\'' < /tmp/new_keys.pub > /etc/sshpiper/authorized_keys
+          chmod 600 /etc/sshpiper/authorized_keys
+          chown sshpiper:sshpiper /etc/sshpiper/authorized_keys
+          rm /tmp/new_keys.pub
+        '
+        rm /tmp/ssh_keys_{{ item.vmid }}.pub
+      loop: "{{ guests }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+      when:
+        - item.type == 'lxc'
+        - "'proxy' in item.name"
       changed_when: true
 
     - name: Deploy SSH key to QEMU VM
