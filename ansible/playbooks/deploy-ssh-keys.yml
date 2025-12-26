@@ -30,6 +30,66 @@
       vars:
         guest_list: "{{ guests }}"
 
+    - name: Find proxy container in guest list
+      ansible.builtin.set_fact:
+        proxy_guest: >-
+          {{
+            (guests_with_type | default([]))
+            | selectattr('type', 'equalto', 'lxc')
+            | selectattr('name', 'defined')
+            | selectattr('name', 'lower', 'equalto', 'proxy.home.goodkind.io')
+            | list
+            | first
+            | default({})
+          }}
+
+    - name: Check if sshpiper upstream public key exists on proxy container
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ proxy_guest.vmid }}"
+          - --
+          - sh
+          - -c
+          - test -f /etc/sshpiper/upstream_id_ed25519.pub
+      delegate_to: "{{ proxy_guest.host }}"
+      register: sshpiper_upstream_key_exists
+      changed_when: false
+      failed_when: false
+      when: proxy_guest.vmid is defined and proxy_guest.host is defined
+
+    - name: Read sshpiper upstream public key from proxy container
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ proxy_guest.vmid }}"
+          - --
+          - cat
+          - /etc/sshpiper/upstream_id_ed25519.pub
+      delegate_to: "{{ proxy_guest.host }}"
+      register: sshpiper_upstream_pubkey_read
+      changed_when: false
+      when:
+        - proxy_guest.vmid is defined
+        - proxy_guest.host is defined
+        - sshpiper_upstream_key_exists.rc | default(1) == 0
+
+    - name: Set sshpiper upstream key fact (empty if unavailable)
+      ansible.builtin.set_fact:
+        sshpiper_upstream_pubkey: >-
+          {{ (sshpiper_upstream_pubkey_read.stdout | default('') | trim) }}
+
+    - name: Copy sshpiper upstream public key to Proxmox hosts (if available)
+      ansible.builtin.copy:
+        content: "{{ sshpiper_upstream_pubkey }}\n"
+        dest: /tmp/sshpiper_upstream_id_ed25519.pub
+        mode: '0644'
+      delegate_to: "{{ item }}"
+      loop: "{{ (guests_with_type | default([])) | map(attribute='host') | unique | list }}"
+      when: sshpiper_upstream_pubkey | length > 0
+
     - name: Check controller SSH keys
       ansible.builtin.shell: |
         set -o pipefail
@@ -82,6 +142,9 @@
         set -e
         [ -f /tmp/authorized_keys_{{ item.vmid }}.pub ] || exit 0
         pct push {{ item.vmid }} /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
+        if [ -f /tmp/sshpiper_upstream_id_ed25519.pub ]; then
+          pct push {{ item.vmid }} /tmp/sshpiper_upstream_id_ed25519.pub /tmp/sshpiper_upstream_id_ed25519.pub
+        fi
         pct exec {{ item.vmid }} -- sh -c '
           set -e
           mkdir -p /root/.ssh
@@ -89,6 +152,13 @@
           cat /tmp/new_keys.pub > /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
           chown root:root /root/.ssh/authorized_keys
+          if [ -f /tmp/sshpiper_upstream_id_ed25519.pub ]; then
+            upstream_key="$(cat /tmp/sshpiper_upstream_id_ed25519.pub)"
+            if ! grep -qxF "$upstream_key" /root/.ssh/authorized_keys; then
+              echo "$upstream_key" >> /root/.ssh/authorized_keys
+            fi
+            rm /tmp/sshpiper_upstream_id_ed25519.pub
+          fi
           rm /tmp/new_keys.pub
         '
         rm /tmp/authorized_keys_{{ item.vmid }}.pub
@@ -106,6 +176,9 @@
         set -e
         [ -f /tmp/authorized_keys_{{ item.vmid }}.pub ] || exit 0
         pct push {{ item.vmid }} /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/new_keys.pub
+        if [ -f /tmp/sshpiper_upstream_id_ed25519.pub ]; then
+          pct push {{ item.vmid }} /tmp/sshpiper_upstream_id_ed25519.pub /tmp/sshpiper_upstream_id_ed25519.pub
+        fi
         pct exec {{ item.vmid }} -- sh -c '
           set -e
           mkdir -p /root/.ssh
@@ -113,6 +186,13 @@
           cat /tmp/new_keys.pub > /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
           chown root:root /root/.ssh/authorized_keys
+          if [ -f /tmp/sshpiper_upstream_id_ed25519.pub ]; then
+            upstream_key="$(cat /tmp/sshpiper_upstream_id_ed25519.pub)"
+            if ! grep -qxF "$upstream_key" /root/.ssh/authorized_keys; then
+              echo "$upstream_key" >> /root/.ssh/authorized_keys
+            fi
+            rm /tmp/sshpiper_upstream_id_ed25519.pub
+          fi
           mkdir -p /etc/sshpiper
           cat /tmp/new_keys.pub > /etc/sshpiper/authorized_keys
           chmod 600 /etc/sshpiper/authorized_keys
@@ -161,6 +241,12 @@
         [ -f /tmp/authorized_keys_{{ item.vmid }}.pub ] || exit 0
         cat /tmp/authorized_keys_{{ item.vmid }}.pub | base64 -w0 > /tmp/authorized_keys_{{ item.vmid }}.b64
         KEY_B64=$(cat /tmp/authorized_keys_{{ item.vmid }}.b64)
+
+        UPSTREAM_KEY_B64=""
+        if [ -f /tmp/sshpiper_upstream_id_ed25519.pub ]; then
+          UPSTREAM_KEY_B64="$(base64 -w0 /tmp/sshpiper_upstream_id_ed25519.pub)"
+        fi
+
         qm guest exec {{ item.vmid }} -- sh -c "
           set -e
           mkdir -p /root/.ssh
@@ -168,6 +254,13 @@
           echo '$KEY_B64' | base64 -d > /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
           chown root:root /root/.ssh/authorized_keys
+
+          if [ -n '$UPSTREAM_KEY_B64' ]; then
+            upstream_key=\"\$(echo '$UPSTREAM_KEY_B64' | base64 -d)\"
+            if ! grep -qxF \"\$upstream_key\" /root/.ssh/authorized_keys; then
+              echo \"\$upstream_key\" >> /root/.ssh/authorized_keys
+            fi
+          fi
         " | jq -r '.["out-data"]'
         rm /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/authorized_keys_{{ item.vmid }}.b64
       delegate_to: "{{ item.host }}"
