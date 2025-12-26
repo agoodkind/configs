@@ -74,6 +74,20 @@ sshd_disable_tmp="$tmpdir/sshd-disable-password-auth.conf"
 sshd_global_tmp="$tmpdir/sshd-global-authorized-keys.conf"
 sshd_tmpfiles_tmp="$tmpdir/sshd-tmpfiles.conf"
 
+ssh_cmd() {
+  local host="$1"
+  shift 1
+
+  timeout 25 ssh \
+    -o BatchMode=yes \
+    -o ConnectTimeout=5 \
+    -o ConnectionAttempts=2 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "root@${host}" \
+    "$@"
+}
+
 write_snippets() {
   cat >"$sshd_disable_tmp" <<'EOF'
 # Managed by deploy-authorized-keys
@@ -116,19 +130,21 @@ deploy_pct() {
   local vmid="$2"
   local bundle="$3"
 
-  ssh "root@${host}" \
+  echo "deploy-authorized-keys: pct ${host} vmid=${vmid}" >&2
+
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct status ${vmid} | grep -q running || pct start ${vmid}'"
 
-  ssh "root@${host}" \
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct push ${vmid} ${bundle} /tmp/new_keys.pub'"
-  ssh "root@${host}" \
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_disable_tmp} /tmp/sshd-disable-password-auth.conf'"
-  ssh "root@${host}" \
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_global_tmp} /tmp/sshd-global-authorized-keys.conf'"
-  ssh "root@${host}" \
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_tmpfiles_tmp} /tmp/sshd-tmpfiles.conf'"
 
-  ssh "root@${host}" \
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct exec ${vmid} -- /usr/bin/env bash -lc \"set -e
       mkdir -p /etc/ssh/authorized_keys.d
       cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
@@ -176,7 +192,9 @@ deploy_qm() {
   local vmid="$2"
   local bundle="$3"
 
-  ssh "root@${host}" \
+  echo "deploy-authorized-keys: qm ${host} vmid=${vmid}" >&2
+
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'qm status ${vmid} | grep -q running || qm start ${vmid}'"
 
   local key_b64
@@ -189,7 +207,7 @@ deploy_qm() {
   global_b64="$(base64 <\""$sshd_global_tmp"\" | tr -d '\n')"
   tmpfiles_b64="$(base64 <\""$sshd_tmpfiles_tmp"\" | tr -d '\n')"
 
-  ssh "root@${host}" \
+  ssh_cmd "${host}" \
     "/usr/bin/env bash -lc \"KEY_B64='${key_b64}' \
       DISABLE_B64='${disable_b64}' \
       GLOBAL_B64='${global_b64}' \
