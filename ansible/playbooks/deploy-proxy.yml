@@ -531,29 +531,27 @@
         - "{{ sshpiper_config_dir }}/upstream_id_ed25519"
         - "{{ sshpiper_config_dir }}/upstream_id_ed25519.pub"
 
-    - name: Ensure root SSH directory exists
-      ansible.builtin.file:
-        path: /root/.ssh
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-
     - name: Read sshpiper upstream public key
       ansible.builtin.slurp:
         src: "{{ sshpiper_config_dir }}/upstream_id_ed25519.pub"
       register: sshpiper_upstream_pubkey
       changed_when: false
 
-    - name: Authorize sshpiper upstream key for root on localhost
-      ansible.builtin.lineinfile:
-        path: /root/.ssh/authorized_keys
-        create: true
+    - name: Ensure global authorized_keys directory exists
+      ansible.builtin.file:
+        path: /etc/ssh/authorized_keys.d
+        state: directory
         owner: root
         group: root
-        mode: '0600'
-        line: "{{ sshpiper_upstream_pubkey.content | b64decode | trim }}"
-        state: present
+        mode: '0755'
+
+    - name: Authorize sshpiper upstream key via global authorized_keys file
+      ansible.builtin.copy:
+        content: "{{ sshpiper_upstream_pubkey.content | b64decode | trim }}\n"
+        dest: /etc/ssh/authorized_keys.d/sshpiper_upstream
+        owner: root
+        group: root
+        mode: '0644'
 
     - name: Fetch local SSH keys for authorized_keys
       ansible.builtin.set_fact:
