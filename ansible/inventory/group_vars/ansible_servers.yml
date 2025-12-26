@@ -1,0 +1,24 @@
+---
+# Container hostname
+ansible_hostname: ansible.home.goodkind.io
+
+# Static addressing (pinned; independent of VMID)
+ansible_ipv4: "10.250.0.107/24"
+ansible_ipv6: "3d06:bad:b01::107/64"
+
+# Stable MAC address for DHCP reservations (KEA: hostname "ansible")
+# IPv4 reservation: 10.250.0.107 -> BC:24:11:1D:2C:0F
+# IPv6 reservation: 3d06:bad:b01::107 -> BC:24:11:1D:2C:0F
+ansible_mac_address: "bc:24:11:1d:2c:0f"
+
+# Semaphore Configuration Variables
+semaphore_version: "latest"
+semaphore_user: semaphore
+semaphore_group: semaphore
+semaphore_install_dir: /usr/bin
+semaphore_config_dir: /etc/semaphore
+semaphore_data_dir: /var/lib/semaphore
+
+# Container login directory (prep-guests.yml)
+login_dir: /root
+
