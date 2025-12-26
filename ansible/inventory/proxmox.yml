@@ -17,3 +17,10 @@ keyed_groups:
     prefix: tag
 groups:
   proxmox: true
+  ansible_servers: "'ansible' in (proxmox_tags_parsed or [])"
+  powerdns_servers: "'powerdns' in (proxmox_tags_parsed or [])"
+  proxy_servers: "'traefik' in (proxmox_tags_parsed or [])"
+  mwan_servers: "'mwan' in (proxmox_tags_parsed or [])"
+  adguard_servers: "'adguard' in (proxmox_tags_parsed or [])"
+  proxmox_all_lxc: "proxmox_type == 'lxc'"
+  proxmox_all_qemu: "proxmox_type == 'qemu'"

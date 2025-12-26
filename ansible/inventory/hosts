@@ -4,7 +4,7 @@ ansible_user=root
 [local]
 localhost ansible_connection=local
 
-[ansible_server]
+[ansible_servers]
 ansible.home.goodkind.io
 
 [proxmox_nodes]

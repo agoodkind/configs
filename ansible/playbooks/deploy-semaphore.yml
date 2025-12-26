@@ -1,15 +1,34 @@
 ---
-- name: Update Semaphore
-  hosts: ansible_server
+# Deploy Semaphore UI on the ansible container
+
+- name: Setup Semaphore container
+  ansible.builtin.import_playbook: setup-service-container.yml
+  vars:
+    container_group: ansible_servers
+    group_vars_file: >-
+      {{ playbook_dir }}/../inventory/group_vars/ansible_servers.yml
+    hostname_var: ansible_hostname
+    mac_var: ansible_mac_address
+    target_node: vault
+    container_vmid: ""
+    disk_size: "16"
+    memory: "2048"
+    cores: "2"
+    container_tags: "lxc,ansible,semaphore"
+
+- name: Deploy and Configure Semaphore
+  hosts: ansible_servers
   become: true
 
   vars:
-    semaphore_version: "latest"
-    semaphore_user: semaphore
-    semaphore_group: semaphore
-    semaphore_install_dir: /usr/bin
-    semaphore_config_dir: /etc/semaphore
-    semaphore_data_dir: /var/lib/semaphore
+    semaphore_version: "{{ hostvars[inventory_hostname].semaphore_version }}"
+    semaphore_user: "{{ hostvars[inventory_hostname].semaphore_user }}"
+    semaphore_group: "{{ hostvars[inventory_hostname].semaphore_group }}"
+    semaphore_install_dir: >-
+      {{ hostvars[inventory_hostname].semaphore_install_dir }}
+    semaphore_config_dir: >-
+      {{ hostvars[inventory_hostname].semaphore_config_dir }}
+    semaphore_data_dir: "{{ hostvars[inventory_hostname].semaphore_data_dir }}"
 
   tasks:
     - name: Check if Semaphore is installed
@@ -21,7 +40,8 @@
       ansible.builtin.shell:
         cmd: |
           set -o pipefail
-          {{ semaphore_install_dir }}/semaphore version | grep -oP '^[0-9]+\.[0-9]+\.[0-9]+'
+          {{ semaphore_install_dir }}/semaphore version |
+          grep -oP '^[0-9]+\.[0-9]+\.[0-9]+'
         executable: /bin/bash
       register: semaphore_installed_version
       when: semaphore_binary.stat.exists
@@ -30,11 +50,14 @@
 
     - name: Display current version
       ansible.builtin.debug:
-        msg: "Current Semaphore version: {{ semaphore_installed_version.stdout | default('Not installed') }}"
+        msg: >-
+          Current Semaphore version:
+          {{ semaphore_installed_version.stdout | default('Not installed') }}
 
     - name: Get latest release version from GitHub API
       ansible.builtin.uri:
-        url: https://api.github.com/repos/semaphoreui/semaphore/releases/latest
+        url: >-
+          https://api.github.com/repos/semaphoreui/semaphore/releases/latest
         return_content: true
       register: github_release
       when: semaphore_version == 'latest'
@@ -42,8 +65,10 @@
     - name: Set target version fact
       ansible.builtin.set_fact:
         semaphore_target_version: >-
-          {%- if semaphore_version == 'latest' and github_release is defined -%}
-          {{- github_release.json.tag_name | regex_replace('^v', '') | trim -}}
+          {%- if semaphore_version == 'latest' and
+             github_release is defined -%}
+          {{- github_release.json.tag_name |
+             regex_replace('^v', '') | trim -}}
           {%- else -%}
           {{- semaphore_version | trim -}}
           {%- endif -%}
@@ -53,16 +78,19 @@
         update_needed: >-
           {{ not semaphore_binary.stat.exists or
              (semaphore_installed_version.stdout is not defined) or
-             (semaphore_target_version != semaphore_installed_version.stdout) }}
+             (semaphore_target_version !=
+              semaphore_installed_version.stdout) }}
 
     - name: Display update status
       ansible.builtin.debug:
         msg: >-
           {% if update_needed %}
-          Updating Semaphore from {{ semaphore_installed_version.stdout | default('Not installed') }}
+          Updating Semaphore from
+          {{ semaphore_installed_version.stdout | default('Not installed') }}
           to {{ semaphore_target_version }}
           {% else %}
-          Semaphore is already at version {{ semaphore_installed_version.stdout }}
+          Semaphore is already at version
+          {{ semaphore_installed_version.stdout }}
           (target: {{ semaphore_target_version }})
           {% endif %}
 
@@ -73,17 +101,20 @@
         - name: Set download base URL
           ansible.builtin.set_fact:
             semaphore_base_url: >-
-              {{- 'https://github.com/semaphoreui/semaphore/releases/download/v' -}}
+              {{- 'https://github.com/semaphoreui/semaphore/' -}}
+              {{- 'releases/download/v' -}}
               {{- semaphore_target_version -}}
               {{- '/' -}}
 
         - name: Set download filename
           ansible.builtin.set_fact:
-            semaphore_filename: "semaphore_{{ semaphore_target_version }}_linux_amd64.tar.gz"
+            semaphore_filename: >-
+              semaphore_{{ semaphore_target_version }}_linux_amd64.tar.gz
 
         - name: Set download URL
           ansible.builtin.set_fact:
-            semaphore_download_url: "{{ semaphore_base_url }}{{ semaphore_filename }}"
+            semaphore_download_url: >-
+              {{ semaphore_base_url }}{{ semaphore_filename }}
 
         - name: Download Semaphore binary
           ansible.builtin.get_url:
@@ -130,7 +161,9 @@
           ansible.builtin.file:
             path: "{{ semaphore_install_dir }}/semaphore"
             state: absent
-          when: semaphore_path_stat.stat.exists and semaphore_path_stat.stat.isdir
+          when: >-
+            semaphore_path_stat.stat.exists and
+            semaphore_path_stat.stat.isdir
 
         - name: Install Semaphore binary
           ansible.builtin.copy:
@@ -152,7 +185,8 @@
     - name: Verify installation
       ansible.builtin.shell: |
         set -o pipefail
-        {{ semaphore_install_dir }}/semaphore version | grep -oP '^[0-9]+\.[0-9]+\.[0-9]+'
+        {{ semaphore_install_dir }}/semaphore version |
+        grep -oP '^[0-9]+\.[0-9]+\.[0-9]+'
       args:
         executable: /bin/bash
       register: semaphore_new_version
@@ -160,14 +194,16 @@
 
     - name: Display installed version
       ansible.builtin.debug:
-        msg: "Semaphore version {{ semaphore_new_version.stdout }} is now installed"
+        msg: >-
+          Semaphore version {{ semaphore_new_version.stdout }}
+          is now installed
 
-    # Reboot is required to apply binary update; systemctl is appropriate here
-    - name: Reboot system to apply Semaphore update  # noqa: command-instead-of-module noqa: shell
-      ansible.builtin.command:
-        cmd: systemctl reboot
-      async: 1
-      poll: 0
-      changed_when: true
+    - name: Restart Semaphore service if running
+      ansible.builtin.systemd:
+        name: semaphore
+        state: restarted
+      when:
+        - update_needed | bool
+        - ansible_facts.services['semaphore.service'] is defined
+        - ansible_facts.services['semaphore.service'].state == 'running'
       failed_when: false
-      when: update_needed | bool
