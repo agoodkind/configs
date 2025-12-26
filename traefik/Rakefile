@@ -32,7 +32,7 @@ end
 
 desc 'Check Traefik status'
 task :status do
-  sh 'ansible traefik_servers -m systemd -a "name=traefik state=status"'
+  sh 'ansible proxy_servers -m systemd -a "name=traefik state=status"'
 end
 
 task default: :validate
