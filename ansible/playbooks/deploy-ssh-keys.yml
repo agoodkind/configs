@@ -42,7 +42,8 @@
       ansible.builtin.set_fact:
         proxy_from_inventory: >-
           {{
-            groups.get('proxy_servers', []) | first | default('')
+            (groups.get('proxy_servers', []) | length > 0) |
+            ternary(groups.get('proxy_servers', [])[0], '')
           }}
 
     - name: Initialize proxy guest from hostvars as empty
