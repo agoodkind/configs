@@ -901,8 +901,23 @@
           #
           # Any key present in the global file can authenticate as any local
           # user account.
-          AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys /etc/ssh/authorized_keys.d/sshpiper_upstream
+          AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys
       register: sshpiper_global_authorized_keys_conf
+
+    - name: Ensure /run/sshd exists (privsep runtime dir)
+      ansible.builtin.copy:
+        dest: /etc/tmpfiles.d/sshd.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # Managed by Ansible (prep-guests.yml)
+          d /run/sshd 0755 root root -
+      register: sshd_tmpfiles
+
+    - name: Create tmpfiles-managed runtime directories
+      ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/sshd.conf
+      changed_when: false
 
     - name: Validate sshd configuration before restart
       ansible.builtin.command: sshd -t
