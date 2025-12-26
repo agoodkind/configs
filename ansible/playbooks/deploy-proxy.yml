@@ -644,6 +644,33 @@
         name: ssh
         state: restarted
 
+- name: Deploy and Configure Cloudflared
+  hosts: traefik_servers
+  become: true
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Install and configure cloudflared
+      ansible.builtin.include_tasks: tasks/install-cloudflared.yml
+
+    - name: Verify cloudflared service status
+      ansible.builtin.systemd:
+        name: cloudflared
+      register: cloudflared_status
+
+    - name: Display cloudflared service status
+      ansible.builtin.debug:
+        msg: "✓ Cloudflared service is {{ cloudflared_status.status.ActiveState }}"
+
+  handlers:
+    - name: Restart cloudflared
+      ansible.builtin.systemd:
+        name: cloudflared
+        state: restarted
+        daemon_reload: true
+
 - name: Summary
   hosts: localhost
   gather_facts: false
@@ -651,5 +678,5 @@
     - name: Display completion message
       ansible.builtin.debug:
         msg: >-
-          ✅ Traefik and SSHPiper deployed successfully on
+          ✅ Traefik, SSHPiper, and Cloudflared deployed successfully on
           {{ hostvars['localhost']['service_hostname'] }}
