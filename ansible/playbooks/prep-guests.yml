@@ -881,7 +881,6 @@
           KbdInteractiveAuthentication no
           ChallengeResponseAuthentication no
       register: sshd_disable_password_auth
-      notify: Restart ssh
 
     - name: Create global authorized_keys directory
       ansible.builtin.file:
@@ -904,6 +903,13 @@
           # user account.
           AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys /etc/ssh/authorized_keys.d/sshpiper_upstream
       register: sshpiper_global_authorized_keys_conf
+
+    - name: Validate sshd configuration before restart
+      ansible.builtin.command: sshd -t
+      changed_when: false
+      when: >
+        (sshd_disable_password_auth.changed | default(false)) or
+        (sshpiper_global_authorized_keys_conf.changed | default(false))
       notify: Restart ssh
 
     - name: Reload systemd daemon (if config changed)
