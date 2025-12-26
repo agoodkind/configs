@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE'
 deploy-authorized-keys
 
-Generate an authorized_keys bundle (newline-separated).
+Generate (and optionally deploy) an authorized_keys bundle (newline-separated).
 
 Bundle sources:
 - All local ~/.ssh/id_*.pub files
@@ -13,7 +13,19 @@ Bundle sources:
 - Optional extra public key file
 
 Usage:
+  # Build bundle only
   deploy-authorized-keys [--out <path>] [--github-user <user>] [--extra-pubkey <path>]
+
+  # Deploy to a guest via Proxmox (also converges sshd)
+  deploy-authorized-keys \
+    --deploy \
+    --method pct|qm \
+    --proxmox-host <host> \
+    --vmid <vmid> \
+    [--proxy] \
+    [--bundle <path>] \
+    [--github-user <user>] \
+    [--extra-pubkey <path>]
 
 Examples:
   deploy-authorized-keys --out /tmp/authorized_keys.bundle
@@ -29,12 +41,24 @@ die() {
 OUT_PATH=""
 GITHUB_USER="agoodkind"
 EXTRA_PUBKEY=""
+DEPLOY="0"
+METHOD=""
+PROXMOX_HOST=""
+VMID=""
+IS_PROXY="0"
+BUNDLE_PATH=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT_PATH="${2:-}"; shift 2;;
     --github-user) GITHUB_USER="${2:-}"; shift 2;;
     --extra-pubkey) EXTRA_PUBKEY="${2:-}"; shift 2;;
+    --deploy) DEPLOY="1"; shift 1;;
+    --method) METHOD="${2:-}"; shift 2;;
+    --proxmox-host) PROXMOX_HOST="${2:-}"; shift 2;;
+    --vmid) VMID="${2:-}"; shift 2;;
+    --proxy) IS_PROXY="1"; shift 1;;
+    --bundle) BUNDLE_PATH="${2:-}"; shift 2;;
     -h|--help) usage; exit 0;;
     *) die "unknown arg: $1";;
   esac
@@ -46,22 +70,194 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 bundle_tmp="$tmpdir/authorized_keys"
+sshd_disable_tmp="$tmpdir/sshd-disable-password-auth.conf"
+sshd_global_tmp="$tmpdir/sshd-global-authorized-keys.conf"
+sshd_tmpfiles_tmp="$tmpdir/sshd-tmpfiles.conf"
 
-{
-  for f in "$HOME"/.ssh/id_*.pub; do
-    [ -f "$f" ] || continue
-    awk 'NF {print}' "$f"
-  done
+write_snippets() {
+  cat >"$sshd_disable_tmp" <<'EOF'
+# Managed by deploy-authorized-keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+EOF
 
-  ssh-add -L 2>/dev/null || true
+  cat >"$sshd_global_tmp" <<'EOF'
+# Managed by deploy-authorized-keys
+AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys
+EOF
 
-  curl -fsSL "https://github.com/${GITHUB_USER}.keys" | awk 'NF {print}'
+  cat >"$sshd_tmpfiles_tmp" <<'EOF'
+# Managed by deploy-authorized-keys
+d /run/sshd 0755 root root -
+EOF
+}
 
-  if [ -n "$EXTRA_PUBKEY" ]; then
-    [ -f "$EXTRA_PUBKEY" ] || die "extra pubkey not found: $EXTRA_PUBKEY"
-    awk 'NF {print}' "$EXTRA_PUBKEY"
+build_bundle() {
+  {
+    for f in "$HOME"/.ssh/id_*.pub; do
+      [ -f "$f" ] || continue
+      awk 'NF {print}' "$f"
+    done
+
+    ssh-add -L 2>/dev/null || true
+
+    curl -fsSL "https://github.com/${GITHUB_USER}.keys" | awk 'NF {print}'
+
+    if [ -n "$EXTRA_PUBKEY" ]; then
+      [ -f "$EXTRA_PUBKEY" ] || die "extra pubkey not found: $EXTRA_PUBKEY"
+      awk 'NF {print}' "$EXTRA_PUBKEY"
+    fi
+  } | tr -d '\r' | awk 'NF {print}' | sort -u >"$bundle_tmp"
+}
+
+deploy_pct() {
+  local host="$1"
+  local vmid="$2"
+  local bundle="$3"
+
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc 'pct status ${vmid} | grep -q running || pct start ${vmid}'"
+
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc 'pct push ${vmid} ${bundle} /tmp/new_keys.pub'"
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_disable_tmp} /tmp/sshd-disable-password-auth.conf'"
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_global_tmp} /tmp/sshd-global-authorized-keys.conf'"
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_tmpfiles_tmp} /tmp/sshd-tmpfiles.conf'"
+
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc 'pct exec ${vmid} -- /usr/bin/env bash -lc \"set -e
+      mkdir -p /etc/ssh/authorized_keys.d
+      cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
+      chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
+      chown root:root /etc/ssh/authorized_keys.d/authorized_keys
+
+      mkdir -p /etc/ssh/sshd_config.d
+      mv /tmp/sshd-disable-password-auth.conf \
+        /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+      mv /tmp/sshd-global-authorized-keys.conf \
+        /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+      chmod 0644 /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+      chmod 0644 /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+      chown root:root /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+      chown root:root /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+
+      mkdir -p /etc/tmpfiles.d
+      mv /tmp/sshd-tmpfiles.conf /etc/tmpfiles.d/sshd.conf
+      chmod 0644 /etc/tmpfiles.d/sshd.conf
+      chown root:root /etc/tmpfiles.d/sshd.conf
+      if command -v systemd-tmpfiles >/dev/null 2>&1; then
+        systemd-tmpfiles --create /etc/tmpfiles.d/sshd.conf || true
+      fi
+      mkdir -p /run/sshd
+      chmod 0755 /run/sshd
+
+      if [ ${IS_PROXY} = 1 ]; then
+        mkdir -p /etc/sshpiper
+        cat /tmp/new_keys.pub > /etc/sshpiper/authorized_keys
+        chmod 0600 /etc/sshpiper/authorized_keys
+        chown sshpiper:sshpiper /etc/sshpiper/authorized_keys || true
+      fi
+
+      sshd -t
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl reset-failed ssh || true
+        systemctl restart ssh
+      fi
+      rm -f /tmp/new_keys.pub
+    \"'"
+}
+
+deploy_qm() {
+  local host="$1"
+  local vmid="$2"
+  local bundle="$3"
+
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc 'qm status ${vmid} | grep -q running || qm start ${vmid}'"
+
+  local key_b64
+  local disable_b64
+  local global_b64
+  local tmpfiles_b64
+
+  key_b64="$(base64 <\""$bundle"\" | tr -d '\n')"
+  disable_b64="$(base64 <\""$sshd_disable_tmp"\" | tr -d '\n')"
+  global_b64="$(base64 <\""$sshd_global_tmp"\" | tr -d '\n')"
+  tmpfiles_b64="$(base64 <\""$sshd_tmpfiles_tmp"\" | tr -d '\n')"
+
+  ssh "root@${host}" \
+    "/usr/bin/env bash -lc \"KEY_B64='${key_b64}' \
+      DISABLE_B64='${disable_b64}' \
+      GLOBAL_B64='${global_b64}' \
+      TMPFILES_B64='${tmpfiles_b64}' \
+      PROXY='${IS_PROXY}' \
+      qm guest exec ${vmid} -- /usr/bin/env bash -lc \\\"set -e
+        mkdir -p /etc/ssh/authorized_keys.d
+        echo \\\\\\\"\\\$KEY_B64\\\\\\\" | base64 -d \\
+          > /etc/ssh/authorized_keys.d/authorized_keys
+        chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
+        chown root:root /etc/ssh/authorized_keys.d/authorized_keys
+
+        mkdir -p /etc/ssh/sshd_config.d
+        echo \\\\\\\"\\\$DISABLE_B64\\\\\\\" | base64 -d \\
+          > /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+        echo \\\\\\\"\\\$GLOBAL_B64\\\\\\\" | base64 -d \\
+          > /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+        chmod 0644 /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+        chmod 0644 /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+
+        mkdir -p /etc/tmpfiles.d
+        echo \\\\\\\"\\\$TMPFILES_B64\\\\\\\" | base64 -d > /etc/tmpfiles.d/sshd.conf
+        chmod 0644 /etc/tmpfiles.d/sshd.conf
+        if command -v systemd-tmpfiles >/dev/null 2>&1; then
+          systemd-tmpfiles --create /etc/tmpfiles.d/sshd.conf || true
+        fi
+        mkdir -p /run/sshd
+        chmod 0755 /run/sshd
+
+        if [ \\\\\\\"\\\$PROXY\\\\\\\" = 1 ]; then
+          mkdir -p /etc/sshpiper
+          echo \\\\\\\"\\\$KEY_B64\\\\\\\" | base64 -d > /etc/sshpiper/authorized_keys
+          chmod 0600 /etc/sshpiper/authorized_keys
+          chown sshpiper:sshpiper /etc/sshpiper/authorized_keys || true
+        fi
+
+        sshd -t
+        if command -v systemctl >/dev/null 2>&1; then
+          systemctl reset-failed ssh || true
+          systemctl restart ssh
+        fi
+      \\\"\" >/dev/null"
+}
+
+if [ "$DEPLOY" = "1" ]; then
+  [ -n "$METHOD" ] || die "--method is required with --deploy"
+  [ -n "$PROXMOX_HOST" ] || die "--proxmox-host is required with --deploy"
+  [ -n "$VMID" ] || die "--vmid is required with --deploy"
+
+  write_snippets
+
+  if [ -n "$BUNDLE_PATH" ]; then
+    [ -f "$BUNDLE_PATH" ] || die "bundle not found: $BUNDLE_PATH"
+    cp "$BUNDLE_PATH" "$bundle_tmp"
+  else
+    build_bundle
   fi
-} | tr -d '\r' | awk 'NF {print}' | sort -u >"$bundle_tmp"
+
+  case "$METHOD" in
+    pct) deploy_pct "$PROXMOX_HOST" "$VMID" "$bundle_tmp";;
+    qm) deploy_qm "$PROXMOX_HOST" "$VMID" "$bundle_tmp";;
+    *) die "unknown --method: $METHOD";;
+  esac
+
+  exit 0
+fi
+
+build_bundle
 
 if [ -n "$OUT_PATH" ]; then
   cp "$bundle_tmp" "$OUT_PATH"
