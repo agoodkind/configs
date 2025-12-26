@@ -4,7 +4,7 @@
 # NOTE: After initial deployment, sshpiper runs on port 22 and sshd moves to 2222.
 # For subsequent runs, you'll need to connect to the proxy container on port 2222:
 #   ansible-playbook deploy-proxy.yml -e "ansible_port=2222"
-# Or uncomment `ansible_port: 2222` in inventory/group_vars/traefik_servers.yml
+# Or uncomment `ansible_port: 2222` in inventory/group_vars/proxy_servers.yml
 #
 # To manually SSH to the proxy container after deployment:
 #   ssh -p 2222 root@proxy.home.goodkind.io
@@ -13,8 +13,8 @@
 - name: Setup Traefik container
   ansible.builtin.import_playbook: setup-service-container.yml
   vars:
-    container_group: traefik_servers
-    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/traefik_servers.yml"
+    container_group: proxy_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/proxy_servers.yml"
     hostname_var: traefik_hostname
     mac_var: traefik_mac_address
     target_node: vault
@@ -34,7 +34,7 @@
     - name: Update proxy container with multi-port SSH config
       ansible.builtin.add_host:
         name: "{{ proxy_hostname }}"
-        groups: traefik_servers
+        groups: proxy_servers
         ansible_host: "{{ proxy_ip }}"
         ansible_user: root
         ansible_ssh_common_args: >-
@@ -46,7 +46,7 @@
       when: proxy_ip | length > 0
 
 - name: Deploy and Configure Traefik
-  hosts: traefik_servers
+  hosts: proxy_servers
   become: true
 
   vars:
@@ -393,7 +393,7 @@
         state: restarted
 
 - name: Deploy and Configure SSHPiper
-  hosts: traefik_servers
+  hosts: proxy_servers
   become: true
 
   vars:
@@ -645,7 +645,7 @@
         state: restarted
 
 - name: Deploy and Configure Cloudflared
-  hosts: traefik_servers
+  hosts: proxy_servers
   become: true
 
   vars:
