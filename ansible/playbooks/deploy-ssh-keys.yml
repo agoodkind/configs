@@ -30,17 +30,24 @@
       vars:
         guest_list: "{{ guests }}"
 
-    - name: Find proxy container in guest list
+    - name: Filter proxy container candidates from guest list
       ansible.builtin.set_fact:
-        proxy_guest: >-
+        proxy_guests: >-
           {{
             (guests_with_type | default([]))
             | selectattr('type', 'equalto', 'lxc')
             | selectattr('name', 'defined')
-            | selectattr('name', 'lower', 'equalto', 'proxy.home.goodkind.io')
+            | selectattr('name', 'match', '(?i)^proxy\\.home\\.goodkind\\.io$')
             | list
-            | first
-            | default({})
+          }}
+
+    - name: Select proxy container from candidates
+      ansible.builtin.set_fact:
+        proxy_guest: >-
+          {{
+            proxy_guests[0]
+            if (proxy_guests | default([]) | length > 0)
+            else {}
           }}
 
     - name: Check if sshpiper upstream public key exists on proxy container
