@@ -1,6 +1,32 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/tg123/sshpiper/master/plugin/yaml/schema.json
 version: "1.0"
 pipes:
+{% set lxc_hosts = groups['proxmox_all_lxc'] | default(groups['taglxc'] | default([])) %}
+{% for host in lxc_hosts %}
+{% set short_name = host.split('.')[0] %}
+{% set target_ip = hostvars[host].ansible_host | default('') %}
+{% if (short_name != 'proxy') and (target_ip | length > 0) %}
+  # Regex route for {{ short_name }}: user@{{ short_name }} -> user@{{ target_ip }}
+  - from:
+      - username: "^(.+)@{{ short_name | regex_escape }}$"
+        username_regex_match: true
+        authorized_keys: /etc/sshpiper/authorized_keys
+    to:
+      host: "{{ '[' + target_ip + ']' if ':' in target_ip else target_ip }}:22"
+      username: "$1"
+      private_key: /etc/sshpiper/upstream_id_ed25519
+      ignore_hostkey: true
+  # Simple route for {{ short_name }}: {{ short_name }} -> root@{{ target_ip }}
+  - from:
+      - username: "{{ short_name }}"
+        authorized_keys: /etc/sshpiper/authorized_keys
+    to:
+      host: "{{ '[' + target_ip + ']' if ':' in target_ip else target_ip }}:22"
+      username: root
+      private_key: /etc/sshpiper/upstream_id_ed25519
+      ignore_hostkey: true
+{% endif %}
+{% endfor %}
   # Self-route: "proxy" username routes back to this container on port 2222
   - from:
       - username: "proxy"
@@ -19,27 +45,3 @@ pipes:
       username: root
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
-{% set lxc_hosts = groups['proxmox_all_lxc'] | default(groups['taglxc'] | default([])) %}
-{% for host in lxc_hosts %}
-{% set short_name = host.split('.')[0] %}
-{% set target_ip = hostvars[host].ansible_host | default('') %}
-{% if (short_name != 'proxy') and (target_ip | length > 0) %}
-  - from:
-      - username: "^(.+)@{{ short_name | regex_escape }}$"
-        username_regex_match: true
-        authorized_keys: /etc/sshpiper/authorized_keys
-    to:
-      host: "{{ '[' + target_ip + ']' if ':' in target_ip else target_ip }}:22"
-      username: "$1"
-      private_key: /etc/sshpiper/upstream_id_ed25519
-      ignore_hostkey: true
-  - from:
-      - username: "{{ short_name }}"
-        authorized_keys: /etc/sshpiper/authorized_keys
-    to:
-      host: "{{ '[' + target_ip + ']' if ':' in target_ip else target_ip }}:22"
-      username: root
-      private_key: /etc/sshpiper/upstream_id_ed25519
-      ignore_hostkey: true
-{% endif %}
-{% endfor %}

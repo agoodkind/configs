@@ -11,7 +11,7 @@ ExecStart=/usr/local/bin/sshpiperd \
   --port 22 \
   --server-key /etc/sshpiper/ssh_host_ed25519_key \
   --server-key-generate-mode notexist \
-  --log-level info \
+  --log-level debug \
   /usr/local/bin/plugins/yaml --config /etc/sshpiper/sshpiperd.yaml
 Restart=on-failure
 RestartSec=5s
