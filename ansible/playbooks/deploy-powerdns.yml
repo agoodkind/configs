@@ -157,7 +157,7 @@
         state: started
         enabled: true
 
-    - name: Create PowerDNS database
+    - name: Create PowerDNS database  # noqa: syntax-check[unknown-module]
       become_user: postgres
       community.postgresql.postgresql_db:
         name: "{{ postgres_db }}"
