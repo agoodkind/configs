@@ -198,6 +198,7 @@
         ssh -v -o ConnectTimeout=5 \
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
+          -p {{ ansible_port | default(22) }} \
           {{ ansible_user | default('root') }}@{{ ansible_host | default(inventory_hostname) }} \
           'echo "SSH connection successful"; whoami' 2>&1 | tail -20
       delegate_to: localhost
@@ -880,6 +881,31 @@
           KbdInteractiveAuthentication no
           ChallengeResponseAuthentication no
       register: sshd_disable_password_auth
+      notify: Restart ssh
+
+    - name: Create global authorized_keys directory
+      ansible.builtin.file:
+        path: /etc/ssh/authorized_keys.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Enable global authorized_keys file for all users
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # Managed by Ansible (prep-guests.yml)
+          #
+          # Any key present in the global file can authenticate as any local
+          # user account.
+          AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys2 \
+            /etc/ssh/authorized_keys.d/authorized_keys \
+            /etc/ssh/authorized_keys.d/sshpiper_upstream
+      register: sshpiper_global_authorized_keys_conf
       notify: Restart ssh
 
     - name: Reload systemd daemon (if config changed)
