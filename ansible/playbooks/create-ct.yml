@@ -174,14 +174,6 @@
       ansible.builtin.debug:
         msg: "Selected VMID: {{ actual_vmid | default('auto-assign') }}"
 
-    - name: Show existing container status
-      ansible.builtin.debug:
-        msg: >-
-          Container {{ container_hostname }} already exists with VMID
-          {{ existing_vmid }}. Skipping creation.
-      when: >-
-        (existing_vmid | default('') | string | trim) | length > 0
-
     - name: Fail if requested VMID conflicts with existing container VMID
       ansible.builtin.assert:
         that:
@@ -192,6 +184,18 @@
           Container {{ container_hostname }} already exists with VMID {{ existing_vmid }}.
           You requested vmid={{ vmid }}. Delete/recreate the existing container or
           omit vmid to reuse the current VMID.
+
+    - name: Set container exists flag
+      ansible.builtin.set_fact:
+        container_already_exists: >-
+          {{ (existing_vmid | default('') | string | trim) | length > 0 }}
+
+    - name: Show existing container status
+      ansible.builtin.debug:
+        msg: >-
+          Container {{ container_hostname }} already exists with VMID
+          {{ existing_vmid }}. Skipping creation, will configure existing container.
+      when: container_already_exists | bool
 
     - name: Compute default management IPs from VMID (decimal string, not hex)
       ansible.builtin.set_fact:
@@ -363,6 +367,15 @@
         tags: "{{ container_tags.split(',') }}"
       delegate_to: localhost
       register: container_result
+      when: not (container_already_exists | default(false) | bool)
+
+    - name: Set container result for existing container
+      ansible.builtin.set_fact:
+        container_result:
+          changed: false
+          msg: "Container already exists"
+          vmid: "{{ existing_vmid }}"
+      when: container_already_exists | default(false) | bool
 
     - name: Debug container creation result
       ansible.builtin.debug:
