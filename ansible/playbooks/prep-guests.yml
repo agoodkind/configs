@@ -902,9 +902,7 @@
           #
           # Any key present in the global file can authenticate as any local
           # user account.
-          AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys2 \
-            /etc/ssh/authorized_keys.d/authorized_keys \
-            /etc/ssh/authorized_keys.d/sshpiper_upstream
+          AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys /etc/ssh/authorized_keys.d/sshpiper_upstream
       register: sshpiper_global_authorized_keys_conf
       notify: Restart ssh
 
