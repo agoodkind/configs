@@ -349,8 +349,6 @@
         memory: "{{ memory }}"
         cores: "{{ cores }}"
         netif: "{{ {'net0': net0_config} }}"
-        features:
-          - nesting=1
         onboot: true
         unprivileged: true
         state: present
