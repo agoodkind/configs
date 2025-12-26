@@ -10,7 +10,7 @@ ansible.home.goodkind.io
 [proxmox_nodes]
 vault ansible_host=10.250.0.254 ansible_user=root
 
-[traefik_servers]
+[proxy_servers]
 proxy.home.goodkind.io ansible_port=2222
 
 [powerdns_servers]
