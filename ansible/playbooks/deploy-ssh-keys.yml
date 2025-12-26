@@ -64,7 +64,10 @@
       register: sshpiper_upstream_key_exists
       changed_when: false
       failed_when: false
-      when: proxy_guest.vmid is defined and proxy_guest.host is defined
+      when: >
+        (proxy_guest is mapping) and
+        (proxy_guest.vmid | default('') | string | trim | length > 0) and
+        (proxy_guest.host | default('') | string | trim | length > 0)
 
     - name: Read sshpiper upstream public key from proxy container
       ansible.builtin.command:
@@ -79,8 +82,9 @@
       register: sshpiper_upstream_pubkey_read
       changed_when: false
       when:
-        - proxy_guest.vmid is defined
-        - proxy_guest.host is defined
+        - proxy_guest is mapping
+        - (proxy_guest.vmid | default('') | string | trim | length > 0)
+        - (proxy_guest.host | default('') | string | trim | length > 0)
         - sshpiper_upstream_key_exists.rc | default(1) == 0
 
     - name: Set sshpiper upstream key fact (empty if unavailable)
@@ -143,6 +147,42 @@
       loop: "{{ guests_with_type | unique(attribute='vmid') }}"
       loop_control:
         label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+
+    - name: Ensure LXC guests are running
+      ansible.builtin.shell: |
+        set -euo pipefail
+        status="$(pct status {{ item.vmid }} 2>/dev/null || true)"
+        case "$status" in
+          *running*) exit 0;;
+          *stopped*) pct start {{ item.vmid }};;
+          *) exit 0;;
+        esac
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ item.host }}"
+      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+      when: item.type == 'lxc'
+      changed_when: false
+
+    - name: Ensure QEMU guests are running
+      ansible.builtin.shell: |
+        set -euo pipefail
+        status="$(qm status {{ item.vmid }} 2>/dev/null || true)"
+        case "$status" in
+          *running*) exit 0;;
+          *stopped*) qm start {{ item.vmid }};;
+          *) exit 0;;
+        esac
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ item.host }}"
+      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+      when: item.type == 'qemu'
+      changed_when: false
 
     - name: Deploy authorized_keys to LXC guest
       ansible.builtin.shell: |
