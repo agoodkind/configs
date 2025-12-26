@@ -582,7 +582,7 @@
         dest: "{{ sshpiper_config_dir }}/sshpiperd.yaml"
         owner: "{{ sshpiper_user }}"
         group: "{{ sshpiper_group }}"
-        mode: '0644'
+        mode: '0600'
       notify: Restart sshpiper
 
     - name: Configure sshd to listen on port 2222 only

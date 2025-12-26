@@ -135,14 +135,28 @@ deploy_pct() {
   ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct status ${vmid} | grep -q running || pct start ${vmid}'"
 
+  # Copy files to Proxmox host first (pct push requires files on Proxmox)
+  scp -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=2 \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "${bundle}" "root@${host}:/tmp/pve-deploy-keys-${vmid}.pub"
+  scp -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=2 \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "${sshd_disable_tmp}" "root@${host}:/tmp/pve-deploy-sshd-disable-${vmid}.conf"
+  scp -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=2 \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "${sshd_global_tmp}" "root@${host}:/tmp/pve-deploy-sshd-global-${vmid}.conf"
+  scp -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=2 \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "${sshd_tmpfiles_tmp}" "root@${host}:/tmp/pve-deploy-sshd-tmpfiles-${vmid}.conf"
+
   ssh_cmd "${host}" \
-    "/usr/bin/env bash -lc 'pct push ${vmid} ${bundle} /tmp/new_keys.pub'"
+    "/usr/bin/env bash -lc 'pct push ${vmid} /tmp/pve-deploy-keys-${vmid}.pub /tmp/new_keys.pub'"
   ssh_cmd "${host}" \
-    "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_disable_tmp} /tmp/sshd-disable-password-auth.conf'"
+    "/usr/bin/env bash -lc 'pct push ${vmid} /tmp/pve-deploy-sshd-disable-${vmid}.conf /tmp/sshd-disable-password-auth.conf'"
   ssh_cmd "${host}" \
-    "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_global_tmp} /tmp/sshd-global-authorized-keys.conf'"
+    "/usr/bin/env bash -lc 'pct push ${vmid} /tmp/pve-deploy-sshd-global-${vmid}.conf /tmp/sshd-global-authorized-keys.conf'"
   ssh_cmd "${host}" \
-    "/usr/bin/env bash -lc 'pct push ${vmid} ${sshd_tmpfiles_tmp} /tmp/sshd-tmpfiles.conf'"
+    "/usr/bin/env bash -lc 'pct push ${vmid} /tmp/pve-deploy-sshd-tmpfiles-${vmid}.conf /tmp/sshd-tmpfiles.conf'"
 
   ssh_cmd "${host}" \
     "/usr/bin/env bash -lc 'pct exec ${vmid} -- /usr/bin/env bash -lc \"set -e
@@ -185,6 +199,10 @@ deploy_pct() {
       fi
       rm -f /tmp/new_keys.pub
     \"'"
+
+  # Clean up temp files on Proxmox host
+  ssh_cmd "${host}" \
+    "/usr/bin/env bash -lc 'rm -f /tmp/pve-deploy-keys-${vmid}.pub /tmp/pve-deploy-sshd-disable-${vmid}.conf /tmp/pve-deploy-sshd-global-${vmid}.conf /tmp/pve-deploy-sshd-tmpfiles-${vmid}.conf'"
 }
 
 deploy_qm() {
