@@ -58,6 +58,10 @@
             else {}
           }}
 
+    - name: Show selected proxy guest
+      ansible.builtin.debug:
+        var: proxy_guest
+
     - name: Check if sshpiper upstream public key exists on proxy container
       ansible.builtin.command:
         argv:
