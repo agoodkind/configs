@@ -22,16 +22,16 @@
   vars:
     deploy_authorized_keys_script: "{{ playbook_dir }}/../deploy-authorized-keys"
     work_tmp_dir: "{{ playbook_dir }}/../.tmp"
-    authorized_keys_bundle_path: "{{ work_tmp_dir }}/authorized_keys.bundle"
-    sshpiper_upstream_pubkey_path: "{{ work_tmp_dir }}/sshpiper_upstream_id_ed25519.pub"
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
-    guests: "{{ groups[target_group] | map('extract', hostvars, 'guest_info') | select('defined') | list }}"
+    guests: >-
+      {{ groups[target_group] | map('extract', hostvars, 'guest_info') |
+         select('defined') | list }}
   tasks:
-    - name: Ensure local temp directory exists
+    - name: Create work tmp directory
       ansible.builtin.file:
         path: "{{ work_tmp_dir }}"
         state: directory
-        mode: '0700'
+        mode: '0755'
 
     - name: Detect guest types
       ansible.builtin.include_tasks: tasks/detect-guest-type.yml
@@ -58,9 +58,9 @@
             else {}
           }}
 
-    - name: Show selected proxy guest
+    - name: Show proxy guest selection
       ansible.builtin.debug:
-        var: proxy_guest
+        msg: "Proxy guest: {{ proxy_guest }}"
 
     - name: Check if sshpiper upstream public key exists on proxy container
       ansible.builtin.command:
@@ -99,32 +99,32 @@
         - (proxy_guest.host | default('') | string | trim | length > 0)
         - sshpiper_upstream_key_exists.rc | default(1) == 0
 
-    - name: Set sshpiper upstream key fact (empty if unavailable)
+    - name: Set sshpiper upstream key fact
       ansible.builtin.set_fact:
         sshpiper_upstream_pubkey: >-
           {{ (sshpiper_upstream_pubkey_read.stdout | default('') | trim) }}
 
-    - name: Write sshpiper upstream public key to controller (if available)
+    - name: Write sshpiper upstream public key to work dir
       ansible.builtin.copy:
         content: "{{ sshpiper_upstream_pubkey }}\n"
-        dest: "{{ sshpiper_upstream_pubkey_path }}"
-        mode: '0600'
+        dest: "{{ work_tmp_dir }}/sshpiper_upstream_id_ed25519.pub"
+        mode: '0644'
       delegate_to: localhost
       when: sshpiper_upstream_pubkey | length > 0
 
-    - name: Build authorized_keys bundle on controller
+    - name: Build authorized_keys bundle
       ansible.builtin.command:
         argv: >-
           {{
             [
               deploy_authorized_keys_script,
               '--out',
-              authorized_keys_bundle_path
+              work_tmp_dir + '/authorized_keys.bundle'
             ]
             + (
               [
                 '--extra-pubkey',
-                sshpiper_upstream_pubkey_path
+                work_tmp_dir + '/sshpiper_upstream_id_ed25519.pub'
               ]
               if (sshpiper_upstream_pubkey | length > 0)
               else []
@@ -133,27 +133,176 @@
       register: build_bundle
       changed_when: false
 
-    - name: Deploy keys and sshd config to each guest
-      ansible.builtin.command:
-        argv: >-
-          {{
-            [
-              deploy_authorized_keys_script,
-              '--deploy',
-              '--method',
-              ('pct' if item.type == 'lxc' else 'qm'),
-              '--proxmox-host',
-              item.host,
-              '--vmid',
-              (item.vmid | string),
-              '--bundle',
-              authorized_keys_bundle_path
-            ]
-            + (['--proxy'] if ((item.name | lower) == 'proxy.home.goodkind.io') else [])
-          }}
-      loop: "{{ guests_with_type | unique(attribute='vmid') }}"
+    - name: Show bundle preview
+      ansible.builtin.debug:
+        msg: >-
+          Bundle built with {{ build_bundle.stdout_lines | default([]) |
+          length }} keys
+
+    - name: Copy bundle to Proxmox hosts
+      ansible.builtin.copy:
+        src: "{{ work_tmp_dir }}/authorized_keys.bundle"
+        dest: "/tmp/authorized_keys_deploy.bundle"
+        mode: '0644'
+      delegate_to: "{{ item }}"
+      loop: >-
+        {{ (guests_with_type | default([]))
+           | map(attribute='host') | unique | list }}
+
+    - name: Write sshd disable password auth snippet to Proxmox hosts
+      ansible.builtin.copy:
+        dest: /tmp/sshd-disable-password-auth.conf
+        mode: '0644'
+        content: |
+          # Managed by Ansible
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          ChallengeResponseAuthentication no
+      delegate_to: "{{ item }}"
+      loop: >-
+        {{ (guests_with_type | default([]))
+           | map(attribute='host') | unique | list }}
+
+    - name: Write sshd global authorized keys snippet to Proxmox hosts
+      ansible.builtin.copy:
+        dest: /tmp/sshd-global-authorized-keys.conf
+        mode: '0644'
+        content: |
+          # Managed by Ansible
+          AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys
+      delegate_to: "{{ item }}"
+      loop: >-
+        {{ (guests_with_type | default([]))
+           | map(attribute='host') | unique | list }}
+
+    - name: Write sshd tmpfiles snippet to Proxmox hosts
+      ansible.builtin.copy:
+        dest: /tmp/sshd-tmpfiles.conf
+        mode: '0644'
+        content: |
+          # Managed by Ansible
+          d /run/sshd 0755 root root -
+      delegate_to: "{{ item }}"
+      loop: >-
+        {{ (guests_with_type | default([]))
+           | map(attribute='host') | unique | list }}
+
+    - name: Ensure LXC guests are running
+      ansible.builtin.shell: |
+        set -o pipefail
+        pct status {{ item.vmid }} | grep -q running || pct start {{ item.vmid }}
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ item.host }}"
+      loop: "{{ guests_with_type }}"
       loop_control:
-        label: "{{ item.name }} (VMID: {{ item.vmid }} on {{ item.host }})"
+        label: "{{ item.name }} (VMID: {{ item.vmid }})"
+      when: item.type == 'lxc'
+      changed_when: false
+      failed_when: false
+
+    - name: Ensure QEMU guests are running
+      ansible.builtin.shell: |
+        set -o pipefail
+        qm status {{ item.vmid }} | grep -q running || qm start {{ item.vmid }}
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ item.host }}"
+      loop: "{{ guests_with_type }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }})"
+      when: item.type == 'qemu'
+      changed_when: false
+      failed_when: false
+
+    - name: Deploy keys and sshd config to LXC guests
+      ansible.builtin.shell: |
+        set -e
+        pct push {{ item.vmid }} /tmp/authorized_keys_deploy.bundle \
+          /tmp/new_keys.pub
+        pct push {{ item.vmid }} /tmp/sshd-disable-password-auth.conf \
+          /tmp/sshd-disable-password-auth.conf
+        pct push {{ item.vmid }} /tmp/sshd-global-authorized-keys.conf \
+          /tmp/sshd-global-authorized-keys.conf
+        pct push {{ item.vmid }} /tmp/sshd-tmpfiles.conf \
+          /tmp/sshd-tmpfiles.conf
+
+        pct exec {{ item.vmid }} -- sh -c '
+          set -e
+          mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
+          mv /tmp/sshd-disable-password-auth.conf \
+            /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+          mv /tmp/sshd-global-authorized-keys.conf \
+            /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+          mv /tmp/sshd-tmpfiles.conf /etc/tmpfiles.d/sshd.conf
+          chmod 0644 /etc/ssh/sshd_config.d/*.conf /etc/tmpfiles.d/sshd.conf
+          if command -v systemd-tmpfiles >/dev/null 2>&1; then
+            systemd-tmpfiles --create /etc/tmpfiles.d/sshd.conf || true
+          fi
+          mkdir -p /run/sshd
+          chmod 0755 /run/sshd
+          cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
+          chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
+          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
+          {% if (item.name | lower) == "proxy.home.goodkind.io" %}
+          mkdir -p /etc/sshpiper
+          cat /tmp/new_keys.pub > /etc/sshpiper/authorized_keys
+          chmod 0600 /etc/sshpiper/authorized_keys
+          chown sshpiper:sshpiper /etc/sshpiper/authorized_keys || true
+          {% endif %}
+          sshd -t
+          systemctl reset-failed ssh || true
+          systemctl restart ssh || true
+          rm -f /tmp/new_keys.pub
+        '
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ item.host }}"
+      loop: "{{ guests_with_type }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }})"
+      when: item.type == 'lxc'
+      changed_when: true
+
+    - name: Deploy keys and sshd config to QEMU guests
+      ansible.builtin.shell: |
+        set -eo pipefail
+        qm status {{ item.vmid }} | grep -q running || qm start {{ item.vmid }}
+
+        KEY_B64="$(base64 -w0 /tmp/authorized_keys_deploy.bundle)"
+        DISABLE_B64="$(base64 -w0 /tmp/sshd-disable-password-auth.conf)"
+        GLOBAL_B64="$(base64 -w0 /tmp/sshd-global-authorized-keys.conf)"
+        TMPFILES_B64="$(base64 -w0 /tmp/sshd-tmpfiles.conf)"
+
+        qm guest exec {{ item.vmid }} -- sh -c "
+          set -e
+          mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
+          echo '$DISABLE_B64' | base64 -d \
+            > /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
+          echo '$GLOBAL_B64' | base64 -d \
+            > /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
+          echo '$TMPFILES_B64' | base64 -d > /etc/tmpfiles.d/sshd.conf
+          chmod 0644 /etc/ssh/sshd_config.d/*.conf /etc/tmpfiles.d/sshd.conf
+          if command -v systemd-tmpfiles >/dev/null 2>&1; then
+            systemd-tmpfiles --create /etc/tmpfiles.d/sshd.conf || true
+          fi
+          mkdir -p /run/sshd
+          chmod 0755 /run/sshd
+          echo '$KEY_B64' | base64 -d \
+            > /etc/ssh/authorized_keys.d/authorized_keys
+          chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
+          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
+          sshd -t
+          systemctl reset-failed ssh || true
+          systemctl restart ssh || true
+        " | jq -r '.["out-data"]' || true
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ item.host }}"
+      loop: "{{ guests_with_type }}"
+      loop_control:
+        label: "{{ item.name }} (VMID: {{ item.vmid }})"
+      when: item.type == 'qemu'
       changed_when: true
 
     - name: Summary

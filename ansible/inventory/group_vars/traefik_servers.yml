@@ -79,6 +79,10 @@ login_dir: /etc/traefik
 sshpiper_user: sshpiper
 sshpiper_group: sshpiper
 sshpiper_config_dir: /etc/sshpiper
+
+# Cloudflared tunnel
+# Path to cloudflared tunnel token on Ansible controller
+cloudflared_token_src: "/var/lib/semaphore/tokens/proxy/cloudflared/token"
 # Ansible SSH configuration
 # Ansible connects as root@<host>:22
 # Before sshpiper: connects directly to sshd on port 22

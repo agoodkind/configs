@@ -1,0 +1,103 @@
+---
+# Reusable tasks for cloudflared installation and configuration
+#
+# Required variables:
+#   cloudflared_token_src: path to token file on Ansible controller
+#
+# Optional variables:
+#   cloudflared_service_src: path to custom service file (default: generic)
+#   cloudflared_service_after: systemd After= dependencies (default: network-online.target)
+#   cloudflared_service_wants: systemd Wants= dependencies (default: network-online.target)
+
+- name: Ensure keyrings dir exists
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Install Cloudflare apt signing key
+  ansible.builtin.get_url:
+    url: https://pkg.cloudflare.com/cloudflare-public-v2.gpg
+    dest: /usr/share/keyrings/cloudflare-public-v2.gpg
+    mode: "0644"
+
+- name: Add Cloudflare apt repo
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/cloudflared.list
+    mode: "0644"
+    content: |
+      deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install cloudflared
+  ansible.builtin.apt:
+    name: cloudflared
+    state: present
+
+- name: Ensure cloudflared user exists
+  ansible.builtin.user:
+    name: cloudflared
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Ensure cloudflared config directory exists
+  ansible.builtin.file:
+    path: /etc/cloudflared
+    state: directory
+    owner: root
+    group: cloudflared
+    mode: "0750"
+
+- name: Copy cloudflared tunnel token
+  ansible.builtin.copy:
+    src: "{{ cloudflared_token_src }}"
+    dest: /etc/cloudflared/token
+    owner: root
+    group: cloudflared
+    mode: "0640"
+
+- name: Deploy cloudflared systemd service (custom)
+  ansible.builtin.copy:
+    src: "{{ cloudflared_service_src }}"
+    dest: /etc/systemd/system/cloudflared.service
+    mode: "0644"
+  when: cloudflared_service_src is defined
+
+- name: Deploy cloudflared systemd service (generic)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/cloudflared.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=cloudflared tunnel
+      After={{ cloudflared_service_after | default('network-online.target') }}
+      Wants={{ cloudflared_service_wants | default('network-online.target') }}
+
+      [Service]
+      TimeoutStartSec=15
+      Type=notify
+      User=cloudflared
+      Group=cloudflared
+      ExecStart=/usr/bin/cloudflared tunnel run --token-file /etc/cloudflared/token
+      Restart=on-failure
+      RestartSec=5s
+
+      [Install]
+      WantedBy=multi-user.target
+  when: cloudflared_service_src is not defined
+  notify: Restart cloudflared
+
+- name: Enable cloudflared service
+  ansible.builtin.systemd:
+    name: cloudflared
+    enabled: true
+    daemon_reload: true
+
+- name: Ensure cloudflared is running
+  ansible.builtin.systemd:
+    name: cloudflared
+    state: started

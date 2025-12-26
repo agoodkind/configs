@@ -150,28 +150,8 @@
         update_cache: true
         cache_valid_time: 3600
 
-    - name: Ensure keyrings dir exists (cloudflared apt repo)
-      ansible.builtin.file:
-        path: /usr/share/keyrings
-        state: directory
-        mode: '0755'
-
-    - name: Install Cloudflare apt signing key (cloudflared repo)
-      ansible.builtin.get_url:
-        url: https://pkg.cloudflare.com/cloudflare-public-v2.gpg
-        dest: /usr/share/keyrings/cloudflare-public-v2.gpg
-        mode: '0644'
-
-    - name: Add Cloudflare apt repo (cloudflared)
-      ansible.builtin.copy:
-        dest: /etc/apt/sources.list.d/cloudflared.list
-        mode: '0644'
-        content: |
-          deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
-
-    - name: Update apt cache (cloudflared repo)
-      ansible.builtin.apt:
-        update_cache: true
+    - name: Install and configure cloudflared
+      ansible.builtin.include_tasks: tasks/install-cloudflared.yml
 
     - name: Install required packages
       ansible.builtin.apt:
@@ -192,7 +172,6 @@
           - ipcalc
           - ipv6calc
           - fping
-          - cloudflared
         state: present
 
     - name: Create MWAN runtime config directory
@@ -206,29 +185,6 @@
         src: "{{ repo_root }}/mwan/config/mwan.env.j2"
         dest: /etc/mwan/mwan.env
         mode: '0644'
-
-    - name: Ensure cloudflared user exists (for UID-based policy routing)
-      ansible.builtin.user:
-        name: cloudflared
-        system: true
-        create_home: false
-        shell: /usr/sbin/nologin
-
-    - name: Ensure cloudflared token directory exists
-      ansible.builtin.file:
-        path: /etc/cloudflared
-        state: directory
-        owner: root
-        group: cloudflared
-        mode: '0750'
-
-    - name: Copy cloudflared tunnel token to MWAN
-      ansible.builtin.copy:
-        src: /var/lib/semaphore/tokens/mwan/cloudflared/token
-        dest: /etc/cloudflared/token
-        owner: root
-        group: cloudflared
-        mode: '0640'
 
     - name: Get actual VMID from Proxmox
       delegate_to: vault
@@ -668,13 +624,6 @@
         dest: /etc/systemd/system/mwan-health.service
         mode: '0644'
 
-    - name: Deploy cloudflared systemd service
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/services/cloudflared.service"
-        dest: /etc/systemd/system/cloudflared.service
-        mode: '0644'
-
-
     - name: Enable services
       ansible.builtin.systemd:
         name: "{{ item }}"
@@ -685,7 +634,6 @@
         - mwan-update-npt
         - mwan-update-att-pinned-dests.timer
         - bringup-att-vlan
-        - cloudflared
         - systemd-networkd
         - networkd-dispatcher
         - nftables
@@ -709,12 +657,6 @@
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
-
-    - name: Restart cloudflared (apply User= and routing dependency ordering)
-      ansible.builtin.systemd:
-        name: cloudflared
-        state: restarted
-      failed_when: false
 
     - name: Restart systemd-networkd
       ansible.builtin.systemd:

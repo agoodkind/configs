@@ -265,6 +265,16 @@ mwan_smtp_user: "{{ lookup('env', 'SMTP2GO_SMTP_USER', default='') }}"
 mwan_smtp_pass: "{{ lookup('env', 'SMTP2GO_SMTP_PASS', default='') }}"
 
 # ----------------------------------------------------------------------------
+# Cloudflared
+# ----------------------------------------------------------------------------
+
+# Path to cloudflared tunnel token on Ansible controller
+cloudflared_token_src: "/var/lib/semaphore/tokens/mwan/cloudflared/token"
+
+# Custom service file with mwan-specific dependencies
+cloudflared_service_src: "{{ repo_root }}/mwan/services/cloudflared.service"
+
+# ----------------------------------------------------------------------------
 # Debug
 # ----------------------------------------------------------------------------
 
