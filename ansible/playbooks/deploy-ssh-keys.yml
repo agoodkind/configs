@@ -154,16 +154,16 @@
         fi
         pct exec {{ item.vmid }} -- sh -c '
           set -e
-          mkdir -p /root/.ssh
-          chmod 700 /root/.ssh
-          cat /tmp/new_keys.pub > /root/.ssh/authorized_keys
-          chmod 600 /root/.ssh/authorized_keys
-          chown root:root /root/.ssh/authorized_keys
+          mkdir -p /etc/ssh/authorized_keys.d
+          cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
+          chmod 644 /etc/ssh/authorized_keys.d/authorized_keys
+          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
           if [ -f /tmp/sshpiper_upstream_id_ed25519.pub ]; then
-            upstream_key="$(cat /tmp/sshpiper_upstream_id_ed25519.pub)"
-            if ! grep -qxF "$upstream_key" /root/.ssh/authorized_keys; then
-              echo "$upstream_key" >> /root/.ssh/authorized_keys
-            fi
+            mkdir -p /etc/ssh/authorized_keys.d
+            cp /tmp/sshpiper_upstream_id_ed25519.pub \
+              /etc/ssh/authorized_keys.d/sshpiper_upstream
+            chmod 644 /etc/ssh/authorized_keys.d/sshpiper_upstream
+            chown root:root /etc/ssh/authorized_keys.d/sshpiper_upstream
             rm /tmp/sshpiper_upstream_id_ed25519.pub
           fi
           rm /tmp/new_keys.pub
@@ -188,16 +188,16 @@
         fi
         pct exec {{ item.vmid }} -- sh -c '
           set -e
-          mkdir -p /root/.ssh
-          chmod 700 /root/.ssh
-          cat /tmp/new_keys.pub > /root/.ssh/authorized_keys
-          chmod 600 /root/.ssh/authorized_keys
-          chown root:root /root/.ssh/authorized_keys
+          mkdir -p /etc/ssh/authorized_keys.d
+          cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
+          chmod 644 /etc/ssh/authorized_keys.d/authorized_keys
+          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
           if [ -f /tmp/sshpiper_upstream_id_ed25519.pub ]; then
-            upstream_key="$(cat /tmp/sshpiper_upstream_id_ed25519.pub)"
-            if ! grep -qxF "$upstream_key" /root/.ssh/authorized_keys; then
-              echo "$upstream_key" >> /root/.ssh/authorized_keys
-            fi
+            mkdir -p /etc/ssh/authorized_keys.d
+            cp /tmp/sshpiper_upstream_id_ed25519.pub \
+              /etc/ssh/authorized_keys.d/sshpiper_upstream
+            chmod 644 /etc/ssh/authorized_keys.d/sshpiper_upstream
+            chown root:root /etc/ssh/authorized_keys.d/sshpiper_upstream
             rm /tmp/sshpiper_upstream_id_ed25519.pub
           fi
           mkdir -p /etc/sshpiper
@@ -219,12 +219,16 @@
     - name: Verify deployed keys on proxy
       ansible.builtin.shell: |
         set -o pipefail
-        echo "=== /root/.ssh/authorized_keys ==="
-        pct exec {{ item.vmid }} -- wc -l /root/.ssh/authorized_keys
-        pct exec {{ item.vmid }} -- ls -la /root/.ssh/authorized_keys
+        echo "=== /etc/ssh/authorized_keys.d/authorized_keys ==="
+        pct exec {{ item.vmid }} -- wc -l /etc/ssh/authorized_keys.d/authorized_keys
+        pct exec {{ item.vmid }} -- ls -la /etc/ssh/authorized_keys.d/authorized_keys
         echo ""
         echo "=== First key preview ==="
-        pct exec {{ item.vmid }} -- head -1 /root/.ssh/authorized_keys | cut -c1-80
+        pct exec {{ item.vmid }} -- head -1 /etc/ssh/authorized_keys.d/authorized_keys | cut -c1-80
+        echo ""
+        echo "=== /etc/sshpiper/authorized_keys ==="
+        pct exec {{ item.vmid }} -- wc -l /etc/sshpiper/authorized_keys
+        pct exec {{ item.vmid }} -- ls -la /etc/sshpiper/authorized_keys
       args:
         executable: /bin/bash
       delegate_to: "{{ item.host }}"
@@ -256,17 +260,17 @@
 
         qm guest exec {{ item.vmid }} -- sh -c "
           set -e
-          mkdir -p /root/.ssh
-          chmod 700 /root/.ssh
-          echo '$KEY_B64' | base64 -d > /root/.ssh/authorized_keys
-          chmod 600 /root/.ssh/authorized_keys
-          chown root:root /root/.ssh/authorized_keys
+          mkdir -p /etc/ssh/authorized_keys.d
+          echo '$KEY_B64' | base64 -d > /etc/ssh/authorized_keys.d/authorized_keys
+          chmod 644 /etc/ssh/authorized_keys.d/authorized_keys
+          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
 
           if [ -n '$UPSTREAM_KEY_B64' ]; then
-            upstream_key=\"\$(echo '$UPSTREAM_KEY_B64' | base64 -d)\"
-            if ! grep -qxF \"\$upstream_key\" /root/.ssh/authorized_keys; then
-              echo \"\$upstream_key\" >> /root/.ssh/authorized_keys
-            fi
+            mkdir -p /etc/ssh/authorized_keys.d
+            echo '$UPSTREAM_KEY_B64' | base64 -d \
+              > /etc/ssh/authorized_keys.d/sshpiper_upstream
+            chmod 644 /etc/ssh/authorized_keys.d/sshpiper_upstream
+            chown root:root /etc/ssh/authorized_keys.d/sshpiper_upstream
           fi
         " | jq -r '.["out-data"]'
         rm /tmp/authorized_keys_{{ item.vmid }}.pub /tmp/authorized_keys_{{ item.vmid }}.b64
