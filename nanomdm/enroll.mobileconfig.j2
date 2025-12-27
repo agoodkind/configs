@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>AccessRights</key>
+            <!-- 8191 = all rights for unsupervised devices -->
+            <integer>8191</integer>
+            <key>CheckInURL</key>
+            <string>{{ nanomdm_server_url }}/mdm</string>
+            <key>CheckOutWhenRemoved</key>
+            <true/>
+            <key>PayloadDescription</key>
+            <string>MDM enrollment payload for NanoMDM</string>
+            <key>PayloadDisplayName</key>
+            <string>MDM Profile</string>
+            <key>PayloadIdentifier</key>
+            <string>io.goodkind.mdm.payload</string>
+            <key>PayloadOrganization</key>
+            <string>Goodkind Family</string>
+            <key>PayloadType</key>
+            <string>com.apple.mdm</string>
+            <key>PayloadUUID</key>
+            <string>{{ nanomdm_payload_uuid | default('A1B2C3D4-E5F6-7890-ABCD-EF1234567890') }}</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>ServerCapabilities</key>
+            <array>
+                <string>com.apple.mdm.per-user-connections</string>
+            </array>
+            <key>ServerURL</key>
+            <string>{{ nanomdm_server_url }}/mdm</string>
+            <key>SignMessage</key>
+            <true/>
+            <key>Topic</key>
+            <string>{{ nanomdm_apns_topic }}</string>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>MDM enrollment profile for Goodkind family devices</string>
+    <key>PayloadDisplayName</key>
+    <string>Goodkind MDM</string>
+    <key>PayloadIdentifier</key>
+    <string>io.goodkind.mdm</string>
+    <key>PayloadOrganization</key>
+    <string>Goodkind Family</string>
+    <key>PayloadRemovalDisallowed</key>
+    <!-- false = user can remove profile (unsupervised) -->
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>{{ nanomdm_profile_uuid | default('12345678-90AB-CDEF-1234-567890ABCDEF') }}</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>
+

@@ -23,5 +23,6 @@ groups:
   proxy_servers: "'traefik' in (proxmox_tags_parsed or [])"
   mwan_servers: "'mwan' in (proxmox_tags_parsed or [])"
   adguard_servers: "'adguard' in (proxmox_tags_parsed or [])"
+  nanomdm_servers: "'nanomdm' in (proxmox_tags_parsed or [])"
   proxmox_all_lxc: "proxmox_type == 'lxc'"
   proxmox_all_qemu: "proxmox_type == 'qemu'"
