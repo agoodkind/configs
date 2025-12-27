@@ -56,3 +56,6 @@ build-iPhoneSimulator/
 # .rubocop-https?--*
 .DS_Store
 
+*.vault-pass
+vault.pass
+.vault-pass
