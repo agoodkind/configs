@@ -19,6 +19,7 @@ pveum acl modify / -user ansible@pam -role PVEVMAdmin
 ```
 
 This grants:
+
 - `VM.Allocate` - Create/destroy VMs/containers
 - `VM.Config.Options` - Modify container options (including features like nesting)
 - `VM.Config.Disk` - Manage disks
@@ -59,7 +60,8 @@ Or use the helper script:
 ### Permission denied (403) errors
 
 If you see errors like:
-```
+
+```text
 Permission check failed (changing feature flags (except nesting) is only allowed for root@pam)
 ```
 
@@ -75,10 +77,10 @@ For testing only, you can use `root@pam` instead of `ansible@pam`:
 
 1. Create API token for `root@pam`
 2. Update `ansible/inventory/group_vars/all.yml`:
+
    ```yaml
    proxmox_api_user: root@pam
    proxmox_token_id: root-ansible-token
    ```
 
 **Note**: Using `root@pam` is less secure. Prefer granting specific permissions to `ansible@pam`.
-

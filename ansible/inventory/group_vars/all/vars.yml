@@ -1,9 +1,11 @@
 ---
+# Non-secret variables (references vault.yml for secrets)
+
 # Proxmox API credentials (shared across all playbooks)
 proxmox_api_host: 10.250.0.254
 proxmox_api_user: ansible@pam
 proxmox_token_id: ansible-token
-proxmox_token_secret: "{{ lookup('env', 'PROXMOX_API_TOKEN') }}"
+proxmox_token_secret: "{{ vault_proxmox_token_secret }}"
 
 # ----------------------------------------------------------------------------
 # SMTP (outbound) defaults for all CTs/VMs (via prep-guests)
@@ -15,16 +17,12 @@ smtp_from_domain: "{{ lookup('env', 'SMTP_FROM_DOMAIN', default='goodkind.io') }
 smtp_sender_name: "{{ lookup('env', 'SMTP_SENDER_NAME', default='') }}"
 
 # SMTP2GO (preferred): provide a single API key, Ansible provisions per-host SMTP users.
-smtp2go_api_key: "{{ lookup('env', 'SMTP2GO_API_KEY', default='') }}"
+smtp2go_api_key: "{{ vault_smtp2go_api_key }}"
 smtp_host: "{{ lookup('env', 'SMTP2GO_SMTP_HOST', default='mail.smtp2go.com') }}"
 smtp_port: "{{ lookup('env', 'SMTP2GO_SMTP_PORT', default='587') }}"
-
-# Optional manual override (skip API provisioning)
-smtp_user: "{{ lookup('env', 'SMTP2GO_SMTP_USER', default='') }}"
-smtp_pass: "{{ lookup('env', 'SMTP2GO_SMTP_PASS', default='') }}"
 
 # ----------------------------------------------------------------------------
 # Cloudflare DNS (automatic DNS record updates)
 # ----------------------------------------------------------------------------
-cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
+cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
 cloudflare_dns_update_enabled: true

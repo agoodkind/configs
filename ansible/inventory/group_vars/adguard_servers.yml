@@ -15,9 +15,8 @@ adguard_mac_address: "bc:24:11:ee:f9:50"
 # Override these in your own environment or use ansible-vault for sensitive values
 
 # ACME / Let's Encrypt (certbot DNS-01 via Cloudflare)
-# Note: Token is sourced from the same env var pattern as proxy_servers.yml
 adguard_acme_email: "alex@goodkind.io"
-cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_KEY', default='') }}"
+# cloudflare_api_token inherited from all/vars.yml (references vault)
 
 # Web interface configuration (non-default: IPv6 bind address)
 adguard_bind_host: "::"
