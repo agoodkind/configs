@@ -80,6 +80,17 @@ http:
       tls:
         certResolver: letsencrypt
 
+    # NanoMDM - Apple MDM server (public via Cloudflare Tunnel)
+    mdm-ingress:
+      rule: "Host(`mdm.goodkind.io`)"
+      service: mdm-service
+      middlewares:
+        - secure-headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
   services:
     ansible-service:
       loadBalancer:
@@ -119,6 +130,11 @@ http:
         servers:
           - url: "https://[3d06:bad:b01::53]"
         serversTransport: insecure-transport
+
+    mdm-service:
+      loadBalancer:
+        servers:
+          - url: "http://[3d06:bad:b01::103]:9000"
 
   serversTransports:
     insecure-transport:
