@@ -1,0 +1,313 @@
+---
+# Deploy NanoMDM on a dedicated LXC container
+#
+# Prerequisites:
+#   - vault_nanomdm_api_key and vault_nanomdm_push_pem in vault.yml
+#   - DHCP reservation for MAC bc:24:11:a0:67:03 -> 10.250.0.103
+#
+# Usage:
+#   ansible-playbook playbooks/deploy-nanomdm.yml
+
+- name: Setup NanoMDM container
+  ansible.builtin.import_playbook: setup-service-container.yml
+  vars:
+    container_group: nanomdm_servers
+    group_vars_file: >-
+      {{ playbook_dir }}/../inventory/group_vars/nanomdm_servers.yml
+    hostname_var: nanomdm_hostname
+    mac_var: nanomdm_mac_address
+    ipv4_var: nanomdm_ipv4
+    ipv6_var: nanomdm_ipv6
+    target_node: vault
+    disk_size: "8"
+    memory: "512"
+    cores: "1"
+    container_tags: "lxc,nanomdm"
+
+- name: Deploy and Configure NanoMDM
+  hosts: nanomdm_servers
+  become: true
+
+  vars:
+    nanomdm_user: "{{ hostvars[inventory_hostname].nanomdm_user }}"
+    nanomdm_group: "{{ hostvars[inventory_hostname].nanomdm_group }}"
+    nanomdm_install_dir: >-
+      {{ hostvars[inventory_hostname].nanomdm_install_dir }}
+    nanomdm_config_dir: >-
+      {{ hostvars[inventory_hostname].nanomdm_config_dir }}
+    nanomdm_data_dir: "{{ hostvars[inventory_hostname].nanomdm_data_dir }}"
+    nanomdm_version: "{{ hostvars[inventory_hostname].nanomdm_version }}"
+    nanomdm_listen: "{{ hostvars[inventory_hostname].nanomdm_listen }}"
+    nanomdm_server_url: "{{ hostvars[inventory_hostname].nanomdm_server_url }}"
+    nanomdm_api_key: "{{ hostvars[inventory_hostname].nanomdm_api_key }}"
+    nanomdm_push_pem: "{{ hostvars[inventory_hostname].nanomdm_push_pem }}"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Version checking (pattern from deploy-semaphore.yml)
+    # -------------------------------------------------------------------------
+    - name: Check if NanoMDM is installed
+      ansible.builtin.stat:
+        path: "{{ nanomdm_install_dir }}/nanomdm"
+      register: nanomdm_binary
+
+    - name: Get installed NanoMDM version
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          {{ nanomdm_install_dir }}/nanomdm -version 2>&1 |
+          grep -oP 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1
+        executable: /bin/bash
+      register: nanomdm_installed_version
+      when: nanomdm_binary.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Display current version
+      ansible.builtin.debug:
+        msg: >-
+          Current NanoMDM version:
+          {{ nanomdm_installed_version.stdout | default('Not installed') }}
+
+    - name: Get latest release version from GitHub API
+      ansible.builtin.uri:
+        url: >-
+          https://api.github.com/repos/micromdm/nanomdm/releases/latest
+        return_content: true
+      register: github_release
+      when: nanomdm_version == 'latest'
+
+    - name: Set target version fact
+      ansible.builtin.set_fact:
+        nanomdm_target_version: >-
+          {%- if nanomdm_version == 'latest' and
+             github_release is defined -%}
+          {{- github_release.json.tag_name |
+             regex_replace('^v', '') | trim -}}
+          {%- else -%}
+          {{- nanomdm_version | regex_replace('^v', '') | trim -}}
+          {%- endif -%}
+
+    - name: Normalize installed version (strip v prefix)
+      ansible.builtin.set_fact:
+        nanomdm_installed_norm: >-
+          {{
+            (nanomdm_installed_version.stdout | default(''))
+            | regex_replace('^v', '') | trim
+          }}
+
+    - name: Check if update is needed
+      ansible.builtin.set_fact:
+        update_needed: >-
+          {{ not nanomdm_binary.stat.exists or
+             (nanomdm_installed_norm | length == 0) or
+             (nanomdm_target_version != nanomdm_installed_norm) }}
+
+    - name: Display update status
+      ansible.builtin.debug:
+        msg: >-
+          {% if update_needed %}
+          Installing/updating NanoMDM from
+          {{ nanomdm_installed_norm | default('Not installed') }}
+          to {{ nanomdm_target_version }}
+          {% else %}
+          NanoMDM is already at version {{ nanomdm_installed_norm }}
+          (target: {{ nanomdm_target_version }})
+          {% endif %}
+
+    # -------------------------------------------------------------------------
+    # Create user and directories
+    # -------------------------------------------------------------------------
+    - name: Create NanoMDM system user
+      ansible.builtin.user:
+        name: "{{ nanomdm_user }}"
+        system: true
+        shell: /bin/false
+        home: "{{ nanomdm_data_dir }}"
+        create_home: false
+
+    - name: Create NanoMDM directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ nanomdm_user }}"
+        group: "{{ nanomdm_group }}"
+        mode: '0750'
+      loop:
+        - "{{ nanomdm_config_dir }}"
+        - "{{ nanomdm_data_dir }}"
+
+    # -------------------------------------------------------------------------
+    # Download and install binary
+    # -------------------------------------------------------------------------
+    - name: Download and install NanoMDM
+      when: update_needed | bool
+      block:
+
+        - name: Set download URL
+          ansible.builtin.set_fact:
+            nanomdm_download_url: >-
+              https://github.com/micromdm/nanomdm/releases/download/v{{-
+              nanomdm_target_version -}}/nanomdm-linux-amd64-v{{-
+              nanomdm_target_version -}}.zip
+
+        - name: Download NanoMDM binary
+          ansible.builtin.get_url:
+            url: "{{ nanomdm_download_url }}"
+            dest: /tmp/nanomdm.zip
+            mode: '0644'
+
+        - name: Install unzip if not present
+          ansible.builtin.apt:
+            name: unzip
+            state: present
+
+        - name: Cleanup any existing extracted files
+          ansible.builtin.file:
+            path: /tmp/nanomdm_extract
+            state: absent
+
+        - name: Create extraction directory
+          ansible.builtin.file:
+            path: /tmp/nanomdm_extract
+            state: directory
+            mode: '0755'
+
+        - name: Extract NanoMDM binary
+          ansible.builtin.unarchive:
+            src: /tmp/nanomdm.zip
+            dest: /tmp/nanomdm_extract
+            remote_src: true
+
+        - name: Find NanoMDM binary in extracted files
+          ansible.builtin.find:
+            paths: /tmp/nanomdm_extract
+            patterns: nanomdm*
+            file_type: file
+            recurse: true
+          register: nanomdm_binary_file
+
+        - name: Fail if binary not found
+          ansible.builtin.fail:
+            msg: "NanoMDM binary not found in extracted archive"
+          when: nanomdm_binary_file.files | length == 0
+
+        - name: Install NanoMDM binary
+          ansible.builtin.copy:
+            src: "{{ nanomdm_binary_file.files[0].path }}"
+            dest: "{{ nanomdm_install_dir }}/nanomdm"
+            owner: root
+            group: root
+            mode: '0755'
+            remote_src: true
+          notify: Restart nanomdm
+
+        - name: Cleanup download files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/nanomdm.zip
+            - /tmp/nanomdm_extract
+
+    # -------------------------------------------------------------------------
+    # Write push certificate
+    # -------------------------------------------------------------------------
+    - name: Write APNs push certificate
+      ansible.builtin.copy:
+        content: "{{ nanomdm_push_pem }}"
+        dest: "{{ nanomdm_config_dir }}/push.pem"
+        owner: "{{ nanomdm_user }}"
+        group: "{{ nanomdm_group }}"
+        mode: '0600'
+      no_log: true
+      notify: Restart nanomdm
+
+    # -------------------------------------------------------------------------
+    # Systemd service
+    # -------------------------------------------------------------------------
+    - name: Create NanoMDM environment file
+      ansible.builtin.copy:
+        content: |
+          # NanoMDM configuration
+          NANOMDM_API_KEY={{ nanomdm_api_key }}
+        dest: "{{ nanomdm_config_dir }}/nanomdm.env"
+        owner: "{{ nanomdm_user }}"
+        group: "{{ nanomdm_group }}"
+        mode: '0600'
+      no_log: true
+      notify: Restart nanomdm
+
+    - name: Install NanoMDM systemd service
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=NanoMDM - Apple MDM Server
+          Documentation=https://github.com/micromdm/nanomdm
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ nanomdm_user }}
+          Group={{ nanomdm_group }}
+          EnvironmentFile={{ nanomdm_config_dir }}/nanomdm.env
+          ExecStart={{ nanomdm_install_dir }}/nanomdm \
+            -api $NANOMDM_API_KEY \
+            -ca {{ nanomdm_config_dir }}/push.pem \
+            -listen {{ nanomdm_listen }} \
+            -storage file \
+            -storage-path {{ nanomdm_data_dir }}
+          Restart=on-failure
+          RestartSec=5
+
+          # Security hardening
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths={{ nanomdm_data_dir }}
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/nanomdm.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Reload systemd
+        - Restart nanomdm
+
+    - name: Enable and start NanoMDM service
+      ansible.builtin.systemd:
+        name: nanomdm
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    # -------------------------------------------------------------------------
+    # Verify installation
+    # -------------------------------------------------------------------------
+    - name: Verify NanoMDM is running
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ nanomdm_install_dir }}/nanomdm -version 2>&1 |
+        grep -oP 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1
+      args:
+        executable: /bin/bash
+      register: nanomdm_new_version
+      changed_when: false
+
+    - name: Display installed version
+      ansible.builtin.debug:
+        msg: >-
+          NanoMDM version {{ nanomdm_new_version.stdout }} is now installed
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart nanomdm
+      ansible.builtin.systemd:
+        name: nanomdm
+        state: restarted

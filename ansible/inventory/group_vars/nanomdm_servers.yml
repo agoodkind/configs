@@ -1,0 +1,38 @@
+---
+# NanoMDM Container Configuration
+
+# Container hostname
+nanomdm_hostname: mdm.home.goodkind.io
+
+# Static addressing (pinned; independent of VMID)
+nanomdm_ipv4: "10.250.0.103/24"
+nanomdm_ipv6: "3d06:bad:b01::103/64"
+
+# Stable MAC address for DHCP reservations
+nanomdm_mac_address: "bc:24:11:a0:67:03"
+
+# NanoMDM version: "latest" or pin e.g. "0.5.0" (without v prefix)
+nanomdm_version: "latest"
+
+# NanoMDM runtime settings
+nanomdm_user: nanomdm
+nanomdm_group: nanomdm
+nanomdm_install_dir: /usr/local/bin
+nanomdm_config_dir: /etc/nanomdm
+nanomdm_data_dir: /var/lib/nanomdm
+
+# Listen address (NanoMDM default is :9000)
+nanomdm_listen: ":9000"
+
+# Public server URL (what devices connect to via Traefik/Cloudflare)
+nanomdm_server_url: "https://mdm.goodkind.io"
+
+# APNs push certificate topic (extracted from push cert subject UID)
+nanomdm_apns_topic: "com.apple.mgmt.External.2ae84f39-156e-4e1a-bf4c-b14ed7e239f4"
+
+# API key (reference vault secret)
+nanomdm_api_key: "{{ vault_nanomdm_api_key }}"
+
+# Push certificate content (reference vault secret)
+nanomdm_push_pem: "{{ vault_nanomdm_push_pem }}"
+
