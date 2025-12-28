@@ -255,8 +255,8 @@
             -api $NANOMDM_API_KEY \
             -ca {{ nanomdm_config_dir }}/push.pem \
             -listen {{ nanomdm_listen }} \
-            -storage file \
-            -storage-path {{ nanomdm_data_dir }}
+            -storage filekv \
+            -storage-dsn {{ nanomdm_data_dir }}
           Restart=on-failure
           RestartSec=5
 
