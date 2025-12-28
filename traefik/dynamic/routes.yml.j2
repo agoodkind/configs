@@ -82,7 +82,7 @@ http:
 
     # NanoMDM - Apple MDM server (public via Cloudflare Tunnel)
     mdm-ingress:
-      rule: "Host(`mdm.goodkind.io`)"
+      rule: "Host(`mdm.{{ traefik_ingress_domain }}`)"
       service: mdm-service
       middlewares:
         - secure-headers

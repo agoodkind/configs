@@ -734,8 +734,12 @@
         state: stopped
       failed_when: false
 
-    - name: Get host timezone
-      ansible.builtin.command: timedatectl show -p Timezone --value
+    - name: Get host timezone (cross-platform)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        timedatectl show -p Timezone --value 2>/dev/null || \
+        readlink /etc/localtime | sed 's|.*/zoneinfo/||' || \
+        echo "UTC"
       register: host_timezone
       changed_when: false
       failed_when: false
@@ -750,7 +754,9 @@
     - name: Set timezone to host timezone
       ansible.builtin.command: timedatectl set-timezone "{{ host_timezone.stdout }}"
       changed_when: true
-      when: container_timezone.stdout != host_timezone.stdout
+      when:
+        - host_timezone.stdout | default('') | trim | length > 0
+        - container_timezone.stdout != host_timezone.stdout
 
     - name: Configure rsyslog for local time
       ansible.builtin.copy:
