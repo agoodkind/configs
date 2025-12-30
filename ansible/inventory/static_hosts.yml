@@ -1,0 +1,15 @@
+---
+# Static hosts for SSHPiper routing
+# Add non-Proxmox hosts here that you want accessible via SSHPiper
+
+all:
+  children:
+    sshpiper_static_hosts:
+      hosts:
+        nas.home.goodkind.io:
+          ansible_host: nas.home.goodkind.io
+        mini.home.goodkind.io:
+          ansible_host: mini.home.goodkind.io
+        # Add more static hosts here
+        # opnsense.home.goodkind.io:
+        #   ansible_host: 10.250.0.1
