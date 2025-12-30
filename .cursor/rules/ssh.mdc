@@ -8,15 +8,15 @@ alwaysApply: true
 
 ## Primary Method: SSHPiper Routing
 
-All `*.home.goodkind.io` DNS points to `10.250.0.110` (proxy VM) where sshpiper routes by username:
+All `*.ssh.home.goodkind.io` DNS points to `10.250.0.110` (proxy VM) where sshpiper routes by username:
 
 ```bash
-ssh adguard@home.goodkind.io    # → routes to root@adguard-container-ip
-ssh pdns@home.goodkind.io       # → routes to root@pdns-container-ip
-ssh mwan@home.goodkind.io       # → routes to root@mwan-container-ip
+ssh adguard@ssh.home.goodkind.io    # → routes to root@adguard-container-ip
+ssh pdns@ssh.home.goodkind.io       # → routes to root@pdns-container-ip
+ssh mwan@ssh.home.goodkind.io       # → routes to root@mwan-container-ip
 ```
 
-**Pattern**: `ssh <short-hostname>@home.goodkind.io`
+**Pattern**: `ssh <short-hostname>@ssh.home.goodkind.io`
 
 The short hostname is extracted from the full container name (e.g., `adguard` from `adguard.home.goodkind.io`).
 

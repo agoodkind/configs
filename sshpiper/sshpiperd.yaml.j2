@@ -1,8 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/tg123/sshpiper/master/plugin/yaml/schema.json
 version: "1.0"
 pipes:
-{% set lxc_hosts = groups['proxmox_all_lxc'] | default(groups['taglxc'] | default([])) %}
-{% for host in lxc_hosts %}
+{% set proxmox_lxc = groups['proxmox_all_lxc'] | default([]) %}
+{% set proxmox_qemu = groups['proxmox_all_qemu'] | default([]) %}
+{% set static_hosts = groups['sshpiper_static_hosts'] | default([]) %}
+{% set all_hosts = proxmox_lxc + proxmox_qemu + static_hosts %}
+{% for host in all_hosts %}
 {% set short_name = host.split('.')[0] %}
 {% set target_ip = hostvars[host].ansible_host | default('') %}
 {% if (short_name != 'proxy') and (target_ip | length > 0) %}
