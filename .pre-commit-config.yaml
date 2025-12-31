@@ -12,3 +12,5 @@ repos:
       - id: check-yaml
         exclude: ^ansible/playbooks/requirements\.yml$  # Allow ansible-galaxy format
       - id: detect-private-key
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
