@@ -12,6 +12,9 @@
         ".cache": true,
         "retool.config.json": true
     },
+    "files.insertFinalNewline": true,
+    "files.trimFinalNewlines": true,
+    "files.trimTrailingWhitespace": true,
     "files.associations": {
         "*.sh.j2": "jinja-shell"
     },
