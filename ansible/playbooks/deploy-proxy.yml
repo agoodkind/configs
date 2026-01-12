@@ -262,9 +262,7 @@
 
     - name: Parse Cloudflare IPv4 ranges
       ansible.builtin.set_fact:
-        cloudflare_ipv4_ranges: >-
-          {{ cloudflare_ipv4_response.content.split('\n') |
-             select('match', '^[0-9]') | list }}
+        cloudflare_ipv4_ranges: "{{ cloudflare_ipv4_response.content.splitlines() | select('match', '^[0-9]') | list }}"
 
     - name: Fetch Cloudflare IPv6 ranges
       ansible.builtin.uri:
@@ -275,9 +273,7 @@
 
     - name: Parse Cloudflare IPv6 ranges
       ansible.builtin.set_fact:
-        cloudflare_ipv6_ranges: >-
-          {{ cloudflare_ipv6_response.content.split('\n') |
-             select('match', '^[0-9a-f:]') | list }}
+        cloudflare_ipv6_ranges: "{{ cloudflare_ipv6_response.content.splitlines() | select('match', '^[0-9a-f:]') | list }}"
 
     - name: Validate RFC2136 credentials are configured
       ansible.builtin.assert:
@@ -695,4 +691,4 @@
       ansible.builtin.debug:
         msg: >-
           ✅ Traefik, SSHPiper, and Cloudflared deployed successfully on
-          {{ hostvars['localhost']['service_hostname'] }}
+          {{ hostvars['localhost'].get('service_hostname', 'proxy.home.goodkind.io') }}
