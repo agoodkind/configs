@@ -6,6 +6,27 @@ alwaysApply: true
 
 # SSH / Host Access Rules
 
+## Proxy Container Access
+
+The proxy container (`proxy.home.goodkind.io`) is special and has two SSH entry points:
+
+1.  **Port 22 (SSHPiper)**: Public-facing. Routes traffic to *other* containers based on username.
+    *   `ssh user@ssh.home.goodkind.io` -> routes to `user` on backend container.
+2.  **Port 2222 (OpenSSH)**: Admin-facing. Direct access to the proxy container itself.
+    *   `ssh -p 2222 root@10.250.0.110` -> routes to `root` on the proxy container.
+
+### Proxy Shortcut
+
+To access the proxy container itself via the public port (SSHPiper), use the `@proxy` suffix (if configured):
+
+```bash
+ssh root@proxy@ssh.home.goodkind.io
+# OR if configured in ~/.ssh/config:
+ssh root@proxy
+```
+
+This matches the regex `^(.+)@proxy` in `sshpiperd.yaml` and routes to `127.0.0.1:2222`.
+
 ## Primary Method: SSHPiper Routing
 
 All `*.ssh.home.goodkind.io` DNS points to `10.250.0.110` (proxy VM) where sshpiper routes by username:
@@ -22,10 +43,11 @@ The short hostname is extracted from the full container name (e.g., `adguard` fr
 
 ## Direct IP Access (Bypass SSHPiper)
 
-When sshpiper is unavailable or for troubleshooting, use IPs directly:
+When sshpiper is unavailable or for troubleshooting, use IPs directly (prefer IPv6):
 
 ```bash
-ssh root@10.250.0.107    # direct to container IP
+ssh root@<ipv6-address>    # ✅ Preferred (e.g. ssh root@3d06:bad:b01::107)
+ssh root@10.250.0.107      # ⚠️ Fallback only
 ```
 
 ### Finding Container IPs
@@ -40,12 +62,12 @@ ssh root@10.250.0.254
 pct list | grep -i <name>    # for containers
 qm list | grep -i <name>     # for VMs
 
-# 3. Get the IP address
-pct exec <VMID> -- ip -4 addr show eth0 | grep inet    # for containers
-qm guest cmd <VMID> network-get-interfaces              # for VMs
+# 3. Get the IP address (Look for inet6 first!)
+pct exec <VMID> -- ip addr show eth0           # for containers
+qm guest cmd <VMID> network-get-interfaces     # for VMs
 
-# 4. SSH directly to the IP
-ssh root@<ip-address>
+# 4. SSH directly to the IP (Prefer IPv6)
+ssh root@<ipv6-address>
 ```
 
 ## Jump Host Access (Last Resort)

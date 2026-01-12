@@ -8,9 +8,13 @@ alwaysApply: true
 
 ## Priority: IPv6 is P0
 
-- **IPv6 connectivity issues are RED ALERT** - treat as critical priority
-- Always prefer IPv6 addresses when available
-- When diagnosing network issues, check IPv6 first, then IPv4
+- **IPv6 connectivity issues are RED ALERT** - treat as critical priority.
+- **Configuration Preference**: Always prefer IPv6 literals over IPv4 in configuration files and bindings.
+    - Use `[::1]` instead of `127.0.0.1`.
+    - Use `[::]` instead of `0.0.0.0`.
+- **Testing Priority**: When diagnosing or verifying connectivity (SSH, curl, etc.), always use/test IPv6 addresses *first*.
+    - Example: `ssh root@2600:...` before trying IPv4.
+- **Diagnosis**: Check IPv6 stack first, then IPv4.
 
 ## DHCPv6 Reservation Matching in KEA
 

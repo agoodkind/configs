@@ -8,6 +8,7 @@ Type=simple
 User=sshpiper
 Group=sshpiper
 ExecStart=/usr/local/bin/sshpiperd \
+  --address :: \
   --port 22 \
   --server-key /etc/sshpiper/ssh_host_ed25519_key \
   --server-key-generate-mode notexist \
