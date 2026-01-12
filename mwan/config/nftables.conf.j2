@@ -21,25 +21,25 @@ define INTERNAL_NET = 10.250.250.0/29
 table inet filter {
     chain input {
         type filter hook input priority filter; policy drop;
-        
+
         # Allow established/related
         ct state established,related accept
-        
+
         # Allow loopback
         iif lo accept
-        
+
         # Allow ICMP
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
-        
+
         # Allow SSH from management network
         iif $MGMT_IFACE tcp dport 22 accept
         # iif $INTERNAL_IFACE tcp dport 22 accept
-        
+
         # Allow DHCP on management interface
         # iif $MGMT_IFACE udp sport 67 udp dport 68 accept
         # iif $MGMT_IFACE udp sport 547 udp dport 546 accept
-        
+
         # Allow DHCP on WAN interfaces
         iif $ATT_IFACE udp sport 67 udp dport 68 accept
         iif $WEBPASS_IFACE udp sport 67 udp dport 68 accept
@@ -47,31 +47,31 @@ table inet filter {
         iif $WEBPASS_IFACE udp sport 547 udp dport 546 accept
         iif $MB_IFACE udp sport 67 udp dport 68 accept
         iif $MB_IFACE udp sport 547 udp dport 546 accept
-        
+
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables input drop: " drop
     }
-    
+
     chain forward {
         type filter hook forward priority filter; policy drop;
-        
+
         # Allow established/related
         ct state established,related accept
-        
+
         # Allow forwarding from internal to WANs
         iif $INTERNAL_IFACE oif { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
         } accept
-        
+
         # Allow forwarding from WANs to internal (for inbound services)
         iif { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
         } oif $INTERNAL_IFACE accept
-        
+
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables forward drop: " drop
     }
-    
+
     chain output {
         type filter hook output priority filter; policy accept;
     }
@@ -81,7 +81,7 @@ table ip nat {
     # Connection tracking for load balancing
     chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
-        
+
         # Mark new connections for load balancing (fwmark)
         iif $INTERNAL_IFACE ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
@@ -94,23 +94,23 @@ table ip nat {
         iif $WEBPASS_IFACE ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
 {% endfor %}
     }
-    
+
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-        
+
         # 1:1 NAT for static IPs - AT&T
 {% for mapping in mwan_static_mappings.att %}
         oif $ATT_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
 {% endfor %}
-        
+
         # 1:1 NAT for static IPs - Webpass
 {% for mapping in mwan_static_mappings.webpass %}
         oif $WEBPASS_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
 {% endfor %}
-        
+
         # Default SNAT for other LAN traffic via AT&T (mark 1)
         oif $ATT_IFACE meta mark 1 ip saddr $INTERNAL_NET masquerade
-        
+
         # Default SNAT for other LAN traffic via Webpass (mark 2)
         oif $WEBPASS_IFACE meta mark 2 ip saddr $INTERNAL_NET masquerade
 
@@ -122,16 +122,16 @@ table ip nat {
 table ip6 nat {
     chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
-        
+
         # Inbound NPT - translate ISP prefix to internal
         # These will be dynamically set by update-npt.sh when PDs arrive
         # Called by 55-update-npt.sh (networkd-dispatcher hook)
     }
-    
+
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-        
-        # Outbound NPT for IPv6 (programmed at runtime): 
+
+        # Outbound NPT for IPv6 (programmed at runtime):
         # - /60 NPT to PD /60
         # Called by update-npt.sh via 55-update-npt.sh hook
 
@@ -155,7 +155,7 @@ table inet mangle {
 
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
-        
+
         # Mark inbound NEW flows by ingress WAN (keeps replies symmetric via policy routing tables)
         iif $ATT_IFACE ct state new meta mark set 1
         iif $WEBPASS_IFACE ct state new meta mark set 2
@@ -163,12 +163,12 @@ table inet mangle {
 
         # NOTE: IPv4 load balancing is driven by the per-flow random mark in `table ip nat prerouting`.
         # Do NOT override marks for 10.250.250.2-10.250.250.6 here, or IPv4 will pin to one WAN.
-        
+
         # Pin latency-sensitive traffic to AT&T (mark 1)
         # Failover: If AT&T down, update-routes.sh removes the fwmark rule,
         # and traffic falls through to main table (which uses Webpass)
         ip daddr @att_pinned_v4 meta mark set 1
-        
+
         # Load-balance outbound IPv6 from OPNsense-edge /128 as well.
         #
         # Why:
@@ -179,22 +179,21 @@ table inet mangle {
 
         # Load-balance IPv6 from internal /60 prefix
         ip6 saddr {{ mwan_internal_prefix }} ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
-        
+
         # General traffic (no mark): Uses main table's multipath routing
         # Kernel automatically:
         #   - Load balances 50/50 when both WANs up
         #   - Fails over to single WAN when one is down
         # update-routes.sh manages the multipath route based on health
-        
+
         # Restore mark for established connections (session affinity)
         ct state established,related meta mark set ct mark
     }
-    
+
     chain postrouting {
         type filter hook postrouting priority mangle; policy accept;
-        
+
         # Save mark to conntrack
         ct mark set meta mark
     }
 }
-

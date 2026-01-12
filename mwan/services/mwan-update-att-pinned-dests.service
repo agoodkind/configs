@@ -9,4 +9,3 @@ ExecStart=/usr/local/bin/update-att-pinned-dests.sh
 
 [Install]
 WantedBy=multi-user.target
-

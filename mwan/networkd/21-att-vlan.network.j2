@@ -18,7 +18,7 @@ Name={{ mwan_att_iface }}.{{ mwan_att_vlan_id }}
 DHCP=yes
 IPv6AcceptRA=yes
 # Needed for policy routing
-IPv4Forwarding=yes 
+IPv4Forwarding=yes
 IPv6Forwarding=yes
 
 [DHCPv4]
@@ -45,5 +45,3 @@ RouterLifetimeSec=1800
 # 1. Detect the dynamic Gateway/IP after the link comes up.
 # 2. Add the default route to table {{ mwan_rt_tables.att }}.
 # 3. Add the ip rules (fwmark/from) for policy routing.
-
-

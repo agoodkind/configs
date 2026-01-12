@@ -19,5 +19,8 @@ pdns.home.goodkind.io
 [mwan_servers]
 mwan.home.goodkind.io
 
+[grommunio_servers]
+grommunio.home.goodkind.io
+
 [homelab]
 # Add your homelab hosts here

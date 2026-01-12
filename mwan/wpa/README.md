@@ -16,7 +16,7 @@ ssh root@mwan.home.goodkind.io "chmod 600 /etc/wpa_supplicant/*.pem"
 ## Required Files on mwan VM
 
 - `/etc/wpa_supplicant/ca_cert.pem` - AT&T CA certificate
-- `/etc/wpa_supplicant/client_cert.pem` - Client certificate  
+- `/etc/wpa_supplicant/client_cert.pem` - Client certificate
 - `/etc/wpa_supplicant/private_key.pem` - Private key
 
 The Ansible playbook will check for these files and warn if they're missing.

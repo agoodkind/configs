@@ -21,12 +21,12 @@ alwaysApply: true
   ```yaml
   # ❌ BAD - exceeds 120 columns
   url: "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node }}/lxc/{{ container_result.vmid }}/interfaces"
-  
+
   # ❌ BAD - `>-` converts newline to space, creating `/lxc/ {{-` with unwanted space
   url: >-
     "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node }}/lxc/
     {{- container_result.vmid }}/interfaces"
-  
+
   # ✅ GOOD - uses `-}}` to strip trailing whitespace and `{{-` on same line
   url: >-
     "https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
@@ -49,10 +49,10 @@ alwaysApply: true
   url: >-
     https://github.com/user/repo/releases/download/
     v{{ version }}/file.tar.gz
-  
+
   # ✅ GOOD - single line
   url: "https://github.com/user/repo/releases/download/v{{ version }}/file.tar.gz"
-  
+
   # ✅ GOOD - broken line with proper Jinja2 whitespace control
   url: >-
     "https://{{ host }}/api/nodes/{{ node -}}/lxc/{{-
@@ -92,7 +92,7 @@ alwaysApply: true
   block: |
     ExecStart=-/sbin/agetty >-
       --autologin root tty%I 115200 $TERM
-  
+
   # ✅ GOOD
   block: |
     ExecStart=-/sbin/agetty --autologin root tty%I 115200 $TERM
@@ -158,7 +158,7 @@ alwaysApply: true
   - set_fact:
       filtered_ipv6: "{{ ipv6_candidates | reject('match','^fe80:') | list }}"
       primary_ip: "{{ filtered_ipv6[0] if (filtered_ipv6 | length > 0) else '' }}"
-  
+
   # ✅ GOOD
   - set_fact:
       var1: "value"
@@ -182,7 +182,7 @@ alwaysApply: true
   ```yaml
   # ❌ BAD - fails on empty list
   ip: "{{ ip_list | first }}"
-  
+
   # ✅ GOOD
   ip: "{{ ip_list[0] if (ip_list | length > 0) else '' }}"
   ```

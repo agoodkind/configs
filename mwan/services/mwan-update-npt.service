@@ -17,4 +17,3 @@ ExecStart=/usr/local/bin/mwan-update-npt-all.sh
 
 [Install]
 WantedBy=multi-user.target
-

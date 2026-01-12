@@ -37,4 +37,3 @@ case "$2" in
         rm -f "$AUTH_FILE"
         ;;
 esac
-

@@ -65,15 +65,15 @@ for f in "$PLAYBOOK_ROOT"/*.yml; do
   existing_template=$(curl -s "$SEMHOST/api/project/$PROJECT_ID/templates" \
     -H "Authorization: Bearer $TOKEN" \
     | jq -r ".[] | select(.name == \"$name\")")
-  
+
   existing=$(echo "$existing_template" | jq -r '.id // empty')
 
   if [ -n "$existing" ]; then
     echo "  Template '$name' already exists (ID: $existing), updating..."
-    
+
     # Preserve ALL existing fields and only update specific ones
     echo "  Preserving all existing settings (surveys, CLI args, etc.)"
-    
+
     # Build update payload by merging existing template with our updates
     update_payload=$(echo "$existing_template" | jq -c \
       --arg name "$name" \
