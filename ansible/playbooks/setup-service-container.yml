@@ -13,7 +13,6 @@
 #   container_vmid: Specific VMID to use (default: "")
 #   ipv4_var: Variable name in group_vars containing IPv4 CIDR (e.g., adguard_ipv4)
 #   ipv6_var: Variable name in group_vars containing IPv6 CIDR (e.g., adguard_ipv6)
-#   ipv6_only_var: Variable name in group_vars for IPv6-only flag (e.g., adguard_ipv6_only)
 #   disk_size: Container disk size in GB (default: "8")
 #   memory: Container memory in MB (default: "2048")
 #   cores: Container CPU cores (default: "2")
@@ -64,14 +63,9 @@
         - ipv6_var is defined
         - (ipv6_var | default('') | trim) | length > 0
 
-    - name: Set IPv6-only flag from group_vars (optional)
+    - name: Set IPv6-only flag
       ansible.builtin.set_fact:
-        service_ipv6_only: >-
-          {{
-            (lookup('vars', ipv6_only_var) | default(false) | bool)
-            if (ipv6_only_var is defined and (ipv6_only_var | default('') | trim) | length > 0)
-            else false
-          }}
+        service_ipv6_only: "{{ ipv6_only | default(true) | bool }}"
 
     - name: Compute effective container settings (caller overrides defaults)
       ansible.builtin.set_fact:

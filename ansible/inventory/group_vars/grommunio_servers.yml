@@ -11,7 +11,7 @@ grommunio_hostname: grommunio.home.goodkind.io
 
 # Static addressing (VMID 104)
 # IPv6 only: 3d06:bad:b01::104/64
-grommunio_ipv6_only: true
+ipv6_only: true
 grommunio_ipv6: "3d06:bad:b01::104/64"
 
 # Stable MAC address for static addressing
