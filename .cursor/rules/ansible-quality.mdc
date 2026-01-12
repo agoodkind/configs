@@ -210,6 +210,30 @@ alwaysApply: true
 - **Check**: Any reservation with both identifiers.
 - **Fix**: Use only one identifier per reservation. Prefer `hw-address` when MAC is pinned.
 
+## Secrets Management
+
+- **Vault-First Policy**: Do not rely on local files (e.g., `/var/lib/semaphore/...`) existing on the controller.
+- **Implementation**: Store secrets in `inventory/group_vars/all/vault.yml`.
+- **Usage**: Inject secrets using `content: "{{ vault_var }}"` in `copy` tasks, rather than `src:`.
+
+## Dynamic List Parsing (Jinja2)
+
+- **Problem**: Ansible `uri` module returns multi-line strings for list-like data (e.g., Cloudflare IP ranges), which breaks YAML if templated directly.
+- **Fix**: Explicitly split the string into a list.
+- **Example**:
+  ```yaml
+  # ❌ BAD - renders as one long invalid string
+  trusted_ips: "{{ response.content.split('\n') }}"
+
+  # ✅ GOOD - renders as a proper YAML list
+  trusted_ips: "{{ response.content.splitlines() }}"
+  ```
+
+## Process Management
+
+- **Concurrency**: When debugging or running complex deployments that might race, use `--forks=1` to force sequential execution.
+- **Cleanup**: Ensure previous ansible-playbook processes are killed before starting a new run if they might be hung.
+
 ## Linting and Verification
 
 ### Ansible-lint Timing

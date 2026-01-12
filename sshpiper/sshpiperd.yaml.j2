@@ -19,33 +19,16 @@ pipes:
       username: "$1"
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
-  # Simple route for {{ short_name }}: {{ short_name }} -> root@{{ target_ip }}
-  - from:
-      - username: "{{ short_name }}"
-        authorized_keys: /etc/sshpiper/authorized_keys
-    to:
-      host: "{{ '[' + target_ip + ']' if ':' in target_ip else target_ip }}:22"
-      username: root
-      private_key: /etc/sshpiper/upstream_id_ed25519
-      ignore_hostkey: true
 {% endif %}
 {% endfor %}
   # Self-route: "proxy" username routes back to this container on port 2222
   - from:
-      - username: "proxy"
+      - username: "^(.+)@proxy"
+        username_regex_match: true
         authorized_keys: /etc/sshpiper/authorized_keys
     to:
-      host: "127.0.0.1:2222"
-      username: root
-      private_key: /etc/sshpiper/upstream_id_ed25519
-      ignore_hostkey: true
-  # Self-route: "root" username routes back to this container on port 2222
-  - from:
-      - username: "root"
-        authorized_keys: /etc/sshpiper/authorized_keys
-    to:
-      host: "127.0.0.1:2222"
-      username: root
+      host: "[::1]:2222"
+      username: "$1"
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
   # Static route for nas: user@nas -> user@nas.home.goodkind.io
@@ -56,14 +39,5 @@ pipes:
     to:
       host: "nas.home.goodkind.io:22"
       username: "$1"
-      private_key: /etc/sshpiper/upstream_id_ed25519
-      ignore_hostkey: true
-  # Static route for nas: nas -> agoodkind@nas.home.goodkind.io
-  - from:
-      - username: "nas"
-        authorized_keys: /etc/sshpiper/authorized_keys
-    to:
-      host: "nas.home.goodkind.io:22"
-      username: agoodkind
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
