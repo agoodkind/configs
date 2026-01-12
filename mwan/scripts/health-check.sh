@@ -150,10 +150,10 @@ get_health() {
 set_health() {
     local wan="$1"
     local health="$2"
-    
+
     # Remove old state
     sed -i "/^${wan}:/d" "$STATE_FILE"
-    
+
     # Add new state
     echo "${wan}:${health}" >> "$STATE_FILE"
 }
@@ -163,7 +163,7 @@ check_wan_health() {
     local interface="$2"
     local ping_count="$3"
     local success_threshold="$4"
-    
+
     local success_v4=0
     local success_v6=0
     local success_http4=0
@@ -195,16 +195,16 @@ check_wan_health() {
             http_targets=()
             ;;
     esac
-    
+
     # Check if interface exists and is up
     if ! ip link show "$interface" >/dev/null 2>&1; then
         return 1
     fi
-    
+
     if ! ip link show "$interface" | grep -q "state UP"; then
         return 1
     fi
-    
+
     # IPv6 health check FIRST (P0 priority)
     if ip -6 addr show dev "$interface" | grep -q "scope global"; then
         for target in "${targets_v6[@]}"; do
@@ -220,7 +220,7 @@ check_wan_health() {
             fi
         done
     fi
-    
+
     # IPv4 health check (secondary)
     for target in "${targets_v4[@]}"; do
         [ -n "$target" ] || continue
@@ -234,7 +234,7 @@ check_wan_health() {
             success_http4=$((success_http4 + 1))
         fi
     done
-    
+
     [ "$DEBUG" = "1" ] && debug_json "CHECK" "probe_results" "$(jq -cn \
       --arg wan "$wan_name" \
       --arg iface "$interface" \
@@ -292,19 +292,19 @@ check_wan_health() {
 
 handle_wan_failure() {
     local wan_name="$1"
-    
+
     log "WAN $wan_name failed health check"
-    
+
     local old_state
     old_state=$(get_health "$wan_name")
-    
+
     if [ "$old_state" != "unhealthy" ]; then
         set_health "$wan_name" "unhealthy"
         log "Marking $wan_name as UNHEALTHY (was $old_state)"
-        
+
         # Update routing to remove failed WAN
         /usr/local/bin/update-routes.sh
-        
+
         send_email_notification \
           "MWAN: ${wan_name} UNHEALTHY" \
           "WAN ${wan_name} became UNHEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
@@ -313,18 +313,18 @@ handle_wan_failure() {
 
 handle_wan_recovery() {
     local wan_name="$1"
-    
+
     local old_state
     old_state=$(get_health "$wan_name")
-    
+
     if [ "$old_state" != "healthy" ]; then
         log "WAN $wan_name health check passed"
         set_health "$wan_name" "healthy"
         log "Marking $wan_name as HEALTHY (was $old_state)"
-        
+
         # Update routing to add recovered WAN
         /usr/local/bin/update-routes.sh
-        
+
         send_email_notification \
           "MWAN: ${wan_name} HEALTHY" \
           "WAN ${wan_name} became HEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
@@ -356,7 +356,7 @@ run_health_checks() {
     for config in "${WAN_CONFIGS[@]}"; do
         # Skip commented configs
         [[ "$config" =~ ^[[:space:]]*# ]] && continue
-        
+
         IFS=':' read -r wan_name interface ping_count success_threshold interval failure_threshold recovery_threshold <<< "$config"
         recovery_threshold="${recovery_threshold:-2}"
 
@@ -375,11 +375,11 @@ run_health_checks() {
 
         FAIL_COUNTS["$wan_name"]="${FAIL_COUNTS["$wan_name"]:-0}"
         OK_COUNTS["$wan_name"]="${OK_COUNTS["$wan_name"]:-0}"
-        
+
         if check_wan_health "$wan_name" "$interface" "$ping_count" "$success_threshold"; then
             OK_COUNTS["$wan_name"]=$((OK_COUNTS["$wan_name"] + 1))
             FAIL_COUNTS["$wan_name"]=0
-            
+
             # Need N consecutive successes to mark as up (prevents flapping)
             if [ "${OK_COUNTS["$wan_name"]}" -ge "$recovery_threshold" ]; then
                 handle_wan_recovery "$wan_name"
@@ -387,7 +387,7 @@ run_health_checks() {
         else
             FAIL_COUNTS["$wan_name"]=$((FAIL_COUNTS["$wan_name"] + 1))
             OK_COUNTS["$wan_name"]=0
-            
+
             if [ "${FAIL_COUNTS["$wan_name"]}" -ge "$failure_threshold" ]; then
                 handle_wan_failure "$wan_name"
             fi
@@ -400,7 +400,7 @@ run_health_checks() {
 
 daemon_loop() {
     log "Starting mwan-health daemon"
-    
+
     # Initialize state file
     : > "$STATE_FILE"
     # Write initial states so other components never see an empty file.
@@ -410,10 +410,10 @@ daemon_loop() {
         [ -n "${wan_name:-}" ] || continue
         echo "${wan_name}:unknown" >> "$STATE_FILE"
     done
-    
+
     while true; do
         run_health_checks
-        
+
         # Sleep interval (use minimum interval from configs)
         interval="$(cat /var/run/mwan-health.interval 2>/dev/null || echo 10)"
         sleep "${interval:-10}"
@@ -423,23 +423,23 @@ daemon_loop() {
 show_status() {
     echo "=== MWAN Health Status ==="
     echo ""
-    
+
     if [ ! -f "$STATE_FILE" ]; then
         echo "No state file found. Daemon may not be running."
         exit 1
     fi
-    
+
     for config in "${WAN_CONFIGS[@]}"; do
         [[ "$config" =~ ^[[:space:]]*# ]] && continue
-        
+
         IFS=':' read -r wan_name interface _ _ _ _ <<< "$config"
-        
+
         local health
         health=$(get_health "$wan_name")
-        
+
         printf "%-15s %-15s %s\n" "$wan_name" "$interface" "$health"
     done
-    
+
     echo ""
     echo "=== Recent Log Entries ==="
     tail -20 "$LOG_FILE" 2>/dev/null || echo "(no log entries)"
@@ -471,4 +471,3 @@ case "${1:-}" in
         exit 1
         ;;
 esac
-

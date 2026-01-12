@@ -73,8 +73,11 @@ dns:
   private_networks: []
   use_private_ptr_resolvers: true
   local_ptr_upstreams: []
-  use_dns64: false
-  dns64_prefixes: []
+  use_dns64: {{ adguard_use_dns64 | lower }}
+  dns64_prefixes:
+{% for prefix in adguard_dns64_prefixes %}
+    - {{ prefix }}
+{% endfor %}
   serve_http3: false
   use_http3_upstreams: false
   serve_plain_dns: true

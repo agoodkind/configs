@@ -20,4 +20,3 @@ EOF
 chmod +x "$HOOK_PATH"
 echo "✅ Git hook installed at $HOOK_PATH"
 echo "   Templates will auto-sync after 'git pull'"
-

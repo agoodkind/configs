@@ -170,7 +170,7 @@ esac
     target: $target
   }')"
 
-# Postrouting: 
+# Postrouting:
 # - SNAT specific /128s (fe::1, fe::2) to PD ::1
 # - NPT broader /60 to PD /60
 # Add PD ::1 address to interface first

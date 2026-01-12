@@ -35,4 +35,3 @@ nanomdm_api_key: "{{ vault_nanomdm_api_key }}"
 
 # Push certificate content (reference vault secret)
 nanomdm_push_pem: "{{ vault_nanomdm_push_pem }}"
-

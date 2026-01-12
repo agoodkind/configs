@@ -48,3 +48,22 @@ pipes:
       username: root
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
+  # Static route for nas: user@nas -> user@nas.home.goodkind.io
+  - from:
+      - username: "^(.+)@nas$"
+        username_regex_match: true
+        authorized_keys: /etc/sshpiper/authorized_keys
+    to:
+      host: "nas.home.goodkind.io:22"
+      username: "$1"
+      private_key: /etc/sshpiper/upstream_id_ed25519
+      ignore_hostkey: true
+  # Static route for nas: nas -> agoodkind@nas.home.goodkind.io
+  - from:
+      - username: "nas"
+        authorized_keys: /etc/sshpiper/authorized_keys
+    to:
+      host: "nas.home.goodkind.io:22"
+      username: agoodkind
+      private_key: /etc/sshpiper/upstream_id_ed25519
+      ignore_hostkey: true

@@ -11,4 +11,3 @@ ExecStart=/usr/local/bin/mwan-trace-boot.sh
 
 [Install]
 WantedBy=multi-user.target
-

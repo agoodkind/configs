@@ -100,7 +100,7 @@
             content: |
               # Generated PowerDNS secrets - Add these to Semaphore Environment Variables
               # Generated at: {{ ansible_date_time.iso8601 | default('unknown') }}
-              # 
+              #
               # IMPORTANT: Add these to Semaphore before the next playbook run:
               # 1. Go to Environments → Select your environment
               # 2. Add these as Environment Variables

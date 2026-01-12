@@ -381,4 +381,3 @@ final_json() {
 }
 
 [ "$DEBUG" = "1" ] && debug_json "FINAL" "rules_and_routes" "$(final_json)"
-

@@ -169,7 +169,7 @@ ssh agoodkind@10.250.0.1 "sudo cat /var/db/kea/kea-leases6.csv | grep '<expected
    ```bash
    # Get current DUID
    ssh root@<host> "networkctl status eth0 | grep -i 'DUID:'"
-   
+
    # Check lease database for multiple DUIDs for same MAC
    ssh <kea-host> "cat /var/db/kea/kea-leases6.csv | grep '<mac>' | awk -F',' '{print \$2}' | sort -u"
    ```
@@ -198,7 +198,7 @@ ssh agoodkind@10.250.0.1 "sudo cat /var/db/kea/kea-leases6.csv | grep '<expected
    ```bash
    # Verify reservation exists in KEA config
    grep -A 5 "reservations" /path/to/kea-dhcp6.conf
-   
+
    # Check what identifier type is used (duid vs hw-address)
    grep "host-reservation-identifiers" /path/to/kea-dhcp6.conf
    ```
@@ -208,7 +208,7 @@ ssh agoodkind@10.250.0.1 "sudo cat /var/db/kea/kea-leases6.csv | grep '<expected
    ```bash
    # Get client's DUID
    ssh root@<host> "networkctl status eth0 | grep -i 'DUID:'"
-   
+
    # Get client's MAC
    ssh root@<host> "ip link show eth0 | grep -i link/ether"
    ```

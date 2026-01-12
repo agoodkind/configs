@@ -29,21 +29,16 @@ adguard_dns_bind_hosts:
 
 # Upstream DNS servers (non-default)
 adguard_upstream_dns:
-  - "2606:4700:4700::1111"
-  - "1.1.1.1"
-  - "https://cloudflare-dns.com/dns-query"
-  - "2001:4860:4860::8888"
-  - "8.8.8.8"
+  - "quic://adguard-home-7d698e.dns.nextdns.io"
+  - "tls://adguard-home-7d698e.dns.nextdns.io"
 
 # Bootstrap DNS servers (non-default)
 adguard_bootstrap_dns:
-  - "2606:4700:4700::1111"
-  - "1.1.1.1"
+  - "2a07:a8c1::7d:698e"
 
 # Fallback DNS servers (non-default)
 adguard_fallback_dns:
-  - "2606:4700:4700::1111"
-  - "1.1.1.1"
+  - "2a07:a8c0::7d:698e"
 
 # Upstream mode (default is load_balance, we use parallel)
 adguard_upstream_mode: parallel
@@ -51,6 +46,11 @@ adguard_upstream_mode: parallel
 # DNS security (non-default: DNSSEC enabled, ECS enabled)
 adguard_enable_dnssec: true
 adguard_edns_client_subnet: true
+
+# DNS64 (non-default: enabled for IPv6-only client access to IPv4 services)
+adguard_use_dns64: true
+adguard_dns64_prefixes:
+  - "64:ff9b::/96"
 
 # Filtering (non-default: blocking_mode and safebrowsing)
 adguard_blocking_mode: nxdomain
@@ -62,13 +62,16 @@ adguard_clients_rdns: false
 # Statistics interval (non-default: 2160h instead of 24h)
 adguard_stats_interval: 2160h
 
+# DNS rewrites (domain overrides)
+adguard_rewrites: []
+
 # Filters (non-default list)
 adguard_filters:
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_24.txt
     name: 1Hosts (Lite)
     id: 1765787746
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_70.txt
     name: 1Hosts (Xtra)
     id: 1765787747
@@ -84,39 +87,39 @@ adguard_filters:
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_53.txt
     name: AWAvenue Ads Rule
     id: 1765787750
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_4.txt
     name: Dan Pollock's List
     id: 1765787751
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_34.txt
     name: HaGeZi's Normal Blocklist
     id: 1765787752
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt
     name: HaGeZi's Pro Blocklist
     id: 1765787753
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_51.txt
     name: HaGeZi's Pro++ Blocklist
     id: 1765787754
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_49.txt
     name: HaGeZi's Ultimate Blocklist
     id: 1765787755
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_5.txt
     name: OISD Blocklist Small
     id: 1765787756
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_27.txt
     name: OISD Blocklist Big
     id: 1765787757
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_3.txt
     name: Peter Lowe's Blocklist
     id: 1765787758
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_69.txt
     name: ShadowWhisperer Tracking List
     id: 1765787759
@@ -132,7 +135,7 @@ adguard_filters:
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_65.txt
     name: HaGeZi's Vivo Tracker Blocklist
     id: 1765848074
-  - enabled: true
+  - enabled: false
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_63.txt
     name: HaGeZi's Windows/Office Tracker Blocklist
     id: 1765848075
@@ -188,8 +191,46 @@ adguard_filters:
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_11.txt
     name: Malicious URL Blocklist (URLHaus)
     id: 1765848088
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_66.txt
+    name: HaGeZi's OPPO & Realme Tracker Blocklist
+    id: 1765864766
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_7.txt
+    name: Perflyst and Dandelion Sprout's Smart-TV Blocklist
+    id: 1765864767
+  - enabled: false
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_57.txt
+    name: ShadowWhisperer's Dating List
+    id: 1765864768
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_62.txt
+    name: Ukrainian Security Filter
+    id: 1765864769
 adguard_user_rules:
   - "@@||drd.sh^"
+  - "@@||ifconfig.co^$important"
+  - "@@||browser-intake-datadoghq.com^$client='10.250.10.4'"
+  - "@@||app-analytics-services.com^$client='10.250.10.4'"
+  - "@@||xerxes-sub.xerxessecure.com^$client='10.250.10.4'"
+  - "@@||xerxes-sub.xerxessecure.com^$important"
+  - "@@||xerxes-context-prod.codebig2.net^$important"
+  - "@@||mfa.comcast.com^$important"
+  - "@@||assets.xfinity.com^$important"
+  - "@@||api.xfinitymfa.com^$important"
+  - "@@||static.cimcontent.net^$important"
+  - "@@||secure-niagaralog-prod.codebig2.net^$important"
+  - "@@||gs-loc.apple.com^$important"
+  - "@@||daf.xp.apple.com^$important"
+  - "@@||verifi.podscribe.com^$important"
+  - "@@||chime-public-assets.prod-ext.chmfin.com^$important"
+  - "@@||enrollment-web-app-assets.prod-ext.chmfin.com^$important"
+  - "@@||event-router.chime.com^$important"
+  - "@@||analyticsmobile-pa.googleapis.com^$important"
+  - "@@||cdn.perfops.net^$important"
+  - "@@||assets.adobedtm.com^$important"
+  - "@@||api.perfops.net^$important"
+  - ""
 
 # TLS configuration
 adguard_tls_enabled: true

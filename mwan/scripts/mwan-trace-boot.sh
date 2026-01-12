@@ -22,4 +22,3 @@ tid="${ts}-boot-${boot_id:-unknown}"
 
 printf '%s\n' "$tid" | tee /run/mwan-trace-id /var/lib/mwan/trace-id >/dev/null
 logger -t mwan-trace-boot "traceId=$tid"
-

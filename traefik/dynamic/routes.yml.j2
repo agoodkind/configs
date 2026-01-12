@@ -124,7 +124,7 @@ http:
         servers:
           - url: "https://nas.{{ traefik_upstream_domain }}:8443"
         serversTransport: insecure-transport
-    
+
     adguard-service:
       loadBalancer:
         servers:
@@ -139,7 +139,7 @@ http:
   serversTransports:
     insecure-transport:
       insecureSkipVerify: true
-    
+
     unifi-transport:
       insecureSkipVerify: true
       serverName: "UniFi"

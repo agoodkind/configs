@@ -32,4 +32,3 @@ done
 
 echo "Interface $IFACE not found after ${WAIT_SECS}s" >&2
 exit 1
-

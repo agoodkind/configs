@@ -21,6 +21,7 @@
     ipv6_gateway: ""
     ipv4_prefix: "24"
     ipv6_prefix: "64"
+    ipv6_only: false
     container_tags: "lxc"
     allow_dhcp: false
 
@@ -86,6 +87,11 @@
       when:
         - proxmox_cluster_resources.json.data is defined
         - vmid_list is defined
+
+    - name: Set existing_vmid to empty if not found
+      ansible.builtin.set_fact:
+        existing_vmid: ""
+      when: existing_vmid is not defined
 
     - name: Debug existing VMID lookup
       ansible.builtin.debug:
@@ -206,9 +212,13 @@
       ansible.builtin.set_fact:
         effective_ipv4_value: >-
           {{
-            (ip_address | trim)
-            if (ip_address | default('') | trim) | length > 0
-            else default_ipv4_host
+            ''
+            if (ipv6_only | default(false) | bool)
+            else (
+              (ip_address | trim)
+              if (ip_address | default('') | trim) | length > 0
+              else default_ipv4_host
+            )
           }}
         effective_ipv6_value: >-
           {{
@@ -220,23 +230,31 @@
     - name: Enforce static addressing for containers (no DHCP by default)
       ansible.builtin.assert:
         that:
-          - allow_dhcp | bool or (effective_ipv4_value | lower) != 'dhcp'
-          - allow_dhcp | bool or (effective_ipv6_value | lower) != 'dhcp'
+          - >-
+            allow_dhcp | bool or
+            (ipv6_only | default(false) | bool) or
+            (effective_ipv4_value | default('') | lower) != 'dhcp'
+          - allow_dhcp | bool or (effective_ipv6_value | default('') | lower) != 'dhcp'
         fail_msg: >-
           DHCP is disabled for containers. Provide a static ip_address/ipv6_address
           (or omit them to use the VMID-derived defaults).
           To explicitly allow DHCP for this container, set allow_dhcp=true.
+          For IPv6-only containers, set ipv6_only=true.
 
     - name: Normalize effective IPs (add prefixes unless DHCP or already CIDR)
       ansible.builtin.set_fact:
         effective_ipv4_cidr: >-
           {{
-            'dhcp'
-            if (effective_ipv4_value | default('') | lower) == 'dhcp'
+            ''
+            if (ipv6_only | default(false) | bool)
             else (
-              effective_ipv4_value
-              if '/' in (effective_ipv4_value | default(''))
-              else (effective_ipv4_value ~ '/' ~ (ipv4_prefix | default('24') | string))
+              'dhcp'
+              if (effective_ipv4_value | default('') | lower) == 'dhcp'
+              else (
+                effective_ipv4_value
+                if '/' in (effective_ipv4_value | default(''))
+                else (effective_ipv4_value ~ '/' ~ (ipv4_prefix | default('24') | string))
+              )
             )
           }}
         effective_ipv6_cidr: >-
@@ -276,17 +294,30 @@
         - (effective_ipv4_cidr == 'dhcp' or effective_ipv6_cidr == 'dhcp')
         - (mac_address | default('') | trim) | length == 0
 
+    - name: Validate MAC address format (if provided)
+      ansible.builtin.set_fact:
+        mac_address_valid: >-
+          {{
+            (mac_address | default('') | trim | regex_search('^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$'))
+            if (mac_address | default('') | trim) | length > 0
+            else false
+          }}
+
     - name: Build network interface configuration
       ansible.builtin.set_fact:
         net0_config: >-
           name=eth0,bridge={{ network_bridge -}}
           {{- ',hwaddr=' + mac_address
-              if (mac_address | default('') | trim) | length > 0 else '' -}}
-          ,ip={{ effective_ipv4_cidr -}}
+              if (mac_address_valid | default(false) | bool)
+              else '' -}}
+          {{- ',ip=' + effective_ipv4_cidr
+              if (not (ipv6_only | default(false) | bool) and (effective_ipv4_cidr | length > 0))
+              else '' -}}
           {{- ',gw=' + effective_gateway_v4
               if (
                 (effective_gateway_v4 | default('') | trim) | length > 0
                 and effective_ipv4_cidr != 'dhcp'
+                and (effective_ipv4_cidr | length > 0)
               ) else '' -}}
           ,ip6={{ effective_ipv6_cidr -}}
           {{- ',gw6=' + effective_gateway_v6
@@ -340,9 +371,12 @@
     - name: Combine all SSH keys
       ansible.builtin.set_fact:
         all_ssh_keys: >-
-          {{ github_keys.content }}{{ (ansible_key.content | b64decode)
-             if (ssh_key_files is defined and (ssh_key_files.files | default([]) | length > 0))
-             else '' }}
+          {{- (github_keys.content | default('')) if (github_keys is defined
+          and github_keys.content is defined) else '' -}}
+          {{- (ansible_key.content | b64decode) if (ssh_key_files is defined
+          and (ssh_key_files.files | default([]) | length > 0)
+          and ansible_key is defined and ansible_key.content is defined)
+          else '' -}}
 
     - name: Create LXC container
       community.proxmox.proxmox:
@@ -353,7 +387,12 @@
         validate_certs: false
         node: "{{ target_node }}"
         hostname: "{{ container_hostname }}"
-        vmid: "{{ actual_vmid | default(omit) }}"
+        vmid: >-
+          {{
+            (actual_vmid | int)
+            if (actual_vmid | default('') | trim) | length > 0
+            else omit
+          }}
         ostemplate: "storage:vztmpl/{{ template_name }}"
         password: "{{ actual_password }}"
         pubkey: "{{ all_ssh_keys }}"
@@ -375,13 +414,23 @@
           changed: false
           msg: "Container already exists"
           vmid: "{{ existing_vmid }}"
+        effective_vmid: "{{ existing_vmid }}"
       when: container_already_exists | default(false) | bool
+
+    - name: Set effective VMID from container result or actual
+      ansible.builtin.set_fact:
+        effective_vmid: >-
+          {{
+            (container_result.vmid | string | trim)
+            if (container_result is defined and container_result.vmid is defined)
+            else (actual_vmid | default('') | string | trim)
+          }}
 
     - name: Debug container creation result
       ansible.builtin.debug:
         msg:
           - "Container created/updated: {{ container_result.changed | default(false) }}"
-          - "Container VMID: {{ container_result.vmid }}"
+          - "Container VMID: {{ container_result.vmid | default(actual_vmid | default('auto-assign')) }}"
           - "Container hostname: {{ container_hostname }}"
           - "Container tags: {{ container_tags.split(',') }}"
 
@@ -394,7 +443,16 @@
         validate_certs: false
         node: "{{ target_node }}"
         hostname: "{{ container_hostname }}"
-        vmid: "{{ container_result.vmid }}"
+        vmid: >-
+          {{
+            (container_result.vmid | int)
+            if (container_result.vmid is defined)
+            else (
+              (actual_vmid | int)
+              if (actual_vmid | default('') | trim) | length > 0
+              else omit
+            )
+          }}
         state: started
       delegate_to: localhost
 
@@ -403,7 +461,7 @@
         argv:
           - pct
           - exec
-          - "{{ container_result.vmid }}"
+          - "{{ effective_vmid }}"
           - --
           - /bin/true
       delegate_to: "{{ target_node }}"
@@ -417,7 +475,7 @@
       ansible.builtin.uri:
         url: >-
           https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
-          container_result.vmid }}/interfaces
+          effective_vmid }}/interfaces
         method: GET
         headers:
           Authorization: >-
@@ -442,7 +500,7 @@
       ansible.builtin.uri:
         url: >-
           https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
-          container_result.vmid }}/interfaces
+          effective_vmid }}/interfaces
         method: GET
         headers:
           Authorization: >-
@@ -550,16 +608,17 @@
           - container_primary_ip | string | trim | length > 0
         fail_msg: >-
           Unable to discover an IP address for {{ container_hostname }}
-          (VMID {{ container_result.vmid }}) from Proxmox.
+          (VMID {{ effective_vmid | default('unknown') }}) from Proxmox.
           This usually means DHCP hasn't assigned an address yet or the CT
           is not attached to the expected bridge ({{ network_bridge }}).
+      when: not ansible_check_mode
 
     - name: Display container info
       ansible.builtin.debug:
         msg:
           - >-
             Container {{ container_hostname }} created with VMID:
-            {{ container_result.vmid }}
+            {{ effective_vmid | default('unknown') }}
           - >-
             Ansible will connect to {{ container_hostname }} via
             {{ container_primary_ip }}
@@ -572,7 +631,7 @@
         ansible_user: root
         ansible_ssh_common_args: >-
           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-        ansible_proxmox_vmid: "{{ container_result.vmid }}"
+        ansible_proxmox_vmid: "{{ effective_vmid | default('') }}"
         ansible_proxmox_host: "{{ target_node }}"
 
 - name: Prepare new container (deploy keys and initialize)
