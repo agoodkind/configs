@@ -52,13 +52,32 @@
     group: cloudflared
     mode: "0750"
 
-- name: Copy cloudflared tunnel token
+- name: Check if local cloudflared token exists (file based)
+  ansible.builtin.stat:
+    path: "{{ cloudflared_token_src | default('') }}"
+  delegate_to: localhost
+  register: local_cloudflared_token
+  when: cloudflared_token_src is defined
+
+- name: Copy cloudflared tunnel token (from file)
   ansible.builtin.copy:
     src: "{{ cloudflared_token_src }}"
     dest: /etc/cloudflared/token
     owner: root
     group: cloudflared
     mode: "0640"
+  when:
+    - cloudflared_token_src is defined
+    - local_cloudflared_token.stat.exists
+
+- name: Copy cloudflared tunnel token (from content)
+  ansible.builtin.copy:
+    content: "{{ cloudflared_token_content }}"
+    dest: /etc/cloudflared/token
+    owner: root
+    group: cloudflared
+    mode: "0640"
+  when: cloudflared_token_content is defined
 
 - name: Deploy cloudflared systemd service (custom)
   ansible.builtin.copy:

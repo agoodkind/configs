@@ -173,6 +173,7 @@
           }}
       register: build_bundle
       changed_when: false
+      become: true
 
     - name: Show bundle preview
       ansible.builtin.debug:
