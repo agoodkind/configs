@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook to prevent committing unencrypted Ansible Vault files.
+#
+# Checks for files named 'vault.yml' or containing 'vault' in the path.
+# If they don't start with '$ANSIBLE_VAULT', the commit is blocked.
+
+set -euo pipefail
+
+# ANSI color codes
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Find all staged files that look like vault files
+staged_vault_files=$(git diff --cached --name-only | grep -E 'vault\.yml$|group_vars/.*/vault$|host_vars/.*/vault$' || true)
+
+if [ -z "$staged_vault_files" ]; then
+  exit 0
+fi
+
+has_errors=0
+
+for file in $staged_vault_files; do
+  # Check if file exists (it might have been deleted)
+  if [ ! -f "$file" ]; then
+    continue
+  fi
+
+  # Check first line for Vault header
+  if ! head -n 1 "$file" | grep -q "^\$ANSIBLE_VAULT"; then
+    echo -e "${RED}ERROR: Attempting to commit unencrypted vault file: $file${NC}"
+    echo "Run 'ansible-vault encrypt $file' before committing."
+    has_errors=1
+  fi
+done
+
+if [ "$has_errors" -eq 1 ]; then
+  exit 1
+fi
+
+exit 0

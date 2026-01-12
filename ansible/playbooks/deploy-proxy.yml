@@ -407,6 +407,7 @@
 - name: Deploy and Configure SSHPiper
   hosts: proxy_servers
   become: true
+  tags: [sshpiper]
 
   vars:
     sshpiper_user: sshpiper
@@ -570,15 +571,27 @@
         ssh_key_from_file: "{{
           lookup('file', '~/.ssh/id_ed25519.pub', errors='ignore') |
           default('') }}"
-        ssh_key_from_url: "{{
-          lookup('url', 'https://github.com/agoodkind.keys', split_lines=False) |
-          default('') }}"
+
+    - name: Fetch GitHub SSH keys
+      ansible.builtin.get_url:
+        url: https://github.com/agoodkind.keys
+        dest: /tmp/github_keys
+        force: true
+      delegate_to: localhost
+      become: false
+
+    - name: Read GitHub SSH keys
+      ansible.builtin.command: cat /tmp/github_keys
+      register: github_keys_content
+      delegate_to: localhost
+      become: false
+      changed_when: false
 
     - name: Combine SSH keys
       ansible.builtin.set_fact:
         combined_ssh_keys: "{{
           (ssh_key_from_file + '\n' if ssh_key_from_file else '') +
-          ssh_key_from_url }}"
+          github_keys_content.stdout }}"
 
     - name: Create authorized_keys for sshpiper
       ansible.builtin.copy:
