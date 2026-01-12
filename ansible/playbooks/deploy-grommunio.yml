@@ -1,0 +1,473 @@
+---
+# Deploy Grommunio Mail Server (EAS-Only)
+#
+# EAS-Only Setup: Exchange ActiveSync for mobile devices
+# - No IMAP/dovecot configuration required
+# - SMTP required for incoming/outgoing mail
+# - HTTPS handled by Cloudflare Tunnel + Traefik
+#
+# Prerequisites:
+#   - grommunio_admin_password and grommunio_db_password in vault.yml
+#   - DNS records: mail.goodkind.io, autodiscover.goodkind.io
+#   - Traefik routes configured separately
+#
+# Usage:
+#   ansible-playbook playbooks/deploy-grommunio.yml
+
+- name: Setup Grommunio container
+  ansible.builtin.import_playbook: setup-service-container.yml
+  vars:
+    container_group: grommunio_servers
+    group_vars_file: >-
+      {{ playbook_dir }}/../inventory/group_vars/grommunio_servers.yml
+    hostname_var: grommunio_hostname
+    mac_var: grommunio_mac_address
+    ipv6_var: grommunio_ipv6
+    ipv6_only_var: grommunio_ipv6_only
+    target_node: vault
+    disk_size: "20"
+    memory: "4096"
+    cores: "4"
+    container_tags: "lxc,grommunio"
+
+- name: Prepare container
+  ansible.builtin.import_playbook: prep-guests.yml
+  vars:
+    target_hosts: grommunio_servers
+
+- name: Deploy and Configure Grommunio
+  hosts: grommunio_servers
+  become: true
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    grommunio_hostname: >-
+      {{ hostvars['localhost']['service_hostname'] }}
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Repository & Package Installation
+    # -------------------------------------------------------------------------
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Add grommunio GPG key
+      ansible.builtin.apt_key:
+        url: https://download.grommunio.com/RPM-GPG-KEY-grommunio
+        keyring: /usr/share/keyrings/download.grommunio.com.gpg
+        state: present
+
+    - name: Add grommunio repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/download.grommunio.com.gpg]
+          https://download.grommunio.com/community/Ubuntu_24.04 Ubuntu_24.04 main
+        state: present
+        filename: grommunio
+
+    - name: Install grommunio packages (EAS-only, no IMAP)
+      ansible.builtin.apt:
+        name:
+          - gromox
+          - grommunio-admin-api
+          - grommunio-sync
+          - grommunio-web
+          - nginx
+          - mariadb-server
+          - mariadb-client
+        state: present
+        update_cache: true
+
+    # -------------------------------------------------------------------------
+    # Database Setup
+    # -------------------------------------------------------------------------
+    - name: Ensure MariaDB is started and enabled
+      ansible.builtin.systemd:
+        name: mariadb
+        state: started
+        enabled: true
+
+    - name: Get MariaDB root password from vault
+      ansible.builtin.set_fact:
+        mariadb_root_password: >-
+          {{ vault_grommunio_mariadb_root_password | default('') }}
+      no_log: true
+
+    - name: Build mysql command with or without password
+      ansible.builtin.set_fact:
+        mysql_root_cmd: >-
+          {%- if mariadb_root_password | length > 0 -%}
+          mysql -u root -p{{ mariadb_root_password }}
+          {%- else -%}
+          mysql -u root
+          {%- endif -%}
+
+    - name: Check if grommunio database password is set
+      ansible.builtin.assert:
+        that:
+          - vault_grommunio_db_password is defined
+          - vault_grommunio_db_password | length > 0
+        fail_msg: >-
+          vault_grommunio_db_password must be set in
+          inventory/group_vars/all/vault.yml
+
+    - name: Check if grommunio database exists
+      ansible.builtin.command: >-
+        {{ mysql_root_cmd }} -e "SHOW DATABASES LIKE '{{ grommunio_db_name }}';"
+        2>/dev/null | grep -q "{{ grommunio_db_name }}"
+      register: db_exists
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Create grommunio database
+      ansible.builtin.command: >-
+        {{ mysql_root_cmd }} -e
+        "CREATE DATABASE IF NOT EXISTS {{ grommunio_db_name }} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+      when: not db_exists.rc == 0
+      no_log: true
+
+    - name: Check if grommunio database password is set
+      ansible.builtin.assert:
+        that:
+          - vault_grommunio_db_password is defined
+          - vault_grommunio_db_password | length > 0
+        fail_msg: >-
+          vault_grommunio_db_password must be set in
+          inventory/group_vars/all/vault.yml
+
+    - name: Check if grommunio database user exists
+      ansible.builtin.command: >-
+        {{ mysql_root_cmd }} -e "SELECT User FROM mysql.user WHERE User='{{ grommunio_db_user }}';" 2>/dev/null | grep -q "{{ grommunio_db_user }}"
+      register: db_user_exists
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Create grommunio database user
+      ansible.builtin.command: >-
+        {{ mysql_root_cmd }} -e "CREATE USER IF NOT EXISTS '{{ grommunio_db_user }}'@'localhost' IDENTIFIED BY '{{ vault_grommunio_db_password }}'; GRANT ALL PRIVILEGES ON {{ grommunio_db_name }}.* TO '{{ grommunio_db_user }}'@'localhost'; FLUSH PRIVILEGES;"
+      when: not db_user_exists.rc == 0
+      no_log: true
+
+    - name: Configure MySQL adaptor for grommunio
+      ansible.builtin.template:
+        src: >-
+          {{ repo_root }}/grommunio/mysql_adaptor.cfg.j2
+        dest: /etc/grommunio/mysql_adaptor.cfg
+        owner: root
+        group: root
+        mode: '0640'
+      notify: Restart gromox
+
+    - name: Check if grommunio database schema is initialized
+      ansible.builtin.command: >-
+        mysql -u {{ grommunio_db_user }} -p{{ vault_grommunio_db_password }}
+        -D {{ grommunio_db_name }} -e "SHOW TABLES;" 2>/dev/null | grep -q .
+      register: schema_check
+      changed_when: false
+      failed_when: false
+      no_log: true
+      ignore_errors: true
+
+    - name: Initialize grommunio database schema
+      ansible.builtin.command: gromox-dbop -C
+      when: schema_check.rc != 0
+      notify: Restart gromox
+      changed_when: true
+
+    - name: Mark database as initialized
+      ansible.builtin.file:
+        path: /var/lib/grommunio/.db-initialized
+        state: touch
+        mode: '0644'
+      when: schema_check.rc != 0
+
+    # -------------------------------------------------------------------------
+    # SMTP Configuration
+    # -------------------------------------------------------------------------
+    - name: Configure gromox SMTP
+      ansible.builtin.template:
+        src: >-
+          {{ repo_root }}/grommunio/gromox-smtp.cfg.j2
+        dest: /etc/gromox/smtp.cfg
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart gromox-smtp
+
+    # -------------------------------------------------------------------------
+    # Nginx Configuration (Behind Traefik)
+    # -------------------------------------------------------------------------
+    - name: Configure nginx for grommunio (behind Traefik)
+      ansible.builtin.template:
+        src: >-
+          {{ repo_root }}/grommunio/nginx/grommunio.conf.j2
+        dest: /etc/nginx/sites-available/grommunio
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: Enable nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/grommunio
+        dest: /etc/nginx/sites-enabled/grommunio
+        state: link
+      notify: Reload nginx
+
+    - name: Remove default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    # -------------------------------------------------------------------------
+    # Grommunio Service Configuration
+    # -------------------------------------------------------------------------
+    - name: Configure gromox main service
+      ansible.builtin.template:
+        src: >-
+          {{ repo_root }}/grommunio/gromox.cfg.j2
+        dest: /etc/gromox/main.cfg
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart gromox
+
+    - name: Configure grommunio-admin-api
+      ansible.builtin.template:
+        src: >-
+          {{ repo_root }}/grommunio/grommunio-admin-api.cfg.j2
+        dest: /etc/grommunio/admin-api.cfg
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart grommunio-admin-api
+
+    - name: Configure grommunio-sync
+      ansible.builtin.template:
+        src: >-
+          {{ repo_root }}/grommunio/grommunio-sync.cfg.j2
+        dest: /etc/grommunio/sync.cfg
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart grommunio-sync
+
+    - name: Configure grommunio-web
+      ansible.builtin.template:
+        src: >-
+          {{ repo_root }}/grommunio/grommunio-web.cfg.j2
+        dest: /etc/grommunio/web.cfg
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart grommunio-web
+
+    # -------------------------------------------------------------------------
+    # Enable and Start Services
+    # -------------------------------------------------------------------------
+    - name: Flush handlers to apply configuration
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable gromox service
+      ansible.builtin.systemd:
+        name: gromox
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable gromox-smtp service
+      ansible.builtin.systemd:
+        name: gromox-smtp
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable grommunio-admin-api service
+      ansible.builtin.systemd:
+        name: grommunio-admin-api
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable grommunio-sync service
+      ansible.builtin.systemd:
+        name: grommunio-sync
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable grommunio-web service
+      ansible.builtin.systemd:
+        name: grommunio-web
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable nginx service
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    # -------------------------------------------------------------------------
+    # Initialize Domain and Admin User
+    # -------------------------------------------------------------------------
+    - name: Check if domain exists
+      ansible.builtin.command: >-
+        grommunio-admin domain list 2>/dev/null | grep -q "{{ grommunio_domain }}"
+      register: domain_exists
+      changed_when: false
+      failed_when: false
+
+    - name: Create domain
+      ansible.builtin.command: >-
+        grommunio-admin domain add {{ grommunio_domain }}
+      register: domain_create
+      when: not domain_exists.rc == 0
+      failed_when: false
+      changed_when: domain_create.rc == 0
+      no_log: true
+
+    - name: Check if grommunio admin password is set
+      ansible.builtin.assert:
+        that:
+          - vault_grommunio_admin_password is defined
+          - vault_grommunio_admin_password | length > 0
+        fail_msg: >-
+          vault_grommunio_admin_password must be set in
+          inventory/group_vars/all/vault.yml
+
+    - name: Check if admin user exists
+      ansible.builtin.command: >-
+        grommunio-admin user list {{ grommunio_domain }} 2>/dev/null |
+        grep -q "{{ grommunio_admin_user }}"
+      register: admin_user_exists
+      changed_when: false
+      failed_when: false
+
+    - name: Create admin user
+      ansible.builtin.command: >-
+        grommunio-admin user create {{ grommunio_admin_user }}
+        --password "{{ vault_grommunio_admin_password }}"
+      register: admin_user_create
+      when: not admin_user_exists.rc == 0
+      failed_when: false
+      changed_when: admin_user_create.rc == 0
+      no_log: true
+
+    # -------------------------------------------------------------------------
+    # Verification
+    # -------------------------------------------------------------------------
+    - name: Wait for gromox to be ready
+      ansible.builtin.wait_for:
+        port: 8080
+        host: "::1"
+        delay: 2
+        timeout: 30
+
+    - name: Verify gromox service is running
+      ansible.builtin.systemd:
+        name: gromox
+      register: gromox_status
+
+    - name: Verify gromox-smtp service is running
+      ansible.builtin.systemd:
+        name: gromox-smtp
+      register: smtp_status
+
+    - name: Verify SMTP is listening on port 25
+      ansible.builtin.wait_for:
+        port: 25
+        host: "::"
+        delay: 2
+        timeout: 30
+
+    - name: Verify nginx is listening on port 80
+      ansible.builtin.wait_for:
+        port: 80
+        host: "::"
+        delay: 2
+        timeout: 30
+
+    - name: Check nginx HTTP endpoint
+      ansible.builtin.uri:
+        url: "http://localhost/"
+        follow_redirects: none
+        validate_certs: false
+        status_code: [200, 301, 302, 308]
+        timeout: 5
+      register: nginx_health_check
+      retries: 3
+      delay: 2
+      until: nginx_health_check.status is defined
+      failed_when: false
+
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "================================================================================"
+          - "✅ Grommunio Mail Server Deployment Complete"
+          - "================================================================================"
+          - ""
+          - "Services:"
+          - "  - gromox: {{ gromox_status.status.ActiveState }}"
+          - "  - gromox-smtp: {{ smtp_status.status.ActiveState }}"
+          - "  - nginx: {{ nginx_health_check.status | default('unknown') }}"
+          - ""
+          - "Domain: {{ grommunio_domain }}"
+          - "Admin User: {{ grommunio_admin_user }}"
+          - ""
+          - "Next Steps:"
+          - "  1. Configure Traefik routes in traefik/dynamic/routes.yml.j2"
+          - "  2. Ensure Cloudflare Tunnel is configured"
+          - "  3. Enable HTTP/2 to Origin in Cloudflare Dashboard"
+          - "  4. Configure port forwarding for SMTP (port 25)"
+          - ""
+          - "================================================================================"
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+
+    - name: Restart gromox
+      ansible.builtin.systemd:
+        name: gromox
+        state: restarted
+
+    - name: Restart gromox-smtp
+      ansible.builtin.systemd:
+        name: gromox-smtp
+        state: restarted
+
+    - name: Restart grommunio-admin-api
+      ansible.builtin.systemd:
+        name: grommunio-admin-api
+        state: restarted
+
+    - name: Restart grommunio-sync
+      ansible.builtin.systemd:
+        name: grommunio-sync
+        state: restarted
+
+    - name: Restart grommunio-web
+      ansible.builtin.systemd:
+        name: grommunio-web
+        state: restarted
+
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: >-
+          ✅ Grommunio deployed successfully on
+          {{ hostvars['localhost']['service_hostname'] }}

@@ -1,0 +1,55 @@
+---
+# Grommunio Mail Server Configuration Variables
+#
+# EAS-Only Setup: Exchange ActiveSync for mobile devices
+# - No IMAP/dovecot configuration required
+# - SMTP required for incoming/outgoing mail
+# - HTTPS handled by Cloudflare Tunnel + Traefik
+
+# Container hostname
+grommunio_hostname: grommunio.home.goodkind.io
+
+# Static addressing (VMID 104)
+# IPv6 only: 3d06:bad:b01::104/64
+grommunio_ipv6_only: true
+grommunio_ipv6: "3d06:bad:b01::104/64"
+
+# Stable MAC address for static addressing
+# Assigned by Proxmox: BC:24:11:79:B8:C0
+grommunio_mac_address: "bc:24:11:79:b8:c0"
+
+# Domain configuration
+grommunio_domain: goodkind.io
+# Mail domain: HTTPS/web/EAS via Traefik, SMTP (port 25) direct to container IP
+grommunio_mail_domain: mail.goodkind.io
+# Autodiscover domain: HTTPS via Traefik only
+grommunio_autodiscover_domain: autodiscover.goodkind.io
+
+# Admin user configuration
+grommunio_admin_user: "alex@{{ grommunio_domain }}"
+# grommunio_admin_password stored in vault
+
+# MariaDB database configuration
+grommunio_db_name: grommunio
+grommunio_db_user: grommunio
+# grommunio_db_password stored in vault
+
+# SMTP configuration
+grommunio_smtp_port: 25
+grommunio_smtp_relay_enabled: false
+# grommunio_smtp_relay_host: ""  # Optional: SendGrid, AWS SES, etc.
+# grommunio_smtp_relay_port: 587
+# grommunio_smtp_relay_user: ""
+# grommunio_smtp_relay_password: ""  # stored in vault if needed
+
+# Nginx configuration (behind Traefik)
+grommunio_nginx_port: 80
+grommunio_nginx_listen: "::"
+
+# Service directories
+grommunio_config_dir: /etc/grommunio
+grommunio_data_dir: /var/lib/grommunio
+grommunio_log_dir: /var/log/grommunio
+
+# Container login directory (prep-guests.yml)
+login_dir: /etc/grommunio

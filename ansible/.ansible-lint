@@ -10,4 +10,3 @@ enable_list:
 
 exclude_paths:
   - requirements.yml  # Not a playbook, it's an ansible-galaxy requirements file
-

@@ -38,4 +38,3 @@ RSpec/DescribeClass:
 
 RSpec/BeforeAfterAll:
   Enabled: false
-

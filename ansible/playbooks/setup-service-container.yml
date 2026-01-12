@@ -13,6 +13,7 @@
 #   container_vmid: Specific VMID to use (default: "")
 #   ipv4_var: Variable name in group_vars containing IPv4 CIDR (e.g., adguard_ipv4)
 #   ipv6_var: Variable name in group_vars containing IPv6 CIDR (e.g., adguard_ipv6)
+#   ipv6_only_var: Variable name in group_vars for IPv6-only flag (e.g., adguard_ipv6_only)
 #   disk_size: Container disk size in GB (default: "8")
 #   memory: Container memory in MB (default: "2048")
 #   cores: Container CPU cores (default: "2")
@@ -62,6 +63,15 @@
       when:
         - ipv6_var is defined
         - (ipv6_var | default('') | trim) | length > 0
+
+    - name: Set IPv6-only flag from group_vars (optional)
+      ansible.builtin.set_fact:
+        service_ipv6_only: >-
+          {{
+            (lookup('vars', ipv6_only_var) | default(false) | bool)
+            if (ipv6_only_var is defined and (ipv6_only_var | default('') | trim) | length > 0)
+            else false
+          }}
 
     - name: Compute effective container settings (caller overrides defaults)
       ansible.builtin.set_fact:
@@ -117,6 +127,7 @@
     vmid: "{{ hostvars['localhost']['service_container_vmid'] | default('') }}"
     ip_address: "{{ hostvars['localhost']['service_ip_address'] | default('') }}"
     ipv6_address: "{{ hostvars['localhost']['service_ipv6_address'] | default('') }}"
+    ipv6_only: "{{ hostvars['localhost']['service_ipv6_only'] | default(false) | bool }}"
     disk_size: "{{ hostvars['localhost']['service_disk_size'] | default('8') }}"
     memory: "{{ hostvars['localhost']['service_memory'] | default('2048') }}"
     cores: "{{ hostvars['localhost']['service_cores'] | default('2') }}"
@@ -134,6 +145,7 @@
           - (hostvars['localhost']['container_primary_ip'] | default('') | trim) | length > 0
         fail_msg: >-
           container_primary_ip was not discovered for {{ hostvars['localhost']['service_hostname'] }}.
+      when: not ansible_check_mode
 
     - name: Add container to service-specific inventory group
       ansible.builtin.add_host:

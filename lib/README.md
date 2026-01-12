@@ -51,7 +51,7 @@ def deploy_config
     puts "Would deploy files".yellow
     return
   end
-  
+
   deploy_files_to_host(
     ['config1.conf', 'config2.conf'],
     'root@server.example.com',
@@ -69,4 +69,3 @@ end
 - **Consistency** - Same deployment behavior across all projects
 - **Maintainability** - Update deployment logic in one place
 - **Testing** - Easier to test shared functionality
-

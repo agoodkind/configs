@@ -114,4 +114,3 @@ log "VLAN interface ${VLAN_IFACE} is ready and DHCP triggered"
 log "systemd-networkd will now obtain IP address from AT&T"
 
 exit 0
-
