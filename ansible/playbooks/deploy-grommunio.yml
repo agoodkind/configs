@@ -23,7 +23,6 @@
     hostname_var: grommunio_hostname
     mac_var: grommunio_mac_address
     ipv6_var: grommunio_ipv6
-    ipv6_only_var: grommunio_ipv6_only
     target_node: vault
     disk_size: "20"
     memory: "4096"
