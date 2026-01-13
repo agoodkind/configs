@@ -279,7 +279,7 @@
       block:
         - name: Get next available VMID
           ansible.builtin.uri:
-            url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/nextid"
+            url: "https://[{{ proxmox_api_host }}]:8006/api2/json/cluster/nextid"
             method: GET
             headers:
               Authorization: >-

@@ -57,7 +57,7 @@
   tasks:
     - name: Query Proxmox for MWAN VM details
       ansible.builtin.uri:
-        url: https://{{ proxmox_api_host }}:8006/api2/json/nodes/vault/qemu/113/config
+        url: https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/vault/qemu/113/config
         method: GET
         headers:
           Authorization: >-

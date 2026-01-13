@@ -3,12 +3,9 @@
 adguard_hostname: adguard.home.goodkind.io
 
 # Static addressing (pinned; independent of VMID)
-adguard_ipv4: "10.250.0.53/24"
+ipv6_only: true
 adguard_ipv6: "3d06:bad:b01::53/64"
 
-# Stable MAC address for DHCP reservations (KEA: hostname "adguard")
-# IPv4 reservation: 10.250.0.53 -> BC:24:11:EE:F9:50
-# IPv6 reservation: 3d06:bad:b01::53 -> BC:24:11:EE:F9:50
 adguard_mac_address: "bc:24:11:ee:f9:50"
 
 # AdGuard Home Configuration Variables
