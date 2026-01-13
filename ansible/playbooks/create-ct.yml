@@ -53,7 +53,7 @@
 
     - name: Lookup existing CT VMID by hostname
       ansible.builtin.uri:
-        url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/resources?type=vm"
+        url: "https://[{{ proxmox_api_host }}]:8006/api2/json/cluster/resources?type=vm"
         method: GET
         headers:
           Authorization: "PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{ proxmox_token_secret }}"
@@ -147,7 +147,7 @@
 
     - name: Get next available VMID (if not provided and container not found)
       ansible.builtin.uri:
-        url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/nextid"
+        url: "https://[{{ proxmox_api_host }}]:8006/api2/json/cluster/nextid"
         method: GET
         headers:
           Authorization: >-
@@ -474,7 +474,7 @@
     - name: Wait for container to get network interfaces
       ansible.builtin.uri:
         url: >-
-          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
+          https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
           effective_vmid }}/interfaces
         method: GET
         headers:
@@ -499,7 +499,7 @@
     - name: Fetch container network interfaces (discover IPs)
       ansible.builtin.uri:
         url: >-
-          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
+          https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/{{ target_node -}}/lxc/{{-
           effective_vmid }}/interfaces
         method: GET
         headers:

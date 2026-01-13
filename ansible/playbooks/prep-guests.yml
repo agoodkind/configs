@@ -49,7 +49,7 @@
         label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
       ansible.builtin.uri:
         url: >-
-          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ item.proxmox_host -}}/lxc/{{-
+          https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/{{ item.proxmox_host -}}/lxc/{{-
           item.vmid }}/status/start
         method: POST
         headers:
@@ -72,7 +72,7 @@
         label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
       ansible.builtin.uri:
         url: >-
-          https://{{ proxmox_api_host }}:8006/api2/json/nodes/{{ item.proxmox_host -}}/qemu/{{-
+          https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/{{ item.proxmox_host -}}/qemu/{{-
           item.vmid }}/status/start
         method: POST
         headers:
