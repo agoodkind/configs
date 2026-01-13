@@ -33,7 +33,7 @@ table inet filter {
         ip6 nexthdr icmpv6 accept
 
         # Allow SSH from management network
-        iif $MGMT_IFACE tcp dport 22 accept
+        iifname $MGMT_IFACE tcp dport 22 accept
         # iif $INTERNAL_IFACE tcp dport 22 accept
 
         # Allow DHCP on management interface
@@ -41,12 +41,12 @@ table inet filter {
         # iif $MGMT_IFACE udp sport 547 udp dport 546 accept
 
         # Allow DHCP on WAN interfaces
-        iif $ATT_IFACE udp sport 67 udp dport 68 accept
-        iif $WEBPASS_IFACE udp sport 67 udp dport 68 accept
-        iif $ATT_IFACE udp sport 547 udp dport 546 accept
-        iif $WEBPASS_IFACE udp sport 547 udp dport 546 accept
-        iif $MB_IFACE udp sport 67 udp dport 68 accept
-        iif $MB_IFACE udp sport 547 udp dport 546 accept
+        iifname $ATT_IFACE udp sport 67 udp dport 68 accept
+        iifname $WEBPASS_IFACE udp sport 67 udp dport 68 accept
+        iifname $ATT_IFACE udp sport 547 udp dport 546 accept
+        iifname $WEBPASS_IFACE udp sport 547 udp dport 546 accept
+        iifname $MB_IFACE udp sport 67 udp dport 68 accept
+        iifname $MB_IFACE udp sport 547 udp dport 546 accept
 
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables input drop: " drop
@@ -59,14 +59,14 @@ table inet filter {
         ct state established,related accept
 
         # Allow forwarding from internal to WANs
-        iif $INTERNAL_IFACE oif { $ATT_IFACE, $WEBPASS_IFACE
+        iifname $INTERNAL_IFACE oifname { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
         } accept
 
         # Allow forwarding from WANs to internal (for inbound services)
-        iif { $ATT_IFACE, $WEBPASS_IFACE
+        iifname { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
-        } oif $INTERNAL_IFACE accept
+        } oifname $INTERNAL_IFACE accept
 
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables forward drop: " drop
@@ -83,15 +83,15 @@ table ip nat {
         type nat hook prerouting priority dstnat; policy accept;
 
         # Mark new connections for load balancing (fwmark)
-        iif $INTERNAL_IFACE ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        iifname $INTERNAL_IFACE ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
         # Inbound 1:1 NAT (DNAT) for static IPs
         # Map external /29s back to the internal /29 so OPNsense (and downstream) can receive inbound traffic.
 {% for mapping in mwan_static_mappings.att %}
-        iif $ATT_IFACE ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
+        iifname $ATT_IFACE ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
 {% endfor %}
 {% for mapping in mwan_static_mappings.webpass %}
-        iif $WEBPASS_IFACE ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
+        iifname $WEBPASS_IFACE ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
 {% endfor %}
     }
 
@@ -100,22 +100,22 @@ table ip nat {
 
         # 1:1 NAT for static IPs - AT&T
 {% for mapping in mwan_static_mappings.att %}
-        oif $ATT_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
+        oifname $ATT_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
 {% endfor %}
 
         # 1:1 NAT for static IPs - Webpass
 {% for mapping in mwan_static_mappings.webpass %}
-        oif $WEBPASS_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
+        oifname $WEBPASS_IFACE ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
 {% endfor %}
 
         # Default SNAT for other LAN traffic via AT&T (mark 1)
-        oif $ATT_IFACE meta mark 1 ip saddr $INTERNAL_NET masquerade
+        oifname $ATT_IFACE meta mark 1 ip saddr $INTERNAL_NET masquerade
 
         # Default SNAT for other LAN traffic via Webpass (mark 2)
-        oif $WEBPASS_IFACE meta mark 2 ip saddr $INTERNAL_NET masquerade
+        oifname $WEBPASS_IFACE meta mark 2 ip saddr $INTERNAL_NET masquerade
 
         # Emergency fallback SNAT via Monkeybrains (mark 3 or any mark if routed out MB)
-        oif $MB_IFACE ip saddr $INTERNAL_NET masquerade
+        oifname $MB_IFACE ip saddr $INTERNAL_NET masquerade
     }
 }
 
@@ -157,9 +157,9 @@ table inet mangle {
         type filter hook prerouting priority mangle; policy accept;
 
         # Mark inbound NEW flows by ingress WAN (keeps replies symmetric via policy routing tables)
-        iif $ATT_IFACE ct state new meta mark set 1
-        iif $WEBPASS_IFACE ct state new meta mark set 2
-        iif $MB_IFACE ct state new meta mark set 3
+        iifname $ATT_IFACE ct state new meta mark set 1
+        iifname $WEBPASS_IFACE ct state new meta mark set 2
+        iifname $MB_IFACE ct state new meta mark set 3
 
         # NOTE: IPv4 load balancing is driven by the per-flow random mark in `table ip nat prerouting`.
         # Do NOT override marks for 10.250.250.2-10.250.250.6 here, or IPv4 will pin to one WAN.
