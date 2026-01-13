@@ -2,7 +2,7 @@
 # Non-secret variables (references vault.yml for secrets)
 
 # Proxmox API credentials (shared across all playbooks)
-proxmox_api_host: 10.250.0.254
+proxmox_api_host: 3d06:bad:b01::fe
 proxmox_api_user: ansible@pam
 proxmox_token_id: ansible-token
 proxmox_token_secret: "{{ vault_proxmox_token_secret }}"

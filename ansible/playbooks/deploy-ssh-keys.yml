@@ -35,8 +35,7 @@
 
     - name: Detect guest types
       ansible.builtin.include_tasks: tasks/detect-guest-type.yml
-      vars:
-        guest_list: "{{ guests }}"
+
 
     - name: Look for proxy container in full inventory
       ansible.builtin.set_fact:
@@ -153,6 +152,30 @@
       delegate_to: localhost
       when: sshpiper_upstream_pubkey | length > 0
 
+    - name: Get proxy container IPv6 from hostvars
+      ansible.builtin.set_fact:
+        proxy_ipv6: "{{ hostvars[proxy_from_inventory]['ansible_host'] }}"
+      when:
+        - proxy_from_inventory | length > 0
+        - proxy_from_inventory in hostvars
+        - hostvars[proxy_from_inventory].ansible_host is defined
+        - "':' in hostvars[proxy_from_inventory].ansible_host"
+
+    - name: Write sshd authorized_keys with 'from' restriction
+      ansible.builtin.copy:
+        content: |
+          # Managed by Ansible - Restricted by SSHPiper
+          {% if proxy_ipv6 is defined %}
+          from="{{ '[' + proxy_ipv6 + ']' if ':' in proxy_ipv6 else proxy_ipv6 }}" {{ sshpiper_upstream_pubkey }}
+          {% else %}
+          # WARN: Proxy IPv6 not detected, key is unrestricted!
+          {{ sshpiper_upstream_pubkey }}
+          {% endif %}
+        dest: "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
+        mode: '0644'
+      delegate_to: localhost
+      when: sshpiper_upstream_pubkey | length > 0
+
     - name: Build authorized_keys bundle
       ansible.builtin.command:
         argv: >-
@@ -165,7 +188,7 @@
             + (
               [
                 '--extra-pubkey',
-                work_tmp_dir + '/sshpiper_upstream_id_ed25519.pub'
+                work_tmp_dir + '/sshpiper_restricted_key.pub'
               ]
               if (sshpiper_upstream_pubkey | length > 0)
               else []
