@@ -1,0 +1,14 @@
+---
+dns64_hostname: dns64
+dns64_description: "DNS64 Resolver"
+dns64_ipv6: "3d06:bad:b01::64/64"
+dns64_ipv6_only: true
+dns64_mac_address: "BC:24:11:00:00:64"
+dns64_tags: "lxc,dns,dns64"
+dns64_memory: "512"
+dns64_cores: "1"
+dns64_disk_size: "4"
+
+# DNS Configuration
+dns64_upstream_dns: "3d06:bad:b01::53"
+dns64_prefix: "64:ff9b::/96"
