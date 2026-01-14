@@ -7,7 +7,7 @@ pipes:
 {% set all_hosts = proxmox_lxc + proxmox_qemu + static_hosts %}
 {% for host in all_hosts %}
 {% set short_name = host.split('.')[0] %}
-{% set target_ip = hostvars[host].ansible_host | default('') %}
+{% set target_ip = hostvars[host].ansible_host_v6 | default(hostvars[host].ansible_host) | default('') %}
 {% if (short_name != 'proxy') and (target_ip | length > 0) %}
   # Regex route for {{ short_name }}: user@{{ short_name }} -> user@{{ target_ip }}
   - from:

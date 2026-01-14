@@ -1,0 +1,25 @@
+options {
+    directory "/var/cache/bind";
+
+    // Enable recursion
+    recursion yes;
+    allow-query { any; };
+
+    // Forward queries to upstream
+    forwarders {
+        {{ dns64_upstream_dns }};
+    };
+    forward only;
+
+    // DNSSEC validation
+    dnssec-validation auto;
+
+    // Network listeners - IPv6 only as requested
+    listen-on-v6 { any; };
+    listen-on { none; };
+
+    // DNS64 Configuration
+    dns64 {{ dns64_prefix }} {
+        clients { any; };
+    };
+};
