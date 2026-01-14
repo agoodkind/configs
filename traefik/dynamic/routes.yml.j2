@@ -122,8 +122,7 @@ http:
     nas-service:
       loadBalancer:
         servers:
-          - url: "https://nas.{{ traefik_upstream_domain }}:8443"
-        serversTransport: insecure-transport
+          - url: "http://[3d06:bad:b01:1::2f]:3923"
 
     adguard-service:
       loadBalancer:

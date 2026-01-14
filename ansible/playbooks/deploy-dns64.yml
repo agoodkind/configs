@@ -1,0 +1,51 @@
+---
+- name: Setup DNS64 container
+  ansible.builtin.import_playbook: setup-service-container.yml
+  vars:
+    container_group: dns64_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/dns64_servers.yml"
+    hostname_var: dns64_hostname
+    mac_var: dns64_mac_address
+    ipv6_var: dns64_ipv6
+    ipv6_only: true
+    memory: "512"
+    cores: "1"
+    disk_size: "4"
+
+- name: Configure DNS64 Service
+  hosts: dns64_servers
+  become: true
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Bind9
+      ansible.builtin.apt:
+        name:
+          - bind9
+          - bind9-utils
+          - bind9-dnsutils
+        state: present
+
+    - name: Configure named.conf.options for DNS64
+      ansible.builtin.template:
+        src: ../../bind/named.conf.options.j2
+        dest: /etc/bind/named.conf.options
+        owner: root
+        group: bind
+        mode: '0644'
+      notify: Restart Bind9
+
+    - name: Ensure Bind9 is enabled and started
+      ansible.builtin.systemd:
+        name: named
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart Bind9
+      ansible.builtin.systemd:
+        name: named
+        state: restarted
