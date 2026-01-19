@@ -10,82 +10,19 @@
 # Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
-- name: Load mwan configuration and setup VM
+- name: Add MWAN to runtime inventory
   hosts: localhost
   gather_facts: false
   vars_files:
     - ../inventory/group_vars/mwan_servers.yml
   tasks:
-    - name: Set variables for VM creation
-      ansible.builtin.set_fact:
-        vm_hostname: "{{ mwan_hostname }}"
-        vm_mgmt_bridge: "{{ mwan_mgmt_bridge | default('vmbr0') }}"
-        vm_internal_bridge: "{{ mwan_bridge_name | default('mwanbr') }}"
-        vm_x710_vf: "{{ pci_x710_vf | default('') }}"
-        vm_webpass_nic: "{{ pci_webpass_nic | default('') }}"
-        vm_dns_domain: "{{ mwan_dns_domain }}"
-        vm_dns_servers: "{{ mwan_dns_servers }}"
-        vm_mgmt_ip_config: "{{ mwan_mgmt_ip_config | default('ip=dhcp,ip6=dhcp') }}"
-        vm_delete_existing_vm: "{{ delete_existing_vm | default(false) | bool }}"
-        vm_skip_password_reset: "{{ skip_password_reset | default(false) | bool }}"
-
-- name: Setup mwan VM
-  ansible.builtin.import_playbook: create-vm.yml
-  vars:
-    hostname: "{{ hostvars['localhost']['vm_hostname'] }}"
-    target_node: vault
-    disk_size: "16"
-    memory: "2048"
-    cores: "2"
-    network_interfaces:
-      - "{{ hostvars['localhost']['vm_mgmt_bridge'] }}"
-      - "{{ hostvars['localhost']['vm_internal_bridge'] }}"
-    hostpci_devices:
-      - "{{ hostvars['localhost']['vm_x710_vf'] }}"
-      - "{{ hostvars['localhost']['vm_webpass_nic'] }}"
-    vm_tags: "vm,mwan,network"
-    mgmt_ip_config: "{{ hostvars['localhost']['vm_mgmt_ip_config'] }}"
-    dns_domain: "{{ hostvars['localhost']['vm_dns_domain'] }}"
-    dns_servers: "{{ hostvars['localhost']['vm_dns_servers'] }}"
-    delete_existing_vm: "{{ hostvars['localhost']['vm_delete_existing_vm'] }}"
-    preserve_nic_macs: true
-    skip_password_reset: "{{ hostvars['localhost']['vm_skip_password_reset'] }}"
-
-- name: Get MWAN VM IP from Proxmox
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Query Proxmox for MWAN VM details
-      ansible.builtin.uri:
-        url: https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/vault/qemu/113/config
-        method: GET
-        headers:
-          Authorization: >-
-            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
-            proxmox_token_secret }}
-        validate_certs: false
-        return_content: true
-      register: mwan_vm_config
-
-    - name: Extract MWAN IP from network config
-      ansible.builtin.set_fact:
-        mwan_vm_ip: >-
-          {{ mwan_vm_config.json.data.ipconfig0.ip6
-          | default(mwan_vm_config.json.data.ipconfig0.ip, true)
-          | regex_replace('/.*$', '') }}
-      when:
-        - mwan_vm_config.json.data.ipconfig0 is defined
-
-    - name: Update MWAN in inventory with IP from Proxmox
+    - name: Add MWAN host to inventory
       ansible.builtin.add_host:
-        name: mwan.home.goodkind.io
+        name: "{{ mwan_hostname }}"
         groups: mwan_servers
-        ansible_host: "{{ mwan_vm_ip }}"
+        ansible_host: "{{ mwan_ansible_host }}"
         ansible_user: root
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-      when:
-        - mwan_vm_ip is defined
-        - mwan_vm_ip | length > 0
 
 - name: Configure MWAN VM
   hosts: mwan_servers

@@ -1,12 +1,13 @@
 ---
 # Reusable playbook for setting up a Debian 13 VM with cloud-init
 #
-# Required variables (for VM creation):
+# Required variables:
 #   hostname: VM hostname (e.g., mwan.home.goodkind.io)
+#   vm_ip_address: IP address to connect to VM (IPv6 only)
+#   vmid: Proxmox VMID
 #
 # Optional variables:
 #   proxmox_host: Proxmox node (default: vault)
-#   vmid: Specific VMID (default: auto-assign)
 #   disk_size: Disk size in GB (default: "8")
 #   memory: Memory in MB (default: "1024")
 #   cores: CPU cores (default: "1")
@@ -149,14 +150,11 @@
     network_interfaces: ["vmbr0"]
     hostpci_devices: []
 
-    # Cloud-init & Network config
-    mgmt_ip_config: "ip=dhcp,ip6=dhcp"
+    # Cloud-init & Network config (IPv6 only)
     vm_mgmt_iface: "enmgmt0"
-    vm_mgmt_ipv4_prefix: "24"
     vm_mgmt_ipv6_prefix: "64"
-    vm_mgmt_gateway_ipv4: "10.250.0.1"
     vm_mgmt_gateway_ipv6: "3d06:bad:b01::1"
-    vm_mgmt_dns_servers: "3d06:bad:b01::6 10.250.0.6"
+    vm_mgmt_dns_servers: "3d06:bad:b01::64"
     vm_mgmt_dns_domain: "home.goodkind.io"
 
     # Serial console & guest agent
@@ -171,6 +169,16 @@
     # SSH keys fetched at runtime from GitHub
 
   tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - vm_ip_address is defined
+          - vm_ip_address | length > 0
+          - vmid is defined
+          - vmid | string | length > 0
+        fail_msg: "Required variables missing: vm_ip_address and vmid must be provided"
+        success_msg: "Required variables validated"
+
     - name: Generate hostname if not provided
       ansible.builtin.command: date +%Y%m%d-%H%M%S
       register: generated_hostname_suffix
@@ -431,11 +439,11 @@
                 else ('3d06:bad:b01::' ~ (new_vmid | string | trim))
               }}
 
-        - name: Build ipconfig string (DRY composition)
+        - name: Build ipconfig string
           ansible.builtin.set_fact:
             vm_ipconfig_str: >-
-              {{ 'ip=' + vm_static_ipv4 + '/24,gw=10.250.0.1,' +
-                 'ip6=' + vm_static_ipv6 + '/64,gw6=3d06:bad:b01::1' }}
+              {{ 'ip6=' + vm_ip_address + '/' + vm_mgmt_ipv6_prefix +
+                 ',gw6=' + vm_mgmt_gateway_ipv6 }}
 
         - name: Generate temporary password if not provided
           ansible.builtin.shell: |
@@ -510,42 +518,14 @@
             state: started
           delegate_to: localhost
 
-        - name: Attempting SSH connection via IPv6
-          ansible.builtin.debug:
-            msg: "Waiting for VM to be reachable via SSH at {{ vm_static_ipv6 }}:22 (timeout: 120s)"
-
-        - name: Wait for VM to be reachable via SSH (IPv6 first)
+        - name: Wait for VM to be reachable via SSH
           ansible.builtin.wait_for:
-            host: "{{ vm_static_ipv6 }}"
+            host: "{{ vm_ip_address }}"
             port: 22
             timeout: 120
             state: started
-            msg: "Waiting for SSH on {{ vm_static_ipv6 }}:22..."
-          register: ssh_wait_v6
+            msg: "Waiting for SSH on {{ vm_ip_address }}:22..."
           failed_when: false
-
-        - name: Attempting SSH connection via IPv4 (fallback)
-          ansible.builtin.debug:
-            msg: "IPv6 connection failed, trying IPv4 at {{ vm_static_ipv4 }}:22 (timeout: 30s)"
-          when: ssh_wait_v6.failed | default(false)
-
-        - name: Wait for VM to be reachable via SSH (IPv4 fallback)
-          ansible.builtin.wait_for:
-            host: "{{ vm_static_ipv4 }}"
-            port: 22
-            timeout: 30
-            state: started
-            msg: "Waiting for SSH on {{ vm_static_ipv4 }}:22..."
-          register: ssh_wait_v4
-          when: ssh_wait_v6.failed | default(false)
-          failed_when: false
-
-        - name: Set connection IP (IPv6 preferred, IPv4 fallback)
-          ansible.builtin.set_fact:
-            vm_ip_address: >-
-              {{ vm_static_ipv6
-              if not (ssh_wait_v6.failed | default(false))
-              else vm_static_ipv4 }}
 
         - name: Wait for cloud-init to complete
           ansible.builtin.command: cloud-init status --wait
@@ -554,9 +534,6 @@
             ansible_user: root
             ansible_ssh_common_args: >-
               -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-          when: >-
-            (not (ssh_wait_v6.failed | default(true))
-            or not (ssh_wait_v4.failed | default(true)))
           changed_when: false
           failed_when: false
 
@@ -770,21 +747,13 @@
             ansible_proxmox_host: "{{ proxmox_host }}"
           when: vm_ip_address | default('') | length > 0
 
-        - name: Check if SSH is available
-          ansible.builtin.set_fact:
-            ssh_available: >-
-              {{ not (ssh_wait_v6.failed | default(true)) or
-              not (ssh_wait_v4.failed | default(true)) }}
-
         - name: Display result
           ansible.builtin.debug:
             msg:
               - "✅ VM {{ hostname }} created (VMID: {{ new_vmid }})"
-              - "  - IPv4: {{ vm_static_ipv4 }}/24"
               - "  - IPv6: {{ vm_static_ipv6 }}/64"
-              - >-
-                {{ '✅ SSH available at ' + vm_ip_address
-                if ssh_available else '⚠️  SSH not yet available' }}
+              - "  - IPv4: {{ vm_static_ipv4 }}/24"
+              - "  - SSH: {{ vm_ip_address }}"
               - ""
               - "Next: Run deployment playbook to configure services"
 
