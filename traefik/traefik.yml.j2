@@ -47,6 +47,10 @@ entryPoints:
           - "{{ cidr }}"
 {% endfor %}
 
+  # Xpra QUIC/UDP entry point
+  xpra-quic:
+    address: ":9876/udp"
+
 certificatesResolvers:
   letsencrypt:
     acme:

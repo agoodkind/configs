@@ -142,3 +142,16 @@ http:
     unifi-transport:
       insecureSkipVerify: true
       serverName: "UniFi"
+
+udp:
+  routers:
+    # Xpra Remote Desktop - QUIC/UDP routing
+    xpra-quic-ingress:
+      entryPoints:
+        - xpra-quic
+
+  services:
+    xpra-quic-service:
+      loadBalancer:
+        servers:
+          - address: "[3d06:bad:b01::100]:9876"
