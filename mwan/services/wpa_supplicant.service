@@ -2,7 +2,6 @@
 Description=WPA Supplicant for AT&T 802.1X
 After=systemd-networkd.service
 Wants=systemd-networkd.service
-Before=network-online.target
 
 [Service]
 Type=simple

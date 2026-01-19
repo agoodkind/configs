@@ -15,6 +15,7 @@
           vmid: "{{ ansible_proxmox_vmid }}"
           host: "{{ ansible_proxmox_host }}"
           name: "{{ inventory_hostname }}"
+          type: "{{ proxmox_vmtype | default('') }}"
 
 - name: Deploy SSH keys to containers/VMs via Proxmox
   hosts: localhost
@@ -24,8 +25,16 @@
     work_tmp_dir: "{{ playbook_dir }}/../.tmp"
     target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
     guests: >-
-      {{ groups[target_group] | map('extract', hostvars, 'guest_info') |
-         select('defined') | list }}
+      {{
+        (
+          groups.get(target_group, [])
+          if target_group in groups
+          else [target_group]
+        )
+        | map('extract', hostvars, 'guest_info')
+        | select('defined')
+        | list
+      }}
   tasks:
     - name: Create work tmp directory
       ansible.builtin.file:
@@ -33,25 +42,26 @@
         state: directory
         mode: '0755'
 
-    - name: Detect guest types
-      ansible.builtin.include_tasks: tasks/detect-guest-type.yml
+    - name: Use guest list with proxmox type
+      ansible.builtin.set_fact:
+        guests_with_type: "{{ guests }}"
+
+    - name: Validate guest types are present
+      ansible.builtin.fail:
+        msg: >-
+          Guest type missing for {{ item.name | default(item.vmid) }}.
+          Expected proxmox_vmtype to be 'lxc' or 'qemu'.
+      loop: "{{ guests_with_type }}"
+      when: item.type | default('') | trim | length == 0
 
 
     - name: Look for proxy container in full inventory
       ansible.builtin.set_fact:
-        proxy_from_inventory: >-
-          {{
-            (groups.get('proxy_servers', []) | length > 0) |
-            ternary(groups.get('proxy_servers', [])[0], '')
-          }}
-
-    - name: Initialize proxy guest from hostvars as empty
-      ansible.builtin.set_fact:
-        proxy_guest_from_hostvars: {}
+        proxy_from_inventory: "{{ (groups.get('proxy_servers', []) | first) | default('') }}"
 
     - name: Get proxy container info from hostvars
       ansible.builtin.set_fact:
-        proxy_guest_from_hostvars:
+        proxy_guest:
           vmid: "{{ hostvars[proxy_from_inventory].ansible_proxmox_vmid }}"
           host: "{{ hostvars[proxy_from_inventory].ansible_proxmox_host }}"
           name: "{{ proxy_from_inventory }}"
@@ -62,36 +72,12 @@
         - hostvars[proxy_from_inventory].ansible_proxmox_vmid is defined
         - hostvars[proxy_from_inventory].ansible_proxmox_host is defined
 
-    - name: Filter proxy container from targeted guests
-      ansible.builtin.set_fact:
-        proxy_guests_from_targets: >-
-          {{
-            (guests_with_type | default([]))
-            | selectattr('type', 'equalto', 'lxc')
-            | selectattr('name', 'defined')
-            | selectattr('name', 'match', '(?i)^proxy\\.home\\.goodkind\\.io$')
-            | list
-          }}
-
-    - name: Select proxy container (prefer from targets, fallback to inventory)
-      ansible.builtin.set_fact:
-        proxy_guest: >-
-          {{
-            proxy_guests_from_targets[0]
-            if (proxy_guests_from_targets | default([]) | length > 0)
-            else (proxy_guest_from_hostvars | default({}))
-          }}
-
     - name: Show proxy guest selection
       ansible.builtin.debug:
         msg: >-
           Proxy guest: {{ proxy_guest.get('name', 'not found') }}
           (VMID: {{ proxy_guest.get('vmid', 'N/A') }},
-          source: {{
-            'targeted hosts'
-            if (proxy_guests_from_targets | default([]) | length > 0)
-            else 'inventory lookup'
-          }})
+          source: inventory lookup)
 
     - name: Check if sshpiper upstream public key exists on proxy container
       ansible.builtin.command:
@@ -152,25 +138,37 @@
       delegate_to: localhost
       when: sshpiper_upstream_pubkey | length > 0
 
-    - name: Get proxy container IPv6 from hostvars
+    - name: Get proxy IPv6 from Proxmox inventory
       ansible.builtin.set_fact:
-        proxy_ipv6: "{{ hostvars[proxy_from_inventory]['ansible_host'] }}"
+        proxy_ipv6: >-
+          {{
+            hostvars[proxy_from_inventory].proxmox_net0.ip6
+            | default('')
+            | ansible.utils.ipaddr('address')
+          }}
       when:
         - proxy_from_inventory | length > 0
         - proxy_from_inventory in hostvars
-        - hostvars[proxy_from_inventory].ansible_host is defined
-        - "':' in hostvars[proxy_from_inventory].ansible_host"
+        - hostvars[proxy_from_inventory].proxmox_net0 is defined
+        - hostvars[proxy_from_inventory].proxmox_net0.ip6 is defined
+
+    - name: Validate proxy IPv6 is available
+      ansible.builtin.fail:
+        msg: >-
+          Proxy IPv6 not found in Proxmox inventory for
+          {{ proxy_from_inventory }}. Expected proxmox_net0.ip6.
+      when:
+        - proxy_ipv6 | default('') | trim | length == 0
+
+    - name: Build proxy IPv6 allowlist from Proxmox
+      ansible.builtin.set_fact:
+        proxy_allowed_ipv6_list: ["{{ proxy_ipv6 }}/128"]
 
     - name: Write sshd authorized_keys with 'from' restriction
       ansible.builtin.copy:
         content: |
           # Managed by Ansible - Restricted by SSHPiper
-          {% if proxy_ipv6 is defined %}
-          from="{{ '[' + proxy_ipv6 + ']' if ':' in proxy_ipv6 else proxy_ipv6 }}" {{ sshpiper_upstream_pubkey }}
-          {% else %}
-          # WARN: Proxy IPv6 not detected, key is unrestricted!
-          {{ sshpiper_upstream_pubkey }}
-          {% endif %}
+          from="{{ proxy_allowed_ipv6_list | join(',') }}" {{ sshpiper_upstream_pubkey }}
         dest: "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
         mode: '0644'
       delegate_to: localhost
@@ -363,7 +361,7 @@
           sshd -t
           systemctl reset-failed ssh || true
           systemctl restart ssh || true
-        " | jq -r '.["out-data"]' || true
+        " | jq -r '.["out-data"]'
       args:
         executable: /bin/bash
       delegate_to: "{{ item.host }}"
