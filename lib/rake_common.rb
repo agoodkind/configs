@@ -58,7 +58,8 @@ module RakeCommon
   # @param args [Array] command and arguments
   # @return [String] command output
   def ssh_exec(host, *args)
-    IO.popen(['ssh', host] + args, &:read).strip
+    # Use LogLevel=ERROR to suppress "Permanently added..." messages
+    IO.popen(['ssh', '-o', 'LogLevel=ERROR', host] + args, &:read).strip
   end
 
   ##

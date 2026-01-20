@@ -15,28 +15,45 @@ Dotenv.load('.env', '../.env')
 extend RakeCommon
 # rubocop:enable Style/MixinUsage
 
-KEA_HOST = ENV.fetch('KEA_HOST', nil)
 ROUTER_USER = ENV.fetch('ROUTER_USER', 'agoodkind')
-ROUTER_HOST = ENV.fetch('ROUTER_HOST', '10.250.0.1')
-CONFIG_FILE = 'kea/kea-dhcp-ddns.conf'
-DEST_PATH = '/etc/kea/kea-dhcp-ddns.conf'
+ROUTER_HOST = ENV.fetch('ROUTER_HOST', '3d06:bad:b01::1')
 
 ##
-# Execute command on Kea host and return output
+# Format host string for SSH/SCP commands (handles IPv6 properly)
 #
-# @param args [Array] command and arguments
-# @return [String] command output
-def ssh_kea(*)
-  ssh_exec(KEA_HOST, *)
+# @param host [String] the hostname/IP
+# @return [String] properly formatted host string
+def format_ssh_host(host)
+  # IPv6 addresses need to be enclosed in brackets so SSH/SCP doesn't
+  # try to parse colons as hostname separators
+  if host.include?(':') && !host.start_with?('[')
+    "[#{host}]"
+  else
+    host
+  end
 end
 
 ##
-# Execute command on Kea host with error handling
+# Format host string for SSH commands (IPv6 addresses work bare)
 #
-# @param args [Array] command and arguments
-# @return [void]
-def ssh_kea_sh(*)
-  ssh_exec_sh(KEA_HOST, *)
+# @param host [String] the hostname/IP
+# @return [String] properly formatted host string for SSH
+def format_ssh_host(host)
+  host
+end
+
+##
+# Format host string for SCP commands (IPv6 addresses need brackets)
+#
+# @param host [String] the hostname/IP
+# @return [String] properly formatted host string for SCP
+def format_scp_host(host)
+  # IPv6 addresses need to be enclosed in brackets for SCP
+  if host.include?(':') && !host.start_with?('[')
+    "[#{host}]"
+  else
+    host
+  end
 end
 
 ##
@@ -45,7 +62,7 @@ end
 # @param args [Array] command and arguments
 # @return [String] command output
 def ssh_router(*)
-  ssh_exec("#{ROUTER_USER}@#{ROUTER_HOST}", *)
+  ssh_exec("#{ROUTER_USER}@#{format_ssh_host(ROUTER_HOST)}", *)
 end
 
 ##
@@ -54,65 +71,7 @@ end
 # @param args [Array] command and arguments
 # @return [void]
 def ssh_router_sh(*)
-  ssh_exec_sh("#{ROUTER_USER}@#{ROUTER_HOST}", *)
-end
-
-##
-# Create temp file path on remote host
-#
-# @return [String] path to temp file
-def create_temp_file
-  '/tmp/kea-dhcp-ddns.conf.new'
-end
-
-##
-# Push configuration file to Kea host
-#
-# @param temp_file [String] destination path on Kea host
-# @return [void]
-def push_to_kea(temp_file)
-  deploy_file_to_host(CONFIG_FILE, KEA_HOST, temp_file, owner: '_kea:_kea', mode: '640')
-end
-
-##
-# Test configuration file on Kea host
-#
-# @param temp_file [String] path to config file on Kea host
-# @return [void]
-def test_config(temp_file)
-  if verbose?
-    ssh_kea_sh('sudo', '-u', '_kea', '/sbin/kea-dhcp-ddns', '-t', temp_file)
-  else
-    output = ssh_kea('sudo', '-u', '_kea', '/sbin/kea-dhcp-ddns', '-t', temp_file)
-    puts "   #{output.split("\n").last}" if output.include?('success')
-  end
-end
-
-##
-# Backup existing config and install new one
-#
-# @param temp_file [String] path to new config file on Kea host
-# @param timestamp [String] timestamp for backup filename
-# @return [void]
-def backup_and_install(temp_file, timestamp)
-  begin
-    ssh_kea_sh('sudo', 'test', '-f', DEST_PATH)
-    ssh_kea_sh('sudo', 'cp', DEST_PATH, "#{DEST_PATH}.backup.#{timestamp}")
-  rescue StandardError
-    # File doesn't exist, skip backup
-  end
-
-  ssh_kea_sh('sudo', 'mv', temp_file, DEST_PATH)
-  ssh_kea_sh('sudo', 'chown', '_kea:_kea', DEST_PATH)
-  ssh_kea_sh('sudo', 'chmod', '640', DEST_PATH)
-end
-
-##
-# Restart kea-dhcp-ddns service
-#
-# @return [void]
-def restart_kea
-  ssh_kea_sh('sudo', 'systemctl', 'restart', 'isc-kea-dhcp-ddns-server')
+  ssh_exec_sh("#{ROUTER_USER}@#{format_ssh_host(ROUTER_HOST)}", *)
 end
 
 ##
@@ -121,7 +80,7 @@ end
 # @param config_file [String] local config file path
 # @return [void]
 def router_upload(config_file)
-  scp_to_host(config_file, "#{ROUTER_USER}@#{ROUTER_HOST}", '~/')
+  scp_to_host(config_file, "#{ROUTER_USER}@#{format_scp_host(ROUTER_HOST)}", '~/')
 end
 
 ##
@@ -197,7 +156,7 @@ def kea_single_lease(resp)
 end
 
 def load_reservations4(subnet_id)
-  data = JSON.parse(File.read('kea/kea-dhcp4.conf'))
+  data = JSON.parse(File.read('kea-dhcp4.conf'))
   subnet = data.fetch('Dhcp4').fetch('subnet4').find { |s| s['id'] == subnet_id }
   raise "subnet4 id=#{subnet_id} not found" if subnet.nil?
 
@@ -211,7 +170,7 @@ def load_reservations4(subnet_id)
 end
 
 def load_reservations6(subnet_id)
-  data = JSON.parse(File.read('kea/kea-dhcp6.conf'))
+  data = JSON.parse(File.read('kea-dhcp6.conf'))
   subnet = data.fetch('Dhcp6').fetch('subnet6').find { |s| s['id'] == subnet_id }
   raise "subnet6 id=#{subnet_id} not found" if subnet.nil?
 
@@ -229,7 +188,7 @@ namespace :router do
   desc 'Push kea-dhcp4.conf to router'
   task :push_dhcp4 do
     puts '▶️  Uploading DHCP4 config...'
-    router_upload('kea/kea-dhcp4.conf')
+    router_upload('kea-dhcp4.conf')
     puts '✅ Config uploaded'
   end
 
@@ -253,7 +212,7 @@ namespace :router do
   desc 'Push kea-dhcp6.conf to router'
   task :push_dhcp6 do
     puts '▶️  Uploading DHCP6 config...'
-    router_upload('kea/kea-dhcp6.conf')
+    router_upload('kea-dhcp6.conf')
     puts '✅ Config uploaded'
   end
 
@@ -426,133 +385,14 @@ namespace :lease do
   end
 end
 
-namespace :bind do
-  desc 'List all DNS records'
-  task :list_records do
-    puts '▶️  Fetching DNS records...'
-    puts ''
-
-    # Dump current zone data
-    ssh_kea_sh('sudo', 'rndc', 'dumpdb', '-all') if verbose?
-    sleep 1 # Wait for dump to complete
-
-    # Read the dump file directly
-    raw_records = ssh_kea('sudo', 'cat', '/var/cache/bind/named_dump.db')
-
-    if raw_records.empty?
-      puts '   No records found or dump file does not exist'
-    else
-      # Parse and filter records in Ruby
-      useful_types = %w[A AAAA CNAME TXT NS SOA PTR DHCID]
-      records_list = []
-
-      raw_records.split("\n").each do |line|
-        # Skip comments, empty lines, and $DATE lines
-        next if line.start_with?(';', '$') || line.strip.empty?
-
-        parts = line.split
-        next if parts.length < 4
-
-        domain = parts[0]
-        ttl = parts[1].to_i
-        record_type = parts[3]
-        value = parts[4..].join(' ')
-
-        # Filter: only show useful record types, skip RRSIG and root servers
-        next unless useful_types.include?(record_type)
-        next if line.include?('RRSIG') || line.include?('root-servers')
-
-        records_list << { domain: domain, ttl: ttl, type: record_type, value: value }
-      end
-
-      # Print table header
-      puts "┌#{'─' * 52}┬#{'─' * 10}┬#{'─' * 8}┬#{'─' * 50}┐"
-      printf "│ %-50s │ %-8s │ %-6s │ %-48s │\n", 'Domain', 'TTL', 'Type', 'Value'
-      puts "├#{'─' * 52}┼#{'─' * 10}┼#{'─' * 8}┼#{'─' * 50}┤"
-
-      # Print records
-      current_domain = nil
-      records_list.each do |record|
-        # Convert TTL to human readable
-        ttl_human = if record[:ttl] >= 86_400
-                      "#{record[:ttl] / 86_400}d"
-                    elsif record[:ttl] >= 3600
-                      "#{record[:ttl] / 3600}h"
-                    elsif record[:ttl] >= 60
-                      "#{record[:ttl] / 60}m"
-                    else
-                      "#{record[:ttl]}s"
-                    end
-
-        # Add separator between different domains
-        puts "├#{'─' * 52}┼#{'─' * 10}┼#{'─' * 8}┼#{'─' * 50}┤" if current_domain && current_domain != record[:domain]
-
-        # Truncate long values
-        display_value = record[:value].length > 48 ? "#{record[:value][0..44]}..." : record[:value]
-
-        domain_display = record[:domain] == current_domain ? '' : record[:domain]
-        current_domain = record[:domain]
-
-        printf "│ %-50s │ %-8s │ %-6s │ %-48s │\n", domain_display, ttl_human, record[:type], display_value
-      end
-
-      # Print table footer
-      puts "└#{'─' * 52}┴#{'─' * 10}┴#{'─' * 8}┴#{'─' * 50}┘"
-    end
-
-    puts ''
-    puts '✅ Records listed'
-  end
-
-  desc 'Show BIND status'
-  task :status do
-    puts '▶️  Checking BIND status...'
-    ssh_kea_sh('sudo', 'rndc', 'status')
-    puts '✅ Status retrieved'
-  end
-end
-
-namespace :kea do
-  desc 'Push kea-dhcp-ddns.conf to Kea host'
-  task :push do
-    temp_file = create_temp_file
-    puts '▶️  Pushing config to Kea host...'
-    puts "   Target: #{temp_file}" if verbose?
-    push_to_kea(temp_file)
-    puts '✅ Config pushed'
-  end
-
-  desc 'Test kea-dhcp-ddns.conf on Kea host'
-  task :test do
-    temp_file = create_temp_file
-    puts '▶️  Testing configuration...'
-    puts "   File: #{temp_file}" if verbose?
-    test_config(temp_file)
-    puts '✅ Configuration valid'
-  end
-
-  desc 'Backup and install kea-dhcp-ddns.conf'
-  task :install do
-    temp_file = create_temp_file
-    timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
-    puts '▶️  Backing up and installing...'
-    puts "   Backup: #{DEST_PATH}.backup.#{timestamp}" if verbose?
-    backup_and_install(temp_file, timestamp)
-    puts '✅ Configuration installed'
-  end
-
-  desc 'Restart kea-dhcp-ddns service'
-  task :restart do
-    puts '▶️  Restarting service...'
-    restart_kea
-    puts '✅ Service restarted'
-  end
-
-  desc 'Deploy kea-dhcp-ddns.conf to Kea host'
-  task deploy: %i[push test install restart] do
-    puts ''
-    puts '✅ Deployment complete'
-  end
+##
+# Strip SSH messages and extract JSON from output
+#
+# @param output [String] raw SSH output that may contain non-JSON prefix
+# @return [String] JSON portion of output
+def extract_json(output)
+  json_start = output.index(/[\[{]/)
+  json_start ? output[json_start..] : output
 end
 
 namespace :lease do
@@ -569,11 +409,16 @@ namespace :lease do
       arguments: arguments
     }.to_json
 
-    output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
-                        '-H', 'Content-Type: application/json',
-                        '-d', payload,
-                        'http://localhost:8080/api/servers/localhost/leases')
-    JSON.parse(output)
+    # Use same pattern as kea_api - pass as single shell command to avoid
+    # SSH argument quoting issues that cause "Permanent Redirect" errors
+    b64 = Base64.strict_encode64(payload)
+    pipeline = "echo #{b64.shellescape} | base64 -d | " \
+               "curl -sS -X POST -H 'Content-Type: application/json' --data-binary @- #{KEA_CTRL_URL.shellescape}"
+    output = ssh_router("sudo /bin/sh -lc #{pipeline.shellescape}")
+
+    result = JSON.parse(output)
+    # API returns an array, extract first element
+    result.is_a?(Array) ? result[0] : result
   rescue JSON::ParserError, StandardError => e
     puts "   Error: #{e.message}" if verbose?
     { 'result' => 1, 'text' => e.message }
@@ -775,8 +620,8 @@ namespace :lease do
     output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
                         '-H', 'Content-Type: application/json',
                         '-d', payload,
-                        'http://localhost:8080/api/servers/localhost/leases')
-    result = JSON.parse(output)
+                        KEA_CTRL_URL)
+    result = JSON.parse(extract_json(output))
     if result['result'] == 0
       puts "✅ Lease deleted: #{result['text']}"
     elsif result['result'] == 3
@@ -817,8 +662,8 @@ namespace :lease do
     output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
                         '-H', 'Content-Type: application/json',
                         '-d', payload,
-                        'http://localhost:8080/api/servers/localhost/leases')
-    result = JSON.parse(output)
+                        KEA_CTRL_URL)
+    result = JSON.parse(extract_json(output))
     if result['result'] == 0
       puts "✅ Lease deleted: #{result['text']}"
     elsif result['result'] == 3
@@ -851,8 +696,8 @@ namespace :lease do
     output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
                         '-H', 'Content-Type: application/json',
                         '-d', payload,
-                        'http://localhost:8080/api/servers/localhost/leases')
-    result = JSON.parse(output)
+                        KEA_CTRL_URL)
+    result = JSON.parse(extract_json(output))
     if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
       lease = result['arguments']['leases'].first
       if lease
@@ -896,8 +741,8 @@ namespace :lease do
     output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
                         '-H', 'Content-Type: application/json',
                         '-d', payload,
-                        'http://localhost:8080/api/servers/localhost/leases')
-    result = JSON.parse(output)
+                        KEA_CTRL_URL)
+    result = JSON.parse(extract_json(output))
     if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
       leases = result['arguments']['leases'].select do |l|
         l['duid']&.downcase == duid.downcase &&
@@ -923,8 +768,8 @@ namespace :lease do
           del_output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
                                   '-H', 'Content-Type: application/json',
                                   '-d', del_payload,
-                                  'http://localhost:8080/api/servers/localhost/leases')
-          del_result = JSON.parse(del_output)
+                                  KEA_CTRL_URL)
+          del_result = JSON.parse(extract_json(del_output))
           if del_result['result'] == 0
             puts "   ✅ Deleted lease for #{lease['ip-address']}"
           else
@@ -963,8 +808,8 @@ namespace :lease do
     output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
                         '-H', 'Content-Type: application/json',
                         '-d', payload,
-                        'http://localhost:8080/api/servers/localhost/leases')
-    result = JSON.parse(output)
+                        KEA_CTRL_URL)
+    result = JSON.parse(extract_json(output))
     if result['result'] == 0 && result['arguments'] && result['arguments']['leases']
       leases = result['arguments']['leases'].select do |l|
         l['hw-address']&.downcase == mac_address.downcase &&
@@ -990,8 +835,8 @@ namespace :lease do
           del_output = ssh_router('sudo', 'curl', '-s', '-X', 'POST',
                                   '-H', 'Content-Type: application/json',
                                   '-d', del_payload,
-                                  'http://localhost:8080/api/servers/localhost/leases')
-          del_result = JSON.parse(del_output)
+                                  KEA_CTRL_URL)
+          del_result = JSON.parse(extract_json(del_output))
           if del_result['result'] == 0
             puts "   ✅ Deleted lease for #{lease['ip-address']}"
           else
