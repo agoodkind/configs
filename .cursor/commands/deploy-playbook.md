@@ -109,7 +109,6 @@ Run Ansible deploy playbooks locally with proper configuration and vault passwor
 - `deploy-grommunio.yml` - Grommunio email server
 - `deploy-mwan.yml` - Multi-WAN configuration
 - `deploy-nanomdm.yml` - NanoMDM device management
-- `deploy-powerdns.yml` - PowerDNS server
 - `deploy-proxy.yml` - Traefik reverse proxy + SSHPiper + Cloudflared
 - `deploy-semaphore.yml` - Semaphore automation server
 - `deploy-ssh-keys.yml` - SSH key deployment
