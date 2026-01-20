@@ -10,7 +10,8 @@ User=cloudflared
 Group=cloudflared
 
 # Token is copied to disk by Ansible (root-owned, mode 0600).
-ExecStart=/usr/bin/cloudflared tunnel run --token-file /etc/cloudflared/token
+# IPv6-Only: --edge-ip-version 6 forces IPv6 connections to Cloudflare edge servers
+ExecStart=/usr/bin/cloudflared --edge-ip-version 6 tunnel run --token-file /etc/cloudflared/token
 
 Restart=on-failure
 RestartSec=5s
