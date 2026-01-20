@@ -11,5 +11,3 @@ all:
         mini.home.goodkind.io:
           ansible_host: mini.home.goodkind.io
         # Add more static hosts here
-        # opnsense.home.goodkind.io:
-        #   ansible_host: 10.250.0.1

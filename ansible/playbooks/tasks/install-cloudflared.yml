@@ -1,6 +1,9 @@
 ---
 # Reusable tasks for cloudflared installation and configuration
 #
+# IPv6-Only Support: Configured with --edge-ip-version 6 to force IPv6 connections
+# to Cloudflare's edge servers. This is required for IPv6-only container environments.
+#
 # Required variables:
 #   cloudflared_token_src: path to token file on Ansible controller
 #
@@ -101,7 +104,7 @@
       Type=notify
       User=cloudflared
       Group=cloudflared
-      ExecStart=/usr/bin/cloudflared tunnel run --token-file /etc/cloudflared/token
+      ExecStart=/usr/bin/cloudflared --edge-ip-version 6 tunnel run --token-file /etc/cloudflared/token
       Restart=on-failure
       RestartSec=5s
 
