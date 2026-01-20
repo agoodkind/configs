@@ -21,5 +21,6 @@ options {
     // DNS64 Configuration
     dns64 {{ dns64_prefix }} {
         clients { any; };
+        break-dnssec yes;
     };
 };
