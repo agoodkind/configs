@@ -11,4 +11,4 @@ dns64_disk_size: "4"
 
 # DNS Configuration
 dns64_upstream_dns: "3d06:bad:b01::53"
-dns64_prefix: "64:ff9b::/96"
+dns64_prefix: "3d06:bad:b01:6464::/96"
