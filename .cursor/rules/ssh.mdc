@@ -10,10 +10,10 @@ alwaysApply: true
 
 The proxy container (`proxy.home.goodkind.io`) is special and has two SSH entry points:
 
-1.  **Port 22 (SSHPiper)**: Public-facing. Routes traffic to *other* containers based on username.
-    *   `ssh user@ssh.home.goodkind.io` -> routes to `user` on backend container.
-2.  **Port 2222 (OpenSSH)**: Admin-facing. Direct access to the proxy container itself.
-    *   `ssh -p 2222 root@10.250.0.110` -> routes to `root` on the proxy container.
+1. **Port 22 (SSHPiper)**: Public-facing. Routes traffic to _other_ containers based on username.
+    - `ssh user@ssh.home.goodkind.io` -> routes to `user` on backend container.
+2. **Port 2222 (OpenSSH)**: Admin-facing. Direct access to the proxy container itself.
+    - `ssh -p 2222 root@3d06:bad:b01::110` -> routes to `root` on the proxy container.
 
 ### Proxy Shortcut
 
@@ -29,7 +29,7 @@ This matches the regex `^(.+)@proxy` in `sshpiperd.yaml` and routes to `127.0.0.
 
 ## Primary Method: SSHPiper Routing
 
-All `*.ssh.home.goodkind.io` DNS points to `10.250.0.110` (proxy VM) where sshpiper routes by username:
+All `*.ssh.home.goodkind.io` DNS points to `3d06:bad:b01::110` (proxy VM) where sshpiper routes by username:
 
 ```bash
 ssh adguard@ssh.home.goodkind.io    # → routes to root@adguard-container-ip
@@ -84,7 +84,7 @@ ssh root@<container-ip>   # to target container
 
 ## Known Infrastructure IPs
 
-- **Proxy VM (sshpiper)**: `10.250.0.110` - sshd on port 2222, sshpiper on port 22
+- **Proxy VM (sshpiper)**: `3d06:bad:b01::110` - sshd on port 2222, sshpiper on port 22
 - **OPNsense**: `10.250.0.1` - SSH user: `agoodkind` (use `sudo` for privileged tasks)
 - **Proxmox host**: `10.250.0.254` - SSH user: `root`
 - **Ansible container**: `10.250.0.107` (CT 107) - has `PROXMOX_API_TOKEN` set
@@ -94,7 +94,7 @@ ssh root@<container-ip>   # to target container
 To access the proxy VM itself (bypassing sshpiper):
 
 ```bash
-ssh -p 2222 root@10.250.0.110    # sshd on port 2222
+ssh -p 2222 root@3d06:bad:b01::110    # sshd on port 2222
 ```
 
 ## Diagnostics-only SSH Options

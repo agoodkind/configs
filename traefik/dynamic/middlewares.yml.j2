@@ -31,7 +31,7 @@ http:
     # IP Whitelist for Internal Services Only
     # Use this for services that should only be accessible from your internal network
     internal-only:
-      ipWhiteList:
+      ipAllowList:
         sourceRange:
           - "127.0.0.1/32"
           - "10.0.0.0/8"
@@ -42,7 +42,7 @@ http:
     # This ensures all public traffic comes through Cloudflare
     # Updated automatically from: https://www.cloudflare.com/ips/
     cloudflare-only:
-      ipWhiteList:
+      ipAllowList:
         sourceRange:
 {% for cidr in cloudflare_ipv4_ranges %}
           - "{{ cidr }}"
@@ -54,7 +54,7 @@ http:
     # Combined: Cloudflare + Internal IPs
     # Allows traffic from Cloudflare (public) OR internal network (direct access)
     cloudflare-or-internal:
-      ipWhiteList:
+      ipAllowList:
         sourceRange:
           - "127.0.0.1/32"
           - "10.0.0.0/8"
@@ -77,3 +77,13 @@ http:
     # Compression
     compress:
       compress: {}
+
+    # WebSocket-friendly headers (less restrictive for WebSocket connections)
+    websocket-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        customResponseHeaders:
+          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
+          Server: ""

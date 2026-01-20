@@ -13,9 +13,6 @@ vault ansible_host=3d06:bad:b01::fe ansible_user=root
 [proxy_servers]
 proxy.home.goodkind.io ansible_port=2222
 
-[powerdns_servers]
-pdns.home.goodkind.io
-
 [mwan_servers]
 mwan.home.goodkind.io
 
