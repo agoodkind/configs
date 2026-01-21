@@ -226,15 +226,43 @@ mwan_att_pinned_v4_seed_cidrs:
   - "208.54.0.0/16"
   - "66.94.0.0/19"
 
+  # AT&T ePDG infrastructure
+  - "107.64.0.0/10"
+  - "129.192.0.0/16"
+  - "166.128.0.0/9"
+  - "141.207.0.0/16"
+  - "162.115.0.0/16"
+
 # Verizon Wi‑Fi Calling: resolve these FQDNs periodically and pin their A records to AT&T.
 mwan_att_pinned_v4_fqdns:
   - "wo.vzwwo.com"
   - "spg.vzw.com"
   - "sg.vzwfemto.com"
 
+  # AT&T ePDG infrastructure FQDNs
+  - "epdg.epc.att.net"
+  - "entitlement2.mobile.att.net"
+  - "tvvm.mobile.att.net"
+  - "cnc.epdg.att.erricson.net"
+  - "vtc.epdg.att.ericsson.net"
+
 # Zoom: pull published IPv4 prefixes periodically and pin to AT&T.
 # This is a plain-text list of prefixes (one per line).
 mwan_zoom_ipranges_url: "https://assets.zoom.us/docs/ipranges/ZoomMeetings.txt"
+
+# AT&T ePDG infrastructure - IPv6 seed CIDRs
+mwan_att_pinned_v6_seed_cidrs:
+  - "2600:1000::/28"
+  - "2607:fb90::/32"
+  - "2001:1890::/32"
+
+# AT&T ePDG infrastructure - IPv6 FQDNs to resolve
+mwan_att_pinned_v6_fqdns:
+  - "epdg.epc.att.net"
+  - "entitlement2.mobile.att.net"
+  - "tvvm.mobile.att.net"
+  - "cnc.epdg.att.erricson.net"
+  - "vtc.epdg.att.ericsson.net"
 
 # ----------------------------------------------------------------------------
 # Routing table IDs

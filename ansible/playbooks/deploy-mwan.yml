@@ -28,6 +28,9 @@
   hosts: mwan_servers
   become: false
 
+  vars_files:
+    - ../inventory/group_vars/mwan_servers.yml
+
   vars:
     mwan_config_dir: /etc/mwan
     repo_root: "{{ playbook_dir | dirname | dirname }}"
@@ -735,5 +738,11 @@
     - name: Restart wpa_supplicant
       ansible.builtin.systemd:
         name: wpa_supplicant-mwan
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart cloudflared
+      ansible.builtin.systemd:
+        name: cloudflared
         state: restarted
         daemon_reload: true
