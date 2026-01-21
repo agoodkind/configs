@@ -153,6 +153,16 @@ table inet mangle {
         }
     }
 
+    set att_pinned_v6 {
+        type ipv6_addr;
+        flags interval;
+        elements = {
+{% for cidr in mwan_att_pinned_v6_seed_cidrs | default([]) %}
+            {{ cidr }}{% if not loop.last %},{% endif %}
+{% endfor %}
+        }
+    }
+
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
 
@@ -168,6 +178,7 @@ table inet mangle {
         # Failover: If AT&T down, update-routes.sh removes the fwmark rule,
         # and traffic falls through to main table (which uses Webpass)
         ip daddr @att_pinned_v4 meta mark set 1
+        ip6 daddr @att_pinned_v6 meta mark set 1
 
         # Load-balance outbound IPv6 from OPNsense-edge /128 as well.
         #
