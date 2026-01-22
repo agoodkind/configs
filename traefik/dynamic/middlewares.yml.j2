@@ -78,6 +78,15 @@ http:
     compress:
       compress: {}
 
+    # Router-specific headers (allows content type sniffing for compatibility)
+    router-headers:
+      headers:
+        browserXssFilter: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        customResponseHeaders:
+          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
+          Server: ""
+
     # WebSocket-friendly headers (less restrictive for WebSocket connections)
     websocket-headers:
       headers:

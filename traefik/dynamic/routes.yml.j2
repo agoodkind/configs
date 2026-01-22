@@ -22,7 +22,7 @@ http:
       rule: "Host(`router.{{ traefik_ingress_domain }}`)"
       service: router-service
       middlewares:
-        - secure-headers
+        - router-headers
       entryPoints:
         - websecure
       tls:

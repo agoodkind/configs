@@ -4,25 +4,21 @@
   gather_facts: false
 
   vars:
-    # Keep targeting logic in sync with the main play below.
-    effective_target: >-
-      {{
-        (target_hosts | default('') | trim)
-        if (target_hosts | default('') | trim) | length > 0
-        else (
-          (hostname | default('') | trim)
-          if (hostname | default('') | trim) | length > 0
-          else 'proxmox_all_lxc'
-        )
-      }}
     selected_hosts: >-
       {{
-        groups[effective_target]
-        if effective_target in groups
-        else [effective_target]
+        groups[target_hosts]
+        if target_hosts in groups
+        else [target_hosts]
       }}
 
   tasks:
+    - name: Validate target_hosts is provided
+      ansible.builtin.assert:
+        that:
+          - target_hosts is defined
+          - (target_hosts | trim) | length > 0
+        fail_msg: "target_hosts must be provided (group name or hostname)"
+
     - name: Build Proxmox start target list
       ansible.builtin.set_fact:
         guest_start_targets: >-
@@ -43,7 +39,7 @@
         - (hostvars[item].ansible_proxmox_host | default('') | trim) | length > 0
         - (hostvars[item].ansible_proxmox_vmid | default('') | string | trim) | length > 0
 
-    - name: Ensure LXC guest is running on Proxmox (API best-effort)
+    - name: Ensure LXC guest is running on Proxmox via API
       loop: "{{ guest_start_targets | default([]) }}"
       loop_control:
         label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
@@ -66,7 +62,7 @@
       changed_when: false
       failed_when: false
 
-    - name: Ensure QEMU guest is running on Proxmox (API best-effort)
+    - name: Ensure QEMU guest is running on Proxmox via API
       loop: "{{ guest_start_targets | default([]) }}"
       loop_control:
         label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
@@ -89,97 +85,15 @@
       changed_when: false
       failed_when: false
 
-    - name: Probe SSH on VMID IPv6
-      ansible.builtin.wait_for:
-        host: "3d06:bad:b01::{{ item.vmid | string | trim }}"
-        port: "{{ hostvars[item.name].ansible_port | default(22) }}"
-        timeout: 2
-        state: started
-      loop: "{{ guest_start_targets | default([]) }}"
-      loop_control:
-        label: "{{ item.name }} -> 3d06:bad:b01::{{ item.vmid | string | trim }}"
-      register: ssh_probe_v6
-      changed_when: false
-      failed_when: false
-
-    - name: Probe SSH on VMID IPv4
-      ansible.builtin.wait_for:
-        host: "10.250.0.{{ item.vmid | string | trim }}"
-        port: "{{ hostvars[item.name].ansible_port | default(22) }}"
-        timeout: 2
-        state: started
-      loop: "{{ guest_start_targets | default([]) }}"
-      loop_control:
-        label: "{{ item.name }} -> 10.250.0.{{ item.vmid | string | trim }}"
-      register: ssh_probe_v4
-      changed_when: false
-      failed_when: false
-
-    - name: Add VMID-derived targets to in-memory inventory
-      ansible.builtin.add_host:
-        name: "{{ item.name }}"
-        groups: proxmox_api_targets
-        ansible_host: "{{ ansible_host_final }}"
-        ansible_user: root
-        ansible_port: "{{ hostvars[item.name].ansible_port | default(22) }}"
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-        ansible_proxmox_vmid: "{{ item.vmid }}"
-        ansible_proxmox_host: "{{ item.proxmox_host }}"
-        prep_ct_target_group: "{{ effective_target }}"
-        prep_ct_service: >-
-          {{
-            (
-              effective_target
-              | regex_replace('_servers$','')
-              | trim
-            )
-            if (effective_target | default('') | trim) | length > 0
-            else ''
-          }}
-      vars:
-        vmid_ip_v6: "3d06:bad:b01::{{ item.vmid | string | trim }}"
-        vmid_ip_v4: "10.250.0.{{ item.vmid | string | trim }}"
-        inv_host_override: >-
-          {{
-            (hostvars[item.name].ansible_host | default('') | trim)
-            if (
-              item.name in hostvars
-              and (hostvars[item.name].ansible_host | default('') | trim) | length > 0
-            )
-            else ''
-          }}
-        ansible_host_final: >-
-          {{
-            inv_host_override
-            if (inv_host_override | default('') | trim) | length > 0
-            else (
-              vmid_ip_v6
-              if not (ssh_probe_v6.results[idx].failed | default(true))
-              else (
-                vmid_ip_v4
-                if not (ssh_probe_v4.results[idx].failed | default(true))
-                else vmid_ip_v6
-              )
-            )
-          }}
-      loop: "{{ guest_start_targets | default([]) }}"
-      loop_control:
-        index_var: idx
-        label: "{{ item.name }} -> {{ ansible_host_final | default('') | trim }}"
-      when:
-        - item is defined
-        - (ansible_host_final | default('') | trim) | length > 0
-
 - name: Deploy SSH keys to CT/VM guests
   ansible.builtin.import_playbook: deploy-ssh-keys.yml
-  vars:
-    target_hosts: proxmox_api_targets
 
-- name: Prepare CT/VM guests (common)
-  hosts: proxmox_api_targets
+- name: Prepare CT/VM guests
+  hosts: "{{ target_hosts }}"
   gather_facts: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   tasks:
     - name: Show connection details
       ansible.builtin.debug:
@@ -232,151 +146,8 @@
 
     - name: Compute effective prep-guests service name and login directory
       ansible.builtin.set_fact:
-        prep_ct_service_effective: >-
-          {{
-            (prep_ct_service | default('') | trim)
-            if (prep_ct_service | default('') | trim) | length > 0
-            else (
-              (prep_ct_target_group | default('') | trim | regex_replace('_servers$',''))
-              if (prep_ct_target_group | default('') | trim) | length > 0
-              else ''
-            )
-          }}
+        prep_ct_service_effective: "{{ target_hosts | regex_replace('_servers$','') | trim }}"
         login_dir_effective: "{{ login_dir | default('/root') }}"
-
-    - name: Update Cloudflare DNS records (A and AAAA)
-      when:
-        - cloudflare_dns_update_enabled | default(true) | bool
-        - cloudflare_api_token is defined
-        - (cloudflare_api_token | default('') | trim) | length > 0
-        - inventory_hostname is match('.*\\.home\\.goodkind\\.io$')
-      delegate_to: localhost
-      block:
-        - name: Parse hostname components for Cloudflare
-          ansible.builtin.set_fact:
-            cf_zone_name: "home.goodkind.io"
-            cf_record_name: "{{ inventory_hostname | regex_replace('\\.home\\.goodkind\\.io$', '') }}"
-            cf_api_token: "{{ cloudflare_api_token }}"
-
-        - name: Get Cloudflare zone ID
-          ansible.builtin.uri:
-            url: https://api.cloudflare.com/client/v4/zones?name={{ cf_zone_name }}
-            method: GET
-            headers:
-              Authorization: "Bearer {{ cf_api_token }}"
-              Content-Type: application/json
-            return_content: true
-            status_code: [200]
-          register: cf_zone_lookup
-          no_log: true
-
-        - name: Extract zone ID
-          ansible.builtin.set_fact:
-            cf_zone_id: "{{ cf_zone_lookup.json.result[0].id }}"
-          when:
-            - cf_zone_lookup.json.result is defined
-            - (cf_zone_lookup.json.result | length) > 0
-
-        - name: Get existing DNS records for this hostname
-          ansible.builtin.uri:
-            url: >-
-              https://api.cloudflare.com/client/v4/zones/{{ cf_zone_id }}/dns_records?name={{-
-              inventory_hostname }}
-            method: GET
-            headers:
-              Authorization: "Bearer {{ cf_api_token }}"
-              Content-Type: application/json
-            return_content: true
-            status_code: [200]
-          register: cf_existing_records
-          no_log: true
-          when: cf_zone_id is defined
-
-        - name: Find existing A record ID
-          ansible.builtin.set_fact:
-            cf_a_record_id: >-
-              {{
-                (cf_existing_records.json.result | default([])
-                | selectattr('type', 'equalto', 'A')
-                | list)[0].id | default('')
-              }}
-          when:
-            - cf_existing_records.json.result is defined
-            - ansible_default_ipv4.address is defined
-
-        - name: Find existing AAAA record ID
-          ansible.builtin.set_fact:
-            cf_aaaa_record_id: >-
-              {{
-                (cf_existing_records.json.result | default([])
-                | selectattr('type', 'equalto', 'AAAA')
-                | list)[0].id | default('')
-              }}
-          when:
-            - cf_existing_records.json.result is defined
-            - ansible_default_ipv6.address is defined
-
-        - name: Create or update A record (IPv4)
-          ansible.builtin.uri:
-            url: >-
-              https://api.cloudflare.com/client/v4/zones/{{ cf_zone_id }}/dns_records{{-
-              ('/' + cf_a_record_id) if (cf_a_record_id | default('') | trim) | length > 0 else '' }}
-            method: "{{ 'PATCH' if (cf_a_record_id | default('') | trim) | length > 0 else 'POST' }}"
-            headers:
-              Authorization: "Bearer {{ cf_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              type: A
-              name: "{{ inventory_hostname }}"
-              content: "{{ ansible_default_ipv4.address }}"
-              ttl: 300
-              proxied: false
-            return_content: true
-            status_code: [200]
-          register: cf_a_record_result
-          no_log: true
-          when:
-            - cf_zone_id is defined
-            - ansible_default_ipv4.address is defined
-            - ansible_default_ipv4.address != '127.0.0.1'
-
-        - name: Create or update AAAA record (IPv6)
-          ansible.builtin.uri:
-            url: >-
-              https://api.cloudflare.com/client/v4/zones/{{ cf_zone_id }}/dns_records{{-
-              ('/' + cf_aaaa_record_id) if (cf_aaaa_record_id | default('') | trim) | length > 0 else '' }}
-            method: "{{ 'PATCH' if (cf_aaaa_record_id | default('') | trim) | length > 0 else 'POST' }}"
-            headers:
-              Authorization: "Bearer {{ cf_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              type: AAAA
-              name: "{{ inventory_hostname }}"
-              content: "{{ ansible_default_ipv6.address }}"
-              ttl: 300
-              proxied: false
-            return_content: true
-            status_code: [200]
-          register: cf_aaaa_record_result
-          no_log: true
-          when:
-            - cf_zone_id is defined
-            - ansible_default_ipv6.address is defined
-            - ansible_default_ipv6.address != '::1'
-            - not (ansible_default_ipv6.address is match('^fe80:'))
-
-        - name: Display Cloudflare DNS update results
-          ansible.builtin.debug:
-            msg:
-              - "✓ Cloudflare DNS updated for {{ inventory_hostname }}"
-              - "  A record: {{ ansible_default_ipv4.address | default('(none)') }}"
-              - "  AAAA record: {{ ansible_default_ipv6.address | default('(none)') }}"
-          when:
-            - cf_zone_id is defined
-            - (cf_a_record_result is defined and cf_a_record_result.status == 200) or
-              (cf_aaaa_record_result is defined and cf_aaaa_record_result.status == 200)
 
     - name: Update package lists
       ansible.builtin.apt:
@@ -440,14 +211,6 @@
         line: 'export LC_ALL="en_US.UTF-8"'
         state: present
 
-    - name: Update package lists again
-      ansible.builtin.apt:
-        update_cache: true
-
-    - name: Upgrade all packages
-      ansible.builtin.apt:
-        upgrade: dist
-
     - name: Install essential packages
       ansible.builtin.apt:
         name:
@@ -472,65 +235,44 @@
           - msmtp-mta
         state: present
 
-    - name: Ensure /opt/scripts exists (git checkout)
-      ansible.builtin.git:
-        repo: https://github.com/agoodkind/scripts.git
-        dest: /opt/scripts
-        version: main
-        update: true
+    - name: Fetch install-updater script from GitHub
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/agoodkind/scripts/main/install-updater
+        dest: /tmp/install-updater
+        mode: '0755'
         force: true
 
-    - name: Ensure /opt/scripts is executable
+    - name: Run install-updater to set up /opt/scripts and auto-update timer
+      ansible.builtin.command:
+        cmd: /tmp/install-updater --platform linux
+      register: install_updater_result
+      changed_when: "'Installation complete' in install_updater_result.stdout"
+
+    - name: Clean up install-updater script
       ansible.builtin.file:
-        path: /opt/scripts
-        state: directory
-        mode: '0755'
-        recurse: true
+        path: /tmp/install-updater
+        state: absent
 
-    - name: Install scripts-updater systemd service
+    - name: Deploy package-updater systemd service
       ansible.builtin.copy:
-        dest: /etc/systemd/system/scripts-updater.service
+        src: "{{ repo_root }}/common/services/package-updater.service"
+        dest: /etc/systemd/system/package-updater.service
         mode: '0644'
-        content: |
-          [Unit]
-          Description=Update /opt/scripts from git
-          After=network-online.target
-          Wants=network-online.target
+      register: package_updater_service
 
-          [Service]
-          Type=oneshot
-          ExecStart=/usr/bin/git -C /opt/scripts pull --ff-only
-          TimeoutStartSec=300
-
-    - name: Install scripts-updater systemd timer
+    - name: Deploy package-updater systemd timer
       ansible.builtin.copy:
-        dest: /etc/systemd/system/scripts-updater.timer
+        src: "{{ repo_root }}/common/timers/package-updater.timer"
+        dest: /etc/systemd/system/package-updater.timer
         mode: '0644'
-        content: |
-          [Unit]
-          Description=Run scripts-updater daily
+      register: package_updater_timer
 
-          [Timer]
-          OnCalendar=daily
-          RandomizedDelaySec=3600
-          Persistent=true
-
-          [Install]
-          WantedBy=timers.target
-
-    - name: Ensure /opt/scripts is in system PATH
-      ansible.builtin.copy:
-        dest: /etc/profile.d/opt-scripts.sh
-        mode: '0644'
-        content: |
-          export PATH="/opt/scripts:$PATH"
-
-    - name: Enable scripts-updater timer
+    - name: Enable and start package-updater timer
       ansible.builtin.systemd:
-        name: scripts-updater.timer
+        name: package-updater.timer
         enabled: true
         state: started
-        daemon_reload: true
+        daemon_reload: "{{ package_updater_service.changed or package_updater_timer.changed }}"
 
     - name: Compute SMTP username for this host
       ansible.builtin.set_fact:
@@ -821,31 +563,6 @@
         (prep_ct_service_effective | default('') | trim) | length == 0
         or (prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns'])
 
-    - name: Check if any MOTD script is executable
-      ansible.builtin.find:
-        paths: /etc/update-motd.d
-        file_type: file
-        patterns: "*.sh"
-      register: motd_scripts
-      changed_when: false
-
-    - name: Check executable status of MOTD scripts
-      ansible.builtin.stat:
-        path: "{{ item.path }}"
-      register: motd_script_stats
-      loop: "{{ motd_scripts.files | default([]) }}"
-      changed_when: false
-
-    - name: Disable default MOTD scripts
-      ansible.builtin.file:
-        path: /etc/update-motd.d/
-        recurse: true
-        mode: 'u-x,g-x,o-x'
-      when: >
-        motd_scripts.files | default([]) | length > 0 and
-        (motd_script_stats.results | selectattr('stat.exists') |
-         selectattr('stat.mode', 'match', '.*x.*') | list | length > 0)
-
     - name: Configure auto-login for root (LXC only)
       ansible.builtin.blockinfile:
         path: /etc/systemd/system/container-getty@1.service.d/override.conf
@@ -856,7 +573,19 @@
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
       register: configure_auto_login
-      when: is_lxc | default(false)
+      when:
+        - is_lxc | default(false)
+        - console_autologin_enabled | default(true) | bool
+      notify: Restart getty service
+
+    - name: Remove auto-login override (if disabled)
+      ansible.builtin.file:
+        path: /etc/systemd/system/container-getty@1.service.d/override.conf
+        state: absent
+      register: remove_auto_login
+      when:
+        - is_lxc | default(false)
+        - not (console_autologin_enabled | default(true) | bool)
       notify: Restart getty service
 
     - name: Create systemd system.conf.d directory

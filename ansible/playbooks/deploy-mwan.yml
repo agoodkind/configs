@@ -10,22 +10,8 @@
 # Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
-- name: Add MWAN to runtime inventory
-  hosts: localhost
-  gather_facts: false
-  vars_files:
-    - ../inventory/group_vars/mwan_servers.yml
-  tasks:
-    - name: Add MWAN host to inventory
-      ansible.builtin.add_host:
-        name: "{{ mwan_hostname }}"
-        groups: mwan_servers
-        ansible_host: "{{ mwan_ansible_host }}"
-        ansible_user: root
-        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-
-- name: Deploy SSH keys
-  ansible.builtin.import_playbook: deploy-ssh-keys.yml
+- name: Prepare MWAN VM (base packages, SSH keys, etc.)
+  ansible.builtin.import_playbook: prep-guests.yml
   vars:
     target_hosts: mwan_servers
 
@@ -44,12 +30,6 @@
     - name: Generate deploy trace ID (early)
       ansible.builtin.set_fact:
         mwan_deploy_trace_id: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}-deploy-{{ 999999 | random }}"
-
-    - name: Wait for VM
-      ansible.builtin.wait_for_connection:
-        timeout: 120
-      register: connection_check
-      failed_when: false
 
     - name: Ensure MWAN trace state directory exists
       ansible.builtin.file:
@@ -75,10 +55,6 @@
       changed_when: false
       failed_when: false
 
-    - name: Gather facts
-      ansible.builtin.setup:
-      when: connection_check.failed is not defined or not connection_check.failed
-
     - name: Verify Debian
       ansible.builtin.assert:
         that:
@@ -89,11 +65,6 @@
         success_msg: >-
           ✓ {{ ansible_distribution }}
           {{ ansible_distribution_version }}
-
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: true
-        cache_valid_time: 3600
 
     - name: Get actual VMID from Proxmox
       delegate_to: vault

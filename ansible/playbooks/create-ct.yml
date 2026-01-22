@@ -21,7 +21,7 @@
     ipv6_gateway: ""
     ipv4_prefix: "24"
     ipv6_prefix: "64"
-    ipv6_only: false
+    ipv6_only: true
     container_tags: "lxc"
     allow_dhcp: false
 
@@ -213,7 +213,7 @@
         effective_ipv4_value: >-
           {{
             ''
-            if (ipv6_only | default(false) | bool)
+            if (ipv6_only | default(true) | bool)
             else (
               (ip_address | trim)
               if (ip_address | default('') | trim) | length > 0
@@ -232,7 +232,7 @@
         that:
           - >-
             allow_dhcp | bool or
-            (ipv6_only | default(false) | bool) or
+            (ipv6_only | default(true) | bool) or
             (effective_ipv4_value | default('') | lower) != 'dhcp'
           - allow_dhcp | bool or (effective_ipv6_value | default('') | lower) != 'dhcp'
         fail_msg: >-
@@ -246,7 +246,7 @@
         effective_ipv4_cidr: >-
           {{
             ''
-            if (ipv6_only | default(false) | bool)
+            if (ipv6_only | default(true) | bool)
             else (
               'dhcp'
               if (effective_ipv4_value | default('') | lower) == 'dhcp'
@@ -288,7 +288,7 @@
         msg: >-
           WARNING: Using DHCP without a pinned MAC address. This may cause
           IP address changes if the container is recreated. Consider setting
-          mac_address variable for stable DHCP reservations.
+          mac_address variable for stable container identity.
       when:
         - allow_dhcp | default(false) | bool
         - (effective_ipv4_cidr == 'dhcp' or effective_ipv6_cidr == 'dhcp')
@@ -311,7 +311,7 @@
               if (mac_address_valid | default(false) | bool)
               else '' -}}
           {{- ',ip=' + effective_ipv4_cidr
-              if (not (ipv6_only | default(false) | bool) and (effective_ipv4_cidr | length > 0))
+              if (not (ipv6_only | default(true) | bool) and (effective_ipv4_cidr | length > 0))
               else '' -}}
           {{- ',gw=' + effective_gateway_v4
               if (
@@ -638,6 +638,7 @@
   import_playbook: prep-guests.yml
   vars:
     target_hosts: new_containers
+    ipv6_only: "{{ ipv6_only | default(true) | bool }}"
 
 - name: Summary
   hosts: localhost
