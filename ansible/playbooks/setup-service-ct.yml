@@ -1,6 +1,5 @@
 ---
 # Reusable playbook wrapper for service containers
-# Simplified to call create-ct.yml directly
 #
 # Required variables:
 #   container_group: Inventory group name (e.g., adguard_servers)
@@ -43,7 +42,7 @@
           - hostname_var is defined
         fail_msg: >-
           container_group, group_vars_file, and hostname_var must be
-          provided when importing setup-service-container.yml
+          provided when importing setup-service-ct.yml
 
     - name: Get container hostname from group_vars
       ansible.builtin.set_fact:

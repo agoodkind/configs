@@ -15,7 +15,7 @@
 # 5. Reverse zone transfer direction (PowerDNS -> BIND)
 
 - name: Setup PowerDNS container
-  ansible.builtin.import_playbook: setup-service-container.yml
+  ansible.builtin.import_playbook: setup-service-ct.yml
   vars:
     container_group: powerdns_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/powerdns_servers.yml"
@@ -111,7 +111,7 @@
               PDNS_TSIG_SECRET={{ tsig_secret }}
             dest: "/tmp/pdns-secrets.txt"
             owner: "{{ ansible_ssh_user | default('root') }}"
-            mode: '0600'
+            mode: "0600"
           no_log: true
           when: secrets_were_generated | default(false)
           delegate_to: localhost
@@ -157,7 +157,7 @@
         state: started
         enabled: true
 
-    - name: Create PowerDNS database  # noqa: syntax-check[unknown-module]
+    - name: Create PowerDNS database # noqa: syntax-check[unknown-module]
       become_user: postgres
       community.postgresql.postgresql_db:
         name: "{{ postgres_db }}"
@@ -198,7 +198,7 @@
         url: >-
           https://raw.githubusercontent.com/PowerDNS/pdns/master/modules/gpgsqlbackend/schema.pgsql.sql
         dest: /tmp/pdns-schema.sql
-        mode: '0644'
+        mode: "0644"
       when: >-
         schema_check.query_result is not defined or
         schema_check.query_result[0].count == 0
@@ -219,16 +219,16 @@
           master: no
           slave: true
           slave-cycle-interval: 60
-          local-address: '::,0.0.0.0'
-          local-port: '53'
+          local-address: "::,0.0.0.0"
+          local-port: "53"
           version-string: powerdns
           webserver: true
-          webserver-address: '::'
-          webserver-allow-from: '3d06:bad:b01::/56,::1,10.250.0.0/24,127.0.0.1'
-          webserver-port: '8081'
+          webserver-address: "::"
+          webserver-allow-from: "3d06:bad:b01::/56,::1,10.250.0.0/24,127.0.0.1"
+          webserver-port: "8081"
           api: true
           api-key: "{{ pdns_api_key }}"
-          security-poll-suffix: ''
+          security-poll-suffix: ""
           log-dns-details: no
           log-dns-queries: no
           logging-facility: 0
@@ -255,7 +255,7 @@
         state: directory
         owner: pdns
         group: pdns
-        mode: '0750'
+        mode: "0750"
 
     - name: Store TSIG key for reference
       copy:
@@ -267,7 +267,7 @@
         dest: /etc/powerdns/tsig/{{ tsig_key_name }}.info
         owner: pdns
         group: pdns
-        mode: '0640'
+        mode: "0640"
         no_log: true
 
     - name: Check if zone already exists
@@ -316,14 +316,14 @@
     - name: Configure systemd-resolved to not bind to port 53
       lineinfile:
         path: /etc/systemd/resolved.conf
-        regexp: '^#?DNSStubListener='
-        line: 'DNSStubListener=no'
+        regexp: "^#?DNSStubListener="
+        line: "DNSStubListener=no"
         backup: true
 
     - name: Ensure systemd-resolved uses DHCP-provided DNS (remove any static DNS config)
       lineinfile:
         path: /etc/systemd/resolved.conf
-        regexp: '^DNS='
+        regexp: "^DNS="
         state: absent
         backup: true
 
@@ -401,7 +401,7 @@
         dest: /etc/bind/keys/{{ tsig_key_name }}.key
         owner: root
         group: bind
-        mode: '0640'
+        mode: "0640"
         no_log: true
 
     - name: Backup current zone configuration
@@ -431,7 +431,7 @@
       blockinfile:
         path: /etc/bind/zones/goodkind.io/zone.{{ zone_name }}.dynamic-signed
         marker: "    # {mark} ANSIBLE MANAGED - PowerDNS zone transfer"
-        insertafter: "^zone \"{{ zone_name }}\""
+        insertafter: '^zone "{{ zone_name }}"'
         block: |2
             allow-transfer { key {{ tsig_key_name }}; };
             also-notify { {{ powerdns_ipv6 | default(powerdns_ipv4) }}; };
@@ -540,18 +540,18 @@
     - name: Display DNS test result
       debug:
         msg:
-        - "DNS Resolution Test:"
-        - "{{ dns_test.stdout_lines }}"
-        - ""
-        - "✅ PowerDNS DNS records added:"
-        - "  - NS record: pdns.{{ zone_name }}"
-        - "  - AAAA record: pdns.{{ zone_name }} -> {{ powerdns_ipv6 }}"
-        - "  - A record: pdns.{{ zone_name }} -> {{ powerdns_ipv4 }}"
-        - ""
-        - "Next step:"
-        - >-
-           - Update DHCP to include {{ powerdns_ipv6 }} and
-             {{ powerdns_ipv4 }} in DNS servers (IPv6 first)
+          - "DNS Resolution Test:"
+          - "{{ dns_test.stdout_lines }}"
+          - ""
+          - "✅ PowerDNS DNS records added:"
+          - "  - NS record: pdns.{{ zone_name }}"
+          - "  - AAAA record: pdns.{{ zone_name }} -> {{ powerdns_ipv6 }}"
+          - "  - A record: pdns.{{ zone_name }} -> {{ powerdns_ipv4 }}"
+          - ""
+          - "Next step:"
+          - >-
+            - Update DHCP to include {{ powerdns_ipv6 }} and
+              {{ powerdns_ipv4 }} in DNS servers (IPv6 first)
 
 - name: Summary
   hosts: localhost

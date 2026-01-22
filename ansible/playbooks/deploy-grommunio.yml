@@ -15,7 +15,7 @@
 #   ansible-playbook playbooks/deploy-grommunio.yml
 
 - name: Setup Grommunio container
-  ansible.builtin.import_playbook: setup-service-container.yml
+  ansible.builtin.import_playbook: setup-service-ct.yml
   vars:
     container_group: grommunio_servers
     group_vars_file: >-

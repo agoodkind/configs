@@ -9,7 +9,7 @@
 #   ansible-playbook playbooks/deploy-nanomdm.yml
 
 - name: Setup NanoMDM container
-  ansible.builtin.import_playbook: setup-service-container.yml
+  ansible.builtin.import_playbook: setup-service-ct.yml
   vars:
     container_group: nanomdm_servers
     group_vars_file: >-
@@ -132,7 +132,7 @@
         state: directory
         owner: "{{ nanomdm_user }}"
         group: "{{ nanomdm_group }}"
-        mode: '0750'
+        mode: "0750"
       loop:
         - "{{ nanomdm_config_dir }}"
         - "{{ nanomdm_data_dir }}"
@@ -143,7 +143,6 @@
     - name: Download and install NanoMDM
       when: update_needed | bool
       block:
-
         - name: Set download URL
           ansible.builtin.set_fact:
             nanomdm_download_url: >-
@@ -155,7 +154,7 @@
           ansible.builtin.get_url:
             url: "{{ nanomdm_download_url }}"
             dest: /tmp/nanomdm.zip
-            mode: '0644'
+            mode: "0644"
 
         - name: Install unzip if not present
           ansible.builtin.apt:
@@ -171,7 +170,7 @@
           ansible.builtin.file:
             path: /tmp/nanomdm_extract
             state: directory
-            mode: '0755'
+            mode: "0755"
 
         - name: Extract NanoMDM binary
           ansible.builtin.unarchive:
@@ -198,7 +197,7 @@
             dest: "{{ nanomdm_install_dir }}/nanomdm"
             owner: root
             group: root
-            mode: '0755'
+            mode: "0755"
             remote_src: true
           notify: Restart nanomdm
 
@@ -219,7 +218,7 @@
         dest: "{{ nanomdm_config_dir }}/push.pem"
         owner: "{{ nanomdm_user }}"
         group: "{{ nanomdm_group }}"
-        mode: '0600'
+        mode: "0600"
       no_log: true
       notify: Restart nanomdm
 
@@ -234,7 +233,7 @@
         dest: "{{ nanomdm_config_dir }}/nanomdm.env"
         owner: "{{ nanomdm_user }}"
         group: "{{ nanomdm_group }}"
-        mode: '0600'
+        mode: "0600"
       no_log: true
       notify: Restart nanomdm
 
@@ -272,7 +271,7 @@
         dest: /etc/systemd/system/nanomdm.service
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify:
         - Reload systemd
         - Restart nanomdm

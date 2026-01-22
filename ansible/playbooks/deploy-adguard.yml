@@ -1,6 +1,6 @@
 ---
 - name: Setup AdGuard container
-  ansible.builtin.import_playbook: setup-service-container.yml
+  ansible.builtin.import_playbook: setup-service-ct.yml
   vars:
     container_group: adguard_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/adguard_servers.yml"
@@ -38,7 +38,7 @@
         state: directory
         owner: "{{ adguard_user }}"
         group: "{{ adguard_group }}"
-        mode: '0750'
+        mode: "0750"
       loop:
         - "{{ adguard_work_dir }}"
         - "{{ adguard_data_dir }}"
@@ -66,7 +66,7 @@
     - name: Create Cloudflare credentials file for certbot
       ansible.builtin.copy:
         dest: /etc/letsencrypt/cloudflare.ini
-        mode: '0600'
+        mode: "0600"
         content: |
           dns_cloudflare_api_token = {{ cloudflare_api_token }}
       when: adguard_tls_enabled | default(false)
@@ -77,7 +77,7 @@
         dest: /usr/local/sbin/adguard-sync-le-certs
         owner: root
         group: root
-        mode: '0755'
+        mode: "0755"
       when: adguard_tls_enabled | default(false)
 
     - name: Obtain/ensure Let's Encrypt certificate for AdGuardHome (DNS-01)
@@ -116,7 +116,7 @@
         dest: /etc/systemd/system/adguard-certbot-renew.service
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Reload systemd
       when: adguard_tls_enabled | default(false)
 
@@ -126,7 +126,7 @@
         dest: /etc/systemd/system/adguard-certbot-renew.timer
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Reload systemd
       when: adguard_tls_enabled | default(false)
 
@@ -338,7 +338,7 @@
         dest: "{{ adguard_work_dir }}/AdGuardHome.yaml"
         owner: "{{ adguard_user }}"
         group: "{{ adguard_group }}"
-        mode: '0640'
+        mode: "0640"
         backup: true
       notify: Restart AdGuardHome
       when: not (adguard_config_file.stat.exists | default(false))
@@ -349,7 +349,7 @@
         dest: /usr/local/sbin/adguard-merge-config
         owner: root
         group: root
-        mode: '0755'
+        mode: "0755"
       when: adguard_config_file.stat.exists | default(false)
 
     - name: Merge TLS and hostname rewrites into existing AdGuardHome config
@@ -380,7 +380,7 @@
       ansible.builtin.file:
         path: /etc/systemd/resolved.conf.d
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Disable systemd-resolved stub listener (free port 53)
       ansible.builtin.copy:
@@ -389,7 +389,7 @@
           [Resolve]
           DNS=127.0.0.1
           DNSStubListener=no
-        mode: '0644'
+        mode: "0644"
       notify: Restart systemd-resolved
 
     - name: Flush handlers to free port 53 before starting AdGuard

@@ -11,7 +11,7 @@
 #   (or ssh -p 2222 root@10.250.0.10)
 
 - name: Setup Traefik container
-  ansible.builtin.import_playbook: setup-service-container.yml
+  ansible.builtin.import_playbook: setup-service-ct.yml
   vars:
     container_group: proxy_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/proxy_servers.yml"
