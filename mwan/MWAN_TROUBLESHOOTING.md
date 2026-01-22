@@ -20,7 +20,107 @@ When something breaks:
 
 ---
 
+## Useful Diagnostic Commands
+
+### Check for systemd dependency cycles (without rebooting)
+
+```bash
+# Verify default.target for cycles
+systemd-analyze verify default.target 2>&1 | grep -i cycle
+
+# Verify a specific unit
+systemd-analyze verify wpa_supplicant-mwan.service
+
+# Show full dependency tree (useful for understanding ordering)
+systemd-analyze dot wpa_supplicant-mwan.service | dot -Tsvg > /tmp/deps.svg
+```
+
+### Check unit ordering and dependencies
+
+```bash
+# What does this unit need to start?
+systemctl list-dependencies wpa_supplicant-mwan.service
+
+# What units are blocking this from starting?
+systemctl list-dependencies --reverse wpa_supplicant-mwan.service
+
+# Show effective unit file (with all overrides merged)
+systemctl cat nftables.service
+```
+
+### Debug boot ordering issues
+
+```bash
+# Show boot timeline
+systemd-analyze
+
+# Show critical chain (what delayed boot)
+systemd-analyze critical-chain
+
+# Blame: which units took longest
+systemd-analyze blame | head -20
+```
+
+### Verify playbook commands before trusting them
+
+Always test shell commands from playbooks directly on the target before assuming they work:
+
+```bash
+# Example: shutdown -r +0.08 does NOT work (fractional minutes invalid)
+ssh root@3d06:bad:b01::113 "shutdown -r +0.08"
+# Failed to parse time specification: +0.08
+
+# Correct: use sleep + reboot for short delays
+ssh root@3d06:bad:b01::113 "nohup sh -c 'sleep 5 && reboot' &>/dev/null &"
+```
+
+Ansible's `changed_when: true` with `async` can mask command failures.
+
+---
+
 ## MWAN
+
+### 2026-01-22: systemd dependency cycles skipping critical services at boot
+
+**Symptom**:
+
+- Boot logs show "Ordering cycle found, skipping" for:
+  - `paths.target`
+  - `systemd-networkd.service`
+  - `network-pre.target`
+  - `network.target`
+- wpa_supplicant-mwan.service and network stack start late or not at all
+
+**Root cause (Cycle 1: wpa_supplicant-mwan)**:
+
+1. `wpa-authenticated.path` had `After=wpa_supplicant-mwan.service`
+2. Path units are part of `paths.target` which must complete before `basic.target`
+3. But regular services need `basic.target` first
+4. Cycle: wpa_supplicant-mwan → basic.target → paths.target → wpa-authenticated.path → wpa_supplicant-mwan
+
+**Root cause (Cycle 2: nftables)**:
+
+1. nftables override added `After=network-online.target`
+2. Stock nftables has `Before=network-pre.target` (firewall before networking)
+3. Cycle: nftables → network-pre.target → networkd → network.target → network-online.target → nftables
+
+**Fix**:
+
+1. `wpa-authenticated.path`: Removed `After=wpa_supplicant-mwan.service` (path units don't need ordering, they just watch files)
+2. `wpa-authenticated.path`: Changed `WantedBy=multi-user.target` to `WantedBy=wpa_supplicant-mwan.service`
+3. `wpa_supplicant.service`: Added `Wants=wpa-authenticated.path` to pull in the path
+4. `nftables.service.d-override.conf`: Removed `After/Wants=network-online.target`
+
+**Prevention**:
+
+- Path units (`.path`) cannot have `After=` dependencies on regular services
+- Never order nftables `After=` any network target when stock config has `Before=network-pre.target`
+
+**Files changed**:
+
+- `mwan/paths/wpa-authenticated.path`
+- `mwan/services/wpa_supplicant.service`
+- `mwan/overrides/nftables.service.d-override.conf`
 
 ### 2026-01-22: systemd-networkd restart broke internet + Cloudflare tunnel
 

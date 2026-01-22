@@ -1,6 +1,8 @@
 [Unit]
 Description=Watch for wpa_supplicant authentication success
-After=wpa_supplicant-mwan.service
+# No After= here - path units are part of paths.target which must complete
+# before basic.target. Ordering After= a regular service creates a cycle.
+# BindsTo= ensures path stops when service stops (no ordering implied).
 BindsTo=wpa_supplicant-mwan.service
 
 [Path]
@@ -8,4 +10,6 @@ PathExists=/run/wpa_supplicant-mwan.authenticated
 MakeDirectory=false
 
 [Install]
-WantedBy=multi-user.target
+# Pulled in by wpa_supplicant-mwan.service, not multi-user.target
+# to avoid paths.target ordering issues
+WantedBy=wpa_supplicant-mwan.service

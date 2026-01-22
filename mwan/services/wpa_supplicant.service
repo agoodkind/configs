@@ -1,7 +1,7 @@
 [Unit]
 Description=WPA Supplicant for AT&T 802.1X
 After=systemd-networkd.service
-Wants=systemd-networkd.service
+Wants=systemd-networkd.service wpa-authenticated.path
 
 [Service]
 Type=simple
