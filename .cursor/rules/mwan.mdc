@@ -79,6 +79,15 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ...
   - what it does (symptoms + technical)
   - where it sits in the dependency graph
 
+## Console auto-login
+
+- **Physical console access** (keyboard/mouse/VGA, serial) auto-logs in as root without password.
+- **SSH access** requires normal authentication (password/key).
+- **Configuration**: systemd getty service overrides:
+  - `getty@tty1`: `--autologin root --noclear %I $TERM`
+  - `serial-getty@ttyS0`: `--autologin root --keep-baud 115200,57600,38400,9600 - ${TERM}`
+- **Idempotent deployment**: Ansible handles directory creation (systemd reloads on reboot).
+
 ## nftables + runtime rules
 
 - Assume `nftables` reload flushes runtime rules. Any dynamic runtime rule programming (e.g. NPT) must be re-applied via:
