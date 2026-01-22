@@ -16,8 +16,8 @@
 #   memory: Container memory in MB (default: "2048")
 #   cores: Container CPU cores (default: "2")
 #   mac_var: Variable name in group_vars containing a stable MAC address
-#     (e.g., traefik_mac_address). Used to keep DHCP reservations stable
-#     across container recreation.
+#     (e.g., traefik_mac_address). Used to keep container identity stable
+#     across recreation.
 #   container_tags: Container tags
 #     (default: "lxc,{{ container_group | replace('_servers', '') }}")
 - name: Load service configuration and create/setup container
@@ -120,7 +120,7 @@
     vmid: "{{ hostvars['localhost']['service_container_vmid'] | default('') }}"
     ip_address: "{{ hostvars['localhost']['service_ip_address'] | default('') }}"
     ipv6_address: "{{ hostvars['localhost']['service_ipv6_address'] | default('') }}"
-    ipv6_only: "{{ hostvars['localhost']['service_ipv6_only'] | default(false) | bool }}"
+    ipv6_only: "{{ hostvars['localhost']['service_ipv6_only'] | default(true) | bool }}"
     disk_size: "{{ hostvars['localhost']['service_disk_size'] | default('8') }}"
     memory: "{{ hostvars['localhost']['service_memory'] | default('2048') }}"
     cores: "{{ hostvars['localhost']['service_cores'] | default('2') }}"

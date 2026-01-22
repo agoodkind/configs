@@ -10,8 +10,7 @@ ansible_port: 2222
 # Container hostname
 traefik_hostname: proxy.home.goodkind.io
 
-# Stable MAC address for DHCP reservations (KEA: hostname "proxy")
-# IPv4 reservation: 10.250.0.10 -> BC:24:11:1D:2C:0F
+# Stable MAC address for container recreation consistency
 traefik_mac_address: "bc:24:11:1d:2c:0f"
 
 # Domain configuration

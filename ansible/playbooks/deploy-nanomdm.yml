@@ -3,7 +3,6 @@
 #
 # Prerequisites:
 #   - vault_nanomdm_api_key and vault_nanomdm_push_pem in vault.yml
-#   - DHCP reservation for MAC bc:24:11:a0:67:03 -> 10.250.0.103
 #
 # Usage:
 #   ansible-playbook playbooks/deploy-nanomdm.yml
