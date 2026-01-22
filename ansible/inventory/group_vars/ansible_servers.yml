@@ -3,12 +3,9 @@
 ansible_hostname: ansible.home.goodkind.io
 
 # Static addressing (pinned; independent of VMID)
-ansible_ipv4: "10.250.0.107/24"
+ipv6_only: true
 ansible_ipv6: "3d06:bad:b01::107/64"
 
-# Stable MAC address for DHCP reservations (KEA: hostname "ansible")
-# IPv4 reservation: 10.250.0.107 -> BC:24:11:AA:BB:07
-# IPv6 reservation: 3d06:bad:b01::107 -> BC:24:11:AA:BB:07
 ansible_mac_address: "BC:24:11:AA:BB:07"
 
 # Semaphore Configuration Variables

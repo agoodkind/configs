@@ -1,0 +1,19 @@
+[Unit]
+Description=MWAN Auto-Rollback Watchdog
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/mwan-watchdog/watchdog.env
+ExecStart=/usr/local/bin/mwan-watchdog.sh
+Restart=always
+RestartSec=10
+# Run as root to access qm commands and VM control
+User=root
+Group=root
+# No timeout - watchdog should run continuously
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
