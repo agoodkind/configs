@@ -82,11 +82,11 @@ http:
     router-headers:
       headers:
         browserXssFilter: true
+        contentType: "text/html; charset=utf-8"
         customFrameOptionsValue: "SAMEORIGIN"
         customResponseHeaders:
           X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
           Server: ""
-          Content-Type: "text/html; charset=utf-8"
 
     # WebSocket-friendly headers (less restrictive for WebSocket connections)
     websocket-headers:
