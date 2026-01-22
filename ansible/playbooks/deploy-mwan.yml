@@ -22,7 +22,7 @@
         groups: mwan_servers
         ansible_host: "{{ mwan_ansible_host }}"
         ansible_user: root
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
 - name: Configure MWAN VM
   hosts: mwan_servers
@@ -50,7 +50,7 @@
       ansible.builtin.file:
         path: /var/lib/mwan
         state: directory
-        mode: '0755'
+        mode: "0755"
       changed_when: false
       failed_when: false
 
@@ -58,7 +58,7 @@
       ansible.builtin.copy:
         dest: /run/mwan-trace-id
         content: "{{ mwan_deploy_trace_id }}\n"
-        mode: '0644'
+        mode: "0644"
       changed_when: false
       failed_when: false
 
@@ -66,7 +66,7 @@
       ansible.builtin.copy:
         dest: /var/lib/mwan/trace-id
         content: "{{ mwan_deploy_trace_id }}\n"
-        mode: '0644'
+        mode: "0644"
       changed_when: false
       failed_when: false
 
@@ -85,10 +85,112 @@
           ✓ {{ ansible_distribution }}
           {{ ansible_distribution_version }}
 
+    - name: Deploy SSH keys for Proxmox access
+      ansible.posix.authorized_key:
+        user: root
+        key: "{{ lookup('file', '/root/.ssh/id_ed25519.pub') }}"
+        state: present
+      delegate_facts: true
+
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
+
+    - name: Get actual VMID from Proxmox
+      delegate_to: vault
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          qm list | awk '$2 == "{{ inventory_hostname }}" {print $1}'
+        executable: /bin/bash
+      register: vmid_lookup
+      changed_when: false
+      failed_when: vmid_lookup.stdout | length == 0
+
+    - name: Set actual VMID
+      ansible.builtin.set_fact:
+        actual_vmid: "{{ vmid_lookup.stdout | trim }}"
+        mwan_vmid: "{{ vmid_lookup.stdout | trim }}" # Override group_vars
+
+    # ============================================================================
+    # PRE-DEPLOY: Auto-rollback setup
+    # ============================================================================
+
+    - name: Verify internet connectivity before deploy
+      delegate_to: vault
+      ansible.builtin.shell: |
+        ping6 -c 2 -W 3 2606:4700:4700::1111 >/dev/null 2>&1 || \
+        ping -c 2 -W 3 1.1.1.1 >/dev/null 2>&1
+      register: pre_deploy_connectivity
+      changed_when: false
+      failed_when: false
+
+    - name: Create pre-deploy snapshot on Proxmox
+      delegate_to: vault
+      ansible.builtin.command:
+        cmd: >-
+          qm snapshot {{ actual_vmid }}
+          pre-deploy-{{ ansible_date_time.iso8601_basic_short }}
+          --description "Pre-deploy snapshot for auto-rollback"
+      register: snapshot_result
+      changed_when: snapshot_result.rc == 0
+      when: pre_deploy_connectivity.rc == 0
+
+    - name: Warn if skipping snapshot due to broken connectivity
+      ansible.builtin.debug:
+        msg: "⚠️  Skipping pre-deploy snapshot - connectivity already broken!"
+      when: pre_deploy_connectivity.rc != 0
+
+    - name: Write deploy timestamp to MWAN VM
+      ansible.builtin.copy:
+        content: "{{ ansible_date_time.epoch }}"
+        dest: /var/run/mwan-last-deploy
+        mode: "0644"
+
+    # ============================================================================
+    # WATCHDOG: Deploy auto-rollback monitor
+    # ============================================================================
+
+    - name: Create watchdog config directory on Proxmox
+      delegate_to: vault
+      ansible.builtin.file:
+        path: /etc/mwan-watchdog
+        state: directory
+        mode: "0755"
+
+    - name: Deploy watchdog environment file to Proxmox
+      delegate_to: vault
+      ansible.builtin.template:
+        src: "{{ repo_root }}/proxmox/config/mwan-watchdog.env.j2"
+        dest: /etc/mwan-watchdog/watchdog.env
+        mode: "0644"
+
+    - name: Deploy mwan-watchdog script to Proxmox
+      delegate_to: vault
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/proxmox/scripts/mwan-watchdog.sh"
+        dest: /usr/local/bin/mwan-watchdog.sh
+        mode: "0755"
+
+    - name: Deploy mwan-watchdog service to Proxmox
+      delegate_to: vault
+      ansible.builtin.template:
+        src: "{{ repo_root }}/proxmox/services/mwan-watchdog.service.j2"
+        dest: /etc/systemd/system/mwan-watchdog.service
+        mode: "0644"
+
+    - name: Enable mwan-watchdog service on Proxmox
+      delegate_to: vault
+      ansible.builtin.systemd:
+        name: mwan-watchdog
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    # ============================================================================
+    # DEPLOY: MWAN configuration
+    # ============================================================================
 
     - name: Install and configure cloudflared
       ansible.builtin.include_tasks: tasks/install-cloudflared.yml
@@ -118,29 +220,13 @@
       ansible.builtin.file:
         path: /etc/mwan
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy MWAN runtime environment file
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/mwan.env.j2"
         dest: /etc/mwan/mwan.env
-        mode: '0644'
-
-    - name: Get actual VMID from Proxmox
-      delegate_to: vault
-      ansible.builtin.shell:
-        cmd: |
-          set -o pipefail
-          qm list | awk '$2 == "{{ inventory_hostname }}" {print $1}'
-        executable: /bin/bash
-      register: vmid_lookup
-      changed_when: false
-      failed_when: vmid_lookup.stdout | length == 0
-
-    - name: Set actual VMID
-      ansible.builtin.set_fact:
-        actual_vmid: "{{ vmid_lookup.stdout | trim }}"
-        mwan_vmid: "{{ vmid_lookup.stdout | trim }}"  # Override group_vars
+        mode: "0644"
 
     - name: Get VM network config from Proxmox
       delegate_to: vault
@@ -206,7 +292,7 @@
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
       loop:
         - "{{ mwan_config_dir }}"
         - /etc/sysctl.d
@@ -221,7 +307,7 @@
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/wpa_supplicant.conf.j2"
         dest: /etc/wpa_supplicant/wpa_supplicant.conf
-        mode: '0600'
+        mode: "0600"
 
     - name: Check for AT&T certificates on Ansible host
       delegate_to: localhost
@@ -237,7 +323,7 @@
       ansible.builtin.copy:
         src: "{{ mwan_att_certs_path }}/{{ item.item }}"
         dest: "/etc/wpa_supplicant/{{ item.item }}"
-        mode: '0600'
+        mode: "0600"
         owner: root
         group: root
       when: item.stat.exists
@@ -269,14 +355,14 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/config/openssl.cnf"
         dest: /etc/wpa_supplicant/openssl.cnf
-        mode: '0644'
+        mode: "0644"
       notify: Restart wpa_supplicant
 
     - name: Deploy wpa_supplicant systemd service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/wpa_supplicant.service"
         dest: /etc/systemd/system/wpa_supplicant-mwan.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Enable wpa_supplicant service
       ansible.builtin.systemd:
@@ -288,7 +374,7 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/wpa-cli-action.service"
         dest: /etc/systemd/system/wpa-cli-action.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Enable wpa-cli-action service
       ansible.builtin.systemd:
@@ -300,19 +386,19 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/scripts/wpa-action.sh"
         dest: /usr/local/bin/wpa-action.sh
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy wpa-authenticated path unit
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/paths/wpa-authenticated.path"
         dest: /etc/systemd/system/wpa-authenticated.path
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy wpa-authenticated service unit
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/wpa-authenticated.service"
         dest: /etc/systemd/system/wpa-authenticated.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Enable wpa-authenticated path unit
       ansible.builtin.systemd:
@@ -324,13 +410,13 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/scripts/bringup-att-vlan.sh"
         dest: /usr/local/bin/bringup-att-vlan.sh
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy AT&T VLAN bringup systemd service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/bringup-att-vlan.service"
         dest: /etc/systemd/system/bringup-att-vlan.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Enable AT&T VLAN bringup service
       ansible.builtin.systemd:
@@ -347,18 +433,14 @@
       ansible.builtin.file:
         path: /etc/systemd/network
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Set variables for management interface templates
       ansible.builtin.set_fact:
         vm_mgmt_iface: "{{ mwan_mgmt_iface }}"
-        vm_mgmt_ipv4_prefix: "24"
         vm_mgmt_ipv6_prefix: "64"
-        vm_mgmt_gateway_ipv4: "10.250.0.1"
-        vm_mgmt_gateway_ipv6: "3d06:bad:b01::1"
         vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
-        vm_mgmt_ipv4: "10.250.0.{{ actual_vmid }}"
         vm_mgmt_ipv6: "3d06:bad:b01::{{ actual_vmid | string | trim }}"
         hostname: "{{ mwan_hostname }}"
 
@@ -366,7 +448,7 @@
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/vm/{{ item }}.j2"
         dest: /etc/systemd/network/{{ item }}
-        mode: '0644'
+        mode: "0644"
       loop:
         - 10-mgmt.link
         - 10-mgmt.network
@@ -375,7 +457,7 @@
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/networkd/{{ item }}.j2"
         dest: /etc/systemd/network/{{ item }}
-        mode: '0644'
+        mode: "0644"
       loop:
         - 20-att.link
         - 20-att.network
@@ -402,13 +484,13 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/hooks/50-update-routes.sh"
         dest: /etc/networkd-dispatcher/routable.d/50-update-routes.sh
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy networkd-dispatcher hook for NPT updates
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/hooks/55-update-npt.sh"
         dest: /etc/networkd-dispatcher/routable.d/55-update-npt.sh
-        mode: '0755'
+        mode: "0755"
 
     - name: Enable networkd-dispatcher
       ansible.builtin.systemd:
@@ -420,25 +502,25 @@
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/sysctl-mwan.conf.j2"
         dest: /etc/sysctl.d/99-mwan.conf
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy quiet console sysctl config
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/config/99-quiet-console.conf"
         dest: /etc/sysctl.d/99-quiet-console.conf
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy routing tables
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/rt_tables.j2"
         dest: /etc/iproute2/rt_tables
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy nftables config
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/nftables.conf.j2"
         dest: /etc/nftables.conf
-        mode: '0644'
+        mode: "0644"
         backup: true
       vars:
         actual_mgmt_iface: "{{ mwan_mgmt_iface }}"
@@ -450,38 +532,38 @@
       ansible.builtin.file:
         path: /etc/systemd/system/nftables.service.d
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy nftables systemd override
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/overrides/nftables.service.d-override.conf"
         dest: /etc/systemd/system/nftables.service.d/override.conf
-        mode: '0644'
+        mode: "0644"
 
     - name: Create systemd override for systemd-networkd
       ansible.builtin.file:
         path: /etc/systemd/system/systemd-networkd.service.d
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy systemd-networkd debug override
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/overrides/systemd-networkd.service.d-override.conf"
         dest: /etc/systemd/system/systemd-networkd.service.d/override.conf
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy templated helper scripts
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/{{ item }}.j2"
         dest: /usr/local/bin/{{ item | basename }}
-        mode: '0755'
+        mode: "0755"
       loop: []
 
     - name: Deploy static helper scripts
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/{{ item }}"
         dest: /usr/local/bin/{{ item | basename }}
-        mode: '0755'
+        mode: "0755"
       loop:
         - scripts/update-routes.sh
         - scripts/health-check.sh
@@ -496,61 +578,61 @@
       ansible.builtin.file:
         path: /usr/local/share/mwan
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy jq helper for `mwan trace-tail`
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/scripts/trace-tail.jq"
         dest: /usr/local/share/mwan/trace-tail.jq
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy mwan debug helper (single entrypoint)
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/scripts/mwan-debug.sh"
         dest: /usr/local/bin/mwan
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy DHCPv6-PD prefix finder helper
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/scripts/find-pd-prefixes.sh"
         dest: /usr/local/bin/find-pd-prefixes.sh
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy pinned destination refresher (nft set)
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/scripts/update-att-pinned-dests.sh"
         dest: /usr/local/bin/update-att-pinned-dests.sh
-        mode: '0755'
+        mode: "0755"
 
     - name: Deploy pinned destination updater service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-update-att-pinned-dests.service"
         dest: /etc/systemd/system/mwan-update-att-pinned-dests.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy pinned destination updater timer
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/timers/mwan-update-att-pinned-dests.timer"
         dest: /etc/systemd/system/mwan-update-att-pinned-dests.timer
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy mwan update-routes oneshot service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-update-routes.service"
         dest: /etc/systemd/system/mwan-update-routes.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy mwan update-npt oneshot service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-update-npt.service"
         dest: /etc/systemd/system/mwan-update-npt.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Deploy mwan boot trace service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-trace-boot.service"
         dest: /etc/systemd/system/mwan-trace-boot.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Enable mwan update-routes oneshot service
       ansible.builtin.systemd:
@@ -562,7 +644,7 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-health.service"
         dest: /etc/systemd/system/mwan-health.service
-        mode: '0644'
+        mode: "0644"
 
     - name: Enable services
       ansible.builtin.systemd:
@@ -597,52 +679,6 @@
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
-
-    - name: Restart systemd-networkd
-      ansible.builtin.systemd:
-        name: systemd-networkd
-        state: restarted
-
-    - name: Rebuild policy routing tables after networkd restart
-      ansible.builtin.systemd:
-        name: mwan-update-routes
-        state: started
-      failed_when: false
-
-    - name: Refresh pinned destination set
-      ansible.builtin.systemd:
-        name: mwan-update-att-pinned-dests
-        state: started
-      failed_when: false
-
-    - name: Wait for internal interface to be created by systemd-networkd
-      ansible.builtin.wait_for:
-        path: /sys/class/net/{{ mwan_internal_iface }}
-        timeout: 60
-      failed_when: false
-      register: internal_iface_wait
-
-    - name: Load nf_conntrack module
-      ansible.builtin.command:
-        cmd: modprobe nf_conntrack
-      failed_when: false
-      changed_when: false
-
-    - name: Apply sysctl configs
-      ansible.builtin.command:
-        cmd: sysctl -p {{ item }}
-      loop:
-        - /etc/sysctl.d/99-mwan.conf
-        - /etc/sysctl.d/99-quiet-console.conf
-      changed_when: false
-      failed_when: false
-      register: sysctl_result
-
-    - name: Reload nftables
-      ansible.builtin.systemd:
-        name: nftables
-        state: reloaded
-      failed_when: false
 
     - name: Reapply IPv6 NPT rules after nftables reload
       ansible.builtin.systemd:
@@ -733,6 +769,31 @@
               state={{ result.status.ActiveState | default('unknown') }},
               sub={{ result.status.SubState | default('unknown') }}
           {% endfor %}
+
+    # ============================================================================
+    # POST-DEPLOY: Schedule reboot for clean state
+    # ============================================================================
+
+    - name: Deploy complete - scheduling reboot
+      ansible.builtin.debug:
+        msg: >-
+          ✓ All configs deployed (traceId={{ mwan_deploy_trace_id }})
+          ✓ Scheduling reboot in 5 seconds to apply changes cleanly
+          ✓ Timestamp preserved: /var/run/mwan-last-deploy
+          ✓ Watchdog will monitor post-reboot and auto-rollback if needed
+
+    - name: Schedule reboot to apply all changes
+      ansible.builtin.command:
+        cmd: shutdown -r +0.08
+      changed_when: true
+      async: 1
+      poll: 0
+
+    - name: Playbook complete
+      ansible.builtin.debug:
+        msg: >-
+          Deploy playbook complete. MWAN VM will reboot in ~5 seconds.
+          Monitor watchdog logs: ssh root@3d06:bad:b01::254 "tail -f /var/log/mwan-watchdog.log"
 
   handlers:
     - name: Restart wpa_supplicant

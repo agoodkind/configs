@@ -11,9 +11,9 @@ alwaysApply: true
 The proxy container (`proxy.home.goodkind.io`) is special and has two SSH entry points:
 
 1. **Port 22 (SSHPiper)**: Public-facing. Routes traffic to _other_ containers based on username.
-    - `ssh user@ssh.home.goodkind.io` -> routes to `user` on backend container.
+   - `ssh user@ssh.home.goodkind.io` -> routes to `user` on backend container.
 2. **Port 2222 (OpenSSH)**: Admin-facing. Direct access to the proxy container itself.
-    - `ssh -p 2222 root@3d06:bad:b01::110` -> routes to `root` on the proxy container.
+   - `ssh -p 2222 root@3d06:bad:b01::110` -> routes to `root` on the proxy container.
 
 ### Proxy Shortcut
 
@@ -47,7 +47,6 @@ When sshpiper is unavailable or for troubleshooting, use IPs directly (prefer IP
 
 ```bash
 ssh root@<ipv6-address>    # ✅ Preferred (e.g. ssh root@3d06:bad:b01::107)
-ssh root@10.250.0.107      # ⚠️ Fallback only
 ```
 
 ### Finding Container IPs
@@ -56,7 +55,7 @@ If the IP is unknown, look it up via Proxmox:
 
 ```bash
 # 1. SSH into Proxmox host
-ssh root@10.250.0.254
+ssh root@3d06:bad:b01::254
 
 # 2. Find the container/VM by name
 pct list | grep -i <name>    # for containers
@@ -76,18 +75,18 @@ If direct IP access fails, use jump hosts:
 
 ```bash
 # Via OPNsense
-ssh agoodkind@10.250.0.1
+ssh agoodkind@3d06:bad:b01::1
 # then from there:
-ssh root@10.250.0.254    # to Proxmox
+ssh root@3d06:bad:b01::254    # to Proxmox
 ssh root@<container-ip>   # to target container
 ```
 
 ## Known Infrastructure IPs
 
 - **Proxy VM (sshpiper)**: `3d06:bad:b01::110` - sshd on port 2222, sshpiper on port 22
-- **OPNsense**: `10.250.0.1` - SSH user: `agoodkind` (use `sudo` for privileged tasks)
-- **Proxmox host**: `10.250.0.254` - SSH user: `root`
-- **Ansible container**: `10.250.0.107` (CT 107) - has `PROXMOX_API_TOKEN` set
+- **OPNsense**: `3d06:bad:b01::1` - SSH user: `agoodkind` (use `sudo` for privileged tasks)
+- **Proxmox host**: `3d06:bad:b01::254` - SSH user: `root`
+- **Ansible container**: `3d06:bad:b01::107` (CT 107) - has `PROXMOX_API_TOKEN` set
 
 ## Direct Access to Proxy VM
 
