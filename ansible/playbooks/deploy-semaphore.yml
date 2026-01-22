@@ -2,7 +2,7 @@
 # Deploy Semaphore UI on the ansible container
 
 - name: Setup Semaphore container
-  ansible.builtin.import_playbook: setup-service-container.yml
+  ansible.builtin.import_playbook: setup-service-ct.yml
   vars:
     container_group: ansible_servers
     group_vars_file: >-
@@ -97,7 +97,6 @@
     - name: Download and install Semaphore
       when: update_needed | bool
       block:
-
         - name: Set download base URL
           ansible.builtin.set_fact:
             semaphore_base_url: >-
@@ -120,7 +119,7 @@
           ansible.builtin.get_url:
             url: "{{ semaphore_download_url }}"
             dest: /tmp/semaphore.tar.gz
-            mode: '0644'
+            mode: "0644"
 
         - name: Cleanup any existing extracted files
           ansible.builtin.file:
@@ -131,7 +130,7 @@
           ansible.builtin.file:
             path: /tmp/semaphore_extract
             state: directory
-            mode: '0755'
+            mode: "0755"
 
         - name: Extract Semaphore binary
           ansible.builtin.unarchive:
@@ -171,7 +170,7 @@
             dest: "{{ semaphore_install_dir }}/semaphore"
             owner: root
             group: root
-            mode: '0755'
+            mode: "0755"
             remote_src: true
 
         - name: Cleanup download files

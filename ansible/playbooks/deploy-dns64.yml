@@ -1,6 +1,6 @@
 ---
 - name: Setup DNS64 container
-  ansible.builtin.import_playbook: setup-service-container.yml
+  ansible.builtin.import_playbook: setup-service-ct.yml
   vars:
     container_group: dns64_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/dns64_servers.yml"
@@ -35,7 +35,7 @@
         dest: /etc/bind/named.conf.options
         owner: root
         group: bind
-        mode: '0644'
+        mode: "0644"
       notify: Restart Bind9
 
     - name: Ensure Bind9 is enabled and started
