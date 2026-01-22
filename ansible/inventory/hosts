@@ -8,7 +8,7 @@ localhost ansible_connection=local
 ansible.home.goodkind.io
 
 [proxmox_nodes]
-vault ansible_host=3d06:bad:b01::fe ansible_user=root
+vault ansible_host=3d06:bad:b01::254 ansible_user=root
 
 [proxy_servers]
 proxy.home.goodkind.io ansible_port=2222

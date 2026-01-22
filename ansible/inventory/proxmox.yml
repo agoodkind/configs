@@ -1,5 +1,5 @@
 plugin: community.proxmox.proxmox
-url: https://[3d06:bad:b01::fe]:8006
+url: https://[3d06:bad:b01::254]:8006
 user: ansible@pam
 token_id: ansible-token
 token_secret: >-

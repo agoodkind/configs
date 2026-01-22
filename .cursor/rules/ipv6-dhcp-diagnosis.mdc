@@ -98,7 +98,7 @@ ssh root@<host> "ip link show eth0 | grep -i link/ether"
 
 ```bash
 # List all leases for a MAC address
-ssh agoodkind@10.250.0.1 "sudo cat /var/db/kea/kea-leases6.csv | grep -i '<mac>'"
+ssh agoodkind@3d06:bad:b01::1 "sudo cat /var/db/kea/kea-leases6.csv | grep -i '<mac>'"
 
 # Check via KEA API (if available)
 # Use rake tasks: rake lease:get6_by_ip[<ip>] or rake lease:cleanup6_by_mac[<mac>]
@@ -159,7 +159,7 @@ ssh root@<host> "networkctl renew eth0"
 ssh root@<host> "ip -6 addr show eth0 | grep 'scope global'"
 
 # Check KEA lease database for correct IP
-ssh agoodkind@10.250.0.1 "sudo cat /var/db/kea/kea-leases6.csv | grep '<expected-ip>'"
+ssh agoodkind@3d06:bad:b01::1 "sudo cat /var/db/kea/kea-leases6.csv | grep '<expected-ip>'"
 ```
 
 ## Common Issues and Fixes
