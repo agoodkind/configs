@@ -98,3 +98,4 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ...
 
 - Do not add new docs unless asked.
 - When updating existing docs, avoid giant pasted code blocks; prefer short excerpts and direct pointers to files.
+- When we encounter and fix issues, document them in `MWAN_TROUBLESHOOTING.md` using the established format.

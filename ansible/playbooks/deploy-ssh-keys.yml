@@ -40,7 +40,7 @@
       ansible.builtin.file:
         path: "{{ work_tmp_dir }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Use guest list with proxmox type
       ansible.builtin.set_fact:
@@ -53,7 +53,6 @@
           Expected proxmox_vmtype to be 'lxc' or 'qemu'.
       loop: "{{ guests_with_type }}"
       when: item.type | default('') | trim | length == 0
-
 
     - name: Look for proxy container in full inventory
       ansible.builtin.set_fact:
@@ -134,7 +133,7 @@
       ansible.builtin.copy:
         content: "{{ sshpiper_upstream_pubkey }}\n"
         dest: "{{ work_tmp_dir }}/sshpiper_upstream_id_ed25519.pub"
-        mode: '0644'
+        mode: "0644"
       delegate_to: localhost
       when: sshpiper_upstream_pubkey | length > 0
 
@@ -170,7 +169,7 @@
           # Managed by Ansible - Restricted by SSHPiper
           from="{{ proxy_allowed_ipv6_list | join(',') }}" {{ sshpiper_upstream_pubkey }}
         dest: "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
-        mode: '0644'
+        mode: "0644"
       delegate_to: localhost
       when: sshpiper_upstream_pubkey | length > 0
 
@@ -209,7 +208,7 @@
       ansible.builtin.copy:
         src: "{{ work_tmp_dir }}/authorized_keys.bundle"
         dest: "/tmp/authorized_keys_deploy.bundle"
-        mode: '0644'
+        mode: "0644"
       delegate_to: "{{ item }}"
       loop: >-
         {{ (guests_with_type | default([]))
@@ -218,7 +217,7 @@
     - name: Write sshd disable password auth snippet to Proxmox hosts
       ansible.builtin.copy:
         dest: /tmp/sshd-disable-password-auth.conf
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible
           PasswordAuthentication no
@@ -232,7 +231,7 @@
     - name: Write sshd global authorized keys snippet to Proxmox hosts
       ansible.builtin.copy:
         dest: /tmp/sshd-global-authorized-keys.conf
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible
           AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys
@@ -244,7 +243,7 @@
     - name: Write sshd tmpfiles snippet to Proxmox hosts
       ansible.builtin.copy:
         dest: /tmp/sshd-tmpfiles.conf
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible
           d /run/sshd 0755 root root -

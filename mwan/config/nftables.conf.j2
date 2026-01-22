@@ -146,6 +146,7 @@ table inet mangle {
     set att_pinned_v4 {
         type ipv4_addr;
         flags interval;
+        auto-merge;
         elements = {
 {% for cidr in mwan_att_pinned_v4_seed_cidrs | default([]) %}
             {{ cidr }}{% if not loop.last %},{% endif %}
@@ -156,6 +157,7 @@ table inet mangle {
     set att_pinned_v6 {
         type ipv6_addr;
         flags interval;
+        auto-merge;
         elements = {
 {% for cidr in mwan_att_pinned_v6_seed_cidrs | default([]) %}
             {{ cidr }}{% if not loop.last %},{% endif %}

@@ -502,7 +502,7 @@
         dest: /etc/sysctl.d/99-mwan.conf
         mode: "0644"
 
-    - name: Deploy quiet console sysctl config
+    - name: Deploy quiet console sysctl config to prevent nftables logging noise
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/config/99-quiet-console.conf"
         dest: /etc/sysctl.d/99-quiet-console.conf
@@ -805,8 +805,8 @@
           ✓ Watchdog will monitor post-reboot and auto-rollback if needed
 
     - name: Schedule reboot to apply all changes
-      ansible.builtin.command:
-        cmd: shutdown -r +0.08
+      ansible.builtin.shell:
+        cmd: nohup sh -c 'sleep 5 && reboot' &>/dev/null &
       changed_when: true
       async: 1
       poll: 0
