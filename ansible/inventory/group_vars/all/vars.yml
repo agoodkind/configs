@@ -26,3 +26,27 @@ smtp_port: "{{ lookup('env', 'SMTP2GO_SMTP_PORT', default='587') }}"
 # ----------------------------------------------------------------------------
 cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
 cloudflare_dns_update_enabled: true
+
+# ----------------------------------------------------------------------------
+# Consul service discovery
+# ----------------------------------------------------------------------------
+consul_server_address: "consul.home.goodkind.io"
+consul_datacenter: home
+consul_domain: int
+consul_agent_enabled: true
+
+# Static IP fallbacks (used when Consul is unavailable)
+# Derived from service_mapping (single source of truth)
+consul_static_ips: >-
+  {{
+    dict(
+      service_mapping | dict2items
+      | selectattr('value.ipv6', 'defined')
+      | map(attribute='key')
+      | zip(
+          service_mapping | dict2items
+          | selectattr('value.ipv6', 'defined')
+          | map(attribute='value.ipv6')
+        )
+    )
+  }}

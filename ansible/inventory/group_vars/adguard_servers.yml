@@ -1,12 +1,14 @@
 ---
-# Container hostname
-adguard_hostname: adguard.home.goodkind.io
+# AdGuard Home Container Configuration
+# All service_* variables derive from service_mapping (single source of truth)
+
+# Service identity
+service_hostname: "{{ service_mapping.adguard.hostname }}"
 
 # Static addressing (pinned; independent of VMID)
-ipv6_only: true
-adguard_ipv6: "3d06:bad:b01::53/64"
-
-adguard_mac_address: "bc:24:11:ee:f9:50"
+service_ipv6_only: true
+service_ipv6_address: "{{ service_mapping.adguard.ipv6 }}/64"
+service_mac_address: "bc:24:11:ee:f9:50"
 
 # AdGuard Home Configuration Variables
 # Override these in your own environment or use ansible-vault for sensitive values
@@ -26,8 +28,8 @@ adguard_dns_bind_hosts:
 
 # Upstream DNS servers (non-default)
 adguard_upstream_dns:
-  - "quic://adguard-home-7d698e.dns.nextdns.io"
-  - "tls://adguard-home-7d698e.dns.nextdns.io"
+  - "quic://7d698e.dns.nextdns.io"
+  - "tls://7d698e.dns.nextdns.io"
 
 # Bootstrap DNS servers (non-default)
 adguard_bootstrap_dns:
@@ -44,8 +46,8 @@ adguard_upstream_mode: parallel
 adguard_enable_dnssec: true
 adguard_edns_client_subnet: true
 
-# DNS64 (non-default: enabled for IPv6-only client access to IPv4 services)
-adguard_use_dns64: true
+# DNS64 (disabled - using dedicated dns64 container instead)
+adguard_use_dns64: false
 adguard_dns64_prefixes:
   - "64:ff9b::/96"
 
@@ -59,8 +61,25 @@ adguard_clients_rdns: false
 # Statistics interval (non-default: 2160h instead of 24h)
 adguard_stats_interval: 2160h
 
+# Query log interval (non-default: 2160h instead of 24h)
+adguard_querylog_interval: 2160h
+
+# Cache configuration (non-default values)
+adguard_cache_enabled: true
+adguard_cache_size: 8194304
+adguard_cache_ttl_min: 6000
+adguard_cache_optimistic: true
+adguard_cache_optimistic_answer_ttl: 30s
+adguard_cache_optimistic_max_age: 12h
+
 # DNS rewrites (domain overrides)
-adguard_rewrites: []
+adguard_rewrites:
+  - domain: adguard.home.goodkind.io
+    answer: 10.250.0.53
+    enabled: false
+  - domain: adguard.home.goodkind.io
+    answer: 3d06:bad:b01::53
+    enabled: true
 
 # Filters (non-default list)
 adguard_filters:
@@ -231,7 +250,7 @@ adguard_user_rules:
 
 # TLS configuration
 adguard_tls_enabled: true
-adguard_tls_server_name: "{{ adguard_hostname }}"
+adguard_tls_server_name: "{{ service_hostname }}"
 adguard_tls_force_https: true
 adguard_tls_port_https: 443
 adguard_tls_port_dns_over_tls: 853

@@ -1,12 +1,14 @@
 ---
-# Container hostname
-ansible_hostname: ansible.home.goodkind.io
+# Ansible/Semaphore Container Configuration
+# All service_* variables derive from service_mapping (single source of truth)
+
+# Service identity
+service_hostname: "{{ service_mapping.ansible.hostname }}"
 
 # Static addressing (pinned; independent of VMID)
-ipv6_only: true
-ansible_ipv6: "3d06:bad:b01::107/64"
-
-ansible_mac_address: "BC:24:11:AA:BB:07"
+service_ipv6_only: true
+service_ipv6_address: "{{ service_mapping.ansible.ipv6 }}/64"
+service_mac_address: "BC:24:11:AA:BB:07"
 
 # Semaphore Configuration Variables
 semaphore_version: "latest"
