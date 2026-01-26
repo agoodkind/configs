@@ -1,0 +1,45 @@
+---
+# Consul Server Container Configuration
+# All service_* variables derive from service_mapping (single source of truth)
+
+# Service identity
+service_hostname: "{{ service_mapping.consul.hostname }}"
+
+# Static addressing (pinned; independent of VMID)
+service_ipv6_only: true
+service_ipv6_address: "{{ service_mapping.consul.ipv6 }}/64"
+service_mac_address: "bc:24:11:ee:85:00"
+
+# Consul Server Configuration
+# consul_datacenter and consul_domain inherited from all/vars.yml
+consul_data_dir: /var/lib/consul
+consul_config_dir: /etc/consul.d
+
+# Server mode
+consul_server: true
+consul_bootstrap_expect: 1
+
+# UI enabled
+consul_ui_enabled: true
+
+# DNS interface (port 8600)
+consul_dns_port: 8600
+consul_dns_enable_truncate: true
+consul_dns_only_passing: true
+
+# HTTP API (port 8500)
+consul_http_port: 8500
+
+# ACLs disabled initially for simplicity
+consul_acl_enabled: false
+
+# Consul user and group
+consul_user: consul
+consul_group: consul
+
+# Binary version
+consul_version: "1.20.1"
+consul_arch: "arm64"
+
+# Container login directory (prep-guests.yml)
+login_dir: /etc/consul.d

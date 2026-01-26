@@ -1,0 +1,8 @@
+{
+  "service": {
+    "name": "{{ consul_service_name }}",
+    "tags": {{ consul_service_tags | to_json }},
+    "port": {{ consul_service_port }},
+    "checks": {{ consul_service_checks | to_json }}
+  }
+}

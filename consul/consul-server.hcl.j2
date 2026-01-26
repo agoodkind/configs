@@ -1,0 +1,38 @@
+datacenter = "{{ consul_datacenter }}"
+domain = "{{ consul_domain }}"
+data_dir = "{{ consul_data_dir }}"
+
+# Bind to primary IPv6 address (derived from service_mapping)
+bind_addr = "{{ service_ipv6_address | ansible.utils.ipaddr('address') }}"
+
+# Listen on all interfaces for client connections
+client_addr = "0.0.0.0 [::]"
+
+# Server mode
+server = {{ consul_server | lower }}
+bootstrap_expect = {{ consul_bootstrap_expect }}
+
+# UI configuration
+ui_config {
+  enabled = {{ consul_ui_enabled | lower }}
+}
+
+# DNS interface
+dns_config {
+  enable_truncate = {{ consul_dns_enable_truncate | lower }}
+  only_passing = {{ consul_dns_only_passing | lower }}
+}
+
+# ACL configuration
+acl {
+  enabled = {{ consul_acl_enabled | lower }}
+}
+
+# Performance tuning
+performance {
+  raft_multiplier = 1
+}
+
+# Logging
+log_level = "INFO"
+enable_syslog = false

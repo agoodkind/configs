@@ -1,0 +1,97 @@
+---
+- name: Setup Consul container
+  ansible.builtin.import_playbook: setup-service-ct.yml
+  vars:
+    container_group: consul_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/consul_servers.yml"
+    disk_size: "4"
+    memory: "512"
+    cores: "1"
+
+- name: Deploy and Configure Consul Server
+  hosts: consul_servers
+  become: true
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Create Consul user
+      ansible.builtin.user:
+        name: "{{ consul_user }}"
+        system: true
+        shell: /bin/false
+        home: "{{ consul_data_dir }}"
+        create_home: false
+
+    - name: Create Consul directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ consul_user }}"
+        group: "{{ consul_group }}"
+        mode: "0750"
+      loop:
+        - "{{ consul_config_dir }}"
+        - "{{ consul_data_dir }}"
+
+    - name: Download Consul binary
+      ansible.builtin.get_url:
+        url: >-
+          https://releases.hashicorp.com/consul/{{
+          consul_version }}/consul_{{ consul_version }}_linux_{{
+          consul_arch }}.zip
+        dest: /tmp/consul.zip
+        mode: "0644"
+
+    - name: Install unzip
+      ansible.builtin.apt:
+        name: unzip
+        state: present
+        update_cache: true
+
+    - name: Extract Consul binary
+      ansible.builtin.unarchive:
+        src: /tmp/consul.zip
+        dest: /usr/local/bin
+        remote_src: true
+        mode: "0755"
+        owner: root
+        group: root
+
+    - name: Deploy Consul server configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/consul/consul-server.hcl.j2"
+        dest: "{{ consul_config_dir }}/consul.hcl"
+        owner: "{{ consul_user }}"
+        group: "{{ consul_group }}"
+        mode: "0640"
+      notify: Reload Consul
+
+    - name: Deploy Consul systemd service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/consul/consul.service"
+        dest: /etc/systemd/system/consul.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Consul
+
+    - name: Enable and start Consul service
+      ansible.builtin.systemd:
+        name: consul
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Reload Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: reloaded
+
+    - name: Restart Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: restarted
+        daemon_reload: true
