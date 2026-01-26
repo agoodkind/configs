@@ -39,3 +39,15 @@ ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/de
 
 - Must run from `ansible/` directory (where `ansible.cfg` lives)
 - Vault password file: `~/.config/ansible/vault.pass`
+- Stop on first error to discuss: add `--step` or check output before continuing
+
+## Debugging Failures
+
+When a playbook fails, investigate the **root cause** before adding workarounds:
+
+1. **Variable missing?** Trace where it should come from (inventory, set_fact, hostvars)
+2. **Wrong variable name?** Check dynamic inventory (e.g., `proxmox_type` vs `proxmox_vmtype`)
+3. **Validation failing?** Check if the validation logic itself is broken (missing `when` condition)
+4. **Task skipped unexpectedly?** Check if a `when` condition is too restrictive
+
+Do NOT add `| default()` or `when: var is defined` without first understanding why the variable is missing.

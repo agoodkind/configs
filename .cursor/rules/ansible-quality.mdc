@@ -6,6 +6,56 @@ alwaysApply: true
 
 # Ansible Quality Checks
 
+## Debugging: Fix Root Causes, Not Symptoms
+
+When a variable is missing or a validation fails, investigate **why** before adding defensive code.
+
+### Anti-pattern: Bandaid Defaults and Defensive `when`
+
+- **Problem**: Adding `| default('')` or `when: var is defined` without understanding why the variable is missing masks the real issue.
+- **Principle**: `when` is for **logic branches** (deciding between actions), not defensive programming.
+- **Symptoms**:
+  - Validation tasks failing for values that should exist
+  - Variables unexpectedly empty despite being "set"
+  - Playbooks silently skipping tasks that should run
+- **Root Cause Investigation**:
+  1. **Trace the variable source**: Is it from inventory, `set_fact`, `register`, or hostvars?
+  2. **Check variable naming**: Proxmox plugin provides `proxmox_type`, not `proxmox_vmtype`. Dynamic inventories have specific variable names.
+  3. **Check play/task ordering**: Variables set in one play aren't automatically available in another without `hostvars`.
+  4. **Check inventory composition**: Does `proxmox.yml` compose the variable you expect? (e.g., `ansible_proxmox_vmid: proxmox_vmid`)
+- **Example**:
+
+  ```yaml
+  # ❌ BAD - bandaid that hides the real problem
+  type: "{{ proxmox_vmtype | default('lxc') }}"
+
+  # ❌ BAD - defensive when that masks missing data
+  - name: Configure service
+    ansible.builtin.template:
+      src: config.j2
+      dest: /etc/service/config
+    when: service_config is defined  # Why would it not be defined?
+
+  # ✅ GOOD - when for actual logic branches
+  - name: Configure IPv6
+    ansible.builtin.template:
+      src: ipv6.j2
+      dest: /etc/network/ipv6
+    when: enable_ipv6 | bool  # Intentional feature flag
+
+  # ✅ GOOD - fix at the source
+  # If proxmox_vmtype is missing, add it to proxmox.yml composition:
+  #   compose:
+  #     proxmox_vmtype: proxmox_type
+  ```
+
+- **Checklist before adding `| default()` or `is defined`**:
+  1. Where is this variable supposed to come from?
+  2. Is it a naming mismatch (e.g., `proxmox_type` vs `proxmox_vmtype`)?
+  3. Is it missing from inventory composition?
+  4. Is it set in a different play that hasn't run yet?
+  5. Only add defensive defaults after confirming the source is correct
+
 ## Line Length Limits
 
 - **Prefer**: Stay below 80 columns for readability
@@ -166,7 +216,7 @@ alwaysApply: true
   # ❌ BAD - variables set concurrently
   - set_fact:
       var1: "value"
-      var2: "{{ var1 }}-suffix"  # var1 not available yet
+      var2: "{{ var1 }}-suffix" # var1 not available yet
 
   # ❌ BAD - derived facts in the same task
   - set_fact:
@@ -221,6 +271,7 @@ alwaysApply: true
 - **Problem**: Ansible `uri` module returns multi-line strings for list-like data (e.g., Cloudflare IP ranges), which breaks YAML if templated directly.
 - **Fix**: Explicitly split the string into a list.
 - **Example**:
+
   ```yaml
   # ❌ BAD - renders as one long invalid string
   trusted_ips: "{{ response.content.split('\n') }}"
@@ -255,3 +306,4 @@ Before committing Ansible changes, verify:
 7. ✅ No `.first` filter used without empty list checks
 8. ✅ No KEA reservations with mutually exclusive identifiers
 9. ✅ No `blockinfile` creating duplicate systemd-networkd sections (use `lineinfile` instead)
+10. ✅ No `| default()` added without first investigating why the variable is missing
