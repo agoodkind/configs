@@ -1,0 +1,10 @@
+---
+# Dynamic inventory plugin that reads service_mapping from group_vars
+# and creates {service}_servers groups with proper IPv6 addresses.
+#
+# This eliminates the need for manual group membership and allows targeting
+# groups like `proxy_servers` without relying on Proxmox inventory discovery.
+
+plugin: service_mapping
+mapping_file: group_vars/all/service_mapping.yml
+create_all_services_group: true

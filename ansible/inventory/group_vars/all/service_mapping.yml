@@ -1,0 +1,60 @@
+---
+# Single source of truth for service hostnames and IPv6 addresses
+# All services use <service>.home.goodkind.io pattern (or alternate domain)
+#
+# Usage:
+#   - group_vars: service_ipv6_address: "{{ service_mapping.<service>.ipv6 }}/64"
+#   - templates: {{ service_mapping.<service>.hostname }}
+#   - SSHPiper: iterates over service_mapping for routing
+
+service_mapping:
+  # LXC Containers
+  adguard:
+    hostname: adguard.home.goodkind.io
+    ipv6: "3d06:bad:b01::53"
+  ansible:
+    hostname: ansible.home.goodkind.io
+    ipv6: "3d06:bad:b01::107"
+  consul:
+    hostname: consul.home.goodkind.io
+    ipv6: "3d06:bad:b01::106"
+  dns64:
+    hostname: dns64.home.goodkind.io
+    ipv6: "3d06:bad:b01::64"
+  grommunio:
+    hostname: grommunio.home.goodkind.io
+    ipv6: "3d06:bad:b01::104"
+  mwan:
+    hostname: mwan.home.goodkind.io
+    ipv6: "3d06:bad:b01::113"
+  nanomdm:
+    hostname: mdm.home.goodkind.io
+    ipv6: "3d06:bad:b01::103"
+    ipv4: "10.250.0.103"
+  proxy:
+    hostname: proxy.home.goodkind.io
+    ipv6: "3d06:bad:b01::110"
+    ipv4: "10.250.0.110"
+
+  # Static Hosts (different subnet or external)
+  unifi:
+    hostname: unifi.home.goodkind.io
+    ipv6: "3d06:bad:b01::102"
+    ipv4: "10.250.0.102"
+  mini:
+    hostname: mini.home.goodkind.io
+    ipv6: "3d06:bad:b01:1::2"
+  nas:
+    hostname: nas.home.goodkind.io
+    ipv6: "3d06:bad:b01:1::3"
+  suburban:
+    hostname: hypervisor.suburban.goodkind.io
+    ipv6: "3d06:bad:b01::114"
+
+  # Infrastructure
+  vault:
+    hostname: vault.home.goodkind.io
+    ipv6: "3d06:bad:b01::254"
+  router:
+    hostname: router.home.goodkind.io
+    ipv6: "3d06:bad:b01::1"
