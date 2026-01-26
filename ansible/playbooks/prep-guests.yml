@@ -1,95 +1,19 @@
 ---
-- name: Ensure targeted CT/VM is running
-  hosts: localhost
-  gather_facts: false
-
-  vars:
-    selected_hosts: >-
-      {{
-        groups[target_hosts]
-        if target_hosts in groups
-        else [target_hosts]
-      }}
-
-  tasks:
-    - name: Validate target_hosts is provided
-      ansible.builtin.assert:
-        that:
-          - target_hosts is defined
-          - (target_hosts | trim) | length > 0
-        fail_msg: "target_hosts must be provided (group name or hostname)"
-
-    - name: Build Proxmox start target list
-      ansible.builtin.set_fact:
-        guest_start_targets: >-
-          {{
-            (guest_start_targets | default([])) + [
-              {
-                'name': item,
-                'proxmox_host': (hostvars[item].ansible_proxmox_host | default('') | trim),
-                'vmid': (hostvars[item].ansible_proxmox_vmid | default('') | string | trim)
-              }
-            ]
-          }}
-      loop: "{{ selected_hosts }}"
-      loop_control:
-        label: "{{ item }}"
-      when:
-        - item in hostvars
-        - (hostvars[item].ansible_proxmox_host | default('') | trim) | length > 0
-        - (hostvars[item].ansible_proxmox_vmid | default('') | string | trim) | length > 0
-
-    - name: Ensure LXC guest is running on Proxmox via API
-      loop: "{{ guest_start_targets | default([]) }}"
-      loop_control:
-        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
-      ansible.builtin.uri:
-        url: >-
-          https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/{{ item.proxmox_host -}}/lxc/{{-
-          item.vmid }}/status/start
-        method: POST
-        headers:
-          Authorization: >-
-            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
-            proxmox_token_secret }}
-        validate_certs: false
-        return_content: true
-        # 404: not an LXC on this node/vmid
-        # 500: already running / not startable
-        status_code: [200, 401, 403, 404, 500]
-      delegate_to: localhost
-      register: guest_start_lxc
-      changed_when: false
-      failed_when: false
-
-    - name: Ensure QEMU guest is running on Proxmox via API
-      loop: "{{ guest_start_targets | default([]) }}"
-      loop_control:
-        label: "{{ item.name }} ({{ item.vmid }} on {{ item.proxmox_host }})"
-      ansible.builtin.uri:
-        url: >-
-          https://[{{ proxmox_api_host }}]:8006/api2/json/nodes/{{ item.proxmox_host -}}/qemu/{{-
-          item.vmid }}/status/start
-        method: POST
-        headers:
-          Authorization: >-
-            PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_token_id }}={{-
-            proxmox_token_secret }}
-        validate_certs: false
-        return_content: true
-        # 404: not a VM on this node/vmid
-        # 500: already running / not startable
-        status_code: [200, 401, 403, 404, 500]
-      delegate_to: localhost
-      register: guest_start_qemu
-      changed_when: false
-      failed_when: false
+# Prepare CT/VM guest for use (SSH-based configuration)
+#
+# Required vars (provided via import_playbook):
+#   target_hosts: inventory hostname or group to configure
+#
+# Example:
+#   - ansible.builtin.import_playbook: prep-guests.yml
+#     vars:
+#       target_hosts: my_servers
 
 - name: Deploy SSH keys to CT/VM guests
   ansible.builtin.import_playbook: deploy-ssh-keys.yml
 
 - name: Prepare CT/VM guests
-  hosts: "{{ target_hosts }}"
+  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
   gather_facts: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
