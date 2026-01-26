@@ -142,6 +142,19 @@ send_email_notification() {
     fi
 }
 
+is_wan_excluded() {
+    local wan="$1"
+    local exclude_list="${MWAN_HEALTH_EXCLUDE_WANS:-}"
+
+    # Check if WAN is in the space-separated exclusion list
+    for excluded in $exclude_list; do
+        if [[ "$wan" == "$excluded" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 get_health() {
     local wan="$1"
     grep "^${wan}:" "$STATE_FILE" 2>/dev/null | cut -d: -f2 || echo "unknown"
@@ -305,9 +318,12 @@ handle_wan_failure() {
         # Update routing to remove failed WAN
         /usr/local/bin/update-routes.sh
 
-        send_email_notification \
-          "MWAN: ${wan_name} UNHEALTHY" \
-          "WAN ${wan_name} became UNHEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
+        # Skip email for excluded WANs (e.g. lossy links like monkeybrains)
+        if ! is_wan_excluded "$wan_name"; then
+            send_email_notification \
+              "MWAN: ${wan_name} UNHEALTHY" \
+              "WAN ${wan_name} became UNHEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
+        fi
     fi
 }
 
@@ -325,9 +341,12 @@ handle_wan_recovery() {
         # Update routing to add recovered WAN
         /usr/local/bin/update-routes.sh
 
-        send_email_notification \
-          "MWAN: ${wan_name} HEALTHY" \
-          "WAN ${wan_name} became HEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
+        # Skip email for excluded WANs (e.g. lossy links like monkeybrains)
+        if ! is_wan_excluded "$wan_name"; then
+            send_email_notification \
+              "MWAN: ${wan_name} HEALTHY" \
+              "WAN ${wan_name} became HEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
+        fi
     fi
 }
 

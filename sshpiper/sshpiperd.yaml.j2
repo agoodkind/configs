@@ -1,21 +1,15 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/tg123/sshpiper/master/plugin/yaml/schema.json
 version: "1.0"
 pipes:
-{% set proxmox_lxc = groups['proxmox_all_lxc'] | default([]) %}
-{% set proxmox_qemu = groups['proxmox_all_qemu'] | default([]) %}
-{% set static_hosts = groups['sshpiper_static_hosts'] | default([]) %}
-{% set all_hosts = proxmox_lxc + proxmox_qemu + static_hosts %}
-{% for host in all_hosts %}
-{% set short_name = host.split('.')[0] %}
-{% set target_ip = hostvars[host].ansible_host_v6 | default(hostvars[host].ansible_host) | default('') %}
-{% if (short_name != 'proxy') and (target_ip | length > 0) %}
-  # Regex route for {{ short_name }}: user@{{ short_name }} -> user@{{ target_ip }}
+{% for service_name, service_info in service_mapping.items() %}
+{% if service_name != 'proxy' and service_info.ipv6 is defined %}
+  # Route for {{ service_name }}: user@{{ service_name }} -> user@{{ service_info.ipv6 }}
   - from:
-      - username: "^(.+)@{{ short_name | regex_escape }}$"
+      - username: "^(.+)@{{ service_name | regex_escape }}$"
         username_regex_match: true
         authorized_keys: /etc/sshpiper/authorized_keys
     to:
-      host: "{{ '[' + target_ip + ']' if ':' in target_ip else target_ip }}:22"
+      host: "[{{ service_info.ipv6 }}]:22"
       username: "$1"
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
@@ -28,16 +22,6 @@ pipes:
         authorized_keys: /etc/sshpiper/authorized_keys
     to:
       host: "[::1]:2222"
-      username: "$1"
-      private_key: /etc/sshpiper/upstream_id_ed25519
-      ignore_hostkey: true
-  # Static route for nas: user@nas -> user@nas.home.goodkind.io
-  - from:
-      - username: "^(.+)@nas$"
-        username_regex_match: true
-        authorized_keys: /etc/sshpiper/authorized_keys
-    to:
-      host: "nas.home.goodkind.io:22"
       username: "$1"
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true

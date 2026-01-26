@@ -5,7 +5,7 @@ set -euo pipefail
 # This runs as root (certbot deploy-hook), copies cert/key to the AdGuard work dir
 # with restricted permissions, then restarts AdGuardHome to pick up the new cert.
 
-DOMAIN="{{ adguard_hostname }}"
+DOMAIN="{{ service_hostname }}"
 
 SRC_DIR="/etc/letsencrypt/live/${DOMAIN}"
 DST_DIR="{{ adguard_work_dir }}/certs"
