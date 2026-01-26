@@ -3,8 +3,8 @@
 #
 # NOTE: After initial deployment, sshpiper runs on port 22 and sshd moves to 2222.
 # For subsequent runs, you'll need to connect to the proxy container on port 2222:
-#   ansible-playbook deploy-proxy.yml -e "ansible_port=2222"
-# Or uncomment `ansible_port: 2222` in inventory/group_vars/proxy_servers.yml
+#   ansible-playbook deploy-proxy.yml -e "service_ssh_port=2222"
+# Or uncomment `service_ssh_port: 2222` in inventory/group_vars/proxy_servers.yml
 #
 # To manually SSH to the proxy container after deployment:
 #   ssh -p 2222 root@proxy.home.goodkind.io
@@ -15,14 +15,6 @@
   vars:
     container_group: proxy_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/proxy_servers.yml"
-    hostname_var: traefik_hostname
-    mac_var: traefik_mac_address
-    target_node: vault
-    container_vmid: ""
-    disk_size: "8"
-    memory: "2048"
-    cores: "2"
-    container_tags: "lxc,traefik"
 
 - name: Configure connection method for proxy container
   hosts: localhost
@@ -78,7 +70,7 @@
         state: directory
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0750'
+        mode: "0750"
       loop:
         - "{{ traefik_config_dir }}"
         - "{{ traefik_config_dir }}/dynamic"
@@ -107,7 +99,7 @@
               https://github.com/traefik/traefik/releases/download/v{{ traefik_version }}/traefik_v{{-
               traefik_version }}_linux_amd64.tar.gz
             dest: /tmp/traefik.tar.gz
-            mode: '0644'
+            mode: "0644"
 
         - name: Extract Traefik binary
           ansible.builtin.unarchive:
@@ -121,7 +113,7 @@
             dest: /usr/local/bin/traefik
             owner: root
             group: root
-            mode: '0755'
+            mode: "0755"
             remote_src: true
 
         - name: Cleanup download files
@@ -156,7 +148,7 @@
         state: touch
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0600'
+        mode: "0600"
         modification_time: preserve
         access_time: preserve
 
@@ -166,7 +158,7 @@
         dest: /etc/systemd/system/traefik.service
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify:
         - Reload systemd
         - Restart traefik
@@ -178,7 +170,7 @@
         dest: "{{ traefik_config_dir }}/.cloudflare.env"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0600'
+        mode: "0600"
       when:
         - traefik_acme_dns_provider | default('cloudflare') == 'cloudflare'
         - cloudflare_api_token is defined
@@ -195,7 +187,7 @@
         dest: "{{ traefik_config_dir }}/.rfc2136.env"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0600'
+        mode: "0600"
       when:
         - traefik_acme_dns_provider | default('cloudflare') == 'rfc2136'
         - traefik_rfc2136_tsig_key is defined
@@ -213,7 +205,7 @@
         state: directory
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0750'
+        mode: "0750"
 
     - name: Validate Traefik dashboard credentials are configured (if dashboard enabled)
       ansible.builtin.assert:
@@ -246,7 +238,7 @@
         content: "{{ traefik_dashboard_htpasswd.stdout }}\n"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0600'
+        mode: "0600"
       when:
         - traefik_dashboard_enabled | default(false)
         - traefik_dashboard_htpasswd.stdout is defined
@@ -273,7 +265,11 @@
 
     - name: Parse Cloudflare IPv6 ranges
       ansible.builtin.set_fact:
-        cloudflare_ipv6_ranges: "{{ cloudflare_ipv6_response.content.splitlines() | select('match', '^[0-9a-f:]') | list }}"
+        cloudflare_ipv6_ranges: >-
+          {{
+          cloudflare_ipv6_response.content.splitlines()
+          | select('match', '^[0-9a-f:]') | list
+          }}
 
     - name: Validate RFC2136 credentials are configured
       ansible.builtin.assert:
@@ -323,13 +319,42 @@
             - {{ cloudflare_ips_v6_url }}
         success_msg: "✓ Cloudflare IPv4/IPv6 ranges downloaded"
 
+    - name: Resolve service IPs from Consul
+      ansible.builtin.include_tasks: tasks/resolve-consul-services.yml
+      vars:
+        consul_services_to_resolve:
+          - adguard
+          - ansible
+          - mwan
+          - router
+          - vault
+      when: consul_agent_enabled | default(true) | bool
+
+    - name: Create systemd-resolved config directory
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configure DNS forwarding for Consul
+      ansible.builtin.template:
+        src: "{{ repo_root }}/consul/resolved/consul.conf.j2"
+        dest: /etc/systemd/resolved.conf.d/consul.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart systemd-resolved
+      when: consul_agent_enabled | default(true) | bool
+
     - name: Template Traefik static configuration
       ansible.builtin.template:
         src: "{{ repo_root }}/traefik/traefik.yml.j2"
         dest: "{{ traefik_config_dir }}/traefik.yml"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0644'
+        mode: "0644"
       notify: Restart traefik
 
     - name: Template Traefik dynamic routes
@@ -338,7 +363,7 @@
         dest: "{{ traefik_config_dir }}/dynamic/routes.yml"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0644'
+        mode: "0644"
       notify: Restart traefik
 
     - name: Template Traefik dynamic middlewares
@@ -347,7 +372,7 @@
         dest: "{{ traefik_config_dir }}/dynamic/middlewares.yml"
         owner: "{{ traefik_user }}"
         group: "{{ traefik_group }}"
-        mode: '0644'
+        mode: "0644"
       notify: Restart traefik
 
     - name: Enable Traefik service
@@ -404,6 +429,11 @@
         name: traefik
         state: restarted
 
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+
 - name: Deploy and Configure SSHPiper
   hosts: proxy_servers
   become: true
@@ -430,7 +460,7 @@
         state: directory
         owner: "{{ sshpiper_user }}"
         group: "{{ sshpiper_group }}"
-        mode: '0750'
+        mode: "0750"
       loop:
         - "{{ sshpiper_config_dir }}"
 
@@ -473,7 +503,7 @@
               https://github.com/tg123/sshpiper/releases/download/v{{-
               sshpiper_version_resolved }}/sshpiperd_with_plugins_linux_x86_64.tar.gz
             dest: /tmp/sshpiper.tar.gz
-            mode: '0644'
+            mode: "0644"
 
         - name: Extract sshpiper
           ansible.builtin.unarchive:
@@ -487,14 +517,14 @@
             dest: /usr/local/bin/sshpiperd
             owner: root
             group: root
-            mode: '0755'
+            mode: "0755"
             remote_src: true
 
         - name: Create plugins directory
           ansible.builtin.file:
             path: /usr/local/bin/plugins
             state: directory
-            mode: '0755'
+            mode: "0755"
 
         - name: Install yaml plugin
           ansible.builtin.copy:
@@ -502,7 +532,7 @@
             dest: /usr/local/bin/plugins/yaml
             owner: root
             group: root
-            mode: '0755'
+            mode: "0755"
             remote_src: true
 
         - name: Cleanup download files
@@ -539,7 +569,7 @@
         path: "{{ item }}"
         owner: "{{ sshpiper_user }}"
         group: "{{ sshpiper_group }}"
-        mode: '0600'
+        mode: "0600"
       loop:
         - "{{ sshpiper_config_dir }}/upstream_id_ed25519"
         - "{{ sshpiper_config_dir }}/upstream_id_ed25519.pub"
@@ -556,7 +586,7 @@
         state: directory
         owner: root
         group: root
-        mode: '0755'
+        mode: "0755"
 
     - name: Authorize sshpiper upstream key via global authorized_keys file
       ansible.builtin.copy:
@@ -564,7 +594,7 @@
         dest: /etc/ssh/authorized_keys.d/sshpiper_upstream
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
 
     - name: Fetch local SSH keys for authorized_keys
       ansible.builtin.set_fact:
@@ -576,6 +606,7 @@
       ansible.builtin.get_url:
         url: https://github.com/agoodkind.keys
         dest: /tmp/github_keys
+        mode: "0644"
         force: true
       delegate_to: localhost
       become: false
@@ -599,7 +630,7 @@
         dest: "{{ sshpiper_config_dir }}/authorized_keys"
         owner: "{{ sshpiper_user }}"
         group: "{{ sshpiper_group }}"
-        mode: '0600'
+        mode: "0600"
 
     - name: Template sshpiper routing configuration
       ansible.builtin.template:
@@ -607,13 +638,13 @@
         dest: "{{ sshpiper_config_dir }}/sshpiperd.yaml"
         owner: "{{ sshpiper_user }}"
         group: "{{ sshpiper_group }}"
-        mode: '0600'
+        mode: "0600"
       notify: Restart sshpiper
 
     - name: Configure sshd to listen on port 2222 only
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/99-sshpiper-port.conf
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible (deploy-proxy.yml)
           # sshd on port 2222 for direct access
@@ -627,7 +658,7 @@
         dest: /etc/systemd/system/sshpiper.service
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify:
         - Reload systemd
         - Restart sshpiper
@@ -689,12 +720,35 @@
       ansible.builtin.debug:
         msg: "✓ Cloudflared service is {{ cloudflared_status.status.ActiveState }}"
 
+    - name: Register service with Consul
+      ansible.builtin.template:
+        src: "{{ repo_root }}/consul/services/service-definition.json.j2"
+        dest: /etc/consul.d/proxy.json
+        owner: consul
+        group: consul
+        mode: "0640"
+      vars:
+        consul_service_name: proxy
+        consul_service_tags: ["traefik", "sshpiper", "lxc"]
+        consul_service_port: 443
+        consul_service_checks:
+          - tcp: "localhost:443"
+            interval: "30s"
+            timeout: "5s"
+      notify: Reload Consul
+      when: consul_agent_enabled | default(true) | bool
+
   handlers:
     - name: Restart cloudflared
       ansible.builtin.systemd:
         name: cloudflared
         state: restarted
         daemon_reload: true
+
+    - name: Reload Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: reloaded
 
 - name: Summary
   hosts: localhost

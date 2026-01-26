@@ -46,88 +46,20 @@
       ansible.builtin.set_fact:
         guests_with_type: "{{ guests }}"
 
-    - name: Validate guest types are present
-      ansible.builtin.fail:
-        msg: >-
-          Guest type missing for {{ item.name | default(item.vmid) }}.
-          Expected proxmox_vmtype to be 'lxc' or 'qemu'.
-      loop: "{{ guests_with_type }}"
-      when: item.type | default('') | trim | length == 0
-
-    - name: Look for proxy container in full inventory
+    - name: Get proxy host and sshpiper upstream key from inventory
       ansible.builtin.set_fact:
-        proxy_from_inventory: "{{ (groups.get('proxy_servers', []) | first) | default('') }}"
-
-    - name: Get proxy container info from hostvars
-      ansible.builtin.set_fact:
-        proxy_guest:
-          vmid: "{{ hostvars[proxy_from_inventory].ansible_proxmox_vmid }}"
-          host: "{{ hostvars[proxy_from_inventory].ansible_proxmox_host }}"
-          name: "{{ proxy_from_inventory }}"
-          type: lxc
-      when:
-        - proxy_from_inventory | length > 0
-        - proxy_from_inventory in hostvars
-        - hostvars[proxy_from_inventory].ansible_proxmox_vmid is defined
-        - hostvars[proxy_from_inventory].ansible_proxmox_host is defined
-
-    - name: Show proxy guest selection
-      ansible.builtin.debug:
-        msg: >-
-          Proxy guest: {{ proxy_guest.get('name', 'not found') }}
-          (VMID: {{ proxy_guest.get('vmid', 'N/A') }},
-          source: inventory lookup)
-
-    - name: Check if sshpiper upstream public key exists on proxy container
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ proxy_guest.vmid }}"
-          - --
-          - sh
-          - -c
-          - test -f /etc/sshpiper/upstream_id_ed25519.pub
-      delegate_to: "{{ proxy_guest.host }}"
-      register: sshpiper_upstream_key_exists
-      changed_when: false
-      failed_when: false
-      when: >
-        (proxy_guest is mapping) and
-        (proxy_guest.vmid | default('') | string | trim | length > 0) and
-        (proxy_guest.host | default('') | string | trim | length > 0)
-
-    - name: Read sshpiper upstream public key from proxy container
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ proxy_guest.vmid }}"
-          - --
-          - cat
-          - /etc/sshpiper/upstream_id_ed25519.pub
-      delegate_to: "{{ proxy_guest.host }}"
-      register: sshpiper_upstream_pubkey_read
-      changed_when: false
-      when:
-        - proxy_guest is mapping
-        - (proxy_guest.vmid | default('') | string | trim | length > 0)
-        - (proxy_guest.host | default('') | string | trim | length > 0)
-        - sshpiper_upstream_key_exists.rc | default(1) == 0
-
-    - name: Set sshpiper upstream key fact
-      ansible.builtin.set_fact:
+        proxy_host: "{{ groups.proxy_servers | first }}"
         sshpiper_upstream_pubkey: >-
-          {{ (sshpiper_upstream_pubkey_read.stdout | default('') | trim) }}
+          {{ hostvars[(groups.proxy_servers | first)].sshpiper_upstream_pubkey | trim }}
+
+    - name: Get proxy IPv6 from service_mapping inventory
+      ansible.builtin.set_fact:
+        proxy_ipv6: "{{ hostvars[proxy_host].service_ipv6 }}"
 
     - name: Show sshpiper upstream key status
       ansible.builtin.debug:
         msg: >-
-          {{
-            'Found sshpiper upstream key: ' + (sshpiper_upstream_pubkey | truncate(60))
-            if (sshpiper_upstream_pubkey | length > 0)
-            else 'No sshpiper upstream key found (will not be added to bundle)'
-          }}
+          {{ 'Using sshpiper upstream key: ' + (sshpiper_upstream_pubkey | truncate(60)) }}
 
     - name: Write sshpiper upstream public key to work dir
       ansible.builtin.copy:
@@ -135,31 +67,8 @@
         dest: "{{ work_tmp_dir }}/sshpiper_upstream_id_ed25519.pub"
         mode: "0644"
       delegate_to: localhost
-      when: sshpiper_upstream_pubkey | length > 0
 
-    - name: Get proxy IPv6 from Proxmox inventory
-      ansible.builtin.set_fact:
-        proxy_ipv6: >-
-          {{
-            hostvars[proxy_from_inventory].proxmox_net0.ip6
-            | default('')
-            | ansible.utils.ipaddr('address')
-          }}
-      when:
-        - proxy_from_inventory | length > 0
-        - proxy_from_inventory in hostvars
-        - hostvars[proxy_from_inventory].proxmox_net0 is defined
-        - hostvars[proxy_from_inventory].proxmox_net0.ip6 is defined
-
-    - name: Validate proxy IPv6 is available
-      ansible.builtin.fail:
-        msg: >-
-          Proxy IPv6 not found in Proxmox inventory for
-          {{ proxy_from_inventory }}. Expected proxmox_net0.ip6.
-      when:
-        - proxy_ipv6 | default('') | trim | length == 0
-
-    - name: Build proxy IPv6 allowlist from Proxmox
+    - name: Build proxy IPv6 allowlist from service_mapping
       ansible.builtin.set_fact:
         proxy_allowed_ipv6_list: ["{{ proxy_ipv6 }}/128"]
 
@@ -171,7 +80,6 @@
         dest: "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
         mode: "0644"
       delegate_to: localhost
-      when: sshpiper_upstream_pubkey | length > 0
 
     - name: Build authorized_keys bundle
       ansible.builtin.command:
@@ -187,8 +95,6 @@
                 '--extra-pubkey',
                 work_tmp_dir + '/sshpiper_restricted_key.pub'
               ]
-              if (sshpiper_upstream_pubkey | length > 0)
-              else []
             )
           }}
       register: build_bundle
@@ -198,7 +104,7 @@
     - name: Show bundle preview
       ansible.builtin.debug:
         msg: >-
-          Bundle built with {{ build_bundle.stdout_lines | default([]) |
+          Bundle built with {{ build_bundle.stdout_lines |
           length }} keys
           (includes sshpiper upstream key: {{
             'yes' if (sshpiper_upstream_pubkey | length > 0) else 'no'
@@ -211,7 +117,7 @@
         mode: "0644"
       delegate_to: "{{ item }}"
       loop: >-
-        {{ (guests_with_type | default([]))
+        {{ guests_with_type
            | map(attribute='host') | unique | list }}
 
     - name: Write sshd disable password auth snippet to Proxmox hosts
@@ -225,7 +131,7 @@
           ChallengeResponseAuthentication no
       delegate_to: "{{ item }}"
       loop: >-
-        {{ (guests_with_type | default([]))
+        {{ guests_with_type
            | map(attribute='host') | unique | list }}
 
     - name: Write sshd global authorized keys snippet to Proxmox hosts
@@ -237,7 +143,7 @@
           AuthorizedKeysFile /etc/ssh/authorized_keys.d/authorized_keys
       delegate_to: "{{ item }}"
       loop: >-
-        {{ (guests_with_type | default([]))
+        {{ guests_with_type
            | map(attribute='host') | unique | list }}
 
     - name: Write sshd tmpfiles snippet to Proxmox hosts
@@ -249,7 +155,7 @@
           d /run/sshd 0755 root root -
       delegate_to: "{{ item }}"
       loop: >-
-        {{ (guests_with_type | default([]))
+        {{ guests_with_type
            | map(attribute='host') | unique | list }}
 
     - name: Ensure LXC guests are running

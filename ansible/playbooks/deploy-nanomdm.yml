@@ -13,15 +13,9 @@
     container_group: nanomdm_servers
     group_vars_file: >-
       {{ playbook_dir }}/../inventory/group_vars/nanomdm_servers.yml
-    hostname_var: nanomdm_hostname
-    mac_var: nanomdm_mac_address
-    ipv4_var: nanomdm_ipv4
-    ipv6_var: nanomdm_ipv6
-    target_node: vault
     disk_size: "8"
     memory: "512"
     cores: "1"
-    container_tags: "lxc,nanomdm"
 
 - name: Deploy and Configure NanoMDM
   hosts: nanomdm_servers

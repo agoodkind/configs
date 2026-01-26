@@ -93,26 +93,15 @@
   gather_facts: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   tasks:
-    - name: Show connection details
-      ansible.builtin.debug:
-        msg:
-          - "=== SSH Connection Details ==="
-          - "Target host: {{ inventory_hostname }}"
-          - "Ansible host: {{ ansible_host | default('not set') }}"
-          - "Ansible user: {{ ansible_user | default('not set') }}"
-          - "Ansible port: {{ ansible_port | default(22) }}"
-          - "SSH private key: {{ ansible_ssh_private_key_file | default('default') }}"
-      delegate_to: localhost
-
     - name: Test SSH connection with verbose output
       ansible.builtin.shell: |
         echo "=== Attempting SSH connection ==="
         ssh -v -o ConnectTimeout=5 \
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
-          -p {{ ansible_port | default(22) }} \
+          -p {{ service_ssh_port | default(22) }} \
           {{ ansible_user | default('root') }}@{{ ansible_host | default(inventory_hostname) }} \
           'echo "SSH connection successful"; whoami' 2>&1 | tail -20
       delegate_to: localhost
@@ -167,8 +156,8 @@
     - name: Uncomment en_US.UTF-8 in locale.gen
       ansible.builtin.lineinfile:
         path: /etc/locale.gen
-        regexp: '^# *en_US.UTF-8'
-        line: 'en_US.UTF-8 UTF-8'
+        regexp: "^# *en_US.UTF-8"
+        line: "en_US.UTF-8 UTF-8"
         state: present
       when: not locale_uncommented.rc == 0
 
@@ -239,7 +228,7 @@
       ansible.builtin.get_url:
         url: https://raw.githubusercontent.com/agoodkind/scripts/main/install-updater
         dest: /tmp/install-updater
-        mode: '0755'
+        mode: "0755"
         force: true
 
     - name: Run install-updater to set up /opt/scripts and auto-update timer
@@ -257,14 +246,14 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/common/services/package-updater.service"
         dest: /etc/systemd/system/package-updater.service
-        mode: '0644'
+        mode: "0644"
       register: package_updater_service
 
     - name: Deploy package-updater systemd timer
       ansible.builtin.copy:
         src: "{{ repo_root }}/common/timers/package-updater.timer"
         dest: /etc/systemd/system/package-updater.timer
-        mode: '0644'
+        mode: "0644"
       register: package_updater_timer
 
     - name: Enable and start package-updater timer
@@ -415,7 +404,7 @@
     - name: Deploy /etc/msmtprc
       ansible.builtin.copy:
         dest: /etc/msmtprc
-        mode: '0600'
+        mode: "0600"
         content: |
           defaults
           auth           on
@@ -509,7 +498,7 @@
           $template TraditionalFormatWithLocalTime, >-
             "%timegenerated% %HOSTNAME% %syslogtag%%msg:::drop-last-lf%\n"
           $ActionFileDefaultTemplate TraditionalFormatWithLocalTime
-        mode: '0644'
+        mode: "0644"
       notify: Restart rsyslog
 
     - name: Set 256-color terminal for root
@@ -527,7 +516,7 @@
     - name: Install login directory helper (service-aware)
       ansible.builtin.copy:
         dest: /etc/profile.d/99-prep-guests-login-dir.sh
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible (prep-guests.yml)
           #
@@ -548,7 +537,7 @@
           {{ repo_root }}/{{ prep_ct_service_effective | lower -}}/debug-{{-
           prep_ct_service_effective | lower }}.sh.j2
         dest: /usr/local/bin/debug
-        mode: '0755'
+        mode: "0755"
       when:
         - prep_ct_service_effective is defined
         - (prep_ct_service_effective | default('') | trim) | length > 0
@@ -558,7 +547,7 @@
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/debug/debug-generic.sh.j2"
         dest: /usr/local/bin/debug
-        mode: '0755'
+        mode: "0755"
       when: >-
         (prep_ct_service_effective | default('') | trim) | length == 0
         or (prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns'])
@@ -567,7 +556,7 @@
       ansible.builtin.blockinfile:
         path: /etc/systemd/system/container-getty@1.service.d/override.conf
         create: true
-        mode: '0644'
+        mode: "0644"
         block: |
           [Service]
           ExecStart=
@@ -592,7 +581,7 @@
       ansible.builtin.file:
         path: /etc/systemd/system.conf.d
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Lower systemctl shutdown timeout to 15 seconds
       ansible.builtin.copy:
@@ -600,13 +589,20 @@
         content: |
           [Manager]
           DefaultTimeoutStopSec=15s
-        mode: '0644'
+        mode: "0644"
       register: lower_shutdown_timeout
+
+    - name: Install and configure Consul agent
+      ansible.builtin.include_tasks: tasks/install-consul-agent.yml
+      when:
+        - consul_agent_enabled | default(true) | bool
+        - consul_server_address | default('') | length > 0
+        - inventory_hostname not in groups['consul_servers'] | default([])
 
     - name: Disable SSH password authentication (keys only)
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible (prep-guests.yml)
           #
@@ -623,14 +619,14 @@
         state: directory
         owner: root
         group: root
-        mode: '0755'
+        mode: "0755"
 
     - name: Enable global authorized_keys file for all users
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible (prep-guests.yml)
           #
@@ -644,7 +640,7 @@
         dest: /etc/tmpfiles.d/sshd.conf
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
         content: |
           # Managed by Ansible (prep-guests.yml)
           d /run/sshd 0755 root root -
@@ -685,3 +681,15 @@
       ansible.builtin.systemd:
         name: ssh
         state: restarted
+
+    - name: Reload Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: reloaded
+      when: ansible_facts.services['consul.service'] is defined
+
+    - name: Restart Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: restarted
+        daemon_reload: true

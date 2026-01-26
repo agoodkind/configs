@@ -20,14 +20,9 @@
     container_group: grommunio_servers
     group_vars_file: >-
       {{ playbook_dir }}/../inventory/group_vars/grommunio_servers.yml
-    hostname_var: grommunio_hostname
-    mac_var: grommunio_mac_address
-    ipv6_var: grommunio_ipv6
-    target_node: vault
     disk_size: "20"
     memory: "4096"
     cores: "4"
-    container_tags: "lxc,grommunio"
 
 - name: Prepare container
   ansible.builtin.import_playbook: prep-guests.yml
@@ -40,8 +35,6 @@
 
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    grommunio_hostname: >-
-      {{ hostvars['localhost']['service_hostname'] }}
 
   tasks:
     # -------------------------------------------------------------------------
@@ -158,7 +151,7 @@
         dest: /etc/grommunio/mysql_adaptor.cfg
         owner: root
         group: root
-        mode: '0640'
+        mode: "0640"
       notify: Restart gromox
 
     - name: Check if grommunio database schema is initialized
@@ -181,7 +174,7 @@
       ansible.builtin.file:
         path: /var/lib/grommunio/.db-initialized
         state: touch
-        mode: '0644'
+        mode: "0644"
       when: schema_check.rc != 0
 
     # -------------------------------------------------------------------------
@@ -194,7 +187,7 @@
         dest: /etc/gromox/smtp.cfg
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Restart gromox-smtp
 
     # -------------------------------------------------------------------------
@@ -207,7 +200,7 @@
         dest: /etc/nginx/sites-available/grommunio
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Reload nginx
 
     - name: Enable nginx site
@@ -233,7 +226,7 @@
         dest: /etc/gromox/main.cfg
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Restart gromox
 
     - name: Configure grommunio-admin-api
@@ -243,7 +236,7 @@
         dest: /etc/grommunio/admin-api.cfg
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Restart grommunio-admin-api
 
     - name: Configure grommunio-sync
@@ -253,7 +246,7 @@
         dest: /etc/grommunio/sync.cfg
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Restart grommunio-sync
 
     - name: Configure grommunio-web
@@ -263,7 +256,7 @@
         dest: /etc/grommunio/web.cfg
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       notify: Restart grommunio-web
 
     # -------------------------------------------------------------------------
