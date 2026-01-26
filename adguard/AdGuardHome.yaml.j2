@@ -50,13 +50,13 @@ dns:
   trusted_proxies:
     - 127.0.0.0/8
     - ::1/128
-  cache_enabled: true
-  cache_size: 4194304
-  cache_ttl_min: 0
+  cache_enabled: {{ adguard_cache_enabled | default(true) | lower }}
+  cache_size: {{ adguard_cache_size | default(8194304) }}
+  cache_ttl_min: {{ adguard_cache_ttl_min | default(6000) }}
   cache_ttl_max: 0
-  cache_optimistic: false
-  cache_optimistic_answer_ttl: 30s
-  cache_optimistic_max_age: 12h
+  cache_optimistic: {{ adguard_cache_optimistic | default(true) | lower }}
+  cache_optimistic_answer_ttl: {{ adguard_cache_optimistic_answer_ttl | default('30s') }}
+  cache_optimistic_max_age: {{ adguard_cache_optimistic_max_age | default('12h') }}
   bogus_nxdomain: []
   aaaa_disabled: false
   enable_dnssec: {{ adguard_enable_dnssec | lower }}
@@ -69,7 +69,7 @@ dns:
   ipset: []
   ipset_file: ""
   bootstrap_prefer_ipv6: false
-  upstream_timeout: 1s
+  upstream_timeout: 2s
   private_networks: []
   use_private_ptr_resolvers: true
   local_ptr_upstreams: []
@@ -102,7 +102,7 @@ tls:
 querylog:
   dir_path: ""
   ignored: []
-  interval: 2160h
+  interval: {{ adguard_querylog_interval | default('2160h') }}
   size_memory: 1000
   enabled: true
   file_enabled: true
