@@ -5,13 +5,14 @@
 # Controller / host identity
 # ----------------------------------------------------------------------------
 
-# VM hostname
-mwan_hostname: mwan.home.goodkind.io
+# Service identity (derives from service_mapping)
+service_hostname: "{{ service_mapping.mwan.hostname }}"
 
 # VM details (known/static)
+# Derived from service_mapping (single source of truth)
 mwan_vmid: 113
 mwan_proxmox_node: vault
-mwan_ansible_host: "3d06:bad:b01::113"
+service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
 # Management interface uses DHCP - IP assigned by KEA and registered in DNS automatically
 # mwan_mgmt_ip_config can be overridden for static IP if needed:

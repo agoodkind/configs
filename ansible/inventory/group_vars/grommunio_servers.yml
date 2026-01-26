@@ -5,18 +5,16 @@
 # - No IMAP/dovecot configuration required
 # - SMTP required for incoming/outgoing mail
 # - HTTPS handled by Cloudflare Tunnel + Traefik
+#
+# All service_* variables derive from service_mapping (single source of truth)
 
-# Container hostname
-grommunio_hostname: grommunio.home.goodkind.io
+# Service identity
+service_hostname: "{{ service_mapping.grommunio.hostname }}"
 
-# Static addressing (VMID 104)
-# IPv6 only: 3d06:bad:b01::104/64
-ipv6_only: true
-grommunio_ipv6: "3d06:bad:b01::104/64"
-
-# Stable MAC address for static addressing
-# Assigned by Proxmox: BC:24:11:79:B8:C0
-grommunio_mac_address: "bc:24:11:79:b8:c0"
+# Static addressing (pinned; independent of VMID)
+service_ipv6_only: true
+service_ipv6_address: "{{ service_mapping.grommunio.ipv6 }}/64"
+service_mac_address: "bc:24:11:79:b8:c0"
 
 # Domain configuration
 grommunio_domain: goodkind.io
