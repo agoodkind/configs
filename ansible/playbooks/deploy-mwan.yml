@@ -10,6 +10,20 @@
 # Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
+- name: Add MWAN to inventory
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all/service_mapping.yml
+    - ../inventory/group_vars/mwan_servers.yml
+  tasks:
+    - name: Add MWAN VM to mwan_servers group
+      ansible.builtin.include_tasks: tasks/add-service-to-group.yml
+      vars:
+        service_name: mwan
+        service_vmid: "{{ mwan_vmid }}"
+        service_proxmox_node: "{{ mwan_proxmox_node }}"
+
 - name: Prepare MWAN VM (base packages, SSH keys, etc.)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
@@ -411,7 +425,7 @@
         vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
         vm_mgmt_ipv6: "3d06:bad:b01::{{ actual_vmid | string | trim }}"
-        hostname: "{{ mwan_hostname }}"
+        hostname: "{{ service_hostname }}"
 
     - name: Deploy management interface networkd configuration
       ansible.builtin.template:
@@ -657,115 +671,29 @@
         - wpa-cli-action
         - wpa-authenticated.path
 
-    - name: Ensure systemd-networkd is running
-      ansible.builtin.systemd:
-        name: systemd-networkd
-        state: started
-        enabled: true
-
-    - name: Ensure networkd-dispatcher is running
-      ansible.builtin.systemd:
-        name: networkd-dispatcher
-        state: started
-        enabled: true
-
-    - name: Reload systemd
-      ansible.builtin.systemd:
-        daemon_reload: true
-
-    - name: Reapply IPv6 NPT rules after nftables reload
-      ansible.builtin.systemd:
-        name: mwan-update-npt
-        state: started
-      failed_when: false
-
-    - name: Run deploy trace (routes, NPT hooks, health)
-      ansible.builtin.shell: |
-        set -eu
-        set -o pipefail
-        export MWAN_TRACE_ID="{{ mwan_deploy_trace_id }}"
-        att_iface="{{ mwan_att_iface }}.{{ mwan_att_vlan_id }}"
-        webpass_iface="{{ mwan_webpass_iface }}"
-        /usr/local/bin/update-routes.sh || true
-        /etc/networkd-dispatcher/routable.d/55-update-npt.sh "$att_iface" routable || true
-        /etc/networkd-dispatcher/routable.d/55-update-npt.sh "$webpass_iface" routable || true
-        /usr/local/bin/health-check.sh --check || true
-      args:
-        executable: /bin/bash
-      changed_when: false
-      failed_when: false
-
-    - name: Show deploy trace log tail
-      ansible.builtin.shell: |
-        set -eu
-        set -o pipefail
-        if [ -f /var/log/mwan-debug.log ]; then
-          echo "traceId={{ mwan_deploy_trace_id }}"
-          grep -F "\"traceId\":\"{{ mwan_deploy_trace_id }}\"" /var/log/mwan-debug.log | tail -n 200 || true
-        else
-          echo "No /var/log/mwan-debug.log found"
-        fi
-      args:
-        executable: /bin/bash
-      changed_when: false
-      failed_when: false
-
-    - name: Check health status
-      ansible.builtin.command: /usr/local/bin/health-check.sh --status
-      register: health_status
-      changed_when: false
-      failed_when: false
-
-    - name: Start wpa_supplicant (if certs present)
-      ansible.builtin.systemd:
-        name: wpa_supplicant-mwan
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Start AT&T VLAN bringup service (if certs present)
-      ansible.builtin.systemd:
-        name: bringup-att-vlan
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Start wpa-authenticated path unit (if certs present)
-      ansible.builtin.systemd:
-        name: wpa-authenticated.path
-        state: started
-      when: cert_check.results | selectattr('stat.exists') | list | length == 3
-      failed_when: false
-
-    - name: Get service statuses
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-      register: service_statuses
-      loop:
-        - bringup-att-vlan
-        - systemd-networkd
-        - networkd-dispatcher
-        - nftables
-        - mwan-health
-        - wpa_supplicant-mwan
-        - wpa-cli-action
-        - wpa-authenticated.path
-      changed_when: false
-      failed_when: false
-
-    - name: Display status
-      ansible.builtin.debug:
-        msg: |
-          Service status summary:
-          {% for result in service_statuses.results %}
-          - {{ result.item }}:
-              state={{ result.status.ActiveState | default('unknown') }},
-              sub={{ result.status.SubState | default('unknown') }}
-          {% endfor %}
-
     # ============================================================================
-    # POST-DEPLOY: Schedule reboot for clean state
+    # POST-DEPLOY: Reboot for clean state
     # ============================================================================
+    # All services are enabled and will start on boot.
+    # Watchdog monitors post-reboot and auto-rolls back if connectivity fails.
+
+    - name: Register service with Consul
+      ansible.builtin.template:
+        src: "{{ repo_root }}/consul/services/service-definition.json.j2"
+        dest: /etc/consul.d/mwan.json
+        owner: consul
+        group: consul
+        mode: "0640"
+      vars:
+        consul_service_name: mwan
+        consul_service_tags: ["gateway", "vm"]
+        consul_service_port: 22
+        consul_service_checks:
+          - tcp: "localhost:22"
+            interval: "30s"
+            timeout: "5s"
+      notify: Reload Consul
+      when: consul_agent_enabled | default(true) | bool
 
     - name: Deploy complete - scheduling reboot
       ansible.builtin.debug:
@@ -800,3 +728,8 @@
         name: cloudflared
         state: restarted
         daemon_reload: true
+
+    - name: Reload Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: reloaded

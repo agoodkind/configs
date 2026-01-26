@@ -633,6 +633,7 @@
           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
         ansible_proxmox_vmid: "{{ effective_vmid | default('') }}"
         ansible_proxmox_host: "{{ target_node }}"
+        proxmox_vmtype: lxc
 
 - name: Prepare new container (deploy keys and initialize)
   import_playbook: prep-guests.yml

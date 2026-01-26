@@ -4,15 +4,6 @@
   vars:
     container_group: adguard_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/adguard_servers.yml"
-    hostname_var: adguard_hostname
-    mac_var: adguard_mac_address
-    ipv4_var: adguard_ipv4
-    ipv6_var: adguard_ipv6
-    target_node: vault
-    disk_size: "8"
-    memory: "2048"
-    cores: "2"
-    container_tags: "lxc,adguard"
 
 - name: Deploy and Configure AdGuard Home
   hosts: adguard_servers
@@ -21,7 +12,6 @@
   vars:
     adguard_channel: "release"
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    adguard_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
 
   tasks:
     - name: Create AdGuard user
@@ -90,15 +80,15 @@
         --dns-cloudflare
         --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
         --keep-until-expiring
-        -d {{ adguard_hostname }}
+        -d {{ service_hostname }}
         --deploy-hook /usr/local/sbin/adguard-sync-le-certs
       args:
-        creates: "/etc/letsencrypt/live/{{ adguard_hostname }}/fullchain.pem"
+        creates: "/etc/letsencrypt/live/{{ service_hostname }}/fullchain.pem"
       when: adguard_tls_enabled | default(false)
 
     - name: Check for existing Let's Encrypt cert on disk
       ansible.builtin.stat:
-        path: "/etc/letsencrypt/live/{{ adguard_hostname }}/fullchain.pem"
+        path: "/etc/letsencrypt/live/{{ service_hostname }}/fullchain.pem"
       register: adguard_le_fullchain
       changed_when: false
       when: adguard_tls_enabled | default(false)
@@ -311,7 +301,7 @@
             (adguard_rewrites | default([]))
             +
             (
-              ([{'domain': adguard_hostname, 'answer': ansible_default_ipv4.address, 'enabled': true}]
+              ([{'domain': service_hostname, 'answer': ansible_default_ipv4.address, 'enabled': true}]
                if (ansible_default_ipv4 is defined and
                    ansible_default_ipv4.address is defined and
                    ansible_default_ipv4.address != '127.0.0.1')
@@ -319,7 +309,7 @@
             )
             +
             (
-              ([{'domain': adguard_hostname, 'answer': ansible_default_ipv6.address, 'enabled': true}]
+              ([{'domain': service_hostname, 'answer': ansible_default_ipv6.address, 'enabled': true}]
                if (ansible_default_ipv6 is defined and
                    ansible_default_ipv6.address is defined and
                    ansible_default_ipv6.address != '::1')
@@ -359,12 +349,12 @@
       notify: Restart AdGuardHome
       environment:
         ADGUARD_CONFIG_PATH: "{{ adguard_work_dir }}/AdGuardHome.yaml"
-        ADGUARD_MANAGED_DOMAIN_LC: "{{ adguard_hostname | lower }}"
+        ADGUARD_MANAGED_DOMAIN_LC: "{{ service_hostname | lower }}"
         ADGUARD_TLS_JSON: >-
           {{
             {
               'enabled': (adguard_tls_enabled | default(false)),
-              'server_name': (adguard_tls_server_name | default(adguard_hostname) | default('')),
+              'server_name': (adguard_tls_server_name | default(service_hostname) | default('')),
               'force_https': (adguard_tls_force_https | default(false)),
               'port_https': (adguard_tls_port_https | default(0)),
               'port_dns_over_tls': (adguard_tls_port_dns_over_tls | default(0)),
@@ -496,6 +486,24 @@
           AdGuardHome TLS is enabled but HTTPS did not respond on
           https://localhost:{{ adguard_tls_port_https }}.
 
+    - name: Register service with Consul
+      ansible.builtin.template:
+        src: "{{ repo_root }}/consul/services/service-definition.json.j2"
+        dest: /etc/consul.d/adguard.json
+        owner: consul
+        group: consul
+        mode: "0640"
+      vars:
+        consul_service_name: adguard
+        consul_service_tags: ["dns", "lxc"]
+        consul_service_port: 80
+        consul_service_checks:
+          - http: "http://localhost:80/"
+            interval: "30s"
+            timeout: "5s"
+      notify: Reload Consul
+      when: consul_agent_enabled | default(true) | bool
+
     - name: Report health check result
       ansible.builtin.debug:
         msg: >-
@@ -519,6 +527,11 @@
       ansible.builtin.systemd:
         name: AdGuardHome
         state: restarted
+
+    - name: Reload Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: reloaded
 
 - name: Summary
   hosts: localhost

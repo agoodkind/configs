@@ -4,22 +4,25 @@
 # Required variables:
 #   container_group: Inventory group name (e.g., adguard_servers)
 #   group_vars_file: Path to group_vars file (relative to playbook_dir)
-#   hostname_var: Variable name in group_vars containing the hostname
-#     (e.g., adguard_hostname)
 #
-# Optional variables:
+# Standard variables from group_vars (derived from service_mapping):
+#   service_hostname: Container FQDN (e.g., adguard.home.goodkind.io)
+#   service_mac_address: Stable MAC for DHCP reservations (optional)
+#   service_ipv6_address: IPv6 CIDR from service_mapping
+#   service_ipv4_address: IPv4 CIDR (when dual-stack needed)
+#   service_ipv6_only: Boolean (default: true)
+#   service_memory: Container memory in MB
+#   service_cores: Container CPU cores
+#   service_disk_size: Container disk in GB
+#   service_tags: Container tags
+#
+# Optional variables (set in deploy playbooks to override group_vars):
 #   target_node: Proxmox node (default: vault)
 #   container_vmid: Specific VMID to use (default: "")
-#   ipv4_var: Variable name in group_vars containing IPv4 CIDR (e.g., adguard_ipv4)
-#   ipv6_var: Variable name in group_vars containing IPv6 CIDR (e.g., adguard_ipv6)
-#   disk_size: Container disk size in GB (default: "8")
-#   memory: Container memory in MB (default: "2048")
-#   cores: Container CPU cores (default: "2")
-#   mac_var: Variable name in group_vars containing a stable MAC address
-#     (e.g., traefik_mac_address). Used to keep container identity stable
-#     across recreation.
-#   container_tags: Container tags
-#     (default: "lxc,{{ container_group | replace('_servers', '') }}")
+#   disk_size: Override service_disk_size
+#   memory: Override service_memory
+#   cores: Override service_cores
+#   container_tags: Override service_tags
 - name: Load service configuration and create/setup container
   hosts: localhost
   gather_facts: false
@@ -32,6 +35,7 @@
     container_tags_default: >-
       lxc,{{ container_group | replace('_servers', '') }}
   vars_files:
+    - "{{ playbook_dir }}/../inventory/group_vars/all/service_mapping.yml"
     - "{{ group_vars_file }}"
   tasks:
     - name: Validate required variables
@@ -39,32 +43,27 @@
         that:
           - container_group is defined
           - group_vars_file is defined
-          - hostname_var is defined
+          - service_hostname is defined
         fail_msg: >-
-          container_group, group_vars_file, and hostname_var must be
-          provided when importing setup-service-ct.yml
+          container_group, group_vars_file must be provided when importing
+          setup-service-ct.yml. service_hostname must be defined in group_vars.
 
-    - name: Get container hostname from group_vars
+    - name: Persist service identity variables to hostvars
       ansible.builtin.set_fact:
-        service_hostname: "{{ lookup('vars', hostname_var) }}"
+        service_hostname: "{{ service_hostname }}"
+        service_ipv6_address: "{{ service_ipv6_address | default('') }}"
+        service_mac_address: "{{ service_mac_address | default('') }}"
 
-    - name: Get static IPs from group_vars (optional)
+    - name: Use service_ipv4_address from group_vars (if defined)
       ansible.builtin.set_fact:
-        service_ip_address: "{{ lookup('vars', ipv4_var) }}"
+        service_ip_address: "{{ service_ipv4_address }}"
       when:
-        - ipv4_var is defined
-        - (ipv4_var | default('') | trim) | length > 0
+        - service_ipv4_address is defined
+        - (service_ipv4_address | default('') | trim) | length > 0
 
-    - name: Get static IPv6 from group_vars (optional)
+    - name: Set IPv6-only flag from group_vars
       ansible.builtin.set_fact:
-        service_ipv6_address: "{{ lookup('vars', ipv6_var) }}"
-      when:
-        - ipv6_var is defined
-        - (ipv6_var | default('') | trim) | length > 0
-
-    - name: Set IPv6-only flag
-      ansible.builtin.set_fact:
-        service_ipv6_only: "{{ ipv6_only | default(true) | bool }}"
+        effective_ipv6_only: "{{ service_ipv6_only | default(true) | bool }}"
 
     - name: Compute effective container settings (caller overrides defaults)
       ansible.builtin.set_fact:
@@ -80,52 +79,65 @@
             if (container_vmid | default('') | string | trim) | length > 0
             else (container_vmid_default | default('') | string | trim)
           }}
-        service_disk_size: >-
+        effective_disk_size: >-
           {{
             (disk_size | default('') | string | trim)
             if (disk_size | default('') | string | trim) | length > 0
-            else (disk_size_default | string)
+            else (
+              (service_disk_size | default('') | string | trim)
+              if (service_disk_size | default('') | string | trim) | length > 0
+              else (disk_size_default | string)
+            )
           }}
-        service_memory: >-
+        effective_memory: >-
           {{
             (memory | default('') | string | trim)
             if (memory | default('') | string | trim) | length > 0
-            else (memory_default | string)
+            else (
+              (service_memory | default('') | string | trim)
+              if (service_memory | default('') | string | trim) | length > 0
+              else (memory_default | string)
+            )
           }}
-        service_cores: >-
+        effective_cores: >-
           {{
             (cores | default('') | string | trim)
             if (cores | default('') | string | trim) | length > 0
-            else (cores_default | string)
+            else (
+              (service_cores | default('') | string | trim)
+              if (service_cores | default('') | string | trim) | length > 0
+              else (cores_default | string)
+            )
           }}
-        service_container_tags: >-
+        effective_container_tags: >-
           {{
             (container_tags | default('') | string | trim)
             if (container_tags | default('') | string | trim) | length > 0
-            else (container_tags_default | string)
+            else (
+              (service_tags | default('') | string | trim)
+              if (service_tags | default('') | string | trim) | length > 0
+              else (container_tags_default | string)
+            )
           }}
-
-    - name: Get container MAC address from group_vars (optional)
-      ansible.builtin.set_fact:
-        service_mac_address: "{{ lookup('vars', mac_var) }}"
-      when:
-        - mac_var is defined
-        - mac_var | string | trim | length > 0
 
 - name: Create or ensure container exists
   ansible.builtin.import_playbook: create-ct.yml
   vars:
     container_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
-    target_node: "{{ hostvars['localhost']['service_target_node'] | default('vault') }}"
+    target_node: >-
+      {{ hostvars['localhost']['service_target_node'] | default('vault') }}
     vmid: "{{ hostvars['localhost']['service_container_vmid'] | default('') }}"
     ip_address: "{{ hostvars['localhost']['service_ip_address'] | default('') }}"
-    ipv6_address: "{{ hostvars['localhost']['service_ipv6_address'] | default('') }}"
-    ipv6_only: "{{ hostvars['localhost']['service_ipv6_only'] | default(true) | bool }}"
-    disk_size: "{{ hostvars['localhost']['service_disk_size'] | default('8') }}"
-    memory: "{{ hostvars['localhost']['service_memory'] | default('2048') }}"
-    cores: "{{ hostvars['localhost']['service_cores'] | default('2') }}"
-    container_tags: "{{ hostvars['localhost']['service_container_tags'] }}"
-    mac_address: "{{ hostvars['localhost']['service_mac_address'] | default('') }}"
+    ipv6_address: >-
+      {{ hostvars['localhost']['service_ipv6_address'] | default('') }}
+    ipv6_only: >-
+      {{ hostvars['localhost']['effective_ipv6_only'] | default(true) | bool }}
+    disk_size: "{{ hostvars['localhost']['effective_disk_size'] | default('8') }}"
+    memory: "{{ hostvars['localhost']['effective_memory'] | default('2048') }}"
+    cores: "{{ hostvars['localhost']['effective_cores'] | default('2') }}"
+    container_tags: "{{ hostvars['localhost']['effective_container_tags'] }}"
+    mac_address: >-
+      {{ hostvars['localhost']['service_mac_address'] | default('') }}
 
 - name: Add container to service group
   hosts: localhost
@@ -135,9 +147,12 @@
       ansible.builtin.assert:
         that:
           - hostvars['localhost']['container_primary_ip'] is defined
-          - (hostvars['localhost']['container_primary_ip'] | default('') | trim) | length > 0
+          - >-
+            (hostvars['localhost']['container_primary_ip']
+            | default('') | trim) | length > 0
         fail_msg: >-
-          container_primary_ip was not discovered for {{ hostvars['localhost']['service_hostname'] }}.
+          container_primary_ip was not discovered for
+          {{ hostvars['localhost']['service_hostname'] }}.
       when: not ansible_check_mode
 
     - name: Add container to service-specific inventory group
@@ -149,6 +164,17 @@
         ansible_ssh_common_args: >-
           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
         ansible_proxmox_vmid: >-
-          {{ hostvars[hostvars['localhost']['service_hostname']].ansible_proxmox_vmid | default('') }}
+          {{
+            hostvars[hostvars['localhost']['service_hostname']
+            ].ansible_proxmox_vmid | default('')
+          }}
         ansible_proxmox_host: >-
-          {{ hostvars[hostvars['localhost']['service_hostname']].ansible_proxmox_host | default('vault') }}
+          {{
+            hostvars[hostvars['localhost']['service_hostname']
+            ].ansible_proxmox_host | default('vault')
+          }}
+        proxmox_vmtype: >-
+          {{
+            hostvars[hostvars['localhost']['service_hostname']
+            ].proxmox_vmtype | default('lxc')
+          }}

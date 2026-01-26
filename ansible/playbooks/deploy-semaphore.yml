@@ -7,10 +7,6 @@
     container_group: ansible_servers
     group_vars_file: >-
       {{ playbook_dir }}/../inventory/group_vars/ansible_servers.yml
-    hostname_var: ansible_hostname
-    mac_var: ansible_mac_address
-    target_node: vault
-    container_vmid: ""
     disk_size: "16"
     memory: "2048"
     cores: "2"

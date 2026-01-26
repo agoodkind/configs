@@ -4,13 +4,6 @@
   vars:
     container_group: dns64_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/dns64_servers.yml"
-    hostname_var: dns64_hostname
-    mac_var: dns64_mac_address
-    ipv6_var: dns64_ipv6
-    ipv6_only: true
-    memory: "512"
-    cores: "1"
-    disk_size: "4"
 
 - name: Configure DNS64 Service
   hosts: dns64_servers
