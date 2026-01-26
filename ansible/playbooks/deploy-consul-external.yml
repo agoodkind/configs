@@ -1,0 +1,130 @@
+---
+# Deploy Consul agents to external hosts (Proxmox, NAS, mini, OPNsense)
+# These hosts are not LXC containers and require special handling
+
+- name: Deploy Consul agent to Proxmox nodes
+  hosts: proxmox_nodes
+  become: true
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    consul_version: "1.20.1"
+    consul_arch: "arm64"
+
+  tasks:
+    - name: Create Consul user
+      ansible.builtin.user:
+        name: consul
+        system: true
+        shell: /bin/false
+        home: /var/lib/consul
+        create_home: false
+
+    - name: Create Consul directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: consul
+        group: consul
+        mode: "0750"
+      loop:
+        - /etc/consul.d
+        - /var/lib/consul
+
+    - name: Check if Consul binary exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/consul
+      register: consul_binary
+
+    - name: Download Consul binary
+      ansible.builtin.get_url:
+        url: >-
+          https://releases.hashicorp.com/consul/{{
+          consul_version }}/consul_{{ consul_version }}_linux_{{
+          consul_arch }}.zip
+        dest: /tmp/consul.zip
+        mode: "0644"
+      when: not consul_binary.stat.exists
+
+    - name: Install unzip
+      ansible.builtin.apt:
+        name: unzip
+        state: present
+        update_cache: false
+      when: not consul_binary.stat.exists
+
+    - name: Extract Consul binary
+      ansible.builtin.unarchive:
+        src: /tmp/consul.zip
+        dest: /usr/local/bin
+        remote_src: true
+        mode: "0755"
+        owner: root
+        group: root
+      when: not consul_binary.stat.exists
+
+    - name: Deploy Consul agent configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/consul/consul-agent.hcl.j2"
+        dest: /etc/consul.d/consul.hcl
+        owner: consul
+        group: consul
+        mode: "0640"
+      notify: Reload Consul
+
+    - name: Deploy Consul systemd service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/consul/consul.service"
+        dest: /etc/systemd/system/consul.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Consul
+
+    - name: Register Proxmox service with Consul
+      ansible.builtin.copy:
+        dest: /etc/consul.d/proxmox.json
+        owner: consul
+        group: consul
+        mode: "0640"
+        content: |
+          {
+            "service": {
+              "name": "proxmox",
+              "tags": ["hypervisor", "host"],
+              "port": 8006,
+              "checks": [{
+                "tcp": "localhost:8006",
+                "interval": "30s",
+                "timeout": "5s"
+              }]
+            }
+          }
+      notify: Reload Consul
+
+    - name: Enable and start Consul agent
+      ansible.builtin.systemd:
+        name: consul
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Reload Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: reloaded
+
+    - name: Restart Consul
+      ansible.builtin.systemd:
+        name: consul
+        state: restarted
+        daemon_reload: true
+
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: ✅ Consul agents deployed to external hosts

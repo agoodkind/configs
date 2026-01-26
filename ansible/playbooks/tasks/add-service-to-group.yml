@@ -1,0 +1,19 @@
+---
+# Add a service to its inventory group using service_mapping
+#
+# Required variables:
+#   service_name: Key in service_mapping (e.g., 'mwan', 'adguard')
+#
+# Optional variables:
+#   service_vmid: Proxmox VMID (for prep-guests compatibility)
+#   service_proxmox_node: Proxmox node name (default: vault)
+
+- name: Add service to inventory group - {{ service_name }}
+  ansible.builtin.add_host:
+    name: "{{ service_mapping[service_name].hostname }}"
+    groups: "{{ service_name }}_servers"
+    ansible_host: "{{ service_mapping[service_name].ipv6 }}"
+    ansible_user: root
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    ansible_proxmox_vmid: "{{ service_vmid | default('') }}"
+    ansible_proxmox_host: "{{ service_proxmox_node | default('vault') }}"

@@ -1,0 +1,51 @@
+---
+# Query Consul HTTP API at deploy time for service IPs
+# This task is included by playbooks that need service discovery
+# (e.g., deploy-proxy.yml for Traefik/SSHPiper config generation)
+
+- name: Query Consul for service IPs
+  ansible.builtin.uri:
+    url: >-
+      http://{{ consul_server_address | default('consul.home.goodkind.io')
+      }}:8500/v1/health/service/{{ item }}?passing=true
+    return_content: true
+    status_code: [200, 404]
+  register: consul_query_results
+  ignore_errors: true
+  loop: "{{ consul_services_to_resolve }}"
+  when:
+    - consul_services_to_resolve is defined
+    - (consul_services_to_resolve | length) > 0
+
+- name: Build resolved service map (IPv6 primary)
+  ansible.builtin.set_fact:
+    consul_resolved_ips: >-
+      {{
+        consul_resolved_ips | default({}) | combine({
+          item.item: (
+            (item.json[0].Service.Address | default(''))
+            if (
+              item.status | default(0) == 200
+              and item.json is defined
+              and (item.json | length) > 0
+            )
+            else service_mapping[item.item].ipv6 | default('')
+          )
+        })
+      }}
+  loop: "{{ consul_query_results.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - consul_query_results is defined
+    - consul_query_results.results is defined
+
+- name: Display resolved service IPs
+  ansible.builtin.debug:
+    msg: "Resolved {{ item.key }}: {{ item.value }}"
+  loop: "{{ consul_resolved_ips | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - consul_resolved_ips is defined
+    - (consul_resolved_ips | length) > 0

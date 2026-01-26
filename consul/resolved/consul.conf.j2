@@ -1,0 +1,5 @@
+# Forward .{{ consul_domain | default('int') }} queries to Consul DNS
+# Managed by Ansible (deploy-proxy.yml)
+[Resolve]
+DNS={{ consul_server_address | default('consul.home.goodkind.io') }}
+Domains=~{{ consul_domain | default('int') }}
