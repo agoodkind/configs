@@ -1,0 +1,58 @@
+---
+# Clean up stale Cloudflare ACME challenge TXT records
+# Run before restarting Traefik to prevent certificate generation errors
+
+- name: List all DNS records in zone
+  ansible.builtin.uri:
+    url: >-
+      https://api.cloudflare.com/client/v4/zones/{{
+      cloudflare_zone_id }}/dns_records
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: application/json
+    return_content: true
+  register: cf_dns_records
+  delegate_to: localhost
+  no_log: true
+
+- name: Filter ACME challenge TXT records
+  ansible.builtin.set_fact:
+    acme_challenge_records: >-
+      {{
+      cf_dns_records.json.result
+      | selectattr('type', 'equalto', 'TXT')
+      | selectattr('name', 'match', '^_acme-challenge\.')
+      | list
+      }}
+
+- name: Display stale ACME challenge records
+  ansible.builtin.debug:
+    msg: >-
+      Found {{ acme_challenge_records | length }} stale ACME challenge
+      record(s): {{ acme_challenge_records | map(attribute='name') | list }}
+  when: (acme_challenge_records | length) > 0
+
+- name: Delete stale ACME challenge records
+  ansible.builtin.uri:
+    url: >-
+      https://api.cloudflare.com/client/v4/zones/{{
+      cloudflare_zone_id }}/dns_records/{{ item.id }}
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: application/json
+    status_code: 200
+  loop: "{{ acme_challenge_records }}"
+  loop_control:
+    label: "{{ item.name }}"
+  delegate_to: localhost
+  no_log: true
+  when: (acme_challenge_records | length) > 0
+
+- name: Report cleanup completion
+  ansible.builtin.debug:
+    msg: >-
+      Deleted {{ acme_challenge_records | length }} stale ACME
+      challenge record(s)
+  when: (acme_challenge_records | length) > 0

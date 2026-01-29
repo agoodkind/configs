@@ -381,6 +381,9 @@
         enabled: true
         daemon_reload: true
 
+    - name: Clean up stale ACME challenge records
+      ansible.builtin.include_tasks: tasks/cleanup-acme-challenges.yml
+
     - name: Flush handlers to ensure Traefik is restarted
       ansible.builtin.meta: flush_handlers
 
