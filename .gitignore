@@ -65,3 +65,4 @@ vault.pass
 # Python cache
 __pycache__/
 *.pyc
+router/cloudflared-token.sh
