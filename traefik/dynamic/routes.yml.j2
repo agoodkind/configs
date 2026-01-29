@@ -101,6 +101,16 @@ http:
       tls:
         certResolver: letsencrypt
 
+    freebsd-dev-ingress:
+      rule: "Host(`freebsd-dev.{{ traefik_ingress_domain }}`)"
+      service: freebsd-dev-service
+      middlewares:
+        - secure-headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
   services:
     ansible-service:
       loadBalancer:
@@ -149,11 +159,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://[3d06:bad:b01:2::3]:8123"
-        healthCheck:
-          path: /api/
-          interval: 30s
-          timeout: 5s
         passHostHeader: true
+
+    freebsd-dev-service:
+      loadBalancer:
+        servers:
+          - url: "http://[3d06:bad:b01::108]:8080"
 
   serversTransports:
     insecure-transport:

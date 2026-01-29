@@ -9,38 +9,43 @@
 
 service_mapping:
   # LXC Containers
-  adguard:
-    hostname: adguard.home.goodkind.io
-    ipv6: "3d06:bad:b01::53"
-  ansible:
-    hostname: ansible.home.goodkind.io
-    ipv6: "3d06:bad:b01::107"
-  consul:
-    hostname: consul.home.goodkind.io
-    ipv6: "3d06:bad:b01::106"
-  dns64:
-    hostname: dns64.home.goodkind.io
-    ipv6: "3d06:bad:b01::64"
-  grommunio:
-    hostname: grommunio.home.goodkind.io
-    ipv6: "3d06:bad:b01::104"
-  mwan:
-    hostname: mwan.home.goodkind.io
-    ipv6: "3d06:bad:b01::113"
-  nanomdm:
-    hostname: mdm.home.goodkind.io
-    ipv6: "3d06:bad:b01::103"
-    ipv4: "10.250.0.103"
-  proxy:
-    hostname: proxy.home.goodkind.io
-    ipv6: "3d06:bad:b01::110"
-    ipv4: "10.250.0.110"
-
-  # Static Hosts (different subnet or external)
+  debianct:
+    hostname: debianct.home.goodkind.io
+    ipv6: "3d06:bad:b01::100"
   unifi:
     hostname: unifi.home.goodkind.io
     ipv6: "3d06:bad:b01::102"
     ipv4: "10.250.0.102"
+  dns64:
+    hostname: dns64.home.goodkind.io
+    ipv6: "3d06:bad:b01::64" # id: 103
+  grommunio:
+    hostname: grommunio.home.goodkind.io
+    ipv6: "3d06:bad:b01::104"
+  pvd:
+    hostname: pvd.home.goodkind.io
+    ipv6: "3d06:bad:b01::105"
+  consul:
+    hostname: consul.home.goodkind.io
+    ipv6: "3d06:bad:b01::106"
+  ansible:
+    hostname: ansible.home.goodkind.io
+    ipv6: "3d06:bad:b01::107"
+  freebsd-dev-home:
+    hostname: freebsd-dev.home.goodkind.io
+    ipv6: "3d06:bad:b01::108"
+  proxy:
+    hostname: proxy.home.goodkind.io
+    ipv6: "3d06:bad:b01::110"
+    ipv4: "10.250.0.110"
+  adguard:
+    hostname: adguard.home.goodkind.io
+    ipv6: "3d06:bad:b01::53" # id: 112
+  mwan:
+    hostname: mwan.home.goodkind.io
+    ipv6: "3d06:bad:b01::113"
+
+  # Static Hosts (different subnet or external)
   mini:
     hostname: mini.home.goodkind.io
     ipv6: "3d06:bad:b01:1::2"

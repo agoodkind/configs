@@ -14,6 +14,8 @@ service_mac_address: "bc:24:11:1d:2c:0f"
 # Port 22: SSHPiper (routes by username)
 # Port 2222: Direct sshd (for Ansible root access)
 service_ssh_port: 2222
+# Map to Ansible's connection variable
+ansible_port: "{{ service_ssh_port }}"
 
 # Domain configuration
 # ingress_domain: client-facing URLs in Traefik route rules (what users access)
@@ -45,13 +47,14 @@ traefik_rfc2136_tsig_key: >-
 traefik_rfc2136_tsig_secret: >-
   {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_SECRET', default='') }}
 
-# Cloudflare API token
+# Cloudflare API configuration
 # Traefik expects CF_DNS_API_TOKEN. Support common env var names.
 cloudflare_api_token: >-
   {{ lookup('env', 'CLOUDFLARE_API_TOKEN',
      default=lookup('env', 'CF_DNS_API_TOKEN',
      default=lookup('env', 'CLOUDFLARE_API_KEY',
      default=vault_cloudflare_api_token))) }}
+cloudflare_zone_id: "{{ vault_cloudflare_zone_id }}"
 
 # Traefik Dashboard Authentication
 # Set TRAEFIK_DASHBOARD_USER and TRAEFIK_DASHBOARD_PASS environment variables
@@ -86,15 +89,7 @@ sshpiper_upstream_pubkey: >-
   sshpiper-upstream
 
 cloudflared_token_content: "{{ vault_cloudflared_tunnel_token }}"
-# Ansible SSH configuration
-# Ansible connects as root@<host>:22
-# Before sshpiper: connects directly to sshd on port 22
-# After sshpiper: sshpiper rejects "root" user (no route), must use port 2222
-#
-# After initial deployment, uncomment to use direct sshd access:
-# service_ssh_port: 2222
-#
-# Manual SSH access patterns after deployment:
+# Manual SSH access patterns:
 #   ssh -p 2222 root@proxy.home.goodkind.io  → direct sshd
-#   ssh proxy@home.goodkind.io               → sshpiper route to localhost:2222 as root
-#   ssh adguard@home.goodkind.io             → sshpiper route to adguard container
+#   ssh proxy@ssh.home.goodkind.io           → sshpiper route to localhost:2222 as root
+#   ssh adguard@ssh.home.goodkind.io         → sshpiper route to adguard container
