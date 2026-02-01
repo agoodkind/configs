@@ -547,12 +547,33 @@
             - /tmp/sshpiperd
             - /tmp/plugins
 
+    - name: Remove conflicting ET repository files and keys
+      ansible.builtin.shell:
+        cmd: rm -f /etc/apt/sources.list.d/*et*.list /etc/apt/sources.list.d/*jgmath*.list /etc/apt/keyrings/*et*
+
+    # 2. Download key directly to /etc/apt/trusted.gpg.d/ (Global Trust)
+    - name: Install Eternal Terminal GPG key
+      ansible.builtin.get_url:
+        url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x1BB943DB"
+        dest: /etc/apt/trusted.gpg.d/jgmath2000-et.asc
+        mode: '0644'
+        force: true
+
+    # 3. Add the repository (Force Jammy)
+    - name: Add Eternal Terminal Repository
+      ansible.builtin.apt_repository:
+        repo: "deb https://ppa.launchpadcontent.net/jgmath2000/et/ubuntu jammy main"
+        filename: et-releases
+        state: present
+        update_cache: true
+
     - name: Install mosh and eternal-terminal for persistent sessions
       ansible.builtin.apt:
         name:
           - mosh
           - et
         state: present
+        update_cache: true
 
     - name: Check if upstream keypair exists
       ansible.builtin.stat:
