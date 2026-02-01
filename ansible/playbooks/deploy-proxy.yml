@@ -547,6 +547,13 @@
             - /tmp/sshpiperd
             - /tmp/plugins
 
+    - name: Install mosh and eternal-terminal for persistent sessions
+      ansible.builtin.apt:
+        name:
+          - mosh
+          - et
+        state: present
+
     - name: Check if upstream keypair exists
       ansible.builtin.stat:
         path: "{{ sshpiper_config_dir }}/upstream_id_ed25519"
