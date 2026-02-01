@@ -5,7 +5,7 @@ pipes:
 {% if service_name != 'proxy' and service_info.ipv6 is defined %}
   # Route for {{ service_name }}: user@{{ service_name }} -> user@{{ service_info.ipv6 }}
   - from:
-      - username: "^(.+)@{{ service_name | regex_escape }}$"
+      - username: '^(.+)@{{ service_name | regex_escape }}$'
         username_regex_match: true
         authorized_keys: /etc/sshpiper/authorized_keys
     to:
