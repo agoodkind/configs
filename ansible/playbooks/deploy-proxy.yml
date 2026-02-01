@@ -550,6 +550,7 @@
     - name: Remove conflicting ET repository files and keys
       ansible.builtin.shell:
         cmd: rm -f /etc/apt/sources.list.d/*et*.list /etc/apt/sources.list.d/*jgmath*.list /etc/apt/keyrings/*et*
+      changed_when: false
 
     # 2. Download key directly to /etc/apt/trusted.gpg.d/ (Global Trust)
     - name: Install Eternal Terminal GPG key
