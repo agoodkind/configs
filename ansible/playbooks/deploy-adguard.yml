@@ -496,9 +496,16 @@
       vars:
         consul_service_name: adguard
         consul_service_tags: ["dns", "lxc"]
-        consul_service_port: 80
+        consul_service_port: 53
         consul_service_checks:
-          - http: "http://localhost:80/"
+          - args:
+              - "bash"
+              - "-c"
+              - >-
+                dig @localhost ipv4.google.com A
+                +short +time=2 | grep -q .
+                && dig @localhost ipv6.google.com AAAA
+                +short +time=2 | grep -q .
             interval: "30s"
             timeout: "5s"
       notify: Reload Consul

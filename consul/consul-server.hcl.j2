@@ -2,11 +2,10 @@ datacenter = "{{ consul_datacenter }}"
 domain = "{{ consul_domain }}"
 data_dir = "{{ consul_data_dir }}"
 
-# Bind to primary IPv6 address (derived from service_mapping)
-bind_addr = "{{ service_ipv6_address | ansible.utils.ipaddr('address') }}"
+bind_addr = "{{ '{{' }} GetAllInterfaces | include \"name\" \"{{ consul_bind_interface | default('eth0') }}\" | include \"type\" \"IPv6\" | attr \"address\" {{ '}}' }}"
 
-# Listen on all interfaces for client connections
-client_addr = "0.0.0.0 [::]"
+# IPv6-only for all client interfaces (avoids dual-stack port conflict)
+client_addr = "[::]"
 
 # Server mode
 server = {{ consul_server | lower }}

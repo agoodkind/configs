@@ -43,6 +43,7 @@ pci_webpass_nic: "06:00.0"
 # Interface names are DETECTED at deploy time and stored as facts
 # These defaults are overridden by deploy-mwan.yml after detection
 mwan_mgmt_iface: "enmgmt0"
+consul_bind_interface: "enmgmt0"
 mwan_att_iface: "{{ detected_att_iface | default('enatt0') }}"
 mwan_webpass_iface: "{{ detected_webpass_iface | default('enwebpass0') }}"
 mwan_internal_iface: "{{ detected_internal_iface | default('enmwanbr0') }}"

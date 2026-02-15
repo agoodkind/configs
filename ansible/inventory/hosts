@@ -5,4 +5,4 @@ ansible_user=root
 localhost ansible_connection=local
 
 [proxmox_nodes]
-vault ansible_host=3d06:bad:b01::254 ansible_user=root
+vault ansible_host=3d06:bad:b01::254 ansible_user=root consul_bind_interface=vmbr0

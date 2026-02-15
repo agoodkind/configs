@@ -70,7 +70,7 @@
     owner: consul
     group: consul
     mode: "0640"
-  notify: Reload Consul
+  notify: Restart Consul
 
 - name: Deploy Consul systemd service
   ansible.builtin.copy:

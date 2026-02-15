@@ -2,22 +2,13 @@ datacenter = "{{ consul_datacenter | default('home') }}"
 domain = "{{ consul_domain | default('int') }}"
 data_dir = "{{ consul_data_dir | default('/var/lib/consul') }}"
 
-# Bind address: auto-detected by Consul at runtime
-# Consul will select the first non-loopback, non-link-local address
-# For IPv6-only hosts, this picks the global unicast address automatically
-# bind_addr = "0.0.0.0"  # Omitted - let Consul auto-detect
+bind_addr = "{{ '{{' }} GetAllInterfaces | include \"name\" \"{{ consul_bind_interface | default('eth0') }}\" | include \"type\" \"IPv6\" | attr \"address\" {{ '}}' }}"
 
-# Advertise address: what this agent tells others to use to reach it
-# By default, uses bind_addr, but we can override if needed
-# advertise_addr = {% raw %}"{{ GetPrivateIP }}"{% endraw %}
+retry_join = ["{{ consul_server_address }}"]
 
-# Retry joining the Consul server
-retry_join = ["{{ consul_server_address | default('consul.home.goodkind.io') }}"]
-
-# Agent-specific configuration
 server = false
-client_addr = "127.0.0.1 ::1"
+client_addr = "::1"
+enable_local_script_checks = true
 
-# Logging
 log_level = "INFO"
 enable_syslog = false
