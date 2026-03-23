@@ -1,0 +1,20 @@
+[Unit]
+Description=Crafty Controller - Minecraft Server Manager
+Documentation=https://craftycontrol.com/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=crafty
+Group=crafty
+WorkingDirectory=/var/opt/minecraft/crafty/crafty-4
+Environment=TZ=America/New_York
+Environment=JAVA_TOOL_OPTIONS=-Djava.net.preferIPv6Addresses=true
+ExecStart=/var/opt/minecraft/crafty/.venv/bin/python main.py --daemon
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

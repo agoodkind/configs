@@ -1,0 +1,221 @@
+---
+- name: Setup Minecraft container
+  ansible.builtin.import_playbook: setup-service-ct.yml
+  vars:
+    container_group: mc_servers
+    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/mc_servers.yml"
+
+- name: Configure Minecraft Service (Crafty Controller)
+  hosts: mc_servers
+  become: true
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    crafty_repo: "https://gitlab.com/crafty-controller/crafty-4.git"
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Java and Crafty dependencies
+      ansible.builtin.apt:
+        name:
+          - openjdk-21-jre-headless
+          - python3
+          - python3-pip
+          - python3-venv
+          - python3-dev
+          - git
+          - wget
+        state: present
+
+    - name: Create crafty group
+      ansible.builtin.group:
+        name: "{{ crafty_group }}"
+        system: true
+
+    - name: Create crafty user
+      ansible.builtin.user:
+        name: "{{ crafty_user }}"
+        group: "{{ crafty_group }}"
+        shell: /bin/bash
+        system: true
+        create_home: false
+
+    - name: Create Crafty directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ crafty_user }}"
+        group: "{{ crafty_group }}"
+        mode: "0755"
+      loop:
+        - "{{ crafty_install_dir }}"
+        - "{{ crafty_server_dir }}"
+
+    - name: Create Ansible temp directory for crafty user
+      ansible.builtin.file:
+        path: /tmp/.ansible-crafty/tmp
+        state: directory
+        owner: "{{ crafty_user }}"
+        group: "{{ crafty_group }}"
+        mode: "0700"
+
+    - name: Check if Crafty is already installed
+      ansible.builtin.stat:
+        path: "{{ crafty_install_dir }}/crafty-4/main.py"
+      register: crafty_installed
+      changed_when: false
+
+    - name: Clone Crafty Controller 4
+      ansible.builtin.git:
+        repo: "{{ crafty_repo }}"
+        dest: "{{ crafty_install_dir }}/crafty-4"
+        version: master
+        force: true
+      become: true
+      become_user: "{{ crafty_user }}"
+      vars:
+        ansible_remote_tmp: /tmp/.ansible-crafty/tmp
+      when: not crafty_installed.stat.exists
+
+    - name: Create Python virtual environment
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -m
+          - venv
+          - "{{ crafty_install_dir }}/.venv"
+      args:
+        creates: "{{ crafty_install_dir }}/.venv/bin/python"
+      become: true
+      become_user: "{{ crafty_user }}"
+      vars:
+        ansible_remote_tmp: /tmp/.ansible-crafty/tmp
+
+    - name: Install Crafty Python dependencies
+      ansible.builtin.pip:
+        requirements: >-
+          {{ crafty_install_dir }}/crafty-4/requirements.txt
+        virtualenv: "{{ crafty_install_dir }}/.venv"
+        virtualenv_command: python3 -m venv
+        state: present
+        extra_args: "--no-cache-dir"
+      become: true
+      become_user: "{{ crafty_user }}"
+      vars:
+        ansible_remote_tmp: /tmp/.ansible-crafty/tmp
+
+    - name: Ensure Crafty directories owned by crafty
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ crafty_user }}"
+        group: "{{ crafty_group }}"
+        recurse: true
+      loop:
+        - "{{ crafty_install_dir }}"
+        - "{{ crafty_server_dir }}"
+
+    - name: Install Crafty systemd service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mc/crafty.service"
+        dest: /etc/systemd/system/crafty.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable and start Crafty
+      ansible.builtin.systemd:
+        name: crafty
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Wait for Crafty to start
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: Wait for Crafty HTTPS port
+      ansible.builtin.wait_for:
+        host: "127.0.0.1"
+        port: "{{ crafty_port }}"
+        timeout: 60
+
+    - name: Health check Crafty UI
+      ansible.builtin.uri:
+        url: "https://localhost:{{ crafty_port }}"
+        validate_certs: false
+        status_code: [200, 301, 302, 401, 403]
+        timeout: 10
+      register: crafty_health
+      retries: 6
+      delay: 5
+      until: crafty_health.status is defined
+
+    - name: Report Crafty health check
+      ansible.builtin.debug:
+        msg: >-
+          Crafty Controller responding
+          (HTTPS {{ crafty_health.status }})
+
+    - name: Install jq for mod updater
+      ansible.builtin.apt:
+        name: jq
+        state: present
+
+    - name: Deploy mod updater env file
+      ansible.builtin.copy:
+        dest: /etc/mc-mods.env
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          CRAFTY_SERVERS_DIR={{ mc_crafty_servers_dir }}
+          MOD_PROJECT_IDS={{ mc_mod_project_ids | join(' ') }}
+
+    - name: Install mod updater script
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mc/update-mods.sh"
+        dest: /usr/local/bin/update-mods.sh
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install mod updater systemd service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mc/update-mods.service"
+        dest: /etc/systemd/system/update-mods.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install mod updater systemd timer
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mc/update-mods.timer"
+        dest: /etc/systemd/system/update-mods.timer
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable mod updater timer
+      ansible.builtin.systemd:
+        name: update-mods.timer
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Run initial mod update
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['/usr/local/bin/update-mods.sh',
+             '-d', mc_crafty_servers_dir]
+            + mc_mod_project_ids
+          }}
+      register: mod_update_result
+      changed_when: "'updated' in mod_update_result.stdout"
+
+    - name: Show mod update result
+      ansible.builtin.debug:
+        msg: "{{ mod_update_result.stdout_lines }}"

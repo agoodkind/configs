@@ -1,0 +1,10 @@
+[Unit]
+Description=Minecraft Mod Updater (Modrinth)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mc-mods.env
+Environment=JAVA_TOOL_OPTIONS=-Djava.net.preferIPv6Addresses=true
+ExecStart=/bin/bash -c 'exec /usr/local/bin/update-mods.sh -d "$CRAFTY_SERVERS_DIR" $MOD_PROJECT_IDS'

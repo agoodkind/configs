@@ -1,0 +1,39 @@
+---
+# Minecraft (Crafty Controller) Container Configuration
+# All service_* variables derive from service_mapping (single source of truth)
+
+# Service identity
+service_hostname: "{{ service_mapping.mc.hostname }}"
+service_description: "Minecraft Fabric Server (Crafty Controller)"
+
+# Static addressing (pinned; VMID 109)
+service_ipv6_only: true
+service_ipv6_address: "{{ service_mapping.mc.ipv6 }}/64"
+service_mac_address: "BC:24:11:00:01:09"
+container_vmid: "109"
+
+# Container resources
+service_memory: "8192"
+service_cores: "4"
+service_disk_size: "20"
+service_tags: "lxc,minecraft,mc"
+
+# Crafty Controller
+crafty_port: 8443
+crafty_install_dir: /var/opt/minecraft/crafty
+crafty_server_dir: /var/opt/minecraft/server
+crafty_user: crafty
+crafty_group: crafty
+
+# Minecraft server
+mc_server_port: 25565
+mc_crafty_servers_dir: >-
+  {{ crafty_install_dir }}/crafty-4/servers
+
+# Modrinth project IDs for auto-update
+mc_mod_project_ids:
+  - gvQqBUqZ # lithium
+  - KOHu7RCS # moonrise
+
+# Container login directory (prep-guests.yml)
+login_dir: /var/opt/minecraft/crafty
