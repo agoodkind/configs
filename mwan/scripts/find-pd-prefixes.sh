@@ -45,7 +45,7 @@ bytes16_to_ipv6() {
     local -a b=("$@")
     local hex
 
-    if [[ "${#b[@]}" -eq 16 ]]; then
+    if [[ "${#b[@]}" -ne 16 ]]; then
         return 1
     fi
 
@@ -78,8 +78,12 @@ normalize_ipv6_cidr() {
     local cidr="$1" net pref
     net="$(ipcalc6_field "$cidr" '.NETWORK')"
     pref="$(ipcalc6_field "$cidr" '.PREFIX')"
-    [[ -n "$net" ]] || return 1
-    [[ -n "$pref" ]] || return 1
+    if [[ -z "$net" ]]; then
+        return 1
+    fi
+    if [[ -z "$pref" ]]; then
+        return 1
+    fi
     echo "${net}/${pref}"
 }
 
@@ -102,7 +106,9 @@ from_describe() {
           | jq -r '.data[1] // empty' 2>/dev/null \
           || true
     )"
-    [[ -n "$path" ]] || return 1
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
 
     # Describe returns a JSON string inside .data[0]
     busctl -j --no-pager --system call \

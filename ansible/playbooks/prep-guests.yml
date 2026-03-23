@@ -341,6 +341,7 @@
           host {{ smtp_host }}
           port {{ smtp_port }}
           user {{ smtp_effective_user }}
+          auth           login
           password {{ smtp_effective_pass }}
           from {{ smtp_effective_from }}
 

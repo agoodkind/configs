@@ -174,62 +174,18 @@ Ansible's `changed_when: true` with `async` can mask command failures.
 5. Line 48: `$(((now - null) / 60))` causes bash error "null: unbound variable"
 
 **Fix**:
+
 - Fixed timestamp parsing to handle "null" from jq
 - Made watchdog always monitor (continuous mode)
 - Added alert emails for non-deploy connectivity issues
 - Tests from both Proxmox and inside MWAN VM
 
 **Prevention**:
+
 - Moved to env file pattern: `proxmox/config/mwan-watchdog.env.j2`
 - Script sources env, service uses `EnvironmentFile`
 - Created HTTP email script for reliable routing
 - Updated post-deploy check to test from MWAN VM + cloudflared
-
----
-
-## Outstanding Issues
-
-### Watchdog doesn't monitor continuously [FIXED]
-
-**Was**:
-- Exits immediately if no recent deploy
-- Crashes on missing/invalid timestamp file (`null: unbound variable`)
-- No continuous health monitoring
-
-**Now**:
-- ✓ Always monitors connectivity (continuous mode)
-- ✓ If broken + recent deploy → rollback
-- ✓ If broken + no recent deploy → alert email
-- ✓ Never crashes on missing file
-- ✓ Tests from both Proxmox and inside MWAN VM
-
-### No email notifications for events
-
-**Current behavior**: Email only on rollback
-
-**Required behavior**: Email on:
-
-- Interface state changes (WAN up/down)
-- Config changes
-- Deploys (start/finish/fail)
-- Startup/shutdown
-- Health state transitions (healthy → unhealthy)
-
-### Post-deploy connectivity check incomplete [FIXED]
-
-**Was**: Tests from Proxmox to internet only
-
-**Now**:
-- ✓ Tests from MWAN VM itself (via qm guest exec)
-- ✓ Tests IPv4 + IPv6 connectivity
-- ✓ Tests cloudflared service status
-- ✓ Only updates last-known-good if both pass
-
-### Cloudflared no fallback route
-
-**Current behavior**: Uses default routing (can fail if primary WAN down)
-
-**Required behavior**: Fallback to monkeybrains if other WANs fail
 
 ---
 

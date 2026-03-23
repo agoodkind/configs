@@ -34,6 +34,9 @@ service_mapping:
   freebsd-dev-home:
     hostname: freebsd-dev.home.goodkind.io
     ipv6: "3d06:bad:b01::108"
+  mc:
+    hostname: mc.home.goodkind.io
+    ipv6: "3d06:bad:b01::109"
   proxy:
     hostname: proxy.home.goodkind.io
     ipv6: "3d06:bad:b01::110"

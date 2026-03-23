@@ -111,6 +111,16 @@ http:
       tls:
         certResolver: letsencrypt
 
+    mc-ingress:
+      rule: "Host(`mc.{{ traefik_ingress_domain }}`)"
+      service: crafty-service
+      middlewares:
+        - secure-headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
   services:
     ansible-service:
       loadBalancer:
@@ -166,6 +176,12 @@ http:
         servers:
           - url: "http://[3d06:bad:b01::108]:8080"
 
+    crafty-service:
+      loadBalancer:
+        servers:
+          - url: "https://[3d06:bad:b01::109]:8443"
+        serversTransport: insecure-transport
+
   serversTransports:
     insecure-transport:
       insecureSkipVerify: true
@@ -173,6 +189,19 @@ http:
     unifi-transport:
       insecureSkipVerify: true
       serverName: "UniFi"
+
+tcp:
+  routers:
+    minecraft-ingress:
+      entryPoints:
+        - minecraft
+      rule: "HostSNI(`*`)"
+      service: minecraft-service
+  services:
+    minecraft-service:
+      loadBalancer:
+        servers:
+          - address: "[3d06:bad:b01::109]:25565"
 
 udp:
   routers:

@@ -36,6 +36,11 @@ table inet filter {
         iifname $MGMT_IFACE tcp dport 22 accept
         # iif $INTERNAL_IFACE tcp dport 22 accept
 
+        # Allow Consul gossip (Serf) from management network
+        # Required for consul server (::106) to initiate push/pull to this agent.
+        iifname $MGMT_IFACE tcp dport 8301 accept
+        iifname $MGMT_IFACE udp dport 8301 accept
+
         # Allow DHCP on management interface
         # iif $MGMT_IFACE udp sport 67 udp dport 68 accept
         # iif $MGMT_IFACE udp sport 547 udp dport 546 accept

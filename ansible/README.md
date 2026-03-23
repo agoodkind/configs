@@ -27,10 +27,9 @@ Vault password is configured as environment variable in Semaphore.
 
 ## Secrets Management
 
-**All secrets are stored in Ansible Vault** (single source of truth).
+All secrets are stored in Ansible Vault (single source of truth).
 
-- **Documentation**: See [VAULT-SETUP.md](VAULT-SETUP.md)
-- **Quick Reference**: See [VAULT-QUICKREF.md](VAULT-QUICKREF.md)
+- **Documentation**: See [SECRETS.md](SECRETS.md)
 
 ## Directory Structure
 
@@ -39,31 +38,41 @@ Vault password is configured as environment variable in Semaphore.
 ├── ansible.cfg                   # Ansible configuration
 ├── inventory/                    # Inventory and variables
 │   ├── hosts                     # Static inventory
+│   ├── proxmox.yml               # Dynamic Proxmox inventory plugin
 │   └── group_vars/
 │       └── all/
 │           ├── vault.yml         # Encrypted secrets (Ansible Vault)
-│           └── vars.yml          # Non-secret variables
-├── playbooks/                    # Playbooks
-│   ├── create-ct.yml             # Create LXC containers
-│   ├── deploy-mwan.yml           # Deploy multi-WAN setup
-│   ├── deploy-proxy.yml          # Deploy reverse proxy
-│   └── tasks/                    # Reusable task files
-└── roles/                        # Ansible roles (if any)
+│           ├── vars.yml          # Non-secret variables
+│           └── service_mapping.yml  # Single source of truth for host IPs
+├── playbooks/                    # Playbooks (one per service)
+│   ├── create-ct.yml             # Provision LXC containers
+│   ├── prep-guests.yml           # Bootstrap all LXCs (packages, msmtp, Consul, updater)
+│   ├── deploy-mwan.yml           # Multi-WAN VM
+│   ├── deploy-proxy.yml          # Traefik + SSHPiper
+│   ├── deploy-adguard.yml        # AdGuard Home
+│   ├── deploy-dns64.yml          # BIND DNS64
+│   ├── deploy-consul.yml         # Consul server
+│   ├── deploy-consul-external.yml # Consul agents on vault, NAS, mini, OPNsense
+│   └── deploy-grommunio.yml      # Grommunio (not wired into any workflow)
+└── templates/                    # Jinja2 templates organized by host type
 ```
 
 ## Common Tasks
 
 ### View Secrets
+
 ```bash
 ansible-vault view inventory/group_vars/all/vault.yml
 ```
 
 ### Edit Secrets
+
 ```bash
 ansible-vault edit inventory/group_vars/all/vault.yml
 ```
 
 ### Add New Secret
+
 1. Edit vault: `ansible-vault edit inventory/group_vars/all/vault.yml`
 2. Add: `vault_new_secret: "value"`
 3. Reference in vars: `new_secret: "{{ vault_new_secret }}"`
@@ -72,6 +81,7 @@ ansible-vault edit inventory/group_vars/all/vault.yml
 ## Setup for New Team Members
 
 1. **Clone repository**:
+
    ```bash
    git clone <repo-url>
    cd ansible
@@ -80,6 +90,7 @@ ansible-vault edit inventory/group_vars/all/vault.yml
 2. **Get vault password** from team password manager
 
 3. **Store password locally**:
+
    ```bash
    mkdir -p ~/.config/ansible
    chmod 700 ~/.config/ansible
@@ -88,6 +99,7 @@ ansible-vault edit inventory/group_vars/all/vault.yml
    ```
 
 4. **Install dependencies**:
+
    ```bash
    ansible-galaxy collection install -r requirements.yml
    ```
@@ -99,8 +111,8 @@ ansible-vault edit inventory/group_vars/all/vault.yml
 
 ## Documentation
 
-- [Vault Setup Guide](VAULT-SETUP.md) - Complete secrets management documentation
-- [Vault Quick Reference](VAULT-QUICKREF.md) - Common commands cheat sheet
+- [Secrets Management](SECRETS.md) - Vault setup and common commands
+- [Proxmox Setup](PROXMOX_SETUP.md) - Proxmox VE host preparation
 
 ## Support
 
