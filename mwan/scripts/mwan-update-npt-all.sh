@@ -19,13 +19,15 @@ set -euo pipefail
 
 TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
-if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+if [[ -z "${MWAN_TRACE_ID:-}" && -r "$TRACE_FILE" ]]; then
   MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
 log() {
   local prefix=""
-  [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+  if [[ -n "${MWAN_TRACE_ID:-}" ]]; then
+      prefix="traceId=${MWAN_TRACE_ID} "
+  fi
   logger -t mwan-update-npt-all "${prefix}$*" || true
   echo "[mwan-update-npt-all] ${prefix}$*"
 }
@@ -34,8 +36,8 @@ run_one() {
   local ifc="$1"
   local cidr="$2"
 
-  [ -n "$ifc" ] || return 0
-  [ -n "$cidr" ] || return 0
+  [[ -n "$ifc" ]] || return 0
+  [[ -n "$cidr" ]] || return 0
 
   log "Updating NPT: iface=$ifc prefix=$cidr"
   /usr/local/bin/update-npt.sh "$ifc" "$cidr"

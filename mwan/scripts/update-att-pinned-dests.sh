@@ -24,7 +24,7 @@ DEBUG="${MWAN_DEBUG_LOGGING:-0}"
 DEBUG_LOG="${MWAN_DEBUG_LOG:-/var/log/mwan-debug.log}"
 TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
-if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+if [[ -z "${MWAN_TRACE_ID:-}" && -r "$TRACE_FILE" ]]; then
     MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
@@ -34,13 +34,15 @@ flock 9
 
 log() {
     local prefix=""
-    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    if [[ -n "${MWAN_TRACE_ID:-}" ]]; then
+        prefix="traceId=${MWAN_TRACE_ID} "
+    fi
     logger -t update-att-pinned "${prefix}$*" || true
     echo "[update-att-pinned] ${prefix}$*"
 }
 
 debug_json() {
-    [ "$DEBUG" = "1" ] || return 0
+    [[ "$DEBUG" = "1" ]] || return 0
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
@@ -103,7 +105,9 @@ append_seed_cidrs_v4() {
     local cidr
 
     for cidr in ${MWAN_ATT_PINNED_V4_SEED_CIDRS:-}; do
-        [ -n "$cidr" ] || continue
+        if [[ -z "$cidr" ]]; then
+            continue
+        fi
         echo "$cidr" >>"$tmp"
     done
 }
@@ -113,9 +117,13 @@ append_fqdn_v4() {
     local fqdn ip
 
     for fqdn in ${MWAN_ATT_PINNED_V4_FQDNS:-}; do
-        [ -n "$fqdn" ] || continue
+        if [[ -z "$fqdn" ]]; then
+            continue
+        fi
         while read -r ip; do
-            [ -n "$ip" ] || continue
+            if [[ -z "$ip" ]]; then
+                continue
+            fi
             echo "$ip/32" >>"$tmp"
         done < <(resolve_v4 "$fqdn" || true)
     done
@@ -123,7 +131,7 @@ append_fqdn_v4() {
 
 zoom_v4_prefixes() {
     local url="${MWAN_ZOOM_IPRANGES_URL:-}"
-    [ -n "$url" ] || return 0
+    [[ -n "$url" ]] || return 0
 
     # Prefer parsing Zoom's plain-text prefix lists (one prefix per line), but also support the
     # older JSON format (ip_prefix fields) if you swap the URL back.
@@ -145,7 +153,9 @@ append_seed_cidrs_v6() {
     local cidr
 
     for cidr in ${MWAN_ATT_PINNED_V6_SEED_CIDRS:-}; do
-        [ -n "$cidr" ] || continue
+        if [[ -z "$cidr" ]]; then
+            continue
+        fi
         echo "$cidr" >>"$tmp"
     done
 }
@@ -155,9 +165,13 @@ append_fqdn_v6() {
     local fqdn ip
 
     for fqdn in ${MWAN_ATT_PINNED_V6_FQDNS:-}; do
-        [ -n "$fqdn" ] || continue
+        if [[ -z "$fqdn" ]]; then
+            continue
+        fi
         while read -r ip; do
-            [ -n "$ip" ] || continue
+            if [[ -z "$ip" ]]; then
+                continue
+            fi
             echo "$ip/128" >>"$tmp"
         done < <(resolve_v6 "$fqdn" || true)
     done
@@ -180,7 +194,9 @@ main() {
 
     # Zoom feed (optional, IPv4 only)
     while read -r cidr; do
-        [ -n "$cidr" ] || continue
+        if [[ -z "$cidr" ]]; then
+            continue
+        fi
         echo "$cidr" >>"$tmp_v4"
     done < <(zoom_v4_prefixes || true)
 
@@ -194,14 +210,18 @@ main() {
     {
         echo "flush set $TABLE $NFT_TABLE $SET_V4"
         sort -u "$tmp_v4" | while read -r elem; do
-            [ -n "$elem" ] || continue
+            if [[ -z "$elem" ]]; then
+                continue
+            fi
             echo "add element $TABLE $NFT_TABLE $SET_V4 { $elem }"
             count_v4=$((count_v4 + 1))
         done
 
         echo "flush set $TABLE $NFT_TABLE $SET_V6"
         sort -u "$tmp_v6" | while read -r elem; do
-            [ -n "$elem" ] || continue
+            if [[ -z "$elem" ]]; then
+                continue
+            fi
             echo "add element $TABLE $NFT_TABLE $SET_V6 { $elem }"
             count_v6=$((count_v6 + 1))
         done
@@ -213,8 +233,10 @@ main() {
 
     nft -f "$tmp_nft"
 
-    [ "$DEBUG" = "1" ] && debug_json "APPLY" "elements_applied" \
-        "$(jq -cn --argjson v4 "$count_v4" --argjson v6 "$count_v6" '{v4: $v4, v6: $v6}')"
+    if [[ "$DEBUG" = "1" ]]; then
+        debug_json "APPLY" "elements_applied" \
+            "$(jq -cn --argjson v4 "$count_v4" --argjson v6 "$count_v6" '{v4: $v4, v6: $v6}')"
+    fi
 
     log "Pinned sets updated (v4: $count_v4, v6: $count_v6)"
 }

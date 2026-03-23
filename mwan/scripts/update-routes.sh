@@ -31,7 +31,9 @@ flock 9
 log() {
     local msg="$1"
     local prefix=""
-    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    if [[ -n "${MWAN_TRACE_ID:-}" ]]; then
+        prefix="traceId=${MWAN_TRACE_ID} "
+    fi
     echo "[update-routes] ${prefix}${msg}"
     logger -t update-routes "${prefix}${msg}" || true
 }
@@ -40,12 +42,12 @@ DEBUG="${MWAN_DEBUG_LOGGING:-0}"
 DEBUG_LOG="${MWAN_DEBUG_LOG:-/var/log/mwan-debug.log}"
 TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
-if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+if [[ -z "${MWAN_TRACE_ID:-}" && -r "$TRACE_FILE" ]]; then
     MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
 debug_json() {
-    [ "$DEBUG" = "1" ] || return 0
+    [[ "$DEBUG" = "1" ]] || return 0
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
@@ -98,12 +100,15 @@ CLOUDFLARED_TABLE="${MWAN_RT_CLOUDFLARED:-400}"
 STATE_FILE="/var/run/mwan-health.state"
 wan_health_state() {
     local wan="$1"
-    [ -r "$STATE_FILE" ] || { echo "unknown"; return 0; }
+    if [[ ! -r "$STATE_FILE" ]]; then
+        echo "unknown"
+        return 0
+    fi
     grep "^${wan}:" "$STATE_FILE" | tail -n1 | cut -d: -f2 || echo "unknown"
 }
 # Treat unknown as healthy to avoid cutting traffic during daemon warmup.
 wan_is_healthy() {
-    [ "$(wan_health_state "$1")" != "unhealthy" ]
+    [[ "$(wan_health_state "$1")" != "unhealthy" ]]
 }
 
 # Get gateways
@@ -155,14 +160,28 @@ defaults_json() {
     }'
 }
 
-[ "$DEBUG" = "1" ] && debug_json "DEFAULTS" "ip_default_routes" "$(defaults_json)"
+if [[ "$DEBUG" = "1" ]]; then
+    debug_json "DEFAULTS" "ip_default_routes" "$(defaults_json)"
+fi
 
-[ -n "$ATT_IFACE" ] && ATT_GW4="$(get_gw4 "$ATT_IFACE")"
-[ -n "$WEBPASS_IFACE" ] && WEBPASS_GW4="$(get_gw4 "$WEBPASS_IFACE")"
-[ -n "$MB_IFACE" ] && MB_GW4="$(get_gw4 "$MB_IFACE")"
-[ -n "$ATT_IFACE" ] && ATT_GW6="$(get_gw6 "$ATT_IFACE")"
-[ -n "$WEBPASS_IFACE" ] && WEBPASS_GW6="$(get_gw6 "$WEBPASS_IFACE")"
-[ -n "$MB_IFACE" ] && MB_GW6="$(get_gw6 "$MB_IFACE")"
+if [[ -n "$ATT_IFACE" ]]; then
+    ATT_GW4="$(get_gw4 "$ATT_IFACE")"
+fi
+if [[ -n "$WEBPASS_IFACE" ]]; then
+    WEBPASS_GW4="$(get_gw4 "$WEBPASS_IFACE")"
+fi
+if [[ -n "$MB_IFACE" ]]; then
+    MB_GW4="$(get_gw4 "$MB_IFACE")"
+fi
+if [[ -n "$ATT_IFACE" ]]; then
+    ATT_GW6="$(get_gw6 "$ATT_IFACE")"
+fi
+if [[ -n "$WEBPASS_IFACE" ]]; then
+    WEBPASS_GW6="$(get_gw6 "$WEBPASS_IFACE")"
+fi
+if [[ -n "$MB_IFACE" ]]; then
+    MB_GW6="$(get_gw6 "$MB_IFACE")"
+fi
 
 log "AT&T: $ATT_IFACE (v6: $ATT_GW6, v4: $ATT_GW4)"
 log "Webpass: $WEBPASS_IFACE (v6: $WEBPASS_GW6, v4: $WEBPASS_GW4)"
@@ -200,7 +219,9 @@ gateways_json() {
     }'
 }
 
-[ "$DEBUG" = "1" ] && debug_json "GW" "parsed_gateways" "$(gateways_json)"
+if [[ "$DEBUG" = "1" ]]; then
+    debug_json "GW" "parsed_gateways" "$(gateways_json)"
+fi
 
 del_rule_v4() {
     # Best-effort targeted deletes (avoid nuking unrelated rules such as networkd "from" rules)
@@ -212,51 +233,63 @@ del_rule_v6() {
 ensure_uid_rule_v4() {
     local uid="$1" table="$2" prio="$3" enable="$4"
     del_rule_v4 priority "$prio" uidrange "${uid}-${uid}" table "$table"
-    [ "$enable" = "1" ] && ip rule add priority "$prio" uidrange "${uid}-${uid}" table "$table" || true
+    if [[ "$enable" = "1" ]]; then
+        ip rule add priority "$prio" uidrange "${uid}-${uid}" table "$table" || true
+    fi
 }
 ensure_uid_rule_v6() {
     local uid="$1" table="$2" prio="$3" enable="$4"
     del_rule_v6 priority "$prio" uidrange "${uid}-${uid}" table "$table"
-    [ "$enable" = "1" ] && ip -6 rule add priority "$prio" uidrange "${uid}-${uid}" table "$table" || true
+    if [[ "$enable" = "1" ]]; then
+        ip -6 rule add priority "$prio" uidrange "${uid}-${uid}" table "$table" || true
+    fi
 }
 ensure_fwmark_rule_v4() {
     local mark="$1" table="$2" prio="$3" enable="$4"
     del_rule_v4 priority "$prio" fwmark "$mark" table "$table"
-    [ "$enable" = "1" ] && ip rule add priority "$prio" fwmark "$mark" table "$table" || true
+    if [[ "$enable" = "1" ]]; then
+        ip rule add priority "$prio" fwmark "$mark" table "$table" || true
+    fi
 }
 ensure_fwmark_rule_v6() {
     local mark="$1" table="$2" prio="$3" enable="$4"
     del_rule_v6 priority "$prio" fwmark "$mark" table "$table"
-    [ "$enable" = "1" ] && ip -6 rule add priority "$prio" fwmark "$mark" table "$table" || true
+    if [[ "$enable" = "1" ]]; then
+        ip -6 rule add priority "$prio" fwmark "$mark" table "$table" || true
+    fi
 }
 ensure_iif_fallback_v4() {
     local table="$1" prio="$2" enable="$3"
     del_rule_v4 priority "$prio" iif "$INTERNAL_IFACE" table "$table"
-    [ "$enable" = "1" ] && ip rule add priority "$prio" iif "$INTERNAL_IFACE" table "$table" || true
+    if [[ "$enable" = "1" ]]; then
+        ip rule add priority "$prio" iif "$INTERNAL_IFACE" table "$table" || true
+    fi
 }
 ensure_iif_fallback_v6() {
     local table="$1" prio="$2" enable="$3"
     del_rule_v6 priority "$prio" iif "$INTERNAL_IFACE" table "$table"
-    [ "$enable" = "1" ] && ip -6 rule add priority "$prio" iif "$INTERNAL_IFACE" table "$table" || true
+    if [[ "$enable" = "1" ]]; then
+        ip -6 rule add priority "$prio" iif "$INTERNAL_IFACE" table "$table" || true
+    fi
 }
 
 # Populate per-WAN routing tables first (non-destructive; do not flush).
-if [ -n "${ATT_GW6:-}" ]; then
+if [[ -n "${ATT_GW6:-}" ]]; then
     ip -6 route replace default via "$ATT_GW6" dev "$ATT_IFACE" table "$ATT_TABLE"
 fi
-if [ -n "${ATT_GW4:-}" ]; then
+if [[ -n "${ATT_GW4:-}" ]]; then
     ip route replace default via "$ATT_GW4" dev "$ATT_IFACE" table "$ATT_TABLE"
 fi
-if [ -n "${WEBPASS_GW6:-}" ]; then
+if [[ -n "${WEBPASS_GW6:-}" ]]; then
     ip -6 route replace default via "$WEBPASS_GW6" dev "$WEBPASS_IFACE" table "$WEBPASS_TABLE"
 fi
-if [ -n "${WEBPASS_GW4:-}" ]; then
+if [[ -n "${WEBPASS_GW4:-}" ]]; then
     ip route replace default via "$WEBPASS_GW4" dev "$WEBPASS_IFACE" table "$WEBPASS_TABLE"
 fi
-if [ -n "${MB_GW6:-}" ]; then
+if [[ -n "${MB_GW6:-}" ]]; then
     ip -6 route replace default via "$MB_GW6" dev "$MB_IFACE" table "$MB_TABLE"
 fi
-if [ -n "${MB_GW4:-}" ]; then
+if [[ -n "${MB_GW4:-}" ]]; then
     ip route replace default via "$MB_GW4" dev "$MB_IFACE" table "$MB_TABLE"
 fi
 
@@ -291,12 +324,24 @@ att_v4_enable=0; att_v6_enable=0
 web_v4_enable=0; web_v6_enable=0
 mb_v4_enable=0; mb_v6_enable=0
 
-[ -n "${ATT_GW4:-}" ] && wan_is_healthy att && att_v4_enable=1
-[ -n "${ATT_GW6:-}" ] && wan_is_healthy att && att_v6_enable=1
-[ -n "${WEBPASS_GW4:-}" ] && wan_is_healthy webpass && web_v4_enable=1
-[ -n "${WEBPASS_GW6:-}" ] && wan_is_healthy webpass && web_v6_enable=1
-[ -n "${MB_GW4:-}" ] && wan_is_healthy monkeybrains && mb_v4_enable=1
-[ -n "${MB_GW6:-}" ] && wan_is_healthy monkeybrains && mb_v6_enable=1
+if [[ -n "${ATT_GW4:-}" ]] && wan_is_healthy att; then
+    att_v4_enable=1
+fi
+if [[ -n "${ATT_GW6:-}" ]] && wan_is_healthy att; then
+    att_v6_enable=1
+fi
+if [[ -n "${WEBPASS_GW4:-}" ]] && wan_is_healthy webpass; then
+    web_v4_enable=1
+fi
+if [[ -n "${WEBPASS_GW6:-}" ]] && wan_is_healthy webpass; then
+    web_v6_enable=1
+fi
+if [[ -n "${MB_GW4:-}" ]] && wan_is_healthy monkeybrains; then
+    mb_v4_enable=1
+fi
+if [[ -n "${MB_GW6:-}" ]] && wan_is_healthy monkeybrains; then
+    mb_v6_enable=1
+fi
 
 ensure_fwmark_rule_v4 1 "$ATT_TABLE" 100 "$att_v4_enable"
 ensure_fwmark_rule_v6 1 "$ATT_TABLE" 100 "$att_v6_enable"
@@ -317,29 +362,29 @@ cloud_if4=""
 cloud_gw6=""
 cloud_if6=""
 
-if [ "$att_v4_enable" = "1" ]; then
+if [[ "$att_v4_enable" = "1" ]]; then
     cloud_v4_enable=1; cloud_gw4="$ATT_GW4"; cloud_if4="$ATT_IFACE"
-elif [ "$web_v4_enable" = "1" ]; then
+elif [[ "$web_v4_enable" = "1" ]]; then
     cloud_v4_enable=1; cloud_gw4="$WEBPASS_GW4"; cloud_if4="$WEBPASS_IFACE"
-elif [ "$mb_v4_enable" = "1" ]; then
+elif [[ "$mb_v4_enable" = "1" ]]; then
     cloud_v4_enable=1; cloud_gw4="$MB_GW4"; cloud_if4="$MB_IFACE"
 fi
 
-if [ "$att_v6_enable" = "1" ]; then
+if [[ "$att_v6_enable" = "1" ]]; then
     cloud_v6_enable=1; cloud_gw6="$ATT_GW6"; cloud_if6="$ATT_IFACE"
-elif [ "$web_v6_enable" = "1" ]; then
+elif [[ "$web_v6_enable" = "1" ]]; then
     cloud_v6_enable=1; cloud_gw6="$WEBPASS_GW6"; cloud_if6="$WEBPASS_IFACE"
-elif [ "$mb_v6_enable" = "1" ]; then
+elif [[ "$mb_v6_enable" = "1" ]]; then
     cloud_v6_enable=1; cloud_gw6="$MB_GW6"; cloud_if6="$MB_IFACE"
 fi
 
-if [ "$cloud_v4_enable" = "1" ]; then
+if [[ "$cloud_v4_enable" = "1" ]]; then
     ip route replace default via "$cloud_gw4" dev "$cloud_if4" table "$CLOUDFLARED_TABLE" || true
 else
     ip route del default table "$CLOUDFLARED_TABLE" || true
 fi
 
-if [ "$cloud_v6_enable" = "1" ]; then
+if [[ "$cloud_v6_enable" = "1" ]]; then
     ip -6 route replace default via "$cloud_gw6" dev "$cloud_if6" table "$CLOUDFLARED_TABLE" || true
 else
     ip -6 route del default table "$CLOUDFLARED_TABLE" || true
@@ -380,4 +425,6 @@ final_json() {
     }'
 }
 
-[ "$DEBUG" = "1" ] && debug_json "FINAL" "rules_and_routes" "$(final_json)"
+if [[ "$DEBUG" = "1" ]]; then
+    debug_json "FINAL" "rules_and_routes" "$(final_json)"
+fi

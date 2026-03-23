@@ -29,12 +29,12 @@ DEBUG="${MWAN_DEBUG_LOGGING:-0}"
 DEBUG_LOG="${MWAN_DEBUG_LOG:-/var/log/mwan-debug.log}"
 TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
-if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+if [[ -z "${MWAN_TRACE_ID:-}" && -r "$TRACE_FILE" ]]; then
     MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
 debug_json() {
-    [ "$DEBUG" = "1" ] || return 0
+    [[ "$DEBUG" = "1" ]] || return 0
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
@@ -94,29 +94,49 @@ MB_TARGETS_V6=()
 MB_HTTP_TARGETS=()
 
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_ATT_TARGETS_V4:-}" ] && ATT_TARGETS_V4=(${MWAN_HEALTH_ATT_TARGETS_V4})
+if [[ -n "${MWAN_HEALTH_ATT_TARGETS_V4:-}" ]]; then
+    ATT_TARGETS_V4=(${MWAN_HEALTH_ATT_TARGETS_V4})
+fi
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_ATT_TARGETS_V6:-}" ] && ATT_TARGETS_V6=(${MWAN_HEALTH_ATT_TARGETS_V6})
+if [[ -n "${MWAN_HEALTH_ATT_TARGETS_V6:-}" ]]; then
+    ATT_TARGETS_V6=(${MWAN_HEALTH_ATT_TARGETS_V6})
+fi
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_ATT_HTTP_TARGETS:-}" ] && ATT_HTTP_TARGETS=(${MWAN_HEALTH_ATT_HTTP_TARGETS})
+if [[ -n "${MWAN_HEALTH_ATT_HTTP_TARGETS:-}" ]]; then
+    ATT_HTTP_TARGETS=(${MWAN_HEALTH_ATT_HTTP_TARGETS})
+fi
 
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_WEBPASS_TARGETS_V4:-}" ] && WEBPASS_TARGETS_V4=(${MWAN_HEALTH_WEBPASS_TARGETS_V4})
+if [[ -n "${MWAN_HEALTH_WEBPASS_TARGETS_V4:-}" ]]; then
+    WEBPASS_TARGETS_V4=(${MWAN_HEALTH_WEBPASS_TARGETS_V4})
+fi
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_WEBPASS_TARGETS_V6:-}" ] && WEBPASS_TARGETS_V6=(${MWAN_HEALTH_WEBPASS_TARGETS_V6})
+if [[ -n "${MWAN_HEALTH_WEBPASS_TARGETS_V6:-}" ]]; then
+    WEBPASS_TARGETS_V6=(${MWAN_HEALTH_WEBPASS_TARGETS_V6})
+fi
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_WEBPASS_HTTP_TARGETS:-}" ] && WEBPASS_HTTP_TARGETS=(${MWAN_HEALTH_WEBPASS_HTTP_TARGETS})
+if [[ -n "${MWAN_HEALTH_WEBPASS_HTTP_TARGETS:-}" ]]; then
+    WEBPASS_HTTP_TARGETS=(${MWAN_HEALTH_WEBPASS_HTTP_TARGETS})
+fi
 
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V4:-}" ] && MB_TARGETS_V4=(${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V4})
+if [[ -n "${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V4:-}" ]]; then
+    MB_TARGETS_V4=(${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V4})
+fi
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V6:-}" ] && MB_TARGETS_V6=(${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V6})
+if [[ -n "${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V6:-}" ]]; then
+    MB_TARGETS_V6=(${MWAN_HEALTH_MONKEYBRAINS_TARGETS_V6})
+fi
 # shellcheck disable=SC2206
-[ -n "${MWAN_HEALTH_MONKEYBRAINS_HTTP_TARGETS:-}" ] && MB_HTTP_TARGETS=(${MWAN_HEALTH_MONKEYBRAINS_HTTP_TARGETS})
+if [[ -n "${MWAN_HEALTH_MONKEYBRAINS_HTTP_TARGETS:-}" ]]; then
+    MB_HTTP_TARGETS=(${MWAN_HEALTH_MONKEYBRAINS_HTTP_TARGETS})
+fi
 
 log() {
     local prefix=""
-    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    if [[ -n "${MWAN_TRACE_ID:-}" ]]; then
+        prefix="traceId=${MWAN_TRACE_ID} "
+    fi
     local msg
     msg="[$(date '+%Y-%m-%d %H:%M:%S')] ${prefix}$1"
     echo "$msg" | tee -a "$LOG_FILE"
@@ -124,21 +144,157 @@ log() {
 }
 
 send_email_notification() {
-    [ "${MWAN_EMAIL_ENABLED:-0}" = "1" ] || return 0
-    [ -n "${MWAN_EMAIL_RECIPIENT:-}" ] || return 0
-    [ -n "${MWAN_EMAIL_SCRIPT:-}" ] || return 0
-    [ -x "${MWAN_EMAIL_SCRIPT:-}" ] || return 0
+    [[ "${MWAN_EMAIL_ENABLED:-0}" = "1" ]] || return 0
+    [[ -n "${MWAN_EMAIL_RECIPIENT:-}" ]] || return 0
+    [[ -n "${MWAN_EMAIL_SCRIPT:-}" ]] || return 0
+    [[ -x "${MWAN_EMAIL_SCRIPT:-}" ]] || return 0
 
     local subject="$1"
     local message="$2"
 
     local -a args
     args=(-t "${MWAN_EMAIL_RECIPIENT}" -s "${subject}" -m "${message}")
-    [ -n "${MWAN_EMAIL_FROM:-}" ] && args+=(-f "${MWAN_EMAIL_FROM}")
-    [ -n "${MWAN_EMAIL_SENDER_NAME:-}" ] && args+=(-n "${MWAN_EMAIL_SENDER_NAME}")
+    if [[ -n "${MWAN_EMAIL_FROM:-}" ]]; then
+        args+=(-f "${MWAN_EMAIL_FROM}")
+    fi
+    if [[ -n "${MWAN_EMAIL_SENDER_NAME:-}" ]]; then
+        args+=(-n "${MWAN_EMAIL_SENDER_NAME}")
+    fi
 
     if ! "${MWAN_EMAIL_SCRIPT}" "${args[@]}" >/dev/null 2>&1; then
         log "Email notification failed (subject=${subject})"
+    fi
+}
+
+# Builds a standard event body: the caller-supplied detail followed by a
+# host/time/traceId footer. Uses printf so the result contains real newlines,
+# not literal \n sequences.
+build_event_body() {
+    local detail="$1"
+    printf '%s\n\nHost: %s\nTime: %s\nTraceId: %s\n' \
+        "$detail" \
+        "$(hostname)" \
+        "$(date)" \
+        "${MWAN_TRACE_ID:-}"
+}
+
+# Convenience wrapper: prepends "MWAN:" to the event token and builds the body,
+# so call sites only supply a short event label and a detail sentence.
+send_mwan_notification() {
+    local event="$1"
+    local detail="$2"
+    send_email_notification \
+        "MWAN: ${event}" \
+        "$(build_event_body "$detail")"
+}
+
+SYSTEMD_CHECK_INTERVAL="${MWAN_SYSTEMD_CHECK_INTERVAL:-600}"
+SYSTEMD_CHECK_TS_FILE="/var/run/mwan-systemd-check.ts"
+SYSTEMD_FAILED_STATE="/var/run/mwan-systemd-failed.state"
+# Units stuck in activating for longer than this are flagged (seconds).
+SYSTEMD_ACTIVATING_THRESHOLD="${MWAN_SYSTEMD_ACTIVATING_THRESHOLD:-300}"
+
+# Returns units currently in activating state whose StateChangeTimestamp is
+# older than SYSTEMD_ACTIVATING_THRESHOLD seconds. Output is newline-separated
+# unit names, empty if none qualify.
+_stuck_activating_units() {
+    local threshold="$1"
+    local now
+    now=$(date +%s)
+
+    systemctl list-units --state=activating --no-legend --plain 2>/dev/null \
+        | awk '{print $1}' \
+        | while IFS= read -r unit; do
+            if [[ -z "$unit" ]]; then
+                continue
+            fi
+            local ts_str ts_epoch
+            ts_str=$(systemctl show "$unit" \
+                --property=StateChangeTimestamp --value 2>/dev/null)
+            # systemctl returns "n/a" or empty when timestamp is unavailable.
+            if [[ "$ts_str" == "n/a" || -z "$ts_str" ]]; then
+                continue
+            fi
+            if ! ts_epoch=$(date -d "$ts_str" +%s 2>/dev/null); then
+                continue
+            fi
+            if (( now - ts_epoch > threshold )); then
+                echo "$unit"
+            fi
+        done
+}
+
+# Checks for newly failed systemd units and units stuck in activating state,
+# sending one email per new event. Runs at most once every
+# MWAN_SYSTEMD_CHECK_INTERVAL seconds. Tracks previously seen failures in
+# SYSTEMD_FAILED_STATE so repeat emails are suppressed across iterations.
+check_systemd_health() {
+    local now
+    now=$(date +%s)
+    local last
+    last=$(cat "$SYSTEMD_CHECK_TS_FILE" 2>/dev/null || echo 0)
+
+    if (( now - last < SYSTEMD_CHECK_INTERVAL )); then
+        return 0
+    fi
+
+    echo "$now" > "$SYSTEMD_CHECK_TS_FILE"
+
+    local failed_units
+    failed_units=$(systemctl list-units --state=failed --no-legend --plain 2>/dev/null \
+        | awk '{print $1}' | sort)
+
+    touch "$SYSTEMD_FAILED_STATE"
+    local prev_failed
+    prev_failed=$(cat "$SYSTEMD_FAILED_STATE")
+
+    # Write current set back immediately.
+    echo "$failed_units" > "$SYSTEMD_FAILED_STATE"
+
+    local new_failures=""
+    while IFS= read -r unit; do
+        if [[ -z "$unit" ]]; then
+            continue
+        fi
+        if ! echo "$prev_failed" | grep -qxF "$unit"; then
+            new_failures="${new_failures}${unit}"$'\n'
+        fi
+    done <<< "$failed_units"
+
+    if [[ "$DEBUG" = "1" ]] && [[ -n "$failed_units" ]]; then
+        local units_json jq_filter
+        jq_filter='{
+            units: (
+                $units
+                | split("\n")
+                | map(select(length > 0))
+            )
+        }'
+        units_json=$(jq -cn --arg units "$failed_units" "$jq_filter")
+        debug_json "SYSTEMD" "failed_units" "$units_json"
+    fi
+
+    if [[ -n "$new_failures" ]]; then
+        log "Newly failed systemd units detected: $(echo "$new_failures" | tr '\n' ' ')"
+        local body
+        body=$(printf 'Newly failed systemd units:\n%s' "$new_failures")
+        send_mwan_notification \
+            "systemd unit(s) failed on $(hostname)" \
+            "$body"
+    fi
+
+    # Check for units stuck in activating state.
+    local stuck_units
+    stuck_units=$(_stuck_activating_units "$SYSTEMD_ACTIVATING_THRESHOLD")
+
+    if [[ -n "$stuck_units" ]]; then
+        log "Units stuck in activating (>${SYSTEMD_ACTIVATING_THRESHOLD}s): $(echo "$stuck_units" | tr '\n' ' ')"
+        local body
+        body=$(printf 'Units stuck in activating (>%ss):\n%s' \
+            "$SYSTEMD_ACTIVATING_THRESHOLD" "$stuck_units")
+        send_mwan_notification \
+            "systemd unit(s) stuck activating on $(hostname)" \
+            "$body"
     fi
 }
 
@@ -221,84 +377,96 @@ check_wan_health() {
     # IPv6 health check FIRST (P0 priority)
     if ip -6 addr show dev "$interface" | grep -q "scope global"; then
         for target in "${targets_v6[@]}"; do
-            [ -n "$target" ] || continue
-            if ping6 -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
-                success_v6=$((success_v6 + 1))
+            if [[ -n "$target" ]]; then
+                if ping6 -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
+                    success_v6=$((success_v6 + 1))
+                fi
             fi
         done
         for url in "${http_targets[@]}"; do
-            [ -n "$url" ] || continue
-            if curl -6 -sS --connect-timeout 2 --max-time 5 --interface "$interface" "$url" >/dev/null 2>&1; then
-                success_http6=$((success_http6 + 1))
+            if [[ -n "$url" ]]; then
+                if curl -6 -sS --connect-timeout 2 --max-time 5 --interface "$interface" "$url" >/dev/null 2>&1; then
+                    success_http6=$((success_http6 + 1))
+                fi
             fi
         done
     fi
 
     # IPv4 health check (secondary)
     for target in "${targets_v4[@]}"; do
-        [ -n "$target" ] || continue
-        if ping -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
-            success_v4=$((success_v4 + 1))
+        if [[ -n "$target" ]]; then
+            if ping -c "$ping_count" -W 2 -I "$interface" "$target" >/dev/null 2>&1; then
+                success_v4=$((success_v4 + 1))
+            fi
         fi
     done
     for url in "${http_targets[@]}"; do
-        [ -n "$url" ] || continue
-        if curl -4 -sS --connect-timeout 2 --max-time 5 --interface "$interface" "$url" >/dev/null 2>&1; then
-            success_http4=$((success_http4 + 1))
+        if [[ -n "$url" ]]; then
+            if curl -4 -sS --connect-timeout 2 --max-time 5 --interface "$interface" "$url" >/dev/null 2>&1; then
+                success_http4=$((success_http4 + 1))
+            fi
         fi
     done
 
-    [ "$DEBUG" = "1" ] && debug_json "CHECK" "probe_results" "$(jq -cn \
-      --arg wan "$wan_name" \
-      --arg iface "$interface" \
-      --argjson success_v6 "$success_v6" \
-      --argjson success_http6 "$success_http6" \
-      --argjson success_v4 "$success_v4" \
-      --argjson success_http4 "$success_http4" \
-      --argjson threshold "$success_threshold" \
-      '{
-        wan: $wan,
-        iface: $iface,
-        success_v6: $success_v6,
-        success_http6: $success_http6,
-        success_v4: $success_v4,
-        success_http4: $success_http4,
-        threshold: $threshold
-      }')"
+    if [[ "$DEBUG" = "1" ]]; then
+        debug_json "CHECK" "probe_results" "$(jq -cn \
+          --arg wan "$wan_name" \
+          --arg iface "$interface" \
+          --argjson success_v6 "$success_v6" \
+          --argjson success_http6 "$success_http6" \
+          --argjson success_v4 "$success_v4" \
+          --argjson success_http4 "$success_http4" \
+          --argjson threshold "$success_threshold" \
+          '{
+            wan: $wan,
+            iface: $iface,
+            success_v6: $success_v6,
+            success_http6: $success_http6,
+            success_v4: $success_v4,
+            success_http4: $success_http4,
+            threshold: $threshold
+          }')"
+    fi
 
     # WAN is healthy if IPv6 meets threshold (preferred)
     # or IPv4 meets threshold (fallback)
     # IPv6 is checked first and preferred
-    if [ $success_v6 -ge "$success_threshold" ] || [ $success_http6 -ge 1 ]; then
-        [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_healthy" "$(jq -cn \
-          --arg wan "$wan_name" \
-          --arg iface "$interface" \
-          --arg reason "v6" \
-          '{
-            wan: $wan,
-            iface: $iface,
-            reason: $reason
-          }')"
+    if [[ $success_v6 -ge $success_threshold || $success_http6 -ge 1 ]]; then
+        if [[ "$DEBUG" = "1" ]]; then
+            debug_json "DECISION" "wan_healthy" "$(jq -cn \
+              --arg wan "$wan_name" \
+              --arg iface "$interface" \
+              --arg reason "v6" \
+              '{
+                wan: $wan,
+                iface: $iface,
+                reason: $reason
+              }')"
+        fi
         return 0
-    elif [ $success_v4 -ge "$success_threshold" ] || [ $success_http4 -ge 1 ]; then
-        [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_healthy" "$(jq -cn \
-          --arg wan "$wan_name" \
-          --arg iface "$interface" \
-          --arg reason "v4" \
-          '{
-            wan: $wan,
-            iface: $iface,
-            reason: $reason
-          }')"
+    elif [[ $success_v4 -ge $success_threshold || $success_http4 -ge 1 ]]; then
+        if [[ "$DEBUG" = "1" ]]; then
+            debug_json "DECISION" "wan_healthy" "$(jq -cn \
+              --arg wan "$wan_name" \
+              --arg iface "$interface" \
+              --arg reason "v4" \
+              '{
+                wan: $wan,
+                iface: $iface,
+                reason: $reason
+              }')"
+        fi
         return 0
     else
-        [ "$DEBUG" = "1" ] && debug_json "DECISION" "wan_unhealthy" "$(jq -cn \
-          --arg wan "$wan_name" \
-          --arg iface "$interface" \
-          '{
-            wan: $wan,
-            iface: $iface
-          }')"
+        if [[ "$DEBUG" = "1" ]]; then
+            debug_json "DECISION" "wan_unhealthy" "$(jq -cn \
+              --arg wan "$wan_name" \
+              --arg iface "$interface" \
+              '{
+                wan: $wan,
+                iface: $iface
+              }')"
+        fi
         return 1
     fi
 }
@@ -311,18 +479,18 @@ handle_wan_failure() {
     local old_state
     old_state=$(get_health "$wan_name")
 
-    if [ "$old_state" != "unhealthy" ]; then
+    if [[ "$old_state" != "unhealthy" ]]; then
         set_health "$wan_name" "unhealthy"
         log "Marking $wan_name as UNHEALTHY (was $old_state)"
 
         # Update routing to remove failed WAN
         /usr/local/bin/update-routes.sh
 
-        # Skip email for excluded WANs (e.g. lossy links like monkeybrains)
-        if ! is_wan_excluded "$wan_name"; then
-            send_email_notification \
-              "MWAN: ${wan_name} UNHEALTHY" \
-              "WAN ${wan_name} became UNHEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
+        # Skip email for excluded WANs and for startup unknown->unhealthy transitions.
+        if ! is_wan_excluded "$wan_name" && [[ "$old_state" != "unknown" ]]; then
+            send_mwan_notification \
+                "${wan_name} UNHEALTHY" \
+                "WAN ${wan_name} became UNHEALTHY (was ${old_state})."
         fi
     fi
 }
@@ -333,7 +501,7 @@ handle_wan_recovery() {
     local old_state
     old_state=$(get_health "$wan_name")
 
-    if [ "$old_state" != "healthy" ]; then
+    if [[ "$old_state" != "healthy" ]]; then
         log "WAN $wan_name health check passed"
         set_health "$wan_name" "healthy"
         log "Marking $wan_name as HEALTHY (was $old_state)"
@@ -341,11 +509,11 @@ handle_wan_recovery() {
         # Update routing to add recovered WAN
         /usr/local/bin/update-routes.sh
 
-        # Skip email for excluded WANs (e.g. lossy links like monkeybrains)
-        if ! is_wan_excluded "$wan_name"; then
-            send_email_notification \
-              "MWAN: ${wan_name} HEALTHY" \
-              "WAN ${wan_name} became HEALTHY (was ${old_state}).\n\nHost: $(hostname)\nTime: $(date)\nTraceId: ${MWAN_TRACE_ID:-}\n"
+        # Skip email for excluded WANs and for startup unknown->healthy transitions.
+        if ! is_wan_excluded "$wan_name" && [[ "$old_state" != "unknown" ]]; then
+            send_mwan_notification \
+                "${wan_name} HEALTHY" \
+                "WAN ${wan_name} became HEALTHY (was ${old_state})."
         fi
     fi
 }
@@ -354,41 +522,51 @@ run_health_checks() {
     local min_interval=999999
 
     # Ensure the state file exists even in one-shot mode.
-    if [ ! -f "$STATE_FILE" ]; then
+    if [[ ! -f "$STATE_FILE" ]]; then
         : > "$STATE_FILE"
         for config in "${WAN_CONFIGS[@]}"; do
-            [[ "$config" =~ ^[[:space:]]*# ]] && continue
+            if [[ "$config" =~ ^[[:space:]]*# ]]; then
+                continue
+            fi
             IFS=':' read -r wan_name _ _ _ _ _ _ <<< "$config"
-            [ -n "${wan_name:-}" ] || continue
+            if [[ -z "${wan_name:-}" ]]; then
+                continue
+            fi
             echo "${wan_name}:unknown" >> "$STATE_FILE"
         done
     fi
 
     for config in "${WAN_CONFIGS[@]}"; do
-        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$config" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
         IFS=':' read -r _ _ _ _ interval _ _ <<< "$config"
-        if [ -n "$interval" ] && [ "$interval" -lt "$min_interval" ]; then
+        if [[ -n "$interval" && "$interval" -lt "$min_interval" ]]; then
             min_interval="$interval"
         fi
     done
 
     for config in "${WAN_CONFIGS[@]}"; do
         # Skip commented configs
-        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$config" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
 
         IFS=':' read -r wan_name interface ping_count success_threshold interval failure_threshold recovery_threshold <<< "$config"
         recovery_threshold="${recovery_threshold:-2}"
 
-        if [ -z "${wan_name:-}" ] || [ -z "${interface:-}" ]; then
-            [ "$DEBUG" = "1" ] && debug_json "CONFIG" "skipped_wan_config" "$(jq -cn \
-              --arg wan "${wan_name:-}" \
-              --arg iface "${interface:-}" \
-              --arg reason "missing_wan_or_interface" \
-              '{
-                wan: $wan,
-                iface: $iface,
-                reason: $reason
-              }')"
+        if [[ -z "${wan_name:-}" || -z "${interface:-}" ]]; then
+            if [[ "$DEBUG" = "1" ]]; then
+                debug_json "CONFIG" "skipped_wan_config" "$(jq -cn \
+                  --arg wan "${wan_name:-}" \
+                  --arg iface "${interface:-}" \
+                  --arg reason "missing_wan_or_interface" \
+                  '{
+                    wan: $wan,
+                    iface: $iface,
+                    reason: $reason
+                  }')"
+            fi
             continue
         fi
 
@@ -400,14 +578,14 @@ run_health_checks() {
             FAIL_COUNTS["$wan_name"]=0
 
             # Need N consecutive successes to mark as up (prevents flapping)
-            if [ "${OK_COUNTS["$wan_name"]}" -ge "$recovery_threshold" ]; then
+            if [[ "${OK_COUNTS["$wan_name"]}" -ge "$recovery_threshold" ]]; then
                 handle_wan_recovery "$wan_name"
             fi
         else
             FAIL_COUNTS["$wan_name"]=$((FAIL_COUNTS["$wan_name"] + 1))
             OK_COUNTS["$wan_name"]=0
 
-            if [ "${FAIL_COUNTS["$wan_name"]}" -ge "$failure_threshold" ]; then
+            if [[ "${FAIL_COUNTS["$wan_name"]}" -ge "$failure_threshold" ]]; then
                 handle_wan_failure "$wan_name"
             fi
         fi
@@ -424,14 +602,19 @@ daemon_loop() {
     : > "$STATE_FILE"
     # Write initial states so other components never see an empty file.
     for config in "${WAN_CONFIGS[@]}"; do
-        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$config" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
         IFS=':' read -r wan_name _ _ _ _ _ _ <<< "$config"
-        [ -n "${wan_name:-}" ] || continue
+        if [[ -z "${wan_name:-}" ]]; then
+            continue
+        fi
         echo "${wan_name}:unknown" >> "$STATE_FILE"
     done
 
     while true; do
         run_health_checks
+        check_systemd_health
 
         # Sleep interval (use minimum interval from configs)
         interval="$(cat /var/run/mwan-health.interval 2>/dev/null || echo 10)"
@@ -443,13 +626,15 @@ show_status() {
     echo "=== MWAN Health Status ==="
     echo ""
 
-    if [ ! -f "$STATE_FILE" ]; then
+    if [[ ! -f "$STATE_FILE" ]]; then
         echo "No state file found. Daemon may not be running."
         exit 1
     fi
 
     for config in "${WAN_CONFIGS[@]}"; do
-        [[ "$config" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$config" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
 
         IFS=':' read -r wan_name interface _ _ _ _ <<< "$config"
 

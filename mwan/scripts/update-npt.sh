@@ -30,11 +30,11 @@ DEBUG="${MWAN_DEBUG_LOGGING:-0}"
 DEBUG_LOG="${MWAN_DEBUG_LOG:-/var/log/mwan-debug.log}"
 TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
-if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+if [[ -z "${MWAN_TRACE_ID:-}" && -r "$TRACE_FILE" ]]; then
     MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
-if [ -z "$WAN_IFACE" ] || [ -z "$DELEGATED_PREFIX" ]; then
+if [[ -z "$WAN_IFACE" || -z "$DELEGATED_PREFIX" ]]; then
     echo "Usage: $(basename "$0") <wan_iface> <delegated_prefix>"
     echo "Example: $(basename "$0") enatt0.3242 2600:1700:2f71:c80::/60"
     exit 1
@@ -65,26 +65,28 @@ first_60_of_prefix() {
     local cidr="$1"
     local plen="${cidr##*/}"
     [[ "$plen" =~ ^[0-9]+$ ]] || return 1
-    [ "$plen" -le 60 ] || return 1
+    [[ "$plen" -le 60 ]] || return 1
 
     local base net60
     base="$(ipcalc_field "$cidr" '.NETWORK')"
-    [ -n "$base" ] || return 1
+    [[ -n "$base" ]] || return 1
     net60="$(ipcalc_field "$base/60" '.NETWORK')"
-    [ -n "$net60" ] || return 1
+    [[ -n "$net60" ]] || return 1
     printf '%s/60\n' "$net60"
 }
 
 log() {
     local msg="$1"
     local prefix=""
-    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    if [[ -n "${MWAN_TRACE_ID:-}" ]]; then
+        prefix="traceId=${MWAN_TRACE_ID} "
+    fi
     logger -t update-npt "${prefix}${msg}"
     echo "[update-npt] ${prefix}${msg}"
 }
 
 debug_json() {
-    [ "$DEBUG" = "1" ] || return 0
+    [[ "$DEBUG" = "1" ]] || return 0
     local loc="$1"; shift
     local msg="$1"; shift
     local data="${1:-{}}"; shift || true
@@ -143,12 +145,12 @@ case "$WAN_IFACE" in
         TARGET_PREFIX="${MWAN_NPT_WEBPASS_PREFIX:-}"
         ;;
     "${MWAN_MONKEYBRAINS_IFACE:-}")
-        if [ -n "$MB_STATIC_PREFIX" ]; then
+        if [[ -n "$MB_STATIC_PREFIX" ]]; then
             TARGET_PREFIX="$MB_STATIC_PREFIX"
         else
             # Monkeybrains may delegate a /56; pick the first /60 from the delegated prefix.
             TARGET_PREFIX="$(first_60_of_prefix "$DELEGATED_PREFIX" || true)"
-            if [ -z "$TARGET_PREFIX" ]; then
+            if [[ -z "$TARGET_PREFIX" ]]; then
                 log "Delegated prefix $DELEGATED_PREFIX is not usable for /60 NPT; skipping"
                 exit 0
             fi
@@ -160,15 +162,17 @@ case "$WAN_IFACE" in
         ;;
 esac
 
-[ "$DEBUG" = "1" ] && debug_json "SELECT" "target_prefix_selected" "$(jq -cn \
-  --arg iface "$WAN_IFACE" \
-  --arg delegated "$DELEGATED_PREFIX" \
-  --arg target "$TARGET_PREFIX" \
-  '{
-    iface: $iface,
-    delegated: $delegated,
-    target: $target
-  }')"
+if [[ "$DEBUG" = "1" ]]; then
+    debug_json "SELECT" "target_prefix_selected" "$(jq -cn \
+      --arg iface "$WAN_IFACE" \
+      --arg delegated "$DELEGATED_PREFIX" \
+      --arg target "$TARGET_PREFIX" \
+      '{
+        iface: $iface,
+        delegated: $delegated,
+        target: $target
+      }')"
+fi
 
 # Postrouting:
 # - SNAT specific /128s (fe::1, fe::2) to PD ::1
@@ -212,8 +216,9 @@ tmp="$(mktemp)"
                 $0 ~ /\/128$/ && $0 != keep { sub(/\/128$/, "", $0); print }
             ' \
           | while read -r ip6_addr; do
-                [ -n "${ip6_addr:-}" ] || continue
-                echo "add rule ip6 nat prerouting iif \"$ifc\" ip6 daddr ${ip6_addr}/128 dnat to $OPNSENSE_EDGE_V6"
+                if [[ -n "${ip6_addr:-}" ]]; then
+                    echo "add rule ip6 nat prerouting iif \"$ifc\" ip6 daddr ${ip6_addr}/128 dnat to $OPNSENSE_EDGE_V6"
+                fi
             done
     }
 
@@ -225,7 +230,7 @@ rm -f "$tmp"
 # Save current nftables config
 nft list ruleset > /etc/nftables.conf.dynamic
 
-if [ "$DEBUG" = "1" ]; then
+if [[ "$DEBUG" = "1" ]]; then
     prerouting_chain="$(nft -a list chain ip6 nat prerouting || true)"
     postrouting_chain="$(nft -a list chain ip6 nat postrouting || true)"
 

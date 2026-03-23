@@ -31,7 +31,7 @@ PING4_TARGETS=("1.1.1.1" "8.8.8.8")
 
 # Basic color helpers (honor NO_COLOR)
 # shellcheck disable=SC2034
-if [ -z "${NO_COLOR:-}" ]; then
+if [[ -z "${NO_COLOR:-}" ]]; then
   C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'; C_RED=$'\033[31m'
   C_GRN=$'\033[32m'; C_CYN=$'\033[36m'; C_RST=$'\033[0m'
 else
@@ -63,6 +63,7 @@ Commands:
   policy       Show ip rules, WAN tables, and mangle marks
   sim4         Route-get IPv4 from LAN src (incl. marks 1/2)
   sim6         Route-get IPv6 from LAN src (incl. marks 1/2)
+  systemd      Show failed/stuck units, blame, and critical-chain for mwan services
 EOT
 }
 
@@ -121,7 +122,7 @@ show_pd() {
     for ifc in "${IFACES[@]}"; do
         # Script prints CIDRs only; keep show_pd output stable/simple.
         out="$(/usr/local/bin/find-pd-prefixes.sh "$ifc" || true)"
-        if [ -z "${out:-}" ]; then
+        if [[ -z "${out:-}" ]]; then
             echo "$ifc: none"
         else
             while IFS= read -r line; do
@@ -149,7 +150,7 @@ show_status() {
 
 show_stats() {
     for ifc in "${IFACES[@]}"; do
-        [ -n "${ifc:-}" ] || continue
+        [[ -n "${ifc:-}" ]] || continue
         echo "== $ifc =="
         ip -s link show dev "$ifc" || true
         echo
@@ -201,9 +202,9 @@ connectivity() {
 
     fmt() {
         local ok="$1"
-        if [ "$ok" = "ok" ]; then
+        if [[ "$ok" = "ok" ]]; then
             printf "%sOK%s" "$C_GRN" "$C_RST"
-        elif [ "$ok" = "skip" ]; then
+        elif [[ "$ok" = "skip" ]]; then
             printf "%sSKIP%s" "$C_DIM" "$C_RST"
         else
             printf "%sFAIL%s" "$C_RED" "$C_RST"
@@ -221,24 +222,34 @@ connectivity() {
     for wan in att webpass monkeybrains; do
         local ifc v4 v6 pd p4 p6 npt
         ifc="$(iface_for_wan "$wan")"
-        [ -n "${ifc:-}" ] || continue
+        [[ -n "${ifc:-}" ]] || continue
 
         v4="$(addr4_for_iface "$ifc" || true)"
         v6="$(addr6_for_iface "$ifc" || true)"
         pd="$(get_pd "$ifc")"
 
         p4="skip"
-        if [ -n "${v4:-}" ]; then
-            probe_ping4 "$ifc" && p4="ok" || p4="fail"
+        if [[ -n "${v4:-}" ]]; then
+            if probe_ping4 "$ifc"; then
+                p4="ok"
+            else
+                p4="fail"
+            fi
         fi
 
         p6="skip"
-        if [ -n "${v6:-}" ]; then
-            probe_ping6 "$ifc" && p6="ok" || p6="fail"
+        if [[ -n "${v6:-}" ]]; then
+            if probe_ping6 "$ifc"; then
+                p6="ok"
+            else
+                p6="fail"
+            fi
         fi
 
         npt="fail"
-        npt_present_for_iface "$ifc" >/dev/null 2>&1 && npt="ok"
+        if npt_present_for_iface "$ifc" >/dev/null 2>&1; then
+            npt="ok"
+        fi
 
         printf "%-12s %-16s %-18s %-26s %-6s %-6s %-5s %-20s\n" \
           "$wan" \
@@ -310,12 +321,15 @@ get_pd() {
             pd=""
             ;;
     esac
-    if [ -n "$pd" ]; then
+    if [[ -n "$pd" ]]; then
         echo "$pd"
         return 0
     fi
     pd="$(/usr/local/bin/find-pd-prefixes.sh "$ifc" --one || true)"
-    [ -n "$pd" ] && { echo "$pd"; return 0; }
+    if [[ -n "$pd" ]]; then
+        echo "$pd"
+        return 0
+    fi
     echo ""
 }
 
@@ -363,7 +377,7 @@ run_pd_test() {
             echo "False"
             return 0
         }
-        [ "$plen" -ge 0 ] && [ "$plen" -le 128 ] || {
+        [[ "$plen" -ge 0 && "$plen" -le 128 ]] || {
             echo "False"
             return 0
         }
@@ -379,7 +393,7 @@ run_pd_test() {
         net_of_cidr="$(ipcalc_network "$cidr")"
         net_of_ip="$(ipcalc_network "$ip/$plen")"
 
-        if [ -n "$net_of_cidr" ] && [ -n "$net_of_ip" ] && [ "$net_of_cidr" = "$net_of_ip" ]; then
+        if [[ -n "$net_of_cidr" && -n "$net_of_ip" && "$net_of_cidr" = "$net_of_ip" ]]; then
             echo "True"
         else
             echo "False"
@@ -400,7 +414,7 @@ run_pd_test() {
         fi
 
         echo "$ifc: PD=$pd addr=$addr_pref (existing=$existed)"
-        if [ "$existed" = "no" ]; then
+        if [[ "$existed" = "no" ]]; then
             ip -6 addr add "$addr_pref" dev "$ifc" nodad || true
         fi
 
@@ -455,8 +469,16 @@ run_pd_test() {
             local in_prefix="${IN_PREFIX_BY_IFACE[$ifc]:-False}"
             local far="${FAR_IP_BY_IFACE[$ifc]:-<empty>}"
 
-            [ "$ping_ok" = "ok" ] && ping_ok="OK" || ping_ok="FAIL"
-            [ "$in_prefix" = "True" ] && in_prefix="OK" || in_prefix="FAIL"
+            if [[ "$ping_ok" = "ok" ]]; then
+                ping_ok="OK"
+            else
+                ping_ok="FAIL"
+            fi
+            if [[ "$in_prefix" = "True" ]]; then
+                in_prefix="OK"
+            else
+                in_prefix="FAIL"
+            fi
 
             printf "%-11s %-20s %-7s %-7s %-32s\n" "$ifc" "$pd" "$ping_ok" "$in_prefix" "$far"
         done
@@ -467,7 +489,7 @@ run_pd_test() {
         echo
         echo "Cleanup: removing temp PD addrs that were added by this test."
         for ifc in "${IFCS[@]}"; do
-            if [ "${EXISTED_BY_IFACE[$ifc]:-no}" = "no" ]; then
+            if [[ "${EXISTED_BY_IFACE[$ifc]:-no}" = "no" ]]; then
                 ip -6 addr del "${ADDR_PREF_BY_IFACE[$ifc]}" dev "$ifc" || true
             fi
         done
@@ -488,7 +510,7 @@ run_pd_test() {
 
     for ifc in "${IFACES[@]}"; do
         pd="$(get_pd "$ifc")"
-        if [ -z "$pd" ]; then
+        if [[ -z "$pd" ]]; then
             echo "$ifc: no PD found; skipping"
             continue
         fi
@@ -514,7 +536,7 @@ run_pd_test() {
         resp=$(curl -6 --interface "$ifc" --max-time 8 -s "$tgt" || true)
         printf "%-11s %s\n" "FAR IP" "${resp:-<empty>}"
         FAR_IP_BY_IFACE["$ifc"]="$resp"
-        if [ -n "$resp" ]; then
+        if [[ -n "$resp" ]]; then
             ok="$(ipv6_in_prefix "$resp" "$pd" 2>/dev/null || echo "False")"
             printf "In-prefix : %s\n" "$ok"
             IN_PREFIX_BY_IFACE["$ifc"]="$ok"
@@ -567,8 +589,25 @@ run_lb6_ifaces() {
     done
 }
 
+show_systemd() {
+    echo "== failed units =="
+    systemctl list-units --state=failed --no-pager || true
+    echo
+    echo "== units stuck in activating =="
+    systemctl list-units --state=activating --no-pager || true
+    echo
+    echo "== systemd-analyze blame (slowest starters) =="
+    systemd-analyze blame --no-pager 2>/dev/null | head -20 || true
+    echo
+    echo "== systemd-analyze critical-chain (mwan services) =="
+    for svc in mwan-health.service bringup-att-vlan.service \
+                systemd-networkd.service consul.service cloudflared.service; do
+        echo "-- $svc --"
+        systemd-analyze critical-chain "$svc" --no-pager 2>/dev/null || true
+    done
+}
+
 show_policy() {
-    echo "== ip rule =="
     ip rule show || true
     echo
     echo "== table 100 (att) v4 =="
@@ -628,6 +667,7 @@ case "$cmd" in
     policy) show_policy ;;
     sim4) sim4 ;;
     sim6) sim6 ;;
+    systemd) show_systemd ;;
     ""|help|-h|--help) usage ;;
     *)
         echo "Unknown command: $cmd" >&2

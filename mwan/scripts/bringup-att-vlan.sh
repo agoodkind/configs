@@ -29,22 +29,24 @@ MAX_WAIT=60
 CHECK_INTERVAL=2
 TRACE_FILE="${MWAN_TRACE_FILE:-/run/mwan-trace-id}"
 MWAN_TRACE_ID="${MWAN_TRACE_ID:-}"
-if [ -z "${MWAN_TRACE_ID:-}" ] && [ -r "$TRACE_FILE" ]; then
+if [[ -z "${MWAN_TRACE_ID:-}" && -r "$TRACE_FILE" ]]; then
     MWAN_TRACE_ID="$(cat "$TRACE_FILE")"
 fi
 
-[ -n "$ATT_IFACE" ] || {
+if [[ -z "$ATT_IFACE" ]]; then
     echo "Missing MWAN_ATT_IFACE in /etc/mwan/mwan.env" >&2
     exit 1
-}
-[ -n "$VLAN_IFACE" ] || {
+fi
+if [[ -z "$VLAN_IFACE" ]]; then
     echo "Missing MWAN_ATT_VLAN_IFACE in /etc/mwan/mwan.env" >&2
     exit 1
-}
+fi
 
 log() {
     local prefix=""
-    [ -n "${MWAN_TRACE_ID:-}" ] && prefix="traceId=${MWAN_TRACE_ID} "
+    if [[ -n "${MWAN_TRACE_ID:-}" ]]; then
+        prefix="traceId=${MWAN_TRACE_ID} "
+    fi
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ${prefix}$*" | \
         systemd-cat -t bringup-att-vlan
 }
@@ -55,7 +57,7 @@ log "Starting AT&T VLAN post-authentication script"
 log "Waiting for 802.1X authentication on ${ATT_IFACE}"
 elapsed=0
 authenticated=false
-while [ $elapsed -lt $MAX_WAIT ]; do
+while [[ $elapsed -lt $MAX_WAIT ]]; do
     # Check authentication state via wpa_cli
     if $WPA_CLI -i "${ATT_IFACE}" status 2>/dev/null | \
        grep -q "Supplicant PAE state=AUTHENTICATED"; then
@@ -67,7 +69,7 @@ while [ $elapsed -lt $MAX_WAIT ]; do
     elapsed=$((elapsed + CHECK_INTERVAL))
 done
 
-if [ "$authenticated" != "true" ]; then
+if [[ "$authenticated" != "true" ]]; then
     log "ERROR: 802.1X authentication not completed after ${MAX_WAIT}s"
     exit 1
 fi
@@ -76,7 +78,7 @@ log "Authentication successful, waiting for VLAN interface"
 
 # Wait for VLAN interface to be created by systemd-networkd
 elapsed=0
-while [ $elapsed -lt $MAX_WAIT ]; do
+while [[ $elapsed -lt $MAX_WAIT ]]; do
     if ip link show "${VLAN_IFACE}" >/dev/null 2>&1; then
         log "VLAN interface ${VLAN_IFACE} detected"
         break

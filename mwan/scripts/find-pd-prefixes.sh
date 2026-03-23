@@ -30,10 +30,10 @@ set -euo pipefail
 IFACE="${1:-}"
 MODE="${2:-}" # optional: --one
 
-[ -n "$IFACE" ] || {
+if [[ -z "$IFACE" ]]; then
     echo "usage: find-pd-prefixes.sh <iface> [--one]" >&2
     exit 2
-}
+fi
 
 STATE_FILE="/var/lib/mwan/pd-$IFACE"
 
@@ -45,7 +45,9 @@ bytes16_to_ipv6() {
     local -a b=("$@")
     local hex
 
-    [ "${#b[@]}" -eq 16 ] || return 1
+    if [[ "${#b[@]}" -eq 16 ]]; then
+        return 1
+    fi
 
     hex="$(printf '%02x' "${b[@]}")"
     printf '%s:%s:%s:%s:%s:%s:%s:%s\n' \
@@ -76,13 +78,13 @@ normalize_ipv6_cidr() {
     local cidr="$1" net pref
     net="$(ipcalc6_field "$cidr" '.NETWORK')"
     pref="$(ipcalc6_field "$cidr" '.PREFIX')"
-    [ -n "$net" ] || return 1
-    [ -n "$pref" ] || return 1
+    [[ -n "$net" ]] || return 1
+    [[ -n "$pref" ]] || return 1
     echo "${net}/${pref}"
 }
 
 emit_first_if_requested() {
-    if [ "$MODE" = "--one" ]; then
+    if [[ "$MODE" = "--one" ]]; then
         head -n 1 || true
         exit 0
     fi
@@ -100,7 +102,7 @@ from_describe() {
           | jq -r '.data[1] // empty' 2>/dev/null \
           || true
     )"
-    [ -n "$path" ] || return 1
+    [[ -n "$path" ]] || return 1
 
     # Describe returns a JSON string inside .data[0]
     busctl -j --no-pager --system call \
@@ -115,14 +117,20 @@ from_describe() {
           | "\(.Prefix | map(tostring) | join(" "))|\(.PrefixLength // empty)"
         ' 2>/dev/null \
       | while IFS='|' read -r bytes plen; do
-            [ -n "${bytes:-}" ] || continue
-            [ -n "${plen:-}" ] || continue
+            if [[ -z "${bytes:-}" ]]; then
+                continue
+            fi
+            if [[ -z "${plen:-}" ]]; then
+                continue
+            fi
 
             # shellcheck disable=SC2206
             b=($bytes)
             ip=""
             if ip="$(bytes16_to_ipv6 "${b[@]}" 2>/dev/null)"; then
-                [ -n "${ip:-}" ] || continue
+                if [[ -z "${ip:-}" ]]; then
+                    continue
+                fi
             else
                 continue
             fi
@@ -164,14 +172,16 @@ from_journal() {
 }
 
 from_state_file() {
-    [ -f "$STATE_FILE" ] || return 1
+    [[ -f "$STATE_FILE" ]] || return 1
     awk 'NF{print}' "$STATE_FILE" 2>/dev/null
 }
 
 normalize_unique_ipv6_cidrs() {
     # Read CIDRs on stdin, normalize, drop empties, unique-sort.
     while read -r c; do
-        [ -n "${c:-}" ] || continue
+        if [[ -z "${c:-}" ]]; then
+            continue
+        fi
         normalize_ipv6_cidr "$c" || true
     done | awk 'NF{print}' | sort -u
 }
@@ -185,7 +195,7 @@ main() {
           | sort -u \
           || true
     )"
-    if [ -n "$out" ]; then
+    if [[ -n "$out" ]]; then
         printf "%s\n" "$out" | emit_first_if_requested
         exit 0
     fi
@@ -195,7 +205,7 @@ main() {
           | normalize_unique_ipv6_cidrs \
           || true
     )"
-    if [ -n "$out" ]; then
+    if [[ -n "$out" ]]; then
         printf "%s\n" "$out" | emit_first_if_requested
         exit 0
     fi
@@ -205,7 +215,7 @@ main() {
           | normalize_unique_ipv6_cidrs \
           || true
     )"
-    if [ -n "$out" ]; then
+    if [[ -n "$out" ]]; then
         printf "%s\n" "$out" | emit_first_if_requested
         exit 0
     fi
@@ -215,7 +225,7 @@ main() {
           | normalize_unique_ipv6_cidrs \
           || true
     )"
-    if [ -n "$out" ]; then
+    if [[ -n "$out" ]]; then
         printf "%s\n" "$out" | emit_first_if_requested
         exit 0
     fi
@@ -225,7 +235,7 @@ main() {
           | normalize_unique_ipv6_cidrs \
           || true
     )"
-    if [ -n "$out" ]; then
+    if [[ -n "$out" ]]; then
         printf "%s\n" "$out" | emit_first_if_requested
         exit 0
     fi

@@ -35,7 +35,7 @@ log() {
 
 iface_exists() {
   local iface="$1"
-  [ -n "${iface:-}" ] && [ -d "/sys/class/net/$iface" ]
+  [[ -n "${iface:-}" && -d "/sys/class/net/$iface" ]]
 }
 
 gw4_for_dev() {
@@ -71,13 +71,23 @@ gw6_for_dev() {
 }
 
 log "Waiting for WAN gateways (timeout=${WAIT_SECS}s): $ATT_VLAN, $WEBPASS_IFACE"
-[ -n "${ATT_VLAN:-}" ] || { log "Missing MWAN_ATT_VLAN_IFACE"; exit 1; }
-[ -n "${WEBPASS_IFACE:-}" ] || { log "Missing MWAN_WEBPASS_IFACE"; exit 1; }
+if [[ -z "${ATT_VLAN:-}" ]]; then
+    log "Missing MWAN_ATT_VLAN_IFACE"
+    exit 1
+fi
+if [[ -z "${WEBPASS_IFACE:-}" ]]; then
+    log "Missing MWAN_WEBPASS_IFACE"
+    exit 1
+fi
 
 for _ in $(seq 1 "$((WAIT_SECS / SLEEP_SECS))"); do
   att_exists=0; web_exists=0
-  iface_exists "$ATT_VLAN" && att_exists=1
-  iface_exists "$WEBPASS_IFACE" && web_exists=1
+  if iface_exists "$ATT_VLAN"; then
+      att_exists=1
+  fi
+  if iface_exists "$WEBPASS_IFACE"; then
+      web_exists=1
+  fi
 
   att_gw4="$(gw4_for_dev "$ATT_VLAN" || true)"
   web_gw4="$(gw4_for_dev "$WEBPASS_IFACE" || true)"
@@ -85,31 +95,31 @@ for _ in $(seq 1 "$((WAIT_SECS / SLEEP_SECS))"); do
   web_gw6="$(gw6_for_dev "$WEBPASS_IFACE" || true)"
 
   have_primary_v4=0
-  if [ -n "$att_gw4" ] || [ -n "$web_gw4" ]; then
+  if [[ -n "$att_gw4" || -n "$web_gw4" ]]; then
     have_primary_v4=1
   fi
 
   have_primary_v6=0
-  if [ -n "$att_gw6" ] || [ -n "$web_gw6" ]; then
+  if [[ -n "$att_gw6" || -n "$web_gw6" ]]; then
     have_primary_v6=1
   fi
 
   # Normal case: at least one primary WAN exists; don't proceed until we can build v4+v6 policy routing.
-  if [ "$att_exists" -eq 1 ] || [ "$web_exists" -eq 1 ]; then
-    if [ "$have_primary_v4" -eq 1 ] && [ "$have_primary_v6" -eq 1 ]; then
+  if [[ "$att_exists" -eq 1 || "$web_exists" -eq 1 ]]; then
+    if [[ "$have_primary_v4" -eq 1 && "$have_primary_v6" -eq 1 ]]; then
       log "Primary WAN gateways detected (v4+v6)."
       exit 0
     fi
   else
     # Emergency: no primary WAN interfaces exist; allow boot to proceed if Monkeybrains has any gateway.
-    if [ -n "${MB_IFACE:-}" ]; then
+    if [[ -n "${MB_IFACE:-}" ]]; then
       mb_gw4="$(gw4_for_dev "$MB_IFACE" || true)"
       mb_gw6="$(gw6_for_dev "$MB_IFACE" || true)"
     else
       mb_gw4=""
       mb_gw6=""
     fi
-    if [ -n "${MB_IFACE:-}" ] && ( [ -n "$mb_gw4" ] || [ -n "$mb_gw6" ] ); then
+    if [[ -n "${MB_IFACE:-}" && ( -n "$mb_gw4" || -n "$mb_gw6" ) ]]; then
       log "No primary WAN interfaces found; proceeding with Monkeybrains gateways."
       log "Primary WANs will continue to be monitored; when AT&T/Webpass become available and healthy, the health daemon and routable hooks will trigger /usr/local/bin/update-routes.sh to converge."
       exit 0
