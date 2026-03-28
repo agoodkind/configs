@@ -7,6 +7,10 @@ proxmox_api_user: ansible@pam
 proxmox_token_id: ansible-token
 proxmox_token_secret: "{{ vault_proxmox_token_secret }}"
 
+# mwan-watchdog Proxmox API token (separate token on vault, root@pam!watchdog)
+mwan_watchdog_pve_token_id: "root@pam!watchdog"
+mwan_watchdog_pve_token_secret: "{{ vault_mwan_watchdog_pve_token_secret }}"
+
 # ----------------------------------------------------------------------------
 # SMTP (outbound) defaults for all CTs/VMs (via prep-guests)
 # ----------------------------------------------------------------------------

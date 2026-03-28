@@ -32,6 +32,8 @@
 - name: Configure MWAN VM
   hosts: mwan_servers
   become: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
 
   vars_files:
     - ../inventory/group_vars/mwan_servers.yml
@@ -147,13 +149,33 @@
       ansible.builtin.template:
         src: "{{ repo_root }}/proxmox/config/mwan-watchdog.env.j2"
         dest: /etc/mwan-watchdog/watchdog.env
+        mode: "0600"
+
+    - name: Deploy watchdog network topology config to Proxmox
+      delegate_to: vault
+      ansible.builtin.template:
+        src: "{{ repo_root }}/proxmox/config/mwan-network.toml.j2"
+        dest: /etc/mwan-watchdog/network.toml
         mode: "0644"
 
-    - name: Deploy mwan-watchdog script to Proxmox
+    - name: Build mwan-watchdog Go binary
+      ansible.builtin.command:
+        cmd: >-
+          go build -o {{ repo_root }}/mwan/go/mwan-watchdog
+          ./cmd/mwan-watchdog
+        chdir: "{{ repo_root }}/mwan/go"
+      environment:
+        GOOS: linux
+        GOARCH: amd64
+        HOME: "{{ ansible_env.HOME }}"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Deploy mwan-watchdog binary to Proxmox
       delegate_to: vault
       ansible.builtin.copy:
-        src: "{{ repo_root }}/proxmox/scripts/mwan-watchdog.sh"
-        dest: /usr/local/bin/mwan-watchdog.sh
+        src: "{{ repo_root }}/mwan/go/mwan-watchdog"
+        dest: /usr/local/bin/mwan-watchdog
         mode: "0755"
 
     - name: Deploy mwan-watchdog service to Proxmox
@@ -163,12 +185,12 @@
         dest: /etc/systemd/system/mwan-watchdog.service
         mode: "0644"
 
-    - name: Enable mwan-watchdog service on Proxmox
+    - name: Enable and restart mwan-watchdog service on Proxmox
       delegate_to: vault
       ansible.builtin.systemd:
         name: mwan-watchdog
         enabled: true
-        state: started
+        state: restarted
         daemon_reload: true
 
     # ============================================================================
