@@ -70,6 +70,14 @@ type realOps struct {
 	vsockPort uint32
 	pveNode   string
 	nc        networkConfig
+
+	// testVsockOverride, if set, replaces vsockExec inside guestExec (unit tests only).
+	testVsockOverride func(
+		ctx context.Context, args ...string,
+	) (guestExecResult, error)
+
+	// testGrpcDialer, if set, replaces vsock.Dial in vsockExec (unit tests only).
+	testGrpcDialer func(ctx context.Context, addr string) (net.Conn, error)
 }
 
 func newRealOps(cfg config, nc networkConfig) *realOps {
@@ -137,7 +145,13 @@ func (r *realOps) vmSnapshots(ctx context.Context, vmid string) ([]byte, error) 
 func (r *realOps) guestExec(
 	ctx context.Context, vmid string, args ...string,
 ) (guestExecResult, error) {
-	res, err := r.vsockExec(ctx, args...)
+	var res guestExecResult
+	var err error
+	if r.testVsockOverride != nil {
+		res, err = r.testVsockOverride(ctx, args...)
+	} else {
+		res, err = r.vsockExec(ctx, args...)
+	}
 	if err == nil {
 		return res, nil
 	}
@@ -149,12 +163,16 @@ func (r *realOps) vsockExec(
 ) (guestExecResult, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeoutVsockRPC)
 	defer cancel()
+	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+		return vsock.Dial(r.vsockCID, r.vsockPort, nil)
+	}
+	if r.testGrpcDialer != nil {
+		dialer = r.testGrpcDialer
+	}
 	conn, err := grpc.NewClient(
 		"passthrough:///mwan",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
-			return vsock.Dial(r.vsockCID, r.vsockPort, nil)
-		}),
+		grpc.WithContextDialer(dialer),
 	)
 	if err != nil {
 		return guestExecResult{ExitCode: 1}, err

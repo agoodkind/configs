@@ -34,6 +34,11 @@ type watchdog struct {
 	limiter *alertLimiter
 	log     *slog.Logger
 
+	// exitFn, if non-nil, replaces os.Exit when rollback defers shutdown after SIGTERM.
+	exitFn func(code int)
+	// testHeartbeatInterval overrides heartbeatInterval in run() when > 0 (tests only).
+	testHeartbeatInterval time.Duration
+
 	lastState             connectivityState
 	vmStoppedLogged       bool
 	consecutiveTotalFails int
@@ -42,6 +47,13 @@ type watchdog struct {
 
 	// probeLog accumulates per-cycle probe results for inclusion in emails.
 	probeLog []string
+}
+
+func (w *watchdog) heartbeatTick() time.Duration {
+	if w.testHeartbeatInterval > 0 {
+		return w.testHeartbeatInterval
+	}
+	return heartbeatInterval
 }
 
 func (w *watchdog) appendProbe(msg string) {
@@ -446,7 +458,12 @@ func (w *watchdog) rollback(ctx context.Context, deployTS int64, snap string) {
 	)
 	if w.coord.takeShutdownAfterRollback() {
 		w.log.Info("Deferred shutdown now executing after rollback")
-		os.Exit(0)
+		if w.exitFn != nil {
+			w.exitFn(0)
+		} else {
+			// Production path: process exit is not exercised in unit tests (use exitFn).
+			os.Exit(0)
+		}
 	}
 }
 
@@ -687,7 +704,7 @@ func (w *watchdog) run(ctx context.Context) {
 					"Connectivity OK: IPv4 and IPv6",
 					"previous_state", w.lastState,
 				)
-			} else if time.Since(w.lastHeartbeat) >= heartbeatInterval {
+			} else if time.Since(w.lastHeartbeat) >= w.heartbeatTick() {
 				w.log.Info(
 					"Heartbeat: connectivity healthy",
 					"ping_target_ipv4", w.nc.PingTargetIPv4,

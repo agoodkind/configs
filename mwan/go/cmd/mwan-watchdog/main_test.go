@@ -3,16 +3,25 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	mwanv1 "github.com/agoodkind/infra-tools/gen/mwan/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 // ---------------------------------------------------------------------------
@@ -2314,4 +2323,740 @@ func TestWatchdog_Run_TotalLossBeforeTimeout(t *testing.T) {
 		c.CheckIntervalDegraded = 0
 	})
 	w.run(context.Background())
+}
+
+// ---------------------------------------------------------------------------
+// teeHandler.Enabled: all children disabled
+// ---------------------------------------------------------------------------
+
+func TestTeeHandlerEnabled_AllChildrenDisabled(t *testing.T) {
+	t.Parallel()
+	h1 := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})
+	h2 := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn})
+	tee := newTeeHandler(h1, h2)
+	ctx := context.Background()
+	if tee.Enabled(ctx, slog.LevelDebug) {
+		t.Fatal("Debug should be disabled when both handlers reject it")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// fake qm on PATH (realOps vm* methods)
+// ---------------------------------------------------------------------------
+
+func writeFakeQM(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "qm")
+	snapLine := "`-> pre-deploy-fake"
+	script := `#!/usr/bin/env sh
+case "$1" in
+status)
+  if [ "$2" = "999" ]; then exit 1; fi
+  if [ "$2" = "998" ]; then echo "status: stopped"; exit 0; fi
+  echo "status: running"
+  ;;
+stop)
+  if [ "$2" = "999" ]; then exit 1; fi
+  exit 0
+  ;;
+rollback)
+  if [ "$2" = "999" ]; then exit 1; fi
+  exit 0
+  ;;
+start)
+  if [ "$2" = "999" ]; then exit 1; fi
+  exit 0
+  ;;
+listsnapshot)
+  if [ "$2" = "999" ]; then exit 1; fi
+  echo snap-line
+  echo '` + snapLine + `'
+  ;;
+*)
+  exit 1
+  ;;
+esac
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return tmp
+}
+
+func TestRealOps_QM_VMMethods(t *testing.T) {
+	dir := writeFakeQM(t)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r := newRealOps(config{}, defaultNetworkConfig())
+	ctx := context.Background()
+
+	t.Run("vmStatus running", func(t *testing.T) {
+		ok, err := r.vmStatus(ctx, "113")
+		if err != nil || !ok {
+			t.Fatalf("got %v %v", ok, err)
+		}
+	})
+	t.Run("vmStatus stopped", func(t *testing.T) {
+		ok, err := r.vmStatus(ctx, "998")
+		if err != nil || ok {
+			t.Fatalf("got %v %v", ok, err)
+		}
+	})
+	t.Run("vmStatus error", func(t *testing.T) {
+		_, err := r.vmStatus(ctx, "999")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("vmStop ok", func(t *testing.T) {
+		if err := r.vmStop(ctx, "113"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("vmStop error", func(t *testing.T) {
+		if err := r.vmStop(ctx, "999"); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("vmRollback ok", func(t *testing.T) {
+		if err := r.vmRollback(ctx, "113", "snap"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("vmRollback error", func(t *testing.T) {
+		if err := r.vmRollback(ctx, "999", "snap"); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("vmStart ok", func(t *testing.T) {
+		if err := r.vmStart(ctx, "113"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("vmStart error", func(t *testing.T) {
+		if err := r.vmStart(ctx, "999"); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("vmSnapshots", func(t *testing.T) {
+		b, err := r.vmSnapshots(ctx, "113")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "pre-deploy-fake") {
+			t.Fatalf("got %q", b)
+		}
+	})
+	t.Run("vmSnapshots error", func(t *testing.T) {
+		_, err := r.vmSnapshots(ctx, "999")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// vsockExec branches (no live vsock)
+// ---------------------------------------------------------------------------
+
+func TestRealOps_VsockExec_NoArgs(t *testing.T) {
+	r := newRealOps(config{}, defaultNetworkConfig())
+	_, err := r.vsockExec(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no args") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRealOps_VsockExec_UnhandledCommand(t *testing.T) {
+	r := newRealOps(config{}, defaultNetworkConfig())
+	_, err := r.vsockExec(context.Background(), "unknown-cmd")
+	if err == nil || !strings.Contains(err.Error(), "unhandled") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// grpcMWANAgentStub implements Ping and GetConfigState for bufconn vsockExec tests.
+type grpcMWANAgentStub struct {
+	mwanv1.UnimplementedMWANAgentServer
+	pingErr     error
+	pingSuccess bool
+	deployEpoch int64
+	cfgErr      error
+}
+
+func (g *grpcMWANAgentStub) Ping(
+	_ context.Context, _ *mwanv1.PingRequest,
+) (*mwanv1.PingResponse, error) {
+	if g.pingErr != nil {
+		return nil, g.pingErr
+	}
+	return &mwanv1.PingResponse{Success: g.pingSuccess}, nil
+}
+
+func (g *grpcMWANAgentStub) GetConfigState(
+	_ context.Context, _ *mwanv1.GetConfigStateRequest,
+) (*mwanv1.GetConfigStateResponse, error) {
+	if g.cfgErr != nil {
+		return nil, g.cfgErr
+	}
+	return &mwanv1.GetConfigStateResponse{LastDeployEpoch: g.deployEpoch}, nil
+}
+
+func grpcTestDialer(t *testing.T, impl mwanv1.MWANAgentServer) func(
+	context.Context, string,
+) (net.Conn, error) {
+	t.Helper()
+	lis := bufconn.Listen(1024 * 1024)
+	srv := grpc.NewServer()
+	mwanv1.RegisterMWANAgentServer(srv, impl)
+	go func() {
+		if err := srv.Serve(lis); err != nil {
+			t.Logf("grpc serve: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+	return func(ctx context.Context, _ string) (net.Conn, error) {
+		return lis.DialContext(ctx)
+	}
+}
+
+func TestRealOps_VsockExec_BufconnPingSuccess(t *testing.T) {
+	stub := &grpcMWANAgentStub{pingSuccess: true}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	ctx := context.Background()
+	res, err := r.vsockExec(ctx, "ping6", "-c", "2", "-W", "3", "1.1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("exit %d", res.ExitCode)
+	}
+}
+
+func TestRealOps_VsockExec_BufconnPingFail(t *testing.T) {
+	stub := &grpcMWANAgentStub{pingSuccess: false}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	res, err := r.vsockExec(context.Background(), "ping", "-c", "2", "-W", "3", "8.8.8.8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode == 0 {
+		t.Fatal("expected nonzero exit")
+	}
+}
+
+func TestRealOps_VsockExec_BufconnPingRPCError(t *testing.T) {
+	stub := &grpcMWANAgentStub{pingErr: errors.New("rpc down")}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	_, err := r.vsockExec(context.Background(), "ping6", "-c", "2", "-W", "3", "1.1.1.1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestRealOps_VsockExec_BufconnCatDeploy(t *testing.T) {
+	stub := &grpcMWANAgentStub{deployEpoch: 424242}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	res, err := r.vsockExec(
+		context.Background(), "cat", "/var/run/mwan-last-deploy",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 0 || res.Stdout != "424242" {
+		t.Fatalf("got %+v", res)
+	}
+}
+
+func TestRealOps_VsockExec_BufconnGetConfigStateError(t *testing.T) {
+	stub := &grpcMWANAgentStub{cfgErr: errors.New("no state")}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	_, err := r.vsockExec(
+		context.Background(), "cat", "/var/run/mwan-last-deploy",
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestRealOps_VsockExec_BufconnCatNotDeployPath(t *testing.T) {
+	stub := &grpcMWANAgentStub{}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	_, err := r.vsockExec(context.Background(), "cat", "/etc/hosts")
+	if err == nil || !strings.Contains(err.Error(), "unhandled") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRealOps_VsockExec_BufconnUnhandled(t *testing.T) {
+	stub := &grpcMWANAgentStub{}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	_, err := r.vsockExec(context.Background(), "echo", "hi")
+	if err == nil || !strings.Contains(err.Error(), "unhandled") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRealOps_VsockExec_BufconnNoArgs(t *testing.T) {
+	stub := &grpcMWANAgentStub{}
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testGrpcDialer = grpcTestDialer(t, stub)
+	_, err := r.vsockExec(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no args") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// pveExec + guestExec via httptest TLS server
+// ---------------------------------------------------------------------------
+
+func newPveTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewTLSServer(handler)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestPveExec_Success(t *testing.T) {
+	var statusCalls int32
+	h := func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"pid":42}}`)
+		case strings.Contains(r.URL.Path, "/agent/exec-status"):
+			n := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if n == 1 {
+				fmt.Fprint(w, `{"data":{"exited":0}}`)
+				return
+			}
+			fmt.Fprint(w, `{"data":{"exited":1,"exitcode":0,"out-data":""}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+	srv := newPveTestServer(t, h)
+	r := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	ctx := context.Background()
+	res, err := r.pveExec(ctx, "113", "echo", "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 0 || res.Stdout != "" {
+		t.Fatalf("code=%d out=%q", res.ExitCode, res.Stdout)
+	}
+}
+
+func TestGuestExec_VsockOverrideSuccess(t *testing.T) {
+	r := newRealOps(config{}, defaultNetworkConfig())
+	r.testVsockOverride = func(
+		_ context.Context, _ ...string,
+	) (guestExecResult, error) {
+		return guestExecResult{ExitCode: 0, Stdout: "vsock-ok"}, nil
+	}
+	res, err := r.guestExec(context.Background(), "113", "ping", "1.1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 0 || res.Stdout != "vsock-ok" {
+		t.Fatalf("got %+v", res)
+	}
+}
+
+func TestGuestExec_VsockOverrideErrUsesPVE(t *testing.T) {
+	var statusCalls int32
+	h := func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"pid":1}}`)
+		case strings.Contains(r.URL.Path, "/agent/exec-status"):
+			n := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if n == 1 {
+				fmt.Fprint(w, `{"data":{"exited":0}}`)
+				return
+			}
+			fmt.Fprint(w, `{"data":{"exited":1,"exitcode":0,"out-data":""}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+	srv := newPveTestServer(t, h)
+	ro := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	ro.testVsockOverride = func(
+		_ context.Context, _ ...string,
+	) (guestExecResult, error) {
+		return guestExecResult{ExitCode: 1}, errors.New("vsock failed")
+	}
+	res, err := ro.guestExec(context.Background(), "113", "echo", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("exit %d", res.ExitCode)
+	}
+}
+
+func TestPveExec_GuestExecFallback(t *testing.T) {
+	var statusCalls int32
+	h := func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"pid":1}}`)
+		case strings.Contains(r.URL.Path, "/agent/exec-status"):
+			n := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if n == 1 {
+				fmt.Fprint(w, `{"data":{"exited":0}}`)
+				return
+			}
+			fmt.Fprint(w, `{"data":{"exited":1,"exitcode":0,"out-data":""}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+	srv := newPveTestServer(t, h)
+	ro := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	res, err := ro.guestExec(context.Background(), "113", "echo", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("exit %d", res.ExitCode)
+	}
+}
+
+func TestPveExec_HTTPErrorOnExec(t *testing.T) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec") {
+			http.Error(w, "nope", http.StatusBadRequest)
+			return
+		}
+		http.NotFound(w, r)
+	}
+	srv := newPveTestServer(t, h)
+	r := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	_, err := r.pveExec(context.Background(), "113", "true")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPveExec_JSONDecodeErrorOnExec(t *testing.T) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec") {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `not-json`)
+			return
+		}
+		http.NotFound(w, r)
+	}
+	srv := newPveTestServer(t, h)
+	r := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	_, err := r.pveExec(context.Background(), "113", "true")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPveExec_ExecStatusHTTPError(t *testing.T) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"pid":7}}`)
+		case strings.Contains(r.URL.Path, "/agent/exec-status"):
+			http.Error(w, "fail", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+	srv := newPveTestServer(t, h)
+	r := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	_, err := r.pveExec(context.Background(), "113", "true")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPveExec_ExecStatusJSONError(t *testing.T) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"pid":7}}`)
+		case strings.Contains(r.URL.Path, "/agent/exec-status"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `<<<`)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+	srv := newPveTestServer(t, h)
+	r := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	_, err := r.pveExec(context.Background(), "113", "true")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPveExec_ContextCancelledInStatusLoop(t *testing.T) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"pid":7}}`)
+		case strings.Contains(r.URL.Path, "/agent/exec-status"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"exited":0}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+	srv := newPveTestServer(t, h)
+	r := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := r.pveExec(ctx, "113", "true")
+	if err == nil {
+		t.Fatal("expected cancel error")
+	}
+}
+
+func TestPveExec_MissingPID(t *testing.T) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/agent/exec") {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"pid":0}}`)
+			return
+		}
+		http.NotFound(w, r)
+	}
+	srv := newPveTestServer(t, h)
+	r := newRealOps(config{
+		PVETokenID: "id",
+		PVESecret:  "sec",
+		PVEBaseURL: srv.URL + "/api2/json",
+		PVENode:    "n1",
+	}, defaultNetworkConfig())
+	_, err := r.pveExec(context.Background(), "113", "true")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// rollback exitFn + remove lock error + recoverInterrupted remove error
+// ---------------------------------------------------------------------------
+
+func TestRollback_ExitFnAfterSignal(t *testing.T) {
+	tmp := t.TempDir()
+	m := &mockOps{}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.RollbackLockFile = filepath.Join(tmp, "rollback.lock")
+		c.RollbackStateFile = filepath.Join(tmp, "rollback.state")
+		c.PostRollbackGraceSeconds = 0
+	})
+	var exitArg int
+	var exitCalled bool
+	w.exitFn = func(code int) {
+		exitCalled = true
+		exitArg = code
+	}
+	w.coord.onSignalDuringRollback()
+	w.rollback(context.Background(), 42, "snap-a")
+	if !exitCalled || exitArg != 0 {
+		t.Fatalf("exitCalled=%v arg=%d", exitCalled, exitArg)
+	}
+}
+
+func TestRecoverInterrupted_RemoveLockError_VMRunning(t *testing.T) {
+	tmp := t.TempDir()
+	lockPath := filepath.Join(tmp, "lock")
+	if err := os.WriteFile(lockPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tmp, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tmp, 0o700) })
+	m := &mockOps{vmRunning: true}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.RollbackLockFile = lockPath
+		c.PostRollbackGraceSeconds = 0
+	})
+	w.recoverInterrupted(context.Background())
+}
+
+func TestRecoverInterrupted_RemoveLockError_AfterStartFail(t *testing.T) {
+	tmp := t.TempDir()
+	lockPath := filepath.Join(tmp, "lock2")
+	if err := os.WriteFile(lockPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tmp, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tmp, 0o700) })
+	m := &mockOps{vmRunning: false, vmStartErr: errors.New("start")}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.RollbackLockFile = lockPath
+		c.PostRollbackGraceSeconds = 0
+	})
+	w.recoverInterrupted(context.Background())
+}
+
+// ---------------------------------------------------------------------------
+// run(): heartbeat + context cancel during sleeps
+// ---------------------------------------------------------------------------
+
+func TestWatchdog_Run_HeartbeatLog(t *testing.T) {
+	t.Parallel()
+	nc := testNC()
+	m := &mockOps{
+		vmRunning: true,
+		pingResults: map[string]bool{
+			"ping:" + nc.PingTargetIPv4:  true,
+			"ping6:" + nc.PingTargetIPv6: true,
+		},
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.MaxIterations = 4
+		c.CheckIntervalHealthy = 0
+	})
+	w.nc = nc
+	w.testHeartbeatInterval = 1
+	w.run(context.Background())
+}
+
+func TestWatchdog_Run_ContextCancelledDuringHealthySleep(t *testing.T) {
+	nc := testNC()
+	m := &mockOps{
+		vmRunning: true,
+		pingResults: map[string]bool{
+			"ping:" + nc.PingTargetIPv4:  true,
+			"ping6:" + nc.PingTargetIPv6: true,
+		},
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.CheckIntervalHealthy = 100 * time.Millisecond
+	})
+	w.nc = nc
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+	w.run(ctx)
+}
+
+func TestWatchdog_Run_ContextCancelledDuringVMStoppedSleep(t *testing.T) {
+	m := &mockOps{vmRunning: false}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.CheckIntervalDegraded = 50 * time.Millisecond
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+	w.run(ctx)
+}
+
+func TestWatchdog_Run_ContextCancelledDuringPartialSleep(t *testing.T) {
+	nc := testNC()
+	m := &mockOps{
+		vmRunning: true,
+		pingResults: map[string]bool{
+			"ping:" + nc.PingTargetIPv4:  false,
+			"ping6:" + nc.PingTargetIPv6: true,
+		},
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.CheckIntervalDegraded = 50 * time.Millisecond
+		c.AlertCooldownSeconds = 0
+	})
+	w.nc = nc
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+	w.run(ctx)
+}
+
+func TestWatchdog_Run_ContextCancelledDuringTotalLossSleep(t *testing.T) {
+	nc := testNC()
+	m := &mockOps{
+		vmRunning: true,
+		pingResults: map[string]bool{
+			"ping:" + nc.PingTargetIPv4:  false,
+			"ping6:" + nc.PingTargetIPv6: false,
+		},
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.ConnectivityTimeoutSeconds = 600
+		c.CheckIntervalDegraded = 50 * time.Millisecond
+	})
+	w.nc = nc
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+	w.run(ctx)
 }
