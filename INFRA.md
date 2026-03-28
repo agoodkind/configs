@@ -50,6 +50,80 @@ here as potentially stale; it reflects a point-in-time probe, not a live feed._
 | berylax        | OpenWrt 24.10.5, GL.iNet       | `eth0`: Monkeybrains CG-NAT `100.64.155.249/24`; `br-lan`: `3d06:bad:b01:300::1/56` (static) | N/A                                     | No               | Same Monkeybrains L2 segment as mwan. `3d06:bad:b01:300::1/56` is statically set in UCI; OPNsense has no route for `3d06:bad:b01:300::/56`, so how this address is routable from the home network is not confirmed. No WireGuard installed. |
 | jetkvm (x2)    | JetKVM (embedded Linux)        | Monkeybrains L2 segment                                                                      | Unknown                                 | No               | Two KVM-over-IP devices on the Monkeybrains segment (link-locals `fe80::8234:28ff:fe66:5ed7` and `fe80::3252:53ff:fe0d:6d08`). Not in any inventory.                                                                                        |
 
+### Emergency out-of-band (OOB) access
+
+When vault's IPv6 network is unreachable (e.g., MWAN VM stopped, routing broken, or vault
+itself SSH-unreachable), the only in-band path to vault's console is via berylax's USB-serial
+adapter.
+
+**Prerequisites:**
+
+- berylax is on the Monkeybrains L2 segment (same physical switch as vault's server).
+  It is NOT on the `3d06:bad:b01::/48` management network, so it cannot SSH to vault directly.
+- A USB-to-serial cable runs from berylax (`/dev/ttyUSB0`) to vault's physical serial port.
+- vault has a serial console configured (115200 8N1). Proxmox's GRUB and the Linux kernel
+  both output to this port.
+
+**Procedure: run commands on vault via serial console**
+
+```bash
+# 1. SSH into berylax
+ssh berylax
+
+# 2. Start a detached screen session logging serial output to a file
+screen -dmS vault-serial /dev/ttyUSB0 115200
+sleep 1
+screen -S vault-serial -X logfile /tmp/vault-serial.log
+screen -S vault-serial -X log on
+
+# 3. Send a command (e.g., press Enter to get a prompt, then run a command)
+screen -S vault-serial -X stuff $'\r'
+sleep 1
+screen -S vault-serial -X stuff "qm status 113\r"
+sleep 3
+
+# 4. Read the output
+cat /tmp/vault-serial.log
+
+# 5. To start a stopped VM:
+screen -S vault-serial -X stuff "qm start 113\r"
+sleep 15
+cat /tmp/vault-serial.log
+```
+
+**Notes:**
+
+- `screen` uses `-X stuff` to send keystrokes to the serial TTY. The `\r` at the end of each
+  command string is the carriage return (Enter key).
+- Output contains ANSI escape codes (color, cursor positioning); the log is still readable
+  but will have control sequences mixed in. `grep` on a keyword still works.
+- vault's zsh prompt looks like `vault ~ ❯` in the serial output. If the screen is blank,
+  press Enter once to wake it.
+- picocom and minicom are also available on berylax but both require a real PTY for interactive
+  use. Screen's `stuff` approach works non-interactively from a script or SSH session.
+- The serial session persists as long as berylax is up. To check if one is already running:
+  `screen -ls`.
+- If vault is mid-boot, kernel messages will scroll through. Wait for the login prompt or
+  zsh prompt before sending commands.
+
+**What this covers:**
+
+- MWAN VM (113) stopped and network is down: start it with `qm start 113` via serial.
+- Vault SSH unreachable but host is up: run arbitrary commands via serial.
+- Vault BIOS/GRUB: visible on serial at boot (115200 baud).
+
+**What this does NOT cover:**
+
+- vault fully powered off or kernel-panicked: requires physical access or IPMI/iDRAC.
+- berylax unreachable (Monkeybrains link down): no remote OOB path available; physical
+  access to the rack is required.
+- Vault is not the only path: JetKVM devices (`vault-jetkvm`, `nas-jetkvm`) are also on the
+  Monkeybrains segment and may provide an alternate KVM-over-IP console path, though their
+  DNS names (`vault-jetkvm.goodkind.io`, `nas-jetkvm.goodkind.io`) and credentials are not
+  confirmed at this time.
+
+---
+
 ### MWAN WAN links (confirmed via SSH to `3d06:bad:b01::113`)
 
 | Interface     | Provider      | IPv4                         | IPv6                                                                             | Route metric     | Notes                                                                                                         |

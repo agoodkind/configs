@@ -87,4 +87,11 @@ SSHPiper listens on port 22 on the proxy container. Two items worth noting: the 
 routes `suburban` to a stale address; the live management address is `3d06:bad:b01:200::254`.
 Direct access via the SSH alias works because `ssh_config.local` maps `suburban` correctly.
 
+## Emergency OOB access
+
+When vault's network is down (MWAN VM stopped, routing broken), SSH to vault is unavailable.
+The fallback is a USB-serial cable from berylax (`/dev/ttyUSB0`) to vault's physical serial port.
+Use `screen` on berylax to send commands and capture output without a PTY. Full procedure in
+`INFRA.md` under "Emergency out-of-band (OOB) access".
+
 ---
