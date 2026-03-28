@@ -111,16 +111,50 @@
       changed_when: false
       failed_when: false
 
+    - name: Set pre-deploy snapshot name for this run
+      ansible.builtin.set_fact:
+        mwan_pre_deploy_snapshot_name: >-
+          pre-deploy-{{ ansible_date_time.iso8601_basic_short }}
+      when: pre_deploy_connectivity.rc == 0
+
     - name: Create pre-deploy snapshot on Proxmox
       delegate_to: vault
       ansible.builtin.command:
         cmd: >-
           qm snapshot {{ actual_vmid }}
-          pre-deploy-{{ ansible_date_time.iso8601_basic_short }}
+          {{ mwan_pre_deploy_snapshot_name }}
           --description "Pre-deploy snapshot for auto-rollback"
       register: snapshot_result
       changed_when: snapshot_result.rc == 0
       when: pre_deploy_connectivity.rc == 0
+
+    - name: Prune old pre-deploy snapshots (keep last 3)
+      delegate_to: vault
+      ansible.builtin.shell:
+        cmd: |
+          {% raw %}
+          set -euo pipefail
+          VMID="${MWAN_VMID}"
+          mapfile -t snaps < <(
+            qm listsnapshot "$VMID" | grep -oE 'pre-deploy-[^[:space:]]+' | sort -u
+          )
+          count=0
+          for _ in "${snaps[@]}"; do
+            count=$((count + 1))
+          done
+          if [ "$count" -le 3 ]; then
+            exit 0
+          fi
+          to_delete=$((count - 3))
+          for ((i=0; i<to_delete; i++)); do
+            qm delsnapshot "$VMID" "${snaps[$i]}" --force
+          done
+          {% endraw %}
+        executable: /bin/bash
+      environment:
+        MWAN_VMID: "{{ actual_vmid }}"
+      when: pre_deploy_connectivity.rc == 0
+      changed_when: false
 
     - name: Warn if skipping snapshot due to broken connectivity
       ansible.builtin.debug:
@@ -675,6 +709,67 @@
         dest: /etc/systemd/system/mwan-health.service
         mode: "0644"
 
+    - name: Ensure local build cache directory exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ repo_root }}/.cache"
+        state: directory
+        mode: "0755"
+
+    - name: Build mwan-change-detect for Linux (controller)
+      delegate_to: localhost
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -trimpath
+          - -o
+          - "{{ repo_root }}/.cache/mwan-change-detect"
+          - .
+        chdir: "{{ repo_root }}/mwan/go/cmd/mwan-change-detect"
+      environment:
+        GOOS: linux
+        GOARCH: amd64
+        CGO_ENABLED: "0"
+      changed_when: true
+
+    - name: Install mwan-change-detect binary
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/.cache/mwan-change-detect"
+        dest: /usr/local/bin/mwan-change-detect
+        mode: "0755"
+
+    - name: Deploy mwan-change-detect systemd units
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - mwan-change-detect.service
+        - mwan-change-detect.path
+
+    - name: Stat scripts-updater unit
+      ansible.builtin.stat:
+        path: /etc/systemd/system/scripts-updater.service
+      register: scripts_updater_svc
+
+    - name: Ensure scripts-updater drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/scripts-updater.service.d
+        state: directory
+        mode: "0755"
+      when: scripts_updater_svc.stat.exists
+
+    - name: Touch mwan-last-change after scripts-updater runs
+      ansible.builtin.copy:
+        dest: >-
+          /etc/systemd/system/scripts-updater.service.d/mwan-last-change.conf
+        mode: "0644"
+        content: |
+          [Service]
+          ExecStartPost=/bin/sh -c 'date +%s > /var/run/mwan-last-change'
+      when: scripts_updater_svc.stat.exists
+
     - name: Enable services
       ansible.builtin.systemd:
         name: "{{ item }}"
@@ -689,6 +784,7 @@
         - networkd-dispatcher
         - nftables
         - mwan-health
+        - mwan-change-detect.path
         - wpa_supplicant-mwan
         - wpa-cli-action
         - wpa-authenticated.path
@@ -732,11 +828,79 @@
       async: 1
       poll: 0
 
+    - name: Post-deploy health gate (poll from vault up to 90 seconds)
+      delegate_to: vault
+      ansible.builtin.shell:
+        cmd: |
+          {% raw %}
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 90 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            if ping6 -c 1 -W 2 2606:4700:4700::1111 >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+          {% endraw %}
+        executable: /bin/bash
+      register: mwan_health_gate
+      failed_when: false
+      changed_when: false
+
+    - name: Stop MWAN VM for rollback after failed health gate
+      delegate_to: vault
+      ansible.builtin.command:
+        cmd: qm stop {{ actual_vmid }}
+      when:
+        - mwan_health_gate.rc != 0
+        - mwan_pre_deploy_snapshot_name is defined
+      changed_when: true
+
+    - name: Rollback MWAN VM to pre-deploy snapshot
+      delegate_to: vault
+      ansible.builtin.command:
+        cmd: >-
+          qm rollback {{ actual_vmid }} {{ mwan_pre_deploy_snapshot_name }}
+      when:
+        - mwan_health_gate.rc != 0
+        - mwan_pre_deploy_snapshot_name is defined
+      changed_when: true
+
+    - name: Start MWAN VM after rollback
+      delegate_to: vault
+      ansible.builtin.command:
+        cmd: qm start {{ actual_vmid }}
+      when:
+        - mwan_health_gate.rc != 0
+        - mwan_pre_deploy_snapshot_name is defined
+      changed_when: true
+
+    - name: Fail playbook after rollback
+      ansible.builtin.fail:
+        msg: >-
+          Post-deploy health gate failed after 90s (ping6 2606:4700:4700::1111
+          from vault). Rolled back to {{ mwan_pre_deploy_snapshot_name }}.
+      when:
+        - mwan_health_gate.rc != 0
+        - mwan_pre_deploy_snapshot_name is defined
+
+    - name: Fail when health gate failed without rollback snapshot
+      ansible.builtin.fail:
+        msg: >-
+          Post-deploy health gate failed after 90s and no pre-deploy snapshot
+          exists (connectivity was broken before deploy). Restore VM manually.
+      when:
+        - mwan_health_gate.rc != 0
+        - mwan_pre_deploy_snapshot_name is not defined
+
     - name: Playbook complete
       ansible.builtin.debug:
         msg: >-
           Deploy playbook complete. MWAN VM will reboot in ~5 seconds.
+          Post-deploy health gate passed (ping6 from vault).
           Monitor watchdog logs: ssh root@3d06:bad:b01::254 "tail -f /var/log/mwan-watchdog.log"
+      when: mwan_health_gate.rc == 0
 
   handlers:
     - name: Restart wpa_supplicant

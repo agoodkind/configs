@@ -1,0 +1,20 @@
+[Unit]
+Description=Watch critical MWAN config paths
+
+[Path]
+PathChanged=/etc/mwan/mwan.env
+PathChanged=/etc/nftables.conf
+PathChanged=/etc/systemd/network
+PathChanged=/etc/iproute2/rt_tables
+PathChanged=/etc/sysctl.d/99-mwan.conf
+PathChanged=/etc/wpa_supplicant/wpa_supplicant.conf
+PathChanged=/etc/networkd-dispatcher/routable.d
+PathChanged=/usr/local/bin/update-routes.sh
+PathChanged=/usr/local/bin/update-npt.sh
+PathChanged=/usr/local/bin/health-check.sh
+Unit=mwan-change-detect.service
+TriggerLimitIntervalSec=30
+TriggerLimitBurst=1
+
+[Install]
+WantedBy=multi-user.target

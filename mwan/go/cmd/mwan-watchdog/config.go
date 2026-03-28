@@ -40,6 +40,11 @@ type networkConfig struct {
 	// LastDeployPath is the path inside the MWAN VM that contains the last
 	// deploy Unix timestamp (written by the deploy playbook).
 	LastDeployPath string `toml:"last_deploy_path"`
+	// LastChangePath is updated when any watched config changes (path unit or
+	// scripts hook).
+	LastChangePath string `toml:"last_change_path"`
+	// ConfigHashPath holds a composite sha256 written by mwan-change-detect.
+	ConfigHashPath string `toml:"config_hash_path"`
 }
 
 func defaultNetworkConfig() networkConfig {
@@ -51,6 +56,8 @@ func defaultNetworkConfig() networkConfig {
 			{Name: "enmbrains0"},
 		},
 		LastDeployPath: "/var/run/mwan-last-deploy",
+		LastChangePath: "/var/run/mwan-last-change",
+		ConfigHashPath: "/var/run/mwan-config-hash",
 	}
 }
 
@@ -110,12 +117,20 @@ type config struct {
 	MaxIterations              int
 	VsockCID                   uint32
 	VsockPort                  uint32
+	MwanAgentTCPAddr           string
 	PVEBaseURL                 string
 	PVENode                    string
 	PVETokenID                 string
 	PVESecret                  string
 	NetworkConfigPath          string
+	EmailVerbosity             EmailVerbosity
 	ConfigWarnings             []string
+
+	SnapshotHealthyThreshold   int
+	MaxKnownGoodSnapshots      int
+	HashCheckEveryNHealthy     int
+	MinSnapshotIntervalSeconds int
+	MaxTotalSnapshots          int
 }
 
 func getenv(key, defaultVal string) string {
@@ -166,7 +181,7 @@ func loadConfig(requireAPIKey bool) (config, error) {
 
 	deployWin, w := getenvInt("DEPLOY_WINDOW_MINUTES", 30)
 	appendWarn(w)
-	connTO, w := getenvInt("CONNECTIVITY_TIMEOUT_SECONDS", 60)
+	connTO, w := getenvInt("CONNECTIVITY_TIMEOUT_SECONDS", 30)
 	appendWarn(w)
 	checkHealthy, w := getenvInt("CHECK_INTERVAL_HEALTHY", 30)
 	appendWarn(w)
@@ -175,6 +190,16 @@ func loadConfig(requireAPIKey bool) (config, error) {
 	postGrace, w := getenvInt("POST_ROLLBACK_GRACE_SECONDS", 120)
 	appendWarn(w)
 	alertCD, w := getenvInt("ALERT_COOLDOWN_SECONDS", 300)
+	appendWarn(w)
+	snapHealthy, w := getenvInt("SNAPSHOT_HEALTHY_THRESHOLD", 20)
+	appendWarn(w)
+	maxKG, w := getenvInt("MAX_KNOWN_GOOD_SNAPSHOTS", 3)
+	appendWarn(w)
+	hashEvery, w := getenvInt("HASH_CHECK_EVERY_N_HEALTHY", 10)
+	appendWarn(w)
+	minSnapInt, w := getenvInt("MIN_SNAPSHOT_INTERVAL_SECONDS", 300)
+	appendWarn(w)
+	maxTotalSnaps, w := getenvInt("MAX_TOTAL_SNAPSHOTS", 15)
 	appendWarn(w)
 	vsockCID, w := getenvUint32("MWAN_VSOCK_CID", defaultVsockCID)
 	appendWarn(w)
@@ -208,6 +233,9 @@ func loadConfig(requireAPIKey bool) (config, error) {
 		),
 		VsockCID:  vsockCID,
 		VsockPort: vsockPort,
+		MwanAgentTCPAddr: getenv(
+			"MWAN_AGENT_TCP_ADDR", "[3d06:bad:b01::113]:50052",
+		),
 		PVEBaseURL: getenv(
 			"PVE_BASE_URL", "https://127.0.0.1:8006/api2/json",
 		),
@@ -218,7 +246,13 @@ func loadConfig(requireAPIKey bool) (config, error) {
 			"MWAN_NETWORK_CONFIG",
 			"/etc/mwan-watchdog/network.toml",
 		),
-		ConfigWarnings: warnings,
+		EmailVerbosity:             emailVerbosityFromEnv(),
+		ConfigWarnings:             warnings,
+		SnapshotHealthyThreshold:   snapHealthy,
+		MaxKnownGoodSnapshots:      maxKG,
+		HashCheckEveryNHealthy:     hashEvery,
+		MinSnapshotIntervalSeconds: minSnapInt,
+		MaxTotalSnapshots:          maxTotalSnaps,
 	}
 	if requireAPIKey && cfg.SMTP2GOAPIKey == "" {
 		return config{}, errors.New(

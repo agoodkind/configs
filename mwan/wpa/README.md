@@ -1,22 +1,11 @@
 # AT&T 802.1X Certificates
 
-⚠️ **Certificates are NOT stored in this git repository for security.**
+Certificates are not stored in this git repository for security reasons.
 
-## Manual Upload Required
+They must be manually copied from OPNsense to the mwan VM before `wpa_supplicant` can
+authenticate. On OPNsense, the certs live under `/conf/opnatt/wpa/`. On the mwan VM,
+they belong in `/etc/wpa_supplicant/` with `600` permissions. Copy them using `scp`
+from the OPNsense console via the direct IPv6 address.
 
-Certificates must be manually uploaded to the mwan VM at `/etc/wpa_supplicant/`
-
-### Upload from OPNsense to mwan VM
-
-```bash
-scp agoodkind@router:/conf/opnatt/wpa/*.pem root@mwan.home.goodkind.io:/etc/wpa_supplicant/
-ssh root@mwan.home.goodkind.io "chmod 600 /etc/wpa_supplicant/*.pem"
-```
-
-## Required Files on mwan VM
-
-- `/etc/wpa_supplicant/ca_cert.pem` - AT&T CA certificate
-- `/etc/wpa_supplicant/client_cert.pem` - Client certificate
-- `/etc/wpa_supplicant/private_key.pem` - Private key
-
-The Ansible playbook will check for these files and warn if they're missing.
+The three required files are the AT&T CA certificate, the client certificate, and the
+private key. The Ansible playbook checks for their presence and warns if any are missing.

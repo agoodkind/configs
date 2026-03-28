@@ -62,6 +62,21 @@ type mockOps struct {
 	sendEmailErr   error
 
 	vmStatusFn func(context.Context, string) (bool, error)
+
+	vmSnapshotCalls   []vmSnapshotCall
+	vmDelSnapshotCalls []vmDelSnapshotCall
+	vmSnapshotErr     error
+	vmDelSnapshotErr  error
+}
+
+type vmSnapshotCall struct {
+	VMID string
+	Name string
+}
+
+type vmDelSnapshotCall struct {
+	VMID string
+	Name string
 }
 
 func (m *mockOps) vmStatus(ctx context.Context, vmid string) (bool, error) {
@@ -116,6 +131,26 @@ func (m *mockOps) vmSnapshots(_ context.Context, _ string) ([]byte, error) {
 		return nil, m.vmSnapshotsErr
 	}
 	return m.snapshotsOut, nil
+}
+
+func (m *mockOps) vmSnapshot(_ context.Context, vmid, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.vmSnapshotErr != nil {
+		return m.vmSnapshotErr
+	}
+	m.vmSnapshotCalls = append(m.vmSnapshotCalls, vmSnapshotCall{VMID: vmid, Name: name})
+	return nil
+}
+
+func (m *mockOps) vmDelSnapshot(_ context.Context, vmid, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.vmDelSnapshotErr != nil {
+		return m.vmDelSnapshotErr
+	}
+	m.vmDelSnapshotCalls = append(m.vmDelSnapshotCalls, vmDelSnapshotCall{VMID: vmid, Name: name})
+	return nil
 }
 
 func (m *mockOps) guestExec(
@@ -256,6 +291,14 @@ func guestKeyDeployCat(nc networkConfig) string {
 	return strings.Join([]string{"cat", nc.LastDeployPath}, " ")
 }
 
+func guestKeyChangeCat(nc networkConfig) string {
+	return strings.Join([]string{"cat", nc.LastChangePath}, " ")
+}
+
+func guestKeyConfigHashCat(nc networkConfig) string {
+	return strings.Join([]string{"cat", nc.ConfigHashPath}, " ")
+}
+
 // allISPKeys returns all WAN interface ping keys used in total-loss scenarios.
 func allISPKeys(nc networkConfig) []string {
 	var keys []string
@@ -288,6 +331,18 @@ func TestExtractLatestSnapshot(t *testing.T) {
 	t.Run("single match", func(t *testing.T) {
 		out := []byte("`-> pre-deploy-only\n")
 		if got := extractLatestSnapshot(out); got != "pre-deploy-only" {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("known-good fallback", func(t *testing.T) {
+		out := []byte("x\n`-> known-good-a\n")
+		if got := extractLatestSnapshot(out); got != "known-good-a" {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("pre-deploy preferred over known-good", func(t *testing.T) {
+		out := []byte("`-> known-good-z\n`-> pre-deploy-a\n")
+		if got := extractLatestSnapshot(out); got != "pre-deploy-a" {
 			t.Fatalf("got %q", got)
 		}
 	})
@@ -466,7 +521,7 @@ func TestLoadConfig(t *testing.T) {
 		if cfg.DeployWindowMinutes != 30 {
 			t.Fatalf("DeployWindowMinutes %d", cfg.DeployWindowMinutes)
 		}
-		if cfg.ConnectivityTimeoutSeconds != 60 {
+		if cfg.ConnectivityTimeoutSeconds != 30 {
 			t.Fatalf("ConnectivityTimeoutSeconds %d", cfg.ConnectivityTimeoutSeconds)
 		}
 		if cfg.CheckIntervalHealthy != 30*time.Second {
@@ -689,7 +744,7 @@ func TestWatchdog_TotalLoss_MWANFailure_Rollback(t *testing.T) {
 	if len(m.vmStartCalls) != 1 || m.vmStartCalls[0] != "113" {
 		t.Fatalf("vmStartCalls %v", m.vmStartCalls)
 	}
-	if !emailSubjectContains(m.emailsSent, "Auto-Rollback") {
+	if !emailSubjectContains(m.emailsSent, "AUTO-ROLLBACK") {
 		t.Fatalf("rollback email missing: %+v", m.emailsSent)
 	}
 	ds, done, snap, err := parseRollbackStateFile(w.cfg.RollbackStateFile)
@@ -725,7 +780,7 @@ func TestWatchdog_TotalLoss_ISPOutage_NoRollback(t *testing.T) {
 		t.Fatalf("expected no rollback, vmStop=%v", m.vmStopCalls)
 	}
 	for _, e := range m.emailsSent {
-		if strings.Contains(e.Subject, "Auto-Rollback") {
+		if strings.Contains(e.Subject, "AUTO-ROLLBACK") {
 			t.Fatalf("unexpected rollback email: %+v", e)
 		}
 	}
@@ -744,7 +799,7 @@ func TestWatchdog_TotalLoss_ProxmoxRouting(t *testing.T) {
 	runWatchdogUntilDone(t, w)
 	found := false
 	for _, e := range m.emailsSent {
-		if strings.Contains(e.Subject, "MWAN Connectivity Alert") &&
+		if strings.Contains(e.Subject, "MWAN TOTAL ALERT") &&
 			strings.Contains(e.Body, "Proxmox") {
 			found = true
 			break
@@ -765,13 +820,49 @@ func TestWatchdog_VMStopped(t *testing.T) {
 	if w.lastState != stateVMStopped {
 		t.Fatalf("lastState %q", w.lastState)
 	}
-	if len(m.emailsSent) != 0 || len(m.vmStopCalls) != 0 {
-		t.Fatalf("unexpected emails or stop: emails=%d stop=%d",
-			len(m.emailsSent), len(m.vmStopCalls))
+	// When VM is stopped with no rollback lock, the watchdog must:
+	//   1. Send exactly one alert email.
+	//   2. Attempt vmStart exactly once.
+	//   3. Not perform any rollback (vmStop).
+	//   4. Skip host/guest probes entirely.
+	if len(m.emailsSent) != 1 {
+		t.Fatalf("expected 1 alert email, got %d: %+v", len(m.emailsSent), m.emailsSent)
+	}
+	if !strings.Contains(m.emailsSent[0].Subject, "stopped unexpectedly") {
+		t.Fatalf("unexpected email subject: %q", m.emailsSent[0].Subject)
+	}
+	if len(m.vmStartCalls) != 1 {
+		t.Fatalf("expected vmStart to be called once, got %d", len(m.vmStartCalls))
+	}
+	if len(m.vmStopCalls) != 0 {
+		t.Fatalf("unexpected vmStop calls: %d", len(m.vmStopCalls))
 	}
 	if m.pingCallCount != 0 || m.guestExecCallCount != 0 {
 		t.Fatalf("VM stopped should skip host/guest probes: ping=%d guest=%d",
 			m.pingCallCount, m.guestExecCallCount)
+	}
+}
+
+func TestWatchdog_VMStopped_RollbackLockSkipsStartAndEmail(t *testing.T) {
+	m := &mockOps{vmRunning: false}
+	w := newTestWatchdog(t, m)
+	// Write the lock file to the path the watchdog already has configured.
+	if err := os.WriteFile(w.cfg.RollbackLockFile, []byte("1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.run(context.Background())
+	if w.lastState != stateVMStopped {
+		t.Fatalf("lastState %q", w.lastState)
+	}
+	// Rollback lock present: recoverInterrupted already handled it (called vmStart
+	// once to resume the interrupted rollback), then removed the lock. The main
+	// loop must NOT send an extra email or issue a second vmStart.
+	if len(m.emailsSent) != 0 {
+		t.Fatalf("expected no emails when rollback lock present, got %d", len(m.emailsSent))
+	}
+	if len(m.vmStartCalls) != 1 {
+		// recoverInterrupted issues exactly one vmStart for the interrupted rollback.
+		t.Fatalf("expected exactly 1 vmStart from recovery, got %d", len(m.vmStartCalls))
 	}
 }
 
@@ -870,8 +961,19 @@ func TestRedTeamScenarios(t *testing.T) {
 				if len(inner.vmStopCalls) < 1 {
 					t.Fatalf("expected rollback vmStop, got %+v", inner.vmStopCalls)
 				}
-				if !emailSubjectContains(inner.emailsSent, "Auto-Rollback") {
+				if !emailSubjectContains(inner.emailsSent, "AUTO-ROLLBACK") {
 					t.Fatalf("emails %+v", inner.emailsSent)
+				}
+			case "config-drift":
+				if len(inner.vmStopCalls) < 1 {
+					t.Fatalf("expected rollback vmStop, got %+v", inner.vmStopCalls)
+				}
+				if !emailSubjectContains(inner.emailsSent, "AUTO-ROLLBACK") {
+					t.Fatalf("emails %+v", inner.emailsSent)
+				}
+				if len(inner.vmRollbackCalls) < 1 ||
+					!strings.HasPrefix(inner.vmRollbackCalls[0].Snap, "known-good-") {
+					t.Fatalf("want known-good rollback, got %+v", inner.vmRollbackCalls)
 				}
 			case "total-loss-isp":
 				if len(inner.vmStopCalls) != 0 {
@@ -891,7 +993,7 @@ func TestRedTeamScenarios(t *testing.T) {
 				}
 				found := false
 				for _, e := range inner.emailsSent {
-					if e.Subject == "MWAN Connectivity Alert" &&
+					if strings.Contains(e.Subject, "MWAN TOTAL ALERT") &&
 						strings.Contains(e.Body, "Proxmox") {
 						found = true
 						break
@@ -1154,6 +1256,14 @@ func TestFindSnapshot(t *testing.T) {
 			t.Fatalf("got %q %v", s, err)
 		}
 	})
+	t.Run("known-good only", func(t *testing.T) {
+		m := &mockOps{snapshotsOut: []byte("`-> known-good-x\n")}
+		w := newTestWatchdog(t, m)
+		s, err := w.findSnapshot(context.Background())
+		if err != nil || s != "known-good-x" {
+			t.Fatalf("got %q %v", s, err)
+		}
+	})
 }
 
 func TestCheckDeploy(t *testing.T) {
@@ -1264,6 +1374,106 @@ func TestCheckDeploy(t *testing.T) {
 			t.Fatalf("ts=%d ok=%v", ts, ok)
 		}
 	})
+	t.Run("recent change marker only", func(t *testing.T) {
+		recent := time.Now().Unix() - 60
+		m := &mockOps{
+			vmRunning: true,
+			guestResults: map[string]guestExecResult{
+				guestKeyDeployCat(nc): {ExitCode: 1},
+				guestKeyChangeCat(nc): {ExitCode: 0, Stdout: strconv.FormatInt(recent, 10)},
+			},
+		}
+		w := newTestWatchdog(t, m, func(c *config) { c.DeployWindowMinutes = 30 })
+		ts, ok := w.checkDeploy(ctx)
+		if !ok || ts != recent {
+			t.Fatalf("ts=%d ok=%v", ts, ok)
+		}
+	})
+}
+
+func TestCheckConfigHash(t *testing.T) {
+	t.Parallel()
+	nc := testNC()
+	ctx := context.Background()
+	t.Run("first run records hash no drift", func(t *testing.T) {
+		m := &mockOps{
+			vmRunning: true,
+			guestResults: map[string]guestExecResult{
+				guestKeyConfigHashCat(nc): {ExitCode: 0, Stdout: "aaa\n"},
+			},
+		}
+		w := newTestWatchdog(t, m)
+		w.nc = nc
+		w.checkConfigHash(ctx)
+		if w.lastConfigHash != "aaa" {
+			t.Fatalf("got %q", w.lastConfigHash)
+		}
+		if w.hashChangeWindowStart != 0 {
+			t.Fatal("want no drift window")
+		}
+	})
+	t.Run("hash change sets window", func(t *testing.T) {
+		m := &mockOps{
+			vmRunning: true,
+			guestResults: map[string]guestExecResult{
+				guestKeyConfigHashCat(nc): {ExitCode: 0, Stdout: "bbb\n"},
+			},
+		}
+		w := newTestWatchdog(t, m)
+		w.nc = nc
+		w.lastConfigHash = "aaa"
+		w.checkConfigHash(ctx)
+		if w.hashChangeWindowStart == 0 {
+			t.Fatal("want hash window")
+		}
+	})
+}
+
+func TestMaybeSnapshot(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	m := &mockOps{
+		vmRunning:    true,
+		snapshotsOut: []byte(""),
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.SnapshotHealthyThreshold = 2
+		c.MinSnapshotIntervalSeconds = 0
+		c.MaxKnownGoodSnapshots = 0
+		c.MaxTotalSnapshots = 0
+	})
+	w.consecutiveHealthy = 1
+	w.maybeSnapshot(ctx)
+	if len(m.vmSnapshotCalls) != 0 {
+		t.Fatalf("no snapshot yet")
+	}
+	w.consecutiveHealthy = 2
+	w.maybeSnapshot(ctx)
+	if len(m.vmSnapshotCalls) != 1 ||
+		!strings.HasPrefix(m.vmSnapshotCalls[0].Name, "known-good-") {
+		t.Fatalf("got %+v", m.vmSnapshotCalls)
+	}
+}
+
+func TestPruneSnapshots(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	m := &mockOps{
+		vmRunning: true,
+		snapshotsOut: []byte(
+			"`-> known-good-001\n`-> known-good-002\n`-> known-good-003\n`-> known-good-004\n",
+		),
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.MaxKnownGoodSnapshots = 2
+		c.MaxTotalSnapshots = 99
+	})
+	if err := w.pruneSnapshots(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.vmDelSnapshotCalls) != 2 {
+		t.Fatalf("got %+v", m.vmDelSnapshotCalls)
+	}
 }
 
 func TestRollback(t *testing.T) {
@@ -1494,7 +1704,7 @@ func TestHandleTimeoutExceeded(t *testing.T) {
 		})
 		w.nc = nc
 		w.handleTimeoutExceeded(ctx)
-		if !emailSubjectContains(m.emailsSent, "MWAN Connectivity Alert") {
+		if !emailSubjectContains(m.emailsSent, "MWAN TOTAL ALERT") {
 			t.Fatalf("emails %+v", m.emailsSent)
 		}
 	})
@@ -1625,7 +1835,7 @@ func TestHandleTimeoutExceeded(t *testing.T) {
 		w.nc = nc
 		w.handleTimeoutExceeded(ctx)
 		if len(m.emailsSent) != 1 ||
-			!strings.Contains(m.emailsSent[0].Body, "no pre-deploy") {
+			!strings.Contains(m.emailsSent[0].Body, "known-good") {
 			t.Fatalf("emails %+v", m.emailsSent)
 		}
 	})
@@ -1742,9 +1952,9 @@ func TestNewRealOps(t *testing.T) {
 func TestDryRunOps(t *testing.T) {
 	t.Parallel()
 	inner := &mockOps{
-		vmRunning:   true,
+		vmRunning:    true,
 		snapshotsOut: []byte("x"),
-		pingResults: map[string]bool{"ping:1.1.1.1": true},
+		pingResults:  map[string]bool{"ping:1.1.1.1": true},
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	d := &dryRunOps{inner: inner, log: log}
@@ -1759,6 +1969,12 @@ func TestDryRunOps(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := d.vmStart(ctx, "113"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.vmSnapshot(ctx, "113", "snap"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.vmDelSnapshot(ctx, "113", "snap"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.vmSnapshots(ctx, "113"); err != nil {
@@ -1911,7 +2127,7 @@ func TestRedTeamOps_VMStatus(t *testing.T) {
 	inner := &mockOps{vmRunning: true}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	rt := &redTeamOps{
-		inner: inner,
+		inner:  inner,
 		preset: redTeamPreset{VMStopped: true},
 		log:    log,
 		nc:     testNC(),
@@ -1934,8 +2150,16 @@ func TestRedTeamOps_VMLifecyclePassthrough(t *testing.T) {
 	_ = rt.vmStop(ctx, "1")
 	_ = rt.vmRollback(ctx, "1", "s")
 	_ = rt.vmStart(ctx, "1")
+	_ = rt.vmSnapshot(ctx, "1", "snap")
+	_ = rt.vmDelSnapshot(ctx, "1", "snap")
 	if len(inner.vmStopCalls) != 1 {
 		t.Fatal("stop")
+	}
+	if len(inner.vmSnapshotCalls) != 1 || inner.vmSnapshotCalls[0].Name != "snap" {
+		t.Fatalf("snapshot %+v", inner.vmSnapshotCalls)
+	}
+	if len(inner.vmDelSnapshotCalls) != 1 || inner.vmDelSnapshotCalls[0].Name != "snap" {
+		t.Fatalf("delsnap %+v", inner.vmDelSnapshotCalls)
 	}
 }
 
@@ -2089,9 +2313,9 @@ func TestRedTeamOps_SendEmail(t *testing.T) {
 	t.Parallel()
 	inner := &mockOps{}
 	rt := &redTeamOps{
-		inner:  inner,
-		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		nc:     testNC(),
+		inner: inner,
+		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		nc:    testNC(),
 	}
 	if err := rt.sendEmail(context.Background(), "a", "s", "b"); err != nil {
 		t.Fatal(err)
@@ -2195,6 +2419,16 @@ func TestRealOpsGuestExec_NoPVE(t *testing.T) {
 	_, err := r.guestExec(context.Background(), "113", "ping", "127.0.0.1")
 	if err == nil {
 		t.Fatal("expected error without vsock/PVE")
+	}
+}
+
+func TestTCPExec_NoAddrConfigured(t *testing.T) {
+	t.Parallel()
+	r := newRealOps(config{MwanAgentTCPAddr: ""}, defaultNetworkConfig())
+	ctx := context.Background()
+	_, err := r.tcpExec(ctx, "ping", "8.8.8.8")
+	if err == nil || !strings.Contains(err.Error(), "no tcp addr configured") {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -2453,6 +2687,66 @@ func TestRealOps_QM_VMMethods(t *testing.T) {
 			t.Fatal("expected error")
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// channelTracker (channels.go)
+// ---------------------------------------------------------------------------
+
+func TestChannelTracker_RecordSuccess(t *testing.T) {
+	t.Parallel()
+	tr := newChannelTracker()
+	tr.recordSuccess(chanVsock)
+	h := tr.channels[chanVsock]
+	if !h.healthy || h.consecutiveFails != 0 || h.lastError != "" {
+		t.Fatalf("got healthy=%v consecutiveFails=%d lastError=%q",
+			h.healthy, h.consecutiveFails, h.lastError)
+	}
+}
+
+func TestChannelTracker_RecordFailure(t *testing.T) {
+	t.Parallel()
+	tr := newChannelTracker()
+	tr.recordFailure(chanVsock, errors.New("dial failed"))
+	h := tr.channels[chanVsock]
+	if h.healthy || h.consecutiveFails != 1 || h.lastError != "dial failed" {
+		t.Fatalf("after first failure: healthy=%v consecutiveFails=%d lastError=%q",
+			h.healthy, h.consecutiveFails, h.lastError)
+	}
+	tr.recordFailure(chanVsock, errors.New("second"))
+	h = tr.channels[chanVsock]
+	if h.consecutiveFails != 2 || h.lastError != "second" {
+		t.Fatalf("after second failure: consecutiveFails=%d lastError=%q",
+			h.consecutiveFails, h.lastError)
+	}
+	tr.recordSuccess(chanVsock)
+	h = tr.channels[chanVsock]
+	if h.consecutiveFails != 0 || !h.healthy {
+		t.Fatalf("after success: consecutiveFails=%d healthy=%v",
+			h.consecutiveFails, h.healthy)
+	}
+}
+
+func TestChannelTracker_Summary(t *testing.T) {
+	t.Parallel()
+	tr := newChannelTracker()
+	tr.recordSuccess(chanPVE)
+	tr.recordFailure(chanTCP, errors.New("err"))
+	s := tr.summary()
+	for _, want := range []string{
+		"pve_rest", "tcp_mgmt", "vsock", "OK", "FAIL",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("summary missing %q:\n%s", want, s)
+		}
+	}
+}
+
+func TestChannelTracker_LogAll(t *testing.T) {
+	t.Parallel()
+	tr := newChannelTracker()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tr.logAll(logger)
 }
 
 // ---------------------------------------------------------------------------
@@ -2753,6 +3047,63 @@ func TestPveExec_GuestExecFallback(t *testing.T) {
 	if res.ExitCode != 0 {
 		t.Fatalf("exit %d", res.ExitCode)
 	}
+}
+
+func TestGuestExec_ThreeChannelFallback(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	failDial := func(context.Context, string) (net.Conn, error) {
+		return nil, net.ErrClosed
+	}
+
+	t.Run("all three fail", func(t *testing.T) {
+		r := newRealOps(config{MwanAgentTCPAddr: "127.0.0.1:1"}, defaultNetworkConfig())
+		r.testGrpcDialer = failDial
+		r.testTCPDialer = failDial
+		_, err := r.guestExec(ctx, "113", "ping", "-c", "2", "-W", "3", "8.8.8.8")
+		if err == nil {
+			t.Fatal("expected error when vsock, tcp, and pve all fail")
+		}
+		if !strings.Contains(err.Error(), "PVE_TOKEN") {
+			t.Fatalf("expected pve not configured error, got %v", err)
+		}
+		vs := r.tracker.channels[chanVsock]
+		tcp := r.tracker.channels[chanTCP]
+		pve := r.tracker.channels[chanPVE]
+		if vs.healthy || tcp.healthy || pve.healthy {
+			t.Fatalf("expected all channels unhealthy: vsock=%v tcp=%v pve=%v",
+				vs.healthy, tcp.healthy, pve.healthy)
+		}
+		if vs.consecutiveFails != 1 || tcp.consecutiveFails != 1 || pve.consecutiveFails != 1 {
+			t.Fatalf("consecutiveFails vsock=%d tcp=%d pve=%d",
+				vs.consecutiveFails, tcp.consecutiveFails, pve.consecutiveFails)
+		}
+	})
+
+	t.Run("tcp succeeds after vsock fails", func(t *testing.T) {
+		stub := &grpcMWANAgentStub{pingSuccess: true}
+		r := newRealOps(
+			config{MwanAgentTCPAddr: "127.0.0.1:9"},
+			defaultNetworkConfig(),
+		)
+		r.testGrpcDialer = failDial
+		r.testTCPDialer = grpcTestDialer(t, stub)
+		res, err := r.guestExec(
+			ctx, "113", "ping", "-c", "2", "-W", "3", "8.8.8.8",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.ExitCode != 0 {
+			t.Fatalf("want exit 0, got %d", res.ExitCode)
+		}
+		if r.tracker.channels[chanVsock].healthy {
+			t.Fatal("vsock should be recorded as failed")
+		}
+		if !r.tracker.channels[chanTCP].healthy {
+			t.Fatal("tcp should be recorded as success")
+		}
+	})
 }
 
 func TestPveExec_HTTPErrorOnExec(t *testing.T) {

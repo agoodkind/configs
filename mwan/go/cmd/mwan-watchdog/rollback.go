@@ -10,14 +10,22 @@ import (
 	"time"
 )
 
-var preDeploySnapRE = regexp.MustCompile(`pre-deploy-[^\s]+`)
+var (
+	preDeploySnapRE = regexp.MustCompile(`pre-deploy-[^\s]+`)
+	knownGoodSnapRE = regexp.MustCompile(`known-good-[^\s]+`)
+)
 
 func extractLatestSnapshot(qmOutput []byte) string {
-	matches := preDeploySnapRE.FindAllString(string(qmOutput), -1)
-	if len(matches) == 0 {
-		return ""
+	s := string(qmOutput)
+	pre := preDeploySnapRE.FindAllString(s, -1)
+	if len(pre) > 0 {
+		return pre[len(pre)-1]
 	}
-	return matches[len(matches)-1]
+	kg := knownGoodSnapRE.FindAllString(s, -1)
+	if len(kg) > 0 {
+		return kg[len(kg)-1]
+	}
+	return ""
 }
 
 func parseRollbackStateFile(

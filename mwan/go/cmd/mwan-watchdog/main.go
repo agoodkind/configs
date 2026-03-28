@@ -1,6 +1,9 @@
 // Build (from this directory):
 //
-//	GOOS=linux GOARCH=amd64 go build -o mwan-watchdog .
+//	GOOS=linux GOARCH=amd64 go build \
+//	  -ldflags="-X main.gitCommit=$(git rev-parse --short HEAD) \
+//	            -X 'main.gitDirty=$(git diff --quiet HEAD -- . && echo clean || echo dirty)'" \
+//	  -o mwan-watchdog .
 //
 // Usage:
 //
@@ -95,6 +98,7 @@ func main() {
 		)
 		os.Exit(1)
 	}
+	logger.Info("mwan-watchdog starting", "version", buildVersionString())
 
 	var ops sysOps = newRealOps(cfg, nc)
 
@@ -150,6 +154,20 @@ func main() {
 		limiter: newAlertLimiter(cfg.AlertCooldownSeconds),
 		log:     logger,
 	}
+	w.tracker = extractTracker(ops)
 
 	w.run(mainCtx)
+}
+
+func extractTracker(ops sysOps) *channelTracker {
+	switch v := ops.(type) {
+	case *realOps:
+		return v.tracker
+	case *dryRunOps:
+		return extractTracker(v.inner)
+	case *redTeamOps:
+		return extractTracker(v.inner)
+	default:
+		return nil
+	}
 }

@@ -1,75 +1,111 @@
-// Command mwan-agent serves the MWAN gRPC API on virtio-vsock (default port 50051).
+// Command mwan-agent serves the MWAN gRPC API on TCP and optionally virtio-vsock.
 package main
 
 import (
-	"context"
-	"log"
+	"flag"
+	"log/slog"
+	"net"
 	"os"
-	"strconv"
+	"os/signal"
+	"syscall"
 
 	mwanv1 "github.com/agoodkind/infra-tools/gen/mwan/v1"
 	"github.com/mdlayher/vsock"
 	"google.golang.org/grpc"
 )
 
-const defaultListenPort = 50051
-
 func main() {
-	port := uint32(defaultListenPort)
-	if p := os.Getenv("MWAN_AGENT_VSOCK_PORT"); p != "" {
-		if n, err := strconv.ParseUint(p, 10, 32); err == nil {
-			port = uint32(n)
+	vsockPort := flag.Uint("vsock-port", 50051, "virtio-vsock listen port (0 disables)")
+	tcpAddr := flag.String("tcp-addr", "[::]:50052", "TCP listen address for gRPC")
+	deployFile := flag.String(
+		"deploy-file",
+		"/var/run/mwan-last-deploy",
+		"path to last deploy timestamp file",
+	)
+	logFile := flag.String("log-file", "/var/log/mwan-agent.log", "path to text log file")
+	flag.Parse()
+
+	logger, err := newAgentLogger(*logFile)
+	if err != nil {
+		boot := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		boot.Error("init logger", "error", err, "log_file", *logFile)
+		os.Exit(1)
+	}
+
+	if *vsockPort != 0 && *vsockPort > 0xffffffff {
+		logger.Error("vsock port out of range", "vsock_port", *vsockPort)
+		os.Exit(1)
+	}
+	port := uint32(*vsockPort)
+
+	logger.Info(
+		"mwan-agent starting",
+		"detail", buildVersionString(),
+		"vsock_port", *vsockPort,
+		"tcp_addr", *tcpAddr,
+	)
+
+	var vsockLis net.Listener
+	if port != 0 {
+		var vsockErr error
+		vsockLis, vsockErr = vsock.Listen(port, nil)
+		if vsockErr != nil {
+			logger.Warn(
+				"vsock listen failed, continuing without vsock",
+				"error", vsockErr,
+				"vsock_port", port,
+			)
 		}
 	}
-	lis, err := vsock.Listen(port, nil)
+
+	tcpLis, err := net.Listen("tcp", *tcpAddr)
 	if err != nil {
-		log.Fatalf("vsock listen: %v", err)
+		logger.Error("tcp listen", "error", err, "tcp_addr", *tcpAddr)
+		os.Exit(1)
 	}
-	srv := grpc.NewServer()
-	mwanv1.RegisterMWANAgentServer(srv, &agentServer{})
-	log.Printf("mwan-agent listening on vsock port %d", port)
-	if err := srv.Serve(lis); err != nil {
-		log.Fatalf("grpc: %v", err)
+
+	grpcServer := grpc.NewServer()
+	mwanv1.RegisterMWANAgentServer(grpcServer, newAgentServer(*deployFile, logger))
+
+	serveCount := 1
+	if vsockLis != nil {
+		serveCount++
 	}
-}
 
-type agentServer struct {
-	mwanv1.UnimplementedMWANAgentServer
-}
+	errCh := make(chan error, 2)
 
-func (a *agentServer) GetHealth(
-	ctx context.Context,
-	_ *mwanv1.GetHealthRequest,
-) (*mwanv1.GetHealthResponse, error) {
-	return &mwanv1.GetHealthResponse{}, nil
-}
+	go func() {
+		errCh <- grpcServer.Serve(tcpLis)
+	}()
+	if vsockLis != nil {
+		go func() {
+			errCh <- grpcServer.Serve(vsockLis)
+		}()
+	}
 
-func (a *agentServer) Ping(
-	ctx context.Context,
-	_ *mwanv1.PingRequest,
-) (*mwanv1.PingResponse, error) {
-	return &mwanv1.PingResponse{}, nil
-}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-func (a *agentServer) GetConfigState(
-	ctx context.Context,
-	_ *mwanv1.GetConfigStateRequest,
-) (*mwanv1.GetConfigStateResponse, error) {
-	return &mwanv1.GetConfigStateResponse{}, nil
-}
-
-func (a *agentServer) GetSystemInfo(
-	ctx context.Context,
-	_ *mwanv1.GetSystemInfoRequest,
-) (*mwanv1.GetSystemInfoResponse, error) {
-	h, _ := os.Hostname()
-	return &mwanv1.GetSystemInfoResponse{Hostname: h}, nil
-}
-
-func (a *agentServer) WatchEvents(
-	_ *mwanv1.WatchEventsRequest,
-	stream mwanv1.MWANAgent_WatchEventsServer,
-) error {
-	<-stream.Context().Done()
-	return stream.Context().Err()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			logger.Error("grpc serve", "error", err)
+			os.Exit(1)
+		}
+		for i := 1; i < serveCount; i++ {
+			if err := <-errCh; err != nil {
+				logger.Error("grpc serve", "error", err)
+				os.Exit(1)
+			}
+		}
+	case sig := <-sigCh:
+		logger.Info("shutdown signal", "signal", sig.String())
+		grpcServer.GracefulStop()
+		for i := 0; i < serveCount; i++ {
+			if err := <-errCh; err != nil {
+				logger.Error("grpc after graceful stop", "error", err)
+				os.Exit(1)
+			}
+		}
+	}
 }

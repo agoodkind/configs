@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,12 +43,22 @@ type watchdog struct {
 
 	lastState             connectivityState
 	vmStoppedLogged       bool
+	recoveredFromRollback bool // set by recoverInterrupted when VM was stopped due to rollback
 	consecutiveTotalFails int
 	totalDownStartUnix    int64
 	lastHeartbeat         time.Time
 
 	// probeLog accumulates per-cycle probe results for inclusion in emails.
 	probeLog []string
+
+	// tracker may be nil when ops is not realOps (e.g. mock in tests).
+	tracker *channelTracker
+
+	lastConfigHash        string
+	hashChangeWindowStart int64
+	consecutiveHealthy    int
+	lastSnapshotAt        time.Time
+	healthyCyclesForHash  int
 }
 
 func (w *watchdog) heartbeatTick() time.Duration {
@@ -64,6 +76,121 @@ func (w *watchdog) flushProbeLog() string {
 	s := strings.Join(w.probeLog, "\n")
 	w.probeLog = w.probeLog[:0]
 	return s
+}
+
+func (w *watchdog) channelSummarySection() string {
+	if w.tracker == nil {
+		return ""
+	}
+	return "--- COMMUNICATION CHANNELS ---\n" + w.tracker.summary() + "\n"
+}
+
+// buildSystemContext collects a human-readable snapshot of the vault host's
+// interface addresses for inclusion in alert emails.
+func buildSystemContext() string {
+	var b strings.Builder
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Sprintf("(error reading interfaces: %v)", err)
+	}
+	b.WriteString(fmt.Sprintf("Host interfaces at %s:\n", time.Now().Format(time.RFC3339)))
+	for _, iface := range ifaces {
+		addrs, addrErr := iface.Addrs()
+		flags := iface.Flags.String()
+		if addrErr != nil || len(addrs) == 0 {
+			b.WriteString(fmt.Sprintf("  %-20s  flags=%-20s  (no addresses)\n",
+				iface.Name, flags))
+			continue
+		}
+		var addrStrs []string
+		for _, a := range addrs {
+			addrStrs = append(addrStrs, a.String())
+		}
+		b.WriteString(fmt.Sprintf("  %-20s  flags=%-20s  %s\n",
+			iface.Name, flags, strings.Join(addrStrs, ", ")))
+	}
+	return b.String()
+}
+
+// collectIfaceAddrs returns a map[ifaceName][]cidr for all non-loopback interfaces.
+func collectIfaceAddrs() map[string][]string {
+	result := make(map[string][]string)
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return result
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		var cidrs []string
+		for _, a := range addrs {
+			cidrs = append(cidrs, a.String())
+		}
+		result[iface.Name] = cidrs
+	}
+	return result
+}
+
+// diffIfaceAddrs returns a human-readable diff between two interface address snapshots.
+// Returns empty string if nothing changed.
+func diffIfaceAddrs(prev, curr map[string][]string) string {
+	prevSet := func(m map[string][]string) map[string]map[string]struct{} {
+		out := make(map[string]map[string]struct{})
+		for iface, addrs := range m {
+			out[iface] = make(map[string]struct{})
+			for _, a := range addrs {
+				out[iface][a] = struct{}{}
+			}
+		}
+		return out
+	}
+	ps := prevSet(prev)
+	cs := prevSet(curr)
+
+	var changes []string
+
+	// Check for removed addresses or removed interfaces.
+	for iface, paddrs := range ps {
+		caddrs, exists := cs[iface]
+		if !exists {
+			changes = append(changes, fmt.Sprintf("  REMOVED  %-20s  (interface gone)", iface))
+			continue
+		}
+		for a := range paddrs {
+			if _, ok := caddrs[a]; !ok {
+				changes = append(changes,
+					fmt.Sprintf("  REMOVED  %-20s  %s", iface, a))
+			}
+		}
+	}
+
+	// Check for added addresses or new interfaces.
+	for iface, caddrs := range cs {
+		paddrs, exists := ps[iface]
+		if !exists {
+			for a := range caddrs {
+				changes = append(changes,
+					fmt.Sprintf("  ADDED    %-20s  %s (new interface)", iface, a))
+			}
+			continue
+		}
+		for a := range caddrs {
+			if _, ok := paddrs[a]; !ok {
+				changes = append(changes,
+					fmt.Sprintf("  ADDED    %-20s  %s", iface, a))
+			}
+		}
+	}
+
+	if len(changes) == 0 {
+		return ""
+	}
+	return strings.Join(changes, "\n")
 }
 
 func (w *watchdog) guestExecOK(ctx context.Context, args ...string) bool {
@@ -225,13 +352,151 @@ func (w *watchdog) findSnapshot(ctx context.Context) (string, error) {
 	snap := extractLatestSnapshot(out)
 	if snap == "" {
 		w.log.Info(
-			"No pre-deploy-* snapshot found",
+			"No rollback snapshot (pre-deploy-* or known-good-*)",
 			"listsnapshot_output", string(out),
 		)
 	} else {
 		w.log.Info("Found rollback snapshot", "snapshot", snap)
 	}
 	return snap, nil
+}
+
+func (w *watchdog) readGuestUnix(ctx context.Context, path string) (int64, bool) {
+	parsed, err := w.ops.guestExec(ctx, w.cfg.MwanVMID, "cat", path)
+	if err != nil {
+		w.log.Error("guestExec(cat) error", "path", path, "err", err)
+		return 0, false
+	}
+	if parsed.ExitCode != 0 {
+		return 0, false
+	}
+	raw := strings.TrimSpace(parsed.Stdout)
+	if raw == "" || raw == "null" {
+		return 0, false
+	}
+	ts, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		w.log.Error(
+			"guest timestamp parse error",
+			"path", path,
+			"raw", raw,
+			"err", err,
+		)
+		return 0, false
+	}
+	return ts, true
+}
+
+func (w *watchdog) checkConfigHash(ctx context.Context) {
+	parsed, err := w.ops.guestExec(
+		ctx, w.cfg.MwanVMID, "cat", w.nc.ConfigHashPath,
+	)
+	if err != nil {
+		w.log.Error("checkConfigHash guestExec", "err", err)
+		return
+	}
+	if parsed.ExitCode != 0 {
+		return
+	}
+	h := strings.TrimSpace(parsed.Stdout)
+	if h == "" {
+		return
+	}
+	if w.lastConfigHash != "" && h != w.lastConfigHash {
+		w.log.Warn(
+			"config hash drift detected",
+			"config_hash_path", w.nc.ConfigHashPath,
+		)
+		w.hashChangeWindowStart = time.Now().Unix()
+	}
+	w.lastConfigHash = h
+}
+
+func (w *watchdog) maybeSnapshot(ctx context.Context) {
+	if w.cfg.SnapshotHealthyThreshold <= 0 {
+		return
+	}
+	if w.consecutiveHealthy < w.cfg.SnapshotHealthyThreshold {
+		return
+	}
+	minGap := time.Duration(w.cfg.MinSnapshotIntervalSeconds) * time.Second
+	if !w.lastSnapshotAt.IsZero() && time.Since(w.lastSnapshotAt) < minGap {
+		return
+	}
+	name := fmt.Sprintf(
+		"known-good-%s",
+		time.Now().Format("20060102-150405"),
+	)
+	if err := w.ops.vmSnapshot(ctx, w.cfg.MwanVMID, name); err != nil {
+		w.log.Error("vmSnapshot failed", "err", err, "snapshot", name)
+		return
+	}
+	w.log.Info("created known-good snapshot", "snapshot", name)
+	w.lastSnapshotAt = time.Now()
+	w.consecutiveHealthy = 0
+	if err := w.pruneSnapshots(ctx); err != nil {
+		w.log.Error("pruneSnapshots failed", "err", err)
+	}
+}
+
+func (w *watchdog) pruneSnapshots(ctx context.Context) error {
+	out, err := w.ops.vmSnapshots(ctx, w.cfg.MwanVMID)
+	if err != nil {
+		return err
+	}
+	s := string(out)
+	knownGoods := knownGoodSnapRE.FindAllString(s, -1)
+	sort.Strings(knownGoods)
+	preDeploys := preDeploySnapRE.FindAllString(s, -1)
+	total := len(knownGoods) + len(preDeploys)
+
+	if w.cfg.MaxKnownGoodSnapshots > 0 &&
+		len(knownGoods) > w.cfg.MaxKnownGoodSnapshots {
+		toDrop := len(knownGoods) - w.cfg.MaxKnownGoodSnapshots
+		for i := 0; i < toDrop; i++ {
+			if err := w.ops.vmDelSnapshot(
+				ctx, w.cfg.MwanVMID, knownGoods[i],
+			); err != nil {
+				w.log.Error(
+					"vmDelSnapshot",
+					"snapshot", knownGoods[i],
+					"err", err,
+				)
+				return err
+			}
+		}
+		out, err = w.ops.vmSnapshots(ctx, w.cfg.MwanVMID)
+		if err != nil {
+			return err
+		}
+		s = string(out)
+		knownGoods = knownGoodSnapRE.FindAllString(s, -1)
+		sort.Strings(knownGoods)
+		preDeploys = preDeploySnapRE.FindAllString(s, -1)
+		total = len(knownGoods) + len(preDeploys)
+	}
+
+	if w.cfg.MaxTotalSnapshots <= 0 ||
+		total <= w.cfg.MaxTotalSnapshots || len(knownGoods) == 0 {
+		return nil
+	}
+	excess := total - w.cfg.MaxTotalSnapshots
+	if excess > len(knownGoods) {
+		excess = len(knownGoods)
+	}
+	for i := 0; i < excess; i++ {
+		if err := w.ops.vmDelSnapshot(
+			ctx, w.cfg.MwanVMID, knownGoods[i],
+		); err != nil {
+			w.log.Error(
+				"vmDelSnapshot max total",
+				"snapshot", knownGoods[i],
+				"err", err,
+			)
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
@@ -242,66 +507,58 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 	}
 	if !running {
 		w.log.Info(
-			"checkDeploy: VM is not running; cannot check deploy timestamp",
+			"checkDeploy: VM is not running; cannot check change window",
 			"vmid", w.cfg.MwanVMID,
 		)
 		return 0, false
 	}
 
 	w.log.Info(
-		"checkDeploy: reading last deploy path from VM",
-		"path", w.nc.LastDeployPath,
+		"checkDeploy: reading change window markers",
+		"last_deploy_path", w.nc.LastDeployPath,
+		"last_change_path", w.nc.LastChangePath,
 		"vmid", w.cfg.MwanVMID,
 	)
-	parsed, err := w.ops.guestExec(
-		ctx, w.cfg.MwanVMID, "cat", w.nc.LastDeployPath,
-	)
-	if err != nil {
-		w.log.Error(
-			"checkDeploy: guestExec(cat) error",
-			"path", w.nc.LastDeployPath,
-			"err", err,
-		)
+
+	deployTS, dOK := w.readGuestUnix(ctx, w.nc.LastDeployPath)
+	changeTS, cOK := w.readGuestUnix(ctx, w.nc.LastChangePath)
+
+	var candidates []int64
+	if dOK {
+		candidates = append(candidates, deployTS)
+	}
+	if cOK {
+		candidates = append(candidates, changeTS)
+	}
+	if w.hashChangeWindowStart > 0 {
+		candidates = append(candidates, w.hashChangeWindowStart)
+	}
+	if len(candidates) == 0 {
+		w.log.Info("checkDeploy: no change markers or hash window")
 		return 0, false
 	}
-	if parsed.ExitCode != 0 {
-		w.log.Info(
-			"checkDeploy: last deploy path not found or unreadable in VM; no recent deploy",
-			"path", w.nc.LastDeployPath,
-			"exit_code", parsed.ExitCode,
-		)
-		return 0, false
+	effective := candidates[0]
+	for _, t := range candidates[1:] {
+		if t > effective {
+			effective = t
+		}
 	}
 
-	raw := strings.TrimSpace(parsed.Stdout)
-	if raw == "" || raw == "null" {
-		w.log.Info(
-			"checkDeploy: last deploy path is empty or null; no recent deploy",
-			"path", w.nc.LastDeployPath,
-		)
-		return 0, false
-	}
-
-	ts, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		w.log.Error(
-			"checkDeploy: cannot parse deploy timestamp",
-			"raw", raw,
-			"err", err,
-		)
-		return 0, false
-	}
-
-	ageMin := (time.Now().Unix() - ts) / 60
+	ageMin := (time.Now().Unix() - effective) / 60
 	w.log.Info(
-		"checkDeploy: deploy timestamp and age",
-		"deploy_ts", ts,
+		"checkDeploy: change window",
+		"deploy_ts", deployTS,
+		"deploy_ok", dOK,
+		"change_ts", changeTS,
+		"change_ok", cOK,
+		"hash_window_ts", w.hashChangeWindowStart,
+		"effective_ts", effective,
 		"age_minutes", ageMin,
 		"window_minutes", w.cfg.DeployWindowMinutes,
 	)
 	if ageMin > int64(w.cfg.DeployWindowMinutes) {
 		w.log.Info(
-			"checkDeploy: deploy is stale; no rollback",
+			"checkDeploy: change window stale",
 			"age_minutes", ageMin,
 			"window_minutes", w.cfg.DeployWindowMinutes,
 		)
@@ -309,13 +566,15 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 	}
 
 	w.log.Info(
-		"checkDeploy: deploy is recent; rollback is eligible",
+		"checkDeploy: within change window",
+		"effective_ts", effective,
 		"age_minutes", ageMin,
 	)
-	return ts, true
+	return effective, true
 }
 
 func (w *watchdog) rollback(ctx context.Context, deployTS int64, snap string) {
+	w.hashChangeWindowStart = 0
 	w.coord.setRollingBack(true)
 	defer w.coord.setRollingBack(false)
 
@@ -423,27 +682,69 @@ func (w *watchdog) rollback(ctx context.Context, deployTS int64, snap string) {
 	}
 
 	deployAge := time.Now().Unix() - deployTS
+	sysCtx := buildSystemContext()
 	msg := fmt.Sprintf(
-		"MWAN auto-rollback executed at %s.\n\n"+
-			"VM:              %s\n"+
-			"Snapshot:        %s\n"+
-			"Deploy timestamp: %d (%ds ago, within %dm window)\n\n"+
-			"Connectivity probe history:\n%s\n\n"+
-			"The VM has been rolled back and restarted. "+
-			"Monitor routing recovery and verify WAN connectivity.\n"+
-			"If routing does not recover within %s, manual intervention is needed.",
+		"=== MWAN AUTO-ROLLBACK EXECUTED ===\n\n"+
+			"Time:              %s\n"+
+			"VM ID:             %s\n"+
+			"PVE Node:          %s\n"+
+			"Snapshot:          %s\n"+
+			"Deploy timestamp:  %d  (%ds ago, within %dm window)\n\n"+
+			"--- WHAT HAPPENED ---\n"+
+			"The MWAN watchdog detected sustained connectivity failure consistent with a bad\n"+
+			"MWAN configuration deploy. It has stopped the VM, rolled it back to the snapshot\n"+
+			"above, and restarted it.\n\n"+
+			"--- ROLLBACK SEQUENCE ---\n"+
+			"  1. qm stop   %s\n"+
+			"  2. qm rollback %s %s\n"+
+			"  3. qm start  %s\n\n"+
+			"--- CONNECTIVITY PROBE HISTORY ---\n"+
+			"%s\n\n"+
+			"%s"+
+			"--- HOST INTERFACE STATE AT ROLLBACK ---\n"+
+			"%s\n"+
+			"--- CONFIG AT ROLLBACK ---\n"+
+			"  deploy_window_minutes=%d  timeout_seconds=%d\n"+
+			"  check_interval_healthy=%s  check_interval_degraded=%s\n"+
+			"  alert_cooldown_seconds=%d  post_rollback_grace=%s\n"+
+			"  rollback_state_file=%s\n"+
+			"  rollback_lock_file=%s\n"+
+			"  wan_interfaces=%s\n"+
+			"  ping_target_ipv4=%s  ping_target_ipv6=%s\n\n"+
+			"--- NEXT STEPS ---\n"+
+			"Monitor WAN routing recovery and verify connectivity.\n"+
+			"If routing does not recover within %s, manual intervention is needed.\n"+
+			"Check the rollback state file to confirm rollback was recorded: %s\n",
 		time.Now().Format(time.RFC3339),
 		w.cfg.MwanVMID,
+		w.cfg.PVENode,
 		snap,
-		deployTS,
-		deployAge,
-		w.cfg.DeployWindowMinutes,
+		deployTS, deployAge, w.cfg.DeployWindowMinutes,
+		w.cfg.MwanVMID,
+		w.cfg.MwanVMID, snap,
+		w.cfg.MwanVMID,
 		probeHistory,
+		w.channelSummarySection(),
+		sysCtx,
+		w.cfg.DeployWindowMinutes,
+		w.cfg.ConnectivityTimeoutSeconds,
+		w.cfg.CheckIntervalHealthy,
+		w.cfg.CheckIntervalDegraded,
+		w.cfg.AlertCooldownSeconds,
 		w.cfg.PostRollbackGraceSeconds,
+		w.cfg.RollbackStateFile,
+		w.cfg.RollbackLockFile,
+		strings.Join(w.nc.wanIfaceNames(), ", "),
+		w.nc.PingTargetIPv4,
+		w.nc.PingTargetIPv6,
+		w.cfg.PostRollbackGraceSeconds,
+		w.cfg.RollbackStateFile,
 	)
 	w.log.Info("Sending rollback notification email...")
 	if err := w.ops.sendEmail(
-		ctx, w.cfg.AlertEmail, "MWAN Auto-Rollback Triggered", msg,
+		ctx, w.cfg.AlertEmail,
+		fmt.Sprintf("MWAN AUTO-ROLLBACK: VM %s rolled back to %s", w.cfg.MwanVMID, snap),
+		msg,
 	); err != nil {
 		w.log.Error("rollback email send error", "err", err)
 	} else {
@@ -516,6 +817,7 @@ func (w *watchdog) recoverInterrupted(ctx context.Context) {
 		!errors.Is(err, os.ErrNotExist) {
 		w.log.Error("remove rollback lock after recovery", "err", err)
 	}
+	w.recoveredFromRollback = true
 	w.log.Info(
 		"Waiting for VM to boot and routes to converge after interrupted rollback recovery",
 		"grace", w.cfg.PostRollbackGraceSeconds,
@@ -541,24 +843,62 @@ func (w *watchdog) sendPartialAlert(ctx context.Context, proto string) {
 	if proto == "IPv4" {
 		upProto = "IPv6"
 	}
+	sysCtx := buildSystemContext()
 	body := fmt.Sprintf(
-		"MWAN partial connectivity degradation at %s.\n\n"+
+		"=== MWAN PARTIAL CONNECTIVITY DEGRADATION ===\n\n"+
+			"Time:         %s\n"+
+			"VM ID:        %s\n"+
+			"PVE Node:     %s\n"+
+			"Alert to:     %s\n\n"+
+			"--- CONNECTIVITY STATUS ---\n"+
 			"DOWN:  %s (target: %s)\n"+
 			"UP:    %s (target: %s)\n\n"+
-			"VM:    %s\n"+
-			"Path:  Proxmox -> OPNsense -> MWAN VM -> WAN\n\n"+
-			"The other protocol is still working. "+
-			"This is a partial degradation; no rollback will be triggered.\n"+
-			"Manual investigation may be needed.\n\n"+
-			"Probe history:\n%s",
+			"--- DIAGNOSIS ---\n"+
+			"One protocol is down; the other is still working.\n"+
+			"This is a PARTIAL degradation -- no rollback will be triggered automatically.\n"+
+			"Path: Proxmox host -> OPNsense -> MWAN VM (vmid=%s) -> WAN interfaces.\n"+
+			"Manual investigation may be needed if this persists.\n\n"+
+			"--- CONSECUTIVE FAIL COUNT ---\n"+
+			"Consecutive total failures: %d\n"+
+			"Current state:              %s\n\n"+
+			"--- PROBE HISTORY (this cycle) ---\n"+
+			"%s\n\n"+
+			"%s"+
+			"--- HOST INTERFACE STATE ---\n"+
+			"%s\n"+
+			"--- WAN INTERFACES CONFIGURED ---\n"+
+			"  %s\n\n"+
+			"--- CONFIG ---\n"+
+			"  deploy_window_minutes=%d  timeout_seconds=%d\n"+
+			"  check_interval_healthy=%s  check_interval_degraded=%s\n"+
+			"  alert_cooldown_seconds=%d  post_rollback_grace=%s\n"+
+			"  ping_target_ipv4=%s  ping_target_ipv6=%s\n",
 		time.Now().Format(time.RFC3339),
+		w.cfg.MwanVMID,
+		w.cfg.PVENode,
+		w.cfg.AlertEmail,
 		proto, w.pingTarget(proto),
 		upProto, w.pingTarget(upProto),
 		w.cfg.MwanVMID,
+		w.consecutiveTotalFails,
+		w.lastState,
 		w.flushProbeLog(),
+		w.channelSummarySection(),
+		sysCtx,
+		strings.Join(w.nc.wanIfaceNames(), ", "),
+		w.cfg.DeployWindowMinutes,
+		w.cfg.ConnectivityTimeoutSeconds,
+		w.cfg.CheckIntervalHealthy,
+		w.cfg.CheckIntervalDegraded,
+		w.cfg.AlertCooldownSeconds,
+		w.cfg.PostRollbackGraceSeconds,
+		w.nc.PingTargetIPv4,
+		w.nc.PingTargetIPv6,
 	)
 	if err := w.ops.sendEmail(
-		ctx, w.cfg.AlertEmail, "MWAN: "+proto+" connectivity lost", body,
+		ctx, w.cfg.AlertEmail,
+		fmt.Sprintf("MWAN PARTIAL ALERT: %s connectivity lost (VM %s)", proto, w.cfg.MwanVMID),
+		body,
 	); err != nil {
 		w.log.Error("partial alert email error", "err", err)
 	} else {
@@ -584,22 +924,71 @@ func (w *watchdog) sendTotalAlert(ctx context.Context, reason, detail string) {
 		return
 	}
 	w.log.Info("Sending total-loss alert", "reason", reason)
+	sysCtx := buildSystemContext()
+	downDurationSec := 0
+	if w.totalDownStartUnix > 0 {
+		downDurationSec = int(time.Now().Unix() - w.totalDownStartUnix)
+	}
 	body := fmt.Sprintf(
-		"MWAN connectivity alert at %s.\n\n"+
-			"Reason: %s\n\n"+
+		"=== MWAN TOTAL CONNECTIVITY ALERT ===\n\n"+
+			"Time:         %s\n"+
+			"VM ID:        %s\n"+
+			"PVE Node:     %s\n"+
+			"Alert to:     %s\n\n"+
+			"--- REASON ---\n"+
 			"%s\n\n"+
-			"VM:      %s\n"+
-			"Consecutive total failures: %d\n\n"+
-			"Probe history:\n%s",
+			"--- DETAIL ---\n"+
+			"%s\n\n"+
+			"--- CONNECTIVITY STATUS ---\n"+
+			"IPv4 target:  %s  -- FAILED\n"+
+			"IPv6 target:  %s  -- FAILED\n\n"+
+			"--- OUTAGE DURATION ---\n"+
+			"Consecutive total failures: %d\n"+
+			"Outage duration so far:     %d seconds\n"+
+			"Current state:              %s\n\n"+
+			"--- PROBE HISTORY (this cycle) ---\n"+
+			"%s\n\n"+
+			"%s"+
+			"--- HOST INTERFACE STATE ---\n"+
+			"%s\n"+
+			"--- WAN INTERFACES CONFIGURED ---\n"+
+			"  %s\n\n"+
+			"--- CONFIG ---\n"+
+			"  deploy_window_minutes=%d  timeout_seconds=%d\n"+
+			"  check_interval_healthy=%s  check_interval_degraded=%s\n"+
+			"  alert_cooldown_seconds=%d  post_rollback_grace=%s\n"+
+			"  rollback_state_file=%s\n"+
+			"  rollback_lock_file=%s\n"+
+			"  last_deploy_path=%s\n",
 		time.Now().Format(time.RFC3339),
+		w.cfg.MwanVMID,
+		w.cfg.PVENode,
+		w.cfg.AlertEmail,
 		reason,
 		detail,
-		w.cfg.MwanVMID,
+		w.nc.PingTargetIPv4,
+		w.nc.PingTargetIPv6,
 		w.consecutiveTotalFails,
+		downDurationSec,
+		w.lastState,
 		w.flushProbeLog(),
+		w.channelSummarySection(),
+		sysCtx,
+		strings.Join(w.nc.wanIfaceNames(), ", "),
+		w.cfg.DeployWindowMinutes,
+		w.cfg.ConnectivityTimeoutSeconds,
+		w.cfg.CheckIntervalHealthy,
+		w.cfg.CheckIntervalDegraded,
+		w.cfg.AlertCooldownSeconds,
+		w.cfg.PostRollbackGraceSeconds,
+		w.cfg.RollbackStateFile,
+		w.cfg.RollbackLockFile,
+		w.nc.LastDeployPath,
 	)
 	if err := w.ops.sendEmail(
-		ctx, w.cfg.AlertEmail, "MWAN Connectivity Alert", body,
+		ctx, w.cfg.AlertEmail,
+		fmt.Sprintf("MWAN TOTAL ALERT: %s (VM %s)", reason, w.cfg.MwanVMID),
+		body,
 	); err != nil {
 		w.log.Error("total alert email error", "err", err)
 	} else {
@@ -644,9 +1033,15 @@ func (w *watchdog) run(ctx context.Context) {
 		"vsock_port", w.cfg.VsockPort,
 	)
 	w.recoverInterrupted(ctx)
+	w.sendStartupEmail(ctx)
 	w.lastState = stateUnknown
 	w.lastHeartbeat = time.Now()
 	iteration := 0
+
+	// Launch interface address monitor in a background goroutine.
+	// It polls every 30 s and fires an alert + log entry whenever any
+	// interface on the vault host gains or loses an IPv4/IPv6 address.
+	go w.runIfaceMonitor(ctx)
 
 	for {
 		if w.cfg.MaxIterations > 0 && iteration >= w.cfg.MaxIterations {
@@ -682,6 +1077,78 @@ func (w *watchdog) run(ctx context.Context) {
 				)
 				w.vmStoppedLogged = true
 				w.lastState = stateVMStopped
+
+				// Only alert and auto-start when no rollback is in progress.
+				// If the rollback lock exists, the watchdog itself stopped the VM
+				// intentionally; do not interfere. Also skip if recoverInterrupted
+				// already handled this episode (lock was present at startup and removed).
+				_, lockErr := os.Stat(w.cfg.RollbackLockFile)
+				rollbackInProgress := lockErr == nil || w.recoveredFromRollback
+				if rollbackInProgress {
+					w.log.Info(
+						"VM stopped but rollback lock present; skipping alert and auto-start",
+						"lock_file", w.cfg.RollbackLockFile,
+					)
+				} else {
+					w.log.Error(
+						"VM stopped unexpectedly; sending alert and attempting restart",
+						"vmid", w.cfg.MwanVMID,
+					)
+					sysCtx := buildSystemContext()
+					alertBody := fmt.Sprintf(
+						"=== MWAN VM STOPPED UNEXPECTEDLY ===\n\n"+
+							"Time:     %s\n"+
+							"VM ID:    %s\n"+
+							"PVE Node: %s\n\n"+
+							"--- WHAT HAPPENED ---\n"+
+							"The MWAN VM was found in STOPPED state with no rollback in progress.\n"+
+							"This likely means:\n"+
+							"  - The VM crashed or was killed by the hypervisor\n"+
+							"  - Someone ran 'qm stop %s' manually\n"+
+							"  - A power event stopped the VM\n\n"+
+							"--- ACTION TAKEN ---\n"+
+							"The watchdog has issued 'qm start %s' to restart the VM.\n"+
+							"Check VM logs in the Proxmox UI for details.\n\n"+
+							"%s"+
+							"--- HOST INTERFACE STATE AT DETECTION ---\n"+
+							"%s\n"+
+							"--- CONFIG ---\n"+
+							"  rollback_lock_file=%s  rollback_state_file=%s\n"+
+							"  pve_node=%s  pve_token_id=%s\n",
+						time.Now().Format(time.RFC3339),
+						w.cfg.MwanVMID,
+						w.cfg.PVENode,
+						w.cfg.MwanVMID,
+						w.cfg.MwanVMID,
+						w.channelSummarySection(),
+						sysCtx,
+						w.cfg.RollbackLockFile,
+						w.cfg.RollbackStateFile,
+						w.cfg.PVENode,
+						w.cfg.PVETokenID,
+					)
+					if err := w.ops.sendEmail(
+						ctx,
+						w.cfg.AlertEmail,
+						fmt.Sprintf("MWAN VM %s stopped unexpectedly", w.cfg.MwanVMID),
+						alertBody,
+					); err != nil {
+						w.log.Error("Failed to send VM-stopped alert email", "err", err)
+					} else {
+						w.log.Info("VM-stopped alert email sent", "to", w.cfg.AlertEmail)
+					}
+
+					w.log.Info("Attempting to start stopped VM", "vmid", w.cfg.MwanVMID)
+					if startErr := w.ops.vmStart(ctx, w.cfg.MwanVMID); startErr != nil {
+						w.log.Error(
+							"vmStart failed for stopped VM",
+							"vmid", w.cfg.MwanVMID,
+							"err", startErr,
+						)
+					} else {
+						w.log.Info("vmStart issued for stopped VM", "vmid", w.cfg.MwanVMID)
+					}
+				}
 			}
 			if !sleepOrDone(ctx, w.cfg.CheckIntervalDegraded) {
 				w.log.Info(
@@ -698,6 +1165,21 @@ func (w *watchdog) run(ctx context.Context) {
 
 		v4ok, v6ok := w.probeConnectivity(ctx)
 
+		if !(v4ok && v6ok) {
+			w.consecutiveHealthy = 0
+			w.healthyCyclesForHash = 0
+		}
+		if v4ok && v6ok {
+			w.consecutiveHealthy++
+			w.healthyCyclesForHash++
+			if w.cfg.HashCheckEveryNHealthy > 0 &&
+				w.healthyCyclesForHash >= w.cfg.HashCheckEveryNHealthy {
+				w.healthyCyclesForHash = 0
+				w.checkConfigHash(ctx)
+			}
+			w.maybeSnapshot(ctx)
+		}
+
 		if v4ok && v6ok {
 			if w.lastState != stateHealthy {
 				w.log.Info(
@@ -711,6 +1193,9 @@ func (w *watchdog) run(ctx context.Context) {
 					"ping_target_ipv6", w.nc.PingTargetIPv6,
 					"iteration", iteration,
 				)
+				if w.tracker != nil {
+					w.tracker.logAll(w.log)
+				}
 				w.lastHeartbeat = time.Now()
 			}
 			w.lastState = stateHealthy
@@ -795,6 +1280,69 @@ func (w *watchdog) run(ctx context.Context) {
 	}
 }
 
+// runIfaceMonitor polls the vault host's interface addresses every 30 seconds.
+// When any address is added or removed on any interface, it logs the change and
+// sends an alert email so network changes are never silent.
+func (w *watchdog) runIfaceMonitor(ctx context.Context) {
+	const pollInterval = 30 * time.Second
+	prev := collectIfaceAddrs()
+	w.log.Info(
+		"Interface monitor started",
+		"poll_interval", pollInterval,
+		"interface_count", len(prev),
+	)
+	for {
+		select {
+		case <-ctx.Done():
+			w.log.Info("Interface monitor stopped (context cancelled)")
+			return
+		case <-time.After(pollInterval):
+		}
+		curr := collectIfaceAddrs()
+		diff := diffIfaceAddrs(prev, curr)
+		if diff == "" {
+			prev = curr
+			continue
+		}
+		w.log.Warn(
+			"HOST INTERFACE ADDRESS CHANGE DETECTED",
+			"diff", diff,
+		)
+		sysCtx := buildSystemContext()
+		body := fmt.Sprintf(
+			"=== VAULT HOST INTERFACE ADDRESS CHANGE ===\n\n"+
+				"Time:     %s\n"+
+				"VM ID:    %s\n"+
+				"PVE Node: %s\n\n"+
+				"--- WHAT CHANGED ---\n"+
+				"%s\n\n"+
+				"--- CURRENT HOST INTERFACE STATE ---\n"+
+				"%s\n"+
+				"This change was detected by the mwan-watchdog interface monitor.\n"+
+				"If this is unexpected, check vault's network config, OPNsense, and the MWAN VM.\n",
+			time.Now().Format(time.RFC3339),
+			w.cfg.MwanVMID,
+			w.cfg.PVENode,
+			diff,
+			sysCtx,
+		)
+		if err := w.ops.sendEmail(
+			ctx,
+			w.cfg.AlertEmail,
+			fmt.Sprintf(
+				"VAULT HOST: interface address change at %s",
+				time.Now().Format("2006-01-02 15:04:05"),
+			),
+			body,
+		); err != nil {
+			w.log.Error("Interface change alert email error", "err", err)
+		} else {
+			w.log.Info("Interface change alert email sent", "to", w.cfg.AlertEmail)
+		}
+		prev = curr
+	}
+}
+
 func (w *watchdog) handleTimeoutExceeded(ctx context.Context) {
 	w.log.Info("--- DIAGNOSIS START ---")
 
@@ -841,18 +1389,18 @@ func (w *watchdog) handleTimeoutExceeded(ctx context.Context) {
 	deployTS, recent := w.checkDeploy(ctx)
 	if !recent {
 		w.log.Info(
-			"No recent deploy found; cannot auto-rollback (manual intervention needed)",
+			"No recent change within window; cannot auto-rollback (manual intervention needed)",
 		)
 		w.sendTotalAlert(
 			ctx,
-			"MWAN routing broken but no recent deploy found",
+			"MWAN routing broken but no recent change within window",
 			fmt.Sprintf(
 				"MWAN routing is broken (ISP reachable per-interface, "+
-					"default route failed) but no deploy timestamp was found within "+
-					"the %dm window.\n\nThis may indicate:\n"+
+					"default route failed) but no deploy/change/hash window was found "+
+					"within the %dm window.\n\nThis may indicate:\n"+
 					"  - A spontaneous routing failure (nftables, npd, etc.)\n"+
-					"  - A deploy that happened outside the tracking window\n"+
-					"  - The deploy timestamp file is missing from the VM\n\n"+
+					"  - A change that happened outside the tracking window\n"+
+					"  - Change marker files are missing from the VM\n\n"+
 					"Manual investigation is required.",
 				w.cfg.DeployWindowMinutes,
 			),
@@ -890,13 +1438,13 @@ func (w *watchdog) handleTimeoutExceeded(ctx context.Context) {
 		w.log.Error("listsnapshot error", "err", snapErr)
 	}
 	if snap == "" {
-		w.log.Info("No pre-deploy snapshot found; cannot rollback")
+		w.log.Info("No rollback snapshot found; cannot rollback")
 		w.sendTotalAlert(
 			ctx,
-			"MWAN routing broken after deploy but no pre-deploy snapshot exists",
+			"MWAN routing broken after change but no rollback snapshot exists",
 			fmt.Sprintf(
-				"A recent deploy (ts=%d) was detected and routing is broken, "+
-					"but no pre-deploy-* snapshot was found.\n\n"+
+				"A recent change (effective ts=%d) was detected and routing is broken, "+
+					"but no pre-deploy-* or known-good-* snapshot was found.\n\n"+
 					"Manual intervention is required. "+
 					"Create a snapshot and fix routing manually.",
 				deployTS,

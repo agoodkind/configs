@@ -1,0 +1,6 @@
+[Unit]
+Description=MWAN config change detector
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mwan-change-detect

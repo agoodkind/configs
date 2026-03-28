@@ -22,8 +22,11 @@ type redTeamPreset struct {
 	GuestDefaultFail  bool
 	GuestIfaceFail    bool
 	GuestIfaceSucceed bool // force per-interface ISP pings to succeed (simulate ISP up)
-	InjectDeployTS    bool
-	InjectSnapshot    bool
+	InjectDeployTS     bool
+	InjectSnapshot     bool
+	InjectChangeMarker  bool
+	InjectKnownGoodSnap bool
+	OmitDeployMarker    bool
 }
 
 var redTeamPresets = map[string]redTeamPreset{
@@ -65,6 +68,17 @@ var redTeamPresets = map[string]redTeamPreset{
 		Description: "Host fails, VM has internet -> Proxmox-side issue",
 		HostV4Fail:  true,
 		HostV6Fail:  true,
+	},
+	"config-drift": {
+		Description: "No deploy marker; change marker + known-good snapshot -> rollback",
+		HostV4Fail:          true,
+		HostV6Fail:          true,
+		GuestDefaultFail:    true,
+		GuestIfaceSucceed:   true,
+		OmitDeployMarker:    true,
+		InjectChangeMarker:  true,
+		InjectSnapshot:      true,
+		InjectKnownGoodSnap: true,
 	},
 }
 
@@ -111,13 +125,33 @@ func (r *redTeamOps) vmSnapshots(ctx context.Context, vmid string) ([]byte, erro
 			"fault", "fake_snapshot",
 			"vmid", vmid,
 		)
-		fake := fmt.Sprintf(
-			"`-> pre-deploy-%s\n",
-			time.Now().Format("20060102-150405"),
-		)
+		var fake string
+		if r.preset.InjectKnownGoodSnap {
+			fake = fmt.Sprintf(
+				"`-> known-good-%s\n",
+				time.Now().Format("20060102-150405"),
+			)
+		} else {
+			fake = fmt.Sprintf(
+				"`-> pre-deploy-%s\n",
+				time.Now().Format("20060102-150405"),
+			)
+		}
 		return []byte(fake), nil
 	}
 	return r.inner.vmSnapshots(ctx, vmid)
+}
+
+func (r *redTeamOps) vmSnapshot(
+	ctx context.Context, vmid, snapName string,
+) error {
+	return r.inner.vmSnapshot(ctx, vmid, snapName)
+}
+
+func (r *redTeamOps) vmDelSnapshot(
+	ctx context.Context, vmid, snapName string,
+) error {
+	return r.inner.vmDelSnapshot(ctx, vmid, snapName)
 }
 
 func (r *redTeamOps) guestExec(
@@ -143,6 +177,9 @@ func (r *redTeamOps) guestExec(
 	isCatDeploy := len(args) >= 2 &&
 		args[0] == "cat" &&
 		strings.Contains(args[1], "mwan-last-deploy")
+	isCatChange := len(args) >= 2 &&
+		args[0] == "cat" &&
+		strings.Contains(args[1], "mwan-last-change")
 	if isPing && hasIfaceFlag && r.preset.GuestIfaceFail {
 		r.log.Info(
 			"[RED TEAM] injecting fault",
@@ -170,6 +207,9 @@ func (r *redTeamOps) guestExec(
 		)
 		return guestExecResult{ExitCode: 1}, nil
 	}
+	if isCatDeploy && r.preset.OmitDeployMarker {
+		return guestExecResult{ExitCode: 1}, nil
+	}
 	if isCatDeploy && r.preset.InjectDeployTS {
 		ts := time.Now().Unix() - 60
 		r.log.Info(
@@ -177,6 +217,19 @@ func (r *redTeamOps) guestExec(
 			"fault", "inject_deploy_ts",
 			"vmid", vmid,
 			"deploy_ts", ts,
+		)
+		return guestExecResult{
+			ExitCode: 0,
+			Stdout:   strconv.FormatInt(ts, 10),
+		}, nil
+	}
+	if isCatChange && r.preset.InjectChangeMarker {
+		ts := time.Now().Unix() - 60
+		r.log.Info(
+			"[RED TEAM] injecting fault",
+			"fault", "inject_change_ts",
+			"vmid", vmid,
+			"change_ts", ts,
 		)
 		return guestExecResult{
 			ExitCode: 0,

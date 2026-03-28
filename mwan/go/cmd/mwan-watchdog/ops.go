@@ -30,8 +30,11 @@ const (
 	timeoutQmRollback     = 120 * time.Second
 	timeoutQmStart        = 60 * time.Second
 	timeoutQmListSnapshot = 10 * time.Second
+	timeoutQmSnapshot     = 120 * time.Second
+	timeoutQmDelSnapshot  = 120 * time.Second
 	timeoutHostProbe      = 20 * time.Second
 	timeoutVsockRPC       = 15 * time.Second
+	timeoutTCPRPC         = 15 * time.Second
 	timeoutPVEExec        = 45 * time.Second
 )
 
@@ -50,6 +53,8 @@ type sysOps interface {
 	vmRollback(ctx context.Context, vmid, snap string) error
 	vmStart(ctx context.Context, vmid string) error
 	vmSnapshots(ctx context.Context, vmid string) ([]byte, error)
+	vmSnapshot(ctx context.Context, vmid, snapName string) error
+	vmDelSnapshot(ctx context.Context, vmid, snapName string) error
 	guestExec(
 		ctx context.Context, vmid string, args ...string,
 	) (guestExecResult, error)
@@ -78,6 +83,12 @@ type realOps struct {
 
 	// testGrpcDialer, if set, replaces vsock.Dial in vsockExec (unit tests only).
 	testGrpcDialer func(ctx context.Context, addr string) (net.Conn, error)
+
+	tcpAddr string
+	tracker *channelTracker
+
+	// testTCPDialer, if set, replaces net.Dial in tcpExec (unit tests only).
+	testTCPDialer func(ctx context.Context, addr string) (net.Conn, error)
 }
 
 func newRealOps(cfg config, nc networkConfig) *realOps {
@@ -100,6 +111,8 @@ func newRealOps(cfg config, nc networkConfig) *realOps {
 		vsockPort: cfg.VsockPort,
 		pveNode:   cfg.PVENode,
 		nc:        nc,
+		tcpAddr:   cfg.MwanAgentTCPAddr,
+		tracker:   newChannelTracker(),
 	}
 }
 
@@ -141,21 +154,60 @@ func (r *realOps) vmSnapshots(ctx context.Context, vmid string) ([]byte, error) 
 	return runCmd(ctx, timeoutQmListSnapshot, "qm", "listsnapshot", vmid)
 }
 
-// guestExec tries gRPC-over-vsock first, then falls back to PVE REST API.
+func (r *realOps) vmSnapshot(
+	ctx context.Context, vmid, snapName string,
+) error {
+	_, err := runCmd(ctx, timeoutQmSnapshot, "qm", "snapshot", vmid, snapName)
+	return err
+}
+
+func (r *realOps) vmDelSnapshot(
+	ctx context.Context, vmid, snapName string,
+) error {
+	_, err := runCmd(
+		ctx, timeoutQmDelSnapshot, "qm", "delsnapshot", vmid, snapName,
+	)
+	return err
+}
+
+// guestExec tries all three channels in order: vsock -> TCP/mgmt -> PVE REST.
+// Each channel's result is recorded in the channelTracker regardless of outcome.
 func (r *realOps) guestExec(
 	ctx context.Context, vmid string, args ...string,
 ) (guestExecResult, error) {
-	var res guestExecResult
-	var err error
+	// Allow unit test overrides to bypass the real transport layer.
 	if r.testVsockOverride != nil {
-		res, err = r.testVsockOverride(ctx, args...)
+		res, err := r.testVsockOverride(ctx, args...)
+		if err == nil {
+			return res, nil
+		}
+		return r.pveExec(ctx, vmid, args...)
+	}
+
+	// Channel 1: vsock
+	vsockRes, vsockErr := r.vsockExec(ctx, args...)
+	if vsockErr == nil {
+		r.tracker.recordSuccess(chanVsock)
+		return vsockRes, nil
+	}
+	r.tracker.recordFailure(chanVsock, vsockErr)
+
+	// Channel 2: TCP management interface
+	tcpRes, tcpErr := r.tcpExec(ctx, args...)
+	if tcpErr == nil {
+		r.tracker.recordSuccess(chanTCP)
+		return tcpRes, nil
+	}
+	r.tracker.recordFailure(chanTCP, tcpErr)
+
+	// Channel 3: PVE REST API fallback
+	pveRes, pveErr := r.pveExec(ctx, vmid, args...)
+	if pveErr == nil {
+		r.tracker.recordSuccess(chanPVE)
 	} else {
-		res, err = r.vsockExec(ctx, args...)
+		r.tracker.recordFailure(chanPVE, pveErr)
 	}
-	if err == nil {
-		return res, nil
-	}
-	return r.pveExec(ctx, vmid, args...)
+	return pveRes, pveErr
 }
 
 func (r *realOps) vsockExec(
@@ -212,6 +264,65 @@ func (r *realOps) vsockExec(
 	}
 	return guestExecResult{ExitCode: 1},
 		fmt.Errorf("vsockExec: unhandled command %q", args[0])
+}
+
+func (r *realOps) tcpExec(
+	ctx context.Context, args ...string,
+) (guestExecResult, error) {
+	if r.tcpAddr == "" {
+		return guestExecResult{ExitCode: 1}, fmt.Errorf("tcpExec: no tcp addr configured")
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeoutTCPRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", r.tcpAddr)
+	}
+	if r.testTCPDialer != nil {
+		dialer = r.testTCPDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan-tcp",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return guestExecResult{ExitCode: 1}, err
+	}
+	defer func() { _ = conn.Close() }()
+
+	cli := mwanv1.NewMWANAgentClient(conn)
+
+	if len(args) == 0 {
+		return guestExecResult{ExitCode: 1}, fmt.Errorf("tcpExec: no args")
+	}
+	switch args[0] {
+	case "ping", "ping6":
+		req := &mwanv1.PingRequest{
+			Target:         pingTarget(args),
+			BindInterface:  pingIface(args),
+			Count:          pingCount(args, 2),
+			TimeoutSeconds: 3,
+		}
+		resp, err := cli.Ping(cctx, req)
+		if err != nil {
+			return guestExecResult{ExitCode: 1}, err
+		}
+		if resp.GetSuccess() {
+			return guestExecResult{ExitCode: 0}, nil
+		}
+		return guestExecResult{ExitCode: 1}, nil
+	case "cat":
+		if len(args) >= 2 && strings.Contains(args[1], "mwan-last-deploy") {
+			resp, err := cli.GetConfigState(cctx, &mwanv1.GetConfigStateRequest{})
+			if err != nil {
+				return guestExecResult{ExitCode: 1}, err
+			}
+			ts := strconv.FormatInt(resp.GetLastDeployEpoch(), 10)
+			return guestExecResult{ExitCode: 0, Stdout: ts}, nil
+		}
+	}
+	return guestExecResult{ExitCode: 1},
+		fmt.Errorf("tcpExec: unhandled command %q", args[0])
 }
 
 func (r *realOps) pveExec(
@@ -323,6 +434,24 @@ func (d *dryRunOps) vmStart(_ context.Context, vmid string) error {
 
 func (d *dryRunOps) vmSnapshots(ctx context.Context, vmid string) ([]byte, error) {
 	return d.inner.vmSnapshots(ctx, vmid)
+}
+
+func (d *dryRunOps) vmSnapshot(_ context.Context, vmid, snapName string) error {
+	d.log.Info(
+		"[DRY-RUN] would snapshot VM",
+		"vmid", vmid,
+		"snapshot", snapName,
+	)
+	return nil
+}
+
+func (d *dryRunOps) vmDelSnapshot(_ context.Context, vmid, snapName string) error {
+	d.log.Info(
+		"[DRY-RUN] would delete snapshot",
+		"vmid", vmid,
+		"snapshot", snapName,
+	)
+	return nil
 }
 
 func (d *dryRunOps) guestExec(

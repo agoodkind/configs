@@ -58,7 +58,7 @@ func (t *teeHandler) WithGroup(name string) slog.Handler {
 }
 
 // textHandler writes human-readable lines to a writer.
-// Format: 2006-01-02 15:04:05 [mwan-watchdog] LEVEL msg key=val key=val
+// Format: 2006-01-02 15:04:05 [mwan-agent] LEVEL msg key=val key=val
 type textHandler struct {
 	mu sync.Mutex
 	w  io.Writer
@@ -69,7 +69,7 @@ func (h *textHandler) Enabled(_ context.Context, _ slog.Level) bool { return tru
 func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 	var b strings.Builder
 	b.WriteString(r.Time.Format("2006-01-02 15:04:05"))
-	b.WriteString(" [mwan-watchdog] ")
+	b.WriteString(" [mwan-agent] ")
 	b.WriteString(r.Level.String())
 	b.WriteByte(' ')
 	b.WriteString(r.Message)
@@ -103,20 +103,15 @@ func newLumberjackWriter(path string) *lumberjack.Logger {
 	}
 }
 
-// newWatchdogLogger tees to a text file, a JSON lines file, and JSON on stdout
-// (journald). Paths come from cfg.LogFile and cfg.JSONLogFile.
-// Every log record carries a "build" attribute with the git commit + binary hash
-// so logs can always be correlated to an exact build, including uncommitted ones.
-func newWatchdogLogger(cfg config) (*slog.Logger, error) {
-	textLJ := newLumberjackWriter(cfg.LogFile)
-	jsonLJ := newLumberjackWriter(cfg.JSONLogFile)
-
+// newAgentLogger tees to a text file and JSON on stdout (e.g. journald).
+// Every log record carries a "build" attribute with the git commit + binary hash.
+func newAgentLogger(logFile string) (*slog.Logger, error) {
+	textLJ := newLumberjackWriter(logFile)
 	txtH := &textHandler{w: textLJ}
 	jsonOpts := &slog.HandlerOptions{Level: slog.LevelDebug}
-	jsonH := slog.NewJSONHandler(jsonLJ, jsonOpts)
 	stdoutH := slog.NewJSONHandler(os.Stdout, jsonOpts)
 
-	logger := slog.New(newTeeHandler(txtH, jsonH, stdoutH)).
+	logger := slog.New(newTeeHandler(txtH, stdoutH)).
 		With("build", buildVersion())
 	return logger, nil
 }

@@ -1,0 +1,27 @@
+[Unit]
+Description=MWAN Agent (gRPC over virtio-vsock)
+Documentation=https://github.com/agoodkind/infra-tools
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mwan-agent \
+    --vsock-port=50051 \
+    --tcp-addr=[::]:50052 \
+    --deploy-file=/var/run/mwan-last-deploy \
+    --log-file=/var/log/mwan-agent.log
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mwan-agent
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log /var/run
+
+[Install]
+WantedBy=multi-user.target
