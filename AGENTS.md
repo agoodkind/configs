@@ -91,7 +91,33 @@ Direct access via the SSH alias works because `ssh_config.local` maps `suburban`
 
 When vault's network is down (MWAN VM stopped, routing broken), SSH to vault is unavailable.
 The fallback is a USB-serial cable from berylax (`/dev/ttyUSB0`) to vault's physical serial port.
-Use `screen` on berylax to send commands and capture output without a PTY. Full procedure in
-`INFRA.md` under "Emergency out-of-band (OOB) access".
+
+**Preferred tool: `serial-exec`** ([github.com/agoodkind/serial-exec](https://github.com/agoodkind/serial-exec)).
+Rust CLI that runs on berylax (static arm64 musl binary, no dependencies). Uses a
+sentinel-based protocol for reliable output capture and exit code extraction over serial.
+
+```bash
+# Run a command on vault via serial
+ssh berylax '/tmp/serial-exec run vault "qm list" --json'
+
+# Interactive serial shell (Ctrl-] to exit)
+ssh berylax '/tmp/serial-exec shell vault'
+
+# Check if vault's serial console is responsive
+ssh berylax '/tmp/serial-exec ping vault'
+```
+
+Config on berylax: `~/.config/serial-exec/hosts.toml`
+
+```toml
+[hosts.vault]
+device = "/dev/ttyUSB0"
+baud = 115200
+prompt = '(?m)[#$] $'
+user = "root"
+```
+
+If `serial-exec` is unavailable, fall back to `screen /dev/ttyUSB0 115200` on berylax.
+Full procedure in `INFRA.md` under "Emergency out-of-band (OOB) access".
 
 ---
