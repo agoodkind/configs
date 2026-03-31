@@ -1,0 +1,187 @@
+---
+- name: Setup Huly guest
+  ansible.builtin.import_playbook: prep-guests.yml
+  vars:
+    target_hosts: huly_servers
+
+- name: Provision Huly via Docker Compose
+  hosts: huly_servers
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Install prerequisites for Docker repo
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - jq
+        state: present
+        update_cache: true
+
+    - name: Add Docker apt repository (deb822 format)
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: deb
+        uris: https://download.docker.com/linux/debian
+        suites: trixie
+        components: stable
+        architectures: amd64
+        signed_by: https://download.docker.com/linux/debian/gpg
+        state: present
+
+    - name: Install Docker CE
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Create Huly install directory
+      ansible.builtin.file:
+        path: "{{ huly_install_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Deploy Huly environment file
+      ansible.builtin.template:
+        src: "{{ repo_root }}/huly/huly.env.j2"
+        dest: "{{ huly_install_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart Huly
+
+    - name: Copy Huly nginx template
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/huly/.huly.nginx"
+        dest: "{{ huly_install_dir }}/.huly.nginx"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Huly
+
+    - name: Copy Huly docker-compose.yml
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/huly/docker-compose.yml"
+        dest: "{{ huly_install_dir }}/compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Huly
+
+    - name: Start Huly services
+      ansible.builtin.command:
+        cmd: docker compose -f compose.yml up -d
+        chdir: "{{ huly_install_dir }}"
+      changed_when: true
+      when: huly_start_services | default(true) | bool
+
+    - name: Restart Huly nginx container to refresh upstream DNS
+      ansible.builtin.command:
+        cmd: docker compose -f compose.yml restart nginx
+        chdir: "{{ huly_install_dir }}"
+      when: huly_start_services | default(true) | bool
+
+    - name: Require Huly notification recipient email
+      ansible.builtin.assert:
+        that:
+          - huly_update_notify_to is defined
+          - huly_update_notify_to | string | trim | length > 0
+        fail_msg: >-
+          huly_update_notify_to must be defined and non-empty
+          in ansible/inventory/group_vars/huly_servers.yml.
+
+    - name: Wait for Huly HTTP endpoint
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ huly_http_port }}"
+        delay: 5
+        timeout: 180
+        connect_timeout: 5
+      when: huly_start_services | default(true) | bool
+
+    - name: Verify Huly login endpoint responds
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ huly_http_port }}/login"
+        method: GET
+        status_code: 200
+        headers:
+          Host: "{{ huly_domain }}"
+        timeout: 15
+        follow_redirects: none
+      register: huly_login_check
+      retries: 12
+      delay: 5
+      until: huly_login_check.status == 200
+      when: huly_start_services | default(true) | bool
+      changed_when: false
+
+    - name: Install huly-update-checker script
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/huly/huly-update-checker.sh"
+        dest: /usr/local/bin/huly-update-checker.sh
+        owner: root
+        group: root
+        mode: "0755"
+      register: huly_update_checker_script
+
+    - name: Ensure huly-update-checker state directory
+      ansible.builtin.file:
+        path: /var/lib/huly-update-checker
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy huly-update-checker systemd service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/huly/services/huly-update-checker.service.j2"
+        dest: /etc/systemd/system/huly-update-checker.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: huly_update_checker_service
+
+    - name: Deploy huly-update-checker systemd timer
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/huly/timers/huly-update-checker.timer"
+        dest: /etc/systemd/system/huly-update-checker.timer
+        owner: root
+        group: root
+        mode: "0644"
+      register: huly_update_checker_timer
+
+    - name: Enable and start huly-update-checker timer
+      ansible.builtin.systemd:
+        name: huly-update-checker.timer
+        enabled: true
+        state: started
+        daemon_reload: >-
+          {{
+            huly_update_checker_script.changed
+            or huly_update_checker_service.changed
+            or huly_update_checker_timer.changed
+          }}
+
+  handlers:
+    - name: Restart Huly
+      ansible.builtin.command:
+        cmd: docker compose -f compose.yml up -d --force-recreate && docker compose -f compose.yml restart nginx
+        chdir: "{{ huly_install_dir }}"
+      changed_when: true

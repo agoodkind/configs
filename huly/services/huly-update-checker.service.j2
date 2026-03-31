@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for new Huly upstream releases and notify by email
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HULY_ENV_FILE=/opt/huly/.env
+Environment=HULY_UPDATE_STATE_DIR=/var/lib/huly-update-checker
+Environment=HULY_UPDATE_NOTIFY_TO={{ huly_update_notify_to }}
+ExecStart=/usr/local/bin/huly-update-checker.sh
+TimeoutStartSec=120
