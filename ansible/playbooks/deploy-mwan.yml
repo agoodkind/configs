@@ -192,24 +192,44 @@
         dest: /etc/mwan-watchdog/network.toml
         mode: "0644"
 
-    - name: Build mwan-watchdog Go binary
-      ansible.builtin.command:
-        cmd: >-
-          go build -o {{ repo_root }}/mwan/go/mwan-watchdog
-          ./cmd/mwan-watchdog
-        chdir: "{{ repo_root }}/mwan/go"
-      environment:
-        GOOS: linux
-        GOARCH: amd64
-        HOME: "{{ ansible_env.HOME }}"
+    - name: Build unified mwan Go binary (controller)
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          cd "{{ repo_root }}/mwan/go"
+          commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+          if git diff --quiet HEAD -- . 2>/dev/null; then
+            dirty=clean
+          else
+            dirty=dirty
+          fi
+          GOOS=linux GOARCH=amd64 go build -trimpath \
+            -ldflags="-X main.gitCommit=${commit} -X main.gitDirty=${dirty}" \
+            -o "{{ repo_root }}/mwan/go/mwan" \
+            ./cmd/mwan
+        executable: /bin/bash
       delegate_to: localhost
+      environment:
+        HOME: "{{ ansible_env.HOME }}"
       changed_when: true
 
-    - name: Deploy mwan-watchdog binary to Proxmox
+    - name: Remove legacy mwan-watchdog binary on Proxmox if present
+      delegate_to: vault
+      ansible.builtin.file:
+        path: /usr/local/bin/mwan-watchdog
+        state: absent
+
+    - name: Remove legacy mwan-agent binary on Proxmox if present
+      delegate_to: vault
+      ansible.builtin.file:
+        path: /usr/local/bin/mwan-agent
+        state: absent
+
+    - name: Deploy mwan binary to Proxmox
       delegate_to: vault
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/mwan-watchdog"
-        dest: /usr/local/bin/mwan-watchdog
+        src: "{{ repo_root }}/mwan/go/mwan"
+        dest: /usr/local/bin/mwan
         mode: "0755"
 
     - name: Deploy mwan-watchdog service to Proxmox
@@ -341,6 +361,30 @@
         - /etc/dhcp
         - /etc/systemd/network
         - /etc/networkd-dispatcher/routable.d
+
+    - name: Remove legacy mwan-agent binary on MWAN VM if present
+      ansible.builtin.file:
+        path: /usr/local/bin/mwan-agent
+        state: absent
+
+    - name: Deploy mwan unified binary to MWAN VM
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/mwan"
+        dest: /usr/local/bin/mwan
+        mode: "0755"
+
+    - name: Deploy mwan agent systemd unit on MWAN VM
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
+        dest: /etc/systemd/system/mwan-agent.service
+        mode: "0644"
+
+    - name: Enable mwan-agent service
+      ansible.builtin.systemd:
+        name: mwan-agent
+        enabled: true
+        daemon_reload: true
+        state: started
 
     - name: Deploy wpa_supplicant config for AT&T 802.1X
       ansible.builtin.template:
@@ -649,10 +693,10 @@
         dest: /usr/local/share/mwan/trace-tail.jq
         mode: "0644"
 
-    - name: Deploy mwan debug helper (single entrypoint)
+    - name: Deploy mwan debug helper (shell entrypoint)
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/scripts/mwan-debug.sh"
-        dest: /usr/local/bin/mwan
+        dest: /usr/local/bin/mwan-debug
         mode: "0755"
 
     - name: Deploy DHCPv6-PD prefix finder helper
@@ -716,38 +760,6 @@
         state: directory
         mode: "0755"
 
-    - name: Build mwan-change-detect for Linux (controller)
-      delegate_to: localhost
-      ansible.builtin.command:
-        argv:
-          - go
-          - build
-          - -trimpath
-          - -o
-          - "{{ repo_root }}/.cache/mwan-change-detect"
-          - .
-        chdir: "{{ repo_root }}/mwan/go/cmd/mwan-change-detect"
-      environment:
-        GOOS: linux
-        GOARCH: amd64
-        CGO_ENABLED: "0"
-      changed_when: true
-
-    - name: Install mwan-change-detect binary
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/.cache/mwan-change-detect"
-        dest: /usr/local/bin/mwan-change-detect
-        mode: "0755"
-
-    - name: Deploy mwan-change-detect systemd units
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/services/{{ item }}"
-        dest: "/etc/systemd/system/{{ item }}"
-        mode: "0644"
-      loop:
-        - mwan-change-detect.service
-        - mwan-change-detect.path
-
     - name: Stat scripts-updater unit
       ansible.builtin.stat:
         path: /etc/systemd/system/scripts-updater.service
@@ -784,7 +796,6 @@
         - networkd-dispatcher
         - nftables
         - mwan-health
-        - mwan-change-detect.path
         - wpa_supplicant-mwan
         - wpa-cli-action
         - wpa-authenticated.path

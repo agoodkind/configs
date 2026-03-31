@@ -6,7 +6,7 @@ Wants=network.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/mwan-watchdog/watchdog.env
-ExecStart=/usr/local/bin/mwan-watchdog
+ExecStart=/usr/local/bin/mwan watchdog
 Restart=always
 RestartSec=10
 User=root
