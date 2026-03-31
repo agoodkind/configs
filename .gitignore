@@ -66,3 +66,13 @@ vault.pass
 __pycache__/
 *.pyc
 router/cloudflared-token.sh
+
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfstate
+*.tfstate.backup
+*.tfplan
+
+# Root-level scratch artifacts
+/test-*.tgz
