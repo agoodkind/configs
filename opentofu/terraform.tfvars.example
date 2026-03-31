@@ -1,0 +1,2 @@
+proxmox_api_token  = "ansible@pam!ansible=<token-from-vault>"
+# proxmox_endpoint = "https://[3d06:bad:b01::254]:8006/"  # default; override only if host IP changes
