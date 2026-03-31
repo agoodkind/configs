@@ -1,4 +1,5 @@
 /bin/
+/mwan
 /mwan-agent
 /mwan-watchdog
 /mwan-change-detect

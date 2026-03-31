@@ -172,10 +172,27 @@ func (c *Client) GuestExecStatus(
 // decodeAgentB64 decodes PVE guest-exec out-data / err-data.
 // The PVE API returns these fields as base64 when output is present, but
 // some Proxmox versions (or certain error paths) return plain text. If
-// base64 decode fails, return the raw string so callers still get the value.
+// the value is already printable text (all bytes < 0x80), return it as-is
+// without attempting a base64 decode, since a valid base64 decode of plain
+// ASCII content (e.g. a hex hash string) produces incorrect binary garbage.
+// Only attempt base64 decode when the input contains characters outside the
+// printable ASCII range, which would indicate actual base64-encoded binary.
 func decodeAgentB64(s string) (string, error) {
 	if s == "" {
 		return "", nil
+	}
+	// If every byte is printable ASCII (0x20-0x7e) or a common whitespace
+	// character, the value is already plain text — return it directly.
+	plainText := true
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b >= 0x80 || (b < 0x20 && b != '\n' && b != '\r' && b != '\t') {
+			plainText = false
+			break
+		}
+	}
+	if plainText {
+		return s, nil
 	}
 	raw, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {

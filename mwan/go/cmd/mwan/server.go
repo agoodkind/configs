@@ -12,7 +12,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -202,35 +204,67 @@ func (a *agentServer) GetConfigState(
 	ctx context.Context,
 	_ *mwanv1.GetConfigStateRequest,
 ) (*mwanv1.GetConfigStateResponse, error) {
-	path := a.deployFilePath
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		a.log.ErrorContext(ctx, "read deploy file", "path", path, "error", err)
-		return nil, status.Errorf(codes.Internal, "read deploy file: %v", err)
+	composite := sha256.New()
+	var manifest strings.Builder
+	for _, p := range criticalPaths() {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		sum := sha256.Sum256(data)
+		fileSum := hex.EncodeToString(sum[:])
+		manifest.WriteString(fileSum)
+		manifest.WriteString("  ")
+		manifest.WriteString(p)
+		manifest.WriteByte('\n')
+		_, _ = composite.Write([]byte(p))
+		_, _ = composite.Write([]byte{0})
+		_, _ = composite.Write(data)
 	}
 
-	sum := sha256.Sum256(raw)
-	hashHex := hex.EncodeToString(sum[:])
-
-	trimmed := strings.TrimSpace(string(raw))
-	deployEpoch, err := strconv.ParseInt(trimmed, 10, 64)
+	raw, err := os.ReadFile(a.deployFilePath)
 	if err != nil {
-		a.log.ErrorContext(ctx, "parse deploy timestamp", "path", path, "error", err)
-		return nil, status.Errorf(codes.Internal, "parse deploy timestamp: %v", err)
+		a.log.WarnContext(ctx, "read deploy file", "path", a.deployFilePath, "error", err)
 	}
-
-	st, err := os.Stat(path)
-	if err != nil {
-		a.log.ErrorContext(ctx, "stat deploy file", "path", path, "error", err)
-		return nil, status.Errorf(codes.Internal, "stat deploy file: %v", err)
-	}
-	mtime := st.ModTime().Unix()
+	deployEpoch, _ := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
 
 	return &mwanv1.GetConfigStateResponse{
-		ConfigHash:      hashHex,
+		ConfigHash:      hex.EncodeToString(composite.Sum(nil)),
+		ConfigManifest:  manifest.String(),
 		LastDeployEpoch: deployEpoch,
-		LastChangeEpoch: mtime,
+		LastChangeEpoch: time.Now().Unix(),
 	}, nil
+}
+
+// criticalPaths returns the sorted list of files whose contents contribute to
+// the composite config hash. Glob patterns are expanded at call time so newly
+// created files under watched directories are automatically included.
+func criticalPaths() []string {
+	var paths []string
+	add := func(p string) { paths = append(paths, p) }
+	add("/etc/mwan/mwan.env")
+	add("/etc/nftables.conf")
+	add("/etc/iproute2/rt_tables")
+	add("/etc/sysctl.d/99-mwan.conf")
+	add("/etc/wpa_supplicant/wpa_supplicant.conf")
+	for _, g := range []string{
+		"/etc/systemd/network/*",
+		"/etc/networkd-dispatcher/routable.d/*",
+	} {
+		matches, err := filepath.Glob(g)
+		if err != nil {
+			continue
+		}
+		for _, m := range matches {
+			st, err := os.Stat(m)
+			if err != nil || st.IsDir() {
+				continue
+			}
+			add(m)
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func (a *agentServer) GetSystemInfo(

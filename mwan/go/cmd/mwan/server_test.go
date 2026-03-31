@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	mwanv1 "github.com/agoodkind/infra-tools/gen/mwan/v1"
 	"google.golang.org/grpc"
@@ -428,46 +427,43 @@ func TestGetConfigState_OK(t *testing.T) {
 	if err := os.WriteFile(p, []byte(strconv.FormatInt(epoch, 10)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256([]byte(strconv.FormatInt(epoch, 10) + "\n"))
-	wantHash := hex.EncodeToString(sum[:])
-
 	srv := newAgentServer(p, testLogger(t))
 	cli := startTestServer(t, srv)
 	res, err := cli.GetConfigState(context.Background(), &mwanv1.GetConfigStateRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.GetConfigHash() != wantHash {
-		t.Fatalf("hash=%q want %q", res.GetConfigHash(), wantHash)
+	// Hash is a composite of whatever critical paths exist on this host; we
+	// only assert it is non-empty (test hosts may have none of the watched paths).
+	if res.GetConfigHash() == "" {
+		t.Fatal("config_hash is empty")
 	}
 	if res.GetLastDeployEpoch() != epoch {
 		t.Fatalf("last_deploy_epoch=%d want %d", res.GetLastDeployEpoch(), epoch)
 	}
-	st, err := os.Stat(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta := res.GetLastChangeEpoch() - st.ModTime().Unix()
-	if delta < -2 || delta > 2 {
-		t.Fatalf("last_change_epoch=%d mtime=%d delta=%d",
-			res.GetLastChangeEpoch(), st.ModTime().Unix(), delta)
+	// last_change_epoch is time.Now() at call time; allow a generous 5s window.
+	now := time.Now().Unix()
+	delta := now - res.GetLastChangeEpoch()
+	if delta < -5 || delta > 5 {
+		t.Fatalf("last_change_epoch=%d now=%d delta=%d", res.GetLastChangeEpoch(), now, delta)
 	}
 }
 
-func TestGetConfigState_MissingFile(t *testing.T) {
+func TestGetConfigState_MissingDeployFile(t *testing.T) {
 	t.Parallel()
+	// Missing deploy file is not an error: deployEpoch is just 0.
 	srv := newAgentServer(filepath.Join(t.TempDir(), "nope"), testLogger(t))
 	cli := startTestServer(t, srv)
-	_, err := cli.GetConfigState(context.Background(), &mwanv1.GetConfigStateRequest{})
-	if err == nil {
-		t.Fatal("expected error")
+	res, err := cli.GetConfigState(context.Background(), &mwanv1.GetConfigStateRequest{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-	if status.Code(err) != codes.Internal {
-		t.Fatalf("code=%v want Internal", status.Code(err))
+	if res.GetLastDeployEpoch() != 0 {
+		t.Fatalf("last_deploy_epoch=%d want 0", res.GetLastDeployEpoch())
 	}
 }
 
-func TestGetConfigState_InvalidContent(t *testing.T) {
+func TestGetConfigState_InvalidDeployContent(t *testing.T) {
 	t.Parallel()
 	p := filepath.Join(t.TempDir(), "deploy")
 	if err := os.WriteFile(p, []byte("not-a-number\n"), 0o644); err != nil {
@@ -475,12 +471,13 @@ func TestGetConfigState_InvalidContent(t *testing.T) {
 	}
 	srv := newAgentServer(p, testLogger(t))
 	cli := startTestServer(t, srv)
-	_, err := cli.GetConfigState(context.Background(), &mwanv1.GetConfigStateRequest{})
-	if err == nil {
-		t.Fatal("expected error")
+	// Invalid content is not an error: deployEpoch is 0, hash still computed.
+	res, err := cli.GetConfigState(context.Background(), &mwanv1.GetConfigStateRequest{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-	if status.Code(err) != codes.Internal {
-		t.Fatalf("code=%v want Internal", status.Code(err))
+	if res.GetLastDeployEpoch() != 0 {
+		t.Fatalf("last_deploy_epoch=%d want 0", res.GetLastDeployEpoch())
 	}
 }
 

@@ -354,8 +354,11 @@ type GetConfigStateResponse struct {
 	ConfigHash      string                 `protobuf:"bytes,1,opt,name=config_hash,json=configHash,proto3" json:"config_hash,omitempty"`
 	LastDeployEpoch int64                  `protobuf:"varint,2,opt,name=last_deploy_epoch,json=lastDeployEpoch,proto3" json:"last_deploy_epoch,omitempty"`
 	LastChangeEpoch int64                  `protobuf:"varint,3,opt,name=last_change_epoch,json=lastChangeEpoch,proto3" json:"last_change_epoch,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Per-file hashes in sha256sum(1) format: "<hash>  <path>\n" per file.
+	// The watchdog diffs consecutive values to report which files changed.
+	ConfigManifest string `protobuf:"bytes,4,opt,name=config_manifest,json=configManifest,proto3" json:"config_manifest,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetConfigStateResponse) Reset() {
@@ -407,6 +410,13 @@ func (x *GetConfigStateResponse) GetLastChangeEpoch() int64 {
 		return x.LastChangeEpoch
 	}
 	return 0
+}
+
+func (x *GetConfigStateResponse) GetConfigManifest() string {
+	if x != nil {
+		return x.ConfigManifest
+	}
+	return ""
 }
 
 type GetSystemInfoRequest struct {
@@ -867,12 +877,13 @@ const file_mwan_v1_mwan_proto_rawDesc = "" +
 	"\fPingResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12)\n" +
 	"\x10packets_received\x18\x02 \x01(\x05R\x0fpacketsReceived\"\x17\n" +
-	"\x15GetConfigStateRequest\"\x91\x01\n" +
+	"\x15GetConfigStateRequest\"\xba\x01\n" +
 	"\x16GetConfigStateResponse\x12\x1f\n" +
 	"\vconfig_hash\x18\x01 \x01(\tR\n" +
 	"configHash\x12*\n" +
 	"\x11last_deploy_epoch\x18\x02 \x01(\x03R\x0flastDeployEpoch\x12*\n" +
-	"\x11last_change_epoch\x18\x03 \x01(\x03R\x0flastChangeEpoch\"\x16\n" +
+	"\x11last_change_epoch\x18\x03 \x01(\x03R\x0flastChangeEpoch\x12'\n" +
+	"\x0fconfig_manifest\x18\x04 \x01(\tR\x0econfigManifest\"\x16\n" +
 	"\x14GetSystemInfoRequest\"\xa9\x02\n" +
 	"\x15GetSystemInfoResponse\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12%\n" +

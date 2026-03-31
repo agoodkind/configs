@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	mwanv1 "github.com/agoodkind/infra-tools/gen/mwan/v1"
 )
 
 // ---------------------------------------------------------------------------
@@ -14,20 +16,28 @@ import (
 // ---------------------------------------------------------------------------
 
 type redTeamPreset struct {
-	Description       string
-	HostV4Fail        bool
-	HostV6Fail        bool
-	VMStopped         bool
-	GuestExecFail     bool
-	GuestDefaultFail  bool
-	GuestIfaceFail    bool
-	GuestIfaceSucceed bool // force per-interface ISP pings to succeed (simulate ISP up)
-	InjectDeployTS     bool
-	InjectSnapshot     bool
+	Description         string
+	HostV4Fail          bool
+	HostV6Fail          bool
+	VMStopped           bool
+	GuestExecFail       bool
+	GuestDefaultFail    bool
+	GuestIfaceFail      bool
+	GuestIfaceSucceed   bool // force per-interface ISP pings to succeed (simulate ISP up)
+	DeployTSMode        deployTSMode
+	InjectSnapshot      bool
 	InjectChangeMarker  bool
 	InjectKnownGoodSnap bool
 	OmitDeployMarker    bool
 }
+
+type deployTSMode string
+
+const (
+	deployTSModeNone            deployTSMode = "none"
+	deployTSModeAlwaysRecent    deployTSMode = "always_recent"
+	deployTSModeRecentThenStale deployTSMode = "recent_then_stale"
+)
 
 var redTeamPresets = map[string]redTeamPreset{
 	"ipv4-loss": {
@@ -44,15 +54,16 @@ var redTeamPresets = map[string]redTeamPreset{
 		HostV6Fail:        true,
 		GuestDefaultFail:  true,
 		GuestIfaceSucceed: true,
-		InjectDeployTS:    true,
+		DeployTSMode:      deployTSModeRecentThenStale,
 		InjectSnapshot:    false,
 	},
 	"total-loss-isp": {
-		Description:      "Both fail, ISP also down -> real outage, no rollback",
+		Description:      "Both fail, no recent config change -> real outage, no rollback",
 		HostV4Fail:       true,
 		HostV6Fail:       true,
 		GuestDefaultFail: true,
 		GuestIfaceFail:   true,
+		OmitDeployMarker: true,
 	},
 	"vm-crash": {
 		Description: "VM appears stopped -> watchdog waits",
@@ -65,12 +76,13 @@ var redTeamPresets = map[string]redTeamPreset{
 		GuestExecFail: true,
 	},
 	"proxmox-routing": {
-		Description: "Host fails, VM has internet -> Proxmox-side issue",
-		HostV4Fail:  true,
-		HostV6Fail:  true,
+		Description:      "Host fails, VM has internet, no config change -> Proxmox-side issue",
+		HostV4Fail:       true,
+		HostV6Fail:       true,
+		OmitDeployMarker: true,
 	},
 	"config-drift": {
-		Description: "No deploy marker; change marker + known-good snapshot -> rollback",
+		Description:         "No deploy marker; change marker + known-good snapshot -> rollback",
 		HostV4Fail:          true,
 		HostV6Fail:          true,
 		GuestDefaultFail:    true,
@@ -92,6 +104,8 @@ type redTeamOps struct {
 	log    *slog.Logger
 	// nc is passed through so guestExec can match against the configured paths.
 	nc networkConfig
+
+	deployTSInjected bool
 }
 
 func (r *redTeamOps) vmStatus(ctx context.Context, vmid string) (bool, error) {
@@ -210,18 +224,35 @@ func (r *redTeamOps) guestExec(
 	if isCatDeploy && r.preset.OmitDeployMarker {
 		return guestExecResult{ExitCode: 1}, nil
 	}
-	if isCatDeploy && r.preset.InjectDeployTS {
-		ts := time.Now().Unix() - 60
-		r.log.Info(
-			"[RED TEAM] injecting fault",
-			"fault", "inject_deploy_ts",
-			"vmid", vmid,
-			"deploy_ts", ts,
-		)
-		return guestExecResult{
-			ExitCode: 0,
-			Stdout:   strconv.FormatInt(ts, 10),
-		}, nil
+	if isCatDeploy {
+		if r.preset.DeployTSMode == deployTSModeRecentThenStale && r.deployTSInjected {
+			oldTS := time.Now().Unix() - 7200
+			r.log.Info(
+				"[RED TEAM] suppressing repeat deploy marker",
+				"fault", "inject_deploy_ts_once",
+				"vmid", vmid,
+				"deploy_ts", oldTS,
+			)
+			return guestExecResult{
+				ExitCode: 0,
+				Stdout:   strconv.FormatInt(oldTS, 10),
+			}, nil
+		}
+		if r.preset.DeployTSMode == deployTSModeAlwaysRecent ||
+			r.preset.DeployTSMode == deployTSModeRecentThenStale {
+			ts := time.Now().Unix() - 60
+			r.log.Info(
+				"[RED TEAM] injecting fault",
+				"fault", "inject_deploy_ts",
+				"vmid", vmid,
+				"deploy_ts", ts,
+			)
+			r.deployTSInjected = true
+			return guestExecResult{
+				ExitCode: 0,
+				Stdout:   strconv.FormatInt(ts, 10),
+			}, nil
+		}
 	}
 	if isCatChange && r.preset.InjectChangeMarker {
 		ts := time.Now().Unix() - 60
@@ -261,4 +292,10 @@ func (r *redTeamOps) ping(ctx context.Context, bin, target string) bool {
 
 func (r *redTeamOps) sendEmail(ctx context.Context, to, subject, body string) error {
 	return r.inner.sendEmail(ctx, to, subject, body)
+}
+
+func (r *redTeamOps) getConfigState(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetConfigStateResponse, string, error) {
+	return r.inner.getConfigState(ctx, vmid)
 }

@@ -3,6 +3,10 @@ PROTOC ?= protoc
 GOBIN ?= $(shell go env GOPATH)/bin
 export PATH := $(GOBIN):$(PATH)
 
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_DIRTY := $(shell git diff --quiet HEAD -- . 2>/dev/null && echo clean || echo dirty)
+LDFLAGS := -X main.gitCommit=$(GIT_COMMIT) -X main.gitDirty=$(GIT_DIRTY)
+
 .PHONY: all proto build test vet
 
 all: build
@@ -16,8 +20,7 @@ proto:
 
 build: proto
 	@mkdir -p bin
-	go build -o bin/mwan-agent ./cmd/mwan-agent
-	go build -o bin/mwan-watchdog ./cmd/mwan-watchdog
+	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/mwan ./cmd/mwan
 
 test:
 	go test ./...

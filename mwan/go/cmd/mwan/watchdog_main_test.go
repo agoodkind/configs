@@ -20,6 +20,8 @@ import (
 	"time"
 
 	mwanv1 "github.com/agoodkind/infra-tools/gen/mwan/v1"
+	"github.com/agoodkind/infra-tools/pkg/emaillog"
+	"github.com/agoodkind/infra-tools/pkg/logging"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -63,10 +65,13 @@ type mockOps struct {
 
 	vmStatusFn func(context.Context, string) (bool, error)
 
-	vmSnapshotCalls   []vmSnapshotCall
+	vmSnapshotCalls    []vmSnapshotCall
 	vmDelSnapshotCalls []vmDelSnapshotCall
-	vmSnapshotErr     error
-	vmDelSnapshotErr  error
+	vmSnapshotErr      error
+	vmDelSnapshotErr   error
+
+	getConfigStateReply *mwanv1.GetConfigStateResponse
+	getConfigStateErr   error
 }
 
 type vmSnapshotCall struct {
@@ -77,6 +82,13 @@ type vmSnapshotCall struct {
 type vmDelSnapshotCall struct {
 	VMID string
 	Name string
+}
+
+// mockEmailSender adapts mockOps.sendEmail to the emaillog.Sender interface.
+type mockEmailSender struct{ m *mockOps }
+
+func (s *mockEmailSender) Send(ctx context.Context, to, subject, body string) error {
+	return s.m.sendEmail(ctx, to, subject, body)
 }
 
 func (m *mockOps) vmStatus(ctx context.Context, vmid string) (bool, error) {
@@ -130,7 +142,10 @@ func (m *mockOps) vmSnapshots(_ context.Context, _ string) ([]byte, error) {
 	if m.vmSnapshotsErr != nil {
 		return nil, m.vmSnapshotsErr
 	}
-	return m.snapshotsOut, nil
+	if m.snapshotsOut != nil {
+		return m.snapshotsOut, nil
+	}
+	return []byte("`-> known-good-testdefault\n"), nil
 }
 
 func (m *mockOps) vmSnapshot(_ context.Context, vmid, name string) error {
@@ -200,6 +215,20 @@ func (m *mockOps) sendEmail(
 	return nil
 }
 
+func (m *mockOps) getConfigState(
+	_ context.Context, _ string,
+) (*mwanv1.GetConfigStateResponse, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.getConfigStateErr != nil {
+		return nil, "", m.getConfigStateErr
+	}
+	if m.getConfigStateReply != nil {
+		return m.getConfigStateReply, "vsock", nil
+	}
+	return &mwanv1.GetConfigStateResponse{}, "vsock", nil
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -231,7 +260,23 @@ func newTestWatchdog(
 	for _, fn := range cfgOverrides {
 		fn(&cfg)
 	}
-	testLog := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var emailH slog.Handler = slog.NewTextHandler(io.Discard, nil)
+	switch o := ops.(type) {
+	case *mockOps:
+		emailH = emaillog.New(
+			slog.LevelWarn, 0, &mockEmailSender{m: o}, cfg.AlertEmail,
+		)
+	case *redTeamOps:
+		if m, ok := o.inner.(*mockOps); ok {
+			emailH = emaillog.New(
+				slog.LevelWarn, 0, &mockEmailSender{m: m}, cfg.AlertEmail,
+			)
+		}
+	}
+	testLog := slog.New(logging.NewTeeHandler(
+		slog.NewTextHandler(io.Discard, nil),
+		emailH,
+	))
 	return &watchdog{
 		cfg:     cfg,
 		nc:      testNC(),
@@ -295,10 +340,6 @@ func guestKeyChangeCat(nc networkConfig) string {
 	return strings.Join([]string{"cat", nc.LastChangePath}, " ")
 }
 
-func guestKeyConfigHashCat(nc networkConfig) string {
-	return strings.Join([]string{"cat", nc.ConfigHashPath}, " ")
-}
-
 // allISPKeys returns all WAN interface ping keys used in total-loss scenarios.
 func allISPKeys(nc networkConfig) []string {
 	var keys []string
@@ -358,10 +399,11 @@ func TestParseRollbackStateFile(t *testing.T) {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		ds, done, snap, err := parseRollbackStateFile(path)
+		ds, st, snap, _, err := parseRollbackStateFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+		done := st == "done" || st == "exhausted"
 		if ds != "42" || !done || snap != "snap1" {
 			t.Fatalf("got %q %v %q", ds, done, snap)
 		}
@@ -372,10 +414,11 @@ func TestParseRollbackStateFile(t *testing.T) {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		ds, done, snap, err := parseRollbackStateFile(path)
+		ds, st, snap, _, err := parseRollbackStateFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+		done := st == "done" || st == "exhausted"
 		if ds != "" || done || snap != "" {
 			t.Fatalf("got %q %v %q", ds, done, snap)
 		}
@@ -386,10 +429,11 @@ func TestParseRollbackStateFile(t *testing.T) {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		ds, done, snap, err := parseRollbackStateFile(path)
+		ds, st, snap, _, err := parseRollbackStateFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+		done := st == "done" || st == "exhausted"
 		if ds != "7" || done || snap != "" {
 			t.Fatalf("got %q %v %q", ds, done, snap)
 		}
@@ -402,15 +446,17 @@ func TestWriteRollbackState(t *testing.T) {
 	path := filepath.Join(tmp, "rb.state")
 	deployTS := int64(12345)
 	snap := "pre-deploy-test"
-	if err := writeRollbackState(path, deployTS, snap); err != nil {
+	if err := writeRollbackState(path, deployTS, snap, 1, true); err != nil {
 		t.Fatal(err)
 	}
-	ds, done, readSnap, err := parseRollbackStateFile(path)
+	ds, st, readSnap, attStr, err := parseRollbackStateFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds != strconv.FormatInt(deployTS, 10) || !done || readSnap != snap {
-		t.Fatalf("got %q %v %q", ds, done, readSnap)
+	done := st == "done" || st == "exhausted"
+	if ds != strconv.FormatInt(deployTS, 10) || !done || readSnap != snap ||
+		attStr != "1" {
+		t.Fatalf("got %q %v %q attempts=%q", ds, done, readSnap, attStr)
 	}
 }
 
@@ -425,7 +471,7 @@ func TestRollbackAlreadyDone(t *testing.T) {
 			[]byte("deploy_timestamp=99\nrollback_done=true\n"),
 			0o644,
 		)
-		ok, err := rollbackAlreadyDone(path, 99)
+		ok, _, err := rollbackAlreadyDone(path, 99)
 		if err != nil || !ok {
 			t.Fatalf("got %v %v", ok, err)
 		}
@@ -437,7 +483,7 @@ func TestRollbackAlreadyDone(t *testing.T) {
 			[]byte("deploy_timestamp=99\nrollback_done=true\n"),
 			0o644,
 		)
-		ok, err := rollbackAlreadyDone(path, 100)
+		ok, _, err := rollbackAlreadyDone(path, 100)
 		if err != nil || ok {
 			t.Fatalf("got %v %v", ok, err)
 		}
@@ -445,7 +491,7 @@ func TestRollbackAlreadyDone(t *testing.T) {
 
 	t.Run("missing file returns false", func(t *testing.T) {
 		missing := filepath.Join(tmp, "nope")
-		ok, err := rollbackAlreadyDone(missing, 1)
+		ok, _, err := rollbackAlreadyDone(missing, 1)
 		if err != nil || ok {
 			t.Fatalf("got %v %v", ok, err)
 		}
@@ -686,7 +732,7 @@ func TestWatchdog_PartialIPv4Loss(t *testing.T) {
 	if w.lastState != statePartial {
 		t.Fatalf("lastState %q", w.lastState)
 	}
-	if !emailSubjectContains(m.emailsSent, "IPv4") {
+	if !emailSubjectContains(m.emailsSent, "partial loss") {
 		t.Fatalf("emails: %+v", m.emailsSent)
 	}
 	if len(m.vmStopCalls) != 0 || len(m.vmRollbackCalls) != 0 {
@@ -708,7 +754,7 @@ func TestWatchdog_PartialIPv6Loss(t *testing.T) {
 	if w.lastState != statePartial {
 		t.Fatalf("lastState %q", w.lastState)
 	}
-	if !emailSubjectContains(m.emailsSent, "IPv6") {
+	if !emailSubjectContains(m.emailsSent, "partial loss") {
 		t.Fatalf("emails: %+v", m.emailsSent)
 	}
 }
@@ -744,13 +790,14 @@ func TestWatchdog_TotalLoss_MWANFailure_Rollback(t *testing.T) {
 	if len(m.vmStartCalls) != 1 || m.vmStartCalls[0] != "113" {
 		t.Fatalf("vmStartCalls %v", m.vmStartCalls)
 	}
-	if !emailSubjectContains(m.emailsSent, "AUTO-ROLLBACK") {
+	if !emailSubjectContains(m.emailsSent, "auto-rollback") {
 		t.Fatalf("rollback email missing: %+v", m.emailsSent)
 	}
-	ds, done, snap, err := parseRollbackStateFile(w.cfg.RollbackStateFile)
+	ds, st, snap, _, err := parseRollbackStateFile(w.cfg.RollbackStateFile)
 	if err != nil {
 		t.Fatal(err)
 	}
+	done := st == "done" || st == "exhausted"
 	if ds != recentTS || !done || snap != "pre-deploy-rollback-test" {
 		t.Fatalf("state file %q %v %q", ds, done, snap)
 	}
@@ -758,12 +805,11 @@ func TestWatchdog_TotalLoss_MWANFailure_Rollback(t *testing.T) {
 
 func TestWatchdog_TotalLoss_ISPOutage_NoRollback(t *testing.T) {
 	nc := testNC()
-	recentTS := strconv.FormatInt(time.Now().Unix()-60, 10)
 	fail := guestExecResult{ExitCode: 1}
 	results := map[string]guestExecResult{
 		guestKeyPing6Default(nc): fail,
 		guestKeyPingDefault(nc):  fail,
-		guestKeyDeployCat(nc):    {ExitCode: 0, Stdout: recentTS},
+		guestKeyDeployCat(nc):    {ExitCode: 1},
 	}
 	for _, k := range allISPKeys(nc) {
 		results[k] = fail
@@ -780,7 +826,7 @@ func TestWatchdog_TotalLoss_ISPOutage_NoRollback(t *testing.T) {
 		t.Fatalf("expected no rollback, vmStop=%v", m.vmStopCalls)
 	}
 	for _, e := range m.emailsSent {
-		if strings.Contains(e.Subject, "AUTO-ROLLBACK") {
+		if strings.Contains(e.Subject, "auto-rollback") {
 			t.Fatalf("unexpected rollback email: %+v", e)
 		}
 	}
@@ -799,7 +845,7 @@ func TestWatchdog_TotalLoss_ProxmoxRouting(t *testing.T) {
 	runWatchdogUntilDone(t, w)
 	found := false
 	for _, e := range m.emailsSent {
-		if strings.Contains(e.Subject, "MWAN TOTAL ALERT") &&
+		if strings.Contains(e.Subject, "total loss") &&
 			strings.Contains(e.Body, "Proxmox") {
 			found = true
 			break
@@ -857,8 +903,12 @@ func TestWatchdog_VMStopped_RollbackLockSkipsStartAndEmail(t *testing.T) {
 	// Rollback lock present: recoverInterrupted already handled it (called vmStart
 	// once to resume the interrupted rollback), then removed the lock. The main
 	// loop must NOT send an extra email or issue a second vmStart.
-	if len(m.emailsSent) != 0 {
-		t.Fatalf("expected no emails when rollback lock present, got %d", len(m.emailsSent))
+	// Startup may emit one WARN for stale rollback lock before recovery clears it.
+	for _, e := range m.emailsSent {
+		if !strings.Contains(e.Subject, "Stale rollback lock") &&
+			!strings.Contains(e.Body, "Stale rollback lock") {
+			t.Fatalf("unexpected email when rollback lock present: %+v", e)
+		}
 	}
 	if len(m.vmStartCalls) != 1 {
 		// recoverInterrupted issues exactly one vmStart for the interrupted rollback.
@@ -947,28 +997,28 @@ func TestRedTeamScenarios(t *testing.T) {
 				if w.lastState != statePartial {
 					t.Fatalf("want partial, got %q", w.lastState)
 				}
-				if !emailSubjectContains(inner.emailsSent, "IPv4") {
+				if !emailSubjectContains(inner.emailsSent, "partial loss") {
 					t.Fatalf("emails %+v", inner.emailsSent)
 				}
 			case "ipv6-loss":
 				if w.lastState != statePartial {
 					t.Fatalf("want partial, got %q", w.lastState)
 				}
-				if !emailSubjectContains(inner.emailsSent, "IPv6") {
+				if !emailSubjectContains(inner.emailsSent, "partial loss") {
 					t.Fatalf("emails %+v", inner.emailsSent)
 				}
 			case "total-loss-mwan":
 				if len(inner.vmStopCalls) < 1 {
 					t.Fatalf("expected rollback vmStop, got %+v", inner.vmStopCalls)
 				}
-				if !emailSubjectContains(inner.emailsSent, "AUTO-ROLLBACK") {
+				if !emailSubjectContains(inner.emailsSent, "auto-rollback") {
 					t.Fatalf("emails %+v", inner.emailsSent)
 				}
 			case "config-drift":
 				if len(inner.vmStopCalls) < 1 {
 					t.Fatalf("expected rollback vmStop, got %+v", inner.vmStopCalls)
 				}
-				if !emailSubjectContains(inner.emailsSent, "AUTO-ROLLBACK") {
+				if !emailSubjectContains(inner.emailsSent, "auto-rollback") {
 					t.Fatalf("emails %+v", inner.emailsSent)
 				}
 				if len(inner.vmRollbackCalls) < 1 ||
@@ -993,7 +1043,7 @@ func TestRedTeamScenarios(t *testing.T) {
 				}
 				found := false
 				for _, e := range inner.emailsSent {
-					if strings.Contains(e.Subject, "MWAN TOTAL ALERT") &&
+					if strings.Contains(e.Subject, "total loss") &&
 						strings.Contains(e.Body, "Proxmox") {
 						found = true
 						break
@@ -1398,8 +1448,8 @@ func TestCheckConfigHash(t *testing.T) {
 	t.Run("first run records hash no drift", func(t *testing.T) {
 		m := &mockOps{
 			vmRunning: true,
-			guestResults: map[string]guestExecResult{
-				guestKeyConfigHashCat(nc): {ExitCode: 0, Stdout: "aaa\n"},
+			getConfigStateReply: &mwanv1.GetConfigStateResponse{
+				ConfigHash: "aaa\n",
 			},
 		}
 		w := newTestWatchdog(t, m)
@@ -1415,8 +1465,8 @@ func TestCheckConfigHash(t *testing.T) {
 	t.Run("hash change sets window", func(t *testing.T) {
 		m := &mockOps{
 			vmRunning: true,
-			guestResults: map[string]guestExecResult{
-				guestKeyConfigHashCat(nc): {ExitCode: 0, Stdout: "bbb\n"},
+			getConfigStateReply: &mwanv1.GetConfigStateResponse{
+				ConfigHash: "bbb\n",
 			},
 		}
 		w := newTestWatchdog(t, m)
@@ -1452,6 +1502,60 @@ func TestMaybeSnapshot(t *testing.T) {
 	if len(m.vmSnapshotCalls) != 1 ||
 		!strings.HasPrefix(m.vmSnapshotCalls[0].Name, "known-good-") {
 		t.Fatalf("got %+v", m.vmSnapshotCalls)
+	}
+}
+
+func TestMaybeSnapshot_SkipsWhenHashRecent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	m := &mockOps{
+		vmRunning:    true,
+		snapshotsOut: []byte(""),
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.SnapshotHealthyThreshold = 1
+		c.MinSnapshotIntervalSeconds = 0
+		c.MaxKnownGoodSnapshots = 0
+		c.MaxTotalSnapshots = 0
+		c.DeployWindowMinutes = 30
+	})
+	w.consecutiveHealthy = 5
+	w.hashChangeWindowStart = time.Now().Unix() - 60
+	w.maybeSnapshot(ctx)
+	if len(m.vmSnapshotCalls) != 0 {
+		t.Fatalf("no snapshot when hash recently changed: %+v",
+			m.vmSnapshotCalls)
+	}
+}
+
+func TestMaybeSnapshot_SkipsWhenDeployRecent(t *testing.T) {
+	t.Parallel()
+	nc := testNC()
+	ctx := context.Background()
+	recentTS := time.Now().Unix() - 60
+	m := &mockOps{
+		vmRunning:    true,
+		snapshotsOut: []byte(""),
+		guestResults: map[string]guestExecResult{
+			guestKeyDeployCat(nc): {
+				ExitCode: 0,
+				Stdout:   strconv.FormatInt(recentTS, 10),
+			},
+		},
+	}
+	w := newTestWatchdog(t, m, func(c *config) {
+		c.SnapshotHealthyThreshold = 1
+		c.MinSnapshotIntervalSeconds = 0
+		c.MaxKnownGoodSnapshots = 0
+		c.MaxTotalSnapshots = 0
+		c.DeployWindowMinutes = 30
+	})
+	w.nc = nc
+	w.consecutiveHealthy = 5
+	w.maybeSnapshot(ctx)
+	if len(m.vmSnapshotCalls) != 0 {
+		t.Fatalf("no snapshot when deploy recent: %+v",
+			m.vmSnapshotCalls)
 	}
 }
 
@@ -1493,7 +1597,8 @@ func TestRollback(t *testing.T) {
 	if err == nil || !os.IsNotExist(err) {
 		t.Fatal("lock should be removed")
 	}
-	ds, done, snap, err := parseRollbackStateFile(w.cfg.RollbackStateFile)
+	ds, st, snap, _, err := parseRollbackStateFile(w.cfg.RollbackStateFile)
+	done := st == "done" || st == "exhausted"
 	if err != nil || ds != "42" || !done || snap != "snap-a" {
 		t.Fatalf("state %q %v %q err=%v", ds, done, snap, err)
 	}
@@ -1704,8 +1809,17 @@ func TestHandleTimeoutExceeded(t *testing.T) {
 		})
 		w.nc = nc
 		w.handleTimeoutExceeded(ctx)
-		if !emailSubjectContains(m.emailsSent, "MWAN TOTAL ALERT") {
-			t.Fatalf("emails %+v", m.emailsSent)
+		found := false
+		for _, e := range m.emailsSent {
+			if strings.Contains(e.Body, "Proxmox") ||
+				strings.Contains(e.Subject, "Proxmox") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected Proxmox context in alert: %+v",
+				m.emailsSent)
 		}
 	})
 	t.Run("isp outage fail count lte 2", func(t *testing.T) {
@@ -1764,7 +1878,7 @@ func TestHandleTimeoutExceeded(t *testing.T) {
 		tmp := t.TempDir()
 		st := filepath.Join(tmp, "st")
 		recent := time.Now().Unix() - 60
-		if err := writeRollbackState(st, recent, "snap"); err != nil {
+		if err := writeRollbackState(st, recent, "snap", 1, true); err != nil {
 			t.Fatal(err)
 		}
 		fail := guestExecResult{ExitCode: 1}
@@ -1835,7 +1949,7 @@ func TestHandleTimeoutExceeded(t *testing.T) {
 		w.nc = nc
 		w.handleTimeoutExceeded(ctx)
 		if len(m.emailsSent) != 1 ||
-			!strings.Contains(m.emailsSent[0].Body, "known-good") {
+			!strings.Contains(m.emailsSent[0].Body, "no rollback snapshot") {
 			t.Fatalf("emails %+v", m.emailsSent)
 		}
 	})
@@ -1898,6 +2012,95 @@ func TestHandleTimeoutExceeded(t *testing.T) {
 		})
 		w.nc = nc
 		w.handleTimeoutExceeded(ctx)
+	})
+	t.Run("deploy grace period skips rollback", func(t *testing.T) {
+		veryRecent := time.Now().Unix() - 10
+		fail := guestExecResult{ExitCode: 1}
+		res := map[string]guestExecResult{
+			guestKeyPing6Default(nc): fail,
+			guestKeyPingDefault(nc):  fail,
+			guestKeyDeployCat(nc): {
+				ExitCode: 0,
+				Stdout:   strconv.FormatInt(veryRecent, 10),
+			},
+		}
+		m := &mockOps{
+			vmRunning:    true,
+			guestResults: res,
+			snapshotsOut: []byte("`-> pre-deploy-grace\n"),
+		}
+		w := newTestWatchdog(t, m, func(c *config) {
+			c.DeployGracePeriodSeconds = 60
+			c.AlertCooldownSeconds = 0
+		})
+		w.nc = nc
+		w.handleTimeoutExceeded(ctx)
+		if len(m.vmStopCalls) != 0 {
+			t.Fatalf("no rollback during grace: %v", m.vmStopCalls)
+		}
+	})
+	t.Run("deploy grace expired triggers rollback", func(t *testing.T) {
+		tmp := t.TempDir()
+		pastGrace := time.Now().Unix() - 120
+		fail := guestExecResult{ExitCode: 1}
+		res := map[string]guestExecResult{
+			guestKeyPing6Default(nc): fail,
+			guestKeyPingDefault(nc):  fail,
+			guestKeyDeployCat(nc): {
+				ExitCode: 0,
+				Stdout:   strconv.FormatInt(pastGrace, 10),
+			},
+		}
+		m := &mockOps{
+			vmRunning:    true,
+			guestResults: res,
+			snapshotsOut: []byte("`-> pre-deploy-past-grace\n"),
+		}
+		w := newTestWatchdog(t, m, func(c *config) {
+			c.DeployGracePeriodSeconds = 60
+			c.RollbackStateFile = filepath.Join(tmp, "rs.state")
+			c.RollbackLockFile = filepath.Join(tmp, "rs.lock")
+			c.PostRollbackGraceSeconds = 0
+			c.AlertCooldownSeconds = 0
+		})
+		w.nc = nc
+		w.handleTimeoutExceeded(ctx)
+		if len(m.vmRollbackCalls) != 1 {
+			t.Fatalf("expected rollback: %+v", m.vmRollbackCalls)
+		}
+	})
+	t.Run("hash change no grace triggers rollback", func(t *testing.T) {
+		tmp := t.TempDir()
+		fail := guestExecResult{ExitCode: 1}
+		res := map[string]guestExecResult{
+			guestKeyPing6Default(nc): fail,
+			guestKeyPingDefault(nc):  fail,
+			guestKeyDeployCat(nc):    {ExitCode: 1},
+			guestKeyChangeCat(nc): {
+				ExitCode: 0,
+				Stdout: strconv.FormatInt(
+					time.Now().Unix()-10, 10,
+				),
+			},
+		}
+		m := &mockOps{
+			vmRunning:    true,
+			guestResults: res,
+			snapshotsOut: []byte("`-> known-good-hash\n"),
+		}
+		w := newTestWatchdog(t, m, func(c *config) {
+			c.DeployGracePeriodSeconds = 60
+			c.RollbackStateFile = filepath.Join(tmp, "rs.state")
+			c.RollbackLockFile = filepath.Join(tmp, "rs.lock")
+			c.PostRollbackGraceSeconds = 0
+			c.AlertCooldownSeconds = 0
+		})
+		w.nc = nc
+		w.handleTimeoutExceeded(ctx)
+		if len(m.vmRollbackCalls) != 1 {
+			t.Fatalf("expected rollback on hash change: %+v",
+				m.vmRollbackCalls)
+		}
 	})
 }
 
@@ -1998,9 +2201,9 @@ func TestDryRunOps(t *testing.T) {
 func TestTeeHandlerAndTextHandler(t *testing.T) {
 	t.Parallel()
 	var buf strings.Builder
-	th := &textHandler{w: &buf}
+	th := logging.NewTextHandler(&buf, "")
 	h2 := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})
-	tee := newTeeHandler(th, h2)
+	tee := logging.NewTeeHandler(th, h2)
 	ctx := context.Background()
 	if !tee.Enabled(ctx, slog.LevelInfo) {
 		t.Fatal("enabled")
@@ -2099,7 +2302,7 @@ func TestLoadNetworkConfigInvalidTOML(t *testing.T) {
 
 func TestParseRollbackStateFile_Error(t *testing.T) {
 	t.Parallel()
-	_, _, _, err := parseRollbackStateFile(filepath.Join(t.TempDir(), "nope"))
+	_, _, _, _, err := parseRollbackStateFile(filepath.Join(t.TempDir(), "nope"))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -2112,7 +2315,7 @@ func TestRollbackAlreadyDone_ReadError(t *testing.T) {
 	if err := os.MkdirAll(dirPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := rollbackAlreadyDone(dirPath, 1)
+	_, _, err := rollbackAlreadyDone(dirPath, 1)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -2246,7 +2449,7 @@ func TestRedTeamOps_GuestExecBranches(t *testing.T) {
 	t.Run("inject deploy ts", func(t *testing.T) {
 		rt := &redTeamOps{
 			inner:  inner,
-			preset: redTeamPreset{InjectDeployTS: true},
+			preset: redTeamPreset{DeployTSMode: deployTSModeAlwaysRecent},
 			log:    log,
 			nc:     nc,
 		}
@@ -2480,7 +2683,7 @@ func (e errSlogHandler) WithGroup(string) slog.Handler { return e }
 
 func TestTeeHandlerHandleError(t *testing.T) {
 	t.Parallel()
-	th := newTeeHandler(
+	th := logging.NewTeeHandler(
 		errSlogHandler{},
 		slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo}),
 	)
@@ -2514,10 +2717,11 @@ func TestParseRollbackStateMalformedSkips(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ds, done, snap, err := parseRollbackStateFile(p)
+	ds, st, snap, _, err := parseRollbackStateFile(p)
 	if err != nil {
 		t.Fatal(err)
 	}
+	done := st == "done" || st == "exhausted"
 	if ds != "" || done || snap != "" {
 		t.Fatalf("%q %v %q", ds, done, snap)
 	}
@@ -2567,7 +2771,7 @@ func TestTeeHandlerEnabled_AllChildrenDisabled(t *testing.T) {
 	t.Parallel()
 	h1 := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})
 	h2 := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn})
-	tee := newTeeHandler(h1, h2)
+	tee := logging.NewTeeHandler(h1, h2)
 	ctx := context.Background()
 	if tee.Enabled(ctx, slog.LevelDebug) {
 		t.Fatal("Debug should be disabled when both handlers reject it")

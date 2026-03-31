@@ -1,18 +1,18 @@
-// Build (from this directory):
+// Build (from mwan/go):
 //
 //	GOOS=linux GOARCH=amd64 go build \
 //	  -ldflags="-X main.gitCommit=$(git rev-parse --short HEAD) \
 //	            -X 'main.gitDirty=$(git diff --quiet HEAD -- . && echo clean || echo dirty)'" \
-//	  -o mwan-watchdog .
+//	  -o mwan ./cmd/mwan
 //
 // Usage:
 //
-//	mwan-watchdog                          Normal monitoring mode
-//	mwan-watchdog --dry-run                Real probes, skip destructive ops
-//	mwan-watchdog --red-team <scenario>    Fault injection (implies --dry-run)
-//	mwan-watchdog --list-scenarios         Show available red-team scenarios
+//	mwan watchdog                          Normal monitoring mode
+//	mwan watchdog --dry-run                Real probes, skip destructive ops
+//	mwan watchdog --red-team <scenario>    Fault injection (implies --dry-run)
+//	mwan watchdog --list-scenarios         Show available red-team scenarios
 //
-// Primary path:   gRPC over virtio-vsock (mdlayher/vsock) to mwan-agent inside VM 113.
+// Primary path:   gRPC over virtio-vsock (mdlayher/vsock) to the MWAN agent inside VM 113.
 // Fallback path:  Proxmox REST API (agent/exec + agent/exec-status) when vsock unavailable.
 // VM lifecycle:   qm CLI (stop / rollback / start), unchanged.
 // Email:          send-email/mailer library (SMTP2GO HTTP API auto-detected from env).
@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-func main() {
+func watchdogMain() {
 	dryRun := flag.Bool(
 		"dry-run", false,
 		"Skip destructive ops and emails; log decisions only",
@@ -37,6 +37,10 @@ func main() {
 	redTeam := flag.String(
 		"red-team", "",
 		"Run a fault-injection scenario (implies --dry-run)",
+	)
+	redTeamLive := flag.Bool(
+		"red-team-live", false,
+		"Run red-team fault injection WITHOUT --dry-run (real VM operations)",
 	)
 	redTeamIters := flag.Int(
 		"red-team-iterations", 10,
@@ -56,12 +60,13 @@ func main() {
 		}
 		fmt.Println()
 		fmt.Println(
-			"Usage: mwan-watchdog --red-team <scenario> [--red-team-iterations N]",
+			"Usage: mwan watchdog --red-team <scenario> " +
+				"[--red-team-live] [--red-team-iterations N]",
 		)
 		os.Exit(0)
 	}
 
-	if *redTeam != "" {
+	if *redTeam != "" && !*redTeamLive {
 		*dryRun = true
 	}
 	if os.Getenv("DRY_RUN") == "1" {
@@ -70,13 +75,13 @@ func main() {
 
 	cfg, err := loadConfig(!*dryRun)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mwan-watchdog: %v\n", err)
+		fmt.Fprintf(os.Stderr, "mwan watchdog: %v\n", err)
 		os.Exit(1)
 	}
 
 	nc, err := loadNetworkConfig(cfg.NetworkConfigPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mwan-watchdog: %v\n", err)
+		fmt.Fprintf(os.Stderr, "mwan watchdog: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -89,16 +94,23 @@ func main() {
 		cfg.AlertCooldownSeconds = 0
 	}
 
+	if !*dryRun && *redTeam == "" {
+		if err := validateConfig(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan watchdog: invalid config: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	logger, lerr := newWatchdogLogger(cfg)
 	if lerr != nil {
 		fmt.Fprintf(
 			os.Stderr,
-			"mwan-watchdog: logger init: %v\n",
+			"mwan watchdog: logger init: %v\n",
 			lerr,
 		)
 		os.Exit(1)
 	}
-	logger.Info("mwan-watchdog starting", "version", buildVersionString())
+	logger.Info("mwan watchdog starting", "version", buildVersionString())
 
 	var ops sysOps = newRealOps(cfg, nc)
 
@@ -112,7 +124,7 @@ func main() {
 		if !ok {
 			fmt.Fprintf(
 				os.Stderr,
-				"mwan-watchdog: unknown scenario %q (use --list-scenarios)\n",
+				"mwan watchdog: unknown scenario %q (use --list-scenarios)\n",
 				*redTeam,
 			)
 			os.Exit(1)
@@ -121,6 +133,7 @@ func main() {
 			"[MODE] Red-team scenario",
 			"scenario", *redTeam,
 			"description", preset.Description,
+			"live", *redTeamLive,
 		)
 		ops = &redTeamOps{inner: ops, preset: preset, log: logger, nc: nc}
 	}

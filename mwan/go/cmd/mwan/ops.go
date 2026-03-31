@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -38,6 +39,11 @@ const (
 	timeoutPVEExec        = 45 * time.Second
 )
 
+// ErrGuestExecUnavailable is returned by pveExec when the PVE client is
+// not configured (missing token). Callers can distinguish this from a
+// command that ran and returned a non-zero exit code.
+var ErrGuestExecUnavailable = errors.New("pve client not configured (no PVE_TOKEN_ID)")
+
 // ---------------------------------------------------------------------------
 // sysOps: interface for all external dependencies
 // ---------------------------------------------------------------------------
@@ -62,6 +68,9 @@ type sysOps interface {
 	sendEmail(
 		ctx context.Context, to, subject, body string,
 	) error
+	getConfigState(
+		ctx context.Context, vmid string,
+	) (*mwanv1.GetConfigStateResponse, string, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -329,8 +338,7 @@ func (r *realOps) pveExec(
 	ctx context.Context, vmid string, args ...string,
 ) (guestExecResult, error) {
 	if r.pve == nil {
-		return guestExecResult{ExitCode: 1},
-			fmt.Errorf("pve client not configured (no PVE_TOKEN_ID)")
+		return guestExecResult{ExitCode: 1}, ErrGuestExecUnavailable
 	}
 	cctx, cancel := context.WithTimeout(ctx, timeoutPVEExec)
 	defer cancel()
@@ -343,6 +351,76 @@ func (r *realOps) pveExec(
 		return guestExecResult{ExitCode: 1}, err
 	}
 	return guestExecResult{ExitCode: code, Stdout: stdout}, nil
+}
+
+func (r *realOps) vsockGetConfigState(
+	ctx context.Context,
+) (*mwanv1.GetConfigStateResponse, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeoutVsockRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+		return vsock.Dial(r.vsockCID, r.vsockPort, nil)
+	}
+	if r.testGrpcDialer != nil {
+		dialer = r.testGrpcDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.GetConfigState(cctx, &mwanv1.GetConfigStateRequest{})
+}
+
+func (r *realOps) tcpGetConfigState(
+	ctx context.Context,
+) (*mwanv1.GetConfigStateResponse, error) {
+	if r.tcpAddr == "" {
+		return nil, fmt.Errorf("tcpGetConfigState: no tcp addr configured")
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeoutTCPRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", r.tcpAddr)
+	}
+	if r.testTCPDialer != nil {
+		dialer = r.testTCPDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan-tcp",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.GetConfigState(cctx, &mwanv1.GetConfigStateRequest{})
+}
+
+func (r *realOps) getConfigState(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetConfigStateResponse, string, error) {
+	_ = vmid
+	if res, err := r.vsockGetConfigState(ctx); err == nil {
+		r.tracker.recordSuccess(chanVsock)
+		return res, "vsock", nil
+	} else {
+		r.tracker.recordFailure(chanVsock, err)
+	}
+	if res, err := r.tcpGetConfigState(ctx); err == nil {
+		r.tracker.recordSuccess(chanTCP)
+		return res, "tcp", nil
+	} else {
+		r.tracker.recordFailure(chanTCP, err)
+	}
+	return nil, "", fmt.Errorf("getConfigState: all channels failed")
 }
 
 func (r *realOps) ping(ctx context.Context, bin, target string) bool {
@@ -471,4 +549,10 @@ func (d *dryRunOps) sendEmail(_ context.Context, to, subject, _ string) error {
 		"subject", subject,
 	)
 	return nil
+}
+
+func (d *dryRunOps) getConfigState(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetConfigStateResponse, string, error) {
+	return d.inner.getConfigState(ctx, vmid)
 }

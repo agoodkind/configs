@@ -43,8 +43,6 @@ type networkConfig struct {
 	// LastChangePath is updated when any watched config changes (path unit or
 	// scripts hook).
 	LastChangePath string `toml:"last_change_path"`
-	// ConfigHashPath holds a composite sha256 written by mwan-change-detect.
-	ConfigHashPath string `toml:"config_hash_path"`
 }
 
 func defaultNetworkConfig() networkConfig {
@@ -57,7 +55,6 @@ func defaultNetworkConfig() networkConfig {
 		},
 		LastDeployPath: "/var/run/mwan-last-deploy",
 		LastChangePath: "/var/run/mwan-last-change",
-		ConfigHashPath: "/var/run/mwan-config-hash",
 	}
 }
 
@@ -123,7 +120,6 @@ type config struct {
 	PVETokenID                 string
 	PVESecret                  string
 	NetworkConfigPath          string
-	EmailVerbosity             EmailVerbosity
 	ConfigWarnings             []string
 
 	SnapshotHealthyThreshold   int
@@ -131,6 +127,8 @@ type config struct {
 	HashCheckEveryNHealthy     int
 	MinSnapshotIntervalSeconds int
 	MaxTotalSnapshots          int
+	DeployGracePeriodSeconds   int
+	MaxRollbackAttempts        int
 }
 
 func getenv(key, defaultVal string) string {
@@ -201,6 +199,10 @@ func loadConfig(requireAPIKey bool) (config, error) {
 	appendWarn(w)
 	maxTotalSnaps, w := getenvInt("MAX_TOTAL_SNAPSHOTS", 15)
 	appendWarn(w)
+	deployGrace, w := getenvInt("DEPLOY_GRACE_PERIOD_SECONDS", 60)
+	appendWarn(w)
+	maxRollbackAttempts, w := getenvInt("MAX_ROLLBACK_ATTEMPTS", 3)
+	appendWarn(w)
 	vsockCID, w := getenvUint32("MWAN_VSOCK_CID", defaultVsockCID)
 	appendWarn(w)
 	vsockPort, w := getenvUint32("MWAN_VSOCK_PORT", defaultVsockPort)
@@ -241,18 +243,24 @@ func loadConfig(requireAPIKey bool) (config, error) {
 		),
 		PVENode:    getenv("PVE_NODE", "vault"),
 		PVETokenID: getenv("PVE_TOKEN_ID", ""),
-		PVESecret:  strings.TrimSpace(os.Getenv("PROXMOX_API_TOKEN")),
+		PVESecret: func() string {
+			if v := strings.TrimSpace(os.Getenv("PVE_TOKEN_SECRET")); v != "" {
+				return v
+			}
+			return strings.TrimSpace(os.Getenv("PROXMOX_API_TOKEN"))
+		}(),
 		NetworkConfigPath: getenv(
 			"MWAN_NETWORK_CONFIG",
 			"/etc/mwan-watchdog/network.toml",
 		),
-		EmailVerbosity:             emailVerbosityFromEnv(),
-		ConfigWarnings:             warnings,
+		ConfigWarnings: warnings,
 		SnapshotHealthyThreshold:   snapHealthy,
 		MaxKnownGoodSnapshots:      maxKG,
 		HashCheckEveryNHealthy:     hashEvery,
 		MinSnapshotIntervalSeconds: minSnapInt,
 		MaxTotalSnapshots:          maxTotalSnaps,
+		DeployGracePeriodSeconds:   deployGrace,
+		MaxRollbackAttempts:        maxRollbackAttempts,
 	}
 	if requireAPIKey && cfg.SMTP2GOAPIKey == "" {
 		return config{}, errors.New(
@@ -260,4 +268,27 @@ func loadConfig(requireAPIKey bool) (config, error) {
 		)
 	}
 	return cfg, nil
+}
+
+// validateConfig returns an error if cfg contains an internally
+// inconsistent state that would prevent correct watchdog operation.
+// Call this from main before constructing ops, in non-dry-run mode only.
+func validateConfig(cfg config) error {
+	if cfg.MwanVMID == "" {
+		return errors.New("MWAN_VMID must not be empty")
+	}
+	if cfg.PVETokenID != "" && cfg.PVESecret == "" {
+		return errors.New(
+			"PVE_TOKEN_ID is set but PVE_TOKEN_SECRET (or PROXMOX_API_TOKEN) is empty; " +
+				"the PVE client will not be initialized and deploy timestamps " +
+				"cannot be read from the VM",
+		)
+	}
+	if cfg.PVETokenID == "" && cfg.PVESecret != "" {
+		return errors.New(
+			"PVE_TOKEN_SECRET is set but PVE_TOKEN_ID is empty; " +
+				"the PVE client will not be initialized",
+		)
+	}
+	return nil
 }

@@ -1,4 +1,4 @@
-// Command mwan-agent serves the MWAN gRPC API on TCP and optionally virtio-vsock.
+// Agent subcommand serves the MWAN gRPC API on TCP and optionally virtio-vsock.
 package main
 
 import (
@@ -12,9 +12,10 @@ import (
 	mwanv1 "github.com/agoodkind/infra-tools/gen/mwan/v1"
 	"github.com/mdlayher/vsock"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
-func main() {
+func agentMain() {
 	vsockPort := flag.Uint("vsock-port", 50051, "virtio-vsock listen port (0 disables)")
 	tcpAddr := flag.String("tcp-addr", "[::]:50052", "TCP listen address for gRPC")
 	deployFile := flag.String(
@@ -23,6 +24,11 @@ func main() {
 		"path to last deploy timestamp file",
 	)
 	logFile := flag.String("log-file", "/var/log/mwan-agent.log", "path to text log file")
+	debug := flag.Bool(
+		"debug",
+		false,
+		"enable gRPC reflection service for ad-hoc grpcurl inspection",
+	)
 	flag.Parse()
 
 	logger, err := newAgentLogger(*logFile)
@@ -66,6 +72,10 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 	mwanv1.RegisterMWANAgentServer(grpcServer, newAgentServer(*deployFile, logger))
+	if *debug {
+		reflection.Register(grpcServer)
+		logger.Info("gRPC reflection enabled (debug mode)")
+	}
 
 	serveCount := 1
 	if vsockLis != nil {
