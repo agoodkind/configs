@@ -1,86 +1,30 @@
 # Proxmox API Token Setup for Ansible
 
-This document describes the required permissions for the `ansible@pam` API token.
+## Create the API token
 
-## Create API Token
+In the Proxmox web UI, go to Datacenter, then Permissions, then API Tokens. Create a
+token for `ansible@pam` with token ID `ansible-token`. Uncheck "Privilege Separation"
+so the token inherits the user's permissions directly.
 
-1. In Proxmox web UI, go to **Datacenter** → **Permissions** → **API Tokens**
-2. Create token for user `ansible@pam`:
-   - Token ID: `ansible-token`
-   - Privilege Separation: **Unchecked** (use user permissions)
+## Required permissions
 
-## Required Permissions
+Grant `ansible@pam` the `PVEVMAdmin` role on path `/`, either through the Proxmox ACL
+UI or by running `pveum acl modify` on the Proxmox host. This role covers VM and
+container create/destroy, config changes (options, disk, CPU, memory, network), power
+management, console access, and datastore allocation.
 
-Grant the following permissions to `ansible@pam` on path `/`:
+To verify, check the ACL list and confirm `ansible@pam` has `PVEVMAdmin` on `/`.
 
-```bash
-# On Proxmox host, run:
-pveum acl modify / -user ansible@pam -role PVEVMAdmin
-```
+## Store the token
 
-This grants:
-
-- `VM.Allocate` - Create/destroy VMs/containers
-- `VM.Config.Options` - Modify container options (including features like nesting)
-- `VM.Config.Disk` - Manage disks
-- `VM.Config.CPU` - Manage CPU settings
-- `VM.Config.Memory` - Manage memory settings
-- `VM.Config.Network` - Manage network settings
-- `VM.PowerMgmt` - Start/stop/reboot
-- `VM.Console` - Access console
-- `VM.Audit` - View configuration
-- `Datastore.AllocateSpace` - Allocate storage
-
-## Verify Permissions
-
-```bash
-pveum user permissions ansible@pam
-```
-
-Should show `PVEVMAdmin` role on `/` path.
-
-## Store Token in Environment
-
-On the ansible container (`ansible.home.goodkind.io`):
-
-```bash
-# Add to ~/.bashrc
-echo 'export PROXMOX_API_TOKEN="<your-token>"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Or use the helper script:
-
-```bash
-./setup-api-token.sh
-```
+On the ansible container, export `PROXMOX_API_TOKEN` in `~/.bashrc`. In Semaphore,
+add it as an environment variable in the project environment.
 
 ## Troubleshooting
 
-### Permission denied (403) errors
+Permission denied (403) errors mentioning "changing feature flags (except nesting)" mean
+`ansible@pam` is missing `VM.Config.Options`. Re-grant `PVEVMAdmin` on `/` to fix it.
 
-If you see errors like:
-
-```text
-Permission check failed (changing feature flags (except nesting) is only allowed for root@pam)
-```
-
-The `ansible@pam` user needs `VM.Config.Options` permission. Grant it with:
-
-```bash
-pveum acl modify / -user ansible@pam -role PVEVMAdmin
-```
-
-### Alternative: Use root@pam (not recommended)
-
-For testing only, you can use `root@pam` instead of `ansible@pam`:
-
-1. Create API token for `root@pam`
-2. Update `ansible/inventory/group_vars/all.yml`:
-
-   ```yaml
-   proxmox_api_user: root@pam
-   proxmox_token_id: root-ansible-token
-   ```
-
-**Note**: Using `root@pam` is less secure. Prefer granting specific permissions to `ansible@pam`.
+Using `root@pam` instead of `ansible@pam` works but is less secure and should be limited
+to testing. If you do, update `proxmox_api_user` and `proxmox_token_id` in the inventory
+group vars.

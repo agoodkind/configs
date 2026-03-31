@@ -8,6 +8,8 @@
 - name: Configure Minecraft Service (Crafty Controller)
   hosts: mc_servers
   become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
     crafty_repo: "https://gitlab.com/crafty-controller/crafty-4.git"

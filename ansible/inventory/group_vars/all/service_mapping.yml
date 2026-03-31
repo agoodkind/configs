@@ -47,6 +47,12 @@ service_mapping:
   mwan:
     hostname: mwan.home.goodkind.io
     ipv6: "3d06:bad:b01::113"
+  plane:
+    hostname: plane.home.goodkind.io
+    ipv6: "3d06:bad:b01::115"
+  huly:
+    hostname: huly.home.goodkind.io
+    ipv6: "3d06:bad:b01::117"
 
   # Static Hosts (different subnet or external)
   mini:

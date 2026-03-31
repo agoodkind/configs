@@ -2,6 +2,8 @@
 - name: Update all systems
   hosts: proxmox_all_lxc
   become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   tasks:
     - name: Update apt cache
       ansible.builtin.apt:

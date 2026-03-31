@@ -5,5 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c '/usr/bin/apt-get update && /usr/bin/apt-get upgrade -y && /usr/bin/apt-get autoremove -y && /usr/bin/apt-get autoclean'
+Environment=DEBIAN_FRONTEND=noninteractive
+ExecStart=/bin/bash -c '/usr/bin/apt-get update && /usr/bin/apt-get -o Dpkg::Options::="--force-confold" upgrade -y && /usr/bin/apt-get autoremove -y && /usr/bin/apt-get autoclean'
 TimeoutStartSec=1800

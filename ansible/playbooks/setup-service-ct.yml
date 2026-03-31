@@ -119,6 +119,7 @@
               else (container_tags_default | string)
             )
           }}
+        service_container_features: "{{ container_features | default('') }}"
 
 - name: Create or ensure container exists
   ansible.builtin.import_playbook: create-ct.yml
@@ -138,6 +139,8 @@
     container_tags: "{{ hostvars['localhost']['effective_container_tags'] }}"
     mac_address: >-
       {{ hostvars['localhost']['service_mac_address'] | default('') }}
+    container_features: >-
+      {{ hostvars['localhost']['service_container_features'] | default('') }}
 
 - name: Add container to service group
   hosts: localhost

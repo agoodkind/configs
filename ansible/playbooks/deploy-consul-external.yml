@@ -5,6 +5,8 @@
 - name: Deploy Consul agent to Proxmox nodes
   hosts: proxmox_nodes
   become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
 
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"

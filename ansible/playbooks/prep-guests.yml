@@ -59,17 +59,28 @@
 
     - name: Compute effective prep-guests service name and login directory
       ansible.builtin.set_fact:
-        prep_ct_service_effective: "{{ target_hosts | regex_replace('_servers$','') | trim }}"
+        prep_ct_service_effective: "{{ target_hosts | regex_replace('_servers$', '') | trim }}"
         login_dir_effective: "{{ login_dir | default('/root') }}"
+
+    - name: Set debconf frontend to noninteractive
+      ansible.builtin.debconf:
+        name: debconf
+        question: debconf/frontend
+        vtype: select
+        value: Noninteractive
 
     - name: Update package lists
       ansible.builtin.apt:
         update_cache: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
 
     - name: Install locales package
       ansible.builtin.apt:
         name: locales
         state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive
 
     - name: Check if en_US.UTF-8 locale is already uncommented
       ansible.builtin.command: grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen
@@ -147,6 +158,8 @@
           - msmtp
           - msmtp-mta
         state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive
 
     - name: Fetch install-updater script from GitHub
       ansible.builtin.get_url:

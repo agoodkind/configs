@@ -1,78 +1,33 @@
 # Ansible Vault - Quick Reference
 
-## Common Commands
+All secrets live in `inventory/group_vars/all/vault.yml`, encrypted with Ansible Vault.
+Edit it with `ansible-vault edit`, view it with `ansible-vault view`, and rekey it with
+`ansible-vault rekey` when rotating the vault password.
 
-```bash
-# View secrets
-ansible-vault view inventory/group_vars/all/vault.yml
+## File locations
 
-# Edit secrets (recommended)
-ansible-vault edit inventory/group_vars/all/vault.yml
+- Vault file: `inventory/group_vars/all/vault.yml` (encrypted, committed to git)
+- Vars file: `inventory/group_vars/all/vars.yml` (plaintext, committed to git)
+- CLI password: `~/.config/ansible/vault.pass` (not in git, must be 600 permissions)
+- Semaphore password: environment variable `ANSIBLE_VAULT_PASSWORD` in the Semaphore database
 
-# Add a new secret
-ansible-vault edit inventory/group_vars/all/vault.yml
-# Add: vault_new_secret: "value"
-# Then reference in vars.yml: new_secret: "{{ vault_new_secret }}"
+## Naming convention
 
-# Decrypt temporarily
-ansible-vault decrypt inventory/group_vars/all/vault.yml
-# Edit file
-ansible-vault encrypt inventory/group_vars/all/vault.yml
-
-# Change vault password
-ansible-vault rekey inventory/group_vars/all/vault.yml
-```
-
-## File Locations
-
-- **Vault file**: `inventory/group_vars/all/vault.yml` (encrypted, in git)
-- **Vars file**: `inventory/group_vars/all/vars.yml` (not encrypted, in git)
-- **CLI password**: `~/.config/ansible/vault.pass` (not in git)
-- **Semaphore password**: Environment variable `ANSIBLE_VAULT_PASSWORD` in database
-
-## Naming Convention
-
-- Secrets in vault.yml: `vault_*` prefix
-- References in vars.yml: no prefix, use `{{ vault_* }}`
-
-## Example
-
-**vault.yml**:
-
-```yaml
-vault_api_key: "secret123"
-```
-
-**vars.yml**:
-
-```yaml
-api_key: "{{ vault_api_key }}"
-```
-
-**Usage in playbook**:
-
-```yaml
-- name: Call API
-  uri:
-    url: https://api.example.com
-    headers:
-      Authorization: "Bearer {{ api_key }}"
-```
+Secrets in `vault.yml` use a `vault_` prefix. They are exposed in `vars.yml` without
+the prefix so playbooks reference clean names. For example, a secret named
+`vault_api_key` in `vault.yml` would be referenced as `api_key` elsewhere by
+assigning `api_key: "{{ vault_api_key }}"` in `vars.yml`.
 
 ## Troubleshooting
 
-| Error | Fix |
-|-------|-----|
-| Decryption failed | Check `~/.config/ansible/vault.pass` exists and is correct |
-| Variable undefined | Add variable to vault.yml with `ansible-vault edit` |
-| Semaphore fails | Verify `ANSIBLE_VAULT_PASSWORD` env var in Semaphore environment |
+If decryption fails, verify `~/.config/ansible/vault.pass` exists and contains the
+correct password. If a variable shows as undefined in a playbook, the variable is likely
+absent from `vault.yml` or `vars.yml`. If Semaphore fails, check that
+`ANSIBLE_VAULT_PASSWORD` is set in the Semaphore project environment.
 
-## Emergency: Lost Vault Password
+## Lost vault password
 
-If you lose the vault password, you **cannot** decrypt vault.yml. Options:
-
-1. **Restore from backup** (if you have one)
-2. **Re-create all secrets** from original sources and create new vault.yml
-3. **Check Semaphore database** for old encrypted secrets (may still have them)
-
-**Prevention**: Back up vault password in team password manager (1Password, etc.)
+If the vault password is lost, decryption of `vault.yml` is not possible. Options are
+to restore the password from the team password manager (1Password), or to re-create all
+secrets from their original sources and create a new `vault.yml`. Back up the vault
+password in the team password manager.

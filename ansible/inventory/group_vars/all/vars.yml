@@ -39,6 +39,9 @@ consul_datacenter: home
 consul_domain: int
 consul_agent_enabled: true
 
+# Huly route defaults (used by Traefik route templating)
+huly_http_port: 8087
+
 # Static IP fallbacks (used when Consul is unavailable)
 # Derived from service_mapping (single source of truth)
 consul_static_ips: >-

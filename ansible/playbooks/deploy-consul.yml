@@ -11,6 +11,8 @@
 - name: Deploy and Configure Consul Server
   hosts: consul_servers
   become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
 
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"

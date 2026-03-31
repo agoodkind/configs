@@ -8,6 +8,8 @@
 - name: Deploy and Configure AdGuard Home
   hosts: adguard_servers
   become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
 
   vars:
     adguard_channel: "release"

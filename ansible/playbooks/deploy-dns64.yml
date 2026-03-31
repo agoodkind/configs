@@ -8,6 +8,8 @@
 - name: Configure DNS64 Service
   hosts: dns64_servers
   become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   tasks:
     - name: Update apt cache
       ansible.builtin.apt:

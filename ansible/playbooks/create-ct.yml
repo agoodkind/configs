@@ -24,6 +24,7 @@
     ipv6_only: true
     container_tags: "lxc"
     allow_dhcp: false
+    container_features: ""
 
   tasks:
     - name: Validate container hostname is set
@@ -404,6 +405,7 @@
         unprivileged: true
         state: present
         tags: "{{ container_tags.split(',') }}"
+        features: "{{ container_features if container_features | length > 0 else omit }}"
       delegate_to: localhost
       register: container_result
       when: not (container_already_exists | default(false) | bool)
