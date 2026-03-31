@@ -1,0 +1,147 @@
+---
+# Note: Container creation is handled by OpenTofu (opentofu/containers.tf).
+# This playbook only configures the container after OpenTofu has provisioned it.
+# prep-guests.yml is imported explicitly here (instead of via setup-service-ct.yml)
+# because setup-service-ct.yml also provisions the container, which conflicts with
+# OpenTofu managing that lifecycle.
+#
+# Use merged inventory so plane has Proxmox facts (ansible_proxmox_vmid) for
+# deploy-ssh-keys.yml, for example:
+#   ansible-playbook playbooks/deploy-plane.yml \
+#     -i inventory/proxmox.yml -i inventory/hosts -l plane_servers
+
+- name: Prepare plane guest (SSH keys, package-updater, base config)
+  ansible.builtin.import_playbook: prep-guests.yml
+  vars:
+    target_hosts: plane_servers
+
+- name: Provision Plane via Docker Compose
+  hosts: plane_servers
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Install prerequisites for Docker repo
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Add Docker apt repository (deb822 format)
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: deb
+        uris: https://download.docker.com/linux/debian
+        suites: trixie
+        components: stable
+        architectures: amd64
+        signed_by: https://download.docker.com/linux/debian/gpg
+        state: present
+
+    - name: Install Docker CE
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Create Plane install directory
+      ansible.builtin.file:
+        path: "{{ plane_install_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Deploy Plane environment file
+      ansible.builtin.template:
+        src: "{{ repo_root }}/plane/plane.env.j2"
+        dest: "{{ plane_install_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart Plane
+
+    - name: Copy Plane docker-compose.yml
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/plane/docker-compose.yml"
+        dest: "{{ plane_install_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Start Plane services
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ plane_install_dir }}"
+      changed_when: true
+
+    - name: Install plane-update-checker script
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/plane/scripts/plane-update-checker.sh"
+        dest: /usr/local/bin/plane-update-checker.sh
+        owner: root
+        group: root
+        mode: "0755"
+      register: plane_update_checker_script
+
+    - name: Ensure plane-update-checker state directory
+      ansible.builtin.file:
+        path: /var/lib/plane-update-checker
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy plane-update-checker systemd service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/plane/services/plane-update-checker.service"
+        dest: /etc/systemd/system/plane-update-checker.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: plane_update_checker_service
+
+    - name: Deploy plane-update-checker systemd timer
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/plane/timers/plane-update-checker.timer"
+        dest: /etc/systemd/system/plane-update-checker.timer
+        owner: root
+        group: root
+        mode: "0644"
+      register: plane_update_checker_timer
+
+    - name: Enable and start plane-update-checker timer
+      ansible.builtin.systemd:
+        name: plane-update-checker.timer
+        enabled: true
+        state: started
+        daemon_reload: >-
+          {{
+            plane_update_checker_script.changed
+            or plane_update_checker_service.changed
+            or plane_update_checker_timer.changed
+          }}
+
+  handlers:
+    - name: Restart Plane
+      ansible.builtin.command:
+        cmd: docker compose restart
+        chdir: "{{ plane_install_dir }}"
+      changed_when: true

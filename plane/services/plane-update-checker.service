@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for new Plane upstream releases and notify by email
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PLANE_ENV_FILE=/opt/plane/.env
+Environment=PLANE_UPDATE_STATE_DIR=/var/lib/plane-update-checker
+Environment=PLANE_UPDATE_NOTIFY_TO=alex@goodkind.io
+ExecStart=/usr/local/bin/plane-update-checker.sh
+TimeoutStartSec=120
