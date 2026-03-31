@@ -121,6 +121,26 @@ http:
       tls:
         certResolver: letsencrypt
 
+    plane-ingress:
+      rule: "Host(`plane.{{ traefik_ingress_domain }}`)"
+      service: plane-service
+      middlewares:
+        - secure-headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
+    huly-ingress:
+      rule: "Host(`huly.{{ traefik_ingress_domain }}`)"
+      service: huly-service
+      middlewares:
+        - secure-headers
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
   services:
     ansible-service:
       loadBalancer:
@@ -181,6 +201,16 @@ http:
         servers:
           - url: "https://[3d06:bad:b01::109]:8443"
         serversTransport: insecure-transport
+
+    plane-service:
+      loadBalancer:
+        servers:
+          - url: "http://[{{ service_mapping.plane.ipv6 }}]:80"
+
+    huly-service:
+      loadBalancer:
+        servers:
+          - url: "http://[{{ service_mapping.huly.ipv6 }}]:{{ huly_http_port }}"
 
   serversTransports:
     insecure-transport:

@@ -24,17 +24,6 @@ ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/de
 ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-adguard.yml
 ```
 
-## Available playbooks
-
-- `deploy-adguard.yml` - AdGuard Home DNS server
-- `deploy-dns64.yml` - DNS64 configuration
-- `deploy-grommunio.yml` - Grommunio email server
-- `deploy-mwan.yml` - Multi-WAN configuration
-- `deploy-nanomdm.yml` - NanoMDM device management
-- `deploy-proxy.yml` - Traefik reverse proxy + SSHPiper
-- `deploy-semaphore.yml` - Semaphore automation server
-- `deploy-ssh-keys.yml` - SSH key deployment
-
 ## Notes
 
 - Must run from `ansible/` directory (where `ansible.cfg` lives)

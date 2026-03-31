@@ -21,7 +21,7 @@ pipes:
         username_regex_match: true
         authorized_keys: /etc/sshpiper/authorized_keys
     to:
-      host: "[::1]:2222"
+      host: "[{{ service_mapping.proxy.ipv6 | default('::1') }}]:2222"
       username: "$1"
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true
