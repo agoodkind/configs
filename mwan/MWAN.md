@@ -13,8 +13,8 @@ This design keeps the downstream network simple:
 
 High-level goals:
 
-- **Outbound IPv4**: OPNsense SNATs downstream RFC1918 into `10.250.250.2-10.250.250.6`; MWAN load-balances *new* flows and performs 1:1 SNAT to the corresponding public /29 on the chosen WAN.
-- **Outbound IPv6**: downstream uses internal-only `3d06:bad:b01::/60`; MWAN load-balances *new* flows and performs NPT to each WAN’s delegated /60.
+- **Outbound IPv4**: OPNsense SNATs downstream RFC1918 into `10.250.250.2-10.250.250.6`; MWAN load-balances _new_ flows and performs 1:1 SNAT to the corresponding public /29 on the chosen WAN.
+- **Outbound IPv6**: downstream uses internal-only `3d06:bad:b01::/60`; MWAN load-balances _new_ flows and performs NPT to each WAN’s delegated /60.
 - **Inbound services**: inbound IPv4/IPv6 to either WAN’s public space is translated on MWAN (DNAT / reverse-NPT) and forwarded to OPNsense so OPNsense rules/port-forwards can handle services.
 - **Failover**: when a WAN is unhealthy, new flows stop using it; existing sessions drain naturally; recovery restores balancing.
 
@@ -47,13 +47,13 @@ Interfaces (logical):
 
 ### Static IPv4 mappings (internal /29 ↔ public /29s)
 
-| Internal | AT&T | Webpass | Purpose |
-|----------|------|---------|---------|
+| Internal     | AT&T           | Webpass       | Purpose          |
+| ------------ | -------------- | ------------- | ---------------- |
 | 10.250.250.2 | 104.57.226.193 | 136.25.91.242 | OPNsense primary |
-| 10.250.250.3 | 104.57.226.194 | 136.25.91.243 | Service 1 |
-| 10.250.250.4 | 104.57.226.195 | 136.25.91.244 | Service 2 |
-| 10.250.250.5 | 104.57.226.196 | 136.25.91.245 | Service 3 |
-| 10.250.250.6 | 104.57.226.197 | 136.25.91.246 | Service 4 |
+| 10.250.250.3 | 104.57.226.194 | 136.25.91.243 | Service 1        |
+| 10.250.250.4 | 104.57.226.195 | 136.25.91.244 | Service 2        |
+| 10.250.250.5 | 104.57.226.196 | 136.25.91.245 | Service 3        |
+| 10.250.250.6 | 104.57.226.197 | 136.25.91.246 | Service 4        |
 
 Notes:
 
@@ -203,7 +203,7 @@ What MWAN runs automatically:
 - **`networkd-dispatcher.service`** → on `routable`, runs:
   - `/etc/networkd-dispatcher/routable.d/50-update-routes.sh` → `/usr/local/bin/update-routes.sh` (updates `ip rule`/`ip route` policy tables)
   - `/etc/networkd-dispatcher/routable.d/55-update-npt.sh` → `/usr/local/bin/update-npt.sh` (programs `nft` `table ip6 nat` runtime rules + adds PD `::1/128`)
-- **`nftables.service`** → loads the base `/etc/nftables.conf` ruleset (includes *empty* `table ip6 nat` chains; NPT rules are added later)
+- **`nftables.service`** → loads the base `/etc/nftables.conf` ruleset (includes _empty_ `table ip6 nat` chains; NPT rules are added later)
 - **`wpa_supplicant-mwan.service`** → runs AT&T 802.1X (EAPOL) on the parent interface
   - **`wpa-cli-action.service`** → `wpa_cli -a /usr/local/bin/wpa-action.sh` → creates/removes `/run/wpa_supplicant-mwan.authenticated`
   - **`wpa-authenticated.path`** → triggers **`wpa-authenticated.service`** → starts **`bringup-att-vlan.service`**
@@ -231,7 +231,7 @@ Typical state flows:
   - **How we detect recovery**:
     - Marks a WAN **healthy** only after **M consecutive successful check cycles** (`recovery_threshold`) — hysteresis to prevent oscillation during partial recovery.
   - **What happens on unhealthy/healthy**:
-    - Calls `update-routes.sh` to remove/add the WAN for *new* flows (existing sessions drain via conntrack).
+    - Calls `update-routes.sh` to remove/add the WAN for _new_ flows (existing sessions drain via conntrack).
 
 ## IPv6 (NPT + inbound DNPT)
 
@@ -244,7 +244,7 @@ Downstream LANs use `3d06:bad:b01::/60` on purpose. For all intents and purposes
 **Why this is not a ULA (`fd00::/8`):**
 
 - Modern OSes decide “IPv6 is probably globally useful” largely based on whether the source address is a **GUA** vs a **ULA** (RFC 6724-ish behavior).
-- If you use a ULA internally, many clients will deprioritize it vs IPv4, even though *we know* it will work globally once MWAN does NPT.
+- If you use a ULA internally, many clients will deprioritize it vs IPv4, even though _we know_ it will work globally once MWAN does NPT.
 - Using a “fake” GUA-shaped internal prefix keeps clients preferring IPv6, while MWAN is the only place where that prefix becomes Internet-routable via NPT.
 
 The only point where traffic becomes Internet-routable is **on `mwan`**, where NPT (stateless prefix translation) swaps the internal /60 to one of the WAN delegated /60 prefixes.
@@ -380,7 +380,7 @@ MWAN also marks **inbound NEW flows** based on ingress WAN to keep replies symme
 ### Nuances / gotchas (debugging IPv4)
 
 - **Do not override IPv4 fwmarks in `inet mangle prerouting` for `10.250.250.2-10.250.250.6`**.
-  - IPv4 load balancing is driven by per-flow random fwmark assignment for *new* connections.
+  - IPv4 load balancing is driven by per-flow random fwmark assignment for _new_ connections.
   - Setting `meta mark` by `ip saddr 10.250.250.x` pins that host to one WAN.
 
 ## NPT rule persistence (why `ip6 nat` chains can be empty)
@@ -396,7 +396,7 @@ Common reasons:
   - PCI/virtio devices can appear slightly later (driver load timing).
   - AT&T needs 802.1X before DHCPv6-PD on the VLAN will succeed (so PD can be “late”).
   - `networkd-dispatcher` and `nftables` are independent services; it is possible for a “routable” event to occur before `nftables` has loaded the base ruleset.
-  - If `update-npt.sh` runs before the target interface exists *or* before the base `table ip6 nat` exists, it can fail/exit early (it uses `set -e` and calls `nft`).
+  - If `update-npt.sh` runs before the target interface exists _or_ before the base `table ip6 nat` exists, it can fail/exit early (it uses `set -e` and calls `nft`).
 
 Two different “empty” symptoms to distinguish:
 
@@ -478,7 +478,7 @@ ssh root@mwan.home.goodkind.io
 wpa_cli status
 systemctl status wpa_supplicant-mwan systemd-networkd networkd-dispatcher nftables mwan-health cloudflared
 /usr/local/bin/health-check.sh --status
-/usr/local/bin/mwan connectivity
+/usr/local/bin/mwan-debug
 ```
 
 ### Quick IPv6 sanity checks
@@ -550,6 +550,152 @@ Hairpin validation to WAN interface /128:
 
 - With full PCI passthrough, VM uses the real NIC MAC (no spoofing)
 - Verify NIC is assigned: `lspci | grep I226`
+
+## Watchdog: Diagnosis and Rollback Design
+
+The `mwan-watchdog` runs on the Proxmox host and monitors connectivity by
+pinging external targets (`1.1.1.1`, `2606:4700:4700::1111`) from the host.
+When connectivity fails, the watchdog decides whether to auto-rollback the
+mwan VM to a known-good snapshot or to alert and wait.
+
+### Core Principle
+
+The rollback decision is based on **whether config recently changed**, not
+on per-interface ISP reachability probes from inside the VM. If config
+changed and then connectivity broke, the config is the most probable cause.
+If config has been stable and connectivity breaks, it is probably external
+(ISP outage).
+
+This follows two established industry patterns:
+
+- **Juniper `commit confirmed` / Cisco Configuration Rollback Confirmed
+  Change**: push a config with a timer; auto-rollback if not confirmed
+  within the window. The watchdog's deploy-timestamp window serves the
+  same role.
+- **Canary deployments with observation windows** (Flagger, Argo Rollouts,
+  Istio): deploy, monitor health metrics during an observation window,
+  auto-rollback if metrics degrade. The grace period + connectivity
+  timeout is the same structure.
+
+### Two Signals for "Config Recently Changed"
+
+1. **Deploy timestamp** (`/var/run/mwan-last-deploy`): written by the
+   deploy playbook before pushing new config. Indicates an intentional,
+   full deploy that may include a VM reboot.
+2. **Config hash change**: detected by `checkConfigHash` when the
+   composite hash reported by `mwan-agent` changes. Indicates config
+   files were modified on disk (ansible push, manual edit, agent pull).
+
+Both are treated as "recent config change" for rollback decisions. The
+hash change is equivalent to a deploy signal but without the "expect a
+reboot" semantics.
+
+### Decision Matrix
+
+| Connectivity fails? | Recent deploy timestamp? | Recent hash change? | Stable before? | Action                           |
+| ------------------- | ------------------------ | ------------------- | -------------- | -------------------------------- |
+| Yes                 | Yes (within 60s)         | -                   | -              | Grace period; wait for reboot    |
+| Yes                 | Yes (past 60s grace)     | -                   | -              | Connectivity timeout -> rollback |
+| Yes                 | No                       | Yes (within window) | Yes            | Connectivity timeout -> rollback |
+| Yes                 | No                       | No                  | Yes            | ISP outage -> email, wait        |
+| No                  | -                        | -                   | -              | Healthy; normal monitoring       |
+
+### Grace Period
+
+A deploy may reboot the mwan VM (typical reboot: ~45s). To avoid a false
+rollback during the reboot:
+
+- **Deploy timestamp detected -> 60s grace period.** The watchdog monitors
+  but does not start the rollback countdown during this window.
+- **After 60s, if connectivity is still down**: the normal connectivity
+  timeout (`CONNECTIVITY_TIMEOUT_SECONDS`, default 30s) begins.
+- **Total time before rollback**: ~90s (60 grace + 30 timeout).
+
+Hash-only changes (no new deploy timestamp) get no grace period because
+config pushes don't cause reboots. If connectivity breaks immediately
+after a hash change, the timeout starts right away.
+
+### Hash Change Recency Window
+
+A config hash change is considered "recent" for `DEPLOY_WINDOW_MINUTES`
+(default 30 min) after detection. A hash change from hours ago does not
+count; connectivity failures that far out are treated as external.
+
+### ISP Outage Handling
+
+When connectivity fails and there is no recent config change (no deploy
+timestamp, no hash change within window, system was healthy and stable):
+
+1. Log at ERROR: "total connectivity loss, no recent config change"
+2. Send email alert (subject to cooldown)
+3. Continue monitoring; do NOT rollback
+4. Log recovery when connectivity returns
+
+### Snapshots
+
+Two snapshot types, with different owners:
+
+**`pre-deploy-*` (owned by the deploy playbook):** taken immediately
+before pushing new config. This is the primary rollback target; rolling
+back to it restores the state right before the change that broke things.
+
+**`known-good-*` (owned by the watchdog):** taken automatically after
+the system has been healthy and stable for a sustained period. Falls back
+to this if no `pre-deploy-*` snapshot exists.
+
+#### Pre-deploy snapshot requirement (Ansible)
+
+Before pushing **any** configuration change to the MWAN VM, the deploy
+playbook **must** create a snapshot named `pre-deploy-<unix-timestamp>`
+(e.g. `pre-deploy-1743200000`). Without it, a fresh or recently changed VM
+may have no rollback target until a `known-good-*` snapshot is created,
+which takes many healthy probe cycles (see below).
+
+The watchdog’s `findSnapshot` prefers the latest `pre-deploy-*` snapshot;
+if none exist, it falls back to `known-good-*`. If **neither** exists, the
+watchdog cannot roll back: it alerts but does not recover.
+
+Run this **before** any task that copies config to the VM:
+
+```yaml
+- name: Create pre-deploy snapshot
+  ansible.builtin.command:
+    argv: ["qm", "snapshot", "{{ mwan_vmid }}", "pre-deploy-{{ ansible_date_time.epoch }}"]
+  delegate_to: vault
+```
+
+#### When to take `known-good-*`
+
+All conditions must be true:
+
+1. System has been healthy for N consecutive probe cycles
+   (`SNAPSHOT_HEALTHY_THRESHOLD`, default 20)
+2. Config hash is stable (no change detected within
+   `DEPLOY_WINDOW_MINUTES`)
+3. No recent deploy timestamp (outside deploy window)
+4. Minimum time gap since last snapshot
+   (`MIN_SNAPSHOT_INTERVAL_SECONDS`, default 300s)
+
+This prevents snapshotting a partially-converged or not-yet-validated
+state. A snapshot taken right after a config push, even if pings are
+passing, could capture incomplete state.
+
+#### Snapshot selection for rollback
+
+Target order matches **Pre-deploy snapshot requirement** above: latest
+`pre-deploy-*`, else most recent `known-good-*`.
+
+#### Pruning
+
+The watchdog keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 3) and
+`MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first.
+
+### Per-Interface ISP Tests (informational only)
+
+The watchdog can still run per-interface ISP reachability tests
+(`testISP`, `testVMConnectivity`) via guest-exec inside the VM, but
+these are informational data points included in email alert bodies.
+They do not gate the rollback/no-rollback decision.
 
 ## Future Enhancements
 

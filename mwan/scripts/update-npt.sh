@@ -195,6 +195,11 @@ tmp="$(mktemp)"
     echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 ct status dnat return"
     echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
     echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $MWANBR_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
+    # Also SNAT the VRRP VIP when it is defined (used after keepalived moves the real VM
+    # address to fe::3; the VIP fe::1 still needs an explicit /128 SNAT rule).
+    if [[ -n "${MWAN_VIP_IPV6:-}" ]]; then
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr ${MWAN_VIP_IPV6}/128 snat to ${TARGET_PREFIX%/*}1"
+    fi
     echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $INTERNAL_PREFIX snat ip6 prefix to $TARGET_PREFIX"
 
     # Prerouting:
