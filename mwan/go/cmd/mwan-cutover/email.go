@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"time"
 )
 
 // sendEmail sends via SMTP2GO HTTP API, running the request as the
@@ -20,7 +19,7 @@ func sendEmail(cfg *CutoverConfig, subject, body string) error {
 		"sender":    cfg.EmailFrom,
 		"to":        []string{cfg.AlertEmail},
 		"subject":   subject,
-		"text_body": fmt.Sprintf("%s\n\n---\nHost: %s\nTime: %s", body, cfg.Hostname, time.Now().Format(time.RFC3339)),
+		"text_body": body,
 	}
 
 	data, err := json.Marshal(payload)
