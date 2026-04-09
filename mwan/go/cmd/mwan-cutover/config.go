@@ -29,6 +29,10 @@ type CutoverConfig struct {
 	VIPIPv6     string `toml:"vip_ipv6"`
 	VIPIPv4     string `toml:"vip_ipv4"`
 
+	// OPNsense (for NDP cache flush during rollback)
+	OPNsenseAddr string `toml:"opnsense_addr"` // SSH address (e.g. agoodkind@3d06:bad:b01::1)
+	OPNsenseVIPv6 string `toml:"opnsense_vip_v6"` // VIP address to flush from NDP (e.g. 3d06:bad:b01:fe::1)
+
 	// Failover LXC
 	FailoverLXCID    string `toml:"failover_lxc_id"`
 	FailoverLXCIface string `toml:"failover_lxc_iface"` // eth1

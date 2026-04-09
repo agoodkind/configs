@@ -66,12 +66,22 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 	_, _ = sshExec(ctx, host,
 		fmt.Sprintf("ip addr add %s dev %s", cfg.CurrentRealIPv4, iface), to)
 
-	// Step 6: Send gratuitous NDP to update neighbor caches immediately
-	log.Info("rollback: sending unsolicited neighbor advertisement")
-	_, _ = sshExec(ctx, host,
-		fmt.Sprintf("ndisc6 -q %s %s 2>/dev/null || ip -6 neigh replace proxy %s dev %s 2>/dev/null",
-			cfg.CurrentRealIPv6[:len(cfg.CurrentRealIPv6)-3], iface,
-			cfg.CurrentRealIPv6[:len(cfg.CurrentRealIPv6)-3], iface), to)
+	// Step 6: Flush OPNsense NDP cache for the VIP address.
+	// CRITICAL: without this, OPNsense keeps the VRRP virtual MAC in its neighbor
+	// cache and sends traffic to a MAC that no longer exists, causing total outage.
+	if cfg.OPNsenseAddr != "" {
+		vipBare := strings.Split(cfg.CurrentRealIPv6, "/")[0]
+		log.Info("rollback: flushing OPNsense NDP cache for VIP", "addr", vipBare)
+		if r, ndpErr := sshExec(ctx, cfg.OPNsenseAddr,
+			fmt.Sprintf("sudo ndp -d %s", vipBare), to); ndpErr != nil {
+			log.Error("rollback: FAILED to flush OPNsense NDP — MANUAL FIX NEEDED",
+				"err", ndpErr, "fix", fmt.Sprintf("ssh %s 'sudo ndp -d %s'", cfg.OPNsenseAddr, vipBare))
+		} else {
+			log.Info("rollback: OPNsense NDP flushed", "output", r.Stdout)
+		}
+	} else {
+		log.Warn("rollback: no opnsense_addr configured, cannot flush NDP cache — do it manually")
+	}
 
 	// Step 7: Verify — if SSH works and the address is there, we're good
 	log.Info("rollback: verifying")

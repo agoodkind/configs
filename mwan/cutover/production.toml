@@ -19,6 +19,10 @@ new_real_ipv4 = "10.250.250.3/29"
 vip_ipv6      = "3d06:bad:b01:fe::1/64"
 vip_ipv4      = "10.250.250.1/29"
 
+# OPNsense (for NDP cache flush on rollback)
+opnsense_addr   = "agoodkind@3d06:bad:b01::1"
+opnsense_vip_v6 = "3d06:bad:b01:fe::1"
+
 # Failover LXC 116
 failover_lxc_id    = "116"
 failover_lxc_iface = "eth1"
