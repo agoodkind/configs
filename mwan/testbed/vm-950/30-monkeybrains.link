@@ -1,0 +1,6 @@
+# Simulated Monkeybrains WAN (vmbr6)
+[Match]
+MACAddress=FILL_AFTER_CREATE
+
+[Link]
+Name=enmbrains0

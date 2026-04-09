@@ -1,0 +1,25 @@
+# Simulated Webpass WAN
+# In production: static IPv4 136.25.91.242/29, DHCPv6-PD for 2604:5500:c271:be00::/56
+# In testbed: static IPv4 on simulated ISP bridge, IPv6 RA from suburban
+
+[Match]
+Name=enwebpass0
+
+[Network]
+DHCP=no
+IPv6AcceptRA=yes
+IPv4Forwarding=yes
+IPv6Forwarding=yes
+
+[Address]
+Address=10.240.204.2/24
+
+[Route]
+Gateway=10.240.204.1
+Table=200
+
+[DHCPv6]
+UseDelegatedPrefix=no
+
+[IPv6AcceptRA]
+RouteMetric=200
