@@ -1,14 +1,31 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"strings"
+	"text/template"
 	"time"
 )
 
-const keepalivedConfTemplate = `vrrp_instance VI_HA {
+//go:embed scripts/check_internet.sh.tmpl
+var checkInternetTmpl string
+
+//go:embed scripts/notify.sh.tmpl
+var notifyTmpl string
+
+const keepalivedConfTemplate = `vrrp_script chk_internet {
+    script "/etc/keepalived/check_internet.sh"
+    interval %d
+    weight %d
+    fall %d
+    rise %d
+}
+
+vrrp_instance VI_HA {
     state MASTER
     interface %s
     virtual_router_id %d
@@ -19,51 +36,25 @@ const keepalivedConfTemplate = `vrrp_instance VI_HA {
     virtual_ipaddress {
         %s
     }
+    track_script {
+        chk_internet
+    }
     notify /etc/keepalived/notify.sh
 }
 `
 
-// notifyScriptTemplate is deployed to both MASTER and BACKUP nodes.
-// It handles: IPv4 VIP on vmac (keepalived VRRPv3 only adds IPv6),
-// and OPNsense ARP+NDP cache flush on transitions.
-const notifyScriptTemplate = `#!/bin/bash
-# Deployed by mwan-cutover. Called by keepalived on state transitions.
-# Args: $1=GROUP|INSTANCE $2=name $3=MASTER|BACKUP|FAULT
-
-TYPE=$1
-NAME=$2
-STATE=$3
-
-VIP_V4="%s"
-VIP_V6="%s"
-VMAC_IFACE="vrrp.%d"
-OPNSENSE="%s"
-
-log() { logger -t keepalived-notify "$STATE: $*"; echo "$(date) keepalived-notify $STATE: $*"; }
-
-case $STATE in
-    MASTER)
-        log "Becoming MASTER"
-        # Add IPv4 VIP to vmac (keepalived VRRPv3 only adds IPv6)
-        ip addr replace $VIP_V4 dev $VMAC_IFACE 2>/dev/null
-        log "Added IPv4 VIP $VIP_V4 to $VMAC_IFACE"
-        # Flush OPNsense ARP+NDP so it re-resolves to the vmac MAC
-        if [ -n "$OPNSENSE" ]; then
-            V6=$(echo "$VIP_V6" | cut -d/ -f1)
-            V4=$(echo "$VIP_V4" | cut -d/ -f1)
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$OPNSENSE" \
-                "sudo ndp -d $V6; sudo arp -d $V4" 2>/dev/null
-            log "Flushed OPNsense NDP+ARP for $V6 / $V4"
-        fi
-        ;;
-    BACKUP)
-        log "Becoming BACKUP"
-        ;;
-    FAULT)
-        log "FAULT state"
-        ;;
-esac
-`
+// renderScript renders an embedded template with the given config.
+func renderScript(tmplStr string, cfg *CutoverConfig) (string, error) {
+	t, err := template.New("script").Parse(tmplStr)
+	if err != nil {
+		return "", fmt.Errorf("parse template: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, cfg); err != nil {
+		return "", fmt.Errorf("execute template: %w", err)
+	}
+	return buf.String(), nil
+}
 
 func cmdMigrate(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
 	if cfg.DryRun {
@@ -97,11 +88,24 @@ func migrateReal(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 		}
 	}
 
-	// Step 1: Write notify script and keepalived config
+	// Step 1: Render and deploy health check + notify scripts from embedded templates
+	log.Info("migrate: writing health check script on VM")
+	checkScript, err := renderScript(checkInternetTmpl, cfg)
+	if err != nil {
+		return fmt.Errorf("render check_internet.sh: %w", err)
+	}
+	_, err = sshMustExec(ctx, host,
+		fmt.Sprintf("cat > /etc/keepalived/check_internet.sh << 'CKEOF'\n%sCKEOF\nchmod +x /etc/keepalived/check_internet.sh", checkScript), to)
+	if err != nil {
+		return fmt.Errorf("write check_internet.sh: %w", err)
+	}
+
 	log.Info("migrate: writing notify script on VM")
-	notifyScript := fmt.Sprintf(notifyScriptTemplate,
-		cfg.VIPIPv4, cfg.VIPIPv6, cfg.VRID, cfg.OPNsenseAddr)
-	_, err := sshMustExec(ctx, host,
+	notifyScript, err := renderScript(notifyTmpl, cfg)
+	if err != nil {
+		return fmt.Errorf("render notify.sh: %w", err)
+	}
+	_, err = sshMustExec(ctx, host,
 		fmt.Sprintf("cat > /etc/keepalived/notify.sh << 'NSEOF'\n%sNSEOF\nchmod +x /etc/keepalived/notify.sh", notifyScript), to)
 	if err != nil {
 		return fmt.Errorf("write notify.sh: %w", err)
@@ -109,6 +113,7 @@ func migrateReal(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 
 	log.Info("migrate: writing keepalived.conf on VM")
 	conf := fmt.Sprintf(keepalivedConfTemplate,
+		cfg.HealthCheckInterval, cfg.HealthCheckWeight, cfg.HealthCheckFall, cfg.HealthCheckRise,
 		iface, cfg.VRID, cfg.MasterPriority, cfg.AdvertInterval, cfg.VRID,
 		cfg.VIPIPv6)
 

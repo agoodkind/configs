@@ -8,7 +8,15 @@ import (
 	"time"
 )
 
-const backupKeepaliveConf = `vrrp_instance VI_HA {
+const backupKeepaliveConf = `vrrp_script chk_internet {
+    script "/etc/keepalived/check_internet.sh"
+    interval %d
+    weight %d
+    fall %d
+    rise %d
+}
+
+vrrp_instance VI_HA {
     state BACKUP
     interface %s
     virtual_router_id %d
@@ -18,6 +26,9 @@ const backupKeepaliveConf = `vrrp_instance VI_HA {
     vmac_xmit_base
     virtual_ipaddress {
         %s
+    }
+    track_script {
+        chk_internet
     }
     notify /etc/keepalived/notify.sh
 }
@@ -46,11 +57,26 @@ func cmdStartBackup(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) e
 		}
 	}
 
+	// Write health check script
+	log.Info("start-backup: writing health check script on LXC", "lxc", lxc)
+	checkScript, err := renderScript(checkInternetTmpl, cfg)
+	if err != nil {
+		return fmt.Errorf("render check_internet.sh: %w", err)
+	}
+	_, err = localExec(ctx, "pct", []string{"exec", lxc, "--",
+		"bash", "-c", fmt.Sprintf("cat > /etc/keepalived/check_internet.sh << 'CKEOF'\n%sCKEOF\nchmod +x /etc/keepalived/check_internet.sh", checkScript)},
+		cfg.SSHTimeoutSec)
+	if err != nil {
+		return fmt.Errorf("write check_internet.sh on LXC %s: %w", lxc, err)
+	}
+
 	// Write notify script
 	log.Info("start-backup: writing notify script on LXC", "lxc", lxc)
-	notifyScript := fmt.Sprintf(notifyScriptTemplate,
-		cfg.VIPIPv4, cfg.VIPIPv6, cfg.VRID, cfg.OPNsenseAddr)
-	_, err := localExec(ctx, "pct", []string{"exec", lxc, "--",
+	notifyScript, err := renderScript(notifyTmpl, cfg)
+	if err != nil {
+		return fmt.Errorf("render notify.sh: %w", err)
+	}
+	_, err = localExec(ctx, "pct", []string{"exec", lxc, "--",
 		"bash", "-c", fmt.Sprintf("cat > /etc/keepalived/notify.sh << 'NSEOF'\n%sNSEOF\nchmod +x /etc/keepalived/notify.sh", notifyScript)},
 		cfg.SSHTimeoutSec)
 	if err != nil {
@@ -60,6 +86,7 @@ func cmdStartBackup(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) e
 	// Write keepalived config
 	log.Info("start-backup: writing keepalived config on LXC", "lxc", lxc)
 	conf := fmt.Sprintf(backupKeepaliveConf,
+		cfg.HealthCheckInterval, cfg.HealthCheckWeight, cfg.HealthCheckFall, cfg.HealthCheckRise,
 		lxcIface, cfg.VRID, cfg.BackupPriority, cfg.AdvertInterval, cfg.VRID,
 		cfg.VIPIPv6)
 

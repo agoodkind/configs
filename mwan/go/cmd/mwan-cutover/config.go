@@ -43,10 +43,17 @@ type CutoverConfig struct {
 	BackupPriority int `toml:"backup_priority"`
 	AdvertInterval int `toml:"advert_interval"`
 
-	// Verification targets
-	PingTargetIPv6 string `toml:"ping_target_ipv6"`
-	PingTargetIPv4 string `toml:"ping_target_ipv4"`
-	CurlTarget     string `toml:"curl_target"`
+	// Verification + health check targets
+	PingTargetIPv6 string   `toml:"ping_target_ipv6"`
+	PingTargetIPv4 string   `toml:"ping_target_ipv4"`
+	PingTargets    []string `toml:"ping_targets"` // health check uses all of these
+	CurlTarget     string   `toml:"curl_target"`
+
+	// Health check
+	HealthCheckInterval int `toml:"health_check_interval"` // seconds between checks
+	HealthCheckWeight   int `toml:"health_check_weight"`   // negative priority adjustment on failure
+	HealthCheckFall     int `toml:"health_check_fall"`     // consecutive failures before unhealthy
+	HealthCheckRise     int `toml:"health_check_rise"`     // consecutive successes before healthy
 
 	// Email
 	SMTP2GOAPIKey  string `toml:"-"` // from env only, never in config file
@@ -86,9 +93,14 @@ func loadCutoverConfig() (*CutoverConfig, error) {
 		MasterPriority:   150,
 		BackupPriority:   50,
 		AdvertInterval:   1,
-		PingTargetIPv6:   "2606:4700:4700::1111",
-		PingTargetIPv4:   "1.1.1.1",
-		CurlTarget:       "https://ifconfig.co/ip",
+		PingTargetIPv6:      "2606:4700:4700::1111",
+		PingTargetIPv4:      "1.1.1.1",
+		PingTargets:         []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+		CurlTarget:          "https://ifconfig.co/ip",
+		HealthCheckInterval: 10,
+		HealthCheckWeight:   -110,
+		HealthCheckFall:     3,
+		HealthCheckRise:     2,
 		AlertEmail:       emailTo,
 		EmailFrom:        emailFrom,
 		SSHTimeoutSec:    10,

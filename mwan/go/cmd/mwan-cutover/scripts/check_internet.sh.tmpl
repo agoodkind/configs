@@ -1,0 +1,17 @@
+#!/bin/bash
+# Check internet reachability for keepalived health tracking.
+# Deployed by mwan-cutover. Do not edit manually.
+# Exit 0 = healthy, exit 1 = unhealthy.
+# Only fails if ALL targets are unreachable.
+
+{{range .PingTargets}}
+if ping6 -c1 -W2 {{.}} >/dev/null 2>&1; then
+    exit 0
+fi
+{{end}}
+
+if ping -c1 -W2 {{.PingTargetIPv4}} >/dev/null 2>&1; then
+    exit 0
+fi
+
+exit 1
