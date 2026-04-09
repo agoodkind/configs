@@ -1,32 +1,44 @@
 package main
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
+	"os/exec"
 	"time"
-
-	mailer "github.com/agoodkind/send-email/mailer"
 )
 
+// sendEmail sends via SMTP2GO HTTP API, running the request as the
+// cloudflared-oob user so it exits via Monkeybrains (UID-based routing).
+// This ensures emails work even when the MWAN VIP is broken.
 func sendEmail(cfg *CutoverConfig, subject, body string) error {
 	if cfg.SMTP2GOAPIKey == "" {
 		return nil
 	}
 
-	m := mailer.New(mailer.Config{
-		SMTP2GOAPIKey:     cfg.SMTP2GOAPIKey,
-		DefaultFromDomain: "goodkind.io",
-		Transport:         mailer.MethodHTTP,
-	})
+	payload := map[string]interface{}{
+		"api_key":   cfg.SMTP2GOAPIKey,
+		"sender":    cfg.EmailFrom,
+		"to":        []string{cfg.AlertEmail},
+		"subject":   subject,
+		"text_body": fmt.Sprintf("%s\n\n---\nHost: %s\nTime: %s", body, cfg.Hostname, time.Now().Format(time.RFC3339)),
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal email: %w", err)
+	}
 
-	return m.Send(ctx, mailer.Message{
-		To:      cfg.AlertEmail,
-		From:    cfg.EmailFrom,
-		Subject: subject,
-		Body:    fmt.Sprintf("%s\n\n---\nHost: %s\nTime: %s", body, cfg.Hostname, time.Now().Format(time.RFC3339)),
-		Caller:  "mwan-cutover",
-	})
+	// Run curl as cloudflared-oob user so UID-based routing sends it via mbrains
+	cmd := exec.Command("runuser", "-u", "cloudflared-oob", "--",
+		"curl", "-sS", "--max-time", "10",
+		"-X", "POST",
+		"-H", "Content-Type: application/json",
+		"-d", string(data),
+		"https://api.smtp2go.com/v3/email/send")
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("send email via oob: %w (output: %s)", err, string(out))
+	}
+	return nil
 }
