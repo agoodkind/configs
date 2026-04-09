@@ -6,7 +6,7 @@ hostname = "suburban"
 # VM 950 (primary, plays role of VM 113)
 mwan_vmid      = "950"
 mwan_mgmt_addr = "3d06:bad:b01:200::950"
-mwan_int_iface = "ens20"
+mwan_int_iface = "enmwanbr0"
 
 # Pre-cutover state: ::1 is the real address
 current_real_ipv6 = "3d06:bad:b01:201::1/64"
@@ -26,10 +26,10 @@ opnsense_vip_v6 = "3d06:bad:b01:201::1"
 failover_lxc_id        = "100"
 failover_lxc_iface     = "eth1"
 failover_lxc_wan_iface = "eth0"
-failover_default_gw6   = "fe80::aedb:48ff:fe76:b097"
-failover_default_gw4   = "10.240.0.1"
+failover_default_gw6   = "fe80::54aa:98ff:fee0:cae7"  # suburban's LL on vmbr6 (simulated Monkeybrains)
+failover_default_gw4   = "10.240.206.1"  # suburban's addr on vmbr6 (simulated Monkeybrains)
 failover_internal_pfx  = "3d06:bad:b01:201::/64"
-failover_opnsense_ll   = "fe80::be24:11ff:fe07:a172"
+failover_opnsense_ll   = "fe80::be24:11ff:fe07:a172"  # derived from OPNsense vtnet0 MAC BC:24:11:07:A1:72
 failover_ipv4_return   = "10.250.250.0/29 via 10.250.250.2"
 
 # keepalived
