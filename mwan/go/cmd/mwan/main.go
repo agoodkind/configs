@@ -7,7 +7,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|cutover> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -17,6 +17,8 @@ func main() {
 		agentMain()
 	case "watchdog":
 		watchdogMain()
+	case "cutover":
+		cutoverMain()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", sub)
 		os.Exit(1)
