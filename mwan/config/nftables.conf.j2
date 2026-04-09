@@ -66,15 +66,18 @@ table inet filter {
         # Allow established/related
         ct state established,related accept
 
-        # Allow forwarding from internal to WANs
-        iifname $INTERNAL_IFACE oifname { $ATT_IFACE, $WEBPASS_IFACE
+        # Allow forwarding from internal to WANs.
+        # "vrrp.*" matches the keepalived VMAC interface (e.g. vrrp.51) which
+        # holds the VIP after HA cutover. Without this, VIP traffic is dropped
+        # by the default policy because it arrives on vrrp.51, not enmwanbr0.
+        iifname { $INTERNAL_IFACE, "vrrp.*" } oifname { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
         } accept
 
         # Allow forwarding from WANs to internal (for inbound services)
         iifname { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
-        } oifname $INTERNAL_IFACE accept
+        } oifname { $INTERNAL_IFACE, "vrrp.*" } accept
 
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables forward drop: " drop
