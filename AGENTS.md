@@ -31,13 +31,11 @@ owns provisioning.
 OpenTofu state is stored in Consul at `opentofu/state`. Credentials go in
 `opentofu/terraform.tfvars` (gitignored; see `terraform.tfvars.example`).
 
-Ansible runs from either the CLI on the `ansible` container (`3d06:bad:b01::107`, which
-has `PROXMOX_API_TOKEN` set) or via the Semaphore UI at `https://ansible.home.goodkind.io`.
-The vault password lives at `~/.config/ansible/vault.pass` on the controller and as
-`ANSIBLE_VAULT_PASSWORD` in the Semaphore environment.
+Ansible runs **locally** from `ansible/` on the controller (this machine). Vault password
+lives at `~/.config/ansible/vault.pass`.
 
 Playbooks live in `ansible/playbooks/` and follow a `deploy-<service>.yml` naming
-convention. Run them from the `ansible/` directory with `ansible-playbook`. Use
+convention. See `.cursor/commands/deploy-playbook.md` for the exact invocation. Use
 `--limit <hostname>` to target a single host and `--check --diff` for a dry run.
 
 ## Surgical Change Protocol
