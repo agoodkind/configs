@@ -24,8 +24,8 @@ case $STATE in
         if [ -n "$OPNSENSE" ]; then
             V6=$(echo "$VIP_V6" | cut -d/ -f1)
             V4=$(echo "$VIP_V4" | cut -d/ -f1)
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$OPNSENSE" \
-                "sudo ndp -d $V6; sudo arp -d $V4" 2>/dev/null
+            timeout 10 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=1 "$OPNSENSE" \
+                "sudo ndp -d $V6; sudo arp -d $V4" 2>/dev/null || log "WARNING: OPNsense cache flush failed (SSH timeout or error)"
             log "Flushed OPNsense NDP+ARP for $V6 / $V4"
         fi
         ;;

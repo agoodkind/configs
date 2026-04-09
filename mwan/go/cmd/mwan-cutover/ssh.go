@@ -19,6 +19,15 @@ type SSHResult struct {
 // sshExec runs a command on a remote host via SSH with an explicit timeout.
 // No shell interpretation on the local side. The command string is passed as a
 // single argument to bash -c on the remote side for predictable behavior.
+// sshTarget returns the SSH target. If host already contains @, use as-is.
+// Otherwise prepend root@.
+func sshTarget(host string) string {
+	if strings.Contains(host, "@") {
+		return host
+	}
+	return "root@" + host
+}
+
 func sshExec(ctx context.Context, host string, command string, timeoutSec int) (SSHResult, error) {
 	timeout := time.Duration(timeoutSec) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -29,7 +38,7 @@ func sshExec(ctx context.Context, host string, command string, timeoutSec int) (
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "LogLevel=ERROR",
 		"-o", fmt.Sprintf("ConnectTimeout=%d", timeoutSec),
-		fmt.Sprintf("root@%s", host),
+		sshTarget(host),
 		command,
 	)
 

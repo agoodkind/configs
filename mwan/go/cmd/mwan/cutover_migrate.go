@@ -137,9 +137,10 @@ func migrateReal(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 		log.Warn("add new real v4 (may already exist)", "err", err)
 	}
 
-	// Step 3: Start keepalived (creates vrrp.51, adds VIP)
-	log.Info("migrate: starting keepalived")
-	_, err = sshMustExec(ctx, host, "systemctl start keepalived", to)
+	// Step 3: Enable and start keepalived (creates vrrp.51, adds VIP)
+	// Must enable so it survives reboots
+	log.Info("migrate: enabling and starting keepalived")
+	_, err = sshMustExec(ctx, host, "systemctl enable --now keepalived", to)
 	if err != nil {
 		return fmt.Errorf("start keepalived: %w", err)
 	}
@@ -185,7 +186,20 @@ func migrateReal(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 		log.Warn("migrate: failed to remove old IPv4 address (may already be gone)", "err", delErr, "stderr", r.Stderr)
 	}
 
-	// Step 5b: Write deploy timestamp so the watchdog knows a deploy is in progress
+	// Step 5b: Persist the address change so it survives VM reboot.
+	// Update the systemd-networkd config to use the new real address.
+	log.Info("migrate: persisting address change in networkd config")
+	persistCmd := fmt.Sprintf(
+		"sed -i 's|%s|%s|g' /etc/systemd/network/*mwanbr* /etc/systemd/network/*internal* 2>/dev/null; "+
+			"sed -i 's|%s|%s|g' /etc/systemd/network/*mwanbr* /etc/systemd/network/*internal* 2>/dev/null; "+
+			"echo persisted",
+		strings.Split(cfg.CurrentRealIPv6, "/")[0], strings.Split(cfg.NewRealIPv6, "/")[0],
+		strings.Split(cfg.CurrentRealIPv4, "/")[0], strings.Split(cfg.NewRealIPv4, "/")[0])
+	if r, pErr := sshExec(ctx, host, persistCmd, to); pErr != nil || r.ExitCode != 0 {
+		log.Warn("migrate: failed to persist address change in networkd (manual update needed)", "err", pErr)
+	}
+
+	// Step 5c: Write deploy timestamp so the watchdog knows a deploy is in progress
 	// and doesn't trigger rollback during the transition window
 	log.Info("migrate: writing deploy timestamp to VM")
 	_, _ = sshExec(ctx, host,

@@ -20,6 +20,8 @@ func cmdPreflight(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) err
 		{"vm-113-current-addr", preflightCurrentAddr},
 		{"vm-113-keepalived-installed", preflightVMKeepalived},
 		{"vm-113-no-keepalived-running", preflightNoKeepalived},
+		{"opnsense-ssh", preflightOPNsenseSSH},
+		{"nftables-forward-vrrp", preflightNftForwardVRRP},
 		{"host-ipv6-forwarding", preflightHostForwarding},
 		{"host-ipv4-forwarding", preflightHostIPv4Forwarding},
 		{"lxc-failover-running", preflightLXCRunning},
@@ -138,6 +140,41 @@ func preflightLXCKeepalived(ctx context.Context, log *slog.Logger, cfg *CutoverC
 	}
 	if !strings.Contains(out, "keepalived") {
 		return fmt.Errorf("keepalived package not found on LXC %s", cfg.FailoverLXCID)
+	}
+	return nil
+}
+
+func preflightOPNsenseSSH(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
+	if cfg.OPNsenseAddr == "" {
+		log.Warn("preflight: no opnsense_addr configured, skipping SSH check")
+		return nil
+	}
+	_, err := sshMustExec(ctx, cfg.OPNsenseAddr, "echo ok", cfg.SSHTimeoutSec)
+	if err != nil {
+		return fmt.Errorf("cannot SSH to OPNsense at %s (needed for NDP/ARP flush): %w", cfg.OPNsenseAddr, err)
+	}
+	return nil
+}
+
+func preflightNftForwardVRRP(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
+	// Check if the mwan VM's nftables forward chain allows vrrp.* interfaces
+	out, err := sshMustExec(ctx, cfg.MwanMgmtAddr,
+		"nft list chain inet filter forward 2>/dev/null || echo NO_CHAIN", cfg.SSHTimeoutSec)
+	if err != nil {
+		return fmt.Errorf("cannot check nftables forward chain: %w", err)
+	}
+	if strings.Contains(out, "NO_CHAIN") {
+		// No forward chain = no restrictive rules = OK
+		return nil
+	}
+	if strings.Contains(out, "policy accept") {
+		return nil
+	}
+	// Forward chain exists with non-accept policy — must have vrrp.* rules
+	if !strings.Contains(out, "vrrp") {
+		return fmt.Errorf("nftables forward chain has policy drop but no vrrp.* rules. "+
+			"Run on mwan: nft insert rule inet filter forward iifname \"vrrp.*\" oifname { WAN_IFACES } accept\n"+
+			"Current chain:\n%s", out)
 	}
 	return nil
 }
