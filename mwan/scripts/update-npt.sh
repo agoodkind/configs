@@ -137,6 +137,8 @@ PRE_HANDLES="$(
 
 # Decide target /60 for this iface.
 # NOTE: NPT is stateless and requires internal/external prefixes to be the same length (/60 here).
+USE_MASQUERADE=0
+
 case "$WAN_IFACE" in
     "${MWAN_ATT_VLAN_IFACE:-}")
         TARGET_PREFIX="${MWAN_NPT_ATT_PREFIX:-}"
@@ -145,14 +147,25 @@ case "$WAN_IFACE" in
         TARGET_PREFIX="${MWAN_NPT_WEBPASS_PREFIX:-}"
         ;;
     "${MWAN_MONKEYBRAINS_IFACE:-}")
+        # Monkeybrains PD availability is unreliable (provider may revoke delegation).
+        # Strategy: use NPT when PD is delegated, fall back to NAT66 masquerade using
+        # the SLAAC address when it is not. Detection: check if a nodad /128 from the
+        # PD prefix exists on the interface (systemd-networkd adds it when PD is active).
+        USE_MASQUERADE=0
         if [[ -n "$MB_STATIC_PREFIX" ]]; then
-            TARGET_PREFIX="$MB_STATIC_PREFIX"
+            # Check if the PD-derived address is actually live on the interface.
+            pd_addr="${MB_STATIC_PREFIX%/*}1"
+            if ip -6 addr show dev "$WAN_IFACE" | grep -q "$pd_addr"; then
+                TARGET_PREFIX="$MB_STATIC_PREFIX"
+            else
+                log "Monkeybrains PD address $pd_addr not present on $WAN_IFACE; falling back to NAT66 masquerade"
+                USE_MASQUERADE=1
+            fi
         else
-            # Monkeybrains may delegate a /56; pick the first /60 from the delegated prefix.
             TARGET_PREFIX="$(first_60_of_prefix "$DELEGATED_PREFIX" || true)"
             if [[ -z "$TARGET_PREFIX" ]]; then
-                log "Delegated prefix $DELEGATED_PREFIX is not usable for /60 NPT; skipping"
-                exit 0
+                log "No usable PD for $WAN_IFACE; falling back to NAT66 masquerade"
+                USE_MASQUERADE=1
             fi
         fi
         ;;
@@ -166,19 +179,15 @@ if [[ "$DEBUG" = "1" ]]; then
     debug_json "SELECT" "target_prefix_selected" "$(jq -cn \
       --arg iface "$WAN_IFACE" \
       --arg delegated "$DELEGATED_PREFIX" \
-      --arg target "$TARGET_PREFIX" \
+      --arg target "${TARGET_PREFIX:-masquerade}" \
+      --arg masquerade "$USE_MASQUERADE" \
       '{
         iface: $iface,
         delegated: $delegated,
-        target: $target
+        target: $target,
+        masquerade: $masquerade
       }')"
 fi
-
-# Postrouting:
-# - SNAT specific /128s (fe::1, fe::2) to PD ::1
-# - NPT broader /60 to PD /60
-# Add PD ::1 address to interface first
-ip -6 addr replace "${TARGET_PREFIX%/*}1/128" dev "$WAN_IFACE" nodad || true
 
 # Apply nftables changes in a single `nft -f` batch to avoid partial state.
 tmp="$(mktemp)"
@@ -190,24 +199,41 @@ tmp="$(mktemp)"
         echo "delete rule ip6 nat prerouting handle $h"
     done
 
-    # If this packet is part of a DNAT'd flow to the OPNsense edge address, do NOT clobber
-    # conntrack's reverse-NAT with an unconditional SNAT rule.
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 ct status dnat return"
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $MWANBR_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
-    # Also SNAT the VRRP VIP when it is defined (used after keepalived moves the real VM
-    # address to fe::3; the VIP fe::1 still needs an explicit /128 SNAT rule).
-    if [[ -n "${MWAN_VIP_IPV6:-}" ]]; then
-        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr ${MWAN_VIP_IPV6}/128 snat to ${TARGET_PREFIX%/*}1"
-    fi
-    echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $INTERNAL_PREFIX snat ip6 prefix to $TARGET_PREFIX"
+    if [[ "${USE_MASQUERADE:-0}" = "1" ]]; then
+        # NAT66 masquerade: use the interface's SLAAC address as the source.
+        # Stateful NAT, no inbound, no prefix translation. Degraded but functional.
+        log "Programming NAT66 masquerade rules for $WAN_IFACE" >&2
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $INTERNAL_PREFIX masquerade"
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 masquerade"
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $MWANBR_EDGE_V6/128 masquerade"
+        if [[ -n "${MWAN_VIP_IPV6:-}" ]]; then
+            echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr ${MWAN_VIP_IPV6}/128 masquerade"
+        fi
+        # No prerouting DNAT rules: masquerade is outbound-only, conntrack handles replies.
+    else
+        # NPT: stateless prefix-to-prefix translation with PD.
+        # Add PD ::1 address to interface first.
+        ip -6 addr replace "${TARGET_PREFIX%/*}1/128" dev "$WAN_IFACE" nodad || true
 
-    # Prerouting:
-    echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr ${TARGET_PREFIX%/*}1/128 dnat to $OPNSENSE_EDGE_V6"
-    echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr $TARGET_PREFIX dnat ip6 prefix to $INTERNAL_PREFIX"
+        log "Programming NPT rules for $WAN_IFACE (prefix $TARGET_PREFIX)" >&2
+        # If this packet is part of a DNAT'd flow to the OPNsense edge address, do NOT clobber
+        # conntrack's reverse-NAT with an unconditional SNAT rule.
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 ct status dnat return"
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $OPNSENSE_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $MWANBR_EDGE_V6/128 snat to ${TARGET_PREFIX%/*}1"
+        # Also SNAT the VRRP VIP when it is defined (used after keepalived moves the real VM
+        # address to fe::3; the VIP fe::1 still needs an explicit /128 SNAT rule).
+        if [[ -n "${MWAN_VIP_IPV6:-}" ]]; then
+            echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr ${MWAN_VIP_IPV6}/128 snat to ${TARGET_PREFIX%/*}1"
+        fi
+        echo "add rule ip6 nat postrouting oif \"$WAN_IFACE\" ip6 saddr $INTERNAL_PREFIX snat ip6 prefix to $TARGET_PREFIX"
 
-    # Also DNAT any other global /128 address currently assigned to the WAN interface back to OPNsense.
-    emit_extra_prerouting_dnat_rules() {
+        # Prerouting:
+        echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr ${TARGET_PREFIX%/*}1/128 dnat to $OPNSENSE_EDGE_V6"
+        echo "add rule ip6 nat prerouting iif \"$WAN_IFACE\" ip6 daddr $TARGET_PREFIX dnat ip6 prefix to $INTERNAL_PREFIX"
+
+        # Also DNAT any other global /128 address currently assigned to the WAN interface back to OPNsense.
+        emit_extra_prerouting_dnat_rules() {
         # For any additional global /128s on the WAN interface (besides PD ::1),
         # DNAT them to the OPNsense edge so inbound traffic doesn't terminate on MWAN.
         local ifc="$1"
@@ -227,7 +253,8 @@ tmp="$(mktemp)"
             done
     }
 
-    emit_extra_prerouting_dnat_rules "$WAN_IFACE" "${TARGET_PREFIX%/*}1/128" || true
+        emit_extra_prerouting_dnat_rules "$WAN_IFACE" "${TARGET_PREFIX%/*}1/128" || true
+    fi
 } >"$tmp"
 nft -f "$tmp"
 rm -f "$tmp"

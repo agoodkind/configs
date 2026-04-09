@@ -50,8 +50,8 @@ service_mapping:
   plane:
     hostname: plane.home.goodkind.io
     ipv6: "3d06:bad:b01::115"
-  huly:
-    hostname: huly.home.goodkind.io
+  tack:
+    hostname: tack.home.goodkind.io
     ipv6: "3d06:bad:b01::117"
 
   # Static Hosts (different subnet or external)

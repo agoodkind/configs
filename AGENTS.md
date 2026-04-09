@@ -40,6 +40,37 @@ Playbooks live in `ansible/playbooks/` and follow a `deploy-<service>.yml` namin
 convention. Run them from the `ansible/` directory with `ansible-playbook`. Use
 `--limit <hostname>` to target a single host and `--check --diff` for a dry run.
 
+## Surgical Change Protocol
+
+Production hosts (vault, mwan, OPNsense, berylax) serve live traffic for non-technical
+users who cannot recover from outages. Physical access to hardware is unavailable for months
+at a time. Treat every change as potentially irreversible.
+
+**Before any change to a production host:**
+
+1. **Understand the current state.** SSH in and read live config, routes, rules, logs.
+   Do not trust INFRA.md or Ansible templates as ground truth; they drift.
+2. **Form a testable hypothesis.** State what you expect the change to do and what would
+   prove it worked.
+3. **Test surgically.** Apply the smallest possible change, verify with a specific command,
+   then remove it. Example: add one ip6 rule, verify route lookup changed, run one ping,
+   remove the rule.
+4. **Verify no regression.** After confirming the fix, check that forwarded traffic, load
+   balancing, and other paths still work before making anything permanent.
+5. **Then codify.** Only after the live test passes, write the change into the Ansible
+   template or script in the repo.
+6. **Never bulk-change production.** No `ansible-playbook` runs against mwan without
+   verifying each component independently first. No `systemctl restart` of networking
+   services without a rollback plan.
+
+**Things that have gone wrong before:**
+- Watchdog emailing on every probe cycle because gRPC port was firewalled (port 50052
+  missing from nftables input chain).
+- PD-sourced traffic misrouting via wrong WAN because source-based ip6 rules were missing
+  from update-routes.sh.
+- IA_NA addresses having partial reachability (some destinations unreachable) which is
+  normal and does not affect PD-based forwarding.
+
 ## Rules for Changes
 
 1. Before editing any playbook or template, check the Ansible quality rules in

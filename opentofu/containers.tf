@@ -55,15 +55,15 @@ resource "proxmox_virtual_environment_container" "plane" {
   }
 }
 
-# Huly project management LXC (VMID 117)
+# Tack project management LXC (VMID 117)
 # Runs Docker CE + docker compose on Debian 13 (Trixie).
 # Nesting is required for Docker's overlay filesystem inside LXC.
-resource "proxmox_virtual_environment_container" "huly" {
+resource "proxmox_virtual_environment_container" "tack" {
   node_name = "vault"
   vm_id     = 117
 
   initialization {
-    hostname = "huly.home.goodkind.io"
+    hostname = "tack.home.goodkind.io"
     ip_config {
       ipv6 {
         address = "3d06:bad:b01::117/64"
@@ -90,10 +90,10 @@ resource "proxmox_virtual_environment_container" "huly" {
     size         = 40
   }
 
-  memory { dedicated = 16384 }
-  cpu    { cores     = 4 }
+  memory { dedicated = 2048 }
+  cpu    { cores     = 2 }
 
-  tags = ["lxc", "huly", "docker"]
+  tags = ["lxc", "tack", "docker"]
 
   operating_system {
     template_file_id = "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"

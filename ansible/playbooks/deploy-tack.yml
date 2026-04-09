@@ -1,0 +1,97 @@
+---
+# Note: Container creation is handled by OpenTofu (opentofu/containers.tf).
+# This playbook only configures the container after OpenTofu has provisioned it.
+#
+# Usage:
+#   ansible-playbook playbooks/deploy-tack.yml \
+#     -i inventory/proxmox.yml -i inventory/hosts -l tack_servers
+
+- name: Prepare tack guest (SSH keys, package-updater, base config)
+  ansible.builtin.import_playbook: prep-guests.yml
+  vars:
+    target_hosts: tack_servers
+
+- name: Provision Tack via Docker Compose
+  hosts: tack_servers
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Install prerequisites for Docker repo
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Add Docker apt repository (deb822 format)
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: deb
+        uris: https://download.docker.com/linux/debian
+        suites: trixie
+        components: stable
+        architectures: amd64
+        signed_by: https://download.docker.com/linux/debian/gpg
+        state: present
+
+    - name: Install Docker CE
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Create Tack install directory
+      ansible.builtin.file:
+        path: "{{ tack_install_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Deploy Tack environment file
+      ansible.builtin.template:
+        src: "{{ repo_root }}/tack/tack.env.j2"
+        dest: "{{ tack_install_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart Tack
+
+    - name: Copy Tack docker-compose.yml
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/tack/docker-compose.yml"
+        dest: "{{ tack_install_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Tack
+
+    - name: Start Tack services
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ tack_install_dir }}"
+      changed_when: true
+
+  handlers:
+    - name: Restart Tack
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ tack_install_dir }}"
+      changed_when: true

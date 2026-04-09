@@ -93,7 +93,6 @@ INTERNAL_PREFIX="${MWAN_INTERNAL_PREFIX:-}"
 ATT_TABLE="${MWAN_RT_ATT:-100}"
 WEBPASS_TABLE="${MWAN_RT_WEBPASS:-200}"
 MB_TABLE="${MWAN_RT_MONKEYBRAINS:-300}"
-CLOUDFLARED_TABLE="${MWAN_RT_CLOUDFLARED:-400}"
 
 # Health state (soft failures) from mwan-health
 # Format: wan_name:health (e.g. "att:healthy", "webpass:unhealthy")
@@ -272,6 +271,13 @@ ensure_iif_fallback_v6() {
         ip -6 rule add priority "$prio" iif "$INTERNAL_IFACE" table "$table" || true
     fi
 }
+ensure_from_rule_v6() {
+    local prefix="$1" table="$2" prio="$3" enable="$4"
+    del_rule_v6 priority "$prio" from "$prefix" table "$table"
+    if [[ "$enable" = "1" ]] && [[ -n "$prefix" ]]; then
+        ip -6 rule add priority "$prio" from "$prefix" table "$table" || true
+    fi
+}
 
 # Populate per-WAN routing tables first (non-destructive; do not flush).
 if [[ -n "${ATT_GW6:-}" ]]; then
@@ -315,9 +321,6 @@ done
 # Ensure the main table can also reach the internal IPv6 /60 (for locally-generated traffic).
 ip -6 route replace "$INTERNAL_PREFIX" via "$OPNSENSE_WAN_LL" dev "$INTERNAL_IFACE" metric 1024 || true
 
-# Ensure cloudflared can always reach management/DNS networks even when its default is a WAN.
-ip route replace 10.250.0.0/24 dev "$MGMT_IFACE" table "$CLOUDFLARED_TABLE" || true
-ip -6 route replace 3d06:bad:b01::/64 dev "$MGMT_IFACE" table "$CLOUDFLARED_TABLE" || true
 
 # Finally, enable/disable the policy rules we own based on health + gateway presence.
 att_v4_enable=0; att_v6_enable=0
@@ -350,48 +353,14 @@ ensure_fwmark_rule_v6 2 "$WEBPASS_TABLE" 200 "$web_v6_enable"
 ensure_fwmark_rule_v4 3 "$MB_TABLE" 300 "$mb_v4_enable"
 ensure_fwmark_rule_v6 3 "$MB_TABLE" 300 "$mb_v6_enable"
 
-# Cloudflared carve-out:
-# - Route cloudflared traffic via a dedicated table that prefers AT&T, then Webpass, then Monkeybrains.
-# - Scoped by UID (does not interfere with fwmark-based forwarding logic).
-cloudflared_uid="$(id -u cloudflared)"
+# Source-based rules for PD prefixes: locally-originated traffic from a WAN's
+# delegated prefix must exit via that WAN. Without these, the main table's
+# default route (AT&T RA) wins and traffic from Webpass/Monkeybrains PD
+# addresses exits via AT&T, which drops it (BCP38 source filtering).
+ensure_from_rule_v6 "${MWAN_NPT_ATT_PREFIX:-}" "$ATT_TABLE" 55 "$att_v6_enable"
+ensure_from_rule_v6 "${MWAN_NPT_WEBPASS_PREFIX:-}" "$WEBPASS_TABLE" 56 "$web_v6_enable"
+ensure_from_rule_v6 "${MWAN_NPT_MONKEYBRAINS_PREFIX:-}" "$MB_TABLE" 57 "$mb_v6_enable"
 
-cloud_v4_enable=0
-cloud_v6_enable=0
-cloud_gw4=""
-cloud_if4=""
-cloud_gw6=""
-cloud_if6=""
-
-if [[ "$att_v4_enable" = "1" ]]; then
-    cloud_v4_enable=1; cloud_gw4="$ATT_GW4"; cloud_if4="$ATT_IFACE"
-elif [[ "$web_v4_enable" = "1" ]]; then
-    cloud_v4_enable=1; cloud_gw4="$WEBPASS_GW4"; cloud_if4="$WEBPASS_IFACE"
-elif [[ "$mb_v4_enable" = "1" ]]; then
-    cloud_v4_enable=1; cloud_gw4="$MB_GW4"; cloud_if4="$MB_IFACE"
-fi
-
-if [[ "$att_v6_enable" = "1" ]]; then
-    cloud_v6_enable=1; cloud_gw6="$ATT_GW6"; cloud_if6="$ATT_IFACE"
-elif [[ "$web_v6_enable" = "1" ]]; then
-    cloud_v6_enable=1; cloud_gw6="$WEBPASS_GW6"; cloud_if6="$WEBPASS_IFACE"
-elif [[ "$mb_v6_enable" = "1" ]]; then
-    cloud_v6_enable=1; cloud_gw6="$MB_GW6"; cloud_if6="$MB_IFACE"
-fi
-
-if [[ "$cloud_v4_enable" = "1" ]]; then
-    ip route replace default via "$cloud_gw4" dev "$cloud_if4" table "$CLOUDFLARED_TABLE" || true
-else
-    ip route del default table "$CLOUDFLARED_TABLE" || true
-fi
-
-if [[ "$cloud_v6_enable" = "1" ]]; then
-    ip -6 route replace default via "$cloud_gw6" dev "$cloud_if6" table "$CLOUDFLARED_TABLE" || true
-else
-    ip -6 route del default table "$CLOUDFLARED_TABLE" || true
-fi
-
-ensure_uid_rule_v4 "$cloudflared_uid" "$CLOUDFLARED_TABLE" 10 "$cloud_v4_enable"
-ensure_uid_rule_v6 "$cloudflared_uid" "$CLOUDFLARED_TABLE" 10 "$cloud_v6_enable"
 
 # Deterministic fallback: if BOTH primary WANs are unhealthy and Monkeybrains is healthy,
 # route forwarded traffic (coming from OPNsense) via Monkeybrains table for new flows.

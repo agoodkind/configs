@@ -35,9 +35,13 @@ not a live feed._
 | ---- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 101  | router       | OPNsense 25.7.11_2, FreeBSD 14.3-RELEASE-p7. 8 GB RAM, 4 cores. PCI passthrough `hostpci0: 0000:02:0a` (X710 VF for AT&T 802.1X on mwan VM).                                                                                                                    |
 | 108  | freebsd-uefi | FreeBSD 14.3-RELEASE-p7, nginx + sshd. Cloud-init, 4 GB RAM. Traefik routes port 8080 to this host but no process was observed listening on 8080 at probe time.                                                                                                 |
-| 113  | mwan         | Debian/Linux. Management `3d06:bad:b01::113/64`. 2 GB RAM, 2 cores. Running: cloudflared v2026.3.0 (tunnel `home-mwan`, 4/4 QUIC via IPv6, up since 2026-01-22), consul, mwan-health daemon, wpa_supplicant. msmtp 1.8.28 with `auth login` (fixed 2026-03-22). |
+| 113  | mwan         | Debian/Linux. Management `3d06:bad:b01::113/64`. 2 GB RAM, 2 cores. Running: `mwan agent` (monolith binary, gRPC on TCP `:50052`), cloudflared v2026.3.0 (tunnel `home-mwan`, QUIC via IPv6), consul, mwan-health daemon, wpa_supplicant. nftables allows port 50052 on enmgmt0 (added 2026-04-08). mwan-change-detect path unit still active (cleanup pending). |
 
 **Stopped VMs:** 200 (`test-vm`), 9000 (`debian-13-cloud-template`).
+
+**Host services on vault:** `mwan-watchdog.service` running monolith binary (`/usr/local/bin/mwan watchdog`)
+since 2026-04-08. Uses TCP gRPC channel to agent on VM 113 (vsock unavailable, pending HA+coldstop).
+`EMAIL_MIN_LEVEL=ERROR` to suppress transient channel warnings.
 
 ### Hosts not on vault Proxmox
 
@@ -47,7 +51,7 @@ not a live feed._
 | mini           | Ubuntu 24.04.4 LTS             | vlan0100, `10.250.1.2` / `3d06:bad:b01:1::2`                                                                         | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | Has `scripts-updater.timer`. Needs `prep-guests.yml` run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | nas            | Ubuntu 24.04.3 LTS             | vlan0100, `3d06:bad:b01:1::3` (live)                                                                                 | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | SSH via `ssh nas`. OPNsense alias `nas_host` updated to `::3` (2026-03-23).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | vault          | Debian 13 (trixie), Proxmox VE | `3d06:bad:b01::254`                                                                                                  | Postfix with send-email (`/opt/scripts/send-email`)                                   | No               | `deploy-consul-external.yml` targets this host but has `consul_arch: arm64` bug.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| suburban       | Debian 13 (trixie), Proxmox VE | `3d06:bad:b01:200::1` on `vmbr1`, `10.240.0.148` on `vmbr0` (Comcast NJ), WG `3d06:bad:b01:10::240`                  | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | Remote NJ hypervisor. Up 78+ days. Two bridges: `vmbr0` (`nic0`, Comcast uplink) and `vmbr1` (VM segment, `10.240.200.1/24`, `3d06:bad:b01:200::1/64`, `fe80::1/64`). No VMs as of 2026-03-29 (all test VMs destroyed during cleanup). Ghost bridges `vmbr3`/`vmbr4` and accumulated NAT rules cleaned up 2026-03-29. NAT rules now use `-C` check-before-append guards. IPv4 MASQUERADE tightened to `-s 10.240.200.0/24`. WireGuard tunnel to home shows last handshake ~8 days ago despite 25s keepalive. SSH alias `suburban` may still point to old `::254` address; use `10.240.0.148` or update to `::200::1`.                                                                                        |
+| suburban       | Debian 13 (trixie), Proxmox VE | `3d06:bad:b01:200::1` on `vmbr1`, `10.240.0.148` on `vmbr0` (Comcast NJ), WG `3d06:bad:b01:10::240`                  | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | Remote NJ hypervisor. Four bridges: `vmbr0` (Comcast), `vmbr1` (VM segment `3d06:bad:b01:200::/64`), `vmbr2` (HA testbed mwanbr `3d06:bad:b01:201::/64`), `vmbr3` (HA testbed LAN `3d06:bad:b01:202::/64`). Running: VM 950 (keepalived MASTER), LXC 100 (keepalived BACKUP), OPNsense VM 101 (test gateway). WireGuard tunnel healthy (verified 2026-04-08). SSH alias `suburban` resolves to stale `::254`; use `10.240.0.148`. HA failover testbed passed all gates 2026-04-09: atomic VIP migration (0 loss), failover (1 pkt), failback (clean preemption), VIP-dependent SSH chain (script completes via nohup). |
 | imac           | intel imac macOS 18            | Comcast, NJ LAN (not on same L2) accessible via suburban                                                             | macOS send-email                                                                      | No               | Not documented or discoverable from known inventory. Worth clarifying if this host exists.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | berylax        | OpenWrt 24.10.5, GL.iNet       | `eth0`: Monkeybrains IPv4 (dynamic); provider SLAAC on WAN /64; `br-lan`: `3d06:bad:b01:300::1/64` (static fake GUA) | msmtp with SMTP2GO (`/usr/local/bin/send-email`, `/usr/local/bin/send-email-smtp2go`) | No               | Same Monkeybrains L2 segment as vault MWAN. LAN uses fake GUA `3d06:bad:b01:300::/64` with NPT to the WAN SLAAC /64 on `eth0` (no Monkeybrains PD). `ndppd` proxies WAN-delegated traffic on `eth0`; downstream `3d06:bad:b01:300::100` IPv6 tests now receive replies. The NPT prerouting rule now exempts local WAN addresses with `fib daddr . iif type local accept`, so the router's own WAN address stays reachable. Inbound IPv4/IPv6 ping and SSH were verified on 2026-03-28 from CT 116, and inbound IPv6 ping plus SSH were also verified from a local Mac. Laptops reach `3d06:bad:b01:300::1` via the Cloudflare WARP route on tunnel `home-berylax`, not via OPNsense. No WireGuard installed. |
 | jetkvm (x2)    | JetKVM (embedded Linux)        | Monkeybrains L2 segment                                                                                              | Unknown                                                                               | No               | Two KVM-over-IP devices on the Monkeybrains segment (link-locals `fe80::8234:28ff:fe66:5ed7` and `fe80::3252:53ff:fe0d:6d08`). Not in any inventory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -132,7 +136,7 @@ cat /tmp/vault-serial.log
 | ------------- | ------------- | -------------------------------- | ------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------- |
 | `enwebpass0`  | Webpass       | `dynamic/CGNAT (not recorded)`   | `delegated /64 from provider (not recorded)`     | 10 (primary)     | Google Fiber. RTT to `2001:4860:4860::8888` ~2.6 ms.                                                          |
 | `enatt0.3242` | AT&T (802.1X) | `dynamic/CGNAT (not recorded)`   | Provider-delegated IPv6 from AT&T (not recorded) | 1024 (secondary) | IPv6 gateway pings fine but `ping6 8.8.8.8` is 100% loss. NPT rule or PD routing issue suspected.             |
-| `enmbrains0`  | Monkeybrains  | `CG-NAT IPv4 /24 (not recorded)` | None (router solicitation times out)             | 5000 (tertiary)  | IPv6 absent since 2026-01-22 23:44 UTC (57-second window after last good probe). Gateway CPE likely replaced. |
+| `enmbrains0`  | Monkeybrains  | `158.247.70.6/26` (public)        | SLAAC `2607:f598:d3e0:131::/64` (no PD)          | 5000 (tertiary)  | RA restored. DHCPv6-PD not delegated (provider-side). NAT66 masquerade fallback active. IPv4 upgraded from CG-NAT to public. |
 
 ### OPNsense network topology
 
@@ -359,26 +363,32 @@ container. The right choice depends on whether Consul port 8301 connectivity is 
 
 ### Under investigation
 
-**AT&T IPv6 outbound broken.** AT&T provides a delegated PD `/60` (not recorded here) and the gateway
-(`fe80::a2f3:e4ff:fe70:e30`) pings fine. But `ping6 8.8.8.8` is 100% loss and traceroute stops
-after 3 AT&T hops. The NPT rule for AT&T egress or the PD lease routing may not be active.
-Worth checking `networkctl status enatt0.3242` and whether the nftables NPT rule for the AT&T
-prefix is present.
+**AT&T IPv6: resolved 2026-04-08.** AT&T PD (`2600:1700:2f71:c80::/60`) forwarding works
+correctly for LAN traffic (TCP to Google, YouTube, etc. all confirmed). The earlier "broken"
+diagnosis was caused by two compounding issues: (1) the health check pinged from the AT&T
+IA_NA address (`2001:506:72f7:108c::1/128`), which has partial reachability (some destinations
+like Google cannot route replies back to AT&T infrastructure addresses; this is normal and does
+not affect PD-based traffic); (2) locally-originated traffic from PD source addresses was
+misrouting via the main table's default route (AT&T RA) instead of the correct per-WAN policy
+table, causing Webpass/Monkeybrains PD traffic to exit via AT&T and get dropped by BCP38
+source filtering. Fix: added source-based `ip -6 rule` entries for each `MWAN_NPT_*_PREFIX`
+in `update-routes.sh` (priorities 55-57). The cloudflared UID-based routing carve-out
+(table 400) was also removed as unnecessary.
 
-**WireGuard suburban tunnel stale.** Suburban is reachable at `10.240.0.148` (Comcast NJ) and
-`3d06:bad:b01:200::1` (vmbr1 GUA, available when a VM on vmbr1 brings carrier up). The old
-management address `3d06:bad:b01:200::254` was on a ghost bridge `vmbr3` that was deleted
-2026-03-29. The WireGuard tunnel shows the last handshake was ~8 days ago despite a 25-second
-keepalive. One possibility is the OPNsense side stopped acknowledging suburban peer keepalives
-after the handshake aged out. The endpoint suburban dials was provider-scope and is not
-recorded here.
-(Webpass NPT external).
+**WireGuard suburban tunnel: resolved 2026-04-08.** Tunnel is healthy. Suburban dials
+`[2600:1700:2f71:c80::1]:51820` (AT&T PD on mwan). OPNsense sees suburban's endpoint at
+Comcast NJ IPv6 (`2601:84:837c:a160:...`). Handshake is current (verified live). The earlier
+"8 days stale" report was a transient issue that self-resolved.
 
-**Monkeybrains IPv6 absent since 2026-01-22.** IPv6 was working at 23:43:36 UTC and gone 57
-seconds later. Source: `mwan-debug.log` parsed on 2026-03-23. The previously-issued prefix
-is intentionally not retained in this document. The CPE/gateway (`fe80::f61e:57ff:fe06:4983`) no longer responds
-to NDP and no RA is sent on the segment. IPv4 via CG-NAT is fine. This is provider-side; no
-mwan action is needed beyond retaining the historical prefix config.
+**Monkeybrains: partially restored 2026-04-08.** RA is back on the segment (gateway
+`fe80::f61e:57ff:fe06:4983` reachable). SLAAC `/64` (`2607:f598:d3e0:131::/64`) is live and
+functional. DHCPv6-PD is NOT being delegated (solicits go unanswered every ~7 min). The old
+PD prefix (`2607:f598:d3e8:3100::/56`) is stale. Provider previously revoked PD due to
+multiple devices requesting delegations on the same port; said it was restored but it has not
+come back. Follow-up ticket pending. IPv4 is now public
+(`158.247.70.6/26`), not CG-NAT. NAT66 masquerade fallback added to `update-npt.sh` so
+Monkeybrains IPv6 works as a degraded tertiary WAN using the SLAAC address when PD is absent.
+LXC 116 (mwan-failover) was stopped to eliminate extra DHCP/SLAAC noise on the mbrains segment.
 
 **berylax fake GUA, NPT, and WAN reachability.** `3d06:bad:b01:300::1/64` on `br-lan` is the
 static LAN address (internal-only prefix shaped like a GUA). OPNsense does not need to carry a
@@ -393,16 +403,10 @@ kernel can return `Address unreachable`. `ndppd` now uses a static `/64` rule on
 provider WAN range, and downstream client ping from `3d06:bad:b01:300::100`
 was successful after this change.
 
-**cloudflared on mwan: connIndex=2 flapping.** As of 2026-03-28, tunnel `home-mwan` shows 4/4
-connections active (sjc05, sjc10, lax09) per the API, but connIndex=2 periodically drops with
-`"accept stream listener encountered a failure while serving"` and reconnects within ~2 minutes.
-The tunnel has no public hostname ingress; it serves WARP routing only (mwan-mgmt `10.250.0.113/32`,
-mwan-wanbr `10.250.250.1/32`, mwan-wanbr6 `3d06:bad:b01:fe::1/64`). The connector version is
-2025.11.1, which is outdated (current: 2026.3.0). Upgrading may reduce the flapping.
-
-**cloudflared on proxy: outdated version.** Proxy (CT 110) runs cloudflared 2025.11.1; the
-dashboard warns to upgrade to 2026.3.0. The connector has been running since 2026-01-19 (over
-2 months). `connIndex=3` also flaps periodically with timeout errors but reconnects quickly.
+**cloudflared versions: resolved 2026-04-08.** Both mwan and proxy now run cloudflared
+2026.3.0. The connIndex flapping on mwan (connIndex=1, QUIC stream accept failure) still
+occurs occasionally but reconnects within seconds. This appears to be a known cloudflared
+behavior with QUIC multiplexing, not an operational issue.
 
 **UniFi controller Consul alias with unusual address.** OPNsense alias `unifi_controller` includes
 `3d06:bad:b01:6465::102`. An earlier attempt to reach the UniFi controller via a NAT64-synthesized

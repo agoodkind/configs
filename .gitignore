@@ -76,3 +76,5 @@ terraform.tfvars
 
 # Root-level scratch artifacts
 /test-*.tgz
+
+.secrets

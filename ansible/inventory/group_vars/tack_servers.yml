@@ -1,0 +1,31 @@
+---
+# Tack Project Management Container Configuration
+# Note: Container provisioning (VMID, IP, MAC, resources, features) is managed
+# by OpenTofu in opentofu/containers.tf. The vars below are kept for reference
+# and for the Ansible configuration play (deploy-tack.yml).
+
+# Service identity
+service_hostname: "{{ service_mapping.tack.hostname }}"
+
+# Static addressing (reference only - OpenTofu owns these)
+service_ipv6_only: true
+service_ipv6_address: "{{ service_mapping.tack.ipv6 }}/64"
+service_mac_address: "bc:24:11:a3:52:17"
+
+# Container resources (reference only - OpenTofu owns these)
+service_memory: 2048
+service_cores: 2
+service_disk_size: 40
+container_features: "nesting=1"
+
+# Tack configuration
+tack_install_dir: /opt/tack
+tack_domain: "tack.home.goodkind.io"
+tack_image: "ghcr.io/agoodkind/tack:latest"
+
+# Auto-generated secrets via Ansible password lookup.
+# Files are written to tack/.secrets/ (gitignored) on the Ansible controller
+# and reused on subsequent runs so values stay stable.
+tack_db_password: >-
+  {{ lookup('password', playbook_dir + '/../../tack/.secrets/db_password
+  length=32 chars=ascii_letters,digits') }}
