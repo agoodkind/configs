@@ -49,7 +49,7 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 
 	// Step 3: Delete the vrrp macvlan interface entirely
 	log.Info("rollback: removing vrrp interface")
-	_, _ = sshExec(ctx, host, "ip link del vrrp.51 2>/dev/null", to)
+	_, _ = sshExec(ctx, host, fmt.Sprintf("ip link del %s 2>/dev/null", vrrpIface(cfg)), to)
 
 	// Step 4: Flush ALL global addresses from the internal interface
 	log.Info("rollback: flushing all addresses from interface")
@@ -70,8 +70,8 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 	// CRITICAL: without this, OPNsense keeps the VRRP virtual MAC in its neighbor
 	// cache and sends traffic to a MAC that no longer exists, causing total outage.
 	if cfg.OPNsenseAddr != "" {
-		vipv6 := strings.Split(cfg.CurrentRealIPv6, "/")[0]
-		vipv4 := strings.Split(cfg.CurrentRealIPv4, "/")[0]
+		vipv6 := strings.Split(cfg.VIPIPv6, "/")[0]
+		vipv4 := strings.Split(cfg.VIPIPv4, "/")[0]
 		log.Info("rollback: flushing OPNsense NDP + ARP cache for VIP", "v6", vipv6, "v4", vipv4)
 		if r, ndpErr := sshExec(ctx, cfg.OPNsenseAddr,
 			fmt.Sprintf("sudo ndp -d %s; sudo arp -d %s", vipv6, vipv4), to); ndpErr != nil {

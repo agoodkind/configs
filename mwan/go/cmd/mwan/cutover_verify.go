@@ -75,13 +75,14 @@ func cmdVerify(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error 
 		}},
 		{"vip-on-vrrp-interface", func() error {
 			vipAddr := strings.Split(cfg.VIPIPv6, "/")[0]
+			vrIface := vrrpIface(cfg)
 			out, err := sshMustExec(ctx, cfg.MwanMgmtAddr,
-				"ip -6 addr show dev vrrp.51 2>/dev/null", cfg.SSHTimeoutSec)
+				fmt.Sprintf("ip -6 addr show dev %s 2>/dev/null", vrIface), cfg.SSHTimeoutSec)
 			if err != nil {
 				return err
 			}
 			if !strings.Contains(out, vipAddr) {
-				return fmt.Errorf("VIP %s not on vrrp.51:\n%s", vipAddr, out)
+				return fmt.Errorf("VIP %s not on %s:\n%s", vipAddr, vrIface, out)
 			}
 			return nil
 		}},
