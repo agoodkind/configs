@@ -106,6 +106,15 @@ func migrateReal(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 	}
 	log.Info("migrate: VIP confirmed on vrrp.51")
 
+	// Step 4b: Add IPv4 VIP to vrrp.51 manually.
+	// keepalived with use_vmac + VRRPv3 only adds IPv6 addresses to the vmac
+	// interface. The IPv4 VIP must be added explicitly.
+	log.Info("migrate: adding IPv4 VIP to vrrp.51")
+	if r, v4Err := sshExec(ctx, host,
+		fmt.Sprintf("ip addr add %s dev vrrp.51", cfg.VIPIPv4), to); v4Err != nil || r.ExitCode != 0 {
+		log.Warn("migrate: failed to add IPv4 VIP to vrrp.51 (may already exist)", "err", v4Err, "stderr", r.Stderr)
+	}
+
 	// Step 5: Remove old real addresses from the physical interface
 	log.Info("migrate: removing old real addresses from physical interface")
 	if r, delErr := sshExec(ctx, host,
