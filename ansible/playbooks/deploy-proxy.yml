@@ -10,32 +10,10 @@
 #   ssh -p 2222 root@proxy.home.goodkind.io
 #   (or ssh -p 2222 root@10.250.0.10)
 
-- name: Setup Traefik container
-  ansible.builtin.import_playbook: setup-service-ct.yml
+- name: Prepare proxy container (SSH keys, packages, base config)
+  ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    container_group: proxy_servers
-    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/proxy_servers.yml"
-
-- name: Configure connection method for proxy container
-  hosts: localhost
-  gather_facts: false
-  vars:
-    proxy_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
-    proxy_ip: "{{ hostvars[proxy_hostname]['ansible_host'] | default('') }}"
-  tasks:
-    - name: Update proxy container with multi-port SSH config
-      ansible.builtin.add_host:
-        name: "{{ proxy_hostname }}"
-        groups: proxy_servers
-        ansible_host: "{{ proxy_ip }}"
-        ansible_user: root
-        ansible_ssh_common_args: >-
-          -o StrictHostKeyChecking=no
-          -o UserKnownHostsFile=/dev/null
-          -o ConnectTimeout=5
-          -o ConnectionAttempts=3
-          -o Port=22
-      when: proxy_ip | length > 0
+    target_hosts: proxy_servers
 
 - name: Deploy and Configure Traefik
   hosts: proxy_servers

@@ -131,9 +131,9 @@ http:
       tls:
         certResolver: letsencrypt
 
-    huly-ingress:
-      rule: "Host(`huly.{{ traefik_ingress_domain }}`)"
-      service: huly-service
+    tack-ingress:
+      rule: "Host(`tack.{{ traefik_ingress_domain }}`)"
+      service: tack-service
       middlewares:
         - secure-headers
       entryPoints:
@@ -207,10 +207,10 @@ http:
         servers:
           - url: "http://[{{ service_mapping.plane.ipv6 }}]:80"
 
-    huly-service:
+    tack-service:
       loadBalancer:
         servers:
-          - url: "http://[{{ service_mapping.huly.ipv6 }}]:{{ huly_http_port }}"
+          - url: "http://[{{ service_mapping.tack.ipv6 }}]:8000"
 
   serversTransports:
     insecure-transport:
