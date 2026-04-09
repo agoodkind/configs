@@ -89,9 +89,17 @@ func cmdFull(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
 		{"verify", cmdVerify},
 	}
 
-	_ = sendEmail(cfg, fmt.Sprintf("%s STARTING full cutover", subjectPfx),
-		fmt.Sprintf("Beginning HA cutover sequence at %s\n\nPhases: preflight, migrate, start-backup, verify",
-			time.Now().Format(time.RFC3339)))
+	if cfg.DryRun {
+		log.Info("full: DRY RUN — preflight runs for real, everything else is simulated")
+	}
+
+	mode := "LIVE"
+	if cfg.DryRun {
+		mode = "DRY RUN"
+	}
+	_ = sendEmail(cfg, fmt.Sprintf("%s STARTING full cutover (%s)", subjectPfx, mode),
+		fmt.Sprintf("Beginning HA cutover sequence (%s) at %s\n\nPhases: preflight, migrate, start-backup, verify",
+			mode, time.Now().Format(time.RFC3339)))
 
 	for _, p := range phases {
 		log.Info("=== PHASE START ===", "phase", p.name)

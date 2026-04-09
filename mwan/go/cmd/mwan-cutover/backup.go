@@ -24,6 +24,11 @@ const backupKeepaliveConf = `vrrp_instance VI_HA {
 `
 
 func cmdStartBackup(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
+	if cfg.DryRun {
+		log.Info("start-backup: DRY RUN — would start keepalived BACKUP on LXC", "lxc", cfg.FailoverLXCID)
+		return nil
+	}
+
 	lxc := cfg.FailoverLXCID
 
 	lxcIface := cfg.FailoverLXCIface

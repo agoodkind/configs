@@ -8,6 +8,10 @@ import (
 )
 
 func cmdVerify(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
+	if cfg.DryRun {
+		log.Info("verify: DRY RUN — would run connectivity tests (skipping)")
+		return nil
+	}
 	log.Info("verify: running end-to-end connectivity tests")
 	to := cfg.VerifyTimeoutSec
 
