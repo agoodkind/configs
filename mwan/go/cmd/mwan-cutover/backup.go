@@ -14,7 +14,7 @@ const backupKeepaliveConf = `vrrp_instance VI_HA {
     virtual_router_id %d
     priority %d
     advert_int %d
-    use_vmac
+    use_vmac vrrp.%d
     vmac_xmit_base
     virtual_ipaddress {
         %s
@@ -48,7 +48,7 @@ func cmdStartBackup(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) e
 
 	log.Info("start-backup: writing keepalived config on LXC", "lxc", lxc)
 	conf := fmt.Sprintf(backupKeepaliveConf,
-		lxcIface, cfg.VRID, cfg.BackupPriority, cfg.AdvertInterval,
+		lxcIface, cfg.VRID, cfg.BackupPriority, cfg.AdvertInterval, cfg.VRID,
 		cfg.VIPIPv6, cfg.VIPIPv4)
 
 	_, err := localExec(ctx, "pct", []string{"exec", lxc, "--",

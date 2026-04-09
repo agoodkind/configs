@@ -19,7 +19,7 @@ func sendEmail(cfg *CutoverConfig, subject, body string) error {
 		SMTP2GOAPIKey:     cfg.SMTP2GOAPIKey,
 		DefaultFromDomain: "goodkind.io",
 		Transport:         mailer.MethodHTTP,
-		BindInterface:     "mbrains",
+		BindInterface:     cfg.EmailBindIface,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

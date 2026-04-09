@@ -14,7 +14,7 @@ const keepalivedConfTemplate = `vrrp_instance VI_HA {
     virtual_router_id %d
     priority %d
     advert_int %d
-    use_vmac
+    use_vmac vrrp.%d
     vmac_xmit_base
     virtual_ipaddress {
         %s
@@ -58,7 +58,7 @@ func migrateReal(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 	// Step 1: Write keepalived config
 	log.Info("migrate: writing keepalived.conf on VM")
 	conf := fmt.Sprintf(keepalivedConfTemplate,
-		iface, cfg.VRID, cfg.MasterPriority, cfg.AdvertInterval,
+		iface, cfg.VRID, cfg.MasterPriority, cfg.AdvertInterval, cfg.VRID,
 		cfg.VIPIPv6, cfg.VIPIPv4)
 
 	_, err := sshMustExec(ctx, host,
@@ -108,10 +108,14 @@ func migrateReal(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) erro
 
 	// Step 5: Remove old real addresses from the physical interface
 	log.Info("migrate: removing old real addresses from physical interface")
-	_, _ = sshExec(ctx, host,
-		fmt.Sprintf("ip -6 addr del %s dev %s", cfg.CurrentRealIPv6, iface), to)
-	_, _ = sshExec(ctx, host,
-		fmt.Sprintf("ip addr del %s dev %s", cfg.CurrentRealIPv4, iface), to)
+	if r, delErr := sshExec(ctx, host,
+		fmt.Sprintf("ip -6 addr del %s dev %s", cfg.CurrentRealIPv6, iface), to); delErr != nil || r.ExitCode != 0 {
+		log.Warn("migrate: failed to remove old IPv6 address (may already be gone)", "err", delErr, "stderr", r.Stderr)
+	}
+	if r, delErr := sshExec(ctx, host,
+		fmt.Sprintf("ip addr del %s dev %s", cfg.CurrentRealIPv4, iface), to); delErr != nil || r.ExitCode != 0 {
+		log.Warn("migrate: failed to remove old IPv4 address (may already be gone)", "err", delErr, "stderr", r.Stderr)
+	}
 
 	// Step 6: Verify keepalived reached MASTER
 	log.Info("migrate: verifying MASTER state")

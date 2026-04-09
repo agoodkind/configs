@@ -33,6 +33,8 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	ctx, cancelTO := context.WithTimeout(ctx, globalTO)
+	defer cancelTO()
 
 	sub := os.Args[1]
 	os.Args = append(os.Args[:1], os.Args[2:]...)

@@ -20,7 +20,7 @@ func cmdPreflight(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) err
 		{"vm-113-current-addr", preflightCurrentAddr},
 		{"vm-113-keepalived-installed", preflightVMKeepalived},
 		{"vm-113-no-keepalived-running", preflightNoKeepalived},
-		{"lxc-failover-exists", preflightLXCExists},
+		{"lxc-failover-running", preflightLXCRunning},
 		{"lxc-failover-keepalived-installed", preflightLXCKeepalived},
 		{"internet-reachable", preflightInternet},
 		{"email-works", preflightEmail},
@@ -114,10 +114,14 @@ func preflightNoKeepalived(ctx context.Context, log *slog.Logger, cfg *CutoverCo
 	return nil
 }
 
-func preflightLXCExists(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
+func preflightLXCRunning(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
 	out, err := localExec(ctx, "pct", []string{"status", cfg.FailoverLXCID}, cfg.SSHTimeoutSec)
 	if err != nil {
 		return fmt.Errorf("LXC %s not found: %w", cfg.FailoverLXCID, err)
+	}
+	if !strings.Contains(out, "running") {
+		return fmt.Errorf("LXC %s is not running (status: %s). Start it first: pct start %s",
+			cfg.FailoverLXCID, out, cfg.FailoverLXCID)
 	}
 	log.Debug("lxc status", "output", out)
 	return nil

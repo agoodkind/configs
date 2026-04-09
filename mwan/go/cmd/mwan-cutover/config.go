@@ -45,9 +45,10 @@ type CutoverConfig struct {
 	CurlTarget     string `toml:"curl_target"`
 
 	// Email
-	SMTP2GOAPIKey string `toml:"-"` // from env only, never in config file
-	AlertEmail    string `toml:"alert_email"`
-	EmailFrom     string `toml:"email_from"`
+	SMTP2GOAPIKey  string `toml:"-"` // from env only, never in config file
+	AlertEmail     string `toml:"alert_email"`
+	EmailFrom      string `toml:"email_from"`
+	EmailBindIface string `toml:"email_bind_iface"` // interface for OOB email (e.g. "mbrains")
 
 	// Timeouts
 	SSHTimeoutSec    int `toml:"ssh_timeout_sec"`

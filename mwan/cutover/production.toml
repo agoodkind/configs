@@ -35,8 +35,9 @@ ping_target_ipv4 = "1.1.1.1"
 curl_target      = "https://ifconfig.co/ip"
 
 # Email
-alert_email = "alex@goodkind.io"
-email_from  = "mwan-cutover@goodkind.io"
+alert_email      = "alex@goodkind.io"
+email_from       = "mwan-cutover@goodkind.io"
+email_bind_iface = "mbrains"
 
 # Timeouts
 ssh_timeout_sec    = 10
