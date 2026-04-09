@@ -18,8 +18,8 @@ const backupKeepaliveConf = `vrrp_instance VI_HA {
     vmac_xmit_base
     virtual_ipaddress {
         %s
-        %s
     }
+    notify /etc/keepalived/notify.sh
 }
 `
 
@@ -46,12 +46,24 @@ func cmdStartBackup(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) e
 		}
 	}
 
+	// Write notify script
+	log.Info("start-backup: writing notify script on LXC", "lxc", lxc)
+	notifyScript := fmt.Sprintf(notifyScriptTemplate,
+		cfg.VIPIPv4, cfg.VIPIPv6, cfg.VRID, cfg.OPNsenseAddr)
+	_, err := localExec(ctx, "pct", []string{"exec", lxc, "--",
+		"bash", "-c", fmt.Sprintf("cat > /etc/keepalived/notify.sh << 'NSEOF'\n%sNSEOF\nchmod +x /etc/keepalived/notify.sh", notifyScript)},
+		cfg.SSHTimeoutSec)
+	if err != nil {
+		return fmt.Errorf("write notify.sh on LXC %s: %w", lxc, err)
+	}
+
+	// Write keepalived config
 	log.Info("start-backup: writing keepalived config on LXC", "lxc", lxc)
 	conf := fmt.Sprintf(backupKeepaliveConf,
 		lxcIface, cfg.VRID, cfg.BackupPriority, cfg.AdvertInterval, cfg.VRID,
-		cfg.VIPIPv6, cfg.VIPIPv4)
+		cfg.VIPIPv6)
 
-	_, err := localExec(ctx, "pct", []string{"exec", lxc, "--",
+	_, err = localExec(ctx, "pct", []string{"exec", lxc, "--",
 		"bash", "-c", fmt.Sprintf("cat > /etc/keepalived/keepalived.conf << 'KAEOF'\n%sKAEOF", conf)},
 		cfg.SSHTimeoutSec)
 	if err != nil {
