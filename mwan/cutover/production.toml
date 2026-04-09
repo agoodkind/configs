@@ -24,8 +24,14 @@ opnsense_addr   = "agoodkind@3d06:bad:b01::1"
 opnsense_vip_v6 = "3d06:bad:b01:fe::1"
 
 # Failover LXC 116
-failover_lxc_id    = "116"
-failover_lxc_iface = "eth1"
+failover_lxc_id        = "116"
+failover_lxc_iface     = "eth1"
+failover_lxc_wan_iface = "eth0"
+failover_default_gw6   = "fe80::f61e:57ff:fe06:4983"
+failover_default_gw4   = ""
+failover_internal_pfx  = "3d06:bad:b01::/60"
+failover_opnsense_ll   = "fe80::be24:11ff:fe77:500c"
+failover_ipv4_return   = "10.250.0.0/16 via 10.250.250.2"
 
 # keepalived
 vrid             = 51

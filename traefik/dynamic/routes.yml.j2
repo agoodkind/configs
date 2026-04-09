@@ -210,7 +210,7 @@ http:
     tack-service:
       loadBalancer:
         servers:
-          - url: "http://[{{ service_mapping.tack.ipv6 }}]:8000"
+          - url: "h2c://[{{ service_mapping.tack.ipv6 }}]:8000"
 
   serversTransports:
     insecure-transport:

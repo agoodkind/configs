@@ -23,8 +23,14 @@ opnsense_addr   = "root@192.168.1.1"
 opnsense_vip_v6 = "3d06:bad:b01:201::1"
 
 # Failover LXC 100
-failover_lxc_id    = "100"
-failover_lxc_iface = "eth1"
+failover_lxc_id        = "100"
+failover_lxc_iface     = "eth1"
+failover_lxc_wan_iface = "eth0"
+failover_default_gw6   = "fe80::aedb:48ff:fe76:b097"
+failover_default_gw4   = "10.240.0.1"
+failover_internal_pfx  = "3d06:bad:b01:201::/64"
+failover_opnsense_ll   = "fe80::be24:11ff:fe07:a172"
+failover_ipv4_return   = "10.250.250.0/29 via 10.250.250.2"
 
 # keepalived
 vrid             = 51

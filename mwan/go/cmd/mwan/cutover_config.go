@@ -34,8 +34,14 @@ type CutoverConfig struct {
 	OPNsenseVIPv6 string `toml:"opnsense_vip_v6"` // VIP address to flush from NDP (e.g. 3d06:bad:b01:fe::1)
 
 	// Failover LXC
-	FailoverLXCID    string `toml:"failover_lxc_id"`
-	FailoverLXCIface string `toml:"failover_lxc_iface"` // eth1
+	FailoverLXCID       string `toml:"failover_lxc_id"`
+	FailoverLXCIface    string `toml:"failover_lxc_iface"`     // internal iface (eth1)
+	FailoverLXCWanIface string `toml:"failover_lxc_wan_iface"` // WAN iface (eth0)
+	FailoverDefaultGW6  string `toml:"failover_default_gw6"`   // IPv6 default route gateway (Monkeybrains LL)
+	FailoverDefaultGW4  string `toml:"failover_default_gw4"`   // IPv4 default route gateway
+	FailoverInternalPfx string `toml:"failover_internal_pfx"`  // internal return route prefix (3d06:bad:b01::/60)
+	FailoverOPNsenseLL  string `toml:"failover_opnsense_ll"`   // OPNsense link-local on mwanbr (next-hop for internal)
+	FailoverIPv4Return  string `toml:"failover_ipv4_return"`   // IPv4 return route (e.g. 10.250.0.0/16 via 10.250.250.2)
 
 	// keepalived
 	VRID           int `toml:"vrid"`

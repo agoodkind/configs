@@ -71,6 +71,30 @@ at a time. Treat every change as potentially irreversible.
 - IA_NA addresses having partial reachability (some destinations unreachable) which is
   normal and does not affect PD-based forwarding.
 
+## Monolith Architecture
+
+All Go infrastructure code lives in a single binary: `mwan/go/cmd/mwan/`. This binary
+has three subcommands:
+
+- `mwan agent` — gRPC agent running inside the MWAN VM (VM 113)
+- `mwan watchdog` — connectivity monitor and rollback daemon on vault
+- `mwan cutover` — HA cutover tool (preflight, migrate, start-backup, verify, rollback)
+
+There are NO separate Go binaries. No `cmd/mwan-cutover/`, no `cmd/mwan-agent/`, no
+`cmd/mwan-watchdog/`. Everything is one `package main` with prefixed filenames:
+`cutover_*.go`, `agent_*.go`, `watchdog*.go`.
+
+This is a hard requirement. Do not create separate binaries for new functionality.
+New tools become subcommands of the monolith. This ensures:
+- One build artifact to deploy
+- Shared logging, config, and library code
+- No version drift between components
+- `mwan-unfuck` works from any path (it calls `mwan cutover rollback`)
+
+The `mwan cutover start-backup` phase fully configures the failover LXC (forwarding,
+masquerade, routes, keepalived) from scratch. The LXC is treated as disposable — the
+monolith owns all its configuration.
+
 ## Rules for Changes
 
 1. Before editing any playbook or template, check the Ansible quality rules in
