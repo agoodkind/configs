@@ -1,6 +1,6 @@
 # Internal link to OPNsense (vmbr2 / mwanbr)
 [Match]
-MACAddress=FILL_AFTER_CREATE
+MACAddress=BC:24:11:49:5D:94
 
 [Link]
 Name=enmwanbr0
