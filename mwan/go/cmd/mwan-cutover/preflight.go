@@ -18,7 +18,8 @@ func cmdPreflight(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) err
 		{"vm-113-ssh", preflightVMSSH},
 		{"vm-113-interface", preflightVMInterface},
 		{"vm-113-current-addr", preflightCurrentAddr},
-		{"vm-113-no-keepalived", preflightNoKeepalived},
+		{"vm-113-keepalived-installed", preflightVMKeepalived},
+		{"vm-113-no-keepalived-running", preflightNoKeepalived},
 		{"lxc-failover-exists", preflightLXCExists},
 		{"lxc-failover-keepalived-installed", preflightLXCKeepalived},
 		{"internet-reachable", preflightInternet},
@@ -68,6 +69,20 @@ func preflightVMInterface(ctx context.Context, log *slog.Logger, cfg *CutoverCon
 	}
 	if !strings.Contains(out, "UP") {
 		return fmt.Errorf("interface %s not UP: %s", cfg.MwanIntIface, out)
+	}
+	return nil
+}
+
+func preflightVMKeepalived(ctx context.Context, log *slog.Logger, cfg *CutoverConfig) error {
+	out, err := sshMustExec(ctx, cfg.MwanMgmtAddr,
+		"dpkg -l keepalived 2>/dev/null | grep -c '^ii'", cfg.SSHTimeoutSec)
+	if err != nil || strings.TrimSpace(out) != "1" {
+		return fmt.Errorf("keepalived not installed on VM %s (run: apt-get install -y keepalived)", cfg.MwanVMID)
+	}
+	// Also verify /etc/keepalived/ exists
+	_, err = sshMustExec(ctx, cfg.MwanMgmtAddr, "test -d /etc/keepalived", cfg.SSHTimeoutSec)
+	if err != nil {
+		return fmt.Errorf("/etc/keepalived/ does not exist on VM %s", cfg.MwanVMID)
 	}
 	return nil
 }
