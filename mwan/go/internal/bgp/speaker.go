@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"sync"
+	"time"
 
 	apipb "github.com/osrg/gobgp/v4/api"
 	"github.com/osrg/gobgp/v4/pkg/apiutil"
@@ -83,6 +84,29 @@ func (s *Speaker) Start(ctx context.Context) error {
 		if err := s.addPeer(ctx, n.Address, true); err != nil {
 			return fmt.Errorf("add peer %s: %w", n.Address, err)
 		}
+	}
+
+	// Watch for peer state changes. When all peers reach ESTABLISHED,
+	// announce default routes automatically. No polling, no timeout.
+	if err := s.server.WatchEvent(ctx, server.WatchEventMessageCallbacks{
+		OnPeerUpdate: func(ev *apiutil.WatchEventMessage_PeerEvent, _ time.Time) {
+			if ev.Type != apiutil.PEER_EVENT_STATE {
+				return
+			}
+			if ev.Peer.State.SessionState != bgppkt.BGP_FSM_ESTABLISHED {
+				return
+			}
+			s.log.Info("bgp peer established", "peer", ev.Peer.State.NeighborAddress)
+			if s.IsEstablished() {
+				if err := s.AnnounceDefault(); err != nil {
+					s.log.Error("bgp auto-announce failed", "error", err)
+				} else {
+					s.log.Info("bgp routes announced (all peers established)")
+				}
+			}
+		},
+	}, server.WatchPeer()); err != nil {
+		s.log.Error("bgp watch event registration failed", "error", err)
 	}
 
 	s.started = true

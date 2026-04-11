@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/mdlayher/vsock"
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -130,30 +129,8 @@ func Run(cfg *config.Config) {
 		}()
 	}
 
-	if bgpSpeaker != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cancel()
-			ticker := time.NewTicker(time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					logger.Warn("bgp auto-announce timeout waiting for peers")
-					return
-				case <-ticker.C:
-					if bgpSpeaker.IsEstablished() {
-						if err := bgpSpeaker.AnnounceDefault(); err != nil {
-							logger.Error("bgp auto-announce failed", "error", err)
-						} else {
-							logger.Info("bgp routes announced after peer establishment")
-						}
-						return
-					}
-				}
-			}
-		}()
-	}
+	// Auto-announce is handled by the Speaker's WatchEvent callback.
+	// When all peers reach ESTABLISHED, routes are announced immediately.
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
