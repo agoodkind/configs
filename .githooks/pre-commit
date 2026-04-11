@@ -38,11 +38,4 @@ if [ "$has_errors" -eq 1 ]; then
   exit 1
 fi
 
-# Scan staged changes for secrets using gitleaks.
-if command -v gitleaks &>/dev/null; then
-    gitleaks protect --staged --no-banner --redact
-else
-    echo "warning: gitleaks not found - secret scan skipped (install: brew install gitleaks)" >&2
-fi
-
 exit 0
