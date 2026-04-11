@@ -215,7 +215,7 @@ func defaultConfig() Config {
 			SnapshotHealthyThreshold: 20, MaxKnownGoodSnapshots: 3,
 			HashCheckEveryNHealthy: 10, MinSnapshotIntervalSeconds: 300,
 			MaxTotalSnapshots: 15,
-			LogFile: "/var/log/mwan-watchdog.log", JSONLogFile: "/var/log/mwan-watchdog.jsonl",
+			LogFile:           "/var/log/mwan-watchdog.log", JSONLogFile: "/var/log/mwan-watchdog.jsonl",
 			RollbackStateFile: "/run/mwan-rollback.state",
 			RollbackLockFile:  "/run/mwan-watchdog-rollback.lock",
 		},
