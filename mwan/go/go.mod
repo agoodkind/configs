@@ -1,6 +1,6 @@
-module github.com/agoodkind/infra-tools
+module goodkind.io/mwan
 
-go 1.26.1
+go 1.26.2
 
 replace github.com/agoodkind/send-email => ../../../send-email
 

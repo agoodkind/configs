@@ -1,0 +1,14 @@
+[Unit]
+Description=Reapply MWAN testbed IPv6 NPT rules at boot
+After=network-online.target nftables.service
+Wants=network-online.target nftables.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mwan/mwan.env
+ExecStart=/opt/mwan/scripts/mwan-update-npt-all.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

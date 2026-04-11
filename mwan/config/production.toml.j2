@@ -1,0 +1,93 @@
+# Production MWAN config (vault)
+# Rendered by Ansible, deployed to /etc/mwan/config.toml
+
+hostname = "vault"
+mwan_vmid = "113"
+mwan_mgmt_addr = "3d06:bad:b01::113"
+mwan_int_iface = "enmwanbr0"
+
+[email]
+smtp2go_api_key = "{{ mwan_smtp2go_api_key }}"
+alert_email = "alex@goodkind.io"
+from = "mwan@goodkind.io"
+subject_prefix = "[MWAN-vault]"
+bind_iface = "enmbrains0"
+min_level = "ERROR"
+cooldown = "5m"
+
+[pve]
+base_url = "https://127.0.0.1:8006/api2/json"
+node = "vault"
+token_id = "root@pam!watchdog"
+token_secret = "{{ mwan_watchdog_pve_token_secret }}"
+
+[network]
+ping_target_ipv4 = "1.1.1.1"
+ping_target_ipv6 = "2606:4700:4700::1111"
+ping_targets = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+curl_target = "https://ifconfig.co/ip"
+last_deploy_path = "/var/run/mwan-last-deploy"
+last_change_path = "/var/run/mwan-last-change"
+
+[[network.wan_interfaces]]
+name = "enwebpass0"
+
+[[network.wan_interfaces]]
+name = "enmbrains0"
+
+[watchdog]
+deploy_window_minutes = 30
+connectivity_timeout_seconds = 60
+check_interval_healthy_seconds = 30
+check_interval_degraded_seconds = 10
+post_rollback_grace_seconds = 120
+alert_cooldown_seconds = 300
+deploy_grace_period_seconds = 60
+max_rollback_attempts = 3
+snapshot_healthy_threshold = 20
+max_known_good_snapshots = 3
+hash_check_every_n_healthy = 10
+min_snapshot_interval_seconds = 300
+max_total_snapshots = 15
+vsock_cid = 113
+vsock_port = 50051
+mwan_agent_tcp_addr = "[3d06:bad:b01::113]:50052"
+log_file = "/var/log/mwan-watchdog.log"
+json_log_file = "/var/log/mwan-watchdog.jsonl"
+rollback_state_file = "/run/mwan-rollback.state"
+rollback_lock_file = "/run/mwan-watchdog-rollback.lock"
+
+[cutover]
+current_real_ipv6 = "3d06:bad:b01:fe::1/64"
+current_real_ipv4 = "10.250.250.1/29"
+new_real_ipv6 = "3d06:bad:b01:fe::3/64"
+new_real_ipv4 = "10.250.250.3/29"
+vip_ipv6 = "3d06:bad:b01:fe::1/64"
+vip_ipv4 = "10.250.250.1/29"
+opnsense_addr = "agoodkind@3d06:bad:b01::1"
+failover_lxc_id = "116"
+failover_lxc_iface = "eth1"
+failover_lxc_wan_iface = "eth0"
+failover_default_gw6 = ""
+failover_default_gw4 = ""
+failover_internal_pfx = "3d06:bad:b01::/60"
+failover_opnsense_ll = ""
+failover_ipv4_return = "10.250.0.0/16 via 10.250.250.2"
+vrid = 51
+master_priority = 150
+backup_priority = 50
+advert_interval = 1
+health_check_interval = 10
+health_check_weight = -110
+health_check_fall = 3
+health_check_rise = 2
+ssh_timeout_sec = 10
+verify_timeout_sec = 30
+boot_wait_sec = 35
+
+[agent]
+vsock_port = 50051
+tcp_addr = "[::]:50052"
+deploy_file = "/var/run/mwan-last-deploy"
+log_file = "/var/log/mwan-agent.log"
+debug = false

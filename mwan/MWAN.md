@@ -597,8 +597,37 @@ reboot" semantics.
 | Yes                 | Yes (within 60s)         | -                   | -              | Grace period; wait for reboot    |
 | Yes                 | Yes (past 60s grace)     | -                   | -              | Connectivity timeout -> rollback |
 | Yes                 | No                       | Yes (within window) | Yes            | Connectivity timeout -> rollback |
-| Yes                 | No                       | No                  | Yes            | ISP outage -> email, wait        |
+| Yes                 | No                       | No                  | Yes            | Test LXC -> failover or wait     |
 | No                  | -                        | -                   | -              | Healthy; normal monitoring       |
+
+### Failover Decision (HA)
+
+When the watchdog detects total connectivity loss with no recent config
+change, it consults the failover LXC before deciding what to do. The
+watchdog orchestrates; the failover LXC just executes what it's told.
+
+| VM 950 Internet | LXC Internet | Cause                          | Watchdog Action                        |
+| --------------- | ------------ | ------------------------------ | -------------------------------------- |
+| OK              | OK           | Normal                         | No action                              |
+| OK              | DOWN         | LXC WAN issue (Monkeybrains)  | Alert only, no failover needed         |
+| DOWN            | OK           | VM config/routing broken       | **Failover to LXC**                    |
+| DOWN            | DOWN         | Real ISP outage (all ISPs)     | Alert only, wait it out                |
+| DOWN (crashed)  | OK           | VM failure                     | Keepalived auto-promotes LXC (no watchdog needed) |
+| DOWN (crashed)  | DOWN         | VM + ISP down                  | Nothing can be done                    |
+
+The watchdog triggers failover by calling `cmdStartBackup` from the
+cutover module, which configures the LXC (forwarding, masquerade,
+routes, keepalived). Once keepalived starts in BACKUP state and
+detects the primary's health check is failing, it auto-promotes to
+MASTER within seconds.
+
+**Force-failover command:** `mwan watchdog failover` triggers failover
+immediately without waiting for the monitoring loop's timeout. Useful
+for planned maintenance or when the operator knows failover is needed.
+
+**Recovery:** When VM 950 recovers (health check passes), keepalived
+preemption returns MASTER to VM 950 automatically. The LXC drops back
+to BACKUP. No watchdog intervention needed for failback.
 
 ### Grace Period
 
@@ -621,15 +650,23 @@ A config hash change is considered "recent" for `DEPLOY_WINDOW_MINUTES`
 (default 30 min) after detection. A hash change from hours ago does not
 count; connectivity failures that far out are treated as external.
 
-### ISP Outage Handling
+### ISP Outage / Failover Handling
 
 When connectivity fails and there is no recent config change (no deploy
 timestamp, no hash change within window, system was healthy and stable):
 
-1. Log at ERROR: "total connectivity loss, no recent config change"
-2. Send email alert (subject to cooldown)
-3. Continue monitoring; do NOT rollback
-4. Log recovery when connectivity returns
+1. Test VM connectivity (can the VM itself reach the internet?)
+2. Test LXC failover WAN connectivity (can the LXC's Monkeybrains reach the internet?)
+3. **If LXC has internet but VM does not**: trigger failover to LXC
+   - Call `cmdStartBackup` to configure LXC as keepalived BACKUP
+   - Keepalived health check on primary fails -> LXC auto-promotes to MASTER
+   - Email alert: "FAILOVER: activating LXC"
+4. **If both VM and LXC have no internet**: real ISP outage
+   - Log at ERROR: "total connectivity loss, no recent config change"
+   - Send email alert (subject to cooldown)
+   - Continue monitoring at degraded interval; do NOT failover (pointless)
+5. Log recovery when connectivity returns
+6. Keepalived preemption handles failback automatically when VM recovers
 
 ### Snapshots
 
@@ -699,6 +736,5 @@ They do not gate the rollback/no-rollback decision.
 
 ## Future Enhancements
 
-- **Phase 3**: Add Monkeybrains as failover WAN
 - **Phase 4**: Dynamic DNS for Monkeybrains public IPv4
 - **Go Rewrite**: Single binary orchestrator for better state management

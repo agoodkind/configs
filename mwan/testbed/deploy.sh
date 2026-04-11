@@ -8,87 +8,184 @@ SUBURBAN="root@10.240.0.148"
 TESTBED_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$TESTBED_DIR/../.." && pwd)"
 
-echo "=== Phase 1: Suburban host infrastructure ==="
+# Deterministic link-locals (derived from PVE MAC addresses)
+VM950_LL_WEBPASS="fe80::be24:11ff:febe:8eb4"
+VM950_LL_ATT="fe80::be24:11ff:fec0:d760"
+VM950_LL_MBRAINS="fe80::be24:11ff:fe3d:cecc"
 
+echo "=== Phase 1: Suburban host ==="
 echo "  Deploying sysctl..."
 scp "$TESTBED_DIR/suburban-sysctl.conf" "$SUBURBAN:/etc/sysctl.d/99-mwan-testbed.conf"
-ssh "$SUBURBAN" "sysctl --system >/dev/null 2>&1"
+ssh "$SUBURBAN" "sysctl --system | tail -1"
 
 echo "  Deploying bridge config..."
-# Check if bridges already exist
 if ssh "$SUBURBAN" "ip link show vmbr4 >/dev/null 2>&1"; then
-    echo "  Bridges vmbr4/5/6 already exist, skipping"
+    echo "  Bridges already exist"
 else
-    echo "  Appending bridge config to /etc/network/interfaces..."
     scp "$TESTBED_DIR/suburban-interfaces.conf" "$SUBURBAN:/tmp/testbed-bridges.conf"
     ssh "$SUBURBAN" "cat /tmp/testbed-bridges.conf >> /etc/network/interfaces && ifreload -a"
-    echo "  Bridges created"
 fi
 
 echo ""
-echo "=== Phase 2: Create VM 950 ==="
-scp "$TESTBED_DIR/vm-950/create.sh" "$SUBURBAN:/tmp/create-vm950.sh"
-ssh "$SUBURBAN" "chmod +x /tmp/create-vm950.sh && /tmp/create-vm950.sh"
-
-echo "  Starting VM 950..."
-ssh "$SUBURBAN" "qm start 950"
-echo "  Waiting 30s for boot..."
-sleep 30
-
-echo "  Detecting MACs and updating link files..."
-MACS=$(ssh "$SUBURBAN" "qm config 950 | grep '^net' | sort")
-echo "$MACS"
-# TODO: Parse MACs from qm config output and fill in .link files
-# For now, deploy the configs and user fills MACs manually
-
-echo ""
-echo "  Deploying systemd-networkd configs to VM 950..."
+echo "=== Phase 2: VM 950 ==="
 VM950="root@3d06:bad:b01:200::950"
-ssh -o StrictHostKeyChecking=no "$VM950" "mkdir -p /etc/systemd/network /etc/mwan"
-for f in "$TESTBED_DIR"/vm-950/*.link "$TESTBED_DIR"/vm-950/*.network; do
-    scp -o StrictHostKeyChecking=no "$f" "$VM950:/etc/systemd/network/"
+VM950_SCP="root@[3d06:bad:b01:200::950]"
+SSH_VM950="ssh -o StrictHostKeyChecking=accept-new $VM950"
+
+echo "  Deploying mwan.env..."
+$SSH_VM950 "mkdir -p /etc/mwan /opt/mwan/scripts"
+scp "$TESTBED_DIR/vm-950/mwan.env" "$VM950_SCP:/etc/mwan/mwan.env"
+
+echo "  Deploying nftables..."
+scp "$TESTBED_DIR/vm-950/nftables.conf" "$VM950_SCP:/etc/nftables.conf"
+$SSH_VM950 "systemctl enable nftables"
+
+echo "  Deploying sysctl..."
+scp "$TESTBED_DIR/vm-950/sysctl-mwan.conf" "$VM950_SCP:/etc/sysctl.d/99-mwan.conf" 2>/dev/null || \
+$SSH_VM950 "cat > /etc/sysctl.d/99-mwan.conf << 'EOF'
+net.ipv4.ip_forward=1
+net.ipv6.conf.all.forwarding=1
+net.ipv6.conf.default.accept_ra=0
+net.ipv6.conf.enwebpass0.accept_ra=2
+net.ipv6.conf.enatt0.accept_ra=2
+net.ipv6.conf.enmbrains0.accept_ra=2
+net.ipv6.conf.enmwanbr0.accept_ra=1
+net.ipv4.conf.all.rp_filter=0
+net.ipv4.conf.enwebpass0.rp_filter=0
+net.ipv4.conf.enatt0.rp_filter=0
+net.ipv4.conf.enmbrains0.rp_filter=0
+net.ipv4.conf.enmwanbr0.rp_filter=0
+net.ipv6.conf.all.use_tempaddr=0
+EOF"
+
+echo "  Deploying production scripts..."
+for script in update-routes.sh update-npt.sh mwan-update-npt-all.sh mwan-wait-routes-prereqs.sh mwan-wait-npt-prereqs.sh; do
+    scp "$REPO_ROOT/mwan/scripts/$script" "$VM950_SCP:/opt/mwan/scripts/$script"
+    $SSH_VM950 "ln -sf /opt/mwan/scripts/$script /usr/local/bin/$script"
 done
-scp -o StrictHostKeyChecking=no "$TESTBED_DIR/vm-950/mwan.env" "$VM950:/etc/mwan/mwan.env"
+$SSH_VM950 "chmod +x /opt/mwan/scripts/*.sh"
+
+echo "  Deploying rt_tables..."
+$SSH_VM950 "grep -q '^100 att' /etc/iproute2/rt_tables || cat >> /etc/iproute2/rt_tables << 'EOF'
+100 att
+200 webpass
+300 monkeybrains
+EOF"
+
+echo "  Deploying systemd services..."
+scp "$TESTBED_DIR/vm-950/mwan-update-routes.service" "$VM950_SCP:/etc/systemd/system/"
+scp "$TESTBED_DIR/vm-950/mwan-update-npt.service" "$VM950_SCP:/etc/systemd/system/"
+$SSH_VM950 "systemctl daemon-reload && systemctl enable mwan-update-routes mwan-update-npt nftables"
+
+echo "  Installing jq (if needed)..."
+$SSH_VM950 "which jq >/dev/null 2>&1 || apt-get install -y jq" | tail -1
 
 echo ""
-echo "  Deploying mwan monolith to VM 950..."
-MWAN_BIN="$REPO_ROOT/mwan/go/mwan"
-if [[ ! -f "$MWAN_BIN" ]]; then
-    echo "  Building mwan monolith..."
-    (cd "$REPO_ROOT/mwan/go" && GOOS=linux GOARCH=amd64 go build -o mwan ./cmd/mwan)
-fi
-scp -o StrictHostKeyChecking=no "$MWAN_BIN" "$VM950:/usr/local/bin/mwan"
+echo "=== Phase 3: ISP LXCs ==="
+
+deploy_isp_lxc() {
+    local ID=$1 NAME=$2 PD=$3 V4_SUBNET=$4 VM950_LL=$5
+
+    echo "  --- LXC $ID ($NAME) ---"
+
+    # sysctl
+    ssh "$SUBURBAN" "pct push $ID $TESTBED_DIR/isp-lxc/sysctl-isp.conf /etc/sysctl.d/99-isp.conf"
+
+    # nftables (render template)
+    local NFT_FILE="/tmp/isp-${ID}-nftables.conf"
+    sed "s|__V4_SUBNET__|$V4_SUBNET|g" "$TESTBED_DIR/isp-lxc/nftables.conf.tmpl" > "$NFT_FILE"
+    scp "$NFT_FILE" "$SUBURBAN:/tmp/isp-nft-${ID}.conf"
+    ssh "$SUBURBAN" "pct push $ID /tmp/isp-nft-${ID}.conf /etc/nftables.conf"
+
+    # PD route service (render template)
+    local SVC_FILE="/tmp/isp-${ID}-pd-route.service"
+    sed -e "s|__PD_PREFIX__|$PD|g" -e "s|__VM950_LL__|$VM950_LL|g" \
+        "$TESTBED_DIR/isp-lxc/pd-route.service.tmpl" > "$SVC_FILE"
+    scp "$SVC_FILE" "$SUBURBAN:/tmp/isp-pd-${ID}.service"
+    ssh "$SUBURBAN" "pct push $ID /tmp/isp-pd-${ID}.service /etc/systemd/system/pd-route.service"
+
+    # kea config
+    local KEA_FILE="/tmp/isp-${ID}-kea.conf"
+    cat > "$KEA_FILE" << KEAEOF
+{
+    "Dhcp6": {
+        "interfaces-config": { "interfaces": ["eth0"] },
+        "lease-database": { "type": "memfile", "persist": false },
+        "preferred-lifetime": 3000,
+        "valid-lifetime": 4000,
+        "subnet6": [{
+            "id": 1,
+            "subnet": "fe80::/10",
+            "interface": "eth0",
+            "pd-pools": [{ "prefix": "${PD%%::*}::", "prefix-len": 60, "delegated-len": 60 }]
+        }]
+    }
+}
+KEAEOF
+    scp "$KEA_FILE" "$SUBURBAN:/tmp/isp-kea-${ID}.conf"
+    ssh "$SUBURBAN" "pct push $ID /tmp/isp-kea-${ID}.conf /etc/kea/kea-dhcp6.conf"
+
+    # radvd config
+    local RADVD_FILE="/tmp/isp-${ID}-radvd.conf"
+    cat > "$RADVD_FILE" << RADVDEOF
+interface eth0
+{
+    AdvSendAdvert on;
+    MinRtrAdvInterval 30;
+    MaxRtrAdvInterval 100;
+    AdvManagedFlag on;
+    AdvOtherConfigFlag on;
+    prefix ${PD}
+    {
+        AdvOnLink off;
+        AdvAutonomous off;
+        AdvRouterAddr off;
+    };
+};
+RADVDEOF
+    scp "$RADVD_FILE" "$SUBURBAN:/tmp/isp-radvd-${ID}.conf"
+    ssh "$SUBURBAN" "pct push $ID /tmp/isp-radvd-${ID}.conf /etc/radvd.conf"
+
+    # Enable services
+    ssh "$SUBURBAN" "pct exec $ID -- sh -c '
+        sysctl --system >/dev/null 2>&1
+        systemctl daemon-reload
+        systemctl enable nftables pd-route kea-dhcp6-server radvd 2>/dev/null
+        mkdir -p /var/run/kea /run/kea /var/lib/kea
+        chmod 777 /var/run/kea /run/kea /var/lib/kea
+    '"
+    echo "  LXC $ID ($NAME) configured"
+}
+
+# Install kea + radvd on all ISP LXCs (they have internet via eth1)
+for ID in 200 201 202; do
+    ssh "$SUBURBAN" "pct exec $ID -- sh -c 'which kea-dhcp6 >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq kea-dhcp6-server radvd)'" | tail -1
+done
+
+deploy_isp_lxc 200 webpass "3d06:bad:b01:220::/60" "10.240.204.0/24" "$VM950_LL_WEBPASS"
+deploy_isp_lxc 201 att     "3d06:bad:b01:230::/60" "10.240.205.0/24" "$VM950_LL_ATT"
+deploy_isp_lxc 202 mbrains "3d06:bad:b01:240::/60" "10.240.206.0/24" "$VM950_LL_MBRAINS"
 
 echo ""
-echo "=== Phase 3: Create LXC 100 ==="
-ssh "$SUBURBAN" "
-    pct stop 100 2>/dev/null || true
-    sleep 2
-    pct destroy 100 2>/dev/null || true
-    sleep 1
-    pct create 100 local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst \
-        --hostname mwan-failover-test \
-        --ostype debian \
-        --cores 1 \
-        --memory 512 \
-        --unprivileged 0 \
-        --features nesting=1 \
-        --net0 name=eth0,bridge=vmbr6,ip=dhcp,type=veth \
-        --net1 name=eth1,bridge=vmbr2,ip=10.250.250.4/29,ip6=3d06:bad:b01:201::4/64,type=veth \
-        --rootfs local-zfs:4 \
-        --ssh-public-keys /root/.ssh/authorized_keys
-    pct start 100
-    echo 'LXC 100 created and started'
-"
+echo "=== Phase 4: Reboot all and verify ==="
+echo "  Rebooting ISP LXCs..."
+ssh "$SUBURBAN" "pct reboot 200; pct reboot 201; pct reboot 202"
+echo "  Waiting 15s..."
+sleep 15
+
+echo "  Restarting VM 950 services..."
+$SSH_VM950 "sysctl --system >/dev/null 2>&1; systemctl restart nftables mwan-update-routes mwan-update-npt"
 
 echo ""
-echo "=== Phase 4: TODO ==="
-echo "  - Fill in MAC addresses in .link files (from qm config 950 output above)"
-echo "  - Deploy nftables.conf to VM 950"
-echo "  - Deploy update-routes.sh and update-npt.sh to VM 950"
-echo "  - Configure OPNsense VM 101"
-echo "  - Create Cloudflare tunnel"
-echo "  - Run: mwan cutover preflight"
+echo "=== Phase 5: Verify ==="
+echo "  VM 950 nftables:"
+$SSH_VM950 "nft list tables"
+echo "  VM 950 routes:"
+$SSH_VM950 "ip -6 rule show | grep -v local | grep -v main | head -5"
+echo "  ISP LXC services:"
+for ID in 200 201 202; do
+    ssh "$SUBURBAN" "pct exec $ID -- sh -c 'echo LXC${ID}: nft=\$(nft list tables | wc -l) kea=\$(pgrep -c kea-dhcp6 2>/dev/null || echo 0) radvd=\$(pgrep -c radvd 2>/dev/null || echo 0) route=\$(ip -6 route show | grep -c /60)'"
+done
 
 echo ""
-echo "=== Done ==="
+echo "=== Deploy complete ==="

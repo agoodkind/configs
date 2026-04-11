@@ -27,3 +27,11 @@ test:
 
 vet:
 	go vet ./...
+
+lint:
+	golangci-lint run ./...
+
+fmt:
+	gofmt -w ./cmd/mwan/ ./pkg/
+
+check: vet lint test

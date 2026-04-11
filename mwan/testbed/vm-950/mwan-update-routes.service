@@ -1,0 +1,14 @@
+[Unit]
+Description=Rebuild MWAN testbed policy routing tables at boot
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mwan/mwan.env
+ExecStart=/opt/mwan/scripts/update-routes.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

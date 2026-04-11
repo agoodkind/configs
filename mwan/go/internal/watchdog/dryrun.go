@@ -1,0 +1,81 @@
+package watchdog
+
+import (
+	"context"
+	"log/slog"
+
+	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/ops"
+)
+
+// dryRunOps wraps an ops.SysOps and logs destructive operations without executing them.
+type dryRunOps struct {
+	inner ops.SysOps
+	log   *slog.Logger
+}
+
+func (d *dryRunOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
+	return d.inner.VMStatus(ctx, vmid)
+}
+
+func (d *dryRunOps) VMStop(_ context.Context, vmid string) error {
+	d.log.Info("[DRY-RUN] would stop VM", "vmid", vmid)
+	return nil
+}
+
+func (d *dryRunOps) VMRollback(_ context.Context, vmid, snap string) error {
+	d.log.Info("[DRY-RUN] would rollback VM", "vmid", vmid, "snapshot", snap)
+	return nil
+}
+
+func (d *dryRunOps) VMStart(_ context.Context, vmid string) error {
+	d.log.Info("[DRY-RUN] would start VM", "vmid", vmid)
+	return nil
+}
+
+func (d *dryRunOps) VMSnapshots(ctx context.Context, vmid string) ([]byte, error) {
+	return d.inner.VMSnapshots(ctx, vmid)
+}
+
+func (d *dryRunOps) VMSnapshot(_ context.Context, vmid, snapName string) error {
+	d.log.Info(
+		"[DRY-RUN] would snapshot VM",
+		"vmid", vmid,
+		"snapshot", snapName,
+	)
+	return nil
+}
+
+func (d *dryRunOps) VMDelSnapshot(_ context.Context, vmid, snapName string) error {
+	d.log.Info(
+		"[DRY-RUN] would delete snapshot",
+		"vmid", vmid,
+		"snapshot", snapName,
+	)
+	return nil
+}
+
+func (d *dryRunOps) GuestExec(
+	ctx context.Context, vmid string, args ...string,
+) (ops.GuestExecResult, error) {
+	return d.inner.GuestExec(ctx, vmid, args...)
+}
+
+func (d *dryRunOps) Ping(ctx context.Context, bin, target string) bool {
+	return d.inner.Ping(ctx, bin, target)
+}
+
+func (d *dryRunOps) SendEmail(_ context.Context, to, subject, _ string) error {
+	d.log.Info(
+		"[DRY-RUN] would send email",
+		"to", to,
+		"subject", subject,
+	)
+	return nil
+}
+
+func (d *dryRunOps) GetConfigState(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetConfigStateResponse, string, error) {
+	return d.inner.GetConfigState(ctx, vmid)
+}

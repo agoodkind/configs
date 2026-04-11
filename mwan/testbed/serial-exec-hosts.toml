@@ -1,0 +1,8 @@
+[hosts.opnsense]
+device = "unix:///var/run/qemu-server/101.serial0"
+prompt = '(?m)(~|/) # '
+
+[hosts.mwan]
+device = "unix:///var/run/qemu-server/950.serial0"
+prompt = '(?m)[#$] $'
+user = "root"

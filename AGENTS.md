@@ -78,9 +78,11 @@ has three subcommands:
 - `mwan watchdog` — connectivity monitor and rollback daemon on vault
 - `mwan cutover` — HA cutover tool (preflight, migrate, start-backup, verify, rollback)
 
-There are NO separate Go binaries. No `cmd/mwan-cutover/`, no `cmd/mwan-agent/`, no
-`cmd/mwan-watchdog/`. Everything is one `package main` with prefixed filenames:
-`cutover_*.go`, `agent_*.go`, `watchdog*.go`.
+There are NO separate Go binaries. Everything is one binary with `internal/` packages
+for separation of concerns. Each subsystem (watchdog, cutover, agent) is its own package
+under `internal/`. Shared code lives in `internal/config`, `internal/email`,
+`internal/logging`, `internal/ops`. The entry point at `cmd/mwan/main.go` dispatches to
+subcommand packages.
 
 This is a hard requirement. Do not create separate binaries for new functionality.
 New tools become subcommands of the monolith. This ensures:
@@ -92,6 +94,33 @@ New tools become subcommands of the monolith. This ensures:
 The `mwan cutover start-backup` phase fully configures the failover LXC (forwarding,
 masquerade, routes, keepalived) from scratch. The LXC is treated as disposable — the
 monolith owns all its configuration.
+
+## Go Code Standards
+
+These rules apply to all Go code in `mwan/go/`. Violations block merge.
+
+- **Single TOML config.** All subcommands read `/etc/mwan/config.toml`. No env-var-based
+  config loading. Env vars override secrets only (`SMTP2GO_API_KEY`, `PVE_TOKEN_SECRET`).
+- **No globals.** Config is passed explicitly through function arguments. No package-level
+  `var` for config, state, or singletons.
+- **DRY.** No duplicated structs, no bridge/adapter types that mirror another struct
+  field-by-field. If two things need the same data, they share one type.
+- **Small files.** No file over 500 lines. If a file exceeds this, split by responsibility.
+- **Separated concerns.** Config loading, business logic, I/O, and CLI parsing live in
+  separate files. No function that parses flags AND runs business logic.
+- **One email sender.** One `EmailSender` type, parameterized at construction. No
+  per-subcommand email implementations.
+- **One logger factory.** One `newLogger()` function parameterized by subcommand name, log
+  paths, and optional email handler. No per-subcommand logger setup files.
+- **No hardcoded values.** IPs, paths, timeouts, email addresses, hostnames come from TOML
+  config. Validation errors loudly if a required field is missing.
+- **Comments explain WHY, not WHAT.** Do not add comments that restate the code. Do not add
+  `// Foo does X` when the function name already says X.
+- **Secrets in Ansible Vault.** TOML templates use `{{ mwan_smtp2go_api_key }}` Jinja2
+  variables. Never commit plaintext secrets. The `.j2` suffix signals a template.
+- **Linting enforced.** `make lint` (golangci-lint) must pass. Config in `mwan/go/.golangci.yml`.
+- **Cutover is one-time.** `mwan cutover` is a one-time migration tool. After production
+  cutover, it will be deprecated. Ongoing failover is handled by `mwan watchdog failover`.
 
 ## Rules for Changes
 

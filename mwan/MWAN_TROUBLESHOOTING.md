@@ -129,6 +129,92 @@ When something breaks:
 - Created HTTP email script for reliable routing
 - Updated post-deploy check to test from MWAN VM + cloudflared
 
+### 2026-04-09: keepalived overwrites /etc/nftables.conf on suburban testbed VM 950
+
+**Symptom**:
+
+- After reboot, `nftables.service` fails: `Error: Interface does not exist` for `vrrp.51`
+- All filter, NAT, NPT, and mangle rules missing
+- VM 950 reachable on mgmt but all forwarding broken
+
+**Root cause**:
+
+1. During a previous session, runtime nftables state was saved with `nft list ruleset > /etc/nftables.conf`
+2. This captured keepalived's `ip6 keepalived` table which references the `vrrp.51` macvlan interface
+3. On boot, nftables loads before keepalived creates vrrp.51, causing the load to fail
+4. Same class of issue as 2026-01-22 systemd dependency cycle: service ordering at boot
+
+**Fix**:
+
+1. Restored proper `/etc/nftables.conf` from repo (`mwan/testbed/vm-950/nftables.conf`)
+2. NPT rules moved from runtime-only to static config (embedded in nftables.conf)
+3. Keepalived adds its own table at runtime (harmless, coexists with static config)
+
+**Prevention**:
+
+- Never save runtime nftables state over `/etc/nftables.conf`
+- NPT rules are now in the static config, not added at runtime
+- If keepalived needs nft rules, they're added by keepalived itself after it creates vrrp.51
+
+**Files changed**:
+
+- `mwan/testbed/vm-950/nftables.conf`
+
+### 2026-04-09: nftables locks out SSH when mgmt interface is eth0 not enmgmt0
+
+**Symptom**:
+
+- After deploying nftables config to VM 950, SSH times out
+- VM running, all interfaces up, but no SSH access
+
+**Root cause**:
+
+1. Cloud-init names the management interface `eth0`
+2. systemd-networkd link file renames it to `enmgmt0` (stable name)
+3. Rename doesn't always happen (depends on boot order, cloud-init state)
+4. nftables input chain only allows SSH on `enmgmt0`, drops on `eth0`
+5. Same class as 2026-01-22: management interface naming assumptions
+
+**Fix**:
+
+- Changed nftables input rules to accept SSH on both `eth0` and `enmgmt0`:
+  `iifname { $MGMT_IFACE, "eth0" } tcp dport 22 accept`
+
+**Prevention**:
+
+- Always allow management traffic on both possible interface names
+- This mirrors production where the template handles interface naming via Jinja2
+
+**Files changed**:
+
+- `mwan/testbed/vm-950/nftables.conf`
+
+### 2026-04-09: DAD conflict on enmwanbr0 when keepalived VIP active
+
+**Symptom**:
+
+- `ip addr show enmwanbr0` shows `3d06:bad:b01:201::1/64 scope global dadfailed tentative`
+- Cannot ping OPNsense from VM 950 using GUA source address
+- Same issue observed in production cutover attempts
+
+**Root cause**:
+
+1. Keepalived assigns `::1` as VIP on vrrp.51 (macvlan)
+2. networkd also has `::1` configured on the physical enmwanbr0
+3. Linux DAD detects the duplicate and marks enmwanbr0's copy as `dadfailed`
+4. Outbound traffic from enmwanbr0 can't use `::1` as source
+
+**Fix**:
+
+- Remove `::1` from enmwanbr0 after keepalived starts
+- Add `::3` as the "real" address on enmwanbr0 (post-cutover address per config)
+- VIP `::1` lives only on vrrp.51
+
+**Prevention**:
+
+- The cutover tool's migrate phase handles this: assigns new real address, removes old
+- networkd config for enmwanbr0 should use `::3` (post-cutover) not `::1` (VIP)
+
 ---
 
 ## Ansible

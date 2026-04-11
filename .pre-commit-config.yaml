@@ -14,3 +14,11 @@ repos:
       - id: detect-private-key
       - id: trailing-whitespace
       - id: end-of-file-fixer
+
+  - repo: local
+    hooks:
+      - id: mwan-lint
+        name: mwan golangci-lint
+        entry: bash -c 'cd mwan/go && golangci-lint run ./...'
+        language: system
+        files: 'mwan/go/.*\.go$'
