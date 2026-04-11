@@ -269,6 +269,18 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 	return nil
 }
 
+// Reconfigure applies pending OPNsense routing changes (gateways, static routes).
+func (c *Client) Reconfigure(ctx context.Context) error {
+	c.log.Info("opnsense: applying routing reconfiguration")
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/routes/routes/reconfigure", nil, &resp); err != nil {
+		return fmt.Errorf("reconfigure routing: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // BGP status
 // ---------------------------------------------------------------------------

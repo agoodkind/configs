@@ -134,11 +134,12 @@ type CutoverSection struct {
 // OPNsense is a BGP peer, not a speaker we control. Its BGP config is the inverse
 // of the agent's: different router-id, different neighbor list.
 type OPNsenseSection struct {
-	URL       string          `toml:"url"`
-	APIKey    string          `toml:"api_key"`
-	APISecret string          `toml:"api_secret"`
-	Insecure  bool            `toml:"insecure"`
-	BGP       OPNsenseBGP     `toml:"bgp"`
+	URL         string      `toml:"url"`
+	APIKey      string      `toml:"api_key"`
+	APISecret   string      `toml:"api_secret"`
+	Insecure    bool        `toml:"insecure"`
+	GatewayName string      `toml:"gateway_name"` // OPNsense gateway to disable during cutover
+	BGP         OPNsenseBGP `toml:"bgp"`
 }
 
 // OPNsenseBGP describes the BGP configuration to push to OPNsense via its API.

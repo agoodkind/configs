@@ -292,8 +292,70 @@ func cmdVerifyCoexistence(ctx context.Context, log *slog.Logger, cfg *config.Con
 
 func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) error {
 	log.Info("=== Phase 2: Switch to BGP ===")
-	log.Warn("not yet implemented -- will disable OPNsense gateway via API, verify BGP takes over")
-	log.Info("rollback: mwan cutover2 rollback (re-enables OPNsense gateway)")
+
+	if err := validateOPNsenseConfig(cfg); err != nil {
+		return err
+	}
+	if cfg.OPNsense.GatewayName == "" {
+		return fmt.Errorf("[opnsense] gateway_name is required for switch-to-bgp")
+	}
+
+	client := opnsense.New(opnsense.Config{
+		URL:       cfg.OPNsense.URL,
+		APIKey:    cfg.OPNsense.APIKey,
+		APISecret: cfg.OPNsense.APISecret,
+		Insecure:  cfg.OPNsense.Insecure,
+	}, log)
+
+	// Pre-check: verify BGP route exists before touching the gateway
+	log.Info("pre-check: verifying BGP routes exist on OPNsense...")
+	summary, err := client.GetBGPStatus(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot verify BGP routes before cutover: %w", err)
+	}
+
+	v4ok := summary.IPv4Unicast != nil && summary.IPv4Unicast.RIBCount > 0
+	v6ok := summary.IPv6Unicast != nil && summary.IPv6Unicast.RIBCount > 0
+	if !v4ok {
+		return fmt.Errorf("no IPv4 BGP routes on OPNsense, aborting cutover")
+	}
+	log.Info("BGP routes confirmed",
+		"ipv4_routes", summary.IPv4Unicast.RIBCount,
+		"ipv6_routes_present", v6ok,
+	)
+
+	// Find the gateway UUID
+	log.Info("finding gateway...", "name", cfg.OPNsense.GatewayName)
+	gwUUID, err := client.FindGatewayByName(ctx, cfg.OPNsense.GatewayName)
+	if err != nil {
+		return fmt.Errorf("find gateway %q: %w", cfg.OPNsense.GatewayName, err)
+	}
+	log.Info("gateway found", "name", cfg.OPNsense.GatewayName, "uuid", gwUUID)
+
+	// Disable the gateway (BGP takes over)
+	log.Info("disabling OPNsense gateway...")
+	if err := client.DisableGateway(ctx, gwUUID); err != nil {
+		return fmt.Errorf("disable gateway: %w", err)
+	}
+
+	// Reconfigure to apply
+	log.Info("applying gateway change...")
+	if err := client.Reconfigure(ctx); err != nil {
+		return fmt.Errorf("reconfigure after gateway disable: %w", err)
+	}
+
+	// Verify BGP route is now the active default
+	log.Info("verifying BGP took over...")
+	postSummary, err := client.GetBGPStatus(ctx)
+	if err != nil {
+		log.Warn("could not verify post-cutover BGP status", "err", err)
+	} else {
+		logBGPSummary(log, postSummary)
+	}
+
+	log.Info("=== Phase 2 complete: BGP is now the active routing source ===")
+	log.Info("rollback: mwan cutover2 rollback")
+	log.Info("next step: mwan cutover2 test-failover")
 	return nil
 }
 
@@ -318,8 +380,38 @@ func cmdStatus(ctx context.Context, log *slog.Logger, cfg *config.Config) error 
 }
 
 func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) error {
-	log.Info("=== Emergency rollback ===")
-	log.Warn("not yet implemented -- will re-enable OPNsense gateway and restart keepalived")
+	log.Info("=== Emergency rollback: re-enable OPNsense gateway ===")
+
+	if err := validateOPNsenseConfig(cfg); err != nil {
+		return err
+	}
+	if cfg.OPNsense.GatewayName == "" {
+		return fmt.Errorf("[opnsense] gateway_name is required for rollback")
+	}
+
+	client := opnsense.New(opnsense.Config{
+		URL:       cfg.OPNsense.URL,
+		APIKey:    cfg.OPNsense.APIKey,
+		APISecret: cfg.OPNsense.APISecret,
+		Insecure:  cfg.OPNsense.Insecure,
+	}, log)
+
+	log.Info("finding gateway...", "name", cfg.OPNsense.GatewayName)
+	gwUUID, err := client.FindGatewayByName(ctx, cfg.OPNsense.GatewayName)
+	if err != nil {
+		return fmt.Errorf("find gateway %q: %w", cfg.OPNsense.GatewayName, err)
+	}
+
+	log.Info("re-enabling gateway...", "uuid", gwUUID)
+	if err := client.EnableGateway(ctx, gwUUID); err != nil {
+		return fmt.Errorf("enable gateway: %w", err)
+	}
+
+	if err := client.Reconfigure(ctx); err != nil {
+		return fmt.Errorf("reconfigure after gateway enable: %w", err)
+	}
+
+	log.Info("=== Rollback complete: static gateway re-enabled ===")
 	return nil
 }
 
