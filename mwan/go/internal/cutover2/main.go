@@ -296,7 +296,7 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	if err := validateOPNsenseConfig(cfg); err != nil {
 		return err
 	}
-	if cfg.OPNsense.GatewayName == "" {
+	if len(cfg.OPNsense.GatewayNames) == 0 {
 		return fmt.Errorf("[opnsense] gateway_name is required for switch-to-bgp")
 	}
 
@@ -324,22 +324,21 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		"ipv6_routes_present", v6ok,
 	)
 
-	// Find the gateway UUID
-	log.Info("finding gateway...", "name", cfg.OPNsense.GatewayName)
-	gwUUID, err := client.FindGatewayByName(ctx, cfg.OPNsense.GatewayName)
-	if err != nil {
-		return fmt.Errorf("find gateway %q: %w", cfg.OPNsense.GatewayName, err)
-	}
-	log.Info("gateway found", "name", cfg.OPNsense.GatewayName, "uuid", gwUUID)
-
-	// Disable the gateway (BGP takes over)
-	log.Info("disabling OPNsense gateway...")
-	if err := client.DisableGateway(ctx, gwUUID); err != nil {
-		return fmt.Errorf("disable gateway: %w", err)
+	// Disable all configured gateways
+	for _, gwName := range cfg.OPNsense.GatewayNames {
+		log.Info("finding gateway...", "name", gwName)
+		gwUUID, findErr := client.FindGatewayByName(ctx, gwName)
+		if findErr != nil {
+			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
+		}
+		log.Info("disabling gateway...", "name", gwName, "uuid", gwUUID)
+		if disableErr := client.DisableGateway(ctx, gwUUID); disableErr != nil {
+			return fmt.Errorf("disable gateway %q: %w", gwName, disableErr)
+		}
 	}
 
 	// Reconfigure to apply
-	log.Info("applying gateway change...")
+	log.Info("applying gateway changes...")
 	if err := client.Reconfigure(ctx); err != nil {
 		return fmt.Errorf("reconfigure after gateway disable: %w", err)
 	}
@@ -385,7 +384,7 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 	if err := validateOPNsenseConfig(cfg); err != nil {
 		return err
 	}
-	if cfg.OPNsense.GatewayName == "" {
+	if len(cfg.OPNsense.GatewayNames) == 0 {
 		return fmt.Errorf("[opnsense] gateway_name is required for rollback")
 	}
 
@@ -396,15 +395,16 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 		Insecure:  cfg.OPNsense.Insecure,
 	}, log)
 
-	log.Info("finding gateway...", "name", cfg.OPNsense.GatewayName)
-	gwUUID, err := client.FindGatewayByName(ctx, cfg.OPNsense.GatewayName)
-	if err != nil {
-		return fmt.Errorf("find gateway %q: %w", cfg.OPNsense.GatewayName, err)
-	}
-
-	log.Info("re-enabling gateway...", "uuid", gwUUID)
-	if err := client.EnableGateway(ctx, gwUUID); err != nil {
-		return fmt.Errorf("enable gateway: %w", err)
+	for _, gwName := range cfg.OPNsense.GatewayNames {
+		log.Info("finding gateway...", "name", gwName)
+		gwUUID, findErr := client.FindGatewayByName(ctx, gwName)
+		if findErr != nil {
+			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
+		}
+		log.Info("re-enabling gateway...", "name", gwName, "uuid", gwUUID)
+		if enableErr := client.EnableGateway(ctx, gwUUID); enableErr != nil {
+			return fmt.Errorf("enable gateway %q: %w", gwName, enableErr)
+		}
 	}
 
 	if err := client.Reconfigure(ctx); err != nil {

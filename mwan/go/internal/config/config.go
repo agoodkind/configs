@@ -138,7 +138,7 @@ type OPNsenseSection struct {
 	APIKey      string      `toml:"api_key"`
 	APISecret   string      `toml:"api_secret"`
 	Insecure    bool        `toml:"insecure"`
-	GatewayName string      `toml:"gateway_name"` // OPNsense gateway to disable during cutover
+	GatewayNames []string   `toml:"gateway_names"` // OPNsense gateways to disable during cutover
 	BGP         OPNsenseBGP `toml:"bgp"`
 }
 
