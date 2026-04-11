@@ -26,6 +26,7 @@ require (
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/orcaman/concurrent-map/v2 v2.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
+	github.com/reinkens/opnsense-go v0.0.0-20250714065544-415db7f769d2 // indirect
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
 	github.com/segmentio/fasthash v1.0.3 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
