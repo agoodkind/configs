@@ -85,6 +85,12 @@ ssh_timeout_sec = 10
 verify_timeout_sec = 30
 boot_wait_sec = 35
 
+[opnsense]
+url = "https://{{ opnsense_addr }}"
+api_key = "{{ opnsense_api_key }}"
+api_secret = "{{ opnsense_api_secret }}"
+insecure = true
+
 [agent]
 vsock_port = 50051
 tcp_addr = "[::]:50052"

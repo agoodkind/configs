@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v7.34.1
-// source: proto/mwan/v1/mwan.proto
+// source: mwan/v1/mwan.proto
 
 package mwanv1
 
@@ -391,5 +391,5 @@ var MWANAgent_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "proto/mwan/v1/mwan.proto",
+	Metadata: "mwan/v1/mwan.proto",
 }

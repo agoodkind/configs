@@ -130,6 +130,14 @@ type CutoverSection struct {
 	BootWaitSec      int `toml:"boot_wait_sec"`
 }
 
+// OPNsenseSection holds OPNsense API credentials and endpoint.
+type OPNsenseSection struct {
+	URL       string `toml:"url"`        // e.g. "https://192.168.1.1"
+	APIKey    string `toml:"api_key"`
+	APISecret string `toml:"api_secret"`
+	Insecure  bool   `toml:"insecure"`   // skip TLS verify
+}
+
 // BGPSection holds embedded GoBGP speaker configuration.
 type BGPSection struct {
 	Enabled          bool          `toml:"enabled"`
@@ -176,10 +184,11 @@ type Config struct {
 	PVE     PVEConfig     `toml:"pve"`
 	Network NetworkConfig `toml:"network"`
 
-	Watchdog WatchdogSection `toml:"watchdog"`
-	Cutover  CutoverSection  `toml:"cutover"`
-	Agent    AgentSection    `toml:"agent"`
-	BGP      BGPSection      `toml:"bgp"`
+	Watchdog  WatchdogSection  `toml:"watchdog"`
+	Cutover   CutoverSection   `toml:"cutover"`
+	Agent     AgentSection     `toml:"agent"`
+	BGP       BGPSection       `toml:"bgp"`
+	OPNsense  OPNsenseSection  `toml:"opnsense"`
 }
 
 func defaultConfig() Config {
@@ -250,6 +259,9 @@ func Load() (*Config, error) {
 	if v := strings.TrimSpace(os.Getenv("PVE_TOKEN_SECRET")); v != "" {
 		cfg.PVE.TokenSecret = v
 	}
+	if v := strings.TrimSpace(os.Getenv("OPNSENSE_API_SECRET")); v != "" {
+		cfg.OPNsense.APISecret = v
+	}
 
 	return &cfg, nil
 }
@@ -313,6 +325,9 @@ func validateCutover(cfg *Config, dryRun bool) error {
 	}
 	if cfg.Email.SubjectPrefix == "" {
 		return errors.New("[email] subject_prefix is required")
+	}
+	if cfg.OPNsense.URL == "" {
+		return errors.New("[opnsense] url is required")
 	}
 	return nil
 }

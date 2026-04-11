@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.1
-// source: proto/mwan/v1/mwan.proto
+// source: mwan/v1/mwan.proto
 
 package mwanv1
 
@@ -29,7 +29,7 @@ type GetHealthRequest struct {
 
 func (x *GetHealthRequest) Reset() {
 	*x = GetHealthRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[0]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -41,7 +41,7 @@ func (x *GetHealthRequest) String() string {
 func (*GetHealthRequest) ProtoMessage() {}
 
 func (x *GetHealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[0]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -54,7 +54,7 @@ func (x *GetHealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHealthRequest.ProtoReflect.Descriptor instead.
 func (*GetHealthRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{0}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{0}
 }
 
 type GetHealthResponse struct {
@@ -71,7 +71,7 @@ type GetHealthResponse struct {
 
 func (x *GetHealthResponse) Reset() {
 	*x = GetHealthResponse{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[1]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -83,7 +83,7 @@ func (x *GetHealthResponse) String() string {
 func (*GetHealthResponse) ProtoMessage() {}
 
 func (x *GetHealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[1]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -96,7 +96,7 @@ func (x *GetHealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHealthResponse.ProtoReflect.Descriptor instead.
 func (*GetHealthResponse) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{1}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GetHealthResponse) GetIpv4Ok() bool {
@@ -153,7 +153,7 @@ type WANStatus struct {
 
 func (x *WANStatus) Reset() {
 	*x = WANStatus{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[2]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -165,7 +165,7 @@ func (x *WANStatus) String() string {
 func (*WANStatus) ProtoMessage() {}
 
 func (x *WANStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[2]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -178,7 +178,7 @@ func (x *WANStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WANStatus.ProtoReflect.Descriptor instead.
 func (*WANStatus) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{2}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *WANStatus) GetName() string {
@@ -221,7 +221,7 @@ type PingRequest struct {
 
 func (x *PingRequest) Reset() {
 	*x = PingRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[3]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -233,7 +233,7 @@ func (x *PingRequest) String() string {
 func (*PingRequest) ProtoMessage() {}
 
 func (x *PingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[3]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -246,7 +246,7 @@ func (x *PingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
 func (*PingRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{3}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PingRequest) GetTarget() string {
@@ -287,7 +287,7 @@ type PingResponse struct {
 
 func (x *PingResponse) Reset() {
 	*x = PingResponse{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[4]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -299,7 +299,7 @@ func (x *PingResponse) String() string {
 func (*PingResponse) ProtoMessage() {}
 
 func (x *PingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[4]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -312,7 +312,7 @@ func (x *PingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
 func (*PingResponse) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{4}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PingResponse) GetSuccess() bool {
@@ -337,7 +337,7 @@ type GetConfigStateRequest struct {
 
 func (x *GetConfigStateRequest) Reset() {
 	*x = GetConfigStateRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[5]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -349,7 +349,7 @@ func (x *GetConfigStateRequest) String() string {
 func (*GetConfigStateRequest) ProtoMessage() {}
 
 func (x *GetConfigStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[5]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -362,7 +362,7 @@ func (x *GetConfigStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigStateRequest.ProtoReflect.Descriptor instead.
 func (*GetConfigStateRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{5}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{5}
 }
 
 type GetConfigStateResponse struct {
@@ -379,7 +379,7 @@ type GetConfigStateResponse struct {
 
 func (x *GetConfigStateResponse) Reset() {
 	*x = GetConfigStateResponse{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[6]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -391,7 +391,7 @@ func (x *GetConfigStateResponse) String() string {
 func (*GetConfigStateResponse) ProtoMessage() {}
 
 func (x *GetConfigStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[6]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -404,7 +404,7 @@ func (x *GetConfigStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigStateResponse.ProtoReflect.Descriptor instead.
 func (*GetConfigStateResponse) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{6}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetConfigStateResponse) GetConfigHash() string {
@@ -443,7 +443,7 @@ type GetSystemInfoRequest struct {
 
 func (x *GetSystemInfoRequest) Reset() {
 	*x = GetSystemInfoRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[7]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -455,7 +455,7 @@ func (x *GetSystemInfoRequest) String() string {
 func (*GetSystemInfoRequest) ProtoMessage() {}
 
 func (x *GetSystemInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[7]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -468,7 +468,7 @@ func (x *GetSystemInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSystemInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetSystemInfoRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{7}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{7}
 }
 
 type GetSystemInfoResponse struct {
@@ -486,7 +486,7 @@ type GetSystemInfoResponse struct {
 
 func (x *GetSystemInfoResponse) Reset() {
 	*x = GetSystemInfoResponse{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[8]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +498,7 @@ func (x *GetSystemInfoResponse) String() string {
 func (*GetSystemInfoResponse) ProtoMessage() {}
 
 func (x *GetSystemInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[8]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +511,7 @@ func (x *GetSystemInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSystemInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetSystemInfoResponse) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{8}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetSystemInfoResponse) GetHostname() string {
@@ -571,7 +571,7 @@ type WatchEventsRequest struct {
 
 func (x *WatchEventsRequest) Reset() {
 	*x = WatchEventsRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[9]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -583,7 +583,7 @@ func (x *WatchEventsRequest) String() string {
 func (*WatchEventsRequest) ProtoMessage() {}
 
 func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[9]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -596,7 +596,7 @@ func (x *WatchEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchEventsRequest.ProtoReflect.Descriptor instead.
 func (*WatchEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{9}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{9}
 }
 
 type AgentEvent struct {
@@ -614,7 +614,7 @@ type AgentEvent struct {
 
 func (x *AgentEvent) Reset() {
 	*x = AgentEvent{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[10]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -626,7 +626,7 @@ func (x *AgentEvent) String() string {
 func (*AgentEvent) ProtoMessage() {}
 
 func (x *AgentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[10]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -639,7 +639,7 @@ func (x *AgentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentEvent.ProtoReflect.Descriptor instead.
 func (*AgentEvent) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{10}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AgentEvent) GetTimestampEpoch() int64 {
@@ -715,7 +715,7 @@ type ConfigChangedEvent struct {
 
 func (x *ConfigChangedEvent) Reset() {
 	*x = ConfigChangedEvent{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[11]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -727,7 +727,7 @@ func (x *ConfigChangedEvent) String() string {
 func (*ConfigChangedEvent) ProtoMessage() {}
 
 func (x *ConfigChangedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[11]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -740,7 +740,7 @@ func (x *ConfigChangedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigChangedEvent.ProtoReflect.Descriptor instead.
 func (*ConfigChangedEvent) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{11}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ConfigChangedEvent) GetOldHash() string {
@@ -768,7 +768,7 @@ type HealthTransitionEvent struct {
 
 func (x *HealthTransitionEvent) Reset() {
 	*x = HealthTransitionEvent{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[12]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -780,7 +780,7 @@ func (x *HealthTransitionEvent) String() string {
 func (*HealthTransitionEvent) ProtoMessage() {}
 
 func (x *HealthTransitionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[12]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -793,7 +793,7 @@ func (x *HealthTransitionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthTransitionEvent.ProtoReflect.Descriptor instead.
 func (*HealthTransitionEvent) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{12}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HealthTransitionEvent) GetInterfaceName() string {
@@ -827,7 +827,7 @@ type SuppressRollbackEvent struct {
 
 func (x *SuppressRollbackEvent) Reset() {
 	*x = SuppressRollbackEvent{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[13]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -839,7 +839,7 @@ func (x *SuppressRollbackEvent) String() string {
 func (*SuppressRollbackEvent) ProtoMessage() {}
 
 func (x *SuppressRollbackEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[13]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -852,7 +852,7 @@ func (x *SuppressRollbackEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuppressRollbackEvent.ProtoReflect.Descriptor instead.
 func (*SuppressRollbackEvent) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{13}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SuppressRollbackEvent) GetDurationSeconds() int32 {
@@ -877,7 +877,7 @@ type GetBGPStatusRequest struct {
 
 func (x *GetBGPStatusRequest) Reset() {
 	*x = GetBGPStatusRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[14]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +889,7 @@ func (x *GetBGPStatusRequest) String() string {
 func (*GetBGPStatusRequest) ProtoMessage() {}
 
 func (x *GetBGPStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[14]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +902,7 @@ func (x *GetBGPStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBGPStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetBGPStatusRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{14}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{14}
 }
 
 type GetBGPStatusResponse struct {
@@ -916,7 +916,7 @@ type GetBGPStatusResponse struct {
 
 func (x *GetBGPStatusResponse) Reset() {
 	*x = GetBGPStatusResponse{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[15]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -928,7 +928,7 @@ func (x *GetBGPStatusResponse) String() string {
 func (*GetBGPStatusResponse) ProtoMessage() {}
 
 func (x *GetBGPStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[15]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -941,7 +941,7 @@ func (x *GetBGPStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBGPStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetBGPStatusResponse) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{15}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetBGPStatusResponse) GetAnnouncing() bool {
@@ -978,7 +978,7 @@ type BGPPeerStatus struct {
 
 func (x *BGPPeerStatus) Reset() {
 	*x = BGPPeerStatus{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[16]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -990,7 +990,7 @@ func (x *BGPPeerStatus) String() string {
 func (*BGPPeerStatus) ProtoMessage() {}
 
 func (x *BGPPeerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[16]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1003,7 +1003,7 @@ func (x *BGPPeerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BGPPeerStatus.ProtoReflect.Descriptor instead.
 func (*BGPPeerStatus) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{16}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *BGPPeerStatus) GetAddress() string {
@@ -1049,7 +1049,7 @@ type AnnounceRoutesRequest struct {
 
 func (x *AnnounceRoutesRequest) Reset() {
 	*x = AnnounceRoutesRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[17]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1061,7 +1061,7 @@ func (x *AnnounceRoutesRequest) String() string {
 func (*AnnounceRoutesRequest) ProtoMessage() {}
 
 func (x *AnnounceRoutesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[17]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1074,7 +1074,7 @@ func (x *AnnounceRoutesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnnounceRoutesRequest.ProtoReflect.Descriptor instead.
 func (*AnnounceRoutesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{17}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{17}
 }
 
 type AnnounceRoutesResponse struct {
@@ -1087,7 +1087,7 @@ type AnnounceRoutesResponse struct {
 
 func (x *AnnounceRoutesResponse) Reset() {
 	*x = AnnounceRoutesResponse{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[18]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1099,7 +1099,7 @@ func (x *AnnounceRoutesResponse) String() string {
 func (*AnnounceRoutesResponse) ProtoMessage() {}
 
 func (x *AnnounceRoutesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[18]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1112,7 +1112,7 @@ func (x *AnnounceRoutesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnnounceRoutesResponse.ProtoReflect.Descriptor instead.
 func (*AnnounceRoutesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{18}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AnnounceRoutesResponse) GetSuccess() bool {
@@ -1137,7 +1137,7 @@ type WithdrawRoutesRequest struct {
 
 func (x *WithdrawRoutesRequest) Reset() {
 	*x = WithdrawRoutesRequest{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[19]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1149,7 +1149,7 @@ func (x *WithdrawRoutesRequest) String() string {
 func (*WithdrawRoutesRequest) ProtoMessage() {}
 
 func (x *WithdrawRoutesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[19]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1162,7 +1162,7 @@ func (x *WithdrawRoutesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawRoutesRequest.ProtoReflect.Descriptor instead.
 func (*WithdrawRoutesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{19}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{19}
 }
 
 type WithdrawRoutesResponse struct {
@@ -1175,7 +1175,7 @@ type WithdrawRoutesResponse struct {
 
 func (x *WithdrawRoutesResponse) Reset() {
 	*x = WithdrawRoutesResponse{}
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[20]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1187,7 +1187,7 @@ func (x *WithdrawRoutesResponse) String() string {
 func (*WithdrawRoutesResponse) ProtoMessage() {}
 
 func (x *WithdrawRoutesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[20]
+	mi := &file_mwan_v1_mwan_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1200,7 +1200,7 @@ func (x *WithdrawRoutesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawRoutesResponse.ProtoReflect.Descriptor instead.
 func (*WithdrawRoutesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{20}
+	return file_mwan_v1_mwan_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *WithdrawRoutesResponse) GetSuccess() bool {
@@ -1217,11 +1217,11 @@ func (x *WithdrawRoutesResponse) GetError() string {
 	return ""
 }
 
-var File_proto_mwan_v1_mwan_proto protoreflect.FileDescriptor
+var File_mwan_v1_mwan_proto protoreflect.FileDescriptor
 
-const file_proto_mwan_v1_mwan_proto_rawDesc = "" +
+const file_mwan_v1_mwan_proto_rawDesc = "" +
 	"\n" +
-	"\x18proto/mwan/v1/mwan.proto\x12\amwan.v1\"\x12\n" +
+	"\x12mwan/v1/mwan.proto\x12\amwan.v1\"\x12\n" +
 	"\x10GetHealthRequest\"\xfa\x01\n" +
 	"\x11GetHealthResponse\x12\x17\n" +
 	"\aipv4_ok\x18\x01 \x01(\bR\x06ipv4Ok\x12\x17\n" +
@@ -1309,19 +1309,19 @@ const file_proto_mwan_v1_mwan_proto_rawDesc = "" +
 	"\x0eWithdrawRoutes\x12\x1e.mwan.v1.WithdrawRoutesRequest\x1a\x1f.mwan.v1.WithdrawRoutesResponseB%Z#goodkind.io/mwan/gen/mwan/v1;mwanv1b\x06proto3"
 
 var (
-	file_proto_mwan_v1_mwan_proto_rawDescOnce sync.Once
-	file_proto_mwan_v1_mwan_proto_rawDescData []byte
+	file_mwan_v1_mwan_proto_rawDescOnce sync.Once
+	file_mwan_v1_mwan_proto_rawDescData []byte
 )
 
-func file_proto_mwan_v1_mwan_proto_rawDescGZIP() []byte {
-	file_proto_mwan_v1_mwan_proto_rawDescOnce.Do(func() {
-		file_proto_mwan_v1_mwan_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_mwan_v1_mwan_proto_rawDesc), len(file_proto_mwan_v1_mwan_proto_rawDesc)))
+func file_mwan_v1_mwan_proto_rawDescGZIP() []byte {
+	file_mwan_v1_mwan_proto_rawDescOnce.Do(func() {
+		file_mwan_v1_mwan_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_mwan_v1_mwan_proto_rawDesc), len(file_mwan_v1_mwan_proto_rawDesc)))
 	})
-	return file_proto_mwan_v1_mwan_proto_rawDescData
+	return file_mwan_v1_mwan_proto_rawDescData
 }
 
-var file_proto_mwan_v1_mwan_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
-var file_proto_mwan_v1_mwan_proto_goTypes = []any{
+var file_mwan_v1_mwan_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_mwan_v1_mwan_proto_goTypes = []any{
 	(*GetHealthRequest)(nil),       // 0: mwan.v1.GetHealthRequest
 	(*GetHealthResponse)(nil),      // 1: mwan.v1.GetHealthResponse
 	(*WANStatus)(nil),              // 2: mwan.v1.WANStatus
@@ -1344,7 +1344,7 @@ var file_proto_mwan_v1_mwan_proto_goTypes = []any{
 	(*WithdrawRoutesRequest)(nil),  // 19: mwan.v1.WithdrawRoutesRequest
 	(*WithdrawRoutesResponse)(nil), // 20: mwan.v1.WithdrawRoutesResponse
 }
-var file_proto_mwan_v1_mwan_proto_depIdxs = []int32{
+var file_mwan_v1_mwan_proto_depIdxs = []int32{
 	2,  // 0: mwan.v1.GetHealthResponse.wan_interfaces:type_name -> mwan.v1.WANStatus
 	11, // 1: mwan.v1.AgentEvent.config_changed:type_name -> mwan.v1.ConfigChangedEvent
 	12, // 2: mwan.v1.AgentEvent.health_transition:type_name -> mwan.v1.HealthTransitionEvent
@@ -1373,12 +1373,12 @@ var file_proto_mwan_v1_mwan_proto_depIdxs = []int32{
 	0,  // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_proto_mwan_v1_mwan_proto_init() }
-func file_proto_mwan_v1_mwan_proto_init() {
-	if File_proto_mwan_v1_mwan_proto != nil {
+func init() { file_mwan_v1_mwan_proto_init() }
+func file_mwan_v1_mwan_proto_init() {
+	if File_mwan_v1_mwan_proto != nil {
 		return
 	}
-	file_proto_mwan_v1_mwan_proto_msgTypes[10].OneofWrappers = []any{
+	file_mwan_v1_mwan_proto_msgTypes[10].OneofWrappers = []any{
 		(*AgentEvent_ConfigChanged)(nil),
 		(*AgentEvent_HealthTransition)(nil),
 		(*AgentEvent_SuppressRollback)(nil),
@@ -1387,17 +1387,17 @@ func file_proto_mwan_v1_mwan_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_mwan_v1_mwan_proto_rawDesc), len(file_proto_mwan_v1_mwan_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mwan_v1_mwan_proto_rawDesc), len(file_mwan_v1_mwan_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_mwan_v1_mwan_proto_goTypes,
-		DependencyIndexes: file_proto_mwan_v1_mwan_proto_depIdxs,
-		MessageInfos:      file_proto_mwan_v1_mwan_proto_msgTypes,
+		GoTypes:           file_mwan_v1_mwan_proto_goTypes,
+		DependencyIndexes: file_mwan_v1_mwan_proto_depIdxs,
+		MessageInfos:      file_mwan_v1_mwan_proto_msgTypes,
 	}.Build()
-	File_proto_mwan_v1_mwan_proto = out.File
-	file_proto_mwan_v1_mwan_proto_goTypes = nil
-	file_proto_mwan_v1_mwan_proto_depIdxs = nil
+	File_mwan_v1_mwan_proto = out.File
+	file_mwan_v1_mwan_proto_goTypes = nil
+	file_mwan_v1_mwan_proto_depIdxs = nil
 }

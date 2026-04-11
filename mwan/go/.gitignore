@@ -4,3 +4,4 @@
 /mwan-watchdog
 /mwan-change-detect
 /mwan-cutover
+.make/

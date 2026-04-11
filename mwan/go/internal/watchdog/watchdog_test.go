@@ -2,7 +2,6 @@ package watchdog
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -214,24 +213,6 @@ func newTestWatchdog(
 	}
 	return w
 }
-
-type mockEmailSender struct {
-	m *mockOps
-}
-
-func (mes *mockEmailSender) Send(ctx context.Context, to, subject, body string) error {
-	return mes.m.SendEmail(ctx, to, subject, body)
-}
-
-// errSlogHandler is a test slog.Handler that returns an error.
-type errSlogHandler struct{}
-
-func (errSlogHandler) Enabled(context.Context, slog.Level) bool { return true }
-func (errSlogHandler) Handle(context.Context, slog.Record) error {
-	return errors.New("handler error")
-}
-func (e errSlogHandler) WithAttrs([]slog.Attr) slog.Handler { return e }
-func (e errSlogHandler) WithGroup(string) slog.Handler      { return e }
 
 // ---------------------------------------------------------------------------
 // Test Placeholder - minimal tests to allow compilation

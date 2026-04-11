@@ -1,15 +1,47 @@
+GO_MK_URL   := https://raw.githubusercontent.com/agoodkind/go-makefile/main/go.mk
+GO_MK       := .make/go.mk
+GO_MK_CACHE := $(HOME)/.cache/go-makefile/go.mk
+
+$(GO_MK):
+	@mkdir -p $(dir $@)
+	@if curl -fsSL --connect-timeout 5 --max-time 10 "$(GO_MK_URL)" -o "$@"; then \
+		mkdir -p "$(dir $(GO_MK_CACHE))" && cp "$@" "$(GO_MK_CACHE)"; \
+	elif [ -f "$(GO_MK_CACHE)" ]; then \
+		echo "warning: go.mk fetch failed, using cached version" >&2; \
+		cp "$(GO_MK_CACHE)" "$@"; \
+	else \
+		echo "error: go.mk fetch failed and no cache available" >&2; \
+		exit 1; \
+	fi
+
+-include $(GO_MK)
+
+.PHONY: sync
+sync:
+	@mkdir -p "$(dir $(GO_MK))"
+	@if curl -fsSL --connect-timeout 5 --max-time 10 "$(GO_MK_URL)" -o "$(GO_MK)"; then \
+		mkdir -p "$(dir $(GO_MK_CACHE))" && cp "$(GO_MK)" "$(GO_MK_CACHE)"; \
+		echo "go.mk updated"; \
+	else \
+		echo "error: go.mk fetch failed" >&2; \
+		exit 1; \
+	fi
+
 # Protobuf codegen requires protoc, protoc-gen-go, protoc-gen-go-grpc on PATH.
 PROTOC ?= protoc
 GOBIN ?= $(shell go env GOPATH)/bin
 export PATH := $(GOBIN):$(PATH)
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-GIT_DIRTY := $(shell git diff --quiet HEAD -- . 2>/dev/null && echo clean || echo dirty)
-LDFLAGS := -X main.gitCommit=$(GIT_COMMIT) -X main.gitDirty=$(GIT_DIRTY)
+GIT_DIRTY  := $(shell git diff --quiet HEAD -- . 2>/dev/null && echo clean || echo dirty)
+LDFLAGS    := -X main.gitCommit=$(GIT_COMMIT) -X main.gitDirty=$(GIT_DIRTY)
 
-.PHONY: all proto build build-linux test vet lint fmt check
+BINARY := mwan
+CMD    := ./cmd/$(BINARY)
 
-all: build
+.DEFAULT_GOAL := check
+
+.PHONY: proto build build-linux clean
 
 proto:
 	@mkdir -p gen/mwan/v1
@@ -20,22 +52,11 @@ proto:
 
 build: proto
 	@mkdir -p bin
-	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/mwan ./cmd/mwan
+	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) $(CMD)
 
 build-linux: proto
 	@mkdir -p bin
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/mwan-linux ./cmd/mwan
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY)-linux $(CMD)
 
-test:
-	go test ./...
-
-vet:
-	go vet ./...
-
-lint:
-	golangci-lint run ./...
-
-fmt:
-	gofmt -w .
-
-check: vet lint test
+clean:
+	rm -rf bin/

@@ -7,12 +7,13 @@ import (
 	"goodkind.io/mwan/internal/agent"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/cutover"
+	"goodkind.io/mwan/internal/cutover2"
 	"goodkind.io/mwan/internal/watchdog"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|cutover> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|cutover|cutover2> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -43,6 +44,8 @@ func main() {
 			}
 		}
 		runErr = cutover.Run(cfg, dryRun)
+	case "cutover2":
+		runErr = cutover2.Run(cfg)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", sub)
 		os.Exit(1)
