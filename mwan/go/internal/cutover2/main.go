@@ -161,13 +161,13 @@ func cmdConfigureOPNsense(ctx context.Context, log *slog.Logger, cfg *config.Con
 
 	// Verify by querying BGP status.
 	log.Info("verifying BGP configuration...")
-	status, err := client.GetBGPStatus(ctx)
+	summary, err := client.GetBGPStatus(ctx)
 	if err != nil {
 		log.Warn("could not verify BGP status (FRR may not be running yet)", "err", err)
 		log.Info("BGP configuration was applied. Verify manually:")
 		fmt.Fprintf(os.Stderr, "  ssh opnsense vtysh -c 'show bgp summary'\n")
 	} else {
-		log.Info("BGP status after configuration", "status", status)
+		logBGPSummary(log, summary)
 	}
 
 	log.Info("=== Phase 1a complete ===")
@@ -259,11 +259,11 @@ func cmdVerifyCoexistence(ctx context.Context, log *slog.Logger, cfg *config.Con
 
 	// Check 2: OPNsense has BGP routes
 	log.Info("check 2: OPNsense BGP routes")
-	bgpStatus, err := client.GetBGPStatus(ctx)
+	bgpSummary, err := client.GetBGPStatus(ctx)
 	if err != nil {
 		log.Warn("could not query OPNsense BGP status via API", "err", err)
 	} else {
-		log.Info("OPNsense BGP status", "response", bgpStatus)
+		logBGPSummary(log, bgpSummary)
 	}
 
 	// Check 3: LXC agent (if configured)
@@ -326,6 +326,29 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 // ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
+
+func logBGPSummary(log *slog.Logger, s *opnsense.BGPSummary) {
+	for _, af := range []struct {
+		name string
+		data *opnsense.BGPAFSummary
+	}{
+		{"ipv4", s.IPv4Unicast},
+		{"ipv6", s.IPv6Unicast},
+	} {
+		if af.data == nil {
+			continue
+		}
+		for addr, peer := range af.data.Peers {
+			log.Info("OPNsense BGP peer",
+				"af", af.name,
+				"neighbor", addr,
+				"state", peer.State,
+				"pfx_rcvd", peer.PfxRcd,
+				"uptime", peer.PeerUptime,
+			)
+		}
+	}
+}
 
 func validateOPNsenseConfig(cfg *config.Config) error {
 	if cfg.OPNsense.URL == "" {

@@ -273,16 +273,42 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 // BGP status
 // ---------------------------------------------------------------------------
 
+// BGPSummary holds the parsed BGP summary from OPNsense diagnostics.
+type BGPSummary struct {
+	IPv4Unicast *BGPAFSummary `json:"ipv4Unicast,omitempty"`
+	IPv6Unicast *BGPAFSummary `json:"ipv6Unicast,omitempty"`
+}
+
+// BGPAFSummary holds per-address-family BGP summary data.
+type BGPAFSummary struct {
+	RouterID  string                    `json:"routerId"`
+	AS        uint32                    `json:"as"`
+	PeerCount int                       `json:"peerCount"`
+	RIBCount  int                       `json:"ribCount"`
+	Peers     map[string]BGPPeerSummary `json:"peers"`
+}
+
+// BGPPeerSummary holds per-peer status from the OPNsense diagnostics API.
+type BGPPeerSummary struct {
+	Hostname        string `json:"hostname"`
+	SoftwareVersion string `json:"softwareVersion"`
+	RemoteAS        uint32 `json:"remoteAs"`
+	State           string `json:"state"`
+	PeerState       string `json:"peerState"`
+	PeerUptime      string `json:"peerUptime"`
+	PfxRcd          int    `json:"pfxRcd"`
+	PfxSnt          int    `json:"pfxSnt"`
+}
+
 // GetBGPStatus returns the current BGP neighbor status from OPNsense.
-// This calls the diagnostics endpoint that runs "bgpctl show" under the hood.
-func (c *Client) GetBGPStatus(ctx context.Context) (string, error) {
+func (c *Client) GetBGPStatus(ctx context.Context) (*BGPSummary, error) {
 	var resp struct {
-		Response string `json:"response"`
+		Response BGPSummary `json:"response"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, "/quagga/diagnostics/bgpsummary", nil, &resp); err != nil {
-		return "", fmt.Errorf("get BGP status: %w", err)
+		return nil, fmt.Errorf("get BGP status: %w", err)
 	}
-	return resp.Response, nil
+	return &resp.Response, nil
 }
 
 // ---------------------------------------------------------------------------
