@@ -130,6 +130,30 @@ type CutoverSection struct {
 	BootWaitSec      int `toml:"boot_wait_sec"`
 }
 
+// BGPSection holds embedded GoBGP speaker configuration.
+type BGPSection struct {
+	Enabled          bool          `toml:"enabled"`
+	ASN              uint32        `toml:"asn"`
+	RouterID         string        `toml:"router_id"`
+	KeepaliveSeconds uint32        `toml:"keepalive_seconds"`
+	HoldSeconds      uint32        `toml:"hold_seconds"`
+	ListenPort       int32         `toml:"listen_port"`
+	Neighbors        []BGPNeighbor `toml:"neighbors"`
+	NeighborsV6      []BGPNeighbor `toml:"neighbors_v6"`
+	Announce         BGPAnnounce   `toml:"announce"`
+}
+
+// BGPNeighbor identifies a single BGP peer.
+type BGPNeighbor struct {
+	Address string `toml:"address"`
+}
+
+// BGPAnnounce specifies prefixes to originate via BGP.
+type BGPAnnounce struct {
+	IPv4 []string `toml:"ipv4"`
+	IPv6 []string `toml:"ipv6"`
+}
+
 // AgentSection holds agent-specific configuration.
 type AgentSection struct {
 	VsockPort  uint32 `toml:"vsock_port"`
@@ -155,6 +179,7 @@ type Config struct {
 	Watchdog WatchdogSection `toml:"watchdog"`
 	Cutover  CutoverSection  `toml:"cutover"`
 	Agent    AgentSection    `toml:"agent"`
+	BGP      BGPSection      `toml:"bgp"`
 }
 
 func defaultNetworkConfig() NetworkConfig {
@@ -204,6 +229,7 @@ func defaultConfig() Config {
 			VsockPort: 50051, TCPAddr: "[::]:50052",
 			DeployFile: "/var/run/mwan-last-deploy", LogFile: "/var/log/mwan-agent.log",
 		},
+		BGP: BGPSection{},
 	}
 }
 
@@ -287,6 +313,39 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 		if len(cfg.Network.WANInterfaces) == 0 {
 			return errors.New("[network] wan_interfaces must not be empty")
 		}
+	}
+	if cfg.BGP.Enabled && (sub == "agent" || sub == "watchdog") {
+		if err := validateBGP(&cfg.BGP); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateBGP(b *BGPSection) error {
+	if b.ASN == 0 {
+		return errors.New("[bgp] asn is required")
+	}
+	if b.RouterID == "" {
+		return errors.New("[bgp] router_id is required")
+	}
+	if b.ListenPort == 0 {
+		return errors.New("[bgp] listen_port is required")
+	}
+	if b.KeepaliveSeconds == 0 {
+		return errors.New("[bgp] keepalive_seconds is required")
+	}
+	if b.HoldSeconds == 0 {
+		return errors.New("[bgp] hold_seconds is required")
+	}
+	if b.HoldSeconds < 3*b.KeepaliveSeconds {
+		return fmt.Errorf("[bgp] hold_seconds (%d) must be >= 3 * keepalive_seconds (%d)", b.HoldSeconds, b.KeepaliveSeconds)
+	}
+	if len(b.Neighbors) == 0 && len(b.NeighborsV6) == 0 {
+		return errors.New("[bgp] at least one neighbor (v4 or v6) is required")
+	}
+	if len(b.Announce.IPv4) == 0 && len(b.Announce.IPv6) == 0 {
+		return errors.New("[bgp.announce] at least one prefix (ipv4 or ipv6) is required")
 	}
 	return nil
 }
