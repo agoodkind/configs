@@ -215,6 +215,65 @@ When something breaks:
 - The cutover tool's migrate phase handles this: assigns new real address, removes old
 - networkd config for enmwanbr0 should use `::3` (post-cutover) not `::1` (VIP)
 
+### 2026-04-10: ISP LXC emulation missing link/PD prefix separation
+
+**Symptom**:
+
+- LXC 100 (failover) gets SLAAC address from the PD prefix (`240::/60`)
+- When masquerading, ISP LXC 202 routes replies via PD route to VM 950 (stopped) instead of back to LXC 100
+- LXC 100's own IPv6 internet fails; IPv6 failover traffic not yet tested
+
+**Root cause** (verified via tcpdump on ISP LXC 202):
+
+- ISP LXC 202's radvd advertised `3d06:bad:b01:240::/60` for both SLAAC and PD delegation
+- Real ISPs give SLAAC from a separate link prefix, not from the delegated prefix
+- ISP LXC 202's PD route (`240::/60 via VM950 LL`) captured reply traffic meant for LXC 100's SLAAC address
+
+**Partial fix applied** (LXC 100 own internet verified, failover E2E NOT yet verified):
+
+- Added separate link `/64` (`3d06:bad:b01:250::/64`) to ISP LXC 202 for SLAAC
+- radvd now advertises `250::/64` (AdvOnLink on, AdvAutonomous on)
+- kea-dhcp6 delegates `240::/60` as PD (unchanged)
+- Added kea-dhcp4 to ISP LXC 202 for DHCPv4 (was missing, LXC 100 had no IPv4 on WAN)
+- LXC 100 gets SLAAC `250::` address and can reach internet directly (verified)
+- Failover E2E (OPNsense -> LXC 100 -> ISP LXC -> internet) blocked by keepalived FAULT issue below
+
+**Prevention**:
+
+- ISP emulation must separate link prefix (SLAAC) from delegated prefix (PD)
+
+### 2026-04-11: Keepalived on LXC 100 enters FAULT at boot, never recovers
+
+**Symptom**:
+
+- After LXC 100 reboot, keepalived enters FAULT state
+- Log: `(VI_HA) entering FAULT state (no IPv6 address for interface)`
+- Also logs: `(VI_HA) the first IPv6 VIP address should be link local`
+- IPv6 VIP never assigned to vrrp.51
+- IPv4 VIP present on vrrp.51 (from notify script or prior run)
+- Manually restarting keepalived (`systemctl restart keepalived`) resolves it
+
+**What has been verified**:
+
+- Boot timing is NOT the cause. Added `After=networking.service` systemd override. `systemd-analyze critical-chain` confirms keepalived starts AFTER networking.service. eth1 has `201::4/64` when keepalived starts. FAULT still occurs.
+- The FAULT occurs even when eth1 is UP with its IPv6 address assigned.
+- The warning `"the first IPv6 VIP address should be link local"` appears on every boot but also appears on VM 950 where keepalived works fine. Unclear if this warning is causal or cosmetic.
+- keepalived version 2.3.3 (includes fix for GitHub issue #2275).
+- Production LXC 116 has the same architecture and the same risk but has never been cold-booted with keepalived enabled.
+
+**What has NOT been verified**:
+
+- The actual keepalived source code that produces `"no IPv6 address for interface"` has not been found. Attempts to search GitHub and fetch source files did not locate the exact line.
+- Whether the FAULT is about the base interface (eth1) or the vmac interface (vrrp.51) is unknown.
+- Whether adding a link-local VIP would fix it is speculative (not tested).
+- Whether this is a keepalived bug, a Proxmox LXC veth behavior, or a configuration error is undetermined.
+
+**Workaround**:
+
+- `systemctl restart keepalived` after boot works reliably
+
+**Status**: UNDER INVESTIGATION
+
 ---
 
 ## Ansible
