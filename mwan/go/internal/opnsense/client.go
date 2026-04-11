@@ -199,6 +199,7 @@ type gatewaySearchResult struct {
 type gatewayRow struct {
 	UUID     string      `json:"uuid"`
 	Name     string      `json:"name"`
+	Gateway  string      `json:"gateway"`
 	Disabled interface{} `json:"disabled"`
 }
 
@@ -225,6 +226,20 @@ func (c *Client) FindGatewayByName(ctx context.Context, name string) (string, er
 		}
 	}
 	return "", fmt.Errorf("gateway %q not found", name)
+}
+
+// FindGatewayByNameWithAddr searches for a gateway by name and returns its UUID and address.
+func (c *Client) FindGatewayByNameWithAddr(ctx context.Context, name string) (uuid string, addr string, err error) {
+	var result gatewaySearchResult
+	if err := c.doJSON(ctx, http.MethodGet, "/routing/settings/search_gateway", nil, &result); err != nil {
+		return "", "", fmt.Errorf("search gateways: %w", err)
+	}
+	for _, gw := range result.Rows {
+		if gw.Name == name {
+			return gw.UUID, gw.Gateway, nil
+		}
+	}
+	return "", "", fmt.Errorf("gateway %q not found", name)
 }
 
 // DisableGateway disables an OPNsense gateway by UUID.
@@ -276,6 +291,27 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 	}
 
 	c.log.Info("opnsense: gateway toggled", "uuid", uuid, "result", resp.Result)
+	return nil
+}
+
+// DeleteRoute deletes a route from the kernel via the OPNsense diagnostics API.
+// Use destination="default" and gateway=<ip> to delete a default route.
+func (c *Client) DeleteRoute(ctx context.Context, destination, gateway string) error {
+	c.log.Info("opnsense: deleting route", "destination", destination, "gateway", gateway)
+
+	data := fmt.Sprintf("destination=%s&gateway=%s", destination, gateway)
+	var resp struct {
+		Message string `json:"message"`
+	}
+	if err := c.doForm(ctx, "/diagnostics/interface/delRoute", data, &resp); err != nil {
+		return fmt.Errorf("delete route: %w", err)
+	}
+
+	if resp.Message == "not_found" {
+		c.log.Info("opnsense: route not found (already removed)", "destination", destination, "gateway", gateway)
+	} else {
+		c.log.Info("opnsense: route deleted", "destination", destination, "gateway", gateway, "result", resp.Message)
+	}
 	return nil
 }
 
@@ -370,6 +406,39 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, 
 	if res.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(res.Body)
 		return fmt.Errorf("HTTP %s %s: status %d: %s", method, endpoint, res.StatusCode, string(respBody))
+	}
+
+	if resp != nil {
+		if err := json.NewDecoder(res.Body).Decode(resp); err != nil {
+			return fmt.Errorf("decode response from %s: %w", endpoint, err)
+		}
+	}
+
+	return nil
+}
+
+// doForm performs a form-encoded POST to the OPNsense API.
+func (c *Client) doForm(ctx context.Context, endpoint, formData string, resp any) error {
+	url := c.base + "/api" + endpoint
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(formData))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Basic "+c.auth)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	c.log.Debug("opnsense: API request", "method", "POST", "url", url)
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP POST %s: %w", endpoint, err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("HTTP POST %s: status %d: %s", endpoint, res.StatusCode, string(respBody))
 	}
 
 	if resp != nil {

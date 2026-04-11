@@ -324,16 +324,26 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		"ipv6_routes_present", v6ok,
 	)
 
-	// Disable all configured gateways
+	// Collect gateway addresses before disabling (needed to delete stale routes)
+	type gwInfo struct {
+		name, uuid, address string
+	}
+	var gateways []gwInfo
 	for _, gwName := range cfg.OPNsense.GatewayNames {
 		log.Info("finding gateway...", "name", gwName)
-		gwUUID, findErr := client.FindGatewayByName(ctx, gwName)
+		uuid, addr, findErr := client.FindGatewayByNameWithAddr(ctx, gwName)
 		if findErr != nil {
 			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
 		}
-		log.Info("disabling gateway...", "name", gwName, "uuid", gwUUID)
-		if disableErr := client.DisableGateway(ctx, gwUUID); disableErr != nil {
-			return fmt.Errorf("disable gateway %q: %w", gwName, disableErr)
+		gateways = append(gateways, gwInfo{name: gwName, uuid: uuid, address: addr})
+		log.Info("gateway found", "name", gwName, "uuid", uuid, "address", addr)
+	}
+
+	// Disable all gateways
+	for _, gw := range gateways {
+		log.Info("disabling gateway...", "name", gw.name, "uuid", gw.uuid)
+		if disableErr := client.DisableGateway(ctx, gw.uuid); disableErr != nil {
+			return fmt.Errorf("disable gateway %q: %w", gw.name, disableErr)
 		}
 	}
 
@@ -341,6 +351,15 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	log.Info("applying gateway changes...")
 	if err := client.Reconfigure(ctx); err != nil {
 		return fmt.Errorf("reconfigure after gateway disable: %w", err)
+	}
+
+	// Delete stale default routes from kernel.
+	// OPNsense doesn't remove them when gateways are disabled.
+	for _, gw := range gateways {
+		log.Info("deleting stale default route...", "name", gw.name, "gateway", gw.address)
+		if delErr := client.DeleteRoute(ctx, "default", gw.address); delErr != nil {
+			log.Warn("delete route failed (may already be gone)", "gateway", gw.address, "err", delErr)
+		}
 	}
 
 	// Verify BGP route is now the active default
