@@ -18,6 +18,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/logging"
 	"goodkind.io/mwan/internal/opnsense"
+	"goodkind.io/mwan/internal/ops"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -179,10 +180,53 @@ func cmdConfigureOPNsense(ctx context.Context, log *slog.Logger, cfg *config.Con
 // ---------------------------------------------------------------------------
 
 func cmdDeployAgents(ctx context.Context, log *slog.Logger, cfg *config.Config) error {
-	log.Info("=== Phase 1b+1c: Deploy agents ===")
-	log.Warn("not yet implemented -- will deploy mwan binary + config to VM and LXC via SSH")
-	log.Info("rollback: pkill mwan on VM and LXC")
+	log.Info("=== Phase 1b+1c: Verify agents are running with BGP ===")
+	log.Info("NOTE: binary + config deployment is handled by deploy.sh (SCP).")
+	log.Info("This command verifies agents are reachable via gRPC and BGP is active.")
+
+	sysOps := buildOps(cfg, log)
+
+	// Phase 1b: Check VM agent via gRPC
+	log.Info("--- Phase 1b: Verify VM agent ---", "vmid", cfg.MwanVMID)
+
+	vmBGP, err := sysOps.GetBGPStatus(ctx, cfg.MwanVMID)
+	if err != nil {
+		return fmt.Errorf("VM agent unreachable via gRPC (deploy binary + config first): %w", err)
+	}
+	log.Info("VM agent BGP status",
+		"announcing", vmBGP.GetAnnouncing(),
+		"all_established", vmBGP.GetAllEstablished(),
+		"peers", len(vmBGP.GetPeers()),
+	)
+	if !vmBGP.GetAllEstablished() {
+		log.Warn("VM BGP peers not yet established (may need time or firewall fix)")
+	}
+
+	// Phase 1c: Check LXC agent via gRPC
+	if cfg.Cutover.FailoverLXCID != "" {
+		log.Info("--- Phase 1c: Verify LXC agent ---", "lxc_id", cfg.Cutover.FailoverLXCID)
+
+		lxcBGP, err := sysOps.GetBGPStatus(ctx, cfg.Cutover.FailoverLXCID)
+		if err != nil {
+			log.Warn("LXC agent unreachable via gRPC (deploy binary + config first, or LXC not running)", "err", err)
+		} else {
+			log.Info("LXC agent BGP status",
+				"announcing", lxcBGP.GetAnnouncing(),
+				"all_established", lxcBGP.GetAllEstablished(),
+				"peers", len(lxcBGP.GetPeers()),
+			)
+		}
+	}
+
+	log.Info("=== Phase 1b+1c complete ===")
+	log.Info("next step: mwan cutover2 verify-coexistence")
 	return nil
+}
+
+// buildOps creates a SysOps instance using the existing multi-channel pattern
+// (vsock -> TCP -> PVE REST). This is the same ops layer the watchdog uses.
+func buildOps(cfg *config.Config, _ *slog.Logger) ops.SysOps {
+	return ops.NewRealOps(cfg, nil)
 }
 
 func cmdVerifyCoexistence(ctx context.Context, log *slog.Logger, cfg *config.Config) error {
