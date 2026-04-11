@@ -324,54 +324,51 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		"ipv6_routes_present", v6ok,
 	)
 
-	if cfg.OPNsense.SSHAddr == "" {
-		return fmt.Errorf("[opnsense] ssh_addr is required for switch-to-bgp")
-	}
-	wanIface := cfg.OPNsense.WANInterface
-	if wanIface == "" {
-		wanIface = "wan"
-	}
-
-	// Step 1: Disable gateways in the model AND clear interface references.
-	// Both are needed: disabled gateways prevent getDefaultGW() from selecting them,
-	// and clearing interface refs prevents system_routing_configure from reinstalling routes.
+	// Step 1: Mark gateways as "force down" via API.
+	// This is the OPNsense-native way to exclude gateways from default route
+	// selection while keeping them configured. Designed for dynamic routing use.
+	// See: https://github.com/opnsense/core/issues/3597
 	for _, gwName := range cfg.OPNsense.GatewayNames {
 		log.Info("finding gateway...", "name", gwName)
-		uuid, _, findErr := client.FindGatewayByNameWithAddr(ctx, gwName)
+		gwUUID, gwAddr, findErr := client.FindGatewayByNameWithAddr(ctx, gwName)
 		if findErr != nil {
 			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
 		}
-		log.Info("disabling gateway...", "name", gwName, "uuid", uuid)
-		if disableErr := client.DisableGateway(ctx, uuid); disableErr != nil {
-			return fmt.Errorf("disable gateway %q: %w", gwName, disableErr)
+		log.Info("marking gateway as force_down...", "name", gwName, "uuid", gwUUID)
+		if err := client.ForceDownGateway(ctx, gwUUID); err != nil {
+			return fmt.Errorf("force_down gateway %q: %w", gwName, err)
 		}
+		// Save address for stale route deletion
+		_ = gwAddr
 	}
 
-	log.Info("clearing interface gateway references...", "interface", wanIface)
-	if err := client.ClearInterfaceGateways(ctx, cfg.OPNsense.SSHAddr, wanIface); err != nil {
-		return fmt.Errorf("clear interface gateways: %w", err)
-	}
-
-	// Step 2: Reconfigure routing.
+	// Step 2: Reconfigure routing (removes default routes since gateways are force_down).
 	log.Info("reconfiguring routing...")
 	if err := client.Reconfigure(ctx); err != nil {
 		return fmt.Errorf("reconfigure routing: %w", err)
 	}
 
-	// Step 3: Kill all FRR processes and clean start.
-	// The quagga service restart hook can trigger routing reconfigure which
-	// reinstalls routes. We need a hard kill + manual start to avoid this.
-	log.Info("hard-restarting FRR (kill + start)...")
-	if err := client.HardRestartFRR(ctx, cfg.OPNsense.SSHAddr); err != nil {
-		return fmt.Errorf("hard restart FRR: %w", err)
+	// Step 3: Delete any stale kernel routes.
+	for _, gwName := range cfg.OPNsense.GatewayNames {
+		_, gwAddr, _ := client.FindGatewayByNameWithAddr(ctx, gwName)
+		if gwAddr != "" {
+			log.Info("deleting stale route...", "gateway", gwAddr)
+			_ = client.DeleteRoute(ctx, "default", gwAddr)
+		}
 	}
 
-	// Wait for BGP to re-establish
-	log.Info("waiting for BGP to re-establish (25s)...")
+	// Step 4: Reload FRR (not restart) so zebra picks up the clean routing table.
+	log.Info("reloading FRR...")
+	if err := client.ReconfigureFRR(ctx); err != nil {
+		return fmt.Errorf("reconfigure FRR: %w", err)
+	}
+
+	// Wait for BGP to stabilize
+	log.Info("waiting for BGP to stabilize (10s)...")
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(25 * time.Second):
+	case <-time.After(10 * time.Second):
 	}
 
 	// Verify BGP route is now the active default
@@ -432,9 +429,9 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 		if findErr != nil {
 			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
 		}
-		log.Info("re-enabling gateway...", "name", gwName, "uuid", gwUUID)
-		if enableErr := client.EnableGateway(ctx, gwUUID); enableErr != nil {
-			return fmt.Errorf("enable gateway %q: %w", gwName, enableErr)
+		log.Info("removing force_down from gateway...", "name", gwName, "uuid", gwUUID)
+		if err := client.UnforceDownGateway(ctx, gwUUID); err != nil {
+			return fmt.Errorf("unforce_down gateway %q: %w", gwName, err)
 		}
 	}
 

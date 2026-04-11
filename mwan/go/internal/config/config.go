@@ -138,8 +138,6 @@ type OPNsenseSection struct {
 	APIKey       string      `toml:"api_key"`
 	APISecret    string      `toml:"api_secret"`
 	Insecure     bool        `toml:"insecure"`
-	SSHAddr      string      `toml:"ssh_addr"`      // e.g. "root@192.168.1.1" for config.xml edits
-	WANInterface string      `toml:"wan_interface"`  // e.g. "wan" (interface name in config.xml)
 	GatewayNames []string    `toml:"gateway_names"`
 	BGP          OPNsenseBGP `toml:"bgp"`
 }

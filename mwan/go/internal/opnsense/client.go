@@ -13,7 +13,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"io"
 	"log/slog"
 	"net/http"
@@ -243,6 +242,58 @@ func (c *Client) FindGatewayByNameWithAddr(ctx context.Context, name string) (uu
 	return "", "", fmt.Errorf("gateway %q not found", name)
 }
 
+// ForceDownGateway marks a gateway as "force down" via set_gateway API.
+// This excludes it from default route selection while keeping it configured.
+func (c *Client) ForceDownGateway(ctx context.Context, uuid string) error {
+	c.log.Info("opnsense: marking gateway force_down", "uuid", uuid)
+	body := map[string]any{
+		"gateway_item": map[string]string{
+			"force_down": "1",
+		},
+	}
+	var resp struct {
+		Result string `json:"result"`
+	}
+	endpoint := fmt.Sprintf("/routing/settings/set_gateway/%s", uuid)
+	if err := c.doJSON(ctx, http.MethodPost, endpoint, body, &resp); err != nil {
+		return fmt.Errorf("set force_down on %s: %w", uuid, err)
+	}
+	if resp.Result != "saved" {
+		return fmt.Errorf("set force_down on %s: unexpected result %q", uuid, resp.Result)
+	}
+	return nil
+}
+
+// UnforceDownGateway removes the "force down" mark from a gateway (for rollback).
+func (c *Client) UnforceDownGateway(ctx context.Context, uuid string) error {
+	c.log.Info("opnsense: removing force_down from gateway", "uuid", uuid)
+	body := map[string]any{
+		"gateway_item": map[string]string{
+			"force_down": "0",
+		},
+	}
+	var resp struct {
+		Result string `json:"result"`
+	}
+	endpoint := fmt.Sprintf("/routing/settings/set_gateway/%s", uuid)
+	if err := c.doJSON(ctx, http.MethodPost, endpoint, body, &resp); err != nil {
+		return fmt.Errorf("unset force_down on %s: %w", uuid, err)
+	}
+	return nil
+}
+
+// ReconfigureFRR reloads FRR config without restarting (avoids rc dependency hooks).
+func (c *Client) ReconfigureFRR(ctx context.Context) error {
+	c.log.Info("opnsense: reloading FRR (reconfigure)")
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/reconfigure", nil, &resp); err != nil {
+		return fmt.Errorf("reconfigure FRR: %w", err)
+	}
+	return nil
+}
+
 // DisableGateway disables an OPNsense gateway by UUID.
 func (c *Client) DisableGateway(ctx context.Context, uuid string) error {
 	c.log.Info("opnsense: disabling gateway", "uuid", uuid)
@@ -295,64 +346,6 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 	return nil
 }
 
-// ClearInterfaceGateways removes the gateway references from the WAN interface
-// in config.xml. OPNsense has no API for this (legacy interface config is not
-// in the MVC model), so we execute a PHP script on the OPNsense box via SSH.
-// The sshAddr should be the OPNsense management address reachable from the
-// host running cutover2 (e.g. "root@192.168.1.1").
-func (c *Client) ClearInterfaceGateways(ctx context.Context, sshAddr, iface string) error {
-	c.log.Info("opnsense: clearing interface gateway references via SSH", "interface", iface, "ssh", sshAddr)
-
-	php := fmt.Sprintf(
-		`php -r '$x=simplexml_load_file("/conf/config.xml");`+
-			`$x->interfaces->%s->gateway="";`+
-			`$x->interfaces->%s->gatewayv6="";`+
-			`$x->asXML("/conf/config.xml");`+
-			`echo "cleared\n";'`, iface, iface)
-
-	cmd := exec.CommandContext(ctx, "ssh",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "LogLevel=ERROR",
-		"-o", "ConnectTimeout=10",
-		sshAddr,
-		php,
-	)
-
-	out, err := cmd.CombinedOutput()
-	outStr := strings.TrimSpace(string(out))
-	if err != nil {
-		return fmt.Errorf("clear interface gateways via SSH: %s: %w", outStr, err)
-	}
-
-	c.log.Info("opnsense: interface gateways cleared", "interface", iface, "output", outStr)
-	return nil
-}
-
-// HardRestartFRR kills all FRR processes and starts fresh via SSH.
-// The API restart triggers OPNsense hooks that can reinstall stale routes.
-// A hard kill + manual start avoids this.
-func (c *Client) HardRestartFRR(ctx context.Context, sshAddr string) error {
-	c.log.Info("opnsense: hard-restarting FRR via SSH", "ssh", sshAddr)
-
-	cmd := exec.CommandContext(ctx, "ssh",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "LogLevel=ERROR",
-		"-o", "ConnectTimeout=10",
-		sshAddr,
-		"pkill -9 watchfrr; pkill -9 bgpd; pkill -9 zebra; pkill -9 mgmtd; pkill -9 staticd; pkill -9 bfdd; sleep 2; service frr start",
-	)
-
-	out, err := cmd.CombinedOutput()
-	outStr := strings.TrimSpace(string(out))
-	if err != nil {
-		return fmt.Errorf("hard restart FRR via SSH: %s: %w", outStr, err)
-	}
-
-	c.log.Info("opnsense: FRR hard-restarted", "output", outStr)
-	return nil
-}
 
 // DeleteRoute deletes a route from the kernel via the OPNsense diagnostics API.
 // Use destination="default" and gateway=<ip> to delete a default route.
