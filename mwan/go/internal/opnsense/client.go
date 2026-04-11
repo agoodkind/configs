@@ -197,9 +197,20 @@ type gatewaySearchResult struct {
 }
 
 type gatewayRow struct {
-	UUID     string `json:"uuid"`
-	Name     string `json:"name"`
-	Disabled string `json:"disabled"`
+	UUID     string      `json:"uuid"`
+	Name     string      `json:"name"`
+	Disabled interface{} `json:"disabled"`
+}
+
+func (g gatewayRow) isDisabled() bool {
+	switch v := g.Disabled.(type) {
+	case bool:
+		return v
+	case string:
+		return v == "1"
+	default:
+		return false
+	}
 }
 
 // FindGatewayByName searches for a gateway by name and returns its UUID.
@@ -248,10 +259,9 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 		return fmt.Errorf("gateway %s not found", uuid)
 	}
 
-	isDisabled := found.Disabled == "1"
-	if isDisabled == wantDisabled {
+	if found.isDisabled() == wantDisabled {
 		c.log.Info("opnsense: gateway already in desired state",
-			"uuid", uuid, "disabled", isDisabled)
+			"uuid", uuid, "disabled", found.isDisabled())
 		return nil
 	}
 
