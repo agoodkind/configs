@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"io"
 	"log/slog"
 	"net/http"
@@ -291,6 +292,65 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 	}
 
 	c.log.Info("opnsense: gateway toggled", "uuid", uuid, "result", resp.Result)
+	return nil
+}
+
+// ClearInterfaceGateways removes the gateway references from the WAN interface
+// in config.xml. OPNsense has no API for this (legacy interface config is not
+// in the MVC model), so we execute a PHP script on the OPNsense box via SSH.
+// The sshAddr should be the OPNsense management address reachable from the
+// host running cutover2 (e.g. "root@192.168.1.1").
+func (c *Client) ClearInterfaceGateways(ctx context.Context, sshAddr, iface string) error {
+	c.log.Info("opnsense: clearing interface gateway references via SSH", "interface", iface, "ssh", sshAddr)
+
+	php := fmt.Sprintf(
+		`php -r '$x=simplexml_load_file("/conf/config.xml");`+
+			`$x->interfaces->%s->gateway="";`+
+			`$x->interfaces->%s->gatewayv6="";`+
+			`$x->asXML("/conf/config.xml");`+
+			`echo "cleared\n";'`, iface, iface)
+
+	cmd := exec.CommandContext(ctx, "ssh",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"-o", "ConnectTimeout=10",
+		sshAddr,
+		php,
+	)
+
+	out, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+	if err != nil {
+		return fmt.Errorf("clear interface gateways via SSH: %s: %w", outStr, err)
+	}
+
+	c.log.Info("opnsense: interface gateways cleared", "interface", iface, "output", outStr)
+	return nil
+}
+
+// HardRestartFRR kills all FRR processes and starts fresh via SSH.
+// The API restart triggers OPNsense hooks that can reinstall stale routes.
+// A hard kill + manual start avoids this.
+func (c *Client) HardRestartFRR(ctx context.Context, sshAddr string) error {
+	c.log.Info("opnsense: hard-restarting FRR via SSH", "ssh", sshAddr)
+
+	cmd := exec.CommandContext(ctx, "ssh",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"-o", "ConnectTimeout=10",
+		sshAddr,
+		"pkill -9 watchfrr; pkill -9 bgpd; pkill -9 zebra; pkill -9 mgmtd; pkill -9 staticd; pkill -9 bfdd; sleep 2; service frr start",
+	)
+
+	out, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+	if err != nil {
+		return fmt.Errorf("hard restart FRR via SSH: %s: %w", outStr, err)
+	}
+
+	c.log.Info("opnsense: FRR hard-restarted", "output", outStr)
 	return nil
 }
 
