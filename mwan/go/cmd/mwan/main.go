@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/agent"
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/cutover"
 	"goodkind.io/mwan/internal/watchdog"
 )
@@ -24,15 +24,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	var runErr error
 	switch sub {
 	case "agent":
 		agent.Run(cfg)
 	case "watchdog":
 		if len(os.Args) > 1 && os.Args[1] == "failover" {
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
-			watchdog.FailoverRun(cfg)
+			runErr = watchdog.FailoverRun(cfg)
 		} else {
-			watchdog.Run(cfg)
+			runErr = watchdog.Run(cfg)
 		}
 	case "cutover":
 		dryRun := false
@@ -41,9 +42,13 @@ func main() {
 				dryRun = true
 			}
 		}
-		cutover.Run(cfg, dryRun)
+		runErr = cutover.Run(cfg, dryRun)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", sub)
+		os.Exit(1)
+	}
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "mwan %s: %v\n", sub, runErr)
 		os.Exit(1)
 	}
 }

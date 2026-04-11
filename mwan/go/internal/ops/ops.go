@@ -11,19 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mdlayher/vsock"
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/pkg/pveapi"
-	"github.com/mdlayher/vsock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
-	defaultVsockCID  = 113
-	defaultVsockPort = 50051
-
 	TimeoutQmStatus       = 10 * time.Second
 	timeoutQmGuestExec    = 30 * time.Second
 	TimeoutQmStop         = 60 * time.Second
@@ -408,18 +405,18 @@ func (r *RealOps) GetConfigState(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetConfigStateResponse, string, error) {
 	_ = vmid
-	if res, err := r.vsockGetConfigState(ctx); err == nil {
+	res, err := r.vsockGetConfigState(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
 		return res, "vsock", nil
-	} else {
-		r.tracker.recordFailure(ChanVsock, err)
 	}
-	if res, err := r.tcpGetConfigState(ctx); err == nil {
+	r.tracker.recordFailure(ChanVsock, err)
+	res, err = r.tcpGetConfigState(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
 		return res, "tcp", nil
-	} else {
-		r.tracker.recordFailure(ChanTCP, err)
 	}
+	r.tracker.recordFailure(ChanTCP, err)
 	return nil, "", fmt.Errorf("GetConfigState: all channels failed")
 }
 
@@ -482,18 +479,18 @@ func (r *RealOps) GetBGPStatus(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetBGPStatusResponse, error) {
 	_ = vmid
-	if res, err := r.vsockGetBGPStatus(ctx); err == nil {
+	res, err := r.vsockGetBGPStatus(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
 		return res, nil
-	} else {
-		r.tracker.recordFailure(ChanVsock, err)
 	}
-	if res, err := r.tcpGetBGPStatus(ctx); err == nil {
+	r.tracker.recordFailure(ChanVsock, err)
+	res, err = r.tcpGetBGPStatus(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
 		return res, nil
-	} else {
-		r.tracker.recordFailure(ChanTCP, err)
 	}
+	r.tracker.recordFailure(ChanTCP, err)
 	return nil, fmt.Errorf("GetBGPStatus: all channels failed")
 }
 
@@ -550,24 +547,24 @@ func (r *RealOps) tcpAnnounceRoutes(
 
 func (r *RealOps) AnnounceRoutes(ctx context.Context, vmid string) error {
 	_ = vmid
-	if res, err := r.vsockAnnounceRoutes(ctx); err == nil {
+	res, err := r.vsockAnnounceRoutes(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
 		if !res.GetSuccess() {
 			return fmt.Errorf("AnnounceRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
-	} else {
-		r.tracker.recordFailure(ChanVsock, err)
 	}
-	if res, err := r.tcpAnnounceRoutes(ctx); err == nil {
+	r.tracker.recordFailure(ChanVsock, err)
+	res, err = r.tcpAnnounceRoutes(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
 		if !res.GetSuccess() {
 			return fmt.Errorf("AnnounceRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
-	} else {
-		r.tracker.recordFailure(ChanTCP, err)
 	}
+	r.tracker.recordFailure(ChanTCP, err)
 	return fmt.Errorf("AnnounceRoutes: all channels failed")
 }
 
@@ -624,24 +621,24 @@ func (r *RealOps) tcpWithdrawRoutes(
 
 func (r *RealOps) WithdrawRoutes(ctx context.Context, vmid string) error {
 	_ = vmid
-	if res, err := r.vsockWithdrawRoutes(ctx); err == nil {
+	res, err := r.vsockWithdrawRoutes(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
 		if !res.GetSuccess() {
 			return fmt.Errorf("WithdrawRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
-	} else {
-		r.tracker.recordFailure(ChanVsock, err)
 	}
-	if res, err := r.tcpWithdrawRoutes(ctx); err == nil {
+	r.tracker.recordFailure(ChanVsock, err)
+	res, err = r.tcpWithdrawRoutes(ctx)
+	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
 		if !res.GetSuccess() {
 			return fmt.Errorf("WithdrawRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
-	} else {
-		r.tracker.recordFailure(ChanTCP, err)
 	}
+	r.tracker.recordFailure(ChanTCP, err)
 	return fmt.Errorf("WithdrawRoutes: all channels failed")
 }
 

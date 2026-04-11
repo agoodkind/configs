@@ -182,21 +182,6 @@ type Config struct {
 	BGP      BGPSection      `toml:"bgp"`
 }
 
-func defaultNetworkConfig() NetworkConfig {
-	return NetworkConfig{
-		PingTargetIPv4: "1.1.1.1",
-		PingTargetIPv6: "2606:4700:4700::1111",
-		PingTargets:    []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
-		CurlTarget:     "https://ifconfig.co/ip",
-		WANInterfaces: []WANInterface{
-			{Name: "enwebpass0"},
-			{Name: "enmbrains0"},
-		},
-		LastDeployPath: "/var/run/mwan-last-deploy",
-		LastChangePath: "/var/run/mwan-last-change",
-	}
-}
-
 func defaultConfig() Config {
 	return Config{
 		Email: EmailConfig{MinLevel: "ERROR", Cooldown: "5m"},
@@ -275,49 +260,66 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 		return errors.New("hostname is required")
 	}
 	switch sub {
-	case "watchdog", "cutover":
-		if cfg.MwanVMID == "" {
-			return errors.New("mwan_vmid is required")
-		}
-		if !dryRun && cfg.Email.SMTP2GOAPIKey == "" {
-			return errors.New("[email] smtp2go_api_key is required (set in TOML or SMTP2GO_API_KEY env)")
-		}
+	case "watchdog":
+		return validateWatchdog(cfg, dryRun)
+	case "cutover":
+		return validateCutover(cfg, dryRun)
+	case "agent":
+		return validateAgent(cfg)
 	}
-	if sub == "cutover" {
-		if cfg.MwanMgmtAddr == "" {
-			return errors.New("mwan_mgmt_addr is required")
-		}
-		if cfg.MwanIntIface == "" {
-			return errors.New("mwan_int_iface is required")
-		}
-		if cfg.Cutover.VIPIPv6 == "" {
-			return errors.New("[cutover] vip_ipv6 is required")
-		}
-		if cfg.Cutover.FailoverLXCID == "" {
-			return errors.New("[cutover] failover_lxc_id is required")
-		}
-		if cfg.Email.AlertEmail == "" {
-			return errors.New("[email] alert_email is required")
-		}
-		if cfg.Email.From == "" {
-			return errors.New("[email] from is required")
-		}
-		if cfg.Email.SubjectPrefix == "" {
-			return errors.New("[email] subject_prefix is required")
-		}
+	return nil
+}
+
+func validateWatchdog(cfg *Config, dryRun bool) error {
+	if cfg.MwanVMID == "" {
+		return errors.New("mwan_vmid is required")
 	}
-	if sub == "watchdog" {
-		if cfg.PVE.TokenID != "" && cfg.PVE.TokenSecret == "" {
-			return errors.New("[pve] token_id set but token_secret empty")
-		}
-		if len(cfg.Network.WANInterfaces) == 0 {
-			return errors.New("[network] wan_interfaces must not be empty")
-		}
+	if !dryRun && cfg.Email.SMTP2GOAPIKey == "" {
+		return errors.New("[email] smtp2go_api_key is required (set in TOML or SMTP2GO_API_KEY env)")
 	}
-	if cfg.BGP.Enabled && sub == "agent" {
-		if err := validateBGP(&cfg.BGP); err != nil {
-			return err
-		}
+	if cfg.PVE.TokenID != "" && cfg.PVE.TokenSecret == "" {
+		return errors.New("[pve] token_id set but token_secret empty")
+	}
+	if len(cfg.Network.WANInterfaces) == 0 {
+		return errors.New("[network] wan_interfaces must not be empty")
+	}
+	return nil
+}
+
+func validateCutover(cfg *Config, dryRun bool) error {
+	if cfg.MwanVMID == "" {
+		return errors.New("mwan_vmid is required")
+	}
+	if !dryRun && cfg.Email.SMTP2GOAPIKey == "" {
+		return errors.New("[email] smtp2go_api_key is required (set in TOML or SMTP2GO_API_KEY env)")
+	}
+	if cfg.MwanMgmtAddr == "" {
+		return errors.New("mwan_mgmt_addr is required")
+	}
+	if cfg.MwanIntIface == "" {
+		return errors.New("mwan_int_iface is required")
+	}
+	if cfg.Cutover.VIPIPv6 == "" {
+		return errors.New("[cutover] vip_ipv6 is required")
+	}
+	if cfg.Cutover.FailoverLXCID == "" {
+		return errors.New("[cutover] failover_lxc_id is required")
+	}
+	if cfg.Email.AlertEmail == "" {
+		return errors.New("[email] alert_email is required")
+	}
+	if cfg.Email.From == "" {
+		return errors.New("[email] from is required")
+	}
+	if cfg.Email.SubjectPrefix == "" {
+		return errors.New("[email] subject_prefix is required")
+	}
+	return nil
+}
+
+func validateAgent(cfg *Config) error {
+	if cfg.BGP.Enabled {
+		return validateBGP(&cfg.BGP)
 	}
 	return nil
 }

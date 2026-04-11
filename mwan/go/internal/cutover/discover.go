@@ -16,7 +16,18 @@ import (
 func discoverRuntime(ctx context.Context, log *slog.Logger, cfg *config.Config) error {
 	to := cfg.Cutover.SSHTimeoutSec
 
-	// 1. Discover current addresses on the primary VM's internal interface
+	if err := discoverVMAddresses(ctx, log, cfg, to); err != nil {
+		return err
+	}
+	discoverOPNsenseLL(ctx, log, cfg, to)
+	discoverFailoverGW6(ctx, log, cfg, to)
+	discoverFailoverGW4(ctx, log, cfg, to)
+
+	return nil
+}
+
+// discoverVMAddresses queries the primary VM's internal interface for current IPv6 and IPv4 addresses.
+func discoverVMAddresses(ctx context.Context, log *slog.Logger, cfg *config.Config, to int) error {
 	log.Info("discover: querying VM addresses", "host", cfg.MwanMgmtAddr, "iface", cfg.MwanIntIface)
 	addrOut, err := sshMustExec(ctx, cfg.MwanMgmtAddr,
 		fmt.Sprintf("ip addr show %s", cfg.MwanIntIface), to)
@@ -24,7 +35,6 @@ func discoverRuntime(ctx context.Context, log *slog.Logger, cfg *config.Config) 
 		return fmt.Errorf("discover VM addresses: %w", err)
 	}
 
-	// Parse current IPv6 GUA on the internal interface (the "real" address)
 	if cfg.Cutover.CurrentRealIPv6 == "" {
 		v6 := parseFirstGUA(addrOut)
 		if v6 != "" {
@@ -33,7 +43,6 @@ func discoverRuntime(ctx context.Context, log *slog.Logger, cfg *config.Config) 
 		}
 	}
 
-	// Parse current IPv4 on the internal interface
 	if cfg.Cutover.CurrentRealIPv4 == "" {
 		v4 := parseFirstV4(addrOut)
 		if v4 != "" {
@@ -42,52 +51,54 @@ func discoverRuntime(ctx context.Context, log *slog.Logger, cfg *config.Config) 
 		}
 	}
 
-	// 2. Discover OPNsense link-local on the mwanbr segment (for NDP flush)
-	if cfg.Cutover.OPNsenseAddr != "" && cfg.Cutover.FailoverOPNsenseLL == "" {
-		log.Info("discover: querying OPNsense link-local")
-		// Get OPNsense's WAN interface link-local via SSH
-		opnOut, opnErr := sshExec(ctx, cfg.Cutover.OPNsenseAddr,
-			"ifconfig | grep -A1 'description: WAN' | grep fe80 | awk '{print $2}' | cut -d% -f1", to)
-		if opnErr == nil && opnOut.Stdout != "" {
-			cfg.Cutover.FailoverOPNsenseLL = opnOut.Stdout
-			log.Info("discover: failover_opnsense_ll", "ll", opnOut.Stdout)
-		}
-	}
-
-	// 3. Discover failover LXC WAN gateway link-local
-	if cfg.Cutover.FailoverLXCID != "" && cfg.Cutover.FailoverDefaultGW6 == "" {
-		log.Info("discover: querying failover LXC WAN gateway")
-		wanIface := cfg.Cutover.FailoverLXCWanIface
-		if wanIface == "" {
-			wanIface = "eth0"
-		}
-		// The LXC's default gateway LL is the ISP LXC on the same bridge
-		gwOut, gwErr := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-			"ip", "-6", "route", "show", "default"}, to)
-		if gwErr == nil && gwOut != "" {
-			// Parse "default via fe80::xxx dev eth0 ..."
-			gw := parseViaLL(gwOut)
-			if gw != "" {
-				cfg.Cutover.FailoverDefaultGW6 = gw
-				log.Info("discover: failover_default_gw6", "gw", gw)
-			}
-		}
-	}
-
-	// 4. Discover failover LXC IPv4 gateway
-	if cfg.Cutover.FailoverLXCID != "" && cfg.Cutover.FailoverDefaultGW4 == "" {
-		gwOut, gwErr := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-			"ip", "-4", "route", "show", "default"}, to)
-		if gwErr == nil && gwOut != "" {
-			gw := parseViaV4(gwOut)
-			if gw != "" {
-				cfg.Cutover.FailoverDefaultGW4 = gw
-				log.Info("discover: failover_default_gw4", "gw", gw)
-			}
-		}
-	}
-
 	return nil
+}
+
+// discoverOPNsenseLL queries OPNsense for its WAN link-local address (used for NDP flush).
+func discoverOPNsenseLL(ctx context.Context, log *slog.Logger, cfg *config.Config, to int) {
+	if cfg.Cutover.OPNsenseAddr == "" || cfg.Cutover.FailoverOPNsenseLL != "" {
+		return
+	}
+	log.Info("discover: querying OPNsense link-local")
+	opnOut, opnErr := sshExec(ctx, cfg.Cutover.OPNsenseAddr,
+		"ifconfig | grep -A1 'description: WAN' | grep fe80 | awk '{print $2}' | cut -d% -f1", to)
+	if opnErr == nil && opnOut.Stdout != "" {
+		cfg.Cutover.FailoverOPNsenseLL = opnOut.Stdout
+		log.Info("discover: failover_opnsense_ll", "ll", opnOut.Stdout)
+	}
+}
+
+// discoverFailoverGW6 queries the failover LXC for its IPv6 default gateway link-local.
+func discoverFailoverGW6(ctx context.Context, log *slog.Logger, cfg *config.Config, to int) {
+	if cfg.Cutover.FailoverLXCID == "" || cfg.Cutover.FailoverDefaultGW6 != "" {
+		return
+	}
+	log.Info("discover: querying failover LXC WAN gateway")
+	gwOut, gwErr := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
+		"ip", "-6", "route", "show", "default"}, to)
+	if gwErr == nil && gwOut != "" {
+		gw := parseViaLL(gwOut)
+		if gw != "" {
+			cfg.Cutover.FailoverDefaultGW6 = gw
+			log.Info("discover: failover_default_gw6", "gw", gw)
+		}
+	}
+}
+
+// discoverFailoverGW4 queries the failover LXC for its IPv4 default gateway.
+func discoverFailoverGW4(ctx context.Context, log *slog.Logger, cfg *config.Config, to int) {
+	if cfg.Cutover.FailoverLXCID == "" || cfg.Cutover.FailoverDefaultGW4 != "" {
+		return
+	}
+	gwOut, gwErr := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
+		"ip", "-4", "route", "show", "default"}, to)
+	if gwErr == nil && gwOut != "" {
+		gw := parseViaV4(gwOut)
+		if gw != "" {
+			cfg.Cutover.FailoverDefaultGW4 = gw
+			log.Info("discover: failover_default_gw4", "gw", gw)
+		}
+	}
 }
 
 // parseFirstGUA extracts the first global unicast IPv6 address (with prefix) from ip addr output.

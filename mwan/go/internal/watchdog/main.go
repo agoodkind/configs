@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,9 +19,17 @@ import (
 	"goodkind.io/mwan/internal/version"
 )
 
-// Run is the entry point for the watchdog subcommand.
-// It sets up flag parsing, logger, operations layer, and coordinates the watchdog loop.
-func Run(cfg *config.Config) error {
+// watchdogFlags holds the parsed command-line flags for the watchdog subcommand.
+type watchdogFlags struct {
+	dryRun       bool
+	redTeam      string
+	redTeamLive  bool
+	redTeamIters int
+}
+
+// parseFlags parses command-line flags and handles --list-scenarios.
+// Returns the parsed flags. May call os.Exit(0) for --list-scenarios.
+func parseFlags() watchdogFlags {
 	dryRun := flag.Bool(
 		"dry-run", false,
 		"Skip destructive ops and emails; log decisions only",
@@ -57,51 +66,72 @@ func Run(cfg *config.Config) error {
 		os.Exit(0)
 	}
 
-	if *redTeam != "" && !*redTeamLive {
-		*dryRun = true
+	f := watchdogFlags{
+		dryRun:       *dryRun,
+		redTeam:      *redTeam,
+		redTeamLive:  *redTeamLive,
+		redTeamIters: *redTeamIters,
+	}
+	if f.redTeam != "" && !f.redTeamLive {
+		f.dryRun = true
 	}
 	if os.Getenv("DRY_RUN") == "1" {
-		*dryRun = true
+		f.dryRun = true
 	}
+	return f
+}
 
-	// Create logger
+// buildOpsLayer creates the logger, email sender, and operations layer,
+// applying dry-run and red-team wrappers as needed.
+func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOps, error) {
 	logger, lerr := logging.New(logging.Config{
 		TextLogFile: cfg.Watchdog.LogFile,
 		JSONLogFile: cfg.Watchdog.JSONLogFile,
 	}, version.BuildVersionString())
 	if lerr != nil {
-		return fmt.Errorf("logger init: %w", lerr)
+		return nil, nil, fmt.Errorf("logger init: %w", lerr)
 	}
 	logger.Info("mwan watchdog starting", "version", version.BuildVersionString())
 
-	// Create email sender
 	emailSender := email.NewSender(cfg.Email.SMTP2GOAPIKey, cfg.Email.From, cfg.Email.BindIface, "mwan-watchdog", logger)
 
-	// Create operations layer
 	var baseOps ops.SysOps = ops.NewRealOps(cfg, emailSender)
 
-	if *dryRun {
+	if f.dryRun {
 		logger.Info("[MODE] Dry-run enabled; destructive ops will be logged only")
 		baseOps = &dryRunOps{inner: baseOps, log: logger}
 	}
 
-	if *redTeam != "" {
-		preset, ok := redteam.Presets[*redTeam]
+	if f.redTeam != "" {
+		preset, ok := redteam.Presets[f.redTeam]
 		if !ok {
-			return fmt.Errorf("unknown scenario %q (use --list-scenarios)", *redTeam)
+			return nil, nil, fmt.Errorf("unknown scenario %q (use --list-scenarios)", f.redTeam)
 		}
 		logger.Info(
 			"[MODE] Red-team scenario",
-			"scenario", *redTeam,
+			"scenario", f.redTeam,
 			"description", preset.Description,
-			"live", *redTeamLive,
+			"live", f.redTeamLive,
 		)
 		baseOps = redteam.NewOps(baseOps, preset, logger)
 	}
 
+	return logger, baseOps, nil
+}
+
+// Run is the entry point for the watchdog subcommand.
+// It sets up flag parsing, logger, operations layer, and coordinates the watchdog loop.
+func Run(cfg *config.Config) error {
+	f := parseFlags()
+
+	logger, baseOps, err := buildOpsLayer(cfg, f)
+	if err != nil {
+		return err
+	}
+
 	// Override config for red-team mode
-	if *redTeam != "" {
-		cfg.Watchdog.MaxIterations = *redTeamIters
+	if f.redTeam != "" {
+		cfg.Watchdog.MaxIterations = f.redTeamIters
 		cfg.Watchdog.CheckIntervalHealthy = 1
 		cfg.Watchdog.CheckIntervalDegraded = 1
 		cfg.Watchdog.ConnectivityTimeoutSeconds = 3

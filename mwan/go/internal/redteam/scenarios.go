@@ -180,102 +180,86 @@ func (r *Ops) GuestExec(
 	ctx context.Context, vmid string, args ...string,
 ) (ops.GuestExecResult, error) {
 	if r.preset.GuestExecFail {
-		r.log.Info(
-			"[RED TEAM] injecting fault",
-			"fault", "guest_exec_fail",
-			"vmid", vmid,
-			"args", strings.Join(args, " "),
-		)
+		r.logFault("guest_exec_fail", vmid, args)
 		return ops.GuestExecResult{ExitCode: 1}, fmt.Errorf("red-team: guest agent down")
 	}
-	isPing := len(args) > 0 && (args[0] == "ping" || args[0] == "ping6")
-	hasIfaceFlag := false
+	if res, handled := r.handlePingFault(vmid, args); handled {
+		return res, nil
+	}
+	if res, handled := r.handleDeployFault(vmid, args); handled {
+		return res, nil
+	}
+	if res, handled := r.handleChangeFault(vmid, args); handled {
+		return res, nil
+	}
+	return r.inner.GuestExec(ctx, vmid, args...)
+}
+
+func (r *Ops) logFault(fault, vmid string, args []string) {
+	r.log.Info("[RED TEAM] injecting fault", "fault", fault, "vmid", vmid, "args", strings.Join(args, " "))
+}
+
+func classifyGuestArgs(args []string) (isPing, hasIface, isCatDeploy, isCatChange bool) {
+	isPing = len(args) > 0 && (args[0] == "ping" || args[0] == "ping6")
 	for _, a := range args {
 		if a == "-I" {
-			hasIfaceFlag = true
+			hasIface = true
 			break
 		}
 	}
-	isCatDeploy := len(args) >= 2 &&
-		args[0] == "cat" &&
-		strings.Contains(args[1], "mwan-last-deploy")
-	isCatChange := len(args) >= 2 &&
-		args[0] == "cat" &&
-		strings.Contains(args[1], "mwan-last-change")
-	if isPing && hasIfaceFlag && r.preset.GuestIfaceFail {
-		r.log.Info(
-			"[RED TEAM] injecting fault",
-			"fault", "guest_iface_fail",
-			"vmid", vmid,
-			"args", strings.Join(args, " "),
-		)
-		return ops.GuestExecResult{ExitCode: 1}, nil
+	isCatDeploy = len(args) >= 2 && args[0] == "cat" && strings.Contains(args[1], "mwan-last-deploy")
+	isCatChange = len(args) >= 2 && args[0] == "cat" && strings.Contains(args[1], "mwan-last-change")
+	return
+}
+
+func (r *Ops) handlePingFault(vmid string, args []string) (ops.GuestExecResult, bool) {
+	isPing, hasIface, _, _ := classifyGuestArgs(args)
+	if isPing && hasIface && r.preset.GuestIfaceFail {
+		r.logFault("guest_iface_fail", vmid, args)
+		return ops.GuestExecResult{ExitCode: 1}, true
 	}
-	if isPing && hasIfaceFlag && r.preset.GuestIfaceSucceed {
-		r.log.Info(
-			"[RED TEAM] injecting success",
-			"fault", "guest_iface_succeed",
-			"vmid", vmid,
-			"args", strings.Join(args, " "),
-		)
-		return ops.GuestExecResult{ExitCode: 0}, nil
+	if isPing && hasIface && r.preset.GuestIfaceSucceed {
+		r.logFault("guest_iface_succeed", vmid, args)
+		return ops.GuestExecResult{ExitCode: 0}, true
 	}
-	if isPing && !hasIfaceFlag && r.preset.GuestDefaultFail {
-		r.log.Info(
-			"[RED TEAM] injecting fault",
-			"fault", "guest_default_route_fail",
-			"vmid", vmid,
-			"args", strings.Join(args, " "),
-		)
-		return ops.GuestExecResult{ExitCode: 1}, nil
+	if isPing && !hasIface && r.preset.GuestDefaultFail {
+		r.logFault("guest_default_route_fail", vmid, args)
+		return ops.GuestExecResult{ExitCode: 1}, true
 	}
-	if isCatDeploy && r.preset.OmitDeployMarker {
-		return ops.GuestExecResult{ExitCode: 1}, nil
+	return ops.GuestExecResult{}, false
+}
+
+func (r *Ops) handleDeployFault(vmid string, args []string) (ops.GuestExecResult, bool) {
+	_, _, isCatDeploy, _ := classifyGuestArgs(args)
+	if !isCatDeploy {
+		return ops.GuestExecResult{}, false
 	}
-	if isCatDeploy {
-		if r.preset.DeployTSMode == deployTSModeRecentThenStale && r.deployTSInjected {
-			oldTS := time.Now().Unix() - 7200
-			r.log.Info(
-				"[RED TEAM] suppressing repeat deploy marker",
-				"fault", "inject_deploy_ts_once",
-				"vmid", vmid,
-				"deploy_ts", oldTS,
-			)
-			return ops.GuestExecResult{
-				ExitCode: 0,
-				Stdout:   strconv.FormatInt(oldTS, 10),
-			}, nil
-		}
-		if r.preset.DeployTSMode == deployTSModeAlwaysRecent ||
-			r.preset.DeployTSMode == deployTSModeRecentThenStale {
-			ts := time.Now().Unix() - 60
-			r.log.Info(
-				"[RED TEAM] injecting fault",
-				"fault", "inject_deploy_ts",
-				"vmid", vmid,
-				"deploy_ts", ts,
-			)
-			r.deployTSInjected = true
-			return ops.GuestExecResult{
-				ExitCode: 0,
-				Stdout:   strconv.FormatInt(ts, 10),
-			}, nil
-		}
+	if r.preset.OmitDeployMarker {
+		return ops.GuestExecResult{ExitCode: 1}, true
 	}
-	if isCatChange && r.preset.InjectChangeMarker {
+	if r.preset.DeployTSMode == deployTSModeRecentThenStale && r.deployTSInjected {
+		oldTS := time.Now().Unix() - 7200
+		r.logFault("inject_deploy_ts_once", vmid, args)
+		return ops.GuestExecResult{ExitCode: 0, Stdout: strconv.FormatInt(oldTS, 10)}, true
+	}
+	if r.preset.DeployTSMode == deployTSModeAlwaysRecent ||
+		r.preset.DeployTSMode == deployTSModeRecentThenStale {
 		ts := time.Now().Unix() - 60
-		r.log.Info(
-			"[RED TEAM] injecting fault",
-			"fault", "inject_change_ts",
-			"vmid", vmid,
-			"change_ts", ts,
-		)
-		return ops.GuestExecResult{
-			ExitCode: 0,
-			Stdout:   strconv.FormatInt(ts, 10),
-		}, nil
+		r.logFault("inject_deploy_ts", vmid, args)
+		r.deployTSInjected = true
+		return ops.GuestExecResult{ExitCode: 0, Stdout: strconv.FormatInt(ts, 10)}, true
 	}
-	return r.inner.GuestExec(ctx, vmid, args...)
+	return ops.GuestExecResult{}, false
+}
+
+func (r *Ops) handleChangeFault(vmid string, args []string) (ops.GuestExecResult, bool) {
+	_, _, _, isCatChange := classifyGuestArgs(args)
+	if !isCatChange || !r.preset.InjectChangeMarker {
+		return ops.GuestExecResult{}, false
+	}
+	ts := time.Now().Unix() - 60
+	r.logFault("inject_change_ts", vmid, args)
+	return ops.GuestExecResult{ExitCode: 0, Stdout: strconv.FormatInt(ts, 10)}, true
 }
 
 func (r *Ops) Ping(ctx context.Context, bin, target string) bool {

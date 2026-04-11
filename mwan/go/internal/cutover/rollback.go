@@ -37,6 +37,23 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 	_ = sender.Send(ctx, cfg.Email.AlertEmail, fmt.Sprintf("%s ROLLBACK INITIATED", cfg.Email.SubjectPrefix),
 		"Rolling back HA cutover. Killing keepalived, restoring original addresses.")
 
+	rollbackCleanupAndRestore(ctx, log, cfg, host, iface, to)
+
+	// Verify and test connectivity
+	out, err = sshExec(ctx, host,
+		fmt.Sprintf("ip -6 addr show dev %s scope global", iface), to)
+	if err != nil {
+		rollbackVerifyViaSerial(ctx, log, iface, to)
+	} else {
+		log.Info("rollback: interface state", "addrs", out.Stdout)
+	}
+
+	return rollbackTestConnectivity(ctx, log, cfg, sender, out)
+}
+
+// rollbackCleanupAndRestore kills keepalived on both LXC and VM, removes the VRRP
+// interface, flushes addresses, restores originals, and flushes OPNsense caches.
+func rollbackCleanupAndRestore(ctx context.Context, log *slog.Logger, cfg *config.Config, host, iface string, to int) {
 	// Step 1: Kill keepalived on LXC (try stop, then kill, then disable)
 	log.Info("rollback: killing keepalived on LXC", "lxc", cfg.Cutover.FailoverLXCID)
 	_, _ = localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
@@ -71,48 +88,48 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 	_, _ = sshExec(ctx, host,
 		fmt.Sprintf("ip addr add %s dev %s", cfg.Cutover.CurrentRealIPv4, iface), to)
 
-	// Step 6: Flush OPNsense NDP cache for the VIP address.
-	// CRITICAL: without this, OPNsense keeps the VRRP virtual MAC in its neighbor
-	// cache and sends traffic to a MAC that no longer exists, causing total outage.
-	if cfg.Cutover.OPNsenseAddr != "" {
-		vipv6 := strings.Split(cfg.Cutover.VIPIPv6, "/")[0]
-		vipv4 := strings.Split(cfg.Cutover.VIPIPv4, "/")[0]
-		log.Info("rollback: flushing OPNsense NDP + ARP cache for VIP", "v6", vipv6, "v4", vipv4)
-		if r, ndpErr := sshExec(ctx, cfg.Cutover.OPNsenseAddr,
-			fmt.Sprintf("sudo ndp -d %s; sudo arp -d %s", vipv6, vipv4), to); ndpErr != nil {
-			log.Error("rollback: FAILED to flush OPNsense caches — MANUAL FIX NEEDED",
-				"err", ndpErr,
-				"fix", fmt.Sprintf("ssh %s 'sudo ndp -d %s; sudo arp -d %s'", cfg.Cutover.OPNsenseAddr, vipv6, vipv4))
-		} else {
-			log.Info("rollback: OPNsense NDP + ARP flushed", "output", r.Stdout)
-		}
-	} else {
+	// Step 6: Flush OPNsense NDP + ARP cache for the VIP address
+	rollbackFlushOPNsenseCaches(ctx, log, cfg, to)
+}
+
+// rollbackFlushOPNsenseCaches flushes both NDP and ARP entries for the VIP on OPNsense.
+// CRITICAL: without this, OPNsense keeps the VRRP virtual MAC in its neighbor
+// cache and sends traffic to a MAC that no longer exists, causing total outage.
+func rollbackFlushOPNsenseCaches(ctx context.Context, log *slog.Logger, cfg *config.Config, to int) {
+	if cfg.Cutover.OPNsenseAddr == "" {
 		log.Warn("rollback: no opnsense_addr configured, cannot flush NDP/ARP cache — do it manually")
+		return
 	}
-
-	// Step 7: Verify — if SSH works and the address is there, we're good
-	log.Info("rollback: verifying")
-	out, err = sshExec(ctx, host,
-		fmt.Sprintf("ip -6 addr show dev %s scope global", iface), to)
-	if err != nil {
-		log.Error("rollback: SSH to VM failed during verify", "err", err)
-		// Try serial-exec as last resort
-		log.Info("rollback: attempting verification via serial-exec")
-		serialOut, serialErr := localExec(ctx, "serial-exec",
-			[]string{"run", "mwan", fmt.Sprintf("ip -6 addr show dev %s scope global", iface)}, 15)
-		if serialErr != nil {
-			log.Error("rollback: serial-exec also failed", "err", serialErr)
-		} else {
-			log.Info("rollback: serial-exec verify", "addrs", serialOut)
-		}
+	vipv6 := strings.Split(cfg.Cutover.VIPIPv6, "/")[0]
+	vipv4 := strings.Split(cfg.Cutover.VIPIPv4, "/")[0]
+	log.Info("rollback: flushing OPNsense NDP + ARP cache for VIP", "v6", vipv6, "v4", vipv4)
+	if r, ndpErr := sshExec(ctx, cfg.Cutover.OPNsenseAddr,
+		fmt.Sprintf("sudo ndp -d %s; sudo arp -d %s", vipv6, vipv4), to); ndpErr != nil {
+		log.Error("rollback: FAILED to flush OPNsense caches — MANUAL FIX NEEDED",
+			"err", ndpErr,
+			"fix", fmt.Sprintf("ssh %s 'sudo ndp -d %s; sudo arp -d %s'", cfg.Cutover.OPNsenseAddr, vipv6, vipv4))
 	} else {
-		log.Info("rollback: interface state", "addrs", out.Stdout)
+		log.Info("rollback: OPNsense NDP + ARP flushed", "output", r.Stdout)
 	}
+}
 
-	// Step 8: Verify connectivity
+// rollbackVerifyViaSerial attempts to verify the interface state via serial-exec as a last resort.
+func rollbackVerifyViaSerial(ctx context.Context, log *slog.Logger, iface string, to int) {
+	log.Info("rollback: attempting verification via serial-exec")
+	serialOut, serialErr := localExec(ctx, "serial-exec",
+		[]string{"run", "mwan", fmt.Sprintf("ip -6 addr show dev %s scope global", iface)}, 15)
+	if serialErr != nil {
+		log.Error("rollback: serial-exec also failed", "err", serialErr)
+	} else {
+		log.Info("rollback: serial-exec verify", "addrs", serialOut)
+	}
+}
+
+// rollbackTestConnectivity pings the internet and sends appropriate email notifications.
+func rollbackTestConnectivity(ctx context.Context, log *slog.Logger, cfg *config.Config, sender *email.Sender, out SSHResult) error {
 	log.Info("rollback: testing internet connectivity")
 	_, pingErr := localExec(ctx, "ping6",
-		[]string{"-c", "2", "-W", "3", cfg.Network.PingTargetIPv6}, to)
+		[]string{"-c", "2", "-W", "3", cfg.Network.PingTargetIPv6}, cfg.Cutover.SSHTimeoutSec)
 	if pingErr != nil {
 		log.Error("rollback: internet NOT reachable after rollback", "err", pingErr)
 		_ = sender.Send(ctx, cfg.Email.AlertEmail, fmt.Sprintf("%s ROLLBACK COMPLETE BUT INTERNET DOWN", cfg.Email.SubjectPrefix),

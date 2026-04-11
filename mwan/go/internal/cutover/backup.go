@@ -33,22 +33,47 @@ func cmdStartBackup(ctx context.Context, log *slog.Logger, cfg *config.Config, d
 	}
 	to := cfg.Cutover.SSHTimeoutSec
 
-	// Idempotency: if keepalived is already active in BACKUP state, skip
-	if chkOut, chkErr := localExec(ctx, "pct", []string{"exec", lxc, "--",
-		"systemctl", "is-active", "keepalived"}, to); chkErr == nil && strings.TrimSpace(chkOut) == "active" {
-		if logOut, _ := localExec(ctx, "pct", []string{"exec", lxc, "--",
-			"journalctl", "-u", "keepalived", "-n", "3", "--no-pager"}, to); strings.Contains(logOut, "BACKUP") {
-			log.Info("start-backup: already running in BACKUP state, skipping")
-			return nil
-		}
+	if backupAlreadyRunning(ctx, lxc, to, log) {
+		return nil
 	}
 
-	// Helper to exec inside LXC
 	lxcRun := func(cmd string) (string, error) {
 		return localExec(ctx, "pct", []string{"exec", lxc, "--", "bash", "-c", cmd}, to)
 	}
 
-	// Step 1: Configure IP forwarding (persisted)
+	if err := backupConfigureForwarding(lxcRun, lxc, log); err != nil {
+		return err
+	}
+	if err := backupConfigureMasquerade(lxcRun, lxc, wanIface, log); err != nil {
+		return err
+	}
+	if err := backupConfigureRoutes(lxcRun, cfg, lxc, wanIface, lxcIface, log); err != nil {
+		return err
+	}
+	if err := deployKeepalived(ctx, log, cfg, lxcRun, "BACKUP", lxcIface, cfg.Cutover.BackupPriority); err != nil {
+		return fmt.Errorf("deploy keepalived on LXC %s: %w", lxc, err)
+	}
+	return backupStartAndVerify(ctx, lxc, to, log)
+}
+
+// backupAlreadyRunning returns true if keepalived is already active in BACKUP state on the LXC.
+func backupAlreadyRunning(ctx context.Context, lxc string, to int, log *slog.Logger) bool {
+	chkOut, chkErr := localExec(ctx, "pct", []string{"exec", lxc, "--",
+		"systemctl", "is-active", "keepalived"}, to)
+	if chkErr != nil || strings.TrimSpace(chkOut) != "active" {
+		return false
+	}
+	logOut, _ := localExec(ctx, "pct", []string{"exec", lxc, "--",
+		"journalctl", "-u", "keepalived", "-n", "3", "--no-pager"}, to)
+	if strings.Contains(logOut, "BACKUP") {
+		log.Info("start-backup: already running in BACKUP state, skipping")
+		return true
+	}
+	return false
+}
+
+// backupConfigureForwarding enables IPv6 and IPv4 forwarding inside the LXC (persisted via sysctl.d).
+func backupConfigureForwarding(lxcRun execFunc, lxc string, log *slog.Logger) error {
 	log.Info("start-backup: configuring forwarding on LXC", "lxc", lxc)
 	if _, err := lxcRun(`
 		sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null
@@ -62,8 +87,11 @@ __MWAN_EOF__
 	`); err != nil {
 		return fmt.Errorf("configure forwarding on LXC %s: %w", lxc, err)
 	}
+	return nil
+}
 
-	// Step 2: Configure nftables masquerade (persisted)
+// backupConfigureMasquerade sets up nftables masquerade rules on the LXC WAN interface (persisted).
+func backupConfigureMasquerade(lxcRun execFunc, lxc, wanIface string, log *slog.Logger) error {
 	log.Info("start-backup: configuring masquerade on LXC", "lxc", lxc)
 	if _, err := lxcRun(fmt.Sprintf(`
 		nft flush ruleset 2>/dev/null
@@ -79,8 +107,11 @@ __MWAN_EOF__
 	`, wanIface, wanIface)); err != nil {
 		return fmt.Errorf("configure masquerade on LXC %s: %w", lxc, err)
 	}
+	return nil
+}
 
-	// Step 3: Configure routes (persisted via if-up script)
+// backupConfigureRoutes writes and executes the persistent route script on the LXC.
+func backupConfigureRoutes(lxcRun execFunc, cfg *config.Config, lxc, wanIface, lxcIface string, log *slog.Logger) error {
 	log.Info("start-backup: configuring routes on LXC", "lxc", lxc)
 	routeScript := buildRouteScript(cfg, wanIface, lxcIface)
 	if _, err := lxcRun(fmt.Sprintf(`
@@ -93,20 +124,17 @@ __MWAN_EOF__
 	`, routeScript)); err != nil {
 		return fmt.Errorf("configure routes on LXC %s: %w", lxc, err)
 	}
+	return nil
+}
 
-	// Step 4: Deploy keepalived scripts and config (shared with migrate)
-	if err := deployKeepalived(ctx, log, cfg, lxcRun, "BACKUP", lxcIface, cfg.Cutover.BackupPriority); err != nil {
-		return fmt.Errorf("deploy keepalived on LXC %s: %w", lxc, err)
-	}
-
-	// Step 5: Enable and start keepalived
+// backupStartAndVerify enables keepalived on the LXC and waits for it to enter BACKUP state.
+func backupStartAndVerify(ctx context.Context, lxc string, to int, log *slog.Logger) error {
 	log.Info("start-backup: enabling and starting keepalived on LXC", "lxc", lxc)
 	if _, err := localExec(ctx, "pct", []string{"exec", lxc, "--",
 		"systemctl", "enable", "--now", "keepalived"}, to); err != nil {
 		return fmt.Errorf("start keepalived on LXC %s: %w", lxc, err)
 	}
 
-	// Step 6: Wait for BACKUP state
 	log.Info("start-backup: waiting for BACKUP state")
 	time.Sleep(3 * time.Second)
 	out, err := localExec(ctx, "pct", []string{"exec", lxc, "--",

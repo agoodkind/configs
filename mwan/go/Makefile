@@ -7,7 +7,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell git diff --quiet HEAD -- . 2>/dev/null && echo clean || echo dirty)
 LDFLAGS := -X main.gitCommit=$(GIT_COMMIT) -X main.gitDirty=$(GIT_DIRTY)
 
-.PHONY: all proto build test vet
+.PHONY: all proto build build-linux test vet lint fmt check
 
 all: build
 
@@ -22,6 +22,10 @@ build: proto
 	@mkdir -p bin
 	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/mwan ./cmd/mwan
 
+build-linux: proto
+	@mkdir -p bin
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/mwan-linux ./cmd/mwan
+
 test:
 	go test ./...
 
@@ -32,6 +36,6 @@ lint:
 	golangci-lint run ./...
 
 fmt:
-	gofmt -w ./cmd/mwan/ ./pkg/
+	gofmt -w .
 
 check: vet lint test

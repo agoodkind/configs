@@ -47,7 +47,7 @@ func (w *watchdog) triggerFailover(ctx context.Context, cfg *config.Config, reas
 		"Watchdog is triggering failover to LXC %s.\n\nReason: %s\n\nThe backup LXC will be configured and keepalived will promote it to MASTER.",
 		cfg.Cutover.FailoverLXCID, reason,
 	)
-	w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
+	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
 
 	start := time.Now()
 	if err := cutover.StartBackup(ctx, w.log, cfg); err != nil {
@@ -66,7 +66,7 @@ func (w *watchdog) triggerFailover(ctx context.Context, cfg *config.Config, reas
 		"Failover to LXC %s completed in %s.\n\nKeepalived should promote the LXC to MASTER shortly.",
 		cfg.Cutover.FailoverLXCID, time.Since(start).Round(time.Second),
 	)
-	w.ops.SendEmail(ctx, cfg.Email.AlertEmail, successSubject, successBody)
+	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, successSubject, successBody)
 
 	return nil
 }
@@ -87,7 +87,7 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 			"Step 2: Announce routes on failover LXC %s",
 		reason, cfg.MwanVMID, cfg.Cutover.FailoverLXCID,
 	)
-	w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
+	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
 
 	// Step 1: Withdraw routes from primary VM.
 	w.log.Info("BGP_FAILOVER: withdrawing routes from primary VM", "vmid", cfg.MwanVMID)
@@ -138,7 +138,7 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 			"Routes announced on failover LXC %s.",
 		time.Since(start).Round(time.Second), cfg.MwanVMID, cfg.Cutover.FailoverLXCID,
 	)
-	w.ops.SendEmail(ctx, cfg.Email.AlertEmail, successSubject, successBody)
+	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, successSubject, successBody)
 
 	return nil
 }
