@@ -130,12 +130,28 @@ type CutoverSection struct {
 	BootWaitSec      int `toml:"boot_wait_sec"`
 }
 
-// OPNsenseSection holds OPNsense API credentials and endpoint.
+// OPNsenseSection holds OPNsense API credentials, endpoint, and its own BGP config.
+// OPNsense is a BGP peer, not a speaker we control. Its BGP config is the inverse
+// of the agent's: different router-id, different neighbor list.
 type OPNsenseSection struct {
-	URL       string `toml:"url"`        // e.g. "https://192.168.1.1"
-	APIKey    string `toml:"api_key"`
-	APISecret string `toml:"api_secret"`
-	Insecure  bool   `toml:"insecure"`   // skip TLS verify
+	URL       string          `toml:"url"`
+	APIKey    string          `toml:"api_key"`
+	APISecret string          `toml:"api_secret"`
+	Insecure  bool            `toml:"insecure"`
+	BGP       OPNsenseBGP     `toml:"bgp"`
+}
+
+// OPNsenseBGP describes the BGP configuration to push to OPNsense via its API.
+type OPNsenseBGP struct {
+	RouterID  string               `toml:"router_id"`
+	Neighbors []OPNsenseBGPNeighbor `toml:"neighbors"`
+}
+
+// OPNsenseBGPNeighbor is a BGP peer from OPNsense's perspective.
+type OPNsenseBGPNeighbor struct {
+	Address     string `toml:"address"`
+	Description string `toml:"description"`
+	Preference  string `toml:"preference"` // "primary" or "backup"
 }
 
 // BGPSection holds embedded GoBGP speaker configuration.

@@ -115,39 +115,35 @@ func cmdConfigureOPNsense(ctx context.Context, log *slog.Logger, cfg *config.Con
 		Insecure:  cfg.OPNsense.Insecure,
 	}, log)
 
-	// Print what we are about to do.
+	// Build OPNsense BGP config from [opnsense.bgp] section (not [bgp]).
+	// [bgp] is the agent's speaker config. [opnsense.bgp] is OPNsense's perspective.
 	log.Info("will configure BGP on OPNsense",
 		"url", cfg.OPNsense.URL,
 		"asn", cfg.BGP.ASN,
-		"router_id", cfg.BGP.RouterID,
-		"neighbor_count_v4", len(cfg.BGP.Neighbors),
-		"neighbor_count_v6", len(cfg.BGP.NeighborsV6),
+		"router_id", cfg.OPNsense.BGP.RouterID,
+		"neighbor_count", len(cfg.OPNsense.BGP.Neighbors),
 	)
 
-	// Build the BGP config from TOML.
-	neighbors := make([]opnsense.BGPNeighborConfig, 0, len(cfg.BGP.Neighbors)+len(cfg.BGP.NeighborsV6))
-	for _, n := range cfg.BGP.Neighbors {
+	var neighbors []opnsense.BGPNeighborConfig
+	for _, n := range cfg.OPNsense.BGP.Neighbors {
+		routeMap := "PREFER-BACKUP"
+		if n.Preference == "primary" {
+			routeMap = "PREFER-PRIMARY"
+		}
 		neighbors = append(neighbors, opnsense.BGPNeighborConfig{
-			Address:    n.Address,
-			RemoteAS:   cfg.BGP.ASN,
-			Keepalive:  int(cfg.BGP.KeepaliveSeconds),
-			Holddown:   int(cfg.BGP.HoldSeconds),
-			RouteMapIn: "PREFER-PRIMARY",
-		})
-	}
-	for _, n := range cfg.BGP.NeighborsV6 {
-		neighbors = append(neighbors, opnsense.BGPNeighborConfig{
-			Address:    n.Address,
-			RemoteAS:   cfg.BGP.ASN,
-			Keepalive:  int(cfg.BGP.KeepaliveSeconds),
-			Holddown:   int(cfg.BGP.HoldSeconds),
-			RouteMapIn: "PREFER-PRIMARY",
+			Address:     n.Address,
+			RemoteAS:    cfg.BGP.ASN,
+			Keepalive:   int(cfg.BGP.KeepaliveSeconds),
+			Holddown:    int(cfg.BGP.HoldSeconds),
+			BFD:         true,
+			RouteMapIn:  routeMap,
+			Description: n.Description,
 		})
 	}
 
 	bgpCfg := opnsense.BGPConfig{
 		ASN:       cfg.BGP.ASN,
-		RouterID:  cfg.BGP.RouterID,
+		RouterID:  cfg.OPNsense.BGP.RouterID,
 		Neighbors: neighbors,
 	}
 
@@ -250,8 +246,19 @@ func validateBGPConfig(cfg *config.Config) error {
 	if cfg.BGP.ASN == 0 {
 		return fmt.Errorf("[bgp] asn is required for cutover2")
 	}
-	if cfg.BGP.RouterID == "" {
-		return fmt.Errorf("[bgp] router_id is required for cutover2")
+	if cfg.OPNsense.BGP.RouterID == "" {
+		return fmt.Errorf("[opnsense.bgp] router_id is required")
+	}
+	if len(cfg.OPNsense.BGP.Neighbors) == 0 {
+		return fmt.Errorf("[opnsense.bgp] at least one neighbor is required")
+	}
+	for _, n := range cfg.OPNsense.BGP.Neighbors {
+		if n.Address == "" {
+			return fmt.Errorf("[opnsense.bgp.neighbors] address is required")
+		}
+		if n.Preference != "primary" && n.Preference != "backup" {
+			return fmt.Errorf("[opnsense.bgp.neighbors] preference must be 'primary' or 'backup', got %q", n.Preference)
+		}
 	}
 	return nil
 }
