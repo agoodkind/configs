@@ -80,6 +80,29 @@ $SSH_VM950 "systemctl daemon-reload && systemctl enable mwan-update-routes mwan-
 echo "  Installing jq (if needed)..."
 $SSH_VM950 "which jq >/dev/null 2>&1 || apt-get install -y jq" | tail -1
 
+echo "  Deploying mwan agent config..."
+scp "$TESTBED_DIR/vm-950/config.toml" "$VM950_SCP:/etc/mwan/config.toml"
+
+echo "  Deploying FRR config..."
+scp "$TESTBED_DIR/vm-950/frr.conf" "$VM950_SCP:/etc/frr/frr.conf"
+scp "$TESTBED_DIR/vm-950/daemons" "$VM950_SCP:/etc/frr/daemons"
+$SSH_VM950 "which frr >/dev/null 2>&1 || apt-get install -y frr"
+$SSH_VM950 "systemctl enable frr"
+
+echo ""
+echo "=== Phase 2b: LXC 100 (failover) ==="
+ssh "$SUBURBAN" "pct exec 100 -- mkdir -p /etc/mwan /etc/frr"
+scp "$TESTBED_DIR/lxc-100/config.toml" "$SUBURBAN:/tmp/lxc100-config.toml"
+ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-config.toml /etc/mwan/config.toml"
+scp "$TESTBED_DIR/lxc-100/frr.conf" "$SUBURBAN:/tmp/lxc100-frr.conf"
+ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-frr.conf /etc/frr/frr.conf"
+scp "$TESTBED_DIR/lxc-100/daemons" "$SUBURBAN:/tmp/lxc100-daemons"
+ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-daemons /etc/frr/daemons"
+scp "$TESTBED_DIR/lxc-100/nftables.conf" "$SUBURBAN:/tmp/lxc100-nftables.conf"
+ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-nftables.conf /etc/nftables.conf"
+ssh "$SUBURBAN" "pct exec 100 -- sh -c 'which frr >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq frr nftables)'"
+ssh "$SUBURBAN" "pct exec 100 -- systemctl enable frr nftables"
+
 echo ""
 echo "=== Phase 3: ISP LXCs ==="
 

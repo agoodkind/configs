@@ -76,13 +76,13 @@ has three subcommands:
 
 - `mwan agent` — gRPC agent running inside the MWAN VM (VM 113)
 - `mwan watchdog` — connectivity monitor and rollback daemon on vault
-- `mwan cutover` — HA cutover tool (preflight, migrate, start-backup, verify, rollback)
+- `mwan cutover` -- HA cutover tool (preflight, migrate, start-backup, verify, rollback)
 
 There are NO separate Go binaries. Everything is one binary with `internal/` packages
 for separation of concerns. Each subsystem (watchdog, cutover, agent) is its own package
 under `internal/`. Shared code lives in `internal/config`, `internal/email`,
-`internal/logging`, `internal/ops`. The entry point at `cmd/mwan/main.go` dispatches to
-subcommand packages.
+`internal/logging`, `internal/ops`, `internal/bgp`. The entry point at `cmd/mwan/main.go`
+dispatches to subcommand packages.
 
 This is a hard requirement. Do not create separate binaries for new functionality.
 New tools become subcommands of the monolith. This ensures:
@@ -91,9 +91,17 @@ New tools become subcommands of the monolith. This ensures:
 - No version drift between components
 - `mwan-unfuck` works from any path (it calls `mwan cutover rollback`)
 
-The `mwan cutover start-backup` phase fully configures the failover LXC (forwarding,
-masquerade, routes, keepalived) from scratch. The LXC is treated as disposable — the
-monolith owns all its configuration.
+### HA Failover: Embedded BGP (replacing keepalived/VRRP)
+
+The agent embeds a GoBGP v4 speaker (`internal/bgp/`). Each MWAN host peers with
+OPNsense via iBGP and announces a default route (0.0.0.0/0 and ::/0) when healthy.
+OPNsense runs FRR (os-frr plugin) with route-maps to prefer the primary (local-pref).
+The watchdog withdraws routes via gRPC when health degrades. If the agent crashes, the
+BGP session drops and OPNsense converges to the backup within the hold timer.
+
+This replaces keepalived/VRRP. No VIP, no VMAC, no macvlan, no DAD conflicts.
+All BGP parameters (ASN, router ID, neighbors, timers, prefixes) are in `[bgp]`
+section of config.toml. The `mwan cutover` keepalived code paths are deprecated.
 
 ## Go Code Standards
 

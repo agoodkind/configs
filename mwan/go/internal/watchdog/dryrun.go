@@ -79,3 +79,20 @@ func (d *dryRunOps) GetConfigState(
 ) (*mwanv1.GetConfigStateResponse, string, error) {
 	return d.inner.GetConfigState(ctx, vmid)
 }
+
+func (d *dryRunOps) GetBGPStatus(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetBGPStatusResponse, error) {
+	d.log.Info("[DRY-RUN] would get BGP status", "vmid", vmid)
+	return &mwanv1.GetBGPStatusResponse{}, nil
+}
+
+func (d *dryRunOps) AnnounceRoutes(_ context.Context, vmid string) error {
+	d.log.Info("[DRY-RUN] would announce BGP routes", "vmid", vmid)
+	return nil
+}
+
+func (d *dryRunOps) WithdrawRoutes(_ context.Context, vmid string) error {
+	d.log.Info("[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
+	return nil
+}

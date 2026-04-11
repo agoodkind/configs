@@ -1,0 +1,26 @@
+hostname = "mwan-failover-test"
+
+[agent]
+vsock_port = 0
+tcp_addr = "[::]:50052"
+deploy_file = "/var/run/mwan-last-deploy"
+log_file = "/var/log/mwan-agent.log"
+debug = false
+
+[bgp]
+enabled = true
+asn = 4200000001
+router_id = "10.250.250.4"
+keepalive_seconds = 3
+hold_seconds = 9
+listen_port = 179
+
+[[bgp.neighbors]]
+address = "10.250.250.2"
+
+[[bgp.neighbors_v6]]
+address = "3d06:bad:b01:201::2"
+
+[bgp.announce]
+ipv4 = ["0.0.0.0/0"]
+ipv6 = ["::/0"]

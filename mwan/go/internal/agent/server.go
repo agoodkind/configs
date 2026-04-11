@@ -21,6 +21,7 @@ import (
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/bgp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -31,6 +32,7 @@ type Server struct {
 	mwanv1.UnimplementedMWANAgentServer
 	deployFilePath string
 	log            *slog.Logger
+	bgp            *bgp.Speaker // nil when BGP is disabled
 
 	// These are injectable in tests to avoid reading real /proc files.
 	// Production code leaves them nil and uses the real /proc paths.
@@ -40,10 +42,11 @@ type Server struct {
 	statfsPath  string
 }
 
-func NewServer(deployFilePath string, log *slog.Logger) *Server {
+func NewServer(deployFilePath string, log *slog.Logger, bgpSpeaker *bgp.Speaker) *Server {
 	return &Server{
 		deployFilePath: deployFilePath,
 		log:            log,
+		bgp:            bgpSpeaker,
 		uptimePath:     "/proc/uptime",
 		loadAvgPath:    "/proc/loadavg",
 		meminfoPath:    "/proc/meminfo",
@@ -88,6 +91,12 @@ func (a *Server) GetHealth(
 		a.log.WarnContext(ctx, "list failed systemd units", "error", ferr)
 	} else {
 		resp.FailedUnits = failed
+	}
+
+	if a.bgp != nil {
+		st := a.bgp.Status()
+		resp.BgpAnnouncing = st.Announcing
+		resp.BgpAllEstablished = a.bgp.IsEstablished()
 	}
 
 	return resp, nil
@@ -420,6 +429,56 @@ func statfsDiskBytes(path string) (total int64, avail int64, err error) {
 	total = int64(st.Blocks) * bs
 	avail = int64(st.Bavail) * bs
 	return total, avail, nil
+}
+
+func (a *Server) GetBGPStatus(
+	ctx context.Context,
+	_ *mwanv1.GetBGPStatusRequest,
+) (*mwanv1.GetBGPStatusResponse, error) {
+	if a.bgp == nil {
+		return nil, status.Error(codes.Unavailable, "BGP not enabled")
+	}
+	st := a.bgp.Status()
+	resp := &mwanv1.GetBGPStatusResponse{
+		Announcing:     st.Announcing,
+		AllEstablished: a.bgp.IsEstablished(),
+	}
+	for _, p := range st.Peers {
+		resp.Peers = append(resp.Peers, &mwanv1.BGPPeerStatus{
+			Address:      p.Address,
+			Afi:          p.AFI,
+			SessionState: p.State,
+			Established:  p.Established,
+			UpSinceEpoch: p.UpSince,
+		})
+	}
+	return resp, nil
+}
+
+func (a *Server) AnnounceRoutes(
+	ctx context.Context,
+	_ *mwanv1.AnnounceRoutesRequest,
+) (*mwanv1.AnnounceRoutesResponse, error) {
+	if a.bgp == nil {
+		return nil, status.Error(codes.Unavailable, "BGP not enabled")
+	}
+	if err := a.bgp.AnnounceDefault(); err != nil {
+		return &mwanv1.AnnounceRoutesResponse{Success: false, Error: err.Error()}, nil
+	}
+	return &mwanv1.AnnounceRoutesResponse{Success: true}, nil
+}
+
+func (a *Server) WithdrawRoutes(
+	ctx context.Context,
+	_ *mwanv1.WithdrawRoutesRequest,
+) (*mwanv1.WithdrawRoutesResponse, error) {
+	if a.bgp == nil {
+		return nil, status.Error(codes.Unavailable, "BGP not enabled")
+	}
+	if err := a.bgp.WithdrawDefault(); err != nil {
+		return &mwanv1.WithdrawRoutesResponse{Success: false, Error: err.Error()}, nil
+	}
+	return &mwanv1.WithdrawRoutesResponse{Success: true}, nil
 }
 
 func (a *Server) WatchEvents(

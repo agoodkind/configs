@@ -307,3 +307,17 @@ func (r *Ops) GetConfigState(
 ) (*mwanv1.GetConfigStateResponse, string, error) {
 	return r.inner.GetConfigState(ctx, vmid)
 }
+
+func (r *Ops) GetBGPStatus(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetBGPStatusResponse, error) {
+	return r.inner.GetBGPStatus(ctx, vmid)
+}
+
+func (r *Ops) AnnounceRoutes(ctx context.Context, vmid string) error {
+	return r.inner.AnnounceRoutes(ctx, vmid)
+}
+
+func (r *Ops) WithdrawRoutes(ctx context.Context, vmid string) error {
+	return r.inner.WithdrawRoutes(ctx, vmid)
+}

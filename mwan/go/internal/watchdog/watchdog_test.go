@@ -67,6 +67,18 @@ func (m *mockOps) GetConfigState(ctx context.Context, vmid string) (*mwanv1.GetC
 	return &mwanv1.GetConfigStateResponse{}, "", nil
 }
 
+func (m *mockOps) GetBGPStatus(ctx context.Context, vmid string) (*mwanv1.GetBGPStatusResponse, error) {
+	return &mwanv1.GetBGPStatusResponse{}, nil
+}
+
+func (m *mockOps) AnnounceRoutes(ctx context.Context, vmid string) error {
+	return nil
+}
+
+func (m *mockOps) WithdrawRoutes(ctx context.Context, vmid string) error {
+	return nil
+}
+
 func (m *mockOps) VMStart(ctx context.Context, vmid string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -70,6 +70,11 @@ type SysOps interface {
 	GetConfigState(
 		ctx context.Context, vmid string,
 	) (*mwanv1.GetConfigStateResponse, string, error)
+	GetBGPStatus(
+		ctx context.Context, vmid string,
+	) (*mwanv1.GetBGPStatusResponse, error)
+	AnnounceRoutes(ctx context.Context, vmid string) error
+	WithdrawRoutes(ctx context.Context, vmid string) error
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +423,228 @@ func (r *RealOps) GetConfigState(
 	return nil, "", fmt.Errorf("GetConfigState: all channels failed")
 }
 
+// ---------------------------------------------------------------------------
+// BGP route control: vsock -> TCP fallback (same pattern as GetConfigState)
+// ---------------------------------------------------------------------------
+
+func (r *RealOps) vsockGetBGPStatus(
+	ctx context.Context,
+) (*mwanv1.GetBGPStatusResponse, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeoutVsockRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+		return vsock.Dial(r.vsockCID, r.vsockPort, nil)
+	}
+	if r.testGrpcDialer != nil {
+		dialer = r.testGrpcDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.GetBGPStatus(cctx, &mwanv1.GetBGPStatusRequest{})
+}
+
+func (r *RealOps) tcpGetBGPStatus(
+	ctx context.Context,
+) (*mwanv1.GetBGPStatusResponse, error) {
+	if r.tcpAddr == "" {
+		return nil, fmt.Errorf("tcpGetBGPStatus: no tcp addr configured")
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeoutTCPRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", r.tcpAddr)
+	}
+	if r.testTCPDialer != nil {
+		dialer = r.testTCPDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan-tcp",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.GetBGPStatus(cctx, &mwanv1.GetBGPStatusRequest{})
+}
+
+func (r *RealOps) GetBGPStatus(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetBGPStatusResponse, error) {
+	_ = vmid
+	if res, err := r.vsockGetBGPStatus(ctx); err == nil {
+		r.tracker.recordSuccess(ChanVsock)
+		return res, nil
+	} else {
+		r.tracker.recordFailure(ChanVsock, err)
+	}
+	if res, err := r.tcpGetBGPStatus(ctx); err == nil {
+		r.tracker.recordSuccess(ChanTCP)
+		return res, nil
+	} else {
+		r.tracker.recordFailure(ChanTCP, err)
+	}
+	return nil, fmt.Errorf("GetBGPStatus: all channels failed")
+}
+
+func (r *RealOps) vsockAnnounceRoutes(
+	ctx context.Context,
+) (*mwanv1.AnnounceRoutesResponse, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeoutVsockRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+		return vsock.Dial(r.vsockCID, r.vsockPort, nil)
+	}
+	if r.testGrpcDialer != nil {
+		dialer = r.testGrpcDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.AnnounceRoutes(cctx, &mwanv1.AnnounceRoutesRequest{})
+}
+
+func (r *RealOps) tcpAnnounceRoutes(
+	ctx context.Context,
+) (*mwanv1.AnnounceRoutesResponse, error) {
+	if r.tcpAddr == "" {
+		return nil, fmt.Errorf("tcpAnnounceRoutes: no tcp addr configured")
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeoutTCPRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", r.tcpAddr)
+	}
+	if r.testTCPDialer != nil {
+		dialer = r.testTCPDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan-tcp",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.AnnounceRoutes(cctx, &mwanv1.AnnounceRoutesRequest{})
+}
+
+func (r *RealOps) AnnounceRoutes(ctx context.Context, vmid string) error {
+	_ = vmid
+	if res, err := r.vsockAnnounceRoutes(ctx); err == nil {
+		r.tracker.recordSuccess(ChanVsock)
+		if !res.GetSuccess() {
+			return fmt.Errorf("AnnounceRoutes: agent returned error: %s", res.GetError())
+		}
+		return nil
+	} else {
+		r.tracker.recordFailure(ChanVsock, err)
+	}
+	if res, err := r.tcpAnnounceRoutes(ctx); err == nil {
+		r.tracker.recordSuccess(ChanTCP)
+		if !res.GetSuccess() {
+			return fmt.Errorf("AnnounceRoutes: agent returned error: %s", res.GetError())
+		}
+		return nil
+	} else {
+		r.tracker.recordFailure(ChanTCP, err)
+	}
+	return fmt.Errorf("AnnounceRoutes: all channels failed")
+}
+
+func (r *RealOps) vsockWithdrawRoutes(
+	ctx context.Context,
+) (*mwanv1.WithdrawRoutesResponse, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeoutVsockRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+		return vsock.Dial(r.vsockCID, r.vsockPort, nil)
+	}
+	if r.testGrpcDialer != nil {
+		dialer = r.testGrpcDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.WithdrawRoutes(cctx, &mwanv1.WithdrawRoutesRequest{})
+}
+
+func (r *RealOps) tcpWithdrawRoutes(
+	ctx context.Context,
+) (*mwanv1.WithdrawRoutesResponse, error) {
+	if r.tcpAddr == "" {
+		return nil, fmt.Errorf("tcpWithdrawRoutes: no tcp addr configured")
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeoutTCPRPC)
+	defer cancel()
+	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", r.tcpAddr)
+	}
+	if r.testTCPDialer != nil {
+		dialer = r.testTCPDialer
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan-tcp",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	cli := mwanv1.NewMWANAgentClient(conn)
+	return cli.WithdrawRoutes(cctx, &mwanv1.WithdrawRoutesRequest{})
+}
+
+func (r *RealOps) WithdrawRoutes(ctx context.Context, vmid string) error {
+	_ = vmid
+	if res, err := r.vsockWithdrawRoutes(ctx); err == nil {
+		r.tracker.recordSuccess(ChanVsock)
+		if !res.GetSuccess() {
+			return fmt.Errorf("WithdrawRoutes: agent returned error: %s", res.GetError())
+		}
+		return nil
+	} else {
+		r.tracker.recordFailure(ChanVsock, err)
+	}
+	if res, err := r.tcpWithdrawRoutes(ctx); err == nil {
+		r.tracker.recordSuccess(ChanTCP)
+		if !res.GetSuccess() {
+			return fmt.Errorf("WithdrawRoutes: agent returned error: %s", res.GetError())
+		}
+		return nil
+	} else {
+		r.tracker.recordFailure(ChanTCP, err)
+	}
+	return fmt.Errorf("WithdrawRoutes: all channels failed")
+}
+
 func (r *RealOps) Ping(ctx context.Context, bin, target string) bool {
 	cctx, cancel := context.WithTimeout(ctx, timeoutHostProbe)
 	defer cancel()
@@ -553,4 +780,21 @@ func (d *DryRunOps) GetConfigState(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetConfigStateResponse, string, error) {
 	return d.inner.GetConfigState(ctx, vmid)
+}
+
+func (d *DryRunOps) GetBGPStatus(
+	ctx context.Context, vmid string,
+) (*mwanv1.GetBGPStatusResponse, error) {
+	d.log.Info("[DRY-RUN] would get BGP status", "vmid", vmid)
+	return &mwanv1.GetBGPStatusResponse{}, nil
+}
+
+func (d *DryRunOps) AnnounceRoutes(_ context.Context, vmid string) error {
+	d.log.Info("[DRY-RUN] would announce BGP routes", "vmid", vmid)
+	return nil
+}
+
+func (d *DryRunOps) WithdrawRoutes(_ context.Context, vmid string) error {
+	d.log.Info("[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
+	return nil
 }

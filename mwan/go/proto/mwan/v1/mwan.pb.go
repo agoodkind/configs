@@ -58,13 +58,15 @@ func (*GetHealthRequest) Descriptor() ([]byte, []int) {
 }
 
 type GetHealthResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ipv4Ok        bool                   `protobuf:"varint,1,opt,name=ipv4_ok,json=ipv4Ok,proto3" json:"ipv4_ok,omitempty"`
-	Ipv6Ok        bool                   `protobuf:"varint,2,opt,name=ipv6_ok,json=ipv6Ok,proto3" json:"ipv6_ok,omitempty"`
-	WanInterfaces []*WANStatus           `protobuf:"bytes,3,rep,name=wan_interfaces,json=wanInterfaces,proto3" json:"wan_interfaces,omitempty"`
-	FailedUnits   []string               `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Ipv4Ok            bool                   `protobuf:"varint,1,opt,name=ipv4_ok,json=ipv4Ok,proto3" json:"ipv4_ok,omitempty"`
+	Ipv6Ok            bool                   `protobuf:"varint,2,opt,name=ipv6_ok,json=ipv6Ok,proto3" json:"ipv6_ok,omitempty"`
+	WanInterfaces     []*WANStatus           `protobuf:"bytes,3,rep,name=wan_interfaces,json=wanInterfaces,proto3" json:"wan_interfaces,omitempty"`
+	FailedUnits       []string               `protobuf:"bytes,4,rep,name=failed_units,json=failedUnits,proto3" json:"failed_units,omitempty"`
+	BgpAnnouncing     bool                   `protobuf:"varint,5,opt,name=bgp_announcing,json=bgpAnnouncing,proto3" json:"bgp_announcing,omitempty"`
+	BgpAllEstablished bool                   `protobuf:"varint,6,opt,name=bgp_all_established,json=bgpAllEstablished,proto3" json:"bgp_all_established,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GetHealthResponse) Reset() {
@@ -123,6 +125,20 @@ func (x *GetHealthResponse) GetFailedUnits() []string {
 		return x.FailedUnits
 	}
 	return nil
+}
+
+func (x *GetHealthResponse) GetBgpAnnouncing() bool {
+	if x != nil {
+		return x.BgpAnnouncing
+	}
+	return false
+}
+
+func (x *GetHealthResponse) GetBgpAllEstablished() bool {
+	if x != nil {
+		return x.BgpAllEstablished
+	}
+	return false
 }
 
 type WANStatus struct {
@@ -853,17 +869,367 @@ func (x *SuppressRollbackEvent) GetReason() string {
 	return ""
 }
 
+type GetBGPStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBGPStatusRequest) Reset() {
+	*x = GetBGPStatusRequest{}
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBGPStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBGPStatusRequest) ProtoMessage() {}
+
+func (x *GetBGPStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBGPStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetBGPStatusRequest) Descriptor() ([]byte, []int) {
+	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{14}
+}
+
+type GetBGPStatusResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Announcing     bool                   `protobuf:"varint,1,opt,name=announcing,proto3" json:"announcing,omitempty"`
+	AllEstablished bool                   `protobuf:"varint,2,opt,name=all_established,json=allEstablished,proto3" json:"all_established,omitempty"`
+	Peers          []*BGPPeerStatus       `protobuf:"bytes,3,rep,name=peers,proto3" json:"peers,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetBGPStatusResponse) Reset() {
+	*x = GetBGPStatusResponse{}
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBGPStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBGPStatusResponse) ProtoMessage() {}
+
+func (x *GetBGPStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBGPStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetBGPStatusResponse) Descriptor() ([]byte, []int) {
+	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetBGPStatusResponse) GetAnnouncing() bool {
+	if x != nil {
+		return x.Announcing
+	}
+	return false
+}
+
+func (x *GetBGPStatusResponse) GetAllEstablished() bool {
+	if x != nil {
+		return x.AllEstablished
+	}
+	return false
+}
+
+func (x *GetBGPStatusResponse) GetPeers() []*BGPPeerStatus {
+	if x != nil {
+		return x.Peers
+	}
+	return nil
+}
+
+type BGPPeerStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Afi           string                 `protobuf:"bytes,2,opt,name=afi,proto3" json:"afi,omitempty"`
+	SessionState  string                 `protobuf:"bytes,3,opt,name=session_state,json=sessionState,proto3" json:"session_state,omitempty"`
+	Established   bool                   `protobuf:"varint,4,opt,name=established,proto3" json:"established,omitempty"`
+	UpSinceEpoch  int64                  `protobuf:"varint,5,opt,name=up_since_epoch,json=upSinceEpoch,proto3" json:"up_since_epoch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BGPPeerStatus) Reset() {
+	*x = BGPPeerStatus{}
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BGPPeerStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BGPPeerStatus) ProtoMessage() {}
+
+func (x *BGPPeerStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BGPPeerStatus.ProtoReflect.Descriptor instead.
+func (*BGPPeerStatus) Descriptor() ([]byte, []int) {
+	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *BGPPeerStatus) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *BGPPeerStatus) GetAfi() string {
+	if x != nil {
+		return x.Afi
+	}
+	return ""
+}
+
+func (x *BGPPeerStatus) GetSessionState() string {
+	if x != nil {
+		return x.SessionState
+	}
+	return ""
+}
+
+func (x *BGPPeerStatus) GetEstablished() bool {
+	if x != nil {
+		return x.Established
+	}
+	return false
+}
+
+func (x *BGPPeerStatus) GetUpSinceEpoch() int64 {
+	if x != nil {
+		return x.UpSinceEpoch
+	}
+	return 0
+}
+
+type AnnounceRoutesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnnounceRoutesRequest) Reset() {
+	*x = AnnounceRoutesRequest{}
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnnounceRoutesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnnounceRoutesRequest) ProtoMessage() {}
+
+func (x *AnnounceRoutesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnnounceRoutesRequest.ProtoReflect.Descriptor instead.
+func (*AnnounceRoutesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{17}
+}
+
+type AnnounceRoutesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnnounceRoutesResponse) Reset() {
+	*x = AnnounceRoutesResponse{}
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnnounceRoutesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnnounceRoutesResponse) ProtoMessage() {}
+
+func (x *AnnounceRoutesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnnounceRoutesResponse.ProtoReflect.Descriptor instead.
+func (*AnnounceRoutesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *AnnounceRoutesResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *AnnounceRoutesResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type WithdrawRoutesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawRoutesRequest) Reset() {
+	*x = WithdrawRoutesRequest{}
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawRoutesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawRoutesRequest) ProtoMessage() {}
+
+func (x *WithdrawRoutesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawRoutesRequest.ProtoReflect.Descriptor instead.
+func (*WithdrawRoutesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{19}
+}
+
+type WithdrawRoutesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawRoutesResponse) Reset() {
+	*x = WithdrawRoutesResponse{}
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawRoutesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawRoutesResponse) ProtoMessage() {}
+
+func (x *WithdrawRoutesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_mwan_v1_mwan_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawRoutesResponse.ProtoReflect.Descriptor instead.
+func (*WithdrawRoutesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_mwan_v1_mwan_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *WithdrawRoutesResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *WithdrawRoutesResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_proto_mwan_v1_mwan_proto protoreflect.FileDescriptor
 
 const file_proto_mwan_v1_mwan_proto_rawDesc = "" +
 	"\n" +
 	"\x18proto/mwan/v1/mwan.proto\x12\amwan.v1\"\x12\n" +
-	"\x10GetHealthRequest\"\xa3\x01\n" +
+	"\x10GetHealthRequest\"\xfa\x01\n" +
 	"\x11GetHealthResponse\x12\x17\n" +
 	"\aipv4_ok\x18\x01 \x01(\bR\x06ipv4Ok\x12\x17\n" +
 	"\aipv6_ok\x18\x02 \x01(\bR\x06ipv6Ok\x129\n" +
 	"\x0ewan_interfaces\x18\x03 \x03(\v2\x12.mwan.v1.WANStatusR\rwanInterfaces\x12!\n" +
-	"\ffailed_units\x18\x04 \x03(\tR\vfailedUnits\"\x86\x01\n" +
+	"\ffailed_units\x18\x04 \x03(\tR\vfailedUnits\x12%\n" +
+	"\x0ebgp_announcing\x18\x05 \x01(\bR\rbgpAnnouncing\x12.\n" +
+	"\x13bgp_all_established\x18\x06 \x01(\bR\x11bgpAllEstablished\"\x86\x01\n" +
 	"\tWANStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
 	"\alink_up\x18\x02 \x01(\bR\x06linkUp\x12%\n" +
@@ -910,13 +1276,37 @@ const file_proto_mwan_v1_mwan_proto_rawDesc = "" +
 	"\tnew_state\x18\x03 \x01(\tR\bnewState\"Z\n" +
 	"\x15SuppressRollbackEvent\x12)\n" +
 	"\x10duration_seconds\x18\x01 \x01(\x05R\x0fdurationSeconds\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason2\xea\x02\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x15\n" +
+	"\x13GetBGPStatusRequest\"\x8d\x01\n" +
+	"\x14GetBGPStatusResponse\x12\x1e\n" +
+	"\n" +
+	"announcing\x18\x01 \x01(\bR\n" +
+	"announcing\x12'\n" +
+	"\x0fall_established\x18\x02 \x01(\bR\x0eallEstablished\x12,\n" +
+	"\x05peers\x18\x03 \x03(\v2\x16.mwan.v1.BGPPeerStatusR\x05peers\"\xa8\x01\n" +
+	"\rBGPPeerStatus\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x10\n" +
+	"\x03afi\x18\x02 \x01(\tR\x03afi\x12#\n" +
+	"\rsession_state\x18\x03 \x01(\tR\fsessionState\x12 \n" +
+	"\vestablished\x18\x04 \x01(\bR\vestablished\x12$\n" +
+	"\x0eup_since_epoch\x18\x05 \x01(\x03R\fupSinceEpoch\"\x17\n" +
+	"\x15AnnounceRoutesRequest\"H\n" +
+	"\x16AnnounceRoutesResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\x17\n" +
+	"\x15WithdrawRoutesRequest\"H\n" +
+	"\x16WithdrawRoutesResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error2\xdd\x04\n" +
 	"\tMWANAgent\x12B\n" +
 	"\tGetHealth\x12\x19.mwan.v1.GetHealthRequest\x1a\x1a.mwan.v1.GetHealthResponse\x123\n" +
 	"\x04Ping\x12\x14.mwan.v1.PingRequest\x1a\x15.mwan.v1.PingResponse\x12Q\n" +
 	"\x0eGetConfigState\x12\x1e.mwan.v1.GetConfigStateRequest\x1a\x1f.mwan.v1.GetConfigStateResponse\x12N\n" +
 	"\rGetSystemInfo\x12\x1d.mwan.v1.GetSystemInfoRequest\x1a\x1e.mwan.v1.GetSystemInfoResponse\x12A\n" +
-	"\vWatchEvents\x12\x1b.mwan.v1.WatchEventsRequest\x1a\x13.mwan.v1.AgentEvent0\x01B%Z#goodkind.io/mwan/gen/mwan/v1;mwanv1b\x06proto3"
+	"\vWatchEvents\x12\x1b.mwan.v1.WatchEventsRequest\x1a\x13.mwan.v1.AgentEvent0\x01\x12K\n" +
+	"\fGetBGPStatus\x12\x1c.mwan.v1.GetBGPStatusRequest\x1a\x1d.mwan.v1.GetBGPStatusResponse\x12Q\n" +
+	"\x0eAnnounceRoutes\x12\x1e.mwan.v1.AnnounceRoutesRequest\x1a\x1f.mwan.v1.AnnounceRoutesResponse\x12Q\n" +
+	"\x0eWithdrawRoutes\x12\x1e.mwan.v1.WithdrawRoutesRequest\x1a\x1f.mwan.v1.WithdrawRoutesResponseB%Z#goodkind.io/mwan/gen/mwan/v1;mwanv1b\x06proto3"
 
 var (
 	file_proto_mwan_v1_mwan_proto_rawDescOnce sync.Once
@@ -930,7 +1320,7 @@ func file_proto_mwan_v1_mwan_proto_rawDescGZIP() []byte {
 	return file_proto_mwan_v1_mwan_proto_rawDescData
 }
 
-var file_proto_mwan_v1_mwan_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_proto_mwan_v1_mwan_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_proto_mwan_v1_mwan_proto_goTypes = []any{
 	(*GetHealthRequest)(nil),       // 0: mwan.v1.GetHealthRequest
 	(*GetHealthResponse)(nil),      // 1: mwan.v1.GetHealthResponse
@@ -946,27 +1336,41 @@ var file_proto_mwan_v1_mwan_proto_goTypes = []any{
 	(*ConfigChangedEvent)(nil),     // 11: mwan.v1.ConfigChangedEvent
 	(*HealthTransitionEvent)(nil),  // 12: mwan.v1.HealthTransitionEvent
 	(*SuppressRollbackEvent)(nil),  // 13: mwan.v1.SuppressRollbackEvent
+	(*GetBGPStatusRequest)(nil),    // 14: mwan.v1.GetBGPStatusRequest
+	(*GetBGPStatusResponse)(nil),   // 15: mwan.v1.GetBGPStatusResponse
+	(*BGPPeerStatus)(nil),          // 16: mwan.v1.BGPPeerStatus
+	(*AnnounceRoutesRequest)(nil),  // 17: mwan.v1.AnnounceRoutesRequest
+	(*AnnounceRoutesResponse)(nil), // 18: mwan.v1.AnnounceRoutesResponse
+	(*WithdrawRoutesRequest)(nil),  // 19: mwan.v1.WithdrawRoutesRequest
+	(*WithdrawRoutesResponse)(nil), // 20: mwan.v1.WithdrawRoutesResponse
 }
 var file_proto_mwan_v1_mwan_proto_depIdxs = []int32{
 	2,  // 0: mwan.v1.GetHealthResponse.wan_interfaces:type_name -> mwan.v1.WANStatus
 	11, // 1: mwan.v1.AgentEvent.config_changed:type_name -> mwan.v1.ConfigChangedEvent
 	12, // 2: mwan.v1.AgentEvent.health_transition:type_name -> mwan.v1.HealthTransitionEvent
 	13, // 3: mwan.v1.AgentEvent.suppress_rollback:type_name -> mwan.v1.SuppressRollbackEvent
-	0,  // 4: mwan.v1.MWANAgent.GetHealth:input_type -> mwan.v1.GetHealthRequest
-	3,  // 5: mwan.v1.MWANAgent.Ping:input_type -> mwan.v1.PingRequest
-	5,  // 6: mwan.v1.MWANAgent.GetConfigState:input_type -> mwan.v1.GetConfigStateRequest
-	7,  // 7: mwan.v1.MWANAgent.GetSystemInfo:input_type -> mwan.v1.GetSystemInfoRequest
-	9,  // 8: mwan.v1.MWANAgent.WatchEvents:input_type -> mwan.v1.WatchEventsRequest
-	1,  // 9: mwan.v1.MWANAgent.GetHealth:output_type -> mwan.v1.GetHealthResponse
-	4,  // 10: mwan.v1.MWANAgent.Ping:output_type -> mwan.v1.PingResponse
-	6,  // 11: mwan.v1.MWANAgent.GetConfigState:output_type -> mwan.v1.GetConfigStateResponse
-	8,  // 12: mwan.v1.MWANAgent.GetSystemInfo:output_type -> mwan.v1.GetSystemInfoResponse
-	10, // 13: mwan.v1.MWANAgent.WatchEvents:output_type -> mwan.v1.AgentEvent
-	9,  // [9:14] is the sub-list for method output_type
-	4,  // [4:9] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	16, // 4: mwan.v1.GetBGPStatusResponse.peers:type_name -> mwan.v1.BGPPeerStatus
+	0,  // 5: mwan.v1.MWANAgent.GetHealth:input_type -> mwan.v1.GetHealthRequest
+	3,  // 6: mwan.v1.MWANAgent.Ping:input_type -> mwan.v1.PingRequest
+	5,  // 7: mwan.v1.MWANAgent.GetConfigState:input_type -> mwan.v1.GetConfigStateRequest
+	7,  // 8: mwan.v1.MWANAgent.GetSystemInfo:input_type -> mwan.v1.GetSystemInfoRequest
+	9,  // 9: mwan.v1.MWANAgent.WatchEvents:input_type -> mwan.v1.WatchEventsRequest
+	14, // 10: mwan.v1.MWANAgent.GetBGPStatus:input_type -> mwan.v1.GetBGPStatusRequest
+	17, // 11: mwan.v1.MWANAgent.AnnounceRoutes:input_type -> mwan.v1.AnnounceRoutesRequest
+	19, // 12: mwan.v1.MWANAgent.WithdrawRoutes:input_type -> mwan.v1.WithdrawRoutesRequest
+	1,  // 13: mwan.v1.MWANAgent.GetHealth:output_type -> mwan.v1.GetHealthResponse
+	4,  // 14: mwan.v1.MWANAgent.Ping:output_type -> mwan.v1.PingResponse
+	6,  // 15: mwan.v1.MWANAgent.GetConfigState:output_type -> mwan.v1.GetConfigStateResponse
+	8,  // 16: mwan.v1.MWANAgent.GetSystemInfo:output_type -> mwan.v1.GetSystemInfoResponse
+	10, // 17: mwan.v1.MWANAgent.WatchEvents:output_type -> mwan.v1.AgentEvent
+	15, // 18: mwan.v1.MWANAgent.GetBGPStatus:output_type -> mwan.v1.GetBGPStatusResponse
+	18, // 19: mwan.v1.MWANAgent.AnnounceRoutes:output_type -> mwan.v1.AnnounceRoutesResponse
+	20, // 20: mwan.v1.MWANAgent.WithdrawRoutes:output_type -> mwan.v1.WithdrawRoutesResponse
+	13, // [13:21] is the sub-list for method output_type
+	5,  // [5:13] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_proto_mwan_v1_mwan_proto_init() }
@@ -985,7 +1389,7 @@ func file_proto_mwan_v1_mwan_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_mwan_v1_mwan_proto_rawDesc), len(file_proto_mwan_v1_mwan_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -24,6 +24,9 @@ const (
 	MWANAgent_GetConfigState_FullMethodName = "/mwan.v1.MWANAgent/GetConfigState"
 	MWANAgent_GetSystemInfo_FullMethodName  = "/mwan.v1.MWANAgent/GetSystemInfo"
 	MWANAgent_WatchEvents_FullMethodName    = "/mwan.v1.MWANAgent/WatchEvents"
+	MWANAgent_GetBGPStatus_FullMethodName   = "/mwan.v1.MWANAgent/GetBGPStatus"
+	MWANAgent_AnnounceRoutes_FullMethodName = "/mwan.v1.MWANAgent/AnnounceRoutes"
+	MWANAgent_WithdrawRoutes_FullMethodName = "/mwan.v1.MWANAgent/WithdrawRoutes"
 )
 
 // MWANAgentClient is the client API for MWANAgent service.
@@ -37,6 +40,9 @@ type MWANAgentClient interface {
 	GetConfigState(ctx context.Context, in *GetConfigStateRequest, opts ...grpc.CallOption) (*GetConfigStateResponse, error)
 	GetSystemInfo(ctx context.Context, in *GetSystemInfoRequest, opts ...grpc.CallOption) (*GetSystemInfoResponse, error)
 	WatchEvents(ctx context.Context, in *WatchEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[AgentEvent], error)
+	GetBGPStatus(ctx context.Context, in *GetBGPStatusRequest, opts ...grpc.CallOption) (*GetBGPStatusResponse, error)
+	AnnounceRoutes(ctx context.Context, in *AnnounceRoutesRequest, opts ...grpc.CallOption) (*AnnounceRoutesResponse, error)
+	WithdrawRoutes(ctx context.Context, in *WithdrawRoutesRequest, opts ...grpc.CallOption) (*WithdrawRoutesResponse, error)
 }
 
 type mWANAgentClient struct {
@@ -106,6 +112,36 @@ func (c *mWANAgentClient) WatchEvents(ctx context.Context, in *WatchEventsReques
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type MWANAgent_WatchEventsClient = grpc.ServerStreamingClient[AgentEvent]
 
+func (c *mWANAgentClient) GetBGPStatus(ctx context.Context, in *GetBGPStatusRequest, opts ...grpc.CallOption) (*GetBGPStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBGPStatusResponse)
+	err := c.cc.Invoke(ctx, MWANAgent_GetBGPStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mWANAgentClient) AnnounceRoutes(ctx context.Context, in *AnnounceRoutesRequest, opts ...grpc.CallOption) (*AnnounceRoutesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AnnounceRoutesResponse)
+	err := c.cc.Invoke(ctx, MWANAgent_AnnounceRoutes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mWANAgentClient) WithdrawRoutes(ctx context.Context, in *WithdrawRoutesRequest, opts ...grpc.CallOption) (*WithdrawRoutesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WithdrawRoutesResponse)
+	err := c.cc.Invoke(ctx, MWANAgent_WithdrawRoutes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MWANAgentServer is the server API for MWANAgent service.
 // All implementations must embed UnimplementedMWANAgentServer
 // for forward compatibility.
@@ -117,6 +153,9 @@ type MWANAgentServer interface {
 	GetConfigState(context.Context, *GetConfigStateRequest) (*GetConfigStateResponse, error)
 	GetSystemInfo(context.Context, *GetSystemInfoRequest) (*GetSystemInfoResponse, error)
 	WatchEvents(*WatchEventsRequest, grpc.ServerStreamingServer[AgentEvent]) error
+	GetBGPStatus(context.Context, *GetBGPStatusRequest) (*GetBGPStatusResponse, error)
+	AnnounceRoutes(context.Context, *AnnounceRoutesRequest) (*AnnounceRoutesResponse, error)
+	WithdrawRoutes(context.Context, *WithdrawRoutesRequest) (*WithdrawRoutesResponse, error)
 	mustEmbedUnimplementedMWANAgentServer()
 }
 
@@ -141,6 +180,15 @@ func (UnimplementedMWANAgentServer) GetSystemInfo(context.Context, *GetSystemInf
 }
 func (UnimplementedMWANAgentServer) WatchEvents(*WatchEventsRequest, grpc.ServerStreamingServer[AgentEvent]) error {
 	return status.Error(codes.Unimplemented, "method WatchEvents not implemented")
+}
+func (UnimplementedMWANAgentServer) GetBGPStatus(context.Context, *GetBGPStatusRequest) (*GetBGPStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBGPStatus not implemented")
+}
+func (UnimplementedMWANAgentServer) AnnounceRoutes(context.Context, *AnnounceRoutesRequest) (*AnnounceRoutesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AnnounceRoutes not implemented")
+}
+func (UnimplementedMWANAgentServer) WithdrawRoutes(context.Context, *WithdrawRoutesRequest) (*WithdrawRoutesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WithdrawRoutes not implemented")
 }
 func (UnimplementedMWANAgentServer) mustEmbedUnimplementedMWANAgentServer() {}
 func (UnimplementedMWANAgentServer) testEmbeddedByValue()                   {}
@@ -246,6 +294,60 @@ func _MWANAgent_WatchEvents_Handler(srv interface{}, stream grpc.ServerStream) e
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type MWANAgent_WatchEventsServer = grpc.ServerStreamingServer[AgentEvent]
 
+func _MWANAgent_GetBGPStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBGPStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MWANAgentServer).GetBGPStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MWANAgent_GetBGPStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MWANAgentServer).GetBGPStatus(ctx, req.(*GetBGPStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MWANAgent_AnnounceRoutes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnnounceRoutesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MWANAgentServer).AnnounceRoutes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MWANAgent_AnnounceRoutes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MWANAgentServer).AnnounceRoutes(ctx, req.(*AnnounceRoutesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MWANAgent_WithdrawRoutes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawRoutesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MWANAgentServer).WithdrawRoutes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MWANAgent_WithdrawRoutes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MWANAgentServer).WithdrawRoutes(ctx, req.(*WithdrawRoutesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MWANAgent_ServiceDesc is the grpc.ServiceDesc for MWANAgent service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -268,6 +370,18 @@ var MWANAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSystemInfo",
 			Handler:    _MWANAgent_GetSystemInfo_Handler,
+		},
+		{
+			MethodName: "GetBGPStatus",
+			Handler:    _MWANAgent_GetBGPStatus_Handler,
+		},
+		{
+			MethodName: "AnnounceRoutes",
+			Handler:    _MWANAgent_AnnounceRoutes_Handler,
+		},
+		{
+			MethodName: "WithdrawRoutes",
+			Handler:    _MWANAgent_WithdrawRoutes_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -314,7 +314,7 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 			return errors.New("[network] wan_interfaces must not be empty")
 		}
 	}
-	if cfg.BGP.Enabled && (sub == "agent" || sub == "watchdog") {
+	if cfg.BGP.Enabled && sub == "agent" {
 		if err := validateBGP(&cfg.BGP); err != nil {
 			return err
 		}

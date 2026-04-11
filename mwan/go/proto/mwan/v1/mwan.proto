@@ -11,6 +11,9 @@ service MWANAgent {
   rpc GetConfigState(GetConfigStateRequest) returns (GetConfigStateResponse);
   rpc GetSystemInfo(GetSystemInfoRequest) returns (GetSystemInfoResponse);
   rpc WatchEvents(WatchEventsRequest) returns (stream AgentEvent);
+  rpc GetBGPStatus(GetBGPStatusRequest) returns (GetBGPStatusResponse);
+  rpc AnnounceRoutes(AnnounceRoutesRequest) returns (AnnounceRoutesResponse);
+  rpc WithdrawRoutes(WithdrawRoutesRequest) returns (WithdrawRoutesResponse);
 }
 
 message GetHealthRequest {}
@@ -20,6 +23,8 @@ message GetHealthResponse {
   bool ipv6_ok = 2;
   repeated WANStatus wan_interfaces = 3;
   repeated string failed_units = 4;
+  bool bgp_announcing = 5;
+  bool bgp_all_established = 6;
 }
 
 message WANStatus {
@@ -89,4 +94,36 @@ message HealthTransitionEvent {
 message SuppressRollbackEvent {
   int32 duration_seconds = 1;
   string reason = 2;
+}
+
+// BGP status and control
+
+message GetBGPStatusRequest {}
+
+message GetBGPStatusResponse {
+  bool announcing = 1;
+  bool all_established = 2;
+  repeated BGPPeerStatus peers = 3;
+}
+
+message BGPPeerStatus {
+  string address = 1;
+  string afi = 2;
+  string session_state = 3;
+  bool established = 4;
+  int64 up_since_epoch = 5;
+}
+
+message AnnounceRoutesRequest {}
+
+message AnnounceRoutesResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message WithdrawRoutesRequest {}
+
+message WithdrawRoutesResponse {
+  bool success = 1;
+  string error = 2;
 }

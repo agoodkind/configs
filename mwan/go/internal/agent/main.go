@@ -2,17 +2,20 @@
 package agent
 
 import (
+	"context"
 	"flag"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/mdlayher/vsock"
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/bgp"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/logging"
-	"github.com/mdlayher/vsock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -57,6 +60,34 @@ func Run(cfg *config.Config) {
 		"tcp_addr", *tcpAddr,
 	)
 
+	var bgpSpeaker *bgp.Speaker
+	if cfg.BGP.Enabled {
+		bgpCfg := bgp.Config{
+			Enabled:          true,
+			ASN:              cfg.BGP.ASN,
+			RouterID:         cfg.BGP.RouterID,
+			KeepaliveSeconds: cfg.BGP.KeepaliveSeconds,
+			HoldSeconds:      cfg.BGP.HoldSeconds,
+			ListenPort:       cfg.BGP.ListenPort,
+			Announce: bgp.AnnounceConfig{
+				IPv4: cfg.BGP.Announce.IPv4,
+				IPv6: cfg.BGP.Announce.IPv6,
+			},
+		}
+		for _, n := range cfg.BGP.Neighbors {
+			bgpCfg.Neighbors = append(bgpCfg.Neighbors, bgp.NeighborConfig{Address: n.Address})
+		}
+		for _, n := range cfg.BGP.NeighborsV6 {
+			bgpCfg.NeighborsV6 = append(bgpCfg.NeighborsV6, bgp.NeighborConfig{Address: n.Address})
+		}
+		bgpSpeaker = bgp.New(bgpCfg, logger)
+		if err := bgpSpeaker.Start(context.Background()); err != nil {
+			logger.Error("bgp speaker start failed", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("bgp speaker started", "asn", cfg.BGP.ASN, "router_id", cfg.BGP.RouterID)
+	}
+
 	var vsockLis net.Listener
 	if port != 0 {
 		var vsockErr error
@@ -77,7 +108,7 @@ func Run(cfg *config.Config) {
 	}
 
 	grpcServer := grpc.NewServer()
-	mwanv1.RegisterMWANAgentServer(grpcServer, NewServer(*deployFile, logger))
+	mwanv1.RegisterMWANAgentServer(grpcServer, NewServer(*deployFile, logger, bgpSpeaker))
 	if *debug {
 		reflection.Register(grpcServer)
 		logger.Info("gRPC reflection enabled (debug mode)")
@@ -99,6 +130,31 @@ func Run(cfg *config.Config) {
 		}()
 	}
 
+	if bgpSpeaker != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					logger.Warn("bgp auto-announce timeout waiting for peers")
+					return
+				case <-ticker.C:
+					if bgpSpeaker.IsEstablished() {
+						if err := bgpSpeaker.AnnounceDefault(); err != nil {
+							logger.Error("bgp auto-announce failed", "error", err)
+						} else {
+							logger.Info("bgp routes announced after peer establishment")
+						}
+						return
+					}
+				}
+			}
+		}()
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
@@ -116,6 +172,10 @@ func Run(cfg *config.Config) {
 		}
 	case sig := <-sigCh:
 		logger.Info("shutdown signal", "signal", sig.String())
+		if bgpSpeaker != nil {
+			_ = bgpSpeaker.WithdrawDefault()
+			_ = bgpSpeaker.Stop()
+		}
 		grpcServer.GracefulStop()
 		for i := 0; i < serveCount; i++ {
 			if err := <-errCh; err != nil {
