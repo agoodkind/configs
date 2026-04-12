@@ -13,7 +13,18 @@ VM950_LL_WEBPASS="fe80::be24:11ff:febe:8eb4"
 VM950_LL_ATT="fe80::be24:11ff:fec0:d760"
 VM950_LL_MBRAINS="fe80::be24:11ff:fe3d:cecc"
 
+echo "=== Phase 0: Build mwan binary ==="
+MWAN_BIN="$REPO_ROOT/mwan/go/bin/mwan-linux"
+if [ ! -f "$MWAN_BIN" ]; then
+    echo "  Building mwan binary..."
+    (cd "$REPO_ROOT/mwan/go" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 make build-linux)
+fi
+
 echo "=== Phase 1: Suburban host ==="
+echo "  Deploying mwan binary + config to hypervisor..."
+scp "$MWAN_BIN" "$SUBURBAN:/usr/local/bin/mwan"
+scp "$TESTBED_DIR/../config/suburban-testbed.toml.j2" "$SUBURBAN:/etc/mwan/config.toml" 2>/dev/null || true
+
 echo "  Deploying sysctl..."
 scp "$TESTBED_DIR/suburban-sysctl.conf" "$SUBURBAN:/etc/sysctl.d/99-mwan-testbed.conf"
 ssh "$SUBURBAN" "sysctl --system | tail -1"
@@ -80,28 +91,43 @@ $SSH_VM950 "systemctl daemon-reload && systemctl enable mwan-update-routes mwan-
 echo "  Installing jq (if needed)..."
 $SSH_VM950 "which jq >/dev/null 2>&1 || apt-get install -y jq" | tail -1
 
+echo "  Deploying mwan binary..."
+MWAN_BIN="$REPO_ROOT/mwan/go/bin/mwan-linux"
+if [ ! -f "$MWAN_BIN" ]; then
+    echo "  ERROR: $MWAN_BIN not found. Run 'make build-linux' first."
+    exit 1
+fi
+scp "$MWAN_BIN" "$VM950_SCP:/usr/local/bin/mwan"
+
 echo "  Deploying mwan agent config..."
 scp "$TESTBED_DIR/vm-950/config.toml" "$VM950_SCP:/etc/mwan/config.toml"
 
-echo "  Deploying FRR config..."
-scp "$TESTBED_DIR/vm-950/frr.conf" "$VM950_SCP:/etc/frr/frr.conf"
-scp "$TESTBED_DIR/vm-950/daemons" "$VM950_SCP:/etc/frr/daemons"
-$SSH_VM950 "which frr >/dev/null 2>&1 || apt-get install -y frr"
-$SSH_VM950 "systemctl enable frr"
+echo "  Deploying mwan-agent systemd service..."
+scp "$REPO_ROOT/mwan/go/cmd/mwan/mwan-agent.service" "$VM950_SCP:/etc/systemd/system/mwan-agent.service"
+$SSH_VM950 "systemctl daemon-reload && systemctl enable mwan-agent"
 
 echo ""
 echo "=== Phase 2b: LXC 100 (failover) ==="
-ssh "$SUBURBAN" "pct exec 100 -- mkdir -p /etc/mwan /etc/frr"
+ssh "$SUBURBAN" "pct exec 100 -- mkdir -p /etc/mwan"
+
+echo "  Deploying mwan binary to LXC 100..."
+scp "$MWAN_BIN" "$SUBURBAN:/tmp/lxc100-mwan"
+ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-mwan /usr/local/bin/mwan"
+ssh "$SUBURBAN" "pct exec 100 -- chmod +x /usr/local/bin/mwan"
+
+echo "  Deploying configs to LXC 100..."
 scp "$TESTBED_DIR/lxc-100/config.toml" "$SUBURBAN:/tmp/lxc100-config.toml"
 ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-config.toml /etc/mwan/config.toml"
-scp "$TESTBED_DIR/lxc-100/frr.conf" "$SUBURBAN:/tmp/lxc100-frr.conf"
-ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-frr.conf /etc/frr/frr.conf"
-scp "$TESTBED_DIR/lxc-100/daemons" "$SUBURBAN:/tmp/lxc100-daemons"
-ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-daemons /etc/frr/daemons"
 scp "$TESTBED_DIR/lxc-100/nftables.conf" "$SUBURBAN:/tmp/lxc100-nftables.conf"
 ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-nftables.conf /etc/nftables.conf"
-ssh "$SUBURBAN" "pct exec 100 -- sh -c 'which frr >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq frr nftables)'"
-ssh "$SUBURBAN" "pct exec 100 -- systemctl enable frr nftables"
+
+echo "  Deploying mwan-agent service to LXC 100..."
+scp "$REPO_ROOT/mwan/go/cmd/mwan/mwan-agent.service" "$SUBURBAN:/tmp/lxc100-mwan-agent.service"
+ssh "$SUBURBAN" "pct push 100 /tmp/lxc100-mwan-agent.service /etc/systemd/system/mwan-agent.service"
+
+echo "  Installing nftables (if needed)..."
+ssh "$SUBURBAN" "pct exec 100 -- sh -c 'which nft >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq nftables)'"
+ssh "$SUBURBAN" "pct exec 100 -- sh -c 'systemctl daemon-reload && systemctl enable nftables mwan-agent'"
 
 echo ""
 echo "=== Phase 3: ISP LXCs ==="

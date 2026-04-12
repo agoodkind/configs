@@ -54,7 +54,7 @@ build: proto
 	@mkdir -p bin
 	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) $(CMD)
 
-build-linux: proto
+build-linux: build vet lint test proto
 	@mkdir -p bin
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY)-linux $(CMD)
 
