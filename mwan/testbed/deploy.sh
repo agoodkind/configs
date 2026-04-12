@@ -23,19 +23,14 @@ fi
 echo "=== Phase 1: Suburban host ==="
 echo "  Deploying mwan binary + config to hypervisor..."
 scp "$MWAN_BIN" "$SUBURBAN:/usr/local/bin/mwan"
-scp "$TESTBED_DIR/../config/suburban-testbed.toml.j2" "$SUBURBAN:/etc/mwan/config.toml" 2>/dev/null || true
+scp "$TESTBED_DIR/suburban-cutover2.toml" "$SUBURBAN:/etc/mwan/config.toml"
 
 echo "  Deploying sysctl..."
 scp "$TESTBED_DIR/suburban-sysctl.conf" "$SUBURBAN:/etc/sysctl.d/99-mwan-testbed.conf"
 ssh "$SUBURBAN" "sysctl --system | tail -1"
 
-echo "  Deploying bridge config..."
-if ssh "$SUBURBAN" "ip link show vmbr4 >/dev/null 2>&1"; then
-    echo "  Bridges already exist"
-else
-    scp "$TESTBED_DIR/suburban-interfaces.conf" "$SUBURBAN:/tmp/testbed-bridges.conf"
-    ssh "$SUBURBAN" "cat /tmp/testbed-bridges.conf >> /etc/network/interfaces && ifreload -a"
-fi
+echo "  Deploying masquerade rules (sourced file)..."
+scp "$TESTBED_DIR/suburban-interfaces.d-testbed-masquerade.conf" "$SUBURBAN:/etc/network/interfaces.d/testbed-masquerade.conf"
 
 echo ""
 echo "=== Phase 2: VM 950 ==="
