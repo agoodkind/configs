@@ -1,0 +1,1 @@
+../../.cursor/rules/ipv6-dhcp-diagnosis.mdc

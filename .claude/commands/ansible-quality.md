@@ -1,0 +1,1 @@
+../../.cursor/commands/ansible-quality.md

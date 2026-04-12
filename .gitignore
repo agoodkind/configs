@@ -78,3 +78,6 @@ terraform.tfvars
 /test-*.tgz
 
 .secrets.api-credentials
+
+# Claude Code runtime state
+.claude/clotilde/
