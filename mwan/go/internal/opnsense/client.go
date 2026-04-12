@@ -294,6 +294,20 @@ func (c *Client) ReconfigureFRR(ctx context.Context) error {
 	return nil
 }
 
+// RestartFRR restarts the FRR service via the quagga API.
+// This clears zebra's stale kernel route cache. Only safe when gateways are
+// force_down (prevents system_routing_configure from reinstalling static routes).
+func (c *Client) RestartFRR(ctx context.Context) error {
+	c.log.Info("opnsense: restarting FRR")
+	var resp struct {
+		Response string `json:"response"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/restart", nil, &resp); err != nil {
+		return fmt.Errorf("restart FRR: %w", err)
+	}
+	return nil
+}
+
 // DisableGateway disables an OPNsense gateway by UUID.
 func (c *Client) DisableGateway(ctx context.Context, uuid string) error {
 	c.log.Info("opnsense: disabling gateway", "uuid", uuid)

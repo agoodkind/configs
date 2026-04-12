@@ -357,18 +357,19 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		}
 	}
 
-	// Step 4: Reload FRR (not restart) so zebra picks up the clean routing table.
-	log.Info("reloading FRR...")
-	if err := client.ReconfigureFRR(ctx); err != nil {
-		return fmt.Errorf("reconfigure FRR: %w", err)
+	// Step 4: Restart FRR so zebra starts fresh without stale kernel route cache.
+	// force_down prevents system_routing_configure from reinstalling the static route.
+	log.Info("restarting FRR (clears zebra stale cache)...")
+	if err := client.RestartFRR(ctx); err != nil {
+		return fmt.Errorf("restart FRR: %w", err)
 	}
 
-	// Wait for BGP to stabilize
-	log.Info("waiting for BGP to stabilize (10s)...")
+	// Wait for BGP to re-establish after FRR restart
+	log.Info("waiting for BGP to re-establish (15s)...")
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(10 * time.Second):
+	case <-time.After(15 * time.Second):
 	}
 
 	// Verify BGP route is now the active default
