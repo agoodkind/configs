@@ -16,8 +16,8 @@ $(GO_MK):
 
 -include $(GO_MK)
 
-.PHONY: sync
-sync:
+.PHONY: update-go-mk
+update-go-mk:
 	@mkdir -p "$(dir $(GO_MK))"
 	@if curl -fsSL --connect-timeout 5 --max-time 10 "$(GO_MK_URL)" -o "$(GO_MK)"; then \
 		mkdir -p "$(dir $(GO_MK_CACHE))" && cp "$(GO_MK)" "$(GO_MK_CACHE)"; \
