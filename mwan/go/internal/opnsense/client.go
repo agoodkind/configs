@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Client provides high-level operations against the OPNsense REST API.
@@ -342,16 +343,32 @@ func (c *Client) ReconfigureFRR(ctx context.Context) error {
 	return nil
 }
 
-// RestartFRR restarts the FRR service via the quagga API.
-// This clears zebra's stale kernel route cache. Only safe when gateways are
-// force_down (prevents system_routing_configure from reinstalling static routes).
-func (c *Client) RestartFRR(ctx context.Context) error {
-	c.log.Info("opnsense: restarting FRR")
-	var resp struct {
+// StopStartFRR does a clean stop then start of FRR via the quagga API.
+// The "restart" action doesn't actually restart running daemons (watchfrr keeps them).
+// Stop + start forces a full daemon cycle, clearing zebra's stale kernel route cache.
+// Only safe when gateways are force_down (prevents static route reinstallation).
+func (c *Client) StopStartFRR(ctx context.Context) error {
+	c.log.Info("opnsense: stopping FRR")
+	var stopResp struct {
 		Response string `json:"response"`
 	}
-	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/restart", nil, &resp); err != nil {
-		return fmt.Errorf("restart FRR: %w", err)
+	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/stop", nil, &stopResp); err != nil {
+		return fmt.Errorf("stop FRR: %w", err)
+	}
+
+	// Brief pause for daemons to fully exit
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(3 * time.Second):
+	}
+
+	c.log.Info("opnsense: starting FRR")
+	var startResp struct {
+		Response string `json:"response"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/start", nil, &startResp); err != nil {
+		return fmt.Errorf("start FRR: %w", err)
 	}
 	return nil
 }

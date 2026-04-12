@@ -359,11 +359,12 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		}
 	}
 
-	// Step 4: Restart FRR so zebra starts fresh without stale kernel route cache.
-	// force_down prevents system_routing_configure from reinstalling the static route.
-	log.Info("restarting FRR (clears zebra stale cache)...")
-	if err := client.RestartFRR(ctx); err != nil {
-		return fmt.Errorf("restart FRR: %w", err)
+	// Step 4: Stop then start FRR so zebra starts fresh without stale cache.
+	// The API "restart" doesn't actually restart running daemons (watchfrr keeps them).
+	// Stop + start forces a full cycle. force_down prevents static route reinstallation.
+	log.Info("stop+start FRR (clears zebra stale cache)...")
+	if err := client.StopStartFRR(ctx); err != nil {
+		return fmt.Errorf("stop+start FRR: %w", err)
 	}
 
 	// Wait for BGP to re-establish after FRR restart
