@@ -172,42 +172,6 @@ func (c *Client) createNeighbor(ctx context.Context, n BGPNeighborConfig, routeM
 	return err
 }
 
-// listRouteMaps returns a map of route-map name -> UUID for existing route-maps.
-func (c *Client) listRouteMaps(ctx context.Context) (map[string]string, error) {
-	var resp struct {
-		Rows []struct {
-			UUID string `json:"uuid"`
-			Name string `json:"name"`
-		} `json:"rows"`
-	}
-	if err := c.doJSON(ctx, http.MethodGet, "/quagga/bgp/searchRoutemap", nil, &resp); err != nil {
-		return nil, err
-	}
-	result := make(map[string]string, len(resp.Rows))
-	for _, r := range resp.Rows {
-		result[r.Name] = r.UUID
-	}
-	return result, nil
-}
-
-// listNeighbors returns a map of neighbor address -> UUID for existing neighbors.
-func (c *Client) listNeighbors(ctx context.Context) (map[string]string, error) {
-	var resp struct {
-		Rows []struct {
-			UUID    string `json:"uuid"`
-			Address string `json:"address"`
-		} `json:"rows"`
-	}
-	if err := c.doJSON(ctx, http.MethodGet, "/quagga/bgp/searchNeighbor", nil, &resp); err != nil {
-		return nil, err
-	}
-	result := make(map[string]string, len(resp.Rows))
-	for _, r := range resp.Rows {
-		result[r.Address] = r.UUID
-	}
-	return result, nil
-}
-
 // reconfigureQuagga triggers an FRR/Quagga service reconfigure.
 func (c *Client) reconfigureQuagga(ctx context.Context) error {
 	var resp struct {
