@@ -6,11 +6,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/mwan agent \
-    --vsock-port=50051 \
-    --tcp-addr=[::]:50052 \
-    --deploy-file=/var/run/mwan-last-deploy \
-    --log-file=/var/log/mwan-agent.log
+ExecStart=/usr/local/bin/mwan agent
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal

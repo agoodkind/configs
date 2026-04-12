@@ -10,9 +10,11 @@ type Config struct {
 
 // BGPConfig describes the desired BGP configuration for OPNsense FRR.
 type BGPConfig struct {
-	ASN       uint32
-	RouterID  string
-	Neighbors []BGPNeighborConfig
+	ASN              uint32
+	RouterID         string
+	Neighbors        []BGPNeighborConfig
+	FirewallSourceV4 string // e.g. "10.250.250.0/29" for BGP firewall allow rule
+	FirewallSourceV6 string // e.g. "3d06:bad:b01:201::/64"
 }
 
 // BGPNeighborConfig describes a single BGP neighbor to create.

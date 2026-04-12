@@ -144,8 +144,10 @@ type OPNsenseSection struct {
 
 // OPNsenseBGP describes the BGP configuration to push to OPNsense via its API.
 type OPNsenseBGP struct {
-	RouterID  string               `toml:"router_id"`
-	Neighbors []OPNsenseBGPNeighbor `toml:"neighbors"`
+	RouterID         string                `toml:"router_id"`
+	Neighbors        []OPNsenseBGPNeighbor `toml:"neighbors"`
+	FirewallSourceV4 string                `toml:"firewall_source_v4"` // e.g. "10.250.250.0/29"
+	FirewallSourceV6 string                `toml:"firewall_source_v6"` // e.g. "3d06:bad:b01:201::/64"
 }
 
 // OPNsenseBGPNeighbor is a BGP peer from OPNsense's perspective.

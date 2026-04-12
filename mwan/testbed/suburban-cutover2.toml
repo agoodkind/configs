@@ -12,6 +12,8 @@ insecure = true
 
 [opnsense.bgp]
 router_id = "10.250.250.2"
+firewall_source_v4 = "10.250.250.0/29"
+firewall_source_v6 = "3d06:bad:b01:201::/64"
 
 [[opnsense.bgp.neighbors]]
 address = "10.250.250.3"

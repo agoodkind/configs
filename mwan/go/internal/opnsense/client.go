@@ -49,6 +49,12 @@ func New(cfg Config, log *slog.Logger) *Client {
 // sets ASN/router-id, creates route-maps, creates neighbors linked to
 // route-maps, and reconfigures the service.
 func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
+	// Step 0: Add firewall rules to allow BGP (TCP 179) on WAN interface.
+	c.log.Info("opnsense: adding BGP firewall rules")
+	if err := c.addBGPFirewallRules(ctx, bgpCfg); err != nil {
+		return fmt.Errorf("add BGP firewall rules: %w", err)
+	}
+
 	// Step 1: Enable FRR general (datacenter profile, syslog).
 	c.log.Info("opnsense: enabling FRR general settings")
 	if err := c.setFRRGeneral(ctx); err != nil {
@@ -103,6 +109,48 @@ func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
 	}
 
 	c.log.Info("opnsense: BGP configuration complete")
+	return nil
+}
+
+// addBGPFirewallRules adds pass rules for TCP 179 on the WAN interface (IPv4 + IPv6).
+func (c *Client) addBGPFirewallRules(ctx context.Context, bgpCfg BGPConfig) error {
+	rules := []struct {
+		ipproto   string
+		sourceNet string
+		desc      string
+	}{
+		{"inet", bgpCfg.FirewallSourceV4, "BGP from MWAN (IPv4)"},
+		{"inet6", bgpCfg.FirewallSourceV6, "BGP from MWAN (IPv6)"},
+	}
+
+	for _, r := range rules {
+		body := map[string]any{
+			"rule": map[string]string{
+				"enabled":          "1",
+				"action":           "pass",
+				"interface":        "wan",
+				"direction":        "in",
+				"ipprotocol":       r.ipproto,
+				"protocol":         "TCP",
+				"source_net":       r.sourceNet,
+				"destination_port": "179",
+				"description":      r.desc,
+			},
+		}
+		c.log.Info("opnsense: adding firewall rule", "ipproto", r.ipproto, "source", r.sourceNet)
+		if _, err := c.postAdd(ctx, "/firewall/filter/addRule", body); err != nil {
+			return fmt.Errorf("add firewall rule (%s): %w", r.ipproto, err)
+		}
+	}
+
+	// Apply firewall changes
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/firewall/filter/apply", nil, &resp); err != nil {
+		return fmt.Errorf("apply firewall rules: %w", err)
+	}
+
 	return nil
 }
 

@@ -143,9 +143,11 @@ func cmdConfigureOPNsense(ctx context.Context, log *slog.Logger, cfg *config.Con
 	}
 
 	bgpCfg := opnsense.BGPConfig{
-		ASN:       cfg.BGP.ASN,
-		RouterID:  cfg.OPNsense.BGP.RouterID,
-		Neighbors: neighbors,
+		ASN:              cfg.BGP.ASN,
+		RouterID:         cfg.OPNsense.BGP.RouterID,
+		Neighbors:        neighbors,
+		FirewallSourceV4: cfg.OPNsense.BGP.FirewallSourceV4,
+		FirewallSourceV6: cfg.OPNsense.BGP.FirewallSourceV6,
 	}
 
 	// Execute.
