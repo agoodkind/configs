@@ -90,7 +90,7 @@ resource "proxmox_virtual_environment_container" "tack" {
     size         = 40
   }
 
-  memory { dedicated = 2048 }
+  memory { dedicated = 8192 }
   cpu    { cores     = 2 }
 
   tags = ["lxc", "tack", "docker"]
