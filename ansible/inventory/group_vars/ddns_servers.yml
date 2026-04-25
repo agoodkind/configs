@@ -1,0 +1,21 @@
+---
+# Dynamic DNS (Zebradil/cloudflare-dynamic-dns) per-host configuration.
+#
+# Each key under ddns_instances becomes a systemd template instance
+# (cloudflare-dynamic-dns@<key>.service + .timer) and renders to
+# /etc/cloudflare-dynamic-dns/config.d/<key>.yaml.
+
+ddns_instances:
+  128-nj:
+    stack: ipv4
+    domains:
+      - 128-nj.goodkind.io
+
+  128-nj6:
+    stack: ipv6
+    iface: vmbr0
+    domains:
+      - 128-nj6.goodkind.io
+      - hypervisor6.suburban.goodkind.io
+    priority_subnets:
+      - 3d06:bad:b01::/48

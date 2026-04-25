@@ -1,0 +1,13 @@
+{{ ansible_managed | comment }}
+# cloudflare-dynamic-dns IPv4 config for {{ inventory_hostname }}
+# Rendered by ansible/playbooks/deploy-ddns.yml
+
+stack: ipv4
+ipcmd: curl -fsSL https://api.ipify.org
+token: {{ ddns_cloudflare_token }}
+domains:
+{% for domain in ddns_ipv4_domains %}
+  - {{ domain }}
+{% endfor %}
+ttl: {{ ddns_ttl | default(1) }}
+log-level: info

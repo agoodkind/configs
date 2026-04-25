@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic Dynamic DNS update for %i
+Documentation=https://github.com/Zebradil/cloudflare-dynamic-dns
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=cloudflare-dynamic-dns@%i.service
+
+[Install]
+WantedBy=timers.target
