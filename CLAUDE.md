@@ -46,3 +46,4 @@ For any production change (proxy, mwan, vault, OPNsense):
 - `ssh tack` — tack CT (CT 117), `3d06:bad:b01::117`
 - `ssh vault` — Proxmox host, `3d06:bad:b01::254`
 - Full patterns in `.cursor/rules/ssh.mdc`
+

@@ -11,7 +11,6 @@ rules:
 
   document-start: disable
 
-  # 90 chars line length
   line-length:
     max: 120
 
