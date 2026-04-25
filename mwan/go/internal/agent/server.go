@@ -63,6 +63,9 @@ func (a *Server) GetHealth(
 	ipv4OK := a.pingExitZero(ctx, "ping", "-c", "1", "-W", "2", "1.1.1.1")
 	resp.Ipv4Ok = ipv4OK
 
+	// No -s flag: relies on Linux ping6's 56-byte default. Webpass drops
+	// ICMPv6 with payload <= 8 bytes; if this ever runs on FreeBSD or with
+	// a smaller default, add "-s", "16" to keep the Webpass path measurable.
 	ipv6OK := a.pingExitZero(ctx, "ping6", "-c", "1", "-W", "2", "2606:4700:4700::1111")
 	resp.Ipv6Ok = ipv6OK
 

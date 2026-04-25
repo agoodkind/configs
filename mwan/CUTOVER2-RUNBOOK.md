@@ -136,6 +136,8 @@ ssh root@10.240.0.148 "qm rollback 950 pre-cutover2-reboot-clean && qm rollback 
 
 7. **OPNsense didn't reboot.** In the 2026-04-13 test, SSH reboot failed (auth, but key was added after). BGP still worked because force_down removed static routes and BGP was already ESTABLISHED. The reboot is needed only for the IPv6 zebra stale cache issue (when gatewayv6 creates a competing static route). With force_down on both gateways, BGP may work without reboot.
 
+8. **Pinging IPv6 from OPNsense shell needs `-s 16`.** FreeBSD `ping6` defaults to 8-byte payload. Webpass silently drops ICMPv6 with payload <= 8 bytes (confirmed 2026-04-24). OPNsense's `fe::2` mod-2 fwmark sends ~50% of pings via Webpass, producing fake "50% loss" results. Use `ping6 -s 16 <target>` for accurate diagnostics. Linux `ping -6` from LXC 203 / VM 113 is unaffected (default payload 56 bytes). See `memory/project_webpass_icmpv6_size.md`.
+
 ## Test results (2026-04-13)
 
 ### Run 1 (05:44 UTC): Partial success

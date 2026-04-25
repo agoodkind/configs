@@ -83,6 +83,9 @@ func ping4(ctx context.Context, host string) bool {
 	return cmd.Run() == nil
 }
 
+// ping6 sends a single ICMPv6 echo. Linux ping6 default payload is 56 bytes,
+// which clears the Webpass upstream filter that drops ICMPv6 with payload
+// <= 8 bytes. If ever ported to FreeBSD (default 8 bytes), add "-s", "16".
 func ping6(ctx context.Context, host string) bool {
 	cmd := exec.CommandContext(ctx, "ping6", "-c", "1", "-W", "2", host)
 	if cmd.Run() == nil {
