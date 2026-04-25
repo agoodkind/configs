@@ -8,16 +8,26 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/cutover"
 	"goodkind.io/mwan/internal/cutover2"
+	"goodkind.io/mwan/internal/healthcheck"
 	"goodkind.io/mwan/internal/watchdog"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|cutover|cutover2> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|cutover|cutover2|health-check> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
 	os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+
+	// Subcommands that don't need config
+	if sub == "health-check" {
+		if err := healthcheck.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan health-check: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg, err := config.Load()
 	if err != nil {

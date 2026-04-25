@@ -1,4 +1,4 @@
-hostname = "mwan-failover-test"
+hostname = "mwan-failover"
 
 [agent]
 vsock_port = 0
@@ -11,7 +11,7 @@ debug = false
 enabled = true
 asn = 4200000001
 router_id = "10.250.250.4"
-next_hop_v6 = "3d06:bad:b01:201::4"
+next_hop_v6 = "3d06:bad:b01:fe::4"
 keepalive_seconds = 3
 hold_seconds = 9
 listen_port = 179
@@ -20,7 +20,7 @@ listen_port = 179
 address = "10.250.250.2"
 
 [[bgp.neighbors_v6]]
-address = "3d06:bad:b01:201::2"
+address = "3d06:bad:b01:fe::2"
 
 [bgp.announce]
 ipv4 = ["0.0.0.0/0"]

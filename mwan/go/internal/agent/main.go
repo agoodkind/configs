@@ -65,6 +65,7 @@ func Run(cfg *config.Config) {
 			Enabled:          true,
 			ASN:              cfg.BGP.ASN,
 			RouterID:         cfg.BGP.RouterID,
+			NextHopV6:        cfg.BGP.NextHopV6,
 			KeepaliveSeconds: cfg.BGP.KeepaliveSeconds,
 			HoldSeconds:      cfg.BGP.HoldSeconds,
 			ListenPort:       cfg.BGP.ListenPort,

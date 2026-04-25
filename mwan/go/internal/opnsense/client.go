@@ -46,17 +46,71 @@ func New(cfg Config, log *slog.Logger) *Client {
 // BGP configuration
 // ---------------------------------------------------------------------------
 
+// PurgeBGPConfig deletes all existing BGP neighbors and route-maps so that
+// ConfigureBGP can run cleanly. OPNsense allows duplicate route-map names,
+// which causes "Related Route-Map item not found" when addNeighbor tries to
+// link to a UUID that shares a name with an older entry. Purging first makes
+// ConfigureBGP idempotent regardless of prior state.
+func (c *Client) PurgeBGPConfig(ctx context.Context) error {
+	// Delete all existing neighbors.
+	var neighborResult struct {
+		Rows []struct {
+			UUID string `json:"uuid"`
+		} `json:"rows"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/quagga/bgp/searchNeighbor", nil, &neighborResult); err != nil {
+		return fmt.Errorf("list neighbors: %w", err)
+	}
+	for _, n := range neighborResult.Rows {
+		c.log.Info("opnsense: deleting existing neighbor", "uuid", n.UUID)
+		endpoint := fmt.Sprintf("/quagga/bgp/delNeighbor/%s", n.UUID)
+		var resp struct{ Result string `json:"result"` }
+		if err := c.doJSON(ctx, http.MethodPost, endpoint, nil, &resp); err != nil {
+			c.log.Warn("opnsense: failed to delete neighbor", "uuid", n.UUID, "err", err)
+		}
+	}
+
+	// Delete all existing route-maps.
+	var routemapResult struct {
+		Rows []struct {
+			UUID string `json:"uuid"`
+		} `json:"rows"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/quagga/bgp/searchRoutemap", nil, &routemapResult); err != nil {
+		return fmt.Errorf("list routemaps: %w", err)
+	}
+	for _, rm := range routemapResult.Rows {
+		c.log.Info("opnsense: deleting existing route-map", "uuid", rm.UUID)
+		endpoint := fmt.Sprintf("/quagga/bgp/delRoutemap/%s", rm.UUID)
+		var resp struct{ Result string `json:"result"` }
+		if err := c.doJSON(ctx, http.MethodPost, endpoint, nil, &resp); err != nil {
+			c.log.Warn("opnsense: failed to delete route-map", "uuid", rm.UUID, "err", err)
+		}
+	}
+
+	c.log.Info("opnsense: BGP config purged", "neighbors_deleted", len(neighborResult.Rows), "routemaps_deleted", len(routemapResult.Rows))
+	return nil
+}
+
 // ConfigureBGP sets up the full BGP configuration on OPNsense: enables FRR,
 // sets ASN/router-id, creates route-maps, creates neighbors linked to
-// route-maps, and reconfigures the service.
+// route-maps, and reconfigures the service. It purges any existing BGP
+// config first so it is safe to re-run after a snapshot rollback.
 func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
-	// Step 0: Add firewall rules to allow BGP (TCP 179) on WAN interface.
+	// Step 0: Purge any leftover BGP config (route-maps, neighbors) so this
+	// function is idempotent across snapshot rollbacks and re-runs.
+	c.log.Info("opnsense: purging any existing BGP config before configuring")
+	if err := c.PurgeBGPConfig(ctx); err != nil {
+		return fmt.Errorf("purge existing BGP config: %w", err)
+	}
+
+	// Step 1: Add firewall rules to allow BGP (TCP 179) on WAN interface.
 	c.log.Info("opnsense: adding BGP firewall rules")
 	if err := c.addBGPFirewallRules(ctx, bgpCfg); err != nil {
 		return fmt.Errorf("add BGP firewall rules: %w", err)
 	}
 
-	// Step 1: Enable FRR general (datacenter profile, syslog).
+	// Step 2: Enable FRR general (datacenter profile, syslog).
 	c.log.Info("opnsense: enabling FRR general settings")
 	if err := c.setFRRGeneral(ctx); err != nil {
 		return fmt.Errorf("enable FRR general: %w", err)
@@ -347,6 +401,15 @@ func (c *Client) ReconfigureFRR(ctx context.Context) error {
 // The "restart" action doesn't actually restart running daemons (watchfrr keeps them).
 // Stop + start forces a full daemon cycle, clearing zebra's stale kernel route cache.
 // Only safe when gateways are force_down (prevents static route reinstallation).
+// StopFRR stops the FRR service without restarting it.
+func (c *Client) StopFRR(ctx context.Context) error {
+	c.log.Info("opnsense: stopping FRR")
+	var resp struct {
+		Response string `json:"response"`
+	}
+	return c.doJSON(ctx, http.MethodPost, "/quagga/service/stop", nil, &resp)
+}
+
 func (c *Client) StopStartFRR(ctx context.Context) error {
 	c.log.Info("opnsense: stopping FRR")
 	var stopResp struct {
@@ -499,6 +562,34 @@ func (c *Client) GetBGPStatus(ctx context.Context) (*BGPSummary, error) {
 		return nil, fmt.Errorf("get BGP status: %w", err)
 	}
 	return &resp.Response, nil
+}
+
+// WaitForReady polls the OPNsense API until it responds, indicating the
+// system is back up after a reboot. Polls every pollInterval up to timeout.
+func (c *Client) WaitForReady(ctx context.Context, timeout, pollInterval time.Duration) error {
+	deadline := time.After(timeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline:
+			return fmt.Errorf("OPNsense did not become ready within %s", timeout)
+		case <-time.After(pollInterval):
+		}
+
+		// Try a lightweight API call. If it succeeds, OPNsense is up.
+		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		var resp struct {
+			Status string `json:"status"`
+		}
+		err := c.doJSON(checkCtx, http.MethodGet, "/core/firmware/status", nil, &resp)
+		cancel()
+		if err == nil {
+			c.log.Info("opnsense: API is reachable after reboot")
+			return nil
+		}
+		c.log.Debug("opnsense: not ready yet", "err", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

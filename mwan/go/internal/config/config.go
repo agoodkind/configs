@@ -162,6 +162,7 @@ type BGPSection struct {
 	Enabled          bool          `toml:"enabled"`
 	ASN              uint32        `toml:"asn"`
 	RouterID         string        `toml:"router_id"`
+	NextHopV6        string        `toml:"next_hop_v6"` // IPv6 next-hop for announced routes (optional, defaults to RouterID)
 	KeepaliveSeconds uint32        `toml:"keepalive_seconds"`
 	HoldSeconds      uint32        `toml:"hold_seconds"`
 	ListenPort       int32         `toml:"listen_port"`

@@ -43,8 +43,33 @@ run_one() {
   /usr/local/bin/update-npt.sh "$ifc" "$cidr"
 }
 
-run_one "${MWAN_ATT_VLAN_IFACE:-}" "${MWAN_NPT_ATT_PREFIX:-}"
-run_one "${MWAN_WEBPASS_IFACE:-}" "${MWAN_NPT_WEBPASS_PREFIX:-}"
-run_one "${MWAN_MONKEYBRAINS_IFACE:-}" "${MWAN_NPT_MONKEYBRAINS_PREFIX:-}"
+discover_npt_prefix() {
+  # Discover the delegated prefix for an interface and truncate to /60 for NPT.
+  # ISPs may delegate /56, /60, or other lengths; NPT always uses the first /60.
+  # Falls back to mwan.env value if discovery fails.
+  local ifc="$1"
+  local fallback="$2"
+  local raw net
+
+  [[ -n "$ifc" ]] || return 0
+
+  raw="$(find-pd-prefixes.sh "$ifc" --one 2>/dev/null || true)"
+  if [[ -n "$raw" ]]; then
+    net="$(ipcalc-ng -6 --all-info -j "$raw" 2>/dev/null | jq -r '.NETWORK // empty' 2>/dev/null || true)"
+    if [[ -n "$net" ]]; then
+      echo "${net}/60"
+      return 0
+    fi
+  fi
+
+  if [[ -n "$fallback" ]]; then
+    log "PD discovery failed for $ifc, using fallback: $fallback"
+    echo "$fallback"
+  fi
+}
+
+run_one "${MWAN_ATT_VLAN_IFACE:-}" "$(discover_npt_prefix "${MWAN_ATT_VLAN_IFACE:-}" "${MWAN_NPT_ATT_PREFIX:-}")"
+run_one "${MWAN_WEBPASS_IFACE:-}" "$(discover_npt_prefix "${MWAN_WEBPASS_IFACE:-}" "${MWAN_NPT_WEBPASS_PREFIX:-}")"
+run_one "${MWAN_MONKEYBRAINS_IFACE:-}" "$(discover_npt_prefix "${MWAN_MONKEYBRAINS_IFACE:-}" "${MWAN_NPT_MONKEYBRAINS_PREFIX:-}")"
 
 log "Done"

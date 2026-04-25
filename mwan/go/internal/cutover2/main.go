@@ -36,6 +36,7 @@ var subcommands = []struct {
 	{"remove-keepalived", "Phase 4: stop/disable keepalived on VM and LXC"},
 	{"status", "Show current state of all components"},
 	{"rollback", "Emergency: re-enable OPNsense gateway, restart keepalived"},
+	{"unfuck", "Nuclear rollback: stop agents, stop FRR, re-enable gateway, verify"},
 }
 
 func usage() {
@@ -87,6 +88,8 @@ func Run(cfg *config.Config) error {
 		return cmdStatus(ctx, log, cfg)
 	case "rollback":
 		return cmdRollback(ctx, log, cfg)
+	case "unfuck":
+		return cmdUnfuck(ctx, log, cfg)
 	default:
 		usage()
 		return fmt.Errorf("unknown subcommand %q", sub)
@@ -302,6 +305,13 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		return fmt.Errorf("[opnsense] gateway_name is required for switch-to-bgp")
 	}
 
+	// Stop watchdog: it could trigger VM snapshot rollback during the cutover gap.
+	log.Info("stopping mwan-watchdog on hypervisor...")
+	stopWatchdog(log)
+
+	// Notify watchdog timestamp in case it restarts.
+	writeDeployTimestamp(log, cfg)
+
 	client := opnsense.New(opnsense.Config{
 		URL:       cfg.OPNsense.URL,
 		APIKey:    cfg.OPNsense.APIKey,
@@ -309,7 +319,17 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		Insecure:  cfg.OPNsense.Insecure,
 	}, log)
 
-	// Pre-check: verify BGP route exists before touching the gateway
+	// Start auto-rollback monitor. If connectivity drops for >45s, unfuck triggers.
+	// Paused during the reboot window to avoid false triggers.
+	rollbackCtx, rollbackCancel := context.WithCancel(ctx)
+	defer rollbackCancel()
+	monitor := startHealthMonitor(rollbackCtx, log, func() {
+		log.Error("AUTO-ROLLBACK: triggering unfuck due to prolonged connectivity loss")
+		_ = cmdUnfuck(context.Background(), log, cfg)
+	}, rollbackCancel)
+	defer monitor.Stop()
+
+	// Pre-check: verify BGP routes exist before touching the gateway.
 	log.Info("pre-check: verifying BGP routes exist on OPNsense...")
 	summary, err := client.GetBGPStatus(ctx)
 	if err != nil {
@@ -327,12 +347,11 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	)
 
 	// Step 1: Mark gateways as "force down" via API.
-	// This is the OPNsense-native way to exclude gateways from default route
-	// selection while keeping them configured. Designed for dynamic routing use.
-	// See: https://github.com/opnsense/core/issues/3597
+	// Persists in config.xml, survives reboot. Prevents static route
+	// reinstallation when OPNsense comes back up.
 	for _, gwName := range cfg.OPNsense.GatewayNames {
 		log.Info("finding gateway...", "name", gwName)
-		gwUUID, gwAddr, findErr := client.FindGatewayByNameWithAddr(ctx, gwName)
+		gwUUID, _, findErr := client.FindGatewayByNameWithAddr(ctx, gwName)
 		if findErr != nil {
 			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
 		}
@@ -340,42 +359,54 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 		if err := client.ForceDownGateway(ctx, gwUUID); err != nil {
 			return fmt.Errorf("force_down gateway %q: %w", gwName, err)
 		}
-		// Save address for stale route deletion
-		_ = gwAddr
 	}
 
-	// Step 2: Reconfigure routing (removes default routes since gateways are force_down).
-	log.Info("reconfiguring routing...")
-	if err := client.Reconfigure(ctx); err != nil {
-		return fmt.Errorf("reconfigure routing: %w", err)
+	// Step 2: Remove gatewayv6 from OPNsense config.xml.
+	// Prevents IPv6 static route from being recreated on boot. force_down
+	// only covers IPv4 gateways; the IPv6 static route comes from the
+	// <gatewayv6> element in the WAN interface config.
+	removeGatewayV6(ctx, log, cfg)
+
+	// Step 3: Reboot OPNsense.
+	// A clean reboot avoids the FreeBSD zebra stale route cache issue entirely.
+	// On boot: force_down gateways produce no static IPv4 route, gatewayv6
+	// removal produces no static IPv6 route, FRR starts fresh with an empty
+	// zebra RIB, BGP peers establish, and BGP routes install without competition.
+	monitor.Pause()
+	log.Info("rebooting OPNsense (clean zebra start, no stale routes)...")
+	host := opnsenseSSHHost(cfg)
+	if err := opnsenseSSH(ctx, log, host, "reboot"); err != nil {
+		// reboot often kills the SSH connection before the reply arrives.
+		// That produces an exit error, which is expected.
+		log.Info("reboot command sent (SSH disconnect is expected)", "err", err)
 	}
 
-	// Step 3: Delete any stale kernel routes.
-	for _, gwName := range cfg.OPNsense.GatewayNames {
-		_, gwAddr, _ := client.FindGatewayByNameWithAddr(ctx, gwName)
-		if gwAddr != "" {
-			log.Info("deleting stale route...", "gateway", gwAddr)
-			_ = client.DeleteRoute(ctx, "default", gwAddr)
-		}
-	}
-
-	// Step 4: Stop then start FRR so zebra starts fresh without stale cache.
-	// The API "restart" doesn't actually restart running daemons (watchfrr keeps them).
-	// Stop + start forces a full cycle. force_down prevents static route reinstallation.
-	log.Info("stop+start FRR (clears zebra stale cache)...")
-	if err := client.StopStartFRR(ctx); err != nil {
-		return fmt.Errorf("stop+start FRR: %w", err)
-	}
-
-	// Wait for BGP to re-establish after FRR restart
-	log.Info("waiting for BGP to re-establish (15s)...")
+	// Step 4: Wait for OPNsense to come back up.
+	log.Info("waiting for OPNsense to reboot (polling API)...")
+	// Initial delay: OPNsense needs time to shut down before we start polling.
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(15 * time.Second):
+	case <-time.After(30 * time.Second):
 	}
 
-	// Verify BGP route is now the active default
+	if err := client.WaitForReady(ctx, 4*time.Minute, 10*time.Second); err != nil {
+		monitor.Resume()
+		return fmt.Errorf("OPNsense did not come back after reboot: %w", err)
+	}
+
+	// Step 5: Wait for FRR to start and BGP peers to establish.
+	// FRR auto-starts on boot. BGP peers need ~30s to establish after FRR is up.
+	log.Info("OPNsense is up, waiting for BGP to establish (30s)...")
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(30 * time.Second):
+	}
+
+	monitor.Resume()
+
+	// Verify BGP route is now the active default.
 	log.Info("verifying BGP took over...")
 	postSummary, err := client.GetBGPStatus(ctx)
 	if err != nil {

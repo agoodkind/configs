@@ -1,0 +1,242 @@
+---
+# MWAN Testbed Configuration Variables (suburban)
+#
+# Uses the SAME variable names as mwan_servers.yml (production) so that
+# the same .j2 templates render correctly for both environments.
+# Only the values differ.
+
+# ----------------------------------------------------------------------------
+# Controller / host identity
+# ----------------------------------------------------------------------------
+
+service_hostname: test-mwan
+mwan_vmid: 950
+mwan_proxmox_node: hypervisor
+
+# DNS (same as production)
+mwan_dns_domain: "home.goodkind.io"
+mwan_dns_servers: "3d06:bad:b01::1 10.250.0.1"
+
+# ----------------------------------------------------------------------------
+# Interfaces (testbed uses virtio, simpler than production passthrough)
+# ----------------------------------------------------------------------------
+
+mwan_mgmt_iface: "enmgmt0"
+consul_bind_interface: "enmgmt0"
+mwan_att_iface: "enatt0"
+mwan_webpass_iface: "enwebpass0"
+mwan_internal_iface: "enmwanbr0"
+mwan_monkeybrains_iface: "enmbrains0"
+
+# MAC addresses (from PVE config, used by .link files for stable naming)
+mwan_mgmt_mac: "BC:24:11:B3:9E:46"
+mwan_att_mac: "BC:24:11:C0:D7:60"
+mwan_webpass_mac: "BC:24:11:BE:8E:B4"
+mwan_mbrains_mac: "BC:24:11:3D:CE:CC"
+mwan_net1_mac: "BC:24:11:49:5D:94"
+
+# AT&T: testbed has no VLAN (direct link to ISP LXC)
+# Empty string signals templates to skip VLAN-specific config.
+mwan_att_vlan_id: ""
+
+# WAN IPv4 (static, ISP LXCs have no DHCPv4 server)
+mwan_webpass_ipv4: "10.240.204.2/24"
+mwan_webpass_ipv4_addr: "10.240.204.2"
+mwan_webpass_gateway: "10.240.204.1"
+mwan_att_ipv4: "10.240.205.2/24"
+mwan_att_ipv4_addr: "10.240.205.2"
+mwan_att_gateway: "10.240.205.1"
+mwan_monkeybrains_ipv4: "10.240.206.2/24"
+mwan_monkeybrains_gateway: "10.240.206.1"
+
+# DHCPv6 DUIDs (not needed for testbed, ISP LXCs don't check)
+mwan_webpass_duid_raw_data: ""
+mwan_monkeybrains_duid_raw_data: ""
+
+# 1:1 SNAT (all internal addresses map to VM 950's single ISP address)
+mwan_static_mappings:
+  att:
+    - { internal: "10.250.250.2", external: "10.240.205.2" }
+    - { internal: "10.250.250.3", external: "10.240.205.2" }
+    - { internal: "10.250.250.4", external: "10.240.205.2" }
+    - { internal: "10.250.250.5", external: "10.240.205.2" }
+  webpass:
+    - { internal: "10.250.250.2", external: "10.240.204.2" }
+    - { internal: "10.250.250.3", external: "10.240.204.2" }
+    - { internal: "10.250.250.4", external: "10.240.204.2" }
+    - { internal: "10.250.250.5", external: "10.240.204.2" }
+
+# VIP (keepalived manages these on vrrp.51)
+mwan_vip_ipv6: "3d06:bad:b01:201::1"
+mwan_vip_ipv4: "10.250.250.1/29"
+
+# ----------------------------------------------------------------------------
+# Internal link (to OPNsense)
+# ----------------------------------------------------------------------------
+
+mwan_internal_ipv4: "10.250.250.3/29"
+mwan_internal_ipv6: "3d06:bad:b01:201::3/64"
+mwan_mwanbr_edge_ipv6: "3d06:bad:b01:201::3"
+mwan_internal_prefix: "3d06:bad:b01:210::/60"
+
+# OPNsense addresses (testbed OPNsense VM 101)
+mwan_opnsense_wan_ll: "fe80::be24:11ff:feec:efcc"
+mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
+
+# ----------------------------------------------------------------------------
+# IPv6 prefixes (simulated ISPs on suburban)
+# ----------------------------------------------------------------------------
+
+mwan_npt_att_prefix: "3d06:bad:b01:230::/60"
+mwan_npt_webpass_prefix: "3d06:bad:b01:220::/60"
+mwan_npt_monkeybrains_prefix: "3d06:bad:b01:240::/60"
+
+# PD prefixes (same as NPT targets in testbed)
+mwan_att_pd_prefix: "3d06:bad:b01:230::/60"
+mwan_webpass_pd_prefix: "3d06:bad:b01:220::/60"
+mwan_monkeybrains_pd_prefix: "3d06:bad:b01:240::/60"
+
+# ----------------------------------------------------------------------------
+# Routing tables
+# ----------------------------------------------------------------------------
+
+mwan_rt_tables:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+  cloudflared: 400
+
+# ----------------------------------------------------------------------------
+# Notifications
+# ----------------------------------------------------------------------------
+
+mwan_email_enabled: true
+mwan_email_recipient: "alex@goodkind.io"
+mwan_email_from: "mwan-testbed@goodkind.io"
+mwan_email_script: "/opt/scripts/send-email"
+mwan_email_sender_name: "MWAN-TESTBED"
+mwan_smtp2go_api_key: "{{ smtp2go_api_key }}"
+mwan_debug_logging: true
+
+# Health checks (same structure as production)
+mwan_health_checks:
+  att:
+    enabled: true
+    ping_count: 3
+    success_threshold: 2
+    check_interval: 10
+    failure_threshold: 2
+    recovery_threshold: 2
+    targets_v4: ["1.1.1.1", "8.8.8.8"]
+    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+    http_targets: ["https://ifconfig.co/ip"]
+  webpass:
+    enabled: true
+    ping_count: 3
+    success_threshold: 2
+    check_interval: 10
+    failure_threshold: 2
+    recovery_threshold: 2
+    targets_v4: ["1.1.1.1", "8.8.8.8"]
+    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+    http_targets: ["https://ifconfig.co/ip"]
+  monkeybrains:
+    enabled: true
+    ping_count: 5
+    success_threshold: 1
+    check_interval: 30
+    failure_threshold: 5
+    recovery_threshold: 3
+    targets_v4: ["1.1.1.1", "8.8.8.8"]
+    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+    http_targets: ["https://ifconfig.co/ip"]
+
+# Not used in testbed
+mwan_att_pinned_v4_seed_cidrs: []
+mwan_att_pinned_v4_fqdns: []
+mwan_att_pinned_v6_seed_cidrs: []
+mwan_att_pinned_v6_fqdns: []
+mwan_zoom_ipranges_url: ""
+mwan_health_exclude_wans: ["monkeybrains"]
+
+# ----------------------------------------------------------------------------
+# OPNsense (testbed VM 101)
+# ----------------------------------------------------------------------------
+
+opnsense_addr: "192.168.1.1"
+opnsense_api_key: "{{ vault_suburban_testbed_opnsense_api_key }}"
+opnsense_api_secret: "{{ vault_suburban_testbed_opnsense_api_secret }}"
+opnsense_gateway_names:
+  - WAN_GW4
+  - WAN_GW6
+
+# OPNsense BGP (from OPNsense's perspective)
+opnsense_bgp_router_id: "10.250.250.2"
+opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
+opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
+opnsense_bgp_neighbors:
+  - address: "10.250.250.3"
+    description: "VM950-IPv4"
+    preference: "primary"
+  - address: "3d06:bad:b01:201::3"
+    description: "VM950-IPv6"
+    preference: "primary"
+  - address: "10.250.250.4"
+    description: "LXC100-IPv4"
+    preference: "backup"
+  - address: "3d06:bad:b01:201::4"
+    description: "LXC100-IPv6"
+    preference: "backup"
+
+# ----------------------------------------------------------------------------
+# BGP (embedded GoBGP in agent)
+# ----------------------------------------------------------------------------
+
+bgp_asn: 4200000001
+bgp_router_id: "10.250.250.3"
+bgp_next_hop_v6: "3d06:bad:b01:201::3"
+bgp_keepalive_seconds: 3
+bgp_hold_seconds: 9
+bgp_listen_port: 179
+bgp_neighbors:
+  - "10.250.250.2"
+bgp_neighbors_v6:
+  - "3d06:bad:b01:201::2"
+bgp_announce_ipv4:
+  - "0.0.0.0/0"
+bgp_announce_ipv6:
+  - "::/0"
+
+# ----------------------------------------------------------------------------
+# Watchdog
+# ----------------------------------------------------------------------------
+
+mwan_watchdog_pve_token_secret: "{{ vault_suburban_testbed_pve_token_secret }}"
+
+# ----------------------------------------------------------------------------
+# Failover LXC
+# ----------------------------------------------------------------------------
+
+failover_lxc_id: "100"
+
+# ----------------------------------------------------------------------------
+# Testbed-only: ISP LXCs and hypervisor
+# (these have no production equivalent)
+# ----------------------------------------------------------------------------
+
+testbed_isp_lxcs:
+  - id: 200
+    name: webpass
+    pd_prefix: "3d06:bad:b01:220::/60"
+    v4_subnet: "10.240.204.0/24"
+    vm950_ll: "fe80::be24:11ff:febe:8eb4"
+  - id: 201
+    name: att
+    pd_prefix: "3d06:bad:b01:230::/60"
+    v4_subnet: "10.240.205.0/24"
+    vm950_ll: "fe80::be24:11ff:fec0:d760"
+  - id: 202
+    name: mbrains
+    pd_prefix: "3d06:bad:b01:240::/60"
+    v4_subnet: "10.240.206.0/24"
+    vm950_ll: "fe80::be24:11ff:fe3d:cecc"

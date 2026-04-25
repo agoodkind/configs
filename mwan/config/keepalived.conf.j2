@@ -1,0 +1,25 @@
+vrrp_script chk_internet {
+    script "/etc/keepalived/check_internet.sh"
+    interval 10
+    weight -110
+    fall 3
+    rise 2
+}
+
+vrrp_instance VI_HA {
+    state MASTER
+    interface {{ mwan_internal_iface }}
+    virtual_router_id 51
+    priority 150
+    advert_int 1
+    use_vmac
+    vmac_xmit_base
+    virtual_ipaddress {
+        {{ mwan_vip_ipv6 }}/64
+        {{ mwan_vip_ipv4 }}
+    }
+    track_script {
+        chk_internet
+    }
+    notify /etc/keepalived/notify.sh
+}

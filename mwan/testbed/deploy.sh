@@ -21,9 +21,20 @@ if [ ! -f "$MWAN_BIN" ]; then
 fi
 
 echo "=== Phase 1: Suburban host ==="
-echo "  Deploying mwan binary + config to hypervisor..."
+echo "  Deploying mwan binary to hypervisor..."
 scp "$MWAN_BIN" "$SUBURBAN:/usr/local/bin/mwan"
-scp "$TESTBED_DIR/suburban-cutover2.toml" "$SUBURBAN:/etc/mwan/config.toml"
+
+echo "  Deploying hypervisor config (rendering secrets)..."
+CREDS_FILE="$TESTBED_DIR/opnsense-101/.api-credentials"
+if [ -f "$CREDS_FILE" ]; then
+    API_KEY=$(grep '^key=' "$CREDS_FILE" | cut -d= -f2)
+    API_SECRET=$(grep '^secret=' "$CREDS_FILE" | cut -d= -f2)
+    sed -e "s/TESTBED_API_KEY/$API_KEY/g" -e "s/TESTBED_API_SECRET/$API_SECRET/g" \
+        "$TESTBED_DIR/suburban-cutover2.toml" | ssh "$SUBURBAN" "mkdir -p /etc/mwan && cat > /etc/mwan/config.toml"
+else
+    echo "  WARNING: $CREDS_FILE not found. Deploying config with placeholder keys."
+    scp "$TESTBED_DIR/suburban-cutover2.toml" "$SUBURBAN:/etc/mwan/config.toml"
+fi
 
 echo "  Deploying sysctl..."
 scp "$TESTBED_DIR/suburban-sysctl.conf" "$SUBURBAN:/etc/sysctl.d/99-mwan-testbed.conf"
@@ -47,22 +58,7 @@ scp "$TESTBED_DIR/vm-950/nftables.conf" "$VM950_SCP:/etc/nftables.conf"
 $SSH_VM950 "systemctl enable nftables"
 
 echo "  Deploying sysctl..."
-scp "$TESTBED_DIR/vm-950/sysctl-mwan.conf" "$VM950_SCP:/etc/sysctl.d/99-mwan.conf" 2>/dev/null || \
-$SSH_VM950 "cat > /etc/sysctl.d/99-mwan.conf << 'EOF'
-net.ipv4.ip_forward=1
-net.ipv6.conf.all.forwarding=1
-net.ipv6.conf.default.accept_ra=0
-net.ipv6.conf.enwebpass0.accept_ra=2
-net.ipv6.conf.enatt0.accept_ra=2
-net.ipv6.conf.enmbrains0.accept_ra=2
-net.ipv6.conf.enmwanbr0.accept_ra=1
-net.ipv4.conf.all.rp_filter=0
-net.ipv4.conf.enwebpass0.rp_filter=0
-net.ipv4.conf.enatt0.rp_filter=0
-net.ipv4.conf.enmbrains0.rp_filter=0
-net.ipv4.conf.enmwanbr0.rp_filter=0
-net.ipv6.conf.all.use_tempaddr=0
-EOF"
+scp "$TESTBED_DIR/vm-950/sysctl-mwan.conf" "$VM950_SCP:/etc/sysctl.d/99-mwan.conf"
 
 echo "  Deploying production scripts..."
 for script in update-routes.sh update-npt.sh mwan-update-npt-all.sh mwan-wait-routes-prereqs.sh mwan-wait-npt-prereqs.sh; do
@@ -133,7 +129,8 @@ deploy_isp_lxc() {
     echo "  --- LXC $ID ($NAME) ---"
 
     # sysctl
-    ssh "$SUBURBAN" "pct push $ID $TESTBED_DIR/isp-lxc/sysctl-isp.conf /etc/sysctl.d/99-isp.conf"
+    scp "$TESTBED_DIR/isp-lxc/sysctl-isp.conf" "$SUBURBAN:/tmp/isp-sysctl-${ID}.conf"
+    ssh "$SUBURBAN" "pct push $ID /tmp/isp-sysctl-${ID}.conf /etc/sysctl.d/99-isp.conf"
 
     # nftables (render template)
     local NFT_FILE="/tmp/isp-${ID}-nftables.conf"

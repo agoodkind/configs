@@ -1,0 +1,63 @@
+---
+# Render and push config files to a single ISP LXC.
+# Called from deploy-mwan-testbed.yml with loop_var: isp
+#
+# isp fields: id, name, pd_prefix, v4_subnet, vm950_ll
+# repo_root is set in the parent play.
+
+- name: "ISP {{ isp.name }} ({{ isp.id }}): render templates to suburban /tmp"
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/testbed/isp-lxc/{{ item.src }}"
+    dest: "/tmp/isp-{{ isp.id }}-{{ item.name }}"
+    mode: "0644"
+  loop:
+    - { src: kea-dhcp6.conf.j2, name: kea-dhcp6.conf }
+    - { src: radvd.conf.j2, name: radvd.conf }
+    - { src: nftables.conf.j2, name: nftables.conf }
+    - { src: pd-route.service.j2, name: pd-route.service }
+
+- name: "ISP {{ isp.name }} ({{ isp.id }}): copy sysctl to suburban /tmp"
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/testbed/isp-lxc/sysctl-isp.conf"
+    dest: "/tmp/isp-{{ isp.id }}-sysctl-isp.conf"
+    mode: "0644"
+
+- name: "ISP {{ isp.name }} ({{ isp.id }}): push configs into LXC"
+  ansible.builtin.command:
+    cmd: >-
+      pct push {{ isp.id }}
+      /tmp/isp-{{ isp.id }}-{{ item.tmp }}
+      {{ item.dest }}
+  loop:
+    - { tmp: kea-dhcp6.conf, dest: /etc/kea/kea-dhcp6.conf }
+    - { tmp: radvd.conf, dest: /etc/radvd.conf }
+    - { tmp: nftables.conf, dest: /etc/nftables.conf }
+    - { tmp: pd-route.service, dest: /etc/systemd/system/pd-route.service }
+    - { tmp: sysctl-isp.conf, dest: /etc/sysctl.d/99-isp.conf }
+  changed_when: true
+
+- name: "ISP {{ isp.name }} ({{ isp.id }}): clean up temp files"
+  ansible.builtin.file:
+    path: "/tmp/isp-{{ isp.id }}-{{ item }}"
+    state: absent
+  loop:
+    - kea-dhcp6.conf
+    - radvd.conf
+    - nftables.conf
+    - pd-route.service
+    - sysctl-isp.conf
+
+- name: "ISP {{ isp.name }} ({{ isp.id }}): apply sysctl (ignore LXC permission errors)"
+  ansible.builtin.command:
+    cmd: pct exec {{ isp.id }} -- sysctl --system
+  changed_when: false
+  failed_when: false
+
+- name: "ISP {{ isp.name }} ({{ isp.id }}): reload and enable services"
+  ansible.builtin.command:
+    cmd: >-
+      pct exec {{ isp.id }} -- sh -c
+      'systemctl daemon-reload
+      && systemctl enable --now nftables kea-dhcp6-server radvd pd-route
+      && systemctl restart nftables kea-dhcp6-server radvd pd-route'
+  changed_when: true

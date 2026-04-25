@@ -86,11 +86,24 @@ verify_timeout_sec = 30
 boot_wait_sec = 35
 
 [opnsense]
-url = "https://192.168.1.1"
+url = "https://{{ opnsense_addr }}"
 api_key = "{{ opnsense_api_key }}"
 api_secret = "{{ opnsense_api_secret }}"
 insecure = true
+gateway_names = {{ opnsense_gateway_names | to_json }}
 
+[opnsense.bgp]
+router_id = "{{ opnsense_bgp_router_id }}"
+firewall_source_v4 = "{{ opnsense_bgp_firewall_source_v4 }}"
+firewall_source_v6 = "{{ opnsense_bgp_firewall_source_v6 }}"
+
+{% for neighbor in opnsense_bgp_neighbors %}
+[[opnsense.bgp.neighbors]]
+address = "{{ neighbor.address }}"
+description = "{{ neighbor.description }}"
+preference = "{{ neighbor.preference }}"
+
+{% endfor %}
 [agent]
 vsock_port = 50051
 tcp_addr = "[::]:50052"
@@ -100,3 +113,23 @@ debug = false
 
 [bgp]
 enabled = true
+asn = {{ bgp_asn }}
+router_id = "{{ bgp_router_id }}"
+next_hop_v6 = "{{ bgp_next_hop_v6 }}"
+keepalive_seconds = {{ bgp_keepalive_seconds }}
+hold_seconds = {{ bgp_hold_seconds }}
+listen_port = {{ bgp_listen_port }}
+
+{% for neighbor in bgp_neighbors %}
+[[bgp.neighbors]]
+address = "{{ neighbor }}"
+
+{% endfor %}
+{% for neighbor in bgp_neighbors_v6 %}
+[[bgp.neighbors_v6]]
+address = "{{ neighbor }}"
+
+{% endfor %}
+[bgp.announce]
+ipv4 = {{ bgp_announce_ipv4 | to_json }}
+ipv6 = {{ bgp_announce_ipv6 | to_json }}

@@ -308,9 +308,17 @@ func (s *Speaker) addIPv6Path(prefix string) error {
 		return fmt.Errorf("new ipaddr prefix: %w", err)
 	}
 
-	routerID, err := netip.ParseAddr(s.cfg.RouterID)
+	// Use explicit IPv6 next-hop if configured, otherwise fall back to RouterID.
+	// RFC 2545 requires an IPv6 next-hop for IPv6 unicast MP_REACH_NLRI.
+	// GoBGP will convert an IPv4 RouterID to ::ffff:x.x.x.x which some FRR
+	// versions may not install as a usable route.
+	nhStr := s.cfg.NextHopV6
+	if nhStr == "" {
+		nhStr = s.cfg.RouterID
+	}
+	nextHop, err := netip.ParseAddr(nhStr)
 	if err != nil {
-		return fmt.Errorf("parse router id: %w", err)
+		return fmt.Errorf("parse ipv6 next-hop %q: %w", nhStr, err)
 	}
 
 	origin := bgppkt.NewPathAttributeOrigin(0) // IGP
@@ -318,7 +326,7 @@ func (s *Speaker) addIPv6Path(prefix string) error {
 	mpReach, err := bgppkt.NewPathAttributeMpReachNLRI(
 		bgppkt.RF_IPv6_UC,
 		[]bgppkt.PathNLRI{{NLRI: nlri}},
-		routerID,
+		nextHop,
 	)
 	if err != nil {
 		return fmt.Errorf("new mp reach: %w", err)

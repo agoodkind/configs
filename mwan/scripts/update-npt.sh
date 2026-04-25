@@ -137,55 +137,23 @@ PRE_HANDLES="$(
 
 # Decide target /60 for this iface.
 # NOTE: NPT is stateless and requires internal/external prefixes to be the same length (/60 here).
-USE_MASQUERADE=0
-
-case "$WAN_IFACE" in
-    "${MWAN_ATT_VLAN_IFACE:-}")
-        TARGET_PREFIX="${MWAN_NPT_ATT_PREFIX:-}"
-        ;;
-    "${MWAN_WEBPASS_IFACE:-}")
-        TARGET_PREFIX="${MWAN_NPT_WEBPASS_PREFIX:-}"
-        ;;
-    "${MWAN_MONKEYBRAINS_IFACE:-}")
-        # Monkeybrains PD availability is unreliable (provider may revoke delegation).
-        # Strategy: use NPT when PD is delegated, fall back to NAT66 masquerade using
-        # the SLAAC address when it is not. Detection: check if a nodad /128 from the
-        # PD prefix exists on the interface (systemd-networkd adds it when PD is active).
-        USE_MASQUERADE=0
-        if [[ -n "$MB_STATIC_PREFIX" ]]; then
-            # Check if the PD-derived address is actually live on the interface.
-            pd_addr="${MB_STATIC_PREFIX%/*}1"
-            if ip -6 addr show dev "$WAN_IFACE" | grep -q "$pd_addr"; then
-                TARGET_PREFIX="$MB_STATIC_PREFIX"
-            else
-                log "Monkeybrains PD address $pd_addr not present on $WAN_IFACE; falling back to NAT66 masquerade"
-                USE_MASQUERADE=1
-            fi
-        else
-            TARGET_PREFIX="$(first_60_of_prefix "$DELEGATED_PREFIX" || true)"
-            if [[ -z "$TARGET_PREFIX" ]]; then
-                log "No usable PD for $WAN_IFACE; falling back to NAT66 masquerade"
-                USE_MASQUERADE=1
-            fi
-        fi
-        ;;
-    *)
-        log "Unknown WAN iface $WAN_IFACE; skipping"
-        exit 0
-        ;;
-esac
+# Use the prefix passed by the caller (discovered or from mwan.env).
+# Truncate to /60 if the delegation is larger (e.g. /56).
+TARGET_PREFIX="$(first_60_of_prefix "$DELEGATED_PREFIX" || true)"
+if [[ -z "$TARGET_PREFIX" ]]; then
+    log "No usable /60 prefix for $WAN_IFACE from delegation $DELEGATED_PREFIX; skipping"
+    exit 0
+fi
 
 if [[ "$DEBUG" = "1" ]]; then
     debug_json "SELECT" "target_prefix_selected" "$(jq -cn \
       --arg iface "$WAN_IFACE" \
       --arg delegated "$DELEGATED_PREFIX" \
-      --arg target "${TARGET_PREFIX:-masquerade}" \
-      --arg masquerade "$USE_MASQUERADE" \
+      --arg target "${TARGET_PREFIX}" \
       '{
         iface: $iface,
         delegated: $delegated,
-        target: $target,
-        masquerade: $masquerade
+        target: $target
       }')"
 fi
 
@@ -199,6 +167,10 @@ tmp="$(mktemp)"
         echo "delete rule ip6 nat prerouting handle $h"
     done
 
+    # LEGACY: masquerade fallback. Previously used for Monkeybrains when PD was unavailable.
+    # Now that mwan-update-npt-all.sh handles discovery and only calls update-npt.sh with a
+    # valid prefix, this branch should not be reached. Kept for potential future use as a
+    # standalone masquerade script. Revisit when creating the dedicated masquerade fallback.
     if [[ "${USE_MASQUERADE:-0}" = "1" ]]; then
         # NAT66 masquerade: use the interface's SLAAC address as the source.
         # Stateful NAT, no inbound, no prefix translation. Degraded but functional.

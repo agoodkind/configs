@@ -10,7 +10,7 @@ flush ruleset
 
 # Define variables - use actual kernel interface names
 define MGMT_IFACE = "{{ actual_mgmt_iface | default(mwan_mgmt_iface) }}"
-define ATT_IFACE = "{{ actual_att_iface | default(mwan_att_iface) }}.{{ mwan_att_vlan_id }}"
+define ATT_IFACE = "{{ actual_att_iface | default(mwan_att_iface) }}{% if mwan_att_vlan_id %}.{{ mwan_att_vlan_id }}{% endif %}"
 define WEBPASS_IFACE = "{{ actual_webpass_iface | default(mwan_webpass_iface) }}"
 define INTERNAL_IFACE = "{{ actual_internal_iface | default(mwan_internal_iface) }}"
 define MB_IFACE = "{{ mwan_monkeybrains_iface }}"
@@ -47,6 +47,10 @@ table inet filter {
         # Allow DHCP on management interface
         # iif $MGMT_IFACE udp sport 67 udp dport 68 accept
         # iif $MGMT_IFACE udp sport 547 udp dport 546 accept
+
+        # Allow BGP and BFD from OPNsense on internal interface
+        iifname $INTERNAL_IFACE tcp dport 179 accept
+        iifname $INTERNAL_IFACE udp dport { 3784, 3785 } accept
 
         # Allow DHCP on WAN interfaces
         iifname $ATT_IFACE udp sport 67 udp dport 68 accept
@@ -94,7 +98,8 @@ table ip nat {
         type nat hook prerouting priority dstnat; policy accept;
 
         # Mark new connections for load balancing (fwmark)
-        iifname $INTERNAL_IFACE ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        # Match both enmwanbr0 and vrrp.* (keepalived VMAC receives on vrrp.51)
+        iifname { $INTERNAL_IFACE, "vrrp.*" } ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
         # Inbound 1:1 NAT (DNAT) for static IPs
         # Map external /29s back to the internal /29 so OPNsense (and downstream) can receive inbound traffic.
@@ -158,22 +163,26 @@ table inet mangle {
         type ipv4_addr;
         flags interval;
         auto-merge;
+{% if mwan_att_pinned_v4_seed_cidrs | default([]) | length > 0 %}
         elements = {
-{% for cidr in mwan_att_pinned_v4_seed_cidrs | default([]) %}
+{% for cidr in mwan_att_pinned_v4_seed_cidrs %}
             {{ cidr }}{% if not loop.last %},{% endif %}
 {% endfor %}
         }
+{% endif %}
     }
 
     set att_pinned_v6 {
         type ipv6_addr;
         flags interval;
         auto-merge;
+{% if mwan_att_pinned_v6_seed_cidrs | default([]) | length > 0 %}
         elements = {
-{% for cidr in mwan_att_pinned_v6_seed_cidrs | default([]) %}
+{% for cidr in mwan_att_pinned_v6_seed_cidrs %}
             {{ cidr }}{% if not loop.last %},{% endif %}
 {% endfor %}
         }
+{% endif %}
     }
 
     chain prerouting {

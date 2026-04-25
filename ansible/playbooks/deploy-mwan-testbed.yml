@@ -1,0 +1,391 @@
+---
+# ============================================================================
+# MWAN Testbed Deployment (suburban)
+# ============================================================================
+# Mirrors deploy-mwan.yml but targets the suburban testbed.
+# Uses the SAME .j2 templates as production with testbed-specific group vars.
+# VMs and LXCs must already exist.
+#
+# Usage:
+#   bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook \
+#     --vault-password-file ~/.config/ansible/vault.pass \
+#     playbooks/deploy-mwan-testbed.yml"
+# ============================================================================
+
+# --- Add testbed hosts to inventory ---
+- name: Add testbed hosts to inventory
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all/service_mapping.yml
+    - ../inventory/group_vars/mwan_testbed_servers.yml
+  tasks:
+    - name: Add suburban hypervisor
+      ansible.builtin.add_host:
+        name: suburban
+        ansible_host: "10.240.0.148"
+        ansible_user: root
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+    - name: Add VM 950 (test-mwan)
+      ansible.builtin.add_host:
+        name: test-mwan
+        groups: mwan_testbed_servers
+        ansible_host: "3d06:bad:b01:200::950"
+        ansible_user: root
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        ansible_proxmox_vmid: "950"
+        ansible_proxmox_host: suburban
+
+    - name: Add LXC 100 (mwan-failover-test)
+      ansible.builtin.add_host:
+        name: mwan-failover-test
+        groups: mwan_testbed_servers
+        ansible_host: "3d06:bad:b01:200::100"
+        ansible_user: root
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        ansible_proxmox_vmid: "100"
+        ansible_proxmox_host: suburban
+
+# --- Prep guests (SSH keys, base packages) ---
+# Uncomment when running on fresh guests. Already completed for VM 950 and LXC 100.
+# - name: Prepare testbed guests
+#   ansible.builtin.import_playbook: prep-guests.yml
+#   vars:
+#     target_hosts: mwan_testbed_servers
+
+# --- Suburban hypervisor ---
+- name: Configure suburban hypervisor
+  hosts: suburban
+  become: false
+  vars_files:
+    - ../inventory/group_vars/all/vars.yml
+    - ../inventory/group_vars/all/vault.yml
+    - ../inventory/group_vars/mwan_testbed_servers.yml
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+  tasks:
+    - name: Build mwan binary (local)
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          cd "{{ repo_root }}/mwan/go"
+          make build-linux
+        executable: /bin/bash
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Deploy mwan binary
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        dest: /usr/local/bin/mwan
+        mode: "0755"
+
+    - name: Create mwan config directory
+      ansible.builtin.file:
+        path: /etc/mwan
+        state: directory
+        mode: "0755"
+
+    - name: Deploy hypervisor config (rendered from .j2)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/suburban-testbed.toml.j2"
+        dest: /etc/mwan/config.toml
+        mode: "0600"
+
+    - name: Deploy sysctl
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/testbed/suburban-sysctl.conf"
+        dest: /etc/sysctl.d/99-mwan-testbed.conf
+        mode: "0644"
+      notify: Reload sysctl
+
+    - name: Deploy masquerade sourced file
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/testbed/suburban-interfaces.d-testbed-masquerade.conf"
+        dest: /etc/network/interfaces.d/testbed-masquerade.conf
+        mode: "0644"
+
+    # --- ISP LXCs (200/201/202) via pct ---
+
+    - name: Install packages on ISP LXCs
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ item.id }} -- sh -c
+          'which kea-dhcp6 >/dev/null 2>&1 ||
+           (apt-get update -qq && apt-get install -y -qq kea-dhcp6-server radvd nftables)'
+      loop: "{{ testbed_isp_lxcs }}"
+      changed_when: false
+
+    - name: Render and push ISP LXC configs
+      ansible.builtin.include_tasks: tasks/deploy-testbed-isp-lxc.yml
+      loop: "{{ testbed_isp_lxcs }}"
+      loop_control:
+        loop_var: isp
+
+  handlers:
+    - name: Reload sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: false
+
+# --- VM 950 (test-mwan) ---
+- name: Configure VM 950
+  hosts: test-mwan
+  become: false
+  vars_files:
+    - ../inventory/group_vars/all/vars.yml
+    - ../inventory/group_vars/all/vault.yml
+    - ../inventory/group_vars/mwan_testbed_servers.yml
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    # Variables expected by the management interface templates
+    vm_mgmt_iface: "{{ mwan_mgmt_iface }}"
+    vm_mgmt_mac: "{{ mwan_mgmt_mac }}"
+    vm_mgmt_ipv6: "3d06:bad:b01:200::950"
+    vm_mgmt_ipv6_prefix: "64"
+    vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
+    vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
+    vm_mgmt_gateway6: "fe80::1"
+    hostname: "{{ service_hostname }}"
+  tasks:
+    - name: Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/mwan
+        - /etc/systemd/network
+        - /etc/iproute2
+        - /etc/sysctl.d
+
+    - name: Remove netplan (conflicts with systemd-networkd link files)
+      ansible.builtin.apt:
+        name: netplan.io
+        state: absent
+
+    - name: Remove netplan runtime configs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/netplan
+        - /run/systemd/network/10-netplan-eth0.link
+        - /run/systemd/network/10-netplan-eth0.network
+
+    - name: Install packages (matches production deploy-mwan.yml)
+      ansible.builtin.apt:
+        name:
+          - nftables
+          - iproute2
+          - iptables
+          - bash
+          - curl
+          - jq
+          - vlan
+          - bridge-utils
+          - networkd-dispatcher
+          - telnet
+          - sipcalc
+          - ipcalc-ng
+          - ipcalc
+          - ipv6calc
+          - fping
+        state: present
+
+    - name: Deploy mwan binary
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        dest: /usr/local/bin/mwan
+        mode: "0755"
+
+    - name: Deploy agent config (rendered from .j2)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/suburban-testbed.toml.j2"
+        dest: /etc/mwan/config.toml
+        mode: "0600"
+
+    - name: Deploy mwan.env (production template)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/mwan.env.j2"
+        dest: /etc/mwan/mwan.env
+        mode: "0644"
+
+    - name: Deploy mwan-agent service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
+        dest: /etc/systemd/system/mwan-agent.service
+        mode: "0644"
+
+    # --- systemd-networkd: interface naming and addressing ---
+
+    - name: Deploy management interface networkd config (production template)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/ansible/templates/vm/{{ item }}.j2"
+        dest: "/etc/systemd/network/{{ item }}"
+        mode: "0644"
+      loop:
+        - 10-mgmt.link
+        - 10-mgmt.network
+
+    - name: Deploy WAN link files (testbed, MAC-based matching)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/networkd/testbed/{{ item }}.j2"
+        dest: "/etc/systemd/network/{{ item }}"
+        mode: "0644"
+      loop:
+        - 20-att.link
+        - 20-att.network
+        - 20-webpass.link
+        - 20-webpass.network
+
+    - name: Deploy monkeybrains networkd config (production template)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/networkd/{{ item }}.j2"
+        dest: "/etc/systemd/network/{{ item }}"
+        mode: "0644"
+      loop:
+        - 30-monkeybrains.link
+        - 30-monkeybrains.network
+
+    - name: Deploy mwanbr networkd config (production template)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/networkd/{{ item }}.j2"
+        dest: "/etc/systemd/network/{{ item }}"
+        mode: "0644"
+      loop:
+        - 40-mwanbr.link
+        - 40-mwanbr.network
+
+    - name: Reload udev rules
+      ansible.builtin.command: udevadm control --reload
+      changed_when: false
+      failed_when: false
+
+    - name: Trigger net udev events
+      ansible.builtin.command: udevadm trigger --action=add --subsystem-match=net
+      changed_when: false
+      failed_when: false
+
+    # --- System configs (production templates) ---
+
+    - name: Deploy nftables (production template)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/nftables.conf.j2"
+        dest: /etc/nftables.conf
+        mode: "0644"
+
+    - name: Deploy sysctl (production template)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/sysctl-mwan.conf.j2"
+        dest: /etc/sysctl.d/99-mwan.conf
+        mode: "0644"
+
+    - name: Deploy routing tables (production template)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/rt_tables.j2"
+        dest: /etc/iproute2/rt_tables
+        mode: "0644"
+
+    # --- Scripts (same as production, not templated) ---
+
+    - name: Deploy scripts
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: "0755"
+      loop:
+        - update-routes.sh
+        - update-npt.sh
+        - mwan-update-npt-all.sh
+        - mwan-wait-routes-prereqs.sh
+        - mwan-wait-npt-prereqs.sh
+        - find-pd-prefixes.sh
+
+    - name: Deploy systemd services (same as production)
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/services/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - mwan-update-routes.service
+        - mwan-update-npt.service
+
+    - name: Deploy networkd-dispatcher hooks
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/hooks/{{ item }}"
+        dest: "/etc/networkd-dispatcher/routable.d/{{ item }}"
+        mode: "0755"
+      loop:
+        - 50-update-routes.sh
+        - 55-update-npt.sh
+
+    - name: Enable services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - nftables
+        - systemd-networkd
+        - networkd-dispatcher
+        - mwan-update-routes
+        - mwan-update-npt
+        - mwan-agent
+
+    - name: Apply sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: false
+
+# --- LXC 100 (mwan-failover-test) ---
+- name: Configure LXC 100
+  hosts: mwan-failover-test
+  become: false
+  vars_files:
+    - ../inventory/group_vars/mwan_testbed_servers.yml
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+  tasks:
+    - name: Create directories
+      ansible.builtin.file:
+        path: /etc/mwan
+        state: directory
+        mode: "0755"
+
+    - name: Install nftables
+      ansible.builtin.apt:
+        name: nftables
+        state: present
+
+    - name: Deploy mwan binary
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        dest: /usr/local/bin/mwan
+        mode: "0755"
+
+    - name: Deploy agent config
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/testbed/lxc-100/config.toml"
+        dest: /etc/mwan/config.toml
+        mode: "0644"
+
+    - name: Deploy nftables
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/testbed/lxc-100/nftables.conf"
+        dest: /etc/nftables.conf
+        mode: "0644"
+
+    - name: Deploy mwan-agent service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
+        dest: /etc/systemd/system/mwan-agent.service
+        mode: "0644"
+
+    - name: Enable services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - nftables
+        - mwan-agent

@@ -9,8 +9,8 @@ Use this when translating a tested cutover2 procedure to production.
 | `mwan_vmid` | `950` | `113` | |
 | `mwan_mgmt_addr` | `3d06:bad:b01:200::950` | `3d06:bad:b01::113` | |
 | `opnsense.url` | `https://192.168.1.1` | TBD (query prod) | |
-| `opnsense.api_key` | in `.api-credentials` | Ansible Vault | |
-| `opnsense.api_secret` | in `.api-credentials` | Ansible Vault | |
+| `opnsense.api_key` | Ansible Vault (`vault_suburban_testbed_opnsense_api_key`) | Ansible Vault | |
+| `opnsense.api_secret` | Ansible Vault (`vault_suburban_testbed_opnsense_api_secret`) | Ansible Vault | |
 | `opnsense.gateway_names` | `["GW_WAN", "GW_WANv6"]` | TBD (query prod) | |
 | `opnsense.bgp.router_id` | `10.250.250.2` | `10.250.250.2` (same) | OPNsense WAN IP |
 | `opnsense.bgp.neighbors` (v4) | `.3`, `.4` | `.3`, `.4` (same) | VM + LXC IPv4 |

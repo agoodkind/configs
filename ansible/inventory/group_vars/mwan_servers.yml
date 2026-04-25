@@ -102,11 +102,15 @@ mwan_webpass_gateway: "136.25.91.241"
 # Internal link (to OPNsense)
 # ----------------------------------------------------------------------------
 
-mwan_internal_ipv4: "10.250.250.1/29"
-mwan_internal_ipv6: "3d06:bad:b01:fe::1/64"
+mwan_internal_ipv4: "10.250.250.3/29"
+mwan_internal_ipv6: "3d06:bad:b01:fe::3/64"
+
+# VIP (keepalived manages these on vrrp.51)
+mwan_vip_ipv6: "3d06:bad:b01:fe::1"
+mwan_vip_ipv4: "10.250.250.1/29"
 
 # MWAN IPv6 address on the MWAN↔OPNsense link (used as a /128 in some SNAT cases).
-mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::1"
+mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::3"
 
 # Internal prefix for NPT (LAN -> PD)
 # Keep LAN /64 on the bridge, but NPT the broader /60
@@ -132,7 +136,7 @@ mwan_opnsense_edge_ipv6: "3d06:bad:b01:fe::2"
 # - Source for NPT'd traffic from broader /60
 mwan_npt_att_prefix: "2600:1700:2f71:c80::/60"
 mwan_npt_webpass_prefix: "2604:5500:c271:be00::/60"
-mwan_npt_monkeybrains_prefix: "2607:f598:d3e8:3100::/60"
+mwan_npt_monkeybrains_prefix: "2607:f598:d3e8:4500::/60"
 
 # Delegated prefixes (DHCPv6-PD) - reference/visibility.
 # These are what the ISPs delegate; NPT targets above intentionally use /60s.
@@ -314,3 +318,51 @@ cloudflared_service_src: "{{ repo_root }}/mwan/services/cloudflared.service"
 # - syslog (tagged per script)
 # - /var/log/mwan-debug.log (JSON lines)
 mwan_debug_logging: true
+
+# ----------------------------------------------------------------------------
+# OPNsense (production, 3d06:bad:b01::1)
+# ----------------------------------------------------------------------------
+
+opnsense_addr: "3d06:bad:b01::1"
+opnsense_api_key: "{{ vault_prod_opnsense_api_key }}"
+opnsense_api_secret: "{{ vault_prod_opnsense_api_secret }}"
+opnsense_gateway_names:
+  - WAN_GW4
+  - WAN_GW6
+
+# OPNsense BGP (from OPNsense's perspective)
+opnsense_bgp_router_id: "10.250.250.2"
+opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
+opnsense_bgp_firewall_source_v6: "3d06:bad:b01:fe::/64"
+opnsense_bgp_neighbors:
+  - address: "10.250.250.3"
+    description: "VM113-IPv4"
+    preference: "primary"
+  - address: "3d06:bad:b01:fe::3"
+    description: "VM113-IPv6"
+    preference: "primary"
+  - address: "10.250.250.4"
+    description: "LXC116-IPv4"
+    preference: "backup"
+  - address: "3d06:bad:b01:fe::4"
+    description: "LXC116-IPv6"
+    preference: "backup"
+
+# ----------------------------------------------------------------------------
+# BGP (embedded GoBGP in agent)
+# ----------------------------------------------------------------------------
+
+bgp_asn: 4200000001
+bgp_router_id: "10.250.250.3"
+bgp_next_hop_v6: "3d06:bad:b01:fe::3"
+bgp_keepalive_seconds: 3
+bgp_hold_seconds: 9
+bgp_listen_port: 179
+bgp_neighbors:
+  - "10.250.250.2"
+bgp_neighbors_v6:
+  - "3d06:bad:b01:fe::2"
+bgp_announce_ipv4:
+  - "0.0.0.0/0"
+bgp_announce_ipv6:
+  - "::/0"
