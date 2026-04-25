@@ -15,8 +15,11 @@
 # - Called by: `networkd-dispatcher` on systemd-networkd state transitions.
 # - Calls into: `update-npt.sh`.
 
-IFACE="$1"
-STATE="$2"
+# networkd-dispatcher invokes hooks via subprocess.Popen(script, env=...) with NO
+# positional args; IFACE and STATE arrive in the environment. Manual/test invocations
+# usually pass positionals. Accept both so the hook works either way.
+IFACE="${IFACE:-${1:-}}"
+STATE="${STATE:-${2:-}}"
 
 # shellcheck disable=SC1091
 . /etc/mwan/mwan.env

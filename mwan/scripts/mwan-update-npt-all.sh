@@ -29,7 +29,9 @@ log() {
       prefix="traceId=${MWAN_TRACE_ID} "
   fi
   logger -t mwan-update-npt-all "${prefix}$*" || true
-  echo "[mwan-update-npt-all] ${prefix}$*"
+  # stderr only: discover_npt_prefix is captured via $(...), so log lines on
+  # stdout would be concatenated into the prefix value (boot-time bug 2026-04-24).
+  echo "[mwan-update-npt-all] ${prefix}$*" >&2
 }
 
 run_one() {
