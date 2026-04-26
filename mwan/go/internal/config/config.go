@@ -345,8 +345,10 @@ func validateOOB(cfg *Config) error {
 	if cfg.OOB.MbrainsIface == "" {
 		return errors.New("oob.mbrains_iface is required")
 	}
-	if cfg.OOB.OOBTableID <= 0 || cfg.OOB.OOBTableID > 252 {
-		return fmt.Errorf("oob.oob_table_id %d out of range (1-252)", cfg.OOB.OOBTableID)
+	// Modern Linux supports 32-bit routing table IDs. Reserve 0 (unspec) and
+	// the well-known IDs (253 local, 254 main, 255 default).
+	if cfg.OOB.OOBTableID <= 0 || cfg.OOB.OOBTableID >= 253 && cfg.OOB.OOBTableID <= 255 {
+		return fmt.Errorf("oob.oob_table_id %d invalid (must be > 0 and not in [253,255])", cfg.OOB.OOBTableID)
 	}
 	if cfg.OOB.OOBTableName == "" {
 		return errors.New("oob.oob_table_name is required")

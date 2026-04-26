@@ -209,6 +209,13 @@ func getTableDefault(
 		flag, "route", "show", "table", table, "default",
 	)
 	if err != nil {
+		// "FIB table does not exist" means the table has zero entries
+		// for this family. The kernel auto-creates the table the first
+		// time a route is added to it, so we treat this as "no default
+		// present" rather than a hard error.
+		if strings.Contains(strings.ToLower(err.Error()), "fib table does not exist") {
+			return nil, nil
+		}
 		return nil, err
 	}
 	for _, line := range strings.Split(string(out), "\n") {

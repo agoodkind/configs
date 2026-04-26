@@ -158,7 +158,11 @@ func parseRuleList(text string) ([]CurrentRule, error) {
 			switch fields[i] {
 			case "from":
 				if i+1 < len(fields) {
-					r.From = fields[i+1]
+					// "from all" is the implicit default; normalize to ""
+					// so a DesiredRule without an explicit From matches.
+					if fields[i+1] != "all" {
+						r.From = fields[i+1]
+					}
 					i++
 				}
 			case "uidrange":

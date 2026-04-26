@@ -14,10 +14,11 @@ func TestParseRuleList(t *testing.T) {
 32766:	from all lookup main
 `
 	want := []CurrentRule{
-		{Priority: 0, From: "all", Table: "local"},
-		{Priority: 5, From: "all", UIDRange: "997-997", Table: "oob"},
+		// "from all" normalizes to empty, matching DesiredRule.From="".
+		{Priority: 0, Table: "local"},
+		{Priority: 5, UIDRange: "997-997", Table: "oob"},
 		{Priority: 6, From: "3d06:bad:b01:ff::1", Table: "oob"},
-		{Priority: 32766, From: "all", Table: "main"},
+		{Priority: 32766, Table: "main"},
 	}
 	got, err := parseRuleList(in)
 	if err != nil {
@@ -29,16 +30,16 @@ func TestParseRuleList(t *testing.T) {
 }
 
 func TestRulesMatch(t *testing.T) {
-	cur := CurrentRule{Priority: 5, From: "all", UIDRange: "997-997", Table: "oob"}
+	cur := CurrentRule{Priority: 5, UIDRange: "997-997", Table: "oob"}
 	cases := []struct {
 		name string
 		want DesiredRule
 		ok   bool
 	}{
-		{"exact", DesiredRule{Priority: 5, From: "all", UIDRange: "997-997", Table: "oob"}, true},
-		{"diff prio", DesiredRule{Priority: 6, From: "all", UIDRange: "997-997", Table: "oob"}, false},
-		{"diff uid", DesiredRule{Priority: 5, From: "all", UIDRange: "996-996", Table: "oob"}, false},
-		{"diff table", DesiredRule{Priority: 5, From: "all", UIDRange: "997-997", Table: "main"}, false},
+		{"exact", DesiredRule{Priority: 5, UIDRange: "997-997", Table: "oob"}, true},
+		{"diff prio", DesiredRule{Priority: 6, UIDRange: "997-997", Table: "oob"}, false},
+		{"diff uid", DesiredRule{Priority: 5, UIDRange: "996-996", Table: "oob"}, false},
+		{"diff table", DesiredRule{Priority: 5, UIDRange: "997-997", Table: "main"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
