@@ -1,0 +1,19 @@
+# /etc/systemd/system/keepalived.service.d/wait-for-ipv6.conf
+#
+# keepalived 2.3.3 (and earlier) has a terminal-FAULT bug at boot:
+# if the parent interface for use_vmac doesn't have an IPv6 address yet,
+# keepalived enters FAULT and never recovers, even after the address arrives.
+# Upstream issue: https://github.com/acassen/keepalived/issues/2275 (closed without fix)
+# Boot timeline observed on testbed: networkd brings the interface UP at t=5.7s,
+# keepalived enters FAULT at t=5.9s, IPv6LL arrives at t=7.3s, FAULT persists forever.
+#
+# Workaround: block service start until the parent interface has an IPv6 link-local
+# address. The polling loop is bounded by TimeoutStartSec.
+
+[Service]
+# Wait until the parent interface has a NON-TENTATIVE IPv6 link-local address.
+# A tentative fe80:: appears immediately on link-up but DAD takes ~1s to complete.
+# Keepalived treats tentative as "no IPv6 address" and FAULTs. Match scope link
+# entries that lack the "tentative" flag.
+ExecStartPre=/bin/sh -c 'iface={{ mwan_internal_iface }}; for i in $(seq 1 60); do if ip -6 addr show "$iface" 2>/dev/null | grep "scope link" | grep -v tentative | grep -q "fe80::"; then exit 0; fi; sleep 0.5; done; echo "timeout waiting for non-tentative IPv6LL on $iface" >&2; exit 1'
+TimeoutStartSec=60s
