@@ -215,6 +215,7 @@ bgp_announce_ipv6:
 # ----------------------------------------------------------------------------
 
 mwan_watchdog_pve_token_secret: "{{ vault_suburban_testbed_pve_token_secret }}"
+mwan_watchdog_service_name: "mwan-watchdog-testbed"
 
 # ----------------------------------------------------------------------------
 # Failover LXC

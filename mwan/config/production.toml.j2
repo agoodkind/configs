@@ -36,6 +36,7 @@ name = "enwebpass0"
 name = "enmbrains0"
 
 [watchdog]
+service_name = "{{ mwan_watchdog_service_name | default('mwan-watchdog') }}"
 deploy_window_minutes = 30
 connectivity_timeout_seconds = 60
 check_interval_healthy_seconds = 30
