@@ -72,15 +72,14 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
 }
 
-// New is the Constructor. Accepts cfg["rule"] as a list of map[string]any.
+// New is the Constructor. Accepts cfg["rule"] as either []any (generic
+// toml decoders) or []map[string]any (BurntSushi/toml when the parent
+// map is typed map[string]any). Defensive on both shapes.
 func New(cfg map[string]any) (ifmgr.Module, error) {
-	rawRules, _ := cfg["rule"].([]any)
+	rawRules := normalizeTableList(cfg["rule"])
 	rules := make([]netif.DesiredRule, 0, len(rawRules))
-	for i, raw := range rawRules {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("policy_rules.rule[%d]: not a table", i)
-		}
+	for i, m := range rawRules {
+		_ = i
 		r := netif.DesiredRule{}
 		if v, ok := m["family"].(string); ok {
 			r.Family = v
@@ -109,6 +108,25 @@ func New(cfg map[string]any) (ifmgr.Module, error) {
 		rules = append(rules, r)
 	}
 	return &Module{cfg: Config{Rules: rules}}, nil
+}
+
+// normalizeTableList accepts the various shapes a TOML decoder might use
+// for "an array of tables" inside a generically-typed parent map, and
+// returns []map[string]any. Empty / unknown shape yields nil.
+func normalizeTableList(v any) []map[string]any {
+	switch x := v.(type) {
+	case []map[string]any:
+		return x
+	case []any:
+		out := make([]map[string]any, 0, len(x))
+		for _, e := range x {
+			if m, ok := e.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func init() { ifmgr.Register("policy_rules", New) }

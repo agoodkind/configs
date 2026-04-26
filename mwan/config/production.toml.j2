@@ -141,3 +141,58 @@ address = "{{ neighbor }}"
 [bgp.announce]
 ipv4 = {{ bgp_announce_ipv4 | to_json }}
 ipv6 = {{ bgp_announce_ipv6 | to_json }}
+
+# ============================================================================
+# ifmgr: vault interface manager (formerly mwan-oob).
+# ============================================================================
+# This block configures the mwan ifmgr daemon for the vault host. It
+# replaces the legacy [oob] section. The role "vault-oob" selects modules
+# policy_rules + oobv6 + oobv4 + ra_lost (see internal/ifmgr/roles.go).
+# ============================================================================
+
+[ifmgr]
+role = "vault-oob"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.mbrains]
+name = "mbrains"
+dhcp_v4 = true
+ra_solicit = true
+dhcp_initial_backoff = "5s"
+dhcp_max_backoff = "5m"
+
+[ifmgr.modules.oobv6]
+iface = "mbrains"
+oob_addr = "3d06:bad:b01:ff::1/128"
+oob_table_id = 500
+
+[ifmgr.modules.oobv4]
+iface = "mbrains"
+oob_table_id = 500
+
+[ifmgr.modules.ra_lost]
+iface = "mbrains"
+ra_lost_alert_after = "5m"
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 5
+uid_range = "997-997"
+table = "oob"
+table_id = 500
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 6
+from = "3d06:bad:b01:ff::1"
+table = "oob"
+table_id = 500
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet"
+priority = 5
+uid_range = "997-997"
+table = "oob"
+table_id = 500

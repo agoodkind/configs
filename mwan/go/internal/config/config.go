@@ -215,7 +215,6 @@ type Config struct {
 	Agent     AgentSection     `toml:"agent"`
 	BGP       BGPSection       `toml:"bgp"`
 	OPNsense  OPNsenseSection  `toml:"opnsense"`
-	OOB       OOBSection       `toml:"oob"`
 	IfMgr     IfMgrSection     `toml:"ifmgr"`
 }
 
@@ -242,26 +241,6 @@ type IfMgrIfaceSection struct {
 	RASolicit          bool   `toml:"ra_solicit"`
 	DHCPInitialBackoff string `toml:"dhcp_initial_backoff"`
 	DHCPMaxBackoff     string `toml:"dhcp_max_backoff"`
-}
-
-// OOBSection holds the mbrains/OOB management daemon configuration.
-type OOBSection struct {
-	MbrainsIface       string `toml:"mbrains_iface"`         // Interface name; e.g. "mbrains"
-	OOBTableID         int    `toml:"oob_table_id"`          // /etc/iproute2/rt_tables entry id; e.g. 500
-	OOBTableName       string `toml:"oob_table_name"`        // Table name as it appears in rt_tables; e.g. "oob"
-	OOBV6Addr          string `toml:"oob_v6_addr"`           // Static OOB v6 address (CIDR); e.g. "3d06:bad:b01:ff::1/128"
-	CloudflaredUID     int    `toml:"cloudflared_uid"`       // System uid for cloudflared-oob; rule selects this
-	OOBSrcRulePriority int    `toml:"oob_src_rule_priority"` // Priority of the from-:ff::1 rule
-	OOBUIDRulePriority int    `toml:"oob_uid_rule_priority"` // Priority of the uid 997 rule
-	ReconcileInterval  string `toml:"reconcile_interval"`    // e.g. "60s"
-	RASolicitTimeout   string `toml:"ra_solicit_timeout"`    // wait for RA after rdisc6
-	RALostAlertAfter   string `toml:"ra_lost_alert_after"`   // alert if RA-learned default missing this long
-	DHCPInitialBackoff string `toml:"dhcp_initial_backoff"`  // e.g. "5s"
-	DHCPMaxBackoff     string `toml:"dhcp_max_backoff"`      // e.g. "5m"
-	LogFile            string `toml:"log_file"`              // text log
-	JSONLogFile        string `toml:"json_log_file"`         // structured log
-	Debug              bool   `toml:"debug"`                 // enables LevelDebug everywhere
-	DryRun             bool   `toml:"dry_run"`               // log intents, do not apply
 }
 
 func defaultConfig() Config {
@@ -298,22 +277,6 @@ func defaultConfig() Config {
 			DeployFile: "/var/run/mwan-last-deploy", LogFile: "/var/log/mwan-agent.log",
 		},
 		BGP: BGPSection{},
-		OOB: OOBSection{
-			MbrainsIface:       "mbrains",
-			OOBTableID:         500,
-			OOBTableName:       "oob",
-			OOBV6Addr:          "3d06:bad:b01:ff::1/128",
-			CloudflaredUID:     997,
-			OOBSrcRulePriority: 6,
-			OOBUIDRulePriority: 5,
-			ReconcileInterval:  "60s",
-			RASolicitTimeout:   "10s",
-			RALostAlertAfter:   "5m",
-			DHCPInitialBackoff: "5s",
-			DHCPMaxBackoff:     "5m",
-			LogFile:            "/var/log/mwan-oob.log",
-			JSONLogFile:        "/var/log/mwan-oob.jsonl",
-		},
 	}
 }
 
@@ -368,8 +331,6 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 		return validateCutover(cfg, dryRun)
 	case "agent":
 		return validateAgent(cfg)
-	case "oob":
-		return validateOOB(cfg)
 	case "ifmgr":
 		return validateIfMgr(cfg)
 	}
@@ -405,47 +366,6 @@ func validateIfMgr(cfg *Config) error {
 			if _, err := time.ParseDuration(iface.DHCPMaxBackoff); err != nil {
 				return fmt.Errorf("ifmgr.iface.%s.dhcp_max_backoff %q: %w", name, iface.DHCPMaxBackoff, err)
 			}
-		}
-	}
-	return nil
-}
-
-func validateOOB(cfg *Config) error {
-	if cfg.OOB.MbrainsIface == "" {
-		return errors.New("oob.mbrains_iface is required")
-	}
-	// Modern Linux supports 32-bit routing table IDs. Reserve 0 (unspec) and
-	// the well-known IDs (253 local, 254 main, 255 default).
-	if cfg.OOB.OOBTableID <= 0 || cfg.OOB.OOBTableID >= 253 && cfg.OOB.OOBTableID <= 255 {
-		return fmt.Errorf("oob.oob_table_id %d invalid (must be > 0 and not in [253,255])", cfg.OOB.OOBTableID)
-	}
-	if cfg.OOB.OOBTableName == "" {
-		return errors.New("oob.oob_table_name is required")
-	}
-	if cfg.OOB.OOBV6Addr == "" {
-		return errors.New("oob.oob_v6_addr is required")
-	}
-	if cfg.OOB.CloudflaredUID <= 0 {
-		return errors.New("oob.cloudflared_uid must be > 0")
-	}
-	if cfg.OOB.OOBSrcRulePriority <= 0 || cfg.OOB.OOBUIDRulePriority <= 0 {
-		return errors.New("oob.oob_src_rule_priority and oob.oob_uid_rule_priority must be > 0")
-	}
-	if cfg.OOB.OOBSrcRulePriority == cfg.OOB.OOBUIDRulePriority {
-		return errors.New("oob.oob_src_rule_priority and oob.oob_uid_rule_priority must differ")
-	}
-	for name, val := range map[string]string{
-		"reconcile_interval":   cfg.OOB.ReconcileInterval,
-		"ra_solicit_timeout":   cfg.OOB.RASolicitTimeout,
-		"ra_lost_alert_after":  cfg.OOB.RALostAlertAfter,
-		"dhcp_initial_backoff": cfg.OOB.DHCPInitialBackoff,
-		"dhcp_max_backoff":     cfg.OOB.DHCPMaxBackoff,
-	} {
-		if val == "" {
-			return fmt.Errorf("oob.%s is required", name)
-		}
-		if _, err := time.ParseDuration(val); err != nil {
-			return fmt.Errorf("oob.%s: invalid duration %q: %w", name, val, err)
 		}
 	}
 	return nil
