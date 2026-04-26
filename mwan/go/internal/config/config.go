@@ -216,6 +216,32 @@ type Config struct {
 	BGP       BGPSection       `toml:"bgp"`
 	OPNsense  OPNsenseSection  `toml:"opnsense"`
 	OOB       OOBSection       `toml:"oob"`
+	IfMgr     IfMgrSection     `toml:"ifmgr"`
+}
+
+// IfMgrSection holds the mwan ifmgr daemon's role-pluggable configuration.
+// Each role is a list of modules (see internal/ifmgr/roles.go); each
+// module reads its own sub-config from Modules[name] (a raw map[string]any
+// passed verbatim to the module's Constructor).
+type IfMgrSection struct {
+	Role              string                            `toml:"role"`
+	ReconcileInterval string                            `toml:"reconcile_interval"`
+	LogFile           string                            `toml:"log_file"`
+	JSONLogFile       string                            `toml:"json_log_file"`
+	Debug             bool                              `toml:"debug"`
+	Iface             map[string]IfMgrIfaceSection      `toml:"iface"`
+	Modules           map[string]map[string]any         `toml:"modules"`
+}
+
+// IfMgrIfaceSection holds one [ifmgr.iface.<name>] sub-table. The map
+// key is the conventional iface name (mbrains, eth0, ...); Name overrides
+// it when set explicitly.
+type IfMgrIfaceSection struct {
+	Name               string `toml:"name"`
+	DHCPv4             bool   `toml:"dhcp_v4"`
+	RASolicit          bool   `toml:"ra_solicit"`
+	DHCPInitialBackoff string `toml:"dhcp_initial_backoff"`
+	DHCPMaxBackoff     string `toml:"dhcp_max_backoff"`
 }
 
 // OOBSection holds the mbrains/OOB management daemon configuration.
@@ -344,6 +370,42 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 		return validateAgent(cfg)
 	case "oob":
 		return validateOOB(cfg)
+	case "ifmgr":
+		return validateIfMgr(cfg)
+	}
+	return nil
+}
+
+// validateIfMgr sanity-checks the [ifmgr] section. Module-specific
+// validation lives in the module Constructor (Init); here we only catch
+// gross structural issues so the CLI fails fast instead of surfacing a
+// confusing runtime error from a module Init far down the call stack.
+func validateIfMgr(cfg *Config) error {
+	if cfg.IfMgr.Role == "" {
+		return errors.New("ifmgr.role is required (or pass --role on the CLI)")
+	}
+	if len(cfg.IfMgr.Iface) == 0 {
+		return errors.New("ifmgr: at least one [ifmgr.iface.<name>] section is required")
+	}
+	if len(cfg.IfMgr.Iface) > 1 {
+		return errors.New("ifmgr: multi-iface configurations are not yet supported")
+	}
+	if cfg.IfMgr.ReconcileInterval != "" {
+		if _, err := time.ParseDuration(cfg.IfMgr.ReconcileInterval); err != nil {
+			return fmt.Errorf("ifmgr.reconcile_interval %q: %w", cfg.IfMgr.ReconcileInterval, err)
+		}
+	}
+	for name, iface := range cfg.IfMgr.Iface {
+		if iface.DHCPInitialBackoff != "" {
+			if _, err := time.ParseDuration(iface.DHCPInitialBackoff); err != nil {
+				return fmt.Errorf("ifmgr.iface.%s.dhcp_initial_backoff %q: %w", name, iface.DHCPInitialBackoff, err)
+			}
+		}
+		if iface.DHCPMaxBackoff != "" {
+			if _, err := time.ParseDuration(iface.DHCPMaxBackoff); err != nil {
+				return fmt.Errorf("ifmgr.iface.%s.dhcp_max_backoff %q: %w", name, iface.DHCPMaxBackoff, err)
+			}
+		}
 	}
 	return nil
 }
