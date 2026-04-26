@@ -32,6 +32,8 @@ var subcommands = []struct {
 	{"deploy-agents", "Phase 1b+1c: deploy mwan binary + config to VM and LXC"},
 	{"verify-coexistence", "Phase 1d: check all BGP peers established, traffic still on static"},
 	{"switch-to-bgp", "Phase 2: disable OPNsense gateway, verify BGP takes over"},
+	{"arm-watchdog", "Post-cutover: probe connectivity, snapshot VM, start watchdog"},
+	{"disarm-watchdog", "Stop mwan-watchdog (use before maintenance, after issues)"},
 	{"test-failover", "Phase 3: kill VM agent, verify LXC takes over, restore"},
 	{"remove-keepalived", "Phase 4: stop/disable keepalived on VM and LXC"},
 	{"status", "Show current state of all components"},
@@ -80,6 +82,10 @@ func Run(cfg *config.Config) error {
 		return cmdVerifyCoexistence(ctx, log, cfg)
 	case "switch-to-bgp":
 		return cmdSwitchToBGP(ctx, log, cfg)
+	case "arm-watchdog":
+		return cmdArmWatchdog(ctx, log, cfg)
+	case "disarm-watchdog":
+		return cmdDisarmWatchdog(ctx, log, cfg)
 	case "test-failover":
 		return cmdTestFailover(ctx, log, cfg)
 	case "remove-keepalived":
@@ -416,8 +422,11 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	}
 
 	log.Info("=== Phase 2 complete: BGP is now the active routing source ===")
-	log.Info("rollback: mwan cutover2 rollback")
-	log.Info("next step: mwan cutover2 test-failover")
+	log.Info("watchdog is currently STOPPED (auto-rollback OFF) " +
+		"so it can't undo this cutover before you've verified it.")
+	log.Info("rollback: mwan cutover2 rollback (or qm rollback 101 <pre-cutover-snapshot>)")
+	log.Info("next step: VERIFY traffic, then run: mwan cutover2 arm-watchdog")
+	log.Info("optional: mwan cutover2 test-failover")
 	return nil
 }
 
