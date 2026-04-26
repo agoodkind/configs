@@ -8,8 +8,12 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/agoodkind/send-email v0.0.0-20260328050211-9169e66bce5d
 	github.com/insomniacslk/dhcp v0.0.0-20260407060928-11b94ed970f2
+	github.com/mdlayher/ndp v1.1.0
 	github.com/mdlayher/vsock v1.2.1
 	github.com/osrg/gobgp/v4 v4.4.0
+	github.com/vishvananda/netlink v1.3.1
+	golang.org/x/net v0.53.0
+	golang.org/x/sys v0.43.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -39,13 +43,10 @@ require (
 	github.com/spf13/viper v1.20.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/u-root/uio v0.0.0-20230220225925-ffce2a382923 // indirect
-	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
