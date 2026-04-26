@@ -28,9 +28,10 @@ type Module struct {
 	env *ifmgr.Env
 	log *slog.Logger
 
-	mu        sync.Mutex
-	lastResult map[string]bool // key=target string, val=last probe healthy?
-	lastRunAt time.Time
+	mu             sync.Mutex
+	lastResult     map[string]bool      // key=target string, val=last probe healthy?
+	lastRunAt      time.Time
+	firstFailedAt  map[string]time.Time // key=target string, val=first time it began failing in current run
 }
 
 // Config is the parsed [ifmgr.modules.connectivity_probe] sub-config.
@@ -60,10 +61,12 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 		return fmt.Errorf("connectivity_probe: at least one targets_v6 entry is required")
 	}
 	m.lastResult = map[string]bool{}
+	m.firstFailedAt = map[string]time.Time{}
 	return nil
 }
 
-// Reconcile implements ifmgr.Module. Runs each probe in series.
+// Reconcile implements ifmgr.Module. Runs each probe in series and updates
+// per-target failure-onset tracking used by the unhealthy_after debounce.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	probe := netif.NewV6Probe(m.cfg.Iface, log)
 	now := time.Now()
@@ -76,6 +79,17 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			"target", t.String(), "ok", ok, "err", err)
 	}
 	m.mu.Lock()
+	for tgt, ok := range results {
+		if ok {
+			delete(m.firstFailedAt, tgt)
+			continue
+		}
+		if _, already := m.firstFailedAt[tgt]; !already {
+			m.firstFailedAt[tgt] = now
+			log.Debug("connectivity_probe: target entered failing state",
+				"target", tgt, "unhealthy_after", m.cfg.UnhealthyAfter.String())
+		}
+	}
 	m.lastResult = results
 	m.lastRunAt = now
 	m.mu.Unlock()
@@ -93,11 +107,17 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 }
 
 // EvaluateAlerts implements ifmgr.Module. Aggregates per-target results
-// into a single iface-level alert: any failed target means unhealthy.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time) {
+// into a single iface-level alert: a target is debounced past UnhealthyAfter
+// before contributing. All failing targets must be past their debounce
+// before the alert fires. Resolution is immediate once all targets succeed.
+func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Time) {
 	m.mu.Lock()
 	results := m.lastResult
 	last := m.lastRunAt
+	firstFailed := make(map[string]time.Time, len(m.firstFailedAt))
+	for k, v := range m.firstFailedAt {
+		firstFailed[k] = v
+	}
 	m.mu.Unlock()
 
 	if last.IsZero() {
@@ -106,10 +126,22 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 
 	allOK := true
 	failingTargets := []string{}
+	pendingTargets := []string{}
 	for t, ok := range results {
-		if !ok {
-			allOK = false
+		if ok {
+			continue
+		}
+		allOK = false
+		first, tracked := firstFailed[t]
+		if !tracked {
+			// Defensive: treated as just-failed if we somehow missed Reconcile bookkeeping.
+			pendingTargets = append(pendingTargets, t)
+			continue
+		}
+		if now.Sub(first) >= m.cfg.UnhealthyAfter {
 			failingTargets = append(failingTargets, t)
+		} else {
+			pendingTargets = append(pendingTargets, t)
 		}
 	}
 
@@ -121,11 +153,20 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 		}
 		return
 	}
+	if len(failingTargets) == 0 {
+		// Some failures, none debounced past threshold yet. Stay quiet but trace it.
+		log.Debug("connectivity_probe: failures within debounce window",
+			"pending_targets", pendingTargets,
+			"unhealthy_after_s", int(m.cfg.UnhealthyAfter.Seconds()))
+		return
+	}
 	m.env.Alerts.Notify(now, slog.LevelWarn,
 		"connectivity-down", m.cfg.Iface,
 		"connectivity_probe: one or more upstream targets unreachable",
 		"failing_targets", failingTargets,
+		"pending_targets", pendingTargets,
 		"target_count", len(results),
+		"unhealthy_after_s", int(m.cfg.UnhealthyAfter.Seconds()),
 	)
 }
 
