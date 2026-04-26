@@ -290,6 +290,9 @@ mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
 
+# health-check.sh: how often to recheck systemd unit health (seconds)
+mwan_systemd_check_interval: 600
+
 # Sender identity (must be allowed by SMTP2GO/domain config)
 mwan_email_from: "alerts@goodkind.io"
 mwan_email_sender_name: "MWAN"

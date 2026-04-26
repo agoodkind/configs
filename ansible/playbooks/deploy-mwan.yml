@@ -171,19 +171,10 @@
     # WATCHDOG: Deploy auto-rollback monitor
     # ============================================================================
 
-    - name: Create watchdog config directory on Proxmox
-      delegate_to: vault
-      ansible.builtin.file:
-        path: /etc/mwan-watchdog
-        state: directory
-        mode: "0755"
-
-    - name: Deploy watchdog environment file to Proxmox
-      delegate_to: vault
-      ansible.builtin.template:
-        src: "{{ repo_root }}/proxmox/config/mwan-watchdog.env.j2"
-        dest: /etc/mwan-watchdog/watchdog.env
-        mode: "0600"
+    # NOTE: watchdog config now lives in /etc/mwan/config.toml (not in a
+    # separate env file). Secrets render via Ansible vault directly into
+    # the toml. The Go binary reads only the toml + a tiny set of optional
+    # env-var overrides. See mwan/config/mwan-watchdog.service.j2.
 
     - name: Deploy watchdog network topology config to Proxmox
       delegate_to: vault
@@ -235,8 +226,8 @@
     - name: Deploy mwan-watchdog service to Proxmox
       delegate_to: vault
       ansible.builtin.template:
-        src: "{{ repo_root }}/proxmox/services/mwan-watchdog.service.j2"
-        dest: /etc/systemd/system/mwan-watchdog.service
+        src: "{{ repo_root }}/config/mwan-watchdog.service.j2"
+        dest: /etc/systemd/system/{{ mwan_watchdog_service_name | default('mwan-watchdog') }}.service
         mode: "0644"
 
     - name: Enable and restart mwan-watchdog service on Proxmox

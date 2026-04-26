@@ -100,6 +100,8 @@ gateway_names = {{ opnsense_gateway_names | to_json }}
 
 [opnsense.bgp]
 router_id = "{{ opnsense_bgp_router_id }}"
+firewall_source_v4 = "{{ opnsense_bgp_firewall_source_v4 }}"
+firewall_source_v6 = "{{ opnsense_bgp_firewall_source_v6 }}"
 
 {% for neighbor in opnsense_bgp_neighbors %}
 [[opnsense.bgp.neighbors]]

@@ -114,6 +114,9 @@ mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_from: "mwan-testbed@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
+
+# health-check.sh: how often to recheck systemd unit health (seconds)
+mwan_systemd_check_interval: 600
 mwan_email_sender_name: "MWAN-TESTBED"
 mwan_smtp2go_api_key: "{{ smtp2go_api_key }}"
 mwan_debug_logging: true
@@ -216,6 +219,7 @@ bgp_announce_ipv6:
 
 mwan_watchdog_pve_token_secret: "{{ vault_suburban_testbed_pve_token_secret }}"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
+mwan_watchdog_unit_description: "MWAN Testbed Watchdog"
 
 # ----------------------------------------------------------------------------
 # Failover LXC
