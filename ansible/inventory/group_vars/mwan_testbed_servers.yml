@@ -163,7 +163,10 @@ mwan_health_exclude_wans: ["monkeybrains"]
 # OPNsense (testbed VM 101)
 # ----------------------------------------------------------------------------
 
-opnsense_addr: "192.168.1.1"
+# Use IPv6 LAN address so the testbed exercises the same URL-parsing code
+# path as production (where opnsense_addr is an IPv6 literal). Suburban
+# has a global v6 on vmbr3 (3d06:bad:b01:211::5/64) reaching OPNsense.
+opnsense_addr: "3d06:bad:b01:211::1"
 opnsense_api_key: "{{ vault_suburban_testbed_opnsense_api_key }}"
 opnsense_api_secret: "{{ vault_suburban_testbed_opnsense_api_secret }}"
 opnsense_gateway_names:

@@ -86,7 +86,12 @@ verify_timeout_sec = 30
 boot_wait_sec = 35
 
 [opnsense]
-url = "https://{{ opnsense_addr }}"
+# Brackets are required by RFC 3986 when a URL host is an IPv6 literal.
+# This conditional brackets only when opnsense_addr looks like IPv6
+# (contains a colon AND no port, AND isn't already bracketed). The Go
+# client also normalizes this, but rendering it correctly here keeps the
+# config readable.
+url = "https://{% if ':' in opnsense_addr and not opnsense_addr.startswith('[') %}[{{ opnsense_addr }}]{% else %}{{ opnsense_addr }}{% endif %}"
 api_key = "{{ opnsense_api_key }}"
 api_secret = "{{ opnsense_api_secret }}"
 insecure = true

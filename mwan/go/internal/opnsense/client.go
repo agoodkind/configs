@@ -36,10 +36,49 @@ func New(cfg Config, log *slog.Logger) *Client {
 	}
 	return &Client{
 		http: &http.Client{Transport: transport},
-		base: strings.TrimRight(cfg.URL, "/"),
+		base: normalizeBaseURL(cfg.URL),
 		auth: base64.StdEncoding.EncodeToString([]byte(cfg.APIKey + ":" + cfg.APISecret)),
 		log:  log,
 	}
+}
+
+// normalizeBaseURL trims trailing slashes and brackets bare IPv6 hosts.
+// Go's net/url.Parse rejects "https://3d06:bad:b01::1/api" because it
+// cannot tell the embedded colons apart from a port number. RFC 3986
+// requires IPv6 literals in URLs to be enclosed in [].
+//
+// Accepts any of these and returns a parse-safe form:
+//
+//	https://3d06:bad:b01::1            -> https://[3d06:bad:b01::1]
+//	https://3d06:bad:b01::1/           -> https://[3d06:bad:b01::1]
+//	https://[3d06:bad:b01::1]          -> https://[3d06:bad:b01::1]
+//	https://192.168.1.1                -> https://192.168.1.1
+//	https://opnsense.example.com:8443  -> https://opnsense.example.com:8443
+func normalizeBaseURL(raw string) string {
+	u := strings.TrimRight(raw, "/")
+	scheme := ""
+	rest := u
+	if idx := strings.Index(u, "://"); idx >= 0 {
+		scheme = u[:idx+3]
+		rest = u[idx+3:]
+	}
+	// Split host[:port][/path] off rest.
+	hostPort := rest
+	tail := ""
+	if slash := strings.Index(rest, "/"); slash >= 0 {
+		hostPort = rest[:slash]
+		tail = rest[slash:]
+	}
+	// If already bracketed, leave it alone.
+	if strings.HasPrefix(hostPort, "[") {
+		return scheme + hostPort + tail
+	}
+	// IPv6 literals contain at least two colons (e.g. ::1, fe80::1).
+	// IPv4:port contains exactly one colon and the part after is digits.
+	if strings.Count(hostPort, ":") < 2 {
+		return scheme + hostPort + tail
+	}
+	return scheme + "[" + hostPort + "]" + tail
 }
 
 // ---------------------------------------------------------------------------
