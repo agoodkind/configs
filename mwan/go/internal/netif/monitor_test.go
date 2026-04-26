@@ -2,96 +2,131 @@
 
 package netif
 
-import "testing"
+import (
+	"net"
+	"testing"
 
-func TestParseMonitorLine(t *testing.T) {
-	cases := []struct {
-		name      string
-		in        string
-		family    string
-		iface     string
-		wantKind  EventKind
-		wantDest  string
-		wantVia   string
-		wantCIDR  string
-	}{
-		{
-			name:     "v6 default add",
-			in:       "default via fe80::f61e:57ff:fe06:4983 dev mbrains proto ra metric 1024 pref high",
-			family:   "inet6", iface: "mbrains",
-			wantKind: EvRouteAdded, wantDest: "default", wantVia: "fe80::f61e:57ff:fe06:4983",
-		},
-		{
-			name:     "v6 default delete",
-			in:       "Deleted default via fe80::f61e:57ff:fe06:4983 dev mbrains proto ra metric 1024 pref high",
-			family:   "inet6", iface: "mbrains",
-			wantKind: EvRouteDeleted, wantDest: "default", wantVia: "fe80::f61e:57ff:fe06:4983",
-		},
-		{
-			name:     "default on different iface ignored",
-			in:       "default via 10.250.0.1 dev vmbr0",
-			family:   "inet", iface: "mbrains",
-			wantKind: EvUnknown,
-		},
-		{
-			name:     "v4 addr add",
-			in:       "3: mbrains    inet 158.247.70.13/26 brd 158.247.70.63 scope global mbrains",
-			family:   "inet", iface: "mbrains",
-			wantKind: EvAddrAdded, wantCIDR: "158.247.70.13/26",
-		},
-		{
-			name:     "v6 SLAAC addr add",
-			in:       "10: mbrains    inet6 2607:f598:d3e0:131:6662:66ff:fe23:f982/64 scope global dynamic mngtmpaddr ",
-			family:   "inet6", iface: "mbrains",
-			wantKind: EvAddrAdded, wantCIDR: "2607:f598:d3e0:131:6662:66ff:fe23:f982/64",
-		},
-		{
-			name:     "addr delete",
-			in:       "Deleted 3: mbrains    inet 158.247.70.13/26 brd 158.247.70.63 scope global mbrains",
-			family:   "inet", iface: "mbrains",
-			wantKind: EvAddrDeleted, wantCIDR: "158.247.70.13/26",
-		},
-		{
-			name:     "addr on different iface ignored",
-			in:       "5: vmbr0    inet 10.250.0.254/24 scope global vmbr0",
-			family:   "inet", iface: "mbrains",
-			wantKind: EvUnknown,
-		},
-		{
-			name:     "junk line",
-			in:       "what is this",
-			family:   "inet6", iface: "mbrains",
-			wantKind: EvUnknown,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := parseMonitorLine(tc.in, tc.family, tc.iface)
-			if got.Kind != tc.wantKind {
-				t.Fatalf("kind got %s want %s; raw=%q",
-					got.Kind, tc.wantKind, tc.in)
-			}
-			if got.Dest != tc.wantDest {
-				t.Errorf("dest got %q want %q", got.Dest, tc.wantDest)
-			}
-			if got.Via != tc.wantVia {
-				t.Errorf("via got %q want %q", got.Via, tc.wantVia)
-			}
-			if got.CIDR != tc.wantCIDR {
-				t.Errorf("cidr got %q want %q", got.CIDR, tc.wantCIDR)
-			}
-		})
+	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
+)
+
+// Note: TestParseMonitorLine and TestIsAddrLine were removed when monitor.go
+// switched from `ip monitor` subprocess parsing to netlink subscribe APIs.
+// The string parser and isAddrLine helper no longer exist. The replacement
+// path is exercised by integration tests on a real Linux host (testbed
+// LXC 100, prod vault) where the netlink subscription is fed by the live
+// kernel.
+
+func newTestMonitor(iface string, ifIndex int) *Monitor {
+	return &Monitor{
+		cfg:     MonitorConfig{Iface: iface},
+		ifIndex: ifIndex,
 	}
 }
 
-func TestIsAddrLine(t *testing.T) {
-	if !isAddrLine("3: mbrains") {
-		t.Fatal("expected addr line")
+func TestAddrUpdateToEventAdd(t *testing.T) {
+	m := newTestMonitor("eth0", 7)
+	ip := net.ParseIP("2001:db8::1")
+	upd := netlink.AddrUpdate{
+		LinkIndex:   7,
+		NewAddr:     true,
+		LinkAddress: net.IPNet{IP: ip, Mask: net.CIDRMask(64, 128)},
 	}
-	if isAddrLine("default via foo") {
-		t.Fatal("default should not be addr line")
+	got := m.addrUpdateToEvent(upd)
+	if got.Kind != EvAddrAdded {
+		t.Fatalf("kind got %s, want %s", got.Kind, EvAddrAdded)
 	}
-	if isAddrLine("") {
-		t.Fatal("empty should not be addr line")
+	if got.Family != "inet6" {
+		t.Errorf("family got %q want inet6", got.Family)
+	}
+	if got.CIDR != "2001:db8::1/64" {
+		t.Errorf("cidr got %q want 2001:db8::1/64", got.CIDR)
+	}
+}
+
+func TestAddrUpdateToEventOtherIfaceFiltered(t *testing.T) {
+	m := newTestMonitor("eth0", 7)
+	upd := netlink.AddrUpdate{
+		LinkIndex:   99,
+		NewAddr:     true,
+		LinkAddress: net.IPNet{IP: net.ParseIP("192.0.2.1"), Mask: net.CIDRMask(24, 32)},
+	}
+	if got := m.addrUpdateToEvent(upd); got.Kind != EvUnknown {
+		t.Fatalf("expected EvUnknown for foreign iface, got %s", got.Kind)
+	}
+}
+
+func TestRouteUpdateToEventDefaultV4(t *testing.T) {
+	m := newTestMonitor("eth0", 7)
+	upd := netlink.RouteUpdate{
+		Type: unix.RTM_NEWROUTE,
+		Route: netlink.Route{
+			LinkIndex: 7,
+			Family:    unix.AF_INET,
+			Gw:        net.ParseIP("192.0.2.1"),
+			// Dst nil = default
+		},
+	}
+	got := m.routeUpdateToEvent(upd)
+	if got.Kind != EvRouteAdded {
+		t.Fatalf("kind got %s, want %s", got.Kind, EvRouteAdded)
+	}
+	if got.Family != "inet" {
+		t.Errorf("family got %q want inet", got.Family)
+	}
+	if got.Via != "192.0.2.1" {
+		t.Errorf("via got %q want 192.0.2.1", got.Via)
+	}
+}
+
+func TestRouteUpdateToEventNonDefaultIgnored(t *testing.T) {
+	m := newTestMonitor("eth0", 7)
+	_, dst, _ := net.ParseCIDR("192.0.2.0/24")
+	upd := netlink.RouteUpdate{
+		Type: unix.RTM_NEWROUTE,
+		Route: netlink.Route{
+			LinkIndex: 7,
+			Family:    unix.AF_INET,
+			Dst:       dst,
+		},
+	}
+	if got := m.routeUpdateToEvent(upd); got.Kind != EvUnknown {
+		t.Fatalf("expected EvUnknown for non-default, got %s", got.Kind)
+	}
+}
+
+func TestRouteUpdateDeleteV6(t *testing.T) {
+	m := newTestMonitor("eth0", 7)
+	upd := netlink.RouteUpdate{
+		Type: unix.RTM_DELROUTE,
+		Route: netlink.Route{
+			LinkIndex: 7,
+			Family:    unix.AF_INET6,
+			Gw:        net.ParseIP("fe80::1"),
+		},
+	}
+	got := m.routeUpdateToEvent(upd)
+	if got.Kind != EvRouteDeleted {
+		t.Fatalf("kind got %s want %s", got.Kind, EvRouteDeleted)
+	}
+	if got.Family != "inet6" {
+		t.Errorf("family got %q want inet6", got.Family)
+	}
+}
+
+func TestEventKindString(t *testing.T) {
+	cases := map[EventKind]string{
+		EvUnknown:      "unknown",
+		EvRouteAdded:   "route-added",
+		EvRouteDeleted: "route-deleted",
+		EvAddrAdded:    "addr-added",
+		EvAddrDeleted:  "addr-deleted",
+		EvLinkUp:       "link-up",
+		EvLinkDown:     "link-down",
+	}
+	for k, want := range cases {
+		if got := k.String(); got != want {
+			t.Errorf("EventKind(%d).String() = %q, want %q", k, got, want)
+		}
 	}
 }
