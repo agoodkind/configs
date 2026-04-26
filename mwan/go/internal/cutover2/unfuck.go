@@ -87,8 +87,8 @@ func cmdUnfuck(ctx context.Context, log *slog.Logger, cfg *config.Config) error 
 	restoreGatewayV6(ctx, log, cfg)
 
 	// Step 8: Restart watchdog (may have been stopped by switch-to-bgp)
-	log.Info("unfuck: restarting mwan-watchdog")
-	startWatchdog(log)
+	log.Info("unfuck: restarting mwan-watchdog", "service", cfg.Watchdog.ServiceName)
+	startWatchdog(log, cfg.Watchdog.ServiceName)
 
 	// Step 8: Verify connectivity
 	log.Info("unfuck: testing connectivity...")
@@ -188,23 +188,35 @@ func opnsenseSSH(ctx context.Context, log *slog.Logger, host, cmd string) error 
 }
 
 
-// stopWatchdog stops the mwan-watchdog service on the local hypervisor.
-func stopWatchdog(log *slog.Logger) {
-	cmd := exec.Command("systemctl", "stop", "mwan-watchdog")
+// stopWatchdog stops the mwan-watchdog systemd service on the local
+// hypervisor. serviceName is the unit name (e.g. "mwan-watchdog" on prod,
+// "mwan-watchdog-testbed" on suburban). Empty defaults to "mwan-watchdog".
+func stopWatchdog(log *slog.Logger, serviceName string) {
+	if serviceName == "" {
+		serviceName = "mwan-watchdog"
+	}
+	cmd := exec.Command("systemctl", "stop", serviceName)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Warn("failed to stop watchdog (may not be running)", "err", err, "output", string(out))
+		log.Warn("failed to stop watchdog (may not be running)",
+			"service", serviceName, "err", err, "output", string(out))
 	} else {
-		log.Info("watchdog stopped")
+		log.Info("watchdog stopped", "service", serviceName)
 	}
 }
 
-// startWatchdog starts the mwan-watchdog service on the local hypervisor.
-func startWatchdog(log *slog.Logger) {
-	cmd := exec.Command("systemctl", "start", "mwan-watchdog")
+// startWatchdog starts the mwan-watchdog systemd service on the local
+// hypervisor. Best-effort; logs warnings on failure but does not return
+// an error (used in unfuck recovery where we keep going regardless).
+func startWatchdog(log *slog.Logger, serviceName string) {
+	if serviceName == "" {
+		serviceName = "mwan-watchdog"
+	}
+	cmd := exec.Command("systemctl", "start", serviceName)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Warn("failed to start watchdog", "err", err, "output", string(out))
+		log.Warn("failed to start watchdog",
+			"service", serviceName, "err", err, "output", string(out))
 	} else {
-		log.Info("watchdog started")
+		log.Info("watchdog started", "service", serviceName)
 	}
 }
 

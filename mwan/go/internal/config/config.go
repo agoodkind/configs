@@ -79,6 +79,12 @@ type WatchdogSection struct {
 	JSONLogFile       string `toml:"json_log_file"`
 	RollbackStateFile string `toml:"rollback_state_file"`
 	RollbackLockFile  string `toml:"rollback_lock_file"`
+
+	// ServiceName is the systemd unit name that the cutover2 arm-watchdog
+	// and disarm-watchdog subcommands target. Defaults to "mwan-watchdog"
+	// on production. Testbed sets this to "mwan-watchdog-testbed" so the
+	// same binary works against the per-environment unit.
+	ServiceName string `toml:"service_name"`
 }
 
 // Duration helper methods for WatchdogSection.
@@ -253,6 +259,7 @@ func defaultConfig() Config {
 			LogFile:           "/var/log/mwan-watchdog.log", JSONLogFile: "/var/log/mwan-watchdog.jsonl",
 			RollbackStateFile: "/run/mwan-rollback.state",
 			RollbackLockFile:  "/run/mwan-watchdog-rollback.lock",
+			ServiceName:       "mwan-watchdog",
 		},
 		Cutover: CutoverSection{
 			VRID: 51, MasterPriority: 150, BackupPriority: 50, AdvertInterval: 1,

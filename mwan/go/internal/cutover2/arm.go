@@ -55,14 +55,18 @@ func cmdArmWatchdog(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 
 	// 3. Start mwan-watchdog. It will treat the just-taken snapshot as
 	//    the new known-good baseline.
-	log.Info("arm-watchdog: starting mwan-watchdog")
-	if err := startWatchdogChecked(log); err != nil {
+	svc := cfg.Watchdog.ServiceName
+	if svc == "" {
+		svc = "mwan-watchdog"
+	}
+	log.Info("arm-watchdog: starting watchdog", "service", svc)
+	if err := startWatchdogChecked(log, svc); err != nil {
 		return fmt.Errorf("start watchdog: %w", err)
 	}
 
 	// 4. Verify the service stayed running for a few seconds (catches
 	//    a config/startup error that would crash watchdog immediately).
-	if err := verifyWatchdogActive(ctx, log); err != nil {
+	if err := verifyWatchdogActive(ctx, log, svc); err != nil {
 		return fmt.Errorf("verify watchdog active: %w", err)
 	}
 
@@ -77,9 +81,9 @@ func cmdArmWatchdog(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 // or before any subsequent maintenance that would otherwise trigger
 // auto-rollback (a second cutover, OPNsense reboot, OPNsense API
 // outage, etc.).
-func cmdDisarmWatchdog(_ context.Context, log *slog.Logger, _ *config.Config) error {
-	log.Info("=== Disarming watchdog ===")
-	stopWatchdog(log)
+func cmdDisarmWatchdog(_ context.Context, log *slog.Logger, cfg *config.Config) error {
+	log.Info("=== Disarming watchdog ===", "service", cfg.Watchdog.ServiceName)
+	stopWatchdog(log, cfg.Watchdog.ServiceName)
 	log.Info("=== disarm-watchdog complete: auto-rollback is OFF ===")
 	log.Info("re-arm: mwan cutover2 arm-watchdog")
 	return nil
@@ -126,18 +130,18 @@ func pingOrFail(
 	return err
 }
 
-// startWatchdogChecked runs `systemctl start mwan-watchdog` and returns
+// startWatchdogChecked runs `systemctl start <serviceName>` and returns
 // an error on failure (unlike startWatchdog in unfuck.go which logs and
 // swallows errors as best-effort recovery). Used by arm-watchdog where
 // failure is meaningful.
-func startWatchdogChecked(log *slog.Logger) error {
-	cmd := exec.Command("systemctl", "start", "mwan-watchdog")
+func startWatchdogChecked(log *slog.Logger, serviceName string) error {
+	cmd := exec.Command("systemctl", "start", serviceName)
 	out, err := cmd.CombinedOutput()
-	log.Debug("arm-watchdog: systemctl start mwan-watchdog",
-		"err", err, "output", string(out))
+	log.Debug("arm-watchdog: systemctl start",
+		"service", serviceName, "err", err, "output", string(out))
 	if err != nil {
-		return fmt.Errorf("systemctl start mwan-watchdog: %w (output: %s)",
-			err, string(out))
+		return fmt.Errorf("systemctl start %s: %w (output: %s)",
+			serviceName, err, string(out))
 	}
 	return nil
 }
@@ -145,7 +149,7 @@ func startWatchdogChecked(log *slog.Logger) error {
 // verifyWatchdogActive sleeps briefly then confirms the watchdog
 // service is in 'active' state. Catches the common "service starts
 // but immediately exits with bad config" failure mode.
-func verifyWatchdogActive(ctx context.Context, log *slog.Logger) error {
+func verifyWatchdogActive(ctx context.Context, log *slog.Logger, serviceName string) error {
 	const settleDelay = 3 * time.Second
 	t := time.NewTimer(settleDelay)
 	defer t.Stop()
@@ -155,14 +159,16 @@ func verifyWatchdogActive(ctx context.Context, log *slog.Logger) error {
 	case <-t.C:
 	}
 
-	cmd := exec.Command("systemctl", "is-active", "mwan-watchdog")
+	cmd := exec.Command("systemctl", "is-active", serviceName)
 	out, err := cmd.CombinedOutput()
 	state := string(out)
-	log.Debug("arm-watchdog: systemctl is-active mwan-watchdog",
-		"state", state, "err", err)
+	log.Debug("arm-watchdog: systemctl is-active",
+		"service", serviceName, "state", state, "err", err)
 	if err != nil {
-		return fmt.Errorf("watchdog not active: %s (err: %w)", state, err)
+		return fmt.Errorf("watchdog %s not active: %s (err: %w)",
+			serviceName, state, err)
 	}
-	log.Info("arm-watchdog: watchdog is active and healthy")
+	log.Info("arm-watchdog: watchdog is active and healthy",
+		"service", serviceName)
 	return nil
 }

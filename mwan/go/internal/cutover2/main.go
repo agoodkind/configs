@@ -312,8 +312,9 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	}
 
 	// Stop watchdog: it could trigger VM snapshot rollback during the cutover gap.
-	log.Info("stopping mwan-watchdog on hypervisor...")
-	stopWatchdog(log)
+	log.Info("stopping mwan-watchdog on hypervisor...",
+		"service", cfg.Watchdog.ServiceName)
+	stopWatchdog(log, cfg.Watchdog.ServiceName)
 
 	// Notify watchdog timestamp in case it restarts.
 	writeDeployTimestamp(log, cfg)
