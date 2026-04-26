@@ -20,11 +20,18 @@ var roleModules = map[string][]string{
 		"oobv4",
 		"ra_lost",
 	},
+	// lxc-failover-backup is the iface-monitor role for prod LXC 116 and
+	// testbed LXC 117. mainv4 is included so that when dhcp_v4 is enabled
+	// for the iface, the daemon's DHCP client also drives kernel addr and
+	// the main-table default route. If dhcp_v4 is disabled, mainv4's Init
+	// returns an error and the daemon falls back to the no-mainv4 modules
+	// (this is intentional; prod LXC 116 today runs without mainv4).
 	"lxc-failover-backup": {
 		"slaac_health",
 		"bridge_probe",
 		"connectivity_probe",
 		"ra_lost",
+		"mainv4",
 	},
 }
 

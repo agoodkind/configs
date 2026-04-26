@@ -22,6 +22,7 @@ import (
 	// with the ifmgr registry. Roles are resolved by name in roles.go.
 	_ "goodkind.io/mwan/internal/ifmgr/modules/bridgeprobe"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/connprobe"
+	_ "goodkind.io/mwan/internal/ifmgr/modules/mainv4"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/oobv4"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/oobv6"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/policyrules"

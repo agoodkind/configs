@@ -156,13 +156,16 @@ func (m *Monitor) subscribeAddr(ctx context.Context) {
 	log := m.log.With("goroutine", "subscribe-addr")
 	log.Debug("monitor: subscribe-addr starting")
 
-	ch := make(chan netlink.AddrUpdate, 32)
+	ch := make(chan netlink.AddrUpdate, 64)
 	if err := netlink.AddrSubscribeWithOptions(ch, m.done, netlink.AddrSubscribeOptions{
 		ErrorCallback: func(err error) {
 			log.Warn("monitor: AddrSubscribe error", "err", err)
 		},
-		// ListExisting=false: we only want change events, not the initial
-		// snapshot. The daemon's reconcile loop handles "what's there now".
+		// ListExisting=true: emit synthetic events for existing addresses
+		// at subscribe time. Modules track first-observed timestamps via
+		// OnKernelEvent, so they need to see what was already on the iface
+		// when the daemon started, not just deltas going forward.
+		ListExisting: true,
 	}); err != nil {
 		log.Error("monitor: AddrSubscribeWithOptions failed; goroutine exiting",
 			"err", err)
@@ -195,11 +198,15 @@ func (m *Monitor) subscribeRoute(ctx context.Context) {
 	log := m.log.With("goroutine", "subscribe-route")
 	log.Debug("monitor: subscribe-route starting")
 
-	ch := make(chan netlink.RouteUpdate, 32)
+	ch := make(chan netlink.RouteUpdate, 64)
 	if err := netlink.RouteSubscribeWithOptions(ch, m.done, netlink.RouteSubscribeOptions{
 		ErrorCallback: func(err error) {
 			log.Warn("monitor: RouteSubscribe error", "err", err)
 		},
+		// ListExisting=true: emit synthetic events for existing routes so
+		// modules see RA-installed defaults that arrived before the daemon
+		// started. Otherwise lastRA stays zero and bridge_probe never fires.
+		ListExisting: true,
 	}); err != nil {
 		log.Error("monitor: RouteSubscribeWithOptions failed; goroutine exiting",
 			"err", err)
@@ -235,11 +242,15 @@ func (m *Monitor) subscribeLink(ctx context.Context) {
 	log := m.log.With("goroutine", "subscribe-link")
 	log.Debug("monitor: subscribe-link starting")
 
-	ch := make(chan netlink.LinkUpdate, 32)
+	ch := make(chan netlink.LinkUpdate, 64)
 	if err := netlink.LinkSubscribeWithOptions(ch, m.done, netlink.LinkSubscribeOptions{
 		ErrorCallback: func(err error) {
 			log.Warn("monitor: LinkSubscribe error", "err", err)
 		},
+		// ListExisting=true: emit a synthetic LinkUpdate for the watched
+		// iface so EvLinkUp fires once at startup if the iface is already
+		// up. bridge_probe sets lastLinkUp from this event.
+		ListExisting: true,
 	}); err != nil {
 		log.Error("monitor: LinkSubscribeWithOptions failed; goroutine exiting",
 			"err", err)
