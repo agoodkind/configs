@@ -4,39 +4,44 @@ package netif
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
-const ipRuleListTimeout = 5 * time.Second
-const ipRuleMutateTimeout = 5 * time.Second
-
 // DesiredRule describes one ip rule entry the daemon wants to keep present.
-// Matches what `ip -6 rule add ...` accepts. Only the fields the daemon
+// Matches what `ip [-6] rule add ...` accepts. Only the fields the daemon
 // actively manages are modeled; foreign rules are left alone.
 type DesiredRule struct {
 	Family   string // "inet" or "inet6"; empty defaults to "inet6"
 	Priority int    // numeric priority (0..32766)
-	From     string // source selector; empty means no "from" clause
-	UIDRange string // "lo-hi" or "u-u"; empty means no "uidrange" clause
-	Table    string // table name (e.g. "oob"); required
+	From     string // source selector (CIDR or single addr); empty == "all"
+	UIDRange string // "lo-hi" or "u-u"; empty means no uidrange clause
+	Table    string // table name (kept for log readability; not authoritative)
+	TableID  int    // numeric routing table ID; required (was Table string)
 }
 
-// CurrentRule is one parsed entry from `ip [-6] rule show`.
+// CurrentRule is one rule observed via netlink.RuleList. Mirrors the fields
+// the daemon manages so equality checks are unambiguous.
 type CurrentRule struct {
 	Priority int
 	From     string
 	UIDRange string
-	Table    string
+	Table    string // historical name, parsed reverse-mapped from TableID where possible
+	TableID  int
 }
 
 // ReconcileRules ensures every rule in desired is present, and removes
-// any rule the daemon previously installed (matching priority+table+family)
-// that no longer matches. Foreign rules at unrelated priorities are
-// preserved.
+// any rule the daemon previously installed (matching priority+family) that
+// no longer matches. Foreign rules at unrelated priorities are preserved.
 //
 // Strategy:
 //   - For each family (inet/inet6) seen in desired, list current rules.
@@ -44,12 +49,13 @@ type CurrentRule struct {
 //   - If a rule exists at the same priority but doesn't match: del + add.
 //   - If no rule at that priority: add.
 //
-// All actions are logged at DEBUG with full diff context.
+// All actions log at DEBUG with full diff context.
 func ReconcileRules(
-	ctx context.Context, runner IPRunner, log *slog.Logger,
+	ctx context.Context, _ IPRunner, log *slog.Logger,
 	desired []DesiredRule,
 ) error {
 	log = log.With("component", "rules")
+	log.Debug("rules: reconcile entry", "desired_count", len(desired))
 
 	// Group desired by family so we list each family at most once.
 	byFamily := map[string][]DesiredRule{}
@@ -62,13 +68,15 @@ func ReconcileRules(
 	}
 
 	for fam, want := range byFamily {
-		log.Debug("rules: starting reconcile", "family", fam, "want_count", len(want))
-		current, err := listRules(ctx, runner, fam)
+		flog := log.With("family", fam)
+		flog.Debug("rules: starting family reconcile", "want_count", len(want))
+
+		current, err := listRulesNetlink(flog, fam)
 		if err != nil {
 			return fmt.Errorf("list %s rules: %w", fam, err)
 		}
-		log.Debug("rules: current snapshot", "family", fam, "count", len(current),
-			"rules", current)
+		flog.Debug("rules: current snapshot",
+			"count", len(current), "rules", current)
 
 		byPrio := map[int]CurrentRule{}
 		for _, c := range current {
@@ -79,139 +87,240 @@ func ReconcileRules(
 			cur, exists := byPrio[w.Priority]
 			matches := exists && rulesMatch(cur, w)
 			if matches {
-				log.Debug("rules: already present",
-					"family", fam, "priority", w.Priority, "table", w.Table)
+				flog.Debug("rules: already present",
+					"priority", w.Priority, "table_id", w.TableID)
 				continue
 			}
 			if exists {
-				log.Info("rules: replacing rule at priority",
-					"family", fam, "priority", w.Priority,
-					"old", cur, "new", w)
-				if err := delRule(ctx, runner, fam, cur); err != nil {
+				flog.Info("rules: replacing rule at priority",
+					"priority", w.Priority, "old", cur, "new", w)
+				if err := delRuleNetlink(ctx, flog, fam, cur); err != nil {
 					return fmt.Errorf("del rule prio=%d: %w", w.Priority, err)
 				}
 			} else {
-				log.Info("rules: adding new rule",
-					"family", fam, "priority", w.Priority,
-					"from", w.From, "uidrange", w.UIDRange, "table", w.Table)
+				flog.Info("rules: adding new rule",
+					"priority", w.Priority,
+					"from", w.From, "uidrange", w.UIDRange, "table_id", w.TableID)
 			}
-			if err := addRule(ctx, runner, fam, w); err != nil {
+			if err := addRuleNetlink(ctx, flog, fam, w); err != nil {
 				return fmt.Errorf("add rule prio=%d: %w", w.Priority, err)
 			}
 		}
 	}
+	log.Debug("rules: reconcile complete")
 	return nil
 }
 
 // rulesMatch returns true if a current rule equals a desired rule on the
-// dimensions the daemon manages.
+// dimensions the daemon manages. Compares TableID (authoritative) and the
+// optional From / UIDRange selectors.
 func rulesMatch(c CurrentRule, w DesiredRule) bool {
-	return c.Priority == w.Priority &&
-		c.From == w.From &&
-		c.UIDRange == w.UIDRange &&
-		c.Table == w.Table
+	if c.Priority != w.Priority {
+		return false
+	}
+	if c.TableID != w.TableID {
+		return false
+	}
+	if c.From != w.From {
+		return false
+	}
+	if c.UIDRange != w.UIDRange {
+		return false
+	}
+	return true
 }
 
-// listRules returns parsed rules for one family.
-func listRules(
-	ctx context.Context, runner IPRunner, family string,
-) ([]CurrentRule, error) {
-	flag := "-6"
-	if family == "inet" {
-		flag = "-4"
-	}
-	out, err := runner.Run(ctx, ipRuleListTimeout, flag, "rule", "show")
+// listRulesNetlink returns parsed rules for one family via netlink.RuleList.
+func listRulesNetlink(log *slog.Logger, family string) ([]CurrentRule, error) {
+	famConst := familyToNetlink(family)
+
+	start := time.Now()
+	rules, err := netlink.RuleList(famConst)
+	dur := time.Since(start)
+	log.Debug("rules: RuleList",
+		"family", family,
+		"count", len(rules),
+		"duration_ms", dur.Milliseconds(),
+		"err", err,
+	)
 	if err != nil {
 		return nil, err
 	}
-	return parseRuleList(string(out))
-}
 
-// parseRuleList parses `ip [-6] rule show` output. Each line looks like:
-//
-//	0:   from all lookup local
-//	5:   from all uidrange 997-997 lookup oob
-//	6:   from 3d06:bad:b01:ff::1 lookup oob
-//	32766:       from all lookup main
-//
-// Pure function for unit-testing without exec.
-func parseRuleList(text string) ([]CurrentRule, error) {
-	var out []CurrentRule
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// "PRIO:\t<rest>"
-		colon := strings.Index(line, ":")
-		if colon <= 0 {
-			continue
-		}
-		prio, err := strconv.Atoi(line[:colon])
-		if err != nil {
-			continue
-		}
-		rest := strings.TrimSpace(line[colon+1:])
-		fields := strings.Fields(rest)
-		r := CurrentRule{Priority: prio}
-		for i := 0; i < len(fields); i++ {
-			switch fields[i] {
-			case "from":
-				if i+1 < len(fields) {
-					// "from all" is the implicit default; normalize to ""
-					// so a DesiredRule without an explicit From matches.
-					if fields[i+1] != "all" {
-						r.From = fields[i+1]
-					}
-					i++
-				}
-			case "uidrange":
-				if i+1 < len(fields) {
-					r.UIDRange = fields[i+1]
-					i++
-				}
-			case "lookup":
-				if i+1 < len(fields) {
-					r.Table = fields[i+1]
-					i++
-				}
-			}
-		}
-		out = append(out, r)
+	out := make([]CurrentRule, 0, len(rules))
+	for _, r := range rules {
+		out = append(out, ruleToCurrent(r))
 	}
 	return out, nil
 }
 
-func addRule(
-	ctx context.Context, runner IPRunner, family string, w DesiredRule,
+// ruleToCurrent converts a netlink.Rule into our CurrentRule, normalising
+// the implicit "from all" to an empty From string so equality with
+// DesiredRule (which uses "" for no selector) works without special-casing.
+func ruleToCurrent(r netlink.Rule) CurrentRule {
+	c := CurrentRule{
+		Priority: r.Priority,
+		TableID:  r.Table,
+	}
+	if r.Src != nil && !isAllAddr(r.Src) {
+		c.From = ipNetToString(r.Src)
+	}
+	if r.UIDRange != nil {
+		// netlink stores Start/End as uint32 even though the original CLI
+		// uses signed-looking strings. Re-emit in "lo-hi" form so it round-
+		// trips with DesiredRule.UIDRange.
+		c.UIDRange = strconv.FormatUint(uint64(r.UIDRange.Start), 10) +
+			"-" + strconv.FormatUint(uint64(r.UIDRange.End), 10)
+	}
+	return c
+}
+
+// isAllAddr reports whether an IPNet is the wildcard ("from all").
+func isAllAddr(n *net.IPNet) bool {
+	if n == nil {
+		return true
+	}
+	ones, _ := n.Mask.Size()
+	if ones != 0 {
+		return false
+	}
+	return n.IP.Equal(net.IPv4zero) || n.IP.Equal(net.IPv6unspecified)
+}
+
+// ipNetToString renders an IPNet as a single-address selector when the mask
+// is /32 (v4) or /128 (v6), or as a CIDR otherwise. Matches CLI rendering.
+func ipNetToString(n *net.IPNet) string {
+	ones, bits := n.Mask.Size()
+	if (bits == 32 && ones == 32) || (bits == 128 && ones == 128) {
+		return n.IP.String()
+	}
+	return n.String()
+}
+
+// addRuleNetlink installs one rule via netlink.RuleAdd. Returns nil on
+// EEXIST (idempotent add).
+func addRuleNetlink(
+	ctx context.Context, log *slog.Logger, family string, w DesiredRule,
 ) error {
-	flag := "-6"
-	if family == "inet" {
-		flag = "-4"
+	_ = ctx
+	r, err := buildNetlinkRule(family, w)
+	if err != nil {
+		return err
 	}
-	args := []string{flag, "rule", "add"}
-	if w.From != "" {
-		args = append(args, "from", w.From)
-	}
-	if w.UIDRange != "" {
-		args = append(args, "uidrange", w.UIDRange)
-	}
-	args = append(args,
-		"lookup", w.Table,
-		"priority", strconv.Itoa(w.Priority),
+	start := time.Now()
+	err = netlink.RuleAdd(r)
+	dur := time.Since(start)
+	log.Debug("rules: RuleAdd",
+		"family", family, "priority", w.Priority, "table_id", w.TableID,
+		"from", w.From, "uidrange", w.UIDRange,
+		"duration_ms", dur.Milliseconds(),
+		"err", err,
 	)
-	_, err := runner.Run(ctx, ipRuleMutateTimeout, args...)
+	if err != nil && errors.Is(err, syscall.EEXIST) {
+		log.Debug("rules: RuleAdd EEXIST (already present)")
+		return nil
+	}
 	return err
 }
 
-func delRule(
-	ctx context.Context, runner IPRunner, family string, c CurrentRule,
+// delRuleNetlink removes the rule at the given (family, priority, table)
+// triple. ENOENT is swallowed.
+func delRuleNetlink(
+	ctx context.Context, log *slog.Logger, family string, c CurrentRule,
 ) error {
-	flag := "-6"
-	if family == "inet" {
-		flag = "-4"
+	_ = ctx
+	r, err := buildNetlinkRule(family, DesiredRule{
+		Family:   family,
+		Priority: c.Priority,
+		From:     c.From,
+		UIDRange: c.UIDRange,
+		TableID:  c.TableID,
+	})
+	if err != nil {
+		return err
 	}
-	args := []string{flag, "rule", "del", "priority", strconv.Itoa(c.Priority)}
-	_, err := runner.Run(ctx, ipRuleMutateTimeout, args...)
+	start := time.Now()
+	err = netlink.RuleDel(r)
+	dur := time.Since(start)
+	log.Debug("rules: RuleDel",
+		"family", family, "priority", c.Priority, "table_id", c.TableID,
+		"duration_ms", dur.Milliseconds(),
+		"err", err,
+	)
+	if err != nil && (errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ESRCH)) {
+		log.Debug("rules: RuleDel ENOENT (already absent)")
+		return nil
+	}
 	return err
 }
+
+// buildNetlinkRule constructs the netlink.Rule struct from our DesiredRule.
+// Centralised so both add and del sides build identical structs (the kernel
+// matches rules for deletion by all selector fields, not just priority).
+func buildNetlinkRule(family string, w DesiredRule) (*netlink.Rule, error) {
+	r := netlink.NewRule()
+	r.Family = familyToNetlink(family)
+	r.Priority = w.Priority
+	r.Table = w.TableID
+
+	if w.From != "" {
+		ipnet, err := parseSelector(family, w.From)
+		if err != nil {
+			return nil, fmt.Errorf("parse from %q: %w", w.From, err)
+		}
+		r.Src = ipnet
+	}
+
+	if w.UIDRange != "" {
+		start, end, err := parseUIDRange(w.UIDRange)
+		if err != nil {
+			return nil, fmt.Errorf("parse uidrange %q: %w", w.UIDRange, err)
+		}
+		r.UIDRange = netlink.NewRuleUIDRange(uint32(start), uint32(end))
+	}
+
+	return r, nil
+}
+
+// parseSelector accepts either a bare address ("1.2.3.4" or "::1") or a
+// CIDR, and returns an *net.IPNet sized for the family.
+func parseSelector(family, s string) (*net.IPNet, error) {
+	if strings.Contains(s, "/") {
+		_, ipnet, err := net.ParseCIDR(s)
+		return ipnet, err
+	}
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return nil, fmt.Errorf("not an IP: %q", s)
+	}
+	bits := 128
+	if family == "inet" {
+		bits = 32
+		ip = ip.To4()
+		if ip == nil {
+			return nil, fmt.Errorf("not an IPv4 address: %q", s)
+		}
+	}
+	return &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}, nil
+}
+
+// parseUIDRange splits "lo-hi" (or "u-u" or "u").
+func parseUIDRange(s string) (lo, hi int, err error) {
+	parts := strings.SplitN(s, "-", 2)
+	lo, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	if len(parts) == 1 {
+		return lo, lo, nil
+	}
+	hi, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+	return lo, hi, nil
+}
+
+// af_unspec_unused is here to silence unused-import warnings on unix when
+// compiled with build tags that strip earlier references.
+var _ = unix.AF_UNSPEC

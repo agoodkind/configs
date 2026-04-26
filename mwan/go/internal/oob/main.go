@@ -170,12 +170,14 @@ func buildDaemonConfig(cfg *config.Config) (DaemonConfig, error) {
 				Priority: cfg.OOB.OOBUIDRulePriority,
 				UIDRange: uidRange,
 				Table:    cfg.OOB.OOBTableName,
+				TableID:  cfg.OOB.OOBTableID,
 			},
 			{
 				Family:   "inet6",
 				Priority: cfg.OOB.OOBSrcRulePriority,
 				From:     srcAddr,
 				Table:    cfg.OOB.OOBTableName,
+				TableID:  cfg.OOB.OOBTableID,
 			},
 			// IPv4 uid rule too: cloudflared-oob may send IPv4 traffic (e.g.
 			// to Cloudflare edge IPv4 addresses if IPv6 is briefly down).
@@ -184,6 +186,7 @@ func buildDaemonConfig(cfg *config.Config) (DaemonConfig, error) {
 				Priority: cfg.OOB.OOBUIDRulePriority,
 				UIDRange: uidRange,
 				Table:    cfg.OOB.OOBTableName,
+				TableID:  cfg.OOB.OOBTableID,
 			},
 		},
 	}, nil
