@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"goodkind.io/mwan/internal/netif"
 )
 
 // V4Manager owns the IPv4 side of mbrains: the DHCP-learned address bound
@@ -19,7 +21,7 @@ import (
 // via the IPRunner.
 type V4Manager struct {
 	cfg    V4Config
-	runner IPRunner
+	runner netif.IPRunner
 	log    *slog.Logger
 
 	mu          sync.Mutex
@@ -36,7 +38,7 @@ type V4Config struct {
 
 // NewV4Manager constructs (does not start) a V4Manager.
 func NewV4Manager(
-	runner IPRunner, log *slog.Logger, cfg V4Config,
+	runner netif.IPRunner, log *slog.Logger, cfg V4Config,
 ) *V4Manager {
 	return &V4Manager{
 		cfg:    cfg,
@@ -51,21 +53,21 @@ func NewV4Manager(
 //   - On EXPIRED: remove the IP and clear the OOB v4 default. (Daemon
 //     attempts re-acquire on its own; this method just reflects state.)
 //   - Other states are debug-only.
-func (m *V4Manager) HandleLease(ctx context.Context, lease LeaseInfo) error {
+func (m *V4Manager) HandleLease(ctx context.Context, lease netif.LeaseInfo) error {
 	log := m.log.With("op", "lease-event", "state", lease.State.String())
 	log.Debug("v4: lease event", "info", lease.String())
 
 	switch lease.State {
-	case LeaseBound:
+	case netif.LeaseBound:
 		return m.applyBound(ctx, log, lease)
-	case LeaseExpired:
+	case netif.LeaseExpired:
 		return m.applyExpired(ctx, log)
 	}
 	return nil
 }
 
 func (m *V4Manager) applyBound(
-	ctx context.Context, log *slog.Logger, lease LeaseInfo,
+	ctx context.Context, log *slog.Logger, lease netif.LeaseInfo,
 ) error {
 	if lease.IP == nil {
 		return fmt.Errorf("lease BOUND without IP")
@@ -79,14 +81,14 @@ func (m *V4Manager) applyBound(
 	cidr := fmt.Sprintf("%s/%d", lease.IP.String(), prefix)
 
 	// Address: replace ensures we end up with exactly this address.
-	if err := ReconcileAddrs(ctx, m.runner, log, m.cfg.Iface, []AddrSpec{
+	if err := netif.ReconcileAddrs(ctx, m.runner, log, m.cfg.Iface, []netif.AddrSpec{
 		{CIDR: cidr, Family: "inet"},
 	}); err != nil {
 		return fmt.Errorf("apply lease addr %s: %w", cidr, err)
 	}
 
 	// OOB table default. nil gateway clears.
-	want := RouteSpec{
+	want := netif.RouteSpec{
 		Family: "inet",
 		Dest:   "default",
 		Dev:    m.cfg.Iface,
@@ -95,7 +97,7 @@ func (m *V4Manager) applyBound(
 	if lease.Gateway != nil {
 		want.Via = lease.Gateway.String()
 	}
-	if err := ReconcileTableDefault(ctx, m.runner, log, want); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, m.runner, log, want); err != nil {
 		return fmt.Errorf("apply lease default route: %w", err)
 	}
 
@@ -119,12 +121,12 @@ func (m *V4Manager) applyExpired(
 	ctx context.Context, log *slog.Logger,
 ) error {
 	log.Warn("v4: lease expired; clearing oob default v4")
-	clear := RouteSpec{
+	clear := netif.RouteSpec{
 		Family: "inet", Dest: "default",
 		Dev: m.cfg.Iface, Table: m.cfg.OOBTable,
 		// Via empty -> ReconcileTableDefault will delete the existing entry.
 	}
-	if err := ReconcileTableDefault(ctx, m.runner, log, clear); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, m.runner, log, clear); err != nil {
 		return fmt.Errorf("clear oob default v4: %w", err)
 	}
 	// Address removal is intentionally NOT done; the kernel keeps the lease

@@ -1,6 +1,6 @@
 //go:build linux
 
-package oob
+package netif
 
 import (
 	"context"

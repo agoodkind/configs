@@ -1,13 +1,22 @@
 //go:build linux
 
-// Package oob implements the mwan oob daemon: a long-lived process that
-// owns the dynamic state of the mbrains interface on vault. It manages the
-// OOB v6 address, OOB routing table, policy rules, and an async DHCPv4
-// client. See plans/2-the-other-ips-tidy-fountain.md for context.
+// Package netif provides Go-native (and, transitionally, /sbin/ip-shellout)
+// implementations of low-level Linux network state operations: address and
+// route reconciliation, policy-rule reconciliation, kernel event monitoring,
+// DHCPv4 client, Router Solicitation, and connectivity probes.
 //
-// The package is Linux-only. It shells out to /sbin/ip and uses raw sockets
-// via insomniacslk/dhcp/nclient4. Both depend on Linux-specific facilities.
-package oob
+// It is intentionally a leaf package: it does not depend on any other mwan
+// internal package (besides version), and exposes a small, testable surface
+// (IPRunner, Monitor, DHCPClient) that the higher-level ifmgr daemon and its
+// modules consume. Splitting netif out of internal/oob lets multiple roles
+// (vault-oob, lxc-failover-backup, future NPT/policy-routing modules) share
+// the same primitives without duplicating shellout glue.
+//
+// The package is Linux-only. Operations either use vishvananda/netlink,
+// mdlayher/ndp, golang.org/x/net/icmp+ipv6, or shell out to /sbin/ip and
+// rdisc6 during the transition. All implementations log every boundary at
+// slog.LevelDebug.
+package netif
 
 import (
 	"context"

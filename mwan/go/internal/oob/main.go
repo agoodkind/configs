@@ -16,6 +16,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -54,7 +55,7 @@ func Run(cfg *config.Config) error {
 		return fmt.Errorf("build daemon config: %w", err)
 	}
 
-	runner := NewExecIPRunner(logger, dryRun)
+	runner := netif.NewExecIPRunner(logger, dryRun)
 	daemon := NewDaemon(runner, logger, dcfg)
 
 	ctx, stop := signal.NotifyContext(
@@ -138,7 +139,7 @@ func buildDaemonConfig(cfg *config.Config) (DaemonConfig, error) {
 	}
 
 	uidRange := strconv.Itoa(cfg.OOB.CloudflaredUID) + "-" + strconv.Itoa(cfg.OOB.CloudflaredUID)
-	srcAddr := stripPrefix(cfg.OOB.OOBV6Addr) // "3d06:bad:b01:ff::1/128" -> "3d06:bad:b01:ff::1"
+	srcAddr := netif.StripPrefix(cfg.OOB.OOBV6Addr) // "3d06:bad:b01:ff::1/128" -> "3d06:bad:b01:ff::1"
 
 	return DaemonConfig{
 		ReconcileInterval: rec,
@@ -156,12 +157,12 @@ func buildDaemonConfig(cfg *config.Config) (DaemonConfig, error) {
 			V4LeaseLostAfter: 30 * time.Minute, // default, configurable later
 			RepeatEvery:      30 * time.Minute,
 		},
-		DHCP: DHCPConfig{
+		DHCP: netif.DHCPConfig{
 			Iface:          cfg.OOB.MbrainsIface,
 			InitialBackoff: dhcpInit,
 			MaxBackoff:     dhcpMax,
 		},
-		Rules: []DesiredRule{
+		Rules: []netif.DesiredRule{
 			{
 				Family:   "inet6",
 				Priority: cfg.OOB.OOBUIDRulePriority,
@@ -184,17 +185,6 @@ func buildDaemonConfig(cfg *config.Config) (DaemonConfig, error) {
 			},
 		},
 	}, nil
-}
-
-// stripPrefix returns the address half of a CIDR, or the input unchanged
-// if no slash is present.
-func stripPrefix(cidr string) string {
-	for i, c := range cidr {
-		if c == '/' {
-			return cidr[:i]
-		}
-	}
-	return cidr
 }
 
 // logShutdownReason logs the signal that triggered ctx cancellation so the

@@ -9,20 +9,22 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"goodkind.io/mwan/internal/netif"
 )
 
 // Daemon ties V6Manager, V4Manager, DHCPClient, AlertManager, and the
 // kernel monitor into one reconcile loop.
 type Daemon struct {
 	cfg     DaemonConfig
-	runner  IPRunner
+	runner  netif.IPRunner
 	log     *slog.Logger
 	v6      *V6Manager
 	v4      *V4Manager
-	rules   []DesiredRule
+	rules   []netif.DesiredRule
 	alerts  *AlertManager
-	monitor *Monitor
-	dhcp    *DHCPClient
+	monitor *netif.Monitor
+	dhcp    *netif.DHCPClient
 
 	mu        sync.Mutex
 	startedAt time.Time
@@ -34,13 +36,13 @@ type DaemonConfig struct {
 	V6                V6Config
 	V4                V4Config
 	Alerts            AlertConfig
-	DHCP              DHCPConfig
-	Rules             []DesiredRule
+	DHCP              netif.DHCPConfig
+	Rules             []netif.DesiredRule
 }
 
 // NewDaemon constructs (does not start) a Daemon.
 func NewDaemon(
-	runner IPRunner, log *slog.Logger, cfg DaemonConfig,
+	runner netif.IPRunner, log *slog.Logger, cfg DaemonConfig,
 ) *Daemon {
 	d := &Daemon{
 		cfg:    cfg,
@@ -71,10 +73,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	)
 
 	// Start the kernel route/address monitor and the DHCP client.
-	d.monitor = NewMonitor(ctx, d.log, MonitorConfig{
+	d.monitor = netif.NewMonitor(ctx, d.log, netif.MonitorConfig{
 		Iface: d.cfg.V6.Iface,
 	})
-	d.dhcp = StartDHCPClient(ctx, d.log, d.cfg.DHCP)
+	d.dhcp = netif.StartDHCPClient(ctx, d.log, d.cfg.DHCP)
 
 	// Initial reconcile: rules first (so OOB egress works as soon as
 	// addresses arrive), then v6 (which solicits RA, populates oob default).
@@ -131,7 +133,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 // reconcileAll runs the full reconcile sequence: rules, v6 addr+default,
 // then re-evaluates alerts. v4 reconcile is event-driven only.
 func (d *Daemon) reconcileAll(ctx context.Context, log *slog.Logger) error {
-	if err := ReconcileRules(ctx, d.runner, log, d.rules); err != nil {
+	if err := netif.ReconcileRules(ctx, d.runner, log, d.rules); err != nil {
 		return err
 	}
 	if err := d.v6.Reconcile(ctx); err != nil {
@@ -141,24 +143,24 @@ func (d *Daemon) reconcileAll(ctx context.Context, log *slog.Logger) error {
 }
 
 func (d *Daemon) handleKernelEvent(
-	ctx context.Context, log *slog.Logger, ev Event,
+	ctx context.Context, log *slog.Logger, ev netif.Event,
 ) {
 	switch ev.Kind {
-	case EvRouteAdded, EvRouteDeleted:
+	case netif.EvRouteAdded, netif.EvRouteDeleted:
 		if err := d.v6.HandleRouteEvent(ctx, ev); err != nil {
 			log.Warn("oob: v6 route event handling failed", "err", err)
 		}
-	case EvAddrAdded:
+	case netif.EvAddrAdded:
 		if newPx := d.v6.HandleAddrEvent(ev); newPx != "" {
 			d.alerts.NotifyRenumber("(prior)", newPx)
 		}
-	case EvAddrDeleted:
+	case netif.EvAddrDeleted:
 		log.Debug("oob: addr-deleted event observed (no action)")
 	}
 }
 
 func (d *Daemon) handleDHCPEvent(
-	ctx context.Context, log *slog.Logger, lease LeaseInfo,
+	ctx context.Context, log *slog.Logger, lease netif.LeaseInfo,
 ) {
 	if err := d.v4.HandleLease(ctx, lease); err != nil {
 		log.Warn("oob: v4 lease handling failed", "err", err)

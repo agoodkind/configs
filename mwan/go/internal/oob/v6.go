@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"goodkind.io/mwan/internal/netif"
 )
 
 const rdisc6Timeout = 10 * time.Second
@@ -18,7 +20,7 @@ const rdisc6Timeout = 10 * time.Second
 // `oob` routing table.
 type V6Manager struct {
 	cfg    V6Config
-	runner IPRunner
+	runner netif.IPRunner
 	log    *slog.Logger
 
 	mu          sync.Mutex
@@ -36,7 +38,7 @@ type V6Config struct {
 
 // NewV6Manager constructs (does not start) a V6Manager.
 func NewV6Manager(
-	runner IPRunner, log *slog.Logger, cfg V6Config,
+	runner netif.IPRunner, log *slog.Logger, cfg V6Config,
 ) *V6Manager {
 	return &V6Manager{
 		cfg:    cfg,
@@ -52,14 +54,14 @@ func (m *V6Manager) Reconcile(ctx context.Context) error {
 	log := m.log.With("op", "reconcile")
 
 	// Ensure the static OOB v6 address is present on mbrains.
-	if err := ReconcileAddrs(ctx, m.runner, log, m.cfg.Iface, []AddrSpec{
+	if err := netif.ReconcileAddrs(ctx, m.runner, log, m.cfg.Iface, []netif.AddrSpec{
 		{CIDR: m.cfg.OOBAddr, Family: "inet6"},
 	}); err != nil {
 		return fmt.Errorf("reconcile OOB v6 addr: %w", err)
 	}
 
 	// If we don't have an RA-learned default yet, nudge with rdisc6.
-	cur, err := FindMainRADefault(ctx, m.runner, m.cfg.Iface)
+	cur, err := netif.FindMainRADefault(ctx, m.runner, m.cfg.Iface)
 	if err != nil {
 		return fmt.Errorf("find main RA default: %w", err)
 	}
@@ -70,7 +72,7 @@ func (m *V6Manager) Reconcile(ctx context.Context) error {
 		}
 		// Re-check after solicit; brief delay to let kernel install RA.
 		time.Sleep(500 * time.Millisecond)
-		cur, err = FindMainRADefault(ctx, m.runner, m.cfg.Iface)
+		cur, err = netif.FindMainRADefault(ctx, m.runner, m.cfg.Iface)
 		if err != nil {
 			return fmt.Errorf("find main RA default after solicit: %w", err)
 		}
@@ -82,7 +84,7 @@ func (m *V6Manager) Reconcile(ctx context.Context) error {
 // HandleRouteEvent reacts to a route add/del event from the kernel monitor.
 // If the event concerns the RA-learned default via mbrains, refresh the OOB
 // table to match.
-func (m *V6Manager) HandleRouteEvent(ctx context.Context, ev Event) error {
+func (m *V6Manager) HandleRouteEvent(ctx context.Context, ev netif.Event) error {
 	if ev.Family != "inet6" || ev.Iface != m.cfg.Iface {
 		return nil
 	}
@@ -92,7 +94,7 @@ func (m *V6Manager) HandleRouteEvent(ctx context.Context, ev Event) error {
 	log := m.log.With("op", "route-event", "kind", ev.Kind.String(), "via", ev.Via)
 	log.Debug("v6: route event for mbrains default")
 
-	cur, err := FindMainRADefault(ctx, m.runner, m.cfg.Iface)
+	cur, err := netif.FindMainRADefault(ctx, m.runner, m.cfg.Iface)
 	if err != nil {
 		return fmt.Errorf("find main RA default after event: %w", err)
 	}
@@ -103,9 +105,9 @@ func (m *V6Manager) HandleRouteEvent(ctx context.Context, ev Event) error {
 // nil, the daemon clears the OOB default (no upstream visible). Updates
 // internal state used by the alerts subsystem.
 func (m *V6Manager) syncOOBDefault(
-	ctx context.Context, log *slog.Logger, cur *CurrentRoute,
+	ctx context.Context, log *slog.Logger, cur *netif.CurrentRoute,
 ) error {
-	want := RouteSpec{
+	want := netif.RouteSpec{
 		Family: "inet6",
 		Dest:   "default",
 		Dev:    m.cfg.Iface,
@@ -115,7 +117,7 @@ func (m *V6Manager) syncOOBDefault(
 		want.Via = cur.Via
 	}
 
-	if err := ReconcileTableDefault(ctx, m.runner, log, want); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, m.runner, log, want); err != nil {
 		return fmt.Errorf("reconcile oob default: %w", err)
 	}
 
@@ -138,8 +140,8 @@ func (m *V6Manager) syncOOBDefault(
 // HandleAddrEvent watches for SLAAC address arrivals on mbrains. Used by the
 // alerts subsystem to detect MB renumbering us. Returns the new SLAAC prefix
 // CIDR if we observed a renumber, or empty string otherwise.
-func (m *V6Manager) HandleAddrEvent(ev Event) (renumberedTo string) {
-	if ev.Family != "inet6" || ev.Iface != m.cfg.Iface || ev.Kind != EvAddrAdded {
+func (m *V6Manager) HandleAddrEvent(ev netif.Event) (renumberedTo string) {
+	if ev.Family != "inet6" || ev.Iface != m.cfg.Iface || ev.Kind != netif.EvAddrAdded {
 		return ""
 	}
 	// Skip link-local addresses (always present, not interesting).
