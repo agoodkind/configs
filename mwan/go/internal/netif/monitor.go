@@ -243,6 +243,59 @@ func parseMonitorLine(line, family, iface string) Event {
 	return ev
 }
 
+// parseRouteLine parses a single `ip [-6] route` (or `ip monitor route`) line:
+//
+//	default via fe80::f61e:57ff:fe06:4983 dev mbrains metric 1024 pref medium
+//
+// Pure function for unit-testing. Lives here (not state.go) because state.go
+// is now netlink-typed and does not need string parsing; this parser is only
+// used by the legacy `ip monitor` subprocess consumer below, which step 5 of
+// the netif refactor replaces with netlink subscribe APIs. When that ships,
+// this function is deleted.
+func parseRouteLine(line string) *CurrentRoute {
+	fields := strings.Fields(line)
+	if len(fields) < 1 {
+		return nil
+	}
+	r := &CurrentRoute{Dest: fields[0]}
+	for i := 1; i < len(fields); i++ {
+		switch fields[i] {
+		case "via":
+			if i+1 < len(fields) {
+				r.Via = fields[i+1]
+				i++
+			}
+		case "dev":
+			if i+1 < len(fields) {
+				r.Dev = fields[i+1]
+				i++
+			}
+		case "metric":
+			if i+1 < len(fields) {
+				if m, err := strconvAtoi(fields[i+1]); err == nil {
+					r.Metric = m
+				}
+				i++
+			}
+		}
+	}
+	return r
+}
+
+// strconvAtoi is a thin shim so monitor.go does not need to import strconv
+// once parseRouteLine moves out at step 5. Kept here to localise the
+// transient parsing dependency.
+func strconvAtoi(s string) (int, error) {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
+}
+
 // isAddrLine returns true if the line looks like an address-add/del event
 // (starts with "<digits>:").
 func isAddrLine(s string) bool {

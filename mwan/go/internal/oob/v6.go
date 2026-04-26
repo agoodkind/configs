@@ -31,9 +31,10 @@ type V6Manager struct {
 
 // V6Config configures one V6Manager.
 type V6Config struct {
-	Iface         string // mbrains
-	OOBAddr       string // "3d06:bad:b01:ff::1/128"
-	OOBTable      string // "oob"
+	Iface     string // mbrains
+	OOBAddr   string // "3d06:bad:b01:ff::1/128"
+	OOBTable  string // table name (kept for log readability; no longer authoritative)
+	OOBTableID int   // numeric routing table ID (e.g. 500); used by netlink path
 }
 
 // NewV6Manager constructs (does not start) a V6Manager.
@@ -108,10 +109,10 @@ func (m *V6Manager) syncOOBDefault(
 	ctx context.Context, log *slog.Logger, cur *netif.CurrentRoute,
 ) error {
 	want := netif.RouteSpec{
-		Family: "inet6",
-		Dest:   "default",
-		Dev:    m.cfg.Iface,
-		Table:  m.cfg.OOBTable,
+		Family:  "inet6",
+		Dest:    "default",
+		Dev:     m.cfg.Iface,
+		TableID: m.cfg.OOBTableID,
 	}
 	if cur != nil {
 		want.Via = cur.Via

@@ -32,8 +32,9 @@ type V4Manager struct {
 
 // V4Config configures a V4Manager.
 type V4Config struct {
-	Iface    string // mbrains
-	OOBTable string // "oob"
+	Iface      string // mbrains
+	OOBTable   string // table name (kept for log readability; no longer authoritative)
+	OOBTableID int    // numeric routing table ID (e.g. 500); used by netlink path
 }
 
 // NewV4Manager constructs (does not start) a V4Manager.
@@ -89,10 +90,10 @@ func (m *V4Manager) applyBound(
 
 	// OOB table default. nil gateway clears.
 	want := netif.RouteSpec{
-		Family: "inet",
-		Dest:   "default",
-		Dev:    m.cfg.Iface,
-		Table:  m.cfg.OOBTable,
+		Family:  "inet",
+		Dest:    "default",
+		Dev:     m.cfg.Iface,
+		TableID: m.cfg.OOBTableID,
 	}
 	if lease.Gateway != nil {
 		want.Via = lease.Gateway.String()
@@ -123,7 +124,7 @@ func (m *V4Manager) applyExpired(
 	log.Warn("v4: lease expired; clearing oob default v4")
 	clear := netif.RouteSpec{
 		Family: "inet", Dest: "default",
-		Dev: m.cfg.Iface, Table: m.cfg.OOBTable,
+		Dev: m.cfg.Iface, TableID: m.cfg.OOBTableID,
 		// Via empty -> ReconcileTableDefault will delete the existing entry.
 	}
 	if err := netif.ReconcileTableDefault(ctx, m.runner, log, clear); err != nil {

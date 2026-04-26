@@ -144,13 +144,15 @@ func buildDaemonConfig(cfg *config.Config) (DaemonConfig, error) {
 	return DaemonConfig{
 		ReconcileInterval: rec,
 		V6: V6Config{
-			Iface:    cfg.OOB.MbrainsIface,
-			OOBAddr:  cfg.OOB.OOBV6Addr,
-			OOBTable: cfg.OOB.OOBTableName,
+			Iface:      cfg.OOB.MbrainsIface,
+			OOBAddr:    cfg.OOB.OOBV6Addr,
+			OOBTable:   cfg.OOB.OOBTableName,
+			OOBTableID: cfg.OOB.OOBTableID,
 		},
 		V4: V4Config{
-			Iface:    cfg.OOB.MbrainsIface,
-			OOBTable: cfg.OOB.OOBTableName,
+			Iface:      cfg.OOB.MbrainsIface,
+			OOBTable:   cfg.OOB.OOBTableName,
+			OOBTableID: cfg.OOB.OOBTableID,
 		},
 		Alerts: AlertConfig{
 			RALostAfter:      raLost,
