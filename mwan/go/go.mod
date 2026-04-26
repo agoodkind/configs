@@ -25,7 +25,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/k-sone/critbitgo v1.4.0 // indirect
-	github.com/mdlayher/ndp v1.1.0 // indirect
 	github.com/mdlayher/packet v1.1.2 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/orcaman/concurrent-map/v2 v2.0.1 // indirect

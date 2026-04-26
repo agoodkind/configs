@@ -41,7 +41,10 @@ CMD    := ./cmd/$(BINARY)
 
 .DEFAULT_GOAL := check
 
-.PHONY: proto build build-linux clean
+.PHONY: proto build build-linux clean tidy
+
+tidy:
+	go mod tidy
 
 proto:
 	@mkdir -p gen/mwan/v1
