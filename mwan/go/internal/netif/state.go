@@ -55,7 +55,7 @@ type CurrentAddr struct {
 // is retained for interface-level back-compat with callers that still
 // pass it in step 3; it is not consulted for this operation.
 func ReconcileAddrs(
-	ctx context.Context, _ IPRunner, log *slog.Logger,
+	ctx context.Context, log *slog.Logger,
 	iface string, desired []AddrSpec,
 ) error {
 	log = log.With("component", "addrs", "iface", iface, "op", "reconcile")
@@ -177,7 +177,7 @@ type CurrentRoute struct {
 // If no default exists, it's added. Other entries in the table are not
 // touched. Pass want.Via == "" to clear the default route from the table.
 func ReconcileTableDefault(
-	ctx context.Context, _ IPRunner, log *slog.Logger,
+	ctx context.Context, log *slog.Logger,
 	want RouteSpec,
 ) error {
 	log = log.With("component", "route",
@@ -372,7 +372,7 @@ func delTableDefaultNetlink(
 // main IPv6 routing table, if any. This is the source-of-truth gateway the
 // daemon mirrors into the oob table.
 func FindMainRADefault(
-	ctx context.Context, _ IPRunner, iface string,
+	ctx context.Context, iface string,
 ) (*CurrentRoute, error) {
 	_ = ctx
 	log := slog.Default().With("component", "route", "iface", iface, "op", "find-ra-default")

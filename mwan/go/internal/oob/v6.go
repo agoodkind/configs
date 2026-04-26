@@ -19,9 +19,8 @@ const rdisc6Timeout = 10 * time.Second
 // solicitation, and synchronization of the RA-learned default into the
 // `oob` routing table.
 type V6Manager struct {
-	cfg    V6Config
-	runner netif.IPRunner
-	log    *slog.Logger
+	cfg V6Config
+	log *slog.Logger
 
 	mu          sync.Mutex
 	lastRAGW    string    // last RA-learned default gateway in main table
@@ -38,13 +37,10 @@ type V6Config struct {
 }
 
 // NewV6Manager constructs (does not start) a V6Manager.
-func NewV6Manager(
-	runner netif.IPRunner, log *slog.Logger, cfg V6Config,
-) *V6Manager {
+func NewV6Manager(log *slog.Logger, cfg V6Config) *V6Manager {
 	return &V6Manager{
-		cfg:    cfg,
-		runner: runner,
-		log:    log.With("component", "v6", "iface", cfg.Iface),
+		cfg: cfg,
+		log: log.With("component", "v6", "iface", cfg.Iface),
 	}
 }
 
@@ -55,14 +51,14 @@ func (m *V6Manager) Reconcile(ctx context.Context) error {
 	log := m.log.With("op", "reconcile")
 
 	// Ensure the static OOB v6 address is present on mbrains.
-	if err := netif.ReconcileAddrs(ctx, m.runner, log, m.cfg.Iface, []netif.AddrSpec{
+	if err := netif.ReconcileAddrs(ctx, log, m.cfg.Iface, []netif.AddrSpec{
 		{CIDR: m.cfg.OOBAddr, Family: "inet6"},
 	}); err != nil {
 		return fmt.Errorf("reconcile OOB v6 addr: %w", err)
 	}
 
 	// If we don't have an RA-learned default yet, nudge with rdisc6.
-	cur, err := netif.FindMainRADefault(ctx, m.runner, m.cfg.Iface)
+	cur, err := netif.FindMainRADefault(ctx, m.cfg.Iface)
 	if err != nil {
 		return fmt.Errorf("find main RA default: %w", err)
 	}
@@ -73,7 +69,7 @@ func (m *V6Manager) Reconcile(ctx context.Context) error {
 		}
 		// Re-check after solicit; brief delay to let kernel install RA.
 		time.Sleep(500 * time.Millisecond)
-		cur, err = netif.FindMainRADefault(ctx, m.runner, m.cfg.Iface)
+		cur, err = netif.FindMainRADefault(ctx, m.cfg.Iface)
 		if err != nil {
 			return fmt.Errorf("find main RA default after solicit: %w", err)
 		}
@@ -95,7 +91,7 @@ func (m *V6Manager) HandleRouteEvent(ctx context.Context, ev netif.Event) error 
 	log := m.log.With("op", "route-event", "kind", ev.Kind.String(), "via", ev.Via)
 	log.Debug("v6: route event for mbrains default")
 
-	cur, err := netif.FindMainRADefault(ctx, m.runner, m.cfg.Iface)
+	cur, err := netif.FindMainRADefault(ctx, m.cfg.Iface)
 	if err != nil {
 		return fmt.Errorf("find main RA default after event: %w", err)
 	}
@@ -118,7 +114,7 @@ func (m *V6Manager) syncOOBDefault(
 		want.Via = cur.Via
 	}
 
-	if err := netif.ReconcileTableDefault(ctx, m.runner, log, want); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, log, want); err != nil {
 		return fmt.Errorf("reconcile oob default: %w", err)
 	}
 

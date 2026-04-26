@@ -17,7 +17,6 @@ import (
 // kernel monitor into one reconcile loop.
 type Daemon struct {
 	cfg     DaemonConfig
-	runner  netif.IPRunner
 	log     *slog.Logger
 	v6      *V6Manager
 	v4      *V4Manager
@@ -41,15 +40,12 @@ type DaemonConfig struct {
 }
 
 // NewDaemon constructs (does not start) a Daemon.
-func NewDaemon(
-	runner netif.IPRunner, log *slog.Logger, cfg DaemonConfig,
-) *Daemon {
+func NewDaemon(log *slog.Logger, cfg DaemonConfig) *Daemon {
 	d := &Daemon{
 		cfg:    cfg,
-		runner: runner,
 		log:    log,
-		v6:     NewV6Manager(runner, log, cfg.V6),
-		v4:     NewV4Manager(runner, log, cfg.V4),
+		v6:     NewV6Manager(log, cfg.V6),
+		v4:     NewV4Manager(log, cfg.V4),
 		rules:  cfg.Rules,
 		alerts: NewAlertManager(log, cfg.Alerts),
 	}
@@ -133,7 +129,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 // reconcileAll runs the full reconcile sequence: rules, v6 addr+default,
 // then re-evaluates alerts. v4 reconcile is event-driven only.
 func (d *Daemon) reconcileAll(ctx context.Context, log *slog.Logger) error {
-	if err := netif.ReconcileRules(ctx, d.runner, log, d.rules); err != nil {
+	if err := netif.ReconcileRules(ctx, log, d.rules); err != nil {
 		return err
 	}
 	if err := d.v6.Reconcile(ctx); err != nil {

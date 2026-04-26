@@ -55,8 +55,11 @@ func Run(cfg *config.Config) error {
 		return fmt.Errorf("build daemon config: %w", err)
 	}
 
-	runner := netif.NewExecIPRunner(logger, dryRun)
-	daemon := NewDaemon(runner, logger, dcfg)
+	// dryRun is kept in the parsed flags for future netif-level wiring;
+	// the Go-native netif helpers do not yet thread it through, so we
+	// log it for diagnostic visibility rather than silently dropping.
+	logger.Info("oob: starting daemon", "dry_run", dryRun)
+	daemon := NewDaemon(logger, dcfg)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(), syscall.SIGINT, syscall.SIGTERM,

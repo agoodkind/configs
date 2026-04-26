@@ -20,9 +20,8 @@ import (
 // events. V4Manager.HandleLease translates those events to kernel mutations
 // via the IPRunner.
 type V4Manager struct {
-	cfg    V4Config
-	runner netif.IPRunner
-	log    *slog.Logger
+	cfg V4Config
+	log *slog.Logger
 
 	mu          sync.Mutex
 	currentCIDR string    // last-applied address (e.g. "158.247.70.13/26")
@@ -38,13 +37,10 @@ type V4Config struct {
 }
 
 // NewV4Manager constructs (does not start) a V4Manager.
-func NewV4Manager(
-	runner netif.IPRunner, log *slog.Logger, cfg V4Config,
-) *V4Manager {
+func NewV4Manager(log *slog.Logger, cfg V4Config) *V4Manager {
 	return &V4Manager{
-		cfg:    cfg,
-		runner: runner,
-		log:    log.With("component", "v4", "iface", cfg.Iface),
+		cfg: cfg,
+		log: log.With("component", "v4", "iface", cfg.Iface),
 	}
 }
 
@@ -82,7 +78,7 @@ func (m *V4Manager) applyBound(
 	cidr := fmt.Sprintf("%s/%d", lease.IP.String(), prefix)
 
 	// Address: replace ensures we end up with exactly this address.
-	if err := netif.ReconcileAddrs(ctx, m.runner, log, m.cfg.Iface, []netif.AddrSpec{
+	if err := netif.ReconcileAddrs(ctx, log, m.cfg.Iface, []netif.AddrSpec{
 		{CIDR: cidr, Family: "inet"},
 	}); err != nil {
 		return fmt.Errorf("apply lease addr %s: %w", cidr, err)
@@ -98,7 +94,7 @@ func (m *V4Manager) applyBound(
 	if lease.Gateway != nil {
 		want.Via = lease.Gateway.String()
 	}
-	if err := netif.ReconcileTableDefault(ctx, m.runner, log, want); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, log, want); err != nil {
 		return fmt.Errorf("apply lease default route: %w", err)
 	}
 
@@ -127,7 +123,7 @@ func (m *V4Manager) applyExpired(
 		Dev: m.cfg.Iface, TableID: m.cfg.OOBTableID,
 		// Via empty -> ReconcileTableDefault will delete the existing entry.
 	}
-	if err := netif.ReconcileTableDefault(ctx, m.runner, log, clear); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, log, clear); err != nil {
 		return fmt.Errorf("clear oob default v4: %w", err)
 	}
 	// Address removal is intentionally NOT done; the kernel keeps the lease

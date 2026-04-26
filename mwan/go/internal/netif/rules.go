@@ -51,7 +51,7 @@ type CurrentRule struct {
 //
 // All actions log at DEBUG with full diff context.
 func ReconcileRules(
-	ctx context.Context, _ IPRunner, log *slog.Logger,
+	ctx context.Context, log *slog.Logger,
 	desired []DesiredRule,
 ) error {
 	log = log.With("component", "rules")
