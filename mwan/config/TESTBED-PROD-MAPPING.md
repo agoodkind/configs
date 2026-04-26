@@ -21,6 +21,29 @@ Use this when translating a tested cutover2 procedure to production.
 | `bgp.neighbors` (v4) | `10.250.250.2` | `10.250.250.2` (same) | OPNsense |
 | `bgp.neighbors_v6` | `201::2` | `fe::2` | Different prefix |
 | `cutover.failover_lxc_id` | `100` | `116` | |
+| `watchdog.service_name` | `mwan-watchdog-testbed` | `mwan-watchdog` | systemd unit name |
+
+## Suburban as the cutover orchestrator (testbed-prod parity)
+
+On production, vault is a single host that hosts everything: PVE, the
+mwan-watchdog systemd service, and a LAN bridge that reaches the OPNsense
+API directly. cutover2 commands therefore all run from one place.
+
+To mirror that on testbed, suburban joins the OPNsense LAN bridge:
+
+- vmbr3 on suburban has `192.168.1.5/24` (declared in `/etc/network/interfaces`)
+- vmbr3 also carries OPNsense's `vtnet0` (the LAN port) and LXC 203's `eth0`,
+  so suburban becomes an additional LAN client with direct access to the
+  OPNsense API at `https://192.168.1.1`
+- Suburban's hypervisor SSH key is in OPNsense's authorized_keys, so the
+  switch-to-bgp reboot SSH works
+- All cutover2 phases (configure-opnsense, deploy-agents, switch-to-bgp,
+  arm-watchdog, disarm-watchdog, unfuck) are intended to run from suburban,
+  matching how they all run from vault on prod
+
+Earlier testbed runs split phases between LXC 203 (OPNsense API) and suburban
+(PVE + watchdog), which silently no-op'd switch-to-bgp's local watchdog
+stop. The single-host arrangement above eliminates that asymmetry.
 
 ## Before production cutover
 
