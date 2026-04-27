@@ -47,6 +47,12 @@ service_mapping:
   mwan:
     hostname: mwan.home.goodkind.io
     ipv6: "3d06:bad:b01::113"
+  mwan-failover:
+    hostname: mwan-failover.home.goodkind.io
+    # LXC 116, BGP backup peer; eth1 on mwanbr (vault is on same bridge so
+    # this address is the natural Ansible SSH target). eth0 lives on mbrains
+    # for the upstream-ISP iface that mwan-ifmgr monitors.
+    ipv6: "3d06:bad:b01:fe::4"
   plane:
     hostname: plane.home.goodkind.io
     ipv6: "3d06:bad:b01::115"

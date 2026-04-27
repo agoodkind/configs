@@ -24,10 +24,22 @@
         service_vmid: "{{ mwan_vmid }}"
         service_proxmox_node: "{{ mwan_proxmox_node }}"
 
+    - name: Add MWAN failover LXC to mwan_failover_servers group
+      ansible.builtin.include_tasks: tasks/add-service-to-group.yml
+      vars:
+        service_name: mwan-failover
+        service_vmid: "116"
+        service_proxmox_node: "vault"
+
 - name: Prepare MWAN VM (base packages, SSH keys, etc.)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
     target_hosts: mwan_servers
+
+- name: Prepare MWAN failover LXC (base packages, SSH keys, etc.)
+  ansible.builtin.import_playbook: prep-guests.yml
+  vars:
+    target_hosts: mwan-failover_servers
 
 - name: Configure MWAN VM
   hosts: mwan_servers
@@ -921,3 +933,143 @@
       ansible.builtin.systemd:
         name: consul
         state: reloaded
+
+# ============================================================================
+# Configure MWAN failover LXC 116 (mwan-failover)
+# ----------------------------------------------------------------------------
+# Mirrors the MWAN VM build artifact (mwan/go/mwan) and ships:
+#   - mwan binary           /usr/local/bin/mwan
+#   - agent + ifmgr units   /etc/systemd/system/mwan-{agent,ifmgr}.service
+#   - keepalived drop-in    /etc/systemd/system/keepalived.service.d/
+#   - /etc/network/interfaces (eth0 dhcp + eth1 static + IPv6 return route)
+#   - /etc/mwan/config.toml  (lxc-failover-backup role config)
+#
+# The container's eth1 is on mwanbr (BGP backup peer link to OPNsense),
+# eth0 is on mbrains (upstream-ISP iface that mwan-ifmgr monitors).
+# ============================================================================
+- name: Configure MWAN failover LXC
+  hosts: mwan-failover_servers
+  become: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    failover_iface: eth1
+
+  tasks:
+    - name: Build mwan binary (local) - skip if already built by MWAN VM play
+      ansible.builtin.shell: |
+        set -e
+        cd "{{ repo_root }}/mwan/go"
+        commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+        if git diff --quiet HEAD -- . 2>/dev/null; then
+          dirty=clean
+        else
+          dirty=dirty
+        fi
+        GOOS=linux GOARCH=amd64 go build -trimpath \
+          -ldflags="-X main.gitCommit=${commit} -X main.gitDirty=${dirty}" \
+          -o "{{ repo_root }}/mwan/go/mwan" \
+          ./cmd/mwan
+      args:
+        executable: /bin/bash
+        creates: "{{ repo_root }}/mwan/go/mwan"
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    - name: Ensure /etc/mwan exists
+      ansible.builtin.file:
+        path: /etc/mwan
+        state: directory
+        mode: "0755"
+
+    - name: Deploy mwan unified binary
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/mwan"
+        dest: /usr/local/bin/mwan
+        mode: "0755"
+      notify:
+        - Restart mwan-agent
+        - Restart mwan-ifmgr
+
+    - name: Deploy /etc/mwan/config.toml
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/production/lxc-116/config.toml"
+        dest: /etc/mwan/config.toml
+        mode: "0640"
+      notify:
+        - Restart mwan-agent
+        - Restart mwan-ifmgr
+
+    - name: Deploy /etc/network/interfaces
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/production/lxc-116/interfaces"
+        dest: /etc/network/interfaces
+        mode: "0644"
+      # Intentionally no auto-restart of networking. Operator must reload
+      # manually to control timing (network restart bounces eth0 + eth1
+      # which can interrupt BGP and the ifmgr-managed iface).
+
+    - name: Deploy mwan-agent systemd unit
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
+        dest: /etc/systemd/system/mwan-agent.service
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart mwan-agent
+
+    - name: Deploy mwan-ifmgr systemd unit
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/production/lxc-116/mwan-ifmgr.service"
+        dest: /etc/systemd/system/mwan-ifmgr.service
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart mwan-ifmgr
+
+    - name: Ensure keepalived drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/keepalived.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Deploy keepalived IPv6LL wait drop-in (workaround for upstream #2275)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/keepalived-wait-ipv6.conf.j2"
+        dest: /etc/systemd/system/keepalived.service.d/wait-for-ipv6.conf
+        mode: "0644"
+      vars:
+        mwan_internal_iface: "{{ failover_iface }}"
+      notify:
+        - Reload systemd
+        # Intentionally no auto-restart of keepalived. The drop-in only
+        # affects boot ordering; restart can disrupt the active VIP.
+
+    - name: Enable mwan + keepalived services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - mwan-agent
+        - mwan-ifmgr
+        - keepalived
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart mwan-agent
+      ansible.builtin.systemd:
+        name: mwan-agent
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart mwan-ifmgr
+      ansible.builtin.systemd:
+        name: mwan-ifmgr
+        state: restarted
+        daemon_reload: true
