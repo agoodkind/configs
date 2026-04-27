@@ -52,12 +52,15 @@ func (m *Module) Name() string { return "mainv4" }
 func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "mainv4", "iface", m.cfg.Iface)
-	if m.cfg.Iface == "" {
-		return fmt.Errorf("mainv4: iface is required")
-	}
 	if env.DHCP == nil {
+		// Inert when DHCPv4 is disabled. iface is unused in this mode, so
+		// don't require it; lets roles include the module unconditionally
+		// without forcing every host's config to declare a placeholder iface.
 		m.log.Info("mainv4: Init (inert: dhcp_v4 is disabled)")
 		return nil
+	}
+	if m.cfg.Iface == "" {
+		return fmt.Errorf("mainv4: iface is required when dhcp_v4 is enabled")
 	}
 	m.log.Info("mainv4: Init (active)")
 	return nil
