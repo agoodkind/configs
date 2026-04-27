@@ -25,3 +25,47 @@ address = "3d06:bad:b01:201::2"
 [bgp.announce]
 ipv4 = ["0.0.0.0/0"]
 ipv6 = ["::/0"]
+
+# ============================================================================
+# ifmgr: lxc-failover-backup role (eth0/mbrains-side health management)
+# ============================================================================
+# Mirrors prod LXC 116 config. Same role, same modules, same dhcp_v4 setting.
+# eth0 receives DHCPv4 plus SLAAC from the simulated MB ISP on vmbr6.
+# Container ifupdown owns DHCP (dhcp_v4 false) so ifmgr only monitors.
+# ============================================================================
+
+[ifmgr]
+role = "lxc-failover-backup"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.eth0]
+name = "eth0"
+dhcp_v4 = false
+ra_solicit = true
+
+[ifmgr.modules.slaac_health]
+iface = "eth0"
+degraded_after = "30s"
+escalate_after = "90s"
+alert_after = "300s"
+max_toggles_per_hour = 4
+probe_targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+
+[ifmgr.modules.bridge_probe]
+iface = "eth0"
+no_signal_alert_after = "120s"
+
+[ifmgr.modules.connectivity_probe]
+iface = "eth0"
+targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+timeout = "2s"
+unhealthy_after = "10s"
+
+[ifmgr.modules.ra_lost]
+iface = "eth0"
+ra_lost_alert_after = "5m"
+
+[ifmgr.modules.mainv4]
+iface = "eth0"

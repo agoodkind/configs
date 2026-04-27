@@ -38,10 +38,12 @@
         ansible_proxmox_host: suburban
 
     - name: Add LXC 100 (mwan-failover-test)
+      # eth0 is now DHCP on vmbr6 (mirroring prod LXC 116). eth1 keeps its
+      # static OPNsense-side address 3d06:bad:b01:201::4 which is stable.
       ansible.builtin.add_host:
         name: mwan-failover-test
         groups: mwan_testbed_servers
-        ansible_host: "3d06:bad:b01:200::100"
+        ansible_host: "3d06:bad:b01:201::4"
         ansible_user: root
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         ansible_proxmox_vmid: "100"
@@ -375,10 +377,22 @@
         dest: /etc/nftables.conf
         mode: "0644"
 
+    - name: Deploy /etc/network/interfaces
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/testbed/lxc-100/interfaces"
+        dest: /etc/network/interfaces
+        mode: "0644"
+
     - name: Deploy mwan-agent service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
         dest: /etc/systemd/system/mwan-agent.service
+        mode: "0644"
+
+    - name: Deploy mwan-ifmgr service
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/testbed/lxc-100/mwan-ifmgr.service"
+        dest: /etc/systemd/system/mwan-ifmgr.service
         mode: "0644"
 
     - name: Enable services
@@ -389,3 +403,4 @@
       loop:
         - nftables
         - mwan-agent
+        - mwan-ifmgr

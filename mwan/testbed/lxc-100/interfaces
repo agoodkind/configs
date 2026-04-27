@@ -1,14 +1,21 @@
+# /etc/network/interfaces on testbed LXC 100 (mwan-failover-test).
+# Mirrors prod LXC 116 shape. eth0 takes DHCPv4 plus SLAAC from the simulated
+# MB ISP on vmbr6 (isp-mbrains LXC 202 serves kea-dhcp4 plus radvd).
+# eth1 stays static on vmbr2 as the BGP backup peer link to OPNsense.
+# The IPv6 return route ensures de-NATted reply traffic for the OPNsense LAN
+# (3d06:bad:b01:211::/64) goes back through OPNsense WAN, not out the
+# management bridge. Same reason as prod LXC 116.
+
 auto lo
 iface lo inet loopback
 
 auto eth0
-iface eth0 inet static
-	address 10.240.200.100/24
-	gateway 10.240.200.1
+iface eth0 inet dhcp
 
-iface eth0 inet6 static
-	address 3d06:bad:b01:200::100/64
-	gateway 3d06:bad:b01:200::1
+# v6 left to kernel SLAAC via accept_ra sysctl. We do NOT request DHCPv6
+# (testbed isp-mbrains kea-dhcp6 is PD-only and never responds to IA_NA,
+# which would hang dhclient -6 forever and block networking.service).
+iface eth0 inet6 manual
 
 auto eth1
 iface eth1 inet static
@@ -16,9 +23,5 @@ iface eth1 inet static
 
 iface eth1 inet6 static
 	address 3d06:bad:b01:201::4/64
-	# Route OPNsense LAN back via eth1 so masquerade return traffic uses the
-	# correct interface. Without this, de-NATed IPv6 replies for LAN clients
-	# (3d06:bad:b01:211::/64) follow the default route out eth0 (management)
-	# and never reach OPNsense, causing IPv6 forwarding to fail silently.
 	up ip -6 route add 3d06:bad:b01:211::/64 via 3d06:bad:b01:201::2 dev eth1 || true
 	down ip -6 route del 3d06:bad:b01:211::/64 via 3d06:bad:b01:201::2 dev eth1 || true
