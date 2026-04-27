@@ -381,8 +381,7 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	// zebra RIB, BGP peers establish, and BGP routes install without competition.
 	monitor.Pause()
 	log.Info("rebooting OPNsense (clean zebra start, no stale routes)...")
-	host := opnsenseSSHHost(cfg)
-	if err := opnsenseSSH(ctx, log, host, "reboot"); err != nil {
+	if err := opnsenseSSH(ctx, log, cfg, "reboot"); err != nil {
 		// reboot often kills the SSH connection before the reply arrives.
 		// That produces an exit error, which is expected.
 		log.Info("reboot command sent (SSH disconnect is expected)", "err", err)

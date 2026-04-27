@@ -146,6 +146,12 @@ type OPNsenseSection struct {
 	Insecure     bool        `toml:"insecure"`
 	GatewayNames []string    `toml:"gateway_names"`
 	BGP          OPNsenseBGP `toml:"bgp"`
+
+	// SSHUser is the SSH login on OPNsense. OPNsense disables root SSH by
+	// default and ships with an admin user that has wheel + NOPASSWD sudo.
+	// Defaults to "agoodkind". Cutover commands needing root (config.xml
+	// edit, reboot) are wrapped with "sudo" automatically.
+	SSHUser string `toml:"ssh_user"`
 }
 
 // OPNsenseBGP describes the BGP configuration to push to OPNsense via its API.

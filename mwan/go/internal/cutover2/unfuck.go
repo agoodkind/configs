@@ -168,22 +168,54 @@ func opnsenseSSHHost(cfg *config.Config) string {
 	return strings.Trim(host, "[]")
 }
 
-// opnsenseSSH runs a command on OPNsense via SSH.
-func opnsenseSSH(ctx context.Context, log *slog.Logger, host, cmd string) error {
+// opnsenseSSHUser returns the configured SSH login on OPNsense.
+// Defaults to "agoodkind" because OPNsense disables root SSH by default
+// and ships with an admin user (wheel + NOPASSWD sudo) for shell access.
+func opnsenseSSHUser(cfg *config.Config) string {
+	if u := strings.TrimSpace(cfg.OPNsense.SSHUser); u != "" {
+		return u
+	}
+	return "agoodkind"
+}
+
+// opnsenseSudo wraps a remote command in sudo when the SSH user is not root.
+// Commands like editing /conf/config.xml or rebooting need root regardless of
+// who SSH'd in; the admin user has NOPASSWD sudo on OPNsense.
+func opnsenseSudo(user, cmd string) string {
+	if user == "root" {
+		return cmd
+	}
+	return "sudo -n sh -c " + shellQuote(cmd)
+}
+
+// shellQuote wraps a string in single quotes for safe sh -c consumption,
+// escaping any embedded single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// opnsenseSSH runs a command on OPNsense via SSH as the configured user,
+// wrapping in sudo when needed. Commands run with full root privilege.
+func opnsenseSSH(ctx context.Context, log *slog.Logger, cfg *config.Config, cmd string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+
+	host := opnsenseSSHHost(cfg)
+	user := opnsenseSSHUser(cfg)
+	wrapped := opnsenseSudo(user, cmd)
 
 	sshCmd := exec.CommandContext(ctx, "ssh",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "ConnectTimeout=5",
-		fmt.Sprintf("root@%s", host), cmd)
+		fmt.Sprintf("%s@%s", user, host), wrapped)
 	out, err := sshCmd.CombinedOutput()
 	if err != nil {
-		log.Warn("OPNsense SSH command failed", "host", host, "cmd", cmd, "err", err, "output", string(out))
+		log.Warn("OPNsense SSH command failed",
+			"host", host, "user", user, "cmd", cmd, "err", err, "output", string(out))
 		return err
 	}
-	log.Info("OPNsense SSH command OK", "host", host, "cmd", cmd)
+	log.Info("OPNsense SSH command OK", "host", host, "user", user, "cmd", cmd)
 	return nil
 }
 
