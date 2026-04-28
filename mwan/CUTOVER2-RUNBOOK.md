@@ -2,6 +2,10 @@
 
 Last updated: 2026-04-13. Keep this up to date as things change.
 
+> **For post-cutover steady-state OPNsense config + operational rules** (e.g.
+> "do not enable any v4/v6 gateway entity post-cutover or BGP default gets
+> wiped on next Apply"), see [OPNSENSE-OPERATIONAL-NOTES.md](./OPNSENSE-OPERATIONAL-NOTES.md).
+
 ## Testbed topology
 
 | Host | VMID | Role | Management address | Bridges |
