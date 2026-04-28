@@ -97,9 +97,19 @@ table ip nat {
     chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
 
+        # Pin OPNsense-initiated WireGuard control-plane to AT&T regardless of
+        # peer IP. WG ports are static (OPNsense listens on 51820, configured
+        # peers listen on 51821) even when the peer's IP renumbers. Without this
+        # pin, the mod-2 LB below would split rekey attempts 50/50 across AT&T
+        # and Webpass; the resulting peer-IP flapping (via WG roaming) destabilizes
+        # long-lived peers like suburban whose Comcast IPv6 also renumbers.
+        # See MWAN-76 / MWAN-77 for follow-up alternatives.
+        iifname { $INTERNAL_IFACE, "vrrp.*" } ip saddr 10.250.250.2 udp sport 51820 udp dport 51821 ct state new meta mark set 1
+
         # Mark new connections for load balancing (fwmark)
         # Match both enmwanbr0 and vrrp.* (keepalived VMAC receives on vrrp.51)
-        iifname { $INTERNAL_IFACE, "vrrp.*" } ip saddr $INTERNAL_NET ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        # `meta mark 0` guard preserves the WG pin set above.
+        iifname { $INTERNAL_IFACE, "vrrp.*" } ip saddr $INTERNAL_NET meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
         # Inbound 1:1 NAT (DNAT) for static IPs
         # Map external /29s back to the internal /29 so OPNsense (and downstream) can receive inbound traffic.
@@ -202,16 +212,23 @@ table inet mangle {
         ip daddr @att_pinned_v4 meta mark set 1
         ip6 daddr @att_pinned_v6 meta mark set 1
 
+        # Pin OPNsense-initiated WireGuard control-plane (IPv6) to AT&T.
+        # Mirror of the IPv4 pin in `table ip nat / chain prerouting` above.
+        # See note there for rationale; covers the case where suburban's WG peer
+        # is reachable over IPv6 (and prone to Comcast prefix renumbers).
+        ip6 saddr {{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}/128 udp sport 51820 udp dport 51821 ct state new meta mark set 1
+
         # Load-balance outbound IPv6 from OPNsense-edge /128 as well.
         #
         # Why:
         # - Hairpinned inbound flows DNAT to OPNsense at {{ mwan_opnsense_edge_ipv6 }}.
         # - Replies sourced from that address MUST be marked so policy routing sends them
         #   back out the same WAN (and so postrouting SNAT selects the correct WAN ::1).
-        ip6 saddr {{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}/128 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        # `meta mark 0` guard preserves the WG pin set above.
+        ip6 saddr {{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}/128 meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
         # Load-balance IPv6 from internal /60 prefix
-        ip6 saddr {{ mwan_internal_prefix }} ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        ip6 saddr {{ mwan_internal_prefix }} meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
         # General traffic (no mark): Uses main table's multipath routing
         # Kernel automatically:
