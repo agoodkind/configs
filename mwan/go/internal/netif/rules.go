@@ -111,6 +111,35 @@ func ReconcileRules(
 	return nil
 }
 
+// RemoveRuleAtPriority deletes any rule(s) at the given (family, priority).
+// No-op if no rule exists at that slot. Used by modules that own a single
+// (family, priority) slot and need to vacate it (e.g. when the source
+// address that justified the rule disappears). Foreign rules at unrelated
+// priorities are not touched.
+func RemoveRuleAtPriority(
+	ctx context.Context, log *slog.Logger, family string, priority int,
+) error {
+	log = log.With("component", "rules", "op", "remove-at-priority",
+		"family", family, "priority", priority)
+	current, err := listRulesNetlink(log, family)
+	if err != nil {
+		return fmt.Errorf("list %s rules: %w", family, err)
+	}
+	removed := 0
+	for _, c := range current {
+		if c.Priority != priority {
+			continue
+		}
+		log.Info("rules: removing rule at priority", "rule", c)
+		if err := delRuleNetlink(ctx, log, family, c); err != nil {
+			return fmt.Errorf("del rule prio=%d: %w", priority, err)
+		}
+		removed++
+	}
+	log.Debug("rules: remove-at-priority done", "removed", removed)
+	return nil
+}
+
 // rulesMatch returns true if a current rule equals a desired rule on the
 // dimensions the daemon manages. Compares TableID (authoritative) and the
 // optional From / UIDRange selectors.

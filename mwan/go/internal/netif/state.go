@@ -93,6 +93,18 @@ func ReconcileAddrs(
 	return nil
 }
 
+// ListAddrs returns every address (v4 and v6) currently assigned to iface.
+// Wraps RTM_GETADDR via netlink. Returns ENODEV-style errors as nil link
+// not found, matching ReconcileAddrs' shape.
+func ListAddrs(_ context.Context, log *slog.Logger, iface string) ([]CurrentAddr, error) {
+	log = log.With("component", "addrs", "op", "list", "iface", iface)
+	link, err := linkByName(log, iface)
+	if err != nil {
+		return nil, fmt.Errorf("link %s: %w", iface, err)
+	}
+	return listAddrsNetlink(log, link)
+}
+
 // listAddrsNetlink returns parsed addresses on link, both families. Uses
 // netlink.AddrList (RTM_GETADDR) directly. Logged at DEBUG with counts.
 func listAddrsNetlink(log *slog.Logger, link netlink.Link) ([]CurrentAddr, error) {

@@ -31,6 +31,12 @@ type Module struct {
 	lastRAGW    string    // last RA-learned default gateway in main table
 	lastRASeen  time.Time // last successful observation of RA default
 	lastSLAACPx string    // last observed non-OOB global SLAAC prefix
+
+	// installedSLAACAddr is the source address currently installed in the
+	// SLAAC source-based ip rule (bare addr, no prefix). Empty means no
+	// rule installed by this module. Tracked so we can clean up across
+	// renumbers and on shutdown.
+	installedSLAACAddr string
 }
 
 // Config is the parsed [ifmgr.modules.oobv6] sub-config.
@@ -38,6 +44,19 @@ type Config struct {
 	Iface      string // mbrains
 	OOBAddr    string // "3d06:bad:b01:ff::1/128"
 	OOBTableID int    // numeric routing table ID (e.g. 500)
+
+	// ManageSLAACRule, when true (default), keeps an `ip -6 rule from
+	// <current-MB-SLAAC> lookup oob priority N` entry in sync with the
+	// live MB SLAAC address on the iface. Without this rule, replies
+	// sourced from the MB SLAAC fall through to the main table and
+	// egress via the lower-metric default (e.g. vmbr0/OPNsense),
+	// breaking off-site reachability to vault's public MB v6.
+	ManageSLAACRule bool
+
+	// SLAACRulePriority is the rule priority used for the SLAAC
+	// source-based rule. Default 7 (one lower than rule 6 which pins
+	// 3d06:bad:b01:ff::1 -> oob, so they don't collide).
+	SLAACRulePriority int
 }
 
 // Name implements ifmgr.Module.
@@ -91,7 +110,15 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		}
 	}
 
-	return m.syncOOBDefault(ctx, log, cur)
+	if err := m.syncOOBDefault(ctx, log, cur); err != nil {
+		return err
+	}
+
+	// Keep the source-based rule for the live MB SLAAC in sync. This is
+	// what makes off-site v6 reach back to vault from any address mbrains
+	// hands us, without depending on the address staying the same across
+	// RA renumbers (MWAN-67).
+	return m.reconcileSLAACSrcRule(ctx, log)
 }
 
 // syncOOBDefault writes the desired default into the oob table. If cur is
@@ -167,6 +194,26 @@ func (m *Module) OnKernelEvent(
 				"old", old, "new", ev.CIDR,
 			)
 		}
+		// Re-run the SLAAC source-rule reconcile so the rule tracks the
+		// new address within one event tick instead of one reconcile cycle.
+		if err := m.reconcileSLAACSrcRule(ctx, log); err != nil {
+			return fmt.Errorf("reconcile slaac src rule on AddrAdded: %w", err)
+		}
+	case netif.EvAddrDeleted:
+		if ev.Family != "inet6" {
+			return nil
+		}
+		if strings.HasPrefix(strings.ToLower(ev.CIDR), "fe80") || ev.CIDR == m.cfg.OOBAddr {
+			return nil
+		}
+		// A non-OOB SLAAC address went away. The rule may now point at a
+		// stale source; let reconcile remove it (or replace if another
+		// SLAAC is still present).
+		log.Debug("oobv6: SLAAC addr deleted, re-evaluating src rule",
+			"addr", ev.CIDR)
+		if err := m.reconcileSLAACSrcRule(ctx, log); err != nil {
+			return fmt.Errorf("reconcile slaac src rule on AddrDeleted: %w", err)
+		}
 	}
 	return nil
 }
@@ -192,9 +239,120 @@ func (m *Module) LastRASeen() time.Time {
 	return m.lastRASeen
 }
 
+// reconcileSLAACSrcRule installs an ip rule that points the live MB SLAAC
+// source at the OOB routing table. Removes the rule when no SLAAC is
+// present. Idempotent. No-op when ManageSLAACRule is false.
+//
+// State machine across reconciles:
+//   - SLAAC absent, no rule installed     -> no-op
+//   - SLAAC absent, rule installed        -> remove rule
+//   - SLAAC present, none installed       -> install rule
+//   - SLAAC present, same address rule    -> no-op
+//   - SLAAC present, different address    -> remove old, install new
+func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) error {
+	if !m.cfg.ManageSLAACRule {
+		log.Debug("oobv6: SLAAC source-rule management disabled")
+		return nil
+	}
+
+	log = log.With("op", "reconcile-slaac-src-rule")
+
+	current, err := m.findCurrentGlobalSLAAC(ctx, log)
+	if err != nil {
+		return fmt.Errorf("find current SLAAC: %w", err)
+	}
+
+	m.mu.Lock()
+	installed := m.installedSLAACAddr
+	m.mu.Unlock()
+
+	log.Debug("oobv6: SLAAC src rule state",
+		"installed", installed, "current", current,
+		"priority", m.cfg.SLAACRulePriority, "table_id", m.cfg.OOBTableID)
+
+	if current == installed {
+		// No-op for both "both empty" and "match" cases.
+		return nil
+	}
+
+	// Need to change the rule. Remove any existing rule at our priority
+	// first (covers stale-installed cleanup and the renumber case), then
+	// install the new one if we have a current SLAAC.
+	if installed != "" || current != "" {
+		log.Info("oobv6: SLAAC source-rule update",
+			"old", installed, "new", current,
+			"priority", m.cfg.SLAACRulePriority)
+	}
+
+	if installed != "" {
+		if err := netif.RemoveRuleAtPriority(
+			ctx, log, "inet6", m.cfg.SLAACRulePriority,
+		); err != nil {
+			return fmt.Errorf("remove stale SLAAC src rule: %w", err)
+		}
+	}
+
+	if current != "" {
+		desired := []netif.DesiredRule{{
+			Family:   "inet6",
+			Priority: m.cfg.SLAACRulePriority,
+			From:     current,
+			TableID:  m.cfg.OOBTableID,
+		}}
+		if err := netif.ReconcileRules(ctx, log, desired); err != nil {
+			return fmt.Errorf("install SLAAC src rule: %w", err)
+		}
+	}
+
+	m.mu.Lock()
+	m.installedSLAACAddr = current
+	m.mu.Unlock()
+	return nil
+}
+
+// findCurrentGlobalSLAAC returns the bare address (no /prefix) of the
+// first global IPv6 address on m.cfg.Iface that is not link-local and not
+// the static OOB address. Returns "" if none found. The first such
+// address is sufficient: in practice MB hands us exactly one SLAAC GUA
+// at a time. If multiple ever appear, we deterministically pick whichever
+// listAddrs returns first; the next reconcile will pick the same one.
+func (m *Module) findCurrentGlobalSLAAC(
+	ctx context.Context, log *slog.Logger,
+) (string, error) {
+	addrs, err := netif.ListAddrs(ctx, log, m.cfg.Iface)
+	if err != nil {
+		return "", err
+	}
+	oobBare := netif.StripPrefix(m.cfg.OOBAddr)
+	for _, a := range addrs {
+		if a.Family != "inet6" {
+			continue
+		}
+		bare := netif.StripPrefix(a.CIDR)
+		lower := strings.ToLower(bare)
+		if strings.HasPrefix(lower, "fe80") || strings.HasPrefix(lower, "fe8") ||
+			strings.HasPrefix(lower, "fe9") || strings.HasPrefix(lower, "fea") ||
+			strings.HasPrefix(lower, "feb") {
+			// link-local fe80::/10
+			continue
+		}
+		if bare == oobBare {
+			continue
+		}
+		return bare, nil
+	}
+	return "", nil
+}
+
 // New is the Constructor registered with ifmgr. Parses cfg into Config.
+// Defaults: ManageSLAACRule=true, SLAACRulePriority=7. Pass
+// `manage_slaac_source_rule = false` in [ifmgr.modules.oobv6] to
+// disable the rule entirely.
 func New(cfg map[string]any) (ifmgr.Module, error) {
-	c := Config{}
+	c := Config{
+		ManageSLAACRule:   true,
+		SLAACRulePriority: 7,
+	}
 	if v, ok := cfg["iface"].(string); ok {
 		c.Iface = v
 	}
@@ -206,6 +364,18 @@ func New(cfg map[string]any) (ifmgr.Module, error) {
 		c.OOBTableID = v
 	case int64:
 		c.OOBTableID = int(v)
+	}
+	if v, ok := cfg["manage_slaac_source_rule"].(bool); ok {
+		c.ManageSLAACRule = v
+	}
+	switch v := cfg["slaac_rule_priority"].(type) {
+	case int:
+		c.SLAACRulePriority = v
+	case int64:
+		c.SLAACRulePriority = int(v)
+	}
+	if c.SLAACRulePriority <= 0 || c.SLAACRulePriority >= 32766 {
+		return nil, fmt.Errorf("oobv6: slaac_rule_priority out of range (1..32765): %d", c.SLAACRulePriority)
 	}
 	return &Module{cfg: c}, nil
 }
