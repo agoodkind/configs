@@ -49,14 +49,11 @@ fmt:
 fix:
 	golangci-lint run --fix ./...
 
-# Wire go.mk's `staticcheck-extra` system to Clyde's analyzer set.
-# Project owns: which binary/source, which analyzer flags. go.mk owns:
-# build-on-demand, baseline diff, NEW-finding gate. See STATICCHECK-NOTES.md.
-STATICCHECK_EXTRA_BUILD_REPO := $(HOME)/Sites/clyde-dev/clyde
-STATICCHECK_EXTRA_BUILD_PKG  := ./cmd/clyde-staticcheck
-STATICCHECK_EXTRA_FLAGS      := -slog_error_without_err -banned_direct_output \
-	-hot_loop_info_log -missing_boundary_log -no_any_or_empty_interface
-STATICCHECK_EXTRA_BASELINE   := .staticcheck-clyde-baseline.txt
+# go.mk's `staticcheck-extra` system uses its own bundled analyzer set by
+# default (5 custom AST analyzers, installed via `go install` from
+# go-makefile). Project just sets the per-finding baseline file.
+# See STATICCHECK-NOTES.md for the documented exceptions.
+STATICCHECK_EXTRA_BASELINE := .staticcheck-extra-baseline.txt
 
 tidy:
 	go mod tidy
