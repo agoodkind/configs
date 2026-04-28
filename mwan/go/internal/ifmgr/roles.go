@@ -19,6 +19,12 @@ var roleModules = map[string][]string{
 		"oobv6",
 		"oobv4",
 		"ra_lost",
+		// cloudflared_tap is a log forwarder. It tails a configured
+		// systemd unit (cloudflared-oob) and re-emits each entry through
+		// the daemon's slog logger so cloudflared events flow through
+		// the same JSON log file and email pipeline as everything else.
+		// Pure log forwarder: no kernel state.
+		"cloudflared_tap",
 	},
 	// lxc-failover-backup is the iface-monitor role for prod LXC 116 and
 	// testbed LXC 117. mainv4 is included so that when dhcp_v4 is enabled

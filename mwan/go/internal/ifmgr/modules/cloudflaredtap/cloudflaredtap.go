@@ -1,0 +1,322 @@
+//go:build linux
+
+// Package cloudflaredtap implements an ifmgr log-sink module that tails
+// a configured systemd unit's journal and re-emits each entry through
+// the daemon's slog.Logger. The intent is to fold cloudflared-oob (or
+// any other systemd unit) events into the same JSON log file, the same
+// email-on-WARN+ pipeline, and the same trace context as everything
+// else mwan-ifmgr produces.
+//
+// Registers as "cloudflared_tap". Selected by the vault-oob role.
+//
+// The module is purely a log forwarder: Reconcile, OnKernelEvent,
+// OnDHCPLease, and EvaluateAlerts are all no-ops. The work happens in
+// a goroutine spawned during Init that runs journalctl as a long-lived
+// child process, parses each JSON line, and re-emits.
+package cloudflaredtap
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"sync"
+	"time"
+
+	"goodkind.io/mwan/internal/ifmgr"
+	"goodkind.io/mwan/internal/netif"
+)
+
+// Module owns the journal-tail goroutine for one unit.
+type Module struct {
+	cfg      Config
+	env      *ifmgr.Env
+	log      *slog.Logger
+	patterns []*regexp.Regexp
+
+	mu       sync.Mutex
+	running  bool
+	stopOnce sync.Once
+	stop     chan struct{}
+}
+
+// Config is the parsed [ifmgr.modules.cloudflared_tap] sub-config.
+type Config struct {
+	// Unit names the systemd unit whose journal we tail. Required.
+	// Example: "cloudflared-oob".
+	Unit string
+
+	// DowngradePatterns is a list of regex patterns. Any journal entry
+	// whose message matches any of them is forced to DEBUG, regardless
+	// of the syslog priority cloudflared assigned. Used to silence
+	// well-known noisy lines like edge-rotation reconnects.
+	DowngradePatterns []string
+
+	// JournalctlPath is the binary to invoke. Defaults to "journalctl".
+	// Made configurable for testing.
+	JournalctlPath string
+}
+
+// Name implements ifmgr.Module.
+func (m *Module) Name() string { return "cloudflared_tap" }
+
+// Init validates config, compiles regex patterns, and spawns the
+// long-lived journal-tail goroutine.
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
+	m.env = env
+	m.log = env.Log.With("module", "cloudflared_tap", "unit", m.cfg.Unit)
+	m.log.Info("cloudflared_tap: Init",
+		"unit", m.cfg.Unit,
+		"downgrade_patterns", len(m.cfg.DowngradePatterns),
+		"journalctl_path", m.cfg.JournalctlPath)
+
+	if m.cfg.Unit == "" {
+		return fmt.Errorf("cloudflared_tap: unit is required")
+	}
+
+	for i, p := range m.cfg.DowngradePatterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			return fmt.Errorf("cloudflared_tap: invalid downgrade_patterns[%d] %q: %w", i, p, err)
+		}
+		m.patterns = append(m.patterns, re)
+	}
+
+	if m.cfg.JournalctlPath == "" {
+		m.cfg.JournalctlPath = "journalctl"
+	}
+
+	m.stop = make(chan struct{})
+	m.mu.Lock()
+	m.running = true
+	m.mu.Unlock()
+	go m.tailLoop(ctx)
+	return nil
+}
+
+// Reconcile is a no-op; this module reacts only to journal stream events.
+func (m *Module) Reconcile(_ context.Context, _ *slog.Logger) error { return nil }
+
+// OnKernelEvent is a no-op.
+func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
+	return nil
+}
+
+// OnDHCPLease is a no-op.
+func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
+	return nil
+}
+
+// EvaluateAlerts is a no-op; alerts (if any) are emitted inline by the
+// re-emit path with the appropriate slog level.
+func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {}
+
+// tailLoop is the long-lived goroutine that runs journalctl --follow,
+// parses each JSON line, and re-emits via the module logger. On
+// subprocess exit it backs off exponentially (cap 30s) and retries
+// until the daemon context is cancelled.
+func (m *Module) tailLoop(ctx context.Context) {
+	defer func() {
+		m.mu.Lock()
+		m.running = false
+		m.mu.Unlock()
+	}()
+
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			m.log.Info("cloudflared_tap: tail loop exiting (context cancelled)")
+			return
+		case <-m.stop:
+			m.log.Info("cloudflared_tap: tail loop exiting (stop signalled)")
+			return
+		default:
+		}
+
+		err := m.runJournalctl(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+
+		m.log.Warn("cloudflared_tap: journalctl exited; will restart after backoff",
+			"backoff", backoff.String(), "err", errMsg(err))
+		select {
+		case <-ctx.Done():
+			return
+		case <-m.stop:
+			return
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+}
+
+// runJournalctl spawns one journalctl --follow run and forwards each
+// line until the subprocess exits (or context cancels). Returns the
+// subprocess error.
+func (m *Module) runJournalctl(ctx context.Context) error {
+	args := []string{
+		"-u", m.cfg.Unit,
+		"-f",
+		"-o", "json",
+		"--no-pager",
+		"-n", "0", // start at the tail; do not replay history
+	}
+	cmd := exec.CommandContext(ctx, m.cfg.JournalctlPath, args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("stdout pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start: %w", err)
+	}
+	m.log.Info("cloudflared_tap: journalctl started",
+		"pid", cmd.Process.Pid, "args", args)
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // up to 1 MiB per line
+	for scanner.Scan() {
+		m.processLine(scanner.Bytes())
+	}
+	scanErr := scanner.Err()
+	waitErr := cmd.Wait()
+	if scanErr != nil {
+		return fmt.Errorf("scanner: %w", scanErr)
+	}
+	return waitErr
+}
+
+// processLine parses one journalctl JSON output line and re-emits it.
+func (m *Module) processLine(line []byte) {
+	var entry map[string]any
+	if err := json.Unmarshal(line, &entry); err != nil {
+		m.log.Debug("cloudflared_tap: skip non-json line", "raw", string(line), "err", err.Error())
+		return
+	}
+
+	msg := strField(entry, "MESSAGE")
+	if msg == "" {
+		return
+	}
+	priority := intField(entry, "PRIORITY")
+	level := mapPriority(priority)
+
+	// Demote routine cloudflared lines so the email handler does not page
+	// on every edge rotation. Keep WARN/ERR from cloudflared at WARN/ERR
+	// unless they match a downgrade pattern.
+	if level < slog.LevelWarn {
+		level = slog.LevelDebug
+	}
+	if matchAny(m.patterns, msg) {
+		level = slog.LevelDebug
+	}
+
+	args := []any{
+		"src_unit", strField(entry, "_SYSTEMD_UNIT"),
+		"src_pid", strField(entry, "_PID"),
+		"src_comm", strField(entry, "_COMM"),
+		"src_priority", priority,
+		"msg", msg,
+	}
+	m.log.Log(context.Background(), level, "cloudflared_tap", args...)
+}
+
+// mapPriority converts a syslog severity 0..7 to the closest slog.Level.
+//
+//	0..3 (emerg/alert/crit/err) -> ERROR
+//	4    (warning)              -> WARN
+//	5    (notice)               -> INFO
+//	6    (info)                 -> INFO
+//	7    (debug)                -> DEBUG
+//	any other                   -> INFO (fallback)
+func mapPriority(p int) slog.Level {
+	switch {
+	case p <= 3:
+		return slog.LevelError
+	case p == 4:
+		return slog.LevelWarn
+	case p == 5, p == 6:
+		return slog.LevelInfo
+	case p == 7:
+		return slog.LevelDebug
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// matchAny reports whether any pattern matches s.
+func matchAny(patterns []*regexp.Regexp, s string) bool {
+	for _, re := range patterns {
+		if re.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// strField extracts a string field from a parsed journal entry. journalctl
+// emits all field values as strings (or arrays of strings); we take the
+// scalar form only for now.
+func strField(entry map[string]any, key string) string {
+	v, ok := entry[key]
+	if !ok {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// intField extracts a numeric field that journalctl encodes as a string.
+func intField(entry map[string]any, key string) int {
+	s := strField(entry, key)
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func errMsg(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// New is the Constructor registered with ifmgr. Parses cfg into Config.
+func New(cfg map[string]any) (ifmgr.Module, error) {
+	c := Config{}
+	if v, ok := cfg["unit"].(string); ok {
+		c.Unit = v
+	}
+	if v, ok := cfg["journalctl_path"].(string); ok {
+		c.JournalctlPath = v
+	}
+	switch v := cfg["downgrade_patterns"].(type) {
+	case []any:
+		for _, x := range v {
+			if s, ok := x.(string); ok {
+				c.DowngradePatterns = append(c.DowngradePatterns, s)
+			}
+		}
+	case []string:
+		c.DowngradePatterns = append(c.DowngradePatterns, v...)
+	}
+	return &Module{cfg: c}, nil
+}
+
+func init() { ifmgr.Register("cloudflared_tap", New) }
