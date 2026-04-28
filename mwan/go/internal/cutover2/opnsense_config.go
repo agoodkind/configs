@@ -46,13 +46,116 @@ func removeGatewayV6(ctx context.Context, log *slog.Logger, cfg *config.Config) 
 	log.Info("gatewayv6 removed from config.xml")
 }
 
-// restoreGatewayV6 restores <gatewayv6> to the WAN interface in OPNsense
-// config.xml from the pre-BGP backup created by removeGatewayV6.
-func restoreGatewayV6(ctx context.Context, log *slog.Logger, cfg *config.Config) {
-	log.Info("restoring gatewayv6 to OPNsense WAN interface config")
-	if err := opnsenseSSH(ctx, log, cfg, "test -f /conf/config.xml.pre-bgp && cp /conf/config.xml.pre-bgp /conf/config.xml || echo no-backup"); err != nil {
-		log.Error("failed to restore config.xml from backup", "err", err)
+// restoreGatewayV6 surgically re-adds <gatewayv6>WAN_GW6</gatewayv6> to the
+// WAN interface in OPNsense config.xml. Idempotent and conservative:
+//
+//   - If <gatewayv6> is already present, no-op.
+//   - If the gateway name passed in is empty, no-op.
+//   - Mutates only the WAN section's gatewayv6 line, preserving everything
+//     else byte-for-byte. Does NOT clobber other config changes the way
+//     the previous cp-from-backup implementation did.
+//
+// Caller is responsible for verifying the gateway record exists on
+// OPNsense; if it doesn't (post-decommission state), no DefaultRoute
+// will be selected even after this function "succeeds" - the caller
+// should refuse to run unfuck in that case (see cmdUnfuck pre-flight).
+func restoreGatewayV6(ctx context.Context, log *slog.Logger, cfg *config.Config, gatewayName string) {
+	if gatewayName == "" {
+		log.Info("restoreGatewayV6: empty gatewayName; skipping")
+		return
 	}
+	log.Info("restoring gatewayv6 to OPNsense WAN interface config",
+		"gateway", gatewayName)
+
+	raw, err := opnsenseSSHOutput(ctx, log, cfg, "cat /conf/config.xml")
+	if err != nil {
+		log.Error("failed to read config.xml from OPNsense", "err", err)
+		return
+	}
+
+	modified, changed := injectGatewayV6(raw, gatewayName)
+	if !changed {
+		log.Info("restoreGatewayV6: <gatewayv6> already present in <wan>; no-op")
+		return
+	}
+
+	if err := opnsenseSSHWrite(ctx, log, cfg, "/conf/config.xml", modified); err != nil {
+		log.Error("failed to write modified config.xml", "err", err)
+		return
+	}
+	log.Info("restoreGatewayV6: injected <gatewayv6> back into <wan>",
+		"gateway", gatewayName)
+}
+
+// injectGatewayV6 inserts a <gatewayv6>name</gatewayv6> element into the
+// <wan> interface section of an OPNsense config.xml, immediately before
+// the closing </wan> tag. If <gatewayv6> is already present anywhere in
+// <wan>, returns the input unchanged.
+//
+// Mirror of stripGatewayV6: tokenize to find <wan>, scan inside, decide,
+// then string-splice to preserve byte-level fidelity.
+func injectGatewayV6(input []byte, gatewayName string) ([]byte, bool) {
+	decoder := xml.NewDecoder(bytes.NewReader(input))
+	decoder.Strict = false
+	decoder.AutoClose = xml.HTMLAutoClose
+
+	var inWan bool
+	var alreadyHas bool
+	var wanCloseStart int64 = -1
+
+	for {
+		offset := decoder.InputOffset()
+		tok, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			if t.Name.Local == "wan" {
+				inWan = true
+				continue
+			}
+			if inWan && t.Name.Local == "gatewayv6" {
+				alreadyHas = true
+			}
+		case xml.EndElement:
+			if t.Name.Local == "wan" && inWan {
+				wanCloseStart = offset
+				inWan = false
+			}
+		}
+		if alreadyHas || wanCloseStart >= 0 {
+			break
+		}
+	}
+
+	if alreadyHas {
+		return input, false
+	}
+	if wanCloseStart < 0 {
+		// no <wan> section at all - bail rather than mangle
+		return input, false
+	}
+
+	// Find indent: walk back from wanCloseStart over spaces/tabs to find
+	// the indent of </wan>, then add 2 spaces of nesting for the new line.
+	indentStart := wanCloseStart
+	for indentStart > 0 && (input[indentStart-1] == ' ' || input[indentStart-1] == '\t') {
+		indentStart--
+	}
+	indent := string(input[indentStart:wanCloseStart])
+	innerIndent := indent + "  "
+
+	insertion := fmt.Sprintf("%s<gatewayv6>%s</gatewayv6>\n", innerIndent, gatewayName)
+
+	var out bytes.Buffer
+	out.Write(input[:indentStart])
+	out.WriteString(insertion)
+	out.Write(input[indentStart:])
+	return out.Bytes(), true
 }
 
 // stripGatewayV6 removes the <gatewayv6>...</gatewayv6> element from within

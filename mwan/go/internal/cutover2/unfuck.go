@@ -34,6 +34,19 @@ func cmdUnfuck(ctx context.Context, log *slog.Logger, cfg *config.Config) error 
 		Insecure:  cfg.OPNsense.Insecure,
 	}, log)
 
+	// Step 0: refuse-to-run when fully decommissioned. If both static
+	// gateways have been deleted (MWAN-69 cleanup), unfuck cannot recover
+	// without their config; the only safe revert is PVE snapshot rollback.
+	// Refuse explicitly rather than running a half-restore that leaves the
+	// system in worse state than no-op.
+	if isFullyDecommissioned(ctx, log, client, cfg.OPNsense.GatewayNames) {
+		return fmt.Errorf("unfuck: pre-cutover gateways %v are gone from OPNsense; "+
+			"system is in post-decommission state; "+
+			"unfuck cannot rebuild them. Use PVE snapshot rollback instead "+
+			"(qm rollback <opnsense-vmid> <pre-cutover-snap>)",
+			cfg.OPNsense.GatewayNames)
+	}
+
 	// Step 1: Stop mwan-agent on VM (stops BGP announcements from primary)
 	// Uses qm guest exec (QEMU guest agent channel) instead of SSH to avoid
 	// the circular dependency where SSH requires the network we're trying to fix.
@@ -77,14 +90,25 @@ func cmdUnfuck(ctx context.Context, log *slog.Logger, cfg *config.Config) error 
 		log.Error("unfuck: failed to reconfigure routing (continuing)", "err", err)
 	}
 
-	// Step 6: Restart keepalived on VM (restore VIP)
+	// Step 6: Start keepalived on VM only if the operator hasn't explicitly
+	// disabled it (post-decommission cleanup may disable keepalived as part
+	// of removing the pre-cutover stack). Use `start` not `restart`: restart
+	// would start a disabled unit, ignoring operator intent.
 	if vmid != "" && vmid != "0" {
-		log.Info("unfuck: restarting keepalived on VM via guest agent", "vmid", vmid)
-		qmBestEffort(ctx, log, vmid, "systemctl restart keepalived")
+		log.Info("unfuck: conditionally starting keepalived on VM via guest agent", "vmid", vmid)
+		qmBestEffort(ctx, log, vmid,
+			"systemctl is-enabled keepalived >/dev/null 2>&1 "+
+				"&& systemctl start keepalived "+
+				"|| echo keepalived is disabled or absent; respecting operator intent")
 	}
 
-	// Step 7: Restore gatewayv6 to OPNsense config (removed by switch-to-bgp)
-	restoreGatewayV6(ctx, log, cfg)
+	// Step 7: Restore gatewayv6 to OPNsense config if it was removed by
+	// switch-to-bgp. Surgical XML mutation, idempotent: no-op if already
+	// present, no-op if WAN_GW6 record doesn't exist on the system. The
+	// gateway name is the v6 entry from cfg.OPNsense.GatewayNames (by
+	// convention the second entry: [WAN_GW4, WAN_GW6]).
+	gw6 := pickV6GatewayName(cfg.OPNsense.GatewayNames)
+	restoreGatewayV6(ctx, log, cfg, gw6)
 
 	// Step 8: Restart watchdog (may have been stopped by switch-to-bgp)
 	log.Info("unfuck: restarting mwan-watchdog", "service", cfg.Watchdog.ServiceName)
@@ -102,6 +126,51 @@ func cmdUnfuck(ctx context.Context, log *slog.Logger, cfg *config.Config) error 
 	}
 
 	return nil
+}
+
+// isFullyDecommissioned returns true if NONE of the configured pre-cutover
+// gateway names exist on OPNsense. This is the post-MWAN-69 state where
+// the static gateways have been deleted; unfuck cannot rebuild them
+// (the cp-from-backup approach we used before was destructive). Caller
+// should refuse to run.
+//
+// Conservative: returns false if the API itself errors (we don't want to
+// refuse just because OPNsense is briefly unreachable).
+func isFullyDecommissioned(
+	ctx context.Context, log *slog.Logger,
+	client *opnsense.Client, gatewayNames []string,
+) bool {
+	if len(gatewayNames) == 0 {
+		return false
+	}
+	missing := 0
+	for _, name := range gatewayNames {
+		_, err := client.FindGatewayByName(ctx, name)
+		if err == nil {
+			// At least one gateway still present, we are NOT fully decommissioned.
+			return false
+		}
+		log.Debug("unfuck pre-flight: gateway absent", "name", name, "err", err)
+		missing++
+	}
+	return missing == len(gatewayNames)
+}
+
+// pickV6GatewayName returns the IPv6 gateway name from the configured list.
+// Convention: cfg.OPNsense.GatewayNames is [WAN_GW4, WAN_GW6] in that
+// order. Picks the entry matching v6-style naming, falling back to the
+// second entry. Empty if nothing identifiable.
+func pickV6GatewayName(names []string) string {
+	for _, n := range names {
+		if strings.Contains(strings.ToUpper(n), "GW6") ||
+			strings.Contains(strings.ToUpper(n), "V6") {
+			return n
+		}
+	}
+	if len(names) >= 2 {
+		return names[1]
+	}
+	return ""
 }
 
 // pctBestEffort runs a command inside an LXC via pct exec and logs but does not fail.

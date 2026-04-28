@@ -11,7 +11,7 @@ internal/cutover2/main.go:366:3: do not emit info-level slog events directly ins
 internal/cutover2/main.go:472:3: do not emit info-level slog events directly inside loops; log state transitions or summaries
 internal/cutover2/main.go:477:3: do not emit info-level slog events directly inside loops; log state transitions or summaries
 internal/cutover2/main.go:507:4: do not emit info-level slog events directly inside loops; log state transitions or summaries
-internal/cutover2/unfuck.go:63:3: do not emit info-level slog events directly inside loops; log state transitions or summaries
+internal/cutover2/unfuck.go:76:3: do not emit info-level slog events directly inside loops; log state transitions or summaries
 internal/healthcheck/main.go:49:4: do not emit info-level slog events directly inside loops; log state transitions or summaries
 internal/opnsense/client.go:104:3: do not emit info-level slog events directly inside loops; log state transitions or summaries
 internal/opnsense/client.go:124:3: do not emit info-level slog events directly inside loops; log state transitions or summaries
