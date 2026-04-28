@@ -61,13 +61,5 @@ build-linux: build vet lint test proto
 	@mkdir -p bin
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY)-linux $(CMD)
 
-# Cross-compile only, skipping lint and test. Use when the upstream lint
-# config is broken or you need a fast iteration during local debugging.
-# Production deploys should use `build-linux` (with lint+test) once lint
-# is unblocked.
-build-linux-only: build proto
-	@mkdir -p bin
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY)-linux $(CMD)
-
 clean:
 	rm -rf bin/
