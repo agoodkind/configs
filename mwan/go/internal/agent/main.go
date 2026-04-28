@@ -15,6 +15,7 @@ import (
 	"goodkind.io/mwan/internal/bgp"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/version"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -39,7 +40,7 @@ func Run(cfg *config.Config) {
 
 	logger, err := logging.New(logging.Config{
 		JSONLogFile: *logFile,
-	}, buildVersion())
+	}, version.BuildVersionString())
 	if err != nil {
 		boot := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 		boot.Error("init logger", "error", err, "log_file", *logFile)
@@ -54,7 +55,7 @@ func Run(cfg *config.Config) {
 
 	logger.Info(
 		"mwan-agent starting",
-		"detail", buildVersion(),
+		"detail", version.BuildVersionString(),
 		"vsock_port", *vsockPort,
 		"tcp_addr", *tcpAddr,
 	)
@@ -164,9 +165,3 @@ func Run(cfg *config.Config) {
 	}
 }
 
-// buildVersion returns the build version string.
-// This should match the version.go implementation from cmd/mwan/.
-func buildVersion() string {
-	// TODO: import from a shared location or pass in
-	return "dev"
-}

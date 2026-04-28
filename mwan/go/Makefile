@@ -34,7 +34,7 @@ export PATH := $(GOBIN):$(PATH)
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY  := $(shell git diff --quiet HEAD -- . 2>/dev/null && echo clean || echo dirty)
-LDFLAGS    := -X main.gitCommit=$(GIT_COMMIT) -X main.gitDirty=$(GIT_DIRTY)
+LDFLAGS    := -X goodkind.io/mwan/internal/version.gitCommit=$(GIT_COMMIT) -X goodkind.io/mwan/internal/version.gitDirty=$(GIT_DIRTY)
 
 BINARY := mwan
 CMD    := ./cmd/$(BINARY)
