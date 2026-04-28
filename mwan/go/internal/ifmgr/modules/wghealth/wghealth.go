@@ -1,20 +1,26 @@
 //go:build linux
 
-// Package wghealth polls a remote WireGuard server (typically OPNsense)
-// over SSH and reports per-peer handshake age plus byte-rate health.
+// Package wghealth polls a WireGuard interface and reports per-peer
+// handshake age plus byte-rate health. Two modes:
 //
-// The OPNsense-side view is authoritative because it sees every peer.
+//   - Remote SSH mode: when ssh_host is set, runs `wg show <iface> dump`
+//     on the remote (typically OPNsense). Used by the vault-oob role.
+//   - Local exec mode: when ssh_host is empty, runs `wg show <iface> dump`
+//     locally. Used by daemons running on a WG endpoint host directly
+//     (e.g. suburban). Wired by the suburban-wg role.
+//
 // The module emits one structured log entry per peer per Reconcile pass
 // at DEBUG. Threshold-based alerts fire at WARN when a peer handshake
 // goes stale and at ERROR when it crosses a higher threshold. Recovery
 // emits INFO and clears the alert.
 //
-// Bidirectional reconciliation (cross-checking from each peer's own view)
-// is intentionally out of scope for v1. The OPNsense view is sufficient
-// for the failure mode this module was built to detect (suburban WG
-// stalled for 68 minutes on 2026-04-28 with no observability).
+// For bidirectional split-brain detection (each side's view of the same
+// peer should agree on endpoint after NAT normalization), run wghealth
+// on BOTH sides. Each daemon emits its local view as structured logs
+// with module=wg_health and src_host=<hostname>. Cross-side correlation
+// is currently log-analysis; native cross-check is MWAN-80 follow-up.
 //
-// Registers as "wg_health". Selected by the vault-oob role.
+// Registers as "wg_health".
 package wghealth
 
 import (
@@ -99,7 +105,11 @@ func (m *Module) Name() string { return "wg_health" }
 // Init implements ifmgr.Module.
 func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 	m.env = env
-	m.log = env.Log.With("module", "wg_health", "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
+	mode := "local"
+	if m.cfg.SSHHost != "" {
+		mode = "ssh"
+	}
+	m.log = env.Log.With("module", "wg_health", "mode", mode, "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
 	m.log.Info("wg_health: Init",
 		"warn_handshake_age", m.cfg.WarnHandshakeAge.String(),
 		"error_handshake_age", m.cfg.ErrorHandshakeAge.String(),
@@ -107,9 +117,6 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 		"sudo", m.cfg.Sudo,
 		"timeout", m.cfg.Timeout.String(),
 	)
-	if m.cfg.SSHHost == "" {
-		return fmt.Errorf("wg_health: ssh_host is required")
-	}
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("wg_health: iface is required")
 	}
@@ -233,9 +240,16 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 	}
 }
 
-// runRemoteWGShow runs `wg show <iface> dump` on the configured ssh target
-// and returns the raw stdout.
+// runRemoteWGShow runs `wg show <iface> dump` either locally (when SSHHost
+// is empty) or on the configured ssh target, and returns the raw stdout.
 func (m *Module) runRemoteWGShow(ctx context.Context, log *slog.Logger) (string, error) {
+	timeout := m.cfg.Timeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if m.cfg.SSHHost == "" {
+		return m.runLocalWGShow(ctx, log, timeout)
+	}
 	port := m.cfg.SSHPort
 	if port == 0 {
 		port = 22
@@ -264,10 +278,6 @@ func (m *Module) runRemoteWGShow(ctx context.Context, log *slog.Logger) (string,
 		remoteCmd = "sudo -n " + remoteCmd
 	}
 	args = append(args, remoteCmd)
-	timeout := m.cfg.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	start := time.Now()
@@ -288,6 +298,43 @@ func (m *Module) runRemoteWGShow(ctx context.Context, log *slog.Logger) (string,
 	}
 	log.Debug("wg_health: ssh wg show ok",
 		"duration_ms", dur.Milliseconds(),
+		"out_bytes", len(out),
+	)
+	return string(out), nil
+}
+
+// runLocalWGShow runs `wg show <iface> dump` directly on the local host.
+// Used when SSHHost is empty (local-exec mode). Optionally wraps in sudo
+// if the daemon does not run as root and wg requires elevation.
+func (m *Module) runLocalWGShow(ctx context.Context, log *slog.Logger, timeout time.Duration) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var cmd *exec.Cmd
+	if m.cfg.Sudo {
+		cmd = exec.CommandContext(cctx, "sudo", "-n", "wg", "show", m.cfg.Iface, "dump")
+	} else {
+		cmd = exec.CommandContext(cctx, "wg", "show", m.cfg.Iface, "dump")
+	}
+	start := time.Now()
+	out, err := cmd.Output()
+	dur := time.Since(start)
+	if err != nil {
+		stderr := ""
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = string(ee.Stderr)
+		}
+		log.Debug("wg_health: local wg show failed",
+			"duration_ms", dur.Milliseconds(),
+			"iface", m.cfg.Iface,
+			"sudo", m.cfg.Sudo,
+			"err", err,
+			"stderr", stderr,
+		)
+		return "", fmt.Errorf("local wg show %s: %w (stderr=%q)", m.cfg.Iface, err, stderr)
+	}
+	log.Debug("wg_health: local wg show ok",
+		"duration_ms", dur.Milliseconds(),
+		"iface", m.cfg.Iface,
 		"out_bytes", len(out),
 	)
 	return string(out), nil

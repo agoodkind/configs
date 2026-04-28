@@ -43,6 +43,16 @@ var roleModules = map[string][]string{
 		"ra_lost",
 		"mainv4",
 	},
+	// suburban-wg is the WG-endpoint observer role for the suburban testbed
+	// host. It runs wg_health in local-exec mode (ssh_host empty) so the
+	// daemon polls the local wg0 and emits suburban's own view of every
+	// peer endpoint. Combined with vault's wg_health (OPNsense view),
+	// log analysis can surface split-brain (each side believes a different
+	// peer endpoint) caused by WG roaming + asymmetric NAT paths.
+	// See mwan/WIREGUARD-ROAMING-NOTES.md for protocol details.
+	"suburban-wg": {
+		"wg_health",
+	},
 }
 
 // modulesForRole returns the module name list for the named role, or an
