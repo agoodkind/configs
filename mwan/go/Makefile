@@ -41,13 +41,67 @@ CMD    := ./cmd/$(BINARY)
 
 .DEFAULT_GOAL := check
 
-.PHONY: proto build build-linux clean tidy fmt fix
+.PHONY: proto build build-linux clean tidy fmt fix staticcheck-clyde
 
 fmt:
 	golangci-lint fmt ./...
 
 fix:
 	golangci-lint run --fix ./...
+
+# clyde-staticcheck = Clyde's custom analyzer set:
+# - slog_error_without_err: error-level slog must carry err field
+# - banned_direct_output:  no fmt.Print*, no stdlib log.Print/Fatal/Panic
+# - hot_loop_info_log:     no Info-level slog directly inside loops
+# - missing_boundary_log:  main() must emit a structured slog event
+# - no_any_or_empty_interface: exported types/funcs must not use any/interface{}
+#
+# Runs against an upstream binary built from goodkind.io/clyde local clone.
+# Falls back to a polite skip if clyde isn't checked out.
+CLYDE_REPO := $(HOME)/Sites/clyde-dev/clyde
+CLYDE_BIN  := .make/clyde-staticcheck
+$(CLYDE_BIN): $(wildcard $(CLYDE_REPO)/internal/staticcheck/*.go) $(CLYDE_REPO)/cmd/clyde-staticcheck/main.go
+	@if [ ! -d "$(CLYDE_REPO)" ]; then \
+		echo "clyde-staticcheck: $(CLYDE_REPO) not present; skipping"; \
+		exit 0; \
+	fi
+	@mkdir -p .make
+	cd $(CLYDE_REPO) && go build -o $(CURDIR)/$(CLYDE_BIN) ./cmd/clyde-staticcheck
+
+staticcheck-clyde: $(CLYDE_BIN)
+	@if [ ! -x "$(CLYDE_BIN)" ]; then \
+		echo "clyde-staticcheck binary not built; skipping"; \
+		exit 0; \
+	fi
+	@bash -c 'set -o pipefail; \
+		$(CLYDE_BIN) -slog_error_without_err -banned_direct_output \
+			-hot_loop_info_log -missing_boundary_log \
+			-no_any_or_empty_interface ./... 2>&1 \
+			| sed "s|$(CURDIR)/||g" | sort > .make/staticcheck-clyde.out; \
+		new=$$(comm -23 .make/staticcheck-clyde.out .staticcheck-clyde-baseline.txt || true); \
+		if [ -n "$$new" ]; then \
+			echo "NEW staticcheck-clyde findings (not in baseline):"; \
+			echo "$$new"; \
+			echo ""; \
+			echo "Either fix them, or update the baseline with:"; \
+			echo "  make staticcheck-clyde-baseline"; \
+			echo "and document the exception in STATICCHECK-NOTES.md"; \
+			exit 1; \
+		fi; \
+		gone=$$(comm -13 .make/staticcheck-clyde.out .staticcheck-clyde-baseline.txt || true); \
+		if [ -n "$$gone" ]; then \
+			echo "RESOLVED staticcheck-clyde findings (please update baseline):"; \
+			echo "$$gone"; \
+		fi; \
+		n=$$(wc -l < .make/staticcheck-clyde.out); \
+		echo "staticcheck-clyde: OK ($$n findings, all in baseline)"'
+
+staticcheck-clyde-baseline: $(CLYDE_BIN)
+	@$(CLYDE_BIN) -slog_error_without_err -banned_direct_output \
+		-hot_loop_info_log -missing_boundary_log \
+		-no_any_or_empty_interface ./... 2>&1 \
+		| sed "s|$(CURDIR)/||g" | sort > .staticcheck-clyde-baseline.txt
+	@echo "Baseline updated: $$(wc -l < .staticcheck-clyde-baseline.txt | tr -d ' ') findings"
 
 tidy:
 	go mod tidy

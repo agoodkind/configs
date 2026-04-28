@@ -290,7 +290,7 @@ func cmdVerifyCoexistence(ctx context.Context, log *slog.Logger, cfg *config.Con
 
 	if len(failures) > 0 {
 		for _, f := range failures {
-			log.Error("FAILED", "check", f)
+			log.Error("FAILED", "check", f, "err", "coexistence check failed")
 		}
 		return fmt.Errorf("coexistence verification failed: %d checks failed", len(failures))
 	}
@@ -331,7 +331,8 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	rollbackCtx, rollbackCancel := context.WithCancel(ctx)
 	defer rollbackCancel()
 	monitor := startHealthMonitor(rollbackCtx, log, func() {
-		log.Error("AUTO-ROLLBACK: triggering unfuck due to prolonged connectivity loss")
+		log.Error("AUTO-ROLLBACK: triggering unfuck due to prolonged connectivity loss",
+			"err", "auto-rollback threshold exceeded")
 		_ = cmdUnfuck(context.Background(), log, cfg)
 	}, rollbackCancel)
 	defer monitor.Stop()

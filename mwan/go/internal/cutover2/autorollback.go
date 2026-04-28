@@ -120,7 +120,8 @@ func (m *healthMonitor) run(ctx context.Context) {
 			m.triggered.Store(true)
 			m.log.Error("auto-rollback: TRIGGERED",
 				"down_for", downFor.String(),
-				"threshold", m.threshold.String())
+				"threshold", m.threshold.String(),
+				"err", "connectivity loss exceeded auto-rollback threshold")
 			m.onRollback()
 			m.cancel()
 			return

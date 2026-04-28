@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"goodkind.io/mwan/internal/agent"
@@ -9,6 +10,7 @@ import (
 	"goodkind.io/mwan/internal/cutover"
 	"goodkind.io/mwan/internal/cutover2"
 	"goodkind.io/mwan/internal/healthcheck"
+	"goodkind.io/mwan/internal/version"
 	"goodkind.io/mwan/internal/watchdog"
 )
 
@@ -19,6 +21,14 @@ func main() {
 	}
 	sub := os.Args[1]
 	os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+
+	// Boundary log: every mwan invocation is recorded with build identity
+	// and the chosen subcommand, before subcommand-specific logger setup.
+	// This is the single grep-anchor that links a binary on disk to the
+	// session it executed in.
+	slog.Info("mwan boundary",
+		"build", version.BuildVersionString(),
+		"subcommand", sub)
 
 	// Subcommands that don't need config
 	if sub == "health-check" {

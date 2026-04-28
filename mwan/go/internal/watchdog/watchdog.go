@@ -833,7 +833,7 @@ func (w *watchdog) recordRollbackResult(deployTS int64, snap string, rollbackErr
 		)
 	}
 
-	w.log.Error(
+	w.log.Warn(
 		"auto-rollback completed",
 		"vm_id", w.cfg.MwanVMID,
 		"snapshot", snap,
@@ -991,6 +991,7 @@ func (w *watchdog) sendTotalAlert(ctx context.Context, reason, detail string) {
 		"reason", reason,
 		"vm_id", w.cfg.MwanVMID,
 		"node", w.cfg.PVE.Node,
+		"err", reason,
 	)
 }
 
@@ -1121,6 +1122,7 @@ func (w *watchdog) handleVMStopped(ctx context.Context) {
 		"VM stopped unexpectedly",
 		"vm_id", w.cfg.MwanVMID,
 		"node", w.cfg.PVE.Node,
+		"err", "vm transitioned to stopped state outside of mwan control",
 	)
 
 	w.log.Info("Attempting to start stopped VM", "vmid", w.cfg.MwanVMID)
@@ -1419,6 +1421,7 @@ func (w *watchdog) attemptRollbackForDeploy(ctx context.Context, deployTS int64)
 			"deploy_ts", deployTS,
 			"attempts", attempts,
 			"max_attempts", w.cfg.Watchdog.MaxRollbackAttempts,
+			"err", "rollback attempt budget exhausted",
 		)
 		w.log.Info("--- DIAGNOSIS END (rollback exhausted) ---")
 		return false

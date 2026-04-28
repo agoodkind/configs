@@ -95,8 +95,10 @@ func cmdUnfuck(ctx context.Context, log *slog.Logger, cfg *config.Config) error 
 	if verifyConnectivity(ctx, log) {
 		log.Info("=== UNFUCK complete: connectivity restored ===")
 	} else {
-		log.Error("=== UNFUCK complete but connectivity NOT verified ===")
-		log.Error("manual intervention may be needed")
+		log.Error("=== UNFUCK complete but connectivity NOT verified ===",
+			"err", "post-unfuck connectivity probe failed")
+		log.Error("manual intervention may be needed",
+			"err", "post-unfuck connectivity probe failed")
 	}
 
 	return nil

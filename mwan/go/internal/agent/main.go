@@ -48,7 +48,7 @@ func Run(cfg *config.Config) {
 	}
 
 	if *vsockPort != 0 && *vsockPort > 0xffffffff {
-		logger.Error("vsock port out of range", "vsock_port", *vsockPort)
+		logger.Error("vsock port out of range", "vsock_port", *vsockPort, "err", "vsock_port exceeds uint32 max")
 		os.Exit(1)
 	}
 	port := uint32(*vsockPort)

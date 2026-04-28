@@ -53,14 +53,16 @@ func parseFlags() watchdogFlags {
 	flag.Parse()
 
 	if *listScenarios {
-		fmt.Println("Available red-team scenarios:")
-		fmt.Println()
+		// Explicit os.Stdout writes for human-facing CLI usage output;
+		// not production diagnostics (which go through slog).
+		fmt.Fprintln(os.Stdout, "Available red-team scenarios:")
+		fmt.Fprintln(os.Stdout)
 		for name, preset := range redteam.Presets {
-			fmt.Printf("  %-22s %s\n", name, preset.Description)
+			fmt.Fprintf(os.Stdout, "  %-22s %s\n", name, preset.Description)
 		}
-		fmt.Println()
-		fmt.Println(
-			"Usage: mwan watchdog --red-team <scenario> " +
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout,
+			"Usage: mwan watchdog --red-team <scenario> "+
 				"[--red-team-live] [--red-team-iterations N]",
 		)
 		os.Exit(0)
