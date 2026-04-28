@@ -25,13 +25,13 @@ type Module struct {
 	env *ifmgr.Env
 	log *slog.Logger
 
-	mu          sync.Mutex
-	lastRASeen  time.Time // updated on EvRouteAdded for ra-learned defaults
+	mu         sync.Mutex
+	lastRASeen time.Time // updated on EvRouteAdded for ra-learned defaults
 }
 
 // Config is the parsed [ifmgr.modules.ra_lost] sub-config.
 type Config struct {
-	Iface         string
+	Iface       string
 	RALostAfter time.Duration
 }
 

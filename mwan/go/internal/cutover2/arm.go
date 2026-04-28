@@ -81,7 +81,8 @@ func cmdArmWatchdog(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 // or before any subsequent maintenance that would otherwise trigger
 // auto-rollback (a second cutover, OPNsense reboot, OPNsense API
 // outage, etc.).
-func cmdDisarmWatchdog(_ context.Context, log *slog.Logger, cfg *config.Config) error {
+// Returns error to match the sibling cmd* dispatch signature in main.go.
+func cmdDisarmWatchdog(_ context.Context, log *slog.Logger, cfg *config.Config) error { //nolint:unparam
 	log.Info("=== Disarming watchdog ===", "service", cfg.Watchdog.ServiceName)
 	stopWatchdog(log, cfg.Watchdog.ServiceName)
 	log.Info("=== disarm-watchdog complete: auto-rollback is OFF ===")

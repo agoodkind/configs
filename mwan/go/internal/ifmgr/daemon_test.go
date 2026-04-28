@@ -18,14 +18,14 @@ import (
 // daemon makes into it. Used to verify the framework's lifecycle wiring
 // without depending on any real netlink/iface operations.
 type fakeModule struct {
-	name        string
-	initCount   int32
-	reconcile   int32
-	kernelEv    int32
-	dhcpEv      int32
-	alertEv     int32
-	mu          sync.Mutex
-	lastEnv     *Env
+	name      string
+	initCount int32
+	reconcile int32
+	kernelEv  int32
+	dhcpEv    int32
+	alertEv   int32
+	mu        sync.Mutex
+	lastEnv   *Env
 }
 
 func (f *fakeModule) Name() string { return f.name }

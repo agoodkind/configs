@@ -83,7 +83,7 @@ func (h *TextHandler) Handle(_ context.Context, r slog.Record) error {
 		b.WriteByte(' ')
 		b.WriteString(a.Key)
 		b.WriteByte('=')
-		b.WriteString(fmt.Sprintf("%v", a.Value.Any()))
+		fmt.Fprintf(&b, "%v", a.Value.Any())
 		return true
 	})
 	b.WriteByte('\n')

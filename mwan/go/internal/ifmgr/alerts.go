@@ -36,7 +36,7 @@ type AlertConfig struct {
 // alertState is the per-(kind,key) memory: was the alert active last
 // time we saw it, when did we last emit.
 type alertState struct {
-	active  bool
+	active   bool
 	lastEmit time.Time
 }
 

@@ -30,22 +30,22 @@ type Module struct {
 	env *ifmgr.Env
 	log *slog.Logger
 
-	mu             sync.Mutex
-	degradedSince  time.Time
-	lastToggle     time.Time
+	mu              sync.Mutex
+	degradedSince   time.Time
+	lastToggle      time.Time
 	togglesThisHour int
 	hourBucketStart time.Time
 }
 
 // Config is the parsed [ifmgr.modules.slaac_health] sub-config.
 type Config struct {
-	Iface              string
-	DegradedAfter      time.Duration
-	EscalateAfter      time.Duration
-	AlertAfter         time.Duration
-	MaxTogglesPerHour  int
-	ProbeTargetsV6     []netip.Addr
-	ProbeTimeout       time.Duration
+	Iface             string
+	DegradedAfter     time.Duration
+	EscalateAfter     time.Duration
+	AlertAfter        time.Duration
+	MaxTogglesPerHour int
+	ProbeTargetsV6    []netip.Addr
+	ProbeTimeout      time.Duration
 }
 
 // Name implements ifmgr.Module.
@@ -71,12 +71,12 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 // Reconcile implements ifmgr.Module. Runs the staged health-check on
 // every tick:
 //
-//   1. Health check: at least one global v6 with preferred_lft > 0; default
-//      v6 gateway link-local responds; configured probe targets respond.
-//   2. Degraded for > DegradedAfter: send Router Solicitation if RA client
-//      is available.
-//   3. Degraded for > EscalateAfter: toggle disable_ipv6 (throttled).
-//   4. Degraded for > AlertAfter: emit WARN alert (idempotent).
+//  1. Health check: at least one global v6 with preferred_lft > 0; default
+//     v6 gateway link-local responds; configured probe targets respond.
+//  2. Degraded for > DegradedAfter: send Router Solicitation if RA client
+//     is available.
+//  3. Degraded for > EscalateAfter: toggle disable_ipv6 (throttled).
+//  4. Degraded for > AlertAfter: emit WARN alert (idempotent).
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	log = log.With("op", "reconcile")
 

@@ -184,7 +184,7 @@ func decodeAgentB64(s string) (string, error) {
 	// If every byte is printable ASCII (0x20-0x7e) or a common whitespace
 	// character, the value is already plain text — return it directly.
 	plainText := true
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		b := s[i]
 		if b >= 0x80 || (b < 0x20 && b != '\n' && b != '\r' && b != '\t') {
 			plainText = false
@@ -196,7 +196,10 @@ func decodeAgentB64(s string) (string, error) {
 	}
 	raw, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return s, nil
+		// Input had non-printable bytes but isn't valid base64 either,
+		// so we cannot decode it. Surface the error rather than masking it
+		// with the original (binary) input.
+		return "", fmt.Errorf("decode base64 agent output: %w", err)
 	}
 	return string(raw), nil
 }

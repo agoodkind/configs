@@ -58,13 +58,17 @@ func cmdStartBackup(ctx context.Context, log *slog.Logger, cfg *config.Config, d
 
 // backupAlreadyRunning returns true if keepalived is already active in BACKUP state on the LXC.
 func backupAlreadyRunning(ctx context.Context, lxc string, to int, log *slog.Logger) bool {
-	chkOut, chkErr := localExec(ctx, "pct", []string{"exec", lxc, "--",
-		"systemctl", "is-active", "keepalived"}, to)
+	chkOut, chkErr := localExec(ctx, "pct", []string{
+		"exec", lxc, "--",
+		"systemctl", "is-active", "keepalived",
+	}, to)
 	if chkErr != nil || strings.TrimSpace(chkOut) != "active" {
 		return false
 	}
-	logOut, _ := localExec(ctx, "pct", []string{"exec", lxc, "--",
-		"journalctl", "-u", "keepalived", "-n", "3", "--no-pager"}, to)
+	logOut, _ := localExec(ctx, "pct", []string{
+		"exec", lxc, "--",
+		"journalctl", "-u", "keepalived", "-n", "3", "--no-pager",
+	}, to)
 	if strings.Contains(logOut, "BACKUP") {
 		log.Info("start-backup: already running in BACKUP state, skipping")
 		return true
@@ -130,15 +134,19 @@ __MWAN_EOF__
 // backupStartAndVerify enables keepalived on the LXC and waits for it to enter BACKUP state.
 func backupStartAndVerify(ctx context.Context, lxc string, to int, log *slog.Logger) error {
 	log.Info("start-backup: enabling and starting keepalived on LXC", "lxc", lxc)
-	if _, err := localExec(ctx, "pct", []string{"exec", lxc, "--",
-		"systemctl", "enable", "--now", "keepalived"}, to); err != nil {
+	if _, err := localExec(ctx, "pct", []string{
+		"exec", lxc, "--",
+		"systemctl", "enable", "--now", "keepalived",
+	}, to); err != nil {
 		return fmt.Errorf("start keepalived on LXC %s: %w", lxc, err)
 	}
 
 	log.Info("start-backup: waiting for BACKUP state")
 	time.Sleep(3 * time.Second)
-	out, err := localExec(ctx, "pct", []string{"exec", lxc, "--",
-		"journalctl", "-u", "keepalived", "-n", "5", "--no-pager"}, to)
+	out, err := localExec(ctx, "pct", []string{
+		"exec", lxc, "--",
+		"journalctl", "-u", "keepalived", "-n", "5", "--no-pager",
+	}, to)
 	if err != nil {
 		return fmt.Errorf("check keepalived state on LXC %s: %w", lxc, err)
 	}

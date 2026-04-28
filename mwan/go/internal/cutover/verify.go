@@ -109,8 +109,10 @@ func verifyVMKeepalived(ctx context.Context, cfg *config.Config) func() error {
 
 func verifyLXCKeepalived(ctx context.Context, cfg *config.Config) func() error {
 	return func() error {
-		out, err := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-			"journalctl", "-u", "keepalived", "-n", "5", "--no-pager"}, cfg.Cutover.SSHTimeoutSec)
+		out, err := localExec(ctx, "pct", []string{
+			"exec", cfg.Cutover.FailoverLXCID, "--",
+			"journalctl", "-u", "keepalived", "-n", "5", "--no-pager",
+		}, cfg.Cutover.SSHTimeoutSec)
 		if err != nil {
 			return err
 		}

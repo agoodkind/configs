@@ -19,15 +19,15 @@ import (
 // Daemons (or, future work, a multi-iface Daemon).
 //
 // Lifecycle:
-//   1. NewDaemon constructs the Daemon and instantiates each role module
-//      via the registry. Init is called in dependency order.
-//   2. Run starts the netif Monitor (and DHCP/RA clients if requested),
-//      runs an initial Reconcile pass, then enters the main loop.
-//   3. Main loop selects on ctx.Done, monitor events, DHCP lease events,
-//      and a periodic ticker. Each tick: Reconcile every module then
-//      EvaluateAlerts every module.
-//   4. Run returns when ctx is cancelled. Modules' kernel state is left
-//      in place (no Cleanup hook); the daemon is restart-safe.
+//  1. NewDaemon constructs the Daemon and instantiates each role module
+//     via the registry. Init is called in dependency order.
+//  2. Run starts the netif Monitor (and DHCP/RA clients if requested),
+//     runs an initial Reconcile pass, then enters the main loop.
+//  3. Main loop selects on ctx.Done, monitor events, DHCP lease events,
+//     and a periodic ticker. Each tick: Reconcile every module then
+//     EvaluateAlerts every module.
+//  4. Run returns when ctx is cancelled. Modules' kernel state is left
+//     in place (no Cleanup hook); the daemon is restart-safe.
 type Daemon struct {
 	cfg     DaemonConfig
 	log     *slog.Logger
@@ -50,9 +50,9 @@ type DaemonConfig struct {
 	// EnableDHCP causes the daemon to start a DHCPv4 client on Iface.
 	// The client emits LeaseInfo events the daemon fans out to all
 	// modules via OnDHCPLease.
-	EnableDHCP     bool
-	DHCPInitial    time.Duration
-	DHCPMax        time.Duration
+	EnableDHCP  bool
+	DHCPInitial time.Duration
+	DHCPMax     time.Duration
 
 	// EnableRA causes the daemon to open a Router Solicitation client
 	// (mdlayher/ndp) and pass it to modules via env.RA. Without this,

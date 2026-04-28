@@ -142,8 +142,10 @@ func preflightLXCRunning(ctx context.Context, log *slog.Logger, cfg *config.Conf
 }
 
 func preflightLXCKeepalived(ctx context.Context, log *slog.Logger, cfg *config.Config) error {
-	out, err := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-		"dpkg", "-l", "keepalived"}, cfg.Cutover.SSHTimeoutSec)
+	out, err := localExec(ctx, "pct", []string{
+		"exec", cfg.Cutover.FailoverLXCID, "--",
+		"dpkg", "-l", "keepalived",
+	}, cfg.Cutover.SSHTimeoutSec)
 	if err != nil {
 		return fmt.Errorf("keepalived not installed on LXC %s: %w", cfg.Cutover.FailoverLXCID, err)
 	}
@@ -240,15 +242,19 @@ func preflightLXCForwarding(ctx context.Context, log *slog.Logger, cfg *config.C
 		{"net.ipv4.ip_forward", "1"},
 	}
 	for _, s := range sysctls {
-		out, err := localExec(ctx, "pct", []string{"exec", lxc, "--",
-			"sysctl", "-n", s.name}, cfg.Cutover.SSHTimeoutSec)
+		out, err := localExec(ctx, "pct", []string{
+			"exec", lxc, "--",
+			"sysctl", "-n", s.name,
+		}, cfg.Cutover.SSHTimeoutSec)
 		if err != nil {
 			return fmt.Errorf("cannot read %s on LXC %s: %w", s.name, lxc, err)
 		}
 		if strings.TrimSpace(out) != s.want {
 			log.Warn("preflight: fixing LXC sysctl", "lxc", lxc, "sysctl", s.name, "was", strings.TrimSpace(out))
-			_, err = localExec(ctx, "pct", []string{"exec", lxc, "--",
-				"sysctl", "-w", fmt.Sprintf("%s=%s", s.name, s.want)}, cfg.Cutover.SSHTimeoutSec)
+			_, err = localExec(ctx, "pct", []string{
+				"exec", lxc, "--",
+				"sysctl", "-w", fmt.Sprintf("%s=%s", s.name, s.want),
+			}, cfg.Cutover.SSHTimeoutSec)
 			if err != nil {
 				return fmt.Errorf("failed to set %s=%s on LXC %s: %w", s.name, s.want, lxc, err)
 			}

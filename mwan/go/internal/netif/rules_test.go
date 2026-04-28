@@ -37,10 +37,10 @@ func TestRulesMatch(t *testing.T) {
 
 func TestParseUIDRange(t *testing.T) {
 	cases := []struct {
-		in       string
-		wantLo   int
-		wantHi   int
-		wantErr  bool
+		in      string
+		wantLo  int
+		wantHi  int
+		wantErr bool
 	}{
 		{"997-997", 997, 997, false},
 		{"100-200", 100, 200, false},

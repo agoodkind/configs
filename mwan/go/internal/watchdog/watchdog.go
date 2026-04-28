@@ -409,7 +409,7 @@ func (w *watchdog) readGuestUnix(ctx context.Context, path string) (int64, bool)
 // silently skipped (e.g. legacy plain-path manifests from before this change).
 func parseManifest(raw string) map[string]string {
 	m := make(map[string]string)
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -594,7 +594,7 @@ func (w *watchdog) pruneSnapshots(ctx context.Context) error {
 	if w.cfg.Watchdog.MaxKnownGoodSnapshots > 0 &&
 		len(knownGoods) > w.cfg.Watchdog.MaxKnownGoodSnapshots {
 		toDrop := len(knownGoods) - w.cfg.Watchdog.MaxKnownGoodSnapshots
-		for i := 0; i < toDrop; i++ {
+		for i := range toDrop {
 			if err := w.ops.VMDelSnapshot(
 				ctx, w.cfg.MwanVMID, knownGoods[i],
 			); err != nil {
@@ -621,11 +621,8 @@ func (w *watchdog) pruneSnapshots(ctx context.Context) error {
 		total <= w.cfg.Watchdog.MaxTotalSnapshots || len(knownGoods) == 0 {
 		return nil
 	}
-	excess := total - w.cfg.Watchdog.MaxTotalSnapshots
-	if excess > len(knownGoods) {
-		excess = len(knownGoods)
-	}
-	for i := 0; i < excess; i++ {
+	excess := min(total-w.cfg.Watchdog.MaxTotalSnapshots, len(knownGoods))
+	for i := range excess {
 		if err := w.ops.VMDelSnapshot(
 			ctx, w.cfg.MwanVMID, knownGoods[i],
 		); err != nil {
@@ -1269,7 +1266,7 @@ func (w *watchdog) runIteration(ctx context.Context, iteration int) bool {
 	w.vmStoppedLogged = false
 
 	v4ok, v6ok := w.probeConnectivity(ctx)
-	if !(v4ok && v6ok) {
+	if !v4ok || !v6ok {
 		w.consecutiveHealthy = 0
 		w.healthyCyclesForHash = 0
 	}

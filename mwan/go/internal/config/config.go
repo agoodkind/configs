@@ -216,12 +216,12 @@ type Config struct {
 	PVE     PVEConfig     `toml:"pve"`
 	Network NetworkConfig `toml:"network"`
 
-	Watchdog  WatchdogSection  `toml:"watchdog"`
-	Cutover   CutoverSection   `toml:"cutover"`
-	Agent     AgentSection     `toml:"agent"`
-	BGP       BGPSection       `toml:"bgp"`
-	OPNsense  OPNsenseSection  `toml:"opnsense"`
-	IfMgr     IfMgrSection     `toml:"ifmgr"`
+	Watchdog WatchdogSection `toml:"watchdog"`
+	Cutover  CutoverSection  `toml:"cutover"`
+	Agent    AgentSection    `toml:"agent"`
+	BGP      BGPSection      `toml:"bgp"`
+	OPNsense OPNsenseSection `toml:"opnsense"`
+	IfMgr    IfMgrSection    `toml:"ifmgr"`
 }
 
 // IfMgrSection holds the mwan ifmgr daemon's role-pluggable configuration.
@@ -229,13 +229,13 @@ type Config struct {
 // module reads its own sub-config from Modules[name] (a raw map[string]any
 // passed verbatim to the module's Constructor).
 type IfMgrSection struct {
-	Role              string                            `toml:"role"`
-	ReconcileInterval string                            `toml:"reconcile_interval"`
-	LogFile           string                            `toml:"log_file"`
-	JSONLogFile       string                            `toml:"json_log_file"`
-	Debug             bool                              `toml:"debug"`
-	Iface             map[string]IfMgrIfaceSection      `toml:"iface"`
-	Modules           map[string]map[string]any         `toml:"modules"`
+	Role              string                       `toml:"role"`
+	ReconcileInterval string                       `toml:"reconcile_interval"`
+	LogFile           string                       `toml:"log_file"`
+	JSONLogFile       string                       `toml:"json_log_file"`
+	Debug             bool                         `toml:"debug"`
+	Iface             map[string]IfMgrIfaceSection `toml:"iface"`
+	Modules           map[string]map[string]any    `toml:"modules"`
 }
 
 // IfMgrIfaceSection holds one [ifmgr.iface.<name>] sub-table. The map

@@ -56,12 +56,18 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 func rollbackCleanupAndRestore(ctx context.Context, log *slog.Logger, cfg *config.Config, host, iface string, to int) {
 	// Step 1: Kill keepalived on LXC (try stop, then kill, then disable)
 	log.Info("rollback: killing keepalived on LXC", "lxc", cfg.Cutover.FailoverLXCID)
-	_, _ = localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-		"systemctl", "stop", "keepalived"}, to)
-	_, _ = localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-		"killall", "-9", "keepalived"}, to)
-	_, _ = localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-		"systemctl", "disable", "keepalived"}, to)
+	_, _ = localExec(ctx, "pct", []string{
+		"exec", cfg.Cutover.FailoverLXCID, "--",
+		"systemctl", "stop", "keepalived",
+	}, to)
+	_, _ = localExec(ctx, "pct", []string{
+		"exec", cfg.Cutover.FailoverLXCID, "--",
+		"killall", "-9", "keepalived",
+	}, to)
+	_, _ = localExec(ctx, "pct", []string{
+		"exec", cfg.Cutover.FailoverLXCID, "--",
+		"systemctl", "disable", "keepalived",
+	}, to)
 
 	// Step 2: Kill keepalived on VM (try stop, then kill, then disable)
 	log.Info("rollback: killing keepalived on VM")
@@ -114,7 +120,7 @@ func rollbackFlushOPNsenseCaches(ctx context.Context, log *slog.Logger, cfg *con
 }
 
 // rollbackVerifyViaSerial attempts to verify the interface state via serial-exec as a last resort.
-func rollbackVerifyViaSerial(ctx context.Context, log *slog.Logger, iface string, to int) {
+func rollbackVerifyViaSerial(ctx context.Context, log *slog.Logger, iface string, _ int) {
 	log.Info("rollback: attempting verification via serial-exec")
 	serialOut, serialErr := localExec(ctx, "serial-exec",
 		[]string{"run", "mwan", fmt.Sprintf("ip -6 addr show dev %s scope global", iface)}, 15)

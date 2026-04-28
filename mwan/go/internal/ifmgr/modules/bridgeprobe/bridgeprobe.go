@@ -29,10 +29,10 @@ type Module struct {
 	env *ifmgr.Env
 	log *slog.Logger
 
-	mu          sync.Mutex
-	lastRA      time.Time
-	lastDHCP    time.Time
-	lastLinkUp  time.Time
+	mu         sync.Mutex
+	lastRA     time.Time
+	lastDHCP   time.Time
+	lastLinkUp time.Time
 }
 
 // Config is the parsed [ifmgr.modules.bridge_probe] sub-config.

@@ -31,7 +31,7 @@ func TestNew_DefaultsApplied(t *testing.T) {
 
 func TestNew_DowngradePatternsParsedFromAny(t *testing.T) {
 	m, _ := New(map[string]any{
-		"unit": "x",
+		"unit":               "x",
 		"downgrade_patterns": []any{"foo", "bar.*"},
 	})
 	mod := m.(*Module)
@@ -45,7 +45,7 @@ func TestNew_DowngradePatternsParsedFromAny(t *testing.T) {
 
 func TestNew_DowngradePatternsParsedFromStringSlice(t *testing.T) {
 	m, _ := New(map[string]any{
-		"unit": "x",
+		"unit":               "x",
 		"downgrade_patterns": []string{"alpha", "beta"},
 	})
 	mod := m.(*Module)

@@ -388,7 +388,7 @@ func (s *Speaker) Status() Status {
 		if p.State.SessionState == apipb.PeerState_SESSION_STATE_ESTABLISHED {
 			ps.Established = true
 			if p.Timers != nil && p.Timers.State != nil {
-				ps.UpSince = int64(p.Timers.State.Uptime.GetSeconds())
+				ps.UpSince = p.Timers.State.Uptime.GetSeconds()
 			}
 		}
 
@@ -407,7 +407,6 @@ func (s *Speaker) Status() Status {
 
 		st.Peers = append(st.Peers, ps)
 	})
-
 	if err != nil {
 		s.log.Error("list peers failed", "error", err)
 	}

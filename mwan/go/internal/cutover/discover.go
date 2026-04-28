@@ -74,8 +74,10 @@ func discoverFailoverGW6(ctx context.Context, log *slog.Logger, cfg *config.Conf
 		return
 	}
 	log.Info("discover: querying failover LXC WAN gateway")
-	gwOut, gwErr := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-		"ip", "-6", "route", "show", "default"}, to)
+	gwOut, gwErr := localExec(ctx, "pct", []string{
+		"exec", cfg.Cutover.FailoverLXCID, "--",
+		"ip", "-6", "route", "show", "default",
+	}, to)
 	if gwErr == nil && gwOut != "" {
 		gw := parseViaLL(gwOut)
 		if gw != "" {
@@ -90,8 +92,10 @@ func discoverFailoverGW4(ctx context.Context, log *slog.Logger, cfg *config.Conf
 	if cfg.Cutover.FailoverLXCID == "" || cfg.Cutover.FailoverDefaultGW4 != "" {
 		return
 	}
-	gwOut, gwErr := localExec(ctx, "pct", []string{"exec", cfg.Cutover.FailoverLXCID, "--",
-		"ip", "-4", "route", "show", "default"}, to)
+	gwOut, gwErr := localExec(ctx, "pct", []string{
+		"exec", cfg.Cutover.FailoverLXCID, "--",
+		"ip", "-4", "route", "show", "default",
+	}, to)
 	if gwErr == nil && gwOut != "" {
 		gw := parseViaV4(gwOut)
 		if gw != "" {
@@ -104,7 +108,7 @@ func discoverFailoverGW4(ctx context.Context, log *slog.Logger, cfg *config.Conf
 // parseFirstGUA extracts the first global unicast IPv6 address (with prefix) from ip addr output.
 // Returns e.g. "3d06:bad:b01:201::3/64" or "".
 func parseFirstGUA(ipAddrOutput string) string {
-	for _, line := range strings.Split(ipAddrOutput, "\n") {
+	for line := range strings.SplitSeq(ipAddrOutput, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "inet6 ") && strings.Contains(line, "scope global") && !strings.Contains(line, "dadfailed") {
 			fields := strings.Fields(line)
@@ -118,7 +122,7 @@ func parseFirstGUA(ipAddrOutput string) string {
 
 // parseFirstV4 extracts the first IPv4 address (with prefix) from ip addr output.
 func parseFirstV4(ipAddrOutput string) string {
-	for _, line := range strings.Split(ipAddrOutput, "\n") {
+	for line := range strings.SplitSeq(ipAddrOutput, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "inet ") && !strings.Contains(line, "127.0.0.1") {
 			fields := strings.Fields(line)
@@ -132,7 +136,7 @@ func parseFirstV4(ipAddrOutput string) string {
 
 // parseViaLL extracts a link-local next-hop from "default via fe80::xxx dev ..." output.
 func parseViaLL(routeOutput string) string {
-	for _, line := range strings.Split(routeOutput, "\n") {
+	for line := range strings.SplitSeq(routeOutput, "\n") {
 		fields := strings.Fields(line)
 		for i, f := range fields {
 			if f == "via" && i+1 < len(fields) && strings.HasPrefix(fields[i+1], "fe80::") {
@@ -145,7 +149,7 @@ func parseViaLL(routeOutput string) string {
 
 // parseViaV4 extracts an IPv4 next-hop from "default via x.x.x.x dev ..." output.
 func parseViaV4(routeOutput string) string {
-	for _, line := range strings.Split(routeOutput, "\n") {
+	for line := range strings.SplitSeq(routeOutput, "\n") {
 		fields := strings.Fields(line)
 		for i, f := range fields {
 			if f == "via" && i+1 < len(fields) && !strings.Contains(fields[i+1], ":") {

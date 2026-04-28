@@ -9,9 +9,9 @@ import (
 
 func TestNextBackoff(t *testing.T) {
 	cases := []struct {
-		cur    time.Duration
-		max    time.Duration
-		want   time.Duration
+		cur  time.Duration
+		max  time.Duration
+		want time.Duration
 	}{
 		{5 * time.Second, time.Minute, 10 * time.Second},
 		{30 * time.Second, time.Minute, time.Minute},

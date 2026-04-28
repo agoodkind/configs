@@ -28,10 +28,10 @@ type Module struct {
 	env *ifmgr.Env
 	log *slog.Logger
 
-	mu             sync.Mutex
-	lastResult     map[string]bool      // key=target string, val=last probe healthy?
-	lastRunAt      time.Time
-	firstFailedAt  map[string]time.Time // key=target string, val=first time it began failing in current run
+	mu            sync.Mutex
+	lastResult    map[string]bool // key=target string, val=last probe healthy?
+	lastRunAt     time.Time
+	firstFailedAt map[string]time.Time // key=target string, val=first time it began failing in current run
 }
 
 // Config is the parsed [ifmgr.modules.connectivity_probe] sub-config.

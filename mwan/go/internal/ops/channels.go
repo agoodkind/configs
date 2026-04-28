@@ -78,7 +78,7 @@ func (t *ChannelTracker) Summary() string {
 					h.consecutiveFails, h.lastError, h.lastFailure.Format(time.RFC3339))
 			}
 		}
-		sb.WriteString(fmt.Sprintf("  %-10s %s\n", name, status))
+		fmt.Fprintf(&sb, "  %-10s %s\n", name, status)
 	}
 	return sb.String()
 }

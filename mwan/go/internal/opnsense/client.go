@@ -103,7 +103,9 @@ func (c *Client) PurgeBGPConfig(ctx context.Context) error {
 	for _, n := range neighborResult.Rows {
 		c.log.Info("opnsense: deleting existing neighbor", "uuid", n.UUID)
 		endpoint := fmt.Sprintf("/quagga/bgp/delNeighbor/%s", n.UUID)
-		var resp struct{ Result string `json:"result"` }
+		var resp struct {
+			Result string `json:"result"`
+		}
 		if err := c.doJSON(ctx, http.MethodPost, endpoint, nil, &resp); err != nil {
 			c.log.Warn("opnsense: failed to delete neighbor", "uuid", n.UUID, "err", err)
 		}
@@ -121,7 +123,9 @@ func (c *Client) PurgeBGPConfig(ctx context.Context) error {
 	for _, rm := range routemapResult.Rows {
 		c.log.Info("opnsense: deleting existing route-map", "uuid", rm.UUID)
 		endpoint := fmt.Sprintf("/quagga/bgp/delRoutemap/%s", rm.UUID)
-		var resp struct{ Result string `json:"result"` }
+		var resp struct {
+			Result string `json:"result"`
+		}
 		if err := c.doJSON(ctx, http.MethodPost, endpoint, nil, &resp); err != nil {
 			c.log.Warn("opnsense: failed to delete route-map", "uuid", rm.UUID, "err", err)
 		}
@@ -265,12 +269,12 @@ func (c *Client) setFRRGeneral(ctx context.Context) error {
 func (c *Client) setBGPGlobal(ctx context.Context, asn uint32, routerID string) error {
 	body := map[string]any{
 		"bgp": map[string]string{
-			"enabled":              "1",
-			"asnumber":             strconv.FormatUint(uint64(asn), 10),
-			"routerid":             routerID,
-			"graceful":             "0",
-			"logneighborchanges":   "1",
-			"networkimportcheck":   "0",
+			"enabled":            "1",
+			"asnumber":           strconv.FormatUint(uint64(asn), 10),
+			"routerid":           routerID,
+			"graceful":           "0",
+			"logneighborchanges": "1",
+			"networkimportcheck": "0",
 		},
 	}
 	return c.postSaved(ctx, "/quagga/bgp/set", body)
@@ -339,10 +343,10 @@ type gatewaySearchResult struct {
 }
 
 type gatewayRow struct {
-	UUID     string      `json:"uuid"`
-	Name     string      `json:"name"`
-	Gateway  string      `json:"gateway"`
-	Disabled interface{} `json:"disabled"`
+	UUID     string `json:"uuid"`
+	Name     string `json:"name"`
+	Gateway  string `json:"gateway"`
+	Disabled any    `json:"disabled"`
 }
 
 func (g gatewayRow) isDisabled() bool {
@@ -527,7 +531,6 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 	return nil
 }
 
-
 // DeleteRoute deletes a route from the kernel via the OPNsense diagnostics API.
 // Use destination="default" and gateway=<ip> to delete a default route.
 func (c *Client) DeleteRoute(ctx context.Context, destination, gateway string) error {
@@ -663,7 +666,7 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, 
 	if err != nil {
 		return fmt.Errorf("HTTP %s %s: %w", method, endpoint, err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(res.Body)
@@ -696,7 +699,7 @@ func (c *Client) doForm(ctx context.Context, endpoint, formData string, resp any
 	if err != nil {
 		return fmt.Errorf("HTTP POST %s: %w", endpoint, err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(res.Body)

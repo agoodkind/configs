@@ -41,7 +41,13 @@ CMD    := ./cmd/$(BINARY)
 
 .DEFAULT_GOAL := check
 
-.PHONY: proto build build-linux clean tidy
+.PHONY: proto build build-linux clean tidy fmt fix
+
+fmt:
+	golangci-lint fmt ./...
+
+fix:
+	golangci-lint run --fix ./...
 
 tidy:
 	go mod tidy

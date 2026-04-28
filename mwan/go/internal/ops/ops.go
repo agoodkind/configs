@@ -122,10 +122,12 @@ func NewRealOps(cfg *config.Config, emailSender *email.Sender) *RealOps {
 	}
 }
 
+// Generic exec wrapper. All current callers pass "qm" but kept generic
+// since opnsense API replacement is in progress and other binaries may follow.
 func runCmd(
 	ctx context.Context,
 	timeout time.Duration,
-	name string,
+	name string, //nolint:unparam // generic, currently always "qm"; kept generic for future
 	args ...string,
 ) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)

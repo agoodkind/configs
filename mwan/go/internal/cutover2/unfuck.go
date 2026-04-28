@@ -219,7 +219,6 @@ func opnsenseSSH(ctx context.Context, log *slog.Logger, cfg *config.Config, cmd 
 	return nil
 }
 
-
 // stopWatchdog stops the mwan-watchdog systemd service on the local
 // hypervisor. serviceName is the unit name (e.g. "mwan-watchdog" on prod,
 // "mwan-watchdog-testbed" on suburban). Empty defaults to "mwan-watchdog".
@@ -251,4 +250,3 @@ func startWatchdog(log *slog.Logger, serviceName string) {
 		log.Info("watchdog started", "service", serviceName)
 	}
 }
-

@@ -75,7 +75,7 @@ type execFunc func(cmd string) (string, error)
 
 // deployKeepalived deploys all keepalived scripts and config to a target via the given exec function.
 // This is used by both migrate (SSH to VM) and start-backup (pct exec to LXC).
-func deployKeepalived(ctx context.Context, log *slog.Logger, cfg *config.Config, run execFunc, state string, iface string, priority int) error {
+func deployKeepalived(_ context.Context, log *slog.Logger, cfg *config.Config, run execFunc, state string, iface string, priority int) error {
 	// 1. Health check script
 	log.Info("deploy-keepalived: writing health check script")
 	checkScript, err := renderScript(checkInternetTmpl, cfg)

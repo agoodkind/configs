@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -71,7 +72,7 @@ func stripGatewayV6(input []byte) ([]byte, bool) {
 	for {
 		offset := decoder.InputOffset()
 		tok, err := decoder.Token()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -128,7 +129,7 @@ func stripGatewayV6(input []byte) ([]byte, bool) {
 // opnsenseSSHOutput runs a command on OPNsense and returns stdout.
 // SSHes as the configured user (default agoodkind) and wraps in sudo
 // when not root, so callers can issue root-only commands like cat /conf/config.xml.
-func opnsenseSSHOutput(ctx context.Context, log *slog.Logger, cfg *config.Config, cmd string) ([]byte, error) {
+func opnsenseSSHOutput(ctx context.Context, _ *slog.Logger, cfg *config.Config, cmd string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
@@ -151,7 +152,7 @@ func opnsenseSSHOutput(ctx context.Context, log *slog.Logger, cfg *config.Config
 // opnsenseSSHWrite writes data to a file on OPNsense via SSH stdin.
 // Uses `sudo tee` (not `cat >`) when SSH user is not root: shell redirection
 // runs in the unprivileged user's shell, but `sudo tee` writes as root.
-func opnsenseSSHWrite(ctx context.Context, log *slog.Logger, cfg *config.Config, path string, data []byte) error {
+func opnsenseSSHWrite(ctx context.Context, _ *slog.Logger, cfg *config.Config, path string, data []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 

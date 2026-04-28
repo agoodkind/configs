@@ -3,6 +3,7 @@ package cutover
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -53,7 +54,8 @@ func sshExec(ctx context.Context, host string, command string, timeoutSec int) (
 	}
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		exitErr := &exec.ExitError{}
+		if errors.As(err, &exitErr) {
 			result.ExitCode = exitErr.ExitCode()
 			return result, nil // non-zero exit is not a Go error; caller decides
 		}

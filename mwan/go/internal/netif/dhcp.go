@@ -17,9 +17,9 @@ import (
 
 // DHCPConfig configures the async DHCPv4 client.
 type DHCPConfig struct {
-	Iface          string        // Interface to bind on (e.g. "mbrains")
-	InitialBackoff time.Duration // First retry delay after a failure
-	MaxBackoff     time.Duration // Cap on retry backoff
+	Iface           string        // Interface to bind on (e.g. "mbrains")
+	InitialBackoff  time.Duration // First retry delay after a failure
+	MaxBackoff      time.Duration // Cap on retry backoff
 	DiscoverTimeout time.Duration // Per-attempt deadline for DISCOVER
 	RequestTimeout  time.Duration // Per-attempt deadline for REQUEST
 	RenewTimeout    time.Duration // Per-attempt deadline for RENEW
@@ -82,10 +82,10 @@ func (l LeaseInfo) String() string {
 // DHCPClient runs a long-lived DHCPv4 state machine in its own goroutine
 // and emits LeaseInfo on Events whenever the state changes.
 type DHCPClient struct {
-	cfg   DHCPConfig
-	log   *slog.Logger
-	mu    sync.Mutex
-	last  LeaseInfo
+	cfg  DHCPConfig
+	log  *slog.Logger
+	mu   sync.Mutex
+	last LeaseInfo
 
 	Events chan LeaseInfo
 }
@@ -312,7 +312,7 @@ type slogDHCPLogger struct{ base *slog.Logger }
 
 // Printf implements nclient4.Logger.
 func (l slogDHCPLogger) Printf(format string, v ...interface{}) {
-	l.base.Debug("dhcp: "+fmt.Sprintf(format, v...))
+	l.base.Debug("dhcp: " + fmt.Sprintf(format, v...))
 }
 
 // PrintMessage implements nclient4.Logger.

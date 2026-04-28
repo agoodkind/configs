@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -201,11 +202,8 @@ func (r *Ops) logFault(fault, vmid string, args []string) {
 
 func classifyGuestArgs(args []string) (isPing, hasIface, isCatDeploy, isCatChange bool) {
 	isPing = len(args) > 0 && (args[0] == "ping" || args[0] == "ping6")
-	for _, a := range args {
-		if a == "-I" {
-			hasIface = true
-			break
-		}
+	if slices.Contains(args, "-I") {
+		hasIface = true
 	}
 	isCatDeploy = len(args) >= 2 && args[0] == "cat" && strings.Contains(args[1], "mwan-last-deploy")
 	isCatChange = len(args) >= 2 && args[0] == "cat" && strings.Contains(args[1], "mwan-last-change")
