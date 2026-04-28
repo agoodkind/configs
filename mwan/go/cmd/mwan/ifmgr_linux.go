@@ -29,6 +29,7 @@ import (
 	_ "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/ralost"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/slaachealth"
+	_ "goodkind.io/mwan/internal/ifmgr/modules/wghealth"
 )
 
 // runIfMgr is the entry point for the `mwan ifmgr` subcommand.
