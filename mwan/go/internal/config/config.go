@@ -225,9 +225,8 @@ type Config struct {
 }
 
 // IfMgrSection holds the mwan ifmgr daemon's role-pluggable configuration.
-// Each role is a list of modules (see internal/ifmgr/roles.go); each
-// module reads its own sub-config from Modules[name] (a raw map[string]any
-// passed verbatim to the module's Constructor).
+// Each role is a list of modules (see internal/ifmgr/roles.go), and the
+// module config schema is explicitly modeled in IfMgrModulesSection.
 type IfMgrSection struct {
 	Role              string                       `toml:"role"`
 	ReconcileInterval string                       `toml:"reconcile_interval"`
@@ -235,7 +234,7 @@ type IfMgrSection struct {
 	JSONLogFile       string                       `toml:"json_log_file"`
 	Debug             bool                         `toml:"debug"`
 	Iface             map[string]IfMgrIfaceSection `toml:"iface"`
-	Modules           map[string]map[string]any    `toml:"modules"`
+	Modules           IfMgrModulesSection          `toml:"modules"`
 }
 
 // IfMgrIfaceSection holds one [ifmgr.iface.<name>] sub-table. The map

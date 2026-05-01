@@ -20,12 +20,12 @@ func cmdVerify(ctx context.Context, log *slog.Logger, cfg *config.Config, dryRun
 
 	var failures []string
 	for _, c := range checks {
-		log.Info("verify check", "check", c.name)
+		log.Debug("verify check", "check", c.name)
 		if err := c.fn(); err != nil {
 			log.Error("verify FAILED", "check", c.name, "err", err)
 			failures = append(failures, fmt.Sprintf("%s: %v", c.name, err))
 		} else {
-			log.Info("verify OK", "check", c.name)
+			log.Debug("verify OK", "check", c.name)
 		}
 	}
 

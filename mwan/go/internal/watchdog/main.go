@@ -16,6 +16,7 @@ import (
 	"goodkind.io/mwan/internal/logging"
 	"goodkind.io/mwan/internal/ops"
 	"goodkind.io/mwan/internal/redteam"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -97,7 +98,7 @@ func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOp
 
 	emailSender := email.NewSender(cfg.Email.SMTP2GOAPIKey, cfg.Email.From, cfg.Email.BindIface, "mwan-watchdog", logger)
 
-	var baseOps ops.SysOps = ops.NewRealOps(cfg, emailSender)
+	var baseOps ops.SysOps = ops.NewRealOps(cfg, emailSender, logger)
 
 	if f.dryRun {
 		logger.Info("[MODE] Dry-run enabled; destructive ops will be logged only")
@@ -130,6 +131,11 @@ func Run(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	runID := tracing.NewID()
+	logger = logger.With(
+		slog.String(tracing.RunIDKey, runID),
+		slog.String(tracing.ComponentKey, "watchdog"),
+	)
 
 	// Override config for red-team mode
 	if f.redTeam != "" {
@@ -170,6 +176,7 @@ func Run(cfg *config.Config) error {
 		coord:   coord,
 		limiter: alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
 		log:     logger,
+		runID:   runID,
 	}
 
 	// Try to extract channel tracker for diagnostics

@@ -43,6 +43,8 @@ CMD    := ./cmd/$(BINARY)
 
 .PHONY: proto build build-linux clean tidy fmt fix
 
+GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
+
 fmt:
 	golangci-lint fmt ./...
 
@@ -75,3 +77,6 @@ build-linux: build vet lint test proto
 
 clean:
 	rm -rf bin/
+
+govulncheck:
+	$(GOVULNCHECK_WRAPPER)

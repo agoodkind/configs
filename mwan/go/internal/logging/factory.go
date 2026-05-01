@@ -65,7 +65,7 @@ func New(lc Config, buildVersion string) (*slog.Logger, error) {
 		children = append(children, emailH)
 	}
 
-	logger := slog.New(logging.NewTeeHandler(children...)).
+	logger := slog.New(NewContextHandler(logging.NewTeeHandler(children...))).
 		With("build", buildVersion)
 	return logger, nil
 }

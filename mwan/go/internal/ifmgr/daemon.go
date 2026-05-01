@@ -4,14 +4,13 @@ package ifmgr
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/tracing"
 )
 
 // Daemon is the long-lived ifmgr process. One Daemon serves one role on
@@ -40,8 +39,8 @@ type Daemon struct {
 }
 
 // DaemonConfig captures the subset of cfg.IfMgr that the daemon needs.
-// It is built by main.go from the parsed TOML; modules read their own
-// per-module sub-configs out of ModuleConfigs (keyed by module name).
+// It is built by main.go from the parsed TOML, after the explicit config
+// schema has been adapted into typed runtime module configs.
 type DaemonConfig struct {
 	Role              string
 	Iface             string
@@ -63,9 +62,9 @@ type DaemonConfig struct {
 	// AlertRepeatEvery is passed to AlertManager. Zero disables repeats.
 	AlertRepeatEvery time.Duration
 
-	// ModuleConfigs holds per-module sub-config trees keyed by module
-	// name. Each module's Constructor receives ModuleConfigs[Name()].
-	ModuleConfigs map[string]map[string]any
+	// ModuleConfigs holds per-module runtime configs keyed by module name.
+	// Each module's Constructor receives ModuleConfigs[Name()].
+	ModuleConfigs ModuleConfigSet
 }
 
 // NewDaemon constructs a Daemon for the given config and role. Resolves
@@ -113,7 +112,7 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 		if err != nil {
 			return nil, fmt.Errorf("construct module %q: %w", name, err)
 		}
-		dlog.Debug("ifmgr: module constructed", "module", name, "config_keys", mapKeys(mcfg))
+		dlog.Debug("ifmgr: module constructed", "module", name, "config_type", moduleConfigType(mcfg))
 		modules = append(modules, mod)
 	}
 
@@ -191,9 +190,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	// Initial reconcile pass.
-	traceID := newTraceID()
-	initLog := d.log.With("trace", traceID, "phase", "initial-reconcile")
-	d.reconcileAll(ctx, initLog)
+	initialCtx := tracing.WithOperation(ctx, "initial_reconcile")
+	initialCtx, _ = tracing.StartTrace(initialCtx, "", "initial_reconcile")
+	initLog := tracing.Logger(initialCtx, d.log).With("phase", "initial-reconcile")
+	d.reconcileAll(initialCtx, initLog)
 
 	tick := time.NewTicker(d.cfg.ReconcileInterval)
 	defer tick.Stop()
@@ -213,26 +213,39 @@ func (d *Daemon) Run(ctx context.Context) error {
 				d.log.Warn("ifmgr: monitor events channel closed")
 				continue
 			}
-			tid := newTraceID()
-			elog := d.log.With("trace", tid, "phase", "kernel-event",
-				"kind", ev.Kind.String(), "iface", ev.Iface)
-			d.dispatchEvent(ctx, elog, ev)
+			eventCtx := tracing.WithOperation(ctx, "kernel_event")
+			eventCtx = tracing.WithEvent(eventCtx, ev.Kind.String())
+			eventCtx = tracing.WithAttrs(eventCtx,
+				slog.String("iface", ev.Iface),
+			)
+			eventCtx, _ = tracing.StartTrace(eventCtx, "", "kernel_event")
+			elog := tracing.Logger(eventCtx, d.log).With(
+				"phase", "kernel-event",
+				"kind", ev.Kind.String(),
+				"iface", ev.Iface,
+			)
+			d.dispatchEvent(eventCtx, elog, ev)
 
 		case lease, ok := <-dhcpEvents(dhcpClient):
 			if !ok {
 				continue
 			}
-			tid := newTraceID()
-			llog := d.log.With("trace", tid, "phase", "dhcp-event",
-				"state", lease.State.String())
-			d.dispatchLease(ctx, llog, lease)
+			leaseCtx := tracing.WithOperation(ctx, "dhcp_event")
+			leaseCtx = tracing.WithEvent(leaseCtx, lease.State.String())
+			leaseCtx, _ = tracing.StartTrace(leaseCtx, "", "dhcp_event")
+			llog := tracing.Logger(leaseCtx, d.log).With(
+				"phase", "dhcp-event",
+				"state", lease.State.String(),
+			)
+			d.dispatchLease(leaseCtx, llog, lease)
 
 		case <-tick.C:
-			tid := newTraceID()
-			tlog := d.log.With("trace", tid, "phase", "periodic-reconcile")
+			tickCtx := tracing.WithOperation(ctx, "periodic_reconcile")
+			tickCtx, _ = tracing.StartTrace(tickCtx, "", "periodic_reconcile")
+			tlog := tracing.Logger(tickCtx, d.log).With("phase", "periodic-reconcile")
 			tlog.Debug("ifmgr: tick")
-			d.reconcileAll(ctx, tlog)
-			d.evaluateAlertsAll(ctx, tlog, time.Now())
+			d.reconcileAll(tickCtx, tlog)
+			d.evaluateAlertsAll(tickCtx, tlog, time.Now())
 		}
 	}
 }
@@ -288,20 +301,11 @@ func dhcpEvents(c *netif.DHCPClient) <-chan netif.LeaseInfo {
 	return c.Events
 }
 
-// newTraceID returns a short random hex string used as a per-iteration
-// correlation identifier in log records.
-func newTraceID() string {
-	var buf [4]byte
-	_, _ = rand.Read(buf[:])
-	return hex.EncodeToString(buf[:])
-}
-
 // mapKeys returns the sorted key set of m. Used for diagnostic logging
 // of module config trees without dumping potentially-large values.
-func mapKeys(m map[string]any) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
+func moduleConfigType(cfg ModuleConfig) string {
+	if cfg == nil {
+		return "<nil>"
 	}
-	return out
+	return cfg.ModuleConfigName()
 }

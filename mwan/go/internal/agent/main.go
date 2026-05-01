@@ -15,6 +15,7 @@ import (
 	"goodkind.io/mwan/internal/bgp"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -46,6 +47,11 @@ func Run(cfg *config.Config) {
 		boot.Error("init logger", "error", err, "log_file", *logFile)
 		os.Exit(1)
 	}
+	runID := tracing.NewID()
+	logger = logger.With(
+		slog.String(tracing.RunIDKey, runID),
+		slog.String(tracing.ComponentKey, "agent"),
+	)
 
 	if *vsockPort != 0 && *vsockPort > 0xffffffff {
 		logger.Error("vsock port out of range", "vsock_port", *vsockPort, "err", "vsock_port exceeds uint32 max")
@@ -108,7 +114,9 @@ func Run(cfg *config.Config) {
 		os.Exit(1)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(unaryTraceInterceptor(logger)),
+	)
 	mwanv1.RegisterMWANAgentServer(grpcServer, NewServer(*deployFile, logger, bgpSpeaker))
 	if *debug {
 		reflection.Register(grpcServer)
@@ -164,4 +172,3 @@ func Run(cfg *config.Config) {
 		}
 	}
 }
-

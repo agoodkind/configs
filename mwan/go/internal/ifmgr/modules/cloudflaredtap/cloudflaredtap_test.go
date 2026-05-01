@@ -9,7 +9,7 @@ import (
 )
 
 func TestNew_DefaultsApplied(t *testing.T) {
-	m, err := New(map[string]any{"unit": "cloudflared-oob"})
+	m, err := New(Config{Unit: "cloudflared-oob"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -29,10 +29,10 @@ func TestNew_DefaultsApplied(t *testing.T) {
 	}
 }
 
-func TestNew_DowngradePatternsParsedFromAny(t *testing.T) {
-	m, _ := New(map[string]any{
-		"unit":               "x",
-		"downgrade_patterns": []any{"foo", "bar.*"},
+func TestNew_DowngradePatternsParsed(t *testing.T) {
+	m, _ := New(Config{
+		Unit:              "x",
+		DowngradePatterns: []string{"foo", "bar.*"},
 	})
 	mod := m.(*Module)
 	if len(mod.cfg.DowngradePatterns) != 2 {
@@ -43,19 +43,8 @@ func TestNew_DowngradePatternsParsedFromAny(t *testing.T) {
 	}
 }
 
-func TestNew_DowngradePatternsParsedFromStringSlice(t *testing.T) {
-	m, _ := New(map[string]any{
-		"unit":               "x",
-		"downgrade_patterns": []string{"alpha", "beta"},
-	})
-	mod := m.(*Module)
-	if len(mod.cfg.DowngradePatterns) != 2 {
-		t.Fatalf("expected 2 patterns, got %d", len(mod.cfg.DowngradePatterns))
-	}
-}
-
 func TestNew_JournalctlPathOverride(t *testing.T) {
-	m, _ := New(map[string]any{"unit": "x", "journalctl_path": "/usr/bin/journalctl-test"})
+	m, _ := New(Config{Unit: "x", JournalctlPath: "/usr/bin/journalctl-test"})
 	if m.(*Module).cfg.JournalctlPath != "/usr/bin/journalctl-test" {
 		t.Errorf("journalctl_path not parsed")
 	}

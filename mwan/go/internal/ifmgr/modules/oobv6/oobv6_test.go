@@ -24,10 +24,10 @@ func testLog(t *testing.T) *slog.Logger {
 // TestNew_DefaultsApplied confirms the constructor enables SLAAC rule
 // management by default with priority 7.
 func TestNew_DefaultsApplied(t *testing.T) {
-	mod, err := New(map[string]any{
-		"iface":        "mbrains",
-		"oob_addr":     "3d06:bad:b01:ff::1/128",
-		"oob_table_id": 500,
+	mod, err := New(Config{
+		Iface:      "mbrains",
+		OOBAddr:    "3d06:bad:b01:ff::1/128",
+		OOBTableID: 500,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -44,11 +44,11 @@ func TestNew_DefaultsApplied(t *testing.T) {
 // TestNew_ExplicitDisable confirms manage_slaac_source_rule=false
 // disables rule management (off-switch for problematic deploys).
 func TestNew_ExplicitDisable(t *testing.T) {
-	mod, err := New(map[string]any{
-		"iface":                    "mbrains",
-		"oob_addr":                 "3d06:bad:b01:ff::1/128",
-		"oob_table_id":             500,
-		"manage_slaac_source_rule": false,
+	mod, err := New(Config{
+		Iface:           "mbrains",
+		OOBAddr:         "3d06:bad:b01:ff::1/128",
+		OOBTableID:      500,
+		ManageSLAACRule: false,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -60,21 +60,21 @@ func TestNew_ExplicitDisable(t *testing.T) {
 }
 
 // TestNew_CustomPriority confirms slaac_rule_priority overrides the
-// default. Accepts both int and int64 to handle TOML decoder variance.
+// default.
 func TestNew_CustomPriority(t *testing.T) {
-	for _, v := range []any{int(42), int64(42)} {
-		mod, err := New(map[string]any{
-			"iface":               "mbrains",
-			"oob_addr":            "3d06:bad:b01:ff::1/128",
-			"oob_table_id":        500,
-			"slaac_rule_priority": v,
+	for _, priority := range []int{42} {
+		mod, err := New(Config{
+			Iface:             "mbrains",
+			OOBAddr:           "3d06:bad:b01:ff::1/128",
+			OOBTableID:        500,
+			SLAACRulePriority: priority,
 		})
 		if err != nil {
-			t.Fatalf("New(%T): %v", v, err)
+			t.Fatalf("New(%d): %v", priority, err)
 		}
 		m := mod.(*Module)
 		if m.cfg.SLAACRulePriority != 42 {
-			t.Errorf("SLAACRulePriority(%T): got %d, want 42", v, m.cfg.SLAACRulePriority)
+			t.Errorf("SLAACRulePriority(%d): got %d, want 42", priority, m.cfg.SLAACRulePriority)
 		}
 	}
 }
@@ -84,11 +84,11 @@ func TestNew_CustomPriority(t *testing.T) {
 func TestNew_PriorityOutOfRange(t *testing.T) {
 	cases := []int{0, -1, 32766, 100000}
 	for _, p := range cases {
-		_, err := New(map[string]any{
-			"iface":               "mbrains",
-			"oob_addr":            "3d06:bad:b01:ff::1/128",
-			"oob_table_id":        500,
-			"slaac_rule_priority": p,
+		_, err := New(Config{
+			Iface:             "mbrains",
+			OOBAddr:           "3d06:bad:b01:ff::1/128",
+			OOBTableID:        500,
+			SLAACRulePriority: p,
 		})
 		if err == nil {
 			t.Errorf("priority=%d: expected error, got nil", p)

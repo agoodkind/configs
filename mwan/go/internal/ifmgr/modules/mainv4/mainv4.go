@@ -42,6 +42,8 @@ type Config struct {
 	Iface string
 }
 
+func (Config) ModuleConfigName() string { return "mainv4" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "mainv4" }
 
@@ -172,10 +174,14 @@ func (m *Module) LastBound() time.Time {
 }
 
 // New is the Constructor.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{}
-	if v, ok := cfg["iface"].(string); ok {
-		c.Iface = v
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("mainv4: invalid config type %T", cfg)
+		}
+		c = typedConfig
 	}
 	return &Module{cfg: c}, nil
 }

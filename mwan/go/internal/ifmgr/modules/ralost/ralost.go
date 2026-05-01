@@ -35,6 +35,8 @@ type Config struct {
 	RALostAfter time.Duration
 }
 
+func (Config) ModuleConfigName() string { return "ra_lost" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "ra_lost" }
 
@@ -124,17 +126,14 @@ func (m *Module) markSeen() {
 }
 
 // New is the Constructor.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{}
-	if v, ok := cfg["iface"].(string); ok {
-		c.Iface = v
-	}
-	if v, ok := cfg["ra_lost_alert_after"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("ra_lost: parse ra_lost_alert_after %q: %w", v, err)
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("ra_lost: invalid config type %T", cfg)
 		}
-		c.RALostAfter = d
+		c = typedConfig
 	}
 	if c.RALostAfter == 0 {
 		c.RALostAfter = 5 * time.Minute

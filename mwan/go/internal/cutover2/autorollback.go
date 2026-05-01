@@ -91,7 +91,7 @@ func (m *healthMonitor) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			m.log.Info("auto-rollback monitor stopped")
+			m.log.Debug("auto-rollback monitor stopped")
 			return
 		case <-time.After(m.interval):
 		}

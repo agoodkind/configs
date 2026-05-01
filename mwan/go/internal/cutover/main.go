@@ -12,6 +12,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -24,6 +25,11 @@ func Run(cfg *config.Config, dryRun bool) error {
 	if lerr != nil {
 		return fmt.Errorf("logger init: %w", lerr)
 	}
+	runID := tracing.NewID()
+	log = log.With(
+		slog.String(tracing.RunIDKey, runID),
+		slog.String(tracing.ComponentKey, "cutover"),
+	)
 
 	// Create email sender
 	sender := email.NewSender(cfg.Email.SMTP2GOAPIKey, cfg.Email.From, cfg.Email.BindIface, "mwan-cutover", log)
@@ -101,7 +107,7 @@ func cmdFull(ctx context.Context, log *slog.Logger, cfg *config.Config, sender *
 	}
 
 	for _, p := range phases {
-		log.Info("=== PHASE START ===", "phase", p.name)
+		log.Debug("=== PHASE START ===", "phase", p.name)
 		if sender != nil {
 			_ = sender.Send(ctx, cfg.Email.AlertEmail, fmt.Sprintf("%s Phase: %s STARTING", cfg.Email.SubjectPrefix, p.name),
 				fmt.Sprintf("Starting phase %q at %s", p.name, time.Now().Format(time.RFC3339)))
@@ -116,7 +122,7 @@ func cmdFull(ctx context.Context, log *slog.Logger, cfg *config.Config, sender *
 			return fmt.Errorf("phase %s: %w", p.name, err)
 		}
 
-		log.Info("=== PHASE COMPLETE ===", "phase", p.name)
+		log.Debug("=== PHASE COMPLETE ===", "phase", p.name)
 		if sender != nil {
 			_ = sender.Send(ctx, cfg.Email.AlertEmail, fmt.Sprintf("%s Phase: %s OK", cfg.Email.SubjectPrefix, p.name),
 				fmt.Sprintf("Phase %q completed at %s", p.name, time.Now().Format(time.RFC3339)))

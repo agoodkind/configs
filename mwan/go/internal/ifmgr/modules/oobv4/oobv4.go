@@ -36,6 +36,8 @@ type Config struct {
 	OOBTableID int
 }
 
+func (Config) ModuleConfigName() string { return "oobv4" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "oobv4" }
 
@@ -162,16 +164,14 @@ func (m *Module) LastBound() time.Time {
 }
 
 // New is the Constructor.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{}
-	if v, ok := cfg["iface"].(string); ok {
-		c.Iface = v
-	}
-	switch v := cfg["oob_table_id"].(type) {
-	case int:
-		c.OOBTableID = v
-	case int64:
-		c.OOBTableID = int(v)
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("oobv4: invalid config type %T", cfg)
+		}
+		c = typedConfig
 	}
 	return &Module{cfg: c}, nil
 }

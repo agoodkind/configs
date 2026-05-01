@@ -84,12 +84,14 @@ func TestShortKey(t *testing.T) {
 }
 
 func TestNew_DefaultsAndOverrides(t *testing.T) {
-	m, err := New(map[string]any{
-		"ssh_host":            "agoodkind@3d06:bad:b01::1",
-		"sudo":                true,
-		"warn_handshake_age":  "200s",
-		"error_handshake_age": "400s",
-		"ignore_peers":        []any{"PmJXT8pLFCkJwRCSkKhXAJJTs598tiQdvR+kKQeORkI="},
+	m, err := New(Config{
+		SSHHost:           "agoodkind@3d06:bad:b01::1",
+		Sudo:              true,
+		WarnHandshakeAge:  200 * time.Second,
+		ErrorHandshakeAge: 400 * time.Second,
+		IgnorePeers: map[string]bool{
+			"PmJXT8pLFCkJwRCSkKhXAJJTs598tiQdvR+kKQeORkI=": true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -116,7 +118,7 @@ func TestNew_DefaultsAndOverrides(t *testing.T) {
 }
 
 func TestNew_RequiresSSHHost(t *testing.T) {
-	m, err := New(map[string]any{})
+	m, err := New(Config{})
 	if err != nil {
 		t.Fatalf("constructor should not error on missing ssh_host (validated in Init): %v", err)
 	}

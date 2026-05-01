@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/tracing"
 )
 
 // fakeModule is a Module implementation that records every dispatch the
@@ -24,6 +25,7 @@ type fakeModule struct {
 	kernelEv  int32
 	dhcpEv    int32
 	alertEv   int32
+	traceSeen int32
 	mu        sync.Mutex
 	lastEnv   *Env
 }
@@ -38,8 +40,11 @@ func (f *fakeModule) Init(_ context.Context, env *Env) error {
 	return nil
 }
 
-func (f *fakeModule) Reconcile(_ context.Context, _ *slog.Logger) error {
+func (f *fakeModule) Reconcile(ctx context.Context, _ *slog.Logger) error {
 	atomic.AddInt32(&f.reconcile, 1)
+	if tracing.TraceID(ctx) != "" {
+		atomic.AddInt32(&f.traceSeen, 1)
+	}
 	return nil
 }
 
@@ -65,7 +70,7 @@ func withFakeRole(t *testing.T, role, modName string, mod Module) {
 	// Save previous registration if any, then install ours.
 	prev, hadPrev := Lookup(modName)
 	registryMu.Lock()
-	registry[modName] = func(map[string]any) (Module, error) { return mod, nil }
+	registry[modName] = func(ModuleConfig) (Module, error) { return mod, nil }
 	registryMu.Unlock()
 
 	prevRole, hadRole := roleModules[role]
@@ -113,6 +118,9 @@ func TestDaemonInitAndReconcile(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&mod.reconcile); got < 2 {
 		t.Errorf("reconcile count=%d, want >=2", got)
+	}
+	if got := atomic.LoadInt32(&mod.traceSeen); got < 1 {
+		t.Errorf("traceSeen=%d, want >=1", got)
 	}
 	// Env was populated.
 	mod.mu.Lock()

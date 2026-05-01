@@ -33,6 +33,8 @@ type Config struct {
 	Rules []netif.DesiredRule
 }
 
+func (Config) ModuleConfigName() string { return "policy_rules" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "policy_rules" }
 
@@ -72,61 +74,17 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
 }
 
-// New is the Constructor. Accepts cfg["rule"] as either []any (generic
-// toml decoders) or []map[string]any (BurntSushi/toml when the parent
-// map is typed map[string]any). Defensive on both shapes.
-func New(cfg map[string]any) (ifmgr.Module, error) {
-	rawRules := normalizeTableList(cfg["rule"])
-	rules := make([]netif.DesiredRule, 0, len(rawRules))
-	for i, m := range rawRules {
-		_ = i
-		r := netif.DesiredRule{}
-		if v, ok := m["family"].(string); ok {
-			r.Family = v
+// New is the Constructor.
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
+	c := Config{}
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("policy_rules: invalid config type %T", cfg)
 		}
-		switch v := m["priority"].(type) {
-		case int:
-			r.Priority = v
-		case int64:
-			r.Priority = int(v)
-		}
-		if v, ok := m["from"].(string); ok {
-			r.From = v
-		}
-		if v, ok := m["uid_range"].(string); ok {
-			r.UIDRange = v
-		}
-		if v, ok := m["table"].(string); ok {
-			r.Table = v
-		}
-		switch v := m["table_id"].(type) {
-		case int:
-			r.TableID = v
-		case int64:
-			r.TableID = int(v)
-		}
-		rules = append(rules, r)
+		c = typedConfig
 	}
-	return &Module{cfg: Config{Rules: rules}}, nil
-}
-
-// normalizeTableList accepts the various shapes a TOML decoder might use
-// for "an array of tables" inside a generically-typed parent map, and
-// returns []map[string]any. Empty / unknown shape yields nil.
-func normalizeTableList(v any) []map[string]any {
-	switch x := v.(type) {
-	case []map[string]any:
-		return x
-	case []any:
-		out := make([]map[string]any, 0, len(x))
-		for _, e := range x {
-			if m, ok := e.(map[string]any); ok {
-				out = append(out, m)
-			}
-		}
-		return out
-	}
-	return nil
+	return &Module{cfg: c}, nil
 }
 
 func init() { ifmgr.Register("policy_rules", New) }

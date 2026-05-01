@@ -101,7 +101,7 @@ func (c *Client) PurgeBGPConfig(ctx context.Context) error {
 		return fmt.Errorf("list neighbors: %w", err)
 	}
 	for _, n := range neighborResult.Rows {
-		c.log.Info("opnsense: deleting existing neighbor", "uuid", n.UUID)
+		c.log.Debug("opnsense: deleting existing neighbor", "uuid", n.UUID)
 		endpoint := fmt.Sprintf("/quagga/bgp/delNeighbor/%s", n.UUID)
 		var resp struct {
 			Result string `json:"result"`
@@ -121,7 +121,7 @@ func (c *Client) PurgeBGPConfig(ctx context.Context) error {
 		return fmt.Errorf("list routemaps: %w", err)
 	}
 	for _, rm := range routemapResult.Rows {
-		c.log.Info("opnsense: deleting existing route-map", "uuid", rm.UUID)
+		c.log.Debug("opnsense: deleting existing route-map", "uuid", rm.UUID)
 		endpoint := fmt.Sprintf("/quagga/bgp/delRoutemap/%s", rm.UUID)
 		var resp struct {
 			Result string `json:"result"`
@@ -177,13 +177,13 @@ func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
 	}
 	routeMapUUIDs := make(map[string]string, len(routeMaps))
 	for _, rm := range routeMaps {
-		c.log.Info("opnsense: creating route-map", "name", rm.name, "local_pref", rm.localPref)
+		c.log.Debug("opnsense: creating route-map", "name", rm.name, "local_pref", rm.localPref)
 		uuid, err := c.createRouteMap(ctx, rm.name, rm.localPref)
 		if err != nil {
 			return fmt.Errorf("create route-map %s: %w", rm.name, err)
 		}
 		routeMapUUIDs[rm.name] = uuid
-		c.log.Info("opnsense: route-map created", "name", rm.name, "uuid", uuid)
+		c.log.Debug("opnsense: route-map created", "name", rm.name, "uuid", uuid)
 	}
 
 	// Step 4: Create each neighbor linked to the appropriate route-map UUID.
@@ -192,7 +192,7 @@ func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
 		if rmUUID == "" {
 			return fmt.Errorf("neighbor %s references unknown route-map %q", n.Address, n.RouteMapIn)
 		}
-		c.log.Info("opnsense: creating BGP neighbor",
+		c.log.Debug("opnsense: creating BGP neighbor",
 			"address", n.Address, "remote_as", n.RemoteAS,
 			"route_map_in", n.RouteMapIn, "route_map_uuid", rmUUID)
 		if err := c.createNeighbor(ctx, n, rmUUID); err != nil {
@@ -235,7 +235,7 @@ func (c *Client) addBGPFirewallRules(ctx context.Context, bgpCfg BGPConfig) erro
 				"description":      r.desc,
 			},
 		}
-		c.log.Info("opnsense: adding firewall rule", "ipproto", r.ipproto, "source", r.sourceNet)
+		c.log.Debug("opnsense: adding firewall rule", "ipproto", r.ipproto, "source", r.sourceNet)
 		if _, err := c.postAdd(ctx, "/firewall/filter/addRule", body); err != nil {
 			return fmt.Errorf("add firewall rule (%s): %w", r.ipproto, err)
 		}
@@ -627,7 +627,7 @@ func (c *Client) WaitForReady(ctx context.Context, timeout, pollInterval time.Du
 		err := c.doJSON(checkCtx, http.MethodGet, "/core/firmware/status", nil, &resp)
 		cancel()
 		if err == nil {
-			c.log.Info("opnsense: API is reachable after reboot")
+			c.log.Debug("opnsense: API is reachable after reboot")
 			return nil
 		}
 		c.log.Debug("opnsense: not ready yet", "err", err)

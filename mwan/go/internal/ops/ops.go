@@ -15,6 +15,7 @@ import (
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/email"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/pkg/pveapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -80,6 +81,7 @@ type SysOps interface {
 
 type RealOps struct {
 	email     *email.Sender
+	log       *slog.Logger
 	pve       *pveapi.Client
 	vsockCID  uint32
 	vsockPort uint32
@@ -101,7 +103,11 @@ type RealOps struct {
 	testTCPDialer func(ctx context.Context, addr string) (net.Conn, error)
 }
 
-func NewRealOps(cfg *config.Config, emailSender *email.Sender) *RealOps {
+func NewRealOps(
+	cfg *config.Config,
+	emailSender *email.Sender,
+	logger *slog.Logger,
+) *RealOps {
 	var pveClient *pveapi.Client
 	if cfg.PVE.TokenID != "" && cfg.PVE.TokenSecret != "" {
 		pveClient = pveapi.NewClient(
@@ -110,8 +116,12 @@ func NewRealOps(cfg *config.Config, emailSender *email.Sender) *RealOps {
 			cfg.PVE.TokenSecret,
 		)
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &RealOps{
 		email:     emailSender,
+		log:       logger.With("component", "ops"),
 		pve:       pveClient,
 		vsockCID:  cfg.Watchdog.VsockCID,
 		vsockPort: cfg.Watchdog.VsockPort,
@@ -193,27 +203,36 @@ func (r *RealOps) GuestExec(
 	}
 
 	// Channel 1: vsock
+	r.logAttemptStart(ctx, "guest_exec", ChanVsock, 1, vmid)
 	vsockRes, vsockErr := r.vsockExec(ctx, args...)
 	if vsockErr == nil {
 		r.tracker.recordSuccess(ChanVsock)
+		r.logAttemptResult(ctx, "guest_exec", ChanVsock, 1, vmid, nil)
 		return vsockRes, nil
 	}
 	r.tracker.recordFailure(ChanVsock, vsockErr)
+	r.logAttemptResult(ctx, "guest_exec", ChanVsock, 1, vmid, vsockErr)
 
 	// Channel 2: TCP management interface
+	r.logAttemptStart(ctx, "guest_exec", ChanTCP, 2, vmid)
 	tcpRes, tcpErr := r.tcpExec(ctx, args...)
 	if tcpErr == nil {
 		r.tracker.recordSuccess(ChanTCP)
+		r.logAttemptResult(ctx, "guest_exec", ChanTCP, 2, vmid, nil)
 		return tcpRes, nil
 	}
 	r.tracker.recordFailure(ChanTCP, tcpErr)
+	r.logAttemptResult(ctx, "guest_exec", ChanTCP, 2, vmid, tcpErr)
 
 	// Channel 3: PVE REST API fallback
+	r.logAttemptStart(ctx, "guest_exec", ChanPVE, 3, vmid)
 	pveRes, pveErr := r.pveExec(ctx, vmid, args...)
 	if pveErr == nil {
 		r.tracker.recordSuccess(ChanPVE)
+		r.logAttemptResult(ctx, "guest_exec", ChanPVE, 3, vmid, nil)
 	} else {
 		r.tracker.recordFailure(ChanPVE, pveErr)
+		r.logAttemptResult(ctx, "guest_exec", ChanPVE, 3, vmid, pveErr)
 	}
 	return pveRes, pveErr
 }
@@ -407,18 +426,24 @@ func (r *RealOps) GetConfigState(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetConfigStateResponse, string, error) {
 	_ = vmid
+	r.logAttemptStart(ctx, "get_config_state", ChanVsock, 1, vmid)
 	res, err := r.vsockGetConfigState(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
+		r.logAttemptResult(ctx, "get_config_state", ChanVsock, 1, vmid, nil)
 		return res, "vsock", nil
 	}
 	r.tracker.recordFailure(ChanVsock, err)
+	r.logAttemptResult(ctx, "get_config_state", ChanVsock, 1, vmid, err)
+	r.logAttemptStart(ctx, "get_config_state", ChanTCP, 2, vmid)
 	res, err = r.tcpGetConfigState(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
+		r.logAttemptResult(ctx, "get_config_state", ChanTCP, 2, vmid, nil)
 		return res, "tcp", nil
 	}
 	r.tracker.recordFailure(ChanTCP, err)
+	r.logAttemptResult(ctx, "get_config_state", ChanTCP, 2, vmid, err)
 	return nil, "", fmt.Errorf("GetConfigState: all channels failed")
 }
 
@@ -481,18 +506,24 @@ func (r *RealOps) GetBGPStatus(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetBGPStatusResponse, error) {
 	_ = vmid
+	r.logAttemptStart(ctx, "get_bgp_status", ChanVsock, 1, vmid)
 	res, err := r.vsockGetBGPStatus(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
+		r.logAttemptResult(ctx, "get_bgp_status", ChanVsock, 1, vmid, nil)
 		return res, nil
 	}
 	r.tracker.recordFailure(ChanVsock, err)
+	r.logAttemptResult(ctx, "get_bgp_status", ChanVsock, 1, vmid, err)
+	r.logAttemptStart(ctx, "get_bgp_status", ChanTCP, 2, vmid)
 	res, err = r.tcpGetBGPStatus(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
+		r.logAttemptResult(ctx, "get_bgp_status", ChanTCP, 2, vmid, nil)
 		return res, nil
 	}
 	r.tracker.recordFailure(ChanTCP, err)
+	r.logAttemptResult(ctx, "get_bgp_status", ChanTCP, 2, vmid, err)
 	return nil, fmt.Errorf("GetBGPStatus: all channels failed")
 }
 
@@ -549,24 +580,30 @@ func (r *RealOps) tcpAnnounceRoutes(
 
 func (r *RealOps) AnnounceRoutes(ctx context.Context, vmid string) error {
 	_ = vmid
+	r.logAttemptStart(ctx, "announce_routes", ChanVsock, 1, vmid)
 	res, err := r.vsockAnnounceRoutes(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
+		r.logAttemptResult(ctx, "announce_routes", ChanVsock, 1, vmid, nil)
 		if !res.GetSuccess() {
 			return fmt.Errorf("AnnounceRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
 	}
 	r.tracker.recordFailure(ChanVsock, err)
+	r.logAttemptResult(ctx, "announce_routes", ChanVsock, 1, vmid, err)
+	r.logAttemptStart(ctx, "announce_routes", ChanTCP, 2, vmid)
 	res, err = r.tcpAnnounceRoutes(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
+		r.logAttemptResult(ctx, "announce_routes", ChanTCP, 2, vmid, nil)
 		if !res.GetSuccess() {
 			return fmt.Errorf("AnnounceRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
 	}
 	r.tracker.recordFailure(ChanTCP, err)
+	r.logAttemptResult(ctx, "announce_routes", ChanTCP, 2, vmid, err)
 	return fmt.Errorf("AnnounceRoutes: all channels failed")
 }
 
@@ -623,24 +660,30 @@ func (r *RealOps) tcpWithdrawRoutes(
 
 func (r *RealOps) WithdrawRoutes(ctx context.Context, vmid string) error {
 	_ = vmid
+	r.logAttemptStart(ctx, "withdraw_routes", ChanVsock, 1, vmid)
 	res, err := r.vsockWithdrawRoutes(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanVsock)
+		r.logAttemptResult(ctx, "withdraw_routes", ChanVsock, 1, vmid, nil)
 		if !res.GetSuccess() {
 			return fmt.Errorf("WithdrawRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
 	}
 	r.tracker.recordFailure(ChanVsock, err)
+	r.logAttemptResult(ctx, "withdraw_routes", ChanVsock, 1, vmid, err)
+	r.logAttemptStart(ctx, "withdraw_routes", ChanTCP, 2, vmid)
 	res, err = r.tcpWithdrawRoutes(ctx)
 	if err == nil {
 		r.tracker.recordSuccess(ChanTCP)
+		r.logAttemptResult(ctx, "withdraw_routes", ChanTCP, 2, vmid, nil)
 		if !res.GetSuccess() {
 			return fmt.Errorf("WithdrawRoutes: agent returned error: %s", res.GetError())
 		}
 		return nil
 	}
 	r.tracker.recordFailure(ChanTCP, err)
+	r.logAttemptResult(ctx, "withdraw_routes", ChanTCP, 2, vmid, err)
 	return fmt.Errorf("WithdrawRoutes: all channels failed")
 }
 
@@ -652,6 +695,49 @@ func (r *RealOps) Ping(ctx context.Context, bin, target string) bool {
 
 func (r *RealOps) SendEmail(ctx context.Context, to, subject, body string) error {
 	return r.email.Send(ctx, to, subject, body)
+}
+
+func (r *RealOps) attemptLogger(
+	ctx context.Context,
+	operation string,
+	channel ChannelName,
+	attempt int,
+) *slog.Logger {
+	attemptCtx := tracing.WithOperation(ctx, operation)
+	attemptCtx = tracing.WithAttempt(attemptCtx, attempt)
+	attemptCtx = tracing.WithAttrs(attemptCtx,
+		slog.String("channel", string(channel)),
+	)
+	return tracing.Logger(attemptCtx, r.log)
+}
+
+func (r *RealOps) logAttemptStart(
+	ctx context.Context,
+	operation string,
+	channel ChannelName,
+	attempt int,
+	vmid string,
+) {
+	r.attemptLogger(ctx, operation, channel, attempt).Info(
+		"ops transport attempt",
+		"vmid", vmid,
+	)
+}
+
+func (r *RealOps) logAttemptResult(
+	ctx context.Context,
+	operation string,
+	channel ChannelName,
+	attempt int,
+	vmid string,
+	err error,
+) {
+	log := r.attemptLogger(ctx, operation, channel, attempt)
+	if err != nil {
+		log.Warn("ops transport failed", "vmid", vmid, "err", err)
+		return
+	}
+	log.Info("ops transport succeeded", "vmid", vmid)
 }
 
 // ---------------------------------------------------------------------------

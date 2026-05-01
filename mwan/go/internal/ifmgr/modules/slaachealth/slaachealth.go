@@ -48,6 +48,8 @@ type Config struct {
 	ProbeTimeout      time.Duration
 }
 
+func (Config) ModuleConfigName() string { return "slaac_health" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "slaac_health" }
 
@@ -247,62 +249,19 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) 
 }
 
 // New is the Constructor.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
 		MaxTogglesPerHour: 4,
 		ProbeTimeout:      2 * time.Second,
 	}
-	if v, ok := cfg["iface"].(string); ok {
-		c.Iface = v
-	}
-	if d, err := parseDur(cfg, "degraded_after", 30*time.Second); err != nil {
-		return nil, err
-	} else {
-		c.DegradedAfter = d
-	}
-	if d, err := parseDur(cfg, "escalate_after", 90*time.Second); err != nil {
-		return nil, err
-	} else {
-		c.EscalateAfter = d
-	}
-	if d, err := parseDur(cfg, "alert_after", 300*time.Second); err != nil {
-		return nil, err
-	} else {
-		c.AlertAfter = d
-	}
-	switch v := cfg["max_toggles_per_hour"].(type) {
-	case int:
-		c.MaxTogglesPerHour = v
-	case int64:
-		c.MaxTogglesPerHour = int(v)
-	}
-	if rawList, ok := cfg["probe_targets_v6"].([]any); ok {
-		for i, raw := range rawList {
-			s, ok := raw.(string)
-			if !ok {
-				return nil, fmt.Errorf("slaac_health: probe_targets_v6[%d] not a string", i)
-			}
-			addr, err := netip.ParseAddr(s)
-			if err != nil {
-				return nil, fmt.Errorf("slaac_health: probe_targets_v6[%d] %q: %w", i, s, err)
-			}
-			c.ProbeTargetsV6 = append(c.ProbeTargetsV6, addr)
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("slaac_health: invalid config type %T", cfg)
 		}
+		c = typedConfig
 	}
 	return &Module{cfg: c}, nil
-}
-
-// parseDur extracts a duration from a config map with a default if absent.
-func parseDur(cfg map[string]any, key string, def time.Duration) (time.Duration, error) {
-	v, ok := cfg[key].(string)
-	if !ok {
-		return def, nil
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return 0, fmt.Errorf("slaac_health: %s %q: %w", key, v, err)
-	}
-	return d, nil
 }
 
 func init() { ifmgr.Register("slaac_health", New) }

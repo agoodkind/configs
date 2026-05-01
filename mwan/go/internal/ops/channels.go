@@ -83,13 +83,13 @@ func (t *ChannelTracker) Summary() string {
 	return sb.String()
 }
 
-// LogAll emits one slog line per channel at INFO level.
+// LogAll emits one slog line per channel at DEBUG level.
 func (t *ChannelTracker) LogAll(log *slog.Logger) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, name := range []ChannelName{ChanVsock, ChanTCP, ChanPVE} {
 		h := t.channels[name]
-		log.Info("channel health",
+		log.Debug("channel health",
 			"channel", name,
 			"healthy", h.healthy,
 			"consecutive_fails", h.consecutiveFails,

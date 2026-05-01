@@ -42,6 +42,8 @@ type Config struct {
 	UnhealthyAfter time.Duration // a single failed probe must persist this long before alert
 }
 
+func (Config) ModuleConfigName() string { return "connectivity_probe" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "connectivity_probe" }
 
@@ -171,40 +173,17 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 }
 
 // New is the Constructor.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
 		Timeout:        2 * time.Second,
 		UnhealthyAfter: 10 * time.Second,
 	}
-	if v, ok := cfg["iface"].(string); ok {
-		c.Iface = v
-	}
-	if v, ok := cfg["timeout"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("connectivity_probe: timeout %q: %w", v, err)
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("connectivity_probe: invalid config type %T", cfg)
 		}
-		c.Timeout = d
-	}
-	if v, ok := cfg["unhealthy_after"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("connectivity_probe: unhealthy_after %q: %w", v, err)
-		}
-		c.UnhealthyAfter = d
-	}
-	if rawList, ok := cfg["targets_v6"].([]any); ok {
-		for i, raw := range rawList {
-			s, ok := raw.(string)
-			if !ok {
-				return nil, fmt.Errorf("connectivity_probe: targets_v6[%d] not a string", i)
-			}
-			addr, err := netip.ParseAddr(s)
-			if err != nil {
-				return nil, fmt.Errorf("connectivity_probe: targets_v6[%d] %q: %w", i, s, err)
-			}
-			c.TargetsV6 = append(c.TargetsV6, addr)
-		}
+		c = typedConfig
 	}
 	return &Module{cfg: c}, nil
 }

@@ -36,12 +36,12 @@ func cmdPreflight(ctx context.Context, log *slog.Logger, cfg *config.Config) err
 
 	var failures []string
 	for _, c := range checks {
-		log.Info("preflight check", "check", c.name)
+		log.Debug("preflight check", "check", c.name)
 		if err := c.fn(ctx, log, cfg); err != nil {
 			log.Error("preflight FAILED", "check", c.name, "err", err)
 			failures = append(failures, fmt.Sprintf("%s: %v", c.name, err))
 		} else {
-			log.Info("preflight OK", "check", c.name)
+			log.Debug("preflight OK", "check", c.name)
 		}
 	}
 

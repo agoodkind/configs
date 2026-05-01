@@ -73,7 +73,7 @@ func cmdUnfuck(ctx context.Context, log *slog.Logger, cfg *config.Config) error 
 
 	// Step 4: Unforce_down all gateways
 	for _, gwName := range cfg.OPNsense.GatewayNames {
-		log.Info("unfuck: re-enabling gateway", "name", gwName)
+		log.Debug("unfuck: re-enabling gateway", "name", gwName)
 		gwUUID, findErr := client.FindGatewayByName(ctx, gwName)
 		if findErr != nil {
 			log.Error("unfuck: failed to find gateway (continuing)", "name", gwName, "err", findErr)

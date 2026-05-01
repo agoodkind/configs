@@ -47,7 +47,7 @@ func cmdArmWatchdog(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	snapName := fmt.Sprintf("post-bgp-cutover-%s", time.Now().UTC().Format("20060102-150405"))
 	log.Info("arm-watchdog: snapshotting MWAN VM",
 		"vmid", cfg.MwanVMID, "snapshot", snapName)
-	realOps := ops.NewRealOps(cfg, nil)
+	realOps := ops.NewRealOps(cfg, nil, log)
 	if err := realOps.VMSnapshot(ctx, cfg.MwanVMID, snapName); err != nil {
 		return fmt.Errorf("snapshot %s: %w", snapName, err)
 	}

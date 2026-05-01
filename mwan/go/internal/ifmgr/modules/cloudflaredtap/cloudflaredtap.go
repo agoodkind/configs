@@ -61,6 +61,8 @@ type Config struct {
 	JournalctlPath string
 }
 
+func (Config) ModuleConfigName() string { return "cloudflared_tap" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "cloudflared_tap" }
 
@@ -298,23 +300,14 @@ func errMsg(err error) string {
 }
 
 // New is the Constructor registered with ifmgr. Parses cfg into Config.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{}
-	if v, ok := cfg["unit"].(string); ok {
-		c.Unit = v
-	}
-	if v, ok := cfg["journalctl_path"].(string); ok {
-		c.JournalctlPath = v
-	}
-	switch v := cfg["downgrade_patterns"].(type) {
-	case []any:
-		for _, x := range v {
-			if s, ok := x.(string); ok {
-				c.DowngradePatterns = append(c.DowngradePatterns, s)
-			}
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("cloudflared_tap: invalid config type %T", cfg)
 		}
-	case []string:
-		c.DowngradePatterns = append(c.DowngradePatterns, v...)
+		c = typedConfig
 	}
 	return &Module{cfg: c}, nil
 }

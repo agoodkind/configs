@@ -91,6 +91,8 @@ type Config struct {
 	Timeout time.Duration
 }
 
+func (Config) ModuleConfigName() string { return "wg_health" }
+
 type peerState struct {
 	endpoint  string
 	rxBytes   int64
@@ -418,7 +420,7 @@ func shortKey(pub string) string {
 }
 
 // New is the constructor.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
 		Iface:             "wg0",
 		Sudo:              false,
@@ -427,52 +429,20 @@ func New(cfg map[string]any) (ifmgr.Module, error) {
 		Timeout:           10 * time.Second,
 		IgnorePeers:       map[string]bool{},
 	}
-	if v, ok := cfg["ssh_host"].(string); ok {
-		c.SSHHost = v
+	if cfg == nil {
+		return &Module{cfg: c}, nil
 	}
-	if v, ok := cfg["ssh_port"].(int64); ok {
-		c.SSHPort = int(v)
+	typedConfig, ok := cfg.(Config)
+	if !ok {
+		return nil, fmt.Errorf("wg_health: invalid config type %T", cfg)
 	}
-	if v, ok := cfg["identity_file"].(string); ok {
-		c.IdentityFile = v
+	if typedConfig.Iface == "" {
+		typedConfig.Iface = c.Iface
 	}
-	if v, ok := cfg["iface"].(string); ok && v != "" {
-		c.Iface = v
+	if typedConfig.IgnorePeers == nil {
+		typedConfig.IgnorePeers = map[string]bool{}
 	}
-	if v, ok := cfg["sudo"].(bool); ok {
-		c.Sudo = v
-	}
-	if v, ok := cfg["warn_handshake_age"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("wg_health: warn_handshake_age %q: %w", v, err)
-		}
-		c.WarnHandshakeAge = d
-	}
-	if v, ok := cfg["error_handshake_age"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("wg_health: error_handshake_age %q: %w", v, err)
-		}
-		c.ErrorHandshakeAge = d
-	}
-	if v, ok := cfg["timeout"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("wg_health: timeout %q: %w", v, err)
-		}
-		c.Timeout = d
-	}
-	if rawList, ok := cfg["ignore_peers"].([]any); ok {
-		for i, raw := range rawList {
-			s, ok := raw.(string)
-			if !ok {
-				return nil, fmt.Errorf("wg_health: ignore_peers[%d] not a string", i)
-			}
-			c.IgnorePeers[s] = true
-		}
-	}
-	return &Module{cfg: c}, nil
+	return &Module{cfg: typedConfig}, nil
 }
 
 func init() { ifmgr.Register("wg_health", New) }

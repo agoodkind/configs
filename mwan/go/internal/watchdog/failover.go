@@ -3,6 +3,7 @@ package watchdog
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"goodkind.io/mwan/internal/alert"
@@ -11,6 +12,7 @@ import (
 	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/logging"
 	"goodkind.io/mwan/internal/ops"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -186,6 +188,11 @@ func FailoverRun(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("logger: %w", err)
 	}
+	runID := tracing.NewID()
+	logger = logger.With(
+		slog.String(tracing.RunIDKey, runID),
+		slog.String(tracing.ComponentKey, "watchdog"),
+	)
 
 	// Create email sender
 	emailSender := email.NewSender(cfg.Email.SMTP2GOAPIKey, cfg.Email.From, cfg.Email.BindIface, "mwan-watchdog", logger)
@@ -193,10 +200,11 @@ func FailoverRun(cfg *config.Config) error {
 	// Create watchdog instance
 	w := &watchdog{
 		cfg:     cfg,
-		ops:     ops.NewRealOps(cfg, emailSender),
+		ops:     ops.NewRealOps(cfg, emailSender, logger),
 		coord:   &alert.Coord{},
 		limiter: alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
 		log:     logger,
+		runID:   runID,
 	}
 
 	ctx := context.Background()

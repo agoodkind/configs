@@ -16,6 +16,7 @@ import (
 	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 
 	// Side-effect imports: each module package's init() registers itself
@@ -50,6 +51,11 @@ func runIfMgr(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("build logger: %w", err)
 	}
+	runID := tracing.NewID()
+	logger = logger.With(
+		slog.String(tracing.RunIDKey, runID),
+		slog.String(tracing.ComponentKey, "ifmgr"),
+	)
 	logger.Info("ifmgr: starting",
 		"build", version.BuildVersionString(),
 		"role", role,
@@ -130,9 +136,8 @@ func logShutdownReason(ctx context.Context, log *slog.Logger) {
 }
 
 // buildIfMgrDaemonConfig translates cfg.IfMgr (the parsed TOML) into the
-// shape ifmgr.Daemon expects. Per-module sub-configs are passed through
-// as-is (map[string]any) so the modules' constructors do their own
-// strict parsing.
+// shape ifmgr.Daemon expects. Module configs are adapted from the explicit
+// TOML schema into typed runtime configs before daemon startup.
 func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig, error) {
 	ifaceName := ""
 	enableDHCP := false
@@ -181,6 +186,11 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		rec = d
 	}
 
+	moduleConfigs, err := buildIfMgrModuleConfigs(cfg.IfMgr.Modules)
+	if err != nil {
+		return ifmgr.DaemonConfig{}, err
+	}
+
 	return ifmgr.DaemonConfig{
 		Role:              role,
 		Iface:             ifaceName,
@@ -190,6 +200,6 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		DHCPMax:           dhcpMax,
 		EnableRA:          enableRA,
 		AlertRepeatEvery:  30 * time.Minute,
-		ModuleConfigs:     cfg.IfMgr.Modules,
+		ModuleConfigs:     moduleConfigs,
 	}, nil
 }

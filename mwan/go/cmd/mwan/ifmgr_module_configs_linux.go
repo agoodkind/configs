@@ -1,0 +1,353 @@
+//go:build linux
+
+package main
+
+import (
+	"fmt"
+	"net/netip"
+	"time"
+
+	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/ifmgr"
+	bridgeprobe "goodkind.io/mwan/internal/ifmgr/modules/bridgeprobe"
+	cloudflaredtap "goodkind.io/mwan/internal/ifmgr/modules/cloudflaredtap"
+	connprobe "goodkind.io/mwan/internal/ifmgr/modules/connprobe"
+	mainv4 "goodkind.io/mwan/internal/ifmgr/modules/mainv4"
+	oobv4 "goodkind.io/mwan/internal/ifmgr/modules/oobv4"
+	oobv6 "goodkind.io/mwan/internal/ifmgr/modules/oobv6"
+	policyrules "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
+	ralost "goodkind.io/mwan/internal/ifmgr/modules/ralost"
+	slaachealth "goodkind.io/mwan/internal/ifmgr/modules/slaachealth"
+	wghealth "goodkind.io/mwan/internal/ifmgr/modules/wghealth"
+	"goodkind.io/mwan/internal/netif"
+)
+
+func buildIfMgrModuleConfigs(
+	modules config.IfMgrModulesSection,
+) (ifmgr.ModuleConfigSet, error) {
+	moduleConfigs := make(ifmgr.ModuleConfigSet)
+
+	wgHealthConfig, err := buildWGHealthConfig(modules.WGHealth)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["wg_health"] = wgHealthConfig
+
+	oobV6Config, err := buildOOBV6Config(modules.OOBV6)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["oobv6"] = oobV6Config
+
+	moduleConfigs["oobv4"] = buildOOBV4Config(modules.OOBV4)
+
+	slaacHealthConfig, err := buildSLAACHealthConfig(modules.SLAACHealth)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["slaac_health"] = slaacHealthConfig
+
+	raLostConfig, err := buildRALostConfig(modules.RALost)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["ra_lost"] = raLostConfig
+
+	connectivityProbeConfig, err := buildConnectivityProbeConfig(modules.ConnectivityProbe)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["connectivity_probe"] = connectivityProbeConfig
+
+	bridgeProbeConfig, err := buildBridgeProbeConfig(modules.BridgeProbe)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["bridge_probe"] = bridgeProbeConfig
+
+	moduleConfigs["cloudflared_tap"] = buildCloudflaredTapConfig(modules.CloudflaredTap)
+	moduleConfigs["mainv4"] = buildMainV4Config(modules.MainV4)
+	moduleConfigs["policy_rules"] = buildPolicyRulesConfig(modules.PolicyRules)
+
+	return moduleConfigs, nil
+}
+
+func buildWGHealthConfig(section *config.IfMgrWGHealthSection) (wghealth.Config, error) {
+	cfg := wghealth.Config{
+		Iface:             "wg0",
+		Sudo:              false,
+		WarnHandshakeAge:  180 * time.Second,
+		ErrorHandshakeAge: 300 * time.Second,
+		Timeout:           10 * time.Second,
+		IgnorePeers:       map[string]bool{},
+	}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.SSHHost = section.SSHHost
+	if section.SSHPort != nil {
+		cfg.SSHPort = *section.SSHPort
+	}
+	cfg.IdentityFile = section.IdentityFile
+	if section.Iface != "" {
+		cfg.Iface = section.Iface
+	}
+	cfg.Sudo = section.Sudo
+
+	var err error
+	cfg.WarnHandshakeAge, err = parseDurationSetting(
+		section.WarnHandshakeAge,
+		cfg.WarnHandshakeAge,
+		"ifmgr.modules.wg_health.warn_handshake_age",
+	)
+	if err != nil {
+		return wghealth.Config{}, err
+	}
+	cfg.ErrorHandshakeAge, err = parseDurationSetting(
+		section.ErrorHandshakeAge,
+		cfg.ErrorHandshakeAge,
+		"ifmgr.modules.wg_health.error_handshake_age",
+	)
+	if err != nil {
+		return wghealth.Config{}, err
+	}
+	cfg.Timeout, err = parseDurationSetting(
+		section.Timeout,
+		cfg.Timeout,
+		"ifmgr.modules.wg_health.timeout",
+	)
+	if err != nil {
+		return wghealth.Config{}, err
+	}
+	for _, peer := range section.IgnorePeers {
+		cfg.IgnorePeers[peer] = true
+	}
+	return cfg, nil
+}
+
+func buildOOBV6Config(section *config.IfMgrOOBV6Section) (oobv6.Config, error) {
+	cfg := oobv6.Config{
+		ManageSLAACRule:   true,
+		SLAACRulePriority: 7,
+	}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.Iface = section.Iface
+	cfg.OOBAddr = section.OOBAddr
+	cfg.OOBTableID = section.OOBTableID
+	if section.ManageSLAACSourceRule != nil {
+		cfg.ManageSLAACRule = *section.ManageSLAACSourceRule
+	}
+	if section.SLAACRulePriority != nil {
+		cfg.SLAACRulePriority = *section.SLAACRulePriority
+	}
+	return cfg, nil
+}
+
+func buildOOBV4Config(section *config.IfMgrOOBV4Section) oobv4.Config {
+	cfg := oobv4.Config{}
+	if section == nil {
+		return cfg
+	}
+	cfg.Iface = section.Iface
+	cfg.OOBTableID = section.OOBTableID
+	return cfg
+}
+
+func buildSLAACHealthConfig(section *config.IfMgrSLAACHealthSection) (slaachealth.Config, error) {
+	cfg := slaachealth.Config{
+		MaxTogglesPerHour: 4,
+		ProbeTimeout:      2 * time.Second,
+	}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.Iface = section.Iface
+
+	var err error
+	cfg.DegradedAfter, err = parseDurationSetting(
+		section.DegradedAfter,
+		30*time.Second,
+		"ifmgr.modules.slaac_health.degraded_after",
+	)
+	if err != nil {
+		return slaachealth.Config{}, err
+	}
+	cfg.EscalateAfter, err = parseDurationSetting(
+		section.EscalateAfter,
+		90*time.Second,
+		"ifmgr.modules.slaac_health.escalate_after",
+	)
+	if err != nil {
+		return slaachealth.Config{}, err
+	}
+	cfg.AlertAfter, err = parseDurationSetting(
+		section.AlertAfter,
+		300*time.Second,
+		"ifmgr.modules.slaac_health.alert_after",
+	)
+	if err != nil {
+		return slaachealth.Config{}, err
+	}
+	cfg.ProbeTimeout, err = parseDurationSetting(
+		section.ProbeTimeout,
+		cfg.ProbeTimeout,
+		"ifmgr.modules.slaac_health.probe_timeout",
+	)
+	if err != nil {
+		return slaachealth.Config{}, err
+	}
+	if section.MaxTogglesPerHour != nil {
+		cfg.MaxTogglesPerHour = *section.MaxTogglesPerHour
+	}
+	cfg.ProbeTargetsV6, err = parseAddrList(
+		section.ProbeTargetsV6,
+		"ifmgr.modules.slaac_health.probe_targets_v6",
+	)
+	if err != nil {
+		return slaachealth.Config{}, err
+	}
+	return cfg, nil
+}
+
+func buildRALostConfig(section *config.IfMgrRALostSection) (ralost.Config, error) {
+	cfg := ralost.Config{RALostAfter: 5 * time.Minute}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.Iface = section.Iface
+	var err error
+	cfg.RALostAfter, err = parseDurationSetting(
+		section.RALostAlertAfter,
+		cfg.RALostAfter,
+		"ifmgr.modules.ra_lost.ra_lost_alert_after",
+	)
+	if err != nil {
+		return ralost.Config{}, err
+	}
+	return cfg, nil
+}
+
+func buildConnectivityProbeConfig(
+	section *config.IfMgrConnectivityProbeSection,
+) (connprobe.Config, error) {
+	cfg := connprobe.Config{
+		Timeout:        2 * time.Second,
+		UnhealthyAfter: 10 * time.Second,
+	}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.Iface = section.Iface
+
+	var err error
+	cfg.Timeout, err = parseDurationSetting(
+		section.Timeout,
+		cfg.Timeout,
+		"ifmgr.modules.connectivity_probe.timeout",
+	)
+	if err != nil {
+		return connprobe.Config{}, err
+	}
+	cfg.UnhealthyAfter, err = parseDurationSetting(
+		section.UnhealthyAfter,
+		cfg.UnhealthyAfter,
+		"ifmgr.modules.connectivity_probe.unhealthy_after",
+	)
+	if err != nil {
+		return connprobe.Config{}, err
+	}
+	cfg.TargetsV6, err = parseAddrList(
+		section.TargetsV6,
+		"ifmgr.modules.connectivity_probe.targets_v6",
+	)
+	if err != nil {
+		return connprobe.Config{}, err
+	}
+	return cfg, nil
+}
+
+func buildBridgeProbeConfig(section *config.IfMgrBridgeProbeSection) (bridgeprobe.Config, error) {
+	cfg := bridgeprobe.Config{NoSignalAlertAfter: 120 * time.Second}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.Iface = section.Iface
+	var err error
+	cfg.NoSignalAlertAfter, err = parseDurationSetting(
+		section.NoSignalAlertAfter,
+		cfg.NoSignalAlertAfter,
+		"ifmgr.modules.bridge_probe.no_signal_alert_after",
+	)
+	if err != nil {
+		return bridgeprobe.Config{}, err
+	}
+	return cfg, nil
+}
+
+func buildCloudflaredTapConfig(section *config.IfMgrCloudflaredTapSection) cloudflaredtap.Config {
+	cfg := cloudflaredtap.Config{}
+	if section == nil {
+		return cfg
+	}
+	cfg.Unit = section.Unit
+	cfg.DowngradePatterns = append([]string(nil), section.DowngradePatterns...)
+	cfg.JournalctlPath = section.JournalctlPath
+	return cfg
+}
+
+func buildMainV4Config(section *config.IfMgrMainV4Section) mainv4.Config {
+	cfg := mainv4.Config{}
+	if section == nil {
+		return cfg
+	}
+	cfg.Iface = section.Iface
+	return cfg
+}
+
+func buildPolicyRulesConfig(section *config.IfMgrPolicyRulesSection) policyrules.Config {
+	cfg := policyrules.Config{}
+	if section == nil {
+		return cfg
+	}
+	cfg.Rules = make([]netif.DesiredRule, 0, len(section.Rule))
+	for _, rule := range section.Rule {
+		cfg.Rules = append(cfg.Rules, netif.DesiredRule{
+			Family:   rule.Family,
+			Priority: rule.Priority,
+			From:     rule.From,
+			UIDRange: rule.UIDRange,
+			Table:    rule.Table,
+			TableID:  rule.TableID,
+		})
+	}
+	return cfg
+}
+
+func parseDurationSetting(
+	raw string,
+	defaultValue time.Duration,
+	fieldName string,
+) (time.Duration, error) {
+	if raw == "" {
+		return defaultValue, nil
+	}
+	durationValue, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s %q: %w", fieldName, raw, err)
+	}
+	return durationValue, nil
+}
+
+func parseAddrList(values []string, fieldName string) ([]netip.Addr, error) {
+	addresses := make([]netip.Addr, 0, len(values))
+	for i, value := range values {
+		address, err := netip.ParseAddr(value)
+		if err != nil {
+			return nil, fmt.Errorf("%s[%d] %q: %w", fieldName, i, value, err)
+		}
+		addresses = append(addresses, address)
+	}
+	return addresses, nil
+}

@@ -9,12 +9,13 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -30,8 +31,15 @@ const defaultInterval = 500 * time.Millisecond
 func Run() error {
 	interval := defaultInterval
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	logger = logger.With("build", version.BuildVersionString())
+	logger, err := logging.New(logging.Config{}, version.BuildVersionString())
+	if err != nil {
+		return err
+	}
+	runID := tracing.NewID()
+	logger = logger.With(
+		slog.String(tracing.RunIDKey, runID),
+		slog.String(tracing.ComponentKey, "healthcheck"),
+	)
 	slog.SetDefault(logger)
 
 	slog.Info("health-check started", "interval", interval.String(),
@@ -46,7 +54,6 @@ func Run() error {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("health-check stopping")
 			return nil
 		default:
 		}

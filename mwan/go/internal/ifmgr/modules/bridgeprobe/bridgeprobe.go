@@ -41,6 +41,8 @@ type Config struct {
 	NoSignalAlertAfter time.Duration
 }
 
+func (Config) ModuleConfigName() string { return "bridge_probe" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "bridge_probe" }
 
@@ -132,17 +134,14 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 }
 
 // New is the Constructor.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{NoSignalAlertAfter: 120 * time.Second}
-	if v, ok := cfg["iface"].(string); ok {
-		c.Iface = v
-	}
-	if v, ok := cfg["no_signal_alert_after"].(string); ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("bridge_probe: no_signal_alert_after %q: %w", v, err)
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("bridge_probe: invalid config type %T", cfg)
 		}
-		c.NoSignalAlertAfter = d
+		c = typedConfig
 	}
 	return &Module{cfg: c}, nil
 }

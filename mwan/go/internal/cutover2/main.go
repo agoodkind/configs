@@ -19,6 +19,7 @@ import (
 	"goodkind.io/mwan/internal/logging"
 	"goodkind.io/mwan/internal/opnsense"
 	"goodkind.io/mwan/internal/ops"
+	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -58,6 +59,11 @@ func Run(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("logger init: %w", err)
 	}
+	runID := tracing.NewID()
+	log = log.With(
+		slog.String(tracing.RunIDKey, runID),
+		slog.String(tracing.ComponentKey, "cutover2"),
+	)
 
 	if len(os.Args) < 2 {
 		usage()
@@ -236,8 +242,8 @@ func cmdDeployAgents(ctx context.Context, log *slog.Logger, cfg *config.Config) 
 
 // buildOps creates a SysOps instance using the existing multi-channel pattern
 // (vsock -> TCP -> PVE REST). This is the same ops layer the watchdog uses.
-func buildOps(cfg *config.Config, _ *slog.Logger) ops.SysOps {
-	return ops.NewRealOps(cfg, nil)
+func buildOps(cfg *config.Config, log *slog.Logger) ops.SysOps {
+	return ops.NewRealOps(cfg, nil, log)
 }
 
 func cmdVerifyCoexistence(ctx context.Context, log *slog.Logger, cfg *config.Config) error {
@@ -358,12 +364,12 @@ func cmdSwitchToBGP(ctx context.Context, log *slog.Logger, cfg *config.Config) e
 	// Persists in config.xml, survives reboot. Prevents static route
 	// reinstallation when OPNsense comes back up.
 	for _, gwName := range cfg.OPNsense.GatewayNames {
-		log.Info("finding gateway...", "name", gwName)
+		log.Debug("finding gateway...", "name", gwName)
 		gwUUID, _, findErr := client.FindGatewayByNameWithAddr(ctx, gwName)
 		if findErr != nil {
 			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
 		}
-		log.Info("marking gateway as force_down...", "name", gwName, "uuid", gwUUID)
+		log.Debug("marking gateway as force_down...", "name", gwName, "uuid", gwUUID)
 		if err := client.ForceDownGateway(ctx, gwUUID); err != nil {
 			return fmt.Errorf("force_down gateway %q: %w", gwName, err)
 		}
@@ -469,12 +475,12 @@ func cmdRollback(ctx context.Context, log *slog.Logger, cfg *config.Config) erro
 	}, log)
 
 	for _, gwName := range cfg.OPNsense.GatewayNames {
-		log.Info("finding gateway...", "name", gwName)
+		log.Debug("finding gateway...", "name", gwName)
 		gwUUID, findErr := client.FindGatewayByName(ctx, gwName)
 		if findErr != nil {
 			return fmt.Errorf("find gateway %q: %w", gwName, findErr)
 		}
-		log.Info("removing force_down from gateway...", "name", gwName, "uuid", gwUUID)
+		log.Debug("removing force_down from gateway...", "name", gwName, "uuid", gwUUID)
 		if err := client.UnforceDownGateway(ctx, gwUUID); err != nil {
 			return fmt.Errorf("unforce_down gateway %q: %w", gwName, err)
 		}
@@ -504,7 +510,7 @@ func logBGPSummary(log *slog.Logger, s *opnsense.BGPSummary) {
 			continue
 		}
 		for addr, peer := range af.data.Peers {
-			log.Info("OPNsense BGP peer",
+			log.Debug("OPNsense BGP peer",
 				"af", af.name,
 				"neighbor", addr,
 				"state", peer.State,

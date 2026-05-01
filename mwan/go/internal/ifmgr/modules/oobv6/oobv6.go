@@ -59,6 +59,8 @@ type Config struct {
 	SLAACRulePriority int
 }
 
+func (Config) ModuleConfigName() string { return "oobv6" }
+
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "oobv6" }
 
@@ -344,35 +346,21 @@ func (m *Module) findCurrentGlobalSLAAC(
 	return "", nil
 }
 
-// New is the Constructor registered with ifmgr. Parses cfg into Config.
-// Defaults: ManageSLAACRule=true, SLAACRulePriority=7. Pass
+// New is the Constructor registered with ifmgr. Defaults:
+// ManageSLAACRule=true, SLAACRulePriority=7. Pass
 // `manage_slaac_source_rule = false` in [ifmgr.modules.oobv6] to
 // disable the rule entirely.
-func New(cfg map[string]any) (ifmgr.Module, error) {
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
 		ManageSLAACRule:   true,
 		SLAACRulePriority: 7,
 	}
-	if v, ok := cfg["iface"].(string); ok {
-		c.Iface = v
-	}
-	if v, ok := cfg["oob_addr"].(string); ok {
-		c.OOBAddr = v
-	}
-	switch v := cfg["oob_table_id"].(type) {
-	case int:
-		c.OOBTableID = v
-	case int64:
-		c.OOBTableID = int(v)
-	}
-	if v, ok := cfg["manage_slaac_source_rule"].(bool); ok {
-		c.ManageSLAACRule = v
-	}
-	switch v := cfg["slaac_rule_priority"].(type) {
-	case int:
-		c.SLAACRulePriority = v
-	case int64:
-		c.SLAACRulePriority = int(v)
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("oobv6: invalid config type %T", cfg)
+		}
+		c = typedConfig
 	}
 	if c.SLAACRulePriority <= 0 || c.SLAACRulePriority >= 32766 {
 		return nil, fmt.Errorf("oobv6: slaac_rule_priority out of range (1..32765): %d", c.SLAACRulePriority)

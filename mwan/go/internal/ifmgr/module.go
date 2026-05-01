@@ -54,11 +54,16 @@ type Module interface {
 	EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.Time)
 }
 
-// Constructor builds a Module from its raw config map (the subsection of
-// the parsed TOML under [ifmgr.modules.<name>]). Constructors are
-// registered at package init time via Register and looked up by name when
-// the daemon resolves the role-to-modules list.
-type Constructor func(cfg map[string]any) (Module, error)
+type ModuleConfig interface {
+	ModuleConfigName() string
+}
+
+type ModuleConfigSet map[string]ModuleConfig
+
+// Constructor builds a Module from its typed runtime config. Config-file
+// parsing happens in internal/config plus the cmd/mwan ifmgr adapter; the
+// registry only sees the runtime shape it needs to instantiate a module.
+type Constructor func(cfg ModuleConfig) (Module, error)
 
 // Env is everything the daemon hands a module at Init time. Modules MUST
 // hold a reference to the bits they need; the daemon will not pass Env
