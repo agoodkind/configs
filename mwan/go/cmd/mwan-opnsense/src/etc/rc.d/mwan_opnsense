@@ -1,0 +1,45 @@
+#!/bin/sh
+# PROVIDE: mwan_opnsense
+# REQUIRE: NETWORKING FILESYSTEMS
+# KEYWORD: shutdown
+#
+# Add the following line to /etc/rc.conf to enable mwan-opnsense:
+#   mwan_opnsense_enable="YES"
+#
+# Optional settings (set in /etc/rc.conf.d/mwan_opnsense):
+#   mwan_opnsense_listen_tcp="[::]:9443"
+#   mwan_opnsense_listen_serial="/dev/ttyV0.0"
+#   mwan_opnsense_cert="/usr/local/etc/mwan-opnsense/server.crt"
+#   mwan_opnsense_key="/usr/local/etc/mwan-opnsense/server.key"
+#   mwan_opnsense_ca="/usr/local/etc/mwan-opnsense/ca.crt"
+#   mwan_opnsense_pins="/usr/local/etc/mwan-opnsense/allowed_clients.txt"
+#   mwan_opnsense_logfile="/var/log/mwan-opnsense.log"
+
+. /etc/rc.subr
+
+name="mwan_opnsense"
+rcvar="${name}_enable"
+
+load_rc_config $name
+
+: ${mwan_opnsense_enable:="NO"}
+: ${mwan_opnsense_listen_tcp:="[::]:9443"}
+: ${mwan_opnsense_listen_serial:="/dev/ttyV0.0"}
+: ${mwan_opnsense_cert:="/usr/local/etc/mwan-opnsense/server.crt"}
+: ${mwan_opnsense_key:="/usr/local/etc/mwan-opnsense/server.key"}
+: ${mwan_opnsense_ca:="/usr/local/etc/mwan-opnsense/ca.crt"}
+: ${mwan_opnsense_pins:="/usr/local/etc/mwan-opnsense/allowed_clients.txt"}
+: ${mwan_opnsense_logfile:="/var/log/mwan-opnsense.log"}
+
+pidfile="/var/run/${name}.pid"
+procname="/usr/local/sbin/mwan-opnsense"
+command="/usr/sbin/daemon"
+command_args="-r -P ${pidfile} -o ${mwan_opnsense_logfile} ${procname} serve \
+    -tcp \"${mwan_opnsense_listen_tcp}\" \
+    -serial \"${mwan_opnsense_listen_serial}\" \
+    -cert \"${mwan_opnsense_cert}\" \
+    -key \"${mwan_opnsense_key}\" \
+    -ca \"${mwan_opnsense_ca}\" \
+    -pins \"${mwan_opnsense_pins}\""
+
+run_rc_command "$1"

@@ -41,7 +41,7 @@ CMD    := ./cmd/$(BINARY)
 
 .DEFAULT_GOAL := check
 
-.PHONY: proto build build-linux clean tidy fmt fix
+.PHONY: proto build build-linux build-mwan-opnsense clean tidy fmt fix
 
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
@@ -65,15 +65,32 @@ proto:
 	$(PROTOC) -I proto \
 		--go_out=gen --go_opt=paths=source_relative \
 		--go-grpc_out=gen --go-grpc_opt=paths=source_relative \
-		mwan/v1/mwan.proto
+		mwan/v1/mwan.proto \
+		mwan/v1/mwan_opnsense.proto
+
+# Reusable cross-platform build template.
+# $(1)=output binary name, $(2)=GOOS, $(3)=GOARCH, $(4)=cmd path
+define build_platform
+	@mkdir -p bin
+	GOOS=$(2) GOARCH=$(3) CGO_ENABLED=0 go build -trimpath \
+		-ldflags="$(LDFLAGS)" \
+		-buildvcs=false \
+		-o bin/$(1) $(4)
+endef
 
 build: proto
 	@mkdir -p bin
 	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) $(CMD)
 
-build-linux: build vet lint test proto
-	@mkdir -p bin
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY)-linux $(CMD)
+# build-linux and build-mwan-opnsense both depend on `check`, which fans
+# out to: build vet lint test govulncheck staticcheck-extra (defined by
+# go.mk). Full lint pass is mandatory before any deploy artifact lands
+# in bin/.
+build-linux: check
+	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD))
+
+build-mwan-opnsense: check
+	$(call build_platform,mwan-opnsense,freebsd,amd64,./cmd/mwan-opnsense)
 
 clean:
 	rm -rf bin/

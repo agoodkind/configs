@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package mwan.v1;
+
+option go_package = "goodkind.io/mwan/gen/mwan/v1;mwanv1";
+
+// MWANOPNsenseService runs inside the OPNsense VM.
+//
+// It exposes a recovery channel: arbitrary command exec and arbitrary
+// /conf/config.xml manipulation, gated only by mTLS. The TLS cert is
+// the entire security boundary. Single tier. No allowlist.
+//
+// Two transports: virtio-serial-pci named port (OOB,
+// network-stack-independent) and TCP-on-LAN. Same gRPC server.
+service MWANOPNsenseService {
+  // Sanity check, returns the daemon version. mTLS handshake required.
+  rpc Version(VersionRequest) returns (VersionResponse);
+
+  // Arbitrary command exec. The recovery surface for "I need to run X
+  // on OPNsense right now and SSH+sudo is broken."
+  rpc Exec(ExecRequest) returns (ExecResponse);
+
+  // Read full /conf/config.xml.
+  rpc ReadConfigXML(ReadConfigXMLRequest) returns (ReadConfigXMLResponse);
+
+  // Write /conf/config.xml. Server snapshots the current contents to
+  // /conf/backup/<ts>.xml first; backup_path is returned in the
+  // response so the client can immediately revert if needed.
+  rpc WriteConfigXML(WriteConfigXMLRequest) returns (WriteConfigXMLResponse);
+
+  // Explicit snapshot of /conf/config.xml. Useful before a multi-step
+  // mutation sequence.
+  rpc BackupConfigXML(BackupConfigXMLRequest) returns (BackupConfigXMLResponse);
+
+  // XPath read. No mutation. No snapshot taken.
+  rpc XPathGet(XPathGetRequest) returns (XPathGetResponse);
+
+  // XPath set. Server snapshots first. Returns backup_path and the
+  // count of changed nodes.
+  rpc XPathSet(XPathSetRequest) returns (XPathSetResponse);
+
+  // XPath delete. Server snapshots first. Returns backup_path and the
+  // count of deleted nodes.
+  rpc XPathDelete(XPathDeleteRequest) returns (XPathDeleteResponse);
+
+  // Convenience: surgical removal of <gatewayv6>...</gatewayv6> from
+  // <wan>. Verbatim port of the byte-offset tokenizer from the
+  // deleted internal/cutover2/opnsense_config.go (commit 63d050d^).
+  // Preserves whitespace fidelity better than generic XPath.
+  rpc StripGatewayV6(StripGatewayV6Request) returns (StripGatewayV6Response);
+
+  // Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
+  // before </wan>. Same byte-offset tokenizer as above.
+  rpc InjectGatewayV6(InjectGatewayV6Request) returns (InjectGatewayV6Response);
+}
+
+message VersionRequest {}
+
+message VersionResponse {
+  string version = 1;
+  string build_commit = 2;
+  bool build_dirty = 3;
+  string build_binhash = 4;
+}
+
+message ExecRequest {
+  string command = 1;          // path of binary to exec
+  repeated string args = 2;
+  bool sudo = 3;               // wrap in sudo -n
+  int32 timeout_seconds = 4;   // default 30, max 300 (5 min)
+  bytes stdin_bytes = 5;       // optional stdin content
+  // env_vars intentionally omitted; pass via args if needed
+}
+
+message ExecResponse {
+  bytes stdout = 1;
+  bytes stderr = 2;
+  int32 exit_code = 3;
+  int64 duration_ms = 4;
+  bool stdout_truncated = 5;   // true if stdout exceeded 10 MB cap
+  bool stderr_truncated = 6;   // true if stderr exceeded 10 MB cap
+  bool timed_out = 7;          // true if killed by timeout
+}
+
+message ReadConfigXMLRequest {}
+
+message ReadConfigXMLResponse {
+  bytes content = 1;
+  int64 size_bytes = 2;
+  string sha256 = 3;           // hex of sha256(content)
+}
+
+message WriteConfigXMLRequest {
+  bytes content = 1;
+  string label = 2;            // optional label included in backup filename
+}
+
+message WriteConfigXMLResponse {
+  string backup_path = 1;      // /conf/backup/<ts>-<label>.xml
+  int64 bytes_written = 2;
+}
+
+message BackupConfigXMLRequest {
+  string label = 1;            // optional label included in backup filename
+}
+
+message BackupConfigXMLResponse {
+  string backup_path = 1;      // /conf/backup/<ts>-<label>.xml
+  int64 size_bytes = 2;
+}
+
+message XPathGetRequest {
+  string expression = 1;       // any XPath expression
+}
+
+message XPathGetResponse {
+  repeated string matches = 1; // serialized XML for element matches; string for attr/text matches
+}
+
+message XPathSetRequest {
+  string expression = 1;
+  string new_value = 2;
+}
+
+message XPathSetResponse {
+  string backup_path = 1;
+  int32 changed_count = 2;
+}
+
+message XPathDeleteRequest {
+  string expression = 1;
+}
+
+message XPathDeleteResponse {
+  string backup_path = 1;
+  int32 deleted_count = 2;
+}
+
+message StripGatewayV6Request {}
+
+message StripGatewayV6Response {
+  string backup_path = 1;
+  bool changed = 2;            // false if config was already stripped
+}
+
+message InjectGatewayV6Request {
+  string gateway_name = 1;     // typically "WAN_GW6"
+}
+
+message InjectGatewayV6Response {
+  string backup_path = 1;
+  bool changed = 2;            // false if gatewayv6 already present
+}

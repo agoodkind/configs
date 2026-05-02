@@ -90,3 +90,20 @@ func BuildVersionString() string {
 	}
 	return fmt.Sprintf("commit=%s dirty=%s binhash=%s", commit, dirty, BinaryHash())
 }
+
+// GitCommit returns the build-time-injected git commit, or "unknown".
+func GitCommit() string {
+	if gitCommit == "" {
+		return "unknown"
+	}
+	return gitCommit
+}
+
+// GitDirty returns "clean", "dirty", or "unknown" based on the
+// build-time-injected flag.
+func GitDirty() string {
+	if gitDirty == "" {
+		return "unknown"
+	}
+	return gitDirty
+}

@@ -1,0 +1,74 @@
+name: Build mwan-opnsense (FreeBSD amd64)
+
+on:
+  push:
+    paths:
+      - "mwan/go/**"
+      - ".github/workflows/mwan-opnsense-build.yml"
+  pull_request:
+    paths:
+      - "mwan/go/**"
+      - ".github/workflows/mwan-opnsense-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint, vet, test, cross-compile gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mwan/go
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mwan/go/go.mod
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -count=1 ./...
+
+      - name: Cross-compile for FreeBSD (build gate)
+        run: |
+          GOOS=freebsd GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -buildvcs=false \
+              -o /tmp/mwan-opnsense-cross-gate \
+              ./cmd/mwan-opnsense
+          file /tmp/mwan-opnsense-cross-gate
+
+  build:
+    name: Native FreeBSD build (vmactions/freebsd-vm)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Build in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.4.3
+        with:
+          release: "14.2"
+          usesh: true
+          prepare: |
+            pkg upgrade -y
+            pkg install -y go gmake git
+          run: |
+            set -e
+            cd mwan/go
+            mkdir -p bin
+            go build -buildvcs=false -trimpath \
+              -o bin/mwan-opnsense ./cmd/mwan-opnsense
+            file bin/mwan-opnsense
+            ls -la bin/mwan-opnsense
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: mwan-opnsense-freebsd-amd64
+          path: mwan/go/bin/mwan-opnsense
+          retention-days: 30

@@ -1,0 +1,63 @@
+---
+# Deploy mwan-opnsense to an OPNsense host (testbed first, then prod).
+#
+# Usage:
+#   # testbed (suburban VM 101 via LAN IP):
+#   ansible-playbook playbooks/deploy-mwan-opnsense.yml \
+#     -e mwan_opnsense_target=testbed
+#
+#   # prod (vault VM 101 via fe::2):
+#   ansible-playbook playbooks/deploy-mwan-opnsense.yml \
+#     -e mwan_opnsense_target=prod
+#
+# The hypervisor-side virtio-serial-pci args change is one-time and
+# manual (see plan: V0-S9). Re-run this playbook freely afterwards.
+
+- name: Resolve OPNsense target into ansible inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Validate target
+      ansible.builtin.assert:
+        that:
+          - mwan_opnsense_target is defined
+          - mwan_opnsense_target in ['testbed', 'prod']
+        fail_msg: "set -e mwan_opnsense_target=testbed|prod"
+
+    - name: Add OPNsense host to inventory
+      ansible.builtin.add_host:
+        name: "opnsense_{{ mwan_opnsense_target }}"
+        groups: mwan_opnsense_targets
+        ansible_host: >-
+          {{
+            '192.168.1.1' if mwan_opnsense_target == 'testbed'
+            else '3d06:bad:b01::1'
+          }}
+        ansible_user: agoodkind
+
+- name: Deploy mwan-opnsense daemon
+  hosts: mwan_opnsense_targets
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/all/vault.yml
+  vars:
+    mwan_opnsense_binary_local: "{{ playbook_dir }}/../../mwan/go/bin/mwan-opnsense"
+  handlers:
+    - name: restart mwan_opnsense
+      ansible.builtin.command: service mwan_opnsense restart
+      become: true
+      changed_when: true
+  tasks:
+    - name: Verify binary exists locally
+      ansible.builtin.stat:
+        path: "{{ mwan_opnsense_binary_local }}"
+      register: bin_stat
+      delegate_to: localhost
+
+    - name: Fail if binary missing
+      ansible.builtin.fail:
+        msg: "build the binary first: cd mwan/go && make build-mwan-opnsense"
+      when: not bin_stat.stat.exists
+
+    - name: Run in-guest install task
+      ansible.builtin.include_tasks: tasks/mwan-opnsense-deploy.yml
