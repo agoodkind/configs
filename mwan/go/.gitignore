@@ -5,3 +5,8 @@
 /mwan-change-detect
 /mwan-cutover
 .make/
+
+# staticcheck-extra runtime artefact: tooling regenerates this empty file on
+# every run (or with the current findings via `make staticcheck-extra-baseline`).
+# Tracked only when explicitly seeded with non-zero findings.
+.staticcheck-extra-baseline.txt
