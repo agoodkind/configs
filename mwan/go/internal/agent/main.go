@@ -39,9 +39,9 @@ func Run(cfg *config.Config) {
 	)
 	flag.Parse()
 
-	logger, err := logging.New(logging.Config{
+	logger, err := logging.New(logging.WithEmail(logging.Config{
 		JSONLogFile: *logFile,
-	}, version.BuildVersionString())
+	}, cfg, "mwan-agent"), version.BuildVersionString())
 	if err != nil {
 		boot := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 		boot.Error("init logger", "error", err, "log_file", *logFile)

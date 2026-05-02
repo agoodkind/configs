@@ -53,9 +53,9 @@ func usage() {
 
 // Run is the entry point called from cmd/mwan/main.go.
 func Run(cfg *config.Config) error {
-	log, err := logging.New(logging.Config{
+	log, err := logging.New(logging.WithEmail(logging.Config{
 		JSONLogFile: "/var/log/mwan-cutover2.log",
-	}, version.BuildVersionString())
+	}, cfg, "mwan-cutover2"), version.BuildVersionString())
 	if err != nil {
 		return fmt.Errorf("logger init: %w", err)
 	}

@@ -87,10 +87,10 @@ func parseFlags() watchdogFlags {
 // buildOpsLayer creates the logger, email sender, and operations layer,
 // applying dry-run and red-team wrappers as needed.
 func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOps, error) {
-	logger, lerr := logging.New(logging.Config{
+	logger, lerr := logging.New(logging.WithEmail(logging.Config{
 		TextLogFile: cfg.Watchdog.LogFile,
 		JSONLogFile: cfg.Watchdog.JSONLogFile,
-	}, version.BuildVersionString())
+	}, cfg, "mwan-watchdog"), version.BuildVersionString())
 	if lerr != nil {
 		return nil, nil, fmt.Errorf("logger init: %w", lerr)
 	}

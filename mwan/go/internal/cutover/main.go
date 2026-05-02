@@ -21,7 +21,7 @@ const globalTO = 5 * time.Minute
 // Run executes the cutover subcommand.
 func Run(cfg *config.Config, dryRun bool) error {
 	// Create logger
-	log, lerr := logging.New(logging.Config{JSONLogFile: "/var/log/mwan-cutover.log"}, version.BuildVersionString())
+	log, lerr := logging.New(logging.WithEmail(logging.Config{JSONLogFile: "/var/log/mwan-cutover.log"}, cfg, "mwan-cutover"), version.BuildVersionString())
 	if lerr != nil {
 		return fmt.Errorf("logger init: %w", lerr)
 	}
