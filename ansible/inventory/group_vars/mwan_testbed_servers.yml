@@ -66,7 +66,10 @@ mwan_static_mappings:
     - { internal: "10.250.250.4", external: "10.240.204.2" }
     - { internal: "10.250.250.5", external: "10.240.204.2" }
 
-# VIP (keepalived manages these on vrrp.51)
+# Legacy VIP values. Keepalived was removed on prod 2026-04-29 after the BGP
+# cutover. These values stay only because update-npt.sh references
+# mwan_vip_ipv6 as a fallback SNAT source; both go away once the shell scripts
+# are absorbed into the Go monolith per the rewrite-shell EPIC.
 mwan_vip_ipv6: "3d06:bad:b01:201::1"
 mwan_vip_ipv4: "10.250.250.1/29"
 

@@ -940,7 +940,6 @@
 # Mirrors the MWAN VM build artifact (mwan/go/mwan) and ships:
 #   - mwan binary           /usr/local/bin/mwan
 #   - agent + ifmgr units   /etc/systemd/system/mwan-{agent,ifmgr}.service
-#   - keepalived drop-in    /etc/systemd/system/keepalived.service.d/
 #   - /etc/network/interfaces (eth0 dhcp + eth1 static + IPv6 return route)
 #   - /etc/mwan/config.toml  (lxc-failover-backup role config)
 #
@@ -1029,25 +1028,7 @@
         - Reload systemd
         - Restart mwan-ifmgr
 
-    - name: Ensure keepalived drop-in directory exists
-      ansible.builtin.file:
-        path: /etc/systemd/system/keepalived.service.d
-        state: directory
-        mode: "0755"
-
-    - name: Deploy keepalived IPv6LL wait drop-in (workaround for upstream #2275)
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/keepalived-wait-ipv6.conf.j2"
-        dest: /etc/systemd/system/keepalived.service.d/wait-for-ipv6.conf
-        mode: "0644"
-      vars:
-        mwan_internal_iface: "{{ failover_iface }}"
-      notify:
-        - Reload systemd
-        # Intentionally no auto-restart of keepalived. The drop-in only
-        # affects boot ordering; restart can disrupt the active VIP.
-
-    - name: Enable mwan + keepalived services
+    - name: Enable mwan services
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: true
@@ -1055,7 +1036,6 @@
       loop:
         - mwan-agent
         - mwan-ifmgr
-        - keepalived
 
   handlers:
     - name: Reload systemd
