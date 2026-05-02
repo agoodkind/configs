@@ -27,7 +27,7 @@ func Run(cfg *config.Config, dryRun bool) error {
 	if h := logging.EmailFromConfig(cfg, "mwan-cutover"); h != nil {
 		handlers = append(handlers, h)
 	}
-	log := logging.New(logging.Config{
+	log, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
 	})

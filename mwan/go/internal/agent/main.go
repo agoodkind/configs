@@ -46,7 +46,7 @@ func Run(cfg *config.Config) {
 	if h := logging.EmailFromConfig(cfg, "mwan-agent"); h != nil {
 		handlers = append(handlers, h)
 	}
-	logger := logging.New(logging.Config{
+	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
 	})

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"goodkind.io/gklog"
 	"goodkind.io/mwan/internal/tracing"
-	pkglogging "goodkind.io/mwan/pkg/logging"
 )
 
 type captureHandler struct {
@@ -66,7 +66,7 @@ func TestTextHandlerPreservesWithAttrsAndGroups(t *testing.T) {
 	t.Parallel()
 
 	var builder strings.Builder
-	logger := slog.New(pkglogging.NewTextHandler(&builder, "[mwan]")).
+	logger := slog.New(gklog.NewTextHandler(&builder, "[mwan]")).
 		With("trace_id", "trace-456").
 		WithGroup("rpc")
 
@@ -84,7 +84,7 @@ func TestTextHandlerPreservesWithAttrsAndGroups(t *testing.T) {
 func TestNewLoggerAppliesContextHandler(t *testing.T) {
 	t.Parallel()
 
-	logger := New(Config{BuildVersion: "test-build"})
+	logger, _ := New(Config{BuildVersion: "test-build"})
 
 	ctx := tracing.WithTraceID(context.Background(), "trace-789")
 	ctx = tracing.WithOperation(ctx, "noop")

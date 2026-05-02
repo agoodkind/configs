@@ -60,7 +60,7 @@ func Run(cfg *config.Config) error {
 	if h := logging.EmailFromConfig(cfg, "mwan-cutover2"); h != nil {
 		handlers = append(handlers, h)
 	}
-	log := logging.New(logging.Config{
+	log, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
 	})

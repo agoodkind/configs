@@ -5,37 +5,12 @@ import (
 	"os"
 	"time"
 
+	"goodkind.io/gklog"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/email"
-	"goodkind.io/mwan/pkg/emaillog"
-	"goodkind.io/mwan/pkg/logging"
 )
 
-// StdoutJSON returns a slog handler that writes JSON records to stdout
-// at LevelDebug or above. Intended for journald capture; the
-// systemd-journald daemon classifies records by their level field.
-func StdoutJSON() slog.Handler {
-	return slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
-}
-
-// FileText returns a text handler that writes a human-friendly format
-// (matching the project's [mwan]-style prefix) to a lumberjack-rotated
-// file at path. label is the bracketed prefix on every line, e.g.
-// "[watchdog]" or "[mwan]".
-func FileText(path, label string) slog.Handler {
-	return logging.NewTextHandler(logging.NewLumberjackWriter(path), label)
-}
-
-// FileJSON returns a JSON handler that writes records at LevelDebug or
-// above to a lumberjack-rotated file at path.
-func FileJSON(path string) slog.Handler {
-	return slog.NewJSONHandler(
-		logging.NewLumberjackWriter(path),
-		&slog.HandlerOptions{Level: slog.LevelDebug},
-	)
-}
-
-// EmailFromConfig returns an email handler that sends records at
+// EmailFromConfig returns a slog.Handler that emails records at
 // cfg.Email.MinLevel (default WARN) or above to cfg.Email.AlertEmail
 // via SMTP2GO, with a per-subject cooldown to avoid spam. serviceName
 // is the X-Mailer-style identifier on outgoing messages, typically the
@@ -60,12 +35,16 @@ func EmailFromConfig(cfg *config.Config, serviceName string) slog.Handler {
 		serviceName,
 		bootLogger,
 	)
-	min := ParseEmailMinLevel(cfg.Email.MinLevel)
+	min := gklog.ParseLevel(cfg.Email.MinLevel)
 	cd := 5 * time.Minute
 	if cfg.Email.Cooldown != "" {
 		if parsed, err := time.ParseDuration(cfg.Email.Cooldown); err == nil {
 			cd = parsed
 		}
 	}
-	return emaillog.New(min, cd, sender, cfg.Email.AlertEmail)
+	subjectPrefix := ""
+	if cfg.Email.SubjectPrefix != "" {
+		subjectPrefix = cfg.Email.SubjectPrefix
+	}
+	return gklog.EmailHandler(min, cd, sender, cfg.Email.AlertEmail, subjectPrefix)
 }

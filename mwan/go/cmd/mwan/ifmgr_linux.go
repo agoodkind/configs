@@ -109,7 +109,7 @@ func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
 	if h := logging.EmailFromConfig(cfg, "mwan-ifmgr"); h != nil {
 		handlers = append(handlers, h)
 	}
-	logger := logging.New(logging.Config{
+	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
 	})

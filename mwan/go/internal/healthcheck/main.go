@@ -31,7 +31,7 @@ const defaultInterval = 500 * time.Millisecond
 func Run() error {
 	interval := defaultInterval
 
-	logger := logging.New(logging.Config{
+	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     []slog.Handler{logging.StdoutJSON()},
 	})
