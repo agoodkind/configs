@@ -45,7 +45,30 @@ func (a AddrSpec) family() string {
 type CurrentAddr struct {
 	CIDR   string
 	Family string // "inet" or "inet6"
+	// Flags is the raw IFA_F_* bitmask from netlink (linux/if_addr.h).
+	// Useful flags include IFA_F_PERMANENT (0x80) which is set when the
+	// address was added administratively rather than via SLAAC autoconf.
+	Flags int
 }
+
+// IFA_F_* flag constants from linux/if_addr.h, exposed so callers can
+// classify addresses (SLAAC vs manually-added vs deprecated etc.) without
+// importing the kernel headers or vishvananda/netlink. Matches the values
+// returned in CurrentAddr.Flags.
+const (
+	IFAFTemporary      = 0x01
+	IFAFNoDAD          = 0x02
+	IFAFOptimistic     = 0x04
+	IFAFDADFailed      = 0x08
+	IFAFHomeAddress    = 0x10
+	IFAFDeprecated     = 0x20
+	IFAFTentative      = 0x40
+	IFAFPermanent      = 0x80
+	IFAFManageTempAddr = 0x100
+	IFAFNoPrefixRoute  = 0x200
+	IFAFMcAutoJoin     = 0x400
+	IFAFStablePrivacy  = 0x800
+)
 
 // ReconcileAddrs ensures every spec in desired is present on iface.
 // Foreign addresses are NOT removed; the daemon only adds what it owns.
@@ -129,7 +152,7 @@ func listAddrsNetlink(log *slog.Logger, link netlink.Link) ([]CurrentAddr, error
 		if a.IP.To4() == nil {
 			fam = "inet6"
 		}
-		out = append(out, CurrentAddr{CIDR: a.IPNet.String(), Family: fam})
+		out = append(out, CurrentAddr{CIDR: a.IPNet.String(), Family: fam, Flags: a.Flags})
 	}
 	return out, nil
 }

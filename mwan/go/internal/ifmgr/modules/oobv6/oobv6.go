@@ -313,11 +313,24 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 }
 
 // findCurrentGlobalSLAAC returns the bare address (no /prefix) of the
-// first global IPv6 address on m.cfg.Iface that is not link-local and not
-// the static OOB address. Returns "" if none found. The first such
-// address is sufficient: in practice MB hands us exactly one SLAAC GUA
-// at a time. If multiple ever appear, we deterministically pick whichever
-// listAddrs returns first; the next reconcile will pick the same one.
+// SLAAC-derived global IPv6 address on m.cfg.Iface. Returns "" if none.
+//
+// Filter chain (each must pass for an address to be considered):
+//
+//   - family is inet6
+//   - not link-local (fe80::/10)
+//   - not the static OOB address we manage ourselves
+//   - IFA_F_PERMANENT NOT set: SLAAC autoconf addresses do not have this
+//     flag, while manually-added addresses (`ip addr add`) do. This is the
+//     defensive piece that distinguishes SLAAC from any extra manual
+//     addrs the operator may have on the iface (e.g. service VIPs).
+//   - IFA_F_TENTATIVE NOT set: the kernel is still doing DAD; address is
+//     not yet usable as a source. Skip and let the next reconcile retry.
+//
+// In practice MB hands us exactly one SLAAC GUA at a time, so the first
+// match wins. If multiple SLAAC addresses appeared we still pick the
+// first one netlink returns (kernel ordering is stable across reconciles
+// so this is deterministic).
 func (m *Module) findCurrentGlobalSLAAC(
 	ctx context.Context, log *slog.Logger,
 ) (string, error) {
@@ -339,6 +352,14 @@ func (m *Module) findCurrentGlobalSLAAC(
 			continue
 		}
 		if bare == oobBare {
+			continue
+		}
+		if a.Flags&netif.IFAFPermanent != 0 {
+			// Manually-added address (not SLAAC autoconf). Skip.
+			continue
+		}
+		if a.Flags&netif.IFAFTentative != 0 {
+			// Still doing DAD; not yet usable as source.
 			continue
 		}
 		return bare, nil
