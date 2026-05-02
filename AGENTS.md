@@ -76,7 +76,7 @@ has three subcommands:
 
 - `mwan agent` — gRPC agent running inside the MWAN VM (VM 113)
 - `mwan watchdog` — connectivity monitor and rollback daemon on vault
-- `mwan cutover` -- HA cutover tool (preflight, migrate, start-backup, verify, rollback)
+- `mwan cutover`: deprecated migration/rollback tooling from the completed production cutover
 
 There are NO separate Go binaries. Everything is one binary with `internal/` packages
 for separation of concerns. Each subsystem (watchdog, cutover, agent) is its own package
@@ -99,9 +99,9 @@ OPNsense runs FRR (os-frr plugin) with route-maps to prefer the primary (local-p
 The watchdog withdraws routes via gRPC when health degrades. If the agent crashes, the
 BGP session drops and OPNsense converges to the backup within the hold timer.
 
-This replaces keepalived/VRRP. No VIP, no VMAC, no macvlan, no DAD conflicts.
+This replaced keepalived/VRRP. No VIP, no VMAC, no macvlan, no DAD conflicts.
 All BGP parameters (ASN, router ID, neighbors, timers, prefixes) are in `[bgp]`
-section of config.toml. The `mwan cutover` keepalived code paths are deprecated.
+section of config.toml.
 
 ## Go Code Standards
 
@@ -127,8 +127,8 @@ These rules apply to all Go code in `mwan/go/`. Violations block merge.
 - **Secrets in Ansible Vault.** TOML templates use `{{ mwan_smtp2go_api_key }}` Jinja2
   variables. Never commit plaintext secrets. The `.j2` suffix signals a template.
 - **Linting enforced.** `make lint` (golangci-lint) must pass. Config in `mwan/go/.golangci.yml`.
-- **Cutover is one-time.** `mwan cutover` is a one-time migration tool. After production
-  cutover, it will be deprecated. Ongoing failover is handled by `mwan watchdog failover`.
+- **Cutover is complete.** `mwan cutover` is deprecated migration tooling. Ongoing
+  failover is handled by `mwan watchdog failover`.
 
 ## Rules for Changes
 
@@ -177,4 +177,3 @@ user = "root"
 If `serial-exec` is unavailable, fall back to `screen /dev/ttyUSB0 115200` on berylax.
 
 ---
-

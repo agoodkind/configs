@@ -1,6 +1,6 @@
 [Unit]
 Description=MWAN ifmgr (interface manager) daemon
-Documentation=file:///root/configs/mwan/CUTOVER2-RUNBOOK.md
+Documentation=file:///root/configs/mwan/MWAN.md
 After=networking.service
 Wants=networking.service
 

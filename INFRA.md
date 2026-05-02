@@ -2,7 +2,8 @@
 
 ## Infrastructure Snapshot
 
-_Last verified: 2026-03-29. Sources: live SSH to vault, router, and containers; `pct list`,
+_Last live read-only spot check: 2026-05-02. Sources: live SSH to vault, router,
+suburban, mwan, proxy, mini, and nas; `pct list`,
 `qm list`, `systemctl`, KEA conf files, radvd conf, `wg show`, and `/conf/config.xml` on the
 OPNsense router; Cloudflare API (`/client/v4/accounts`, `/cfd_tunnel`, `/dns_records`,
 `/load_balancers`, `/load_balancers/pools`, zone settings). Suburban networking verified via
@@ -26,22 +27,23 @@ not a live feed._
 | 106  | consul    | `::106` | Consul server v1, single-node, `bootstrap_expect=1`, datacenter `home`, domain `int`. Occasional `dial tcp [::113]:8301: i/o timeout` from mwan (resolved 2026-03-22 by adding nftables rules on mwan). |
 | 107  | ansible   | `::107` | Semaphore UI on `:3000`. Traefik health check confirms UP.                                                                                                                                              |
 | 109  | mc        | `::109` | Crafty Controller, mod updater timer, Consul agent.                                                                                                                                                     |
-| 110  | proxy     | `::110` | Traefik v3, SSHPiper on `[::]`:22, cloudflared v2025.11.1 (tunnel `home-proxy`). sshd on port 2222.                                                                                                     |
+| 110  | proxy     | `::110` | Traefik v3, SSHPiper on `[::]`:22, cloudflared tunnel `home-proxy`. sshd on port 2222.                                                                                                                   |
 | 112  | adguard   | `::53`  | AdGuard Home v0.107.71, Consul agent. Upstream: NextDNS over QUIC. Disk 69% (7.8 GB).                                                                                                                   |
 
 **QEMU VMs:**
 
 | VMID | Name         | Notes                                                                                                                                                                                                                                                           |
 | ---- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 101  | router       | OPNsense 25.7.11_2, FreeBSD 14.3-RELEASE-p7. 8 GB RAM, 4 cores. PCI passthrough `hostpci0: 0000:02:0a` (X710 VF for AT&T 802.1X on mwan VM).                                                                                                                    |
+| 101  | router       | OPNsense. 8 GB RAM, 4 cores. PCI passthrough `hostpci0: 0000:02:0a` (X710 VF for AT&T 802.1X on mwan VM).                                                                                                                    |
 | 108  | freebsd-uefi | FreeBSD 14.3-RELEASE-p7, nginx + sshd. Cloud-init, 4 GB RAM. Traefik routes port 8080 to this host but no process was observed listening on 8080 at probe time.                                                                                                 |
-| 113  | mwan         | Debian/Linux. Management `3d06:bad:b01::113/64`. 2 GB RAM, 2 cores. Running: `mwan agent` (monolith binary, gRPC on TCP `:50052`), cloudflared v2026.3.0 (tunnel `home-mwan`, QUIC via IPv6), consul, mwan-health daemon, wpa_supplicant. nftables allows port 50052 on enmgmt0 (added 2026-04-08). mwan-change-detect path unit still active (cleanup pending). |
+| 113  | mwan         | Debian/Linux. Management `3d06:bad:b01::113/64`. 2 GB RAM, 2 cores. Running: `mwan agent` (monolith binary, gRPC on vsock `50051` and TCP fallback `:50052`), cloudflared tunnel `home-mwan`, consul, mwan-health daemon, wpa_supplicant. nftables allows port 50052 on enmgmt0. `mwan-change-detect.path` is still active and should be removed once the Go watchdog hash check fully owns drift detection. |
 
 **Stopped VMs:** 200 (`test-vm`), 9000 (`debian-13-cloud-template`).
 
-**Host services on vault:** `mwan-watchdog.service` running monolith binary (`/usr/local/bin/mwan watchdog`)
-since 2026-04-08. Uses TCP gRPC channel to agent on VM 113 (vsock unavailable, pending HA+coldstop).
-`EMAIL_MIN_LEVEL=ERROR` to suppress transient channel warnings.
+**Host services on vault:** `mwan-watchdog.service` runs the monolith binary
+(`/usr/local/bin/mwan watchdog`). It uses vsock to the agent on VM 113 first,
+with TCP on `[3d06:bad:b01::113]:50052` as fallback. Live logs on 2026-05-02
+show the vsock channel healthy.
 
 ### Hosts not on vault Proxmox
 
@@ -51,7 +53,7 @@ since 2026-04-08. Uses TCP gRPC channel to agent on VM 113 (vsock unavailable, p
 | mini           | Ubuntu 24.04.4 LTS             | vlan0100, `10.250.1.2` / `3d06:bad:b01:1::2`                                                                         | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | Has `scripts-updater.timer`. Needs `prep-guests.yml` run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | nas            | Ubuntu 24.04.3 LTS             | vlan0100, `3d06:bad:b01:1::3` (live)                                                                                 | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | SSH via `ssh nas`. OPNsense alias `nas_host` updated to `::3` (2026-03-23).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | vault          | Debian 13 (trixie), Proxmox VE | `3d06:bad:b01::254`                                                                                                  | Postfix with send-email (`/opt/scripts/send-email`)                                   | No               | `deploy-consul-external.yml` targets this host but has `consul_arch: arm64` bug.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| suburban       | Debian 13 (trixie), Proxmox VE | `3d06:bad:b01:200::1` on `vmbr1`, `10.240.0.148` on `vmbr0` (Comcast NJ), WG `3d06:bad:b01:10::240`                  | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | Remote NJ hypervisor. Four bridges: `vmbr0` (Comcast), `vmbr1` (VM segment `3d06:bad:b01:200::/64`), `vmbr2` (HA testbed mwanbr `3d06:bad:b01:201::/64`), `vmbr3` (HA testbed LAN `3d06:bad:b01:202::/64`). Running: VM 950 (keepalived MASTER), LXC 100 (keepalived BACKUP), OPNsense VM 101 (test gateway). WireGuard tunnel healthy (verified 2026-04-08). SSH alias `suburban` resolves to stale `::254`; use `10.240.0.148`. HA failover testbed passed all gates 2026-04-09: atomic VIP migration (0 loss), failover (1 pkt), failback (clean preemption), VIP-dependent SSH chain (script completes via nohup). |
+| suburban       | Debian 13 (trixie), Proxmox VE | `3d06:bad:b01:200::1` on `vmbr1`, `10.240.0.148` on `vmbr0` (Comcast NJ), WG `3d06:bad:b01:10::240`                  | Postfix with send-email (`/opt/scripts/send-email`)                                   | Partial          | Remote NJ hypervisor. Four bridges: `vmbr0` (Comcast), `vmbr1` (VM segment `3d06:bad:b01:200::/64`), `vmbr2` (HA testbed mwanbr `3d06:bad:b01:201::/64`), `vmbr3` (HA testbed LAN `3d06:bad:b01:202::/64`). Running: VM 950, LXC 100, OPNsense VM 101, and ISP LXCs 200/201/202. WireGuard tunnel healthy. SSH by direct IPv4: `root@10.240.0.148`. |
 | imac           | intel imac macOS 18            | Comcast, NJ LAN (not on same L2) accessible via suburban                                                             | macOS send-email                                                                      | No               | Not documented or discoverable from known inventory. Worth clarifying if this host exists.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | berylax        | OpenWrt 24.10.5, GL.iNet       | `eth0`: Monkeybrains IPv4 (dynamic); provider SLAAC on WAN /64; `br-lan`: `3d06:bad:b01:300::1/64` (static fake GUA) | msmtp with SMTP2GO (`/usr/local/bin/send-email`, `/usr/local/bin/send-email-smtp2go`) | No               | Same Monkeybrains L2 segment as vault MWAN. LAN uses fake GUA `3d06:bad:b01:300::/64` with NPT to the WAN SLAAC /64 on `eth0` (no Monkeybrains PD). `ndppd` proxies WAN-delegated traffic on `eth0`; downstream `3d06:bad:b01:300::100` IPv6 tests now receive replies. The NPT prerouting rule now exempts local WAN addresses with `fib daddr . iif type local accept`, so the router's own WAN address stays reachable. Inbound IPv4/IPv6 ping and SSH were verified on 2026-03-28 from CT 116, and inbound IPv6 ping plus SSH were also verified from a local Mac. Laptops reach `3d06:bad:b01:300::1` via the Cloudflare WARP route on tunnel `home-berylax`, not via OPNsense. No WireGuard installed. |
 | jetkvm (x2)    | JetKVM (embedded Linux)        | Monkeybrains L2 segment                                                                                              | Unknown                                                                               | No               | Two KVM-over-IP devices on the Monkeybrains segment (link-locals `fe80::8234:28ff:fe66:5ed7` and `fe80::3252:53ff:fe0d:6d08`). Not in any inventory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -259,8 +261,7 @@ AT&T PD `/60`: not recorded (provider-provided, verify live). AT&T IPv4 is `dyna
 | `mc/`       | Deployed, untracked   | `crafty.service`, `update-mods.`\* confirmed on CT 109. `deploy-mc.yml` untracked. |
 | `kea/`      | Actively used         | Rakefile is the live push mechanism for DHCP config. Not passive.                  |
 | `bind/`     | Actively used         | `named.conf.options.j2` directly referenced by `deploy-dns64.yml`.                 |
-| `logstash/` | Retired               | No live instance anywhere. User confirmed retired.                                 |
-| `ups-nut/`  | Planning docs only    | NUT running on vault manually. `templates/` directory does not exist yet.          |
+| `ups-nut/`  | Manual config docs    | NUT is live on vault and suburban, but not yet managed by Ansible.                 |
 | `nanomdm/`  | Planned, not deployed | Only `enroll.mobileconfig.j2` present.                                             |
 | `proxmox/`  | Likely superseded     | Static copies of watchdog files; `mwan/proxmox/` has the active Jinja2 versions.   |
 | `common/`   | Actively deployed     | `package-updater.timer` confirmed on CTs 103, 106, 109, 110, 112.                  |
@@ -274,21 +275,20 @@ Zone `goodkind.io` is on the Pro plan, SSL mode strict, TLS 1.3 0-RTT, HTTP/3 on
 
 **Cloudflare Tunnels (9 active, all remotely managed, WARP routing enabled on all):**
 
-| Tunnel name           | ID (prefix) | Connector host   | Origin IP(s)   | Version   | Colos                      | Public hostname ingress                                                                                                                                                                                                                                              |
-| --------------------- | ----------- | ---------------- | -------------- | --------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `home-proxy`          | `4b602332`  | proxy (CT 110)   | `not recorded` | 2025.11.1 | lax08, sjc11, lax11        | `mdm.goodkind.io` -> `https://mdm.home.goodkind.io`; `home-assistant-ext.goodkind.io` -> `https://assistant.home.goodkind.io`; `cloudflared-opnsense-pkg.goodkind.io` -> `https://localhost`; `plane.goodkind.io` -> `https://plane.home.goodkind.io`; catch-all 404 |
-| `home-mwan`           | `be52c73b`  | mwan (VM 113)    | `not recorded` | 2025.11.1 | lax09, sjc10, sjc05        | WARP-only (no public hostnames)                                                                                                                                                                                                                                      |
-| `home-mini`           | `fe0e094b`  | mini             | `not recorded` | 2026.3.0  | sjc01, sjc06, sjc08, sjc10 | WARP-only (no public hostnames)                                                                                                                                                                                                                                      |
-| `home-nas`            | `1fb61f17`  | nas              | `not recorded` | 2025.11.1 | sjc01, sjc06, sjc11        | WARP-only (no public hostnames)                                                                                                                                                                                                                                      |
-| `home-vault`          | `50453c03`  | vault            | `not recorded` | 2025.11.1 | sjc06, sjc07               | `vault-test.goodkind.io` -> `https://localhost:8006`; catch-all 404                                                                                                                                                                                                  |
-| `home-berylax`        | `4a216d14`  | berylax          | `not recorded` | 2025.11.1 | sjc01, sjc08, sjc10        | WARP-only (no public hostnames)                                                                                                                                                                                                                                      |
-| `suburban-hypervisor` | `e83d2644`  | suburban         | `not recorded` | 2025.11.1 | ewr05, ewr11, ewr12, ewr16 | WARP-only (no public hostnames)                                                                                                                                                                                                                                      |
-| `suburban-pikvm`      | `6e73b6d4`  | suburban (pikvm) | `not recorded` | 2025.8.1  | ewr11, ewr12, ewr13, ewr16 | `suburban-pikvm.goodkind.io` -> `https://localhost:443`; catch-all 404                                                                                                                                                                                               |
-| `suburban-mom`        | `2267fc65`  | suburban (mom)   | `not recorded` | 2025.11.1 | ewr01, ewr05, ewr07, ewr15 | Catch-all 404 only                                                                                                                                                                                                                                                   |
+| Tunnel name           | ID (prefix) | Connector host   | Public hostname ingress                                                                                                                                                                                                                                              |
+| --------------------- | ----------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `home-proxy`          | `4b602332`  | proxy (CT 110)   | `mdm.goodkind.io` -> `https://mdm.home.goodkind.io`; `home-assistant-ext.goodkind.io` -> `https://assistant.home.goodkind.io`; `cloudflared-opnsense-pkg.goodkind.io` -> `https://localhost`; `plane.goodkind.io` -> `https://plane.home.goodkind.io`; catch-all 404 |
+| `home-mwan`           | `be52c73b`  | mwan (VM 113)    | WARP-only                                                                                                                                                                                                                                                            |
+| `home-mini`           | `fe0e094b`  | mini             | WARP-only                                                                                                                                                                                                                                                            |
+| `home-nas`            | `1fb61f17`  | nas              | WARP-only                                                                                                                                                                                                                                                            |
+| `home-vault`          | `50453c03`  | vault            | `vault-test.goodkind.io` -> `https://localhost:8006`; catch-all 404                                                                                                                                                                                                  |
+| `home-berylax`        | `4a216d14`  | berylax          | WARP-only                                                                                                                                                                                                                                                            |
+| `suburban-hypervisor` | `e83d2644`  | suburban         | WARP-only                                                                                                                                                                                                                                                            |
+| `suburban-pikvm`      | `6e73b6d4`  | suburban (pikvm) | `suburban-pikvm.goodkind.io` -> `https://localhost:443`; catch-all 404                                                                                                                                                                                               |
+| `suburban-mom`        | `2267fc65`  | suburban (mom)   | Catch-all 404 only                                                                                                                                                                                                                                                   |
 
 Notes on tunnel deployment: `home-proxy` and `home-mwan` are deployed via Ansible
 (`install-cloudflared.yml` tasks, token-based). Both run with `--edge-ip-version 6`.
-The proxy connector's version is 2025.11.1 (outdated; dashboard warns to upgrade to 2026.3.0).
 The `home-mini`, `home-nas`, `home-vault`, and `home-berylax` connectors are not deployed via
 the Ansible playbooks in this repo; they appear to be standalone installs on those hosts.
 Tunnel tokens are stored in Ansible Vault (`vault_cloudflared_tunnel_token`) for the proxy and
@@ -391,7 +391,7 @@ no Hyperdrive configs.
 | mini, nas                         | msmtp installed, no msmtprc; not in Ansible inventory | Add to inventory then run, or deploy manually        |
 | vault                             | No msmtp; uses Proxmox datacenter email               | Configure via PVE datacenter settings                |
 | home-assistant                    | HAOS; no msmtp                                        | Configure via HA notification integrations if needed |
-| suburban                          | No msmtp                                              | Address after WireGuard is restored                  |
+| suburban                          | No msmtprc observed live 2026-05-02                   | Configure if host-local email is needed              |
 
 **Fix `consul_arch: arm64` in `consul_servers.yml` and `deploy-consul-external.yml`.** Both files
 hardcode `arm64`; the actual target hosts are `amd64`.
@@ -457,10 +457,10 @@ kernel can return `Address unreachable`. `ndppd` now uses a static `/64` rule on
 provider WAN range, and downstream client ping from `3d06:bad:b01:300::100`
 was successful after this change.
 
-**cloudflared versions: resolved 2026-04-08.** Both mwan and proxy now run cloudflared
-2026.3.0. The connIndex flapping on mwan (connIndex=1, QUIC stream accept failure) still
-occurs occasionally but reconnects within seconds. This appears to be a known cloudflared
-behavior with QUIC multiplexing, not an operational issue.
+**cloudflared health.** Live checks on 2026-05-02 showed active cloudflared services
+on vault, proxy, mwan, suburban, mini, and nas. The connIndex flapping on mwan
+still occurs occasionally but reconnects within seconds. This appears to be a known
+cloudflared behavior with QUIC multiplexing, not an operational issue.
 
 **UniFi controller Consul alias with unusual address.** OPNsense alias `unifi_controller` includes
 `3d06:bad:b01:6465::102`. An earlier attempt to reach the UniFi controller via a NAT64-synthesized
@@ -469,14 +469,13 @@ stale and should be cleaned up.
 
 ### Repo housekeeping
 
-1. `logstash/` should be removed. Confirmed retired; no live Logstash process anywhere.
-2. `nanomdm/` should be removed or a container should be stood up. The Traefik backend and
+1. `nanomdm/` should be removed or a container should be stood up. The Traefik backend and
    group vars point to a stale address.
-3. `grommunio` deploy situation needs clarifying. Container is live but playbook is not wired
+2. `grommunio` deploy situation needs clarifying. Container is live but playbook is not wired
    into any workflow.
-4. `proxmox/` vs `mwan/proxmox/`: the top-level `proxmox/` holds static originals; no playbook
+3. `proxmox/` vs `mwan/proxmox/`: the top-level `proxmox/` holds static originals; no playbook
    deploys from it. Safe to remove after verifying no unique content.
-5. Migrate remaining containers (102, 104, 105, 107, mwan VM) to `package-updater` timer.
+4. Migrate remaining containers (102, 104, 105, 107, mwan VM) to `package-updater` timer.
 
 ---
 

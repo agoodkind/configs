@@ -179,9 +179,8 @@ Two paths to add the suburban side:
 
 - **Remote SSH mode (single daemon)**. Extend wghealth to support a list of
   SSH targets. Vault daemon polls both OPNsense (working) and suburban
-  (requires fixing root SSH access to suburban). Currently
-  `Permission denied (publickey)`. wg is only readable via root or wg-quick
-  group. Single daemon does the cross-check natively.
+  over root SSH. `wg` is only readable via root or the `wg-quick` group.
+  Single daemon does the cross-check natively.
 
 Local-exec is cleaner for ops. Each box owns its own observation and ships
 logs centrally. But it requires running mwan-ifmgr on suburban. SSH-list is

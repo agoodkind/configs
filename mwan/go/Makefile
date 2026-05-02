@@ -102,8 +102,8 @@ build-linux: check
 build-mwan-opnsense: check
 	$(call build_platform,mwan-opnsense,freebsd,amd64,./cmd/mwan-opnsense)
 
-# Host-native build of mwan-opnsense for offline CA bootstrap and
-# local CLI use. Always lives at bin/mwan-opnsense-host so it never
+# Host-native build of mwan-opnsense for local CLI use. Always lives at
+# bin/mwan-opnsense-host so it never
 # shadows the cross-compiled FreeBSD artifact at bin/mwan-opnsense.
 build-mwan-opnsense-host: check
 	$(call build_platform,mwan-opnsense-host,$(HOST_GOOS),$(HOST_GOARCH),./cmd/mwan-opnsense)

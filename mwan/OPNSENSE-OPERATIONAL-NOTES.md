@@ -1,9 +1,8 @@
-# OPNsense operational notes (post BGP cutover)
+# OPNsense Operational Notes
 
-Captured 2026-04-27 during the prod decommission of the static-WAN-gateway stack
-(MWAN-69). These are the non-obvious behaviors and configurations that matter
-when running OPNsense as a BGP-only edge router (no static WAN gateways, FRR
-owns the kernel default route).
+These are the non-obvious behaviors and configurations that matter when running
+OPNsense as a BGP-only edge router. Static WAN gateways do not own the default
+route. FRR owns the kernel default route.
 
 If you stand up another OPNsense to replace this one, the steady-state config
 section is the canonical end target. The operational rules section is the
@@ -13,7 +12,7 @@ list of foot-guns to avoid.
 
 ## Steady-state OPNsense config
 
-Validated working as of 2026-04-27 on prod (`router.home.goodkind.io`).
+Validated on prod (`router.home.goodkind.io`).
 
 ### Gateways (System / Gateways / Configuration)
 
@@ -73,11 +72,10 @@ should be `Status: Installed, Selected` for the BGP entry.
   - `10.250.250.3` and `3d06:bad:b01:fe::3` (VM 113, primary, route-map sets local-pref 200)
   - `10.250.250.4` and `3d06:bad:b01:fe::4` (LXC 116, backup, route-map sets local-pref 100)
 
-### Keepalived
+### VRRP
 
-Removed. Was used pre-cutover for `.1` / `:fe::1` VIPs. Now BGP carries the
-default route directly to VM 113's real address `.3` / `:fe::3`, no VIP
-needed. Service stopped and disabled on both VM 113 and LXC 116.
+No keepalived or VRRP is in the steady-state design. BGP carries the default
+route directly to VM 113's real address `.3` / `:fe::3`.
 
 ---
 
@@ -201,13 +199,3 @@ Most likely cause: someone enabled then disabled WAN_GW4, or the manual
 NAT rules got deleted. Check Firewall / NAT / Outbound for the two
 manual rules. Verify with `pfctl -sn | grep ^nat` from OPNsense shell;
 should see at least one `nat on vtnet1 inet from <internal_net> to any -> (vtnet1:0)` rule.
-
----
-
-## Related Tack issues
-
-- MWAN-69: prod decommission of pre-cutover stack (parent context)
-- MWAN-72: system_routing_configure selective wipe behavior
-- MWAN-73: keepalived stop+disable (cosmetic cleanup, done)
-- MWAN-74: cruft /60 static route (already gone)
-- MWAN-75: this document

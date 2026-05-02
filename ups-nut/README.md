@@ -2,22 +2,25 @@
 
 This directory stores NUT configuration planning and tooling for vault and suburban.
 
-NUT is currently running manually on vault. No Ansible playbook exists yet. See
-[PLAN.md](PLAN.md) for the full implementation roadmap.
+NUT is deployed manually on vault and suburban. No Ansible playbook exists yet.
+Each host monitors its own UPS independently.
 
 ## Hosts
 
-- vault (`3d06:bad:b01::254`) is the NUT master, monitoring the primary UPS via a local
-  driver and exposing upsd on the network.
-- suburban (`3d06:bad:b01:200::254`) operates standalone or as a slave depending on
-  network connectivity to vault.
+- vault (`3d06:bad:b01::254`) monitors its local UPS.
+- suburban (`10.240.0.148`, `3d06:bad:b01:200::1`) monitors its local UPS.
 
 ## Status
 
-Not yet Ansible-managed. The templates directory does not exist; configs are still
-managed manually. See PLAN.md for the phased rollout plan.
+Not yet Ansible-managed. The live configs are manual and not in git.
 
 ## Credentials
 
-NUT credentials will be stored in `ansible/inventory/group_vars/all/vault.yml`
-(encrypted with Ansible Vault) once the playbook is built.
+NUT credentials should move to `ansible/inventory/group_vars/all/vault.yml`
+when a deploy playbook is added.
+
+## Remaining work
+
+1. Pull live configs from `/etc/nut/` on vault and suburban.
+2. Commit host-specific templates under this directory.
+3. Add an Ansible playbook for reproducible deployment.

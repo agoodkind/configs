@@ -8,23 +8,9 @@
 #
 # Required vars (typically from group_vars or playbook):
 #   mwan_opnsense_binary_local       local path to bin/mwan-opnsense
-#   mwan_opnsense_ca_cert            PEM
-#   mwan_opnsense_server_cert        PEM
-#   mwan_opnsense_server_key         PEM
-#   mwan_opnsense_allowed_spkis      newline-separated SPKI fingerprints
 #
 # Optional vars (with sensible defaults):
-#   mwan_opnsense_listen_tcp         default "[::]:9443"
-#   mwan_opnsense_listen_serial      default "/dev/ttyV0.0"
-
-- name: Ensure mwan-opnsense config dir exists
-  ansible.builtin.file:
-    path: /usr/local/etc/mwan-opnsense
-    state: directory
-    owner: root
-    group: wheel
-    mode: "0750"
-  become: true
+#   mwan_opnsense_listen_serial      default "/dev/ttyV0.1"
 
 - name: Install mwan-opnsense binary
   ansible.builtin.copy:
@@ -64,48 +50,6 @@
     group: wheel
     mode: "0644"
   become: true
-
-- name: Write CA cert
-  ansible.builtin.copy:
-    content: "{{ mwan_opnsense_ca_cert }}"
-    dest: /usr/local/etc/mwan-opnsense/ca.crt
-    owner: root
-    group: wheel
-    mode: "0644"
-  become: true
-  no_log: false  # cert is public material; key is the secret
-  notify: restart mwan_opnsense
-
-- name: Write server cert
-  ansible.builtin.copy:
-    content: "{{ mwan_opnsense_server_cert }}"
-    dest: /usr/local/etc/mwan-opnsense/server.crt
-    owner: root
-    group: wheel
-    mode: "0644"
-  become: true
-  notify: restart mwan_opnsense
-
-- name: Write server key
-  ansible.builtin.copy:
-    content: "{{ mwan_opnsense_server_key }}"
-    dest: /usr/local/etc/mwan-opnsense/server.key
-    owner: root
-    group: wheel
-    mode: "0600"
-  become: true
-  no_log: true
-  notify: restart mwan_opnsense
-
-- name: Write allowed-clients SPKI pin file
-  ansible.builtin.copy:
-    content: "{{ mwan_opnsense_allowed_spkis }}\n"
-    dest: /usr/local/etc/mwan-opnsense/allowed_clients.txt
-    owner: root
-    group: wheel
-    mode: "0644"
-  become: true
-  notify: restart mwan_opnsense
 
 - name: Enable mwan_opnsense in rc.conf
   ansible.builtin.lineinfile:

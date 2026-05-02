@@ -38,13 +38,12 @@ const (
 // MWANOPNsenseService runs inside the OPNsense VM.
 //
 // It exposes a recovery channel: arbitrary command exec and arbitrary
-// /conf/config.xml manipulation, gated only by mTLS. The TLS cert is
-// the entire security boundary. Single tier. No allowlist.
+// /conf/config.xml manipulation over the Proxmox qemu virtio-serial
+// socket. There is no TLS and no application-level authentication.
 //
-// Two transports: virtio-serial-pci named port (OOB,
-// network-stack-independent) and TCP-on-LAN. Same gRPC server.
+// The security boundary is host access to the qemu serial socket.
 type MWANOPNsenseServiceClient interface {
-	// Sanity check, returns the daemon version. mTLS handshake required.
+	// Sanity check, returns the daemon version.
 	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error)
 	// Arbitrary command exec. The recovery surface for "I need to run X
 	// on OPNsense right now and SSH+sudo is broken."
@@ -191,13 +190,12 @@ func (c *mWANOPNsenseServiceClient) InjectGatewayV6(ctx context.Context, in *Inj
 // MWANOPNsenseService runs inside the OPNsense VM.
 //
 // It exposes a recovery channel: arbitrary command exec and arbitrary
-// /conf/config.xml manipulation, gated only by mTLS. The TLS cert is
-// the entire security boundary. Single tier. No allowlist.
+// /conf/config.xml manipulation over the Proxmox qemu virtio-serial
+// socket. There is no TLS and no application-level authentication.
 //
-// Two transports: virtio-serial-pci named port (OOB,
-// network-stack-independent) and TCP-on-LAN. Same gRPC server.
+// The security boundary is host access to the qemu serial socket.
 type MWANOPNsenseServiceServer interface {
-	// Sanity check, returns the daemon version. mTLS handshake required.
+	// Sanity check, returns the daemon version.
 	Version(context.Context, *VersionRequest) (*VersionResponse, error)
 	// Arbitrary command exec. The recovery surface for "I need to run X
 	// on OPNsense right now and SSH+sudo is broken."

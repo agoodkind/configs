@@ -602,32 +602,29 @@ reboot" semantics.
 
 ### Failover Decision (HA)
 
+Production failover is BGP-based. The primary MWAN VM and failover LXC
+both run `mwan agent`, both peer with OPNsense FRR, and both announce
+default routes when healthy. OPNsense prefers the primary through route-map
+local preference.
+
 When the watchdog detects total connectivity loss with no recent config
-change, it consults the failover LXC before deciding what to do. The
-watchdog orchestrates; the failover LXC just executes what it's told.
+change, it checks the failover LXC before deciding whether to withdraw
+or announce routes.
 
-| VM 950 Internet | LXC Internet | Cause                          | Watchdog Action                        |
-| --------------- | ------------ | ------------------------------ | -------------------------------------- |
-| OK              | OK           | Normal                         | No action                              |
-| OK              | DOWN         | LXC WAN issue (Monkeybrains)  | Alert only, no failover needed         |
-| DOWN            | OK           | VM config/routing broken       | **Failover to LXC**                    |
-| DOWN            | DOWN         | Real ISP outage (all ISPs)     | Alert only, wait it out                |
-| DOWN (crashed)  | OK           | VM failure                     | Keepalived auto-promotes LXC (no watchdog needed) |
-| DOWN (crashed)  | DOWN         | VM + ISP down                  | Nothing can be done                    |
+| Primary Internet | Failover LXC Internet | Cause                      | Watchdog Action                         |
+| ---------------- | --------------------- | -------------------------- | --------------------------------------- |
+| OK               | OK                    | Normal                     | No action                               |
+| OK               | DOWN                  | Failover WAN issue         | Alert only                              |
+| DOWN             | OK                    | Primary config or WAN down | Withdraw primary routes or force backup |
+| DOWN             | DOWN                  | Upstream outage            | Alert only                              |
+| Agent down       | OK                    | Primary agent crash        | BGP session drops and OPNsense converges |
 
-The watchdog triggers failover by calling `cmdStartBackup` from the
-cutover module, which configures the LXC (forwarding, masquerade,
-routes, keepalived). Once keepalived starts in BACKUP state and
-detects the primary's health check is failing, it auto-promotes to
-MASTER within seconds.
+**Force-failover command:** `mwan watchdog failover` triggers the BGP
+failover path immediately. It does not configure keepalived or VRRP.
 
-**Force-failover command:** `mwan watchdog failover` triggers failover
-immediately without waiting for the monitoring loop's timeout. Useful
-for planned maintenance or when the operator knows failover is needed.
-
-**Recovery:** When VM 950 recovers (health check passes), keepalived
-preemption returns MASTER to VM 950 automatically. The LXC drops back
-to BACKUP. No watchdog intervention needed for failback.
+**Recovery:** When the primary agent and WAN health recover, the primary
+announces routes again. OPNsense prefers the primary because its route-map
+sets higher local preference than the failover LXC.
 
 ### Grace Period
 
@@ -657,16 +654,16 @@ timestamp, no hash change within window, system was healthy and stable):
 
 1. Test VM connectivity (can the VM itself reach the internet?)
 2. Test LXC failover WAN connectivity (can the LXC's Monkeybrains reach the internet?)
-3. **If LXC has internet but VM does not**: trigger failover to LXC
-   - Call `cmdStartBackup` to configure LXC as keepalived BACKUP
-   - Keepalived health check on primary fails -> LXC auto-promotes to MASTER
+3. **If LXC has internet but VM does not**: trigger BGP failover to LXC
+   - Withdraw primary routes or announce backup routes through the agent gRPC API
+   - OPNsense FRR installs the surviving BGP default route
    - Email alert: "FAILOVER: activating LXC"
 4. **If both VM and LXC have no internet**: real ISP outage
    - Log at ERROR: "total connectivity loss, no recent config change"
    - Send email alert (subject to cooldown)
    - Continue monitoring at degraded interval; do NOT failover (pointless)
 5. Log recovery when connectivity returns
-6. Keepalived preemption handles failback automatically when VM recovers
+6. BGP route preference handles failback when the primary recovers
 
 ### Snapshots
 
