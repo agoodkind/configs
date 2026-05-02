@@ -227,11 +227,23 @@ tcp:
         - minecraft
       rule: "HostSNI(`*`)"
       service: minecraft-service
+
+    syncthing-ingress:
+      entryPoints:
+        - syncthing
+      rule: "HostSNI(`*`)"
+      service: syncthing-service
+
   services:
     minecraft-service:
       loadBalancer:
         servers:
           - address: "[3d06:bad:b01::109]:25565"
+
+    syncthing-service:
+      loadBalancer:
+        servers:
+          - address: "[3d06:bad:b01:1::3]:22000"
 
 udp:
   routers:
@@ -241,8 +253,28 @@ udp:
         - xpra-quic
       service: xpra-quic-service
 
+    syncthing-quic-ingress:
+      entryPoints:
+        - syncthing-quic
+      service: syncthing-quic-service
+
+    syncthing-quic-test-ingress:
+      entryPoints:
+        - syncthing-quic-test
+      service: syncthing-quic-test-service
+
   services:
     xpra-quic-service:
       loadBalancer:
         servers:
           - address: "[3d06:bad:b01::100]:9876"
+
+    syncthing-quic-service:
+      loadBalancer:
+        servers:
+          - address: "[3d06:bad:b01:1::3]:22000"
+
+    syncthing-quic-test-service:
+      loadBalancer:
+        servers:
+          - address: "[3d06:bad:b01:1::3]:22001"

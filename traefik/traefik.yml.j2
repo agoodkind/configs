@@ -54,6 +54,15 @@ entryPoints:
   minecraft:
     address: "[::]:25565"
 
+  syncthing:
+    address: "[::]:22000"
+
+  syncthing-quic:
+    address: "[::]:22000/udp"
+
+  syncthing-quic-test:
+    address: "[::]:22001/udp"
+
 certificatesResolvers:
   letsencrypt:
     acme:
