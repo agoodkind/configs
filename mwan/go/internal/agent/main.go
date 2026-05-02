@@ -39,14 +39,17 @@ func Run(cfg *config.Config) {
 	)
 	flag.Parse()
 
-	logger, err := logging.New(logging.WithEmail(logging.Config{
-		JSONLogFile: *logFile,
-	}, cfg, "mwan-agent"), version.BuildVersionString())
-	if err != nil {
-		boot := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-		boot.Error("init logger", "error", err, "log_file", *logFile)
-		os.Exit(1)
+	handlers := []slog.Handler{logging.StdoutJSON()}
+	if *logFile != "" {
+		handlers = append(handlers, logging.FileJSON(*logFile))
 	}
+	if h := logging.EmailFromConfig(cfg, "mwan-agent"); h != nil {
+		handlers = append(handlers, h)
+	}
+	logger := logging.New(logging.Config{
+		BuildVersion: version.BuildVersionString(),
+		Handlers:     handlers,
+	})
 	runID := tracing.NewID()
 	logger = logger.With(
 		slog.String(tracing.RunIDKey, runID),

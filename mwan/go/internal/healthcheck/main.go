@@ -31,10 +31,10 @@ const defaultInterval = 500 * time.Millisecond
 func Run() error {
 	interval := defaultInterval
 
-	logger, err := logging.New(logging.Config{}, version.BuildVersionString())
-	if err != nil {
-		return err
-	}
+	logger := logging.New(logging.Config{
+		BuildVersion: version.BuildVersionString(),
+		Handlers:     []slog.Handler{logging.StdoutJSON()},
+	})
 	runID := tracing.NewID()
 	logger = logger.With(
 		slog.String(tracing.RunIDKey, runID),

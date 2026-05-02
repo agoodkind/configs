@@ -11,16 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"goodkind.io/mwan/pkg/logging"
+	pkglogging "goodkind.io/mwan/pkg/logging"
 )
 
 func TestNewAgentLogger(t *testing.T) {
 	t.Parallel()
 	p := filepath.Join(t.TempDir(), "agent.log")
-	log, err := New(Config{JSONLogFile: p}, "test-version")
-	if err != nil {
-		t.Fatal(err)
-	}
+	log := New(Config{
+		BuildVersion: "test-version",
+		Handlers:     []slog.Handler{FileJSON(p)},
+	})
 	if log == nil {
 		t.Fatal("nil logger")
 	}
@@ -44,7 +44,7 @@ func (errHandler) WithGroup(string) slog.Handler { return errHandler{} }
 
 func TestTeeHandler_HandleErrorPropagates(t *testing.T) {
 	t.Parallel()
-	th := logging.NewTeeHandler(errHandler{}, slog.NewJSONHandler(io.Discard, nil))
+	th := pkglogging.NewTeeHandler(errHandler{}, slog.NewJSONHandler(io.Discard, nil))
 	err := th.Handle(context.Background(), slog.NewRecord(time.Now(), slog.LevelInfo, "m", 0))
 	if err == nil || !strings.Contains(err.Error(), "handler error") {
 		t.Fatalf("want handler error, got %v", err)
@@ -54,11 +54,11 @@ func TestTeeHandler_HandleErrorPropagates(t *testing.T) {
 func TestTeeHandler_Enabled(t *testing.T) {
 	t.Parallel()
 	disabled := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})
-	th := logging.NewTeeHandler(disabled, slog.NewJSONHandler(io.Discard, nil))
+	th := pkglogging.NewTeeHandler(disabled, slog.NewJSONHandler(io.Discard, nil))
 	if th.Enabled(context.Background(), slog.LevelDebug) {
 		t.Fatal("expected disabled at debug when both handlers reject")
 	}
-	th2 := logging.NewTeeHandler(slog.NewJSONHandler(io.Discard, nil), disabled)
+	th2 := pkglogging.NewTeeHandler(slog.NewJSONHandler(io.Discard, nil), disabled)
 	if !th2.Enabled(context.Background(), slog.LevelInfo) {
 		t.Fatal("expected enabled when one child accepts")
 	}
@@ -67,7 +67,7 @@ func TestTeeHandler_Enabled(t *testing.T) {
 func TestTeeHandler_WithAttrs(t *testing.T) {
 	t.Parallel()
 	base := slog.NewJSONHandler(io.Discard, nil)
-	th := logging.NewTeeHandler(base).WithAttrs([]slog.Attr{slog.String("a", "b")})
+	th := pkglogging.NewTeeHandler(base).WithAttrs([]slog.Attr{slog.String("a", "b")})
 	if th == nil {
 		t.Fatal("nil handler")
 	}
@@ -76,7 +76,7 @@ func TestTeeHandler_WithAttrs(t *testing.T) {
 func TestTeeHandler_WithGroup(t *testing.T) {
 	t.Parallel()
 	base := slog.NewJSONHandler(io.Discard, nil)
-	th := logging.NewTeeHandler(base).WithGroup("g")
+	th := pkglogging.NewTeeHandler(base).WithGroup("g")
 	if th == nil {
 		t.Fatal("nil handler")
 	}
@@ -84,7 +84,7 @@ func TestTeeHandler_WithGroup(t *testing.T) {
 
 func TestTextHandler_WithGroup(t *testing.T) {
 	t.Parallel()
-	th := logging.NewTextHandler(io.Discard, "").WithGroup("g")
+	th := pkglogging.NewTextHandler(io.Discard, "").WithGroup("g")
 	if th == nil {
 		t.Fatal("nil handler")
 	}
@@ -93,7 +93,7 @@ func TestTextHandler_WithGroup(t *testing.T) {
 func TestTextHandler_Handle(t *testing.T) {
 	t.Parallel()
 	var b strings.Builder
-	th := logging.NewTextHandler(&b, "")
+	th := pkglogging.NewTextHandler(&b, "")
 	rec := slog.NewRecord(time.Now(), slog.LevelWarn, "hello", 0)
 	rec.Add("x", 1)
 	if err := th.Handle(context.Background(), rec); err != nil {

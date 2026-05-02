@@ -180,14 +180,20 @@ func (w *watchdog) tryFailover(ctx context.Context, cfg *config.Config, reason s
 // FailoverRun is the entry point for `mwan watchdog failover`.
 // It triggers failover immediately without the monitoring loop.
 func FailoverRun(cfg *config.Config) error {
-	// Create logger
-	logger, err := logging.New(logging.Config{
-		TextLogFile: cfg.Watchdog.LogFile,
-		JSONLogFile: cfg.Watchdog.JSONLogFile,
-	}, version.BuildVersionString())
-	if err != nil {
-		return fmt.Errorf("logger: %w", err)
+	handlers := []slog.Handler{logging.StdoutJSON()}
+	if p := cfg.Watchdog.LogFile; p != "" {
+		handlers = append(handlers, logging.FileText(p, "[watchdog]"))
 	}
+	if p := cfg.Watchdog.JSONLogFile; p != "" {
+		handlers = append(handlers, logging.FileJSON(p))
+	}
+	if h := logging.EmailFromConfig(cfg, "mwan-watchdog"); h != nil {
+		handlers = append(handlers, h)
+	}
+	logger := logging.New(logging.Config{
+		BuildVersion: version.BuildVersionString(),
+		Handlers:     handlers,
+	})
 	runID := tracing.NewID()
 	logger = logger.With(
 		slog.String(tracing.RunIDKey, runID),

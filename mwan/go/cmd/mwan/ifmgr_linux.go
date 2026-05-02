@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/logging"
 	"goodkind.io/mwan/internal/tracing"
@@ -100,28 +99,20 @@ func parseIfMgrFlags() ifmgrFlags {
 }
 
 func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
-	lc := logging.Config{
-		TextLogFile: cfg.IfMgr.LogFile,
-		JSONLogFile: cfg.IfMgr.JSONLogFile,
+	handlers := []slog.Handler{logging.StdoutJSON()}
+	if p := cfg.IfMgr.LogFile; p != "" {
+		handlers = append(handlers, logging.FileText(p, "[mwan-ifmgr]"))
 	}
-	if cfg.Email.SMTP2GOAPIKey != "" && cfg.Email.AlertEmail != "" {
-		sender := email.NewSender(
-			cfg.Email.SMTP2GOAPIKey, cfg.Email.From,
-			cfg.Email.BindIface, "mwan-ifmgr",
-			slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
-		)
-		lc.EmailSend = sender.Send
-		lc.EmailTo = cfg.Email.AlertEmail
-		lc.EmailMinLevel = cfg.Email.MinLevel
-		if lc.EmailMinLevel == "" {
-			lc.EmailMinLevel = "WARN"
-		}
-		lc.EmailCooldown = cfg.Email.Cooldown
+	if p := cfg.IfMgr.JSONLogFile; p != "" {
+		handlers = append(handlers, logging.FileJSON(p))
 	}
-	logger, err := logging.New(lc, version.BuildVersionString())
-	if err != nil {
-		return nil, err
+	if h := logging.EmailFromConfig(cfg, "mwan-ifmgr"); h != nil {
+		handlers = append(handlers, h)
 	}
+	logger := logging.New(logging.Config{
+		BuildVersion: version.BuildVersionString(),
+		Handlers:     handlers,
+	})
 	if debug || cfg.IfMgr.Debug {
 		logger.Info("ifmgr: debug logging enabled")
 	}

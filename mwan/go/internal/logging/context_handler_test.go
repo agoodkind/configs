@@ -84,10 +84,7 @@ func TestTextHandlerPreservesWithAttrsAndGroups(t *testing.T) {
 func TestNewLoggerAppliesContextHandler(t *testing.T) {
 	t.Parallel()
 
-	logger, err := New(Config{}, "test-build")
-	if err != nil {
-		t.Fatal(err)
-	}
+	logger := New(Config{BuildVersion: "test-build"})
 
 	ctx := tracing.WithTraceID(context.Background(), "trace-789")
 	ctx = tracing.WithOperation(ctx, "noop")
