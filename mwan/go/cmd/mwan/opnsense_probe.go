@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -14,30 +15,23 @@ import (
 )
 
 // runOPNsenseProbe is the operational tool for ad hoc dialing of the
-// mwan-opnsense daemon. It exercises the same gRPC client path that
-// cutover2 will use, so a successful probe is also a smoke test of
-// the production code path.
+// mwan-opnsense daemon over its OOB virtio-serial unix socket.
 //
-// Examples:
-//
-//	mwan opnsense-probe \
-//	    -target tcp://[3d06:bad:b01:fe::2]:9443 \
-//	    -cert vault.crt -key vault.key -ca ca.crt \
-//	    -authority opnsense-test
+// Example:
 //
 //	mwan opnsense-probe \
 //	    -target unix:///var/run/qemu-server/101.mwanrpc \
-//	    -cert vault.crt -key vault.key -ca ca.crt \
-//	    -authority opnsense-test
+//	    -op version
+//
+//	mwan opnsense-probe \
+//	    -target unix:///var/run/qemu-server/101.mwanrpc \
+//	    -op smoke
 func runOPNsenseProbe(args []string) error {
 	fs := flag.NewFlagSet("opnsense-probe", flag.ExitOnError)
-	target := fs.String("target", "", "tcp://host:port or unix:///path/to/socket (required)")
-	certPath := fs.String("cert", "", "client cert PEM (required)")
-	keyPath := fs.String("key", "", "client key PEM (required)")
-	caPath := fs.String("ca", "", "CA cert PEM (required)")
-	authority := fs.String("authority", "", "override :authority pseudo-header (defaults to dial host; use 'localhost' for unix)")
+	target := fs.String("target", "", "unix:///path/to/socket (required)")
 	timeout := fs.Duration("timeout", 10*time.Second, "dial+RPC timeout")
-	op := fs.String("op", "version", "RPC to call: version|read-config|xpath-get|exec")
+	op := fs.String("op", "version", "RPC to call: version|read-config|xpath-get|exec|smoke")
+	repeat := fs.Int("repeat", 1, "number of times to run the selected RPC over one connection")
 	xpath := fs.String("xpath", "", "XPath expression for op=xpath-get")
 	cmdStr := fs.String("cmd", "", "command for op=exec")
 	cmdArgs := fs.String("cmd-args", "", "comma-separated args for op=exec")
@@ -45,9 +39,15 @@ func runOPNsenseProbe(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *target == "" || *certPath == "" || *keyPath == "" || *caPath == "" {
+	if *target == "" {
 		fs.Usage()
-		return errors.New("-target, -cert, -key, -ca all required")
+		return errors.New("-target required")
+	}
+	if !strings.HasPrefix(*target, "unix:///") {
+		return fmt.Errorf("-target must be unix:///path; got %q", *target)
+	}
+	if *repeat < 1 {
+		return errors.New("-repeat must be >= 1")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
@@ -55,10 +55,6 @@ func runOPNsenseProbe(args []string) error {
 
 	cli, err := opnsenseclient.Dial(ctx, opnsenseclient.Config{
 		Target:      *target,
-		CertPath:    *certPath,
-		KeyPath:     *keyPath,
-		CAPath:      *caPath,
-		Authority:   *authority,
 		DialTimeout: *timeout,
 	})
 	if err != nil {
@@ -67,13 +63,61 @@ func runOPNsenseProbe(args []string) error {
 	defer func() { _ = cli.Close() }()
 
 	rpc := cli.RPC()
-	switch *op {
+	for i := 1; i <= *repeat; i++ {
+		if *repeat > 1 {
+			fmt.Fprintf(os.Stdout, "repeat=%d/%d\n", i, *repeat)
+		}
+		if *op == "smoke" {
+			if err := runOPNsenseProbeSmoke(ctx, rpc); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := runOPNsenseProbeRPC(ctx, rpc, *op, *xpath, *cmdStr, *cmdArgs, *cmdSudo); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runOPNsenseProbeSmoke(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) error {
+	ops := []struct {
+		op      string
+		xpath   string
+		cmd     string
+		cmdArgs string
+	}{
+		{op: "version"},
+		{op: "read-config"},
+		{op: "xpath-get", xpath: "/opnsense/system/hostname"},
+		{op: "exec", cmd: "uname", cmdArgs: "-s,-r,-m"},
+	}
+	for _, smokeOp := range ops {
+		fmt.Fprintf(os.Stdout, "smoke-op=%s\n", smokeOp.op)
+		if err := runOPNsenseProbeRPC(ctx, rpc, smokeOp.op, smokeOp.xpath, smokeOp.cmd, smokeOp.cmdArgs, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runOPNsenseProbeRPC(
+	ctx context.Context,
+	rpc mwanv1.MWANOPNsenseServiceClient,
+	op string,
+	xpath string,
+	cmdStr string,
+	cmdArgs string,
+	cmdSudo bool,
+) error {
+	switch op {
 	case "version":
 		resp, err := rpc.Version(ctx, &mwanv1.VersionRequest{})
 		if err != nil {
+			slog.ErrorContext(ctx, "opnsense-probe Version failed", "err", err)
 			return fmt.Errorf("rpc Version: %w", err)
 		}
-		slog.Info("opnsense-probe Version OK",
+		slog.InfoContext(ctx, "opnsense-probe Version OK",
 			"version", resp.GetVersion(),
 			"commit", resp.GetBuildCommit(),
 			"dirty", resp.GetBuildDirty(),
@@ -83,41 +127,44 @@ func runOPNsenseProbe(args []string) error {
 	case "read-config":
 		resp, err := rpc.ReadConfigXML(ctx, &mwanv1.ReadConfigXMLRequest{})
 		if err != nil {
+			slog.ErrorContext(ctx, "opnsense-probe ReadConfigXML failed", "err", err)
 			return fmt.Errorf("rpc ReadConfigXML: %w", err)
 		}
-		slog.Info("opnsense-probe ReadConfigXML OK",
+		slog.InfoContext(ctx, "opnsense-probe ReadConfigXML OK",
 			"size_bytes", resp.GetSizeBytes(),
 			"sha256", resp.GetSha256())
 		fmt.Fprintf(os.Stdout, "size=%d sha256=%s\n", resp.GetSizeBytes(), resp.GetSha256())
 	case "xpath-get":
-		if *xpath == "" {
+		if xpath == "" {
 			return errors.New("op=xpath-get requires -xpath")
 		}
-		resp, err := rpc.XPathGet(ctx, &mwanv1.XPathGetRequest{Expression: *xpath})
+		resp, err := rpc.XPathGet(ctx, &mwanv1.XPathGetRequest{Expression: xpath})
 		if err != nil {
+			slog.ErrorContext(ctx, "opnsense-probe XPathGet failed", "err", err)
 			return fmt.Errorf("rpc XPathGet: %w", err)
 		}
-		slog.Info("opnsense-probe XPathGet OK", "matches", len(resp.GetMatches()))
+		slog.InfoContext(ctx, "opnsense-probe XPathGet OK", "matches", len(resp.GetMatches()))
 		for _, m := range resp.GetMatches() {
 			fmt.Fprintln(os.Stdout, m)
 		}
 	case "exec":
-		if *cmdStr == "" {
+		if cmdStr == "" {
 			return errors.New("op=exec requires -cmd")
 		}
 		var argv []string
-		if *cmdArgs != "" {
-			argv = splitCSVProbe(*cmdArgs)
+		if cmdArgs != "" {
+			argv = strings.Split(cmdArgs, ",")
 		}
 		resp, err := rpc.Exec(ctx, &mwanv1.ExecRequest{
-			Command: *cmdStr,
+			Command: cmdStr,
 			Args:    argv,
-			Sudo:    *cmdSudo,
+			Sudo:    cmdSudo,
 		})
 		if err != nil {
+			slog.ErrorContext(ctx, "opnsense-probe Exec failed", "err", err)
 			return fmt.Errorf("rpc Exec: %w", err)
 		}
-		slog.Info("opnsense-probe Exec OK",
+		slog.InfoContext(ctx, "opnsense-probe Exec OK",
 			"exit_code", resp.GetExitCode(),
 			"duration_ms", resp.GetDurationMs(),
 			"stdout_truncated", resp.GetStdoutTruncated(),
@@ -129,22 +176,7 @@ func runOPNsenseProbe(args []string) error {
 			return fmt.Errorf("remote exit code %d", resp.GetExitCode())
 		}
 	default:
-		return fmt.Errorf("unknown op %q", *op)
+		return fmt.Errorf("unknown op %q", op)
 	}
 	return nil
-}
-
-func splitCSVProbe(s string) []string {
-	out := []string{}
-	cur := []byte{}
-	for i := range len(s) {
-		if s[i] == ',' {
-			out = append(out, string(cur))
-			cur = cur[:0]
-			continue
-		}
-		cur = append(cur, s[i])
-	}
-	out = append(out, string(cur))
-	return out
 }

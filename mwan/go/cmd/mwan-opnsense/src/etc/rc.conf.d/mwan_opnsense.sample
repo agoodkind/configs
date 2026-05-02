@@ -5,21 +5,9 @@
 
 mwan_opnsense_enable="YES"
 
-# Listen for mTLS-gated gRPC on this TCP address. Empty disables the
-# TCP listener entirely. The OOB virtio-serial path stays available
-# either way.
-mwan_opnsense_listen_tcp="[::]:9443"
-
-# virtio-serial-pci device path. Empty disables the OOB serial
-# listener. /dev/ttyV0.1 corresponds to the first virtio-serial port
-# attached to the VM via Proxmox -args.
+# virtio-serial-pci device path. /dev/ttyV0.1 corresponds to the first
+# virtio-serial port attached to the VM via Proxmox -args.
 mwan_opnsense_listen_serial="/dev/ttyV0.1"
-
-# Server cert + key, client CA, and SPKI fingerprint pin file.
-mwan_opnsense_cert="/usr/local/etc/mwan-opnsense/server.crt"
-mwan_opnsense_key="/usr/local/etc/mwan-opnsense/server.key"
-mwan_opnsense_ca="/usr/local/etc/mwan-opnsense/ca.crt"
-mwan_opnsense_pins="/usr/local/etc/mwan-opnsense/allowed_clients.txt"
 
 # Log destination for daemon(8). Rotated by newsyslog (see
 # /usr/local/etc/newsyslog.conf.d/mwan-opnsense.conf if you want it

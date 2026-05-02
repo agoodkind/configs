@@ -8,12 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -68,11 +66,11 @@ func (s *Server) Version(_ context.Context, _ *mwanv1.VersionRequest) (*mwanv1.V
 	}, nil
 }
 
-// Exec runs an arbitrary command. mTLS is the entire security
-// boundary. The command is forwarded to runExec for execution and
-// output capture.
+// Exec runs an arbitrary command. Access is constrained by the
+// root-only Proxmox-side unix socket for the virtio-serial channel.
+// The command is forwarded to runExec for execution and output capture.
 func (s *Server) Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error) {
-	s.log.Info("opnsensesvc: Exec",
+	s.log.InfoContext(ctx, "opnsensesvc: Exec",
 		"command", req.GetCommand(),
 		"args_len", len(req.GetArgs()),
 		"sudo", req.GetSudo(),
@@ -86,7 +84,7 @@ func (s *Server) Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.Exe
 		StdinBytes:     req.GetStdinBytes(),
 	})
 	if err != nil {
-		s.log.Error("opnsensesvc: Exec failed",
+		s.log.ErrorContext(ctx, "opnsensesvc: Exec failed",
 			"err", err,
 			"command", req.GetCommand())
 		return nil, status.Errorf(codes.Internal, "exec: %v", err)
@@ -322,66 +320,48 @@ func (s *Server) InjectGatewayV6(_ context.Context, req *mwanv1.InjectGatewayV6R
 	}, nil
 }
 
-// ServeOpts controls the dual listener loop.
+// ServeOpts controls the listener loop.
 type ServeOpts struct {
-	TCPAddr      string
 	SerialPath   string
 	OpenSerial   func(path string) (io.ReadWriteCloser, error)
-	Creds        credentials.TransportCredentials
 	Server       *Server
 	Log          *slog.Logger
-	OnTCPListen  func(addr net.Addr)
 	OnSerialOpen func(path string)
 }
 
-// Serve runs both listeners until ctx is cancelled. Returns the first
-// non-nil error from any listener (gRPC stops on context cancel).
+// Serve runs the virtio-serial listener until ctx is cancelled. There
+// is no TLS and no application-level authentication; the only peer is
+// the host process that owns the unix socket on the Proxmox side.
+// Returns the listener's error (gRPC stops on context cancel).
 func Serve(ctx context.Context, opts ServeOpts) error {
-	if opts.Creds == nil {
-		return errors.New("Serve: TLS credentials required")
-	}
 	if opts.Server == nil {
 		return errors.New("Serve: Server required")
+	}
+	if opts.SerialPath == "" {
+		return errors.New("Serve: SerialPath required")
+	}
+	if opts.OpenSerial == nil {
+		return errors.New("Serve: OpenSerial required")
 	}
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
 	}
 
-	gs := grpc.NewServer(grpc.Creds(opts.Creds))
+	gs := grpc.NewServer()
 	opts.Server.Register(gs)
 
-	errCh := make(chan error, 2)
-
-	if opts.TCPAddr != "" {
-		tcpLis, err := net.Listen("tcp", opts.TCPAddr)
-		if err != nil {
-			return fmt.Errorf("Serve: tcp listen %s: %w", opts.TCPAddr, err)
-		}
-		if opts.OnTCPListen != nil {
-			opts.OnTCPListen(tcpLis.Addr())
-		}
-		log.Info("opnsensesvc: tcp listening", "addr", tcpLis.Addr())
-		go func() {
-			err := gs.Serve(tcpLis)
-			errCh <- fmt.Errorf("tcp serve: %w", err)
-		}()
+	serLis := NewSerialListener(opts.SerialPath, opts.OpenSerial)
+	if opts.OnSerialOpen != nil {
+		opts.OnSerialOpen(opts.SerialPath)
 	}
+	log.Info("opnsensesvc: serial listening", "path", opts.SerialPath)
 
-	if opts.SerialPath != "" {
-		if opts.OpenSerial == nil {
-			return errors.New("Serve: SerialPath set but OpenSerial nil")
-		}
-		serLis := NewSerialListener(opts.SerialPath, opts.OpenSerial)
-		if opts.OnSerialOpen != nil {
-			opts.OnSerialOpen(opts.SerialPath)
-		}
-		log.Info("opnsensesvc: serial listening", "path", opts.SerialPath)
-		go func() {
-			err := gs.Serve(serLis)
-			errCh <- fmt.Errorf("serial serve: %w", err)
-		}()
-	}
+	errCh := make(chan error, 1)
+	go func() {
+		err := gs.Serve(serLis)
+		errCh <- fmt.Errorf("serial serve: %w", err)
+	}()
 
 	go func() {
 		<-ctx.Done()

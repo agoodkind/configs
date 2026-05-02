@@ -18,21 +18,30 @@ import (
 var debugSerialIO = os.Getenv("MWAN_OPNSENSE_SERIAL_TRACE") == "1"
 
 // SerialListener wraps a single character device (typically
-// /dev/ttyV0.1) as a net.Listener. The serial channel is
-// inherently single-stream: at most one connection is "open" at
-// any time. Accept blocks until either the previous connection
-// closes (so we can re-open) or the listener itself is closed.
+// /dev/ttyV0.1) as a net.Listener. The serial channel is inherently
+// single-stream: at most one connection is "open" at any time. Accept
+// blocks while a wrapper is active and resumes after the wrapper is
+// closed.
+//
+// Each Accept opens the device fresh; each wrapper Close releases it.
+// A small grace period on close gives qemu chardev time to flush its
+// disconnect notification and accept a new host peer before the next
+// Accept opens a fresh fd. Without this grace the next Accept races
+// the disconnect/reconnect handshake on virtio-serial, producing an
+// every-other-RPC failure pattern.
 //
 // gRPC's Serve loop expects Accept to block when no connection is
 // available rather than return an error, so this matters for
 // correctness (errored Accepts cause gRPC to give up entirely).
 //
-// This is enough for our use case (vault is the only client).
-// Multiplexing would require a small framing protocol on top.
+// Single-peer use case (the host process that owns the unix socket
+// on the Proxmox side). Multiplexing would require a small framing
+// protocol on top.
 type SerialListener struct {
-	devPath string
-	openFn  func(path string) (io.ReadWriteCloser, error)
-	addr    serialAddr
+	devPath        string
+	openFn         func(path string) (io.ReadWriteCloser, error)
+	addr           serialAddr
+	postCloseDelay time.Duration
 
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -45,18 +54,19 @@ type SerialListener struct {
 // opens the character device, in tests it can return a fake.
 func NewSerialListener(devPath string, openFn func(path string) (io.ReadWriteCloser, error)) *SerialListener {
 	l := &SerialListener{
-		devPath: devPath,
-		openFn:  openFn,
-		addr:    serialAddr(devPath),
+		devPath:        devPath,
+		openFn:         openFn,
+		addr:           serialAddr(devPath),
+		postCloseDelay: 200 * time.Millisecond,
 	}
 	l.cond = sync.NewCond(&l.mu)
 	return l
 }
 
-// Accept opens the device and returns it as a net.Conn. If a
-// previous connection is still open it blocks until that
-// connection closes before opening the device again. Returns an
-// error only when the listener itself is closed.
+// Accept opens the device and returns it as a net.Conn. If a previous
+// connection is still open (or in its post-close grace) it blocks
+// until the device is free. Returns an error only when the listener
+// itself is closed.
 func (l *SerialListener) Accept() (net.Conn, error) {
 	l.mu.Lock()
 	for !l.closed && l.cur != nil {
@@ -87,8 +97,8 @@ func (l *SerialListener) Accept() (net.Conn, error) {
 }
 
 // Close releases the listener. If a connection is open, that
-// connection is also closed. Wakes any pending Accept callers so
-// they observe the closed state.
+// connection is also closed. Wakes any pending Accept callers so they
+// observe the closed state.
 func (l *SerialListener) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -102,13 +112,23 @@ func (l *SerialListener) Close() error {
 	return nil
 }
 
-// Addr returns a stable address representation referencing the
-// device file path.
+// Addr returns a stable address representation referencing the device
+// file path.
 func (l *SerialListener) Addr() net.Addr {
 	return l.addr
 }
 
 func (l *SerialListener) connClosed(rwc io.ReadWriteCloser) {
+	// Hold the device-busy state for a short grace period after the
+	// gRPC server closed its end. This lets qemu's chardev see the
+	// host disconnect and accept the next host peer cleanly before
+	// the next Accept reopens /dev/ttyV0.x. Without this grace the
+	// reopen races the disconnect/reconnect on virtio-serial and the
+	// next session sees stale bytes from the previous one.
+	if l.postCloseDelay > 0 {
+		timer := time.NewTimer(l.postCloseDelay)
+		<-timer.C
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.cur == rwc {
@@ -172,9 +192,8 @@ func (c *serialConn) Close() error {
 
 // SetDeadline / SetReadDeadline / SetWriteDeadline are best-effort.
 // If the underlying ReadWriteCloser is an *os.File the kernel will
-// honor them (on Linux/FreeBSD via SO_RCVTIMEO/SO_SNDTIMEO style
-// poll-based deadlines for char devices). For fake implementations
-// in tests, they are no-ops.
+// honor them (on Linux/FreeBSD via poll-based deadlines for char
+// devices). For fake implementations in tests, they are no-ops.
 func (c *serialConn) SetDeadline(t time.Time) error {
 	if f, ok := c.rwc.(*os.File); ok {
 		return f.SetDeadline(t)

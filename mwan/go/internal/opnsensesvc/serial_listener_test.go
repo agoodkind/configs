@@ -41,9 +41,17 @@ func newFakeOpener(payload string) func(string) (io.ReadWriteCloser, error) {
 	}
 }
 
+// newTestListener returns a listener with the post-close grace
+// disabled so tests don't sleep needlessly.
+func newTestListener(devPath string, openFn func(string) (io.ReadWriteCloser, error)) *SerialListener {
+	l := NewSerialListener(devPath, openFn)
+	l.postCloseDelay = 0
+	return l
+}
+
 func TestSerialListener_AcceptReadClose(t *testing.T) {
 	opener := newFakeOpener("hello")
-	l := NewSerialListener("/dev/test", opener)
+	l := newTestListener("/dev/test", opener)
 	defer func() { _ = l.Close() }()
 
 	conn, err := l.Accept()
@@ -64,7 +72,7 @@ func TestSerialListener_AcceptReadClose(t *testing.T) {
 
 func TestSerialListener_BlocksUntilFirstCloses(t *testing.T) {
 	opener := newFakeOpener("first")
-	l := NewSerialListener("/dev/test", opener)
+	l := newTestListener("/dev/test", opener)
 	defer func() { _ = l.Close() }()
 
 	conn1, err := l.Accept()
@@ -105,7 +113,7 @@ func TestSerialListener_BlocksUntilFirstCloses(t *testing.T) {
 
 func TestSerialListener_ClosedRejects(t *testing.T) {
 	opener := newFakeOpener("x")
-	l := NewSerialListener("/dev/test", opener)
+	l := newTestListener("/dev/test", opener)
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +125,7 @@ func TestSerialListener_ClosedRejects(t *testing.T) {
 
 func TestSerialListener_OpenerError(t *testing.T) {
 	want := errors.New("device gone")
-	l := NewSerialListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
+	l := newTestListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
 		return nil, want
 	})
 	defer func() { _ = l.Close() }()
@@ -140,7 +148,7 @@ func TestSerialAddr(t *testing.T) {
 
 func TestSerialConn_AddrAndClose(t *testing.T) {
 	opener := newFakeOpener("y")
-	l := NewSerialListener("/dev/test", opener)
+	l := newTestListener("/dev/test", opener)
 	defer func() { _ = l.Close() }()
 
 	conn, err := l.Accept()

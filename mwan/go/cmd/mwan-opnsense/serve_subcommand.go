@@ -12,17 +12,13 @@ import (
 	"goodkind.io/mwan/internal/opnsensesvc"
 )
 
-// runServe starts the gRPC daemon with both the TCP listener (LAN
-// diagnostic) and the virtio-serial-pci listener (OOB recovery
-// channel). Either may be disabled by setting its flag to empty.
+// runServe starts the gRPC daemon with the virtio-serial-pci listener.
+// There is exactly one listener and exactly one peer. Auth is unix
+// socket permissions on the host side (root-only), so the daemon does
+// not authenticate at the application layer.
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	tcpAddr := fs.String("tcp", "[::]:9443", "mTLS TCP listen address; empty disables")
-	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path; empty disables")
-	certPath := fs.String("cert", "/usr/local/etc/mwan-opnsense/server.crt", "server cert PEM")
-	keyPath := fs.String("key", "/usr/local/etc/mwan-opnsense/server.key", "server key PEM")
-	caPath := fs.String("ca", "/usr/local/etc/mwan-opnsense/ca.crt", "client CA PEM")
-	pinsPath := fs.String("pins", "/usr/local/etc/mwan-opnsense/allowed_clients.txt", "SPKI pins file (empty disables pin check)")
+	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path")
 	configPath := fs.String("config-xml", opnsensesvc.ConfigPath, "OPNsense config.xml path")
 	backupDir := fs.String("backup-dir", opnsensesvc.BackupDir, "directory for snapshot files")
 	if err := fs.Parse(args); err != nil {
@@ -30,15 +26,9 @@ func runServe(args []string) {
 		os.Exit(2)
 	}
 
-	if *tcpAddr == "" && *serialPath == "" {
-		fmt.Fprintln(os.Stderr, "serve: at least one of -tcp or -serial must be set")
+	if *serialPath == "" {
+		fmt.Fprintln(os.Stderr, "serve: -serial path required")
 		os.Exit(2)
-	}
-
-	creds, err := opnsensesvc.LoadServerCreds(*certPath, *keyPath, *caPath, *pinsPath)
-	if err != nil {
-		slog.Error("serve: load creds failed", "err", err)
-		os.Exit(1)
 	}
 
 	srv := opnsensesvc.NewServer(slog.Default(), *configPath, *backupDir)
@@ -48,19 +38,15 @@ func runServe(args []string) {
 	// any os.Exit; gocritic flags exit-after-defer otherwise.
 
 	opts := opnsensesvc.ServeOpts{
-		TCPAddr:    *tcpAddr,
 		SerialPath: *serialPath,
 		OpenSerial: opnsensesvc.OpenVirtioSerial,
-		Creds:      creds,
 		Server:     srv,
 		Log:        slog.Default(),
 	}
 
-	slog.Info("mwan-opnsense: serving",
-		"tcp_addr", *tcpAddr,
-		"serial_path", *serialPath)
+	slog.Info("mwan-opnsense: serving", "serial_path", *serialPath)
 
-	err = opnsensesvc.Serve(ctx, opts)
+	err := opnsensesvc.Serve(ctx, opts)
 	cancel()
 	if err != nil {
 		slog.Error("serve: terminated", "err", err)
