@@ -8,7 +8,6 @@ import (
 
 	"goodkind.io/mwan/internal/alert"
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/cutover"
 	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/logging"
 	"goodkind.io/mwan/internal/ops"
@@ -16,61 +15,20 @@ import (
 	"goodkind.io/mwan/internal/version"
 )
 
-// triggerFailover activates the failover LXC as a hot standby.
-// It loads the cutover config and calls cutover.StartBackup which:
-//   - Configures forwarding, masquerade, routes on the LXC
-//   - Deploys and starts keepalived in BACKUP state
-//   - keepalived's health check on the primary will detect the outage
-//     and promote the LXC to MASTER automatically
-//
-// If the primary VM's keepalived health check is already failing,
-// the LXC will promote to MASTER within a few seconds of starting.
+// triggerFailover dispatches to the BGP route-control failover path.
+// The legacy keepalived-based path was removed when the BGP cutover
+// completed (MWAN-1) and keepalived was decommissioned (MWAN-69 +
+// MWAN-82). cfg.BGP.Enabled must be true on every host this watchdog
+// runs against.
 func (w *watchdog) triggerFailover(ctx context.Context, cfg *config.Config, reason string) error {
 	if cfg.Cutover.FailoverLXCID == "" {
 		return fmt.Errorf("cutover config has no failover_lxc_id; cannot failover")
 	}
-
-	// If BGP is enabled, use BGP route control instead of keepalived.
-	if cfg.BGP.Enabled {
-		w.log.Info("FAILOVER: BGP enabled, using BGP route control path",
-			"reason", reason,
-		)
-		return w.triggerBGPFailover(ctx, cfg, reason)
+	if !cfg.BGP.Enabled {
+		return fmt.Errorf("failover requires cfg.BGP.Enabled=true; legacy keepalived path was removed")
 	}
-
-	w.log.Info("FAILOVER: activating backup LXC",
-		"lxc", cfg.Cutover.FailoverLXCID,
-		"reason", reason,
-	)
-
-	// Send alert email about failover
-	subject := fmt.Sprintf("[%s] FAILOVER: activating LXC %s", cfg.Email.SubjectPrefix, cfg.Cutover.FailoverLXCID)
-	body := fmt.Sprintf(
-		"Watchdog is triggering failover to LXC %s.\n\nReason: %s\n\nThe backup LXC will be configured and keepalived will promote it to MASTER.",
-		cfg.Cutover.FailoverLXCID, reason,
-	)
-	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
-
-	start := time.Now()
-	if err := cutover.StartBackup(ctx, w.log, cfg); err != nil {
-		w.log.Error("FAILOVER: StartBackup failed", "err", err, "elapsed", time.Since(start))
-		return fmt.Errorf("failover StartBackup: %w", err)
-	}
-
-	w.log.Info("FAILOVER: backup LXC activated successfully",
-		"lxc", cfg.Cutover.FailoverLXCID,
-		"elapsed", time.Since(start),
-	)
-
-	// Send success email
-	successSubject := fmt.Sprintf("[%s] FAILOVER COMPLETE: LXC %s active", cfg.Email.SubjectPrefix, cfg.Cutover.FailoverLXCID)
-	successBody := fmt.Sprintf(
-		"Failover to LXC %s completed in %s.\n\nKeepalived should promote the LXC to MASTER shortly.",
-		cfg.Cutover.FailoverLXCID, time.Since(start).Round(time.Second),
-	)
-	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, successSubject, successBody)
-
-	return nil
+	w.log.Info("FAILOVER: dispatching to BGP route control path", "reason", reason)
+	return w.triggerBGPFailover(ctx, cfg, reason)
 }
 
 // triggerBGPFailover performs failover using BGP route control:

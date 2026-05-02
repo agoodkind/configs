@@ -7,8 +7,6 @@ import (
 
 	"goodkind.io/mwan/internal/agent"
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/cutover"
-	"goodkind.io/mwan/internal/cutover2"
 	"goodkind.io/mwan/internal/healthcheck"
 	"goodkind.io/mwan/internal/version"
 	"goodkind.io/mwan/internal/watchdog"
@@ -16,7 +14,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|cutover|cutover2|health-check|ifmgr> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -56,16 +54,6 @@ func main() {
 		} else {
 			runErr = watchdog.Run(cfg)
 		}
-	case "cutover":
-		dryRun := false
-		for _, arg := range os.Args[1:] {
-			if arg == "--dry-run" {
-				dryRun = true
-			}
-		}
-		runErr = cutover.Run(cfg, dryRun)
-	case "cutover2":
-		runErr = cutover2.Run(cfg)
 	case "ifmgr":
 		runErr = runIfMgr(cfg)
 	default:
