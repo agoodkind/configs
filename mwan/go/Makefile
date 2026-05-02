@@ -41,7 +41,7 @@ CMD    := ./cmd/$(BINARY)
 
 .DEFAULT_GOAL := check
 
-.PHONY: proto build build-linux build-mwan-opnsense clean tidy fmt fix
+.PHONY: proto build build-linux build-mwan-opnsense build-mwan-opnsense-host build-mwan-opnsense-linux clean tidy fmt fix
 
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
@@ -68,7 +68,11 @@ proto:
 		mwan/v1/mwan.proto \
 		mwan/v1/mwan_opnsense.proto
 
-# Reusable cross-platform build template.
+# Reusable cross-platform build template. All build targets fold
+# through this so the flag set is identical everywhere
+# (CGO_ENABLED=0, -trimpath, -buildvcs=false, ldflags from version
+# package).
+#
 # $(1)=output binary name, $(2)=GOOS, $(3)=GOARCH, $(4)=cmd path
 define build_platform
 	@mkdir -p bin
@@ -78,19 +82,37 @@ define build_platform
 		-o bin/$(1) $(4)
 endef
 
-build: proto
-	@mkdir -p bin
-	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) $(CMD)
+HOST_GOOS   := $(shell go env GOOS)
+HOST_GOARCH := $(shell go env GOARCH)
 
-# build-linux and build-mwan-opnsense both depend on `check`, which fans
-# out to: build vet lint test govulncheck staticcheck-extra (defined by
-# go.mk). Full lint pass is mandatory before any deploy artifact lands
-# in bin/.
+# build is the host-native default mwan binary; depends on proto so
+# go.mk's `check` recipe (which does `build vet lint test ...`) does
+# not loop. NOTE: now produces a CGO_ENABLED=0 + -buildvcs=false
+# binary like the cross-compile targets, for consistent flags.
+build: proto
+	$(call build_platform,$(BINARY),$(HOST_GOOS),$(HOST_GOARCH),$(CMD))
+
+# build-linux and build-mwan-opnsense* depend on `check`, which fans
+# out to: build vet lint test govulncheck staticcheck-extra (defined
+# by go.mk). Full lint pass is mandatory before any deploy artifact
+# lands in bin/.
 build-linux: check
 	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD))
 
 build-mwan-opnsense: check
 	$(call build_platform,mwan-opnsense,freebsd,amd64,./cmd/mwan-opnsense)
+
+# Host-native build of mwan-opnsense for offline CA bootstrap and
+# local CLI use. Always lives at bin/mwan-opnsense-host so it never
+# shadows the cross-compiled FreeBSD artifact at bin/mwan-opnsense.
+build-mwan-opnsense-host: check
+	$(call build_platform,mwan-opnsense-host,$(HOST_GOOS),$(HOST_GOARCH),./cmd/mwan-opnsense)
+
+# Linux build of mwan-opnsense, used as the *client* binary on
+# vault/suburban to dial the daemon over the qemu unix socket
+# (virtio-serial OOB transport). Same binary, different platform.
+build-mwan-opnsense-linux: check
+	$(call build_platform,mwan-opnsense-linux,linux,amd64,./cmd/mwan-opnsense)
 
 clean:
 	rm -rf bin/

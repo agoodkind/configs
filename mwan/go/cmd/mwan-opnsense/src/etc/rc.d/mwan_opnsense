@@ -8,7 +8,7 @@
 #
 # Optional settings (set in /etc/rc.conf.d/mwan_opnsense):
 #   mwan_opnsense_listen_tcp="[::]:9443"
-#   mwan_opnsense_listen_serial="/dev/ttyV0.0"
+#   mwan_opnsense_listen_serial="/dev/ttyV0.1"
 #   mwan_opnsense_cert="/usr/local/etc/mwan-opnsense/server.crt"
 #   mwan_opnsense_key="/usr/local/etc/mwan-opnsense/server.key"
 #   mwan_opnsense_ca="/usr/local/etc/mwan-opnsense/ca.crt"
@@ -24,7 +24,7 @@ load_rc_config $name
 
 : ${mwan_opnsense_enable:="NO"}
 : ${mwan_opnsense_listen_tcp:="[::]:9443"}
-: ${mwan_opnsense_listen_serial:="/dev/ttyV0.0"}
+: ${mwan_opnsense_listen_serial:="/dev/ttyV0.1"}
 : ${mwan_opnsense_cert:="/usr/local/etc/mwan-opnsense/server.crt"}
 : ${mwan_opnsense_key:="/usr/local/etc/mwan-opnsense/server.key"}
 : ${mwan_opnsense_ca:="/usr/local/etc/mwan-opnsense/ca.crt"}

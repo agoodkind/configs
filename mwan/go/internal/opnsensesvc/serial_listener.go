@@ -1,20 +1,31 @@
 package opnsensesvc
 
 import (
+	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
 	"time"
 )
 
+// debugSerialIO when true logs first bytes of every serial Read/Write
+// to help diagnose framing/protocol issues over virtio-serial.
+var debugSerialIO = os.Getenv("MWAN_OPNSENSE_SERIAL_TRACE") == "1"
+
 // SerialListener wraps a single character device (typically
-// /dev/ttyV0.0) as a net.Listener. The serial channel is
+// /dev/ttyV0.1) as a net.Listener. The serial channel is
 // inherently single-stream: at most one connection is "open" at
-// any time. Subsequent Accept() calls block until the previous
-// connection closes, then re-open the device.
+// any time. Accept blocks until either the previous connection
+// closes (so we can re-open) or the listener itself is closed.
+//
+// gRPC's Serve loop expects Accept to block when no connection is
+// available rather than return an error, so this matters for
+// correctness (errored Accepts cause gRPC to give up entirely).
 //
 // This is enough for our use case (vault is the only client).
 // Multiplexing would require a small framing protocol on top.
@@ -24,6 +35,7 @@ type SerialListener struct {
 	addr    serialAddr
 
 	mu     sync.Mutex
+	cond   *sync.Cond
 	closed bool
 	cur    io.ReadWriteCloser
 }
@@ -32,30 +44,33 @@ type SerialListener struct {
 // Accept call. openFn is the device-open function; on FreeBSD it
 // opens the character device, in tests it can return a fake.
 func NewSerialListener(devPath string, openFn func(path string) (io.ReadWriteCloser, error)) *SerialListener {
-	return &SerialListener{
+	l := &SerialListener{
 		devPath: devPath,
 		openFn:  openFn,
 		addr:    serialAddr(devPath),
 	}
+	l.cond = sync.NewCond(&l.mu)
+	return l
 }
 
-// Accept opens the device and returns it as a net.Conn. Blocks
-// until the previous connection closes.
+// Accept opens the device and returns it as a net.Conn. If a
+// previous connection is still open it blocks until that
+// connection closes before opening the device again. Returns an
+// error only when the listener itself is closed.
 func (l *SerialListener) Accept() (net.Conn, error) {
 	l.mu.Lock()
+	for !l.closed && l.cur != nil {
+		l.cond.Wait()
+	}
 	if l.closed {
 		l.mu.Unlock()
 		return nil, errors.New("serial listener: closed")
-	}
-	if l.cur != nil {
-		// Previous connection still open. Wait for it to close.
-		l.mu.Unlock()
-		return nil, errors.New("serial listener: previous connection still open")
 	}
 	l.mu.Unlock()
 
 	rwc, err := l.openFn(l.devPath)
 	if err != nil {
+		slog.Error("serial listener: open failed", "path", l.devPath, "err", err)
 		return nil, fmt.Errorf("serial listener: open %s: %w", l.devPath, err)
 	}
 
@@ -72,11 +87,13 @@ func (l *SerialListener) Accept() (net.Conn, error) {
 }
 
 // Close releases the listener. If a connection is open, that
-// connection is also closed.
+// connection is also closed. Wakes any pending Accept callers so
+// they observe the closed state.
 func (l *SerialListener) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.closed = true
+	l.cond.Broadcast()
 	if l.cur != nil {
 		err := l.cur.Close()
 		l.cur = nil
@@ -96,6 +113,7 @@ func (l *SerialListener) connClosed(rwc io.ReadWriteCloser) {
 	defer l.mu.Unlock()
 	if l.cur == rwc {
 		l.cur = nil
+		l.cond.Broadcast()
 	}
 }
 
@@ -118,10 +136,31 @@ type serialConn struct {
 	closeErr  error
 }
 
-func (c *serialConn) Read(b []byte) (int, error)  { return c.rwc.Read(b) }
-func (c *serialConn) Write(b []byte) (int, error) { return c.rwc.Write(b) }
-func (c *serialConn) LocalAddr() net.Addr         { return c.laddr }
-func (c *serialConn) RemoteAddr() net.Addr        { return c.raddr }
+func (c *serialConn) Read(b []byte) (int, error) {
+	n, err := c.rwc.Read(b)
+	if debugSerialIO {
+		var sample []byte
+		if n > 0 {
+			sample = b[:min(n, 32)]
+		}
+		slog.DebugContext(context.Background(), "serial read", "n", n, "err", err, "first32hex", hex.EncodeToString(sample))
+	}
+	return n, err
+}
+
+func (c *serialConn) Write(b []byte) (int, error) {
+	n, err := c.rwc.Write(b)
+	if debugSerialIO {
+		var sample []byte
+		if len(b) > 0 {
+			sample = b[:min(len(b), 32)]
+		}
+		slog.DebugContext(context.Background(), "serial write", "n", n, "err", err, "first32hex", hex.EncodeToString(sample))
+	}
+	return n, err
+}
+func (c *serialConn) LocalAddr() net.Addr  { return c.laddr }
+func (c *serialConn) RemoteAddr() net.Addr { return c.raddr }
 
 func (c *serialConn) Close() error {
 	c.closeOnce.Do(func() {

@@ -14,7 +14,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense-probe> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -32,6 +32,13 @@ func main() {
 	if sub == "health-check" {
 		if err := healthcheck.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "mwan health-check: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if sub == "opnsense-probe" {
+		if err := runOPNsenseProbe(os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan opnsense-probe: %v\n", err)
 			os.Exit(1)
 		}
 		return

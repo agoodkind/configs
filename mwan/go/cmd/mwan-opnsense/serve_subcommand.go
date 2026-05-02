@@ -18,7 +18,7 @@ import (
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	tcpAddr := fs.String("tcp", "[::]:9443", "mTLS TCP listen address; empty disables")
-	serialPath := fs.String("serial", "/dev/ttyV0.0", "virtio-serial device path; empty disables")
+	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path; empty disables")
 	certPath := fs.String("cert", "/usr/local/etc/mwan-opnsense/server.crt", "server cert PEM")
 	keyPath := fs.String("key", "/usr/local/etc/mwan-opnsense/server.key", "server key PEM")
 	caPath := fs.String("ca", "/usr/local/etc/mwan-opnsense/ca.crt", "client CA PEM")
@@ -69,8 +69,13 @@ func runServe(args []string) {
 	slog.Info("mwan-opnsense: stopped")
 }
 
+// runStatus reports whether the rc.d service is currently running.
+// It is the daemon-side counterpart, NOT a remote-probe tool. For
+// dialing the daemon from a client, use `mwan opnsense-probe` from
+// the vault-side mwan binary which carries the
+// internal/opnsenseclient package.
 func runStatus(_ []string) {
-	fmt.Fprintln(os.Stderr, "mwan-opnsense status: not implemented yet")
+	fmt.Fprintln(os.Stderr, "mwan-opnsense status: not implemented yet (use rc.d 'service mwan_opnsense status')")
 	os.Exit(1)
 }
 

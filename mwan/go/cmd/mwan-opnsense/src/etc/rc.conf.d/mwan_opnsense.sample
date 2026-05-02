@@ -11,9 +11,9 @@ mwan_opnsense_enable="YES"
 mwan_opnsense_listen_tcp="[::]:9443"
 
 # virtio-serial-pci device path. Empty disables the OOB serial
-# listener. /dev/ttyV0.0 corresponds to the first virtio-serial port
+# listener. /dev/ttyV0.1 corresponds to the first virtio-serial port
 # attached to the VM via Proxmox -args.
-mwan_opnsense_listen_serial="/dev/ttyV0.0"
+mwan_opnsense_listen_serial="/dev/ttyV0.1"
 
 # Server cert + key, client CA, and SPKI fingerprint pin file.
 mwan_opnsense_cert="/usr/local/etc/mwan-opnsense/server.crt"
