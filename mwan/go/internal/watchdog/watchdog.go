@@ -46,6 +46,7 @@ type watchdog struct {
 	exitFn func(code int)
 	// testHeartbeatInterval overrides heartbeatInterval in run() when > 0 (tests only).
 	testHeartbeatInterval time.Duration
+	nowFn                 func() time.Time
 
 	lastState             connectivityState
 	vmStoppedLogged       bool
@@ -77,6 +78,18 @@ func (w *watchdog) heartbeatTick() time.Duration {
 		return w.testHeartbeatInterval
 	}
 	return heartbeatInterval
+}
+
+func (w *watchdog) now() time.Time {
+	if w.nowFn == nil {
+		now := time.Now
+		return now()
+	}
+	return w.nowFn()
+}
+
+func (w *watchdog) since(start time.Time) time.Duration {
+	return w.now().Sub(start)
 }
 
 func (w *watchdog) appendProbe(msg string) {
@@ -179,14 +192,14 @@ func (w *watchdog) guestExecProbe(ctx context.Context, args ...string) (bool, bo
 	parsed, err := w.ops.GuestExec(ctx, w.cfg.MwanVMID, args...)
 	if err != nil {
 		if errors.Is(err, ops.ErrGuestExecUnavailable) {
-			log.Warn(
+			log.WarnContext(ctx,
 				"guestExec unavailable",
 				"args", strings.Join(args, " "),
 				"err", err,
 			)
 			return false, true
 		}
-		log.Error(
+		log.ErrorContext(ctx,
 			"guestExec error",
 			"args", strings.Join(args, " "),
 			"err", err,
@@ -194,7 +207,7 @@ func (w *watchdog) guestExecProbe(ctx context.Context, args ...string) (bool, bo
 		return false, false
 	}
 	if parsed.ExitCode != 0 {
-		log.Info(
+		log.InfoContext(ctx,
 			"guestExec non-zero exit",
 			"args", strings.Join(args, " "),
 			"exit_code", parsed.ExitCode,
@@ -211,6 +224,11 @@ func (w *watchdog) probeConnectivity(ctx context.Context) (v4ok, v6ok bool) {
 	var mu sync.Mutex
 	wg.Add(2)
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.ErrorContext(ctx, "IPv4 probe panic", "err", fmt.Errorf("panic: %v", recovered))
+			}
+		}()
 		defer wg.Done()
 		ok := w.ops.Ping(ctx, "ping", w.cfg.Network.PingTargetIPv4)
 		mu.Lock()
@@ -218,6 +236,11 @@ func (w *watchdog) probeConnectivity(ctx context.Context) (v4ok, v6ok bool) {
 		mu.Unlock()
 	}()
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.ErrorContext(ctx, "IPv6 probe panic", "err", fmt.Errorf("panic: %v", recovered))
+			}
+		}()
 		defer wg.Done()
 		ok := w.ops.Ping(ctx, "ping6", w.cfg.Network.PingTargetIPv6)
 		mu.Lock()
@@ -234,7 +257,7 @@ func (w *watchdog) probeConnectivity(ctx context.Context) (v4ok, v6ok bool) {
 	if !v6ok {
 		v6str = "FAIL"
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"probe",
 		"ipv4_target", w.cfg.Network.PingTargetIPv4,
 		"ipv4", v4str,
@@ -253,7 +276,7 @@ func (w *watchdog) probeConnectivity(ctx context.Context) (v4ok, v6ok bool) {
 // MWAN routing failure from a Proxmox-side issue.
 func (w *watchdog) testVMConnectivity(ctx context.Context) bool {
 	log := w.tracedLogger(ctx)
-	log.Info(
+	log.InfoContext(ctx,
 		"Testing VM default-route connectivity",
 		"vmid", w.cfg.MwanVMID,
 		"ping6_target", w.cfg.Network.PingTargetIPv6,
@@ -263,7 +286,7 @@ func (w *watchdog) testVMConnectivity(ctx context.Context) bool {
 		ctx, "ping6", "-c", "2", "-W", "3", w.cfg.Network.PingTargetIPv6,
 	)
 	if v6ok {
-		log.Info(
+		log.InfoContext(ctx,
 			"VM default-route IPv6 ping OK -> issue is Proxmox-side",
 			"vmid", w.cfg.MwanVMID,
 		)
@@ -277,7 +300,7 @@ func (w *watchdog) testVMConnectivity(ctx context.Context) bool {
 		ctx, "ping", "-c", "2", "-W", "3", w.cfg.Network.PingTargetIPv4,
 	)
 	if v4ok {
-		log.Info(
+		log.InfoContext(ctx,
 			"VM default-route IPv4 ping OK -> issue is Proxmox-side",
 			"vmid", w.cfg.MwanVMID,
 		)
@@ -288,7 +311,7 @@ func (w *watchdog) testVMConnectivity(ctx context.Context) bool {
 		return true
 	}
 	if v6Unavailable || v4Unavailable {
-		log.Warn(
+		log.WarnContext(ctx,
 			"VM default-route probes unavailable due to guest-exec transport",
 			"vmid", w.cfg.MwanVMID,
 		)
@@ -297,7 +320,7 @@ func (w *watchdog) testVMConnectivity(ctx context.Context) bool {
 			w.cfg.MwanVMID,
 		))
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"VM default-route: both IPv4 and IPv6 FAILED",
 		"vmid", w.cfg.MwanVMID,
 	)
@@ -314,7 +337,7 @@ func (w *watchdog) testVMConnectivity(ctx context.Context) bool {
 func (w *watchdog) testISP(ctx context.Context) bool {
 	log := w.tracedLogger(ctx)
 	ifaces := w.cfg.Network.WanIfaceNames()
-	log.Info(
+	log.InfoContext(ctx,
 		"Testing ISP reachability via WAN interfaces",
 		"wan_count", len(ifaces),
 		"interfaces", strings.Join(ifaces, ", "),
@@ -327,7 +350,7 @@ func (w *watchdog) testISP(ctx context.Context) bool {
 			ctx, "ping6", "-c", "3", "-W", "3", "-I", iface, w.cfg.Network.PingTargetIPv6,
 		)
 		if v4ok {
-			log.Debug(
+			log.DebugContext(ctx,
 				"ISP reachable from VM (IPv4 OK)",
 				"interface", iface,
 			)
@@ -335,7 +358,7 @@ func (w *watchdog) testISP(ctx context.Context) bool {
 			return true
 		}
 		if v6ok {
-			log.Debug(
+			log.DebugContext(ctx,
 				"ISP reachable from VM (IPv6 OK)",
 				"interface", iface,
 			)
@@ -343,7 +366,7 @@ func (w *watchdog) testISP(ctx context.Context) bool {
 			return true
 		}
 		if v4Unavailable || v6Unavailable {
-			log.Debug(
+			log.DebugContext(ctx,
 				"ISP probe via WAN interface unavailable due to guest-exec transport",
 				"interface", iface,
 			)
@@ -353,31 +376,31 @@ func (w *watchdog) testISP(ctx context.Context) bool {
 			))
 			continue
 		}
-		log.Debug(
+		log.DebugContext(ctx,
 			"ISP unreachable from VM (IPv4 FAIL, IPv6 FAIL)",
 			"interface", iface,
 		)
 		w.appendProbe(fmt.Sprintf("WAN %s: IPv4 FAIL, IPv6 FAIL", iface))
 	}
-	log.Debug("ISP unreachable from VM on all tested WAN interfaces")
+	log.DebugContext(ctx, "ISP unreachable from VM on all tested WAN interfaces")
 	return false
 }
 
 func (w *watchdog) findSnapshot(ctx context.Context) (string, error) {
 	log := w.tracedLogger(ctx)
-	log.Info("Listing snapshots for VM", "vmid", w.cfg.MwanVMID)
+	log.InfoContext(ctx, "Listing snapshots for VM", "vmid", w.cfg.MwanVMID)
 	out, err := w.ops.VMSnapshots(ctx, w.cfg.MwanVMID)
 	if err != nil {
 		return "", err
 	}
 	snap := rollback.ExtractLatestSnapshot(out)
 	if snap == "" {
-		log.Info(
+		log.InfoContext(ctx,
 			"No rollback snapshot (pre-deploy-* or known-good-*)",
 			"listsnapshot_output", string(out),
 		)
 	} else {
-		log.Info("Found rollback snapshot", "snapshot", snap)
+		log.InfoContext(ctx, "Found rollback snapshot", "snapshot", snap)
 	}
 	return snap, nil
 }
@@ -387,12 +410,12 @@ func (w *watchdog) readGuestUnix(ctx context.Context, path string) (int64, bool)
 	parsed, err := w.ops.GuestExec(ctx, w.cfg.MwanVMID, "cat", path)
 	if err != nil {
 		if errors.Is(err, ops.ErrGuestExecUnavailable) {
-			log.Warn(
+			log.WarnContext(ctx,
 				"PVE guest-exec unavailable; cannot read deploy timestamp; assuming no recent deploy",
 				"vmid", w.cfg.MwanVMID,
 			)
 		} else {
-			log.Error("guestExec(cat) error", "path", path, "err", err)
+			log.ErrorContext(ctx, "guestExec(cat) error", "path", path, "err", err)
 		}
 		return 0, false
 	}
@@ -405,7 +428,7 @@ func (w *watchdog) readGuestUnix(ctx context.Context, path string) (int64, bool)
 	}
 	ts, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
-		log.Error(
+		log.ErrorContext(ctx,
 			"guest timestamp parse error",
 			"path", path,
 			"raw", raw,
@@ -477,7 +500,7 @@ func manifestDiff(prev, curr map[string]string) string {
 
 	changed, added, removed := categorizeManifestChanges(prev, curr)
 	if len(changed) == 0 && len(added) == 0 && len(removed) == 0 {
-		return "  (no per-file diff available -- composite hash changed)\n"
+		return "  (no per-file diff available; composite hash changed)\n"
 	}
 	var sb strings.Builder
 	for _, p := range changed {
@@ -502,12 +525,12 @@ func (w *watchdog) checkConfigHash(ctx context.Context) {
 	log := w.tracedLogger(ctx)
 	resp, usedChannel, err := w.ops.GetConfigState(ctx, w.cfg.MwanVMID)
 	if err != nil {
-		log.Warn("checkConfigHash getConfigState", "err", err)
+		log.WarnContext(ctx, "checkConfigHash getConfigState", "err", err)
 		w.lastHashCheckOK = false
 		return
 	}
 	if usedChannel == "tcp" {
-		log.Warn(
+		log.WarnContext(ctx,
 			"getConfigState: vsock unavailable, used TCP fallback",
 			"channel", usedChannel,
 		)
@@ -520,17 +543,17 @@ func (w *watchdog) checkConfigHash(ctx context.Context) {
 
 	if w.lastConfigHash != "" && h != w.lastConfigHash {
 		if !w.postRollbackGraceUntil.IsZero() &&
-			time.Now().Before(w.postRollbackGraceUntil) {
-			log.Info(
+			w.now().Before(w.postRollbackGraceUntil) {
+			log.InfoContext(ctx,
 				"Post-rollback hash change suppressed",
 				"old_hash", w.lastConfigHash,
 				"new_hash", h,
 				"grace_until", w.postRollbackGraceUntil,
 			)
 		} else {
-			w.hashChangeWindowStart = time.Now().Unix()
+			w.hashChangeWindowStart = w.now().Unix()
 			diffSection := manifestDiff(w.lastManifest, currentManifest)
-			log.Warn(
+			log.WarnContext(ctx,
 				"config hash drift detected",
 				"old_hash", w.lastConfigHash,
 				"new_hash", resp.GetConfigHash(),
@@ -541,7 +564,7 @@ func (w *watchdog) checkConfigHash(ctx context.Context) {
 			)
 		}
 	} else {
-		log.Debug(
+		log.DebugContext(ctx,
 			"config hash check: no drift",
 			"hash", h,
 			"channel", usedChannel,
@@ -562,17 +585,17 @@ func (w *watchdog) maybeSnapshot(ctx context.Context) {
 	}
 	windowSec := int64(w.cfg.Watchdog.DeployWindowMinutes) * 60
 	if w.hashChangeWindowStart > 0 {
-		elapsed := time.Now().Unix() - w.hashChangeWindowStart
+		elapsed := w.now().Unix() - w.hashChangeWindowStart
 		if elapsed < windowSec {
 			return
 		}
 	}
 	deployTS, dOK := w.readGuestUnix(ctx, w.cfg.Network.LastDeployPath)
-	if dOK && (time.Now().Unix()-deployTS) < windowSec {
+	if dOK && (w.now().Unix()-deployTS) < windowSec {
 		return
 	}
 	minGap := time.Duration(w.cfg.Watchdog.MinSnapshotIntervalSeconds) * time.Second
-	if !w.lastSnapshotAt.IsZero() && time.Since(w.lastSnapshotAt) < minGap {
+	if !w.lastSnapshotAt.IsZero() && w.since(w.lastSnapshotAt) < minGap {
 		return
 	}
 	if w.cfg.Watchdog.HashCheckEveryNHealthy > 0 && !w.lastHashCheckOK {
@@ -580,19 +603,19 @@ func (w *watchdog) maybeSnapshot(ctx context.Context) {
 	}
 	name := fmt.Sprintf(
 		"known-good-%s",
-		time.Now().Format("20060102-150405"),
+		w.now().Format("20060102-150405"),
 	)
 	if err := w.ops.VMSnapshot(ctx, w.cfg.MwanVMID, name); err != nil {
-		log.Error("vmSnapshot failed", "err", err, "snapshot", name)
+		log.ErrorContext(ctx, "vmSnapshot failed", "err", err, "snapshot", name)
 		return
 	}
-	log.Info("created known-good snapshot", "snapshot", name)
-	w.lastSnapshotAt = time.Now()
+	log.InfoContext(ctx, "created known-good snapshot", "snapshot", name)
+	w.lastSnapshotAt = w.now()
 	w.consecutiveHealthy = 0
 	if err := w.pruneSnapshots(ctx); err != nil {
-		log.Error("pruneSnapshots failed", "err", err)
+		log.ErrorContext(ctx, "pruneSnapshots failed", "err", err)
 	}
-	log.Info("Interface monitor stopped (context cancelled)")
+	log.InfoContext(ctx, "Interface monitor stopped (context cancelled)")
 }
 
 func (w *watchdog) pruneSnapshots(ctx context.Context) error {
@@ -614,7 +637,7 @@ func (w *watchdog) pruneSnapshots(ctx context.Context) error {
 			if err := w.ops.VMDelSnapshot(
 				ctx, w.cfg.MwanVMID, knownGoods[i],
 			); err != nil {
-				log.Error(
+				log.ErrorContext(ctx,
 					"vmDelSnapshot",
 					"snapshot", knownGoods[i],
 					"err", err,
@@ -642,7 +665,7 @@ func (w *watchdog) pruneSnapshots(ctx context.Context) error {
 		if err := w.ops.VMDelSnapshot(
 			ctx, w.cfg.MwanVMID, knownGoods[i],
 		); err != nil {
-			log.Error(
+			log.ErrorContext(ctx,
 				"vmDelSnapshot max total",
 				"snapshot", knownGoods[i],
 				"err", err,
@@ -657,18 +680,18 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 	log := w.tracedLogger(ctx)
 	running, err := w.ops.VMStatus(ctx, w.cfg.MwanVMID)
 	if err != nil {
-		log.Error("checkDeploy: vmStatus error", "err", err)
+		log.ErrorContext(ctx, "checkDeploy: vmStatus error", "err", err)
 		return 0, false
 	}
 	if !running {
-		log.Info(
+		log.InfoContext(ctx,
 			"checkDeploy: VM is not running; cannot check change window",
 			"vmid", w.cfg.MwanVMID,
 		)
 		return 0, false
 	}
 
-	log.Info(
+	log.InfoContext(ctx,
 		"checkDeploy: reading change window markers",
 		"last_deploy_path", w.cfg.Network.LastDeployPath,
 		"last_change_path", w.cfg.Network.LastChangePath,
@@ -689,7 +712,7 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 		candidates = append(candidates, w.hashChangeWindowStart)
 	}
 	if len(candidates) == 0 {
-		log.Info("checkDeploy: no change markers or hash window")
+		log.InfoContext(ctx, "checkDeploy: no change markers or hash window")
 		return 0, false
 	}
 	effective := candidates[0]
@@ -699,8 +722,8 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 		}
 	}
 
-	ageMin := (time.Now().Unix() - effective) / 60
-	log.Info(
+	ageMin := (w.now().Unix() - effective) / 60
+	log.InfoContext(ctx,
 		"checkDeploy: change window",
 		"deploy_ts", deployTS,
 		"deploy_ok", dOK,
@@ -712,7 +735,7 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 		"window_minutes", w.cfg.Watchdog.DeployWindowMinutes,
 	)
 	if ageMin > int64(w.cfg.Watchdog.DeployWindowMinutes) {
-		log.Info(
+		log.InfoContext(ctx,
 			"checkDeploy: change window stale",
 			"age_minutes", ageMin,
 			"window_minutes", w.cfg.Watchdog.DeployWindowMinutes,
@@ -720,7 +743,7 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 		return 0, false
 	}
 
-	log.Info(
+	log.InfoContext(ctx,
 		"checkDeploy: within change window",
 		"effective_ts", effective,
 		"age_minutes", ageMin,
@@ -734,23 +757,23 @@ func (w *watchdog) checkDeploy(ctx context.Context) (int64, bool) {
 // Returns a non-nil error if the qm rollback command itself failed.
 func (w *watchdog) executeRollbackVM(ctx context.Context, snap string) error {
 	log := w.tracedLogger(ctx)
-	stopStart := time.Now()
-	log.Info(
+	stopStart := w.now()
+	log.InfoContext(ctx,
 		"Stopping VM",
 		"vmid", w.cfg.MwanVMID,
 		"timeout", ops.TimeoutQmStop,
 	)
 	if err := w.ops.VMStop(ctx, w.cfg.MwanVMID); err != nil {
-		log.Error(
+		log.ErrorContext(ctx,
 			"vmStop error (continuing to rollback)",
 			"vmid", w.cfg.MwanVMID,
 			"err", err,
 		)
 	} else {
-		log.Debug(
+		log.DebugContext(ctx,
 			"VM stopped",
 			"vmid", w.cfg.MwanVMID,
-			"elapsed", time.Since(stopStart).Round(time.Millisecond),
+			"elapsed", w.since(stopStart).Round(time.Millisecond),
 		)
 	}
 
@@ -760,20 +783,20 @@ func (w *watchdog) executeRollbackVM(ctx context.Context, snap string) error {
 		toDelete := rollback.SnapshotsAfter(listOut, snap)
 		for i := len(toDelete) - 1; i >= 0; i-- {
 			child := toDelete[i]
-			log.Debug("Deleting intermediate snapshot before rollback",
+			log.DebugContext(ctx, "Deleting intermediate snapshot before rollback",
 				"snapshot", child, "target", snap)
 			if dErr := w.ops.VMDelSnapshot(ctx, w.cfg.MwanVMID, child); dErr != nil {
-				log.Error("Failed to delete intermediate snapshot",
+				log.ErrorContext(ctx, "Failed to delete intermediate snapshot",
 					"snapshot", child, "err", dErr)
 			}
 		}
 	} else {
-		log.Warn("Could not list snapshots before rollback", "err", lErr)
+		log.WarnContext(ctx, "Could not list snapshots before rollback", "err", lErr)
 	}
 
 	var rollbackErr error
-	rollbackStart := time.Now()
-	log.Info(
+	rollbackStart := w.now()
+	log.InfoContext(ctx,
 		"Running qm rollback",
 		"vmid", w.cfg.MwanVMID,
 		"snapshot", snap,
@@ -781,38 +804,38 @@ func (w *watchdog) executeRollbackVM(ctx context.Context, snap string) error {
 	)
 	if err := w.ops.VMRollback(ctx, w.cfg.MwanVMID, snap); err != nil {
 		rollbackErr = err
-		log.Error(
+		log.ErrorContext(ctx,
 			"qm rollback FAILED; attempting qm start anyway",
 			"vmid", w.cfg.MwanVMID,
 			"snapshot", snap,
-			"elapsed", time.Since(rollbackStart).Round(time.Millisecond),
+			"elapsed", w.since(rollbackStart).Round(time.Millisecond),
 			"err", err,
 		)
 	} else {
-		log.Info(
+		log.InfoContext(ctx,
 			"qm rollback completed",
-			"elapsed", time.Since(rollbackStart).Round(time.Millisecond),
+			"elapsed", w.since(rollbackStart).Round(time.Millisecond),
 		)
 	}
 
-	startTime := time.Now()
-	log.Info(
+	startTime := w.now()
+	log.InfoContext(ctx,
 		"Starting VM",
 		"vmid", w.cfg.MwanVMID,
 		"timeout", ops.TimeoutQmStart,
 	)
 	if err := w.ops.VMStart(ctx, w.cfg.MwanVMID); err != nil {
-		log.Error(
+		log.ErrorContext(ctx,
 			"qm start FAILED; VM may remain stopped",
 			"vmid", w.cfg.MwanVMID,
-			"elapsed", time.Since(startTime).Round(time.Millisecond),
+			"elapsed", w.since(startTime).Round(time.Millisecond),
 			"err", err,
 		)
 	} else {
-		log.Info(
+		log.InfoContext(ctx,
 			"VM started",
 			"vmid", w.cfg.MwanVMID,
-			"elapsed", time.Since(startTime).Round(time.Millisecond),
+			"elapsed", w.since(startTime).Round(time.Millisecond),
 		)
 	}
 	return rollbackErr
@@ -829,9 +852,9 @@ func (w *watchdog) recordRollbackResult(
 	log := w.tracedLogger(ctx)
 	if err := os.Remove(w.cfg.Watchdog.RollbackLockFile); err != nil &&
 		!errors.Is(err, os.ErrNotExist) {
-		log.Error("remove rollback lock", "err", err)
+		log.ErrorContext(ctx, "remove rollback lock", "err", err)
 	} else {
-		log.Info("Removed rollback lock file")
+		log.InfoContext(ctx, "Removed rollback lock file")
 	}
 
 	rollbackAttempts := 1
@@ -843,11 +866,11 @@ func (w *watchdog) recordRollbackResult(
 	rollbackSucceeded := rollbackErr == nil
 	if writeErr := rollback.WriteState(
 		w.cfg.Watchdog.RollbackStateFile, deployTS, snap,
-		rollbackAttempts, rollbackSucceeded,
+		rollbackAttempts, rollbackSucceeded, w.now(),
 	); writeErr != nil {
-		log.Error("write rollback state", "err", writeErr)
+		log.ErrorContext(ctx, "write rollback state", "err", writeErr)
 	} else {
-		log.Info(
+		log.InfoContext(ctx,
 			"Wrote rollback state",
 			"path", w.cfg.Watchdog.RollbackStateFile,
 			"deploy_ts", deployTS,
@@ -857,7 +880,7 @@ func (w *watchdog) recordRollbackResult(
 		)
 	}
 
-	log.Warn(
+	log.WarnContext(ctx,
 		"auto-rollback completed",
 		"vm_id", w.cfg.MwanVMID,
 		"snapshot", snap,
@@ -877,43 +900,40 @@ func (w *watchdog) rollback(ctx context.Context, deployTS int64, snap string) {
 
 	lockContent := fmt.Sprintf(
 		"deploy_ts=%d snapshot=%s ts=%d\n",
-		deployTS, snap, time.Now().Unix(),
+		deployTS, snap, w.now().Unix(),
 	)
 	if err := os.WriteFile(
 		w.cfg.Watchdog.RollbackLockFile, []byte(lockContent), 0o644,
 	); err != nil {
-		log.Error("write rollback lock", "err", err)
+		log.ErrorContext(ctx, "write rollback lock", "err", err)
 	} else {
-		log.Info("Wrote rollback lock", "path", w.cfg.Watchdog.RollbackLockFile)
+		log.InfoContext(ctx, "Wrote rollback lock", "path", w.cfg.Watchdog.RollbackLockFile)
 	}
 
-	log.Info(
+	log.InfoContext(ctx,
 		"INITIATING ROLLBACK",
 		"vmid", w.cfg.MwanVMID,
 		"snapshot", snap,
 		"deploy_ts", deployTS,
-		"deploy_age_seconds", time.Now().Unix()-deployTS,
+		"deploy_age_seconds", w.now().Unix()-deployTS,
 	)
 
 	rollbackErr := w.executeRollbackVM(ctx, snap)
 	w.recordRollbackResult(ctx, deployTS, snap, rollbackErr)
 
-	log.Info(
+	log.InfoContext(ctx,
 		"ROLLBACK COMPLETE; waiting for routes to converge",
 		"vmid", w.cfg.MwanVMID,
 		"snapshot", snap,
 		"grace", w.cfg.Watchdog.PostRollbackGraceSeconds,
 	)
-	w.postRollbackGraceUntil = time.Now().Add(
+	w.postRollbackGraceUntil = w.now().Add(
 		time.Duration(w.cfg.Watchdog.DeployWindowMinutes) * time.Minute,
 	)
 	if w.coord.TakeShutdownAfterRollback() {
-		log.Info("Deferred shutdown now executing after rollback")
+		log.InfoContext(ctx, "Deferred shutdown now executing after rollback")
 		if w.exitFn != nil {
 			w.exitFn(0)
-		} else {
-			// Production path: process exit is not exercised in unit tests (use exitFn).
-			os.Exit(0)
 		}
 	}
 }
@@ -925,73 +945,75 @@ func (w *watchdog) recoverInterrupted(ctx context.Context) {
 		return
 	}
 	if err != nil {
-		log.Error("read rollback lock", "err", err)
+		log.ErrorContext(ctx, "read rollback lock", "err", err)
 		return
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"Found rollback lock from previous instance",
 		"lock_content", strings.TrimSpace(string(data)),
 	)
 	running, statusErr := w.ops.VMStatus(ctx, w.cfg.MwanVMID)
 	if statusErr != nil {
-		log.Error("qm status during recovery", "err", statusErr)
+		log.ErrorContext(ctx, "qm status during recovery", "err", statusErr)
 		return
 	}
 	if running {
-		log.Info(
+		log.InfoContext(ctx,
 			"VM is running; previous rollback completed. Removing lock.",
 			"vmid", w.cfg.MwanVMID,
 		)
 		if err := os.Remove(w.cfg.Watchdog.RollbackLockFile); err != nil &&
 			!errors.Is(err, os.ErrNotExist) {
-			log.Error("remove stale rollback lock", "err", err)
+			log.ErrorContext(ctx, "remove stale rollback lock", "err", err)
 		}
 		return
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"VM is STOPPED and rollback lock exists; attempting to start VM to complete interrupted rollback",
 		"vmid", w.cfg.MwanVMID,
 	)
 	if startErr := w.ops.VMStart(ctx, w.cfg.MwanVMID); startErr != nil {
-		log.Error(
+		log.ErrorContext(ctx,
 			"VM start after interrupted rollback FAILED; manual intervention needed",
 			"vmid", w.cfg.MwanVMID,
 			"err", startErr,
 		)
 	} else {
-		log.Info(
+		log.InfoContext(ctx,
 			"VM started successfully after interrupted rollback",
 			"vmid", w.cfg.MwanVMID,
 		)
 	}
 	if err := os.Remove(w.cfg.Watchdog.RollbackLockFile); err != nil &&
 		!errors.Is(err, os.ErrNotExist) {
-		log.Error("remove rollback lock after recovery", "err", err)
+		log.ErrorContext(ctx, "remove rollback lock after recovery", "err", err)
 	}
 	w.recoveredFromRollback = true
-	log.Info(
+	log.InfoContext(ctx,
 		"Waiting for VM to boot and routes to converge after interrupted rollback recovery",
 		"grace", w.cfg.Watchdog.PostRollbackGraceSeconds,
 	)
-	time.Sleep(time.Duration(w.cfg.Watchdog.PostRollbackGraceSeconds) * time.Second)
+	if !sleepOrDone(ctx, time.Duration(w.cfg.Watchdog.PostRollbackGraceSeconds)*time.Second) {
+		log.InfoContext(ctx, "Context cancelled during interrupted rollback recovery")
+	}
 }
 
 func (w *watchdog) sendPartialAlert(ctx context.Context, proto string) {
 	log := w.tracedLogger(ctx)
-	if !w.limiter.TrySendPartial(time.Now()) {
-		remaining := w.limiter.PartialCooldownRemaining(time.Now())
-		log.Info(
+	if !w.limiter.TrySendPartial(w.now()) {
+		remaining := w.limiter.PartialCooldownRemaining(w.now())
+		log.InfoContext(ctx,
 			"Partial alert suppressed (cooldown)",
 			"protocol", proto,
 			"remaining", remaining.Round(time.Second),
 		)
 		return
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"Sending partial-degradation alert",
 		"protocol_down", proto,
 	)
-	log.Warn(
+	log.WarnContext(ctx,
 		"connectivity partial loss",
 		"proto", proto,
 		"vm_id", w.cfg.MwanVMID,
@@ -1002,17 +1024,17 @@ func (w *watchdog) sendPartialAlert(ctx context.Context, proto string) {
 func (w *watchdog) sendTotalAlert(ctx context.Context, reason, detail string) {
 	log := w.tracedLogger(ctx)
 	_ = detail
-	if !w.limiter.TrySendTotal(time.Now()) {
-		remaining := w.limiter.TotalCooldownRemaining(time.Now())
-		log.Info(
+	if !w.limiter.TrySendTotal(w.now()) {
+		remaining := w.limiter.TotalCooldownRemaining(w.now())
+		log.InfoContext(ctx,
 			"Total alert suppressed (cooldown)",
 			"remaining", remaining.Round(time.Second),
 			"reason", reason,
 		)
 		return
 	}
-	log.Info("Sending total-loss alert", "reason", reason)
-	log.Error(
+	log.InfoContext(ctx, "Sending total-loss alert", "reason", reason)
+	log.ErrorContext(ctx,
 		"connectivity total loss",
 		"reason", reason,
 		"vm_id", w.cfg.MwanVMID,
@@ -1035,9 +1057,9 @@ func sleepOrDone(ctx context.Context, d time.Duration) bool {
 
 // logStartupConfig emits structured log entries describing the watchdog's
 // configuration. Called once at the beginning of run().
-func (w *watchdog) logStartupConfig() {
+func (w *watchdog) logStartupConfig(ctx context.Context) {
 	log := w.log
-	log.Info(
+	log.InfoContext(ctx,
 		"Starting MWAN watchdog",
 		"vmid", w.cfg.MwanVMID,
 		"deploy_window_minutes", w.cfg.Watchdog.DeployWindowMinutes,
@@ -1046,17 +1068,17 @@ func (w *watchdog) logStartupConfig() {
 		"check_interval_degraded", w.cfg.Watchdog.DegradedInterval(),
 		"alert_cooldown_seconds", w.cfg.Watchdog.AlertCooldownSeconds,
 	)
-	log.Info(
+	log.InfoContext(ctx,
 		"Network config",
 		"ping_target_ipv4", w.cfg.Network.PingTargetIPv4,
 		"ping_target_ipv6", w.cfg.Network.PingTargetIPv6,
 		"wan_interfaces", strings.Join(w.cfg.Network.WanIfaceNames(), ", "),
 		"last_deploy_path", w.cfg.Network.LastDeployPath,
 	)
-	log.Info(
+	log.InfoContext(ctx,
 		"PVE",
 		"node", w.cfg.PVE.Node,
-		"token_id", w.cfg.PVE.TokenID,
+		"pve_api_configured", w.cfg.PVE.TokenID != "",
 		"vsock_cid", w.cfg.Watchdog.VsockCID,
 		"vsock_port", w.cfg.Watchdog.VsockPort,
 	)
@@ -1072,17 +1094,17 @@ func (w *watchdog) runStartupChecks(ctx context.Context) {
 	// Startup checks.
 	if listOut, lErr := w.ops.VMSnapshots(ctx, w.cfg.MwanVMID); lErr == nil {
 		if rollback.ExtractLatestSnapshot(listOut) == "" {
-			log.Warn(
+			log.WarnContext(ctx,
 				"No rollback snapshots found at startup",
 				"vmid", w.cfg.MwanVMID,
 				"note", "rollback will not be possible until a snapshot is created",
 			)
 		}
 	} else {
-		log.Warn("Could not check snapshots at startup", "err", lErr)
+		log.WarnContext(ctx, "Could not check snapshots at startup", "err", lErr)
 	}
 	if data, lErr := os.ReadFile(w.cfg.Watchdog.RollbackLockFile); lErr == nil {
-		log.Warn(
+		log.WarnContext(ctx,
 			"Stale rollback lock file found at startup",
 			"path", w.cfg.Watchdog.RollbackLockFile,
 			"content", strings.TrimSpace(string(data)),
@@ -1105,7 +1127,7 @@ func (w *watchdog) runStartupChecks(ctx context.Context) {
 	if !startupV6 {
 		v6str = "FAIL"
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"watchdog started",
 		"vm_id", w.cfg.MwanVMID,
 		"node", w.cfg.PVE.Node,
@@ -1126,7 +1148,7 @@ func (w *watchdog) handleVMStopped(ctx context.Context) {
 	if w.vmStoppedLogged {
 		return
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"VM is not running; pausing checks",
 		"vmid", w.cfg.MwanVMID,
 		"recheck_interval", w.cfg.Watchdog.DegradedInterval(),
@@ -1141,28 +1163,28 @@ func (w *watchdog) handleVMStopped(ctx context.Context) {
 	_, lockErr := os.Stat(w.cfg.Watchdog.RollbackLockFile)
 	rollbackInProgress := lockErr == nil || w.recoveredFromRollback
 	if rollbackInProgress {
-		log.Info(
+		log.InfoContext(ctx,
 			"VM stopped but rollback lock present; skipping alert and auto-start",
 			"lock_file", w.cfg.Watchdog.RollbackLockFile,
 		)
 		return
 	}
-	log.Error(
+	log.ErrorContext(ctx,
 		"VM stopped unexpectedly",
 		"vm_id", w.cfg.MwanVMID,
 		"node", w.cfg.PVE.Node,
 		"err", "vm transitioned to stopped state outside of mwan control",
 	)
 
-	log.Info("Attempting to start stopped VM", "vmid", w.cfg.MwanVMID)
+	log.InfoContext(ctx, "Attempting to start stopped VM", "vmid", w.cfg.MwanVMID)
 	if startErr := w.ops.VMStart(ctx, w.cfg.MwanVMID); startErr != nil {
-		log.Error(
+		log.ErrorContext(ctx,
 			"vmStart failed for stopped VM",
 			"vmid", w.cfg.MwanVMID,
 			"err", startErr,
 		)
 	} else {
-		log.Info("vmStart issued for stopped VM", "vmid", w.cfg.MwanVMID)
+		log.InfoContext(ctx, "vmStart issued for stopped VM", "vmid", w.cfg.MwanVMID)
 	}
 }
 
@@ -1181,21 +1203,21 @@ func (w *watchdog) handleHealthyProbe(ctx context.Context, iteration int) {
 	w.maybeSnapshot(ctx)
 
 	if w.lastState != stateHealthy {
-		log.Info(
+		log.InfoContext(ctx,
 			"Connectivity OK: IPv4 and IPv6",
 			"previous_state", w.lastState,
 		)
-	} else if time.Since(w.lastHeartbeat) >= w.heartbeatTick() {
-		log.Info(
+	} else if w.since(w.lastHeartbeat) >= w.heartbeatTick() {
+		log.InfoContext(ctx,
 			"Heartbeat: connectivity healthy",
 			"ping_target_ipv4", w.cfg.Network.PingTargetIPv4,
 			"ping_target_ipv6", w.cfg.Network.PingTargetIPv6,
 			"iteration", iteration,
 		)
 		if w.tracker != nil {
-			w.tracker.LogAll(log)
+			w.tracker.LogAll(ctx, log)
 		}
-		w.lastHeartbeat = time.Now()
+		w.lastHeartbeat = w.now()
 	}
 	w.lastState = stateHealthy
 	w.consecutiveTotalFails = 0
@@ -1213,13 +1235,13 @@ func (w *watchdog) handlePartialProbe(ctx context.Context, v6ok bool) {
 		downProto = "IPv4"
 	}
 	if w.lastState != statePartial {
-		log.Info(
+		log.InfoContext(ctx,
 			"Partial degradation: one protocol DOWN, other OK",
 			"protocol_down", downProto,
 			"previous_state", w.lastState,
 		)
 	} else {
-		log.Info(
+		log.InfoContext(ctx,
 			"Still in partial degradation: one protocol DOWN, other OK",
 			"protocol_down", downProto,
 		)
@@ -1236,10 +1258,10 @@ func (w *watchdog) handlePartialProbe(ctx context.Context, v6ok bool) {
 func (w *watchdog) handleTotalLoss(ctx context.Context) bool {
 	log := w.tracedLogger(ctx)
 	w.consecutiveTotalFails++
-	now := time.Now().Unix()
+	now := w.now().Unix()
 	if w.totalDownStartUnix == 0 {
 		w.totalDownStartUnix = now
-		log.Info(
+		log.InfoContext(ctx,
 			"TOTAL connectivity loss (IPv4 and IPv6 both FAILED); starting timeout",
 			"timeout_seconds", w.cfg.Watchdog.ConnectivityTimeoutSeconds,
 			"fail_count", w.consecutiveTotalFails,
@@ -1249,7 +1271,7 @@ func (w *watchdog) handleTotalLoss(ctx context.Context) bool {
 	downDuration := int(now - w.totalDownStartUnix)
 	remaining := w.cfg.Watchdog.ConnectivityTimeoutSeconds - downDuration
 	if downDuration < w.cfg.Watchdog.ConnectivityTimeoutSeconds {
-		log.Info(
+		log.InfoContext(ctx,
 			"Still down before timeout threshold",
 			"elapsed_seconds", downDuration,
 			"remaining_seconds", remaining,
@@ -1257,7 +1279,7 @@ func (w *watchdog) handleTotalLoss(ctx context.Context) bool {
 		)
 		return false
 	}
-	log.Info(
+	log.InfoContext(ctx,
 		"Timeout exceeded; entering diagnosis",
 		"down_seconds", downDuration,
 		"threshold_seconds", w.cfg.Watchdog.ConnectivityTimeoutSeconds,
@@ -1270,7 +1292,7 @@ func (w *watchdog) handleTotalLoss(ctx context.Context) bool {
 func (w *watchdog) sleepOrShutdown(ctx context.Context, d time.Duration) bool {
 	log := w.tracedLogger(ctx)
 	if !sleepOrDone(ctx, d) {
-		log.Info("Context cancelled during sleep; watchdog shutting down")
+		log.InfoContext(ctx, "Context cancelled during sleep; watchdog shutting down")
 		return false
 	}
 	return true
@@ -1285,14 +1307,14 @@ func (w *watchdog) runIteration(ctx context.Context, iteration int) bool {
 	log := w.tracedLogger(iterCtx)
 	select {
 	case <-ctx.Done():
-		log.Info("Context cancelled; watchdog shutting down")
+		log.InfoContext(ctx, "Context cancelled; watchdog shutting down")
 		return false
 	default:
 	}
 
 	running, err := w.ops.VMStatus(iterCtx, w.cfg.MwanVMID)
 	if err != nil {
-		log.Error("qm status error", "vmid", w.cfg.MwanVMID, "err", err)
+		log.ErrorContext(ctx, "qm status error", "vmid", w.cfg.MwanVMID, "err", err)
 		return w.sleepOrShutdown(iterCtx, w.cfg.Watchdog.DegradedInterval())
 	}
 	if !running {
@@ -1300,7 +1322,7 @@ func (w *watchdog) runIteration(ctx context.Context, iteration int) bool {
 		return w.sleepOrShutdown(iterCtx, w.cfg.Watchdog.DegradedInterval())
 	}
 	if w.vmStoppedLogged {
-		log.Debug("VM is running again", "vmid", w.cfg.MwanVMID)
+		log.DebugContext(ctx, "VM is running again", "vmid", w.cfg.MwanVMID)
 	}
 	w.vmStoppedLogged = false
 
@@ -1327,13 +1349,20 @@ func (w *watchdog) runIteration(ctx context.Context, iteration int) bool {
 
 func (w *watchdog) run(ctx context.Context) {
 	log := w.tracedLogger(ctx)
-	w.logStartupConfig()
+	w.logStartupConfig(ctx)
 	w.runStartupChecks(ctx)
 	w.lastState = stateUnknown
-	w.lastHeartbeat = time.Now()
+	w.lastHeartbeat = w.now()
 	iteration := 0
 
-	go w.runIfaceMonitor(ctx)
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.ErrorContext(ctx, "interface monitor panic", "err", fmt.Errorf("panic: %v", recovered))
+			}
+		}()
+		w.runIfaceMonitor(ctx)
+	}()
 
 	for w.cfg.Watchdog.MaxIterations <= 0 ||
 		iteration < w.cfg.Watchdog.MaxIterations {
@@ -1342,7 +1371,7 @@ func (w *watchdog) run(ctx context.Context) {
 			return
 		}
 	}
-	log.Info("Reached max iterations; exiting", "max", w.cfg.Watchdog.MaxIterations)
+	log.InfoContext(ctx, "Reached max iterations; exiting", "max", w.cfg.Watchdog.MaxIterations)
 }
 
 // runIfaceMonitor polls the vault host's interface addresses every 30 seconds.
@@ -1352,7 +1381,7 @@ func (w *watchdog) runIfaceMonitor(ctx context.Context) {
 	log := w.tracedLogger(ctx)
 	const pollInterval = 30 * time.Second
 	prev := collectIfaceAddrs()
-	log.Info(
+	log.InfoContext(ctx,
 		"Interface monitor started",
 		"poll_interval", pollInterval,
 		"interface_count", len(prev),
@@ -1372,7 +1401,7 @@ func (w *watchdog) runIfaceMonitor(ctx context.Context) {
 			prev = curr
 			continue
 		}
-		log.Warn(
+		log.WarnContext(ctx,
 			"vault host interface address changed",
 			"diff", diff,
 			"vm_id", w.cfg.MwanVMID,
@@ -1387,7 +1416,7 @@ func (w *watchdog) runIfaceMonitor(ctx context.Context) {
 // Returns true if a failover was triggered (caller should return early).
 func (w *watchdog) diagnoseNoRecentChange(ctx context.Context) bool {
 	log := w.tracedLogger(ctx)
-	log.Info(
+	log.InfoContext(ctx,
 		"No recent config change; running diagnostics for alert context",
 	)
 	vmOK := w.testVMConnectivity(ctx)
@@ -1422,7 +1451,7 @@ func (w *watchdog) diagnoseNoRecentChange(ctx context.Context) bool {
 	}
 
 	w.sendTotalAlert(ctx, reason, detail)
-	log.Info(
+	log.InfoContext(ctx,
 		"--- DIAGNOSIS END (no recent config change) ---",
 		"reason", reason,
 	)
@@ -1433,7 +1462,7 @@ func (w *watchdog) diagnoseNoRecentChange(ctx context.Context) bool {
 // triggers a rollback if appropriate. Returns true if a rollback was executed.
 func (w *watchdog) attemptRollbackForDeploy(ctx context.Context, deployTS int64) bool {
 	log := w.tracedLogger(ctx)
-	log.Info(
+	log.InfoContext(ctx,
 		"Step 2: checking rollback state",
 		"deploy_ts", deployTS,
 	)
@@ -1441,40 +1470,40 @@ func (w *watchdog) attemptRollbackForDeploy(ctx context.Context, deployTS int64)
 		w.cfg.Watchdog.RollbackStateFile, deployTS,
 	)
 	if err != nil {
-		log.Error(
+		log.ErrorContext(ctx,
 			"read rollback state file (proceeding cautiously)",
 			"path", w.cfg.Watchdog.RollbackStateFile,
 			"err", err,
 		)
 	}
 	if already {
-		log.Info(
+		log.InfoContext(ctx,
 			"Rollback already performed for this deploy_ts; "+
 				"not rolling back again",
 			"deploy_ts", deployTS,
 		)
-		log.Info("--- DIAGNOSIS END (rollback already done) ---")
+		log.InfoContext(ctx, "--- DIAGNOSIS END (rollback already done) ---")
 		return false
 	}
 	if w.cfg.Watchdog.MaxRollbackAttempts > 0 && attempts >= w.cfg.Watchdog.MaxRollbackAttempts {
-		log.Error(
+		log.ErrorContext(ctx,
 			"Rollback attempt limit reached; manual intervention required",
 			"deploy_ts", deployTS,
 			"attempts", attempts,
 			"max_attempts", w.cfg.Watchdog.MaxRollbackAttempts,
 			"err", "rollback attempt budget exhausted",
 		)
-		log.Info("--- DIAGNOSIS END (rollback exhausted) ---")
+		log.InfoContext(ctx, "--- DIAGNOSIS END (rollback exhausted) ---")
 		return false
 	}
 
-	log.Info("Step 3: finding rollback snapshot...")
+	log.InfoContext(ctx, "Step 3: finding rollback snapshot...")
 	snap, snapErr := w.findSnapshot(ctx)
 	if snapErr != nil {
-		log.Error("listsnapshot error", "err", snapErr)
+		log.ErrorContext(ctx, "listsnapshot error", "err", snapErr)
 	}
 	if snap == "" {
-		log.Info("No rollback snapshot found; cannot rollback")
+		log.InfoContext(ctx, "No rollback snapshot found; cannot rollback")
 		w.sendTotalAlert(
 			ctx,
 			"Config changed but no rollback snapshot exists",
@@ -1487,11 +1516,11 @@ func (w *watchdog) attemptRollbackForDeploy(ctx context.Context, deployTS int64)
 				deployTS,
 			),
 		)
-		log.Info("--- DIAGNOSIS END (no snapshot) ---")
+		log.InfoContext(ctx, "--- DIAGNOSIS END (no snapshot) ---")
 		return false
 	}
 
-	log.Info(
+	log.InfoContext(ctx,
 		"--- DIAGNOSIS END: triggering rollback ---",
 		"vmid", w.cfg.MwanVMID,
 		"snapshot", snap,
@@ -1509,14 +1538,14 @@ func (w *watchdog) handleTimeoutExceeded(ctx context.Context) {
 	diagCtx := tracing.WithOperation(ctx, "diagnose_connectivity")
 	diagCtx, _ = tracing.StartTrace(diagCtx, "", "diagnose_connectivity")
 	log := w.tracedLogger(diagCtx)
-	log.Info("--- DIAGNOSIS START ---")
+	log.InfoContext(ctx, "--- DIAGNOSIS START ---")
 
-	log.Info("Step 1: checking for recent config change...")
+	log.InfoContext(ctx, "Step 1: checking for recent config change...")
 	deployTS, recent := w.checkDeploy(diagCtx)
 
 	if !recent {
 		if w.diagnoseNoRecentChange(diagCtx) {
-			log.Info("--- DIAGNOSIS END (failover triggered) ---")
+			log.InfoContext(ctx, "--- DIAGNOSIS END (failover triggered) ---")
 		}
 		sleepOrDone(diagCtx, 60*time.Second)
 		return
@@ -1527,11 +1556,11 @@ func (w *watchdog) handleTimeoutExceeded(ctx context.Context) {
 			diagCtx, w.cfg.Network.LastDeployPath,
 		)
 		if dOK {
-			deployAge := time.Now().Unix() - rawDeployTS
+			deployAge := w.now().Unix() - rawDeployTS
 			grace := int64(w.cfg.Watchdog.DeployGracePeriodSeconds)
 			if deployAge >= 0 && deployAge < grace {
 				remaining := grace - deployAge
-				log.Info(
+				log.InfoContext(ctx,
 					"Within deploy grace period; waiting for "+
 						"VM to stabilize",
 					"deploy_ts", rawDeployTS,
@@ -1540,7 +1569,7 @@ func (w *watchdog) handleTimeoutExceeded(ctx context.Context) {
 					"grace_period_seconds",
 					w.cfg.Watchdog.DeployGracePeriodSeconds,
 				)
-				log.Info(
+				log.InfoContext(ctx,
 					"--- DIAGNOSIS END (deploy grace period) ---",
 				)
 				sleepOrDone(
@@ -1552,13 +1581,13 @@ func (w *watchdog) handleTimeoutExceeded(ctx context.Context) {
 		}
 	}
 
-	log.Info(
+	log.InfoContext(ctx,
 		"Config recently changed and connectivity still down",
 		"deploy_ts", deployTS,
 	)
 
 	if w.attemptRollbackForDeploy(diagCtx, deployTS) {
-		log.Info(
+		log.InfoContext(ctx,
 			"Waiting for VM to boot and routes to converge after rollback",
 			"grace", w.cfg.Watchdog.PostRollbackGraceSeconds,
 		)

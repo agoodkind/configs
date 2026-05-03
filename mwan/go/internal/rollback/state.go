@@ -121,7 +121,7 @@ func AlreadyDone(
 // WriteState writes the rollback state to a file.
 func WriteState(
 	path string, deployTS int64, snapshot string,
-	attempts int, success bool,
+	attempts int, success bool, timestamp time.Time,
 ) error {
 	status := "failed"
 	if success {
@@ -131,7 +131,7 @@ func WriteState(
 		"deploy_timestamp=%d\nrollback_done=%s\nrollback_timestamp=%d\nsnapshot=%s\nrollback_attempts=%d\n",
 		deployTS,
 		status,
-		time.Now().Unix(),
+		timestamp.Unix(),
 		snapshot,
 		attempts,
 	)

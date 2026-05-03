@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
@@ -26,6 +27,8 @@ type ExecArgs struct {
 	Sudo           bool
 	TimeoutSeconds int32
 	StdinBytes     []byte
+	Clock          Clock
+	Log            *slog.Logger
 }
 
 // ExecResult is the output shape mirrored back into the gRPC response.
@@ -71,9 +74,10 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 	cmd.Stdout = stdoutBuf
 	cmd.Stderr = stderrBuf
 
-	start := time.Now()
+	activeClock := clockOrReal(args.Clock)
+	start := activeClock.Now()
 	runErr := cmd.Run()
-	dur := time.Since(start)
+	dur := activeClock.Now().Sub(start)
 
 	res := &ExecResult{
 		Stdout:          stdoutBuf.Bytes(),
@@ -95,8 +99,9 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 			res.ExitCode = -1
 			return res, nil
 		}
-		// Real failure (binary not found, fork failed, etc).
-		return res, fmt.Errorf("runExec: %w", runErr)
+		return res, logWrappedErrorContext(ctx, args.Log,
+			"opnsensesvc: exec command failed", "runExec", runErr,
+			slog.String("command", args.Command))
 	}
 
 	return res, nil

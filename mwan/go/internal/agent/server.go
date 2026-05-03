@@ -22,7 +22,10 @@ import (
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/bgp"
+	"goodkind.io/mwan/internal/tracing"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -33,6 +36,7 @@ type Server struct {
 	deployFilePath string
 	log            *slog.Logger
 	bgp            *bgp.Speaker // nil when BGP is disabled
+	clock          clock
 
 	// These are injectable in tests to avoid reading real /proc files.
 	// Production code leaves them nil and uses the real /proc paths.
@@ -47,6 +51,7 @@ func NewServer(deployFilePath string, log *slog.Logger, bgpSpeaker *bgp.Speaker)
 		deployFilePath: deployFilePath,
 		log:            log,
 		bgp:            bgpSpeaker,
+		clock:          realClock{},
 		uptimePath:     "/proc/uptime",
 		loadAvgPath:    "/proc/loadavg",
 		meminfoPath:    "/proc/meminfo",
@@ -54,10 +59,31 @@ func NewServer(deployFilePath string, log *slog.Logger, bgpSpeaker *bgp.Speaker)
 	}
 }
 
+func (a *Server) enrichRPCContext(
+	ctx context.Context,
+	peerInfo *peer.Peer,
+	metadataMap metadata.MD,
+) context.Context {
+	attrs := make([]slog.Attr, 0, 4)
+	if peerInfo != nil && peerInfo.Addr != nil {
+		attrs = append(attrs,
+			slog.String("peer_addr", peerInfo.Addr.String()),
+			slog.String("transport", peerInfo.Addr.Network()),
+		)
+	}
+	if authorityValues := metadataMap.Get(":authority"); len(authorityValues) > 0 {
+		attrs = append(attrs, slog.String("grpc_authority", authorityValues[0]))
+	}
+	return tracing.WithAttrs(ctx, attrs...)
+}
+
 func (a *Server) GetHealth(
 	ctx context.Context,
 	_ *mwanv1.GetHealthRequest,
 ) (*mwanv1.GetHealthResponse, error) {
+	peerInfo, _ := peer.FromContext(ctx)
+	metadataMap, _ := metadata.FromIncomingContext(ctx)
+	ctx = a.enrichRPCContext(ctx, peerInfo, metadataMap)
 	resp := &mwanv1.GetHealthResponse{}
 
 	ipv4OK := a.pingExitZero(ctx, "ping", "-c", "1", "-W", "2", "1.1.1.1")
@@ -150,6 +176,9 @@ func (a *Server) Ping(
 	ctx context.Context,
 	req *mwanv1.PingRequest,
 ) (*mwanv1.PingResponse, error) {
+	peerInfo, _ := peer.FromContext(ctx)
+	metadataMap, _ := metadata.FromIncomingContext(ctx)
+	ctx = a.enrichRPCContext(ctx, peerInfo, metadataMap)
 	target := strings.TrimSpace(req.GetTarget())
 	if target == "" {
 		return nil, status.Error(codes.InvalidArgument, "target is required")
@@ -216,6 +245,9 @@ func (a *Server) GetConfigState(
 	ctx context.Context,
 	_ *mwanv1.GetConfigStateRequest,
 ) (*mwanv1.GetConfigStateResponse, error) {
+	peerInfo, _ := peer.FromContext(ctx)
+	metadataMap, _ := metadata.FromIncomingContext(ctx)
+	ctx = a.enrichRPCContext(ctx, peerInfo, metadataMap)
 	composite := sha256.New()
 	var manifest strings.Builder
 	for _, p := range criticalPaths() {
@@ -244,7 +276,7 @@ func (a *Server) GetConfigState(
 		ConfigHash:      hex.EncodeToString(composite.Sum(nil)),
 		ConfigManifest:  manifest.String(),
 		LastDeployEpoch: deployEpoch,
-		LastChangeEpoch: time.Now().Unix(),
+		LastChangeEpoch: a.clock.Now().Unix(),
 	}, nil
 }
 
@@ -283,6 +315,9 @@ func (a *Server) GetSystemInfo(
 	ctx context.Context,
 	_ *mwanv1.GetSystemInfoRequest,
 ) (*mwanv1.GetSystemInfoResponse, error) {
+	peerInfo, _ := peer.FromContext(ctx)
+	metadataMap, _ := metadata.FromIncomingContext(ctx)
+	ctx = a.enrichRPCContext(ctx, peerInfo, metadataMap)
 	host, err := os.Hostname()
 	if err != nil {
 		a.log.ErrorContext(ctx, "hostname", "error", err)

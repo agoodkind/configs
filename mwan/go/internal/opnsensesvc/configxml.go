@@ -1,12 +1,12 @@
 package opnsensesvc
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/beevik/etree"
 )
@@ -19,67 +19,112 @@ const ConfigPath = "/conf/config.xml"
 // itself uses /conf/backup so we land alongside its native backups.
 const BackupDir = "/conf/backup"
 
-// readConfig returns the bytes of the named config.xml. Errors are
-// wrapped with the path for easier diagnosis.
 func readConfig(path string) ([]byte, error) {
+	return readConfigWithLog(context.Background(), nil, path)
+}
+
+func readConfigWithLog(ctx context.Context, log *slog.Logger, path string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("readConfig: %s: %w", path, err)
+		return nil, logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: read config failed",
+			"readConfig: "+path,
+			err,
+			slog.String("path", path),
+		)
 	}
 	return b, nil
 }
 
-// writeConfig writes content to path atomically via temp file + rename.
-// Caller is responsible for snapshotting first if desired (the server
-// layer enforces this for mutating RPCs).
 func writeConfig(path string, content []byte) error {
+	return writeConfigWithLog(context.Background(), nil, path, content)
+}
+
+func writeConfigWithLog(ctx context.Context, log *slog.Logger, path string, content []byte) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".config.xml.tmp.*")
 	if err != nil {
-		return fmt.Errorf("writeConfig: tmp: %w", err)
+		return logWrappedErrorContext(
+			ctx,
+			log,
+			"opnsensesvc: create temp config failed",
+			"writeConfig: tmp",
+			err,
+			slog.String("dir", dir),
+		)
 	}
 	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
+	cleanup := func() {
+		if err := os.Remove(tmpName); err != nil && !errors.Is(err, os.ErrNotExist) {
+			loggerOrDefault(log).WarnContext(ctx,
+				"opnsensesvc: remove temp config failed",
+				"path", tmpName,
+				"err", err)
+		}
+	}
 
 	if _, err := tmp.Write(content); err != nil {
-		_ = tmp.Close()
+		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp config failed")
 		cleanup()
-		return fmt.Errorf("writeConfig: write: %w", err)
+		return logWrappedErrorContext(ctx, log,
+			"opnsensesvc: write temp config failed", "writeConfig: write", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
+		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp config failed")
 		cleanup()
-		return fmt.Errorf("writeConfig: sync: %w", err)
+		return logWrappedErrorContext(ctx, log,
+			"opnsensesvc: sync temp config failed", "writeConfig: sync", err)
 	}
 	if err := tmp.Close(); err != nil {
 		cleanup()
-		return fmt.Errorf("writeConfig: close: %w", err)
+		return logWrappedErrorContext(ctx, log,
+			"opnsensesvc: close temp config failed", "writeConfig: close", err)
 	}
 	if err := os.Chmod(tmpName, 0o644); err != nil {
 		cleanup()
-		return fmt.Errorf("writeConfig: chmod: %w", err)
+		return logWrappedErrorContext(ctx, log,
+			"opnsensesvc: chmod temp config failed", "writeConfig: chmod", err,
+			slog.String("path", tmpName))
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		cleanup()
-		return fmt.Errorf("writeConfig: rename: %w", err)
+		return logWrappedErrorContext(ctx, log,
+			"opnsensesvc: rename temp config failed", "writeConfig: rename", err,
+			slog.String("from", tmpName), slog.String("to", path))
 	}
 	return nil
 }
 
-// backupConfig copies the current config.xml at srcPath to a
-// timestamped file under BackupDir and returns the destination path.
-// Optional label is appended to the filename for human readability.
 func backupConfig(srcPath, backupDir, label string) (string, error) {
+	return backupConfigWithLog(context.Background(), nil, nil, srcPath, backupDir, label)
+}
+
+func backupConfigWithLog(
+	ctx context.Context,
+	log *slog.Logger,
+	candidateClock Clock,
+	srcPath string,
+	backupDir string,
+	label string,
+) (string, error) {
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
-		return "", fmt.Errorf("backupConfig: mkdir: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: make backup dir failed", "backupConfig: mkdir", err,
+			slog.String("backup_dir", backupDir))
 	}
 	src, err := os.Open(srcPath)
 	if err != nil {
-		return "", fmt.Errorf("backupConfig: open src: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: open config backup source failed", "backupConfig: open src", err,
+			slog.String("path", srcPath))
 	}
-	defer func() { _ = src.Close() }()
+	defer logCloseErrorContext(ctx, log, src,
+		"opnsensesvc: close config backup source failed",
+		slog.String("path", srcPath))
 
-	stamp := time.Now().UTC().Format("20060102-150405")
+	stamp := clockOrReal(candidateClock).Now().UTC().Format("20060102-150405")
 	name := stamp + ".xml"
 	if label != "" {
 		name = stamp + "-" + sanitizeLabel(label) + ".xml"
@@ -88,37 +133,52 @@ func backupConfig(srcPath, backupDir, label string) (string, error) {
 
 	tmp, err := os.CreateTemp(backupDir, ".backup.tmp.*")
 	if err != nil {
-		return "", fmt.Errorf("backupConfig: tmp: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: create temp backup failed", "backupConfig: tmp", err,
+			slog.String("backup_dir", backupDir))
 	}
 	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
+	cleanup := func() {
+		if err := os.Remove(tmpName); err != nil && !errors.Is(err, os.ErrNotExist) {
+			loggerOrDefault(log).WarnContext(ctx,
+				"opnsensesvc: remove temp backup failed",
+				"path", tmpName,
+				"err", err)
+		}
+	}
 
 	if _, err := io.Copy(tmp, src); err != nil {
-		_ = tmp.Close()
+		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp backup failed")
 		cleanup()
-		return "", fmt.Errorf("backupConfig: copy: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: copy config backup failed", "backupConfig: copy", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
+		logCloseErrorContext(ctx, log, tmp, "opnsensesvc: close temp backup failed")
 		cleanup()
-		return "", fmt.Errorf("backupConfig: sync: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: sync temp backup failed", "backupConfig: sync", err)
 	}
 	if err := tmp.Close(); err != nil {
 		cleanup()
-		return "", fmt.Errorf("backupConfig: close: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: close temp backup failed", "backupConfig: close", err)
 	}
 	if err := os.Chmod(tmpName, 0o644); err != nil {
 		cleanup()
-		return "", fmt.Errorf("backupConfig: chmod: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: chmod temp backup failed", "backupConfig: chmod", err,
+			slog.String("path", tmpName))
 	}
 	if err := os.Rename(tmpName, destPath); err != nil {
 		cleanup()
-		return "", fmt.Errorf("backupConfig: rename: %w", err)
+		return "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: rename temp backup failed", "backupConfig: rename", err,
+			slog.String("from", tmpName), slog.String("to", destPath))
 	}
 	return destPath, nil
 }
 
-// sanitizeLabel scrubs characters that have no business in a filename.
 func sanitizeLabel(s string) string {
 	out := make([]byte, 0, len(s))
 	for i := 0; i < len(s) && i < 32; i++ {
@@ -142,12 +202,15 @@ func sanitizeLabel(s string) string {
 	return string(out)
 }
 
-// stripGatewayV6 removes <gatewayv6> from the WAN interface section.
-// Returns the modified bytes and whether anything changed.
 func stripGatewayV6(input []byte) ([]byte, bool, error) {
+	return stripGatewayV6WithLog(context.Background(), nil, input)
+}
+
+func stripGatewayV6WithLog(ctx context.Context, log *slog.Logger, input []byte) ([]byte, bool, error) {
 	doc := etree.NewDocument()
 	if err := doc.ReadFromBytes(input); err != nil {
-		return nil, false, fmt.Errorf("stripGatewayV6: parse: %w", err)
+		return nil, false, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: strip gateway parse failed", "stripGatewayV6: parse", err)
 	}
 	wan := doc.FindElement("//opnsense/interfaces/wan")
 	if wan == nil {
@@ -161,21 +224,29 @@ func stripGatewayV6(input []byte) ([]byte, bool, error) {
 
 	out, err := doc.WriteToBytes()
 	if err != nil {
-		return nil, false, fmt.Errorf("stripGatewayV6: serialize: %w", err)
+		return nil, false, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: strip gateway serialize failed", "stripGatewayV6: serialize", err)
 	}
 	return out, true, nil
 }
 
-// injectGatewayV6 inserts <gatewayv6>name</gatewayv6> into the WAN
-// interface section, unless one is already present. Returns the
-// modified bytes and whether anything changed.
 func injectGatewayV6(input []byte, gatewayName string) ([]byte, bool, error) {
+	return injectGatewayV6WithLog(context.Background(), nil, input, gatewayName)
+}
+
+func injectGatewayV6WithLog(
+	ctx context.Context,
+	log *slog.Logger,
+	input []byte,
+	gatewayName string,
+) ([]byte, bool, error) {
 	if gatewayName == "" {
 		return nil, false, errors.New("injectGatewayV6: gatewayName required")
 	}
 	doc := etree.NewDocument()
 	if err := doc.ReadFromBytes(input); err != nil {
-		return nil, false, fmt.Errorf("injectGatewayV6: parse: %w", err)
+		return nil, false, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: inject gateway parse failed", "injectGatewayV6: parse", err)
 	}
 	wan := doc.FindElement("//opnsense/interfaces/wan")
 	if wan == nil {
@@ -189,7 +260,8 @@ func injectGatewayV6(input []byte, gatewayName string) ([]byte, bool, error) {
 
 	out, err := doc.WriteToBytes()
 	if err != nil {
-		return nil, false, fmt.Errorf("injectGatewayV6: serialize: %w", err)
+		return nil, false, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: inject gateway serialize failed", "injectGatewayV6: serialize", err)
 	}
 	return out, true, nil
 }

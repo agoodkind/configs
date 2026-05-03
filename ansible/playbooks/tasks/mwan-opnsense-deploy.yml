@@ -20,31 +20,31 @@
     group: wheel
     mode: "0755"
   become: true
-  notify: restart mwan_opnsense
 
 - name: Install rc.d script
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense/src/etc/rc.d/mwan_opnsense"
+    src: >-
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense/src/etc/rc.d/mwan_opnsense
     dest: /usr/local/etc/rc.d/mwan_opnsense
     owner: root
     group: wheel
     mode: "0755"
   become: true
-  notify: restart mwan_opnsense
 
 - name: Install rc.conf.d settings
-  ansible.builtin.template:
-    src: "{{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense/src/etc/rc.conf.d/mwan_opnsense.sample"
+  ansible.builtin.copy:
+    src: >-
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense/src/etc/rc.conf.d/mwan_opnsense.sample
     dest: /etc/rc.conf.d/mwan_opnsense
     owner: root
     group: wheel
     mode: "0644"
   become: true
-  notify: restart mwan_opnsense
 
 - name: Install loader.conf.d entry (virtio_console autoload)
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense/src/boot/loader.conf.d/mwan_opnsense.conf"
+    src: >-
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense/src/boot/loader.conf.d/mwan_opnsense.conf
     dest: /boot/loader.conf.d/mwan_opnsense.conf
     owner: root
     group: wheel
@@ -54,7 +54,29 @@
 - name: Enable mwan_opnsense in rc.conf
   ansible.builtin.lineinfile:
     path: /etc/rc.conf
+    regexp: '^mwan_opnsense_enable='
     line: 'mwan_opnsense_enable="YES"'
     create: false
   become: true
-  notify: restart mwan_opnsense
+
+- name: Check mwan_opnsense service status
+  ansible.builtin.command:
+    argv:
+      - /usr/local/etc/rc.d/mwan_opnsense
+      - status
+  register: mwan_opnsense_service_status
+  changed_when: false
+  failed_when: >-
+    mwan_opnsense_service_status.rc not in [0, 1]
+  when: not ansible_check_mode
+  become: true
+
+- name: Start mwan_opnsense when stopped
+  ansible.builtin.command:
+    argv:
+      - /usr/local/etc/rc.d/mwan_opnsense
+      - start
+  when:
+    - not ansible_check_mode
+    - mwan_opnsense_service_status.rc == 1
+  become: true

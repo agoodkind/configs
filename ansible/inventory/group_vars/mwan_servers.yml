@@ -128,6 +128,7 @@ mwan_opnsense_wan_ll: "fe80::be24:11ff:fe77:500c"
 
 # OPNsense IPv6 address on the MWAN link (DNAT target for "hairpinned" WAN /128 interface addresses).
 # This does not need to be globally routable; it is only used on the MWAN↔OPNsense link.
+mwan_opnsense_ansible_host: "3d06:bad:b01::1"
 mwan_opnsense_edge_ipv6: "3d06:bad:b01:fe::2"
 
 # ----------------------------------------------------------------------------

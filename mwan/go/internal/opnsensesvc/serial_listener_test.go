@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +28,74 @@ func (f *fakeRWC) Close() error {
 	f.closed = true
 	_ = f.PipeReader.Close()
 	_ = f.PipeWriter.Close()
+	return nil
+}
+
+type deadlineFakeRWC struct {
+	readDeadlineCount int
+}
+
+func (f *deadlineFakeRWC) Read(_ []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (f *deadlineFakeRWC) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (f *deadlineFakeRWC) Close() error {
+	return nil
+}
+
+func (f *deadlineFakeRWC) SetDeadline(time.Time) error {
+	return nil
+}
+
+func (f *deadlineFakeRWC) SetReadDeadline(time.Time) error {
+	f.readDeadlineCount++
+	return nil
+}
+
+func (f *deadlineFakeRWC) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
+type timeoutFakeRWC struct{}
+
+func (f *timeoutFakeRWC) Read(_ []byte) (int, error) {
+	return 0, os.ErrDeadlineExceeded
+}
+
+func (f *timeoutFakeRWC) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (f *timeoutFakeRWC) Close() error {
+	return nil
+}
+
+func (f *timeoutFakeRWC) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (f *timeoutFakeRWC) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
+type closeCountingRWC struct {
+	closeCount int
+}
+
+func (f *closeCountingRWC) Read(_ []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (f *closeCountingRWC) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (f *closeCountingRWC) Close() error {
+	f.closeCount++
 	return nil
 }
 
@@ -123,6 +192,73 @@ func TestSerialListener_ClosedRejects(t *testing.T) {
 	}
 }
 
+func TestSerialListener_CloseClosesActiveConnection(t *testing.T) {
+	fake := &closeCountingRWC{}
+	l := newTestListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
+		return fake, nil
+	})
+	conn, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn == nil {
+		t.Fatal("expected accepted connection")
+	}
+
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if fake.closeCount != 1 {
+		t.Fatalf("close count = %d, want 1", fake.closeCount)
+	}
+	_, err = l.Accept()
+	if err == nil {
+		t.Fatal("expected error after listener Close")
+	}
+}
+
+func TestSerialListener_CloseWhileOpeningClosesDevice(t *testing.T) {
+	fake := &closeCountingRWC{}
+	openStarted := make(chan struct{})
+	allowOpen := make(chan struct{})
+	acceptDone := make(chan error, 1)
+	l := newTestListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
+		close(openStarted)
+		<-allowOpen
+		return fake, nil
+	})
+
+	go func() {
+		conn, err := l.Accept()
+		if conn != nil {
+			_ = conn.Close()
+		}
+		acceptDone <- err
+	}()
+
+	select {
+	case <-openStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Accept did not call opener")
+	}
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	close(allowOpen)
+
+	select {
+	case err := <-acceptDone:
+		if err == nil {
+			t.Fatal("expected Accept error after listener close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Accept did not return after listener close")
+	}
+	if fake.closeCount != 1 {
+		t.Fatalf("close count = %d, want 1", fake.closeCount)
+	}
+}
+
 func TestSerialListener_OpenerError(t *testing.T) {
 	want := errors.New("device gone")
 	l := newTestListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
@@ -175,4 +311,37 @@ func TestSerialConn_AddrAndClose(t *testing.T) {
 		t.Fatalf("Accept after close: %v", err)
 	}
 	_ = conn2.Close()
+}
+
+func TestSerialConn_ReadSetsStaleDeadline(t *testing.T) {
+	fake := &deadlineFakeRWC{}
+	conn := &serialConn{
+		rwc:              fake,
+		staleReadTimeout: time.Second,
+		nowFn:            time.Now,
+	}
+
+	buffer := make([]byte, 1)
+	_, _ = conn.Read(buffer)
+	if fake.readDeadlineCount != 1 {
+		t.Fatalf("read deadline count = %d", fake.readDeadlineCount)
+	}
+}
+
+func TestSerialConn_ReadTimeoutReturnsEOF(t *testing.T) {
+	fake := &timeoutFakeRWC{}
+	conn := &serialConn{
+		rwc:              fake,
+		staleReadTimeout: time.Second,
+		nowFn:            time.Now,
+	}
+
+	buffer := make([]byte, 1)
+	n, err := conn.Read(buffer)
+	if n != 0 {
+		t.Fatalf("n = %d", n)
+	}
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("err = %v, want EOF", err)
+	}
 }

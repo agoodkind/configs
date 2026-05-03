@@ -14,6 +14,8 @@ import (
 	"goodkind.io/mwan/internal/opnsenseclient"
 )
 
+const opnsenseProbeSerialSettleDelay = 1200 * time.Millisecond
+
 // runOPNsenseProbe is the operational tool for ad hoc dialing of the
 // mwan-opnsense daemon over its OOB virtio-serial unix socket.
 //
@@ -61,6 +63,17 @@ func runOPNsenseProbe(args []string) error {
 		return err
 	}
 	defer func() { _ = cli.Close() }()
+
+	if *op == "version" && *repeat == 1 {
+		return runOPNsenseProbeRPC(ctx, cli.RPC(), *op, *xpath, *cmdStr, *cmdArgs, *cmdSudo)
+	}
+	timer := time.NewTimer(opnsenseProbeSerialSettleDelay)
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		return ctx.Err()
+	case <-timer.C:
+	}
 
 	rpc := cli.RPC()
 	for i := 1; i <= *repeat; i++ {

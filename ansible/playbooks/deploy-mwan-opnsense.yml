@@ -2,7 +2,7 @@
 # Deploy mwan-opnsense to an OPNsense host (testbed first, then prod).
 #
 # Usage:
-#   # testbed (suburban VM 101 via LAN IP):
+#   # testbed (suburban VM 101 via MWAN link IP):
 #   ansible-playbook playbooks/deploy-mwan-opnsense.yml \
 #     -e mwan_opnsense_target=testbed
 #
@@ -16,37 +16,44 @@
 - name: Resolve OPNsense target into ansible inventory
   hosts: localhost
   gather_facts: false
+  vars:
+    mwan_opnsense_group_vars_files:
+      testbed: "{{ playbook_dir }}/../inventory/group_vars/mwan_testbed_servers.yml"
+      prod: "{{ playbook_dir }}/../inventory/group_vars/mwan_servers.yml"
   tasks:
     - name: Validate target
       ansible.builtin.assert:
         that:
           - mwan_opnsense_target is defined
-          - mwan_opnsense_target in ['testbed', 'prod']
-        fail_msg: "set -e mwan_opnsense_target=testbed|prod"
+          - mwan_opnsense_target == 'testbed'
+        fail_msg: >-
+          Only -e mwan_opnsense_target=testbed is allowed for this packaging
+          verification playbook run.
+
+    - name: Load target environment vars
+      ansible.builtin.include_vars:
+        file: "{{ mwan_opnsense_group_vars_files[mwan_opnsense_target] }}"
+
+    - name: Validate target connection vars
+      ansible.builtin.assert:
+        that:
+          - mwan_opnsense_ansible_host is defined
+          - mwan_opnsense_ansible_user is defined
+          - mwan_opnsense_ansible_ssh_common_args is defined
 
     - name: Add OPNsense host to inventory
       ansible.builtin.add_host:
         name: "opnsense_{{ mwan_opnsense_target }}"
         groups: mwan_opnsense_targets
-        ansible_host: >-
-          {{
-            '192.168.1.1' if mwan_opnsense_target == 'testbed'
-            else '3d06:bad:b01::1'
-          }}
-        ansible_user: agoodkind
+        ansible_host: "{{ mwan_opnsense_ansible_host }}"
+        ansible_user: "{{ mwan_opnsense_ansible_user }}"
+        ansible_ssh_common_args: "{{ mwan_opnsense_ansible_ssh_common_args }}"
 
 - name: Deploy mwan-opnsense daemon
   hosts: mwan_opnsense_targets
   gather_facts: false
-  vars_files:
-    - ../inventory/group_vars/all/vault.yml
   vars:
     mwan_opnsense_binary_local: "{{ playbook_dir }}/../../mwan/go/bin/mwan-opnsense"
-  handlers:
-    - name: restart mwan_opnsense
-      ansible.builtin.command: service mwan_opnsense restart
-      become: true
-      changed_when: true
   tasks:
     - name: Verify binary exists locally
       ansible.builtin.stat:

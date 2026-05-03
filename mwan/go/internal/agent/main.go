@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -23,7 +24,7 @@ import (
 
 // Run is the entry point for the agent subcommand.
 // It parses flags, sets up logging, and starts the gRPC server.
-func Run(cfg *config.Config) {
+func Run(cfg *config.Config) error {
 	vsockPort := flag.Uint("vsock-port", uint(cfg.Agent.VsockPort), "virtio-vsock listen port (0 disables)")
 	tcpAddr := flag.String("tcp-addr", cfg.Agent.TCPAddr, "TCP listen address for gRPC")
 	deployFile := flag.String(
@@ -58,7 +59,7 @@ func Run(cfg *config.Config) {
 
 	if *vsockPort != 0 && *vsockPort > 0xffffffff {
 		logger.Error("vsock port out of range", "vsock_port", *vsockPort, "err", "vsock_port exceeds uint32 max")
-		os.Exit(1)
+		return fmt.Errorf("vsock port %d exceeds uint32 max", *vsockPort)
 	}
 	port := uint32(*vsockPort)
 
@@ -93,7 +94,7 @@ func Run(cfg *config.Config) {
 		bgpSpeaker = bgp.New(bgpCfg, logger)
 		if err := bgpSpeaker.Start(context.Background()); err != nil {
 			logger.Error("bgp speaker start failed", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("bgp speaker start: %w", err)
 		}
 		logger.Info("bgp speaker started", "asn", cfg.BGP.ASN, "router_id", cfg.BGP.RouterID)
 	}
@@ -114,7 +115,7 @@ func Run(cfg *config.Config) {
 	tcpLis, err := net.Listen("tcp", *tcpAddr)
 	if err != nil {
 		logger.Error("tcp listen", "error", err, "tcp_addr", *tcpAddr)
-		os.Exit(1)
+		return fmt.Errorf("tcp listen %s: %w", *tcpAddr, err)
 	}
 
 	grpcServer := grpc.NewServer(
@@ -134,10 +135,24 @@ func Run(cfg *config.Config) {
 	errCh := make(chan error, 2)
 
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				recoveredErr := fmt.Errorf("panic: %v", recovered)
+				logger.Error("grpc serve panic", "listener", "tcp", "error", recoveredErr)
+				errCh <- fmt.Errorf("grpc serve tcp panic: %v", recovered)
+			}
+		}()
 		errCh <- grpcServer.Serve(tcpLis)
 	}()
 	if vsockLis != nil {
 		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					recoveredErr := fmt.Errorf("panic: %v", recovered)
+					logger.Error("grpc serve panic", "listener", "vsock", "error", recoveredErr)
+					errCh <- fmt.Errorf("grpc serve vsock panic: %v", recovered)
+				}
+			}()
 			errCh <- grpcServer.Serve(vsockLis)
 		}()
 	}
@@ -147,17 +162,20 @@ func Run(cfg *config.Config) {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer func() {
+		signal.Stop(sigCh)
+	}()
 
 	select {
 	case err := <-errCh:
 		if err != nil {
 			logger.Error("grpc serve", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("grpc serve: %w", err)
 		}
 		for i := 1; i < serveCount; i++ {
 			if err := <-errCh; err != nil {
 				logger.Error("grpc serve", "error", err)
-				os.Exit(1)
+				return fmt.Errorf("grpc serve: %w", err)
 			}
 		}
 	case sig := <-sigCh:
@@ -170,8 +188,9 @@ func Run(cfg *config.Config) {
 		for i := 0; i < serveCount; i++ {
 			if err := <-errCh; err != nil {
 				logger.Error("grpc after graceful stop", "error", err)
-				os.Exit(1)
+				return fmt.Errorf("grpc after graceful stop: %w", err)
 			}
 		}
 	}
+	return nil
 }

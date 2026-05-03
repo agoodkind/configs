@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck shell=sh disable=SC2034
 # PROVIDE: mwan_opnsense
 # REQUIRE: NETWORKING FILESYSTEMS
 # KEYWORD: shutdown
@@ -8,7 +9,10 @@
 #
 # Optional settings (set in /etc/rc.conf.d/mwan_opnsense):
 #   mwan_opnsense_listen_serial="/dev/ttyV0.1"
+#   mwan_opnsense_config_xml="/conf/config.xml"
+#   mwan_opnsense_backup_dir="/conf/backup"
 #   mwan_opnsense_logfile="/var/log/mwan-opnsense.log"
+#   mwan_opnsense_stop_timeout="10"
 
 . /etc/rc.subr
 
@@ -19,12 +23,91 @@ load_rc_config $name
 
 : ${mwan_opnsense_enable:="NO"}
 : ${mwan_opnsense_listen_serial:="/dev/ttyV0.1"}
+: ${mwan_opnsense_config_xml:="/conf/config.xml"}
+: ${mwan_opnsense_backup_dir:="/conf/backup"}
 : ${mwan_opnsense_logfile:="/var/log/mwan-opnsense.log"}
+: ${mwan_opnsense_stop_timeout:="10"}
 
 pidfile="/var/run/${name}.pid"
-procname="/usr/local/sbin/mwan-opnsense"
-command="/usr/sbin/daemon"
-command_args="-r -P ${pidfile} -o ${mwan_opnsense_logfile} ${procname} serve \
-    -serial \"${mwan_opnsense_listen_serial}\""
+command="/usr/local/sbin/mwan-opnsense"
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+restart_cmd="${name}_restart"
+status_cmd="${name}_status"
+
+enabled_cmd="${command} is-enabled -name ${name}"
+required_files="${command}"
+
+mwan_opnsense_status() {
+	"${command}" status -pidfile "${pidfile}"
+}
+
+mwan_opnsense_start() {
+	if "${command}" status -pidfile "${pidfile}" -quiet; then
+		echo "${name} already running"
+		return 0
+	fi
+
+	rm -f "${pidfile}"
+	"${command}" serve -daemonize -pidfile "${pidfile}" \
+		-logfile "${mwan_opnsense_logfile}" \
+		-serial "${mwan_opnsense_listen_serial}" \
+		-config-xml "${mwan_opnsense_config_xml}" \
+		-backup-dir "${mwan_opnsense_backup_dir}"
+
+	count=0
+	while [ "${count}" -lt 10 ]; do
+		if "${command}" status -pidfile "${pidfile}" -quiet; then
+			"${command}" status -pidfile "${pidfile}"
+			return 0
+		fi
+		count=$((count + 1))
+		sleep 1
+	done
+
+	echo "${name} failed to start" >&2
+	return 1
+}
+
+mwan_opnsense_stop() {
+	pid=$(cat "${pidfile}" 2>/dev/null) || {
+		echo "${name} not running"
+		return 0
+	}
+
+	case "${pid}" in
+		*[!0-9]* | "")
+			echo "${name} has invalid pidfile ${pidfile}" >&2
+			return 1
+			;;
+	esac
+
+	if ! kill -0 "${pid}" 2>/dev/null; then
+		echo "${name} not running; removing stale pidfile"
+		rm -f "${pidfile}"
+		return 0
+	fi
+
+	kill -TERM "${pid}" 2>/dev/null || true
+	count=0
+	while [ "${count}" -lt "${mwan_opnsense_stop_timeout}" ]; do
+		if ! kill -0 "${pid}" 2>/dev/null; then
+			rm -f "${pidfile}"
+			echo "${name} stopped"
+			return 0
+		fi
+		count=$((count + 1))
+		sleep 1
+	done
+
+	echo "${name} did not stop after TERM; sending KILL" >&2
+	kill -KILL "${pid}" 2>/dev/null || true
+	rm -f "${pidfile}"
+}
+
+mwan_opnsense_restart() {
+	mwan_opnsense_stop || return 1
+	mwan_opnsense_start
+}
 
 run_rc_command "$1"

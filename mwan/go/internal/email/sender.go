@@ -56,7 +56,7 @@ func (s *Sender) Send(ctx context.Context, to, subject, body string) error {
 
 	// Fallback to OOB interface
 	if s.log != nil {
-		s.log.Warn("email failed via default route, retrying via OOB",
+		s.log.WarnContext(ctx, "email failed via default route, retrying via OOB",
 			"bind_iface", s.bindIface, "primary_err", err)
 	}
 	return s.sendVia(ctx, s.bindIface, msg)

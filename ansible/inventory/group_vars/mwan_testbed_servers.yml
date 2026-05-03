@@ -83,6 +83,11 @@ mwan_mwanbr_edge_ipv6: "3d06:bad:b01:201::3"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
 # OPNsense addresses (testbed OPNsense VM 101)
+mwan_opnsense_ansible_host: "192.168.1.1"
+mwan_opnsense_ansible_ssh_common_args: >-
+  -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o
+  ProxyJump=root@[3d06:bad:b01:200::1]
+mwan_opnsense_ansible_user: root
 mwan_opnsense_wan_ll: "fe80::be24:11ff:feec:efcc"
 mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
 
@@ -133,9 +138,9 @@ mwan_health_checks:
     check_interval: 10
     failure_threshold: 2
     recovery_threshold: 2
-    targets_v4: ["1.1.1.1", "8.8.8.8"]
-    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
-    http_targets: ["https://ifconfig.co/ip"]
+    targets_v4: [ "1.1.1.1", "8.8.8.8" ]
+    targets_v6: [ "2606:4700:4700::1111", "2001:4860:4860::8888" ]
+    http_targets: [ "https://ifconfig.co/ip" ]
   webpass:
     enabled: true
     ping_count: 3
@@ -143,9 +148,9 @@ mwan_health_checks:
     check_interval: 10
     failure_threshold: 2
     recovery_threshold: 2
-    targets_v4: ["1.1.1.1", "8.8.8.8"]
-    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
-    http_targets: ["https://ifconfig.co/ip"]
+    targets_v4: [ "1.1.1.1", "8.8.8.8" ]
+    targets_v6: [ "2606:4700:4700::1111", "2001:4860:4860::8888" ]
+    http_targets: [ "https://ifconfig.co/ip" ]
   monkeybrains:
     enabled: true
     ping_count: 5
@@ -153,9 +158,9 @@ mwan_health_checks:
     check_interval: 30
     failure_threshold: 5
     recovery_threshold: 3
-    targets_v4: ["1.1.1.1", "8.8.8.8"]
-    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
-    http_targets: ["https://ifconfig.co/ip"]
+    targets_v4: [ "1.1.1.1", "8.8.8.8" ]
+    targets_v6: [ "2606:4700:4700::1111", "2001:4860:4860::8888" ]
+    http_targets: [ "https://ifconfig.co/ip" ]
 
 # Not used in testbed
 mwan_att_pinned_v4_seed_cidrs: []
@@ -163,7 +168,7 @@ mwan_att_pinned_v4_fqdns: []
 mwan_att_pinned_v6_seed_cidrs: []
 mwan_att_pinned_v6_fqdns: []
 mwan_zoom_ipranges_url: ""
-mwan_health_exclude_wans: ["monkeybrains"]
+mwan_health_exclude_wans: [ "monkeybrains" ]
 
 # ----------------------------------------------------------------------------
 # OPNsense (testbed VM 101)

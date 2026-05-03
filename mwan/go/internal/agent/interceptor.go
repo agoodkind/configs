@@ -23,6 +23,7 @@ var traceMetadataKeys = []string{
 func unaryTraceInterceptor(
 	logger *slog.Logger,
 ) grpc.UnaryServerInterceptor {
+	clock := realClock{}
 	return func(
 		ctx context.Context,
 		req any,
@@ -47,8 +48,9 @@ func unaryTraceInterceptor(
 			transport = peerInfo.Addr.Network()
 		}
 
-		startTime := time.Now()
-		log.Info(
+		startTime := clock.Now()
+		log.InfoContext(
+			ctx,
 			"grpc request started",
 			"rpc_method", info.FullMethod,
 			"peer_addr", peerAddr,
@@ -57,7 +59,8 @@ func unaryTraceInterceptor(
 
 		resp, err := handler(ctx, req)
 		code := status.Code(err).String()
-		log.Info(
+		log.InfoContext(
+			ctx,
 			"grpc request finished",
 			"rpc_method", info.FullMethod,
 			"grpc_code", code,

@@ -64,7 +64,7 @@ func Run() error {
 
 		v4ok := ping4(ctx, v4Target)
 		v6ok := ping6(ctx, v6Target)
-		httpCode := httpCheck(httpClient, httpSite)
+		httpCode := httpCheck(ctx, httpClient, httpSite)
 		httpOK := httpCode == 200
 
 		allOK := v4ok && v6ok && httpOK
@@ -81,7 +81,15 @@ func Run() error {
 		)
 
 		i++
-		time.Sleep(interval)
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil
+		case <-timer.C:
+		}
 	}
 }
 
@@ -103,8 +111,12 @@ func ping6(ctx context.Context, host string) bool {
 	return cmd.Run() == nil
 }
 
-func httpCheck(client *http.Client, url string) int {
-	resp, err := client.Get(url) //nolint:gosec,noctx // URL from hardcoded list, short-lived check
+func httpCheck(ctx context.Context, client *http.Client, url string) int {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0
 	}

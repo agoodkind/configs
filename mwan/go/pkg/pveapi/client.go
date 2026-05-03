@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -91,6 +92,16 @@ func (c *Client) GuestExec(
 	}
 	var parsed guestExecResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
+		slog.WarnContext(
+			ctx,
+			"failed to decode pve guest exec response",
+			"err",
+			err,
+			"node",
+			node,
+			"vmid",
+			vmid,
+		)
 		return 0, fmt.Errorf("pve guest exec decode: %w", err)
 	}
 	if parsed.Data.PID == 0 {
@@ -182,7 +193,7 @@ func decodeAgentB64(s string) (string, error) {
 		return "", nil
 	}
 	// If every byte is printable ASCII (0x20-0x7e) or a common whitespace
-	// character, the value is already plain text — return it directly.
+	// character, the value is already plain text. Return it directly.
 	plainText := true
 	for i := range len(s) {
 		b := s[i]

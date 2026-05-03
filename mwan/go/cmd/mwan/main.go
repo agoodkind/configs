@@ -53,7 +53,7 @@ func main() {
 	var runErr error
 	switch sub {
 	case "agent":
-		agent.Run(cfg)
+		runErr = agent.Run(cfg)
 	case "watchdog":
 		if len(os.Args) > 1 && os.Args[1] == "failover" {
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)

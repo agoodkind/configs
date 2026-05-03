@@ -9,7 +9,14 @@ mwan_opnsense_enable="YES"
 # virtio-serial port attached to the VM via Proxmox -args.
 mwan_opnsense_listen_serial="/dev/ttyV0.1"
 
-# Log destination for daemon(8). Rotated by newsyslog (see
+mwan_opnsense_config_xml="/conf/config.xml"
+mwan_opnsense_backup_dir="/conf/backup"
+
+# The rc.d wrapper sends SIGKILL after this many seconds if SIGTERM does not
+# exit cleanly, so restart remains bounded if serial transport shutdown wedges.
+mwan_opnsense_stop_timeout="10"
+
+# Log destination for daemon output. Rotated by newsyslog (see
 # /usr/local/etc/newsyslog.conf.d/mwan-opnsense.conf if you want it
 # rotated; defaults to no rotation).
 mwan_opnsense_logfile="/var/log/mwan-opnsense.log"

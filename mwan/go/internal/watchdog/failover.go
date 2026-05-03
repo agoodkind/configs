@@ -27,7 +27,7 @@ func (w *watchdog) triggerFailover(ctx context.Context, cfg *config.Config, reas
 	if !cfg.BGP.Enabled {
 		return fmt.Errorf("failover requires cfg.BGP.Enabled=true; legacy keepalived path was removed")
 	}
-	w.log.Info("FAILOVER: dispatching to BGP route control path", "reason", reason)
+	w.log.InfoContext(ctx, "FAILOVER: dispatching to BGP route control path", "reason", reason)
 	return w.triggerBGPFailover(ctx, cfg, reason)
 }
 
@@ -36,7 +36,7 @@ func (w *watchdog) triggerFailover(ctx context.Context, cfg *config.Config, reas
 //  2. Check BGP status on the failover LXC
 //  3. If the LXC is not yet announcing, tell it to announce
 func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, reason string) error {
-	start := time.Now()
+	start := w.now()
 
 	// Send alert email about BGP failover
 	subject := fmt.Sprintf("[%s] BGP FAILOVER: withdrawing routes from VM, announcing on LXC %s",
@@ -50,43 +50,43 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
 
 	// Step 1: Withdraw routes from primary VM.
-	w.log.Info("BGP_FAILOVER: withdrawing routes from primary VM", "vmid", cfg.MwanVMID)
+	w.log.InfoContext(ctx, "BGP_FAILOVER: withdrawing routes from primary VM", "vmid", cfg.MwanVMID)
 	if err := w.ops.WithdrawRoutes(ctx, cfg.MwanVMID); err != nil {
-		w.log.Error("BGP_FAILOVER: withdraw routes failed on primary", "vmid", cfg.MwanVMID, "err", err)
-		// Continue anyway — the primary may already be unreachable, which is why we're failing over.
+		w.log.ErrorContext(ctx, "BGP_FAILOVER: withdraw routes failed on primary", "vmid", cfg.MwanVMID, "err", err)
+		// Continue because the primary may already be unreachable.
 	} else {
-		w.log.Info("BGP_FAILOVER: routes withdrawn from primary VM", "vmid", cfg.MwanVMID)
+		w.log.InfoContext(ctx, "BGP_FAILOVER: routes withdrawn from primary VM", "vmid", cfg.MwanVMID)
 	}
 
 	// Step 2: Check BGP status on the failover LXC.
-	w.log.Info("BGP_FAILOVER: checking BGP status on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
+	w.log.InfoContext(ctx, "BGP_FAILOVER: checking BGP status on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
 	status, err := w.ops.GetBGPStatus(ctx, cfg.Cutover.FailoverLXCID)
 	if err != nil {
-		w.log.Error("BGP_FAILOVER: failed to get BGP status on LXC", "lxc", cfg.Cutover.FailoverLXCID, "err", err)
-		// Fall through to announce anyway — the LXC agent may still accept the command.
+		w.log.ErrorContext(ctx, "BGP_FAILOVER: failed to get BGP status on LXC", "lxc", cfg.Cutover.FailoverLXCID, "err", err)
+		// Announce anyway because the LXC agent may still accept the command.
 	}
 
 	// Step 3: If LXC is not established or not already announcing, tell it to announce.
 	needsAnnounce := true
 	if status != nil && status.GetAllEstablished() && status.GetAnnouncing() {
-		w.log.Info("BGP_FAILOVER: LXC already established and announcing; no action needed",
+		w.log.InfoContext(ctx, "BGP_FAILOVER: LXC already established and announcing; no action needed",
 			"lxc", cfg.Cutover.FailoverLXCID)
 		needsAnnounce = false
 	}
 
 	if needsAnnounce {
-		w.log.Info("BGP_FAILOVER: announcing routes on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
+		w.log.InfoContext(ctx, "BGP_FAILOVER: announcing routes on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
 		if err := w.ops.AnnounceRoutes(ctx, cfg.Cutover.FailoverLXCID); err != nil {
-			w.log.Error("BGP_FAILOVER: announce routes failed on LXC",
-				"lxc", cfg.Cutover.FailoverLXCID, "err", err, "elapsed", time.Since(start))
+			w.log.ErrorContext(ctx, "BGP_FAILOVER: announce routes failed on LXC",
+				"lxc", cfg.Cutover.FailoverLXCID, "err", err, "elapsed", w.since(start))
 			return fmt.Errorf("BGP failover AnnounceRoutes on LXC %s: %w", cfg.Cutover.FailoverLXCID, err)
 		}
-		w.log.Info("BGP_FAILOVER: routes announced on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
+		w.log.InfoContext(ctx, "BGP_FAILOVER: routes announced on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
 	}
 
-	w.log.Info("BGP_FAILOVER: complete",
+	w.log.InfoContext(ctx, "BGP_FAILOVER: complete",
 		"lxc", cfg.Cutover.FailoverLXCID,
-		"elapsed", time.Since(start),
+		"elapsed", w.since(start),
 	)
 
 	// Send success email
@@ -96,7 +96,7 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 		"BGP failover completed in %s.\n\n"+
 			"Routes withdrawn from primary VM %s.\n"+
 			"Routes announced on failover LXC %s.",
-		time.Since(start).Round(time.Second), cfg.MwanVMID, cfg.Cutover.FailoverLXCID,
+		w.since(start).Round(time.Second), cfg.MwanVMID, cfg.Cutover.FailoverLXCID,
 	)
 	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, successSubject, successBody)
 
@@ -107,29 +107,29 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 // Returns true if failover was triggered, false if skipped (LXC also down).
 func (w *watchdog) tryFailover(ctx context.Context, cfg *config.Config, reason string) bool {
 	if cfg.Cutover.FailoverLXCID == "" {
-		w.log.Warn("FAILOVER: no failover_lxc_id configured; skipping")
+		w.log.WarnContext(ctx, "FAILOVER: no failover_lxc_id configured; skipping")
 		return false
 	}
 
 	// Test LXC WAN connectivity before triggering failover.
 	// If the LXC also has no internet, failover is pointless.
-	w.log.Info("FAILOVER: testing LXC WAN connectivity", "lxc", cfg.Cutover.FailoverLXCID)
+	w.log.InfoContext(ctx, "FAILOVER: testing LXC WAN connectivity", "lxc", cfg.Cutover.FailoverLXCID)
 	lxcV4 := w.ops.Ping(ctx, "ping", cfg.Network.PingTargetIPv4)
 	lxcV6 := w.ops.Ping(ctx, "ping6", cfg.Network.PingTargetIPv6)
 	// TODO: ping from inside LXC specifically, not from host.
 	// For now, host-level ping is a proxy.
 
 	if !lxcV4 && !lxcV6 {
-		w.log.Warn("FAILOVER: LXC also has no internet; skipping failover (real ISP outage)",
+		w.log.WarnContext(ctx, "FAILOVER: LXC also has no internet; skipping failover (real ISP outage)",
 			"lxc", cfg.Cutover.FailoverLXCID)
 		return false
 	}
 
-	w.log.Info("FAILOVER: LXC has internet; proceeding",
+	w.log.InfoContext(ctx, "FAILOVER: LXC has internet; proceeding",
 		"lxc", cfg.Cutover.FailoverLXCID, "v4", lxcV4, "v6", lxcV6)
 
 	if err := w.triggerFailover(ctx, cfg, reason); err != nil {
-		w.log.Error("FAILOVER: failed", "err", err)
+		w.log.ErrorContext(ctx, "FAILOVER: failed", "err", err)
 		return false
 	}
 	return true
@@ -169,16 +169,17 @@ func FailoverRun(cfg *config.Config) error {
 		limiter: alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
 		log:     logger,
 		runID:   runID,
+		nowFn:   time.Now,
 	}
 
 	ctx := context.Background()
-	logger.Info("Manual failover requested")
+	logger.InfoContext(ctx, "Manual failover requested")
 
 	if err := w.triggerFailover(ctx, cfg, "manual trigger via `mwan watchdog failover`"); err != nil {
-		logger.Error("Failover failed", "err", err)
+		logger.ErrorContext(ctx, "Failover failed", "err", err)
 		return err
 	}
 
-	logger.Info("Failover complete")
+	logger.InfoContext(ctx, "Failover complete")
 	return nil
 }

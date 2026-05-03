@@ -42,6 +42,18 @@ func New(cfg Config, log *slog.Logger) *Client {
 	}
 }
 
+func (c *Client) wrapError(ctx context.Context, message string, err error, attrs ...any) error {
+	attrs = append(attrs, "err", err)
+	c.log.WarnContext(ctx, "opnsense: "+message, attrs...)
+	return fmt.Errorf("%s: %w", message, err)
+}
+
+func (c *Client) returnError(ctx context.Context, err error, attrs ...any) error {
+	attrs = append(attrs, "err", err)
+	c.log.WarnContext(ctx, "opnsense: API operation failed", attrs...)
+	return err
+}
+
 // normalizeBaseURL trims trailing slashes and brackets bare IPv6 hosts.
 // Go's net/url.Parse rejects "https://3d06:bad:b01::1/api" because it
 // cannot tell the embedded colons apart from a port number. RFC 3986
@@ -98,16 +110,16 @@ func (c *Client) PurgeBGPConfig(ctx context.Context) error {
 		} `json:"rows"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, "/quagga/bgp/searchNeighbor", nil, &neighborResult); err != nil {
-		return fmt.Errorf("list neighbors: %w", err)
+		return c.wrapError(ctx, "list neighbors", err)
 	}
 	for _, n := range neighborResult.Rows {
-		c.log.Debug("opnsense: deleting existing neighbor", "uuid", n.UUID)
+		c.log.DebugContext(ctx, "opnsense: deleting existing neighbor", "uuid", n.UUID)
 		endpoint := fmt.Sprintf("/quagga/bgp/delNeighbor/%s", n.UUID)
 		var resp struct {
 			Result string `json:"result"`
 		}
 		if err := c.doJSON(ctx, http.MethodPost, endpoint, nil, &resp); err != nil {
-			c.log.Warn("opnsense: failed to delete neighbor", "uuid", n.UUID, "err", err)
+			c.log.WarnContext(ctx, "opnsense: failed to delete neighbor", "uuid", n.UUID, "err", err)
 		}
 	}
 
@@ -118,20 +130,20 @@ func (c *Client) PurgeBGPConfig(ctx context.Context) error {
 		} `json:"rows"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, "/quagga/bgp/searchRoutemap", nil, &routemapResult); err != nil {
-		return fmt.Errorf("list routemaps: %w", err)
+		return c.wrapError(ctx, "list routemaps", err)
 	}
 	for _, rm := range routemapResult.Rows {
-		c.log.Debug("opnsense: deleting existing route-map", "uuid", rm.UUID)
+		c.log.DebugContext(ctx, "opnsense: deleting existing route-map", "uuid", rm.UUID)
 		endpoint := fmt.Sprintf("/quagga/bgp/delRoutemap/%s", rm.UUID)
 		var resp struct {
 			Result string `json:"result"`
 		}
 		if err := c.doJSON(ctx, http.MethodPost, endpoint, nil, &resp); err != nil {
-			c.log.Warn("opnsense: failed to delete route-map", "uuid", rm.UUID, "err", err)
+			c.log.WarnContext(ctx, "opnsense: failed to delete route-map", "uuid", rm.UUID, "err", err)
 		}
 	}
 
-	c.log.Info("opnsense: BGP config purged", "neighbors_deleted", len(neighborResult.Rows), "routemaps_deleted", len(routemapResult.Rows))
+	c.log.InfoContext(ctx, "opnsense: BGP config purged", "neighbors_deleted", len(neighborResult.Rows), "routemaps_deleted", len(routemapResult.Rows))
 	return nil
 }
 
@@ -142,29 +154,29 @@ func (c *Client) PurgeBGPConfig(ctx context.Context) error {
 func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
 	// Step 0: Purge any leftover BGP config (route-maps, neighbors) so this
 	// function is idempotent across snapshot rollbacks and re-runs.
-	c.log.Info("opnsense: purging any existing BGP config before configuring")
+	c.log.InfoContext(ctx, "opnsense: purging any existing BGP config before configuring")
 	if err := c.PurgeBGPConfig(ctx); err != nil {
-		return fmt.Errorf("purge existing BGP config: %w", err)
+		return c.wrapError(ctx, "purge existing BGP config", err)
 	}
 
 	// Step 1: Add firewall rules to allow BGP (TCP 179) on WAN interface.
-	c.log.Info("opnsense: adding BGP firewall rules")
+	c.log.InfoContext(ctx, "opnsense: adding BGP firewall rules")
 	if err := c.addBGPFirewallRules(ctx, bgpCfg); err != nil {
-		return fmt.Errorf("add BGP firewall rules: %w", err)
+		return c.wrapError(ctx, "add BGP firewall rules", err)
 	}
 
 	// Step 2: Enable FRR general (datacenter profile, syslog).
-	c.log.Info("opnsense: enabling FRR general settings")
+	c.log.InfoContext(ctx, "opnsense: enabling FRR general settings")
 	if err := c.setFRRGeneral(ctx); err != nil {
-		return fmt.Errorf("enable FRR general: %w", err)
+		return c.wrapError(ctx, "enable FRR general", err)
 	}
 
 	// Step 2: Enable BGP with ASN, router-id, log-neighbor-changes,
 	//         no network-import-check.
-	c.log.Info("opnsense: configuring BGP global settings",
+	c.log.InfoContext(ctx, "opnsense: configuring BGP global settings",
 		"asn", bgpCfg.ASN, "router_id", bgpCfg.RouterID)
 	if err := c.setBGPGlobal(ctx, bgpCfg.ASN, bgpCfg.RouterID); err != nil {
-		return fmt.Errorf("set BGP global: %w", err)
+		return c.wrapError(ctx, "set BGP global", err)
 	}
 
 	// Step 3: Create route-maps.
@@ -177,13 +189,14 @@ func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
 	}
 	routeMapUUIDs := make(map[string]string, len(routeMaps))
 	for _, rm := range routeMaps {
-		c.log.Debug("opnsense: creating route-map", "name", rm.name, "local_pref", rm.localPref)
+		c.log.DebugContext(ctx, "opnsense: creating route-map", "name", rm.name, "local_pref", rm.localPref)
 		uuid, err := c.createRouteMap(ctx, rm.name, rm.localPref)
 		if err != nil {
-			return fmt.Errorf("create route-map %s: %w", rm.name, err)
+			return c.wrapError(ctx, fmt.Sprintf("create route-map %s", rm.name), err,
+				"route_map", rm.name)
 		}
 		routeMapUUIDs[rm.name] = uuid
-		c.log.Debug("opnsense: route-map created", "name", rm.name, "uuid", uuid)
+		c.log.DebugContext(ctx, "opnsense: route-map created", "name", rm.name, "uuid", uuid)
 	}
 
 	// Step 4: Create each neighbor linked to the appropriate route-map UUID.
@@ -192,21 +205,22 @@ func (c *Client) ConfigureBGP(ctx context.Context, bgpCfg BGPConfig) error {
 		if rmUUID == "" {
 			return fmt.Errorf("neighbor %s references unknown route-map %q", n.Address, n.RouteMapIn)
 		}
-		c.log.Debug("opnsense: creating BGP neighbor",
+		c.log.DebugContext(ctx, "opnsense: creating BGP neighbor",
 			"address", n.Address, "remote_as", n.RemoteAS,
 			"route_map_in", n.RouteMapIn, "route_map_uuid", rmUUID)
 		if err := c.createNeighbor(ctx, n, rmUUID); err != nil {
-			return fmt.Errorf("create neighbor %s: %w", n.Address, err)
+			return c.wrapError(ctx, fmt.Sprintf("create neighbor %s", n.Address), err,
+				"neighbor", n.Address)
 		}
 	}
 
 	// Step 5: Reconfigure the Quagga/FRR service.
-	c.log.Info("opnsense: reconfiguring FRR service")
+	c.log.InfoContext(ctx, "opnsense: reconfiguring FRR service")
 	if err := c.reconfigureQuagga(ctx); err != nil {
-		return fmt.Errorf("reconfigure quagga: %w", err)
+		return c.wrapError(ctx, "reconfigure quagga", err)
 	}
 
-	c.log.Info("opnsense: BGP configuration complete")
+	c.log.InfoContext(ctx, "opnsense: BGP configuration complete")
 	return nil
 }
 
@@ -235,9 +249,11 @@ func (c *Client) addBGPFirewallRules(ctx context.Context, bgpCfg BGPConfig) erro
 				"description":      r.desc,
 			},
 		}
-		c.log.Debug("opnsense: adding firewall rule", "ipproto", r.ipproto, "source", r.sourceNet)
+		c.log.DebugContext(ctx, "opnsense: adding firewall rule", "ipproto", r.ipproto, "source", r.sourceNet)
 		if _, err := c.postAdd(ctx, "/firewall/filter/addRule", body); err != nil {
-			return fmt.Errorf("add firewall rule (%s): %w", r.ipproto, err)
+			return c.wrapError(ctx, fmt.Sprintf("add firewall rule (%s)", r.ipproto), err,
+				"ipproto", r.ipproto,
+				"source", r.sourceNet)
 		}
 	}
 
@@ -246,7 +262,7 @@ func (c *Client) addBGPFirewallRules(ctx context.Context, bgpCfg BGPConfig) erro
 		Status string `json:"status"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/firewall/filter/apply", nil, &resp); err != nil {
-		return fmt.Errorf("apply firewall rules: %w", err)
+		return c.wrapError(ctx, "apply firewall rules", err)
 	}
 
 	return nil
@@ -364,7 +380,8 @@ func (g gatewayRow) isDisabled() bool {
 func (c *Client) FindGatewayByName(ctx context.Context, name string) (string, error) {
 	var result gatewaySearchResult
 	if err := c.doJSON(ctx, http.MethodGet, "/routing/settings/search_gateway", nil, &result); err != nil {
-		return "", fmt.Errorf("search gateways: %w", err)
+		return "", c.wrapError(ctx, "search gateways", err,
+			"gateway", name)
 	}
 	for _, gw := range result.Rows {
 		if gw.Name == name {
@@ -378,7 +395,8 @@ func (c *Client) FindGatewayByName(ctx context.Context, name string) (string, er
 func (c *Client) FindGatewayByNameWithAddr(ctx context.Context, name string) (uuid string, addr string, err error) {
 	var result gatewaySearchResult
 	if err := c.doJSON(ctx, http.MethodGet, "/routing/settings/search_gateway", nil, &result); err != nil {
-		return "", "", fmt.Errorf("search gateways: %w", err)
+		return "", "", c.wrapError(ctx, "search gateways", err,
+			"gateway", name)
 	}
 	for _, gw := range result.Rows {
 		if gw.Name == name {
@@ -391,7 +409,7 @@ func (c *Client) FindGatewayByNameWithAddr(ctx context.Context, name string) (uu
 // ForceDownGateway marks a gateway as "force down" via set_gateway API.
 // This excludes it from default route selection while keeping it configured.
 func (c *Client) ForceDownGateway(ctx context.Context, uuid string) error {
-	c.log.Info("opnsense: marking gateway force_down", "uuid", uuid)
+	c.log.InfoContext(ctx, "opnsense: marking gateway force_down", "uuid", uuid)
 	body := map[string]any{
 		"gateway_item": map[string]string{
 			"force_down": "1",
@@ -402,7 +420,8 @@ func (c *Client) ForceDownGateway(ctx context.Context, uuid string) error {
 	}
 	endpoint := fmt.Sprintf("/routing/settings/set_gateway/%s", uuid)
 	if err := c.doJSON(ctx, http.MethodPost, endpoint, body, &resp); err != nil {
-		return fmt.Errorf("set force_down on %s: %w", uuid, err)
+		return c.wrapError(ctx, fmt.Sprintf("set force_down on %s", uuid), err,
+			"uuid", uuid)
 	}
 	if resp.Result != "saved" {
 		return fmt.Errorf("set force_down on %s: unexpected result %q", uuid, resp.Result)
@@ -412,7 +431,7 @@ func (c *Client) ForceDownGateway(ctx context.Context, uuid string) error {
 
 // UnforceDownGateway removes the "force down" mark from a gateway (for rollback).
 func (c *Client) UnforceDownGateway(ctx context.Context, uuid string) error {
-	c.log.Info("opnsense: removing force_down from gateway", "uuid", uuid)
+	c.log.InfoContext(ctx, "opnsense: removing force_down from gateway", "uuid", uuid)
 	body := map[string]any{
 		"gateway_item": map[string]string{
 			"force_down": "0",
@@ -423,19 +442,20 @@ func (c *Client) UnforceDownGateway(ctx context.Context, uuid string) error {
 	}
 	endpoint := fmt.Sprintf("/routing/settings/set_gateway/%s", uuid)
 	if err := c.doJSON(ctx, http.MethodPost, endpoint, body, &resp); err != nil {
-		return fmt.Errorf("unset force_down on %s: %w", uuid, err)
+		return c.wrapError(ctx, fmt.Sprintf("unset force_down on %s", uuid), err,
+			"uuid", uuid)
 	}
 	return nil
 }
 
 // ReconfigureFRR reloads FRR config without restarting (avoids rc dependency hooks).
 func (c *Client) ReconfigureFRR(ctx context.Context) error {
-	c.log.Info("opnsense: reloading FRR (reconfigure)")
+	c.log.InfoContext(ctx, "opnsense: reloading FRR (reconfigure)")
 	var resp struct {
 		Status string `json:"status"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/reconfigure", nil, &resp); err != nil {
-		return fmt.Errorf("reconfigure FRR: %w", err)
+		return c.wrapError(ctx, "reconfigure FRR", err)
 	}
 	return nil
 }
@@ -446,7 +466,7 @@ func (c *Client) ReconfigureFRR(ctx context.Context) error {
 // Only safe when gateways are force_down (prevents static route reinstallation).
 // StopFRR stops the FRR service without restarting it.
 func (c *Client) StopFRR(ctx context.Context) error {
-	c.log.Info("opnsense: stopping FRR")
+	c.log.InfoContext(ctx, "opnsense: stopping FRR")
 	var resp struct {
 		Response string `json:"response"`
 	}
@@ -454,12 +474,12 @@ func (c *Client) StopFRR(ctx context.Context) error {
 }
 
 func (c *Client) StopStartFRR(ctx context.Context) error {
-	c.log.Info("opnsense: stopping FRR")
+	c.log.InfoContext(ctx, "opnsense: stopping FRR")
 	var stopResp struct {
 		Response string `json:"response"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/stop", nil, &stopResp); err != nil {
-		return fmt.Errorf("stop FRR: %w", err)
+		return c.wrapError(ctx, "stop FRR", err)
 	}
 
 	// Brief pause for daemons to fully exit
@@ -469,25 +489,25 @@ func (c *Client) StopStartFRR(ctx context.Context) error {
 	case <-time.After(3 * time.Second):
 	}
 
-	c.log.Info("opnsense: starting FRR")
+	c.log.InfoContext(ctx, "opnsense: starting FRR")
 	var startResp struct {
 		Response string `json:"response"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/quagga/service/start", nil, &startResp); err != nil {
-		return fmt.Errorf("start FRR: %w", err)
+		return c.wrapError(ctx, "start FRR", err)
 	}
 	return nil
 }
 
 // DisableGateway disables an OPNsense gateway by UUID.
 func (c *Client) DisableGateway(ctx context.Context, uuid string) error {
-	c.log.Info("opnsense: disabling gateway", "uuid", uuid)
+	c.log.InfoContext(ctx, "opnsense: disabling gateway", "uuid", uuid)
 	return c.toggleGateway(ctx, uuid, true)
 }
 
 // EnableGateway re-enables an OPNsense gateway by UUID.
 func (c *Client) EnableGateway(ctx context.Context, uuid string) error {
-	c.log.Info("opnsense: enabling gateway", "uuid", uuid)
+	c.log.InfoContext(ctx, "opnsense: enabling gateway", "uuid", uuid)
 	return c.toggleGateway(ctx, uuid, false)
 }
 
@@ -497,7 +517,8 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 	// Read current state to decide if we need to toggle.
 	var result gatewaySearchResult
 	if err := c.doJSON(ctx, http.MethodGet, "/routing/settings/search_gateway", nil, &result); err != nil {
-		return fmt.Errorf("search gateways: %w", err)
+		return c.wrapError(ctx, "search gateways", err,
+			"uuid", uuid)
 	}
 
 	var found *gatewayRow
@@ -512,7 +533,7 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 	}
 
 	if found.isDisabled() == wantDisabled {
-		c.log.Info("opnsense: gateway already in desired state",
+		c.log.InfoContext(ctx, "opnsense: gateway already in desired state",
 			"uuid", uuid, "disabled", found.isDisabled())
 		return nil
 	}
@@ -524,42 +545,45 @@ func (c *Client) toggleGateway(ctx context.Context, uuid string, wantDisabled bo
 		Changed bool   `json:"changed"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, endpoint, nil, &resp); err != nil {
-		return fmt.Errorf("toggle gateway %s: %w", uuid, err)
+		return c.wrapError(ctx, fmt.Sprintf("toggle gateway %s", uuid), err,
+			"uuid", uuid)
 	}
 
-	c.log.Info("opnsense: gateway toggled", "uuid", uuid, "result", resp.Result)
+	c.log.InfoContext(ctx, "opnsense: gateway toggled", "uuid", uuid, "result", resp.Result)
 	return nil
 }
 
 // DeleteRoute deletes a route from the kernel via the OPNsense diagnostics API.
 // Use destination="default" and gateway=<ip> to delete a default route.
 func (c *Client) DeleteRoute(ctx context.Context, destination, gateway string) error {
-	c.log.Info("opnsense: deleting route", "destination", destination, "gateway", gateway)
+	c.log.InfoContext(ctx, "opnsense: deleting route", "destination", destination, "gateway", gateway)
 
 	data := fmt.Sprintf("destination=%s&gateway=%s", destination, gateway)
 	var resp struct {
 		Message string `json:"message"`
 	}
 	if err := c.doForm(ctx, "/diagnostics/interface/delRoute", data, &resp); err != nil {
-		return fmt.Errorf("delete route: %w", err)
+		return c.wrapError(ctx, "delete route", err,
+			"destination", destination,
+			"gateway", gateway)
 	}
 
 	if resp.Message == "not_found" {
-		c.log.Info("opnsense: route not found (already removed)", "destination", destination, "gateway", gateway)
+		c.log.InfoContext(ctx, "opnsense: route not found (already removed)", "destination", destination, "gateway", gateway)
 	} else {
-		c.log.Info("opnsense: route deleted", "destination", destination, "gateway", gateway, "result", resp.Message)
+		c.log.InfoContext(ctx, "opnsense: route deleted", "destination", destination, "gateway", gateway, "result", resp.Message)
 	}
 	return nil
 }
 
 // Reconfigure applies pending OPNsense routing changes (gateways, static routes).
 func (c *Client) Reconfigure(ctx context.Context) error {
-	c.log.Info("opnsense: applying routing reconfiguration")
+	c.log.InfoContext(ctx, "opnsense: applying routing reconfiguration")
 	var resp struct {
 		Status string `json:"status"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/routes/routes/reconfigure", nil, &resp); err != nil {
-		return fmt.Errorf("reconfigure routing: %w", err)
+		return c.wrapError(ctx, "reconfigure routing", err)
 	}
 	return nil
 }
@@ -601,7 +625,7 @@ func (c *Client) GetBGPStatus(ctx context.Context) (*BGPSummary, error) {
 		Response BGPSummary `json:"response"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, "/quagga/diagnostics/bgpsummary", nil, &resp); err != nil {
-		return nil, fmt.Errorf("get BGP status: %w", err)
+		return nil, c.wrapError(ctx, "get BGP status", err)
 	}
 	return &resp.Response, nil
 }
@@ -627,10 +651,10 @@ func (c *Client) WaitForReady(ctx context.Context, timeout, pollInterval time.Du
 		err := c.doJSON(checkCtx, http.MethodGet, "/core/firmware/status", nil, &resp)
 		cancel()
 		if err == nil {
-			c.log.Debug("opnsense: API is reachable after reboot")
+			c.log.DebugContext(ctx, "opnsense: API is reachable after reboot")
 			return nil
 		}
-		c.log.Debug("opnsense: not ready yet", "err", err)
+		c.log.DebugContext(ctx, "opnsense: not ready yet", "err", err)
 	}
 }
 
@@ -644,7 +668,9 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, 
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("marshal request body: %w", err)
+			return c.wrapError(ctx, "marshal request body", err,
+				"method", method,
+				"endpoint", endpoint)
 		}
 		bodyReader = bytes.NewReader(data)
 	}
@@ -652,7 +678,9 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, 
 	url := c.base + "/api" + endpoint
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return c.wrapError(ctx, "create request", err,
+			"method", method,
+			"endpoint", endpoint)
 	}
 
 	req.Header.Set("Authorization", "Basic "+c.auth)
@@ -660,11 +688,13 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, 
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	c.log.Debug("opnsense: API request", "method", method, "url", url)
+	c.log.DebugContext(ctx, "opnsense: API request", "method", method, "url", url)
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP %s %s: %w", method, endpoint, err)
+		return c.wrapError(ctx, fmt.Sprintf("HTTP %s %s", method, endpoint), err,
+			"method", method,
+			"endpoint", endpoint)
 	}
 	defer func() { _ = res.Body.Close() }()
 
@@ -675,7 +705,9 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, 
 
 	if resp != nil {
 		if err := json.NewDecoder(res.Body).Decode(resp); err != nil {
-			return fmt.Errorf("decode response from %s: %w", endpoint, err)
+			return c.wrapError(ctx, fmt.Sprintf("decode response from %s", endpoint), err,
+				"method", method,
+				"endpoint", endpoint)
 		}
 	}
 
@@ -687,17 +719,21 @@ func (c *Client) doForm(ctx context.Context, endpoint, formData string, resp any
 	url := c.base + "/api" + endpoint
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(formData))
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return c.wrapError(ctx, "create request", err,
+			"method", http.MethodPost,
+			"endpoint", endpoint)
 	}
 
 	req.Header.Set("Authorization", "Basic "+c.auth)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	c.log.Debug("opnsense: API request", "method", "POST", "url", url)
+	c.log.DebugContext(ctx, "opnsense: API request", "method", "POST", "url", url)
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP POST %s: %w", endpoint, err)
+		return c.wrapError(ctx, fmt.Sprintf("HTTP POST %s", endpoint), err,
+			"method", http.MethodPost,
+			"endpoint", endpoint)
 	}
 	defer func() { _ = res.Body.Close() }()
 
@@ -708,7 +744,9 @@ func (c *Client) doForm(ctx context.Context, endpoint, formData string, resp any
 
 	if resp != nil {
 		if err := json.NewDecoder(res.Body).Decode(resp); err != nil {
-			return fmt.Errorf("decode response from %s: %w", endpoint, err)
+			return c.wrapError(ctx, fmt.Sprintf("decode response from %s", endpoint), err,
+				"method", http.MethodPost,
+				"endpoint", endpoint)
 		}
 	}
 
@@ -725,7 +763,11 @@ func (c *Client) postSaved(ctx context.Context, endpoint string, body any) error
 		return err
 	}
 	if resp.Result != "saved" {
-		return fmt.Errorf("%s: result=%q validations=%v", endpoint, resp.Result, resp.Validations)
+		err := fmt.Errorf("%s: result=%q validations=%v", endpoint, resp.Result, resp.Validations)
+		return c.returnError(ctx, err,
+			"endpoint", endpoint,
+			"result", resp.Result,
+			"validations", resp.Validations)
 	}
 	return nil
 }
@@ -741,7 +783,11 @@ func (c *Client) postAdd(ctx context.Context, endpoint string, body any) (string
 		return "", err
 	}
 	if resp.Result != "saved" {
-		return "", fmt.Errorf("%s: result=%q validations=%v", endpoint, resp.Result, resp.Validations)
+		err := fmt.Errorf("%s: result=%q validations=%v", endpoint, resp.Result, resp.Validations)
+		return "", c.returnError(ctx, err,
+			"endpoint", endpoint,
+			"result", resp.Result,
+			"validations", resp.Validations)
 	}
 	return resp.UUID, nil
 }

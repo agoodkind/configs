@@ -2,8 +2,9 @@ package opnsensesvc
 
 import (
 	"bytes"
+	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/antchfx/xmlquery"
@@ -14,16 +15,28 @@ import (
 // serialized as XML; attribute and text matches are returned as their
 // string value.
 func xpathGet(input []byte, expr string) ([]string, error) {
+	return xpathGetWithLog(context.Background(), nil, input, expr)
+}
+
+func xpathGetWithLog(
+	ctx context.Context,
+	log *slog.Logger,
+	input []byte,
+	expr string,
+) ([]string, error) {
 	if expr == "" {
 		return nil, errors.New("xpathGet: empty expression")
 	}
 	doc, err := xmlquery.Parse(bytes.NewReader(input))
 	if err != nil {
-		return nil, fmt.Errorf("xpathGet: parse: %w", err)
+		return nil, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: XPathGet parse failed", "xpathGet: parse", err)
 	}
 	nodes, err := xmlquery.QueryAll(doc, expr)
 	if err != nil {
-		return nil, fmt.Errorf("xpathGet: query %q: %w", expr, err)
+		return nil, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: XPathGet query failed", "xpathGet: query "+expr, err,
+			slog.String("expression", expr))
 	}
 	out := make([]string, 0, len(nodes))
 	for _, n := range nodes {
@@ -35,16 +48,29 @@ func xpathGet(input []byte, expr string) ([]string, error) {
 // xpathSet sets the InnerText of every node matched by expr to
 // newValue. Returns the new bytes and the count of changed nodes.
 func xpathSet(input []byte, expr, newValue string) ([]byte, int, error) {
+	return xpathSetWithLog(context.Background(), nil, input, expr, newValue)
+}
+
+func xpathSetWithLog(
+	ctx context.Context,
+	log *slog.Logger,
+	input []byte,
+	expr string,
+	newValue string,
+) ([]byte, int, error) {
 	if expr == "" {
 		return nil, 0, errors.New("xpathSet: empty expression")
 	}
 	doc, err := xmlquery.Parse(bytes.NewReader(input))
 	if err != nil {
-		return nil, 0, fmt.Errorf("xpathSet: parse: %w", err)
+		return nil, 0, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: XPathSet parse failed", "xpathSet: parse", err)
 	}
 	nodes, err := xmlquery.QueryAll(doc, expr)
 	if err != nil {
-		return nil, 0, fmt.Errorf("xpathSet: query %q: %w", expr, err)
+		return nil, 0, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: XPathSet query failed", "xpathSet: query "+expr, err,
+			slog.String("expression", expr))
 	}
 	if len(nodes) == 0 {
 		return input, 0, nil
@@ -64,16 +90,28 @@ func xpathSet(input []byte, expr, newValue string) ([]byte, int, error) {
 // xpathDelete removes every node matched by expr from its parent.
 // Returns new bytes and the count of deleted nodes.
 func xpathDelete(input []byte, expr string) ([]byte, int, error) {
+	return xpathDeleteWithLog(context.Background(), nil, input, expr)
+}
+
+func xpathDeleteWithLog(
+	ctx context.Context,
+	log *slog.Logger,
+	input []byte,
+	expr string,
+) ([]byte, int, error) {
 	if expr == "" {
 		return nil, 0, errors.New("xpathDelete: empty expression")
 	}
 	doc, err := xmlquery.Parse(bytes.NewReader(input))
 	if err != nil {
-		return nil, 0, fmt.Errorf("xpathDelete: parse: %w", err)
+		return nil, 0, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: XPathDelete parse failed", "xpathDelete: parse", err)
 	}
 	nodes, err := xmlquery.QueryAll(doc, expr)
 	if err != nil {
-		return nil, 0, fmt.Errorf("xpathDelete: query %q: %w", expr, err)
+		return nil, 0, logWrappedErrorContext(ctx, log,
+			"opnsensesvc: XPathDelete query failed", "xpathDelete: query "+expr, err,
+			slog.String("expression", expr))
 	}
 	if len(nodes) == 0 {
 		return input, 0, nil

@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -302,11 +303,13 @@ func Load() (*Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		slog.Error("read config failed", "path", path, "error", err)
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
 	cfg := defaultConfig()
 	if err := toml.Unmarshal(data, &cfg); err != nil {
+		slog.Error("parse config failed", "path", path, "error", err)
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
 

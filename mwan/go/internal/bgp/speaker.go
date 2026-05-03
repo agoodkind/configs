@@ -62,7 +62,15 @@ func (s *Speaker) Start(ctx context.Context) error {
 	s.server = server.NewBgpServer(
 		server.LoggerOption(s.log, logLevel),
 	)
-	go s.server.Serve()
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				recoveredErr := fmt.Errorf("panic: %v", recovered)
+				s.log.ErrorContext(ctx, "bgp server panic", "error", recoveredErr)
+			}
+		}()
+		s.server.Serve()
+	}()
 
 	if err := s.server.StartBgp(ctx, &apipb.StartBgpRequest{
 		Global: &apipb.Global{
@@ -71,17 +79,20 @@ func (s *Speaker) Start(ctx context.Context) error {
 			ListenPort: s.cfg.ListenPort,
 		},
 	}); err != nil {
+		s.log.ErrorContext(ctx, "start bgp failed", "error", err)
 		return fmt.Errorf("start bgp: %w", err)
 	}
 
 	for _, n := range s.cfg.Neighbors {
 		if err := s.addPeer(ctx, n.Address, false); err != nil {
+			s.log.ErrorContext(ctx, "add bgp peer failed", "peer", n.Address, "error", err)
 			return fmt.Errorf("add peer %s: %w", n.Address, err)
 		}
 	}
 
 	for _, n := range s.cfg.NeighborsV6 {
 		if err := s.addPeer(ctx, n.Address, true); err != nil {
+			s.log.ErrorContext(ctx, "add bgp peer failed", "peer", n.Address, "error", err)
 			return fmt.Errorf("add peer %s: %w", n.Address, err)
 		}
 	}
@@ -96,21 +107,21 @@ func (s *Speaker) Start(ctx context.Context) error {
 			if ev.Peer.State.SessionState != bgppkt.BGP_FSM_ESTABLISHED {
 				return
 			}
-			s.log.Info("bgp peer established", "peer", ev.Peer.State.NeighborAddress)
+			s.log.InfoContext(ctx, "bgp peer established", "peer", ev.Peer.State.NeighborAddress)
 			if s.IsEstablished() {
 				if err := s.AnnounceDefault(); err != nil {
-					s.log.Error("bgp auto-announce failed", "error", err)
+					s.log.ErrorContext(ctx, "bgp auto-announce failed", "error", err)
 				} else {
-					s.log.Info("bgp routes announced (all peers established)")
+					s.log.InfoContext(ctx, "bgp routes announced (all peers established)")
 				}
 			}
 		},
 	}, server.WatchPeer()); err != nil {
-		s.log.Error("bgp watch event registration failed", "error", err)
+		s.log.ErrorContext(ctx, "bgp watch event registration failed", "error", err)
 	}
 
 	s.started = true
-	s.log.Info("bgp speaker started",
+	s.log.InfoContext(ctx, "bgp speaker started",
 		"asn", s.cfg.ASN,
 		"router_id", s.cfg.RouterID,
 		"port", s.cfg.ListenPort,
@@ -169,6 +180,7 @@ func (s *Speaker) Stop() error {
 
 	ctx := context.Background()
 	if err := s.server.StopBgp(ctx, &apipb.StopBgpRequest{}); err != nil {
+		s.log.ErrorContext(ctx, "stop bgp failed", "error", err)
 		return fmt.Errorf("stop bgp: %w", err)
 	}
 	s.started = false
@@ -188,12 +200,14 @@ func (s *Speaker) AnnounceDefault() error {
 
 	for _, prefix := range s.cfg.Announce.IPv4 {
 		if err := s.addIPv4Path(prefix); err != nil {
+			s.log.Error("announce bgp route failed", "prefix", prefix, "error", err)
 			return fmt.Errorf("announce %s: %w", prefix, err)
 		}
 	}
 
 	for _, prefix := range s.cfg.Announce.IPv6 {
 		if err := s.addIPv6Path(prefix); err != nil {
+			s.log.Error("announce bgp route failed", "prefix", prefix, "error", err)
 			return fmt.Errorf("announce %s: %w", prefix, err)
 		}
 	}
@@ -217,12 +231,14 @@ func (s *Speaker) WithdrawDefault() error {
 
 	for _, prefix := range s.cfg.Announce.IPv4 {
 		if err := s.deleteIPv4Path(prefix); err != nil {
+			s.log.Error("withdraw bgp route failed", "prefix", prefix, "error", err)
 			return fmt.Errorf("withdraw %s: %w", prefix, err)
 		}
 	}
 
 	for _, prefix := range s.cfg.Announce.IPv6 {
 		if err := s.deleteIPv6Path(prefix); err != nil {
+			s.log.Error("withdraw bgp route failed", "prefix", prefix, "error", err)
 			return fmt.Errorf("withdraw %s: %w", prefix, err)
 		}
 	}
@@ -248,16 +264,19 @@ func (s *Speaker) addIPv4Path(prefix string) error {
 
 	nlri, err := bgppkt.NewIPAddrPrefix(pfx)
 	if err != nil {
+		s.log.Error("create ipv4 nlri failed", "prefix", prefix, "error", err)
 		return fmt.Errorf("new ipaddr prefix: %w", err)
 	}
 
 	routerID, err := netip.ParseAddr(s.cfg.RouterID)
 	if err != nil {
+		s.log.Error("parse bgp router id failed", "router_id", s.cfg.RouterID, "error", err)
 		return fmt.Errorf("parse router id: %w", err)
 	}
 
 	nh, err := bgppkt.NewPathAttributeNextHop(routerID)
 	if err != nil {
+		s.log.Error("create ipv4 nexthop failed", "router_id", s.cfg.RouterID, "error", err)
 		return fmt.Errorf("new nexthop: %w", err)
 	}
 
@@ -283,6 +302,7 @@ func (s *Speaker) deleteIPv4Path(prefix string) error {
 
 	nlri, err := bgppkt.NewIPAddrPrefix(pfx)
 	if err != nil {
+		s.log.Error("create ipv4 nlri failed", "prefix", prefix, "error", err)
 		return fmt.Errorf("new ipaddr prefix: %w", err)
 	}
 
@@ -305,6 +325,7 @@ func (s *Speaker) addIPv6Path(prefix string) error {
 
 	nlri, err := bgppkt.NewIPAddrPrefix(pfx)
 	if err != nil {
+		s.log.Error("create ipv6 nlri failed", "prefix", prefix, "error", err)
 		return fmt.Errorf("new ipaddr prefix: %w", err)
 	}
 
@@ -318,6 +339,7 @@ func (s *Speaker) addIPv6Path(prefix string) error {
 	}
 	nextHop, err := netip.ParseAddr(nhStr)
 	if err != nil {
+		s.log.Error("parse ipv6 nexthop failed", "next_hop", nhStr, "error", err)
 		return fmt.Errorf("parse ipv6 next-hop %q: %w", nhStr, err)
 	}
 
@@ -329,6 +351,7 @@ func (s *Speaker) addIPv6Path(prefix string) error {
 		nextHop,
 	)
 	if err != nil {
+		s.log.Error("create ipv6 mp reach failed", "prefix", prefix, "error", err)
 		return fmt.Errorf("new mp reach: %w", err)
 	}
 
@@ -352,6 +375,7 @@ func (s *Speaker) deleteIPv6Path(prefix string) error {
 
 	nlri, err := bgppkt.NewIPAddrPrefix(pfx)
 	if err != nil {
+		s.log.Error("create ipv6 nlri failed", "prefix", prefix, "error", err)
 		return fmt.Errorf("new ipaddr prefix: %w", err)
 	}
 

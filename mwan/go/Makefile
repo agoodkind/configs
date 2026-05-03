@@ -51,10 +51,11 @@ fmt:
 fix:
 	golangci-lint run --fix ./...
 
-# go.mk's `staticcheck-extra` system uses its own bundled analyzer set by
-# default (5 custom AST analyzers, installed via `go install` from
-# go-makefile). Project just sets the per-finding baseline file.
-# See STATICCHECK-NOTES.md for the documented exceptions.
+# go.mk's `staticcheck-extra` system defaults to the core analyzer set.
+# This project opts into the bundled strict analyzer set as well, matching
+# the strict go-makefile template and keeping the baseline as the only
+# per-project exception list.
+STATICCHECK_EXTRA_FLAGS = $(STATICCHECK_EXTRA_CORE_FLAGS) $(STATICCHECK_EXTRA_STRICT_FLAGS)
 STATICCHECK_EXTRA_BASELINE := .staticcheck-extra-baseline.txt
 
 tidy:

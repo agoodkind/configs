@@ -38,15 +38,19 @@ var debugSerialIO = os.Getenv("MWAN_OPNSENSE_SERIAL_TRACE") == "1"
 // on the Proxmox side). Multiplexing would require a small framing
 // protocol on top.
 type SerialListener struct {
-	devPath        string
-	openFn         func(path string) (io.ReadWriteCloser, error)
-	addr           serialAddr
-	postCloseDelay time.Duration
+	devPath          string
+	openFn           func(path string) (io.ReadWriteCloser, error)
+	addr             serialAddr
+	postCloseDelay   time.Duration
+	staleReadTimeout time.Duration
+	nowFn            func() time.Time
+	log              *slog.Logger
 
-	mu     sync.Mutex
-	cond   *sync.Cond
-	closed bool
-	cur    io.ReadWriteCloser
+	mu            sync.Mutex
+	cond          *sync.Cond
+	closed        bool
+	cur           io.ReadWriteCloser
+	nextSessionID uint64
 }
 
 // NewSerialListener returns a Listener that opens devPath on each
@@ -54,10 +58,13 @@ type SerialListener struct {
 // opens the character device, in tests it can return a fake.
 func NewSerialListener(devPath string, openFn func(path string) (io.ReadWriteCloser, error)) *SerialListener {
 	l := &SerialListener{
-		devPath:        devPath,
-		openFn:         openFn,
-		addr:           serialAddr(devPath),
-		postCloseDelay: 200 * time.Millisecond,
+		devPath:          devPath,
+		openFn:           openFn,
+		addr:             serialAddr(devPath),
+		postCloseDelay:   1200 * time.Millisecond,
+		staleReadTimeout: time.Second,
+		nowFn:            time.Now,
+		log:              slog.Default(),
 	}
 	l.cond = sync.NewCond(&l.mu)
 	return l
@@ -68,6 +75,8 @@ func NewSerialListener(devPath string, openFn func(path string) (io.ReadWriteClo
 // until the device is free. Returns an error only when the listener
 // itself is closed.
 func (l *SerialListener) Accept() (net.Conn, error) {
+	log := l.logger()
+
 	l.mu.Lock()
 	for !l.closed && l.cur != nil {
 		l.cond.Wait()
@@ -76,23 +85,54 @@ func (l *SerialListener) Accept() (net.Conn, error) {
 		l.mu.Unlock()
 		return nil, errors.New("serial listener: closed")
 	}
+	l.nextSessionID++
+	sessionID := l.nextSessionID
+	log.Info("serial listener: accept opening device",
+		"path", l.devPath,
+		"session_id", sessionID)
 	l.mu.Unlock()
 
 	rwc, err := l.openFn(l.devPath)
 	if err != nil {
-		slog.Error("serial listener: open failed", "path", l.devPath, "err", err)
+		log.Error("serial listener: open failed",
+			"path", l.devPath,
+			"session_id", sessionID,
+			"err", err)
 		return nil, fmt.Errorf("serial listener: open %s: %w", l.devPath, err)
 	}
+	log.Info("serial listener: device opened",
+		"path", l.devPath,
+		"session_id", sessionID)
 
 	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		log.Info("serial listener: closing device opened after listener close",
+			"path", l.devPath,
+			"session_id", sessionID)
+		if err := rwc.Close(); err != nil {
+			log.Error("serial listener: close after listener close failed",
+				"path", l.devPath,
+				"session_id", sessionID,
+				"err", err)
+		}
+		return nil, errors.New("serial listener: closed")
+	}
 	l.cur = rwc
+	log.Info("serial listener: connection accepted",
+		"path", l.devPath,
+		"session_id", sessionID)
 	l.mu.Unlock()
 
 	return &serialConn{
-		rwc:    rwc,
-		laddr:  l.addr,
-		raddr:  l.addr,
-		parent: l,
+		rwc:              rwc,
+		laddr:            l.addr,
+		raddr:            l.addr,
+		parent:           l,
+		sessionID:        sessionID,
+		staleReadTimeout: l.staleReadTimeout,
+		nowFn:            l.nowFn,
+		log:              log,
 	}, nil
 }
 
@@ -100,15 +140,33 @@ func (l *SerialListener) Accept() (net.Conn, error) {
 // connection is also closed. Wakes any pending Accept callers so they
 // observe the closed state.
 func (l *SerialListener) Close() error {
+	log := l.logger()
 	l.mu.Lock()
-	defer l.mu.Unlock()
+	if l.closed {
+		l.mu.Unlock()
+		return nil
+	}
 	l.closed = true
+	cur := l.cur
+	l.cur = nil
 	l.cond.Broadcast()
-	if l.cur != nil {
-		err := l.cur.Close()
-		l.cur = nil
+	l.mu.Unlock()
+
+	log.Info("serial listener: closing", "path", l.devPath)
+	if cur == nil {
+		log.Info("serial listener: closed", "path", l.devPath)
+		return nil
+	}
+
+	log.Info("serial listener: closing active device", "path", l.devPath)
+	err := cur.Close()
+	if err != nil {
+		log.Error("serial listener: active device close failed",
+			"path", l.devPath,
+			"err", err)
 		return err
 	}
+	log.Info("serial listener: closed active device", "path", l.devPath)
 	return nil
 }
 
@@ -118,23 +176,56 @@ func (l *SerialListener) Addr() net.Addr {
 	return l.addr
 }
 
-func (l *SerialListener) connClosed(rwc io.ReadWriteCloser) {
+func (l *SerialListener) connClosed(rwc io.ReadWriteCloser, sessionID uint64) {
+	log := l.logger()
 	// Hold the device-busy state for a short grace period after the
 	// gRPC server closed its end. This lets qemu's chardev see the
 	// host disconnect and accept the next host peer cleanly before
 	// the next Accept reopens /dev/ttyV0.x. Without this grace the
 	// reopen races the disconnect/reconnect on virtio-serial and the
 	// next session sees stale bytes from the previous one.
-	if l.postCloseDelay > 0 {
+	if l.shouldRunPostCloseDelay(rwc) {
+		log.Info("serial listener: post-close delay started",
+			"path", l.devPath,
+			"session_id", sessionID,
+			"duration", l.postCloseDelay.String())
 		timer := time.NewTimer(l.postCloseDelay)
 		<-timer.C
+		log.Info("serial listener: post-close delay finished",
+			"path", l.devPath,
+			"session_id", sessionID,
+			"duration", l.postCloseDelay.String())
+	}
+	l.mu.Lock()
+	released := false
+	if l.cur == rwc {
+		l.cur = nil
+		released = true
+		l.cond.Broadcast()
+	}
+	closed := l.closed
+	l.mu.Unlock()
+	log.Info("serial listener: connection closed",
+		"path", l.devPath,
+		"session_id", sessionID,
+		"released", released,
+		"listener_closed", closed)
+}
+
+func (l *SerialListener) shouldRunPostCloseDelay(rwc io.ReadWriteCloser) bool {
+	if l.postCloseDelay <= 0 {
+		return false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.cur == rwc {
-		l.cur = nil
-		l.cond.Broadcast()
+	return !l.closed && l.cur == rwc
+}
+
+func (l *SerialListener) logger() *slog.Logger {
+	if l.log != nil {
+		return l.log
 	}
+	return slog.Default()
 }
 
 // serialAddr is a minimal net.Addr backed by the device path.
@@ -147,23 +238,50 @@ func (s serialAddr) String() string  { return string(s) }
 // Deadline support is best-effort and only takes effect when the
 // underlying file supports it (os.File does on Unix-like systems).
 type serialConn struct {
-	rwc    io.ReadWriteCloser
-	laddr  serialAddr
-	raddr  serialAddr
-	parent *SerialListener
+	rwc              io.ReadWriteCloser
+	laddr            serialAddr
+	raddr            serialAddr
+	parent           *SerialListener
+	sessionID        uint64
+	staleReadTimeout time.Duration
+	nowFn            func() time.Time
+	log              *slog.Logger
 
 	closeOnce sync.Once
 	closeErr  error
 }
 
 func (c *serialConn) Read(b []byte) (int, error) {
+	if c.staleReadTimeout > 0 && c.nowFn != nil {
+		_ = c.setReadDeadline(c.nowFn().Add(c.staleReadTimeout))
+	}
 	n, err := c.rwc.Read(b)
+	switch {
+	case n == 0 && isTimeoutError(err):
+		c.logger().Info("serial connection: read timeout returned EOF",
+			"session_id", c.sessionID,
+			"err", err)
+		err = io.EOF
+	case errors.Is(err, io.EOF):
+		c.logger().Info("serial connection: read EOF",
+			"session_id", c.sessionID,
+			"n", n)
+	case err != nil:
+		c.logger().Warn("serial connection: read error",
+			"session_id", c.sessionID,
+			"n", n,
+			"err", err)
+	}
 	if debugSerialIO {
 		var sample []byte
 		if n > 0 {
 			sample = b[:min(n, 32)]
 		}
-		slog.DebugContext(context.Background(), "serial read", "n", n, "err", err, "first32hex", hex.EncodeToString(sample))
+		c.logger().DebugContext(context.Background(), "serial read",
+			"session_id", c.sessionID,
+			"n", n,
+			"err", err,
+			"first32hex", hex.EncodeToString(sample))
 	}
 	return n, err
 }
@@ -175,7 +293,11 @@ func (c *serialConn) Write(b []byte) (int, error) {
 		if len(b) > 0 {
 			sample = b[:min(len(b), 32)]
 		}
-		slog.DebugContext(context.Background(), "serial write", "n", n, "err", err, "first32hex", hex.EncodeToString(sample))
+		c.logger().DebugContext(context.Background(), "serial write",
+			"session_id", c.sessionID,
+			"n", n,
+			"err", err,
+			"first32hex", hex.EncodeToString(sample))
 	}
 	return n, err
 }
@@ -184,33 +306,74 @@ func (c *serialConn) RemoteAddr() net.Addr { return c.raddr }
 
 func (c *serialConn) Close() error {
 	c.closeOnce.Do(func() {
+		log := c.logger()
+		log.Info("serial connection: closing", "session_id", c.sessionID)
 		c.closeErr = c.rwc.Close()
-		c.parent.connClosed(c.rwc)
+		if c.closeErr != nil {
+			log.Error("serial connection: close failed",
+				"session_id", c.sessionID,
+				"err", c.closeErr)
+		} else {
+			log.Info("serial connection: closed", "session_id", c.sessionID)
+		}
+		c.parent.connClosed(c.rwc, c.sessionID)
 	})
 	return c.closeErr
 }
 
+func (c *serialConn) logger() *slog.Logger {
+	if c.log != nil {
+		return c.log
+	}
+	return slog.Default()
+}
+
 // SetDeadline / SetReadDeadline / SetWriteDeadline are best-effort.
-// If the underlying ReadWriteCloser is an *os.File the kernel will
-// honor them (on Linux/FreeBSD via poll-based deadlines for char
-// devices). For fake implementations in tests, they are no-ops.
+// If the underlying ReadWriteCloser supports deadlines, the kernel or
+// fake test object honors them. Otherwise these methods are no-ops.
 func (c *serialConn) SetDeadline(t time.Time) error {
-	if f, ok := c.rwc.(*os.File); ok {
-		return f.SetDeadline(t)
+	if rwc, ok := c.rwc.(deadlineReadWriteCloser); ok {
+		return rwc.SetDeadline(t)
 	}
 	return nil
 }
 
 func (c *serialConn) SetReadDeadline(t time.Time) error {
-	if f, ok := c.rwc.(*os.File); ok {
-		return f.SetReadDeadline(t)
+	return c.setReadDeadline(t)
+}
+
+func (c *serialConn) SetWriteDeadline(t time.Time) error {
+	if rwc, ok := c.rwc.(writeDeadliner); ok {
+		return rwc.SetWriteDeadline(t)
 	}
 	return nil
 }
 
-func (c *serialConn) SetWriteDeadline(t time.Time) error {
-	if f, ok := c.rwc.(*os.File); ok {
-		return f.SetWriteDeadline(t)
+func (c *serialConn) setReadDeadline(t time.Time) error {
+	if rwc, ok := c.rwc.(readDeadliner); ok {
+		return rwc.SetReadDeadline(t)
 	}
 	return nil
+}
+
+type readDeadliner interface {
+	SetReadDeadline(time.Time) error
+}
+
+type writeDeadliner interface {
+	SetWriteDeadline(time.Time) error
+}
+
+type deadlineReadWriteCloser interface {
+	readDeadliner
+	writeDeadliner
+	SetDeadline(time.Time) error
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }

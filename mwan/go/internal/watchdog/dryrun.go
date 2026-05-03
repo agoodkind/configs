@@ -18,18 +18,18 @@ func (d *dryRunOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
 	return d.inner.VMStatus(ctx, vmid)
 }
 
-func (d *dryRunOps) VMStop(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would stop VM", "vmid", vmid)
+func (d *dryRunOps) VMStop(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would stop VM", "vmid", vmid)
 	return nil
 }
 
-func (d *dryRunOps) VMRollback(_ context.Context, vmid, snap string) error {
-	d.log.Info("[DRY-RUN] would rollback VM", "vmid", vmid, "snapshot", snap)
+func (d *dryRunOps) VMRollback(ctx context.Context, vmid, snap string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would rollback VM", "vmid", vmid, "snapshot", snap)
 	return nil
 }
 
-func (d *dryRunOps) VMStart(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would start VM", "vmid", vmid)
+func (d *dryRunOps) VMStart(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would start VM", "vmid", vmid)
 	return nil
 }
 
@@ -37,8 +37,9 @@ func (d *dryRunOps) VMSnapshots(ctx context.Context, vmid string) ([]byte, error
 	return d.inner.VMSnapshots(ctx, vmid)
 }
 
-func (d *dryRunOps) VMSnapshot(_ context.Context, vmid, snapName string) error {
-	d.log.Info(
+func (d *dryRunOps) VMSnapshot(ctx context.Context, vmid, snapName string) error {
+	d.log.InfoContext(
+		ctx,
 		"[DRY-RUN] would snapshot VM",
 		"vmid", vmid,
 		"snapshot", snapName,
@@ -46,8 +47,9 @@ func (d *dryRunOps) VMSnapshot(_ context.Context, vmid, snapName string) error {
 	return nil
 }
 
-func (d *dryRunOps) VMDelSnapshot(_ context.Context, vmid, snapName string) error {
-	d.log.Info(
+func (d *dryRunOps) VMDelSnapshot(ctx context.Context, vmid, snapName string) error {
+	d.log.InfoContext(
+		ctx,
 		"[DRY-RUN] would delete snapshot",
 		"vmid", vmid,
 		"snapshot", snapName,
@@ -65,8 +67,9 @@ func (d *dryRunOps) Ping(ctx context.Context, bin, target string) bool {
 	return d.inner.Ping(ctx, bin, target)
 }
 
-func (d *dryRunOps) SendEmail(_ context.Context, to, subject, _ string) error {
-	d.log.Info(
+func (d *dryRunOps) SendEmail(ctx context.Context, to, subject, _ string) error {
+	d.log.InfoContext(
+		ctx,
 		"[DRY-RUN] would send email",
 		"to", to,
 		"subject", subject,
@@ -83,16 +86,16 @@ func (d *dryRunOps) GetConfigState(
 func (d *dryRunOps) GetBGPStatus(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetBGPStatusResponse, error) {
-	d.log.Info("[DRY-RUN] would get BGP status", "vmid", vmid)
+	d.log.InfoContext(ctx, "[DRY-RUN] would get BGP status", "vmid", vmid)
 	return &mwanv1.GetBGPStatusResponse{}, nil
 }
 
-func (d *dryRunOps) AnnounceRoutes(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would announce BGP routes", "vmid", vmid)
+func (d *dryRunOps) AnnounceRoutes(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would announce BGP routes", "vmid", vmid)
 	return nil
 }
 
-func (d *dryRunOps) WithdrawRoutes(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
+func (d *dryRunOps) WithdrawRoutes(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
 	return nil
 }

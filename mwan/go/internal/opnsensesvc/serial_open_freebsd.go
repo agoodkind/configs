@@ -42,7 +42,10 @@ func OpenVirtioSerial(path string) (io.ReadWriteCloser, error) {
 	t.Oflag &^= unix.OPOST
 	t.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
 	t.Cflag &^= unix.CSIZE | unix.PARENB
-	t.Cflag |= unix.CS8
+	t.Cflag |= unix.CS8 | unix.CLOCAL
+	if unix.HUPCL != 0 {
+		t.Cflag &^= unix.HUPCL
+	}
 	// VMIN=1, VTIME=0 -> blocking read returns as soon as one byte is
 	// available, no inter-byte timeout.
 	t.Cc[unix.VMIN] = 1

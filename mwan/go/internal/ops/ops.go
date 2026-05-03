@@ -132,21 +132,19 @@ func NewRealOps(
 	}
 }
 
-// Generic exec wrapper. All current callers pass "qm" but kept generic
-// since opnsense API replacement is in progress and other binaries may follow.
-func runCmd(
+// runQm wraps qm with a context-bound timeout.
+func runQm(
 	ctx context.Context,
 	timeout time.Duration,
-	name string, //nolint:unparam // generic, currently always "qm"; kept generic for future
 	args ...string,
 ) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return exec.CommandContext(cctx, name, args...).CombinedOutput()
+	return exec.CommandContext(cctx, "qm", args...).CombinedOutput()
 }
 
 func (r *RealOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
-	out, err := runCmd(ctx, TimeoutQmStatus, "qm", "status", vmid)
+	out, err := runQm(ctx, TimeoutQmStatus, "status", vmid)
 	if err != nil {
 		return false, err
 	}
@@ -154,36 +152,36 @@ func (r *RealOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
 }
 
 func (r *RealOps) VMStop(ctx context.Context, vmid string) error {
-	_, err := runCmd(ctx, TimeoutQmStop, "qm", "stop", vmid, "--timeout", "30")
+	_, err := runQm(ctx, TimeoutQmStop, "stop", vmid, "--timeout", "30")
 	return err
 }
 
 func (r *RealOps) VMRollback(ctx context.Context, vmid, snap string) error {
-	_, err := runCmd(ctx, TimeoutQmRollback, "qm", "rollback", vmid, snap)
+	_, err := runQm(ctx, TimeoutQmRollback, "rollback", vmid, snap)
 	return err
 }
 
 func (r *RealOps) VMStart(ctx context.Context, vmid string) error {
-	_, err := runCmd(ctx, TimeoutQmStart, "qm", "start", vmid)
+	_, err := runQm(ctx, TimeoutQmStart, "start", vmid)
 	return err
 }
 
 func (r *RealOps) VMSnapshots(ctx context.Context, vmid string) ([]byte, error) {
-	return runCmd(ctx, timeoutQmListSnapshot, "qm", "listsnapshot", vmid)
+	return runQm(ctx, timeoutQmListSnapshot, "listsnapshot", vmid)
 }
 
 func (r *RealOps) VMSnapshot(
 	ctx context.Context, vmid, snapName string,
 ) error {
-	_, err := runCmd(ctx, TimeoutQmSnapshot, "qm", "snapshot", vmid, snapName)
+	_, err := runQm(ctx, TimeoutQmSnapshot, "snapshot", vmid, snapName)
 	return err
 }
 
 func (r *RealOps) VMDelSnapshot(
 	ctx context.Context, vmid, snapName string,
 ) error {
-	_, err := runCmd(
-		ctx, timeoutQmDelSnapshot, "qm", "delsnapshot", vmid, snapName,
+	_, err := runQm(
+		ctx, timeoutQmDelSnapshot, "delsnapshot", vmid, snapName,
 	)
 	return err
 }
@@ -734,10 +732,10 @@ func (r *RealOps) logAttemptResult(
 ) {
 	log := r.attemptLogger(ctx, operation, channel, attempt)
 	if err != nil {
-		log.Warn("ops transport failed", "vmid", vmid, "err", err)
+		log.WarnContext(ctx, "ops transport failed", "vmid", vmid, "err", err)
 		return
 	}
-	log.Info("ops transport succeeded", "vmid", vmid)
+	log.InfoContext(ctx, "ops transport succeeded", "vmid", vmid)
 }
 
 // ---------------------------------------------------------------------------
@@ -805,18 +803,18 @@ func (d *DryRunOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
 	return d.inner.VMStatus(ctx, vmid)
 }
 
-func (d *DryRunOps) VMStop(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would stop VM", "vmid", vmid)
+func (d *DryRunOps) VMStop(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would stop VM", "vmid", vmid)
 	return nil
 }
 
-func (d *DryRunOps) VMRollback(_ context.Context, vmid, snap string) error {
-	d.log.Info("[DRY-RUN] would rollback VM", "vmid", vmid, "snapshot", snap)
+func (d *DryRunOps) VMRollback(ctx context.Context, vmid, snap string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would rollback VM", "vmid", vmid, "snapshot", snap)
 	return nil
 }
 
-func (d *DryRunOps) VMStart(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would start VM", "vmid", vmid)
+func (d *DryRunOps) VMStart(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would start VM", "vmid", vmid)
 	return nil
 }
 
@@ -824,8 +822,9 @@ func (d *DryRunOps) VMSnapshots(ctx context.Context, vmid string) ([]byte, error
 	return d.inner.VMSnapshots(ctx, vmid)
 }
 
-func (d *DryRunOps) VMSnapshot(_ context.Context, vmid, snapName string) error {
-	d.log.Info(
+func (d *DryRunOps) VMSnapshot(ctx context.Context, vmid, snapName string) error {
+	d.log.InfoContext(
+		ctx,
 		"[DRY-RUN] would snapshot VM",
 		"vmid", vmid,
 		"snapshot", snapName,
@@ -833,8 +832,9 @@ func (d *DryRunOps) VMSnapshot(_ context.Context, vmid, snapName string) error {
 	return nil
 }
 
-func (d *DryRunOps) VMDelSnapshot(_ context.Context, vmid, snapName string) error {
-	d.log.Info(
+func (d *DryRunOps) VMDelSnapshot(ctx context.Context, vmid, snapName string) error {
+	d.log.InfoContext(
+		ctx,
 		"[DRY-RUN] would delete snapshot",
 		"vmid", vmid,
 		"snapshot", snapName,
@@ -852,8 +852,9 @@ func (d *DryRunOps) Ping(ctx context.Context, bin, target string) bool {
 	return d.inner.Ping(ctx, bin, target)
 }
 
-func (d *DryRunOps) SendEmail(_ context.Context, to, subject, _ string) error {
-	d.log.Info(
+func (d *DryRunOps) SendEmail(ctx context.Context, to, subject, _ string) error {
+	d.log.InfoContext(
+		ctx,
 		"[DRY-RUN] would send email",
 		"to", to,
 		"subject", subject,
@@ -870,16 +871,16 @@ func (d *DryRunOps) GetConfigState(
 func (d *DryRunOps) GetBGPStatus(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetBGPStatusResponse, error) {
-	d.log.Info("[DRY-RUN] would get BGP status", "vmid", vmid)
+	d.log.InfoContext(ctx, "[DRY-RUN] would get BGP status", "vmid", vmid)
 	return &mwanv1.GetBGPStatusResponse{}, nil
 }
 
-func (d *DryRunOps) AnnounceRoutes(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would announce BGP routes", "vmid", vmid)
+func (d *DryRunOps) AnnounceRoutes(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would announce BGP routes", "vmid", vmid)
 	return nil
 }
 
-func (d *DryRunOps) WithdrawRoutes(_ context.Context, vmid string) error {
-	d.log.Info("[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
+func (d *DryRunOps) WithdrawRoutes(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
 	return nil
 }

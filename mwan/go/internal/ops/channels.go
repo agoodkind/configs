@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -27,15 +28,24 @@ type channelHealth struct {
 type ChannelTracker struct {
 	mu       sync.Mutex
 	channels map[ChannelName]*channelHealth
+	now      func() time.Time
 }
 
 func NewChannelTracker() *ChannelTracker {
+	return NewChannelTrackerWithClock(time.Now)
+}
+
+func NewChannelTrackerWithClock(now func() time.Time) *ChannelTracker {
+	if now == nil {
+		now = time.Now
+	}
 	return &ChannelTracker{
 		channels: map[ChannelName]*channelHealth{
 			ChanVsock: {},
 			ChanTCP:   {},
 			ChanPVE:   {},
 		},
+		now: now,
 	}
 }
 
@@ -43,7 +53,7 @@ func (t *ChannelTracker) recordSuccess(ch ChannelName) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	h := t.channels[ch]
-	h.lastSuccess = time.Now()
+	h.lastSuccess = t.now()
 	h.consecutiveFails = 0
 	h.lastError = ""
 	h.healthy = true
@@ -53,7 +63,7 @@ func (t *ChannelTracker) recordFailure(ch ChannelName, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	h := t.channels[ch]
-	h.lastFailure = time.Now()
+	h.lastFailure = t.now()
 	h.consecutiveFails++
 	if err != nil {
 		h.lastError = err.Error()
@@ -84,12 +94,12 @@ func (t *ChannelTracker) Summary() string {
 }
 
 // LogAll emits one slog line per channel at DEBUG level.
-func (t *ChannelTracker) LogAll(log *slog.Logger) {
+func (t *ChannelTracker) LogAll(ctx context.Context, log *slog.Logger) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, name := range []ChannelName{ChanVsock, ChanTCP, ChanPVE} {
 		h := t.channels[name]
-		log.Debug("channel health",
+		log.DebugContext(ctx, "channel health",
 			"channel", name,
 			"healthy", h.healthy,
 			"consecutive_fails", h.consecutiveFails,

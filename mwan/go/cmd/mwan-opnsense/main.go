@@ -24,33 +24,43 @@ import (
 	"goodkind.io/mwan/internal/version"
 )
 
-func usage() {
+func usage() int {
 	fmt.Fprintln(os.Stderr, "usage: mwan-opnsense {serve|version|status|is-enabled} [flags]")
-	os.Exit(2)
+	return 2
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
+	if os.Getenv("MWAN_OPNSENSE_DAEMON_CHILD") == "1" {
+		os.Unsetenv("MWAN_OPNSENSE_DAEMON_CHILD")
+		os.Exit(run(os.Args[1:]))
 	}
-	sub := os.Args[1]
-	args := os.Args[2:]
+	slog.Info("mwan-opnsense process start")
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	if len(args) < 1 {
+		return usage()
+	}
+	sub := args[0]
+	subArgs := args[1:]
 	slog.Info("mwan-opnsense boundary",
 		"build", version.BuildVersionString(),
 		"subcommand", sub)
 	switch sub {
 	case "version":
 		fmt.Fprintln(os.Stdout, version.BuildVersionString())
+		return 0
 	case "serve":
-		runServe(args)
+		return runServe(subArgs)
 	case "status":
-		runStatus(args)
+		return runStatus(subArgs)
 	case "is-enabled":
-		runIsEnabled(args)
+		return runIsEnabled(subArgs)
 	case "-h", "--help", "help":
-		usage()
+		return usage()
 	default:
 		fmt.Fprintf(os.Stderr, "mwan-opnsense: unknown subcommand %q\n", sub)
-		usage()
+		return usage()
 	}
 }

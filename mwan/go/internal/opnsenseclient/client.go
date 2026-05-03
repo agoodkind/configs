@@ -21,12 +21,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+)
+
+const (
+	opnsenseHandshakeAttemptTimeout = 500 * time.Millisecond
+	opnsenseReconnectDelay          = 1200 * time.Millisecond
 )
 
 // Config is the per-connection configuration.
@@ -36,6 +43,8 @@ type Config struct {
 	// DialTimeout caps the time spent waiting on the initial
 	// handshake. RPCs themselves use the per-call context.
 	DialTimeout time.Duration
+	// Clock supplies wall time for retry accounting.
+	Clock Clock
 }
 
 // Client is a thin gRPC wrapper exposing the mwan-opnsense RPC
@@ -55,24 +64,106 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	if dialTimeout <= 0 {
 		dialTimeout = 5 * time.Second
 	}
+	activeClock := clockOrReal(cfg.Clock)
+	remainingTimeout := dialTimeout
+	startedAt := activeClock.Now()
+	var lastErr error
+	attempts := 0
+	for {
+		attempts++
+		attempt := attempts
+		attemptTimeout := min(remainingTimeout, opnsenseHandshakeAttemptTimeout)
+		slog.DebugContext(ctx, "opnsenseclient: handshake attempt starting",
+			"target", cfg.Target,
+			"attempt", attempt,
+			"attempt_timeout_ms", attemptTimeout.Milliseconds(),
+			"remaining_timeout_ms", remainingTimeout.Milliseconds())
 
-	conn, err := grpc.NewClient(cfg.Target,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		slog.ErrorContext(ctx, "opnsenseclient: dial failed", "target", cfg.Target, "err", err)
-		return nil, fmt.Errorf("opnsenseclient: dial %q: %w", cfg.Target, err)
+		attemptStartedAt := activeClock.Now()
+		client, err := dialOnce(ctx, cfg.Target, attemptTimeout)
+		if err == nil {
+			slog.DebugContext(ctx, "opnsenseclient: handshake succeeded",
+				"target", cfg.Target,
+				"attempt", attempt,
+				"elapsed_ms", activeClock.Now().Sub(startedAt).Milliseconds())
+			return client, nil
+		}
+		lastErr = err
+		slog.WarnContext(ctx, "opnsenseclient: handshake attempt failed",
+			"target", cfg.Target,
+			"attempt", attempt,
+			"attempt_timeout_ms", attemptTimeout.Milliseconds(),
+			"attempt_elapsed_ms", activeClock.Now().Sub(attemptStartedAt).Milliseconds(),
+			"err", err)
+
+		remainingTimeout -= attemptTimeout
+		if remainingTimeout <= opnsenseReconnectDelay {
+			break
+		}
+		slog.DebugContext(ctx, "opnsenseclient: reconnect sleep starting",
+			"target", cfg.Target,
+			"attempt", attempt,
+			"next_attempt", attempt+1,
+			"reconnect_sleep_ms", opnsenseReconnectDelay.Milliseconds(),
+			"remaining_timeout_ms", remainingTimeout.Milliseconds())
+		timer := time.NewTimer(opnsenseReconnectDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			slog.WarnContext(ctx, "opnsenseclient: handshake cancelled",
+				"target", cfg.Target,
+				"attempt", attempt,
+				"elapsed_ms", activeClock.Now().Sub(startedAt).Milliseconds(),
+				"err", ctx.Err())
+			return nil, fmt.Errorf("opnsenseclient: handshake to %q: %w", cfg.Target, ctx.Err())
+		case <-timer.C:
+			remainingTimeout -= opnsenseReconnectDelay
+		}
+	}
+	slog.ErrorContext(ctx, "opnsenseclient: handshake failed permanently",
+		"target", cfg.Target,
+		"attempts", attempts,
+		"elapsed_ms", activeClock.Now().Sub(startedAt).Milliseconds(),
+		"err", lastErr)
+	return nil, fmt.Errorf(
+		"opnsenseclient: handshake to %q failed after %d attempt(s): %w",
+		cfg.Target,
+		attempts,
+		lastErr,
+	)
+}
+
+func dialOnce(ctx context.Context, target string, dialTimeout time.Duration) (*Client, error) {
+	dialOptions := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	if unixSocketPath, ok := unixTargetPath(target); ok {
+		dialOptions = append(dialOptions,
+			grpc.WithContextDialer(unixContextDialer(unixSocketPath)))
 	}
 
-	// Force a handshake within dialTimeout so callers get a fast
-	// failure instead of a deadline-exceeded on the first RPC.
+	conn, err := grpc.NewClient(target, dialOptions...)
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsenseclient: create client failed",
+			"target", target,
+			"err", err)
+		return nil, fmt.Errorf("opnsenseclient: dial %q: %w", target, err)
+	}
+
 	probeCtx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 
 	cli := mwanv1.NewMWANOPNsenseServiceClient(conn)
 	if _, err := cli.Version(probeCtx, &mwanv1.VersionRequest{}); err != nil {
-		_ = conn.Close()
-		slog.ErrorContext(ctx, "opnsenseclient: handshake failed", "target", cfg.Target, "err", err)
-		return nil, fmt.Errorf("opnsenseclient: handshake to %q: %w", cfg.Target, err)
+		if closeErr := conn.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "opnsenseclient: close failed after handshake error",
+				"target", target,
+				"err", closeErr)
+		}
+		slog.WarnContext(ctx, "opnsenseclient: version handshake failed",
+			"target", target,
+			"err", err)
+		return nil, fmt.Errorf("opnsenseclient: handshake to %q: %w", target, err)
 	}
 
 	return &Client{conn: conn, rpc: cli}, nil
@@ -87,4 +178,23 @@ func (c *Client) Close() error {
 // to use this for any of the service's RPCs.
 func (c *Client) RPC() mwanv1.MWANOPNsenseServiceClient {
 	return c.rpc
+}
+
+func unixTargetPath(target string) (string, bool) {
+	const unixScheme = "unix://"
+	if !strings.HasPrefix(target, unixScheme) {
+		return "", false
+	}
+	path := strings.TrimPrefix(target, unixScheme)
+	if path == "" {
+		return "", false
+	}
+	return path, true
+}
+
+func unixContextDialer(socketPath string) func(context.Context, string) (net.Conn, error) {
+	return func(ctx context.Context, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "unix", socketPath)
+	}
 }

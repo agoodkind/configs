@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"goodkind.io/mwan/internal/alert"
 	"goodkind.io/mwan/internal/config"
@@ -22,14 +23,14 @@ import (
 
 // watchdogFlags holds the parsed command-line flags for the watchdog subcommand.
 type watchdogFlags struct {
-	dryRun       bool
-	redTeam      string
-	redTeamLive  bool
-	redTeamIters int
+	dryRun        bool
+	redTeam       string
+	redTeamLive   bool
+	redTeamIters  int
+	showScenarios bool
 }
 
-// parseFlags parses command-line flags and handles --list-scenarios.
-// Returns the parsed flags. May call os.Exit(0) for --list-scenarios.
+// parseFlags parses command-line flags for the watchdog subcommand.
 func parseFlags() watchdogFlags {
 	dryRun := flag.Bool(
 		"dry-run", false,
@@ -53,27 +54,12 @@ func parseFlags() watchdogFlags {
 	)
 	flag.Parse()
 
-	if *listScenarios {
-		// Explicit os.Stdout writes for human-facing CLI usage output;
-		// not production diagnostics (which go through slog).
-		fmt.Fprintln(os.Stdout, "Available red-team scenarios:")
-		fmt.Fprintln(os.Stdout)
-		for name, preset := range redteam.Presets {
-			fmt.Fprintf(os.Stdout, "  %-22s %s\n", name, preset.Description)
-		}
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprintln(os.Stdout,
-			"Usage: mwan watchdog --red-team <scenario> "+
-				"[--red-team-live] [--red-team-iterations N]",
-		)
-		os.Exit(0)
-	}
-
 	f := watchdogFlags{
-		dryRun:       *dryRun,
-		redTeam:      *redTeam,
-		redTeamLive:  *redTeamLive,
-		redTeamIters: *redTeamIters,
+		dryRun:        *dryRun,
+		redTeam:       *redTeam,
+		redTeamLive:   *redTeamLive,
+		redTeamIters:  *redTeamIters,
+		showScenarios: *listScenarios,
 	}
 	if f.redTeam != "" && !f.redTeamLive {
 		f.dryRun = true
@@ -82,6 +68,21 @@ func parseFlags() watchdogFlags {
 		f.dryRun = true
 	}
 	return f
+}
+
+func printScenarios() {
+	// Explicit os.Stdout writes for human-facing CLI usage output;
+	// not production diagnostics (which go through slog).
+	fmt.Fprintln(os.Stdout, "Available red-team scenarios:")
+	fmt.Fprintln(os.Stdout)
+	for name, preset := range redteam.Presets {
+		fmt.Fprintf(os.Stdout, "  %-22s %s\n", name, preset.Description)
+	}
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout,
+		"Usage: mwan watchdog --red-team <scenario> "+
+			"[--red-team-live] [--red-team-iterations N]",
+	)
 }
 
 // buildOpsLayer creates the logger, email sender, and operations layer,
@@ -133,6 +134,10 @@ func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOp
 // It sets up flag parsing, logger, operations layer, and coordinates the watchdog loop.
 func Run(cfg *config.Config) error {
 	f := parseFlags()
+	if f.showScenarios {
+		printScenarios()
+		return nil
+	}
 
 	logger, baseOps, err := buildOpsLayer(cfg, f)
 	if err != nil {
@@ -162,16 +167,22 @@ func Run(cfg *config.Config) error {
 		context.Background(), syscall.SIGTERM, syscall.SIGINT,
 	)
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				logger.ErrorContext(mainCtx, "signal handler panic", "err", fmt.Errorf("panic: %v", recovered))
+			}
+		}()
 		<-sigCtx.Done()
 		if coord.IsRollingBack() {
-			logger.Info(
+			logger.InfoContext(
+				mainCtx,
 				"Signal received during rollback; deferring until rollback completes",
 			)
 			coord.OnSignalDuringRollback()
 			stopSig()
 			return
 		}
-		logger.Info("Signal received; shutting down")
+		logger.InfoContext(mainCtx, "Signal received; shutting down")
 		stopSig()
 		cancelMain()
 	}()
@@ -184,6 +195,7 @@ func Run(cfg *config.Config) error {
 		limiter: alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
 		log:     logger,
 		runID:   runID,
+		nowFn:   time.Now,
 	}
 
 	// Try to extract channel tracker for diagnostics
