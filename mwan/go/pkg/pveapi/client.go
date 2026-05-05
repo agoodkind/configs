@@ -210,6 +210,7 @@ func decodeAgentB64(s string) (string, error) {
 		// Input had non-printable bytes but isn't valid base64 either,
 		// so we cannot decode it. Surface the error rather than masking it
 		// with the original (binary) input.
+		slog.Warn("pveapi: decode base64 agent output failed", "err", err)
 		return "", fmt.Errorf("decode base64 agent output: %w", err)
 	}
 	return string(raw), nil

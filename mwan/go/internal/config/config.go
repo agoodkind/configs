@@ -377,17 +377,20 @@ func validateIfMgr(cfg *Config) error {
 	}
 	if cfg.IfMgr.ReconcileInterval != "" {
 		if _, err := time.ParseDuration(cfg.IfMgr.ReconcileInterval); err != nil {
+			slog.Error("config: reconcile_interval invalid", "err", err, "value", cfg.IfMgr.ReconcileInterval)
 			return fmt.Errorf("ifmgr.reconcile_interval %q: %w", cfg.IfMgr.ReconcileInterval, err)
 		}
 	}
 	for name, iface := range cfg.IfMgr.Iface {
 		if iface.DHCPInitialBackoff != "" {
 			if _, err := time.ParseDuration(iface.DHCPInitialBackoff); err != nil {
+				slog.Error("config: dhcp_initial_backoff invalid", "err", err, "iface", name, "value", iface.DHCPInitialBackoff)
 				return fmt.Errorf("ifmgr.iface.%s.dhcp_initial_backoff %q: %w", name, iface.DHCPInitialBackoff, err)
 			}
 		}
 		if iface.DHCPMaxBackoff != "" {
 			if _, err := time.ParseDuration(iface.DHCPMaxBackoff); err != nil {
+				slog.Error("config: dhcp_max_backoff invalid", "err", err, "iface", name, "value", iface.DHCPMaxBackoff)
 				return fmt.Errorf("ifmgr.iface.%s.dhcp_max_backoff %q: %w", name, iface.DHCPMaxBackoff, err)
 			}
 		}

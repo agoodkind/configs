@@ -251,6 +251,7 @@ func (s *Speaker) WithdrawDefault() error {
 func parsePrefix(s string) (netip.Prefix, error) {
 	pfx, err := netip.ParsePrefix(s)
 	if err != nil {
+		slog.Warn("bgp: parse prefix failed", "err", err, "input", s)
 		return netip.Prefix{}, fmt.Errorf("parse prefix %q: %w", s, err)
 	}
 	return pfx, nil
