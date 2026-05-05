@@ -41,6 +41,16 @@ const (
 // command that ran and returned a non-zero exit code.
 var ErrGuestExecUnavailable = errors.New("pve client not configured (no PVE_TOKEN_ID)")
 
+// guestCmd enumerates the argv[0] commands the in-guest gRPC adapter
+// translates from `GuestExec` argv into typed RPCs.
+type guestCmd string
+
+const (
+	guestCmdPing  guestCmd = "ping"
+	guestCmdPing6 guestCmd = "ping6"
+	guestCmdCat   guestCmd = "cat"
+)
+
 // ---------------------------------------------------------------------------
 // SysOps: interface for all external dependencies
 // ---------------------------------------------------------------------------
@@ -138,11 +148,14 @@ func runQm(
 	timeout time.Duration,
 	args ...string,
 ) ([]byte, error) {
+	slog.DebugContext(ctx, "ops: runQm", "args", args, "timeout", timeout)
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return exec.CommandContext(cctx, "qm", args...).CombinedOutput()
 }
 
+// VMStatus reports whether the VM with the given vmid is currently running
+// according to `qm status`.
 func (r *RealOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
 	out, err := runQm(ctx, TimeoutQmStatus, "status", vmid)
 	if err != nil {
@@ -151,25 +164,31 @@ func (r *RealOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
 	return strings.Contains(string(out), "running"), nil
 }
 
+// VMStop stops the VM with the given vmid via `qm stop --timeout 30`.
 func (r *RealOps) VMStop(ctx context.Context, vmid string) error {
 	_, err := runQm(ctx, TimeoutQmStop, "stop", vmid, "--timeout", "30")
 	return err
 }
 
+// VMRollback rolls the VM back to the named snapshot via `qm rollback`.
 func (r *RealOps) VMRollback(ctx context.Context, vmid, snap string) error {
 	_, err := runQm(ctx, TimeoutQmRollback, "rollback", vmid, snap)
 	return err
 }
 
+// VMStart starts the VM with the given vmid via `qm start`.
 func (r *RealOps) VMStart(ctx context.Context, vmid string) error {
 	_, err := runQm(ctx, TimeoutQmStart, "start", vmid)
 	return err
 }
 
+// VMSnapshots returns the raw output of `qm listsnapshot` for the given vmid.
 func (r *RealOps) VMSnapshots(ctx context.Context, vmid string) ([]byte, error) {
 	return runQm(ctx, timeoutQmListSnapshot, "listsnapshot", vmid)
 }
 
+// VMSnapshot creates a new snapshot named snapName on the given VM via
+// `qm snapshot`.
 func (r *RealOps) VMSnapshot(
 	ctx context.Context, vmid, snapName string,
 ) error {
@@ -177,6 +196,8 @@ func (r *RealOps) VMSnapshot(
 	return err
 }
 
+// VMDelSnapshot deletes the snapshot named snapName from the given VM via
+// `qm delsnapshot`.
 func (r *RealOps) VMDelSnapshot(
 	ctx context.Context, vmid, snapName string,
 ) error {
@@ -261,8 +282,8 @@ func (r *RealOps) vsockExec(
 	if len(args) == 0 {
 		return GuestExecResult{ExitCode: 1}, fmt.Errorf("vsockExec: no args")
 	}
-	switch args[0] {
-	case "ping", "ping6":
+	switch guestCmd(args[0]) {
+	case guestCmdPing, guestCmdPing6:
 		req := &mwanv1.PingRequest{
 			Target:         pingTarget(args),
 			BindInterface:  pingIface(args),
@@ -277,7 +298,7 @@ func (r *RealOps) vsockExec(
 			return GuestExecResult{ExitCode: 0}, nil
 		}
 		return GuestExecResult{ExitCode: 1}, nil
-	case "cat":
+	case guestCmdCat:
 		if len(args) >= 2 && strings.Contains(args[1], "mwan-last-deploy") {
 			resp, err := cli.GetConfigState(cctx, &mwanv1.GetConfigStateRequest{})
 			if err != nil {
@@ -320,8 +341,8 @@ func (r *RealOps) tcpExec(
 	if len(args) == 0 {
 		return GuestExecResult{ExitCode: 1}, fmt.Errorf("tcpExec: no args")
 	}
-	switch args[0] {
-	case "ping", "ping6":
+	switch guestCmd(args[0]) {
+	case guestCmdPing, guestCmdPing6:
 		req := &mwanv1.PingRequest{
 			Target:         pingTarget(args),
 			BindInterface:  pingIface(args),
@@ -336,7 +357,7 @@ func (r *RealOps) tcpExec(
 			return GuestExecResult{ExitCode: 0}, nil
 		}
 		return GuestExecResult{ExitCode: 1}, nil
-	case "cat":
+	case guestCmdCat:
 		if len(args) >= 2 && strings.Contains(args[1], "mwan-last-deploy") {
 			resp, err := cli.GetConfigState(cctx, &mwanv1.GetConfigStateRequest{})
 			if err != nil {
@@ -685,7 +706,11 @@ func (r *RealOps) WithdrawRoutes(ctx context.Context, vmid string) error {
 	return fmt.Errorf("WithdrawRoutes: all channels failed")
 }
 
+// Ping runs the host probe binary (typically `ping` or `ping6`) against
+// target with a 2-packet count and 3-second per-packet timeout, capped by
+// timeoutHostProbe. It returns true when the binary exits 0.
 func (r *RealOps) Ping(ctx context.Context, bin, target string) bool {
+	r.log.DebugContext(ctx, "ops: Ping", "bin", bin, "target", target)
 	cctx, cancel := context.WithTimeout(ctx, timeoutHostProbe)
 	defer cancel()
 	return exec.CommandContext(cctx, bin, "-c", "2", "-W", "3", target).Run() == nil
