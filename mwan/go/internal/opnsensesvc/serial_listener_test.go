@@ -32,6 +32,7 @@ func (f *fakeRWC) Close() error {
 }
 
 type deadlineFakeRWC struct {
+	mu                sync.Mutex
 	readDeadlineCount int
 }
 
@@ -52,12 +53,20 @@ func (f *deadlineFakeRWC) SetDeadline(time.Time) error {
 }
 
 func (f *deadlineFakeRWC) SetReadDeadline(time.Time) error {
+	f.mu.Lock()
 	f.readDeadlineCount++
+	f.mu.Unlock()
 	return nil
 }
 
 func (f *deadlineFakeRWC) SetWriteDeadline(time.Time) error {
 	return nil
+}
+
+func (f *deadlineFakeRWC) deadlineCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.readDeadlineCount
 }
 
 type timeoutFakeRWC struct{}
@@ -83,6 +92,7 @@ func (f *timeoutFakeRWC) SetWriteDeadline(time.Time) error {
 }
 
 type closeCountingRWC struct {
+	mu         sync.Mutex
 	closeCount int
 }
 
@@ -95,8 +105,16 @@ func (f *closeCountingRWC) Write(p []byte) (int, error) {
 }
 
 func (f *closeCountingRWC) Close() error {
+	f.mu.Lock()
 	f.closeCount++
+	f.mu.Unlock()
 	return nil
+}
+
+func (f *closeCountingRWC) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closeCount
 }
 
 func newFakeOpener(payload string) func(string) (io.ReadWriteCloser, error) {
@@ -110,17 +128,59 @@ func newFakeOpener(payload string) func(string) (io.ReadWriteCloser, error) {
 	}
 }
 
-// newTestListener returns a listener with the post-close grace
-// disabled so tests don't sleep needlessly.
-func newTestListener(devPath string, openFn func(string) (io.ReadWriteCloser, error)) *SerialListener {
-	l := NewSerialListener(devPath, openFn)
-	l.postCloseDelay = 0
+// newTestListener constructs a listener for tests.
+func newTestListener(t *testing.T, devPath string, openFn func(string) (io.ReadWriteCloser, error)) *SerialListener {
+	t.Helper()
+	l, err := NewSerialListener(devPath, openFn)
+	if err != nil {
+		t.Fatalf("NewSerialListener: %v", err)
+	}
 	return l
 }
 
+// TestSerialListener_NewOpensImmediately confirms the device is opened
+// at construction (the persistent-device model), not deferred to Accept.
+func TestSerialListener_NewOpensImmediately(t *testing.T) {
+	opens := 0
+	opener := func(_ string) (io.ReadWriteCloser, error) {
+		opens++
+		return &closeCountingRWC{}, nil
+	}
+	l := newTestListener(t, "/dev/test", opener)
+	defer func() { _ = l.Close() }()
+
+	if opens != 1 {
+		t.Fatalf("opens at construction = %d, want 1", opens)
+	}
+}
+
+// TestSerialListener_NewOpenerError returns the openFn error, no
+// listener is constructed.
+func TestSerialListener_NewOpenerError(t *testing.T) {
+	want := errors.New("device gone")
+	l, err := NewSerialListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
+		return nil, want
+	})
+	if err == nil || !errors.Is(err, want) {
+		t.Fatalf("expected wrapped %v, got %v (l=%v)", want, err, l)
+	}
+	if l != nil {
+		t.Fatal("expected nil listener on open failure")
+	}
+}
+
+// TestSerialListener_NewRejectsNilOpener guards against accidental nil.
+func TestSerialListener_NewRejectsNilOpener(t *testing.T) {
+	if _, err := NewSerialListener("/dev/test", nil); err == nil {
+		t.Fatal("expected error for nil openFn")
+	}
+}
+
+// TestSerialListener_AcceptReadClose confirms basic read flow over
+// a single accepted Conn.
 func TestSerialListener_AcceptReadClose(t *testing.T) {
 	opener := newFakeOpener("hello")
-	l := newTestListener("/dev/test", opener)
+	l := newTestListener(t, "/dev/test", opener)
 	defer func() { _ = l.Close() }()
 
 	conn, err := l.Accept()
@@ -139,9 +199,13 @@ func TestSerialListener_AcceptReadClose(t *testing.T) {
 	}
 }
 
-func TestSerialListener_BlocksUntilFirstCloses(t *testing.T) {
+// TestSerialListener_AcceptBlocksUntilFirstCloses verifies the
+// session-gating: only one Conn at a time is "active" per the
+// listener's internal state, even though they share the underlying
+// device.
+func TestSerialListener_AcceptBlocksUntilFirstCloses(t *testing.T) {
 	opener := newFakeOpener("first")
-	l := newTestListener("/dev/test", opener)
+	l := newTestListener(t, "/dev/test", opener)
 	defer func() { _ = l.Close() }()
 
 	conn1, err := l.Accept()
@@ -149,7 +213,6 @@ func TestSerialListener_BlocksUntilFirstCloses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Second Accept should block until conn1 closes.
 	type acceptResult struct {
 		conn net.Conn
 		err  error
@@ -160,14 +223,12 @@ func TestSerialListener_BlocksUntilFirstCloses(t *testing.T) {
 		ch <- acceptResult{c, e}
 	}()
 
-	// Confirm it does not return immediately.
 	select {
 	case r := <-ch:
 		t.Fatalf("Accept returned without first close: conn=%v err=%v", r.conn, r.err)
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	// Close conn1 and the second Accept should now succeed.
 	_ = conn1.Close()
 	select {
 	case r := <-ch:
@@ -180,9 +241,10 @@ func TestSerialListener_BlocksUntilFirstCloses(t *testing.T) {
 	}
 }
 
+// TestSerialListener_ClosedRejects after explicit Close, Accept fails.
 func TestSerialListener_ClosedRejects(t *testing.T) {
 	opener := newFakeOpener("x")
-	l := newTestListener("/dev/test", opener)
+	l := newTestListener(t, "/dev/test", opener)
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -192,83 +254,75 @@ func TestSerialListener_ClosedRejects(t *testing.T) {
 	}
 }
 
-func TestSerialListener_CloseClosesActiveConnection(t *testing.T) {
+// TestSerialListener_CloseClosesDeviceOnce: listener Close closes the
+// underlying device exactly once.
+func TestSerialListener_CloseClosesDeviceOnce(t *testing.T) {
 	fake := &closeCountingRWC{}
-	l := newTestListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
+	l := newTestListener(t, "/dev/test", func(_ string) (io.ReadWriteCloser, error) {
 		return fake, nil
 	})
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.count(); got != 1 {
+		t.Fatalf("close count = %d, want 1", got)
+	}
+	// Idempotent.
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.count(); got != 1 {
+		t.Fatalf("close count after second Close = %d, want 1", got)
+	}
+}
+
+// TestSerialListener_ConnCloseDoesNotCloseDevice is the load-bearing
+// invariant of the persistent-device model. Closing a Conn must not
+// close the underlying device.
+func TestSerialListener_ConnCloseDoesNotCloseDevice(t *testing.T) {
+	fake := &closeCountingRWC{}
+	l := newTestListener(t, "/dev/test", func(_ string) (io.ReadWriteCloser, error) {
+		return fake, nil
+	})
+	defer func() { _ = l.Close() }()
+
 	conn, err := l.Accept()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conn == nil {
-		t.Fatal("expected accepted connection")
+	if err := conn.Close(); err != nil {
+		t.Fatalf("conn close: %v", err)
 	}
-
-	if err := l.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if fake.closeCount != 1 {
-		t.Fatalf("close count = %d, want 1", fake.closeCount)
-	}
-	_, err = l.Accept()
-	if err == nil {
-		t.Fatal("expected error after listener Close")
+	if got := fake.count(); got != 0 {
+		t.Fatalf("device close count after conn.Close = %d, want 0", got)
 	}
 }
 
-func TestSerialListener_CloseWhileOpeningClosesDevice(t *testing.T) {
+// TestSerialListener_RepeatedAcceptReusesSameDevice: multiple
+// Accept/Close cycles share the same fd. The fd is opened once.
+func TestSerialListener_RepeatedAcceptReusesSameDevice(t *testing.T) {
+	opens := 0
 	fake := &closeCountingRWC{}
-	openStarted := make(chan struct{})
-	allowOpen := make(chan struct{})
-	acceptDone := make(chan error, 1)
-	l := newTestListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
-		close(openStarted)
-		<-allowOpen
+	l := newTestListener(t, "/dev/test", func(_ string) (io.ReadWriteCloser, error) {
+		opens++
 		return fake, nil
-	})
-
-	go func() {
-		conn, err := l.Accept()
-		if conn != nil {
-			_ = conn.Close()
-		}
-		acceptDone <- err
-	}()
-
-	select {
-	case <-openStarted:
-	case <-time.After(time.Second):
-		t.Fatal("Accept did not call opener")
-	}
-	if err := l.Close(); err != nil {
-		t.Fatal(err)
-	}
-	close(allowOpen)
-
-	select {
-	case err := <-acceptDone:
-		if err == nil {
-			t.Fatal("expected Accept error after listener close")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Accept did not return after listener close")
-	}
-	if fake.closeCount != 1 {
-		t.Fatalf("close count = %d, want 1", fake.closeCount)
-	}
-}
-
-func TestSerialListener_OpenerError(t *testing.T) {
-	want := errors.New("device gone")
-	l := newTestListener("/dev/test", func(_ string) (io.ReadWriteCloser, error) {
-		return nil, want
 	})
 	defer func() { _ = l.Close() }()
 
-	_, err := l.Accept()
-	if err == nil || !errors.Is(err, want) {
-		t.Fatalf("expected wrapped %v, got %v", want, err)
+	for i := 0; i < 5; i++ {
+		conn, err := l.Accept()
+		if err != nil {
+			t.Fatalf("Accept %d: %v", i, err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatalf("Close %d: %v", i, err)
+		}
+	}
+	if opens != 1 {
+		t.Fatalf("opens after 5 Accept/Close cycles = %d, want 1", opens)
+	}
+	if got := fake.count(); got != 0 {
+		t.Fatalf("device close count after 5 conn.Close = %d, want 0", got)
 	}
 }
 
@@ -284,7 +338,7 @@ func TestSerialAddr(t *testing.T) {
 
 func TestSerialConn_AddrAndClose(t *testing.T) {
 	opener := newFakeOpener("y")
-	l := newTestListener("/dev/test", opener)
+	l := newTestListener(t, "/dev/test", opener)
 	defer func() { _ = l.Close() }()
 
 	conn, err := l.Accept()
@@ -297,15 +351,14 @@ func TestSerialConn_AddrAndClose(t *testing.T) {
 	if conn.RemoteAddr().String() != "/dev/test" {
 		t.Fatal("RemoteAddr")
 	}
-	// Calling Close twice must be safe (double-close should not panic
-	// or change error).
+	// Double-close must be safe and idempotent.
 	if err := conn.Close(); err != nil {
 		t.Fatalf("close 1: %v", err)
 	}
 	if err := conn.Close(); err != nil {
 		t.Fatalf("close 2: %v", err)
 	}
-	// Once that conn is closed, the listener should accept a new one.
+	// Listener can hand out a fresh Conn after the previous one ended.
 	conn2, err := l.Accept()
 	if err != nil {
 		t.Fatalf("Accept after close: %v", err)
@@ -313,27 +366,27 @@ func TestSerialConn_AddrAndClose(t *testing.T) {
 	_ = conn2.Close()
 }
 
-func TestSerialConn_ReadSetsStaleDeadline(t *testing.T) {
+func TestSerialConn_ReadSetsIdleDeadline(t *testing.T) {
 	fake := &deadlineFakeRWC{}
 	conn := &serialConn{
-		rwc:              fake,
-		staleReadTimeout: time.Second,
-		nowFn:            time.Now,
+		rwc:         fake,
+		idleTimeout: time.Second,
+		nowFn:       time.Now,
 	}
 
 	buffer := make([]byte, 1)
 	_, _ = conn.Read(buffer)
-	if fake.readDeadlineCount != 1 {
-		t.Fatalf("read deadline count = %d", fake.readDeadlineCount)
+	if got := fake.deadlineCount(); got != 1 {
+		t.Fatalf("read deadline count = %d, want 1", got)
 	}
 }
 
 func TestSerialConn_ReadTimeoutReturnsEOF(t *testing.T) {
 	fake := &timeoutFakeRWC{}
 	conn := &serialConn{
-		rwc:              fake,
-		staleReadTimeout: time.Second,
-		nowFn:            time.Now,
+		rwc:         fake,
+		idleTimeout: time.Second,
+		nowFn:       time.Now,
 	}
 
 	buffer := make([]byte, 1)

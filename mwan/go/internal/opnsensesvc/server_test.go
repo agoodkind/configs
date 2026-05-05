@@ -45,56 +45,6 @@ func (r *closeAwareRWC) Close() error {
 	return nil
 }
 
-type serializedPipeOpen struct {
-	t              *testing.T
-	mu             sync.Mutex
-	pendingClients []net.Conn
-	clientReady    chan struct{}
-}
-
-func newSerializedPipeOpen(t *testing.T) *serializedPipeOpen {
-	t.Helper()
-	return &serializedPipeOpen{
-		t:           t,
-		clientReady: make(chan struct{}, 1),
-	}
-}
-
-func (o *serializedPipeOpen) open(_ string) (io.ReadWriteCloser, error) {
-	serverConn, clientConn := net.Pipe()
-	o.mu.Lock()
-	o.pendingClients = append(o.pendingClients, clientConn)
-	o.mu.Unlock()
-	o.signalClientReady()
-	return serverConn, nil
-}
-
-func (o *serializedPipeOpen) dial(ctx context.Context, _ string) (net.Conn, error) {
-	for {
-		o.mu.Lock()
-		if len(o.pendingClients) > 0 {
-			clientConn := o.pendingClients[0]
-			o.pendingClients = o.pendingClients[1:]
-			o.mu.Unlock()
-			return clientConn, nil
-		}
-		o.mu.Unlock()
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-o.clientReady:
-		}
-	}
-}
-
-func (o *serializedPipeOpen) signalClientReady() {
-	select {
-	case o.clientReady <- struct{}{}:
-	default:
-	}
-}
-
 func TestServeReturnsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	serialDevice := newCloseAwareRWC()
@@ -173,10 +123,20 @@ func TestServeContextCancelClosesBlockedListener(t *testing.T) {
 	}
 }
 
-func TestGRPCOverSerializedListenerAllowsIndependentClients(t *testing.T) {
-	opener := newSerializedPipeOpen(t)
-	listener := NewSerialListener("/tmp/test-serial", opener.open)
-	listener.postCloseDelay = 0
+// TestGRPCOverPersistentListenerMultipleRPCs validates that the
+// persistent-device listener supports many sequential RPCs over a
+// single gRPC ClientConn. This is the bridge architecture: one
+// long-lived ClientConn with many RPCs multiplexed via HTTP/2 streams.
+func TestGRPCOverPersistentListenerMultipleRPCs(t *testing.T) {
+	// Single-pipe opener: device is opened ONCE, returns one fd-equivalent
+	// (the server side of a net.Pipe). The client side is what gRPC dials.
+	serverConn, clientConn := net.Pipe()
+	listener, err := NewSerialListener("/tmp/test-serial", func(_ string) (io.ReadWriteCloser, error) {
+		return serverConn, nil
+	})
+	if err != nil {
+		t.Fatalf("NewSerialListener: %v", err)
+	}
 
 	grpcServer := grpc.NewServer()
 	mwanv1.RegisterMWANOPNsenseServiceServer(
@@ -188,34 +148,36 @@ func TestGRPCOverSerializedListenerAllowsIndependentClients(t *testing.T) {
 		serverDone <- grpcServer.Serve(listener)
 	}()
 
-	for i := range 2 {
+	conn, err := grpc.NewClient(
+		"passthrough:///persistent",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+			return clientConn, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	client := mwanv1.NewMWANOPNsenseServiceClient(conn)
+
+	// Issue several sequential RPCs over the SAME ClientConn (HTTP/2
+	// stream multiplex). All must succeed.
+	for i := range 5 {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		conn, err := grpc.NewClient(
-			"passthrough:///serialized-pipe",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithContextDialer(opener.dial),
-		)
-		if err != nil {
-			cancel()
-			t.Fatalf("NewClient: %v", err)
-		}
-		client := mwanv1.NewMWANOPNsenseServiceClient(conn)
 		resp, err := client.Version(ctx, &mwanv1.VersionRequest{})
+		cancel()
 		if err != nil {
-			cancel()
 			_ = conn.Close()
-			t.Fatalf("Version client %d: %v", i+1, err)
+			t.Fatalf("Version RPC %d: %v", i+1, err)
 		}
 		if strings.TrimSpace(resp.GetVersion()) == "" {
-			cancel()
 			_ = conn.Close()
-			t.Fatalf("Version client %d returned empty version", i+1)
+			t.Fatalf("Version RPC %d returned empty version", i+1)
 		}
-		if err := conn.Close(); err != nil {
-			cancel()
-			t.Fatalf("client close %d: %v", i+1, err)
-		}
-		cancel()
+	}
+
+	if err := conn.Close(); err != nil {
+		t.Fatalf("client close: %v", err)
 	}
 
 	grpcServer.Stop()

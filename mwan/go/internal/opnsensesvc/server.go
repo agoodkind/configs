@@ -408,7 +408,10 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 	gs := grpc.NewServer()
 	opts.Server.Register(gs)
 
-	serLis := NewSerialListener(opts.SerialPath, opts.OpenSerial)
+	serLis, err := NewSerialListener(opts.SerialPath, opts.OpenSerial)
+	if err != nil {
+		return fmt.Errorf("opnsensesvc: open serial listener: %w", err)
+	}
 	serLis.log = log
 	if opts.OnSerialOpen != nil {
 		opts.OnSerialOpen(opts.SerialPath)
