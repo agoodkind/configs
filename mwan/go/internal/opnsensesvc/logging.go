@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-
-	"google.golang.org/grpc/peer"
 )
 
 func loggerOrDefault(log *slog.Logger) *slog.Logger {
@@ -47,30 +45,4 @@ func logCloseErrorContext(
 			append(attrs, slog.Any("err", err))...,
 		)
 	}
-}
-
-func grpcPeerLogAttrs(peerInfo *peer.Peer) []slog.Attr {
-	if peerInfo == nil || peerInfo.Addr == nil {
-		return []slog.Attr{
-			slog.String("peer_addr", ""),
-			slog.String("transport", ""),
-		}
-	}
-	return []slog.Attr{
-		slog.String("peer_addr", peerInfo.Addr.String()),
-		slog.String("transport", peerInfo.Addr.Network()),
-	}
-}
-
-func serverLogAttrs(
-	ctx context.Context,
-	log *slog.Logger,
-	level slog.Level,
-	message string,
-	peerInfo *peer.Peer,
-	attrs ...slog.Attr,
-) {
-	allAttrs := grpcPeerLogAttrs(peerInfo)
-	allAttrs = append(allAttrs, attrs...)
-	loggerOrDefault(log).LogAttrs(ctx, level, message, allAttrs...)
 }
