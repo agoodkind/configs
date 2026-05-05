@@ -64,7 +64,8 @@ proto:
 		--go_out=gen --go_opt=paths=source_relative \
 		--go-grpc_out=gen --go-grpc_opt=paths=source_relative \
 		mwan/v1/mwan.proto \
-		mwan/v1/mwan_opnsense.proto
+		mwan/v1/mwan_opnsense.proto \
+		mwan/v1/chunked.proto
 
 # Reusable cross-platform build template. Pulls GO_BUILD_LDFLAGS and
 # GO_BUILD_EXTRA_FLAGS from the canonical pipeline so every binary, host
