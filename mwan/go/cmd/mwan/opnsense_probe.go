@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,7 +11,9 @@ import (
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/chunkedstream"
 	"goodkind.io/mwan/internal/opnsenseclient"
+	"goodkind.io/mwan/internal/opnsensesvc"
 )
 
 const opnsenseProbeSerialSettleDelay = 1200 * time.Millisecond
@@ -321,29 +321,55 @@ func probeDeploy(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient,
 	if deployBin == "" {
 		return errors.New("op=deploy requires -deploy-bin")
 	}
-	bin, err := os.ReadFile(deployBin)
+	file, err := os.Open(deployBin)
 	if err != nil {
-		slog.ErrorContext(ctx, "opnsense-probe Deploy read-bin failed",
+		slog.ErrorContext(ctx, "opnsense-probe Deploy open failed",
 			"path", deployBin, "err", err)
-		return fmt.Errorf("read deploy-bin: %w", err)
+		return fmt.Errorf("open deploy-bin: %w", err)
 	}
-	sum := sha256.Sum256(bin)
-	resp, err := rpc.Deploy(ctx, &mwanv1.DeployRequest{
-		Binary:     bin,
-		Sha256Hex:  hex.EncodeToString(sum[:]),
-		VersionStr: deployVersion,
-	})
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "opnsense-probe Deploy close source failed",
+				"path", deployBin, "err", closeErr)
+		}
+	}()
+	info, statErr := file.Stat()
+	if statErr != nil {
+		return fmt.Errorf("stat deploy-bin: %w", statErr)
+	}
+	totalSize := info.Size()
+
+	stream, err := rpc.Deploy(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "opnsense-probe Deploy failed", "err", err)
-		return fmt.Errorf("rpc Deploy: %w", err)
+		slog.ErrorContext(ctx, "opnsense-probe Deploy stream open failed", "err", err)
+		return fmt.Errorf("rpc Deploy open: %w", err)
+	}
+	header := &mwanv1.ChunkHeader{
+		ContentType: "application/octet-stream",
+		Label:       deployVersion,
+		TotalSize:   totalSize,
+		Attrs: map[string]string{
+			opnsensesvc.DeployAttrVersionStr: deployVersion,
+		},
+	}
+	sumHex, sentBytes, sendErr := chunkedstream.Send(file, header, 0, stream.Send)
+	if sendErr != nil {
+		slog.ErrorContext(ctx, "opnsense-probe Deploy send failed", "err", sendErr)
+		return fmt.Errorf("rpc Deploy send: %w", sendErr)
+	}
+	resp, recvErr := stream.CloseAndRecv()
+	if recvErr != nil {
+		slog.ErrorContext(ctx, "opnsense-probe Deploy CloseAndRecv failed", "err", recvErr)
+		return fmt.Errorf("rpc Deploy reply: %w", recvErr)
 	}
 	slog.InfoContext(ctx, "opnsense-probe Deploy OK",
 		"staged_sha256", resp.GetStagedSha256(),
 		"previous_path", resp.GetPreviousPath(),
 		"reexec_started", resp.GetReExecStarted(),
-		"size_bytes", len(bin))
+		"size_bytes", sentBytes,
+		"client_sha256", sumHex)
 	fmt.Fprintf(os.Stdout, "staged=%s previous_path=%s reexec_started=%v size_bytes=%d\n",
-		resp.GetStagedSha256(), resp.GetPreviousPath(), resp.GetReExecStarted(), len(bin))
+		resp.GetStagedSha256(), resp.GetPreviousPath(), resp.GetReExecStarted(), sentBytes)
 	return nil
 }
 

@@ -113,6 +113,135 @@ func (d *DeployManager) PreviousSHA256() (string, error) {
 	return fileSHA256(d.pathOf(BinaryPrevious))
 }
 
+// BinaryDir returns the absolute directory holding .current/.previous/
+// .staged. Exposed so the streaming Deploy handler can drop its temp
+// file on the same filesystem (renames must be cross-mount-free).
+func (d *DeployManager) BinaryDir() string { return d.cfg.BinaryDir }
+
+// DeployFromPath is the streaming entry point. The caller has already
+// written the binary to srcPath (typically a temp file produced by
+// the streaming Deploy handler). DeployFromPath verifies sha256
+// against the on-disk content, renames into the staged slot, swaps
+// .current and .previous, drops pending-verify, and arms re-exec. On
+// any error before the rename, srcPath is left in place so the caller
+// can decide whether to remove or inspect it. On success, srcPath has
+// been consumed (renamed into the staged slot).
+func (d *DeployManager) DeployFromPath(ctx context.Context, srcPath, sha256Hex, versionStr string) (previousPath string, stagedSHA256 string, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.log.InfoContext(ctx, "deploy: begin from path",
+		"src", srcPath,
+		"sha256_hex", sha256Hex,
+		"version", versionStr)
+
+	if srcPath == "" {
+		err = errors.New("deploy: empty src path")
+		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
+		return "", "", err
+	}
+	if sha256Hex == "" {
+		err = errors.New("deploy: sha256_hex required")
+		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
+		return "", "", err
+	}
+
+	info, statErr := os.Stat(srcPath)
+	if statErr != nil {
+		d.log.ErrorContext(ctx, "deploy: stat src failed", "err", statErr, "path", srcPath)
+		return "", "", fmt.Errorf("stat src %s: %w", srcPath, statErr)
+	}
+	if info.Size() == 0 {
+		err = errors.New("deploy: empty binary payload")
+		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
+		return "", "", err
+	}
+
+	computedHex, hashErr := fileSHA256(srcPath)
+	if hashErr != nil {
+		d.log.ErrorContext(ctx, "deploy: hash src failed", "err", hashErr)
+		return "", "", fmt.Errorf("hash src: %w", hashErr)
+	}
+	if !strings.EqualFold(computedHex, sha256Hex) {
+		err = fmt.Errorf("deploy: sha256 mismatch: got %s, want %s", computedHex, sha256Hex)
+		d.log.ErrorContext(ctx, "deploy: sha256 mismatch", "err", err, "got", computedHex, "want", sha256Hex)
+		return "", "", err
+	}
+	stagedSHA256 = computedHex
+
+	staged := d.pathOf(BinaryStaged)
+	current := d.pathOf(BinaryCurrent)
+	previous := d.pathOf(BinaryPrevious)
+	previousPath = previous
+
+	if renameErr := os.Rename(srcPath, staged); renameErr != nil {
+		d.log.ErrorContext(ctx, "deploy: stage rename failed", "err", renameErr, "from", srcPath, "to", staged)
+		return "", "", fmt.Errorf("stage rename: %w", renameErr)
+	}
+	if chmodErr := os.Chmod(staged, BinaryFileMode); chmodErr != nil {
+		d.log.ErrorContext(ctx, "deploy: stage chmod failed", "err", chmodErr, "path", staged)
+		_ = os.Remove(staged)
+		return "", "", fmt.Errorf("chmod staged: %w", chmodErr)
+	}
+
+	if err := d.finishSwap(ctx, staged, current, previous, versionStr, computedHex); err != nil {
+		return "", "", err
+	}
+	return previousPath, stagedSHA256, nil
+}
+
+// finishSwap performs the .current<->.previous swap, state-file
+// update, pending-verify marker drop, and re-exec arming. Shared
+// between the in-memory Deploy and DeployFromPath paths.
+func (d *DeployManager) finishSwap(ctx context.Context, staged, current, previous, versionStr, computedHex string) error {
+	if _, statErr := os.Stat(current); statErr == nil {
+		if copyErr := copyFile(current, previous); copyErr != nil {
+			d.log.ErrorContext(ctx, "deploy: copy current to previous failed", "err", copyErr)
+			_ = os.Remove(staged)
+			return fmt.Errorf("copy current to previous: %w", copyErr)
+		}
+		d.log.InfoContext(ctx, "deploy: previous slot updated", "path", previous)
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		d.log.ErrorContext(ctx, "deploy: stat current failed", "err", statErr, "path", current)
+		_ = os.Remove(staged)
+		return fmt.Errorf("stat current: %w", statErr)
+	}
+
+	if err := os.Rename(staged, current); err != nil {
+		d.log.ErrorContext(ctx, "deploy: current swap failed", "err", err, "from", staged, "to", current)
+		_ = os.Remove(staged)
+		return fmt.Errorf("rename staged to current: %w", err)
+	}
+	d.log.InfoContext(ctx, "deploy: current binary swapped", "path", current, "sha256", computedHex)
+
+	previousSHA, _ := fileSHA256(previous)
+	if writeErr := d.writeState(deployState{
+		Active:     computedHex,
+		Previous:   previousSHA,
+		Version:    versionStr,
+		DeployedAt: d.cfg.NowFn().Unix(),
+		Health:     HealthPending,
+	}); writeErr != nil {
+		d.log.ErrorContext(ctx, "deploy: write state failed", "err", writeErr)
+	}
+
+	if writeErr := d.cfg.WriteStateFile(d.cfg.PendingPath, []byte(MarkerFreshDeploy+"\n"), PendingFileMode); writeErr != nil {
+		d.log.ErrorContext(ctx, "deploy: write pending marker failed", "err", writeErr)
+	}
+
+	d.log.InfoContext(ctx, "deploy: armed re-exec", "grace_ms", d.cfg.ReExecGrace.Milliseconds())
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				d.log.ErrorContext(ctx, "deploy: re-exec goroutine panicked", "err", fmt.Errorf("panic: %v", r))
+			}
+		}()
+		d.scheduleReExec(ctx)
+	}()
+	return nil
+}
+
 // Deploy stages binary, verifies sha256, swaps .current and .previous,
 // drops pending-verify marker, and re-execs. Returns previousPath and
 // stagedSHA256. If re-exec fails, the function returns the error
@@ -164,61 +293,9 @@ func (d *DeployManager) Deploy(ctx context.Context, binary []byte, sha256Hex, ve
 		return "", "", fmt.Errorf("stage rename: %w", err)
 	}
 
-	// Move current to previous (best effort: tolerate missing current
-	// on cold-boot first-deploy by skipping).
-	if _, statErr := os.Stat(current); statErr == nil {
-		if copyErr := copyFile(current, previous); copyErr != nil {
-			d.log.ErrorContext(ctx, "deploy: copy current to previous failed", "err", copyErr)
-			_ = os.Remove(staged)
-			return "", "", fmt.Errorf("copy current to previous: %w", copyErr)
-		}
-		d.log.InfoContext(ctx, "deploy: previous slot updated", "path", previous)
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		d.log.ErrorContext(ctx, "deploy: stat current failed", "err", statErr, "path", current)
-		_ = os.Remove(staged)
-		return "", "", fmt.Errorf("stat current: %w", statErr)
+	if err := d.finishSwap(ctx, staged, current, previous, versionStr, computedHex); err != nil {
+		return "", "", err
 	}
-
-	// Atomic swap: staged becomes current.
-	if err := os.Rename(staged, current); err != nil {
-		d.log.ErrorContext(ctx, "deploy: current swap failed", "err", err, "from", staged, "to", current)
-		_ = os.Remove(staged)
-		return "", "", fmt.Errorf("rename staged to current: %w", err)
-	}
-	d.log.InfoContext(ctx, "deploy: current binary swapped", "path", current, "sha256", computedHex)
-
-	// Update state file: health=pending, deployed_at=now.
-	previousSHA, _ := fileSHA256(previous)
-	if writeErr := d.writeState(deployState{
-		Active:     computedHex,
-		Previous:   previousSHA,
-		Version:    versionStr,
-		DeployedAt: d.cfg.NowFn().Unix(),
-		Health:     HealthPending,
-	}); writeErr != nil {
-		d.log.ErrorContext(ctx, "deploy: write state failed", "err", writeErr)
-		// not fatal; preflight script tolerates missing state
-	}
-
-	// Drop pending-verify marker. Preflight script reads this on
-	// next start to know whether to revert if health stayed pending.
-	if writeErr := d.cfg.WriteStateFile(d.cfg.PendingPath, []byte(MarkerFreshDeploy+"\n"), PendingFileMode); writeErr != nil {
-		d.log.ErrorContext(ctx, "deploy: write pending marker failed", "err", writeErr)
-		// not fatal; rollback is degraded but deploy can proceed
-	}
-
-	d.log.InfoContext(ctx, "deploy: armed re-exec", "grace_ms", d.cfg.ReExecGrace.Milliseconds())
-
-	// Trigger re-exec asynchronously so the gRPC reply can land first.
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				d.log.ErrorContext(ctx, "deploy: re-exec goroutine panicked", "err", fmt.Errorf("panic: %v", r))
-			}
-		}()
-		d.scheduleReExec(ctx)
-	}()
-
 	return previousPath, stagedSHA256, nil
 }
 

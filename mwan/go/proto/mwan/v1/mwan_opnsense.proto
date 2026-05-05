@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package mwan.v1;
 
+import "mwan/v1/chunked.proto";
+
 option go_package = "goodkind.io/mwan/gen/mwan/v1;mwanv1";
 
 // MWANOPNsenseService runs inside the OPNsense VM.
@@ -52,10 +54,13 @@ service MWANOPNsenseService {
   // before </wan>. Same byte-offset tokenizer as above.
   rpc InjectGatewayV6(InjectGatewayV6Request) returns (InjectGatewayV6Response);
 
-  // Deploy a new daemon binary. Daemon writes payload atomically,
-  // verifies sha256, swaps .current and .previous, marks pending-verify,
-  // re-execs into the new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
-  rpc Deploy(DeployRequest) returns (DeployResponse);
+  // Deploy a new daemon binary. Client streams the binary in Chunk
+  // messages (ChunkHeader, data*, ChunkTrailer). The header carries
+  // the version string in attrs["version_str"]. Daemon accumulates
+  // chunks into a temp file, verifies sha256 from the trailer, swaps
+  // .current and .previous, marks pending-verify, re-execs into the
+  // new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+  rpc Deploy(stream Chunk) returns (DeployResponse);
 
   // Mark the most recent deploy as healthy. Bridge calls this after
   // post-deploy heartbeat probe succeeds. Daemon clears the
@@ -164,12 +169,6 @@ message InjectGatewayV6Request {
 message InjectGatewayV6Response {
   string backup_path = 1;
   bool changed = 2;            // false if gatewayv6 already present
-}
-
-message DeployRequest {
-  bytes binary = 1;            // full ELF; uncompressed (local IPC)
-  string sha256_hex = 2;       // verified pre-swap
-  string version_str = 3;      // free-form, recorded in state file
 }
 
 message DeployResponse {

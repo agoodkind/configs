@@ -76,10 +76,13 @@ type MWANOPNsenseServiceClient interface {
 	// Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
 	// before </wan>. Same byte-offset tokenizer as above.
 	InjectGatewayV6(ctx context.Context, in *InjectGatewayV6Request, opts ...grpc.CallOption) (*InjectGatewayV6Response, error)
-	// Deploy a new daemon binary. Daemon writes payload atomically,
-	// verifies sha256, swaps .current and .previous, marks pending-verify,
-	// re-execs into the new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
-	Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error)
+	// Deploy a new daemon binary. Client streams the binary in Chunk
+	// messages (ChunkHeader, data*, ChunkTrailer). The header carries
+	// the version string in attrs["version_str"]. Daemon accumulates
+	// chunks into a temp file, verifies sha256 from the trailer, swaps
+	// .current and .previous, marks pending-verify, re-execs into the
+	// new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+	Deploy(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[Chunk, DeployResponse], error)
 	// Mark the most recent deploy as healthy. Bridge calls this after
 	// post-deploy heartbeat probe succeeds. Daemon clears the
 	// pending-verify marker and stamps health=ok in the state file.
@@ -198,15 +201,18 @@ func (c *mWANOPNsenseServiceClient) InjectGatewayV6(ctx context.Context, in *Inj
 	return out, nil
 }
 
-func (c *mWANOPNsenseServiceClient) Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error) {
+func (c *mWANOPNsenseServiceClient) Deploy(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[Chunk, DeployResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeployResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_Deploy_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &MWANOPNsenseService_ServiceDesc.Streams[0], MWANOPNsenseService_Deploy_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[Chunk, DeployResponse]{ClientStream: stream}
+	return x, nil
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MWANOPNsenseService_DeployClient = grpc.ClientStreamingClient[Chunk, DeployResponse]
 
 func (c *mWANOPNsenseServiceClient) DeployStatus(ctx context.Context, in *DeployStatusRequest, opts ...grpc.CallOption) (*DeployStatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -270,10 +276,13 @@ type MWANOPNsenseServiceServer interface {
 	// Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
 	// before </wan>. Same byte-offset tokenizer as above.
 	InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error)
-	// Deploy a new daemon binary. Daemon writes payload atomically,
-	// verifies sha256, swaps .current and .previous, marks pending-verify,
-	// re-execs into the new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
-	Deploy(context.Context, *DeployRequest) (*DeployResponse, error)
+	// Deploy a new daemon binary. Client streams the binary in Chunk
+	// messages (ChunkHeader, data*, ChunkTrailer). The header carries
+	// the version string in attrs["version_str"]. Daemon accumulates
+	// chunks into a temp file, verifies sha256 from the trailer, swaps
+	// .current and .previous, marks pending-verify, re-execs into the
+	// new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+	Deploy(grpc.ClientStreamingServer[Chunk, DeployResponse]) error
 	// Mark the most recent deploy as healthy. Bridge calls this after
 	// post-deploy heartbeat probe succeeds. Daemon clears the
 	// pending-verify marker and stamps health=ok in the state file.
@@ -322,8 +331,8 @@ func (UnimplementedMWANOPNsenseServiceServer) StripGatewayV6(context.Context, *S
 func (UnimplementedMWANOPNsenseServiceServer) InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error) {
 	return nil, status.Error(codes.Unimplemented, "method InjectGatewayV6 not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) Deploy(context.Context, *DeployRequest) (*DeployResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Deploy not implemented")
+func (UnimplementedMWANOPNsenseServiceServer) Deploy(grpc.ClientStreamingServer[Chunk, DeployResponse]) error {
+	return status.Error(codes.Unimplemented, "method Deploy not implemented")
 }
 func (UnimplementedMWANOPNsenseServiceServer) DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeployStatus not implemented")
@@ -532,23 +541,12 @@ func _MWANOPNsenseService_InjectGatewayV6_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_Deploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeployRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).Deploy(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MWANOPNsenseService_Deploy_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).Deploy(ctx, req.(*DeployRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+func _MWANOPNsenseService_Deploy_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MWANOPNsenseServiceServer).Deploy(&grpc.GenericServerStream[Chunk, DeployResponse]{ServerStream: stream})
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MWANOPNsenseService_DeployServer = grpc.ClientStreamingServer[Chunk, DeployResponse]
 
 func _MWANOPNsenseService_DeployStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeployStatusRequest)
@@ -634,10 +632,6 @@ var MWANOPNsenseService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MWANOPNsenseService_InjectGatewayV6_Handler,
 		},
 		{
-			MethodName: "Deploy",
-			Handler:    _MWANOPNsenseService_Deploy_Handler,
-		},
-		{
 			MethodName: "DeployStatus",
 			Handler:    _MWANOPNsenseService_DeployStatus_Handler,
 		},
@@ -646,6 +640,12 @@ var MWANOPNsenseService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MWANOPNsenseService_Revert_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Deploy",
+			Handler:       _MWANOPNsenseService_Deploy_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "mwan/v1/mwan_opnsense.proto",
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/chunkedstream"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -412,29 +414,107 @@ func (s *Server) InjectGatewayV6(
 	}, nil
 }
 
-// Deploy stages a new daemon binary, swaps the .current slot, drops
-// the pending-verify marker, and re-execs the running process. The
-// reply is sent before exec so the bridge sees DeployResponse.
-func (s *Server) Deploy(ctx context.Context, req *mwanv1.DeployRequest) (*mwanv1.DeployResponse, error) {
+// DeployAttrVersionStr is the ChunkHeader.attrs key carrying the
+// human-readable version string for a streaming Deploy upload.
+const DeployAttrVersionStr = "version_str"
+
+// Deploy receives a streaming Chunk upload (header, data*, trailer)
+// from the client, accumulates the bytes into a temp file under the
+// DeployManager's binary dir (so the eventual rename into the staged
+// slot does not cross filesystems), verifies the trailer's sha256,
+// then hands the temp file off to DeployManager.DeployFromPath. The
+// daemon-side reply is sent before re-exec so the bridge sees the
+// response.
+func (s *Server) Deploy(stream grpc.ClientStreamingServer[mwanv1.Chunk, mwanv1.DeployResponse]) error {
+	ctx := stream.Context()
 	peerInfo, _ := peer.FromContext(ctx)
-	serverLogAttrs(ctx, s.log, slog.LevelInfo, "opnsensesvc: Deploy", peerInfo,
-		slog.Int("bytes", len(req.GetBinary())),
-		slog.String("sha256_hex", req.GetSha256Hex()),
-		slog.String("version_str", req.GetVersionStr()))
+	serverLogAttrs(ctx, s.log, slog.LevelInfo, "opnsensesvc: Deploy stream begin", peerInfo)
 
 	if s.deploy == nil {
-		return nil, status.Error(codes.Unimplemented, "Deploy: DeployManager not configured")
+		return status.Error(codes.Unimplemented, "Deploy: DeployManager not configured")
 	}
-	previousPath, stagedSHA256, err := s.deploy.Deploy(ctx, req.GetBinary(), req.GetSha256Hex(), req.GetVersionStr())
+
+	tmpFile, tmpErr := os.CreateTemp(s.deploy.BinaryDir(), "mwan-opnsense.upload-*.bin")
+	if tmpErr != nil {
+		s.log.ErrorContext(ctx, "Deploy: temp file create failed", "err", tmpErr, "dir", s.deploy.BinaryDir())
+		return status.Errorf(codes.Internal, "create temp: %v", tmpErr)
+	}
+	tmpPath := tmpFile.Name()
+	cleanedUp := false
+	defer func() {
+		if cleanedUp {
+			return
+		}
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			s.log.WarnContext(ctx, "Deploy: temp cleanup failed", "err", removeErr, "path", tmpPath)
+		}
+	}()
+
+	writer := chunkedstream.NewWriter(tmpFile)
+	for {
+		chunk, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			_ = tmpFile.Close()
+			s.log.ErrorContext(ctx, "Deploy: recv failed", "err", recvErr)
+			return status.Errorf(codes.Internal, "recv: %v", recvErr)
+		}
+		if writeErr := writer.Write(chunk); writeErr != nil {
+			_ = tmpFile.Close()
+			if errors.Is(writeErr, chunkedstream.ErrProtocol) {
+				return status.Errorf(codes.InvalidArgument, "chunk: %v", writeErr)
+			}
+			s.log.ErrorContext(ctx, "Deploy: chunk write failed", "err", writeErr)
+			return status.Errorf(codes.Internal, "chunk write: %v", writeErr)
+		}
+	}
+	if syncErr := tmpFile.Sync(); syncErr != nil {
+		_ = tmpFile.Close()
+		s.log.ErrorContext(ctx, "Deploy: temp sync failed", "err", syncErr, "path", tmpPath)
+		return status.Errorf(codes.Internal, "sync temp: %v", syncErr)
+	}
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		s.log.ErrorContext(ctx, "Deploy: temp close failed", "err", closeErr, "path", tmpPath)
+		return status.Errorf(codes.Internal, "close temp: %v", closeErr)
+	}
+	if !writer.Done() {
+		return status.Error(codes.InvalidArgument, "Deploy: stream ended before trailer")
+	}
+	if !writer.ChecksumOK() {
+		mismatchErr := fmt.Errorf("Deploy: sha256 mismatch: got %s want %s",
+			writer.Sha256Hex(), writer.TrailerSha256Hex())
+		s.log.ErrorContext(ctx, "Deploy: sha256 mismatch on stream",
+			"err", mismatchErr,
+			"got", writer.Sha256Hex(),
+			"want", writer.TrailerSha256Hex())
+		return status.Error(codes.InvalidArgument, mismatchErr.Error())
+	}
+	header := writer.Header()
+	versionStr := header.GetAttrs()[DeployAttrVersionStr]
+	if versionStr == "" {
+		versionStr = header.GetLabel()
+	}
+	bytesWritten := writer.BytesWritten()
+	serverLogAttrs(ctx, s.log, slog.LevelInfo, "opnsensesvc: Deploy stream complete", peerInfo,
+		slog.Int64("bytes", bytesWritten),
+		slog.String("version_str", versionStr))
+
+	previousPath, stagedSHA256, err := s.deploy.DeployFromPath(ctx, tmpPath, writer.Sha256Hex(), versionStr)
 	if err != nil {
 		s.log.ErrorContext(ctx, "Deploy: failed", "err", err)
-		return nil, status.Errorf(codes.Internal, "deploy: %v", err)
+		return status.Errorf(codes.Internal, "deploy: %v", err)
 	}
-	return &mwanv1.DeployResponse{
+	cleanedUp = true
+	if sendErr := stream.SendAndClose(&mwanv1.DeployResponse{
 		StagedSha256:  stagedSHA256,
 		PreviousPath:  previousPath,
 		ReExecStarted: true,
-	}, nil
+	}); sendErr != nil {
+		return fmt.Errorf("Deploy: send response: %w", sendErr)
+	}
+	return nil
 }
 
 // DeployStatus returns current deploy state. With Mark=MARK_HEALTHY,

@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -145,29 +148,62 @@ func (p *proxyServer) InjectGatewayV6(ctx context.Context, req *mwanv1.InjectGat
 	return resp, nil
 }
 
-// Deploy forwards the deploy RPC and, on a successful re-exec
-// announcement, arms a post-deploy heartbeat probe in a background
-// goroutine. Any subsequent Deploy invocation while a heartbeat is
-// already running will skip arming a second one. The heartbeat itself
-// finalizes the deploy by calling MarkHealthy or Revert.
-func (p *proxyServer) Deploy(ctx context.Context, req *mwanv1.DeployRequest) (*mwanv1.DeployResponse, error) {
+// Deploy bridges the streaming Deploy RPC: it forwards every Chunk
+// from the downstream client to the upstream daemon and relays the
+// final DeployResponse back. The relay loop is intentionally in-line
+// here rather than factored into a generic helper so each future
+// client-streaming RPC can copy the same shape and keep its own
+// per-RPC logging context.
+func (p *proxyServer) Deploy(srv grpc.ClientStreamingServer[mwanv1.Chunk, mwanv1.DeployResponse]) error {
+	ctx := srv.Context()
 	pi, _ := peer.FromContext(ctx)
 	pa := peerString(pi)
-	p.log.InfoContext(ctx, "proxy Deploy: forwarding",
-		"peer", pa,
-		"bytes", len(req.GetBinary()),
-		"sha256_hex", req.GetSha256Hex(),
-		"version_str", req.GetVersionStr())
+	p.log.InfoContext(ctx, "proxy Deploy: stream begin", "peer", pa)
 
-	resp, err := p.upstream.Deploy(ctx, req)
+	upstream, err := p.upstream.Deploy(ctx)
 	if err != nil {
-		p.log.ErrorContext(ctx, "proxy Deploy: upstream error", "peer", pa, "err", err)
-		return nil, fmt.Errorf("proxy Deploy: %w", err)
+		p.log.ErrorContext(ctx, "proxy Deploy: upstream open failed", "peer", pa, "err", err)
+		return fmt.Errorf("proxy Deploy: open upstream: %w", err)
 	}
+
+	relayed := 0
+	for {
+		msg, recvErr := srv.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			p.log.ErrorContext(ctx, "proxy Deploy: recv from caller failed",
+				"peer", pa, "err", recvErr, "relayed", relayed)
+			return fmt.Errorf("proxy Deploy: recv from caller: %w", recvErr)
+		}
+		if sendErr := upstream.Send(msg); sendErr != nil {
+			p.log.ErrorContext(ctx, "proxy Deploy: send to upstream failed",
+				"peer", pa, "err", sendErr, "relayed", relayed)
+			return fmt.Errorf("proxy Deploy: send to upstream: %w", sendErr)
+		}
+		relayed++
+	}
+	resp, closeErr := upstream.CloseAndRecv()
+	if closeErr != nil {
+		p.log.ErrorContext(ctx, "proxy Deploy: close upstream failed",
+			"peer", pa, "err", closeErr, "relayed", relayed)
+		return fmt.Errorf("proxy Deploy: close upstream: %w", closeErr)
+	}
+	p.log.InfoContext(ctx, "proxy Deploy: relay complete",
+		"peer", pa,
+		"chunks_relayed", relayed,
+		"staged_sha256", resp.GetStagedSha256(),
+		"previous_path", resp.GetPreviousPath(),
+		"re_exec_started", resp.GetReExecStarted())
 	if resp.GetReExecStarted() {
 		p.armHeartbeat(ctx)
 	}
-	return resp, nil
+	if sendErr := srv.SendAndClose(resp); sendErr != nil {
+		p.log.ErrorContext(ctx, "proxy Deploy: send response failed", "peer", pa, "err", sendErr)
+		return fmt.Errorf("proxy Deploy: send response: %w", sendErr)
+	}
+	return nil
 }
 
 // DeployStatus forwards the status RPC. The bridge's heartbeat
