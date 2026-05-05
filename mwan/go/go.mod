@@ -9,6 +9,7 @@ require (
 	github.com/agoodkind/send-email v0.0.0-20260328050211-9169e66bce5d
 	github.com/antchfx/xmlquery v1.5.1
 	github.com/beevik/etree v1.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/insomniacslk/dhcp v0.0.0-20260407060928-11b94ed970f2
 	github.com/mdlayher/ndp v1.1.0
 	github.com/mdlayher/vsock v1.2.1
