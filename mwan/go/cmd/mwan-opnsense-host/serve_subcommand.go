@@ -21,7 +21,7 @@ import (
 const (
 	defaultUpstreamTarget = "unix:///var/run/qemu-server/101.mwanrpc"
 	defaultListenPath     = "/var/run/mwan-opnsense.sock"
-	defaultDialTimeout    = 10 * time.Second
+	defaultDialTimeout    = 30 * time.Second
 )
 
 // runServe starts the bridge: dial the persistent upstream gRPC

@@ -86,3 +86,4 @@ terraform.tfvars
 # Binary artifacts
 /mwan-binary
 /bin/
+HANDOFF_MWAN_OPNSENSE_TESTBED.txt

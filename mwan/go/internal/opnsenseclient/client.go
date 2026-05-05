@@ -32,8 +32,14 @@ import (
 )
 
 const (
-	opnsenseHandshakeAttemptTimeout = 500 * time.Millisecond
-	opnsenseReconnectDelay          = 1200 * time.Millisecond
+	// opnsenseHandshakeAttemptTimeout is the per-attempt budget for one
+	// dial+handshake. Over virtio-serial each attempt is several
+	// host->chardev->virtio->guest round trips: client preface, server
+	// SETTINGS, client SETTINGS, ACKs, and the Version RPC. Each RTT
+	// is 100-500ms; the full sequence needs ~5-10s under load. 10s is
+	// the empirical floor under which the bridge fails to handshake.
+	opnsenseHandshakeAttemptTimeout = 10 * time.Second
+	opnsenseReconnectDelay          = 2 * time.Second
 )
 
 // Config is the per-connection configuration.
