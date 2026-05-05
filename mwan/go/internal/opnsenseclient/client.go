@@ -4,7 +4,8 @@
 // The same package is used by both:
 //   - operational tooling (`mwan opnsense-probe` subcommand) for ad
 //     hoc dialing of the daemon
-//   - any future caller that wants the typed RPC surface
+//   - the bridge daemon (cmd/mwan-opnsense-host) which forwards every
+//     RPC from local probes onto a single persistent ClientConn
 //
 // Transport: only the OOB virtio-serial unix socket on the Proxmox
 // host is supported. Target is always:
@@ -14,6 +15,15 @@
 // gRPC's resolver dispatches `unix:///` natively. There is no TLS
 // and no application-level authentication; access control is the
 // unix socket permissions (root-only on the Proxmox host).
+//
+// Reconnect strategy: this package leans on gRPC-go's built-in
+// connection state machine (IDLE -> CONNECTING -> READY ->
+// TRANSIENT_FAILURE) and its native exponential backoff configured
+// via [grpc.WithConnectParams]. There is no application-level
+// handshake-probe loop. Calls issued during TRANSIENT_FAILURE return
+// codes.Unavailable when the call carries a deadline; callers that
+// want to block until the channel is READY should use
+// [Client.WaitForReady] or attach the [grpc.WaitForReady] call option.
 package opnsenseclient
 
 import (
@@ -26,160 +36,115 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 )
 
+// Deploy ships full daemon binaries (~17 MiB). Bump send and recv
+// limits to 64 MiB so probe -> bridge -> daemon upload works.
+const maxMsgBytes = 64 * 1024 * 1024
+
+// Reconnect backoff parameters. Tuned for virtio-serial RTTs which
+// are 100-500ms per round trip and can stall for several seconds
+// under guest load. Matches grpc/doc/connection-backoff.md guidance.
 const (
-	// opnsenseHandshakeAttemptTimeout is the per-attempt budget for one
-	// dial+handshake. Over virtio-serial each attempt is several
-	// host->chardev->virtio->guest round trips: client preface, server
-	// SETTINGS, client SETTINGS, ACKs, and the Version RPC. Each RTT
-	// is 100-500ms; the full sequence needs ~5-10s under load. 10s is
-	// the empirical floor under which the bridge fails to handshake.
-	opnsenseHandshakeAttemptTimeout = 10 * time.Second
-	opnsenseReconnectDelay          = 2 * time.Second
+	reconnectBaseDelay  = 1 * time.Second
+	reconnectMultiplier = 1.6
+	reconnectJitter     = 0.2
+	reconnectMaxDelay   = 30 * time.Second
+	minConnectTimeout   = 10 * time.Second
 )
 
 // Config is the per-connection configuration.
 type Config struct {
 	// Target is the gRPC target string. Must be unix:///path/to/socket.
 	Target string
-	// DialTimeout caps the time spent waiting on the initial
-	// handshake. RPCs themselves use the per-call context.
+	// DialTimeout caps the OPTIONAL initial-readiness wait performed
+	// when [Client.WaitForReady] is called explicitly. It does NOT bound
+	// [Dial] itself: gRPC's NewClient does not block on connect, so
+	// [Dial] returns immediately and the channel transitions through
+	// CONNECTING / TRANSIENT_FAILURE / READY in the background.
+	//
+	// Zero or negative means no waiting. Callers that want to defer the
+	// readiness wait entirely should leave this zero and let RPCs block
+	// per-call (with whatever deadline the call carries) via
+	// [grpc.WaitForReady] semantics.
 	DialTimeout time.Duration
-	// Clock supplies wall time for retry accounting.
-	Clock Clock
 }
 
 // Client is a thin gRPC wrapper exposing the mwan-opnsense RPC
-// surface. Construct via Dial; close with Close.
+// surface. Construct via [Dial]; close with [Client.Close].
 type Client struct {
 	conn *grpc.ClientConn
 	rpc  mwanv1.MWANOPNsenseServiceClient
 }
 
-// Dial opens a gRPC client connection to the configured target.
+// Dial constructs a gRPC ClientConn with auto-reconnect backoff and
+// returns a [Client]. It does NOT block on initial connect: gRPC's
+// NewClient returns a channel in IDLE state and the channel begins
+// connecting on the first RPC (or eagerly when [grpc.ClientConn.Connect]
+// is invoked, which Dial does internally so the state machine starts
+// immediately).
+//
+// Subsequent upstream loss (daemon restart, virtio-serial chardev reset,
+// transient errors) is handled by gRPC's built-in state machine. Calls
+// during TRANSIENT_FAILURE return codes.Unavailable when the call
+// carries a deadline; otherwise gRPC's per-call wait blocks until
+// READY.
+//
 // Caller must Close.
 func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	if cfg.Target == "" {
 		return nil, errors.New("opnsenseclient: empty target")
 	}
-	dialTimeout := cfg.DialTimeout
-	if dialTimeout <= 0 {
-		dialTimeout = 5 * time.Second
-	}
-	activeClock := clockOrReal(cfg.Clock)
-	remainingTimeout := dialTimeout
-	startedAt := activeClock.Now()
-	var lastErr error
-	attempts := 0
-	for {
-		attempts++
-		attempt := attempts
-		attemptTimeout := min(remainingTimeout, opnsenseHandshakeAttemptTimeout)
-		slog.DebugContext(ctx, "opnsenseclient: handshake attempt starting",
-			"target", cfg.Target,
-			"attempt", attempt,
-			"attempt_timeout_ms", attemptTimeout.Milliseconds(),
-			"remaining_timeout_ms", remainingTimeout.Milliseconds())
 
-		attemptStartedAt := activeClock.Now()
-		client, err := dialOnce(ctx, cfg.Target, attemptTimeout)
-		if err == nil {
-			slog.DebugContext(ctx, "opnsenseclient: handshake succeeded",
-				"target", cfg.Target,
-				"attempt", attempt,
-				"elapsed_ms", activeClock.Now().Sub(startedAt).Milliseconds())
-			return client, nil
-		}
-		lastErr = err
-		slog.WarnContext(ctx, "opnsenseclient: handshake attempt failed",
-			"target", cfg.Target,
-			"attempt", attempt,
-			"attempt_timeout_ms", attemptTimeout.Milliseconds(),
-			"attempt_elapsed_ms", activeClock.Now().Sub(attemptStartedAt).Milliseconds(),
-			"err", err)
-
-		remainingTimeout -= attemptTimeout
-		if remainingTimeout <= opnsenseReconnectDelay {
-			break
-		}
-		slog.DebugContext(ctx, "opnsenseclient: reconnect sleep starting",
-			"target", cfg.Target,
-			"attempt", attempt,
-			"next_attempt", attempt+1,
-			"reconnect_sleep_ms", opnsenseReconnectDelay.Milliseconds(),
-			"remaining_timeout_ms", remainingTimeout.Milliseconds())
-		timer := time.NewTimer(opnsenseReconnectDelay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			slog.WarnContext(ctx, "opnsenseclient: handshake cancelled",
-				"target", cfg.Target,
-				"attempt", attempt,
-				"elapsed_ms", activeClock.Now().Sub(startedAt).Milliseconds(),
-				"err", ctx.Err())
-			return nil, fmt.Errorf("opnsenseclient: handshake to %q: %w", cfg.Target, ctx.Err())
-		case <-timer.C:
-			remainingTimeout -= opnsenseReconnectDelay
-		}
-	}
-	slog.ErrorContext(ctx, "opnsenseclient: handshake failed permanently",
-		"target", cfg.Target,
-		"attempts", attempts,
-		"elapsed_ms", activeClock.Now().Sub(startedAt).Milliseconds(),
-		"err", lastErr)
-	return nil, fmt.Errorf(
-		"opnsenseclient: handshake to %q failed after %d attempt(s): %w",
-		cfg.Target,
-		attempts,
-		lastErr,
-	)
-}
-
-func dialOnce(ctx context.Context, target string, dialTimeout time.Duration) (*Client, error) {
-	// Deploy ships full daemon binaries (~17 MiB). Bump send and recv
-	// limits to 64 MiB so probe -> bridge -> daemon upload works.
-	const maxMsgBytes = 64 * 1024 * 1024
 	dialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallSendMsgSize(maxMsgBytes),
 			grpc.MaxCallRecvMsgSize(maxMsgBytes),
 		),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				BaseDelay:  reconnectBaseDelay,
+				Multiplier: reconnectMultiplier,
+				Jitter:     reconnectJitter,
+				MaxDelay:   reconnectMaxDelay,
+			},
+			MinConnectTimeout: minConnectTimeout,
+		}),
 	}
-	if unixSocketPath, ok := unixTargetPath(target); ok {
+	if unixSocketPath, ok := unixTargetPath(cfg.Target); ok {
 		dialOptions = append(dialOptions,
 			grpc.WithContextDialer(unixContextDialer(unixSocketPath)))
 	}
 
-	conn, err := grpc.NewClient(target, dialOptions...)
+	conn, err := grpc.NewClient(cfg.Target, dialOptions...)
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsenseclient: create client failed",
-			"target", target,
+			"target", cfg.Target,
 			"err", err)
-		return nil, fmt.Errorf("opnsenseclient: dial %q: %w", target, err)
+		return nil, fmt.Errorf("opnsenseclient: dial %q: %w", cfg.Target, err)
 	}
 
-	probeCtx, cancel := context.WithTimeout(ctx, dialTimeout)
-	defer cancel()
+	// Kick the state machine out of IDLE so reconnect attempts begin
+	// before the first RPC. This is what makes "the bridge starts up
+	// before the daemon is ready" recover quickly: the channel is
+	// already CONNECTING when probes arrive.
+	conn.Connect()
 
-	cli := mwanv1.NewMWANOPNsenseServiceClient(conn)
-	if _, err := cli.Version(probeCtx, &mwanv1.VersionRequest{}); err != nil {
-		if closeErr := conn.Close(); closeErr != nil {
-			slog.WarnContext(ctx, "opnsenseclient: close failed after handshake error",
-				"target", target,
-				"err", closeErr)
-		}
-		slog.WarnContext(ctx, "opnsenseclient: version handshake failed",
-			"target", target,
-			"err", err)
-		return nil, fmt.Errorf("opnsenseclient: handshake to %q: %w", target, err)
-	}
+	slog.DebugContext(ctx, "opnsenseclient: client created",
+		"target", cfg.Target,
+		"reconnect_base_delay_ms", reconnectBaseDelay.Milliseconds(),
+		"reconnect_max_delay_ms", reconnectMaxDelay.Milliseconds(),
+		"min_connect_timeout_ms", minConnectTimeout.Milliseconds())
 
-	return &Client{conn: conn, rpc: cli}, nil
+	return &Client{
+		conn: conn,
+		rpc:  mwanv1.NewMWANOPNsenseServiceClient(conn),
+	}, nil
 }
 
 // Close releases the underlying gRPC connection.
@@ -191,6 +156,28 @@ func (c *Client) Close() error {
 // to use this for any of the service's RPCs.
 func (c *Client) RPC() mwanv1.MWANOPNsenseServiceClient {
 	return c.rpc
+}
+
+// WaitForReady blocks until the underlying channel reaches READY or
+// the supplied context is done. It issues a no-op Version RPC tagged
+// with [grpc.WaitForReady] which gRPC will hold open across
+// CONNECTING / TRANSIENT_FAILURE transitions. Returns nil on success,
+// the wrapped Version error on RPC failure, or ctx.Err() on
+// cancellation/deadline.
+//
+// Callers that pass a finite deadline get the standard gRPC behaviour:
+// codes.DeadlineExceeded if the channel never reaches READY in time.
+//
+// This is purely optional. The bridge does not need to call it; gRPC
+// will block per-RPC for as long as the call's own context allows.
+func (c *Client) WaitForReady(ctx context.Context) error {
+	_, err := c.rpc.Version(ctx, &mwanv1.VersionRequest{}, grpc.WaitForReady(true))
+	if err != nil {
+		slog.WarnContext(ctx, "opnsenseclient: wait for ready failed",
+			"err", err)
+		return fmt.Errorf("opnsenseclient: wait for ready: %w", err)
+	}
+	return nil
 }
 
 func unixTargetPath(target string) (string, bool) {
