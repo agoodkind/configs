@@ -132,6 +132,7 @@ func (a *Server) GetHealth(
 }
 
 func (a *Server) pingExitZero(ctx context.Context, name string, args ...string) bool {
+	slog.DebugContext(ctx, "agent: pingExitZero", "name", name, "args", args)
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, name, args...)
@@ -140,6 +141,7 @@ func (a *Server) pingExitZero(ctx context.Context, name string, args ...string) 
 }
 
 func (a *Server) listFailedSystemdUnits(ctx context.Context) ([]string, error) {
+	slog.DebugContext(ctx, "agent: listFailedSystemdUnits")
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, "systemctl", "list-units",

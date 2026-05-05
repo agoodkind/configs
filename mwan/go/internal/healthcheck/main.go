@@ -94,6 +94,7 @@ func Run() error {
 }
 
 func ping4(ctx context.Context, host string) bool {
+	slog.DebugContext(ctx, "healthcheck: ping4", "host", host)
 	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", "2", host)
 	return cmd.Run() == nil
 }
@@ -102,6 +103,7 @@ func ping4(ctx context.Context, host string) bool {
 // which clears the Webpass upstream filter that drops ICMPv6 with payload
 // <= 8 bytes. If ever ported to FreeBSD (default 8 bytes), add "-s", "16".
 func ping6(ctx context.Context, host string) bool {
+	slog.DebugContext(ctx, "healthcheck: ping6", "host", host)
 	cmd := exec.CommandContext(ctx, "ping6", "-c", "1", "-W", "2", host)
 	if cmd.Run() == nil {
 		return true

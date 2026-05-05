@@ -45,6 +45,11 @@ type ExecResult struct {
 // runExec is the pure execution implementation. ctx provides the
 // outer deadline; the per-call timeout is layered on top.
 func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
+	slog.DebugContext(ctx, "opnsensesvc: runExec",
+		"command", args.Command,
+		"args_len", len(args.Args),
+		"sudo", args.Sudo,
+		"timeout_seconds", args.TimeoutSeconds)
 	if err := validateExecArgs(args); err != nil {
 		return nil, err
 	}

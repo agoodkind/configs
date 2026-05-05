@@ -24,17 +24,12 @@ func logWrappedErrorContext(
 	err error,
 	attrs ...slog.Attr,
 ) error {
-	logger := loggerOrDefault(log).With(attrsFromSlice(attrs)...)
+	logger := loggerOrDefault(log)
+	for _, attr := range attrs {
+		logger = logger.With(attr)
+	}
 	logger.ErrorContext(ctx, logMessage, "err", err)
 	return fmt.Errorf("%s: %w", wrapMessage, err)
-}
-
-func attrsFromSlice(attrs []slog.Attr) []any {
-	values := make([]any, 0, len(attrs))
-	for _, attr := range attrs {
-		values = append(values, attr)
-	}
-	return values
 }
 
 func logCloseErrorContext(

@@ -114,6 +114,16 @@ func runOPNsenseProbeSmoke(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceCl
 	return nil
 }
 
+// probeOp is the typed enum of -op values accepted by opnsense-probe.
+type probeOp string
+
+const (
+	probeOpVersion    probeOp = "version"
+	probeOpReadConfig probeOp = "read-config"
+	probeOpXPathGet   probeOp = "xpath-get"
+	probeOpExec       probeOp = "exec"
+)
+
 func runOPNsenseProbeRPC(
 	ctx context.Context,
 	rpc mwanv1.MWANOPNsenseServiceClient,
@@ -123,8 +133,8 @@ func runOPNsenseProbeRPC(
 	cmdArgs string,
 	cmdSudo bool,
 ) error {
-	switch op {
-	case "version":
+	switch probeOp(op) {
+	case probeOpVersion:
 		resp, err := rpc.Version(ctx, &mwanv1.VersionRequest{})
 		if err != nil {
 			slog.ErrorContext(ctx, "opnsense-probe Version failed", "err", err)
@@ -137,7 +147,7 @@ func runOPNsenseProbeRPC(
 			"binhash", resp.GetBuildBinhash())
 		fmt.Fprintf(os.Stdout, "version=%s commit=%s dirty=%v binhash=%s\n",
 			resp.GetVersion(), resp.GetBuildCommit(), resp.GetBuildDirty(), resp.GetBuildBinhash())
-	case "read-config":
+	case probeOpReadConfig:
 		resp, err := rpc.ReadConfigXML(ctx, &mwanv1.ReadConfigXMLRequest{})
 		if err != nil {
 			slog.ErrorContext(ctx, "opnsense-probe ReadConfigXML failed", "err", err)
@@ -147,7 +157,7 @@ func runOPNsenseProbeRPC(
 			"size_bytes", resp.GetSizeBytes(),
 			"sha256", resp.GetSha256())
 		fmt.Fprintf(os.Stdout, "size=%d sha256=%s\n", resp.GetSizeBytes(), resp.GetSha256())
-	case "xpath-get":
+	case probeOpXPathGet:
 		if xpath == "" {
 			return errors.New("op=xpath-get requires -xpath")
 		}
@@ -160,7 +170,7 @@ func runOPNsenseProbeRPC(
 		for _, m := range resp.GetMatches() {
 			fmt.Fprintln(os.Stdout, m)
 		}
-	case "exec":
+	case probeOpExec:
 		if cmdStr == "" {
 			return errors.New("op=exec requires -cmd")
 		}

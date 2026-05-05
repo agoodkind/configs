@@ -3,6 +3,7 @@ package rollback
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
@@ -127,6 +128,12 @@ func WriteState(
 	if success {
 		status = "done"
 	}
+	slog.Info("rollback: WriteState",
+		"path", path,
+		"deploy_ts", deployTS,
+		"snapshot", snapshot,
+		"attempts", attempts,
+		"status", status)
 	content := fmt.Sprintf(
 		"deploy_timestamp=%d\nrollback_done=%s\nrollback_timestamp=%d\nsnapshot=%s\nrollback_attempts=%d\n",
 		deployTS,

@@ -327,19 +327,35 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
+// Subcommand is the typed enum of subcommand names that Validate
+// dispatches on.
+type Subcommand string
+
+// Subcommand constants enumerate the subcommands recognized by Validate.
+const (
+	// SubWatchdog routes config validation through validateWatchdog.
+	SubWatchdog Subcommand = "watchdog"
+	// SubCutover routes config validation through validateCutover.
+	SubCutover Subcommand = "cutover"
+	// SubAgent routes config validation through validateAgent.
+	SubAgent Subcommand = "agent"
+	// SubIfMgr routes config validation through validateIfMgr.
+	SubIfMgr Subcommand = "ifmgr"
+)
+
 // Validate validates the Config for a specific subcommand.
 func Validate(cfg *Config, sub string, dryRun bool) error {
 	if cfg.Hostname == "" {
 		return errors.New("hostname is required")
 	}
-	switch sub {
-	case "watchdog":
+	switch Subcommand(sub) {
+	case SubWatchdog:
 		return validateWatchdog(cfg, dryRun)
-	case "cutover":
+	case SubCutover:
 		return validateCutover(cfg, dryRun)
-	case "agent":
+	case SubAgent:
 		return validateAgent(cfg)
-	case "ifmgr":
+	case SubIfMgr:
 		return validateIfMgr(cfg)
 	}
 	return nil
