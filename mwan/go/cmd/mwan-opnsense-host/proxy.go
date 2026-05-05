@@ -69,7 +69,7 @@ func newProxyServer(upstream mwanv1.MWANOPNsenseServiceClient, log *slog.Logger)
 }
 
 func (p *proxyServer) Version(ctx context.Context, req *mwanv1.VersionRequest) (*mwanv1.VersionResponse, error) {
-	resp, err := p.upstream.Version(ctx, req)
+	resp, err := p.upstream.Version(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy Version: %w", err)
 	}
@@ -77,7 +77,7 @@ func (p *proxyServer) Version(ctx context.Context, req *mwanv1.VersionRequest) (
 }
 
 func (p *proxyServer) Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error) {
-	resp, err := p.upstream.Exec(ctx, req)
+	resp, err := p.upstream.Exec(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy Exec: %w", err)
 	}
@@ -85,7 +85,7 @@ func (p *proxyServer) Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv
 }
 
 func (p *proxyServer) ReadConfigXML(ctx context.Context, req *mwanv1.ReadConfigXMLRequest) (*mwanv1.ReadConfigXMLResponse, error) {
-	resp, err := p.upstream.ReadConfigXML(ctx, req)
+	resp, err := p.upstream.ReadConfigXML(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy ReadConfigXML: %w", err)
 	}
@@ -93,7 +93,7 @@ func (p *proxyServer) ReadConfigXML(ctx context.Context, req *mwanv1.ReadConfigX
 }
 
 func (p *proxyServer) WriteConfigXML(ctx context.Context, req *mwanv1.WriteConfigXMLRequest) (*mwanv1.WriteConfigXMLResponse, error) {
-	resp, err := p.upstream.WriteConfigXML(ctx, req)
+	resp, err := p.upstream.WriteConfigXML(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy WriteConfigXML: %w", err)
 	}
@@ -101,7 +101,7 @@ func (p *proxyServer) WriteConfigXML(ctx context.Context, req *mwanv1.WriteConfi
 }
 
 func (p *proxyServer) BackupConfigXML(ctx context.Context, req *mwanv1.BackupConfigXMLRequest) (*mwanv1.BackupConfigXMLResponse, error) {
-	resp, err := p.upstream.BackupConfigXML(ctx, req)
+	resp, err := p.upstream.BackupConfigXML(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy BackupConfigXML: %w", err)
 	}
@@ -109,7 +109,7 @@ func (p *proxyServer) BackupConfigXML(ctx context.Context, req *mwanv1.BackupCon
 }
 
 func (p *proxyServer) XPathGet(ctx context.Context, req *mwanv1.XPathGetRequest) (*mwanv1.XPathGetResponse, error) {
-	resp, err := p.upstream.XPathGet(ctx, req)
+	resp, err := p.upstream.XPathGet(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy XPathGet: %w", err)
 	}
@@ -117,7 +117,7 @@ func (p *proxyServer) XPathGet(ctx context.Context, req *mwanv1.XPathGetRequest)
 }
 
 func (p *proxyServer) XPathSet(ctx context.Context, req *mwanv1.XPathSetRequest) (*mwanv1.XPathSetResponse, error) {
-	resp, err := p.upstream.XPathSet(ctx, req)
+	resp, err := p.upstream.XPathSet(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy XPathSet: %w", err)
 	}
@@ -125,7 +125,7 @@ func (p *proxyServer) XPathSet(ctx context.Context, req *mwanv1.XPathSetRequest)
 }
 
 func (p *proxyServer) XPathDelete(ctx context.Context, req *mwanv1.XPathDeleteRequest) (*mwanv1.XPathDeleteResponse, error) {
-	resp, err := p.upstream.XPathDelete(ctx, req)
+	resp, err := p.upstream.XPathDelete(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy XPathDelete: %w", err)
 	}
@@ -133,7 +133,7 @@ func (p *proxyServer) XPathDelete(ctx context.Context, req *mwanv1.XPathDeleteRe
 }
 
 func (p *proxyServer) StripGatewayV6(ctx context.Context, req *mwanv1.StripGatewayV6Request) (*mwanv1.StripGatewayV6Response, error) {
-	resp, err := p.upstream.StripGatewayV6(ctx, req)
+	resp, err := p.upstream.StripGatewayV6(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy StripGatewayV6: %w", err)
 	}
@@ -141,7 +141,7 @@ func (p *proxyServer) StripGatewayV6(ctx context.Context, req *mwanv1.StripGatew
 }
 
 func (p *proxyServer) InjectGatewayV6(ctx context.Context, req *mwanv1.InjectGatewayV6Request) (*mwanv1.InjectGatewayV6Response, error) {
-	resp, err := p.upstream.InjectGatewayV6(ctx, req)
+	resp, err := p.upstream.InjectGatewayV6(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("proxy InjectGatewayV6: %w", err)
 	}
@@ -160,7 +160,7 @@ func (p *proxyServer) Deploy(srv grpc.ClientStreamingServer[mwanv1.Chunk, mwanv1
 	pa := peerString(pi)
 	p.log.InfoContext(ctx, "proxy Deploy: stream begin", "peer", pa)
 
-	upstream, err := p.upstream.Deploy(ctx)
+	upstream, err := p.upstream.Deploy(ctx, grpc.WaitForReady(true))
 	if err != nil {
 		p.log.ErrorContext(ctx, "proxy Deploy: upstream open failed", "peer", pa, "err", err)
 		return fmt.Errorf("proxy Deploy: open upstream: %w", err)
@@ -212,7 +212,7 @@ func (p *proxyServer) Deploy(srv grpc.ClientStreamingServer[mwanv1.Chunk, mwanv1
 // status queries.
 func (p *proxyServer) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusRequest) (*mwanv1.DeployStatusResponse, error) {
 	pi, _ := peer.FromContext(ctx)
-	resp, err := p.upstream.DeployStatus(ctx, req)
+	resp, err := p.upstream.DeployStatus(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		p.log.ErrorContext(ctx, "proxy DeployStatus: upstream error", "peer", peerString(pi), "err", err)
 		return nil, fmt.Errorf("proxy DeployStatus: %w", err)
@@ -227,7 +227,7 @@ func (p *proxyServer) Revert(ctx context.Context, req *mwanv1.RevertRequest) (*m
 	pi, _ := peer.FromContext(ctx)
 	pa := peerString(pi)
 	p.log.InfoContext(ctx, "proxy Revert: forwarding", "peer", pa)
-	resp, err := p.upstream.Revert(ctx, req)
+	resp, err := p.upstream.Revert(ctx, req, grpc.WaitForReady(true))
 	if err != nil {
 		p.log.ErrorContext(ctx, "proxy Revert: upstream error", "peer", pa, "err", err)
 		return nil, fmt.Errorf("proxy Revert: %w", err)
