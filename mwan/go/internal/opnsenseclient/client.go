@@ -140,8 +140,15 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 }
 
 func dialOnce(ctx context.Context, target string, dialTimeout time.Duration) (*Client, error) {
+	// Deploy ships full daemon binaries (~17 MiB). Bump send and recv
+	// limits to 64 MiB so probe -> bridge -> daemon upload works.
+	const maxMsgBytes = 64 * 1024 * 1024
 	dialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallSendMsgSize(maxMsgBytes),
+			grpc.MaxCallRecvMsgSize(maxMsgBytes),
+		),
 	}
 	if unixSocketPath, ok := unixTargetPath(target); ok {
 		dialOptions = append(dialOptions,

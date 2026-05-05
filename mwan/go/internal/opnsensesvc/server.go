@@ -523,7 +523,9 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 		log = slog.Default()
 	}
 
-	gs := grpc.NewServer()
+	// Deploy RPC ships full mwan-opnsense binaries (typically 15-20 MiB).
+	// Bump the recv limit well past that to allow self-deploy.
+	gs := grpc.NewServer(grpc.MaxRecvMsgSize(maxDeployBytes))
 	opts.Server.Register(gs)
 
 	serLis, err := NewSerialListener(opts.SerialPath, opts.OpenSerial)

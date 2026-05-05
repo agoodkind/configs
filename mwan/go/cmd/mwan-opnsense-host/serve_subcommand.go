@@ -21,7 +21,10 @@ import (
 const (
 	defaultUpstreamTarget = "unix:///var/run/qemu-server/101.mwanrpc"
 	defaultListenPath     = "/var/run/mwan-opnsense.sock"
-	defaultDialTimeout    = 30 * time.Second
+	// 90s lets the bridge ride out post-daemon-restart flakiness where
+	// the first 1-2 handshakes fail on stale chardev bytes (each
+	// attempt is 10s, reconnect delay 2s, so ~7 attempts in 90s).
+	defaultDialTimeout = 90 * time.Second
 )
 
 // runServe starts the bridge: dial the persistent upstream gRPC
@@ -94,7 +97,12 @@ func runServe(args []string) int {
 	slog.InfoContext(ctx, "mwan-opnsense-host: listening",
 		"listen", *listenPath)
 
-	gs := grpc.NewServer()
+	// Probes ship full daemon binaries through Deploy (~17 MiB). Bridge
+	// must accept those messages and forward them to the upstream client
+	// which in turn must respect the same ceiling. 64 MiB matches the
+	// daemon-side limit declared in opnsensesvc.maxDeployBytes.
+	const proxyMaxBytes = 64 * 1024 * 1024
+	gs := grpc.NewServer(grpc.MaxRecvMsgSize(proxyMaxBytes))
 	mwanv1.RegisterMWANOPNsenseServiceServer(gs, newProxyServer(upstreamClient.RPC(), slog.Default()))
 
 	errCh := make(chan error, 1)

@@ -36,6 +36,11 @@ const (
 	HealthOK          = "ok"
 	HealthPending     = "pending"
 	MarkerFreshDeploy = "fresh-deploy"
+
+	// maxDeployBytes caps gRPC message size for the Deploy RPC. Self-
+	// deploy ships full mwan-opnsense binaries (currently ~17 MiB).
+	// 64 MiB leaves headroom for symbol-rich debug builds and growth.
+	maxDeployBytes = 64 * 1024 * 1024
 )
 
 // DeployConfig parameterizes filesystem locations for the deploy
