@@ -38,29 +38,42 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// subcommand is the typed enum of mwan-opnsense subcommand names.
+type subcommand string
+
+const (
+	subcmdVersion   subcommand = "version"
+	subcmdServe     subcommand = "serve"
+	subcmdStatus    subcommand = "status"
+	subcmdIsEnabled subcommand = "is-enabled"
+	subcmdHelpH     subcommand = "-h"
+	subcmdHelpL     subcommand = "--help"
+	subcmdHelp      subcommand = "help"
+)
+
 func run(args []string) int {
 	if len(args) < 1 {
 		return usage()
 	}
-	sub := args[0]
+	sub := subcommand(args[0])
 	subArgs := args[1:]
 	slog.Info("mwan-opnsense boundary",
 		"build", version.BuildVersionString(),
-		"subcommand", sub)
+		"subcommand", string(sub))
 	switch sub {
-	case "version":
+	case subcmdVersion:
 		fmt.Fprintln(os.Stdout, version.BuildVersionString())
 		return 0
-	case "serve":
+	case subcmdServe:
 		return runServe(subArgs)
-	case "status":
+	case subcmdStatus:
 		return runStatus(subArgs)
-	case "is-enabled":
+	case subcmdIsEnabled:
 		return runIsEnabled(subArgs)
-	case "-h", "--help", "help":
+	case subcmdHelpH, subcmdHelpL, subcmdHelp:
 		return usage()
 	default:
-		fmt.Fprintf(os.Stderr, "mwan-opnsense: unknown subcommand %q\n", sub)
+		fmt.Fprintf(os.Stderr, "mwan-opnsense: unknown subcommand %q\n", string(sub))
 		return usage()
 	}
 }

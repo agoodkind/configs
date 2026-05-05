@@ -41,27 +41,41 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// subcommand is the typed enum of bridge subcommand names. Anchored to
+// an allowlist so the log line cannot be poisoned by attacker-controlled
+// input.
+type subcommand string
+
+const (
+	subcmdVersion subcommand = "version"
+	subcmdServe   subcommand = "serve"
+	subcmdHelpH   subcommand = "-h"
+	subcmdHelpL   subcommand = "--help"
+	subcmdHelp    subcommand = "help"
+)
+
 func run(args []string) int {
 	if len(args) < 1 {
 		return usage()
 	}
-	sub := args[0]
+	sub := subcommand(args[0])
 	subArgs := args[1:]
-	// Resolve subcommand against an allowlist BEFORE logging it, so the
-	// log line cannot be poisoned by attacker-controlled input.
 	switch sub {
-	case "version":
+	case subcmdVersion:
+		// Use the constant string literal (not string(sub)) so gosec
+		// taint analysis does not flag the attacker-controlled arg as
+		// reaching the log sink. The case arm guarantees sub == subcmdVersion.
 		slog.Info("mwan-opnsense-host boundary",
 			"build", version.BuildVersionString(),
-			"subcommand", "version")
+			"subcommand", string(subcmdVersion))
 		fmt.Fprintln(os.Stdout, version.BuildVersionString())
 		return 0
-	case "serve":
+	case subcmdServe:
 		slog.Info("mwan-opnsense-host boundary",
 			"build", version.BuildVersionString(),
-			"subcommand", "serve")
+			"subcommand", string(subcmdServe))
 		return runServe(subArgs)
-	case "-h", "--help", "help":
+	case subcmdHelpH, subcmdHelpL, subcmdHelp:
 		return usage()
 	default:
 		fmt.Fprintf(os.Stderr, "mwan-opnsense-host: unknown subcommand\n")

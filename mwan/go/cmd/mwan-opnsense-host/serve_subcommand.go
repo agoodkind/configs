@@ -128,6 +128,7 @@ func runServe(args []string) int {
 // any stale socket file from a previous run before binding. Sets mode
 // 0660 so non-root callers cannot connect by default.
 func openLocalListener(ctx context.Context, path string) (net.Listener, error) {
+	slog.DebugContext(ctx, "openLocalListener", "path", path)
 	removeErr := os.Remove(path)
 	if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 		return nil, fmt.Errorf("remove stale socket %s: %w", path, removeErr)

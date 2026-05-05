@@ -12,6 +12,17 @@ import (
 	"goodkind.io/mwan/internal/watchdog"
 )
 
+// subcommand is the typed enum of mwan subcommands that take a config.
+// "health-check" and "opnsense-probe" are config-less and dispatched
+// before this switch.
+type subcommand string
+
+const (
+	subcmdAgent    subcommand = "agent"
+	subcmdWatchdog subcommand = "watchdog"
+	subcmdIfmgr    subcommand = "ifmgr"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense-probe> [flags]")
@@ -51,17 +62,17 @@ func main() {
 	}
 
 	var runErr error
-	switch sub {
-	case "agent":
+	switch subcommand(sub) {
+	case subcmdAgent:
 		runErr = agent.Run(cfg)
-	case "watchdog":
+	case subcmdWatchdog:
 		if len(os.Args) > 1 && os.Args[1] == "failover" {
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 			runErr = watchdog.FailoverRun(cfg)
 		} else {
 			runErr = watchdog.Run(cfg)
 		}
-	case "ifmgr":
+	case subcmdIfmgr:
 		runErr = runIfMgr(cfg)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", sub)

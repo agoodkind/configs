@@ -7,8 +7,19 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/peer"
+
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 )
+
+// peerString renders a [peer.Peer] as a log-friendly address, or "" when
+// the peer info is missing (e.g. non-gRPC invocation).
+func peerString(p *peer.Peer) string {
+	if p == nil || p.Addr == nil {
+		return ""
+	}
+	return p.Addr.String()
+}
 
 // proxyServer implements mwanv1.MWANOPNsenseServiceServer by
 // forwarding every RPC to the persistent upstream gRPC client.
@@ -140,14 +151,17 @@ func (p *proxyServer) InjectGatewayV6(ctx context.Context, req *mwanv1.InjectGat
 // already running will skip arming a second one. The heartbeat itself
 // finalizes the deploy by calling MarkHealthy or Revert.
 func (p *proxyServer) Deploy(ctx context.Context, req *mwanv1.DeployRequest) (*mwanv1.DeployResponse, error) {
-	p.log.Info("proxy Deploy: forwarding",
+	pi, _ := peer.FromContext(ctx)
+	pa := peerString(pi)
+	p.log.InfoContext(ctx, "proxy Deploy: forwarding",
+		"peer", pa,
 		"bytes", len(req.GetBinary()),
 		"sha256_hex", req.GetSha256Hex(),
 		"version_str", req.GetVersionStr())
 
 	resp, err := p.upstream.Deploy(ctx, req)
 	if err != nil {
-		p.log.Error("proxy Deploy: upstream error", "err", err)
+		p.log.ErrorContext(ctx, "proxy Deploy: upstream error", "peer", pa, "err", err)
 		return nil, fmt.Errorf("proxy Deploy: %w", err)
 	}
 	if resp.GetReExecStarted() {
@@ -161,8 +175,10 @@ func (p *proxyServer) Deploy(ctx context.Context, req *mwanv1.DeployRequest) (*m
 // the deploy healthy. External callers may use it for read-only
 // status queries.
 func (p *proxyServer) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusRequest) (*mwanv1.DeployStatusResponse, error) {
+	pi, _ := peer.FromContext(ctx)
 	resp, err := p.upstream.DeployStatus(ctx, req)
 	if err != nil {
+		p.log.ErrorContext(ctx, "proxy DeployStatus: upstream error", "peer", peerString(pi), "err", err)
 		return nil, fmt.Errorf("proxy DeployStatus: %w", err)
 	}
 	return resp, nil
@@ -172,10 +188,12 @@ func (p *proxyServer) DeployStatus(ctx context.Context, req *mwanv1.DeployStatus
 // announcement arms the heartbeat probe so the bridge can confirm the
 // reverted binary is healthy.
 func (p *proxyServer) Revert(ctx context.Context, req *mwanv1.RevertRequest) (*mwanv1.RevertResponse, error) {
-	p.log.Info("proxy Revert: forwarding")
+	pi, _ := peer.FromContext(ctx)
+	pa := peerString(pi)
+	p.log.InfoContext(ctx, "proxy Revert: forwarding", "peer", pa)
 	resp, err := p.upstream.Revert(ctx, req)
 	if err != nil {
-		p.log.Error("proxy Revert: upstream error", "err", err)
+		p.log.ErrorContext(ctx, "proxy Revert: upstream error", "peer", pa, "err", err)
 		return nil, fmt.Errorf("proxy Revert: %w", err)
 	}
 	if resp.GetReExecStarted() {
@@ -205,6 +223,11 @@ func (p *proxyServer) armHeartbeat(parent context.Context) {
 	)
 	go func() {
 		defer hbCancel()
+		defer func() {
+			if r := recover(); r != nil {
+				p.log.ErrorContext(hbCtx, "heartbeat goroutine panicked", "err", fmt.Errorf("panic: %v", r))
+			}
+		}()
 		p.runHeartbeat(hbCtx)
 	}()
 }
@@ -236,6 +259,7 @@ func (p *proxyServer) runHeartbeat(ctx context.Context) {
 		"initial_delay", p.heartbeatInitial.String(),
 		"max_delay", p.heartbeatMaxDelay.String())
 
+	healthy := false
 	for time.Now().Before(deadline) {
 		attempts++
 		select {
@@ -249,11 +273,8 @@ func (p *proxyServer) runHeartbeat(ctx context.Context) {
 		_, err := p.upstream.Version(probeCtx, &mwanv1.VersionRequest{})
 		cancel()
 		if err == nil {
-			p.log.InfoContext(ctx, "heartbeat: upstream healthy",
-				"attempts", attempts,
-				"elapsed", time.Until(deadline).String())
-			p.markDeployHealthy(ctx)
-			return
+			healthy = true
+			break
 		}
 		p.log.DebugContext(ctx, "heartbeat: probe failed",
 			"attempts", attempts,
@@ -266,7 +287,17 @@ func (p *proxyServer) runHeartbeat(ctx context.Context) {
 		}
 	}
 
-	p.log.ErrorContext(ctx, "heartbeat: budget exhausted; triggering revert", "attempts", attempts)
+	if healthy {
+		p.log.InfoContext(ctx, "heartbeat: upstream healthy",
+			"attempts", attempts,
+			"elapsed", time.Until(deadline).String())
+		p.markDeployHealthy(ctx)
+		return
+	}
+
+	p.log.ErrorContext(ctx, "heartbeat: budget exhausted; triggering revert",
+		"attempts", attempts,
+		"err", fmt.Errorf("heartbeat budget %s exhausted without healthy upstream response", p.heartbeatBudget))
 	rearm = p.triggerRevert(ctx)
 }
 
