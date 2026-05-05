@@ -1,0 +1,36 @@
+[Unit]
+Description=MWAN OPNsense host bridge (gRPC over qemu virtio-serial)
+Documentation=file:///root/configs/mwan/MWAN-95-INVESTIGATION.md
+After=network.target qemu-server.service
+Wants=network.target
+
+[Service]
+Type=simple
+# Defaults assume the testbed VM 101 chardev path. Override with a
+# drop-in at /etc/systemd/system/mwan-opnsense-host.service.d/listen.conf
+# for prod (VM 113) or any other target.
+ExecStart=/usr/local/bin/mwan-opnsense-host serve \
+    -upstream unix:///var/run/qemu-server/101.mwanrpc \
+    -listen /var/run/mwan-opnsense.sock
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mwan-opnsense-host
+
+# The bridge needs:
+#   - read+write access to the qemu chardev unix socket under
+#     /var/run/qemu-server/, owned by root (Proxmox-managed).
+#   - read+write access to its own listen socket under /var/run/.
+# No network capabilities: it only talks to local unix sockets.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+PrivateTmp=true
+ReadWritePaths=/var/run /run
+
+[Install]
+WantedBy=multi-user.target

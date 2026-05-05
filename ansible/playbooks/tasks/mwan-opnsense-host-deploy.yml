@@ -1,0 +1,83 @@
+---
+# Linux-side deploy of mwan-opnsense-host (the bridge daemon).
+#
+# Target: a Proxmox host that runs an OPNsense VM, reached as root.
+# Pairs with mwan-opnsense-deploy.yml which installs the daemon
+# inside the OPNsense guest. See mwan/MWAN-95-INVESTIGATION.md.
+#
+# Required vars:
+#   mwan_opnsense_host_binary_local      local path to bin/mwan-opnsense-host
+#   mwan_opnsense_host_vmid              Proxmox VMID hosting OPNsense (e.g. 101 testbed, 113 prod)
+#
+# Optional vars (with defaults):
+#   mwan_opnsense_host_listen_path       default "/var/run/mwan-opnsense.sock"
+
+- name: Install mwan-opnsense-host binary
+  ansible.builtin.copy:
+    src: "{{ mwan_opnsense_host_binary_local }}"
+    dest: /usr/local/bin/mwan-opnsense-host
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  register: mwan_opnsense_host_binary
+
+- name: Install systemd unit
+  ansible.builtin.copy:
+    src: >-
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense-host/mwan-opnsense-host.service
+    dest: /etc/systemd/system/mwan-opnsense-host.service
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: mwan_opnsense_host_unit
+
+- name: Ensure drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/mwan-opnsense-host.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Drop-in override for upstream chardev path (per-host VMID)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/mwan-opnsense-host.service.d/upstream.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/local/bin/mwan-opnsense-host serve \
+          -upstream unix:///var/run/qemu-server/{{ mwan_opnsense_host_vmid }}.mwanrpc \
+          -listen {{ mwan_opnsense_host_listen_path | default('/var/run/mwan-opnsense.sock') }}
+  become: true
+  register: mwan_opnsense_host_dropin
+
+- name: Reload systemd if anything changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+  when: >-
+    mwan_opnsense_host_unit.changed
+    or mwan_opnsense_host_dropin.changed
+
+- name: Enable and start mwan-opnsense-host
+  ansible.builtin.systemd:
+    name: mwan-opnsense-host
+    enabled: true
+    state: started
+  become: true
+
+- name: Restart mwan-opnsense-host if binary or unit changed
+  ansible.builtin.systemd:
+    name: mwan-opnsense-host
+    state: restarted
+  become: true
+  when: >-
+    mwan_opnsense_host_binary.changed
+    or mwan_opnsense_host_unit.changed
+    or mwan_opnsense_host_dropin.changed
