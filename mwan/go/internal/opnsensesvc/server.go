@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -18,6 +19,18 @@ import (
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/version"
 )
+
+// clampToInt32 saturates n to the int32 range. Used for proto fields
+// that carry small counts but originate from int-typed callees.
+func clampToInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
+}
 
 // Server implements mwanv1.MWANOPNsenseServiceServer.
 //
@@ -278,7 +291,7 @@ func (s *Server) XPathSet(
 		slog.String("backup_path", backupPath))
 	return &mwanv1.XPathSetResponse{
 		BackupPath:   backupPath,
-		ChangedCount: int32(n),
+		ChangedCount: clampToInt32(n),
 	}, nil
 }
 
@@ -317,7 +330,7 @@ func (s *Server) XPathDelete(
 		slog.String("backup_path", backupPath))
 	return &mwanv1.XPathDeleteResponse{
 		BackupPath:   backupPath,
-		DeletedCount: int32(n),
+		DeletedCount: clampToInt32(n),
 	}, nil
 }
 
@@ -414,7 +427,7 @@ func (s *Server) Deploy(ctx context.Context, req *mwanv1.DeployRequest) (*mwanv1
 	}
 	previousPath, stagedSHA256, err := s.deploy.Deploy(ctx, req.GetBinary(), req.GetSha256Hex(), req.GetVersionStr())
 	if err != nil {
-		s.log.Error("Deploy: failed", "err", err)
+		s.log.ErrorContext(ctx, "Deploy: failed", "err", err)
 		return nil, status.Errorf(codes.Internal, "deploy: %v", err)
 	}
 	return &mwanv1.DeployResponse{
@@ -438,7 +451,7 @@ func (s *Server) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusReque
 	if req.GetMark() == mwanv1.DeployStatusRequest_MARK_HEALTHY {
 		active, previous, deployedAt, err := s.deploy.MarkHealthy(ctx)
 		if err != nil {
-			s.log.Error("DeployStatus: mark healthy failed", "err", err)
+			s.log.ErrorContext(ctx, "DeployStatus: mark healthy failed", "err", err)
 			return nil, status.Errorf(codes.Internal, "mark healthy: %v", err)
 		}
 		return &mwanv1.DeployStatusResponse{
@@ -452,7 +465,7 @@ func (s *Server) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusReque
 	// Read-only path.
 	active, previous, health, deployedAt, err := s.deploy.Status(ctx)
 	if err != nil {
-		s.log.Error("DeployStatus: read failed", "err", err)
+		s.log.ErrorContext(ctx, "DeployStatus: read failed", "err", err)
 		return nil, status.Errorf(codes.Internal, "status: %v", err)
 	}
 	return &mwanv1.DeployStatusResponse{
@@ -474,7 +487,7 @@ func (s *Server) Revert(ctx context.Context, _ *mwanv1.RevertRequest) (*mwanv1.R
 	}
 	revertedTo, err := s.deploy.Revert(ctx)
 	if err != nil {
-		s.log.Error("Revert: failed", "err", err)
+		s.log.ErrorContext(ctx, "Revert: failed", "err", err)
 		return nil, status.Errorf(codes.Internal, "revert: %v", err)
 	}
 	return &mwanv1.RevertResponse{
