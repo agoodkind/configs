@@ -51,6 +51,21 @@ service MWANOPNsenseService {
   // Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
   // before </wan>. Same byte-offset tokenizer as above.
   rpc InjectGatewayV6(InjectGatewayV6Request) returns (InjectGatewayV6Response);
+
+  // Deploy a new daemon binary. Daemon writes payload atomically,
+  // verifies sha256, swaps .current and .previous, marks pending-verify,
+  // re-execs into the new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+  rpc Deploy(DeployRequest) returns (DeployResponse);
+
+  // Mark the most recent deploy as healthy. Bridge calls this after
+  // post-deploy heartbeat probe succeeds. Daemon clears the
+  // pending-verify marker and stamps health=ok in the state file.
+  rpc DeployStatus(DeployStatusRequest) returns (DeployStatusResponse);
+
+  // Revert to .previous. Used by bridge when post-deploy heartbeat
+  // budget elapses without a successful Version() call. Same re-exec
+  // dance as Deploy.
+  rpc Revert(RevertRequest) returns (RevertResponse);
 }
 
 message VersionRequest {}
@@ -149,4 +164,38 @@ message InjectGatewayV6Request {
 message InjectGatewayV6Response {
   string backup_path = 1;
   bool changed = 2;            // false if gatewayv6 already present
+}
+
+message DeployRequest {
+  bytes binary = 1;            // full ELF; uncompressed (local IPC)
+  string sha256_hex = 2;       // verified pre-swap
+  string version_str = 3;      // free-form, recorded in state file
+}
+
+message DeployResponse {
+  string staged_sha256 = 1;
+  string previous_path = 2;    // /usr/local/sbin/mwan-opnsense.previous
+  bool re_exec_started = 3;
+}
+
+message DeployStatusRequest {
+  enum Mark {
+    MARK_UNSPECIFIED = 0;
+    MARK_HEALTHY = 1;          // bridge confirms post-deploy reachability
+  }
+  Mark mark = 1;
+}
+
+message DeployStatusResponse {
+  string active_sha256 = 1;
+  string previous_sha256 = 2;
+  string health = 3;           // "ok" | "pending" | "unhealthy"
+  int64 deployed_at = 4;       // unix seconds
+}
+
+message RevertRequest {}
+
+message RevertResponse {
+  string reverted_to_sha256 = 1;
+  bool re_exec_started = 2;
 }

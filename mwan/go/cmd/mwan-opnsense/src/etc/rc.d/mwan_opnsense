@@ -42,11 +42,42 @@ mwan_opnsense_status() {
 	"${command}" status -pidfile "${pidfile}"
 }
 
+mwan_opnsense_preflight() {
+	# Self-deploy revert path. If the previous start was a fresh deploy
+	# (pending-verify marker present) and the daemon never reported
+	# health=ok, swap .current with .previous before this start. See
+	# mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+	pending="/var/run/mwan-opnsense.pending-verify"
+	state="/var/run/mwan-opnsense.deploy.state"
+	sbin_dir="/usr/local/sbin"
+
+	[ -f "${pending}" ] || return 0
+
+	if awk -F: '$1=="health" && $2=="ok"' "${state}" 2>/dev/null | grep -q .; then
+		# Previous deploy verified healthy; just clear marker.
+		rm -f "${pending}"
+		return 0
+	fi
+
+	if [ ! -f "${sbin_dir}/mwan-opnsense.previous" ]; then
+		echo "${name}: pending-verify present but no .previous to revert to" >&2
+		rm -f "${pending}"
+		return 0
+	fi
+
+	logger -t mwan-opnsense-deploy "self-check failed; reverting to .previous"
+	cp -f "${sbin_dir}/mwan-opnsense.previous" "${sbin_dir}/mwan-opnsense.current" \
+		|| { echo "${name}: revert copy failed" >&2; return 1; }
+	rm -f "${pending}"
+}
+
 mwan_opnsense_start() {
 	if "${command}" status -pidfile "${pidfile}" -quiet; then
 		echo "${name} already running"
 		return 0
 	fi
+
+	mwan_opnsense_preflight || return 1
 
 	rm -f "${pidfile}"
 	"${command}" serve -daemonize -pidfile "${pidfile}" \

@@ -95,7 +95,7 @@ func runServe(args []string) int {
 		"listen", *listenPath)
 
 	gs := grpc.NewServer()
-	mwanv1.RegisterMWANOPNsenseServiceServer(gs, &proxyServer{upstream: upstreamClient.RPC()})
+	mwanv1.RegisterMWANOPNsenseServiceServer(gs, newProxyServer(upstreamClient.RPC(), slog.Default()))
 
 	errCh := make(chan error, 1)
 	go func() {

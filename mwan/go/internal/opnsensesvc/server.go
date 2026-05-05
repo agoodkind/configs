@@ -31,12 +31,30 @@ type Server struct {
 	backupDir  string
 	log        *slog.Logger
 	clock      Clock
+	deploy     *DeployManager
 	mu         sync.Mutex // serializes mutating ops on config.xml
 }
 
 // NewServer constructs a Server. configPath defaults to ConfigPath
-// when empty; backupDir defaults to BackupDir when empty.
+// when empty; backupDir defaults to BackupDir when empty. The
+// DeployManager uses package defaults; override with NewServerWithDeploy
+// for tests.
 func NewServer(log *slog.Logger, configPath, backupDir string) *Server {
+	cfg := DeployConfig{
+		BinaryDir:      "",
+		StatePath:      "",
+		PendingPath:    "",
+		ReExecGrace:    0,
+		ReExecFn:       nil,
+		WriteStateFile: nil,
+		NowFn:          nil,
+	}
+	return NewServerWithDeploy(log, configPath, backupDir, NewDeployManager(log, cfg))
+}
+
+// NewServerWithDeploy is the explicit form used by tests to inject
+// a tmpdir-rooted DeployManager.
+func NewServerWithDeploy(log *slog.Logger, configPath, backupDir string, deploy *DeployManager) *Server {
 	if configPath == "" {
 		configPath = ConfigPath
 	}
@@ -47,10 +65,13 @@ func NewServer(log *slog.Logger, configPath, backupDir string) *Server {
 		log = slog.Default()
 	}
 	return &Server{
-		configPath: configPath,
-		backupDir:  backupDir,
-		log:        log,
-		clock:      realClock{},
+		UnimplementedMWANOPNsenseServiceServer: mwanv1.UnimplementedMWANOPNsenseServiceServer{},
+		configPath:                             configPath,
+		backupDir:                              backupDir,
+		log:                                    log,
+		clock:                                  realClock{},
+		deploy:                                 deploy,
+		mu:                                     sync.Mutex{},
 	}
 }
 
@@ -375,6 +396,90 @@ func (s *Server) InjectGatewayV6(
 	return &mwanv1.InjectGatewayV6Response{
 		BackupPath: backupPath,
 		Changed:    true,
+	}, nil
+}
+
+// Deploy stages a new daemon binary, swaps the .current slot, drops
+// the pending-verify marker, and re-execs the running process. The
+// reply is sent before exec so the bridge sees DeployResponse.
+func (s *Server) Deploy(ctx context.Context, req *mwanv1.DeployRequest) (*mwanv1.DeployResponse, error) {
+	peerInfo, _ := peer.FromContext(ctx)
+	serverLogAttrs(ctx, s.log, slog.LevelInfo, "opnsensesvc: Deploy", peerInfo,
+		slog.Int("bytes", len(req.GetBinary())),
+		slog.String("sha256_hex", req.GetSha256Hex()),
+		slog.String("version_str", req.GetVersionStr()))
+
+	if s.deploy == nil {
+		return nil, status.Error(codes.Unimplemented, "Deploy: DeployManager not configured")
+	}
+	previousPath, stagedSHA256, err := s.deploy.Deploy(ctx, req.GetBinary(), req.GetSha256Hex(), req.GetVersionStr())
+	if err != nil {
+		s.log.Error("Deploy: failed", "err", err)
+		return nil, status.Errorf(codes.Internal, "deploy: %v", err)
+	}
+	return &mwanv1.DeployResponse{
+		StagedSha256:  stagedSHA256,
+		PreviousPath:  previousPath,
+		ReExecStarted: true,
+	}, nil
+}
+
+// DeployStatus returns current deploy state. With Mark=MARK_HEALTHY,
+// it also clears the pending-verify marker and stamps health=ok.
+func (s *Server) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusRequest) (*mwanv1.DeployStatusResponse, error) {
+	peerInfo, _ := peer.FromContext(ctx)
+	serverLogAttrs(ctx, s.log, slog.LevelInfo, "opnsensesvc: DeployStatus", peerInfo,
+		slog.String("mark", req.GetMark().String()))
+
+	if s.deploy == nil {
+		return nil, status.Error(codes.Unimplemented, "DeployStatus: DeployManager not configured")
+	}
+
+	if req.GetMark() == mwanv1.DeployStatusRequest_MARK_HEALTHY {
+		active, previous, deployedAt, err := s.deploy.MarkHealthy(ctx)
+		if err != nil {
+			s.log.Error("DeployStatus: mark healthy failed", "err", err)
+			return nil, status.Errorf(codes.Internal, "mark healthy: %v", err)
+		}
+		return &mwanv1.DeployStatusResponse{
+			ActiveSha256:   active,
+			PreviousSha256: previous,
+			Health:         HealthOK,
+			DeployedAt:     deployedAt,
+		}, nil
+	}
+
+	// Read-only path.
+	active, previous, health, deployedAt, err := s.deploy.Status(ctx)
+	if err != nil {
+		s.log.Error("DeployStatus: read failed", "err", err)
+		return nil, status.Errorf(codes.Internal, "status: %v", err)
+	}
+	return &mwanv1.DeployStatusResponse{
+		ActiveSha256:   active,
+		PreviousSha256: previous,
+		Health:         health,
+		DeployedAt:     deployedAt,
+	}, nil
+}
+
+// Revert copies .previous to .current, drops pending-verify marker,
+// and re-execs.
+func (s *Server) Revert(ctx context.Context, _ *mwanv1.RevertRequest) (*mwanv1.RevertResponse, error) {
+	peerInfo, _ := peer.FromContext(ctx)
+	serverLogAttrs(ctx, s.log, slog.LevelInfo, "opnsensesvc: Revert", peerInfo)
+
+	if s.deploy == nil {
+		return nil, status.Error(codes.Unimplemented, "Revert: DeployManager not configured")
+	}
+	revertedTo, err := s.deploy.Revert(ctx)
+	if err != nil {
+		s.log.Error("Revert: failed", "err", err)
+		return nil, status.Errorf(codes.Internal, "revert: %v", err)
+	}
+	return &mwanv1.RevertResponse{
+		RevertedToSha256: revertedTo,
+		ReExecStarted:    true,
 	}, nil
 }
 

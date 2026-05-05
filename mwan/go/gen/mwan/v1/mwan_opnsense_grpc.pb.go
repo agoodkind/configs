@@ -29,6 +29,9 @@ const (
 	MWANOPNsenseService_XPathDelete_FullMethodName     = "/mwan.v1.MWANOPNsenseService/XPathDelete"
 	MWANOPNsenseService_StripGatewayV6_FullMethodName  = "/mwan.v1.MWANOPNsenseService/StripGatewayV6"
 	MWANOPNsenseService_InjectGatewayV6_FullMethodName = "/mwan.v1.MWANOPNsenseService/InjectGatewayV6"
+	MWANOPNsenseService_Deploy_FullMethodName          = "/mwan.v1.MWANOPNsenseService/Deploy"
+	MWANOPNsenseService_DeployStatus_FullMethodName    = "/mwan.v1.MWANOPNsenseService/DeployStatus"
+	MWANOPNsenseService_Revert_FullMethodName          = "/mwan.v1.MWANOPNsenseService/Revert"
 )
 
 // MWANOPNsenseServiceClient is the client API for MWANOPNsenseService service.
@@ -73,6 +76,18 @@ type MWANOPNsenseServiceClient interface {
 	// Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
 	// before </wan>. Same byte-offset tokenizer as above.
 	InjectGatewayV6(ctx context.Context, in *InjectGatewayV6Request, opts ...grpc.CallOption) (*InjectGatewayV6Response, error)
+	// Deploy a new daemon binary. Daemon writes payload atomically,
+	// verifies sha256, swaps .current and .previous, marks pending-verify,
+	// re-execs into the new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+	Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error)
+	// Mark the most recent deploy as healthy. Bridge calls this after
+	// post-deploy heartbeat probe succeeds. Daemon clears the
+	// pending-verify marker and stamps health=ok in the state file.
+	DeployStatus(ctx context.Context, in *DeployStatusRequest, opts ...grpc.CallOption) (*DeployStatusResponse, error)
+	// Revert to .previous. Used by bridge when post-deploy heartbeat
+	// budget elapses without a successful Version() call. Same re-exec
+	// dance as Deploy.
+	Revert(ctx context.Context, in *RevertRequest, opts ...grpc.CallOption) (*RevertResponse, error)
 }
 
 type mWANOPNsenseServiceClient struct {
@@ -183,6 +198,36 @@ func (c *mWANOPNsenseServiceClient) InjectGatewayV6(ctx context.Context, in *Inj
 	return out, nil
 }
 
+func (c *mWANOPNsenseServiceClient) Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeployResponse)
+	err := c.cc.Invoke(ctx, MWANOPNsenseService_Deploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mWANOPNsenseServiceClient) DeployStatus(ctx context.Context, in *DeployStatusRequest, opts ...grpc.CallOption) (*DeployStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeployStatusResponse)
+	err := c.cc.Invoke(ctx, MWANOPNsenseService_DeployStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mWANOPNsenseServiceClient) Revert(ctx context.Context, in *RevertRequest, opts ...grpc.CallOption) (*RevertResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevertResponse)
+	err := c.cc.Invoke(ctx, MWANOPNsenseService_Revert_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MWANOPNsenseServiceServer is the server API for MWANOPNsenseService service.
 // All implementations must embed UnimplementedMWANOPNsenseServiceServer
 // for forward compatibility.
@@ -225,6 +270,18 @@ type MWANOPNsenseServiceServer interface {
 	// Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
 	// before </wan>. Same byte-offset tokenizer as above.
 	InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error)
+	// Deploy a new daemon binary. Daemon writes payload atomically,
+	// verifies sha256, swaps .current and .previous, marks pending-verify,
+	// re-execs into the new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+	Deploy(context.Context, *DeployRequest) (*DeployResponse, error)
+	// Mark the most recent deploy as healthy. Bridge calls this after
+	// post-deploy heartbeat probe succeeds. Daemon clears the
+	// pending-verify marker and stamps health=ok in the state file.
+	DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error)
+	// Revert to .previous. Used by bridge when post-deploy heartbeat
+	// budget elapses without a successful Version() call. Same re-exec
+	// dance as Deploy.
+	Revert(context.Context, *RevertRequest) (*RevertResponse, error)
 	mustEmbedUnimplementedMWANOPNsenseServiceServer()
 }
 
@@ -264,6 +321,15 @@ func (UnimplementedMWANOPNsenseServiceServer) StripGatewayV6(context.Context, *S
 }
 func (UnimplementedMWANOPNsenseServiceServer) InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error) {
 	return nil, status.Error(codes.Unimplemented, "method InjectGatewayV6 not implemented")
+}
+func (UnimplementedMWANOPNsenseServiceServer) Deploy(context.Context, *DeployRequest) (*DeployResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Deploy not implemented")
+}
+func (UnimplementedMWANOPNsenseServiceServer) DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeployStatus not implemented")
+}
+func (UnimplementedMWANOPNsenseServiceServer) Revert(context.Context, *RevertRequest) (*RevertResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Revert not implemented")
 }
 func (UnimplementedMWANOPNsenseServiceServer) mustEmbedUnimplementedMWANOPNsenseServiceServer() {}
 func (UnimplementedMWANOPNsenseServiceServer) testEmbeddedByValue()                             {}
@@ -466,6 +532,60 @@ func _MWANOPNsenseService_InjectGatewayV6_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MWANOPNsenseService_Deploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeployRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MWANOPNsenseServiceServer).Deploy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MWANOPNsenseService_Deploy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MWANOPNsenseServiceServer).Deploy(ctx, req.(*DeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MWANOPNsenseService_DeployStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeployStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MWANOPNsenseServiceServer).DeployStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MWANOPNsenseService_DeployStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MWANOPNsenseServiceServer).DeployStatus(ctx, req.(*DeployStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MWANOPNsenseService_Revert_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevertRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MWANOPNsenseServiceServer).Revert(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MWANOPNsenseService_Revert_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MWANOPNsenseServiceServer).Revert(ctx, req.(*RevertRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MWANOPNsenseService_ServiceDesc is the grpc.ServiceDesc for MWANOPNsenseService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -512,6 +632,18 @@ var MWANOPNsenseService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InjectGatewayV6",
 			Handler:    _MWANOPNsenseService_InjectGatewayV6_Handler,
+		},
+		{
+			MethodName: "Deploy",
+			Handler:    _MWANOPNsenseService_Deploy_Handler,
+		},
+		{
+			MethodName: "DeployStatus",
+			Handler:    _MWANOPNsenseService_DeployStatus_Handler,
+		},
+		{
+			MethodName: "Revert",
+			Handler:    _MWANOPNsenseService_Revert_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

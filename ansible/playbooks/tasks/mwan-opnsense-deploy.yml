@@ -12,13 +12,25 @@
 # Optional vars (with sensible defaults):
 #   mwan_opnsense_listen_serial      default "/dev/ttyV0.1"
 
-- name: Install mwan-opnsense binary
+- name: Install mwan-opnsense binary as .current
   ansible.builtin.copy:
     src: "{{ mwan_opnsense_binary_local }}"
-    dest: /usr/local/sbin/mwan-opnsense
+    dest: /usr/local/sbin/mwan-opnsense.current
     owner: root
     group: wheel
     mode: "0755"
+  become: true
+
+# /usr/local/sbin/mwan-opnsense always points at the active binary.
+# Self-deploy RPC swaps .current atomically; the symlink stays put.
+# See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+- name: Symlink mwan-opnsense to .current
+  ansible.builtin.file:
+    src: mwan-opnsense.current
+    dest: /usr/local/sbin/mwan-opnsense
+    state: link
+    owner: root
+    group: wheel
   become: true
 
 - name: Install rc.d script

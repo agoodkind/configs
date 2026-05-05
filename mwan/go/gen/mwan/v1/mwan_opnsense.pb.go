@@ -21,6 +21,52 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type DeployStatusRequest_Mark int32
+
+const (
+	DeployStatusRequest_MARK_UNSPECIFIED DeployStatusRequest_Mark = 0
+	DeployStatusRequest_MARK_HEALTHY     DeployStatusRequest_Mark = 1 // bridge confirms post-deploy reachability
+)
+
+// Enum value maps for DeployStatusRequest_Mark.
+var (
+	DeployStatusRequest_Mark_name = map[int32]string{
+		0: "MARK_UNSPECIFIED",
+		1: "MARK_HEALTHY",
+	}
+	DeployStatusRequest_Mark_value = map[string]int32{
+		"MARK_UNSPECIFIED": 0,
+		"MARK_HEALTHY":     1,
+	}
+)
+
+func (x DeployStatusRequest_Mark) Enum() *DeployStatusRequest_Mark {
+	p := new(DeployStatusRequest_Mark)
+	*p = x
+	return p
+}
+
+func (x DeployStatusRequest_Mark) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeployStatusRequest_Mark) Descriptor() protoreflect.EnumDescriptor {
+	return file_mwan_v1_mwan_opnsense_proto_enumTypes[0].Descriptor()
+}
+
+func (DeployStatusRequest_Mark) Type() protoreflect.EnumType {
+	return &file_mwan_v1_mwan_opnsense_proto_enumTypes[0]
+}
+
+func (x DeployStatusRequest_Mark) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeployStatusRequest_Mark.Descriptor instead.
+func (DeployStatusRequest_Mark) EnumDescriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{22, 0}
+}
+
 type VersionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1061,6 +1107,326 @@ func (x *InjectGatewayV6Response) GetChanged() bool {
 	return false
 }
 
+type DeployRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Binary        []byte                 `protobuf:"bytes,1,opt,name=binary,proto3" json:"binary,omitempty"`                           // full ELF; uncompressed (local IPC)
+	Sha256Hex     string                 `protobuf:"bytes,2,opt,name=sha256_hex,json=sha256Hex,proto3" json:"sha256_hex,omitempty"`    // verified pre-swap
+	VersionStr    string                 `protobuf:"bytes,3,opt,name=version_str,json=versionStr,proto3" json:"version_str,omitempty"` // free-form, recorded in state file
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployRequest) Reset() {
+	*x = DeployRequest{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployRequest) ProtoMessage() {}
+
+func (x *DeployRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployRequest.ProtoReflect.Descriptor instead.
+func (*DeployRequest) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeployRequest) GetBinary() []byte {
+	if x != nil {
+		return x.Binary
+	}
+	return nil
+}
+
+func (x *DeployRequest) GetSha256Hex() string {
+	if x != nil {
+		return x.Sha256Hex
+	}
+	return ""
+}
+
+func (x *DeployRequest) GetVersionStr() string {
+	if x != nil {
+		return x.VersionStr
+	}
+	return ""
+}
+
+type DeployResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StagedSha256  string                 `protobuf:"bytes,1,opt,name=staged_sha256,json=stagedSha256,proto3" json:"staged_sha256,omitempty"`
+	PreviousPath  string                 `protobuf:"bytes,2,opt,name=previous_path,json=previousPath,proto3" json:"previous_path,omitempty"` // /usr/local/sbin/mwan-opnsense.previous
+	ReExecStarted bool                   `protobuf:"varint,3,opt,name=re_exec_started,json=reExecStarted,proto3" json:"re_exec_started,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployResponse) Reset() {
+	*x = DeployResponse{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployResponse) ProtoMessage() {}
+
+func (x *DeployResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployResponse.ProtoReflect.Descriptor instead.
+func (*DeployResponse) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *DeployResponse) GetStagedSha256() string {
+	if x != nil {
+		return x.StagedSha256
+	}
+	return ""
+}
+
+func (x *DeployResponse) GetPreviousPath() string {
+	if x != nil {
+		return x.PreviousPath
+	}
+	return ""
+}
+
+func (x *DeployResponse) GetReExecStarted() bool {
+	if x != nil {
+		return x.ReExecStarted
+	}
+	return false
+}
+
+type DeployStatusRequest struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Mark          DeployStatusRequest_Mark `protobuf:"varint,1,opt,name=mark,proto3,enum=mwan.v1.DeployStatusRequest_Mark" json:"mark,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployStatusRequest) Reset() {
+	*x = DeployStatusRequest{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployStatusRequest) ProtoMessage() {}
+
+func (x *DeployStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployStatusRequest.ProtoReflect.Descriptor instead.
+func (*DeployStatusRequest) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DeployStatusRequest) GetMark() DeployStatusRequest_Mark {
+	if x != nil {
+		return x.Mark
+	}
+	return DeployStatusRequest_MARK_UNSPECIFIED
+}
+
+type DeployStatusResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ActiveSha256   string                 `protobuf:"bytes,1,opt,name=active_sha256,json=activeSha256,proto3" json:"active_sha256,omitempty"`
+	PreviousSha256 string                 `protobuf:"bytes,2,opt,name=previous_sha256,json=previousSha256,proto3" json:"previous_sha256,omitempty"`
+	Health         string                 `protobuf:"bytes,3,opt,name=health,proto3" json:"health,omitempty"`                            // "ok" | "pending" | "unhealthy"
+	DeployedAt     int64                  `protobuf:"varint,4,opt,name=deployed_at,json=deployedAt,proto3" json:"deployed_at,omitempty"` // unix seconds
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeployStatusResponse) Reset() {
+	*x = DeployStatusResponse{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployStatusResponse) ProtoMessage() {}
+
+func (x *DeployStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployStatusResponse.ProtoReflect.Descriptor instead.
+func (*DeployStatusResponse) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *DeployStatusResponse) GetActiveSha256() string {
+	if x != nil {
+		return x.ActiveSha256
+	}
+	return ""
+}
+
+func (x *DeployStatusResponse) GetPreviousSha256() string {
+	if x != nil {
+		return x.PreviousSha256
+	}
+	return ""
+}
+
+func (x *DeployStatusResponse) GetHealth() string {
+	if x != nil {
+		return x.Health
+	}
+	return ""
+}
+
+func (x *DeployStatusResponse) GetDeployedAt() int64 {
+	if x != nil {
+		return x.DeployedAt
+	}
+	return 0
+}
+
+type RevertRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevertRequest) Reset() {
+	*x = RevertRequest{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevertRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevertRequest) ProtoMessage() {}
+
+func (x *RevertRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevertRequest.ProtoReflect.Descriptor instead.
+func (*RevertRequest) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{24}
+}
+
+type RevertResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RevertedToSha256 string                 `protobuf:"bytes,1,opt,name=reverted_to_sha256,json=revertedToSha256,proto3" json:"reverted_to_sha256,omitempty"`
+	ReExecStarted    bool                   `protobuf:"varint,2,opt,name=re_exec_started,json=reExecStarted,proto3" json:"re_exec_started,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *RevertResponse) Reset() {
+	*x = RevertResponse{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevertResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevertResponse) ProtoMessage() {}
+
+func (x *RevertResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevertResponse.ProtoReflect.Descriptor instead.
+func (*RevertResponse) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *RevertResponse) GetRevertedToSha256() string {
+	if x != nil {
+		return x.RevertedToSha256
+	}
+	return ""
+}
+
+func (x *RevertResponse) GetReExecStarted() bool {
+	if x != nil {
+		return x.ReExecStarted
+	}
+	return false
+}
+
 var File_mwan_v1_mwan_opnsense_proto protoreflect.FileDescriptor
 
 const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
@@ -1142,7 +1508,32 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\x17InjectGatewayV6Response\x12\x1f\n" +
 	"\vbackup_path\x18\x01 \x01(\tR\n" +
 	"backupPath\x12\x18\n" +
-	"\achanged\x18\x02 \x01(\bR\achanged2\xf6\x05\n" +
+	"\achanged\x18\x02 \x01(\bR\achanged\"g\n" +
+	"\rDeployRequest\x12\x16\n" +
+	"\x06binary\x18\x01 \x01(\fR\x06binary\x12\x1d\n" +
+	"\n" +
+	"sha256_hex\x18\x02 \x01(\tR\tsha256Hex\x12\x1f\n" +
+	"\vversion_str\x18\x03 \x01(\tR\n" +
+	"versionStr\"\x82\x01\n" +
+	"\x0eDeployResponse\x12#\n" +
+	"\rstaged_sha256\x18\x01 \x01(\tR\fstagedSha256\x12#\n" +
+	"\rprevious_path\x18\x02 \x01(\tR\fpreviousPath\x12&\n" +
+	"\x0fre_exec_started\x18\x03 \x01(\bR\rreExecStarted\"|\n" +
+	"\x13DeployStatusRequest\x125\n" +
+	"\x04mark\x18\x01 \x01(\x0e2!.mwan.v1.DeployStatusRequest.MarkR\x04mark\".\n" +
+	"\x04Mark\x12\x14\n" +
+	"\x10MARK_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fMARK_HEALTHY\x10\x01\"\x9d\x01\n" +
+	"\x14DeployStatusResponse\x12#\n" +
+	"\ractive_sha256\x18\x01 \x01(\tR\factiveSha256\x12'\n" +
+	"\x0fprevious_sha256\x18\x02 \x01(\tR\x0epreviousSha256\x12\x16\n" +
+	"\x06health\x18\x03 \x01(\tR\x06health\x12\x1f\n" +
+	"\vdeployed_at\x18\x04 \x01(\x03R\n" +
+	"deployedAt\"\x0f\n" +
+	"\rRevertRequest\"f\n" +
+	"\x0eRevertResponse\x12,\n" +
+	"\x12reverted_to_sha256\x18\x01 \x01(\tR\x10revertedToSha256\x12&\n" +
+	"\x0fre_exec_started\x18\x02 \x01(\bR\rreExecStarted2\xb9\a\n" +
 	"\x13MWANOPNsenseService\x12<\n" +
 	"\aVersion\x12\x17.mwan.v1.VersionRequest\x1a\x18.mwan.v1.VersionResponse\x123\n" +
 	"\x04Exec\x12\x14.mwan.v1.ExecRequest\x1a\x15.mwan.v1.ExecResponse\x12N\n" +
@@ -1153,7 +1544,10 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\bXPathSet\x12\x18.mwan.v1.XPathSetRequest\x1a\x19.mwan.v1.XPathSetResponse\x12H\n" +
 	"\vXPathDelete\x12\x1b.mwan.v1.XPathDeleteRequest\x1a\x1c.mwan.v1.XPathDeleteResponse\x12Q\n" +
 	"\x0eStripGatewayV6\x12\x1e.mwan.v1.StripGatewayV6Request\x1a\x1f.mwan.v1.StripGatewayV6Response\x12T\n" +
-	"\x0fInjectGatewayV6\x12\x1f.mwan.v1.InjectGatewayV6Request\x1a .mwan.v1.InjectGatewayV6ResponseB%Z#goodkind.io/mwan/gen/mwan/v1;mwanv1b\x06proto3"
+	"\x0fInjectGatewayV6\x12\x1f.mwan.v1.InjectGatewayV6Request\x1a .mwan.v1.InjectGatewayV6Response\x129\n" +
+	"\x06Deploy\x12\x16.mwan.v1.DeployRequest\x1a\x17.mwan.v1.DeployResponse\x12K\n" +
+	"\fDeployStatus\x12\x1c.mwan.v1.DeployStatusRequest\x1a\x1d.mwan.v1.DeployStatusResponse\x129\n" +
+	"\x06Revert\x12\x16.mwan.v1.RevertRequest\x1a\x17.mwan.v1.RevertResponseB%Z#goodkind.io/mwan/gen/mwan/v1;mwanv1b\x06proto3"
 
 var (
 	file_mwan_v1_mwan_opnsense_proto_rawDescOnce sync.Once
@@ -1167,55 +1561,70 @@ func file_mwan_v1_mwan_opnsense_proto_rawDescGZIP() []byte {
 	return file_mwan_v1_mwan_opnsense_proto_rawDescData
 }
 
-var file_mwan_v1_mwan_opnsense_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_mwan_v1_mwan_opnsense_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_mwan_v1_mwan_opnsense_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_mwan_v1_mwan_opnsense_proto_goTypes = []any{
-	(*VersionRequest)(nil),          // 0: mwan.v1.VersionRequest
-	(*VersionResponse)(nil),         // 1: mwan.v1.VersionResponse
-	(*ExecRequest)(nil),             // 2: mwan.v1.ExecRequest
-	(*ExecResponse)(nil),            // 3: mwan.v1.ExecResponse
-	(*ReadConfigXMLRequest)(nil),    // 4: mwan.v1.ReadConfigXMLRequest
-	(*ReadConfigXMLResponse)(nil),   // 5: mwan.v1.ReadConfigXMLResponse
-	(*WriteConfigXMLRequest)(nil),   // 6: mwan.v1.WriteConfigXMLRequest
-	(*WriteConfigXMLResponse)(nil),  // 7: mwan.v1.WriteConfigXMLResponse
-	(*BackupConfigXMLRequest)(nil),  // 8: mwan.v1.BackupConfigXMLRequest
-	(*BackupConfigXMLResponse)(nil), // 9: mwan.v1.BackupConfigXMLResponse
-	(*XPathGetRequest)(nil),         // 10: mwan.v1.XPathGetRequest
-	(*XPathGetResponse)(nil),        // 11: mwan.v1.XPathGetResponse
-	(*XPathSetRequest)(nil),         // 12: mwan.v1.XPathSetRequest
-	(*XPathSetResponse)(nil),        // 13: mwan.v1.XPathSetResponse
-	(*XPathDeleteRequest)(nil),      // 14: mwan.v1.XPathDeleteRequest
-	(*XPathDeleteResponse)(nil),     // 15: mwan.v1.XPathDeleteResponse
-	(*StripGatewayV6Request)(nil),   // 16: mwan.v1.StripGatewayV6Request
-	(*StripGatewayV6Response)(nil),  // 17: mwan.v1.StripGatewayV6Response
-	(*InjectGatewayV6Request)(nil),  // 18: mwan.v1.InjectGatewayV6Request
-	(*InjectGatewayV6Response)(nil), // 19: mwan.v1.InjectGatewayV6Response
+	(DeployStatusRequest_Mark)(0),   // 0: mwan.v1.DeployStatusRequest.Mark
+	(*VersionRequest)(nil),          // 1: mwan.v1.VersionRequest
+	(*VersionResponse)(nil),         // 2: mwan.v1.VersionResponse
+	(*ExecRequest)(nil),             // 3: mwan.v1.ExecRequest
+	(*ExecResponse)(nil),            // 4: mwan.v1.ExecResponse
+	(*ReadConfigXMLRequest)(nil),    // 5: mwan.v1.ReadConfigXMLRequest
+	(*ReadConfigXMLResponse)(nil),   // 6: mwan.v1.ReadConfigXMLResponse
+	(*WriteConfigXMLRequest)(nil),   // 7: mwan.v1.WriteConfigXMLRequest
+	(*WriteConfigXMLResponse)(nil),  // 8: mwan.v1.WriteConfigXMLResponse
+	(*BackupConfigXMLRequest)(nil),  // 9: mwan.v1.BackupConfigXMLRequest
+	(*BackupConfigXMLResponse)(nil), // 10: mwan.v1.BackupConfigXMLResponse
+	(*XPathGetRequest)(nil),         // 11: mwan.v1.XPathGetRequest
+	(*XPathGetResponse)(nil),        // 12: mwan.v1.XPathGetResponse
+	(*XPathSetRequest)(nil),         // 13: mwan.v1.XPathSetRequest
+	(*XPathSetResponse)(nil),        // 14: mwan.v1.XPathSetResponse
+	(*XPathDeleteRequest)(nil),      // 15: mwan.v1.XPathDeleteRequest
+	(*XPathDeleteResponse)(nil),     // 16: mwan.v1.XPathDeleteResponse
+	(*StripGatewayV6Request)(nil),   // 17: mwan.v1.StripGatewayV6Request
+	(*StripGatewayV6Response)(nil),  // 18: mwan.v1.StripGatewayV6Response
+	(*InjectGatewayV6Request)(nil),  // 19: mwan.v1.InjectGatewayV6Request
+	(*InjectGatewayV6Response)(nil), // 20: mwan.v1.InjectGatewayV6Response
+	(*DeployRequest)(nil),           // 21: mwan.v1.DeployRequest
+	(*DeployResponse)(nil),          // 22: mwan.v1.DeployResponse
+	(*DeployStatusRequest)(nil),     // 23: mwan.v1.DeployStatusRequest
+	(*DeployStatusResponse)(nil),    // 24: mwan.v1.DeployStatusResponse
+	(*RevertRequest)(nil),           // 25: mwan.v1.RevertRequest
+	(*RevertResponse)(nil),          // 26: mwan.v1.RevertResponse
 }
 var file_mwan_v1_mwan_opnsense_proto_depIdxs = []int32{
-	0,  // 0: mwan.v1.MWANOPNsenseService.Version:input_type -> mwan.v1.VersionRequest
-	2,  // 1: mwan.v1.MWANOPNsenseService.Exec:input_type -> mwan.v1.ExecRequest
-	4,  // 2: mwan.v1.MWANOPNsenseService.ReadConfigXML:input_type -> mwan.v1.ReadConfigXMLRequest
-	6,  // 3: mwan.v1.MWANOPNsenseService.WriteConfigXML:input_type -> mwan.v1.WriteConfigXMLRequest
-	8,  // 4: mwan.v1.MWANOPNsenseService.BackupConfigXML:input_type -> mwan.v1.BackupConfigXMLRequest
-	10, // 5: mwan.v1.MWANOPNsenseService.XPathGet:input_type -> mwan.v1.XPathGetRequest
-	12, // 6: mwan.v1.MWANOPNsenseService.XPathSet:input_type -> mwan.v1.XPathSetRequest
-	14, // 7: mwan.v1.MWANOPNsenseService.XPathDelete:input_type -> mwan.v1.XPathDeleteRequest
-	16, // 8: mwan.v1.MWANOPNsenseService.StripGatewayV6:input_type -> mwan.v1.StripGatewayV6Request
-	18, // 9: mwan.v1.MWANOPNsenseService.InjectGatewayV6:input_type -> mwan.v1.InjectGatewayV6Request
-	1,  // 10: mwan.v1.MWANOPNsenseService.Version:output_type -> mwan.v1.VersionResponse
-	3,  // 11: mwan.v1.MWANOPNsenseService.Exec:output_type -> mwan.v1.ExecResponse
-	5,  // 12: mwan.v1.MWANOPNsenseService.ReadConfigXML:output_type -> mwan.v1.ReadConfigXMLResponse
-	7,  // 13: mwan.v1.MWANOPNsenseService.WriteConfigXML:output_type -> mwan.v1.WriteConfigXMLResponse
-	9,  // 14: mwan.v1.MWANOPNsenseService.BackupConfigXML:output_type -> mwan.v1.BackupConfigXMLResponse
-	11, // 15: mwan.v1.MWANOPNsenseService.XPathGet:output_type -> mwan.v1.XPathGetResponse
-	13, // 16: mwan.v1.MWANOPNsenseService.XPathSet:output_type -> mwan.v1.XPathSetResponse
-	15, // 17: mwan.v1.MWANOPNsenseService.XPathDelete:output_type -> mwan.v1.XPathDeleteResponse
-	17, // 18: mwan.v1.MWANOPNsenseService.StripGatewayV6:output_type -> mwan.v1.StripGatewayV6Response
-	19, // 19: mwan.v1.MWANOPNsenseService.InjectGatewayV6:output_type -> mwan.v1.InjectGatewayV6Response
-	10, // [10:20] is the sub-list for method output_type
-	0,  // [0:10] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	0,  // 0: mwan.v1.DeployStatusRequest.mark:type_name -> mwan.v1.DeployStatusRequest.Mark
+	1,  // 1: mwan.v1.MWANOPNsenseService.Version:input_type -> mwan.v1.VersionRequest
+	3,  // 2: mwan.v1.MWANOPNsenseService.Exec:input_type -> mwan.v1.ExecRequest
+	5,  // 3: mwan.v1.MWANOPNsenseService.ReadConfigXML:input_type -> mwan.v1.ReadConfigXMLRequest
+	7,  // 4: mwan.v1.MWANOPNsenseService.WriteConfigXML:input_type -> mwan.v1.WriteConfigXMLRequest
+	9,  // 5: mwan.v1.MWANOPNsenseService.BackupConfigXML:input_type -> mwan.v1.BackupConfigXMLRequest
+	11, // 6: mwan.v1.MWANOPNsenseService.XPathGet:input_type -> mwan.v1.XPathGetRequest
+	13, // 7: mwan.v1.MWANOPNsenseService.XPathSet:input_type -> mwan.v1.XPathSetRequest
+	15, // 8: mwan.v1.MWANOPNsenseService.XPathDelete:input_type -> mwan.v1.XPathDeleteRequest
+	17, // 9: mwan.v1.MWANOPNsenseService.StripGatewayV6:input_type -> mwan.v1.StripGatewayV6Request
+	19, // 10: mwan.v1.MWANOPNsenseService.InjectGatewayV6:input_type -> mwan.v1.InjectGatewayV6Request
+	21, // 11: mwan.v1.MWANOPNsenseService.Deploy:input_type -> mwan.v1.DeployRequest
+	23, // 12: mwan.v1.MWANOPNsenseService.DeployStatus:input_type -> mwan.v1.DeployStatusRequest
+	25, // 13: mwan.v1.MWANOPNsenseService.Revert:input_type -> mwan.v1.RevertRequest
+	2,  // 14: mwan.v1.MWANOPNsenseService.Version:output_type -> mwan.v1.VersionResponse
+	4,  // 15: mwan.v1.MWANOPNsenseService.Exec:output_type -> mwan.v1.ExecResponse
+	6,  // 16: mwan.v1.MWANOPNsenseService.ReadConfigXML:output_type -> mwan.v1.ReadConfigXMLResponse
+	8,  // 17: mwan.v1.MWANOPNsenseService.WriteConfigXML:output_type -> mwan.v1.WriteConfigXMLResponse
+	10, // 18: mwan.v1.MWANOPNsenseService.BackupConfigXML:output_type -> mwan.v1.BackupConfigXMLResponse
+	12, // 19: mwan.v1.MWANOPNsenseService.XPathGet:output_type -> mwan.v1.XPathGetResponse
+	14, // 20: mwan.v1.MWANOPNsenseService.XPathSet:output_type -> mwan.v1.XPathSetResponse
+	16, // 21: mwan.v1.MWANOPNsenseService.XPathDelete:output_type -> mwan.v1.XPathDeleteResponse
+	18, // 22: mwan.v1.MWANOPNsenseService.StripGatewayV6:output_type -> mwan.v1.StripGatewayV6Response
+	20, // 23: mwan.v1.MWANOPNsenseService.InjectGatewayV6:output_type -> mwan.v1.InjectGatewayV6Response
+	22, // 24: mwan.v1.MWANOPNsenseService.Deploy:output_type -> mwan.v1.DeployResponse
+	24, // 25: mwan.v1.MWANOPNsenseService.DeployStatus:output_type -> mwan.v1.DeployStatusResponse
+	26, // 26: mwan.v1.MWANOPNsenseService.Revert:output_type -> mwan.v1.RevertResponse
+	14, // [14:27] is the sub-list for method output_type
+	1,  // [1:14] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_mwan_v1_mwan_opnsense_proto_init() }
@@ -1228,13 +1637,14 @@ func file_mwan_v1_mwan_opnsense_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mwan_v1_mwan_opnsense_proto_rawDesc), len(file_mwan_v1_mwan_opnsense_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   20,
+			NumEnums:      1,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_mwan_v1_mwan_opnsense_proto_goTypes,
 		DependencyIndexes: file_mwan_v1_mwan_opnsense_proto_depIdxs,
+		EnumInfos:         file_mwan_v1_mwan_opnsense_proto_enumTypes,
 		MessageInfos:      file_mwan_v1_mwan_opnsense_proto_msgTypes,
 	}.Build()
 	File_mwan_v1_mwan_opnsense_proto = out.File
