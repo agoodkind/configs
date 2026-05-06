@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"google.golang.org/grpc"
 
@@ -21,23 +20,18 @@ import (
 const (
 	defaultUpstreamTarget = "unix:///var/run/qemu-server/101.mwanrpc"
 	defaultListenPath     = "/var/run/mwan-opnsense.sock"
-	// defaultUpstreamReadyTimeout is zero by default: the bridge does
-	// not block at startup waiting for the upstream daemon. gRPC's
-	// state machine reconnects in the background and per-call
-	// deadlines surface upstream unavailability to probes as
-	// codes.Unavailable.
-	defaultUpstreamReadyTimeout = 0
 	// proxyMaxBytes matches opnsensesvc.maxDeployBytes so the bridge
 	// can forward full daemon-binary Deploy payloads (~17 MiB today,
-	// 64 MiB ceiling).
+	// 64 MiB ceiling). MWN1 carries each Chunk in a single frame whose
+	// payload is bounded by mwn1.MaxPayload (64 KiB); chunkedstream
+	// already splits Deploy bodies into smaller chunks.
 	proxyMaxBytes = 64 * 1024 * 1024
 )
 
 // serveFlags is the parsed CLI surface for the serve subcommand.
 type serveFlags struct {
-	upstream             string
-	listenPath           string
-	upstreamReadyTimeout time.Duration
+	upstream   string
+	listenPath string
 }
 
 // parseServeFlags parses argv for the serve subcommand. Returns the
@@ -46,16 +40,9 @@ type serveFlags struct {
 func parseServeFlags(args []string) (serveFlags, int, bool) {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	upstream := fs.String("upstream", defaultUpstreamTarget,
-		"upstream gRPC target (qemu virtio-serial chardev unix socket)")
+		"upstream MWN1 target (qemu virtio-serial chardev unix socket)")
 	listenPath := fs.String("listen", defaultListenPath,
 		"local unix socket path to listen on")
-	upstreamReadyTimeout := fs.Duration("upstream-ready-timeout",
-		defaultUpstreamReadyTimeout,
-		"OPTIONAL: if > 0, block at startup until the upstream channel "+
-			"reaches READY or this timeout elapses. The bridge will "+
-			"keep serving even if this wait times out; it just means "+
-			"early probes see codes.Unavailable until the channel "+
-			"reconnects. Default 0 (no wait).")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return serveFlags{}, 2, true
@@ -69,21 +56,22 @@ func parseServeFlags(args []string) (serveFlags, int, bool) {
 		return serveFlags{}, 2, true
 	}
 	return serveFlags{
-		upstream:             *upstream,
-		listenPath:           *listenPath,
-		upstreamReadyTimeout: *upstreamReadyTimeout,
+		upstream:   *upstream,
+		listenPath: *listenPath,
 	}, 0, false
 }
 
-// runServe starts the bridge: build the persistent upstream gRPC
-// connection to the mwan-opnsense daemon inside the OPNsense VM, then
-// run a gRPC server on a local unix socket that proxies all RPCs onto
-// the persistent ClientConn.
+// runServe starts the bridge: dial the persistent MWN1 connection to
+// the mwan-opnsense daemon inside the OPNsense VM, then run a gRPC
+// server on a local unix socket that translates every probe RPC into
+// one MWN1 round-trip on the persistent transport.
 //
-// Lifecycle: the bridge process exits only on signal (SIGINT/SIGTERM)
-// or fatal local errors (cannot bind the listen socket). It does NOT
-// exit when the upstream is unreachable: gRPC's auto-reconnect handles
-// transient and prolonged upstream loss transparently.
+// Lifecycle: the bridge process exits on SIGINT/SIGTERM, on local
+// fatal errors (cannot bind the listen socket), or on initial dial
+// failure of the upstream chardev. The MWN1 client does not
+// transparently reconnect; systemd Restart=always brings the bridge
+// back when the upstream returns. An in-process retry loop is a
+// follow-up improvement.
 func runServe(args []string) int {
 	cfg, exitCode, shouldExit := parseServeFlags(args)
 	if shouldExit {
@@ -93,19 +81,14 @@ func runServe(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	slog.InfoContext(ctx, "mwan-opnsense-host: building upstream client",
-		"upstream", cfg.upstream,
-		"upstream_ready_timeout", cfg.upstreamReadyTimeout.String())
+	slog.InfoContext(ctx, "mwan-opnsense-host: dialing upstream",
+		"upstream", cfg.upstream)
 	upstreamClient, err := opnsenseclient.Dial(ctx, opnsenseclient.Config{
-		Target:      cfg.upstream,
-		DialTimeout: cfg.upstreamReadyTimeout,
+		Target: cfg.upstream,
+		Log:    slog.Default(),
 	})
 	if err != nil {
-		// Only structural target/option failures land here. Network
-		// unreachability does NOT produce an error from Dial because
-		// grpc.NewClient is non-blocking. Treating this as fatal is
-		// correct: it indicates a programmer or config bug.
-		slog.ErrorContext(ctx, "mwan-opnsense-host: upstream client construction failed",
+		slog.ErrorContext(ctx, "mwan-opnsense-host: upstream dial failed",
 			"upstream", cfg.upstream,
 			"err", err)
 		return 1
@@ -117,12 +100,8 @@ func runServe(args []string) int {
 				"err", closeErr)
 		}
 	}()
-	slog.InfoContext(ctx, "mwan-opnsense-host: upstream client ready (connecting in background)",
+	slog.InfoContext(ctx, "mwan-opnsense-host: upstream dialed",
 		"upstream", cfg.upstream)
-
-	if cfg.upstreamReadyTimeout > 0 {
-		waitForUpstream(ctx, upstreamClient, cfg.upstream, cfg.upstreamReadyTimeout)
-	}
 
 	listener, err := openLocalListener(ctx, cfg.listenPath)
 	if err != nil {
@@ -142,7 +121,8 @@ func runServe(args []string) int {
 		"listen", cfg.listenPath)
 
 	gs := grpc.NewServer(grpc.MaxRecvMsgSize(proxyMaxBytes))
-	mwanv1.RegisterMWANOPNsenseServiceServer(gs, newProxyServer(upstreamClient.RPC(), slog.Default()))
+	mwanv1.RegisterMWANOPNsenseServiceServer(gs,
+		newProxyServer(upstreamClient.RPC(), slog.Default()))
 	return runServeLoop(ctx, gs, listener)
 }
 
@@ -182,28 +162,6 @@ func runServeLoop(ctx context.Context, gs *grpc.Server, listener net.Listener) i
 		<-errCh
 		return 0
 	}
-}
-
-// waitForUpstream blocks until the upstream channel reaches READY or
-// the timeout elapses. A timeout is logged at WARN but does NOT abort
-// the bridge: gRPC will keep reconnecting in the background and probes
-// arriving in the meantime will get codes.Unavailable until the
-// channel comes up.
-func waitForUpstream(parent context.Context, c *opnsenseclient.Client, target string, timeout time.Duration) {
-	waitCtx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-	startedAt := time.Now()
-	if err := c.WaitForReady(waitCtx); err != nil {
-		slog.WarnContext(parent, "mwan-opnsense-host: upstream not ready before timeout; serving anyway",
-			"upstream", target,
-			"timeout", timeout.String(),
-			"elapsed_ms", time.Since(startedAt).Milliseconds(),
-			"err", err)
-		return
-	}
-	slog.InfoContext(parent, "mwan-opnsense-host: upstream READY",
-		"upstream", target,
-		"elapsed_ms", time.Since(startedAt).Milliseconds())
 }
 
 // openLocalListener prepares a unix-socket listener at path. Removes

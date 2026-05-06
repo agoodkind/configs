@@ -62,8 +62,8 @@ func runOPNsenseProbe(args []string) error {
 	defer cancel()
 
 	cli, err := opnsenseclient.Dial(ctx, opnsenseclient.Config{
-		Target:      *target,
-		DialTimeout: *timeout,
+		Target: *target,
+		Log:    slog.Default(),
 	})
 	if err != nil {
 		return err
@@ -109,7 +109,7 @@ func runOPNsenseProbe(args []string) error {
 	return nil
 }
 
-func runOPNsenseProbeSmoke(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) error {
+func runOPNsenseProbeSmoke(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	ops := []probeRPCArgs{
 		{op: "version"},
 		{op: "read-config"},
@@ -156,7 +156,7 @@ const (
 
 func runOPNsenseProbeRPC(
 	ctx context.Context,
-	rpc mwanv1.MWANOPNsenseServiceClient,
+	rpc *opnsenseclient.RPC,
 	a probeRPCArgs,
 ) error {
 	switch probeOp(a.op) {
@@ -183,7 +183,7 @@ func runOPNsenseProbeRPC(
 	}
 }
 
-func probeVersion(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) error {
+func probeVersion(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	resp, err := rpc.Version(ctx, &mwanv1.VersionRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe Version failed", "err", err)
@@ -199,7 +199,7 @@ func probeVersion(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) err
 	return nil
 }
 
-func probeReadConfig(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) error {
+func probeReadConfig(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	resp, err := rpc.ReadConfigXML(ctx, &mwanv1.ReadConfigXMLRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe ReadConfigXML failed", "err", err)
@@ -212,7 +212,7 @@ func probeReadConfig(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) 
 	return nil
 }
 
-func probeXPathGet(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient, xpath string) error {
+func probeXPathGet(ctx context.Context, rpc *opnsenseclient.RPC, xpath string) error {
 	if xpath == "" {
 		return errors.New("op=xpath-get requires -xpath")
 	}
@@ -228,7 +228,7 @@ func probeXPathGet(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient, xp
 	return nil
 }
 
-func probeExec(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient,
+func probeExec(ctx context.Context, rpc *opnsenseclient.RPC,
 	cmdStr, cmdArgs string, cmdSudo bool,
 ) error {
 	if cmdStr == "" {
@@ -261,7 +261,7 @@ func probeExec(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient,
 	return nil
 }
 
-func probeXPathSet(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient, xpath, value string) error {
+func probeXPathSet(ctx context.Context, rpc *opnsenseclient.RPC, xpath, value string) error {
 	if xpath == "" {
 		return errors.New("op=xpath-set requires -xpath")
 	}
@@ -281,7 +281,7 @@ func probeXPathSet(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient, xp
 	return nil
 }
 
-func probeXPathDelete(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient, xpath string) error {
+func probeXPathDelete(ctx context.Context, rpc *opnsenseclient.RPC, xpath string) error {
 	if xpath == "" {
 		return errors.New("op=xpath-delete requires -xpath")
 	}
@@ -298,7 +298,7 @@ func probeXPathDelete(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient,
 	return nil
 }
 
-func probeDeployStatus(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) error {
+func probeDeployStatus(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	resp, err := rpc.DeployStatus(ctx, &mwanv1.DeployStatusRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe DeployStatus failed", "err", err)
@@ -315,7 +315,7 @@ func probeDeployStatus(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient
 	return nil
 }
 
-func probeDeploy(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient,
+func probeDeploy(ctx context.Context, rpc *opnsenseclient.RPC,
 	deployBin, deployVersion string,
 ) error {
 	if deployBin == "" {
@@ -373,7 +373,7 @@ func probeDeploy(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient,
 	return nil
 }
 
-func probeRevert(ctx context.Context, rpc mwanv1.MWANOPNsenseServiceClient) error {
+func probeRevert(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	resp, err := rpc.Revert(ctx, &mwanv1.RevertRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe Revert failed", "err", err)
