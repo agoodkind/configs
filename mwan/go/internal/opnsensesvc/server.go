@@ -406,14 +406,19 @@ func (s *Server) InjectGatewayV6(
 // human-readable version string for a streaming Deploy upload.
 const DeployAttrVersionStr = "version_str"
 
-// Deploy reassembles a slice of chunked-stream Chunk messages (header,
-// data*, trailer) into a binary, verifies the trailer's sha256, and
-// hands the temp file off to DeployManager.DeployFromPath. The caller
-// (the MWN1 dispatcher) is responsible for buffering frames sharing one
-// CorrID and passing them in order. The reply is sent before re-exec
-// so the bridge sees the response.
-func (s *Server) Deploy(ctx context.Context, chunks []*mwanv1.Chunk) (*mwanv1.DeployResponse, error) {
-	s.log.InfoContext(ctx, "opnsensesvc: Deploy stream begin", "chunk_count", len(chunks))
+// Deploy reads a stream of chunked-stream Chunk messages (header,
+// data*, trailer) off chunks, writes each chunk's body incrementally to
+// a temp file under DeployManager.BinaryDir, verifies the trailer's
+// sha256, and hands the temp file off to DeployManager.DeployFromPath.
+// The caller (the MWN1 dispatcher) closes chunks once the FlagFinal
+// frame arrives. The reply is sent before re-exec so the bridge sees
+// the response.
+//
+// If chunks is closed before a trailer chunk, Deploy returns an error
+// without staging the upload. Cancellation via ctx aborts the read loop
+// and removes the partial temp file.
+func (s *Server) Deploy(ctx context.Context, chunks <-chan *mwanv1.Chunk) (*mwanv1.DeployResponse, error) {
+	s.log.InfoContext(ctx, "opnsensesvc: Deploy stream begin")
 
 	if s.deploy == nil {
 		return nil, errors.New("Deploy: DeployManager not configured")
@@ -437,15 +442,28 @@ func (s *Server) Deploy(ctx context.Context, chunks []*mwanv1.Chunk) (*mwanv1.De
 	}()
 
 	writer := chunkedstream.NewWriter(tmpFile)
-	for _, chunk := range chunks {
-		if writeErr := writer.Write(chunk); writeErr != nil {
+	chunkCount := 0
+loop:
+	for {
+		select {
+		case <-ctx.Done():
 			_ = tmpFile.Close()
-			if errors.Is(writeErr, chunkedstream.ErrProtocol) {
-				s.log.ErrorContext(ctx, "Deploy: chunk protocol error", "err", writeErr)
-				return nil, fmt.Errorf("chunk: %w", writeErr)
+			s.log.WarnContext(ctx, "Deploy: ctx cancelled mid-stream", "err", ctx.Err(), "chunks_seen", chunkCount)
+			return nil, fmt.Errorf("Deploy: ctx: %w", ctx.Err())
+		case chunk, ok := <-chunks:
+			if !ok {
+				break loop
 			}
-			s.log.ErrorContext(ctx, "Deploy: chunk write failed", "err", writeErr)
-			return nil, fmt.Errorf("chunk write: %w", writeErr)
+			chunkCount++
+			if writeErr := writer.Write(chunk); writeErr != nil {
+				_ = tmpFile.Close()
+				if errors.Is(writeErr, chunkedstream.ErrProtocol) {
+					s.log.ErrorContext(ctx, "Deploy: chunk protocol error", "err", writeErr)
+					return nil, fmt.Errorf("chunk: %w", writeErr)
+				}
+				s.log.ErrorContext(ctx, "Deploy: chunk write failed", "err", writeErr)
+				return nil, fmt.Errorf("chunk write: %w", writeErr)
+			}
 		}
 	}
 	if syncErr := tmpFile.Sync(); syncErr != nil {

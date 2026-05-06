@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"runtime"
 	"sync"
+	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
@@ -16,6 +17,13 @@ import (
 	"goodkind.io/mwan/internal/mwn1"
 )
 
+// streamPushTimeout caps how long the dispatcher reader will block
+// pushing a streaming chunk into a per-CorrID channel. The buffer is
+// 16 chunks deep so a handler that keeps draining never hits this; it
+// only fires if the handler panicked or wedged, in which case dropping
+// the frame and logging is preferable to wedging the whole reader.
+const streamPushTimeout = 30 * time.Second
+
 // Dispatcher reads MWN1 frames from an underlying virtio-serial device
 // (wrapped in a [mwn1.Conn]), routes each request to the matching
 // [Server] handler, and writes the response frame back through the
@@ -23,9 +31,9 @@ import (
 //
 // Unary requests run in worker goroutines drawn from a fixed pool so a
 // slow handler cannot block the reader. Streaming requests (currently
-// only Deploy) buffer their per-CorrID frame chunks until the
-// FlagFinal frame arrives, at which point the assembled chunk slice is
-// dispatched to the handler.
+// only Deploy) push frames into a per-CorrID channel that the handler
+// reads from on a dedicated goroutine; the channel is closed when the
+// FlagFinal frame arrives.
 type Dispatcher struct {
 	registry *mwn1.Registry
 	server   *Server
@@ -38,11 +46,14 @@ type Dispatcher struct {
 	onFrameError func(error)
 
 	// streamMu guards streams. Streams maps CorrID to the in-progress
-	// list of buffered chunk frames for client-streaming RPCs. Frames
-	// are appended in arrival order; the entry is removed when the
-	// FlagFinal frame is dispatched.
+	// chunk channel for an active client-streaming RPC. The handler
+	// goroutine reads chunks until the channel is closed (FlagFinal).
 	streamMu sync.Mutex
 	streams  map[uint64]*streamBuffer
+
+	// streamWG tracks active streaming-handler goroutines so Serve can
+	// drain them on shutdown.
+	streamWG sync.WaitGroup
 
 	// frameCh feeds the worker pool. Buffered so the reader goroutine
 	// does not block when all workers are busy on slow handlers.
@@ -62,22 +73,22 @@ type DispatcherConfig struct {
 	OnFrameError func(error)
 }
 
-// streamBuffer accumulates the per-CorrID Chunk frames for a streaming
-// RPC. The dispatcher appends to chunks until a FlagFinal frame
-// arrives, then hands the slice to the handler.
+// streamBuffer carries the per-CorrID chunk channel for an active
+// client-streaming RPC. The handler goroutine reads from ch until it is
+// closed (FlagFinal). cancel aborts the handler when the dispatcher
+// shuts down.
 type streamBuffer struct {
-	chunks []*mwanv1.Chunk
+	ch     chan *mwanv1.Chunk
+	cancel context.CancelFunc
 }
 
-// dispatchJob carries a fully-decoded request to a worker goroutine.
-// For streaming RPCs, chunks holds the full assembled chunk list and
-// req is nil; for unary RPCs, req is the decoded request and chunks is
-// nil.
+// dispatchJob carries a fully-decoded unary request to a worker
+// goroutine. Streaming RPCs do not flow through frameCh; they run on
+// dedicated per-CorrID goroutines spawned in handleStreamFrame.
 type dispatchJob struct {
 	methodID uint16
 	corrID   uint64
 	req      proto.Message
-	chunks   []*mwanv1.Chunk
 }
 
 // NewDispatcher constructs a Dispatcher. It does not open or attach to
@@ -114,6 +125,7 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 		onFrameError: cfg.OnFrameError,
 		streamMu:     sync.Mutex{},
 		streams:      make(map[uint64]*streamBuffer),
+		streamWG:     sync.WaitGroup{},
 		frameCh:      make(chan dispatchJob, workers*2),
 		conn:         nil,
 	}, nil
@@ -170,6 +182,17 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 	close(d.frameCh)
 	wg.Wait()
 
+	// Cancel any in-flight streaming handlers and wait for their goroutines
+	// to exit so Serve does not return while handlers still hold open
+	// channels or temp files.
+	d.streamMu.Lock()
+	for corrID, buf := range d.streams {
+		buf.cancel()
+		delete(d.streams, corrID)
+	}
+	d.streamMu.Unlock()
+	d.streamWG.Wait()
+
 	if cancelled || errors.Is(serveErr, io.EOF) {
 		return nil
 	}
@@ -209,14 +232,16 @@ func (d *Dispatcher) onFrame(frame mwn1.Frame) {
 		methodID: frame.MethodID,
 		corrID:   frame.CorrID,
 		req:      req,
-		chunks:   nil,
 	}
 }
 
-// handleStreamFrame buffers a streaming-request chunk and, on
-// FlagFinal, enqueues the assembled job for the worker pool. Currently
-// only Deploy uses streaming; other method ids in a streaming frame are
-// rejected.
+// handleStreamFrame routes a streaming-request frame into the
+// per-CorrID chunk channel. The first frame for a new CorrID spawns a
+// handler goroutine that consumes the channel; subsequent frames push
+// chunks in. A FlagFinal frame closes the channel after pushing its
+// own chunk, which lets the handler observe end-of-stream and produce
+// the response. Currently only Deploy uses streaming; other method ids
+// in a streaming frame are rejected.
 func (d *Dispatcher) handleStreamFrame(frame mwn1.Frame) {
 	if frame.MethodID != mwn1.MethodDeploy {
 		err := fmt.Errorf("dispatcher: streaming not supported for method id %d", frame.MethodID)
@@ -239,28 +264,65 @@ func (d *Dispatcher) handleStreamFrame(frame mwn1.Frame) {
 		return
 	}
 
+	final := frame.Flags&mwn1.FlagFinal != 0
+
 	d.streamMu.Lock()
 	buf, exists := d.streams[frame.CorrID]
 	if !exists {
-		buf = &streamBuffer{chunks: nil}
+		// First frame for this CorrID. Spin up the handler goroutine
+		// before publishing the channel so subsequent frames find a live
+		// receiver.
+		ctx, cancel := context.WithCancel(context.Background())
+		buf = &streamBuffer{
+			ch:     make(chan *mwanv1.Chunk, 16),
+			cancel: cancel,
+		}
 		d.streams[frame.CorrID] = buf
+
+		methodID := frame.MethodID
+		corrID := frame.CorrID
+		ch := buf.ch
+		d.streamWG.Go(func() {
+			defer cancel()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					d.log.Error("dispatcher: stream handler panic recovered",
+						"err", fmt.Errorf("recovered panic: %v", recovered),
+						"method_id", methodID, "corr_id", corrID)
+					d.sendError(methodID, corrID, fmt.Errorf("dispatcher: stream handler panic: %v", recovered))
+				}
+			}()
+			resp, handlerErr := d.server.Deploy(ctx, ch)
+			if handlerErr != nil {
+				d.sendError(methodID, corrID, handlerErr)
+				return
+			}
+			if sendErr := d.sendResponse(methodID, corrID, resp); sendErr != nil {
+				d.log.Error("dispatcher: send response failed",
+					"err", sendErr, "method_id", methodID, "corr_id", corrID)
+			}
+		})
 	}
-	buf.chunks = append(buf.chunks, chunk)
-	final := frame.Flags&mwn1.FlagFinal != 0
 	if final {
 		delete(d.streams, frame.CorrID)
 	}
-	chunks := buf.chunks
+	ch := buf.ch
 	d.streamMu.Unlock()
 
-	if !final {
-		return
+	// Push chunk; if the handler already exited the channel may be at
+	// capacity and a slow handler would block the reader. Apply the
+	// dispatcher ctx via a non-blocking guard around send: if the
+	// per-stream context is cancelled mid-push, drop with a log so the
+	// reader keeps moving.
+	select {
+	case ch <- chunk:
+	case <-time.After(streamPushTimeout):
+		d.log.Warn("dispatcher push timeout",
+			"method_id", frame.MethodID, "corr_id", frame.CorrID)
 	}
-	d.frameCh <- dispatchJob{
-		methodID: frame.MethodID,
-		corrID:   frame.CorrID,
-		req:      nil,
-		chunks:   chunks,
+
+	if final {
+		close(ch)
 	}
 }
 
@@ -278,14 +340,10 @@ func (d *Dispatcher) handleJob(ctx context.Context, job dispatchJob) {
 	}
 }
 
-// invoke runs the handler matching job.methodID and returns its
-// response message. The signature of every handler is uniform after
-// the refactor: they take ctx and a typed request, and return a typed
-// response and an error.
+// invoke runs the unary handler matching job.methodID and returns its
+// response message. Streaming RPCs (Deploy) do not flow through invoke;
+// they are handled in handleStreamFrame on a dedicated goroutine.
 func (d *Dispatcher) invoke(ctx context.Context, job dispatchJob) (proto.Message, error) {
-	if job.methodID == mwn1.MethodDeploy {
-		return d.server.Deploy(ctx, job.chunks)
-	}
 	handler, ok := d.unaryHandler(job.methodID)
 	if !ok {
 		return nil, fmt.Errorf("unknown method id %d", job.methodID)
