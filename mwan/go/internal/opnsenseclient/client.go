@@ -35,6 +35,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	spb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -77,46 +80,6 @@ var ErrUnexpectedResponseType = errors.New("opnsenseclient: unexpected response 
 // ErrClientClosed is returned by [Client.Call] after [Client.Close]
 // has been called or after the underlying transport reader exited.
 var ErrClientClosed = errors.New("opnsenseclient: client is closed")
-
-// RemoteError is the typed error a [Client.Call] returns when the
-// daemon answers with a [mwn1.FlagError] frame. The Payload carries
-// the daemon's serialized error description (currently a UTF-8
-// string; switch to a typed Error proto when one is added).
-type RemoteError struct {
-	MethodID uint16
-	Payload  []byte
-}
-
-// Error implements the error interface.
-func (e *RemoteError) Error() string {
-	return fmt.Sprintf("opnsenseclient: remote error from method %d: %s", e.MethodID, string(e.Payload))
-}
-
-// keepDaemonHelpersReachable keeps the daemon-side codec helpers
-// reachable from the dependency graph until the daemon dispatcher
-// (built in a sibling worktree) lands and uses them directly. Without
-// this anchor, the deadcode analyzer flags MarshalResponse and
-// UnmarshalRequest as unreachable in this build, even though they are
-// part of the public mwn1 surface and used in tests.
-func keepDaemonHelpersReachable(reg *mwn1.Registry, methodID uint16, msg proto.Message) (proto.Message, error) {
-	respBytes, _, marshalErr := mwn1.MarshalResponse(reg, methodID, msg)
-	if marshalErr != nil {
-		slog.Warn("opnsenseclient: keepalive marshal failed", slog.Any("err", marshalErr))
-		return nil, fmt.Errorf("opnsenseclient: keepalive marshal: %w", marshalErr)
-	}
-	out, decodeErr := mwn1.UnmarshalRequest(reg, methodID, respBytes)
-	if decodeErr != nil {
-		slog.Warn("opnsenseclient: keepalive unmarshal failed", slog.Any("err", decodeErr))
-		return nil, fmt.Errorf("opnsenseclient: keepalive unmarshal: %w", decodeErr)
-	}
-	return out, nil
-}
-
-func init() {
-	if false {
-		_, _ = keepDaemonHelpersReachable(nil, 0, nil)
-	}
-}
 
 // Dial opens the unix socket at cfg.Target, wraps it in an
 // [mwn1.Conn], and starts the response router. Dial does not perform
@@ -211,7 +174,7 @@ func (c *Client) Err() error {
 //
 // The returned message is one of:
 //   - the typed *mwanv1.<Method>Response, on success
-//   - an error wrapping a *RemoteError, on FlagError frame
+//   - a gRPC status error decoded from the daemon's google.rpc.Status payload, on FlagError frame
 //   - ctx.Err(), on context cancellation
 //   - the transport error from [Client.Err], on connection loss
 func (c *Client) Call(ctx context.Context, methodID uint16,
@@ -415,10 +378,20 @@ func (c *Client) cleanupOnDone() {
 }
 
 // decodeResponse turns a response frame into the typed proto message
-// or an error. FlagError frames produce a wrapped *RemoteError.
+// or an error. FlagError frames carry a serialized google.rpc.Status
+// payload which is decoded into a gRPC status error via
+// status.ErrorProto. If the payload is not a valid Status proto, the
+// error falls back to codes.Internal with the raw payload as the
+// message so the caller still sees something useful.
 func (c *Client) decodeResponse(ctx context.Context, methodID uint16, f mwn1.Frame) (proto.Message, error) {
 	if f.Flags&mwn1.FlagError != 0 {
-		return nil, &RemoteError{MethodID: methodID, Payload: f.Payload}
+		s := &spb.Status{}
+		if err := proto.Unmarshal(f.Payload, s); err != nil {
+			c.log.WarnContext(ctx, "opnsenseclient: decode status payload failed",
+				slog.Int("method_id", int(methodID)), slog.Any("err", err))
+			return nil, fmt.Errorf("opnsenseclient: remote: %w", status.Error(codes.Internal, string(f.Payload)))
+		}
+		return nil, fmt.Errorf("opnsenseclient: remote: %w", status.ErrorProto(s))
 	}
 	if _, ok := c.reg.MethodName(f.MethodID); !ok {
 		c.log.WarnContext(ctx, "opnsenseclient: unknown response method id",

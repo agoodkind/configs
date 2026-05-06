@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	spb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -236,16 +239,24 @@ func TestUnixTargetPath(t *testing.T) {
 }
 
 // TestCall_RemoteError covers the FlagError frame path: the daemon
-// answers with FlagError set and an opaque payload; the client
-// surfaces a *RemoteError.
+// answers with FlagError set and a serialized google.rpc.Status
+// payload; the client surfaces a gRPC status error preserving both the
+// code and message.
 func TestCall_RemoteError(t *testing.T) {
 	daemon := newFakeDaemon(t)
+	statusPayload, marshalErr := proto.Marshal(&spb.Status{
+		Code:    int32(codes.FailedPrecondition),
+		Message: "remote went boom",
+	})
+	if marshalErr != nil {
+		t.Fatalf("marshal status: %v", marshalErr)
+	}
 	daemon.setHandler(func(req mwn1.Frame) (mwn1.Frame, bool) {
 		return mwn1.Frame{
 			Flags:    mwn1.FlagFinal | mwn1.FlagError,
 			MethodID: req.MethodID,
 			CorrID:   req.CorrID,
-			Payload:  []byte("remote went boom"),
+			Payload:  statusPayload,
 		}, true
 	})
 	daemon.Serve(t)
@@ -263,15 +274,52 @@ func TestCall_RemoteError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Version: want error, got nil")
 	}
-	var remote *RemoteError
-	if !errors.As(err, &remote) {
-		t.Fatalf("expected *RemoteError, got %T: %v", err, err)
+	if got, want := status.Code(err), codes.FailedPrecondition; got != want {
+		t.Fatalf("status.Code=%v want %v (err=%v)", got, want, err)
 	}
-	if remote.MethodID != mwn1.MethodVersion {
-		t.Fatalf("RemoteError.MethodID=%d want %d", remote.MethodID, mwn1.MethodVersion)
+	// status.FromError does not unwrap; reach the inner status via
+	// errors.As on the GRPCStatus interface.
+	type grpcStatuser interface{ GRPCStatus() *status.Status }
+	var inner grpcStatuser
+	if !errors.As(err, &inner) {
+		t.Fatalf("expected wrapped gRPC status error, got %T: %v", err, err)
 	}
-	if string(remote.Payload) != "remote went boom" {
-		t.Fatalf("RemoteError.Payload=%q", remote.Payload)
+	st := inner.GRPCStatus()
+	if st.Message() != "remote went boom" {
+		t.Fatalf("status.Message=%q want %q", st.Message(), "remote went boom")
+	}
+}
+
+// TestCall_RemoteError_BadPayload covers the fallback path for a
+// FlagError frame whose payload does not parse as a google.rpc.Status:
+// the client returns codes.Internal with the raw payload as message.
+func TestCall_RemoteError_BadPayload(t *testing.T) {
+	daemon := newFakeDaemon(t)
+	daemon.setHandler(func(req mwn1.Frame) (mwn1.Frame, bool) {
+		return mwn1.Frame{
+			Flags:    mwn1.FlagFinal | mwn1.FlagError,
+			MethodID: req.MethodID,
+			CorrID:   req.CorrID,
+			Payload:  []byte("not a status proto"),
+		}, true
+	})
+	daemon.Serve(t)
+	defer daemon.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cli, err := Dial(ctx, Config{Target: "unix://" + daemon.socketPath})
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = cli.Close() }()
+
+	_, err = cli.RPC().Version(ctx, &mwanv1.VersionRequest{})
+	if err == nil {
+		t.Fatal("Version: want error, got nil")
+	}
+	if got, want := status.Code(err), codes.Internal; got != want {
+		t.Fatalf("status.Code=%v want %v (err=%v)", got, want, err)
 	}
 }
 
