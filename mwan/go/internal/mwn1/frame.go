@@ -1,8 +1,5 @@
-// Package mwn1 implements the MWN1 length-prefixed framing protocol
-// used to carry mwan-opnsense RPC traffic over a Proxmox virtio-serial
-// chardev. It is the replacement for gRPC over HTTP/2 over the same
-// transport, which composes badly with virtio-serial's stream
-// semantics.
+// Package mwn1 implements the MWN1 message transport used to carry
+// mwan-opnsense RPC traffic over Proxmox virtio-serial chardevs.
 //
 // On-wire frame layout (big-endian, no padding):
 //
@@ -11,12 +8,13 @@
 //	4       1     flags
 //	5       2     method_id     (uint16)
 //	7       8     corr_id       (uint64)
-//	15      4     payload_len   (uint32, max 65535)
-//	19      N     payload       (proto message bytes)
+//	15      4     payload_len   (uint32, capped at MaxPayload)
+//	19      N     payload       (proto message bytes or fragment)
 //	19+N    4     crc32c castagnoli over magic..payload
 //
-// Total fixed overhead is 23 bytes. Larger RPC payloads use multiple
-// frames sharing one corr_id, terminated by FlagFinal.
+// Total fixed overhead is 23 bytes. Frames are an implementation
+// detail; Conn exposes complete messages and transparently fragments
+// payloads larger than MaxPayload.
 package mwn1
 
 import (
@@ -44,10 +42,9 @@ const (
 	// TailLen is the size of the trailing CRC32C field.
 	TailLen = 4
 
-	// MaxPayload is the per-frame payload byte cap. Payloads larger
-	// than this must be split across multiple frames sharing one
-	// corr_id (FlagStreaming) and terminated by FlagFinal.
-	MaxPayload = 65535
+	// MaxPayload is the per-frame payload byte cap. Payloads larger than
+	// this are split across frames sharing one corr_id.
+	MaxPayload = 64 * 1024
 
 	// FrameOverhead is the total non-payload byte cost of one frame.
 	FrameOverhead = MagicBytes + HdrAfterMagic + TailLen
@@ -56,30 +53,37 @@ const (
 // Flags is the bitfield carried in the flags byte of every frame.
 type Flags uint8
 
-// Flag bits. Bits 4-7 are reserved and must be transmitted as zero.
+// Flag bits.
 const (
-	// FlagRequest marks a frame as a request from client to server.
-	// Cleared frames are responses.
+	// FlagRequest marks a request message from client to server.
 	FlagRequest Flags = 1 << 0
 
-	// FlagStreaming marks a frame as part of a multi-frame stream
-	// sharing one corr_id. Single-frame requests and responses do
-	// not set this bit.
+	// FlagStreaming marks a streamed logical message sequence.
 	FlagStreaming Flags = 1 << 1
 
-	// FlagFinal marks the last frame of a corr_id. A single-frame
-	// request sets FlagRequest|FlagFinal; a streaming request sets
-	// FlagFinal only on its terminal frame.
-	FlagFinal Flags = 1 << 2
+	// FlagResponse marks a response message from server to client.
+	FlagResponse Flags = 1 << 2
 
-	// FlagError marks a response whose payload is a serialized
-	// error status rather than the declared response message.
-	FlagError Flags = 1 << 3
+	// FlagFinal marks the final frame of one complete message.
+	FlagFinal Flags = 1 << 3
+
+	// FlagError marks a response whose payload is an error status rather
+	// than the declared response message.
+	FlagError Flags = 1 << 4
+
+	// FlagFragment marks a non-final transport fragment.
+	FlagFragment Flags = 1 << 5
+
+	// FlagCancel marks a best-effort cancellation for corr_id.
+	FlagCancel Flags = 1 << 6
+
+	// FlagAck acknowledges one accepted streaming message for corr_id.
+	FlagAck Flags = 1 << 7
 )
 
-// Frame is one decoded MWN1 message. Concurrent reads or writes of
-// the same Frame value are not supported.
-type Frame struct {
+// frame is one decoded MWN1 frame. Frames stay package-internal; callers
+// use Conn.SendMessage and Conn.OnMessage with complete payloads.
+type frame struct {
 	Flags    Flags
 	MethodID uint16
 	CorrID   uint64
@@ -96,28 +100,28 @@ var castagnoli = crc32.MakeTable(crc32.Castagnoli)
 var ErrCorrupted = errors.New("mwn1: frame CRC mismatch")
 
 // ErrPayloadTooLarge indicates that a payload exceeded MaxPayload.
-// Returned by WriteFrame for outbound frames and by ReadFrame when
+// Returned by writeFrame for outbound frames and by readFrame when
 // the on-wire payload_len header advertises more than MaxPayload.
 var ErrPayloadTooLarge = errors.New("mwn1: payload exceeds MaxPayload")
 
-// ReadFrame scans r for the magic preamble, then reads the rest of
+// readFrame scans r for the magic preamble, then reads the rest of
 // the frame and verifies its CRC32C. On magic mismatch it slides
 // one byte forward and tries again, logging at WARN with the count
 // of dropped bytes once it locks on. Returns ErrCorrupted on CRC
 // failure, ErrPayloadTooLarge when the advertised payload_len
 // exceeds MaxPayload, or the wrapped underlying read error when
 // the stream is closed mid-frame.
-func ReadFrame(r io.Reader, log *slog.Logger) (Frame, error) {
+func readFrame(r io.Reader, log *slog.Logger) (frame, error) {
 	if log == nil {
 		log = slog.Default()
 	}
 	if err := scanMagic(r, log); err != nil {
-		return Frame{}, err
+		return frame{}, err
 	}
 	hdr := make([]byte, HdrAfterMagic)
 	if _, err := io.ReadFull(r, hdr); err != nil {
 		log.Warn("mwn1: read header", slog.String("err", err.Error()))
-		return Frame{}, fmt.Errorf("mwn1: read header: %w", err)
+		return frame{}, fmt.Errorf("mwn1: read header: %w", err)
 	}
 	flags := Flags(hdr[0])
 	methodID := binary.BigEndian.Uint16(hdr[1:3])
@@ -127,17 +131,17 @@ func ReadFrame(r io.Reader, log *slog.Logger) (Frame, error) {
 		log.Warn("mwn1: payload header exceeds max",
 			slog.Uint64("advertised", uint64(payloadLen)),
 			slog.Uint64("max", uint64(MaxPayload)))
-		return Frame{}, fmt.Errorf("%w: advertised %d", ErrPayloadTooLarge, payloadLen)
+		return frame{}, fmt.Errorf("%w: advertised %d", ErrPayloadTooLarge, payloadLen)
 	}
 	payload := make([]byte, payloadLen)
 	if _, err := io.ReadFull(r, payload); err != nil {
 		log.Warn("mwn1: read payload", slog.String("err", err.Error()))
-		return Frame{}, fmt.Errorf("mwn1: read payload: %w", err)
+		return frame{}, fmt.Errorf("mwn1: read payload: %w", err)
 	}
 	var crcBuf [TailLen]byte
 	if _, err := io.ReadFull(r, crcBuf[:]); err != nil {
 		log.Warn("mwn1: read crc", slog.String("err", err.Error()))
-		return Frame{}, fmt.Errorf("mwn1: read crc: %w", err)
+		return frame{}, fmt.Errorf("mwn1: read crc: %w", err)
 	}
 	got := binary.BigEndian.Uint32(crcBuf[:])
 	want := computeCRC(hdr, payload)
@@ -145,9 +149,9 @@ func ReadFrame(r io.Reader, log *slog.Logger) (Frame, error) {
 		log.Warn("mwn1: crc mismatch",
 			slog.String("got", fmt.Sprintf("%08x", got)),
 			slog.String("want", fmt.Sprintf("%08x", want)))
-		return Frame{}, fmt.Errorf("%w: got=%08x want=%08x", ErrCorrupted, got, want)
+		return frame{}, fmt.Errorf("%w: got=%08x want=%08x", ErrCorrupted, got, want)
 	}
-	return Frame{
+	return frame{
 		Flags:    flags,
 		MethodID: methodID,
 		CorrID:   corrID,
@@ -155,8 +159,8 @@ func ReadFrame(r io.Reader, log *slog.Logger) (Frame, error) {
 	}, nil
 }
 
-// WriteFrame serializes f and writes it to w in a single Write call.
-// Caller is responsible for serializing concurrent writes; Frame
+// writeFrame serializes f and writes it to w in a single Write call.
+// Caller is responsible for serializing concurrent writes; frame
 // itself does not lock. Returns ErrPayloadTooLarge if the payload
 // exceeds MaxPayload.
 //
@@ -164,7 +168,7 @@ func ReadFrame(r io.Reader, log *slog.Logger) (Frame, error) {
 // write failure so the wrapped error returned to the caller has a
 // matching observable log entry. nil is allowed and falls back to
 // [slog.Default].
-func WriteFrame(w io.Writer, f Frame, log *slog.Logger) error {
+func writeFrame(w io.Writer, f frame, log *slog.Logger) error {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -195,7 +199,7 @@ func WriteFrame(w io.Writer, f Frame, log *slog.Logger) error {
 }
 
 // payloadLenU32 narrows an int payload length to uint32 after asserting
-// it fits within MaxPayload. WriteFrame already returns an error when
+// it fits within MaxPayload. writeFrame already returns an error when
 // the payload exceeds MaxPayload, so by the time this runs the value
 // is guaranteed in range. Centralizing the conversion keeps gosec G115
 // happy without scattering inline annotations.

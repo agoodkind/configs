@@ -2,21 +2,26 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
-	"goodkind.io/mwan/internal/chunkedstream"
-	"goodkind.io/mwan/internal/opnsenseclient"
+	"goodkind.io/mwan/internal/opnsense"
 	"goodkind.io/mwan/internal/opnsensesvc"
 )
 
-const opnsenseProbeSerialSettleDelay = 1200 * time.Millisecond
+const (
+	opnsenseProbeSerialSettleDelay = 1200 * time.Millisecond
+	opnsenseProbeDeployChunkBytes  = 8 * 1024
+)
 
 // runOPNsenseProbe is the operational tool for ad hoc dialing of the
 // mwan-opnsense daemon over its OOB virtio-serial unix socket.
@@ -35,13 +40,16 @@ func runOPNsenseProbe(args []string) error {
 	target := fs.String("target", "", "unix:///path/to/socket (required)")
 	timeout := fs.Duration("timeout", 10*time.Second, "dial+RPC timeout")
 	op := fs.String("op", "version",
-		"RPC to call: version|read-config|xpath-get|xpath-set|xpath-delete|exec|deploy-status|deploy|revert|smoke")
+		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|smoke")
 	repeat := fs.Int("repeat", 1, "number of times to run the selected RPC over one connection")
 	xpath := fs.String("xpath", "", "XPath expression for op=xpath-{get,set,delete}")
 	xpathValue := fs.String("xpath-value", "", "value to write for op=xpath-set")
 	cmdStr := fs.String("cmd", "", "command for op=exec")
 	cmdArgs := fs.String("cmd-args", "", "comma-separated args for op=exec")
 	cmdSudo := fs.Bool("cmd-sudo", false, "wrap exec in sudo -n")
+	configXML := fs.String("config-xml", "", "path to XML content for op=write-config")
+	label := fs.String("label", "", "backup label for op=write-config or op=backup-config")
+	gatewayName := fs.String("gateway-name", "", "gateway name for op=inject-gatewayv6")
 	deployBin := fs.String("deploy-bin", "", "path to local binary for op=deploy (read into request)")
 	deployVer := fs.String("deploy-version", "", "version label attached to op=deploy")
 	if err := fs.Parse(args); err != nil {
@@ -61,12 +69,10 @@ func runOPNsenseProbe(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	cli, err := opnsenseclient.Dial(ctx, opnsenseclient.Config{
-		Target: *target,
-		Log:    slog.Default(),
-	})
+	cli, err := opnsense.Dial(*target)
 	if err != nil {
-		return err
+		slog.ErrorContext(ctx, "opnsense-probe dial failed", "target", *target, "err", err)
+		return fmt.Errorf("dial opnsense target: %w", err)
 	}
 	defer func() { _ = cli.Close() }()
 
@@ -77,6 +83,9 @@ func runOPNsenseProbe(args []string) error {
 		cmd:           *cmdStr,
 		cmdArgs:       *cmdArgs,
 		cmdSudo:       *cmdSudo,
+		configXML:     *configXML,
+		label:         *label,
+		gatewayName:   *gatewayName,
 		deployBin:     *deployBin,
 		deployVersion: *deployVer,
 	}
@@ -88,6 +97,13 @@ func runOPNsenseProbe(args []string) error {
 	case <-ctx.Done():
 		timer.Stop()
 		return ctx.Err()
+	case <-cli.Done():
+		timer.Stop()
+		if err := cli.Err(); err != nil {
+			slog.ErrorContext(ctx, "opnsense-probe connection closed during settle", "err", err)
+			return fmt.Errorf("opnsense connection closed during settle: %w", err)
+		}
+		return opnsense.ErrClientClosed
 	case <-timer.C:
 	}
 
@@ -109,7 +125,7 @@ func runOPNsenseProbe(args []string) error {
 	return nil
 }
 
-func runOPNsenseProbeSmoke(ctx context.Context, rpc *opnsenseclient.RPC) error {
+func runOPNsenseProbeSmoke(ctx context.Context, rpc *opnsense.RPC) error {
 	ops := []probeRPCArgs{
 		{op: "version"},
 		{op: "read-config"},
@@ -135,6 +151,9 @@ type probeRPCArgs struct {
 	cmd           string
 	cmdArgs       string
 	cmdSudo       bool
+	configXML     string
+	label         string
+	gatewayName   string
 	deployBin     string
 	deployVersion string
 }
@@ -145,10 +164,14 @@ type probeOp string
 const (
 	probeOpVersion      probeOp = "version"
 	probeOpReadConfig   probeOp = "read-config"
+	probeOpWriteConfig  probeOp = "write-config"
+	probeOpBackupConfig probeOp = "backup-config"
 	probeOpXPathGet     probeOp = "xpath-get"
 	probeOpXPathSet     probeOp = "xpath-set"
 	probeOpXPathDelete  probeOp = "xpath-delete"
 	probeOpExec         probeOp = "exec"
+	probeOpStripGW6     probeOp = "strip-gatewayv6"
+	probeOpInjectGW6    probeOp = "inject-gatewayv6"
 	probeOpDeployStatus probeOp = "deploy-status"
 	probeOpDeploy       probeOp = "deploy"
 	probeOpRevert       probeOp = "revert"
@@ -156,7 +179,7 @@ const (
 
 func runOPNsenseProbeRPC(
 	ctx context.Context,
-	rpc *opnsenseclient.RPC,
+	rpc *opnsense.RPC,
 	a probeRPCArgs,
 ) error {
 	switch probeOp(a.op) {
@@ -164,6 +187,10 @@ func runOPNsenseProbeRPC(
 		return probeVersion(ctx, rpc)
 	case probeOpReadConfig:
 		return probeReadConfig(ctx, rpc)
+	case probeOpWriteConfig:
+		return probeWriteConfig(ctx, rpc, a.configXML, a.label)
+	case probeOpBackupConfig:
+		return probeBackupConfig(ctx, rpc, a.label)
 	case probeOpXPathGet:
 		return probeXPathGet(ctx, rpc, a.xpath)
 	case probeOpExec:
@@ -172,6 +199,10 @@ func runOPNsenseProbeRPC(
 		return probeXPathSet(ctx, rpc, a.xpath, a.xpathValue)
 	case probeOpXPathDelete:
 		return probeXPathDelete(ctx, rpc, a.xpath)
+	case probeOpStripGW6:
+		return probeStripGatewayV6(ctx, rpc)
+	case probeOpInjectGW6:
+		return probeInjectGatewayV6(ctx, rpc, a.gatewayName)
 	case probeOpDeployStatus:
 		return probeDeployStatus(ctx, rpc)
 	case probeOpDeploy:
@@ -183,7 +214,7 @@ func runOPNsenseProbeRPC(
 	}
 }
 
-func probeVersion(ctx context.Context, rpc *opnsenseclient.RPC) error {
+func probeVersion(ctx context.Context, rpc *opnsense.RPC) error {
 	resp, err := rpc.Version(ctx, &mwanv1.VersionRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe Version failed", "err", err)
@@ -199,7 +230,7 @@ func probeVersion(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	return nil
 }
 
-func probeReadConfig(ctx context.Context, rpc *opnsenseclient.RPC) error {
+func probeReadConfig(ctx context.Context, rpc *opnsense.RPC) error {
 	resp, err := rpc.ReadConfigXML(ctx, &mwanv1.ReadConfigXMLRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe ReadConfigXML failed", "err", err)
@@ -212,7 +243,47 @@ func probeReadConfig(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	return nil
 }
 
-func probeXPathGet(ctx context.Context, rpc *opnsenseclient.RPC, xpath string) error {
+func probeWriteConfig(ctx context.Context, rpc *opnsense.RPC, path string, label string) error {
+	if path == "" {
+		return errors.New("op=write-config requires -config-xml")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe WriteConfigXML read source failed",
+			"path", path, "err", err)
+		return fmt.Errorf("read config-xml: %w", err)
+	}
+	resp, err := rpc.WriteConfigXML(ctx, &mwanv1.WriteConfigXMLRequest{
+		Content: content,
+		Label:   label,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe WriteConfigXML failed", "err", err)
+		return fmt.Errorf("rpc WriteConfigXML: %w", err)
+	}
+	slog.InfoContext(ctx, "opnsense-probe WriteConfigXML OK",
+		"backup_path", resp.GetBackupPath(),
+		"bytes_written", resp.GetBytesWritten())
+	fmt.Fprintf(os.Stdout, "backup=%s bytes_written=%d\n",
+		resp.GetBackupPath(), resp.GetBytesWritten())
+	return nil
+}
+
+func probeBackupConfig(ctx context.Context, rpc *opnsense.RPC, label string) error {
+	resp, err := rpc.BackupConfigXML(ctx, &mwanv1.BackupConfigXMLRequest{Label: label})
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe BackupConfigXML failed", "err", err)
+		return fmt.Errorf("rpc BackupConfigXML: %w", err)
+	}
+	slog.InfoContext(ctx, "opnsense-probe BackupConfigXML OK",
+		"backup_path", resp.GetBackupPath(),
+		"size_bytes", resp.GetSizeBytes())
+	fmt.Fprintf(os.Stdout, "backup=%s size=%d\n",
+		resp.GetBackupPath(), resp.GetSizeBytes())
+	return nil
+}
+
+func probeXPathGet(ctx context.Context, rpc *opnsense.RPC, xpath string) error {
 	if xpath == "" {
 		return errors.New("op=xpath-get requires -xpath")
 	}
@@ -228,7 +299,7 @@ func probeXPathGet(ctx context.Context, rpc *opnsenseclient.RPC, xpath string) e
 	return nil
 }
 
-func probeExec(ctx context.Context, rpc *opnsenseclient.RPC,
+func probeExec(ctx context.Context, rpc *opnsense.RPC,
 	cmdStr, cmdArgs string, cmdSudo bool,
 ) error {
 	if cmdStr == "" {
@@ -261,7 +332,7 @@ func probeExec(ctx context.Context, rpc *opnsenseclient.RPC,
 	return nil
 }
 
-func probeXPathSet(ctx context.Context, rpc *opnsenseclient.RPC, xpath, value string) error {
+func probeXPathSet(ctx context.Context, rpc *opnsense.RPC, xpath, value string) error {
 	if xpath == "" {
 		return errors.New("op=xpath-set requires -xpath")
 	}
@@ -281,7 +352,7 @@ func probeXPathSet(ctx context.Context, rpc *opnsenseclient.RPC, xpath, value st
 	return nil
 }
 
-func probeXPathDelete(ctx context.Context, rpc *opnsenseclient.RPC, xpath string) error {
+func probeXPathDelete(ctx context.Context, rpc *opnsense.RPC, xpath string) error {
 	if xpath == "" {
 		return errors.New("op=xpath-delete requires -xpath")
 	}
@@ -298,7 +369,38 @@ func probeXPathDelete(ctx context.Context, rpc *opnsenseclient.RPC, xpath string
 	return nil
 }
 
-func probeDeployStatus(ctx context.Context, rpc *opnsenseclient.RPC) error {
+func probeStripGatewayV6(ctx context.Context, rpc *opnsense.RPC) error {
+	resp, err := rpc.StripGatewayV6(ctx, &mwanv1.StripGatewayV6Request{})
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe StripGatewayV6 failed", "err", err)
+		return fmt.Errorf("rpc StripGatewayV6: %w", err)
+	}
+	slog.InfoContext(ctx, "opnsense-probe StripGatewayV6 OK",
+		"backup_path", resp.GetBackupPath(),
+		"changed", resp.GetChanged())
+	fmt.Fprintf(os.Stdout, "backup=%s changed=%v\n",
+		resp.GetBackupPath(), resp.GetChanged())
+	return nil
+}
+
+func probeInjectGatewayV6(ctx context.Context, rpc *opnsense.RPC, gatewayName string) error {
+	if gatewayName == "" {
+		return errors.New("op=inject-gatewayv6 requires -gateway-name")
+	}
+	resp, err := rpc.InjectGatewayV6(ctx, &mwanv1.InjectGatewayV6Request{GatewayName: gatewayName})
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe InjectGatewayV6 failed", "err", err)
+		return fmt.Errorf("rpc InjectGatewayV6: %w", err)
+	}
+	slog.InfoContext(ctx, "opnsense-probe InjectGatewayV6 OK",
+		"backup_path", resp.GetBackupPath(),
+		"changed", resp.GetChanged())
+	fmt.Fprintf(os.Stdout, "backup=%s changed=%v\n",
+		resp.GetBackupPath(), resp.GetChanged())
+	return nil
+}
+
+func probeDeployStatus(ctx context.Context, rpc *opnsense.RPC) error {
 	resp, err := rpc.DeployStatus(ctx, &mwanv1.DeployStatusRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe DeployStatus failed", "err", err)
@@ -315,7 +417,7 @@ func probeDeployStatus(ctx context.Context, rpc *opnsenseclient.RPC) error {
 	return nil
 }
 
-func probeDeploy(ctx context.Context, rpc *opnsenseclient.RPC,
+func probeDeploy(ctx context.Context, rpc *opnsense.RPC,
 	deployBin, deployVersion string,
 ) error {
 	if deployBin == "" {
@@ -344,6 +446,7 @@ func probeDeploy(ctx context.Context, rpc *opnsenseclient.RPC,
 		slog.ErrorContext(ctx, "opnsense-probe Deploy stream open failed", "err", err)
 		return fmt.Errorf("rpc Deploy open: %w", err)
 	}
+	defer stream.Cancel()
 	header := &mwanv1.ChunkHeader{
 		ContentType: "application/octet-stream",
 		Label:       deployVersion,
@@ -352,7 +455,7 @@ func probeDeploy(ctx context.Context, rpc *opnsenseclient.RPC,
 			opnsensesvc.DeployAttrVersionStr: deployVersion,
 		},
 	}
-	sumHex, sentBytes, sendErr := chunkedstream.Send(file, header, 0, stream.Send)
+	sumHex, sentBytes, sendErr := sendDeployChunks(file, header, stream.Send)
 	if sendErr != nil {
 		slog.ErrorContext(ctx, "opnsense-probe Deploy send failed", "err", sendErr)
 		return fmt.Errorf("rpc Deploy send: %w", sendErr)
@@ -373,7 +476,67 @@ func probeDeploy(ctx context.Context, rpc *opnsenseclient.RPC,
 	return nil
 }
 
-func probeRevert(ctx context.Context, rpc *opnsenseclient.RPC) error {
+func sendDeployChunks(
+	reader io.Reader,
+	header *mwanv1.ChunkHeader,
+	send func(*mwanv1.Chunk) error,
+) (string, int64, error) {
+	if reader == nil {
+		return "", 0, errors.New("deploy chunk source required")
+	}
+	if send == nil {
+		return "", 0, errors.New("deploy chunk sender required")
+	}
+	headerChunk := &mwanv1.Chunk{Body: &mwanv1.Chunk_Header{Header: header}}
+	if err := send(headerChunk); err != nil {
+		slog.Error("opnsense-probe Deploy header send failed", "err", err)
+		return "", 0, fmt.Errorf("send deploy header: %w", err)
+	}
+
+	hash := sha256.New()
+	buffer := make([]byte, opnsenseProbeDeployChunkBytes)
+	var totalBytes int64
+	for {
+		bytesRead, readErr := io.ReadFull(reader, buffer)
+		if bytesRead > 0 {
+			data := buffer[:bytesRead]
+			if _, err := hash.Write(data); err != nil {
+				slog.Error("opnsense-probe Deploy hash failed", "err", err)
+				return "", 0, fmt.Errorf("hash deploy chunk: %w", err)
+			}
+			payload := make([]byte, bytesRead)
+			copy(payload, data)
+			chunk := &mwanv1.Chunk{Body: &mwanv1.Chunk_Data{Data: payload}}
+			if err := send(chunk); err != nil {
+				slog.Error("opnsense-probe Deploy data send failed",
+					"err", err, "bytes", bytesRead)
+				return "", 0, fmt.Errorf("send deploy data: %w", err)
+			}
+			totalBytes += int64(bytesRead)
+		}
+		if errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+			break
+		}
+		if readErr != nil {
+			slog.Error("opnsense-probe Deploy source read failed",
+				"err", readErr, "bytes_so_far", totalBytes)
+			return "", 0, fmt.Errorf("read deploy source: %w", readErr)
+		}
+	}
+
+	sumHex := hex.EncodeToString(hash.Sum(nil))
+	trailer := &mwanv1.Chunk{Body: &mwanv1.Chunk_Trailer{Trailer: &mwanv1.ChunkTrailer{
+		Sha256Hex: sumHex,
+		TotalSize: totalBytes,
+	}}}
+	if err := send(trailer); err != nil {
+		slog.Error("opnsense-probe Deploy trailer send failed", "err", err)
+		return "", 0, fmt.Errorf("send deploy trailer: %w", err)
+	}
+	return sumHex, totalBytes, nil
+}
+
+func probeRevert(ctx context.Context, rpc *opnsense.RPC) error {
 	resp, err := rpc.Revert(ctx, &mwanv1.RevertRequest{})
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe Revert failed", "err", err)

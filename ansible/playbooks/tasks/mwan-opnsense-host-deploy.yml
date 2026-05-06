@@ -1,21 +1,21 @@
 ---
-# Linux-side deploy of mwan-opnsense-host (the bridge daemon).
+# Linux-side deploy of the mwan opnsense-host bridge subcommand.
 #
 # Target: a Proxmox host that runs an OPNsense VM, reached as root.
 # Pairs with mwan-opnsense-deploy.yml which installs the daemon
 # inside the OPNsense guest. See mwan/MWAN-95-INVESTIGATION.md.
 #
 # Required vars:
-#   mwan_opnsense_host_binary_local      local path to bin/mwan-opnsense-host
+#   mwan_opnsense_host_binary_local      local path to bin/mwan-linux
 #   mwan_opnsense_host_vmid              Proxmox VMID hosting OPNsense (e.g. 101 testbed, 113 prod)
 #
 # Optional vars (with defaults):
 #   mwan_opnsense_host_listen_path       default "/var/run/mwan-opnsense.sock"
 
-- name: Install mwan-opnsense-host binary
+- name: Install mwan monolith binary
   ansible.builtin.copy:
     src: "{{ mwan_opnsense_host_binary_local }}"
-    dest: /usr/local/bin/mwan-opnsense-host
+    dest: /usr/local/bin/mwan
     owner: root
     group: root
     mode: "0755"
@@ -25,7 +25,7 @@
 - name: Install systemd unit
   ansible.builtin.copy:
     src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan-opnsense-host/mwan-opnsense-host.service
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-host.service
     dest: /etc/systemd/system/mwan-opnsense-host.service
     owner: root
     group: root
@@ -51,7 +51,7 @@
     content: |
       [Service]
       ExecStart=
-      ExecStart=/usr/local/bin/mwan-opnsense-host serve \
+      ExecStart=/usr/local/bin/mwan opnsense-host serve \
           -upstream unix:///var/run/qemu-server/{{ mwan_opnsense_host_vmid }}.mwanrpc \
           -listen {{ mwan_opnsense_host_listen_path | default('/var/run/mwan-opnsense.sock') }}
   become: true

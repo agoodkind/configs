@@ -157,6 +157,10 @@ func TestDeploy_FirstDeployNoCurrent(t *testing.T) {
 
 	// re-exec stub eventually called
 	waitForReExec(t, captured)
+	gotArgs := captured.Load()
+	if gotArgs == nil || len(*gotArgs) == 0 || (*gotArgs)[0] != filepath.Join(binDir, BinaryCurrent) {
+		t.Fatalf("re-exec argv0=%v want %s", gotArgs, filepath.Join(binDir, BinaryCurrent))
+	}
 }
 
 func TestDeploy_PreservesPreviousOnSecondDeploy(t *testing.T) {

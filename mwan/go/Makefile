@@ -7,8 +7,8 @@
 #
 # mwan Makefile.
 # Build/lint pipeline lives in go-makefile and is fetched at runtime.
-# Project-local: protobuf codegen, multi-platform cross-builds for the
-# secondary mwan-opnsense* binaries, govulncheck wrapper that allowlists a
+# Project-local: protobuf codegen, cross-builds for the Linux monolith
+# and the FreeBSD mwan-opnsense daemon, govulncheck wrapper that allowlists a
 # specific known gobgp CVE.
 
 # Identity. mwan's internal/version pkg uses lowercase unexported fields
@@ -18,7 +18,7 @@ BINARY   := mwan
 CMD      := ./cmd/$(BINARY)
 DIST_DIR := bin
 
-# Build flags applied to every binary (host + cross-compile via build_platform).
+# Build flags applied to every binary.
 export CGO_ENABLED   := 0
 GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
 
@@ -55,7 +55,7 @@ HOST_GOARCH := $(shell go env GOARCH)
 
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
-.PHONY: proto build-linux build-mwan-opnsense build-mwan-opnsense-host build-mwan-opnsense-linux \
+.PHONY: proto build-linux build-mwan-opnsense \
         tidy fix clean
 
 proto:
@@ -79,7 +79,7 @@ define build_platform
 		-o $(DIST_DIR)/$(1) $(4)
 endef
 
-# build-linux and build-mwan-opnsense* depend on `check`, which fans
+# build-linux and build-mwan-opnsense depend on `check`, which fans
 # out to: build vet lint test govulncheck staticcheck-extra. Full lint
 # pass is mandatory before any deploy artifact lands in $(DIST_DIR)/.
 build-linux: check
@@ -87,18 +87,6 @@ build-linux: check
 
 build-mwan-opnsense: check
 	$(call build_platform,mwan-opnsense,freebsd,amd64,./cmd/mwan-opnsense)
-
-# Linux build of mwan-opnsense, used as the *client* binary on
-# vault/suburban to dial the daemon over the qemu unix socket
-# (virtio-serial OOB transport). Same binary, different platform.
-build-mwan-opnsense-linux: check
-	$(call build_platform,mwan-opnsense-linux,linux,amd64,./cmd/mwan-opnsense)
-
-# Bridge daemon. Runs on the Proxmox host. Holds one persistent gRPC
-# ClientConn to the qemu virtio-serial chardev unix socket and proxies
-# probe RPCs onto it via HTTP/2 stream multiplex.
-build-mwan-opnsense-host: check
-	$(call build_platform,mwan-opnsense-host,linux,amd64,./cmd/mwan-opnsense-host)
 
 tidy:
 	go mod tidy

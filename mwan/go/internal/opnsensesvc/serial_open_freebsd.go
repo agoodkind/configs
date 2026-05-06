@@ -38,7 +38,7 @@ func OpenVirtioSerial(path string) (io.ReadWriteCloser, error) {
 
 	// cfmakeraw(3) equivalent.
 	t.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP |
-		unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON
+		unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON | unix.IXOFF | unix.IXANY
 	t.Oflag &^= unix.OPOST
 	t.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
 	t.Cflag &^= unix.CSIZE | unix.PARENB

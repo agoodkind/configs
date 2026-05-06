@@ -422,13 +422,19 @@ func (d *DeployManager) scheduleReExec(ctx context.Context) {
 	case <-ctx.Done():
 		d.log.WarnContext(ctx, "re-exec: context cancelled, exec anyway")
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		d.log.ErrorContext(ctx, "re-exec: resolve executable failed", "err", err)
+	executable := d.pathOf(BinaryCurrent)
+	if _, err := os.Stat(executable); err != nil {
+		d.log.ErrorContext(ctx, "re-exec: current executable missing", "path", executable, "err", err)
 		return
 	}
-	d.log.WarnContext(ctx, "re-exec: invoking syscall.Exec", "argv0", executable, "argc", len(os.Args))
-	if execErr := d.cfg.ReExecFn(executable, os.Args, os.Environ()); execErr != nil {
+	args := append([]string(nil), os.Args...)
+	if len(args) == 0 {
+		args = []string{executable}
+	} else {
+		args[0] = executable
+	}
+	d.log.WarnContext(ctx, "re-exec: invoking syscall.Exec", "argv0", executable, "argc", len(args))
+	if execErr := d.cfg.ReExecFn(executable, args, os.Environ()); execErr != nil {
 		d.log.ErrorContext(ctx, "re-exec: failed", "err", execErr)
 	}
 }

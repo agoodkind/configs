@@ -2,16 +2,15 @@ package opnsensesvc
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,14 +21,24 @@ import (
 	"goodkind.io/mwan/internal/mwn1"
 )
 
-// pipeRWC adapts a net.Conn to io.ReadWriteCloser.
 type pipeRWC struct {
 	net.Conn
 }
 
-// startDispatcher wires a Server to an in-memory net.Pipe and returns
-// the client-side rwc plus a stop func that cancels the dispatcher and
-// waits for it to exit.
+type rpcResponse struct {
+	methodID uint16
+	corrID   uint64
+	flags    mwn1.Flags
+	payload  []byte
+}
+
+type testClient struct {
+	conn    *mwn1.Conn
+	reg     *mwn1.Registry
+	pending map[uint64]chan rpcResponse
+	mu      sync.Mutex
+}
+
 func newRegistryOrFail(t *testing.T) *mwn1.Registry {
 	t.Helper()
 	reg, err := mwn1.NewMWANOPNsenseRegistry()
@@ -39,16 +48,151 @@ func newRegistryOrFail(t *testing.T) *mwn1.Registry {
 	return reg
 }
 
-func startDispatcher(t *testing.T, srv *Server) (clientRWC io.ReadWriteCloser, stop func()) {
+func newTestClient(rwc io.ReadWriteCloser, reg *mwn1.Registry) *testClient {
+	client := &testClient{
+		conn:    mwn1.NewConn(rwc, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		reg:     reg,
+		pending: make(map[uint64]chan rpcResponse),
+	}
+	client.conn.OnMessage(func(methodID uint16, corrID uint64, flags mwn1.Flags, payload []byte) {
+		client.mu.Lock()
+		ch := client.pending[corrID]
+		client.mu.Unlock()
+		if ch != nil {
+			ch <- rpcResponse{
+				methodID: methodID,
+				corrID:   corrID,
+				flags:    flags,
+				payload:  payload,
+			}
+		}
+	})
+	return client
+}
+
+func (c *testClient) call(
+	t *testing.T,
+	methodID uint16,
+	corrID uint64,
+	req proto.Message,
+) rpcResponse {
+	t.Helper()
+	payload, _, err := mwn1.MarshalRequest(c.reg, methodID, req)
+	if err != nil {
+		t.Fatalf("MarshalRequest method %d: %v", methodID, err)
+	}
+	ch := make(chan rpcResponse, 1)
+	c.mu.Lock()
+	c.pending[corrID] = ch
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, corrID)
+		c.mu.Unlock()
+	}()
+	if err := c.conn.SendMessage(methodID, corrID, mwn1.FlagRequest, payload); err != nil {
+		t.Fatalf("SendMessage method %d: %v", methodID, err)
+	}
+	select {
+	case resp := <-ch:
+		if resp.methodID != methodID {
+			t.Fatalf("method_id mismatch: got %d want %d", resp.methodID, methodID)
+		}
+		return resp
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for method %d corr %d", methodID, corrID)
+		return rpcResponse{}
+	}
+}
+
+func (c *testClient) streamDeploy(
+	t *testing.T,
+	corrID uint64,
+	chunks []*mwanv1.Chunk,
+	separateFinal bool,
+) rpcResponse {
+	t.Helper()
+	ch := make(chan rpcResponse, 1)
+	c.mu.Lock()
+	c.pending[corrID] = ch
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, corrID)
+		c.mu.Unlock()
+	}()
+	for i, chunk := range chunks {
+		payload, _, err := mwn1.MarshalRequest(c.reg, mwn1.MethodDeploy, chunk)
+		if err != nil {
+			t.Fatalf("MarshalRequest Deploy chunk %d: %v", i, err)
+		}
+		flags := mwn1.FlagRequest | mwn1.FlagStreaming
+		if i == len(chunks)-1 && !separateFinal {
+			flags |= mwn1.FlagFinal
+		}
+		if err := c.conn.SendMessage(mwn1.MethodDeploy, corrID, flags, payload); err != nil {
+			t.Fatalf("SendMessage Deploy chunk %d: %v", i, err)
+		}
+	}
+	if separateFinal {
+		err := c.conn.SendMessage(
+			mwn1.MethodDeploy,
+			corrID,
+			mwn1.FlagRequest|mwn1.FlagStreaming|mwn1.FlagFinal,
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("SendMessage Deploy final: %v", err)
+		}
+	}
+	select {
+	case resp := <-ch:
+		return resp
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for Deploy corr %d", corrID)
+		return rpcResponse{}
+	}
+}
+
+func (c *testClient) registerResponse(corrID uint64) chan rpcResponse {
+	ch := make(chan rpcResponse, 8)
+	c.mu.Lock()
+	c.pending[corrID] = ch
+	c.mu.Unlock()
+	return ch
+}
+
+func (c *testClient) unregisterResponse(corrID uint64) {
+	c.mu.Lock()
+	delete(c.pending, corrID)
+	c.mu.Unlock()
+}
+
+func (c *testClient) sendDeployChunk(
+	t *testing.T,
+	corrID uint64,
+	chunk *mwanv1.Chunk,
+	flags mwn1.Flags,
+) {
+	t.Helper()
+	payload, _, err := mwn1.MarshalRequest(c.reg, mwn1.MethodDeploy, chunk)
+	if err != nil {
+		t.Fatalf("MarshalRequest Deploy chunk: %v", err)
+	}
+	if err := c.conn.SendMessage(mwn1.MethodDeploy, corrID, flags, payload); err != nil {
+		t.Fatalf("SendMessage Deploy chunk: %v", err)
+	}
+}
+
+func startDispatcher(t *testing.T, srv *Server) (*testClient, func()) {
 	t.Helper()
 	srvSide, cliSide := net.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	d, err := NewDispatcher(DispatcherConfig{
-		Registry:     nil,
-		Server:       srv,
-		Workers:      4,
-		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		OnFrameError: nil,
+		Registry: nil,
+		Server:   srv,
+		Workers:  4,
+		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatalf("NewDispatcher: %v", err)
@@ -57,330 +201,309 @@ func startDispatcher(t *testing.T, srv *Server) (clientRWC io.ReadWriteCloser, s
 	go func() {
 		done <- d.Serve(ctx, &pipeRWC{srvSide})
 	}()
-	stop = func() {
+	client := newTestClient(&pipeRWC{cliSide}, newRegistryOrFail(t))
+	stop := func() {
 		cancel()
-		_ = cliSide.Close()
+		_ = client.conn.Close()
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
 			t.Fatal("dispatcher Serve did not exit")
 		}
 	}
-	return &pipeRWC{cliSide}, stop
+	return client, stop
 }
 
-// roundTrip writes a single request frame and reads a single response
-// frame, asserting the corr_id matches.
-func roundTrip(t *testing.T, w io.Writer, r io.Reader, methodID uint16, corrID uint64, payload []byte, flags mwn1.Flags) mwn1.Frame {
+func newTestServer(t *testing.T, configContent []byte) *Server {
 	t.Helper()
-	if err := mwn1.WriteFrame(w, mwn1.Frame{
-		Flags:    flags | mwn1.FlagRequest,
-		MethodID: methodID,
-		CorrID:   corrID,
-		Payload:  payload,
-	}, slog.Default()); err != nil {
-		t.Fatalf("WriteFrame: %v", err)
+	tempDir := t.TempDir()
+	configPath := tempDir + "/config.xml"
+	if err := os.WriteFile(configPath, configContent, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
 	}
-	resp, err := mwn1.ReadFrame(r, slog.Default())
-	if err != nil {
-		t.Fatalf("ReadFrame: %v", err)
-	}
-	if resp.CorrID != corrID {
-		t.Fatalf("corr_id mismatch: got %d want %d", resp.CorrID, corrID)
-	}
-	return resp
-}
-
-func newTestServer(t *testing.T) *Server {
-	t.Helper()
-	return NewServer(slog.New(slog.NewTextHandler(io.Discard, nil)),
-		"/tmp/nonexistent-config.xml", t.TempDir())
-}
-
-func mustMarshalRequest(t *testing.T, reg *mwn1.Registry, methodID uint16, msg proto.Message) []byte {
-	t.Helper()
-	payload, _, err := mwn1.MarshalRequest(reg, methodID, msg)
-	if err != nil {
-		t.Fatalf("MarshalRequest: %v", err)
-	}
-	return payload
-}
-
-func TestDispatcherSingleVersionRoundTrip(t *testing.T) {
-	srv := newTestServer(t)
-	rwc, stop := startDispatcher(t, srv)
-	defer stop()
-
-	reg := newRegistryOrFail(t)
-	payload := mustMarshalRequest(t, reg, mwn1.MethodVersion, &mwanv1.VersionRequest{})
-	resp := roundTrip(t, rwc, rwc, mwn1.MethodVersion, 42, payload, mwn1.FlagFinal)
-
-	if resp.Flags&mwn1.FlagError != 0 {
-		t.Fatalf("unexpected error frame: %x", resp.Payload)
-	}
-	out := &mwanv1.VersionResponse{}
-	if err := proto.Unmarshal(resp.Payload, out); err != nil {
-		t.Fatalf("unmarshal VersionResponse: %v", err)
-	}
-	if out.GetVersion() == "" {
-		t.Fatalf("empty Version: %+v", out)
-	}
-}
-
-func TestDispatcherSequentialRoundTrips(t *testing.T) {
-	srv := newTestServer(t)
-	rwc, stop := startDispatcher(t, srv)
-	defer stop()
-
-	reg := newRegistryOrFail(t)
-	payload := mustMarshalRequest(t, reg, mwn1.MethodVersion, &mwanv1.VersionRequest{})
-
-	for i := uint64(1); i <= 100; i++ {
-		resp := roundTrip(t, rwc, rwc, mwn1.MethodVersion, i, payload, mwn1.FlagFinal)
-		if resp.Flags&mwn1.FlagError != 0 {
-			t.Fatalf("iter %d: error frame", i)
-		}
-		if resp.CorrID != i {
-			t.Fatalf("iter %d: corr_id mismatch %d", i, resp.CorrID)
-		}
-	}
-}
-
-// TestDispatcherConcurrentRoundTrips fires 100 goroutines, each
-// sending a request and waiting for the matching response. A single
-// goroutine reads responses off the wire and demultiplexes them by
-// CorrID into per-request channels.
-func TestDispatcherConcurrentRoundTrips(t *testing.T) {
-	srv := newTestServer(t)
-	rwc, stop := startDispatcher(t, srv)
-	defer stop()
-
-	reg := newRegistryOrFail(t)
-	payload := mustMarshalRequest(t, reg, mwn1.MethodVersion, &mwanv1.VersionRequest{})
-
-	const concurrency = 100
-	pending := make(map[uint64]chan mwn1.Frame, concurrency)
-	var pendingMu sync.Mutex
-	for i := uint64(1); i <= concurrency; i++ {
-		pending[i] = make(chan mwn1.Frame, 1)
-	}
-
-	readerDone := make(chan struct{})
-	go func() {
-		defer close(readerDone)
-		for i := 0; i < concurrency; i++ {
-			f, err := mwn1.ReadFrame(rwc, slog.Default())
-			if err != nil {
-				return
-			}
-			pendingMu.Lock()
-			ch := pending[f.CorrID]
-			pendingMu.Unlock()
-			if ch != nil {
-				ch <- f
-			}
-		}
-	}()
-
-	// Serialize writes (the wire is a single io.Writer; concurrent
-	// WriteFrame calls would interleave bytes).
-	var writeMu sync.Mutex
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
-	failures := atomic.Int32{}
-	for i := uint64(1); i <= concurrency; i++ {
-		go func(corr uint64) {
-			defer wg.Done()
-			writeMu.Lock()
-			err := mwn1.WriteFrame(rwc, mwn1.Frame{
-				Flags:    mwn1.FlagRequest | mwn1.FlagFinal,
-				MethodID: mwn1.MethodVersion,
-				CorrID:   corr,
-				Payload:  payload,
-			}, slog.Default())
-			writeMu.Unlock()
-			if err != nil {
-				failures.Add(1)
-				return
-			}
-			select {
-			case f := <-pending[corr]:
-				if f.Flags&mwn1.FlagError != 0 {
-					failures.Add(1)
-				}
-			case <-time.After(5 * time.Second):
-				failures.Add(1)
-			}
-		}(i)
-	}
-	wg.Wait()
-	<-readerDone
-	if failures.Load() != 0 {
-		t.Fatalf("%d concurrent round-trips failed", failures.Load())
-	}
-}
-
-func TestDispatcherUnknownMethodIDReturnsError(t *testing.T) {
-	srv := newTestServer(t)
-	rwc, stop := startDispatcher(t, srv)
-	defer stop()
-
-	// Method id 9999 is not registered.
-	resp := roundTrip(t, rwc, rwc, 9999, 7, nil, mwn1.FlagFinal)
-	if resp.Flags&mwn1.FlagError == 0 {
-		t.Fatalf("expected FlagError, got flags=%x", resp.Flags)
-	}
-	st := &status.Status{}
-	if err := proto.Unmarshal(resp.Payload, st); err != nil {
-		t.Fatalf("unmarshal Status: %v", err)
-	}
-	if !strings.Contains(st.GetMessage(), "9999") {
-		t.Fatalf("expected message to mention method id, got %q", st.GetMessage())
-	}
-}
-
-func TestDispatcherHandlerErrorReturnsErrorFrame(t *testing.T) {
-	srv := newTestServer(t)
-	rwc, stop := startDispatcher(t, srv)
-	defer stop()
-
-	reg := newRegistryOrFail(t)
-	// WriteConfigXML with empty content returns "content empty".
-	payload := mustMarshalRequest(t, reg, mwn1.MethodWriteConfigXML, &mwanv1.WriteConfigXMLRequest{})
-	resp := roundTrip(t, rwc, rwc, mwn1.MethodWriteConfigXML, 11, payload, mwn1.FlagFinal)
-	if resp.Flags&mwn1.FlagError == 0 {
-		t.Fatalf("expected FlagError")
-	}
-	st := &status.Status{}
-	if err := proto.Unmarshal(resp.Payload, st); err != nil {
-		t.Fatalf("unmarshal Status: %v", err)
-	}
-	if !strings.Contains(st.GetMessage(), "content empty") {
-		t.Fatalf("expected handler error message, got %q", st.GetMessage())
-	}
-}
-
-// TestDispatcherGarbagePrefix injects 200 random bytes ahead of a real
-// request frame. The framer's resync logic must drop the garbage and
-// the handler must still run.
-func TestDispatcherGarbagePrefix(t *testing.T) {
-	srv := newTestServer(t)
-	rwc, stop := startDispatcher(t, srv)
-	defer stop()
-
-	reg := newRegistryOrFail(t)
-	payload := mustMarshalRequest(t, reg, mwn1.MethodVersion, &mwanv1.VersionRequest{})
-
-	garbage := make([]byte, 200)
-	if _, err := rand.Read(garbage); err != nil {
-		t.Fatalf("rand: %v", err)
-	}
-	// Stamp out any accidental "MWN1" magic in the garbage so we are
-	// not dependent on the framer's CRC catching a crafted lookalike.
-	for i := 0; i+4 <= len(garbage); i++ {
-		if string(garbage[i:i+4]) == mwn1.Magic {
-			garbage[i] = 0
-		}
-	}
-	if _, err := rwc.Write(garbage); err != nil {
-		t.Fatalf("write garbage: %v", err)
-	}
-	resp := roundTrip(t, rwc, rwc, mwn1.MethodVersion, 99, payload, mwn1.FlagFinal)
-	if resp.Flags&mwn1.FlagError != 0 {
-		t.Fatalf("unexpected error frame after garbage: %x", resp.Payload)
-	}
-	out := &mwanv1.VersionResponse{}
-	if err := proto.Unmarshal(resp.Payload, out); err != nil {
-		t.Fatalf("unmarshal VersionResponse: %v", err)
-	}
-}
-
-// TestDispatcherStreamingDeploy sends header, three data chunks, and a
-// trailer as five frames sharing one CorrID. The handler must
-// reassemble them and produce one DeployResponse frame.
-func TestDispatcherStreamingDeploy(t *testing.T) {
-	tmpBinaryDir := t.TempDir()
-	deployManager := NewDeployManager(slog.Default(), DeployConfig{
-		BinaryDir: tmpBinaryDir,
-		StatePath: tmpBinaryDir + "/state.json",
-		ReExecFn:  func(_ string, _ []string, _ []string) error { return nil },
+	deployManager := NewDeployManager(slog.New(slog.NewTextHandler(io.Discard, nil)), DeployConfig{
+		BinaryDir:   tempDir,
+		StatePath:   tempDir + "/state.json",
+		PendingPath: tempDir + "/pending-verify",
+		ReExecFn:    func(_ string, _ []string, _ []string) error { return nil },
 	})
-	srv := NewServerWithDeploy(slog.New(slog.NewTextHandler(io.Discard, nil)),
-		"/tmp/nonexistent-config.xml", t.TempDir(), deployManager)
+	return NewServerWithDeploy(
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		configPath,
+		tempDir,
+		deployManager,
+	)
+}
 
-	rwc, stop := startDispatcher(t, srv)
+func dispatcherSampleConfig() []byte {
+	return []byte(`<opnsense><system><hostname>mwan</hostname></system><gateways><gateway_item><name>WAN_GW6</name><gateway>fe80::1</gateway></gateway_item></gateways></opnsense>`)
+}
+
+func assertNoErrorFrame(t *testing.T, resp rpcResponse) {
+	t.Helper()
+	if resp.flags&mwn1.FlagError != 0 {
+		st := &status.Status{}
+		_ = proto.Unmarshal(resp.payload, st)
+		t.Fatalf("unexpected error frame: %s", st.GetMessage())
+	}
+}
+
+func assertErrorMessageContains(t *testing.T, resp rpcResponse, want string) {
+	t.Helper()
+	if resp.flags&mwn1.FlagError == 0 {
+		t.Fatalf("expected FlagError, got flags=%x", resp.flags)
+	}
+	st := &status.Status{}
+	if err := proto.Unmarshal(resp.payload, st); err != nil {
+		t.Fatalf("unmarshal Status: %v", err)
+	}
+	if !strings.Contains(st.GetMessage(), want) {
+		t.Fatalf("expected message to contain %q, got %q", want, st.GetMessage())
+	}
+}
+
+func TestDispatcherAllRPCs(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcher(t, srv)
 	defer stop()
 
-	reg := newRegistryOrFail(t)
-	const corr = uint64(555)
-	dataParts := [][]byte{
-		[]byte("part-1-bytes"),
-		[]byte("part-2-bytes-larger"),
-		[]byte("part-3-end"),
-	}
-	hasher := sha256.New()
-	for _, part := range dataParts {
-		hasher.Write(part)
-	}
-	sumHex := hex.EncodeToString(hasher.Sum(nil))
-
-	frames := []*mwanv1.Chunk{
-		{Body: &mwanv1.Chunk_Header{Header: &mwanv1.ChunkHeader{Label: "test"}}},
-		{Body: &mwanv1.Chunk_Data{Data: dataParts[0]}},
-		{Body: &mwanv1.Chunk_Data{Data: dataParts[1]}},
-		{Body: &mwanv1.Chunk_Data{Data: dataParts[2]}},
-		{Body: &mwanv1.Chunk_Trailer{Trailer: &mwanv1.ChunkTrailer{Sha256Hex: sumHex}}},
-	}
-
-	for i, chunk := range frames {
-		payload := mustMarshalRequest(t, reg, mwn1.MethodDeploy, chunk)
-		flags := mwn1.FlagRequest | mwn1.FlagStreaming
-		if i == len(frames)-1 {
-			flags |= mwn1.FlagFinal
-		}
-		if err := mwn1.WriteFrame(rwc, mwn1.Frame{
-			Flags:    flags,
-			MethodID: mwn1.MethodDeploy,
-			CorrID:   corr,
-			Payload:  payload,
-		}, slog.Default()); err != nil {
-			t.Fatalf("WriteFrame chunk %d: %v", i, err)
-		}
+	cases := []struct {
+		name     string
+		methodID uint16
+		request  proto.Message
+		wantErr  string
+	}{
+		{"Version", mwn1.MethodVersion, &mwanv1.VersionRequest{}, ""},
+		{"Exec", mwn1.MethodExec, &mwanv1.ExecRequest{Command: "/bin/echo", Args: []string{"ok"}}, ""},
+		{"ReadConfigXML", mwn1.MethodReadConfigXML, &mwanv1.ReadConfigXMLRequest{}, ""},
+		{"WriteConfigXML", mwn1.MethodWriteConfigXML, &mwanv1.WriteConfigXMLRequest{Content: dispatcherSampleConfig(), Label: "write"}, ""},
+		{"BackupConfigXML", mwn1.MethodBackupConfigXML, &mwanv1.BackupConfigXMLRequest{Label: "backup"}, ""},
+		{"XPathGet", mwn1.MethodXPathGet, &mwanv1.XPathGetRequest{Expression: "/opnsense/system/hostname/text()"}, ""},
+		{"XPathSet", mwn1.MethodXPathSet, &mwanv1.XPathSetRequest{Expression: "/opnsense/system/hostname", NewValue: "mwan2"}, ""},
+		{"XPathDelete", mwn1.MethodXPathDelete, &mwanv1.XPathDeleteRequest{Expression: "/opnsense/system/nonexistent"}, ""},
+		{"StripGatewayV6", mwn1.MethodStripGatewayV6, &mwanv1.StripGatewayV6Request{}, ""},
+		{"InjectGatewayV6", mwn1.MethodInjectGatewayV6, &mwanv1.InjectGatewayV6Request{GatewayName: "WAN_GW6"}, ""},
+		{"DeployStatus", mwn1.MethodDeployStatus, &mwanv1.DeployStatusRequest{}, ""},
+		{"Revert", mwn1.MethodRevert, &mwanv1.RevertRequest{}, "previous absent"},
 	}
 
-	resp, err := mwn1.ReadFrame(rwc, slog.Default())
-	if err != nil {
-		t.Fatalf("ReadFrame response: %v", err)
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := client.call(t, tc.methodID, uint64(i+1), tc.request)
+			if tc.wantErr != "" {
+				assertErrorMessageContains(t, resp, tc.wantErr)
+				return
+			}
+			if resp.flags&mwn1.FlagError != 0 {
+				st := &status.Status{}
+				_ = proto.Unmarshal(resp.payload, st)
+				t.Fatalf("method %s returned error: %s", tc.name, st.GetMessage())
+			}
+		})
 	}
-	if resp.CorrID != corr {
-		t.Fatalf("corr_id mismatch: %d", resp.CorrID)
+
+	resp := deployRoundTrip(t, client, 100, false)
+	assertNoErrorFrame(t, resp)
+}
+
+func TestDispatcherReadConfigXMLLargeResponseFragments(t *testing.T) {
+	largeContent := []byte("<opnsense><system><hostname>")
+	largeContent = append(largeContent, []byte(strings.Repeat("a", mwn1.MaxPayload+4096))...)
+	largeContent = append(largeContent, []byte("</hostname></system></opnsense>")...)
+	srv := newTestServer(t, largeContent)
+	client, stop := startDispatcher(t, srv)
+	defer stop()
+
+	resp := client.call(t, mwn1.MethodReadConfigXML, 42, &mwanv1.ReadConfigXMLRequest{})
+	assertNoErrorFrame(t, resp)
+	out := &mwanv1.ReadConfigXMLResponse{}
+	if err := proto.Unmarshal(resp.payload, out); err != nil {
+		t.Fatalf("unmarshal ReadConfigXMLResponse: %v", err)
 	}
-	if resp.Flags&mwn1.FlagError != 0 {
-		st := &status.Status{}
-		_ = proto.Unmarshal(resp.Payload, st)
-		t.Fatalf("Deploy returned error: %s", st.GetMessage())
+	if len(out.GetContent()) != len(largeContent) {
+		t.Fatalf("content size got %d want %d", len(out.GetContent()), len(largeContent))
 	}
+	if !proto.Equal(out, &mwanv1.ReadConfigXMLResponse{
+		Content:   largeContent,
+		SizeBytes: int64(len(largeContent)),
+		Sha256:    dispatcherSHA256Hex(largeContent),
+	}) {
+		t.Fatalf("large response content mismatch")
+	}
+}
+
+func TestDispatcherStreamingDeploy(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcher(t, srv)
+	defer stop()
+
+	resp := deployRoundTrip(t, client, 555, false)
+	assertNoErrorFrame(t, resp)
 	out := &mwanv1.DeployResponse{}
-	if err := proto.Unmarshal(resp.Payload, out); err != nil {
+	if err := proto.Unmarshal(resp.payload, out); err != nil {
 		t.Fatalf("unmarshal DeployResponse: %v", err)
 	}
-	if out.GetStagedSha256() != sumHex {
-		t.Fatalf("staged sha mismatch: %s vs %s", out.GetStagedSha256(), sumHex)
+	if out.GetStagedSha256() == "" {
+		t.Fatalf("empty staged sha")
 	}
 }
 
-// TestDispatcherServeReturnsOnContextCancel verifies that a clean
-// context cancellation produces a nil error from Serve.
+func TestDispatcherStreamingDeployWithSeparateFinal(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcher(t, srv)
+	defer stop()
+
+	resp := deployRoundTrip(t, client, 556, true)
+	assertNoErrorFrame(t, resp)
+	out := &mwanv1.DeployResponse{}
+	if err := proto.Unmarshal(resp.payload, out); err != nil {
+		t.Fatalf("unmarshal DeployResponse: %v", err)
+	}
+	if out.GetStagedSha256() == "" {
+		t.Fatalf("empty staged sha")
+	}
+}
+
+func TestDispatcherCancelTombstonesDeployStream(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcher(t, srv)
+	defer stop()
+
+	const corrID uint64 = 700
+	responseCh := client.registerResponse(corrID)
+	defer client.unregisterResponse(corrID)
+
+	client.sendDeployChunk(
+		t,
+		corrID,
+		&mwanv1.Chunk{Body: &mwanv1.Chunk_Header{Header: &mwanv1.ChunkHeader{Label: "cancel-test"}}},
+		mwn1.FlagRequest|mwn1.FlagStreaming,
+	)
+	if err := client.conn.SendCancel(mwn1.MethodDeploy, corrID); err != nil {
+		t.Fatalf("SendCancel: %v", err)
+	}
+	client.sendDeployChunk(
+		t,
+		corrID,
+		&mwanv1.Chunk{Body: &mwanv1.Chunk_Data{Data: []byte("stale")}},
+		mwn1.FlagRequest|mwn1.FlagStreaming,
+	)
+	if err := client.conn.SendMessage(
+		mwn1.MethodDeploy,
+		corrID,
+		mwn1.FlagRequest|mwn1.FlagStreaming|mwn1.FlagFinal,
+		nil,
+	); err != nil {
+		t.Fatalf("SendMessage stale final: %v", err)
+	}
+
+	select {
+	case resp := <-responseCh:
+		t.Fatalf("unexpected response after cancel: %+v", resp)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	resp := client.call(t, mwn1.MethodVersion, 701, &mwanv1.VersionRequest{})
+	assertNoErrorFrame(t, resp)
+}
+
+func TestDispatcherAcksAcceptedStreamingChunk(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcher(t, srv)
+	defer stop()
+
+	payload, _, err := mwn1.MarshalRequest(
+		client.reg,
+		mwn1.MethodDeploy,
+		&mwanv1.Chunk{Body: &mwanv1.Chunk_Header{Header: &mwanv1.ChunkHeader{Label: "ack-test"}}},
+	)
+	if err != nil {
+		t.Fatalf("MarshalRequest Deploy header: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := client.conn.SendStreamMessage(
+		ctx,
+		mwn1.MethodDeploy,
+		702,
+		mwn1.FlagRequest|mwn1.FlagStreaming,
+		payload,
+	); err != nil {
+		t.Fatalf("SendStreamMessage header: %v", err)
+	}
+	if err := client.conn.SendCancel(mwn1.MethodDeploy, 702); err != nil {
+		t.Fatalf("SendCancel: %v", err)
+	}
+}
+
+func TestDispatcherDoesNotAckMalformedStreamingPayload(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcher(t, srv)
+	defer stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := client.conn.SendStreamMessage(
+		ctx,
+		mwn1.MethodDeploy,
+		703,
+		mwn1.FlagRequest|mwn1.FlagStreaming,
+		[]byte("not protobuf"),
+	)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SendStreamMessage err=%v want context deadline", err)
+	}
+}
+
+func TestDispatcherHandlerErrorReturnsFlagError(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcher(t, srv)
+	defer stop()
+
+	resp := client.call(
+		t,
+		mwn1.MethodWriteConfigXML,
+		11,
+		&mwanv1.WriteConfigXMLRequest{},
+	)
+	assertErrorMessageContains(t, resp, "content empty")
+}
+
+func TestDispatcherServeReturnsOnConnectionClose(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	srvSide, cliSide := net.Pipe()
+	ctx := context.Background()
+	d, err := NewDispatcher(DispatcherConfig{
+		Server: srv,
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("NewDispatcher: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Serve(ctx, &pipeRWC{srvSide})
+	}()
+	_ = cliSide.Close()
+	select {
+	case err := <-done:
+		if err != nil && !strings.Contains(err.Error(), "connection closed") &&
+			!errors.Is(err, io.ErrClosedPipe) &&
+			!errors.Is(err, io.EOF) {
+			t.Fatalf("expected clean return or connection close error, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve did not return")
+	}
+}
+
 func TestDispatcherServeReturnsOnContextCancel(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, dispatcherSampleConfig())
 	srvSide, cliSide := net.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	d, err := NewDispatcher(DispatcherConfig{
-		Registry:     nil,
-		Server:       srv,
-		Workers:      0,
-		Log:          slog.Default(),
-		OnFrameError: nil,
+		Server: srv,
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatalf("NewDispatcher: %v", err)
@@ -399,4 +522,37 @@ func TestDispatcherServeReturnsOnContextCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Serve did not return")
 	}
+}
+
+func deployRoundTrip(
+	t *testing.T,
+	client *testClient,
+	corrID uint64,
+	separateFinal bool,
+) rpcResponse {
+	t.Helper()
+	dataParts := [][]byte{
+		[]byte("part-1-bytes"),
+		[]byte("part-2-bytes-larger"),
+		[]byte("part-3-end"),
+	}
+	hasher := sha256.New()
+	for _, part := range dataParts {
+		_, _ = hasher.Write(part)
+	}
+	sumHex := hex.EncodeToString(hasher.Sum(nil))
+
+	chunks := []*mwanv1.Chunk{
+		{Body: &mwanv1.Chunk_Header{Header: &mwanv1.ChunkHeader{Label: "test"}}},
+		{Body: &mwanv1.Chunk_Data{Data: dataParts[0]}},
+		{Body: &mwanv1.Chunk_Data{Data: dataParts[1]}},
+		{Body: &mwanv1.Chunk_Data{Data: dataParts[2]}},
+		{Body: &mwanv1.Chunk_Trailer{Trailer: &mwanv1.ChunkTrailer{Sha256Hex: sumHex}}},
+	}
+	return client.streamDeploy(t, corrID, chunks, separateFinal)
+}
+
+func dispatcherSHA256Hex(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }

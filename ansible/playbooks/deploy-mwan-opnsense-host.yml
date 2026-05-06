@@ -1,0 +1,48 @@
+---
+# Deploy the Proxmox-host-side mwan-opnsense bridge to the testbed.
+#
+# Usage:
+#   ansible-playbook playbooks/deploy-mwan-opnsense-host.yml \
+#     -e mwan_opnsense_host_target=testbed
+
+- name: Resolve OPNsense host bridge target
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Validate target
+      ansible.builtin.assert:
+        that:
+          - mwan_opnsense_host_target is defined
+          - mwan_opnsense_host_target == 'testbed'
+        fail_msg: >-
+          Only -e mwan_opnsense_host_target=testbed is allowed for this
+          host bridge deploy playbook.
+
+    - name: Add suburban Proxmox host to inventory
+      ansible.builtin.add_host:
+        name: mwan_opnsense_host_testbed
+        groups: mwan_opnsense_host_targets
+        ansible_host: 10.240.0.148
+        ansible_user: root
+
+- name: Deploy mwan-opnsense-host bridge
+  hosts: mwan_opnsense_host_targets
+  gather_facts: false
+  vars:
+    mwan_opnsense_host_binary_local: "{{ playbook_dir }}/../../mwan/go/bin/mwan-linux"
+    mwan_opnsense_host_vmid: 101
+    mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
+  tasks:
+    - name: Verify bridge binary exists locally
+      ansible.builtin.stat:
+        path: "{{ mwan_opnsense_host_binary_local }}"
+      register: bridge_bin_stat
+      delegate_to: localhost
+
+    - name: Fail if bridge binary is missing
+      ansible.builtin.fail:
+        msg: "build the monolith first: cd mwan/go && make build-linux"
+      when: not bridge_bin_stat.stat.exists
+
+    - name: Run host bridge install task
+      ansible.builtin.include_tasks: tasks/mwan-opnsense-host-deploy.yml

@@ -27,7 +27,7 @@ const (
 	pidfileRunning
 )
 
-// runServe starts the gRPC daemon with the virtio-serial-pci listener.
+// runServe starts the MWN1 dispatcher daemon with the virtio-serial-pci listener.
 // There is exactly one listener and exactly one peer. Auth is unix
 // socket permissions on the host side (root-only), so the daemon does
 // not authenticate at the application layer.
