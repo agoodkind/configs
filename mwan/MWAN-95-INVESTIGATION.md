@@ -332,7 +332,8 @@ Components:
 
 Cross-platform compile:
 - mwan-opnsense: existing `make build-mwan-opnsense` (FreeBSD/amd64).
-- mwan-opnsense-host: NEW `make build-mwan-opnsense-host` (Linux/amd64).
+- host bridge: existing `make build-linux` monolith (Linux/amd64), invoked
+  as `mwan opnsense-host serve`.
 - Both fold through the existing `build_platform` macro.
 
 Deployment:

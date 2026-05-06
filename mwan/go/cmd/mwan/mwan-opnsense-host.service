@@ -1,15 +1,15 @@
 [Unit]
-Description=MWAN OPNsense host bridge (gRPC over qemu virtio-serial)
+Description=MWAN OPNsense host bridge (MWN1 over qemu virtio-serial)
 Documentation=file:///root/configs/mwan/MWAN-95-INVESTIGATION.md
 After=network.target qemu-server.service
 Wants=network.target
 
 [Service]
 Type=simple
-# Defaults assume the testbed VM 101 chardev path. Override with a
+# Defaults assume the testbed VM 101 MWN1 chardev path. Override with a
 # drop-in at /etc/systemd/system/mwan-opnsense-host.service.d/listen.conf
 # for prod (VM 113) or any other target.
-ExecStart=/usr/local/bin/mwan-opnsense-host serve \
+ExecStart=/usr/local/bin/mwan opnsense-host serve \
     -upstream unix:///var/run/qemu-server/101.mwanrpc \
     -listen /var/run/mwan-opnsense.sock
 Restart=always

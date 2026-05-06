@@ -10,12 +10,14 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"strings"
 	"sync"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
-	"goodkind.io/mwan/internal/chunkedstream"
 	"goodkind.io/mwan/internal/version"
 )
+
+var errDeployChunkProtocol = errors.New("deploy chunk protocol error")
 
 // clampToInt32 saturates n to the int32 range. Used for proto fields
 // that carry small counts but originate from int-typed callees.
@@ -27,6 +29,93 @@ func clampToInt32(n int) int32 {
 		return math.MinInt32
 	}
 	return int32(n)
+}
+
+type deployChunkWriter struct {
+	destination io.Writer
+	hash        io.Writer
+	header      *mwanv1.ChunkHeader
+	bytesIn     int64
+	headerSeen  bool
+	done        bool
+	checksumOK  bool
+	computedHex string
+	trailerHex  string
+	hashSum     func() []byte
+}
+
+func newDeployChunkWriter(destination io.Writer) *deployChunkWriter {
+	hash := sha256.New()
+	return &deployChunkWriter{
+		destination: destination,
+		hash:        hash,
+		header:      nil,
+		bytesIn:     0,
+		headerSeen:  false,
+		done:        false,
+		checksumOK:  false,
+		computedHex: "",
+		trailerHex:  "",
+		hashSum: func() []byte {
+			return hash.Sum(nil)
+		},
+	}
+}
+
+func (w *deployChunkWriter) Write(chunk *mwanv1.Chunk) error {
+	if chunk == nil {
+		return deployChunkProtocolError("nil chunk")
+	}
+	if w.done {
+		return deployChunkProtocolError("chunk after trailer")
+	}
+	switch body := chunk.GetBody().(type) {
+	case *mwanv1.Chunk_Header:
+		if w.headerSeen {
+			return deployChunkProtocolError("duplicate header")
+		}
+		w.headerSeen = true
+		w.header = body.Header
+		return nil
+	case *mwanv1.Chunk_Data:
+		if !w.headerSeen {
+			return deployChunkProtocolError("data before header")
+		}
+		return w.writeData(body.Data)
+	case *mwanv1.Chunk_Trailer:
+		if !w.headerSeen {
+			return deployChunkProtocolError("trailer before header")
+		}
+		w.done = true
+		w.computedHex = hex.EncodeToString(w.hashSum())
+		w.trailerHex = body.Trailer.GetSha256Hex()
+		w.checksumOK = strings.EqualFold(w.trailerHex, w.computedHex)
+		return nil
+	default:
+		return deployChunkProtocolError("unknown chunk body")
+	}
+}
+
+func (w *deployChunkWriter) writeData(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if _, err := w.destination.Write(data); err != nil {
+		slog.Error("Deploy: write chunk data failed", "err", err, "bytes", len(data))
+		return fmt.Errorf("write deploy chunk data: %w", err)
+	}
+	if _, err := w.hash.Write(data); err != nil {
+		slog.Error("Deploy: hash chunk data failed", "err", err, "bytes", len(data))
+		return fmt.Errorf("hash deploy chunk data: %w", err)
+	}
+	w.bytesIn += int64(len(data))
+	return nil
+}
+
+func deployChunkProtocolError(reason string) error {
+	wrapped := fmt.Errorf("%w: %s", errDeployChunkProtocol, reason)
+	slog.Warn("Deploy: chunk protocol violation", "err", wrapped, "reason", reason)
+	return wrapped
 }
 
 // Server implements the MWANOPNsense RPC handlers. It is no longer a
@@ -441,7 +530,7 @@ func (s *Server) Deploy(ctx context.Context, chunks <-chan *mwanv1.Chunk) (*mwan
 		}
 	}()
 
-	writer := chunkedstream.NewWriter(tmpFile)
+	writer := newDeployChunkWriter(tmpFile)
 	chunkCount := 0
 loop:
 	for {
@@ -457,7 +546,7 @@ loop:
 			chunkCount++
 			if writeErr := writer.Write(chunk); writeErr != nil {
 				_ = tmpFile.Close()
-				if errors.Is(writeErr, chunkedstream.ErrProtocol) {
+				if errors.Is(writeErr, errDeployChunkProtocol) {
 					s.log.ErrorContext(ctx, "Deploy: chunk protocol error", "err", writeErr)
 					return nil, fmt.Errorf("chunk: %w", writeErr)
 				}
@@ -475,28 +564,28 @@ loop:
 		s.log.ErrorContext(ctx, "Deploy: temp close failed", "err", closeErr, "path", tmpPath)
 		return nil, fmt.Errorf("close temp: %w", closeErr)
 	}
-	if !writer.Done() {
+	if !writer.done {
 		return nil, errors.New("Deploy: stream ended before trailer")
 	}
-	if !writer.ChecksumOK() {
+	if !writer.checksumOK {
 		mismatchErr := fmt.Errorf("Deploy: sha256 mismatch: got %s want %s",
-			writer.Sha256Hex(), writer.TrailerSha256Hex())
+			writer.computedHex, writer.trailerHex)
 		s.log.ErrorContext(ctx, "Deploy: sha256 mismatch on stream",
 			"err", mismatchErr,
-			"got", writer.Sha256Hex(),
-			"want", writer.TrailerSha256Hex())
+			"got", writer.computedHex,
+			"want", writer.trailerHex)
 		return nil, mismatchErr
 	}
-	header := writer.Header()
+	header := writer.header
 	versionStr := header.GetAttrs()[DeployAttrVersionStr]
 	if versionStr == "" {
 		versionStr = header.GetLabel()
 	}
-	bytesWritten := writer.BytesWritten()
+	bytesWritten := writer.bytesIn
 	s.log.InfoContext(ctx, "opnsensesvc: Deploy stream complete",
 		"bytes", bytesWritten, "version_str", versionStr)
 
-	previousPath, stagedSHA256, err := s.deploy.DeployFromPath(ctx, tmpPath, writer.Sha256Hex(), versionStr)
+	previousPath, stagedSHA256, err := s.deploy.DeployFromPath(ctx, tmpPath, writer.computedHex, versionStr)
 	if err != nil {
 		s.log.ErrorContext(ctx, "Deploy: failed", "err", err)
 		return nil, fmt.Errorf("deploy: %w", err)

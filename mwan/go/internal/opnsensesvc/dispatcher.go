@@ -48,8 +48,9 @@ type Dispatcher struct {
 	// streamMu guards streams. Streams maps CorrID to the in-progress
 	// chunk channel for an active client-streaming RPC. The handler
 	// goroutine reads chunks until the channel is closed (FlagFinal).
-	streamMu sync.Mutex
-	streams  map[uint64]*streamBuffer
+	streamMu        sync.Mutex
+	streams         map[uint64]*streamBuffer
+	canceledStreams map[uint64]struct{}
 
 	// streamWG tracks active streaming-handler goroutines so Serve can
 	// drain them on shutdown.
@@ -78,8 +79,9 @@ type DispatcherConfig struct {
 // closed (FlagFinal). cancel aborts the handler when the dispatcher
 // shuts down.
 type streamBuffer struct {
-	ch     chan *mwanv1.Chunk
-	cancel context.CancelFunc
+	ch        chan *mwanv1.Chunk
+	cancel    context.CancelFunc
+	closeOnce sync.Once
 }
 
 // dispatchJob carries a fully-decoded unary request to a worker
@@ -118,16 +120,17 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 		log = slog.Default()
 	}
 	return &Dispatcher{
-		registry:     registry,
-		server:       cfg.Server,
-		log:          log,
-		workers:      workers,
-		onFrameError: cfg.OnFrameError,
-		streamMu:     sync.Mutex{},
-		streams:      make(map[uint64]*streamBuffer),
-		streamWG:     sync.WaitGroup{},
-		frameCh:      make(chan dispatchJob, workers*2),
-		conn:         nil,
+		registry:        registry,
+		server:          cfg.Server,
+		log:             log,
+		workers:         workers,
+		onFrameError:    cfg.OnFrameError,
+		streamMu:        sync.Mutex{},
+		streams:         make(map[uint64]*streamBuffer),
+		canceledStreams: make(map[uint64]struct{}),
+		streamWG:        sync.WaitGroup{},
+		frameCh:         make(chan dispatchJob, workers*2),
+		conn:            nil,
 	}, nil
 }
 
@@ -142,7 +145,8 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 		return errors.New("dispatcher: rw required")
 	}
 
-	d.conn = mwn1.NewConn(rw, d.log, d.onFrame)
+	d.conn = mwn1.NewConn(rw, d.log)
+	d.conn.OnMessage(d.onMessage)
 
 	// Worker pool. Each worker pulls jobs off frameCh and runs to
 	// completion. Workers exit when frameCh is closed.
@@ -188,6 +192,7 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 	d.streamMu.Lock()
 	for corrID, buf := range d.streams {
 		buf.cancel()
+		buf.close()
 		delete(d.streams, corrID)
 	}
 	d.streamMu.Unlock()
@@ -203,71 +208,96 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 	return fmt.Errorf("dispatcher: conn err: %w", serveErr)
 }
 
-// onFrame is the per-frame callback wired into [mwn1.Conn]. It runs on
-// the Conn reader goroutine and must not block.
-func (d *Dispatcher) onFrame(frame mwn1.Frame) {
-	if frame.Flags&mwn1.FlagRequest == 0 {
+// onMessage is the complete-message callback wired into [mwn1.Conn].
+// It runs on the Conn reader goroutine and must not block.
+func (d *Dispatcher) onMessage(methodID uint16, corrID uint64, flags mwn1.Flags, payload []byte) {
+	if flags&mwn1.FlagCancel != 0 {
+		d.cancelStream(corrID)
+		return
+	}
+
+	if flags&mwn1.FlagRequest == 0 {
 		// Spurious response frame on the daemon side. Log and drop; the
 		// daemon never initiates requests.
 		d.log.Warn("dispatcher: dropped non-request frame",
-			"method_id", frame.MethodID,
-			"corr_id", frame.CorrID,
-			"flags", uint8(frame.Flags))
+			"method_id", methodID,
+			"corr_id", corrID,
+			"flags", uint8(flags))
 		return
 	}
 
-	if frame.Flags&mwn1.FlagStreaming != 0 {
-		d.handleStreamFrame(frame)
+	if flags&mwn1.FlagStreaming != 0 {
+		d.handleStreamMessage(methodID, corrID, flags, payload)
 		return
 	}
 
-	// Unary request. Must have FlagFinal.
-	req, err := mwn1.UnmarshalRequest(d.registry, frame.MethodID, frame.Payload)
+	req, err := mwn1.UnmarshalRequest(d.registry, methodID, payload)
 	if err != nil {
 		d.reportError(err)
-		d.sendError(frame.MethodID, frame.CorrID, err)
+		d.sendError(methodID, corrID, err)
 		return
 	}
 	d.frameCh <- dispatchJob{
-		methodID: frame.MethodID,
-		corrID:   frame.CorrID,
+		methodID: methodID,
+		corrID:   corrID,
 		req:      req,
 	}
 }
 
-// handleStreamFrame routes a streaming-request frame into the
+// handleStreamMessage routes a streaming-request message into the
 // per-CorrID chunk channel. The first frame for a new CorrID spawns a
 // handler goroutine that consumes the channel; subsequent frames push
-// chunks in. A FlagFinal frame closes the channel after pushing its
-// own chunk, which lets the handler observe end-of-stream and produce
-// the response. Currently only Deploy uses streaming; other method ids
-// in a streaming frame are rejected.
-func (d *Dispatcher) handleStreamFrame(frame mwn1.Frame) {
-	if frame.MethodID != mwn1.MethodDeploy {
-		err := fmt.Errorf("dispatcher: streaming not supported for method id %d", frame.MethodID)
-		d.reportError(err)
-		d.sendError(frame.MethodID, frame.CorrID, err)
+// chunks in. An empty FlagFinal message closes the channel, which lets
+// the handler observe end-of-stream and produce the response. Currently
+// only Deploy uses streaming; other method ids in a streaming frame are
+// rejected.
+func (d *Dispatcher) handleStreamMessage(
+	methodID uint16,
+	corrID uint64,
+	flags mwn1.Flags,
+	payload []byte,
+) {
+	if d.isCanceled(corrID) {
 		return
 	}
 
-	msg, err := mwn1.UnmarshalRequest(d.registry, frame.MethodID, frame.Payload)
-	if err != nil {
+	if methodID != mwn1.MethodDeploy {
+		err := fmt.Errorf("dispatcher: streaming not supported for method id %d", methodID)
 		d.reportError(err)
-		d.sendError(frame.MethodID, frame.CorrID, err)
+		d.sendError(methodID, corrID, err)
+		return
+	}
+
+	if flags&mwn1.FlagFinal != 0 && len(payload) == 0 {
+		if d.closeStream(methodID, corrID) {
+			d.ackStreamMessage(methodID, corrID)
+		}
+		return
+	}
+
+	msg, err := mwn1.UnmarshalRequest(d.registry, methodID, payload)
+	if err != nil {
+		d.log.Warn("dispatcher: stream unmarshal failed",
+			"method_id", methodID,
+			"corr_id", corrID,
+			"payload_len", len(payload),
+			"err", err)
+		d.reportError(err)
+		d.sendError(methodID, corrID, err)
 		return
 	}
 	chunk, ok := msg.(*mwanv1.Chunk)
 	if !ok {
 		err := fmt.Errorf("dispatcher: Deploy frame payload not a Chunk: %T", msg)
 		d.reportError(err)
-		d.sendError(frame.MethodID, frame.CorrID, err)
+		d.sendError(methodID, corrID, err)
 		return
 	}
 
-	final := frame.Flags&mwn1.FlagFinal != 0
+	final := flags&mwn1.FlagFinal != 0
 
 	d.streamMu.Lock()
-	buf, exists := d.streams[frame.CorrID]
+	buf, exists := d.streams[corrID]
 	if !exists {
 		// First frame for this CorrID. Spin up the handler goroutine
 		// before publishing the channel so subsequent frames find a live
@@ -277,10 +307,8 @@ func (d *Dispatcher) handleStreamFrame(frame mwn1.Frame) {
 			ch:     make(chan *mwanv1.Chunk, 16),
 			cancel: cancel,
 		}
-		d.streams[frame.CorrID] = buf
+		d.streams[corrID] = buf
 
-		methodID := frame.MethodID
-		corrID := frame.CorrID
 		ch := buf.ch
 		d.streamWG.Go(func() {
 			defer cancel()
@@ -294,7 +322,13 @@ func (d *Dispatcher) handleStreamFrame(frame mwn1.Frame) {
 			}()
 			resp, handlerErr := d.server.Deploy(ctx, ch)
 			if handlerErr != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				d.sendError(methodID, corrID, handlerErr)
+				return
+			}
+			if ctx.Err() != nil {
 				return
 			}
 			if sendErr := d.sendResponse(methodID, corrID, resp); sendErr != nil {
@@ -304,7 +338,7 @@ func (d *Dispatcher) handleStreamFrame(frame mwn1.Frame) {
 		})
 	}
 	if final {
-		delete(d.streams, frame.CorrID)
+		delete(d.streams, corrID)
 	}
 	ch := buf.ch
 	d.streamMu.Unlock()
@@ -314,16 +348,89 @@ func (d *Dispatcher) handleStreamFrame(frame mwn1.Frame) {
 	// dispatcher ctx via a non-blocking guard around send: if the
 	// per-stream context is cancelled mid-push, drop with a log so the
 	// reader keeps moving.
-	select {
-	case ch <- chunk:
-	case <-time.After(streamPushTimeout):
-		d.log.Warn("dispatcher push timeout",
-			"method_id", frame.MethodID, "corr_id", frame.CorrID)
+	if ok := sendStreamChunk(ch, chunk); !ok {
+		d.log.Warn("dispatcher stream closed before chunk push",
+			"method_id", methodID, "corr_id", corrID)
+		return
+	}
+	if !d.ackStreamMessage(methodID, corrID) {
+		return
 	}
 
 	if final {
-		close(ch)
+		buf.close()
 	}
+}
+
+func sendStreamChunk(ch chan<- *mwanv1.Chunk, chunk *mwanv1.Chunk) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	select {
+	case ch <- chunk:
+		return true
+	case <-time.After(streamPushTimeout):
+		return false
+	}
+}
+
+func (d *Dispatcher) closeStream(methodID uint16, corrID uint64) bool {
+	d.streamMu.Lock()
+	if _, canceled := d.canceledStreams[corrID]; canceled {
+		d.streamMu.Unlock()
+		return false
+	}
+	buf, exists := d.streams[corrID]
+	if exists {
+		delete(d.streams, corrID)
+	}
+	d.streamMu.Unlock()
+	if !exists {
+		err := fmt.Errorf("dispatcher: final streaming frame for unknown corr_id %d", corrID)
+		d.reportError(err)
+		d.sendError(methodID, corrID, err)
+		return false
+	}
+	buf.close()
+	return true
+}
+
+func (d *Dispatcher) ackStreamMessage(methodID uint16, corrID uint64) bool {
+	if err := d.conn.SendAck(methodID, corrID); err != nil {
+		if !errors.Is(err, mwn1.ErrClosed) {
+			d.log.Warn("dispatcher: stream ACK failed",
+				"err", err, "method_id", methodID, "corr_id", corrID)
+		}
+		return false
+	}
+	return true
+}
+
+func (d *Dispatcher) cancelStream(corrID uint64) {
+	d.streamMu.Lock()
+	buf, exists := d.streams[corrID]
+	if exists {
+		delete(d.streams, corrID)
+		buf.cancel()
+		buf.close()
+	}
+	d.canceledStreams[corrID] = struct{}{}
+	d.streamMu.Unlock()
+}
+
+func (d *Dispatcher) isCanceled(corrID uint64) bool {
+	d.streamMu.Lock()
+	defer d.streamMu.Unlock()
+	_, canceled := d.canceledStreams[corrID]
+	return canceled
+}
+
+func (b *streamBuffer) close() {
+	b.closeOnce.Do(func() {
+		close(b.ch)
+	})
 }
 
 // handleJob dispatches one assembled request to its handler and writes
@@ -410,12 +517,7 @@ func (d *Dispatcher) sendResponse(methodID uint16, corrID uint64, resp proto.Mes
 		// is not left waiting forever.
 		return d.sendError(methodID, corrID, err)
 	}
-	if err := d.conn.Send(mwn1.Frame{
-		Flags:    mwn1.FlagFinal,
-		MethodID: methodID,
-		CorrID:   corrID,
-		Payload:  payload,
-	}); err != nil {
+	if err := d.conn.SendMessage(methodID, corrID, mwn1.FlagResponse, payload); err != nil {
 		d.log.Error("dispatcher: send response failed",
 			"err", err, "method_id", methodID, "corr_id", corrID)
 		return fmt.Errorf("dispatcher: send response: %w", err)
@@ -429,12 +531,8 @@ func (d *Dispatcher) sendResponse(methodID uint16, corrID uint64, resp proto.Mes
 // is sent so the caller can at least observe the error bit.
 func (d *Dispatcher) sendError(methodID uint16, corrID uint64, handlerErr error) error {
 	payload := marshalStatus(handlerErr)
-	if err := d.conn.Send(mwn1.Frame{
-		Flags:    mwn1.FlagFinal | mwn1.FlagError,
-		MethodID: methodID,
-		CorrID:   corrID,
-		Payload:  payload,
-	}); err != nil {
+	flags := mwn1.FlagResponse | mwn1.FlagError
+	if err := d.conn.SendMessage(methodID, corrID, flags, payload); err != nil {
 		d.log.Warn("dispatcher: send error frame failed",
 			"err", err,
 			"method_id", methodID,

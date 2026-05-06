@@ -13,19 +13,22 @@ import (
 )
 
 // subcommand is the typed enum of mwan subcommands that take a config.
-// "health-check" and "opnsense-probe" are config-less and dispatched
-// before this switch.
+// "health-check", "opnsense-probe", and "opnsense-host" are
+// config-less and dispatched before this switch.
 type subcommand string
 
 const (
-	subcmdAgent    subcommand = "agent"
-	subcmdWatchdog subcommand = "watchdog"
-	subcmdIfmgr    subcommand = "ifmgr"
+	subcmdAgent         subcommand = "agent"
+	subcmdWatchdog      subcommand = "watchdog"
+	subcmdIfmgr         subcommand = "ifmgr"
+	subcmdHealthCheck   subcommand = "health-check"
+	subcmdOPNsenseHost  subcommand = "opnsense-host"
+	subcmdOPNsenseProbe subcommand = "opnsense-probe"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense-probe> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense-probe|opnsense-host> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -40,19 +43,22 @@ func main() {
 		"subcommand", sub)
 
 	// Subcommands that don't need config
-	if sub == "health-check" {
+	switch subcommand(sub) {
+	case subcmdHealthCheck:
 		if err := healthcheck.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "mwan health-check: %v\n", err)
 			os.Exit(1)
 		}
 		return
-	}
-	if sub == "opnsense-probe" {
+	case subcmdOPNsenseProbe:
 		if err := runOPNsenseProbe(os.Args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "mwan opnsense-probe: %v\n", err)
 			os.Exit(1)
 		}
 		return
+	case subcmdOPNsenseHost:
+		os.Exit(runOPNsenseHost(os.Args[1:]))
+	case subcmdAgent, subcmdWatchdog, subcmdIfmgr:
 	}
 
 	cfg, err := config.Load()
@@ -74,6 +80,9 @@ func main() {
 		}
 	case subcmdIfmgr:
 		runErr = runIfMgr(cfg)
+	case subcmdHealthCheck, subcmdOPNsenseProbe, subcmdOPNsenseHost:
+		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", sub)
+		os.Exit(1)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", sub)
 		os.Exit(1)
