@@ -78,7 +78,7 @@ func roundTrip(t *testing.T, w io.Writer, r io.Reader, methodID uint16, corrID u
 		MethodID: methodID,
 		CorrID:   corrID,
 		Payload:  payload,
-	}); err != nil {
+	}, slog.Default()); err != nil {
 		t.Fatalf("WriteFrame: %v", err)
 	}
 	resp, err := mwn1.ReadFrame(r, slog.Default())
@@ -197,7 +197,7 @@ func TestDispatcherConcurrentRoundTrips(t *testing.T) {
 				MethodID: mwn1.MethodVersion,
 				CorrID:   corr,
 				Payload:  payload,
-			})
+			}, slog.Default())
 			writeMu.Unlock()
 			if err != nil {
 				failures.Add(1)
@@ -343,7 +343,7 @@ func TestDispatcherStreamingDeploy(t *testing.T) {
 			MethodID: mwn1.MethodDeploy,
 			CorrID:   corr,
 			Payload:  payload,
-		}); err != nil {
+		}, slog.Default()); err != nil {
 			t.Fatalf("WriteFrame chunk %d: %v", i, err)
 		}
 	}
