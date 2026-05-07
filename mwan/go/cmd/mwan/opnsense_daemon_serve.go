@@ -12,11 +12,15 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"goodkind.io/mwan/internal/opnsensesvc"
 )
 
-const defaultPidfile = "/var/run/mwan_opnsense.pid"
+const (
+	defaultPidfile        = "/var/run/mwan_opnsense.pid"
+	rcEnabledCheckTimeout = 5 * time.Second
+)
 
 type pidfileState int
 
@@ -27,11 +31,11 @@ const (
 	pidfileRunning
 )
 
-// runServe starts the MWN1 dispatcher daemon with the virtio-serial-pci listener.
+// runOPNsenseDaemonServe starts the MWN1 dispatcher daemon with the virtio-serial-pci listener.
 // There is exactly one listener and exactly one peer. Auth is unix
 // socket permissions on the host side (root-only), so the daemon does
 // not authenticate at the application layer.
-func runServe(args []string) int {
+func runOPNsenseDaemonServe(args []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path")
 	configPath := fs.String("config-xml", opnsensesvc.ConfigPath, "OPNsense config.xml path")
@@ -64,10 +68,11 @@ func runServe(args []string) int {
 	// returning from this subcommand.
 
 	opts := opnsensesvc.ServeOpts{
-		SerialPath: *serialPath,
-		OpenSerial: opnsensesvc.OpenVirtioSerial,
-		Server:     srv,
-		Log:        slog.Default(),
+		SerialPath:   *serialPath,
+		OpenSerial:   opnsensesvc.OpenVirtioSerial,
+		Server:       srv,
+		Log:          slog.Default(),
+		OnSerialOpen: nil,
 	}
 
 	slog.Info("mwan-opnsense: serving", "serial_path", *serialPath)
@@ -91,12 +96,13 @@ func daemonizeServe(serialPath, configPath, backupDir, pidfile, logfile string) 
 	}
 
 	childArgs := []string{
+		"opnsense",
 		"serve",
 		"-serial", serialPath,
 		"-config-xml", configPath,
 		"-backup-dir", backupDir,
 	}
-	command := exec.Command(executable, childArgs...)
+	command := exec.CommandContext(context.Background(), executable, childArgs...)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	command.Env = os.Environ()
 	command.Env = append(command.Env, "MWAN_OPNSENSE_DAEMON_CHILD=1")
@@ -163,7 +169,7 @@ func daemonizeOutput(logfile string) (*os.File, error) {
 	return file, nil
 }
 
-func runStatus(args []string) int {
+func runOPNsenseDaemonStatus(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	pidfile := fs.String("pidfile", defaultPidfile, "pidfile to inspect")
 	quiet := fs.Bool("quiet", false, "suppress status output")
@@ -222,7 +228,7 @@ func inspectPidfile(pidfile string) (int, pidfileState, error) {
 	pidText := strings.TrimSpace(string(content))
 	pid, convertErr := strconv.Atoi(pidText)
 	if convertErr != nil {
-		return 0, pidfileInvalid, convertErr
+		return 0, pidfileInvalid, fmt.Errorf("parse pidfile %s: %w", pidfile, convertErr)
 	}
 	if pid <= 0 {
 		return 0, pidfileInvalid, nil
@@ -242,7 +248,9 @@ func inspectPidfile(pidfile string) (int, pidfileState, error) {
 func processRunning(pid int) (bool, error) {
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		return false, err
+		wrappedErr := fmt.Errorf("find process %d: %w", pid, err)
+		slog.Error("status: find process failed", "err", wrappedErr, "pid", pid)
+		return false, wrappedErr
 	}
 	err = process.Signal(syscall.Signal(0))
 	if err == nil || errors.Is(err, syscall.EPERM) {
@@ -251,10 +259,12 @@ func processRunning(pid int) (bool, error) {
 	if errors.Is(err, syscall.ESRCH) {
 		return false, nil
 	}
-	return false, err
+	wrappedErr := fmt.Errorf("signal process %d: %w", pid, err)
+	slog.Error("status: signal process failed", "err", wrappedErr, "pid", pid)
+	return false, wrappedErr
 }
 
-func runIsEnabled(args []string) int {
+func runOPNsenseDaemonIsEnabled(args []string) int {
 	fs := flag.NewFlagSet("is-enabled", flag.ContinueOnError)
 	name := fs.String("name", "mwan_opnsense", "rc.d service name")
 	rcSubr := fs.String("rc-subr", "/etc/rc.subr", "rc.subr path")
@@ -300,7 +310,9 @@ func checkRCEnabled(name, rcSubr string) (bool, error) {
 		`load_rc_config "${name}" >/dev/null 2>&1`,
 		`checkyesno "${rcvar}"`,
 	}, "\n")
-	command := exec.Command("/bin/sh", "-c", script, "mwan-opnsense-is-enabled", rcSubr, name)
+	ctx, cancel := context.WithTimeout(context.Background(), rcEnabledCheckTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, "/bin/sh", "-c", script, "mwan-opnsense-is-enabled", rcSubr, name)
 	output, err := command.CombinedOutput()
 	if err == nil {
 		return true, nil
