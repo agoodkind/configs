@@ -44,6 +44,7 @@ type fakeMWN1Daemon struct {
 
 	mu       sync.Mutex
 	handleFn func(fakeRequest) fakeResponse
+	ackFn    func(fakeRequest) fakeResponse
 	conns    []*mwn1.Conn
 
 	versionCalls atomic.Int32
@@ -74,6 +75,7 @@ func newFakeMWN1Daemon(t *testing.T) *fakeMWN1Daemon {
 		reg:        reg,
 	}
 	daemon.handleFn = daemon.defaultEcho
+	daemon.ackFn = daemon.defaultAck
 	return daemon
 }
 
@@ -102,9 +104,27 @@ func (d *fakeMWN1Daemon) defaultEcho(req fakeRequest) fakeResponse {
 	}
 }
 
+func (d *fakeMWN1Daemon) defaultAck(req fakeRequest) fakeResponse {
+	if req.flags&mwn1.FlagStreaming == 0 || req.flags&mwn1.FlagCancel != 0 {
+		return fakeResponse{}
+	}
+	return fakeResponse{
+		methodID: req.methodID,
+		flags:    mwn1.FlagAck,
+		payload:  nil,
+		send:     true,
+	}
+}
+
 func (d *fakeMWN1Daemon) setHandler(fn func(fakeRequest) fakeResponse) {
 	d.mu.Lock()
 	d.handleFn = fn
+	d.mu.Unlock()
+}
+
+func (d *fakeMWN1Daemon) setAckHandler(fn func(fakeRequest) fakeResponse) {
+	d.mu.Lock()
+	d.ackFn = fn
 	d.mu.Unlock()
 }
 
@@ -112,6 +132,12 @@ func (d *fakeMWN1Daemon) currentHandler() func(fakeRequest) fakeResponse {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.handleFn
+}
+
+func (d *fakeMWN1Daemon) currentAckHandler() func(fakeRequest) fakeResponse {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.ackFn
 }
 
 func (d *fakeMWN1Daemon) Serve(t *testing.T) {
@@ -136,17 +162,20 @@ func (d *fakeMWN1Daemon) serveConn(conn net.Conn) {
 	d.conns = append(d.conns, mwnConn)
 	d.mu.Unlock()
 	mwnConn.OnMessage(func(methodID uint16, corrID uint64, flags mwn1.Flags, payload []byte) {
-		if flags&mwn1.FlagStreaming != 0 && flags&mwn1.FlagCancel == 0 {
-			_ = mwnConn.SendAck(methodID, corrID)
-		}
-		handler := d.currentHandler()
-		resp := handler(fakeRequest{
+		req := fakeRequest{
 			conn:     mwnConn,
 			methodID: methodID,
 			corrID:   corrID,
 			flags:    flags,
 			payload:  payload,
-		})
+		}
+		ackHandler := d.currentAckHandler()
+		ack := ackHandler(req)
+		if ack.send {
+			_ = mwnConn.SendMessage(ack.methodID, corrID, ack.flags, ack.payload)
+		}
+		handler := d.currentHandler()
+		resp := handler(req)
 		if !resp.send {
 			return
 		}
@@ -359,6 +388,160 @@ func TestCallStream_ContextCancelSendsCancelNoLeak(t *testing.T) {
 	client.mu.Unlock()
 	if pendingCount != 0 {
 		t.Fatalf("pending leak: %d entries left", pendingCount)
+	}
+}
+
+func TestCallStreamSendWaitsForAck(t *testing.T) {
+	daemon := newFakeMWN1Daemon(t)
+	releaseAck := make(chan struct{})
+	firstStreamingFrame := make(chan struct{}, 1)
+	daemon.setAckHandler(func(req fakeRequest) fakeResponse {
+		if req.flags&mwn1.FlagStreaming == 0 || req.flags&mwn1.FlagCancel != 0 {
+			return fakeResponse{}
+		}
+		firstStreamingFrame <- struct{}{}
+		<-releaseAck
+		return daemon.defaultAck(req)
+	})
+	daemon.setHandler(func(fakeRequest) fakeResponse {
+		return fakeResponse{}
+	})
+	daemon.Serve(t)
+	defer daemon.Stop()
+
+	client, err := Dial("unix://" + daemon.socketPath)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	firstSendReturned := make(chan struct{})
+	go func() {
+		_, _ = client.CallStream(ctx, mwn1.MethodDeploy, func(send func(proto.Message) error) error {
+			chunk := &mwanv1.Chunk{
+				Body: &mwanv1.Chunk_Header{Header: &mwanv1.ChunkHeader{Label: "ack-test"}},
+			}
+			_ = send(chunk)
+			close(firstSendReturned)
+			return context.Canceled
+		})
+	}()
+
+	select {
+	case <-firstStreamingFrame:
+	case <-time.After(2 * time.Second):
+		t.Fatal("daemon did not receive first streaming frame")
+	}
+	select {
+	case <-firstSendReturned:
+		t.Fatal("stream Send returned before ACK")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseAck)
+	select {
+	case <-firstSendReturned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream Send did not return after ACK")
+	}
+}
+
+func TestCallStreamNoAckBlocksSecondSendUntilContextCancel(t *testing.T) {
+	daemon := newFakeMWN1Daemon(t)
+	requests := make(chan fakeRequest, 4)
+	daemon.setAckHandler(func(req fakeRequest) fakeResponse {
+		if req.flags&mwn1.FlagStreaming != 0 && req.flags&mwn1.FlagCancel == 0 {
+			requests <- req
+		}
+		return fakeResponse{}
+	})
+	daemon.setHandler(func(fakeRequest) fakeResponse {
+		return fakeResponse{}
+	})
+	daemon.Serve(t)
+	defer daemon.Stop()
+
+	client, err := Dial("unix://" + daemon.socketPath)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	sendCount := atomic.Int32{}
+	_, err = client.CallStream(ctx, mwn1.MethodDeploy, func(send func(proto.Message) error) error {
+		chunk := &mwanv1.Chunk{
+			Body: &mwanv1.Chunk_Header{Header: &mwanv1.ChunkHeader{Label: "no-ack"}},
+		}
+		sendCount.Add(1)
+		if sendErr := send(chunk); sendErr != nil {
+			return sendErr
+		}
+		sendCount.Add(1)
+		return send(chunk)
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("CallStream error = %v, want context deadline", err)
+	}
+	if got := sendCount.Load(); got != 1 {
+		t.Fatalf("sendCount=%d want 1", got)
+	}
+	if got := len(requests); got != 1 {
+		t.Fatalf("streaming requests=%d want 1", got)
+	}
+}
+
+func TestCallStreamWrongMethodAckBlocksSecondSendUntilContextCancel(t *testing.T) {
+	daemon := newFakeMWN1Daemon(t)
+	requests := make(chan fakeRequest, 4)
+	daemon.setAckHandler(func(req fakeRequest) fakeResponse {
+		if req.flags&mwn1.FlagStreaming == 0 || req.flags&mwn1.FlagCancel != 0 {
+			return fakeResponse{}
+		}
+		requests <- req
+		return fakeResponse{
+			methodID: req.methodID + 1,
+			flags:    mwn1.FlagAck,
+			payload:  nil,
+			send:     true,
+		}
+	})
+	daemon.setHandler(func(fakeRequest) fakeResponse {
+		return fakeResponse{}
+	})
+	daemon.Serve(t)
+	defer daemon.Stop()
+
+	client, err := Dial("unix://" + daemon.socketPath)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	sendCount := atomic.Int32{}
+	_, err = client.CallStream(ctx, mwn1.MethodDeploy, func(send func(proto.Message) error) error {
+		chunk := &mwanv1.Chunk{
+			Body: &mwanv1.Chunk_Header{Header: &mwanv1.ChunkHeader{Label: "wrong-method-ack"}},
+		}
+		sendCount.Add(1)
+		if sendErr := send(chunk); sendErr != nil {
+			return sendErr
+		}
+		sendCount.Add(1)
+		return send(chunk)
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("CallStream error = %v, want context deadline", err)
+	}
+	if got := sendCount.Load(); got != 1 {
+		t.Fatalf("sendCount=%d want 1", got)
+	}
+	if got := len(requests); got != 1 {
+		t.Fatalf("streaming requests=%d want 1", got)
 	}
 }
 

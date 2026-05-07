@@ -30,8 +30,8 @@ type streamForwardJob struct {
 }
 
 type streamForwarder struct {
-	ctx    context.Context
 	cancel context.CancelFunc
+	done   <-chan struct{}
 	jobs   chan streamForwardJob
 }
 
@@ -327,8 +327,8 @@ func (b *fanInBridge) ensureStreamForwarder(upstreamCorr uint64, inbound *inboun
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	forwarder := &streamForwarder{
-		ctx:    ctx,
 		cancel: cancel,
+		done:   ctx.Done(),
 		jobs:   make(chan streamForwardJob, 1),
 	}
 	route.streaming = true
@@ -336,7 +336,18 @@ func (b *fanInBridge) ensureStreamForwarder(upstreamCorr uint64, inbound *inboun
 	b.routes[upstreamCorr] = route
 	b.mu.Unlock()
 
-	go inbound.runStreamForwarder(forwarder)
+	go func() {
+		defer cancel()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				b.log.Error("mwan-opnsense-host: stream forwarder panic recovered",
+					slog.Uint64("inbound_id", inbound.id),
+					slog.Uint64("upstream_corr", upstreamCorr),
+					slog.Any("err", fmt.Errorf("panic: %v", recovered)))
+			}
+		}()
+		inbound.runStreamForwarder(ctx, forwarder)
+	}()
 	return forwarder
 }
 
@@ -352,18 +363,18 @@ func (b *fanInBridge) cancelRouteForwarder(upstreamCorr uint64) {
 func (f *streamForwarder) enqueue(job streamForwardJob) {
 	select {
 	case f.jobs <- job:
-	case <-f.ctx.Done():
+	case <-f.done:
 	}
 }
 
-func (i *inboundConn) runStreamForwarder(forwarder *streamForwarder) {
+func (i *inboundConn) runStreamForwarder(ctx context.Context, forwarder *streamForwarder) {
 	for {
 		select {
-		case <-forwarder.ctx.Done():
+		case <-ctx.Done():
 			return
 		case job := <-forwarder.jobs:
 			err := i.bridge.upstream.SendStreamMessage(
-				forwarder.ctx,
+				ctx,
 				job.methodID,
 				job.upstreamCorr,
 				job.flags,
@@ -371,7 +382,7 @@ func (i *inboundConn) runStreamForwarder(forwarder *streamForwarder) {
 			)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) && !errors.Is(err, mwn1.ErrClosed) {
-					i.bridge.log.Warn("mwan-opnsense-host: forward inbound stream frame",
+					i.bridge.log.WarnContext(ctx, "mwan-opnsense-host: forward inbound stream frame",
 						slog.Uint64("inbound_id", i.id),
 						slog.Uint64("inbound_corr", job.inboundCorr),
 						slog.Uint64("upstream_corr", job.upstreamCorr),
@@ -383,7 +394,7 @@ func (i *inboundConn) runStreamForwarder(forwarder *streamForwarder) {
 			}
 			if err := i.conn.SendAck(job.methodID, job.inboundCorr); err != nil &&
 				!errors.Is(err, mwn1.ErrClosed) {
-				i.bridge.log.Warn("mwan-opnsense-host: ack inbound stream frame",
+				i.bridge.log.WarnContext(ctx, "mwan-opnsense-host: ack inbound stream frame",
 					slog.Uint64("inbound_id", i.id),
 					slog.Uint64("inbound_corr", job.inboundCorr),
 					slog.Uint64("upstream_corr", job.upstreamCorr),

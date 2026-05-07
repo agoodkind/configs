@@ -205,6 +205,15 @@ func (c *Client) callClientStream(
 	if produce != nil {
 		produceDone := make(chan error, 1)
 		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					c.log.ErrorContext(ctx, "opnsense: stream producer panic recovered",
+						slog.Int("method_id", int(methodID)),
+						slog.Uint64("corr_id", corrID),
+						slog.Any("err", fmt.Errorf("panic: %v", recovered)))
+					produceDone <- fmt.Errorf("stream producer panic: %v", recovered)
+				}
+			}()
 			produceDone <- produce(c.streamSendFn(ctx, methodID, corrID, sendCancel))
 		}()
 		select {

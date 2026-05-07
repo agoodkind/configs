@@ -299,43 +299,7 @@ func (d *Dispatcher) handleStreamMessage(
 	d.streamMu.Lock()
 	buf, exists := d.streams[corrID]
 	if !exists {
-		// First frame for this CorrID. Spin up the handler goroutine
-		// before publishing the channel so subsequent frames find a live
-		// receiver.
-		ctx, cancel := context.WithCancel(context.Background())
-		buf = &streamBuffer{
-			ch:     make(chan *mwanv1.Chunk, 16),
-			cancel: cancel,
-		}
-		d.streams[corrID] = buf
-
-		ch := buf.ch
-		d.streamWG.Go(func() {
-			defer cancel()
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					d.log.Error("dispatcher: stream handler panic recovered",
-						"err", fmt.Errorf("recovered panic: %v", recovered),
-						"method_id", methodID, "corr_id", corrID)
-					d.sendError(methodID, corrID, fmt.Errorf("dispatcher: stream handler panic: %v", recovered))
-				}
-			}()
-			resp, handlerErr := d.server.Deploy(ctx, ch)
-			if handlerErr != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				d.sendError(methodID, corrID, handlerErr)
-				return
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if sendErr := d.sendResponse(methodID, corrID, resp); sendErr != nil {
-				d.log.Error("dispatcher: send response failed",
-					"err", sendErr, "method_id", methodID, "corr_id", corrID)
-			}
-		})
+		buf = d.startStreamBufferLocked(methodID, corrID)
 	}
 	if final {
 		delete(d.streams, corrID)
@@ -360,6 +324,45 @@ func (d *Dispatcher) handleStreamMessage(
 	if final {
 		buf.close()
 	}
+}
+
+func (d *Dispatcher) startStreamBufferLocked(methodID uint16, corrID uint64) *streamBuffer {
+	ctx, cancel := context.WithCancel(context.Background())
+	buf := &streamBuffer{
+		ch:        make(chan *mwanv1.Chunk, 16),
+		cancel:    cancel,
+		closeOnce: sync.Once{},
+	}
+	d.streams[corrID] = buf
+
+	ch := buf.ch
+	d.streamWG.Go(func() {
+		defer cancel()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				d.log.Error("dispatcher: stream handler panic recovered",
+					"err", fmt.Errorf("recovered panic: %v", recovered),
+					"method_id", methodID, "corr_id", corrID)
+				d.sendError(methodID, corrID, fmt.Errorf("dispatcher: stream handler panic: %v", recovered))
+			}
+		}()
+		resp, handlerErr := d.server.Deploy(ctx, ch)
+		if handlerErr != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			d.sendError(methodID, corrID, handlerErr)
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if sendErr := d.sendResponse(methodID, corrID, resp); sendErr != nil {
+			d.log.Error("dispatcher: send response failed",
+				"err", sendErr, "method_id", methodID, "corr_id", corrID)
+		}
+	})
+	return buf
 }
 
 func sendStreamChunk(ch chan<- *mwanv1.Chunk, chunk *mwanv1.Chunk) (ok bool) {

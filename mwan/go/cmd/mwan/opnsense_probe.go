@@ -21,6 +21,9 @@ import (
 const (
 	opnsenseProbeSerialSettleDelay = 1200 * time.Millisecond
 	opnsenseProbeDeployChunkBytes  = 8 * 1024
+	opnsenseProbeConfigctlCommand  = "/usr/local/sbin/configctl"
+	configctlActionNotAllowedText  = "Action not allowed or missing"
+	maxProbeCommandTimeoutSeconds  = int32(300)
 )
 
 // runOPNsenseProbe is the operational tool for ad hoc dialing of the
@@ -40,12 +43,16 @@ func runOPNsenseProbe(args []string) error {
 	target := fs.String("target", "", "unix:///path/to/socket (required)")
 	timeout := fs.Duration("timeout", 10*time.Second, "dial+RPC timeout")
 	op := fs.String("op", "version",
-		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|smoke")
+		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|configctl|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|smoke")
 	repeat := fs.Int("repeat", 1, "number of times to run the selected RPC over one connection")
 	xpath := fs.String("xpath", "", "XPath expression for op=xpath-{get,set,delete}")
 	xpathValue := fs.String("xpath-value", "", "value to write for op=xpath-set")
 	cmdStr := fs.String("cmd", "", "command for op=exec")
 	cmdArgs := fs.String("cmd-args", "", "comma-separated args for op=exec")
+	var cmdArgv repeatableStringFlag
+	fs.Var(&cmdArgv, "cmd-arg", "append one argv token for op=exec; repeatable and preferred over -cmd-args")
+	cmdStdinFile := fs.String("stdin-file", "", "local file to send as stdin for op=exec")
+	cmdTimeout := fs.Duration("cmd-timeout", 0, "remote command timeout for op=exec or op=configctl")
 	cmdSudo := fs.Bool("cmd-sudo", false, "wrap exec in sudo -n")
 	configXML := fs.String("config-xml", "", "path to XML content for op=write-config")
 	label := fs.String("label", "", "backup label for op=write-config or op=backup-config")
@@ -65,6 +72,9 @@ func runOPNsenseProbe(args []string) error {
 	if *repeat < 1 {
 		return errors.New("-repeat must be >= 1")
 	}
+	if len(fs.Args()) > 0 && *op != string(probeOpConfigctl) {
+		return fmt.Errorf("unexpected positional args for op=%s: %s", *op, strings.Join(fs.Args(), " "))
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
@@ -82,7 +92,11 @@ func runOPNsenseProbe(args []string) error {
 		xpathValue:    *xpathValue,
 		cmd:           *cmdStr,
 		cmdArgs:       *cmdArgs,
+		cmdArgv:       []string(cmdArgv),
+		cmdStdinFile:  *cmdStdinFile,
+		cmdTimeout:    *cmdTimeout,
 		cmdSudo:       *cmdSudo,
+		configctlArgs: fs.Args(),
 		configXML:     *configXML,
 		label:         *label,
 		gatewayName:   *gatewayName,
@@ -130,7 +144,7 @@ func runOPNsenseProbeSmoke(ctx context.Context, rpc *opnsense.RPC) error {
 		{op: "version"},
 		{op: "read-config"},
 		{op: "xpath-get", xpath: "/opnsense/system/hostname"},
-		{op: "exec", cmd: "uname", cmdArgs: "-s,-r,-m"},
+		{op: "exec", cmd: "uname", cmdArgv: []string{"-s", "-r", "-m"}},
 		{op: "deploy-status"},
 	}
 	for _, smokeOp := range ops {
@@ -150,12 +164,30 @@ type probeRPCArgs struct {
 	xpathValue    string
 	cmd           string
 	cmdArgs       string
+	cmdArgv       []string
+	cmdStdinFile  string
+	cmdTimeout    time.Duration
 	cmdSudo       bool
+	configctlArgs []string
 	configXML     string
 	label         string
 	gatewayName   string
 	deployBin     string
 	deployVersion string
+}
+
+type repeatableStringFlag []string
+
+func (f *repeatableStringFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	return strings.Join(*f, ",")
+}
+
+func (f *repeatableStringFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
 }
 
 // probeOp is the typed enum of -op values accepted by opnsense-probe.
@@ -170,6 +202,7 @@ const (
 	probeOpXPathSet     probeOp = "xpath-set"
 	probeOpXPathDelete  probeOp = "xpath-delete"
 	probeOpExec         probeOp = "exec"
+	probeOpConfigctl    probeOp = "configctl"
 	probeOpStripGW6     probeOp = "strip-gatewayv6"
 	probeOpInjectGW6    probeOp = "inject-gatewayv6"
 	probeOpDeployStatus probeOp = "deploy-status"
@@ -194,7 +227,9 @@ func runOPNsenseProbeRPC(
 	case probeOpXPathGet:
 		return probeXPathGet(ctx, rpc, a.xpath)
 	case probeOpExec:
-		return probeExec(ctx, rpc, a.cmd, a.cmdArgs, a.cmdSudo)
+		return probeExec(ctx, rpc, a)
+	case probeOpConfigctl:
+		return probeConfigctl(ctx, rpc, a.configctlArgs, a.cmdTimeout)
 	case probeOpXPathSet:
 		return probeXPathSet(ctx, rpc, a.xpath, a.xpathValue)
 	case probeOpXPathDelete:
@@ -299,26 +334,112 @@ func probeXPathGet(ctx context.Context, rpc *opnsense.RPC, xpath string) error {
 	return nil
 }
 
-func probeExec(ctx context.Context, rpc *opnsense.RPC,
-	cmdStr, cmdArgs string, cmdSudo bool,
-) error {
-	if cmdStr == "" {
-		return errors.New("op=exec requires -cmd")
+func probeExec(ctx context.Context, rpc *opnsense.RPC, a probeRPCArgs) error {
+	req, err := buildProbeExecRequest(a)
+	if err != nil {
+		return err
 	}
-	var argv []string
-	if cmdArgs != "" {
-		argv = strings.Split(cmdArgs, ",")
-	}
-	resp, err := rpc.Exec(ctx, &mwanv1.ExecRequest{
-		Command: cmdStr,
-		Args:    argv,
-		Sudo:    cmdSudo,
-	})
+	resp, err := rpc.Exec(ctx, req)
 	if err != nil {
 		slog.ErrorContext(ctx, "opnsense-probe Exec failed", "err", err)
 		return fmt.Errorf("rpc Exec: %w", err)
 	}
+	return printAndValidateProbeExecResponse(ctx, "Exec", resp)
+}
+
+func probeConfigctl(
+	ctx context.Context,
+	rpc *opnsense.RPC,
+	action []string,
+	cmdTimeout time.Duration,
+) error {
+	req, reqErr := buildProbeConfigctlRequest(action, cmdTimeout)
+	if reqErr != nil {
+		return reqErr
+	}
+	resp, err := rpc.Exec(ctx, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe configctl failed", "err", err)
+		return fmt.Errorf("rpc Exec configctl: %w", err)
+	}
+	return printAndValidateProbeExecResponse(ctx, "configctl", resp)
+}
+
+func buildProbeExecRequest(a probeRPCArgs) (*mwanv1.ExecRequest, error) {
+	if a.cmd == "" {
+		return nil, errors.New("op=exec requires -cmd")
+	}
+	stdinBytes, err := ReadProbeStdinFile(a.cmdStdinFile)
+	if err != nil {
+		return nil, err
+	}
+	return &mwanv1.ExecRequest{
+		Command:        a.cmd,
+		Args:           buildProbeExecArgv(a.cmdArgv, a.cmdArgs),
+		Sudo:           a.cmdSudo,
+		TimeoutSeconds: durationSeconds(a.cmdTimeout),
+		StdinBytes:     stdinBytes,
+	}, nil
+}
+
+func buildProbeConfigctlRequest(
+	action []string,
+	cmdTimeout time.Duration,
+) (*mwanv1.ExecRequest, error) {
+	if len(action) == 0 {
+		return nil, errors.New("op=configctl requires action tokens after flags, e.g. -op configctl system event config_changed")
+	}
+	return &mwanv1.ExecRequest{
+		Command:        opnsenseProbeConfigctlCommand,
+		Args:           append([]string(nil), action...),
+		TimeoutSeconds: durationSeconds(cmdTimeout),
+	}, nil
+}
+
+func buildProbeExecArgv(cmdArgv []string, legacyCmdArgs string) []string {
+	if len(cmdArgv) > 0 {
+		return append([]string(nil), cmdArgv...)
+	}
+	if legacyCmdArgs == "" {
+		return nil
+	}
+	return strings.Split(legacyCmdArgs, ",")
+}
+
+// ReadProbeStdinFile loads optional stdin bytes for op=exec.
+func ReadProbeStdinFile(path string) ([]byte, error) {
+	if path == "" {
+		return nil, nil
+	}
+	stdinBytes, err := os.ReadFile(path)
+	if err != nil {
+		slog.Error("opnsense-probe stdin-file read failed",
+			"path", path, "err", err)
+		return nil, fmt.Errorf("read stdin-file: %w", err)
+	}
+	return stdinBytes, nil
+}
+
+func durationSeconds(timeout time.Duration) int32 {
+	if timeout <= 0 {
+		return 0
+	}
+	remaining := timeout
+	var seconds int32
+	for remaining > 0 && seconds < maxProbeCommandTimeoutSeconds {
+		seconds++
+		remaining -= time.Second
+	}
+	return seconds
+}
+
+func printAndValidateProbeExecResponse(
+	ctx context.Context,
+	opName string,
+	resp *mwanv1.ExecResponse,
+) error {
 	slog.InfoContext(ctx, "opnsense-probe Exec OK",
+		"op", opName,
 		"exit_code", resp.GetExitCode(),
 		"duration_ms", resp.GetDurationMs(),
 		"stdout_truncated", resp.GetStdoutTruncated(),
@@ -326,10 +447,25 @@ func probeExec(ctx context.Context, rpc *opnsense.RPC,
 		"timed_out", resp.GetTimedOut())
 	_, _ = os.Stdout.Write(resp.GetStdout())
 	_, _ = os.Stderr.Write(resp.GetStderr())
+	return validateProbeExecResponse(opName, resp)
+}
+
+func validateProbeExecResponse(opName string, resp *mwanv1.ExecResponse) error {
+	if responseContainsConfigctlActionFailure(resp) {
+		return fmt.Errorf("remote %s reported %q", opName, configctlActionNotAllowedText)
+	}
 	if resp.GetExitCode() != 0 {
 		return fmt.Errorf("remote exit code %d", resp.GetExitCode())
 	}
 	return nil
+}
+
+func responseContainsConfigctlActionFailure(resp *mwanv1.ExecResponse) bool {
+	if resp == nil {
+		return false
+	}
+	return strings.Contains(string(resp.GetStdout()), configctlActionNotAllowedText) ||
+		strings.Contains(string(resp.GetStderr()), configctlActionNotAllowedText)
 }
 
 func probeXPathSet(ctx context.Context, rpc *opnsense.RPC, xpath, value string) error {

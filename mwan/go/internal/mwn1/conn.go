@@ -36,6 +36,11 @@ type reassembly struct {
 	payload  []byte
 }
 
+type ackWaiter struct {
+	methodID uint16
+	ch       chan error
+}
+
 // Conn wraps an [io.ReadWriteCloser] as a message-oriented MWN1 transport.
 type Conn struct {
 	rw              io.ReadWriteCloser
@@ -54,7 +59,7 @@ type Conn struct {
 	reassemblies map[uint64]*reassembly
 
 	ackMu      sync.Mutex
-	ackWaiters map[uint64]chan error
+	ackWaiters map[uint64]ackWaiter
 
 	shutdownOnce sync.Once
 	errMu        sync.Mutex
@@ -88,7 +93,7 @@ func newConnWithReassemblyLimit(
 		handlerOnce:     sync.Once{},
 		reassemblyMu:    sync.Mutex{},
 		ackMu:           sync.Mutex{},
-		ackWaiters:      make(map[uint64]chan error),
+		ackWaiters:      make(map[uint64]ackWaiter),
 		shutdownOnce:    sync.Once{},
 		errMu:           sync.Mutex{},
 		err:             nil,
@@ -115,7 +120,7 @@ func newConnWithReassemblyLimit(
 // SendCancel sends a best-effort cancellation frame for corrID. Cancel frames
 // use the control path so they bypass queued normal frames.
 func (c *Conn) SendCancel(methodID uint16, corrID uint64) error {
-	c.completeAck(corrID, ErrStreamCanceled)
+	c.completeAckForCorrID(corrID, ErrStreamCanceled)
 	return c.sendControlFrame(frame{
 		Flags:    FlagCancel,
 		MethodID: methodID,
@@ -182,7 +187,7 @@ func (c *Conn) SendStreamMessage(
 	payload []byte,
 ) error {
 	if ctx == nil {
-		ctx = context.Background()
+		return errors.New("mwn1: nil stream context")
 	}
 	baseFlags := (flags | FlagStreaming) &^ FlagFragment
 	if len(payload) == 0 {
@@ -212,7 +217,7 @@ func (c *Conn) SendStreamMessage(
 }
 
 func (c *Conn) sendStreamFrameAndWait(ctx context.Context, outboundFrame frame, messagePayloadLen int) error {
-	ackCh, err := c.registerAckWaiter(outboundFrame.CorrID)
+	ackCh, err := c.registerAckWaiter(outboundFrame.MethodID, outboundFrame.CorrID)
 	if err != nil {
 		return err
 	}
@@ -232,7 +237,7 @@ func (c *Conn) sendStreamFrameAndWait(ctx context.Context, outboundFrame frame, 
 			slog.Int("frame_payload_len", len(outboundFrame.Payload)),
 			slog.Int("message_payload_len", messagePayloadLen),
 			slog.String("err", ctx.Err().Error()))
-		return ctx.Err()
+		return fmt.Errorf("stream ack wait context done: %w", ctx.Err())
 	case <-c.done:
 		return ErrClosed
 	}
@@ -299,7 +304,9 @@ func (c *Conn) sendQueuedFrameContext(ctx context.Context, ch chan<- frame, outb
 	case <-c.done:
 		return ErrClosed
 	case <-ctx.Done():
-		return ctx.Err()
+		c.log.Warn("mwn1: send queue context done before enqueue",
+			slog.String("err", ctx.Err().Error()))
+		return fmt.Errorf("send queue context done: %w", ctx.Err())
 	default:
 	}
 	select {
@@ -308,44 +315,10 @@ func (c *Conn) sendQueuedFrameContext(ctx context.Context, ch chan<- frame, outb
 	case <-c.done:
 		return ErrClosed
 	case <-ctx.Done():
-		return ctx.Err()
+		c.log.Warn("mwn1: send queue context done during enqueue",
+			slog.String("err", ctx.Err().Error()))
+		return fmt.Errorf("send queue context done: %w", ctx.Err())
 	}
-}
-
-func (c *Conn) sendMessageContext(
-	ctx context.Context,
-	methodID uint16,
-	corrID uint64,
-	flags Flags,
-	payload []byte,
-	maxPayload int,
-) error {
-	baseFlags := flags &^ FlagFragment
-	if len(payload) == 0 {
-		return c.sendFrameContext(ctx, frame{
-			Flags:    baseFlags,
-			MethodID: methodID,
-			CorrID:   corrID,
-			Payload:  nil,
-		})
-	}
-	for offset := 0; offset < len(payload); offset += maxPayload {
-		end := min(offset+maxPayload, len(payload))
-		frameFlags := baseFlags
-		if end != len(payload) {
-			frameFlags |= FlagFragment
-		}
-		outboundFrame := frame{
-			Flags:    frameFlags,
-			MethodID: methodID,
-			CorrID:   corrID,
-			Payload:  payload[offset:end],
-		}
-		if err := c.sendFrameContext(ctx, outboundFrame); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (c *Conn) readLoop() {
@@ -411,14 +384,14 @@ func (c *Conn) writeLoop() {
 
 func (c *Conn) handleFrame(inboundFrame frame) {
 	if inboundFrame.Flags&FlagAck != 0 {
-		c.completeAck(inboundFrame.CorrID, nil)
+		c.completeAck(inboundFrame.MethodID, inboundFrame.CorrID, nil)
 		return
 	}
 	if inboundFrame.Flags&FlagCancel != 0 {
 		c.reassemblyMu.Lock()
 		delete(c.reassemblies, inboundFrame.CorrID)
 		c.reassemblyMu.Unlock()
-		c.completeAck(inboundFrame.CorrID, ErrStreamCanceled)
+		c.completeAckForCorrID(inboundFrame.CorrID, ErrStreamCanceled)
 		c.deliver(inboundFrame.MethodID, inboundFrame.CorrID, inboundFrame.Flags, nil)
 		return
 	}
@@ -514,28 +487,41 @@ func (c *Conn) sendReassemblyError(inboundFrame frame) {
 	}
 }
 
-func (c *Conn) registerAckWaiter(corrID uint64) (chan error, error) {
+func (c *Conn) registerAckWaiter(methodID uint16, corrID uint64) (chan error, error) {
 	c.ackMu.Lock()
 	defer c.ackMu.Unlock()
 	if _, exists := c.ackWaiters[corrID]; exists {
 		return nil, ErrAckWaiterExists
 	}
 	ch := make(chan error, 1)
-	c.ackWaiters[corrID] = ch
+	c.ackWaiters[corrID] = ackWaiter{methodID: methodID, ch: ch}
 	return ch, nil
 }
 
 func (c *Conn) unregisterAckWaiter(corrID uint64, ch chan error) {
 	c.ackMu.Lock()
-	if current := c.ackWaiters[corrID]; current == ch {
+	if current := c.ackWaiters[corrID]; current.ch == ch {
 		delete(c.ackWaiters, corrID)
 	}
 	c.ackMu.Unlock()
 }
 
-func (c *Conn) completeAck(corrID uint64, err error) {
+func (c *Conn) completeAck(methodID uint16, corrID uint64, err error) {
 	c.ackMu.Lock()
-	ch, ok := c.ackWaiters[corrID]
+	waiter, ok := c.ackWaiters[corrID]
+	if ok && waiter.methodID == methodID {
+		delete(c.ackWaiters, corrID)
+	}
+	c.ackMu.Unlock()
+	if !ok || waiter.methodID != methodID {
+		return
+	}
+	waiter.ch <- err
+}
+
+func (c *Conn) completeAckForCorrID(corrID uint64, err error) {
+	c.ackMu.Lock()
+	waiter, ok := c.ackWaiters[corrID]
 	if ok {
 		delete(c.ackWaiters, corrID)
 	}
@@ -543,16 +529,16 @@ func (c *Conn) completeAck(corrID uint64, err error) {
 	if !ok {
 		return
 	}
-	ch <- err
+	waiter.ch <- err
 }
 
 func (c *Conn) completeAllAcks(err error) {
 	c.ackMu.Lock()
 	waiters := c.ackWaiters
-	c.ackWaiters = make(map[uint64]chan error)
+	c.ackWaiters = make(map[uint64]ackWaiter)
 	c.ackMu.Unlock()
-	for _, ch := range waiters {
-		ch <- err
+	for _, waiter := range waiters {
+		waiter.ch <- err
 	}
 }
 

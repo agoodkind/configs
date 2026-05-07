@@ -269,6 +269,41 @@ func TestConn_WrongCorrIDAckDoesNotUnblock(t *testing.T) {
 	}
 }
 
+func TestConn_WrongMethodAckDoesNotUnblock(t *testing.T) {
+	sender, receiver := linkedConns(t)
+	messageCh := make(chan receivedMessage, 1)
+	receiver.OnMessage(func(methodID uint16, corrID uint64, flags Flags, gotPayload []byte) {
+		messageCh <- receivedMessage{methodID: methodID, corrID: corrID, flags: flags, payload: gotPayload}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sendDone := make(chan error, 1)
+	go func() {
+		sendDone <- sender.SendStreamMessage(ctx, 11, 99, FlagRequest|FlagStreaming, []byte("chunk"))
+	}()
+	_ = waitForMessage(t, messageCh)
+	if err := receiver.SendAck(12, 99); err != nil {
+		t.Fatalf("wrong method SendAck: %v", err)
+	}
+	select {
+	case err := <-sendDone:
+		t.Fatalf("SendStreamMessage returned after wrong method ACK: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := receiver.SendAck(11, 99); err != nil {
+		t.Fatalf("right method SendAck: %v", err)
+	}
+	select {
+	case err := <-sendDone:
+		if err != nil {
+			t.Fatalf("SendStreamMessage: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SendStreamMessage did not return after right method ACK")
+	}
+}
+
 func TestConn_SendStreamMessageContextTimeoutCleansWaiter(t *testing.T) {
 	sender, receiver := linkedConns(t)
 	receiver.OnMessage(func(uint16, uint64, Flags, []byte) {})
