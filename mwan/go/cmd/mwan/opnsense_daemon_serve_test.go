@@ -62,7 +62,7 @@ func TestInspectPidfileRunning(t *testing.T) {
 
 func TestRunStatusReturnsOneForMissingPidfile(t *testing.T) {
 	pidfile := filepath.Join(t.TempDir(), "missing.pid")
-	status := runStatus([]string{"-pidfile", pidfile, "-quiet"})
+	status := runOPNsenseDaemonStatus([]string{"-pidfile", pidfile, "-quiet"})
 	if status != 1 {
 		t.Fatalf("status = %d, want 1", status)
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"goodkind.io/mwan/internal/agent"
 	"goodkind.io/mwan/internal/config"
@@ -13,7 +15,7 @@ import (
 )
 
 // subcommand is the typed enum of mwan subcommands that take a config.
-// "health-check", "opnsense-probe", and "opnsense-host" are
+// "health-check", "opnsense", "opnsense-probe", and "opnsense-host" are
 // config-less and dispatched before this switch.
 type subcommand string
 
@@ -22,13 +24,17 @@ const (
 	subcmdWatchdog      subcommand = "watchdog"
 	subcmdIfmgr         subcommand = "ifmgr"
 	subcmdHealthCheck   subcommand = "health-check"
+	subcmdOPNsense      subcommand = "opnsense"
 	subcmdOPNsenseHost  subcommand = "opnsense-host"
 	subcmdOPNsenseProbe subcommand = "opnsense-probe"
 )
 
 func main() {
+	if invokedAsOPNsenseDaemon(os.Args[0]) {
+		os.Exit(runOPNsenseDaemon(os.Args[1:]))
+	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense-probe|opnsense-host> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|opnsense-probe|opnsense-host> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -56,6 +62,8 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case subcmdOPNsense:
+		os.Exit(runOPNsenseDaemon(os.Args[1:]))
 	case subcmdOPNsenseHost:
 		os.Exit(runOPNsenseHost(os.Args[1:]))
 	case subcmdAgent, subcmdWatchdog, subcmdIfmgr:
@@ -80,7 +88,7 @@ func main() {
 		}
 	case subcmdIfmgr:
 		runErr = runIfMgr(cfg)
-	case subcmdHealthCheck, subcmdOPNsenseProbe, subcmdOPNsenseHost:
+	case subcmdHealthCheck, subcmdOPNsense, subcmdOPNsenseProbe, subcmdOPNsenseHost:
 		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", sub)
 		os.Exit(1)
 	default:
@@ -91,4 +99,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "mwan %s: %v\n", sub, runErr)
 		os.Exit(1)
 	}
+}
+
+func invokedAsOPNsenseDaemon(argv0 string) bool {
+	binaryName := filepath.Base(argv0)
+	return binaryName == "mwan-opnsense" || strings.HasPrefix(binaryName, "mwan-opnsense.")
 }

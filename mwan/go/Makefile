@@ -7,8 +7,8 @@
 #
 # mwan Makefile.
 # Build/lint pipeline lives in go-makefile and is fetched at runtime.
-# Project-local: protobuf codegen, cross-builds for the Linux monolith
-# and the FreeBSD mwan-opnsense daemon, govulncheck wrapper that allowlists a
+# Project-local: protobuf codegen, cross-builds for the Linux and FreeBSD
+# monolith entrypoints, plus a govulncheck wrapper that allowlists a
 # specific known gobgp CVE.
 
 # Identity. mwan's internal/version pkg uses lowercase unexported fields
@@ -86,7 +86,7 @@ build-linux: check
 	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD))
 
 build-mwan-opnsense: check
-	$(call build_platform,mwan-opnsense,freebsd,amd64,./cmd/mwan-opnsense)
+	$(call build_platform,mwan-opnsense,freebsd,amd64,$(CMD))
 
 tidy:
 	go mod tidy
