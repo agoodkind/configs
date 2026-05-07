@@ -96,11 +96,13 @@ func daemonizeServe(serialPath, configPath, backupDir, pidfile, logfile string) 
 	}
 
 	childArgs := []string{
-		"opnsense",
 		"serve",
 		"-serial", serialPath,
 		"-config-xml", configPath,
 		"-backup-dir", backupDir,
+	}
+	if !invokedAsOPNsenseDaemon(executable) {
+		childArgs = append([]string{"opnsense"}, childArgs...)
 	}
 	command := exec.CommandContext(context.Background(), executable, childArgs...)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
