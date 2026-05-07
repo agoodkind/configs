@@ -6,7 +6,7 @@ replace github.com/agoodkind/send-email => ../../../send-email
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/agoodkind/send-email v0.0.0-20260328050211-9169e66bce5d
+	github.com/agoodkind/send-email v0.0.0-20260507024032-8eec7e659c87
 	github.com/antchfx/xmlquery v1.5.1
 	github.com/beevik/etree v1.6.0
 	github.com/google/go-cmp v0.7.0
