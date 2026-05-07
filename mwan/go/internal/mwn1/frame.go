@@ -24,6 +24,7 @@ import (
 	"hash/crc32"
 	"io"
 	"log/slog"
+	"net"
 )
 
 // Wire constants. All offsets and sizes are in bytes.
@@ -120,7 +121,7 @@ func readFrame(r io.Reader, log *slog.Logger) (frame, error) {
 	}
 	hdr := make([]byte, HdrAfterMagic)
 	if _, err := io.ReadFull(r, hdr); err != nil {
-		log.Warn("mwn1: read header", slog.String("err", err.Error()))
+		logFrameReadError(log, "mwn1: read header", err)
 		return frame{}, fmt.Errorf("mwn1: read header: %w", err)
 	}
 	flags := Flags(hdr[0])
@@ -135,12 +136,12 @@ func readFrame(r io.Reader, log *slog.Logger) (frame, error) {
 	}
 	payload := make([]byte, payloadLen)
 	if _, err := io.ReadFull(r, payload); err != nil {
-		log.Warn("mwn1: read payload", slog.String("err", err.Error()))
+		logFrameReadError(log, "mwn1: read payload", err)
 		return frame{}, fmt.Errorf("mwn1: read payload: %w", err)
 	}
 	var crcBuf [TailLen]byte
 	if _, err := io.ReadFull(r, crcBuf[:]); err != nil {
-		log.Warn("mwn1: read crc", slog.String("err", err.Error()))
+		logFrameReadError(log, "mwn1: read crc", err)
 		return frame{}, fmt.Errorf("mwn1: read crc: %w", err)
 	}
 	got := binary.BigEndian.Uint32(crcBuf[:])
@@ -232,7 +233,7 @@ func scanMagic(r io.Reader, log *slog.Logger) error {
 	scanned := 0
 	for {
 		if _, err := io.ReadFull(r, b[:]); err != nil {
-			log.Warn("mwn1: scan magic", slog.String("err", err.Error()))
+			logFrameReadError(log, "mwn1: scan magic", err)
 			return fmt.Errorf("mwn1: scan magic: %w", err)
 		}
 		scanned++
@@ -273,4 +274,11 @@ func scanMagic(r io.Reader, log *slog.Logger) error {
 			}
 		}
 	}
+}
+
+func logFrameReadError(log *slog.Logger, msg string, err error) {
+	if errors.Is(err, net.ErrClosed) {
+		return
+	}
+	log.Warn(msg, slog.String("err", err.Error()))
 }
