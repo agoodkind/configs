@@ -11,6 +11,7 @@
 /Users/agoodkind/Library/Caches/go-build/e0/e023fc14b632037249667e6b994773113604857f4a74222a730dc2c8c99a7285-d:51:1: boundary function must emit at least one structured slog event	# staticcheck-extra:first_added=2026-05-06T00:36:29Z last_seen=2026-05-06T02:39:23Z
 /Users/agoodkind/Library/Caches/go-build/f4/f4c501fa4b38f60188da20d29c1447e5ebcd5e701fbfe70724be96e2ebe587ee-d:53:1: boundary function must emit at least one structured slog event	# staticcheck-extra:first_added=2026-05-06T02:39:23Z last_seen=2026-05-06T02:39:23Z
 internal/agent/clock.go:12:9: time.Now() outside clock helper; inject a clock.Clock for testability or //nolint:time_now_outside_clock	# staticcheck-extra:first_added=2026-05-06T00:36:29Z last_seen=2026-05-06T02:39:23Z
+internal/logging/clock.go:16:9: time.Now() outside clock helper; inject a clock.Clock for testability or //nolint:time_now_outside_clock	# staticcheck-extra:first_added=2026-05-08T02:25:58Z last_seen=2026-05-08T02:25:58Z
 internal/agent/interceptor.go:29:7: do not use any; define a deeply enumerated named type	# staticcheck-extra:first_added=2026-05-05T15:41:13Z last_seen=2026-05-06T02:39:23Z
 internal/agent/interceptor.go:29:7: signature uses any, which expands to any (empty interface); define a deeply enumerated named type	# staticcheck-extra:first_added=2026-05-05T15:41:13Z last_seen=2026-05-06T02:39:23Z
 internal/agent/interceptor.go:32:5: do not use any; define a deeply enumerated named type	# staticcheck-extra:first_added=2026-05-05T15:41:13Z last_seen=2026-05-06T02:39:23Z
