@@ -3,7 +3,11 @@ hostname = "test-mwan"
 [agent]
 vsock_port = 50051
 tcp_addr = "[::]:50052"
-deploy_file = "/var/run/mwan-last-deploy"
+deploy_file = "/var/lib/mwan/last-deploy"
+# vm-950 is a bare testbed VM that has never run the full deploy-mwan
+# Ansible play, so the timestamp file is never written. The gate keeps
+# the agent from emitting the deploy-file-missing notify on every poll.
+deploy_expected = false
 log_file = "/var/log/mwan-agent.log"
 debug = false
 

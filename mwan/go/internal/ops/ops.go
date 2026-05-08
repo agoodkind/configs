@@ -292,7 +292,7 @@ func (r *RealOps) vsockExec(
 		}
 		return GuestExecResult{ExitCode: 1}, nil
 	case guestCmdCat:
-		if len(args) >= 2 && strings.Contains(args[1], "mwan-last-deploy") {
+		if len(args) >= 2 && isLastDeployPath(args[1]) {
 			resp, err := cli.GetConfigState(cctx, &mwanv1.GetConfigStateRequest{})
 			if err != nil {
 				return GuestExecResult{ExitCode: 1}, err
@@ -303,6 +303,15 @@ func (r *RealOps) vsockExec(
 	}
 	return GuestExecResult{ExitCode: 1},
 		fmt.Errorf("vsockExec: unhandled command %q", args[0])
+}
+
+// isLastDeployPath reports whether p names the last-deploy timestamp
+// file. The MWAN-144 path move from /var/run/mwan-last-deploy to
+// /var/lib/mwan/last-deploy means a substring like "mwan-last-deploy"
+// no longer matches the new path. Matching the suffix "last-deploy" is
+// safe because mwan-last-change uses a different suffix.
+func isLastDeployPath(p string) bool {
+	return strings.Contains(p, "last-deploy")
 }
 
 func (r *RealOps) tcpExec(
@@ -351,7 +360,7 @@ func (r *RealOps) tcpExec(
 		}
 		return GuestExecResult{ExitCode: 1}, nil
 	case guestCmdCat:
-		if len(args) >= 2 && strings.Contains(args[1], "mwan-last-deploy") {
+		if len(args) >= 2 && isLastDeployPath(args[1]) {
 			resp, err := cli.GetConfigState(cctx, &mwanv1.GetConfigStateRequest{})
 			if err != nil {
 				return GuestExecResult{ExitCode: 1}, err

@@ -255,7 +255,7 @@ func testNC() config.NetworkConfig {
 			{Name: "enwebpass0"},
 			{Name: "enmbrains0"},
 		},
-		LastDeployPath: "/var/run/mwan-last-deploy",
+		LastDeployPath: "/var/lib/mwan/last-deploy",
 		LastChangePath: "/var/run/mwan-last-change",
 	}
 }

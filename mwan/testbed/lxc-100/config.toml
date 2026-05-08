@@ -15,7 +15,8 @@ cooldown = "5m"
 [agent]
 vsock_port = 0
 tcp_addr = "[::]:50052"
-deploy_file = "/var/run/mwan-last-deploy"
+deploy_file = "/var/lib/mwan/last-deploy"
+deploy_expected = true
 log_file = "/var/log/mwan-agent.log"
 debug = false
 

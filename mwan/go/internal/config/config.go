@@ -213,12 +213,20 @@ type BGPAnnounce struct {
 }
 
 // AgentSection holds agent-specific configuration.
+//
+// DeployExpected gates the "deploy-file-missing" warning emitted by
+// GetConfigState when DeployFile cannot be read. The default is true,
+// which preserves the historical behaviour for production and testbed
+// hosts that are deployed by Ansible. Fresh hosts that have never been
+// deployed should set this to false so the missing file is treated as
+// steady state and no notify event is fired.
 type AgentSection struct {
-	VsockPort  uint32 `toml:"vsock_port"`
-	TCPAddr    string `toml:"tcp_addr"`
-	DeployFile string `toml:"deploy_file"`
-	LogFile    string `toml:"log_file"`
-	Debug      bool   `toml:"debug"`
+	VsockPort      uint32 `toml:"vsock_port"`
+	TCPAddr        string `toml:"tcp_addr"`
+	DeployFile     string `toml:"deploy_file"`
+	DeployExpected bool   `toml:"deploy_expected"`
+	LogFile        string `toml:"log_file"`
+	Debug          bool   `toml:"debug"`
 }
 
 // Config is the single TOML configuration for the mwan monolith.
@@ -309,7 +317,7 @@ func defaultConfig() Config {
 		Network: NetworkConfig{
 			PingTargetIPv4: "1.1.1.1",
 			PingTargetIPv6: "2606:4700:4700::1111",
-			LastDeployPath: "/var/run/mwan-last-deploy",
+			LastDeployPath: "/var/lib/mwan/last-deploy",
 			LastChangePath: "/var/run/mwan-last-change",
 		},
 		Watchdog: WatchdogSection{
@@ -333,7 +341,9 @@ func defaultConfig() Config {
 		},
 		Agent: AgentSection{
 			VsockPort: 50051, TCPAddr: "[::]:50052",
-			DeployFile: "/var/run/mwan-last-deploy", LogFile: "/var/log/mwan-agent.log",
+			DeployFile:     "/var/lib/mwan/last-deploy",
+			DeployExpected: true,
+			LogFile:        "/var/log/mwan-agent.log",
 		},
 		BGP: BGPSection{
 			GracefulRestart: BGPGracefulRestart{

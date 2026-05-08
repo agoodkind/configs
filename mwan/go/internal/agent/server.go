@@ -35,6 +35,7 @@ var pingReceivedRE = regexp.MustCompile(`(\d+)\s+received`)
 type Server struct {
 	mwanv1.UnimplementedMWANAgentServer
 	deployFilePath string
+	deployExpected bool
 	log            *slog.Logger
 	bgp            *bgp.Speaker // nil when BGP is disabled
 	clock          clock
@@ -59,6 +60,11 @@ func NewServer(
 	}
 	return &Server{
 		deployFilePath: deployFilePath,
+		// deployExpected defaults to true so production and testbed-deployed
+		// hosts keep their historical alerting behaviour. Fresh hosts that
+		// have never been Ansible-deployed flip this to false via
+		// SetDeployExpected so the missing file is steady state.
+		deployExpected: true,
 		log:            log,
 		bgp:            bgpSpeaker,
 		clock:          realClock{},
@@ -68,6 +74,15 @@ func NewServer(
 		meminfoPath:    "/proc/meminfo",
 		statfsPath:     "/",
 	}
+}
+
+// SetDeployExpected toggles the deploy-file-missing notify gate. When
+// false, GetConfigState treats a missing deploy file as steady state
+// and skips the Notify call. The Resolve call still fires on a
+// successful read so a host that flips from fresh to deployed clears
+// any stale alert.
+func (a *Server) SetDeployExpected(expected bool) {
+	a.deployExpected = expected
 }
 
 func (a *Server) enrichRPCContext(
@@ -281,16 +296,21 @@ func (a *Server) GetConfigState(
 
 	raw, err := os.ReadFile(a.deployFilePath)
 	if err != nil {
-		a.notifier.Notify(ctx, notify.Event{
-			Level:   slog.LevelWarn,
-			Kind:    "deploy-file-missing",
-			Key:     a.deployFilePath,
-			Message: "read deploy file",
-			Fields: []slog.Attr{
-				slog.String("path", a.deployFilePath),
-				slog.String("error", err.Error()),
-			},
-		})
+		// Skip the notify route on hosts that have never been deployed.
+		// The watchdog's deploy-staleness check still observes a zero
+		// epoch; this gate suppresses the WARN flood on fresh hosts.
+		if a.deployExpected {
+			a.notifier.Notify(ctx, notify.Event{
+				Level:   slog.LevelWarn,
+				Kind:    "deploy-file-missing",
+				Key:     a.deployFilePath,
+				Message: "read deploy file",
+				Fields: []slog.Attr{
+					slog.String("path", a.deployFilePath),
+					slog.String("error", err.Error()),
+				},
+			})
+		}
 	} else {
 		a.notifier.Resolve(ctx, "deploy-file-missing", a.deployFilePath,
 			"deploy file readable",
