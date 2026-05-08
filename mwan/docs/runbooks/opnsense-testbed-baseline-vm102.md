@@ -111,3 +111,70 @@ ssh root@10.240.0.148 'qm snapshot 102 baseline-clean --description "Fresh OPNse
   Proxmox side is the supported reset path during rehearsal.
 - VM 101 stays untouched throughout this workflow. Any operation that
   references VM 101 belongs in a separate, explicit slice.
+
+## Addendum: Option A topology (2026-05-08)
+
+The MWAN-149 cycle picked Option A for VM 102's MANAGEMENT plane. The
+LAN side of OPNsense (`vtnet0`) lives on `vmbrtrunk` untagged so the
+single-port posture from MWAN-148 is preserved, and suburban itself
+joins the same untagged side as a stub L3 client so it can reach
+OPNsense over SSH and the in-guest mwan-opnsense gRPC channel from a
+single host. This mirrors how prod vault joins the OPNsense LAN bridge
+to act as the host-side watchdog peer.
+
+Address allocation (mirrors the MWAN-150 substitutions; testbed prefix
+`2N` mirrors the prod prefix `N`):
+
+| Endpoint                  | IPv4              | IPv6                       |
+| ------------------------- | ----------------- | -------------------------- |
+| VM 102 OPNsense MANAGEMENT (`vtnet0`, untagged on `vmbrtrunk`) | `10.240.4.1/24`  | `3d06:bad:b01:204::1/64`  |
+| Suburban stub on `vmbrtrunk`                                    | `10.240.4.5/24`  | `3d06:bad:b01:204::5/64`  |
+
+Persistent state lives in three coordinated places:
+
+1. `opentofu/networks.tf` declares the suburban stub addresses on the
+   `proxmox_network_linux_bridge.trunk` resource via the bpg/proxmox
+   provider's `address` and `address6` attributes.
+2. Suburban's `/etc/network/interfaces` file carries the matching
+   `iface vmbrtrunk inet static` and `iface vmbrtrunk inet6 static`
+   blocks. A pre-change backup is preserved at
+   `/etc/network/interfaces.before-vmbrtrunk-stub-2026-05-08`.
+3. OPNsense's `/conf/config.xml` has the LAN block rewritten from
+   the installer default `192.168.1.1/track6` to the static testbed
+   addresses. A pre-change backup is preserved at
+   `/conf/config.xml.before-vm102-lan-2026-05-08`.
+
+The OPNsense LAN move was driven over the QEMU serial socket
+(`/var/run/qemu-server/102.serial0`) using `expect`-driven `socat`,
+since the installer-default OPNsense did not have SSH reachable yet.
+The same console session also flipped the SSH service to `enabled=1`
+and `permitrootlogin=1`, then `passwordauth=1`, and ran
+`/usr/local/etc/rc.sshd` to regenerate `/usr/local/etc/ssh/sshd_config`
+so password auth actually took effect in the rendered file. Once SSH
+worked, the suburban operator pubkey was installed in
+`/root/.ssh/authorized_keys` so the ongoing daemon-install step did
+not require `sshpass`.
+
+The mwan-opnsense daemon listens on the named virtio-console port
+`io.goodkind.mwan-opnsense.0`, which the FreeBSD `virtio_console`
+driver exposes as `/dev/ttyV0.1` via the symlink in `/dev/vtcon/`.
+The matching `mwan_opnsense_listen_serial` `sysrc` value is
+`/dev/ttyV0.1`, which is also the rc.d default. Cross-check the named
+symlink before assuming the device path:
+
+```sh
+ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0
+```
+
+If the symlink points at `/dev/ttyV1.1` instead, the host-side QEMU
+arguments may have re-ordered the `virtio-serial-pci` slots; update
+`mwan_opnsense_listen_serial` accordingly.
+
+Verified gRPC version probe from suburban after daemon install:
+
+```sh
+mwan opnsense-probe -target unix:///var/run/qemu-server/102.mwanrpc -op version
+```
+
+The probe returns the daemon's build banner
+(`commit=<sha> dirty=clean binhash=<hash>`).

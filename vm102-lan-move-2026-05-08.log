@@ -1,0 +1,50 @@
+spawn socat -,raw,echo=0 UNIX-CONNECT:/var/run/qemu-server/102.serial0
+
+
+root@OPNsense:~ # /usr/local/bin/python3 /root/edit-config.py; echo ===EDIT_RC=$ ?===
+WROTE /conf/config.xml, backup at /conf/config.xml.before-vm102-lan-2026-05-08
+===EDIT_RC=0===
+root@OPNsense:~ # xmllint --xpath '/opnsense/system/hostname/text()' /conf/confi g.xml; echo; xmllint --xpath '/opnsense/interfaces/lan' /conf/config.xml; echo;  xmllint --xpath '/opnsense/system/ssh' /conf/config.xml; echo ===POSTEDIT===
+opnsense-test2
+
+<lan>
+      <enable>1</enable>
+      <if>vtnet0</if>
+      <ipaddr>10.240.4.1</ipaddr>
+      <subnet>24</subnet>
+      <ipaddrv6>3d06:bad:b01:204::1</ipaddrv6>
+      <subnetv6>64</subnetv6>
+      <media/>
+      <mediaopt/>
+      </lan>
+
+<ssh>
+      <group>admins</group>
+    <enabled>1</enabled><permitrootlogin>1</permitrootlogin></ssh>
+===POSTEDIT===
+root@OPNsense:~ # configctl service reload all; echo ===RELOAD_RC=$?===
+OK
+===RELOAD_RC=0===
+root@OPNsense:~ # configctl interface reconfigure lan; echo ===LAN_RC=$?===
+OK
+===LAN_RC=0===
+root@OPNsense:~ # configctl service restart sshd; echo ===SSHD_RC=$?===
+OK
+===SSHD_RC=0===
+root@OPNsense:~ # ifconfig vtnet0; echo ===IFCONFIG_DONE===
+vtnet0: flags=1008843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST,LOWER_UP> metric 0 mtu 1500
+        description: LAN (lan)
+        options=80008<VLAN_MTU,LINKSTATE>
+        ether bc:24:11:7d:6d:87
+        inet 10.240.4.1 netmask 0xffffff00 broadcast 10.240.4.255
+        inet6 fe80::be24:11ff:fe7d:6d87%vtnet0 prefixlen 64 scopeid 0x1
+        inet6 3d06:bad:b01:204::1 prefixlen 64
+        media: Ethernet autoselect (10Gbase-T <full-duplex>)
+        status: active
+        nd6 options=121<PERFORMNUD,AUTO_LINKLOCAL,NO_DAD>
+===IFCONFIG_DONE===
+root@OPNsense:~ # sockstat -4 -l | grep ':22 ' || echo no_v4_sshd_listener; sock stat -6 -l | grep ':22 ' || echo no_v6_sshd_listener; echo ===SOCK_DONE===
+root     sshd       81100 7   tcp4   *:22                  *:*
+root     sshd       81100 6   tcp6   *:22                  *:*
+===SOCK_DONE===
+root@OPNsense:

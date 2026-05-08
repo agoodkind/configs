@@ -43,6 +43,13 @@ resource "proxmox_network_linux_bridge" "trunk" {
   vids       = "64 100 200 300"
   autostart  = true
 
+  # Suburban stub IP on the untagged side of vmbrtrunk so this host can
+  # reach VM 102 OPNsense MANAGEMENT (10.240.4.0/24) and the testbed mwan
+  # gRPC unix socket from a single bridge. Mirrors prod vault joining the
+  # OPNsense LAN bridge as a stub client. Tracked under MWAN-149.
+  address  = "10.240.4.5/24"
+  address6 = "3d06:bad:b01:204::5/64"
+
   lifecycle {
     prevent_destroy = true
   }
