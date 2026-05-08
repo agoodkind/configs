@@ -88,6 +88,11 @@ resource "proxmox_virtual_environment_container" "plane" {
 
 # Suburban LXC 100: mwan-failover-test container.
 # Used as the failover target client for keepalived/VRRP testbed runs.
+#
+# MWAN-62 reconcile (2026-05-08): values below match live `pct config 100`
+# on suburban. unprivileged=false, start_on_boot=false, tags=[], and
+# memory.swap=512 are live-state truth, not desired changes. The ipv6 first
+# ip_config uses `auto` because that is what the live container reports.
 resource "proxmox_virtual_environment_container" "mwan_failover_test" {
   provider  = proxmox.suburban
   node_name = "hypervisor"
@@ -100,7 +105,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_test" {
         address = "dhcp"
       }
       ipv6 {
-        address = "dhcp"
+        address = "auto"
       }
     }
     ip_config {
@@ -134,18 +139,32 @@ resource "proxmox_virtual_environment_container" "mwan_failover_test" {
     size         = 4
   }
 
-  memory { dedicated = 512 }
-  cpu { cores = 1 }
+  memory {
+    dedicated = 512
+    swap      = 512
+  }
+  cpu {
+    architecture = "amd64"
+    cores        = 1
+    limit        = 0
+  }
 
-  tags = ["lxc", "mwan", "testbed"]
+  console {
+    enabled   = true
+    tty_count = 2
+    type      = "tty"
+  }
+
+  tags = []
 
   operating_system {
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     type             = "debian"
   }
 
-  started      = true
-  unprivileged = true
+  started       = true
+  start_on_boot = false
+  unprivileged  = false
 
   lifecycle {
     prevent_destroy = true
@@ -158,6 +177,9 @@ resource "proxmox_virtual_environment_container" "mwan_failover_test" {
 # Suburban LXC 200: isp-webpass simulator.
 # Provides a fake Webpass-style upstream on vmbr4 plus a vmbr0 management
 # NIC for outbound updates and SSH.
+#
+# MWAN-62 reconcile (2026-05-08): unprivileged=false, start_on_boot=false,
+# tags=[], and memory.swap=512 match live `pct config 200` on suburban.
 resource "proxmox_virtual_environment_container" "isp_webpass" {
   provider  = proxmox.suburban
   node_name = "hypervisor"
@@ -198,18 +220,32 @@ resource "proxmox_virtual_environment_container" "isp_webpass" {
     size         = 2
   }
 
-  memory { dedicated = 128 }
-  cpu { cores = 1 }
+  memory {
+    dedicated = 128
+    swap      = 512
+  }
+  cpu {
+    architecture = "amd64"
+    cores        = 1
+    limit        = 0
+  }
 
-  tags = ["lxc", "mwan", "testbed", "isp-sim"]
+  console {
+    enabled   = true
+    tty_count = 2
+    type      = "tty"
+  }
+
+  tags = []
 
   operating_system {
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     type             = "debian"
   }
 
-  started      = true
-  unprivileged = true
+  started       = true
+  start_on_boot = false
+  unprivileged  = false
 
   lifecycle {
     prevent_destroy = true
@@ -221,6 +257,9 @@ resource "proxmox_virtual_environment_container" "isp_webpass" {
 
 # Suburban LXC 201: isp-att simulator.
 # Provides a fake AT&T-style upstream on vmbr5 plus a vmbr0 management NIC.
+#
+# MWAN-62 reconcile (2026-05-08): unprivileged=false, start_on_boot=false,
+# tags=[], and memory.swap=512 match live `pct config 201` on suburban.
 resource "proxmox_virtual_environment_container" "isp_att" {
   provider  = proxmox.suburban
   node_name = "hypervisor"
@@ -261,18 +300,32 @@ resource "proxmox_virtual_environment_container" "isp_att" {
     size         = 2
   }
 
-  memory { dedicated = 128 }
-  cpu { cores = 1 }
+  memory {
+    dedicated = 128
+    swap      = 512
+  }
+  cpu {
+    architecture = "amd64"
+    cores        = 1
+    limit        = 0
+  }
 
-  tags = ["lxc", "mwan", "testbed", "isp-sim"]
+  console {
+    enabled   = true
+    tty_count = 2
+    type      = "tty"
+  }
+
+  tags = []
 
   operating_system {
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     type             = "debian"
   }
 
-  started      = true
-  unprivileged = true
+  started       = true
+  start_on_boot = false
+  unprivileged  = false
 
   lifecycle {
     prevent_destroy = true
@@ -285,6 +338,9 @@ resource "proxmox_virtual_environment_container" "isp_att" {
 # Suburban LXC 202: isp-mbrains simulator.
 # Provides a fake Monkeybrains-style upstream on vmbr6 with both IPv4 and
 # IPv6, plus a vmbr0 management NIC.
+#
+# MWAN-62 reconcile (2026-05-08): unprivileged=false, start_on_boot=false,
+# tags=[], and memory.swap=512 match live `pct config 202` on suburban.
 resource "proxmox_virtual_environment_container" "isp_mbrains" {
   provider  = proxmox.suburban
   node_name = "hypervisor"
@@ -328,18 +384,32 @@ resource "proxmox_virtual_environment_container" "isp_mbrains" {
     size         = 2
   }
 
-  memory { dedicated = 128 }
-  cpu { cores = 1 }
+  memory {
+    dedicated = 128
+    swap      = 512
+  }
+  cpu {
+    architecture = "amd64"
+    cores        = 1
+    limit        = 0
+  }
 
-  tags = ["lxc", "mwan", "testbed", "isp-sim"]
+  console {
+    enabled   = true
+    tty_count = 2
+    type      = "tty"
+  }
+
+  tags = []
 
   operating_system {
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     type             = "debian"
   }
 
-  started      = true
-  unprivileged = true
+  started       = true
+  start_on_boot = false
+  unprivileged  = false
 
   lifecycle {
     prevent_destroy = true
@@ -353,6 +423,9 @@ resource "proxmox_virtual_environment_container" "isp_mbrains" {
 # Single-NIC LAN-side container on vmbr3 used as the OPNsense LAN client
 # during cutover2 testing. Live config has a static IPv4 gateway
 # (192.168.1.1) and IPv6 gateway (3d06:bad:b01:211::1).
+#
+# MWAN-62 reconcile (2026-05-08): unprivileged=false, start_on_boot=false,
+# tags=[], and memory.swap=512 match live `pct config 203` on suburban.
 resource "proxmox_virtual_environment_container" "testbed_proxy" {
   provider  = proxmox.suburban
   node_name = "hypervisor"
@@ -387,18 +460,32 @@ resource "proxmox_virtual_environment_container" "testbed_proxy" {
     size         = 2
   }
 
-  memory { dedicated = 256 }
-  cpu { cores = 1 }
+  memory {
+    dedicated = 256
+    swap      = 512
+  }
+  cpu {
+    architecture = "amd64"
+    cores        = 1
+    limit        = 0
+  }
 
-  tags = ["lxc", "mwan", "testbed", "lan-client"]
+  console {
+    enabled   = true
+    tty_count = 2
+    type      = "tty"
+  }
+
+  tags = []
 
   operating_system {
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     type             = "debian"
   }
 
-  started      = true
-  unprivileged = true
+  started       = true
+  start_on_boot = false
+  unprivileged  = false
 
   lifecycle {
     prevent_destroy = true
