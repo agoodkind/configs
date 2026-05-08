@@ -1,30 +1,30 @@
 # MWAN-63: suburban testbed bridges managed by OpenTofu.
 #
-# The mwan-140 slice 1 design added two bridges to suburban for the OPNsense
-# testbed VM (VM 101) to mirror the prod iavf0 VLAN parent shape:
+# The mwan-140 slice 1 design originally added two bridges to suburban for
+# the OPNsense testbed VM (VM 101) to mirror the prod iavf0 VLAN parent
+# shape. MWAN-148 narrowed that to a single trunk bridge, since prod runs
+# MANAGEMENT untagged on the same physical port that carries the VLAN
+# trunk (`iavf0`). The testbed mirrors that one-port posture: VM 101
+# attaches to the trunk bridge once, and OPNsense exposes MANAGEMENT as
+# the untagged interface plus the four 802.1q VLAN children on top.
 #
 #   * trunk: VLAN-aware trunk bridge carrying VIDs 64, 100, 200, 300.
-#     VM 101 net3 attaches as a tagged trunk member. OPNsense renames the
-#     virtio NIC to iavf0 inside the guest so the imported config.xml VLAN
-#     children (vlan0064, vlan0100, vlan0200, vlan0300) bind correctly.
-#
-#   * mgmt: untagged MANAGEMENT bridge mirroring prod iavf0 native.
-#     The host carries 10.240.4.1/24 and 3d06:bad:b01:204::1/64 so suburban
-#     itself can reach the MANAGEMENT plane for diagnostics. VM 101 net2
-#     attaches here.
+#     VM 101 attaches as a trunk member that also carries the untagged
+#     MANAGEMENT plane. The imported config.xml VLAN children
+#     (vlan0064, vlan0100, vlan0200, vlan0300) bind to the testbed
+#     equivalent device through the config.xml transform layer rather
+#     than via a FreeBSD rename. See MWAN-148 for the rationale.
 #
 # Naming constraint (verified at validate time on 2026-05-07): the
 # bpg/proxmox provider enforces the upstream Proxmox API rule that bridge
 # names match `^[a-zA-Z][a-zA-Z0-9_]*$` and stay at or under 10 characters.
-# The mwan-140 spec used `vmbr-trunk` and `vmbr-mgmt`, which violate the
-# hyphen and length rules. Live discovery on 2026-05-07 confirmed those
-# bridges do NOT exist on suburban yet (the slice 1 Ansible template was
-# never applied), so this slice renames them to `vmbrtrunk` and
-# `vmbrmgmt`. Downstream callers (mwan-140 fragments, OPNsense config.xml,
-# vmbr2/vmbr3 suburban interfaces stanza, ansible group_vars) need to
-# follow the same rename in their own slices before applying these
-# resources. Surfacing this as a follow-up because it touches scope
-# outside MWAN-63/MWAN-62.
+# The mwan-140 spec used `vmbr-trunk`, which violates the hyphen rule.
+# Live discovery on 2026-05-07 confirmed the bridge does NOT exist on
+# suburban yet (the slice 1 Ansible template was never applied), so this
+# slice uses `vmbrtrunk`. Downstream callers (mwan-140 fragments,
+# OPNsense config.xml, vmbr2/vmbr3 suburban interfaces stanza, ansible
+# group_vars) need to follow the same name in their own slices before
+# applying this resource.
 #
 # Schema reference (bpg/proxmox >= 0.106):
 #   https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/network_linux_bridge
@@ -42,21 +42,6 @@ resource "proxmox_network_linux_bridge" "trunk" {
   vlan_aware = true
   vids       = "64 100 200 300"
   autostart  = true
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "proxmox_network_linux_bridge" "mgmt" {
-  provider  = proxmox.suburban
-  node_name = "hypervisor"
-  name      = "vmbrmgmt"
-  comment   = "MWAN-140 slice 1: untagged MANAGEMENT bridge mirroring prod iavf0 native"
-
-  address   = "10.240.4.1/24"
-  address6  = "3d06:bad:b01:204::1/64"
-  autostart = true
 
   lifecycle {
     prevent_destroy = true
