@@ -39,6 +39,15 @@ address = "3d06:bad:b01:fe::2"
 ipv4 = ["0.0.0.0/0"]
 ipv6 = ["::/0"]
 
+# BGP Graceful Restart (RFC 4724) on the failover-backup speaker. Matches
+# the production.toml.j2 settings so the OPNsense FRR helper sees a
+# consistent GR capability from both the primary (VM 113) and backup (LXC
+# 116) speakers. See mwan/docs/MWAN-130-bgp-graceful-restart-plan.md.
+[bgp.graceful_restart]
+enabled = true
+restart_time = 30
+notification_enabled = true
+
 # ============================================================================
 # ifmgr: lxc-failover-backup role (eth0/mbrains-side health management)
 # ============================================================================

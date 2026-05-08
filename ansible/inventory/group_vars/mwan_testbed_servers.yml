@@ -237,6 +237,13 @@ bgp_announce_ipv4:
 bgp_announce_ipv6:
   - "::/0"
 
+# BGP Graceful Restart (RFC 4724). Mirrors mwan_servers.yml so the testbed
+# exercises the same GR negotiation as production. restart_time is held at
+# 30 seconds (not the GoBGP default of 120) per the MWAN-130 plan.
+mwan_bgp_graceful_restart_enabled: true
+mwan_bgp_graceful_restart_time_seconds: 30
+mwan_bgp_graceful_restart_notification_enabled: true
+
 # ----------------------------------------------------------------------------
 # Watchdog
 # ----------------------------------------------------------------------------
