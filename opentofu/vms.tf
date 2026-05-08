@@ -275,3 +275,95 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
     ]
   }
 }
+
+# MWAN-149: replacement OPNsense testbed VM 102 (opnsense-test2).
+#
+# Replacement for wedged VM 101. After `tofu apply` creates the shell,
+# install OPNsense via serial console per
+# `mwan/docs/runbooks/opnsense-serial-vm-from-scratch.md`. Once running,
+# install the mwan-opnsense daemon and bring the gRPC channel up. Then
+# this VM becomes the testbed baseline for MWAN-127 config import
+# rehearsal and MWAN-13 26.x upgrade validation.
+#
+# VM 101 stays in place as a forensic artifact of the MWAN-119 v2
+# rollback wedge. Do not destroy or apply against it; this slice only
+# adds VM 102 alongside.
+#
+# NIC layout follows the MWAN-148 one-port posture: a single NIC on
+# `vmbrtrunk` carries MANAGEMENT untagged plus the four 802.1q VLAN
+# children (vlan0064, vlan0100, vlan0200, vlan0300). The OPNsense
+# config.xml transform layer (see
+# `mwan/docs/MWAN-140-config-xml-transform-spec.md`) rewrites prod-side
+# `iavf0` references to the testbed's matching device name (typically
+# `vtnet0` for the first virtio NIC).
+#
+# The `kvm_arguments` block mirrors the VM 101 chardev pattern but uses
+# the path `/var/run/qemu-server/102.mwanrpc` so the future
+# mwan-opnsense daemon has its own gRPC channel. The chardev name
+# `io.goodkind.mwan-opnsense.0` matches what the OPNsense plugin opens
+# on `/dev/ttyV0.0` inside the guest.
+#
+# CPU, memory, BIOS, machine, scsi_hardware, agent, serial_device, and
+# vga settings mirror VM 101 so the OPNsense installer behaves the same.
+# The boot disk is sized at 8G on local-zfs to match VM 101.
+
+resource "proxmox_virtual_environment_vm" "opnsense_test2" {
+  provider  = proxmox.suburban
+  node_name = "hypervisor"
+  vm_id     = 102
+  name      = "opnsense-test2"
+
+  scsi_hardware = "virtio-scsi-pci"
+  on_boot       = false
+  started       = false
+
+  # Raw QEMU args: virtio-serial-pci controller plus the mwan-opnsense
+  # chardev. Path is /var/run/qemu-server/102.mwanrpc so it does not
+  # collide with VM 101's chardev. The chardev name matches what the
+  # OPNsense plugin expects on /dev/ttyV0.0 inside the guest.
+  kvm_arguments = "-device virtio-serial-pci,id=mwanrpc -chardev socket,id=mwanchr,path=/var/run/qemu-server/102.mwanrpc,server=on,wait=off -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0"
+
+  keyboard_layout = "en-us"
+
+  agent {
+    enabled = true
+    type    = "virtio"
+  }
+
+  cpu {
+    cores = 2
+  }
+
+  memory {
+    dedicated = 2048
+  }
+
+  serial_device {
+    device = "socket"
+  }
+
+  vga {
+    type = "serial0"
+  }
+
+  # Boot disk. After `tofu apply` the disk is empty; the operator
+  # installs OPNsense from the serial ISO per the from-scratch runbook.
+  disk {
+    datastore_id = "local-zfs"
+    interface    = "scsi0"
+    size         = 8
+  }
+
+  # Single trunk NIC per MWAN-148. MANAGEMENT untagged plus the four
+  # VLAN children share this one port. MAC address is left to the
+  # provider so the operator does not have to pre-allocate one; the
+  # OPNsense config.xml transform layer keys off device name, not MAC.
+  network_device {
+    bridge = "vmbrtrunk"
+    model  = "virtio"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}

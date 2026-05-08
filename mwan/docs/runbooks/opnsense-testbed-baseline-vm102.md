@@ -1,0 +1,113 @@
+# OPNsense Testbed Baseline VM 102
+
+Created: 2026-05-08
+Tracking issue: MWAN-149
+
+This runbook is the operator workflow for bringing the replacement OPNsense
+testbed VM (`opnsense-test2`, VMID `102`) on suburban from a freshly applied
+OpenTofu shell to a baseline ready for the MWAN-127 config import rehearsal
+and the MWAN-13 26.x upgrade validation.
+
+The wedged VM `101` (`opnsense-test`) stays in place as a forensic artifact
+of the MWAN-119 v2 rollback. Do not destroy or apply against it.
+
+## Prerequisites
+
+- The MWAN-149 branch is merged and `tofu apply` has been run against the
+  suburban Proxmox provider, so the `proxmox_virtual_environment_vm.opnsense_test2`
+  resource exists and the VM 102 shell is provisioned. The shell has:
+  - One NIC on `vmbrtrunk` (single-port posture per MWAN-148).
+  - An 8G boot disk on `local-zfs` (empty).
+  - `serial0: socket` and `vga: serial0` for serial-console install.
+  - The mwan-opnsense virtio-serial chardev exposed at
+    `/var/run/qemu-server/102.mwanrpc` with chardev name
+    `io.goodkind.mwan-opnsense.0`.
+  - `started = false`, so the operator boots it explicitly when ready.
+- An OPNsense serial installer image is staged on suburban at
+  `/var/lib/vz/template/iso/OPNsense-25.7-serial-amd64.img` (or the latest
+  serial image variant for the rehearsal).
+- The operator has SSH access to suburban as `root@10.240.0.148`.
+
+## Step 1: Install OPNsense via serial console
+
+Follow `mwan/docs/runbooks/opnsense-serial-vm-from-scratch.md` end to end,
+substituting the rehearsal VMID with `102` and using the
+`opnsense-test2` name. Notable substitutions:
+
+- `VMID=102`
+- `NAME=opnsense-test2`
+- `LAN_IPV4` should be a free address on the testbed management plane;
+  the existing rehearsal used `10.240.200.130`, so pick a different
+  unused address like `10.240.200.102` to keep VM ID and IP aligned.
+
+Stop after the runbook reaches the basic operational state with SSH and
+QEMU Guest Agent reachable. Do not import the prod config.xml yet; that
+happens in MWAN-127 after the baseline is captured.
+
+## Step 2: Install the mwan-opnsense daemon
+
+The mwan-opnsense daemon runs inside the OPNsense guest and exposes the
+gRPC channel that the in-host watchdog talks to via the virtio-serial
+chardev. The rollout recipe lives in the top-level `AGENTS.MD` under the
+`Manual rollout of a new mwan binary` heading. Build the freebsd/amd64
+binary locally with `make`, then scp it to `opnsense-test2` and install
+the rc.d unit per the recipe.
+
+Confirm the daemon is up with the local check inside the guest:
+
+```bash
+service mwan_opnsense status
+ls -l /dev/ttyV0.0
+```
+
+The chardev device should be `/dev/ttyV0.0` and the service should show
+running.
+
+## Step 3: Confirm the gRPC channel from the host
+
+From suburban, point the host-side `mwan opnsense-host` upstream at the
+new chardev path and confirm round-trip RPC works:
+
+```bash
+ssh root@10.240.0.148 \
+  'mwan opnsense-probe -upstream unix:///var/run/qemu-server/102.mwanrpc'
+```
+
+Expected: a non-error probe response. If the probe fails, check that the
+chardev path matches the `kvm_arguments` block in `opentofu/vms.tf` and
+that the `mwan_opnsense` service inside the guest has registered the
+serial device.
+
+If you intend to run `mwan-opnsense-host.service` against VM 102 instead
+of VM 101, update the `upstream.conf` drop-in for the unit so it points
+at the VM 102 chardev path. The existing drop-in points at VM 101 and
+should not be changed without a follow-up commit, since the wedged VM
+101 still surfaces forensic state.
+
+## Step 4: Capture the baseline
+
+Once the gRPC channel is confirmed reachable, the VM 102 baseline is
+ready for downstream slices:
+
+- MWAN-150 (config.xml transform import): the transform layer rewrites
+  prod-side `iavf0` references to the testbed's matching device name and
+  imports the prod config.xml into the new baseline.
+- MWAN-151 (26.x changelog): use this baseline as the starting point for
+  the OPNsense 26.x upgrade dry-run; record any deltas in the changelog.
+- MWAN-127 (config.xml import rehearsal): the actual rehearsal runs
+  against this VM with the transform applied.
+
+Snapshot the baseline before any of those slices touch it so the operator
+has a clean rollback target:
+
+```bash
+ssh root@10.240.0.148 'qm snapshot 102 baseline-clean --description "Fresh OPNsense install + mwan-opnsense daemon, no prod config imported"'
+```
+
+## Notes
+
+- The `prevent_destroy = true` lifecycle on the VM 102 resource keeps
+  `tofu destroy` from removing the shell. Snapshot rollback on the
+  Proxmox side is the supported reset path during rehearsal.
+- VM 101 stays untouched throughout this workflow. Any operation that
+  references VM 101 belongs in a separate, explicit slice.
