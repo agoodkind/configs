@@ -117,8 +117,8 @@ func TestLoadBaseline_RejectsWrongSchema(t *testing.T) {
 }
 
 func TestArtefactPath_MatchesMWAN152(t *testing.T) {
-	got := ArtefactPath("/var/lib/mwan/upgrade", 101, "deploy-1")
-	want := "/var/lib/mwan/upgrade/101/deploy-1"
+	got := ArtefactPath("/var/lib/mwan/upgrades", 101, "deploy-1")
+	want := "/var/lib/mwan/upgrades/101/deploy-1"
 	if got != want {
 		t.Fatalf("got=%s want=%s", got, want)
 	}
