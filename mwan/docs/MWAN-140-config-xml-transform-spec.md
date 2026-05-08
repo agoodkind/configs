@@ -197,3 +197,23 @@ Scope:
 - Out of scope: actually applying the transformed config.xml to a live OPNsense VM. That work belongs to slice 6.
 
 Acceptance: golden test passes, per-element tests pass, `xmllint --noout` on the output is clean, `make check` is green.
+
+## 9. Implementation status
+
+Tracking ticket: `MWAN-150` (slice 4 implementation). The Go code lives in:
+
+- Subcommand entry: `mwan/go/cmd/mwan/opnsense_import_config.go` (subcommand name: `mwan opnsense-import-config`).
+- Transform package: `mwan/go/internal/opnsense/configxform/` (`configxform.go`, `yaml.go`, `configxform_test.go`).
+- Test fixture: `mwan/go/internal/opnsense/configxform/testdata/minimal-config.xml`.
+- Operator-facing example YAML: `mwan/testbed/opnsense/substitutions.example.yaml`.
+
+The YAML schema has four sections:
+
+1. `device_names`: `from` and `to` text values for `<if>` element rewrites (spec section 2).
+2. `xpath_sets`: per-element `xpath` plus `new_value` (spec sections 3.1, 3.4, 3.6, 3.7).
+3. `remove_elements`: `xpath` to delete (spec section 3.5 strip option, 3.8 strip option).
+4. `text_literals`: byte-level `from` and `to` for prefix shifts and embedded references (spec sections 3.3, 3.7, 3.9).
+
+The example YAML carries placeholder values for every operator-decided field, marked `TBD: see MWAN-140 open question N` per spec section 7. Real-world use needs the operator to resolve those open questions and replace each TBD value before invoking the transform.
+
+The implementation deliberately treats Apply as a single in-process transform pass. The structural XML walks run first using `beevik/etree`, and the byte-level text replacements run last on the serialized output so any embedded copies (cert CNs, NAT source nets, SSH-username addresses) are caught after the canonical element values are set. Tests in `configxform_test.go` cover the round-trip device-name rewrite, per-element XPath rewrite, text literal rewrite, WireGuard peer strip, and the YAML decoder error paths (malformed YAML, unknown fields, empty input).

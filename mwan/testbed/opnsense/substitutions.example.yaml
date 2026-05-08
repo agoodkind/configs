@@ -1,0 +1,140 @@
+# Example substitution table for `mwan opnsense-import-config`.
+#
+# This file is the operator-facing knob that drives the prod-to-testbed
+# transform described in mwan/docs/MWAN-140-config-xml-transform-spec.md.
+#
+# Sections map to the spec:
+#   device_names    -> spec section 2 (every <if>iavf0</if> reference)
+#   xpath_sets      -> spec section 3.1, 3.2, 3.4, 3.6, 3.7 (per-element rewrites)
+#   remove_elements -> spec section 3.5 (WireGuard peer strip option)
+#   text_literals   -> spec section 3.3 (NAT source nets) and downstream
+#                      hostname literals embedded in cert altNames or rules.
+#
+# Values marked TBD are open questions in spec section 7. Replace each with
+# the operator-chosen testbed value before running the transform.
+
+device_names:
+  - name: "MANAGEMENT and four VLAN parents: iavf0 to vtnet0"
+    from: "iavf0"
+    to:   "vtnet0"
+
+xpath_sets:
+  # 3.4 hostname / domain (TBD: spec section 7 has no specific question for
+  # this; the spec recommends `router-test` and `test.home.goodkind.io`).
+  - name: "hostname"
+    xpath: "//opnsense/system/hostname"
+    new_value: "router-test"
+  - name: "domain"
+    xpath: "//opnsense/system/domain"
+    new_value: "test.home.goodkind.io"
+
+  # 3.1 IPv4 / IPv6 per-interface rewrites.
+  # TBD: see MWAN-140 open question 1 (final testbed network ranges).
+  - name: "WAN ipv4"
+    xpath: "//opnsense/interfaces/wan/ipaddr"
+    new_value: "10.240.250.2"   # TBD: see MWAN-140 open question 1
+  - name: "WAN ipv6"
+    xpath: "//opnsense/interfaces/wan/ipaddrv6"
+    new_value: "3d06:bad:b01:2fe::2"   # TBD: see MWAN-140 open question 1
+  - name: "MANAGEMENT v4"
+    xpath: "//opnsense/interfaces/opt9/ipaddr"
+    new_value: "10.240.4.1"   # TBD: see MWAN-140 open question 1
+  - name: "MANAGEMENT v6"
+    xpath: "//opnsense/interfaces/opt9/ipaddrv6"
+    new_value: "3d06:bad:b01:204::1"   # TBD: see MWAN-140 open question 1
+
+  # 3.6 NAT64 prefix.
+  # TBD: see MWAN-140 open question 4 (NAT64 prefix choice).
+  # The spec proposes 3d06:bad:b01:2664::/96 to avoid collision with prod.
+  - name: "NAT64 / Tayga prefix"
+    xpath: "//opnsense/OPNsense/Tayga/general/ipv6_prefix"
+    new_value: "3d06:bad:b01:2664::/96"   # TBD: see MWAN-140 open question 4
+
+  # 3.7 captive portal hostname (TBD: spec proposes captive.test.home.goodkind.io).
+  - name: "Captive portal hostname"
+    xpath: "//opnsense/captiveportal/hostname"
+    new_value: "captive"
+  - name: "Captive portal domain"
+    xpath: "//opnsense/captiveportal/domain"
+    new_value: "test.home.goodkind.io"
+
+remove_elements:
+  # 3.5 WireGuard peers: strip per spec section 3.5 default.
+  # TBD: see MWAN-140 open question 3 (strip vs replace).
+  - name: "WireGuard client peers"
+    xpath: "//opnsense/OPNsense/wireguard/client/clients/client"
+  - name: "WireGuard server peers"
+    xpath: "//opnsense/OPNsense/wireguard/server/servers/server"
+
+  # 3.8 Inline TLS certificates (strip option).
+  # TBD: see MWAN-140 open question 5 (strip vs rewrite CN/altNames).
+  # If the operator chooses to strip, uncomment the next entry. If they
+  # choose to rewrite, leave this commented out and rely on text_literals
+  # below to rewrite the embedded hostname.
+  # - name: "Inline certs (strip option)"
+  #   xpath: "//opnsense/cert"
+
+text_literals:
+  # 3.3 NAT and outbound source_networks rewrites (subnet shifts).
+  # TBD: see MWAN-140 open question 1; per-prefix shifts mirror xpath_sets.
+  - name: "PRIVILEGED v4 prefix shift"
+    from: "10.250.1."
+    to:   "10.240.1."
+  - name: "GENERAL v4 prefix shift"
+    from: "10.250.2."
+    to:   "10.240.2."
+  - name: "CAPTIVE v4 prefix shift"
+    from: "10.250.3."
+    to:   "10.240.3."
+  - name: "MANAGEMENT v4 prefix shift"
+    from: "10.250.4."
+    to:   "10.240.4."
+  - name: "VMNET v4 prefix shift"
+    from: "10.250.0."
+    to:   "10.240.0."
+  - name: "WAN v4 prefix shift"
+    from: "10.250.250."
+    to:   "10.240.250."
+
+  # IPv6 prefix shifts. Order matters: longer / more specific must come first.
+  # TBD: see MWAN-140 open question 1.
+  - name: "v6 PRIVILEGED prefix shift"
+    from: "3d06:bad:b01:1::"
+    to:   "3d06:bad:b01:201::"
+  - name: "v6 GENERAL prefix shift"
+    from: "3d06:bad:b01:2::"
+    to:   "3d06:bad:b01:202::"
+  - name: "v6 CAPTIVE prefix shift"
+    from: "3d06:bad:b01:3::"
+    to:   "3d06:bad:b01:203::"
+  - name: "v6 MANAGEMENT prefix shift"
+    from: "3d06:bad:b01:4::"
+    to:   "3d06:bad:b01:204::"
+  - name: "v6 IPv6OnlyVLAN prefix shift"
+    from: "3d06:bad:b01:64::"
+    to:   "3d06:bad:b01:264::"
+  - name: "v6 WAN prefix shift"
+    from: "3d06:bad:b01:fe::"
+    to:   "3d06:bad:b01:2fe::"
+  - name: "v6 VMNET prefix shift"
+    from: "3d06:bad:b01::"
+    to:   "3d06:bad:b01:200::"
+
+  # 3.4 hostname literal rewrites that may appear embedded in cert CN,
+  # SSH banners, or alt-names. The xpath_sets above set the canonical
+  # element values; these literals catch the embedded copies.
+  - name: "domain literal"
+    from: "home.goodkind.io"
+    to:   "test.home.goodkind.io"
+
+  # 3.7 captive portal hostname literal (mirrors the xpath_sets entry).
+  - name: "captive portal FQDN"
+    from: "captive.chaotic.dog"
+    to:   "captive.test.home.goodkind.io"
+
+  # 3.9 SSH-username-bound firewall rules.
+  # TBD: see MWAN-140 open question 6 (rewrite vs strip).
+  # Commented out by default; the operator picks the strategy.
+  # - name: "agoodkind admin v6 address"
+  #   from: "agoodkind@3d06:bad:b01::110"
+  #   to:   "agoodkind@3d06:bad:b01:200::110"
