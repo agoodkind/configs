@@ -311,10 +311,6 @@ func (r *Ops) Ping(ctx context.Context, bin, target string) bool {
 	return r.inner.Ping(ctx, bin, target)
 }
 
-func (r *Ops) SendEmail(ctx context.Context, to, subject, body string) error {
-	return r.inner.SendEmail(ctx, to, subject, body)
-}
-
 func (r *Ops) GetConfigState(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetConfigStateResponse, string, error) {

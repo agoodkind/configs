@@ -290,6 +290,19 @@
         dest: /etc/mwan/mwan.env
         mode: "0644"
 
+    # The mwan-agent and mwan-ifmgr units load this file via EnvironmentFile=.
+    # SMTP2GO_API_KEY is read by internal/config/config.go and overrides the
+    # smtp2go_api_key field in /etc/mwan/config.toml when set.
+    - name: Deploy MWAN secrets environment file
+      ansible.builtin.copy:
+        dest: /etc/mwan/secrets.env
+        content: |
+          SMTP2GO_API_KEY={{ mwan_smtp2go_api_key }}
+        owner: root
+        group: root
+        mode: "0640"
+      no_log: true
+
     - name: Get VM network config from Proxmox
       delegate_to: vault
       ansible.builtin.command:
@@ -982,6 +995,22 @@
         path: /etc/mwan
         state: directory
         mode: "0755"
+
+    # See deploy-mwan.yml main play for the rationale on this file. The
+    # failover LXC config.toml has an [email] block but no smtp2go_api_key;
+    # systemd loads SMTP2GO_API_KEY from this file at unit start.
+    - name: Deploy MWAN secrets environment file (failover LXC)
+      ansible.builtin.copy:
+        dest: /etc/mwan/secrets.env
+        content: |
+          SMTP2GO_API_KEY={{ mwan_smtp2go_api_key }}
+        owner: root
+        group: root
+        mode: "0640"
+      no_log: true
+      notify:
+        - Restart mwan-agent
+        - Restart mwan-ifmgr
 
     - name: Deploy mwan unified binary
       ansible.builtin.copy:

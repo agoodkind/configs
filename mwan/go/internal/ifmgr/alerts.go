@@ -3,152 +3,121 @@
 package ifmgr
 
 import (
+	"context"
 	"log/slog"
-	"strings"
-	"sync"
 	"time"
+
+	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/notify"
 )
 
-// AlertManager is a small transition + repeat tracker for module alerts.
-// It does not own delivery; the actual email/journal handler lives in
-// the slog logger chain (internal/logging routes WARN/ERROR through the
-// email sender). AlertManager exists to suppress duplicate alerts per
-// (kind, key) when modules call Notify repeatedly during the same
-// degraded interval, and to re-emit on a configurable repeat cadence so
-// long-lived problems do not silently drop off the operator's radar.
+// AlertManager is the ifmgr-facing adapter over the notify package.
+// The state machine (per-(kind, key) active/lastEmit/lastLevel plus
+// repeat cadence) lives in notify.Manager. This wrapper keeps the
+// existing module call surface, which uses time.Time and a variadic
+// fields ...any tail, so module code under internal/ifmgr/modules/ does
+// not need to change in slice B.
 //
-// Concurrency: safe for concurrent Notify from multiple modules.
+// Concurrency: forwards to notify.Notifier, which is safe for concurrent
+// Notify and Resolve calls.
 type AlertManager struct {
-	cfg AlertConfig
-	log *slog.Logger
-
-	mu    sync.Mutex
-	state map[string]alertState
+	n notify.Notifier
 }
 
-// AlertConfig controls the per-(kind,key) suppression and repeat cadence.
+// AlertConfig is retained as the test/legacy entry point. RepeatEvery
+// maps to notify.Config.RepeatEvery. The old RepeatResolver field has
+// been removed since per-kind cadence now flows through cfg.Notify in
+// the production path; tests that need per-kind overrides should
+// construct a notify.Manager directly.
 type AlertConfig struct {
-	// RepeatEvery: if a previously-emitted alert is Notify()d again, the
-	// manager re-emits at most once per RepeatEvery. Zero disables repeats
-	// (alerts fire once per transition). Used as a fallback when
-	// RepeatResolver is nil.
+	// RepeatEvery applied to every (kind, key). Zero disables repeats so
+	// alerts fire once per transition.
 	RepeatEvery time.Duration
-
-	// RepeatResolver, when non-nil, is consulted on every Notify to
-	// determine the repeat interval for that (kind, key). This lets the
-	// daemon plumb a per-alert-kind cadence from TOML without forcing
-	// AlertManager to know about the config schema. When nil, RepeatEvery
-	// is used for all (kind, key) pairs.
-	RepeatResolver func(kind, key string) time.Duration
 }
 
-// alertState is the per-(kind,key) memory: was the alert active last
-// time we saw it, when did we last emit, and at what level.
+// NewAlertManager builds an AlertManager wired to a notify.Manager. log
+// must be non-nil; the wrapped Manager journals through it. The Manager
+// has a nil email Sink, which is the right default for tests and for
+// daemon paths that have not been wired through notify.FromConfig yet.
 //
-// lastLevel is recorded at Notify-emit time so Resolve can re-emit the
-// recovery line at the same severity. Without this, Resolve would log
-// at INFO and be filtered out by EmailConfig.MinLevel (default ERROR),
-// leaving open alerts in the inbox with no visible close.
-type alertState struct {
-	active    bool
-	lastEmit  time.Time
-	lastLevel slog.Level
-}
-
-// NewAlertManager constructs an AlertManager with the given config.
-// log must be non-nil; log.With("component","alerts") is applied here.
+// Implementation note: this constructor builds a synthetic *config.Config
+// so notify.FromConfig can be used without exposing an additional
+// constructor on the notify package. cfg.Notify.RepeatEvery feeds the
+// global cadence; PerKind is left empty here because the test surface
+// does not exercise it.
 func NewAlertManager(log *slog.Logger, cfg AlertConfig) *AlertManager {
 	if log == nil {
 		panic("ifmgr.NewAlertManager: log is required")
 	}
-	return &AlertManager{
-		cfg:   cfg,
-		log:   log.With("component", "alerts"),
-		state: map[string]alertState{},
+	syntheticCfg := &config.Config{}
+	if cfg.RepeatEvery > 0 {
+		syntheticCfg.Notify.RepeatEvery = cfg.RepeatEvery.String()
 	}
+	n := notify.FromConfig(syntheticCfg, log, "mwan-ifmgr")
+	return &AlertManager{n: n}
 }
 
-// Notify emits an alert at the given level if either:
-//   - This (kind, key) was not active before (transition into bad state), OR
-//   - It is still active AND RepeatEvery has elapsed since the last emit.
-//
-// After emit, the state is marked active. Call Resolve to clear.
-//
-// fields are key/value pairs appended to the log record for context.
+// WrapNotifier adapts an existing notify.Notifier to the AlertManager
+// surface. The daemon path uses this so cmd/mwan can build the
+// underlying Manager once via notify.FromConfig (with the email sink
+// wired) and pass it through DaemonConfig.
+func WrapNotifier(n notify.Notifier) *AlertManager {
+	if n == nil {
+		n = notify.NullNotifier{}
+	}
+	return &AlertManager{n: n}
+}
+
+// Notify emits an alert at the given level via the wrapped Notifier.
+// The fields tail accepts the slog ...any pattern existing modules use
+// (alternating key/value pairs) and is normalised into []slog.Attr
+// before crossing the boundary.
 func (a *AlertManager) Notify(
 	now time.Time, level slog.Level, kind, key, msg string, fields ...any,
 ) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	id := kind + "|" + key
-	st, exists := a.state[id]
-	shouldEmit := !exists || !st.active
-	repeatEvery := a.cfg.RepeatEvery
-	if a.cfg.RepeatResolver != nil {
-		repeatEvery = a.cfg.RepeatResolver(kind, key)
-	}
-	if !shouldEmit && repeatEvery > 0 && now.Sub(st.lastEmit) >= repeatEvery {
-		shouldEmit = true
-	}
-	st.active = true
-	if shouldEmit {
-		st.lastEmit = now
-		st.lastLevel = level
-		baseFields := []any{
-			"alert_kind", kind,
-			"alert_key", key,
-			"transition", !exists || !a.state[id].active,
-		}
-		a.log.Log(nil, level, msg, append(baseFields, fields...)...)
-	}
-	a.state[id] = st
+	a.n.Notify(context.Background(), notify.Event{
+		Now:     now,
+		Level:   level,
+		Kind:    kind,
+		Key:     key,
+		Message: msg,
+		Fields:  fieldsToAttrs(fields),
+	})
 }
 
-// Resolve clears the (kind, key) so the next Notify will be treated as a
-// fresh transition. Call when the underlying problem is fixed.
-//
-// The recovery line emits at the same severity the original Notify used,
-// so it crosses the same MinLevel threshold the open alert did and the
-// pairing actually shows up in the inbox. The msg is prefixed with
-// "RECOVERED: " (unless the caller already supplied that prefix) so the
-// gklog email subject, derived from the slog message, makes the open and
-// close obvious at a glance.
+// Resolve clears the (kind, key) so the next Notify is treated as a
+// fresh transition. The wrapped Notifier emits the recovery line at
+// the level the original Notify used; see notify.Manager for the
+// state-change semantics.
 func (a *AlertManager) Resolve(now time.Time, kind, key, msg string, fields ...any) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	id := kind + "|" + key
-	st, exists := a.state[id]
-	if !exists || !st.active {
-		return
-	}
-	st.active = false
-	st.lastEmit = now
-	a.state[id] = st
-	level := st.lastLevel
-	// Defensive: an alertState may exist with active=true but lastLevel
-	// unset if a future code path ever marks active without going through
-	// the emit branch. Fall back to WARN so the recovery still surfaces.
-	if level == 0 {
-		level = slog.LevelWarn
-	}
-	if !strings.HasPrefix(msg, "RECOVERED:") {
-		msg = "RECOVERED: " + msg
-	}
-	baseFields := []any{
-		"alert_kind", kind,
-		"alert_key", key,
-		"resolved", true,
-	}
-	a.log.Log(nil, level, msg, append(baseFields, fields...)...)
+	// notify.Notifier.Resolve does not take a now; the wrapped Manager
+	// reads its clock internally. The now argument is preserved on this
+	// adapter only so module call sites stay unchanged.
+	_ = now
+	a.n.Resolve(context.Background(), kind, key, msg, fieldsToAttrs(fields)...)
 }
 
-// Active reports whether the named alert is currently in the "fired but
-// not resolved" state. Useful for modules that want to escalate (e.g.
-// bridge_probe waits for slaac_health to be Active before suspecting
-// the bridge).
+// Active reports whether the named alert is currently in the "fired
+// but not resolved" state. Forwards to the wrapped Notifier.
 func (a *AlertManager) Active(kind, key string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	st, ok := a.state[kind+"|"+key]
-	return ok && st.active
+	return a.n.Active(kind, key)
+}
+
+// fieldsToAttrs converts the variadic ...any tail used by ifmgr modules
+// into []slog.Attr that notify.Event accepts. Pairs are alternating
+// key (string) and value (any). Odd-length tails are tolerated by
+// dropping the dangling key, mirroring slog's loose-pair behaviour.
+func fieldsToAttrs(fields []any) []slog.Attr {
+	if len(fields) == 0 {
+		return nil
+	}
+	attrs := make([]slog.Attr, 0, len(fields)/2)
+	for i := 0; i+1 < len(fields); i += 2 {
+		key, ok := fields[i].(string)
+		if !ok {
+			continue
+		}
+		attrs = append(attrs, slog.Any(key, fields[i+1]))
+	}
+	return attrs
 }

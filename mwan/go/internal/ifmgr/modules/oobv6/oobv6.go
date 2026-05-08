@@ -189,7 +189,8 @@ func (m *Module) OnKernelEvent(
 		m.lastSLAACPx = ev.CIDR
 		m.mu.Unlock()
 		if old != "" && old != ev.CIDR {
-			log.Warn("oobv6: SLAAC renumber observed", "old", old, "new", ev.CIDR)
+			// The Alerts.Notify path below is the single email surface;
+			// the prior log.Warn here was a double-emit (audit-flagged).
 			m.env.Alerts.Notify(time.Now(), slog.LevelWarn,
 				"slaac-renumber", m.cfg.Iface,
 				"oobv6: SLAAC prefix changed",

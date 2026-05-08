@@ -30,7 +30,7 @@ func TestUnaryTraceInterceptorUsesIncomingTraceID(t *testing.T) {
 	)
 	mwanv1.RegisterMWANAgentServer(
 		server,
-		NewServer("/nonexistent", testLogger(t), nil),
+		NewServer("/nonexistent", testLogger(t), nil, nil),
 	)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop() })

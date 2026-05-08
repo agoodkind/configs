@@ -14,8 +14,8 @@ import (
 
 	"goodkind.io/mwan/internal/alert"
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/ops"
 	"goodkind.io/mwan/internal/redteam"
 	"goodkind.io/mwan/internal/tracing"
@@ -86,9 +86,12 @@ func printScenarios() {
 	)
 }
 
-// buildOpsLayer creates the logger, email sender, and operations layer,
-// applying dry-run and red-team wrappers as needed.
-func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOps, error) {
+// buildOpsLayer creates the logger, notifier, and operations layer,
+// applying dry-run and red-team wrappers as needed. The slog email
+// handler is intentionally not attached: notify owns email delivery
+// for the watchdog now, so attaching the handler would produce a
+// duplicate email per failover or recovery event.
+func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOps, notify.Notifier, error) {
 	handlers := []slog.Handler{logging.StdoutJSON()}
 	if p := cfg.Watchdog.LogFile; p != "" {
 		handlers = append(handlers, logging.FileText(p, "[watchdog]"))
@@ -96,18 +99,15 @@ func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOp
 	if p := cfg.Watchdog.JSONLogFile; p != "" {
 		handlers = append(handlers, logging.FileJSON(p))
 	}
-	if h := logging.EmailFromConfig(cfg, "mwan-watchdog"); h != nil {
-		handlers = append(handlers, h)
-	}
 	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
 	})
 	logger.Info("mwan watchdog starting", "version", version.BuildVersionString())
 
-	emailSender := email.NewSender(cfg.Email.SMTP2GOAPIKey, cfg.Email.From, cfg.Email.BindIface, "mwan-watchdog", logger)
+	notifier := notify.FromConfig(cfg, logger, "mwan-watchdog")
 
-	var baseOps ops.SysOps = ops.NewRealOps(cfg, emailSender, logger)
+	var baseOps ops.SysOps = ops.NewRealOps(cfg, logger)
 
 	if f.dryRun {
 		logger.Info("[MODE] Dry-run enabled; destructive ops will be logged only")
@@ -117,7 +117,7 @@ func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOp
 	if f.redTeam != "" {
 		preset, ok := redteam.Presets[f.redTeam]
 		if !ok {
-			return nil, nil, fmt.Errorf("unknown scenario %q (use --list-scenarios)", f.redTeam)
+			return nil, nil, nil, fmt.Errorf("unknown scenario %q (use --list-scenarios)", f.redTeam)
 		}
 		logger.Info(
 			"[MODE] Red-team scenario",
@@ -128,7 +128,7 @@ func buildOpsLayer(cfg *config.Config, f watchdogFlags) (*slog.Logger, ops.SysOp
 		baseOps = redteam.NewOps(baseOps, preset, logger)
 	}
 
-	return logger, baseOps, nil
+	return logger, baseOps, notifier, nil
 }
 
 // Run is the entry point for the watchdog subcommand.
@@ -140,7 +140,7 @@ func Run(cfg *config.Config) error {
 		return nil
 	}
 
-	logger, baseOps, err := buildOpsLayer(cfg, f)
+	logger, baseOps, notifier, err := buildOpsLayer(cfg, f)
 	if err != nil {
 		return err
 	}
@@ -192,6 +192,7 @@ func Run(cfg *config.Config) error {
 	w := &watchdog{
 		cfg:               cfg,
 		ops:               baseOps,
+		notify:            notifier,
 		coord:             coord,
 		limiter:           alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
 		log:               logger,

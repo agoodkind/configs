@@ -16,6 +16,7 @@ import (
 	"goodkind.io/mwan/internal/bgp"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 	"google.golang.org/grpc"
@@ -44,13 +45,11 @@ func Run(cfg *config.Config) error {
 	if *logFile != "" {
 		handlers = append(handlers, logging.FileJSON(*logFile))
 	}
-	if h := logging.EmailFromConfig(cfg, "mwan-agent"); h != nil {
-		handlers = append(handlers, h)
-	}
 	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
 	})
+	notifier := notify.FromConfig(cfg, logger, "mwan-agent")
 	runID := tracing.NewID()
 	logger = logger.With(
 		slog.String(tracing.RunIDKey, runID),
@@ -121,7 +120,7 @@ func Run(cfg *config.Config) error {
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(unaryTraceInterceptor(logger)),
 	)
-	mwanv1.RegisterMWANAgentServer(grpcServer, NewServer(*deployFile, logger, bgpSpeaker))
+	mwanv1.RegisterMWANAgentServer(grpcServer, NewServer(*deployFile, logger, bgpSpeaker, notifier))
 	if *debug {
 		reflection.Register(grpcServer)
 		logger.Info("gRPC reflection enabled (debug mode)")

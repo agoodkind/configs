@@ -14,7 +14,6 @@ import (
 	"github.com/mdlayher/vsock"
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/pkg/pveapi"
 	"google.golang.org/grpc"
@@ -72,9 +71,6 @@ type SysOps interface {
 		ctx context.Context, vmid string, args ...string,
 	) (GuestExecResult, error)
 	Ping(ctx context.Context, bin, target string) bool
-	SendEmail(
-		ctx context.Context, to, subject, body string,
-	) error
 	GetConfigState(
 		ctx context.Context, vmid string,
 	) (*mwanv1.GetConfigStateResponse, string, error)
@@ -90,7 +86,6 @@ type SysOps interface {
 // ---------------------------------------------------------------------------
 
 type RealOps struct {
-	email     *email.Sender
 	log       *slog.Logger
 	pve       *pveapi.Client
 	vsockCID  uint32
@@ -115,7 +110,6 @@ type RealOps struct {
 
 func NewRealOps(
 	cfg *config.Config,
-	emailSender *email.Sender,
 	logger *slog.Logger,
 ) *RealOps {
 	var pveClient *pveapi.Client
@@ -130,7 +124,6 @@ func NewRealOps(
 		logger = slog.Default()
 	}
 	return &RealOps{
-		email:     emailSender,
 		log:       logger.With("component", "ops"),
 		pve:       pveClient,
 		vsockCID:  cfg.Watchdog.VsockCID,
@@ -716,10 +709,6 @@ func (r *RealOps) Ping(ctx context.Context, bin, target string) bool {
 	return exec.CommandContext(cctx, bin, "-c", "2", "-W", "3", target).Run() == nil
 }
 
-func (r *RealOps) SendEmail(ctx context.Context, to, subject, body string) error {
-	return r.email.Send(ctx, to, subject, body)
-}
-
 func (r *RealOps) attemptLogger(
 	ctx context.Context,
 	operation string,
@@ -875,16 +864,6 @@ func (d *DryRunOps) GuestExec(
 
 func (d *DryRunOps) Ping(ctx context.Context, bin, target string) bool {
 	return d.inner.Ping(ctx, bin, target)
-}
-
-func (d *DryRunOps) SendEmail(ctx context.Context, to, subject, _ string) error {
-	d.log.InfoContext(
-		ctx,
-		"[DRY-RUN] would send email",
-		"to", to,
-		"subject", subject,
-	)
-	return nil
 }
 
 func (d *DryRunOps) GetConfigState(

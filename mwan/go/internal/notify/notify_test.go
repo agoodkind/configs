@@ -1,4 +1,4 @@
-package logging
+package notify
 
 import (
 	"log/slog"
@@ -8,7 +8,7 @@ import (
 )
 
 // recordFromAttrs builds a slog.Record at LevelError with the given
-// message and attrs. Used across body_test.go and email_handler_test.go.
+// message and attrs.
 func recordFromAttrs(msg string, attrs ...slog.Attr) slog.Record {
 	r := slog.NewRecord(time.Date(2026, 5, 6, 22, 33, 6, 0, time.UTC), slog.LevelError, msg, 0)
 	r.AddAttrs(attrs...)
@@ -86,7 +86,6 @@ func TestBuildEmailBodyExtraKey(t *testing.T) {
 	if !strings.Contains(got, "Remote_addr: 10.0.0.1") {
 		t.Fatalf("extra key not rendered:\n%s", got)
 	}
-	// Trace/Build line must precede the extras section.
 	traceIdx := strings.Index(got, "Trace:")
 	extraIdx := strings.Index(got, "Remote_addr:")
 	if traceIdx < 0 || extraIdx < 0 || traceIdx > extraIdx {
@@ -95,7 +94,8 @@ func TestBuildEmailBodyExtraKey(t *testing.T) {
 }
 
 // TestBuildEmailBodyErrWithoutStderr exercises the err branch where
-// there is no stderr=... fragment; the err prints verbatim under What:.
+// there is no stderr=... fragment; the err prints verbatim under
+// What:.
 func TestBuildEmailBodyErrWithoutStderr(t *testing.T) {
 	t.Parallel()
 	r := recordFromAttrs(

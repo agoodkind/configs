@@ -9,11 +9,11 @@ mwan_int_iface = "enmwanbr0"
 [email]
 smtp2go_api_key = "{{ mwan_smtp2go_api_key }}"
 alert_email = "alex@goodkind.io"
-from = "mwan@goodkind.io"
-subject_prefix = "[MWAN-vault]"
-bind_iface = "enmbrains0"
-min_level = "ERROR"
-cooldown = "5m"
+from = "{{ mwan_email_from | default('mwan@goodkind.io') }}"
+subject_prefix = "{{ mwan_email_subject_prefix | default('[MWAN-vault]') }}"
+bind_iface = "{{ mwan_email_bind_iface | default('enmbrains0') }}"
+min_level = "{{ mwan_email_min_level | default('ERROR') }}"
+cooldown = "{{ mwan_email_cooldown | default('5m') }}"
 
 [pve]
 base_url = "https://127.0.0.1:8006/api2/json"

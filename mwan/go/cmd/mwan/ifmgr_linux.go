@@ -15,6 +15,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 
@@ -67,6 +68,8 @@ func runIfMgr(cfg *config.Config) error {
 		return fmt.Errorf("build daemon config: %w", err)
 	}
 
+	dcfg.Notifier = notify.FromConfig(cfg, logger, "mwan-ifmgr")
+
 	d, err := ifmgr.NewDaemon(logger, dcfg)
 	if err != nil {
 		return fmt.Errorf("new daemon: %w", err)
@@ -106,9 +109,9 @@ func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
 	if p := cfg.IfMgr.JSONLogFile; p != "" {
 		handlers = append(handlers, logging.FileJSON(p))
 	}
-	if h := logging.EmailFromConfig(cfg, "mwan-ifmgr"); h != nil {
-		handlers = append(handlers, h)
-	}
+	// Email no longer flows through the slog handler chain for ifmgr.
+	// notify.Manager (constructed in runIfMgr via notify.FromConfig)
+	// owns the email path with per-(kind, key) state-change semantics.
 	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
@@ -182,64 +185,18 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		return ifmgr.DaemonConfig{}, err
 	}
 
-	alertRepeatEvery, alertResolver := buildAlertRepeatPolicy(cfg.IfMgr.Alerts)
-
+	// The repeat cadence (cfg.IfMgr.Alerts.RepeatEvery and PerModule, or
+	// cfg.Notify.RepeatEvery and PerKind) is consumed by notify.FromConfig
+	// directly. Daemon construction no longer plumbs it through, so the
+	// old buildAlertRepeatPolicy helper is gone.
 	return ifmgr.DaemonConfig{
-		Role:                role,
-		Iface:               ifaceName,
-		ReconcileInterval:   rec,
-		EnableDHCP:          enableDHCP,
-		DHCPInitial:         dhcpInit,
-		DHCPMax:             dhcpMax,
-		EnableRA:            enableRA,
-		AlertRepeatEvery:    alertRepeatEvery,
-		AlertRepeatResolver: alertResolver,
-		ModuleConfigs:       moduleConfigs,
+		Role:              role,
+		Iface:             ifaceName,
+		ReconcileInterval: rec,
+		EnableDHCP:        enableDHCP,
+		DHCPInitial:       dhcpInit,
+		DHCPMax:           dhcpMax,
+		EnableRA:          enableRA,
+		ModuleConfigs:     moduleConfigs,
 	}, nil
-}
-
-// buildAlertRepeatPolicy turns the parsed [ifmgr.alerts] section into the
-// global repeat cadence and a resolver suitable for AlertManager.
-//
-// PerModule is keyed by alert kind (the first arg passed to
-// AlertManager.Notify, e.g. "wg-peer-stalled"), not by Module.Name(). Keying
-// on alert kind preserves full granularity since one module can emit
-// multiple kinds of alerts and may want different cadences for each
-// (e.g. wghealth emits both "wg-peer-stalled" and "wg-reconcile-failed").
-//
-// Empty / unparseable values fall back to zero (state-change-only) so
-// missing config does not silently inherit some surprising default.
-func buildAlertRepeatPolicy(
-	alerts config.IfMgrAlertsSection,
-) (time.Duration, func(kind, key string) time.Duration) {
-	var globalRepeat time.Duration
-	if alerts.RepeatEvery != "" {
-		if d, err := time.ParseDuration(alerts.RepeatEvery); err == nil {
-			globalRepeat = d
-		}
-	}
-
-	parsedPerKind := make(map[string]time.Duration, len(alerts.PerModule))
-	for kind, raw := range alerts.PerModule {
-		if raw == "" {
-			continue
-		}
-		d, err := time.ParseDuration(raw)
-		if err != nil {
-			continue
-		}
-		parsedPerKind[kind] = d
-	}
-
-	if len(parsedPerKind) == 0 {
-		return globalRepeat, nil
-	}
-
-	resolver := func(kind, _ string) time.Duration {
-		if d, ok := parsedPerKind[kind]; ok {
-			return d
-		}
-		return globalRepeat
-	}
-	return globalRepeat, resolver
 }
