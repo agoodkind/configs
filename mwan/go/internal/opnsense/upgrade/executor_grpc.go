@@ -1,0 +1,121 @@
+package upgrade
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+)
+
+// OPNsenseRPCClient is the narrow surface the gRPC Executor needs from
+// the mwan-opnsense daemon. It is satisfied by *opnsense.RPC in
+// production and by an in-memory mock in tests. Keeping the interface
+// local to the upgrade package mirrors the validate package's
+// OPNsenseRPCClient and avoids a dependency cycle through internal/
+// opnsense.
+type OPNsenseRPCClient interface {
+	// Exec runs a binary inside the OPNsense guest. Command is the
+	// executable path (e.g. "cat", "opnsense-upgrade") and Args is the
+	// argv tail. The Executor surface uses the same shape, so the
+	// mapping is one-to-one.
+	Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error)
+}
+
+// GRPCExecutor implements [Executor] by routing each GuestExec call to
+// the mwan-opnsense daemon over the persistent virtio-serial gRPC
+// channel. This is the OOB path used when QGA is unavailable on the
+// guest, for example on the testbed where there is no internet egress
+// to install the os-qemu-guest-agent package. The same RPC handles the
+// validator's surface (see validate/env_grpc.go), so prepare, execute,
+// rollback, and commit can all run with --env-transport=grpc.
+type GRPCExecutor struct {
+	// RPC is the typed mwan-opnsense client. Required.
+	RPC OPNsenseRPCClient
+
+	// ExecTimeoutSeconds caps each Exec RPC's per-call timeout. Zero
+	// falls back to the daemon's default (30s); negative is rejected
+	// by the daemon at call time. Maximum honoured by the daemon is
+	// 300 (5 minutes). The execute phase passes its own ctx deadline
+	// for the upgrade command, so the per-RPC timeout here is for the
+	// short capture commands run during prepare and the QGA-liveness
+	// poll after rollback.
+	ExecTimeoutSeconds int32
+}
+
+// guard against drift: GRPCExecutor must satisfy Executor.
+var _ Executor = (*GRPCExecutor)(nil)
+
+// GuestExec dispatches an in-guest exec to the daemon's Exec RPC. The
+// vmid is recorded in slog context for forensics but is not forwarded
+// to the daemon: the daemon serves a single VM identified by its
+// virtio-serial socket path on the Proxmox host, so the binding is
+// implicit at dial time.
+func (g *GRPCExecutor) GuestExec(
+	ctx context.Context, vmid string, args ...string,
+) (GuestExecResult, error) {
+	if g.RPC == nil {
+		err := errors.New("GRPCExecutor: RPC client not set")
+		slog.ErrorContext(ctx, "upgrade GRPCExecutor missing RPC client",
+			"err", err.Error(), "vmid", vmid)
+		return GuestExecResult{}, err
+	}
+	if len(args) == 0 {
+		err := errors.New("GRPCExecutor: empty argv")
+		slog.ErrorContext(ctx, "upgrade GRPCExecutor empty argv",
+			"err", err.Error(), "vmid", vmid)
+		return GuestExecResult{}, err
+	}
+	command := args[0]
+	tail := args[1:]
+	req := &mwanv1.ExecRequest{
+		Command:        command,
+		Args:           append([]string(nil), tail...),
+		Sudo:           false,
+		TimeoutSeconds: g.ExecTimeoutSeconds,
+		StdinBytes:     nil,
+	}
+	resp, err := g.RPC.Exec(ctx, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "upgrade GRPCExecutor Exec RPC failed",
+			"err", err.Error(), "vmid", vmid, "command", command)
+		return GuestExecResult{}, fmt.Errorf("grpc Exec %s: %w", command, err)
+	}
+	if resp == nil {
+		err := errors.New("GRPCExecutor: nil ExecResponse from daemon")
+		slog.ErrorContext(ctx, "upgrade GRPCExecutor nil response",
+			"err", err.Error(), "vmid", vmid, "command", command)
+		return GuestExecResult{}, err
+	}
+	stderrText := string(resp.GetStderr())
+	if resp.GetTimedOut() {
+		stderrText = appendDiag(stderrText, "[grpc-executor: command timed out]")
+	}
+	if resp.GetStdoutTruncated() {
+		stderrText = appendDiag(stderrText, "[grpc-executor: stdout truncated at 10 MB]")
+	}
+	if resp.GetStderrTruncated() {
+		stderrText = appendDiag(stderrText, "[grpc-executor: stderr truncated at 10 MB]")
+	}
+	return GuestExecResult{
+		ExitCode: int(resp.GetExitCode()),
+		Stdout:   string(resp.GetStdout()),
+		Stderr:   stderrText,
+	}, nil
+}
+
+// appendDiag joins a diagnostic line onto an existing stderr blob
+// without colliding with trailing whitespace. The same shape is used
+// by the validate package's GRPCEnv so the operator-facing diagnostic
+// line format is consistent across surfaces.
+func appendDiag(stderr, diag string) string {
+	if stderr == "" {
+		return diag
+	}
+	if strings.HasSuffix(stderr, "\n") {
+		return stderr + diag
+	}
+	return stderr + "\n" + diag
+}

@@ -209,18 +209,39 @@ func (f upgradeFlags) toOptions() upgrade.Options {
 // upgrade.Validator interface. Validator transport flags (SSH hosts,
 // API auth, BGP neighbors) come from the upgrade subcommand's own flag
 // set; see registerCommonFlags.
-func buildUpgradeDeps(cfg *config.Config, f upgradeFlags) upgrade.Deps {
+//
+// The Executor selection mirrors the validator's: --env-transport=ssh
+// keeps the QGA-backed opsExecutorAdapter that has shipped since
+// MWAN-152, --env-transport=grpc routes every GuestExec through the
+// mwan-opnsense daemon's Exec RPC. The dial happens here at deps-build
+// time so a missing or bad gRPC target fails the subcommand before any
+// state-file mutations land.
+func buildUpgradeDeps(cfg *config.Config, f upgradeFlags) (upgrade.Deps, error) {
 	logger := slog.Default()
 	notifier := notify.FromConfig(cfg, logger, "mwan-opnsense-upgrade")
 	realOps := ops.NewRealOps(cfg, logger)
+	exec, err := defaultUpgradeExecutorFactory().build(envTransportConfig{
+		Transport:           f.envTransport,
+		GRPCTarget:          f.envGRPCTarget,
+		OPNsenseSSHHost:     f.opnsenseSSHHost,
+		OPNsenseSSHJumpHost: f.opnsenseJumpHost,
+		ProxmoxSSHHost:      f.proxmoxSSHHost,
+		LANClientSSHHost:    f.lanClientSSH,
+		OPNsenseAddr:        f.opnsenseAddr,
+	}, realOps)
+	if err != nil {
+		slog.Error("opnsense-upgrade: build executor", "err", err,
+			"transport", string(f.envTransport))
+		return upgrade.Deps{}, fmt.Errorf("opnsense-upgrade: build executor: %w", err)
+	}
 	return upgrade.Deps{
 		Snap:     realOps,
-		Exec:     opsExecutorAdapter{ops: realOps},
+		Exec:     exec,
 		Validate: newValidatorAdapter(f),
 		Notifier: notifier,
 		Clock:    nil,
 		Log:      logger,
-	}
+	}, nil
 }
 
 // opsExecutorAdapter bridges ops.SysOps.GuestExec to the
@@ -257,7 +278,10 @@ func runUpgradePrepare(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg, f)
+	deps, err := buildUpgradeDeps(cfg, f)
+	if err != nil {
+		return err
+	}
 	st, err := upgrade.Prepare(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade prepare failed", "err", err)
@@ -276,7 +300,10 @@ func runUpgradeExecute(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg, f)
+	deps, err := buildUpgradeDeps(cfg, f)
+	if err != nil {
+		return err
+	}
 	st, err := upgrade.Execute(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade execute failed", "err", err)
@@ -295,7 +322,10 @@ func runUpgradeValidate(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg, f)
+	deps, err := buildUpgradeDeps(cfg, f)
+	if err != nil {
+		return err
+	}
 	st, res, err := upgrade.Validate(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade validate failed", "err", err)
@@ -315,7 +345,10 @@ func runUpgradeRollback(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg, f)
+	deps, err := buildUpgradeDeps(cfg, f)
+	if err != nil {
+		return err
+	}
 	st, err := upgrade.Rollback(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade rollback failed", "err", err)
@@ -334,7 +367,10 @@ func runUpgradeCommit(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg, f)
+	deps, err := buildUpgradeDeps(cfg, f)
+	if err != nil {
+		return err
+	}
 	st, err := upgrade.Commit(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade commit failed", "err", err)
@@ -353,7 +389,10 @@ func runUpgradeRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg, f)
+	deps, err := buildUpgradeDeps(cfg, f)
+	if err != nil {
+		return err
+	}
 	out, err := upgrade.Run(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade run failed", "err", err)
@@ -372,7 +411,10 @@ func runUpgradeGC(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg, f)
+	deps, err := buildUpgradeDeps(cfg, f)
+	if err != nil {
+		return err
+	}
 	res, err := upgrade.GC(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade gc failed", "err", err)
