@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -189,13 +190,17 @@ func Run(cfg *config.Config) error {
 
 	// Create watchdog instance and run
 	w := &watchdog{
-		cfg:     cfg,
-		ops:     baseOps,
-		coord:   coord,
-		limiter: alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
-		log:     logger,
-		runID:   runID,
-		nowFn:   time.Now,
+		cfg:               cfg,
+		ops:               baseOps,
+		coord:             coord,
+		limiter:           alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
+		log:               logger,
+		runID:             runID,
+		nowFn:             time.Now,
+		failoverMu:        sync.Mutex{},
+		failoverActive:    false,
+		failoverStartedAt: time.Time{},
+		failoverReason:    "",
 	}
 
 	// Try to extract channel tracker for diagnostics
