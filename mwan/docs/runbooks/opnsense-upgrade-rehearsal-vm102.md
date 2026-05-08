@@ -120,7 +120,7 @@ What `prepare` does, mapped to the design:
 - Reads `BackupConfigXML` and writes `config.xml.pre` plus a sha256 (MWAN-152 section 4.1 step 3).
 - Captures `bgp_status.json`, `interfaces.json`, and `metadata.json` (same).
 - Takes the Proxmox snapshot with the prefix `pre-upgrade-26x-<unix-timestamp>` per MWAN-152 section 3 (line 99). The vmstate pause should be near the 6.67s measurement on suburban (MWAN-152 section 11.1, line 391).
-- Writes the rollback state file with `phase=prepared` to `<state_dir>/102/state.txt` per MWAN-152 section 4.7 (line 224).
+- Writes the rollback state file with `phase=prepared` to `<state_dir>/102/state.json` per MWAN-152 section 4.7 (line 224).
 - Emits an `opnsense-upgrade-prepared` Info event over `notify` per MWAN-152 section 11.7 (line 463).
 
 Operator action after the run:
@@ -128,10 +128,10 @@ Operator action after the run:
 - Confirm the state file landed:
 
   ```sh
-  ssh root@10.240.0.148 "cat /var/lib/mwan/upgrades/102/state.txt"
+  ssh root@10.240.0.148 "cat /var/lib/mwan/upgrades/102/state.json"
   ```
 
-  The file should show `phase=prepared` plus the `snapshot=pre-upgrade-26x-<ts>` line. Note the snapshot name and record it next to the deploy ID for use in step 5.
+  The file is JSON. Confirm `"phase": "prepared"` and note the `"snapshot"` field value (`pre-upgrade-26x-<ts>`). Record the snapshot name next to the deploy ID for use in step 5.
 
 - Confirm the per-deploy directory has all the artefacts:
 
@@ -394,14 +394,14 @@ The rehearsal can absorb several failure cycles. Each cycle adds a row to the po
 
 ## 13. Known gaps in the prerequisite docs
 
-Two gaps are worth flagging up front so the operator knows where this runbook is making a judgement call rather than citing a settled decision.
+One open gap remains; a previously flagged state-directory spelling disagreement has been resolved (see 13.1).
 
-### 13.1 State directory spelling mismatch between MWAN-152 and MWAN-153
+### 13.1 State directory spelling (resolved: plural)
 
-MWAN-152 section 11.6 (line 444) commits to `/var/lib/mwan/upgrades/` (plural with `s`). MWAN-153 section 9.8 (line 533) commits to `/var/lib/mwan/upgrade/` (singular). The two designs disagree about the directory name. This runbook uses the plural form (`/var/lib/mwan/upgrades/`) per MWAN-152 since that is the design the subcommand implementation derives from. The implementation slice should reconcile the two designs and pick one; until then, the operator should run `mwan opnsense-upgrade --help` to see which path the deployed binary expects, and adjust the commands above accordingly.
+MWAN-152 section 11.6 and MWAN-153 section 9.8 previously disagreed about whether the state directory should be `/var/lib/mwan/upgrades/` (plural) or `/var/lib/mwan/upgrade/` (singular). Both documents now agree on plural, matching the implementation (`upgrade.DefaultStateDir = "/var/lib/mwan/upgrades"`). The commands in this runbook all use the plural form.
 
 ### 13.2 Vault prod VM 101 disk backend (MWAN-152 9.9)
 
 Section 11.9 of MWAN-152 (line 499) is only partially resolved. The suburban testbed sits on `local-zfs`, but prod may be `local-lvm` or directory storage. The snapshot pause budget and the ZFS-host snapshot fallback both depend on the answer. The prod cutover plan must include a `qm config 101` probe on vault as the first step, which is out of scope for the rehearsal on VM 102 but is a hard prerequisite for the actual cutover.
 
-Both gaps are tracked in the MWAN-152 design's section 11.11 follow-up list (line 532); neither blocks this rehearsal because the rehearsal runs on suburban, where the backend is known.
+The disk backend gap is tracked in MWAN-152 design section 11.11 follow-up list (line 532). It does not block this rehearsal because the rehearsal runs on suburban, where the backend is known.

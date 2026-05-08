@@ -532,7 +532,7 @@ needed for those.
 ### 9.8 O-6 baseline artefact storage location (resolved: align with MWAN-152's state directory)
 
 Decision: store baseline and post-upgrade artefacts under
-`/var/lib/mwan/upgrade/<vmid>/<deploy-id>/` on the Proxmox host (vault),
+`/var/lib/mwan/upgrades/<vmid>/<deploy-id>/` on the Proxmox host (vault),
 mirroring the layout MWAN-152 already uses. Use these filenames:
 
 - `pre-baseline.json` (the pre-upgrade matrix run, one record per check).
@@ -550,13 +550,13 @@ diagnosing slow-burning regressions; the snapshot itself is GBs and
 cannot be kept that long. The retention rule is independent and does
 not change the MWAN-152 snapshot lifecycle.
 
-Evidence: the path matches MWAN-152 design doc section 4.7 ("`<state_dir>`
-defaults to `/var/lib/mwan/upgrade/`") and section 4.4 ("Capture
-pre-upgrade state under `<state_dir>/<vmid>/<deploy-id>/`"). The earlier
-proposal in the open-question text used `/var/lib/mwan/upgrades/`
-(plural with `s`). The MWAN-152 spelling is `upgrade/` (singular). The
-singular form wins because changing MWAN-152 would be invasive and the
-two designs need to share a directory.
+Evidence: MWAN-152 resolved decision 11.6 (section 9.6) explicitly chooses
+`/var/lib/mwan/upgrades/` (plural). The original O-6 proposal in the
+open-question text also used the plural form. MWAN-152 section 4 previously
+defaulted to `/var/lib/mwan/upgrade/` (singular), but section 11.6 overrides
+it and the implementation (`upgrade.DefaultStateDir`) uses plural. This design
+aligns with that resolution, and `validate.DefaultStateDir` uses plural to
+match.
 
 Cross-link: the `mwan opnsense-validate` runner from section 8 should
 take a `--state-dir` flag with the same default as MWAN-152's
@@ -572,8 +572,8 @@ take a `--state-dir` flag with the same default as MWAN-152's
   section 2.h. Resolved.
 - O-5: six 26.x-specific checks added across sections 2.a, 2.f, 2.i,
   sourced from MWAN-151 risks. Resolved.
-- O-6: storage path aligned with MWAN-152 (`/var/lib/mwan/upgrade/`,
-  singular). 30-day artefact retention chosen. Resolved.
+- O-6: storage path aligned with MWAN-152 resolved decision 11.6 (`/var/lib/mwan/upgrades/`,
+  plural). 30-day artefact retention chosen. Resolved.
 
 All six open questions in section 7 have a concrete decision.
 

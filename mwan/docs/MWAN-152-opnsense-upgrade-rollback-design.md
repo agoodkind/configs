@@ -113,7 +113,7 @@ mwan opnsense-upgrade commit   --vmid 101 [--snapshot pre-upgrade-26x-1746657600
 mwan opnsense-upgrade run      --vmid 101 --target 26.7 [--unattended]
 ```
 
-Top-level flags shared by every subcommand: `--vmid`, `--node` (Proxmox node, defaults to `cfg.PVE.Node`), `--state-dir` (defaults to `/var/lib/mwan/upgrade/`).
+Top-level flags shared by every subcommand: `--vmid`, `--node` (Proxmox node, defaults to `cfg.PVE.Node`), `--state-dir` (defaults to `/var/lib/mwan/upgrades/`).
 
 ### 4.1 prepare
 
@@ -131,7 +131,7 @@ Behavior:
    - `interfaces.json` from a new helper that calls `Exec` with `ifconfig -l` plus `netstat -rn -f inet` and `netstat -rn -f inet6`. The runbook's section 6 lists "Interface device bindings" and "Default routes" as gate items; capturing them at `prepare` lets `validate` diff against them.
    - `metadata.json`: deploy ID, target version, snapshot name, timestamps.
 4. Take the Proxmox snapshot via `ops.VMSnapshot(ctx, vmid, "pre-upgrade-26x-"+ts)`. The same `qm snapshot --vmstate 1` path the watchdog uses.
-5. Write the rollback state file via the existing `rollback.WriteState` (extended with a `phase` field, see section 4.7). The file lives at `<state_dir>/<vmid>/state.txt` so a separate process (or a re-invocation of the subcommand) can read it.
+5. Write the rollback state file via the existing `rollback.WriteState` (extended with a `phase` field, see section 4.7). The file lives at `<state_dir>/<vmid>/state.json` so a separate process (or a re-invocation of the subcommand) can read it.
 6. Emit a `notify.Notify` event with kind `opnsense_upgrade`, key `prepared`, level `Info`. The unified notify boundary handles state-change suppression and email delivery per MWAN-132.
 
 Failure path: if any step before `VMSnapshot` fails, the subcommand exits non-zero and does nothing. If `VMSnapshot` fails specifically, the subcommand emits an `opnsense_upgrade`/`prepare_failed` alert at `Error` and exits non-zero.
@@ -142,7 +142,7 @@ Inputs: `vmid`, `target`, `state_dir`.
 
 Behavior:
 
-1. Load state from `<state_dir>/<vmid>/state.txt`. Refuse to execute if `phase` is not `prepared`.
+1. Load state from `<state_dir>/<vmid>/state.json`. Refuse to execute if `phase` is not `prepared`.
 2. Run the OPNsense upgrade in the guest. The mechanism is open question 9.3; primary candidate is `pveapi.Client.GuestExec` with `["opnsense-upgrade", "-r", target]` because QGA bypasses any networking dependencies that the upgrade itself might break. Alternative: the mwan-opnsense `Exec` RPC, which has the advantage of going over the existing vsock channel but the disadvantage that the upgrade is likely to kill or restart the daemon mid-execution, which would close the vsock channel and orphan the call.
 3. Stream stdout and stderr from `GuestExecStatus` into `<state_dir>/<vmid>/<deploy-id>/upgrade.log`.
 4. Apply a watchdog timeout. The upgrade has a known maximum duration on the prod VM 101 hardware that needs measurement on the testbed first; until then, the subcommand uses `cfg.Watchdog.UpgradeTimeout` defaulting to 30 minutes. If the timeout fires, transition to phase `execute_hung` and trigger automatic rollback (section 6).
@@ -356,7 +356,7 @@ Listed numbered so the follow-up ticket can answer them in order.
 3. **Upgrade execution channel.** Use Proxmox QGA `GuestExec` (primary) or mwan-opnsense `Exec` RPC (alternative)? The design recommends QGA to avoid the vsock-channel-dies-mid-upgrade hazard, but the operator may have a reason to prefer the typed RPC.
 4. **Dry-run execute mode.** Should the subcommand expose a `--dry-run-execute` flag that runs `opnsense-upgrade -c` (check-only) instead of the real upgrade? It would let `run` exercise the full state machine without committing the upgrade.
 5. **Dedicated rehearsal VM.** MWAN-149 proposes a VM 102 on suburban for upgrade rehearsals. Should `mwan opnsense-upgrade` mandate a dedicated VM in its `--vmid` validation, or allow any VM that QGA sees?
-6. **State directory ownership.** `<state_dir>` defaults to `/var/lib/mwan/upgrade/`. Confirm this fits the systemd unit file conventions in `cmd/mwan/mwan-agent.service` and friends, and that the unit's `StateDirectory=` covers it.
+6. **State directory ownership.** `<state_dir>` defaults to `/var/lib/mwan/upgrades/`. Confirm this fits the systemd unit file conventions in `cmd/mwan/mwan-agent.service` and friends, and that the unit's `StateDirectory=` covers it.
 7. **Notify kind name.** The design uses `opnsense_upgrade` as the alert kind. Confirm this does not collide with any kind already registered in `internal/notify/` after MWAN-132.
 8. **Snapshot retention.** Does `commit` always delete the pre-upgrade snapshot, or does the operator want a "keep the last N upgrade snapshots" policy? The watchdog-managed snapshots (`pre-deploy-*`, `known-good-*`) already have retention rules in `internal/rollback/state.go`; the upgrade snapshot prefix (`pre-upgrade-26x-*`) currently has none.
 9. **Vault prod VM 101 disk backend.** What storage backend backs the prod VM 101 disk on vault? The answer determines `qm snapshot` cost and whether the ZFS path in section 2.2 is even available.
@@ -444,7 +444,7 @@ Justification:
 
 Resolved. Use `/var/lib/mwan/upgrades/` (plural) as the state directory for the upgrade flow. This aligns with the path MWAN-153 already commits to in its baseline-storage proposal at `mwan/docs/MWAN-153-26x-upgrade-test-matrix.md` line 292.
 
-The design at section 4 currently defaults to `/var/lib/mwan/upgrade/` (singular). Section 4 should be updated when the implementation slice lands; this resolution overrides it.
+The design at section 4 previously defaulted to `/var/lib/mwan/upgrade/` (singular). Section 4 has been updated to reflect the plural form; the implementation (`upgrade.DefaultStateDir`) uses `/var/lib/mwan/upgrades` to match.
 
 Systemd unit changes: the existing `mwan/config/mwan-watchdog.service.j2` does not declare `StateDirectory=`. The watchdog runs as root and writes to `/var/lib/mwan/last-deploy` ad hoc (`mwan/go/internal/config/config.go` line 320 default). The implementation slice for MWAN-152 should add a new systemd unit (or reuse the watchdog unit) with `StateDirectory=mwan/upgrades` so systemd auto-creates the directory with the right ownership. Until that lands, the subcommand creates the directory itself with `os.MkdirAll(stateDir, 0750)` and emits a warning if the parent `/var/lib/mwan/` does not already exist.
 
