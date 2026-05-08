@@ -91,3 +91,67 @@ So this is a transport-routing gap in `Prepare`. It is not a guest-side problem.
 1. `opnsense-upgrade prepare` is hardwired to `GuestExec` and ignores `--env-transport=grpc`. This is the blocker that stopped the rehearsal.
 2. The mwan-opnsense gRPC daemon on the guest is healthy and exposes everything `Prepare` needs. The gap is purely on the host-side caller.
 3. `metadata.json` is written before the snapshot is taken and is not cleaned up on failure. Retries with the same deploy_id can read stale snapshot names.
+
+## QGA install attempt 2026-05-08 (rehearsal2 retry)
+
+This pass aimed to install `os-qemu-guest-agent` on VM 102 so the existing `Prepare` GuestExec path could work, then resume the abandoned rehearsal at Phase C. The pass stopped in Phase B before any guest mutation occurred.
+
+### Pre-flight
+
+- `qm config 102` shows `agent: enabled=1,type=virtio` and the existing `args:` line wiring `/var/run/qemu-server/102.mwanrpc` as a virtio-serial port. Both channels coexist as expected.
+- `qm guest cmd 102 ping` returned `QEMU guest agent is not running`. Baseline confirmed.
+- `mwan opnsense-probe -op exec -cmd pkg -cmd-arg info -cmd-arg -E -cmd-arg os-qemu-guest-agent` returned exit 1 with `pkg: No package(s) matching os-qemu-guest-agent`. Confirms QGA not installed.
+- The probe's `-cmd` is the executable, not a shell string. Shell-style `pkg info ... || echo NOT_INSTALLED` failed with `executable file not found in $PATH`. Subsequent calls used `-cmd-arg` per token. This is worth noting for future runs and probably for the probe's `--help` text.
+
+### Snapshot
+
+Took `pre-qga-install-2026-05-08` with `--vmstate 1`. `qm listsnapshot 102` shows the chain unchanged through `prod-shaped-25-7-baseline-2026-05-08` and the new snapshot appended after it.
+
+### Install attempt and blocker
+
+`pkg install -y os-qemu-guest-agent` (via `-cmd-arg` per token) returned exit 3 with:
+
+```
+Updating OPNsense repository catalogue...
+Unable to update repository OPNsense
+pkg: https://pkg.opnsense.org/FreeBSD:14:amd64/25.7/latest/meta.txz: No address record
+pkg: https://pkg.opnsense.org/FreeBSD:14:amd64/25.7/latest/packagesite.pkg: No address record
+pkg: https://pkg.opnsense.org/FreeBSD:14:amd64/25.7/latest/packagesite.txz: No address record
+```
+
+Forensics inside the guest:
+
+- `cat /etc/resolv.conf` lists `nameserver 127.0.0.1` plus two IPv6 upstreams under `2a07:a8c0::/32`.
+- `drill pkg.opnsense.org` against `127.0.0.1` returned `SERVFAIL`. Local Unbound has no upstream reachable.
+- `netstat -rn -f inet` shows only the four directly-connected /24s (`10.240.{1,2,3,4}.0/24`). No `default` row.
+- `netstat -rn -f inet6` shows the directly-connected /64s and one /96 NAT64 hint via `vlan064`. No `default` row.
+- `xpath-get /opnsense/gateways` returned only `<gateway_group></gateway_group>`. The config defines no gateways at all.
+- `/var/cache/pkg` does not exist. There is no offline pkg cache to fall back on.
+
+The testbed VM is wired as a closed-loop simulation. It owns its VLANs but has no upstream egress configured. Any pkg install path needs either an upstream gateway plus working DNS, or an out-of-band binary delivery (e.g. `pkg fetch` on a host that has internet, then `scp` the package set onto the guest filesystem and `pkg install -y --no-repo-update <pkg>`).
+
+### Decision
+
+Stopped per Rule 3 before improvising. No gateway was added. No DNS was changed. No `pkg add` of a hand-fetched archive was attempted. The guest VM state is unchanged from the `pre-qga-install-2026-05-08` snapshot.
+
+The rehearsal phases C through G were not reached and no rehearsal2 artefacts were updated. State on disk under `/var/lib/mwan/upgrades/102/20260508T222042Z-rehearsal2/` is whatever the prior agent left.
+
+### Recommendations
+
+- The "make Prepare gRPC-aware" recommendation from the previous section is the right path. The QGA install detour for the testbed needs working upstream networking that does not exist there today, which makes the QGA-only fallback impractical to rehearse against this VM in its current shape.
+- If we still want to rehearse the QGA path on suburban, a pre-step is needed: either add a `<gateways>` entry plus a default route to a reachable upstream, or stage a local pkg mirror on suburban (`pkg-repo` or a plain HTTP server) and point the guest at it. Both are a non-trivial amount of testbed plumbing.
+- The probe `--help` could clarify that `-cmd` is `argv[0]` and that shell metacharacters do not work; recommend `-cmd-arg` for any multi-token invocation.
+
+### Hard rules check (this pass)
+
+- `prod-shaped-25-7-baseline-2026-05-08` still present in `qm listsnapshot 102`.
+- `pre-qga-install-2026-05-08` snapshot exists and was not deleted (commit/rollback never ran).
+- No prod hosts touched; only suburban and VM 102.
+- No `tofu apply`, `ansible-playbook`, `git push`, or `git merge` to main.
+
+### Top three findings (this pass)
+
+1. The QGA-on-guest fallback path is not exercisable on suburban as configured. The testbed has no IPv4 default route, no IPv6 default route, an empty `<gateways>` block, and a local resolver that cannot reach its upstreams. `pkg install os-qemu-guest-agent` cannot fetch from `pkg.opnsense.org`.
+2. The `opnsense-probe -op exec` path takes argv tokens, not a shell string. Multi-token commands need `-cmd` for the executable plus repeated `-cmd-arg` flags. Shell pipes, quoting, and `||` do not work and produce a misleading "executable file not found" error.
+3. Combined with the prior pass's finding that `Prepare` is hardwired to `GuestExec`, the practical conclusion for prod cutover is to make `Prepare` gRPC-aware rather than to chase QGA install on the testbed. The MWAN-162/163 follow-on for `Prepare` is the unblocker.
+
