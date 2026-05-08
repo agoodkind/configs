@@ -143,19 +143,35 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
   }
 }
 
-# MWAN-62: suburban testbed OPNsense VM 101 (opnsense-test).
+# MWAN-62 / MWAN-140: suburban testbed OPNsense VM 101 (opnsense-test).
 #
 # This VM is the testbed counterpart of the prod OPNsense router. It boots
 # from scsi0 on local-zfs (8G) and exposes the mwan-opnsense virtio-serial
-# RPC channel via the `args` block. Mirrors the prod VM 101 shape on vault
-# minus the LAN trunk plumbing (the trunk-mode iavf0 NIC mapping for
-# vmbrtrunk lands in a follow-up slice tied to MWAN-140 slice 1).
+# RPC channel via the `args` block.
+#
+# NIC layout (MWAN-140 slice 2, per MWAN-148 one-port posture):
+#   Prod VM 101 carries MANAGEMENT untagged plus four 802.1q VLAN children
+#   (vlan0064, vlan0100, vlan0200, vlan0300) on a single physical port
+#   (`iavf0`, the PCI VF). The testbed mirrors that one-port posture by
+#   attaching VM 101 to `vmbrtrunk` exactly once. Inside OPNsense the
+#   imported config.xml declares MANAGEMENT as the untagged interface on
+#   the trunk parent (the testbed device is whatever the guest sees, e.g.
+#   `vtnet0`), then declares the four VLAN children on top of that same
+#   parent. The config.xml transform layer (MWAN-140 slice 4) rewrites
+#   every prod-side reference to `iavf0` to the testbed's matching device
+#   name; see `mwan/docs/MWAN-140-config-xml-transform-spec.md`.
+#
+#   MWAN-148 dropped the previously planned separate management bridge
+#   (`vmbrmgmt`) and the FreeBSD `rc.conf` rename approach. Both layers
+#   are gone: the bridge layer (networks.tf) only defines `vmbrtrunk`,
+#   and VM 101 only attaches to `vmbrtrunk`.
 #
 # Live state caveat (handed off 2026-05-08): VM 101 is wedged from the
-# MWAN-119 v2 rollback. The resource definition here documents the shape
-# the live config reports right now (`qm config 101` on 2026-05-07) so
-# `tofu import` succeeds; the wedged guest disk content is orthogonal to
-# the resource shape.
+# MWAN-119 v2 rollback. The resource definition here documents the
+# TARGET shape that slice 6 of MWAN-140 will rebuild from scratch on a
+# new VM, not the current live shape. Do not `tofu apply` this resource
+# against the wedged VM 101; the rebuild lives in a separate slice and
+# uses a fresh OPNsense install per the from-scratch runbook.
 #
 # Discovered fields not modeled here:
 #   * `unused0: local-zfs:vm-101-disk-0` is an orphan disk left from a
@@ -218,19 +234,28 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
     size         = 8
   }
 
-  # net0: WAN side on vmbr3 (testbed-proxy LAN, used as OPNsense's
-  # upstream during cutover2 dry runs).
+  # net0: single trunk attach on vmbrtrunk (MWAN-140 slice 2, MWAN-148).
+  #
+  # This NIC mirrors prod's `iavf0` posture: MANAGEMENT untagged plus the
+  # four 802.1q VLAN children (vlan0064, vlan0100, vlan0200, vlan0300)
+  # ride on the same parent device inside the guest. The bridge is
+  # VLAN-aware (see networks.tf) and carries VIDs 64, 100, 200, 300 plus
+  # the untagged MANAGEMENT plane.
+  #
+  # Only one network_device is declared. The previous two-NIC layout
+  # (net0 on vmbr3, net1 on vmbr2) belonged to the pre-MWAN-140 testbed
+  # shape and is intentionally removed: it does not match prod, and slice
+  # 6 will rebuild VM 101 against the one-port shape declared here.
+  #
+  # MAC address: held off until slice 6 picks one for the freshly built
+  # VM. The bpg provider auto-generates a MAC if `mac_address` is unset,
+  # so this resource intentionally omits it. Operators who run `tofu
+  # apply` for the rebuild can let the provider assign a MAC, then pin
+  # it back into this resource and into the
+  # `mwan_testbed_servers.yml` MAC list once slice 6 stabilizes.
   network_device {
-    bridge      = "vmbr3"
-    model       = "virtio"
-    mac_address = "BC:24:11:5A:2E:A0"
-  }
-
-  # net1: LAN side on vmbr2 (mwan testbed internal segment).
-  network_device {
-    bridge      = "vmbr2"
-    model       = "virtio"
-    mac_address = "BC:24:11:EC:EF:CC"
+    bridge = "vmbrtrunk"
+    model  = "virtio"
   }
 
   lifecycle {
