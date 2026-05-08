@@ -46,5 +46,9 @@ func EmailFromConfig(cfg *config.Config, serviceName string) slog.Handler {
 	if cfg.Email.SubjectPrefix != "" {
 		subjectPrefix = cfg.Email.SubjectPrefix
 	}
-	return gklog.EmailHandler(min, cd, sender, cfg.Email.AlertEmail, subjectPrefix)
+	// Use the project-local email handler so the body is rendered with
+	// BuildEmailBody (tight What/Where/Trace/Build sections) instead of
+	// gklog's flat key-value dump, which duplicated fields that
+	// send-email already emits in the host-snapshot footer.
+	return newEmailHandler(min, cd, sender, cfg.Email.AlertEmail, subjectPrefix)
 }
