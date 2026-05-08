@@ -71,6 +71,21 @@ xpath_sets:
     new_value: "test.home.goodkind.io"
 
 remove_elements:
+  # MWAN-150 collision fix (2026-05-08): the prod config declares opt6
+  # (VMNET) with `<if>vtnet0</if>`, AND opt9 (MANAGEMENT) with
+  # `<if>iavf0</if>` which the device_names mapping above rewrites to
+  # `vtnet0`. Two interfaces declaring the same untagged device causes
+  # OPNsense to bind vtnet0 to opt6 first, which leaves opt9 (the
+  # MANAGEMENT interface that holds the SSH path on testbed) without an
+  # address. Suburban testbed has no VMNET-equivalent broadcast domain,
+  # so strip opt6 entirely. The text_literals `VMNET v4 prefix shift`
+  # and `v6 VMNET prefix shift` below still rewrite embedded VMNET
+  # address copies; those references resolve to non-existent testbed
+  # addresses, which is acceptable for parity (rules retain shape but
+  # cannot match).
+  - name: "VMNET interface declaration (strip; collides with MANAGEMENT on vtnet0)"
+    xpath: "//opnsense/interfaces/opt6"
+
   # Spec section 3.5 / spec section 7 question 3.
   # MWAN-150 resolution: strip prod WireGuard peers. Testbed does not
   # need real upstream peers; an isolated tunnel that does not actually

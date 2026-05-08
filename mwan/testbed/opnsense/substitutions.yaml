@@ -92,6 +92,24 @@ xpath_sets:
     new_value: "test.home.goodkind.io"
 
 remove_elements:
+  # MWAN-150 collision fix (2026-05-08): the prod config declares opt6
+  # (VMNET) with `<if>vtnet0</if>` directly, AND opt9 (MANAGEMENT) with
+  # `<if>iavf0</if>` which the device_names mapping above rewrites to
+  # `vtnet0`. Two interfaces declaring the same untagged device causes
+  # OPNsense to bind vtnet0 to opt6 first (alphabetical priority), which
+  # leaves opt9 (the MANAGEMENT interface holding 10.240.4.1 and the
+  # SSH path on testbed) without an address. Suburban testbed has no
+  # VMNET-equivalent broadcast domain, so the safe fix is to strip the
+  # entire opt6 declaration rather than try to rewrite it. After this
+  # strip, the only interface declaring untagged `<if>vtnet0</if>` is
+  # opt9, which gets the management address as intended. The text_literals
+  # `VMNET v4 prefix shift` and `v6 VMNET prefix shift` below still
+  # rewrite any embedded VMNET address copies in firewall rules, NAT
+  # rules, and aliases, so those references resolve to non-existent
+  # testbed addresses (acceptable: rules retain shape but cannot match).
+  - name: "VMNET interface declaration (strip; collides with MANAGEMENT on vtnet0)"
+    xpath: "//opnsense/interfaces/opt6"
+
   # Spec section 3.5: WireGuard peer strip (operator decision: strip).
   # The testbed does not need real upstream WG peers; an isolated WG
   # tunnel that does not connect anywhere is acceptable for parity
