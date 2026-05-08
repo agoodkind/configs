@@ -39,8 +39,13 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
   # native vsock to reach the in-VM mwan-agent. Mirrors prod VM 113.
   kvm_arguments = "-device vhost-vsock-pci,guest-cid=950"
 
+  # MWAN-62 reconcile (2026-05-08): keyboard_layout, agent.type match live
+  # state from `qm config 950` import.
+  keyboard_layout = "en-us"
+
   agent {
     enabled = true
+    type    = "virtio"
   }
 
   cpu {
@@ -113,8 +118,10 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
     mac_address = "BC:24:11:3D:CE:CC"
   }
 
+  # MWAN-62 reconcile (2026-05-08): cloud-init drive lives on local-lvm per
+  # live `qm config 950` even though the boot disk is on local-zfs.
   initialization {
-    datastore_id = "local-zfs"
+    datastore_id = "local-lvm"
 
     ip_config {
       ipv4 {
@@ -201,8 +208,19 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
   # /dev/ttyV0.0 inside the guest.
   kvm_arguments = "-device virtio-serial-pci,id=mwanrpc -chardev socket,id=mwanchr,path=/var/run/qemu-server/101.mwanrpc,server=on,wait=off -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0"
 
+  # MWAN-62 reconcile (2026-05-08): keyboard_layout and agent.type match
+  # live `qm config 101` from suburban. The MWAN-140 slice 2 single-trunk
+  # NIC redesign (vmbrtrunk) has not been applied to live yet; the live VM
+  # still has the pre-MWAN-140 two-NIC layout (vmbr3 + vmbr2) and no
+  # operating_system block. HCL below mirrors live so plan is zero-diff.
+  # Slice 6 of MWAN-140 will rebuild VM 101 from scratch on a fresh disk
+  # against the one-port `vmbrtrunk` shape; that work is out of scope for
+  # this reconciliation.
+  keyboard_layout = "en-us"
+
   agent {
     enabled = true
+    type    = "virtio"
   }
 
   cpu {
@@ -211,10 +229,6 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
 
   memory {
     dedicated = 2048
-  }
-
-  operating_system {
-    type = "other"
   }
 
   serial_device {
@@ -234,28 +248,21 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
     size         = 8
   }
 
-  # net0: single trunk attach on vmbrtrunk (MWAN-140 slice 2, MWAN-148).
-  #
-  # This NIC mirrors prod's `iavf0` posture: MANAGEMENT untagged plus the
-  # four 802.1q VLAN children (vlan0064, vlan0100, vlan0200, vlan0300)
-  # ride on the same parent device inside the guest. The bridge is
-  # VLAN-aware (see networks.tf) and carries VIDs 64, 100, 200, 300 plus
-  # the untagged MANAGEMENT plane.
-  #
-  # Only one network_device is declared. The previous two-NIC layout
-  # (net0 on vmbr3, net1 on vmbr2) belonged to the pre-MWAN-140 testbed
-  # shape and is intentionally removed: it does not match prod, and slice
-  # 6 will rebuild VM 101 against the one-port shape declared here.
-  #
-  # MAC address: held off until slice 6 picks one for the freshly built
-  # VM. The bpg provider auto-generates a MAC if `mac_address` is unset,
-  # so this resource intentionally omits it. Operators who run `tofu
-  # apply` for the rebuild can let the provider assign a MAC, then pin
-  # it back into this resource and into the
-  # `mwan_testbed_servers.yml` MAC list once slice 6 stabilizes.
+  # net0 + net1: pre-MWAN-140 two-NIC layout currently on the live VM.
+  # net0 attaches to vmbr3 (LAN side); net1 attaches to vmbr2 (internal
+  # link to VM 950). MAC addresses come from live `qm config 101`. The
+  # MWAN-140 slice 6 rebuild collapses these to a single vmbrtrunk NIC,
+  # but that has not been applied; the resource records what is live.
   network_device {
-    bridge = "vmbrtrunk"
-    model  = "virtio"
+    bridge      = "vmbr3"
+    model       = "virtio"
+    mac_address = "BC:24:11:5A:2E:A0"
+  }
+
+  network_device {
+    bridge      = "vmbr2"
+    model       = "virtio"
+    mac_address = "BC:24:11:EC:EF:CC"
   }
 
   lifecycle {
