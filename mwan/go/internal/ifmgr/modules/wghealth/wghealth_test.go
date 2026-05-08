@@ -3,9 +3,15 @@
 package wghealth
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"goodkind.io/mwan/internal/ifmgr"
 )
 
 // canonical wg show wg0 dump output: first line is the interface, rest are peers.
@@ -139,5 +145,153 @@ func TestParseWGShowDump_CRLF(t *testing.T) {
 	}
 	if len(got) != 3 {
 		t.Errorf("CRLF want 3 peers, got %d", len(got))
+	}
+}
+
+// captureHandler records every slog.Record it receives so tests can assert
+// that AlertManager emitted exactly the expected number of records for a
+// given (kind, key). Pattern mirrors internal/ifmgr/alerts_test.go.
+type captureHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *captureHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+
+func (h *captureHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *captureHandler) WithGroup(_ string) slog.Handler      { return h }
+
+func (h *captureHandler) snapshot() []slog.Record {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]slog.Record, len(h.records))
+	copy(out, h.records)
+	return out
+}
+
+// recordsMatching returns the subset of captured records whose alert_kind
+// and alert_key attributes both match the given values. AlertManager always
+// attaches both attributes, so this is the canonical way to filter.
+func recordsMatching(records []slog.Record, kind, key string) []slog.Record {
+	var out []slog.Record
+	for _, r := range records {
+		var gotKind, gotKey string
+		r.Attrs(func(a slog.Attr) bool {
+			switch a.Key {
+			case "alert_kind":
+				gotKind = a.Value.String()
+			case "alert_key":
+				gotKey = a.Value.String()
+			}
+			return true
+		})
+		if gotKind == kind && gotKey == key {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// newModuleForReconcileTest builds a Module wired to a captureHandler-backed
+// AlertManager so tests can assert on Notify and Resolve transitions without
+// touching ssh, exec, or filesystem.
+func newModuleForReconcileTest(t *testing.T) (*Module, *captureHandler) {
+	t.Helper()
+	h := &captureHandler{}
+	log := slog.New(h)
+	alerts := ifmgr.NewAlertManager(log, ifmgr.AlertConfig{})
+	m := &Module{
+		cfg: Config{Iface: "wg0"},
+		env: &ifmgr.Env{
+			Iface:  "wg0",
+			Log:    log,
+			Alerts: alerts,
+		},
+		log:       log,
+		lastPeers: map[string]peerState{},
+	}
+	return m, h
+}
+
+// Three consecutive Reconcile passes where the wg-show seam returns an
+// error must collapse to exactly one alert emit on the (wg-reconcile-failed,
+// remote-wg-show) (kind, key) pair: the transition. AlertManager is the
+// gate that keeps the email sender from re-firing every reconcile tick.
+func TestReconcile_RemoteWGShowFailure_CollapsesToSingleEmit(t *testing.T) {
+	m, h := newModuleForReconcileTest(t)
+	m.runWGShow = func(_ context.Context, _ *slog.Logger) (string, error) {
+		return "", errors.New("ssh: connection refused")
+	}
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if err := m.Reconcile(ctx, m.log); err != nil {
+			t.Fatalf("Reconcile #%d returned err: %v", i+1, err)
+		}
+	}
+	matched := recordsMatching(h.snapshot(), "wg-reconcile-failed", "remote-wg-show")
+	if len(matched) != 1 {
+		t.Fatalf("got %d records for (wg-reconcile-failed, remote-wg-show), want 1", len(matched))
+	}
+	if matched[0].Level != slog.LevelError {
+		t.Errorf("emit level=%v, want ERROR", matched[0].Level)
+	}
+}
+
+// After three failing Reconciles, a successful Reconcile must emit a
+// Resolve record for (wg-reconcile-failed, remote-wg-show). Resolve is a
+// no-op when no alert is active, so the parse-wg-dump key (which never
+// fired) must not produce a record.
+func TestReconcile_RecoveryEmitsResolveOnce(t *testing.T) {
+	m, h := newModuleForReconcileTest(t)
+	failures := 0
+	m.runWGShow = func(_ context.Context, _ *slog.Logger) (string, error) {
+		if failures < 3 {
+			failures++
+			return "", errors.New("ssh: connection refused")
+		}
+		// Header-only output: parseWGShowDump returns an empty peer map and
+		// no error, exercising the success-path Resolve calls.
+		return "PRIVKEYabc=\tPUB\t51820\toff\n", nil
+	}
+	ctx := context.Background()
+	for i := 0; i < 4; i++ {
+		if err := m.Reconcile(ctx, m.log); err != nil {
+			t.Fatalf("Reconcile #%d returned err: %v", i+1, err)
+		}
+	}
+	records := h.snapshot()
+	failureMatches := recordsMatching(records, "wg-reconcile-failed", "remote-wg-show")
+	// Want exactly two: the initial ERROR transition, then the recovery
+	// emit triggered by Resolve once the seam returned a parseable dump.
+	if len(failureMatches) != 2 {
+		t.Fatalf("got %d records for (wg-reconcile-failed, remote-wg-show), want 2 (1 emit + 1 resolve)", len(failureMatches))
+	}
+	parseMatches := recordsMatching(records, "wg-reconcile-failed", "parse-wg-dump")
+	if len(parseMatches) != 0 {
+		t.Errorf("got %d records for (wg-reconcile-failed, parse-wg-dump), want 0 (Resolve on inactive key is no-op)", len(parseMatches))
+	}
+	// The second remote-wg-show record is the Resolve emit. AlertManager
+	// emits Resolve at INFO with resolved=true on this branch (subtask A,
+	// which would change the level and message prefix, is not yet merged).
+	resolve := failureMatches[1]
+	if resolve.Level != slog.LevelInfo {
+		t.Errorf("resolve level=%v, want INFO", resolve.Level)
+	}
+	var resolved bool
+	resolve.Attrs(func(a slog.Attr) bool {
+		if a.Key == "resolved" {
+			resolved = a.Value.Bool()
+		}
+		return true
+	})
+	if !resolved {
+		t.Errorf("resolve record missing resolved=true attribute")
 	}
 }
