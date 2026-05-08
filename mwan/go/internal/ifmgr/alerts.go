@@ -29,8 +29,16 @@ type AlertManager struct {
 type AlertConfig struct {
 	// RepeatEvery: if a previously-emitted alert is Notify()d again, the
 	// manager re-emits at most once per RepeatEvery. Zero disables repeats
-	// (alerts fire once per transition).
+	// (alerts fire once per transition). Used as a fallback when
+	// RepeatResolver is nil.
 	RepeatEvery time.Duration
+
+	// RepeatResolver, when non-nil, is consulted on every Notify to
+	// determine the repeat interval for that (kind, key). This lets the
+	// daemon plumb a per-alert-kind cadence from TOML without forcing
+	// AlertManager to know about the config schema. When nil, RepeatEvery
+	// is used for all (kind, key) pairs.
+	RepeatResolver func(kind, key string) time.Duration
 }
 
 // alertState is the per-(kind,key) memory: was the alert active last
@@ -68,7 +76,11 @@ func (a *AlertManager) Notify(
 	id := kind + "|" + key
 	st, exists := a.state[id]
 	shouldEmit := !exists || !st.active
-	if !shouldEmit && a.cfg.RepeatEvery > 0 && now.Sub(st.lastEmit) >= a.cfg.RepeatEvery {
+	repeatEvery := a.cfg.RepeatEvery
+	if a.cfg.RepeatResolver != nil {
+		repeatEvery = a.cfg.RepeatResolver(kind, key)
+	}
+	if !shouldEmit && repeatEvery > 0 && now.Sub(st.lastEmit) >= repeatEvery {
 		shouldEmit = true
 	}
 	st.active = true
