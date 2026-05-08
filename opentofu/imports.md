@@ -138,6 +138,29 @@ Drift expectations on `tofu plan` after these imports:
   100, plus the `mwan119-v2-preapply-20260508-0110` snapshot on VM 101,
   are not modeled by the bpg provider.
 
+## VM 102 (MWAN-149) manual-then-import
+
+VM 102 (`opnsense_test2`) follows a different recipe. The bpg/proxmox
+API rejects the `args` field for non-`root@pam` API tokens, so a regular
+`tofu apply` against the suburban provider alias cannot create this VM
+when the chardev/virtio-serial-pci `args` block is present. The operator
+sidesteps the API restriction by creating the empty VM directly via
+`qm create` over SSH as root, then importing it into Tofu state. After
+import, `tofu plan` reports zero changes so the resource is fully
+managed.
+
+The qm command shape lives at `vm102-create.cmd` in the worktree for
+reference. After the VM exists and is stopped, run:
+
+```bash
+tofu import \
+  'proxmox_virtual_environment_vm.opnsense_test2' \
+  'hypervisor/102'
+```
+
+The operator then installs OPNsense via the serial console per
+`mwan/docs/runbooks/opnsense-testbed-baseline-vm102.md`.
+
 ## Out of scope
 
 The suburban testbed still includes resources that this slice does NOT
