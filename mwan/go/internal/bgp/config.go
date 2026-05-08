@@ -14,6 +14,18 @@ type Config struct {
 	NeighborsV6 []NeighborConfig
 
 	Announce AnnounceConfig
+
+	GracefulRestart GracefulRestartConfig
+}
+
+// GracefulRestartConfig mirrors config.BGPGracefulRestart on the speaker
+// side. The speaker uses these fields when building the GoBGP API requests
+// for StartBgp, AddPeer, and StopBgp so the GR capability is negotiated
+// with each peer per RFC 4724.
+type GracefulRestartConfig struct {
+	Enabled             bool
+	RestartTime         uint32
+	NotificationEnabled bool
 }
 
 // NeighborConfig identifies a single BGP peer.

@@ -83,6 +83,11 @@ func Run(cfg *config.Config) error {
 				IPv4: cfg.BGP.Announce.IPv4,
 				IPv6: cfg.BGP.Announce.IPv6,
 			},
+			GracefulRestart: bgp.GracefulRestartConfig{
+				Enabled:             cfg.BGP.GracefulRestart.Enabled,
+				RestartTime:         cfg.BGP.GracefulRestart.RestartTime,
+				NotificationEnabled: cfg.BGP.GracefulRestart.NotificationEnabled,
+			},
 		}
 		for _, n := range cfg.BGP.Neighbors {
 			bgpCfg.Neighbors = append(bgpCfg.Neighbors, bgp.NeighborConfig{Address: n.Address})
@@ -180,7 +185,14 @@ func Run(cfg *config.Config) error {
 	case sig := <-sigCh:
 		logger.Info("shutdown signal", "signal", sig.String())
 		if bgpSpeaker != nil {
-			_ = bgpSpeaker.WithdrawDefault()
+			// When BGP Graceful Restart is enabled, skip the pre-emptive
+			// route withdrawal: an explicit WITHDRAW defeats GR semantics
+			// because the helper (OPNsense FRR) sees the withdraw and
+			// removes the route immediately. With GR off, the pre-withdraw
+			// is the right behaviour for clean shutdown.
+			if !cfg.BGP.GracefulRestart.Enabled {
+				_ = bgpSpeaker.WithdrawDefault()
+			}
 			_ = bgpSpeaker.Stop()
 		}
 		grpcServer.GracefulStop()
