@@ -20,13 +20,14 @@ import (
 type subcommand string
 
 const (
-	subcmdAgent         subcommand = "agent"
-	subcmdWatchdog      subcommand = "watchdog"
-	subcmdIfmgr         subcommand = "ifmgr"
-	subcmdHealthCheck   subcommand = "health-check"
-	subcmdOPNsense      subcommand = "opnsense"
-	subcmdOPNsenseHost  subcommand = "opnsense-host"
-	subcmdOPNsenseProbe subcommand = "opnsense-probe"
+	subcmdAgent                subcommand = "agent"
+	subcmdWatchdog             subcommand = "watchdog"
+	subcmdIfmgr                subcommand = "ifmgr"
+	subcmdHealthCheck          subcommand = "health-check"
+	subcmdOPNsense             subcommand = "opnsense"
+	subcmdOPNsenseHost         subcommand = "opnsense-host"
+	subcmdOPNsenseProbe        subcommand = "opnsense-probe"
+	subcmdOPNsenseImportConfig subcommand = "opnsense-import-config"
 )
 
 func main() {
@@ -34,7 +35,7 @@ func main() {
 		os.Exit(runOPNsenseDaemon(os.Args[1:]))
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|opnsense-probe|opnsense-host> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|opnsense-probe|opnsense-host|opnsense-import-config> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -66,6 +67,12 @@ func main() {
 		os.Exit(runOPNsenseDaemon(os.Args[1:]))
 	case subcmdOPNsenseHost:
 		os.Exit(runOPNsenseHost(os.Args[1:]))
+	case subcmdOPNsenseImportConfig:
+		if err := runOPNsenseImportConfig(os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan opnsense-import-config: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	case subcmdAgent, subcmdWatchdog, subcmdIfmgr:
 	}
 
@@ -88,7 +95,7 @@ func main() {
 		}
 	case subcmdIfmgr:
 		runErr = runIfMgr(cfg)
-	case subcmdHealthCheck, subcmdOPNsense, subcmdOPNsenseProbe, subcmdOPNsenseHost:
+	case subcmdHealthCheck, subcmdOPNsense, subcmdOPNsenseProbe, subcmdOPNsenseHost, subcmdOPNsenseImportConfig:
 		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", sub)
 		os.Exit(1)
 	default:
