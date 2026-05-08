@@ -47,10 +47,10 @@ func runOPNsenseProbe(args []string) error {
 	repeat := fs.Int("repeat", 1, "number of times to run the selected RPC over one connection")
 	xpath := fs.String("xpath", "", "XPath expression for op=xpath-{get,set,delete}")
 	xpathValue := fs.String("xpath-value", "", "value to write for op=xpath-set")
-	cmdStr := fs.String("cmd", "", "command for op=exec")
-	cmdArgs := fs.String("cmd-args", "", "comma-separated args for op=exec")
+	cmdStr := fs.String("cmd", "", "executable path for op=exec (argv token, not a shell string; no shell expansion or pipes)")
+	cmdArgs := fs.String("cmd-args", "", "comma-separated argv tokens for op=exec (legacy; prefer -cmd-arg)")
 	var cmdArgv repeatableStringFlag
-	fs.Var(&cmdArgv, "cmd-arg", "append one argv token for op=exec; repeatable and preferred over -cmd-args")
+	fs.Var(&cmdArgv, "cmd-arg", "append one argv token for op=exec; repeatable and preferred over -cmd-args; for shell pipelines use -cmd /bin/sh -cmd-arg -c -cmd-arg \"cmd || fallback\"")
 	cmdStdinFile := fs.String("stdin-file", "", "local file to send as stdin for op=exec")
 	cmdTimeout := fs.Duration("cmd-timeout", 0, "remote command timeout for op=exec or op=configctl")
 	cmdSudo := fs.Bool("cmd-sudo", false, "wrap exec in sudo -n")
