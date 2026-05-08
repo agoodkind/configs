@@ -37,9 +37,10 @@ include bootstrap.mk
 
 .DEFAULT_GOAL := check
 
-# Augment canonical build with proto codegen as a prerequisite. The recipe
-# from go-build.mk still applies; this just adds the proto dep.
-build: proto
+# Acceptance gate. `make build` fails unless every shipped platform compiles
+# cleanly. Add new platform targets to this prerequisite list when we start
+# shipping them.
+build: proto build-linux build-mwan-opnsense
 
 # ---------------------------------------------------------------------------
 # Project-local
