@@ -79,13 +79,72 @@ abort `tofu apply` before damage; treat any such plan as a sign the
 resource definition does not match the live shape and tune the HCL
 before re-running.
 
+## Testbed import (MWAN-62)
+
+The MWAN-62 expansion adds the four ISP simulator LXCs, the
+mwan-failover-test LXC, and the testbed OPNsense VM. The bpg/proxmox
+provider import IDs follow the same `<node_name>/<vm_id>` shape for both
+containers and VMs (the container resource accepts the same separator the
+VM resource uses).
+
+Run from `opentofu/` in the worktree (or from repo root after merge):
+
+```bash
+# MWAN-62: suburban testbed LXCs.
+tofu import \
+  'proxmox_virtual_environment_container.mwan_failover_test' \
+  'hypervisor/100'
+
+tofu import \
+  'proxmox_virtual_environment_container.isp_webpass' \
+  'hypervisor/200'
+
+tofu import \
+  'proxmox_virtual_environment_container.isp_att' \
+  'hypervisor/201'
+
+tofu import \
+  'proxmox_virtual_environment_container.isp_mbrains' \
+  'hypervisor/202'
+
+tofu import \
+  'proxmox_virtual_environment_container.testbed_proxy' \
+  'hypervisor/203'
+
+# MWAN-62: suburban testbed OPNsense VM.
+# VM 101 is wedged from the MWAN-119 v2 rollback. The import succeeds on
+# the resource shape regardless of the wedged guest disk content.
+tofu import \
+  'proxmox_virtual_environment_vm.opnsense_test' \
+  'hypervisor/101'
+```
+
+Drift expectations on `tofu plan` after these imports:
+
+* `operating_system.template_file_id` on every imported LXC. Proxmox does
+  not store the original template name in `pct config`, so the value
+  declared here is informational. Each LXC resource lists this field in
+  `lifecycle.ignore_changes` so plan does not flag it.
+* `initialization.ip_config` on the LXCs. The bpg provider models the
+  Proxmox-native `ip=`/`ip6=` fields on each net line via this block. The
+  values declared here mirror the live `pct config` output as of
+  2026-05-07. If plan flags drift, compare against the live config and
+  tune the HCL rather than ignoring the field.
+* VM 101 `vga` is in the lifecycle ignore list because the value comes
+  from `qm config` as `serial0` and the bpg provider sometimes normalizes
+  the field on plan.
+* VM 101 `unused0` (the orphan disk from a prior reinstall) is not
+  modeled. Drift is not expected because Tofu only manages declared
+  disks.
+* The `[ansible-deploy-golden]` and `[pre-cutover2-v2]` snapshots on LXC
+  100, plus the `mwan119-v2-preapply-20260508-0110` snapshot on VM 101,
+  are not modeled by the bpg provider.
+
 ## Out of scope
 
-The suburban testbed includes more resources that this slice does NOT
+The suburban testbed still includes resources that this slice does NOT
 import:
 
-* LXC 200, 201, 202, 203 (simulated ISP and OPNsense LAN containers).
-* VM 101 (testbed OPNsense).
 * SDN config and `/etc/network/interfaces.d/testbed-masquerade.conf`.
 
-Those land in a follow-up MWAN-62 slice.
+Those land in a follow-up slice tied to MWAN-140.
