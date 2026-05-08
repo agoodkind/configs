@@ -137,11 +137,36 @@ type fakeExec struct {
 	errs    []error
 	idx     int
 	delay   time.Duration
+
+	// byCommand overrides results for specific argv[0] values. The
+	// upgrade prepare phase issues capture commands (cat, ifconfig,
+	// netstat, vtysh, opnsense-version) before the upgrade itself; this
+	// map lets a test return a specific result for one of those without
+	// disturbing the sequential `results` slice that drives the upgrade
+	// command itself.
+	byCommand map[string]GuestExecResult
+	// errByCommand mirrors byCommand for the error return.
+	errByCommand map[string]error
 }
 
 func (e *fakeExec) GuestExec(ctx context.Context, vmid string, args ...string) (GuestExecResult, error) {
 	e.mu.Lock()
 	e.calls = append(e.calls, execCall{VMID: vmid, Args: append([]string(nil), args...)})
+	if len(args) > 0 {
+		if res, ok := e.byCommand[args[0]]; ok {
+			err := e.errByCommand[args[0]]
+			delay := e.delay
+			e.mu.Unlock()
+			if delay > 0 {
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					return GuestExecResult{}, ctx.Err()
+				}
+			}
+			return res, err
+		}
+	}
 	i := e.idx
 	if i >= len(e.results) {
 		i = len(e.results) - 1
@@ -188,7 +213,20 @@ func newDeps(t *testing.T) (Deps, *fakeNotifier, *fakeSnap, *fakeExec, *fakeVali
 	t.Helper()
 	n := &fakeNotifier{}
 	s := &fakeSnap{}
-	x := &fakeExec{results: []GuestExecResult{{ExitCode: 0}}}
+	// Default capture commands return success with a small canned
+	// stdout so Prepare's pre-upgrade artefact capture lands without
+	// disturbing the sequential `results` slice that drives the upgrade
+	// command itself.
+	x := &fakeExec{
+		results: []GuestExecResult{{ExitCode: 0}},
+		byCommand: map[string]GuestExecResult{
+			"cat":              {ExitCode: 0, Stdout: "<config/>"},
+			"opnsense-version": {ExitCode: 0, Stdout: "OPNsense 25.7\n"},
+			"ifconfig":         {ExitCode: 0, Stdout: "lo0: flags=...\n"},
+			"netstat":          {ExitCode: 0, Stdout: "Routing tables\n"},
+			"vtysh":            {ExitCode: 0, Stdout: "{}\n"},
+		},
+	}
 	v := &fakeValidator{result: AggregateChecks([]CheckResult{{Name: "qga_responsive", Pass: true}})}
 	deps := Deps{
 		Snap:     s,

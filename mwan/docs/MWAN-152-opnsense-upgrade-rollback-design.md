@@ -136,6 +136,20 @@ Behavior:
 
 Failure path: if any step before `VMSnapshot` fails, the subcommand exits non-zero and does nothing. If `VMSnapshot` fails specifically, the subcommand emits an `opnsense_upgrade`/`prepare_failed` alert at `Error` and exits non-zero.
 
+#### Transport choices (MWAN-162 implementation note)
+
+The MWAN-162 slice landed every artefact capture on a single transport: the `Executor.GuestExec` interface (Proxmox QGA in production). Reasons recorded here:
+
+- One transport keeps the test seam small. The same `fakeExec` already in place for `Execute` covers every capture.
+- The mwan-opnsense daemon may be down at prepare time on a recovery path. QGA stays available even when the gRPC channel is broken.
+- The artefact capture has no need for typed protobuf round trips. Raw stdout from `cat /conf/config.xml`, `opnsense-version`, `ifconfig -av`, and `vtysh -c 'show bgp summary json'` is sufficient for the validate-phase diff and operator forensics.
+
+A future slice can swap individual captures to the typed RPC client (`Version`, `BackupConfigXML`) if the QGA path proves slow or unreliable. The contract for what lands on disk does not change.
+
+The `interfaces.json` artefact is a JSON object of three sections (`ifconfig_av`, `netstat_rn_inet`, `netstat_rn_inet6`) plus a per-section `*_err` field. This is a richer shape than the design originally proposed and lets the validate-phase diff inspect a single artefact rather than three.
+
+Best-effort vs required: `config.xml.pre` and its sha256 sidecar are required (failure aborts Prepare and skips the snapshot). `version.txt`, `interfaces.json`, and `bgp_status.json` are best-effort: a guest with no FRR or no `opnsense-version` shim still completes Prepare with empty placeholder files, so the deploy-dir shape is uniform.
+
 ### 4.2 execute
 
 Inputs: `vmid`, `target`, `state_dir`.
