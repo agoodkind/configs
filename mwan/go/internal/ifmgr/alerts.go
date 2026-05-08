@@ -4,6 +4,7 @@ package ifmgr
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,10 +35,16 @@ type AlertConfig struct {
 }
 
 // alertState is the per-(kind,key) memory: was the alert active last
-// time we saw it, when did we last emit.
+// time we saw it, when did we last emit, and at what level.
+//
+// lastLevel is recorded at Notify-emit time so Resolve can re-emit the
+// recovery line at the same severity. Without this, Resolve would log
+// at INFO and be filtered out by EmailConfig.MinLevel (default ERROR),
+// leaving open alerts in the inbox with no visible close.
 type alertState struct {
-	active   bool
-	lastEmit time.Time
+	active    bool
+	lastEmit  time.Time
+	lastLevel slog.Level
 }
 
 // NewAlertManager constructs an AlertManager with the given config.
@@ -74,6 +81,7 @@ func (a *AlertManager) Notify(
 	st.active = true
 	if shouldEmit {
 		st.lastEmit = now
+		st.lastLevel = level
 		baseFields := []any{
 			"alert_kind", kind,
 			"alert_key", key,
@@ -85,8 +93,14 @@ func (a *AlertManager) Notify(
 }
 
 // Resolve clears the (kind, key) so the next Notify will be treated as a
-// fresh transition. Call when the underlying problem is fixed; emits an
-// INFO line so the journal records the recovery.
+// fresh transition. Call when the underlying problem is fixed.
+//
+// The recovery line emits at the same severity the original Notify used,
+// so it crosses the same MinLevel threshold the open alert did and the
+// pairing actually shows up in the inbox. The msg is prefixed with
+// "RECOVERED: " (unless the caller already supplied that prefix) so the
+// gklog email subject, derived from the slog message, makes the open and
+// close obvious at a glance.
 func (a *AlertManager) Resolve(now time.Time, kind, key, msg string, fields ...any) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -98,12 +112,22 @@ func (a *AlertManager) Resolve(now time.Time, kind, key, msg string, fields ...a
 	st.active = false
 	st.lastEmit = now
 	a.state[id] = st
+	level := st.lastLevel
+	// Defensive: an alertState may exist with active=true but lastLevel
+	// unset if a future code path ever marks active without going through
+	// the emit branch. Fall back to WARN so the recovery still surfaces.
+	if level == 0 {
+		level = slog.LevelWarn
+	}
+	if !strings.HasPrefix(msg, "RECOVERED:") {
+		msg = "RECOVERED: " + msg
+	}
 	baseFields := []any{
 		"alert_kind", kind,
 		"alert_key", key,
 		"resolved", true,
 	}
-	a.log.Info(msg, append(baseFields, fields...)...)
+	a.log.Log(nil, level, msg, append(baseFields, fields...)...)
 }
 
 // Active reports whether the named alert is currently in the "fired but
