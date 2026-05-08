@@ -18,7 +18,7 @@ import (
 // opnsense.
 type OPNsenseRPCClient interface {
 	// Exec runs a binary inside the OPNsense guest. Command is the
-	// executable path (e.g. "cat", "opnsense-upgrade") and Args is the
+	// executable path (e.g. "cat", "opnsense-update") and Args is the
 	// argv tail. The Executor surface uses the same shape, so the
 	// mapping is one-to-one.
 	Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error)

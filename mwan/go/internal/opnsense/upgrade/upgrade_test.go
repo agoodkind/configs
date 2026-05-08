@@ -437,6 +437,41 @@ func TestExecuteNonZeroExitTransitionsToExecuteFailed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// upgradeCommand argv
+// ---------------------------------------------------------------------------
+
+// TestUpgradeCommandArgv pins the argv shapes emitted by upgradeCommand.
+// opnsense-update is the canonical major-release upgrade tool on OPNsense
+// 25.7 and later; opnsense-upgrade does not exist on that platform.
+// Source: opnsense/update src/update/opnsense-update.sh.in, getopts line 293,
+// -u case (DO_UPGRADE) and -r case (DO_RELEASE).
+func TestUpgradeCommandArgv(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		target  string
+		dryRun  bool
+		wantArg []string
+	}{
+		{"", false, []string{"opnsense-update", "-u"}},
+		{"26.1", false, []string{"opnsense-update", "-u", "-r", "26.1"}},
+		{"", true, []string{"opnsense-update", "-c"}},
+		{"26.1", true, []string{"opnsense-update", "-c"}},
+	}
+	for _, tc := range cases {
+		got := upgradeCommand(tc.target, tc.dryRun)
+		if len(got) != len(tc.wantArg) {
+			t.Errorf("upgradeCommand(%q, %v) = %v, want %v", tc.target, tc.dryRun, got, tc.wantArg)
+			continue
+		}
+		for i, w := range tc.wantArg {
+			if got[i] != w {
+				t.Errorf("upgradeCommand(%q, %v)[%d] = %q, want %q", tc.target, tc.dryRun, i, got[i], w)
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // validate
 // ---------------------------------------------------------------------------
 
