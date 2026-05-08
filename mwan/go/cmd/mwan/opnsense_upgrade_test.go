@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/opnsense/upgrade"
 	"goodkind.io/mwan/internal/opnsense/validate"
 )
@@ -267,3 +268,212 @@ func TestBuildAPIAuthOnlyPopulatesWhenSet(t *testing.T) {
 		t.Errorf("auth = %+v", auth)
 	}
 }
+
+// fakeUpgradeRPC is a stub OPNsenseRPCClient that records every Exec
+// call without speaking the real protocol. It exists so the executor
+// factory tests can drive the gRPC selection path without dialing a
+// unix socket.
+type fakeUpgradeRPC struct {
+	calls []*mwanv1.ExecRequest
+}
+
+func (f *fakeUpgradeRPC) Exec(
+	_ context.Context, req *mwanv1.ExecRequest,
+) (*mwanv1.ExecResponse, error) {
+	f.calls = append(f.calls, req)
+	return &mwanv1.ExecResponse{Stdout: []byte("stub"), ExitCode: 0}, nil
+}
+
+// TestParseUpgradeFlagsAcceptsGRPCTransport confirms the upgrade
+// subcommand's flag set parses --env-transport=grpc and the matching
+// --env-grpc-target value, mirroring the validator-side wiring from
+// MWAN-160 / MWAN-163.
+func TestParseUpgradeFlagsAcceptsGRPCTransport(t *testing.T) {
+	t.Parallel()
+	args := []string{
+		"--vmid", "102",
+		"--env-transport", "grpc",
+		"--env-grpc-target", "unix:///var/run/qemu-server/102.mwanrpc",
+	}
+	f, err := parseUpgradeFlags("opnsense-upgrade prepare", args)
+	if err != nil {
+		t.Fatalf("parseUpgradeFlags: unexpected error: %v", err)
+	}
+	if f.envTransport != envTransportGRPC {
+		t.Errorf("envTransport = %q, want %q", f.envTransport, envTransportGRPC)
+	}
+	if f.envGRPCTarget != "unix:///var/run/qemu-server/102.mwanrpc" {
+		t.Errorf("envGRPCTarget = %q", f.envGRPCTarget)
+	}
+}
+
+// TestRegisterCommonFlagsRegistersTransportFlags is a focused regression
+// test on the flag set itself; without --env-transport / --env-grpc-
+// target registered, the upgrade subcommand cannot opt in to the gRPC
+// path.
+func TestRegisterCommonFlagsRegistersTransportFlags(t *testing.T) {
+	t.Parallel()
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	var f upgradeFlags
+	registerCommonFlags(fs, &f)
+	if fs.Lookup("env-transport") == nil {
+		t.Fatal("--env-transport flag not registered on upgrade flag set")
+	}
+	if fs.Lookup("env-grpc-target") == nil {
+		t.Fatal("--env-grpc-target flag not registered on upgrade flag set")
+	}
+}
+
+// TestUpgradeExecutorFactoryDefaultsToSSH confirms the SSH path keeps
+// using the existing ops-backed adapter when the operator does not
+// pass --env-transport.
+func TestUpgradeExecutorFactoryDefaultsToSSH(t *testing.T) {
+	t.Parallel()
+	factory := upgradeExecutorFactory{
+		dial: func(_ string) (upgrade.OPNsenseRPCClient, error) {
+			t.Fatal("dial should not be invoked on the SSH transport path")
+			return nil, nil
+		},
+	}
+	exec, err := factory.build(envTransportConfig{Transport: envTransportSSH}, nil)
+	if err != nil {
+		t.Fatalf("build: unexpected error: %v", err)
+	}
+	if _, ok := exec.(opsExecutorAdapter); !ok {
+		t.Errorf("exec type = %T, want opsExecutorAdapter", exec)
+	}
+}
+
+// TestUpgradeExecutorFactoryEmptyTransportFallsBackToSSH covers the
+// zero-value transport case so the upgrade subcommand stays
+// backwards-compatible with operator habits that never set the flag.
+func TestUpgradeExecutorFactoryEmptyTransportFallsBackToSSH(t *testing.T) {
+	t.Parallel()
+	factory := upgradeExecutorFactory{
+		dial: func(_ string) (upgrade.OPNsenseRPCClient, error) {
+			t.Fatal("dial should not be invoked on the empty transport path")
+			return nil, nil
+		},
+	}
+	exec, err := factory.build(envTransportConfig{Transport: ""}, nil)
+	if err != nil {
+		t.Fatalf("build: unexpected error: %v", err)
+	}
+	if _, ok := exec.(opsExecutorAdapter); !ok {
+		t.Errorf("exec type = %T, want opsExecutorAdapter", exec)
+	}
+}
+
+// TestUpgradeExecutorFactoryGRPCRoutesThroughDial asserts that
+// --env-transport=grpc dials the supplied target and returns a
+// GRPCExecutor wired to the dialed RPC client. A subsequent GuestExec
+// call must land on the mock RPC, not on opsExecutorAdapter.
+func TestUpgradeExecutorFactoryGRPCRoutesThroughDial(t *testing.T) {
+	t.Parallel()
+	rpc := &fakeUpgradeRPC{}
+	var dialedTarget string
+	factory := upgradeExecutorFactory{
+		dial: func(target string) (upgrade.OPNsenseRPCClient, error) {
+			dialedTarget = target
+			return rpc, nil
+		},
+	}
+	exec, err := factory.build(envTransportConfig{
+		Transport:  envTransportGRPC,
+		GRPCTarget: "unix:///var/run/qemu-server/102.mwanrpc",
+	}, nil)
+	if err != nil {
+		t.Fatalf("build: unexpected error: %v", err)
+	}
+	if dialedTarget != "unix:///var/run/qemu-server/102.mwanrpc" {
+		t.Errorf("dialedTarget = %q", dialedTarget)
+	}
+	gExec, ok := exec.(*upgrade.GRPCExecutor)
+	if !ok {
+		t.Fatalf("exec type = %T, want *upgrade.GRPCExecutor", exec)
+	}
+	if gExec.RPC == nil {
+		t.Fatal("GRPCExecutor.RPC is nil after factory build")
+	}
+	// Drive a GuestExec call to confirm it lands on the mock RPC,
+	// not on the SSH adapter. This is the load-bearing assertion that
+	// proves the gRPC path is wired end-to-end.
+	res, err := exec.GuestExec(context.Background(), "102", "cat", "/conf/config.xml")
+	if err != nil {
+		t.Fatalf("GuestExec: unexpected error: %v", err)
+	}
+	if res.Stdout != "stub" {
+		t.Errorf("Stdout = %q, want stub (proves RPC was called)", res.Stdout)
+	}
+	if len(rpc.calls) != 1 {
+		t.Fatalf("rpc.calls = %d, want 1", len(rpc.calls))
+	}
+	if rpc.calls[0].GetCommand() != "cat" {
+		t.Errorf("Command = %q, want cat", rpc.calls[0].GetCommand())
+	}
+	gotArgs := rpc.calls[0].GetArgs()
+	if len(gotArgs) != 1 || gotArgs[0] != "/conf/config.xml" {
+		t.Errorf("Args = %v, want [/conf/config.xml]", gotArgs)
+	}
+}
+
+// TestUpgradeExecutorFactoryGRPCRequiresTarget rejects --env-transport=
+// grpc without --env-grpc-target. The upgrade subcommand must fail
+// before any state-file mutations land, so the factory error is
+// surfaced at deps-build time.
+func TestUpgradeExecutorFactoryGRPCRequiresTarget(t *testing.T) {
+	t.Parallel()
+	factory := upgradeExecutorFactory{
+		dial: func(_ string) (upgrade.OPNsenseRPCClient, error) {
+			t.Fatal("dial should not be invoked when target is empty")
+			return nil, nil
+		},
+	}
+	_, err := factory.build(envTransportConfig{
+		Transport:  envTransportGRPC,
+		GRPCTarget: "",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error for empty GRPCTarget, got nil")
+	}
+}
+
+// TestUpgradeExecutorFactoryUnknownTransportRejected covers the
+// defensive default-branch in the switch. parseEnvTransport already
+// rejects unknown values at flag-parse time, but the factory keeps an
+// independent guard so a future caller cannot bypass it.
+func TestUpgradeExecutorFactoryUnknownTransportRejected(t *testing.T) {
+	t.Parallel()
+	factory := upgradeExecutorFactory{dial: nil}
+	_, err := factory.build(envTransportConfig{Transport: "carrier-pigeon"}, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown transport, got nil")
+	}
+}
+
+// TestUpgradeExecutorFactoryGRPCPropagatesDialError wraps the dial
+// error so callers can chain errors.Is. The runner uses the dial path
+// at deps-build time, so a typed error here is the surface operators
+// will see when --env-grpc-target points to a missing socket.
+func TestUpgradeExecutorFactoryGRPCPropagatesDialError(t *testing.T) {
+	t.Parallel()
+	wantErr := errors.New("dial: socket missing")
+	factory := upgradeExecutorFactory{
+		dial: func(_ string) (upgrade.OPNsenseRPCClient, error) {
+			return nil, wantErr
+		},
+	}
+	_, err := factory.build(envTransportConfig{
+		Transport:  envTransportGRPC,
+		GRPCTarget: "unix:///does/not/exist",
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error = %v, want chain containing %v", err, wantErr)
+	}
+}
+
+// guard against drift: fakeUpgradeRPC must satisfy OPNsenseRPCClient.
+var _ upgrade.OPNsenseRPCClient = (*fakeUpgradeRPC)(nil)

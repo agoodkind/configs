@@ -118,9 +118,15 @@ Operator action after the run:
 
 The prepare phase takes the Proxmox snapshot, captures pre-upgrade artefacts beyond the matrix baseline, and transitions the state machine to `prepared`. See MWAN-152 section 4.1 (line 118).
 
+On the suburban testbed, prepare cannot reach the guest over QGA: VM 102 has no `os-qemu-guest-agent` package installed and no internet egress to install it (see `MWAN-13-rehearsal-findings-2026-05-08.md`). Use `--env-transport=grpc` so the in-guest capture commands (`cat /conf/config.xml`, `opnsense-version`, `ifconfig -av`, `netstat -rn`, `vtysh -c 'show bgp summary json'`) route through the mwan-opnsense daemon's Exec RPC instead of QGA. The `--env-grpc-target` value matches the validator flag set above.
+
 ```sh
-ssh root@10.240.0.148 "mwan opnsense-upgrade prepare --vmid 102 --target 26.1.7 --deploy-id ${DEPLOY_ID}"
+ssh root@10.240.0.148 "mwan opnsense-upgrade prepare \
+  --vmid 102 --target 26.1.7 --deploy-id ${DEPLOY_ID} \
+  --env-transport=grpc --env-grpc-target=${GRPC_TARGET}"
 ```
+
+Production cutover should also prefer `--env-transport=grpc` because the gRPC path survives a pf or routing break that would silently fail the QGA channel.
 
 `--target 26.1.7` is the latest 26.1 release per MWAN-151 section 1 (line 47). The target should always be a specific point release rather than the bare ABI string, so the rehearsal exercises a real upgrade path.
 
@@ -158,13 +164,17 @@ Operator action after the run:
 The execute phase runs the in-guest upgrade. See MWAN-152 section 4.2 (line 140).
 
 ```sh
-ssh root@10.240.0.148 "mwan opnsense-upgrade execute --vmid 102 --deploy-id ${DEPLOY_ID}"
+ssh root@10.240.0.148 "mwan opnsense-upgrade execute \
+  --vmid 102 --deploy-id ${DEPLOY_ID} \
+  --env-transport=grpc --env-grpc-target=${GRPC_TARGET}"
 ```
+
+The same `--env-transport=grpc` flag applies here as on prepare. QGA is still not available on the testbed VM. The execute argv (`opnsense-upgrade -r <target>`) is dispatched through the daemon's Exec RPC. The per-call timeout falls back to the daemon default. The upgrade-watchdog timeout from `--upgrade-timeout` still gates the surrounding context.
 
 What `execute` does:
 
 - Loads the state file. Refuses to execute unless `phase=prepared` (MWAN-152 section 4.2 step 1, line 145).
-- Runs the OPNsense upgrade in the guest via QGA `GuestExec`. The argv shape is `["opnsense-upgrade", "-r", "26.1.7"]` or whatever the design slice settled on (MWAN-152 section 4.2 step 2, line 146; channel decision in section 11.3, line 408).
+- Runs the OPNsense upgrade in the guest via the configured Executor (QGA on the SSH transport, mwan-opnsense daemon on the gRPC transport). The argv shape is `["opnsense-upgrade", "-r", "26.1.7"]` or whatever the design slice settled on (MWAN-152 section 4.2 step 2, line 146; channel decision in section 11.3, line 408).
 - Streams stdout and stderr to `<state_dir>/102/<deploy-id>/upgrade.log`.
 - Applies a watchdog timeout (default 30 minutes per MWAN-152 section 4.2 step 4, line 148). Operator can override via `--timeout` if available.
 - Reboots the VM as part of the upgrade itself; the QGA channel comes back on the new kernel.
@@ -263,8 +273,12 @@ The rehearsal cycle is not complete until the operator picks one. Both end state
 Use commit when the validate phase landed at `validated` and the operator is ready to release the safety net.
 
 ```sh
-ssh root@10.240.0.148 "mwan opnsense-upgrade commit --vmid 102 --deploy-id ${DEPLOY_ID}"
+ssh root@10.240.0.148 "mwan opnsense-upgrade commit \
+  --vmid 102 --deploy-id ${DEPLOY_ID} \
+  --env-transport=grpc --env-grpc-target=${GRPC_TARGET}"
 ```
+
+The transport flags do not affect commit semantics on their own. Commit is a snapshot delete plus a state-file write. The same flag set is required for any subsequent `validate` or `run` invocation in the same shell. Passing the flags here keeps the operator's history-recall consistent across phases.
 
 What commit does, per MWAN-152 section 4.5 (line 195):
 
@@ -280,8 +294,12 @@ After commit, the rehearsal cycle is locked. The next cycle starts with a fresh 
 Use rollback when validate landed at `validate_failed`, `execute_hung`, or `execute_failed`.
 
 ```sh
-ssh root@10.240.0.148 "mwan opnsense-upgrade rollback --vmid 102 --deploy-id ${DEPLOY_ID}"
+ssh root@10.240.0.148 "mwan opnsense-upgrade rollback \
+  --vmid 102 --deploy-id ${DEPLOY_ID} \
+  --env-transport=grpc --env-grpc-target=${GRPC_TARGET}"
 ```
+
+Pass the gRPC transport flags so the post-rollback liveness probe (a `true` exec via the Executor) lands on the daemon path rather than QGA. After a Proxmox `qm rollback`, the guest reboots. The daemon starts with the guest. The daemon is reachable as soon as the virtio-serial socket is up. This is the same liveness signal the validator uses.
 
 What rollback does, per MWAN-152 section 4.4 (line 178):
 
@@ -302,8 +320,13 @@ If `phase=rollback_failed`, drop to OOB access at `root@3d06:bad:b01:ff::1` per 
 After the first manual rehearsal cycle has succeeded, repeat cycles can use one-shot mode. See MWAN-152 section 4.6 (line 207).
 
 ```sh
-ssh root@10.240.0.148 "mwan opnsense-upgrade run --vmid 102 --target 26.1.7 --deploy-id ${DEPLOY_ID} --auto-rollback-on-fail"
+ssh root@10.240.0.148 "mwan opnsense-upgrade run \
+  --vmid 102 --target 26.1.7 --deploy-id ${DEPLOY_ID} \
+  --env-transport=grpc --env-grpc-target=${GRPC_TARGET} \
+  --auto-rollback-on-fail"
 ```
+
+The `run` subcommand fans out to prepare, execute, validate, and either rollback or commit under one set of flags. The gRPC transport flags propagate to every phase from a single invocation. This is the recommended shape for testbed cycles.
 
 What run does:
 
