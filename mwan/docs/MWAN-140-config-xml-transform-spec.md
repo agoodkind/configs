@@ -217,3 +217,32 @@ The YAML schema has four sections:
 The example YAML carries placeholder values for every operator-decided field, marked `TBD: see MWAN-140 open question N` per spec section 7. Real-world use needs the operator to resolve those open questions and replace each TBD value before invoking the transform.
 
 The implementation deliberately treats Apply as a single in-process transform pass. The structural XML walks run first using `beevik/etree`, and the byte-level text replacements run last on the serialized output so any embedded copies (cert CNs, NAT source nets, SSH-username addresses) are caught after the canonical element values are set. Tests in `configxform_test.go` cover the round-trip device-name rewrite, per-element XPath rewrite, text literal rewrite, WireGuard peer strip, and the YAML decoder error paths (malformed YAML, unknown fields, empty input).
+
+## 10. MWAN-150 resolution of section 7 open questions
+
+Tracking ticket: `MWAN-150`. The concrete substitution table that resolves the open questions below lives at `mwan/testbed/opnsense/substitutions.yaml`. The example YAML at `mwan/testbed/opnsense/substitutions.example.yaml` documents the same decisions with the alternatives spelled out so a future operator can revisit any choice.
+
+The resolution was verified against suburban live state on 2026-05-08 (`cat /etc/network/interfaces` and `cat /etc/network/interfaces.d/testbed-masquerade.conf` over v6 SSH, read-only) and against the existing testbed conventions captured in `ansible/inventory/group_vars/mwan_testbed_servers.yml` and `mwan/config/suburban-testbed.toml.j2`.
+
+### 10.1 Resolved with concrete values
+
+1. **Final testbed network ranges (question 1).** The five VLAN subnets shift mechanically: prod `10.250.{0,1,2,3,4}.x/24` becomes testbed `10.240.{0,1,2,3,4}.x/24`, and prod `3d06:bad:b01:{0,1,2,3,4}::/64` becomes testbed `3d06:bad:b01:{200,201,202,203,204}::/64`. The IPv6OnlyVLAN shifts from `3d06:bad:b01:64::/64` to `3d06:bad:b01:264::/64`. The WAN-side IPv4 link `10.250.250.0/29` is reused unchanged because the live testbed already runs that subnet (suburban `vmbr2` at `10.250.250.5/29`, VM 950 internal at `10.250.250.3` per the testbed group_vars). The WAN-side IPv6 subnet shifts from prod `3d06:bad:b01:fe::/64` to testbed `3d06:bad:b01:201::/64` so the OPNsense WAN IPv6 ends up at `3d06:bad:b01:201::2`, matching `mwan_opnsense_edge_ipv6` in the testbed group_vars.
+4. **NAT64 prefix (question 4).** Prod uses `3d06:bad:b01:6464::/96`; testbed uses `3d06:bad:b01:2664::/96` to keep the prefix shape parallel while staying in the testbed `:200..2ff::` family.
+8. **VLAN tag remapping (question 8).** Keep the prod tags `64`, `100`, `200`, `300` on testbed. The trunk does not span planes, so there is no risk of cross-plane traffic. Suburban `vmbrtrunk` already declares `bridge-vids 64 100 200 300` per the live `/etc/network/interfaces`.
+
+### 10.2 Resolved as design choices with documented defaults
+
+2. **Firewall rule UUIDs (question 2).** Default: preserve. UUID changes do not affect functionality but block log-line correlation against any frozen prod artifact and make per-rule reasoning across the two planes harder. The transform leaves UUIDs alone unless the operator adds explicit XPath rewrites. Alternative: regenerate, only worth picking if there is a real risk that the testbed config ever gets reimported on prod (today there is not).
+3. **WireGuard peers (question 3).** Default: strip. The testbed does not need real upstream peers; an isolated tunnel that does not actually connect anywhere is fine for parity exercises and avoids the misrouted-handshake risk callout 3 in the parity plan. Alternative: replace each peer with a testbed-only key set, which exercises more code paths but adds key-management overhead.
+5. **Inline TLS certs (question 5).** Default: strip. OPNsense regenerates a self-signed cert on first boot. Alternative: rewrite CN and altNames to match the testbed domain, which preserves cert state but embeds material that has no real chain of trust on testbed anyway.
+6. **SSH-username-bound firewall rules (question 6).** Default: rely on the v6 prefix shifts above to rewrite the parallel addresses (`agoodkind@3d06:bad:b01::110` becomes `agoodkind@3d06:bad:b01:200::110` via the VMNET shift) and accept that the remaining prod operator addresses (e.g. `agoodkind@3d06:bad:b01:10::8`, `agoodkind@10.250.1.245`) resolve to non-existent testbed addresses after the shifts. The rules keep their shape so OPNsense exercises the same code paths on import, but no operator matches them. Alternative: strip every `<username>`-bound rule outright if a cleaner rule set matters more than parity with the prod rule shape.
+
+### 10.3 Deferred
+
+7. **CI structural validation (question 7).** Deferred to slice 6 boot gate per spec section 5.3. The transform output passes `xmllint --noout` for well-formedness; the slice 6 from-scratch boot test on VM 102 acts as the structural validator. No XSD shipped in CI.
+
+### 10.4 Notes for the operator
+
+- The text-literal substitution order in `substitutions.yaml` is load-bearing: the longer/more-specific IPv6 prefixes must come before the shorter ones, and `chaotic.dog` must come after `captive.chaotic.dog`. The file's comments call this out per substitution. Reordering by hand needs care.
+- The transform deliberately leaves DHCP pool ranges (lines 442-479 of the redacted artifact) to the text-literal layer because the prefix-shift entries above already cover them: `10.250.1.50` to `10.250.1.150` becomes `10.240.1.50` to `10.240.1.150` via the PRIVILEGED v4 shift, and so on. No separate xpath entries are needed for the DHCP pools.
+- The MANAGEMENT interface rewrite assumes prod's `<opt9>` slot continues to host MANAGEMENT. If a future redact swaps the slot, both `xpath_sets` entries above (`opt9/ipaddr`, `opt9/ipaddrv6`) need updating. Verify with `grep -n MANAGEMENT` against the next redacted artifact before applying.
