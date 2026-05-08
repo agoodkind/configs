@@ -377,3 +377,160 @@ Scope:
 - Out of scope: running the upgrade on prod vault VM 101. That step is gated on the section 8.3 pre-prod gate and on the open-question answers in section 9.
 
 Acceptance: unit tests pass, integration test passes on suburban VM 101 in both success and failure paths, `make check` is green, runbook cross-reference lands.
+
+## 11. Resolved decisions
+
+This section answers the section 9 open questions. Resolved on 2026-05-08 via repo investigation, suburban testbed measurement, and OPNsense upstream source review. Each decision cites the evidence it rests on. The decisions here override section 9 where they conflict; section 9 is preserved verbatim above as the historical record.
+
+### 11.1 Snapshot pause budget (section 9.1)
+
+Resolved. Use `qm snapshot --vmstate 1` as the primary mechanism; the measured pause is well inside the BGP graceful-restart window.
+
+Measurement on suburban VM 101 on 2026-05-08 (2GB RAM allocation, 1.78 GiB of memory state actually saved, `local-zfs` storage backend):
+
+- `qm snapshot 101 measure-snap-2026-05-08 --vmstate 1`: 6.67s wall, 0.94s user, 0.16s sys.
+- `qm delsnapshot 101 measure-snap-2026-05-08`: 1.41s wall.
+- `qm snapshot 101 measure-snap-novm-2026-05-08 --vmstate 0` (no-vmstate variant): 1.11s wall.
+- `qm delsnapshot` on the no-vmstate snap: 1.16s wall.
+
+The MWAN-130 plan (`mwan/docs/MWAN-130-bgp-graceful-restart-plan.md`) sets BGP graceful-restart `restart_time` to 30 seconds (`mwan/go/internal/config/config.go` line 351 confirms `RestartTime: 30` as the default). The measured 6.67s pause is roughly 22 percent of the GR window, leaving 23 seconds of headroom. ZFS dataset snapshots (section 2.2) and the `--vmstate 0` variant remain available as fallbacks if the prod VM 101 measurement comes in higher. The follow-up implementation ticket should re-measure on the prod hardware before the first prod run and surface the number to the operator.
+
+Implementation note: only the QEMU device-state save phase (the saved-RAM dump) actually pauses the VM. The subsequent ZFS snapshot of `drive-scsi0` is near-instant on `local-zfs`, so the pause budget tracks RAM size rather than disk size. Prod VM 101 likely has more RAM than the 2GB testbed allocation; budget conservatively at 2x the measured pause until verified.
+
+### 11.2 Boot environments on OPNsense 26.x (section 9.2)
+
+Resolved. Boot environments are available on 26.x ZFS-installed systems via `bectl` from the FreeBSD base. The Go subcommand does not depend on them, but exposes an opt-in `--use-boot-environment` flag that captures a BE alongside the Proxmox snapshot.
+
+Evidence: the OPNsense 26.1 source tree contains the ZFS boot loader at `stand/i386/zfsboot/zfsboot.c` on the `stable/26.1` branch ([opnsense/src](https://github.com/opnsense/src/blob/stable/26.1/stand/i386/zfsboot/zfsboot.c)), and the OPNsense GUI snapshots feature was introduced via [commit 7118a82a050](https://github.com/opnsense/core/commit/7118a82a050). FreeBSD bundles `bectl` in base from 11.2 onward ([FreeBSD bectl docs](https://forums.freebsd.org/threads/bectl-clarifications.84396/)), so OPNsense 26.x running on FreeBSD 14.3 inherits `bectl` automatically when installed onto ZFS. The standalone `opnsense-bootenv` script is not confirmed present in the 26.x repo, but `bectl` covers the same surface.
+
+Caveat: vault prod VM 101's root filesystem type (UFS or ZFS) is not documented in the repo. The testbed VM 101 sits on `local-zfs` at the host level, but the in-guest filesystem is independent of the host backing store. The follow-up ticket should probe `bectl list` over QGA during `prepare` and skip the BE capture when `bectl` is unavailable; do not error.
+
+### 11.3 Upgrade execution channel (section 9.3)
+
+Resolved. Use Proxmox QGA `GuestExec` as the primary channel during `execute`. Use mwan-opnsense `Exec` RPC for `prepare` and `validate` where available, falling back to QGA when the daemon is itself in the upgrade window.
+
+Justification:
+
+- The 26.x upgrade restarts services and may install a new mwan-opnsense binary. Routing the upgrade command itself through the daemon would orphan the call mid-upgrade. QGA is independent of OPNsense's userland and survives daemon restarts.
+- mwan-opnsense `Exec` returns structured stdout, stderr, and exit codes via the typed RPC at `mwan/go/internal/opnsense/rpc_typed.go`. For `prepare` snapshots of pre-upgrade state and for the `validate` matrix, the structured response is easier to consume than the QGA `GuestExecStatus` polling pattern.
+- QGA stays as the fallback channel for `validate` checks too, because `pveapi.GuestExec` is the only path that survives a guest in which the mwan-opnsense daemon is not yet running again post-upgrade.
+
+The primary path for each phase:
+
+- `prepare`: mwan-opnsense `Exec` (`Version`, `BackupConfigXML`, `ReadConfigXML` are typed RPC; the `interfaces.json` capture uses `Exec` for `ifconfig -l` and `netstat -rn`).
+- `execute`: QGA `GuestExec`.
+- `validate`: mwan-opnsense `Exec` and typed RPC where available; QGA for `nc -z 127.0.0.1 443`, `pfctl`, `vtysh`, and any check that runs before the daemon is back.
+- `rollback`: QGA only for the post-rollback liveness probe; switch to mwan-opnsense once the daemon answers.
+
+### 11.4 Dry-run execute mode (section 9.4)
+
+Resolved. Add a `--dry-run-execute` flag to `execute` and to `run`. When set, the subcommand runs `opnsense-upgrade -c` (check-only) instead of the real upgrade. Phase transitions still happen, so the test plan in section 8.2 can exercise the full state machine without committing the upgrade.
+
+Behavior detail: `--dry-run-execute` does not skip the snapshot. The snapshot still happens in `prepare`, the dummy "upgrade" runs in `execute`, `validate` runs against the unchanged guest (so the matrix should pass on a healthy 25.7 baseline), and `commit` deletes the snapshot. This exercises the storage cost of the snapshot lifecycle, which is part of what the rehearsal needs to verify.
+
+Negative-path rehearsal: pair `--dry-run-execute` with `--inject-failure=<phase>` in a future iteration to force `execute_failed` or `validate_failed` synthetically. Out of scope for the first slice; track as a follow-up.
+
+### 11.5 Dedicated rehearsal VM (section 9.5)
+
+Resolved. Use VM 102 (`opnsense-test2`) on suburban as the dedicated rehearsal target, per MWAN-149. The runbook for that VM is at `mwan/docs/runbooks/opnsense-testbed-baseline-vm102.md`, dated 2026-05-08.
+
+Justification:
+
+- VM 101 is wedged from the MWAN-119 v2 rollback (per `opentofu/vms.tf` lines 176-181 and `mwan/docs/MWAN-140-testbed-infra-parity-plan.md` section "Testbed OPNsense (suburban VM 101, OPNsense 25.7, currently wedged)") and is preserved as a forensic artifact. Running upgrade rehearsals against it would either destroy the artifact or fail because the VM cannot boot cleanly.
+- Other slices (MWAN-127 config import rehearsal, MWAN-13 26.x validation matrix) already plan to land on VM 102. Sharing one rehearsal VM keeps the testbed footprint small.
+- The Go subcommand should not hardcode VMID 102. Operators may rehearse on additional VMs; the validation in `--vmid` should accept any VMID that the QGA reports as healthy. Document VM 102 as the recommended default in the runbook update for slice 1.
+
+### 11.6 State directory ownership (section 9.6)
+
+Resolved. Use `/var/lib/mwan/upgrades/` (plural) as the state directory for the upgrade flow. This aligns with the path MWAN-153 already commits to in its baseline-storage proposal at `mwan/docs/MWAN-153-26x-upgrade-test-matrix.md` line 292.
+
+The design at section 4 currently defaults to `/var/lib/mwan/upgrade/` (singular). Section 4 should be updated when the implementation slice lands; this resolution overrides it.
+
+Systemd unit changes: the existing `mwan/config/mwan-watchdog.service.j2` does not declare `StateDirectory=`. The watchdog runs as root and writes to `/var/lib/mwan/last-deploy` ad hoc (`mwan/go/internal/config/config.go` line 320 default). The implementation slice for MWAN-152 should add a new systemd unit (or reuse the watchdog unit) with `StateDirectory=mwan/upgrades` so systemd auto-creates the directory with the right ownership. Until that lands, the subcommand creates the directory itself with `os.MkdirAll(stateDir, 0750)` and emits a warning if the parent `/var/lib/mwan/` does not already exist.
+
+### 11.7 Notify kind names (section 9.7)
+
+Resolved. Use kebab-case kind names with the `opnsense-upgrade-` prefix, matching the existing convention in the codebase. No collision with existing kinds.
+
+Existing kinds enumerated from the codebase on 2026-05-08:
+
+- `bgp-failover`, `bgp-failover-complete`, `bgp-recovered` (`mwan/go/internal/watchdog/failover.go`).
+- `vsock-fallback`, `deploy-file-missing` (`mwan/go/internal/watchdog/watchdog.go`, `mwan/go/internal/agent/server.go`).
+- `ra-lost`, `slaac-degraded`, `slaac-renumber`, `bridge-suspected-dangling`, `connectivity-down`, `wg-reconcile-failed`, `wg-peer-stalled`, `parse-wg-dump`, `remote-wg-show`, `previous-value`, `not-a-number`, `route-event` (`mwan/go/internal/ifmgr/modules/*`).
+
+Recommended kinds for the upgrade flow (each carries `Key=<vmid>`):
+
+- `opnsense-upgrade-prepared` (Info, on successful prepare).
+- `opnsense-upgrade-prepare-failed` (Error).
+- `opnsense-upgrade-executed` (Info).
+- `opnsense-upgrade-execute-failed` (Error).
+- `opnsense-upgrade-execute-hung` (Error, after watchdog timeout).
+- `opnsense-upgrade-validated` (Info).
+- `opnsense-upgrade-validated-partial` (Warn).
+- `opnsense-upgrade-validate-failed` (Error).
+- `opnsense-upgrade-rolled-back` (Warn).
+- `opnsense-upgrade-rollback-failed` (Error, the loud-alert path).
+- `opnsense-upgrade-committed` (Info).
+- `opnsense-upgrade-run-complete` (level matches highest seen during run).
+
+The design at sections 4.1 through 4.6 currently uses `opnsense_upgrade` as a single kind with the phase encoded in the `Key`. That works too, but it ties all upgrade events to one alert state in `notify.Manager`, which means a `validated` event resolves a previous `prepare_failed` event for the same vmid. The per-phase kind set above keeps each lifecycle event its own alert with its own state-change semantics. The implementation slice should pick one approach; the per-phase kind set is the recommendation.
+
+### 11.8 Snapshot retention (section 9.8)
+
+Resolved. `commit` deletes the prepare-phase snapshot immediately. Add a separate `mwan opnsense-upgrade gc` subcommand that lists pre-upgrade snapshots older than a configurable threshold and deletes them. Default threshold: 7 days.
+
+Justification:
+
+- The watchdog snapshots (`pre-deploy-*`, `known-good-*`) already have implicit retention via the rolling-deploy cycle in `mwan/go/internal/rollback/state.go`. A new dataset for the upgrade flow keeps the regex sets non-overlapping and the lifecycles independent.
+- 7 days covers the "subtle regression surfaces a few days post-upgrade" case while bounding storage. A 26.x upgrade snapshot includes a full 25.7 OPNsense root filesystem image and the saved RAM state from `--vmstate 1`; on `local-zfs` the snapshot is a near-instant clone that grows only with subsequent writes, so the 7-day cost is bounded by the post-upgrade write rate (config edits, log rotation, package state changes).
+- The `gc` subcommand is preferred over a systemd timer because the operator may want to keep specific upgrade snapshots indefinitely (for example as a known-good rollback target before a complex change). A timer-driven sweep would silently delete those. `gc` runs on demand.
+
+Behavior of `commit`:
+
+- Default: delete the prepare-phase snapshot. Symmetric with the watchdog `commit` semantics.
+- `--keep-snapshot`: retain the snapshot. The snapshot becomes a candidate for `gc` after the threshold elapses, unless renamed to a `keep-` prefix.
+
+Behavior of `gc`:
+
+- Lists snapshots matching `^pre-upgrade-26x-(\\d+)$` on the target VMID and deletes those older than `--older-than` (default 7d).
+- Skips snapshots renamed to `keep-pre-upgrade-26x-*`. This is the "keep specific snapshots indefinitely" escape hatch.
+- Requires `--vmid`; refuses to operate without an explicit VMID to avoid sweeping snapshots on VMs the operator did not intend.
+
+### 11.9 Vault prod VM 101 disk backend (section 9.9)
+
+Partially resolved. Repo state and Tofu configuration confirm the suburban testbed VM 101 sits on `local-zfs` (`opentofu/vms.tf` line 184 references `local-zfs:vm-101-disk-0` as the orphan disk on suburban; `qm config 101` on suburban confirms `scsi0: local-zfs:vm-101-disk-1,size=8G`). Vault prod VM 101 is not modeled in `opentofu/` and the auto-memory entry says `local-lvm:vm-101-disk-1`, which would be LVM, not ZFS.
+
+The prod backend cannot be confirmed read-only from this branch without SSHing to vault, which is out of scope per the user instruction "production is read-only via repo, not live commands". The implementation slice should run `qm config 101` on vault as part of slice 1 verification and update this resolution, rather than guess.
+
+What follows from each possible answer:
+
+- If prod is `local-zfs` (matching suburban): the ZFS-host snapshot path in section 2.2 is available. The recommended primary remains `qm snapshot --vmstate 1`; ZFS-host snapshots stay as a fallback if the pause budget on prod hardware exceeds the GR window.
+- If prod is `local-lvm`: section 2.2 (ZFS dataset snapshot at the host level) is unavailable. The primary `qm snapshot --vmstate 1` still works because LVM-thin supports thin-volume snapshots. Snapshot pause is bounded by RAM-state save time, not by disk-volume copy, so the suburban measurement should generalize.
+- If prod is something else (directory storage with qcow2): `qm snapshot` uses qcow2 internal snapshots, which are slower than ZFS clones but still bounded by RAM-state size. Re-measure on prod hardware before deciding.
+
+In all three cases, `qm snapshot --vmstate 1` works and the design's primary path holds. Section 2.2 is decided by the answer; the design should treat it as a defense-in-depth alternative regardless.
+
+### 11.10 Resolved decisions summary
+
+| Question | Status | Recommended default |
+| --- | --- | --- |
+| 9.1 Snapshot pause budget | Resolved | `qm snapshot --vmstate 1`. Measured 6.67s on suburban VM 101, well under the 30s GR window. |
+| 9.2 Boot environments on 26.x | Resolved | `bectl` is available on ZFS-installed 26.x guests. Add opt-in `--use-boot-environment` flag. |
+| 9.3 Execution channel | Resolved | QGA for `execute`. Mwan-opnsense RPC for `prepare`/`validate` with QGA fallback. |
+| 9.4 Dry-run execute mode | Resolved | Add `--dry-run-execute` flag that runs `opnsense-upgrade -c`. |
+| 9.5 Dedicated rehearsal VM | Resolved | VM 102 (`opnsense-test2`) on suburban per MWAN-149. Do not hardcode the VMID. |
+| 9.6 State directory | Resolved | `/var/lib/mwan/upgrades/` (plural). Add `StateDirectory=mwan/upgrades` to a future systemd unit. |
+| 9.7 Notify kind names | Resolved | Kebab-case `opnsense-upgrade-*` prefix, one kind per phase. No collisions. |
+| 9.8 Snapshot retention | Resolved | `commit` deletes immediately. Separate `gc` subcommand for older-than-7d sweep. |
+| 9.9 Vault prod VM 101 backend | Partially resolved | Suburban is `local-zfs`. Prod backend probe deferred to slice 1 verification. |
+
+Resolved: 8 of 9 questions.
+Recommended-default decisions awaiting operator review before implementation: all 8 resolved items above (each is a recommended default, not a binding decision).
+Operator-only decision still pending: 9.9 prod backend, gated on read-only `qm config 101` on vault during slice 1 setup.
+
+### 11.11 Follow-up tickets surfaced during resolution
+
+- The `mwan opnsense-upgrade gc` subcommand (section 11.8) is a separate scope. Suggest filing as a sibling slice to the main implementation ticket.
+- Negative-path rehearsal `--inject-failure=<phase>` (section 11.4) is a follow-up to the dry-run mode.
+- A backend-probe step in `prepare` that detects `local-zfs` vs `local-lvm` vs directory storage and surfaces the latency to the operator (already noted in section 3, restated here for completeness).
+- Snapshot retention rename helper: a `mwan opnsense-upgrade keep <snapshot>` subcommand that renames `pre-upgrade-26x-*` to `keep-pre-upgrade-26x-*` so the operator does not have to run raw `qm` commands for the keep escape hatch.
