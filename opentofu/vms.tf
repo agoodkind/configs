@@ -2,9 +2,8 @@
 #
 # This resource codifies the suburban MWAN testbed VM that mwan-143 created
 # via a shell script. It mirrors prod VM 113 with five NICs (mgmt, internal,
-# three simulated ISP WANs) and ships the vhost-vsock-pci device so the
-# watchdog on suburban talks to the in-VM mwan-agent over native vsock
-# instead of the noisy TCP fallback.
+# three simulated ISP WANs). The vhost-vsock-pci device that the watchdog
+# uses is set by Ansible on the live host; see the MWAN-154 note below.
 #
 # Live discovery on 2026-05-07 (qm config 950) was the source of truth for
 # this resource. Operators import the running VM into Tofu state per
@@ -17,11 +16,14 @@
 # Schema reference (bpg/proxmox >= 0.70):
 #   https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_vm
 #
-# Assumption flagged: bpg/proxmox documents `kvm_arguments` as the field
-# carrying raw QEMU arguments. The Proxmox API field is `args`; the provider
-# maps `kvm_arguments` to it. If `tofu plan` reports drift on this field,
-# verify the provider mapping against the upstream issue tracker before
-# changing the value.
+# MWAN-154: the `kvm_arguments` (Proxmox `args`) field is NOT managed by
+# Tofu on VM 950 or VM 102. The Proxmox API rejects writes to `args` for
+# any actor other than the bare `root@pam` user (no API tokens, no roles
+# can bypass it). Ansible owns this field instead; see the VM 950 vsock
+# qm-set task in `ansible/playbooks/deploy-mwan-testbed.yml` and the
+# matching VM 102 chardev qm-set task. The bpg/proxmox provider leaves
+# undeclared fields alone, so live `args` drift will not surface in
+# `tofu plan`.
 
 resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
   provider  = proxmox.suburban
@@ -29,15 +31,15 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
   vm_id     = 950
   name      = "test-mwan"
 
+  # MWAN-154: `kvm_arguments` (Proxmox `args`) intentionally omitted.
+  # The vhost-vsock-pci device is set by the Ansible task
+  # "Set vsock device on VM 950 args" in
+  # `ansible/playbooks/deploy-mwan-testbed.yml`.
   machine       = "q35"
   scsi_hardware = "virtio-scsi-pci"
   bios          = "seabios"
   on_boot       = false
   started       = true
-
-  # Raw QEMU arg adding the vsock device so mwan-watchdog-testbed can use
-  # native vsock to reach the in-VM mwan-agent. Mirrors prod VM 113.
-  kvm_arguments = "-device vhost-vsock-pci,guest-cid=950"
 
   # MWAN-62 reconcile (2026-05-08): keyboard_layout, agent.type match live
   # state from `qm config 950` import.
@@ -297,9 +299,11 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
 # `iavf0` references to the testbed's matching device name (typically
 # `vtnet0` for the first virtio NIC).
 #
-# The `kvm_arguments` block mirrors the VM 101 chardev pattern but uses
-# the path `/var/run/qemu-server/102.mwanrpc` so the future
-# mwan-opnsense daemon has its own gRPC channel. The chardev name
+# MWAN-154 (2026-05-08): the `args` field is owned by Ansible, not Tofu.
+# The Ansible task "Set mwanrpc chardev on VM 102 args" in
+# `ansible/playbooks/deploy-mwan-testbed.yml` writes the chardev pattern
+# to live VM 102. The chardev path is `/var/run/qemu-server/102.mwanrpc`
+# so it does not collide with VM 101. The chardev name
 # `io.goodkind.mwan-opnsense.0` matches what the OPNsense plugin opens
 # on `/dev/ttyV0.0` inside the guest.
 #
@@ -313,15 +317,15 @@ resource "proxmox_virtual_environment_vm" "opnsense_test2" {
   vm_id     = 102
   name      = "opnsense-test2"
 
+  # MWAN-154: `kvm_arguments` (Proxmox `args`) intentionally omitted.
+  # The virtio-serial-pci + mwanrpc chardev block is set by the Ansible
+  # task "Set mwanrpc chardev on VM 102 args" in
+  # `ansible/playbooks/deploy-mwan-testbed.yml`. See
+  # `mwan/docs/proxmox-args-privilege-research-2026-05-08.md` for why
+  # API-token writes to `args` cannot succeed.
   scsi_hardware = "virtio-scsi-pci"
   on_boot       = false
   started       = false
-
-  # Raw QEMU args: virtio-serial-pci controller plus the mwan-opnsense
-  # chardev. Path is /var/run/qemu-server/102.mwanrpc so it does not
-  # collide with VM 101's chardev. The chardev name matches what the
-  # OPNsense plugin expects on /dev/ttyV0.0 inside the guest.
-  kvm_arguments = "-device virtio-serial-pci,id=mwanrpc -chardev socket,id=mwanchr,path=/var/run/qemu-server/102.mwanrpc,server=on,wait=off -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0"
 
   keyboard_layout = "en-us"
 
