@@ -86,6 +86,18 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 		return emptyState(), err
 	}
 
+	if err := capturePreUpgradeArtefacts(ctx, deps, opts, deployDir); err != nil {
+		emit(ctx, deps.Notifier, slog.LevelError, KindPrepare, opts.VMID,
+			"opnsense-upgrade prepare: pre-upgrade artefact capture failed",
+			slog.String("vmid", opts.VMID),
+			slog.String("deploy_id", deployID),
+			slog.String("err", err.Error()),
+		)
+		slog.ErrorContext(ctx, "upgrade.Prepare: capture artefacts failed",
+			"err", err, "vmid", opts.VMID, "deploy_id", deployID)
+		return emptyState(), err
+	}
+
 	if opts.UseBootEnvironment && deps.Exec != nil {
 		bectlOK := captureBootEnvironment(ctx, deps, opts, deployDir, clk)
 		if logger := deps.Log; logger != nil {
@@ -94,6 +106,21 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 		}
 	}
 
+	return takeSnapshotAndPersistState(ctx, deps, opts, deployID, snap, now)
+}
+
+// takeSnapshotAndPersistState issues the Proxmox snapshot and writes
+// the prepared state file. Split out of [Prepare] so the surrounding
+// orchestration stays under the funlen ceiling. On any error before
+// the state file is written this returns emptyState; the caller
+// returns the same.
+func takeSnapshotAndPersistState(
+	ctx context.Context,
+	deps Deps,
+	opts Options,
+	deployID, snap string,
+	now time.Time,
+) (State, error) {
 	if err := deps.Snap.VMSnapshot(ctx, opts.VMID, snap); err != nil {
 		emit(ctx, deps.Notifier, slog.LevelError, KindPrepare, opts.VMID,
 			"opnsense-upgrade prepare: snapshot creation failed",
