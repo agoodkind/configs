@@ -112,6 +112,78 @@ ssh root@10.240.0.148 'qm snapshot 102 baseline-clean --description "Fresh OPNse
 - VM 101 stays untouched throughout this workflow. Any operation that
   references VM 101 belongs in a separate, explicit slice.
 
+## Install run 2026-05-08 (automated, Path B)
+
+The Step 1 install was driven non-interactively from a developer host
+using `expect(1)` against the suburban serial socket
+`/var/run/qemu-server/102.serial0`. Path B from the runbook prompt: the
+serial installer image at
+`/var/lib/vz/template/iso/OPNsense-25.7-serial-amd64.img` was attached
+as the live system, the existing 8 GiB target disk was grown to 16 GiB
+in place, and the installer wrote ZFS stripe onto `da1`.
+
+Tooling notes:
+
+- `expect` was used instead of pexpect because it ships with Proxmox
+  and the suburban host already has `/usr/bin/expect`. No `pip install`
+  step was needed.
+- The serial socket type is a Unix stream socket (not a PTY), so
+  `socat - UNIX-CONNECT:/var/run/qemu-server/102.serial0` is the
+  correct adapter rather than `qm terminal`.
+- Step scripts ran from a local Mac and were `scp`'d to suburban
+  `/tmp/`. Final transcript:
+  `mwan/docs/runbooks/install-transcript-vm102-2026-05-08.log`
+  (passwords redacted).
+
+Disk-size correction:
+
+- Tofu shipped VM 102 with an 8 GiB boot disk. The Path B installer
+  fails on 8 GiB with `gpart: autofill: No space left on device`, as
+  documented in `opnsense-serial-vm-from-scratch.md`. The disk was
+  grown in place with `qm resize 102 scsi0 16G` before the install
+  began. Tofu state may want to be reconciled separately so the
+  declared size matches the on-disk size.
+- During the install the original 16 GiB disk was temporarily moved
+  to `scsi1` while the live installer image occupied `scsi0`. Once
+  the install finished and the VM halted, scsi0 was reset to the
+  installed disk and the installer image was left as `unused1` for
+  audit. A follow-up commit can `qm set 102 --delete unused1` to
+  reclaim the space.
+
+Pre-install snapshot:
+
+```bash
+qm snapshot 102 pre-install-2026-05-08 --vmstate 0
+```
+
+Known installer hiccup, confirmed:
+
+- After `Space` on `da1`, press `Enter` directly. Do not `Tab`. The
+  rehearsal correction in `opnsense-serial-vm-from-scratch.md` was
+  followed and the install proceeded normally.
+
+Result on first boot from disk:
+
+- ZFS root mounted: `Root file system: zroot/ROOT/default`.
+- Console banner: `OPNsense 25.7 (amd64)`, hostname
+  `OPNsense.internal`, LAN `vtnet0 -> v4: 192.168.1.1/24` (the
+  installer default; not adjusted in this slice per the prompt's
+  "do not change network beyond `vmbrtrunk`" rule).
+- Root login with the install-default password works.
+- `sysrc openssh_enable=YES` and `sysrc openssh_skipportscheck=YES`
+  were set, then `service openssh start` brought up `sshd` listening
+  on `*:22` for both tcp4 and tcp6, confirmed via `sockstat` and
+  `service openssh status`.
+
+What this slice did not do (deferred):
+
+- Did not push the generated `mwan/testbed/opnsense/generated/config-testbed.xml`.
+- Did not install the `mwan-opnsense` daemon, the rc.d unit, or the
+  loader.conf drop-in.
+- Did not change the LAN IPv4 from the `192.168.1.1/24` default.
+- Did not enable QEMU Guest Agent inside the guest.
+- Did not delete `unused1` (the installer image disk).
+
 ## Addendum: Option A topology (2026-05-08)
 
 The MWAN-149 cycle picked Option A for VM 102's MANAGEMENT plane. The
