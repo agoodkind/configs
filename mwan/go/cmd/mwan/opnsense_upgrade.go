@@ -112,6 +112,8 @@ type upgradeFlags struct {
 
 	// Validator transport flags. Mirror mwan opnsense-validate so
 	// `mwan opnsense-upgrade {validate,run}` can run the same matrix.
+	envTransport     envTransport
+	envGRPCTarget    string
 	opnsenseSSHHost  string
 	opnsenseJumpHost string
 	proxmoxSSHHost   string
@@ -127,7 +129,12 @@ type upgradeFlags struct {
 	settleAfter      time.Duration
 }
 
-func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) {
+// registerCommonFlags wires the shared flag set used by every
+// opnsense-upgrade phase. The --env-transport flag is parsed into a
+// raw string here and the typed envTransport value is resolved in
+// parseUpgradeFlags after fs.Parse runs. Returning the pointer keeps
+// the flag binding adjacent to the struct field it backs.
+func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) *string {
 	fs.StringVar(&f.vmid, "vmid", "", "VMID to operate on (required)")
 	fs.StringVar(&f.target, "target", "", "Target OPNsense version")
 	fs.StringVar(&f.stateDir, "state-dir", upgrade.DefaultStateDir, "Upgrade state directory")
@@ -140,6 +147,10 @@ func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) {
 	fs.DurationVar(&f.olderThan, "older-than", upgrade.DefaultGCThreshold, "gc age threshold")
 	fs.DurationVar(&f.upgradeTimeout, "upgrade-timeout", upgrade.DefaultUpgradeTimeout, "Watchdog timeout for the in-guest upgrade")
 	fs.DurationVar(&f.postRollbackWait, "post-rollback-wait", upgrade.DefaultPostRollbackTimeout, "QGA liveness probe deadline after rollback")
+	transportStr := fs.String("env-transport", string(envTransportSSH),
+		"validator transport: ssh|grpc (grpc routes OPNsense ops via mwan-opnsense daemon)")
+	fs.StringVar(&f.envGRPCTarget, "env-grpc-target", "",
+		"gRPC target socket for --env-transport=grpc (e.g. unix:///var/run/qemu-server/102.mwanrpc)")
 	fs.StringVar(&f.opnsenseSSHHost, "opnsense-ssh", "", "ssh destination for the OPNsense guest (validator)")
 	fs.StringVar(&f.opnsenseJumpHost, "opnsense-jump", "", "ssh ProxyJump for OPNsense (validator)")
 	fs.StringVar(&f.proxmoxSSHHost, "proxmox-ssh", "", "ssh destination for the Proxmox host (validator)")
@@ -153,16 +164,22 @@ func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) {
 	fs.StringVar(&f.mwanSocket, "mwan-opnsense-socket", "", "unix socket path probed by the gRPC check (validator)")
 	fs.StringVar(&f.mwanHostSocket, "mwan-opnsense-host-socket", "", "unix socket path the bridge listens on (validator)")
 	fs.DurationVar(&f.settleAfter, "settle-after-upgrade", 5*time.Minute, "validator dwell time before DHCP-related checks run")
+	return transportStr
 }
 
 func parseUpgradeFlags(name string, args []string) (upgradeFlags, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	var f upgradeFlags
-	registerCommonFlags(fs, &f)
+	transportStr := registerCommonFlags(fs, &f)
 	if err := fs.Parse(args); err != nil {
 		slog.Error("opnsense-upgrade: parse flags", "err", err, "subcommand", name)
 		return f, fmt.Errorf("%s: parse flags: %w", name, err)
 	}
+	transport, err := parseEnvTransport(*transportStr)
+	if err != nil {
+		return f, fmt.Errorf("%s: %w", name, err)
+	}
+	f.envTransport = transport
 	if err := requireVMID(f.vmid); err != nil {
 		return f, err
 	}

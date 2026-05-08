@@ -87,10 +87,20 @@ DEPLOY_ID="rehearsal-$(date +%s)"
 echo "DEPLOY_ID=$DEPLOY_ID"
 ```
 
+Pick a transport for the validator. The default is `--env-transport=ssh`, which reaches OPNsense via the operator-supplied `--opnsense-ssh` host. On the suburban testbed the pf rule set blocks SSH from suburban to VM 102, so the SSH transport returns errors for every OPNsense-side check. Use `--env-transport=grpc` instead, which routes OPNsense ops through the mwan-opnsense daemon over the persistent virtio-serial gRPC channel (MWAN-163). Production cutover should also prefer gRPC because it survives a pf or routing break during the upgrade.
+
+The gRPC transport requires `--env-grpc-target` pointing at the per-VM mwanrpc unix socket:
+
+```sh
+GRPC_TARGET="unix:///var/run/qemu-server/102.mwanrpc"
+```
+
+Proxmox-host and LAN-client checks still use SSH because the daemon does not proxy those surfaces. Pass `--proxmox-ssh` and `--lan-client-ssh` alongside the gRPC flag so those probes have a transport.
+
 Capture the baseline:
 
 ```sh
-ssh root@10.240.0.148 "mwan opnsense-validate --capture-baseline --vmid 102 --output /var/lib/mwan/upgrades/102/${DEPLOY_ID}/pre-baseline.json"
+ssh root@10.240.0.148 "mwan opnsense-validate --capture-baseline --vmid 102 --env-transport=grpc --env-grpc-target=${GRPC_TARGET} --output /var/lib/mwan/upgrades/102/${DEPLOY_ID}/pre-baseline.json"
 ```
 
 The flag names follow MWAN-153 section 6 (line 250). The output path matches the storage layout in MWAN-153 section 9.8 (line 533), with the caveat noted in section 5 of this runbook below regarding the `upgrades/` versus `upgrade/` spelling gap.
