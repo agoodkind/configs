@@ -67,16 +67,6 @@ func (d *dryRunOps) Ping(ctx context.Context, bin, target string) bool {
 	return d.inner.Ping(ctx, bin, target)
 }
 
-func (d *dryRunOps) SendEmail(ctx context.Context, to, subject, _ string) error {
-	d.log.InfoContext(
-		ctx,
-		"[DRY-RUN] would send email",
-		"to", to,
-		"subject", subject,
-	)
-	return nil
-}
-
 func (d *dryRunOps) GetConfigState(
 	ctx context.Context, vmid string,
 ) (*mwanv1.GetConfigStateResponse, string, error) {

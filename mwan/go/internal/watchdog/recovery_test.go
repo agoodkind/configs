@@ -23,14 +23,16 @@ func recoveryTestCfgOverrides(cfg *config.Config) {
 	}
 }
 
-// emailSubjectsContaining returns the subjects of every email recorded by
-// the mock that include any of the given substrings, preserving order.
-func emailSubjectsContaining(emails []emailSent, needles ...string) []string {
+// notifyMessagesContaining returns the messages of every notify event
+// whose Message field includes any of the given substrings, preserving
+// order. Used by recovery tests that need to assert on what the
+// watchdog emitted through the notifier boundary.
+func notifyMessagesContaining(events []notifyEvent, needles ...string) []string {
 	var out []string
-	for _, e := range emails {
+	for _, e := range events {
 		for _, n := range needles {
-			if strings.Contains(e.Subject, n) {
-				out = append(out, e.Subject)
+			if strings.Contains(e.Message, n) {
+				out = append(out, e.Message)
 				break
 			}
 		}
@@ -87,18 +89,28 @@ func TestRecoveryEmail_AfterFailover(t *testing.T) {
 		t.Fatal("expected failoverActive=false after successful recovery")
 	}
 
-	subjects := emailSubjectsContaining(m.emailsSent,
+	fn := fakeNotifierFrom(t, w)
+	events := fn.snapshot()
+	messages := notifyMessagesContaining(events,
 		"BGP FAILOVER", "BGP FAILOVER COMPLETE", "BGP RECOVERED")
-	if len(subjects) < 3 {
-		t.Fatalf("expected 3 emails (FAILOVER, FAILOVER COMPLETE, RECOVERED); got %d: %v",
-			len(subjects), subjects)
+	if len(messages) < 3 {
+		t.Fatalf("expected 3 notify events (FAILOVER, FAILOVER COMPLETE, RECOVERED); got %d: %v",
+			len(messages), messages)
 	}
-	last := m.emailsSent[len(m.emailsSent)-1]
-	if !strings.Contains(last.Subject, "BGP RECOVERED") {
-		t.Fatalf("expected last email to be BGP RECOVERED, got %q", last.Subject)
+	// The last event the watchdog emits during recovery is the
+	// dedicated bgp-recovered Notify; the resolveAt of the active
+	// failover precedes it.
+	last := events[len(events)-1]
+	if !strings.Contains(last.Message, "BGP RECOVERED") {
+		t.Fatalf("expected last event to be BGP RECOVERED, got %q", last.Message)
 	}
-	if !strings.Contains(last.Body, "Original failover reason: test failover") {
-		t.Fatalf("recovery body missing original reason; got body:\n%s", last.Body)
+	if last.Kind != "bgp-recovered" {
+		t.Fatalf("expected last event kind=bgp-recovered, got %q", last.Kind)
+	}
+	// Verify the active failover state cleared so a future failover
+	// reads as a fresh transition.
+	if fn.Active("bgp-failover", w.cfg.MwanVMID) {
+		t.Fatal("expected bgp-failover key to be inactive after recovery")
 	}
 
 	// Recovery must have moved routes off the LXC and back to the primary VM.
@@ -127,9 +139,11 @@ func TestRecoveryEmail_NoEmailWhenNotInFailover(t *testing.T) {
 	ctx := context.Background()
 	w.maybeTriggerRecovery(ctx, w.cfg)
 
-	if len(m.emailsSent) != 0 {
-		t.Fatalf("expected zero emails when not in failover; got %d: %+v",
-			len(m.emailsSent), m.emailsSent)
+	fn := fakeNotifierFrom(t, w)
+	events := fn.snapshot()
+	if len(events) != 0 {
+		t.Fatalf("expected zero notify events when not in failover; got %d: %+v",
+			len(events), events)
 	}
 	if len(m.announceRoutesCalls) != 0 || len(m.withdrawRoutesCalls) != 0 {
 		t.Fatalf("expected zero route ops when not in failover; got announce=%v withdraw=%v",
@@ -159,7 +173,8 @@ func TestRecoveryEmail_PrimaryStillUnhealthy(t *testing.T) {
 		t.Fatalf("triggerBGPFailover: %v", err)
 	}
 
-	preEmails := len(m.emailsSent)
+	fn := fakeNotifierFrom(t, w)
+	preEvents := len(fn.snapshot())
 	w.maybeTriggerRecovery(ctx, w.cfg)
 
 	w.failoverMu.Lock()
@@ -169,10 +184,11 @@ func TestRecoveryEmail_PrimaryStillUnhealthy(t *testing.T) {
 		t.Fatal("expected failoverActive to stay true while primary unreachable")
 	}
 
-	for _, e := range m.emailsSent[preEmails:] {
-		if strings.Contains(e.Subject, "BGP RECOVERED") {
-			t.Fatalf("did not expect a BGP RECOVERED email when primary unreachable; got %q",
-				e.Subject)
+	post := fn.snapshot()
+	for _, e := range post[preEvents:] {
+		if strings.Contains(e.Message, "BGP RECOVERED") {
+			t.Fatalf("did not expect a BGP RECOVERED notify when primary unreachable; got %q",
+				e.Message)
 		}
 	}
 }

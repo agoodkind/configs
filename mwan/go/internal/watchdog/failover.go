@@ -9,8 +9,8 @@ import (
 
 	"goodkind.io/mwan/internal/alert"
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/ops"
 	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
@@ -39,16 +39,25 @@ func (w *watchdog) triggerFailover(ctx context.Context, cfg *config.Config, reas
 func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, reason string) error {
 	start := w.now()
 
-	// Send alert email about BGP failover
-	subject := fmt.Sprintf("[%s] BGP FAILOVER: withdrawing routes from VM, announcing on LXC %s",
-		cfg.Email.SubjectPrefix, cfg.Cutover.FailoverLXCID)
-	body := fmt.Sprintf(
-		"Watchdog is triggering BGP failover.\n\nReason: %s\n\n"+
-			"Step 1: Withdraw routes from primary VM %s\n"+
-			"Step 2: Announce routes on failover LXC %s",
-		reason, cfg.MwanVMID, cfg.Cutover.FailoverLXCID,
-	)
-	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
+	// Notify about BGP failover initiation. The notify boundary owns
+	// per-(kind, key) state-change suppression so a stuck watchdog cannot
+	// flood the inbox; the key is the primary vmid so a different vmid
+	// retains its own failover state.
+	failoverMsg := fmt.Sprintf("BGP FAILOVER: withdrawing routes from VM %s, announcing on LXC %s",
+		cfg.MwanVMID, cfg.Cutover.FailoverLXCID)
+	w.notify.Notify(ctx, notify.Event{
+		Now:     time.Time{},
+		Level:   slog.LevelError,
+		Kind:    "bgp-failover",
+		Key:     cfg.MwanVMID,
+		Message: failoverMsg,
+		Fields: []slog.Attr{
+			slog.String("reason", reason),
+			slog.String("vmid", cfg.MwanVMID),
+			slog.String("lxc", cfg.Cutover.FailoverLXCID),
+		},
+		IsRecovery: false,
+	})
 
 	// Step 1: Withdraw routes from primary VM.
 	w.log.InfoContext(ctx, "BGP_FAILOVER: withdrawing routes from primary VM", "vmid", cfg.MwanVMID)
@@ -90,16 +99,24 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 		"elapsed", w.since(start),
 	)
 
-	// Send success email
-	successSubject := fmt.Sprintf("[%s] BGP FAILOVER COMPLETE: LXC %s announcing",
-		cfg.Email.SubjectPrefix, cfg.Cutover.FailoverLXCID)
-	successBody := fmt.Sprintf(
-		"BGP failover completed in %s.\n\n"+
-			"Routes withdrawn from primary VM %s.\n"+
-			"Routes announced on failover LXC %s.",
-		w.since(start).Round(time.Second), cfg.MwanVMID, cfg.Cutover.FailoverLXCID,
-	)
-	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, successSubject, successBody)
+	// Notify that the failover sequence completed. Kind "bgp-failover-complete"
+	// is a separate state-change so it does not collide with the active
+	// "bgp-failover" alert; the latter stays open until recovery resolves it.
+	completeMsg := fmt.Sprintf("BGP FAILOVER COMPLETE: LXC %s announcing", cfg.Cutover.FailoverLXCID)
+	elapsed := w.since(start).Round(time.Second)
+	w.notify.Notify(ctx, notify.Event{
+		Now:     time.Time{},
+		Level:   slog.LevelError,
+		Kind:    "bgp-failover-complete",
+		Key:     cfg.MwanVMID,
+		Message: completeMsg,
+		Fields: []slog.Attr{
+			slog.Duration("elapsed", elapsed),
+			slog.String("vmid", cfg.MwanVMID),
+			slog.String("lxc", cfg.Cutover.FailoverLXCID),
+		},
+		IsRecovery: false,
+	})
 
 	// Record failover state under the mutex so the run loop can later detect
 	// recovery and emit the BGP RECOVERED email exactly once.
@@ -170,21 +187,35 @@ func (w *watchdog) triggerBGPRecovery(ctx context.Context, cfg *config.Config) e
 		elapsedSinceFailover = w.now().Sub(startedAt).Round(time.Second)
 	}
 
-	subject := fmt.Sprintf("[%s] BGP RECOVERED: routes back on primary VM %s",
-		cfg.Email.SubjectPrefix, cfg.MwanVMID)
-	body := fmt.Sprintf(
-		"BGP recovery completed in %s.\n\n"+
-			"Original failover reason: %s\n"+
-			"Time spent in failover: %s\n\n"+
-			"Routes withdrawn from failover LXC %s.\n"+
-			"Routes announced on primary VM %s.",
-		w.since(start).Round(time.Second),
-		prevReason,
-		elapsedSinceFailover,
-		cfg.Cutover.FailoverLXCID,
-		cfg.MwanVMID,
+	// Resolve the open "bgp-failover" alert so the next failover reads as a
+	// fresh transition rather than a repeat. The recovery line emits at the
+	// same severity the original Notify used (ERROR), per the Manager's
+	// resolveAt contract, so it crosses the same MinLevel threshold.
+	recoveryMsg := "BGP RECOVERED: routes back on primary VM " + cfg.MwanVMID
+	w.notify.Resolve(ctx, "bgp-failover", cfg.MwanVMID, recoveryMsg,
+		slog.Duration("recovery_elapsed", w.since(start).Round(time.Second)),
+		slog.String("original_reason", prevReason),
+		slog.Duration("time_in_failover", elapsedSinceFailover),
+		slog.String("lxc", cfg.Cutover.FailoverLXCID),
+		slog.String("vmid", cfg.MwanVMID),
 	)
-	_ = w.ops.SendEmail(ctx, cfg.Email.AlertEmail, subject, body)
+	// Also emit a dedicated "bgp-recovered" event so dashboards or tests that
+	// gate on the explicit recovery kind see the transition.
+	w.notify.Notify(ctx, notify.Event{
+		Now:     time.Time{},
+		Level:   slog.LevelError,
+		Kind:    "bgp-recovered",
+		Key:     cfg.MwanVMID,
+		Message: recoveryMsg,
+		Fields: []slog.Attr{
+			slog.Duration("recovery_elapsed", w.since(start).Round(time.Second)),
+			slog.String("original_reason", prevReason),
+			slog.Duration("time_in_failover", elapsedSinceFailover),
+			slog.String("lxc", cfg.Cutover.FailoverLXCID),
+			slog.String("vmid", cfg.MwanVMID),
+		},
+		IsRecovery: false,
+	})
 
 	w.failoverMu.Lock()
 	w.failoverActive = false
@@ -262,9 +293,9 @@ func FailoverRun(cfg *config.Config) error {
 	if p := cfg.Watchdog.JSONLogFile; p != "" {
 		handlers = append(handlers, logging.FileJSON(p))
 	}
-	if h := logging.EmailFromConfig(cfg, "mwan-watchdog"); h != nil {
-		handlers = append(handlers, h)
-	}
+	// The slog email handler is intentionally not attached here: notify
+	// owns email delivery for the watchdog now, so attaching the handler
+	// would produce a duplicate email per failover or recovery event.
 	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
@@ -275,13 +306,16 @@ func FailoverRun(cfg *config.Config) error {
 		slog.String(tracing.ComponentKey, "watchdog"),
 	)
 
-	// Create email sender
-	emailSender := email.NewSender(cfg.Email.SMTP2GOAPIKey, cfg.Email.From, cfg.Email.BindIface, "mwan-watchdog", logger)
+	// Construct the notify boundary the watchdog uses for failover and
+	// recovery emails. NullNotifier is returned when [email] is
+	// unconfigured so the call sites are always safe.
+	notifier := notify.FromConfig(cfg, logger, "mwan-watchdog")
 
 	// Create watchdog instance
 	w := &watchdog{
 		cfg:               cfg,
-		ops:               ops.NewRealOps(cfg, emailSender, logger),
+		ops:               ops.NewRealOps(cfg, logger),
+		notify:            notifier,
 		coord:             &alert.Coord{},
 		limiter:           alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
 		log:               logger,

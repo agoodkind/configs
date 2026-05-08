@@ -15,6 +15,7 @@ import (
 
 	"goodkind.io/mwan/internal/alert"
 	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/ops"
 	"goodkind.io/mwan/internal/rollback"
 	"goodkind.io/mwan/internal/tracing"
@@ -37,6 +38,7 @@ const (
 type watchdog struct {
 	cfg     *config.Config
 	ops     ops.SysOps
+	notify  notify.Notifier
 	coord   *alert.Coord
 	limiter *alert.Limiter
 	log     *slog.Logger
