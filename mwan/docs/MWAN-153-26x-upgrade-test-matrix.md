@@ -261,6 +261,19 @@ Reusable primitives:
   read-only RPCs (firmware status, FRR show commands).
 - The SSH transport is the same one used by the cutover flow. We should
   not invent a new auth path.
+- The runner exposes a `--env-transport` flag (added in MWAN-163) that
+  picks between two `validate.Env` implementations: `ssh` (the default,
+  shells out to ssh and curl) and `grpc` (routes OPNsense-side checks
+  through the mwan-opnsense daemon over the persistent virtio-serial
+  gRPC channel). The gRPC path is the right choice for the suburban
+  testbed where pf blocks SSH from suburban to VM 102, and for the
+  production cutover because virtio-serial survives a network break.
+  Proxmox-host and LAN-client checks still run over SSH under both
+  transports because the daemon does not proxy those surfaces. HTTPS
+  GETs against the OPNsense web UI under the gRPC transport are
+  proxied by running curl inside the guest via the daemon's Exec RPC;
+  a typed HTTPRequest RPC on the daemon would let us return the parsed
+  response without parsing curl stdout (filed as a follow-up).
 
 Test data:
 

@@ -71,14 +71,20 @@ func (a *validatorAdapter) Validate(
 		SeverityFilter:         "",
 	}
 
-	env := &validate.ExecEnv{
+	env, err := defaultEnvFactory().build(envTransportConfig{
+		Transport:           a.flags.envTransport,
+		GRPCTarget:          a.flags.envGRPCTarget,
 		OPNsenseSSHHost:     a.flags.opnsenseSSHHost,
 		OPNsenseSSHJumpHost: a.flags.opnsenseJumpHost,
 		ProxmoxSSHHost:      a.flags.proxmoxSSHHost,
 		LANClientSSHHost:    a.flags.lanClientSSH,
 		OPNsenseAddr:        a.flags.opnsenseAddr,
-		HTTPClient:          nil,
-		Clock:               nil,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "validatorAdapter: build env",
+			"err", err, "transport", string(a.flags.envTransport))
+		return emptyUpgradeValidation(),
+			fmt.Errorf("validatorAdapter: build env: %w", err)
 	}
 
 	baseline, err := a.runner(ctx, cfg, nil, env)

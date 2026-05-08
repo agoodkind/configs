@@ -34,6 +34,8 @@ type validateFlags struct {
 	diffAgainst      string
 	outputFormat     outputFormat
 	severityFilter   validate.Severity
+	envTransport     envTransport
+	envGRPCTarget    string
 	opnsenseSSHHost  string
 	opnsenseJumpHost string
 	proxmoxSSHHost   string
@@ -72,7 +74,12 @@ func runOPNsenseValidate(args []string) error {
 		"vmid", flags.vmid, "deploy_id", flags.deployID,
 		"mode", validateMode(flags))
 
-	env := buildExecEnvFromFlags(flags)
+	env, err := buildEnvFromValidateFlags(flags)
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-validate build env failed",
+			"err", err.Error())
+		return fmt.Errorf("build env: %w", err)
+	}
 	cfg := buildValidateConfigFromFlags(flags)
 
 	var prior *validate.Baseline
@@ -136,7 +143,14 @@ func parseValidateFlags(args []string) (validateFlags, int, error) {
 			"usage: mwan opnsense-validate [flags] <vmid>")
 		fs.PrintDefaults()
 	}
-	out := validateFlags{outputFormat: outputFormatText}
+	out := validateFlags{
+		outputFormat: outputFormatText,
+		envTransport: envTransportSSH,
+	}
+	transportStr := fs.String("env-transport", string(envTransportSSH),
+		"validate transport: ssh|grpc (grpc routes OPNsense ops via mwan-opnsense daemon)")
+	fs.StringVar(&out.envGRPCTarget, "env-grpc-target", "",
+		"gRPC target socket for --env-transport=grpc (e.g. unix:///var/run/qemu-server/102.mwanrpc)")
 	fs.StringVar(&out.stateDir, "state-dir", validate.DefaultStateDir,
 		"artefact root (matches MWAN-152's --state-dir)")
 	fs.StringVar(&out.deployID, "deploy-id", "",
@@ -186,6 +200,11 @@ func parseValidateFlags(args []string) (validateFlags, int, error) {
 	if out.outputFormat != outputFormatText && out.outputFormat != outputFormatJSON {
 		return out, 0, fmt.Errorf("opnsense-validate: --output-format must be text|json")
 	}
+	transport, err := parseEnvTransport(*transportStr)
+	if err != nil {
+		return out, 0, fmt.Errorf("opnsense-validate: %w", err)
+	}
+	out.envTransport = transport
 	if *severityStr == "blocker" {
 		out.severityFilter = validate.SeverityBlocker
 	} else if *severityStr != "" && *severityStr != "all" {
@@ -208,16 +227,16 @@ func parseValidateFlags(args []string) (validateFlags, int, error) {
 	return out, vmid, nil
 }
 
-func buildExecEnvFromFlags(f validateFlags) *validate.ExecEnv {
-	return &validate.ExecEnv{
+func buildEnvFromValidateFlags(f validateFlags) (validate.Env, error) {
+	return defaultEnvFactory().build(envTransportConfig{
+		Transport:           f.envTransport,
+		GRPCTarget:          f.envGRPCTarget,
 		OPNsenseSSHHost:     f.opnsenseSSHHost,
 		OPNsenseSSHJumpHost: f.opnsenseJumpHost,
 		ProxmoxSSHHost:      f.proxmoxSSHHost,
 		LANClientSSHHost:    f.lanClientSSH,
 		OPNsenseAddr:        f.opnsenseAddr,
-		HTTPClient:          nil,
-		Clock:               nil,
-	}
+	})
 }
 
 func buildValidateConfigFromFlags(f validateFlags) validate.Config {
