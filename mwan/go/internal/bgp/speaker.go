@@ -29,11 +29,32 @@ type Status struct {
 	Peers      []PeerState
 }
 
+// bgpServerAPI is the narrow surface of *server.BgpServer that Speaker
+// calls into. It exists so tests can swap in a fake and assert the
+// GoBGP API requests we build (GR fields on Start, AllowGracefulRestart
+// on Stop, MpGracefulRestart on AddPeer). The production constructor
+// New wires the real *server.BgpServer; tests use newWithServer.
+type bgpServerAPI interface {
+	Serve()
+	StartBgp(ctx context.Context, r *apipb.StartBgpRequest) error
+	StopBgp(ctx context.Context, r *apipb.StopBgpRequest) error
+	AddPeer(ctx context.Context, r *apipb.AddPeerRequest) error
+	WatchEvent(ctx context.Context, callbacks server.WatchEventMessageCallbacks, opts ...server.WatchOption) error
+	ListPeer(ctx context.Context, r *apipb.ListPeerRequest, fn func(*apipb.Peer)) error
+	AddPath(req apiutil.AddPathRequest) ([]apiutil.AddPathResponse, error)
+	DeletePath(req apiutil.DeletePathRequest) error
+}
+
 // Speaker wraps a GoBGP embedded server for programmatic route control.
 type Speaker struct {
 	cfg    Config
 	log    *slog.Logger
-	server *server.BgpServer
+	server bgpServerAPI
+
+	// newServer constructs the underlying GoBGP server. Production code
+	// leaves this nil so Start defaults to server.NewBgpServer; tests
+	// override it to inject a fake bgpServerAPI before Start runs.
+	newServer func(log *slog.Logger) bgpServerAPI
 
 	mu         sync.Mutex
 	announcing bool
@@ -43,8 +64,13 @@ type Speaker struct {
 // New creates a BGP speaker. Call Start to begin peering.
 func New(cfg Config, log *slog.Logger) *Speaker {
 	return &Speaker{
-		cfg: cfg,
-		log: log,
+		cfg:        cfg,
+		log:        log,
+		server:     nil,
+		newServer:  nil,
+		mu:         sync.Mutex{},
+		announcing: false,
+		started:    false,
 	}
 }
 
@@ -57,11 +83,15 @@ func (s *Speaker) Start(ctx context.Context) error {
 		return nil
 	}
 
-	logLevel := new(slog.LevelVar)
-	logLevel.Set(slog.LevelInfo)
-	s.server = server.NewBgpServer(
-		server.LoggerOption(s.log, logLevel),
-	)
+	if s.newServer != nil {
+		s.server = s.newServer(s.log)
+	} else {
+		logLevel := new(slog.LevelVar)
+		logLevel.Set(slog.LevelInfo)
+		s.server = server.NewBgpServer(
+			server.LoggerOption(s.log, logLevel),
+		)
+	}
 	go func() {
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -72,13 +102,19 @@ func (s *Speaker) Start(ctx context.Context) error {
 		s.server.Serve()
 	}()
 
-	if err := s.server.StartBgp(ctx, &apipb.StartBgpRequest{
-		Global: &apipb.Global{
-			Asn:        s.cfg.ASN,
-			RouterId:   s.cfg.RouterID,
-			ListenPort: s.cfg.ListenPort,
-		},
-	}); err != nil {
+	global := &apipb.Global{
+		Asn:        s.cfg.ASN,
+		RouterId:   s.cfg.RouterID,
+		ListenPort: s.cfg.ListenPort,
+	}
+	if s.cfg.GracefulRestart.Enabled {
+		global.GracefulRestart = &apipb.GracefulRestart{
+			Enabled:             true,
+			RestartTime:         s.cfg.GracefulRestart.RestartTime,
+			NotificationEnabled: s.cfg.GracefulRestart.NotificationEnabled,
+		}
+	}
+	if err := s.server.StartBgp(ctx, &apipb.StartBgpRequest{Global: global}); err != nil {
 		s.log.ErrorContext(ctx, "start bgp failed", "error", err)
 		return fmt.Errorf("start bgp: %w", err)
 	}
@@ -144,29 +180,37 @@ func (s *Speaker) addPeer(ctx context.Context, addr string, ipv6 bool) error {
 		AfiSafis: []*apipb.AfiSafi{},
 	}
 
-	if ipv6 {
-		peer.AfiSafis = append(peer.AfiSafis, &apipb.AfiSafi{
-			Config: &apipb.AfiSafiConfig{
-				Family: &apipb.Family{
-					Afi:  apipb.Family_AFI_IP6,
-					Safi: apipb.Family_SAFI_UNICAST,
-				},
-				Enabled: true,
-			},
-		})
-	} else {
-		peer.AfiSafis = append(peer.AfiSafis, &apipb.AfiSafi{
-			Config: &apipb.AfiSafiConfig{
-				Family: &apipb.Family{
-					Afi:  apipb.Family_AFI_IP,
-					Safi: apipb.Family_SAFI_UNICAST,
-				},
-				Enabled: true,
-			},
-		})
+	if s.cfg.GracefulRestart.Enabled {
+		peer.GracefulRestart = &apipb.GracefulRestart{
+			Enabled:             true,
+			RestartTime:         s.cfg.GracefulRestart.RestartTime,
+			NotificationEnabled: s.cfg.GracefulRestart.NotificationEnabled,
+		}
 	}
 
-	return s.server.AddPeer(ctx, &apipb.AddPeerRequest{Peer: peer})
+	afiSafi := &apipb.AfiSafi{
+		Config: &apipb.AfiSafiConfig{
+			Family:  &apipb.Family{Safi: apipb.Family_SAFI_UNICAST},
+			Enabled: true,
+		},
+	}
+	if ipv6 {
+		afiSafi.Config.Family.Afi = apipb.Family_AFI_IP6
+	} else {
+		afiSafi.Config.Family.Afi = apipb.Family_AFI_IP
+	}
+	if s.cfg.GracefulRestart.Enabled {
+		afiSafi.MpGracefulRestart = &apipb.MpGracefulRestart{
+			Config: &apipb.MpGracefulRestartConfig{Enabled: true},
+		}
+	}
+	peer.AfiSafis = append(peer.AfiSafis, afiSafi)
+
+	if err := s.server.AddPeer(ctx, &apipb.AddPeerRequest{Peer: peer}); err != nil {
+		s.log.ErrorContext(ctx, "add bgp peer api failed", "peer", addr, "error", err)
+		return fmt.Errorf("add peer: %w", err)
+	}
+	return nil
 }
 
 // Stop gracefully shuts down the BGP server.
@@ -179,7 +223,11 @@ func (s *Speaker) Stop() error {
 	}
 
 	ctx := context.Background()
-	if err := s.server.StopBgp(ctx, &apipb.StopBgpRequest{}); err != nil {
+	stopReq := &apipb.StopBgpRequest{}
+	if s.cfg.GracefulRestart.Enabled {
+		stopReq.AllowGracefulRestart = true
+	}
+	if err := s.server.StopBgp(ctx, stopReq); err != nil {
 		s.log.ErrorContext(ctx, "stop bgp failed", "error", err)
 		return fmt.Errorf("stop bgp: %w", err)
 	}
@@ -289,10 +337,12 @@ func (s *Speaker) addIPv4Path(prefix string) error {
 		Attrs:  []bgppkt.PathAttributeInterface{origin, nh},
 	}
 
-	_, err = s.server.AddPath(apiutil.AddPathRequest{
+	if _, err := s.server.AddPath(apiutil.AddPathRequest{
 		Paths: []*apiutil.Path{path},
-	})
-	return err
+	}); err != nil {
+		return fmt.Errorf("add ipv4 path: %w", err)
+	}
+	return nil
 }
 
 func (s *Speaker) deleteIPv4Path(prefix string) error {
@@ -313,9 +363,12 @@ func (s *Speaker) deleteIPv4Path(prefix string) error {
 		Withdrawal: true,
 	}
 
-	return s.server.DeletePath(apiutil.DeletePathRequest{
+	if err := s.server.DeletePath(apiutil.DeletePathRequest{
 		Paths: []*apiutil.Path{path},
-	})
+	}); err != nil {
+		return fmt.Errorf("delete ipv4 path: %w", err)
+	}
+	return nil
 }
 
 func (s *Speaker) addIPv6Path(prefix string) error {
@@ -362,10 +415,12 @@ func (s *Speaker) addIPv6Path(prefix string) error {
 		Attrs:  []bgppkt.PathAttributeInterface{origin, mpReach},
 	}
 
-	_, err = s.server.AddPath(apiutil.AddPathRequest{
+	if _, err := s.server.AddPath(apiutil.AddPathRequest{
 		Paths: []*apiutil.Path{path},
-	})
-	return err
+	}); err != nil {
+		return fmt.Errorf("add ipv6 path: %w", err)
+	}
+	return nil
 }
 
 func (s *Speaker) deleteIPv6Path(prefix string) error {
@@ -386,9 +441,12 @@ func (s *Speaker) deleteIPv6Path(prefix string) error {
 		Withdrawal: true,
 	}
 
-	return s.server.DeletePath(apiutil.DeletePathRequest{
+	if err := s.server.DeletePath(apiutil.DeletePathRequest{
 		Paths: []*apiutil.Path{path},
-	})
+	}); err != nil {
+		return fmt.Errorf("delete ipv6 path: %w", err)
+	}
+	return nil
 }
 
 // Status returns the current state of all BGP peers.

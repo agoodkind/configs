@@ -172,16 +172,33 @@ type OPNsenseBGPNeighbor struct {
 
 // BGPSection holds embedded GoBGP speaker configuration.
 type BGPSection struct {
-	Enabled          bool          `toml:"enabled"`
-	ASN              uint32        `toml:"asn"`
-	RouterID         string        `toml:"router_id"`
-	NextHopV6        string        `toml:"next_hop_v6"` // IPv6 next-hop for announced routes (optional, defaults to RouterID)
-	KeepaliveSeconds uint32        `toml:"keepalive_seconds"`
-	HoldSeconds      uint32        `toml:"hold_seconds"`
-	ListenPort       int32         `toml:"listen_port"`
-	Neighbors        []BGPNeighbor `toml:"neighbors"`
-	NeighborsV6      []BGPNeighbor `toml:"neighbors_v6"`
-	Announce         BGPAnnounce   `toml:"announce"`
+	Enabled          bool               `toml:"enabled"`
+	ASN              uint32             `toml:"asn"`
+	RouterID         string             `toml:"router_id"`
+	NextHopV6        string             `toml:"next_hop_v6"` // IPv6 next-hop for announced routes (optional, defaults to RouterID)
+	KeepaliveSeconds uint32             `toml:"keepalive_seconds"`
+	HoldSeconds      uint32             `toml:"hold_seconds"`
+	ListenPort       int32              `toml:"listen_port"`
+	Neighbors        []BGPNeighbor      `toml:"neighbors"`
+	NeighborsV6      []BGPNeighbor      `toml:"neighbors_v6"`
+	Announce         BGPAnnounce        `toml:"announce"`
+	GracefulRestart  BGPGracefulRestart `toml:"graceful_restart"`
+}
+
+// BGPGracefulRestart configures BGP Graceful Restart (RFC 4724) on the
+// embedded GoBGP speaker. When Enabled is true, the speaker negotiates
+// the GR capability with each peer so that planned restarts of mwan-agent
+// do not trigger immediate route withdrawal on the helper (OPNsense FRR).
+//
+// RestartTime is advertised to the helper as the maximum number of seconds
+// the helper should hold our routes after the BGP session drops. The plan
+// (MWAN-130) sets this to 30s by default. NotificationEnabled mirrors the
+// "N" bit (RFC 8538) so a NOTIFICATION-triggered session reset still
+// preserves the GR semantics.
+type BGPGracefulRestart struct {
+	Enabled             bool   `toml:"enabled"`
+	RestartTime         uint32 `toml:"restart_time"`
+	NotificationEnabled bool   `toml:"notification_enabled"`
 }
 
 // BGPNeighbor identifies a single BGP peer.
@@ -318,7 +335,13 @@ func defaultConfig() Config {
 			VsockPort: 50051, TCPAddr: "[::]:50052",
 			DeployFile: "/var/run/mwan-last-deploy", LogFile: "/var/log/mwan-agent.log",
 		},
-		BGP:    BGPSection{},
+		BGP: BGPSection{
+			GracefulRestart: BGPGracefulRestart{
+				Enabled:             true,
+				RestartTime:         30,
+				NotificationEnabled: true,
+			},
+		},
 		Notify: NotifySection{RepeatEvery: "", PerKind: nil},
 	}
 }
@@ -531,6 +554,14 @@ func validateBGP(b *BGPSection) error {
 	}
 	if len(b.Announce.IPv4) == 0 && len(b.Announce.IPv6) == 0 {
 		return errors.New("[bgp.announce] at least one prefix (ipv4 or ipv6) is required")
+	}
+	if b.GracefulRestart.Enabled {
+		if b.GracefulRestart.RestartTime == 0 {
+			return errors.New("[bgp.graceful_restart] restart_time is required when enabled")
+		}
+		if b.GracefulRestart.RestartTime > 600 {
+			return fmt.Errorf("[bgp.graceful_restart] restart_time (%d) must be <= 600", b.GracefulRestart.RestartTime)
+		}
 	}
 	return nil
 }
