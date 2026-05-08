@@ -81,6 +81,7 @@ func printUpgradeUsage(w *os.File) {
 	fmt.Fprintln(w, "  --vmid <id>             VMID to operate on (required)")
 	fmt.Fprintln(w, "  --target <ver>          Target OPNsense version (e.g. 26.7)")
 	fmt.Fprintln(w, "  --state-dir <path>      State directory (default /var/lib/mwan/upgrades)")
+	fmt.Fprintln(w, "  --deploy-id <id>        Deploy identifier (auto-generated when empty)")
 	fmt.Fprintln(w, "  --snapshot <name>       Override snapshot name for rollback/commit")
 	fmt.Fprintln(w, "  --dry-run-execute       Run opnsense-upgrade -c instead of the real upgrade")
 	fmt.Fprintln(w, "  --use-boot-environment  Capture a bectl boot environment alongside the snapshot")
@@ -91,11 +92,15 @@ func printUpgradeUsage(w *os.File) {
 
 // upgradeFlags holds the flag values shared across phases. Each phase
 // subcommand sets up its own flag set but reads the same struct so the
-// surface stays uniform.
+// surface stays uniform. The validator-related fields mirror the
+// `mwan opnsense-validate` flag set so the upgrade phases can drive the
+// same MWAN-153 check matrix without operators having to learn two
+// flag surfaces.
 type upgradeFlags struct {
 	vmid               string
 	target             string
 	stateDir           string
+	deployID           string
 	snapshot           string
 	dryRunExecute      bool
 	useBootEnvironment bool
@@ -104,12 +109,29 @@ type upgradeFlags struct {
 	olderThan          time.Duration
 	upgradeTimeout     time.Duration
 	postRollbackWait   time.Duration
+
+	// Validator transport flags. Mirror mwan opnsense-validate so
+	// `mwan opnsense-upgrade {validate,run}` can run the same matrix.
+	opnsenseSSHHost  string
+	opnsenseJumpHost string
+	proxmoxSSHHost   string
+	lanClientSSH     string
+	opnsenseAddr     string
+	apiKey           string
+	apiSecret        string
+	bgpV4Neighbors   string
+	bgpV6Neighbors   string
+	opnsenseLAN      string
+	mwanSocket       string
+	mwanHostSocket   string
+	settleAfter      time.Duration
 }
 
 func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) {
 	fs.StringVar(&f.vmid, "vmid", "", "VMID to operate on (required)")
 	fs.StringVar(&f.target, "target", "", "Target OPNsense version")
 	fs.StringVar(&f.stateDir, "state-dir", upgrade.DefaultStateDir, "Upgrade state directory")
+	fs.StringVar(&f.deployID, "deploy-id", "", "Deploy identifier; auto-generated when empty")
 	fs.StringVar(&f.snapshot, "snapshot", "", "Snapshot name override")
 	fs.BoolVar(&f.dryRunExecute, "dry-run-execute", false, "Run opnsense-upgrade -c instead of the real upgrade")
 	fs.BoolVar(&f.useBootEnvironment, "use-boot-environment", false, "Capture bectl boot environment if available")
@@ -118,6 +140,19 @@ func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) {
 	fs.DurationVar(&f.olderThan, "older-than", upgrade.DefaultGCThreshold, "gc age threshold")
 	fs.DurationVar(&f.upgradeTimeout, "upgrade-timeout", upgrade.DefaultUpgradeTimeout, "Watchdog timeout for the in-guest upgrade")
 	fs.DurationVar(&f.postRollbackWait, "post-rollback-wait", upgrade.DefaultPostRollbackTimeout, "QGA liveness probe deadline after rollback")
+	fs.StringVar(&f.opnsenseSSHHost, "opnsense-ssh", "", "ssh destination for the OPNsense guest (validator)")
+	fs.StringVar(&f.opnsenseJumpHost, "opnsense-jump", "", "ssh ProxyJump for OPNsense (validator)")
+	fs.StringVar(&f.proxmoxSSHHost, "proxmox-ssh", "", "ssh destination for the Proxmox host (validator)")
+	fs.StringVar(&f.lanClientSSH, "lan-client-ssh", "", "ssh destination for a LAN client (validator data-plane probes)")
+	fs.StringVar(&f.opnsenseAddr, "opnsense-addr", "", "host:port for HTTPS GETs against the OPNsense web UI (validator)")
+	fs.StringVar(&f.apiKey, "api-key", "", "OPNsense API key (validator)")
+	fs.StringVar(&f.apiSecret, "api-secret", "", "OPNsense API secret (validator)")
+	fs.StringVar(&f.bgpV4Neighbors, "bgp-v4-neighbors", "", "comma-separated v4 BGP peer addresses (validator)")
+	fs.StringVar(&f.bgpV6Neighbors, "bgp-v6-neighbors", "", "comma-separated v6 BGP peer addresses (validator)")
+	fs.StringVar(&f.opnsenseLAN, "opnsense-lan", "", "OPNsense LAN address used by dig probes (validator)")
+	fs.StringVar(&f.mwanSocket, "mwan-opnsense-socket", "", "unix socket path probed by the gRPC check (validator)")
+	fs.StringVar(&f.mwanHostSocket, "mwan-opnsense-host-socket", "", "unix socket path the bridge listens on (validator)")
+	fs.DurationVar(&f.settleAfter, "settle-after-upgrade", 5*time.Minute, "validator dwell time before DHCP-related checks run")
 }
 
 func parseUpgradeFlags(name string, args []string) (upgradeFlags, error) {
@@ -139,7 +174,7 @@ func (f upgradeFlags) toOptions() upgrade.Options {
 		VMID:                f.vmid,
 		Target:              f.target,
 		StateDir:            f.stateDir,
-		DeployID:            "",
+		DeployID:            f.deployID,
 		Snapshot:            f.snapshot,
 		DryRunExecute:       f.dryRunExecute,
 		UseBootEnvironment:  f.useBootEnvironment,
@@ -152,17 +187,19 @@ func (f upgradeFlags) toOptions() upgrade.Options {
 }
 
 // buildUpgradeDeps wires the production Deps from the loaded config.
-// Validator is left nil because the MWAN-153 implementation will plug
-// in its own; callers that need validate today must inject their own
-// validator. This is the clearest "stub surface" for the slice.
-func buildUpgradeDeps(cfg *config.Config) upgrade.Deps {
+// The Validator is the MWAN-153 check matrix wrapped in
+// validatorAdapter so the upgrade phases can drive it through the
+// upgrade.Validator interface. Validator transport flags (SSH hosts,
+// API auth, BGP neighbors) come from the upgrade subcommand's own flag
+// set; see registerCommonFlags.
+func buildUpgradeDeps(cfg *config.Config, f upgradeFlags) upgrade.Deps {
 	logger := slog.Default()
 	notifier := notify.FromConfig(cfg, logger, "mwan-opnsense-upgrade")
 	realOps := ops.NewRealOps(cfg, logger)
 	return upgrade.Deps{
 		Snap:     realOps,
 		Exec:     opsExecutorAdapter{ops: realOps},
-		Validate: nil,
+		Validate: newValidatorAdapter(f),
 		Notifier: notifier,
 		Clock:    nil,
 		Log:      logger,
@@ -203,7 +240,7 @@ func runUpgradePrepare(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg)
+	deps := buildUpgradeDeps(cfg, f)
 	st, err := upgrade.Prepare(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade prepare failed", "err", err)
@@ -222,7 +259,7 @@ func runUpgradeExecute(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg)
+	deps := buildUpgradeDeps(cfg, f)
 	st, err := upgrade.Execute(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade execute failed", "err", err)
@@ -241,12 +278,7 @@ func runUpgradeValidate(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg)
-	if deps.Validate == nil {
-		err := errors.New("opnsense-upgrade validate: no validator wired (MWAN-153 implementation pending)")
-		slog.Error("opnsense-upgrade validate: validator missing", "err", err)
-		return err
-	}
+	deps := buildUpgradeDeps(cfg, f)
 	st, res, err := upgrade.Validate(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade validate failed", "err", err)
@@ -266,7 +298,7 @@ func runUpgradeRollback(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg)
+	deps := buildUpgradeDeps(cfg, f)
 	st, err := upgrade.Rollback(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade rollback failed", "err", err)
@@ -285,7 +317,7 @@ func runUpgradeCommit(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg)
+	deps := buildUpgradeDeps(cfg, f)
 	st, err := upgrade.Commit(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade commit failed", "err", err)
@@ -304,12 +336,7 @@ func runUpgradeRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg)
-	if deps.Validate == nil {
-		err := errors.New("opnsense-upgrade run: no validator wired (MWAN-153 implementation pending)")
-		slog.Error("opnsense-upgrade run: validator missing", "err", err)
-		return err
-	}
+	deps := buildUpgradeDeps(cfg, f)
 	out, err := upgrade.Run(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade run failed", "err", err)
@@ -328,7 +355,7 @@ func runUpgradeGC(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps := buildUpgradeDeps(cfg)
+	deps := buildUpgradeDeps(cfg, f)
 	res, err := upgrade.GC(context.Background(), deps, f.toOptions())
 	if err != nil {
 		slog.Error("opnsense-upgrade gc failed", "err", err)

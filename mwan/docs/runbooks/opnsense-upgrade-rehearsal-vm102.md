@@ -201,6 +201,21 @@ The `mwan opnsense-upgrade validate` form runs the full matrix against the upgra
 ssh root@10.240.0.148 "mwan opnsense-upgrade validate --vmid 102 --deploy-id ${DEPLOY_ID}"
 ```
 
+The MWAN-153 check matrix needs operator-supplied transport flags to reach the OPNsense guest, the Proxmox host, and a LAN client; these mirror `mwan opnsense-validate` and are read by the upgrade subcommand's validator adapter (MWAN-160). Any subcommand that drives the matrix (`validate` and `run`) accepts the same flag set:
+
+```sh
+ssh root@10.240.0.148 "mwan opnsense-upgrade validate \
+  --vmid 102 --deploy-id ${DEPLOY_ID} \
+  --opnsense-ssh router --opnsense-jump vault \
+  --proxmox-ssh vault --lan-client-ssh client \
+  --opnsense-addr 10.240.0.1 \
+  --api-key ${OPN_API_KEY} --api-secret ${OPN_API_SECRET} \
+  --bgp-v4-neighbors 10.0.0.1 --bgp-v6-neighbors 'fc00::1' \
+  --mwan-opnsense-socket /run/mwan-opnsense.sock"
+```
+
+When the operator omits these flags the matrix runs with empty defaults; checks that need a transport return `error`, which the upgrade state machine treats as `validate_failed`.
+
 The `mwan opnsense-validate --compare` form runs the matrix and produces an explicit diff against the baseline JSON, per MWAN-153 section 6 (line 252):
 
 ```sh
