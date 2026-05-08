@@ -5,10 +5,12 @@
 //
 //   - re-exports of the bits mwan call sites use most so existing
 //     imports of "goodkind.io/mwan/internal/logging" keep working.
-//   - EmailFromConfig, the project-specific glue that builds an email
-//     handler from mwan's *config.Config + internal/email.Sender.
 //   - ContextHandler, the project-specific slog.Handler that pulls
 //     trace attrs out of context (depends on internal/tracing).
+//
+// Email delivery is owned by goodkind.io/mwan/internal/notify; the
+// slog email handler that used to live here is intentionally absent so
+// alerts flow through one path with state-change semantics.
 //
 // New project code can also import goodkind.io/gklog directly; this
 // package is intentionally a thin adapter, not a wrapper hierarchy.
@@ -58,7 +60,3 @@ func FileText(path, label string) slog.Handler {
 func FileJSON(path string) slog.Handler {
 	return gklog.FileJSON(path, slog.LevelDebug, gklog.RotationConfig{})
 }
-
-// ParseEmailMinLevel converts a level string to slog.Level. Defaults
-// to LevelWarn for empty or unknown input. Re-exports gklog.ParseLevel.
-func ParseEmailMinLevel(s string) slog.Level { return gklog.ParseLevel(s) }
