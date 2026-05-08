@@ -40,6 +40,18 @@ type interfacesArtefact struct {
 	NetstatV6Err string `json:"netstat_rn_inet6_err,omitempty"`
 }
 
+// bgpStatusArtefact is the on-disk shape for bgp_status.json. When
+// vtysh is present and returns data, Captured is true and Raw holds
+// the verbatim vtysh output. When capture fails for any reason,
+// Captured is false and Reason explains why. A zero-byte file is
+// indistinguishable from a write error, so a sentinel document is
+// always written even when no BGP data is available.
+type bgpStatusArtefact struct {
+	Captured bool   `json:"captured"`
+	Raw      string `json:"raw,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 // errCaptureExecMissing is returned when a capture is asked to run
 // without a configured Executor.
 var errCaptureExecMissing = errors.New("upgrade: capture requires deps.Exec")
@@ -153,30 +165,61 @@ func captureInterfaces(ctx context.Context, deps Deps, opts Options, deployDir s
 }
 
 // captureBGPStatus runs `vtysh -c 'show bgp summary json'` and writes
-// `bgp_status.json`. Best-effort: a guest without FRR running still
-// produces an empty file so validate has a uniform shape to look at.
+// `bgp_status.json`. Best-effort: a guest without FRR or vtysh still
+// produces a valid JSON sentinel so the validate phase can distinguish
+// "BGP not captured" from "file missing entirely".
 func captureBGPStatus(ctx context.Context, deps Deps, opts Options, deployDir string) {
 	path := filepath.Join(deployDir, ArtefactBGPStatus)
 	if deps.Exec == nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: deps.Exec missing, writing empty placeholder")
-		_ = WriteFileBytes(ctx, path, nil)
+		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: deps.Exec missing")
+		writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
+			Captured: false,
+			Raw:      "",
+			Reason:   "deps.Exec not configured",
+		})
 		return
 	}
 	res, err := deps.Exec.GuestExec(ctx, opts.VMID, "vtysh", "-c", "show bgp summary json")
 	if err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: GuestExec failed, writing empty placeholder",
+		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: GuestExec failed",
 			"err", err, "vmid", opts.VMID)
-		_ = WriteFileBytes(ctx, path, nil)
+		writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
+			Captured: false,
+			Raw:      "",
+			Reason:   "GuestExec error: " + err.Error(),
+		})
 		return
 	}
 	if res.ExitCode != 0 {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: non-zero exit, writing empty placeholder",
+		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: non-zero exit",
 			"vmid", opts.VMID, "exit", res.ExitCode, "stderr", res.Stderr)
-		_ = WriteFileBytes(ctx, path, nil)
+		writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
+			Captured: false,
+			Raw:      "",
+			Reason:   fmt.Sprintf("vtysh exit=%d stderr=%s", res.ExitCode, res.Stderr),
+		})
 		return
 	}
-	if err := WriteFileBytes(ctx, path, []byte(res.Stdout)); err != nil {
-		slog.WarnContext(ctx, "upgrade.Prepare: capture bgp_status: write failed",
+	writeBGPStatusArtefact(ctx, path, bgpStatusArtefact{
+		Captured: true,
+		Raw:      res.Stdout,
+		Reason:   "",
+	})
+}
+
+// writeBGPStatusArtefact marshals the bgp status artefact and writes
+// it. A marshal failure is unexpected (the type is concrete) but is
+// logged without propagating because the surrounding capture is
+// best-effort.
+func writeBGPStatusArtefact(ctx context.Context, path string, art bgpStatusArtefact) {
+	body, err := json.MarshalIndent(art, "", "  ")
+	if err != nil {
+		slog.WarnContext(ctx, "upgrade.Prepare: marshal bgp_status artefact failed",
+			"err", err, "path", path)
+		return
+	}
+	if err := WriteFileBytes(ctx, path, body); err != nil {
+		slog.WarnContext(ctx, "upgrade.Prepare: write bgp_status artefact failed",
 			"err", err, "path", path)
 	}
 }
