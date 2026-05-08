@@ -31,26 +31,24 @@ The suburban node name is `hypervisor`.
 
    ```
    ssh suburban 'qm config 950 | grep -E "args|net|cores|memory|machine"'
-   ssh suburban 'ip -br link | grep vmbr-'
+   ssh suburban 'ip -br link | grep vmbrtrunk'
    ```
 
-   If `vmbr-trunk` and `vmbr-mgmt` are missing on the live host, the
-   mwan-140 slice 1 work has not been applied surgically yet. Apply it on
-   suburban first, then import.
+   If `vmbrtrunk` is missing on the live host, the mwan-140 slice 1 work
+   has not been applied surgically yet. Apply it on suburban first, then
+   import. MWAN-148 dropped the separate `vmbrmgmt` bridge from this
+   plan, since prod runs MANAGEMENT untagged on the same physical port
+   that carries the VLAN trunk.
 
 ## Import commands
 
 Run from `opentofu/` in the worktree (or from repo root after merge):
 
 ```bash
-# MWAN-63: bridges.
+# MWAN-63: trunk bridge.
 tofu import \
-  'proxmox_virtual_environment_network_linux_bridge.trunk' \
-  'hypervisor:vmbr-trunk'
-
-tofu import \
-  'proxmox_virtual_environment_network_linux_bridge.mgmt' \
-  'hypervisor:vmbr-mgmt'
+  'proxmox_network_linux_bridge.trunk' \
+  'hypervisor:vmbrtrunk'
 
 # MWAN-62 (partial): VM 950.
 tofu import \

@@ -2,6 +2,8 @@
 
 Tracking ticket: `MWAN-140`. Parent arc: `MWAN-13` (OPNsense 26.x upgrade).
 
+Two design decisions in this plan come from `MWAN-148`. The first decision moves device-name remapping out of FreeBSD `rc.conf` and into the `config.xml` transform layer described in slice 4. The second decision drops the separate testbed MANAGEMENT bridge so that the testbed mirrors prod's one-port posture (MANAGEMENT untagged plus the VLAN trunk on the same device). Both decisions are noted inline where they affect the plan.
+
 ## Context
 
 The 26.x upgrade strategy is testbed-first: bring testbed to the closest possible match of prod, run the upgrade there, capture issues, mediate them, then upgrade prod. Two parity axes were already named: email behavior (`MWAN-132`, in flight) and OPNsense `config.xml` shape (`MWAN-117/118/119/127`). This plan covers a third axis that the config-import work has been silently hitting: testbed **infrastructure** does not match prod's interface shape, so any prod-shaped `config.xml` applied on testbed targets interface names and parents that do not exist. `MWAN-119 v1` and `v2` both failed for related reasons, then rolled back.
@@ -51,11 +53,11 @@ Suburban host bridges: `vmbr0` (10.240.0.148/24), `vmbr1` (10.240.200.1/24, 3d06
 
 ## Approach
 
-Rebuild testbed infrastructure to expose the same interface NAMES as prod, with testbed-specific addresses chosen to avoid prod conflicts. Use a trunked virtio NIC in place of the PCI VF, since suburban has no spare PCI hardware to passthrough. Rename the virtio interface in OPNsense to `iavf0` so `config.xml` paths import unmodified.
+Rebuild testbed infrastructure to mirror prod's interface ORDER and TOPOLOGY, with testbed-specific addresses chosen to avoid prod conflicts. Use a trunked virtio NIC in place of the PCI VF, since suburban has no spare PCI hardware to passthrough. Leave the testbed device names at their natural FreeBSD values (`vtnet0`, `vtnet1`, etc.) and have the slice 4 `config.xml` transform rewrite every prod reference to `iavf0` to whatever the testbed equivalent is at the matching slot. Interface order matters; names need not match.
 
-The renaming approach uses FreeBSD's `ifconfig <orig> name iavf0` invocation, applied via `/etc/rc.conf` `ifconfig_<orig>_name="iavf0"` so the rename survives reboot. This is supported FreeBSD behavior, not a hack. The advantage: the imported `config.xml` does not need a transform step for the iavf0 references.
+Rejected approach (forensic note): an earlier iteration of this plan renamed the virtio interface in OPNsense to `iavf0` via FreeBSD `/etc/rc.conf` `ifconfig_<orig>_name="iavf0"`. The branch `mwan-140-opnsense-rcconf` carries that work and stays as a forensic artifact of the rejected direction. `MWAN-148` superseded it for two reasons: testbed device names need not match prod since only ordering matters, and centralizing the name remap in the `config.xml` transform layer keeps the FreeBSD side untouched. Do not delete the `mwan-140-opnsense-rcconf` branch; it documents the rejected path.
 
-Alternative considered and rejected: rewrite `config.xml` to substitute every `iavf0` reference with `vtnet2`. Mechanical, but has to be redone every time we re-import from prod. The rename approach centralizes the asymmetry on the FreeBSD side.
+The `config.xml` transform in slice 4 carries the concrete name-remap deliverable: rewrite every `<if>iavf0</if>` (and any other prod-side reference to `iavf0`) to the testbed's matching device name at the same interface slot.
 
 ### Slice plan
 
@@ -69,9 +71,8 @@ Owner files:
 - `mwan/docs/testbed-infra-bridge-map.md` (new doc).
 
 What changes on suburban:
-- Add `vmbr-trunk` bridge with `bridge-vlan-aware yes`. This becomes the parent of the 802.1q children inside OPNsense.
+- Add `vmbrtrunk` bridge with `bridge-vlan-aware yes`. This becomes the parent of the 802.1q children inside OPNsense and ALSO carries the untagged MANAGEMENT plane, mirroring prod's one-port posture (`iavf0` carries MANAGEMENT untagged plus the VLAN trunk on the same physical port). The earlier draft of this plan reserved a separate `vmbr-mgmt` bridge for MANAGEMENT; `MWAN-148` dropped that split so testbed matches prod.
 - Reserve VLAN IDs 100, 200, 300, 64 for PRIVILEGED, GENERAL, CAPTIVE, IPv6Only on the trunk.
-- Reserve a separate untagged bridge for MANAGEMENT (e.g. `vmbr-mgmt`, 10.240.4.0/24, 3d06:bad:b01:204::/64).
 - Reserve a non-routable bridge for INTERNAL group equivalent if needed (likely not, since INTERNAL is a virtual group with no physical bind).
 - All addressing stays in the 10.240.x.0/24 and 3d06:bad:b01:200..209::/64 testbed ranges to avoid clashing with prod.
 
@@ -85,28 +86,23 @@ Owner files:
 
 What changes on VM 101:
 - Keep `net0` on `vmbr3` (LAN reach for SSH from suburban).
-- Move `net1` to the new `vmbr-trunk` (this becomes the trunk parent inside OPNsense).
-- Add `net2` on the new `vmbr-mgmt` for MANAGEMENT.
-- Optionally add `net3` on `mwanbr-equivalent` (currently `vmbr2`) for the BGP-side link.
+- Move `net1` to the new `vmbrtrunk`. This single attach carries both the untagged MANAGEMENT plane and the four 802.1q VLAN children, matching prod's one-port posture for `iavf0`. `MWAN-148` removed the previously planned separate `net2` on `vmbr-mgmt`.
+- Optionally add `net2` on `mwanbr-equivalent` (currently `vmbr2`) for the BGP-side link.
 - Keep the existing `mwanrpc` virtio-serial chardev for MWN1.
 
 This slice does not touch VM 101 directly. It captures the target Proxmox config in repo and as Ansible tasks. The actual `qm set` runs are part of slice 6 (the wiped-baseline rebuild) so we do not destabilize the currently-wedged VM 101.
 
-#### Slice 3: OPNsense interface rename via rc.conf
+#### Slice 3: rejected; folded into Slice 4
 
-Owner files:
-- `mwan/testbed/opnsense/etc-rc.conf-overlay.md` (new doc).
-- A small file fragment that gets baked into the freshly installed OPNsense image, e.g. `ifconfig_vtnet1_name="iavf0"`.
+`MWAN-148` rejected the FreeBSD `rc.conf` rename approach (originally drafted as "rename the virtio NIC to `iavf0` via `ifconfig_<orig>_name="iavf0"`"). The reasoning: testbed device names need not match prod, only the interface order matters; centralizing the asymmetry in the `config.xml` transform layer keeps the FreeBSD side stock and avoids drift on every prod re-import. The `mwan-140-opnsense-rcconf` branch stays as a forensic artifact of the rejected path; do not delete it. This slice's deliverables fold into Slice 4 below.
 
-This slice writes the rename overlay. It does not apply on any host. Slice 6 will apply it during the wiped-baseline build.
-
-#### Slice 4: imported config.xml shaping for testbed
+#### Slice 4: imported config.xml shaping for testbed (now also handles device-name remap)
 
 Owner files:
 - `mwan/scripts/opnsense-config-shape-for-testbed.sh` (new) or a Python helper.
 - The redacted candidate already exists at `.claude/worktrees/mwan-redact-opnsense-config/tmp/opnsense-prod-config.redacted.xml` per the handoff.
 
-What this slice produces: a deterministic transform from the prod redacted `config.xml` to a testbed-shaped `config.xml`. The transform substitutes prod IP ranges for testbed equivalents, preserves interface names (since slice 3 renames the virtio NIC to `iavf0`), substitutes the WG peer set with testbed peers, and substitutes Tayga prefixes if they collide with prod.
+What this slice produces: a deterministic transform from the prod redacted `config.xml` to a testbed-shaped `config.xml`. The transform substitutes prod IP ranges for testbed equivalents, substitutes the WG peer set with testbed peers, substitutes Tayga prefixes if they collide with prod, AND rewrites every prod-side reference to `iavf0` (e.g. `<if>iavf0</if>`, VLAN `<if>` parents, `<interface>` elements) to the testbed's matching device name at the same interface slot. This name-remap responsibility moved here from the rejected Slice 3 per `MWAN-148`.
 
 The transform output is the input to slice 6.
 
@@ -126,7 +122,7 @@ Owner runbooks:
 - `mwan/docs/runbooks/opnsense-serial-vm-from-scratch.md` (committed).
 - `mwan/docs/runbooks/opnsense-testbed-config-import.md` (committed).
 
-What this slice does: provision a fresh OPNsense VM on suburban using the from-scratch runbook, with the hardware shape from slice 2 and the rc.conf overlay from slice 3. Apply the testbed-shaped `config.xml` from slice 4 via SSH or QGA, observed on the serial console per the import runbook gate. Validate every step. The current wedged VM 101 stays untouched until the new baseline is healthy, then it is decommissioned.
+What this slice does: provision a fresh OPNsense VM on suburban using the from-scratch runbook, with the hardware shape from slice 2 (no rc.conf overlay; `MWAN-148` dropped the rename approach). Apply the testbed-shaped `config.xml` from slice 4 via SSH or QGA, observed on the serial console per the import runbook gate. Validate every step. The current wedged VM 101 stays untouched until the new baseline is healthy, then it is decommissioned.
 
 This is the slice that retires `MWAN-127` once it lands clean.
 
@@ -143,10 +139,11 @@ New:
 - `ansible/playbooks/configure-isp-lxcs.yml`
 - `mwan/testbed/suburban/etc-network-interfaces.j2`
 - `mwan/testbed/vm-101/qm-config.md`
-- `mwan/testbed/opnsense/etc-rc.conf-overlay.md`
 - `mwan/scripts/opnsense-config-shape-for-testbed.sh`
 - `mwan/docs/testbed-infra-bridge-map.md`
 - `mwan/docs/testbed-prod-parity-matrix.md`
+
+Note: `mwan/testbed/opnsense/etc-rc.conf-overlay.md` was in an earlier draft of this plan and is no longer a deliverable; `MWAN-148` rejected the rc.conf rename approach.
 
 Modified:
 - `AGENTS.md`
@@ -159,10 +156,10 @@ To file via `mcp__tack__tack_create_issue` after this plan is approved. No pre-p
 Parent: already filed as `MWAN-140`.
 
 Children:
-1. Slice 1: suburban hypervisor bridge plumbing.
+1. Slice 1: suburban hypervisor bridge plumbing (single trunk bridge per `MWAN-148`).
 2. Slice 2: VM 101 hardware reconfiguration codified in IaC.
-3. Slice 3: OPNsense interface rename via rc.conf overlay.
-4. Slice 4: testbed-shaped config.xml transform.
+3. Slice 3: REJECTED per `MWAN-148`. Folded into Slice 4. No ticket.
+4. Slice 4: testbed-shaped config.xml transform (also performs device-name remap per `MWAN-148`).
 5. Slice 5: ISP simulator alignment.
 6. Slice 6: wiped-baseline rebuild and config import (closes `MWAN-127` on landing).
 7. Slice 7: documentation.
@@ -182,7 +179,7 @@ After all slices land: a separate ticket files for the actual 26.x testbed upgra
 1. **Wedged VM 101.** The current testbed VM 101 is unreachable on `agoodkind@3d06:bad:b01:200::11`. The from-scratch runbook builds a NEW VM (e.g. VM 102) so the wedged VM 101 stays as a forensic artifact for diagnosing the MWAN-119 v2 failure. Do not retire it until the new baseline is verified.
 2. **Testbed addressing collision.** Prod uses 10.250.0.0/16 and 3d06:bad:b01::/56 broadly. Testbed uses 10.240.0.0/16 and 3d06:bad:b01:200..209::/56. Slice 4's transform must enforce this split or risk emitting routes that conflict with the prod plane.
 3. **WireGuard peer collision.** Prod and testbed must not share peer keys, or a misrouted handshake from one side could land at the other. Slice 4 substitutes peer keys.
-4. **No PCI passthrough on suburban.** The `iavf0` rename approach is the workaround. If FreeBSD ever drops the rename feature, the alternative is the config-rewrite approach in slice 4.
+4. **No PCI passthrough on suburban.** The slice 4 `config.xml` transform handles the asymmetry by remapping every prod-side `iavf0` reference to the testbed's matching device. `MWAN-148` chose this over the rejected FreeBSD `rc.conf` rename approach because device names need not match prod (only interface order matters) and centralizing the remap in the transform layer keeps FreeBSD stock.
 
 ## Out of scope
 
