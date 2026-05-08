@@ -238,7 +238,7 @@
     - name: Deploy mwan-watchdog service to Proxmox
       delegate_to: vault
       ansible.builtin.template:
-        src: "{{ repo_root }}/config/mwan-watchdog.service.j2"
+        src: "{{ repo_root }}/mwan/config/mwan-watchdog.service.j2"
         dest: /etc/systemd/system/{{ mwan_watchdog_service_name | default('mwan-watchdog') }}.service
         mode: "0644"
 
