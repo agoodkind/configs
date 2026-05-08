@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
 )
 
@@ -59,15 +60,14 @@ type DaemonConfig struct {
 	// in passive (RA-monitoring-only) mode.
 	EnableRA bool
 
-	// AlertRepeatEvery is the global default repeat cadence passed to
-	// AlertManager. Zero disables repeats (alerts fire on transition only).
-	// Used as a fallback when AlertRepeatResolver is nil or returns 0.
-	AlertRepeatEvery time.Duration
-
-	// AlertRepeatResolver, when non-nil, lets the caller override the
-	// repeat cadence on a per-(kind, key) basis. AlertManager calls this
-	// for every Notify; returning 0 disables repeats for that pair.
-	AlertRepeatResolver func(kind, key string) time.Duration
+	// Notifier is the boundary every email exits through. The daemon wires
+	// it into env.Alerts via WrapNotifier so existing module call sites
+	// keep using the AlertManager surface. cmd/mwan builds the Notifier
+	// from cfg.Email plus cfg.Notify (via notify.FromConfig) so the
+	// per-(kind, key) state machine and the email sink share one path.
+	// A nil Notifier degrades to NullNotifier (journald-only via the
+	// daemon's own logger; no email).
+	Notifier notify.Notifier
 
 	// ModuleConfigs holds per-module runtime configs keyed by module name.
 	// Each module's Constructor receives ModuleConfigs[Name()].
@@ -176,13 +176,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	d.env = &Env{
-		Iface:  d.cfg.Iface,
-		Sysctl: netif.NewProcSysctlRunner(d.log, false),
-		Log:    d.log,
-		Alerts: NewAlertManager(d.log, AlertConfig{
-			RepeatEvery:    d.cfg.AlertRepeatEvery,
-			RepeatResolver: d.cfg.AlertRepeatResolver,
-		}),
+		Iface:   d.cfg.Iface,
+		Sysctl:  netif.NewProcSysctlRunner(d.log, false),
+		Log:     d.log,
+		Alerts:  WrapNotifier(d.cfg.Notifier),
 		Monitor: mon,
 		DHCP:    dhcpClient,
 		RA:      raClient,
