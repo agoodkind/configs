@@ -27,6 +27,10 @@ import (
 //	remove_elements:
 //	  - name: "wireguard peers"
 //	    xpath: "//opnsense/OPNsense/wireguard/client/clients/client"
+//	insert_elements:
+//	  - name: "SSH pass rule on MANAGEMENT"
+//	    parent_xpath: "//opnsense/filter"
+//	    xml: "<rule>...</rule>"
 //	text_literals:
 //	  - name: "v6 prefix shift 3d06:bad:b01:1:: -> 3d06:bad:b01:201::"
 //	    from: "3d06:bad:b01:1::"
@@ -35,6 +39,7 @@ type Substitutions struct {
 	DeviceNames    []DeviceNameMapping `yaml:"device_names"`
 	XPathSets      []XPathSet          `yaml:"xpath_sets"`
 	RemoveElements []ElementRemove     `yaml:"remove_elements"`
+	InsertElements []ElementInsert     `yaml:"insert_elements"`
 	TextLiterals   []TextLiteral       `yaml:"text_literals"`
 }
 
@@ -60,6 +65,17 @@ type XPathSet struct {
 type ElementRemove struct {
 	Name  string `yaml:"name"`
 	XPath string `yaml:"xpath"`
+}
+
+// ElementInsert appends a new XML child element to every element selected by
+// ParentXPath. XML must be a single well-formed XML element fragment (no XML
+// declaration). If ParentXPath matches more than one element, the fragment is
+// appended to each match. Used to inject testbed-only rules that should not
+// exist in the prod config (e.g. an SSH pass rule on MANAGEMENT).
+type ElementInsert struct {
+	Name        string `yaml:"name"`
+	ParentXPath string `yaml:"parent_xpath"`
+	XML         string `yaml:"xml"`
 }
 
 // TextLiteral is a byte-level substitution applied to the serialized XML.

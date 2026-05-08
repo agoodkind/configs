@@ -39,6 +39,16 @@
       <descr>CaptiveVLAN</descr>
     </vlan>
   </vlans>
+  <filter>
+    <rule uuid="aaaaaaaa-0000-0000-0000-000000000001">
+      <type>pass</type>
+      <interface>wan</interface>
+      <protocol>tcp</protocol>
+      <descr>Allow SSH Externally</descr>
+      <source><any>1</any></source>
+      <destination><network>wanip</network><port>22</port></destination>
+    </rule>
+  </filter>
   <nat>
     <outbound>
       <rule>

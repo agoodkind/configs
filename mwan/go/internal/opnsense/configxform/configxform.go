@@ -60,6 +60,10 @@ func Apply(input []byte, subs Substitutions) ([]byte, error) {
 		slog.Error("configxform: apply element removes failed", "err", err)
 		return nil, fmt.Errorf("configxform.Apply: remove elements: %w", err)
 	}
+	if err := applyInsertElements(doc, subs.InsertElements); err != nil {
+		slog.Error("configxform: apply insert elements failed", "err", err)
+		return nil, fmt.Errorf("configxform.Apply: insert elements: %w", err)
+	}
 
 	out, err := doc.WriteToBytes()
 	if err != nil {
@@ -133,6 +137,42 @@ func applyElementRemoves(doc *etree.Document, removes []ElementRemove) error {
 				continue
 			}
 			parent.RemoveChild(el)
+		}
+	}
+	return nil
+}
+
+// applyInsertElements appends a new XML child to every element selected by
+// ParentXPath. The XML field must be a single well-formed element fragment
+// with no XML declaration. If ParentXPath matches zero elements the entry is
+// skipped silently, matching the silent-skip behaviour of applyXPathSets. If
+// the fragment fails to parse, an error is returned immediately.
+func applyInsertElements(doc *etree.Document, inserts []ElementInsert) error {
+	for _, ins := range inserts {
+		if ins.ParentXPath == "" {
+			err := fmt.Errorf("applyInsertElements: empty parent_xpath for entry %q", ins.Name)
+			slog.Error("configxform: insert element rejected empty parent_xpath", "name", ins.Name, "err", err)
+			return err
+		}
+		if strings.TrimSpace(ins.XML) == "" {
+			err := fmt.Errorf("applyInsertElements: empty xml for entry %q", ins.Name)
+			slog.Error("configxform: insert element rejected empty xml", "name", ins.Name, "err", err)
+			return err
+		}
+		parents := doc.FindElements(ins.ParentXPath)
+		for _, parent := range parents {
+			frag := etree.NewDocument()
+			if err := frag.ReadFromString(ins.XML); err != nil {
+				slog.Error("configxform: insert element xml fragment parse failed", "name", ins.Name, "err", err)
+				return fmt.Errorf("applyInsertElements: parse xml fragment for %q: %w", ins.Name, err)
+			}
+			root := frag.Root()
+			if root == nil {
+				err := fmt.Errorf("applyInsertElements: xml fragment for %q has no root element", ins.Name)
+				slog.Error("configxform: insert element xml fragment has no root", "name", ins.Name, "err", err)
+				return err
+			}
+			parent.AddChild(root.Copy())
 		}
 	}
 	return nil

@@ -173,6 +173,10 @@ xpath_sets:
 remove_elements:
   - name: "wg peers"
     xpath: "//opnsense/OPNsense/wireguard/client/clients/client"
+insert_elements:
+  - name: "ssh rule"
+    parent_xpath: "//opnsense/filter"
+    xml: "<rule/>"
 text_literals:
   - name: "nat src"
     from: "10.250.0.0/24"
@@ -191,8 +195,96 @@ text_literals:
 	if len(got.RemoveElements) != 1 {
 		t.Errorf("RemoveElements roundtrip mismatch: %+v", got.RemoveElements)
 	}
+	if len(got.InsertElements) != 1 || got.InsertElements[0].ParentXPath != "//opnsense/filter" {
+		t.Errorf("InsertElements roundtrip mismatch: %+v", got.InsertElements)
+	}
 	if len(got.TextLiterals) != 1 || got.TextLiterals[0].To != "10.240.0.0/24" {
 		t.Errorf("TextLiterals roundtrip mismatch: %+v", got.TextLiterals)
+	}
+}
+
+func TestApplyInsertElementAddsRuleToFilter(t *testing.T) {
+	subs := Substitutions{
+		InsertElements: []ElementInsert{
+			{
+				Name:        "SSH pass rule on MANAGEMENT (MWAN-158)",
+				ParentXPath: "//opnsense/filter",
+				XML: `<rule uuid="mwan-158-testbed-ssh">` +
+					`<type>pass</type>` +
+					`<interface>opt9</interface>` +
+					`<protocol>tcp</protocol>` +
+					`<descr>Allow SSH on MANAGEMENT (testbed-only, MWAN-158)</descr>` +
+					`<source><network>opt9</network></source>` +
+					`<destination><network>opt9ip</network><port>22</port></destination>` +
+					`</rule>`,
+			},
+		},
+	}
+	out, err := Apply(loadFixture(t), subs)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	doc := mustParse(t, out)
+	rules := doc.FindElements(`//opnsense/filter/rule`)
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules after insert, got %d", len(rules))
+	}
+	inserted := doc.FindElement(`//opnsense/filter/rule[descr]`)
+	var found bool
+	for _, el := range rules {
+		descr := el.FindElement("descr")
+		if descr != nil && strings.Contains(descr.Text(), "MWAN-158") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("inserted rule with MWAN-158 descr not found; last rule descr: %v",
+			inserted)
+	}
+}
+
+func TestApplyInsertElementEmptyParentXPathReturnsError(t *testing.T) {
+	subs := Substitutions{
+		InsertElements: []ElementInsert{
+			{Name: "broken", ParentXPath: "", XML: "<rule/>"},
+		},
+	}
+	if _, err := Apply(loadFixture(t), subs); err == nil {
+		t.Fatal("Apply with empty parent_xpath returned no error")
+	}
+}
+
+func TestApplyInsertElementEmptyXMLReturnsError(t *testing.T) {
+	subs := Substitutions{
+		InsertElements: []ElementInsert{
+			{Name: "broken", ParentXPath: "//opnsense/filter", XML: ""},
+		},
+	}
+	if _, err := Apply(loadFixture(t), subs); err == nil {
+		t.Fatal("Apply with empty xml returned no error")
+	}
+}
+
+func TestApplyInsertElementMalformedXMLReturnsError(t *testing.T) {
+	subs := Substitutions{
+		InsertElements: []ElementInsert{
+			{Name: "broken", ParentXPath: "//opnsense/filter", XML: "<rule><unclosed>"},
+		},
+	}
+	if _, err := Apply(loadFixture(t), subs); err == nil {
+		t.Fatal("Apply with malformed xml fragment returned no error")
+	}
+}
+
+func TestApplyInsertElementNoMatchIsTolerated(t *testing.T) {
+	subs := Substitutions{
+		InsertElements: []ElementInsert{
+			{Name: "no match", ParentXPath: "//opnsense/does-not-exist", XML: "<rule/>"},
+		},
+	}
+	if _, err := Apply(loadFixture(t), subs); err != nil {
+		t.Fatalf("Apply with no-match parent_xpath should not error, got: %v", err)
 	}
 }
 
