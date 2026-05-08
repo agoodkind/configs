@@ -118,17 +118,22 @@ func Execute(ctx context.Context, deps Deps, opts Options) (State, error) {
 }
 
 // upgradeCommand builds the argv that the guest will run. With
-// --dry-run-execute the command becomes `opnsense-upgrade -c` which is
-// the documented check-only mode (resolved decision 11.4). The real
-// path is `opnsense-upgrade -r <target>`.
+// --dry-run-execute the command becomes `opnsense-update -c` which is
+// the check-only mode (resolved decision 11.4). The real path is
+// `opnsense-update -u` (latest release) or `opnsense-update -u -r
+// <target>` (specific release). `opnsense-upgrade` does not exist on
+// OPNsense 25.7; the canonical major-release upgrade tool is
+// opnsense-update. Source: opnsense/update src/update/opnsense-update.sh.in,
+// getopts string line 293; -u case (DO_UPGRADE) and -r case (DO_RELEASE)
+// at https://github.com/opnsense/update/blob/master/src/update/opnsense-update.sh.in.
 func upgradeCommand(target string, dryRun bool) []string {
 	if dryRun {
-		return []string{"opnsense-upgrade", "-c"}
+		return []string{"opnsense-update", "-c"}
 	}
 	if target == "" {
-		return []string{"opnsense-upgrade"}
+		return []string{"opnsense-update", "-u"}
 	}
-	return []string{"opnsense-upgrade", "-r", target}
+	return []string{"opnsense-update", "-u", "-r", target}
 }
 
 // waitForGuest is a small helper used by rollback to poll for QGA
