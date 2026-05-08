@@ -148,21 +148,41 @@ func (c *Client) Call(
 	}
 	defer c.unregisterPending(corrID)
 
-	err = c.conn.SendMessage(methodID, corrID, mwn1.FlagRequest|mwn1.FlagFinal, payload)
+	logCallBoundary := shouldLogCallBoundary(methodID, payload)
+	if logCallBoundary {
+		c.log.InfoContext(ctx, "opnsense: call send start",
+			slog.Int("method_id", int(methodID)),
+			slog.Uint64("corr_id", corrID),
+			slog.Int("payload_len", len(payload)))
+	}
+	err = c.conn.SendMessageContext(ctx, methodID, corrID, mwn1.FlagRequest|mwn1.FlagFinal, payload)
 	if err != nil {
 		return nil, c.wrapError(ctx, "opnsense: call send failed", err,
-			slog.Int("method_id", int(methodID)), slog.Uint64("corr_id", corrID))
+			slog.Int("method_id", int(methodID)),
+			slog.Uint64("corr_id", corrID))
+	}
+	if logCallBoundary {
+		c.log.InfoContext(ctx, "opnsense: call send complete",
+			slog.Int("method_id", int(methodID)),
+			slog.Uint64("corr_id", corrID),
+			slog.Int("payload_len", len(payload)))
 	}
 
 	select {
 	case <-ctx.Done():
-		return nil, c.wrapError(ctx, "opnsense: call context done", ctx.Err(), slog.Int("method_id", int(methodID)))
+		return nil, c.wrapError(ctx, "opnsense: call context done", ctx.Err(),
+			slog.Int("method_id", int(methodID)),
+			slog.Uint64("corr_id", corrID))
 	case resp, ok := <-respCh:
 		if !ok {
 			return nil, c.connClosedErr(ctx, "call", methodID)
 		}
 		return c.decodeResponse(ctx, resp)
 	}
+}
+
+func shouldLogCallBoundary(methodID uint16, payload []byte) bool {
+	return methodID == mwn1.MethodWriteConfigXML || len(payload) > mwn1.MaxPayload
 }
 
 // CallStream sends a client-streaming request and waits for one terminal response.

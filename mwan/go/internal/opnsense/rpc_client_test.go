@@ -1,9 +1,11 @@
 package opnsense
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -20,6 +22,7 @@ import (
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/mwn1"
+	"goodkind.io/mwan/internal/opnsensesvc"
 )
 
 type fakeRequest struct {
@@ -219,6 +222,100 @@ func TestCall_SequentialRouting(t *testing.T) {
 	}
 	if got := daemon.versionCalls.Load(); got != 50 {
 		t.Fatalf("versionCalls=%d want 50", got)
+	}
+}
+
+func TestWriteConfigXMLLargePayloadThroughDispatcher(t *testing.T) {
+	tempDir, err := os.MkdirTemp("/tmp", "mwan126-*")
+	if err != nil {
+		t.Fatalf("temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(tempDir)
+	})
+	socketPath := filepath.Join(tempDir, "mwan-opnsense.sock")
+	configPath := filepath.Join(tempDir, "config.xml")
+	backupDir := filepath.Join(tempDir, "backup")
+	initialConfig := []byte("<opnsense><system><hostname>old</hostname></system></opnsense>")
+	if err := os.WriteFile(configPath, initialConfig, 0o600); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server := opnsensesvc.NewServer(
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		configPath,
+		backupDir,
+	)
+	dispatcher, err := opnsensesvc.NewDispatcher(opnsensesvc.DispatcherConfig{
+		Server: server,
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("NewDispatcher: %v", err)
+	}
+	serveDone := make(chan error, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			serveDone <- acceptErr
+			return
+		}
+		serveDone <- dispatcher.Serve(ctx, conn)
+	}()
+
+	client, err := Dial("unix://" + socketPath)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	content := []byte("<opnsense><system><hostname>")
+	content = append(content, bytes.Repeat([]byte("m"), 155_546-len(content)-len("</hostname></system></opnsense>"))...)
+	content = append(content, []byte("</hostname></system></opnsense>")...)
+	callCtx, callCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer callCancel()
+	resp, err := client.RPC().WriteConfigXML(callCtx, &mwanv1.WriteConfigXMLRequest{
+		Content: content,
+		Label:   "large-local",
+	})
+	if err != nil {
+		t.Fatalf("WriteConfigXML: %v", err)
+	}
+	if resp.GetBytesWritten() != int64(len(content)) {
+		t.Fatalf("bytes_written=%d want %d", resp.GetBytesWritten(), len(content))
+	}
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("written config mismatch")
+	}
+	backup, err := os.ReadFile(resp.GetBackupPath())
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if !bytes.Equal(backup, initialConfig) {
+		t.Fatalf("backup mismatch")
+	}
+
+	cancel()
+	_ = client.Close()
+	select {
+	case serveErr := <-serveDone:
+		if serveErr != nil {
+			t.Fatalf("dispatcher Serve: %v", serveErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("dispatcher did not stop")
 	}
 }
 

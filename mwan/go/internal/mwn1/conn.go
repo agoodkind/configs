@@ -177,6 +177,47 @@ func (c *Conn) SendMessage(
 	return nil
 }
 
+// SendMessageContext sends one complete logical message, respecting ctx while
+// queueing each outbound frame.
+func (c *Conn) SendMessageContext(
+	ctx context.Context,
+	methodID uint16,
+	corrID uint64,
+	flags Flags,
+	payload []byte,
+) error {
+	if ctx == nil {
+		return errors.New("mwn1: nil send context")
+	}
+	baseFlags := flags &^ FlagFragment
+	if len(payload) == 0 {
+		return c.sendFrameContext(ctx, frame{
+			Flags:    baseFlags,
+			MethodID: methodID,
+			CorrID:   corrID,
+			Payload:  nil,
+		})
+	}
+	for offset := 0; offset < len(payload); offset += MaxPayload {
+		end := min(offset+MaxPayload, len(payload))
+		frameFlags := baseFlags
+		if end != len(payload) {
+			frameFlags |= FlagFragment
+		}
+		outboundPayload := payload[offset:end]
+		outboundFrame := frame{
+			Flags:    frameFlags,
+			MethodID: methodID,
+			CorrID:   corrID,
+			Payload:  outboundPayload,
+		}
+		if err := c.sendFrameContext(ctx, outboundFrame); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SendStreamMessage sends one complete streaming message and waits for
 // the receiver to ACK that message for corrID.
 func (c *Conn) SendStreamMessage(

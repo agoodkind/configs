@@ -249,23 +249,48 @@ func (s *Server) WriteConfigXML(
 	if len(req.GetContent()) == 0 {
 		return nil, errors.New("content empty")
 	}
+	activeClock := clockOrReal(s.clock)
+	startedAt := activeClock.Now()
+	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML start",
+		"bytes_in", len(req.GetContent()),
+		"label", req.GetLabel())
+	lockStartedAt := activeClock.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML lock acquired",
+		"bytes_in", len(req.GetContent()),
+		"lock_wait_ms", activeClock.Now().Sub(lockStartedAt).Milliseconds())
 
+	backupStartedAt := activeClock.Now()
 	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock,
 		s.configPath, s.backupDir, req.GetLabel())
 	if err != nil {
 		s.log.ErrorContext(ctx, "opnsensesvc: WriteConfigXML backup failed",
-			"err", err, "label", req.GetLabel())
+			"err", err,
+			"label", req.GetLabel(),
+			"bytes_in", len(req.GetContent()),
+			"backup_duration_ms", activeClock.Now().Sub(backupStartedAt).Milliseconds(),
+			"total_duration_ms", activeClock.Now().Sub(startedAt).Milliseconds())
 		return nil, fmt.Errorf("backup: %w", err)
 	}
+	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML backup complete",
+		"backup_path", backupPath,
+		"backup_duration_ms", activeClock.Now().Sub(backupStartedAt).Milliseconds())
+	writeStartedAt := activeClock.Now()
 	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, req.GetContent()); writeErr != nil {
 		s.log.ErrorContext(ctx, "opnsensesvc: WriteConfigXML write failed",
-			"err", writeErr, "backup_path", backupPath)
+			"err", writeErr,
+			"backup_path", backupPath,
+			"bytes_in", len(req.GetContent()),
+			"write_duration_ms", activeClock.Now().Sub(writeStartedAt).Milliseconds(),
+			"total_duration_ms", activeClock.Now().Sub(startedAt).Milliseconds())
 		return nil, fmt.Errorf("write: %w", writeErr)
 	}
 	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML",
-		"backup_path", backupPath, "bytes_written", len(req.GetContent()))
+		"backup_path", backupPath,
+		"bytes_written", len(req.GetContent()),
+		"write_duration_ms", activeClock.Now().Sub(writeStartedAt).Milliseconds(),
+		"total_duration_ms", activeClock.Now().Sub(startedAt).Milliseconds())
 	return &mwanv1.WriteConfigXMLResponse{
 		BackupPath:   backupPath,
 		BytesWritten: int64(len(req.GetContent())),
