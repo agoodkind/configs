@@ -104,8 +104,8 @@ assume from the repo.
 | `plugin_os_tayga_installed` | `pkg info os-tayga` | exit 0. Skip if not in baseline. | regression |
 | `plugin_os_tayga_running` | `service tayga status` | exit 0. | regression |
 | `plugin_os_tayga_forwarding` | `nat64_v6_only_to_v4_works` from 2.a covers the data-plane proof. | (linked check) | (linked) |
-| `plugin_os_captiveportal_installed` | `pkg info os-captiveportal` | exit 0. Skip if not in baseline. | regression |
-| `plugin_os_captiveportal_zones_active` | `configctl captiveportal list_zones` | non-empty list when baseline had zones. | regression |
+| `plugin_os_captiveportal_installed` | (deprecated) | (replaced by `core_captiveportal_zones_active` in 2.g, since prod runs the core captive portal feature, not the `os-captiveportal` plugin) | (linked) |
+| `plugin_os_captiveportal_zones_active` | (deprecated) | (replaced by `core_captiveportal_zones_active` in 2.g) | (linked) |
 | `plugin_os_acme_client_installed` | `pkg info os-acme-client` | exit 0. Skip if not in baseline. | regression |
 | `plugin_os_acme_client_certs_unexpired` | parse `/var/etc/acme-client/certs/*.crt` with `openssl x509 -enddate -noout` | every cert listed in baseline still parses and `notAfter` is in the future. | regression |
 | `pkg_audit_no_vulnerable_packages` | `pkg audit -F` then `pkg audit` | exit 0 (no vulnerable packages). | advisory |
@@ -307,3 +307,313 @@ Scope:
 
 Out of scope: the upgrade procedure itself, performance benchmarks
 (see O-3), and any GUI changes.
+
+---
+
+## 9. Resolved decisions
+
+This section records decisions on the open questions in section 7. It was
+appended on May 8 2026 by an investigation pass on the
+`mwan-153-questions` branch off `main` at `e7045e0`. Each subsection cites
+the artefact or doc that backs the decision so the reasoning is auditable.
+
+### 9.1 O-1 DHCP lease tolerance (resolved: ratify with a settle window)
+
+Decision: ratify the proposed default `tolerance = max(2, 0.1 * baseline_count)`,
+and add a 5-minute settle window between upgrade-finalize and the
+`dhcpv4_leases_present` / `dhcpv6_ia_na_present` / `dhcpv6_ia_pd_present`
+post-upgrade run.
+
+Rationale: the tolerance has to absorb two effects. The first is clients
+that disappear off the LAN during the upgrade window (laptops sleeping,
+phones moving to LTE) and have not re-DHCPed yet. The second is leases
+that expired during the upgrade reboot. The 10% floor with a 2-lease
+absolute minimum covers normal LAN churn for both small and large LANs.
+The settle window protects against the case where the post-upgrade run
+fires while the LAN is still re-establishing; without it a busy LAN can
+look like a regression for sixty seconds and then self-heal.
+
+Implementation note: add a `--settle-after-upgrade=5m` flag to the runner
+described in section 6, with the default applied to DHCP-related checks
+only. Other checks (BGP, kernel routes, plugins) run immediately so the
+operator sees blocker conditions as fast as possible.
+
+Source for the tolerance constant: `Section 2.b dhcpv4_leases_present`
+already cited the operator-defined tolerance as O-1. No new dependency.
+
+### 9.2 O-2 captive portal in prod (resolved: prod runs the core captive portal feature, not the os-captiveportal plugin)
+
+Decision: prod actively runs OPNsense's core captive portal feature with
+one enabled zone. The `os-captiveportal` plugin is not relevant; captive
+portal is a core feature in 25.7 and 26.1 (per
+`MWAN-151-26x-changelog-deep-dive.md` section 2 row 5). The matrix should
+keep captive portal checks in scope, retarget them at the core feature,
+and skip them only on environments where the captive portal feature is
+disabled.
+
+Evidence (read May 8 2026): the redacted prod config at
+`/Users/agoodkind/Sites/configs/.claude/worktrees/mwan-redact-opnsense-config/tmp/opnsense-prod-config.redacted.xml`
+declares one zone at line 2882:
+
+```
+<captiveportal version="1.0.4" persisted_at="1762661697.73">
+  <zones>
+    <zone uuid="c561c16d-1165-4df3-8f9f-23626c79fa12">
+      <enabled>1</enabled>
+      <zoneid>0</zoneid>
+      <interfaces>opt5</interfaces>
+      ...
+      <description>Chaotic Dog Captive Portal</description>
+    </zone>
+  </zones>
+```
+
+Twelve `__captiveportal_zone_0` references appear in pf table aliases
+across the file (rules and counts listed at lines 818, 822, 852, 856,
+886, 890, 920, 924, 2093, 2097, 2171, 2195), confirming the zone is
+wired into the active ruleset.
+
+The installed plugin list (line 255) is
+`os-acme-client,os-crowdsec,os-frr,os-git-backup,os-nginx,os-qemu-guest-agent,os-redis,os-tayga`.
+`os-captiveportal` is not in that list. Captive portal is a core feature.
+
+The two existing checks `plugin_os_captiveportal_installed` and
+`plugin_os_captiveportal_zones_active` in section 2.d are therefore
+mis-targeted. Section 9.4 below adds replacement core-targeted checks to
+section 2.g and marks the old plugin-targeted rows as deprecated (they are
+not removed so the audit trail is preserved).
+
+Per-environment applicability: the matrix runner should mark each captive
+portal check with `applies_when = "captiveportal_zones_present_in_baseline"`
+so an environment with no zones (e.g. the suburban testbed) skips them
+without reporting a regression. The applies-when predicate evaluates the
+baseline result, not a static config flag.
+
+### 9.3 O-2 plugin-set update (informational)
+
+While answering O-2 the prod plugin set was found to differ from what
+MWAN-151 derived from the testbed config.xml. The prod set adds
+`os-crowdsec`, `os-git-backup`, `os-nginx`, and `os-redis` beyond
+`os-frr`, `os-qemu-guest-agent`, `os-tayga`, and `os-acme-client`.
+
+Recommendation: extend the section 2.d table with installed/running
+checks for `os-crowdsec`, `os-git-backup`, `os-nginx`, and `os-redis` at
+`regression` severity, gated on the plugin being present in baseline.
+The shape is the same as the existing rows, so the runner does not need
+schema changes. None of these plugins is in the upgrade-blocker path
+(routing, DNS, NAT, BGP, captive portal); they are auxiliary services.
+
+This recommendation is informational and does not require action in this
+ticket. The matrix runner reads the plugin list from baseline, so a
+runner that walks `pkg info -a | grep ^os-` and emits a check per row
+satisfies this without a hand-maintained list. The follow-up ticket in
+section 8 should specify "discover plugins from baseline" as the runner
+contract rather than hard-code the list.
+
+### 9.4 O-2 replacement checks (added to section 2.g new surface)
+
+Two new core-targeted checks land in a new section 2.g, "Captive portal
+core feature". They target the core feature path that prod actually uses
+and replace the deprecated plugin rows in section 2.d:
+
+| Check name | Command | Pass criterion | Severity |
+|---|---|---|---|
+| `core_captiveportal_zones_active` | over SSH on OPNsense: `configctl captiveportal list_zones` | every zone in baseline appears with the same `zoneid`. Skip if baseline has no zones. Source: prod config zone `c561c16d-1165-4df3-8f9f-23626c79fa12` at line 2882 of `opnsense-prod-config.redacted.xml`. | regression |
+| `core_captiveportal_pf_aliases_present` | over SSH on OPNsense: `pfctl -t __captiveportal_zone_0 -T show \| wc -l` for each zone in baseline | exit 0 (the alias exists). Source: 12 references to `__captiveportal_zone_0` in active pf rules in `opnsense-prod-config.redacted.xml`. Skip if baseline had no zones. | regression |
+
+The ApiMutableModelControllerBase POST-only hardening change in 26.1 (per
+MWAN-151 section 6) does not affect either check, since both are
+`configctl`/`pfctl` reads over SSH, not API calls.
+
+### 9.5 O-3 throughput and latency probes (resolved: out of scope, follow-up filed in section 11)
+
+Decision: throughput and latency probes are out of scope for this matrix.
+A follow-up ticket should track continuous performance measurement as a
+separate concern.
+
+Rationale: an upgrade-validation matrix proves "the same surfaces still
+work" by comparing two point-in-time runs. Performance characterization
+needs a stable test bed, a load generator, a multi-minute observation
+window, and a separate baseline regimen. Mixing the two conflates "did
+the upgrade break something" with "is the box big enough", and the noise
+floor on the second question is much higher.
+
+The MWAN-151 risk register identifies one performance-relevant 26.1
+change (R5: vtnet LRO off-by-default and `VIRTIO_NET_HDR_F_DATA_VALID`
+removed). The 26.x-specific check `vtnet_hwlro_disabled` in section 9.7
+covers the configuration-side observation. The data-plane impact is left
+to the separate performance ticket.
+
+The follow-up ticket is filed in section 11 below.
+
+### 9.6 O-4 external monitoring integration (resolved: in-monolith watchdog is the external monitor)
+
+Decision: there is no external monitoring stack today. The mwan watchdog
+running on the Proxmox host plays the role of an external monitor for
+OPNsense, since its probe path goes Proxmox -> OPNsense -> MWAN -> WAN.
+The matrix should include a check that the watchdog reports the OPNsense
+path healthy after the upgrade.
+
+Evidence (read May 8 2026):
+
+- A grep across `ansible/`, `proxmox/`, and `mwan/` for prometheus,
+  grafana, alertmanager, smokeping, librenms, zabbix, netdata, telegraf,
+  influxdb, nagios, uptimerobot, healthchecks.io, cronitor, pingdom,
+  statuscake returned no actual configuration. The single match was an
+  unrelated reference inside MWAN-72.
+- The prod plugin set in `opnsense-prod-config.redacted.xml` line 255
+  does not include `os-monit`, `os-nrpe`, `os-net-snmp`, `os-statuspage`,
+  `os-zabbix-agent`, `os-zabbix-proxy`, `os-prometheus-node-exporter`,
+  `os-telegraf`, or `os-haproxy`. None of the standard "agent on the
+  firewall, scraper off-host" patterns is in place.
+- `<Syslog>` is enabled (line 4198, `<enabled>1</enabled>`,
+  `maxpreserve=31`) but `<destinations />` is empty, so no remote syslog
+  receiver is configured. There is no off-box log telemetry today.
+- The mwan watchdog at `mwan/proxmox/scripts/mwan-watchdog.sh` runs on
+  the Proxmox host and probes the path "Proxmox -> OPNsense (default gw)
+  -> MWAN internal link -> WAN" (line 13 comment). It writes pre-deploy
+  and known-good snapshots and emits state-change emails through
+  `internal/notify`. This is the closest thing to external monitoring
+  we run.
+- `internal/notify` (per `AGENTS.md` lines 114-127) is the chokepoint for
+  ifmgr alerts, watchdog alerts, and other transition emails.
+
+Two new checks land in section 2.h, "Off-box health observation":
+
+| Check name | Command | Pass criterion | Severity |
+|---|---|---|---|
+| `watchdog_path_healthy` | on Proxmox host: tail `journalctl -u mwan-watchdog --since '5 minutes ago' \| grep -E 'state=(OK\|degraded\|fault)' \| tail -1` | last logged state is `OK`. Source: `mwan/proxmox/scripts/mwan-watchdog.sh` lines 13, 170, 189, 347. | blocker |
+| `notify_email_path_intact` | on Proxmox host: `mwan notify --self-test --dry-run` (proposed CLI; runner falls back to `mwan agent ping` if the self-test does not exist on the deployed binary) | exit 0. Confirms the alert path that would carry an upgrade failure notice still works. Source: `internal/notify` chokepoint per `AGENTS.md` lines 114-127. | regression |
+
+The matrix does not need a real external SMTP probe; the existing
+`internal/notify` self-test (or its fallback) is sufficient to confirm
+the path is intact. If a future ticket adds a Prometheus or similar
+stack, replace `watchdog_path_healthy` with the appropriate scrape
+target check; the row's intent stays the same.
+
+### 9.7 O-5 26.x-specific checks (resolved: six new checks added, sourced from MWAN-151 risks)
+
+Decision: add six 26.x-specific checks to existing surface tables. Each
+check ties back to a MWAN-151 risk register entry that has an observable
+post-upgrade signal. Risks without an observable signal (R9 plugin
+deprecation scan, R12 doc-only line-number drift) remain follow-ups.
+
+The new checks:
+
+| Check name | Surface | Command | Pass criterion | Severity | Risk |
+|---|---|---|---|---|---|
+| `running_version_is_26x` | 2.f Web UI/API (extends `api_firmware_running_version_matches_target`) | `curl -k -u <key>:<secret> https://<addr>/api/core/firmware/status` parsed for `product_version` | starts with `26.`. Source: MWAN-151 section 1 (canonical upgrade target is 26.1). | blocker | (general) |
+| `kernel_default_v4_persists_post_finalize` | 2.a Routing (extends `kernel_default_v4_present`) | `netstat -rn -f inet \| awk '$1=="default"{print $2}'` sampled three times at 30s intervals starting 60s after `firmware-finalize` exits | every sample non-empty and equal. Catches the scenario where `system_routing_configure` flushes the BGP-installed default and FRR has not re-installed it yet. Source: MWAN-151 R1; `OPNSENSE-OPERATIONAL-NOTES.md` recovery snippet "BGP default got wiped on v4 + v6". | blocker | R1 |
+| `kernel_default_v6_persists_post_finalize` | 2.a Routing (extends `kernel_default_v6_present`) | `netstat -rn -f inet6 \| awk '$1=="default"{print $2}'` sampled three times at 30s intervals starting 60s after finalize | same as v4. Source: MWAN-151 R1. | blocker | R1 |
+| `vtnet_hwlro_disabled` | 2.i (new section, "Kernel and driver defaults") | over SSH: `sysctl -n dev.vtnet.0.tx_hwlro` (and per additional vtnet index in baseline) | value `0` post-upgrade; was likely `1` on 25.7. The flip is the documented 26.1 default change. Source: MWAN-151 section 4 commit `c7cd4884 vtnet: disable hardware TCP LRO by default`. | advisory (not regression: the new default is correct for a forwarding box) | R5 |
+| `interfaces_set_unchanged` | 2.i (new section) | over SSH: `ifconfig -l \| tr ' ' '\n' \| sort` | output equals baseline (set equality). Catches the case where the interfaces.inc refactor in 26.1 reorders or drops a sub-interface. Source: MWAN-151 R6, the +553/-507 diff in `src/etc/inc/interfaces.inc`. | regression | R6 |
+| `quagga_api_post_only` | 2.f Web UI/API | `curl -k -u <key>:<secret> -X GET https://<addr>/api/quagga/bgp/set` (note GET, not POST) | HTTP 405 or HTTP 400 (method not allowed). Confirms the 26.1 MVC POST-only hardening took effect on the os-frr controllers. Source: MWAN-151 section 6 "mvc: fix CSRF vulnerability in multiple API endpoints by enforcing POST-only requests". | regression | (security posture) |
+
+A new section 2.i ("Kernel and driver defaults") is added by these
+rows. The runner does not need schema changes; the existing
+`canonical schema` in section 3 covers the new check shapes.
+
+Out of the MWAN-151 risk register, two risks are explicitly not
+checkable here:
+
+- R9 (plugin source still calling deprecated `mwexec_bg`/`mwexec`): a
+  source-tree scan is the right shape, not a post-upgrade host probe.
+  Filed as follow-up in section 11.
+- R12 (doc line-number drift in `interfaces.inc`): documentation
+  maintenance only. Out of scope.
+
+R3 (CaptivePortal `<roaming>` migration), R4 (Radvd migration), R8
+(os-tayga 1.5 behavior) and R11 (Suricata 8) are covered by existing
+rows in the matrix (`core_captiveportal_zones_active`,
+`api_firmware_status_ok` config-diff, `nat64_v6_only_to_v4_works`, and
+the IDS subtree being absent in our config respectively). No new check
+needed for those.
+
+### 9.8 O-6 baseline artefact storage location (resolved: align with MWAN-152's state directory)
+
+Decision: store baseline and post-upgrade artefacts under
+`/var/lib/mwan/upgrade/<vmid>/<deploy-id>/` on the Proxmox host (vault),
+mirroring the layout MWAN-152 already uses. Use these filenames:
+
+- `pre-baseline.json` (the pre-upgrade matrix run, one record per check).
+- `post-result.json` (the post-upgrade matrix run, same shape).
+- `diff-report.json` (the per-check diff outcomes from section 5).
+- `snapshot-meta.json` (Proxmox snapshot name and timestamp, mirrors
+  MWAN-152 section 4.6 metadata.json).
+
+Retention: keep the artefact directory alongside the MWAN-152 snapshot
+until `mwan opnsense-upgrade commit` runs. After commit, retain
+artefacts for 30 days for post-mortem use, then garbage-collect. The
+30-day window is longer than MWAN-152's snapshot retention because the
+artefacts are small JSON files and historical baselines are useful for
+diagnosing slow-burning regressions; the snapshot itself is GBs and
+cannot be kept that long. The retention rule is independent and does
+not change the MWAN-152 snapshot lifecycle.
+
+Evidence: the path matches MWAN-152 design doc section 4.7 ("`<state_dir>`
+defaults to `/var/lib/mwan/upgrade/`") and section 4.4 ("Capture
+pre-upgrade state under `<state_dir>/<vmid>/<deploy-id>/`"). The earlier
+proposal in the open-question text used `/var/lib/mwan/upgrades/`
+(plural with `s`). The MWAN-152 spelling is `upgrade/` (singular). The
+singular form wins because changing MWAN-152 would be invasive and the
+two designs need to share a directory.
+
+Cross-link: the `mwan opnsense-validate` runner from section 8 should
+take a `--state-dir` flag with the same default as MWAN-152's
+`mwan opnsense-upgrade`, so the operator only ever sets one path.
+
+### 9.9 Summary of resolutions
+
+- O-1: ratified default with a 5-minute settle window. Resolved.
+- O-2: prod runs the core captive portal feature; checks retargeted to
+  section 2.g. Resolved.
+- O-3: out of scope; follow-up filed in section 11. Resolved.
+- O-4: in-monolith watchdog is the external monitor; two new checks in
+  section 2.h. Resolved.
+- O-5: six 26.x-specific checks added across sections 2.a, 2.f, 2.i,
+  sourced from MWAN-151 risks. Resolved.
+- O-6: storage path aligned with MWAN-152 (`/var/lib/mwan/upgrade/`,
+  singular). 30-day artefact retention chosen. Resolved.
+
+All six open questions in section 7 have a concrete decision.
+
+---
+
+## 10. New surfaces introduced by section 9
+
+These are the new section labels referenced in section 9. They are
+listed here so the runner schema in section 3 stays self-contained.
+
+### 2.g Captive portal core feature
+
+Two checks defined in section 9.4. Apply only when baseline records at
+least one captive portal zone.
+
+### 2.h Off-box health observation
+
+Two checks defined in section 9.6. The first (`watchdog_path_healthy`)
+runs on the Proxmox host; the second (`notify_email_path_intact`) runs
+on the Proxmox host as well. Neither runs on the OPNsense guest.
+
+### 2.i Kernel and driver defaults
+
+Two checks defined in section 9.7 (`vtnet_hwlro_disabled`,
+`interfaces_set_unchanged`). Both run over SSH on the OPNsense guest.
+
+---
+
+## 11. Follow-up tickets out of section 9
+
+Two follow-ups are recommended off this resolution pass. Neither
+blocks the matrix runner ticket in section 8.
+
+1. `MWAN-XXX: continuous throughput and latency monitoring for OPNsense`
+   (per O-3). Scope: pick a load generator, define a steady-state and a
+   stressed measurement, capture pre- and post-upgrade samples,
+   integrate with the watchdog notification path. Out of scope: making
+   it a blocker for upgrades.
+2. `MWAN-XXX: scan os-frr 1.51 and os-tayga 1.5 source for mwexec_bg/mwexec calls`
+   (per MWAN-151 R9). Scope: source-tree grep for the deprecated
+   FreeBSD/OPNsense `mwexec_bg(` and `mwexec(` wrappers in the two
+   plugin trees we depend on, file an upstream fix or pin to a known
+   working version if any are found. Independent of upgrade timing.
