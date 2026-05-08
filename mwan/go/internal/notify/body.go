@@ -1,4 +1,4 @@
-package logging
+package notify
 
 import (
 	"log/slog"
@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// dropKeys are slog attrs that already appear in the email subject or in
-// the host-snapshot footer rendered by send-email, so we strip them from
-// the body to avoid duplication.
+// dropKeys are slog attrs that already appear in the email subject or
+// in the host-snapshot footer rendered by send-email, so they are
+// stripped from the body to avoid duplication.
 var dropKeys = map[string]struct{}{
 	"level":  {},
 	"module": {},
@@ -29,9 +29,9 @@ var whereKeys = []string{"iface", "role", "daemon", "phase"}
 
 // BuildEmailBody renders a tight body for the alert email above the
 // host-snapshot footer that send-email appends downstream. boundAttrs
-// represents attrs already bound on the handler (e.g. via WithAttrs) and
-// are merged with the record's per-call attrs; per-call attrs win on key
-// collision.
+// represents attrs already bound on the handler (e.g. via WithAttrs)
+// and are merged with the record's per-call attrs; per-call attrs win
+// on key collision.
 func BuildEmailBody(r slog.Record, boundAttrs []slog.Attr) string {
 	merged := mergeAttrs(boundAttrs, r)
 
@@ -75,9 +75,9 @@ func mergeAttrs(bound []slog.Attr, r slog.Record) map[string]string {
 	return out
 }
 
-// buildWhat renders the What: block from the err attr. If err contains a
-// stderr=... substring, the stderr is split onto its own line under the
-// main message line for readability.
+// buildWhat renders the What: block from the err attr. If err contains
+// a stderr=... substring, the stderr is split onto its own line under
+// the main message line for readability.
 func buildWhat(attrs map[string]string) string {
 	errVal, ok := attrs["err"]
 	if !ok {
@@ -113,8 +113,8 @@ func splitStderr(err string) (string, string) {
 	return main, rest
 }
 
-// buildWhere renders the Where: line. Skips any of (iface, role, daemon,
-// phase) that are not in attrs.
+// buildWhere renders the Where: line. Skips any of (iface, role,
+// daemon, phase) that are not in attrs.
 func buildWhere(attrs map[string]string) string {
 	var parts []string
 	for _, k := range whereKeys {
@@ -154,8 +154,9 @@ func buildTraceLine(attrs map[string]string) string {
 
 // buildSummary collapses (build, commit, dirty, binhash) into a compact
 // string and removes those keys from attrs. The expected mwan attrs are
-// commit (short SHA) and dirty ("clean"|"dirty"); build is sometimes used
-// as an alias for commit. binhash is appended in plain form if present.
+// commit (short SHA) and dirty ("clean"|"dirty"); build is sometimes
+// used as an alias for commit. binhash is appended in plain form if
+// present.
 func buildSummary(attrs map[string]string) string {
 	commit := firstNonEmpty(attrs, "commit", "build")
 	dirty := attrs["dirty"]
@@ -196,10 +197,10 @@ func firstNonEmpty(attrs map[string]string, keys ...string) string {
 	return ""
 }
 
-// buildExtras renders any remaining attrs as Key: value lines, sorted by
-// key. The buildKeys, whereKeys, dropKeys, and trace/err keys have all
-// been removed from attrs by earlier steps, so this only emits genuinely
-// extra context.
+// buildExtras renders any remaining attrs as Key: value lines, sorted
+// by key. The buildKeys, whereKeys, dropKeys, and trace/err keys have
+// all been removed from attrs by earlier steps, so this only emits
+// genuinely extra context.
 func buildExtras(attrs map[string]string) string {
 	if len(attrs) == 0 {
 		return ""
@@ -219,10 +220,11 @@ func buildExtras(attrs map[string]string) string {
 	return strings.Join(lines, "\n")
 }
 
-// titleKey upper-cases the first rune so extra-attr labels read like the
-// other section headers. Multi-word keys with underscores are left as-is
-// because they tend to be machine identifiers (e.g. "remote_addr") and
-// the underscore reads better than space-separated capitalization.
+// titleKey upper-cases the first rune so extra-attr labels read like
+// the other section headers. Multi-word keys with underscores are left
+// as-is because they tend to be machine identifiers (e.g.
+// "remote_addr") and the underscore reads better than space-separated
+// capitalization.
 func titleKey(k string) string {
 	if k == "" {
 		return k

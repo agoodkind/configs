@@ -10,12 +10,12 @@ import (
 	"time"
 )
 
-// captureHandler is a minimal slog.Handler that records every Record it
-// receives so tests can assert both the level/message of each emit (the
-// gate that determines whether the email handler delivers a recovery
-// line) and the total number of emits across a window (the gate that
-// determines whether RepeatEvery / RepeatResolver suppress steady-state
-// noise).
+// captureHandler records every slog.Record so adapter tests can assert
+// what the wrapped notify.Manager emitted via the journald path. The
+// notify package owns the broader state-change tests under
+// internal/notify/manager_test.go; this file covers only the
+// AlertManager → notify.Notifier adapter surface (variadic ...any tail
+// translation, signature preservation for module callers).
 type captureHandler struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -41,172 +41,96 @@ func (h *captureHandler) snapshot() []slog.Record {
 	return out
 }
 
-func (h *captureHandler) count() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.records)
-}
-
-func newAlertManagerForTest() (*AlertManager, *captureHandler) {
+// TestAlertManager_NotifyResolveAdapter checks that the adapter forwards
+// a Notify and a Resolve through to the wrapped Notifier and that both
+// the alert_kind and alert_key attributes survive the variadic-to-Attr
+// conversion. The notify package separately tests the state machine, so
+// this test only confirms the bridge.
+func TestAlertManager_NotifyResolveAdapter(t *testing.T) {
 	h := &captureHandler{}
 	log := slog.New(h)
-	return NewAlertManager(log, AlertConfig{}), h
-}
-
-func TestResolveEmitsAtNotifyLevelWarn(t *testing.T) {
-	a, h := newAlertManagerForTest()
+	a := NewAlertManager(log, AlertConfig{})
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
-	a.Notify(now, slog.LevelWarn, "wg_health", "peer-EYvlZyou", "stalled")
-	a.Resolve(now.Add(time.Minute), "wg_health", "peer-EYvlZyou", "back to good")
+	a.Notify(now, slog.LevelWarn, "kind", "key", "broken", "extra", "ctx")
+	if !a.Active("kind", "key") {
+		t.Fatal("expected Active=true after Notify")
+	}
+	a.Resolve(now.Add(time.Minute), "kind", "key", "fixed")
+	if a.Active("kind", "key") {
+		t.Fatal("expected Active=false after Resolve")
+	}
 
 	records := h.snapshot()
 	if len(records) != 2 {
 		t.Fatalf("got %d records, want 2", len(records))
 	}
-	resolve := records[1]
-	if resolve.Level != slog.LevelWarn {
-		t.Errorf("resolve level=%v, want WARN", resolve.Level)
+	if records[0].Level != slog.LevelWarn {
+		t.Errorf("notify level=%v, want WARN", records[0].Level)
 	}
-	wantMsg := "RECOVERED: back to good"
-	if resolve.Message != wantMsg {
-		t.Errorf("resolve message=%q, want %q", resolve.Message, wantMsg)
+	if records[1].Level != slog.LevelWarn {
+		t.Errorf("resolve level=%v, want WARN (matches notify level)", records[1].Level)
 	}
-}
-
-func TestResolveEmitsAtNotifyLevelError(t *testing.T) {
-	a, h := newAlertManagerForTest()
-	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-
-	a.Notify(now, slog.LevelError, "wg_health", "peer-jz3eKGui", "remote wg show failed")
-	a.Resolve(now.Add(time.Minute), "wg_health", "peer-jz3eKGui", "remote wg show ok")
-
-	records := h.snapshot()
-	if len(records) != 2 {
-		t.Fatalf("got %d records, want 2", len(records))
-	}
-	resolve := records[1]
-	if resolve.Level != slog.LevelError {
-		t.Errorf("resolve level=%v, want ERROR", resolve.Level)
-	}
-	wantMsg := "RECOVERED: remote wg show ok"
-	if resolve.Message != wantMsg {
-		t.Errorf("resolve message=%q, want %q", resolve.Message, wantMsg)
-	}
-}
-
-func TestResolveOnUnknownKeyIsNoOp(t *testing.T) {
-	a, h := newAlertManagerForTest()
-	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-
-	// Must not panic and must emit nothing: there is no active alert for
-	// this (kind, key), so Resolve has no recovery to announce.
-	a.Resolve(now, "wg_health", "never-fired", "spurious")
-
-	if got := len(h.snapshot()); got != 0 {
-		t.Errorf("emitted %d records on unknown-key Resolve, want 0", got)
-	}
-}
-
-func TestResolveDoesNotDoublePrefixRecovered(t *testing.T) {
-	a, h := newAlertManagerForTest()
-	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-
-	a.Notify(now, slog.LevelError, "kind", "key", "broken")
-	// Caller has already added the prefix; AlertManager must not stack it.
-	a.Resolve(now.Add(time.Minute), "kind", "key", "RECOVERED: fixed itself")
-
-	records := h.snapshot()
-	if len(records) != 2 {
-		t.Fatalf("got %d records, want 2", len(records))
-	}
-	if got := records[1].Message; got != "RECOVERED: fixed itself" {
-		t.Errorf("resolve message=%q, want %q", got, "RECOVERED: fixed itself")
-	}
-}
-
-// TestAlertManager_StateChangeOnlyByDefault drives Notify many times across
-// simulated time with RepeatEvery=0 and no per-module override. Only the
-// initial transition should emit; subsequent Notify calls collapse into the
-// already-active state.
-func TestAlertManager_StateChangeOnlyByDefault(t *testing.T) {
-	h := &captureHandler{}
-	log := slog.New(h)
-	am := NewAlertManager(log, AlertConfig{RepeatEvery: 0})
-
-	start := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 240; i++ {
-		now := start.Add(time.Duration(i) * time.Minute)
-		am.Notify(now, slog.LevelWarn, "wg-peer-stalled", "peer1", "stalled")
+	if got := records[1].Message; got != "RECOVERED: fixed" {
+		t.Errorf("resolve message=%q, want %q", got, "RECOVERED: fixed")
 	}
 
-	if got := h.count(); got != 1 {
-		t.Fatalf("expected exactly 1 emit (transition only), got %d", got)
-	}
-}
-
-// TestAlertManager_RepeatEveryGlobal drives Notify every minute for two
-// hours with RepeatEvery=30m. Expect 4 emits: the transition at t=0, then
-// repeats at t=30m, t=60m, t=90m. The Notify at t=120m is exactly at the
-// next boundary; with our minute-stepped clock the boundary at t=120m is
-// also a repeat tick, so we drive Notify for i in [0, 120) to land on
-// 4 emits.
-func TestAlertManager_RepeatEveryGlobal(t *testing.T) {
-	h := &captureHandler{}
-	log := slog.New(h)
-	am := NewAlertManager(log, AlertConfig{RepeatEvery: 30 * time.Minute})
-
-	start := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 120; i++ {
-		now := start.Add(time.Duration(i) * time.Minute)
-		am.Notify(now, slog.LevelWarn, "wg-peer-stalled", "peer1", "stalled")
-	}
-
-	if got := h.count(); got != 4 {
-		t.Fatalf("expected 4 emits (transition + 3 repeats), got %d", got)
-	}
-}
-
-// TestAlertManager_PerModuleOverride verifies that the RepeatResolver
-// short-circuits the global RepeatEvery on a per-alert-kind basis.
-// PerModule says wg-peer-stalled repeats every 24h, so during a 2h window
-// only the transition emit fires. A different kind under the same window
-// falls back to the 30m global cadence and emits 4 times.
-func TestAlertManager_PerModuleOverride(t *testing.T) {
-	h := &captureHandler{}
-	log := slog.New(h)
-
-	perKind := map[string]time.Duration{
-		"wg-peer-stalled": 24 * time.Hour,
-	}
-	resolver := func(kind, _ string) time.Duration {
-		if d, ok := perKind[kind]; ok {
-			return d
+	// Confirm the variadic ...any tail produced an extra=ctx attr on the
+	// notify record. The adapter pairs alternating string/any entries.
+	var sawExtra bool
+	records[0].Attrs(func(a slog.Attr) bool {
+		if a.Key == "extra" && a.Value.String() == "ctx" {
+			sawExtra = true
 		}
-		return 30 * time.Minute
-	}
-	am := NewAlertManager(log, AlertConfig{
-		RepeatEvery:    30 * time.Minute,
-		RepeatResolver: resolver,
+		return true
 	})
+	if !sawExtra {
+		t.Error("expected variadic field extra=ctx to survive translation")
+	}
+}
 
-	start := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 120; i++ {
-		now := start.Add(time.Duration(i) * time.Minute)
-		am.Notify(now, slog.LevelWarn, "wg-peer-stalled", "peer1", "stalled")
-	}
-	stalledCount := h.count()
-	if stalledCount != 1 {
-		t.Fatalf("wg-peer-stalled with 24h override: expected 1 emit, got %d", stalledCount)
-	}
+// TestAlertManager_OddVariadicTailDropsDanglingKey confirms the adapter
+// does not panic on an odd-length tail and silently drops the dangling
+// key (mirrors slog's loose-pair tolerance).
+func TestAlertManager_OddVariadicTailDropsDanglingKey(t *testing.T) {
+	h := &captureHandler{}
+	log := slog.New(h)
+	a := NewAlertManager(log, AlertConfig{})
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
-	for i := 0; i < 120; i++ {
-		now := start.Add(time.Duration(i) * time.Minute)
-		am.Notify(now, slog.LevelWarn, "wg-reconcile-failed", "peer1", "reconcile failed")
+	a.Notify(now, slog.LevelError, "kind", "key", "msg",
+		"complete_pair_key", "complete_pair_val",
+		"dangling_key",
+	)
+
+	records := h.snapshot()
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
 	}
-	totalCount := h.count()
-	reconcileCount := totalCount - stalledCount
-	if reconcileCount != 4 {
-		t.Fatalf("wg-reconcile-failed using global 30m: expected 4 emits, got %d", reconcileCount)
+	var sawComplete, sawDangling bool
+	records[0].Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "complete_pair_key":
+			sawComplete = true
+		case "dangling_key":
+			sawDangling = true
+		}
+		return true
+	})
+	if !sawComplete {
+		t.Error("expected complete pair to survive translation")
+	}
+	if sawDangling {
+		t.Error("dangling key should be dropped, not emitted")
+	}
+}
+
+// TestWrapNotifier_NilDegradesToNull confirms WrapNotifier(nil) returns
+// an AlertManager that does not panic and reports Active=false.
+func TestWrapNotifier_NilDegradesToNull(t *testing.T) {
+	a := WrapNotifier(nil)
+	a.Notify(time.Now(), slog.LevelWarn, "kind", "key", "msg")
+	if a.Active("kind", "key") {
+		t.Error("nil-wrapped AlertManager.Active should always return false")
 	}
 }

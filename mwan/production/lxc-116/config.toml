@@ -1,5 +1,17 @@
 hostname = "mwan-failover"
 
+# The smtp2go_api_key is intentionally absent here. The mwan binary reads it
+# from the SMTP2GO_API_KEY environment variable, which systemd loads from
+# /etc/mwan/secrets.env via the EnvironmentFile= directive on each unit.
+# Ansible renders /etc/mwan/secrets.env from the vault during deploy.
+[email]
+alert_email = "alex@goodkind.io"
+from = "mwan@goodkind.io"
+subject_prefix = "[MWAN-vault-failover]"
+bind_iface = ""
+min_level = "ERROR"
+cooldown = "5m"
+
 [agent]
 vsock_port = 0
 tcp_addr = "[::]:50052"

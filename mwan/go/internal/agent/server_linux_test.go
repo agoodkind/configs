@@ -12,7 +12,7 @@ import (
 
 func TestGetSystemInfo_Linux(t *testing.T) {
 	t.Parallel()
-	srv := NewServer("/x", testLogger(t))
+	srv := NewServer("/x", testLogger(t), nil, nil)
 	cli := startTestServer(t, srv)
 	res, err := cli.GetSystemInfo(context.Background(), &mwanv1.GetSystemInfoRequest{})
 	if err != nil {
