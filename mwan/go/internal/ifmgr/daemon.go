@@ -59,8 +59,15 @@ type DaemonConfig struct {
 	// in passive (RA-monitoring-only) mode.
 	EnableRA bool
 
-	// AlertRepeatEvery is passed to AlertManager. Zero disables repeats.
+	// AlertRepeatEvery is the global default repeat cadence passed to
+	// AlertManager. Zero disables repeats (alerts fire on transition only).
+	// Used as a fallback when AlertRepeatResolver is nil or returns 0.
 	AlertRepeatEvery time.Duration
+
+	// AlertRepeatResolver, when non-nil, lets the caller override the
+	// repeat cadence on a per-(kind, key) basis. AlertManager calls this
+	// for every Notify; returning 0 disables repeats for that pair.
+	AlertRepeatResolver func(kind, key string) time.Duration
 
 	// ModuleConfigs holds per-module runtime configs keyed by module name.
 	// Each module's Constructor receives ModuleConfigs[Name()].
@@ -169,10 +176,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	d.env = &Env{
-		Iface:   d.cfg.Iface,
-		Sysctl:  netif.NewProcSysctlRunner(d.log, false),
-		Log:     d.log,
-		Alerts:  NewAlertManager(d.log, AlertConfig{RepeatEvery: d.cfg.AlertRepeatEvery}),
+		Iface:  d.cfg.Iface,
+		Sysctl: netif.NewProcSysctlRunner(d.log, false),
+		Log:    d.log,
+		Alerts: NewAlertManager(d.log, AlertConfig{
+			RepeatEvery:    d.cfg.AlertRepeatEvery,
+			RepeatResolver: d.cfg.AlertRepeatResolver,
+		}),
 		Monitor: mon,
 		DHCP:    dhcpClient,
 		RA:      raClient,

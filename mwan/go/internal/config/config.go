@@ -236,6 +236,21 @@ type IfMgrSection struct {
 	Debug             bool                         `toml:"debug"`
 	Iface             map[string]IfMgrIfaceSection `toml:"iface"`
 	Modules           IfMgrModulesSection          `toml:"modules"`
+	Alerts            IfMgrAlertsSection           `toml:"alerts"`
+}
+
+// IfMgrAlertsSection controls the per-alert repeat cadence for the
+// AlertManager. RepeatEvery is the global default applied to every alert
+// kind unless overridden in PerModule. PerModule is keyed by alert kind
+// (the first arg to AlertManager.Notify, e.g. "wg-peer-stalled" or
+// "wg-reconcile-failed"), not by module name. Keying on alert kind lets
+// one module emit multiple kinds and get a separate cadence for each.
+//
+// Default behaviour with empty values: RepeatEvery == "0s" means alerts
+// fire once per transition only and never repeat.
+type IfMgrAlertsSection struct {
+	RepeatEvery string            `toml:"repeat_every"`
+	PerModule   map[string]string `toml:"per_module"`
 }
 
 // IfMgrIfaceSection holds one [ifmgr.iface.<name>] sub-table. The map
@@ -393,6 +408,21 @@ func validateIfMgr(cfg *Config) error {
 				slog.Error("config: dhcp_max_backoff invalid", "err", err, "iface", name, "value", iface.DHCPMaxBackoff)
 				return fmt.Errorf("ifmgr.iface.%s.dhcp_max_backoff %q: %w", name, iface.DHCPMaxBackoff, err)
 			}
+		}
+	}
+	if cfg.IfMgr.Alerts.RepeatEvery != "" {
+		if _, err := time.ParseDuration(cfg.IfMgr.Alerts.RepeatEvery); err != nil {
+			slog.Error("config: alerts.repeat_every invalid", "err", err, "value", cfg.IfMgr.Alerts.RepeatEvery)
+			return fmt.Errorf("ifmgr.alerts.repeat_every %q: %w", cfg.IfMgr.Alerts.RepeatEvery, err)
+		}
+	}
+	for kind, val := range cfg.IfMgr.Alerts.PerModule {
+		if val == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(val); err != nil {
+			slog.Error("config: alerts.per_module invalid", "err", err, "kind", kind, "value", val)
+			return fmt.Errorf("ifmgr.alerts.per_module.%s %q: %w", kind, val, err)
 		}
 	}
 	return nil
