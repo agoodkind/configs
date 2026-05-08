@@ -32,6 +32,14 @@ const (
 	subcmdOPNsenseValidate     subcommand = "opnsense-validate"
 )
 
+// dispatchResult describes how dispatchConfigLess handled a subcommand.
+// handled=true means the subcommand ran (caller exits with code).
+// handled=false means the caller should fall through to the config-loading path.
+type dispatchResult struct {
+	handled bool
+	code    int
+}
+
 func main() {
 	if invokedAsOPNsenseDaemon(os.Args[0]) {
 		os.Exit(runOPNsenseDaemon(os.Args[1:]))
@@ -51,45 +59,8 @@ func main() {
 		"build", version.BuildVersionString(),
 		"subcommand", sub)
 
-	// Subcommands that don't need config
-	switch subcommand(sub) {
-	case subcmdHealthCheck:
-		if err := healthcheck.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "mwan health-check: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	case subcmdOPNsenseProbe:
-		if err := runOPNsenseProbe(os.Args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "mwan opnsense-probe: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	case subcmdOPNsense:
-		os.Exit(runOPNsenseDaemon(os.Args[1:]))
-	case subcmdOPNsenseHost:
-		os.Exit(runOPNsenseHost(os.Args[1:]))
-	case subcmdOPNsenseImportConfig:
-		if err := runOPNsenseImportConfig(os.Args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "mwan opnsense-import-config: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	case subcmdOPNsenseUpgrade:
-		if err := runOPNsenseUpgrade(os.Args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "mwan opnsense-upgrade: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	case subcmdOPNsenseValidate:
-		if err := runOPNsenseValidate(os.Args[1:]); err != nil {
-			if !strings.Contains(err.Error(), "help requested") {
-				fmt.Fprintf(os.Stderr, "mwan opnsense-validate: %v\n", err)
-			}
-			os.Exit(1)
-		}
-		return
-	case subcmdAgent, subcmdWatchdog, subcmdIfmgr:
+	if res := dispatchConfigLess(subcommand(sub)); res.handled {
+		os.Exit(res.code)
 	}
 
 	cfg, err := config.Load()
@@ -98,8 +69,62 @@ func main() {
 		os.Exit(1)
 	}
 
+	if code := dispatchWithConfig(sub, subcommand(sub), cfg); code != 0 {
+		os.Exit(code)
+	}
+}
+
+// dispatchConfigLess handles subcommands that do not load mwan config.
+func dispatchConfigLess(sub subcommand) dispatchResult {
+	switch sub {
+	case subcmdHealthCheck:
+		if err := healthcheck.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan health-check: %v\n", err)
+			return dispatchResult{handled: true, code: 1}
+		}
+		return dispatchResult{handled: true, code: 0}
+	case subcmdOPNsenseProbe:
+		if err := runOPNsenseProbe(os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan opnsense-probe: %v\n", err)
+			return dispatchResult{handled: true, code: 1}
+		}
+		return dispatchResult{handled: true, code: 0}
+	case subcmdOPNsense:
+		return dispatchResult{handled: true, code: runOPNsenseDaemon(os.Args[1:])}
+	case subcmdOPNsenseHost:
+		return dispatchResult{handled: true, code: runOPNsenseHost(os.Args[1:])}
+	case subcmdOPNsenseImportConfig:
+		if err := runOPNsenseImportConfig(os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan opnsense-import-config: %v\n", err)
+			return dispatchResult{handled: true, code: 1}
+		}
+		return dispatchResult{handled: true, code: 0}
+	case subcmdOPNsenseUpgrade:
+		if err := runOPNsenseUpgrade(os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "mwan opnsense-upgrade: %v\n", err)
+			return dispatchResult{handled: true, code: 1}
+		}
+		return dispatchResult{handled: true, code: 0}
+	case subcmdOPNsenseValidate:
+		if err := runOPNsenseValidate(os.Args[1:]); err != nil {
+			if !strings.Contains(err.Error(), "help requested") {
+				fmt.Fprintf(os.Stderr, "mwan opnsense-validate: %v\n", err)
+			}
+			return dispatchResult{handled: true, code: 1}
+		}
+		return dispatchResult{handled: true, code: 0}
+	case subcmdAgent, subcmdWatchdog, subcmdIfmgr:
+		return dispatchResult{handled: false}
+	}
+	return dispatchResult{handled: false}
+}
+
+// dispatchWithConfig handles subcommands that need a loaded mwan config.
+// Returns the exit code; 0 means success. The helper prints the error
+// itself so wrapcheck doesn't fire on the cross-package error returns.
+func dispatchWithConfig(rawSub string, sub subcommand, cfg *config.Config) int {
 	var runErr error
-	switch subcommand(sub) {
+	switch sub {
 	case subcmdAgent:
 		runErr = agent.Run(cfg)
 	case subcmdWatchdog:
@@ -112,16 +137,17 @@ func main() {
 	case subcmdIfmgr:
 		runErr = runIfMgr(cfg)
 	case subcmdHealthCheck, subcmdOPNsense, subcmdOPNsenseProbe, subcmdOPNsenseHost, subcmdOPNsenseImportConfig, subcmdOPNsenseUpgrade, subcmdOPNsenseValidate:
-		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", sub)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", rawSub)
+		return 1
 	default:
-		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", sub)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", rawSub)
+		return 1
 	}
 	if runErr != nil {
-		fmt.Fprintf(os.Stderr, "mwan %s: %v\n", sub, runErr)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "mwan %s: %v\n", rawSub, runErr)
+		return 1
 	}
+	return 0
 }
 
 func invokedAsOPNsenseDaemon(argv0 string) bool {
