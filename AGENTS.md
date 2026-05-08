@@ -111,6 +111,34 @@ This replaced keepalived/VRRP. No VIP, no VMAC, no macvlan, no DAD conflicts.
 All BGP parameters (ASN, router ID, neighbors, timers, prefixes) are in `[bgp]`
 section of config.toml.
 
+## Email and alert routing
+
+Forward-looking section. The target state described here lands across slices A through F
+of MWAN-132. Until those slices merge, the live code still has three email surfaces and
+the `internal/notify` package may not yet exist on every branch.
+
+`internal/notify` is the single chokepoint for every outbound email. The contract: every
+email exits through `notify.Notifier`, which owns per-(kind, key) state-change suppression
+and per-kind repeat cadence. Direct calls to `email.Sender.Send` and the slog
+`email_handler` path are removed by slice E.
+
+Three sources currently funnel through (or migrate into) `notify.Manager`:
+
+- ifmgr alerts (`internal/ifmgr/alerts.go`), one alert per (kind, key) state transition.
+  Wg-peer-stalled, oobv6 SLAAC renumber, and similar per-interface conditions.
+- watchdog failover (`internal/watchdog/failover.go`), one email at failover trigger, one
+  at completion, one at recovery, all keyed and deduped.
+- persistent-WARN downgrades (`watchdog.go`, `ops.go`, `agent/server.go`), routed at WARN
+  level with explicit `Resolve` calls when the underlying condition clears.
+
+`SMTP2GO_API_KEY` is injected via systemd `EnvironmentFile=/etc/mwan/secrets.env` rather
+than templated into config.toml. That env-var injection contract is the standard tracked
+under MWAN-131; slice F of MWAN-132 is the first instance.
+
+For full routing details, kind catalog, and failure modes, see
+`mwan/docs/mwan-email-routing.md` and the plan at
+`mwan/docs/MWAN-132-email-unification-plan.md`.
+
 ## MWAN deployment topology
 
 Live state captured 2026-05-07 against current main (`4c754f4`). Mgmt addresses are
