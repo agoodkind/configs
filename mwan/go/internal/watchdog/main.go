@@ -16,6 +16,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/email"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/ops"
 	"goodkind.io/mwan/internal/redteam"
 	"goodkind.io/mwan/internal/tracing"
@@ -196,6 +197,7 @@ func Run(cfg *config.Config) error {
 		limiter:           alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
 		log:               logger,
 		runID:             runID,
+		notifier:          notify.FromConfig(cfg, logger, "mwan-watchdog"),
 		nowFn:             time.Now,
 		failoverMu:        sync.Mutex{},
 		failoverActive:    false,

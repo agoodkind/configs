@@ -15,6 +15,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
 
@@ -106,13 +107,16 @@ func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
 	if p := cfg.IfMgr.JSONLogFile; p != "" {
 		handlers = append(handlers, logging.FileJSON(p))
 	}
-	if h := logging.EmailFromConfig(cfg, "mwan-ifmgr"); h != nil {
-		handlers = append(handlers, h)
-	}
 	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
 	})
+	// Slice D swaps the slog email handler for the notify boundary;
+	// slice B plumbs notifier into ifmgr.Daemon. Until slice B lands the
+	// constructor change, the notifier is built here so the
+	// notify.FromConfig contract is exercised, then discarded. The
+	// underscore is the integration seam for slice B.
+	_ = notify.FromConfig(cfg, logger, "mwan-ifmgr")
 	if debug || cfg.IfMgr.Debug {
 		logger.Info("ifmgr: debug logging enabled")
 	}
