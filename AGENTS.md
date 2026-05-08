@@ -139,6 +139,49 @@ For full routing details, kind catalog, and failure modes, see
 `mwan/docs/mwan-email-routing.md` and the plan at
 `mwan/docs/MWAN-132-email-unification-plan.md`.
 
+## BGP graceful restart
+
+BGP Graceful Restart (RFC 4724) lets a speaker restart its BGP process without
+flapping its routes in the helper. The helper retains the restarter's prefixes for
+`restart_time` seconds and only flushes them if the session does not come back. We
+care about this because the agent restarts on every deploy. The 2026-05-07 deploy
+measured a 1.7s WAN outage at agent restart with GR off, so GR is the path to
+zero-flap deploys.
+
+The wiring lives in `mwan/go/internal/bgp/speaker.go`. It is fed by the
+`BGPGracefulRestart` config struct in `mwan/go/internal/bgp/config.go`, which mirrors
+the loader struct of the same name in `mwan/go/internal/config/config.go`. Both were
+introduced in slice 1 of MWAN-130 (commit `f0a4847`). When GR is enabled the speaker
+attaches `GracefulRestart` to the GoBGP global config, sets `MpGracefulRestart` on
+each AFI/SAFI, mirrors `GracefulRestart` onto every peer, and passes
+`AllowGracefulRestart=true` on `Stop`. The agent shutdown path in
+`mwan/go/internal/agent/main.go` skips the pre-emptive `WithdrawDefault` call when GR
+is on. An explicit WITHDRAW would defeat GR because FRR would see it and drop the
+route immediately, so pre-withdraw only runs when GR is off.
+
+Configuration lives in the `[bgp.graceful_restart]` TOML block, added in slice 3 of
+MWAN-130 under MWAN-146. Three knobs: `enabled` (bool, default `true`),
+`restart_time` (uint32 seconds, default `30`, capped at `600` by the loader),
+`notification_enabled` (bool, default `true`). The defaults are baked into
+`config.BGPDefaults` so an empty `[bgp.graceful_restart]` block matches the documented
+behaviour.
+
+The OPNsense FRR side has its own toggle. The setting is
+`OPNsense.quagga.bgp.graceful = '1'` in `/conf/config.xml`. For production the
+operator flips it via the OPNsense GUI under Routing -> BGP -> General. The testbed
+has no GUI access from this controller, so the operator drives an LLM session against
+the `mwan-opnsense` gRPC API to mutate `config.xml` directly. After the toggle the
+operator runs `configctl quagga reload bgp` (or the matching reconfigure call) to
+apply it. To verify FRR has GR active, SSH to OPNsense and run
+`vtysh -c 'show running-config router bgp' | grep 'bgp graceful-restart'`.
+
+BFD is the natural follow-up. GR is only safe-by-default with BFD when a real WAN
+link dies inside the GR window, because without BFD the helper holds stale routes
+for the full `restart_time`. We do not have BFD wired today and rely on the watchdog
+gRPC withdraw path for fast WAN failure detection. `gobgp/v4@v4.5.0` shipped BFD
+primitives, so a future ticket can wire BFD into the speaker without an upstream
+bump.
+
 ## MWAN deployment topology
 
 Live state captured 2026-05-07 against current main (`4c754f4`). Mgmt addresses are
