@@ -207,6 +207,19 @@
         dest: /etc/mwan/config.toml
         mode: "0600"
 
+    # The mwan-agent unit loads this file via EnvironmentFile=. SMTP2GO_API_KEY
+    # is read by internal/config/config.go and overrides smtp2go_api_key in
+    # /etc/mwan/config.toml when set.
+    - name: Deploy MWAN secrets environment file (VM 950)
+      ansible.builtin.copy:
+        dest: /etc/mwan/secrets.env
+        content: |
+          SMTP2GO_API_KEY={{ mwan_smtp2go_api_key }}
+        owner: root
+        group: root
+        mode: "0640"
+      no_log: true
+
     - name: Deploy mwan.env (production template)
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/mwan.env.j2"
@@ -370,6 +383,19 @@
         src: "{{ repo_root }}/mwan/testbed/lxc-100/config.toml"
         dest: /etc/mwan/config.toml
         mode: "0644"
+
+    # The lxc-100 config.toml has an [email] block but no smtp2go_api_key.
+    # The mwan binary reads SMTP2GO_API_KEY from this file via the systemd
+    # EnvironmentFile= directive on each mwan unit.
+    - name: Deploy MWAN secrets environment file (LXC 100)
+      ansible.builtin.copy:
+        dest: /etc/mwan/secrets.env
+        content: |
+          SMTP2GO_API_KEY={{ mwan_smtp2go_api_key }}
+        owner: root
+        group: root
+        mode: "0640"
+      no_log: true
 
     - name: Deploy nftables
       ansible.builtin.copy:

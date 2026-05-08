@@ -129,6 +129,22 @@ mwan_email_sender_name: "MWAN-TESTBED"
 mwan_smtp2go_api_key: "{{ smtp2go_api_key }}"
 mwan_debug_logging: true
 
+# Variables consumed by mwan/config/suburban-testbed.toml.j2 [email] block.
+# Testbed previously rendered min_level=WARN; the notify boundary makes
+# per-event state-change drive emails regardless of slog level, so testbed
+# moves to ERROR for parity with prod. bind_iface stays empty because the
+# testbed does not have the prod OOB tunnel infrastructure that pins prod
+# to enmbrains0.
+mwan_email_min_level: "ERROR"
+mwan_email_subject_prefix: "[MWAN-suburban]"
+mwan_email_bind_iface: ""
+mwan_email_cooldown: "5m"
+
+# Subject prefix used by the testbed failover LXC (lxc-100). Distinct from
+# mwan_email_subject_prefix so failover-side alerts are visually separate
+# from main-host alerts in the inbox.
+mwan_failover_subject_prefix: "[MWAN-suburban-failover]"
+
 # Health checks (same structure as production)
 mwan_health_checks:
   att:
