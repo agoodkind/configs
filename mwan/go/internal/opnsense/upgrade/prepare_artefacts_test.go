@@ -76,10 +76,10 @@ func TestPrepareCapturesAllArtefacts(t *testing.T) {
 	}
 }
 
-// TestPrepareBGPCaptureFailureWritesEmptyFile checks that a guest with
-// no BGP daemon does not abort Prepare. The artefact file is still
-// written so the deploy-dir shape is uniform.
-func TestPrepareBGPCaptureFailureWritesEmptyFile(t *testing.T) {
+// TestPrepareBGPCaptureFailureWritesReasonStamp checks that a guest
+// with no BGP daemon does not abort Prepare and that the artefact
+// contains a meaningful JSON sentinel rather than a zero-byte file.
+func TestPrepareBGPCaptureFailureWritesReasonStamp(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
 	x.byCommand["vtysh"] = GuestExecResult{ExitCode: 1, Stderr: "vtysh: command not found"}
@@ -97,16 +97,23 @@ func TestPrepareBGPCaptureFailureWritesEmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read bgp_status.json: %v", err)
 	}
-	if len(body) != 0 {
-		t.Fatalf("bgp_status.json = %q, want empty", string(body))
+	var art bgpStatusArtefact
+	if err := json.Unmarshal(body, &art); err != nil {
+		t.Fatalf("bgp_status.json parse: %v", err)
+	}
+	if art.Captured {
+		t.Fatalf("bgp_status.json captured = true, want false on vtysh non-zero exit")
+	}
+	if art.Reason == "" {
+		t.Fatalf("bgp_status.json reason empty, want non-empty explanation")
 	}
 }
 
-// TestPrepareBGPCaptureExecErrorWritesEmptyFile checks the same guard
-// for transport-level errors (not just non-zero exit). A QGA agent that
-// cannot reach the guest at all still must not abort Prepare for this
-// best-effort artefact.
-func TestPrepareBGPCaptureExecErrorWritesEmptyFile(t *testing.T) {
+// TestPrepareBGPCaptureExecErrorWritesReasonStamp checks the same
+// guard for transport-level errors (not just non-zero exit). A QGA
+// agent that cannot reach the guest must not abort Prepare, and the
+// artefact must contain a non-zero JSON sentinel with a reason field.
+func TestPrepareBGPCaptureExecErrorWritesReasonStamp(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
 	if x.errByCommand == nil {
@@ -124,8 +131,19 @@ func TestPrepareBGPCaptureExecErrorWritesEmptyFile(t *testing.T) {
 		t.Fatalf("phase = %q, want prepared", st.Phase)
 	}
 	bgpPath := filepath.Join(opts.StateDir, "101", st.DeployID, ArtefactBGPStatus)
-	if _, statErr := os.Stat(bgpPath); statErr != nil {
-		t.Fatalf("bgp_status.json missing: %v", statErr)
+	body, err := os.ReadFile(bgpPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("bgp_status.json missing: %v", err)
+	}
+	var art bgpStatusArtefact
+	if err := json.Unmarshal(body, &art); err != nil {
+		t.Fatalf("bgp_status.json parse: %v", err)
+	}
+	if art.Captured {
+		t.Fatalf("bgp_status.json captured = true, want false on GuestExec error")
+	}
+	if art.Reason == "" {
+		t.Fatalf("bgp_status.json reason empty, want non-empty explanation")
 	}
 }
 
@@ -240,9 +258,10 @@ func TestCaptureConfigXMLNilExecReturnsError(t *testing.T) {
 	}
 }
 
-// TestCaptureBGPStatusNilExecWritesEmptyFile pins that the best-effort
-// captures degrade gracefully when no Executor is available.
-func TestCaptureBGPStatusNilExecWritesEmptyFile(t *testing.T) {
+// TestCaptureBGPStatusNilExecWritesReasonStamp pins that the
+// best-effort capture degrades gracefully when no Executor is
+// available, producing a valid JSON sentinel instead of an empty file.
+func TestCaptureBGPStatusNilExecWritesReasonStamp(t *testing.T) {
 	t.Parallel()
 	deps := Deps{Snap: nil, Exec: nil, Validate: nil, Notifier: nil, Clock: nil, Log: nil}
 	opts := Options{
@@ -257,7 +276,71 @@ func TestCaptureBGPStatusNilExecWritesEmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read bgp_status.json: %v", err)
 	}
-	if len(body) != 0 {
-		t.Fatalf("bgp_status.json = %q, want empty", string(body))
+	var art bgpStatusArtefact
+	if err := json.Unmarshal(body, &art); err != nil {
+		t.Fatalf("bgp_status.json parse: %v", err)
+	}
+	if art.Captured {
+		t.Fatalf("bgp_status.json captured = true, want false when Exec is nil")
+	}
+	if art.Reason == "" {
+		t.Fatalf("bgp_status.json reason empty, want non-empty explanation")
+	}
+}
+
+// TestPrepareWritesMetadataAfterSnapshot verifies that metadata.json
+// is absent when Prepare fails during snapshot creation. Before the
+// fix, metadata.json was written before VMSnapshot, which meant a
+// retry with the same deploy_id could find a stale file naming a
+// snapshot that was never created.
+func TestPrepareWritesMetadataAfterSnapshot(t *testing.T) {
+	t.Parallel()
+	deps, _, s, _, _ := newDeps(t)
+	s.snapErr = errors.New("snapshot exploded")
+	opts := newOpts(t, "101")
+	opts.DeployID = "fixed-deploy-id"
+
+	_, err := Prepare(context.Background(), deps, opts)
+	if err == nil {
+		t.Fatalf("expected error from snapshot failure")
+	}
+
+	// metadata.json must not exist because the snapshot never landed.
+	metaPath := filepath.Join(opts.StateDir, "101", "fixed-deploy-id", "metadata.json")
+	if _, statErr := os.Stat(metaPath); statErr == nil {
+		t.Fatalf("metadata.json present after snapshot failure; a retry would see a phantom snapshot name")
+	}
+}
+
+// TestCaptureBGPStatusEmptyHasReasonStamp asserts that when vtysh
+// returns no usable data (non-zero exit), the written artefact is
+// parseable JSON with captured=false and a non-empty reason field.
+func TestCaptureBGPStatusEmptyHasReasonStamp(t *testing.T) {
+	t.Parallel()
+	deps, _, _, x, _ := newDeps(t)
+	x.byCommand["vtysh"] = GuestExecResult{ExitCode: 127, Stderr: "vtysh: not found"}
+	opts := newOpts(t, "101")
+
+	st, err := Prepare(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	bgpPath := filepath.Join(opts.StateDir, "101", st.DeployID, ArtefactBGPStatus)
+	body, err := os.ReadFile(bgpPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("read bgp_status.json: %v", err)
+	}
+	if len(body) == 0 {
+		t.Fatalf("bgp_status.json is empty; should always be a non-zero JSON document")
+	}
+	var art bgpStatusArtefact
+	if err := json.Unmarshal(body, &art); err != nil {
+		t.Fatalf("bgp_status.json parse: %v", err)
+	}
+	if art.Captured {
+		t.Fatalf("captured = true, want false when vtysh exits non-zero")
+	}
+	if art.Reason == "" {
+		t.Fatalf("reason is empty, want non-empty description")
 	}
 }

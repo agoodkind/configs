@@ -73,19 +73,6 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 
 	snap := SnapshotName(now)
 
-	meta := metadata{
-		DeployID:   deployID,
-		VMID:       opts.VMID,
-		Target:     opts.Target,
-		Snapshot:   snap,
-		StartedAt:  now,
-		UseBootEnv: opts.UseBootEnvironment,
-		DryRunExec: opts.DryRunExecute,
-	}
-	if err := writeMetadata(ctx, filepath.Join(deployDir, "metadata.json"), meta); err != nil {
-		return emptyState(), err
-	}
-
 	if err := capturePreUpgradeArtefacts(ctx, deps, opts, deployDir); err != nil {
 		emit(ctx, deps.Notifier, slog.LevelError, KindPrepare, opts.VMID,
 			"opnsense-upgrade prepare: pre-upgrade artefact capture failed",
@@ -106,20 +93,39 @@ func Prepare(ctx context.Context, deps Deps, opts Options) (State, error) {
 		}
 	}
 
-	return takeSnapshotAndPersistState(ctx, deps, opts, deployID, snap, now)
+	// metadata.json is written after the snapshot lands so that a retry
+	// with the same deploy_id does not find a stale file referencing a
+	// snapshot that was never created. The snapshot name is known before
+	// takeSnapshotAndPersistState is called because SnapshotName is
+	// deterministic for a given timestamp.
+	meta := metadata{
+		DeployID:   deployID,
+		VMID:       opts.VMID,
+		Target:     opts.Target,
+		Snapshot:   snap,
+		StartedAt:  now,
+		UseBootEnv: opts.UseBootEnvironment,
+		DryRunExec: opts.DryRunExecute,
+	}
+	return takeSnapshotAndPersistState(ctx, deps, opts, deployID, snap, now, meta)
 }
 
-// takeSnapshotAndPersistState issues the Proxmox snapshot and writes
-// the prepared state file. Split out of [Prepare] so the surrounding
-// orchestration stays under the funlen ceiling. On any error before
-// the state file is written this returns emptyState; the caller
-// returns the same.
+// takeSnapshotAndPersistState issues the Proxmox snapshot, writes
+// metadata.json, and writes the prepared state file. Split out of
+// [Prepare] so the surrounding orchestration stays under the funlen
+// ceiling. On any error before the state file is written this returns
+// emptyState; the caller returns the same.
+//
+// metadata.json is written here, after the snapshot succeeds, so that
+// a retry with the same deploy_id cannot find a stale file whose
+// snapshot name points to a snapshot that was never created.
 func takeSnapshotAndPersistState(
 	ctx context.Context,
 	deps Deps,
 	opts Options,
 	deployID, snap string,
 	now time.Time,
+	meta metadata,
 ) (State, error) {
 	if err := deps.Snap.VMSnapshot(ctx, opts.VMID, snap); err != nil {
 		emit(ctx, deps.Notifier, slog.LevelError, KindPrepare, opts.VMID,
@@ -131,6 +137,11 @@ func takeSnapshotAndPersistState(
 		slog.ErrorContext(ctx, "upgrade.Prepare: VMSnapshot failed",
 			"err", err, "vmid", opts.VMID, "snapshot", snap)
 		return emptyState(), fmt.Errorf("upgrade.Prepare: VMSnapshot: %w", err)
+	}
+
+	deployDir := deployPathFor(opts.StateDir, opts.VMID, deployID)
+	if err := writeMetadata(ctx, filepath.Join(deployDir, "metadata.json"), meta); err != nil {
+		return emptyState(), err
 	}
 
 	st := State{
