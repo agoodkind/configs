@@ -71,6 +71,14 @@ type watchdog struct {
 	postRollbackGraceUntil time.Time
 	lastHashCheckOK        bool
 	totalFailStart         time.Time
+
+	// failoverMu guards failoverActive, failoverStartedAt, and failoverReason.
+	// These track BGP failover state so the recovery hook can fire exactly
+	// once when the primary returns.
+	failoverMu        sync.Mutex
+	failoverActive    bool
+	failoverStartedAt time.Time
+	failoverReason    string
 }
 
 func (w *watchdog) heartbeatTick() time.Duration {
@@ -1335,6 +1343,7 @@ func (w *watchdog) runIteration(ctx context.Context, iteration int) bool {
 	switch {
 	case v4ok && v6ok:
 		w.handleHealthyProbe(iterCtx, iteration)
+		w.maybeTriggerRecovery(iterCtx, w.cfg)
 		return w.sleepOrShutdown(iterCtx, w.cfg.Watchdog.HealthyInterval())
 	case v4ok || v6ok:
 		w.handlePartialProbe(iterCtx, v6ok)

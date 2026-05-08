@@ -182,15 +182,64 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		return ifmgr.DaemonConfig{}, err
 	}
 
+	alertRepeatEvery, alertResolver := buildAlertRepeatPolicy(cfg.IfMgr.Alerts)
+
 	return ifmgr.DaemonConfig{
-		Role:              role,
-		Iface:             ifaceName,
-		ReconcileInterval: rec,
-		EnableDHCP:        enableDHCP,
-		DHCPInitial:       dhcpInit,
-		DHCPMax:           dhcpMax,
-		EnableRA:          enableRA,
-		AlertRepeatEvery:  30 * time.Minute,
-		ModuleConfigs:     moduleConfigs,
+		Role:                role,
+		Iface:               ifaceName,
+		ReconcileInterval:   rec,
+		EnableDHCP:          enableDHCP,
+		DHCPInitial:         dhcpInit,
+		DHCPMax:             dhcpMax,
+		EnableRA:            enableRA,
+		AlertRepeatEvery:    alertRepeatEvery,
+		AlertRepeatResolver: alertResolver,
+		ModuleConfigs:       moduleConfigs,
 	}, nil
+}
+
+// buildAlertRepeatPolicy turns the parsed [ifmgr.alerts] section into the
+// global repeat cadence and a resolver suitable for AlertManager.
+//
+// PerModule is keyed by alert kind (the first arg passed to
+// AlertManager.Notify, e.g. "wg-peer-stalled"), not by Module.Name(). Keying
+// on alert kind preserves full granularity since one module can emit
+// multiple kinds of alerts and may want different cadences for each
+// (e.g. wghealth emits both "wg-peer-stalled" and "wg-reconcile-failed").
+//
+// Empty / unparseable values fall back to zero (state-change-only) so
+// missing config does not silently inherit some surprising default.
+func buildAlertRepeatPolicy(
+	alerts config.IfMgrAlertsSection,
+) (time.Duration, func(kind, key string) time.Duration) {
+	var globalRepeat time.Duration
+	if alerts.RepeatEvery != "" {
+		if d, err := time.ParseDuration(alerts.RepeatEvery); err == nil {
+			globalRepeat = d
+		}
+	}
+
+	parsedPerKind := make(map[string]time.Duration, len(alerts.PerModule))
+	for kind, raw := range alerts.PerModule {
+		if raw == "" {
+			continue
+		}
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			continue
+		}
+		parsedPerKind[kind] = d
+	}
+
+	if len(parsedPerKind) == 0 {
+		return globalRepeat, nil
+	}
+
+	resolver := func(kind, _ string) time.Duration {
+		if d, ok := parsedPerKind[kind]; ok {
+			return d
+		}
+		return globalRepeat
+	}
+	return globalRepeat, resolver
 }

@@ -44,6 +44,11 @@ type Module struct {
 	env *ifmgr.Env
 	log *slog.Logger
 
+	// runWGShow is the test seam for runRemoteWGShow. Production code leaves
+	// this nil and the real implementation runs. Tests assign a stub before
+	// calling Reconcile to avoid execing ssh or wg.
+	runWGShow func(ctx context.Context, log *slog.Logger) (string, error)
+
 	mu        sync.Mutex
 	lastPeers map[string]peerState // key = peer pubkey
 	lastRunAt time.Time
@@ -128,17 +133,44 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 
 // Reconcile fetches the current peer table from the remote and updates state.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
-	out, err := m.runRemoteWGShow(ctx, log)
+	now := time.Now()
+	runner := m.runWGShow
+	if runner == nil {
+		runner = m.runRemoteWGShow
+	}
+	out, err := runner(ctx, log)
 	if err != nil {
-		log.Error("wg_health: remote wg show failed", "err", err)
+		// Route through AlertManager so repeated failures collapse to a
+		// single transition email plus one recovery email when SSH comes
+		// back, instead of one log.Error per ~6 minutes governed by the
+		// gklog email subject cooldown.
+		m.env.Alerts.Notify(now, slog.LevelError,
+			"wg-reconcile-failed", "remote-wg-show",
+			"wg_health: remote wg show failed",
+			"err", err.Error(),
+		)
 		return nil // do not fail the whole reconcile loop
 	}
 	peers, parseErr := parseWGShowDump(out)
 	if parseErr != nil {
-		log.Error("wg_health: parse wg dump failed", "err", parseErr, "raw_lines", strings.Count(out, "\n"))
+		m.env.Alerts.Notify(now, slog.LevelError,
+			"wg-reconcile-failed", "parse-wg-dump",
+			"wg_health: parse wg dump failed",
+			"err", parseErr.Error(),
+			"raw_lines", strings.Count(out, "\n"),
+		)
 		return nil
 	}
-	now := time.Now()
+	// Healthy tick: clear any previously-active reconcile-failure alert so the
+	// inbox sees a recovery email. Resolve is a no-op when no alert is active.
+	m.env.Alerts.Resolve(now,
+		"wg-reconcile-failed", "remote-wg-show",
+		"wg_health: remote wg show recovered",
+	)
+	m.env.Alerts.Resolve(now,
+		"wg-reconcile-failed", "parse-wg-dump",
+		"wg_health: parse wg dump recovered",
+	)
 	m.mu.Lock()
 	m.lastPeers = peers
 	m.lastRunAt = now
