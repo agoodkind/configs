@@ -34,8 +34,13 @@ func defaultSubs() Substitutions {
 			{Name: "iavf0 to vtnet0", From: "iavf0", To: "vtnet0"},
 		},
 		XPathSets: []XPathSet{
+			// Note: domain is intentionally absent here. The domain text_literal
+			// below rewrites the prod "home.goodkind.io" value in the serialized
+			// XML, which avoids the MWAN-157 double-prefix bug: if an xpath_set
+			// wrote "test.home.goodkind.io" first, the text_literal would then
+			// find "home.goodkind.io" as a substring and double the prefix to
+			// "test.test.home.goodkind.io".
 			{Name: "hostname", XPath: "//opnsense/system/hostname", NewValue: "router-test"},
-			{Name: "domain", XPath: "//opnsense/system/domain", NewValue: "test.home.goodkind.io"},
 			{Name: "wan ipaddr", XPath: "//opnsense/interfaces/wan/ipaddr", NewValue: "10.240.250.2"},
 			{Name: "wan ipaddrv6", XPath: "//opnsense/interfaces/wan/ipaddrv6", NewValue: "3d06:bad:b01:2fe::2"},
 			{Name: "mgmt v4", XPath: "//opnsense/interfaces/opt9/ipaddr", NewValue: "10.240.4.1"},
@@ -46,6 +51,7 @@ func defaultSubs() Substitutions {
 		},
 		TextLiterals: []TextLiteral{
 			{Name: "nat source net", From: "10.250.0.0/24", To: "10.240.0.0/24"},
+			{Name: "domain literal", From: "home.goodkind.io", To: "test.home.goodkind.io"},
 		},
 	}
 }
@@ -199,6 +205,50 @@ text_literals:
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := Load(filepath.Join("testdata", "does-not-exist.yaml")); err == nil {
 		t.Fatal("Load on missing file returned no error")
+	}
+}
+
+// TestApplyDomainLiteralNoDoublePrefix guards against MWAN-157.
+//
+// The bug: applyXPathSets wrote "test.home.goodkind.io" into <domain> before
+// applyTextLiterals ran. The text_literal "home.goodkind.io" ->
+// "test.home.goodkind.io" then matched the substring inside the already-written
+// value and doubled the prefix to "test.test.home.goodkind.io".
+//
+// The fix: remove the domain xpath_set so that every occurrence of
+// "home.goodkind.io" in the serialized XML is still the original prod value
+// when the text_literal fires, and the text_literal rewrites it exactly once.
+func TestApplyDomainLiteralNoDoublePrefix(t *testing.T) {
+	out, err := Apply(loadFixture(t), defaultSubs())
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	doc := mustParse(t, out)
+
+	// <domain> must be rewritten exactly once by the text_literal.
+	domainEl := doc.FindElement("//opnsense/system/domain")
+	if domainEl == nil {
+		t.Fatal("xpath //opnsense/system/domain matched no element")
+	}
+	gotDomain := strings.TrimSpace(domainEl.Text())
+	if gotDomain != "test.home.goodkind.io" {
+		t.Errorf("<domain> got %q, want %q", gotDomain, "test.home.goodkind.io")
+	}
+
+	// The dnssearchdomain embedded copy must also be rewritten exactly once.
+	dsEl := doc.FindElement("//opnsense/system/dnssearchdomain")
+	if dsEl == nil {
+		t.Fatal("xpath //opnsense/system/dnssearchdomain matched no element")
+	}
+	gotDS := strings.TrimSpace(dsEl.Text())
+	if gotDS != "router.test.home.goodkind.io" {
+		t.Errorf("<dnssearchdomain> got %q, want %q", gotDS, "router.test.home.goodkind.io")
+	}
+
+	// No doubled prefix anywhere in the output.
+	if strings.Contains(string(out), "test.test.") {
+		t.Errorf("output contains doubled prefix 'test.test.'")
 	}
 }
 

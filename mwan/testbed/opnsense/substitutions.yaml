@@ -37,14 +37,20 @@ device_names:
     to:   "vtnet0"
 
 xpath_sets:
-  # Spec section 3.4: hostname and domain. Subdomain `test.home.goodkind.io`
-  # avoids DNS collision with the prod router record.
+  # Spec section 3.4: hostname. The domain element is NOT set here; see the
+  # "domain literal" text_literal below.
+  #
+  # MWAN-157 fix: removing the domain xpath_set prevents a doubled-prefix
+  # bug. applyTextLiterals runs after applyXPathSets on the serialized XML
+  # bytes. If xpath_set wrote "test.home.goodkind.io" into <domain>, the
+  # text_literal "home.goodkind.io" -> "test.home.goodkind.io" would then
+  # match the substring inside that value and double the prefix to
+  # "test.test.home.goodkind.io". The prod <domain> element contains
+  # "home.goodkind.io", so the text_literal rewrites it exactly once to
+  # "test.home.goodkind.io" without conflict.
   - name: "hostname"
     xpath: "//opnsense/system/hostname"
     new_value: "router-test"
-  - name: "domain"
-    xpath: "//opnsense/system/domain"
-    new_value: "test.home.goodkind.io"
 
   # Spec section 3.1: per-interface address rewrites.
   # WAN IPv4 stays at the prod value because testbed reuses the same
@@ -84,12 +90,12 @@ xpath_sets:
 
   # Spec section 3.7: captive portal hostname. Prod uses
   # `captive.chaotic.dog`; testbed uses `captive.test.home.goodkind.io`.
+  # The hostname portion is set here; the domain portion is handled by the
+  # "domain literal" text_literal (same MWAN-157 fix: removing the domain
+  # xpath_set prevents the double-prefix bug described above).
   - name: "Captive portal hostname"
     xpath: "//opnsense/captiveportal/hostname"
     new_value: "captive"
-  - name: "Captive portal domain"
-    xpath: "//opnsense/captiveportal/domain"
-    new_value: "test.home.goodkind.io"
 
 remove_elements:
   # MWAN-150 collision fix (2026-05-08): the prod config declares opt6
@@ -188,10 +194,19 @@ text_literals:
     to:   "3d06:bad:b01:200::"
 
   # Spec section 3.4: hostname and domain literals embedded in cert CN,
-  # SSH banners, alt-names, dnssearchdomain. The xpath_sets above set the
-  # canonical element values; this catches the embedded copies. Order
-  # matters: the more specific `home.goodkind.io` rewrite must run after
-  # the xpath_sets entries land.
+  # SSH banners, alt-names, dnssearchdomain, and the canonical <domain>
+  # elements. The xpath_set for hostname sets <system/hostname>; this
+  # text_literal handles <system/domain>, <captiveportal/domain>, and all
+  # embedded copies.
+  #
+  # MWAN-157 fix: the domain xpath_sets were removed so that this text_literal
+  # is the sole authority for rewriting "home.goodkind.io". With the xpath_sets
+  # still present, they would write "test.home.goodkind.io" into the domain
+  # elements before applyTextLiterals ran; the text_literal would then find
+  # "home.goodkind.io" as a substring of "test.home.goodkind.io" and double
+  # the prefix to "test.test.home.goodkind.io". With the xpath_sets removed,
+  # every occurrence of "home.goodkind.io" is the original prod value, so the
+  # text_literal rewrites it exactly once.
   - name: "domain literal"
     from: "home.goodkind.io"
     to:   "test.home.goodkind.io"

@@ -3,6 +3,7 @@
   <system>
     <hostname>router</hostname>
     <domain>home.goodkind.io</domain>
+    <dnssearchdomain>router.home.goodkind.io</dnssearchdomain>
   </system>
   <interfaces>
     <wan>
