@@ -299,8 +299,23 @@ mwan_email_script: "/opt/scripts/send-email"
 mwan_systemd_check_interval: 600
 
 # Sender identity (must be allowed by SMTP2GO/domain config)
-mwan_email_from: "alerts@goodkind.io"
+mwan_email_from: "mwan@goodkind.io"
 mwan_email_sender_name: "MWAN"
+
+# Variables consumed by mwan/config/production.toml.j2 [email] block.
+# The mwan-go binary reads these from /etc/mwan/config.toml. Values match
+# the literals previously hard-coded in the template; this refactor lets
+# group_vars override them per-environment.
+mwan_email_min_level: "ERROR"
+mwan_email_subject_prefix: "[MWAN-vault]"
+mwan_email_bind_iface: "enmbrains0"
+mwan_email_cooldown: "5m"
+
+# Subject prefix used by the failover LXC (lxc-116). Distinct from
+# mwan_email_subject_prefix so failover-side alerts are visually separate
+# from main-host alerts in the inbox. Consumed by tasks that template the
+# failover LXC config.
+mwan_failover_subject_prefix: "[MWAN-vault-failover]"
 
 # SMTP2GO configuration (sourced from vault via all/vars.yml)
 mwan_smtp2go_api_key: "{{ smtp2go_api_key }}"
