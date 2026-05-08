@@ -744,6 +744,169 @@ func TestGCDeletesOldSnapshotsAndKeepsYoung(t *testing.T) {
 	}
 }
 
+func TestGCDryRunReportsWithoutDeleting(t *testing.T) {
+	t.Parallel()
+	deps, _, s, _, _ := newDeps(t)
+	now := time.Unix(1_800_000_000, 0)
+	deps.Clock = fixedClock{t: now}
+	old := SnapshotName(now.Add(-30 * 24 * time.Hour))
+	listing := []byte(" `-> " + old + " 2026-04-01 desc\n")
+	s.listing = listing
+	opts := newOpts(t, "101")
+	opts.DryRunGC = true
+
+	res, err := GC(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("GC dry-run: %v", err)
+	}
+	// Dry-run reports the snapshot as "would be deleted" but must not call VMDelSnapshot.
+	if len(res.Deleted) != 1 || res.Deleted[0] != old {
+		t.Fatalf("dry-run deleted = %v, want [%s]", res.Deleted, old)
+	}
+	if len(s.deletes) != 0 {
+		t.Fatalf("dry-run must not call VMDelSnapshot, got %d calls", len(s.deletes))
+	}
+}
+
+func TestGCSkipsActiveDeploySnapshot(t *testing.T) {
+	t.Parallel()
+	deps, _, s, _, _ := newDeps(t)
+	now := time.Unix(1_800_000_000, 0)
+	deps.Clock = fixedClock{t: now}
+
+	// Prepare lands a state file with an active snapshot.
+	opts := newOpts(t, "101")
+	st, err := Prepare(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	activeSnap := st.Snapshot
+
+	// Put the active snapshot in the listing, old enough that gc would
+	// otherwise delete it.
+	old := activeSnap
+	listing := []byte(" `-> " + old + " 2026-01-01 desc\n")
+	s.listing = listing
+
+	// Force the timestamp embedded in the snapshot name to appear old
+	// by advancing the clock far past DefaultGCThreshold.
+	deps.Clock = fixedClock{t: time.Unix(1_800_000_000+int64(30*24*time.Hour/time.Second), 0)}
+
+	res, err := GC(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("GC: %v", err)
+	}
+	// The active snapshot must be in Skipped, not Deleted.
+	if len(res.Deleted) != 0 {
+		t.Fatalf("GC deleted active snapshot: deleted = %v", res.Deleted)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0] != old {
+		t.Fatalf("GC skipped = %v, want [%s]", res.Skipped, old)
+	}
+	if len(s.deletes) != 0 {
+		t.Fatalf("GC must not call VMDelSnapshot for active deploy, got %d calls", len(s.deletes))
+	}
+}
+
+func TestGCCommittedDeploySnapshotIsEligible(t *testing.T) {
+	t.Parallel()
+	deps, _, s, _, _ := newDeps(t)
+	now := time.Unix(1_800_000_000, 0)
+	deps.Clock = fixedClock{t: now}
+
+	// Run through the full pipeline to land at PhaseCommitted.
+	opts := newOpts(t, "101")
+	st, err := Prepare(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	committedSnap := st.Snapshot
+	if _, err := Execute(context.Background(), deps, opts); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if _, _, err := Validate(context.Background(), deps, opts); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if _, err := Commit(context.Background(), deps, opts); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Commit deletes the snapshot; re-add it to the listing so gc sees it.
+	s.deletes = nil
+	oldEnough := committedSnap
+	listing := []byte(" `-> " + oldEnough + " 2026-01-01 desc\n")
+	s.listing = listing
+	deps.Clock = fixedClock{t: time.Unix(1_800_000_000+int64(30*24*time.Hour/time.Second), 0)}
+
+	res, err := GC(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("GC: %v", err)
+	}
+	// Phase is committed so the snapshot is not protected; gc must delete it.
+	if len(res.Deleted) != 1 || res.Deleted[0] != oldEnough {
+		t.Fatalf("deleted = %v, want [%s]", res.Deleted, oldEnough)
+	}
+}
+
+func TestGCVMSnapshotsErrorReturnsError(t *testing.T) {
+	t.Parallel()
+	deps, _, s, _, _ := newDeps(t)
+	s.listing = nil
+	// Override VMSnapshots to return an error by using a custom fakeSnap.
+	errSnap := &errSnapshotter{err: errors.New("qm: connection refused")}
+	deps.Snap = errSnap
+	opts := newOpts(t, "101")
+
+	_, err := GC(context.Background(), deps, opts)
+	if err == nil {
+		t.Fatalf("expected error from VMSnapshots failure")
+	}
+	if !strings.Contains(err.Error(), "VMSnapshots") {
+		t.Fatalf("error = %v, want VMSnapshots in message", err)
+	}
+}
+
+func TestGCDelSnapshotErrorSkipsInsteadOfAborting(t *testing.T) {
+	t.Parallel()
+	deps, _, s, _, _ := newDeps(t)
+	now := time.Unix(1_800_000_000, 0)
+	deps.Clock = fixedClock{t: now}
+	old1 := SnapshotName(now.Add(-30 * 24 * time.Hour))
+	old2 := SnapshotName(now.Add(-20 * 24 * time.Hour))
+	listing := []byte(" `-> " + old1 + " 2026-01-01 desc\n `-> " + old2 + " 2026-01-11 desc\n")
+	s.listing = listing
+	// Make VMDelSnapshot always fail.
+	s.delErr = errors.New("pve: snapshot locked")
+	opts := newOpts(t, "101")
+
+	res, err := GC(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("GC must not return error when VMDelSnapshot fails: %v", err)
+	}
+	// Both old snapshots land in Skipped; none in Deleted.
+	if len(res.Deleted) != 0 {
+		t.Fatalf("deleted = %v, want empty", res.Deleted)
+	}
+	if len(res.Skipped) != 2 {
+		t.Fatalf("skipped = %v, want 2 entries", res.Skipped)
+	}
+}
+
+// errSnapshotter is a Snapshotter stub whose VMSnapshots always returns an error.
+// It is used only by gc error-path tests in this file.
+type errSnapshotter struct {
+	err error
+}
+
+func (e *errSnapshotter) VMSnapshot(_ context.Context, _, _ string) error { return nil }
+func (e *errSnapshotter) VMRollback(_ context.Context, _, _ string) error { return nil }
+func (e *errSnapshotter) VMSnapshots(_ context.Context, _ string) ([]byte, error) {
+	return nil, e.err
+}
+func (e *errSnapshotter) VMDelSnapshot(_ context.Context, _, _ string) error { return nil }
+func (e *errSnapshotter) VMStart(_ context.Context, _ string) error          { return nil }
+func (e *errSnapshotter) VMStatus(_ context.Context, _ string) (bool, error) { return false, nil }
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

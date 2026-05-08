@@ -162,6 +162,7 @@ type Options struct {
 	Snapshot            string
 	AcceptPartial       bool
 	DryRunExecute       bool
+	DryRunGC            bool
 	UseBootEnvironment  bool
 	KeepSnapshot        bool
 	OlderThan           time.Duration
