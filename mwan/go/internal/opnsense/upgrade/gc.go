@@ -13,8 +13,8 @@ import (
 
 // GCResult records the outcome of a single gc invocation. Deleted
 // holds the snapshot names that were removed; Skipped holds names that
-// were inspected but retained (either younger than the threshold or
-// renamed to KeepPrefix).
+// were inspected but retained (either younger than the threshold,
+// renamed to KeepPrefix, or pinned as the active deploy snapshot).
 type GCResult struct {
 	Deleted []string
 	Skipped []string
@@ -24,6 +24,15 @@ type GCResult struct {
 // DefaultGCThreshold per resolved decision 11.8. The function refuses
 // to run without an explicit VMID so it cannot accidentally sweep
 // snapshots on an unrelated VM.
+//
+// GC loads state.json to discover the active deploy snapshot and
+// protects it regardless of age. A deploy is considered active when
+// its Phase is not PhaseCommitted and not PhaseRollbackFailed, because
+// those are the only two terminal states where the snapshot is no
+// longer needed for rollback.
+//
+// When opts.DryRunGC is true, GC logs and records what it would delete
+// without calling VMDelSnapshot.
 func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 	if err := validateOptions(opts); err != nil {
 		slog.ErrorContext(ctx, "upgrade.GC: invalid options", "err", err)
@@ -41,6 +50,11 @@ func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 		threshold = DefaultGCThreshold
 	}
 
+	// Load state.json so GC can pin the active deploy's snapshot.
+	// A missing state file (PhaseEmpty) means no active deploy; the
+	// load is best-effort here and a missing file is not an error.
+	activeSnap := activeDeploySnapshot(ctx, opts)
+
 	listing, err := deps.Snap.VMSnapshots(ctx, opts.VMID)
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade.GC: VMSnapshots", "err", err, "vmid", opts.VMID)
@@ -52,6 +66,11 @@ func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 		if !IsUpgradeSnapshot(name) {
 			continue
 		}
+		// Protect the active deploy's snapshot from gc regardless of age.
+		if activeSnap != "" && name == activeSnap {
+			result.Skipped = append(result.Skipped, name)
+			continue
+		}
 		ts, ok := timestampFromName(name)
 		if !ok {
 			continue
@@ -59,6 +78,10 @@ func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 		age := now.Sub(time.Unix(ts, 0))
 		if age < threshold {
 			result.Skipped = append(result.Skipped, name)
+			continue
+		}
+		if opts.DryRunGC {
+			result.Deleted = append(result.Deleted, name)
 			continue
 		}
 		if err := deps.Snap.VMDelSnapshot(ctx, opts.VMID, name); err != nil {
@@ -69,8 +92,28 @@ func GC(ctx context.Context, deps Deps, opts Options) (GCResult, error) {
 		result.Deleted = append(result.Deleted, name)
 	}
 	slog.InfoContext(ctx, "upgrade.GC: complete", "vmid", opts.VMID,
-		"deleted", len(result.Deleted), "skipped", len(result.Skipped))
+		"deleted", len(result.Deleted), "skipped", len(result.Skipped),
+		"dry_run", opts.DryRunGC)
 	return result, nil
+}
+
+// activeDeploySnapshot returns the snapshot name recorded in state.json
+// when the current phase is not a terminal state. Returns an empty
+// string when the state file is missing, the phase is terminal, or the
+// recorded snapshot name is empty. The function is intentionally
+// best-effort: a state file that cannot be read is logged but does not
+// abort the gc sweep.
+func activeDeploySnapshot(ctx context.Context, opts Options) string {
+	st, err := loadStateCtx(ctx, opts.StateDir, opts.VMID)
+	if err != nil {
+		slog.WarnContext(ctx, "upgrade.GC: could not load state, active snapshot protection skipped",
+			"err", err, "vmid", opts.VMID)
+		return ""
+	}
+	if st.Phase == PhaseEmpty || st.Phase == PhaseCommitted || st.Phase == PhaseRollbackFailed {
+		return ""
+	}
+	return st.Snapshot
 }
 
 // parseSnapshotNames extracts snapshot names from the qm listsnapshot

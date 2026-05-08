@@ -88,6 +88,7 @@ func printUpgradeUsage(w *os.File) {
 	fmt.Fprintln(w, "  --accept-partial        Treat partial-pass as a manual-decision state instead of fail")
 	fmt.Fprintln(w, "  --keep-snapshot         Retain the snapshot during commit (sweep later via gc)")
 	fmt.Fprintln(w, "  --older-than <dur>      gc threshold (default 168h)")
+	fmt.Fprintln(w, "  --dry-run               gc: print what would be deleted without removing anything")
 }
 
 // upgradeFlags holds the flag values shared across phases. Each phase
@@ -103,6 +104,7 @@ type upgradeFlags struct {
 	deployID           string
 	snapshot           string
 	dryRunExecute      bool
+	dryRunGC           bool
 	useBootEnvironment bool
 	acceptPartial      bool
 	keepSnapshot       bool
@@ -141,6 +143,7 @@ func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) *string {
 	fs.StringVar(&f.deployID, "deploy-id", "", "Deploy identifier; auto-generated when empty")
 	fs.StringVar(&f.snapshot, "snapshot", "", "Snapshot name override")
 	fs.BoolVar(&f.dryRunExecute, "dry-run-execute", false, "Run opnsense-update -c instead of the real upgrade")
+	fs.BoolVar(&f.dryRunGC, "dry-run", false, "gc: print what would be deleted without removing anything")
 	fs.BoolVar(&f.useBootEnvironment, "use-boot-environment", false, "Capture bectl boot environment if available")
 	fs.BoolVar(&f.acceptPartial, "accept-partial", false, "Treat partial-pass validation as manual-decision state")
 	fs.BoolVar(&f.keepSnapshot, "keep-snapshot", false, "Retain the upgrade snapshot during commit")
@@ -194,6 +197,7 @@ func (f upgradeFlags) toOptions() upgrade.Options {
 		DeployID:            f.deployID,
 		Snapshot:            f.snapshot,
 		DryRunExecute:       f.dryRunExecute,
+		DryRunGC:            f.dryRunGC,
 		UseBootEnvironment:  f.useBootEnvironment,
 		AcceptPartial:       f.acceptPartial,
 		KeepSnapshot:        f.keepSnapshot,
