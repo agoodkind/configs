@@ -28,6 +28,7 @@ const (
 	subcmdOPNsenseHost         subcommand = "opnsense-host"
 	subcmdOPNsenseProbe        subcommand = "opnsense-probe"
 	subcmdOPNsenseImportConfig subcommand = "opnsense-import-config"
+	subcmdOPNsenseValidate     subcommand = "opnsense-validate"
 )
 
 func main() {
@@ -35,7 +36,7 @@ func main() {
 		os.Exit(runOPNsenseDaemon(os.Args[1:]))
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|opnsense-probe|opnsense-host|opnsense-import-config> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|opnsense-probe|opnsense-host|opnsense-import-config|opnsense-validate> [flags]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -73,6 +74,14 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case subcmdOPNsenseValidate:
+		if err := runOPNsenseValidate(os.Args[1:]); err != nil {
+			if !strings.Contains(err.Error(), "help requested") {
+				fmt.Fprintf(os.Stderr, "mwan opnsense-validate: %v\n", err)
+			}
+			os.Exit(1)
+		}
+		return
 	case subcmdAgent, subcmdWatchdog, subcmdIfmgr:
 	}
 
@@ -95,7 +104,7 @@ func main() {
 		}
 	case subcmdIfmgr:
 		runErr = runIfMgr(cfg)
-	case subcmdHealthCheck, subcmdOPNsense, subcmdOPNsenseProbe, subcmdOPNsenseHost, subcmdOPNsenseImportConfig:
+	case subcmdHealthCheck, subcmdOPNsense, subcmdOPNsenseProbe, subcmdOPNsenseHost, subcmdOPNsenseImportConfig, subcmdOPNsenseValidate:
 		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", sub)
 		os.Exit(1)
 	default:

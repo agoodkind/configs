@@ -1,6 +1,7 @@
 # golangci-lint: generated_at=2026-05-08T05:40:34Z
 cmd/mwan/ifmgr_other.go:3:1: package-comments: should have a package comment (revive)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
 cmd/mwan/main.go:47:11: G706: Log injection via taint analysis (gosec)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
+cmd/mwan/opnsense_validate.go:251:13: G706: Log injection via taint analysis (gosec)	# golangci-lint:first_added=2026-05-08T12:00:00Z last_seen=2026-05-08T12:00:00Z
 cmd/mwan/opnsense_probe.go:113:10: error returned from interface method should be wrapped: sig: func (context.Context).Err() error (wrapcheck)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
 cmd/mwan/opnsense_probe.go:63:10: error returned from external package is unwrapped: sig: func (*flag.FlagSet).Parse(arguments []string) error (wrapcheck)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
 go.mod:5:1: local replacement are not allowed: github.com/agoodkind/send-email (gomoddirectives)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
@@ -262,6 +263,7 @@ pkg/pveapi/client.go:146:22: error returned from external package is unwrapped: 
 pkg/pveapi/client.go:151:22: error returned from external package is unwrapped: sig: func io.ReadAll(r io.Reader) ([]byte, error) (wrapcheck)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
 pkg/pveapi/client.go:162:22: error returned from external package is unwrapped: sig: func encoding/json.Unmarshal(data []byte, v any) error (wrapcheck)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
 pkg/pveapi/client.go:177:22: error returned from interface method should be wrapped: sig: func (context.Context).Err() error (wrapcheck)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
+internal/opnsense/validate/env_exec.go:170:23: G402: TLS InsecureSkipVerify set to true. (gosec)	# golangci-lint:first_added=2026-05-08T12:00:00Z last_seen=2026-05-08T12:00:00Z
 pkg/pveapi/client.go:31:24: G402: TLS InsecureSkipVerify set to true. (gosec)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
 pkg/pveapi/client.go:73:13: error returned from external package is unwrapped: sig: func encoding/json.Marshal(v any) ([]byte, error) (wrapcheck)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
 pkg/pveapi/client.go:77:13: error returned from external package is unwrapped: sig: func net/http.NewRequestWithContext(ctx context.Context, method string, url string, body io.Reader) (*net/http.Request, error) (wrapcheck)	# golangci-lint:first_added=2026-05-05T03:10:57Z last_seen=2026-05-08T05:40:34Z
