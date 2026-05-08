@@ -305,7 +305,11 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
 #
 # CPU, memory, BIOS, machine, scsi_hardware, agent, serial_device, and
 # vga settings mirror VM 101 so the OPNsense installer behaves the same.
-# The boot disk is sized at 8G on local-zfs to match VM 101.
+#
+# MWAN-149 reconcile (2026-05-08): live `qm config 102` on suburban shows
+# memory=4096 and scsi0 size=16G after the OPNsense installer expanded
+# the disk and the operator increased RAM. HCL below mirrors live so
+# `tofu plan` reports zero diff for VM 102.
 
 resource "proxmox_virtual_environment_vm" "opnsense_test2" {
   provider  = proxmox.suburban
@@ -335,7 +339,7 @@ resource "proxmox_virtual_environment_vm" "opnsense_test2" {
   }
 
   memory {
-    dedicated = 2048
+    dedicated = 4096
   }
 
   serial_device {
@@ -346,12 +350,12 @@ resource "proxmox_virtual_environment_vm" "opnsense_test2" {
     type = "serial0"
   }
 
-  # Boot disk. After `tofu apply` the disk is empty; the operator
-  # installs OPNsense from the serial ISO per the from-scratch runbook.
+  # Boot disk. Live size is 16G after the OPNsense installer expanded
+  # the volume during the from-scratch install.
   disk {
     datastore_id = "local-zfs"
     interface    = "scsi0"
-    size         = 8
+    size         = 16
   }
 
   # Single trunk NIC per MWAN-148. MANAGEMENT untagged plus the four
