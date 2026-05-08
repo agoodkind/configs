@@ -63,10 +63,10 @@ common ones are:
 * `initialization.user_account.keys`: the GitHub SSH key list rotates
   whenever the operator adds or removes a public key. The resource
   ignores changes on this attribute, so plan should not flag it.
-* `kvm_arguments`: the bpg/proxmox provider passes the value through to
-  the API `args` field unchanged. The live value reads
-  `-device vhost-vsock-pci,guest-cid=950`; the resource declares the
-  same string.
+* `kvm_arguments` was removed from the VM 950 resource under MWAN-154.
+  Ansible now owns the live `args` value, which reads
+  `-device vhost-vsock-pci,guest-cid=950`. `tofu plan` no longer compares
+  this field, so the live value is left alone.
 * `vids`: the bridge resource declares the VLAN list space-separated
   (`64 100 200 300`). If the live config stores it comma-separated, plan
   flags drift; switch the value to `64,100,200,300` and re-plan.

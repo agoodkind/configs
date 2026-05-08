@@ -26,6 +26,7 @@
         ansible_host: "10.240.0.148"
         ansible_user: root
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      tags: ["always"]
 
     - name: Add VM 950 (test-mwan)
       ansible.builtin.add_host:
@@ -36,6 +37,7 @@
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         ansible_proxmox_vmid: "950"
         ansible_proxmox_host: suburban
+      tags: ["always"]
 
     - name: Add LXC 100 (mwan-failover-test)
       # eth0 is now DHCP on vmbr6 (mirroring prod LXC 116). eth1 keeps its
@@ -48,6 +50,7 @@
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         ansible_proxmox_vmid: "100"
         ansible_proxmox_host: suburban
+      tags: ["always"]
 
 # --- Prep guests (SSH keys, base packages) ---
 # Uncomment when running on fresh guests. Already completed for VM 950 and LXC 100.
@@ -107,6 +110,81 @@
         src: "{{ repo_root }}/mwan/testbed/suburban-interfaces.d-testbed-masquerade.conf"
         dest: /etc/network/interfaces.d/testbed-masquerade.conf
         mode: "0644"
+
+    # --- VM args (MWAN-154 owns the args field on suburban testbed VMs) ---
+    # The Proxmox API rejects writes to the `args` field for any actor
+    # other than the bare `root@pam` user. API tokens cannot bypass this.
+    # See `mwan/docs/proxmox-args-privilege-research-2026-05-08.md` for the
+    # full write-up. Tofu no longer declares `kvm_arguments` on VM 950 or
+    # VM 102; these tasks set the live `args` string instead. Each task
+    # only runs `qm set` when the live config does not already match.
+    # `args` only takes effect at QEMU process start, so a change here
+    # requires a cold reboot of the affected VM.
+
+    - name: Read current VM 950 args (MWAN-143)
+      ansible.builtin.command:
+        cmd: qm config 950
+      register: vm_950_config
+      changed_when: false
+      check_mode: false
+      tags: ["args"]
+
+    - name: Set vsock device on VM 950 args (MWAN-143)
+      ansible.builtin.command:
+        cmd: qm set 950 --args "-device vhost-vsock-pci,guest-cid=950"
+      when: >-
+        vm_950_config.stdout is not search('args:\s*-device\s+vhost-vsock-pci,guest-cid=950')
+      register: vm_950_args_set
+      changed_when: vm_950_args_set is not skipped and vm_950_args_set.rc == 0
+      tags: ["args"]
+
+    - name: Note that VM 950 needs a cold reboot when args changed
+      ansible.builtin.debug:
+        msg: >-
+          VM 950 args were updated. The vsock device only attaches on a
+          fresh QEMU process. Stop and start VM 950 (qm stop 950 then qm
+          start 950) for the new args to take effect.
+      when: vm_950_args_set is changed
+      tags: ["args"]
+
+    - name: Read current VM 102 args (MWAN-149)
+      ansible.builtin.command:
+        cmd: qm config 102
+      register: vm_102_config
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: ["args"]
+
+    - name: Set mwanrpc chardev on VM 102 args (MWAN-149)
+      # The expected args string carries the virtio-serial-pci controller,
+      # the chardev that bridges to /var/run/qemu-server/102.mwanrpc, and
+      # the virtserialport that exposes the chardev as
+      # /dev/ttyV0.0 inside the guest. The regex below pins the three
+      # device IDs (mwanrpc, mwanchr, the chardev path 102.mwanrpc) so
+      # the task is idempotent across whitespace differences.
+      ansible.builtin.command:
+        cmd: >-
+          qm set 102 --args "-device virtio-serial-pci,id=mwanrpc -chardev
+          socket,id=mwanchr,path=/var/run/qemu-server/102.mwanrpc,server=on,wait=off
+          -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0"
+      when: >-
+        vm_102_config.rc == 0
+        and (vm_102_config.stdout is not search('id=mwanrpc')
+             or vm_102_config.stdout is not search('path=/var/run/qemu-server/102\.mwanrpc')
+             or vm_102_config.stdout is not search('name=io\.goodkind\.mwan-opnsense\.0'))
+      register: vm_102_args_set
+      changed_when: vm_102_args_set is not skipped and vm_102_args_set.rc == 0
+      tags: ["args"]
+
+    - name: Note that VM 102 needs a cold reboot when args changed
+      ansible.builtin.debug:
+        msg: >-
+          VM 102 args were updated. The mwanrpc chardev only attaches on a
+          fresh QEMU process. Stop and start VM 102 (qm stop 102 then qm
+          start 102) for the new args to take effect.
+      when: vm_102_args_set is changed
+      tags: ["args"]
 
     # --- ISP LXCs (200/201/202) via pct ---
 
