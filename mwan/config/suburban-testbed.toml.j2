@@ -136,3 +136,68 @@ address = "{{ neighbor }}"
 [bgp.announce]
 ipv4 = {{ bgp_announce_ipv4 | to_json }}
 ipv6 = {{ bgp_announce_ipv6 | to_json }}
+
+# ============================================================================
+# ifmgr: suburban testbed interface manager.
+# ============================================================================
+# Mirrors production.toml.j2 lines 153-198 with testbed-appropriate values.
+# Role suburban-oob selects policy_rules + oobv6 + oobv4 + ra_lost (see
+# internal/ifmgr/roles.go). cloudflared_tap and wg_health are excluded
+# because the testbed has no cloudflared-oob tunnel and no remote WG peer.
+#
+# The kernel iface enmbrains0 is the simulated Monkeybrains ISP link in
+# this testbed (vmbr6 in Proxmox, MAC pinned by the testbed
+# 30-monkeybrains.link file). Reusing it as the OOB iface lets the
+# testbed exercise the same reconcile code paths as vault.
+#
+# OOB v6 prefix 3d06:bad:b01:2ff::/64 is reserved for testbed OOB so the
+# testbed cannot collide with prod 3d06:bad:b01:ff::/64. Table id 500 is
+# reused because routing tables are per-host.
+# ============================================================================
+
+[ifmgr]
+role = "suburban-oob"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.enmbrains0]
+name = "enmbrains0"
+dhcp_v4 = true
+ra_solicit = true
+dhcp_initial_backoff = "5s"
+dhcp_max_backoff = "5m"
+
+[ifmgr.modules.oobv6]
+iface = "enmbrains0"
+oob_addr = "3d06:bad:b01:2ff::1/128"
+oob_table_id = 500
+
+[ifmgr.modules.oobv4]
+iface = "enmbrains0"
+oob_table_id = 500
+
+[ifmgr.modules.ra_lost]
+iface = "enmbrains0"
+ra_lost_alert_after = "5m"
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 5
+uid_range = "997-997"
+table = "oob"
+table_id = 500
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 6
+from = "3d06:bad:b01:2ff::1"
+table = "oob"
+table_id = 500
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet"
+priority = 5
+uid_range = "997-997"
+table = "oob"
+table_id = 500
