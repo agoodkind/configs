@@ -173,10 +173,20 @@
         msg: "⚠️  Skipping pre-deploy snapshot - connectivity already broken!"
       when: pre_deploy_connectivity.rc != 0
 
+    - name: Ensure persistent mwan state directory exists
+      ansible.builtin.file:
+        path: /var/lib/mwan
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Write deploy timestamp to MWAN VM
       ansible.builtin.copy:
         content: "{{ ansible_date_time.epoch }}"
-        dest: /var/run/mwan-last-deploy
+        dest: /var/lib/mwan/last-deploy
+        owner: root
+        group: root
         mode: "0644"
 
     # ============================================================================
@@ -845,7 +855,7 @@
         msg: >-
           ✓ All configs deployed (traceId={{ mwan_deploy_trace_id }})
           ✓ Scheduling reboot in 5 seconds to apply changes cleanly
-          ✓ Timestamp preserved: /var/run/mwan-last-deploy
+          ✓ Timestamp preserved: /var/lib/mwan/last-deploy
           ✓ Watchdog will monitor post-reboot and auto-rollback if needed
 
     - name: Schedule reboot to apply all changes

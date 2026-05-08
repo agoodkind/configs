@@ -222,7 +222,7 @@ func classifyGuestArgs(args []string) (isPing, hasIface, isCatDeploy, isCatChang
 	if slices.Contains(args, "-I") {
 		hasIface = true
 	}
-	isCatDeploy = len(args) >= 2 && args[0] == "cat" && strings.Contains(args[1], "mwan-last-deploy")
+	isCatDeploy = len(args) >= 2 && args[0] == "cat" && strings.Contains(args[1], "last-deploy")
 	isCatChange = len(args) >= 2 && args[0] == "cat" && strings.Contains(args[1], "mwan-last-change")
 	return
 }

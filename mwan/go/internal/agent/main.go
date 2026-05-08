@@ -33,6 +33,11 @@ func Run(cfg *config.Config) error {
 		cfg.Agent.DeployFile,
 		"path to last deploy timestamp file",
 	)
+	deployExpected := flag.Bool(
+		"deploy-expected",
+		cfg.Agent.DeployExpected,
+		"emit deploy-file-missing notify when the deploy file is absent",
+	)
 	logFile := flag.String("log-file", cfg.Agent.LogFile, "path to JSON log file")
 	debug := flag.Bool(
 		"debug",
@@ -120,7 +125,9 @@ func Run(cfg *config.Config) error {
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(unaryTraceInterceptor(logger)),
 	)
-	mwanv1.RegisterMWANAgentServer(grpcServer, NewServer(*deployFile, logger, bgpSpeaker, notifier))
+	agentServer := NewServer(*deployFile, logger, bgpSpeaker, notifier)
+	agentServer.SetDeployExpected(*deployExpected)
+	mwanv1.RegisterMWANAgentServer(grpcServer, agentServer)
 	if *debug {
 		reflection.Register(grpcServer)
 		logger.Info("gRPC reflection enabled (debug mode)")

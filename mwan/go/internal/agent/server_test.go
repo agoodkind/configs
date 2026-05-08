@@ -15,6 +15,7 @@ import (
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/notify"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -478,6 +479,61 @@ func TestGetConfigState_InvalidDeployContent(t *testing.T) {
 	}
 	if res.GetLastDeployEpoch() != 0 {
 		t.Fatalf("last_deploy_epoch=%d want 0", res.GetLastDeployEpoch())
+	}
+}
+
+// recordingNotifier is a minimal Notifier that captures every Notify
+// call so the deploy-expected gate test can assert on whether the
+// "deploy-file-missing" event fires.
+type recordingNotifier struct {
+	notifies []notify.Event
+	resolves int
+}
+
+func (r *recordingNotifier) Notify(_ context.Context, ev notify.Event) {
+	r.notifies = append(r.notifies, ev)
+}
+
+func (r *recordingNotifier) Resolve(
+	_ context.Context, _, _, _ string, _ ...slog.Attr,
+) {
+	r.resolves++
+}
+
+func (r *recordingNotifier) Active(_, _ string) bool { return false }
+
+func TestGetConfigState_DeployExpectedFalseSuppressesNotify(t *testing.T) {
+	t.Parallel()
+	rec := &recordingNotifier{}
+	srv := NewServer(filepath.Join(t.TempDir(), "missing"), testLogger(t), nil, rec)
+	srv.SetDeployExpected(false)
+	cli := startTestServer(t, srv)
+	res, err := cli.GetConfigState(context.Background(), &mwanv1.GetConfigStateRequest{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if res.GetLastDeployEpoch() != 0 {
+		t.Fatalf("last_deploy_epoch=%d want 0", res.GetLastDeployEpoch())
+	}
+	if len(rec.notifies) != 0 {
+		t.Fatalf("expected no Notify calls when deploy_expected=false, got %d", len(rec.notifies))
+	}
+}
+
+func TestGetConfigState_DeployExpectedTrueFiresNotify(t *testing.T) {
+	t.Parallel()
+	rec := &recordingNotifier{}
+	// Default deployExpected is true; do not flip the setter.
+	srv := NewServer(filepath.Join(t.TempDir(), "missing"), testLogger(t), nil, rec)
+	cli := startTestServer(t, srv)
+	if _, err := cli.GetConfigState(context.Background(), &mwanv1.GetConfigStateRequest{}); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(rec.notifies) != 1 {
+		t.Fatalf("expected one Notify call when deploy_expected=true, got %d", len(rec.notifies))
+	}
+	if rec.notifies[0].Kind != "deploy-file-missing" {
+		t.Fatalf("kind=%q want deploy-file-missing", rec.notifies[0].Kind)
 	}
 }
 
