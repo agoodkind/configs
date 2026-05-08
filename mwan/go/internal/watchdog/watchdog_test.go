@@ -42,14 +42,21 @@ type mockOps struct {
 	guestResults  map[string]ops.GuestExecResult
 	snapshotsOut  []byte
 
-	vmStatusCalls    int
-	vmStartCalls     int
-	vmStopCalls      int
-	vmSnapshotsCalls int
-	pingCalls        []string
-	guestCalls       []string
-	emailsSent       []emailSent
-	vmRollbackCalls  []vmRollbackCall
+	// bgpStatusByVMID seeds GetBGPStatus responses keyed by the vmid argument.
+	// Defaults to an empty response (not established) if the key is missing.
+	bgpStatusByVMID map[string]*mwanv1.GetBGPStatusResponse
+
+	vmStatusCalls       int
+	vmStartCalls        int
+	vmStopCalls         int
+	vmSnapshotsCalls    int
+	pingCalls           []string
+	guestCalls          []string
+	emailsSent          []emailSent
+	vmRollbackCalls     []vmRollbackCall
+	announceRoutesCalls []string
+	withdrawRoutesCalls []string
+	getBGPStatusCalls   []string
 }
 
 func (m *mockOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
@@ -67,14 +74,28 @@ func (m *mockOps) GetConfigState(ctx context.Context, vmid string) (*mwanv1.GetC
 }
 
 func (m *mockOps) GetBGPStatus(ctx context.Context, vmid string) (*mwanv1.GetBGPStatusResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getBGPStatusCalls = append(m.getBGPStatusCalls, vmid)
+	if m.bgpStatusByVMID != nil {
+		if resp, ok := m.bgpStatusByVMID[vmid]; ok {
+			return resp, nil
+		}
+	}
 	return &mwanv1.GetBGPStatusResponse{}, nil
 }
 
 func (m *mockOps) AnnounceRoutes(ctx context.Context, vmid string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.announceRoutesCalls = append(m.announceRoutesCalls, vmid)
 	return nil
 }
 
 func (m *mockOps) WithdrawRoutes(ctx context.Context, vmid string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.withdrawRoutesCalls = append(m.withdrawRoutesCalls, vmid)
 	return nil
 }
 
