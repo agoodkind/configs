@@ -116,6 +116,48 @@ func (w *watchdog) tracedLogger(ctx context.Context) *slog.Logger {
 	return tracing.Logger(ctx, w.log)
 }
 
+// notifierOrNull returns w.notify when configured, or a NullNotifier
+// otherwise. Tests construct watchdog instances without wiring notify so
+// the call sites stay safe without conditional guards.
+func (w *watchdog) notifierOrNull() notify.Notifier {
+	if w.notify == nil {
+		return notify.NullNotifier{}
+	}
+	return w.notify
+}
+
+// routeChannelFallback bounds the per-cycle TCP-fallback warning to one
+// email per state transition plus one per repeat-cadence window. The
+// vsock-unavailable path used to fire WARN every 5-minute cycle on
+// testbed because VM 950 has no vhost-vsock-pci device. When the vsock
+// channel returns successfully, Resolve fires the recovery line.
+func (w *watchdog) routeChannelFallback(ctx context.Context, usedChannel string) {
+	notifier := w.notifierOrNull()
+	key := w.cfg.MwanVMID + ":" + strconv.FormatUint(uint64(w.cfg.Watchdog.VsockPort), 10)
+	if usedChannel == "tcp" {
+		notifier.Notify(ctx, notify.Event{
+			Now:     w.now(),
+			Level:   slog.LevelWarn,
+			Kind:    "vsock-fallback",
+			Key:     key,
+			Message: "getConfigState: vsock unavailable, used TCP fallback",
+			Fields: []slog.Attr{
+				slog.String("channel", usedChannel),
+				slog.String("vm_id", w.cfg.MwanVMID),
+			},
+			IsRecovery: false,
+		})
+		return
+	}
+	if usedChannel == "vsock" {
+		notifier.Resolve(ctx, "vsock-fallback", key,
+			"getConfigState: vsock channel restored",
+			slog.String("channel", usedChannel),
+			slog.String("vm_id", w.cfg.MwanVMID),
+		)
+	}
+}
+
 // collectIfaceAddrs returns a map[ifaceName][]cidr for all non-loopback interfaces.
 func collectIfaceAddrs() map[string][]string {
 	result := make(map[string][]string)
@@ -539,12 +581,7 @@ func (w *watchdog) checkConfigHash(ctx context.Context) {
 		w.lastHashCheckOK = false
 		return
 	}
-	if usedChannel == "tcp" {
-		log.WarnContext(ctx,
-			"getConfigState: vsock unavailable, used TCP fallback",
-			"channel", usedChannel,
-		)
-	}
+	w.routeChannelFallback(ctx, usedChannel)
 	h := strings.TrimSpace(resp.GetConfigHash())
 	if h == "" {
 		return

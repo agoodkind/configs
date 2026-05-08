@@ -112,8 +112,6 @@ func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
 	// Email no longer flows through the slog handler chain for ifmgr.
 	// notify.Manager (constructed in runIfMgr via notify.FromConfig)
 	// owns the email path with per-(kind, key) state-change semantics.
-	// The slog email handler is deleted in slice E once watchdog and
-	// agent migrate too.
 	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,

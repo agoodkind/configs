@@ -22,6 +22,7 @@ import (
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/bgp"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -37,6 +38,7 @@ type Server struct {
 	log            *slog.Logger
 	bgp            *bgp.Speaker // nil when BGP is disabled
 	clock          clock
+	notifier       notify.Notifier
 
 	// These are injectable in tests to avoid reading real /proc files.
 	// Production code leaves them nil and uses the real /proc paths.
@@ -46,12 +48,21 @@ type Server struct {
 	statfsPath  string
 }
 
-func NewServer(deployFilePath string, log *slog.Logger, bgpSpeaker *bgp.Speaker) *Server {
+func NewServer(
+	deployFilePath string,
+	log *slog.Logger,
+	bgpSpeaker *bgp.Speaker,
+	notifier notify.Notifier,
+) *Server {
+	if notifier == nil {
+		notifier = notify.NullNotifier{}
+	}
 	return &Server{
 		deployFilePath: deployFilePath,
 		log:            log,
 		bgp:            bgpSpeaker,
 		clock:          realClock{},
+		notifier:       notifier,
 		uptimePath:     "/proc/uptime",
 		loadAvgPath:    "/proc/loadavg",
 		meminfoPath:    "/proc/meminfo",
@@ -270,7 +281,21 @@ func (a *Server) GetConfigState(
 
 	raw, err := os.ReadFile(a.deployFilePath)
 	if err != nil {
-		a.log.WarnContext(ctx, "read deploy file", "path", a.deployFilePath, "error", err)
+		a.notifier.Notify(ctx, notify.Event{
+			Level:   slog.LevelWarn,
+			Kind:    "deploy-file-missing",
+			Key:     a.deployFilePath,
+			Message: "read deploy file",
+			Fields: []slog.Attr{
+				slog.String("path", a.deployFilePath),
+				slog.String("error", err.Error()),
+			},
+		})
+	} else {
+		a.notifier.Resolve(ctx, "deploy-file-missing", a.deployFilePath,
+			"deploy file readable",
+			slog.String("path", a.deployFilePath),
+		)
 	}
 	deployEpoch, _ := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
 
