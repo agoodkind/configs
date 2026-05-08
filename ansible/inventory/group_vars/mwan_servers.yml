@@ -389,3 +389,12 @@ bgp_announce_ipv4:
   - "0.0.0.0/0"
 bgp_announce_ipv6:
   - "::/0"
+
+# BGP Graceful Restart (RFC 4724). When enabled the embedded GoBGP speaker
+# negotiates the GR capability so a planned restart of mwan-agent does not
+# cause immediate route withdrawal on the OPNsense FRR helper. The
+# restart_time is the helper-side hold timer in seconds (MWAN-130 plan
+# pins this to 30s, deliberately shorter than the GoBGP default of 120s).
+mwan_bgp_graceful_restart_enabled: true
+mwan_bgp_graceful_restart_time_seconds: 30
+mwan_bgp_graceful_restart_notification_enabled: true

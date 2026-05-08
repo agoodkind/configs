@@ -143,6 +143,17 @@ address = "{{ neighbor }}"
 ipv4 = {{ bgp_announce_ipv4 | to_json }}
 ipv6 = {{ bgp_announce_ipv6 | to_json }}
 
+# BGP Graceful Restart (RFC 4724) negotiation with the OPNsense FRR helper.
+# When enabled the speaker advertises the GR capability so a planned restart
+# of mwan-agent does not cause immediate route withdrawal on the helper.
+# restart_time is the helper-side hold timer in seconds. The MWAN-130 plan
+# sets this to 30s. notification_enabled mirrors the RFC 8538 "N" bit so a
+# NOTIFICATION-triggered session reset still preserves GR semantics.
+[bgp.graceful_restart]
+enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
+restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
+notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
+
 # ============================================================================
 # ifmgr: vault interface manager (formerly mwan-oob).
 # ============================================================================

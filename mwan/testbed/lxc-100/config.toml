@@ -39,6 +39,14 @@ address = "3d06:bad:b01:201::2"
 ipv4 = ["0.0.0.0/0"]
 ipv6 = ["::/0"]
 
+# BGP Graceful Restart (RFC 4724) on the testbed failover-backup speaker.
+# Mirrors mwan/production/lxc-116/config.toml so the testbed exercises the
+# same GR negotiation path as production.
+[bgp.graceful_restart]
+enabled = true
+restart_time = 30
+notification_enabled = true
+
 # ============================================================================
 # ifmgr: lxc-failover-backup role (eth0/mbrains-side health management)
 # ============================================================================

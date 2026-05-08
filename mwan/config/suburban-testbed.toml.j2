@@ -138,6 +138,14 @@ address = "{{ neighbor }}"
 ipv4 = {{ bgp_announce_ipv4 | to_json }}
 ipv6 = {{ bgp_announce_ipv6 | to_json }}
 
+# BGP Graceful Restart (RFC 4724) negotiation with the testbed OPNsense FRR
+# helper. Mirrors production.toml.j2 [bgp.graceful_restart]. See plan
+# MWAN-130 for the rationale and the 30s restart_time choice.
+[bgp.graceful_restart]
+enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
+restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
+notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
+
 # ============================================================================
 # ifmgr: suburban testbed interface manager.
 # ============================================================================
