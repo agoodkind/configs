@@ -53,6 +53,19 @@ var roleModules = map[string][]string{
 	"suburban-wg": {
 		"wg_health",
 	},
+	// suburban-oob is the testbed analog of vault-oob. It selects the same
+	// kernel-state modules so the suburban testbed VM exercises the same
+	// reconcile paths as vault, against the simulated mbrains ISP iface
+	// (enmbrains0) and a testbed-only OOB v6 prefix under
+	// 3d06:bad:b01:2ff::/64. cloudflared_tap and wg_health are excluded
+	// because the testbed has no cloudflared-oob tunnel and no remote WG
+	// peer to observe through ifmgr.
+	"suburban-oob": {
+		"policy_rules",
+		"oobv6",
+		"oobv4",
+		"ra_lost",
+	},
 }
 
 // modulesForRole returns the module name list for the named role, or an
