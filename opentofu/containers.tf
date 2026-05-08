@@ -38,7 +38,7 @@ resource "proxmox_virtual_environment_container" "plane" {
   }
 
   memory { dedicated = 4096 }
-  cpu    { cores     = 2 }
+  cpu { cores = 2 }
 
   tags = ["lxc", "plane", "docker"]
 
@@ -91,7 +91,7 @@ resource "proxmox_virtual_environment_container" "tack" {
   }
 
   memory { dedicated = 8192 }
-  cpu    { cores     = 2 }
+  cpu { cores = 2 }
 
   tags = ["lxc", "tack", "docker"]
 

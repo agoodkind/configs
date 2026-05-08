@@ -16,8 +16,19 @@ terraform {
   required_version = ">= 1.9"
 }
 
+# Default provider targets the production vault Proxmox host.
+# Existing LXC resources in containers.tf use this provider implicitly.
 provider "proxmox" {
   endpoint  = var.proxmox_endpoint
   api_token = var.proxmox_api_token
+  insecure  = true
+}
+
+# Suburban provider alias targets the suburban testbed Proxmox host.
+# All MWAN testbed resources (bridges, VM 950) use this alias explicitly.
+provider "proxmox" {
+  alias     = "suburban"
+  endpoint  = var.suburban_proxmox_endpoint
+  api_token = var.suburban_proxmox_api_token
   insecure  = true
 }
