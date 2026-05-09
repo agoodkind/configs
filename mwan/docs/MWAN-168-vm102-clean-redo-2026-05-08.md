@@ -152,3 +152,125 @@ post-import verification was NOT run.
   minted root API key+secret was round-tripped between mode-600 tmpfiles
   and deleted from both VM 102 and the local mac at the end of the slice.
   The vault entries were not updated; the key is gone with no record.
+
+## Follow-up: SSH+scp import path (2026-05-08, second session)
+
+After the first session ended with both gRPC and QGA wedged on the 219kB
+stdin push, this session recovered by rolling VM 102 back to
+`post-runbook-pre-import-2026-05-08` and importing the prod-shaped XML over
+SSH+scp instead of stdin-over-virtio-serial. The path worked end to end and
+the v2 baseline was reached.
+
+### Wedge recovery
+
+`qm rollback 102 post-runbook-pre-import-2026-05-08` restored both daemons.
+gRPC `op=version` returned `Version OK` within the first 5 second probe,
+`qm guest cmd 102 ping` returned exit 0, and `pkg info -E os-qemu-guest-agent
+os-frr` confirmed `os-qemu-guest-agent-1.3` and `os-frr-1.50_1` were still
+installed inside the snapshot. The wedge was confirmed to be a transient
+runtime state, not a snapshot corruption.
+
+### SSH+scp import path that worked
+
+Phase by phase:
+
+1. The post-runbook snapshot already had `net1` on `vmbr1` with
+   `vtnet1` carrying `10.240.200.102/24` and a default route via
+   `10.240.200.1`. No `qm set --net1` call was needed; the snapshot
+   restored the prior session's transient NIC.
+2. `pf` blocked SSH on `vtnet1` because the OPNsense pf rules only
+   permit SSH on `vtnet0` (the LAN interface). Disabling pf with
+   `pfctl -d` opened the path. The clean baseline is replaced by the
+   import anyway, so loosening pf for the import window is harmless.
+3. `xmllint --noout` validated the regenerated
+   `mwan/testbed/opnsense/generated/config-testbed.xml` (219492 bytes,
+   sha256 `3e967e73b0c1586ab33937566ac34c2ba4023f5817803f7d4055694272f904d5`).
+4. `scp` from local Mac to suburban, then suburban to VM 102 via
+   `sshpass -p opnsense scp ... root@10.240.200.102:/conf/backup/...`.
+   `mwan opnsense-probe ... -op exec -cmd /sbin/sha256` on VM 102
+   confirmed the destination hash matched bit for bit.
+5. API key was minted by writing a small PHP script, scp-ing it to
+   VM 102, running `/usr/local/bin/php /tmp/keymint.sh` over SSH, and
+   capturing the two output lines (key on line 1, secret on line 2)
+   into a mode-600 tmpfile on the local Mac and on suburban.
+6. `curl -k -u "$KEY:$SECRET" -X POST
+   https://10.240.200.102/api/core/backup/revertBackup/config-testbed-import-clean-2026-05-08.xml`
+   returned `{"status":"reverted"}` with HTTP 200. The HTTPS endpoint
+   was reachable on `vtnet1` since `lighttpd` listens on `*:443`.
+7. Default route deleted, `vtnet1` alias removed, `qm set 102 --delete
+   net1` cleared the transient NIC. `qm config 102` shows only `net0`
+   on `vmbrtrunk`. The mwanrpc virtio-serial args block is preserved.
+8. `qm reboot 102` and a 180 second probe loop confirmed gRPC came
+   back. Post-reboot verification:
+   - `hostname` returned `router-test.test.home.goodkind.io`.
+   - `vtnet0` carries `10.240.4.1/24` and `3d06:bad:b01:204::1/64`,
+     description `MANAGEMENT (opt9)`, group `INTERNAL`.
+   - `pkg info -E os-qemu-guest-agent os-frr` returned both packages.
+   - `service mwan_opnsense status`, `service qemu-guest-agent
+     status`, and `service openssh status` all reported running.
+   - `qm guest cmd 102 ping` returned exit 0.
+9. `qm snapshot 102 prod-shaped-25-7-baseline-v2-2026-05-08 --vmstate
+   1` saved 1.83 GiB of RAM in 3 seconds. Snapshot tree end state has
+   all 4 snapshots: `pre-install-2026-05-08` ->
+   `pre-config-import-2026-05-08` ->
+   `post-runbook-pre-import-2026-05-08` ->
+   `prod-shaped-25-7-baseline-v2-2026-05-08` -> `current`.
+
+### Pre-existing finding: vtysh fails at startup on this baseline
+
+`vtysh -c "show ip bgp summary"` returns:
+
+```
+ld-elf.so.1: /usr/local/lib/libpcre2-8.so.0: version PCRE2_10.47
+required by /usr/local/lib/libyang.so.2 not defined
+```
+
+`pkg info` shows `pcre2-10.45_1` and `libyang2-2.1.128`. The libyang
+shared library was built against PCRE2_10.47 but the OPNsense repo
+ships pcre2-10.45_1. Both packages were installed during Phase 4 of
+the first session from the OPNsense package mirror, so this skew is
+not caused by the SSH+scp import path; it is a pre-existing testbed
+package set issue.
+
+This blocks any FRR-driven verification of the testbed BGP peering
+until the package set is reconciled. The mwn-opnsense daemon, QGA,
+SSH, lighttpd, and pf are all unaffected. The next slice should
+update pcre2 to a version that exports PCRE2_10.47 (or downgrade
+libyang2 to a build that matches pcre2-10.45) before any BGP peering
+work begins.
+
+### Hard rules check at end of this session
+
+- pre-install-2026-05-08 still exists. Yes.
+- pre-config-import-2026-05-08 still exists. Yes.
+- post-runbook-pre-import-2026-05-08 still exists. Yes.
+- prod-shaped-25-7-baseline-v2-2026-05-08 exists. Yes.
+- Transient vmbr1 NIC removed. Yes.
+- No production hosts touched. Confirmed.
+- No `tofu apply`, no `ansible-playbook`, no `git push`, no `git
+  merge` to main. Confirmed.
+- No password or API key printed in chat or committed. Confirmed;
+  the minted API key+secret were captured into mode-600 tmpfiles on
+  the local Mac and suburban, used only for the single revertBackup
+  call, and deleted at the end of this session.
+
+### Top three findings
+
+1. The SSH+scp import path is reliable for the 219kB prod-shaped
+   config. The earlier wedge was caused by pushing the same payload
+   over virtio-serial stdin (gRPC `--stdin-file` and `qm guest exec
+   --pass-stdin`); both transports wedged. SCP over SSH avoided the
+   virtio-serial buffer pressure entirely. Future runbook revisions
+   should mark `--stdin-file` and `--pass-stdin` unsafe for payloads
+   above some bound that needs measurement, and document SCP+SSH as
+   the canonical path.
+2. pf on a freshly imported prod-shaped OPNsense permits SSH only on
+   the LAN interface. To reach the VM via a transient `vmbr1` NIC,
+   pf must be disabled with `pfctl -d` for the duration of the
+   import. Adding a temporary pass rule on `vtnet1` would also work
+   but is more invasive.
+3. The current OPNsense 25.7 testbed package set has a pcre2 vs.
+   libyang2 ABI skew that breaks `vtysh` at startup. This was not
+   surfaced earlier because the prior session never reached a
+   working FRR runtime check. BGP work on this baseline must
+   reconcile the package set first.
