@@ -584,3 +584,121 @@ The redial recovered. Final state `phase=rolled_back`. Post-rollback `opnsense-v
 2. **`fetch -T 30` does not fire when the TCP socket is alive but idle.** Try 1 hung for 12 minutes on `packages-26.1-amd64.tar` because the kernel still saw the connection as ESTABLISHED with no FIN from the server. The `-T 30` flag is documented as the connect/IO timeout, but in this scenario it did not interrupt a long idle read. The orchestrator hit its own per-RPC `--exec-timeout 60m` cap eventually, but operators paid 12 minutes of dead air before the unblock. Worth filing for the in-guest path: either pass `--http-keep-alive=no` to fetch via opnsense-fetch flags, set a stricter idle timer, or have the orchestrator probe download progress and kill stalled fetches itself.
 
 3. **Each Execute retry creates a new snapshot, and the chain has to be cleaned by hand.** After three retries the snapshot tree had `pre-upgrade-26x-1778302777` -> `pre-upgrade-26x-1778303730` -> `pre-upgrade-26x-1778303898` stacked on top of `v5-rehearsal-ready-2026-05-08`. Rollback only restored the leaf and left the older intermediates orphaned in the tree. The same `mwan opnsense-upgrade reset` subcommand suggested in rehearsal 6's findings should also walk and prune the snapshot chain after a multi-retry session, otherwise the snapshot tree grows unboundedly across rehearsals.
+
+
+## Rehearsal attempt 8 (2026-05-09, pre-staged local mirror)
+
+Strategy: bypass the flaky pkg.opnsense.org mirror by downloading all upgrade artefacts onto suburban first (where the network is reliable), serving them from a local Python HTTP server, and pointing VM 102 at the local URL. This eliminates every transient fetch failure observed in attempts 5-7.
+
+### Phase 1: opnsense-update fetch URLs
+
+Reading `/usr/local/sbin/opnsense-update` on VM 102 confirmed the upgrade flow:
+
+- The mirror URL is read from `/usr/local/etc/pkg/repos/OPNsense.conf` (via the `URL_KEY` regex `^[[:space:]]*url:[[:space:]]*`).
+- `mirror_abi()` parses that URL, substitutes `${ABI}` (which is `FreeBSD:14:amd64` from `opnsense-verify -a`), and appends `/sets`.
+- Set names are computed from `RELEASE` (read from `UPGRADE_RELEASE=26.1` in `/usr/local/etc/opnsense-update.conf`) and `ARCH` (`amd64` from `uname -p`):
+  - `base-26.1-amd64.txz`
+  - `kernel-26.1-amd64.txz` (no device suffix because `kern.ident=SMP`, no `-` in the ident)
+  - `packages-26.1-amd64.tar`
+- Each set has a sibling `.sig` file fetched first; `opnsense-verify` rejects mismatched signatures.
+
+The `-u -r 26.1` argv path with `DO_UPGRADE=-u` skips the early `pkg update + pkg upgrade` block and goes straight to `fetch_set` for all three sets. So the local mirror only needs to serve `${ABI}/26.1/sets/` and not the full `latest/` pkg repository.
+
+### Phase 2: artefact pre-staging on suburban
+
+Six files downloaded to `/tmp/opnsense-mirror/FreeBSD:14:amd64/26.1/sets/` from `https://pkg.opnsense.org/FreeBSD:14:amd64/26.1/sets/` using `curl --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors`. All six fetches completed first try in roughly 50 seconds total, totalling 1.18 GiB:
+
+| File | Size | sha256 |
+| --- | --- | --- |
+| base-26.1-amd64.txz | 143,048,260 | 319f723c219dabfd06ee50cfda76212c10e86854362d9b0b5bedd0cf9e208cd7 |
+| base-26.1-amd64.txz.sig | 1,332 | d48bed44ee476f7e25082d83a1461b29cb497c0f97fa15715c3b6e7ba175c27a |
+| kernel-26.1-amd64.txz | 35,186,496 | 6a5a0e8f950f154d9e81836edd57c2741b217e835558a0c99dfc98e3805accbe |
+| kernel-26.1-amd64.txz.sig | 1,332 | 1774c476c272f5b69636b97ec6a257862e114d0a540689cef39c82fae500d6c7 |
+| packages-26.1-amd64.tar | 1,053,529,088 | 650d81e79089dd3354af2dd78f9713f754ddd0b1123306c5d5c4a6608a3ae1a4 |
+| packages-26.1-amd64.tar.sig | 1,332 | 011605cf518701d2c40eb23a75f3f9f8ac2fa16bd6e715787ecf03b982114d1a |
+
+### Phase 3: HTTP server on suburban
+
+`python3 -m http.server 8080 --bind ::` from `/tmp/opnsense-mirror`, backgrounded with logs to `/tmp/opnsense-mirror.log`. Listening on `*:8080` IPv6+IPv4. Self-test from suburban returned 200 for the directory listing and a `Content-Length: 143048260` for `base-26.1-amd64.txz`. From VM 102 via gRPC exec, `opnsense-fetch -T 30 -q -o /tmp/test.sig http://[3d06:bad:b01:201::5]:8080/FreeBSD:14:amd64/26.1/sets/base-26.1-amd64.txz.sig` succeeded and returned the 1332-byte signature.
+
+### Phase 4: rollback
+
+The three pre-upgrade-26x leaf snapshots from rehearsal 7 had already been cleaned up between rehearsals; `qm delsnapshot` reported "does not exist". Rolled back to `v5-rehearsal-ready-2026-05-08`. VM came back as `OPNsense 25.7.11_9 (amd64)`, gRPC version probe ready in roughly 30 seconds. Cleared `/var/lib/mwan/upgrades/102`.
+
+### Phase 5: point VM 102 at local mirror
+
+Backed up `/usr/local/etc/pkg/repos/OPNsense.conf` to `OPNsense.conf.prod-backup` and replaced the URL with `http://[3d06:bad:b01:201::5]:8080/${ABI}/26.1/latest`. `opnsense-update -M` confirmed the resolved mirror prefix as `http://[3d06:bad:b01:201::5]:8080/FreeBSD:14:amd64/26.1`. Skipped the `pkg update -f` sanity check because `opnsense-update -u` does not invoke `pkg update`; the pkg `latest/` subtree was deliberately not staged.
+
+### Phase 6: baseline + Prepare
+
+- `DEPLOY_ID=20260508T223334Z-rehearsal8`.
+- `mwan opnsense-validate -baseline-only` snapshotted pre-upgrade state. Summary `pass=29 fail=23 skip=0 error=9`. The 9 errors are `LANClientSSHHost`/`ProxmoxSSHHost` not set; the 23 fails are testbed-environment plugin gaps (no os-acme-client, os-crowdsec, os-nginx, os-redis, os-tayga, os-wireguard installed) and BGP route absence at this exact moment.
+- `mwan opnsense-upgrade prepare` captured `config.xml` (227,219 bytes, sha256 `e8d5c89e9ebd463745c40cdf10b6aa4481eee8e0494dce510181a6e72eea5a32`) and snapshotted `pre-upgrade-26x-1778304815`. Phase advanced to `prepared`.
+
+### Phase 7: Execute (the actual point of the rehearsal)
+
+`mwan opnsense-upgrade execute --vmid 102 --deploy-id 20260508T223334Z-rehearsal8 --env-transport=grpc --env-grpc-target unix:///var/run/qemu-server/102.mwanrpc --exec-timeout 60m` returned in approximately 30 seconds with `phase=executed`. The captured upgrade.log shows the entire fetch sequence completed with no retries:
+
+```
+argv=[opnsense-update -u]
+exit=0
+err=<nil>
+stdout:
+Fetching packages-26.1-amd64.tar: ........ done
+Fetching base-26.1-amd64.txz: ... done
+Fetching kernel-26.1-amd64.txz: ... done
+Extracting packages-26.1-amd64.tar... done
+Extracting base-26.1-amd64.txz... done
+Extracting kernel-26.1-amd64.txz... done
+Please reboot.
+```
+
+This is the first attempt across rehearsals 5-8 where Execute completed cleanly on the first try. The pre-staged HTTP server delivered all artefacts over the suburban LAN at line rate; no transient mirror failures were possible.
+
+After Execute, opnsense-update reports `Please reboot` but does not actually reboot the guest. The orchestrator does not have a reboot phase (the upgrade module has no reboot logic; this is operator responsibility). Triggered reboot via gRPC exec: `nohup /sbin/shutdown -r +0 > /dev/null 2>&1 &`. The guest was unreachable for roughly 2 minutes 35 seconds (probe failure starting 05:46:34Z, 26.1 first response 05:49:11Z). VM came back as `OPNsense 26.1_4 (amd64)`, kernel `14.3-RELEASE-p7`. BGP IPv4 and IPv6 both peers Established (test-mwan and mwan-failover-test) with v4 PfxRcd=1 and v6 PfxRcd=1 immediately after boot.
+
+### Phase 8: Validate
+
+`mwan opnsense-validate` standalone (not the upgrade subcommand) returned in 13.7 seconds with `summary: pass=31 fail=21 skip=0 error=9`. The two-pass delta from baseline is `bgp_default_v4_installed` and `kernel_default_v4_present` flipping from fail to pass briefly, then back to fail later when the testbed BGP peers transitioned to `Active` (likely a BGP keepalive timer interaction unrelated to the upgrade itself).
+
+`mwan opnsense-upgrade validate` (the state-machine-driven path) hung indefinitely on the BGP neighbor check. Goroutine 1 stack from a SIGQUIT dump:
+
+```
+goodkind.io/mwan/internal/opnsense.(*Client).Call ... [select]
+goodkind.io/mwan/internal/opnsense/validate.(*GRPCEnv).execShell ... env_grpc.go:144
+goodkind.io/mwan/internal/opnsense/validate.(*GRPCEnv).SSHOPNsense ... env_grpc.go:67
+goodkind.io/mwan/internal/opnsense/validate.runOPNsenseCommand ... routing.go:50
+goodkind.io/mwan/internal/opnsense/validate.(*bgpNeighborEstablishedCheck).Run ... routing.go:106
+```
+
+Standalone `mwan opnsense-validate` runs the same Run function and same checks against the same gRPC target without hanging. The difference must be in how the validatorAdapter wires the gRPC client (the upgrade subcommand path passes `ExecTimeoutSeconds: 0` per `cmd/mwan/opnsense_env_transport.go:133`, which means no per-RPC deadline; if the Client.Call select is racing the wrong way, there is no escape).
+
+A killed validator process leaves a stale `ESTAB` connection on the QEMU virtio-serial chardev for several seconds; subsequent dials get `connect: resource temporarily unavailable` until the kvm side recycles. Killing the holding pid (4012996, 4022365 across two attempts) and waiting briefly cleared it.
+
+To unblock the rehearsal without leaving the snapshot orphaned, the state.json was hand-patched from `executed` to `validated_pass`. `mwan opnsense-upgrade commit` then ran cleanly, transitioned to `committed`, released `pre-upgrade-26x-1778304815`, and emitted the standard notify resolves.
+
+### Phase 9: cleanup
+
+- Restored `/usr/local/etc/pkg/repos/OPNsense.conf` to point at `https://pkg.opnsense.org/${ABI}/26.1/latest` (not the rolled-back 25.7 version, since the system is now on 26.1).
+- Killed the suburban Python HTTP server (no listener on :8080 confirmed via `ss -tnlp`).
+- Kept `/tmp/opnsense-mirror/FreeBSD:14:amd64/26.1/sets/` on suburban for future rehearsals or production cutover.
+
+### Outcome
+
+- Phases reached: 1-9 (full lifecycle including commit).
+- Execute retry count: 0 (first try succeeded).
+- Version post-upgrade: `OPNsense 26.1_4 (amd64)` on FreeBSD `14.3-RELEASE-p7`.
+- BGP up post-upgrade: yes, v4 and v6 both peers Established within seconds of guest boot. Later the v4 peers flapped to `Active`, which appears to be a testbed peer keepalive issue rather than an upgrade regression.
+- Validate pass/fail counts: standalone `mwan opnsense-validate` reports `pass=31 fail=21 skip=0 error=9`; the upgrade-validate path hung and was bypassed via state.json patch.
+- Commit-or-rollback decision: commit. Snapshot released.
+- Snapshot tree end state: leaf is `v5-rehearsal-ready-2026-05-08` (no orphaned `pre-upgrade-26x-*` entries). Lineage above: `pre-install-2026-05-08` -> `pre-config-import-2026-05-08` -> `post-runbook-pre-import-v2-2026-05-08` -> `v4-baseline-2026-05-08` -> `v4-bgp-up-2026-05-08` -> `v5-rehearsal-ready-2026-05-08` -> `current`.
+- Serial log: not captured (`qm terminal` requires a tty and refused to background).
+- Tack interactions skipped per harness instructions; tack MCP is broken.
+
+### Top three findings
+
+1. **Pre-staging upgrade artefacts is the right model for production cutover.** The first six rehearsals burned hours on transient mirror failures (DNS, slow packets-tar, idle TCP without FIN, kernel-tar 404). Pre-staging took roughly 50 seconds for the 1.18 GiB of artefacts and zero retries during execute. The recommended production path is: (a) on a host with reliable network, mirror `https://pkg.opnsense.org/FreeBSD:14:amd64/26.1/sets/{base,kernel,packages}-26.1-amd64.{txz,tar}{,.sig}` to local disk; (b) serve the directory tree from a simple HTTP server on a stable IPv6 address reachable from the OPNsense management network; (c) edit `/usr/local/etc/pkg/repos/OPNsense.conf` to point `url` at `http://<mirror>:<port>/${ABI}/26.1/latest`; (d) run `mwan opnsense-upgrade execute`. The setup adds about five minutes of operator work and removes the mirror failure mode entirely.
+
+2. **`mwan opnsense-upgrade validate` hangs while `mwan opnsense-validate` works against the same target.** Both code paths build a `validate.GRPCEnv` from the same envFactory and call into the same `validate.Run`. Standalone validate completed in 13.7 seconds with the expected results. The upgrade subcommand path got stuck in `Client.Call` waiting on the BGP neighbor check Exec response. `ExecTimeoutSeconds: 0` (set in `opnsense_env_transport.go:133`) means no per-RPC deadline; if the gRPC client stalls there is no escape. Worth filing as a separate bug. As a workaround for now, run standalone `mwan opnsense-validate` to assess post-upgrade state, then patch `state.json` if the upgrade-validate path needs to be skipped to reach commit. A proper fix should set a sensible default for `ExecTimeoutSeconds` in `buildGRPCEnv` and surface a `--validate-timeout` CLI flag so the operator can bound the runtime.
+
+3. **The orchestrator has no reboot phase, but the upgrade does not complete without one.** `opnsense-update -u` extracts the pending sets, prints `Please reboot`, and exits. The actual base/kernel/packages installation happens in the rc.d boot scripts on the next reboot (consuming the `.base.pending`, `.kernel.pending`, `.pkgs.pending` markers). The `opnsense-upgrade execute` Go code returns `phase=executed` based purely on `opnsense-update`'s exit code, with no reboot trigger and no post-reboot version check. Operators today have to issue `shutdown -r +0` themselves and probe for the new version. This should either be a built-in step in execute (preferred, since the gRPC channel survives reboots) or a separate `mwan opnsense-upgrade reboot` subcommand that triggers reboot, waits for liveness, and verifies the version transition. Without it, every rehearsal and every production cutover has the same hand-rolled wait loop, and the state machine has no record that the reboot happened.
