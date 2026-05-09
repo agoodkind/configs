@@ -67,12 +67,39 @@ xpath_sets:
   - name: "WAN ipv6"
     xpath: "//opnsense/interfaces/wan/ipaddrv6"
     new_value: "3d06:bad:b01:201::2"
+  # PRIVILEGED LAN IPv6 must NOT collide with the WAN-side `:201::/64`
+  # transit prefix. Earlier (commit 7e12ddb) the broad text_literal
+  # `3d06:bad:b01:1::` -> `3d06:bad:b01:201::` mapped PRIVILEGED to the
+  # same `/64` as WAN, FreeBSD installed the connected `:201::/64` route
+  # on vlan0100 (alphabetical priority over vtnet1), and BGP IPv6 packets
+  # to peers `:201::3` and `:201::4` egressed the wrong interface so NDP
+  # failed. Following the `2N` shift convention from MWAN-140 section
+  # 10.1 (prod `:N::/64` -> testbed `:2N::/64`), PRIVILEGED moves to
+  # `3d06:bad:b01:21::/64`.
+  - name: "PRIVILEGED LAN ipv6"
+    xpath: "//opnsense/interfaces/lan/ipaddrv6"
+    new_value: "3d06:bad:b01:21::1"
+  # GENERAL VLAN: prod `:2::/64` -> testbed `:22::/64` per `2N` convention.
+  - name: "GENERAL ipv6"
+    xpath: "//opnsense/interfaces/opt4/ipaddrv6"
+    new_value: "3d06:bad:b01:22::1"
+  # IPv6OnlyVLAN: prod `:64::/64` -> testbed `:264::/64`. Already followed
+  # the `2N` convention; declared explicitly for parity with the other
+  # interface xpath_sets.
+  - name: "IPv6OnlyVLAN ipv6"
+    xpath: "//opnsense/interfaces/opt8/ipaddrv6"
+    new_value: "3d06:bad:b01:264::1"
   # MANAGEMENT v4 shifts to testbed `10.240.4.0/24` per the testbed
   # `:240::/56` IPv4 convention captured in group_vars
   # (`mwan_webpass_ipv4: 10.240.204.2/24`, `:200..240::` IPv6 family).
   - name: "MANAGEMENT v4"
     xpath: "//opnsense/interfaces/opt9/ipaddr"
     new_value: "10.240.4.1"
+  # MANAGEMENT v6 stays at the legacy three-digit `:204::/64` testbed
+  # prefix because it is the SSH path on the running testbed and the
+  # surrounding tooling (group_vars, deploy playbooks, runbooks) depends
+  # on it. Not migrated to the `2N` two-digit convention used for the
+  # other VLANs.
   - name: "MANAGEMENT v6"
     xpath: "//opnsense/interfaces/opt9/ipaddrv6"
     new_value: "3d06:bad:b01:204::1"
@@ -188,15 +215,34 @@ text_literals:
   - name: "v6 NAT64 prefix shift (catches embedded copies)"
     from: "3d06:bad:b01:6464::"
     to:   "3d06:bad:b01:2664::"
+  # MWAN-168 fix (2026-05-08): the previous PRIVILEGED rule mapped
+  # `:1::` -> `:201::`, which collided with the WAN rule below
+  # (`:fe::` -> `:201::`). Same `/64` on two interfaces caused FreeBSD
+  # to install the connected `:201::/64` route on vlan0100 (alphabetical
+  # priority over vtnet1), so BGP IPv6 packets to peers `:201::3` and
+  # `:201::4` egressed the wrong interface and NDP failed. Shift to the
+  # `2N` two-digit convention from MWAN-140 section 10.1 instead. The
+  # paired xpath_set above (`PRIVILEGED LAN ipv6`) writes the same target
+  # value into the canonical `<ipaddrv6>` element; this text_literal
+  # catches embedded prod copies in firewall rules, aliases, and
+  # outbound-NAT entries.
   - name: "v6 PRIVILEGED prefix shift"
     from: "3d06:bad:b01:1::"
-    to:   "3d06:bad:b01:201::"
+    to:   "3d06:bad:b01:21::"
+  # GENERAL: same `2N` migration; WAN rule below does not reuse this
+  # `/64` so no collision.
   - name: "v6 GENERAL prefix shift"
     from: "3d06:bad:b01:2::"
-    to:   "3d06:bad:b01:202::"
+    to:   "3d06:bad:b01:22::"
+  # CAPTIVE: same `2N` migration. The CAPTIVE interface declaration in
+  # prod has no `<ipaddrv6>` element, so this rule only rewrites embedded
+  # references in firewall rules and aliases.
   - name: "v6 CAPTIVE prefix shift"
     from: "3d06:bad:b01:3::"
-    to:   "3d06:bad:b01:203::"
+    to:   "3d06:bad:b01:23::"
+  # MANAGEMENT keeps the legacy three-digit `:204::/64` testbed prefix
+  # because it is the SSH path on the running testbed and the surrounding
+  # tooling depends on it.
   - name: "v6 MANAGEMENT prefix shift"
     from: "3d06:bad:b01:4::"
     to:   "3d06:bad:b01:204::"

@@ -376,12 +376,13 @@ resource "proxmox_virtual_environment_vm" "opnsense_test2" {
   # 10.250.250.0/29 + 3d06:bad:b01:201::/64 link to VM 950 (test-mwan).
   # Required so BGP can establish with the GoBGP speaker on VM 950 and
   # so the testbed OPNsense receives a default route via BGP. MAC
-  # captured from `qm config 102` on 2026-05-08 after a hot-add via
-  # `qm set 102 --net1 virtio,bridge=vmbr2`.
+  # captured from `qm config 102` on 2026-05-08 after the
+  # MWAN-168 substitutions-fix re-import cycle (delete net1 + readd via
+  # `qm set 102 --net1 virtio,bridge=vmbr2`).
   network_device {
     bridge      = "vmbr2"
     model       = "virtio"
-    mac_address = "BC:24:11:D6:38:49"
+    mac_address = "BC:24:11:0F:66:FA"
   }
 
   lifecycle {
