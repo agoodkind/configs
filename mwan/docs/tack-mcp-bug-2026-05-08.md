@@ -33,3 +33,11 @@ their findings in the per-ticket markdown docs under `mwan/docs/`.
 
 This bug cannot be filed as a tack issue (the bug prevents creation). Documented
 here in the repo. File via tack UI when reachable.
+
+## Tickets queued for filing once tack MCP recovers
+
+- (would-be MWAN-180): `mwan opnsense-upgrade validate` hangs while standalone `mwan opnsense-validate` works. Both use the same envFactory and `validate.Run`. Standalone returns in ~13s; the upgrade subcommand sticks in `Client.Call` waiting on a BGP neighbor check Exec. `cmd/mwan/opnsense_env_transport.go:133` sets `ExecTimeoutSeconds: 0` on the validate-via-upgrade path so the per-RPC has no deadline. Standalone path apparently propagates a deadline. Workaround: run standalone `mwan opnsense-validate`, then patch `state.json` from `executed` to `validated_pass`. Found during rehearsal 8 (commit 2417ffa, merged as 6ca6eb5).
+
+- (would-be MWAN-181): `mwan opnsense-upgrade execute` returns based on `opnsense-update -u` script exit code, but the actual install happens on the next boot via rc.d consuming `.base.pending` etc. The orchestrator has no reboot trigger and no post-reboot version check. Operators have to issue `shutdown -r +0` manually then probe for the new version. Should be a built-in step in execute or a separate `reboot` subcommand so the state machine records that the reboot happened. Found during rehearsal 8.
+
+- (would-be MWAN-182): MWAN-168 is functionally Done as of commit 6ca6eb5. BGP v4+v6 convergence on VM 102 verified, DNS resolves via Cloudflare forwarders, default routes installed via BGP, full upgrade rehearsal completes end-to-end. Close MWAN-168 once tack MCP recovers.
