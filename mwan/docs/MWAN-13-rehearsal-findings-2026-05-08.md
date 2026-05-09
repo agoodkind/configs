@@ -390,3 +390,69 @@ Rollback is not strictly required: no upgrade ran, the guest is unchanged, and `
 2. **Add a sanity probe that runs as the first action of `Execute`.** Before invoking the upgrade command, run `command -v opnsense-update` (or the equivalent) on the guest via gRPC and fail fast with a clear message if the executable is not on `$PATH`. The current failure mode buries the actionable signal inside a generic `runExec` error.
 
 3. **Land a deploy step that rebuilds `mwan` on suburban from the current `main` HEAD before each rehearsal.** This pass discovered that the deployed binary's behaviour did not match the merge that fixed it, regardless of cause. A `make deploy-suburban` (or rsync-and-restart) target that runs as the first rehearsal step removes the ambiguity. For prod, the same step gates the cutover.
+
+## Rehearsal attempt 5 (2026-05-08, post MWAN-166 redeploy)
+
+### Goal
+
+Verify the MWAN-166 argv fix is actually present on suburban, then re-run the upgrade rehearsal end-to-end. Rehearsal 4 had identified that the deployed binary on suburban was stale and pre-dated MWAN-166, so `Execute` was still calling `opnsense-upgrade` instead of `opnsense-update -u`.
+
+### Build and deploy
+
+Built `bin/mwan-linux` from the worktree at commit `cdd6630` via `make build-linux`. SHA256 `9c4691d021f1e21d4f69bb39c6b426aa3dfdf5b9e857b84726874ae74d094488`. scp'd to suburban, kept `/usr/local/bin/mwan.prev` as rollback marker, installed at `/usr/local/bin/mwan` with same sha256. Restarted `mwan-watchdog-testbed` and `mwan-opnsense-host`; both `is-active`. `mwan version` boundary log line reports `commit=cdd6630 dirty=clean binhash=9c4691d021f1`. The `--env-transport` and `--env-grpc-target` flags are present on `opnsense-upgrade prepare --help`.
+
+### State reset
+
+Stale `state.json` from rehearsal 4 left the upgrade lifecycle in `phase=execute_failed`. The state machine refused a fresh `prepare` because that transition is not allowed. The corresponding snapshot `pre-upgrade-26x-1778299810` had to be deleted manually before `qm rollback 102 v5-rehearsal-ready-2026-05-08` would run. Proxmox refused the rollback because the orphan snapshot was not the most recent on the disk. After rolling back the snapshot, the operator also has to delete `state.json` manually per the design comment in `state.go:135`. The snapshot delete and state.json clear sequence would be cleaner if scripted as a single subcommand. Today it is documented as a manual recovery step. No `mwan opnsense-upgrade reset` exists.
+
+### Phase 5 - Baseline (PASS)
+
+`DEPLOY_ID=20260509T041828Z-rehearsal5`. `mwan opnsense-validate -baseline-only -deploy-id $DEPLOY_ID -env-transport=grpc -env-grpc-target unix:///var/run/qemu-server/102.mwanrpc 102` wrote `pre-baseline.json` (41484 bytes). Summary `pass=31 fail=21 skip=0 error=9`. The shape matches rehearsal 4. The fails are testbed-expected (uninstalled plugins, quagga shape, radvd). The errors are missing-flag errors for ProxmoxSSHHost and LANClientSSHHost, which are not provided in the rehearsal command.
+
+### Phase 6 - Prepare (PASS)
+
+After clearing stale state.json, `mwan opnsense-upgrade prepare --vmid 102 --deploy-id $DEPLOY_ID --env-transport=grpc --env-grpc-target unix:///var/run/qemu-server/102.mwanrpc` succeeded. Captured `config.xml.pre` 227219 bytes sha256 `e8d5c89e9ebd463745c40cdf10b6aa4481eee8e0494dce510181a6e72eea5a32`. Snapshot `pre-upgrade-26x-1778300364` taken. `state.json` written `phase=prepared`. All artefacts present (`bgp_status.json` 3396 bytes non-empty, `interfaces.json` 8087 bytes, `metadata.json`, `version.txt` `OPNsense 25.7.11_9 (amd64)`).
+
+### Phase 7 - Execute (FAILED, gRPC per-call timeout)
+
+`mwan opnsense-upgrade execute --vmid 102 --deploy-id $DEPLOY_ID --env-transport=grpc --env-grpc-target unix:///var/run/qemu-server/102.mwanrpc` failed with `exit=-1`. The `upgrade.log` shows:
+
+```
+argv=[opnsense-update -u]
+exit=-1
+err=<nil>
+stdout:
+Fetching packages-26.1-amd64.tar: ..................................................................................................................................................
+stderr:
+[grpc-executor: command timed out]
+```
+
+The argv is correct, so the MWAN-166 fix is on the wire. `opnsense-update -u` started, began fetching `packages-26.1-amd64.tar`, and was killed mid-fetch by the daemon's per-RPC command timeout. State went to `execute_failed`.
+
+Root cause: `cmd/mwan/opnsense_upgrade_executor.go:92` constructs the GRPCExecutor with `ExecTimeoutSeconds: 0`. The daemon interprets zero as its 30s default and caps the absolute maximum at 300s (per `executor_grpc.go:38-46` doc comment). The `opnsense-update -u` upgrade easily exceeds that on a fresh testbed where the package set has never been fetched. The outer `Execute` ctx uses `DefaultUpgradeTimeout = 30 * time.Minute`, which would be sufficient. The per-RPC timeout is the binding constraint, and it is hardwired to the short-command default.
+
+The pre-MWAN-166 `opnsense-upgrade` binary did not exist on the guest, so `Execute` always returned a fast `executable file not found` error. That error fired long before the per-RPC timeout could expire. The fix in MWAN-166 surfaced this latent timeout bug.
+
+### Phase 9 - Rollback (snapshot OK, post-rollback wait FAILED)
+
+`mwan opnsense-upgrade rollback --vmid 102 --deploy-id $DEPLOY_ID --env-transport=grpc --env-grpc-target unix:///var/run/qemu-server/102.mwanrpc` ran `qm rollback 102 pre-upgrade-26x-1778300364` successfully. After the snapshot restore, `waitForGuest` polled the gRPC `Exec` with `cmd=true` for 60 seconds and got `opnsense: client is closed` on every retry. State went to `rollback_failed`.
+
+Functionally the VM is fine. The snapshot rollback completed. BGP came back up to both v4 peers, `Established` for roughly one minute by the time the next probe ran. `opnsense-version` reports `OPNsense 25.7.11_9 (amd64)`. A fresh `mwan opnsense-probe --op=exec --cmd=hostname` returns `router-test.test.home.goodkind.io`. The VM is in the expected post-rollback state. The orchestrator's wait loop reused a gRPC client that was killed by the QEMU restart caused by the snapshot rollback. The reused-client design fits the steady-state daemon model with one connection per orchestrator run. It does not survive a full guest restart.
+
+### Outcome
+
+- Phases reached: 1-7 attempted, 8 (validate) skipped because Execute failed, 9 (rollback) attempted.
+- Version post-upgrade: still `OPNsense 25.7.11_9 (amd64)` (upgrade was killed mid-fetch, snapshot restored).
+- BGP up post-rollback: yes (v4 to both peers Established).
+- Validate pass/fail counts: not run.
+- Commit-or-rollback decision: rollback (forced by Execute failure).
+- Final state.json: `phase=rollback_failed`, `snapshot=pre-upgrade-26x-1778300364`. The state value is misleading. The snapshot rollback itself worked. Only the post-rollback liveness probe failed.
+- Snapshot tree end state: leaf is `pre-upgrade-26x-1778300364` (post-rollback). The rehearsal-ready snapshot `v5-rehearsal-ready-2026-05-08` is intact one level up. No prod snapshots affected.
+
+### Top three findings
+
+1. **gRPC executor per-RPC timeout caps the upgrade.** The `GRPCExecutor` is constructed with `ExecTimeoutSeconds: 0`. The daemon treats zero as a 30-second default and enforces a 300-second hard maximum. `opnsense-update -u` exceeds 300s on a fresh testbed because it fetches a multi-hundred-MB package set. MWAN-166 fixed the argv. The upgrade now hits this latent ceiling. The fix needs `Execute`-specific timeout plumbing. One option is to pass the outer `DefaultUpgradeTimeout` of 30 minutes through as `ExecTimeoutSeconds`. Another option is to split the executor so long-running guest commands stream progress instead of relying on a single-shot RPC. The daemon may also need to accept a higher max for explicit upgrade calls.
+
+2. **`Rollback`'s waitForGuest reuses a stale gRPC client.** The `qm rollback` resets the QEMU process. That reset closes any in-flight virtio-serial gRPC connections. The orchestrator's `waitForGuest` then polls with the now-closed client and times out after 60s. The fix is to redial after `qm rollback` returns, not before. The VM and the daemon are healthy. Only the orchestrator's expectation of connection persistence is wrong.
+
+3. **State machine has no operator-friendly reset path.** Recovery from rehearsal 4's `execute_failed` required three manual steps. The operator first deletes the orphan snapshot. The operator then runs `qm rollback` to a known-good snapshot. The operator finally runs `rm /var/lib/mwan/upgrades/102/state.json`. The design doc comment (`state.go:135`) says "operator clears the state file". No `mwan opnsense-upgrade reset` subcommand exists to do this safely. A `reset --vmid <id>` would confirm the snapshot named in state.json no longer exists and then truncate state.json. Adding it would close this gap and reduce the foot-cannon surface during rehearsal recovery.
