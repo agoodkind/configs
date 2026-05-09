@@ -206,6 +206,7 @@ Inside OPNsense:
 route add default 10.240.200.1 || true
 printf 'nameserver 1.1.1.1\n' >/etc/resolv.conf
 pkg update -f
+pkg upgrade -y
 pkg install -y os-qemu-guest-agent
 sysrc qemu_guest_agent_enable=YES
 service qemu-guest-agent start
@@ -213,6 +214,17 @@ service qemu-guest-agent start
 
 The first package operation may upgrade `pkg` before installing
 `os-qemu-guest-agent`.
+
+The `pkg upgrade -y` step is required. The OPNsense ISO ships a baseline
+package set (frozen at release time), and the package mirror ships a current
+set. Mixing the two without a full upgrade produces a hybrid set with
+potential ABI skew. Concrete example observed on 2026-05-08: prod VM 101
+carries `pcre2-10.47_1` and `libyang2-2.1.128`, while a VM 102 baseline
+built without `pkg upgrade -y` retained the ISO's `pcre2-10.45_1` alongside
+`libyang2-2.1.128` from the mirror; `libyang.so.2` requires the `PCRE2_10.47`
+symbol set and `vtysh` failed at startup with a dynamic linker error until
+the package set was reconciled. Running `pkg upgrade -y` before installing
+`os-qemu-guest-agent` and `os-frr` keeps the package set self-consistent.
 
 Validate from suburban:
 
@@ -226,6 +238,46 @@ The hostname should be:
 ```text
 OPNsense.internal
 ```
+
+## Generate API Key For Root
+
+OPNsense API access requires an API key/secret pair tied to a user. The
+`createKey` method on `OPNsense\Auth\API` generates the pair and persists it
+to the user's apikeys list. Run this on the VM via the gRPC exec channel or
+serial console; do not echo the resulting key or secret to logs.
+
+Create the helper script on the VM:
+
+```bash
+cat > /tmp/create_api_key.php <<'PHP'
+<?php
+chdir('/usr/local/opnsense/mvc');
+require_once('script/load_phalcon.php');
+use OPNsense\Auth\API;
+$api = new API();
+$result = $api->createKey('root');
+if ($result === false) { fwrite(STDERR, "createKey returned false\n"); exit(1); }
+echo $result['key'] . "\0" . $result['secret'];
+PHP
+```
+
+Run it:
+
+```bash
+php /tmp/create_api_key.php
+```
+
+Stdout is `<key>\0<secret>` (null-byte separated). The operator splits the
+output into two mode-600 tempfiles on the host, never echoing either value to
+the chat or persistent logs.
+
+Verify the credential pair against the firmware status endpoint:
+
+```bash
+curl -k -u "$KEY:$SECRET" https://<lan_ip>/api/core/firmware/status
+```
+
+A `200` response confirms the key is active.
 
 ## Install MWN1 Daemon
 
