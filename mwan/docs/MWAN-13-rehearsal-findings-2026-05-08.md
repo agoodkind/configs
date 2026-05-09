@@ -456,3 +456,66 @@ Functionally the VM is fine. The snapshot rollback completed. BGP came back up t
 2. **`Rollback`'s waitForGuest reuses a stale gRPC client.** The `qm rollback` resets the QEMU process. That reset closes any in-flight virtio-serial gRPC connections. The orchestrator's `waitForGuest` then polls with the now-closed client and times out after 60s. The fix is to redial after `qm rollback` returns, not before. The VM and the daemon are healthy. Only the orchestrator's expectation of connection persistence is wrong.
 
 3. **State machine has no operator-friendly reset path.** Recovery from rehearsal 4's `execute_failed` required three manual steps. The operator first deletes the orphan snapshot. The operator then runs `qm rollback` to a known-good snapshot. The operator finally runs `rm /var/lib/mwan/upgrades/102/state.json`. The design doc comment (`state.go:135`) says "operator clears the state file". No `mwan opnsense-upgrade reset` subcommand exists to do this safely. A `reset --vmid <id>` would confirm the snapshot named in state.json no longer exists and then truncate state.json. Adding it would close this gap and reduce the foot-cannon surface during rehearsal recovery.
+
+## Rehearsal attempt 6 (2026-05-08, post MWAN-177 + MWAN-178)
+
+Worktree `vm102-rehearsal6` off main with the merged MWAN-177 (--exec-timeout flag, daemon cap raised to 60m) and MWAN-178 (GRPCExecutor redial-on-rollback) fixes. Built `mwan-linux` at commit `6334e93`, sha256 `66ab46c4a441174831ac80148ad69c887f48684f07832746e23efd2f2541b407`. Deployed to suburban via scp + install + restart of `mwan-watchdog-testbed` and `mwan-opnsense-host`. Both came back active. Verified `--exec-timeout` flag is present on the deployed binary (`Per-RPC Exec timeout for the gRPC executor (passed to mwan-opnsense daemon) (default 30m0s)`).
+
+Rolled VM 102 back to `v5-rehearsal-ready-2026-05-08`. The leaf snapshot from rehearsal 5 (`pre-upgrade-26x-1778300364`) had to be deleted first, then `qm rollback` succeeded. Verified the gRPC channel returns and the guest reports `OPNsense 25.7.11_9 (amd64)`, hostname `router-test.test.home.goodkind.io`. Cleared `/var/lib/mwan/upgrades/102` and captured a fresh `pre-baseline.json` (37709 bytes, summary pass=31 fail=21 skip=0 error=9; the failures are the optional-plugin-not-installed pattern from prior rehearsals). Ran `prepare`. State went to `phase=prepared`. New snapshot `pre-upgrade-26x-1778302151` created on top of `v5-rehearsal-ready-2026-05-08`. All 7 expected artefacts present.
+
+### Phase 7 - Execute (failed in 1m45s on transient fetch timeout)
+
+Started a serial capture as a transient systemd unit (`vm102-rehearsal6-serial.service` running `socat -u UNIX-CONNECT:/var/run/qemu-server/102.serial0 OPEN:/tmp/vm102-rehearsal6-serial.log,creat,append`) and a separate transient unit (`vm102-rehearsal6-execute.service`) for the execute call with `--exec-timeout 60m`. The execute exited non-zero after 1m45s. Inspecting the artefact `upgrade.log`:
+
+```
+argv=[opnsense-update -u]
+exit=1
+err=<nil>
+stdout:
+Fetching packages-26.1-amd64.tar: ...................................................................... done
+Fetching base-26.1-amd64.txz: ..............................[fetch: transfer timed out] failed, no signature found
+
+stderr:
+```
+
+The argv (`opnsense-update -u`) is correct, so MWAN-166 is on the wire. The exit was not a per-RPC timeout from MWAN-177 (the orchestrator was nowhere near the 60m cap). It was the in-guest `fetch(1)` giving up on `base-26.1-amd64.txz` after its own internal timeout. A retry of the same URL from inside the guest via `mwan opnsense-probe -op exec -cmd /bin/sh -cmd-arg -c -cmd-arg "fetch --timeout=30 -qo /dev/null https://pkg.opnsense.org/FreeBSD:14:amd64/26.1/sets/base-26.1-amd64.txz"` succeeded in 6.5s. The first failure was a transient network blip on the upstream mirror, not a code defect in mwan or the daemon. Per the rehearsal rules I stopped here on the first unexpected behavior.
+
+Serial capture produced 0 bytes. The QEMU `serial0` UNIX socket only emits data when the guest is actively writing to its serial console; under a normal upgrade no kernel boot occurs unless the guest reboots, so this is consistent with the upgrade being killed in the fetch stage before the planned reboot.
+
+### Phase 9 - Rollback (snapshot OK; new MWN1 transport bug observed)
+
+Ran `mwan opnsense-upgrade rollback --vmid 102 --deploy-id 20260508T214804Z-rehearsal6 --env-transport=grpc --env-grpc-target unix:///var/run/qemu-server/102.mwanrpc`. The flow logged:
+
+```
+WARN mwn1: scan magic err=EOF
+WARN upgrade GRPCExecutor: client closed, redialing err="opnsense: client is closed" vmid=102 command=true
+WARN mwn1: payload header exceeds max advertised=1581276736 max=65536
+ERROR opnsense: connection closed during call err="mwn1: payload exceeds MaxPayload: advertised 1581276736"
+ERROR upgrade GRPCExecutor Exec RPC failed err="opnsense: connection closed during call: mwn1: payload exceeds MaxPayload: advertised 1581276736" vmid=102 command=true
+WARN upgrade GRPCExecutor: client closed, redialing err="opnsense: client is closed" vmid=102 command=true
+INFO upgrade: state saved vmid=102 phase=rolled_back path=/var/lib/mwan/upgrades/102/state.json
+INFO upgrade.Rollback: snapshot restored vmid=102 snapshot=pre-upgrade-26x-1778302151
+phase=rolled_back snapshot=pre-upgrade-26x-1778302151
+```
+
+MWAN-178's `client closed, redialing` triggered twice and ultimately recovered. The qm-rollback restored the snapshot. The post-rollback wait succeeded on the second redial. Final state is `phase=rolled_back`, which matches expectation. The snapshot tree leaf is `pre-upgrade-26x-1778302151` on top of `v5-rehearsal-ready-2026-05-08`. Post-rollback `opnsense-version` returns `OPNsense 25.7.11_9 (amd64)`. BGP came back up to both v4 peers and both v6 peers (`vtysh -c "show bgp summary"` shows Established for `test-mwan` and `mwan-failover-test` on both AFIs).
+
+The unexpected log entries are a new finding. After `qm rollback` resets the QEMU process the virtio-serial channel is reattached. The first read of the framed `mwn1` transport sees garbage (`scan magic err=EOF`, then a header with `advertised=1581276736 max=65536`). MWAN-178's redial logic catches the resulting `opnsense: client is closed` and reopens, but the pre-redial frame surface is leaking these spurious 1.5 GB-payload reports. The redial is recovering, so the rehearsal still completed, but the warnings indicate the framing reader sees stale bytes from the old QEMU process before EOF is detected. This is not the MWAN-178 bug we just fixed; it is a downstream condition that the fix is correctly papering over. Worth filing as a separate ticket so the MWN1 codec can drain or recognize the post-restart framing more cleanly.
+
+### Outcome
+
+- Phases reached: 1-7 attempted, 8 (validate) skipped because Execute failed on a transient fetch, 9 (rollback) completed successfully.
+- Version post-upgrade: still `OPNsense 25.7.11_9 (amd64)` (upgrade killed mid-fetch, snapshot restored).
+- BGP up post-rollback: yes (v4 + v6, both peers Established).
+- Validate pass/fail counts: not run.
+- Commit-or-rollback decision: rollback (forced by transient Execute failure).
+- Final state.json: `phase=rolled_back`, `snapshot=pre-upgrade-26x-1778302151`.
+- Snapshot tree end state: leaf is `pre-upgrade-26x-1778302151` on top of `v5-rehearsal-ready-2026-05-08`. The rehearsal-ready snapshot is intact one level up. No prod snapshots affected.
+
+### Top three findings
+
+1. **First failure was a transient mirror fetch, not a mwan defect.** `opnsense-update -u` aborted on `base-26.1-amd64.txz: fetch: transfer timed out`. A retry of the same URL from inside the same guest succeeded in 6.5 seconds. The deployed binary, the argv (MWAN-166), the per-RPC timeout (MWAN-177), and the rollback redial (MWAN-178) all behaved correctly. Plan for retry around `opnsense-update -u`. One option is to wrap the Execute step with a small bounded retry loop in the orchestrator and surface the underlying exit only if every attempt fails. Another is to pre-stage the package set before the upgrade window so the fetch path is warm.
+
+2. **MWAN-178 redial works; MWN1 framing leaks stale bytes after qm rollback.** The orchestrator logged `WARN mwn1: scan magic err=EOF` and then `WARN mwn1: payload header exceeds max advertised=1581276736 max=65536` on the first read after `qm rollback` returned. The 1.5 GB advertised payload is obvious garbage. The redial recovered, but the framing reader is interpreting stale bytes from the pre-rollback QEMU process before noticing the channel is gone. May be worth a defensive check in the MWN1 reader so the bogus header is logged at INFO, the connection is torn down, and the redial path is taken without surfacing a scary `payload exceeds MaxPayload` ERROR.
+
+3. **Rehearsal recovery still requires manual snapshot deletion.** Cleaning rehearsal 5's leaf (`pre-upgrade-26x-1778300364`) before the rollback to `v5-rehearsal-ready-2026-05-08` had to be done by hand with `qm delsnapshot`. The earlier finding about a missing `mwan opnsense-upgrade reset --vmid <id>` subcommand still applies. A reset that confirms the snapshot named in state.json is the leaf, deletes it, rolls back to the parent, and truncates state.json would remove this manual step from every future rehearsal restart.
