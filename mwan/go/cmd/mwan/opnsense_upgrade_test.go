@@ -477,3 +477,157 @@ func TestUpgradeExecutorFactoryGRPCPropagatesDialError(t *testing.T) {
 
 // guard against drift: fakeUpgradeRPC must satisfy OPNsenseRPCClient.
 var _ upgrade.OPNsenseRPCClient = (*fakeUpgradeRPC)(nil)
+
+// TestParseUpgradeFlagsAcceptsExecTimeout pins the MWAN-177 flag entry
+// point. --exec-timeout=60m must parse and land on the upgradeFlags
+// struct so the factory can plumb it into the GRPCExecutor's per-RPC
+// TimeoutSeconds. Without this flag the daemon's prior 5-minute hard
+// cap killed `opnsense-update -u` mid-fetch on a fresh testbed.
+func TestParseUpgradeFlagsAcceptsExecTimeout(t *testing.T) {
+	t.Parallel()
+	args := []string{
+		"--vmid", "102",
+		"--exec-timeout", "60m",
+	}
+	f, err := parseUpgradeFlags("opnsense-upgrade execute", args)
+	if err != nil {
+		t.Fatalf("parseUpgradeFlags: unexpected error: %v", err)
+	}
+	if f.execTimeout != 60*time.Minute {
+		t.Errorf("execTimeout = %s, want 60m", f.execTimeout)
+	}
+}
+
+// TestParseUpgradeFlagsExecTimeoutDefault asserts the operator-friendly
+// default is 30 minutes when --exec-timeout is omitted, matching the
+// outer --upgrade-timeout default. This keeps short capture commands
+// during prepare unaffected (they finish in milliseconds) while the
+// long execute upgrade command can run to completion.
+func TestParseUpgradeFlagsExecTimeoutDefault(t *testing.T) {
+	t.Parallel()
+	args := []string{"--vmid", "102"}
+	f, err := parseUpgradeFlags("opnsense-upgrade prepare", args)
+	if err != nil {
+		t.Fatalf("parseUpgradeFlags: unexpected error: %v", err)
+	}
+	if f.execTimeout != upgrade.DefaultExecTimeout {
+		t.Errorf("execTimeout = %s, want %s", f.execTimeout, upgrade.DefaultExecTimeout)
+	}
+}
+
+// TestUpgradeExecTimeoutSecondsRoundsUp covers the conversion helper
+// boundary cases. Sub-second durations must not round to zero (which
+// the daemon interprets as its 30s default) when the operator
+// explicitly asked for a positive cap, and 60m must convert to exactly
+// 3600s so the daemon's own clamp does not unnecessarily fire.
+func TestUpgradeExecTimeoutSecondsRoundsUp(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   time.Duration
+		want int32
+	}{
+		{name: "zero", in: 0, want: 0},
+		{name: "negative", in: -5 * time.Second, want: 0},
+		{name: "subSecond", in: 500 * time.Millisecond, want: 1},
+		{name: "exactSecond", in: 1 * time.Second, want: 1},
+		{name: "thirtyMinutes", in: 30 * time.Minute, want: 1800},
+		{name: "sixtyMinutes", in: 60 * time.Minute, want: 3600},
+	}
+	for _, tc := range cases {
+		got := upgradeExecTimeoutSeconds(tc.in)
+		if got != tc.want {
+			t.Errorf("%s: upgradeExecTimeoutSeconds(%s) = %d, want %d",
+				tc.name, tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestUpgradeExecutorFactoryGRPCPropagatesExecTimeout is the load-bearing
+// MWAN-177 assertion: the factory must construct a GRPCExecutor whose
+// ExecTimeoutSeconds matches the operator-supplied value. Without this,
+// the executor sends TimeoutSeconds=0 on every Exec, which the daemon
+// interprets as 30s and used to clamp at 300s.
+func TestUpgradeExecutorFactoryGRPCPropagatesExecTimeout(t *testing.T) {
+	t.Parallel()
+	rpc := &fakeUpgradeRPC{}
+	factory := upgradeExecutorFactory{
+		dial: func(_ string) (upgrade.OPNsenseRPCClient, error) {
+			return rpc, nil
+		},
+	}
+	const sixtyMinutesSeconds int32 = 60 * 60
+	exec, err := factory.build(envTransportConfig{
+		Transport:          envTransportGRPC,
+		GRPCTarget:         "unix:///var/run/qemu-server/102.mwanrpc",
+		ExecTimeoutSeconds: sixtyMinutesSeconds,
+	}, nil)
+	if err != nil {
+		t.Fatalf("build: unexpected error: %v", err)
+	}
+	gExec, ok := exec.(*upgrade.GRPCExecutor)
+	if !ok {
+		t.Fatalf("exec type = %T, want *upgrade.GRPCExecutor", exec)
+	}
+	if gExec.ExecTimeoutSeconds != sixtyMinutesSeconds {
+		t.Errorf("GRPCExecutor.ExecTimeoutSeconds = %d, want %d",
+			gExec.ExecTimeoutSeconds, sixtyMinutesSeconds)
+	}
+	// Drive a real GuestExec and confirm the value lands on the wire.
+	_, execErr := exec.GuestExec(
+		context.Background(), "102", "opnsense-update", "-u",
+	)
+	if execErr != nil {
+		t.Fatalf("GuestExec: unexpected error: %v", execErr)
+	}
+	if len(rpc.calls) != 1 {
+		t.Fatalf("rpc.calls = %d, want 1", len(rpc.calls))
+	}
+	if rpc.calls[0].GetTimeoutSeconds() != sixtyMinutesSeconds {
+		t.Errorf("ExecRequest.TimeoutSeconds = %d, want %d",
+			rpc.calls[0].GetTimeoutSeconds(), sixtyMinutesSeconds)
+	}
+}
+
+// TestUpgradeExecutorFactoryGRPCWiresRedialClosure confirms the factory
+// hands the GRPCExecutor a Redial closure that calls the same dial
+// function with the same target. This is the MWAN-178 wiring: after
+// `qm rollback` resets the QEMU-side virtio-serial channel, the
+// closure must be able to reconnect without operator intervention.
+func TestUpgradeExecutorFactoryGRPCWiresRedialClosure(t *testing.T) {
+	t.Parallel()
+	rpc := &fakeUpgradeRPC{}
+	var dialedTargets []string
+	factory := upgradeExecutorFactory{
+		dial: func(target string) (upgrade.OPNsenseRPCClient, error) {
+			dialedTargets = append(dialedTargets, target)
+			return rpc, nil
+		},
+	}
+	target := "unix:///var/run/qemu-server/102.mwanrpc"
+	exec, err := factory.build(envTransportConfig{
+		Transport:  envTransportGRPC,
+		GRPCTarget: target,
+	}, nil)
+	if err != nil {
+		t.Fatalf("build: unexpected error: %v", err)
+	}
+	gExec, ok := exec.(*upgrade.GRPCExecutor)
+	if !ok {
+		t.Fatalf("exec type = %T, want *upgrade.GRPCExecutor", exec)
+	}
+	if gExec.Redial == nil {
+		t.Fatal("GRPCExecutor.Redial is nil; factory must wire a redial closure")
+	}
+	// The initial dial happened during build; invoking Redial must
+	// hit the same dial function with the same target.
+	if _, err := gExec.Redial(); err != nil {
+		t.Fatalf("Redial: unexpected error: %v", err)
+	}
+	if len(dialedTargets) != 2 {
+		t.Fatalf("dialedTargets = %v, want two entries (build + redial)", dialedTargets)
+	}
+	if dialedTargets[1] != target {
+		t.Errorf("redial target = %q, want %q", dialedTargets[1], target)
+	}
+}

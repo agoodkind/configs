@@ -183,6 +183,14 @@ const DefaultUpgradeTimeout = 30 * time.Minute
 // rollback. Design 4.4 step 6 sets this at 60 seconds.
 const DefaultPostRollbackTimeout = 60 * time.Second
 
+// DefaultExecTimeout is the per-RPC Exec timeout passed to the
+// mwan-opnsense daemon by the gRPC executor. MWAN-177 sets this to 30
+// minutes after rehearsal 5 showed `opnsense-update -u` takes longer
+// than the daemon's prior 5-minute hard cap on a fresh testbed where
+// the package set has never been fetched. The outer --upgrade-timeout
+// still bounds the whole execute phase; this value bounds one Exec.
+const DefaultExecTimeout = 30 * time.Minute
+
 // DefaultGCThreshold is 7 days, per resolved decision 11.8.
 const DefaultGCThreshold = 7 * 24 * time.Hour
 

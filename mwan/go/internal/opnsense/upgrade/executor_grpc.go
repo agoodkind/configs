@@ -37,12 +37,23 @@ type GRPCExecutor struct {
 
 	// ExecTimeoutSeconds caps each Exec RPC's per-call timeout. Zero
 	// falls back to the daemon's default (30s); negative is rejected
-	// by the daemon at call time. Maximum honoured by the daemon is
-	// 300 (5 minutes). The execute phase passes its own ctx deadline
-	// for the upgrade command, so the per-RPC timeout here is for the
-	// short capture commands run during prepare and the QGA-liveness
-	// poll after rollback.
+	// by the daemon at call time. The maximum honoured by the daemon
+	// is bounded by maxExecTimeout in internal/opnsensesvc/exec.go,
+	// which MWAN-177 raised to 60 minutes. The execute phase plumbs
+	// its operator-supplied --exec-timeout through this field so the
+	// per-RPC cap matches the long opnsense-update -u fetch.
 	ExecTimeoutSeconds int32
+
+	// Redial reconnects the gRPC client and returns a fresh
+	// OPNsenseRPCClient. It is invoked when an Exec call returns a
+	// closed-client error, which is the post-rollback condition in
+	// MWAN-178: qm rollback restarts QEMU, which kills the existing
+	// virtio-serial channel, but the orchestrator still wants to poll
+	// the guest for liveness. When Redial is nil the executor never
+	// reconnects and surfaces the original error verbatim. The closed
+	// state is detected via isClientClosedErr so callers do not need
+	// to import the opnsense package for the sentinel.
+	Redial func() (OPNsenseRPCClient, error)
 }
 
 // guard against drift: GRPCExecutor must satisfy Executor.
@@ -78,6 +89,19 @@ func (g *GRPCExecutor) GuestExec(
 		StdinBytes:     nil,
 	}
 	resp, err := g.RPC.Exec(ctx, req)
+	if err != nil && isClientClosedErr(err) && g.Redial != nil {
+		slog.WarnContext(ctx, "upgrade GRPCExecutor: client closed, redialing",
+			"err", err.Error(), "vmid", vmid, "command", command)
+		newRPC, dialErr := g.Redial()
+		if dialErr != nil {
+			slog.ErrorContext(ctx, "upgrade GRPCExecutor: redial failed",
+				"err", dialErr.Error(), "vmid", vmid, "command", command,
+				"orig_err", err.Error())
+			return GuestExecResult{}, fmt.Errorf("grpc Exec %s redial: %w", command, dialErr)
+		}
+		g.RPC = newRPC
+		resp, err = g.RPC.Exec(ctx, req)
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade GRPCExecutor Exec RPC failed",
 			"err", err.Error(), "vmid", vmid, "command", command)
@@ -104,6 +128,18 @@ func (g *GRPCExecutor) GuestExec(
 		Stdout:   string(resp.GetStdout()),
 		Stderr:   stderrText,
 	}, nil
+}
+
+// isClientClosedErr reports whether err indicates the underlying gRPC
+// client is closed. The sentinel from internal/opnsense surfaces as
+// "opnsense: client is closed"; matching by message keeps the upgrade
+// package free of the opnsense package import. This is the post-rollback
+// signal that drives the redial-once path in GuestExec.
+func isClientClosedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "client is closed")
 }
 
 // appendDiag joins a diagnostic line onto an existing stderr blob

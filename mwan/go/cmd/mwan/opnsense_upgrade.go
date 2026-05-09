@@ -89,6 +89,9 @@ func printUpgradeUsage(w *os.File) {
 	fmt.Fprintln(w, "  --keep-snapshot         Retain the snapshot during commit (sweep later via gc)")
 	fmt.Fprintln(w, "  --older-than <dur>      gc threshold (default 168h)")
 	fmt.Fprintln(w, "  --dry-run               gc: print what would be deleted without removing anything")
+	fmt.Fprintln(w, "  --upgrade-timeout <dur> Watchdog timeout for the in-guest upgrade (default 30m)")
+	fmt.Fprintln(w, "  --post-rollback-wait <dur> Liveness probe deadline after rollback (default 60s)")
+	fmt.Fprintln(w, "  --exec-timeout <dur>    Per-RPC Exec timeout for the gRPC executor (default 30m)")
 }
 
 // upgradeFlags holds the flag values shared across phases. Each phase
@@ -111,6 +114,7 @@ type upgradeFlags struct {
 	olderThan          time.Duration
 	upgradeTimeout     time.Duration
 	postRollbackWait   time.Duration
+	execTimeout        time.Duration
 
 	// Validator transport flags. Mirror mwan opnsense-validate so
 	// `mwan opnsense-upgrade {validate,run}` can run the same matrix.
@@ -150,6 +154,7 @@ func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) *string {
 	fs.DurationVar(&f.olderThan, "older-than", upgrade.DefaultGCThreshold, "gc age threshold")
 	fs.DurationVar(&f.upgradeTimeout, "upgrade-timeout", upgrade.DefaultUpgradeTimeout, "Watchdog timeout for the in-guest upgrade")
 	fs.DurationVar(&f.postRollbackWait, "post-rollback-wait", upgrade.DefaultPostRollbackTimeout, "QGA liveness probe deadline after rollback")
+	fs.DurationVar(&f.execTimeout, "exec-timeout", upgrade.DefaultExecTimeout, "Per-RPC Exec timeout for the gRPC executor (passed to mwan-opnsense daemon)")
 	transportStr := fs.String("env-transport", string(envTransportSSH),
 		"validator transport: ssh|grpc (grpc routes OPNsense ops via mwan-opnsense daemon)")
 	fs.StringVar(&f.envGRPCTarget, "env-grpc-target", "",
@@ -232,6 +237,7 @@ func buildUpgradeDeps(cfg *config.Config, f upgradeFlags) (upgrade.Deps, error) 
 		ProxmoxSSHHost:      f.proxmoxSSHHost,
 		LANClientSSHHost:    f.lanClientSSH,
 		OPNsenseAddr:        f.opnsenseAddr,
+		ExecTimeoutSeconds:  upgradeExecTimeoutSeconds(f.execTimeout),
 	}, realOps)
 	if err != nil {
 		slog.Error("opnsense-upgrade: build executor", "err", err,
@@ -427,6 +433,24 @@ func runUpgradeGC(args []string) error {
 	fmt.Fprintf(os.Stdout, "deleted=%s skipped=%s\n",
 		strings.Join(res.Deleted, ","), strings.Join(res.Skipped, ","))
 	return nil
+}
+
+// upgradeExecTimeoutSeconds converts the operator-supplied --exec-timeout
+// flag to the int32 seconds the gRPC ExecRequest carries. Negative or
+// zero values map to zero, which the daemon interprets as its own
+// default (30s). The daemon's hard cap is enforced server-side
+// (maxExecTimeout in internal/opnsensesvc/exec.go), so this helper
+// does not clamp; it just rounds up to the next whole second.
+func upgradeExecTimeoutSeconds(d time.Duration) int32 {
+	if d <= 0 {
+		return 0
+	}
+	rounded := (d + time.Second - 1) / time.Second
+	const int32Max = int32(2147483647)
+	if rounded > time.Duration(int32Max) {
+		return int32Max
+	}
+	return int32(rounded)
 }
 
 func requireVMID(vmid string) error {
