@@ -293,6 +293,23 @@ text_literals:
     from: "chaotic.dog"
     to:   "test.home.goodkind.io"
 
+  # MWAN-168 fix (2026-05-08): DNS forwarder address. Prod's unbound
+  # `<dot>` entries forward to AdGuard at `3d06:bad:b01::53` (port 53 for
+  # plain forward, port 853 for DoT). The v6 VMNET prefix shift above
+  # rewrites that literal to `3d06:bad:b01:200::53`, but the testbed has
+  # no AdGuard equivalent at that address. Replace the post-shift literal
+  # with a public Cloudflare resolver so unbound on the testbed VM can
+  # actually resolve queries during the upgrade rehearsal (firmware fetch
+  # from `pkg.opnsense.org` requires working DNS). This rule must run
+  # AFTER the v6 VMNET shift because the input literal is the post-shift
+  # value, and YAML preserves list order so applyTextLiterals consumes
+  # rules sequentially. Cloudflare's `2606:4700:4700::1111` answers DoT
+  # on tcp/853 and plain DNS on tcp+udp/53, which matches both `<dot>`
+  # entries' port columns.
+  - name: "v6 DNS forwarder shift (testbed has no AdGuard; use Cloudflare)"
+    from: "3d06:bad:b01:200::53"
+    to:   "2606:4700:4700::1111"
+
   # Spec section 3.9: SSH-username-bound firewall rules (operator
   # decision: rewrite where the rewrite is mechanical and clearly
   # parallel to the v6 prefix shifts; do NOT add testbed-specific
