@@ -362,13 +362,26 @@ resource "proxmox_virtual_environment_vm" "opnsense_test2" {
     size         = 16
   }
 
-  # Single trunk NIC per MWAN-148. MANAGEMENT untagged plus the four
+  # net0: trunk NIC per MWAN-148. MANAGEMENT untagged plus the four
   # VLAN children share this one port. MAC address is left to the
   # provider so the operator does not have to pre-allocate one; the
   # OPNsense config.xml transform layer keys off device name, not MAC.
   network_device {
-    bridge = "vmbrtrunk"
-    model  = "virtio"
+    bridge      = "vmbrtrunk"
+    model       = "virtio"
+    mac_address = "BC:24:11:7D:6D:87"
+  }
+
+  # net1 (MWAN-168): WAN transit NIC on vmbr2 carrying the
+  # 10.250.250.0/29 + 3d06:bad:b01:201::/64 link to VM 950 (test-mwan).
+  # Required so BGP can establish with the GoBGP speaker on VM 950 and
+  # so the testbed OPNsense receives a default route via BGP. MAC
+  # captured from `qm config 102` on 2026-05-08 after a hot-add via
+  # `qm set 102 --net1 virtio,bridge=vmbr2`.
+  network_device {
+    bridge      = "vmbr2"
+    model       = "virtio"
+    mac_address = "BC:24:11:D6:38:49"
   }
 
   lifecycle {
