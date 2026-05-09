@@ -274,3 +274,103 @@ work begins.
    surfaced earlier because the prior session never reached a
    working FRR runtime check. BGP work on this baseline must
    reconcile the package set first.
+
+## v3 redo (2026-05-08 evening)
+
+This run starts from the runbook fix on branch
+`runbook-pkg-upgrade-fix` (commit
+`5338757a1f06c5e3a17a26f3b596628af6a367e1`) which inserts `pkg
+upgrade -y` between `pkg update -f` and `pkg install -y
+os-qemu-guest-agent`, and adds a "Generate API Key For Root"
+section using `OPNsense\Auth\API->createKey('root')`.
+
+### Rollback
+
+The v2 baseline and the post-runbook-pre-import snapshot were
+discarded with `qm delsnapshot 102 prod-shaped-25-7-baseline-v2-2026-05-08`
+and `qm delsnapshot 102 post-runbook-pre-import-2026-05-08`. `qm
+rollback 102 pre-config-import-2026-05-08` restored RAM and disk
+to the clean post-install state. Snapshot chain reduced to
+`pre-install -> pre-config-import -> current`.
+
+### Corrected runbook execution
+
+`net1` was attached on `vmbr1` with `qm set 102 --net1
+virtio,bridge=vmbr1`. Inside the VM via gRPC: `vtnet1 inet
+10.240.200.102/24 alias`, default route via 10.240.200.1, ping
+0% loss. `pkg update -f` succeeded. `pkg upgrade -y` ran for
+~90 seconds and reconciled the entire ISO baseline against the
+mirror. `pkg install -y os-qemu-guest-agent` then
+`os-frr` succeeded. `pkg info -E pcre2` returned `pcre2-10.47_1`,
+matching the prod VM 101 baseline. `vtysh --help` ran cleanly
+with no `ld-elf.so.1` error, confirming the package set is
+self-consistent.
+
+### Snapshot post-runbook-pre-import-v2
+
+Saved with `qm snapshot 102 post-runbook-pre-import-v2-2026-05-08
+--vmstate 1`. 2.97 GiB in 5s.
+
+### Prod config import via SSH+scp
+
+`config-testbed.xml` regenerated via `mwan/go/bin/mwan
+opnsense-import-config` (219492 bytes, `xmllint` valid). SCP from
+local Mac to suburban, then suburban to VM 102 over `vtnet1`
+after `pfctl -d` (clean OPNsense ISO ships with pf rules that
+permit SSH only on the LAN interface).
+
+API key was minted by writing `/tmp/create_api_key.php` locally,
+SCP'ing to VM 102, and running `php /tmp/create_api_key.php`
+over SSH. Stdout `key\0secret` was written to a mode-600 tempfile
+on suburban and split into `/tmp/vm102_key_v3` and
+`/tmp/vm102_secret_v3` (both mode 600).
+
+`curl -k -u "$KEY:$SECRET" -X POST
+https://10.240.200.102/api/core/backup/revertBackup/config-testbed-import-clean-2026-05-08.xml`
+returned `{"status":"reverted"}`.
+
+### Cleanup and reboot
+
+Default route deleted, `vtnet1` alias removed, `qm set 102
+--delete net1` cleared the transient NIC. `qm reboot 102`. gRPC
+`op=version` came back at iteration 4 of a 5s/24-iteration probe
+loop (about 20 seconds to ready).
+
+### Post-reboot verification
+
+- `hostname` returned `router-test.test.home.goodkind.io`.
+- `vtnet0` carries `10.240.4.1/24` and `3d06:bad:b01:204::1/64`,
+  description `MANAGEMENT (opt9)`, group `INTERNAL`.
+- `pkg info -E pcre2` returned `pcre2-10.47_1`.
+- `vtysh --help` ran cleanly with no dynamic linker error.
+- `service mwan_opnsense status` reported running as pid 8366.
+- `service qemu-guest-agent status` reported running as pid
+  53344.
+- `service openssh status` reported running as pid 30191.
+- `qm guest cmd 102 ping` returned exit 0.
+
+### Snapshot prod-shaped-25-7-baseline-v3
+
+Saved with `qm snapshot 102 prod-shaped-25-7-baseline-v3-2026-05-08
+--vmstate 1`. 1.78 GiB in 3s.
+
+### Final snapshot tree
+
+```
+pre-install-2026-05-08
+  pre-config-import-2026-05-08
+    post-runbook-pre-import-v2-2026-05-08
+      prod-shaped-25-7-baseline-v3-2026-05-08
+        current
+```
+
+### MWAN-173 status
+
+The pcre2/libyang2 ABI skew that broke `vtysh` on the v2 baseline
+is gone on v3. `vtysh --help` runs cleanly both pre-import and
+post-import. MWAN-173 should be closed.
+
+### Next slice
+
+Attach `net1` on `vmbr2` so VM 102 can peer with the BGP fabric.
+The v3 baseline is now FRR-ready.
