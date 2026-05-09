@@ -89,5 +89,20 @@ func (f upgradeExecutorFactory) buildGRPCExecutor(
 			"target", cfg.GRPCTarget, "err", err.Error())
 		return nil, fmt.Errorf("upgradeExecutorFactory: dial %s: %w", cfg.GRPCTarget, err)
 	}
-	return &upgrade.GRPCExecutor{RPC: rpc, ExecTimeoutSeconds: 0}, nil
+	// Capture the dial closure so the executor can transparently
+	// reconnect when the daemon's connection drops mid-flow. MWAN-178:
+	// `qm rollback` resets QEMU and kills the virtio-serial channel,
+	// so the post-rollback waitForGuest poll needs a fresh client. The
+	// factory already validated the target string above, so the
+	// closure can re-use it directly.
+	target := cfg.GRPCTarget
+	dial := f.dial
+	redial := func() (upgrade.OPNsenseRPCClient, error) {
+		return dial(target)
+	}
+	return &upgrade.GRPCExecutor{
+		RPC:                rpc,
+		ExecTimeoutSeconds: cfg.ExecTimeoutSeconds,
+		Redial:             redial,
+	}, nil
 }

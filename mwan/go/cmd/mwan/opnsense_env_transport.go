@@ -44,6 +44,12 @@ type envTransportConfig struct {
 	ProxmoxSSHHost      string
 	LANClientSSHHost    string
 	OPNsenseAddr        string
+	// ExecTimeoutSeconds is the per-RPC Exec deadline passed to the
+	// mwan-opnsense daemon. Zero falls back to the daemon's 30s default.
+	// The upgrade subcommand sets this from --exec-timeout (MWAN-177)
+	// so long-running guest commands like `opnsense-update -u` are not
+	// killed by the daemon's per-call cap.
+	ExecTimeoutSeconds int32
 }
 
 // envFactory wraps the gRPC client constructor so tests can inject a

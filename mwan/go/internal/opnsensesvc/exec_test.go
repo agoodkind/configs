@@ -135,8 +135,9 @@ func TestRunExec_BinaryNotFound(t *testing.T) {
 }
 
 func TestRunExec_TimeoutClamp(t *testing.T) {
-	// Caller asks for 99999s; we cap at maxExecTimeout (5min). Just
-	// ensure the call returns quickly when the command is fast.
+	// Caller asks for 99999s; we cap at maxExecTimeout (60min after
+	// MWAN-177). Just ensure the call returns quickly when the command
+	// is fast.
 	res, err := runExec(context.Background(), ExecArgs{
 		Command:        "/bin/sh",
 		Args:           []string{"-c", "exit 0"},

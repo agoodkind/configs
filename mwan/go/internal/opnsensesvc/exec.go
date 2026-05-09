@@ -14,8 +14,15 @@ import (
 
 const (
 	defaultExecTimeout = 30 * time.Second
-	maxExecTimeout     = 5 * time.Minute
-	maxOutputBytes     = 10 * 1024 * 1024 // 10 MB stdout/stderr cap each
+	// maxExecTimeout caps the per-Exec RPC duration. MWAN-177 raised
+	// this from 5 minutes to 60 minutes after rehearsal 5 showed
+	// `opnsense-update -u` exceeds 300s on a fresh testbed because it
+	// fetches a multi-hundred-MB package set. The orchestrator's outer
+	// --upgrade-timeout (default 30 minutes) still bounds the overall
+	// execute phase; this cap exists so a runaway operator-supplied
+	// TimeoutSeconds cannot pin the daemon for arbitrarily long.
+	maxExecTimeout = 60 * time.Minute
+	maxOutputBytes = 10 * 1024 * 1024 // 10 MB stdout/stderr cap each
 )
 
 // ExecArgs is the input shape used by the gRPC handler. The proto

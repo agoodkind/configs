@@ -236,3 +236,167 @@ func TestGRPCExecutorPassesTimeoutToDaemon(t *testing.T) {
 		t.Errorf("TimeoutSeconds = %d, want 60", mock.calls[0].GetTimeoutSeconds())
 	}
 }
+
+// TestGRPCExecutorPassesLongTimeoutToDaemon is the MWAN-177 regression
+// guard. Rehearsal 5 showed that `opnsense-update -u` takes longer than
+// the daemon's prior 5-minute hard cap. The factory wires
+// --exec-timeout=60m through the executor as 3600s on the ExecRequest;
+// this test pins that path so a future refactor cannot quietly drop the
+// long timeout back to zero or to the pre-MWAN-177 cap.
+func TestGRPCExecutorPassesLongTimeoutToDaemon(t *testing.T) {
+	t.Parallel()
+	mock := &mockOPNsenseRPCClient{response: &mwanv1.ExecResponse{}}
+	const sixtyMinutesSeconds int32 = 60 * 60
+	exec := &GRPCExecutor{RPC: mock, ExecTimeoutSeconds: sixtyMinutesSeconds}
+	_, err := exec.GuestExec(
+		context.Background(), "102", "opnsense-update", "-u",
+	)
+	if err != nil {
+		t.Fatalf("GuestExec: unexpected error: %v", err)
+	}
+	if len(mock.calls) != 1 {
+		t.Fatalf("len(calls) = %d, want 1", len(mock.calls))
+	}
+	got := mock.calls[0].GetTimeoutSeconds()
+	if got != sixtyMinutesSeconds {
+		t.Errorf("TimeoutSeconds = %d, want %d", got, sixtyMinutesSeconds)
+	}
+}
+
+// flakyClosedRPC returns a closed-client error on the first call and
+// delegates to a successful response on the second call. It is the
+// MWAN-178 mock: after `qm rollback`, the first Exec hits the dead
+// virtio-serial channel; once the executor redials, the second call
+// must land on a fresh client.
+type flakyClosedRPC struct {
+	calls    int
+	response *mwanv1.ExecResponse
+	closeErr error
+}
+
+func (f *flakyClosedRPC) Exec(
+	_ context.Context, _ *mwanv1.ExecRequest,
+) (*mwanv1.ExecResponse, error) {
+	f.calls++
+	if f.calls == 1 {
+		return nil, f.closeErr
+	}
+	return f.response, nil
+}
+
+// TestGRPCExecutorRedialsOnClientClosed is the MWAN-178 regression
+// guard. The post-rollback waitForGuest poll observed
+// "opnsense: client is closed" on every retry because the orchestrator
+// reused the gRPC client that the qm-rollback-induced QEMU restart had
+// killed. The fix: on a client-closed error, the executor invokes the
+// Redial closure to obtain a fresh RPC, then retries the Exec once.
+func TestGRPCExecutorRedialsOnClientClosed(t *testing.T) {
+	t.Parallel()
+	closedErr := errors.New("opnsense: client is closed")
+	freshRPC := &mockOPNsenseRPCClient{
+		response: &mwanv1.ExecResponse{
+			Stdout:   []byte("alive"),
+			ExitCode: 0,
+		},
+	}
+	staleRPC := &flakyClosedRPC{closeErr: closedErr}
+	var redialCalls int
+	exec := &GRPCExecutor{
+		RPC: staleRPC,
+		Redial: func() (OPNsenseRPCClient, error) {
+			redialCalls++
+			return freshRPC, nil
+		},
+	}
+	res, err := exec.GuestExec(context.Background(), "102", "true")
+	if err != nil {
+		t.Fatalf("GuestExec: unexpected error: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0", res.ExitCode)
+	}
+	if res.Stdout != "alive" {
+		t.Errorf("Stdout = %q, want alive (proves redial swapped clients)", res.Stdout)
+	}
+	if redialCalls != 1 {
+		t.Errorf("redialCalls = %d, want 1", redialCalls)
+	}
+	if staleRPC.calls != 1 {
+		t.Errorf("staleRPC.calls = %d, want 1 (only the initial closed call)", staleRPC.calls)
+	}
+	if len(freshRPC.calls) != 1 {
+		t.Errorf("freshRPC.calls = %d, want 1 (the post-redial retry)", len(freshRPC.calls))
+	}
+}
+
+// TestGRPCExecutorRedialDisabledWithoutClosure confirms the executor
+// surfaces the client-closed error verbatim when Redial is nil. Tests
+// and call sites that do not need redial behaviour see no behavioural
+// change from MWAN-178.
+func TestGRPCExecutorRedialDisabledWithoutClosure(t *testing.T) {
+	t.Parallel()
+	closedErr := errors.New("opnsense: client is closed")
+	stale := &flakyClosedRPC{closeErr: closedErr}
+	exec := &GRPCExecutor{RPC: stale, Redial: nil}
+	_, err := exec.GuestExec(context.Background(), "102", "true")
+	if err == nil {
+		t.Fatal("expected client-closed error to surface, got nil")
+	}
+	if !errors.Is(err, closedErr) {
+		t.Errorf("error chain = %v, want chain containing %v", err, closedErr)
+	}
+	if stale.calls != 1 {
+		t.Errorf("stale.calls = %d, want 1 (no retry without Redial)", stale.calls)
+	}
+}
+
+// TestGRPCExecutorRedialFailureSurfacesError covers the path where the
+// reconnect itself fails. The original Exec error and the redial error
+// must both be visible so the operator log captures the full failure.
+func TestGRPCExecutorRedialFailureSurfacesError(t *testing.T) {
+	t.Parallel()
+	closedErr := errors.New("opnsense: client is closed")
+	dialErr := errors.New("dial: socket missing")
+	stale := &flakyClosedRPC{closeErr: closedErr}
+	exec := &GRPCExecutor{
+		RPC: stale,
+		Redial: func() (OPNsenseRPCClient, error) {
+			return nil, dialErr
+		},
+	}
+	_, err := exec.GuestExec(context.Background(), "102", "true")
+	if err == nil {
+		t.Fatal("expected redial failure to surface, got nil")
+	}
+	if !errors.Is(err, dialErr) {
+		t.Errorf("error chain = %v, want chain containing %v", err, dialErr)
+	}
+}
+
+// TestGRPCExecutorDoesNotRedialOnUnrelatedError confirms the redial
+// path is gated on the closed-client signature. A generic transport
+// failure must not trigger a reconnect attempt: the orchestrator's
+// other callers (Prepare, Execute, Commit) want fast-fail semantics.
+func TestGRPCExecutorDoesNotRedialOnUnrelatedError(t *testing.T) {
+	t.Parallel()
+	otherErr := errors.New("daemon: timeout fetching meta")
+	stale := &flakyClosedRPC{closeErr: otherErr}
+	var redialCalls int
+	exec := &GRPCExecutor{
+		RPC: stale,
+		Redial: func() (OPNsenseRPCClient, error) {
+			redialCalls++
+			return nil, nil
+		},
+	}
+	_, err := exec.GuestExec(context.Background(), "102", "true")
+	if err == nil {
+		t.Fatal("expected error from non-closed failure, got nil")
+	}
+	if !errors.Is(err, otherErr) {
+		t.Errorf("error chain = %v, want chain containing %v", err, otherErr)
+	}
+	if redialCalls != 0 {
+		t.Errorf("redialCalls = %d, want 0 (only client-closed should redial)", redialCalls)
+	}
+}
