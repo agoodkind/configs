@@ -1,6 +1,6 @@
 [Unit]
 Description=MWAN ifmgr (interface manager) daemon
-Documentation=file:///root/configs/mwan/MWAN.md
+Documentation=https://github.com/agoodkind/configs
 After=networking.service
 Wants=networking.service
 

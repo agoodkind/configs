@@ -1,6 +1,6 @@
 [Unit]
 Description=MWAN OPNsense host bridge (MWN1 over qemu virtio-serial)
-Documentation=file:///root/configs/mwan/MWAN-95-INVESTIGATION.md
+Documentation=https://github.com/agoodkind/configs
 After=network.target qemu-server.service
 Wants=network.target
 

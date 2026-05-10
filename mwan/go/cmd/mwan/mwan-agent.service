@@ -1,6 +1,6 @@
 [Unit]
 Description=MWAN Agent (gRPC over virtio-vsock)
-Documentation=https://github.com/agoodkind/infra-tools
+Documentation=https://github.com/agoodkind/configs
 After=network.target
 Wants=network.target
 
