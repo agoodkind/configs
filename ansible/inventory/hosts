@@ -12,3 +12,6 @@ plane.home.goodkind.io ansible_host=3d06:bad:b01::115
 
 [tack_servers]
 tack.home.goodkind.io ansible_host=3d06:bad:b01::117
+
+[tack_qa_servers]
+tack-qa ansible_host=3d06:bad:b01:200:1::117
