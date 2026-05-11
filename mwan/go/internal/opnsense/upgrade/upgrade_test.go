@@ -147,12 +147,40 @@ type fakeExec struct {
 	byCommand map[string]GuestExecResult
 	// errByCommand mirrors byCommand for the error return.
 	errByCommand map[string]error
+	// byCommandSeq allows a test to return different results on successive
+	// calls to the same command. When a command's argv[0] appears in
+	// byCommandSeq, each call advances the per-command index; when the
+	// index is exhausted the last entry is repeated. byCommandSeq takes
+	// priority over byCommand.
+	byCommandSeq    map[string][]GuestExecResult
+	byCommandSeqIdx map[string]int
 }
 
 func (e *fakeExec) GuestExec(ctx context.Context, vmid string, args ...string) (GuestExecResult, error) {
 	e.mu.Lock()
 	e.calls = append(e.calls, execCall{VMID: vmid, Args: append([]string(nil), args...)})
 	if len(args) > 0 {
+		if seq, ok := e.byCommandSeq[args[0]]; ok {
+			i := e.byCommandSeqIdx[args[0]]
+			if i >= len(seq) {
+				i = len(seq) - 1
+			}
+			res := seq[i]
+			if e.byCommandSeqIdx == nil {
+				e.byCommandSeqIdx = map[string]int{}
+			}
+			e.byCommandSeqIdx[args[0]] = i + 1
+			delay := e.delay
+			e.mu.Unlock()
+			if delay > 0 {
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					return GuestExecResult{}, ctx.Err()
+				}
+			}
+			return res, nil
+		}
 		if res, ok := e.byCommand[args[0]]; ok {
 			err := e.errByCommand[args[0]]
 			delay := e.delay
@@ -220,12 +248,21 @@ func newDeps(t *testing.T) (Deps, *fakeNotifier, *fakeSnap, *fakeExec, *fakeVali
 	x := &fakeExec{
 		results: []GuestExecResult{{ExitCode: 0}},
 		byCommand: map[string]GuestExecResult{
-			"cat":              {ExitCode: 0, Stdout: "<config/>"},
-			"opnsense-version": {ExitCode: 0, Stdout: "OPNsense 25.7\n"},
-			"ifconfig":         {ExitCode: 0, Stdout: "lo0: flags=...\n"},
-			"netstat":          {ExitCode: 0, Stdout: "Routing tables\n"},
-			"vtysh":            {ExitCode: 0, Stdout: "{}\n"},
+			"cat":      {ExitCode: 0, Stdout: "<config/>"},
+			"ifconfig": {ExitCode: 0, Stdout: "lo0: flags=...\n"},
+			"netstat":  {ExitCode: 0, Stdout: "Routing tables\n"},
+			"vtysh":    {ExitCode: 0, Stdout: "{}\n"},
 		},
+		// opnsense-version is called twice: once by Prepare (captureVersion)
+		// and once by Execute (post-reboot version assertion). The two calls
+		// must return different major versions so the version check passes.
+		byCommandSeq: map[string][]GuestExecResult{
+			"opnsense-version": {
+				{ExitCode: 0, Stdout: "OPNsense 25.7\n"},
+				{ExitCode: 0, Stdout: "OPNsense 26.1\n"},
+			},
+		},
+		byCommandSeqIdx: map[string]int{},
 	}
 	v := &fakeValidator{result: AggregateChecks([]CheckResult{{Name: "qga_responsive", Pass: true}})}
 	deps := Deps{
@@ -430,6 +467,94 @@ func TestExecuteNonZeroExitTransitionsToExecuteFailed(t *testing.T) {
 	st, err := Execute(context.Background(), deps, opts)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+	if st.Phase != PhaseExecuteFailed {
+		t.Fatalf("phase = %q, want execute_failed", st.Phase)
+	}
+}
+
+func TestExecuteRebootsAndChecksVersionOnCleanExit(t *testing.T) {
+	t.Parallel()
+	deps, _, _, x, _ := newDeps(t)
+	opts := newOpts(t, "101")
+
+	if _, err := Prepare(context.Background(), deps, opts); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	st, err := Execute(context.Background(), deps, opts)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if st.Phase != PhaseExecuted {
+		t.Fatalf("phase = %q, want executed", st.Phase)
+	}
+
+	// Confirm the executor received a shutdown -r +0 call during Execute.
+	x.mu.Lock()
+	calls := append([]execCall(nil), x.calls...)
+	x.mu.Unlock()
+	foundReboot := false
+	for _, c := range calls {
+		if len(c.Args) >= 2 && c.Args[0] == "shutdown" && c.Args[1] == "-r" {
+			foundReboot = true
+			break
+		}
+	}
+	if !foundReboot {
+		t.Fatalf("expected shutdown -r call, got calls: %v", calls)
+	}
+}
+
+func TestExecuteVersionUnchangedTransitionsToExecuteFailed(t *testing.T) {
+	t.Parallel()
+	deps, _, _, x, _ := newDeps(t)
+	opts := newOpts(t, "101")
+
+	// Both prepare-time and post-reboot opnsense-version return the same
+	// major version, so the version assertion must fail.
+	x.byCommandSeq["opnsense-version"] = []GuestExecResult{
+		{ExitCode: 0, Stdout: "OPNsense 25.7\n"},
+		{ExitCode: 0, Stdout: "OPNsense 25.7\n"},
+	}
+	x.byCommandSeqIdx["opnsense-version"] = 0
+
+	if _, err := Prepare(context.Background(), deps, opts); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	st, err := Execute(context.Background(), deps, opts)
+	if err == nil {
+		t.Fatalf("expected error from unchanged major version")
+	}
+	if st.Phase != PhaseExecuteFailed {
+		t.Fatalf("phase = %q, want execute_failed", st.Phase)
+	}
+	if !strings.Contains(err.Error(), "major version unchanged") {
+		t.Fatalf("error %q should mention major version unchanged", err)
+	}
+}
+
+func TestExecuteWaitForGuestTimeoutTransitionsToExecuteFailed(t *testing.T) {
+	t.Parallel()
+	deps, _, _, x, _ := newDeps(t)
+	opts := newOpts(t, "101")
+
+	if _, err := Prepare(context.Background(), deps, opts); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	// Make "true" (the waitForGuest liveness probe) always return a
+	// non-zero exit code so the poll loop never succeeds and falls through
+	// to the select. Run Execute under a context that expires quickly so
+	// the select fires pollCtx.Done() rather than the 2-second sleep.
+	x.byCommand["true"] = GuestExecResult{ExitCode: 1}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	st, err := Execute(ctx, deps, opts)
+	if err == nil {
+		t.Fatalf("expected error from waitForGuest timeout")
 	}
 	if st.Phase != PhaseExecuteFailed {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)

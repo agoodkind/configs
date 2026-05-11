@@ -183,6 +183,12 @@ const DefaultUpgradeTimeout = 30 * time.Minute
 // rollback. Design 4.4 step 6 sets this at 60 seconds.
 const DefaultPostRollbackTimeout = 60 * time.Second
 
+// DefaultPostRebootTimeout caps the QGA-liveness probe loop after the
+// post-execute reboot. A major-version OPNsense boot (package scripts,
+// FRR start, mwan-opnsense start) can take several minutes; 10 minutes
+// is the documented safe ceiling.
+const DefaultPostRebootTimeout = 10 * time.Minute
+
 // DefaultExecTimeout is the per-RPC Exec timeout passed to the
 // mwan-opnsense daemon by the gRPC executor. MWAN-177 sets this to 30
 // minutes after rehearsal 5 showed `opnsense-update -u` takes longer

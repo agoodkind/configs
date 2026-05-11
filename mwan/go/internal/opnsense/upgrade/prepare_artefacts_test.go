@@ -224,7 +224,13 @@ func TestPrepareInterfacesPartialFailureLandsErrFields(t *testing.T) {
 func TestPrepareVersionCaptureFailureWritesEmptyFile(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
-	x.byCommand["opnsense-version"] = GuestExecResult{ExitCode: 127, Stderr: "command not found"}
+	// byCommandSeq takes priority over byCommand; override the seq so
+	// both the Prepare capture call and any subsequent Execute call see
+	// the failure result.
+	x.byCommandSeq["opnsense-version"] = []GuestExecResult{
+		{ExitCode: 127, Stderr: "command not found"},
+	}
+	x.byCommandSeqIdx["opnsense-version"] = 0
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
