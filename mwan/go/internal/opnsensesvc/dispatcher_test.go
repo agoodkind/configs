@@ -388,9 +388,18 @@ func TestDispatcherReset_CancelsInflightHandler(t *testing.T) {
 }
 
 // startDispatcherWithWorkers mirrors startDispatcher but lets the
-// caller pin the worker count. Used by Reset tests that need a
-// deterministic queue state.
+// caller pin the worker count. Returns the dispatcher so watchdog
+// tests can call its methods directly.
 func startDispatcherWithWorkers(t *testing.T, srv *Server, workers int) (*testClient, func()) {
+	t.Helper()
+	client, _, stop := startDispatcherWithWorkersAndRef(t, srv, workers)
+	return client, stop
+}
+
+// startDispatcherWithWorkersAndRef is like startDispatcherWithWorkers
+// but also returns the dispatcher reference so watchdog tests can
+// inspect wedgeCount and invoke RunWatchdog directly.
+func startDispatcherWithWorkersAndRef(t *testing.T, srv *Server, workers int) (*testClient, *Dispatcher, func()) {
 	t.Helper()
 	srvSide, cliSide := net.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -418,7 +427,7 @@ func startDispatcherWithWorkers(t *testing.T, srv *Server, workers int) (*testCl
 			t.Fatal("dispatcher Serve did not exit")
 		}
 	}
-	return client, stop
+	return client, d, stop
 }
 
 // sendExecSleep submits an Exec(/bin/sleep 10) RPC without waiting

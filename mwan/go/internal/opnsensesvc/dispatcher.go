@@ -72,10 +72,17 @@ type Dispatcher struct {
 	handlerSeq       atomic.Uint64
 
 	// wedgeCount counts how many times the dispatcher has been reset
-	// over the lifetime of this Serve. Read by the watchdog (Fix 1)
-	// and stamped into the reset log line so reviewers can correlate
+	// over the lifetime of this Serve. Read by the watchdog and
+	// stamped into the reset log line so reviewers can correlate
 	// wedges with recovery actions.
 	wedgeCount atomic.Int64
+
+	// lastFramePoppedNS stamps the time (in UnixNano) at which a
+	// worker most recently dequeued a job from frameCh. The watchdog
+	// uses this together with len(frameCh) to detect wedges. Zero
+	// means "no jobs have been popped yet"; Serve initializes it to
+	// time.Now().UnixNano() so a startup-time stall still surfaces.
+	lastFramePoppedNS atomic.Int64
 
 	conn *mwn1.Conn
 }
@@ -137,21 +144,22 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 		log = slog.Default()
 	}
 	return &Dispatcher{
-		registry:         registry,
-		server:           cfg.Server,
-		log:              log,
-		workers:          workers,
-		onFrameError:     cfg.OnFrameError,
-		streamMu:         sync.Mutex{},
-		streams:          make(map[uint64]*streamBuffer),
-		canceledStreams:  make(map[uint64]struct{}),
-		streamWG:         sync.WaitGroup{},
-		frameCh:          make(chan dispatchJob, workers*2),
-		handlerCancelsMu: sync.Mutex{},
-		handlerCancels:   make(map[uint64]context.CancelFunc),
-		handlerSeq:       atomic.Uint64{},
-		wedgeCount:       atomic.Int64{},
-		conn:             nil,
+		registry:          registry,
+		server:            cfg.Server,
+		log:               log,
+		workers:           workers,
+		onFrameError:      cfg.OnFrameError,
+		streamMu:          sync.Mutex{},
+		streams:           make(map[uint64]*streamBuffer),
+		canceledStreams:   make(map[uint64]struct{}),
+		streamWG:          sync.WaitGroup{},
+		frameCh:           make(chan dispatchJob, workers*2),
+		handlerCancelsMu:  sync.Mutex{},
+		handlerCancels:    make(map[uint64]context.CancelFunc),
+		handlerSeq:        atomic.Uint64{},
+		wedgeCount:        atomic.Int64{},
+		lastFramePoppedNS: atomic.Int64{},
+		conn:              nil,
 	}, nil
 }
 
@@ -169,11 +177,18 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 	d.conn = mwn1.NewConn(rw, d.log)
 	d.conn.OnMessage(d.onMessage)
 
+	// Seed the wedge timestamp so the watchdog has a meaningful idle
+	// measurement even before the first job arrives.
+	d.lastFramePoppedNS.Store(clockOrReal(nil).Now().UnixNano())
+
 	// Worker pool. Each worker pulls jobs off frameCh and runs to
 	// completion. Workers exit when frameCh is closed. Each invocation
 	// derives a per-job context from the Serve ctx and registers the
 	// cancel func with handlerCancels so Reset can abort in-flight
-	// handlers without killing the entire Serve.
+	// handlers without killing the entire Serve. The worker stamps
+	// lastFramePoppedNS on every dequeue so the watchdog can tell a
+	// healthy busy daemon (timestamp advancing) from a wedge
+	// (timestamp frozen and frameCh non-empty).
 	var wg sync.WaitGroup
 	wg.Add(d.workers)
 	for range d.workers {
@@ -186,6 +201,7 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 				}
 			}()
 			for job := range d.frameCh {
+				d.lastFramePoppedNS.Store(clockOrReal(nil).Now().UnixNano())
 				d.runJob(ctx, job)
 			}
 		}()

@@ -73,6 +73,7 @@ func runOPNsenseDaemonServe(args []string) int {
 		Server:       srv,
 		Log:          slog.Default(),
 		OnSerialOpen: nil,
+		Watchdog:     opnsensesvc.DefaultWatchdogConfig(),
 	}
 
 	slog.Info("mwan-opnsense: serving", "serial_path", *serialPath)

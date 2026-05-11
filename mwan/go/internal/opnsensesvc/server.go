@@ -686,6 +686,10 @@ type ServeOpts struct {
 	Server       *Server
 	Log          *slog.Logger
 	OnSerialOpen func(path string)
+	// Watchdog enables and configures the wedge watchdog. A zero
+	// value (Interval <= 0) disables the watchdog. Use
+	// DefaultWatchdogConfig for production wiring.
+	Watchdog WatchdogConfig
 }
 
 // Serve opens the virtio-serial device and runs the MWN1 dispatcher
@@ -729,9 +733,42 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 		log.ErrorContext(ctx, "opnsensesvc: build dispatcher failed", "err", err)
 		return fmt.Errorf("opnsensesvc: build dispatcher: %w", err)
 	}
-	if err := dispatcher.Serve(ctx, rw); err != nil {
-		log.ErrorContext(ctx, "opnsensesvc: dispatcher serve failed", "err", err)
-		return fmt.Errorf("opnsensesvc: dispatcher serve: %w", err)
+
+	// Watchdog runs alongside the dispatcher and shares its context.
+	// On escalation it cancels the dispatcher ctx via watchdogCancel
+	// so Serve returns and the supervisor restarts the daemon.
+	dispatcherCtx, watchdogCancel := context.WithCancel(ctx)
+	defer watchdogCancel()
+	watchdogErrCh := make(chan error, 1)
+	if opts.Watchdog.Interval > 0 {
+		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.ErrorContext(ctx, "opnsensesvc: watchdog goroutine panic",
+						"err", fmt.Errorf("recovered panic: %v", recovered))
+				}
+			}()
+			err := dispatcher.RunWatchdog(dispatcherCtx, opts.Watchdog)
+			watchdogErrCh <- err
+			if err != nil {
+				watchdogCancel()
+			}
+		}()
+	} else {
+		watchdogErrCh <- nil
+	}
+
+	serveErr := dispatcher.Serve(dispatcherCtx, rw)
+	watchdogCancel()
+	wdErr := <-watchdogErrCh
+
+	if serveErr != nil {
+		log.ErrorContext(ctx, "opnsensesvc: dispatcher serve failed", "err", serveErr)
+		return fmt.Errorf("opnsensesvc: dispatcher serve: %w", serveErr)
+	}
+	if wdErr != nil {
+		log.ErrorContext(ctx, "opnsensesvc: watchdog terminated serve", "err", wdErr)
+		return fmt.Errorf("opnsensesvc: watchdog: %w", wdErr)
 	}
 	return nil
 }
