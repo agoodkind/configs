@@ -344,6 +344,88 @@ including `health`), plus `tail /var/log/mwan-opnsense.log` and
 
 
 
+## Operational gotchas
+
+These rules are load-bearing. Each one was learned the hard way during the OPNsense 26.x upgrade rehearsal arc on 2026-05-07 through 2026-05-10. Skipping any of them reintroduces a class of failure that already cost hours to diagnose.
+
+### Never take testbed snapshots with `--vmstate 1`
+
+`qm snapshot <vmid> <name> --vmstate 1` saves the VM's RAM along with the disk. Rollback then resumes from that saved RAM: stale wall clock, dead TCP sockets the peer has long since torn down, in-memory caches the rest of the network has forgotten. We observed a 13 hour clock skew after rollback, BGP sessions stuck in `SYN_SENT:CLOSED` while `nc -vz peer 179` succeeded against the same address, and Unbound returning SERVFAIL because its cached upstream answers were stale. Take testbed snapshots without `--vmstate` so rollback equals a clean reboot, which matches prod recovery semantics. Tracked as MWAN-182.
+
+### After any snapshot rollback, restart the VM and re-verify
+
+Even without `--vmstate`, treat rollback as a state transition that needs verification. Walk Section A of the rehearsal runbook at `mwan/docs/runbooks/opnsense-upgrade-rehearsal-vm102.md` before trusting the post-rollback state: OS version, hostname, time skew within 60 s, interface inventory, expected addresses on each interface, default routes both families, BGP peer state from both sides, `ping 8.8.8.8`, `drill @127.0.0.1 pkg.opnsense.org` answer under 2 s, daemons running, `vtysh` loads without dynamic linker errors, `mwan opnsense-probe` responds in under 5 s.
+
+### virtio-serial wedges on large stdin payloads
+
+`mwan opnsense-probe --stdin-file` and `qm guest exec --pass-stdin` both choke on payloads around 219 KB, which is what a prod-shaped OPNsense `config.xml` weighs. After the timeout the mwan-opnsense daemon stops responding to gRPC and QGA can hang along with it. The canonical config push path is `scp` to `/conf/backup/<basename>.xml` followed by `POST /api/core/backup/revertBackup/<basename>` against the OPNsense REST API. Tracked as MWAN-155.
+
+### OPNsense REST API has no upload-and-replace endpoint
+
+There is no path under `/api/core/backup/*` that accepts an XML body and replaces `/conf/config.xml` in one call. `revertBackup/{basename}` restores from a file already in `/conf/backup/`. The full source-level reasoning lives at `mwan/docs/opnsense-25.7-config-import-flow.md`. Anyone proposing `POST /api/core/backup/restore` with a multipart body is reading a stale runbook.
+
+### `<lock>1</lock>` short-circuits the boot interface mismatch check
+
+`is_interface_mismatch($locked=true)` in `console.inc` walks `legacy_config_get_interfaces` and returns `false` as soon as it sees any interface with `<lock>` set. One locked interface skips the entire check, including unrelated locked entries that reference missing kernel devices. Boot proceeds without dropping to the interactive console; the failure surfaces later as service reconfigure errors. The behavior is intentional but easy to miss when debugging "why did boot proceed past a missing device?".
+
+### Duplicate `<if>device</if>` declarations silently drop the loser
+
+`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but binds no address to any kernel interface. Caught us when prod's `opt6` (VMNET, `<if>vtnet0</if>`) and `opt9` (MANAGEMENT, also `<if>vtnet0</if>` via the `iavf0`-to-`vtnet0` device_names mapping) both claimed `vtnet0`; VMNET sorts later than MANAGEMENT and silently dropped the MANAGEMENT address. The testbed substitutions transform now strips `opt6`.
+
+### `pkg upgrade -y` must run BEFORE `pkg install`
+
+The OPNsense install ISO ships one snapshot of the package set. The mirror has moved on by the time you install anything. Running `pkg update -f` then jumping straight to `pkg install os-frr` pulls a libyang2 built against `pcre2-10.47` onto a system that still has `pcre2-10.45`. `vtysh` then fails at startup with `ld-elf.so.1: /usr/local/lib/libpcre2-8.so.0: version PCRE2_10.47 required by libyang2.so.2 not defined`. Insert `pkg upgrade -y` between `pkg update -f` and the first `pkg install`. The runbook at `mwan/docs/runbooks/opnsense-serial-vm-from-scratch.md` reflects this.
+
+### Proxmox restricts `args` qemu-server field to literal `root@pam`
+
+Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only root can set 'args' config" for any API token, regardless of `privsep` or assigned role. The check is hard-coded in Proxmox, not policy-driven. For VMs that need `args` (any VM with a virtio-serial chardev, including the mwan-opnsense VMs): `qm create` manually as root via SSH, then `tofu import` the resulting VM. The pattern is documented in `opentofu/imports.md`. Long-term cleanup is to drop `kvm_arguments` from Tofu entirely and manage `args` via Ansible or a manual `qm set` (MWAN-154).
+
+### Config import strips API keys
+
+`revertBackup` swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and write the resulting key and secret into `ansible/inventory/group_vars/all/vault.yml`. Snippet lives at `mwan/docs/runbooks/opnsense-serial-vm-from-scratch.md`. Tracked as MWAN-159.
+
+### Hot-adding a NIC needs `configctl interface reconfigure`
+
+`qm set <vmid> --netN ...` adds the NIC at the hypervisor level. OPNsense's kernel sees the new `vtnetN` device, but the in-OPNsense interface config does not auto-bind to it. The new device comes up `IFDISABLED` until `configctl interface reconfigure <wan|opt...>` runs on the guest. Run reconfigure for whichever OPNsense interface is supposed to bind to the new device.
+
+### Proxmox snapshot name cap is 40 characters
+
+Names longer than 40 characters truncate silently. `prod-shaped-25-7-baseline-v3-bgp-up-2026-05-08` (41 chars) becomes garbage. Put the full intent in `--description` and keep the name short.
+
+### Each `Execute` retry creates an orphan prepare snapshot
+
+`mwan opnsense-upgrade execute` calls `prepare` which takes a fresh Proxmox snapshot. A rollback only restores the leaf snapshot. After three retries the snapshot tree carries three stacked `pre-upgrade-*` snapshots that have to be cleaned by hand. `mwan opnsense-upgrade reset` will walk and prune the chain when it lands (MWAN-179).
+
+### `git -C /path` is mandatory
+
+Always invoke git with `-C /path/to/repo` because shell cwd is unreliable across worktrees and subshells. A bare `git push` or `git commit` can land in the wrong repo. The agent-gate hook blocks raw `git` invocations.
+
+### Never grep or pipe vault contents anywhere that reaches chat
+
+`ansible-vault view` output is sensitive. Do not pipe it through `grep`, `awk`, or anything whose stdout reaches the conversation log. Use mode-600 tmpfiles plus `shred -u` cleanup. Earlier in this session a leak via `ansible-vault view | grep` burned nine secret values that the operator explicitly chose not to rotate.
+
+### When the runbook says STOP, stop
+
+Capture forensics, do not improvise, do not retry, surface to the operator. The most expensive failures in this arc came from patching forward through ambiguous state instead of resetting and restarting from a known-good baseline.
+
+## Build rules for implementation agents
+
+Every implementation agent, whether dispatched as a subagent or running inline, must apply these:
+
+- **Start from evidence.** Read the relevant source before changing code. Read this file and any local design doc the change touches. Do not assume architecture from names alone.
+- **Respect the boundary.** Generic layers stay generic. Provider-specific or platform-specific behavior lives behind the provider boundary. Preserve exact user-visible values unless an external boundary requires escaping or translation.
+- **Implement the real behavior.** Wire features into the real runtime path, not only into tests or fallback code. Prefer one source of truth over compatibility crutches. Reconcile related state immediately when the user-facing contract says values should stay in sync. Avoid deferred cleanup.
+- **Avoid shortcuts.** No baseline edits to hide lint findings. No `//nolint` without explicit operator authorization. No synthetic references, dummy logs, or marker-method calls to satisfy reachability tools. No no-op closers or empty lifecycle methods. No compile-only or log-only tests presented as behavioral coverage.
+- **Keep types tight.** Avoid `any`, `interface{}`, and loose maps unless required at a real external boundary. Convert untyped input to concrete types as early as possible.
+- **Write useful tests.** Test the real contract. Add regression coverage for the failure mode that motivated the change. Avoid tests that only prove compilation, only log output, or assert implementation trivia.
+- **Preserve project hygiene.** Keep edits inside scope. Do not revert unrelated work. Update comments and docs when they would otherwise describe the old contract.
+- **Verify before reporting.** Run the project's real gates: `make check`, `make test`, `make build-linux`, `make build-mwan-opnsense`. State exactly what was run and whether it passed. If a gate could not be run, state why.
+- **Report honestly.** State what changed. State the verification commands. State residual risks. Do not claim files, symbols, commits, or behavior that was not verified. Every factual claim must trace to a command run in this session with the output cited verbatim. No "likely", "probably", or "should" without a verifying command.
+
+## Prose rule
+
+Prose reads cleanly as a linear record of the thing itself. Each sentence is a full sentence with a concrete subject, a concrete verb, and enough context to sound natural when spoken aloud. Each new sentence adds useful information in the same direction as the sentence before it, with low cognitive load and no hidden context the reader must reconstruct. Paragraphs move forward by accumulation, with no setup, interruption, reversal, or correction.
+
 ## Go Code Standards
 
 These rules apply to all Go code in `mwan/go/`. Violations block merge.
