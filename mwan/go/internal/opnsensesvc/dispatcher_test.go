@@ -285,6 +285,7 @@ func TestDispatcherAllRPCs(t *testing.T) {
 		{"InjectGatewayV6", mwn1.MethodInjectGatewayV6, &mwanv1.InjectGatewayV6Request{GatewayName: "WAN_GW6"}, ""},
 		{"DeployStatus", mwn1.MethodDeployStatus, &mwanv1.DeployStatusRequest{}, ""},
 		{"Revert", mwn1.MethodRevert, &mwanv1.RevertRequest{}, "previous absent"},
+		{"Reset", mwn1.MethodReset, &mwanv1.ResetRequest{}, ""},
 	}
 
 	for i, tc := range cases {
@@ -304,6 +305,173 @@ func TestDispatcherAllRPCs(t *testing.T) {
 
 	resp := deployRoundTrip(t, client, 100, false)
 	assertNoErrorFrame(t, resp)
+}
+
+// TestDispatcherReset_DrainsQueuedJobs proves that the Reset RPC
+// pulls pending dispatchJobs out of frameCh and reports the count.
+// The test uses a single-worker dispatcher so the second and third
+// Exec frames sit in the queue while the first is held by a long
+// sleep. Reset then cancels the in-flight handler and drains the
+// two queued jobs. The DrainedJobs count surfaces in the response
+// payload and is the operator-visible signal that the reset
+// happened.
+func TestDispatcherReset_DrainsQueuedJobs(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcherWithWorkers(t, srv, 1)
+	defer stop()
+
+	// Three Exec(sleep 10) jobs. With Workers=1 the first occupies
+	// the worker and the rest fill frameCh (capacity = workers*2 = 2).
+	holdCh1 := client.registerResponse(900)
+	holdCh2 := client.registerResponse(901)
+	holdCh3 := client.registerResponse(902)
+	defer client.unregisterResponse(900)
+	defer client.unregisterResponse(901)
+	defer client.unregisterResponse(902)
+
+	sendExecSleep(t, client, 900)
+	sendExecSleep(t, client, 901)
+	sendExecSleep(t, client, 902)
+
+	// Give the dispatcher time to drain the conn buffer into frameCh.
+	time.Sleep(200 * time.Millisecond)
+
+	resetResp := client.call(t, mwn1.MethodReset, 950, &mwanv1.ResetRequest{})
+	assertNoErrorFrame(t, resetResp)
+	resp := decodeResetResponse(t, resetResp.payload)
+	if resp.GetDrainedJobs() < 1 {
+		t.Fatalf("DrainedJobs=%d; expected at least 1 queued job to drain", resp.GetDrainedJobs())
+	}
+
+	// In-flight sleep is cancelled by Reset; the Exec handler returns
+	// with ExitCode=-1 (signal killed). Drain the response channels so
+	// the client does not retain stale frames.
+	drainExecResponse(t, holdCh1)
+	// The two queued jobs were drained without being executed, so they
+	// produce no response. The client never sees them complete.
+	select {
+	case unexpected := <-holdCh2:
+		t.Fatalf("expected drained queue entry to produce no response, got %+v", unexpected)
+	case <-time.After(200 * time.Millisecond):
+	}
+	select {
+	case unexpected := <-holdCh3:
+		t.Fatalf("expected drained queue entry to produce no response, got %+v", unexpected)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// TestDispatcherReset_CancelsInflightHandler proves that an in-flight
+// Exec handler sees its context cancelled when Reset fires and
+// returns with ExitCode=-1. This is the visibility signal that the
+// reset actually reached the running handler and not just the queue.
+func TestDispatcherReset_CancelsInflightHandler(t *testing.T) {
+	srv := newTestServer(t, dispatcherSampleConfig())
+	client, stop := startDispatcherWithWorkers(t, srv, 1)
+	defer stop()
+
+	execCh := client.registerResponse(910)
+	defer client.unregisterResponse(910)
+	sendExecSleep(t, client, 910)
+
+	// Give the worker time to pick the job up and enter sleep.
+	time.Sleep(200 * time.Millisecond)
+
+	resetResp := client.call(t, mwn1.MethodReset, 951, &mwanv1.ResetRequest{})
+	assertNoErrorFrame(t, resetResp)
+
+	execResp := drainExecResponse(t, execCh)
+	if execResp.GetExitCode() == 0 {
+		t.Fatalf("expected Exec to be cancelled (non-zero exit), got ExitCode=0 stdout=%q stderr=%q",
+			execResp.GetStdout(), execResp.GetStderr())
+	}
+}
+
+// startDispatcherWithWorkers mirrors startDispatcher but lets the
+// caller pin the worker count. Used by Reset tests that need a
+// deterministic queue state.
+func startDispatcherWithWorkers(t *testing.T, srv *Server, workers int) (*testClient, func()) {
+	t.Helper()
+	srvSide, cliSide := net.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	d, err := NewDispatcher(DispatcherConfig{
+		Registry:     nil,
+		Server:       srv,
+		Workers:      workers,
+		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		OnFrameError: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewDispatcher: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Serve(ctx, &pipeRWC{srvSide})
+	}()
+	client := newTestClient(&pipeRWC{cliSide}, newRegistryOrFail(t))
+	stop := func() {
+		cancel()
+		_ = client.conn.Close()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("dispatcher Serve did not exit")
+		}
+	}
+	return client, stop
+}
+
+// sendExecSleep submits an Exec(/bin/sleep 10) RPC without waiting
+// for the response. The caller registers a response channel ahead of
+// time via client.registerResponse so the handler reply is captured
+// once Reset fires.
+func sendExecSleep(t *testing.T, client *testClient, corrID uint64) {
+	t.Helper()
+	req := &mwanv1.ExecRequest{
+		Command:        "/bin/sleep",
+		Args:           []string{"10"},
+		TimeoutSeconds: 30,
+	}
+	payload, _, err := mwn1.MarshalRequest(client.reg, mwn1.MethodExec, req)
+	if err != nil {
+		t.Fatalf("MarshalRequest Exec: %v", err)
+	}
+	if err := client.conn.SendMessage(mwn1.MethodExec, corrID, mwn1.FlagRequest, payload); err != nil {
+		t.Fatalf("SendMessage Exec corr=%d: %v", corrID, err)
+	}
+}
+
+// drainExecResponse waits for the Exec response and unmarshals the
+// payload. Used in Reset tests where the Exec handler is expected to
+// return after its context is cancelled.
+func drainExecResponse(t *testing.T, ch chan rpcResponse) *mwanv1.ExecResponse {
+	t.Helper()
+	select {
+	case resp := <-ch:
+		if resp.flags&mwn1.FlagError != 0 {
+			st := &status.Status{}
+			_ = proto.Unmarshal(resp.payload, st)
+			t.Fatalf("Exec returned error frame: %s", st.GetMessage())
+		}
+		out := &mwanv1.ExecResponse{}
+		if err := proto.Unmarshal(resp.payload, out); err != nil {
+			t.Fatalf("unmarshal ExecResponse: %v", err)
+		}
+		return out
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for Exec response after Reset")
+		return nil
+	}
+}
+
+// decodeResetResponse unmarshals a Reset response payload.
+func decodeResetResponse(t *testing.T, payload []byte) *mwanv1.ResetResponse {
+	t.Helper()
+	out := &mwanv1.ResetResponse{}
+	if err := proto.Unmarshal(payload, out); err != nil {
+		t.Fatalf("unmarshal ResetResponse: %v", err)
+	}
+	return out
 }
 
 func TestDispatcherReadConfigXMLLargeResponseFragments(t *testing.T) {

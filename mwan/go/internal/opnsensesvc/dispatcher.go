@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/status"
@@ -59,6 +61,21 @@ type Dispatcher struct {
 	// frameCh feeds the worker pool. Buffered so the reader goroutine
 	// does not block when all workers are busy on slow handlers.
 	frameCh chan dispatchJob
+
+	// handlerCancelsMu guards handlerCancels. Reset iterates and calls
+	// each cancel so running handlers see ctx.Done; workers register
+	// on dequeue and deregister on return. The map is keyed by a
+	// per-invocation id drawn from handlerSeq so two parallel handlers
+	// for the same methodID never collide.
+	handlerCancelsMu sync.Mutex
+	handlerCancels   map[uint64]context.CancelFunc
+	handlerSeq       atomic.Uint64
+
+	// wedgeCount counts how many times the dispatcher has been reset
+	// over the lifetime of this Serve. Read by the watchdog (Fix 1)
+	// and stamped into the reset log line so reviewers can correlate
+	// wedges with recovery actions.
+	wedgeCount atomic.Int64
 
 	conn *mwn1.Conn
 }
@@ -120,17 +137,21 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 		log = slog.Default()
 	}
 	return &Dispatcher{
-		registry:        registry,
-		server:          cfg.Server,
-		log:             log,
-		workers:         workers,
-		onFrameError:    cfg.OnFrameError,
-		streamMu:        sync.Mutex{},
-		streams:         make(map[uint64]*streamBuffer),
-		canceledStreams: make(map[uint64]struct{}),
-		streamWG:        sync.WaitGroup{},
-		frameCh:         make(chan dispatchJob, workers*2),
-		conn:            nil,
+		registry:         registry,
+		server:           cfg.Server,
+		log:              log,
+		workers:          workers,
+		onFrameError:     cfg.OnFrameError,
+		streamMu:         sync.Mutex{},
+		streams:          make(map[uint64]*streamBuffer),
+		canceledStreams:  make(map[uint64]struct{}),
+		streamWG:         sync.WaitGroup{},
+		frameCh:          make(chan dispatchJob, workers*2),
+		handlerCancelsMu: sync.Mutex{},
+		handlerCancels:   make(map[uint64]context.CancelFunc),
+		handlerSeq:       atomic.Uint64{},
+		wedgeCount:       atomic.Int64{},
+		conn:             nil,
 	}, nil
 }
 
@@ -149,7 +170,10 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 	d.conn.OnMessage(d.onMessage)
 
 	// Worker pool. Each worker pulls jobs off frameCh and runs to
-	// completion. Workers exit when frameCh is closed.
+	// completion. Workers exit when frameCh is closed. Each invocation
+	// derives a per-job context from the Serve ctx and registers the
+	// cancel func with handlerCancels so Reset can abort in-flight
+	// handlers without killing the entire Serve.
 	var wg sync.WaitGroup
 	wg.Add(d.workers)
 	for range d.workers {
@@ -162,7 +186,7 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 				}
 			}()
 			for job := range d.frameCh {
-				d.handleJob(ctx, job)
+				d.runJob(ctx, job)
 			}
 		}()
 	}
@@ -183,6 +207,9 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 	if closeErr := d.conn.Close(); closeErr != nil {
 		d.log.WarnContext(ctx, "dispatcher: conn close failed", "err", closeErr)
 	}
+	// Cancel any handler contexts so in-flight handlers see ctx.Done
+	// before we drop the channel and wait for the workers.
+	d.cancelInflight()
 	close(d.frameCh)
 	wg.Wait()
 
@@ -231,6 +258,19 @@ func (d *Dispatcher) onMessage(methodID uint16, corrID uint64, flags mwn1.Flags,
 		return
 	}
 
+	// MethodReset bypasses the worker queue. The reader goroutine
+	// handles it inline so the RPC succeeds even when frameCh is full
+	// and the worker pool is saturated. This is the operator's
+	// "unfuck" path documented in MWAN-184.
+	if methodID == mwn1.MethodReset {
+		resp := d.runReset()
+		if err := d.sendResponse(methodID, corrID, resp); err != nil {
+			d.log.Warn("dispatcher: send reset response failed",
+				"err", err, "corr_id", corrID)
+		}
+		return
+	}
+
 	req, err := mwn1.UnmarshalRequest(d.registry, methodID, payload)
 	if err != nil {
 		d.reportError(err)
@@ -241,6 +281,94 @@ func (d *Dispatcher) onMessage(methodID uint16, corrID uint64, flags mwn1.Flags,
 		methodID: methodID,
 		corrID:   corrID,
 		req:      req,
+	}
+}
+
+// runJob derives a per-invocation context from the Serve ctx,
+// registers the cancel in handlerCancels so Reset can abort it, and
+// invokes the unary handler. The map registration is the only seam
+// the Reset path uses to reach in-flight handlers; storing the
+// context in the Dispatcher struct would conflict with the
+// containedctx lint rule.
+func (d *Dispatcher) runJob(ctx context.Context, job dispatchJob) {
+	id := d.handlerSeq.Add(1)
+	jobCtx, cancel := context.WithCancel(ctx)
+	d.handlerCancelsMu.Lock()
+	d.handlerCancels[id] = cancel
+	d.handlerCancelsMu.Unlock()
+	defer func() {
+		d.handlerCancelsMu.Lock()
+		delete(d.handlerCancels, id)
+		d.handlerCancelsMu.Unlock()
+		cancel()
+	}()
+	d.handleJob(jobCtx, job)
+}
+
+// cancelInflight calls every cancel func registered with
+// handlerCancels and clears the map. Used by Serve shutdown and by
+// Reset to abort in-flight handlers. The count saturates at
+// [math.MaxInt32] to fit the protobuf int32 field; an actual cancel
+// fleet that large would indicate a worker-pool sizing bug rather
+// than a routine reset.
+func (d *Dispatcher) cancelInflight() int32 {
+	d.handlerCancelsMu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(d.handlerCancels))
+	var n int32
+	for id, cancel := range d.handlerCancels {
+		cancels = append(cancels, cancel)
+		delete(d.handlerCancels, id)
+		if n < math.MaxInt32 {
+			n++
+		}
+	}
+	d.handlerCancelsMu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	return n
+}
+
+// runReset performs the actual dispatcher reset and returns the count
+// payload. The reader goroutine invokes this synchronously so the
+// operator gets a deterministic acknowledgement, including when the
+// worker pool is wedged. The reset cancels in-flight handler
+// contexts, drains pending jobs out of frameCh, and tears down
+// active streaming RPCs. A structured log line documents every
+// reset so reviewers can correlate wedges with the recovery action.
+func (d *Dispatcher) runReset() *mwanv1.ResetResponse {
+	cancelledHandlers := d.cancelInflight()
+
+	var drained int32
+drainLoop:
+	for {
+		select {
+		case <-d.frameCh:
+			drained++
+		default:
+			break drainLoop
+		}
+	}
+
+	var streams int32
+	d.streamMu.Lock()
+	for corrID, buf := range d.streams {
+		buf.cancel()
+		buf.close()
+		delete(d.streams, corrID)
+		streams++
+	}
+	d.streamMu.Unlock()
+
+	count := d.wedgeCount.Add(1)
+	d.log.Warn("dispatcher: reset complete",
+		"cancelled_handlers", cancelledHandlers,
+		"drained_jobs", drained,
+		"cancelled_streams", streams,
+		"wedge_count", count)
+	return &mwanv1.ResetResponse{
+		DrainedJobs:      drained,
+		CancelledStreams: streams,
 	}
 }
 

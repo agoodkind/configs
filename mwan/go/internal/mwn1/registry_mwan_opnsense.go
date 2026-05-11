@@ -23,6 +23,7 @@ const (
 	MethodDeploy          uint16 = 11
 	MethodDeployStatus    uint16 = 12
 	MethodRevert          uint16 = 13
+	MethodReset           uint16 = 14
 )
 
 // MWANOPNsenseServicePrefix is the proto-fully-qualified service name
@@ -106,6 +107,11 @@ var mwanOpnsenseEntries = []mwanOpnsenseEntry{
 		MethodRevert, "Revert",
 		func() proto.Message { return &mwanv1.RevertRequest{} },
 		func() proto.Message { return &mwanv1.RevertResponse{} },
+	},
+	{
+		MethodReset, "Reset",
+		func() proto.Message { return &mwanv1.ResetRequest{} },
+		func() proto.Message { return &mwanv1.ResetResponse{} },
 	},
 }
 

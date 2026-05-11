@@ -43,7 +43,7 @@ func runOPNsenseProbe(args []string) error {
 	target := fs.String("target", "", "unix:///path/to/socket (required)")
 	timeout := fs.Duration("timeout", 10*time.Second, "dial+RPC timeout")
 	op := fs.String("op", "version",
-		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|configctl|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|smoke")
+		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|configctl|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|reset|smoke")
 	repeat := fs.Int("repeat", 1, "number of times to run the selected RPC over one connection")
 	xpath := fs.String("xpath", "", "XPath expression for op=xpath-{get,set,delete}")
 	xpathValue := fs.String("xpath-value", "", "value to write for op=xpath-set")
@@ -208,6 +208,7 @@ const (
 	probeOpDeployStatus probeOp = "deploy-status"
 	probeOpDeploy       probeOp = "deploy"
 	probeOpRevert       probeOp = "revert"
+	probeOpReset        probeOp = "reset"
 )
 
 func runOPNsenseProbeRPC(
@@ -244,6 +245,8 @@ func runOPNsenseProbeRPC(
 		return probeDeploy(ctx, rpc, a.deployBin, a.deployVersion)
 	case probeOpRevert:
 		return probeRevert(ctx, rpc)
+	case probeOpReset:
+		return probeReset(ctx, rpc)
 	default:
 		return fmt.Errorf("unknown op %q", a.op)
 	}
@@ -683,5 +686,24 @@ func probeRevert(ctx context.Context, rpc *opnsense.RPC) error {
 		"reexec_started", resp.GetReExecStarted())
 	fmt.Fprintf(os.Stdout, "reverted_to=%s reexec_started=%v\n",
 		resp.GetRevertedToSha256(), resp.GetReExecStarted())
+	return nil
+}
+
+// probeReset calls the Reset RPC. Used by an operator to clear a
+// wedged dispatcher state without restarting the daemon. The RPC
+// returns counts of queued jobs that were drained and active streams
+// that were torn down; both numbers go to stdout so a human reviewing
+// terminal output can see what the reset actually did.
+func probeReset(ctx context.Context, rpc *opnsense.RPC) error {
+	resp, err := rpc.Reset(ctx, &mwanv1.ResetRequest{})
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe Reset failed", "err", err)
+		return fmt.Errorf("rpc Reset: %w", err)
+	}
+	slog.InfoContext(ctx, "opnsense-probe Reset OK",
+		"drained_jobs", resp.GetDrainedJobs(),
+		"cancelled_streams", resp.GetCancelledStreams())
+	fmt.Fprintf(os.Stdout, "drained_jobs=%d cancelled_streams=%d\n",
+		resp.GetDrainedJobs(), resp.GetCancelledStreams())
 	return nil
 }
