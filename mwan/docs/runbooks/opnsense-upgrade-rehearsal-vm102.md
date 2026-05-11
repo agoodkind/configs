@@ -25,33 +25,79 @@ The rehearsal produces three deliverables. First, the actual go/no-go signal for
 
 Run each item from the suburban operator workstation. Each item is a binary go or no-go signal; failure of any item halts the rehearsal until resolved.
 
-### 2.1 Confirm VM 102 is at the prod-shaped 25.7 baseline
+### 2.0 Operational context introduced 2026-05-10/11
 
-The MWAN-127 import recipe in `mwan/docs/opnsense-25.7-config-import-flow.md` line 215 leaves VM 102 with the prod hostname, prod LAN address shape, and the prod plugin set. Verify by reading the live `/conf/config.xml` over SSH via `xmllint`:
+Several findings from the 2026-05-10 and 2026-05-11 sessions changed how this runbook is run. Read this subsection before the rest of the checklist so the commands later make sense.
+
+The MANAGEMENT VLAN does not accept SSH from anyone. The VLAN is the UniFi control plane and OPNsense's pf rule set on `vlan0100` carries an explicit deny on inbound SSH that fires regardless of source. The `agoodkind` user is also configured with no password authentication and `PermitRootLogin no` in `sshd_config`, so `root@10.240.4.1` would be rejected even if pf admitted the connection.
+
+The PRIVILEGED VLAN is the sanctioned admin SSH path. Suburban now carries a VLAN 100 sub-interface `vmbrtrunk.100` at `10.240.1.5/24` (codified in `/etc/network/interfaces` on 2026-05-11). Suburban's `root@hypervisor` ed25519 public key is durably stored in OPNsense's `/conf/config.xml` under `<system><user[name=agoodkind]><authorizedkeys>` (base64-encoded). Plain `ssh agoodkind@10.240.1.1` from suburban succeeds without any `-i` override. SSH commands in this runbook use this form.
+
+Every snapshot taken during a rehearsal uses `--vmstate 0` explicitly. The Web GUI's Take Snapshot dialog defaults Include RAM to checked for running VMs and is forbidden for testbed work. Production OPNsense never uses vmstate. The earlier vmstate-bearing baseline lineage on VM 102 (snapshots dated 2026-05-08) produced hours of stale-RAM-rollback symptoms and is the reason for the no-vmstate rule.
+
+Channel reliability is not uniform across the three OOB paths. The mwan-opnsense gRPC daemon at `unix:///var/run/qemu-server/102.mwanrpc` and the QEMU guest agent both wedge under exec-heavy load and stdin payloads as small as a few kilobytes; a `qm reset 102` recovers QGA and usually recovers the gRPC daemon, though sometimes the daemon stays wedged past a reset. Ticket MWAN-184 tracks this at high priority. For short-lived RPCs (version, xpath, the validate matrix) gRPC is reliable. For file pushes and long-running exec the SSH path via PRIVILEGED is the preferred channel; for true kernel-level fallback the serial console at `unix:///var/run/qemu-server/102.serial0` is the last resort.
+
+OPNsense regenerates `/home/<user>/.ssh/authorized_keys` from the base64-encoded blob in `<user><authorizedkeys>` whenever it re-syncs the user, which happens on boot, on a GUI user save, on `revertBackup`, and on plugin events. The propagation script is `/usr/local/opnsense/scripts/auth/sync_user.php -u <username>`. Direct edits to the on-disk file work until the next sync, then disappear. Operator edits to authorized keys belong in the XML blob; the GUI is the documented path, but a console operator can edit `/conf/config.xml` with a proper XML tool and then invoke `sync_user.php` to propagate.
+
+The user `agoodkind` on OPNsense has its login shell set to `/usr/local/bin/bash`. The bash package is not installed by default on a fresh OPNsense system, and sshd refuses to admit a user whose shell binary is missing with the message `User agoodkind not allowed because shell /usr/local/bin/bash does not exist`. The fix is `pkg install -y bash` on the guest. The 2026-05-11 baseline has bash installed already; a fresh rebuild from `pre-config-import-2026-05-08` would need this step.
+
+The current testbed snapshot lineage carries `pre-install-2026-05-08` (disk-only) at the root, `pre-config-import-2026-05-08` (vmstate-bearing) one step below, then four intermediate vmstate-bearing snapshots from the 2026-05-08 work, then `ssh-ready-2026-05-11` (disk-only, the post-session state) as the current leaf. The four intermediate vmstate-bearing snapshots are still present pending operator deletion. Anyone rebuilding the baseline from scratch should roll back to `pre-config-import-2026-05-08` and produce a new disk-only chain forward.
+
+### 2.0.1 vmstate-0 declaration
+
+This rehearsal makes one explicit commitment up front: every `qm snapshot` invocation in any step below uses `--vmstate 0`. If a step omits the flag, the omission is a bug in the runbook; the operator should add `--vmstate 0` and surface the discrepancy. The Web GUI's Take Snapshot dialog is forbidden for any snapshot in this work.
+
+### 2.0.2 bash presence on the guest
+
+Before running anything that depends on SSH login as `agoodkind`, confirm bash is installed on the guest:
 
 ```sh
-ssh root@10.240.4.1 "xmllint --xpath '/opnsense/system/hostname/text()' /conf/config.xml; echo; xmllint --xpath '/opnsense/interfaces/lan/ipaddr/text()' /conf/config.xml; echo"
+ssh suburban 'qm guest exec 102 --timeout 10 -- /bin/sh -c "test -x /usr/local/bin/bash && echo BASH_OK || echo BASH_MISSING"'
+```
+
+Expected output: `BASH_OK`. If `BASH_MISSING`, run `ssh suburban 'qm guest exec 102 --timeout 120 -- /usr/sbin/pkg install -y bash'` once before proceeding.
+
+### 2.0.3 SSH from suburban via PRIVILEGED
+
+Confirm the PRIVILEGED SSH path works end-to-end:
+
+```sh
+ssh suburban 'ssh -b 10.240.1.5 -o BatchMode=yes agoodkind@10.240.1.1 hostname'
+```
+
+Expected: `router-test.test.home.goodkind.io`. If this fails with `Permission denied (publickey)`, suburban's pubkey is not in OPNsense's `<authorizedkeys>` for `agoodkind`; re-add it via the `inject_authkey.py + sync_user.php` flow documented in the late-2026-05-10 handoff. If it fails with `Connection refused` from a non-`10.240.1.5` source, suburban's route to `10.240.1.1` is not using `vmbrtrunk.100`; check `ip route get 10.240.1.1` on suburban and re-create the sub-interface per the durable stanza in `/etc/network/interfaces`.
+
+### 2.0.4 Channel reliability constraint
+
+This runbook prefers SSH via PRIVILEGED for file pushes and any operation that streams more than a kilobyte of stdin. The mwan-opnsense gRPC daemon serves the validate matrix's RPCs and short xpath calls reliably; it wedges on larger exec or stdin payloads and requires a `qm reset 102` to recover. Reaching for QGA is fine for read-only probes via `qm guest exec`, but multi-step exec sequences in quick succession have wedged QGA in past sessions and should be replaced with one consolidated SSH call where possible.
+
+### 2.1 Confirm VM 102 is at the prod-shaped 25.7 baseline
+
+The MWAN-127 import recipe in `mwan/docs/opnsense-25.7-config-import-flow.md` line 215 leaves VM 102 with the prod hostname, prod LAN address shape, and the prod plugin set. Verify by reading the live `/conf/config.xml` over the PRIVILEGED SSH path (see §2.0):
+
+```sh
+ssh suburban 'ssh -b 10.240.1.5 agoodkind@10.240.1.1 "xmllint --xpath \"/opnsense/system/hostname/text()\" /conf/config.xml; echo; xmllint --xpath \"/opnsense/interfaces/lan/ipaddr/text()\" /conf/config.xml; echo"'
 ```
 
 The hostname must match the prod-shaped value the MWAN-127 import wrote (the operator running the import should have recorded this in the slice notes; cross-check before moving on). The LAN ipaddr likely shows the testbed override `10.240.4.1` per `mwan/docs/runbooks/opnsense-testbed-baseline-vm102.md` line 130, since that block is rewritten for the testbed plane; that is expected.
 
 If either field is unset or differs from the recorded MWAN-127 import expectation, stop. The baseline is not what we think it is.
 
-### 2.2 Confirm the `prod-shaped-25.7-baseline-2026-05-08` snapshot exists
+### 2.2 Confirm a disk-only prod-shaped baseline snapshot exists
 
-The operator running MWAN-127 should have taken this snapshot immediately after the import succeeded, so the rehearsal can reset to it between cycles. Verify on suburban:
-
-```sh
-ssh root@10.240.0.148 'qm listsnapshot 102 | grep prod-shaped-25.7-baseline-2026-05-08'
-```
-
-If the snapshot is missing, take it now before the rehearsal starts:
+The operator running MWAN-127 should have taken a baseline snapshot immediately after the import succeeded, so the rehearsal can reset to it between cycles. As of 2026-05-11 the current leaf of the lineage is `ssh-ready-2026-05-11`, which is disk-only and carries the durable PRIVILEGED SSH access. The earlier dated snapshots from 2026-05-08 are vmstate-bearing and forbidden as rollback targets without a forced cold boot afterward; do not pick them for fresh rehearsal cycles. Verify on suburban:
 
 ```sh
-ssh root@10.240.0.148 'qm snapshot 102 prod-shaped-25.7-baseline-2026-05-08 --vmstate 1 --description "MWAN-127 prod-shaped config import, VM 102, captured before MWAN-13 upgrade rehearsal"'
+ssh suburban 'qm listsnapshot 102 | grep -E "ssh-ready-2026-05-11|prod-shaped-25-7-baseline"'
 ```
 
-The `--vmstate 1` argument matches the convention in `mwan/docs/MWAN-152-opnsense-upgrade-rollback-design.md` section 11.1 (line 387), which measured a 6.67 second pause for vmstate snapshots on suburban.
+If no disk-only prod-shaped baseline exists, take one now before the rehearsal starts. The name must be under 40 characters because Proxmox truncates silently past that, and the date goes in `--description` so it does not consume name budget:
+
+```sh
+ssh suburban 'qm snapshot 102 prod-shaped-25-7-baseline-v6 --vmstate 0 --description "Disk-only baseline: rebuilt from pre-config-import-2026-05-08, prod-shaped config imported, captured for MWAN-13 rehearsal cycles"'
+```
+
+The `--vmstate 0` argument is mandatory per §2.0.1 above. Production OPNsense never uses vmstate snapshots, and rollback to a vmstate snapshot resumes from saved RAM with stale wall clock, dead TCP sockets, and stale Unbound cache. The older recommendation in `mwan/docs/MWAN-152-opnsense-upgrade-rollback-design.md` section 11.1 to use vmstate is superseded by the 2026-05-10 finding tracked under MWAN-182.
 
 ### 2.3 Confirm the mwan-opnsense daemon is running and the gRPC probe succeeds
 
@@ -87,7 +133,7 @@ DEPLOY_ID="rehearsal-$(date +%s)"
 echo "DEPLOY_ID=$DEPLOY_ID"
 ```
 
-Pick a transport for the validator. The default is `--env-transport=ssh`, which reaches OPNsense via the operator-supplied `--opnsense-ssh` host. On the suburban testbed the pf rule set blocks SSH from suburban to VM 102, so the SSH transport returns errors for every OPNsense-side check. Use `--env-transport=grpc` instead, which routes OPNsense ops through the mwan-opnsense daemon over the persistent virtio-serial gRPC channel (MWAN-163). Production cutover should also prefer gRPC because it survives a pf or routing break during the upgrade.
+Pick a transport for the validator. The default is `--env-transport=ssh`, which reaches OPNsense via the operator-supplied `--opnsense-ssh` host. The MANAGEMENT address `10.240.4.1` rejects SSH by design, but as of 2026-05-11 the PRIVILEGED path `agoodkind@10.240.1.1` from suburban is durable (see §2.0) and the SSH transport works against it. The recommendation is still `--env-transport=grpc` for the validate matrix: gRPC routes OPNsense ops through the mwan-opnsense daemon over the persistent virtio-serial gRPC channel (MWAN-163) and survives a pf or routing break during the upgrade itself. The SSH path is a fine fallback when gRPC wedges (see §2.0.4) and is the preferred channel for file pushes. Production cutover should also prefer gRPC for the matrix and reach for SSH for any config push.
 
 The gRPC transport requires `--env-grpc-target` pointing at the per-VM mwanrpc unix socket:
 
@@ -190,10 +236,16 @@ First, the upgrade log itself:
 ssh root@10.240.0.148 "tail -f /var/lib/mwan/upgrades/102/${DEPLOY_ID}/upgrade.log"
 ```
 
-Second, the OPNsense system log (when SSH is reachable; SSH drops during the reboot window and comes back once the guest is up):
+Second, the OPNsense system log over the PRIVILEGED SSH path (see §2.0). SSH drops during the reboot window and comes back once the guest is up:
 
 ```sh
-ssh -J root@10.240.0.148 root@10.240.4.1 'tail -f /var/log/system/latest.log'
+ssh -J suburban -o ProxyCommand='ssh -W %h:%p suburban' -o BindAddress=10.240.1.5 agoodkind@10.240.1.1 'tail -f /var/log/system/latest.log'
+```
+
+If the ProxyCommand-plus-BindAddress combination is fiddly in your client config, the simpler two-hop form works:
+
+```sh
+ssh suburban 'ssh -b 10.240.1.5 agoodkind@10.240.1.1 "tail -f /var/log/system/latest.log"'
 ```
 
 Third, the serial console as a kernel-level fallback for the reboot window:
