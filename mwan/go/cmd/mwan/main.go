@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -101,6 +102,13 @@ func dispatchConfigLess(sub subcommand) dispatchResult {
 		return dispatchResult{handled: true, code: 0}
 	case subcmdOPNsenseUpgrade:
 		if err := runOPNsenseUpgrade(os.Args[1:]); err != nil {
+			var ec exitCodeError
+			if errors.As(err, &ec) {
+				if msg := ec.Error(); msg != "" {
+					fmt.Fprintf(os.Stderr, "mwan opnsense-upgrade: %s\n", msg)
+				}
+				return dispatchResult{handled: true, code: ec.ExitCode()}
+			}
 			fmt.Fprintf(os.Stderr, "mwan opnsense-upgrade: %v\n", err)
 			return dispatchResult{handled: true, code: 1}
 		}

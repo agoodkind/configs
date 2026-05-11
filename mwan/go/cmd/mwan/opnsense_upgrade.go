@@ -29,6 +29,7 @@ const (
 	upgradePhaseCommit   upgradePhase = "commit"
 	upgradePhaseRun      upgradePhase = "run"
 	upgradePhaseGC       upgradePhase = "gc"
+	upgradePhaseReset    upgradePhase = "reset"
 	upgradePhaseHelp1    upgradePhase = "-h"
 	upgradePhaseHelp2    upgradePhase = "--help"
 	upgradePhaseHelp3    upgradePhase = "help"
@@ -62,6 +63,8 @@ func runOPNsenseUpgrade(args []string) error {
 		return runUpgradeRun(rest)
 	case upgradePhaseGC:
 		return runUpgradeGC(rest)
+	case upgradePhaseReset:
+		return runUpgradeReset(rest)
 	case upgradePhaseHelp1, upgradePhaseHelp2, upgradePhaseHelp3:
 		printUpgradeUsage(os.Stdout)
 		return nil
@@ -74,7 +77,7 @@ func runOPNsenseUpgrade(args []string) error {
 }
 
 func printUpgradeUsage(w *os.File) {
-	fmt.Fprintln(w, "usage: mwan opnsense-upgrade <prepare|execute|validate|rollback|commit|run|gc> [flags]")
+	fmt.Fprintln(w, "usage: mwan opnsense-upgrade <prepare|execute|validate|rollback|commit|run|gc|reset> [flags]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Per-phase entry points for the OPNsense upgrade rollback flow.")
 	fmt.Fprintln(w, "Common flags:")
@@ -451,6 +454,120 @@ func upgradeExecTimeoutSeconds(d time.Duration) int32 {
 		return int32Max
 	}
 	return int32(rounded)
+}
+
+// resetExitDryRun is the exit code returned when reset prints a dry-run
+// plan and exits without applying it. The value signals "would have
+// done work, but did not" to wrapper scripts that distinguish a clean
+// no-op (exit 0) from a deferred operation.
+const resetExitDryRun = 2
+
+// exitCodeError carries a non-zero exit code through the error return
+// chain. main.go's dispatcher unwraps it to propagate the exact code
+// instead of the generic 1 used for ordinary errors. The Error string
+// is intentionally empty so main.go can suppress the usual stderr
+// preamble when ExitCodeError is the cause.
+type exitCodeError struct {
+	code int
+	msg  string
+}
+
+func (e exitCodeError) Error() string { return e.msg }
+func (e exitCodeError) ExitCode() int { return e.code }
+
+// runUpgradeReset implements `mwan opnsense-upgrade reset`. Without
+// --confirm it prints the Plan returned by upgrade.Reset and exits
+// resetExitDryRun (2) so wrapper scripts can detect that work was
+// deferred. With --confirm it runs upgrade.ResetExecute and prints
+// "reset complete" on success.
+func runUpgradeReset(args []string) error {
+	fs := flag.NewFlagSet("opnsense-upgrade reset", flag.ContinueOnError)
+	var (
+		vmid     string
+		deployID string
+		stateDir string
+		confirm  bool
+	)
+	fs.StringVar(&vmid, "vmid", "", "VMID to reset (required)")
+	fs.StringVar(&deployID, "deploy-id", "",
+		"Deploy identifier; inferred from state.json or the most recent deploy dir when empty")
+	fs.StringVar(&stateDir, "state-dir", upgrade.DefaultStateDir, "Upgrade state directory")
+	fs.BoolVar(&confirm, "confirm", false,
+		"Apply the plan; without this flag reset prints the plan and exits 2")
+	if err := fs.Parse(args); err != nil {
+		slog.Error("opnsense-upgrade reset: parse flags", "err", err)
+		return fmt.Errorf("opnsense-upgrade reset: parse flags: %w", err)
+	}
+	if err := requireVMID(vmid); err != nil {
+		return err
+	}
+	cfg, err := loadUpgradeConfig()
+	if err != nil {
+		return err
+	}
+	// Reset only needs the Snapshotter, not the validator or executor.
+	// Building the full Deps would force the operator to supply every
+	// validator-related flag even though reset never invokes them, so
+	// we wire a minimal Deps directly from RealOps here.
+	realOps := ops.NewRealOps(cfg, slog.Default())
+	deps := upgrade.Deps{
+		Snap:     realOps,
+		Exec:     nil,
+		Validate: nil,
+		Notifier: nil,
+		Clock:    nil,
+		Log:      slog.Default(),
+	}
+	plan, err := upgrade.Reset(context.Background(), deps, upgrade.ResetOptions{
+		VMID:     vmid,
+		StateDir: stateDir,
+		DeployID: deployID,
+	})
+	if err != nil {
+		slog.Error("opnsense-upgrade reset failed", "err", err)
+		return fmt.Errorf("opnsense-upgrade reset: %w", err)
+	}
+	if plan.NothingToDo {
+		fmt.Fprintln(os.Stdout, "nothing to do")
+		return nil
+	}
+	if !confirm {
+		printResetPlan(os.Stdout, plan)
+		return exitCodeError{code: resetExitDryRun, msg: "reset: dry run; re-run with --confirm to apply"}
+	}
+	if err := upgrade.ResetExecute(context.Background(), deps, plan); err != nil {
+		slog.Error("opnsense-upgrade reset execute failed", "err", err)
+		return fmt.Errorf("opnsense-upgrade reset: %w", err)
+	}
+	fmt.Fprintln(os.Stdout, "reset complete")
+	return nil
+}
+
+// printResetPlan renders a human-readable description of the planned
+// reset operations. The shape is line-oriented so an operator skimming
+// the terminal can see at a glance every snapshot that would be
+// deleted, the rollback target, and the state file path.
+func printResetPlan(w *os.File, plan upgrade.Plan) {
+	fmt.Fprintf(w, "reset plan for vmid=%s deploy_id=%s (dry run, re-run with --confirm to apply):\n",
+		plan.VMID, plan.DeployID)
+	if len(plan.SnapshotsToDelete) == 0 {
+		fmt.Fprintln(w, "  snapshots to delete: (none)")
+	} else {
+		fmt.Fprintln(w, "  snapshots to delete:")
+		for _, s := range plan.SnapshotsToDelete {
+			fmt.Fprintf(w, "    - %s\n", s)
+		}
+	}
+	if plan.RollbackTarget == "" {
+		fmt.Fprintln(w, "  rollback target: (none)")
+	} else {
+		fmt.Fprintf(w, "  rollback target: %s\n", plan.RollbackTarget)
+	}
+	if plan.StatePath == "" {
+		fmt.Fprintln(w, "  state.json to remove: (none)")
+	} else {
+		fmt.Fprintf(w, "  state.json to remove: %s\n", plan.StatePath)
+	}
 }
 
 func requireVMID(vmid string) error {
