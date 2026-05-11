@@ -475,6 +475,67 @@ func TestUpgradeExecutorFactoryGRPCPropagatesDialError(t *testing.T) {
 	}
 }
 
+// TestValidatorAdapterTimeoutFiresOnSlowRunner is the regression test for
+// MWAN-180: the upgrade-driven validate path must not hang when a gRPC
+// call stalls. The runner blocks until its context is cancelled; the
+// adapter must cancel it via context.WithTimeout after the configured
+// exec-timeout, and the error must surface as a deadline-exceeded error
+// rather than a hang. This test fails (hangs indefinitely) with the bug
+// present and passes with the fix.
+func TestValidatorAdapterTimeoutFiresOnSlowRunner(t *testing.T) {
+	t.Parallel()
+	a := &validatorAdapter{
+		flags: upgradeFlags{
+			// A very short timeout so the test completes quickly.
+			execTimeout: 50 * time.Millisecond,
+		},
+		runner: func(ctx context.Context, _ validate.Config, _ *validate.Baseline, _ validate.Env) (*validate.Baseline, error) {
+			// Block until the context deadline fires.
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	_, err := a.Validate(context.Background(), upgrade.ValidateContext{VMID: "102"})
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want context.DeadlineExceeded in chain", err)
+	}
+}
+
+// TestEnvFactoryGRPCPropagatesExecTimeoutToGRPCEnv is the regression test
+// for the second half of the MWAN-180 fix: buildGRPCEnv must copy
+// cfg.ExecTimeoutSeconds into GRPCEnv instead of hardcoding zero. Without
+// this, each per-call Exec RPC sends TimeoutSeconds=0, which the daemon
+// interprets as its own 30s default and can prematurely abort checks.
+func TestEnvFactoryGRPCPropagatesExecTimeoutToGRPCEnv(t *testing.T) {
+	t.Parallel()
+	rpc := &fakeUpgradeRPC{}
+	factory := envFactory{
+		dial: func(_ string) (validate.OPNsenseRPCClient, error) {
+			return rpc, nil
+		},
+	}
+	const wantSeconds int32 = 3600 // 60 minutes
+	env, err := factory.build(envTransportConfig{
+		Transport:          envTransportGRPC,
+		GRPCTarget:         "unix:///var/run/qemu-server/102.mwanrpc",
+		ExecTimeoutSeconds: wantSeconds,
+	})
+	if err != nil {
+		t.Fatalf("build: unexpected error: %v", err)
+	}
+	grpcEnv, ok := env.(*validate.GRPCEnv)
+	if !ok {
+		t.Fatalf("env type = %T, want *validate.GRPCEnv", env)
+	}
+	if grpcEnv.ExecTimeoutSeconds != wantSeconds {
+		t.Errorf("GRPCEnv.ExecTimeoutSeconds = %d, want %d",
+			grpcEnv.ExecTimeoutSeconds, wantSeconds)
+	}
+}
+
 // guard against drift: fakeUpgradeRPC must satisfy OPNsenseRPCClient.
 var _ upgrade.OPNsenseRPCClient = (*fakeUpgradeRPC)(nil)
 

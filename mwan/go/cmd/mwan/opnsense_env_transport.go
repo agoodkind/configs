@@ -130,7 +130,7 @@ func (f envFactory) buildGRPCEnv(cfg envTransportConfig) (*validate.GRPCEnv, err
 	return &validate.GRPCEnv{
 		RPC:                rpc,
 		Fallback:           buildSSHEnv(cfg),
-		ExecTimeoutSeconds: 0,
+		ExecTimeoutSeconds: cfg.ExecTimeoutSeconds,
 		Clock:              nil,
 	}, nil
 }

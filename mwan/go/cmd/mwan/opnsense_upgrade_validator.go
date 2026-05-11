@@ -79,6 +79,7 @@ func (a *validatorAdapter) Validate(
 		ProxmoxSSHHost:      a.flags.proxmoxSSHHost,
 		LANClientSSHHost:    a.flags.lanClientSSH,
 		OPNsenseAddr:        a.flags.opnsenseAddr,
+		ExecTimeoutSeconds:  upgradeExecTimeoutSeconds(a.flags.execTimeout),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "validatorAdapter: build env",
@@ -87,7 +88,18 @@ func (a *validatorAdapter) Validate(
 			fmt.Errorf("validatorAdapter: build env: %w", err)
 	}
 
-	baseline, err := a.runner(ctx, cfg, nil, env)
+	// Wrap the validate.Run call in a timeout so a hung gRPC channel
+	// cannot make the validate phase block indefinitely. The operator
+	// supplies the budget via --exec-timeout; a zero value leaves ctx
+	// unchanged, which the caller is responsible for cancelling.
+	runCtx := ctx
+	if a.flags.execTimeout > 0 {
+		var cancelTimeout context.CancelFunc
+		runCtx, cancelTimeout = context.WithTimeout(ctx, a.flags.execTimeout)
+		defer cancelTimeout()
+	}
+
+	baseline, err := a.runner(runCtx, cfg, nil, env)
 	if err != nil {
 		slog.ErrorContext(ctx, "validatorAdapter: validate.Run",
 			"err", err, "vmid", vctx.VMID, "deploy_id", vctx.DeployID)
