@@ -160,29 +160,13 @@ remove_elements:
   - name: "Inline certs (strip)"
     xpath: "//opnsense/cert"
 
-insert_elements:
-  # MWAN-158: inject an SSH-pass pf rule on the MANAGEMENT interface so
-  # suburban (10.240.4.x) can SSH to VM 102 OPNsense at 10.240.4.1.
-  # Prod's pf policy has SSH rules on PRIVILEGED (opt3), WAN, and wg0 but
-  # not on MANAGEMENT (opt9). This rule is intentionally testbed-only; it
-  # must not be present in the production config. The uuid value uses a
-  # fixed sentinel that the operator can grep for to confirm injection.
-  - name: "Allow SSH on MANAGEMENT interface (testbed-only, MWAN-158)"
-    parent_xpath: "//opnsense/filter"
-    xml: |
-      <rule uuid="mwan-158-testbed-mgmt-ssh">
-        <type>pass</type>
-        <interface>opt9</interface>
-        <ipprotocol>inet</ipprotocol>
-        <statetype>keep state</statetype>
-        <descr>Allow SSH on MANAGEMENT (testbed-only, MWAN-158)</descr>
-        <direction>in</direction>
-        <log>1</log>
-        <quick>1</quick>
-        <protocol>tcp</protocol>
-        <source><network>opt9</network></source>
-        <destination><network>opt9ip</network><port>22</port></destination>
-      </rule>
+# insert_elements: currently unused. The prior MWAN-158 entry that injected
+# an SSH-pass rule on MANAGEMENT was removed: MANAGEMENT is the UniFi control
+# plane and SSH on it is in-subnet-only by design. Operator SSH access to the
+# testbed firewall belongs on PRIVILEGED (inherited from the prod pf policy).
+# Off-subnet "Connection refused" against MANAGEMENT is correct behavior, not
+# a bug to patch around. Out-of-band access for testbed work uses QGA and the
+# mwan-opnsense gRPC daemon, both of which are independent of guest SSH.
 
 text_literals:
   # Spec section 3.3: NAT and outbound rule prefix shifts. Order matters

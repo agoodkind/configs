@@ -210,18 +210,23 @@ text_literals:
 }
 
 func TestApplyInsertElementAddsRuleToFilter(t *testing.T) {
+	// The fixture rule is a synthetic example exercising the engine, not a
+	// real testbed substitution. It must not be interpreted as policy. The
+	// prior MWAN-158 example was removed because MANAGEMENT is in-subnet-only
+	// by design and SSH must not be opened on it.
+	const fixtureDescr = "configxform-engine-fixture-allow-icmp"
 	subs := Substitutions{
 		InsertElements: []ElementInsert{
 			{
-				Name:        "SSH pass rule on MANAGEMENT (MWAN-158)",
+				Name:        "fixture: allow icmp on opt9 (engine-test only)",
 				ParentXPath: "//opnsense/filter",
-				XML: `<rule uuid="mwan-158-testbed-ssh">` +
+				XML: `<rule uuid="configxform-engine-fixture">` +
 					`<type>pass</type>` +
 					`<interface>opt9</interface>` +
-					`<protocol>tcp</protocol>` +
-					`<descr>Allow SSH on MANAGEMENT (testbed-only, MWAN-158)</descr>` +
+					`<protocol>icmp</protocol>` +
+					`<descr>` + fixtureDescr + `</descr>` +
 					`<source><network>opt9</network></source>` +
-					`<destination><network>opt9ip</network><port>22</port></destination>` +
+					`<destination><network>opt9ip</network></destination>` +
 					`</rule>`,
 			},
 		},
@@ -239,13 +244,13 @@ func TestApplyInsertElementAddsRuleToFilter(t *testing.T) {
 	var found bool
 	for _, el := range rules {
 		descr := el.FindElement("descr")
-		if descr != nil && strings.Contains(descr.Text(), "MWAN-158") {
+		if descr != nil && strings.Contains(descr.Text(), fixtureDescr) {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("inserted rule with MWAN-158 descr not found; last rule descr: %v",
+		t.Errorf("inserted rule with fixture descr not found; last rule descr: %v",
 			inserted)
 	}
 }
