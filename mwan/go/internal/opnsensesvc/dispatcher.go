@@ -42,6 +42,11 @@ type Dispatcher struct {
 	log      *slog.Logger
 	workers  int
 
+	// allowedMethods, when non-nil, is the membership-tested set of
+	// method ids this dispatcher will accept. MethodReset is always
+	// accepted. A nil set means accept everything.
+	allowedMethods map[uint16]struct{}
+
 	// onFrameError is invoked when a handler dispatch path fails before a
 	// response frame can be assembled, e.g. a request payload that fails
 	// to unmarshal. Used by tests to assert error counts.
@@ -96,6 +101,14 @@ type DispatcherConfig struct {
 	Workers      int
 	Log          *slog.Logger
 	OnFrameError func(error)
+	// AllowedMethods, if non-nil, restricts the dispatcher to the
+	// listed method ids. Frames carrying any other methodID get a
+	// FlagError response. Used by the channel-split feature (Fix 4)
+	// to keep long-running RPCs off the short-RPC port. A nil slice
+	// preserves the pre-split behavior of accepting every method.
+	// MethodReset is always accepted regardless of this setting so
+	// the operator's recovery path stays open on every port.
+	AllowedMethods []uint16
 }
 
 // streamBuffer carries the per-CorrID chunk channel for an active
@@ -143,11 +156,19 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 	if log == nil {
 		log = slog.Default()
 	}
+	var allowed map[uint16]struct{}
+	if cfg.AllowedMethods != nil {
+		allowed = make(map[uint16]struct{}, len(cfg.AllowedMethods))
+		for _, m := range cfg.AllowedMethods {
+			allowed[m] = struct{}{}
+		}
+	}
 	return &Dispatcher{
 		registry:          registry,
 		server:            cfg.Server,
 		log:               log,
 		workers:           workers,
+		allowedMethods:    allowed,
 		onFrameError:      cfg.OnFrameError,
 		streamMu:          sync.Mutex{},
 		streams:           make(map[uint64]*streamBuffer),
@@ -276,14 +297,22 @@ func (d *Dispatcher) onMessage(methodID uint16, corrID uint64, flags mwn1.Flags,
 
 	// MethodReset bypasses the worker queue. The reader goroutine
 	// handles it inline so the RPC succeeds even when frameCh is full
-	// and the worker pool is saturated. This is the operator's
-	// "unfuck" path documented in MWAN-184.
+	// and the worker pool is saturated. Reset is always allowed on
+	// every dispatcher regardless of AllowedMethods so the operator's
+	// recovery path stays open on every port.
 	if methodID == mwn1.MethodReset {
 		resp := d.runReset()
 		if err := d.sendResponse(methodID, corrID, resp); err != nil {
 			d.log.Warn("dispatcher: send reset response failed",
 				"err", err, "corr_id", corrID)
 		}
+		return
+	}
+
+	if !d.methodAllowed(methodID) {
+		err := fmt.Errorf("dispatcher: method id %d not allowed on this port", methodID)
+		d.reportError(err)
+		d.sendError(methodID, corrID, err)
 		return
 	}
 
@@ -298,6 +327,22 @@ func (d *Dispatcher) onMessage(methodID uint16, corrID uint64, flags mwn1.Flags,
 		corrID:   corrID,
 		req:      req,
 	}
+}
+
+// methodAllowed returns true when methodID is permitted on this
+// dispatcher. The Reset method is implicitly allowed everywhere;
+// callers handle Reset before invoking methodAllowed so the special
+// case here is defensive. A nil allowedMethods set means accept
+// every method (the pre-split default).
+func (d *Dispatcher) methodAllowed(methodID uint16) bool {
+	if d.allowedMethods == nil {
+		return true
+	}
+	if methodID == mwn1.MethodReset {
+		return true
+	}
+	_, ok := d.allowedMethods[methodID]
+	return ok
 }
 
 // runJob derives a per-invocation context from the Serve ctx,

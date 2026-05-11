@@ -396,6 +396,42 @@ func startDispatcherWithWorkers(t *testing.T, srv *Server, workers int) (*testCl
 	return client, stop
 }
 
+// startDispatcherWithAllowedMethods is the channel-split variant
+// that pins the AllowedMethods set on the dispatcher. Used by the
+// MWAN-184 Fix 4 tests to confirm short-channel dispatchers refuse
+// long-channel methods and vice versa.
+func startDispatcherWithAllowedMethods(t *testing.T, srv *Server, allowed []uint16) (*testClient, func()) {
+	t.Helper()
+	srvSide, cliSide := net.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	d, err := NewDispatcher(DispatcherConfig{
+		Registry:       nil,
+		Server:         srv,
+		Workers:        2,
+		Log:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		OnFrameError:   nil,
+		AllowedMethods: allowed,
+	})
+	if err != nil {
+		t.Fatalf("NewDispatcher: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Serve(ctx, &pipeRWC{srvSide})
+	}()
+	client := newTestClient(&pipeRWC{cliSide}, newRegistryOrFail(t))
+	stop := func() {
+		cancel()
+		_ = client.conn.Close()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("dispatcher Serve did not exit")
+		}
+	}
+	return client, stop
+}
+
 // startDispatcherWithWorkersAndRef is like startDispatcherWithWorkers
 // but also returns the dispatcher reference so watchdog tests can
 // inspect wedgeCount and invoke RunWatchdog directly.

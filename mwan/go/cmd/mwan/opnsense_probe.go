@@ -39,8 +39,47 @@ const (
 //	    -target unix:///var/run/qemu-server/101.mwanrpc \
 //	    -op smoke
 func runOPNsenseProbe(args []string) error {
+	cfg, probeArgs, err := parseOPNsenseProbeFlags(args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
+	defer cancel()
+
+	cli, longCli, err := dialProbeTargets(cfg.target, cfg.targetLong)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cli.Close() }()
+	if longCli != nil {
+		defer func() { _ = longCli.Close() }()
+	}
+
+	if cfg.op == "version" && cfg.repeat == 1 {
+		return runOPNsenseProbeRPC(ctx, pickRPCForOp(cfg.op, cli, longCli), probeArgs)
+	}
+	if err := waitProbeSettle(ctx.Done(), cli); err != nil {
+		return err
+	}
+	return runOPNsenseProbeRepeat(ctx, cfg, probeArgs, cli, longCli)
+}
+
+// opnsenseProbeConfig collects the parsed flag set so the runner can
+// stay below the funlen budget. probeRPCArgs is returned separately
+// because it survives unchanged into runOPNsenseProbeRPC.
+type opnsenseProbeConfig struct {
+	target     string
+	targetLong string
+	timeout    time.Duration
+	op         string
+	repeat     int
+}
+
+func parseOPNsenseProbeFlags(args []string) (opnsenseProbeConfig, probeRPCArgs, error) {
 	fs := flag.NewFlagSet("opnsense-probe", flag.ExitOnError)
 	target := fs.String("target", "", "unix:///path/to/socket (required)")
+	targetLong := fs.String("target-long", "",
+		"optional second socket for long-running RPCs (exec/deploy/revert); empty routes everything to -target")
 	timeout := fs.Duration("timeout", 10*time.Second, "dial+RPC timeout")
 	op := fs.String("op", "version",
 		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|configctl|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|reset|smoke")
@@ -60,32 +99,32 @@ func runOPNsenseProbe(args []string) error {
 	deployBin := fs.String("deploy-bin", "", "path to local binary for op=deploy (read into request)")
 	deployVer := fs.String("deploy-version", "", "version label attached to op=deploy")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return opnsenseProbeConfig{}, probeRPCArgs{}, err
 	}
 	if *target == "" {
 		fs.Usage()
-		return errors.New("-target required")
+		return opnsenseProbeConfig{}, probeRPCArgs{}, errors.New("-target required")
 	}
 	if !strings.HasPrefix(*target, "unix:///") {
-		return fmt.Errorf("-target must be unix:///path; got %q", *target)
+		return opnsenseProbeConfig{}, probeRPCArgs{}, fmt.Errorf("-target must be unix:///path; got %q", *target)
+	}
+	if *targetLong != "" && !strings.HasPrefix(*targetLong, "unix:///") {
+		return opnsenseProbeConfig{}, probeRPCArgs{}, fmt.Errorf("-target-long must be unix:///path; got %q", *targetLong)
 	}
 	if *repeat < 1 {
-		return errors.New("-repeat must be >= 1")
+		return opnsenseProbeConfig{}, probeRPCArgs{}, errors.New("-repeat must be >= 1")
 	}
 	if len(fs.Args()) > 0 && *op != string(probeOpConfigctl) {
-		return fmt.Errorf("unexpected positional args for op=%s: %s", *op, strings.Join(fs.Args(), " "))
+		return opnsenseProbeConfig{}, probeRPCArgs{},
+			fmt.Errorf("unexpected positional args for op=%s: %s", *op, strings.Join(fs.Args(), " "))
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-	defer cancel()
-
-	cli, err := opnsense.Dial(*target)
-	if err != nil {
-		slog.ErrorContext(ctx, "opnsense-probe dial failed", "target", *target, "err", err)
-		return fmt.Errorf("dial opnsense target: %w", err)
+	cfg := opnsenseProbeConfig{
+		target:     *target,
+		targetLong: *targetLong,
+		timeout:    *timeout,
+		op:         *op,
+		repeat:     *repeat,
 	}
-	defer func() { _ = cli.Close() }()
-
 	probeArgs := probeRPCArgs{
 		op:            *op,
 		xpath:         *xpath,
@@ -103,43 +142,102 @@ func runOPNsenseProbe(args []string) error {
 		deployBin:     *deployBin,
 		deployVersion: *deployVer,
 	}
-	if *op == "version" && *repeat == 1 {
-		return runOPNsenseProbeRPC(ctx, cli.RPC(), probeArgs)
+	return cfg, probeArgs, nil
+}
+
+// dialProbeTargets dials the short socket (always) and the long
+// socket (optional). It does not accept a context because
+// opnsense.Dial itself does not, and contextcheck flags any ctx-
+// taking wrapper that forwards a call to a non-ctx-taking
+// dependency.
+func dialProbeTargets(target, targetLong string) (*opnsense.Client, *opnsense.Client, error) {
+	cli, err := opnsense.Dial(target)
+	if err != nil {
+		slog.Error("opnsense-probe dial failed", "target", target, "err", err)
+		return nil, nil, fmt.Errorf("dial opnsense target: %w", err)
 	}
+	if targetLong == "" {
+		return cli, nil, nil
+	}
+	longCli, err := opnsense.Dial(targetLong)
+	if err != nil {
+		_ = cli.Close()
+		slog.Error("opnsense-probe dial-long failed",
+			"target_long", targetLong, "err", err)
+		return nil, nil, fmt.Errorf("dial opnsense target-long: %w", err)
+	}
+	return cli, longCli, nil
+}
+
+// waitProbeSettle pauses for the serial settle delay or returns
+// early on done close or client error. It takes a Done channel
+// rather than a full context to keep contextcheck quiet on the
+// non-ctx-taking cli.Err call.
+func waitProbeSettle(done <-chan struct{}, cli *opnsense.Client) error {
 	timer := time.NewTimer(opnsenseProbeSerialSettleDelay)
+	defer timer.Stop()
 	select {
-	case <-ctx.Done():
-		timer.Stop()
-		return ctx.Err()
+	case <-done:
+		return context.Canceled
 	case <-cli.Done():
-		timer.Stop()
 		if err := cli.Err(); err != nil {
-			slog.ErrorContext(ctx, "opnsense-probe connection closed during settle", "err", err)
+			slog.Error("opnsense-probe connection closed during settle", "err", err)
 			return fmt.Errorf("opnsense connection closed during settle: %w", err)
 		}
 		return opnsense.ErrClientClosed
 	case <-timer.C:
+		return nil
 	}
+}
 
-	rpc := cli.RPC()
-	for i := 1; i <= *repeat; i++ {
-		if *repeat > 1 {
-			fmt.Fprintf(os.Stdout, "repeat=%d/%d\n", i, *repeat)
+func runOPNsenseProbeRepeat(
+	ctx context.Context,
+	cfg opnsenseProbeConfig,
+	probeArgs probeRPCArgs,
+	cli, longCli *opnsense.Client,
+) error {
+	for i := 1; i <= cfg.repeat; i++ {
+		if cfg.repeat > 1 {
+			fmt.Fprintf(os.Stdout, "repeat=%d/%d\n", i, cfg.repeat)
 		}
-		if *op == "smoke" {
-			if err := runOPNsenseProbeSmoke(ctx, rpc); err != nil {
+		if cfg.op == "smoke" {
+			if err := runOPNsenseProbeSmoke(ctx, cli, longCli); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := runOPNsenseProbeRPC(ctx, rpc, probeArgs); err != nil {
+		if err := runOPNsenseProbeRPC(ctx, pickRPCForOp(cfg.op, cli, longCli), probeArgs); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func runOPNsenseProbeSmoke(ctx context.Context, rpc *opnsense.RPC) error {
+// pickRPCForOp routes an op to the long-channel RPC client when the
+// op is a long-running RPC and longCli is non-nil; otherwise it
+// returns the short-channel RPC client. The Reset op is routed to
+// whichever port the caller targets (short by default) since the
+// daemon accepts Reset on every port. Every probeOp value is listed
+// explicitly so the exhaustive linter catches new ops as the surface
+// grows.
+func pickRPCForOp(op string, shortCli, longCli *opnsense.Client) *opnsense.RPC {
+	if longCli == nil {
+		return shortCli.RPC()
+	}
+	switch probeOp(op) {
+	case probeOpExec, probeOpConfigctl, probeOpDeploy, probeOpRevert:
+		return longCli.RPC()
+	case probeOpVersion, probeOpReadConfig, probeOpWriteConfig,
+		probeOpBackupConfig, probeOpXPathGet, probeOpXPathSet,
+		probeOpXPathDelete, probeOpStripGW6, probeOpInjectGW6,
+		probeOpDeployStatus, probeOpReset:
+		return shortCli.RPC()
+	default:
+		return shortCli.RPC()
+	}
+}
+
+func runOPNsenseProbeSmoke(ctx context.Context, shortCli, longCli *opnsense.Client) error {
 	ops := []probeRPCArgs{
 		{op: "version"},
 		{op: "read-config"},
@@ -149,7 +247,7 @@ func runOPNsenseProbeSmoke(ctx context.Context, rpc *opnsense.RPC) error {
 	}
 	for _, smokeOp := range ops {
 		fmt.Fprintf(os.Stdout, "smoke-op=%s\n", smokeOp.op)
-		if err := runOPNsenseProbeRPC(ctx, rpc, smokeOp); err != nil {
+		if err := runOPNsenseProbeRPC(ctx, pickRPCForOp(smokeOp.op, shortCli, longCli), smokeOp); err != nil {
 			return err
 		}
 	}

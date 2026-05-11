@@ -37,7 +37,9 @@ const (
 // not authenticate at the application layer.
 func runOPNsenseDaemonServe(args []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path")
+	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path (short-RPC port)")
+	longSerial := fs.String("serial-long", "",
+		"optional second virtio-serial device for long-running RPCs (Exec/Deploy/Revert); empty disables channel split")
 	configPath := fs.String("config-xml", opnsensesvc.ConfigPath, "OPNsense config.xml path")
 	backupDir := fs.String("backup-dir", opnsensesvc.BackupDir, "directory for snapshot files")
 	daemonize := fs.Bool("daemonize", false, "detach into the background")
@@ -54,7 +56,7 @@ func runOPNsenseDaemonServe(args []string) int {
 	}
 
 	if *daemonize {
-		if err := daemonizeServe(*serialPath, *configPath, *backupDir, *pidfile, *logfile); err != nil {
+		if err := daemonizeServe(*serialPath, *longSerial, *configPath, *backupDir, *pidfile, *logfile); err != nil {
 			fmt.Fprintf(os.Stderr, "serve: daemonize: %v\n", err)
 			return 1
 		}
@@ -68,12 +70,13 @@ func runOPNsenseDaemonServe(args []string) int {
 	// returning from this subcommand.
 
 	opts := opnsensesvc.ServeOpts{
-		SerialPath:   *serialPath,
-		OpenSerial:   opnsensesvc.OpenVirtioSerial,
-		Server:       srv,
-		Log:          slog.Default(),
-		OnSerialOpen: nil,
-		Watchdog:     opnsensesvc.DefaultWatchdogConfig(),
+		SerialPath:     *serialPath,
+		OpenSerial:     opnsensesvc.OpenVirtioSerial,
+		Server:         srv,
+		Log:            slog.Default(),
+		OnSerialOpen:   nil,
+		Watchdog:       opnsensesvc.DefaultWatchdogConfig(),
+		LongSerialPath: *longSerial,
 	}
 
 	slog.Info("mwan-opnsense: serving", "serial_path", *serialPath)
@@ -88,7 +91,7 @@ func runOPNsenseDaemonServe(args []string) int {
 	return 0
 }
 
-func daemonizeServe(serialPath, configPath, backupDir, pidfile, logfile string) error {
+func daemonizeServe(serialPath, longSerialPath, configPath, backupDir, pidfile, logfile string) error {
 	executable, err := os.Executable()
 	if err != nil {
 		wrappedErr := fmt.Errorf("resolve executable: %w", err)
@@ -101,6 +104,9 @@ func daemonizeServe(serialPath, configPath, backupDir, pidfile, logfile string) 
 		"-serial", serialPath,
 		"-config-xml", configPath,
 		"-backup-dir", backupDir,
+	}
+	if longSerialPath != "" {
+		childArgs = append(childArgs, "-serial-long", longSerialPath)
 	}
 	if !invokedAsOPNsenseDaemon(executable) {
 		childArgs = append([]string{"opnsense"}, childArgs...)
