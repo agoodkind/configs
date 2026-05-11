@@ -3,6 +3,8 @@ package opnsensesvc
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -131,6 +133,111 @@ func TestRunExec_BinaryNotFound(t *testing.T) {
 	_, err := runExec(context.Background(), ExecArgs{Command: "/this/does/not/exist"})
 	if err == nil {
 		t.Fatal("expected error for missing binary")
+	}
+}
+
+// TestRunExec_StdinClosesForCatChild verifies that a 64 KB stdin
+// payload pushed into `/bin/sh -c "cat > file"` is fully consumed by
+// the child before the handler returns. The test pins the stdin EOF
+// contract: cmd.Stdin = bytes.NewReader closes the child's stdin pipe
+// on Reader EOF, which lets cat exit cleanly. A regression that breaks
+// this contract (e.g. by switching to a Pipe that never closes) would
+// hang the handler past the 5 s deadline.
+func TestRunExec_StdinClosesForCatChild(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "stdin-eof.bin")
+	payload := bytes.Repeat([]byte{'A'}, 64*1024)
+
+	start := time.Now()
+	res, err := runExec(context.Background(), ExecArgs{
+		Command:        "/bin/sh",
+		Args:           []string{"-c", "cat > " + out},
+		StdinBytes:     payload,
+		TimeoutSeconds: 5,
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if dur := time.Since(start); dur > 5*time.Second {
+		t.Fatalf("handler took %v; child likely never saw stdin EOF", dur)
+	}
+	if res.TimedOut {
+		t.Fatalf("TimedOut=true; child did not see stdin EOF: %+v", res)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("exit=%d stderr=%q", res.ExitCode, res.Stderr)
+	}
+
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output file: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("output file size=%d; want %d", len(got), len(payload))
+	}
+}
+
+// TestRunExec_TimeoutKillsChildThatIgnoresStdin verifies the timeout
+// path kills a child that never reads its stdin. The stdin pipe stays
+// full, the child runs the busy loop forever, and the handler must
+// return within the timeout window (plus a small grace) with
+// TimedOut=true and a negative exit code. A regression that leaves the
+// stdin writer goroutine blocked would hang the handler past the
+// timeout.
+func TestRunExec_TimeoutKillsChildThatIgnoresStdin(t *testing.T) {
+	start := time.Now()
+	res, err := runExec(context.Background(), ExecArgs{
+		Command:        "/bin/sh",
+		Args:           []string{"-c", "while true; do :; done"},
+		StdinBytes:     []byte("ignored payload"),
+		TimeoutSeconds: 2,
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	dur := time.Since(start)
+	if !res.TimedOut {
+		t.Fatalf("expected TimedOut=true; got %+v", res)
+	}
+	if res.ExitCode != -1 {
+		t.Fatalf("expected ExitCode=-1 on timeout; got %d", res.ExitCode)
+	}
+	if dur > 5*time.Second {
+		t.Fatalf("timeout enforcement slow: %v (limit 5s)", dur)
+	}
+}
+
+// TestRunExec_CappedBufferDoesNotWedge stresses the cappedBuffer drop
+// path with a payload five times the 10 MB cap. The child writes ~50
+// MB of stdout; cappedBuffer accepts the first 10 MB and silently
+// drops the rest. The contract is that cappedBuffer.Write returns
+// success even after the cap is hit so the subprocess never sees a
+// short-write or SIGPIPE, which would otherwise stall the child and
+// hang the handler.
+func TestRunExec_CappedBufferDoesNotWedge(t *testing.T) {
+	start := time.Now()
+	res, err := runExec(context.Background(), ExecArgs{
+		Command:        "/bin/sh",
+		Args:           []string{"-c", "yes hello | head -c 50000000"},
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if dur := time.Since(start); dur > 30*time.Second {
+		t.Fatalf("handler took %v; cappedBuffer likely stalled the child", dur)
+	}
+	if res.TimedOut {
+		t.Fatalf("TimedOut=true; child did not finish: %+v", res)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("exit=%d stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !res.StdoutTruncated {
+		t.Fatal("expected StdoutTruncated=true after 50 MB write into 10 MB cap")
+	}
+	if len(res.Stdout) > maxOutputBytes {
+		t.Fatalf("stdout exceeded cap: %d > %d", len(res.Stdout), maxOutputBytes)
 	}
 }
 
