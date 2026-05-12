@@ -541,6 +541,22 @@ func uploadDataChunks(ctx context.Context, stream mwanv1.TransferService_UploadC
 		}); sendErr != nil {
 			return probeLogWrap(ctx, "transfer-up: send data", sendErr)
 		}
+		// Stop-and-wait: block on the server's per-chunk ack before
+		// sending the next chunk. Keeps in-flight bytes bounded to
+		// one chunk so the FreeBSD virtio_console RX queue on the
+		// guest cannot overflow under load.
+		ackMsg, recvErr := stream.Recv()
+		if recvErr != nil {
+			return probeLogWrap(ctx, "transfer-up: recv data ack", recvErr)
+		}
+		dataAck, ok := ackMsg.GetBody().(*mwanv1.UploadResponse_DataAck)
+		if !ok {
+			return fmt.Errorf("transfer-up: expected data ack at offset %d, got %T", end, ackMsg.GetBody())
+		}
+		if dataAck.DataAck.GetCommittedOffset() != end {
+			return fmt.Errorf("transfer-up: data ack offset %d != expected %d",
+				dataAck.DataAck.GetCommittedOffset(), end)
+		}
 		offset = end
 		if persistState {
 			snap, snapErr := marshalHashState(ctx, hasher)
@@ -723,6 +739,19 @@ func deployStage(ctx context.Context, cli *opnsense.Client, binaryPath string, c
 			}},
 		}); sendErr != nil {
 			return probeLogWrapStr(ctx, "deploy: send data", sendErr)
+		}
+		ackMsg, recvErr := stream.Recv()
+		if recvErr != nil {
+			return probeLogWrapStr(ctx, "deploy: recv data ack", recvErr)
+		}
+		dataAck, ok := ackMsg.GetBody().(*mwanv1.UploadResponse_DataAck)
+		if !ok {
+			return probeLogWrapStr(ctx, "deploy: expected data ack",
+				fmt.Errorf("got %T", ackMsg.GetBody()))
+		}
+		if dataAck.DataAck.GetCommittedOffset() != end {
+			return probeLogWrapStr(ctx, "deploy: data ack offset",
+				fmt.Errorf("got %d want %d", dataAck.DataAck.GetCommittedOffset(), end))
 		}
 		offset = end
 	}

@@ -471,6 +471,18 @@ func (m *TransferManager) serveWrite(stream mwanv1.TransferService_UploadServer,
 				writeState.cleanup()
 				return status.Errorf(codes.Internal, "transfer: write: %v", writeErr)
 			}
+			// Application-level stop-and-wait pacing. The client
+			// blocks on this ack before sending the next chunk so
+			// the in-flight byte count never exceeds one chunk.
+			if ackErr := stream.Send(&mwanv1.UploadResponse{
+				Body: &mwanv1.UploadResponse_DataAck{
+					DataAck: &mwanv1.TransferDataAck{CommittedOffset: writeState.state.CommittedOffset},
+				},
+			}); ackErr != nil {
+				writeState.cleanup()
+				m.log.ErrorContext(ctx, "opnsensesvc: serveWrite send data ack", "err", ackErr)
+				return fmt.Errorf("transfer: send data ack: %w", ackErr)
+			}
 		case *mwanv1.UploadRequest_Final:
 			return m.finalizeWrite(stream, writeState, body.Final, header)
 		case *mwanv1.UploadRequest_Cancel:

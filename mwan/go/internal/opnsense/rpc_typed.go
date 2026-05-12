@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -301,6 +302,19 @@ func (r *RPC) WriteConfigXML(ctx context.Context, content []byte, label string) 
 			}},
 		}); sendErr != nil {
 			return nil, logWrap(ctx, r.c.log, "WriteConfigXML send data", sendErr)
+		}
+		ackMsg, recvAckErr := stream.Recv()
+		if recvAckErr != nil {
+			return nil, logWrap(ctx, r.c.log, "WriteConfigXML recv data ack", recvAckErr)
+		}
+		dataAck, ok := ackMsg.GetBody().(*mwanv1.UploadResponse_DataAck)
+		if !ok {
+			return nil, logWrap(ctx, r.c.log, "WriteConfigXML expected data ack",
+				fmt.Errorf("got %T", ackMsg.GetBody()))
+		}
+		if dataAck.DataAck.GetCommittedOffset() != end {
+			return nil, logWrap(ctx, r.c.log, "WriteConfigXML data ack offset",
+				fmt.Errorf("got %d want %d", dataAck.DataAck.GetCommittedOffset(), end))
 		}
 		offset = end
 	}

@@ -225,11 +225,21 @@ message TransferTerminal {
   string staged_path = 6;
 }
 
+// TransferDataAck paces the bidi Upload stream. The server emits one
+// of these after every data chunk it writes; the client must receive
+// it before sending the next chunk. Application-level stop-and-wait
+// keeps the in-flight byte count bounded to one chunk so the FreeBSD
+// virtio_console RX queue cannot overflow.
+message TransferDataAck {
+  int64 committed_offset = 1;
+}
+
 message UploadResponse {
   oneof body {
     TransferAck ack = 1;
     TransferDataChunk data = 2;
     TransferTerminal terminal = 3;
+    TransferDataAck data_ack = 4;
   }
 }
 
