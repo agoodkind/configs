@@ -69,6 +69,8 @@ github.com/orcaman/concurrent-map/v2 v2.0.1 h1:jOJ5Pg2w1oeB6PeDurIYf6k9PQ+aTITr/
 github.com/orcaman/concurrent-map/v2 v2.0.1/go.mod h1:9Eq3TG2oBe5FirmYWQfYO5iH1q0Jv47PLaNK++uCdOM=
 github.com/osrg/gobgp/v4 v4.4.0 h1:GA0oTZv4WfjXrhHI3Gm/fm9jAy4fVU7vdMvt0GOEqBE=
 github.com/osrg/gobgp/v4 v4.4.0/go.mod h1:pgu8waqTvZUYl4eQuPrKNOaVwhHv7Zt9YymuzCaX7f8=
+github.com/osrg/gobgp/v4 v4.5.0 h1:1jS4cMxUYSo36UfDyigLOLYEg6Oh+9I2mrnjjgAGCFk=
+github.com/osrg/gobgp/v4 v4.5.0/go.mod h1:pgu8waqTvZUYl4eQuPrKNOaVwhHv7Zt9YymuzCaX7f8=
 github.com/pelletier/go-toml/v2 v2.2.3 h1:YmeHyLY8mFWbdkNWwpr+qIL2bEqT0o95WSdkNHvL12M=
 github.com/pelletier/go-toml/v2 v2.2.3/go.mod h1:MfCQTFTvCcUyyvvwm1+G6H/jORL20Xlb6rzQu9GuUkc=
 github.com/pierrec/lz4/v4 v4.1.14 h1:+fL8AQEZtz/ijeNnpduH0bROTu0O3NZAlPjQxGn8LwE=
