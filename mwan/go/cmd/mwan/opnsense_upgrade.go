@@ -161,7 +161,7 @@ func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) *string {
 	transportStr := fs.String("env-transport", string(envTransportSSH),
 		"validator transport: ssh|grpc (grpc routes OPNsense ops via mwan-opnsense daemon)")
 	fs.StringVar(&f.envGRPCTarget, "env-grpc-target", "",
-		"gRPC target socket for --env-transport=grpc (e.g. unix:///var/run/qemu-server/102.mwanrpc)")
+		"gRPC target socket for --env-transport=grpc (e.g. unix:///var/run/mwan-opnsense.sock)")
 	fs.StringVar(&f.opnsenseSSHHost, "opnsense-ssh", "", "ssh destination for the OPNsense guest (validator)")
 	fs.StringVar(&f.opnsenseJumpHost, "opnsense-jump", "", "ssh ProxyJump for OPNsense (validator)")
 	fs.StringVar(&f.proxmoxSSHHost, "proxmox-ssh", "", "ssh destination for the Proxmox host (validator)")

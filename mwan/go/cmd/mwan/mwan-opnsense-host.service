@@ -1,16 +1,16 @@
 [Unit]
-Description=MWAN OPNsense host bridge (MWN1 over qemu virtio-serial)
+Description=MWAN OPNsense host bridge (yamux over qemu virtio-serial)
 Documentation=https://github.com/agoodkind/configs
 After=network.target qemu-server.service
 Wants=network.target
 
 [Service]
 Type=simple
-# Defaults assume the testbed VM 101 MWN1 chardev path. Override with a
-# drop-in at /etc/systemd/system/mwan-opnsense-host.service.d/listen.conf
-# for prod (VM 113) or any other target.
+# Defaults assume the testbed VM 102 chardev path. Override with a
+# drop-in at /etc/systemd/system/mwan-opnsense-host.service.d/upstream.conf
+# for prod (VM 101) or any other target.
 ExecStart=/usr/local/bin/mwan opnsense-host serve \
-    -upstream unix:///var/run/qemu-server/101.mwanrpc \
+    -upstream unix:///var/run/qemu-server/102.mwanrpc \
     -listen /var/run/mwan-opnsense.sock
 Restart=always
 RestartSec=5s

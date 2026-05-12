@@ -7,7 +7,7 @@
 #
 # Required vars:
 #   mwan_opnsense_host_binary_local      local path to bin/mwan-linux
-#   mwan_opnsense_host_vmid              Proxmox VMID hosting OPNsense (e.g. 101 testbed, 113 prod)
+#   mwan_opnsense_host_vmid              Proxmox VMID hosting OPNsense (e.g. 102 testbed, 101 prod)
 #
 # Optional vars (with defaults):
 #   mwan_opnsense_host_listen_path       default "/var/run/mwan-opnsense.sock"

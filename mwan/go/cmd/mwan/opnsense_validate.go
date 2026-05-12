@@ -150,7 +150,7 @@ func parseValidateFlags(args []string) (validateFlags, int, error) {
 	transportStr := fs.String("env-transport", string(envTransportSSH),
 		"validate transport: ssh|grpc (grpc routes OPNsense ops via mwan-opnsense daemon)")
 	fs.StringVar(&out.envGRPCTarget, "env-grpc-target", "",
-		"gRPC target socket for --env-transport=grpc (e.g. unix:///var/run/qemu-server/102.mwanrpc)")
+		"gRPC target socket for --env-transport=grpc (e.g. unix:///var/run/mwan-opnsense.sock)")
 	fs.StringVar(&out.stateDir, "state-dir", validate.DefaultStateDir,
 		"artefact root (matches MWAN-152's --state-dir)")
 	fs.StringVar(&out.deployID, "deploy-id", "",

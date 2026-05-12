@@ -30,7 +30,7 @@
   gather_facts: false
   vars:
     mwan_opnsense_host_binary_local: "{{ playbook_dir }}/../../mwan/go/bin/mwan-linux"
-    mwan_opnsense_host_vmid: 101
+    mwan_opnsense_host_vmid: 102
     mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
   tasks:
     - name: Verify bridge binary exists locally
