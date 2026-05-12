@@ -648,10 +648,7 @@ func (w *watchdog) maybeSnapshot(ctx context.Context) {
 	if w.cfg.Watchdog.HashCheckEveryNHealthy > 0 && !w.lastHashCheckOK {
 		return
 	}
-	name := fmt.Sprintf(
-		"known-good-%s",
-		w.now().Format("20060102-150405"),
-	)
+	name := "known-good-" + w.now().Format("20060102-150405")
 	if err := w.ops.VMSnapshot(ctx, w.cfg.MwanVMID, name); err != nil {
 		log.ErrorContext(ctx, "vmSnapshot failed", "err", err, "snapshot", name)
 		return

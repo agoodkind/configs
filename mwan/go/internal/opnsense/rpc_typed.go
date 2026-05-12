@@ -2,217 +2,331 @@ package opnsense
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
-	"fmt"
-	"log/slog"
-	"sync"
-
-	"google.golang.org/protobuf/proto"
+	"io"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
-	"goodkind.io/mwan/internal/mwn1"
 )
 
-// RPC exposes typed methods for the mwan-opnsense service.
+// RPC exposes typed methods for the mwan-opnsense service. Each
+// method is a thin wrapper around a generated gRPC client stub plus,
+// for streaming RPCs, a synchronous drive loop.
 type RPC struct {
 	c *Client
 }
 
 // RPC returns the typed service wrapper for this client.
-func (c *Client) RPC() *RPC {
-	return &RPC{c: c}
-}
+func (c *Client) RPC() *RPC { return &RPC{c: c} }
 
-func callTyped[Resp proto.Message](
-	ctx context.Context,
-	c *Client,
-	methodID uint16,
-	req proto.Message,
-) (Resp, error) {
-	var zero Resp
-	resp, err := c.Call(ctx, methodID, req)
-	if err != nil {
-		return zero, err
-	}
-	typed, ok := resp.(Resp)
-	if !ok {
-		err := fmt.Errorf("%w: got %T for method %d", ErrUnexpectedResponseType, resp, methodID)
-		c.log.ErrorContext(ctx, "opnsense: unexpected typed response",
-			slog.Int("method_id", int(methodID)),
-			slog.Any("err", err))
-		return zero, err
-	}
-	return typed, nil
+// ExecResult is the synchronous return shape from RPC.Exec.
+type ExecResult struct {
+	Stdout          []byte
+	Stderr          []byte
+	ExitCode        int32
+	DurationMs      int64
+	StdoutTruncated bool
+	StderrTruncated bool
+	TimedOut        bool
 }
 
 // Version calls the Version RPC.
 func (r *RPC) Version(ctx context.Context, req *mwanv1.VersionRequest) (*mwanv1.VersionResponse, error) {
-	return callTyped[*mwanv1.VersionResponse](ctx, r.c, mwn1.MethodVersion, req)
+	resp, err := r.c.opnsense.Version(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "Version", err)
+	}
+	return resp, nil
 }
 
-// Exec calls the Exec RPC.
-func (r *RPC) Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error) {
-	return callTyped[*mwanv1.ExecResponse](ctx, r.c, mwn1.MethodExec, req)
+// Exec drives the bidi Exec stream synchronously: send the header,
+// send all stdin in one chunk, close send, then drain stdout, stderr,
+// and the terminal message.
+func (r *RPC) Exec(ctx context.Context, command string, args []string, sudo bool, timeoutSeconds int32, stdin []byte) (*ExecResult, error) {
+	stream, err := r.c.opnsense.Exec(ctx)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "Exec stream", err)
+	}
+	if sendErr := stream.Send(&mwanv1.ExecRequest{
+		Body: &mwanv1.ExecRequest_Header{Header: &mwanv1.ExecHeader{
+			Command:        command,
+			Args:           args,
+			Sudo:           sudo,
+			TimeoutSeconds: timeoutSeconds,
+		}},
+	}); sendErr != nil {
+		return nil, logWrap(ctx, r.c.log, "Exec send header", sendErr)
+	}
+	if len(stdin) > 0 {
+		if sendErr := stream.Send(&mwanv1.ExecRequest{
+			Body: &mwanv1.ExecRequest_StdinChunk{StdinChunk: stdin},
+		}); sendErr != nil {
+			return nil, logWrap(ctx, r.c.log, "Exec send stdin", sendErr)
+		}
+	}
+	if sendErr := stream.Send(&mwanv1.ExecRequest{
+		Body: &mwanv1.ExecRequest_StdinClose{StdinClose: true},
+	}); sendErr != nil {
+		return nil, logWrap(ctx, r.c.log, "Exec send stdin close", sendErr)
+	}
+	if closeErr := stream.CloseSend(); closeErr != nil {
+		return nil, logWrap(ctx, r.c.log, "Exec close send", closeErr)
+	}
+	return drainExecResult(ctx, r.c, stream)
 }
 
-// ReadConfigXML calls the ReadConfigXML RPC.
-func (r *RPC) ReadConfigXML(ctx context.Context, req *mwanv1.ReadConfigXMLRequest) (*mwanv1.ReadConfigXMLResponse, error) {
-	return callTyped[*mwanv1.ReadConfigXMLResponse](ctx, r.c, mwn1.MethodReadConfigXML, req)
-}
-
-// WriteConfigXML calls the WriteConfigXML RPC.
-func (r *RPC) WriteConfigXML(ctx context.Context, req *mwanv1.WriteConfigXMLRequest) (*mwanv1.WriteConfigXMLResponse, error) {
-	return callTyped[*mwanv1.WriteConfigXMLResponse](ctx, r.c, mwn1.MethodWriteConfigXML, req)
+func drainExecResult(ctx context.Context, cli *Client, stream mwanv1.OpnsenseService_ExecClient) (*ExecResult, error) {
+	res := &ExecResult{
+		Stdout:          nil,
+		Stderr:          nil,
+		ExitCode:        0,
+		DurationMs:      0,
+		StdoutTruncated: false,
+		StderrTruncated: false,
+		TimedOut:        false,
+	}
+	for {
+		msg, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return res, nil
+		}
+		if err != nil {
+			return res, logWrap(ctx, cli.log, "Exec recv", err)
+		}
+		switch body := msg.GetBody().(type) {
+		case *mwanv1.ExecResponse_StdoutChunk:
+			res.Stdout = append(res.Stdout, body.StdoutChunk...)
+		case *mwanv1.ExecResponse_StderrChunk:
+			res.Stderr = append(res.Stderr, body.StderrChunk...)
+		case *mwanv1.ExecResponse_Terminal:
+			res.ExitCode = body.Terminal.GetExitCode()
+			res.DurationMs = body.Terminal.GetDurationMs()
+			res.StdoutTruncated = body.Terminal.GetStdoutTruncated()
+			res.StderrTruncated = body.Terminal.GetStderrTruncated()
+			res.TimedOut = body.Terminal.GetTimedOut()
+			return res, nil
+		}
+	}
 }
 
 // BackupConfigXML calls the BackupConfigXML RPC.
 func (r *RPC) BackupConfigXML(ctx context.Context, req *mwanv1.BackupConfigXMLRequest) (*mwanv1.BackupConfigXMLResponse, error) {
-	return callTyped[*mwanv1.BackupConfigXMLResponse](ctx, r.c, mwn1.MethodBackupConfigXML, req)
+	resp, err := r.c.opnsense.BackupConfigXML(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "BackupConfigXML", err)
+	}
+	return resp, nil
 }
 
-// XPathGet calls the XPathGet RPC.
-func (r *RPC) XPathGet(ctx context.Context, req *mwanv1.XPathGetRequest) (*mwanv1.XPathGetResponse, error) {
-	return callTyped[*mwanv1.XPathGetResponse](ctx, r.c, mwn1.MethodXPathGet, req)
+// XPathGet calls the server-streaming XPathGet RPC and collects every
+// match into a slice.
+func (r *RPC) XPathGet(ctx context.Context, req *mwanv1.XPathGetRequest) ([]string, error) {
+	stream, err := r.c.opnsense.XPathGet(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "XPathGet open", err)
+	}
+	var matches []string
+	for {
+		m, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			return matches, nil
+		}
+		if recvErr != nil {
+			return matches, logWrap(ctx, r.c.log, "XPathGet recv", recvErr)
+		}
+		matches = append(matches, m.GetMatch())
+	}
 }
 
 // XPathSet calls the XPathSet RPC.
 func (r *RPC) XPathSet(ctx context.Context, req *mwanv1.XPathSetRequest) (*mwanv1.XPathSetResponse, error) {
-	return callTyped[*mwanv1.XPathSetResponse](ctx, r.c, mwn1.MethodXPathSet, req)
+	resp, err := r.c.opnsense.XPathSet(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "XPathSet", err)
+	}
+	return resp, nil
 }
 
 // XPathDelete calls the XPathDelete RPC.
 func (r *RPC) XPathDelete(ctx context.Context, req *mwanv1.XPathDeleteRequest) (*mwanv1.XPathDeleteResponse, error) {
-	return callTyped[*mwanv1.XPathDeleteResponse](ctx, r.c, mwn1.MethodXPathDelete, req)
+	resp, err := r.c.opnsense.XPathDelete(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "XPathDelete", err)
+	}
+	return resp, nil
 }
 
 // StripGatewayV6 calls the StripGatewayV6 RPC.
 func (r *RPC) StripGatewayV6(ctx context.Context, req *mwanv1.StripGatewayV6Request) (*mwanv1.StripGatewayV6Response, error) {
-	return callTyped[*mwanv1.StripGatewayV6Response](ctx, r.c, mwn1.MethodStripGatewayV6, req)
+	resp, err := r.c.opnsense.StripGatewayV6(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "StripGatewayV6", err)
+	}
+	return resp, nil
 }
 
 // InjectGatewayV6 calls the InjectGatewayV6 RPC.
 func (r *RPC) InjectGatewayV6(ctx context.Context, req *mwanv1.InjectGatewayV6Request) (*mwanv1.InjectGatewayV6Response, error) {
-	return callTyped[*mwanv1.InjectGatewayV6Response](ctx, r.c, mwn1.MethodInjectGatewayV6, req)
+	resp, err := r.c.opnsense.InjectGatewayV6(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "InjectGatewayV6", err)
+	}
+	return resp, nil
 }
 
 // DeployStatus calls the DeployStatus RPC.
 func (r *RPC) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusRequest) (*mwanv1.DeployStatusResponse, error) {
-	return callTyped[*mwanv1.DeployStatusResponse](ctx, r.c, mwn1.MethodDeployStatus, req)
+	resp, err := r.c.opnsense.DeployStatus(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "DeployStatus", err)
+	}
+	return resp, nil
 }
 
 // Revert calls the Revert RPC.
 func (r *RPC) Revert(ctx context.Context, req *mwanv1.RevertRequest) (*mwanv1.RevertResponse, error) {
-	return callTyped[*mwanv1.RevertResponse](ctx, r.c, mwn1.MethodRevert, req)
+	resp, err := r.c.opnsense.Revert(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "Revert", err)
+	}
+	return resp, nil
 }
 
-// DeployStream is the client side of the Deploy streaming RPC.
-type DeployStream struct {
-	send      func(proto.Message) error
-	closeSend chan struct{}
-	final     chan deployFinalResult
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	closed    bool
-	completed bool
+// CommitDeploy calls the CommitDeploy RPC.
+func (r *RPC) CommitDeploy(ctx context.Context, req *mwanv1.CommitDeployRequest) (*mwanv1.CommitDeployResponse, error) {
+	resp, err := r.c.opnsense.CommitDeploy(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "CommitDeploy", err)
+	}
+	return resp, nil
 }
 
-type deployFinalResult struct {
-	resp *mwanv1.DeployResponse
-	err  error
+// ConfigXMLResult is the buffered result of a config.xml read.
+type ConfigXMLResult struct {
+	Content   []byte
+	SizeBytes int64
+	Sha256    string
 }
 
-// Send writes one application-level deploy chunk to the stream.
-func (s *DeployStream) Send(chunk *mwanv1.Chunk) error {
-	if s.send == nil {
-		return errors.New("opnsense: Deploy stream not started")
+// ReadConfigXML drives a TransferService.Upload(READ) call against
+// /conf/config.xml and returns the buffered bytes plus their hex
+// sha256.
+func (r *RPC) ReadConfigXML(ctx context.Context) (*ConfigXMLResult, error) {
+	stream, err := r.c.transfer.Upload(ctx)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "ReadConfigXML open", err)
 	}
-	s.mu.Lock()
-	closed := s.closed
-	completed := s.completed
-	s.mu.Unlock()
-	if closed || completed {
-		return errors.New("opnsense: Deploy stream closed")
+	header := &mwanv1.UploadRequest{
+		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
+			Path:      "/conf/config.xml",
+			Direction: mwanv1.TransferDirection_TRANSFER_DIRECTION_READ,
+		}},
 	}
-	return s.send(chunk)
+	if sendErr := stream.Send(header); sendErr != nil {
+		return nil, logWrap(ctx, r.c.log, "ReadConfigXML send header", sendErr)
+	}
+	if closeErr := stream.CloseSend(); closeErr != nil {
+		return nil, logWrap(ctx, r.c.log, "ReadConfigXML close send", closeErr)
+	}
+	var content []byte
+	var terminalSHA string
+	for {
+		msg, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			return nil, logWrap(ctx, r.c.log, "ReadConfigXML recv", recvErr)
+		}
+		switch body := msg.GetBody().(type) {
+		case *mwanv1.UploadResponse_Ack:
+			// Initial ack carries no payload for READ.
+			_ = body
+		case *mwanv1.UploadResponse_Data:
+			content = append(content, body.Data.GetData()...)
+		case *mwanv1.UploadResponse_Terminal:
+			terminalSHA = body.Terminal.GetSha256Hex()
+		}
+	}
+	sum := sha256.Sum256(content)
+	gotHex := hex.EncodeToString(sum[:])
+	if terminalSHA != "" && gotHex != terminalSHA {
+		return nil, logWrap(ctx, r.c.log, "ReadConfigXML sha256 mismatch",
+			errors.New("got "+gotHex+" want "+terminalSHA))
+	}
+	return &ConfigXMLResult{Content: content, SizeBytes: int64(len(content)), Sha256: gotHex}, nil
 }
 
-// CloseAndRecv closes the send side and waits for the Deploy response.
-func (s *DeployStream) CloseAndRecv() (*mwanv1.DeployResponse, error) {
-	s.mu.Lock()
-	if !s.closed {
-		s.closed = true
-		close(s.closeSend)
-	}
-	s.mu.Unlock()
-	res, ok := <-s.final
-	s.mu.Lock()
-	s.completed = true
-	s.mu.Unlock()
-	if !ok {
-		return nil, errors.New("opnsense: Deploy stream finalized without result")
-	}
-	return res.resp, res.err
+// WriteConfigXMLResult is the buffered result of a config.xml write.
+type WriteConfigXMLResult struct {
+	BackupPath   string
+	BytesWritten int64
 }
 
-// Cancel cancels an open Deploy stream without sending the final frame.
-func (s *DeployStream) Cancel() {
-	s.mu.Lock()
-	if s.completed {
-		s.mu.Unlock()
-		return
+// WriteConfigXML drives a TransferService.Upload(WRITE,SNAPSHOT_THEN_REPLACE)
+// call against /conf/config.xml.
+func (r *RPC) WriteConfigXML(ctx context.Context, content []byte, label string) (*WriteConfigXMLResult, error) {
+	if len(content) == 0 {
+		return nil, errors.New("opnsense: WriteConfigXML empty content")
 	}
-	cancel := s.cancel
-	s.closed = true
-	s.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	stream, err := r.c.transfer.Upload(ctx)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "WriteConfigXML open", err)
 	}
-}
-
-// Deploy opens the Deploy client-streaming RPC.
-func (r *RPC) Deploy(ctx context.Context) (*DeployStream, error) {
-	streamCtx, cancel := context.WithCancel(ctx)
-	stream := &DeployStream{
-		send:      nil,
-		closeSend: make(chan struct{}),
-		final:     make(chan deployFinalResult, 1),
-		cancel:    cancel,
-		mu:        sync.Mutex{},
-		closed:    false,
-		completed: false,
+	if sendErr := stream.Send(&mwanv1.UploadRequest{
+		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
+			Path:       "/conf/config.xml",
+			Direction:  mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+			FinishStep: mwanv1.FinishStep_FINISH_STEP_SNAPSHOT_THEN_REPLACE,
+			Label:      label,
+			TotalSize:  int64(len(content)),
+		}},
+	}); sendErr != nil {
+		return nil, logWrap(ctx, r.c.log, "WriteConfigXML send header", sendErr)
 	}
-	sendReady := make(chan func(proto.Message) error, 1)
-
-	go func() {
-		defer func() {
-			if recoverErr := recover(); recoverErr != nil {
-				err := fmt.Errorf("panic: %v", recoverErr)
-				r.c.log.ErrorContext(streamCtx, "opnsense: deploy stream panic recovered", slog.Any("err", err))
-				stream.final <- deployFinalResult{resp: nil, err: err}
-				close(stream.final)
-			}
-		}()
-		resp, err := r.c.CallStream(streamCtx, mwn1.MethodDeploy,
-			func(send func(proto.Message) error) error {
-				sendReady <- send
-				close(sendReady)
-				select {
-				case <-stream.closeSend:
-					return nil
-				case <-streamCtx.Done():
-					return streamCtx.Err()
-				}
-			})
-		typed, _ := resp.(*mwanv1.DeployResponse)
-		stream.final <- deployFinalResult{resp: typed, err: err}
-		close(stream.final)
-	}()
-
-	send, ok := <-sendReady
-	if !ok {
-		res := <-stream.final
-		return nil, res.err
+	ack, recvErr := stream.Recv()
+	if recvErr != nil {
+		return nil, logWrap(ctx, r.c.log, "WriteConfigXML recv ack", recvErr)
 	}
-	stream.send = send
-	return stream, nil
+	_ = ack
+	const chunkSize = 16 << 10
+	offset := int64(0)
+	for offset < int64(len(content)) {
+		end := min(offset+chunkSize, int64(len(content)))
+		if sendErr := stream.Send(&mwanv1.UploadRequest{
+			Body: &mwanv1.UploadRequest_Data{Data: &mwanv1.TransferDataChunk{
+				Offset: offset,
+				Data:   content[offset:end],
+			}},
+		}); sendErr != nil {
+			return nil, logWrap(ctx, r.c.log, "WriteConfigXML send data", sendErr)
+		}
+		offset = end
+	}
+	sum := sha256.Sum256(content)
+	finalHex := hex.EncodeToString(sum[:])
+	if sendErr := stream.Send(&mwanv1.UploadRequest{
+		Body: &mwanv1.UploadRequest_Final{Final: &mwanv1.TransferFinal{Sha256Hex: finalHex}},
+	}); sendErr != nil {
+		return nil, logWrap(ctx, r.c.log, "WriteConfigXML send final", sendErr)
+	}
+	if closeErr := stream.CloseSend(); closeErr != nil {
+		return nil, logWrap(ctx, r.c.log, "WriteConfigXML close send", closeErr)
+	}
+	for {
+		msg, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			return nil, errors.New("opnsense: WriteConfigXML stream ended before terminal")
+		}
+		if recvErr != nil {
+			return nil, logWrap(ctx, r.c.log, "WriteConfigXML recv", recvErr)
+		}
+		if term := msg.GetTerminal(); term != nil {
+			return &WriteConfigXMLResult{
+				BackupPath:   term.GetBackupPath(),
+				BytesWritten: term.GetTotalBytes(),
+			}, nil
+		}
+	}
 }

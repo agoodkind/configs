@@ -7,8 +7,12 @@ import (
 	"log/slog"
 	"strings"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/opnsense"
 )
+
+// ExecResult mirrors opnsense.ExecResult so test doubles can satisfy
+// OPNsenseRPCClient without importing the parent package.
+type ExecResult = opnsense.ExecResult
 
 // OPNsenseRPCClient is the narrow surface the gRPC Executor needs from
 // the mwan-opnsense daemon. It is satisfied by *opnsense.RPC in
@@ -17,11 +21,10 @@ import (
 // OPNsenseRPCClient and avoids a dependency cycle through internal/
 // opnsense.
 type OPNsenseRPCClient interface {
-	// Exec runs a binary inside the OPNsense guest. Command is the
-	// executable path (e.g. "cat", "opnsense-update") and Args is the
-	// argv tail. The Executor surface uses the same shape, so the
-	// mapping is one-to-one.
-	Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error)
+	// Exec runs a binary inside the OPNsense guest via the bidi Exec
+	// stream. The wrapper drives the stream synchronously and returns
+	// a buffered result.
+	Exec(ctx context.Context, command string, args []string, sudo bool, timeoutSeconds int32, stdin []byte) (*ExecResult, error)
 }
 
 // GRPCExecutor implements [Executor] by routing each GuestExec call to
@@ -80,15 +83,8 @@ func (g *GRPCExecutor) GuestExec(
 		return GuestExecResult{}, err
 	}
 	command := args[0]
-	tail := args[1:]
-	req := &mwanv1.ExecRequest{
-		Command:        command,
-		Args:           append([]string(nil), tail...),
-		Sudo:           false,
-		TimeoutSeconds: g.ExecTimeoutSeconds,
-		StdinBytes:     nil,
-	}
-	resp, err := g.RPC.Exec(ctx, req)
+	tail := append([]string(nil), args[1:]...)
+	resp, err := g.RPC.Exec(ctx, command, tail, false, g.ExecTimeoutSeconds, nil)
 	if err != nil && isClientClosedErr(err) && g.Redial != nil {
 		slog.WarnContext(ctx, "upgrade GRPCExecutor: client closed, redialing",
 			"err", err.Error(), "vmid", vmid, "command", command)
@@ -100,7 +96,7 @@ func (g *GRPCExecutor) GuestExec(
 			return GuestExecResult{}, fmt.Errorf("grpc Exec %s redial: %w", command, dialErr)
 		}
 		g.RPC = newRPC
-		resp, err = g.RPC.Exec(ctx, req)
+		resp, err = g.RPC.Exec(ctx, command, tail, false, g.ExecTimeoutSeconds, nil)
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "upgrade GRPCExecutor Exec RPC failed",
@@ -108,24 +104,24 @@ func (g *GRPCExecutor) GuestExec(
 		return GuestExecResult{}, fmt.Errorf("grpc Exec %s: %w", command, err)
 	}
 	if resp == nil {
-		err := errors.New("GRPCExecutor: nil ExecResponse from daemon")
+		err := errors.New("GRPCExecutor: nil ExecResult from daemon")
 		slog.ErrorContext(ctx, "upgrade GRPCExecutor nil response",
 			"err", err.Error(), "vmid", vmid, "command", command)
 		return GuestExecResult{}, err
 	}
-	stderrText := string(resp.GetStderr())
-	if resp.GetTimedOut() {
+	stderrText := string(resp.Stderr)
+	if resp.TimedOut {
 		stderrText = appendDiag(stderrText, "[grpc-executor: command timed out]")
 	}
-	if resp.GetStdoutTruncated() {
+	if resp.StdoutTruncated {
 		stderrText = appendDiag(stderrText, "[grpc-executor: stdout truncated at 10 MB]")
 	}
-	if resp.GetStderrTruncated() {
+	if resp.StderrTruncated {
 		stderrText = appendDiag(stderrText, "[grpc-executor: stderr truncated at 10 MB]")
 	}
 	return GuestExecResult{
-		ExitCode: int(resp.GetExitCode()),
-		Stdout:   string(resp.GetStdout()),
+		ExitCode: int(resp.ExitCode),
+		Stdout:   string(resp.Stdout),
 		Stderr:   stderrText,
 	}, nil
 }

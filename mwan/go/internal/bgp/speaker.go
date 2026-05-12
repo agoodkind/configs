@@ -464,20 +464,20 @@ func (s *Speaker) Status() Status {
 	ctx := context.Background()
 	err := s.server.ListPeer(ctx, &apipb.ListPeerRequest{}, func(p *apipb.Peer) {
 		ps := PeerState{
-			Address: p.Conf.NeighborAddress,
-			State:   p.State.SessionState.String(),
+			Address: p.GetConf().GetNeighborAddress(),
+			State:   p.GetState().GetSessionState().String(),
 		}
 
-		if p.State.SessionState == apipb.PeerState_SESSION_STATE_ESTABLISHED {
+		if p.GetState().GetSessionState() == apipb.PeerState_SESSION_STATE_ESTABLISHED {
 			ps.Established = true
-			if p.Timers != nil && p.Timers.State != nil {
-				ps.UpSince = p.Timers.State.Uptime.GetSeconds()
+			if p.GetTimers() != nil && p.GetTimers().GetState() != nil {
+				ps.UpSince = p.GetTimers().GetState().GetUptime().GetSeconds()
 			}
 		}
 
-		for _, af := range p.AfiSafis {
-			if af.Config != nil && af.Config.Family != nil {
-				if af.Config.Family.Afi == apipb.Family_AFI_IP6 {
+		for _, af := range p.GetAfiSafis() {
+			if af.GetConfig() != nil && af.GetConfig().GetFamily() != nil {
+				if af.GetConfig().GetFamily().GetAfi() == apipb.Family_AFI_IP6 {
 					ps.AFI = "ipv6"
 				} else {
 					ps.AFI = "ipv4"

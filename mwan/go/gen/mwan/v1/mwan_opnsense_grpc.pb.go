@@ -19,631 +19,666 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MWANOPNsenseService_Version_FullMethodName         = "/mwan.v1.MWANOPNsenseService/Version"
-	MWANOPNsenseService_Exec_FullMethodName            = "/mwan.v1.MWANOPNsenseService/Exec"
-	MWANOPNsenseService_ReadConfigXML_FullMethodName   = "/mwan.v1.MWANOPNsenseService/ReadConfigXML"
-	MWANOPNsenseService_WriteConfigXML_FullMethodName  = "/mwan.v1.MWANOPNsenseService/WriteConfigXML"
-	MWANOPNsenseService_BackupConfigXML_FullMethodName = "/mwan.v1.MWANOPNsenseService/BackupConfigXML"
-	MWANOPNsenseService_XPathGet_FullMethodName        = "/mwan.v1.MWANOPNsenseService/XPathGet"
-	MWANOPNsenseService_XPathSet_FullMethodName        = "/mwan.v1.MWANOPNsenseService/XPathSet"
-	MWANOPNsenseService_XPathDelete_FullMethodName     = "/mwan.v1.MWANOPNsenseService/XPathDelete"
-	MWANOPNsenseService_StripGatewayV6_FullMethodName  = "/mwan.v1.MWANOPNsenseService/StripGatewayV6"
-	MWANOPNsenseService_InjectGatewayV6_FullMethodName = "/mwan.v1.MWANOPNsenseService/InjectGatewayV6"
-	MWANOPNsenseService_Deploy_FullMethodName          = "/mwan.v1.MWANOPNsenseService/Deploy"
-	MWANOPNsenseService_DeployStatus_FullMethodName    = "/mwan.v1.MWANOPNsenseService/DeployStatus"
-	MWANOPNsenseService_Revert_FullMethodName          = "/mwan.v1.MWANOPNsenseService/Revert"
+	OpnsenseService_Version_FullMethodName         = "/mwan.v1.OpnsenseService/Version"
+	OpnsenseService_Exec_FullMethodName            = "/mwan.v1.OpnsenseService/Exec"
+	OpnsenseService_XPathGet_FullMethodName        = "/mwan.v1.OpnsenseService/XPathGet"
+	OpnsenseService_XPathSet_FullMethodName        = "/mwan.v1.OpnsenseService/XPathSet"
+	OpnsenseService_XPathDelete_FullMethodName     = "/mwan.v1.OpnsenseService/XPathDelete"
+	OpnsenseService_BackupConfigXML_FullMethodName = "/mwan.v1.OpnsenseService/BackupConfigXML"
+	OpnsenseService_StripGatewayV6_FullMethodName  = "/mwan.v1.OpnsenseService/StripGatewayV6"
+	OpnsenseService_InjectGatewayV6_FullMethodName = "/mwan.v1.OpnsenseService/InjectGatewayV6"
+	OpnsenseService_DeployStatus_FullMethodName    = "/mwan.v1.OpnsenseService/DeployStatus"
+	OpnsenseService_Revert_FullMethodName          = "/mwan.v1.OpnsenseService/Revert"
+	OpnsenseService_CommitDeploy_FullMethodName    = "/mwan.v1.OpnsenseService/CommitDeploy"
 )
 
-// MWANOPNsenseServiceClient is the client API for MWANOPNsenseService service.
+// OpnsenseServiceClient is the client API for OpnsenseService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// MWANOPNsenseService runs inside the OPNsense VM.
-//
-// It exposes a recovery channel: arbitrary command exec and arbitrary
-// /conf/config.xml manipulation over the Proxmox qemu virtio-serial
-// socket. There is no TLS and no application-level authentication.
-//
-// The security boundary is host access to the qemu serial socket.
-type MWANOPNsenseServiceClient interface {
-	// Sanity check, returns the daemon version.
+// OpnsenseService runs inside the OPNsense VM and is reached over a
+// qemu virtio-serial Unix socket. There is no TLS and no application
+// authentication; the security boundary is host access to the socket.
+type OpnsenseServiceClient interface {
 	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error)
-	// Arbitrary command exec. The recovery surface for "I need to run X
-	// on OPNsense right now and SSH+sudo is broken."
-	Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (*ExecResponse, error)
-	// Read full /conf/config.xml.
-	ReadConfigXML(ctx context.Context, in *ReadConfigXMLRequest, opts ...grpc.CallOption) (*ReadConfigXMLResponse, error)
-	// Write /conf/config.xml. Server snapshots the current contents to
-	// /conf/backup/<ts>.xml first; backup_path is returned in the
-	// response so the client can immediately revert if needed.
-	WriteConfigXML(ctx context.Context, in *WriteConfigXMLRequest, opts ...grpc.CallOption) (*WriteConfigXMLResponse, error)
-	// Explicit snapshot of /conf/config.xml. Useful before a multi-step
-	// mutation sequence.
-	BackupConfigXML(ctx context.Context, in *BackupConfigXMLRequest, opts ...grpc.CallOption) (*BackupConfigXMLResponse, error)
-	// XPath read. No mutation. No snapshot taken.
-	XPathGet(ctx context.Context, in *XPathGetRequest, opts ...grpc.CallOption) (*XPathGetResponse, error)
-	// XPath set. Server snapshots first. Returns backup_path and the
-	// count of changed nodes.
+	Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecRequest, ExecResponse], error)
+	XPathGet(ctx context.Context, in *XPathGetRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[XPathMatch], error)
 	XPathSet(ctx context.Context, in *XPathSetRequest, opts ...grpc.CallOption) (*XPathSetResponse, error)
-	// XPath delete. Server snapshots first. Returns backup_path and the
-	// count of deleted nodes.
 	XPathDelete(ctx context.Context, in *XPathDeleteRequest, opts ...grpc.CallOption) (*XPathDeleteResponse, error)
-	// Convenience: surgical removal of <gatewayv6>...</gatewayv6> from
-	// <wan>. Verbatim port of the byte-offset tokenizer from the
-	// deleted internal/cutover2/opnsense_config.go (commit 63d050d^).
-	// Preserves whitespace fidelity better than generic XPath.
+	BackupConfigXML(ctx context.Context, in *BackupConfigXMLRequest, opts ...grpc.CallOption) (*BackupConfigXMLResponse, error)
 	StripGatewayV6(ctx context.Context, in *StripGatewayV6Request, opts ...grpc.CallOption) (*StripGatewayV6Response, error)
-	// Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
-	// before </wan>. Same byte-offset tokenizer as above.
 	InjectGatewayV6(ctx context.Context, in *InjectGatewayV6Request, opts ...grpc.CallOption) (*InjectGatewayV6Response, error)
-	// Deploy a new daemon binary. Client streams the binary in Chunk
-	// messages (ChunkHeader, data*, ChunkTrailer). The header carries
-	// the version string in attrs["version_str"]. Daemon accumulates
-	// chunks into a temp file, verifies sha256 from the trailer, swaps
-	// .current and .previous, marks pending-verify, re-execs into the
-	// new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
-	Deploy(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[Chunk, DeployResponse], error)
-	// Mark the most recent deploy as healthy. Bridge calls this after
-	// post-deploy heartbeat probe succeeds. Daemon clears the
-	// pending-verify marker and stamps health=ok in the state file.
 	DeployStatus(ctx context.Context, in *DeployStatusRequest, opts ...grpc.CallOption) (*DeployStatusResponse, error)
-	// Revert to .previous. Used by bridge when post-deploy heartbeat
-	// budget elapses without a successful Version() call. Same re-exec
-	// dance as Deploy.
 	Revert(ctx context.Context, in *RevertRequest, opts ...grpc.CallOption) (*RevertResponse, error)
+	CommitDeploy(ctx context.Context, in *CommitDeployRequest, opts ...grpc.CallOption) (*CommitDeployResponse, error)
 }
 
-type mWANOPNsenseServiceClient struct {
+type opnsenseServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewMWANOPNsenseServiceClient(cc grpc.ClientConnInterface) MWANOPNsenseServiceClient {
-	return &mWANOPNsenseServiceClient{cc}
+func NewOpnsenseServiceClient(cc grpc.ClientConnInterface) OpnsenseServiceClient {
+	return &opnsenseServiceClient{cc}
 }
 
-func (c *mWANOPNsenseServiceClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
+func (c *opnsenseServiceClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_Version_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, OpnsenseService_Version_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *mWANOPNsenseServiceClient) Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (*ExecResponse, error) {
+func (c *opnsenseServiceClient) Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecRequest, ExecResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ExecResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_Exec_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &OpnsenseService_ServiceDesc.Streams[0], OpnsenseService_Exec_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) ReadConfigXML(ctx context.Context, in *ReadConfigXMLRequest, opts ...grpc.CallOption) (*ReadConfigXMLResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ReadConfigXMLResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_ReadConfigXML_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) WriteConfigXML(ctx context.Context, in *WriteConfigXMLRequest, opts ...grpc.CallOption) (*WriteConfigXMLResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(WriteConfigXMLResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_WriteConfigXML_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) BackupConfigXML(ctx context.Context, in *BackupConfigXMLRequest, opts ...grpc.CallOption) (*BackupConfigXMLResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(BackupConfigXMLResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_BackupConfigXML_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) XPathGet(ctx context.Context, in *XPathGetRequest, opts ...grpc.CallOption) (*XPathGetResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(XPathGetResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_XPathGet_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) XPathSet(ctx context.Context, in *XPathSetRequest, opts ...grpc.CallOption) (*XPathSetResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(XPathSetResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_XPathSet_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) XPathDelete(ctx context.Context, in *XPathDeleteRequest, opts ...grpc.CallOption) (*XPathDeleteResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(XPathDeleteResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_XPathDelete_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) StripGatewayV6(ctx context.Context, in *StripGatewayV6Request, opts ...grpc.CallOption) (*StripGatewayV6Response, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(StripGatewayV6Response)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_StripGatewayV6_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) InjectGatewayV6(ctx context.Context, in *InjectGatewayV6Request, opts ...grpc.CallOption) (*InjectGatewayV6Response, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InjectGatewayV6Response)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_InjectGatewayV6_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *mWANOPNsenseServiceClient) Deploy(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[Chunk, DeployResponse], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &MWANOPNsenseService_ServiceDesc.Streams[0], MWANOPNsenseService_Deploy_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[Chunk, DeployResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ExecRequest, ExecResponse]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type MWANOPNsenseService_DeployClient = grpc.ClientStreamingClient[Chunk, DeployResponse]
+type OpnsenseService_ExecClient = grpc.BidiStreamingClient[ExecRequest, ExecResponse]
 
-func (c *mWANOPNsenseServiceClient) DeployStatus(ctx context.Context, in *DeployStatusRequest, opts ...grpc.CallOption) (*DeployStatusResponse, error) {
+func (c *opnsenseServiceClient) XPathGet(ctx context.Context, in *XPathGetRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[XPathMatch], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &OpnsenseService_ServiceDesc.Streams[1], OpnsenseService_XPathGet_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[XPathGetRequest, XPathMatch]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type OpnsenseService_XPathGetClient = grpc.ServerStreamingClient[XPathMatch]
+
+func (c *opnsenseServiceClient) XPathSet(ctx context.Context, in *XPathSetRequest, opts ...grpc.CallOption) (*XPathSetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XPathSetResponse)
+	err := c.cc.Invoke(ctx, OpnsenseService_XPathSet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *opnsenseServiceClient) XPathDelete(ctx context.Context, in *XPathDeleteRequest, opts ...grpc.CallOption) (*XPathDeleteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(XPathDeleteResponse)
+	err := c.cc.Invoke(ctx, OpnsenseService_XPathDelete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *opnsenseServiceClient) BackupConfigXML(ctx context.Context, in *BackupConfigXMLRequest, opts ...grpc.CallOption) (*BackupConfigXMLResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BackupConfigXMLResponse)
+	err := c.cc.Invoke(ctx, OpnsenseService_BackupConfigXML_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *opnsenseServiceClient) StripGatewayV6(ctx context.Context, in *StripGatewayV6Request, opts ...grpc.CallOption) (*StripGatewayV6Response, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StripGatewayV6Response)
+	err := c.cc.Invoke(ctx, OpnsenseService_StripGatewayV6_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *opnsenseServiceClient) InjectGatewayV6(ctx context.Context, in *InjectGatewayV6Request, opts ...grpc.CallOption) (*InjectGatewayV6Response, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InjectGatewayV6Response)
+	err := c.cc.Invoke(ctx, OpnsenseService_InjectGatewayV6_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *opnsenseServiceClient) DeployStatus(ctx context.Context, in *DeployStatusRequest, opts ...grpc.CallOption) (*DeployStatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeployStatusResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_DeployStatus_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, OpnsenseService_DeployStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *mWANOPNsenseServiceClient) Revert(ctx context.Context, in *RevertRequest, opts ...grpc.CallOption) (*RevertResponse, error) {
+func (c *opnsenseServiceClient) Revert(ctx context.Context, in *RevertRequest, opts ...grpc.CallOption) (*RevertResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RevertResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_Revert_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, OpnsenseService_Revert_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// MWANOPNsenseServiceServer is the server API for MWANOPNsenseService service.
-// All implementations must embed UnimplementedMWANOPNsenseServiceServer
-// for forward compatibility.
-//
-// MWANOPNsenseService runs inside the OPNsense VM.
-//
-// It exposes a recovery channel: arbitrary command exec and arbitrary
-// /conf/config.xml manipulation over the Proxmox qemu virtio-serial
-// socket. There is no TLS and no application-level authentication.
-//
-// The security boundary is host access to the qemu serial socket.
-type MWANOPNsenseServiceServer interface {
-	// Sanity check, returns the daemon version.
-	Version(context.Context, *VersionRequest) (*VersionResponse, error)
-	// Arbitrary command exec. The recovery surface for "I need to run X
-	// on OPNsense right now and SSH+sudo is broken."
-	Exec(context.Context, *ExecRequest) (*ExecResponse, error)
-	// Read full /conf/config.xml.
-	ReadConfigXML(context.Context, *ReadConfigXMLRequest) (*ReadConfigXMLResponse, error)
-	// Write /conf/config.xml. Server snapshots the current contents to
-	// /conf/backup/<ts>.xml first; backup_path is returned in the
-	// response so the client can immediately revert if needed.
-	WriteConfigXML(context.Context, *WriteConfigXMLRequest) (*WriteConfigXMLResponse, error)
-	// Explicit snapshot of /conf/config.xml. Useful before a multi-step
-	// mutation sequence.
-	BackupConfigXML(context.Context, *BackupConfigXMLRequest) (*BackupConfigXMLResponse, error)
-	// XPath read. No mutation. No snapshot taken.
-	XPathGet(context.Context, *XPathGetRequest) (*XPathGetResponse, error)
-	// XPath set. Server snapshots first. Returns backup_path and the
-	// count of changed nodes.
-	XPathSet(context.Context, *XPathSetRequest) (*XPathSetResponse, error)
-	// XPath delete. Server snapshots first. Returns backup_path and the
-	// count of deleted nodes.
-	XPathDelete(context.Context, *XPathDeleteRequest) (*XPathDeleteResponse, error)
-	// Convenience: surgical removal of <gatewayv6>...</gatewayv6> from
-	// <wan>. Verbatim port of the byte-offset tokenizer from the
-	// deleted internal/cutover2/opnsense_config.go (commit 63d050d^).
-	// Preserves whitespace fidelity better than generic XPath.
-	StripGatewayV6(context.Context, *StripGatewayV6Request) (*StripGatewayV6Response, error)
-	// Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
-	// before </wan>. Same byte-offset tokenizer as above.
-	InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error)
-	// Deploy a new daemon binary. Client streams the binary in Chunk
-	// messages (ChunkHeader, data*, ChunkTrailer). The header carries
-	// the version string in attrs["version_str"]. Daemon accumulates
-	// chunks into a temp file, verifies sha256 from the trailer, swaps
-	// .current and .previous, marks pending-verify, re-execs into the
-	// new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
-	Deploy(grpc.ClientStreamingServer[Chunk, DeployResponse]) error
-	// Mark the most recent deploy as healthy. Bridge calls this after
-	// post-deploy heartbeat probe succeeds. Daemon clears the
-	// pending-verify marker and stamps health=ok in the state file.
-	DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error)
-	// Revert to .previous. Used by bridge when post-deploy heartbeat
-	// budget elapses without a successful Version() call. Same re-exec
-	// dance as Deploy.
-	Revert(context.Context, *RevertRequest) (*RevertResponse, error)
-	mustEmbedUnimplementedMWANOPNsenseServiceServer()
+func (c *opnsenseServiceClient) CommitDeploy(ctx context.Context, in *CommitDeployRequest, opts ...grpc.CallOption) (*CommitDeployResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommitDeployResponse)
+	err := c.cc.Invoke(ctx, OpnsenseService_CommitDeploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-// UnimplementedMWANOPNsenseServiceServer must be embedded to have
+// OpnsenseServiceServer is the server API for OpnsenseService service.
+// All implementations must embed UnimplementedOpnsenseServiceServer
+// for forward compatibility.
+//
+// OpnsenseService runs inside the OPNsense VM and is reached over a
+// qemu virtio-serial Unix socket. There is no TLS and no application
+// authentication; the security boundary is host access to the socket.
+type OpnsenseServiceServer interface {
+	Version(context.Context, *VersionRequest) (*VersionResponse, error)
+	Exec(grpc.BidiStreamingServer[ExecRequest, ExecResponse]) error
+	XPathGet(*XPathGetRequest, grpc.ServerStreamingServer[XPathMatch]) error
+	XPathSet(context.Context, *XPathSetRequest) (*XPathSetResponse, error)
+	XPathDelete(context.Context, *XPathDeleteRequest) (*XPathDeleteResponse, error)
+	BackupConfigXML(context.Context, *BackupConfigXMLRequest) (*BackupConfigXMLResponse, error)
+	StripGatewayV6(context.Context, *StripGatewayV6Request) (*StripGatewayV6Response, error)
+	InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error)
+	DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error)
+	Revert(context.Context, *RevertRequest) (*RevertResponse, error)
+	CommitDeploy(context.Context, *CommitDeployRequest) (*CommitDeployResponse, error)
+	mustEmbedUnimplementedOpnsenseServiceServer()
+}
+
+// UnimplementedOpnsenseServiceServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedMWANOPNsenseServiceServer struct{}
+type UnimplementedOpnsenseServiceServer struct{}
 
-func (UnimplementedMWANOPNsenseServiceServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
+func (UnimplementedOpnsenseServiceServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Version not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) Exec(context.Context, *ExecRequest) (*ExecResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Exec not implemented")
+func (UnimplementedOpnsenseServiceServer) Exec(grpc.BidiStreamingServer[ExecRequest, ExecResponse]) error {
+	return status.Error(codes.Unimplemented, "method Exec not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) ReadConfigXML(context.Context, *ReadConfigXMLRequest) (*ReadConfigXMLResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ReadConfigXML not implemented")
+func (UnimplementedOpnsenseServiceServer) XPathGet(*XPathGetRequest, grpc.ServerStreamingServer[XPathMatch]) error {
+	return status.Error(codes.Unimplemented, "method XPathGet not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) WriteConfigXML(context.Context, *WriteConfigXMLRequest) (*WriteConfigXMLResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method WriteConfigXML not implemented")
-}
-func (UnimplementedMWANOPNsenseServiceServer) BackupConfigXML(context.Context, *BackupConfigXMLRequest) (*BackupConfigXMLResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method BackupConfigXML not implemented")
-}
-func (UnimplementedMWANOPNsenseServiceServer) XPathGet(context.Context, *XPathGetRequest) (*XPathGetResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method XPathGet not implemented")
-}
-func (UnimplementedMWANOPNsenseServiceServer) XPathSet(context.Context, *XPathSetRequest) (*XPathSetResponse, error) {
+func (UnimplementedOpnsenseServiceServer) XPathSet(context.Context, *XPathSetRequest) (*XPathSetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method XPathSet not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) XPathDelete(context.Context, *XPathDeleteRequest) (*XPathDeleteResponse, error) {
+func (UnimplementedOpnsenseServiceServer) XPathDelete(context.Context, *XPathDeleteRequest) (*XPathDeleteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method XPathDelete not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) StripGatewayV6(context.Context, *StripGatewayV6Request) (*StripGatewayV6Response, error) {
+func (UnimplementedOpnsenseServiceServer) BackupConfigXML(context.Context, *BackupConfigXMLRequest) (*BackupConfigXMLResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BackupConfigXML not implemented")
+}
+func (UnimplementedOpnsenseServiceServer) StripGatewayV6(context.Context, *StripGatewayV6Request) (*StripGatewayV6Response, error) {
 	return nil, status.Error(codes.Unimplemented, "method StripGatewayV6 not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error) {
+func (UnimplementedOpnsenseServiceServer) InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error) {
 	return nil, status.Error(codes.Unimplemented, "method InjectGatewayV6 not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) Deploy(grpc.ClientStreamingServer[Chunk, DeployResponse]) error {
-	return status.Error(codes.Unimplemented, "method Deploy not implemented")
-}
-func (UnimplementedMWANOPNsenseServiceServer) DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error) {
+func (UnimplementedOpnsenseServiceServer) DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeployStatus not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) Revert(context.Context, *RevertRequest) (*RevertResponse, error) {
+func (UnimplementedOpnsenseServiceServer) Revert(context.Context, *RevertRequest) (*RevertResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Revert not implemented")
 }
-func (UnimplementedMWANOPNsenseServiceServer) mustEmbedUnimplementedMWANOPNsenseServiceServer() {}
-func (UnimplementedMWANOPNsenseServiceServer) testEmbeddedByValue()                             {}
+func (UnimplementedOpnsenseServiceServer) CommitDeploy(context.Context, *CommitDeployRequest) (*CommitDeployResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitDeploy not implemented")
+}
+func (UnimplementedOpnsenseServiceServer) mustEmbedUnimplementedOpnsenseServiceServer() {}
+func (UnimplementedOpnsenseServiceServer) testEmbeddedByValue()                         {}
 
-// UnsafeMWANOPNsenseServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to MWANOPNsenseServiceServer will
+// UnsafeOpnsenseServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to OpnsenseServiceServer will
 // result in compilation errors.
-type UnsafeMWANOPNsenseServiceServer interface {
-	mustEmbedUnimplementedMWANOPNsenseServiceServer()
+type UnsafeOpnsenseServiceServer interface {
+	mustEmbedUnimplementedOpnsenseServiceServer()
 }
 
-func RegisterMWANOPNsenseServiceServer(s grpc.ServiceRegistrar, srv MWANOPNsenseServiceServer) {
-	// If the following call panics, it indicates UnimplementedMWANOPNsenseServiceServer was
+func RegisterOpnsenseServiceServer(s grpc.ServiceRegistrar, srv OpnsenseServiceServer) {
+	// If the following call panics, it indicates UnimplementedOpnsenseServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&MWANOPNsenseService_ServiceDesc, srv)
+	s.RegisterService(&OpnsenseService_ServiceDesc, srv)
 }
 
-func _MWANOPNsenseService_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _OpnsenseService_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).Version(ctx, in)
+		return srv.(OpnsenseServiceServer).Version(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MWANOPNsenseService_Version_FullMethodName,
+		FullMethod: OpnsenseService_Version_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).Version(ctx, req.(*VersionRequest))
+		return srv.(OpnsenseServiceServer).Version(ctx, req.(*VersionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_Exec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).Exec(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MWANOPNsenseService_Exec_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).Exec(ctx, req.(*ExecRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+func _OpnsenseService_Exec_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(OpnsenseServiceServer).Exec(&grpc.GenericServerStream[ExecRequest, ExecResponse]{ServerStream: stream})
 }
 
-func _MWANOPNsenseService_ReadConfigXML_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReadConfigXMLRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type OpnsenseService_ExecServer = grpc.BidiStreamingServer[ExecRequest, ExecResponse]
+
+func _OpnsenseService_XPathGet_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(XPathGetRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).ReadConfigXML(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MWANOPNsenseService_ReadConfigXML_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).ReadConfigXML(ctx, req.(*ReadConfigXMLRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(OpnsenseServiceServer).XPathGet(m, &grpc.GenericServerStream[XPathGetRequest, XPathMatch]{ServerStream: stream})
 }
 
-func _MWANOPNsenseService_WriteConfigXML_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WriteConfigXMLRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).WriteConfigXML(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MWANOPNsenseService_WriteConfigXML_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).WriteConfigXML(ctx, req.(*WriteConfigXMLRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type OpnsenseService_XPathGetServer = grpc.ServerStreamingServer[XPathMatch]
 
-func _MWANOPNsenseService_BackupConfigXML_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BackupConfigXMLRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).BackupConfigXML(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MWANOPNsenseService_BackupConfigXML_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).BackupConfigXML(ctx, req.(*BackupConfigXMLRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _MWANOPNsenseService_XPathGet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(XPathGetRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).XPathGet(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MWANOPNsenseService_XPathGet_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).XPathGet(ctx, req.(*XPathGetRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _MWANOPNsenseService_XPathSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _OpnsenseService_XPathSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(XPathSetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).XPathSet(ctx, in)
+		return srv.(OpnsenseServiceServer).XPathSet(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MWANOPNsenseService_XPathSet_FullMethodName,
+		FullMethod: OpnsenseService_XPathSet_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).XPathSet(ctx, req.(*XPathSetRequest))
+		return srv.(OpnsenseServiceServer).XPathSet(ctx, req.(*XPathSetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_XPathDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _OpnsenseService_XPathDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(XPathDeleteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).XPathDelete(ctx, in)
+		return srv.(OpnsenseServiceServer).XPathDelete(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MWANOPNsenseService_XPathDelete_FullMethodName,
+		FullMethod: OpnsenseService_XPathDelete_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).XPathDelete(ctx, req.(*XPathDeleteRequest))
+		return srv.(OpnsenseServiceServer).XPathDelete(ctx, req.(*XPathDeleteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_StripGatewayV6_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _OpnsenseService_BackupConfigXML_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BackupConfigXMLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OpnsenseServiceServer).BackupConfigXML(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OpnsenseService_BackupConfigXML_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OpnsenseServiceServer).BackupConfigXML(ctx, req.(*BackupConfigXMLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OpnsenseService_StripGatewayV6_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StripGatewayV6Request)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).StripGatewayV6(ctx, in)
+		return srv.(OpnsenseServiceServer).StripGatewayV6(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MWANOPNsenseService_StripGatewayV6_FullMethodName,
+		FullMethod: OpnsenseService_StripGatewayV6_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).StripGatewayV6(ctx, req.(*StripGatewayV6Request))
+		return srv.(OpnsenseServiceServer).StripGatewayV6(ctx, req.(*StripGatewayV6Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_InjectGatewayV6_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _OpnsenseService_InjectGatewayV6_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InjectGatewayV6Request)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).InjectGatewayV6(ctx, in)
+		return srv.(OpnsenseServiceServer).InjectGatewayV6(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MWANOPNsenseService_InjectGatewayV6_FullMethodName,
+		FullMethod: OpnsenseService_InjectGatewayV6_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).InjectGatewayV6(ctx, req.(*InjectGatewayV6Request))
+		return srv.(OpnsenseServiceServer).InjectGatewayV6(ctx, req.(*InjectGatewayV6Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_Deploy_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(MWANOPNsenseServiceServer).Deploy(&grpc.GenericServerStream[Chunk, DeployResponse]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type MWANOPNsenseService_DeployServer = grpc.ClientStreamingServer[Chunk, DeployResponse]
-
-func _MWANOPNsenseService_DeployStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _OpnsenseService_DeployStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeployStatusRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).DeployStatus(ctx, in)
+		return srv.(OpnsenseServiceServer).DeployStatus(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MWANOPNsenseService_DeployStatus_FullMethodName,
+		FullMethod: OpnsenseService_DeployStatus_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).DeployStatus(ctx, req.(*DeployStatusRequest))
+		return srv.(OpnsenseServiceServer).DeployStatus(ctx, req.(*DeployStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_Revert_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _OpnsenseService_Revert_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RevertRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).Revert(ctx, in)
+		return srv.(OpnsenseServiceServer).Revert(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MWANOPNsenseService_Revert_FullMethodName,
+		FullMethod: OpnsenseService_Revert_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).Revert(ctx, req.(*RevertRequest))
+		return srv.(OpnsenseServiceServer).Revert(ctx, req.(*RevertRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// MWANOPNsenseService_ServiceDesc is the grpc.ServiceDesc for MWANOPNsenseService service.
+func _OpnsenseService_CommitDeploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitDeployRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OpnsenseServiceServer).CommitDeploy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OpnsenseService_CommitDeploy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OpnsenseServiceServer).CommitDeploy(ctx, req.(*CommitDeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// OpnsenseService_ServiceDesc is the grpc.ServiceDesc for OpnsenseService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var MWANOPNsenseService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "mwan.v1.MWANOPNsenseService",
-	HandlerType: (*MWANOPNsenseServiceServer)(nil),
+var OpnsenseService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "mwan.v1.OpnsenseService",
+	HandlerType: (*OpnsenseServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "Version",
-			Handler:    _MWANOPNsenseService_Version_Handler,
-		},
-		{
-			MethodName: "Exec",
-			Handler:    _MWANOPNsenseService_Exec_Handler,
-		},
-		{
-			MethodName: "ReadConfigXML",
-			Handler:    _MWANOPNsenseService_ReadConfigXML_Handler,
-		},
-		{
-			MethodName: "WriteConfigXML",
-			Handler:    _MWANOPNsenseService_WriteConfigXML_Handler,
-		},
-		{
-			MethodName: "BackupConfigXML",
-			Handler:    _MWANOPNsenseService_BackupConfigXML_Handler,
-		},
-		{
-			MethodName: "XPathGet",
-			Handler:    _MWANOPNsenseService_XPathGet_Handler,
+			Handler:    _OpnsenseService_Version_Handler,
 		},
 		{
 			MethodName: "XPathSet",
-			Handler:    _MWANOPNsenseService_XPathSet_Handler,
+			Handler:    _OpnsenseService_XPathSet_Handler,
 		},
 		{
 			MethodName: "XPathDelete",
-			Handler:    _MWANOPNsenseService_XPathDelete_Handler,
+			Handler:    _OpnsenseService_XPathDelete_Handler,
+		},
+		{
+			MethodName: "BackupConfigXML",
+			Handler:    _OpnsenseService_BackupConfigXML_Handler,
 		},
 		{
 			MethodName: "StripGatewayV6",
-			Handler:    _MWANOPNsenseService_StripGatewayV6_Handler,
+			Handler:    _OpnsenseService_StripGatewayV6_Handler,
 		},
 		{
 			MethodName: "InjectGatewayV6",
-			Handler:    _MWANOPNsenseService_InjectGatewayV6_Handler,
+			Handler:    _OpnsenseService_InjectGatewayV6_Handler,
 		},
 		{
 			MethodName: "DeployStatus",
-			Handler:    _MWANOPNsenseService_DeployStatus_Handler,
+			Handler:    _OpnsenseService_DeployStatus_Handler,
 		},
 		{
 			MethodName: "Revert",
-			Handler:    _MWANOPNsenseService_Revert_Handler,
+			Handler:    _OpnsenseService_Revert_Handler,
+		},
+		{
+			MethodName: "CommitDeploy",
+			Handler:    _OpnsenseService_CommitDeploy_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "Deploy",
-			Handler:       _MWANOPNsenseService_Deploy_Handler,
+			StreamName:    "Exec",
+			Handler:       _OpnsenseService_Exec_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "XPathGet",
+			Handler:       _OpnsenseService_XPathGet_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "mwan/v1/mwan_opnsense.proto",
+}
+
+const (
+	TransferService_Upload_FullMethodName = "/mwan.v1.TransferService/Upload"
+	TransferService_Status_FullMethodName = "/mwan.v1.TransferService/Status"
+	TransferService_Cancel_FullMethodName = "/mwan.v1.TransferService/Cancel"
+)
+
+// TransferServiceClient is the client API for TransferService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// TransferService implements a tus-shaped resumable file transfer
+// over a single bidi gRPC stream.
+type TransferServiceClient interface {
+	Upload(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[UploadRequest, UploadResponse], error)
+	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error)
+}
+
+type transferServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewTransferServiceClient(cc grpc.ClientConnInterface) TransferServiceClient {
+	return &transferServiceClient{cc}
+}
+
+func (c *transferServiceClient) Upload(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[UploadRequest, UploadResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &TransferService_ServiceDesc.Streams[0], TransferService_Upload_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[UploadRequest, UploadResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TransferService_UploadClient = grpc.BidiStreamingClient[UploadRequest, UploadResponse]
+
+func (c *transferServiceClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, TransferService_Status_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *transferServiceClient) Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelResponse)
+	err := c.cc.Invoke(ctx, TransferService_Cancel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// TransferServiceServer is the server API for TransferService service.
+// All implementations must embed UnimplementedTransferServiceServer
+// for forward compatibility.
+//
+// TransferService implements a tus-shaped resumable file transfer
+// over a single bidi gRPC stream.
+type TransferServiceServer interface {
+	Upload(grpc.BidiStreamingServer[UploadRequest, UploadResponse]) error
+	Status(context.Context, *StatusRequest) (*StatusResponse, error)
+	Cancel(context.Context, *CancelRequest) (*CancelResponse, error)
+	mustEmbedUnimplementedTransferServiceServer()
+}
+
+// UnimplementedTransferServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedTransferServiceServer struct{}
+
+func (UnimplementedTransferServiceServer) Upload(grpc.BidiStreamingServer[UploadRequest, UploadResponse]) error {
+	return status.Error(codes.Unimplemented, "method Upload not implemented")
+}
+func (UnimplementedTransferServiceServer) Status(context.Context, *StatusRequest) (*StatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Status not implemented")
+}
+func (UnimplementedTransferServiceServer) Cancel(context.Context, *CancelRequest) (*CancelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Cancel not implemented")
+}
+func (UnimplementedTransferServiceServer) mustEmbedUnimplementedTransferServiceServer() {}
+func (UnimplementedTransferServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafeTransferServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to TransferServiceServer will
+// result in compilation errors.
+type UnsafeTransferServiceServer interface {
+	mustEmbedUnimplementedTransferServiceServer()
+}
+
+func RegisterTransferServiceServer(s grpc.ServiceRegistrar, srv TransferServiceServer) {
+	// If the following call panics, it indicates UnimplementedTransferServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&TransferService_ServiceDesc, srv)
+}
+
+func _TransferService_Upload_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(TransferServiceServer).Upload(&grpc.GenericServerStream[UploadRequest, UploadResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TransferService_UploadServer = grpc.BidiStreamingServer[UploadRequest, UploadResponse]
+
+func _TransferService_Status_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TransferServiceServer).Status(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TransferService_Status_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TransferServiceServer).Status(ctx, req.(*StatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TransferService_Cancel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TransferServiceServer).Cancel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TransferService_Cancel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TransferServiceServer).Cancel(ctx, req.(*CancelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// TransferService_ServiceDesc is the grpc.ServiceDesc for TransferService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var TransferService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "mwan.v1.TransferService",
+	HandlerType: (*TransferServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Status",
+			Handler:    _TransferService_Status_Handler,
+		},
+		{
+			MethodName: "Cancel",
+			Handler:    _TransferService_Cancel_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Upload",
+			Handler:       _TransferService_Upload_Handler,
+			ServerStreams: true,
 			ClientStreams: true,
 		},
 	},

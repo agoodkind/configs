@@ -44,9 +44,7 @@ const (
 // not authenticate at the application layer.
 func runOPNsenseDaemonServe(args []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path (short-RPC port)")
-	longSerial := fs.String("serial-long", "",
-		"optional second virtio-serial device for long-running RPCs (Exec/Deploy/Revert); empty disables channel split")
+	serialPath := fs.String("serial", "/dev/ttyV0.1", "virtio-serial device path")
 	configPath := fs.String("config-xml", opnsensesvc.ConfigPath, "OPNsense config.xml path")
 	backupDir := fs.String("backup-dir", opnsensesvc.BackupDir, "directory for snapshot files")
 	baud := fs.Uint("baud", defaultSerialBaud,
@@ -72,13 +70,12 @@ func runOPNsenseDaemonServe(args []string) int {
 
 	if *daemonize {
 		if err := daemonizeServe(daemonizeOpts{
-			serialPath:     *serialPath,
-			longSerialPath: *longSerial,
-			configPath:     *configPath,
-			backupDir:      *backupDir,
-			baud:           baudU32,
-			pidfile:        *pidfile,
-			logfile:        *logfile,
+			serialPath: *serialPath,
+			configPath: *configPath,
+			backupDir:  *backupDir,
+			baud:       baudU32,
+			pidfile:    *pidfile,
+			logfile:    *logfile,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "serve: daemonize: %v\n", err)
 			return 1
@@ -86,30 +83,37 @@ func runOPNsenseDaemonServe(args []string) int {
 		return 0
 	}
 
-	srv := opnsensesvc.NewServer(slog.Default(), *configPath, *backupDir)
+	logger := slog.Default()
+	srv := opnsensesvc.NewServer(logger, *configPath, *backupDir)
+	validator := opnsensesvc.NewPathValidator(logger, opnsensesvc.DefaultReadAllowlist, opnsensesvc.DefaultWriteAllowlist)
+	transferMgr, transferErr := opnsensesvc.NewTransferManager(logger, validator, opnsensesvc.TransferStateDir, nil)
+	if transferErr != nil {
+		fmt.Fprintf(os.Stderr, "serve: build transfer manager: %v\n", transferErr)
+		return 1
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	// We do not `defer cancel()` because we explicitly call it before
 	// returning from this subcommand.
 
 	serialBaud := baudU32
-	logger := slog.Default()
 	openSerial := func(path string) (io.ReadWriteCloser, error) {
 		return opnsensesvc.OpenVirtioSerial(path, serialBaud, logger)
 	}
 
 	opts := opnsensesvc.ServeOpts{
-		SerialPath:     *serialPath,
-		OpenSerial:     openSerial,
-		Server:         srv,
-		Log:            logger,
-		OnSerialOpen:   nil,
-		LongSerialPath: *longSerial,
+		SerialPath:   *serialPath,
+		OpenSerial:   openSerial,
+		Server:       srv,
+		Log:          logger,
+		OnSerialOpen: nil,
+		OnGRPCAccept: nil,
+		Transfer:     transferMgr,
+		StopTimeout:  0,
 	}
 
 	slog.Info("mwan-opnsense: serving",
 		"serial_path", *serialPath,
-		"long_serial_path", *longSerial,
 		"baud", serialBaud)
 
 	serveErr := opnsensesvc.Serve(ctx, opts)
@@ -123,13 +127,12 @@ func runOPNsenseDaemonServe(args []string) int {
 }
 
 type daemonizeOpts struct {
-	serialPath     string
-	longSerialPath string
-	configPath     string
-	backupDir      string
-	baud           uint32
-	pidfile        string
-	logfile        string
+	serialPath string
+	configPath string
+	backupDir  string
+	baud       uint32
+	pidfile    string
+	logfile    string
 }
 
 func daemonizeServe(opts daemonizeOpts) error {
@@ -146,9 +149,6 @@ func daemonizeServe(opts daemonizeOpts) error {
 		"-config-xml", opts.configPath,
 		"-backup-dir", opts.backupDir,
 		"-baud", strconv.FormatUint(uint64(opts.baud), 10),
-	}
-	if opts.longSerialPath != "" {
-		childArgs = append(childArgs, "-serial-long", opts.longSerialPath)
 	}
 	if !invokedAsOPNsenseDaemon(executable) {
 		childArgs = append([]string{"opnsense"}, childArgs...)

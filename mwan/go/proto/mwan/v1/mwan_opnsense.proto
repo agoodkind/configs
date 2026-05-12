@@ -2,75 +2,31 @@ syntax = "proto3";
 
 package mwan.v1;
 
-import "mwan/v1/chunked.proto";
-
 option go_package = "goodkind.io/mwan/gen/mwan/v1;mwanv1";
 
-// MWANOPNsenseService runs inside the OPNsense VM.
-//
-// It exposes a recovery channel: arbitrary command exec and arbitrary
-// /conf/config.xml manipulation over the Proxmox qemu virtio-serial
-// socket. There is no TLS and no application-level authentication.
-//
-// The security boundary is host access to the qemu serial socket.
-service MWANOPNsenseService {
-  // Sanity check, returns the daemon version.
+// OpnsenseService runs inside the OPNsense VM and is reached over a
+// qemu virtio-serial Unix socket. There is no TLS and no application
+// authentication; the security boundary is host access to the socket.
+service OpnsenseService {
   rpc Version(VersionRequest) returns (VersionResponse);
-
-  // Arbitrary command exec. The recovery surface for "I need to run X
-  // on OPNsense right now and SSH+sudo is broken."
-  rpc Exec(ExecRequest) returns (ExecResponse);
-
-  // Read full /conf/config.xml.
-  rpc ReadConfigXML(ReadConfigXMLRequest) returns (ReadConfigXMLResponse);
-
-  // Write /conf/config.xml. Server snapshots the current contents to
-  // /conf/backup/<ts>.xml first; backup_path is returned in the
-  // response so the client can immediately revert if needed.
-  rpc WriteConfigXML(WriteConfigXMLRequest) returns (WriteConfigXMLResponse);
-
-  // Explicit snapshot of /conf/config.xml. Useful before a multi-step
-  // mutation sequence.
-  rpc BackupConfigXML(BackupConfigXMLRequest) returns (BackupConfigXMLResponse);
-
-  // XPath read. No mutation. No snapshot taken.
-  rpc XPathGet(XPathGetRequest) returns (XPathGetResponse);
-
-  // XPath set. Server snapshots first. Returns backup_path and the
-  // count of changed nodes.
+  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+  rpc XPathGet(XPathGetRequest) returns (stream XPathMatch);
   rpc XPathSet(XPathSetRequest) returns (XPathSetResponse);
-
-  // XPath delete. Server snapshots first. Returns backup_path and the
-  // count of deleted nodes.
   rpc XPathDelete(XPathDeleteRequest) returns (XPathDeleteResponse);
-
-  // Convenience: surgical removal of <gatewayv6>...</gatewayv6> from
-  // <wan>. Verbatim port of the byte-offset tokenizer from the
-  // deleted internal/cutover2/opnsense_config.go (commit 63d050d^).
-  // Preserves whitespace fidelity better than generic XPath.
+  rpc BackupConfigXML(BackupConfigXMLRequest) returns (BackupConfigXMLResponse);
   rpc StripGatewayV6(StripGatewayV6Request) returns (StripGatewayV6Response);
-
-  // Convenience: surgical insertion of <gatewayv6>NAME</gatewayv6>
-  // before </wan>. Same byte-offset tokenizer as above.
   rpc InjectGatewayV6(InjectGatewayV6Request) returns (InjectGatewayV6Response);
-
-  // Deploy a new daemon binary. Client streams the binary in Chunk
-  // messages (ChunkHeader, data*, ChunkTrailer). The header carries
-  // the version string in attrs["version_str"]. Daemon accumulates
-  // chunks into a temp file, verifies sha256 from the trailer, swaps
-  // .current and .previous, marks pending-verify, re-execs into the
-  // new binary. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
-  rpc Deploy(stream Chunk) returns (DeployResponse);
-
-  // Mark the most recent deploy as healthy. Bridge calls this after
-  // post-deploy heartbeat probe succeeds. Daemon clears the
-  // pending-verify marker and stamps health=ok in the state file.
   rpc DeployStatus(DeployStatusRequest) returns (DeployStatusResponse);
-
-  // Revert to .previous. Used by bridge when post-deploy heartbeat
-  // budget elapses without a successful Version() call. Same re-exec
-  // dance as Deploy.
   rpc Revert(RevertRequest) returns (RevertResponse);
+  rpc CommitDeploy(CommitDeployRequest) returns (CommitDeployResponse);
+}
+
+// TransferService implements a tus-shaped resumable file transfer
+// over a single bidi gRPC stream.
+service TransferService {
+  rpc Upload(stream UploadRequest) returns (stream UploadResponse);
+  rpc Status(StatusRequest) returns (StatusResponse);
+  rpc Cancel(CancelRequest) returns (CancelResponse);
 }
 
 message VersionRequest {}
@@ -82,58 +38,46 @@ message VersionResponse {
   string build_binhash = 4;
 }
 
-message ExecRequest {
-  string command = 1;          // path of binary to exec
+message ExecHeader {
+  string command = 1;
   repeated string args = 2;
-  bool sudo = 3;               // wrap in sudo -n
-  int32 timeout_seconds = 4;   // default 30, max 300 (5 min)
-  bytes stdin_bytes = 5;       // optional stdin content
-  // env_vars intentionally omitted; pass via args if needed
+  bool sudo = 3;
+  int32 timeout_seconds = 4;
+}
+
+message ExecCancel {}
+
+message ExecRequest {
+  oneof body {
+    ExecHeader header = 1;
+    bytes stdin_chunk = 2;
+    bool stdin_close = 3;
+    ExecCancel cancel = 4;
+  }
+}
+
+message ExecTerminal {
+  int32 exit_code = 1;
+  int64 duration_ms = 2;
+  bool stdout_truncated = 3;
+  bool stderr_truncated = 4;
+  bool timed_out = 5;
 }
 
 message ExecResponse {
-  bytes stdout = 1;
-  bytes stderr = 2;
-  int32 exit_code = 3;
-  int64 duration_ms = 4;
-  bool stdout_truncated = 5;   // true if stdout exceeded 10 MB cap
-  bool stderr_truncated = 6;   // true if stderr exceeded 10 MB cap
-  bool timed_out = 7;          // true if killed by timeout
+  oneof body {
+    bytes stdout_chunk = 1;
+    bytes stderr_chunk = 2;
+    ExecTerminal terminal = 3;
+  }
 }
 
-message ReadConfigXMLRequest {}
-
-message ReadConfigXMLResponse {
-  bytes content = 1;
-  int64 size_bytes = 2;
-  string sha256 = 3;           // hex of sha256(content)
-}
-
-message WriteConfigXMLRequest {
-  bytes content = 1;
-  string label = 2;            // optional label included in backup filename
-}
-
-message WriteConfigXMLResponse {
-  string backup_path = 1;      // /conf/backup/<ts>-<label>.xml
-  int64 bytes_written = 2;
-}
-
-message BackupConfigXMLRequest {
-  string label = 1;            // optional label included in backup filename
-}
-
-message BackupConfigXMLResponse {
-  string backup_path = 1;      // /conf/backup/<ts>-<label>.xml
-  int64 size_bytes = 2;
+message XPathMatch {
+  string match = 1;
 }
 
 message XPathGetRequest {
-  string expression = 1;       // any XPath expression
-}
-
-message XPathGetResponse {
-  repeated string matches = 1; // serialized XML for element matches; string for attr/text matches
+  string expression = 1;
 }
 
 message XPathSetRequest {
@@ -155,32 +99,35 @@ message XPathDeleteResponse {
   int32 deleted_count = 2;
 }
 
+message BackupConfigXMLRequest {
+  string label = 1;
+}
+
+message BackupConfigXMLResponse {
+  string backup_path = 1;
+  int64 size_bytes = 2;
+}
+
 message StripGatewayV6Request {}
 
 message StripGatewayV6Response {
   string backup_path = 1;
-  bool changed = 2;            // false if config was already stripped
+  bool changed = 2;
 }
 
 message InjectGatewayV6Request {
-  string gateway_name = 1;     // typically "WAN_GW6"
+  string gateway_name = 1;
 }
 
 message InjectGatewayV6Response {
   string backup_path = 1;
-  bool changed = 2;            // false if gatewayv6 already present
-}
-
-message DeployResponse {
-  string staged_sha256 = 1;
-  string previous_path = 2;    // /usr/local/sbin/mwan-opnsense.previous
-  bool re_exec_started = 3;
+  bool changed = 2;
 }
 
 message DeployStatusRequest {
   enum Mark {
     MARK_UNSPECIFIED = 0;
-    MARK_HEALTHY = 1;          // bridge confirms post-deploy reachability
+    MARK_HEALTHY = 1;
   }
   Mark mark = 1;
 }
@@ -188,8 +135,8 @@ message DeployStatusRequest {
 message DeployStatusResponse {
   string active_sha256 = 1;
   string previous_sha256 = 2;
-  string health = 3;           // "ok" | "pending" | "unhealthy"
-  int64 deployed_at = 4;       // unix seconds
+  string health = 3;
+  int64 deployed_at = 4;
 }
 
 message RevertRequest {}
@@ -197,4 +144,112 @@ message RevertRequest {}
 message RevertResponse {
   string reverted_to_sha256 = 1;
   bool re_exec_started = 2;
+}
+
+message CommitDeployRequest {
+  string staged_sha256 = 1;
+  string version_str = 2;
+}
+
+message CommitDeployResponse {
+  string previous_path = 1;
+  string active_sha256 = 2;
+  bool re_exec_started = 3;
+}
+
+// TransferDirection drives the byte flow inside the Upload stream.
+// READ streams server to client; WRITE streams client to server.
+enum TransferDirection {
+  TRANSFER_DIRECTION_UNSPECIFIED = 0;
+  TRANSFER_DIRECTION_READ = 1;
+  TRANSFER_DIRECTION_WRITE = 2;
+}
+
+// FinishStep selects how the server finalizes a WRITE transfer.
+//   REPLACE: temp file is renamed to target.
+//   SNAPSHOT_THEN_REPLACE: snapshot existing target into a per-dir
+//     backup directory, then rename temp into target.
+//   STAGE: leave the temp file at <target>.staged for a later
+//     CommitDeploy call.
+enum FinishStep {
+  FINISH_STEP_UNSPECIFIED = 0;
+  FINISH_STEP_REPLACE = 1;
+  FINISH_STEP_SNAPSHOT_THEN_REPLACE = 2;
+  FINISH_STEP_STAGE = 3;
+}
+
+message TransferHeader {
+  string path = 1;
+  TransferDirection direction = 2;
+  FinishStep finish_step = 3;
+  string resume_transfer_id = 4;
+  int64 resume_from_offset = 5;
+  bytes resume_sha256_state = 6;
+  string label = 7;
+  int64 total_size = 8;
+}
+
+message TransferDataChunk {
+  int64 offset = 1;
+  bytes data = 2;
+}
+
+message TransferFinal {
+  string sha256_hex = 1;
+}
+
+message TransferCancel {}
+
+message UploadRequest {
+  oneof body {
+    TransferHeader header = 1;
+    TransferDataChunk data = 2;
+    TransferFinal final = 3;
+    TransferCancel cancel = 4;
+  }
+}
+
+message TransferAck {
+  string transfer_id = 1;
+  int64 total_bytes = 2;
+  bool resume_accepted = 3;
+  int64 committed_offset = 4;
+}
+
+message TransferTerminal {
+  string sha256_hex = 1;
+  int64 total_bytes = 2;
+  string backup_path = 3;
+  int32 status_code = 4;
+  string status_message = 5;
+  string staged_path = 6;
+}
+
+message UploadResponse {
+  oneof body {
+    TransferAck ack = 1;
+    TransferDataChunk data = 2;
+    TransferTerminal terminal = 3;
+  }
+}
+
+message StatusRequest {
+  string transfer_id = 1;
+}
+
+message StatusResponse {
+  string transfer_id = 1;
+  bool exists = 2;
+  int64 committed_offset = 3;
+  bytes sha256_state = 4;
+  int64 total_bytes = 5;
+  string path = 6;
+}
+
+message CancelRequest {
+  string transfer_id = 1;
+}
+
+message CancelResponse {
+  bool was_present = 1;
 }

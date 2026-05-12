@@ -9,8 +9,12 @@ import (
 	"strings"
 	"time"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/opnsense"
 )
+
+// ExecResult is the local mirror of opnsense.ExecResult so tests can
+// satisfy OPNsenseRPCClient without importing the parent package.
+type ExecResult = opnsense.ExecResult
 
 // OPNsenseRPCClient is the narrow surface the gRPC Env needs from the
 // mwan-opnsense daemon. It is satisfied by *opnsense.RPC in production
@@ -18,10 +22,10 @@ import (
 // the validate package avoids a dependency cycle and lets unit tests
 // drive the gRPC path with a simple struct.
 type OPNsenseRPCClient interface {
-	// Exec runs a command inside the OPNsense guest. The daemon's
-	// Exec RPC takes a binary path and explicit argv; this Env wraps
-	// shell strings via /bin/sh -c <command> before calling Exec.
-	Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error)
+	// Exec runs a command inside the OPNsense guest via the bidi
+	// Exec stream. The wrapper drives the stream synchronously and
+	// returns a buffered result.
+	Exec(ctx context.Context, command string, args []string, sudo bool, timeoutSeconds int32, stdin []byte) (*ExecResult, error)
 }
 
 // GRPCEnv is the OOB Env. Its OPNsense-side methods route through the
@@ -134,39 +138,30 @@ func (g *GRPCEnv) Now() time.Time {
 // stderr so the operator notices the dropped bytes without the Env
 // surface needing a separate field.
 func (g *GRPCEnv) execShell(ctx context.Context, command string) (CommandResult, error) {
-	req := &mwanv1.ExecRequest{
-		Command:        "/bin/sh",
-		Args:           []string{"-c", command},
-		Sudo:           false,
-		TimeoutSeconds: g.ExecTimeoutSeconds,
-		StdinBytes:     nil,
-	}
-	resp, err := g.RPC.Exec(ctx, req)
+	resp, err := g.RPC.Exec(ctx, "/bin/sh", []string{"-c", command}, false, g.ExecTimeoutSeconds, nil)
 	if err != nil {
-		slog.ErrorContext(ctx, "validate GRPCEnv Exec RPC failed",
-			"err", err.Error())
+		slog.ErrorContext(ctx, "validate GRPCEnv Exec RPC failed", "err", err.Error())
 		return CommandResult{}, fmt.Errorf("grpc Exec: %w", err)
 	}
 	if resp == nil {
-		err := errors.New("GRPCEnv: nil ExecResponse from daemon")
-		slog.ErrorContext(ctx, "validate GRPCEnv nil response",
-			"err", err.Error())
+		err := errors.New("GRPCEnv: nil ExecResult from daemon")
+		slog.ErrorContext(ctx, "validate GRPCEnv nil response", "err", err.Error())
 		return CommandResult{}, err
 	}
-	stderrText := string(resp.GetStderr())
-	if resp.GetTimedOut() {
+	stderrText := string(resp.Stderr)
+	if resp.TimedOut {
 		stderrText = appendDiag(stderrText, "[grpc-env: command timed out]")
 	}
-	if resp.GetStdoutTruncated() {
+	if resp.StdoutTruncated {
 		stderrText = appendDiag(stderrText, "[grpc-env: stdout truncated at 10 MB]")
 	}
-	if resp.GetStderrTruncated() {
+	if resp.StderrTruncated {
 		stderrText = appendDiag(stderrText, "[grpc-env: stderr truncated at 10 MB]")
 	}
 	return CommandResult{
-		Stdout:   string(resp.GetStdout()),
+		Stdout:   string(resp.Stdout),
 		Stderr:   stderrText,
-		ExitCode: int(resp.GetExitCode()),
+		ExitCode: int(resp.ExitCode),
 	}, nil
 }
 

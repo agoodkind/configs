@@ -10,136 +10,37 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"strings"
 	"sync"
+	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/version"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
-var errDeployChunkProtocol = errors.New("deploy chunk protocol error")
-
-// clampToInt32 saturates n to the int32 range. Used for proto fields
-// that carry small counts but originate from int-typed callees.
-func clampToInt32(n int) int32 {
-	if n > math.MaxInt32 {
-		return math.MaxInt32
-	}
-	if n < math.MinInt32 {
-		return math.MinInt32
-	}
-	return int32(n)
-}
-
-type deployChunkWriter struct {
-	destination io.Writer
-	hash        io.Writer
-	header      *mwanv1.ChunkHeader
-	bytesIn     int64
-	headerSeen  bool
-	done        bool
-	checksumOK  bool
-	computedHex string
-	trailerHex  string
-	hashSum     func() []byte
-}
-
-func newDeployChunkWriter(destination io.Writer) *deployChunkWriter {
-	hash := sha256.New()
-	return &deployChunkWriter{
-		destination: destination,
-		hash:        hash,
-		header:      nil,
-		bytesIn:     0,
-		headerSeen:  false,
-		done:        false,
-		checksumOK:  false,
-		computedHex: "",
-		trailerHex:  "",
-		hashSum: func() []byte {
-			return hash.Sum(nil)
-		},
-	}
-}
-
-func (w *deployChunkWriter) Write(chunk *mwanv1.Chunk) error {
-	if chunk == nil {
-		return deployChunkProtocolError("nil chunk")
-	}
-	if w.done {
-		return deployChunkProtocolError("chunk after trailer")
-	}
-	switch body := chunk.GetBody().(type) {
-	case *mwanv1.Chunk_Header:
-		if w.headerSeen {
-			return deployChunkProtocolError("duplicate header")
-		}
-		w.headerSeen = true
-		w.header = body.Header
-		return nil
-	case *mwanv1.Chunk_Data:
-		if !w.headerSeen {
-			return deployChunkProtocolError("data before header")
-		}
-		return w.writeData(body.Data)
-	case *mwanv1.Chunk_Trailer:
-		if !w.headerSeen {
-			return deployChunkProtocolError("trailer before header")
-		}
-		w.done = true
-		w.computedHex = hex.EncodeToString(w.hashSum())
-		w.trailerHex = body.Trailer.GetSha256Hex()
-		w.checksumOK = strings.EqualFold(w.trailerHex, w.computedHex)
-		return nil
-	default:
-		return deployChunkProtocolError("unknown chunk body")
-	}
-}
-
-func (w *deployChunkWriter) writeData(data []byte) error {
-	if len(data) == 0 {
-		return nil
-	}
-	if _, err := w.destination.Write(data); err != nil {
-		slog.Error("Deploy: write chunk data failed", "err", err, "bytes", len(data))
-		return fmt.Errorf("write deploy chunk data: %w", err)
-	}
-	if _, err := w.hash.Write(data); err != nil {
-		slog.Error("Deploy: hash chunk data failed", "err", err, "bytes", len(data))
-		return fmt.Errorf("hash deploy chunk data: %w", err)
-	}
-	w.bytesIn += int64(len(data))
-	return nil
-}
-
-func deployChunkProtocolError(reason string) error {
-	wrapped := fmt.Errorf("%w: %s", errDeployChunkProtocol, reason)
-	slog.Warn("Deploy: chunk protocol violation", "err", wrapped, "reason", reason)
-	return wrapped
-}
-
-// Server implements the MWANOPNsense RPC handlers. It is no longer a
-// gRPC server; the MWN1 Dispatcher dispatches each method directly to
-// the matching method on this struct.
-//
-// All write operations on /conf/config.xml take a snapshot first via
-// backupConfig and return the backup path, so a client can immediately
-// revert by calling WriteConfigXML with the snapshot bytes.
+// Server hosts the OpnsenseService and TransferService gRPC handlers.
+// All mutating operations on /conf/config.xml take a snapshot first
+// via backupConfig and return the backup path so the caller can
+// immediately revert by issuing a write of the snapshot bytes.
 type Server struct {
+	mwanv1.UnimplementedOpnsenseServiceServer
+	mwanv1.UnimplementedTransferServiceServer
+
 	configPath string
 	backupDir  string
 	log        *slog.Logger
 	clock      Clock
 	deploy     *DeployManager
-	mu         sync.Mutex // serializes mutating ops on config.xml
+	transfer   *TransferManager
+	mu         sync.Mutex
 }
 
-// NewServer constructs a Server. configPath defaults to ConfigPath
-// when empty; backupDir defaults to BackupDir when empty. The
-// DeployManager uses package defaults; override with NewServerWithDeploy
-// for tests.
+// NewServer constructs a Server with package-default paths.
 func NewServer(log *slog.Logger, configPath, backupDir string) *Server {
-	cfg := DeployConfig{
+	return NewServerWithDeploy(log, configPath, backupDir, NewDeployManager(log, DeployConfig{
 		BinaryDir:      "",
 		StatePath:      "",
 		PendingPath:    "",
@@ -147,12 +48,11 @@ func NewServer(log *slog.Logger, configPath, backupDir string) *Server {
 		ReExecFn:       nil,
 		WriteStateFile: nil,
 		NowFn:          nil,
-	}
-	return NewServerWithDeploy(log, configPath, backupDir, NewDeployManager(log, cfg))
+	}))
 }
 
-// NewServerWithDeploy is the explicit form used by tests to inject
-// a tmpdir-rooted DeployManager.
+// NewServerWithDeploy is the explicit form used by tests to inject a
+// tmpdir-rooted DeployManager.
 func NewServerWithDeploy(log *slog.Logger, configPath, backupDir string, deploy *DeployManager) *Server {
 	if configPath == "" {
 		configPath = ConfigPath
@@ -164,13 +64,33 @@ func NewServerWithDeploy(log *slog.Logger, configPath, backupDir string, deploy 
 		log = slog.Default()
 	}
 	return &Server{
-		configPath: configPath,
-		backupDir:  backupDir,
-		log:        log,
-		clock:      realClock{},
-		deploy:     deploy,
-		mu:         sync.Mutex{},
+		UnimplementedOpnsenseServiceServer: mwanv1.UnimplementedOpnsenseServiceServer{},
+		UnimplementedTransferServiceServer: mwanv1.UnimplementedTransferServiceServer{},
+		configPath:                         configPath,
+		backupDir:                          backupDir,
+		log:                                log,
+		clock:                              realClock{},
+		deploy:                             deploy,
+		transfer:                           nil,
+		mu:                                 sync.Mutex{},
 	}
+}
+
+// AttachTransferManager wires a TransferManager onto the server.
+func (s *Server) AttachTransferManager(tm *TransferManager) {
+	s.transfer = tm
+}
+
+// clampToInt32 saturates n to the int32 range for proto fields that
+// carry small counts but originate from int-typed callees.
+func clampToInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
 }
 
 // Version returns the build metadata of the running binary.
@@ -183,138 +103,207 @@ func (s *Server) Version(_ context.Context, _ *mwanv1.VersionRequest) (*mwanv1.V
 	}, nil
 }
 
-// Exec runs an arbitrary command. Access is constrained by the
-// root-only Proxmox-side unix socket for the virtio-serial channel.
-// The command is forwarded to runExec for execution and output capture.
-func (s *Server) Exec(ctx context.Context, req *mwanv1.ExecRequest) (*mwanv1.ExecResponse, error) {
+// Exec implements the bidi Exec stream. The first inbound message
+// must be an ExecHeader; stdin chunks follow until stdin_close, then
+// the server emits stdout, stderr, and an ExecTerminal.
+func (s *Server) Exec(stream mwanv1.OpnsenseService_ExecServer) error {
+	ctx := stream.Context()
+	first, err := stream.Recv()
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "exec: recv header: %v", err)
+	}
+	header := first.GetHeader()
+	if header == nil {
+		return status.Error(codes.InvalidArgument, "exec: first message must be header")
+	}
 	s.log.InfoContext(ctx, "opnsensesvc: Exec",
-		"exec_command", req.GetCommand(),
-		"args_len", len(req.GetArgs()),
-		"sudo", req.GetSudo(),
-		"timeout_seconds", req.GetTimeoutSeconds())
+		"exec_command", header.GetCommand(),
+		"args_len", len(header.GetArgs()),
+		"sudo", header.GetSudo(),
+		"timeout_seconds", header.GetTimeoutSeconds())
 
-	res, err := runExec(ctx, ExecArgs{
-		Command:        req.GetCommand(),
-		Args:           req.GetArgs(),
-		Sudo:           req.GetSudo(),
-		TimeoutSeconds: req.GetTimeoutSeconds(),
-		StdinBytes:     req.GetStdinBytes(),
+	stdin := make([]byte, 0, 4096)
+	for {
+		msg, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			return status.Errorf(codes.Canceled, "exec: recv: %v", recvErr)
+		}
+		switch body := msg.GetBody().(type) {
+		case *mwanv1.ExecRequest_StdinChunk:
+			stdin = append(stdin, body.StdinChunk...)
+		case *mwanv1.ExecRequest_StdinClose:
+			if body.StdinClose {
+				break
+			}
+		case *mwanv1.ExecRequest_Cancel:
+			return status.Error(codes.Canceled, "exec: client cancel")
+		default:
+			return status.Error(codes.InvalidArgument, "exec: unexpected body in stream")
+		}
+		if _, closed := msg.GetBody().(*mwanv1.ExecRequest_StdinClose); closed {
+			break
+		}
+	}
+
+	res, runErr := runExec(ctx, ExecArgs{
+		Command:        header.GetCommand(),
+		Args:           header.GetArgs(),
+		Sudo:           header.GetSudo(),
+		TimeoutSeconds: header.GetTimeoutSeconds(),
+		StdinBytes:     stdin,
 		Clock:          s.clock,
 		Log:            s.log,
 	})
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: Exec failed",
-			"err", err, "exec_command", req.GetCommand())
-		return nil, fmt.Errorf("exec: %w", err)
+	if runErr != nil {
+		s.log.ErrorContext(ctx, "opnsensesvc: Exec failed", "err", runErr,
+			"exec_command", header.GetCommand())
+		return status.Errorf(codes.Internal, "exec: %v", runErr)
 	}
-	return &mwanv1.ExecResponse{
-		Stdout:          res.Stdout,
-		Stderr:          res.Stderr,
-		ExitCode:        res.ExitCode,
-		DurationMs:      res.DurationMS,
-		StdoutTruncated: res.StdoutTruncated,
-		StderrTruncated: res.StderrTruncated,
-		TimedOut:        res.TimedOut,
-	}, nil
+
+	if sendErr := sendExecChunks(stream, res); sendErr != nil {
+		return sendErr
+	}
+	if err := stream.Send(&mwanv1.ExecResponse{
+		Body: &mwanv1.ExecResponse_Terminal{
+			Terminal: &mwanv1.ExecTerminal{
+				ExitCode:        res.ExitCode,
+				DurationMs:      res.DurationMS,
+				StdoutTruncated: res.StdoutTruncated,
+				StderrTruncated: res.StderrTruncated,
+				TimedOut:        res.TimedOut,
+			},
+		},
+	}); err != nil {
+		return fmt.Errorf("exec: send terminal: %w", err)
+	}
+	return nil
 }
 
-// ReadConfigXML returns the full /conf/config.xml content.
-func (s *Server) ReadConfigXML(
-	ctx context.Context,
-	_ *mwanv1.ReadConfigXMLRequest,
-) (*mwanv1.ReadConfigXMLResponse, error) {
+func sendExecChunks(stream mwanv1.OpnsenseService_ExecServer, res *ExecResult) error {
+	ctx := stream.Context()
+	if len(res.Stdout) > 0 {
+		if err := stream.Send(&mwanv1.ExecResponse{
+			Body: &mwanv1.ExecResponse_StdoutChunk{StdoutChunk: res.Stdout},
+		}); err != nil {
+			slog.ErrorContext(ctx, "exec: send stdout", "err", err)
+			return fmt.Errorf("exec: send stdout: %w", err)
+		}
+	}
+	if len(res.Stderr) > 0 {
+		if err := stream.Send(&mwanv1.ExecResponse{
+			Body: &mwanv1.ExecResponse_StderrChunk{StderrChunk: res.Stderr},
+		}); err != nil {
+			slog.ErrorContext(ctx, "exec: send stderr", "err", err)
+			return fmt.Errorf("exec: send stderr: %w", err)
+		}
+	}
+	return nil
+}
+
+// XPathGet streams one XPathMatch per result node.
+func (s *Server) XPathGet(req *mwanv1.XPathGetRequest, stream mwanv1.OpnsenseService_XPathGetServer) error {
+	ctx := stream.Context()
 	content, err := readConfigWithLog(ctx, s.log, s.configPath)
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: ReadConfigXML failed",
-			"err", err, "path", s.configPath)
-		return nil, fmt.Errorf("read: %w", err)
+		return status.Errorf(codes.Internal, "read: %v", err)
 	}
-	sum := sha256.Sum256(content)
-	encodedSum := hex.EncodeToString(sum[:])
-	s.log.InfoContext(ctx, "opnsensesvc: ReadConfigXML",
-		"size_bytes", len(content), "sha256", encodedSum)
-	return &mwanv1.ReadConfigXMLResponse{
-		Content:   content,
-		SizeBytes: int64(len(content)),
-		Sha256:    encodedSum,
-	}, nil
+	matches, err := xpathGetWithLog(ctx, s.log, content, req.GetExpression())
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "xpath: %v", err)
+	}
+	s.log.InfoContext(ctx, "opnsensesvc: XPathGet",
+		"expression", req.GetExpression(), "matches", len(matches))
+	for _, m := range matches {
+		if sendErr := stream.Send(&mwanv1.XPathMatch{Match: m}); sendErr != nil {
+			s.log.ErrorContext(ctx, "xpath: send match", "err", sendErr)
+			return fmt.Errorf("xpath: send match: %w", sendErr)
+		}
+	}
+	return nil
 }
 
-// WriteConfigXML snapshots the current config first, then writes
-// the new content atomically.
-func (s *Server) WriteConfigXML(
-	ctx context.Context,
-	req *mwanv1.WriteConfigXMLRequest,
-) (*mwanv1.WriteConfigXMLResponse, error) {
-	if len(req.GetContent()) == 0 {
-		return nil, errors.New("content empty")
-	}
-	activeClock := clockOrReal(s.clock)
-	startedAt := activeClock.Now()
-	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML start",
-		"bytes_in", len(req.GetContent()),
-		"label", req.GetLabel())
-	lockStartedAt := activeClock.Now()
+// XPathSet applies a snapshot-then-set sequence to config.xml.
+func (s *Server) XPathSet(ctx context.Context, req *mwanv1.XPathSetRequest) (*mwanv1.XPathSetResponse, error) {
+	_, _ = peer.FromContext(ctx)
+	_, _ = metadata.FromIncomingContext(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML lock acquired",
-		"bytes_in", len(req.GetContent()),
-		"lock_wait_ms", activeClock.Now().Sub(lockStartedAt).Milliseconds())
 
-	backupStartedAt := activeClock.Now()
-	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock,
-		s.configPath, s.backupDir, req.GetLabel())
+	content, err := readConfigWithLog(ctx, s.log, s.configPath)
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: WriteConfigXML backup failed",
-			"err", err,
-			"label", req.GetLabel(),
-			"bytes_in", len(req.GetContent()),
-			"backup_duration_ms", activeClock.Now().Sub(backupStartedAt).Milliseconds(),
-			"total_duration_ms", activeClock.Now().Sub(startedAt).Milliseconds())
-		return nil, fmt.Errorf("backup: %w", err)
+		return nil, status.Errorf(codes.Internal, "read: %v", err)
 	}
-	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML backup complete",
-		"backup_path", backupPath,
-		"backup_duration_ms", activeClock.Now().Sub(backupStartedAt).Milliseconds())
-	writeStartedAt := activeClock.Now()
-	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, req.GetContent()); writeErr != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: WriteConfigXML write failed",
-			"err", writeErr,
-			"backup_path", backupPath,
-			"bytes_in", len(req.GetContent()),
-			"write_duration_ms", activeClock.Now().Sub(writeStartedAt).Milliseconds(),
-			"total_duration_ms", activeClock.Now().Sub(startedAt).Milliseconds())
-		return nil, fmt.Errorf("write: %w", writeErr)
+	updated, n, err := xpathSetWithLog(ctx, s.log, content, req.GetExpression(), req.GetNewValue())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "xpath: %v", err)
 	}
-	s.log.InfoContext(ctx, "opnsensesvc: WriteConfigXML",
-		"backup_path", backupPath,
-		"bytes_written", len(req.GetContent()),
-		"write_duration_ms", activeClock.Now().Sub(writeStartedAt).Milliseconds(),
-		"total_duration_ms", activeClock.Now().Sub(startedAt).Milliseconds())
-	return &mwanv1.WriteConfigXMLResponse{
+	if n == 0 {
+		return &mwanv1.XPathSetResponse{ChangedCount: 0}, nil
+	}
+	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "xpath-set")
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "backup: %v", err)
+	}
+	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, updated); writeErr != nil {
+		return nil, status.Errorf(codes.Internal, "write: %v", writeErr)
+	}
+	s.log.InfoContext(ctx, "opnsensesvc: XPathSet",
+		"expression", req.GetExpression(), "changed_count", n, "backup_path", backupPath)
+	return &mwanv1.XPathSetResponse{
 		BackupPath:   backupPath,
-		BytesWritten: int64(len(req.GetContent())),
+		ChangedCount: clampToInt32(n),
 	}, nil
 }
 
-// BackupConfigXML takes an explicit snapshot.
-func (s *Server) BackupConfigXML(
-	ctx context.Context,
-	req *mwanv1.BackupConfigXMLRequest,
-) (*mwanv1.BackupConfigXMLResponse, error) {
+// XPathDelete applies a snapshot-then-delete sequence to config.xml.
+func (s *Server) XPathDelete(ctx context.Context, req *mwanv1.XPathDeleteRequest) (*mwanv1.XPathDeleteResponse, error) {
+	_, _ = peer.FromContext(ctx)
+	_, _ = metadata.FromIncomingContext(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock,
-		s.configPath, s.backupDir, req.GetLabel())
+	content, err := readConfigWithLog(ctx, s.log, s.configPath)
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: BackupConfigXML failed", "err", err)
-		return nil, fmt.Errorf("backup: %w", err)
+		return nil, status.Errorf(codes.Internal, "read: %v", err)
+	}
+	updated, n, err := xpathDeleteWithLog(ctx, s.log, content, req.GetExpression())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "xpath: %v", err)
+	}
+	if n == 0 {
+		return &mwanv1.XPathDeleteResponse{DeletedCount: 0}, nil
+	}
+	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "xpath-delete")
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "backup: %v", err)
+	}
+	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, updated); writeErr != nil {
+		return nil, status.Errorf(codes.Internal, "write: %v", writeErr)
+	}
+	s.log.InfoContext(ctx, "opnsensesvc: XPathDelete",
+		"expression", req.GetExpression(), "deleted_count", n, "backup_path", backupPath)
+	return &mwanv1.XPathDeleteResponse{
+		BackupPath:   backupPath,
+		DeletedCount: clampToInt32(n),
+	}, nil
+}
+
+// BackupConfigXML takes an explicit snapshot of /conf/config.xml.
+func (s *Server) BackupConfigXML(ctx context.Context, req *mwanv1.BackupConfigXMLRequest) (*mwanv1.BackupConfigXMLResponse, error) {
+	_, _ = peer.FromContext(ctx)
+	_, _ = metadata.FromIncomingContext(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, req.GetLabel())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "backup: %v", err)
 	}
 	content, err := readConfigWithLog(ctx, s.log, backupPath)
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: BackupConfigXML stat failed", "err", err)
-		return nil, fmt.Errorf("stat: %w", err)
+		return nil, status.Errorf(codes.Internal, "stat: %v", err)
 	}
 	s.log.InfoContext(ctx, "opnsensesvc: BackupConfigXML",
 		"backup_path", backupPath, "size_bytes", len(content))
@@ -324,319 +313,74 @@ func (s *Server) BackupConfigXML(
 	}, nil
 }
 
-// XPathGet runs a read-only XPath query.
-func (s *Server) XPathGet(
-	ctx context.Context,
-	req *mwanv1.XPathGetRequest,
-) (*mwanv1.XPathGetResponse, error) {
-	content, err := readConfigWithLog(ctx, s.log, s.configPath)
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathGet read failed", "err", err)
-		return nil, fmt.Errorf("read: %w", err)
-	}
-	matches, err := xpathGetWithLog(ctx, s.log, content, req.GetExpression())
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathGet query failed",
-			"err", err, "expression", req.GetExpression())
-		return nil, fmt.Errorf("xpath: %w", err)
-	}
-	s.log.InfoContext(ctx, "opnsensesvc: XPathGet",
-		"expression", req.GetExpression(), "matches", len(matches))
-	return &mwanv1.XPathGetResponse{Matches: matches}, nil
-}
-
-// XPathSet snapshots first, applies the change, writes atomically.
-func (s *Server) XPathSet(
-	ctx context.Context,
-	req *mwanv1.XPathSetRequest,
-) (*mwanv1.XPathSetResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	content, err := readConfigWithLog(ctx, s.log, s.configPath)
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathSet read failed", "err", err)
-		return nil, fmt.Errorf("read: %w", err)
-	}
-	updated, n, err := xpathSetWithLog(ctx, s.log,
-		content, req.GetExpression(), req.GetNewValue())
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathSet apply failed",
-			"err", err, "expression", req.GetExpression())
-		return nil, fmt.Errorf("xpath: %w", err)
-	}
-	if n == 0 {
-		return &mwanv1.XPathSetResponse{ChangedCount: 0}, nil
-	}
-	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock,
-		s.configPath, s.backupDir, "xpath-set")
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathSet backup failed", "err", err)
-		return nil, fmt.Errorf("backup: %w", err)
-	}
-	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, updated); writeErr != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathSet write failed",
-			"err", writeErr, "backup_path", backupPath)
-		return nil, fmt.Errorf("write: %w", writeErr)
-	}
-	s.log.InfoContext(ctx, "opnsensesvc: XPathSet",
-		"expression", req.GetExpression(),
-		"changed_count", n, "backup_path", backupPath)
-	return &mwanv1.XPathSetResponse{
-		BackupPath:   backupPath,
-		ChangedCount: clampToInt32(n),
-	}, nil
-}
-
-// XPathDelete snapshots first, deletes matching nodes, writes
-// atomically.
-func (s *Server) XPathDelete(
-	ctx context.Context,
-	req *mwanv1.XPathDeleteRequest,
-) (*mwanv1.XPathDeleteResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	content, err := readConfigWithLog(ctx, s.log, s.configPath)
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathDelete read failed", "err", err)
-		return nil, fmt.Errorf("read: %w", err)
-	}
-	updated, n, err := xpathDeleteWithLog(ctx, s.log, content, req.GetExpression())
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathDelete apply failed",
-			"err", err, "expression", req.GetExpression())
-		return nil, fmt.Errorf("xpath: %w", err)
-	}
-	if n == 0 {
-		return &mwanv1.XPathDeleteResponse{DeletedCount: 0}, nil
-	}
-	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock,
-		s.configPath, s.backupDir, "xpath-delete")
-	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathDelete backup failed", "err", err)
-		return nil, fmt.Errorf("backup: %w", err)
-	}
-	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, updated); writeErr != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: XPathDelete write failed",
-			"err", writeErr, "backup_path", backupPath)
-		return nil, fmt.Errorf("write: %w", writeErr)
-	}
-	s.log.InfoContext(ctx, "opnsensesvc: XPathDelete",
-		"expression", req.GetExpression(),
-		"deleted_count", n, "backup_path", backupPath)
-	return &mwanv1.XPathDeleteResponse{
-		BackupPath:   backupPath,
-		DeletedCount: clampToInt32(n),
-	}, nil
-}
-
 // StripGatewayV6 is the convenience wrapper for the cutover path.
-func (s *Server) StripGatewayV6(
-	ctx context.Context,
-	_ *mwanv1.StripGatewayV6Request,
-) (*mwanv1.StripGatewayV6Response, error) {
+func (s *Server) StripGatewayV6(ctx context.Context, _ *mwanv1.StripGatewayV6Request) (*mwanv1.StripGatewayV6Response, error) {
+	_, _ = peer.FromContext(ctx)
+	_, _ = metadata.FromIncomingContext(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	content, err := readConfigWithLog(ctx, s.log, s.configPath)
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: StripGatewayV6 read failed", "err", err)
-		return nil, fmt.Errorf("read: %w", err)
+		return nil, status.Errorf(codes.Internal, "read: %v", err)
 	}
 	updated, changed, err := stripGatewayV6WithLog(ctx, s.log, content)
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: StripGatewayV6 apply failed", "err", err)
-		return nil, fmt.Errorf("strip: %w", err)
+		return nil, status.Errorf(codes.Internal, "strip: %v", err)
 	}
 	if !changed {
 		return &mwanv1.StripGatewayV6Response{Changed: false}, nil
 	}
-	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock,
-		s.configPath, s.backupDir, "strip-gatewayv6")
+	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "strip-gatewayv6")
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: StripGatewayV6 backup failed", "err", err)
-		return nil, fmt.Errorf("backup: %w", err)
+		return nil, status.Errorf(codes.Internal, "backup: %v", err)
 	}
 	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, updated); writeErr != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: StripGatewayV6 write failed",
-			"err", writeErr, "backup_path", backupPath)
-		return nil, fmt.Errorf("write: %w", writeErr)
+		return nil, status.Errorf(codes.Internal, "write: %v", writeErr)
 	}
 	s.log.InfoContext(ctx, "opnsensesvc: StripGatewayV6", "backup_path", backupPath)
-	return &mwanv1.StripGatewayV6Response{
-		BackupPath: backupPath,
-		Changed:    true,
-	}, nil
+	return &mwanv1.StripGatewayV6Response{BackupPath: backupPath, Changed: true}, nil
 }
 
-// InjectGatewayV6 is the convenience wrapper for the cutover unfuck
-// path.
-func (s *Server) InjectGatewayV6(
-	ctx context.Context,
-	req *mwanv1.InjectGatewayV6Request,
-) (*mwanv1.InjectGatewayV6Response, error) {
+// InjectGatewayV6 inserts <gatewayv6>NAME</gatewayv6> before </wan>.
+func (s *Server) InjectGatewayV6(ctx context.Context, req *mwanv1.InjectGatewayV6Request) (*mwanv1.InjectGatewayV6Response, error) {
 	if req.GetGatewayName() == "" {
-		return nil, errors.New("gateway_name required")
+		return nil, status.Error(codes.InvalidArgument, "gateway_name required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	content, err := readConfigWithLog(ctx, s.log, s.configPath)
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: InjectGatewayV6 read failed", "err", err)
-		return nil, fmt.Errorf("read: %w", err)
+		return nil, status.Errorf(codes.Internal, "read: %v", err)
 	}
-	updated, changed, err := injectGatewayV6WithLog(ctx, s.log,
-		content, req.GetGatewayName())
+	updated, changed, err := injectGatewayV6WithLog(ctx, s.log, content, req.GetGatewayName())
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: InjectGatewayV6 apply failed",
-			"err", err, "gateway_name", req.GetGatewayName())
-		return nil, fmt.Errorf("inject: %w", err)
+		return nil, status.Errorf(codes.Internal, "inject: %v", err)
 	}
 	if !changed {
 		return &mwanv1.InjectGatewayV6Response{Changed: false}, nil
 	}
-	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock,
-		s.configPath, s.backupDir, "inject-gatewayv6")
+	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "inject-gatewayv6")
 	if err != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: InjectGatewayV6 backup failed", "err", err)
-		return nil, fmt.Errorf("backup: %w", err)
+		return nil, status.Errorf(codes.Internal, "backup: %v", err)
 	}
 	if writeErr := writeConfigWithLog(ctx, s.log, s.configPath, updated); writeErr != nil {
-		s.log.ErrorContext(ctx, "opnsensesvc: InjectGatewayV6 write failed",
-			"err", writeErr, "backup_path", backupPath)
-		return nil, fmt.Errorf("write: %w", writeErr)
+		return nil, status.Errorf(codes.Internal, "write: %v", writeErr)
 	}
-	s.log.InfoContext(ctx, "opnsensesvc: InjectGatewayV6",
-		"backup_path", backupPath, "gateway_name", req.GetGatewayName())
-	return &mwanv1.InjectGatewayV6Response{
-		BackupPath: backupPath,
-		Changed:    true,
-	}, nil
-}
-
-// DeployAttrVersionStr is the ChunkHeader.attrs key carrying the
-// human-readable version string for a streaming Deploy upload.
-const DeployAttrVersionStr = "version_str"
-
-// Deploy reads a stream of chunked-stream Chunk messages (header,
-// data*, trailer) off chunks, writes each chunk's body incrementally to
-// a temp file under DeployManager.BinaryDir, verifies the trailer's
-// sha256, and hands the temp file off to DeployManager.DeployFromPath.
-// The caller (the MWN1 dispatcher) closes chunks once the FlagFinal
-// frame arrives. The reply is sent before re-exec so the bridge sees
-// the response.
-//
-// If chunks is closed before a trailer chunk, Deploy returns an error
-// without staging the upload. Cancellation via ctx aborts the read loop
-// and removes the partial temp file.
-func (s *Server) Deploy(ctx context.Context, chunks <-chan *mwanv1.Chunk) (*mwanv1.DeployResponse, error) {
-	s.log.InfoContext(ctx, "opnsensesvc: Deploy stream begin")
-
-	if s.deploy == nil {
-		return nil, errors.New("Deploy: DeployManager not configured")
-	}
-
-	tmpFile, tmpErr := os.CreateTemp(s.deploy.BinaryDir(), "mwan-opnsense.upload-*.bin")
-	if tmpErr != nil {
-		s.log.ErrorContext(ctx, "Deploy: temp file create failed",
-			"err", tmpErr, "dir", s.deploy.BinaryDir())
-		return nil, fmt.Errorf("create temp: %w", tmpErr)
-	}
-	tmpPath := tmpFile.Name()
-	cleanedUp := false
-	defer func() {
-		if cleanedUp {
-			return
-		}
-		if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			s.log.WarnContext(ctx, "Deploy: temp cleanup failed", "err", removeErr, "path", tmpPath)
-		}
-	}()
-
-	writer := newDeployChunkWriter(tmpFile)
-	chunkCount := 0
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			_ = tmpFile.Close()
-			s.log.WarnContext(ctx, "Deploy: ctx cancelled mid-stream", "err", ctx.Err(), "chunks_seen", chunkCount)
-			return nil, fmt.Errorf("Deploy: ctx: %w", ctx.Err())
-		case chunk, ok := <-chunks:
-			if !ok {
-				break loop
-			}
-			chunkCount++
-			if writeErr := writer.Write(chunk); writeErr != nil {
-				_ = tmpFile.Close()
-				if errors.Is(writeErr, errDeployChunkProtocol) {
-					s.log.ErrorContext(ctx, "Deploy: chunk protocol error", "err", writeErr)
-					return nil, fmt.Errorf("chunk: %w", writeErr)
-				}
-				s.log.ErrorContext(ctx, "Deploy: chunk write failed", "err", writeErr)
-				return nil, fmt.Errorf("chunk write: %w", writeErr)
-			}
-		}
-	}
-	if syncErr := tmpFile.Sync(); syncErr != nil {
-		_ = tmpFile.Close()
-		s.log.ErrorContext(ctx, "Deploy: temp sync failed", "err", syncErr, "path", tmpPath)
-		return nil, fmt.Errorf("sync temp: %w", syncErr)
-	}
-	if closeErr := tmpFile.Close(); closeErr != nil {
-		s.log.ErrorContext(ctx, "Deploy: temp close failed", "err", closeErr, "path", tmpPath)
-		return nil, fmt.Errorf("close temp: %w", closeErr)
-	}
-	if !writer.done {
-		return nil, errors.New("Deploy: stream ended before trailer")
-	}
-	if !writer.checksumOK {
-		mismatchErr := fmt.Errorf("Deploy: sha256 mismatch: got %s want %s",
-			writer.computedHex, writer.trailerHex)
-		s.log.ErrorContext(ctx, "Deploy: sha256 mismatch on stream",
-			"err", mismatchErr,
-			"got", writer.computedHex,
-			"want", writer.trailerHex)
-		return nil, mismatchErr
-	}
-	header := writer.header
-	versionStr := header.GetAttrs()[DeployAttrVersionStr]
-	if versionStr == "" {
-		versionStr = header.GetLabel()
-	}
-	bytesWritten := writer.bytesIn
-	s.log.InfoContext(ctx, "opnsensesvc: Deploy stream complete",
-		"bytes", bytesWritten, "version_str", versionStr)
-
-	previousPath, stagedSHA256, err := s.deploy.DeployFromPath(ctx, tmpPath, writer.computedHex, versionStr)
-	if err != nil {
-		s.log.ErrorContext(ctx, "Deploy: failed", "err", err)
-		return nil, fmt.Errorf("deploy: %w", err)
-	}
-	cleanedUp = true
-	return &mwanv1.DeployResponse{
-		StagedSha256:  stagedSHA256,
-		PreviousPath:  previousPath,
-		ReExecStarted: true,
-	}, nil
+	return &mwanv1.InjectGatewayV6Response{BackupPath: backupPath, Changed: true}, nil
 }
 
 // DeployStatus returns current deploy state. With Mark=MARK_HEALTHY,
 // it also clears the pending-verify marker and stamps health=ok.
 func (s *Server) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusRequest) (*mwanv1.DeployStatusResponse, error) {
-	s.log.InfoContext(ctx, "opnsensesvc: DeployStatus", "mark", req.GetMark().String())
-
 	if s.deploy == nil {
-		return nil, errors.New("DeployStatus: DeployManager not configured")
+		return nil, status.Error(codes.FailedPrecondition, "DeployStatus: DeployManager not configured")
 	}
-
 	if req.GetMark() == mwanv1.DeployStatusRequest_MARK_HEALTHY {
 		active, previous, deployedAt, err := s.deploy.MarkHealthy(ctx)
 		if err != nil {
-			s.log.ErrorContext(ctx, "DeployStatus: mark healthy failed", "err", err)
-			return nil, fmt.Errorf("mark healthy: %w", err)
+			return nil, status.Errorf(codes.Internal, "mark healthy: %v", err)
 		}
 		return &mwanv1.DeployStatusResponse{
 			ActiveSha256:   active,
@@ -645,12 +389,9 @@ func (s *Server) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusReque
 			DeployedAt:     deployedAt,
 		}, nil
 	}
-
-	// Read-only path.
 	active, previous, health, deployedAt, err := s.deploy.Status(ctx)
 	if err != nil {
-		s.log.ErrorContext(ctx, "DeployStatus: read failed", "err", err)
-		return nil, fmt.Errorf("status: %w", err)
+		return nil, status.Errorf(codes.Internal, "status: %v", err)
 	}
 	return &mwanv1.DeployStatusResponse{
 		ActiveSha256:   active,
@@ -660,187 +401,97 @@ func (s *Server) DeployStatus(ctx context.Context, req *mwanv1.DeployStatusReque
 	}, nil
 }
 
-// Revert copies .previous to .current, drops pending-verify marker,
-// and re-execs.
+// Revert copies .previous to .current, clears pending-verify, re-execs.
 func (s *Server) Revert(ctx context.Context, _ *mwanv1.RevertRequest) (*mwanv1.RevertResponse, error) {
-	s.log.InfoContext(ctx, "opnsensesvc: Revert")
-
 	if s.deploy == nil {
-		return nil, errors.New("Revert: DeployManager not configured")
+		return nil, status.Error(codes.FailedPrecondition, "Revert: DeployManager not configured")
 	}
 	revertedTo, err := s.deploy.Revert(ctx)
 	if err != nil {
-		s.log.ErrorContext(ctx, "Revert: failed", "err", err)
-		return nil, fmt.Errorf("revert: %w", err)
+		return nil, status.Errorf(codes.Internal, "revert: %v", err)
 	}
-	return &mwanv1.RevertResponse{
-		RevertedToSha256: revertedTo,
-		ReExecStarted:    true,
+	return &mwanv1.RevertResponse{RevertedToSha256: revertedTo, ReExecStarted: true}, nil
+}
+
+// CommitDeploy verifies the sha256 of a previously staged binary,
+// atomically promotes it to <BinaryDir>/mwan-opnsense, and re-execs.
+func (s *Server) CommitDeploy(ctx context.Context, req *mwanv1.CommitDeployRequest) (*mwanv1.CommitDeployResponse, error) {
+	_, _ = peer.FromContext(ctx)
+	_, _ = metadata.FromIncomingContext(ctx)
+	if s.deploy == nil {
+		return nil, status.Error(codes.FailedPrecondition, "CommitDeploy: DeployManager not configured")
+	}
+	if req.GetStagedSha256() == "" {
+		return nil, status.Error(codes.InvalidArgument, "CommitDeploy: staged_sha256 required")
+	}
+	stagedPath := s.deploy.pathOf(BinaryName + ".staged")
+	previousPath, activeSHA, err := commitStagedBinary(ctx, s.log, s.deploy, stagedPath, req.GetStagedSha256(), req.GetVersionStr())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "commit: %v", err)
+	}
+	s.log.InfoContext(ctx, "opnsensesvc: CommitDeploy audit",
+		"staged_sha256", req.GetStagedSha256(),
+		"active_sha256", activeSHA,
+		"previous_path", previousPath,
+		"version_str", req.GetVersionStr())
+	return &mwanv1.CommitDeployResponse{
+		PreviousPath:  previousPath,
+		ActiveSha256:  activeSHA,
+		ReExecStarted: true,
 	}, nil
 }
 
-// ServeOpts controls the dispatcher loop.
+// commitStagedBinary reads the staged file, verifies sha256, and
+// hands it to the deploy manager's path-based promote routine.
+func commitStagedBinary(ctx context.Context, log *slog.Logger, deploy *DeployManager, stagedPath, expectedSHA, versionStr string) (string, string, error) {
+	content, err := ReadStaged(ctx, stagedPath)
+	if err != nil {
+		return "", "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: commit read staged",
+			"read staged "+stagedPath, err,
+			slog.String("staged_path", stagedPath))
+	}
+	sum := sha256.Sum256(content)
+	gotHex := hex.EncodeToString(sum[:])
+	if gotHex != expectedSHA {
+		return "", "", fmt.Errorf("sha256 mismatch: got %s want %s", gotHex, expectedSHA)
+	}
+	log.InfoContext(ctx, "opnsensesvc: CommitDeploy verify ok",
+		"staged_path", stagedPath, "sha256", gotHex, "bytes", len(content))
+	previousPath, activeSHA, err := deploy.DeployFromPath(ctx, stagedPath, gotHex, versionStr)
+	if err != nil {
+		return "", "", logWrappedErrorContext(ctx, log,
+			"opnsensesvc: commit promote",
+			"promote", err,
+			slog.String("staged_path", stagedPath))
+	}
+	return previousPath, activeSHA, nil
+}
+
+// ServeOpts controls the daemon's listener wiring.
 type ServeOpts struct {
 	SerialPath   string
 	OpenSerial   func(path string) (io.ReadWriteCloser, error)
 	Server       *Server
 	Log          *slog.Logger
 	OnSerialOpen func(path string)
-	// LongSerialPath, when non-empty, enables the channel-split mode.
-	// A second dispatcher attaches to this device and accepts only
-	// LongChannelMethods. The primary dispatcher then restricts itself
-	// to ShortChannelMethods so a wedge on the long port cannot starve
-	// short RPCs. Leaving this empty preserves the original single-port
-	// behavior: the primary dispatcher accepts every method.
-	LongSerialPath string
+	OnGRPCAccept func()
+	Transfer     *TransferManager
+	StopTimeout  time.Duration
 }
 
-// Serve opens the virtio-serial device and runs the MWN1 dispatcher
-// against it until ctx is cancelled. There is no TLS and no
-// application-level authentication; the only peer is the host process
-// that owns the unix socket on the Proxmox side.
-func Serve(ctx context.Context, opts ServeOpts) error {
-	if opts.Server == nil {
-		return errors.New("Serve: Server required")
-	}
-	if opts.SerialPath == "" {
-		return errors.New("Serve: SerialPath required")
-	}
-	if opts.OpenSerial == nil {
-		return errors.New("Serve: OpenSerial required")
-	}
-	log := opts.Log
-	if log == nil {
-		log = slog.Default()
-	}
+// Compile-time guards.
+var (
+	_ mwanv1.OpnsenseServiceServer = (*Server)(nil)
+	_ mwanv1.TransferServiceServer = (*Server)(nil)
+)
 
-	short, err := openShortDispatcher(ctx, opts, log)
+// ReadStaged reads the entire content of a staged-binary path.
+func ReadStaged(ctx context.Context, path string) ([]byte, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		slog.ErrorContext(ctx, "opnsensesvc: read staged", "path", path, "err", err)
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	defer short.close()
-
-	long, err := openLongDispatcher(ctx, opts, log)
-	if err != nil {
-		return err
-	}
-	defer long.close()
-
-	dispatcherCtx, dispatcherCancel := context.WithCancel(ctx)
-	defer dispatcherCancel()
-
-	longErrCh := startLongServe(dispatcherCtx, long, log)
-
-	serveErr := short.dispatcher.Serve(dispatcherCtx, short.rw)
-	dispatcherCancel()
-	longServeErr := <-longErrCh
-
-	return collectServeErrors(ctx, log, serveErr, longServeErr)
-}
-
-// dispatcherSession bundles a dispatcher with the [io.ReadWriteCloser]
-// it owns so the channel-split branches can hand both around without
-// repeating themselves. Cleanup closes the RW; the dispatcher itself
-// holds no resources that need explicit Close.
-type dispatcherSession struct {
-	dispatcher *Dispatcher
-	rw         io.ReadWriteCloser
-}
-
-func (s *dispatcherSession) close() {
-	if s == nil || s.rw == nil {
-		return
-	}
-	_ = s.rw.Close()
-}
-
-func openShortDispatcher(ctx context.Context, opts ServeOpts, log *slog.Logger) (*dispatcherSession, error) {
-	rw, err := opts.OpenSerial(opts.SerialPath)
-	if err != nil {
-		log.ErrorContext(ctx, "opnsensesvc: open serial failed",
-			"err", err, "path", opts.SerialPath)
-		return nil, fmt.Errorf("opnsensesvc: open serial: %w", err)
-	}
-	if opts.OnSerialOpen != nil {
-		opts.OnSerialOpen(opts.SerialPath)
-	}
-	log.InfoContext(ctx, "opnsensesvc: serial opened", "path", opts.SerialPath)
-	var allowed []uint16
-	if opts.LongSerialPath != "" {
-		allowed = ShortChannelMethods
-	}
-	d, err := NewDispatcher(DispatcherConfig{
-		Registry:       nil,
-		Server:         opts.Server,
-		Workers:        0,
-		Log:            log,
-		OnFrameError:   nil,
-		AllowedMethods: allowed,
-	})
-	if err != nil {
-		_ = rw.Close()
-		log.ErrorContext(ctx, "opnsensesvc: build dispatcher failed", "err", err)
-		return nil, fmt.Errorf("opnsensesvc: build dispatcher: %w", err)
-	}
-	return &dispatcherSession{dispatcher: d, rw: rw}, nil
-}
-
-func openLongDispatcher(ctx context.Context, opts ServeOpts, log *slog.Logger) (*dispatcherSession, error) {
-	if opts.LongSerialPath == "" {
-		return &dispatcherSession{dispatcher: nil, rw: nil}, nil
-	}
-	rw, err := opts.OpenSerial(opts.LongSerialPath)
-	if err != nil {
-		log.ErrorContext(ctx, "opnsensesvc: open long serial failed",
-			"err", err, "path", opts.LongSerialPath)
-		return nil, fmt.Errorf("opnsensesvc: open long serial: %w", err)
-	}
-	if opts.OnSerialOpen != nil {
-		opts.OnSerialOpen(opts.LongSerialPath)
-	}
-	log.InfoContext(ctx, "opnsensesvc: long serial opened", "path", opts.LongSerialPath)
-	d, err := NewDispatcher(DispatcherConfig{
-		Registry:       nil,
-		Server:         opts.Server,
-		Workers:        0,
-		Log:            log,
-		OnFrameError:   nil,
-		AllowedMethods: LongChannelMethods,
-	})
-	if err != nil {
-		_ = rw.Close()
-		log.ErrorContext(ctx, "opnsensesvc: build long dispatcher failed", "err", err)
-		return nil, fmt.Errorf("opnsensesvc: build long dispatcher: %w", err)
-	}
-	return &dispatcherSession{dispatcher: d, rw: rw}, nil
-}
-
-func startLongServe(ctx context.Context, sess *dispatcherSession, log *slog.Logger) <-chan error {
-	ch := make(chan error, 1)
-	if sess == nil || sess.dispatcher == nil {
-		ch <- nil
-		return ch
-	}
-	go func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.ErrorContext(ctx, "opnsensesvc: long serve goroutine panic",
-					"err", fmt.Errorf("recovered panic: %v", recovered))
-			}
-		}()
-		ch <- sess.dispatcher.Serve(ctx, sess.rw)
-	}()
-	return ch
-}
-
-func collectServeErrors(ctx context.Context, log *slog.Logger, serveErr, longServeErr error) error {
-	if serveErr != nil {
-		log.ErrorContext(ctx, "opnsensesvc: dispatcher serve failed", "err", serveErr)
-		return fmt.Errorf("opnsensesvc: dispatcher serve: %w", serveErr)
-	}
-	if longServeErr != nil {
-		log.ErrorContext(ctx, "opnsensesvc: long dispatcher serve failed", "err", longServeErr)
-		return fmt.Errorf("opnsensesvc: long dispatcher serve: %w", longServeErr)
-	}
-	return nil
+	return content, nil
 }
