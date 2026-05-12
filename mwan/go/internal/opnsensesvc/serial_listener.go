@@ -11,16 +11,17 @@ import (
 	"time"
 )
 
-// SerialConn wraps an [io.ReadWriteCloser] as a [net.Conn] so gRPC's
-// HTTP/2 transport can run over the raw-mode virtio-serial tty.
+// SerialConn wraps the shared virtio-serial fd as a [net.Conn] so
+// gRPC's HTTP/2 transport can run over it. The same underlying fd is
+// reused across sequential client connections because the host-side
+// chardev muxes connections into one byte stream on the guest side.
+// Closing the SerialConn signals the listener that the next Accept()
+// can return a fresh wrapper, but does not close the underlying fd.
 // Deadlines are no-ops; the underlying tty does not support them.
 type SerialConn struct {
-	rwc io.ReadWriteCloser
-}
-
-// NewSerialConn returns a [net.Conn] that reads and writes through rwc.
-func NewSerialConn(rwc io.ReadWriteCloser) net.Conn {
-	return &SerialConn{rwc: rwc}
+	rwc      io.ReadWriteCloser
+	listener *OneShotListener
+	once     sync.Once
 }
 
 // Read forwards to the underlying ReadWriteCloser.
@@ -41,12 +42,14 @@ func (s *SerialConn) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-// Close closes the underlying ReadWriteCloser.
+// Close finalizes this wrapper. The fd stays open because it is owned
+// by the listener and reused for the next client connection. The
+// listener is notified so the next Accept() can return a fresh
+// wrapper.
 func (s *SerialConn) Close() error {
-	if err := s.rwc.Close(); err != nil {
-		slog.ErrorContext(context.Background(), "serial: close failed", "err", err)
-		return fmt.Errorf("serial: close: %w", err)
-	}
+	s.once.Do(func() {
+		s.listener.notifyConnClosed(s)
+	})
 	return nil
 }
 
@@ -70,59 +73,118 @@ type serialAddr string
 func (a serialAddr) Network() string { return "virtio-serial" }
 func (a serialAddr) String() string  { return string(a) }
 
-// OneShotListener is a [net.Listener] that hands a single pre-built
-// [net.Conn] out on the first Accept() and then blocks on subsequent
-// Accept() calls until Close() is invoked. gRPC's Serve loop calls
-// Accept() in a loop; this listener returns one connection, then
-// blocks the second call to keep gRPC quiescent on the one peer.
+// OneShotListener is the [net.Listener] that the daemon hands to
+// grpc.Server.Serve. The name predates the multi-accept rewrite and is
+// kept for source compatibility. At any moment the listener serves at
+// most one active client connection because the host-side chardev
+// muxes connections sequentially into one byte stream on the guest
+// side. Accept() blocks until the previously issued conn is closed by
+// gRPC (which happens when the client disconnects and the daemon
+// observes EOF on Read). It then returns a fresh SerialConn wrapper
+// reading and writing the same fd, so the next probe invocation gets
+// its own HTTP/2 connection over the same persistent guest-side fd.
+// Close() shuts the listener down and closes the underlying fd.
 type OneShotListener struct {
-	mu      sync.Mutex
-	conn    net.Conn
-	yielded bool
-	closeCh chan struct{}
-	closed  bool
+	mu         sync.Mutex
+	cond       *sync.Cond
+	rwc        io.ReadWriteCloser
+	active     *SerialConn
+	closed     bool
+	yieldFirst bool
 }
 
-// NewOneShotListener wraps conn in a single-Accept listener.
-func NewOneShotListener(conn net.Conn) *OneShotListener {
-	return &OneShotListener{
-		mu:      sync.Mutex{},
-		conn:    conn,
-		yielded: false,
-		closeCh: make(chan struct{}),
-		closed:  false,
+// NewOneShotListener wraps an [io.ReadWriteCloser] so its lifecycle is
+// owned by the listener. The underlying fd is reused for every
+// SerialConn yielded by Accept().
+func NewOneShotListener(rwc io.ReadWriteCloser) *OneShotListener {
+	l := &OneShotListener{
+		mu:         sync.Mutex{},
+		cond:       nil,
+		rwc:        rwc,
+		active:     nil,
+		closed:     false,
+		yieldFirst: false,
 	}
+	l.cond = sync.NewCond(&l.mu)
+	return l
 }
 
-// Accept returns the wrapped connection on first call. Subsequent
-// calls block until Close().
+// Accept blocks until the listener is in a state where it can issue a
+// fresh SerialConn. The first call returns immediately. Subsequent
+// calls block until the previously issued conn is Closed, then return
+// a new wrapper around the same fd.
 func (l *OneShotListener) Accept() (net.Conn, error) {
 	l.mu.Lock()
-	if !l.yielded {
-		l.yielded = true
-		c := l.conn
-		l.mu.Unlock()
-		if c == nil {
-			return nil, errors.New("oneshot: nil conn")
+	defer l.mu.Unlock()
+	for {
+		if l.closed {
+			return nil, net.ErrClosed
 		}
-		return c, nil
+		if !l.yieldFirst {
+			l.yieldFirst = true
+			if l.rwc == nil {
+				return nil, errors.New("oneshot: nil rwc")
+			}
+			conn := &SerialConn{rwc: l.rwc, listener: l, once: sync.Once{}}
+			l.active = conn
+			return conn, nil
+		}
+		if l.active == nil {
+			conn := &SerialConn{rwc: l.rwc, listener: l, once: sync.Once{}}
+			l.active = conn
+			return conn, nil
+		}
+		l.cond.Wait()
 	}
-	l.mu.Unlock()
-	<-l.closeCh
-	return nil, net.ErrClosed
 }
 
-// Close releases any blocked Accept() call. It does not close the
-// returned connection; gRPC owns its lifecycle.
-func (l *OneShotListener) Close() error {
+// notifyConnClosed is called from SerialConn.Close() once the gRPC
+// transport tears down the connection. It clears the active slot and
+// signals any blocked Accept() so the next probe can be served.
+func (l *OneShotListener) notifyConnClosed(conn *SerialConn) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.active == conn {
+		l.active = nil
+	}
+	l.cond.Broadcast()
+}
+
+// Close shuts the listener down. Blocked Accept() calls return
+// [net.ErrClosed]. The underlying fd is closed so the daemon releases
+// the virtio-serial device. Close uses [context.Background] for its
+// internal slog event because the [net.Listener] interface forbids
+// taking a context here.
+func (l *OneShotListener) Close() error {
+	return l.shutdown(context.Background())
+}
+
+// shutdown is the context-aware close path used by the daemon's
+// stop-watcher goroutine so the slog event chains to the serve span.
+func (l *OneShotListener) shutdown(ctx context.Context) error {
+	l.mu.Lock()
 	if l.closed {
+		l.mu.Unlock()
 		return nil
 	}
 	l.closed = true
-	close(l.closeCh)
+	rwc := l.rwc
+	l.rwc = nil
+	l.cond.Broadcast()
+	l.mu.Unlock()
+	if rwc == nil {
+		return nil
+	}
+	if err := rwc.Close(); err != nil {
+		slog.ErrorContext(ctx, "oneshot: close rwc failed", "err", err)
+		return fmt.Errorf("oneshot: close rwc: %w", err)
+	}
 	return nil
+}
+
+// Shutdown is the context-aware variant of Close used by serve.go.
+func (l *OneShotListener) Shutdown(ctx context.Context) error {
+	return l.shutdown(ctx)
 }
 
 // Addr returns the listener address.

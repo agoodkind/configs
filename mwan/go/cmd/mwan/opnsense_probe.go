@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 	"os"
@@ -51,22 +52,25 @@ const (
 )
 
 type probeFlags struct {
-	target       string
-	timeout      time.Duration
-	op           string
-	xpath        string
-	xpathValue   string
-	cmd          string
-	cmdArgs      string
-	cmdSudo      bool
-	cmdTimeout   time.Duration
-	configXML    string
-	label        string
-	gatewayName  string
-	selftestSize int
-	transferPath string
-	transferSize int64
-	deployBinary string
+	target         string
+	timeout        time.Duration
+	op             string
+	xpath          string
+	xpathValue     string
+	cmd            string
+	cmdArgs        string
+	cmdSudo        bool
+	cmdTimeout     time.Duration
+	configXML      string
+	label          string
+	gatewayName    string
+	selftestSize   int
+	transferPath   string
+	transferSize   int64
+	deployBinary   string
+	transferSource string
+	transferResume bool
+	transferID     string
 }
 
 // parseProbeFlags binds every probe flag onto a FlagSet so the
@@ -78,6 +82,7 @@ func parseProbeFlags(args []string) (*probeFlags, error) {
 		cmd: "", cmdArgs: "", cmdSudo: false, cmdTimeout: 0,
 		configXML: "", label: "", gatewayName: "",
 		selftestSize: 0, transferPath: "", transferSize: 0, deployBinary: "",
+		transferSource: "", transferResume: false, transferID: "",
 	}
 	fs.StringVar(&pf.target, "target", "", "unix:///path/to/socket (required)")
 	fs.DurationVar(&pf.timeout, "timeout", probeDefaultTimeout, "dial+RPC timeout")
@@ -96,6 +101,12 @@ func parseProbeFlags(args []string) (*probeFlags, error) {
 	fs.StringVar(&pf.transferPath, "path", "", "remote path for op=transfer-up|transfer-down")
 	fs.Int64Var(&pf.transferSize, "size", 0, "size in bytes for op=transfer-up")
 	fs.StringVar(&pf.deployBinary, "binary", "", "local binary path for op=deploy")
+	fs.StringVar(&pf.transferSource, "source", "",
+		"local source file for op=transfer-up; required when -resume is set")
+	fs.BoolVar(&pf.transferResume, "resume", false,
+		"resume the prior transfer for -source from its persisted offset")
+	fs.StringVar(&pf.transferID, "transfer-id", "",
+		"explicit transfer id when multiple resumable transfers share a source")
 	if err := fs.Parse(args); err != nil {
 		slog.ErrorContext(context.Background(), "opnsense-probe: parse", "err", err)
 		return nil, fmt.Errorf("opnsense-probe: parse: %w", err)
@@ -156,9 +167,9 @@ func dispatchProbeOp(ctx context.Context, cli *opnsense.Client, rpc *opnsense.RP
 	case opSelftest:
 		return probeSelftest(ctx, rpc, pf.selftestSize)
 	case opTransferUp:
-		return probeTransferUp(ctx, cli, pf.transferPath, pf.transferSize, pf.label)
+		return probeTransferUp(ctx, cli, pf)
 	case opTransferDown:
-		return probeTransferDown(ctx, cli, pf.transferPath)
+		return probeTransferDown(ctx, cli, pf)
 	case opTransferGC:
 		return probeTransferGC(ctx, cli)
 	case opDeploy:
@@ -323,15 +334,51 @@ func probeSelftest(ctx context.Context, rpc *opnsense.RPC, size int) error {
 	return nil
 }
 
-func probeTransferUp(ctx context.Context, cli *opnsense.Client, remotePath string, size int64, label string) error {
-	if remotePath == "" || size <= 0 {
-		return errors.New("opnsense-probe: -path and -size required for op=transfer-up")
+func probeTransferUp(ctx context.Context, cli *opnsense.Client, pf *probeFlags) error {
+	if pf.transferPath == "" {
+		return errors.New("opnsense-probe: -path required for op=transfer-up")
 	}
-	payload := make([]byte, size)
+	payload, size, source, err := loadTransferUpPayload(ctx, pf)
+	if err != nil {
+		return err
+	}
+	if pf.transferResume {
+		return probeTransferUpResume(ctx, cli, pf, payload, size, source)
+	}
+	return probeTransferUpFresh(ctx, cli, pf, payload, size, source)
+}
+
+// loadTransferUpPayload resolves the bytes the probe will upload.
+// When -source is set, the file is read in full; otherwise the probe
+// falls back to the historical random-payload behavior driven by
+// -size. The returned source string is empty when no -source was given.
+func loadTransferUpPayload(ctx context.Context, pf *probeFlags) ([]byte, int64, string, error) {
+	if pf.transferSource != "" {
+		content, readErr := os.ReadFile(pf.transferSource)
+		if readErr != nil {
+			slog.ErrorContext(ctx, "probe: read source", "err", readErr, "source", pf.transferSource)
+			return nil, 0, "", fmt.Errorf("read %s: %w", pf.transferSource, readErr)
+		}
+		return content, int64(len(content)), pf.transferSource, nil
+	}
+	if pf.transferResume {
+		return nil, 0, "", errors.New("opnsense-probe: -resume requires -source")
+	}
+	if pf.transferSize <= 0 {
+		return nil, 0, "", errors.New("opnsense-probe: -size or -source required for op=transfer-up")
+	}
+	payload := make([]byte, pf.transferSize)
 	if _, err := cryptorand.Read(payload); err != nil {
 		slog.ErrorContext(ctx, "probe: rand", "err", err)
-		return probeLogWrap(ctx, "rand", err)
+		return nil, 0, "", probeLogWrap(ctx, "rand", err)
 	}
+	return payload, pf.transferSize, "", nil
+}
+
+// probeTransferUpFresh runs the first-attempt upload path. When a
+// source path is known and the state file would be useful, the probe
+// persists checkpoints so a later -resume invocation can continue.
+func probeTransferUpFresh(ctx context.Context, cli *opnsense.Client, pf *probeFlags, payload []byte, size int64, source string) error {
 	stream, err := cli.TransferClient().Upload(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "probe: transfer up open", "err", err)
@@ -339,31 +386,181 @@ func probeTransferUp(ctx context.Context, cli *opnsense.Client, remotePath strin
 	}
 	if sendErr := stream.Send(&mwanv1.UploadRequest{
 		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
-			Path:       remotePath,
+			Path:       pf.transferPath,
 			Direction:  mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
 			FinishStep: mwanv1.FinishStep_FINISH_STEP_REPLACE,
-			Label:      label,
+			Label:      pf.label,
 			TotalSize:  size,
 		}},
 	}); sendErr != nil {
 		return probeLogWrap(ctx, "transfer-up: send header", sendErr)
 	}
-	if _, recvErr := stream.Recv(); recvErr != nil {
+	ackMsg, recvErr := stream.Recv()
+	if recvErr != nil {
 		return probeLogWrap(ctx, "transfer-up: recv ack", recvErr)
 	}
-	offset := int64(0)
+	ack := ackMsg.GetAck()
+	if ack == nil {
+		return errors.New("transfer-up: first response was not an ack")
+	}
+	state := &probeTransferState{
+		TransferID:      ack.GetTransferId(),
+		SourcePath:      source,
+		RemotePath:      pf.transferPath,
+		Label:           pf.label,
+		TotalSize:       size,
+		CommittedOffset: 0,
+		HashState:       nil,
+	}
+	hasher := sha256.New()
+	if streamErr := uploadDataChunks(ctx, stream, payload, 0, size, hasher, state, source != ""); streamErr != nil {
+		return streamErr
+	}
+	return finalizeTransferUp(ctx, stream, payload, source)
+}
+
+// probeTransferUpResume reads the persisted state for source and
+// continues the upload from the committed offset. It errors out
+// cleanly when no state exists, when the remote daemon refuses the
+// resume (ResumeAccepted=false), or when -transfer-id is given but
+// does not match.
+func probeTransferUpResume(ctx context.Context, cli *opnsense.Client, pf *probeFlags, payload []byte, size int64, source string) error {
+	state, loadErr := lookupResumeState(ctx, source, pf.transferID)
+	if loadErr != nil {
+		return loadErr
+	}
+	if state.RemotePath != pf.transferPath {
+		return fmt.Errorf("opnsense-probe: -resume: state remote_path %q != -path %q",
+			state.RemotePath, pf.transferPath)
+	}
+	if state.TotalSize != size {
+		return fmt.Errorf("opnsense-probe: -resume: state total_size %d != source size %d",
+			state.TotalSize, size)
+	}
+	hasher, hashErr := unmarshalHashState(ctx, state.HashState)
+	if hashErr != nil {
+		return hashErr
+	}
+
+	stream, err := cli.TransferClient().Upload(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "probe: transfer up open", "err", err)
+		return probeLogWrap(ctx, "transfer-up: open", err)
+	}
+	if sendErr := stream.Send(&mwanv1.UploadRequest{
+		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
+			Path:              pf.transferPath,
+			Direction:         mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+			FinishStep:        mwanv1.FinishStep_FINISH_STEP_REPLACE,
+			Label:             state.Label,
+			TotalSize:         size,
+			ResumeTransferId:  state.TransferID,
+			ResumeFromOffset:  state.CommittedOffset,
+			ResumeSha256State: state.HashState,
+		}},
+	}); sendErr != nil {
+		return probeLogWrap(ctx, "transfer-up: send header", sendErr)
+	}
+	ackMsg, recvErr := stream.Recv()
+	if recvErr != nil {
+		return probeLogWrap(ctx, "transfer-up: recv ack", recvErr)
+	}
+	ack := ackMsg.GetAck()
+	if ack == nil {
+		return errors.New("transfer-up: first response was not an ack")
+	}
+	if !ack.GetResumeAccepted() {
+		return fmt.Errorf("opnsense-probe: -resume: daemon refused; delete %s and retry without -resume",
+			stateFilePathOrEmpty(ctx, state.TransferID))
+	}
+	if ack.GetCommittedOffset() != state.CommittedOffset {
+		return fmt.Errorf("opnsense-probe: -resume: ack offset %d != client offset %d",
+			ack.GetCommittedOffset(), state.CommittedOffset)
+	}
+
+	if streamErr := uploadDataChunks(ctx, stream, payload, state.CommittedOffset, size, hasher, state, true); streamErr != nil {
+		return streamErr
+	}
+	return finalizeTransferUp(ctx, stream, payload, source)
+}
+
+// lookupResumeState resolves the state file for the resume operation
+// by transfer id (when provided) or by source path lookup.
+func lookupResumeState(ctx context.Context, source, transferID string) (*probeTransferState, error) {
+	if transferID != "" {
+		path, pathErr := probeStatePath(ctx, transferID)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		state, loadErr := loadProbeState(ctx, path)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if source != "" && state.SourcePath != source {
+			return nil, fmt.Errorf("opnsense-probe: -resume: state source %q != -source %q",
+				state.SourcePath, source)
+		}
+		return state, nil
+	}
+	path, findErr := findProbeStateBySource(ctx, source)
+	if findErr != nil {
+		return nil, findErr
+	}
+	if path == "" {
+		return nil, fmt.Errorf("opnsense-probe: -resume: no state file for source %q; run once without -resume first", source)
+	}
+	return loadProbeState(ctx, path)
+}
+
+// stateFilePathOrEmpty returns the on-disk path for transferID, or an
+// empty string when the path lookup fails. Used in error messages only.
+func stateFilePathOrEmpty(ctx context.Context, transferID string) string {
+	path, err := probeStatePath(ctx, transferID)
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
+// uploadDataChunks sends data frames from start..size, hashes them,
+// and persists a checkpoint after every chunk so a future -resume can
+// pick up. When persistState is false, no state is written.
+func uploadDataChunks(ctx context.Context, stream mwanv1.TransferService_UploadClient, payload []byte, start, size int64, hasher hash.Hash, state *probeTransferState, persistState bool) error {
+	offset := start
 	for offset < size {
 		end := min(offset+probeDefaultUploadChunk, size)
+		chunk := payload[offset:end]
+		if _, hashErr := hasher.Write(chunk); hashErr != nil {
+			return probeLogWrap(ctx, "transfer-up: hash", hashErr)
+		}
 		if sendErr := stream.Send(&mwanv1.UploadRequest{
 			Body: &mwanv1.UploadRequest_Data{Data: &mwanv1.TransferDataChunk{
 				Offset: offset,
-				Data:   payload[offset:end],
+				Data:   chunk,
 			}},
 		}); sendErr != nil {
 			return probeLogWrap(ctx, "transfer-up: send data", sendErr)
 		}
 		offset = end
+		if persistState {
+			snap, snapErr := marshalHashState(ctx, hasher)
+			if snapErr != nil {
+				return snapErr
+			}
+			state.CommittedOffset = offset
+			state.HashState = snap
+			if saveErr := saveProbeState(ctx, state); saveErr != nil {
+				return saveErr
+			}
+		}
 	}
+	return nil
+}
+
+// finalizeTransferUp sends the Final, waits for the Terminal, and
+// removes the persisted state on success. payload is hashed in full
+// to compute the canonical SHA so the daemon can verify it.
+func finalizeTransferUp(ctx context.Context, stream mwanv1.TransferService_UploadClient, payload []byte, source string) error {
 	sum := sha256.Sum256(payload)
 	finalHex := hex.EncodeToString(sum[:])
 	if sendErr := stream.Send(&mwanv1.UploadRequest{
@@ -385,15 +582,42 @@ func probeTransferUp(ctx context.Context, cli *opnsense.Client, remotePath strin
 		if term := msg.GetTerminal(); term != nil {
 			fmt.Printf("transfer up: bytes=%d sha256=%s backup_path=%s\n",
 				term.GetTotalBytes(), term.GetSha256Hex(), term.GetBackupPath())
+			if source != "" {
+				if delErr := deleteProbeStateForSource(ctx, source); delErr != nil {
+					slog.WarnContext(ctx, "probe: delete state after success", "err", delErr, "source", source)
+				}
+			}
 			return nil
 		}
 	}
 }
 
-func probeTransferDown(ctx context.Context, cli *opnsense.Client, remotePath string) error {
-	if remotePath == "" {
+// deleteProbeStateForSource finds and removes the state file for
+// source, if any. Used after a successful upload to keep the state
+// directory tidy.
+func deleteProbeStateForSource(ctx context.Context, source string) error {
+	path, findErr := findProbeStateBySource(ctx, source)
+	if findErr != nil {
+		return findErr
+	}
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.ErrorContext(ctx, "probe: remove state", "err", err, "path", path)
+		return fmt.Errorf("probe state: remove %s: %w", path, err)
+	}
+	return nil
+}
+
+func probeTransferDown(ctx context.Context, cli *opnsense.Client, pf *probeFlags) error {
+	if pf.transferPath == "" {
 		return errors.New("opnsense-probe: -path required for op=transfer-down")
 	}
+	if pf.transferResume {
+		return errors.New("opnsense-probe: -resume is not supported for op=transfer-down (daemon serves reads without state)")
+	}
+	remotePath := pf.transferPath
 	stream, err := cli.TransferClient().Upload(ctx)
 	if err != nil {
 		return probeLogWrap(ctx, "transfer-down: open", err)

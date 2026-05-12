@@ -46,8 +46,7 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 	}
 	log.InfoContext(ctx, "opnsensesvc: serial opened", "path", opts.SerialPath)
 
-	conn := NewSerialConn(rwc)
-	listener := NewOneShotListener(conn)
+	listener := NewOneShotListener(rwc)
 	grpcServer := grpc.NewServer(
 		grpc.WriteBufferSize(0),
 		grpc.Creds(insecure.NewCredentials()),
@@ -66,7 +65,7 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 		<-ctx.Done()
 		log.InfoContext(ctx, "opnsensesvc: stopping gRPC server")
 		grpcServer.GracefulStop()
-		_ = listener.Close()
+		_ = listener.Shutdown(ctx)
 	}()
 
 	serveErr := grpcServer.Serve(listener)
