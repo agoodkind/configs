@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -43,8 +42,8 @@ type Dispatcher struct {
 	workers  int
 
 	// allowedMethods, when non-nil, is the membership-tested set of
-	// method ids this dispatcher will accept. MethodReset is always
-	// accepted. A nil set means accept everything.
+	// method ids this dispatcher will accept. A nil set means accept
+	// everything.
 	allowedMethods map[uint16]struct{}
 
 	// onFrameError is invoked when a handler dispatch path fails before a
@@ -67,27 +66,14 @@ type Dispatcher struct {
 	// does not block when all workers are busy on slow handlers.
 	frameCh chan dispatchJob
 
-	// handlerCancelsMu guards handlerCancels. Reset iterates and calls
-	// each cancel so running handlers see ctx.Done; workers register
-	// on dequeue and deregister on return. The map is keyed by a
-	// per-invocation id drawn from handlerSeq so two parallel handlers
-	// for the same methodID never collide.
+	// handlerCancelsMu guards handlerCancels. Serve shutdown iterates
+	// and calls each cancel so running handlers see ctx.Done; workers
+	// register on dequeue and deregister on return. The map is keyed by
+	// a per-invocation id drawn from handlerSeq so two parallel
+	// handlers for the same methodID never collide.
 	handlerCancelsMu sync.Mutex
 	handlerCancels   map[uint64]context.CancelFunc
 	handlerSeq       atomic.Uint64
-
-	// wedgeCount counts how many times the dispatcher has been reset
-	// over the lifetime of this Serve. Read by the watchdog and
-	// stamped into the reset log line so reviewers can correlate
-	// wedges with recovery actions.
-	wedgeCount atomic.Int64
-
-	// lastFramePoppedNS stamps the time (in UnixNano) at which a
-	// worker most recently dequeued a job from frameCh. The watchdog
-	// uses this together with len(frameCh) to detect wedges. Zero
-	// means "no jobs have been popped yet"; Serve initializes it to
-	// time.Now().UnixNano() so a startup-time stall still surfaces.
-	lastFramePoppedNS atomic.Int64
 
 	conn *mwn1.Conn
 }
@@ -103,11 +89,9 @@ type DispatcherConfig struct {
 	OnFrameError func(error)
 	// AllowedMethods, if non-nil, restricts the dispatcher to the
 	// listed method ids. Frames carrying any other methodID get a
-	// FlagError response. Used by the channel-split feature (Fix 4)
-	// to keep long-running RPCs off the short-RPC port. A nil slice
-	// preserves the pre-split behavior of accepting every method.
-	// MethodReset is always accepted regardless of this setting so
-	// the operator's recovery path stays open on every port.
+	// FlagError response. Used by the channel-split feature to keep
+	// long-running RPCs off the short-RPC port. A nil slice preserves
+	// the pre-split behavior of accepting every method.
 	AllowedMethods []uint16
 }
 
@@ -164,23 +148,21 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 		}
 	}
 	return &Dispatcher{
-		registry:          registry,
-		server:            cfg.Server,
-		log:               log,
-		workers:           workers,
-		allowedMethods:    allowed,
-		onFrameError:      cfg.OnFrameError,
-		streamMu:          sync.Mutex{},
-		streams:           make(map[uint64]*streamBuffer),
-		canceledStreams:   make(map[uint64]struct{}),
-		streamWG:          sync.WaitGroup{},
-		frameCh:           make(chan dispatchJob, workers*2),
-		handlerCancelsMu:  sync.Mutex{},
-		handlerCancels:    make(map[uint64]context.CancelFunc),
-		handlerSeq:        atomic.Uint64{},
-		wedgeCount:        atomic.Int64{},
-		lastFramePoppedNS: atomic.Int64{},
-		conn:              nil,
+		registry:         registry,
+		server:           cfg.Server,
+		log:              log,
+		workers:          workers,
+		allowedMethods:   allowed,
+		onFrameError:     cfg.OnFrameError,
+		streamMu:         sync.Mutex{},
+		streams:          make(map[uint64]*streamBuffer),
+		canceledStreams:  make(map[uint64]struct{}),
+		streamWG:         sync.WaitGroup{},
+		frameCh:          make(chan dispatchJob, workers*2),
+		handlerCancelsMu: sync.Mutex{},
+		handlerCancels:   make(map[uint64]context.CancelFunc),
+		handlerSeq:       atomic.Uint64{},
+		conn:             nil,
 	}, nil
 }
 
@@ -198,18 +180,11 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 	d.conn = mwn1.NewConn(rw, d.log)
 	d.conn.OnMessage(d.onMessage)
 
-	// Seed the wedge timestamp so the watchdog has a meaningful idle
-	// measurement even before the first job arrives.
-	d.lastFramePoppedNS.Store(clockOrReal(nil).Now().UnixNano())
-
 	// Worker pool. Each worker pulls jobs off frameCh and runs to
 	// completion. Workers exit when frameCh is closed. Each invocation
 	// derives a per-job context from the Serve ctx and registers the
-	// cancel func with handlerCancels so Reset can abort in-flight
-	// handlers without killing the entire Serve. The worker stamps
-	// lastFramePoppedNS on every dequeue so the watchdog can tell a
-	// healthy busy daemon (timestamp advancing) from a wedge
-	// (timestamp frozen and frameCh non-empty).
+	// cancel func with handlerCancels so Serve shutdown can abort
+	// in-flight handlers without killing the entire process.
 	var wg sync.WaitGroup
 	wg.Add(d.workers)
 	for range d.workers {
@@ -222,7 +197,6 @@ func (d *Dispatcher) Serve(ctx context.Context, rw io.ReadWriteCloser) error {
 				}
 			}()
 			for job := range d.frameCh {
-				d.lastFramePoppedNS.Store(clockOrReal(nil).Now().UnixNano())
 				d.runJob(ctx, job)
 			}
 		}()
@@ -290,22 +264,13 @@ func (d *Dispatcher) onMessage(methodID uint16, corrID uint64, flags mwn1.Flags,
 		return
 	}
 
-	if flags&mwn1.FlagStreaming != 0 {
+	// Streaming flag on the inbound frame just means the conn layer
+	// applied per-fragment ACK flow control. Deploy is the only RPC
+	// that genuinely needs the chunk-channel streaming-handler path;
+	// every other method has its assembled message routed through the
+	// unary worker queue below.
+	if flags&mwn1.FlagStreaming != 0 && methodID == mwn1.MethodDeploy {
 		d.handleStreamMessage(methodID, corrID, flags, payload)
-		return
-	}
-
-	// MethodReset bypasses the worker queue. The reader goroutine
-	// handles it inline so the RPC succeeds even when frameCh is full
-	// and the worker pool is saturated. Reset is always allowed on
-	// every dispatcher regardless of AllowedMethods so the operator's
-	// recovery path stays open on every port.
-	if methodID == mwn1.MethodReset {
-		resp := d.runReset()
-		if err := d.sendResponse(methodID, corrID, resp); err != nil {
-			d.log.Warn("dispatcher: send reset response failed",
-				"err", err, "corr_id", corrID)
-		}
 		return
 	}
 
@@ -330,15 +295,10 @@ func (d *Dispatcher) onMessage(methodID uint16, corrID uint64, flags mwn1.Flags,
 }
 
 // methodAllowed returns true when methodID is permitted on this
-// dispatcher. The Reset method is implicitly allowed everywhere;
-// callers handle Reset before invoking methodAllowed so the special
-// case here is defensive. A nil allowedMethods set means accept
-// every method (the pre-split default).
+// dispatcher. A nil allowedMethods set means accept every method
+// (the pre-split default).
 func (d *Dispatcher) methodAllowed(methodID uint16) bool {
 	if d.allowedMethods == nil {
-		return true
-	}
-	if methodID == mwn1.MethodReset {
 		return true
 	}
 	_, ok := d.allowedMethods[methodID]
@@ -346,9 +306,9 @@ func (d *Dispatcher) methodAllowed(methodID uint16) bool {
 }
 
 // runJob derives a per-invocation context from the Serve ctx,
-// registers the cancel in handlerCancels so Reset can abort it, and
-// invokes the unary handler. The map registration is the only seam
-// the Reset path uses to reach in-flight handlers; storing the
+// registers the cancel in handlerCancels so Serve shutdown can abort
+// it, and invokes the unary handler. The map registration is the
+// seam shutdown uses to reach in-flight handlers; storing the
 // context in the Dispatcher struct would conflict with the
 // containedctx lint rule.
 func (d *Dispatcher) runJob(ctx context.Context, job dispatchJob) {
@@ -367,79 +327,28 @@ func (d *Dispatcher) runJob(ctx context.Context, job dispatchJob) {
 }
 
 // cancelInflight calls every cancel func registered with
-// handlerCancels and clears the map. Used by Serve shutdown and by
-// Reset to abort in-flight handlers. The count saturates at
-// [math.MaxInt32] to fit the protobuf int32 field; an actual cancel
-// fleet that large would indicate a worker-pool sizing bug rather
-// than a routine reset.
-func (d *Dispatcher) cancelInflight() int32 {
+// handlerCancels and clears the map. Used by Serve shutdown to abort
+// in-flight handlers.
+func (d *Dispatcher) cancelInflight() {
 	d.handlerCancelsMu.Lock()
 	cancels := make([]context.CancelFunc, 0, len(d.handlerCancels))
-	var n int32
 	for id, cancel := range d.handlerCancels {
 		cancels = append(cancels, cancel)
 		delete(d.handlerCancels, id)
-		if n < math.MaxInt32 {
-			n++
-		}
 	}
 	d.handlerCancelsMu.Unlock()
 	for _, cancel := range cancels {
 		cancel()
 	}
-	return n
 }
 
-// runReset performs the actual dispatcher reset and returns the count
-// payload. The reader goroutine invokes this synchronously so the
-// operator gets a deterministic acknowledgement, including when the
-// worker pool is wedged. The reset cancels in-flight handler
-// contexts, drains pending jobs out of frameCh, and tears down
-// active streaming RPCs. A structured log line documents every
-// reset so reviewers can correlate wedges with the recovery action.
-func (d *Dispatcher) runReset() *mwanv1.ResetResponse {
-	cancelledHandlers := d.cancelInflight()
-
-	var drained int32
-drainLoop:
-	for {
-		select {
-		case <-d.frameCh:
-			drained++
-		default:
-			break drainLoop
-		}
-	}
-
-	var streams int32
-	d.streamMu.Lock()
-	for corrID, buf := range d.streams {
-		buf.cancel()
-		buf.close()
-		delete(d.streams, corrID)
-		streams++
-	}
-	d.streamMu.Unlock()
-
-	count := d.wedgeCount.Add(1)
-	d.log.Warn("dispatcher: reset complete",
-		"cancelled_handlers", cancelledHandlers,
-		"drained_jobs", drained,
-		"cancelled_streams", streams,
-		"wedge_count", count)
-	return &mwanv1.ResetResponse{
-		DrainedJobs:      drained,
-		CancelledStreams: streams,
-	}
-}
-
-// handleStreamMessage routes a streaming-request message into the
+// handleStreamMessage routes a streaming Deploy message into the
 // per-CorrID chunk channel. The first frame for a new CorrID spawns a
 // handler goroutine that consumes the channel; subsequent frames push
 // chunks in. An empty FlagFinal message closes the channel, which lets
-// the handler observe end-of-stream and produce the response. Currently
-// only Deploy uses streaming; other method ids in a streaming frame are
-// rejected.
+// the handler observe end-of-stream and produce the response. The conn
+// layer has already acknowledged the inbound fragment at the wire
+// level, so this function does not emit any application-level ACK.
 func (d *Dispatcher) handleStreamMessage(
 	methodID uint16,
 	corrID uint64,
@@ -450,17 +359,8 @@ func (d *Dispatcher) handleStreamMessage(
 		return
 	}
 
-	if methodID != mwn1.MethodDeploy {
-		err := fmt.Errorf("dispatcher: streaming not supported for method id %d", methodID)
-		d.reportError(err)
-		d.sendError(methodID, corrID, err)
-		return
-	}
-
 	if flags&mwn1.FlagFinal != 0 && len(payload) == 0 {
-		if d.closeStream(methodID, corrID) {
-			d.ackStreamMessage(methodID, corrID)
-		}
+		d.closeStream(methodID, corrID)
 		return
 	}
 
@@ -506,9 +406,6 @@ func (d *Dispatcher) handleStreamMessage(
 			"method_id", methodID, "corr_id", corrID)
 		return
 	}
-	if !d.ackStreamMessage(methodID, corrID) {
-		return
-	}
 
 	if final {
 		buf.close()
@@ -546,8 +443,8 @@ func (d *Dispatcher) startStreamBufferLocked(methodID uint16, corrID uint64) *st
 		if ctx.Err() != nil {
 			return
 		}
-		if sendErr := d.sendResponse(methodID, corrID, resp); sendErr != nil {
-			d.log.Error("dispatcher: send response failed",
+		if sendErr := d.sendResponse(ctx, methodID, corrID, resp); sendErr != nil {
+			d.log.ErrorContext(ctx, "dispatcher: send response failed",
 				"err", sendErr, "method_id", methodID, "corr_id", corrID)
 		}
 	})
@@ -589,17 +486,6 @@ func (d *Dispatcher) closeStream(methodID uint16, corrID uint64) bool {
 	return true
 }
 
-func (d *Dispatcher) ackStreamMessage(methodID uint16, corrID uint64) bool {
-	if err := d.conn.SendAck(methodID, corrID); err != nil {
-		if !errors.Is(err, mwn1.ErrClosed) {
-			d.log.Warn("dispatcher: stream ACK failed",
-				"err", err, "method_id", methodID, "corr_id", corrID)
-		}
-		return false
-	}
-	return true
-}
-
 func (d *Dispatcher) cancelStream(corrID uint64) {
 	d.streamMu.Lock()
 	buf, exists := d.streams[corrID]
@@ -633,7 +519,7 @@ func (d *Dispatcher) handleJob(ctx context.Context, job dispatchJob) {
 		d.sendError(job.methodID, job.corrID, err)
 		return
 	}
-	if err := d.sendResponse(job.methodID, job.corrID, resp); err != nil {
+	if err := d.sendResponse(ctx, job.methodID, job.corrID, resp); err != nil {
 		d.log.ErrorContext(ctx, "dispatcher: send response failed",
 			"err", err, "method_id", job.methodID, "corr_id", job.corrID)
 	}
@@ -701,16 +587,19 @@ func wrapHandler[Req proto.Message, Resp proto.Message](
 }
 
 // sendResponse marshals resp and sends a single FlagFinal response
-// frame.
-func (d *Dispatcher) sendResponse(methodID uint16, corrID uint64, resp proto.Message) error {
+// through the streaming code path so per-fragment flow control bounds
+// the on-wire write size. Large responses (Exec stdout, ReadConfigXML
+// payloads) can exceed the peer kernel's tty input queue cap in one
+// write; streaming guarantees each fragment fits.
+func (d *Dispatcher) sendResponse(ctx context.Context, methodID uint16, corrID uint64, resp proto.Message) error {
 	payload, _, err := mwn1.MarshalResponse(d.registry, methodID, resp)
 	if err != nil {
 		// Marshal failed: fall back to an error frame so the caller
 		// is not left waiting forever.
 		return d.sendError(methodID, corrID, err)
 	}
-	if err := d.conn.SendMessage(methodID, corrID, mwn1.FlagResponse, payload); err != nil {
-		d.log.Error("dispatcher: send response failed",
+	if err := d.conn.SendStreamMessage(ctx, methodID, corrID, mwn1.FlagResponse|mwn1.FlagFinal, payload); err != nil {
+		d.log.ErrorContext(ctx, "dispatcher: send response failed",
 			"err", err, "method_id", methodID, "corr_id", corrID)
 		return fmt.Errorf("dispatcher: send response: %w", err)
 	}

@@ -55,24 +55,6 @@ func TestChannelSplit_LongDispatcherRejectsShortMethods(t *testing.T) {
 	assertErrorMessageContains(t, ver, "not allowed on this port")
 }
 
-// TestChannelSplit_ResetAllowedEverywhere ensures Reset bypasses
-// AllowedMethods on every port. The short and long dispatchers must
-// both accept Reset so the operator's recovery path stays open even
-// when one channel is wedged.
-func TestChannelSplit_ResetAllowedEverywhere(t *testing.T) {
-	srv := newTestServer(t, dispatcherSampleConfig())
-
-	shortClient, stopShort := startDispatcherWithAllowedMethods(t, srv, ShortChannelMethods)
-	defer stopShort()
-	shortReset := shortClient.call(t, mwn1.MethodReset, 720, &mwanv1.ResetRequest{})
-	assertNoErrorFrame(t, shortReset)
-
-	longClient, stopLong := startDispatcherWithAllowedMethods(t, srv, LongChannelMethods)
-	defer stopLong()
-	longReset := longClient.call(t, mwn1.MethodReset, 721, &mwanv1.ResetRequest{})
-	assertNoErrorFrame(t, longReset)
-}
-
 // TestChannelSplit_NilAllowedAcceptsEverything preserves the
 // pre-Fix-4 single-port behavior: a Dispatcher built with
 // AllowedMethods=nil accepts every method id without gating. The

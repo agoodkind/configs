@@ -71,16 +71,6 @@ service MWANOPNsenseService {
   // budget elapses without a successful Version() call. Same re-exec
   // dance as Deploy.
   rpc Revert(RevertRequest) returns (RevertResponse);
-
-  // Reset clears wedged dispatcher state without restarting the daemon.
-  // Drains the in-process job queue, cancels in-flight handler
-  // contexts, and tears down active streaming RPCs. Used by an
-  // operator (`mwan opnsense-probe -op reset`) to recover from a
-  // dispatcher that is alive enough to answer this RPC but whose
-  // worker pool is wedged on slow handlers. The handler runs on the
-  // dispatcher reader goroutine and bypasses the worker queue so the
-  // RPC succeeds even when the queue is full.
-  rpc Reset(ResetRequest) returns (ResetResponse);
 }
 
 message VersionRequest {}
@@ -207,11 +197,4 @@ message RevertRequest {}
 message RevertResponse {
   string reverted_to_sha256 = 1;
   bool re_exec_started = 2;
-}
-
-message ResetRequest {}
-
-message ResetResponse {
-  int32 drained_jobs = 1;        // jobs removed from the pending queue
-  int32 cancelled_streams = 2;   // active streaming RPCs torn down
 }

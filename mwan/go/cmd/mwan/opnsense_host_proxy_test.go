@@ -322,51 +322,6 @@ func TestProxy_InboundCloseMidStreamCancelsUpstream(t *testing.T) {
 	}
 }
 
-func TestProxy_StreamingAckWaitsForUpstreamAck(t *testing.T) {
-	requestSeen := make(chan bridgeMessage, 1)
-	releaseAck := make(chan struct{})
-	fixture := newProxyFixture(t, func(conn *mwn1.Conn, message bridgeMessage) {
-		requestSeen <- message
-		<-releaseAck
-		if err := conn.SendAck(message.methodID, message.corrID); err != nil &&
-			!errors.Is(err, mwn1.ErrClosed) {
-			t.Errorf("upstream ack: %v", err)
-		}
-	})
-	client := fixture.dialClient(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	sendDone := make(chan error, 1)
-	go func() {
-		sendDone <- client.conn.SendStreamMessage(
-			ctx,
-			mwn1.MethodDeploy,
-			7,
-			mwn1.FlagRequest|mwn1.FlagStreaming,
-			[]byte("header"),
-		)
-	}()
-	upstream := recvMessage(t, requestSeen)
-	if upstream.corrID == 7 {
-		t.Fatalf("upstream corr id was not rewritten")
-	}
-	select {
-	case err := <-sendDone:
-		t.Fatalf("stream send returned before upstream ACK: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(releaseAck)
-	select {
-	case err := <-sendDone:
-		if err != nil {
-			t.Fatalf("stream send after upstream ACK: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("stream send did not return after upstream ACK")
-	}
-}
-
 func TestProxy_InboundCloseCancelsWhileUpstreamAckBlocked(t *testing.T) {
 	requestSeen := make(chan struct{}, 1)
 	cancelSeen := make(chan bridgeMessage, 1)

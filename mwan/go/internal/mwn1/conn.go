@@ -10,8 +10,15 @@ import (
 )
 
 const (
-	sendQueueDepth             = 4
-	streamFramePayload         = 1024
+	sendQueueDepth = 4
+	// streamChunkBytes is the per-fragment payload size for streamed
+	// messages. Each fragment plus FrameOverhead must fit in the
+	// FreeBSD virtio-serial peer's tty input queue, which is sized as
+	// c_ispeed/5 and capped at 65536 bytes; at the kernel's 115200
+	// baud ceiling the queue holds 23040 bytes. 16384 leaves over six
+	// kilobytes of headroom and reduces round trips by 16x compared to
+	// the previous one-kilobyte value.
+	streamChunkBytes           = 16384
 	defaultReassemblyLimit     = 256 * 1024 * 1024
 	reassemblyOverflowResponse = "mwn1: reassembly buffer exceeded"
 )
@@ -239,8 +246,8 @@ func (c *Conn) SendStreamMessage(
 			Payload:  nil,
 		}, len(payload))
 	}
-	for offset := 0; offset < len(payload); offset += streamFramePayload {
-		end := min(offset+streamFramePayload, len(payload))
+	for offset := 0; offset < len(payload); offset += streamChunkBytes {
+		end := min(offset+streamChunkBytes, len(payload))
 		frameFlags := baseFlags
 		if end != len(payload) {
 			frameFlags |= FlagFragment
@@ -425,7 +432,7 @@ func (c *Conn) writeLoop() {
 
 func (c *Conn) handleFrame(inboundFrame frame) {
 	if inboundFrame.Flags&FlagAck != 0 {
-		c.completeAck(inboundFrame.MethodID, inboundFrame.CorrID, nil)
+		c.completeAck(inboundFrame.MethodID, inboundFrame.CorrID)
 		return
 	}
 	if inboundFrame.Flags&FlagCancel != 0 {
@@ -442,6 +449,12 @@ func (c *Conn) handleFrame(inboundFrame frame) {
 	c.reassemblyMu.Unlock()
 	isFragmented := inboundFrame.Flags&FlagFragment != 0 || isReassembling
 	if !isFragmented {
+		// Single-frame messages. Acknowledge first when the sender is
+		// streaming so its per-fragment wait unblocks before the local
+		// handler runs; then deliver the payload.
+		if inboundFrame.Flags&FlagStreaming != 0 {
+			c.ackStreamingFragment(inboundFrame.MethodID, inboundFrame.CorrID)
+		}
 		c.deliver(inboundFrame.MethodID, inboundFrame.CorrID, inboundFrame.Flags, inboundFrame.Payload)
 		return
 	}
@@ -450,14 +463,11 @@ func (c *Conn) handleFrame(inboundFrame frame) {
 		c.sendReassemblyError(inboundFrame)
 		return
 	}
-	if inboundFrame.Flags&FlagStreaming != 0 && !complete {
-		if err := c.SendAck(inboundFrame.MethodID, inboundFrame.CorrID); err != nil &&
-			!errors.Is(err, ErrClosed) {
-			c.log.Warn("mwn1: stream fragment ack failed",
-				slog.Int("method_id", int(inboundFrame.MethodID)),
-				slog.Uint64("corr_id", inboundFrame.CorrID),
-				slog.String("err", err.Error()))
-		}
+	if inboundFrame.Flags&FlagStreaming != 0 {
+		// Acknowledge every streaming fragment, including the final one.
+		// The sender's stop-and-wait loop relies on every fragment ack to
+		// pace itself within the peer kernel's tty input-queue ceiling.
+		c.ackStreamingFragment(inboundFrame.MethodID, inboundFrame.CorrID)
 	}
 	if complete {
 		c.deliver(
@@ -466,6 +476,15 @@ func (c *Conn) handleFrame(inboundFrame frame) {
 			completedFrame.Flags,
 			completedFrame.Payload,
 		)
+	}
+}
+
+func (c *Conn) ackStreamingFragment(methodID uint16, corrID uint64) {
+	if err := c.SendAck(methodID, corrID); err != nil && !errors.Is(err, ErrClosed) {
+		c.log.Warn("mwn1: stream fragment ack failed",
+			slog.Int("method_id", int(methodID)),
+			slog.Uint64("corr_id", corrID),
+			slog.String("err", err.Error()))
 	}
 }
 
@@ -547,7 +566,7 @@ func (c *Conn) unregisterAckWaiter(corrID uint64, ch chan error) {
 	c.ackMu.Unlock()
 }
 
-func (c *Conn) completeAck(methodID uint16, corrID uint64, err error) {
+func (c *Conn) completeAck(methodID uint16, corrID uint64) {
 	c.ackMu.Lock()
 	waiter, ok := c.ackWaiters[corrID]
 	if ok && waiter.methodID == methodID {
@@ -557,7 +576,7 @@ func (c *Conn) completeAck(methodID uint16, corrID uint64, err error) {
 	if !ok || waiter.methodID != methodID {
 		return
 	}
-	waiter.ch <- err
+	waiter.ch <- nil
 }
 
 func (c *Conn) completeAckForCorrID(corrID uint64, err error) {

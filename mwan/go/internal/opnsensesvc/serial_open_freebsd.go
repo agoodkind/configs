@@ -5,26 +5,36 @@ package opnsensesvc
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"golang.org/x/sys/unix"
 )
 
 // OpenVirtioSerial opens a virtio-serial-pci character device for
-// read+write in RAW mode. On FreeBSD with virtio_console loaded,
-// the named ports appear under /dev/ttyV<bus>.<port>.
+// read+write in RAW mode at the requested baud. On FreeBSD with
+// virtio_console loaded, the named ports appear under
+// /dev/ttyV<bus>.<port>.
 //
 // Why raw mode: by default, opening a tty character device (which
 // /dev/ttyV0.x is, despite being a virtio-serial named port) gives
 // you the cooked tty line discipline. That eats arbitrary binary
-// bytes, echoes input back, translates newlines, etc. gRPC over
-// HTTP/2 over a cooked tty does not work.
+// bytes, echoes input back, translates newlines, and rings a bell
+// when its small input queue fills. The block below disables every
+// cooked-mode feature so bytes pass through unchanged in both
+// directions.
 //
-// We do a cfmakeraw() equivalent: clear all input/output processing,
-// echo, signal handling, and canonical mode flags so that bytes flow
-// untouched in both directions. Modeled on FreeBSD termios(4) and
-// the cfmakeraw(3) BSD documentation.
-func OpenVirtioSerial(path string) (io.ReadWriteCloser, error) {
+// Why baud matters: the FreeBSD tty input queue is sized as
+// c_ispeed/5 bytes, capped at 65536. The kernel caps the speed itself
+// at 115200, so the queue holds 23040 bytes at the maximum baud. Any
+// single underlying write whose length exceeds the queue size loses
+// its tail silently. The MWN1 streaming protocol keeps fragments well
+// under that ceiling so chunks always fit.
+func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteCloser, error) {
+	if log == nil {
+		log = slog.Default()
+	}
+
 	f, err := os.OpenFile(path, os.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("OpenVirtioSerial: open %s: %w", path, err)
@@ -36,13 +46,16 @@ func OpenVirtioSerial(path string) (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCGETA %s: %w", path, err)
 	}
 
-	// cfmakeraw(3) equivalent.
-	t.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP |
-		unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON | unix.IXOFF | unix.IXANY
+	t.Iflag &^= unix.IMAXBEL | unix.IXOFF | unix.INPCK | unix.BRKINT |
+		unix.PARMRK | unix.ISTRIP | unix.INLCR | unix.IGNCR | unix.ICRNL |
+		unix.IXON | unix.IGNPAR
+	t.Iflag |= unix.IGNBRK
 	t.Oflag &^= unix.OPOST
-	t.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
+	t.Lflag &^= unix.ECHO | unix.ECHOE | unix.ECHOK | unix.ECHOKE | unix.ECHONL |
+		unix.ECHOPRT | unix.ECHOCTL | unix.ICANON | unix.ISIG | unix.IEXTEN |
+		unix.NOFLSH | unix.TOSTOP | unix.PENDIN
 	t.Cflag &^= unix.CSIZE | unix.PARENB
-	t.Cflag |= unix.CS8 | unix.CLOCAL
+	t.Cflag |= unix.CS8 | unix.CREAD | unix.CLOCAL
 	if unix.HUPCL != 0 {
 		t.Cflag &^= unix.HUPCL
 	}
@@ -51,10 +64,47 @@ func OpenVirtioSerial(path string) (io.ReadWriteCloser, error) {
 	t.Cc[unix.VMIN] = 1
 	t.Cc[unix.VTIME] = 0
 
+	// Baud directly drives c_ispeed/5 input queue sizing in the kernel,
+	// which caps how many bytes a single write to the host-side socket
+	// can deliver. 115200 is the kernel's hard ceiling per tty.c.
+	t.Ispeed = baud
+	t.Ospeed = baud
+
 	if err := unix.IoctlSetTermios(int(f.Fd()), unix.TIOCSETA, t); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCSETA %s: %w", path, err)
 	}
 
+	// Read termios back so the log line reflects what the kernel
+	// actually applied. The kernel clamps c_ispeed/c_ospeed at 115200
+	// silently if a higher value is requested.
+	applied, err := unix.IoctlGetTermios(int(f.Fd()), unix.TIOCGETA)
+	if err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("OpenVirtioSerial: TIOCGETA readback %s: %w", path, err)
+	}
+
+	log.Info("opnsensesvc: serial opened",
+		slog.String("path", path),
+		slog.Uint64("ispeed", uint64(applied.Ispeed)),
+		slog.Uint64("ospeed", uint64(applied.Ospeed)),
+		slog.String("icanon", flagState(applied.Lflag, unix.ICANON)),
+		slog.String("imaxbel", flagState(applied.Iflag, unix.IMAXBEL)),
+		slog.String("ixon", flagState(applied.Iflag, unix.IXON)),
+		slog.String("echo", flagState(applied.Lflag, unix.ECHO)),
+		slog.String("icrnl", flagState(applied.Iflag, unix.ICRNL)),
+		slog.String("opost", flagState(applied.Oflag, unix.OPOST)),
+		slog.Int("vmin", int(applied.Cc[unix.VMIN])),
+		slog.Int("vtime", int(applied.Cc[unix.VTIME])))
+
 	return f, nil
+}
+
+// flagState renders a single termios bit as "on" or "off" for log
+// readability.
+func flagState(value, bit uint32) string {
+	if value&bit != 0 {
+		return "on"
+	}
+	return "off"
 }

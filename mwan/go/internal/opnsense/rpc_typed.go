@@ -105,13 +105,6 @@ func (r *RPC) Revert(ctx context.Context, req *mwanv1.RevertRequest) (*mwanv1.Re
 	return callTyped[*mwanv1.RevertResponse](ctx, r.c, mwn1.MethodRevert, req)
 }
 
-// Reset calls the Reset RPC. The daemon handles this inline on the
-// reader goroutine and never queues it through the worker pool, so
-// the call succeeds even when the worker pool is saturated.
-func (r *RPC) Reset(ctx context.Context, req *mwanv1.ResetRequest) (*mwanv1.ResetResponse, error) {
-	return callTyped[*mwanv1.ResetResponse](ctx, r.c, mwn1.MethodReset, req)
-}
-
 // DeployStream is the client side of the Deploy streaming RPC.
 type DeployStream struct {
 	send      func(proto.Message) error

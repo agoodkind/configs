@@ -176,7 +176,12 @@ func TestConn_SendAckIsConsumedInternally(t *testing.T) {
 	}
 }
 
-func TestConn_SendStreamMessageWaitsForAck(t *testing.T) {
+// TestConn_SendStreamMessageReturnsAfterReceiverAcks asserts the
+// streaming-only invariant that the receiver's conn layer auto-ACKs
+// every fragment of a streaming message. The sender's SendStreamMessage
+// returns once that auto-ACK arrives; no application-level ACK is
+// needed.
+func TestConn_SendStreamMessageReturnsAfterReceiverAcks(t *testing.T) {
 	sender, receiver := linkedConns(t)
 	messageCh := make(chan receivedMessage, 1)
 	receiver.OnMessage(func(methodID uint16, corrID uint64, flags Flags, gotPayload []byte) {
@@ -185,36 +190,18 @@ func TestConn_SendStreamMessageWaitsForAck(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	sendDone := make(chan error, 1)
-	go func() {
-		sendDone <- sender.SendStreamMessage(ctx, 11, 99, FlagRequest|FlagStreaming, []byte("chunk"))
-	}()
-
+	if err := sender.SendStreamMessage(ctx, 11, 99, FlagRequest|FlagStreaming, []byte("chunk")); err != nil {
+		t.Fatalf("SendStreamMessage: %v", err)
+	}
 	got := waitForMessage(t, messageCh)
 	if got.methodID != 11 || got.corrID != 99 || string(got.payload) != "chunk" {
 		t.Fatalf("stream message = %+v", got)
-	}
-	select {
-	case err := <-sendDone:
-		t.Fatalf("SendStreamMessage returned before ACK: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	if err := receiver.SendAck(11, 99); err != nil {
-		t.Fatalf("SendAck: %v", err)
-	}
-	select {
-	case err := <-sendDone:
-		if err != nil {
-			t.Fatalf("SendStreamMessage: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("SendStreamMessage did not return after ACK")
 	}
 }
 
 func TestConn_SendStreamMessageAcksTransportFragments(t *testing.T) {
 	sender, receiver := linkedConns(t)
-	payload := bytes.Repeat([]byte("a"), streamFramePayload*2+17)
+	payload := bytes.Repeat([]byte("a"), streamChunkBytes*2+17)
 	messageCh := make(chan receivedMessage, 1)
 	receiver.OnMessage(func(methodID uint16, corrID uint64, flags Flags, gotPayload []byte) {
 		messageCh <- receivedMessage{methodID: methodID, corrID: corrID, flags: flags, payload: gotPayload}
@@ -234,90 +221,32 @@ func TestConn_SendStreamMessageAcksTransportFragments(t *testing.T) {
 	}
 }
 
-func TestConn_WrongCorrIDAckDoesNotUnblock(t *testing.T) {
-	sender, receiver := linkedConns(t)
-	messageCh := make(chan receivedMessage, 1)
-	receiver.OnMessage(func(methodID uint16, corrID uint64, flags Flags, gotPayload []byte) {
-		messageCh <- receivedMessage{methodID: methodID, corrID: corrID, flags: flags, payload: gotPayload}
-	})
+// TestConn_CompleteAckFiltersByMethodAndCorrID verifies that the
+// internal completeAck routing matches both methodID and corrID before
+// firing a waiter. The streaming-only design relies on this filter so
+// stale or mis-routed ACK frames do not unblock the wrong wait.
+func TestConn_CompleteAckFiltersByMethodAndCorrID(t *testing.T) {
+	sender, _ := linkedConns(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	sendDone := make(chan error, 1)
-	go func() {
-		sendDone <- sender.SendStreamMessage(ctx, 11, 99, FlagRequest|FlagStreaming, []byte("chunk"))
-	}()
-	_ = waitForMessage(t, messageCh)
-	if err := receiver.SendAck(11, 100); err != nil {
-		t.Fatalf("wrong SendAck: %v", err)
+	ch, err := sender.registerAckWaiter(11, 99)
+	if err != nil {
+		t.Fatalf("registerAckWaiter: %v", err)
 	}
-	select {
-	case err := <-sendDone:
-		t.Fatalf("SendStreamMessage returned after wrong ACK: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	if err := receiver.SendAck(11, 99); err != nil {
-		t.Fatalf("right SendAck: %v", err)
-	}
-	select {
-	case err := <-sendDone:
-		if err != nil {
-			t.Fatalf("SendStreamMessage: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("SendStreamMessage did not return after right ACK")
-	}
-}
+	defer sender.unregisterAckWaiter(99, ch)
 
-func TestConn_WrongMethodAckDoesNotUnblock(t *testing.T) {
-	sender, receiver := linkedConns(t)
-	messageCh := make(chan receivedMessage, 1)
-	receiver.OnMessage(func(methodID uint16, corrID uint64, flags Flags, gotPayload []byte) {
-		messageCh <- receivedMessage{methodID: methodID, corrID: corrID, flags: flags, payload: gotPayload}
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	sendDone := make(chan error, 1)
-	go func() {
-		sendDone <- sender.SendStreamMessage(ctx, 11, 99, FlagRequest|FlagStreaming, []byte("chunk"))
-	}()
-	_ = waitForMessage(t, messageCh)
-	if err := receiver.SendAck(12, 99); err != nil {
-		t.Fatalf("wrong method SendAck: %v", err)
-	}
+	sender.completeAck(11, 100)
+	sender.completeAck(12, 99)
 	select {
-	case err := <-sendDone:
-		t.Fatalf("SendStreamMessage returned after wrong method ACK: %v", err)
-	case <-time.After(100 * time.Millisecond):
+	case <-ch:
+		t.Fatal("completeAck delivered for wrong methodID/corrID")
+	case <-time.After(50 * time.Millisecond):
 	}
-	if err := receiver.SendAck(11, 99); err != nil {
-		t.Fatalf("right method SendAck: %v", err)
-	}
-	select {
-	case err := <-sendDone:
-		if err != nil {
-			t.Fatalf("SendStreamMessage: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("SendStreamMessage did not return after right method ACK")
-	}
-}
 
-func TestConn_SendStreamMessageContextTimeoutCleansWaiter(t *testing.T) {
-	sender, receiver := linkedConns(t)
-	receiver.OnMessage(func(uint16, uint64, Flags, []byte) {})
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	err := sender.SendStreamMessage(ctx, 11, 99, FlagRequest|FlagStreaming, []byte("chunk"))
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("SendStreamMessage err=%v want deadline", err)
-	}
-	sender.ackMu.Lock()
-	waiterCount := len(sender.ackWaiters)
-	sender.ackMu.Unlock()
-	if waiterCount != 0 {
-		t.Fatalf("ack waiter leak: %d", waiterCount)
+	sender.completeAck(11, 99)
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("completeAck did not fire for matching methodID/corrID")
 	}
 }
 

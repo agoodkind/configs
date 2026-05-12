@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -20,6 +21,12 @@ import (
 const (
 	defaultPidfile        = "/var/run/mwan_opnsense.pid"
 	rcEnabledCheckTimeout = 5 * time.Second
+
+	// defaultSerialBaud is the kernel's hard cap on virtio-serial baud
+	// on FreeBSD. Higher values are silently clamped. This sets the tty
+	// input/output queue size at c_ispeed/5 = 23040 bytes, which is the
+	// headroom each MWN1 streaming chunk fits in.
+	defaultSerialBaud = 115200
 )
 
 type pidfileState int
@@ -42,6 +49,8 @@ func runOPNsenseDaemonServe(args []string) int {
 		"optional second virtio-serial device for long-running RPCs (Exec/Deploy/Revert); empty disables channel split")
 	configPath := fs.String("config-xml", opnsensesvc.ConfigPath, "OPNsense config.xml path")
 	backupDir := fs.String("backup-dir", opnsensesvc.BackupDir, "directory for snapshot files")
+	baud := fs.Uint("baud", defaultSerialBaud,
+		"serial line baud (drives tty input queue size at c_ispeed/5; kernel clamps at 115200)")
 	daemonize := fs.Bool("daemonize", false, "detach into the background")
 	pidfile := fs.String("pidfile", "", "pidfile written by -daemonize")
 	logfile := fs.String("logfile", "", "logfile used by -daemonize")
@@ -55,8 +64,22 @@ func runOPNsenseDaemonServe(args []string) int {
 		return 2
 	}
 
+	baudU32, err := toUint32(*baud, "baud")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "serve:", err)
+		return 2
+	}
+
 	if *daemonize {
-		if err := daemonizeServe(*serialPath, *longSerial, *configPath, *backupDir, *pidfile, *logfile); err != nil {
+		if err := daemonizeServe(daemonizeOpts{
+			serialPath:     *serialPath,
+			longSerialPath: *longSerial,
+			configPath:     *configPath,
+			backupDir:      *backupDir,
+			baud:           baudU32,
+			pidfile:        *pidfile,
+			logfile:        *logfile,
+		}); err != nil {
 			fmt.Fprintf(os.Stderr, "serve: daemonize: %v\n", err)
 			return 1
 		}
@@ -69,29 +92,47 @@ func runOPNsenseDaemonServe(args []string) int {
 	// We do not `defer cancel()` because we explicitly call it before
 	// returning from this subcommand.
 
+	serialBaud := baudU32
+	logger := slog.Default()
+	openSerial := func(path string) (io.ReadWriteCloser, error) {
+		return opnsensesvc.OpenVirtioSerial(path, serialBaud, logger)
+	}
+
 	opts := opnsensesvc.ServeOpts{
 		SerialPath:     *serialPath,
-		OpenSerial:     opnsensesvc.OpenVirtioSerial,
+		OpenSerial:     openSerial,
 		Server:         srv,
-		Log:            slog.Default(),
+		Log:            logger,
 		OnSerialOpen:   nil,
-		Watchdog:       opnsensesvc.DefaultWatchdogConfig(),
 		LongSerialPath: *longSerial,
 	}
 
-	slog.Info("mwan-opnsense: serving", "serial_path", *serialPath)
+	slog.Info("mwan-opnsense: serving",
+		"serial_path", *serialPath,
+		"long_serial_path", *longSerial,
+		"baud", serialBaud)
 
-	err := opnsensesvc.Serve(ctx, opts)
+	serveErr := opnsensesvc.Serve(ctx, opts)
 	cancel()
-	if err != nil {
-		slog.Error("serve: terminated", "err", err)
+	if serveErr != nil {
+		slog.Error("serve: terminated", "err", serveErr)
 		return 1
 	}
 	slog.Info("mwan-opnsense: stopped")
 	return 0
 }
 
-func daemonizeServe(serialPath, longSerialPath, configPath, backupDir, pidfile, logfile string) error {
+type daemonizeOpts struct {
+	serialPath     string
+	longSerialPath string
+	configPath     string
+	backupDir      string
+	baud           uint32
+	pidfile        string
+	logfile        string
+}
+
+func daemonizeServe(opts daemonizeOpts) error {
 	executable, err := os.Executable()
 	if err != nil {
 		wrappedErr := fmt.Errorf("resolve executable: %w", err)
@@ -101,12 +142,13 @@ func daemonizeServe(serialPath, longSerialPath, configPath, backupDir, pidfile, 
 
 	childArgs := []string{
 		"serve",
-		"-serial", serialPath,
-		"-config-xml", configPath,
-		"-backup-dir", backupDir,
+		"-serial", opts.serialPath,
+		"-config-xml", opts.configPath,
+		"-backup-dir", opts.backupDir,
+		"-baud", strconv.FormatUint(uint64(opts.baud), 10),
 	}
-	if longSerialPath != "" {
-		childArgs = append(childArgs, "-serial-long", longSerialPath)
+	if opts.longSerialPath != "" {
+		childArgs = append(childArgs, "-serial-long", opts.longSerialPath)
 	}
 	if !invokedAsOPNsenseDaemon(executable) {
 		childArgs = append([]string{"opnsense"}, childArgs...)
@@ -125,7 +167,7 @@ func daemonizeServe(serialPath, longSerialPath, configPath, backupDir, pidfile, 
 	defer func() { _ = stdin.Close() }()
 	command.Stdin = stdin
 
-	output, err := daemonizeOutput(logfile)
+	output, err := daemonizeOutput(opts.logfile)
 	if err != nil {
 		return err
 	}
@@ -139,9 +181,9 @@ func daemonizeServe(serialPath, longSerialPath, configPath, backupDir, pidfile, 
 		return wrappedErr
 	}
 
-	if pidfile != "" {
+	if opts.pidfile != "" {
 		pid := strconv.Itoa(command.Process.Pid) + "\n"
-		if err := os.WriteFile(pidfile, []byte(pid), 0o600); err != nil {
+		if err := os.WriteFile(opts.pidfile, []byte(pid), 0o600); err != nil {
 			_ = command.Process.Kill()
 			_ = command.Process.Release()
 			wrappedErr := fmt.Errorf("write pidfile: %w", err)
@@ -344,4 +386,14 @@ func checkRCEnabled(name, rcSubr string) (bool, error) {
 	}
 	slog.Error("is-enabled: rc.subr check failed", "err", err, "rc_subr", rcSubr)
 	return false, fmt.Errorf("run rc.subr check: %w", err)
+}
+
+// toUint32 narrows a uint flag to uint32 with an explicit range check
+// so gosec G115 does not flag the conversion as silent overflow.
+func toUint32(value uint, field string) (uint32, error) {
+	const maxU32 = ^uint32(0)
+	if uint64(value) > uint64(maxU32) {
+		return 0, fmt.Errorf("-%s value %d exceeds uint32 max", field, value)
+	}
+	return uint32(value), nil
 }

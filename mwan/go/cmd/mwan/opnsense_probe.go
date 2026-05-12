@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -68,11 +69,12 @@ func runOPNsenseProbe(args []string) error {
 // stay below the funlen budget. probeRPCArgs is returned separately
 // because it survives unchanged into runOPNsenseProbeRPC.
 type opnsenseProbeConfig struct {
-	target     string
-	targetLong string
-	timeout    time.Duration
-	op         string
-	repeat     int
+	target       string
+	targetLong   string
+	timeout      time.Duration
+	op           string
+	repeat       int
+	selftestSize int
 }
 
 func parseOPNsenseProbeFlags(args []string) (opnsenseProbeConfig, probeRPCArgs, error) {
@@ -82,7 +84,7 @@ func parseOPNsenseProbeFlags(args []string) (opnsenseProbeConfig, probeRPCArgs, 
 		"optional second socket for long-running RPCs (exec/deploy/revert); empty routes everything to -target")
 	timeout := fs.Duration("timeout", 10*time.Second, "dial+RPC timeout")
 	op := fs.String("op", "version",
-		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|configctl|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|reset|smoke")
+		"RPC to call: version|read-config|write-config|backup-config|xpath-get|xpath-set|xpath-delete|exec|configctl|strip-gatewayv6|inject-gatewayv6|deploy-status|deploy|revert|smoke|selftest")
 	repeat := fs.Int("repeat", 1, "number of times to run the selected RPC over one connection")
 	xpath := fs.String("xpath", "", "XPath expression for op=xpath-{get,set,delete}")
 	xpathValue := fs.String("xpath-value", "", "value to write for op=xpath-set")
@@ -98,6 +100,8 @@ func parseOPNsenseProbeFlags(args []string) (opnsenseProbeConfig, probeRPCArgs, 
 	gatewayName := fs.String("gateway-name", "", "gateway name for op=inject-gatewayv6")
 	deployBin := fs.String("deploy-bin", "", "path to local binary for op=deploy (read into request)")
 	deployVer := fs.String("deploy-version", "", "version label attached to op=deploy")
+	selftestSize := fs.Int("selftest-size", 0,
+		"payload size in bytes for op=selftest; 0 runs the default size sweep")
 	if err := fs.Parse(args); err != nil {
 		return opnsenseProbeConfig{}, probeRPCArgs{}, err
 	}
@@ -119,11 +123,12 @@ func parseOPNsenseProbeFlags(args []string) (opnsenseProbeConfig, probeRPCArgs, 
 			fmt.Errorf("unexpected positional args for op=%s: %s", *op, strings.Join(fs.Args(), " "))
 	}
 	cfg := opnsenseProbeConfig{
-		target:     *target,
-		targetLong: *targetLong,
-		timeout:    *timeout,
-		op:         *op,
-		repeat:     *repeat,
+		target:       *target,
+		targetLong:   *targetLong,
+		timeout:      *timeout,
+		op:           *op,
+		repeat:       *repeat,
+		selftestSize: *selftestSize,
 	}
 	probeArgs := probeRPCArgs{
 		op:            *op,
@@ -206,6 +211,12 @@ func runOPNsenseProbeRepeat(
 			}
 			continue
 		}
+		if cfg.op == string(probeOpSelftest) {
+			if err := runOPNsenseProbeSelftest(ctx, pickRPCForOp(string(probeOpExec), cli, longCli), cfg.selftestSize); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := runOPNsenseProbeRPC(ctx, pickRPCForOp(cfg.op, cli, longCli), probeArgs); err != nil {
 			return err
 		}
@@ -225,12 +236,12 @@ func pickRPCForOp(op string, shortCli, longCli *opnsense.Client) *opnsense.RPC {
 		return shortCli.RPC()
 	}
 	switch probeOp(op) {
-	case probeOpExec, probeOpConfigctl, probeOpDeploy, probeOpRevert:
+	case probeOpExec, probeOpConfigctl, probeOpDeploy, probeOpRevert, probeOpSelftest:
 		return longCli.RPC()
 	case probeOpVersion, probeOpReadConfig, probeOpWriteConfig,
 		probeOpBackupConfig, probeOpXPathGet, probeOpXPathSet,
 		probeOpXPathDelete, probeOpStripGW6, probeOpInjectGW6,
-		probeOpDeployStatus, probeOpReset:
+		probeOpDeployStatus:
 		return shortCli.RPC()
 	default:
 		return shortCli.RPC()
@@ -306,8 +317,23 @@ const (
 	probeOpDeployStatus probeOp = "deploy-status"
 	probeOpDeploy       probeOp = "deploy"
 	probeOpRevert       probeOp = "revert"
-	probeOpReset        probeOp = "reset"
+	probeOpSelftest     probeOp = "selftest"
 )
+
+// opnsenseProbeSelftestSweep is the default size sweep run when
+// op=selftest with no -selftest-size override. The sizes bracket the
+// known wedge thresholds: 1920 (cap at 9600 baud), 23040 (cap at
+// 115200 baud), and the MWN1 frame payload cap (64 KiB).
+var opnsenseProbeSelftestSweep = []int{
+	1,
+	1920,
+	1921,
+	20480,
+	23040,
+	65536,
+	262144,
+	1048576,
+}
 
 func runOPNsenseProbeRPC(
 	ctx context.Context,
@@ -343,8 +369,11 @@ func runOPNsenseProbeRPC(
 		return probeDeploy(ctx, rpc, a.deployBin, a.deployVersion)
 	case probeOpRevert:
 		return probeRevert(ctx, rpc)
-	case probeOpReset:
-		return probeReset(ctx, rpc)
+	case probeOpSelftest:
+		// selftest is dispatched by runOPNsenseProbeRepeat directly; this
+		// case exists so the exhaustive linter stays satisfied. Reaching
+		// it would indicate a routing bug in the caller.
+		return errors.New("op=selftest must be dispatched by runOPNsenseProbeRepeat, not runOPNsenseProbeRPC")
 	default:
 		return fmt.Errorf("unknown op %q", a.op)
 	}
@@ -787,21 +816,94 @@ func probeRevert(ctx context.Context, rpc *opnsense.RPC) error {
 	return nil
 }
 
-// probeReset calls the Reset RPC. Used by an operator to clear a
-// wedged dispatcher state without restarting the daemon. The RPC
-// returns counts of queued jobs that were drained and active streams
-// that were torn down; both numbers go to stdout so a human reviewing
-// terminal output can see what the reset actually did.
-func probeReset(ctx context.Context, rpc *opnsense.RPC) error {
-	resp, err := rpc.Reset(ctx, &mwanv1.ResetRequest{})
-	if err != nil {
-		slog.ErrorContext(ctx, "opnsense-probe Reset failed", "err", err)
-		return fmt.Errorf("rpc Reset: %w", err)
+// runOPNsenseProbeSelftest sends a payload of random bytes through the
+// daemon's Exec RPC with /bin/cat and verifies the response stdout
+// matches the input byte-for-byte. A size of 0 runs the default
+// sweep; any non-zero size runs that single size. The function prints
+// one line per size with PASS or FAIL and returns a non-nil error on
+// any failure so the caller can exit non-zero.
+func runOPNsenseProbeSelftest(ctx context.Context, rpc *opnsense.RPC, size int) error {
+	sizes := opnsenseProbeSelftestSweep
+	if size > 0 {
+		sizes = []int{size}
 	}
-	slog.InfoContext(ctx, "opnsense-probe Reset OK",
-		"drained_jobs", resp.GetDrainedJobs(),
-		"cancelled_streams", resp.GetCancelledStreams())
-	fmt.Fprintf(os.Stdout, "drained_jobs=%d cancelled_streams=%d\n",
-		resp.GetDrainedJobs(), resp.GetCancelledStreams())
+	var firstFailure error
+	for _, payloadSize := range sizes {
+		if err := probeSelftestOne(ctx, rpc, payloadSize); err != nil {
+			if firstFailure == nil {
+				firstFailure = err
+			}
+		}
+	}
+	return firstFailure
+}
+
+func probeSelftestOne(ctx context.Context, rpc *opnsense.RPC, size int) error {
+	payload, err := newRandomBytes(size)
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe selftest gen random failed", "size", size, "err", err)
+		fmt.Fprintf(os.Stdout, "selftest size=%d FAIL: %v\n", size, err)
+		return fmt.Errorf("selftest size=%d: gen random: %w", size, err)
+	}
+	wantDigest := sha256.Sum256(payload)
+
+	req := &mwanv1.ExecRequest{
+		Command:    "/bin/cat",
+		StdinBytes: payload,
+	}
+	resp, err := rpc.Exec(ctx, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "opnsense-probe selftest Exec failed", "size", size, "err", err)
+		fmt.Fprintf(os.Stdout, "selftest size=%d FAIL: rpc Exec: %v\n", size, err)
+		return fmt.Errorf("selftest size=%d: rpc Exec: %w", size, err)
+	}
+
+	gotStdout := resp.GetStdout()
+	if len(gotStdout) != size {
+		lenErr := fmt.Errorf("stdout length %d, want %d", len(gotStdout), size)
+		slog.ErrorContext(ctx, "opnsense-probe selftest stdout length mismatch",
+			"size", size,
+			"got_len", len(gotStdout),
+			"exit_code", resp.GetExitCode(),
+			"stderr", string(resp.GetStderr()),
+			"err", lenErr)
+		fmt.Fprintf(os.Stdout,
+			"selftest size=%d FAIL: stdout length %d, want %d (exit=%d stderr=%q)\n",
+			size, len(gotStdout), size, resp.GetExitCode(), string(resp.GetStderr()))
+		return fmt.Errorf("selftest size=%d: %w", size, lenErr)
+	}
+	gotDigest := sha256.Sum256(gotStdout)
+	if gotDigest != wantDigest {
+		hashErr := errors.New("sha256 mismatch")
+		slog.ErrorContext(ctx, "opnsense-probe selftest sha256 mismatch",
+			"size", size,
+			"want", hex.EncodeToString(wantDigest[:]),
+			"got", hex.EncodeToString(gotDigest[:]),
+			"err", hashErr)
+		fmt.Fprintf(os.Stdout, "selftest size=%d FAIL: sha256 mismatch want=%s got=%s\n",
+			size, hex.EncodeToString(wantDigest[:]), hex.EncodeToString(gotDigest[:]))
+		return fmt.Errorf("selftest size=%d: %w", size, hashErr)
+	}
+	fmt.Fprintf(os.Stdout, "selftest size=%d PASS sha256=%s\n",
+		size, hex.EncodeToString(gotDigest[:]))
+	slog.InfoContext(ctx, "opnsense-probe selftest size OK",
+		"size", size,
+		"sha256", hex.EncodeToString(gotDigest[:]))
 	return nil
+}
+
+// newRandomBytes returns a buffer of length n filled from crypto/rand.
+// crypto/rand is used so the byte distribution exercises every value
+// 0..255, which catches byte-stripping or LF-translation regressions
+// in the transport that a zero-fill would miss.
+func newRandomBytes(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	if n == 0 {
+		return buf, nil
+	}
+	if _, err := cryptorand.Read(buf); err != nil {
+		slog.Error("opnsense-probe selftest crypto/rand read failed", "size", n, "err", err)
+		return nil, fmt.Errorf("crypto/rand read: %w", err)
+	}
+	return buf, nil
 }

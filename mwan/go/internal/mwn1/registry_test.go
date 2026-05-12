@@ -104,7 +104,6 @@ var expectedMWANOPNsenseMethods = []string{
 	"Deploy",
 	"DeployStatus",
 	"Revert",
-	"Reset",
 }
 
 func TestRegistry_MWANOPNsenseAssignments(t *testing.T) {

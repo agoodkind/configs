@@ -32,7 +32,6 @@ const (
 	MWANOPNsenseService_Deploy_FullMethodName          = "/mwan.v1.MWANOPNsenseService/Deploy"
 	MWANOPNsenseService_DeployStatus_FullMethodName    = "/mwan.v1.MWANOPNsenseService/DeployStatus"
 	MWANOPNsenseService_Revert_FullMethodName          = "/mwan.v1.MWANOPNsenseService/Revert"
-	MWANOPNsenseService_Reset_FullMethodName           = "/mwan.v1.MWANOPNsenseService/Reset"
 )
 
 // MWANOPNsenseServiceClient is the client API for MWANOPNsenseService service.
@@ -92,15 +91,6 @@ type MWANOPNsenseServiceClient interface {
 	// budget elapses without a successful Version() call. Same re-exec
 	// dance as Deploy.
 	Revert(ctx context.Context, in *RevertRequest, opts ...grpc.CallOption) (*RevertResponse, error)
-	// Reset clears wedged dispatcher state without restarting the daemon.
-	// Drains the in-process job queue, cancels in-flight handler
-	// contexts, and tears down active streaming RPCs. Used by an
-	// operator (`mwan opnsense-probe -op reset`) to recover from a
-	// dispatcher that is alive enough to answer this RPC but whose
-	// worker pool is wedged on slow handlers. The handler runs on the
-	// dispatcher reader goroutine and bypasses the worker queue so the
-	// RPC succeeds even when the queue is full.
-	Reset(ctx context.Context, in *ResetRequest, opts ...grpc.CallOption) (*ResetResponse, error)
 }
 
 type mWANOPNsenseServiceClient struct {
@@ -244,16 +234,6 @@ func (c *mWANOPNsenseServiceClient) Revert(ctx context.Context, in *RevertReques
 	return out, nil
 }
 
-func (c *mWANOPNsenseServiceClient) Reset(ctx context.Context, in *ResetRequest, opts ...grpc.CallOption) (*ResetResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ResetResponse)
-	err := c.cc.Invoke(ctx, MWANOPNsenseService_Reset_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // MWANOPNsenseServiceServer is the server API for MWANOPNsenseService service.
 // All implementations must embed UnimplementedMWANOPNsenseServiceServer
 // for forward compatibility.
@@ -311,15 +291,6 @@ type MWANOPNsenseServiceServer interface {
 	// budget elapses without a successful Version() call. Same re-exec
 	// dance as Deploy.
 	Revert(context.Context, *RevertRequest) (*RevertResponse, error)
-	// Reset clears wedged dispatcher state without restarting the daemon.
-	// Drains the in-process job queue, cancels in-flight handler
-	// contexts, and tears down active streaming RPCs. Used by an
-	// operator (`mwan opnsense-probe -op reset`) to recover from a
-	// dispatcher that is alive enough to answer this RPC but whose
-	// worker pool is wedged on slow handlers. The handler runs on the
-	// dispatcher reader goroutine and bypasses the worker queue so the
-	// RPC succeeds even when the queue is full.
-	Reset(context.Context, *ResetRequest) (*ResetResponse, error)
 	mustEmbedUnimplementedMWANOPNsenseServiceServer()
 }
 
@@ -368,9 +339,6 @@ func (UnimplementedMWANOPNsenseServiceServer) DeployStatus(context.Context, *Dep
 }
 func (UnimplementedMWANOPNsenseServiceServer) Revert(context.Context, *RevertRequest) (*RevertResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Revert not implemented")
-}
-func (UnimplementedMWANOPNsenseServiceServer) Reset(context.Context, *ResetRequest) (*ResetResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Reset not implemented")
 }
 func (UnimplementedMWANOPNsenseServiceServer) mustEmbedUnimplementedMWANOPNsenseServiceServer() {}
 func (UnimplementedMWANOPNsenseServiceServer) testEmbeddedByValue()                             {}
@@ -616,24 +584,6 @@ func _MWANOPNsenseService_Revert_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MWANOPNsenseService_Reset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ResetRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MWANOPNsenseServiceServer).Reset(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MWANOPNsenseService_Reset_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MWANOPNsenseServiceServer).Reset(ctx, req.(*ResetRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // MWANOPNsenseService_ServiceDesc is the grpc.ServiceDesc for MWANOPNsenseService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -688,10 +638,6 @@ var MWANOPNsenseService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Revert",
 			Handler:    _MWANOPNsenseService_Revert_Handler,
-		},
-		{
-			MethodName: "Reset",
-			Handler:    _MWANOPNsenseService_Reset_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

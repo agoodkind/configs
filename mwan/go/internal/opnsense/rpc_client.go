@@ -92,6 +92,7 @@ func Dial(target string) (*Client, error) {
 		pending: make(map[uint64]chan responseMessage),
 		closed:  false,
 	}
+	client.log.Info("opnsense: dial succeeded", slog.String("target", target))
 	client.conn = mwn1.NewConn(conn, client.log)
 	client.conn.OnMessage(client.dispatch)
 	go func() {
@@ -155,7 +156,7 @@ func (c *Client) Call(
 			slog.Uint64("corr_id", corrID),
 			slog.Int("payload_len", len(payload)))
 	}
-	err = c.conn.SendMessageContext(ctx, methodID, corrID, mwn1.FlagRequest|mwn1.FlagFinal, payload)
+	err = c.conn.SendStreamMessage(ctx, methodID, corrID, mwn1.FlagRequest|mwn1.FlagFinal, payload)
 	if err != nil {
 		return nil, c.wrapError(ctx, "opnsense: call send failed", err,
 			slog.Int("method_id", int(methodID)),

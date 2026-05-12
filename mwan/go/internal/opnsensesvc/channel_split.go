@@ -1,22 +1,19 @@
 // Package opnsensesvc carries the channel-split partition
 // definitions here: the short/long method lists below pin the
-// per-port allowlist used by the MWAN-184 Fix 4 dispatcher split.
+// per-port allowlist used by the dispatcher split.
 package opnsensesvc
 
 import (
 	"goodkind.io/mwan/internal/mwn1"
 )
 
-// Channel split (MWAN-184 Fix 4) partitions the MWANOPNsense RPC
-// surface across two virtio-serial ports so that a wedge on a
-// long-running RPC port cannot starve the short-RPC port. Reset is
-// implicitly allowed on every port regardless of these lists.
+// Channel split partitions the MWANOPNsense RPC surface across two
+// virtio-serial ports so that a wedge on a long-running RPC port
+// cannot starve the short-RPC port.
 
 // ShortChannelMethods are the unary RPCs that the operator expects
 // to complete in milliseconds. These run on the original
-// `<vmid>.mwanrpc` socket. A wedge on this port is the operational
-// disaster that the watchdog and Reset RPC together aim to recover
-// from.
+// `<vmid>.mwanrpc` socket.
 var ShortChannelMethods = []uint16{
 	mwn1.MethodVersion,
 	mwn1.MethodReadConfigXML,

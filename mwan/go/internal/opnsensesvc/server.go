@@ -686,17 +686,12 @@ type ServeOpts struct {
 	Server       *Server
 	Log          *slog.Logger
 	OnSerialOpen func(path string)
-	// Watchdog enables and configures the wedge watchdog. A zero
-	// value (Interval <= 0) disables the watchdog. Use
-	// DefaultWatchdogConfig for production wiring.
-	Watchdog WatchdogConfig
-	// LongSerialPath, when non-empty, enables the channel-split mode
-	// (MWAN-184 Fix 4). A second dispatcher attaches to this device
-	// and accepts only LongChannelMethods (plus Reset). The primary
-	// dispatcher then restricts itself to ShortChannelMethods (plus
-	// Reset) so a wedge on the long port cannot starve short RPCs.
-	// Leaving this empty preserves the original single-port behavior:
-	// the primary dispatcher accepts every method.
+	// LongSerialPath, when non-empty, enables the channel-split mode.
+	// A second dispatcher attaches to this device and accepts only
+	// LongChannelMethods. The primary dispatcher then restricts itself
+	// to ShortChannelMethods so a wedge on the long port cannot starve
+	// short RPCs. Leaving this empty preserves the original single-port
+	// behavior: the primary dispatcher accepts every method.
 	LongSerialPath string
 }
 
@@ -734,15 +729,13 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 	dispatcherCtx, dispatcherCancel := context.WithCancel(ctx)
 	defer dispatcherCancel()
 
-	watchdogErrCh := startWatchdog(dispatcherCtx, short.dispatcher, opts.Watchdog, log, dispatcherCancel)
 	longErrCh := startLongServe(dispatcherCtx, long, log)
 
 	serveErr := short.dispatcher.Serve(dispatcherCtx, short.rw)
 	dispatcherCancel()
-	wdErr := <-watchdogErrCh
 	longServeErr := <-longErrCh
 
-	return collectServeErrors(ctx, log, serveErr, longServeErr, wdErr)
+	return collectServeErrors(ctx, log, serveErr, longServeErr)
 }
 
 // dispatcherSession bundles a dispatcher with the [io.ReadWriteCloser]
@@ -822,28 +815,6 @@ func openLongDispatcher(ctx context.Context, opts ServeOpts, log *slog.Logger) (
 	return &dispatcherSession{dispatcher: d, rw: rw}, nil
 }
 
-func startWatchdog(ctx context.Context, d *Dispatcher, cfg WatchdogConfig, log *slog.Logger, onEscalate func()) <-chan error {
-	ch := make(chan error, 1)
-	if cfg.Interval <= 0 {
-		ch <- nil
-		return ch
-	}
-	go func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.ErrorContext(ctx, "opnsensesvc: watchdog goroutine panic",
-					"err", fmt.Errorf("recovered panic: %v", recovered))
-			}
-		}()
-		err := d.RunWatchdog(ctx, cfg)
-		ch <- err
-		if err != nil && onEscalate != nil {
-			onEscalate()
-		}
-	}()
-	return ch
-}
-
 func startLongServe(ctx context.Context, sess *dispatcherSession, log *slog.Logger) <-chan error {
 	ch := make(chan error, 1)
 	if sess == nil || sess.dispatcher == nil {
@@ -862,7 +833,7 @@ func startLongServe(ctx context.Context, sess *dispatcherSession, log *slog.Logg
 	return ch
 }
 
-func collectServeErrors(ctx context.Context, log *slog.Logger, serveErr, longServeErr, wdErr error) error {
+func collectServeErrors(ctx context.Context, log *slog.Logger, serveErr, longServeErr error) error {
 	if serveErr != nil {
 		log.ErrorContext(ctx, "opnsensesvc: dispatcher serve failed", "err", serveErr)
 		return fmt.Errorf("opnsensesvc: dispatcher serve: %w", serveErr)
@@ -870,10 +841,6 @@ func collectServeErrors(ctx context.Context, log *slog.Logger, serveErr, longSer
 	if longServeErr != nil {
 		log.ErrorContext(ctx, "opnsensesvc: long dispatcher serve failed", "err", longServeErr)
 		return fmt.Errorf("opnsensesvc: long dispatcher serve: %w", longServeErr)
-	}
-	if wdErr != nil {
-		log.ErrorContext(ctx, "opnsensesvc: watchdog terminated serve", "err", wdErr)
-		return fmt.Errorf("opnsensesvc: watchdog: %w", wdErr)
 	}
 	return nil
 }
