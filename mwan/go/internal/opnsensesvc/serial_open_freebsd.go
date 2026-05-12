@@ -75,6 +75,18 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCSETA %s: %w", path, err)
 	}
 
+	// Drop any bytes left in the tty input queue from a prior session.
+	// FreeBSD's virtio_console driver does not flush the queue on close
+	// of the userspace endpoint, so leftover yamux/serialconn frames
+	// from the previous daemon would corrupt the new session's
+	// handshake. TIOCFLUSH with FREAD (0x1, from <sys/file.h>) clears
+	// the read queue without disturbing the kernel-side framing state.
+	const ttyReadQueue = 1
+	if err := unix.IoctlSetPointerInt(int(f.Fd()), unix.TIOCFLUSH, ttyReadQueue); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("OpenVirtioSerial: TIOCFLUSH %s: %w", path, err)
+	}
+
 	// Read termios back so the log line reflects what the kernel
 	// actually applied. The kernel clamps c_ispeed/c_ospeed at 115200
 	// silently if a higher value is requested.
