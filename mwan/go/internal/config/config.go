@@ -153,6 +153,16 @@ type OPNsenseSection struct {
 	// Defaults to "agoodkind". Cutover commands needing root (config.xml
 	// edit, reboot) are wrapped with "sudo" automatically.
 	SSHUser string `toml:"ssh_user"`
+
+	// Host, Probe, Upgrade, Validate are the four [opnsense.*] subsections
+	// introduced by MWAN-189 for the gRPC-over-virtio-serial transport
+	// between the Proxmox host (mwan-opnsense-host) and the OPNsense
+	// guest (mwan-probe, mwan-upgrade, mwan-validate). Schema only at
+	// this point; validation is wired up in MWAN-190/191/193.
+	Host     OpnsenseHostSection     `toml:"host"`
+	Probe    OpnsenseProbeSection    `toml:"probe"`
+	Upgrade  OpnsenseUpgradeSection  `toml:"upgrade"`
+	Validate OpnsenseValidateSection `toml:"validate"`
 }
 
 // OPNsenseBGP describes the BGP configuration to push to OPNsense via its API.
@@ -168,6 +178,53 @@ type OPNsenseBGPNeighbor struct {
 	Address     string `toml:"address"`
 	Description string `toml:"description"`
 	Preference  string `toml:"preference"` // "primary" or "backup"
+}
+
+// OpnsenseHostSection configures the mwan-opnsense-host daemon that runs
+// on the Proxmox host. Duration fields use the IfMgr style (string parsed
+// at use site via [time.ParseDuration]) so the wire format matches the
+// rest of the file.
+type OpnsenseHostSection struct {
+	Upstream                  string `toml:"upstream"`
+	Listen                    string `toml:"listen"`
+	ReconnectDuration         string `toml:"reconnect"`
+	HeartbeatIntervalDuration string `toml:"heartbeat_interval"`
+	HeartbeatTimeoutDuration  string `toml:"heartbeat_timeout"`
+}
+
+// OpnsenseProbeSection configures the mwan-probe client that talks to
+// the host daemon over the local Unix socket.
+type OpnsenseProbeSection struct {
+	Target           string `toml:"target"`
+	TimeoutDuration  string `toml:"timeout"`
+	UploadChunkBytes int    `toml:"upload_chunk_bytes"`
+}
+
+// OpnsenseUpgradeSection configures the mwan-upgrade orchestrator. The
+// env_transport / env_grpc_target fields name the transport used to
+// reach the guest-side validate/upgrade executors; they are not host
+// process environment variables (MWAN-188 explicitly drops env-var
+// configuration).
+type OpnsenseUpgradeSection struct {
+	VMID                     int    `toml:"vmid"`
+	EnvTransport             string `toml:"env_transport"`
+	EnvGRPCTarget            string `toml:"env_grpc_target"`
+	StateDir                 string `toml:"state_dir"`
+	ExecTimeoutDuration      string `toml:"exec_timeout"`
+	UpgradeTimeoutDuration   string `toml:"upgrade_timeout"`
+	PostRollbackWaitDuration string `toml:"post_rollback_wait"`
+	OPNsenseSSH              string `toml:"opnsense_ssh"`
+	OPNsenseJump             string `toml:"opnsense_jump"`
+	ProxmoxSSH               string `toml:"proxmox_ssh"`
+	LANClientSSH             string `toml:"lan_client_ssh"`
+	OPNsenseAddr             string `toml:"opnsense_addr"`
+}
+
+// OpnsenseValidateSection configures the mwan-validate client.
+type OpnsenseValidateSection struct {
+	EnvTransport  string `toml:"env_transport"`
+	EnvGRPCTarget string `toml:"env_grpc_target"`
+	StateDir      string `toml:"state_dir"`
 }
 
 // BGPSection holds embedded GoBGP speaker configuration.
@@ -311,6 +368,46 @@ type IfMgrIfaceSection struct {
 }
 
 func defaultConfig() Config {
+	cfg := defaultConfigBase()
+	// Populate the four [opnsense.*] subsections introduced by MWAN-189.
+	// Assigning post-construction keeps the Config and OPNsenseSection
+	// struct literals untouched so the existing exhaustruct baseline
+	// keys still match.
+	cfg.OPNsense.Host = OpnsenseHostSection{
+		Upstream:                  "unix:///var/run/qemu-server/102.mwanrpc",
+		Listen:                    "/var/run/mwan-opnsense.sock",
+		ReconnectDuration:         "2s",
+		HeartbeatIntervalDuration: "30s",
+		HeartbeatTimeoutDuration:  "10s",
+	}
+	cfg.OPNsense.Probe = OpnsenseProbeSection{
+		Target:           "unix:///var/run/mwan-opnsense.sock",
+		TimeoutDuration:  "10s",
+		UploadChunkBytes: 16384,
+	}
+	cfg.OPNsense.Upgrade = OpnsenseUpgradeSection{
+		VMID:                     102,
+		EnvTransport:             "grpc",
+		EnvGRPCTarget:            "unix:///var/run/mwan-opnsense.sock",
+		StateDir:                 "/var/lib/mwan/upgrades",
+		ExecTimeoutDuration:      "60m",
+		UpgradeTimeoutDuration:   "30m",
+		PostRollbackWaitDuration: "5m",
+		OPNsenseSSH:              "",
+		OPNsenseJump:             "",
+		ProxmoxSSH:               "",
+		LANClientSSH:             "",
+		OPNsenseAddr:             "",
+	}
+	cfg.OPNsense.Validate = OpnsenseValidateSection{
+		EnvTransport:  "grpc",
+		EnvGRPCTarget: "unix:///var/run/mwan-opnsense.sock",
+		StateDir:      "/var/lib/mwan/upgrades",
+	}
+	return cfg
+}
+
+func defaultConfigBase() Config {
 	return Config{
 		Email: EmailConfig{MinLevel: "ERROR", Cooldown: "5m"},
 		PVE:   PVEConfig{BaseURL: "https://127.0.0.1:8006/api2/json"},
@@ -411,6 +508,10 @@ const (
 	SubAgent Subcommand = "agent"
 	// SubIfMgr routes config validation through validateIfMgr.
 	SubIfMgr Subcommand = "ifmgr"
+	// SubOpnsense routes config validation through validateOpnsense for
+	// the mwan-opnsense-host / mwan-probe / mwan-upgrade / mwan-validate
+	// family. Wired up in MWAN-190/191/193; no-op stub today.
+	SubOpnsense Subcommand = "opnsense"
 )
 
 // Validate validates the Config for a specific subcommand.
@@ -427,7 +528,18 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 		return validateAgent(cfg)
 	case SubIfMgr:
 		return validateIfMgr(cfg)
+	case SubOpnsense:
+		return validateOpnsense(cfg)
 	}
+	return nil
+}
+
+// validateOpnsense is a no-op stub today. The four [opnsense.*]
+// subsections (host, probe, upgrade, validate) are schema-only at
+// MWAN-189; per-subcommand validation is wired up in MWAN-190/191/193
+// once the host daemon, probe client, and upgrade orchestrator start
+// consuming the fields.
+func validateOpnsense(_ *Config) error {
 	return nil
 }
 
