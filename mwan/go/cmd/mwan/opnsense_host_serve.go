@@ -15,7 +15,16 @@ import (
 	"syscall"
 	"time"
 
+	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+
 	"github.com/hashicorp/yamux"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+const (
+	heartbeatInterval = 30 * time.Second
+	heartbeatTimeout  = 10 * time.Second
 )
 
 // runOPNsenseHostServe runs the host-side yamux bridge. It owns one
@@ -181,7 +190,75 @@ func (s *sessionState) dialLocked(ctx context.Context) error {
 	}
 	s.session = session
 	s.log.InfoContext(ctx, "opnsense-host: upstream session established")
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.log.ErrorContext(ctx, "opnsense-host: heartbeat goroutine panic",
+					"panic", r, "err", fmt.Errorf("panic: %v", r))
+			}
+		}()
+		s.runHeartbeat(ctx, session)
+	}()
 	return nil
+}
+
+// runHeartbeat polls the daemon's Version RPC on a fresh yamux
+// substream every heartbeatInterval. A failure means the upstream
+// is wedged at the app layer even if yamux still thinks the byte
+// stream is alive, so close the session and let the next client
+// request dial a new one. The goroutine watches one specific session
+// and exits as soon as that session is gone, so a reconnect spawns
+// a fresh heartbeat rather than racing the old one.
+func (s *sessionState) runHeartbeat(ctx context.Context, watched *yamux.Session) {
+	dialer := func(_ context.Context, _ string) (net.Conn, error) {
+		return watched.OpenStream()
+	}
+	conn, err := grpc.NewClient(
+		"passthrough:///mwan-opnsense-heartbeat",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
+	if err != nil {
+		s.log.WarnContext(ctx, "opnsense-host: heartbeat grpc.NewClient failed", "err", err)
+		return
+	}
+	defer func() { _ = conn.Close() }()
+	client := mwanv1.NewOpnsenseServiceClient(conn)
+
+	timer := time.NewTimer(heartbeatInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-watched.CloseChan():
+			return
+		case <-timer.C:
+		}
+		callCtx, cancel := context.WithTimeout(ctx, heartbeatTimeout)
+		_, err := client.Version(callCtx, &mwanv1.VersionRequest{})
+		cancel()
+		if err != nil {
+			s.log.WarnContext(ctx, "opnsense-host: heartbeat Version failed; closing session", "err", err)
+			s.dropSession(ctx, watched)
+			return
+		}
+		timer.Reset(heartbeatInterval)
+	}
+}
+
+// dropSession closes the supplied session and clears s.session only
+// if it still points at that exact session, so a reconnect that
+// already replaced it is not undone.
+func (s *sessionState) dropSession(ctx context.Context, target *yamux.Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.session == target {
+		s.session = nil
+	}
+	if err := target.Close(); err != nil && !errors.Is(err, yamux.ErrSessionShutdown) {
+		s.log.WarnContext(ctx, "opnsense-host: heartbeat session close failed", "err", err)
+	}
 }
 
 func (s *sessionState) closeSession(ctx context.Context) {
