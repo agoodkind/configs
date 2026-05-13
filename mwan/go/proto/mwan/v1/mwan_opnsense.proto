@@ -18,7 +18,8 @@ service OpnsenseService {
   rpc InjectGatewayV6(InjectGatewayV6Request) returns (InjectGatewayV6Response);
   rpc DeployStatus(DeployStatusRequest) returns (DeployStatusResponse);
   rpc Revert(RevertRequest) returns (RevertResponse);
-  rpc CommitDeploy(CommitDeployRequest) returns (CommitDeployResponse);
+  rpc StageBinary(StageBinaryRequest) returns (StageBinaryResponse);
+  rpc RestartDaemon(RestartDaemonRequest) returns (RestartDaemonResponse);
 }
 
 // TransferService implements a tus-shaped resumable file transfer
@@ -143,19 +144,30 @@ message RevertRequest {}
 
 message RevertResponse {
   string reverted_to_sha256 = 1;
-  bool re_exec_started = 2;
 }
 
-message CommitDeployRequest {
+// StageBinary verifies the previously staged binary's sha256, atomic-
+// renames it into the active slot, swaps the previous slot, writes the
+// deploy state file, and drops the pending-verify marker. It does NOT
+// restart the daemon; the caller invokes RestartDaemon when it is
+// ready for the new binary to take over.
+message StageBinaryRequest {
   string staged_sha256 = 1;
   string version_str = 2;
 }
 
-message CommitDeployResponse {
+message StageBinaryResponse {
   string previous_path = 1;
   string active_sha256 = 2;
-  bool re_exec_started = 3;
 }
+
+// RestartDaemon initiates a clean shutdown of the running daemon. The
+// daemon closes its yamux session via GoAway, exits the process, and
+// the rc.d supervisor respawns it from the staged binary. The client
+// observes the close immediately and reconnects on its next call.
+message RestartDaemonRequest {}
+
+message RestartDaemonResponse {}
 
 // TransferDirection drives the byte flow inside the Upload stream.
 // READ streams server to client; WRITE streams client to server.
@@ -184,9 +196,8 @@ message TransferHeader {
   FinishStep finish_step = 3;
   string resume_transfer_id = 4;
   int64 resume_from_offset = 5;
-  bytes resume_sha256_state = 6;
-  string label = 7;
-  int64 total_size = 8;
+  string label = 6;
+  int64 total_size = 7;
 }
 
 message TransferDataChunk {
@@ -251,9 +262,8 @@ message StatusResponse {
   string transfer_id = 1;
   bool exists = 2;
   int64 committed_offset = 3;
-  bytes sha256_state = 4;
-  int64 total_bytes = 5;
-  string path = 6;
+  int64 total_bytes = 4;
+  string path = 5;
 }
 
 message CancelRequest {

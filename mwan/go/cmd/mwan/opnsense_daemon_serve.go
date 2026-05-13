@@ -95,6 +95,10 @@ func runOPNsenseDaemonServe(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	// We do not `defer cancel()` because we explicitly call it before
 	// returning from this subcommand.
+	srv.SetRestartHook(func() {
+		logger.Info("mwan-opnsense: RestartDaemon hook firing, cancelling serve ctx")
+		cancel()
+	})
 
 	serialBaud := baudU32
 	openSerial := func(path string) (io.ReadWriteCloser, error) {

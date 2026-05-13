@@ -35,6 +35,7 @@ type Server struct {
 	clock      Clock
 	deploy     *DeployManager
 	transfer   *TransferManager
+	onRestart  func()
 	mu         sync.Mutex
 }
 
@@ -44,8 +45,6 @@ func NewServer(log *slog.Logger, configPath, backupDir string) *Server {
 		BinaryDir:      "",
 		StatePath:      "",
 		PendingPath:    "",
-		ReExecGrace:    0,
-		ReExecFn:       nil,
 		WriteStateFile: nil,
 		NowFn:          nil,
 	}))
@@ -72,8 +71,18 @@ func NewServerWithDeploy(log *slog.Logger, configPath, backupDir string, deploy 
 		clock:                              realClock{},
 		deploy:                             deploy,
 		transfer:                           nil,
+		onRestart:                          nil,
 		mu:                                 sync.Mutex{},
 	}
+}
+
+// SetRestartHook wires a shutdown function that RestartDaemon will
+// invoke (in a goroutine after a short grace period so the gRPC
+// response can flush). The daemon main typically wires this to
+// context cancel so the serve loop exits and rc.d respawns the
+// process from the staged binary.
+func (s *Server) SetRestartHook(fn func()) {
+	s.onRestart = fn
 }
 
 // AttachTransferManager wires a TransferManager onto the server.
@@ -410,35 +419,65 @@ func (s *Server) Revert(ctx context.Context, _ *mwanv1.RevertRequest) (*mwanv1.R
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "revert: %v", err)
 	}
-	return &mwanv1.RevertResponse{RevertedToSha256: revertedTo, ReExecStarted: true}, nil
+	return &mwanv1.RevertResponse{RevertedToSha256: revertedTo}, nil
 }
 
-// CommitDeploy verifies the sha256 of a previously staged binary,
-// atomically promotes it to <BinaryDir>/mwan-opnsense, and re-execs.
-func (s *Server) CommitDeploy(ctx context.Context, req *mwanv1.CommitDeployRequest) (*mwanv1.CommitDeployResponse, error) {
+// StageBinary verifies the sha256 of a previously staged binary file,
+// atomically swaps it into the active slot, drops the pending-verify
+// marker, and returns. It does not restart the daemon; the caller
+// invokes RestartDaemon when ready to take the new binary live.
+func (s *Server) StageBinary(ctx context.Context, req *mwanv1.StageBinaryRequest) (*mwanv1.StageBinaryResponse, error) {
 	_, _ = peer.FromContext(ctx)
 	_, _ = metadata.FromIncomingContext(ctx)
 	if s.deploy == nil {
-		return nil, status.Error(codes.FailedPrecondition, "CommitDeploy: DeployManager not configured")
+		return nil, status.Error(codes.FailedPrecondition, "StageBinary: DeployManager not configured")
 	}
 	if req.GetStagedSha256() == "" {
-		return nil, status.Error(codes.InvalidArgument, "CommitDeploy: staged_sha256 required")
+		return nil, status.Error(codes.InvalidArgument, "StageBinary: staged_sha256 required")
 	}
 	stagedPath := s.deploy.pathOf(BinaryName + ".staged")
 	previousPath, activeSHA, err := commitStagedBinary(ctx, s.log, s.deploy, stagedPath, req.GetStagedSha256(), req.GetVersionStr())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "commit: %v", err)
+		return nil, status.Errorf(codes.Internal, "stage: %v", err)
 	}
-	s.log.InfoContext(ctx, "opnsensesvc: CommitDeploy audit",
+	s.log.InfoContext(ctx, "opnsensesvc: StageBinary audit",
 		"staged_sha256", req.GetStagedSha256(),
 		"active_sha256", activeSHA,
 		"previous_path", previousPath,
 		"version_str", req.GetVersionStr())
-	return &mwanv1.CommitDeployResponse{
-		PreviousPath:  previousPath,
-		ActiveSha256:  activeSHA,
-		ReExecStarted: true,
+	return &mwanv1.StageBinaryResponse{
+		PreviousPath: previousPath,
+		ActiveSha256: activeSHA,
 	}, nil
+}
+
+// RestartDaemon initiates a clean shutdown of the running daemon.
+// The actual shutdown runs asynchronously after a short grace so the
+// gRPC response can flush before the yamux session goes away. The
+// rc.d supervisor respawns the process from the active binary slot.
+func (s *Server) RestartDaemon(ctx context.Context, _ *mwanv1.RestartDaemonRequest) (*mwanv1.RestartDaemonResponse, error) {
+	_, _ = peer.FromContext(ctx)
+	_, _ = metadata.FromIncomingContext(ctx)
+	if s.onRestart == nil {
+		return nil, status.Error(codes.FailedPrecondition, "RestartDaemon: shutdown hook not configured")
+	}
+	s.log.InfoContext(ctx, "opnsensesvc: RestartDaemon requested")
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.log.ErrorContext(ctx, "opnsensesvc: RestartDaemon hook panic",
+					"panic", r, "err", fmt.Errorf("panic: %v", r))
+			}
+		}()
+		timer := time.NewTimer(250 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+		}
+		s.onRestart()
+	}()
+	return &mwanv1.RestartDaemonResponse{}, nil
 }
 
 // commitStagedBinary reads the staged file, verifies sha256, and

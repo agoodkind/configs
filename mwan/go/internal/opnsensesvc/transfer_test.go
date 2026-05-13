@@ -37,9 +37,9 @@ func newTestManager(t *testing.T) (*TransferManager, *PathValidator, string) {
 // writeOneChunk drives a synthetic transfer pipeline: open a fresh
 // write state, write a single chunk, and snapshot the hasher state.
 // It returns the assigned transfer id, the temp path, the rolling
-// SHA-256 state, and the bytes written so the test can later attempt
-// to resume.
-func writeOneChunk(t *testing.T, tm *TransferManager, target, parent string, payload []byte) (string, string, []byte) {
+// committed offset, and the bytes written so the test can later
+// attempt to resume.
+func writeOneChunk(t *testing.T, tm *TransferManager, target, parent string, payload []byte) (string, string) {
 	t.Helper()
 	header := &mwanv1.TransferHeader{
 		Path:       target,
@@ -55,11 +55,6 @@ func writeOneChunk(t *testing.T, tm *TransferManager, target, parent string, pay
 	if err := wt.writeChunk(chunk); err != nil {
 		t.Fatalf("writeChunk: %v", err)
 	}
-	snap, err := MarshalHashState(context.Background(), wt.hasher)
-	if err != nil {
-		t.Fatalf("MarshalHashState: %v", err)
-	}
-	wt.state.HashState = snap
 	if err := wt.persist(); err != nil {
 		t.Fatalf("persist: %v", err)
 	}
@@ -67,24 +62,23 @@ func writeOneChunk(t *testing.T, tm *TransferManager, target, parent string, pay
 		t.Fatalf("temp close: %v", err)
 	}
 	wt.temp = nil
-	return wt.state.TransferID, wt.tempPath, snap
+	return wt.state.TransferID, wt.tempPath
 }
 
 func TestTransfer_RollingHashCheckpointResume(t *testing.T) {
 	tm, _, writeDir := newTestManager(t)
 	target := filepath.Join(writeDir, "rolling.bin")
 	payload := []byte("first half-")
-	id, _, snap := writeOneChunk(t, tm, target, writeDir, payload)
+	id, _ := writeOneChunk(t, tm, target, writeDir, payload)
 
 	rest := []byte("second half!")
 	resumeHeader := &mwanv1.TransferHeader{
-		Path:              target,
-		Direction:         mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
-		FinishStep:        mwanv1.FinishStep_FINISH_STEP_REPLACE,
-		ResumeTransferId:  id,
-		ResumeFromOffset:  int64(len(payload)),
-		ResumeSha256State: snap,
-		TotalSize:         int64(len(payload) + len(rest)),
+		Path:             target,
+		Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+		FinishStep:       mwanv1.FinishStep_FINISH_STEP_REPLACE,
+		ResumeTransferId: id,
+		ResumeFromOffset: int64(len(payload)),
+		TotalSize:        int64(len(payload) + len(rest)),
 	}
 	wt, ack, err := tm.openWriteState(context.Background(), resumeHeader, target, writeDir)
 	if err != nil {
@@ -110,32 +104,10 @@ func TestTransfer_RollingHashCheckpointResume(t *testing.T) {
 	wt.cleanup()
 }
 
-func TestTransfer_ResumeSourceMismatchRejected(t *testing.T) {
-	tm, _, writeDir := newTestManager(t)
-	target := filepath.Join(writeDir, "mismatch.bin")
-	payload := []byte("originalA")
-	id, _, _ := writeOneChunk(t, tm, target, writeDir, payload)
-
-	// Tamper the claimed rolling state to simulate a different source.
-	bogusState := append([]byte("XXXX"), make([]byte, 100)...)
-	resumeHeader := &mwanv1.TransferHeader{
-		Path:              target,
-		Direction:         mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
-		FinishStep:        mwanv1.FinishStep_FINISH_STEP_REPLACE,
-		ResumeTransferId:  id,
-		ResumeFromOffset:  int64(len(payload)),
-		ResumeSha256State: bogusState,
-		TotalSize:         int64(len(payload)),
-	}
-	if _, _, err := tm.openWriteState(context.Background(), resumeHeader, target, writeDir); err == nil {
-		t.Fatalf("expected resume to reject source mismatch, got nil error")
-	}
-}
-
 func TestTransfer_CancelDeletesState(t *testing.T) {
 	tm, _, writeDir := newTestManager(t)
 	target := filepath.Join(writeDir, "cancel.bin")
-	id, tempPath, _ := writeOneChunk(t, tm, target, writeDir, []byte("partial"))
+	id, tempPath := writeOneChunk(t, tm, target, writeDir, []byte("partial"))
 
 	statePath := tm.statePath(id)
 	if _, err := os.Stat(statePath); err != nil {

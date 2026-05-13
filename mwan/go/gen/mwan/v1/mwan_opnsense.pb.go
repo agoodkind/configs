@@ -1441,7 +1441,12 @@ func (x *RevertResponse) GetReExecStarted() bool {
 	return false
 }
 
-type CommitDeployRequest struct {
+// StageBinary verifies the previously staged binary's sha256, atomic-
+// renames it into the active slot, swaps the previous slot, writes the
+// deploy state file, and drops the pending-verify marker. It does NOT
+// restart the daemon; the caller invokes RestartDaemon when it is
+// ready for the new binary to take over.
+type StageBinaryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StagedSha256  string                 `protobuf:"bytes,1,opt,name=staged_sha256,json=stagedSha256,proto3" json:"staged_sha256,omitempty"`
 	VersionStr    string                 `protobuf:"bytes,2,opt,name=version_str,json=versionStr,proto3" json:"version_str,omitempty"`
@@ -1449,20 +1454,20 @@ type CommitDeployRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CommitDeployRequest) Reset() {
-	*x = CommitDeployRequest{}
+func (x *StageBinaryRequest) Reset() {
+	*x = StageBinaryRequest{}
 	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CommitDeployRequest) String() string {
+func (x *StageBinaryRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CommitDeployRequest) ProtoMessage() {}
+func (*StageBinaryRequest) ProtoMessage() {}
 
-func (x *CommitDeployRequest) ProtoReflect() protoreflect.Message {
+func (x *StageBinaryRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1474,48 +1479,47 @@ func (x *CommitDeployRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CommitDeployRequest.ProtoReflect.Descriptor instead.
-func (*CommitDeployRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use StageBinaryRequest.ProtoReflect.Descriptor instead.
+func (*StageBinaryRequest) Descriptor() ([]byte, []int) {
 	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *CommitDeployRequest) GetStagedSha256() string {
+func (x *StageBinaryRequest) GetStagedSha256() string {
 	if x != nil {
 		return x.StagedSha256
 	}
 	return ""
 }
 
-func (x *CommitDeployRequest) GetVersionStr() string {
+func (x *StageBinaryRequest) GetVersionStr() string {
 	if x != nil {
 		return x.VersionStr
 	}
 	return ""
 }
 
-type CommitDeployResponse struct {
+type StageBinaryResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PreviousPath  string                 `protobuf:"bytes,1,opt,name=previous_path,json=previousPath,proto3" json:"previous_path,omitempty"`
 	ActiveSha256  string                 `protobuf:"bytes,2,opt,name=active_sha256,json=activeSha256,proto3" json:"active_sha256,omitempty"`
-	ReExecStarted bool                   `protobuf:"varint,3,opt,name=re_exec_started,json=reExecStarted,proto3" json:"re_exec_started,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CommitDeployResponse) Reset() {
-	*x = CommitDeployResponse{}
+func (x *StageBinaryResponse) Reset() {
+	*x = StageBinaryResponse{}
 	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CommitDeployResponse) String() string {
+func (x *StageBinaryResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CommitDeployResponse) ProtoMessage() {}
+func (*StageBinaryResponse) ProtoMessage() {}
 
-func (x *CommitDeployResponse) ProtoReflect() protoreflect.Message {
+func (x *StageBinaryResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1527,49 +1531,117 @@ func (x *CommitDeployResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CommitDeployResponse.ProtoReflect.Descriptor instead.
-func (*CommitDeployResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use StageBinaryResponse.ProtoReflect.Descriptor instead.
+func (*StageBinaryResponse) Descriptor() ([]byte, []int) {
 	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{24}
 }
 
-func (x *CommitDeployResponse) GetPreviousPath() string {
+func (x *StageBinaryResponse) GetPreviousPath() string {
 	if x != nil {
 		return x.PreviousPath
 	}
 	return ""
 }
 
-func (x *CommitDeployResponse) GetActiveSha256() string {
+func (x *StageBinaryResponse) GetActiveSha256() string {
 	if x != nil {
 		return x.ActiveSha256
 	}
 	return ""
 }
 
-func (x *CommitDeployResponse) GetReExecStarted() bool {
+// RestartDaemon initiates a clean shutdown of the running daemon. The
+// daemon closes its yamux session via GoAway, exits the process, and
+// the rc.d supervisor respawns it from the staged binary. The client
+// observes the close immediately and reconnects on its next call.
+type RestartDaemonRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestartDaemonRequest) Reset() {
+	*x = RestartDaemonRequest{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestartDaemonRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestartDaemonRequest) ProtoMessage() {}
+
+func (x *RestartDaemonRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
 	if x != nil {
-		return x.ReExecStarted
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
 	}
-	return false
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestartDaemonRequest.ProtoReflect.Descriptor instead.
+func (*RestartDaemonRequest) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{25}
+}
+
+type RestartDaemonResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestartDaemonResponse) Reset() {
+	*x = RestartDaemonResponse{}
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestartDaemonResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestartDaemonResponse) ProtoMessage() {}
+
+func (x *RestartDaemonResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestartDaemonResponse.ProtoReflect.Descriptor instead.
+func (*RestartDaemonResponse) Descriptor() ([]byte, []int) {
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{26}
 }
 
 type TransferHeader struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Path              string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	Direction         TransferDirection      `protobuf:"varint,2,opt,name=direction,proto3,enum=mwan.v1.TransferDirection" json:"direction,omitempty"`
-	FinishStep        FinishStep             `protobuf:"varint,3,opt,name=finish_step,json=finishStep,proto3,enum=mwan.v1.FinishStep" json:"finish_step,omitempty"`
-	ResumeTransferId  string                 `protobuf:"bytes,4,opt,name=resume_transfer_id,json=resumeTransferId,proto3" json:"resume_transfer_id,omitempty"`
-	ResumeFromOffset  int64                  `protobuf:"varint,5,opt,name=resume_from_offset,json=resumeFromOffset,proto3" json:"resume_from_offset,omitempty"`
-	ResumeSha256State []byte                 `protobuf:"bytes,6,opt,name=resume_sha256_state,json=resumeSha256State,proto3" json:"resume_sha256_state,omitempty"`
-	Label             string                 `protobuf:"bytes,7,opt,name=label,proto3" json:"label,omitempty"`
-	TotalSize         int64                  `protobuf:"varint,8,opt,name=total_size,json=totalSize,proto3" json:"total_size,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Path             string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Direction        TransferDirection      `protobuf:"varint,2,opt,name=direction,proto3,enum=mwan.v1.TransferDirection" json:"direction,omitempty"`
+	FinishStep       FinishStep             `protobuf:"varint,3,opt,name=finish_step,json=finishStep,proto3,enum=mwan.v1.FinishStep" json:"finish_step,omitempty"`
+	ResumeTransferId string                 `protobuf:"bytes,4,opt,name=resume_transfer_id,json=resumeTransferId,proto3" json:"resume_transfer_id,omitempty"`
+	ResumeFromOffset int64                  `protobuf:"varint,5,opt,name=resume_from_offset,json=resumeFromOffset,proto3" json:"resume_from_offset,omitempty"`
+	Label            string                 `protobuf:"bytes,6,opt,name=label,proto3" json:"label,omitempty"`
+	TotalSize        int64                  `protobuf:"varint,7,opt,name=total_size,json=totalSize,proto3" json:"total_size,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *TransferHeader) Reset() {
 	*x = TransferHeader{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1581,7 +1653,7 @@ func (x *TransferHeader) String() string {
 func (*TransferHeader) ProtoMessage() {}
 
 func (x *TransferHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1594,7 +1666,7 @@ func (x *TransferHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferHeader.ProtoReflect.Descriptor instead.
 func (*TransferHeader) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{25}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *TransferHeader) GetPath() string {
@@ -1632,13 +1704,6 @@ func (x *TransferHeader) GetResumeFromOffset() int64 {
 	return 0
 }
 
-func (x *TransferHeader) GetResumeSha256State() []byte {
-	if x != nil {
-		return x.ResumeSha256State
-	}
-	return nil
-}
-
 func (x *TransferHeader) GetLabel() string {
 	if x != nil {
 		return x.Label
@@ -1663,7 +1728,7 @@ type TransferDataChunk struct {
 
 func (x *TransferDataChunk) Reset() {
 	*x = TransferDataChunk{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[26]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1675,7 +1740,7 @@ func (x *TransferDataChunk) String() string {
 func (*TransferDataChunk) ProtoMessage() {}
 
 func (x *TransferDataChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[26]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1688,7 +1753,7 @@ func (x *TransferDataChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferDataChunk.ProtoReflect.Descriptor instead.
 func (*TransferDataChunk) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{26}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *TransferDataChunk) GetOffset() int64 {
@@ -1714,7 +1779,7 @@ type TransferFinal struct {
 
 func (x *TransferFinal) Reset() {
 	*x = TransferFinal{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[27]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1726,7 +1791,7 @@ func (x *TransferFinal) String() string {
 func (*TransferFinal) ProtoMessage() {}
 
 func (x *TransferFinal) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[27]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1739,7 +1804,7 @@ func (x *TransferFinal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferFinal.ProtoReflect.Descriptor instead.
 func (*TransferFinal) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{27}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *TransferFinal) GetSha256Hex() string {
@@ -1757,7 +1822,7 @@ type TransferCancel struct {
 
 func (x *TransferCancel) Reset() {
 	*x = TransferCancel{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[28]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1769,7 +1834,7 @@ func (x *TransferCancel) String() string {
 func (*TransferCancel) ProtoMessage() {}
 
 func (x *TransferCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[28]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1782,7 +1847,7 @@ func (x *TransferCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferCancel.ProtoReflect.Descriptor instead.
 func (*TransferCancel) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{28}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{30}
 }
 
 type UploadRequest struct {
@@ -1800,7 +1865,7 @@ type UploadRequest struct {
 
 func (x *UploadRequest) Reset() {
 	*x = UploadRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[29]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1812,7 +1877,7 @@ func (x *UploadRequest) String() string {
 func (*UploadRequest) ProtoMessage() {}
 
 func (x *UploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[29]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1825,7 +1890,7 @@ func (x *UploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadRequest.ProtoReflect.Descriptor instead.
 func (*UploadRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{29}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *UploadRequest) GetBody() isUploadRequest_Body {
@@ -1911,7 +1976,7 @@ type TransferAck struct {
 
 func (x *TransferAck) Reset() {
 	*x = TransferAck{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[30]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1923,7 +1988,7 @@ func (x *TransferAck) String() string {
 func (*TransferAck) ProtoMessage() {}
 
 func (x *TransferAck) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[30]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1936,7 +2001,7 @@ func (x *TransferAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferAck.ProtoReflect.Descriptor instead.
 func (*TransferAck) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{30}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *TransferAck) GetTransferId() string {
@@ -1981,7 +2046,7 @@ type TransferTerminal struct {
 
 func (x *TransferTerminal) Reset() {
 	*x = TransferTerminal{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[31]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1993,7 +2058,7 @@ func (x *TransferTerminal) String() string {
 func (*TransferTerminal) ProtoMessage() {}
 
 func (x *TransferTerminal) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[31]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2006,7 +2071,7 @@ func (x *TransferTerminal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferTerminal.ProtoReflect.Descriptor instead.
 func (*TransferTerminal) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{31}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *TransferTerminal) GetSha256Hex() string {
@@ -2065,7 +2130,7 @@ type TransferDataAck struct {
 
 func (x *TransferDataAck) Reset() {
 	*x = TransferDataAck{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[32]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2077,7 +2142,7 @@ func (x *TransferDataAck) String() string {
 func (*TransferDataAck) ProtoMessage() {}
 
 func (x *TransferDataAck) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[32]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2090,7 +2155,7 @@ func (x *TransferDataAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferDataAck.ProtoReflect.Descriptor instead.
 func (*TransferDataAck) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{32}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *TransferDataAck) GetCommittedOffset() int64 {
@@ -2115,7 +2180,7 @@ type UploadResponse struct {
 
 func (x *UploadResponse) Reset() {
 	*x = UploadResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[33]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2127,7 +2192,7 @@ func (x *UploadResponse) String() string {
 func (*UploadResponse) ProtoMessage() {}
 
 func (x *UploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[33]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2140,7 +2205,7 @@ func (x *UploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadResponse.ProtoReflect.Descriptor instead.
 func (*UploadResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{33}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *UploadResponse) GetBody() isUploadResponse_Body {
@@ -2223,7 +2288,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[34]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2235,7 +2300,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[34]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2248,7 +2313,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{34}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *StatusRequest) GetTransferId() string {
@@ -2263,16 +2328,15 @@ type StatusResponse struct {
 	TransferId      string                 `protobuf:"bytes,1,opt,name=transfer_id,json=transferId,proto3" json:"transfer_id,omitempty"`
 	Exists          bool                   `protobuf:"varint,2,opt,name=exists,proto3" json:"exists,omitempty"`
 	CommittedOffset int64                  `protobuf:"varint,3,opt,name=committed_offset,json=committedOffset,proto3" json:"committed_offset,omitempty"`
-	Sha256State     []byte                 `protobuf:"bytes,4,opt,name=sha256_state,json=sha256State,proto3" json:"sha256_state,omitempty"`
-	TotalBytes      int64                  `protobuf:"varint,5,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
-	Path            string                 `protobuf:"bytes,6,opt,name=path,proto3" json:"path,omitempty"`
+	TotalBytes      int64                  `protobuf:"varint,4,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	Path            string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[35]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2284,7 +2348,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[35]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2297,7 +2361,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{35}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *StatusResponse) GetTransferId() string {
@@ -2319,13 +2383,6 @@ func (x *StatusResponse) GetCommittedOffset() int64 {
 		return x.CommittedOffset
 	}
 	return 0
-}
-
-func (x *StatusResponse) GetSha256State() []byte {
-	if x != nil {
-		return x.Sha256State
-	}
-	return nil
 }
 
 func (x *StatusResponse) GetTotalBytes() int64 {
@@ -2351,7 +2408,7 @@ type CancelRequest struct {
 
 func (x *CancelRequest) Reset() {
 	*x = CancelRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[36]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2363,7 +2420,7 @@ func (x *CancelRequest) String() string {
 func (*CancelRequest) ProtoMessage() {}
 
 func (x *CancelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[36]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2376,7 +2433,7 @@ func (x *CancelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRequest.ProtoReflect.Descriptor instead.
 func (*CancelRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{36}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CancelRequest) GetTransferId() string {
@@ -2395,7 +2452,7 @@ type CancelResponse struct {
 
 func (x *CancelResponse) Reset() {
 	*x = CancelResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[37]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2407,7 +2464,7 @@ func (x *CancelResponse) String() string {
 func (*CancelResponse) ProtoMessage() {}
 
 func (x *CancelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[37]
+	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2420,7 +2477,7 @@ func (x *CancelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelResponse.ProtoReflect.Descriptor instead.
 func (*CancelResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{37}
+	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *CancelResponse) GetWasPresent() bool {
@@ -2526,26 +2583,26 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\rRevertRequest\"f\n" +
 	"\x0eRevertResponse\x12,\n" +
 	"\x12reverted_to_sha256\x18\x01 \x01(\tR\x10revertedToSha256\x12&\n" +
-	"\x0fre_exec_started\x18\x02 \x01(\bR\rreExecStarted\"[\n" +
-	"\x13CommitDeployRequest\x12#\n" +
+	"\x0fre_exec_started\x18\x02 \x01(\bR\rreExecStarted\"Z\n" +
+	"\x12StageBinaryRequest\x12#\n" +
 	"\rstaged_sha256\x18\x01 \x01(\tR\fstagedSha256\x12\x1f\n" +
 	"\vversion_str\x18\x02 \x01(\tR\n" +
-	"versionStr\"\x88\x01\n" +
-	"\x14CommitDeployResponse\x12#\n" +
+	"versionStr\"_\n" +
+	"\x13StageBinaryResponse\x12#\n" +
 	"\rprevious_path\x18\x01 \x01(\tR\fpreviousPath\x12#\n" +
-	"\ractive_sha256\x18\x02 \x01(\tR\factiveSha256\x12&\n" +
-	"\x0fre_exec_started\x18\x03 \x01(\bR\rreExecStarted\"\xd5\x02\n" +
+	"\ractive_sha256\x18\x02 \x01(\tR\factiveSha256\"\x16\n" +
+	"\x14RestartDaemonRequest\"\x17\n" +
+	"\x15RestartDaemonResponse\"\xa5\x02\n" +
 	"\x0eTransferHeader\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x128\n" +
 	"\tdirection\x18\x02 \x01(\x0e2\x1a.mwan.v1.TransferDirectionR\tdirection\x124\n" +
 	"\vfinish_step\x18\x03 \x01(\x0e2\x13.mwan.v1.FinishStepR\n" +
 	"finishStep\x12,\n" +
 	"\x12resume_transfer_id\x18\x04 \x01(\tR\x10resumeTransferId\x12,\n" +
-	"\x12resume_from_offset\x18\x05 \x01(\x03R\x10resumeFromOffset\x12.\n" +
-	"\x13resume_sha256_state\x18\x06 \x01(\fR\x11resumeSha256State\x12\x14\n" +
-	"\x05label\x18\a \x01(\tR\x05label\x12\x1d\n" +
+	"\x12resume_from_offset\x18\x05 \x01(\x03R\x10resumeFromOffset\x12\x14\n" +
+	"\x05label\x18\x06 \x01(\tR\x05label\x12\x1d\n" +
 	"\n" +
-	"total_size\x18\b \x01(\x03R\ttotalSize\"?\n" +
+	"total_size\x18\a \x01(\x03R\ttotalSize\"?\n" +
 	"\x11TransferDataChunk\x12\x16\n" +
 	"\x06offset\x18\x01 \x01(\x03R\x06offset\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\".\n" +
@@ -2588,16 +2645,15 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\x04body\"0\n" +
 	"\rStatusRequest\x12\x1f\n" +
 	"\vtransfer_id\x18\x01 \x01(\tR\n" +
-	"transferId\"\xcc\x01\n" +
+	"transferId\"\xa9\x01\n" +
 	"\x0eStatusResponse\x12\x1f\n" +
 	"\vtransfer_id\x18\x01 \x01(\tR\n" +
 	"transferId\x12\x16\n" +
 	"\x06exists\x18\x02 \x01(\bR\x06exists\x12)\n" +
-	"\x10committed_offset\x18\x03 \x01(\x03R\x0fcommittedOffset\x12!\n" +
-	"\fsha256_state\x18\x04 \x01(\fR\vsha256State\x12\x1f\n" +
-	"\vtotal_bytes\x18\x05 \x01(\x03R\n" +
+	"\x10committed_offset\x18\x03 \x01(\x03R\x0fcommittedOffset\x12\x1f\n" +
+	"\vtotal_bytes\x18\x04 \x01(\x03R\n" +
 	"totalBytes\x12\x12\n" +
-	"\x04path\x18\x06 \x01(\tR\x04path\"0\n" +
+	"\x04path\x18\x05 \x01(\tR\x04path\"0\n" +
 	"\rCancelRequest\x12\x1f\n" +
 	"\vtransfer_id\x18\x01 \x01(\tR\n" +
 	"transferId\"1\n" +
@@ -2613,7 +2669,7 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\x17FINISH_STEP_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13FINISH_STEP_REPLACE\x10\x01\x12%\n" +
 	"!FINISH_STEP_SNAPSHOT_THEN_REPLACE\x10\x02\x12\x15\n" +
-	"\x11FINISH_STEP_STAGE\x10\x032\xa4\x06\n" +
+	"\x11FINISH_STEP_STAGE\x10\x032\xf1\x06\n" +
 	"\x0fOpnsenseService\x12<\n" +
 	"\aVersion\x12\x17.mwan.v1.VersionRequest\x1a\x18.mwan.v1.VersionResponse\x127\n" +
 	"\x04Exec\x12\x14.mwan.v1.ExecRequest\x1a\x15.mwan.v1.ExecResponse(\x010\x01\x12;\n" +
@@ -2624,8 +2680,9 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\x0eStripGatewayV6\x12\x1e.mwan.v1.StripGatewayV6Request\x1a\x1f.mwan.v1.StripGatewayV6Response\x12T\n" +
 	"\x0fInjectGatewayV6\x12\x1f.mwan.v1.InjectGatewayV6Request\x1a .mwan.v1.InjectGatewayV6Response\x12K\n" +
 	"\fDeployStatus\x12\x1c.mwan.v1.DeployStatusRequest\x1a\x1d.mwan.v1.DeployStatusResponse\x129\n" +
-	"\x06Revert\x12\x16.mwan.v1.RevertRequest\x1a\x17.mwan.v1.RevertResponse\x12K\n" +
-	"\fCommitDeploy\x12\x1c.mwan.v1.CommitDeployRequest\x1a\x1d.mwan.v1.CommitDeployResponse2\xc6\x01\n" +
+	"\x06Revert\x12\x16.mwan.v1.RevertRequest\x1a\x17.mwan.v1.RevertResponse\x12H\n" +
+	"\vStageBinary\x12\x1b.mwan.v1.StageBinaryRequest\x1a\x1c.mwan.v1.StageBinaryResponse\x12N\n" +
+	"\rRestartDaemon\x12\x1d.mwan.v1.RestartDaemonRequest\x1a\x1e.mwan.v1.RestartDaemonResponse2\xc6\x01\n" +
 	"\x0fTransferService\x12=\n" +
 	"\x06Upload\x12\x16.mwan.v1.UploadRequest\x1a\x17.mwan.v1.UploadResponse(\x010\x01\x129\n" +
 	"\x06Status\x12\x16.mwan.v1.StatusRequest\x1a\x17.mwan.v1.StatusResponse\x129\n" +
@@ -2644,7 +2701,7 @@ func file_mwan_v1_mwan_opnsense_proto_rawDescGZIP() []byte {
 }
 
 var file_mwan_v1_mwan_opnsense_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_mwan_v1_mwan_opnsense_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_mwan_v1_mwan_opnsense_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_mwan_v1_mwan_opnsense_proto_goTypes = []any{
 	(TransferDirection)(0),          // 0: mwan.v1.TransferDirection
 	(FinishStep)(0),                 // 1: mwan.v1.FinishStep
@@ -2672,21 +2729,23 @@ var file_mwan_v1_mwan_opnsense_proto_goTypes = []any{
 	(*DeployStatusResponse)(nil),    // 23: mwan.v1.DeployStatusResponse
 	(*RevertRequest)(nil),           // 24: mwan.v1.RevertRequest
 	(*RevertResponse)(nil),          // 25: mwan.v1.RevertResponse
-	(*CommitDeployRequest)(nil),     // 26: mwan.v1.CommitDeployRequest
-	(*CommitDeployResponse)(nil),    // 27: mwan.v1.CommitDeployResponse
-	(*TransferHeader)(nil),          // 28: mwan.v1.TransferHeader
-	(*TransferDataChunk)(nil),       // 29: mwan.v1.TransferDataChunk
-	(*TransferFinal)(nil),           // 30: mwan.v1.TransferFinal
-	(*TransferCancel)(nil),          // 31: mwan.v1.TransferCancel
-	(*UploadRequest)(nil),           // 32: mwan.v1.UploadRequest
-	(*TransferAck)(nil),             // 33: mwan.v1.TransferAck
-	(*TransferTerminal)(nil),        // 34: mwan.v1.TransferTerminal
-	(*TransferDataAck)(nil),         // 35: mwan.v1.TransferDataAck
-	(*UploadResponse)(nil),          // 36: mwan.v1.UploadResponse
-	(*StatusRequest)(nil),           // 37: mwan.v1.StatusRequest
-	(*StatusResponse)(nil),          // 38: mwan.v1.StatusResponse
-	(*CancelRequest)(nil),           // 39: mwan.v1.CancelRequest
-	(*CancelResponse)(nil),          // 40: mwan.v1.CancelResponse
+	(*StageBinaryRequest)(nil),      // 26: mwan.v1.StageBinaryRequest
+	(*StageBinaryResponse)(nil),     // 27: mwan.v1.StageBinaryResponse
+	(*RestartDaemonRequest)(nil),    // 28: mwan.v1.RestartDaemonRequest
+	(*RestartDaemonResponse)(nil),   // 29: mwan.v1.RestartDaemonResponse
+	(*TransferHeader)(nil),          // 30: mwan.v1.TransferHeader
+	(*TransferDataChunk)(nil),       // 31: mwan.v1.TransferDataChunk
+	(*TransferFinal)(nil),           // 32: mwan.v1.TransferFinal
+	(*TransferCancel)(nil),          // 33: mwan.v1.TransferCancel
+	(*UploadRequest)(nil),           // 34: mwan.v1.UploadRequest
+	(*TransferAck)(nil),             // 35: mwan.v1.TransferAck
+	(*TransferTerminal)(nil),        // 36: mwan.v1.TransferTerminal
+	(*TransferDataAck)(nil),         // 37: mwan.v1.TransferDataAck
+	(*UploadResponse)(nil),          // 38: mwan.v1.UploadResponse
+	(*StatusRequest)(nil),           // 39: mwan.v1.StatusRequest
+	(*StatusResponse)(nil),          // 40: mwan.v1.StatusResponse
+	(*CancelRequest)(nil),           // 41: mwan.v1.CancelRequest
+	(*CancelResponse)(nil),          // 42: mwan.v1.CancelResponse
 }
 var file_mwan_v1_mwan_opnsense_proto_depIdxs = []int32{
 	5,  // 0: mwan.v1.ExecRequest.header:type_name -> mwan.v1.ExecHeader
@@ -2695,14 +2754,14 @@ var file_mwan_v1_mwan_opnsense_proto_depIdxs = []int32{
 	2,  // 3: mwan.v1.DeployStatusRequest.mark:type_name -> mwan.v1.DeployStatusRequest.Mark
 	0,  // 4: mwan.v1.TransferHeader.direction:type_name -> mwan.v1.TransferDirection
 	1,  // 5: mwan.v1.TransferHeader.finish_step:type_name -> mwan.v1.FinishStep
-	28, // 6: mwan.v1.UploadRequest.header:type_name -> mwan.v1.TransferHeader
-	29, // 7: mwan.v1.UploadRequest.data:type_name -> mwan.v1.TransferDataChunk
-	30, // 8: mwan.v1.UploadRequest.final:type_name -> mwan.v1.TransferFinal
-	31, // 9: mwan.v1.UploadRequest.cancel:type_name -> mwan.v1.TransferCancel
-	33, // 10: mwan.v1.UploadResponse.ack:type_name -> mwan.v1.TransferAck
-	29, // 11: mwan.v1.UploadResponse.data:type_name -> mwan.v1.TransferDataChunk
-	34, // 12: mwan.v1.UploadResponse.terminal:type_name -> mwan.v1.TransferTerminal
-	35, // 13: mwan.v1.UploadResponse.data_ack:type_name -> mwan.v1.TransferDataAck
+	30, // 6: mwan.v1.UploadRequest.header:type_name -> mwan.v1.TransferHeader
+	31, // 7: mwan.v1.UploadRequest.data:type_name -> mwan.v1.TransferDataChunk
+	32, // 8: mwan.v1.UploadRequest.final:type_name -> mwan.v1.TransferFinal
+	33, // 9: mwan.v1.UploadRequest.cancel:type_name -> mwan.v1.TransferCancel
+	35, // 10: mwan.v1.UploadResponse.ack:type_name -> mwan.v1.TransferAck
+	31, // 11: mwan.v1.UploadResponse.data:type_name -> mwan.v1.TransferDataChunk
+	36, // 12: mwan.v1.UploadResponse.terminal:type_name -> mwan.v1.TransferTerminal
+	37, // 13: mwan.v1.UploadResponse.data_ack:type_name -> mwan.v1.TransferDataAck
 	3,  // 14: mwan.v1.OpnsenseService.Version:input_type -> mwan.v1.VersionRequest
 	7,  // 15: mwan.v1.OpnsenseService.Exec:input_type -> mwan.v1.ExecRequest
 	11, // 16: mwan.v1.OpnsenseService.XPathGet:input_type -> mwan.v1.XPathGetRequest
@@ -2713,26 +2772,28 @@ var file_mwan_v1_mwan_opnsense_proto_depIdxs = []int32{
 	20, // 21: mwan.v1.OpnsenseService.InjectGatewayV6:input_type -> mwan.v1.InjectGatewayV6Request
 	22, // 22: mwan.v1.OpnsenseService.DeployStatus:input_type -> mwan.v1.DeployStatusRequest
 	24, // 23: mwan.v1.OpnsenseService.Revert:input_type -> mwan.v1.RevertRequest
-	26, // 24: mwan.v1.OpnsenseService.CommitDeploy:input_type -> mwan.v1.CommitDeployRequest
-	32, // 25: mwan.v1.TransferService.Upload:input_type -> mwan.v1.UploadRequest
-	37, // 26: mwan.v1.TransferService.Status:input_type -> mwan.v1.StatusRequest
-	39, // 27: mwan.v1.TransferService.Cancel:input_type -> mwan.v1.CancelRequest
-	4,  // 28: mwan.v1.OpnsenseService.Version:output_type -> mwan.v1.VersionResponse
-	9,  // 29: mwan.v1.OpnsenseService.Exec:output_type -> mwan.v1.ExecResponse
-	10, // 30: mwan.v1.OpnsenseService.XPathGet:output_type -> mwan.v1.XPathMatch
-	13, // 31: mwan.v1.OpnsenseService.XPathSet:output_type -> mwan.v1.XPathSetResponse
-	15, // 32: mwan.v1.OpnsenseService.XPathDelete:output_type -> mwan.v1.XPathDeleteResponse
-	17, // 33: mwan.v1.OpnsenseService.BackupConfigXML:output_type -> mwan.v1.BackupConfigXMLResponse
-	19, // 34: mwan.v1.OpnsenseService.StripGatewayV6:output_type -> mwan.v1.StripGatewayV6Response
-	21, // 35: mwan.v1.OpnsenseService.InjectGatewayV6:output_type -> mwan.v1.InjectGatewayV6Response
-	23, // 36: mwan.v1.OpnsenseService.DeployStatus:output_type -> mwan.v1.DeployStatusResponse
-	25, // 37: mwan.v1.OpnsenseService.Revert:output_type -> mwan.v1.RevertResponse
-	27, // 38: mwan.v1.OpnsenseService.CommitDeploy:output_type -> mwan.v1.CommitDeployResponse
-	36, // 39: mwan.v1.TransferService.Upload:output_type -> mwan.v1.UploadResponse
-	38, // 40: mwan.v1.TransferService.Status:output_type -> mwan.v1.StatusResponse
-	40, // 41: mwan.v1.TransferService.Cancel:output_type -> mwan.v1.CancelResponse
-	28, // [28:42] is the sub-list for method output_type
-	14, // [14:28] is the sub-list for method input_type
+	26, // 24: mwan.v1.OpnsenseService.StageBinary:input_type -> mwan.v1.StageBinaryRequest
+	28, // 25: mwan.v1.OpnsenseService.RestartDaemon:input_type -> mwan.v1.RestartDaemonRequest
+	34, // 26: mwan.v1.TransferService.Upload:input_type -> mwan.v1.UploadRequest
+	39, // 27: mwan.v1.TransferService.Status:input_type -> mwan.v1.StatusRequest
+	41, // 28: mwan.v1.TransferService.Cancel:input_type -> mwan.v1.CancelRequest
+	4,  // 29: mwan.v1.OpnsenseService.Version:output_type -> mwan.v1.VersionResponse
+	9,  // 30: mwan.v1.OpnsenseService.Exec:output_type -> mwan.v1.ExecResponse
+	10, // 31: mwan.v1.OpnsenseService.XPathGet:output_type -> mwan.v1.XPathMatch
+	13, // 32: mwan.v1.OpnsenseService.XPathSet:output_type -> mwan.v1.XPathSetResponse
+	15, // 33: mwan.v1.OpnsenseService.XPathDelete:output_type -> mwan.v1.XPathDeleteResponse
+	17, // 34: mwan.v1.OpnsenseService.BackupConfigXML:output_type -> mwan.v1.BackupConfigXMLResponse
+	19, // 35: mwan.v1.OpnsenseService.StripGatewayV6:output_type -> mwan.v1.StripGatewayV6Response
+	21, // 36: mwan.v1.OpnsenseService.InjectGatewayV6:output_type -> mwan.v1.InjectGatewayV6Response
+	23, // 37: mwan.v1.OpnsenseService.DeployStatus:output_type -> mwan.v1.DeployStatusResponse
+	25, // 38: mwan.v1.OpnsenseService.Revert:output_type -> mwan.v1.RevertResponse
+	27, // 39: mwan.v1.OpnsenseService.StageBinary:output_type -> mwan.v1.StageBinaryResponse
+	29, // 40: mwan.v1.OpnsenseService.RestartDaemon:output_type -> mwan.v1.RestartDaemonResponse
+	38, // 41: mwan.v1.TransferService.Upload:output_type -> mwan.v1.UploadResponse
+	40, // 42: mwan.v1.TransferService.Status:output_type -> mwan.v1.StatusResponse
+	42, // 43: mwan.v1.TransferService.Cancel:output_type -> mwan.v1.CancelResponse
+	29, // [29:44] is the sub-list for method output_type
+	14, // [14:29] is the sub-list for method input_type
 	14, // [14:14] is the sub-list for extension type_name
 	14, // [14:14] is the sub-list for extension extendee
 	0,  // [0:14] is the sub-list for field type_name
@@ -2754,13 +2815,13 @@ func file_mwan_v1_mwan_opnsense_proto_init() {
 		(*ExecResponse_StderrChunk)(nil),
 		(*ExecResponse_Terminal)(nil),
 	}
-	file_mwan_v1_mwan_opnsense_proto_msgTypes[29].OneofWrappers = []any{
+	file_mwan_v1_mwan_opnsense_proto_msgTypes[31].OneofWrappers = []any{
 		(*UploadRequest_Header)(nil),
 		(*UploadRequest_Data)(nil),
 		(*UploadRequest_Final)(nil),
 		(*UploadRequest_Cancel)(nil),
 	}
-	file_mwan_v1_mwan_opnsense_proto_msgTypes[33].OneofWrappers = []any{
+	file_mwan_v1_mwan_opnsense_proto_msgTypes[35].OneofWrappers = []any{
 		(*UploadResponse_Ack)(nil),
 		(*UploadResponse_Data)(nil),
 		(*UploadResponse_Terminal)(nil),
@@ -2772,7 +2833,7 @@ func file_mwan_v1_mwan_opnsense_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mwan_v1_mwan_opnsense_proto_rawDesc), len(file_mwan_v1_mwan_opnsense_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   38,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -42,9 +41,10 @@ const (
 	// state file is swept on startup or via the transfer-gc op.
 	TransferGCAge = 7 * 24 * time.Hour
 
-	// TransferHashCheckpointInterval is the byte interval at which the
-	// rolling SHA-256 hasher's internal state is checkpointed.
-	TransferHashCheckpointInterval = 16 << 20
+	// TransferStateCheckpointInterval is the byte interval at which the
+	// on-disk transfer state file is rewritten so a crash mid-transfer
+	// leaves committed_offset roughly in sync with the temp file.
+	TransferStateCheckpointInterval = 16 << 20
 
 	// TransferChunkSize is the application-layer chunk size used by
 	// READ-direction transfers.
@@ -66,7 +66,6 @@ type TransferStateFile struct {
 	Label           string    `json:"label"`
 	TotalSize       int64     `json:"total_size"`
 	CommittedOffset int64     `json:"committed_offset"`
-	HashState       []byte    `json:"hash_state"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	TempPath        string    `json:"temp_path"`
@@ -220,7 +219,7 @@ func (m *TransferManager) Status(ctx context.Context, id string) (*mwanv1.Status
 	if errors.Is(err, os.ErrNotExist) {
 		return &mwanv1.StatusResponse{
 			TransferId: id, Exists: false,
-			CommittedOffset: 0, Sha256State: nil, TotalBytes: 0, Path: "",
+			CommittedOffset: 0, TotalBytes: 0, Path: "",
 		}, nil
 	}
 	if err != nil {
@@ -230,7 +229,6 @@ func (m *TransferManager) Status(ctx context.Context, id string) (*mwanv1.Status
 		TransferId:      st.TransferID,
 		Exists:          true,
 		CommittedOffset: st.CommittedOffset,
-		Sha256State:     st.HashState,
 		TotalBytes:      st.TotalSize,
 		Path:            st.Path,
 	}, nil
@@ -268,36 +266,6 @@ func ReadNewID(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("transfer: rand: %w", err)
 	}
 	return hex.EncodeToString(buf), nil
-}
-
-// MarshalHashState returns the marshaled internal state of a sha256
-// hasher. Restoring this state on resume lets the daemon refuse a
-// resume against a different source file.
-func MarshalHashState(ctx context.Context, h hash.Hash) ([]byte, error) {
-	marshaler, ok := h.(encoding.BinaryMarshaler)
-	if !ok {
-		return nil, errors.New("transfer: hasher does not support marshal")
-	}
-	state, err := marshaler.MarshalBinary()
-	if err != nil {
-		slog.ErrorContext(ctx, "transfer: marshal hash", "err", err)
-		return nil, fmt.Errorf("transfer: marshal hash: %w", err)
-	}
-	return state, nil
-}
-
-// UnmarshalHashState reloads a previously snapshotted hasher state.
-func UnmarshalHashState(ctx context.Context, state []byte) (hash.Hash, error) {
-	h := sha256.New()
-	unmarshaler, ok := h.(encoding.BinaryUnmarshaler)
-	if !ok {
-		return nil, errors.New("transfer: hasher does not support unmarshal")
-	}
-	if err := unmarshaler.UnmarshalBinary(state); err != nil {
-		slog.ErrorContext(ctx, "transfer: unmarshal hash", "err", err)
-		return nil, fmt.Errorf("transfer: unmarshal hash: %w", err)
-	}
-	return h, nil
 }
 
 // Upload implements the bidi resumable transfer stream. The first
@@ -525,12 +493,11 @@ func (w *writeTransfer) writeChunk(chunk *mwanv1.TransferDataChunk) error {
 		return fmt.Errorf("transfer: hash write: %w", hashErr)
 	}
 	w.state.CommittedOffset += int64(n)
-	if w.state.CommittedOffset-w.lastChkpt >= TransferHashCheckpointInterval {
-		snap, snapErr := MarshalHashState(ctx, w.hasher)
-		if snapErr != nil {
-			return snapErr
-		}
-		w.state.HashState = snap
+	// Persist committed_offset periodically so a crash mid-transfer
+	// leaves the temp file and the state file approximately in sync.
+	// Hash state is not stored on disk; on resume the server re-hashes
+	// the temp file from byte 0 to committed_offset.
+	if w.state.CommittedOffset-w.lastChkpt >= TransferStateCheckpointInterval {
 		if err := w.persist(); err != nil {
 			return err
 		}
@@ -593,7 +560,6 @@ func (m *TransferManager) openWriteState(ctx context.Context, header *mwanv1.Tra
 		Label:           header.GetLabel(),
 		TotalSize:       header.GetTotalSize(),
 		CommittedOffset: 0,
-		HashState:       nil,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		TempPath:        tempPath,
@@ -631,19 +597,28 @@ func (m *TransferManager) resumeWriteState(ctx context.Context, header *mwanv1.T
 	if state.Path != target {
 		return nil, nil, status.Errorf(codes.FailedPrecondition, "transfer: resume path mismatch")
 	}
-	if header.GetResumeFromOffset() != state.CommittedOffset {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "transfer: resume offset %d != committed %d", header.GetResumeFromOffset(), state.CommittedOffset)
-	}
-	if !equalBytes(header.GetResumeSha256State(), state.HashState) {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "transfer: resume hash state mismatch")
-	}
-	hasher, hashErr := UnmarshalHashState(ctx, state.HashState)
-	if hashErr != nil {
-		return nil, nil, status.Errorf(codes.Internal, "transfer: hash restore: %v", hashErr)
-	}
+	// The server is authoritative for committed_offset. The client's
+	// hint in header.resume_from_offset is accepted only as a sanity
+	// check; on mismatch we trust our own committed_offset and let
+	// the client adjust on the returned TransferAck.
 	file, openErr := os.OpenFile(state.TempPath, os.O_RDWR, 0o600)
 	if openErr != nil {
 		return nil, nil, status.Errorf(codes.Internal, "transfer: reopen temp: %v", openErr)
+	}
+	if truncErr := file.Truncate(state.CommittedOffset); truncErr != nil {
+		_ = file.Close()
+		return nil, nil, status.Errorf(codes.Internal, "transfer: truncate to committed: %v", truncErr)
+	}
+	hasher := sha256.New()
+	if state.CommittedOffset > 0 {
+		if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+			_ = file.Close()
+			return nil, nil, status.Errorf(codes.Internal, "transfer: seek to start: %v", seekErr)
+		}
+		if _, copyErr := io.CopyN(hasher, file, state.CommittedOffset); copyErr != nil {
+			_ = file.Close()
+			return nil, nil, status.Errorf(codes.Internal, "transfer: replay temp into hasher: %v", copyErr)
+		}
 	}
 	if _, seekErr := file.Seek(state.CommittedOffset, io.SeekStart); seekErr != nil {
 		_ = file.Close()
@@ -771,16 +746,4 @@ func (m *TransferManager) snapshotThenReplace(ctx context.Context, target, paren
 		return backupPath, err
 	}
 	return backupPath, nil
-}
-
-func equalBytes(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

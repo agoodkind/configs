@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,9 +14,12 @@ import (
 
 // probeTransferState is the client-side state the probe persists during
 // a resumable transfer-up. It lives at
-// <UserConfigDir>/mwan/transfers/<id>.json. Persisting after every
-// chunk lets a later invocation with -resume continue from the last
-// committed offset against the same daemon-side transfer id.
+// <UserConfigDir>/mwan/transfers/<id>.json. Persisting the committed
+// offset after every chunk lets a later invocation with -resume continue
+// from there against the same daemon-side transfer id. Hash continuity
+// is reconstructed on resume by re-hashing the source file from byte 0
+// to the server-authoritative committed offset, so no hash state is
+// stored on disk or shipped over the wire.
 type probeTransferState struct {
 	TransferID      string `json:"transfer_id"`
 	SourcePath      string `json:"source_path"`
@@ -27,7 +27,6 @@ type probeTransferState struct {
 	Label           string `json:"label"`
 	TotalSize       int64  `json:"total_size"`
 	CommittedOffset int64  `json:"committed_offset"`
-	HashState       []byte `json:"hash_state"`
 }
 
 // probeStateDir returns the directory holding probe-side transfer
@@ -132,35 +131,4 @@ func saveProbeState(ctx context.Context, st *probeTransferState) error {
 		return fmt.Errorf("probe state: rename %s: %w", path, closeErr)
 	}
 	return nil
-}
-
-// marshalHashState extracts the binary state of a sha256 hasher so
-// the daemon can compare it against its own checkpoint on resume.
-func marshalHashState(ctx context.Context, h hash.Hash) ([]byte, error) {
-	marshaler, ok := h.(encoding.BinaryMarshaler)
-	if !ok {
-		return nil, errors.New("probe state: hasher does not support marshal")
-	}
-	state, err := marshaler.MarshalBinary()
-	if err != nil {
-		slog.ErrorContext(ctx, "probe state: marshal hash", "err", err)
-		return nil, fmt.Errorf("probe state: marshal hash: %w", err)
-	}
-	return state, nil
-}
-
-// unmarshalHashState restores a sha256 hasher from a previously
-// captured binary state. The probe uses this to continue the rolling
-// hash from where the prior invocation left off.
-func unmarshalHashState(ctx context.Context, state []byte) (hash.Hash, error) {
-	h := sha256.New()
-	unmarshaler, ok := h.(encoding.BinaryUnmarshaler)
-	if !ok {
-		return nil, errors.New("probe state: hasher does not support unmarshal")
-	}
-	if err := unmarshaler.UnmarshalBinary(state); err != nil {
-		slog.ErrorContext(ctx, "probe state: unmarshal hash", "err", err)
-		return nil, fmt.Errorf("probe state: unmarshal hash: %w", err)
-	}
-	return h, nil
 }

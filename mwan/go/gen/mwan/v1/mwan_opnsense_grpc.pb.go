@@ -29,7 +29,8 @@ const (
 	OpnsenseService_InjectGatewayV6_FullMethodName = "/mwan.v1.OpnsenseService/InjectGatewayV6"
 	OpnsenseService_DeployStatus_FullMethodName    = "/mwan.v1.OpnsenseService/DeployStatus"
 	OpnsenseService_Revert_FullMethodName          = "/mwan.v1.OpnsenseService/Revert"
-	OpnsenseService_CommitDeploy_FullMethodName    = "/mwan.v1.OpnsenseService/CommitDeploy"
+	OpnsenseService_StageBinary_FullMethodName     = "/mwan.v1.OpnsenseService/StageBinary"
+	OpnsenseService_RestartDaemon_FullMethodName   = "/mwan.v1.OpnsenseService/RestartDaemon"
 )
 
 // OpnsenseServiceClient is the client API for OpnsenseService service.
@@ -50,7 +51,8 @@ type OpnsenseServiceClient interface {
 	InjectGatewayV6(ctx context.Context, in *InjectGatewayV6Request, opts ...grpc.CallOption) (*InjectGatewayV6Response, error)
 	DeployStatus(ctx context.Context, in *DeployStatusRequest, opts ...grpc.CallOption) (*DeployStatusResponse, error)
 	Revert(ctx context.Context, in *RevertRequest, opts ...grpc.CallOption) (*RevertResponse, error)
-	CommitDeploy(ctx context.Context, in *CommitDeployRequest, opts ...grpc.CallOption) (*CommitDeployResponse, error)
+	StageBinary(ctx context.Context, in *StageBinaryRequest, opts ...grpc.CallOption) (*StageBinaryResponse, error)
+	RestartDaemon(ctx context.Context, in *RestartDaemonRequest, opts ...grpc.CallOption) (*RestartDaemonResponse, error)
 }
 
 type opnsenseServiceClient struct {
@@ -173,10 +175,20 @@ func (c *opnsenseServiceClient) Revert(ctx context.Context, in *RevertRequest, o
 	return out, nil
 }
 
-func (c *opnsenseServiceClient) CommitDeploy(ctx context.Context, in *CommitDeployRequest, opts ...grpc.CallOption) (*CommitDeployResponse, error) {
+func (c *opnsenseServiceClient) StageBinary(ctx context.Context, in *StageBinaryRequest, opts ...grpc.CallOption) (*StageBinaryResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CommitDeployResponse)
-	err := c.cc.Invoke(ctx, OpnsenseService_CommitDeploy_FullMethodName, in, out, cOpts...)
+	out := new(StageBinaryResponse)
+	err := c.cc.Invoke(ctx, OpnsenseService_StageBinary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *opnsenseServiceClient) RestartDaemon(ctx context.Context, in *RestartDaemonRequest, opts ...grpc.CallOption) (*RestartDaemonResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestartDaemonResponse)
+	err := c.cc.Invoke(ctx, OpnsenseService_RestartDaemon_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +213,8 @@ type OpnsenseServiceServer interface {
 	InjectGatewayV6(context.Context, *InjectGatewayV6Request) (*InjectGatewayV6Response, error)
 	DeployStatus(context.Context, *DeployStatusRequest) (*DeployStatusResponse, error)
 	Revert(context.Context, *RevertRequest) (*RevertResponse, error)
-	CommitDeploy(context.Context, *CommitDeployRequest) (*CommitDeployResponse, error)
+	StageBinary(context.Context, *StageBinaryRequest) (*StageBinaryResponse, error)
+	RestartDaemon(context.Context, *RestartDaemonRequest) (*RestartDaemonResponse, error)
 	mustEmbedUnimplementedOpnsenseServiceServer()
 }
 
@@ -242,8 +255,11 @@ func (UnimplementedOpnsenseServiceServer) DeployStatus(context.Context, *DeployS
 func (UnimplementedOpnsenseServiceServer) Revert(context.Context, *RevertRequest) (*RevertResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Revert not implemented")
 }
-func (UnimplementedOpnsenseServiceServer) CommitDeploy(context.Context, *CommitDeployRequest) (*CommitDeployResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CommitDeploy not implemented")
+func (UnimplementedOpnsenseServiceServer) StageBinary(context.Context, *StageBinaryRequest) (*StageBinaryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StageBinary not implemented")
+}
+func (UnimplementedOpnsenseServiceServer) RestartDaemon(context.Context, *RestartDaemonRequest) (*RestartDaemonResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestartDaemon not implemented")
 }
 func (UnimplementedOpnsenseServiceServer) mustEmbedUnimplementedOpnsenseServiceServer() {}
 func (UnimplementedOpnsenseServiceServer) testEmbeddedByValue()                         {}
@@ -428,20 +444,38 @@ func _OpnsenseService_Revert_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _OpnsenseService_CommitDeploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CommitDeployRequest)
+func _OpnsenseService_StageBinary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StageBinaryRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(OpnsenseServiceServer).CommitDeploy(ctx, in)
+		return srv.(OpnsenseServiceServer).StageBinary(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: OpnsenseService_CommitDeploy_FullMethodName,
+		FullMethod: OpnsenseService_StageBinary_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(OpnsenseServiceServer).CommitDeploy(ctx, req.(*CommitDeployRequest))
+		return srv.(OpnsenseServiceServer).StageBinary(ctx, req.(*StageBinaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OpnsenseService_RestartDaemon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestartDaemonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OpnsenseServiceServer).RestartDaemon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OpnsenseService_RestartDaemon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OpnsenseServiceServer).RestartDaemon(ctx, req.(*RestartDaemonRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -486,8 +520,12 @@ var OpnsenseService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _OpnsenseService_Revert_Handler,
 		},
 		{
-			MethodName: "CommitDeploy",
-			Handler:    _OpnsenseService_CommitDeploy_Handler,
+			MethodName: "StageBinary",
+			Handler:    _OpnsenseService_StageBinary_Handler,
+		},
+		{
+			MethodName: "RestartDaemon",
+			Handler:    _OpnsenseService_RestartDaemon_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -313,7 +313,7 @@ func probeRevert(ctx context.Context, rpc *opnsense.RPC) error {
 	if err != nil {
 		return probeLogWrap(ctx, "revert", err)
 	}
-	fmt.Printf("reverted_to=%s re_exec_started=%t\n", resp.GetRevertedToSha256(), resp.GetReExecStarted())
+	fmt.Printf("reverted_to=%s\n", resp.GetRevertedToSha256())
 	return nil
 }
 
@@ -410,7 +410,6 @@ func probeTransferUpFresh(ctx context.Context, cli *opnsense.Client, pf *probeFl
 		Label:           pf.label,
 		TotalSize:       size,
 		CommittedOffset: 0,
-		HashState:       nil,
 	}
 	hasher := sha256.New()
 	if streamErr := uploadDataChunks(ctx, stream, payload, 0, size, hasher, state, source != ""); streamErr != nil {
@@ -437,10 +436,6 @@ func probeTransferUpResume(ctx context.Context, cli *opnsense.Client, pf *probeF
 		return fmt.Errorf("opnsense-probe: -resume: state total_size %d != source size %d",
 			state.TotalSize, size)
 	}
-	hasher, hashErr := unmarshalHashState(ctx, state.HashState)
-	if hashErr != nil {
-		return hashErr
-	}
 
 	stream, err := cli.TransferClient().Upload(ctx)
 	if err != nil {
@@ -449,14 +444,13 @@ func probeTransferUpResume(ctx context.Context, cli *opnsense.Client, pf *probeF
 	}
 	if sendErr := stream.Send(&mwanv1.UploadRequest{
 		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
-			Path:              pf.transferPath,
-			Direction:         mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
-			FinishStep:        mwanv1.FinishStep_FINISH_STEP_REPLACE,
-			Label:             state.Label,
-			TotalSize:         size,
-			ResumeTransferId:  state.TransferID,
-			ResumeFromOffset:  state.CommittedOffset,
-			ResumeSha256State: state.HashState,
+			Path:             pf.transferPath,
+			Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+			FinishStep:       mwanv1.FinishStep_FINISH_STEP_REPLACE,
+			Label:            state.Label,
+			TotalSize:        size,
+			ResumeTransferId: state.TransferID,
+			ResumeFromOffset: state.CommittedOffset,
 		}},
 	}); sendErr != nil {
 		return probeLogWrap(ctx, "transfer-up: send header", sendErr)
@@ -473,10 +467,21 @@ func probeTransferUpResume(ctx context.Context, cli *opnsense.Client, pf *probeF
 		return fmt.Errorf("opnsense-probe: -resume: daemon refused; delete %s and retry without -resume",
 			stateFilePathOrEmpty(ctx, state.TransferID))
 	}
-	if ack.GetCommittedOffset() != state.CommittedOffset {
-		return fmt.Errorf("opnsense-probe: -resume: ack offset %d != client offset %d",
-			ack.GetCommittedOffset(), state.CommittedOffset)
+	// Server is authoritative for committed_offset. Re-hash the source
+	// from byte 0 to the server's committed_offset so our hasher and
+	// the server's hasher align, then continue from there.
+	serverOffset := ack.GetCommittedOffset()
+	if serverOffset > size {
+		return fmt.Errorf("opnsense-probe: -resume: ack offset %d > source size %d",
+			serverOffset, size)
 	}
+	hasher := sha256.New()
+	if serverOffset > 0 {
+		if _, hashErr := hasher.Write(payload[:serverOffset]); hashErr != nil {
+			return probeLogWrap(ctx, "transfer-up: rehash source", hashErr)
+		}
+	}
+	state.CommittedOffset = serverOffset
 
 	if streamErr := uploadDataChunks(ctx, stream, payload, state.CommittedOffset, size, hasher, state, true); streamErr != nil {
 		return streamErr
@@ -559,12 +564,7 @@ func uploadDataChunks(ctx context.Context, stream mwanv1.TransferService_UploadC
 		}
 		offset = end
 		if persistState {
-			snap, snapErr := marshalHashState(ctx, hasher)
-			if snapErr != nil {
-				return snapErr
-			}
 			state.CommittedOffset = offset
-			state.HashState = snap
 			if saveErr := saveProbeState(ctx, state); saveErr != nil {
 				return saveErr
 			}
@@ -698,15 +698,20 @@ func probeDeploy(ctx context.Context, cli *opnsense.Client, binaryPath string) e
 	if err != nil {
 		return err
 	}
-	commitResp, err := cli.OpnsenseClient().CommitDeploy(ctx, &mwanv1.CommitDeployRequest{
+	stageResp, err := cli.OpnsenseClient().StageBinary(ctx, &mwanv1.StageBinaryRequest{
 		StagedSha256: stagedSHA,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "probe: commit", "err", err)
-		return probeLogWrap(ctx, "deploy: commit", err)
+		slog.ErrorContext(ctx, "probe: stage", "err", err)
+		return probeLogWrap(ctx, "deploy: stage", err)
 	}
-	fmt.Printf("deploy: committed active=%s previous=%s re_exec=%t\n",
-		commitResp.GetActiveSha256(), commitResp.GetPreviousPath(), commitResp.GetReExecStarted())
+	fmt.Printf("deploy: staged active=%s previous=%s\n",
+		stageResp.GetActiveSha256(), stageResp.GetPreviousPath())
+	if _, err := cli.OpnsenseClient().RestartDaemon(ctx, &mwanv1.RestartDaemonRequest{}); err != nil {
+		slog.ErrorContext(ctx, "probe: restart", "err", err)
+		return probeLogWrap(ctx, "deploy: restart", err)
+	}
+	fmt.Println("deploy: restart initiated")
 	return nil
 }
 

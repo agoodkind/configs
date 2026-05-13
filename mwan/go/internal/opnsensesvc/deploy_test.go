@@ -11,39 +11,26 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// stubExec captures syscall.Exec invocations during tests.
-func stubExec(captured *atomic.Pointer[[]string]) func(string, []string, []string) error {
-	return func(_ string, argv []string, _ []string) error {
-		copyArgs := append([]string(nil), argv...)
-		captured.Store(&copyArgs)
-		return nil
-	}
-}
-
-func newTestDeployManager(t *testing.T) (*DeployManager, *atomic.Pointer[[]string], string) {
+func newTestDeployManager(t *testing.T) (*DeployManager, string) {
 	t.Helper()
 	tmp := t.TempDir()
 	binDir := filepath.Join(tmp, "sbin")
 	if err := os.Mkdir(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	captured := &atomic.Pointer[[]string]{}
 	cfg := DeployConfig{
 		BinaryDir:      binDir,
 		StatePath:      filepath.Join(tmp, "deploy.state"),
 		PendingPath:    filepath.Join(tmp, "pending-verify"),
-		ReExecGrace:    time.Millisecond,
-		ReExecFn:       stubExec(captured),
 		WriteStateFile: atomicWriteFile,
 		NowFn:          func() time.Time { return time.Unix(1715000000, 0) },
 	}
 	dm := NewDeployManager(slog.Default(), cfg)
-	return dm, captured, binDir
+	return dm, binDir
 }
 
 func writeBinary(t *testing.T, path string, content []byte) {
@@ -92,7 +79,7 @@ func TestParseStateFile_TolerantToUnknownKeys(t *testing.T) {
 }
 
 func TestDeploy_RejectsEmptyBinary(t *testing.T) {
-	dm, _, _ := newTestDeployManager(t)
+	dm, _ := newTestDeployManager(t)
 	_, _, err := dm.Deploy(context.Background(), nil, "abc", "v1")
 	if err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Errorf("want empty-binary error, got %v", err)
@@ -100,7 +87,7 @@ func TestDeploy_RejectsEmptyBinary(t *testing.T) {
 }
 
 func TestDeploy_RejectsMissingSHA(t *testing.T) {
-	dm, _, _ := newTestDeployManager(t)
+	dm, _ := newTestDeployManager(t)
 	_, _, err := dm.Deploy(context.Background(), []byte("payload"), "", "v1")
 	if err == nil || !strings.Contains(err.Error(), "sha256_hex required") {
 		t.Errorf("want missing-sha error, got %v", err)
@@ -108,7 +95,7 @@ func TestDeploy_RejectsMissingSHA(t *testing.T) {
 }
 
 func TestDeploy_RejectsSHAMismatch(t *testing.T) {
-	dm, _, _ := newTestDeployManager(t)
+	dm, _ := newTestDeployManager(t)
 	_, _, err := dm.Deploy(context.Background(), []byte("payload"), "deadbeef", "v1")
 	if err == nil || !strings.Contains(err.Error(), "mismatch") {
 		t.Errorf("want sha mismatch error, got %v", err)
@@ -116,7 +103,7 @@ func TestDeploy_RejectsSHAMismatch(t *testing.T) {
 }
 
 func TestDeploy_FirstDeployNoCurrent(t *testing.T) {
-	dm, captured, binDir := newTestDeployManager(t)
+	dm, binDir := newTestDeployManager(t)
 	payload := []byte("new-elf")
 	sum := sha256.Sum256(payload)
 	sumHex := hex.EncodeToString(sum[:])
@@ -154,17 +141,10 @@ func TestDeploy_FirstDeployNoCurrent(t *testing.T) {
 	if state.Health != HealthPending {
 		t.Errorf("state.Health=%s want %s", state.Health, HealthPending)
 	}
-
-	// re-exec stub eventually called
-	waitForReExec(t, captured)
-	gotArgs := captured.Load()
-	if gotArgs == nil || len(*gotArgs) == 0 || (*gotArgs)[0] != filepath.Join(binDir, BinaryCurrent) {
-		t.Fatalf("re-exec argv0=%v want %s", gotArgs, filepath.Join(binDir, BinaryCurrent))
-	}
 }
 
 func TestDeploy_PreservesPreviousOnSecondDeploy(t *testing.T) {
-	dm, captured, binDir := newTestDeployManager(t)
+	dm, binDir := newTestDeployManager(t)
 	original := []byte("v1-elf")
 	originalSum := sha256.Sum256(original)
 	writeBinary(t, filepath.Join(binDir, BinaryCurrent), original)
@@ -193,11 +173,10 @@ func TestDeploy_PreservesPreviousOnSecondDeploy(t *testing.T) {
 	if state.Previous != hex.EncodeToString(originalSum[:]) {
 		t.Errorf("state.Previous=%s want %s", state.Previous, hex.EncodeToString(originalSum[:]))
 	}
-	waitForReExec(t, captured)
 }
 
 func TestMarkHealthy_ClearsPendingAndStampsOK(t *testing.T) {
-	dm, _, binDir := newTestDeployManager(t)
+	dm, binDir := newTestDeployManager(t)
 	payload := []byte("v-elf")
 	writeBinary(t, filepath.Join(binDir, BinaryCurrent), payload)
 	// Pre-condition: pending marker present, health=pending
@@ -232,7 +211,7 @@ func TestMarkHealthy_ClearsPendingAndStampsOK(t *testing.T) {
 }
 
 func TestMarkHealthy_TolerantToMissingState(t *testing.T) {
-	dm, _, binDir := newTestDeployManager(t)
+	dm, binDir := newTestDeployManager(t)
 	payload := []byte("v-elf")
 	writeBinary(t, filepath.Join(binDir, BinaryCurrent), payload)
 	// No state file, no pending marker. MarkHealthy should still succeed.
@@ -247,7 +226,7 @@ func TestMarkHealthy_TolerantToMissingState(t *testing.T) {
 }
 
 func TestStatus_DerivesFromDiskWhenStateMissing(t *testing.T) {
-	dm, _, binDir := newTestDeployManager(t)
+	dm, binDir := newTestDeployManager(t)
 	payload := []byte("v-elf")
 	writeBinary(t, filepath.Join(binDir, BinaryCurrent), payload)
 	prev := []byte("v-prev")
@@ -271,7 +250,7 @@ func TestStatus_DerivesFromDiskWhenStateMissing(t *testing.T) {
 }
 
 func TestRevert_RequiresPrevious(t *testing.T) {
-	dm, _, _ := newTestDeployManager(t)
+	dm, _ := newTestDeployManager(t)
 	_, err := dm.Revert(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "previous absent") {
 		t.Errorf("want previous-absent error, got %v", err)
@@ -279,7 +258,7 @@ func TestRevert_RequiresPrevious(t *testing.T) {
 }
 
 func TestRevert_CopiesPreviousAndArmsReExec(t *testing.T) {
-	dm, captured, binDir := newTestDeployManager(t)
+	dm, binDir := newTestDeployManager(t)
 	current := []byte("v2-elf")
 	previous := []byte("v1-elf")
 	writeBinary(t, filepath.Join(binDir, BinaryCurrent), current)
@@ -299,7 +278,6 @@ func TestRevert_CopiesPreviousAndArmsReExec(t *testing.T) {
 	if _, statErr := os.Stat(dm.cfg.PendingPath); statErr != nil {
 		t.Errorf("pending marker should be present after revert: %v", statErr)
 	}
-	waitForReExec(t, captured)
 }
 
 func TestAtomicWriteFile_ReplacesContent(t *testing.T) {
@@ -328,18 +306,6 @@ func TestFileSHA256_MissingReturnsEmpty(t *testing.T) {
 }
 
 // helpers
-
-func waitForReExec(t *testing.T, captured *atomic.Pointer[[]string]) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if captured.Load() != nil {
-			return
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	t.Errorf("re-exec was never invoked within deadline")
-}
 
 func sha256Hex(b []byte) string {
 	sum := sha256.Sum256(b)

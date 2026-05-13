@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -32,7 +31,6 @@ const (
 	BinaryFileMode    = 0o755
 	StagedTmpFileMode = 0o600
 	PendingFileMode   = 0o644
-	ReExecGraceMillis = 500
 	HealthOK          = "ok"
 	HealthPending     = "pending"
 	MarkerFreshDeploy = "fresh-deploy"
@@ -44,9 +42,7 @@ const (
 type DeployConfig struct {
 	BinaryDir      string // dir holding .current, .previous, .staged
 	StatePath      string // colon-delim flag file
-	PendingPath    string // marker dropped before re-exec
-	ReExecGrace    time.Duration
-	ReExecFn       func(argv0 string, argv []string, envv []string) error // override for tests
+	PendingPath    string // marker dropped before swap
 	WriteStateFile func(path string, content []byte, mode os.FileMode) error
 	NowFn          func() time.Time
 }
@@ -72,12 +68,6 @@ func NewDeployManager(log *slog.Logger, cfg DeployConfig) *DeployManager {
 	}
 	if cfg.PendingPath == "" {
 		cfg.PendingPath = PendingVerifyPath
-	}
-	if cfg.ReExecGrace == 0 {
-		cfg.ReExecGrace = ReExecGraceMillis * time.Millisecond
-	}
-	if cfg.ReExecFn == nil {
-		cfg.ReExecFn = syscall.Exec
 	}
 	if cfg.WriteStateFile == nil {
 		cfg.WriteStateFile = atomicWriteFile
@@ -224,16 +214,8 @@ func (d *DeployManager) finishSwap(ctx context.Context, staged, current, previou
 		d.log.ErrorContext(ctx, "deploy: write pending marker failed", "err", writeErr)
 	}
 
-	d.log.InfoContext(ctx, "deploy: armed re-exec", "grace_ms", d.cfg.ReExecGrace.Milliseconds())
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				d.log.ErrorContext(ctx, "deploy: re-exec goroutine panicked", "err", fmt.Errorf("panic: %v", r))
-			}
-		}()
-		d.scheduleReExec(ctx)
-	}()
+	d.log.InfoContext(ctx, "deploy: staged binary swapped into active slot",
+		"sha256", computedHex)
 	return nil
 }
 
@@ -398,45 +380,8 @@ func (d *DeployManager) Revert(ctx context.Context) (revertedTo string, err erro
 		d.log.ErrorContext(ctx, "revert: write pending marker failed", "err", writeErr)
 	}
 
-	d.log.InfoContext(ctx, "revert: armed re-exec", "reverted_to_sha256", revertedTo)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				d.log.ErrorContext(ctx, "revert: re-exec goroutine panicked", "err", fmt.Errorf("panic: %v", r))
-			}
-		}()
-		d.scheduleReExec(ctx)
-	}()
-
+	d.log.InfoContext(ctx, "revert: completed", "reverted_to_sha256", revertedTo)
 	return revertedTo, nil
-}
-
-// scheduleReExec waits ReExecGrace then re-execs the running process.
-// Called as a goroutine so the originating RPC can reply before exec
-// replaces the process image.
-func (d *DeployManager) scheduleReExec(ctx context.Context) {
-	timer := time.NewTimer(d.cfg.ReExecGrace)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-	case <-ctx.Done():
-		d.log.WarnContext(ctx, "re-exec: context cancelled, exec anyway")
-	}
-	executable := d.pathOf(BinaryCurrent)
-	if _, err := os.Stat(executable); err != nil {
-		d.log.ErrorContext(ctx, "re-exec: current executable missing", "path", executable, "err", err)
-		return
-	}
-	args := append([]string(nil), os.Args...)
-	if len(args) == 0 {
-		args = []string{executable}
-	} else {
-		args[0] = executable
-	}
-	d.log.WarnContext(ctx, "re-exec: invoking syscall.Exec", "argv0", executable, "argc", len(args))
-	if execErr := d.cfg.ReExecFn(executable, args, os.Environ()); execErr != nil {
-		d.log.ErrorContext(ctx, "re-exec: failed", "err", execErr)
-	}
 }
 
 // deployState is the structured form of the state file.

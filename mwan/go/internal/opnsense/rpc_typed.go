@@ -194,11 +194,25 @@ func (r *RPC) Revert(ctx context.Context, req *mwanv1.RevertRequest) (*mwanv1.Re
 	return resp, nil
 }
 
-// CommitDeploy calls the CommitDeploy RPC.
-func (r *RPC) CommitDeploy(ctx context.Context, req *mwanv1.CommitDeployRequest) (*mwanv1.CommitDeployResponse, error) {
-	resp, err := r.c.opnsense.CommitDeploy(ctx, req)
+// StageBinary calls the StageBinary RPC. The daemon verifies the
+// previously staged file's sha256 and swaps it into the active slot
+// without restarting itself.
+func (r *RPC) StageBinary(ctx context.Context, req *mwanv1.StageBinaryRequest) (*mwanv1.StageBinaryResponse, error) {
+	resp, err := r.c.opnsense.StageBinary(ctx, req)
 	if err != nil {
-		return nil, logWrap(ctx, r.c.log, "CommitDeploy", err)
+		return nil, logWrap(ctx, r.c.log, "StageBinary", err)
+	}
+	return resp, nil
+}
+
+// RestartDaemon calls the RestartDaemon RPC. The daemon shuts down
+// cleanly and rc.d respawns it from the active binary slot. The
+// caller's connection will see the yamux session close shortly after
+// this returns and must reconnect for further work.
+func (r *RPC) RestartDaemon(ctx context.Context, req *mwanv1.RestartDaemonRequest) (*mwanv1.RestartDaemonResponse, error) {
+	resp, err := r.c.opnsense.RestartDaemon(ctx, req)
+	if err != nil {
+		return nil, logWrap(ctx, r.c.log, "RestartDaemon", err)
 	}
 	return resp, nil
 }
