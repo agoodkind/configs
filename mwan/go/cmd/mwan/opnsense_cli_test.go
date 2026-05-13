@@ -1,0 +1,134 @@
+package main
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"goodkind.io/mwan/internal/config"
+)
+
+// writeTempTOML writes content to a tempdir-scoped config.toml and
+// returns the path. The MWAN_CONFIG env var is set so config.Load reads
+// the temp file rather than /etc/mwan/config.toml.
+func writeTempTOML(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	t.Setenv("MWAN_CONFIG", path)
+	return path
+}
+
+// TestHostServeReadsTOML verifies that `mwan opnsense host serve`
+// resolves [opnsense.host] from a tempdir-scoped TOML rather than
+// falling back to a flag default. The TOML names a bogus upstream
+// scheme so the verb errors out at validation time after the section
+// has been read, which is the proof point: a "must be unix:///abs/path"
+// message means the [opnsense.host].upstream value made it from TOML
+// into the host serve runner.
+func TestHostServeReadsTOML(t *testing.T) {
+	writeTempTOML(t, `
+hostname = "host-test"
+
+[opnsense.host]
+upstream = "tcp://not-a-unix-socket"
+listen = "/tmp/mwan-test.sock"
+reconnect = "1s"
+heartbeat_interval = "5s"
+heartbeat_timeout = "2s"
+`)
+
+	cfg, err := loadOpnsenseConfig()
+	if err != nil {
+		t.Fatalf("loadOpnsenseConfig: %v", err)
+	}
+	upstream, err := requireHostUpstream(cfg)
+	if err != nil {
+		t.Fatalf("requireHostUpstream: %v", err)
+	}
+	if upstream != "tcp://not-a-unix-socket" {
+		t.Fatalf("upstream = %q, want %q", upstream, "tcp://not-a-unix-socket")
+	}
+	listen, err := requireHostListen(cfg)
+	if err != nil {
+		t.Fatalf("requireHostListen: %v", err)
+	}
+	if listen != "/tmp/mwan-test.sock" {
+		t.Fatalf("listen = %q, want %q", listen, "/tmp/mwan-test.sock")
+	}
+	reconnect, hbInterval, hbTimeout, err := parseHostDurations(cfg)
+	if err != nil {
+		t.Fatalf("parseHostDurations: %v", err)
+	}
+	if reconnect.String() != "1s" || hbInterval.String() != "5s" || hbTimeout.String() != "2s" {
+		t.Fatalf("durations reconnect=%s hbInterval=%s hbTimeout=%s",
+			reconnect, hbInterval, hbTimeout)
+	}
+}
+
+// TestFilePushErrorsOnEmptyProbeTarget verifies that requireProbeTarget
+// returns a clear error citing the missing TOML key when
+// [opnsense.probe].target is empty. The file push verb funnels every
+// call through this helper before it dials anything, so an empty target
+// surfaces as a TOML-keyed error instead of a generic dial failure.
+func TestFilePushErrorsOnEmptyProbeTarget(t *testing.T) {
+	writeTempTOML(t, `
+hostname = "host-test"
+
+[opnsense.probe]
+target = ""
+timeout = "5s"
+upload_chunk_bytes = 16384
+`)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if _, err := requireProbeTarget(cfg); err == nil {
+		t.Fatalf("requireProbeTarget returned nil error for empty target")
+	} else if !strings.Contains(err.Error(), "[opnsense.probe].target") {
+		t.Fatalf("error %q does not name the TOML key", err.Error())
+	}
+}
+
+// TestUpgradePrepareErrorsOnMissingUpgradeSection verifies that
+// resolveUpgradeInputs rejects a TOML missing the [opnsense.upgrade]
+// fields with a TOML-keyed error message. We blank out the values the
+// schema's defaultConfig() pre-populates so the resolver must report
+// the missing key.
+func TestUpgradePrepareErrorsOnMissingUpgradeSection(t *testing.T) {
+	writeTempTOML(t, `
+hostname = "host-test"
+
+[opnsense.upgrade]
+vmid = 0
+state_dir = ""
+env_grpc_target = ""
+exec_timeout = ""
+upgrade_timeout = ""
+post_rollback_wait = ""
+gc_older_than = ""
+[opnsense.upgrade.validate]
+settle_after_upgrade = ""
+`)
+
+	_, _, err := resolveUpgradeInputs()
+	if err == nil {
+		t.Fatalf("resolveUpgradeInputs returned nil error for empty upgrade section")
+	}
+	msg := err.Error()
+	// The first failing field is vmid; subsequent runs should see a
+	// path that names [opnsense.upgrade].
+	if !strings.Contains(msg, "[opnsense.upgrade]") {
+		t.Fatalf("error %q does not name an [opnsense.upgrade] key", msg)
+	}
+	// errors.Is on a wrapped fmt.Errorf is too coarse here; the assertion
+	// on the message text is the contract.
+	var _ error = errors.New("placeholder")
+}

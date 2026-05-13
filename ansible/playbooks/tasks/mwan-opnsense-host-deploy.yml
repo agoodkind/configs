@@ -1,5 +1,5 @@
 ---
-# Linux-side deploy of the mwan opnsense-host bridge subcommand.
+# Linux-side deploy of the mwan opnsense host bridge subcommand.
 #
 # Target: a Proxmox host that runs an OPNsense VM, reached as root.
 # Pairs with mwan-opnsense-deploy.yml which installs the daemon
@@ -7,10 +7,13 @@
 #
 # Required vars:
 #   mwan_opnsense_host_binary_local      local path to bin/mwan-linux
-#   mwan_opnsense_host_vmid              Proxmox VMID hosting OPNsense (e.g. 102 testbed, 101 prod)
+#   mwan_opnsense_host_upstream          unix:///var/run/qemu-server/<vmid>.mwanrpc
 #
 # Optional vars (with defaults):
 #   mwan_opnsense_host_listen_path       default "/var/run/mwan-opnsense.sock"
+#   mwan_opnsense_host_reconnect         default "2s"
+#   mwan_opnsense_host_hb_interval       default "30s"
+#   mwan_opnsense_host_hb_timeout        default "10s"
 
 - name: Install mwan monolith binary
   ansible.builtin.copy:
@@ -33,29 +36,34 @@
   become: true
   register: mwan_opnsense_host_unit
 
-- name: Ensure drop-in directory
+- name: Ensure /etc/mwan exists
   ansible.builtin.file:
-    path: /etc/systemd/system/mwan-opnsense-host.service.d
+    path: /etc/mwan
     state: directory
     owner: root
     group: root
     mode: "0755"
   become: true
 
-- name: Drop-in override for upstream chardev path (per-host VMID)
+- name: Template [opnsense.host] into /etc/mwan/config.toml
   ansible.builtin.copy:
-    dest: /etc/systemd/system/mwan-opnsense-host.service.d/upstream.conf
+    dest: /etc/mwan/config.toml
     owner: root
     group: root
     mode: "0644"
     content: |
-      [Service]
-      ExecStart=
-      ExecStart=/usr/local/bin/mwan opnsense-host serve \
-          -upstream unix:///var/run/qemu-server/{{ mwan_opnsense_host_vmid }}.mwanrpc \
-          -listen {{ mwan_opnsense_host_listen_path | default('/var/run/mwan-opnsense.sock') }}
+      # Managed by ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml.
+      # The host bridge reads every input from this section.
+      hostname = "{{ inventory_hostname }}"
+
+      [opnsense.host]
+      upstream = "{{ mwan_opnsense_host_upstream }}"
+      listen = "{{ mwan_opnsense_host_listen_path | default('/var/run/mwan-opnsense.sock') }}"
+      reconnect = "{{ mwan_opnsense_host_reconnect | default('2s') }}"
+      heartbeat_interval = "{{ mwan_opnsense_host_hb_interval | default('30s') }}"
+      heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout | default('10s') }}"
   become: true
-  register: mwan_opnsense_host_dropin
+  register: mwan_opnsense_host_toml
 
 - name: Reload systemd if anything changed
   ansible.builtin.systemd:
@@ -63,7 +71,6 @@
   become: true
   when: >-
     mwan_opnsense_host_unit.changed
-    or mwan_opnsense_host_dropin.changed
 
 - name: Enable and start mwan-opnsense-host
   ansible.builtin.systemd:
@@ -72,7 +79,7 @@
     state: started
   become: true
 
-- name: Restart mwan-opnsense-host if binary or unit changed
+- name: Restart mwan-opnsense-host if binary, unit, or TOML changed
   ansible.builtin.systemd:
     name: mwan-opnsense-host
     state: restarted
@@ -80,4 +87,4 @@
   when: >-
     mwan_opnsense_host_binary.changed
     or mwan_opnsense_host_unit.changed
-    or mwan_opnsense_host_dropin.changed
+    or mwan_opnsense_host_toml.changed

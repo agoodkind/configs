@@ -31,9 +31,29 @@ type Client struct {
 // ErrClientClosed surfaces when a call is attempted after Close.
 var ErrClientClosed = errors.New("opnsense: client is closed")
 
-// Dial opens target and constructs a Client. target must be of the
-// form unix:///abs/path.
+// DialContext is the ctx-aware variant of Dial. The underlying
+// grpc.NewClient is lazy, so the ctx mainly governs the initial
+// argument validation and slog records; the socket dial itself
+// happens on the first RPC. Callers that already hold a ctx should
+// prefer this entry point.
+func DialContext(ctx context.Context, target string) (*Client, error) {
+	c, err := dialUnix(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Dial opens a gRPC client against the unix-socket target.
 func Dial(target string) (*Client, error) {
+	c, err := dialUnix(context.Background(), target)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func dialUnix(ctx context.Context, target string) (*Client, error) {
 	if target == "" {
 		return nil, errors.New("opnsense: empty target")
 	}
@@ -56,7 +76,7 @@ func Dial(target string) (*Client, error) {
 		grpc.WithContextDialer(dialer),
 	)
 	if err != nil {
-		return nil, logWrap(context.Background(), slog.Default(), "grpc.NewClient", err)
+		return nil, logWrap(ctx, slog.Default(), "grpc.NewClient", err)
 	}
 	c := &Client{
 		target:   target,

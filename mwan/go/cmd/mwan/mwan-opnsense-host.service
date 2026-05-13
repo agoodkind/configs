@@ -6,12 +6,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-# Defaults assume the testbed VM 102 chardev path. Override with a
-# drop-in at /etc/systemd/system/mwan-opnsense-host.service.d/upstream.conf
-# for prod (VM 101) or any other target.
-ExecStart=/usr/local/bin/mwan opnsense-host serve \
-    -upstream unix:///var/run/qemu-server/102.mwanrpc \
-    -listen /var/run/mwan-opnsense.sock
+# All inputs are read from /etc/mwan/config.toml under [opnsense.host].
+# Override per host by templating that section, not by patching the unit.
+ExecStart=/usr/local/bin/mwan opnsense host serve
 Restart=always
 RestartSec=5s
 StandardOutput=journal
@@ -22,6 +19,7 @@ SyslogIdentifier=mwan-opnsense-host
 #   - read+write access to the qemu chardev unix socket under
 #     /var/run/qemu-server/, owned by root (Proxmox-managed).
 #   - read+write access to its own listen socket under /var/run/.
+#   - read access to /etc/mwan/config.toml.
 # No network capabilities: it only talks to local unix sockets.
 NoNewPrivileges=true
 ProtectSystem=strict

@@ -30,7 +30,9 @@
   gather_facts: false
   vars:
     mwan_opnsense_host_binary_local: "{{ playbook_dir }}/../../mwan/go/bin/mwan-linux"
-    mwan_opnsense_host_vmid: 102
+    # vmid is encoded into the upstream chardev path inside the TOML
+    # template; the playbook does not carry it as a separate variable.
+    mwan_opnsense_host_upstream: "unix:///var/run/qemu-server/102.mwanrpc"
     mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
   tasks:
     - name: Verify bridge binary exists locally

@@ -3,22 +3,22 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/notify"
+	"goodkind.io/mwan/internal/opnsense"
 	"goodkind.io/mwan/internal/opnsense/upgrade"
+	"goodkind.io/mwan/internal/opnsense/validate"
 	"goodkind.io/mwan/internal/ops"
 )
 
-// upgradePhase is the typed enum of opnsense-upgrade subcommand names.
-// Using a typed string here satisfies the "switch on bare string"
-// staticcheck-extra rule and keeps the dispatch list discoverable.
+// upgradePhase enumerates `mwan opnsense upgrade <phase>` actions.
 type upgradePhase string
 
 const (
@@ -30,420 +30,329 @@ const (
 	upgradePhaseRun      upgradePhase = "run"
 	upgradePhaseGC       upgradePhase = "gc"
 	upgradePhaseReset    upgradePhase = "reset"
-	upgradePhaseHelp1    upgradePhase = "-h"
-	upgradePhaseHelp2    upgradePhase = "--help"
-	upgradePhaseHelp3    upgradePhase = "help"
 )
 
-// runOPNsenseUpgrade dispatches `mwan opnsense-upgrade <subcommand>`.
-// It is the CLI surface for the per-phase entry points in
-// internal/opnsense/upgrade. The dispatch is one switch by subcommand
-// name; flag parsing lives per subcommand so flag sets stay tight.
-func runOPNsenseUpgrade(args []string) error {
-	if len(args) == 0 {
-		printUpgradeUsage(os.Stderr)
-		err := errors.New("opnsense-upgrade: subcommand required")
-		slog.Error("opnsense-upgrade: subcommand required", "err", err)
-		return err
+func upgradeUsage(out *os.File) {
+	fmt.Fprintln(out, "usage: mwan opnsense upgrade <phase>")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "Phases: prepare, execute, validate, rollback, commit, run, gc, reset")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "Every input comes from [opnsense.upgrade] in /etc/mwan/config.toml.")
+}
+
+func runOPNsenseUpgradeCmd(args []string) int {
+	if len(args) < 1 {
+		upgradeUsage(os.Stderr)
+		return 2
 	}
-	sub := upgradePhase(args[0])
+	verb := upgradePhase(args[0])
 	rest := args[1:]
-	switch sub {
-	case upgradePhasePrepare:
-		return runUpgradePrepare(rest)
-	case upgradePhaseExecute:
-		return runUpgradeExecute(rest)
-	case upgradePhaseValidate:
-		return runUpgradeValidate(rest)
-	case upgradePhaseRollback:
-		return runUpgradeRollback(rest)
-	case upgradePhaseCommit:
-		return runUpgradeCommit(rest)
-	case upgradePhaseRun:
-		return runUpgradeRun(rest)
-	case upgradePhaseGC:
-		return runUpgradeGC(rest)
+	if len(rest) > 0 && (rest[0] == "-h" || rest[0] == "--help" || rest[0] == "help") {
+		upgradeUsage(os.Stdout)
+		return 0
+	}
+	if len(rest) > 0 {
+		fmt.Fprintf(os.Stderr, "mwan opnsense upgrade %s: unexpected arguments: %v\n", verb, rest)
+		return 2
+	}
+	switch verb {
+	case upgradePhasePrepare,
+		upgradePhaseExecute,
+		upgradePhaseValidate,
+		upgradePhaseRollback,
+		upgradePhaseCommit,
+		upgradePhaseRun,
+		upgradePhaseGC:
+		return runUpgradePhase(verb)
 	case upgradePhaseReset:
-		return runUpgradeReset(rest)
-	case upgradePhaseHelp1, upgradePhaseHelp2, upgradePhaseHelp3:
-		printUpgradeUsage(os.Stdout)
-		return nil
+		return runUpgradeReset()
 	default:
-		printUpgradeUsage(os.Stderr)
-		err := errors.New("opnsense-upgrade: unknown subcommand")
-		slog.Error("opnsense-upgrade: unknown subcommand", "err", err)
-		return err
+		fmt.Fprintf(os.Stderr, "mwan opnsense upgrade: unknown phase %q\n", string(verb))
+		upgradeUsage(os.Stderr)
+		return 2
 	}
 }
 
-func printUpgradeUsage(w *os.File) {
-	fmt.Fprintln(w, "usage: mwan opnsense-upgrade <prepare|execute|validate|rollback|commit|run|gc|reset> [flags]")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Per-phase entry points for the OPNsense upgrade rollback flow.")
-	fmt.Fprintln(w, "Common flags:")
-	fmt.Fprintln(w, "  --vmid <id>             VMID to operate on (required)")
-	fmt.Fprintln(w, "  --target <ver>          Target OPNsense version (e.g. 26.7)")
-	fmt.Fprintln(w, "  --state-dir <path>      State directory (default /var/lib/mwan/upgrades)")
-	fmt.Fprintln(w, "  --deploy-id <id>        Deploy identifier (auto-generated when empty)")
-	fmt.Fprintln(w, "  --snapshot <name>       Override snapshot name for rollback/commit")
-	fmt.Fprintln(w, "  --dry-run-execute       Run opnsense-update -c instead of the real upgrade")
-	fmt.Fprintln(w, "  --use-boot-environment  Capture a bectl boot environment alongside the snapshot")
-	fmt.Fprintln(w, "  --accept-partial        Treat partial-pass as a manual-decision state instead of fail")
-	fmt.Fprintln(w, "  --keep-snapshot         Retain the snapshot during commit (sweep later via gc)")
-	fmt.Fprintln(w, "  --older-than <dur>      gc threshold (default 168h)")
-	fmt.Fprintln(w, "  --dry-run               gc: print what would be deleted without removing anything")
-	fmt.Fprintln(w, "  --upgrade-timeout <dur> Watchdog timeout for the in-guest upgrade (default 30m)")
-	fmt.Fprintln(w, "  --post-rollback-wait <dur> Liveness probe deadline after rollback (default 60s)")
-	fmt.Fprintln(w, "  --exec-timeout <dur>    Per-RPC Exec timeout for the gRPC executor (default 30m)")
+// upgradeInputs is the resolved set of TOML-derived values every phase
+// needs. Loading it once and validating every required field up-front
+// guarantees the operator sees one clear error message instead of a
+// half-completed run.
+type upgradeInputs struct {
+	VMID                string
+	StateDir            string
+	GRPCTarget          string
+	Target              string
+	ExecTimeout         time.Duration
+	UpgradeTimeout      time.Duration
+	PostRollbackWait    time.Duration
+	DryRunExecute       bool
+	UseBootEnvironment  bool
+	AcceptPartial       bool
+	KeepSnapshot        bool
+	GCOlderThan         time.Duration
+	ResetConfirm        bool
+	DiffAgainst         string
+	SettleAfterUpgrade  time.Duration
+	APIKey              string
+	APISecret           string
+	BGPv4Neighbors      string
+	BGPv6Neighbors      string
+	OPNsenseLAN         string
+	MWANOpnsenseSock    string
+	MWANOpnsenseHostSck string
+	OPNsenseSSH         string
+	OPNsenseJump        string
+	ProxmoxSSH          string
+	LANClientSSH        string
+	OPNsenseAddr        string
 }
 
-// upgradeFlags holds the flag values shared across phases. Each phase
-// subcommand sets up its own flag set but reads the same struct so the
-// surface stays uniform. The validator-related fields mirror the
-// `mwan opnsense-validate` flag set so the upgrade phases can drive the
-// same MWAN-153 check matrix without operators having to learn two
-// flag surfaces.
-type upgradeFlags struct {
-	vmid               string
-	target             string
-	stateDir           string
-	deployID           string
-	snapshot           string
-	dryRunExecute      bool
-	dryRunGC           bool
-	useBootEnvironment bool
-	acceptPartial      bool
-	keepSnapshot       bool
-	olderThan          time.Duration
-	upgradeTimeout     time.Duration
-	postRollbackWait   time.Duration
-	execTimeout        time.Duration
-
-	// Validator transport flags. Mirror mwan opnsense-validate so
-	// `mwan opnsense-upgrade {validate,run}` can run the same matrix.
-	envTransport     envTransport
-	envGRPCTarget    string
-	opnsenseSSHHost  string
-	opnsenseJumpHost string
-	proxmoxSSHHost   string
-	lanClientSSH     string
-	opnsenseAddr     string
-	apiKey           string
-	apiSecret        string
-	bgpV4Neighbors   string
-	bgpV6Neighbors   string
-	opnsenseLAN      string
-	mwanSocket       string
-	mwanHostSocket   string
-	settleAfter      time.Duration
-}
-
-// registerCommonFlags wires the shared flag set used by every
-// opnsense-upgrade phase. The --env-transport flag is parsed into a
-// raw string here and the typed envTransport value is resolved in
-// parseUpgradeFlags after fs.Parse runs. Returning the pointer keeps
-// the flag binding adjacent to the struct field it backs.
-func registerCommonFlags(fs *flag.FlagSet, f *upgradeFlags) *string {
-	fs.StringVar(&f.vmid, "vmid", "", "VMID to operate on (required)")
-	fs.StringVar(&f.target, "target", "", "Target OPNsense version")
-	fs.StringVar(&f.stateDir, "state-dir", upgrade.DefaultStateDir, "Upgrade state directory")
-	fs.StringVar(&f.deployID, "deploy-id", "", "Deploy identifier; auto-generated when empty")
-	fs.StringVar(&f.snapshot, "snapshot", "", "Snapshot name override")
-	fs.BoolVar(&f.dryRunExecute, "dry-run-execute", false, "Run opnsense-update -c instead of the real upgrade")
-	fs.BoolVar(&f.dryRunGC, "dry-run", false, "gc: print what would be deleted without removing anything")
-	fs.BoolVar(&f.useBootEnvironment, "use-boot-environment", false, "Capture bectl boot environment if available")
-	fs.BoolVar(&f.acceptPartial, "accept-partial", false, "Treat partial-pass validation as manual-decision state")
-	fs.BoolVar(&f.keepSnapshot, "keep-snapshot", false, "Retain the upgrade snapshot during commit")
-	fs.DurationVar(&f.olderThan, "older-than", upgrade.DefaultGCThreshold, "gc age threshold")
-	fs.DurationVar(&f.upgradeTimeout, "upgrade-timeout", upgrade.DefaultUpgradeTimeout, "Watchdog timeout for the in-guest upgrade")
-	fs.DurationVar(&f.postRollbackWait, "post-rollback-wait", upgrade.DefaultPostRollbackTimeout, "QGA liveness probe deadline after rollback")
-	fs.DurationVar(&f.execTimeout, "exec-timeout", upgrade.DefaultExecTimeout, "Per-RPC Exec timeout for the gRPC executor (passed to mwan-opnsense daemon)")
-	transportStr := fs.String("env-transport", string(envTransportSSH),
-		"validator transport: ssh|grpc (grpc routes OPNsense ops via mwan-opnsense daemon)")
-	fs.StringVar(&f.envGRPCTarget, "env-grpc-target", "",
-		"gRPC target socket for --env-transport=grpc (e.g. unix:///var/run/mwan-opnsense.sock)")
-	fs.StringVar(&f.opnsenseSSHHost, "opnsense-ssh", "", "ssh destination for the OPNsense guest (validator)")
-	fs.StringVar(&f.opnsenseJumpHost, "opnsense-jump", "", "ssh ProxyJump for OPNsense (validator)")
-	fs.StringVar(&f.proxmoxSSHHost, "proxmox-ssh", "", "ssh destination for the Proxmox host (validator)")
-	fs.StringVar(&f.lanClientSSH, "lan-client-ssh", "", "ssh destination for a LAN client (validator data-plane probes)")
-	fs.StringVar(&f.opnsenseAddr, "opnsense-addr", "", "host:port for HTTPS GETs against the OPNsense web UI (validator)")
-	fs.StringVar(&f.apiKey, "api-key", "", "OPNsense API key (validator)")
-	fs.StringVar(&f.apiSecret, "api-secret", "", "OPNsense API secret (validator)")
-	fs.StringVar(&f.bgpV4Neighbors, "bgp-v4-neighbors", "", "comma-separated v4 BGP peer addresses (validator)")
-	fs.StringVar(&f.bgpV6Neighbors, "bgp-v6-neighbors", "", "comma-separated v6 BGP peer addresses (validator)")
-	fs.StringVar(&f.opnsenseLAN, "opnsense-lan", "", "OPNsense LAN address used by dig probes (validator)")
-	fs.StringVar(&f.mwanSocket, "mwan-opnsense-socket", "", "unix socket path probed by the gRPC check (validator)")
-	fs.StringVar(&f.mwanHostSocket, "mwan-opnsense-host-socket", "", "unix socket path the bridge listens on (validator)")
-	fs.DurationVar(&f.settleAfter, "settle-after-upgrade", 5*time.Minute, "validator dwell time before DHCP-related checks run")
-	return transportStr
-}
-
-func parseUpgradeFlags(name string, args []string) (upgradeFlags, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	var f upgradeFlags
-	transportStr := registerCommonFlags(fs, &f)
-	if err := fs.Parse(args); err != nil {
-		slog.Error("opnsense-upgrade: parse flags", "err", err, "subcommand", name)
-		return f, fmt.Errorf("%s: parse flags: %w", name, err)
+// buildRedial returns a context-free closure suitable for the
+// upgrade.GRPCExecutor.Redial field. The closure runs in a goroutine
+// that has no caller ctx (the executor invokes it on demand after a
+// rollback drops the gRPC channel), so plain opnsense.Dial is the
+// right primitive here.
+func buildRedial(target string) func() (upgrade.OPNsenseRPCClient, error) {
+	return func() (upgrade.OPNsenseRPCClient, error) {
+		c, err := opnsense.Dial(target)
+		if err != nil {
+			slog.Error("opnsense upgrade: redial", "err", err, "target", target)
+			return nil, fmt.Errorf("dial %s: %w", target, err)
+		}
+		return c.RPC(), nil
 	}
-	transport, err := parseEnvTransport(*transportStr)
+}
+
+func resolveUpgradeInputs() (upgradeInputs, *config.Config, error) {
+	var ui upgradeInputs
+	cfg, err := loadOpnsenseConfig()
 	if err != nil {
-		return f, fmt.Errorf("%s: %w", name, err)
+		return ui, nil, err
 	}
-	f.envTransport = transport
-	if err := requireVMID(f.vmid); err != nil {
-		return f, err
+	vmid, err := requireUpgradeVMID(cfg)
+	if err != nil {
+		return ui, nil, err
 	}
-	return f, nil
+	stateDir, err := requireUpgradeStateDir(cfg)
+	if err != nil {
+		return ui, nil, err
+	}
+	grpcTarget, err := requireUpgradeGRPCTarget(cfg)
+	if err != nil {
+		return ui, nil, err
+	}
+	execTimeout, err := parseRequiredDuration(cfg.OPNsense.Upgrade.ExecTimeoutDuration, "[opnsense.upgrade].exec_timeout")
+	if err != nil {
+		return ui, nil, err
+	}
+	upgradeTimeout, err := parseRequiredDuration(cfg.OPNsense.Upgrade.UpgradeTimeoutDuration, "[opnsense.upgrade].upgrade_timeout")
+	if err != nil {
+		return ui, nil, err
+	}
+	postRollbackWait, err := parseRequiredDuration(cfg.OPNsense.Upgrade.PostRollbackWaitDuration, "[opnsense.upgrade].post_rollback_wait")
+	if err != nil {
+		return ui, nil, err
+	}
+	gcOlderThan, err := parseRequiredDuration(cfg.OPNsense.Upgrade.GCOlderThan, "[opnsense.upgrade].gc_older_than")
+	if err != nil {
+		return ui, nil, err
+	}
+	settle, err := parseRequiredDuration(cfg.OPNsense.Upgrade.Validate.SettleAfterUpgrade, "[opnsense.upgrade.validate].settle_after_upgrade")
+	if err != nil {
+		return ui, nil, err
+	}
+	ui = upgradeInputs{
+		VMID:                vmid,
+		StateDir:            stateDir,
+		GRPCTarget:          grpcTarget,
+		Target:              cfg.OPNsense.Upgrade.Target,
+		ExecTimeout:         execTimeout,
+		UpgradeTimeout:      upgradeTimeout,
+		PostRollbackWait:    postRollbackWait,
+		DryRunExecute:       cfg.OPNsense.Upgrade.DryRunExecute,
+		UseBootEnvironment:  cfg.OPNsense.Upgrade.UseBootEnvironment,
+		AcceptPartial:       cfg.OPNsense.Upgrade.AcceptPartial,
+		KeepSnapshot:        cfg.OPNsense.Upgrade.KeepSnapshot,
+		GCOlderThan:         gcOlderThan,
+		ResetConfirm:        cfg.OPNsense.Upgrade.ResetConfirm,
+		DiffAgainst:         cfg.OPNsense.Upgrade.DiffAgainst,
+		SettleAfterUpgrade:  settle,
+		APIKey:              cfg.OPNsense.Upgrade.Validate.APIKey,
+		APISecret:           cfg.OPNsense.Upgrade.Validate.APISecret,
+		BGPv4Neighbors:      cfg.OPNsense.Upgrade.Validate.BGPv4Neighbors,
+		BGPv6Neighbors:      cfg.OPNsense.Upgrade.Validate.BGPv6Neighbors,
+		OPNsenseLAN:         cfg.OPNsense.Upgrade.Validate.OPNsenseLAN,
+		MWANOpnsenseSock:    cfg.OPNsense.Upgrade.Validate.MWANOpnsenseSocket,
+		MWANOpnsenseHostSck: cfg.OPNsense.Upgrade.Validate.MWANOpnsenseHostSock,
+		OPNsenseSSH:         cfg.OPNsense.Upgrade.OPNsenseSSH,
+		OPNsenseJump:        cfg.OPNsense.Upgrade.OPNsenseJump,
+		ProxmoxSSH:          cfg.OPNsense.Upgrade.ProxmoxSSH,
+		LANClientSSH:        cfg.OPNsense.Upgrade.LANClientSSH,
+		OPNsenseAddr:        cfg.OPNsense.Upgrade.OPNsenseAddr,
+	}
+	return ui, cfg, nil
 }
 
-func (f upgradeFlags) toOptions() upgrade.Options {
+func (ui upgradeInputs) toOptions() upgrade.Options {
 	return upgrade.Options{
-		VMID:                f.vmid,
-		Target:              f.target,
-		StateDir:            f.stateDir,
-		DeployID:            f.deployID,
-		Snapshot:            f.snapshot,
-		DryRunExecute:       f.dryRunExecute,
-		DryRunGC:            f.dryRunGC,
-		UseBootEnvironment:  f.useBootEnvironment,
-		AcceptPartial:       f.acceptPartial,
-		KeepSnapshot:        f.keepSnapshot,
-		OlderThan:           f.olderThan,
-		UpgradeTimeout:      f.upgradeTimeout,
-		PostRollbackTimeout: f.postRollbackWait,
+		VMID:                ui.VMID,
+		Target:              ui.Target,
+		StateDir:            ui.StateDir,
+		DeployID:            "",
+		Snapshot:            "",
+		DryRunExecute:       ui.DryRunExecute,
+		DryRunGC:            false,
+		UseBootEnvironment:  ui.UseBootEnvironment,
+		AcceptPartial:       ui.AcceptPartial,
+		KeepSnapshot:        ui.KeepSnapshot,
+		OlderThan:           ui.GCOlderThan,
+		UpgradeTimeout:      ui.UpgradeTimeout,
+		PostRollbackTimeout: ui.PostRollbackWait,
 	}
 }
 
-// buildUpgradeDeps wires the production Deps from the loaded config.
-// The Validator is the MWAN-153 check matrix wrapped in
-// validatorAdapter so the upgrade phases can drive it through the
-// upgrade.Validator interface. Validator transport flags (SSH hosts,
-// API auth, BGP neighbors) come from the upgrade subcommand's own flag
-// set; see registerCommonFlags.
-//
-// The Executor selection mirrors the validator's: --env-transport=ssh
-// keeps the QGA-backed opsExecutorAdapter that has shipped since
-// MWAN-152, --env-transport=grpc routes every GuestExec through the
-// mwan-opnsense daemon's Exec RPC. The dial happens here at deps-build
-// time so a missing or bad gRPC target fails the subcommand before any
-// state-file mutations land.
-func buildUpgradeDeps(cfg *config.Config, f upgradeFlags) (upgrade.Deps, error) {
+// buildUpgradeDeps wires the production Deps. Executor and validator
+// both ride the gRPC channel today since SSH executor is a relic the
+// CLI no longer exposes; the SSH-host fields are still passed into
+// validator probes that talk to OPNsense over SSH.
+func buildUpgradeDeps(cfg *config.Config, ui upgradeInputs) (upgrade.Deps, error) {
 	logger := slog.Default()
 	notifier := notify.FromConfig(cfg, logger, "mwan-opnsense-upgrade")
 	realOps := ops.NewRealOps(cfg, logger)
-	exec, err := defaultUpgradeExecutorFactory().build(envTransportConfig{
-		Transport:           f.envTransport,
-		GRPCTarget:          f.envGRPCTarget,
-		OPNsenseSSHHost:     f.opnsenseSSHHost,
-		OPNsenseSSHJumpHost: f.opnsenseJumpHost,
-		ProxmoxSSHHost:      f.proxmoxSSHHost,
-		LANClientSSHHost:    f.lanClientSSH,
-		OPNsenseAddr:        f.opnsenseAddr,
-		ExecTimeoutSeconds:  upgradeExecTimeoutSeconds(f.execTimeout),
-	}, realOps)
+
+	rpcCli, err := opnsense.Dial(ui.GRPCTarget)
 	if err != nil {
-		slog.Error("opnsense-upgrade: build executor", "err", err,
-			"transport", string(f.envTransport))
-		return upgrade.Deps{}, fmt.Errorf("opnsense-upgrade: build executor: %w", err)
+		slog.Error("opnsense upgrade: dial", "err", err, "target", ui.GRPCTarget)
+		return upgrade.Deps{}, fmt.Errorf("dial %s: %w", ui.GRPCTarget, err)
+	}
+	target := ui.GRPCTarget
+	redial := buildRedial(target)
+	exec := &upgrade.GRPCExecutor{
+		RPC:                rpcCli.RPC(),
+		ExecTimeoutSeconds: upgradeExecTimeoutSeconds(ui.ExecTimeout),
+		Redial:             redial,
 	}
 	return upgrade.Deps{
 		Snap:     realOps,
 		Exec:     exec,
-		Validate: newValidatorAdapter(f),
+		Validate: newValidatorAdapter(ui),
 		Notifier: notifier,
 		Clock:    nil,
 		Log:      logger,
 	}, nil
 }
 
-// opsExecutorAdapter bridges ops.SysOps.GuestExec to the
-// upgrade.Executor surface. Keeping this thin means the upgrade
-// package does not depend on internal/ops for testing.
-type opsExecutorAdapter struct {
-	ops ops.SysOps
+// validatorAdapter satisfies upgrade.Validator by mapping the upgrade
+// package's ValidateContext into a validate.Run call. All inputs come
+// from the loaded TOML, not flags.
+type validatorAdapter struct {
+	ui upgradeInputs
 }
 
-func (a opsExecutorAdapter) GuestExec(ctx context.Context, vmid string, args ...string) (upgrade.GuestExecResult, error) {
-	res, err := a.ops.GuestExec(ctx, vmid, args...)
-	if err != nil {
-		slog.ErrorContext(ctx, "opsExecutorAdapter.GuestExec", "err", err, "vmid", vmid)
-		return upgrade.GuestExecResult{ExitCode: 0, Stdout: "", Stderr: ""}, fmt.Errorf("opsExecutorAdapter.GuestExec: %w", err)
-	}
-	return upgrade.GuestExecResult{ExitCode: res.ExitCode, Stdout: res.Stdout, Stderr: ""}, nil
+func newValidatorAdapter(ui upgradeInputs) *validatorAdapter {
+	return &validatorAdapter{ui: ui}
 }
 
-func loadUpgradeConfig() (*config.Config, error) {
-	cfg, err := config.Load()
+func (a *validatorAdapter) Validate(ctx context.Context, vctx upgrade.ValidateContext) (upgrade.ValidationResult, error) {
+	vmidInt, err := strconv.Atoi(vctx.VMID)
 	if err != nil {
-		slog.Error("opnsense-upgrade: load config", "err", err)
-		return nil, fmt.Errorf("opnsense-upgrade: load config: %w", err)
+		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: parse vmid", err)
 	}
-	return cfg, nil
+	cfg := validate.Config{
+		VMID:                   vmidInt,
+		DeployID:               vctx.DeployID,
+		StateDir:               vctx.StateDir,
+		BGPv4Neighbors:         splitNonEmpty(a.ui.BGPv4Neighbors),
+		BGPv6Neighbors:         splitNonEmpty(a.ui.BGPv6Neighbors),
+		OPNsenseLAN:            a.ui.OPNsenseLAN,
+		MWANOpnsenseSocket:     a.ui.MWANOpnsenseSock,
+		MWANOpnsenseHostSocket: a.ui.MWANOpnsenseHostSck,
+		APIAuth:                buildBasicAuth(a.ui.APIKey, a.ui.APISecret),
+		SettleAfterUpgrade:     a.ui.SettleAfterUpgrade,
+		SeverityFilter:         "",
+	}
+	rpcCli, err := opnsense.DialContext(ctx, a.ui.GRPCTarget)
+	if err != nil {
+		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: dial "+a.ui.GRPCTarget, err)
+	}
+	env := &validate.GRPCEnv{
+		RPC: rpcCli.RPC(),
+		Fallback: &validate.ExecEnv{
+			OPNsenseSSHHost:     a.ui.OPNsenseSSH,
+			OPNsenseSSHJumpHost: a.ui.OPNsenseJump,
+			ProxmoxSSHHost:      a.ui.ProxmoxSSH,
+			LANClientSSHHost:    a.ui.LANClientSSH,
+			OPNsenseAddr:        a.ui.OPNsenseAddr,
+			HTTPClient:          nil,
+			Clock:               nil,
+		},
+		ExecTimeoutSeconds: upgradeExecTimeoutSeconds(a.ui.ExecTimeout),
+		Clock:              nil,
+	}
+	runCtx := ctx
+	if a.ui.ExecTimeout > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, a.ui.ExecTimeout)
+		defer cancel()
+	}
+	baseline, err := validate.Run(runCtx, cfg, nil, env)
+	if err != nil {
+		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: validate.Run", err)
+	}
+	if baseline == nil {
+		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: nil baseline", errors.New("validate.Run returned nil"))
+	}
+	return upgrade.AggregateChecks(translateResults(baseline.Results)), nil
 }
 
-func runUpgradePrepare(args []string) error {
-	f, err := parseUpgradeFlags("opnsense-upgrade prepare", args)
-	if err != nil {
-		return err
+func buildBasicAuth(apiKey, apiSecret string) *validate.BasicAuth {
+	if apiKey == "" && apiSecret == "" {
+		return nil
 	}
-	cfg, err := loadUpgradeConfig()
-	if err != nil {
-		return err
-	}
-	deps, err := buildUpgradeDeps(cfg, f)
-	if err != nil {
-		return err
-	}
-	st, err := upgrade.Prepare(context.Background(), deps, f.toOptions())
-	if err != nil {
-		slog.Error("opnsense-upgrade prepare failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade prepare: %w", err)
-	}
-	fmt.Fprintf(os.Stdout, "phase=%s deploy_id=%s snapshot=%s\n", st.Phase, st.DeployID, st.Snapshot)
-	return nil
+	return &validate.BasicAuth{Username: apiKey, Password: apiSecret}
 }
 
-func runUpgradeExecute(args []string) error {
-	f, err := parseUpgradeFlags("opnsense-upgrade execute", args)
-	if err != nil {
-		return err
+func translateResults(results []validate.Result) []upgrade.CheckResult {
+	checks := make([]upgrade.CheckResult, 0, len(results))
+	for _, r := range results {
+		checks = append(checks, upgrade.CheckResult{
+			Name: r.CheckID,
+			Pass: r.Outcome == validate.OutcomePass,
+			Note: noteForResult(r),
+		})
 	}
-	cfg, err := loadUpgradeConfig()
-	if err != nil {
-		return err
-	}
-	deps, err := buildUpgradeDeps(cfg, f)
-	if err != nil {
-		return err
-	}
-	st, err := upgrade.Execute(context.Background(), deps, f.toOptions())
-	if err != nil {
-		slog.Error("opnsense-upgrade execute failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade execute: %w", err)
-	}
-	fmt.Fprintf(os.Stdout, "phase=%s\n", st.Phase)
-	return nil
+	return checks
 }
 
-func runUpgradeValidate(args []string) error {
-	f, err := parseUpgradeFlags("opnsense-upgrade validate", args)
-	if err != nil {
-		return err
+func noteForResult(r validate.Result) string {
+	if r.Outcome == validate.OutcomePass {
+		return r.ParsedValue
 	}
-	cfg, err := loadUpgradeConfig()
-	if err != nil {
-		return err
+	if r.Message == "" {
+		return string(r.Outcome)
 	}
-	deps, err := buildUpgradeDeps(cfg, f)
-	if err != nil {
-		return err
-	}
-	st, res, err := upgrade.Validate(context.Background(), deps, f.toOptions())
-	if err != nil {
-		slog.Error("opnsense-upgrade validate failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade validate: %w", err)
-	}
-	fmt.Fprintf(os.Stdout, "phase=%s all_pass=%t partial=%t failing=%s\n",
-		st.Phase, res.AllPass, res.Partial, strings.Join(st.FailingCheck, ","))
-	return nil
+	return fmt.Sprintf("%s: %s", r.Outcome, r.Message)
 }
 
-func runUpgradeRollback(args []string) error {
-	f, err := parseUpgradeFlags("opnsense-upgrade rollback", args)
-	if err != nil {
-		return err
-	}
-	cfg, err := loadUpgradeConfig()
-	if err != nil {
-		return err
-	}
-	deps, err := buildUpgradeDeps(cfg, f)
-	if err != nil {
-		return err
-	}
-	st, err := upgrade.Rollback(context.Background(), deps, f.toOptions())
-	if err != nil {
-		slog.Error("opnsense-upgrade rollback failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade rollback: %w", err)
-	}
-	fmt.Fprintf(os.Stdout, "phase=%s snapshot=%s\n", st.Phase, st.Snapshot)
-	return nil
+func emptyUpgradeValidation() upgrade.ValidationResult {
+	return upgrade.ValidationResult{Checks: nil, AllPass: false, AnyFail: false, Partial: false}
 }
 
-func runUpgradeCommit(args []string) error {
-	f, err := parseUpgradeFlags("opnsense-upgrade commit", args)
-	if err != nil {
-		return err
+func splitNonEmpty(csv string) []string {
+	if csv == "" {
+		return nil
 	}
-	cfg, err := loadUpgradeConfig()
-	if err != nil {
-		return err
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
 	}
-	deps, err := buildUpgradeDeps(cfg, f)
-	if err != nil {
-		return err
-	}
-	st, err := upgrade.Commit(context.Background(), deps, f.toOptions())
-	if err != nil {
-		slog.Error("opnsense-upgrade commit failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade commit: %w", err)
-	}
-	fmt.Fprintf(os.Stdout, "phase=%s\n", st.Phase)
-	return nil
+	return out
 }
 
-func runUpgradeRun(args []string) error {
-	f, err := parseUpgradeFlags("opnsense-upgrade run", args)
-	if err != nil {
-		return err
-	}
-	cfg, err := loadUpgradeConfig()
-	if err != nil {
-		return err
-	}
-	deps, err := buildUpgradeDeps(cfg, f)
-	if err != nil {
-		return err
-	}
-	out, err := upgrade.Run(context.Background(), deps, f.toOptions())
-	if err != nil {
-		slog.Error("opnsense-upgrade run failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade run: %w", err)
-	}
-	fmt.Fprintf(os.Stdout, "reached=%s auto_rollback=%t\n", out.Reached, out.AutoRollback)
-	return nil
-}
-
-func runUpgradeGC(args []string) error {
-	f, err := parseUpgradeFlags("opnsense-upgrade gc", args)
-	if err != nil {
-		return err
-	}
-	cfg, err := loadUpgradeConfig()
-	if err != nil {
-		return err
-	}
-	deps, err := buildUpgradeDeps(cfg, f)
-	if err != nil {
-		return err
-	}
-	res, err := upgrade.GC(context.Background(), deps, f.toOptions())
-	if err != nil {
-		slog.Error("opnsense-upgrade gc failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade gc: %w", err)
-	}
-	fmt.Fprintf(os.Stdout, "deleted=%s skipped=%s\n",
-		strings.Join(res.Deleted, ","), strings.Join(res.Skipped, ","))
-	return nil
-}
-
-// upgradeExecTimeoutSeconds converts the operator-supplied --exec-timeout
-// flag to the int32 seconds the gRPC ExecRequest carries. Negative or
-// zero values map to zero, which the daemon interprets as its own
-// default (30s). The daemon's hard cap is enforced server-side
-// (maxExecTimeout in internal/opnsensesvc/exec.go), so this helper
-// does not clamp; it just rounds up to the next whole second.
 func upgradeExecTimeoutSeconds(d time.Duration) int32 {
 	if d <= 0 {
 		return 0
@@ -456,59 +365,194 @@ func upgradeExecTimeoutSeconds(d time.Duration) int32 {
 	return int32(rounded)
 }
 
-// resetExitDryRun is the exit code returned when reset prints a dry-run
-// plan and exits without applying it. The value signals "would have
-// done work, but did not" to wrapper scripts that distinguish a clean
-// no-op (exit 0) from a deferred operation.
-const resetExitDryRun = 2
-
-// exitCodeError carries a non-zero exit code through the error return
-// chain. main.go's dispatcher unwraps it to propagate the exact code
-// instead of the generic 1 used for ordinary errors. The Error string
-// is intentionally empty so main.go can suppress the usual stderr
-// preamble when ExitCodeError is the cause.
-type exitCodeError struct {
-	code int
-	msg  string
+func runUpgradePhase(phase upgradePhase) int {
+	ui, cfg, err := resolveUpgradeInputs()
+	if err != nil {
+		return printAndExit("upgrade "+string(phase), err)
+	}
+	deps, err := buildUpgradeDeps(cfg, ui)
+	if err != nil {
+		return printAndExit("upgrade "+string(phase), err)
+	}
+	ctx := context.Background()
+	opts := ui.toOptions()
+	switch phase {
+	case upgradePhasePrepare:
+		st, err := upgrade.Prepare(ctx, deps, opts)
+		if err != nil {
+			return printAndExit("upgrade prepare", err)
+		}
+		fmt.Fprintf(os.Stdout, "phase=%s deploy_id=%s snapshot=%s\n", st.Phase, st.DeployID, st.Snapshot)
+	case upgradePhaseExecute:
+		st, err := upgrade.Execute(ctx, deps, opts)
+		if err != nil {
+			return printAndExit("upgrade execute", err)
+		}
+		fmt.Fprintf(os.Stdout, "phase=%s\n", st.Phase)
+	case upgradePhaseValidate:
+		return runUpgradeValidatePhase(ctx, deps, opts, ui)
+	case upgradePhaseRollback:
+		st, err := upgrade.Rollback(ctx, deps, opts)
+		if err != nil {
+			return printAndExit("upgrade rollback", err)
+		}
+		fmt.Fprintf(os.Stdout, "phase=%s snapshot=%s\n", st.Phase, st.Snapshot)
+	case upgradePhaseCommit:
+		st, err := upgrade.Commit(ctx, deps, opts)
+		if err != nil {
+			return printAndExit("upgrade commit", err)
+		}
+		fmt.Fprintf(os.Stdout, "phase=%s\n", st.Phase)
+	case upgradePhaseRun:
+		out, err := upgrade.Run(ctx, deps, opts)
+		if err != nil {
+			return printAndExit("upgrade run", err)
+		}
+		fmt.Fprintf(os.Stdout, "reached=%s auto_rollback=%t\n", out.Reached, out.AutoRollback)
+	case upgradePhaseReset:
+		// runUpgradePhase never receives upgradePhaseReset; the outer
+		// dispatch in runOPNsenseUpgradeCmd routes reset to its own
+		// helper. The case exists to satisfy the exhaustive linter.
+		return printAndExit("upgrade", fmt.Errorf("internal: reset routed to phase switch"))
+	case upgradePhaseGC:
+		res, err := upgrade.GC(ctx, deps, opts)
+		if err != nil {
+			return printAndExit("upgrade gc", err)
+		}
+		fmt.Fprintf(os.Stdout, "deleted=%s skipped=%s\n",
+			strings.Join(res.Deleted, ","), strings.Join(res.Skipped, ","))
+	default:
+		return printAndExit("upgrade", fmt.Errorf("internal: unhandled phase %q", phase))
+	}
+	return 0
 }
 
-func (e exitCodeError) Error() string { return e.msg }
-func (e exitCodeError) ExitCode() int { return e.code }
-
-// runUpgradeReset implements `mwan opnsense-upgrade reset`. Without
-// --confirm it prints the Plan returned by upgrade.Reset and exits
-// resetExitDryRun (2) so wrapper scripts can detect that work was
-// deferred. With --confirm it runs upgrade.ResetExecute and prints
-// "reset complete" on success.
-func runUpgradeReset(args []string) error {
-	fs := flag.NewFlagSet("opnsense-upgrade reset", flag.ContinueOnError)
-	var (
-		vmid     string
-		deployID string
-		stateDir string
-		confirm  bool
-	)
-	fs.StringVar(&vmid, "vmid", "", "VMID to reset (required)")
-	fs.StringVar(&deployID, "deploy-id", "",
-		"Deploy identifier; inferred from state.json or the most recent deploy dir when empty")
-	fs.StringVar(&stateDir, "state-dir", upgrade.DefaultStateDir, "Upgrade state directory")
-	fs.BoolVar(&confirm, "confirm", false,
-		"Apply the plan; without this flag reset prints the plan and exits 2")
-	if err := fs.Parse(args); err != nil {
-		slog.Error("opnsense-upgrade reset: parse flags", "err", err)
-		return fmt.Errorf("opnsense-upgrade reset: parse flags: %w", err)
-	}
-	if err := requireVMID(vmid); err != nil {
-		return err
-	}
-	cfg, err := loadUpgradeConfig()
+// runUpgradeValidatePhase runs the orchestrator's validate step and
+// also persists a standalone baseline so the operator can compare runs
+// across deploys. The orchestrator path is the source of truth for the
+// state machine; the baseline is the operator-facing artefact.
+func runUpgradeValidatePhase(ctx context.Context, deps upgrade.Deps, opts upgrade.Options, ui upgradeInputs) int {
+	st, res, err := upgrade.Validate(ctx, deps, opts)
 	if err != nil {
-		return err
+		return printAndExit("upgrade validate", err)
+	}
+	fmt.Fprintf(os.Stdout, "phase=%s all_pass=%t partial=%t failing=%s\n",
+		st.Phase, res.AllPass, res.Partial, strings.Join(st.FailingCheck, ","))
+
+	if st.DeployID != "" {
+		captureAndPrintBaseline(ctx, ui, st.DeployID)
+	}
+	return 0
+}
+
+// captureAndPrintBaseline drives the standalone baseline capture and
+// emits the operator-facing summary lines. Soft failures are warned
+// and swallowed because the orchestrator's verdict is the contract;
+// the baseline is a side-channel artefact.
+func captureAndPrintBaseline(ctx context.Context, ui upgradeInputs, deployID string) {
+	baseline, runErr := standaloneBaseline(ctx, ui, deployID)
+	if runErr != nil {
+		slog.WarnContext(ctx, "upgrade validate: standalone baseline failed", "err", runErr)
+		return
+	}
+	vmid, parseErr := strconv.Atoi(ui.VMID)
+	if parseErr != nil {
+		slog.WarnContext(ctx, "upgrade validate: vmid parse", "err", parseErr, "vmid", ui.VMID)
+		return
+	}
+	if saveErr := validate.SaveBaseline(ui.StateDir, vmid, deployID, validate.PreBaselineFilename, baseline); saveErr != nil {
+		slog.WarnContext(ctx, "upgrade validate: save baseline", "err", saveErr)
+		return
+	}
+	validate.SortResultsByID(baseline.Results)
+	counts := validate.CountByOutcome(baseline.Results)
+	fmt.Fprintf(os.Stdout, "baseline: path=%s pass=%d fail=%d skip=%d error=%d\n",
+		validate.ArtefactPath(ui.StateDir, vmid, deployID),
+		counts[validate.OutcomePass],
+		counts[validate.OutcomeFail],
+		counts[validate.OutcomeSkip],
+		counts[validate.OutcomeError])
+	if ui.DiffAgainst == "" {
+		return
+	}
+	prior, loadErr := validate.LoadBaseline(ui.DiffAgainst)
+	if loadErr != nil {
+		slog.WarnContext(ctx, "upgrade validate: load prior baseline", "err", loadErr, "path", ui.DiffAgainst)
+		return
+	}
+	report := validate.Diff(prior, baseline)
+	fmt.Fprintf(os.Stdout, "diff: verdict=%s entries=%d\n", report.Verdict, len(report.Entries))
+}
+
+// standaloneBaseline runs validate.Run end-to-end and returns the
+// captured Baseline. The validatorAdapter inside upgrade.Validate
+// already aggregated check results into a ValidationResult, but the
+// adapter discards the baseline metadata (capture time, plugin set,
+// pf rule counts) needed for cross-deploy diffs.
+func standaloneBaseline(ctx context.Context, ui upgradeInputs, deployID string) (*validate.Baseline, error) {
+	vmid, err := strconv.Atoi(ui.VMID)
+	if err != nil {
+		slog.ErrorContext(ctx, "standaloneBaseline: parse vmid", "err", err, "vmid", ui.VMID)
+		return nil, fmt.Errorf("parse vmid %q: %w", ui.VMID, err)
+	}
+	rpcCli, err := opnsense.DialContext(ctx, ui.GRPCTarget)
+	if err != nil {
+		slog.ErrorContext(ctx, "standaloneBaseline: dial", "err", err, "target", ui.GRPCTarget)
+		return nil, fmt.Errorf("dial %s: %w", ui.GRPCTarget, err)
+	}
+	cfg := validate.Config{
+		VMID:                   vmid,
+		DeployID:               deployID,
+		StateDir:               ui.StateDir,
+		BGPv4Neighbors:         splitNonEmpty(ui.BGPv4Neighbors),
+		BGPv6Neighbors:         splitNonEmpty(ui.BGPv6Neighbors),
+		OPNsenseLAN:            ui.OPNsenseLAN,
+		MWANOpnsenseSocket:     ui.MWANOpnsenseSock,
+		MWANOpnsenseHostSocket: ui.MWANOpnsenseHostSck,
+		APIAuth:                buildBasicAuth(ui.APIKey, ui.APISecret),
+		SettleAfterUpgrade:     ui.SettleAfterUpgrade,
+		SeverityFilter:         "",
+	}
+	env := &validate.GRPCEnv{
+		RPC: rpcCli.RPC(),
+		Fallback: &validate.ExecEnv{
+			OPNsenseSSHHost:     ui.OPNsenseSSH,
+			OPNsenseSSHJumpHost: ui.OPNsenseJump,
+			ProxmoxSSHHost:      ui.ProxmoxSSH,
+			LANClientSSHHost:    ui.LANClientSSH,
+			OPNsenseAddr:        ui.OPNsenseAddr,
+			HTTPClient:          nil,
+			Clock:               nil,
+		},
+		ExecTimeoutSeconds: upgradeExecTimeoutSeconds(ui.ExecTimeout),
+		Clock:              nil,
+	}
+	baseline, err := validate.Run(ctx, cfg, nil, env)
+	if err != nil {
+		slog.ErrorContext(ctx, "standaloneBaseline: validate.Run", "err", err)
+		return nil, fmt.Errorf("validate.Run: %w", err)
+	}
+	if baseline == nil {
+		return nil, errors.New("validate.Run returned nil baseline")
+	}
+	if baseline.SchemaVersion == 0 {
+		return nil, errors.New("baseline missing schema version")
+	}
+	return baseline, nil
+}
+
+// runUpgradeReset is the only phase whose semantics differ from a
+// straight phase transition: it computes a plan, prints it, and only
+// applies it when [opnsense.upgrade].reset_confirm is true. Reading the
+// confirm bit from TOML means an operator who wants to apply a reset
+// flips it in their config and re-runs, mirroring the old --confirm
+// flag behaviour.
+func runUpgradeReset() int {
+	ui, cfg, err := resolveUpgradeInputs()
+	if err != nil {
+		return printAndExit("upgrade reset", err)
 	}
 	// Reset only needs the Snapshotter, not the validator or executor.
-	// Building the full Deps would force the operator to supply every
-	// validator-related flag even though reset never invokes them, so
-	// we wire a minimal Deps directly from RealOps here.
 	realOps := ops.NewRealOps(cfg, slog.Default())
 	deps := upgrade.Deps{
 		Snap:     realOps,
@@ -519,37 +563,32 @@ func runUpgradeReset(args []string) error {
 		Log:      slog.Default(),
 	}
 	plan, err := upgrade.Reset(context.Background(), deps, upgrade.ResetOptions{
-		VMID:     vmid,
-		StateDir: stateDir,
-		DeployID: deployID,
+		VMID:     ui.VMID,
+		StateDir: ui.StateDir,
+		DeployID: "",
 	})
 	if err != nil {
-		slog.Error("opnsense-upgrade reset failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade reset: %w", err)
+		return printAndExit("upgrade reset", err)
 	}
 	if plan.NothingToDo {
 		fmt.Fprintln(os.Stdout, "nothing to do")
-		return nil
+		return 0
 	}
-	if !confirm {
+	if !ui.ResetConfirm {
 		printResetPlan(os.Stdout, plan)
-		return exitCodeError{code: resetExitDryRun, msg: "reset: dry run; re-run with --confirm to apply"}
+		fmt.Fprintln(os.Stdout, "")
+		fmt.Fprintln(os.Stdout, "set [opnsense.upgrade].reset_confirm = true in /etc/mwan/config.toml to apply.")
+		return 2
 	}
 	if err := upgrade.ResetExecute(context.Background(), deps, plan); err != nil {
-		slog.Error("opnsense-upgrade reset execute failed", "err", err)
-		return fmt.Errorf("opnsense-upgrade reset: %w", err)
+		return printAndExit("upgrade reset", err)
 	}
 	fmt.Fprintln(os.Stdout, "reset complete")
-	return nil
+	return 0
 }
 
-// printResetPlan renders a human-readable description of the planned
-// reset operations. The shape is line-oriented so an operator skimming
-// the terminal can see at a glance every snapshot that would be
-// deleted, the rollback target, and the state file path.
 func printResetPlan(w *os.File, plan upgrade.Plan) {
-	fmt.Fprintf(w, "reset plan for vmid=%s deploy_id=%s (dry run, re-run with --confirm to apply):\n",
-		plan.VMID, plan.DeployID)
+	fmt.Fprintf(w, "reset plan for vmid=%s deploy_id=%s (dry run):\n", plan.VMID, plan.DeployID)
 	if len(plan.SnapshotsToDelete) == 0 {
 		fmt.Fprintln(w, "  snapshots to delete: (none)")
 	} else {
@@ -568,13 +607,4 @@ func printResetPlan(w *os.File, plan upgrade.Plan) {
 	} else {
 		fmt.Fprintf(w, "  state.json to remove: %s\n", plan.StatePath)
 	}
-}
-
-func requireVMID(vmid string) error {
-	if vmid == "" {
-		err := errors.New("opnsense-upgrade: --vmid is required")
-		slog.Error("opnsense-upgrade: --vmid is required", "err", err)
-		return err
-	}
-	return nil
 }

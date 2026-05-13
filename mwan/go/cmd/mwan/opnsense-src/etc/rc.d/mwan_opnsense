@@ -4,49 +4,46 @@
 # REQUIRE: NETWORKING FILESYSTEMS
 # KEYWORD: shutdown
 #
-# Add the following line to /etc/rc.conf to enable mwan-opnsense:
+# The mwan opnsense daemon takes no flags; its config lives in
+# /var/lib/mwan/daemon.toml (MWAN-193) or compiled defaults today.
+# Enable in /etc/rc.conf with:
 #   mwan_opnsense_enable="YES"
-#
-# Optional settings (set in /etc/rc.conf.d/mwan_opnsense):
-#   mwan_opnsense_listen_serial="/dev/ttyV0.1"
-#   mwan_opnsense_config_xml="/conf/config.xml"
-#   mwan_opnsense_backup_dir="/conf/backup"
-#   mwan_opnsense_logfile="/var/log/mwan-opnsense.log"
-#   mwan_opnsense_stop_timeout="10"
 
 . /etc/rc.subr
 
 name="mwan_opnsense"
 rcvar="${name}_enable"
 
-load_rc_config $name
+load_rc_config "$name"
 
 : ${mwan_opnsense_enable:="NO"}
-: ${mwan_opnsense_listen_serial:="/dev/ttyV0.1"}
-: ${mwan_opnsense_config_xml:="/conf/config.xml"}
-: ${mwan_opnsense_backup_dir:="/conf/backup"}
 : ${mwan_opnsense_logfile:="/var/log/mwan-opnsense.log"}
 : ${mwan_opnsense_stop_timeout:="10"}
 
 pidfile="/var/run/${name}.pid"
 command="/usr/local/sbin/mwan-opnsense"
-start_cmd="${name}_start"
-stop_cmd="${name}_stop"
-restart_cmd="${name}_restart"
-status_cmd="${name}_status"
-
-enabled_cmd="${command} is-enabled -name ${name}"
 required_files="${command}"
 
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+status_cmd="${name}_status"
+
 mwan_opnsense_status() {
-	"${command}" status -pidfile "${pidfile}"
+	if [ -f "${pidfile}" ]; then
+		pid=$(cat "${pidfile}" 2>/dev/null)
+		if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+			echo "${name} is running as pid ${pid}"
+			return 0
+		fi
+	fi
+	echo "${name} is not running"
+	return 1
 }
 
 mwan_opnsense_preflight() {
 	# Self-deploy revert path. If the previous start was a fresh deploy
 	# (pending-verify marker present) and the daemon never reported
-	# health=ok, swap .current with .previous before this start. See
-	# mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+	# health=ok, swap .current with .previous before this start.
 	pending="/var/run/mwan-opnsense.pending-verify"
 	state="/var/run/mwan-opnsense.deploy.state"
 	sbin_dir="/usr/local/sbin"
@@ -54,7 +51,6 @@ mwan_opnsense_preflight() {
 	[ -f "${pending}" ] || return 0
 
 	if awk -F: '$1=="health" && $2=="ok"' "${state}" 2>/dev/null | grep -q .; then
-		# Previous deploy verified healthy; just clear marker.
 		rm -f "${pending}"
 		return 0
 	fi
@@ -72,7 +68,7 @@ mwan_opnsense_preflight() {
 }
 
 mwan_opnsense_start() {
-	if "${command}" status -pidfile "${pidfile}" -quiet; then
+	if mwan_opnsense_status >/dev/null 2>&1; then
 		echo "${name} already running"
 		return 0
 	fi
@@ -80,16 +76,14 @@ mwan_opnsense_start() {
 	mwan_opnsense_preflight || return 1
 
 	rm -f "${pidfile}"
-	"${command}" serve -daemonize -pidfile "${pidfile}" \
-		-logfile "${mwan_opnsense_logfile}" \
-		-serial "${mwan_opnsense_listen_serial}" \
-		-config-xml "${mwan_opnsense_config_xml}" \
-		-backup-dir "${mwan_opnsense_backup_dir}"
+	# daemon(8) backgrounds the foreground binary, owns the pidfile,
+	# and redirects stdout/stderr to ${mwan_opnsense_logfile}.
+	/usr/sbin/daemon -P "${pidfile}" -o "${mwan_opnsense_logfile}" "${command}"
 
 	count=0
 	while [ "${count}" -lt 10 ]; do
-		if "${command}" status -pidfile "${pidfile}" -quiet; then
-			"${command}" status -pidfile "${pidfile}"
+		if mwan_opnsense_status >/dev/null 2>&1; then
+			mwan_opnsense_status
 			return 0
 		fi
 		count=$((count + 1))
@@ -134,11 +128,6 @@ mwan_opnsense_stop() {
 	echo "${name} did not stop after TERM; sending KILL" >&2
 	kill -KILL "${pid}" 2>/dev/null || true
 	rm -f "${pidfile}"
-}
-
-mwan_opnsense_restart() {
-	mwan_opnsense_stop || return 1
-	mwan_opnsense_start
 }
 
 run_rc_command "$1"
