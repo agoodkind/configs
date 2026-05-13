@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	heartbeatInterval = 30 * time.Second
-	heartbeatTimeout  = 10 * time.Second
+	defaultHeartbeatInterval = 30 * time.Second
+	defaultHeartbeatTimeout  = 10 * time.Second
 )
 
 // runOPNsenseHostServe runs the host-side yamux bridge. It owns one
@@ -39,6 +39,10 @@ func runOPNsenseHostServe(args []string) int {
 	upstream := fs.String("upstream", "", "upstream unix socket (e.g. unix:///var/run/qemu-server/102.mwanrpc)")
 	listen := fs.String("listen", "/var/run/mwan-opnsense.sock", "local unix socket path for CLI clients")
 	reconnect := fs.Duration("reconnect", 2*time.Second, "delay between upstream reconnect attempts")
+	heartbeatInterval := fs.Duration("heartbeat-interval", defaultHeartbeatInterval,
+		"interval between app-level Version heartbeats over the upstream session; 0 disables")
+	heartbeatTimeout := fs.Duration("heartbeat-timeout", defaultHeartbeatTimeout,
+		"per-call timeout on each heartbeat Version RPC")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -85,8 +89,12 @@ func runOPNsenseHostServe(args []string) int {
 		_ = listener.Close()
 	}()
 
-	log.InfoContext(ctx, "opnsense-host: serving", "upstream", upstreamPath, "listen", *listen)
-	if err := bridgeLoop(ctx, log, listener, upstreamPath, *reconnect); err != nil {
+	log.InfoContext(ctx, "opnsense-host: serving",
+		"upstream", upstreamPath,
+		"listen", *listen,
+		"heartbeat_interval", heartbeatInterval.String(),
+		"heartbeat_timeout", heartbeatTimeout.String())
+	if err := bridgeLoop(ctx, log, listener, upstreamPath, *reconnect, *heartbeatInterval, *heartbeatTimeout); err != nil {
 		log.ErrorContext(ctx, "opnsense-host: bridge terminated", "err", err)
 		return 1
 	}
@@ -97,13 +105,15 @@ func runOPNsenseHostServe(args []string) int {
 // accepted local connection to a fresh substream over the current
 // session. When the session dies (upstream close, yamux EOF) the next
 // accepted local connection triggers a reconnect.
-func bridgeLoop(ctx context.Context, log *slog.Logger, listener net.Listener, upstreamPath string, backoff time.Duration) error {
+func bridgeLoop(ctx context.Context, log *slog.Logger, listener net.Listener, upstreamPath string, backoff, heartbeatInterval, heartbeatTimeout time.Duration) error {
 	state := &sessionState{
-		mu:           sync.Mutex{},
-		session:      nil,
-		upstreamPath: upstreamPath,
-		log:          log,
-		backoff:      backoff,
+		mu:                sync.Mutex{},
+		session:           nil,
+		upstreamPath:      upstreamPath,
+		log:               log,
+		backoff:           backoff,
+		heartbeatInterval: heartbeatInterval,
+		heartbeatTimeout:  heartbeatTimeout,
 	}
 	defer state.closeSession(ctx)
 
@@ -133,11 +143,13 @@ func bridgeLoop(ctx context.Context, log *slog.Logger, listener net.Listener, up
 }
 
 type sessionState struct {
-	mu           sync.Mutex
-	session      *yamux.Session
-	upstreamPath string
-	log          *slog.Logger
-	backoff      time.Duration
+	mu                sync.Mutex
+	session           *yamux.Session
+	upstreamPath      string
+	log               *slog.Logger
+	backoff           time.Duration
+	heartbeatInterval time.Duration
+	heartbeatTimeout  time.Duration
 }
 
 // openStream returns a yamux substream on the current session. If the
@@ -203,13 +215,16 @@ func (s *sessionState) dialLocked(ctx context.Context) error {
 }
 
 // runHeartbeat polls the daemon's Version RPC on a fresh yamux
-// substream every heartbeatInterval. A failure means the upstream
+// substream every s.heartbeatInterval. A failure means the upstream
 // is wedged at the app layer even if yamux still thinks the byte
 // stream is alive, so close the session and let the next client
 // request dial a new one. The goroutine watches one specific session
 // and exits as soon as that session is gone, so a reconnect spawns
 // a fresh heartbeat rather than racing the old one.
 func (s *sessionState) runHeartbeat(ctx context.Context, watched *yamux.Session) {
+	if s.heartbeatInterval <= 0 {
+		return
+	}
 	dialer := func(_ context.Context, _ string) (net.Conn, error) {
 		return watched.OpenStream()
 	}
@@ -225,7 +240,7 @@ func (s *sessionState) runHeartbeat(ctx context.Context, watched *yamux.Session)
 	defer func() { _ = conn.Close() }()
 	client := mwanv1.NewOpnsenseServiceClient(conn)
 
-	timer := time.NewTimer(heartbeatInterval)
+	timer := time.NewTimer(s.heartbeatInterval)
 	defer timer.Stop()
 	for {
 		select {
@@ -235,7 +250,7 @@ func (s *sessionState) runHeartbeat(ctx context.Context, watched *yamux.Session)
 			return
 		case <-timer.C:
 		}
-		callCtx, cancel := context.WithTimeout(ctx, heartbeatTimeout)
+		callCtx, cancel := context.WithTimeout(ctx, s.heartbeatTimeout)
 		_, err := client.Version(callCtx, &mwanv1.VersionRequest{})
 		cancel()
 		if err != nil {
@@ -243,7 +258,7 @@ func (s *sessionState) runHeartbeat(ctx context.Context, watched *yamux.Session)
 			s.dropSession(ctx, watched)
 			return
 		}
-		timer.Reset(heartbeatInterval)
+		timer.Reset(s.heartbeatInterval)
 	}
 }
 
