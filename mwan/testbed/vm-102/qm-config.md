@@ -2,19 +2,21 @@
 
 ## Target args
 
-VM 102 must run with the following Proxmox `args` field. The
-mwan-opnsense daemon inside the OPNsense guest opens `/dev/ttyV0.0` to
-talk to the host-side mwan-opnsense bridge over a virtio-serial
-chardev when this block is present.
+VM 102 must run with the following Proxmox `args` field. In the current
+testbed docs, the named `io.goodkind.mwan-opnsense.0` virtio console maps
+to `/dev/ttyV0.1` inside the OPNsense guest, and the `mwan_opnsense` rc.d
+service writes that path into `/var/lib/mwan/daemon.toml` before the
+daemon connects to the host-side bridge over this virtio-serial chardev.
 
-```
+```text
 args: -device virtio-serial-pci,id=mwanrpc -chardev socket,id=mwanchr,path=/var/run/qemu-server/102.mwanrpc,server=on,wait=off -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0
 ```
 
 The chardev path `/var/run/qemu-server/102.mwanrpc` does not collide
 with VM 101's chardev at `/var/run/qemu-server/101.mwanrpc`. The
-chardev name `io.goodkind.mwan-opnsense.0` matches what the OPNsense
-plugin opens on `/dev/ttyV0.0` inside the guest.
+chardev name `io.goodkind.mwan-opnsense.0` matches the guest-side named
+virtio console that the rc.d service should render as
+`serial_path = "/dev/ttyV0.1"` in `/var/lib/mwan/daemon.toml`.
 
 ## Why Tofu does NOT manage this field (MWAN-154)
 
@@ -47,15 +49,29 @@ new args.
 
 ## Verification
 
-Inside the OPNsense guest the chardev should appear as `/dev/ttyV0.0`.
+Inside the OPNsense guest, after `service mwan_opnsense start`, confirm
+that the named virtio console resolves to `/dev/ttyV0.1` and that the
+rc.d wrapper wrote the daemon contract file:
 
+```bash
+ssh root@<vm-102-mgmt-ip> 'service mwan_opnsense start'
+ssh root@<vm-102-mgmt-ip> 'service mwan_opnsense status'
+ssh root@<vm-102-mgmt-ip> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
+ssh root@<vm-102-mgmt-ip> 'ls -l /var/lib/mwan/daemon.toml'
+ssh root@<vm-102-mgmt-ip> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
 ```
-ssh root@<vm-102-mgmt-ip> 'ls -l /dev/ttyV0.0'
-```
+
+Expect `/dev/vtcon/io.goodkind.mwan-opnsense.0` to point at `../ttyV0.1`.
+Expect `/var/lib/mwan/daemon.toml` to be owned by `root` with mode
+`-rw-------`, and expect the `[daemon]` table to include `serial_path =
+"/dev/ttyV0.1"`, `baud`, `config_xml_path`, `backup_dir`, `logfile`, and
+`state_dir`. If the named symlink resolves somewhere else, treat that
+symlink target as the live truth and update `mwan_opnsense_listen_serial`
+to match before re-testing.
 
 On suburban, the host-side socket should exist while VM 102 is running.
 
-```
+```bash
 ssh suburban 'ls -l /var/run/qemu-server/102.mwanrpc'
 ```
 

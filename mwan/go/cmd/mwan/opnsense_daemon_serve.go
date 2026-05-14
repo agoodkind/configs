@@ -13,26 +13,19 @@ import (
 	"syscall"
 	"time"
 
+	"goodkind.io/mwan/internal/daemoncfg"
 	"goodkind.io/mwan/internal/opnsensesvc"
 )
 
 const (
 	rcEnabledCheckTimeout = 5 * time.Second
 
-	// defaultSerialBaud is the kernel's hard cap on virtio-serial baud
-	// on FreeBSD. Higher values are silently clamped. This sets the tty
-	// input/output queue size at c_ispeed/5 = 23040 bytes, which is the
-	// headroom each MWN1 streaming chunk fits in.
-	defaultSerialBaud = uint32(115200)
-
-	// defaultSerialPath is the FreeBSD virtio-console node the host-side
-	// chardev is wired to. The Proxmox VM template pins this; if you
-	// change the chardev order in qemu, also change this constant.
-	defaultSerialPath = "/dev/ttyV0.1"
-
 	// defaultRCName / defaultRCSubr are the rc.d service name and the
 	// rc.subr path the is-enabled check resolves. Both live on FreeBSD
-	// hosts and have stable conventional paths.
+	// hosts and have stable conventional paths. The serial path, baud,
+	// config.xml path, backup dir, state dir, and rendered logfile path
+	// are recorded in the daemon-side TOML (/var/lib/mwan/daemon.toml)
+	// after MWAN-193; only rc.d supervision details stay compiled in here.
 	defaultRCName = "mwan_opnsense"
 	defaultRCSubr = "/etc/rc.subr"
 )
@@ -42,17 +35,21 @@ const (
 // one peer; auth is unix socket permissions on the host side (root-only)
 // so the daemon does not authenticate at the application layer.
 //
-// After MWAN-191, the serve verb takes no flags. The serial path, baud,
-// config path, and backup dir are compiled-in constants today and will
-// move to the daemon-side TOML in MWAN-193. The verb still accepts an
-// empty arg slice or a help token for forward compatibility.
+// After MWAN-193, the serve verb still takes no flags. The serial path,
+// baud, config.xml path, backup dir, and transfer state dir come from
+// /var/lib/mwan/daemon.toml (templated by the rc.d script). That file
+// also records the rc.d-owned logfile path so the runtime contract is
+// complete even though the serve process does not open the logfile.
+// The verb still accepts an empty arg slice or a help token for forward
+// compatibility.
 func runOPNsenseDaemonServe(args []string) int {
 	for _, a := range args {
 		if a == "-h" || a == "--help" || a == "help" {
 			fmt.Fprintln(os.Stdout, "usage: mwan opnsense daemon serve")
 			fmt.Fprintln(os.Stdout, "")
-			fmt.Fprintln(os.Stdout, "Run the in-VM dispatcher daemon. No flags; config comes from")
-			fmt.Fprintln(os.Stdout, "compiled defaults today and from daemon-side TOML in MWAN-193.")
+			fmt.Fprintln(os.Stdout, "Run the in-VM dispatcher daemon. No flags; runtime config")
+			fmt.Fprintln(os.Stdout, "is loaded from /var/lib/mwan/daemon.toml (templated by the")
+			fmt.Fprintln(os.Stdout, "rc.d script from rc.conf.d-overridable variables).")
 			return 0
 		}
 	}
@@ -61,15 +58,22 @@ func runOPNsenseDaemonServe(args []string) int {
 		return 2
 	}
 
-	serialPath := defaultSerialPath
-	configPath := opnsensesvc.ConfigPath
-	backupDir := opnsensesvc.BackupDir
-	baud := defaultSerialBaud
+	cfg, cfgErr := daemoncfg.Load()
+	if cfgErr != nil {
+		fmt.Fprintf(os.Stderr, "daemon serve: load config: %v\n", cfgErr)
+		return 1
+	}
+
+	serialPath := cfg.Daemon.SerialPath
+	configPath := cfg.Daemon.ConfigXMLPath
+	backupDir := cfg.Daemon.BackupDir
+	baud := cfg.Daemon.Baud
+	stateDir := cfg.Daemon.StateDir
 
 	logger := slog.Default()
 	srv := opnsensesvc.NewServer(logger, configPath, backupDir)
 	validator := opnsensesvc.NewPathValidator(logger, opnsensesvc.DefaultReadAllowlist, opnsensesvc.DefaultWriteAllowlist)
-	transferMgr, transferErr := opnsensesvc.NewTransferManager(logger, validator, opnsensesvc.TransferStateDir, nil)
+	transferMgr, transferErr := opnsensesvc.NewTransferManager(logger, validator, stateDir, nil)
 	if transferErr != nil {
 		fmt.Fprintf(os.Stderr, "daemon serve: build transfer manager: %v\n", transferErr)
 		return 1

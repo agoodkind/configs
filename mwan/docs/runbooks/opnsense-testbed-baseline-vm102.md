@@ -53,15 +53,24 @@ chardev. The rollout recipe lives in the top-level `AGENTS.MD` under the
 binary locally with `make`, then scp it to `opnsense-test2` and install
 the rc.d unit per the recipe.
 
-Confirm the daemon is up with the local check inside the guest:
+After `service mwan_opnsense start`, confirm the daemon is up and that the
+rc.d wrapper rendered the daemon-side TOML contract inside the guest:
 
 ```bash
+service mwan_opnsense start
 service mwan_opnsense status
-ls -l /dev/ttyV0.0
+ls -l /dev/ttyV0.1
+ls -l /var/lib/mwan/daemon.toml
+sed -n '1,20p' /var/lib/mwan/daemon.toml
 ```
 
-The chardev device should be `/dev/ttyV0.0` and the service should show
-running.
+The service should show running. In the current VM 102 testbed, the named
+`io.goodkind.mwan-opnsense.0` virtio console should be exposed at
+`/dev/ttyV0.1`. The `/var/lib/mwan/daemon.toml` file should exist after
+startup, be owned by `root`, have mode `0600` (`-rw-------` in `ls -l`),
+and contain a `[daemon]` table with `serial_path`, `baud`,
+`config_xml_path`, `backup_dir`, `logfile`, and `state_dir` populated from
+the rc.d defaults or your `rc.conf.d` overrides.
 
 ## Step 3: Confirm the gRPC channel from the host
 
@@ -74,9 +83,10 @@ ssh root@10.240.0.148 \
 ```
 
 Expected: a non-error probe response. If the probe fails, check that the
-chardev path matches the `kvm_arguments` block in `opentofu/vms.tf` and
-that the `mwan_opnsense` service inside the guest has registered the
-serial device.
+live VM 102 `args` field matches `mwan/testbed/vm-102/qm-config.md`, and
+that the `mwan_opnsense` service inside the guest rendered
+`/var/lib/mwan/daemon.toml` with `serial_path = "/dev/ttyV0.1"` before it
+started.
 
 If you intend to run `mwan-opnsense-host.service` against VM 102 instead
 of VM 101, update the `upstream.conf` drop-in for the unit so it points
