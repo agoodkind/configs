@@ -1,0 +1,26 @@
+# /etc/network/interfaces for the MWAN failover LXC.
+# eth0 receives the upstream address. eth1 is the static OPNsense BGP peer link.
+# The return routes keep OPNsense LAN traffic on eth1.
+
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+{% if mwan_failover_eth0_inet6_manual | default(false) %}
+
+iface eth0 inet6 manual
+{% endif %}
+
+auto eth1
+iface eth1 inet static
+	address {{ mwan_failover_ipv4_address }}
+{% if mwan_failover_ipv4_return_route | default('') | length > 0 %}
+	post-up ip -4 route replace {{ mwan_failover_ipv4_return_route }}
+	post-down ip -4 route del {{ mwan_failover_ipv4_return_route }} || true
+{% endif %}
+
+iface eth1 inet6 static
+	address {{ mwan_failover_ipv6_address }}
+	post-up ip -6 route replace {{ mwan_failover_ipv6_return_route }}
+	post-down ip -6 route del {{ mwan_failover_ipv6_return_route }} || true

@@ -5,9 +5,9 @@
 # isp fields: id, name, pd_prefix, v4_subnet, vm950_ll
 # repo_root is set in the parent play.
 
-- name: "ISP {{ isp.name }} ({{ isp.id }}): render templates to suburban /tmp"
+- name: "Render templates to suburban /tmp for ISP {{ isp.name }} ({{ isp.id }})"
   ansible.builtin.template:
-    src: "{{ repo_root }}/mwan/testbed/isp-lxc/{{ item.src }}"
+    src: "{{ repo_root }}/testbed/isp-lxc/{{ item.src }}"
     dest: "/tmp/isp-{{ isp.id }}-{{ item.name }}"
     mode: "0644"
   loop:
@@ -16,13 +16,13 @@
     - { src: nftables.conf.j2, name: nftables.conf }
     - { src: pd-route.service.j2, name: pd-route.service }
 
-- name: "ISP {{ isp.name }} ({{ isp.id }}): copy sysctl to suburban /tmp"
+- name: "Copy sysctl to suburban /tmp for ISP {{ isp.name }} ({{ isp.id }})"
   ansible.builtin.copy:
-    src: "{{ repo_root }}/mwan/testbed/isp-lxc/sysctl-isp.conf"
+    src: "{{ repo_root }}/testbed/isp-lxc/sysctl-isp.conf"
     dest: "/tmp/isp-{{ isp.id }}-sysctl-isp.conf"
     mode: "0644"
 
-- name: "ISP {{ isp.name }} ({{ isp.id }}): push configs into LXC"
+- name: "Push configs into LXC for ISP {{ isp.name }} ({{ isp.id }})"
   ansible.builtin.command:
     cmd: >-
       pct push {{ isp.id }}
@@ -36,7 +36,7 @@
     - { tmp: sysctl-isp.conf, dest: /etc/sysctl.d/99-isp.conf }
   changed_when: true
 
-- name: "ISP {{ isp.name }} ({{ isp.id }}): clean up temp files"
+- name: "Clean up temp files for ISP {{ isp.name }} ({{ isp.id }})"
   ansible.builtin.file:
     path: "/tmp/isp-{{ isp.id }}-{{ item }}"
     state: absent
@@ -47,13 +47,13 @@
     - pd-route.service
     - sysctl-isp.conf
 
-- name: "ISP {{ isp.name }} ({{ isp.id }}): apply sysctl (ignore LXC permission errors)"
+- name: "Apply sysctl for ISP {{ isp.name }} ({{ isp.id }})"
   ansible.builtin.command:
     cmd: pct exec {{ isp.id }} -- sysctl --system
   changed_when: false
   failed_when: false
 
-- name: "ISP {{ isp.name }} ({{ isp.id }}): reload and enable services"
+- name: "Reload and enable services for ISP {{ isp.name }} ({{ isp.id }})"
   ansible.builtin.command:
     cmd: >-
       pct exec {{ isp.id }} -- sh -c

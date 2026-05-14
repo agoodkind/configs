@@ -1,0 +1,7 @@
+# Management interface (vmbr1)
+# MAC will be filled in after VM creation
+[Match]
+MACAddress=BC:24:11:B3:9E:46
+
+[Link]
+Name=enmgmt0

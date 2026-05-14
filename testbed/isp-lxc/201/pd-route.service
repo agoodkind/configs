@@ -1,0 +1,14 @@
+[Unit]
+Description=Route delegated /60 prefix back to VM 950
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ip -6 route replace 3d06:bad:b01:230::/60 via fe80::be24:11ff:fec0:d760 dev eth0
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

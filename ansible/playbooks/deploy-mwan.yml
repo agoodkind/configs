@@ -196,7 +196,7 @@
     # NOTE: watchdog config now lives in /etc/mwan/config.toml (not in a
     # separate env file). Secrets render via Ansible vault directly into
     # the toml. The Go binary reads only the toml + a tiny set of optional
-    # env-var overrides. See mwan/config/mwan-watchdog.service.j2.
+    # env-var overrides. See proxmox/services/mwan-watchdog.service.j2.
 
     - name: Deploy watchdog network topology config to Proxmox
       delegate_to: vault
@@ -248,7 +248,7 @@
     - name: Deploy mwan-watchdog service to Proxmox
       delegate_to: vault
       ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/mwan-watchdog.service.j2"
+        src: "{{ repo_root }}/proxmox/services/mwan-watchdog.service.j2"
         dest: /etc/systemd/system/{{ mwan_watchdog_service_name | default('mwan-watchdog') }}.service
         mode: "0644"
 
@@ -312,6 +312,12 @@
         group: root
         mode: "0640"
       no_log: true
+
+    - name: Deploy MWAN runtime config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/config.toml.j2"
+        dest: /etc/mwan/config.toml
+        mode: "0600"
 
     - name: Get VM network config from Proxmox
       delegate_to: vault
@@ -974,6 +980,8 @@
   become: false
   environment:
     DEBIAN_FRONTEND: noninteractive
+  vars_files:
+    - ../inventory/group_vars/mwan_servers.yml
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
     failover_iface: eth1
@@ -1032,17 +1040,25 @@
         - Restart mwan-ifmgr
 
     - name: Deploy /etc/mwan/config.toml
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/production/lxc-116/config.toml"
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan-failover/config.toml.j2"
         dest: /etc/mwan/config.toml
         mode: "0640"
       notify:
         - Restart mwan-agent
         - Restart mwan-ifmgr
 
-    - name: Deploy /etc/network/interfaces
+    - name: Deploy failover sysctl config
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/production/lxc-116/interfaces"
+        src: "{{ repo_root }}/mwan-failover/sysctl.conf"
+        dest: /etc/sysctl.d/99-mwan-failover.conf
+        mode: "0644"
+      notify:
+        - Reload sysctl
+
+    - name: Deploy /etc/network/interfaces
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan-failover/interfaces.j2"
         dest: /etc/network/interfaces
         mode: "0644"
       # Intentionally no auto-restart of networking. Operator must reload
@@ -1060,7 +1076,7 @@
 
     - name: Deploy mwan-ifmgr systemd unit
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/production/lxc-116/mwan-ifmgr.service"
+        src: "{{ repo_root }}/mwan-failover/mwan-ifmgr.service"
         dest: /etc/systemd/system/mwan-ifmgr.service
         mode: "0644"
       notify:
@@ -1080,6 +1096,10 @@
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
+
+    - name: Reload sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: false
 
     - name: Restart mwan-agent
       ansible.builtin.systemd:

@@ -71,7 +71,7 @@ type bgpNeighborEstablishedCheck struct {
 // NewBGPv4NeighborCheck returns the v4 neighbor check.
 //
 // expected is the operator-supplied list of neighbor addresses
-// (sourced from production.toml.j2 in real deployments). The check
+// (sourced from mwan/config/config.toml.j2 in real deployments). The check
 // fails if any expected address is missing or not in Established.
 func NewBGPv4NeighborCheck(expected []string) Check {
 	return &bgpNeighborEstablishedCheck{

@@ -1,5 +1,0 @@
-# MWAN testbed routing tables
-# Deploy to /etc/iproute2/rt_tables (append)
-100 att
-200 webpass
-300 monkeybrains

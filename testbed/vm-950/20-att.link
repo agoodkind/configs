@@ -1,0 +1,8 @@
+# Simulated AT&T WAN (vmbr5)
+# In production this is a PCI passthrough X710 VF with VLAN 3242.
+# In testbed this is a plain virtio NIC (no VLAN subinterface).
+[Match]
+MACAddress=BC:24:11:C0:D7:60
+
+[Link]
+Name=enatt0

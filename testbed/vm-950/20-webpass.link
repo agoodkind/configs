@@ -1,0 +1,6 @@
+# Simulated Webpass WAN (vmbr4)
+[Match]
+MACAddress=BC:24:11:BE:8E:B4
+
+[Link]
+Name=enwebpass0

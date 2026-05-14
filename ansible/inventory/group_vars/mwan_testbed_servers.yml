@@ -129,7 +129,7 @@ mwan_email_sender_name: "MWAN-TESTBED"
 mwan_smtp2go_api_key: "{{ smtp2go_api_key }}"
 mwan_debug_logging: true
 
-# Variables consumed by mwan/config/suburban-testbed.toml.j2 [email] block.
+# Variables consumed by mwan/config/config.toml.j2 [email] block.
 # Testbed previously rendered min_level=WARN; the notify boundary makes
 # per-event state-change drive emails regardless of slog level, so testbed
 # moves to ERROR for parity with prod. bind_iface stays empty because the
@@ -140,10 +140,57 @@ mwan_email_subject_prefix: "[MWAN-suburban]"
 mwan_email_bind_iface: ""
 mwan_email_cooldown: "5m"
 
+# ----------------------------------------------------------------------------
+# MWAN VM runtime config
+# ----------------------------------------------------------------------------
+
+mwan_config_hostname: "suburban-testbed"
+mwan_config_mgmt_addr: "3d06:bad:b01:200::950"
+mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:200::950]:50052"
+mwan_watchdog_log_file: "/var/log/mwan-watchdog-testbed.log"
+mwan_watchdog_json_log_file: "/var/log/mwan-watchdog-testbed.jsonl"
+mwan_watchdog_state_file: "/run/mwan-rollback-testbed.state"
+mwan_watchdog_lock_file: "/run/mwan-watchdog-testbed-rollback.lock"
+mwan_cutover_current_real_ipv6: "3d06:bad:b01:201::1/64"
+mwan_cutover_current_real_ipv4: "10.250.250.1/29"
+mwan_cutover_new_real_ipv6: "3d06:bad:b01:201::3/64"
+mwan_cutover_new_real_ipv4: "10.250.250.3/29"
+mwan_cutover_vip_ipv6: "3d06:bad:b01:201::1/64"
+mwan_cutover_vip_ipv4: "10.250.250.1/29"
+mwan_cutover_opnsense_addr: "root@192.168.1.1"
+mwan_cutover_failover_internal_pfx: "3d06:bad:b01:201::/64"
+mwan_cutover_failover_ipv4_return: "10.250.250.0/29 via 10.250.250.2"
+mwan_ifmgr_role: "suburban-oob"
+mwan_ifmgr_iface_key: "enmbrains0"
+mwan_ifmgr_iface_name: "enmbrains0"
+mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
+mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
+
+# ----------------------------------------------------------------------------
+# Failover LXC runtime config
+# ----------------------------------------------------------------------------
+
+mwan_failover_hostname: "mwan-failover-test"
+mwan_failover_email_from: "mwan-testbed@goodkind.io"
+
 # Subject prefix used by the testbed failover LXC (lxc-100). Distinct from
 # mwan_email_subject_prefix so failover-side alerts are visually separate
 # from main-host alerts in the inbox.
 mwan_failover_subject_prefix: "[MWAN-suburban-failover]"
+mwan_failover_bgp_asn: 4200000001
+mwan_failover_bgp_router_id: "10.250.250.4"
+mwan_failover_bgp_next_hop_v6: "3d06:bad:b01:201::4"
+mwan_failover_bgp_neighbors:
+  - "10.250.250.2"
+mwan_failover_bgp_neighbors_v6:
+  - "3d06:bad:b01:201::2"
+mwan_failover_ipv4_address: "10.250.250.4/29"
+mwan_failover_ipv6_address: "3d06:bad:b01:201::4/64"
+mwan_failover_ipv4_return_route: ""
+mwan_failover_ipv6_return_route: "3d06:bad:b01:211::/64 via 3d06:bad:b01:201::2 dev eth1"
+mwan_failover_eth0_inet6_manual: true
+mwan_failover_enable_mainv4: true
+mwan_failover_install_nftables: true
 
 # Health checks (same structure as production)
 mwan_health_checks:
@@ -154,9 +201,9 @@ mwan_health_checks:
     check_interval: 10
     failure_threshold: 2
     recovery_threshold: 2
-    targets_v4: [ "1.1.1.1", "8.8.8.8" ]
-    targets_v6: [ "2606:4700:4700::1111", "2001:4860:4860::8888" ]
-    http_targets: [ "https://ifconfig.co/ip" ]
+    targets_v4: ["1.1.1.1", "8.8.8.8"]
+    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+    http_targets: ["https://ifconfig.co/ip"]
   webpass:
     enabled: true
     ping_count: 3
@@ -164,9 +211,9 @@ mwan_health_checks:
     check_interval: 10
     failure_threshold: 2
     recovery_threshold: 2
-    targets_v4: [ "1.1.1.1", "8.8.8.8" ]
-    targets_v6: [ "2606:4700:4700::1111", "2001:4860:4860::8888" ]
-    http_targets: [ "https://ifconfig.co/ip" ]
+    targets_v4: ["1.1.1.1", "8.8.8.8"]
+    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+    http_targets: ["https://ifconfig.co/ip"]
   monkeybrains:
     enabled: true
     ping_count: 5
@@ -174,9 +221,9 @@ mwan_health_checks:
     check_interval: 30
     failure_threshold: 5
     recovery_threshold: 3
-    targets_v4: [ "1.1.1.1", "8.8.8.8" ]
-    targets_v6: [ "2606:4700:4700::1111", "2001:4860:4860::8888" ]
-    http_targets: [ "https://ifconfig.co/ip" ]
+    targets_v4: ["1.1.1.1", "8.8.8.8"]
+    targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+    http_targets: ["https://ifconfig.co/ip"]
 
 # Not used in testbed
 mwan_att_pinned_v4_seed_cidrs: []
@@ -184,7 +231,7 @@ mwan_att_pinned_v4_fqdns: []
 mwan_att_pinned_v6_seed_cidrs: []
 mwan_att_pinned_v6_fqdns: []
 mwan_zoom_ipranges_url: ""
-mwan_health_exclude_wans: [ "monkeybrains" ]
+mwan_health_exclude_wans: ["monkeybrains"]
 
 # ----------------------------------------------------------------------------
 # OPNsense (testbed VM 101)
@@ -248,6 +295,7 @@ mwan_bgp_graceful_restart_notification_enabled: true
 # Watchdog
 # ----------------------------------------------------------------------------
 
+mwan_watchdog_pve_token_id: "root@pam!watchdog-test2"
 mwan_watchdog_pve_token_secret: "{{ vault_suburban_testbed_pve_token_secret }}"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
 mwan_watchdog_unit_description: "MWAN Testbed Watchdog"

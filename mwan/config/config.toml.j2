@@ -1,0 +1,189 @@
+# MWAN runtime config
+# Rendered by Ansible, deployed to /etc/mwan/config.toml
+
+hostname = "{{ mwan_config_hostname }}"
+mwan_vmid = "{{ mwan_vmid }}"
+mwan_mgmt_addr = "{{ mwan_config_mgmt_addr }}"
+mwan_int_iface = "{{ mwan_internal_iface }}"
+
+[email]
+smtp2go_api_key = "{{ mwan_smtp2go_api_key }}"
+alert_email = "{{ mwan_email_recipient }}"
+from = "{{ mwan_email_from }}"
+subject_prefix = "{{ mwan_email_subject_prefix }}"
+bind_iface = "{{ mwan_email_bind_iface }}"
+min_level = "{{ mwan_email_min_level }}"
+cooldown = "{{ mwan_email_cooldown }}"
+
+[pve]
+base_url = "https://[::1]:8006/api2/json"
+node = "{{ mwan_proxmox_node }}"
+token_id = "{{ mwan_watchdog_pve_token_id | default('root@pam!watchdog') }}"
+token_secret = "{{ mwan_watchdog_pve_token_secret }}"
+
+[network]
+ping_target_ipv4 = "1.1.1.1"
+ping_target_ipv6 = "2606:4700:4700::1111"
+ping_targets = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+curl_target = "https://ifconfig.co/ip"
+last_deploy_path = "/var/lib/mwan/last-deploy"
+last_change_path = "/var/run/mwan-last-change"
+
+[[network.wan_interfaces]]
+name = "enwebpass0"
+
+[[network.wan_interfaces]]
+name = "enmbrains0"
+
+[watchdog]
+service_name = "{{ mwan_watchdog_service_name | default('mwan-watchdog') }}"
+deploy_window_minutes = 30
+connectivity_timeout_seconds = 60
+check_interval_healthy_seconds = 30
+check_interval_degraded_seconds = 10
+post_rollback_grace_seconds = 120
+alert_cooldown_seconds = 300
+deploy_grace_period_seconds = 60
+max_rollback_attempts = 3
+snapshot_healthy_threshold = 20
+max_known_good_snapshots = 3
+hash_check_every_n_healthy = 10
+min_snapshot_interval_seconds = 300
+max_total_snapshots = 15
+vsock_cid = {{ mwan_vmid }}
+vsock_port = 50051
+mwan_agent_tcp_addr = "{{ mwan_watchdog_agent_tcp_addr }}"
+log_file = "{{ mwan_watchdog_log_file }}"
+json_log_file = "{{ mwan_watchdog_json_log_file }}"
+rollback_state_file = "{{ mwan_watchdog_state_file }}"
+rollback_lock_file = "{{ mwan_watchdog_lock_file }}"
+
+[cutover]
+current_real_ipv6 = "{{ mwan_cutover_current_real_ipv6 }}"
+current_real_ipv4 = "{{ mwan_cutover_current_real_ipv4 }}"
+new_real_ipv6 = "{{ mwan_cutover_new_real_ipv6 }}"
+new_real_ipv4 = "{{ mwan_cutover_new_real_ipv4 }}"
+vip_ipv6 = "{{ mwan_cutover_vip_ipv6 }}"
+vip_ipv4 = "{{ mwan_cutover_vip_ipv4 }}"
+opnsense_addr = "{{ mwan_cutover_opnsense_addr }}"
+failover_lxc_id = "{{ failover_lxc_id }}"
+failover_lxc_iface = "eth1"
+failover_lxc_wan_iface = "eth0"
+failover_default_gw6 = ""
+failover_default_gw4 = ""
+failover_internal_pfx = "{{ mwan_cutover_failover_internal_pfx }}"
+failover_opnsense_ll = ""
+failover_ipv4_return = "{{ mwan_cutover_failover_ipv4_return }}"
+vrid = 51
+master_priority = 150
+backup_priority = 50
+advert_interval = 1
+health_check_interval = 10
+health_check_weight = -110
+health_check_fall = 3
+health_check_rise = 2
+ssh_timeout_sec = 10
+verify_timeout_sec = 30
+boot_wait_sec = 35
+
+[opnsense]
+url = "https://{% if ':' in opnsense_addr and not opnsense_addr.startswith('[') %}[{{ opnsense_addr }}]{% else %}{{ opnsense_addr }}{% endif %}"
+api_key = "{{ opnsense_api_key }}"
+api_secret = "{{ opnsense_api_secret }}"
+insecure = true
+gateway_names = {{ opnsense_gateway_names | to_json }}
+
+[opnsense.bgp]
+router_id = "{{ opnsense_bgp_router_id }}"
+firewall_source_v4 = "{{ opnsense_bgp_firewall_source_v4 }}"
+firewall_source_v6 = "{{ opnsense_bgp_firewall_source_v6 }}"
+
+{% for neighbor in opnsense_bgp_neighbors %}
+[[opnsense.bgp.neighbors]]
+address = "{{ neighbor.address }}"
+description = "{{ neighbor.description }}"
+preference = "{{ neighbor.preference }}"
+
+{% endfor %}
+[agent]
+vsock_port = 50051
+tcp_addr = "[::]:50052"
+deploy_file = "/var/lib/mwan/last-deploy"
+deploy_expected = true
+log_file = "/var/log/mwan-agent.log"
+debug = false
+
+[bgp]
+enabled = true
+asn = {{ bgp_asn }}
+router_id = "{{ bgp_router_id }}"
+next_hop_v6 = "{{ bgp_next_hop_v6 }}"
+keepalive_seconds = {{ bgp_keepalive_seconds }}
+hold_seconds = {{ bgp_hold_seconds }}
+listen_port = {{ bgp_listen_port }}
+
+{% for neighbor in bgp_neighbors %}
+[[bgp.neighbors]]
+address = "{{ neighbor }}"
+
+{% endfor %}
+{% for neighbor in bgp_neighbors_v6 %}
+[[bgp.neighbors_v6]]
+address = "{{ neighbor }}"
+
+{% endfor %}
+[bgp.announce]
+ipv4 = {{ bgp_announce_ipv4 | to_json }}
+ipv6 = {{ bgp_announce_ipv6 | to_json }}
+
+[bgp.graceful_restart]
+enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
+restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
+notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
+
+[ifmgr]
+role = "{{ mwan_ifmgr_role }}"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.{{ mwan_ifmgr_iface_key }}]
+name = "{{ mwan_ifmgr_iface_name }}"
+dhcp_v4 = true
+ra_solicit = true
+dhcp_initial_backoff = "5s"
+dhcp_max_backoff = "5m"
+
+[ifmgr.modules.oobv6]
+iface = "{{ mwan_ifmgr_iface_name }}"
+oob_addr = "{{ mwan_ifmgr_oob_addr }}"
+oob_table_id = 500
+
+[ifmgr.modules.oobv4]
+iface = "{{ mwan_ifmgr_iface_name }}"
+oob_table_id = 500
+
+[ifmgr.modules.ra_lost]
+iface = "{{ mwan_ifmgr_iface_name }}"
+ra_lost_alert_after = "5m"
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 5
+uid_range = "997-997"
+table = "oob"
+table_id = 500
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 6
+from = "{{ mwan_ifmgr_policy_from_v6 }}"
+table = "oob"
+table_id = 500
+
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet"
+priority = 5
+uid_range = "997-997"
+table = "oob"
+table_id = 500

@@ -1,11 +1,12 @@
 [Unit]
-Description=MWAN Auto-Rollback Watchdog (Go)
+Description={{ mwan_watchdog_unit_description | default('MWAN Auto-Rollback Watchdog') }}
 After=network.target
 Wants=network.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/mwan-watchdog/watchdog.env
+# All secrets and config live in /etc/mwan/config.toml. The Go binary reads
+# them directly after Ansible renders the vault-backed config file.
 ExecStart=/usr/local/bin/mwan watchdog
 Restart=always
 RestartSec=10

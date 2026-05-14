@@ -1,6 +1,0 @@
-# Simulated Monkeybrains WAN (vmbr6)
-[Match]
-MACAddress=BC:24:11:3D:CE:CC
-
-[Link]
-Name=enmbrains0

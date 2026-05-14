@@ -94,20 +94,20 @@
 
     - name: Deploy hypervisor config (rendered from .j2)
       ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/suburban-testbed.toml.j2"
+        src: "{{ repo_root }}/mwan/config/config.toml.j2"
         dest: /etc/mwan/config.toml
         mode: "0600"
 
     - name: Deploy sysctl
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/testbed/suburban-sysctl.conf"
+        src: "{{ repo_root }}/testbed/suburban-sysctl.conf"
         dest: /etc/sysctl.d/99-mwan-testbed.conf
         mode: "0644"
       notify: Reload sysctl
 
     - name: Deploy masquerade sourced file
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/testbed/suburban-interfaces.d-testbed-masquerade.conf"
+        src: "{{ repo_root }}/testbed/suburban-interfaces.d-testbed-masquerade.conf"
         dest: /etc/network/interfaces.d/testbed-masquerade.conf
         mode: "0644"
 
@@ -281,7 +281,7 @@
 
     - name: Deploy agent config (rendered from .j2)
       ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/suburban-testbed.toml.j2"
+        src: "{{ repo_root }}/mwan/config/config.toml.j2"
         dest: /etc/mwan/config.toml
         mode: "0600"
 
@@ -457,12 +457,12 @@
         mode: "0755"
 
     - name: Deploy agent config
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/testbed/lxc-100/config.toml"
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan-failover/config.toml.j2"
         dest: /etc/mwan/config.toml
         mode: "0644"
 
-    # The lxc-100 config.toml has an [email] block but no smtp2go_api_key.
+    # The failover LXC config.toml has an [email] block but no smtp2go_api_key.
     # The mwan binary reads SMTP2GO_API_KEY from this file via the systemd
     # EnvironmentFile= directive on each mwan unit.
     - name: Deploy MWAN secrets environment file (LXC 100)
@@ -477,13 +477,19 @@
 
     - name: Deploy nftables
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/testbed/lxc-100/nftables.conf"
+        src: "{{ repo_root }}/mwan-failover/nftables.conf"
         dest: /etc/nftables.conf
         mode: "0644"
 
-    - name: Deploy /etc/network/interfaces
+    - name: Deploy failover sysctl config
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/testbed/lxc-100/interfaces"
+        src: "{{ repo_root }}/mwan-failover/sysctl.conf"
+        dest: /etc/sysctl.d/99-mwan-failover.conf
+        mode: "0644"
+
+    - name: Deploy /etc/network/interfaces
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan-failover/interfaces.j2"
         dest: /etc/network/interfaces
         mode: "0644"
 
@@ -495,7 +501,7 @@
 
     - name: Deploy mwan-ifmgr service
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/testbed/lxc-100/mwan-ifmgr.service"
+        src: "{{ repo_root }}/mwan-failover/mwan-ifmgr.service"
         dest: /etc/systemd/system/mwan-ifmgr.service
         mode: "0644"
 

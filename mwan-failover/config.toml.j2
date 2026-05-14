@@ -1,0 +1,84 @@
+hostname = "{{ mwan_failover_hostname }}"
+
+# SMTP2GO_API_KEY comes from /etc/mwan/secrets.env via systemd EnvironmentFile.
+[email]
+alert_email = "{{ mwan_email_recipient }}"
+from = "{{ mwan_failover_email_from }}"
+subject_prefix = "{{ mwan_failover_subject_prefix }}"
+bind_iface = "{{ mwan_failover_email_bind_iface | default('') }}"
+min_level = "{{ mwan_email_min_level }}"
+cooldown = "{{ mwan_email_cooldown }}"
+
+[agent]
+vsock_port = 0
+tcp_addr = "[::]:50052"
+deploy_file = "/var/lib/mwan/last-deploy"
+deploy_expected = true
+log_file = "/var/log/mwan-agent.log"
+debug = false
+
+[bgp]
+enabled = true
+asn = {{ mwan_failover_bgp_asn }}
+router_id = "{{ mwan_failover_bgp_router_id }}"
+next_hop_v6 = "{{ mwan_failover_bgp_next_hop_v6 }}"
+keepalive_seconds = {{ bgp_keepalive_seconds }}
+hold_seconds = {{ bgp_hold_seconds }}
+listen_port = {{ bgp_listen_port }}
+
+{% for neighbor in mwan_failover_bgp_neighbors %}
+[[bgp.neighbors]]
+address = "{{ neighbor }}"
+
+{% endfor %}
+{% for neighbor in mwan_failover_bgp_neighbors_v6 %}
+[[bgp.neighbors_v6]]
+address = "{{ neighbor }}"
+
+{% endfor %}
+[bgp.announce]
+ipv4 = {{ bgp_announce_ipv4 | to_json }}
+ipv6 = {{ bgp_announce_ipv6 | to_json }}
+
+[bgp.graceful_restart]
+enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
+restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
+notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
+
+[ifmgr]
+role = "lxc-failover-backup"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.eth0]
+name = "eth0"
+dhcp_v4 = false
+ra_solicit = true
+
+[ifmgr.modules.slaac_health]
+iface = "eth0"
+degraded_after = "30s"
+escalate_after = "90s"
+alert_after = "300s"
+max_toggles_per_hour = 4
+probe_targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+
+[ifmgr.modules.bridge_probe]
+iface = "eth0"
+no_signal_alert_after = "120s"
+
+[ifmgr.modules.connectivity_probe]
+iface = "eth0"
+targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+timeout = "2s"
+unhealthy_after = "10s"
+
+[ifmgr.modules.ra_lost]
+iface = "eth0"
+ra_lost_alert_after = "5m"
+
+{% if mwan_failover_enable_mainv4 | default(false) %}
+[ifmgr.modules.mainv4]
+iface = "eth0"
+{% endif %}
