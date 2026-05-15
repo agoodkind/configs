@@ -1,0 +1,112 @@
+---
+# Codify suburban host-side VFIO passthrough config for the Radeon R7 360.
+# Manages three files on the Proxmox host so a future VM can claim the GPU:
+#   /etc/modprobe.d/vfio.conf            binds Radeon PCI IDs to vfio-pci
+#   /etc/modprobe.d/blacklist-amd-gpu.conf  keeps radeon and amdgpu off
+#   /etc/modules-load.d/vfio.conf        loads vfio modules at boot
+#
+# The playbook does NOT modify /etc/default/grub or reboot. The kernel
+# cmdline edit was applied surgically once; the playbook only asserts
+# that /proc/cmdline still carries intel_iommu=on and fails loudly if
+# the cmdline has drifted, so a future re-image or BIOS rebuild does not
+# silently undo the IOMMU mode without anyone noticing.
+#
+# Usage:
+#   ansible-playbook --vault-password-file ~/.config/ansible/vault.pass \
+#     playbooks/deploy-suburban-vfio.yml
+
+- name: Resolve suburban VFIO deploy target
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add suburban hypervisor
+      ansible.builtin.add_host:
+        name: suburban
+        ansible_host: "10.240.0.148"
+        ansible_user: root
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      tags: ["always"]
+
+- name: Configure suburban VFIO host-side passthrough
+  hosts: suburban
+  become: false
+  gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+  tasks:
+    - name: Deploy vfio-pci binding config
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/vfio/vfio.conf"
+        dest: /etc/modprobe.d/vfio.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Refresh initramfs
+
+    - name: Deploy AMD GPU driver blacklist
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/vfio/blacklist-amd-gpu.conf"
+        dest: /etc/modprobe.d/blacklist-amd-gpu.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Refresh initramfs
+
+    - name: Deploy vfio modules-load list
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/vfio/vfio-modules.conf"
+        dest: /etc/modules-load.d/vfio.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Refresh initramfs
+
+    - name: Read current kernel cmdline
+      ansible.builtin.slurp:
+        src: /proc/cmdline
+      register: vfio_proc_cmdline
+      check_mode: false
+      changed_when: false
+
+    - name: Assert IOMMU is enabled in the running cmdline
+      ansible.builtin.assert:
+        that:
+          - "'intel_iommu=on' in (vfio_proc_cmdline.content | b64decode)"
+          - "'iommu=pt' in (vfio_proc_cmdline.content | b64decode)"
+        fail_msg: >-
+          /proc/cmdline is missing intel_iommu=on or iommu=pt. The kernel
+          cmdline edit lives in /etc/default/grub and is intentionally NOT
+          managed by this playbook. Fix /etc/default/grub by hand, then
+          run: update-initramfs -u -k all && proxmox-boot-tool refresh,
+          then reboot.
+
+    - name: Confirm Radeon is bound to vfio-pci
+      ansible.builtin.command:
+        cmd: lspci -nnk -d 1002:6658
+      register: vfio_radeon_lspci
+      check_mode: false
+      changed_when: false
+      failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_lspci.stdout"
+
+    - name: Confirm Radeon HDMI audio is bound to vfio-pci
+      ansible.builtin.command:
+        cmd: lspci -nnk -d 1002:aac0
+      register: vfio_radeon_audio_lspci
+      check_mode: false
+      changed_when: false
+      failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_audio_lspci.stdout"
+
+  handlers:
+    - name: Refresh initramfs
+      ansible.builtin.command:
+        cmd: update-initramfs -u -k all
+      changed_when: true
+      listen: Refresh initramfs
+
+    - name: Notify reboot needed
+      ansible.builtin.debug:
+        msg: >-
+          initramfs was regenerated. A reboot is required for the change
+          to take effect. The playbook does NOT auto-reboot. Pick a
+          maintenance window and run: reboot
+      listen: Refresh initramfs
