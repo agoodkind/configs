@@ -67,7 +67,12 @@ func buildIfMgrModuleConfigs(
 
 	moduleConfigs["cloudflared_tap"] = buildCloudflaredTapConfig(modules.CloudflaredTap)
 	moduleConfigs["mainv4"] = buildMainV4Config(modules.MainV4)
-	moduleConfigs["policy_rules"] = buildPolicyRulesConfig(modules.PolicyRules)
+
+	policyRulesConfig, err := buildPolicyRulesConfig(modules.PolicyRules)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["policy_rules"] = policyRulesConfig
 
 	return moduleConfigs, nil
 }
@@ -306,23 +311,31 @@ func buildMainV4Config(section *config.IfMgrMainV4Section) mainv4.Config {
 	return cfg
 }
 
-func buildPolicyRulesConfig(section *config.IfMgrPolicyRulesSection) policyrules.Config {
+func buildPolicyRulesConfig(
+	section *config.IfMgrPolicyRulesSection,
+) (policyrules.Config, error) {
 	cfg := policyrules.Config{}
 	if section == nil {
-		return cfg
+		return cfg, nil
 	}
 	cfg.Rules = make([]netif.DesiredRule, 0, len(section.Rule))
-	for _, rule := range section.Rule {
+	for i, rule := range section.Rule {
+		uidRange, err := buildPolicyRuleUIDRange(rule, lookupUserID)
+		if err != nil {
+			return policyrules.Config{}, fmt.Errorf(
+				"policy_rules.rule[%d]: %w", i, err,
+			)
+		}
 		cfg.Rules = append(cfg.Rules, netif.DesiredRule{
 			Family:   rule.Family,
 			Priority: rule.Priority,
 			From:     rule.From,
-			UIDRange: rule.UIDRange,
+			UIDRange: uidRange,
 			Table:    rule.Table,
 			TableID:  rule.TableID,
 		})
 	}
-	return cfg
+	return cfg, nil
 }
 
 func parseDurationSetting(

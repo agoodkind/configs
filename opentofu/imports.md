@@ -109,9 +109,9 @@ tofu import \
   'proxmox_virtual_environment_container.testbed_proxy' \
   'hypervisor/203'
 
-# MWAN-62: suburban testbed OPNsense VM.
-# VM 101 is wedged from the MWAN-119 v2 rollback. The import succeeds on
-# the resource shape regardless of the wedged guest disk content.
+# MWAN-62: suburban testbed OPNsense VM 101 (opnsense-test).
+# This holds the working OPNsense testbed install on `vmbrtrunk` and
+# `vmbr2` with the chardev `args` block owned by Ansible.
 tofu import \
   'proxmox_virtual_environment_vm.opnsense_test' \
   'hypervisor/101'
@@ -128,38 +128,6 @@ Drift expectations on `tofu plan` after these imports:
   values declared here mirror the live `pct config` output as of
   2026-05-07. If plan flags drift, compare against the live config and
   tune the HCL rather than ignoring the field.
-* VM 101 `vga` is in the lifecycle ignore list because the value comes
-  from `qm config` as `serial0` and the bpg provider sometimes normalizes
-  the field on plan.
-* VM 101 `unused0` (the orphan disk from a prior reinstall) is not
-  modeled. Drift is not expected because Tofu only manages declared
-  disks.
-* The `[ansible-deploy-golden]` and `[pre-cutover2-v2]` snapshots on LXC
-  100, plus the `mwan119-v2-preapply-20260508-0110` snapshot on VM 101,
-  are not modeled by the bpg provider.
-
-## VM 102 (MWAN-149) manual-then-import
-
-VM 102 (`opnsense_test2`) follows a different recipe. The bpg/proxmox
-API rejects the `args` field for non-`root@pam` API tokens, so a regular
-`tofu apply` against the suburban provider alias cannot create this VM
-when the chardev/virtio-serial-pci `args` block is present. The operator
-sidesteps the API restriction by creating the empty VM directly via
-`qm create` over SSH as root, then importing it into Tofu state. After
-import, `tofu plan` reports zero changes so the resource is fully
-managed.
-
-The qm command shape lives at `vm102-create.cmd` in the worktree for
-reference. After the VM exists and is stopped, run:
-
-```bash
-tofu import \
-  'proxmox_virtual_environment_vm.opnsense_test2' \
-  'hypervisor/102'
-```
-
-The operator then installs OPNsense via the serial console per
-`mwan/docs/runbooks/opnsense-testbed-baseline-vm102.md`.
 
 ## Out of scope
 

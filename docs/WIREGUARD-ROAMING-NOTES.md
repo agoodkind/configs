@@ -1,8 +1,8 @@
 # WireGuard endpoint roaming research notes
 
 Sources read: `wireguard-go` (Jason Donenfeld's userspace reference impl,
-~/Sites/wireguard-go), `wireguard-tools` man pages (~/Sites/wireguard-tools/src/man),
-WG protocol description (https://www.wireguard.com/protocol/).
+~~/Sites/wireguard-go), `wireguard-tools` man pages (~~/Sites/wireguard-tools/src/man),
+WG protocol description ([https://www.wireguard.com/protocol/](https://www.wireguard.com/protocol/)).
 
 ## What the protocol does
 
@@ -24,7 +24,7 @@ Source path in `wireguard-go`:
 - `device/receive.go:459`. First authenticated transport: same.
 - `device/receive.go:515`. Every subsequent authenticated transport: same.
 - `device/peer.go:279-287`. `SetEndpointFromPacket` locks endpoint and overwrites
-  `peer.endpoint.val` with the new endpoint.
+`peer.endpoint.val` with the new endpoint.
 
 There is a `disableRoaming` flag at `device/peer.go:32`. It cannot be set via
 standard config. No standard `wg`/`wg-quick` config keyword sets it. It is only
@@ -40,16 +40,16 @@ The kernel module behaves identically. Same protocol. Same author.
 Architecture facts:
 
 - `home.goodkind.io` Cloudflare DNS-LB rotates between AT&T-side address
-  (`2600:1700:2f71:c80::1`) and Webpass-side address (`2604:5500:c271:be00::1`).
+(`2600:1700:2f71:c80::1`) and Webpass-side address (`2604:5500:c271:be00::1`).
 - Suburban dials `home.goodkind.io:51820` on a periodic basis. DNS resolution
-  happens per dial, not cached forever.
+happens per dial, not cached forever.
 - VM 113 has DNAT rules for both AT&T and Webpass IPv6 addresses. Both forward
-  to OPNsense `:fe::2:51820`.
+to OPNsense `:fe::2:51820`.
 - VM 113 mangle prerouting: inbound iif sets ct mark, so reply egresses the
-  same WAN suburban dialed. This is DNS-LB symmetry. It works for general
-  traffic.
+same WAN suburban dialed. This is DNS-LB symmetry. It works for general
+traffic.
 - VM 113 mangle prerouting also has a mod-2 random LB rule for OPNsense-initiated
-  outbound: `ip6 saddr :fe::2 ct state new mark set numgen random mod 2`.
+outbound: `ip6 saddr :fe::2 ct state new mark set numgen random mod 2`.
 
 Two flows that break consistency:
 
@@ -58,27 +58,27 @@ Two flows that break consistency:
 1. Suburban resolves `home.goodkind.io`. Cloudflare returns AT&T address.
 2. Suburban dials `[2600:1700:2f71:c80::1]:51820`.
 3. VM 113 DNATs to OPNsense. OPNsense's wg sees endpoint `:7bf2`, suburban's
-   public Comcast SLAAC.
+  public Comcast SLAAC.
 4. Inbound iif rule on VM 113 marks the conntrack AT&T (`mark=1`).
 5. OPNsense replies. Reply ct state established. Mark restored from ct. AT&T.
 6. Suburban's wg sees authenticated reply with src `:c80::1` after SNAT
-   reverse. `SetEndpointFromPacket` keeps suburban's stored endpoint at
+  reverse. `SetEndpointFromPacket` keeps suburban's stored endpoint at
    `:c80::1`. Consistent with what it dialed.
 
 So far healthy.
 
-7. Two minutes later, OPNsense initiates a rekey. The rekey-after timer
-   fires. New conntrack from `:fe::2`. Mod-2 rule fires. 50% chance: mark 2
+1. Two minutes later, OPNsense initiates a rekey. The rekey-after timer
+  fires. New conntrack from `:fe::2`. Mod-2 rule fires. 50% chance: mark 2
    (Webpass).
-8. Reply egresses Webpass. Postrouting NAT rewrites src to `:be00::1`.
-9. Packet arrives at suburban. Suburban's wg validates the packet. Key matches.
-   Then it calls `SetEndpointFromPacket` with the new source `:be00::1`.
+2. Reply egresses Webpass. Postrouting NAT rewrites src to `:be00::1`.
+3. Packet arrives at suburban. Suburban's wg validates the packet. Key matches.
+  Then it calls `SetEndpointFromPacket` with the new source `:be00::1`.
    Suburban's stored endpoint is now `:be00::1`.
-10. Suburban's next periodic re-resolution of `home.goodkind.io` is irrelevant.
-    wg only re-resolves the configured `Endpoint=` line at startup and on
+4. Suburban's next periodic re-resolution of `home.goodkind.io` is irrelevant.
+  wg only re-resolves the configured `Endpoint=` line at startup and on
     persistent-keepalive failure. Roaming-set endpoints do not get re-resolved.
-11. From now on, suburban initiates to `:be00::1`. If Webpass IPv6 path has
-    any flakiness, the WG session degrades silently.
+5. From now on, suburban initiates to `:be00::1`. If Webpass IPv6 path has
+  any flakiness, the WG session degrades silently.
 
 ### Flow B: peer IP renumber
 
@@ -111,23 +111,19 @@ in lockstep with mod-2 randomness on every conntrack flush.
 ## What CAN'T fix it
 
 - **Pinning OPNsense-initiated to AT&T at VM 113** (commit `e2e17a1` shipped
-  earlier). Does not help because most traffic is suburban-initiated.
-  OPNsense-initiated rekeys also exist, but they only hit `ct state new` in
-  the brief window after conntrack expiry. The existing flow is usually in
-  `ct state established` from suburban's prior dial. So the pin rule rarely
-  fires. Effectively inert in practice.
+earlier). Does not help because most traffic is suburban-initiated.
+OPNsense-initiated rekeys also exist, but they only hit `ct state new` in
+the brief window after conntrack expiry. The existing flow is usually in
+`ct state established` from suburban's prior dial. So the pin rule rarely
+fires. Effectively inert in practice.
 - **Disabling roaming**. Not exposed in stock wg/wg-quick uapi. Would require
-  custom-built wireguard-go. Not feasible.
+custom-built wireguard-go. Not feasible.
 - **Static `Endpoint=` on suburban config**. Defeats DNS-LB failover. Goes
-  against active-active intent.
+against active-active intent.
 - **Pinning inbound on VM 113 to a single WAN regardless of iif**. Defeats
-  DNS-LB symmetry. Breaks all DNS-LB-routed traffic, not just WG.
+DNS-LB symmetry. Breaks all DNS-LB-routed traffic, not just WG.
 
-## What CAN fix it
-
-Three categories, increasing in invasiveness.
-
-### 1. Detection plus manual reconciliation
+## Detection plus manual reconciliation
 
 Run wghealth on BOTH sides. On endpoint mismatch (post-NAT-normalization),
 alert. Operator restarts wg-quick on one side. Both sides converge.
@@ -135,55 +131,25 @@ alert. Operator restarts wg-quick on one side. Both sides converge.
 Pros: zero protocol-level change, observable.
 Cons: requires manual intervention. The whole point of WG is "set and forget."
 
-### 2. Per-peer host alias
-
-Stand up `wg.home.goodkind.io` as a Cloudflare hostname that resolves only to
-AT&T addresses, or only to one consistent address. Suburban's `Endpoint=`
-points at `wg.home.goodkind.io`. Cloudflare LB still rotates `home.goodkind.io`
-for general traffic. WG specifically uses the path-pinned hostname.
-
-Pros: simple DNS change. No code. No protocol fight.
-Cons: loses WAN failover for WG specifically. If AT&T is down, WG to home is
-down. When AT&T is down, BGP BACKUP path on LXC 116 takes over for general
-internet, including for WG traffic from suburban to cloudflared. WG to home
-itself is still down. Marginal regression vs. status quo since today's WG is
-also unstable.
-
-### 3. Split-tunnel BGP advertisement
-
-VM 113 advertises a more-specific BGP prefix for WG traffic only (e.g.
-`:fe::1/128` route-map'd with a community). OPNsense pf rules force-route WG
-traffic through that path. BGP withdrawal triggers automatic failover.
-
-Pros: real failover. No DNS hack. Resilient to renumber.
-Cons: significant pf and BGP work. Blast radius into routing layer.
-
-## Recommendation
-
-For now: ship category 1 (bidirectional wg_health detection). Capture data on
-the actual frequency and trigger of split-brain. Then decide between 2 and 3
-based on observed pattern.
-
 ## Implementation note for bidirectional wghealth
 
-Today's `wg_health` (`mwan/go/internal/ifmgr/modules/wghealth/`) polls OPNsense
-via SSH only. The module doc explicitly defers bidirectional cross-check.
+Today's `wg_health` (`mwan/go/internal/ifmgr/modules/wghealth/`) polls OPNsense  
+via SSH only. The module doc explicitly defers bidirectional cross-check (Hallucination? Citation needed?).
 
 Two paths to add the suburban side:
 
 - **Local-exec mode**. Extend `wghealth.Config` to support `SSHHost = ""`,
-  meaning local exec. Stand up `mwan-ifmgr` on suburban with a `suburban-wg`
-  role wiring a wghealth instance with empty SSHHost. Each daemon emits
-  per-peer logs from its own viewpoint. Cross-check happens by log analysis
-  or a future correlation layer.
-
+meaning local exec. Stand up `mwan-ifmgr` on suburban with a `suburban-wg`
+role wiring a wghealth instance with empty SSHHost. Each daemon emits
+per-peer logs from its own viewpoint. Cross-check happens by log analysis
+or a future correlation layer.
 - **Remote SSH mode (single daemon)**. Extend wghealth to support a list of
-  SSH targets. Vault daemon polls both OPNsense (working) and suburban
-  over root SSH. `wg` is only readable via root or the `wg-quick` group.
-  Single daemon does the cross-check natively.
+SSH targets. Vault daemon polls both OPNsense (working) and suburban
+over root SSH. `wg` is only readable via root or the `wg-quick` group.
+Single daemon does the cross-check natively.
 
-Local-exec is cleaner for ops. Each box owns its own observation and ships
-logs centrally. But it requires running mwan-ifmgr on suburban. SSH-list is
-zero-touch on suburban but needs key and permission work.
+Local-exec is cleaner for ops. Each box owns its own observation and ships  
+logs centrally. But it requires running mwan-ifmgr on suburban. SSH-list is  
+zero-touch on suburban but needs key and permission work (hallucination? what is key and permission work).
 
 Tracked: MWAN-80.

@@ -86,6 +86,7 @@ type IfMgrPolicyRuleSection struct {
 	Priority int    `toml:"priority"`
 	From     string `toml:"from"`
 	UIDRange string `toml:"uid_range"`
+	UIDUser  string `toml:"uid_user"`
 	Table    string `toml:"table"`
 	TableID  int    `toml:"table_id"`
 }

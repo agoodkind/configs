@@ -34,4 +34,4 @@ delegated prefix and masquerade will work correctly. This matches production
 Monkeybrains behavior, where the real upstream also advertises `AdvAutonomous on`.
 
 This is Option B from the investigation report at
-`mwan/docs/MWAN-65-v6-loss-asymmetry-investigation.md`, section 5.
+`docs/MWAN-65-v6-loss-asymmetry-investigation.md`, section 5.

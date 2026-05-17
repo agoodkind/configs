@@ -1,4 +1,4 @@
-## AGENTS
+# AGENTS
 
 This is the infrastructure configuration repository for `goodkind.io`. It contains Ansible
 playbooks for LXC/VM provisioning, network device configs (Traefik, KEA DHCP, BIND), the
@@ -10,14 +10,14 @@ named `suburban` runs test and auxiliary workloads in NJ.
 
 ## Sources of Truth
 
-- **Infrastructure state** (IPs, bridges, services, tunnels, open issues): `INFRA.md`
+- **Infrastructure state** (IPs, bridges, services, tunnels, open issues): `docs/INFRA.md`
 - **Container/VM hostnames and IPv6 addresses**: `ansible/inventory/group_vars/all/service_mapping.yml`
 - **Static inventory and host groups**: `ansible/inventory/hosts`
 - **Dynamic Proxmox inventory**: `ansible/inventory/proxmox.yml`
 - **Per-service variables**: `ansible/inventory/group_vars/<service>_servers.yml`
 - **Shared variables**: `ansible/inventory/group_vars/all/vars.yml`
 - **Secrets** (encrypted): `ansible/inventory/group_vars/all/vault.yml`
-- **SSH access, network topology, Cloudflare config**: `INFRA.md`
+- **SSH access, network topology, Cloudflare config**: `docs/INFRA.md`
 
 ## Deployment Workflow
 
@@ -32,7 +32,9 @@ OpenTofu state is stored in Consul at `opentofu/state`. Credentials go in
 `opentofu/terraform.tfvars` (gitignored; see `terraform.tfvars.example`).
 
 Ansible runs **locally** from `ansible/` on the controller (this machine). Vault password
-lives at `~/.config/ansible/vault.pass`.
+lives at `~/.config/ansible/vault.pass`. To inspect vault variable names without
+exposing decrypted values, run `python3 scripts/ansible_vault_keys.py --vault-password-file ~/.config/ansible/vault.pass ansible/inventory/group_vars/all/vault.yml`
+from the repo root.
 
 Playbooks live in `ansible/playbooks/` and follow a `deploy-<service>.yml` naming
 convention. See `.cursor/commands/deploy-playbook.md` for the exact invocation. Use
@@ -47,7 +49,7 @@ at a time. Treat every change as potentially irreversible.
 **Before any change to a production host:**
 
 1. **Understand the current state.** SSH in and read live config, routes, rules, logs.
-   Do not trust INFRA.md or Ansible templates as ground truth; they drift.
+   Do not trust docs/INFRA.md or Ansible templates as ground truth; they drift.
 2. **Form a testable hypothesis.** State what you expect the change to do and what would
    prove it worked.
 3. **Test surgically.** Apply the smallest possible change, verify with a specific command,
@@ -62,6 +64,7 @@ at a time. Treat every change as potentially irreversible.
    services without a rollback plan.
 
 **Things that have gone wrong before:**
+
 - Watchdog emailing on every probe cycle because gRPC port was firewalled (port 50052
   missing from nftables input chain).
 - PD-sourced traffic misrouting via wrong WAN because source-based ip6 rules were missing
@@ -87,9 +90,8 @@ Subcommands as defined in `cmd/mwan/main.go` (HEAD `4c754f4`):
 - `mwan opnsense` is the FreeBSD config daemon (config.xml mutation over virtio
   serial). It is reached either via the explicit subcommand or by invoking the
   binary as `mwan-opnsense`. Source: `internal/opnsense*`.
-- `mwan opnsense-host` runs on the Proxmox host as a unix-socket bridge that
-  proxies gRPC to the OPNsense VM's mwanrpc chardev. Source: `cmd/mwan/opnsense_host*.go`.
-- `mwan opnsense-probe` is a one-shot health probe against an `opnsense-host` socket.
+- `mwan opnsense version` probes the OPNsense daemon through a configured gRPC target.
+- `mwan opnsense host serve` runs the Proxmox host-side Unix socket bridge to the OPNsense VM's `mwanrpc` chardev.
 
 There are NO separate Go binaries. New tools become subcommands of this monolith.
 Shared code lives under `internal/config`, `internal/email`, `internal/logging`,
@@ -136,8 +138,7 @@ than templated into config.toml. That env-var injection contract is the standard
 under MWAN-131; slice F of MWAN-132 is the first instance.
 
 For full routing details, kind catalog, and failure modes, see
-`mwan/docs/mwan-email-routing.md` and the plan at
-`mwan/docs/MWAN-132-email-unification-plan.md`.
+`docs/mwan-email-routing.md`.
 
 ## BGP graceful restart
 
@@ -178,175 +179,22 @@ apply it. To verify FRR has GR active, SSH to OPNsense and run
 BFD is the natural follow-up. GR is only safe-by-default with BFD when a real WAN
 link dies inside the GR window, because without BFD the helper holds stale routes
 for the full `restart_time`. We do not have BFD wired today and rely on the watchdog
-gRPC withdraw path for fast WAN failure detection. `gobgp/v4@v4.5.0` shipped BFD
-primitives, so a future ticket can wire BFD into the speaker without an upstream
-bump.
+gRPC withdraw path for fast WAN failure detection. `gobgp/v4@v4.5.0` has BFD
+primitives available for that work.
 
-## MWAN deployment topology
+## MWAN deployment pointers
 
-Live state captured 2026-05-07 against current main (`4c754f4`). Mgmt addresses are
-the values used in `[main].mwan_mgmt_addr` of each host's config.toml; reachability
-notes describe how this controller reaches each host.
+Current MWAN host topology, live unit names, repository layout state,
+manual rollout order, stale binary inventory, and cleanup notes live in
+`docs/INFRA.md`.
 
-| Host                | OS               | Subcommand(s)                        | Unit file(s) on host                                                          | Repo source unit                                            | Config template                            | role                       | mwan_vmid | Mgmt addr                  |
-|---------------------|------------------|--------------------------------------|-------------------------------------------------------------------------------|-------------------------------------------------------------|--------------------------------------------|----------------------------|-----------|----------------------------|
-| vault (Proxmox SF)  | Linux/amd64      | `mwan ifmgr`, `mwan watchdog`        | `mwan-ifmgr.service`, `mwan-watchdog.service` (active); `mwan-oob.service` (disabled, stale) | `mwan/go/cmd/mwan/mwan-ifmgr.service` (ifmgr); watchdog unit lives only on host | `mwan/config/config.toml.j2`            | `vault-oob`                | 113       | `3d06:bad:b01::254` (host) |
-| mwan VM 113         | Linux/amd64      | `mwan agent`                         | `mwan-agent.service` (active); `mwan-health.service` (legacy shell, active)    | `mwan/go/cmd/mwan/mwan-agent.service`                       | `mwan/config/config.toml.j2`            | (agent, no ifmgr role)     | 113       | `3d06:bad:b01::113`        |
-| mwan-failover LXC 116 (on vault) | Linux/amd64 | `mwan agent`, `mwan ifmgr` | `mwan-agent.service`, `mwan-ifmgr.service`                                     | `mwan/go/cmd/mwan/mwan-agent.service`, `mwan-failover/mwan-ifmgr.service` | `mwan-failover/config.toml.j2`     | `lxc-failover-backup`      | 116 (CT)  | reachable only via vault `pct exec 116` from this controller |
-| OPNsense            | FreeBSD 14.3     | `mwan opnsense serve` (rc daemon)    | `/usr/local/etc/rc.d/mwan_opnsense` enabled via `/etc/rc.conf.d/mwan_opnsense` | `mwan/go/cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense`      | (no `/etc/mwan/`; settings in `rc.conf.d`) | n/a                        | n/a       | `agoodkind@3d06:bad:b01::1` (via vault ProxyJump) |
-| suburban (Proxmox NJ testbed) | Linux/amd64 | `mwan ifmgr`, `mwan opnsense-host serve`, `mwan watchdog` | `mwan-ifmgr.service`, `mwan-opnsense-host.service` (with `upstream.conf` drop-in pointing at VM 101 chardev), `mwan-watchdog-testbed.service` | `mwan/go/cmd/mwan/mwan-ifmgr.service`, `mwan/go/cmd/mwan/mwan-opnsense-host.service`; watchdog-testbed unit lives only on host | `mwan/config/config.toml.j2`   | `suburban-wg`              | 950       | `suburban` SSH alias       |
-| testbed VM 950      | Linux/amd64      | `mwan agent`                         | `mwan-agent.service`                                                          | `mwan/go/cmd/mwan/mwan-agent.service`                       | `mwan/config/config.toml.j2`           | (agent, no ifmgr role)     | 950       | `3d06:bad:b01:200::950` (via suburban ProxyJump) |
-| testbed LXC 100 (on suburban) | Linux/amd64 | `mwan agent`, `mwan ifmgr`     | `mwan-agent.service`, `mwan-ifmgr.service`                                    | `mwan/go/cmd/mwan/mwan-agent.service`, `mwan-failover/mwan-ifmgr.service` | `mwan-failover/config.toml.j2`        | `lxc-failover-backup`      | 100 (CT)  | reachable only via suburban `pct exec 100` |
-| testbed LXCs 200/201/202/203 | Linux/amd64 | none (ISP simulators + proxy)     | none                                                                          | n/a                                                         | n/a                                        | n/a                        | n/a       | reachable only via suburban `pct exec` |
-| tack LXC 117        | Linux/amd64      | none                                 | none                                                                          | n/a                                                         | n/a                                        | n/a                        | n/a       | `tack` SSH alias            |
-
-### Repo drift to clean up
-
-- `mwan/services/mwan-health.service` ships in the repo but the live `mwan-health.service` on VM 113 is the legacy shell health check; it is not derived from the Go binary and should either be retired or rewritten to call `mwan health-check`.
-- `mwan/services/mwan-trace-boot.service`, `mwan-update-att-pinned-dests.service`, `mwan-update-npt.service`, `mwan-update-routes.service` all run shell scripts under `/usr/local/bin/`; they predate the monolith and are out of scope for the binary rollout but are worth flagging for a separate cleanup sweep.
-- `mwan-cutover` and `mwan-cutover2` subcommands no longer exist in the binary on suburban/VM 950 (HEAD), but the older binaries still installed on vault, VM 113, LXC 116, and the testbed LXC 100 still advertise them in their usage line. That is the proof those hosts have not been refreshed.
-
-### Stale binaries to clean up
-
-The same `/usr/local/bin/mwan-*` artefacts left over from the cutover era:
-
-- vault: `mwan-cutover` (Apr 9), `mwan-unfuck` (Apr 9). Surgical cleanup only.
-- mwan VM 113: `mwan-agent` (Mar 28), `mwan-change-detect` (Mar 28). Surgical cleanup.
-- LXC 116: clean (only `/usr/local/bin/mwan` plus the active service files).
-- suburban: `mwan-cutover` (Apr 9), `mwan-watchdog` (Mar 28), `mwan-watchdog-test` (Mar 28), `mwan-unfuck` (Apr 8), `mwan-opnsense-host` (May 5, superseded by current `mwan` binary). Suburban is the testbed and may be reprovisioned freely (`bomb and redo` per the testbed rule), so cleanup here can be aggressive.
-- VM 950: clean.
-- testbed LXC 100: clean.
-- OPNsense: two timestamped backup copies of `mwan-opnsense.pre-*` left in `/usr/local/sbin/` from previous self-deploy runs, plus a backup `mwan_opnsense.pre-*` rc.d script. The self-deploy preflight in `mwan_opnsense` handles its own `.previous` rollback file, so the `pre-*` artefacts are leftovers and can be removed.
-
-## Manual rollout of a new mwan binary
-
-The new artefacts live at `mwan/go/bin/mwan-linux` (linux/amd64) and
-`mwan/go/bin/mwan-opnsense` (freebsd/amd64). Local `main` is at `4c754f4`.
-
-Order: testbed first (suburban host, then VM 950 and LXC 100, then OPNsense
-testbed), verify healthy, then production (LXC 116 first as the backup, then
-mwan VM 113, then vault, then production OPNsense). Always copy `mwan` aside as
-`mwan.prev` before swap so `cp -a /usr/local/bin/mwan.prev /usr/local/bin/mwan`
-is the rollback.
-
-### Testbed: suburban (NJ Proxmox host)
-
-```bash
-scp mwan/go/bin/mwan-linux suburban:/tmp/mwan.new
-ssh suburban 'cp -a /usr/local/bin/mwan /usr/local/bin/mwan.prev \
-  && install -m0755 /tmp/mwan.new /usr/local/bin/mwan \
-  && systemctl restart mwan-ifmgr mwan-opnsense-host mwan-watchdog-testbed \
-  && systemctl --no-pager status mwan-ifmgr mwan-opnsense-host mwan-watchdog-testbed'
-```
-
-Health: `journalctl -u mwan-ifmgr -u mwan-opnsense-host -u mwan-watchdog-testbed -n 50 --no-pager`
-on suburban; `mwan opnsense-probe` against the listen socket if reachable.
-
-If the testbed wedges, the user said "bomb it and redo": rebuild VM 950 and LXC
-100 from `testbed/vm-950/` and `mwan-failover/` via the existing
-`testbed/deploy.sh` and `testbed/isp-lxc-setup.sh` scripts, then run
-the relevant Ansible playbooks afresh. Production is not allowed to be reset
-this way.
-
-### Testbed: VM 950 (mwan agent VM)
-
-```bash
-scp mwan/go/bin/mwan-linux root@3d06:bad:b01:200::950:/tmp/mwan.new \
-  -o ProxyJump=suburban
-ssh -J suburban root@3d06:bad:b01:200::950 \
-  'cp -a /usr/local/bin/mwan /usr/local/bin/mwan.prev \
-   && install -m0755 /tmp/mwan.new /usr/local/bin/mwan \
-   && systemctl restart mwan-agent \
-   && systemctl --no-pager status mwan-agent'
-```
-
-Health: `mwan opnsense-probe -upstream unix:///var/run/mwan-opnsense.sock` from
-suburban, or `mwan health-check` on the VM directly.
-
-### Testbed: LXC 100
-
-```bash
-scp mwan/go/bin/mwan-linux suburban:/tmp/mwan.new
-ssh suburban 'pct push 100 /tmp/mwan.new /usr/local/bin/mwan.new \
-  && pct exec 100 -- bash -c "cp -a /usr/local/bin/mwan /usr/local/bin/mwan.prev \
-       && install -m0755 /usr/local/bin/mwan.new /usr/local/bin/mwan \
-       && systemctl restart mwan-agent mwan-ifmgr \
-       && systemctl --no-pager status mwan-agent mwan-ifmgr"'
-```
-
-### Production: LXC 116 (do this first; it is the backup speaker)
-
-```bash
-scp mwan/go/bin/mwan-linux vault:/tmp/mwan.new
-ssh vault 'pct push 116 /tmp/mwan.new /usr/local/bin/mwan.new \
-  && pct exec 116 -- bash -c "cp -a /usr/local/bin/mwan /usr/local/bin/mwan.prev \
-       && install -m0755 /usr/local/bin/mwan.new /usr/local/bin/mwan \
-       && systemctl restart mwan-agent mwan-ifmgr \
-       && systemctl --no-pager status mwan-agent mwan-ifmgr"'
-```
-
-Health: from vault, `pct exec 116 -- journalctl -u mwan-agent -u mwan-ifmgr -n 50 --no-pager`,
-plus a BGP-session check on OPNsense (`vtysh -c 'show bgp ipv6 summary'`).
-
-### Production: mwan VM 113
-
-```bash
-scp mwan/go/bin/mwan-linux root@3d06:bad:b01::113:/tmp/mwan.new
-ssh root@3d06:bad:b01::113 \
-  'cp -a /usr/local/bin/mwan /usr/local/bin/mwan.prev \
-   && install -m0755 /tmp/mwan.new /usr/local/bin/mwan \
-   && systemctl restart mwan-agent \
-   && systemctl --no-pager status mwan-agent'
-```
-
-Health: `journalctl -u mwan-agent -n 100 --no-pager` on the VM, plus the BGP
-session check on OPNsense.
-
-### Production: vault (Proxmox host)
-
-vault runs both `mwan ifmgr` and `mwan watchdog`. Restart ifmgr first; only restart
-the watchdog when ifmgr is healthy, because the watchdog will react to ifmgr churn.
-
-```bash
-scp mwan/go/bin/mwan-linux vault:/tmp/mwan.new
-ssh vault 'cp -a /usr/local/bin/mwan /usr/local/bin/mwan.prev \
-  && install -m0755 /tmp/mwan.new /usr/local/bin/mwan \
-  && systemctl restart mwan-ifmgr \
-  && sleep 5 && systemctl --no-pager status mwan-ifmgr \
-  && systemctl restart mwan-watchdog \
-  && systemctl --no-pager status mwan-watchdog'
-```
-
-Health: `journalctl -u mwan-ifmgr -u mwan-watchdog -n 100 --no-pager` on vault.
-
-### Production: OPNsense (FreeBSD)
-
-The freebsd build at `mwan/go/bin/mwan-opnsense` lives at
-`/usr/local/sbin/mwan-opnsense` on the router. The rc.d daemon is `mwan_opnsense`.
-The daemon already implements its own `.previous` revert path inside
-`/usr/local/etc/rc.d/mwan_opnsense` (preflight runs `cp -f mwan-opnsense.previous
-mwan-opnsense.current` if a pending-verify marker is present and health was not
-reported ok), so use that contract: keep a hand-made `.prev` as a belt-and-braces
-copy and let the rc.d preflight handle the structured revert.
-
-```bash
-scp -J vault mwan/go/bin/mwan-opnsense agoodkind@3d06:bad:b01::1:/tmp/mwan-opnsense.new
-ssh -J vault agoodkind@3d06:bad:b01::1 'sudo sh -c "
-  cp -a /usr/local/sbin/mwan-opnsense /usr/local/sbin/mwan-opnsense.prev \
-  && install -m0755 /tmp/mwan-opnsense.new /usr/local/sbin/mwan-opnsense \
-  && service mwan_opnsense restart \
-  && service mwan_opnsense status"'
-```
-
-Health: `service mwan_opnsense status` (it returns the daemon's own JSON status
-including `health`), plus `tail /var/log/mwan-opnsense.log` and
-`mwan opnsense-probe` from suburban or vault against the host-side socket.
-
-
+Keep `AGENTS.md` focused on rules and operating guidance. Put current topology,
+host-specific layout details, and point-in-time infrastructure state in
+`docs/INFRA.md`.
 
 ## Operational gotchas
 
-These rules are load-bearing. Each one was learned the hard way during the OPNsense 26.x upgrade rehearsal arc on 2026-05-07 through 2026-05-10. Skipping any of them reintroduces a class of failure that already cost hours to diagnose.
+These rules are current MWAN and OPNsense safety guidance. Keep them current-state only.
 
 ### Never take testbed snapshots with `--vmstate 1`
 
@@ -354,15 +202,15 @@ These rules are load-bearing. Each one was learned the hard way during the OPNse
 
 ### After any snapshot rollback, restart the VM and re-verify
 
-Even without `--vmstate`, treat rollback as a state transition that needs verification. Walk Section A of the rehearsal runbook at `mwan/docs/runbooks/opnsense-upgrade-rehearsal-vm102.md` before trusting the post-rollback state: OS version, hostname, time skew within 60 s, interface inventory, expected addresses on each interface, default routes both families, BGP peer state from both sides, `ping 8.8.8.8`, `drill @127.0.0.1 pkg.opnsense.org` answer under 2 s, daemons running, `vtysh` loads without dynamic linker errors, `mwan opnsense-probe` responds in under 5 s.
+Even without `--vmstate`, treat rollback as a state transition that needs verification. Confirm OS version, hostname, time skew within 60 seconds, interface inventory, expected addresses on each interface, default routes for both IP families, BGP peer state from both sides, outbound IPv4 reachability with `ping 8.8.8.8`, DNS with `drill @127.0.0.1 pkg.opnsense.org`, daemon status, `vtysh` startup, and `mwan opnsense version -target <unix-socket>` returning a build banner before trusting the post-rollback state.
 
 ### virtio-serial wedges on large stdin payloads
 
-`mwan opnsense-probe --stdin-file` and `qm guest exec --pass-stdin` both choke on payloads around 219 KB, which is what a prod-shaped OPNsense `config.xml` weighs. After the timeout the mwan-opnsense daemon stops responding to gRPC and QGA can hang along with it. The canonical config push path is `scp` to `/conf/backup/<basename>.xml` followed by `POST /api/core/backup/revertBackup/<basename>` against the OPNsense REST API. Tracked as MWAN-155.
+`mwan opnsense file push` and `qm guest exec --pass-stdin` both choke on large stdin payloads around the size of a prod-shaped OPNsense `config.xml`. After the timeout the mwan-opnsense daemon can stop responding to gRPC and QGA can hang along with it. The canonical config push path is `scp` to `/conf/backup/<basename>.xml` followed by `POST /api/core/backup/revertBackup/<basename>` against the OPNsense REST API. Tracked as MWAN-155.
 
 ### OPNsense REST API has no upload-and-replace endpoint
 
-There is no path under `/api/core/backup/*` that accepts an XML body and replaces `/conf/config.xml` in one call. `revertBackup/{basename}` restores from a file already in `/conf/backup/`. The full source-level reasoning lives at `mwan/docs/opnsense-25.7-config-import-flow.md`. Anyone proposing `POST /api/core/backup/restore` with a multipart body is reading a stale runbook.
+There is no path under `/api/core/backup/*` that accepts an XML body and replaces `/conf/config.xml` in one call. `revertBackup/{basename}` restores from a file already in `/conf/backup/`. The full source-level reasoning lives at `docs/opnsense-25.7-config-import-flow.md`. Anyone proposing `POST /api/core/backup/restore` with a multipart body is reading a stale runbook.
 
 ### `<lock>1</lock>` short-circuits the boot interface mismatch check
 
@@ -374,7 +222,7 @@ There is no path under `/api/core/backup/*` that accepts an XML body and replace
 
 ### `pkg upgrade -y` must run BEFORE `pkg install`
 
-The OPNsense install ISO ships one snapshot of the package set. The mirror has moved on by the time you install anything. Running `pkg update -f` then jumping straight to `pkg install os-frr` pulls a libyang2 built against `pcre2-10.47` onto a system that still has `pcre2-10.45`. `vtysh` then fails at startup with `ld-elf.so.1: /usr/local/lib/libpcre2-8.so.0: version PCRE2_10.47 required by libyang2.so.2 not defined`. Insert `pkg upgrade -y` between `pkg update -f` and the first `pkg install`. The runbook at `mwan/docs/runbooks/opnsense-serial-vm-from-scratch.md` reflects this.
+The OPNsense install ISO ships one snapshot of the package set. The mirror has moved on by the time you install anything. Running `pkg update -f` then jumping straight to `pkg install os-frr` pulls a libyang2 built against `pcre2-10.47` onto a system that still has `pcre2-10.45`. `vtysh` then fails at startup with `ld-elf.so.1: /usr/local/lib/libpcre2-8.so.0: version PCRE2_10.47 required by libyang2.so.2 not defined`. Insert `pkg upgrade -y` between `pkg update -f` and the first `pkg install`. The runbook at `docs/runbooks/opnsense-serial-vm-from-scratch.md` reflects this.
 
 ### Proxmox restricts `args` qemu-server field to literal `root@pam`
 
@@ -382,7 +230,7 @@ Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only
 
 ### Config import strips API keys
 
-`revertBackup` swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and write the resulting key and secret into `ansible/inventory/group_vars/all/vault.yml`. Snippet lives at `mwan/docs/runbooks/opnsense-serial-vm-from-scratch.md`. Tracked as MWAN-159.
+`revertBackup` swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and write the resulting key and secret into `ansible/inventory/group_vars/all/vault.yml`. Snippet lives at `docs/runbooks/opnsense-serial-vm-from-scratch.md`. Tracked as MWAN-159.
 
 ### Hot-adding a NIC needs `configctl interface reconfigure`
 
@@ -394,7 +242,7 @@ Names longer than 40 characters truncate silently. `prod-shaped-25-7-baseline-v3
 
 ### Each `Execute` retry creates an orphan prepare snapshot
 
-`mwan opnsense-upgrade execute` calls `prepare` which takes a fresh Proxmox snapshot. A rollback only restores the leaf snapshot. After three retries the snapshot tree carries three stacked `pre-upgrade-*` snapshots that have to be cleaned by hand. `mwan opnsense-upgrade reset` will walk and prune the chain when it lands (MWAN-179).
+`mwan opnsense upgrade execute` calls `prepare`, which takes a fresh Proxmox snapshot. A rollback only restores the leaf snapshot. After repeated retries, prune stacked `pre-upgrade-*` snapshots with `mwan opnsense upgrade reset` before starting another execute cycle (MWAN-179, the upgrade reset cleanup ticket).
 
 ### `git -C /path` is mandatory
 
@@ -402,7 +250,11 @@ Always invoke git with `-C /path/to/repo` because shell cwd is unreliable across
 
 ### Never grep or pipe vault contents anywhere that reaches chat
 
-`ansible-vault view` output is sensitive. Do not pipe it through `grep`, `awk`, or anything whose stdout reaches the conversation log. Use mode-600 tmpfiles plus `shred -u` cleanup. Earlier in this session a leak via `ansible-vault view | grep` burned nine secret values that the operator explicitly chose not to rotate.
+`ansible-vault view` output is sensitive. Do not run it in a way that can reach the
+conversation log, and do not pipe it through `grep`, `awk`, or similar filters. If you
+only need variable names, use `python3 scripts/ansible_vault_keys.py --vault-password-file ~/.config/ansible/vault.pass ansible/inventory/group_vars/all/vault.yml`.
+Use `ansible-vault edit` or `ansible-vault rekey` only for manual vault maintenance
+outside the transcript.
 
 ### When the runbook says STOP, stop
 
@@ -474,7 +326,7 @@ These rules apply to all Go code in `mwan/go/`. Violations block merge.
 
 When vault's network is down (MWAN VM stopped, routing broken), SSH to vault is unavailable.
 The fallback is a USB-serial cable from berylax (`/dev/ttyUSB0`) to vault's physical serial
-port. Full procedure and prerequisites are in `INFRA.md` under "Emergency out-of-band (OOB)
+port. Full procedure and prerequisites are in `docs/INFRA.md` under "Emergency out-of-band (OOB)
 access".
 
 **Preferred tool: `serial-exec`** ([github.com/agoodkind/serial-exec](https://github.com/agoodkind/serial-exec)).

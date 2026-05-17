@@ -453,7 +453,7 @@ func defaultConfig() Config {
 	// struct literals untouched so the existing exhaustruct baseline
 	// keys still match.
 	cfg.OPNsense.Host = OpnsenseHostSection{
-		Upstream:                  "unix:///var/run/qemu-server/102.mwanrpc",
+		Upstream:                  "unix:///var/run/qemu-server/101.mwanrpc",
 		Listen:                    "/var/run/mwan-opnsense.sock",
 		ReconnectDuration:         "2s",
 		HeartbeatIntervalDuration: "30s",
@@ -465,7 +465,7 @@ func defaultConfig() Config {
 		UploadChunkBytes: 16384,
 	}
 	cfg.OPNsense.Upgrade = OpnsenseUpgradeSection{
-		VMID:                     102,
+		VMID:                     101,
 		EnvTransport:             "grpc",
 		EnvGRPCTarget:            "unix:///var/run/mwan-opnsense.sock",
 		StateDir:                 "/var/lib/mwan/upgrades",

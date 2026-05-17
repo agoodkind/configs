@@ -19,7 +19,7 @@ The Proxmox API gates the `args` field with a hard-coded
 `$authuser eq 'root@pam'` string compare in `qemu-server`. No role and
 no ACL can bypass it. Even an API token attached to `root@pam` itself
 fails because the token's authuser is `root@pam!<tokenname>`, not bare
-`root@pam`. See `mwan/docs/proxmox-args-privilege-research-2026-05-08.md`
+`root@pam`. See `docs/proxmox-args-privilege-research-2026-05-08.md`
 for the source-level walk-through.
 
 Tofu therefore cannot set `args` via the bpg/proxmox provider when the
