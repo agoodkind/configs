@@ -7,6 +7,7 @@
 
 # Service identity (derives from service_mapping)
 service_hostname: "{{ service_mapping.mwan.hostname }}"
+mwan_environment: "prod"
 
 # VM details (known/static)
 # Derived from service_mapping (single source of truth)
@@ -336,6 +337,19 @@ mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:ff::1"
+mwan_ifmgr_cloudflared_oob_user: "cloudflared-oob"
+
+# ----------------------------------------------------------------------------
+# Vault OOB Cloudflare tunnel
+# ----------------------------------------------------------------------------
+
+cloudflared_oob_enabled: true
+cloudflared_oob_user: "cloudflared-oob"
+cloudflared_oob_bin: "/usr/local/bin/cloudflared"
+cloudflared_oob_config_dir: "/etc/cloudflared-oob"
+cloudflared_oob_nextdns_resolvers:
+  - "2a07:a8c0::7d:698e"
+  - "2a07:a8c1::7d:698e"
 
 # ----------------------------------------------------------------------------
 # Failover LXC runtime config
@@ -364,8 +378,7 @@ mwan_failover_eth0_inet6_manual: false
 mwan_failover_enable_mainv4: false
 mwan_failover_install_nftables: false
 
-# SMTP2GO configuration (sourced from vault via all/vars.yml)
-mwan_smtp2go_api_key: "{{ smtp2go_api_key }}"
+# SMTP2GO defaults (shared non-secret settings)
 mwan_smtp_host: "{{ smtp_host }}"
 mwan_smtp_port: "{{ smtp_port }}"
 
@@ -394,8 +407,6 @@ mwan_debug_logging: true
 # ----------------------------------------------------------------------------
 
 opnsense_addr: "3d06:bad:b01::1"
-opnsense_api_key: "{{ vault_prod_opnsense_api_key }}"
-opnsense_api_secret: "{{ vault_prod_opnsense_api_secret }}"
 opnsense_gateway_names:
   - WAN_GW4
   - WAN_GW6

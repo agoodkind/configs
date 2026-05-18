@@ -54,7 +54,6 @@ cloudflare_api_token: >-
      default=lookup('env', 'CF_DNS_API_TOKEN',
      default=lookup('env', 'CLOUDFLARE_API_KEY',
      default=vault_cloudflare_api_token))) }}
-cloudflare_zone_id: "{{ vault_cloudflare_zone_id }}"
 
 # Traefik Dashboard Authentication
 # Set TRAEFIK_DASHBOARD_USER and TRAEFIK_DASHBOARD_PASS environment variables
@@ -87,8 +86,6 @@ sshpiper_config_dir: /etc/sshpiper
 sshpiper_upstream_pubkey: >-
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMKsQiX/lf0UIaDahZjvceOmsySygUpvs+yQe+33ZfoJ
   sshpiper-upstream
-
-cloudflared_token_content: "{{ vault_cloudflared_tunnel_token }}"
 # Manual SSH access patterns:
 #   ssh -p 2222 root@proxy.home.goodkind.io  → direct sshd
 #   ssh proxy@ssh.home.goodkind.io           → sshpiper route to localhost:2222 as root

@@ -1,7 +1,7 @@
 # MWAN-63: suburban testbed bridges managed by OpenTofu.
 #
 # The mwan-140 slice 1 design originally added two bridges to suburban for
-# the OPNsense testbed VM (VM 101) to mirror the prod iavf0 VLAN parent
+# the OPNsense testbed VM 101 to mirror the prod iavf0 VLAN parent
 # shape. MWAN-148 narrowed that to a single trunk bridge, since prod runs
 # MANAGEMENT untagged on the same physical port that carries the VLAN
 # trunk (`iavf0`). The testbed mirrors that one-port posture: VM 101
@@ -9,11 +9,12 @@
 # the untagged interface plus the four 802.1q VLAN children on top.
 #
 #   * trunk: VLAN-aware trunk bridge carrying VIDs 64, 100, 200, 300.
-#     VM 101 attaches as a trunk member that also carries the untagged
-#     MANAGEMENT plane. The imported config.xml VLAN children
-#     (vlan0064, vlan0100, vlan0200, vlan0300) bind to the testbed
-#     equivalent device through the config.xml transform layer rather
-#     than via a FreeBSD rename. See MWAN-148 for the rationale.
+#     The OPNsense testbed VM 101 attaches as a trunk member that also
+#     carries the untagged MANAGEMENT plane. The imported config.xml
+#     VLAN children (vlan0064, vlan0100, vlan0200, vlan0300) bind to
+#     the testbed equivalent device through the config.xml transform
+#     layer rather than via a FreeBSD rename. See MWAN-148 for the
+#     rationale.
 #
 # Naming constraint (verified at validate time on 2026-05-07): the
 # bpg/proxmox provider enforces the upstream Proxmox API rule that bridge
@@ -44,9 +45,9 @@ resource "proxmox_network_linux_bridge" "trunk" {
   autostart  = true
 
   # Suburban stub IP on the untagged side of vmbrtrunk so this host can
-  # reach VM 102 OPNsense MANAGEMENT (10.240.4.0/24) and the testbed mwan
-  # gRPC unix socket from a single bridge. Mirrors prod vault joining the
-  # OPNsense LAN bridge as a stub client. Tracked under MWAN-149.
+  # reach the OPNsense testbed MANAGEMENT (10.240.4.0/24) and the
+  # testbed mwan gRPC unix socket from a single bridge. Mirrors prod
+  # vault joining the OPNsense LAN bridge as a stub client.
   address  = "10.240.4.5/24"
   address6 = "3d06:bad:b01:204::5/64"
 

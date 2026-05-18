@@ -75,12 +75,12 @@
 
 - name: Copy cloudflared tunnel token (from content)
   ansible.builtin.copy:
-    content: "{{ cloudflared_token_content }}"
+    content: "{{ vault_cloudflared_tunnel_token }}"
     dest: /etc/cloudflared/token
     owner: root
     group: cloudflared
     mode: "0640"
-  when: cloudflared_token_content is defined
+  when: vault_cloudflared_tunnel_token is defined
 
 - name: Deploy cloudflared systemd service (custom)
   ansible.builtin.copy:

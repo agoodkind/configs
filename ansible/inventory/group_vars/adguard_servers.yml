@@ -15,7 +15,12 @@ service_mac_address: "bc:24:11:ee:f9:50"
 
 # ACME / Let's Encrypt (certbot DNS-01 via Cloudflare)
 adguard_acme_email: "alex@goodkind.io"
-# cloudflare_api_token inherited from all/vars.yml (references vault)
+# Local env override wrapper. Falls back to vault when env vars are unset.
+cloudflare_api_token: >-
+  {{ lookup('env', 'CLOUDFLARE_API_TOKEN',
+     default=lookup('env', 'CF_DNS_API_TOKEN',
+     default=lookup('env', 'CLOUDFLARE_API_KEY',
+     default=vault_cloudflare_api_token))) }}
 
 # Web interface configuration (non-default: IPv6 bind address)
 adguard_bind_host: "::"
@@ -201,7 +206,7 @@ adguard_filters:
     id: 1765848086
   - enabled: true
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_50.txt
-    name: uBlock₀ filters – Badware risks
+    name: uBlock₀ filters - Badware risks
     id: 1765848087
   - enabled: true
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_11.txt

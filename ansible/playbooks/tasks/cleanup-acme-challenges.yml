@@ -6,7 +6,7 @@
   ansible.builtin.uri:
     url: >-
       https://api.cloudflare.com/client/v4/zones/{{
-      cloudflare_zone_id }}/dns_records
+      vault_cloudflare_zone_id }}/dns_records
     method: GET
     headers:
       Authorization: "Bearer {{ cloudflare_api_token }}"
@@ -37,7 +37,7 @@
   ansible.builtin.uri:
     url: >-
       https://api.cloudflare.com/client/v4/zones/{{
-      cloudflare_zone_id }}/dns_records/{{ item.id }}
+      vault_cloudflare_zone_id }}/dns_records/{{ item.id }}
     method: DELETE
     headers:
       Authorization: "Bearer {{ cloudflare_api_token }}"
