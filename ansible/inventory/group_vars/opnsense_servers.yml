@@ -1,11 +1,12 @@
 ---
-# Production OPNsense (router.home.goodkind.io / 3d06:bad:b01::1) target vars.
+# Production OPNsense target vars.
 # Consumed by deploy-opnsense.yml when targeting `opnsense_servers`.
-# The group is a parent of `router_servers` defined in hosts so the host
-# discovered via service_mapping.router is the actual SSH target.
+# The group is created by the `opnsense` entry in
+# inventory/group_vars/all/service_mapping.yml, which maps to the host
+# router.home.goodkind.io at 3d06:bad:b01::1.
 
-# SSH override: service_mapping sets ansible_host=ipv6 (3d06:bad:b01::1)
-# and ansible_user defaults to root. OPNsense expects agoodkind for SSH.
+# OPNsense expects agoodkind for SSH (the default `ansible_user: root`
+# in [all:vars] would otherwise be wrong for this host).
 ansible_user: agoodkind
 
 # OPNsense identity for MWAN-side config rendering.

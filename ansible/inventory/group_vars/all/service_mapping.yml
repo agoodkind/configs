@@ -74,10 +74,6 @@ service_mapping:
   # 192.168.1.1 + ProxyJump. Per Ansible precedence rules, inventory
   # host_vars/* override plugin-set host vars.
   opnsense:
-    # Same physical OPNsense host as the `router` entry below; we add
-    # this second alias so deploy-opnsense.yml can target the descriptive
-    # `opnsense_servers` group instead of the legacy `router_servers`.
-    # Both entries resolve to the same inventory host (one SSH target).
     hostname: router.home.goodkind.io
     ipv6: "3d06:bad:b01::1"
   opnsense_test:
@@ -88,9 +84,3 @@ service_mapping:
     # on the LAN IPv4 via ProxyJump through suburban (the jump host and
     # SSH user are set in group_vars/opnsense_test_servers.yml).
     ansible_host: "192.168.1.1"
-
-  # Legacy router_servers group kept for backwards compatibility; the same
-  # physical OPNsense as the opnsense entry above.
-  router:
-    hostname: router.home.goodkind.io
-    ipv6: "3d06:bad:b01::1"
