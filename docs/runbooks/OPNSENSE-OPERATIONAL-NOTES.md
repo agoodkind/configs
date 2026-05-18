@@ -56,7 +56,7 @@ Optional rule for IPsec/IKE if used: same source as #1 but dst port 500 with
 
 ### Default routes (kernel, owned by FRR/zebra)
 
-```
+```text
 default            10.250.250.3       UG1          vtnet1   # BGP via VM 113 primary
 default            3d06:bad:b01:fe::3 UG1          vtnet1   # BGP via VM 113 primary
 ```
@@ -98,7 +98,7 @@ system_default_route($gateway, $routes);  // route delete + add
 **only if** `getDefaultGW` returns a non-empty gateway. `system_default_route`
 unconditionally calls:
 
-```
+```shell
 route delete -inet6 default
 route add -inet6 default <new_gateway>
 ```
@@ -149,7 +149,7 @@ static-route reference but never be selected as default.
 
 Restart FRR after to recover BGP defaults:
 
-```
+```shell
 ssh agoodkind@3d06:bad:b01::1 "sudo service frr stop && sudo route -n delete -inet default 2>/dev/null; sudo route -n delete -inet6 default 2>/dev/null; sudo service frr start"
 ```
 
@@ -163,13 +163,29 @@ The static-route rebuild always runs (delete + add for every
 `<staticroutes><route>` entry) but only affects whatever specific networks
 those routes cover, not the default. So it's safe assuming Rule 1 holds.
 
+### Rule 6: Duplicate `<if>device</if>` declarations silently drop the loser
+
+`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but binds no address to any kernel interface. Caught us when prod's `opt6` (VMNET, `<if>vtnet0</if>`) and `opt9` (MANAGEMENT, also `<if>vtnet0</if>` via the `iavf0`-to-`vtnet0` device_names mapping) both claimed `vtnet0`; VMNET sorts later than MANAGEMENT and silently dropped the MANAGEMENT address. The testbed substitutions transform now strips `opt6`.
+
+### Rule 7: `pkg upgrade -y` must run BEFORE `pkg install`
+
+The OPNsense install ISO ships one snapshot of the package set. The mirror has moved on by the time you install anything. Running `pkg update -f` then jumping straight to `pkg install os-frr` pulls a libyang2 built against `pcre2-10.47` onto a system that still has `pcre2-10.45`. `vtysh` then fails at startup with `ld-elf.so.1: /usr/local/lib/libpcre2-8.so.0: version PCRE2_10.47 required by libyang2.so.2 not defined`. Insert `pkg upgrade -y` between `pkg update -f` and the first `pkg install`.
+
+### Rule 8: Proxmox restricts `args` qemu-server field to literal `root@pam`
+
+Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only root can set 'args' config" for any API token, regardless of `privsep` or assigned role. The check is hard-coded in Proxmox, not policy-driven. For VMs that need `args` (any VM with a virtio-serial chardev, including the mwan-opnsense VMs): `qm create` manually as root via SSH, then `tofu import` the resulting VM. The pattern is documented in [opentofu/imports.md](../../opentofu/imports.md). Long-term cleanup is to drop `kvm_arguments` from Tofu entirely and manage `args` via Ansible or a manual `qm set` (MWAN-154).
+
+### Rule 9: Hot-adding a NIC needs `configctl interface reconfigure`
+
+`qm set <vmid> --netN ...` adds the NIC at the hypervisor level. OPNsense's kernel sees the new `vtnetN` device, but the in-OPNsense interface config does not auto-bind to it. The new device comes up `IFDISABLED` until `configctl interface reconfigure <wan|opt...>` runs on the guest. Run reconfigure for whichever OPNsense interface is supposed to bind to the new device.
+
 ---
 
 ## Recovery snippets
 
 ### BGP default got wiped on v4 + v6
 
-```
+```shell
 ssh agoodkind@3d06:bad:b01::1 'sudo service frr stop'
 ssh agoodkind@3d06:bad:b01::1 'sudo route -n delete -inet default 2>/dev/null'
 ssh agoodkind@3d06:bad:b01::1 'sudo route -n delete -inet6 default 2>/dev/null'
@@ -184,7 +200,7 @@ Should show BGP defaults restored (`UG1` flag).
 
 Check (from any v6-capable host on LAN):
 
-```
+```shell
 dig @3d06:bad:b01::64 +short AAAA ipv4.google.com
 ping6 <synthesized addr from above>
 ```

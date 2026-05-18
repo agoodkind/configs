@@ -1,8 +1,8 @@
 # OPNsense Testbed VM 101 Current State
 
 This file records the current OPNsense testbed VM `101` (`opnsense-test`)
-on suburban. Use `docs/runbooks/opnsense-testbed-config-import.md` for the
-current config-import gate, and use `docs/INFRA.md` for broader MWAN
+on suburban. Use [docs/runbooks/opnsense-testbed-config-import.md](opnsense-testbed-config-import.md)
+for the current config-import gate, and use [docs/infra/mwan-layout.md](../infra/mwan-layout.md) for broader MWAN
 topology.
 
 ## Current State

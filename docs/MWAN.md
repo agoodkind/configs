@@ -229,7 +229,7 @@ Typical state flows:
     - Probes used today: `ping6` / `ping` plus optional `curl -6` / `curl -4` to configured HTTP endpoints (no `nc`).
     - Marks a WAN **unhealthy** after **N consecutive failed check cycles** (`failure_threshold`) to avoid flapping.
   - **How we detect recovery**:
-    - Marks a WAN **healthy** only after **M consecutive successful check cycles** (`recovery_threshold`) — hysteresis to prevent oscillation during partial recovery.
+    - Marks a WAN **healthy** only after **M consecutive successful check cycles** (`recovery_threshold`) - hysteresis to prevent oscillation during partial recovery.
   - **What happens on unhealthy/healthy**:
     - Calls `update-routes.sh` to remove/add the WAN for _new_ flows (existing sessions drain via conntrack).
 
@@ -283,7 +283,7 @@ Inbound IPv6 relies on **reverse-NPT (DNPT)** on MWAN:
 - Traffic to the WAN delegated `/60` is translated back to the internal-only `3d06:bad:b01::/60` and forwarded to OPNsense.
 - The per-WAN PD `::1/128` (e.g. `2600:...:c80::1` / `2604:...:be00::1`) is reserved as the MWAN↔OPNsense “edge” on that WAN.
 
-Additionally, `update-npt.sh` can DNAT other global IPv6 addresses assigned to a WAN interface back to OPNsense so those addresses don’t terminate on MWAN unexpectedly — **but this only helps if your ISP actually delivers inbound traffic to those addresses.**
+Additionally, `update-npt.sh` can DNAT other global IPv6 addresses assigned to a WAN interface back to OPNsense so those addresses don’t terminate on MWAN unexpectedly - **but this only helps if your ISP actually delivers inbound traffic to those addresses.**
 
 #### Reality check (AT&T): inbound to the DHCPv6 /128 “interface address” is blocked
 
@@ -387,7 +387,7 @@ MWAN also marks **inbound NEW flows** based on ingress WAN to keep replies symme
 
 The IPv6 NPT/DNPT rules live in `table ip6 nat` and are **programmed at runtime** by `update-npt.sh` (not baked into the static `nftables.conf`).
 
-So an empty `table ip6 nat` is not “healthy” — it means runtime programming didn’t happen (or was flushed after it happened).
+So an empty `table ip6 nat` is not “healthy” - it means runtime programming didn’t happen (or was flushed after it happened).
 
 Common reasons:
 
@@ -626,6 +626,48 @@ failover path immediately. It does not configure keepalived or VRRP.
 announces routes again. OPNsense prefers the primary because its route-map
 sets higher local preference than the failover LXC.
 
+### BGP graceful restart
+
+BGP Graceful Restart (RFC 4724) lets a speaker restart its BGP process without
+flapping its routes in the helper. The helper retains the restarter's prefixes for
+`restart_time` seconds and only flushes them if the session does not come back. We
+care about this because the agent restarts on every deploy. The 2026-05-07 deploy
+measured a 1.7s WAN outage at agent restart with GR off, so GR is the path to
+zero-flap deploys.
+
+The wiring lives in `mwan/go/internal/bgp/speaker.go`. It is fed by the
+`BGPGracefulRestart` config struct in `mwan/go/internal/bgp/config.go`, which mirrors
+the loader struct of the same name in `mwan/go/internal/config/config.go`. Both were
+introduced in slice 1 of MWAN-130 (commit `f0a4847`). When GR is enabled the speaker
+attaches `GracefulRestart` to the GoBGP global config, sets `MpGracefulRestart` on
+each AFI/SAFI, mirrors `GracefulRestart` onto every peer, and passes
+`AllowGracefulRestart=true` on `Stop`. The agent shutdown path in
+`mwan/go/internal/agent/main.go` skips the pre-emptive `WithdrawDefault` call when GR
+is on. An explicit WITHDRAW would defeat GR because FRR would see it and drop the
+route immediately, so pre-withdraw only runs when GR is off.
+
+Configuration lives in the `[bgp.graceful_restart]` TOML block, added in slice 3 of
+MWAN-130 under MWAN-146. Three knobs: `enabled` (bool, default `true`),
+`restart_time` (uint32 seconds, default `30`, capped at `600` by the loader),
+`notification_enabled` (bool, default `true`). The defaults are baked into
+`config.BGPDefaults` so an empty `[bgp.graceful_restart]` block matches the documented
+behaviour.
+
+The OPNsense FRR side has its own toggle. The setting is
+`OPNsense.quagga.bgp.graceful = '1'` in `/conf/config.xml`. For production the
+operator flips it via the OPNsense GUI under Routing -> BGP -> General. The testbed
+has no GUI access from this controller, so the operator drives an LLM session against
+the `mwan-opnsense` gRPC API to mutate `config.xml` directly. After the toggle the
+operator runs `configctl quagga reload bgp` (or the matching reconfigure call) to
+apply it. To verify FRR has GR active, SSH to OPNsense and run
+`vtysh -c 'show running-config router bgp' | grep 'bgp graceful-restart'`.
+
+BFD is the natural follow-up. GR is only safe-by-default with BFD when a real WAN
+link dies inside the GR window, because without BFD the helper holds stale routes
+for the full `restart_time`. We do not have BFD wired today and rely on the watchdog
+gRPC withdraw path for fast WAN failure detection. `gobgp/v4@v4.5.0` has BFD
+primitives available for that work.
+
 ### Grace Period
 
 A deploy may reboot the mwan VM (typical reboot: ~45s). To avoid a false
@@ -723,6 +765,14 @@ Target order matches **Pre-deploy snapshot requirement** above: latest
 
 The watchdog keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 3) and
 `MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first.
+
+#### Proxmox snapshot name cap is 40 characters
+
+Names longer than 40 characters truncate silently. `prod-shaped-25-7-baseline-v3-bgp-up-2026-05-08` (41 chars) becomes garbage. Put the full intent in `--description` and keep the name short.
+
+#### Each `Execute` retry creates an orphan prepare snapshot
+
+`mwan opnsense upgrade execute` calls `prepare`, which takes a fresh Proxmox snapshot. A rollback only restores the leaf snapshot. After repeated retries, prune stacked `pre-upgrade-*` snapshots with `mwan opnsense upgrade reset` before starting another execute cycle (MWAN-179, the upgrade reset cleanup ticket).
 
 ### Per-Interface ISP Tests (informational only)
 

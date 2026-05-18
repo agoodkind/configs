@@ -1,28 +1,48 @@
 # Ansible Vault Quick Reference
 
-All secrets live in `inventory/group_vars/all/vault.yml`, encrypted with Ansible Vault.
-Edit it with `ansible-vault edit`, view it with `ansible-vault view`, and rekey it with
-`ansible-vault rekey` when rotating the vault password.
+All secret values live in `inventory/group_vars/all/vault.yml`, encrypted with Ansible
+Vault. `inventory/group_vars/all/vars.yml` stores shared non-secret variables only.
+Edit the vault with `ansible-vault edit`, and rekey it with `ansible-vault rekey` when
+rotating the vault password. For safe key discovery in transcripted workflows, use
+`python3 scripts/ansible_vault_keys.py --vault-password-file ~/.config/ansible/vault.pass ansible/inventory/group_vars/all/vault.yml`
+instead of `ansible-vault view`.
 
 ## File locations
 
 - Vault file: `inventory/group_vars/all/vault.yml` (encrypted, committed to git)
-- Vars file: `inventory/group_vars/all/vars.yml` (plaintext, committed to git)
+- Shared vars file: `inventory/group_vars/all/vars.yml` (plaintext, committed to git)
 - CLI password: `~/.config/ansible/vault.pass` (not in git, must be 600 permissions)
+- Semaphore password: environment variable `ANSIBLE_VAULT_PASSWORD` in the Semaphore database
 
-## Naming convention
+## Safe key listing
 
-Secrets in `vault.yml` use a `vault_` prefix. They are exposed in `vars.yml` without
-the prefix so playbooks reference clean names. For example, a secret named
-`vault_api_key` in `vault.yml` would be referenced as `api_key` elsewhere by
-assigning `api_key: "{{ vault_api_key }}"` in `vars.yml`.
+From the repo root, list only vault key names with:
+
+```bash
+python3 scripts/ansible_vault_keys.py \
+  --vault-password-file "$HOME/.config/ansible/vault.pass" \
+  ansible/inventory/group_vars/all/vault.yml
+```
+
+This command prints only key paths such as `vault_proxmox_token_secret`. It does not
+print decrypted values.
+
+## Variable contract
+
+- Secret values in `vault.yml` use `vault_*` names.
+- `inventory/group_vars/all/vars.yml` stores shared non-secret values only.
+- Files that need a vault-stored secret reference the `vault_*` name directly.
+- Do not add pure aliases like `api_key: "{{ vault_api_key }}"` to shared or service `group_vars` files.
+- Env-wrapper variables are allowed only when they encode a real env override with a vault fallback and stay local to the service or play that needs them.
+- Example: `cloudflare_api_token` in `inventory/group_vars/proxy_servers.yml` is allowed because it checks `CLOUDFLARE_*` environment variables first and falls back to `vault_cloudflare_api_token`.
 
 ## Troubleshooting
 
 If decryption fails, verify `~/.config/ansible/vault.pass` exists and contains the
-correct password. If a variable shows as undefined in a playbook, the variable is likely
-absent from `vault.yml` or `vars.yml`. If Semaphore fails, check that
-`ANSIBLE_VAULT_PASSWORD` is set in the Semaphore project environment.
+correct password. If a playbook reports an undefined `vault_*` variable, verify that
+the key exists in `vault.yml` and that the consumer is not still using a removed alias.
+If Semaphore fails, check that `ANSIBLE_VAULT_PASSWORD` is set in the Semaphore project
+environment.
 
 ## Lost vault password
 

@@ -2,7 +2,7 @@
 
 Infrastructure configuration management for `goodkind.io`.
 
-For how to operate in this repo (deployment workflow, SSH access, rules for changes), see [AGENTS.md](AGENTS.md). For a point-in-time snapshot of the running environment (hosts, WAN links, open issues), see [docs/INFRA.md](docs/INFRA.md).
+For how to operate in this repo (deployment workflow, SSH access, rules for changes), see [AGENTS.md](AGENTS.md). For a point-in-time snapshot of the running environment (hosts, WAN links, Cloudflare), see [docs/infra/INFRA.md](docs/infra/INFRA.md).
 
 ## Quick start
 

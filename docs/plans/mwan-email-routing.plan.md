@@ -103,7 +103,7 @@ repeat_every = "1h"
 
 Env-var injection contract (MWAN-131, first instance in MWAN-132 slice F):
 
-- Vault stores `mwan_smtp2go_api_key`.
+- Vault stores `vault_smtp2go_api_key`.
 - Ansible renders `/etc/mwan/secrets.env` with `SMTP2GO_API_KEY=...`, mode 0640 root:root.
 - Systemd units (`mwan-agent.service`, `mwan-ifmgr.service`, plus the lxc-116 and lxc-100
   service files) gain `EnvironmentFile=/etc/mwan/secrets.env`.
@@ -142,7 +142,7 @@ through the same path as the rest.
 
 ## Pointers
 
-- Plan: `docs/MWAN-132-email-unification-plan.md`.
+- Plan: [docs/MWAN-132-email-unification-plan.md](../MWAN-132-email-unification-plan.md).
 - Parent ticket: MWAN-132.
 - Env-var injection standard: MWAN-131.
 - Existing state-machine source (carved into `notify` in slice A):

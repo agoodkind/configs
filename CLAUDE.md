@@ -1,10 +1,10 @@
 # configs repo, Claude Code rules
 
 This is the infrastructure configuration repo for goodkind.io homelab.
-Read `AGENTS.md` for rules and general guidance.
-Read `docs/INFRA.md` for current topology and layout state.
-Read `.cursor/commands/deploy-playbook.md` for deploy rules.
-Read `.cursor/rules/ssh.mdc` for SSH access patterns.
+Read [AGENTS.md](AGENTS.md) for rules and general guidance.
+Read [docs/infra/INFRA.md](docs/infra/INFRA.md) for current topology and layout state.
+Read [.cursor/commands/deploy-playbook.md](.cursor/commands/deploy-playbook.md) for deploy rules.
+Read [.cursor/rules/ssh.mdc](.cursor/rules/ssh.mdc) for SSH access patterns.
 
 ## Running Ansible playbooks
 
@@ -18,14 +18,36 @@ bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-p
 
 If you only need vault variable names, do not run `ansible-vault view`. Run `python3 /Users/agoodkind/Sites/configs/scripts/ansible_vault_keys.py --vault-password-file ~/.config/ansible/vault.pass /Users/agoodkind/Sites/configs/ansible/inventory/group_vars/all/vault.yml` instead.
 
-### Examples
+### Examples (canonical playbooks)
+
+```bash
+# Configure both Proxmox hypervisors (vault and suburban).
+bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml"
+
+# Configure only the vault hypervisor.
+bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml --limit vault"
+
+# Configure the production MWAN VM (VM 113 on vault).
+bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan.yml"
+
+# Dry-run the production MWAN VM.
+bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan.yml --check --diff"
+
+# Configure the testbed MWAN failover LXC (LXC 100 on suburban).
+bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan-failover.yml --limit mwan_failover_test_servers"
+
+# Configure the production OPNsense (mwan-opnsense daemon).
+bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-opnsense.yml --limit opnsense_servers"
+
+# Apply suburban-only testbed extras (ISP LXCs, qm args, host bridge, VFIO).
+bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-testbed.yml --limit suburban"
+```
+
+### Examples (other services)
 
 ```bash
 # Deploy or update Traefik and cloudflared on proxy CT, skipping SSHPiper re-deploy.
 bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxy.yml --skip-tags sshpiper"
-
-# Dry-run first.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxy.yml --skip-tags sshpiper --check --diff"
 
 # Deploy tack CT 117.
 bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-tack.yml"
@@ -47,4 +69,4 @@ For any production change to proxy, mwan, vault, or OPNsense:
 - `ssh proxy`: proxy CT 110, sshd on port 2222, routed via `~/.ssh/config`.
 - `ssh tack`: tack CT 117, `3d06:bad:b01::117`.
 - `ssh vault`: Proxmox host, `3d06:bad:b01::254`.
-- Full patterns live in `.cursor/rules/ssh.mdc`.
+- Full patterns live in [.cursor/rules/ssh.mdc](.cursor/rules/ssh.mdc).
