@@ -1,6 +1,6 @@
 ---
 # Render and push config files to a single ISP LXC.
-# Called from deploy-mwan-testbed.yml with loop_var: isp
+# Called from deploy-testbed.yml with loop_var: isp
 #
 # isp fields: id, name, pd_prefix, v4_subnet, vm950_ll
 # repo_root is set in the parent play.

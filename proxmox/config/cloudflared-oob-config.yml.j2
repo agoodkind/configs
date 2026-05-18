@@ -1,0 +1,12 @@
+tunnel: {{ cloudflared_oob_tunnel_id }}
+credentials-file: {{ cloudflared_oob_config_dir }}/credentials.json
+edge-ip-version: "{{ cloudflared_oob_edge_ip_version | default('6') }}"
+warp-routing:
+  enabled: {{ cloudflared_oob_warp_routing_enabled | default(true) | string | lower }}
+ingress:
+{% for entry in cloudflared_oob_ingress %}
+  - {% if entry.hostname is defined %}hostname: {{ entry.hostname }}
+    service: {{ entry.service }}
+{% else %}service: {{ entry.service }}
+{% endif %}
+{% endfor %}

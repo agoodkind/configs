@@ -1,0 +1,280 @@
+---
+# Testbed-only suburban work that has no production equivalent.
+#
+# Targets the `suburban` hypervisor (in suburban_servers group). The play
+# pulls together: sysctl, masquerade interface stub, VM `args` ownership
+# for VM 950 and VM 101 (Proxmox API rejects `args` writes for any actor
+# other than `root@pam`, so Ansible owns them as root over SSH), ISP-LXC
+# provisioning for the testbed WAN simulators (200/201/202), the
+# mwan-opnsense Unix socket bridge that proxies the OPNsense VM 101 over
+# virtio-serial, and the VFIO host setup for VM 950's WAN passthrough.
+#
+# Run examples:
+#   ansible-playbook playbooks/deploy-testbed.yml --limit suburban
+#   ansible-playbook playbooks/deploy-testbed.yml --limit suburban --tags args
+#
+# The shared Proxmox host services (mwan ifmgr, mwan watchdog, cloudflared
+# OOB, base packages) come from deploy-proxmox.yml. The testbed MWAN VM
+# itself (VM 950) and the testbed failover LXC (LXC 100) are configured by
+# deploy-mwan.yml and deploy-mwan-failover.yml respectively when targeted
+# with --limit test_mwan_servers and --limit mwan_failover_test_servers.
+
+- name: Configure suburban testbed extras
+  hosts: suburban_servers
+  become: false
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    mwan_opnsense_host_upstream: "unix:///var/run/qemu-server/101.mwanrpc"
+    mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
+    mwan_opnsense_host_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+
+  tasks:
+    # ----------------------------------------------------------------------
+    # mwan binary on suburban host (used by mwan-opnsense host bridge below)
+    # ----------------------------------------------------------------------
+
+    - name: Build mwan binary on controller
+      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
+
+    - name: Deploy mwan binary
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        dest: /usr/local/bin/mwan
+        mode: "0755"
+
+    - name: Create mwan config directory
+      ansible.builtin.file:
+        path: /etc/mwan
+        state: directory
+        mode: "0755"
+
+    - name: Deploy hypervisor config (rendered from .j2)
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/config.toml.j2"
+        dest: /etc/mwan/config.toml
+        mode: "0600"
+
+    - name: Deploy sysctl
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/suburban-sysctl.conf"
+        dest: /etc/sysctl.d/99-mwan-testbed.conf
+        mode: "0644"
+      notify: Reload sysctl
+
+    - name: Deploy masquerade sourced file
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/suburban-interfaces.d-testbed-masquerade.conf"
+        dest: /etc/network/interfaces.d/testbed-masquerade.conf
+        mode: "0644"
+
+    # ----------------------------------------------------------------------
+    # qm args ownership (VM 950 vsock, VM 101 mwanrpc virtio-serial)
+    # ----------------------------------------------------------------------
+    # Proxmox API rejects writes to the `args` field for any actor other
+    # than the bare `root@pam` user (API tokens cannot bypass this). Tofu
+    # does not declare `kvm_arguments` for these VMs. The tasks below set
+    # the live `args` string idempotently and only run `qm set` when the
+    # live config does not already match. `args` only takes effect at QEMU
+    # process start, so a change here requires a cold reboot of the VM.
+
+    - name: Read current VM 950 args
+      ansible.builtin.command:
+        cmd: qm config 950
+      register: vm_950_config
+      changed_when: false
+      check_mode: false
+      tags: ["args"]
+
+    - name: Set vsock device on VM 950 args
+      ansible.builtin.command:
+        cmd: qm set 950 --args "-device vhost-vsock-pci,guest-cid=950"
+      when: >-
+        vm_950_config.stdout is not search('args:\s*-device\s+vhost-vsock-pci,guest-cid=950')
+      register: vm_950_args_set
+      changed_when: vm_950_args_set is not skipped and vm_950_args_set.rc == 0
+      tags: ["args"]
+
+    - name: Note that VM 950 needs a cold reboot when args changed
+      ansible.builtin.debug:
+        msg: >-
+          VM 950 args were updated. The vsock device only attaches on a
+          fresh QEMU process. Stop and start VM 950 (qm stop 950 then qm
+          start 950) for the new args to take effect.
+      when: vm_950_args_set is changed
+      tags: ["args"]
+
+    - name: Read current VM 101 args
+      ansible.builtin.command:
+        cmd: qm config 101
+      register: vm_101_config
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: ["args"]
+
+    - name: Set mwanrpc chardev on VM 101 args
+      # The expected args string carries the virtio-serial-pci controller,
+      # the chardev that bridges to /var/run/qemu-server/101.mwanrpc, and
+      # the virtserialport that exposes the chardev as /dev/ttyV0.0 inside
+      # the guest. The regex below pins the three device IDs (mwanrpc,
+      # mwanchr, the chardev path 101.mwanrpc) so the task is idempotent
+      # across whitespace differences.
+      ansible.builtin.command:
+        cmd: >-
+          qm set 101 --args "-device virtio-serial-pci,id=mwanrpc -chardev
+          socket,id=mwanchr,path=/var/run/qemu-server/101.mwanrpc,server=on,wait=off
+          -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0"
+      when: >-
+        vm_101_config.rc == 0
+        and (vm_101_config.stdout is not search('id=mwanrpc')
+             or vm_101_config.stdout is not search('path=/var/run/qemu-server/101\.mwanrpc')
+             or vm_101_config.stdout is not search('name=io\.goodkind\.mwan-opnsense\.0'))
+      register: vm_101_args_set
+      changed_when: vm_101_args_set is not skipped and vm_101_args_set.rc == 0
+      tags: ["args"]
+
+    - name: Note that VM 101 needs a cold reboot when args changed
+      ansible.builtin.debug:
+        msg: >-
+          VM 101 args were updated. The mwanrpc chardev only attaches on a
+          fresh QEMU process. Stop and start VM 101 (qm stop 101 then qm
+          start 101) for the new args to take effect.
+      when: vm_101_args_set is changed
+      tags: ["args"]
+
+    # ----------------------------------------------------------------------
+    # ISP LXCs (200 webpass, 201 att, 202 mbrains) via pct
+    # ----------------------------------------------------------------------
+
+    - name: Install packages on ISP LXCs
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ item.id }} -- sh -c
+          'which kea-dhcp6 >/dev/null 2>&1 ||
+           (apt-get update -qq && apt-get install -y -qq kea-dhcp6-server radvd nftables)'
+      loop: "{{ testbed_isp_lxcs }}"
+      changed_when: false
+      tags: ["isp-lxcs"]
+
+    - name: Render and push ISP LXC configs
+      ansible.builtin.include_tasks: tasks/deploy-testbed-isp-lxc.yml
+      loop: "{{ testbed_isp_lxcs }}"
+      loop_control:
+        loop_var: isp
+      tags: ["isp-lxcs"]
+
+    # ----------------------------------------------------------------------
+    # mwan-opnsense host bridge (Unix socket to /var/run/qemu-server/101.mwanrpc)
+    # ----------------------------------------------------------------------
+
+    - name: Install mwan-opnsense host bridge
+      ansible.builtin.include_tasks: tasks/mwan-opnsense-host-deploy.yml
+      tags: ["opnsense-host-bridge"]
+
+  handlers:
+    - name: Reload sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: false
+
+# ----------------------------------------------------------------------------
+# VFIO host-side passthrough for Radeon R7 360 on suburban.
+#
+# Manages /etc/modprobe.d/vfio.conf, /etc/modprobe.d/blacklist-amd-gpu.conf,
+# and /etc/modules-load.d/vfio.conf so a future VM can claim the GPU. The
+# play does NOT modify /etc/default/grub or reboot. The kernel cmdline edit
+# was applied surgically once; the assertion here fails loudly if
+# /proc/cmdline drifts without anyone noticing, so a future re-image or
+# BIOS rebuild does not silently undo IOMMU mode.
+# ----------------------------------------------------------------------------
+
+- name: Configure suburban VFIO host-side passthrough
+  hosts: suburban_servers
+  become: false
+  gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Deploy vfio-pci binding config
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/vfio/vfio.conf"
+        dest: /etc/modprobe.d/vfio.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Refresh initramfs
+      tags: ["vfio"]
+
+    - name: Deploy AMD GPU driver blacklist
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/vfio/blacklist-amd-gpu.conf"
+        dest: /etc/modprobe.d/blacklist-amd-gpu.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Refresh initramfs
+      tags: ["vfio"]
+
+    - name: Deploy vfio modules-load list
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/vfio/vfio-modules.conf"
+        dest: /etc/modules-load.d/vfio.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Refresh initramfs
+      tags: ["vfio"]
+
+    - name: Read current kernel cmdline
+      ansible.builtin.slurp:
+        src: /proc/cmdline
+      register: vfio_proc_cmdline
+      check_mode: false
+      changed_when: false
+      tags: ["vfio"]
+
+    - name: Assert IOMMU is enabled in the running cmdline
+      ansible.builtin.assert:
+        that:
+          - "'intel_iommu=on' in (vfio_proc_cmdline.content | b64decode)"
+          - "'iommu=pt' in (vfio_proc_cmdline.content | b64decode)"
+        fail_msg: >-
+          /proc/cmdline is missing intel_iommu=on or iommu=pt. The kernel
+          cmdline edit lives in /etc/default/grub and is intentionally NOT
+          managed by this playbook. Fix /etc/default/grub by hand, then
+          run: update-initramfs -u -k all && proxmox-boot-tool refresh,
+          then reboot.
+      tags: ["vfio"]
+
+    - name: Confirm Radeon is bound to vfio-pci
+      ansible.builtin.command:
+        cmd: lspci -nnk -d 1002:6658
+      register: vfio_radeon_lspci
+      check_mode: false
+      changed_when: false
+      failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_lspci.stdout"
+      tags: ["vfio"]
+
+    - name: Confirm Radeon HDMI audio is bound to vfio-pci
+      ansible.builtin.command:
+        cmd: lspci -nnk -d 1002:aac0
+      register: vfio_radeon_audio_lspci
+      check_mode: false
+      changed_when: false
+      failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_audio_lspci.stdout"
+      tags: ["vfio"]
+
+  handlers:
+    - name: Refresh initramfs
+      ansible.builtin.command:
+        cmd: update-initramfs -u -k all
+      changed_when: true
+      listen: Refresh initramfs
+
+    - name: Notify reboot needed
+      ansible.builtin.debug:
+        msg: >-
+          initramfs was regenerated. A reboot is required for the change
+          to take effect. The playbook does NOT auto-reboot. Pick a
+          maintenance window and run: reboot
+      listen: Refresh initramfs

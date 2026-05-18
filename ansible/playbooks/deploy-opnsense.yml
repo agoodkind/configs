@@ -1,0 +1,32 @@
+---
+# Configure the mwan-opnsense daemon on an OPNsense host.
+#
+# Targets opnsense_servers (prod, router.home.goodkind.io reached via
+# 3d06:bad:b01::1 as agoodkind) or opnsense_test_servers (testbed,
+# opnsense-test reached via 192.168.1.1 with ProxyJump through suburban).
+# All connection differences live in opnsense_servers.yml and
+# opnsense_test_servers.yml, so this play body is branchless on
+# inventory_hostname.
+#
+# Run examples:
+#   ansible-playbook playbooks/deploy-opnsense.yml --limit opnsense_servers
+#   ansible-playbook playbooks/deploy-opnsense.yml --limit opnsense_test_servers
+
+- name: Build mwan-opnsense binary
+  hosts: localhost
+  gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+  tasks:
+    - name: Build via Make
+      ansible.builtin.import_tasks: tasks/build-mwan-opnsense-binary.yml
+
+- name: Deploy mwan-opnsense daemon
+  hosts: opnsense_servers:opnsense_test_servers
+  gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    mwan_opnsense_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-opnsense"
+  tasks:
+    - name: Run in-guest install task
+      ansible.builtin.include_tasks: tasks/mwan-opnsense-deploy.yml

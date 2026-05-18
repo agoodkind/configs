@@ -1,0 +1,70 @@
+---
+# Discover the MWAN VM's runtime network shape from Proxmox before any
+# config templates render. Produces facts the rest of deploy-mwan.yml
+# consumes:
+#   - mwan_net1_mac, mwan_net2_mac (parsed_mwan_net2_mac), mwan_net2_present
+#   - vm_mgmt_mac
+#   - mwan_mbrains_mac (inventory override wins, plugin-parsed value falls back)
+#
+# Assumes the calling play already set `actual_vmid` and runs against an
+# MWAN VM host (mwan_servers or test_mwan_servers).
+
+- name: Get VM network config from Proxmox
+  delegate_to: "{{ ansible_proxmox_host | default('vault') }}"
+  ansible.builtin.command:
+    cmd: qm config {{ actual_vmid }}
+  register: vm_config
+  changed_when: false
+
+- name: Parse virtio MAC addresses from VM config
+  delegate_to: localhost
+  ansible.builtin.set_fact:
+    mwan_net1_mac: >-
+      {{
+        vm_config.stdout_lines
+        | select('match', '^net1:.*virtio')
+        | first
+        | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
+        | upper
+      }}
+    parsed_mwan_net2_mac: >-
+      {{
+        vm_config.stdout_lines
+        | select('match', '^net2:.*virtio')
+        | list
+        | first
+        | default('')
+        | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
+        | upper
+      }}
+    mwan_net2_present: >-
+      {{
+        (vm_config.stdout_lines | select('match', '^net2:.*') | list | length) > 0
+      }}
+    vm_mgmt_mac: >-
+      {{
+        vm_config.stdout_lines
+        | select('match', '^net0:.*virtio')
+        | first
+        | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
+        | upper
+      }}
+
+- name: Select Monkeybrains MAC (prefer inventory override)
+  delegate_to: localhost
+  ansible.builtin.set_fact:
+    mwan_mbrains_mac: >-
+      {{
+        ((mwan_mbrains_mac | default('')) | length > 0)
+        | ternary(mwan_mbrains_mac, parsed_mwan_net2_mac)
+      }}
+
+- name: Ensure Monkeybrains NIC exists when enabled
+  ansible.builtin.fail:
+    msg: >-
+      Monkeybrains fallback is enabled, but no virtio net2 interface was found in Proxmox
+      config for VM {{ actual_vmid }}. Add net2 (virtio) attached to the Monkeybrains network
+      or disable mwan_health_checks.monkeybrains.enabled.
+  when:
+    - mwan_health_checks.monkeybrains.enabled | default(false)
+    - not mwan_net2_present

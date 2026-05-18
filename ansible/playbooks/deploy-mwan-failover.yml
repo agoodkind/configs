@@ -1,0 +1,143 @@
+---
+# Configure the MWAN failover LXC.
+#
+# Targets either mwan_failover_servers (prod LXC-116 on vault) or
+# mwan_failover_test_servers (testbed LXC-100 on suburban). Per-target
+# vars in inventory/group_vars/mwan_failover_servers.yml and
+# inventory/group_vars/mwan_failover_test_servers.yml carry every value
+# that differs between environments, so this play body is branchless on
+# inventory_hostname.
+#
+# Run examples:
+#   ansible-playbook playbooks/deploy-mwan-failover.yml --limit mwan_failover_servers
+#   ansible-playbook playbooks/deploy-mwan-failover.yml --limit mwan_failover_test_servers
+
+- name: Configure MWAN failover LXC
+  hosts: mwan_failover_servers:mwan_failover_test_servers
+  become: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Build mwan binary on controller
+      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
+
+    - name: Ensure /etc/mwan exists
+      ansible.builtin.file:
+        path: /etc/mwan
+        state: directory
+        mode: "0755"
+
+    - name: Install nftables (testbed only; gated by group_vars)
+      ansible.builtin.apt:
+        name: nftables
+        state: present
+      when: mwan_failover_install_nftables | default(false) | bool
+
+    - name: Deploy MWAN secrets environment file
+      # The failover LXC config.toml has an [email] block but no
+      # smtp2go_api_key. The mwan binary reads SMTP2GO_API_KEY from this
+      # file at unit start via the systemd EnvironmentFile= directive.
+      ansible.builtin.copy:
+        dest: /etc/mwan/secrets.env
+        content: |
+          SMTP2GO_API_KEY={{ vault_smtp2go_api_key }}
+        owner: root
+        group: root
+        mode: "0640"
+      no_log: true
+      notify:
+        - Restart mwan-agent
+        - Restart mwan-ifmgr
+
+    - name: Deploy mwan unified binary
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        dest: /usr/local/bin/mwan
+        mode: "0755"
+      notify:
+        - Restart mwan-agent
+        - Restart mwan-ifmgr
+
+    - name: Deploy /etc/mwan/config.toml
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan-failover/config.toml.j2"
+        dest: /etc/mwan/config.toml
+        mode: "0640"
+      notify:
+        - Restart mwan-agent
+        - Restart mwan-ifmgr
+
+    - name: Deploy failover sysctl config
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan-failover/sysctl.conf"
+        dest: /etc/sysctl.d/99-mwan-failover.conf
+        mode: "0644"
+      notify:
+        - Reload sysctl
+
+    - name: Deploy /etc/network/interfaces
+      # No auto-restart of networking. Operator must reload manually to
+      # control timing; a `systemctl restart networking` here bounces eth0
+      # and eth1 which interrupts BGP and the ifmgr-managed iface.
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan-failover/interfaces.j2"
+        dest: /etc/network/interfaces
+        mode: "0644"
+
+    - name: Deploy mwan-agent systemd unit
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
+        dest: /etc/systemd/system/mwan-agent.service
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart mwan-agent
+
+    - name: Deploy mwan-ifmgr systemd unit
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan-failover/mwan-ifmgr.service"
+        dest: /etc/systemd/system/mwan-ifmgr.service
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart mwan-ifmgr
+
+    - name: Enable mwan services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - mwan-agent
+        - mwan-ifmgr
+
+    - name: Enable nftables (testbed only; matches install task above)
+      ansible.builtin.systemd:
+        name: nftables
+        enabled: true
+        daemon_reload: true
+      when: mwan_failover_install_nftables | default(false) | bool
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Reload sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: false
+
+    - name: Restart mwan-agent
+      ansible.builtin.systemd:
+        name: mwan-agent
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart mwan-ifmgr
+      ansible.builtin.systemd:
+        name: mwan-ifmgr
+        state: restarted
+        daemon_reload: true

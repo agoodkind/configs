@@ -1,0 +1,34 @@
+---
+# Production OPNsense (router.home.goodkind.io / 3d06:bad:b01::1) target vars.
+# Consumed by deploy-opnsense.yml when targeting `opnsense_servers`.
+# The group is a parent of `router_servers` defined in hosts so the host
+# discovered via service_mapping.router is the actual SSH target.
+
+# SSH override: service_mapping sets ansible_host=ipv6 (3d06:bad:b01::1)
+# and ansible_user defaults to root. OPNsense expects agoodkind for SSH.
+ansible_user: agoodkind
+
+# OPNsense identity for MWAN-side config rendering.
+opnsense_addr: "3d06:bad:b01::1"
+opnsense_gateway_names:
+  - WAN_GW4
+  - WAN_GW6
+
+# OPNsense BGP (from OPNsense's perspective). Consumed by templates that
+# render FRR config on OPNsense via the os-frr plugin.
+opnsense_bgp_router_id: "10.250.250.2"
+opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
+opnsense_bgp_firewall_source_v6: "3d06:bad:b01:fe::/64"
+opnsense_bgp_neighbors:
+  - address: "10.250.250.3"
+    description: "VM113-IPv4"
+    preference: "primary"
+  - address: "3d06:bad:b01:fe::3"
+    description: "VM113-IPv6"
+    preference: "primary"
+  - address: "10.250.250.4"
+    description: "LXC116-IPv4"
+    preference: "backup"
+  - address: "3d06:bad:b01:fe::4"
+    description: "LXC116-IPv6"
+    preference: "backup"

@@ -27,8 +27,8 @@ undeclared fields alone, so `tofu plan` does not flag drift on the live
 
 ## How Ansible owns this field
 
-The Ansible playbook `ansible/playbooks/deploy-mwan-testbed.yml` carries
-an idempotent `qm set` task in the `Configure suburban hypervisor` play.
+The Ansible playbook `ansible/playbooks/deploy-testbed.yml` carries
+an idempotent `qm set` task in the `Configure suburban testbed extras` play.
 The task only runs `qm set` when the live `args` does not already match
 the target string. Look for the task tagged `args` named
 `Set mwanrpc chardev on VM 101 args`.

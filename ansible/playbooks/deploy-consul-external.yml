@@ -3,7 +3,7 @@
 # These hosts are not LXC containers and require special handling
 
 - name: Deploy Consul agent to Proxmox nodes
-  hosts: proxmox_nodes
+  hosts: proxmox_servers
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive

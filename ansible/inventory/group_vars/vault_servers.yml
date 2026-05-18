@@ -1,0 +1,49 @@
+---
+# Vault hypervisor (Proxmox host) target vars.
+# Consumed by deploy-proxmox.yml when targeting `vault` in `vault_servers`.
+# Shared defaults live in proxmox_servers.yml.
+
+# Consul agent settings
+consul_bind_interface: vmbr0
+
+# Proxmox HTTP API host for `community.proxmox.proxmox_*` modules when
+# operating against vault. The dynamic inventory plugin uses its own URL.
+proxmox_api_host: "3d06:bad:b01::254"
+
+# MWAN host-side identity. Used by config.toml.j2 to populate the
+# /etc/mwan/config.toml that vault's `mwan ifmgr` and `mwan watchdog`
+# services read. Distinct from the MWAN VM's own /etc/mwan/config.toml
+# rendered by deploy-mwan.yml against mwan_servers.
+mwan_config_hostname: "vault"
+mwan_config_mgmt_addr: "3d06:bad:b01::113"
+
+# mwan-watchdog service on the host (separate from the BGP watchdog in
+# the MWAN agent on the VM)
+mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01::113]:50052"
+mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
+mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"
+mwan_watchdog_state_file: "/run/mwan-rollback.state"
+mwan_watchdog_lock_file: "/run/mwan-watchdog-rollback.lock"
+
+# mwan-ifmgr service on the host
+mwan_ifmgr_role: "vault-oob"
+mwan_ifmgr_iface_key: "mbrains"
+mwan_ifmgr_iface_name: "mbrains"
+mwan_ifmgr_oob_addr: "3d06:bad:b01:ff::1/128"
+mwan_ifmgr_policy_from_v6: "3d06:bad:b01:ff::1"
+mwan_ifmgr_cloudflared_oob_user: "cloudflared-oob"
+
+# Cloudflared OOB tunnel on vault host. The tunnel UUID, ingress hostname,
+# and SSH backend port are not secrets (just identifiers); the tunnel
+# secret in credentials.json comes from vault_cloudflared_oob_credentials_json.
+cloudflared_oob_enabled: true
+cloudflared_oob_tunnel_id: "88f11d0d-6148-4670-891d-72c0286ca48d"
+cloudflared_oob_edge_ip_version: "6"
+cloudflared_oob_warp_routing_enabled: true
+cloudflared_oob_ingress:
+  - hostname: "vault-oob.goodkind.io"
+    service: "ssh://localhost:22022"
+  - service: "http_status:404"
+cloudflared_oob_nextdns_resolvers:
+  - "2a07:a8c0::7d:698e"
+  - "2a07:a8c1::7d:698e"

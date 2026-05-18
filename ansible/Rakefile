@@ -1,234 +1,129 @@
 # frozen_string_literal: true
 
-require 'dotenv'
 require 'fileutils'
-require_relative '../lib/rake_common'
 
-# Load .env from current directory and parent directory
-Dotenv.load('.env', '../.env')
+# Local Rake wrappers for the five canonical Ansible playbooks. Replaces the
+# previous remote-rsync-to-/usr/share/ansible model with direct local
+# `ansible-playbook` invocations. Run from this directory (`ansible/`) or
+# pass --working-dir; `ansible.cfg` here resolves inventory automatically.
+#
+# Vault password file defaults to ~/.config/ansible/vault.pass.
+# Override with VAULT_PASS_FILE=... or pass `nopass=1` to skip.
 
-# Include common helpers
-# rubocop:disable Style/MixinUsage
-extend RakeCommon
-# rubocop:enable Style/MixinUsage
-
-ANSIBLE_HOST = ENV.fetch('ANSIBLE_HOST', 'ansible.home.goodkind.io')
-ANSIBLE_USER = ENV.fetch('ANSIBLE_USER', 'root')
-ANSIBLE_DIR = '/usr/share/ansible'
+VAULT_PASS_FILE = ENV.fetch('VAULT_PASS_FILE', File.expand_path('~/.config/ansible/vault.pass'))
 LOCAL_PLAYBOOKS_DIR = 'playbooks'
-LOCAL_ROLES_DIR = 'roles'
-LOCAL_INVENTORY_DIR = 'inventory'
+
+CANONICAL_PLAYBOOKS = {
+  proxmox:   'deploy-proxmox.yml',
+  mwan:      'deploy-mwan.yml',
+  failover:  'deploy-mwan-failover.yml',
+  opnsense:  'deploy-opnsense.yml',
+  testbed:   'deploy-testbed.yml'
+}.freeze
 
 ##
-# Get full Ansible host string (user@host)
+# Build the ansible-playbook command for a given playbook name.
 #
-# @return [String] Ansible host connection string
-def ansible_host_string
-  "#{ANSIBLE_USER}@#{ANSIBLE_HOST}"
+# @param playbook [String] playbook filename relative to playbooks/
+# @param extras  [Array<String>] additional ansible-playbook args
+# @return [Array<String>] argv ready for `sh`
+def ansible_playbook_argv(playbook, extras = [])
+  argv = ['ansible-playbook']
+  if ENV['nopass'].to_s == '1' || !File.exist?(VAULT_PASS_FILE)
+    argv += ['--vault-password-file', VAULT_PASS_FILE] if File.exist?(VAULT_PASS_FILE)
+  else
+    argv += ['--vault-password-file', VAULT_PASS_FILE]
+  end
+  argv << "#{LOCAL_PLAYBOOKS_DIR}/#{playbook}"
+  argv.concat(extras) if extras && !extras.empty?
+  argv
 end
 
 ##
-# Execute command on ansible host and return output
+# Run a canonical playbook with optional --limit and --check passthrough.
 #
-# @param args [Array] command and arguments
-# @return [String] command output
-def ssh_ansible(*)
-  ssh_exec(ansible_host_string, *)
-end
-
-##
-# Execute command on ansible host with error handling
+# Tasks accept rake args: rake proxmox[vault] runs with --limit vault.
+# Add :check tasks for --check --diff dry runs.
 #
-# @param args [Array] command and arguments
+# @param playbook [String] playbook filename
+# @param limit    [String, nil] --limit target (e.g. "vault")
+# @param check    [Boolean] add --check --diff
 # @return [void]
-def ssh_ansible_sh(*)
-  ssh_exec_sh(ansible_host_string, *)
+def run_playbook(playbook, limit: nil, check: false)
+  extras = []
+  extras += ['--limit', limit] if limit && !limit.empty?
+  extras += ['--check', '--diff'] if check
+  sh(*ansible_playbook_argv(playbook, extras))
 end
 
-##
-# Upload files to ansible host
-#
-# @param local_path [String] local file or directory path
-# @param remote_path [String] remote destination path
-# @return [void]
-def scp_to_ansible(local_path, remote_path)
-  sh 'scp', '-r', '-q', local_path, "#{ansible_host_string}:#{remote_path}", verbose: verbose?
+namespace :deploy do
+  CANONICAL_PLAYBOOKS.each do |key, playbook|
+    desc "Run #{playbook}; optional rake deploy:#{key}[<limit>]"
+    task key, [:limit] do |_t, args|
+      run_playbook(playbook, limit: args[:limit])
+    end
+  end
 end
 
-##
-# Sync files to ansible host using rsync
-#
-# @param local_path [String] local directory path
-# @param remote_path [String] remote destination path
-# @param delete [Boolean] delete files on remote that don't exist locally
-# @return [void]
-def rsync_to_ansible(local_path, remote_path, delete: false)
-  rsync_to_host(local_path, ansible_host_string, remote_path, delete: delete)
+namespace :check do
+  CANONICAL_PLAYBOOKS.each do |key, playbook|
+    desc "Dry-run #{playbook} with --check --diff; optional rake check:#{key}[<limit>]"
+    task key, [:limit] do |_t, args|
+      run_playbook(playbook, limit: args[:limit], check: true)
+    end
+  end
 end
 
-desc 'Show Ansible version and status'
-task :status do
-  puts '▶️  Checking Ansible status...'
-  ssh_ansible_sh('ansible', '--version')
-  puts '✅ Status retrieved'
-end
-
-desc 'List deployed playbooks'
-task :list do
-  puts '▶️  Listing deployed playbooks...'
-  ssh_ansible_sh('find', ANSIBLE_DIR, '-name', '*.yml', '-o', '-name', '*.yaml')
-end
-
-desc 'Backup current Ansible configs'
-task :backup do
-  puts '▶️  Creating backup...'
-  timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
-  backup_dir = "#{ANSIBLE_DIR}.backup.#{timestamp}"
-
-  ssh_ansible_sh('bash', '-c', "cp -r #{ANSIBLE_DIR} #{backup_dir}")
-  puts "✅ Backup created: #{backup_dir}".green
-end
-
-desc 'Clean remote Ansible configs'
-task :clean do
-  puts '▶️  Cleaning remote configs...'
-  ssh_ansible_sh('bash', '-c',
-                 "rm -rf #{ANSIBLE_DIR}/playbooks " \
-                 "#{ANSIBLE_DIR}/roles #{ANSIBLE_DIR}/inventory")
-  puts '✅ Remote configs cleaned'
-end
-
-desc 'Deploy playbooks to Ansible host'
-task :deploy_playbooks do
-  if Dir.empty?(LOCAL_PLAYBOOKS_DIR)
-    puts '⚠️  No playbooks to deploy'.yellow
-    next
+namespace :syntax do
+  CANONICAL_PLAYBOOKS.each do |key, playbook|
+    desc "Syntax-check #{playbook}"
+    task key do
+      sh 'ansible-playbook', '--syntax-check', "#{LOCAL_PLAYBOOKS_DIR}/#{playbook}"
+    end
   end
 
-  puts '▶️  Deploying playbooks...'
-  ssh_ansible_sh('mkdir', '-p', "#{ANSIBLE_DIR}/playbooks")
-  rsync_to_ansible(LOCAL_PLAYBOOKS_DIR, "#{ANSIBLE_DIR}/playbooks", delete: true)
-  ssh_ansible_sh('chown', '-R', 'root:root', "#{ANSIBLE_DIR}/playbooks")
-  puts '✅ Playbooks deployed'
+  desc 'Syntax-check every canonical playbook'
+  task all: CANONICAL_PLAYBOOKS.keys.map { |k| "syntax:#{k}" }
 end
 
-desc 'Deploy roles to Ansible host'
-task :deploy_roles do
-  if Dir.empty?(LOCAL_ROLES_DIR)
-    puts '⚠️  No roles to deploy'.yellow
-    next
-  end
-
-  puts '▶️  Deploying roles...'
-  ssh_ansible_sh('mkdir', '-p', "#{ANSIBLE_DIR}/roles")
-  rsync_to_ansible(LOCAL_ROLES_DIR, "#{ANSIBLE_DIR}/roles", delete: true)
-  ssh_ansible_sh('chown', '-R', 'root:root', "#{ANSIBLE_DIR}/roles")
-  puts '✅ Roles deployed'
+desc 'Show inventory graph (proves the new layout loads)'
+task :inventory do
+  sh 'ansible-inventory', '--graph'
 end
 
-desc 'Deploy inventory to Ansible host'
-task :deploy_inventory do
-  if Dir.empty?(LOCAL_INVENTORY_DIR)
-    puts '⚠️  No inventory files to deploy'.yellow
-    next
-  end
-
-  puts '▶️  Deploying inventory...'
-  ssh_ansible_sh('mkdir', '-p', "#{ANSIBLE_DIR}/inventory")
-  rsync_to_ansible(LOCAL_INVENTORY_DIR, "#{ANSIBLE_DIR}/inventory", delete: true)
-  ssh_ansible_sh('chown', '-R', 'root:root', "#{ANSIBLE_DIR}/inventory")
-  puts '✅ Inventory deployed'
-end
-
-desc 'Run ansible-lint on local playbooks'
+desc 'Lint canonical playbooks with ansible-lint'
 task :lint do
-  puts '▶️  Linting playbooks...'
-  playbooks = Dir.glob("#{LOCAL_PLAYBOOKS_DIR}/*.{yml,yaml}")
-
-  if playbooks.empty?
-    puts '⚠️  No playbooks to lint'.yellow
-    next
+  CANONICAL_PLAYBOOKS.each_value do |pb|
+    sh 'ansible-lint', "#{LOCAL_PLAYBOOKS_DIR}/#{pb}"
   end
-
-  playbooks.each do |playbook|
-    puts "  Checking #{File.basename(playbook)}..."
-    sh 'ansible-lint', playbook, verbose: verbose?
-  end
-
-  puts '✅ Linting complete'
 end
 
-desc 'Validate playbook syntax'
-task :validate, [:playbook] do |_t, args|
-  playbook = args[:playbook]
-
-  unless playbook
-    puts '❌ Please specify a playbook: rake validate[playbook.yml]'.red
-    exit 1
-  end
-
-  puts "▶️  Validating #{playbook}..."
-
-  # Upload playbook to temp location
-  temp_file = "/tmp/ansible_validate_#{Time.now.strftime('%Y%m%d_%H%M%S')}.yml"
-  scp_to_ansible("#{LOCAL_PLAYBOOKS_DIR}/#{playbook}", temp_file)
-
-  # Run syntax check
-  ssh_ansible_sh('ansible-playbook', '--syntax-check', temp_file)
-  ssh_ansible_sh('rm', '-f', temp_file)
-
-  puts '✅ Syntax valid'
-end
-
-desc 'Run a playbook on Ansible host'
-task :run, [:playbook] do |_t, args|
-  playbook = args[:playbook]
-
-  unless playbook
-    puts '❌ Please specify a playbook: rake run[playbook.yml]'.red
-    exit 1
-  end
-
-  puts "▶️  Running playbook: #{playbook}..."
-  ssh_ansible_sh('ansible-playbook', "#{ANSIBLE_DIR}/playbooks/#{playbook}")
-  puts '✅ Playbook execution complete'
-end
-
-desc 'Deploy all Ansible configurations'
-task deploy: %i[backup deploy_playbooks deploy_roles deploy_inventory] do
-  puts ''
-  puts '✅ Deployment complete'
-  puts ''
-  puts 'Next steps:'.yellow
-  puts '  1. rake list        - List deployed files'
-  puts '  2. rake run[name]   - Run a playbook'
-end
-
-desc 'Run complete workflow (lint, validate, deploy)'
-task full_deploy: %i[lint deploy] do
-  puts ''
-  puts '✅ Full deployment complete'
-end
-
-desc 'Show help'
+desc 'Help: list canonical playbook shortcuts'
 task :help do
-  puts 'Ansible Configuration Management'.blue
+  puts 'Ansible canonical playbook shortcuts (local, no remote rsync).'
   puts ''
-  puts 'Available tasks:'.green
-  puts '  rake status              - Show Ansible version and status'
-  puts '  rake list                - List deployed playbooks'
-  puts '  rake backup              - Backup current configs'
-  puts '  rake lint                - Lint local playbooks'
-  puts '  rake validate[playbook]  - Validate playbook syntax'
-  puts '  rake deploy              - Deploy all configurations'
-  puts '  rake full_deploy         - Lint and deploy'
-  puts '  rake run[playbook]       - Run a playbook'
+  puts 'Run a playbook:'
+  CANONICAL_PLAYBOOKS.each do |k, v|
+    puts format('  rake deploy:%-9s    # %s', k, v)
+  end
   puts ''
-  puts 'Examples:'.yellow
-  puts '  rake deploy'
-  puts '  rake validate[site.yml]'
-  puts '  rake run[site.yml]'
-  puts '  ANSIBLE_HOST=other.host rake deploy'
+  puts 'Limit to one host (passes --limit):'
+  puts '  rake deploy:proxmox[vault]'
+  puts '  rake deploy:mwan[mwan.home.goodkind.io]'
+  puts '  rake deploy:failover[mwan_failover_test_servers]'
+  puts ''
+  puts 'Dry-run (--check --diff):'
+  puts '  rake check:proxmox[vault]'
+  puts '  rake check:mwan'
+  puts ''
+  puts 'Syntax-check:'
+  puts '  rake syntax:all'
+  puts '  rake syntax:opnsense'
+  puts ''
+  puts 'Inventory shape (read-only):'
+  puts '  rake inventory'
+  puts ''
+  puts 'Set VAULT_PASS_FILE=/path/to/passfile, or nopass=1 to skip vault decryption.'
 end
 
 task default: :help

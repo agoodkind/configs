@@ -1,0 +1,26 @@
+---
+# Production MWAN failover LXC (lxc-116 on vault) target vars.
+# Consumed by deploy-mwan-failover.yml when targeting `mwan_failover_servers`.
+
+mwan_failover_hostname: "mwan-failover"
+mwan_failover_email_from: "mwan@goodkind.io"
+
+# Subject prefix distinct from main-host so failover alerts are visually
+# separable in the inbox.
+mwan_failover_subject_prefix: "[MWAN-vault-failover]"
+
+mwan_failover_bgp_asn: 4200000001
+mwan_failover_bgp_router_id: "10.250.250.4"
+mwan_failover_bgp_next_hop_v6: "3d06:bad:b01:fe::4"
+mwan_failover_bgp_neighbors:
+  - "10.250.250.2"
+mwan_failover_bgp_neighbors_v6:
+  - "3d06:bad:b01:fe::2"
+mwan_failover_ipv4_address: "10.250.250.4/29"
+mwan_failover_ipv6_address: "3d06:bad:b01:fe::4/64"
+mwan_failover_ipv4_return_route: "10.250.0.0/16 via 10.250.250.2 dev eth1"
+mwan_failover_ipv6_return_route: >-
+  3d06:bad:b01::/56 via 3d06:bad:b01:fe::2 dev eth1
+mwan_failover_eth0_inet6_manual: false
+mwan_failover_enable_mainv4: false
+mwan_failover_install_nftables: false

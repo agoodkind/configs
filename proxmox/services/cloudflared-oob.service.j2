@@ -1,0 +1,19 @@
+[Unit]
+Description=Cloudflare Tunnel OOB (via Monkeybrains, independent of MWAN)
+After=network.target
+
+[Service]
+Type=simple
+User={{ cloudflared_oob_user }}
+Group={{ cloudflared_oob_user }}
+BindReadOnlyPaths={{ cloudflared_oob_config_dir }}/resolv.conf:/etc/resolv.conf
+ExecStart={{ cloudflared_oob_bin }} --no-autoupdate tunnel \
+    --config {{ cloudflared_oob_config_dir }}/config.yml \
+    run{% for resolver in cloudflared_oob_nextdns_resolvers %} \
+    --dns-resolver-addrs [{{ resolver }}]:53{% endfor %}
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

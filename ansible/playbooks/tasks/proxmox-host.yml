@@ -1,0 +1,229 @@
+---
+# Canonical Proxmox-hypervisor configuration tasks. Imported by
+# deploy-proxmox.yml against the proxmox_servers group. Per-host overrides
+# live in vault_servers.yml and suburban_servers.yml; shared feature flags
+# and non-secret defaults live in proxmox_servers.yml.
+#
+# Feature flags (cloudflared_oob_enabled, mwan_ifmgr_enabled,
+# mwan_watchdog_enabled, proxmox_mwan_host_role_enabled) gate each unit so
+# the task body stays branchless and the play definition does not depend
+# on inventory_hostname.
+
+- name: Build mwan binary on controller
+  ansible.builtin.import_tasks: build-mwan-binary.yml
+
+- name: Deploy package-updater service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/common/services/package-updater.service"
+    dest: /etc/systemd/system/package-updater.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: proxmox_package_updater_service
+
+- name: Deploy package-updater timer
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/common/timers/package-updater.timer"
+    dest: /etc/systemd/system/package-updater.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: proxmox_package_updater_timer
+
+- name: Enable package-updater timer
+  ansible.builtin.systemd:
+    name: package-updater.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        proxmox_package_updater_service.changed
+        or proxmox_package_updater_timer.changed
+      }}
+
+- name: Remove legacy mwan-watchdog binary if present
+  ansible.builtin.file:
+    path: /usr/local/bin/mwan-watchdog
+    state: absent
+
+- name: Remove legacy mwan-agent binary if present
+  ansible.builtin.file:
+    path: /usr/local/bin/mwan-agent
+    state: absent
+
+- name: Deploy unified mwan binary
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+    dest: /usr/local/bin/mwan
+    mode: "0755"
+  when: proxmox_mwan_host_role_enabled | default(true) | bool
+
+- name: Ensure MWAN config directory exists
+  ansible.builtin.file:
+    path: /etc/mwan
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: proxmox_mwan_host_role_enabled | default(true) | bool
+
+- name: Deploy MWAN runtime config
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/config.toml.j2"
+    dest: /etc/mwan/config.toml
+    owner: root
+    group: root
+    mode: "0600"
+  when: proxmox_mwan_host_role_enabled | default(true) | bool
+
+- name: Deploy mwan-ifmgr service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-ifmgr.service"
+    dest: /etc/systemd/system/mwan-ifmgr.service
+    mode: "0644"
+  register: proxmox_mwan_ifmgr_unit
+  when: mwan_ifmgr_enabled | default(true) | bool
+
+- name: Assert cloudflared-oob inputs are defined
+  ansible.builtin.assert:
+    that:
+      - cloudflared_oob_tunnel_id is defined
+      - cloudflared_oob_tunnel_id | length > 0
+      - cloudflared_oob_ingress is defined
+      - cloudflared_oob_ingress | length > 0
+      - cloudflared_oob_nextdns_resolvers is defined
+      - cloudflared_oob_nextdns_resolvers | length > 0
+      - vault_cloudflared_oob_credentials_json is defined
+      - vault_cloudflared_oob_credentials_json | length > 0
+    fail_msg: >-
+      cloudflared_oob_enabled=true but a required input is missing on
+      {{ inventory_hostname }}. Set cloudflared_oob_tunnel_id,
+      cloudflared_oob_ingress, cloudflared_oob_nextdns_resolvers in
+      <hypervisor>_servers.yml, and vault_cloudflared_oob_credentials_json
+      in inventory/group_vars/all/vault.yml.
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Ensure cloudflared-oob group exists
+  ansible.builtin.group:
+    name: "{{ cloudflared_oob_user }}"
+    system: true
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Ensure cloudflared-oob user exists
+  ansible.builtin.user:
+    name: "{{ cloudflared_oob_user }}"
+    group: "{{ cloudflared_oob_user }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Ensure cloudflared-oob config directory exists
+  ansible.builtin.file:
+    path: "{{ cloudflared_oob_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ cloudflared_oob_user }}"
+    mode: "0750"
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Deploy cloudflared-oob resolver file
+  ansible.builtin.copy:
+    dest: "{{ cloudflared_oob_config_dir }}/resolv.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {% for resolver in cloudflared_oob_nextdns_resolvers %}
+      nameserver {{ resolver }}
+      {% endfor %}
+      options timeout:2 attempts:2 rotate
+  register: proxmox_cloudflared_oob_resolv
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Deploy cloudflared-oob config.yml
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/config/cloudflared-oob-config.yml.j2"
+    dest: "{{ cloudflared_oob_config_dir }}/config.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: proxmox_cloudflared_oob_config
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Deploy cloudflared-oob credentials.json
+  ansible.builtin.copy:
+    dest: "{{ cloudflared_oob_config_dir }}/credentials.json"
+    owner: "{{ cloudflared_oob_user }}"
+    group: "{{ cloudflared_oob_user }}"
+    mode: "0600"
+    content: "{{ vault_cloudflared_oob_credentials_json }}"
+  register: proxmox_cloudflared_oob_credentials
+  no_log: true
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Deploy cloudflared-oob service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/services/cloudflared-oob.service.j2"
+    dest: /etc/systemd/system/cloudflared-oob.service
+    mode: "0644"
+  register: proxmox_cloudflared_oob_unit
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Remove legacy cloudflared-oob resolver drop-in
+  ansible.builtin.file:
+    path: /etc/systemd/system/cloudflared-oob.service.d/10-dns-resolvers.conf
+    state: absent
+  when: cloudflared_oob_enabled | default(false) | bool
+
+- name: Enable and restart cloudflared-oob service
+  ansible.builtin.systemd:
+    name: cloudflared-oob
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when:
+    - cloudflared_oob_enabled | default(false) | bool
+    - >-
+      proxmox_cloudflared_oob_unit.changed
+      or proxmox_cloudflared_oob_resolv.changed
+      or proxmox_cloudflared_oob_config.changed
+      or proxmox_cloudflared_oob_credentials.changed
+
+- name: Enable and restart mwan-ifmgr service
+  ansible.builtin.systemd:
+    name: mwan-ifmgr
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when:
+    - mwan_ifmgr_enabled | default(true) | bool
+    - proxmox_mwan_ifmgr_unit.changed
+
+- name: Deploy mwan-watchdog network topology config
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/config/mwan-network.toml.j2"
+    dest: /etc/mwan-watchdog/network.toml
+    mode: "0644"
+  register: proxmox_mwan_watchdog_topology
+  when: mwan_watchdog_enabled | default(true) | bool
+
+- name: Deploy mwan-watchdog service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/services/mwan-watchdog.service.j2"
+    dest: /etc/systemd/system/mwan-watchdog.service
+    mode: "0644"
+  register: proxmox_mwan_watchdog_unit
+  when: mwan_watchdog_enabled | default(true) | bool
+
+- name: Enable and restart mwan-watchdog service
+  ansible.builtin.systemd:
+    name: mwan-watchdog
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when:
+    - mwan_watchdog_enabled | default(true) | bool
+    - >-
+      proxmox_mwan_watchdog_unit.changed
+      or proxmox_mwan_watchdog_topology.changed

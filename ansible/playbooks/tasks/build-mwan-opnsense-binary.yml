@@ -1,0 +1,28 @@
+---
+# Build the mwan-opnsense FreeBSD binary on the controller via `make`.
+# Idempotent: the Makefile builds only when sources are newer than the
+# target. Designed to be import_tasks'd from deploy-opnsense.yml.
+
+- name: Build mwan-opnsense binary on controller
+  ansible.builtin.command:
+    cmd: make build-mwan-opnsense
+    chdir: "{{ repo_root }}/mwan/go"
+  delegate_to: localhost
+  run_once: true
+  register: build_mwan_opnsense
+  changed_when: "'go build' in build_mwan_opnsense.stdout"
+
+- name: Confirm mwan-opnsense binary exists
+  ansible.builtin.stat:
+    path: "{{ repo_root }}/mwan/go/bin/mwan-opnsense"
+  register: mwan_opnsense_binary_stat
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail if mwan-opnsense binary missing after build
+  ansible.builtin.fail:
+    msg: >-
+      Expected {{ repo_root }}/mwan/go/bin/mwan-opnsense after build, but
+      it does not exist. Run `cd mwan/go && make build-mwan-opnsense`
+      manually and inspect the output.
+  when: not mwan_opnsense_binary_stat.stat.exists

@@ -10,46 +10,20 @@
 # Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
-- name: Add MWAN to inventory
-  hosts: localhost
-  gather_facts: false
-  vars_files:
-    - ../inventory/group_vars/all/service_mapping.yml
-    - ../inventory/group_vars/mwan_servers.yml
-  tasks:
-    - name: Add MWAN VM to mwan_servers group
-      ansible.builtin.include_tasks: tasks/add-service-to-group.yml
-      vars:
-        service_name: mwan
-        service_vmid: "{{ mwan_vmid }}"
-        service_proxmox_node: "{{ mwan_proxmox_node }}"
-
-    - name: Add MWAN failover LXC to mwan_failover_servers group
-      ansible.builtin.include_tasks: tasks/add-service-to-group.yml
-      vars:
-        service_name: mwan-failover
-        service_vmid: "116"
-        service_proxmox_node: "vault"
+# MWAN VM membership in mwan_servers is provided by service_mapping.yml,
+# so no localhost add_host bootstrap is needed here. The MWAN failover LXC
+# lives in mwan_failover_servers and is configured by deploy-mwan-failover.yml.
 
 - name: Prepare MWAN VM (base packages, SSH keys, etc.)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
     target_hosts: mwan_servers
 
-- name: Prepare MWAN failover LXC (base packages, SSH keys, etc.)
-  ansible.builtin.import_playbook: prep-guests.yml
-  vars:
-    target_hosts: mwan-failover_servers
-
 - name: Configure MWAN VM
   hosts: mwan_servers
   become: false
   environment:
     DEBIAN_FRONTEND: noninteractive
-
-  vars_files:
-    - ../inventory/group_vars/mwan_servers.yml
-
   vars:
     mwan_config_dir: /etc/mwan
     repo_root: "{{ playbook_dir | dirname | dirname }}"
@@ -190,78 +164,16 @@
         mode: "0644"
 
     # ============================================================================
-    # WATCHDOG: Deploy auto-rollback monitor
+    # WATCHDOG: Proxmox-host watchdog config + binary deploy live in
+    # deploy-proxmox.yml / tasks/proxmox-host.yml. The MWAN VM only needs
+    # the binary built so the agent unit on the VM has something to copy.
     # ============================================================================
 
-    # NOTE: watchdog config now lives in /etc/mwan/config.toml (not in a
-    # separate env file). Secrets render via Ansible vault directly into
-    # the toml. The Go binary reads only the toml + a tiny set of optional
-    # env-var overrides. See proxmox/services/mwan-watchdog.service.j2.
-
-    - name: Deploy watchdog network topology config to Proxmox
-      delegate_to: vault
-      ansible.builtin.template:
-        src: "{{ repo_root }}/proxmox/config/mwan-network.toml.j2"
-        dest: /etc/mwan-watchdog/network.toml
-        mode: "0644"
-
-    - name: Build unified mwan Go binary (controller)
-      ansible.builtin.shell:
-        cmd: |
-          set -euo pipefail
-          cd "{{ repo_root }}/mwan/go"
-          commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
-          if git diff --quiet HEAD -- . 2>/dev/null; then
-            dirty=clean
-          else
-            dirty=dirty
-          fi
-          GOOS=linux GOARCH=amd64 go build -trimpath \
-            -ldflags="-X main.gitCommit=${commit} -X main.gitDirty=${dirty}" \
-            -o "{{ repo_root }}/mwan/go/mwan" \
-            ./cmd/mwan
-        executable: /bin/bash
-      delegate_to: localhost
-      environment:
-        HOME: "{{ ansible_env.HOME }}"
-      changed_when: true
-
-    - name: Remove legacy mwan-watchdog binary on Proxmox if present
-      delegate_to: vault
-      ansible.builtin.file:
-        path: /usr/local/bin/mwan-watchdog
-        state: absent
-
-    - name: Remove legacy mwan-agent binary on Proxmox if present
-      delegate_to: vault
-      ansible.builtin.file:
-        path: /usr/local/bin/mwan-agent
-        state: absent
-
-    - name: Deploy mwan binary to Proxmox
-      delegate_to: vault
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/mwan"
-        dest: /usr/local/bin/mwan
-        mode: "0755"
-
-    - name: Deploy mwan-watchdog service to Proxmox
-      delegate_to: vault
-      ansible.builtin.template:
-        src: "{{ repo_root }}/proxmox/services/mwan-watchdog.service.j2"
-        dest: /etc/systemd/system/{{ mwan_watchdog_service_name | default('mwan-watchdog') }}.service
-        mode: "0644"
-
-    - name: Enable and restart mwan-watchdog service on Proxmox
-      delegate_to: vault
-      ansible.builtin.systemd:
-        name: mwan-watchdog
-        enabled: true
-        state: restarted
-        daemon_reload: true
+    - name: Build unified mwan Go binary on controller
+      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
 
     # ============================================================================
-    # DEPLOY: MWAN configuration
+    # DEPLOY: MWAN configuration on the MWAN VM
     # ============================================================================
 
     - name: Install and configure cloudflared
@@ -307,7 +219,7 @@
       ansible.builtin.copy:
         dest: /etc/mwan/secrets.env
         content: |
-          SMTP2GO_API_KEY={{ mwan_smtp2go_api_key }}
+          SMTP2GO_API_KEY={{ vault_smtp2go_api_key }}
         owner: root
         group: root
         mode: "0640"
@@ -319,65 +231,8 @@
         dest: /etc/mwan/config.toml
         mode: "0600"
 
-    - name: Get VM network config from Proxmox
-      delegate_to: vault
-      ansible.builtin.command:
-        cmd: qm config {{ actual_vmid }}
-      register: vm_config
-      changed_when: false
-
-    - name: Parse virtio MAC addresses from VM config
-      delegate_to: localhost
-      ansible.builtin.set_fact:
-        mwan_net1_mac: >-
-          {{
-            vm_config.stdout_lines
-            | select('match', '^net1:.*virtio')
-            | first
-            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
-            | upper
-          }}
-        parsed_mwan_net2_mac: >-
-          {{
-            vm_config.stdout_lines
-            | select('match', '^net2:.*virtio')
-            | list
-            | first
-            | default('')
-            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
-            | upper
-          }}
-        mwan_net2_present: >-
-          {{
-            (vm_config.stdout_lines | select('match', '^net2:.*') | list | length) > 0
-          }}
-        vm_mgmt_mac: >-
-          {{
-            vm_config.stdout_lines
-            | select('match', '^net0:.*virtio')
-            | first
-            | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
-            | upper
-          }}
-
-    - name: Select Monkeybrains MAC (prefer inventory override)
-      delegate_to: localhost
-      ansible.builtin.set_fact:
-        mwan_mbrains_mac: >-
-          {{
-            ((mwan_mbrains_mac | default('')) | length > 0)
-            | ternary(mwan_mbrains_mac, parsed_mwan_net2_mac)
-          }}
-
-    - name: Ensure Monkeybrains NIC exists when enabled
-      ansible.builtin.fail:
-        msg: >-
-          Monkeybrains fallback is enabled, but no virtio net2 interface was found in Proxmox
-          config for VM {{ actual_vmid }}. Add net2 (virtio) attached to the Monkeybrains network
-          or disable mwan_health_checks.monkeybrains.enabled.
-      when:
-        - mwan_health_checks.monkeybrains.enabled | default(false)
-        - not mwan_net2_present
+    - name: Discover MWAN VM runtime network (MACs + NIC presence)
+      ansible.builtin.include_tasks: tasks/mwan-vm/discover-runtime-network.yml
 
     - name: Create configuration directories
       ansible.builtin.file:
@@ -401,7 +256,7 @@
 
     - name: Deploy mwan unified binary to MWAN VM
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/mwan"
+        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
         dest: /usr/local/bin/mwan
         mode: "0755"
 
@@ -963,152 +818,9 @@
         name: consul
         state: reloaded
 
-# ============================================================================
-# Configure MWAN failover LXC 116 (mwan-failover)
-# ----------------------------------------------------------------------------
-# Mirrors the MWAN VM build artifact (mwan/go/mwan) and ships:
-#   - mwan binary           /usr/local/bin/mwan
-#   - agent + ifmgr units   /etc/systemd/system/mwan-{agent,ifmgr}.service
-#   - /etc/network/interfaces (eth0 dhcp + eth1 static + IPv6 return route)
-#   - /etc/mwan/config.toml  (lxc-failover-backup role config)
+# The MWAN failover LXC is configured by deploy-mwan-failover.yml,
+# targeting mwan_failover_servers (prod) or mwan_failover_test_servers
+# (testbed).
 #
-# The container's eth1 is on mwanbr (BGP backup peer link to OPNsense),
-# eth0 is on mbrains (upstream-ISP iface that mwan-ifmgr monitors).
-# ============================================================================
-- name: Configure MWAN failover LXC
-  hosts: mwan-failover_servers
-  become: false
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-  vars_files:
-    - ../inventory/group_vars/mwan_servers.yml
-  vars:
-    repo_root: "{{ playbook_dir | dirname | dirname }}"
-    failover_iface: eth1
-
-  tasks:
-    - name: Build mwan binary (local) - skip if already built by MWAN VM play
-      ansible.builtin.shell: |
-        set -e
-        cd "{{ repo_root }}/mwan/go"
-        commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
-        if git diff --quiet HEAD -- . 2>/dev/null; then
-          dirty=clean
-        else
-          dirty=dirty
-        fi
-        GOOS=linux GOARCH=amd64 go build -trimpath \
-          -ldflags="-X main.gitCommit=${commit} -X main.gitDirty=${dirty}" \
-          -o "{{ repo_root }}/mwan/go/mwan" \
-          ./cmd/mwan
-      args:
-        executable: /bin/bash
-        creates: "{{ repo_root }}/mwan/go/mwan"
-      delegate_to: localhost
-      run_once: true
-      changed_when: false
-
-    - name: Ensure /etc/mwan exists
-      ansible.builtin.file:
-        path: /etc/mwan
-        state: directory
-        mode: "0755"
-
-    # See deploy-mwan.yml main play for the rationale on this file. The
-    # failover LXC config.toml has an [email] block but no smtp2go_api_key;
-    # systemd loads SMTP2GO_API_KEY from this file at unit start.
-    - name: Deploy MWAN secrets environment file (failover LXC)
-      ansible.builtin.copy:
-        dest: /etc/mwan/secrets.env
-        content: |
-          SMTP2GO_API_KEY={{ mwan_smtp2go_api_key }}
-        owner: root
-        group: root
-        mode: "0640"
-      no_log: true
-      notify:
-        - Restart mwan-agent
-        - Restart mwan-ifmgr
-
-    - name: Deploy mwan unified binary
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/mwan"
-        dest: /usr/local/bin/mwan
-        mode: "0755"
-      notify:
-        - Restart mwan-agent
-        - Restart mwan-ifmgr
-
-    - name: Deploy /etc/mwan/config.toml
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan-failover/config.toml.j2"
-        dest: /etc/mwan/config.toml
-        mode: "0640"
-      notify:
-        - Restart mwan-agent
-        - Restart mwan-ifmgr
-
-    - name: Deploy failover sysctl config
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan-failover/sysctl.conf"
-        dest: /etc/sysctl.d/99-mwan-failover.conf
-        mode: "0644"
-      notify:
-        - Reload sysctl
-
-    - name: Deploy /etc/network/interfaces
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan-failover/interfaces.j2"
-        dest: /etc/network/interfaces
-        mode: "0644"
-      # Intentionally no auto-restart of networking. Operator must reload
-      # manually to control timing (network restart bounces eth0 + eth1
-      # which can interrupt BGP and the ifmgr-managed iface).
-
-    - name: Deploy mwan-agent systemd unit
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
-        dest: /etc/systemd/system/mwan-agent.service
-        mode: "0644"
-      notify:
-        - Reload systemd
-        - Restart mwan-agent
-
-    - name: Deploy mwan-ifmgr systemd unit
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan-failover/mwan-ifmgr.service"
-        dest: /etc/systemd/system/mwan-ifmgr.service
-        mode: "0644"
-      notify:
-        - Reload systemd
-        - Restart mwan-ifmgr
-
-    - name: Enable mwan services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        enabled: true
-        daemon_reload: true
-      loop:
-        - mwan-agent
-        - mwan-ifmgr
-
-  handlers:
-    - name: Reload systemd
-      ansible.builtin.systemd:
-        daemon_reload: true
-
-    - name: Reload sysctl
-      ansible.builtin.command: sysctl --system
-      changed_when: false
-
-    - name: Restart mwan-agent
-      ansible.builtin.systemd:
-        name: mwan-agent
-        state: restarted
-        daemon_reload: true
-
-    - name: Restart mwan-ifmgr
-      ansible.builtin.systemd:
-        name: mwan-ifmgr
-        state: restarted
-        daemon_reload: true
+# Suburban-specific host work (VM 950 args, ISP LXCs, OPNsense host bridge)
+# lives in deploy-testbed.yml.

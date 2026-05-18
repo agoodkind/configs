@@ -1,0 +1,29 @@
+---
+# Configure both Proxmox hypervisors (vault and suburban).
+#
+# Targets the static `proxmox_servers` group from inventory/hosts, which
+# contains vault_servers and suburban_servers as children. Per-host vars
+# live in inventory/group_vars/vault_servers.yml and suburban_servers.yml,
+# auto-loaded by group_vars. Shared defaults live in proxmox_servers.yml.
+#
+# All task gating happens inside tasks/proxmox-host.yml via group_vars
+# feature flags (cloudflared_oob_enabled, mwan_ifmgr_enabled,
+# mwan_watchdog_enabled, proxmox_mwan_host_role_enabled) so this play body
+# stays branchless and depends only on group membership.
+#
+# Run examples:
+#   ansible-playbook playbooks/deploy-proxmox.yml --limit vault
+#   ansible-playbook playbooks/deploy-proxmox.yml --limit suburban
+#   ansible-playbook playbooks/deploy-proxmox.yml   # both hosts
+
+- name: Configure Proxmox hypervisor
+  hosts: proxmox_servers
+  gather_facts: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Configure Proxmox host services
+      ansible.builtin.import_tasks: tasks/proxmox-host.yml

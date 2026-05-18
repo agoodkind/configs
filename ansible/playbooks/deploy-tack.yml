@@ -6,12 +6,10 @@
 #
 # Usage:
 #   # Production
-#   ansible-playbook playbooks/deploy-tack.yml \
-#     -i inventory/proxmox.yml -i inventory/hosts -l tack_servers
+#   ansible-playbook playbooks/deploy-tack.yml -l tack_servers
 #
 #   # QA
-#   ansible-playbook playbooks/deploy-tack.yml \
-#     -i inventory/proxmox.yml -i inventory/hosts -l tack_qa_servers
+#   ansible-playbook playbooks/deploy-tack.yml -l tack_qa_servers
 
 - name: Prepare tack guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml

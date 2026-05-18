@@ -1,0 +1,25 @@
+---
+# Build the unified mwan Go binary on the Ansible controller via the
+# canonical `make build-linux` target. Output lands at
+# {{ repo_root }}/mwan/go/bin/mwan-linux, which every deploy task on a
+# Linux target reads as its `src:`.
+#
+# Imported by deploy-proxmox.yml, deploy-mwan.yml, and
+# deploy-mwan-failover.yml. The run_once: true semantics survive
+# multi-play runs so a single ansible-playbook invocation rebuilds at
+# most once.
+#
+# `make build-linux` depends on `check`, which fans out to vet, lint,
+# test, govulncheck, and staticcheck-extra. That is the acceptance gate
+# documented in mwan/go/Makefile and AGENTS.md. To force a fresh build,
+# remove mwan/go/bin/mwan-linux first; otherwise the `creates:`
+# short-circuit keeps re-runs cheap.
+
+- name: Build unified mwan Go binary (make build-linux)
+  delegate_to: localhost
+  run_once: true
+  ansible.builtin.command:
+    cmd: make build-linux
+    chdir: "{{ repo_root }}/mwan/go"
+    creates: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+  changed_when: false

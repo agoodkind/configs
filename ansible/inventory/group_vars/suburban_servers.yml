@@ -1,0 +1,61 @@
+---
+# Suburban hypervisor (Proxmox host) target vars.
+# Consumed by deploy-proxmox.yml when targeting `suburban` in `suburban_servers`.
+# Also consumed by deploy-testbed.yml for the suburban-only ISP LXC and
+# host-bridge work that has no production equivalent.
+# Shared defaults live in proxmox_servers.yml.
+
+# Consul agent settings
+consul_bind_interface: enmgmt0
+
+# Proxmox HTTP API host for `community.proxmox.proxmox_*` modules when
+# operating against suburban. IPv6 is preferred but currently unreachable
+# from this controller; the dynamic inventory plugin uses the same IPv4.
+proxmox_api_host: "10.240.0.148"
+
+# MWAN host-side identity. Used by config.toml.j2 to populate the
+# /etc/mwan/config.toml that suburban's `mwan ifmgr` and `mwan watchdog`
+# services read.
+mwan_config_hostname: "suburban-testbed"
+mwan_config_mgmt_addr: "3d06:bad:b01:200::950"
+
+# mwan-watchdog service on the host
+mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:200::950]:50052"
+mwan_watchdog_log_file: "/var/log/mwan-watchdog-testbed.log"
+mwan_watchdog_json_log_file: "/var/log/mwan-watchdog-testbed.jsonl"
+mwan_watchdog_state_file: "/run/mwan-rollback-testbed.state"
+mwan_watchdog_lock_file: "/run/mwan-watchdog-testbed-rollback.lock"
+mwan_watchdog_pve_token_id: "root@pam!watchdog-test2"
+mwan_watchdog_service_name: "mwan-watchdog-testbed"
+mwan_watchdog_unit_description: "MWAN Testbed Watchdog"
+
+# mwan-ifmgr service on the host
+mwan_ifmgr_role: "suburban-oob"
+mwan_ifmgr_iface_key: "enmbrains0"
+mwan_ifmgr_iface_name: "enmbrains0"
+mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
+mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
+
+# Cloudflared OOB stays off on suburban (no host OOB tunnel today).
+
+# Testbed-only: ISP LXCs simulating WANs. Consumed by deploy-testbed.yml
+# to provision the per-WAN LXCs on suburban. No production equivalent.
+testbed_isp_lxcs:
+  - id: 200
+    name: webpass
+    pd_prefix: "3d06:bad:b01:220::/60"
+    v4_subnet: "10.240.204.0/24"
+    vm950_ll: "fe80::be24:11ff:febe:8eb4"
+  - id: 201
+    name: att
+    pd_prefix: "3d06:bad:b01:230::/60"
+    v4_subnet: "10.240.205.0/24"
+    vm950_ll: "fe80::be24:11ff:fec0:d760"
+  - id: 202
+    name: mbrains
+    pd_prefix: "3d06:bad:b01:240::/60"
+    v4_subnet: "10.240.206.0/24"
+    vm950_ll: "fe80::be24:11ff:fe3d:cecc"
+
+# Testbed-only: testbed failover LXC id used by deploy-testbed.yml
+failover_lxc_id: "100"

@@ -4,14 +4,20 @@ ansible_user=root
 [local]
 localhost ansible_connection=local
 
-[proxmox_nodes]
-vault ansible_host=3d06:bad:b01::254 ansible_user=root consul_bind_interface=vmbr0
+# Proxmox hypervisor SSH targets.
+# These are real SSH hosts AND parents of LXC/VM guests. Each hypervisor
+# also has a matching ansible/inventory/proxmox-<name>.yml dynamic plugin
+# that discovers its guests as separate inventory hosts.
+[vault_servers]
+vault ansible_host=3d06:bad:b01::254 consul_bind_interface=vmbr0
 
-[plane_servers]
-plane.home.goodkind.io ansible_host=3d06:bad:b01::115
+# Suburban Proxmox host. IPv6 is preferred but currently unreachable from
+# this controller (3d06:bad:b01:200::1), so SSH uses IPv4 until that path
+# is fixed. See docs/infra/INFRA.md.
+[suburban_servers]
+suburban ansible_host=10.240.0.148
 
-[tack_servers]
-tack.home.goodkind.io ansible_host=3d06:bad:b01::117
-
-[tack_qa_servers]
-tack-qa ansible_host=3d06:bad:b01:200:1::117
+# Shared parent group for both hypervisors. deploy-proxmox.yml targets this.
+[proxmox_servers:children]
+vault_servers
+suburban_servers
