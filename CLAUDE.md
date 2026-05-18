@@ -3,8 +3,8 @@
 This is the infrastructure configuration repo for goodkind.io homelab.
 Read [AGENTS.md](AGENTS.md) for rules and general guidance.
 Read [docs/infra/INFRA.md](docs/infra/INFRA.md) for current topology and layout state.
-Read [.cursor/commands/deploy-playbook.md](.cursor/commands/deploy-playbook.md) for deploy rules.
-Read [.cursor/rules/ssh.mdc](.cursor/rules/ssh.mdc) for SSH access patterns.
+Read [.agents/skills/deploy-playbook/SKILL.md](.agents/skills/deploy-playbook/SKILL.md) for deploy rules.
+Read [AGENTS.md](AGENTS.md) for SSH access patterns.
 
 ## Running Ansible playbooks
 
@@ -69,4 +69,4 @@ For any production change to proxy, mwan, vault, or OPNsense:
 - `ssh proxy`: proxy CT 110, sshd on port 2222, routed via `~/.ssh/config`.
 - `ssh tack`: tack CT 117, `3d06:bad:b01::117`.
 - `ssh vault`: Proxmox host, `3d06:bad:b01::254`.
-- Full patterns live in [.cursor/rules/ssh.mdc](.cursor/rules/ssh.mdc).
+- Full patterns live in [AGENTS.md](AGENTS.md).

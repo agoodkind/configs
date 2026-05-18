@@ -79,10 +79,6 @@ terraform.tfvars
 
 .secrets.api-credentials
 
-# Claude Code runtime state
-.claude/clotilde/
-.claude/clyde/
-
 # Binary artifacts
 /mwan-binary
 /bin/

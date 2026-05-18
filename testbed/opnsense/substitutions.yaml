@@ -14,9 +14,9 @@
 #   * `mwan/config/config.toml.j2` for OOB and prefix conventions.
 #   * `testbed/opnsense-101/config.xml` for the existing testbed
 #     OPNsense addressing baseline.
-#   * Redacted prod artifact at
-#     `/Users/agoodkind/Sites/configs/.claude/worktrees/mwan-redact-opnsense-config/tmp/opnsense-prod-config.redacted.xml`
-#     for the shape of the prod literals being rewritten.
+#   * A redacted prod artifact used during MWAN-150 development for the
+#     shape of the prod literals being rewritten. The artifact is not retained
+#     in this repo.
 #
 # Important asymmetry called out: prod and testbed share the WAN-side
 # IPv4 subnet `10.250.250.0/29` (the link between OPNsense and the mwan

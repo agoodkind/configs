@@ -1,1 +1,0 @@
-../../.cursor/commands/deploy-playbook.md

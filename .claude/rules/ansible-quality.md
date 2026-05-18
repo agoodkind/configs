@@ -1,1 +1,0 @@
-../../.cursor/rules/ansible-quality.mdc
