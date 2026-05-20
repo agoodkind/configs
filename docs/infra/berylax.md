@@ -6,7 +6,7 @@ Berylax is indefinitely offline for now. Treat the berylax USB-serial OOB path,
 the `home-berylax` Cloudflare tunnel, and the `3d06:bad:b01:300::/64` WARP route
 as unavailable until a fresh live check says otherwise.
 
-Broader infrastructure state lives in [docs/infra/INFRA.md](infra/INFRA.md).
+Broader infrastructure state lives in [overview.md](overview.md).
 
 ## Historical host notes
 

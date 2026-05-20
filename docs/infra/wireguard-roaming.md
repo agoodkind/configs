@@ -133,7 +133,7 @@ Cons: requires manual intervention. The whole point of WG is "set and forget."
 
 ## Implementation note for bidirectional wghealth
 
-Today's `wg_health` (`mwan/go/internal/ifmgr/modules/wghealth/`) polls OPNsense  
+Today's `wg_health` ([mwan/go/internal/ifmgr/modules/wghealth/](../../mwan/go/internal/ifmgr/modules/wghealth/)) polls OPNsense  
 via SSH only. The module doc explicitly defers bidirectional cross-check (Hallucination? Citation needed?).
 
 Two paths to add the suburban side:
@@ -148,8 +148,8 @@ SSH targets. Vault daemon polls both OPNsense (working) and suburban
 over root SSH. `wg` is only readable via root or the `wg-quick` group.
 Single daemon does the cross-check natively.
 
-Local-exec is cleaner for ops. Each box owns its own observation and ships  
-logs centrally. But it requires running mwan-ifmgr on suburban. SSH-list is  
+Local-exec is cleaner for ops. Each box owns its own observation and ships
+logs centrally. But it requires running mwan-ifmgr on suburban. SSH-list is
 zero-touch on suburban but needs key and permission work (hallucination? what is key and permission work).
 
 Tracked: MWAN-80.

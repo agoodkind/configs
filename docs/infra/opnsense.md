@@ -1,51 +1,62 @@
-# OPNsense Network Topology
+# Production OPNsense State
 
-OPNsense is QEMU VM 101 on vault, not the WAN edge. All WAN traffic flows through the MWAN VM.
+This file records the current production OPNsense role and topology. It is a
+state document, not the architectural source of truth for MWAN behavior. For
+steady-state BGP and operational foot-guns, use
+[../opnsense/operational-notes.md](../opnsense/operational-notes.md). For the
+current testbed baseline and import workflow, use
+[../opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md) and
+[../opnsense/testbed-config-import.md](../opnsense/testbed-config-import.md).
 
-**Interfaces:**
+## Role
 
-| Interface          | Role                             | IPv4                               | IPv6                                                           |
-| ------------------ | -------------------------------- | ---------------------------------- | -------------------------------------------------------------- |
-| `vtnet0` LAN       | Management LAN (containers)      | `10.250.0.1/24`                    | `3d06:bad:b01::1/64`                                           |
-| `vtnet1` WAN       | Uplink to MWAN VM                | `10.250.250.2/29`                  | `3d06:bad:b01:fe::2/64`                                        |
-| `iavf0`            | IoT / UniFi management           | `10.250.4.1/24`                    | `3d06:bad:b01:4::1/64`                                         |
-| `vlan0100`         | Physical devices (mini, NAS)     | `10.250.1.1/24`                    | `3d06:bad:b01:1::1/64`                                         |
-| `vlan0200`         | Home automation (Home Assistant) | `10.250.2.1/24`                    | `3d06:bad:b01:2::1/64`                                         |
-| `vlan0300` CAPTIVE | Guest / captive portal           | `10.250.3.1/24`                    | None (intentionally absent)                                    |
-| `wg0`              | WireGuard hub                    | `10.250.10.1/24`, `10.240.10.2/24` | `3d06:bad:b01:10::1/64`, `3d06:bad:b01:a::1/64`                |
-| `nat64`            | Tayga NAT64                      | `10.250.46.1 -> 10.250.64.1`       | `3d06:bad:b01:64::ffff:1/128`; prefix `3d06:bad:b01:6464::/96` |
+Production OPNsense runs as QEMU VM `101` on `vault`. It is the LAN router and
+services edge, but it is not the WAN edge. All upstream Internet traffic flows
+through the production MWAN VM, and OPNsense treats that VM as its upstream for
+both IPv4 and IPv6.
 
-**Default routes:** IPv4 via `10.250.250.1` on `vtnet1`. IPv6 via `fe80::be24:11ff:fe72:c1` on `vtnet1`. OPNsense delegates all upstream routing to the MWAN VM.
+## Interfaces
 
-**Internal prefix:** All internal addresses use `3d06:bad:b01::/48`. This is a stable internal prefix that is NOT delegated by any ISP. It is treated as ULA-equivalent but GUA-shaped so clients prefer IPv6. The mwan VM performs NPT to map this to ISP-delegated prefixes for outbound reachability.
+| Interface | Role | IPv4 | IPv6 |
+| --------- | ---- | ---- | ---- |
+| `vtnet0` | Management LAN for containers and core services | `10.250.0.1/24` | `3d06:bad:b01::1/64` |
+| `vtnet1` | Uplink toward the MWAN VM | `10.250.250.2/29` | `3d06:bad:b01:fe::2/64` |
+| `iavf0` | IoT and UniFi management | `10.250.4.1/24` | `3d06:bad:b01:4::1/64` |
+| `vlan0100` | Physical devices such as `mini` and `nas` | `10.250.1.1/24` | `3d06:bad:b01:1::1/64` |
+| `vlan0200` | Home automation segment | `10.250.2.1/24` | `3d06:bad:b01:2::1/64` |
+| `vlan0300` | Guest and captive-portal segment | `10.250.3.1/24` | None by design |
+| `wg0` | WireGuard hub | `10.250.10.1/24`, `10.240.10.2/24` | `3d06:bad:b01:10::1/64`, `3d06:bad:b01:a::1/64` |
+| `nat64` | Tayga NAT64 | `10.250.46.1`, translated toward `10.250.64.1` | `3d06:bad:b01:64::ffff:1/128`, prefix `3d06:bad:b01:6464::/96` |
 
-**NPT mapping (provider `/56`, granted 2025-10-08):**
+## Upstream routing
 
-| Internal (`3d06:bad:b01:x::/64`) | External provider prefix (dynamic) | Segment                 |
-| -------------------------------- | ---------------------------------- | ----------------------- |
-| `3d06:bad:b01::/64`              | dynamic (not recorded)             | vmnet / management      |
-| `3d06:bad:b01:1::/64`            | dynamic (not recorded)             | priv (mini, NAS)        |
-| `3d06:bad:b01:2::/64`            | dynamic (not recorded)             | guest / home automation |
-| `3d06:bad:b01:64::/64`           | dynamic (not recorded)             | v6-only experiment      |
+The default IPv4 route points at `10.250.250.1` on `vtnet1`. The default IPv6
+route points at the MWAN-side link-local next hop on `vtnet1`. OPNsense does
+not hold the WAN uplinks directly, so outbound failover and delegated-prefix
+handling happen on MWAN, not on OPNsense.
 
-AT&T PD `/60`: not recorded (provider-provided, verify live). AT&T IPv4 is `dynamic`.
+The internal IPv6 space remains `3d06:bad:b01::/48`. The repo treats that block
+as the stable internal prefix, and the MWAN VM applies NPT to map internal
+segments onto provider-delegated space for outbound reachability.
 
-**WireGuard peers (five configured):**
+## Services anchored here
 
-| Peer         | Tunnel address                              | Handshake status                                                       |
-| ------------ | ------------------------------------------- | ---------------------------------------------------------------------- |
-| alexs-mba    | `10.250.10.8`, `::10::8`                    | Active                                                                 |
-| alexs-iphone | `10.250.10.4`, `::10::4`                    | Active (periodic)                                                      |
-| suburban     | `10.250.10.2`, `::10::240`, plus NJ subnets | Healthy (verified live 2026-04-08).                                     |
-| berylax      | `10.250.10.6`, `::10::6`                    | Never connected (no WireGuard installed on device)                     |
-| alexs-mbp    | `10.250.10.3`, `::10::3`                    | Never connected                                                        |
+OPNsense still owns Unbound, DHCP, WireGuard, and the LAN-facing interface
+address plan.
 
-**KEA DHCP reservations of note:** `mini` at `10.250.1.2` / `3d06:bad:b01:1::2`; `nas` at `3d06:bad:b01:1::3` (OPNsense alias updated 2026-03-23); `home-assistant` at `10.250.2.3` / `3d06:bad:b01:2::3`.
+Notable current DHCP and DNS state:
 
-**DNS:** Unbound, forwarding to NextDNS. Private domains include `home.goodkind.io`, `goodkind.io`, `wg.goodkind.io`.
+- `mini` is reserved at `10.250.1.2` and `3d06:bad:b01:1::2`.
+- `nas` is reserved at `3d06:bad:b01:1::3`, and the `nas_host` alias follows
+  that address.
+- `home-assistant` is reserved at `10.250.2.3` and `3d06:bad:b01:2::3`.
+- Unbound forwards upstream queries to NextDNS.
 
-## Known Failed Systemd Units
+## WireGuard peers
 
-- `proxmox-regenerate-snakeoil.service`: fails on consul (106) and mc (109). Expected; these containers already have real certs.
-- `scripts-updater.service`: fails on consul (106), mc (109), adguard (112), dns64 (103), grommunio (104). Likely missing deploy key for the scripts repo or stale repo URL.
-- `motd-news.service`: fails on ansible (107) and adguard (112). Ubuntu MOTD fetcher fails in IPv6-only containers.
+The current configured peers are `alexs-mba`, `alexs-iphone`, `suburban`,
+`berylax`, and `alexs-mbp`.
+
+`suburban` is the meaningful infrastructure peer. The laptop and phone peers
+are client access paths. `berylax` remains offline, so its peer config is only
+historical state.

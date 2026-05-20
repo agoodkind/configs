@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 # Deploy Ansible Playbook
 
-Run locally from the `ansible/` directory. The vault password file at
+Run locally from [ansible/](../../../ansible/). The vault password file at
 `~/.config/ansible/vault.pass` is required.
 
 ## Canonical Playbooks
@@ -20,16 +20,16 @@ flags.
 
 | Playbook | Target group | Owns |
 | --- | --- | --- |
-| `deploy-proxmox.yml` | `proxmox_servers` | mwan-ifmgr, mwan-watchdog, cloudflared-oob, package-updater on hypervisors |
-| `deploy-mwan.yml` | `mwan_servers` | MWAN VM, prod VM 113 on vault |
-| `deploy-mwan-failover.yml` | `mwan_failover_servers` or `mwan_failover_test_servers` | MWAN failover LXC |
-| `deploy-opnsense.yml` | `opnsense_servers` or `opnsense_test_servers` | mwan-opnsense daemon on OPNsense host |
-| `deploy-testbed.yml` | `suburban_servers` | Suburban-only extras, including `qm args`, ISP LXCs, host bridge, and VFIO |
+| [ansible/playbooks/deploy-proxmox.yml](../../../ansible/playbooks/deploy-proxmox.yml) | `proxmox_servers` | mwan-ifmgr, mwan-watchdog, cloudflared-oob, package-updater on hypervisors |
+| [ansible/playbooks/deploy-mwan.yml](../../../ansible/playbooks/deploy-mwan.yml) | `mwan_servers` | MWAN VM, prod VM 113 on vault |
+| [ansible/playbooks/deploy-mwan-failover.yml](../../../ansible/playbooks/deploy-mwan-failover.yml) | `mwan_failover_servers` or `mwan_failover_test_servers` | MWAN failover LXC |
+| [ansible/playbooks/deploy-opnsense.yml](../../../ansible/playbooks/deploy-opnsense.yml) | `opnsense_servers` or `opnsense_test_servers` | mwan-opnsense daemon on OPNsense host |
+| [ansible/playbooks/deploy-testbed.yml](../../../ansible/playbooks/deploy-testbed.yml) | `suburban_servers` | Suburban-only extras, including `qm args`, ISP LXCs, host bridge, and VFIO |
 
 ## Direct Invocation Pattern
 
 Use this pattern from the agent terminal so `ansible.cfg` and dynamic inventory
-resolve from the `ansible/` directory:
+resolve from [ansible/](../../../ansible/):
 
 ```bash
 bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml --limit vault"
@@ -63,7 +63,7 @@ bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-p
 
 ## Rake Shortcuts
 
-The `Rakefile` in `ansible/` wraps the same invocations:
+The [ansible/Rakefile](../../../ansible/Rakefile) wraps the same invocations:
 
 ```bash
 rake help
@@ -75,7 +75,7 @@ rake inventory
 
 ## Notes
 
-- The command must run from `ansible/`, where `ansible.cfg` lives.
+- The command must run from [ansible/](../../../ansible/), where `ansible.cfg` lives.
 - The vault password file is `~/.config/ansible/vault.pass`.
 - For a single deploy of a non-MWAN service, such as proxy, adguard, ddns, or
   tack, use the matching `deploy-<service>.yml` directly with the same vault

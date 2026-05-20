@@ -7,9 +7,9 @@
 # Also removes the legacy ddclient setup.
 #
 # Usage:
-#   cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook \
+#   bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook \
 #     --vault-password-file ~/.config/ansible/vault.pass \
-#     playbooks/deploy-ddns.yml
+#     playbooks/deploy-ddns.yml"
 # ============================================================================
 
 - name: Add ddns hosts to inventory

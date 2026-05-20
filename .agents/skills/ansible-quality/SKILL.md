@@ -25,7 +25,7 @@ When a variable is missing or a validation fails, investigate **why** before add
   1. **Trace the variable source**: Is it from inventory, `set_fact`, `register`, or hostvars?
   2. **Check variable naming**: Proxmox plugin provides `proxmox_type`, not `proxmox_vmtype`. Dynamic inventories have specific variable names.
   3. **Check play/task ordering**: Variables set in one play are not automatically available in another without `hostvars`.
-  4. **Check inventory composition**: Does the relevant Proxmox plugin file (`vault.proxmox.yml` or `suburban.proxmox.yml`) compose the variable you expect? For example, `ansible_proxmox_vmid: proxmox_vmid`.
+  4. **Check inventory composition**: Does the relevant Proxmox plugin file ([ansible/inventory/vault.proxmox.yml](../../../ansible/inventory/vault.proxmox.yml) or [ansible/inventory/suburban.proxmox.yml](../../../ansible/inventory/suburban.proxmox.yml)) compose the variable you expect? For example, `ansible_proxmox_vmid: proxmox_vmid`.
 - **Example**:
 
 ```yaml
@@ -48,7 +48,8 @@ type: "{{ proxmox_vmtype | default('lxc') }}"
 
 # GOOD - fix at the source
 # If proxmox_vmtype is missing, add it to the per-hypervisor Proxmox
-# plugin file composition (vault.proxmox.yml or suburban.proxmox.yml):
+# plugin file composition ([ansible/inventory/vault.proxmox.yml](../../../ansible/inventory/vault.proxmox.yml)
+# or [ansible/inventory/suburban.proxmox.yml](../../../ansible/inventory/suburban.proxmox.yml)):
 #   compose:
 #     proxmox_vmtype: proxmox_type
 ```

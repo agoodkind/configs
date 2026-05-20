@@ -24,14 +24,15 @@ for the source-level walk-through.
 
 Tofu therefore cannot set `args` via the bpg/proxmox provider when the
 suburban provider alias authenticates with an API token. The
-`opentofu/vms.tf` resource for VM 950 omits `kvm_arguments` for that
-reason. The bpg/proxmox provider leaves undeclared fields alone, so
-`tofu plan` does not flag drift on the live `args` string.
+[opentofu/vms.tf](../../opentofu/vms.tf) resource for VM 950 omits
+`kvm_arguments` for that reason. The bpg/proxmox provider leaves undeclared
+fields alone, so `tofu plan` does not flag drift on the live `args` string.
 
 ## How Ansible owns this field
 
-The Ansible playbook `ansible/playbooks/deploy-testbed.yml` carries
-an idempotent `qm set` task in the `Configure suburban testbed extras` play.
+The Ansible playbook [ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml)
+carries an idempotent `qm set` task in the `Configure suburban testbed extras`
+play.
 The task only runs `qm set` when the live `args` does not already match
 the target string. Look for the task tagged `args` named
 `Set vsock device on VM 950 args (MWAN-143)`.

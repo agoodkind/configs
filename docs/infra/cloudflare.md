@@ -20,11 +20,12 @@ Zone `goodkind.io` is on the Pro plan, SSL mode strict, TLS 1.3 0-RTT, HTTP/3 on
 | `suburban-mom`        | `2267fc65`  | suburban (mom)    | Catch-all 404 only                                                                                                                                                                                                                                                   |
 
 Notes on tunnel deployment: `home-proxy` and `home-mwan` are deployed via Ansible
-(`install-cloudflared.yml` tasks, token-based). Both run with `--edge-ip-version 6`.
+([ansible/playbooks/tasks/install-cloudflared.yml](../../ansible/playbooks/tasks/install-cloudflared.yml)
+tasks, token-based). Both run with `--edge-ip-version 6`.
 The `home-mini`, `home-nas`, and `home-vault` connectors are not deployed via
 the Ansible playbooks in this repo; they appear to be standalone installs on those hosts.
 The `home-berylax` connector is indefinitely offline for now. Historical berylax
-routing state lives in [docs/BERYLAX.md](../BERYLAX.md).
+routing state lives in [berylax.md](berylax.md).
 Tunnel tokens are stored in Ansible Vault (`vault_cloudflared_tunnel_token`) for the proxy and
 on the Semaphore controller (`/var/lib/semaphore/tokens/mwan/cloudflared/token`) for mwan.
 

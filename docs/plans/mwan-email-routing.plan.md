@@ -9,7 +9,7 @@ out inline.
 
 ## Why
 
-Email currently leaks out of three independent surfaces in `mwan/go`. Two of them
+Email currently leaks out of three independent surfaces in [mwan/go/](../../mwan/go/). Two of them
 bypass the per-(kind, key) state-change suppression that the ifmgr `AlertManager`
 implements. The result on testbed is an every-five-minutes flurry of `vsock unavailable`,
 `ops transport failed`, and `read deploy file` emails that obscures real signals. The
@@ -72,8 +72,8 @@ land with the implementing slice; if a slice diverges, that slice is the source 
 ## Config
 
 Two TOML blocks govern routing. The non-secret fields live in `/etc/mwan/config.toml`
-(rendered by Ansible from `mwan/config/config.toml.j2` or
-`mwan-failover/config.toml.j2`). The SMTP2GO API key is injected at runtime via a
+(rendered by Ansible from [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) or
+[mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2)). The SMTP2GO API key is injected at runtime via a
 systemd `EnvironmentFile`.
 
 `[email]` block, today and after MWAN-132:
@@ -110,7 +110,7 @@ Env-var injection contract (MWAN-131, first instance in MWAN-132 slice F):
 - `internal/config/config.go:332` already reads `SMTP2GO_API_KEY` from the environment
   when the toml field is empty, so no code change is needed for the env-var read path.
 - Result: lxc-116 and lxc-100 render non-secret email fields from
-  `mwan-failover/config.toml.j2`. The secret stays out of the toml.
+  [mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2). The secret stays out of the toml.
 
 ## Failure modes
 
@@ -146,4 +146,5 @@ through the same path as the rest.
 - Parent ticket: MWAN-132.
 - Env-var injection standard: MWAN-131.
 - Existing state-machine source (carved into `notify` in slice A):
-  `mwan/go/internal/ifmgr/alerts.go` and `alerts_test.go`.
+  [mwan/go/internal/ifmgr/alerts.go](../../mwan/go/internal/ifmgr/alerts.go) and
+  [mwan/go/internal/ifmgr/alerts_test.go](../../mwan/go/internal/ifmgr/alerts_test.go).

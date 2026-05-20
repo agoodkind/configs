@@ -9,10 +9,10 @@ The bpg/proxmox provider import IDs follow these formats:
 
 * `proxmox_virtual_environment_network_linux_bridge`: `<node_name>:<iface>`
   (documented at
-  https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_network_linux_bridge)
+  [Terraform Registry: virtual_environment_network_linux_bridge](https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_network_linux_bridge))
 * `proxmox_virtual_environment_vm`: `<node_name>/<vm_id>`
   (documented at
-  https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_vm)
+  [Terraform Registry: virtual_environment_vm](https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_vm))
 
 The suburban node name is `hypervisor`.
 
@@ -20,16 +20,16 @@ The suburban node name is `hypervisor`.
 
 1. `terraform.tfvars` populated with both Proxmox API tokens
    (`proxmox_api_token` for vault, `suburban_proxmox_api_token` for
-   suburban). The example file at `terraform.tfvars.example` lists the
+   suburban). The example file at [opentofu/terraform.tfvars.example](./terraform.tfvars.example) lists the
    fields. Real token values come from the Ansible vault, never the repo.
 2. `tofu init` against the Consul backend at `[3d06:bad:b01::106]:8500`.
    Operators only run init the first time after the suburban provider
-   alias is added to `providers.tf`; subsequent runs reuse the cached
+   alias is added to [opentofu/providers.tf](./providers.tf); subsequent runs reuse the cached
    plugins.
 3. Live verification of the resources before import. The expected shape
    on suburban as of 2026-05-07:
 
-   ```
+   ```bash
    ssh suburban 'qm config 950 | grep -E "args|net|cores|memory|machine"'
    ssh suburban 'ip -br link | grep vmbrtrunk'
    ```
@@ -42,7 +42,7 @@ The suburban node name is `hypervisor`.
 
 ## Import commands
 
-Run from `opentofu/` in the worktree (or from repo root after merge):
+Run from [opentofu/](./) in the worktree (or from repo root after merge):
 
 ```bash
 # MWAN-63: trunk bridge.
@@ -85,7 +85,7 @@ provider import IDs follow the same `<node_name>/<vm_id>` shape for both
 containers and VMs (the container resource accepts the same separator the
 VM resource uses).
 
-Run from `opentofu/` in the worktree (or from repo root after merge):
+Run from [opentofu/](./) in the worktree (or from repo root after merge):
 
 ```bash
 # MWAN-62: suburban testbed LXCs.

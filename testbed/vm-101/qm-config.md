@@ -21,14 +21,15 @@ fails because the token's authuser is `root@pam!<tokenname>`, not bare
 `root@pam`.
 
 The bpg/proxmox provider therefore omits `kvm_arguments` from
-`opentofu/vms.tf` and ownership lives in Ansible. The provider leaves
-undeclared fields alone, so `tofu plan` does not flag drift on the live
-`args` string.
+[opentofu/vms.tf](../../opentofu/vms.tf) and ownership lives in Ansible. The
+provider leaves undeclared fields alone, so `tofu plan` does not flag drift on
+the live `args` string.
 
 ## How Ansible owns this field
 
-The Ansible playbook `ansible/playbooks/deploy-testbed.yml` carries
-an idempotent `qm set` task in the `Configure suburban testbed extras` play.
+The Ansible playbook [ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml)
+carries an idempotent `qm set` task in the `Configure suburban testbed extras`
+play.
 The task only runs `qm set` when the live `args` does not already match
 the target string. Look for the task tagged `args` named
 `Set mwanrpc chardev on VM 101 args`.
@@ -68,6 +69,7 @@ ssh suburban 'ls -l /var/run/qemu-server/101.mwanrpc'
 
 The host-side mwan-opnsense bridge daemon reads
 `/etc/mwan/config.toml` `[opnsense.host].upstream` to find this socket.
-The deploy task in `ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml`
+The deploy task in
+[ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml](../../ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml)
 sets `mwan_opnsense_host_vmid=101` so the rendered upstream is
 `unix:///var/run/qemu-server/101.mwanrpc`.

@@ -16,7 +16,8 @@ Not yet Ansible-managed. The live configs are manual and not in git.
 
 ## Credentials
 
-NUT credentials should move to `ansible/inventory/group_vars/all/vault.yml`
+NUT credentials should move to
+[ansible/inventory/group_vars/all/vault.yml](../ansible/inventory/group_vars/all/vault.yml)
 when a deploy playbook is added.
 
 ## Remaining work
