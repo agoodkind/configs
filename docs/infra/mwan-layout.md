@@ -13,7 +13,7 @@ host's `/etc/mwan/config.toml`.
 | suburban, the New Jersey Proxmox testbed host | Linux/amd64 | `mwan ifmgr`, `mwan opnsense host serve`, `mwan watchdog` | `mwan-ifmgr.service`, `mwan-opnsense-host.service`, `mwan-watchdog-testbed.service` | [mwan/go/cmd/mwan/mwan-ifmgr.service](../../mwan/go/cmd/mwan/mwan-ifmgr.service), [mwan/go/cmd/mwan/mwan-opnsense-host.service](../../mwan/go/cmd/mwan/mwan-opnsense-host.service); watchdog-testbed unit lives only on host | [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | `suburban-wg` | 950 | `suburban` SSH alias |
 | testbed VM 950 on suburban | Linux/amd64 | `mwan agent` | `mwan-agent.service` | [mwan/go/cmd/mwan/mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service) | [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | agent host | 950 | `3d06:bad:b01:200::950` through suburban |
 | testbed LXC 100 on suburban | Linux/amd64 | `mwan agent`, `mwan ifmgr` | `mwan-agent.service`, `mwan-ifmgr.service` | [mwan/go/cmd/mwan/mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service), [mwan-failover/mwan-ifmgr.service](../../mwan-failover/mwan-ifmgr.service) | [mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2) | `lxc-failover-backup` | 100 | reachable from suburban with `pct exec 100` |
-| testbed LXCs 200, 201, 202, and 203 on suburban | Linux/amd64 | none | none | none | none | ISP simulators and proxy | n/a | reachable from suburban with `pct exec` |
+| testbed LXCs 200, 201, and 202 on suburban | Linux/amd64 | none | none | none | none | ISP simulators | n/a | reachable from suburban with `pct exec` |
 | tack LXC 117 on vault | Linux/amd64 | none | none | none | none | unrelated service container | 117 | `tack` SSH alias |
 
 Current tracked layout after the MWAN cleanup:
@@ -35,7 +35,7 @@ OpenTofu variable cleanup is reflected in
 [opentofu/terraform.tfvars.example](../../opentofu/terraform.tfvars.example),
 where the suburban Proxmox API token is represented as a variable and an
 example placeholder rather than a plaintext secret. Preserve unrelated edits in
-[opentofu/containers.tf](../../opentofu/containers.tf) unless the operator asks
+[opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf) unless the operator asks
 for a separate OpenTofu cleanup.
 
 Manual MWAN binary rollout remains testbed-first, then production. The order is

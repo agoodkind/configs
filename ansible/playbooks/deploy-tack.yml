@@ -1,7 +1,7 @@
 ---
 # Deploy the Tack Compose stack on any host in tack_servers or tack_qa_servers.
-# Container creation is handled by OpenTofu (opentofu/containers.tf for
-# production; opentofu/tack_qa.tf for QA). This playbook runs after the LXC
+# Container creation is handled by OpenTofu (opentofu/vault/ for
+# production; opentofu/suburban/ for QA). This playbook runs after the LXC
 # is provisioned and reachable via SSH.
 #
 # Usage:

@@ -24,6 +24,7 @@
     mode: "0755"
   become: true
   register: mwan_opnsense_host_binary
+  notify: Restart mwan-opnsense-host
 
 - name: Install systemd unit
   ansible.builtin.copy:
@@ -35,6 +36,7 @@
     mode: "0644"
   become: true
   register: mwan_opnsense_host_unit
+  notify: Restart mwan-opnsense-host
 
 - name: Ensure /etc/mwan exists
   ansible.builtin.file:
@@ -64,27 +66,12 @@
       heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout | default('10s') }}"
   become: true
   register: mwan_opnsense_host_toml
-
-- name: Reload systemd if anything changed
-  ansible.builtin.systemd:
-    daemon_reload: true
-  become: true
-  when: >-
-    mwan_opnsense_host_unit.changed
+  notify: Restart mwan-opnsense-host
 
 - name: Enable and start mwan-opnsense-host
   ansible.builtin.systemd:
     name: mwan-opnsense-host
     enabled: true
     state: started
+    daemon_reload: true
   become: true
-
-- name: Restart mwan-opnsense-host if binary, unit, or TOML changed
-  ansible.builtin.systemd:
-    name: mwan-opnsense-host
-    state: restarted
-  become: true
-  when: >-
-    mwan_opnsense_host_binary.changed
-    or mwan_opnsense_host_unit.changed
-    or mwan_opnsense_host_toml.changed

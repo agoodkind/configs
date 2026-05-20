@@ -1,0 +1,13 @@
+{{ ansible_managed | comment }}
+# cloudflare-dynamic-dns IPv4 config for suburban
+# Rendered by ansible/playbooks/deploy-testbed.yml
+
+stack: ipv4
+ipcmd: curl -fsSL {{ vault_nextdns_link_ip_url }}
+token: {{ vault_cloudflare_api_token }}
+domains:
+{% for domain in suburban_ddns_ipv4_domains %}
+  - {{ domain }}
+{% endfor %}
+ttl: {{ suburban_ddns_ttl }}
+log-level: info

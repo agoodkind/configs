@@ -3,8 +3,8 @@
 Suburban is the NJ Proxmox hypervisor. The testbed mirrors production MWAN
 using the same Ansible templates with different group vars
 ([test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml)).
-Live container definitions live in
-[opentofu/containers.tf](../../opentofu/containers.tf); treat that file as
+Live suburban definitions live in
+[opentofu/suburban/](../../opentofu/suburban/); treat that module as
 ground truth and update this page when it changes.
 
 ## Bridges
@@ -14,7 +14,6 @@ ground truth and update this page when it changes.
 | vmbr0  | Comcast uplink             | Suburban-managed management plus outbound NAT    |
 | vmbr1  | VM management              | Suburban's testbed management subnet             |
 | vmbr2  | MWAN internal (OPNsense)   | `10.250.250.0/29` and `3d06:bad:b01:fe::/64` (testbed-side) |
-| vmbr3  | OPNsense LAN               | bare L2, shared by `testbed-proxy` LAN client    |
 | vmbr4  | Simulated Webpass ISP      | bare L2                                          |
 | vmbr5  | Simulated AT&T ISP         | bare L2                                          |
 | vmbr6  | Simulated Monkeybrains ISP | bare L2 plus failover-test eth0                  |
@@ -22,7 +21,9 @@ ground truth and update this page when it changes.
 ## Guests
 
 OpenTofu owns every suburban guest below. Cross-check VMID, type, and bridges
-against [opentofu/containers.tf](../../opentofu/containers.tf) when in doubt.
+against [opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf),
+[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf), and
+[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf) when in doubt.
 
 | VMID | Name               | Type | Role                                                  |
 | ---- | ------------------ | ---- | ----------------------------------------------------- |
@@ -32,7 +33,6 @@ against [opentofu/containers.tf](../../opentofu/containers.tf) when in doubt.
 | 200  | isp-webpass        | LXC  | Simulated Webpass ISP                                 |
 | 201  | isp-att            | LXC  | Simulated AT&T ISP                                    |
 | 202  | isp-mbrains        | LXC  | Simulated Monkeybrains ISP                            |
-| 203  | testbed-proxy      | LXC  | LAN-side OPNsense client used during cutover testing  |
 
 Authoritative connection addresses for the OPNsense testbed are documented in
 [docs/opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md). Other

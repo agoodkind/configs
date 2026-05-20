@@ -1,4 +1,4 @@
-proxmox_network_linux_bridge.trunk: Refreshing state... [id=hypervisor:vmbrtrunk]
+module.suburban.proxmox_network_linux_bridge.trunk: Refreshing state... [id=hypervisor:vmbrtrunk]
 
 No changes. Your infrastructure matches the configuration.
 

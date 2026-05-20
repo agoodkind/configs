@@ -21,7 +21,7 @@ fails because the token's authuser is `root@pam!<tokenname>`, not bare
 `root@pam`.
 
 The bpg/proxmox provider therefore omits `kvm_arguments` from
-[opentofu/vms.tf](../../opentofu/vms.tf) and ownership lives in Ansible. The
+[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) and ownership lives in Ansible. The
 provider leaves undeclared fields alone, so `tofu plan` does not flag drift on
 the live `args` string.
 

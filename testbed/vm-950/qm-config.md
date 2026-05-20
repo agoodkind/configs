@@ -24,7 +24,7 @@ for the source-level walk-through.
 
 Tofu therefore cannot set `args` via the bpg/proxmox provider when the
 suburban provider alias authenticates with an API token. The
-[opentofu/vms.tf](../../opentofu/vms.tf) resource for VM 950 omits
+[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) resource for VM 950 omits
 `kvm_arguments` for that reason. The bpg/proxmox provider leaves undeclared
 fields alone, so `tofu plan` does not flag drift on the live `args` string.
 

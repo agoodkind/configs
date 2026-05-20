@@ -5,7 +5,7 @@
 # isp fields: id, name, pd_prefix, v4_subnet, vm950_ll
 # repo_root is set in the parent play.
 
-- name: "Render templates to suburban /tmp for ISP {{ isp.name }} ({{ isp.id }})"
+- name: Render ISP templates to suburban /tmp
   ansible.builtin.template:
     src: "{{ repo_root }}/testbed/isp-lxc/{{ item.src }}"
     dest: "/tmp/isp-{{ isp.id }}-{{ item.name }}"
@@ -16,13 +16,13 @@
     - { src: nftables.conf.j2, name: nftables.conf }
     - { src: pd-route.service.j2, name: pd-route.service }
 
-- name: "Copy sysctl to suburban /tmp for ISP {{ isp.name }} ({{ isp.id }})"
+- name: Copy ISP sysctl to suburban /tmp
   ansible.builtin.copy:
     src: "{{ repo_root }}/testbed/isp-lxc/sysctl-isp.conf"
     dest: "/tmp/isp-{{ isp.id }}-sysctl-isp.conf"
     mode: "0644"
 
-- name: "Push configs into LXC for ISP {{ isp.name }} ({{ isp.id }})"
+- name: Push ISP configs into LXC
   ansible.builtin.command:
     cmd: >-
       pct push {{ isp.id }}
@@ -36,7 +36,7 @@
     - { tmp: sysctl-isp.conf, dest: /etc/sysctl.d/99-isp.conf }
   changed_when: true
 
-- name: "Clean up temp files for ISP {{ isp.name }} ({{ isp.id }})"
+- name: Clean up ISP temp files
   ansible.builtin.file:
     path: "/tmp/isp-{{ isp.id }}-{{ item }}"
     state: absent
@@ -47,13 +47,13 @@
     - pd-route.service
     - sysctl-isp.conf
 
-- name: "Apply sysctl for ISP {{ isp.name }} ({{ isp.id }})"
+- name: Apply ISP sysctl
   ansible.builtin.command:
     cmd: pct exec {{ isp.id }} -- sysctl --system
   changed_when: false
   failed_when: false
 
-- name: "Reload and enable services for ISP {{ isp.name }} ({{ isp.id }})"
+- name: Reload and enable ISP services
   ansible.builtin.command:
     cmd: >-
       pct exec {{ isp.id }} -- sh -c

@@ -23,21 +23,24 @@ sshkeys: %0Assh-rsa%20AAAAB3NzaC1yc2EAAAADAQABAAACAQCw7TVlfvMPCWc06mVtSwOC9THc48
 vga: serial0
 vmgenid: 1ace4aa1-1350-4f79-99eb-e84e6566b667
 === VM 101 ===
+agent: enabled=1,type=virtio
+args: -device virtio-serial-pci,id=mwanrpc -chardev socket,id=mwanchr,path=/var/run/qemu-server/101.mwanrpc,server=on,wait=off -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0
 boot: order=scsi0
 cores: 2
-memory: 2048
-meta: creation-qemu=10.1.2,ctime=1775774398
+keyboard: en-us
+memory: 4096
+meta: creation-qemu=10.1.2,ctime=1778229650
 name: opnsense-test
-net0: virtio=BC:24:11:5A:2E:A0,bridge=vmbr3
-net1: virtio=BC:24:11:EC:EF:CC,bridge=vmbr2
+net0: virtio=BC:24:11:7D:6D:87,bridge=vmbrtrunk
+net1: virtio=BC:24:11:0F:66:FA,bridge=vmbr2
+onboot: 1
 ostype: other
-scsi0: local-zfs:vm-101-disk-1,size=8G
+scsi0: local-zfs:vm-101-disk-0,size=16G
 scsihw: virtio-scsi-pci
 serial0: socket
-smbios1: uuid=09b8ebe0-4fb0-4cc5-b453-88d6b35879a7
-unused0: local-zfs:vm-101-disk-0
+smbios1: uuid=6fed2ae3-763a-4c4c-a42f-6946952c031a
 vga: serial0
-vmgenid: 2e115d41-2817-4b37-b339-980d016e674b
+vmgenid: eb574e85-8aa1-45d1-a6ab-6a0777eef6ee
 === CT 100 ===
 arch: amd64
 cores: 1
@@ -81,13 +84,4 @@ net0: name=eth0,bridge=vmbr6,hwaddr=BC:24:11:87:1F:3A,ip=10.240.206.1/24,type=ve
 net1: name=eth1,bridge=vmbr0,hwaddr=BC:24:11:DF:62:D3,ip=dhcp,type=veth
 ostype: debian
 rootfs: local-zfs:subvol-202-disk-0,size=2G
-swap: 512
-=== CT 203 ===
-arch: amd64
-cores: 1
-hostname: testbed-proxy
-memory: 256
-net0: name=eth0,bridge=vmbr3,gw=192.168.1.1,gw6=3d06:bad:b01:211::1,hwaddr=BC:24:11:4B:CC:BD,ip=192.168.1.10/24,ip6=3d06:bad:b01:211::10/64,type=veth
-ostype: debian
-rootfs: local-zfs:subvol-203-disk-0,size=2G
 swap: 512

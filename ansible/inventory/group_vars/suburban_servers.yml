@@ -29,6 +29,11 @@ mwan_watchdog_pve_token_id: "root@pam!watchdog-test2"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
 mwan_watchdog_unit_description: "MWAN Testbed Watchdog"
 
+# mwan-opnsense host bridge service on suburban.
+mwan_opnsense_host_upstream: "unix:///var/run/qemu-server/101.mwanrpc"
+mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
+mwan_opnsense_host_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+
 # mwan-ifmgr service on the host
 mwan_ifmgr_role: "suburban-oob"
 mwan_ifmgr_iface_key: "enmbrains0"
@@ -37,6 +42,31 @@ mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
 
 # Cloudflared OOB stays off on suburban (no host OOB tunnel today).
+
+# Suburban DDNS is owned by deploy-testbed.yml.
+cfddns_version: "4.4.4"
+cfddns_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+  armv7l: armv7
+cfddns_deb_arch: "{{ cfddns_arch_map[ansible_architecture] }}"
+cfddns_release_base_url: >-
+  https://github.com/Zebradil/cloudflare-dynamic-dns/releases/download
+cfddns_deb_file: >-
+  cloudflare-dynamic-dns_{{ cfddns_version }}_linux_{{ cfddns_deb_arch }}.deb
+cfddns_deb_url: >-
+  {{ cfddns_release_base_url }}/{{ cfddns_version }}/{{ cfddns_deb_file }}
+cfddns_config_dir: /etc/cloudflare-dynamic-dns/config.d
+cfddns_timer_dir: /etc/systemd/system
+suburban_ddns_ttl: 1
+suburban_ddns_ipv4_domains:
+  - 128-nj.goodkind.io
+suburban_ddns_ipv6_iface: vmbr0
+suburban_ddns_ipv6_domains:
+  - 128-nj6.goodkind.io
+  - hypervisor6.suburban.goodkind.io
+suburban_ddns_ipv6_priority_subnets:
+  - 3d06:bad:b01::/48
 
 # Testbed-only: ISP LXCs simulating WANs. Consumed by deploy-testbed.yml
 # to provision the per-WAN LXCs on suburban. No production equivalent.

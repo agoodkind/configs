@@ -1,0 +1,84 @@
+---
+- name: Check installed cloudflare-dynamic-dns version
+  ansible.builtin.command: dpkg-query -W -f='${Version}' cloudflare-dynamic-dns
+  register: cfddns_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Download cloudflare-dynamic-dns .deb
+  ansible.builtin.get_url:
+    url: "{{ cfddns_deb_url }}"
+    dest: "/tmp/{{ cfddns_deb_file }}"
+    mode: "0644"
+  when:
+    - not ansible_check_mode
+    - cfddns_installed.stdout != cfddns_version
+
+- name: Install cloudflare-dynamic-dns
+  ansible.builtin.apt:
+    deb: "/tmp/{{ cfddns_deb_file }}"
+  when:
+    - not ansible_check_mode
+    - cfddns_installed.stdout != cfddns_version
+
+- name: Configure cloudflare-dynamic-dns
+  when: not ansible_check_mode or cfddns_installed.stdout == cfddns_version
+  block:
+    - name: Ensure DDNS config directory exists
+      ansible.builtin.file:
+        path: "{{ cfddns_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Render DDNS 128-nj config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/testbed/ddns/suburban-128-nj.yaml.j2"
+        dest: "{{ cfddns_config_dir }}/128-nj.yaml"
+        owner: root
+        group: root
+        mode: "0640"
+      register: suburban_ddns_ipv4_config
+      no_log: true
+      notify: Run DDNS 128-nj
+
+    - name: Render DDNS 128-nj6 config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/testbed/ddns/suburban-128-nj6.yaml.j2"
+        dest: "{{ cfddns_config_dir }}/128-nj6.yaml"
+        owner: root
+        group: root
+        mode: "0640"
+      register: suburban_ddns_ipv6_config
+      no_log: true
+      notify: Run DDNS 128-nj6
+
+    - name: Install DDNS timer template
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/ddns/cloudflare-dynamic-dns@.timer"
+        dest: "{{ cfddns_timer_dir }}/cloudflare-dynamic-dns@.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      register: suburban_ddns_timer_unit
+
+    - name: Disable unescaped DDNS timer instances
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop:
+        - cloudflare-dynamic-dns@128-nj.timer
+        - cloudflare-dynamic-dns@128-nj6.timer
+
+    - name: Enable and start DDNS timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop:
+        - 'cloudflare-dynamic-dns@128\x2dnj.timer'
+        - 'cloudflare-dynamic-dns@128\x2dnj6.timer'

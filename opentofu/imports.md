@@ -1,139 +1,123 @@
-# OpenTofu import recipe for suburban testbed resources
+# OpenTofu import recipe for suburban resources
 
-This file documents how an operator brings the live suburban resources
-under OpenTofu control without recreating them. The resources already
-exist on suburban (`hypervisor.suburban.goodkind.io`); the goal is to
-attach Tofu state to those running objects.
+This file documents how an operator brings live suburban resources under
+OpenTofu control without recreating them. The resources already exist on
+suburban (`hypervisor.suburban.goodkind.io`); the goal is to attach Tofu
+state to those running objects.
+
+The root module keeps the backend and provider configuration. Host-specific
+resources live under child modules:
+
+- [suburban/](./suburban/) owns the suburban testbed bridges, VMs, and LXCs.
+- [vault/](./vault/) owns production vault resources.
 
 The bpg/proxmox provider import IDs follow these formats:
 
-* `proxmox_virtual_environment_network_linux_bridge`: `<node_name>:<iface>`
-  (documented at
-  [Terraform Registry: virtual_environment_network_linux_bridge](https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_network_linux_bridge))
-* `proxmox_virtual_environment_vm`: `<node_name>/<vm_id>`
-  (documented at
-  [Terraform Registry: virtual_environment_vm](https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_vm))
+- Network interfaces: `<node_name>:<iface>`.
+- VMs and containers: `<node_name>/<vm_id>`.
 
 The suburban node name is `hypervisor`.
 
 ## Prerequisites
 
-1. `terraform.tfvars` populated with both Proxmox API tokens
+1. `terraform.tfvars` is populated with both Proxmox API tokens
    (`proxmox_api_token` for vault, `suburban_proxmox_api_token` for
-   suburban). The example file at [opentofu/terraform.tfvars.example](./terraform.tfvars.example) lists the
-   fields. Real token values come from the Ansible vault, never the repo.
-2. `tofu init` against the Consul backend at `[3d06:bad:b01::106]:8500`.
-   Operators only run init the first time after the suburban provider
-   alias is added to [opentofu/providers.tf](./providers.tf); subsequent runs reuse the cached
-   plugins.
-3. Live verification of the resources before import. The expected shape
-   on suburban as of 2026-05-07:
-
-   ```bash
-   ssh suburban 'qm config 950 | grep -E "args|net|cores|memory|machine"'
-   ssh suburban 'ip -br link | grep vmbrtrunk'
-   ```
-
-   If `vmbrtrunk` is missing on the live host, the mwan-140 slice 1 work
-   has not been applied surgically yet. Apply it on suburban first, then
-   import. MWAN-148 dropped the separate `vmbrmgmt` bridge from this
-   plan, since prod runs MANAGEMENT untagged on the same physical port
-   that carries the VLAN trunk.
-
-## Import commands
-
-Run from [opentofu/](./) in the worktree (or from repo root after merge):
+   suburban). The example file at [terraform.tfvars.example](./terraform.tfvars.example)
+   lists the fields. Real token values come from the Ansible vault, never the
+   repo.
+2. `tofu init` has run against the Consul backend at `[3d06:bad:b01::106]:8500`.
+3. The live suburban shape matches the target resources before import:
 
 ```bash
-# MWAN-63: trunk bridge.
-tofu import \
-  'proxmox_network_linux_bridge.trunk' \
-  'hypervisor:vmbrtrunk'
-
-# MWAN-62 (partial): VM 950.
-tofu import \
-  'proxmox_virtual_environment_vm.vm950_test_mwan' \
-  'hypervisor/950'
+ssh suburban 'pvesh get /nodes/hypervisor/network --output-format json'
+ssh suburban 'qm config 950'
+ssh suburban 'qm config 101'
+ssh suburban 'pct config 100'
+ssh suburban 'pct config 200'
+ssh suburban 'pct config 201'
+ssh suburban 'pct config 202'
 ```
 
-After all three imports succeed, run `tofu plan` to confirm the resource
-definitions match the live shape. Drift is expected on a few fields; the
-common ones are:
+## Network imports
 
-* `initialization.user_account.keys`: the GitHub SSH key list rotates
-  whenever the operator adds or removes a public key. The resource
-  ignores changes on this attribute, so plan should not flag it.
-* `kvm_arguments` was removed from the VM 950 resource under MWAN-154.
-  Ansible now owns the live `args` value, which reads
-  `-device vhost-vsock-pci,guest-cid=950`. `tofu plan` no longer compares
-  this field, so the live value is left alone.
-* `vids`: the bridge resource declares the VLAN list space-separated
-  (`64 100 200 300`). If the live config stores it comma-separated, plan
-  flags drift; switch the value to `64,100,200,300` and re-plan.
-
-If plan reports unexpected destroy actions on any imported resource,
-stop and inspect. The `lifecycle.prevent_destroy = true` blocks will
-abort `tofu apply` before damage; treat any such plan as a sign the
-resource definition does not match the live shape and tune the HCL
-before re-running.
-
-## Testbed import (MWAN-62)
-
-The MWAN-62 expansion adds the four ISP simulator LXCs, the
-mwan-failover-test LXC, and the testbed OPNsense VM. The bpg/proxmox
-provider import IDs follow the same `<node_name>/<vm_id>` shape for both
-containers and VMs (the container resource accepts the same separator the
-VM resource uses).
-
-Run from [opentofu/](./) in the worktree (or from repo root after merge):
+Run from [opentofu/](./):
 
 ```bash
-# MWAN-62: suburban testbed LXCs.
 tofu import \
-  'proxmox_virtual_environment_container.mwan_failover_test' \
+  'module.suburban.proxmox_network_linux_bridge.vm_management' \
+  'hypervisor:vmbr1'
+
+tofu import \
+  'module.suburban.proxmox_network_linux_bridge.mwan_internal' \
+  'hypervisor:vmbr2'
+
+tofu import \
+  'module.suburban.proxmox_network_linux_bridge.isp_webpass' \
+  'hypervisor:vmbr4'
+
+tofu import \
+  'module.suburban.proxmox_network_linux_bridge.isp_att' \
+  'hypervisor:vmbr5'
+
+tofu import \
+  'module.suburban.proxmox_network_linux_bridge.isp_mbrains' \
+  'hypervisor:vmbr6'
+
+tofu import \
+  'module.suburban.proxmox_network_linux_bridge.trunk' \
+  'hypervisor:vmbrtrunk'
+
+tofu import \
+  'module.suburban.proxmox_network_linux_vlan.trunk_vlan_100' \
+  'hypervisor:vmbrtrunk.100'
+```
+
+## Guest imports
+
+Run from [opentofu/](./):
+
+```bash
+tofu import \
+  'module.suburban.proxmox_virtual_environment_vm.vm950_test_mwan' \
+  'hypervisor/950'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_vm.opnsense_test' \
+  'hypervisor/101'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.mwan_failover_test' \
   'hypervisor/100'
 
 tofu import \
-  'proxmox_virtual_environment_container.isp_webpass' \
+  'module.suburban.proxmox_virtual_environment_container.isp_webpass' \
   'hypervisor/200'
 
 tofu import \
-  'proxmox_virtual_environment_container.isp_att' \
+  'module.suburban.proxmox_virtual_environment_container.isp_att' \
   'hypervisor/201'
 
 tofu import \
-  'proxmox_virtual_environment_container.isp_mbrains' \
+  'module.suburban.proxmox_virtual_environment_container.isp_mbrains' \
   'hypervisor/202'
-
-tofu import \
-  'proxmox_virtual_environment_container.testbed_proxy' \
-  'hypervisor/203'
-
-# MWAN-62: suburban testbed OPNsense VM 101 (opnsense-test).
-# This holds the working OPNsense testbed install on `vmbrtrunk` and
-# `vmbr2` with the chardev `args` block owned by Ansible.
-tofu import \
-  'proxmox_virtual_environment_vm.opnsense_test' \
-  'hypervisor/101'
 ```
 
-Drift expectations on `tofu plan` after these imports:
+If `tack-qa` already exists live and is not yet in state, import it with:
 
-* `operating_system.template_file_id` on every imported LXC. Proxmox does
-  not store the original template name in `pct config`, so the value
-  declared here is informational. Each LXC resource lists this field in
-  `lifecycle.ignore_changes` so plan does not flag it.
-* `initialization.ip_config` on the LXCs. The bpg provider models the
-  Proxmox-native `ip=`/`ip6=` fields on each net line via this block. The
-  values declared here mirror the live `pct config` output as of
-  2026-05-07. If plan flags drift, compare against the live config and
-  tune the HCL rather than ignoring the field.
+```bash
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
+  'hypervisor/103'
+```
 
-## Out of scope
+## Drift expectations
 
-The suburban testbed still includes resources that this slice does NOT
-import:
-
-* SDN config and `/etc/network/interfaces.d/testbed-masquerade.conf`.
-
-Those land in a follow-up slice tied to MWAN-140.
+- `kvm_arguments` is intentionally absent from VM 950 and VM 101 resources.
+  Ansible owns the live `args` values because the Proxmox API rejects token
+  writes to that field.
+- `initialization.user_account.keys` can change when GitHub public keys rotate.
+  Resources ignore that field where it would otherwise create noise.
+- `operating_system.template_file_id` on imported LXCs is informational because
+  Proxmox does not store the original template name in `pct config`.
+- `/etc/network/interfaces.d/testbed-masquerade.conf` and the extra routable
+  `vmbr1` IPv6 address remain Ansible-owned sourced files.

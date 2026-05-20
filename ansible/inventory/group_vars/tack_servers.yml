@@ -1,7 +1,7 @@
 ---
 # Tack production server configuration.
 # Container provisioning (VMID, IP, MAC, resources, features) is managed by
-# OpenTofu in opentofu/containers.tf. The vars below drive deploy-tack.yml.
+# OpenTofu in opentofu/vault/containers.tf. The vars below drive deploy-tack.yml.
 
 # Service identity
 service_hostname: "{{ service_mapping.tack.hostname }}"

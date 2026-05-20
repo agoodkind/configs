@@ -14,7 +14,7 @@ runtime story lives in [docs/mwan/overview.md](../mwan/overview.md).
 - The MANAGEMENT interface (`opt9` in `config.xml`) carries `10.240.4.1/24` and
   `3d06:bad:b01:204::1/64`. Suburban joins the same broadcast domain via a
   `vmbrtrunk` stub at `10.240.4.5/24` and `3d06:bad:b01:204::5/64`, defined in
-  [opentofu/networks.tf](../../opentofu/networks.tf).
+  [opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf).
 - The LAN interface (`lan` in `config.xml`) carries `192.168.1.1/24` and
   `3d06:bad:b01:211::1/64`. This is the SSH path used by the Ansible
   controller via ProxyJump through suburban; see

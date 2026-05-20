@@ -1,0 +1,17 @@
+{{ ansible_managed | comment }}
+# cloudflare-dynamic-dns IPv6 config for suburban
+# Rendered by ansible/playbooks/deploy-testbed.yml
+
+stack: ipv6
+iface: {{ suburban_ddns_ipv6_iface }}
+token: {{ vault_cloudflare_api_token }}
+domains:
+{% for domain in suburban_ddns_ipv6_domains %}
+  - {{ domain }}
+{% endfor %}
+priority-subnets:
+{% for subnet in suburban_ddns_ipv6_priority_subnets %}
+  - {{ subnet }}
+{% endfor %}
+ttl: {{ suburban_ddns_ttl }}
+log-level: info

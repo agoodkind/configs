@@ -2,11 +2,11 @@
 # Testbed-only suburban work that has no production equivalent.
 #
 # Targets the `suburban` hypervisor (in suburban_servers group). The play
-# pulls together: sysctl, masquerade interface stub, VM `args` ownership
-# for VM 950 and VM 101 (Proxmox API rejects `args` writes for any actor
-# other than `root@pam`, so Ansible owns them as root over SSH), ISP-LXC
-# provisioning for the testbed WAN simulators (200/201/202), the
-# mwan-opnsense Unix socket bridge that proxies the OPNsense VM 101 over
+# pulls together: sysctl, masquerade interface stub, suburban DDNS,
+# VM `args` ownership for VM 950 and VM 101 (Proxmox API rejects `args`
+# writes for any actor other than `root@pam`, so Ansible owns them as root
+# over SSH), ISP-LXC provisioning for the testbed WAN simulators (200/201/202),
+# the mwan-opnsense Unix socket bridge that proxies the OPNsense VM 101 over
 # virtio-serial, and the VFIO host setup for VM 950's WAN passthrough.
 #
 # Run examples:
@@ -24,9 +24,6 @@
   become: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    mwan_opnsense_host_upstream: "unix:///var/run/qemu-server/101.mwanrpc"
-    mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
-    mwan_opnsense_host_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-linux"
 
   tasks:
     # ----------------------------------------------------------------------
@@ -67,6 +64,17 @@
         dest: /etc/network/interfaces.d/testbed-masquerade.conf
         mode: "0644"
 
+    - name: Deploy vmbr1 IPv6 sourced file
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/suburban-interfaces.d-vmbr1-ipv6.conf"
+        dest: /etc/network/interfaces.d/testbed-vmbr1-ipv6.conf
+        mode: "0644"
+      tags: ["vmbr1"]
+
+    - name: Deploy suburban DDNS
+      ansible.builtin.import_tasks: tasks/suburban-ddns.yml
+      tags: ["ddns"]
+
     # ----------------------------------------------------------------------
     # qm args ownership (VM 950 vsock, VM 101 mwanrpc virtio-serial)
     # ----------------------------------------------------------------------
@@ -92,15 +100,7 @@
         vm_950_config.stdout is not search('args:\s*-device\s+vhost-vsock-pci,guest-cid=950')
       register: vm_950_args_set
       changed_when: vm_950_args_set is not skipped and vm_950_args_set.rc == 0
-      tags: ["args"]
-
-    - name: Note that VM 950 needs a cold reboot when args changed
-      ansible.builtin.debug:
-        msg: >-
-          VM 950 args were updated. The vsock device only attaches on a
-          fresh QEMU process. Stop and start VM 950 (qm stop 950 then qm
-          start 950) for the new args to take effect.
-      when: vm_950_args_set is changed
+      notify: Note VM 950 args reboot required
       tags: ["args"]
 
     - name: Read current VM 101 args
@@ -131,15 +131,7 @@
              or vm_101_config.stdout is not search('name=io\.goodkind\.mwan-opnsense\.0'))
       register: vm_101_args_set
       changed_when: vm_101_args_set is not skipped and vm_101_args_set.rc == 0
-      tags: ["args"]
-
-    - name: Note that VM 101 needs a cold reboot when args changed
-      ansible.builtin.debug:
-        msg: >-
-          VM 101 args were updated. The mwanrpc chardev only attaches on a
-          fresh QEMU process. Stop and start VM 101 (qm stop 101 then qm
-          start 101) for the new args to take effect.
-      when: vm_101_args_set is changed
+      notify: Note VM 101 args reboot required
       tags: ["args"]
 
     # ----------------------------------------------------------------------
@@ -175,6 +167,41 @@
     - name: Reload sysctl
       ansible.builtin.command: sysctl --system
       changed_when: false
+
+    - name: Note VM 950 args reboot required
+      ansible.builtin.debug:
+        msg: >-
+          VM 950 args were updated. The vsock device only attaches on a
+          fresh QEMU process. Stop and start VM 950 (qm stop 950 then qm
+          start 950) for the new args to take effect.
+      tags: ["args"]
+
+    - name: Note VM 101 args reboot required
+      ansible.builtin.debug:
+        msg: >-
+          VM 101 args were updated. The mwanrpc chardev only attaches on a
+          fresh QEMU process. Stop and start VM 101 (qm stop 101 then qm
+          start 101) for the new args to take effect.
+      tags: ["args"]
+
+    - name: Restart mwan-opnsense-host
+      ansible.builtin.systemd:
+        name: mwan-opnsense-host
+        state: restarted
+      become: true
+      tags: ["opnsense-host-bridge"]
+
+    - name: Run DDNS 128-nj
+      ansible.builtin.systemd:
+        name: 'cloudflare-dynamic-dns@128\x2dnj.service'
+        state: restarted
+      tags: ["ddns"]
+
+    - name: Run DDNS 128-nj6
+      ansible.builtin.systemd:
+        name: 'cloudflare-dynamic-dns@128\x2dnj6.service'
+        state: restarted
+      tags: ["ddns"]
 
 # ----------------------------------------------------------------------------
 # VFIO host-side passthrough for Radeon R7 360 on suburban.
