@@ -85,9 +85,8 @@ Failover decision matrix:
 | DOWN             | DOWN                  | Upstream outage            | Alert only                               |
 | Agent down       | OK                    | Primary agent crash        | BGP session drops; OPNsense converges    |
 
-`mwan watchdog failover` triggers the BGP failover path immediately. There is
-no keepalived, VRRP, VIP, VMAC, or macvlan in the failover path; that work was
-removed when BGP replaced VRRP.
+`mwan watchdog failover` triggers the BGP failover path immediately. The
+current failover path uses BGP route control.
 
 ### BGP graceful restart
 
@@ -241,14 +240,11 @@ state.
 [mwan/go/internal/notify/](../../mwan/go/internal/notify/) is the single
 chokepoint for outbound email from MWAN code.
 The contract: every email exits through `notify.Notifier`, which owns
-per-(kind, key) state-change suppression and per-kind repeat cadence. Direct
-calls to `email.Sender.Send` and the slog `email_handler` path are removed by
-the relevant MWAN-132 slices.
+per-(kind, key) state-change suppression and per-kind repeat cadence.
 
 `SMTP2GO_API_KEY` is injected via systemd `EnvironmentFile=/etc/mwan/secrets.env`
-rather than templated into `config.toml`. That env-var injection contract is
-tracked under MWAN-131 and is also documented in
-[docs/ansible/secrets.md](../ansible/secrets.md).
+rather than templated into `config.toml`. This secret-handling contract is also
+documented in [docs/ansible/secrets.md](../ansible/secrets.md).
 
 In-flight plan and full routing detail: see
 [docs/plans/mwan-email-routing.plan.md](../plans/mwan-email-routing.plan.md).

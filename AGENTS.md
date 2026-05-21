@@ -106,7 +106,7 @@ capture forensics, and reset to a known-good state instead of improvising.
 ## Operational pointers
 
 - Vault hypervisor state: [docs/infra/vault.md](docs/infra/vault.md)
-- MWAN host layout and stale runtime artifacts:
+- MWAN host layout:
   [docs/infra/mwan-layout.md](docs/infra/mwan-layout.md)
 - Suburban testbed bridges and guests:
   [docs/infra/suburban-testbed.md](docs/infra/suburban-testbed.md)

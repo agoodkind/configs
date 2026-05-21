@@ -2,15 +2,14 @@
 # In-guest install of mwan-opnsense.
 #
 # Target: an OPNsense host reached as `agoodkind` with sudo. The
-# hypervisor-side virtio-serial-pci args change is a one-time manual
-# step (see plan: V0-S9 / MWAN-99). This task only does the in-guest
-# install and assumes the device is already wired.
+# hypervisor-side virtio-serial-pci args field must already be wired. This task
+# only does the in-guest install.
 #
 # Required vars (typically from group_vars or playbook):
 #   mwan_opnsense_binary_local       local path to bin/mwan-opnsense
 #
-# Optional rc.conf.d overrides after install (defaults come from the sample
-# copied below; MWAN-197 separately owns any future host-TOML merge):
+# Optional rc.conf.d overrides after install. Defaults come from the sample
+# copied below.
 #   mwan_opnsense_listen_serial      default "/dev/ttyV0.1"
 #   mwan_opnsense_baud               default "115200"
 #   mwan_opnsense_config_xml         default "/conf/config.xml"
@@ -30,7 +29,6 @@
 
 # /usr/local/sbin/mwan-opnsense always points at the active binary.
 # Self-deploy RPC swaps .current atomically; the symlink stays put.
-# See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
 - name: Symlink mwan-opnsense to .current
   ansible.builtin.file:
     src: mwan-opnsense.current

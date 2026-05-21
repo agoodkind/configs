@@ -36,10 +36,7 @@ func defaultSubs() Substitutions {
 		XPathSets: []XPathSet{
 			// Note: domain is intentionally absent here. The domain text_literal
 			// below rewrites the prod "home.goodkind.io" value in the serialized
-			// XML, which avoids the MWAN-157 double-prefix bug: if an xpath_set
-			// wrote "test.home.goodkind.io" first, the text_literal would then
-			// find "home.goodkind.io" as a substring and double the prefix to
-			// "test.test.home.goodkind.io".
+			// XML and avoids double-prefixing the testbed domain.
 			{Name: "hostname", XPath: "//opnsense/system/hostname", NewValue: "router-test"},
 			{Name: "wan ipaddr", XPath: "//opnsense/interfaces/wan/ipaddr", NewValue: "10.240.250.2"},
 			{Name: "wan ipaddrv6", XPath: "//opnsense/interfaces/wan/ipaddrv6", NewValue: "3d06:bad:b01:2fe::2"},
@@ -211,9 +208,7 @@ text_literals:
 
 func TestApplyInsertElementAddsRuleToFilter(t *testing.T) {
 	// The fixture rule is a synthetic example exercising the engine, not a
-	// real testbed substitution. It must not be interpreted as policy. The
-	// prior MWAN-158 example was removed because MANAGEMENT is in-subnet-only
-	// by design and SSH must not be opened on it.
+	// real testbed substitution. It must not be interpreted as policy.
 	const fixtureDescr = "configxform-engine-fixture-allow-icmp"
 	subs := Substitutions{
 		InsertElements: []ElementInsert{
@@ -305,16 +300,8 @@ func TestLoadMissingFile(t *testing.T) {
 	}
 }
 
-// TestApplyDomainLiteralNoDoublePrefix guards against MWAN-157.
-//
-// The bug: applyXPathSets wrote "test.home.goodkind.io" into <domain> before
-// applyTextLiterals ran. The text_literal "home.goodkind.io" ->
-// "test.home.goodkind.io" then matched the substring inside the already-written
-// value and doubled the prefix to "test.test.home.goodkind.io".
-//
-// The fix: remove the domain xpath_set so that every occurrence of
-// "home.goodkind.io" in the serialized XML is still the original prod value
-// when the text_literal fires, and the text_literal rewrites it exactly once.
+// TestApplyDomainLiteralNoDoublePrefix verifies that the domain literal rewrite
+// only applies once.
 func TestApplyDomainLiteralNoDoublePrefix(t *testing.T) {
 	out, err := Apply(loadFixture(t), defaultSubs())
 	if err != nil {

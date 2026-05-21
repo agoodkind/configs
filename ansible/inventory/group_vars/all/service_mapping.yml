@@ -68,18 +68,15 @@ service_mapping:
     # eth1 static OPNsense-side address; eth0 is DHCP on vmbr6
     ipv6: "3d06:bad:b01:201::4"
   # OPNsense (one logical machine per environment). The plugin uses ipv6 as
-  # ansible_host by default, which is correct for prod. The testbed IPv6 is not
-  # reachable from this controller, so the `opnsense_test` entry sets
-  # ansible_host to 192.168.1.1. SSH user and ProxyJump live in
-  # group_vars/opnsense_test_servers.yml.
+  # ansible_host by default, which is correct for prod. Testbed sets
+  # ansible_host to the WAN/internal address reachable on vmbr2.
   opnsense:
     hostname: router.home.goodkind.io
     ipv6: "3d06:bad:b01::1"
   opnsense_test:
     hostname: opnsense-test
     ipv6: "3d06:bad:b01:211::1"
-    ipv4: "192.168.1.1"
-    # Testbed OPNsense lives on the isolated testbed LAN, so SSH lands
-    # on the LAN IPv4 via ProxyJump through suburban (the jump host and
-    # SSH user are set in group_vars/opnsense_test_servers.yml).
-    ansible_host: "192.168.1.1"
+    ipv4: "10.250.250.2"
+    # Testbed OPNsense SSH lands on the WAN/internal address through suburban.
+    # SSH user and ProxyJump live in group_vars/opnsense_test_servers.yml.
+    ansible_host: "10.250.250.2"

@@ -20,6 +20,5 @@ func StripPrefix(cidr string) string {
 	return cidr
 }
 
-// stripPrefix is a package-internal alias kept for the existing dhcp_test.go
-// case names; remove it once those tests are renamed.
+// stripPrefix is a package-internal alias kept for existing tests.
 func stripPrefix(cidr string) string { return StripPrefix(cidr) }

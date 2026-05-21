@@ -322,7 +322,7 @@ func (s *Server) BackupConfigXML(ctx context.Context, req *mwanv1.BackupConfigXM
 	}, nil
 }
 
-// StripGatewayV6 is the convenience wrapper for the cutover path.
+// StripGatewayV6 removes the IPv6 gateway from the WAN interface config.
 func (s *Server) StripGatewayV6(ctx context.Context, _ *mwanv1.StripGatewayV6Request) (*mwanv1.StripGatewayV6Response, error) {
 	_, _ = peer.FromContext(ctx)
 	_, _ = metadata.FromIncomingContext(ctx)

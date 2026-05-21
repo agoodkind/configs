@@ -144,7 +144,7 @@ Failure mode: per-model migrations log to the OPNsense system log and print `***
 
 ## 6. Service-reconfigure ordering
 
-The order taken from `rc.bootup` lines 24-60 (tag `25.7`), which is the canonical post-reboot sequence and the one we should verify post-import in the MWAN-153 test matrix:
+The order taken from `rc.bootup` lines 24-60 (tag `25.7`) is the canonical post-reboot sequence to verify after import:
 
 1. `convert_config()` -> `run_migrations.php`, `pluginctl -i`, `firmware/register.php sync`, `Config::forceReload`, `parse_config()`.
 2. `system_devd_configure(true)`.
@@ -174,7 +174,7 @@ The order taken from `rc.bootup` lines 24-60 (tag `25.7`), which is the canonica
 26. `plugins_configure('bootup', true)`.
 27. `system_powerd_configure(true)`.
 
-That is 27 ordered steps with `filter_configure_sync` repeated three times. For MWAN-153, the matrix should at minimum exercise the DHCP, DNS, VPN, monitor, and bootup plugin stages, plus `interfaces_configure` and the routing step.
+That is 27 ordered steps with `filter_configure_sync` repeated three times. The test matrix should at minimum exercise the DHCP, DNS, VPN, monitor, and bootup plugin stages, plus `interfaces_configure` and the routing step.
 
 ## 7. Failure modes
 
@@ -233,13 +233,13 @@ VM 101 import checks:
 - Treat the first-boot `set_networking_interfaces_ports` interactive prompt as a failed pre-import interface gate.
 - Confirm pf rules are stable after the third `filter_configure_sync` pass, which is steps 14, 18, and 23 in the boot sequence above.
 
-## What MWAN-152 rollback design needs to know
+## What rollback design needs to know
 
 - **Schema version drift is a one-way door under default settings.** After a reboot import, per-model migrations have written into `/conf/config.xml`. Restoring an older XML by file-swap is fine on disk, but the next reboot will run `convert_config()` again and the older models will either (a) be migrated forward again to match this build, or (b) fail to upgrade if a downgrade-migration is missing. Test path: stage current XML, file-swap-import the older XML, reboot, observe whether the older fields parse and which models log re-migration.
 - **GUI restore writes a backup snapshot; file-swap does not.** If we want symmetry between rollback and forward import, our rollback tool must also write `/conf/backup/config-<epoch>.xml` for every swap. Otherwise an operator looking at the GUI history sees no record of the rollback.
-- **`flush_history` is destructive.** If our forward-import tool ever sets the equivalent of `flush_history=1` (we do not today), the operator loses the local history and can no longer revert via the REST endpoint. We should keep `flush_history` off in MWAN-152.
-- **`<lock>` semantics.** If any of our prod-shaped interfaces carries `<lock>1</lock>`, both the GUI mismatch check and the boot-time mismatch check skip it. That means a bad interface name on a locked entry will not block the reboot and will only manifest as a service-reconfigure failure later. MWAN-152 should treat any `<lock>` in the XML as "review by hand".
-- **The reboot-vs-hot-apply asymmetry**. If MWAN-152 ever wants to roll back without a reboot, it needs to call the same `*_configure()` chain `rc.bootup` runs, in order. There is no single helper for that on `25.7`; expect to call them individually.
+- **`flush_history` is destructive.** If the forward-import tool ever sets the equivalent of `flush_history=1`, the operator loses local history and cannot revert via the REST endpoint. Keep `flush_history` off.
+- **`<lock>` semantics.** If any prod-shaped interface carries `<lock>1</lock>`, both the GUI mismatch check and the boot-time mismatch check skip it. A bad interface name on a locked entry will not block the reboot and will only manifest as a service-reconfigure failure later. Treat any `<lock>` in the XML as "review by hand".
+- **The reboot-vs-hot-apply asymmetry**. Rollback without reboot must call the same `*_configure()` chain `rc.bootup` runs, in order. There is no single helper for that on `25.7`; expect to call them individually.
 - **No transaction across services.** Once `interfaces_configure` runs and the new IPs come up, a later `plugins_configure('vpn')` failure does not roll the interfaces back. The rollback tool must be designed around "apply, observe, decide" rather than "all-or-nothing".
 
 ## Sources

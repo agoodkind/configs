@@ -105,7 +105,7 @@ func (r *ProcSysctlRunner) DryRun() bool { return r.dryRun }
 
 // keyToPath translates a sysctl dotted key into the corresponding /proc/sys
 // path. "." becomes "/" except for components that contain a literal dot
-// in the interface name (e.g. "vrrp.51", "enatt0.3242"). The kernel's
+// in the interface name (e.g. "enatt0.3242"). The kernel's
 // /proc/sys hierarchy escapes those by reversing dot-vs-slash convention
 // only at the interface name token. We follow the same convention as the
 // `sysctl(8)` userspace tool: the FIRST occurrence of a dot in an
@@ -121,7 +121,7 @@ func keyToPath(key string) string {
 	const procSys = "/proc/sys/"
 
 	// Special-case interface tunables: net.ipv{4,6}.conf.<NAME>.<leaf>.
-	// The NAME may itself contain dots (e.g. "vrrp.51", "enatt0.3242").
+	// The NAME may itself contain dots (e.g. "enatt0.3242").
 	for _, prefix := range []string{"net.ipv4.conf.", "net.ipv6.conf."} {
 		if strings.HasPrefix(key, prefix) {
 			rest := strings.TrimPrefix(key, prefix)

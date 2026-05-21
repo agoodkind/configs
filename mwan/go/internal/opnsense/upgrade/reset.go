@@ -56,9 +56,9 @@ type Plan struct {
 // via the Snapshotter, and validates that the recorded baseline still
 // exists on the VM. The constraints encoded here match the operator-
 // facing contract: on a clean VM with no state and no snapshots the
-// returned Plan has NothingToDo=true; if state.json names a baseline
-// that the VM no longer holds, Reset returns an error and the operator
-// must investigate manually.
+// returned Plan has NothingToDo=true; if state.json names a baseline absent
+// from the VM, Reset returns an error and the operator must investigate
+// manually.
 func Reset(ctx context.Context, deps Deps, opts ResetOptions) (Plan, error) {
 	if opts.VMID == "" {
 		err := errors.New("upgrade.Reset: VMID is required")

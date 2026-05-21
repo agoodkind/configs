@@ -1,11 +1,7 @@
-// Package validate implements the MWAN-153 OPNsense 26.x upgrade test
-// matrix runner. The matrix lives in
-// mwan/docs/MWAN-153-26x-upgrade-test-matrix.md and this package turns
-// each row into a typed Check that produces a deterministic Result.
-//
-// The runner is invoked as a subcommand of the mwan monolith
-// (mwan opnsense-validate) and is also callable from the MWAN-152
-// upgrade flow via Run.
+// Package validate implements the OPNsense upgrade test matrix runner. The
+// matrix document supplies typed checks that produce deterministic results.
+// The runner is invoked as a subcommand of the mwan monolith and is callable
+// from the upgrade flow via Run.
 package validate
 
 import (
@@ -19,8 +15,7 @@ import (
 type Severity string
 
 const (
-	// SeverityBlocker means a failed check fails the upgrade and
-	// triggers the MWAN-152 rollback path.
+	// SeverityBlocker means a failed check fails the upgrade and triggers rollback.
 	SeverityBlocker Severity = "blocker"
 
 	// SeverityRegression means a feature broke but the upgrade
@@ -121,9 +116,7 @@ type Check interface {
 // tests can drive every check with a fake.
 type Env interface {
 	// SSHOPNsense runs a shell command on the OPNsense guest. The
-	// implementation is expected to wrap an SSH transport with the
-	// same auth path as the cutover flow. Returns stdout, stderr,
-	// exit code, and any transport error.
+	// implementation is expected to wrap the configured SSH transport.
 	SSHOPNsense(ctx context.Context, command string) (CommandResult, error)
 
 	// SSHProxmoxHost runs a shell command on the Proxmox host

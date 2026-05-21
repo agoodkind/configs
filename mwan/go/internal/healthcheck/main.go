@@ -1,8 +1,7 @@
 // Package healthcheck provides continuous connectivity testing with structured logging.
 //
-// Designed for cutover validation: creates new connections each iteration (no long-lived
-// sessions) to exercise the full routing path. Tests IPv4 ping, IPv6 ping, and HTTP
-// against diverse targets, rotating each cycle.
+// It creates new connections each iteration to exercise the full routing path.
+// It tests IPv4 ping, IPv6 ping, and HTTP against diverse targets, rotating each cycle.
 package healthcheck
 
 import (

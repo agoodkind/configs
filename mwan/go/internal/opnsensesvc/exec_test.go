@@ -242,9 +242,8 @@ func TestRunExec_CappedBufferDoesNotWedge(t *testing.T) {
 }
 
 func TestRunExec_TimeoutClamp(t *testing.T) {
-	// Caller asks for 99999s; we cap at maxExecTimeout (60min after
-	// MWAN-177). Just ensure the call returns quickly when the command
-	// is fast.
+	// Caller asks for 99999s; we cap at maxExecTimeout. Ensure the call returns
+	// quickly when the command is fast.
 	res, err := runExec(context.Background(), ExecArgs{
 		Command:        "/bin/sh",
 		Args:           []string{"-c", "exit 0"},

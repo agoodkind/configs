@@ -58,33 +58,8 @@ json_log_file = "{{ mwan_watchdog_json_log_file }}"
 rollback_state_file = "{{ mwan_watchdog_state_file }}"
 rollback_lock_file = "{{ mwan_watchdog_lock_file }}"
 
-[cutover]
-current_real_ipv6 = "{{ mwan_cutover_current_real_ipv6 }}"
-current_real_ipv4 = "{{ mwan_cutover_current_real_ipv4 }}"
-new_real_ipv6 = "{{ mwan_cutover_new_real_ipv6 }}"
-new_real_ipv4 = "{{ mwan_cutover_new_real_ipv4 }}"
-vip_ipv6 = "{{ mwan_cutover_vip_ipv6 }}"
-vip_ipv4 = "{{ mwan_cutover_vip_ipv4 }}"
-opnsense_addr = "{{ mwan_cutover_opnsense_addr }}"
-failover_lxc_id = "{{ failover_lxc_id }}"
-failover_lxc_iface = "eth1"
-failover_lxc_wan_iface = "eth0"
-failover_default_gw6 = ""
-failover_default_gw4 = ""
-failover_internal_pfx = "{{ mwan_cutover_failover_internal_pfx }}"
-failover_opnsense_ll = ""
-failover_ipv4_return = "{{ mwan_cutover_failover_ipv4_return }}"
-vrid = 51
-master_priority = 150
-backup_priority = 50
-advert_interval = 1
-health_check_interval = 10
-health_check_weight = -110
-health_check_fall = 3
-health_check_rise = 2
-ssh_timeout_sec = 10
-verify_timeout_sec = 30
-boot_wait_sec = 35
+[failover]
+lxc_id = "{{ failover_lxc_id }}"
 
 [opnsense]
 url = "https://{% if ':' in opnsense_addr and not opnsense_addr.startswith('[') %}[{{ opnsense_addr }}]{% else %}{{ opnsense_addr }}{% endif %}"

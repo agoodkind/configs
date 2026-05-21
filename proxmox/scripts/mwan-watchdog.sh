@@ -294,7 +294,7 @@ perform_rollback() {
         error "qm start failed after rollback; VM may be stopped"
     fi
 
-    # Lock is no longer needed; VM should be starting.
+    # Clear the rollback lock while the VM is starting.
     rm -f "$ROLLBACK_LOCK_FILE"
 
     log "Sending rollback notification..."

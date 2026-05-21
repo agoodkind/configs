@@ -2,14 +2,11 @@
 // config.xml. The transform consumes a redacted prod config.xml, an operator
 // supplied substitution table, and produces a testbed-shaped config.xml.
 //
-// The design follows section 4.3 of MWAN-140-config-xml-transform-spec.md:
-// hybrid handling that uses an XML-aware walker for structural rewrites where
-// element identity matters (interfaces, VLANs, hostname, domain, peers, NAT64
-// prefix), and falls back to a small list of textual literal substitutions for
-// values that may appear in many places (IP addresses, hostnames embedded in
-// certificate names, captive portal references). Tests assert per-element
-// correctness for the structural rewrites and per-byte stability for the
-// textual substitutions.
+// Structural rewrites use an XML-aware walker where element identity matters
+// (interfaces, VLANs, hostname, domain, peers, NAT64 prefix). Textual literal
+// substitutions cover values that may appear in many places, such as IP
+// addresses, hostnames embedded in certificate names, and captive portal
+// references.
 //
 // This package is intentionally small. The substitution table is loaded from
 // YAML at runtime by Load. Apply takes a parsed Substitutions value plus the

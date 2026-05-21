@@ -306,10 +306,8 @@ func (r *RealOps) vsockExec(
 }
 
 // isLastDeployPath reports whether p names the last-deploy timestamp
-// file. The MWAN-144 path move from /var/run/mwan-last-deploy to
-// /var/lib/mwan/last-deploy means a substring like "mwan-last-deploy"
-// no longer matches the new path. Matching the suffix "last-deploy" is
-// safe because mwan-last-change uses a different suffix.
+// file. Matching the suffix "last-deploy" is safe because mwan-last-change
+// uses a different suffix.
 func isLastDeployPath(p string) bool {
 	return strings.Contains(p, "last-deploy")
 }

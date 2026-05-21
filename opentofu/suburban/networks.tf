@@ -66,7 +66,7 @@ resource "proxmox_network_linux_bridge" "isp_mbrains" {
 resource "proxmox_network_linux_bridge" "trunk" {
   node_name = "hypervisor"
   name      = "vmbrtrunk"
-  comment   = "MWAN-140 slice 1: VLAN-aware trunk for OPNsense iavf0 parity"
+  comment   = "VLAN-aware trunk for OPNsense testbed parity"
 
   vlan_aware = true
   vids       = "64 100 200 300"

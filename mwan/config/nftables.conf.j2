@@ -71,17 +71,14 @@ table inet filter {
         ct state established,related accept
 
         # Allow forwarding from internal to WANs.
-        # "vrrp.*" matches the keepalived VMAC interface (e.g. vrrp.51) which
-        # holds the VIP after HA cutover. Without this, VIP traffic is dropped
-        # by the default policy because it arrives on vrrp.51, not enmwanbr0.
-        iifname { $INTERNAL_IFACE, "vrrp.*" } oifname { $ATT_IFACE, $WEBPASS_IFACE
+        iifname $INTERNAL_IFACE oifname { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
         } accept
 
         # Allow forwarding from WANs to internal (for inbound services)
         iifname { $ATT_IFACE, $WEBPASS_IFACE
             , $MB_IFACE
-        } oifname { $INTERNAL_IFACE, "vrrp.*" } accept
+        } oifname $INTERNAL_IFACE accept
 
         # Log dropped packets (rate limited)
         limit rate 1/second log prefix "nftables forward drop: " drop
@@ -103,13 +100,11 @@ table ip nat {
         # pin, the mod-2 LB below would split rekey attempts 50/50 across AT&T
         # and Webpass; the resulting peer-IP flapping (via WG roaming) destabilizes
         # long-lived peers like suburban whose Comcast IPv6 also renumbers.
-        # See MWAN-76 / MWAN-77 for follow-up alternatives.
-        iifname { $INTERNAL_IFACE, "vrrp.*" } ip saddr 10.250.250.2 udp sport 51820 udp dport 51821 ct state new meta mark set 1
+        iifname $INTERNAL_IFACE ip saddr 10.250.250.2 udp sport 51820 udp dport 51821 ct state new meta mark set 1
 
         # Mark new connections for load balancing (fwmark)
-        # Match both enmwanbr0 and vrrp.* (keepalived VMAC receives on vrrp.51)
         # `meta mark 0` guard preserves the WG pin set above.
-        iifname { $INTERNAL_IFACE, "vrrp.*" } ip saddr $INTERNAL_NET meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        iifname $INTERNAL_IFACE ip saddr $INTERNAL_NET meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
         # Inbound 1:1 NAT (DNAT) for static IPs
         # Map external /29s back to the internal /29 so OPNsense (and downstream) can receive inbound traffic.

@@ -133,23 +133,18 @@ Cons: requires manual intervention. The whole point of WG is "set and forget."
 
 ## Implementation note for bidirectional wghealth
 
-Today's `wg_health` ([mwan/go/internal/ifmgr/modules/wghealth/](../../mwan/go/internal/ifmgr/modules/wghealth/)) polls OPNsense  
-via SSH only. The module doc explicitly defers bidirectional cross-check (Hallucination? Citation needed?).
+Today's `wg_health` ([mwan/go/internal/ifmgr/modules/wghealth/](../../mwan/go/internal/ifmgr/modules/wghealth/)) polls OPNsense via SSH.
 
-Two paths to add the suburban side:
+Two paths can add the suburban side:
 
-- **Local-exec mode**. Extend `wghealth.Config` to support `SSHHost = ""`,
-meaning local exec. Stand up `mwan-ifmgr` on suburban with a `suburban-wg`
-role wiring a wghealth instance with empty SSHHost. Each daemon emits
-per-peer logs from its own viewpoint. Cross-check happens by log analysis
-or a future correlation layer.
-- **Remote SSH mode (single daemon)**. Extend wghealth to support a list of
-SSH targets. Vault daemon polls both OPNsense (working) and suburban
-over root SSH. `wg` is only readable via root or the `wg-quick` group.
-Single daemon does the cross-check natively.
+- **Local-exec mode**. Run `mwan-ifmgr` on suburban with a `suburban-wg` role
+  and a wghealth instance that reads the local WireGuard interface. Each daemon
+  emits per-peer logs from its own viewpoint. Cross-checking happens by log
+  analysis or a correlation layer.
+- **Remote SSH mode**. Extend wghealth to support multiple SSH targets. The
+  vault daemon polls both OPNsense and suburban over SSH. `wg` is only readable
+  via root or the `wg-quick` group.
 
-Local-exec is cleaner for ops. Each box owns its own observation and ships
-logs centrally. But it requires running mwan-ifmgr on suburban. SSH-list is
-zero-touch on suburban but needs key and permission work (hallucination? what is key and permission work).
-
-Tracked: MWAN-80.
+Local-exec keeps each box responsible for its own observation. Remote SSH keeps
+one daemon responsible for both viewpoints but requires credentials and read
+permissions on each target.

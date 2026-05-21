@@ -15,8 +15,6 @@ import (
 )
 
 // subcommand is the typed enum of top-level mwan subcommands.
-// After MWAN-190/191/192 the opnsense surface collapsed into one
-// `mwan opnsense ...` verb tree; the old flat names are gone.
 type subcommand string
 
 const (

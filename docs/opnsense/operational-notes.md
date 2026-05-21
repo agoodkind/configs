@@ -18,8 +18,6 @@ Validated on prod (`router.home.goodkind.io`).
 
 | Gateway | Disabled | force_down | defaultgw | Notes |
 |---|---|---|---|---|
-| WAN_GW4 | (deleted) | n/a | n/a | Removed; BGP carries v4 default |
-| WAN_GW6 | (deleted) | n/a | n/a | Removed; BGP carries v6 default |
 | NAT64_GW | 0 | **1** | 0 | Enabled but force_down so it does NOT win default selection. Static route to `:6464::/96` still installs because the route lookup ignores `force_down`. Tayga keeps translating. |
 
 ### Static routes (System / Routes / Configuration)
@@ -28,17 +26,15 @@ Validated on prod (`router.home.goodkind.io`).
 |---|---|---|
 | `3d06:bad:b01:6464::/96` | NAT64_GW | NAT64 prefix delegated to Tayga for v6 to v4 translation |
 
-Anything else here is cruft (e.g., a `:60` route pointing at a deleted
-WAN_GW6 from mid-session recovery would log `gateway IP could not be found`
-and silently skip install).
+Only the NAT64 static route belongs here.
 
 ### Outbound NAT (Firewall / NAT / Outbound)
 
 Mode: **Manual** (or Hybrid; either works as long as the manual rules below exist).
 
-Auto-generated NAT does NOT run because the WAN interface no longer has
-`<gateway>WAN_GW4</gateway>`. The `filter.inc` auto-NAT loop is gated on
-`!empty($ifcfg['gateway'])`, so we must replace it with explicit manual rules.
+Explicit manual NAT rules are required because the OPNsense auto-NAT loop only
+runs when an interface gateway is configured. BGP owns the default route here,
+so these manual rules provide the outbound NAT contract.
 
 | # | Interface | Source | Translation | Static port | Purpose |
 |---|---|---|---|---|---|
@@ -71,11 +67,6 @@ should be `Status: Installed, Selected` for the BGP entry.
 - Two neighbors per family:
   - `10.250.250.3` and `3d06:bad:b01:fe::3` (VM 113, primary, route-map sets local-pref 200)
   - `10.250.250.4` and `3d06:bad:b01:fe::4` (LXC 116, backup, route-map sets local-pref 100)
-
-### VRRP
-
-No keepalived or VRRP is in the steady-state design. BGP carries the default
-route directly to VM 113's real address `.3` / `:fe::3`.
 
 ---
 
@@ -112,9 +103,8 @@ stays `Status: None` while the kernel sits with whatever OPNsense reinstalled
 | Any enabled non-down gateway exists | YES | NO (kernel default replaced) |
 | All gateways for family are deleted/disabled/force_down | NO (early `continue`) | YES |
 
-So: with WAN_GW4/GW6 deleted and NAT64_GW force_down, no v4 or v6 gateway is
-selectable as default. Future Apply events skip `system_default_route` and
-leave BGP's kernel default untouched.
+So: when no v4 or v6 gateway is selectable as default, future Apply events
+skip `system_default_route` and leave BGP's kernel default untouched.
 
 ### Rule 2: Auto outbound NAT also requires a gateway
 
@@ -128,9 +118,8 @@ foreach ($fw->getInterfaceMapping() as $intf => $ifcfg) {
 }
 ```
 
-When WAN_GW4 was deleted, the `<wan><gateway>` field cleared, so this
-condition went false. Auto-NAT for v4 LAN to WAN stopped generating. v4 LAN
-clients lost Internet because their packets were forwarded but not source-NAT'd.
+When the WAN interface has no configured gateway, this condition is false and
+OPNsense does not generate auto-NAT for v4 LAN to WAN traffic.
 
 Replacement: the two manual rules in the steady-state section. They cover
 the same ground regardless of gateway state.
@@ -165,7 +154,7 @@ those routes cover, not the default. So it's safe assuming Rule 1 holds.
 
 ### Rule 6: Duplicate `<if>device</if>` declarations silently drop the loser
 
-`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but binds no address to any kernel interface. Caught us when prod's `opt6` (VMNET, `<if>vtnet0</if>`) and `opt9` (MANAGEMENT, also `<if>vtnet0</if>` via the `iavf0`-to-`vtnet0` device_names mapping) both claimed `vtnet0`; VMNET sorts later than MANAGEMENT and silently dropped the MANAGEMENT address. The testbed substitutions transform now strips `opt6`.
+`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but binds no address to any kernel interface. The testbed substitutions transform strips `opt6` so MANAGEMENT remains the only untagged interface mapped to `vtnet0`.
 
 ### Rule 7: `pkg upgrade -y` must run BEFORE `pkg install`
 
@@ -173,7 +162,7 @@ The OPNsense install ISO ships one snapshot of the package set. The mirror has m
 
 ### Rule 8: Proxmox restricts `args` qemu-server field to literal `root@pam`
 
-Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only root can set 'args' config" for any API token, regardless of `privsep` or assigned role. The check is hard-coded in Proxmox, not policy-driven. For VMs that need `args` (any VM with a virtio-serial chardev, including the mwan-opnsense VMs): `qm create` manually as root via SSH, then `tofu import` the resulting VM. The pattern is documented in [opentofu/imports.md](../../opentofu/imports.md). Long-term cleanup is to drop `kvm_arguments` from Tofu entirely and manage `args` via Ansible or a manual `qm set` (MWAN-154).
+Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only root can set 'args' config" for any API token, regardless of `privsep` or assigned role. The check is hard-coded in Proxmox, not policy-driven. For VMs that need `args` (any VM with a virtio-serial chardev, including the mwan-opnsense VMs): `qm create` manually as root via SSH, then `tofu import` the resulting VM. The pattern is documented in [opentofu/imports.md](../../opentofu/imports.md).
 
 ### Rule 9: Hot-adding a NIC needs `configctl interface reconfigure`
 
@@ -211,7 +200,7 @@ NAT64_GW is `disabled=0` AND the static route is `disabled=0`.
 
 ### Outbound NAT stops working (LAN clients lose v4 Internet but v6 works)
 
-Most likely cause: someone enabled then disabled WAN_GW4, or the manual
-NAT rules got deleted. Check Firewall / NAT / Outbound for the two
-manual rules. Verify with `pfctl -sn | grep ^nat` from OPNsense shell;
-should see at least one `nat on vtnet1 inet from <internal_net> to any -> (vtnet1:0)` rule.
+Most likely cause: the manual NAT rules are missing. Check Firewall / NAT /
+Outbound for the two manual rules. Verify with `pfctl -sn | grep ^nat` from
+OPNsense shell; should see at least one `nat on vtnet1 inet from <internal_net>
+to any -> (vtnet1:0)` rule.

@@ -106,14 +106,6 @@ mwan_webpass_gateway: "136.25.91.241"
 mwan_internal_ipv4: "10.250.250.3/29"
 mwan_internal_ipv6: "3d06:bad:b01:fe::3/64"
 
-# Legacy VIP values. Keepalived was removed 2026-04-29 after the BGP cutover
-# (BGP via VM 113 now carries the default route; LXC 116 is the BGP-backup
-# peer). These values stay only because update-npt.sh references mwan_vip_ipv6
-# as a fallback SNAT source; both go away once the shell scripts are absorbed
-# into the Go monolith per the rewrite-shell EPIC.
-mwan_vip_ipv6: "3d06:bad:b01:fe::1"
-mwan_vip_ipv4: "10.250.250.1/29"
-
 # MWAN IPv6 address on the MWAN↔OPNsense link (used as a /128 in some SNAT cases).
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::3"
 
@@ -304,9 +296,6 @@ mwan_email_from: "mwan@goodkind.io"
 mwan_email_sender_name: "MWAN"
 
 # Variables consumed by mwan/config/config.toml.j2 [email] block.
-# The mwan-go binary reads these from /etc/mwan/config.toml. Values match
-# the literals previously hard-coded in the template; this refactor lets
-# group_vars override them per-environment.
 mwan_email_min_level: "ERROR"
 mwan_email_subject_prefix: "[MWAN-vault]"
 mwan_email_bind_iface: "enmbrains0"
@@ -323,15 +312,7 @@ mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"
 mwan_watchdog_state_file: "/run/mwan-rollback.state"
 mwan_watchdog_lock_file: "/run/mwan-watchdog-rollback.lock"
-mwan_cutover_current_real_ipv6: "3d06:bad:b01:fe::1/64"
-mwan_cutover_current_real_ipv4: "10.250.250.1/29"
-mwan_cutover_new_real_ipv6: "3d06:bad:b01:fe::3/64"
-mwan_cutover_new_real_ipv4: "10.250.250.3/29"
-mwan_cutover_vip_ipv6: "3d06:bad:b01:fe::1/64"
-mwan_cutover_vip_ipv4: "10.250.250.1/29"
-mwan_cutover_opnsense_addr: "agoodkind@3d06:bad:b01::1"
-mwan_cutover_failover_internal_pfx: "3d06:bad:b01::/60"
-mwan_cutover_failover_ipv4_return: "10.250.0.0/16 via 10.250.250.2"
+failover_lxc_id: "116"
 mwan_ifmgr_role: "vault-oob"
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
@@ -451,8 +432,8 @@ bgp_announce_ipv6:
 # BGP Graceful Restart (RFC 4724). When enabled the embedded GoBGP speaker
 # negotiates the GR capability so a planned restart of mwan-agent does not
 # cause immediate route withdrawal on the OPNsense FRR helper. The
-# restart_time is the helper-side hold timer in seconds (MWAN-130 plan
-# pins this to 30s, deliberately shorter than the GoBGP default of 120s).
+# restart_time is the helper-side hold timer in seconds. Keep it deliberately
+# shorter than the GoBGP default of 120s.
 mwan_bgp_graceful_restart_enabled: true
 mwan_bgp_graceful_restart_time_seconds: 30
 mwan_bgp_graceful_restart_notification_enabled: true

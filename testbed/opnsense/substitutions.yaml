@@ -1,178 +1,63 @@
-# Concrete substitution table for `mwan opnsense-import-config` on the
-# suburban testbed. Resolved values for MWAN-150. The matching design
-# discussion lives in `mwan/docs/MWAN-140-config-xml-transform-spec.md`
-# section 7 (open questions) plus the appended resolution section.
-#
-# Sourced from:
-#   * Live state on suburban hypervisor (read 2026-05-08 over v6 SSH):
-#     `cat /etc/network/interfaces` and
-#     `cat /etc/network/interfaces.d/testbed-masquerade.conf`.
-#   * `ansible/inventory/group_vars/mwan_testbed_servers.yml` for the
-#     internal-link addressing convention (vmbr2 sits at
-#     `10.250.250.5/29` and `3d06:bad:b01:201::5/64`; VM 950 internal at
-#     `10.250.250.3` and `3d06:bad:b01:201::3`).
-#   * `mwan/config/config.toml.j2` for OOB and prefix conventions.
-#   * `testbed/opnsense-101/config.xml` for the existing testbed
-#     OPNsense addressing baseline.
-#   * A redacted prod artifact used during MWAN-150 development for the
-#     shape of the prod literals being rewritten. The artifact is not retained
-#     in this repo.
-#
-# Important asymmetry called out: prod and testbed share the WAN-side
-# IPv4 subnet `10.250.250.0/29` (the link between OPNsense and the mwan
-# VM). Live testbed `vmbr2` already sits in that subnet, so we deliberately
-# do NOT shift `10.250.250.` literals; OPNsense WAN IPv4 stays at
-# `10.250.250.2` on testbed exactly as it does on prod. The IPv6 side
-# diverges: prod uses `3d06:bad:b01:fe::/64` for the WAN side, and testbed
-# uses `3d06:bad:b01:201::/64` for that same link. The xpath_sets and
-# text_literals below reflect that asymmetry.
+# Concrete substitution table for `mwan opnsense-import-config` on the suburban
+# OPNsense testbed. Values here describe the current testbed shape.
+
+# Addressing rules:
+#   * The WAN IPv4 transit link stays on `10.250.250.0/29`.
+#   * Testbed IPv4 tenant VLANs use `10.240.x.0/24`.
+#   * Testbed IPv6 tenant VLANs use the `3d06:bad:b01:2xx::/64` family.
+#   * MANAGEMENT uses `10.240.4.0/24` and `3d06:bad:b01:204::/64`.
 
 device_names:
-  # Spec section 2: every prod `<if>iavf0</if>` resolves to the testbed VM 101
-  # virtio device. With one NIC declared on VM 101 (vmbrtrunk parent), the
-  # FreeBSD device is `vtnet0`. Verify with `ifconfig -l` on the rebuilt VM
-  # 101 before applying.
   - name: "MANAGEMENT and four VLAN parents: iavf0 to vtnet0"
     from: "iavf0"
     to:   "vtnet0"
 
 xpath_sets:
-  # Spec section 3.4: hostname. The domain element is NOT set here; see the
-  # "domain literal" text_literal below.
-  #
-  # MWAN-157 fix: removing the domain xpath_set prevents a doubled-prefix
-  # bug. applyTextLiterals runs after applyXPathSets on the serialized XML
-  # bytes. If xpath_set wrote "test.home.goodkind.io" into <domain>, the
-  # text_literal "home.goodkind.io" -> "test.home.goodkind.io" would then
-  # match the substring inside that value and double the prefix to
-  # "test.test.home.goodkind.io". The prod <domain> element contains
-  # "home.goodkind.io", so the text_literal rewrites it exactly once to
-  # "test.home.goodkind.io" without conflict.
   - name: "hostname"
     xpath: "//opnsense/system/hostname"
     new_value: "router-test"
 
-  # Spec section 3.1: per-interface address rewrites.
-  # WAN IPv4 stays at the prod value because testbed reuses the same
-  # `10.250.250.0/29` link between OPNsense and the mwan VM. Live state
-  # confirms suburban vmbr2 sits at `10.250.250.5/29` and VM 950 internal
-  # is `10.250.250.3` per group_vars.
-  - name: "WAN ipv4 (unchanged from prod)"
+  - name: "WAN ipv4"
     xpath: "//opnsense/interfaces/wan/ipaddr"
     new_value: "10.250.250.2"
-  # WAN IPv6 shifts because testbed uses `3d06:bad:b01:201::/64` for the
-  # WAN-side internal link, not prod's `3d06:bad:b01:fe::/64`. Live state
-  # confirms suburban vmbr2 ipv6 is `3d06:bad:b01:201::5/64` and the
-  # OPNsense edge ipv6 in group_vars is `3d06:bad:b01:201::2`.
   - name: "WAN ipv6"
     xpath: "//opnsense/interfaces/wan/ipaddrv6"
     new_value: "3d06:bad:b01:201::2"
-  # PRIVILEGED LAN IPv6 must NOT collide with the WAN-side `:201::/64`
-  # transit prefix. Earlier (commit 7e12ddb) the broad text_literal
-  # `3d06:bad:b01:1::` -> `3d06:bad:b01:201::` mapped PRIVILEGED to the
-  # same `/64` as WAN, FreeBSD installed the connected `:201::/64` route
-  # on vlan0100 (alphabetical priority over vtnet1), and BGP IPv6 packets
-  # to peers `:201::3` and `:201::4` egressed the wrong interface so NDP
-  # failed. Following the `2N` shift convention from MWAN-140 section
-  # 10.1 (prod `:N::/64` -> testbed `:2N::/64`), PRIVILEGED moves to
-  # `3d06:bad:b01:21::/64`.
   - name: "PRIVILEGED LAN ipv6"
     xpath: "//opnsense/interfaces/lan/ipaddrv6"
     new_value: "3d06:bad:b01:21::1"
-  # GENERAL VLAN: prod `:2::/64` -> testbed `:22::/64` per `2N` convention.
   - name: "GENERAL ipv6"
     xpath: "//opnsense/interfaces/opt4/ipaddrv6"
     new_value: "3d06:bad:b01:22::1"
-  # IPv6OnlyVLAN: prod `:64::/64` -> testbed `:264::/64`. Already followed
-  # the `2N` convention; declared explicitly for parity with the other
-  # interface xpath_sets.
   - name: "IPv6OnlyVLAN ipv6"
     xpath: "//opnsense/interfaces/opt8/ipaddrv6"
     new_value: "3d06:bad:b01:264::1"
-  # MANAGEMENT v4 shifts to testbed `10.240.4.0/24` per the testbed
-  # `:240::/56` IPv4 convention captured in group_vars
-  # (`mwan_webpass_ipv4: 10.240.204.2/24`, `:200..240::` IPv6 family).
   - name: "MANAGEMENT v4"
     xpath: "//opnsense/interfaces/opt9/ipaddr"
     new_value: "10.240.4.1"
-  # MANAGEMENT v6 stays at the legacy three-digit `:204::/64` testbed
-  # prefix because it is the SSH path on the running testbed and the
-  # surrounding tooling (group_vars, deploy playbooks, runbooks) depends
-  # on it. Not migrated to the `2N` two-digit convention used for the
-  # other VLANs.
   - name: "MANAGEMENT v6"
     xpath: "//opnsense/interfaces/opt9/ipaddrv6"
     new_value: "3d06:bad:b01:204::1"
 
-  # Spec section 3.6: NAT64 / Tayga prefix. Prod uses
-  # `3d06:bad:b01:6464::/96`; testbed uses `3d06:bad:b01:2664::/96` to keep
-  # the prefix shape parallel while staying in the testbed `:200..2ff::`
-  # family. The canonical Tayga element lives at the path below (verified
-  # by reading lines 5083-5092 of the redacted artifact). The same prefix
-  # also appears in firewall aliases and rule networks; the text_literals
-  # section catches those copies.
   - name: "NAT64 / Tayga prefix"
     xpath: "//opnsense/OPNsense/tayga/general/v6prefix"
     new_value: "3d06:bad:b01:2664::/96"
 
-  # Spec section 3.7: captive portal hostname. Prod uses
-  # `captive.chaotic.dog`; testbed uses `captive.test.home.goodkind.io`.
-  # The hostname portion is set here; the domain portion is handled by the
-  # "domain literal" text_literal (same MWAN-157 fix: removing the domain
-  # xpath_set prevents the double-prefix bug described above).
   - name: "Captive portal hostname"
     xpath: "//opnsense/captiveportal/hostname"
     new_value: "captive"
 
 remove_elements:
-  # MWAN-150 collision fix (2026-05-08): the prod config declares opt6
-  # (VMNET) with `<if>vtnet0</if>` directly, AND opt9 (MANAGEMENT) with
-  # `<if>iavf0</if>` which the device_names mapping above rewrites to
-  # `vtnet0`. Two interfaces declaring the same untagged device causes
-  # OPNsense to bind vtnet0 to opt6 first (alphabetical priority), which
-  # leaves opt9 (the MANAGEMENT interface holding 10.240.4.1 and the
-  # SSH path on testbed) without an address. Suburban testbed has no
-  # VMNET-equivalent broadcast domain, so the safe fix is to strip the
-  # entire opt6 declaration rather than try to rewrite it. After this
-  # strip, the only interface declaring untagged `<if>vtnet0</if>` is
-  # opt9, which gets the management address as intended. The text_literals
-  # `VMNET v4 prefix shift` and `v6 VMNET prefix shift` below still
-  # rewrite any embedded VMNET address copies in firewall rules, NAT
-  # rules, and aliases, so those references resolve to non-existent
-  # testbed addresses (acceptable: rules retain shape but cannot match).
-  - name: "VMNET interface declaration (strip; collides with MANAGEMENT on vtnet0)"
+  - name: "VMNET interface declaration"
     xpath: "//opnsense/interfaces/opt6"
-
-  # Spec section 3.5: WireGuard peer strip (operator decision: strip).
-  # The testbed does not need real upstream WG peers; an isolated WG
-  # tunnel that does not connect anywhere is acceptable for parity
-  # exercises. Avoids the misrouted-handshake risk callout 3 in the
-  # MWAN-140 parity plan.
-  - name: "WireGuard client peers (strip)"
+  - name: "WireGuard client peers"
     xpath: "//opnsense/OPNsense/wireguard/client/clients/client"
-  - name: "WireGuard server peers (strip)"
+  - name: "WireGuard server peers"
     xpath: "//opnsense/OPNsense/wireguard/server/servers/server"
-
-  # Spec section 3.8: inline TLS cert strip (operator decision: strip).
-  # OPNsense regenerates a self-signed cert on first boot. Testbed does
-  # not need a CA-signed cert because access is over the LAN management
-  # link only.
-  - name: "Inline certs (strip)"
+  - name: "Inline certs"
     xpath: "//opnsense/cert"
 
-# insert_elements: currently unused. The prior MWAN-158 entry that injected
-# an SSH-pass rule on MANAGEMENT was removed: MANAGEMENT is the UniFi control
-# plane and SSH on it is in-subnet-only by design. Operator SSH access to the
-# testbed firewall belongs on PRIVILEGED (inherited from the prod pf policy).
-# Off-subnet "Connection refused" against MANAGEMENT is correct behavior, not
-# a bug to patch around. Out-of-band access for testbed work uses QGA and the
-# mwan-opnsense gRPC daemon, both of which are independent of guest SSH.
-
 text_literals:
-  # Spec section 3.3: NAT and outbound rule prefix shifts. Order matters
-  # because applyTextLiterals does a sequential bytes.ReplaceAll. We
-  # deliberately do NOT shift `10.250.250.` because testbed reuses prod's
-  # WAN-side `/29` subnet; see the WAN IPv4 note above.
   - name: "PRIVILEGED v4 prefix shift"
     from: "10.250.1."
     to:   "10.240.1."
@@ -189,44 +74,19 @@ text_literals:
     from: "10.250.0."
     to:   "10.240.0."
 
-  # IPv6 prefix shifts. Order matters because longer or more specific
-  # prefixes must come first so a substring rewrite does not split a
-  # longer literal into a corrupted value. The NAT64 prefix shift runs
-  # first to catch the embedded copies (firewall alias content at
-  # line 3354, rule network at line 5715). It is safe before or after
-  # the IPv6OnlyVLAN `:64::` shift because `:64::` is not a substring
-  # of `:6464::` (the char after `:6` in `:6464::` is `4`, not `:`).
-  - name: "v6 NAT64 prefix shift (catches embedded copies)"
+  # Longer IPv6 literals run first so sequential replacements keep prefixes intact.
+  - name: "v6 NAT64 prefix shift"
     from: "3d06:bad:b01:6464::"
     to:   "3d06:bad:b01:2664::"
-  # MWAN-168 fix (2026-05-08): the previous PRIVILEGED rule mapped
-  # `:1::` -> `:201::`, which collided with the WAN rule below
-  # (`:fe::` -> `:201::`). Same `/64` on two interfaces caused FreeBSD
-  # to install the connected `:201::/64` route on vlan0100 (alphabetical
-  # priority over vtnet1), so BGP IPv6 packets to peers `:201::3` and
-  # `:201::4` egressed the wrong interface and NDP failed. Shift to the
-  # `2N` two-digit convention from MWAN-140 section 10.1 instead. The
-  # paired xpath_set above (`PRIVILEGED LAN ipv6`) writes the same target
-  # value into the canonical `<ipaddrv6>` element; this text_literal
-  # catches embedded prod copies in firewall rules, aliases, and
-  # outbound-NAT entries.
   - name: "v6 PRIVILEGED prefix shift"
     from: "3d06:bad:b01:1::"
     to:   "3d06:bad:b01:21::"
-  # GENERAL: same `2N` migration; WAN rule below does not reuse this
-  # `/64` so no collision.
   - name: "v6 GENERAL prefix shift"
     from: "3d06:bad:b01:2::"
     to:   "3d06:bad:b01:22::"
-  # CAPTIVE: same `2N` migration. The CAPTIVE interface declaration in
-  # prod has no `<ipaddrv6>` element, so this rule only rewrites embedded
-  # references in firewall rules and aliases.
   - name: "v6 CAPTIVE prefix shift"
     from: "3d06:bad:b01:3::"
     to:   "3d06:bad:b01:23::"
-  # MANAGEMENT keeps the legacy three-digit `:204::/64` testbed prefix
-  # because it is the SSH path on the running testbed and the surrounding
-  # tooling depends on it.
   - name: "v6 MANAGEMENT prefix shift"
     from: "3d06:bad:b01:4::"
     to:   "3d06:bad:b01:204::"
@@ -236,79 +96,19 @@ text_literals:
   - name: "v6 WAN prefix shift"
     from: "3d06:bad:b01:fe::"
     to:   "3d06:bad:b01:201::"
-  # VMNET prefix shift comes last because `3d06:bad:b01::` is a strict
-  # prefix-as-substring of nothing else in the post-shift document
-  # (every other testbed v6 literal has a non-empty hex group between
-  # `b01:` and `::`). Specifically, `3d06:bad:b01::110` and
-  # `3d06:bad:b01::1` (the prod VMNET interface address and the embedded
-  # SSH-rule v6 addresses) both match this rule and become
-  # `3d06:bad:b01:200::110` and `3d06:bad:b01:200::1`.
   - name: "v6 VMNET prefix shift"
     from: "3d06:bad:b01::"
     to:   "3d06:bad:b01:200::"
 
-  # Spec section 3.4: hostname and domain literals embedded in cert CN,
-  # SSH banners, alt-names, dnssearchdomain, and the canonical <domain>
-  # elements. The xpath_set for hostname sets <system/hostname>; this
-  # text_literal handles <system/domain>, <captiveportal/domain>, and all
-  # embedded copies.
-  #
-  # MWAN-157 fix: the domain xpath_sets were removed so that this text_literal
-  # is the sole authority for rewriting "home.goodkind.io". With the xpath_sets
-  # still present, they would write "test.home.goodkind.io" into the domain
-  # elements before applyTextLiterals ran; the text_literal would then find
-  # "home.goodkind.io" as a substring of "test.home.goodkind.io" and double
-  # the prefix to "test.test.home.goodkind.io". With the xpath_sets removed,
-  # every occurrence of "home.goodkind.io" is the original prod value, so the
-  # text_literal rewrites it exactly once.
   - name: "domain literal"
     from: "home.goodkind.io"
     to:   "test.home.goodkind.io"
-
-  # Spec section 3.7: captive portal FQDN literal that mirrors the
-  # xpath_sets entries above. Prod uses `captive.chaotic.dog` and
-  # `chaotic.dog`; testbed uses `captive.test.home.goodkind.io` and
-  # `test.home.goodkind.io`. The captive FQDN runs first so the trailing
-  # `chaotic.dog` substring rewrite below does not corrupt the FQDN.
   - name: "captive portal FQDN"
     from: "captive.chaotic.dog"
     to:   "captive.test.home.goodkind.io"
   - name: "chaotic.dog domain literal"
     from: "chaotic.dog"
     to:   "test.home.goodkind.io"
-
-  # MWAN-168 fix (2026-05-08): DNS forwarder address. Prod's unbound
-  # `<dot>` entries forward to AdGuard at `3d06:bad:b01::53` (port 53 for
-  # plain forward, port 853 for DoT). The v6 VMNET prefix shift above
-  # rewrites that literal to `3d06:bad:b01:200::53`, but the testbed has
-  # no AdGuard equivalent at that address. Replace the post-shift literal
-  # with a public Cloudflare resolver so unbound on the testbed VM can
-  # actually resolve queries during the upgrade rehearsal (firmware fetch
-  # from `pkg.opnsense.org` requires working DNS). This rule must run
-  # AFTER the v6 VMNET shift because the input literal is the post-shift
-  # value, and YAML preserves list order so applyTextLiterals consumes
-  # rules sequentially. Cloudflare's `2606:4700:4700::1111` answers DoT
-  # on tcp/853 and plain DNS on tcp+udp/53, which matches both `<dot>`
-  # entries' port columns.
-  - name: "v6 DNS forwarder shift (testbed has no AdGuard; use Cloudflare)"
+  - name: "v6 DNS forwarder"
     from: "3d06:bad:b01:200::53"
     to:   "2606:4700:4700::1111"
-
-  # Spec section 3.9: SSH-username-bound firewall rules (operator
-  # decision: rewrite where the rewrite is mechanical and clearly
-  # parallel to the v6 prefix shifts; do NOT add testbed-specific
-  # admin addresses because no operator SSH access is expected through
-  # OPNsense on testbed). The v6 prefix shifts above already rewrite
-  # `agoodkind@3d06:bad:b01::110` to `agoodkind@3d06:bad:b01:200::110`
-  # via the v6 VMNET shift. The remaining prod operator addresses
-  # (`3d06:bad:b01:0:ad57:792c:c7a5:efc7`,
-  # `3d06:bad:b01:1:b505:9968:6f94:91f1`,
-  # `3d06:bad:b01:1:9d3f:b18:d72d:8b1f`,
-  # `3d06:bad:b01:10::8`,
-  # `2604:5500:c271:6310:bad:b01:0:4`,
-  # `10.250.1.245`) end up resolving to non-existent testbed addresses
-  # after the prefix shifts above. That is acceptable for a testbed
-  # parity exercise: the rules retain their shape so OPNsense exercises
-  # the same code paths on import, but no operator can match them. If
-  # the operator decides later to add real testbed admin addresses,
-  # extend this section with explicit per-username rewrites.

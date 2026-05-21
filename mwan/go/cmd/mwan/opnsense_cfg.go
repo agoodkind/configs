@@ -48,9 +48,8 @@ func requireProbeTarget(cfg *config.Config) (string, error) {
 	return target, nil
 }
 
-// requireProbeTimeout parses [opnsense.probe].timeout. An empty value
-// is treated as a hard error so the caller cannot silently fall back
-// to a flag default that no longer exists.
+// requireProbeTimeout parses [opnsense.probe].timeout. An empty value is a
+// hard error because the TOML value is the source of truth.
 func requireProbeTimeout(cfg *config.Config) (time.Duration, error) {
 	raw := strings.TrimSpace(cfg.OPNsense.Probe.TimeoutDuration)
 	if raw == "" {
@@ -150,9 +149,7 @@ func requireUpgradeStateDir(cfg *config.Config) (string, error) {
 }
 
 // requireUpgradeGRPCTarget returns [opnsense.upgrade].env_grpc_target.
-// The upgrade orchestrator always uses the gRPC transport after
-// MWAN-191 because SSH-only flag inputs are gone; the daemon socket
-// is the single source of truth.
+// The daemon socket is the single source of truth for the gRPC upgrade path.
 func requireUpgradeGRPCTarget(cfg *config.Config) (string, error) {
 	v := strings.TrimSpace(cfg.OPNsense.Upgrade.EnvGRPCTarget)
 	if v == "" {

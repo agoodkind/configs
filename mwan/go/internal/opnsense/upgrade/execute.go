@@ -11,11 +11,8 @@ import (
 	"time"
 )
 
-// Execute runs the in-guest upgrade per design section 4.2 and
-// resolved decision 11.3. The execution channel is the QGA-shaped
-// Executor interface. The mwan-opnsense RPC fallback is a stub today;
-// resolved decision 11.3 documents that path so MWAN-153 or a sibling
-// slice can wire it in without re-shaping the function signature.
+// Execute runs the in-guest upgrade. The execution channel is the QGA-shaped
+// Executor interface.
 func Execute(ctx context.Context, deps Deps, opts Options) (State, error) {
 	if err := validateOptions(opts); err != nil {
 		slog.ErrorContext(ctx, "upgrade.Execute: invalid options", "err", err)
@@ -195,10 +192,6 @@ func rebootAndVerifyVersion(ctx context.Context, deps Deps, vmid, deployDir stri
 // the major component of the version string. opnsense-version prints a
 // line like "OPNsense 25.7.11_9 (amd64)"; the major version is the
 // integer before the first dot in the second whitespace-separated token.
-// Source: MWAN-13-rehearsal-findings-2026-05-08.md line 64 ("opnsense-version
-// returns `OPNsense 25.7 (amd64)`") and line 566 ("`opnsense-version -O`
-// returns `CORE_PKGVERSION=25.7.11_9`"). No verifiable upstream spec was
-// found for the plain output format beyond those observed values.
 func guestMajorVersion(ctx context.Context, deps Deps, vmid string) (string, error) {
 	res, err := deps.Exec.GuestExec(ctx, vmid, "opnsense-version")
 	if err != nil {

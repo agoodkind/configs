@@ -1,9 +1,8 @@
 ---
 # Testbed OPNsense (VM 101 on suburban) target vars.
 # Consumed by deploy-opnsense.yml when targeting `opnsense_test_servers`.
-# Static `[opnsense_test_servers]` group in hosts owns the SSH identity
-# because the canonical IPv6 (3d06:bad:b01:211::1) is not reachable from
-# this controller; SSH goes via ProxyJump through suburban to 192.168.1.1.
+# Static `[opnsense_test_servers]` group in hosts owns the SSH identity.
+# SSH targets the WAN/internal address on vmbr2.
 
 ansible_user: root
 ansible_ssh_common_args: >-

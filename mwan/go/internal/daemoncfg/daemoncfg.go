@@ -31,10 +31,10 @@ import (
 // the rc.d script and the daemon, not a user-facing knob.
 const DefaultPath = "/var/lib/mwan/daemon.toml"
 
-// missingFileMessage is the exact error string the MWAN-193 contract
-// requires when the file is absent. The rc.d script is responsible for
-// templating the TOML before exec'ing the daemon, so a missing file
-// always indicates a packaging or rc.d bug, never a normal startup.
+// missingFileMessage is the exact error string returned when the daemon-side
+// TOML is absent. The rc.d script is responsible for templating the TOML before
+// exec'ing the daemon, so a missing file always indicates a packaging or rc.d
+// bug, never a normal startup.
 const missingFileMessage = "daemoncfg: /var/lib/mwan/daemon.toml not found; " +
 	"the rc.d script must template this file before starting the daemon"
 
@@ -93,9 +93,9 @@ func loadFrom(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// validate enforces that every field listed in the MWAN-193 schema is
-// present and non-empty. The error message cites the offending TOML key
-// so operators can fix the rc.d-templated file directly.
+// validate enforces that every field in the daemon TOML schema is present and
+// non-empty. The error message cites the offending TOML key so operators can
+// fix the rc.d-templated file directly.
 func validate(cfg *Config) error {
 	d := &cfg.Daemon
 	if d.SerialPath == "" {

@@ -41,21 +41,15 @@ type GRPCExecutor struct {
 	// ExecTimeoutSeconds caps each Exec RPC's per-call timeout. Zero
 	// falls back to the daemon's default (30s); negative is rejected
 	// by the daemon at call time. The maximum honoured by the daemon
-	// is bounded by maxExecTimeout in internal/opnsensesvc/exec.go,
-	// which MWAN-177 raised to 60 minutes. The execute phase plumbs
-	// its operator-supplied --exec-timeout through this field so the
-	// per-RPC cap matches the long opnsense-update -u fetch.
+	// is bounded by maxExecTimeout in internal/opnsensesvc/exec.go.
 	ExecTimeoutSeconds int32
 
 	// Redial reconnects the gRPC client and returns a fresh
 	// OPNsenseRPCClient. It is invoked when an Exec call returns a
-	// closed-client error, which is the post-rollback condition in
-	// MWAN-178: qm rollback restarts QEMU, which kills the existing
-	// virtio-serial channel, but the orchestrator still wants to poll
-	// the guest for liveness. When Redial is nil the executor never
-	// reconnects and surfaces the original error verbatim. The closed
-	// state is detected via isClientClosedErr so callers do not need
-	// to import the opnsense package for the sentinel.
+	// closed-client error, which can happen after qm rollback restarts QEMU.
+	// When Redial is nil the executor never reconnects and surfaces the original
+	// error verbatim. The closed state is detected via isClientClosedErr so
+	// callers do not need to import the opnsense package for the sentinel.
 	Redial func() (OPNsenseRPCClient, error)
 }
 

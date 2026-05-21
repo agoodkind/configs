@@ -6,9 +6,7 @@
 //
 // The package is deliberately decoupled from the concrete RealOps,
 // real PVE client, and real validator: every external surface goes
-// through an interface defined in this file so the unit tests can
-// stub them. The MWAN-153 test matrix implementation plugs into the
-// Validator interface here.
+// through an interface defined in this file so the unit tests can stub them.
 package upgrade
 
 import (
@@ -21,9 +19,6 @@ import (
 )
 
 // Phase is the typed lifecycle state recorded in the state file.
-// The full state machine is enumerated in
-// docs/MWAN-152-opnsense-upgrade-rollback-design.md section 5 and
-// resolved decision 11.10.
 type Phase string
 
 // Phase values enumerate every documented state in the upgrade
@@ -90,10 +85,9 @@ type Executor interface {
 	GuestExec(ctx context.Context, vmid string, args ...string) (GuestExecResult, error)
 }
 
-// Validator is the test-matrix surface. MWAN-153 owns the concrete
-// implementation. The Result type is intentionally simple so the unit
-// tests in this package can pass canned results without coupling to
-// MWAN-153 internals.
+// Validator is the test-matrix surface. The Result type is intentionally
+// simple so the unit tests in this package can pass canned results without
+// coupling to concrete validator internals.
 type Validator interface {
 	Validate(ctx context.Context, ctxArgs ValidateContext) (ValidationResult, error)
 }
@@ -190,22 +184,16 @@ const DefaultPostRollbackTimeout = 60 * time.Second
 const DefaultPostRebootTimeout = 10 * time.Minute
 
 // DefaultExecTimeout is the per-RPC Exec timeout passed to the
-// mwan-opnsense daemon by the gRPC executor. MWAN-177 sets this to 30
-// minutes after rehearsal 5 showed `opnsense-update -u` takes longer
-// than the daemon's prior 5-minute hard cap on a fresh testbed where
-// the package set has never been fetched. The outer --upgrade-timeout
+// mwan-opnsense daemon by the gRPC executor. The outer --upgrade-timeout
 // still bounds the whole execute phase; this value bounds one Exec.
 const DefaultExecTimeout = 30 * time.Minute
 
-// DefaultGCThreshold is 7 days, per resolved decision 11.8.
+// DefaultGCThreshold is 7 days.
 const DefaultGCThreshold = 7 * 24 * time.Hour
 
-// SnapshotPrefix is the prefix used for upgrade snapshots. Per design
-// section 3 the watchdog regex sets are kept disjoint, so the upgrade
-// flow uses its own prefix.
+// SnapshotPrefix is the prefix used for upgrade snapshots. The upgrade flow
+// uses its own prefix so watchdog and upgrade snapshots stay disjoint.
 const SnapshotPrefix = "pre-upgrade-26x-"
 
-// KeepPrefix is the rename prefix that protects a snapshot from gc
-// per resolved decision 11.8. Operators rename a snapshot to keep-
-// prefix to retain it indefinitely.
+// KeepPrefix is the rename prefix that protects a snapshot from gc.
 const KeepPrefix = "keep-pre-upgrade-26x-"

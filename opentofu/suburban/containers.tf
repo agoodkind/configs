@@ -1,4 +1,4 @@
-# MWAN-62: suburban testbed LXCs managed by OpenTofu.
+# Suburban testbed LXCs managed by OpenTofu.
 
 resource "proxmox_virtual_environment_container" "mwan_failover_test" {
   node_name = "hypervisor"

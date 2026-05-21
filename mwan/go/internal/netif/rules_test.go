@@ -7,12 +7,6 @@ import (
 	"testing"
 )
 
-// Note: TestParseRuleList was removed when rules.go switched to
-// vishvananda/netlink. The string parser it covered no longer exists.
-// Equivalent coverage is now via integration tests on a real Linux host
-// (testbed LXC 100, prod vault) where RuleList round-trips through the
-// kernel.
-
 func TestRulesMatch(t *testing.T) {
 	cur := CurrentRule{Priority: 5, UIDRange: "997-997", TableID: 500}
 	cases := []struct {

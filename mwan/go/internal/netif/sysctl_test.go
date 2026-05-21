@@ -22,9 +22,9 @@ func TestKeyToPath(t *testing.T) {
 			want: "/proc/sys/net/ipv4/conf/all/forwarding",
 		},
 		{
-			// NIC name with dot (vrrp.51 from keepalived).
-			key:  "net.ipv6.conf.vrrp.51.accept_ra",
-			want: "/proc/sys/net/ipv6/conf/vrrp.51/accept_ra",
+			// VLAN-style NIC name.
+			key:  "net.ipv6.conf.enatt0.3242.accept_ra",
+			want: "/proc/sys/net/ipv6/conf/enatt0.3242/accept_ra",
 		},
 		{
 			// VLAN-style NIC name.

@@ -16,9 +16,10 @@ runtime story lives in [docs/mwan/overview.md](../mwan/overview.md).
   `vmbrtrunk` stub at `10.240.4.5/24` and `3d06:bad:b01:204::5/64`, defined in
   [opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf).
 - The LAN interface (`lan` in `config.xml`) carries `192.168.1.1/24` and
-  `3d06:bad:b01:211::1/64`. This is the SSH path used by the Ansible
-  controller via ProxyJump through suburban; see
-  [ansible/inventory/group_vars/opnsense_test_servers.yml](../../ansible/inventory/group_vars/opnsense_test_servers.yml).
+  `3d06:bad:b01:211::1/64`.
+- The WAN/internal interface carries `10.250.250.2/29` and
+  `3d06:bad:b01:201::2/64`. Suburban reaches that interface through `vmbr2`,
+  and TCP port 22 is open there.
 - The host-side OPNsense gRPC target is
   `unix:///var/run/qemu-server/101.mwanrpc`.
 - The named virtio-console port is `io.goodkind.mwan-opnsense.0`.

@@ -7,9 +7,8 @@ See [docs/mwan/overview.md](overview.md) for the runtime architecture and
 ## Monolith contract
 
 All Go infrastructure code lives in one binary built from
-[mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan`
-(renamed `mwan-linux` in [mwan/go/bin/](../../mwan/go/bin/) for the local
-host). The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
+[mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan` on targets and `mwan-linux` in
+[mwan/go/bin/](../../mwan/go/bin/) on the local host. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
 where it auto-dispatches into the `opnsense` daemon based on `argv[0]`.
 
 Subcommands (as defined in [mwan/go/cmd/mwan/main.go](../../mwan/go/cmd/mwan/main.go)):
@@ -45,12 +44,7 @@ Shared code lives under
 [mwan/go/internal/alert/](../../mwan/go/internal/alert/),
 [mwan/go/internal/tracing/](../../mwan/go/internal/tracing/),
 [mwan/go/internal/mwn1/](../../mwan/go/internal/mwn1/), and
-[mwan/go/internal/rollback/](../../mwan/go/internal/rollback/). The legacy
-[mwan/go/internal/cmd/cutover/](../../mwan/go/internal/cmd/cutover/) and
-[mwan/go/internal/cmd/cutover2/](../../mwan/go/internal/cmd/cutover2/)
-packages have been removed; the leftover `mwan-cutover` and `mwan-unfuck`
-files still present on production hosts are stale wrappers from that era and
-should be cleaned up.
+[mwan/go/internal/rollback/](../../mwan/go/internal/rollback/).
 
 ## Code standards
 
@@ -81,10 +75,6 @@ should be cleaned up.
   template. Full vault contract in [docs/ansible/secrets.md](../ansible/secrets.md).
 - **Linting enforced.** `make lint` (golangci-lint) must pass. Config in
   [mwan/go/.golangci.yml](../../mwan/go/.golangci.yml).
-- **Cutover is complete.** The `mwan cutover` and `mwan cutover2` subcommands
-  have been removed from the binary. Ongoing failover is handled by
-  `mwan watchdog failover`.
-
 ## Build rules
 
 Every implementation agent or person making changes must:

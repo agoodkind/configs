@@ -15,7 +15,7 @@ runbooks.
 - [vault.md](vault.md): Proxmox vault hypervisor, vault LXCs, QEMU VMs, stopped
   VMs, and vault host services.
 - [mwan-layout.md](mwan-layout.md): MWAN command surfaces, per-host runtime
-  layout, stale binaries, rollout order, and WAN links.
+  layout, rollout order, and WAN links.
 - [suburban-testbed.md](suburban-testbed.md): suburban bridges, testbed guests,
   and production versus testbed shape.
 - [opnsense.md](opnsense.md): current production OPNsense topology and its role

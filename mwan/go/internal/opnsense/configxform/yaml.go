@@ -11,9 +11,6 @@ import (
 )
 
 // Substitutions is the operator-supplied table that drives the transform.
-// Each section maps to a numbered scope item in
-// mwan/docs/MWAN-140-config-xml-transform-spec.md.
-//
 // The YAML structure is:
 //
 //	device_names:

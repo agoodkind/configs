@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Deploy paths and constants. See mwan/MWAN-95-SELFDEPLOY-DESIGN.md.
+// Deploy paths and constants.
 const (
 	DefaultBinaryDir  = "/usr/local/sbin"
 	BinaryName        = "mwan-opnsense"

@@ -3,7 +3,7 @@
 #
 # Targets opnsense_servers (prod, router.home.goodkind.io reached via
 # 3d06:bad:b01::1 as agoodkind) or opnsense_test_servers (testbed,
-# opnsense-test reached via 192.168.1.1 with ProxyJump through suburban).
+# opnsense-test reached through suburban on the vmbr2 WAN/internal link).
 # All connection differences live in opnsense_servers.yml and
 # opnsense_test_servers.yml, so this play body is branchless on
 # inventory_hostname.

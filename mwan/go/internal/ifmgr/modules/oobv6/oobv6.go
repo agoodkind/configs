@@ -119,7 +119,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	// Keep the source-based rule for the live MB SLAAC in sync. This is
 	// what makes off-site v6 reach back to vault from any address mbrains
 	// hands us, without depending on the address staying the same across
-	// RA renumbers (MWAN-67).
+	// RA renumbers.
 	return m.reconcileSLAACSrcRule(ctx, log)
 }
 

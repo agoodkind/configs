@@ -10,13 +10,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Note: TestParseMonitorLine and TestIsAddrLine were removed when monitor.go
-// switched from `ip monitor` subprocess parsing to netlink subscribe APIs.
-// The string parser and isAddrLine helper no longer exist. The replacement
-// path is exercised by integration tests on a real Linux host (testbed
-// LXC 100, prod vault) where the netlink subscription is fed by the live
-// kernel.
-
 func newTestMonitor(iface string, ifIndex int) *Monitor {
 	return &Monitor{
 		cfg:     MonitorConfig{Iface: iface},

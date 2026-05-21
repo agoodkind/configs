@@ -109,9 +109,8 @@ func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
 	if p := cfg.IfMgr.JSONLogFile; p != "" {
 		handlers = append(handlers, logging.FileJSON(p))
 	}
-	// Email no longer flows through the slog handler chain for ifmgr.
-	// notify.Manager (constructed in runIfMgr via notify.FromConfig)
-	// owns the email path with per-(kind, key) state-change semantics.
+	// Email flows through notify.Manager, constructed in runIfMgr via
+	// notify.FromConfig, with per-(kind, key) state-change semantics.
 	logger, _ := logging.New(logging.Config{
 		BuildVersion: version.BuildVersionString(),
 		Handlers:     handlers,
@@ -185,10 +184,8 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		return ifmgr.DaemonConfig{}, err
 	}
 
-	// The repeat cadence (cfg.IfMgr.Alerts.RepeatEvery and PerModule, or
-	// cfg.Notify.RepeatEvery and PerKind) is consumed by notify.FromConfig
-	// directly. Daemon construction no longer plumbs it through, so the
-	// old buildAlertRepeatPolicy helper is gone.
+	// The repeat cadence is consumed directly by notify.FromConfig from
+	// cfg.IfMgr.Alerts or cfg.Notify.
 	return ifmgr.DaemonConfig{
 		Role:              role,
 		Iface:             ifaceName,

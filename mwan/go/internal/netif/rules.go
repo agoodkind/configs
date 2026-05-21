@@ -40,8 +40,8 @@ type CurrentRule struct {
 }
 
 // ReconcileRules ensures every rule in desired is present, and removes
-// any rule the daemon previously installed (matching priority+family) that
-// no longer matches. Foreign rules at unrelated priorities are preserved.
+// daemon-owned rules (matching priority+family) that do not match desired.
+// Foreign rules at unrelated priorities are preserved.
 //
 // Strategy:
 //   - For each family (inet/inet6) seen in desired, list current rules.

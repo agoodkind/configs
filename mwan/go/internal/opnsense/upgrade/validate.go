@@ -9,11 +9,8 @@ import (
 	"path/filepath"
 )
 
-// Validate runs the test-matrix surface per design section 4.3. The
-// concrete checks live in MWAN-153; this function is the plumbing that
-// invokes the Validator interface and translates the result into the
-// next Phase plus a notify event. The Validator interface is the
-// stubbed surface that MWAN-153 will plug into.
+// Validate runs the test-matrix surface, invokes the Validator interface, and
+// translates the result into the next Phase plus a notify event.
 func Validate(ctx context.Context, deps Deps, opts Options) (State, ValidationResult, error) {
 	if err := validateOptions(opts); err != nil {
 		slog.ErrorContext(ctx, "upgrade.Validate: invalid options", "err", err)
@@ -154,8 +151,7 @@ func failingCheckNames(result ValidationResult) []string {
 
 // AggregateChecks computes the AllPass, AnyFail, Partial booleans
 // from a slice of CheckResult. Callers building a ValidationResult
-// inline use this so the booleans stay consistent. Used by the run
-// pipeline and by tests; exported so MWAN-153 can compose with it.
+// inline use this so the booleans stay consistent.
 func AggregateChecks(checks []CheckResult) ValidationResult {
 	if len(checks) == 0 {
 		return ValidationResult{Checks: checks, AllPass: false, AnyFail: false, Partial: false}

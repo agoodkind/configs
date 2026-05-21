@@ -1,5 +1,4 @@
-# Internal link to OPNsense (mwanbr equivalent)
-# Post-cutover: ::3 is the "real" address, ::1 is the VIP (on vrrp.51 via keepalived)
+# Internal link to OPNsense
 
 [Match]
 Name=enmwanbr0

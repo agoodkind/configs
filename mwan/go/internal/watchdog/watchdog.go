@@ -493,7 +493,7 @@ func (w *watchdog) readGuestUnix(ctx context.Context, path string) (int64, bool)
 
 // parseManifest parses a manifest in sha256sum(1) format: "<hash>  <path>\n".
 // Returns a map of path -> sha256hex. Lines that don't match the format are
-// silently skipped (e.g. legacy plain-path manifests from before this change).
+// silently skipped.
 func parseManifest(raw string) map[string]string {
 	m := make(map[string]string)
 	for line := range strings.SplitSeq(raw, "\n") {
@@ -1480,7 +1480,7 @@ func (w *watchdog) diagnoseNoRecentChange(ctx context.Context) bool {
 		// Check if failover LXC can reach the internet.
 		// If yes: failover is useful (VM routing broken, LXC WAN works).
 		// If no: real ISP outage, failover is pointless.
-		if w.cfg.Cutover.FailoverLXCID != "" {
+		if w.cfg.Failover.LXCID != "" {
 			if w.tryFailover(ctx, w.cfg, "Total connectivity loss on primary, no recent config change") {
 				return true
 			}

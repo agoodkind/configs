@@ -2,8 +2,8 @@
 # Linux-side deploy of the mwan opnsense host bridge subcommand.
 #
 # Target: a Proxmox host that runs an OPNsense VM, reached as root.
-# Pairs with mwan-opnsense-deploy.yml which installs the daemon
-# inside the OPNsense guest. See mwan/MWAN-95-INVESTIGATION.md.
+# Pairs with mwan-opnsense-deploy.yml which installs the daemon inside the
+# OPNsense guest.
 #
 # Required vars:
 #   mwan_opnsense_host_binary_local      local path to bin/mwan-linux

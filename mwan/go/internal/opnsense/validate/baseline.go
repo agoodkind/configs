@@ -19,10 +19,6 @@ const (
 	BaselineSchemaVersion = 1
 
 	// DefaultStateDir is the on-disk root for upgrade artefacts.
-	// The path matches MWAN-152 resolved decision 11.6 (section 9.6):
-	// plural "upgrades". MWAN-153 section 9.8 originally recorded
-	// singular, but MWAN-152 section 11.6 overrides it and the
-	// implementation (upgrade.DefaultStateDir) uses plural.
 	DefaultStateDir = "/var/lib/mwan/upgrades"
 
 	// PreBaselineFilename is the file name written under

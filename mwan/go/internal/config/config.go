@@ -81,10 +81,10 @@ type WatchdogSection struct {
 	RollbackStateFile string `toml:"rollback_state_file"`
 	RollbackLockFile  string `toml:"rollback_lock_file"`
 
-	// ServiceName is the systemd unit name that the cutover2 arm-watchdog
-	// and disarm-watchdog subcommands target. Defaults to "mwan-watchdog"
-	// on production. Testbed sets this to "mwan-watchdog-testbed" so the
-	// same binary works against the per-environment unit.
+	// ServiceName is the systemd unit name that watchdog subcommands target.
+	// Defaults to "mwan-watchdog" on production. Testbed sets this to
+	// "mwan-watchdog-testbed" so the same binary works against the
+	// per-environment unit.
 	ServiceName string `toml:"service_name"`
 }
 
@@ -102,39 +102,9 @@ func (ws WatchdogSection) PostRollbackGrace() time.Duration {
 	return time.Duration(ws.PostRollbackGraceSeconds) * time.Second
 }
 
-// CutoverSection holds cutover-specific configuration.
-type CutoverSection struct {
-	CurrentRealIPv6 string `toml:"current_real_ipv6"`
-	CurrentRealIPv4 string `toml:"current_real_ipv4"`
-	NewRealIPv6     string `toml:"new_real_ipv6"`
-	NewRealIPv4     string `toml:"new_real_ipv4"`
-	VIPIPv6         string `toml:"vip_ipv6"`
-	VIPIPv4         string `toml:"vip_ipv4"`
-
-	OPNsenseAddr string `toml:"opnsense_addr"`
-
-	FailoverLXCID       string `toml:"failover_lxc_id"`
-	FailoverLXCIface    string `toml:"failover_lxc_iface"`
-	FailoverLXCWanIface string `toml:"failover_lxc_wan_iface"`
-	FailoverDefaultGW6  string `toml:"failover_default_gw6"`
-	FailoverDefaultGW4  string `toml:"failover_default_gw4"`
-	FailoverInternalPfx string `toml:"failover_internal_pfx"`
-	FailoverOPNsenseLL  string `toml:"failover_opnsense_ll"`
-	FailoverIPv4Return  string `toml:"failover_ipv4_return"`
-
-	VRID           int `toml:"vrid"`
-	MasterPriority int `toml:"master_priority"`
-	BackupPriority int `toml:"backup_priority"`
-	AdvertInterval int `toml:"advert_interval"`
-
-	HealthCheckInterval int `toml:"health_check_interval"`
-	HealthCheckWeight   int `toml:"health_check_weight"`
-	HealthCheckFall     int `toml:"health_check_fall"`
-	HealthCheckRise     int `toml:"health_check_rise"`
-
-	SSHTimeoutSec    int `toml:"ssh_timeout_sec"`
-	VerifyTimeoutSec int `toml:"verify_timeout_sec"`
-	BootWaitSec      int `toml:"boot_wait_sec"`
+// FailoverSection holds BGP failover configuration.
+type FailoverSection struct {
+	LXCID string `toml:"lxc_id"`
 }
 
 // OPNsenseSection holds OPNsense API credentials, endpoint, and its own BGP config.
@@ -150,16 +120,13 @@ type OPNsenseSection struct {
 
 	// SSHUser is the SSH login on OPNsense. OPNsense disables root SSH by
 	// default and ships with an admin user that has wheel + NOPASSWD sudo.
-	// Defaults to "agoodkind". Cutover commands needing root (config.xml
-	// edit, reboot) are wrapped with "sudo" automatically.
+	// Defaults to "agoodkind". OPNsense operations that need root are
+	// wrapped with "sudo" automatically.
 	SSHUser string `toml:"ssh_user"`
 
-	// Host, Probe, Upgrade, Validate are the four [opnsense.*] subsections
-	// introduced by MWAN-189 for the gRPC-over-virtio-serial transport
-	// between the Proxmox host (mwan-opnsense-host) and the OPNsense
-	// guest. ConfigImport was added in MWAN-192 so the prod-XML transform
-	// path is TOML-driven (the old flag-based -input/-substitutions/-output
-	// surface is gone).
+	// Host, Probe, Upgrade, Validate, and ConfigImport are the [opnsense.*]
+	// subsections for the gRPC-over-virtio-serial transport between the Proxmox
+	// host and the OPNsense guest.
 	Host         OpnsenseHostSection         `toml:"host"`
 	Probe        OpnsenseProbeSection        `toml:"probe"`
 	Upgrade      OpnsenseUpgradeSection      `toml:"upgrade"`
@@ -212,11 +179,9 @@ type OpnsenseProbeSection struct {
 	UploadChunkBytes int    `toml:"upload_chunk_bytes"`
 }
 
-// OpnsenseUpgradeSection configures the mwan upgrade orchestrator. After
-// MWAN-191 every operator-tunable knob lives here; the old CLI flag set
-// is gone. EnvTransport is retained for forward compatibility but the
-// CLI today always uses the gRPC path because the SSH executor was a
-// staging hop, not a steady-state surface.
+// OpnsenseUpgradeSection configures the mwan upgrade orchestrator. Operator
+// tunables live here. EnvTransport is retained for forward compatibility, and
+// the CLI currently uses the gRPC path.
 type OpnsenseUpgradeSection struct {
 	VMID                     int    `toml:"vmid"`
 	EnvTransport             string `toml:"env_transport"`
@@ -327,10 +292,9 @@ type BGPSection struct {
 // do not trigger immediate route withdrawal on the helper (OPNsense FRR).
 //
 // RestartTime is advertised to the helper as the maximum number of seconds
-// the helper should hold our routes after the BGP session drops. The plan
-// (MWAN-130) sets this to 30s by default. NotificationEnabled mirrors the
-// "N" bit (RFC 8538) so a NOTIFICATION-triggered session reset still
-// preserves the GR semantics.
+// the helper should hold our routes after the BGP session drops.
+// NotificationEnabled mirrors the "N" bit (RFC 8538) so a
+// NOTIFICATION-triggered session reset still preserves the GR semantics.
 type BGPGracefulRestart struct {
 	Enabled             bool   `toml:"enabled"`
 	RestartTime         uint32 `toml:"restart_time"`
@@ -366,7 +330,6 @@ type AgentSection struct {
 }
 
 // Config is the single TOML configuration for the mwan monolith.
-// All subcommands (agent, watchdog, cutover) read from the same file.
 // Default path: /etc/mwan/config.toml, override with --config or MWAN_CONFIG env.
 type Config struct {
 	Hostname     string `toml:"hostname"`
@@ -379,7 +342,7 @@ type Config struct {
 	Network NetworkConfig `toml:"network"`
 
 	Watchdog WatchdogSection `toml:"watchdog"`
-	Cutover  CutoverSection  `toml:"cutover"`
+	Failover FailoverSection `toml:"failover"`
 	Agent    AgentSection    `toml:"agent"`
 	BGP      BGPSection      `toml:"bgp"`
 	OPNsense OPNsenseSection `toml:"opnsense"`
@@ -448,10 +411,7 @@ type IfMgrIfaceSection struct {
 
 func defaultConfig() Config {
 	cfg := defaultConfigBase()
-	// Populate the four [opnsense.*] subsections introduced by MWAN-189.
-	// Assigning post-construction keeps the Config and OPNsenseSection
-	// struct literals untouched so the existing exhaustruct baseline
-	// keys still match.
+	// Populate the [opnsense.*] subsections outside the base Config literal.
 	cfg.OPNsense.Host = OpnsenseHostSection{
 		Upstream:                  "unix:///var/run/qemu-server/101.mwanrpc",
 		Listen:                    "/var/run/mwan-opnsense.sock",
@@ -545,12 +505,7 @@ func defaultConfigBase() Config {
 			RollbackLockFile:  "/run/mwan-watchdog-rollback.lock",
 			ServiceName:       "mwan-watchdog",
 		},
-		Cutover: CutoverSection{
-			VRID: 51, MasterPriority: 150, BackupPriority: 50, AdvertInterval: 1,
-			HealthCheckInterval: 10, HealthCheckWeight: -110,
-			HealthCheckFall: 3, HealthCheckRise: 2,
-			SSHTimeoutSec: 10, VerifyTimeoutSec: 30, BootWaitSec: 35,
-		},
+		Failover: FailoverSection{LXCID: ""},
 		Agent: AgentSection{
 			VsockPort: 50051, TCPAddr: "[::]:50052",
 			DeployFile:     "/var/lib/mwan/last-deploy",
@@ -617,15 +572,12 @@ type Subcommand string
 const (
 	// SubWatchdog routes config validation through validateWatchdog.
 	SubWatchdog Subcommand = "watchdog"
-	// SubCutover routes config validation through validateCutover.
-	SubCutover Subcommand = "cutover"
 	// SubAgent routes config validation through validateAgent.
 	SubAgent Subcommand = "agent"
 	// SubIfMgr routes config validation through validateIfMgr.
 	SubIfMgr Subcommand = "ifmgr"
 	// SubOpnsense routes config validation through validateOpnsense for
-	// the mwan-opnsense-host / mwan-probe / mwan-upgrade / mwan-validate
-	// family. Wired up in MWAN-190/191/193; no-op stub today.
+	// the mwan-opnsense-host / mwan-probe / mwan-upgrade / mwan-validate family.
 	SubOpnsense Subcommand = "opnsense"
 )
 
@@ -637,8 +589,6 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 	switch Subcommand(sub) {
 	case SubWatchdog:
 		return validateWatchdog(cfg, dryRun)
-	case SubCutover:
-		return validateCutover(cfg, dryRun)
 	case SubAgent:
 		return validateAgent(cfg)
 	case SubIfMgr:
@@ -649,11 +599,8 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 	return nil
 }
 
-// validateOpnsense is a no-op stub today. The four [opnsense.*]
-// subsections (host, probe, upgrade, validate) are schema-only at
-// MWAN-189; per-subcommand validation is wired up in MWAN-190/191/193
-// once the host daemon, probe client, and upgrade orchestrator start
-// consuming the fields.
+// validateOpnsense is a no-op stub today. The [opnsense.*] subsections are
+// schema-only at this layer.
 func validateOpnsense(_ *Config) error {
 	return nil
 }
@@ -722,40 +669,6 @@ func validateWatchdog(cfg *Config, dryRun bool) error {
 	}
 	if len(cfg.Network.WANInterfaces) == 0 {
 		return errors.New("[network] wan_interfaces must not be empty")
-	}
-	return nil
-}
-
-func validateCutover(cfg *Config, dryRun bool) error {
-	if cfg.MwanVMID == "" {
-		return errors.New("mwan_vmid is required")
-	}
-	if !dryRun && cfg.Email.SMTP2GOAPIKey == "" {
-		return errors.New("[email] smtp2go_api_key is required (set in TOML or SMTP2GO_API_KEY env)")
-	}
-	if cfg.MwanMgmtAddr == "" {
-		return errors.New("mwan_mgmt_addr is required")
-	}
-	if cfg.MwanIntIface == "" {
-		return errors.New("mwan_int_iface is required")
-	}
-	if cfg.Cutover.VIPIPv6 == "" {
-		return errors.New("[cutover] vip_ipv6 is required")
-	}
-	if cfg.Cutover.FailoverLXCID == "" {
-		return errors.New("[cutover] failover_lxc_id is required")
-	}
-	if cfg.Email.AlertEmail == "" {
-		return errors.New("[email] alert_email is required")
-	}
-	if cfg.Email.From == "" {
-		return errors.New("[email] from is required")
-	}
-	if cfg.Email.SubjectPrefix == "" {
-		return errors.New("[email] subject_prefix is required")
-	}
-	if cfg.OPNsense.URL == "" {
-		return errors.New("[opnsense] url is required")
 	}
 	return nil
 }

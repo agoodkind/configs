@@ -17,7 +17,7 @@ again.
 Use the serial console while reloads or reboots are in progress. If SSH drops,
 continue observing through the console path.
 
-`revertBackup` swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and write the resulting key and secret into [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml). Tracked as MWAN-159.
+`revertBackup` swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and write the resulting key and secret into [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml).
 
 ## Every Change Gate
 

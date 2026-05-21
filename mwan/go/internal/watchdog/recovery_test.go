@@ -11,12 +11,12 @@ import (
 	"goodkind.io/mwan/internal/config"
 )
 
-// recoveryTestCfgOverrides applies the BGP/Cutover/Email plumbing required
+// recoveryTestCfgOverrides applies the BGP failover and email plumbing required
 // for triggerBGPFailover and triggerBGPRecovery to run end-to-end against the
 // mock ops surface.
 func recoveryTestCfgOverrides(cfg *config.Config) {
 	cfg.BGP = config.BGPSection{Enabled: true}
-	cfg.Cutover = config.CutoverSection{FailoverLXCID: "203"}
+	cfg.Failover = config.FailoverSection{LXCID: "203"}
 	cfg.Email = config.EmailConfig{
 		AlertEmail:    "test@test.com",
 		SubjectPrefix: "MWAN",

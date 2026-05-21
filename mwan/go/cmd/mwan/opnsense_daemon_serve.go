@@ -24,8 +24,8 @@ const (
 	// rc.subr path the is-enabled check resolves. Both live on FreeBSD
 	// hosts and have stable conventional paths. The serial path, baud,
 	// config.xml path, backup dir, state dir, and rendered logfile path
-	// are recorded in the daemon-side TOML (/var/lib/mwan/daemon.toml)
-	// after MWAN-193; only rc.d supervision details stay compiled in here.
+	// are recorded in the daemon-side TOML (/var/lib/mwan/daemon.toml);
+	// only rc.d supervision details stay compiled in here.
 	defaultRCName = "mwan_opnsense"
 	defaultRCSubr = "/etc/rc.subr"
 )
@@ -35,11 +35,11 @@ const (
 // one peer; auth is unix socket permissions on the host side (root-only)
 // so the daemon does not authenticate at the application layer.
 //
-// After MWAN-193, the serve verb still takes no flags. The serial path,
-// baud, config.xml path, backup dir, and transfer state dir come from
-// /var/lib/mwan/daemon.toml (templated by the rc.d script). That file
-// also records the rc.d-owned logfile path so the runtime contract is
-// complete even though the serve process does not open the logfile.
+// The serve verb takes no flags. The serial path, baud, config.xml path,
+// backup dir, and transfer state dir come from /var/lib/mwan/daemon.toml
+// (templated by the rc.d script). That file also records the rc.d-owned logfile
+// path so the runtime contract is complete even though the serve process does
+// not open the logfile.
 // The verb still accepts an empty arg slice or a help token for forward
 // compatibility.
 func runOPNsenseDaemonServe(args []string) int {

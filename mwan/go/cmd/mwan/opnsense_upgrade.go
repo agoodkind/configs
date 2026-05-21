@@ -211,10 +211,9 @@ func (ui upgradeInputs) toOptions() upgrade.Options {
 	}
 }
 
-// buildUpgradeDeps wires the production Deps. Executor and validator
-// both ride the gRPC channel today since SSH executor is a relic the
-// CLI no longer exposes; the SSH-host fields are still passed into
-// validator probes that talk to OPNsense over SSH.
+// buildUpgradeDeps wires the production Deps. Executor and validator both ride
+// the gRPC channel. The SSH-host fields are still passed into validator probes
+// that talk to OPNsense over SSH.
 func buildUpgradeDeps(cfg *config.Config, ui upgradeInputs) (upgrade.Deps, error) {
 	logger := slog.Default()
 	notifier := notify.FromConfig(cfg, logger, "mwan-opnsense-upgrade")

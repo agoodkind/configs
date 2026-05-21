@@ -810,7 +810,7 @@
       ansible.builtin.debug:
         msg:
           - "🔒 Password for root@{{ reset_hostname }} has been reset"
-          - "  (Previous temporary password is no longer valid)"
+          - "  (Temporary password has been replaced)"
       when:
         - should_reset | default(false) | bool
         - not skip_password_reset | default(false) | bool

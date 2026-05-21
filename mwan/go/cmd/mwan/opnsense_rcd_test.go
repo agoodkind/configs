@@ -29,11 +29,11 @@ func TestRCDWritesDaemonTOML(t *testing.T) {
 	renderScript := string(scriptData)
 	rewrittenScript := strings.Replace(renderScript, ". /etc/rc.subr", `. "${RC_SUBR_STUB}"`, 1)
 	if rewrittenScript == renderScript {
-		t.Fatal("rc.d script no longer contains the expected rc.subr include")
+		t.Fatal("rc.d script does not contain the expected rc.subr include")
 	}
 	renderScript = strings.Replace(rewrittenScript, `run_rc_command "$1"`, `:`, 1)
 	if renderScript == rewrittenScript {
-		t.Fatal("rc.d script no longer contains the expected run_rc_command tail")
+		t.Fatal("rc.d script does not contain the expected run_rc_command tail")
 	}
 
 	tempScriptPath := filepath.Join(dir, "mwan_opnsense")

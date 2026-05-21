@@ -2,10 +2,9 @@
 
 require 'fileutils'
 
-# Local Rake wrappers for the five canonical Ansible playbooks. Replaces the
-# previous remote-rsync-to-/usr/share/ansible model with direct local
-# `ansible-playbook` invocations. Run from this directory (`ansible/`) or
-# pass --working-dir; `ansible.cfg` here resolves inventory automatically.
+# Local Rake wrappers for the five canonical Ansible playbooks. Run from this
+# directory (`ansible/`) or pass --working-dir; `ansible.cfg` here resolves
+# inventory automatically.
 #
 # Vault password file defaults to ~/.config/ansible/vault.pass.
 # Override with VAULT_PASS_FILE=... or pass `nopass=1` to skip.

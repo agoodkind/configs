@@ -5,7 +5,6 @@ internal/agent/server.go:429:6: unreachable func: readMeminfoKB	# deadcode:first
 internal/config/config.go:384:6: unreachable func: Validate	# deadcode:first_added=2026-05-05T06:21:42Z last_seen=2026-05-08T05:40:13Z
 internal/config/config.go:405:6: unreachable func: validateIfMgr	# deadcode:first_added=2026-05-05T06:21:42Z last_seen=2026-05-08T05:40:13Z
 internal/config/config.go:453:6: unreachable func: validateWatchdog	# deadcode:first_added=2026-05-05T06:21:42Z last_seen=2026-05-08T05:40:13Z
-internal/config/config.go:469:6: unreachable func: validateCutover	# deadcode:first_added=2026-05-05T06:21:42Z last_seen=2026-05-08T05:40:13Z
 internal/config/config.go:503:6: unreachable func: validateAgent	# deadcode:first_added=2026-05-05T06:21:42Z last_seen=2026-05-08T05:40:13Z
 internal/config/config.go:510:6: unreachable func: validateBGP	# deadcode:first_added=2026-05-05T06:21:42Z last_seen=2026-05-08T05:40:13Z
 internal/config/config.go:542:6: unreachable func: validateOpnsense	# deadcode:first_added=2026-05-12T00:00:00Z last_seen=2026-05-12T00:00:00Z

@@ -17,16 +17,12 @@ import (
 )
 
 // triggerFailover dispatches to the BGP route-control failover path.
-// The legacy keepalived-based path was removed when the BGP cutover
-// completed (MWAN-1) and keepalived was decommissioned (MWAN-69 +
-// MWAN-82). cfg.BGP.Enabled must be true on every host this watchdog
-// runs against.
 func (w *watchdog) triggerFailover(ctx context.Context, cfg *config.Config, reason string) error {
-	if cfg.Cutover.FailoverLXCID == "" {
-		return fmt.Errorf("cutover config has no failover_lxc_id; cannot failover")
+	if cfg.Failover.LXCID == "" {
+		return fmt.Errorf("failover config has no lxc_id; cannot failover")
 	}
 	if !cfg.BGP.Enabled {
-		return fmt.Errorf("failover requires cfg.BGP.Enabled=true; legacy keepalived path was removed")
+		return fmt.Errorf("failover requires cfg.BGP.Enabled=true")
 	}
 	w.log.InfoContext(ctx, "FAILOVER: dispatching to BGP route control path", "reason", reason)
 	return w.triggerBGPFailover(ctx, cfg, reason)
@@ -44,7 +40,7 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 	// flood the inbox; the key is the primary vmid so a different vmid
 	// retains its own failover state.
 	failoverMsg := fmt.Sprintf("BGP FAILOVER: withdrawing routes from VM %s, announcing on LXC %s",
-		cfg.MwanVMID, cfg.Cutover.FailoverLXCID)
+		cfg.MwanVMID, cfg.Failover.LXCID)
 	w.notify.Notify(ctx, notify.Event{
 		Now:     time.Time{},
 		Level:   slog.LevelError,
@@ -54,7 +50,7 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 		Fields: []slog.Attr{
 			slog.String("reason", reason),
 			slog.String("vmid", cfg.MwanVMID),
-			slog.String("lxc", cfg.Cutover.FailoverLXCID),
+			slog.String("lxc", cfg.Failover.LXCID),
 		},
 		IsRecovery: false,
 	})
@@ -69,10 +65,10 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 	}
 
 	// Step 2: Check BGP status on the failover LXC.
-	w.log.InfoContext(ctx, "BGP_FAILOVER: checking BGP status on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
-	status, err := w.ops.GetBGPStatus(ctx, cfg.Cutover.FailoverLXCID)
+	w.log.InfoContext(ctx, "BGP_FAILOVER: checking BGP status on failover LXC", "lxc", cfg.Failover.LXCID)
+	status, err := w.ops.GetBGPStatus(ctx, cfg.Failover.LXCID)
 	if err != nil {
-		w.log.ErrorContext(ctx, "BGP_FAILOVER: failed to get BGP status on LXC", "lxc", cfg.Cutover.FailoverLXCID, "err", err)
+		w.log.ErrorContext(ctx, "BGP_FAILOVER: failed to get BGP status on LXC", "lxc", cfg.Failover.LXCID, "err", err)
 		// Announce anyway because the LXC agent may still accept the command.
 	}
 
@@ -80,29 +76,29 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 	needsAnnounce := true
 	if status != nil && status.GetAllEstablished() && status.GetAnnouncing() {
 		w.log.InfoContext(ctx, "BGP_FAILOVER: LXC already established and announcing; no action needed",
-			"lxc", cfg.Cutover.FailoverLXCID)
+			"lxc", cfg.Failover.LXCID)
 		needsAnnounce = false
 	}
 
 	if needsAnnounce {
-		w.log.InfoContext(ctx, "BGP_FAILOVER: announcing routes on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
-		if err := w.ops.AnnounceRoutes(ctx, cfg.Cutover.FailoverLXCID); err != nil {
+		w.log.InfoContext(ctx, "BGP_FAILOVER: announcing routes on failover LXC", "lxc", cfg.Failover.LXCID)
+		if err := w.ops.AnnounceRoutes(ctx, cfg.Failover.LXCID); err != nil {
 			w.log.ErrorContext(ctx, "BGP_FAILOVER: announce routes failed on LXC",
-				"lxc", cfg.Cutover.FailoverLXCID, "err", err, "elapsed", w.since(start))
-			return fmt.Errorf("BGP failover AnnounceRoutes on LXC %s: %w", cfg.Cutover.FailoverLXCID, err)
+				"lxc", cfg.Failover.LXCID, "err", err, "elapsed", w.since(start))
+			return fmt.Errorf("BGP failover AnnounceRoutes on LXC %s: %w", cfg.Failover.LXCID, err)
 		}
-		w.log.InfoContext(ctx, "BGP_FAILOVER: routes announced on failover LXC", "lxc", cfg.Cutover.FailoverLXCID)
+		w.log.InfoContext(ctx, "BGP_FAILOVER: routes announced on failover LXC", "lxc", cfg.Failover.LXCID)
 	}
 
 	w.log.InfoContext(ctx, "BGP_FAILOVER: complete",
-		"lxc", cfg.Cutover.FailoverLXCID,
+		"lxc", cfg.Failover.LXCID,
 		"elapsed", w.since(start),
 	)
 
 	// Notify that the failover sequence completed. Kind "bgp-failover-complete"
 	// is a separate state-change so it does not collide with the active
 	// "bgp-failover" alert; the latter stays open until recovery resolves it.
-	completeMsg := fmt.Sprintf("BGP FAILOVER COMPLETE: LXC %s announcing", cfg.Cutover.FailoverLXCID)
+	completeMsg := fmt.Sprintf("BGP FAILOVER COMPLETE: LXC %s announcing", cfg.Failover.LXCID)
 	elapsed := w.since(start).Round(time.Second)
 	w.notify.Notify(ctx, notify.Event{
 		Now:     time.Time{},
@@ -113,7 +109,7 @@ func (w *watchdog) triggerBGPFailover(ctx context.Context, cfg *config.Config, r
 		Fields: []slog.Attr{
 			slog.Duration("elapsed", elapsed),
 			slog.String("vmid", cfg.MwanVMID),
-			slog.String("lxc", cfg.Cutover.FailoverLXCID),
+			slog.String("lxc", cfg.Failover.LXCID),
 		},
 		IsRecovery: false,
 	})
@@ -164,12 +160,12 @@ func (w *watchdog) triggerBGPRecovery(ctx context.Context, cfg *config.Config) e
 
 	// Step 3: withdraw from the failover LXC.
 	w.log.InfoContext(ctx, "BGP_RECOVERY: withdrawing routes from failover LXC",
-		"lxc", cfg.Cutover.FailoverLXCID)
-	if err := w.ops.WithdrawRoutes(ctx, cfg.Cutover.FailoverLXCID); err != nil {
+		"lxc", cfg.Failover.LXCID)
+	if err := w.ops.WithdrawRoutes(ctx, cfg.Failover.LXCID); err != nil {
 		w.log.ErrorContext(ctx, "BGP_RECOVERY: withdraw routes failed on LXC",
-			"lxc", cfg.Cutover.FailoverLXCID, "err", err)
+			"lxc", cfg.Failover.LXCID, "err", err)
 		return fmt.Errorf("BGP recovery WithdrawRoutes on LXC %s: %w",
-			cfg.Cutover.FailoverLXCID, err)
+			cfg.Failover.LXCID, err)
 	}
 
 	// Step 4: announce routes on the primary VM.
@@ -196,7 +192,7 @@ func (w *watchdog) triggerBGPRecovery(ctx context.Context, cfg *config.Config) e
 		slog.Duration("recovery_elapsed", w.since(start).Round(time.Second)),
 		slog.String("original_reason", prevReason),
 		slog.Duration("time_in_failover", elapsedSinceFailover),
-		slog.String("lxc", cfg.Cutover.FailoverLXCID),
+		slog.String("lxc", cfg.Failover.LXCID),
 		slog.String("vmid", cfg.MwanVMID),
 	)
 	// Also emit a dedicated "bgp-recovered" event so dashboards or tests that
@@ -211,7 +207,7 @@ func (w *watchdog) triggerBGPRecovery(ctx context.Context, cfg *config.Config) e
 			slog.Duration("recovery_elapsed", w.since(start).Round(time.Second)),
 			slog.String("original_reason", prevReason),
 			slog.Duration("time_in_failover", elapsedSinceFailover),
-			slog.String("lxc", cfg.Cutover.FailoverLXCID),
+			slog.String("lxc", cfg.Failover.LXCID),
 			slog.String("vmid", cfg.MwanVMID),
 		},
 		IsRecovery: false,
@@ -234,14 +230,14 @@ func (w *watchdog) triggerBGPRecovery(ctx context.Context, cfg *config.Config) e
 // tryFailover attempts failover if the LXC has internet connectivity.
 // Returns true if failover was triggered, false if skipped (LXC also down).
 func (w *watchdog) tryFailover(ctx context.Context, cfg *config.Config, reason string) bool {
-	if cfg.Cutover.FailoverLXCID == "" {
-		w.log.WarnContext(ctx, "FAILOVER: no failover_lxc_id configured; skipping")
+	if cfg.Failover.LXCID == "" {
+		w.log.WarnContext(ctx, "FAILOVER: no failover LXC configured; skipping")
 		return false
 	}
 
 	// Test LXC WAN connectivity before triggering failover.
 	// If the LXC also has no internet, failover is pointless.
-	w.log.InfoContext(ctx, "FAILOVER: testing LXC WAN connectivity", "lxc", cfg.Cutover.FailoverLXCID)
+	w.log.InfoContext(ctx, "FAILOVER: testing LXC WAN connectivity", "lxc", cfg.Failover.LXCID)
 	lxcV4 := w.ops.Ping(ctx, "ping", cfg.Network.PingTargetIPv4)
 	lxcV6 := w.ops.Ping(ctx, "ping6", cfg.Network.PingTargetIPv6)
 	// TODO: ping from inside LXC specifically, not from host.
@@ -249,12 +245,12 @@ func (w *watchdog) tryFailover(ctx context.Context, cfg *config.Config, reason s
 
 	if !lxcV4 && !lxcV6 {
 		w.log.WarnContext(ctx, "FAILOVER: LXC also has no internet; skipping failover (real ISP outage)",
-			"lxc", cfg.Cutover.FailoverLXCID)
+			"lxc", cfg.Failover.LXCID)
 		return false
 	}
 
 	w.log.InfoContext(ctx, "FAILOVER: LXC has internet; proceeding",
-		"lxc", cfg.Cutover.FailoverLXCID, "v4", lxcV4, "v6", lxcV6)
+		"lxc", cfg.Failover.LXCID, "v4", lxcV4, "v6", lxcV6)
 
 	if err := w.triggerFailover(ctx, cfg, reason); err != nil {
 		w.log.ErrorContext(ctx, "FAILOVER: failed", "err", err)

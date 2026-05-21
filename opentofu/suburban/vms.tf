@@ -1,4 +1,4 @@
-# MWAN-62: suburban testbed VMs managed by OpenTofu.
+# Suburban testbed VMs managed by OpenTofu.
 #
 # The live `args` fields on VM 950 and VM 101 are owned by Ansible because the
 # Proxmox API rejects API-token writes to that field. The bpg/proxmox provider

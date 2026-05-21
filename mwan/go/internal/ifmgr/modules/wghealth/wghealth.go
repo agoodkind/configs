@@ -18,7 +18,7 @@
 // peer should agree on endpoint after NAT normalization), run wghealth
 // on BOTH sides. Each daemon emits its local view as structured logs
 // with module=wg_health and src_host=<hostname>. Cross-side correlation
-// is currently log-analysis; native cross-check is MWAN-80 follow-up.
+// is currently log-analysis.
 //
 // Registers as "wg_health".
 package wghealth
