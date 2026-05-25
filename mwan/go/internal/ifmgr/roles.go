@@ -57,11 +57,14 @@ var roleModules = map[string][]string{
 	// kernel-state modules so the suburban testbed VM exercises the same
 	// reconcile paths as vault, against the simulated mbrains ISP iface
 	// (enmbrains0) and a testbed-only OOB v6 prefix under
-	// 3d06:bad:b01:2ff::/64. cloudflared_tap and wg_health are excluded
-	// because the testbed has no cloudflared-oob tunnel and no remote WG
-	// peer to observe through ifmgr.
+	// 3d06:bad:b01:2ff::/64. host_ipv6_policy keeps the hypervisor's own
+	// bridge RA policy aligned with the intended uplink and simulated-ISP
+	// roles before the OOB modules rely on stable IPv6 egress. cloudflared_tap
+	// and wg_health are excluded because the testbed has no cloudflared-oob
+	// tunnel and no remote WG peer to observe through ifmgr.
 	"suburban-oob": {
 		"policy_rules",
+		"host_ipv6_policy",
 		"oobv6",
 		"oobv4",
 		"ra_lost",

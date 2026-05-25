@@ -19,6 +19,55 @@ proxmox_api_host: "10.240.0.148"
 mwan_config_hostname: "suburban-testbed"
 mwan_config_mgmt_addr: "3d06:bad:b01:200::950"
 
+# Shared testbed MWAN topology values consumed by the suburban host config.
+mwan_environment: "testbed"
+mwan_vmid: 950
+mwan_proxmox_node: "hypervisor"
+mwan_internal_iface: "enmwanbr0"
+mwan_email_recipient: "alex@goodkind.io"
+mwan_email_from: "mwan-testbed@goodkind.io"
+mwan_email_min_level: "ERROR"
+mwan_email_subject_prefix: "[MWAN-suburban]"
+mwan_email_bind_iface: ""
+mwan_email_cooldown: "5m"
+opnsense_addr: "3d06:bad:b01:211::1"
+opnsense_gateway_names:
+  - WAN_GW4
+  - WAN_GW6
+opnsense_bgp_router_id: "10.250.250.2"
+opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
+opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
+opnsense_bgp_neighbors:
+  - address: "10.250.250.3"
+    description: "VM950-IPv4"
+    preference: "primary"
+  - address: "3d06:bad:b01:201::3"
+    description: "VM950-IPv6"
+    preference: "primary"
+  - address: "10.250.250.4"
+    description: "LXC100-IPv4"
+    preference: "backup"
+  - address: "3d06:bad:b01:201::4"
+    description: "LXC100-IPv6"
+    preference: "backup"
+bgp_asn: 4200000001
+bgp_router_id: "10.250.250.3"
+bgp_next_hop_v6: "3d06:bad:b01:201::3"
+bgp_keepalive_seconds: 3
+bgp_hold_seconds: 9
+bgp_listen_port: 179
+bgp_neighbors:
+  - "10.250.250.2"
+bgp_neighbors_v6:
+  - "3d06:bad:b01:201::2"
+bgp_announce_ipv4:
+  - "0.0.0.0/0"
+bgp_announce_ipv6:
+  - "::/0"
+mwan_bgp_graceful_restart_enabled: true
+mwan_bgp_graceful_restart_time_seconds: 30
+mwan_bgp_graceful_restart_notification_enabled: true
+
 # mwan-watchdog service on the host
 mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:200::950]:50052"
 mwan_watchdog_log_file: "/var/log/mwan-watchdog-testbed.log"
@@ -28,6 +77,9 @@ mwan_watchdog_lock_file: "/run/mwan-watchdog-testbed-rollback.lock"
 mwan_watchdog_pve_token_id: "root@pam!watchdog-test2"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
 mwan_watchdog_unit_description: "MWAN Testbed Watchdog"
+mwan_watchdog_wan_interfaces:
+  - "enwebpass0"
+  - "enmbrains0"
 
 # mwan-opnsense host bridge service on suburban.
 mwan_opnsense_host_upstream: "unix:///var/run/qemu-server/101.mwanrpc"
@@ -40,6 +92,22 @@ mwan_ifmgr_iface_key: "enmbrains0"
 mwan_ifmgr_iface_name: "enmbrains0"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
+mwan_ifmgr_host_ipv6_policy_enabled: true
+mwan_ifmgr_host_ipv6_missing_iface_grace_period: "2m"
+mwan_ifmgr_host_ipv6_allowed_ra_uplink:
+  name: "vmbr0"
+  accept_ra: 2
+  autoconf: true
+  accept_ra_defrtr: true
+  solicit_ra: true
+  cleanup_ra_default: false
+mwan_ifmgr_host_ipv6_denied_ra_ifaces:
+  - "vmbr1"
+  - "vmbr2"
+  - "vmbr4"
+  - "vmbr5"
+  - "vmbr6"
+  - "vmbrtrunk"
 
 # Cloudflared OOB stays off on suburban (no host OOB tunnel today).
 

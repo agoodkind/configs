@@ -1,8 +1,11 @@
+//go:build linux
+
 package main
 
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"goodkind.io/mwan/internal/config"
 )
@@ -64,5 +67,46 @@ func TestBuildPolicyRuleUIDRangeRejectsInvalidUID(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("buildPolicyRuleUIDRange returned nil error")
+	}
+}
+
+func TestBuildHostIPv6PolicyConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := buildHostIPv6PolicyConfig(&config.IfMgrHostIPv6PolicySection{
+		MissingIfaceGracePeriod: "3m",
+		Interface: []config.IfMgrHostIPv6PolicyIfaceSection{
+			{
+				Name:             "vmbr0",
+				AcceptRA:         2,
+				AutoConf:         true,
+				AcceptRADefRtr:   true,
+				SolicitRA:        true,
+				CleanupRADefault: false,
+			},
+			{
+				Name:             "vmbr4",
+				AcceptRA:         0,
+				AutoConf:         false,
+				AcceptRADefRtr:   false,
+				SolicitRA:        false,
+				CleanupRADefault: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildHostIPv6PolicyConfig returned error: %v", err)
+	}
+	if got := cfg.MissingIfaceGracePeriod; got != 3*time.Minute {
+		t.Fatalf("MissingIfaceGracePeriod = %s, want %s", got, 3*time.Minute)
+	}
+	if len(cfg.Policies) != 2 {
+		t.Fatalf("policy count = %d, want 2", len(cfg.Policies))
+	}
+	if got := cfg.Policies[0].Name; got != "vmbr0" {
+		t.Fatalf("first policy iface = %q, want %q", got, "vmbr0")
+	}
+	if got := cfg.Policies[1].CleanupRADefault; !got {
+		t.Fatal("second policy should clean denied RA defaults")
 	}
 }

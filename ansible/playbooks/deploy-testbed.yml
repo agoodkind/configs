@@ -22,6 +22,7 @@
 - name: Configure suburban testbed extras
   hosts: suburban_servers
   become: false
+  force_handlers: true
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
@@ -38,6 +39,7 @@
         src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
         dest: /usr/local/bin/mwan
         mode: "0755"
+      notify: Restart mwan-ifmgr
 
     - name: Create mwan config directory
       ansible.builtin.file:
@@ -50,6 +52,7 @@
         src: "{{ repo_root }}/mwan/config/config.toml.j2"
         dest: /etc/mwan/config.toml
         mode: "0600"
+      notify: Restart mwan-ifmgr
 
     - name: Deploy sysctl
       ansible.builtin.copy:
@@ -57,6 +60,16 @@
         dest: /etc/sysctl.d/99-mwan-testbed.conf
         mode: "0644"
       notify: Reload sysctl
+
+    - name: Remove legacy suburban IPv6 forward snippet
+      ansible.builtin.file:
+        path: /etc/sysctl.d/99-ipv6-forward.conf
+        state: absent
+
+    - name: Remove legacy suburban vmbr0 IPv6 snippet
+      ansible.builtin.file:
+        path: /etc/sysctl.d/99-vmbr0-ipv6.conf
+        state: absent
 
     - name: Deploy masquerade sourced file
       ansible.builtin.copy:
@@ -167,6 +180,13 @@
     - name: Reload sysctl
       ansible.builtin.command: sysctl --system
       changed_when: false
+
+    - name: Restart mwan-ifmgr
+      ansible.builtin.systemd:
+        name: mwan-ifmgr
+        enabled: true
+        state: restarted
+      become: true
 
     - name: Note VM 950 args reboot required
       ansible.builtin.debug:

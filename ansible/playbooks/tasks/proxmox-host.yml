@@ -56,7 +56,11 @@
     src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
     dest: /usr/local/bin/mwan
     mode: "0755"
-  when: proxmox_mwan_host_role_enabled | default(true) | bool
+  register: proxmox_mwan_binary
+  notify:
+    - Restart mwan-ifmgr
+    - Restart mwan-watchdog
+  when: proxmox_mwan_host_role_enabled | bool
 
 - name: Ensure MWAN config directory exists
   ansible.builtin.file:
@@ -65,7 +69,7 @@
     owner: root
     group: root
     mode: "0755"
-  when: proxmox_mwan_host_role_enabled | default(true) | bool
+  when: proxmox_mwan_host_role_enabled | bool
 
 - name: Deploy MWAN runtime config
   ansible.builtin.template:
@@ -74,7 +78,11 @@
     owner: root
     group: root
     mode: "0600"
-  when: proxmox_mwan_host_role_enabled | default(true) | bool
+  register: proxmox_mwan_runtime_config
+  notify:
+    - Restart mwan-ifmgr
+    - Restart mwan-watchdog
+  when: proxmox_mwan_host_role_enabled | bool
 
 - name: Deploy mwan-ifmgr service
   ansible.builtin.copy:
@@ -82,7 +90,42 @@
     dest: /etc/systemd/system/mwan-ifmgr.service
     mode: "0644"
   register: proxmox_mwan_ifmgr_unit
-  when: mwan_ifmgr_enabled | default(true) | bool
+  notify: Restart mwan-ifmgr
+  when: mwan_ifmgr_enabled | bool
+
+- name: Ensure mwan-ifmgr drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/mwan-ifmgr.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - mwan_ifmgr_enabled | bool
+    - mwan_ifmgr_host_ipv6_policy_enabled | bool
+
+- name: Deploy suburban host IPv6 policy drop-in
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/proxmox/services/mwan-ifmgr-suburban-host-ipv6-policy.conf"
+    dest: /etc/systemd/system/mwan-ifmgr.service.d/suburban-host-ipv6-policy.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: proxmox_mwan_ifmgr_host_ipv6_policy_dropin
+  notify: Restart mwan-ifmgr
+  when:
+    - mwan_ifmgr_enabled | bool
+    - mwan_ifmgr_host_ipv6_policy_enabled | bool
+
+- name: Remove suburban host IPv6 policy drop-in when disabled
+  ansible.builtin.file:
+    path: /etc/systemd/system/mwan-ifmgr.service.d/suburban-host-ipv6-policy.conf
+    state: absent
+  register: proxmox_mwan_ifmgr_host_ipv6_policy_dropin_removed
+  notify: Restart mwan-ifmgr
+  when:
+    - mwan_ifmgr_enabled | bool
+    - not (mwan_ifmgr_host_ipv6_policy_enabled | bool)
 
 - name: Assert cloudflared-oob inputs are defined
   ansible.builtin.assert:
@@ -101,13 +144,13 @@
       cloudflared_oob_ingress, cloudflared_oob_nextdns_resolvers in
       <hypervisor>_servers.yml, and vault_cloudflared_oob_credentials_json
       in inventory/group_vars/all/vault.yml.
-  when: cloudflared_oob_enabled | default(false) | bool
+  when: cloudflared_oob_enabled | bool
 
 - name: Ensure cloudflared-oob group exists
   ansible.builtin.group:
     name: "{{ cloudflared_oob_user }}"
     system: true
-  when: cloudflared_oob_enabled | default(false) | bool
+  when: cloudflared_oob_enabled | bool
 
 - name: Ensure cloudflared-oob user exists
   ansible.builtin.user:
@@ -116,7 +159,7 @@
     system: true
     create_home: false
     shell: /usr/sbin/nologin
-  when: cloudflared_oob_enabled | default(false) | bool
+  when: cloudflared_oob_enabled | bool
 
 - name: Ensure cloudflared-oob config directory exists
   ansible.builtin.file:
@@ -125,7 +168,7 @@
     owner: root
     group: "{{ cloudflared_oob_user }}"
     mode: "0750"
-  when: cloudflared_oob_enabled | default(false) | bool
+  when: cloudflared_oob_enabled | bool
 
 - name: Deploy cloudflared-oob resolver file
   ansible.builtin.copy:
@@ -139,7 +182,8 @@
       {% endfor %}
       options timeout:2 attempts:2 rotate
   register: proxmox_cloudflared_oob_resolv
-  when: cloudflared_oob_enabled | default(false) | bool
+  notify: Restart cloudflared-oob
+  when: cloudflared_oob_enabled | bool
 
 - name: Deploy cloudflared-oob config.yml
   ansible.builtin.template:
@@ -149,7 +193,8 @@
     group: root
     mode: "0644"
   register: proxmox_cloudflared_oob_config
-  when: cloudflared_oob_enabled | default(false) | bool
+  notify: Restart cloudflared-oob
+  when: cloudflared_oob_enabled | bool
 
 - name: Deploy cloudflared-oob credentials.json
   ansible.builtin.copy:
@@ -159,8 +204,9 @@
     mode: "0600"
     content: "{{ vault_cloudflared_oob_credentials_json }}"
   register: proxmox_cloudflared_oob_credentials
+  notify: Restart cloudflared-oob
   no_log: true
-  when: cloudflared_oob_enabled | default(false) | bool
+  when: cloudflared_oob_enabled | bool
 
 - name: Deploy cloudflared-oob service
   ansible.builtin.template:
@@ -168,37 +214,40 @@
     dest: /etc/systemd/system/cloudflared-oob.service
     mode: "0644"
   register: proxmox_cloudflared_oob_unit
-  when: cloudflared_oob_enabled | default(false) | bool
+  notify: Restart cloudflared-oob
+  when: cloudflared_oob_enabled | bool
 
 - name: Remove legacy cloudflared-oob resolver drop-in
   ansible.builtin.file:
     path: /etc/systemd/system/cloudflared-oob.service.d/10-dns-resolvers.conf
     state: absent
-  when: cloudflared_oob_enabled | default(false) | bool
+  notify: Restart cloudflared-oob
+  when: cloudflared_oob_enabled | bool
 
-- name: Enable and restart cloudflared-oob service
+- name: Ensure cloudflared-oob service is enabled and started
   ansible.builtin.systemd:
     name: cloudflared-oob
     enabled: true
-    state: restarted
+    state: started
     daemon_reload: true
-  when:
-    - cloudflared_oob_enabled | default(false) | bool
-    - >-
-      proxmox_cloudflared_oob_unit.changed
-      or proxmox_cloudflared_oob_resolv.changed
-      or proxmox_cloudflared_oob_config.changed
-      or proxmox_cloudflared_oob_credentials.changed
+  when: cloudflared_oob_enabled | bool
 
-- name: Enable and restart mwan-ifmgr service
+- name: Ensure mwan-ifmgr service is enabled and started
   ansible.builtin.systemd:
     name: mwan-ifmgr
     enabled: true
-    state: restarted
+    state: started
     daemon_reload: true
-  when:
-    - mwan_ifmgr_enabled | default(true) | bool
-    - proxmox_mwan_ifmgr_unit.changed
+  when: mwan_ifmgr_enabled | bool
+
+- name: Ensure mwan-watchdog config directory exists
+  ansible.builtin.file:
+    path: /etc/mwan-watchdog
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: mwan_watchdog_enabled | bool
 
 - name: Deploy mwan-watchdog network topology config
   ansible.builtin.template:
@@ -206,24 +255,33 @@
     dest: /etc/mwan-watchdog/network.toml
     mode: "0644"
   register: proxmox_mwan_watchdog_topology
-  when: mwan_watchdog_enabled | default(true) | bool
+  notify: Restart mwan-watchdog
+  when: mwan_watchdog_enabled | bool
 
 - name: Deploy mwan-watchdog service
   ansible.builtin.template:
     src: "{{ repo_root }}/proxmox/services/mwan-watchdog.service.j2"
-    dest: /etc/systemd/system/mwan-watchdog.service
+    dest: >-
+      /etc/systemd/system/{{ mwan_watchdog_service_name }}.service
     mode: "0644"
   register: proxmox_mwan_watchdog_unit
-  when: mwan_watchdog_enabled | default(true) | bool
+  notify: Restart mwan-watchdog
+  when: mwan_watchdog_enabled | bool
 
-- name: Enable and restart mwan-watchdog service
-  ansible.builtin.systemd:
-    name: mwan-watchdog
-    enabled: true
-    state: restarted
-    daemon_reload: true
+- name: Remove legacy default-name mwan-watchdog unit when custom name is in use
+  ansible.builtin.file:
+    path: /etc/systemd/system/mwan-watchdog.service
+    state: absent
+  register: proxmox_mwan_watchdog_legacy_unit_removed
+  notify: Restart mwan-watchdog
   when:
-    - mwan_watchdog_enabled | default(true) | bool
-    - >-
-      proxmox_mwan_watchdog_unit.changed
-      or proxmox_mwan_watchdog_topology.changed
+    - mwan_watchdog_enabled | bool
+    - mwan_watchdog_service_name != 'mwan-watchdog'
+
+- name: Ensure mwan-watchdog service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ mwan_watchdog_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: mwan_watchdog_enabled | bool

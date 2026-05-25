@@ -18,7 +18,7 @@ cooldown = "{{ mwan_email_cooldown }}"
 [pve]
 base_url = "https://[::1]:8006/api2/json"
 node = "{{ mwan_proxmox_node }}"
-token_id = "{{ mwan_watchdog_pve_token_id | default('root@pam!watchdog') }}"
+token_id = "{{ mwan_watchdog_pve_token_id }}"
 token_secret = "{{ vault_suburban_testbed_pve_token_secret if mwan_environment == 'testbed' else vault_mwan_watchdog_pve_token_secret }}"
 
 [network]
@@ -36,7 +36,7 @@ name = "enwebpass0"
 name = "enmbrains0"
 
 [watchdog]
-service_name = "{{ mwan_watchdog_service_name | default('mwan-watchdog') }}"
+service_name = "{{ mwan_watchdog_service_name }}"
 deploy_window_minutes = 30
 connectivity_timeout_seconds = 60
 check_interval_healthy_seconds = 30
@@ -142,6 +142,30 @@ oob_table_id = 500
 iface = "{{ mwan_ifmgr_iface_name }}"
 ra_lost_alert_after = "5m"
 
+{% if mwan_ifmgr_host_ipv6_policy_enabled %}
+[ifmgr.modules.host_ipv6_policy]
+missing_iface_grace_period = "{{ mwan_ifmgr_host_ipv6_missing_iface_grace_period }}"
+
+[[ifmgr.modules.host_ipv6_policy.interface]]
+name = "{{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.name }}"
+accept_ra = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.accept_ra }}
+autoconf = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.autoconf | ternary('true', 'false') }}
+accept_ra_defrtr = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.accept_ra_defrtr | ternary('true', 'false') }}
+solicit_ra = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.solicit_ra | ternary('true', 'false') }}
+cleanup_ra_default = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.cleanup_ra_default | ternary('true', 'false') }}
+
+{% for iface in mwan_ifmgr_host_ipv6_denied_ra_ifaces %}
+[[ifmgr.modules.host_ipv6_policy.interface]]
+name = "{{ iface }}"
+accept_ra = 0
+autoconf = false
+accept_ra_defrtr = false
+solicit_ra = false
+cleanup_ra_default = true
+
+{% endfor %}
+{% endif %}
+{% if mwan_ifmgr_cloudflared_oob_user | length > 0 %}
 [[ifmgr.modules.policy_rules.rule]]
 family = "inet6"
 priority = 5
@@ -149,6 +173,7 @@ uid_user = "{{ mwan_ifmgr_cloudflared_oob_user }}"
 table = "oob"
 table_id = 500
 
+{% endif %}
 [[ifmgr.modules.policy_rules.rule]]
 family = "inet6"
 priority = 6
@@ -156,9 +181,11 @@ from = "{{ mwan_ifmgr_policy_from_v6 }}"
 table = "oob"
 table_id = 500
 
+{% if mwan_ifmgr_cloudflared_oob_user | length > 0 %}
 [[ifmgr.modules.policy_rules.rule]]
 family = "inet"
 priority = 5
 uid_user = "{{ mwan_ifmgr_cloudflared_oob_user }}"
 table = "oob"
 table_id = 500
+{% endif %}

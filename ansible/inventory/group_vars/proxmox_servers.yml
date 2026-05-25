@@ -3,11 +3,17 @@
 # Overridden per-host in vault_servers.yml and suburban_servers.yml.
 
 # Feature flags that gate proxmox-host.yml task blocks. Explicit so the
-# default(true) expressions in proxmox-host.yml never silently take effect
-# without an inventory-level decision.
+# task file fails loudly if inventory stops defining a required value.
 proxmox_mwan_host_role_enabled: true
 mwan_ifmgr_enabled: true
+mwan_ifmgr_host_ipv6_policy_enabled: false
+mwan_ifmgr_cloudflared_oob_user: ""
 mwan_watchdog_enabled: true
+mwan_watchdog_service_name: "mwan-watchdog"
+mwan_watchdog_unit_description: "MWAN Auto-Rollback Watchdog"
+mwan_watchdog_wan_interfaces:
+  - "enwebpass0"
+  - "enmbrains0"
 
 # Cloudflared OOB tunnel paths (non-secret). The enabled flag and per-host
 # resolvers/credentials live in the per-hypervisor group_vars.

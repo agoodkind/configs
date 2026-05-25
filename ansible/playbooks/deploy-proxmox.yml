@@ -19,6 +19,7 @@
 - name: Configure Proxmox hypervisor
   hosts: proxmox_servers
   gather_facts: false
+  force_handlers: true
   environment:
     DEBIAN_FRONTEND: noninteractive
   vars:
@@ -27,3 +28,28 @@
   tasks:
     - name: Configure Proxmox host services
       ansible.builtin.import_tasks: tasks/proxmox-host.yml
+
+  handlers:
+    - name: Restart cloudflared-oob
+      ansible.builtin.systemd:
+        name: cloudflared-oob
+        enabled: true
+        state: restarted
+        daemon_reload: true
+      when: cloudflared_oob_enabled | bool
+
+    - name: Restart mwan-ifmgr
+      ansible.builtin.systemd:
+        name: mwan-ifmgr
+        enabled: true
+        state: restarted
+        daemon_reload: true
+      when: mwan_ifmgr_enabled | bool
+
+    - name: Restart mwan-watchdog
+      ansible.builtin.systemd:
+        name: "{{ mwan_watchdog_service_name }}"
+        enabled: true
+        state: restarted
+        daemon_reload: true
+      when: mwan_watchdog_enabled | bool

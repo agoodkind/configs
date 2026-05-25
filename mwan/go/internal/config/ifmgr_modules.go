@@ -13,6 +13,7 @@ type IfMgrModulesSection struct {
 	CloudflaredTap    *IfMgrCloudflaredTapSection    `toml:"cloudflared_tap"`
 	MainV4            *IfMgrMainV4Section            `toml:"mainv4"`
 	PolicyRules       *IfMgrPolicyRulesSection       `toml:"policy_rules"`
+	HostIPv6Policy    *IfMgrHostIPv6PolicySection    `toml:"host_ipv6_policy"`
 }
 
 type IfMgrWGHealthSection struct {
@@ -79,6 +80,24 @@ type IfMgrMainV4Section struct {
 
 type IfMgrPolicyRulesSection struct {
 	Rule []IfMgrPolicyRuleSection `toml:"rule"`
+}
+
+// IfMgrHostIPv6PolicySection is the explicit TOML schema for
+// [ifmgr.modules.host_ipv6_policy].
+type IfMgrHostIPv6PolicySection struct {
+	MissingIfaceGracePeriod string                            `toml:"missing_iface_grace_period"`
+	Interface               []IfMgrHostIPv6PolicyIfaceSection `toml:"interface"`
+}
+
+// IfMgrHostIPv6PolicyIfaceSection is one [[ifmgr.modules.host_ipv6_policy.interface]]
+// table in the config file.
+type IfMgrHostIPv6PolicyIfaceSection struct {
+	Name             string `toml:"name"`
+	AcceptRA         int    `toml:"accept_ra"`
+	AutoConf         bool   `toml:"autoconf"`
+	AcceptRADefRtr   bool   `toml:"accept_ra_defrtr"`
+	SolicitRA        bool   `toml:"solicit_ra"`
+	CleanupRADefault bool   `toml:"cleanup_ra_default"`
 }
 
 type IfMgrPolicyRuleSection struct {

@@ -446,6 +446,68 @@ func FindMainRADefault(
 	return nil, nil
 }
 
+// DeleteMainRADefaults removes every RA-learned IPv6 default route from the
+// main table on iface. Returns the number of defaults deleted.
+func DeleteMainRADefaults(
+	ctx context.Context, log *slog.Logger, iface string,
+) (int, error) {
+	_ = ctx
+	log = log.With("component", "route", "iface", iface, "op", "delete-ra-defaults")
+	log.Debug("route: DeleteMainRADefaults entry")
+
+	link, err := linkByName(log, iface)
+	if err != nil {
+		return 0, err
+	}
+
+	filter := &netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Table:     unix.RT_TABLE_MAIN,
+		Protocol:  unix.RTPROT_RA,
+	}
+	mask := netlink.RT_FILTER_OIF | netlink.RT_FILTER_TABLE | netlink.RT_FILTER_PROTOCOL
+
+	start := time.Now()
+	routes, err := netlink.RouteListFiltered(unix.AF_INET6, filter, mask)
+	dur := time.Since(start)
+	log.Debug("route: RouteListFiltered (delete RA defaults)",
+		"count", len(routes),
+		"duration_ms", dur.Milliseconds(),
+		"err", err,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	deletedCount := 0
+	for _, route := range routes {
+		if !isDefaultRoute(route, unix.AF_INET6) {
+			continue
+		}
+		via := ""
+		if route.Gw != nil {
+			via = route.Gw.String()
+		}
+		route.Family = unix.AF_INET6
+		delStart := time.Now()
+		delErr := netlink.RouteDel(&route)
+		delDur := time.Since(delStart)
+		log.Debug("route: RouteDel (RA default)",
+			"via", via,
+			"duration_ms", delDur.Milliseconds(),
+			"err", delErr,
+		)
+		if delErr != nil {
+			if errors.Is(delErr, syscall.ENOENT) || errors.Is(delErr, syscall.ESRCH) {
+				continue
+			}
+			return deletedCount, delErr
+		}
+		deletedCount++
+	}
+	return deletedCount, nil
+}
+
 // linkByName wraps netlink.LinkByName with debug logging. Centralised so
 // every call records the interface lookup.
 func linkByName(log *slog.Logger, iface string) (netlink.Link, error) {

@@ -307,6 +307,7 @@ mwan_email_cooldown: "5m"
 
 mwan_config_hostname: "vault"
 mwan_config_mgmt_addr: "3d06:bad:b01::113"
+mwan_watchdog_service_name: "mwan-watchdog"
 mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01::113]:50052"
 mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"
@@ -319,6 +320,7 @@ mwan_ifmgr_iface_name: "mbrains"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:ff::1"
 mwan_ifmgr_cloudflared_oob_user: "cloudflared-oob"
+mwan_ifmgr_host_ipv6_policy_enabled: false
 
 # ----------------------------------------------------------------------------
 # Vault OOB Cloudflare tunnel

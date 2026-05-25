@@ -12,6 +12,7 @@ import (
 	bridgeprobe "goodkind.io/mwan/internal/ifmgr/modules/bridgeprobe"
 	cloudflaredtap "goodkind.io/mwan/internal/ifmgr/modules/cloudflaredtap"
 	connprobe "goodkind.io/mwan/internal/ifmgr/modules/connprobe"
+	hostipv6policy "goodkind.io/mwan/internal/ifmgr/modules/hostipv6policy"
 	mainv4 "goodkind.io/mwan/internal/ifmgr/modules/mainv4"
 	oobv4 "goodkind.io/mwan/internal/ifmgr/modules/oobv4"
 	oobv6 "goodkind.io/mwan/internal/ifmgr/modules/oobv6"
@@ -73,6 +74,12 @@ func buildIfMgrModuleConfigs(
 		return nil, err
 	}
 	moduleConfigs["policy_rules"] = policyRulesConfig
+
+	hostIPv6PolicyConfig, err := buildHostIPv6PolicyConfig(modules.HostIPv6Policy)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["host_ipv6_policy"] = hostIPv6PolicyConfig
 
 	return moduleConfigs, nil
 }
@@ -333,6 +340,38 @@ func buildPolicyRulesConfig(
 			UIDRange: uidRange,
 			Table:    rule.Table,
 			TableID:  rule.TableID,
+		})
+	}
+	return cfg, nil
+}
+
+func buildHostIPv6PolicyConfig(
+	section *config.IfMgrHostIPv6PolicySection,
+) (hostipv6policy.Config, error) {
+	cfg := hostipv6policy.Config{
+		MissingIfaceGracePeriod: 2 * time.Minute,
+	}
+	if section == nil {
+		return cfg, nil
+	}
+	var err error
+	cfg.MissingIfaceGracePeriod, err = parseDurationSetting(
+		section.MissingIfaceGracePeriod,
+		cfg.MissingIfaceGracePeriod,
+		"ifmgr.modules.host_ipv6_policy.missing_iface_grace_period",
+	)
+	if err != nil {
+		return hostipv6policy.Config{}, err
+	}
+	cfg.Policies = make([]hostipv6policy.InterfacePolicy, 0, len(section.Interface))
+	for _, policy := range section.Interface {
+		cfg.Policies = append(cfg.Policies, hostipv6policy.InterfacePolicy{
+			Name:             policy.Name,
+			AcceptRA:         policy.AcceptRA,
+			AutoConf:         policy.AutoConf,
+			AcceptRADefRtr:   policy.AcceptRADefRtr,
+			SolicitRA:        policy.SolicitRA,
+			CleanupRADefault: policy.CleanupRADefault,
 		})
 	}
 	return cfg, nil

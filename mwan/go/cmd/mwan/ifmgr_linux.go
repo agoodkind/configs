@@ -24,6 +24,7 @@ import (
 	_ "goodkind.io/mwan/internal/ifmgr/modules/bridgeprobe"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/cloudflaredtap"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/connprobe"
+	_ "goodkind.io/mwan/internal/ifmgr/modules/hostipv6policy"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/mainv4"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/oobv4"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/oobv6"

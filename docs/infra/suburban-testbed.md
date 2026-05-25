@@ -61,7 +61,9 @@ statically assigned; the ISP LXCs do not run a DHCPv4 server.
 
 ## Testbed-only infrastructure
 
-ISP LXCs 200/201/202, suburban-side sysctl tweaks
-(`accept_ra=0` on `vmbr4`/`vmbr5`/`vmbr6`), and suburban masquerade rules
-(`vmbr1` to `vmbr0`/`wg0`) only exist on the testbed. These are owned by
-[ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml).
+ISP LXCs 200/201/202, suburban-side safe IPv6 sysctl defaults, and suburban
+masquerade rules (`vmbr1` to `vmbr0`/`wg0`) only exist on the testbed. The
+bridge shape stays in OpenTofu, the safe early-boot sysctl defaults stay in
+[ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml),
+and the live per-bridge Router Advertisement policy is reconciled continuously by
+`mwan-ifmgr` from the suburban host config rendered by the Proxmox host tasks.
