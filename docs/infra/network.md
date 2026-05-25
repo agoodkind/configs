@@ -236,6 +236,71 @@ despite `DUIDType=link-layer`, you can hardcode it:
 This is a workaround. The proper fix is to ensure DUID stability through MAC
 pinning and `DUIDType=link-layer`.
 
+## IPv6 reachability through MWAN
+
+### Webpass small-payload ICMPv6 drop
+
+Webpass silently drops ICMPv6 echo requests with payload `<= 8` bytes, so
+the BSD `ping6` default (8-byte payload) returns 100% loss even when the
+path is healthy. Probe IPv6 from FreeBSD or macOS with `ping6 -s 16 ...`
+instead. Linux `ping6` defaults to a 56-byte payload and is unaffected.
+
+### MWAN dataplane state for the customer prefix
+
+Three pieces of state on MWAN must be present for OPNsense LAN traffic to
+reach the public IPv6 internet:
+
+- **Webpass PD lease.** `find-pd-prefixes.sh enwebpass0` returns the live
+  `/56` delegated by Webpass (currently `2604:5500:c271:be00::/56`).
+- **NPT rules** in `nft list table ip6 nat`. `update-npt.sh` programs them
+  from the live PD lease. `mwan-update-npt.service` is the boot safety net.
+- **Internal `/60` return route** in MWAN's main + tables 100/200/300:
+  `3d06:bad:b01::/60 via fe80::be24:11ff:fe77:500c dev enmwanbr0`.
+  `update-routes.sh` writes this. Without it, MWAN cannot forward conntrack
+  replies for any non-shared LAN `/64` back to OPNsense.
+
+### Source-sweep diagnostic
+
+When only some IPv6 sources work, sweep across every routable `/64` from
+OPNsense:
+
+```bash
+ssh router 'for src in 3d06:bad:b01::1 3d06:bad:b01:1::1 3d06:bad:b01:2::1 \
+    3d06:bad:b01:a::1 3d06:bad:b01:10::1 3d06:bad:b01:64::1 \
+    3d06:bad:b01:fe::2; do
+        echo "=== source $src ==="
+        ping6 -c 2 -s 16 -S "$src" 2606:4700:4700::1111
+done'
+```
+
+Interpretation:
+
+- All sources work: IPv6 path healthy.
+- All sources fail: WAN side broken (Webpass, NPT, or upstream).
+- Shared LAN `/64` (`3d06:bad:b01::1`) + transit `/64`
+  (`3d06:bad:b01:fe::2`) work; everything else fails: MWAN is missing the
+  internal `/60` return route. The shared `/64` reaches OPNsense without a
+  route because OPNsense `vtnet0` and MWAN `enmgmt0` are L2 neighbors on
+  that subnet.
+
+### Verify and recover the internal /60 return route
+
+On MWAN:
+
+```bash
+ip -6 route show table all | grep '3d06:bad:b01::/60'
+```
+
+Expected: one entry in main + one in each of tables 100, 200, 300.
+
+If empty, recover with `systemctl start mwan-update-routes` to re-run
+`update-routes.sh`. The script is idempotent.
+
+The dispatcher hook `routable.d/50-update-routes.sh` fires
+`update-routes.sh` on any routable transition for `enwebpass0`,
+`enatt0.3242`, `enmbrains0`, or `enmwanbr0` (the internal link), so any
+flap of those interfaces reinstalls the route automatically.
+
 ## Pre-commit checklist
 
 1. Verify `host-reservation-identifiers: ["hw-address"]` (or the matching

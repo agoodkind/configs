@@ -218,6 +218,28 @@ the BGP speaker:
   call [update-routes.sh](../../mwan/scripts/update-routes.sh) so the system
   converges back to the healthy WAN automatically once it recovers.
 
+### Health state persistence and email guard
+
+The shell daemon `health-check.sh --daemon` keeps two state files:
+
+- **Runtime state** at `/var/run/mwan-health.state`. This is the file
+  `update-routes.sh` and `--status` read.
+- **Persistent state** at `/var/lib/mwan/health-state`. This is the
+  daemon's memory of last-known WAN states across its own restarts. The
+  systemd unit declares `StateDirectory=mwan` so this path exists with
+  the right ownership before the daemon starts.
+
+On daemon start, the runtime file is seeded from the persistent file when
+it exists, and only WANs missing from the persistent file get `unknown`.
+On every `set_health` call the daemon writes both files atomically.
+
+This avoids a previous bug where every transition immediately after a
+daemon restart was logged as `(was unknown)` and the email guard
+`[[ "$old_state" != "unknown" ]]` then suppressed legitimate alerts. A
+brand-new host has no persistent file, so first-ever transitions still
+read `unknown -> X` and email correctly stays off; every subsequent
+restart sees the prior state and emails real transitions.
+
 Lock files in `/run/...` serialise writers, so dispatcher hooks, safety-net
 services, and the health daemon cannot collide on `ip rule`, `ip route`, or
 `nft` updates.
