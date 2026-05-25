@@ -1,13 +1,7 @@
 package agent
 
-import "time"
+import internalclock "goodkind.io/mwan/internal/clock"
 
-type clock interface {
-	Now() time.Time
-}
+type clock = internalclock.Clock
 
-type realClock struct{}
-
-func (realClock) Now() time.Time {
-	return time.Now()
-}
+type realClock = internalclock.Real

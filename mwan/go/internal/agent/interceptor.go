@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"path"
 	"strings"
-	"time"
 
 	"goodkind.io/mwan/internal/tracing"
 	"google.golang.org/grpc"
@@ -64,7 +63,7 @@ func unaryTraceInterceptor(
 			"grpc request finished",
 			"rpc_method", info.FullMethod,
 			"grpc_code", code,
-			"duration_ms", time.Since(startTime).Milliseconds(),
+			"duration_ms", clock.Now().Sub(startTime).Milliseconds(),
 		)
 		return resp, err
 	}
