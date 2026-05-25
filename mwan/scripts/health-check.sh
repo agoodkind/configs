@@ -20,6 +20,7 @@
 set -euo pipefail
 
 STATE_FILE="/var/run/mwan-health.state"
+PERSIST_STATE_FILE="/var/lib/mwan/health-state"
 LOG_FILE="/var/log/mwan-health.log"
 
 # shellcheck disable=SC1091
@@ -320,11 +321,17 @@ set_health() {
     local wan="$1"
     local health="$2"
 
-    # Remove old state
+    # Update runtime state file.
     sed -i "/^${wan}:/d" "$STATE_FILE"
-
-    # Add new state
     echo "${wan}:${health}" >> "$STATE_FILE"
+
+    # Mirror to persistent state so daemon restarts can recover the last-known
+    # state and avoid the "(was unknown)" email suppression.
+    mkdir -p "$(dirname "$PERSIST_STATE_FILE")"
+    if [[ -f "$PERSIST_STATE_FILE" ]]; then
+        sed -i "/^${wan}:/d" "$PERSIST_STATE_FILE"
+    fi
+    echo "${wan}:${health}" >> "$PERSIST_STATE_FILE"
 }
 
 check_wan_health() {
@@ -518,22 +525,37 @@ handle_wan_recovery() {
     fi
 }
 
+init_state_files() {
+    # Seed the runtime state file. If the persistent state file from a previous
+    # run exists, prefer its values so that real `healthy -> unhealthy` (or
+    # the reverse) transitions across a daemon restart are observed against the
+    # correct baseline and the email guard does not swallow them as
+    # `unknown -> X` startup transitions.
+    mkdir -p "$(dirname "$PERSIST_STATE_FILE")"
+    : > "$STATE_FILE"
+    if [[ -f "$PERSIST_STATE_FILE" ]]; then
+        cat "$PERSIST_STATE_FILE" >> "$STATE_FILE"
+    fi
+    for config in "${WAN_CONFIGS[@]}"; do
+        if [[ "$config" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+        IFS=':' read -r wan_name _ _ _ _ _ _ <<< "$config"
+        if [[ -z "${wan_name:-}" ]]; then
+            continue
+        fi
+        if ! grep -q "^${wan_name}:" "$STATE_FILE"; then
+            echo "${wan_name}:unknown" >> "$STATE_FILE"
+        fi
+    done
+}
+
 run_health_checks() {
     local min_interval=999999
 
     # Ensure the state file exists even in one-shot mode.
     if [[ ! -f "$STATE_FILE" ]]; then
-        : > "$STATE_FILE"
-        for config in "${WAN_CONFIGS[@]}"; do
-            if [[ "$config" =~ ^[[:space:]]*# ]]; then
-                continue
-            fi
-            IFS=':' read -r wan_name _ _ _ _ _ _ <<< "$config"
-            if [[ -z "${wan_name:-}" ]]; then
-                continue
-            fi
-            echo "${wan_name}:unknown" >> "$STATE_FILE"
-        done
+        init_state_files
     fi
 
     for config in "${WAN_CONFIGS[@]}"; do
@@ -598,19 +620,9 @@ run_health_checks() {
 daemon_loop() {
     log "Starting mwan-health daemon"
 
-    # Initialize state file
-    : > "$STATE_FILE"
-    # Write initial states so other components never see an empty file.
-    for config in "${WAN_CONFIGS[@]}"; do
-        if [[ "$config" =~ ^[[:space:]]*# ]]; then
-            continue
-        fi
-        IFS=':' read -r wan_name _ _ _ _ _ _ <<< "$config"
-        if [[ -z "${wan_name:-}" ]]; then
-            continue
-        fi
-        echo "${wan_name}:unknown" >> "$STATE_FILE"
-    done
+    # Seed runtime state from persistent state when available, falling back to
+    # `unknown` only for WANs we have never observed before.
+    init_state_files
 
     while true; do
         run_health_checks
