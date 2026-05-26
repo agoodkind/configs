@@ -2,7 +2,7 @@
 
 // Package connprobe runs periodic active connectivity probes against
 // configured targets and publishes a healthy/unhealthy state. Used by
-// the lxc-failover-backup role to verify upstream actually works,
+// the failover role to verify upstream actually works,
 // independent of whether SLAAC and routes look correct.
 //
 // Failures emit a WARN; recoveries log INFO and clear the alert.

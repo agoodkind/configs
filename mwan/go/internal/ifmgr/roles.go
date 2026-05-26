@@ -13,9 +13,27 @@ import "fmt"
 //
 // Adding a new role: append the entry here and ensure the named modules
 // are registered (their package is imported by main.go).
+//
+// Per-host opt-in modules: cloudflared_tap, host_ipv6_policy, and wg
+// self-disable via ifmgr.ErrModuleDisabled when their TOML section is
+// absent from the rendered config. That lets the single oob role list
+// every OOB-style module while each host enables only the subset it
+// actually configures.
 var roleModules = map[string][]string{
-	"vault-oob": {
+	// oob is the unified OOB role for vault and the suburban hypervisor.
+	// Module list is the union of every OOB-style module. Per-host
+	// selection is driven by which [ifmgr.modules.X] sections render in
+	// /etc/mwan/config.toml; modules whose section is absent self-disable
+	// at Init time via ifmgr.ErrModuleDisabled and are dropped from the
+	// daemon's dispatch list.
+	//
+	// Vault enables: policy_rules, oobv6, oobv4, ra_lost, cloudflared_tap, wg.
+	// Suburban hypervisor enables: policy_rules, host_ipv6_policy, oobv6,
+	// oobv4, ra_lost, wg (local-exec mode against the hypervisor's own
+	// wg0 endpoint).
+	"oob": {
 		"policy_rules",
+		"host_ipv6_policy",
 		"oobv6",
 		"oobv4",
 		"ra_lost",
@@ -25,49 +43,25 @@ var roleModules = map[string][]string{
 		// the same JSON log file and email pipeline as everything else.
 		// Pure log forwarder: no kernel state.
 		"cloudflared_tap",
-		// wg_health polls a remote WireGuard server (typically OPNsense)
-		// over SSH and alerts when any peer's handshake age crosses
-		// configured thresholds. Read-only observer; no kernel state.
-		"wg_health",
+		// wg polls a WireGuard interface and alerts when any peer's
+		// handshake age crosses configured thresholds. Two modes: remote
+		// SSH (vault polls OPNsense) or local exec (suburban polls its
+		// own wg0). Read-only observer; no kernel state.
+		"wg",
 	},
-	// lxc-failover-backup is the iface-monitor role for prod LXC 116 and
-	// testbed LXC 117. mainv4 is included so that when dhcp_v4 is enabled
-	// for the iface, the daemon's DHCP client also drives kernel addr and
-	// the main-table default route. If dhcp_v4 is disabled, mainv4's Init
-	// returns an error and the daemon falls back to the no-mainv4 modules
-	// (this is intentional; prod LXC 116 today runs without mainv4).
-	"lxc-failover-backup": {
+	// failover is the iface-monitor role for prod LXC 116 and testbed
+	// LXC 100. mainv4 is included so that when dhcp_v4 is enabled for
+	// the iface, the daemon's DHCP client also drives kernel addr and
+	// the main-table default route. If dhcp_v4 is disabled, mainv4's
+	// Init returns inert and the role falls back to the no-mainv4
+	// modules (this is intentional; prod LXC 116 today runs without
+	// mainv4).
+	"failover": {
 		"slaac_health",
 		"bridge_probe",
 		"connectivity_probe",
 		"ra_lost",
 		"mainv4",
-	},
-	// suburban-wg is the WG-endpoint observer role for the suburban testbed
-	// host. It runs wg_health in local-exec mode (ssh_host empty) so the
-	// daemon polls the local wg0 and emits suburban's own view of every
-	// peer endpoint. Combined with vault's wg_health (OPNsense view),
-	// log analysis can surface split-brain (each side believes a different
-	// peer endpoint) caused by WG roaming + asymmetric NAT paths.
-	// See mwan/WIREGUARD-ROAMING-NOTES.md for protocol details.
-	"suburban-wg": {
-		"wg_health",
-	},
-	// suburban-oob is the testbed analog of vault-oob. It selects the same
-	// kernel-state modules so the suburban testbed VM exercises the same
-	// reconcile paths as vault, against the simulated mbrains ISP iface
-	// (enmbrains0) and a testbed-only OOB v6 prefix under
-	// 3d06:bad:b01:2ff::/64. host_ipv6_policy keeps the hypervisor's own
-	// bridge RA policy aligned with the intended uplink and simulated-ISP
-	// roles before the OOB modules rely on stable IPv6 egress. cloudflared_tap
-	// and wg_health are excluded because the testbed has no cloudflared-oob
-	// tunnel and no remote WG peer to observe through ifmgr.
-	"suburban-oob": {
-		"policy_rules",
-		"host_ipv6_policy",
-		"oobv6",
-		"oobv4",
-		"ra_lost",
 	},
 }
 

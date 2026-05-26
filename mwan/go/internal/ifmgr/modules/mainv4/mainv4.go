@@ -1,15 +1,15 @@
 //go:build linux
 
 // Package mainv4 applies DHCPv4 lease state to the watched interface and
-// to the main routing table. This is the lxc-failover-backup analogue of
-// oobv4 (which applies to a separate OOB table for vault).
+// to the main routing table. This is the failover analogue of oobv4
+// (which applies to a separate OOB table for vault).
 //
 // Use this when the daemon owns DHCPv4 for the iface and you want the
 // lease to drive the iface's primary v4 configuration. Pair with
 // ifmgr.iface.<name>.dhcp_v4 = true.
 //
-// Registers as "mainv4". Selected by the lxc-failover-backup role when
-// dhcp_v4 is enabled.
+// Registers as "mainv4". Selected by the failover role when dhcp_v4
+// is enabled.
 package mainv4
 
 import (
@@ -48,9 +48,9 @@ func (Config) ModuleConfigName() string { return "mainv4" }
 func (m *Module) Name() string { return "mainv4" }
 
 // Init implements ifmgr.Module. Inert when DHCP is disabled so that the
-// shared lxc-failover-backup role still works on hosts that do not own
-// DHCPv4 (prod LXC 116 today). A no-op Init lets the role include this
-// module unconditionally without breaking those hosts.
+// shared failover role still works on hosts that do not own DHCPv4
+// (prod LXC 116 today). A no-op Init lets the role include this module
+// unconditionally without breaking those hosts.
 func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "mainv4", "iface", m.cfg.Iface)

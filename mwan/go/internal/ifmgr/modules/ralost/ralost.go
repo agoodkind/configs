@@ -2,8 +2,8 @@
 
 // Package ralost implements the ifmgr ra-lost alert module: emits WARN
 // when no RA has been observed on the watched iface for longer than a
-// configured threshold. Works on every role; for vault-oob it consumes
-// the RA observation timestamp from the oobv6 module via accessor.
+// configured threshold. Works on every role; for oob it consumes the
+// RA observation timestamp from the oobv6 module via accessor.
 //
 // Registers as "ra_lost".
 package ralost

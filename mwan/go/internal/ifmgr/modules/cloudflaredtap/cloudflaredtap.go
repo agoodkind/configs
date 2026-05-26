@@ -7,7 +7,10 @@
 // email-on-WARN+ pipeline, and the same trace context as everything
 // else mwan-ifmgr produces.
 //
-// Registers as "cloudflared_tap". Selected by the vault-oob role.
+// Registers as "cloudflared_tap". Selected by the oob role as an opt-in
+// module; absent [ifmgr.modules.cloudflared_tap] section makes Init
+// return ifmgr.ErrModuleDisabled so the daemon skips it on hosts (like
+// the suburban hypervisor) that have no cloudflared-oob tunnel.
 //
 // The module is purely a log forwarder: Reconcile, OnKernelEvent,
 // OnDHCPLease, and EvaluateAlerts are all no-ops. The work happens in

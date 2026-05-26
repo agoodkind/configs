@@ -23,7 +23,7 @@ func TestBuildEmailBodyShape(t *testing.T) {
 	r := recordFromAttrs(
 		"wg: remote wg show failed",
 		slog.String("daemon", "ifmgr"),
-		slog.String("role", "vault-oob"),
+		slog.String("role", "oob"),
 		slog.String("iface", "mbrains"),
 		slog.String("trace", "4df84777"),
 		slog.String("phase", "periodic-reconcile"),
@@ -42,7 +42,7 @@ func TestBuildEmailBodyShape(t *testing.T) {
 	want := "wg: remote wg show failed\n\n" +
 		"What:    ssh agoodkind@host: exit status 255\n" +
 		"         stderr: Permission denied (publickey)\n\n" +
-		"Where:   iface=mbrains, role=vault-oob, daemon=ifmgr, phase=periodic-reconcile\n\n" +
+		"Where:   iface=mbrains, role=oob, daemon=ifmgr, phase=periodic-reconcile\n\n" +
 		"Trace:   4df84777    Build: bcf4019 (dirty) binhash=b80490fd54b5"
 
 	if got != want {

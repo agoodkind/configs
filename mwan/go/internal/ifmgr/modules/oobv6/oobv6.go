@@ -1,12 +1,12 @@
 //go:build linux
 
-// Package oobv6 implements the vault-oob IPv6 module: it ensures the
+// Package oobv6 implements the oob role's IPv6 module: it ensures the
 // static OOB v6 address is present on the watched iface, mirrors the
 // RA-learned default from the main table into the OOB routing table,
 // and feeds RA observation timestamps to the AlertManager.
 //
-// Registers itself as "oobv6" at init time. Selected by the vault-oob
-// role in internal/ifmgr/roles.go.
+// Registers itself as "oobv6" at init time. Selected by the oob role
+// in internal/ifmgr/roles.go.
 package oobv6
 
 import (

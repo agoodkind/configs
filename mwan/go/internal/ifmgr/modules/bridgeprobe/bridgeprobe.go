@@ -1,7 +1,7 @@
 //go:build linux
 
 // Package bridgeprobe implements an alert-only module for the
-// lxc-failover-backup role: when the watched iface has been silent
+// failover role: when the watched iface has been silent
 // (no RA observed AND no DHCP-server reply) for longer than a
 // configured threshold AND the slaac_health module has already
 // escalated without recovery, emit a WARN alert that the host-side

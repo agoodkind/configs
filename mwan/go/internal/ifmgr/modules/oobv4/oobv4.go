@@ -1,10 +1,10 @@
 //go:build linux
 
-// Package oobv4 implements the vault-oob IPv4 module: applies DHCPv4
+// Package oobv4 implements the oob role's IPv4 module: applies DHCPv4
 // lease state to the watched iface and the OOB routing table. Reacts
 // to LeaseInfo events fanned out by the daemon.
 //
-// Registers itself as "oobv4". Selected by the vault-oob role.
+// Registers itself as "oobv4". Selected by the oob role.
 package oobv4
 
 import (

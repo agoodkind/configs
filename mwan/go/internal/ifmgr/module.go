@@ -14,9 +14,9 @@ import (
 )
 
 // Module is one feature plug-in for the ifmgr daemon. Each role
-// (vault-oob, lxc-failover-backup, ...) selects an ordered list of
-// modules; the daemon instantiates them via their Constructor and
-// dispatches lifecycle calls into them.
+// (oob, failover, ...) selects an ordered list of modules; the daemon
+// instantiates them via their Constructor and dispatches lifecycle
+// calls into them.
 //
 // All methods MUST be safe to call concurrently with each other on a
 // single Module instance: Reconcile and OnKernelEvent in particular run

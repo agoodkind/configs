@@ -9,8 +9,8 @@
 // internal package, and exposes a small surface (Monitor, DHCPClient,
 // RAClient, V6Probe, ProcSysctlRunner, plus the package-level reconcile
 // helpers) that the higher-level ifmgr daemon and its modules consume.
-// Splitting netif out of internal/oob lets multiple roles (vault-oob,
-// lxc-failover-backup, future NPT/policy-routing modules) share the same
+// Splitting netif out of internal/oob lets multiple roles (oob,
+// failover, future NPT/policy-routing modules) share the same
 // primitives without duplicating glue.
 //
 // All operations are in-process via:

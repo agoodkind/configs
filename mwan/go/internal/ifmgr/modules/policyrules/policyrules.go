@@ -5,7 +5,7 @@
 // is an (priority, family, selector, table) tuple. Foreign rules at
 // unrelated priorities are not touched.
 //
-// Registers as "policy_rules". Selected by the vault-oob role today;
+// Registers as "policy_rules". Selected by the oob role today;
 // reusable for any role that needs static policy routing.
 package policyrules
 

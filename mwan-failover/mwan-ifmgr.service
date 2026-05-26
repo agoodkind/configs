@@ -1,5 +1,5 @@
 [Unit]
-Description=MWAN ifmgr (eth0 health for lxc-failover-backup)
+Description=MWAN ifmgr (eth0 health for failover role)
 After=networking.service
 Wants=networking.service
 

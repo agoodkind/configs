@@ -37,12 +37,12 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 PrivateTmp=true
 
-# ProtectKernelTunables: vault role (vault-oob) does not need to write
-# any sysctls and keeps the default true. The lxc-failover-backup role
-# uses slaac_health, which writes net.ipv6.conf.<iface>.disable_ipv6, and
-# the suburban-oob role can enable host_ipv6_policy, which writes
-# net.ipv6.conf.<iface>.accept_ra, autoconf, and accept_ra_defrtr. Those
-# roles MUST relax this via a drop-in:
+# ProtectKernelTunables: vault keeps the default true since its oob
+# instance does not need to write any sysctls. The failover role uses
+# slaac_health, which writes net.ipv6.conf.<iface>.disable_ipv6, and the
+# suburban hypervisor's oob instance enables host_ipv6_policy, which
+# writes net.ipv6.conf.<iface>.accept_ra, autoconf, and
+# accept_ra_defrtr. Those deployments MUST relax this via a drop-in:
 #
 #   # /etc/systemd/system/mwan-ifmgr.service.d/lxc-failover.conf
 #   [Service]

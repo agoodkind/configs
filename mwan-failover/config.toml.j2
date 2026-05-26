@@ -46,7 +46,7 @@ restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
 notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
 
 [ifmgr]
-role = "lxc-failover-backup"
+role = "failover"
 reconcile_interval = "60s"
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
