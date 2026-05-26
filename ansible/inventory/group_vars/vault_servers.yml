@@ -29,6 +29,24 @@ mwan_watchdog_state_file: "/run/mwan-rollback.state"
 mwan_watchdog_lock_file: "/run/mwan-watchdog-rollback.lock"
 failover_lxc_id: "116"
 
+# Distinguishes prod vault from suburban testbed when the config template
+# picks between vault_mwan_watchdog_pve_token_secret (prod) and
+# vault_suburban_testbed_pve_token_secret (testbed).
+mwan_environment: "prod"
+
+# Proxmox node name vault's mwan-watchdog hits via the PVE API.
+mwan_proxmox_node: vault
+
+# Email surface for emails originated on the vault host (mwan-watchdog,
+# mwan-ifmgr via notify). Subject prefix names the host so prod alerts
+# are distinguishable from suburban-testbed alerts.
+mwan_email_recipient: "alex@goodkind.io"
+mwan_email_from: "mwan@goodkind.io"
+mwan_email_subject_prefix: "[MWAN-vault]"
+mwan_email_bind_iface: "enmbrains0"
+mwan_email_min_level: "ERROR"
+mwan_email_cooldown: "5m"
+
 # mwan-ifmgr service on the host
 mwan_ifmgr_role: "oob"
 mwan_ifmgr_iface_key: "mbrains"

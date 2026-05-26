@@ -73,7 +73,7 @@
 
 - name: Deploy MWAN runtime config
   ansible.builtin.template:
-    src: "{{ repo_root }}/mwan/config/config.toml.j2"
+    src: "{{ repo_root }}/mwan/config/config-host.toml.j2"
     dest: /etc/mwan/config.toml
     owner: root
     group: root

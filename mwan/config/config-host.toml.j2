@@ -1,0 +1,163 @@
+# MWAN runtime config for Proxmox hypervisor hosts (vault, suburban).
+# Rendered by Ansible (proxmox-host.yml), deployed to /etc/mwan/config.toml.
+# Consumed by `mwan ifmgr` and `mwan watchdog` running on the hypervisor.
+# The MWAN VM (VM 113 on vault, VM 950 on suburban) uses the sibling
+# template config-vm.toml.j2, which also includes [agent], [bgp], and
+# [opnsense] sections that this host template intentionally omits.
+
+hostname = "{{ mwan_config_hostname }}"
+mwan_vmid = "{{ mwan_vmid }}"
+mwan_mgmt_addr = "{{ mwan_config_mgmt_addr }}"
+
+[email]
+smtp2go_api_key = "{{ vault_smtp2go_api_key }}"
+alert_email = "{{ mwan_email_recipient }}"
+from = "{{ mwan_email_from }}"
+subject_prefix = "{{ mwan_email_subject_prefix }}"
+bind_iface = "{{ mwan_email_bind_iface }}"
+min_level = "{{ mwan_email_min_level }}"
+cooldown = "{{ mwan_email_cooldown }}"
+
+[pve]
+base_url = "https://[::1]:8006/api2/json"
+node = "{{ mwan_proxmox_node }}"
+token_id = "{{ mwan_watchdog_pve_token_id }}"
+token_secret = "{{ vault_suburban_testbed_pve_token_secret if mwan_environment == 'testbed' else vault_mwan_watchdog_pve_token_secret }}"
+
+[network]
+ping_target_ipv4 = "1.1.1.1"
+ping_target_ipv6 = "2606:4700:4700::1111"
+ping_targets = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+curl_target = "https://ifconfig.co/ip"
+last_deploy_path = "/var/lib/mwan/last-deploy"
+last_change_path = "/var/run/mwan-last-change"
+
+[[network.wan_interfaces]]
+name = "enwebpass0"
+
+[[network.wan_interfaces]]
+name = "enmbrains0"
+
+[watchdog]
+service_name = "{{ mwan_watchdog_service_name }}"
+deploy_window_minutes = 30
+connectivity_timeout_seconds = 60
+check_interval_healthy_seconds = 30
+check_interval_degraded_seconds = 10
+post_rollback_grace_seconds = 120
+alert_cooldown_seconds = 300
+deploy_grace_period_seconds = 60
+max_rollback_attempts = 3
+snapshot_healthy_threshold = 20
+max_known_good_snapshots = 3
+hash_check_every_n_healthy = 10
+min_snapshot_interval_seconds = 300
+max_total_snapshots = 15
+vsock_cid = {{ mwan_vmid }}
+vsock_port = 50051
+mwan_agent_tcp_addr = "{{ mwan_watchdog_agent_tcp_addr }}"
+log_file = "{{ mwan_watchdog_log_file }}"
+json_log_file = "{{ mwan_watchdog_json_log_file }}"
+rollback_state_file = "{{ mwan_watchdog_state_file }}"
+rollback_lock_file = "{{ mwan_watchdog_lock_file }}"
+
+[failover]
+lxc_id = "{{ failover_lxc_id }}"
+
+[ifmgr]
+role = "{{ mwan_ifmgr_role }}"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.{{ mwan_ifmgr_iface_key }}]
+name = "{{ mwan_ifmgr_iface_name }}"
+dhcp_v4 = true
+ra_solicit = true
+dhcp_initial_backoff = "5s"
+dhcp_max_backoff = "5m"
+
+[ifmgr.modules.oobv6]
+iface = "{{ mwan_ifmgr_iface_name }}"
+oob_addr = "{{ mwan_ifmgr_oob_addr }}"
+oob_table_id = 500
+
+[ifmgr.modules.oobv4]
+iface = "{{ mwan_ifmgr_iface_name }}"
+oob_table_id = 500
+
+[ifmgr.modules.ra_lost]
+iface = "{{ mwan_ifmgr_iface_name }}"
+ra_lost_alert_after = "5m"
+
+{% if mwan_ifmgr_host_ipv6_policy_enabled %}
+[ifmgr.modules.host_ipv6_policy]
+missing_iface_grace_period = "{{ mwan_ifmgr_host_ipv6_missing_iface_grace_period }}"
+
+[[ifmgr.modules.host_ipv6_policy.interface]]
+name = "{{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.name }}"
+accept_ra = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.accept_ra }}
+autoconf = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.autoconf | ternary('true', 'false') }}
+accept_ra_defrtr = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.accept_ra_defrtr | ternary('true', 'false') }}
+solicit_ra = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.solicit_ra | ternary('true', 'false') }}
+cleanup_ra_default = {{ mwan_ifmgr_host_ipv6_allowed_ra_uplink.cleanup_ra_default | ternary('true', 'false') }}
+
+{% for iface in mwan_ifmgr_host_ipv6_denied_ra_ifaces %}
+[[ifmgr.modules.host_ipv6_policy.interface]]
+name = "{{ iface }}"
+accept_ra = 0
+autoconf = false
+accept_ra_defrtr = false
+solicit_ra = false
+cleanup_ra_default = true
+
+{% endfor %}
+{% endif %}
+{% if mwan_ifmgr_cloudflared_oob_user | length > 0 %}
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 5
+uid_user = "{{ mwan_ifmgr_cloudflared_oob_user }}"
+table = "oob"
+table_id = 500
+
+{% endif %}
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet6"
+priority = 6
+from = "{{ mwan_ifmgr_policy_from_v6 }}"
+table = "oob"
+table_id = 500
+
+{% if mwan_ifmgr_cloudflared_oob_user | length > 0 %}
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet"
+priority = 5
+uid_user = "{{ mwan_ifmgr_cloudflared_oob_user }}"
+table = "oob"
+table_id = 500
+{% endif %}
+
+{% if mwan_ifmgr_cloudflared_tap_enabled | default(false) | bool %}
+[ifmgr.modules.cloudflared_tap]
+unit = "{{ mwan_ifmgr_cloudflared_tap_unit | default('cloudflared-oob') }}"
+{% if mwan_ifmgr_cloudflared_tap_downgrade_patterns | default([]) | length > 0 %}
+downgrade_patterns = {{ mwan_ifmgr_cloudflared_tap_downgrade_patterns | to_json }}
+{% endif %}
+{% endif %}
+
+{% if mwan_ifmgr_wg_enabled | default(false) | bool %}
+[ifmgr.modules.wg]
+ssh_host = "{{ mwan_ifmgr_wg_ssh_host | default('') }}"
+{% if mwan_ifmgr_wg_identity_file | default('') | length > 0 %}
+identity_file = "{{ mwan_ifmgr_wg_identity_file }}"
+{% endif %}
+iface = "{{ mwan_ifmgr_wg_iface | default('wg0') }}"
+sudo = {{ mwan_ifmgr_wg_sudo | default(false) | ternary('true', 'false') }}
+warn_handshake_age = "{{ mwan_ifmgr_wg_warn_handshake_age | default('180s') }}"
+error_handshake_age = "{{ mwan_ifmgr_wg_error_handshake_age | default('300s') }}"
+timeout = "{{ mwan_ifmgr_wg_timeout | default('10s') }}"
+{% if mwan_ifmgr_wg_ignore_peers | default([]) | length > 0 %}
+ignore_peers = {{ mwan_ifmgr_wg_ignore_peers | to_json }}
+{% endif %}
+{% endif %}

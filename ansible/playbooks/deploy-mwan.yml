@@ -227,7 +227,7 @@
 
     - name: Deploy MWAN runtime config
       ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/config.toml.j2"
+        src: "{{ repo_root }}/mwan/config/config-vm.toml.j2"
         dest: /etc/mwan/config.toml
         mode: "0600"
 
