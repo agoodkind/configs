@@ -19,7 +19,7 @@ import (
 	policyrules "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
 	ralost "goodkind.io/mwan/internal/ifmgr/modules/ralost"
 	slaachealth "goodkind.io/mwan/internal/ifmgr/modules/slaachealth"
-	wghealth "goodkind.io/mwan/internal/ifmgr/modules/wghealth"
+	wg "goodkind.io/mwan/internal/ifmgr/modules/wg"
 	"goodkind.io/mwan/internal/netif"
 )
 
@@ -28,11 +28,11 @@ func buildIfMgrModuleConfigs(
 ) (ifmgr.ModuleConfigSet, error) {
 	moduleConfigs := make(ifmgr.ModuleConfigSet)
 
-	wgHealthConfig, err := buildWGHealthConfig(modules.WGHealth)
+	wgConfig, err := buildWGConfig(modules.WG)
 	if err != nil {
 		return nil, err
 	}
-	moduleConfigs["wg_health"] = wgHealthConfig
+	moduleConfigs["wg"] = wgConfig
 
 	oobV6Config, err := buildOOBV6Config(modules.OOBV6)
 	if err != nil {
@@ -84,8 +84,8 @@ func buildIfMgrModuleConfigs(
 	return moduleConfigs, nil
 }
 
-func buildWGHealthConfig(section *config.IfMgrWGHealthSection) (wghealth.Config, error) {
-	cfg := wghealth.Config{
+func buildWGConfig(section *config.IfMgrWGHealthSection) (wg.Config, error) {
+	cfg := wg.Config{
 		Iface:             "wg0",
 		Sudo:              false,
 		WarnHandshakeAge:  180 * time.Second,
@@ -110,26 +110,26 @@ func buildWGHealthConfig(section *config.IfMgrWGHealthSection) (wghealth.Config,
 	cfg.WarnHandshakeAge, err = parseDurationSetting(
 		section.WarnHandshakeAge,
 		cfg.WarnHandshakeAge,
-		"ifmgr.modules.wg_health.warn_handshake_age",
+		"ifmgr.modules.wg.warn_handshake_age",
 	)
 	if err != nil {
-		return wghealth.Config{}, err
+		return wg.Config{}, err
 	}
 	cfg.ErrorHandshakeAge, err = parseDurationSetting(
 		section.ErrorHandshakeAge,
 		cfg.ErrorHandshakeAge,
-		"ifmgr.modules.wg_health.error_handshake_age",
+		"ifmgr.modules.wg.error_handshake_age",
 	)
 	if err != nil {
-		return wghealth.Config{}, err
+		return wg.Config{}, err
 	}
 	cfg.Timeout, err = parseDurationSetting(
 		section.Timeout,
 		cfg.Timeout,
-		"ifmgr.modules.wg_health.timeout",
+		"ifmgr.modules.wg.timeout",
 	)
 	if err != nil {
-		return wghealth.Config{}, err
+		return wg.Config{}, err
 	}
 	for _, peer := range section.IgnorePeers {
 		cfg.IgnorePeers[peer] = true

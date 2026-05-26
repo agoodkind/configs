@@ -1,6 +1,6 @@
 //go:build linux
 
-package wghealth
+package wg
 
 import (
 	"context"

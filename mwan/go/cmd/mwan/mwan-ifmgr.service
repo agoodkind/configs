@@ -55,7 +55,7 @@ ProtectKernelTunables=true
 ReadWritePaths=/var/log /var/run /run
 
 # Allow reading SSH credentials for outbound SSH from modules like
-# wg_health that probe remote WG endpoints. ProtectHome=true otherwise
+# wg that probe remote WG endpoints. ProtectHome=true otherwise
 # hides /root entirely. Read-only is sufficient: the SSH client also
 # needs UserKnownHostsFile=/dev/null in its options to skip the
 # known_hosts write that this read-only mount cannot satisfy.

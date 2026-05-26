@@ -1,13 +1,13 @@
 //go:build linux
 
-// Package wghealth polls a WireGuard interface and reports per-peer
+// Package wg polls a WireGuard interface and reports per-peer
 // handshake age plus byte-rate health. Two modes:
 //
 //   - Remote SSH mode: when ssh_host is set, runs `wg show <iface> dump`
-//     on the remote (typically OPNsense). Used by the vault-oob role.
+//     on the remote (typically OPNsense). Used on vault by the oob role.
 //   - Local exec mode: when ssh_host is empty, runs `wg show <iface> dump`
 //     locally. Used by daemons running on a WG endpoint host directly
-//     (e.g. suburban). Wired by the suburban-wg role.
+//     (e.g. suburban hypervisor) via the same oob role.
 //
 // The module emits one structured log entry per peer per Reconcile pass
 // at DEBUG. Threshold-based alerts fire at WARN when a peer handshake
@@ -15,13 +15,13 @@
 // emits INFO and clears the alert.
 //
 // For bidirectional split-brain detection (each side's view of the same
-// peer should agree on endpoint after NAT normalization), run wghealth
-// on BOTH sides. Each daemon emits its local view as structured logs
-// with module=wg_health and src_host=<hostname>. Cross-side correlation
-// is currently log-analysis.
+// peer should agree on endpoint after NAT normalization), run wg on
+// BOTH sides. Each daemon emits its local view as structured logs
+// with module=wg and src_host=<hostname>. Cross-side correlation is
+// currently log-analysis.
 //
-// Registers as "wg_health".
-package wghealth
+// Registers as "wg".
+package wg
 
 import (
 	"bufio"
@@ -38,7 +38,7 @@ import (
 	"goodkind.io/mwan/internal/netif"
 )
 
-// Module owns wg_health state.
+// Module owns wg state.
 type Module struct {
 	cfg Config
 	env *ifmgr.Env
@@ -54,7 +54,7 @@ type Module struct {
 	lastRunAt time.Time
 }
 
-// Config is the parsed [ifmgr.modules.wg_health] sub-config.
+// Config is the parsed [ifmgr.modules.wg] sub-config.
 type Config struct {
 	// SSHHost is the remote target for `wg show <iface> dump`. Format:
 	// "user@host" (e.g. "agoodkind@3d06:bad:b01::1"). The user must be
@@ -96,7 +96,7 @@ type Config struct {
 	Timeout time.Duration
 }
 
-func (Config) ModuleConfigName() string { return "wg_health" }
+func (Config) ModuleConfigName() string { return "wg" }
 
 type peerState struct {
 	endpoint  string
@@ -107,7 +107,7 @@ type peerState struct {
 }
 
 // Name implements ifmgr.Module.
-func (m *Module) Name() string { return "wg_health" }
+func (m *Module) Name() string { return "wg" }
 
 // Init implements ifmgr.Module.
 func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
@@ -116,8 +116,8 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 	if m.cfg.SSHHost != "" {
 		mode = "ssh"
 	}
-	m.log = env.Log.With("module", "wg_health", "mode", mode, "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
-	m.log.Info("wg_health: Init",
+	m.log = env.Log.With("module", "wg", "mode", mode, "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
+	m.log.Info("wg: Init",
 		"warn_handshake_age", m.cfg.WarnHandshakeAge.String(),
 		"error_handshake_age", m.cfg.ErrorHandshakeAge.String(),
 		"ignored_peer_count", len(m.cfg.IgnorePeers),
@@ -125,7 +125,7 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 		"timeout", m.cfg.Timeout.String(),
 	)
 	if m.cfg.Iface == "" {
-		return fmt.Errorf("wg_health: iface is required")
+		return fmt.Errorf("wg: iface is required")
 	}
 	m.lastPeers = map[string]peerState{}
 	return nil
@@ -146,7 +146,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		// gklog email subject cooldown.
 		m.env.Alerts.Notify(now, slog.LevelError,
 			"wg-reconcile-failed", "remote-wg-show",
-			"wg_health: remote wg show failed",
+			"wg: remote wg show failed",
 			"err", err.Error(),
 		)
 		return nil // do not fail the whole reconcile loop
@@ -155,7 +155,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	if parseErr != nil {
 		m.env.Alerts.Notify(now, slog.LevelError,
 			"wg-reconcile-failed", "parse-wg-dump",
-			"wg_health: parse wg dump failed",
+			"wg: parse wg dump failed",
 			"err", parseErr.Error(),
 			"raw_lines", strings.Count(out, "\n"),
 		)
@@ -165,11 +165,11 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	// inbox sees a recovery email. Resolve is a no-op when no alert is active.
 	m.env.Alerts.Resolve(now,
 		"wg-reconcile-failed", "remote-wg-show",
-		"wg_health: remote wg show recovered",
+		"wg: remote wg show recovered",
 	)
 	m.env.Alerts.Resolve(now,
 		"wg-reconcile-failed", "parse-wg-dump",
-		"wg_health: parse wg dump recovered",
+		"wg: parse wg dump recovered",
 	)
 	m.mu.Lock()
 	m.lastPeers = peers
@@ -183,7 +183,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			ageS = int(age.Seconds())
 			ageStr = age.Truncate(time.Second).String()
 		}
-		log.Debug("wg_health: peer",
+		log.Debug("wg: peer",
 			"peer", shortKey(pubkey),
 			"endpoint", p.endpoint,
 			"handshake_age", ageStr,
@@ -194,7 +194,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			"ignored", m.cfg.IgnorePeers[pubkey],
 		)
 	}
-	log.Debug("wg_health: reconcile complete", "peer_count", len(peers))
+	log.Debug("wg: reconcile complete", "peer_count", len(peers))
 	return nil
 }
 
@@ -235,7 +235,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 			// peer that "never handshaked since daemon start" from one
 			// that "never handshaked ever". Skipping is the safe default.
 			// Use ignore_peers explicitly if a peer should not be tracked.
-			log.Debug("wg_health: peer has never handshaked, skipping alert",
+			log.Debug("wg: peer has never handshaked, skipping alert",
 				"peer", key, "endpoint", p.endpoint)
 			continue
 		}
@@ -244,7 +244,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 		case age >= m.cfg.ErrorHandshakeAge:
 			m.env.Alerts.Notify(now, slog.LevelError,
 				"wg-peer-stalled", key,
-				"wg_health: peer handshake stalled past error threshold",
+				"wg: peer handshake stalled past error threshold",
 				"peer", key,
 				"endpoint", p.endpoint,
 				"handshake_age_s", int(age.Seconds()),
@@ -253,7 +253,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 		case age >= m.cfg.WarnHandshakeAge:
 			m.env.Alerts.Notify(now, slog.LevelWarn,
 				"wg-peer-stalled", key,
-				"wg_health: peer handshake stalled past warn threshold",
+				"wg: peer handshake stalled past warn threshold",
 				"peer", key,
 				"endpoint", p.endpoint,
 				"handshake_age_s", int(age.Seconds()),
@@ -263,7 +263,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 			if m.env.Alerts.Active("wg-peer-stalled", key) {
 				m.env.Alerts.Resolve(now,
 					"wg-peer-stalled", key,
-					"wg_health: peer handshake recovered",
+					"wg: peer handshake recovered",
 					"peer", key,
 					"endpoint", p.endpoint,
 					"handshake_age_s", int(age.Seconds()),
@@ -323,14 +323,14 @@ func (m *Module) runRemoteWGShow(ctx context.Context, log *slog.Logger) (string,
 		if ee, ok := err.(*exec.ExitError); ok {
 			stderr = string(ee.Stderr)
 		}
-		log.Debug("wg_health: ssh wg show failed",
+		log.Debug("wg: ssh wg show failed",
 			"duration_ms", dur.Milliseconds(),
 			"err", err,
 			"stderr", stderr,
 		)
 		return "", fmt.Errorf("ssh %s: %w (stderr=%q)", m.cfg.SSHHost, err, stderr)
 	}
-	log.Debug("wg_health: ssh wg show ok",
+	log.Debug("wg: ssh wg show ok",
 		"duration_ms", dur.Milliseconds(),
 		"out_bytes", len(out),
 	)
@@ -357,7 +357,7 @@ func (m *Module) runLocalWGShow(ctx context.Context, log *slog.Logger, timeout t
 		if ee, ok := err.(*exec.ExitError); ok {
 			stderr = string(ee.Stderr)
 		}
-		log.Debug("wg_health: local wg show failed",
+		log.Debug("wg: local wg show failed",
 			"duration_ms", dur.Milliseconds(),
 			"iface", m.cfg.Iface,
 			"sudo", m.cfg.Sudo,
@@ -366,7 +366,7 @@ func (m *Module) runLocalWGShow(ctx context.Context, log *slog.Logger, timeout t
 		)
 		return "", fmt.Errorf("local wg show %s: %w (stderr=%q)", m.cfg.Iface, err, stderr)
 	}
-	log.Debug("wg_health: local wg show ok",
+	log.Debug("wg: local wg show ok",
 		"duration_ms", dur.Milliseconds(),
 		"iface", m.cfg.Iface,
 		"out_bytes", len(out),
@@ -466,7 +466,7 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	}
 	typedConfig, ok := cfg.(Config)
 	if !ok {
-		return nil, fmt.Errorf("wg_health: invalid config type %T", cfg)
+		return nil, fmt.Errorf("wg: invalid config type %T", cfg)
 	}
 	if typedConfig.Iface == "" {
 		typedConfig.Iface = c.Iface
@@ -477,4 +477,4 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	return &Module{cfg: typedConfig}, nil
 }
 
-func init() { ifmgr.Register("wg_health", New) }
+func init() { ifmgr.Register("wg", New) }

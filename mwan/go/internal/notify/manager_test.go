@@ -66,8 +66,8 @@ func TestResolveEmitsAtNotifyLevelWarn(t *testing.T) {
 	m, h := newManagerForTest()
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
-	m.notifyAt(context.Background(), now, slog.LevelWarn, "wg_health", "peer-EYvlZyou", "stalled")
-	m.resolveAt(context.Background(), now.Add(time.Minute), "wg_health", "peer-EYvlZyou", "back to good")
+	m.notifyAt(context.Background(), now, slog.LevelWarn, "wg", "peer-EYvlZyou", "stalled")
+	m.resolveAt(context.Background(), now.Add(time.Minute), "wg", "peer-EYvlZyou", "back to good")
 
 	records := h.snapshot()
 	if len(records) != 2 {
@@ -87,8 +87,8 @@ func TestResolveEmitsAtNotifyLevelError(t *testing.T) {
 	m, h := newManagerForTest()
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
-	m.notifyAt(context.Background(), now, slog.LevelError, "wg_health", "peer-jz3eKGui", "remote wg show failed")
-	m.resolveAt(context.Background(), now.Add(time.Minute), "wg_health", "peer-jz3eKGui", "remote wg show ok")
+	m.notifyAt(context.Background(), now, slog.LevelError, "wg", "peer-jz3eKGui", "remote wg show failed")
+	m.resolveAt(context.Background(), now.Add(time.Minute), "wg", "peer-jz3eKGui", "remote wg show ok")
 
 	records := h.snapshot()
 	if len(records) != 2 {
@@ -110,7 +110,7 @@ func TestResolveOnUnknownKeyIsNoOp(t *testing.T) {
 
 	// Must not panic and must emit nothing: there is no active alert
 	// for this (kind, key), so Resolve has no recovery to announce.
-	m.resolveAt(context.Background(), now, "wg_health", "never-fired", "spurious")
+	m.resolveAt(context.Background(), now, "wg", "never-fired", "spurious")
 
 	if got := len(h.snapshot()); got != 0 {
 		t.Errorf("emitted %d records on unknown-key Resolve, want 0", got)

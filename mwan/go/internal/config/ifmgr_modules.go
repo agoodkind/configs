@@ -3,7 +3,7 @@ package config
 // IfMgrModulesSection is the explicit TOML schema for [ifmgr.modules].
 // Each field maps to one supported module table.
 type IfMgrModulesSection struct {
-	WGHealth          *IfMgrWGHealthSection          `toml:"wg_health"`
+	WG                *IfMgrWGHealthSection          `toml:"wg"`
 	OOBV6             *IfMgrOOBV6Section             `toml:"oobv6"`
 	OOBV4             *IfMgrOOBV4Section             `toml:"oobv4"`
 	SLAACHealth       *IfMgrSLAACHealthSection       `toml:"slaac_health"`
