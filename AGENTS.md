@@ -59,8 +59,16 @@ provisioning path.
 The canonical playbook invocation in this environment is:
 
 ```bash
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/<name>.yml"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy <name> [--limit <host>] [--check] [--diff]
 ```
+
+The helper spawns `ansible-playbook` as a subprocess from
+[ansible/](ansible/) so the inner call never goes through an agent Bash tool
+dispatch. `rake -C /Users/agoodkind/Sites/configs/ansible deploy:<service>[<limit>]`
+is the equivalent shortcut from inside the configs repo. Direct invocation of
+`ansible`, `ansible-vault`, `ansible-playbook`, `ansible-inventory`, and
+`ansible-console` from agent shells is blocked by agent-gate because every one
+of those decrypts vault values into stdout.
 
 Use `--limit <host>` for production runs and `--check --diff` before mutating
 anything important. Shortcuts live in [ansible/Rakefile](ansible/Rakefile), and
@@ -87,9 +95,7 @@ workflow details live in [.agents/skills/deploy-playbook/SKILL.md](.agents/skill
   chat. If you only need key names, run:
 
 ```bash
-python3 scripts/ansible_vault_keys.py \
-  --vault-password-file ~/.config/ansible/vault.pass \
-  ansible/inventory/group_vars/all/vault.yml
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py keys
 ```
 
 ## Production change protocol

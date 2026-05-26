@@ -9,8 +9,12 @@ disable-model-invocation: true
 
 # Deploy Ansible Playbook
 
-Run locally from [ansible/](../../../ansible/). The vault password file at
-`~/.config/ansible/vault.pass` is required.
+The vault password file at `~/.config/ansible/vault.pass` is required. The
+agent helper at
+[scripts/ansible_helper.py](../../../scripts/ansible_helper.py) wraps
+`ansible-playbook` so the agent shell never invokes the ansible CLI directly.
+Direct invocation of `ansible`, `ansible-vault`, `ansible-playbook`,
+`ansible-inventory`, and `ansible-console` is blocked by agent-gate.
 
 ## Canonical Playbooks
 
@@ -26,14 +30,15 @@ flags.
 | [ansible/playbooks/deploy-opnsense.yml](../../../ansible/playbooks/deploy-opnsense.yml) | `opnsense_servers` or `opnsense_test_servers` | mwan-opnsense daemon on OPNsense host |
 | [ansible/playbooks/deploy-testbed.yml](../../../ansible/playbooks/deploy-testbed.yml) | `suburban_servers` | Suburban-only extras, including `qm args`, ISP LXCs, host bridge, and VFIO |
 
-## Direct Invocation Pattern
-
-Use this pattern from the agent terminal so `ansible.cfg` and dynamic inventory
-resolve from [ansible/](../../../ansible/):
+## Invocation Pattern
 
 ```bash
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml --limit vault"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy <name> [--limit <host>] [--check] [--diff]
 ```
+
+`<name>` is the playbook stem, such as `deploy-proxmox` or `deploy-mwan`. The
+helper resolves it to `playbooks/<name>.yml` under
+[ansible/](../../../ansible/). A full `.yml` path is also accepted.
 
 Always include `--limit <host-or-group>` for production runs so one command does
 not touch both hypervisors at once. Dry-run with `--check --diff` first when in
@@ -43,22 +48,22 @@ doubt.
 
 ```bash
 # Configure both Proxmox hypervisors
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-proxmox
 
 # Configure only vault
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml --limit vault"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-proxmox --limit vault
 
 # Dry-run the MWAN VM playbook
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan.yml --check --diff"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-mwan --check --diff
 
 # Configure the testbed failover LXC
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan-failover.yml --limit mwan_failover_test_servers"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-mwan-failover --limit mwan_failover_test_servers
 
 # Configure the testbed OPNsense
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-opnsense.yml --limit opnsense_test_servers"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-opnsense --limit opnsense_test_servers
 
 # Suburban-only testbed extras
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-testbed.yml --limit suburban"
+python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-testbed --limit suburban
 ```
 
 ## Rake Shortcuts
@@ -75,11 +80,11 @@ rake inventory
 
 ## Notes
 
-- The command must run from [ansible/](../../../ansible/), where `ansible.cfg` lives.
+- The helper sets `cwd` to [ansible/](../../../ansible/) so `ansible.cfg` and
+  dynamic inventory resolve. The rake tasks do the same.
 - The vault password file is `~/.config/ansible/vault.pass`.
 - For a single deploy of a non-MWAN service, such as proxy, adguard, ddns, or
-  tack, use the matching `deploy-<service>.yml` directly with the same vault
-  password flag.
+  tack, pass the matching `deploy-<service>` stem to the helper.
 
 ## Debugging Failures
 
