@@ -9,12 +9,10 @@ disable-model-invocation: true
 
 # Deploy Ansible Playbook
 
-The vault password file at `~/.config/ansible/vault.pass` is required. The
-agent helper at
-[scripts/ansible_helper.py](../../../scripts/ansible_helper.py) wraps
-`ansible-playbook` so the agent shell never invokes the ansible CLI directly.
-Direct invocation of `ansible`, `ansible-vault`, `ansible-playbook`,
-`ansible-inventory`, and `ansible-console` is blocked by agent-gate.
+The vault password file at `~/.config/ansible/vault.pass` is required. Use
+[scripts/ansible_helper.py](../../../scripts/ansible_helper.py) `deploy` to run
+playbooks. Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
+`ansible-inventory`, or `ansible-console` directly.
 
 ## Canonical Playbooks
 

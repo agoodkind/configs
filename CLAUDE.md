@@ -11,10 +11,10 @@ Read [docs/infra/access.md](docs/infra/access.md) for SSH access patterns.
 ## Running Ansible playbooks
 
 The canonical deploy invocation and vault-key listing live in
-[AGENTS.md](AGENTS.md). Direct invocation of `ansible`, `ansible-vault`,
-`ansible-playbook`, `ansible-inventory`, and `ansible-console` from agent shells
-is blocked by agent-gate. The five-playbook table and per-service examples live
-in [.agents/skills/deploy-playbook/SKILL.md](.agents/skills/deploy-playbook/SKILL.md).
+[AGENTS.md](AGENTS.md). Do not invoke `ansible`, `ansible-vault`,
+`ansible-playbook`, `ansible-inventory`, or `ansible-console` directly. The
+five-playbook table and per-service examples live in
+[.agents/skills/deploy-playbook/SKILL.md](.agents/skills/deploy-playbook/SKILL.md).
 
 ## Surgical change protocol
 

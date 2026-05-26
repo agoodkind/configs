@@ -2,11 +2,10 @@
 
 All secret values live in [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml), encrypted with Ansible
 Vault. [ansible/inventory/group_vars/all/vars.yml](../../ansible/inventory/group_vars/all/vars.yml) stores shared non-secret variables only.
-Operators edit and rekey the vault with `ansible-vault edit` and `ansible-vault rekey`
-from an interactive shell outside the agent transcript, since the ansible CLI is
-blocked from agent shells by agent-gate. For safe key discovery from inside an
-agent shell, use [scripts/ansible_helper.py](../../scripts/ansible_helper.py)
-with the `keys` subcommand.
+List vault key names with
+[scripts/ansible_helper.py](../../scripts/ansible_helper.py) `keys`. Do not
+invoke `ansible`, `ansible-vault`, `ansible-playbook`, `ansible-inventory`, or
+`ansible-console` directly.
 
 ## File locations
 
@@ -17,15 +16,12 @@ with the `keys` subcommand.
 
 ## Safe key listing
 
-List only vault key names with:
-
 ```bash
 python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py keys
 ```
 
-This command prints only key paths such as `vault_proxmox_token_secret`. It does not
-print decrypted values. The helper spawns `ansible-vault view` as a subprocess so the
-inner call never goes through an agent Bash tool dispatch.
+Prints key paths such as `vault_proxmox_token_secret`. Decrypted values are not
+printed.
 
 ## Variable contract
 

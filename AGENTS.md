@@ -56,23 +56,20 @@ Legacy guest-creation playbooks such as
 for older hosts. Treat them as migration-era exceptions, not as the default
 provisioning path.
 
-The canonical playbook invocation in this environment is:
+The canonical playbook invocation is:
 
 ```bash
 python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy <name> [--limit <host>] [--check] [--diff]
 ```
 
-The helper spawns `ansible-playbook` as a subprocess from
-[ansible/](ansible/) so the inner call never goes through an agent Bash tool
-dispatch. `rake -C /Users/agoodkind/Sites/configs/ansible deploy:<service>[<limit>]`
-is the equivalent shortcut from inside the configs repo. Direct invocation of
-`ansible`, `ansible-vault`, `ansible-playbook`, `ansible-inventory`, and
-`ansible-console` from agent shells is blocked by agent-gate because every one
-of those decrypts vault values into stdout.
+`rake -C /Users/agoodkind/Sites/configs/ansible deploy:<service>[<limit>]` is
+the equivalent shortcut from inside the configs repo. Do not invoke `ansible`,
+`ansible-vault`, `ansible-playbook`, `ansible-inventory`, or `ansible-console`
+directly.
 
 Use `--limit <host>` for production runs and `--check --diff` before mutating
-anything important. Shortcuts live in [ansible/Rakefile](ansible/Rakefile), and
-workflow details live in [.agents/skills/deploy-playbook/SKILL.md](.agents/skills/deploy-playbook/SKILL.md).
+anything important. Workflow details live in
+[.agents/skills/deploy-playbook/SKILL.md](.agents/skills/deploy-playbook/SKILL.md).
 
 ## Ansible and secret contract
 
