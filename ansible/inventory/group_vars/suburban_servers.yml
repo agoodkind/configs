@@ -87,7 +87,7 @@ mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
 mwan_opnsense_host_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-linux"
 
 # mwan-ifmgr service on the host
-mwan_ifmgr_role: "suburban-oob"
+mwan_ifmgr_role: "oob"
 mwan_ifmgr_iface_key: "enmbrains0"
 mwan_ifmgr_iface_name: "enmbrains0"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"

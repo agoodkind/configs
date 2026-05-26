@@ -27,7 +27,7 @@ mwan_watchdog_lock_file: "/run/mwan-watchdog-rollback.lock"
 failover_lxc_id: "116"
 
 # mwan-ifmgr service on the host
-mwan_ifmgr_role: "vault-oob"
+mwan_ifmgr_role: "oob"
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:ff::1/128"

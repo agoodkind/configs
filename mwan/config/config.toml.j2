@@ -189,3 +189,27 @@ uid_user = "{{ mwan_ifmgr_cloudflared_oob_user }}"
 table = "oob"
 table_id = 500
 {% endif %}
+
+{% if mwan_ifmgr_cloudflared_tap_enabled | default(false) | bool %}
+[ifmgr.modules.cloudflared_tap]
+unit = "{{ mwan_ifmgr_cloudflared_tap_unit | default('cloudflared-oob') }}"
+{% if mwan_ifmgr_cloudflared_tap_downgrade_patterns | default([]) | length > 0 %}
+downgrade_patterns = {{ mwan_ifmgr_cloudflared_tap_downgrade_patterns | to_json }}
+{% endif %}
+{% endif %}
+
+{% if mwan_ifmgr_wg_enabled | default(false) | bool %}
+[ifmgr.modules.wg]
+ssh_host = "{{ mwan_ifmgr_wg_ssh_host | default('') }}"
+{% if mwan_ifmgr_wg_identity_file | default('') | length > 0 %}
+identity_file = "{{ mwan_ifmgr_wg_identity_file }}"
+{% endif %}
+iface = "{{ mwan_ifmgr_wg_iface | default('wg0') }}"
+sudo = {{ mwan_ifmgr_wg_sudo | default(false) | ternary('true', 'false') }}
+warn_handshake_age = "{{ mwan_ifmgr_wg_warn_handshake_age | default('180s') }}"
+error_handshake_age = "{{ mwan_ifmgr_wg_error_handshake_age | default('300s') }}"
+timeout = "{{ mwan_ifmgr_wg_timeout | default('10s') }}"
+{% if mwan_ifmgr_wg_ignore_peers | default([]) | length > 0 %}
+ignore_peers = {{ mwan_ifmgr_wg_ignore_peers | to_json }}
+{% endif %}
+{% endif %}

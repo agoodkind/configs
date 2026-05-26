@@ -8,6 +8,12 @@ proxmox_mwan_host_role_enabled: true
 mwan_ifmgr_enabled: true
 mwan_ifmgr_host_ipv6_policy_enabled: false
 mwan_ifmgr_cloudflared_oob_user: ""
+# Opt-in ifmgr modules under the unified `oob` role. Each absent flag
+# leaves the matching [ifmgr.modules.X] section out of the rendered
+# config; the module's Init then returns ifmgr.ErrModuleDisabled and
+# the daemon drops it from its dispatch list.
+mwan_ifmgr_cloudflared_tap_enabled: false
+mwan_ifmgr_wg_enabled: false
 mwan_watchdog_enabled: true
 mwan_watchdog_service_name: "mwan-watchdog"
 mwan_watchdog_unit_description: "MWAN Auto-Rollback Watchdog"
