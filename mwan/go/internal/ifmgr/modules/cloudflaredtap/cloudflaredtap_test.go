@@ -3,9 +3,14 @@
 package cloudflaredtap
 
 import (
+	"context"
+	"errors"
+	"io"
 	"log/slog"
 	"regexp"
 	"testing"
+
+	"goodkind.io/mwan/internal/ifmgr"
 )
 
 func TestNew_DefaultsApplied(t *testing.T) {
@@ -125,5 +130,26 @@ func TestIntField(t *testing.T) {
 	}
 	if got := intField(e, "MISSING"); got != 0 {
 		t.Errorf("missing should return 0; got %d", got)
+	}
+}
+
+func TestInitReturnsDisabledSentinelWhenUnitEmpty(t *testing.T) {
+	t.Parallel()
+
+	module, err := New(Config{})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	env := &ifmgr.Env{
+		Iface:  "lo",
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Alerts: ifmgr.NewAlertManager(slog.New(slog.NewTextHandler(io.Discard, nil)), ifmgr.AlertConfig{}),
+	}
+	initErr := module.Init(context.Background(), env)
+	if initErr == nil {
+		t.Fatal("Init returned nil error for empty Unit, want ErrModuleDisabled")
+	}
+	if !errors.Is(initErr, ifmgr.ErrModuleDisabled) {
+		t.Fatalf("Init returned err=%v, want errors.Is(err, ifmgr.ErrModuleDisabled)", initErr)
 	}
 }

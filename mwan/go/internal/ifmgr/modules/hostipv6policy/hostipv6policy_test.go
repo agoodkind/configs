@@ -4,6 +4,7 @@ package hostipv6policy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -223,5 +224,21 @@ func TestNewRejectsInvalidConfigType(t *testing.T) {
 	_, err := New(invalidModuleConfig{})
 	if err == nil {
 		t.Fatal("New returned nil error for invalid config type")
+	}
+}
+
+func TestInitReturnsDisabledSentinelWhenPoliciesEmpty(t *testing.T) {
+	t.Parallel()
+
+	module, err := New(Config{MissingIfaceGracePeriod: time.Minute})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	initErr := module.Init(context.Background(), newTestEnv(&fakeSysctlRunner{values: map[string]string{}}))
+	if initErr == nil {
+		t.Fatal("Init returned nil error for empty Policies, want ErrModuleDisabled")
+	}
+	if !errors.Is(initErr, ifmgr.ErrModuleDisabled) {
+		t.Fatalf("Init returned err=%v, want errors.Is(err, ifmgr.ErrModuleDisabled)", initErr)
 	}
 }

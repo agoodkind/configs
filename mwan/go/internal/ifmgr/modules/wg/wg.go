@@ -44,6 +44,14 @@ type Module struct {
 	env *ifmgr.Env
 	log *slog.Logger
 
+	// disabled is true when New received a nil ModuleConfig, meaning the
+	// adapter saw no [ifmgr.modules.wg] section. Init returns
+	// ifmgr.ErrModuleDisabled in that case so the daemon drops the
+	// module from its dispatch list. A present-but-default Config (e.g.
+	// local-exec mode on wg0 with no ssh_host) is still a valid
+	// configuration and must NOT trip this sentinel.
+	disabled bool
+
 	// runWGShow is the test seam for runRemoteWGShow. Production code leaves
 	// this nil and the real implementation runs. Tests assign a stub before
 	// calling Reconcile to avoid execing ssh or wg.
@@ -112,6 +120,10 @@ func (m *Module) Name() string { return "wg" }
 // Init implements ifmgr.Module.
 func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 	m.env = env
+	if m.disabled {
+		env.Log.With("module", "wg").Info("wg: Init (disabled)")
+		return fmt.Errorf("%w: wg: no [ifmgr.modules.wg] section", ifmgr.ErrModuleDisabled)
+	}
 	mode := "local"
 	if m.cfg.SSHHost != "" {
 		mode = "ssh"
@@ -451,7 +463,11 @@ func shortKey(pub string) string {
 	return pub[:8]
 }
 
-// New is the constructor.
+// New is the constructor. A nil cfg means the operator did not render an
+// [ifmgr.modules.wg] section for this host; the returned Module remembers
+// this and Init returns ifmgr.ErrModuleDisabled. A non-nil cfg even with
+// every field at zero is a valid local-exec config (Iface defaults to
+// wg0) and must not flip the disabled flag.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
 		Iface:             "wg0",
@@ -462,7 +478,7 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		IgnorePeers:       map[string]bool{},
 	}
 	if cfg == nil {
-		return &Module{cfg: c}, nil
+		return &Module{cfg: c, disabled: true}, nil
 	}
 	typedConfig, ok := cfg.(Config)
 	if !ok {

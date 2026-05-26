@@ -67,7 +67,10 @@ func (Config) ModuleConfigName() string { return "cloudflared_tap" }
 func (m *Module) Name() string { return "cloudflared_tap" }
 
 // Init validates config, compiles regex patterns, and spawns the
-// long-lived journal-tail goroutine.
+// long-lived journal-tail goroutine. An empty Unit means the operator did
+// not render an [ifmgr.modules.cloudflared_tap] section for this host, so
+// Init returns ifmgr.ErrModuleDisabled and the daemon drops the module
+// from its dispatch list.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "cloudflared_tap", "unit", m.cfg.Unit)
@@ -77,7 +80,7 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		"journalctl_path", m.cfg.JournalctlPath)
 
 	if m.cfg.Unit == "" {
-		return fmt.Errorf("cloudflared_tap: unit is required")
+		return fmt.Errorf("%w: cloudflared_tap: no [ifmgr.modules.cloudflared_tap] section", ifmgr.ErrModuleDisabled)
 	}
 
 	for i, p := range m.cfg.DowngradePatterns {

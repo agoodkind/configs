@@ -66,7 +66,10 @@ type Module struct {
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "host_ipv6_policy" }
 
-// Init implements ifmgr.Module.
+// Init implements ifmgr.Module. An empty Policies list means no
+// [ifmgr.modules.host_ipv6_policy] section was rendered for this host,
+// so Init returns ifmgr.ErrModuleDisabled and the daemon drops the
+// module from its dispatch list.
 func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "host_ipv6_policy")
@@ -74,11 +77,11 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 		"policy_count", len(m.cfg.Policies),
 		"missing_iface_grace_period", m.cfg.MissingIfaceGracePeriod.String(),
 	)
+	if len(m.cfg.Policies) == 0 {
+		return fmt.Errorf("%w: host_ipv6_policy: no [ifmgr.modules.host_ipv6_policy] section", ifmgr.ErrModuleDisabled)
+	}
 	if m.cfg.MissingIfaceGracePeriod <= 0 {
 		return fmt.Errorf("host_ipv6_policy: missing_iface_grace_period must be > 0")
-	}
-	if len(m.cfg.Policies) == 0 {
-		return fmt.Errorf("host_ipv6_policy: at least one interface policy is required")
 	}
 	seenIfaces := make(map[string]bool, len(m.cfg.Policies))
 	for i, policy := range m.cfg.Policies {

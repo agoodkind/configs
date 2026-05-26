@@ -84,7 +84,15 @@ func buildIfMgrModuleConfigs(
 	return moduleConfigs, nil
 }
 
-func buildWGConfig(section *config.IfMgrWGHealthSection) (wg.Config, error) {
+// buildWGConfig returns nil when section is nil so the wg module's
+// constructor (wg.New) flips its disabled flag and Init returns the
+// ifmgr.ErrModuleDisabled sentinel. A present but defaulted section
+// renders local-exec mode on wg0, which is a valid configuration on
+// suburban and must NOT trip the disabled sentinel.
+func buildWGConfig(section *config.IfMgrWGHealthSection) (ifmgr.ModuleConfig, error) {
+	if section == nil {
+		return nil, nil
+	}
 	cfg := wg.Config{
 		Iface:             "wg0",
 		Sudo:              false,
@@ -92,9 +100,6 @@ func buildWGConfig(section *config.IfMgrWGHealthSection) (wg.Config, error) {
 		ErrorHandshakeAge: 300 * time.Second,
 		Timeout:           10 * time.Second,
 		IgnorePeers:       map[string]bool{},
-	}
-	if section == nil {
-		return cfg, nil
 	}
 	cfg.SSHHost = section.SSHHost
 	if section.SSHPort != nil {
@@ -113,7 +118,7 @@ func buildWGConfig(section *config.IfMgrWGHealthSection) (wg.Config, error) {
 		"ifmgr.modules.wg.warn_handshake_age",
 	)
 	if err != nil {
-		return wg.Config{}, err
+		return nil, err
 	}
 	cfg.ErrorHandshakeAge, err = parseDurationSetting(
 		section.ErrorHandshakeAge,
@@ -121,7 +126,7 @@ func buildWGConfig(section *config.IfMgrWGHealthSection) (wg.Config, error) {
 		"ifmgr.modules.wg.error_handshake_age",
 	)
 	if err != nil {
-		return wg.Config{}, err
+		return nil, err
 	}
 	cfg.Timeout, err = parseDurationSetting(
 		section.Timeout,
@@ -129,7 +134,7 @@ func buildWGConfig(section *config.IfMgrWGHealthSection) (wg.Config, error) {
 		"ifmgr.modules.wg.timeout",
 	)
 	if err != nil {
-		return wg.Config{}, err
+		return nil, err
 	}
 	for _, peer := range section.IgnorePeers {
 		cfg.IgnorePeers[peer] = true

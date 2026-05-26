@@ -5,6 +5,7 @@ package wg
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -293,5 +294,51 @@ func TestReconcile_RecoveryEmitsResolveOnce(t *testing.T) {
 	})
 	if !resolved {
 		t.Errorf("resolve record missing resolved=true attribute")
+	}
+}
+
+// New(nil) flags the module disabled (no [ifmgr.modules.wg] section was
+// rendered). Init returns ifmgr.ErrModuleDisabled so the daemon drops
+// the module from its dispatch list for its remaining lifetime.
+func TestInitReturnsDisabledSentinelWhenConfigNil(t *testing.T) {
+	t.Parallel()
+
+	module, err := New(nil)
+	if err != nil {
+		t.Fatalf("New(nil) returned error: %v", err)
+	}
+	env := &ifmgr.Env{
+		Iface:  "lo",
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Alerts: ifmgr.NewAlertManager(slog.New(slog.NewTextHandler(io.Discard, nil)), ifmgr.AlertConfig{}),
+	}
+	initErr := module.Init(context.Background(), env)
+	if initErr == nil {
+		t.Fatal("Init returned nil error after New(nil), want ErrModuleDisabled")
+	}
+	if !errors.Is(initErr, ifmgr.ErrModuleDisabled) {
+		t.Fatalf("Init returned err=%v, want errors.Is(err, ifmgr.ErrModuleDisabled)", initErr)
+	}
+}
+
+// Local-exec mode (Config{} with empty SSHHost) is a valid configuration
+// on suburban and must NOT trip the disabled sentinel. The fact that
+// a non-nil cfg was passed to New is the operator's signal that the
+// section was rendered.
+func TestInitDoesNotDisableOnDefaultLocalExecConfig(t *testing.T) {
+	t.Parallel()
+
+	module, err := New(Config{})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	env := &ifmgr.Env{
+		Iface:  "lo",
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Alerts: ifmgr.NewAlertManager(slog.New(slog.NewTextHandler(io.Discard, nil)), ifmgr.AlertConfig{}),
+	}
+	initErr := module.Init(context.Background(), env)
+	if initErr != nil {
+		t.Fatalf("Init returned err=%v on default local-exec config, want nil", initErr)
 	}
 }

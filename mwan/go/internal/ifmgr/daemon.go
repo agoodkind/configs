@@ -4,6 +4,7 @@ package ifmgr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -185,16 +186,30 @@ func (d *Daemon) Run(ctx context.Context) error {
 		RA:      raClient,
 	}
 
-	// Init every module in role order. Failure here is fatal: it usually
-	// means a misconfiguration the operator should fix before letting
-	// the daemon idle.
+	// Init every module in role order. Failure here is fatal unless the
+	// module returns ifmgr.ErrModuleDisabled, in which case the module
+	// removes itself from this daemon's dispatch list for the rest of
+	// the process lifetime. This is the opt-in pattern: a unified role
+	// (e.g. "oob") can list modules that are only configured on some
+	// hosts; an entirely-absent [ifmgr.modules.X] section yields a zero
+	// Config, Init sees empty state, and returns the sentinel so the
+	// daemon transparently skips the module on that host.
+	enabledModules := make([]Module, 0, len(d.modules))
 	for _, m := range d.modules {
 		mlog := d.log.With("module", m.Name(), "phase", "init")
 		mlog.Debug("ifmgr: module Init")
-		if err := m.Init(ctx, d.env); err != nil {
+		err := m.Init(ctx, d.env)
+		if errors.Is(err, ErrModuleDisabled) {
+			mlog.Info("ifmgr: module disabled, skipping for daemon lifetime",
+				"reason", err.Error())
+			continue
+		}
+		if err != nil {
 			return fmt.Errorf("module %s Init: %w", m.Name(), err)
 		}
+		enabledModules = append(enabledModules, m)
 	}
+	d.modules = enabledModules
 
 	// Initial reconcile pass.
 	initialCtx := tracing.WithOperation(ctx, "initial_reconcile")
