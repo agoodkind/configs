@@ -335,7 +335,6 @@ type Config struct {
 	Hostname     string `toml:"hostname"`
 	MwanVMID     string `toml:"mwan_vmid"`
 	MwanMgmtAddr string `toml:"mwan_mgmt_addr"`
-	MwanIntIface string `toml:"mwan_int_iface"`
 
 	Email   EmailConfig   `toml:"email"`
 	PVE     PVEConfig     `toml:"pve"`
@@ -483,44 +482,45 @@ func defaultConfig() Config {
 }
 
 func defaultConfigBase() Config {
-	return Config{
-		Email: EmailConfig{MinLevel: "ERROR", Cooldown: "5m"},
-		PVE:   PVEConfig{BaseURL: "https://127.0.0.1:8006/api2/json"},
-		Network: NetworkConfig{
-			PingTargetIPv4: "1.1.1.1",
-			PingTargetIPv6: "2606:4700:4700::1111",
-			LastDeployPath: "/var/lib/mwan/last-deploy",
-			LastChangePath: "/var/run/mwan-last-change",
-		},
-		Watchdog: WatchdogSection{
-			DeployWindowMinutes: 30, ConnectivityTimeoutSeconds: 60,
-			CheckIntervalHealthy: 30, CheckIntervalDegraded: 10,
-			PostRollbackGraceSeconds: 120, AlertCooldownSeconds: 300,
-			DeployGracePeriodSeconds: 60, MaxRollbackAttempts: 3,
-			SnapshotHealthyThreshold: 20, MaxKnownGoodSnapshots: 3,
-			HashCheckEveryNHealthy: 10, MinSnapshotIntervalSeconds: 300,
-			MaxTotalSnapshots: 15,
-			LogFile:           "/var/log/mwan-watchdog.log", JSONLogFile: "/var/log/mwan-watchdog.jsonl",
-			RollbackStateFile: "/run/mwan-rollback.state",
-			RollbackLockFile:  "/run/mwan-watchdog-rollback.lock",
-			ServiceName:       "mwan-watchdog",
-		},
-		Failover: FailoverSection{LXCID: ""},
-		Agent: AgentSection{
-			VsockPort: 50051, TCPAddr: "[::]:50052",
-			DeployFile:     "/var/lib/mwan/last-deploy",
-			DeployExpected: true,
-			LogFile:        "/var/log/mwan-agent.log",
-		},
-		BGP: BGPSection{
-			GracefulRestart: BGPGracefulRestart{
-				Enabled:             true,
-				RestartTime:         30,
-				NotificationEnabled: true,
-			},
-		},
-		Notify: NotifySection{RepeatEvery: "", PerKind: nil},
+	// Assign field-by-field instead of via a struct literal so the
+	// exhaustruct lint does not require enumerating every zero-value
+	// sub-section (OPNsense, IfMgr, and their many nested sub-structs).
+	var cfg Config
+	cfg.Email = EmailConfig{MinLevel: "ERROR", Cooldown: "5m"}
+	cfg.PVE = PVEConfig{BaseURL: "https://127.0.0.1:8006/api2/json"}
+	cfg.Network = NetworkConfig{
+		PingTargetIPv4: "1.1.1.1",
+		PingTargetIPv6: "2606:4700:4700::1111",
+		LastDeployPath: "/var/lib/mwan/last-deploy",
+		LastChangePath: "/var/run/mwan-last-change",
 	}
+	cfg.Watchdog = WatchdogSection{
+		DeployWindowMinutes: 30, ConnectivityTimeoutSeconds: 60,
+		CheckIntervalHealthy: 30, CheckIntervalDegraded: 10,
+		PostRollbackGraceSeconds: 120, AlertCooldownSeconds: 300,
+		DeployGracePeriodSeconds: 60, MaxRollbackAttempts: 3,
+		SnapshotHealthyThreshold: 20, MaxKnownGoodSnapshots: 3,
+		HashCheckEveryNHealthy: 10, MinSnapshotIntervalSeconds: 300,
+		MaxTotalSnapshots: 15,
+		LogFile:           "/var/log/mwan-watchdog.log", JSONLogFile: "/var/log/mwan-watchdog.jsonl",
+		RollbackStateFile: "/run/mwan-rollback.state",
+		RollbackLockFile:  "/run/mwan-watchdog-rollback.lock",
+		ServiceName:       "mwan-watchdog",
+	}
+	cfg.Agent = AgentSection{
+		VsockPort: 50051, TCPAddr: "[::]:50052",
+		DeployFile:     "/var/lib/mwan/last-deploy",
+		DeployExpected: true,
+		LogFile:        "/var/log/mwan-agent.log",
+	}
+	cfg.BGP = BGPSection{
+		GracefulRestart: BGPGracefulRestart{
+			Enabled:             true,
+			RestartTime:         30,
+			NotificationEnabled: true,
+		},
+	}
+	return cfg
 }
 
 // Load loads the single TOML config.
