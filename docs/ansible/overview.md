@@ -2,13 +2,13 @@
 
 Automated deployment and configuration management for goodkind.io infrastructure.
 
-Playbooks run locally from the [ansible/](../../ansible/) directory on the
-controller. Set the vault password at `~/.config/ansible/vault.pass` once. The
-Rake helpers and the canonical `ansible-playbook --vault-password-file`
-invocation both pick it up. See [docs/ansible/secrets.md](secrets.md) for the
-vault contract, [docs/ansible/quality.md](quality.md) for style and safety
-rules, and [docs/ansible/proxmox-api.md](proxmox-api.md) for Proxmox API token
-setup.
+Playbooks run from the controller via
+[scripts/ansible_helper.py](../../scripts/ansible_helper.py) or the Rake
+helpers, both of which pick up `~/.config/ansible/vault.pass`. The canonical
+deploy invocation lives in [AGENTS.md](../../AGENTS.md). See
+[docs/ansible/secrets.md](secrets.md) for the vault contract,
+[docs/ansible/quality.md](quality.md) for style and safety rules, and
+[docs/ansible/proxmox-api.md](proxmox-api.md) for Proxmox API token setup.
 
 ## Inventory layout
 
@@ -107,16 +107,7 @@ of the guests in Proxmox itself.
 All secret values live in Ansible Vault under `vault_*` names. Files that need
 a vault-stored secret reference the `vault_*` name directly. See
 [docs/ansible/secrets.md](secrets.md) for the naming rule, allowed env-wrapper
-exceptions, and the safe key listing command. When you only need secret names,
-run
-
-```bash
-python3 scripts/ansible_vault_keys.py \
-  --vault-password-file ~/.config/ansible/vault.pass \
-  ansible/inventory/group_vars/all/vault.yml
-```
-
-from the repo root instead of `ansible-vault view`.
+exceptions, and the safe key listing command.
 
 ## Setup for new operators
 
@@ -127,13 +118,6 @@ Store the team vault password at `~/.config/ansible/vault.pass` with mode
 
 ## Running playbooks
 
-Use the canonical command pattern from the repo root so the
-[ansible/](../../ansible/) subshell picks up `ansible.cfg` and the dynamic
-inventory plugins correctly:
-
-```bash
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml --limit vault"
-```
-
-Rake helpers wrap the canonical playbooks. See
+The canonical deploy invocation lives in [AGENTS.md](../../AGENTS.md). Rake
+helpers wrap the canonical playbooks. See
 [ansible/Rakefile](../../ansible/Rakefile) for the current set.

@@ -10,52 +10,11 @@ Read [docs/infra/access.md](docs/infra/access.md) for SSH access patterns.
 
 ## Running Ansible playbooks
 
-The canonical command pattern in this environment is:
-
-```bash
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/<name>.yml"
-```
-
-The `bash -c` wrapper is required here so the `cd` takes effect in the same
-subshell that runs `ansible-playbook`, picks up `ansible.cfg`, and resolves the
-dynamic inventory.
-
-If you only need vault variable names, do not run `ansible-vault view`. Run:
-
-```bash
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_vault_keys.py --vault-password-file ~/.config/ansible/vault.pass /Users/agoodkind/Sites/configs/ansible/inventory/group_vars/all/vault.yml
-```
-
-### Examples
-
-```bash
-# Configure both Proxmox hypervisors.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml"
-
-# Configure only the vault hypervisor.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxmox.yml --limit vault"
-
-# Configure the production MWAN VM.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan.yml"
-
-# Dry-run the production MWAN VM.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan.yml --check --diff"
-
-# Configure the testbed MWAN failover LXC.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-mwan-failover.yml --limit mwan_failover_test_servers"
-
-# Configure the production OPNsense daemon.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-opnsense.yml --limit opnsense_servers"
-
-# Apply suburban-only testbed extras.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-testbed.yml --limit suburban"
-
-# Deploy or update Traefik and cloudflared on proxy CT.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-proxy.yml --skip-tags sshpiper"
-
-# Deploy tack.
-bash -c "cd /Users/agoodkind/Sites/configs/ansible && ansible-playbook --vault-password-file ~/.config/ansible/vault.pass playbooks/deploy-tack.yml"
-```
+The canonical deploy invocation and vault-key listing live in
+[AGENTS.md](AGENTS.md). Direct invocation of `ansible`, `ansible-vault`,
+`ansible-playbook`, `ansible-inventory`, and `ansible-console` from agent shells
+is blocked by agent-gate. The five-playbook table and per-service examples live
+in [.agents/skills/deploy-playbook/SKILL.md](.agents/skills/deploy-playbook/SKILL.md).
 
 ## Surgical change protocol
 
