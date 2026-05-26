@@ -16,6 +16,9 @@ proxmox_api_host: "3d06:bad:b01::254"
 # rendered by deploy-mwan.yml against mwan_servers.
 mwan_config_hostname: "vault"
 mwan_config_mgmt_addr: "3d06:bad:b01::113"
+# VMID of the MWAN VM that vault's mwan-watchdog monitors and that the
+# config.toml template references via mwan_vmid and vsock_cid.
+mwan_vmid: 113
 
 # mwan-watchdog service on the host (separate from the BGP watchdog in
 # the MWAN agent on the VM)
