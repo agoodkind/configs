@@ -107,7 +107,7 @@ If `tack-qa` already exists live and is not yet in state, import it with:
 ```bash
 tofu import \
   'module.suburban.proxmox_virtual_environment_container.tack_qa' \
-  'hypervisor/103'
+  'hypervisor/400'
 ```
 
 ## Drift expectations

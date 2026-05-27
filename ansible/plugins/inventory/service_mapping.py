@@ -5,6 +5,8 @@ Reads service_mapping from group_vars/all/service_mapping.yml and creates:
   - A host for each service using its hostname
   - A group named {service}_servers containing that host
   - Host vars: ansible_host (IPv6), service_ipv4 (if defined)
+  - Optional parent groups declared under top-level `group_children`, with
+    children resolved against the plugin-created {service}_servers groups.
 
 Usage:
   Create inventory/service_mapping.yml with:
@@ -152,3 +154,32 @@ class InventoryModule(BaseInventoryPlugin):
             # Add to all_services group
             if create_all_group:
                 self.inventory.add_host(hostname, group="all_services")
+
+        # Process group_children: parent group declarations whose children are
+        # the plugin-created {service}_servers groups. Keeping these in the
+        # same file removes the drift risk of duplicating the parent group
+        # declaration in inventory/hosts.
+        group_children = data.get("group_children", {})
+        if group_children is None:
+            group_children = {}
+        if not isinstance(group_children, dict):
+            raise AnsibleParserError(
+                f"'group_children' in {mapping_path} must be a mapping of "
+                f"parent group name to a list of child group names"
+            )
+
+        for parent_name, children in group_children.items():
+            if not isinstance(children, list):
+                raise AnsibleParserError(
+                    f"group_children[{parent_name}] in {mapping_path} must be "
+                    f"a list of child group names"
+                )
+            self.inventory.add_group(parent_name)
+            for child_name in children:
+                if not isinstance(child_name, str):
+                    raise AnsibleParserError(
+                        f"group_children[{parent_name}] in {mapping_path} "
+                        f"contains a non-string child"
+                    )
+                self.inventory.add_group(child_name)
+                self.inventory.add_child(parent_name, child_name)

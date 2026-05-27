@@ -80,3 +80,12 @@ service_mapping:
     # Testbed OPNsense SSH lands on the WAN/internal address through suburban.
     # SSH user and ProxyJump live in group_vars/opnsense_test_servers.yml.
     ansible_host: "10.250.250.2"
+
+# Parent groups composed of plugin-created child groups. The service_mapping
+# plugin creates each parent group and attaches the listed children at parse
+# time, so playbooks can target the parent (e.g. tack_all) and group_vars/
+# tack_all.yml resolves for every member host.
+group_children:
+  tack_all:
+    - tack_servers
+    - tack_qa_servers
