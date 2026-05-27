@@ -1,6 +1,6 @@
 # configs
 
-Infrastructure configuration management for `goodkind.io`.
+Infrastructure configuration management for `home.goodkind.io`.
 
 Start with [AGENTS.md](AGENTS.md) for repo rules and workflow, then use
 [docs/infra/overview.md](docs/infra/overview.md) for the current infrastructure
