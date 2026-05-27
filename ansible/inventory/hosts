@@ -11,11 +11,8 @@ localhost ansible_connection=local
 [vault_servers]
 vault ansible_host=3d06:bad:b01::254 consul_bind_interface=vmbr0
 
-# Suburban Proxmox host. IPv6 is preferred but currently unreachable from
-# this controller (3d06:bad:b01:200::1), so SSH uses IPv4 until that path
-# is fixed. See docs/infra/INFRA.md.
 [suburban_servers]
-suburban ansible_host=10.240.0.148
+suburban ansible_host=3d06:bad:b01:200::1
 
 # Shared parent group for both hypervisors. deploy-proxmox.yml targets this.
 [proxmox_servers:children]

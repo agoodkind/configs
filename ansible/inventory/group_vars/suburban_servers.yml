@@ -9,9 +9,8 @@
 consul_bind_interface: enmgmt0
 
 # Proxmox HTTP API host for `community.proxmox.proxmox_*` modules when
-# operating against suburban. IPv6 is preferred but currently unreachable
-# from this controller; the dynamic inventory plugin uses the same IPv4.
-proxmox_api_host: "10.240.0.148"
+# operating against suburban.
+proxmox_api_host: "3d06:bad:b01:200::1"
 
 # MWAN host-side identity. Used by config.toml.j2 to populate the
 # /etc/mwan/config.toml that suburban's `mwan ifmgr` and `mwan watchdog`
