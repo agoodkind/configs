@@ -15,6 +15,11 @@ mwan_vmid: 113
 mwan_proxmox_node: vault
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
+# Override the dynamic inventory plugin's IPv4-first compose so SSH targets
+# the IPv6 address. The plugin renders ansible_host from proxmox ipconfig0
+# (IPv4 first) which is unreachable from controllers off the mgmt VLAN.
+ansible_host: "{{ service_mapping.mwan.ipv6 }}"
+
 # Management interface uses DHCP - IP assigned by KEA and registered in DNS automatically
 # mwan_mgmt_ip_config can be overridden for static IP if needed:
 # mwan_mgmt_ip_config: "ip=10.250.0.134/24,gw=10.250.0.1,ip6=3d06:bad:b01::86/64,gw6=3d06:bad:b01::1"
