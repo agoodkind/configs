@@ -21,8 +21,3 @@ suburban ansible_host=10.240.0.148
 [proxmox_servers:children]
 vault_servers
 suburban_servers
-
-# Tack parent group (tack_all) and its children (tack_servers, tack_qa_servers)
-# are declared in inventory/group_vars/all/service_mapping.yml under the
-# top-level group_children block. The service_mapping plugin creates them at
-# parse time, so they do not need INI placeholders here.

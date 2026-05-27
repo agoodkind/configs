@@ -155,10 +155,6 @@ class InventoryModule(BaseInventoryPlugin):
             if create_all_group:
                 self.inventory.add_host(hostname, group="all_services")
 
-        # Process group_children: parent group declarations whose children are
-        # the plugin-created {service}_servers groups. Keeping these in the
-        # same file removes the drift risk of duplicating the parent group
-        # declaration in inventory/hosts.
         group_children = data.get("group_children", {})
         if group_children is None:
             group_children = {}

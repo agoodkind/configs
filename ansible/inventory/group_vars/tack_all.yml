@@ -1,36 +1,24 @@
 ---
-# Tack shared variables for both production and QA.
-# Anything that differs between environments lives in tack_servers.yml
-# (production) or tack_qa_servers.yml (QA).
-
-# Both Tack environments run IPv6-only.
 service_ipv6_only: true
 
-# Container resources (reference only; OpenTofu owns the live values).
+# Container resources are reference values only; OpenTofu owns the live shape.
 service_memory: 8192
 service_cores: 2
 service_disk_size: 40
 container_features: "nesting=1"
 
-# Install layout. Production deploys via make deploy rsync to /root/tack;
-# Ansible mirrors that path so both paths stay in sync.
 tack_install_dir: /root/tack
 
-# YugabyteDB user and database. Passwords are environment-specific and live
-# in the per-environment vars files, bound to the matching vault key.
 tack_yugabyte_user: tack
 tack_yugabyte_db: tack
 
-# Audit signing key path on the host. Each environment generates its own key
-# at this path on first deploy; the path is shared, the key material is not.
+# Each environment generates its own key at this path on first deploy. The
+# path is shared; the key material is not.
 tack_audit_signing_key_path: /etc/tack/audit-signing.pem
 
-# tack-ops sidecar database URL. Resolves through the environment-specific
-# yugabyte password binding via Jinja2.
 tack_ops_database_url: >-
   postgres://{{ tack_yugabyte_user }}:{{ tack_yugabyte_password }}@[::1]:5433/{{ tack_yugabyte_db }}?sslmode=disable
 
-# Log and runtime defaults shared by both environments.
 tack_log_level: debug
 tack_log_max_backups: 0
 tack_log_max_age_days: 0

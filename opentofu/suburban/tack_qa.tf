@@ -1,6 +1,3 @@
-# Tack QA LXC on suburban. All values come from var.tack_qa so the module's
-# default block is the single source of truth for the resource shape.
-
 resource "proxmox_virtual_environment_container" "tack_qa" {
   node_name = "hypervisor"
   vm_id     = var.tack_qa.vm_id
