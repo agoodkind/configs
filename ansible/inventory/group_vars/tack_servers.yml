@@ -1,59 +1,24 @@
 ---
 # Tack production server configuration.
-# Container provisioning (VMID, IP, MAC, resources, features) is managed by
-# OpenTofu in opentofu/vault/containers.tf. The vars below drive deploy-tack.yml.
+# Shared keys live in tack_all.yml. This file holds production-only values.
 
-# Service identity
+# Service identity.
 service_hostname: "{{ service_mapping.tack.hostname }}"
-
-# Static addressing (reference only; OpenTofu owns these)
-service_ipv6_only: true
 service_ipv6_address: "{{ service_mapping.tack.ipv6 }}/64"
 service_mac_address: "bc:24:11:a3:52:17"
 
-# Container resources (reference only; OpenTofu owns these)
-service_memory: 8192
-service_cores: 2
-service_disk_size: 40
-container_features: "nesting=1"
-
-# Install directory. Production deploys via make deploy rsync to /root/tack.
-# Ansible mirrors that path so both paths stay in sync.
-tack_install_dir: /root/tack
-
 tack_domain: "tack.home.goodkind.io"
 
-# YugabyteDB credentials.
-# Secrets are written to tack/.secrets/ on the controller (gitignored)
-# and reused across re-runs so values stay stable.
-tack_yugabyte_user: tack
-tack_yugabyte_db: tack
-tack_yugabyte_password: >-
-  {{ lookup('password', playbook_dir + '/../../tack/.secrets/yugabyte_password
-  length=32 chars=ascii_letters,digits') }}
+# YugabyteDB password. Sourced from the vault.
+tack_yugabyte_password: "{{ vault_tack_yugabyte_password }}"
 
-# Meilisearch master key.
-tack_meili_master_key: >-
-  {{ lookup('password', playbook_dir + '/../../tack/.secrets/meili_master_key
-  length=40 chars=ascii_letters,digits') }}
+# Meilisearch master key. Sourced from the vault.
+tack_meili_master_key: "{{ vault_tack_meili_master_key }}"
 
-# Audit role passwords.
-tack_audit_writer_password: >-
-  {{ lookup('password', playbook_dir + '/../../tack/.secrets/audit_writer_password
-  length=32 chars=ascii_letters,digits') }}
-tack_audit_reader_password: >-
-  {{ lookup('password', playbook_dir + '/../../tack/.secrets/audit_reader_password
-  length=32 chars=ascii_letters,digits') }}
-tack_audit_redactor_password: >-
-  {{ lookup('password', playbook_dir + '/../../tack/.secrets/audit_redactor_password
-  length=32 chars=ascii_letters,digits') }}
-
-# Audit signing key path on the host.
-tack_audit_signing_key_path: /etc/tack/audit-signing.pem
-
-# tack-ops sidecar database URL (loopback, host networking, published port 5433).
-tack_ops_database_url: >-
-  postgres://{{ tack_yugabyte_user }}:{{ tack_yugabyte_password }}@[::1]:5433/{{ tack_yugabyte_db }}?sslmode=disable
+# Audit role passwords. Sourced from the vault.
+tack_audit_writer_password: "{{ vault_tack_audit_writer_password }}"
+tack_audit_reader_password: "{{ vault_tack_audit_reader_password }}"
+tack_audit_redactor_password: "{{ vault_tack_audit_redactor_password }}"
 
 # Docker IPv6 bridge subnet for this host. Production carves a /96 from the
 # on-link 3d06:bad:b01::/64 and NDP-proxies it back via ndppd.
@@ -62,11 +27,3 @@ tack_docker_v6_gateway: "3d06:bad:b01:0:7ac::1"
 
 # ndppd prefix to proxy on eth0. Must match tack_docker_v6_subnet.
 tack_ndp_proxy_prefix: "3d06:bad:b01:0:7ac::/96"
-
-# Log and runtime defaults. These flow through tack.env.j2 into the container.
-tack_log_level: debug
-tack_log_max_backups: 0
-tack_log_max_age_days: 0
-tack_log_max_size_mb: 100
-tack_fdb_version: "7.4.6"
-tack_port: 8000

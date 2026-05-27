@@ -21,3 +21,17 @@ suburban ansible_host=10.240.0.148
 [proxmox_servers:children]
 vault_servers
 suburban_servers
+
+# Tack groups are populated by the service_mapping plugin. Declaring them as
+# empty INI groups lets the [tack_all:children] block below resolve at parse
+# time; the plugin still attaches the real hosts (tack, tack-qa) at runtime.
+[tack_servers]
+
+[tack_qa_servers]
+
+# Shared parent group for production tack and tack-qa. Variables common to
+# both live in group_vars/tack_all.yml; per-environment values live in
+# tack_servers.yml and tack_qa_servers.yml.
+[tack_all:children]
+tack_servers
+tack_qa_servers

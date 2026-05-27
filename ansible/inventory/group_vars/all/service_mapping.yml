@@ -47,6 +47,9 @@ service_mapping:
   tack:
     hostname: tack.home.goodkind.io
     ipv6: "3d06:bad:b01::117"
+  tack_qa:
+    hostname: tack-qa
+    ipv6: "3d06:bad:b01:200:1::400"
 
   # Static Hosts (different subnet or external)
   mini:

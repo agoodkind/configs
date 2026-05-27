@@ -1,0 +1,29 @@
+---
+# Tack QA server configuration.
+# Shared keys live in tack_all.yml. This file holds QA-only values.
+
+# Service identity.
+service_hostname: "{{ service_mapping.tack_qa.hostname }}"
+service_ipv6_address: "{{ service_mapping.tack_qa.ipv6 }}/64"
+service_mac_address: "bc:24:11:04:00:00"
+
+tack_domain: "tack-qa"
+
+# YugabyteDB password. Sourced from the vault.
+tack_yugabyte_password: "{{ vault_tack_qa_yugabyte_password }}"
+
+# Meilisearch master key. Sourced from the vault.
+tack_meili_master_key: "{{ vault_tack_qa_meili_master_key }}"
+
+# Audit role passwords. Sourced from the vault.
+tack_audit_writer_password: "{{ vault_tack_qa_audit_writer_password }}"
+tack_audit_reader_password: "{{ vault_tack_qa_audit_reader_password }}"
+tack_audit_redactor_password: "{{ vault_tack_qa_audit_redactor_password }}"
+
+# Docker IPv6 bridge subnet for QA. Carved from the suburban VM segment
+# 3d06:bad:b01:200::/64, keeping the production-style :7ac: infix.
+tack_docker_v6_subnet: "3d06:bad:b01:200:1:7ac::/96"
+tack_docker_v6_gateway: "3d06:bad:b01:200:1:7ac::1"
+
+# ndppd prefix to proxy on eth0. Must match tack_docker_v6_subnet.
+tack_ndp_proxy_prefix: "3d06:bad:b01:200:1:7ac::/96"
