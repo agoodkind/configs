@@ -4,7 +4,7 @@ variable "ssh_keys" {
 }
 
 variable "tack_qa" {
-  description = "Settings for the tack-qa LXC on suburban. The default pins every field so the resource is fully described from the module."
+  description = "Settings for the tack-qa LXC on suburban. Lives on the opnsense-test MANAGEMENT segment (opt9, vmbrtrunk untagged, 3d06:bad:b01:204::/64), the closest mirror of prod's opt6 VMNET where the prod tack LXC lives. Default gateway is opnsense-test at 3d06:bad:b01:204::1. Outbound IPv4 reach is via NAT64 (3d06:bad:b01:2664::/96) on opnsense-test."
   type = object({
     vm_id            = number
     hostname         = string
@@ -23,9 +23,9 @@ variable "tack_qa" {
   default = {
     vm_id            = 400
     hostname         = "tack-qa"
-    ipv6_address     = "3d06:bad:b01:200:1::400/64"
-    ipv6_gateway     = "3d06:bad:b01:200::1"
-    bridge           = "vmbr1"
+    ipv6_address     = "3d06:bad:b01:204::400/64"
+    ipv6_gateway     = "3d06:bad:b01:204::1"
+    bridge           = "vmbrtrunk"
     mac_address      = "BC:24:11:04:00:00"
     disk_size_gb     = 40
     memory_mb        = 8192
@@ -33,12 +33,12 @@ variable "tack_qa" {
     tags             = ["lxc", "tack", "qa", "docker"]
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     datastore_id     = "local-zfs"
-    dns_servers      = ["3d06:bad:b01:200::464"]
+    dns_servers      = ["3d06:bad:b01:204::464"]
   }
 }
 
 variable "dns64" {
-  description = "Settings for the suburban-segment DNS64 LXC. Mirrors the vault-side dns64 service. Provides AAAA synthesis for IPv4-only services so IPv6-only guests on the suburban /64 can reach them through a NAT64 path."
+  description = "Settings for the suburban-segment DNS64 LXC. Mirrors the vault-side dns64 service. Lives on the opnsense-test MANAGEMENT segment alongside tack-qa, the closest mirror of prod's opt6 VMNET where the prod dns64 LXC lives. Synthesises AAAA records into 3d06:bad:b01:2664::/96 so guests on the segment can reach IPv4 services via opnsense-test's Tayga NAT64."
   type = object({
     vm_id            = number
     hostname         = string
@@ -56,9 +56,9 @@ variable "dns64" {
   default = {
     vm_id            = 464
     hostname         = "dns64-suburban"
-    ipv6_address     = "3d06:bad:b01:200::464/64"
-    ipv6_gateway     = "3d06:bad:b01:200::1"
-    bridge           = "vmbr1"
+    ipv6_address     = "3d06:bad:b01:204::464/64"
+    ipv6_gateway     = "3d06:bad:b01:204::1"
+    bridge           = "vmbrtrunk"
     mac_address      = "BC:24:11:04:64:00"
     disk_size_gb     = 4
     memory_mb        = 512

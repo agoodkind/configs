@@ -3,7 +3,7 @@ resource "proxmox_virtual_environment_container" "dns64" {
   vm_id     = var.dns64.vm_id
 
   depends_on = [
-    proxmox_network_linux_bridge.vm_management,
+    proxmox_network_linux_bridge.trunk,
   ]
 
   initialization {

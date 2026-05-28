@@ -49,7 +49,10 @@ service_mapping:
     ipv6: "3d06:bad:b01::117"
   tack_qa:
     hostname: tack-qa
-    ipv6: "3d06:bad:b01:200:1::400"
+    ipv6: "3d06:bad:b01:204::400"
+  dns64_suburban:
+    hostname: dns64-suburban
+    ipv6: "3d06:bad:b01:204::464"
 
   # Static Hosts (different subnet or external)
   mini:
