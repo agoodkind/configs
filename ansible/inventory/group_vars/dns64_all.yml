@@ -1,0 +1,13 @@
+---
+# Shared DNS64 service vars (prod + suburban testbed).
+# Per-environment overrides live in dns64_servers.yml and
+# dns64_suburban_servers.yml.
+
+service_description: "DNS64 Resolver"
+
+# Container resources are reference values only; OpenTofu owns the live shape.
+service_ipv6_only: true
+service_memory: "512"
+service_cores: "1"
+service_disk_size: "4"
+service_tags: "lxc,dns,dns64"

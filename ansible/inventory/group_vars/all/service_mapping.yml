@@ -97,3 +97,6 @@ group_children:
   opnsense_all:
     - opnsense_servers
     - opnsense_test_servers
+  dns64_all:
+    - dns64_servers
+    - dns64_suburban_servers

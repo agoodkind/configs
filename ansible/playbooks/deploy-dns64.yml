@@ -1,12 +1,26 @@
 ---
-- name: Setup DNS64 container
-  ansible.builtin.import_playbook: setup-service-ct.yml
+# Deploy bind9 with DNS64 synthesis on dns64 LXCs in either environment.
+# Container creation is owned by OpenTofu (opentofu/vault/ for prod,
+# opentofu/suburban/ for the testbed). This playbook runs after the LXC
+# is provisioned and reachable via SSH.
+#
+# Usage:
+#   # Production (vault):
+#   python3 scripts/ansible_helper.py deploy deploy-dns64 --limit dns64_servers
+#
+#   # Suburban testbed:
+#   python3 scripts/ansible_helper.py deploy deploy-dns64 --limit dns64_suburban_servers
+#
+#   # Both at once:
+#   python3 scripts/ansible_helper.py deploy deploy-dns64 --limit dns64_all
+
+- name: Prepare dns64 guest (SSH keys, package-updater, base config)
+  ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    container_group: dns64_servers
-    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/dns64_servers.yml"
+    target_hosts: dns64_servers:dns64_suburban_servers
 
 - name: Configure DNS64 Service
-  hosts: dns64_servers
+  hosts: dns64_servers:dns64_suburban_servers
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive

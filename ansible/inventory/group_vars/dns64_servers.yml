@@ -1,22 +1,14 @@
 ---
-# DNS64 Container Configuration
-# All service_* variables derive from service_mapping (single source of truth)
+# Production dns64 LXC (CT 103 on vault).
+# Shared keys live in dns64_all.yml.
 
-# Service identity
 service_hostname: "{{ service_mapping.dns64.hostname }}"
-service_description: "DNS64 Resolver"
-
-# Static addressing (pinned; independent of VMID)
-service_ipv6_only: true
 service_ipv6_address: "{{ service_mapping.dns64.ipv6 }}/64"
 service_mac_address: "BC:24:11:00:00:64"
 
-# Container resources
-service_memory: "512"
-service_cores: "1"
-service_disk_size: "4"
-service_tags: "lxc,dns,dns64"
-
-# DNS Configuration
-dns64_upstream_dns: "3d06:bad:b01::53"
+# Prod DNS64 prefix matches the prod opnsense Tayga setup.
 dns64_prefix: "3d06:bad:b01:6464::/96"
+
+# Vault-side AdGuard. Reachable from the prod LXC over the vault VMNET segment
+# without crossing NAT or transit.
+dns64_upstream_dns: "3d06:bad:b01::53"

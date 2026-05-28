@@ -14,6 +14,9 @@ resource "proxmox_virtual_environment_container" "dns64" {
         gateway = var.dns64.ipv6_gateway
       }
     }
+    dns {
+      servers = var.dns64.dns_servers
+    }
     user_account {
       keys = [var.ssh_keys]
     }
