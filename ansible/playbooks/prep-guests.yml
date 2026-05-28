@@ -179,26 +179,8 @@
         path: /tmp/install-updater
         state: absent
 
-    - name: Deploy package-updater systemd service
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/common/services/package-updater.service"
-        dest: /etc/systemd/system/package-updater.service
-        mode: "0644"
-      register: package_updater_service
-
-    - name: Deploy package-updater systemd timer
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/common/timers/package-updater.timer"
-        dest: /etc/systemd/system/package-updater.timer
-        mode: "0644"
-      register: package_updater_timer
-
-    - name: Enable and start package-updater timer
-      ansible.builtin.systemd:
-        name: package-updater.timer
-        enabled: true
-        state: started
-        daemon_reload: "{{ package_updater_service.changed or package_updater_timer.changed }}"
+    - name: Install package-updater (script, service, timer)
+      ansible.builtin.include_tasks: tasks/package-updater.yml
 
     - name: Compute SMTP username for this host
       ansible.builtin.set_fact:

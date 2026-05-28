@@ -1,0 +1,43 @@
+---
+# Shared package-updater deploy. Imported by proxmox-host.yml for
+# hypervisors and included by prep-guests.yml for LXC guests, so both
+# code paths use the same script, unit, and timer.
+
+- name: Deploy package-updater script
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/common/scripts/package-updater.sh"
+    dest: /usr/local/sbin/package-updater.sh
+    owner: root
+    group: root
+    mode: "0755"
+  register: package_updater_script
+
+- name: Deploy package-updater service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/common/services/package-updater.service"
+    dest: /etc/systemd/system/package-updater.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: package_updater_service
+
+- name: Deploy package-updater timer
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/common/timers/package-updater.timer"
+    dest: /etc/systemd/system/package-updater.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: package_updater_timer
+
+- name: Enable package-updater timer
+  ansible.builtin.systemd:
+    name: package-updater.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        package_updater_script.changed
+        or package_updater_service.changed
+        or package_updater_timer.changed
+      }}

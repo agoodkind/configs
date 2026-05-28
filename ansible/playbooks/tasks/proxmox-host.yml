@@ -12,34 +12,8 @@
 - name: Build mwan binary on controller
   ansible.builtin.import_tasks: build-mwan-binary.yml
 
-- name: Deploy package-updater service
-  ansible.builtin.copy:
-    src: "{{ repo_root }}/common/services/package-updater.service"
-    dest: /etc/systemd/system/package-updater.service
-    owner: root
-    group: root
-    mode: "0644"
-  register: proxmox_package_updater_service
-
-- name: Deploy package-updater timer
-  ansible.builtin.copy:
-    src: "{{ repo_root }}/common/timers/package-updater.timer"
-    dest: /etc/systemd/system/package-updater.timer
-    owner: root
-    group: root
-    mode: "0644"
-  register: proxmox_package_updater_timer
-
-- name: Enable package-updater timer
-  ansible.builtin.systemd:
-    name: package-updater.timer
-    enabled: true
-    state: started
-    daemon_reload: >-
-      {{
-        proxmox_package_updater_service.changed
-        or proxmox_package_updater_timer.changed
-      }}
+- name: Install package-updater (script, service, timer)
+  ansible.builtin.import_tasks: package-updater.yml
 
 - name: Remove legacy mwan-watchdog binary if present
   ansible.builtin.file:
