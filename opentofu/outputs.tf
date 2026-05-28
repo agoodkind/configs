@@ -18,6 +18,16 @@ output "tack_qa_ipv6" {
   value       = module.suburban.tack_qa_ipv6
 }
 
+output "dns64_suburban_vmid" {
+  description = "VMID assigned to the suburban DNS64 LXC"
+  value       = module.suburban.dns64_vmid
+}
+
+output "dns64_suburban_ipv6" {
+  description = "IPv6 address of the suburban DNS64 LXC"
+  value       = module.suburban.dns64_ipv6
+}
+
 output "test_mwan_vmid" {
   description = "VMID assigned to the suburban test MWAN VM"
   value       = module.suburban.test_mwan_vmid

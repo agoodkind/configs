@@ -14,6 +14,9 @@ resource "proxmox_virtual_environment_container" "tack_qa" {
         gateway = var.tack_qa.ipv6_gateway
       }
     }
+    dns {
+      servers = var.tack_qa.dns_servers
+    }
     user_account {
       keys = [var.ssh_keys]
     }
