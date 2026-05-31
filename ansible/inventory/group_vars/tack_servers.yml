@@ -24,3 +24,6 @@ tack_repo_read_token: "{{ vault_tack_repo_read_token }}"
 tack_docker_v6_subnet: "3d06:bad:b01:0:7ac::/96"
 tack_docker_v6_gateway: "3d06:bad:b01:0:7ac::1"
 tack_ndp_proxy_prefix: "3d06:bad:b01:0:7ac::/96"
+
+# No object store on production yet, so the backup env block is not rendered.
+tack_backup_enabled: false
