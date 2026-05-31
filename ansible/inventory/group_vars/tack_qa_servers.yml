@@ -27,5 +27,6 @@ tack_ndp_proxy_prefix: "3d06:bad:b01:204:7ac::/96"
 # Backup object store: the SeaweedFS LXC on the same suburban 204:: segment.
 # Same S3 identity the SeaweedFS s3.json grants (single source in vault).
 tack_backup_s3_endpoint: "http://[{{ service_mapping.seaweedfs.ipv6 }}]:8333"
+tack_backup_s3_host: "{{ service_mapping.seaweedfs.ipv6 }}"
 tack_backup_s3_access_key: "{{ vault_seaweedfs_s3_access_key }}"
 tack_backup_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"
