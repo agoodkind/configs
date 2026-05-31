@@ -22,3 +22,9 @@ repos:
         entry: bash -c 'cd mwan/go && golangci-lint run ./...'
         language: system
         files: 'mwan/go/.*\.go$'
+
+      - id: ansible-input-defaults
+        name: ban input-side default()/is defined in ansible
+        entry: python3 scripts/lint_ansible_defaults.py
+        language: system
+        files: '(^ansible/.*\.ya?ml$|\.j2$)'

@@ -92,6 +92,7 @@ end
 
 desc 'Lint canonical playbooks with ansible-lint'
 task :lint do
+  sh 'python3', File.expand_path('../scripts/lint_ansible_defaults.py', __dir__)
   CANONICAL_PLAYBOOKS.each_value do |pb|
     sh 'ansible-lint', "#{LOCAL_PLAYBOOKS_DIR}/#{pb}"
   end
