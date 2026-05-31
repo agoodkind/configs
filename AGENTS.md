@@ -49,9 +49,9 @@ runbooks that explain how those pieces fit together.
 
 The deploy is split cleanly across two repos plus the ops command surface.
 
-1. The configs repo owns Host and LXC. Proxmox and OpenTofu provision the LXC; Ansible brings it to a deployable state (Docker, host networking, the install directory, the audit signing key, the FoundationDB cluster directory, and the rendered `.env`), and it fetches the app stack from the app repo's GitHub source of truth.
+1. The configs repo owns Host and LXC. Proxmox and OpenTofu provision the LXC; Ansible brings it to a deployable state (Docker, host networking, the install directory, the audit signing key, the FoundationDB cluster directory, and the rendered `.env`), fetches the app stack from the app repo's GitHub source of truth, and runs `docker compose up -d` to start the full stack. First boot and any full-stack change are Ansible's; it starts the stack but does not build the images, which come from CI.
 2. Each app repo owns everything that runs on top of its LXC. For Tack that is `docker-compose.yml` and the overlays (`fdb-overlay/fdb.bash`, `yugabyte-overlay/yugabyted`); they live only in the tack repo and are the single source of truth. Ansible fetches them from GitHub at the deployed ref; the configs-rendered `.env` is the env override.
-3. Tack-side build and orchestration live in `./server ops` (Go), not shell. Image build, backups, and deploy orchestration (pull, up, verify) run through the ops command surface using typed SDKs (the Docker Go SDK, pgx, the FoundationDB bindings). The Docker SDK has no compose API, so `ops deploy up` makes one controlled `docker compose` call. Brittle standalone shell scripts are not used; the legacy `make deploy` path is retired in favor of `./server ops deploy`.
+3. Image build, backups, and app-image deploys live in `./server ops` (Go), not shell, using typed SDKs (the Docker Go SDK, pgx, the FoundationDB bindings). `./server ops deploy` builds, pushes, pulls, runs `docker compose up -d` for `app` and `audit-consumer`, and verifies the running image digest; the full-stack bring-up is Ansible's job (point 1), not this command's. Brittle standalone shell scripts are not used; the legacy `make deploy` path is retired.
 
 ## Deployment workflow
 
