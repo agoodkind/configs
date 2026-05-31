@@ -45,6 +45,14 @@ runbooks that explain how those pieces fit together.
   [ansible/inventory/group_vars/all/vault.yml](ansible/inventory/group_vars/all/vault.yml).
 - Provisioned guest resources live in [opentofu/](opentofu/).
 
+## Deployment contract
+
+The deploy is split cleanly across two repos plus the ops command surface.
+
+1. The configs repo owns Host and LXC. Proxmox and OpenTofu provision the LXC; Ansible brings it to a deployable state (Docker, host networking, the install directory, the audit signing key, the FoundationDB cluster directory, and the rendered `.env`), and it fetches the app stack from the app repo's GitHub source of truth.
+2. Each app repo owns everything that runs on top of its LXC. For Tack that is `docker-compose.yml` and the overlays (`fdb-overlay/fdb.bash`, `yugabyte-overlay/yugabyted`); they live only in the tack repo and are the single source of truth. Ansible fetches them from GitHub at the deployed ref; the configs-rendered `.env` is the env override.
+3. Tack-side build and orchestration live in `./server ops` (Go), not shell. Image build, backups, and deploy orchestration (pull, up, verify) run through the ops command surface using typed SDKs (the Docker Go SDK, pgx, the FoundationDB bindings). The Docker SDK has no compose API, so `ops deploy up` makes one controlled `docker compose` call. Brittle standalone shell scripts are not used; the legacy `make deploy` path is retired in favor of `./server ops deploy`.
+
 ## Deployment workflow
 
 OpenTofu is the forward path for provisioning. Run `tofu apply` from
