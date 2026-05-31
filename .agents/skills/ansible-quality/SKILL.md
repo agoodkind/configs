@@ -15,8 +15,8 @@ When a variable is missing or a validation fails, investigate **why** before add
 
 ### Anti-pattern: Bandaid Defaults and Defensive `when`
 
-- **Problem**: Adding `| default('')` or `when: var is defined` without understanding why the variable is missing masks the real issue.
-- **Principle**: `when` is for **logic branches** (deciding between actions), not defensive programming.
+- **Rule (enforced)**: Never use `| default(...)` or `is defined` on an input variable. Declare every input value explicitly in the service's group_vars (or `service_mapping.yml` or OpenTofu) and read it bare; a missing value must fail at load time, not silently default. `default()` and `is defined` are allowed only on module or register **output** (the shape of a command result), never on a config input. `when:` is for logic branches between actions, driven by an explicit flag, not defensive programming.
+- **Enforcement**: `scripts/lint_ansible_defaults.py` flags every input-side violation. The ansible helper runs it before each deploy, the lint path runs it, and pre-commit runs it on staged files. A genuine command-result exception the check cannot classify takes a `# noqa: input-default` comment.
 - **Symptoms**:
   - Validation tasks failing for values that should exist
   - Variables unexpectedly empty despite being "set"

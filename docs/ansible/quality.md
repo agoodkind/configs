@@ -64,18 +64,22 @@ Checklist before adding `| default()` or `is defined`:
 
 ## Default values policy
 
-Two cases, two answers:
+Every input value is declared explicitly: in the service's group_vars, in
+[ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
+or in OpenTofu. A playbook or template reads it bare and fails at load time when
+it is missing. Do not use `| default(...)` or `is defined` on an input variable
+to paper over a missing value or to infer presence. When you need a branch, drive
+`when:` from an explicit flag, not from whether a variable happens to be set.
 
-- Optional inputs whose typical case is "not specified" (feature toggles, niche
-  overrides): default at the consumer with `| default(value)`.
-- Required inputs (`vault_*` secrets, hostnames sourced from
-  [ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
-  identifiers a task or template reads unconditionally): never default. If the
-  value is missing, that is a real error and must fail at load time, not at
-  runtime.
+`default()` and `is defined` are allowed only on module or register output (the
+shape of a command result, for example `cmd.rc | default(1)` or
+`stat_result.stat.exists | default(false)`) and on empty-sequence safety
+(`ip_list[0] if (ip_list | length > 0) else ''`).
 
-Practical rule: a default is allowed when both halves are true: the input is
-genuinely a choice, and the default is the typical-case behavior.
+Enforced by `scripts/lint_ansible_defaults.py`: the ansible helper runs it before
+every deploy, the lint path runs it, and pre-commit runs it on staged files. A
+genuine command-result exception the check cannot classify takes a
+`# noqa: input-default` comment.
 
 ## Line length
 
@@ -284,5 +288,6 @@ Before committing Ansible changes, verify:
 8. No KEA reservation uses mutually exclusive identifiers.
 9. No `blockinfile` creates a duplicate systemd-networkd section; use
    `lineinfile` instead.
-10. No `| default()` added without first investigating why the variable is
-    missing.
+10. No `| default()` or `is defined` on an input variable. Declare it in
+    group_vars and read it bare; both are allowed only on command or register
+    output. `scripts/lint_ansible_defaults.py` enforces this.

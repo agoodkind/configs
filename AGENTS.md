@@ -90,9 +90,12 @@ anything important. Workflow details live in
 - Env-wrapper variables are allowed only when they represent a real environment
   override with a vault fallback and stay local to the service or play that
   needs them.
-- Do not use `default()` or `is defined` to mask a variable that is actually
-  required. If the value must exist, fail loudly. Use defaults only when the
-  normal case is that the value may be omitted.
+- Never use `default()` or `is defined` on an input variable. Declare every input
+  value explicitly in the service's group_vars, `service_mapping.yml`, or
+  OpenTofu, and read it bare; a missing value fails at load time. `default()` and
+  `is defined` are allowed only on module or register output (a command result's
+  shape). Enforced by `scripts/lint_ansible_defaults.py`, which the ansible helper
+  runs before every deploy and the lint path runs; see `docs/ansible/quality.md`.
 - The Proxmox inventory plugins read `token_secret` directly from
   [ansible/inventory/group_vars/all/vault.yml](ansible/inventory/group_vars/all/vault.yml).
   Do not move those secrets into shell startup files just to make a playbook work.
