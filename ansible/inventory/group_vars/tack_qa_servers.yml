@@ -11,8 +11,21 @@ tack_audit_writer_password: "{{ vault_tack_qa_audit_writer_password }}"
 tack_audit_reader_password: "{{ vault_tack_qa_audit_reader_password }}"
 tack_audit_redactor_password: "{{ vault_tack_qa_audit_redactor_password }}"
 
-# /96 carved from the suburban VM segment 3d06:bad:b01:200::/64. ndp prefix
-# must match the docker subnet.
-tack_docker_v6_subnet: "3d06:bad:b01:200:1:7ac::/96"
-tack_docker_v6_gateway: "3d06:bad:b01:200:1:7ac::1"
-tack_ndp_proxy_prefix: "3d06:bad:b01:200:1:7ac::/96"
+# GHCR pull token. Classic PAT with read:packages scope.
+ghcr_pull_token: "{{ vault_tack_qa_ghcr_pull_token }}"
+
+# Repo read token. Fine-grained PAT with contents:read on agoodkind/tack, used
+# by deploy-tack to fetch docker-compose.yml and the overlays from the SOT.
+tack_repo_read_token: "{{ vault_tack_qa_repo_read_token }}"
+
+# /96 carved from the suburban VMNET segment 3d06:bad:b01:204::/64
+# (opt9 on opnsense-test). ndp prefix must match the docker subnet.
+tack_docker_v6_subnet: "3d06:bad:b01:204:7ac::/96"
+tack_docker_v6_gateway: "3d06:bad:b01:204:7ac::1"
+tack_ndp_proxy_prefix: "3d06:bad:b01:204:7ac::/96"
+
+# Backup object store: the SeaweedFS LXC on the same suburban 204:: segment.
+# Same S3 identity the SeaweedFS s3.json grants (single source in vault).
+tack_backup_s3_endpoint: "http://[{{ service_mapping.seaweedfs.ipv6 }}]:8333"
+tack_backup_s3_access_key: "{{ vault_seaweedfs_s3_access_key }}"
+tack_backup_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"

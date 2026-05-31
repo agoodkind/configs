@@ -1,0 +1,26 @@
+{# Managed by Ansible (deploy-seaweedfs.yml). SeaweedFS S3 identity config. #}
+{# One identity holds the tack S3 access key/secret and is granted #}
+{# Admin/Read/Write/List actions scoped to the tack-backups and #}
+{# tack-audit-archive buckets only. Internal-only object store. #}
+{
+  "identities": [
+    {
+      "name": "{{ service_mapping.seaweedfs.hostname }}-tack",
+      "credentials": [
+        {
+          "accessKey": "{{ seaweedfs_s3_access_key }}",
+          "secretKey": "{{ seaweedfs_s3_secret_key }}"
+        }
+      ],
+      "actions": [
+{% set ns = namespace(entries=[]) %}
+{% for bucket in seaweedfs_s3_buckets %}
+{% for verb in ["Admin", "Read", "Write", "List"] %}
+{% set _ = ns.entries.append('"' ~ verb ~ ':' ~ bucket ~ '"') %}
+{% endfor %}
+{% endfor %}
+        {{ ns.entries | join(',\n        ') }}
+      ]
+    }
+  ]
+}

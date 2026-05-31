@@ -11,6 +11,13 @@ tack_audit_writer_password: "{{ vault_tack_audit_writer_password }}"
 tack_audit_reader_password: "{{ vault_tack_audit_reader_password }}"
 tack_audit_redactor_password: "{{ vault_tack_audit_redactor_password }}"
 
+# GHCR pull token. Classic PAT with read:packages scope.
+ghcr_pull_token: "{{ vault_tack_ghcr_pull_token }}"
+
+# Repo read token. Fine-grained PAT with contents:read on agoodkind/tack, used
+# by deploy-tack to fetch docker-compose.yml and the overlays from the SOT.
+tack_repo_read_token: "{{ vault_tack_repo_read_token }}"
+
 # /96 carved from the on-link 3d06:bad:b01::/64, NDP-proxied via ndppd so
 # container GUAs appear on-link to the upstream router. ndp prefix must
 # match the docker subnet.

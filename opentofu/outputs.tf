@@ -18,6 +18,16 @@ output "tack_qa_ipv6" {
   value       = module.suburban.tack_qa_ipv6
 }
 
+output "seaweedfs_vmid" {
+  description = "VMID assigned to the suburban SeaweedFS LXC container"
+  value       = module.suburban.seaweedfs_vmid
+}
+
+output "seaweedfs_ipv6" {
+  description = "IPv6 address of the suburban SeaweedFS LXC container"
+  value       = module.suburban.seaweedfs_ipv6
+}
+
 output "dns64_suburban_vmid" {
   description = "VMID assigned to the suburban DNS64 LXC"
   value       = module.suburban.dns64_vmid

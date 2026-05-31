@@ -1,0 +1,19 @@
+# Managed by Ansible (deploy-seaweedfs.yml).
+# All-in-one SeaweedFS server (master + volume + S3) under systemd.
+# Binds on all addresses ([::]); the S3 endpoint is reachable only on the
+# internal suburban segment via the LXC's own IPv6.
+[Unit]
+Description=SeaweedFS object store (master, volume, S3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{ seaweedfs_bin_path }} server -dir={{ seaweedfs_data_dir }} -s3 -s3.config={{ seaweedfs_config_dir }}/s3.json -ip.bind=:: -master.volumeSizeLimitMB=1024
+WorkingDirectory={{ seaweedfs_data_dir }}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

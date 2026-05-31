@@ -18,6 +18,16 @@ output "tack_qa_ipv6" {
   value       = var.tack_qa.ipv6_address
 }
 
+output "seaweedfs_vmid" {
+  description = "VMID assigned to the suburban SeaweedFS LXC."
+  value       = proxmox_virtual_environment_container.seaweedfs.vm_id
+}
+
+output "seaweedfs_ipv6" {
+  description = "IPv6 address assigned to the suburban SeaweedFS LXC."
+  value       = var.seaweedfs.ipv6_address
+}
+
 output "dns64_vmid" {
   description = "VMID assigned to the suburban DNS64 LXC."
   value       = proxmox_virtual_environment_container.dns64.vm_id

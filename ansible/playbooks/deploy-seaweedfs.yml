@@ -1,0 +1,113 @@
+---
+# Deploy the SeaweedFS object store on any host in seaweedfs_servers.
+# Container creation is handled by OpenTofu (opentofu/suburban/seaweedfs.tf).
+# This playbook runs after the LXC is provisioned and reachable via SSH. It
+# installs the pinned weed binary and runs it under systemd (no Docker).
+#
+# The LXC reaches GitHub for the release download via opnsense-test NAT64.
+#
+# Usage:
+#   ansible-playbook playbooks/deploy-seaweedfs.yml -l seaweedfs_servers
+
+- name: Prepare seaweedfs guest (SSH keys, package-updater, base config)
+  ansible.builtin.import_playbook: prep-guests.yml
+  vars:
+    target_hosts: seaweedfs_servers
+
+- name: Provision SeaweedFS via binary and systemd
+  hosts: seaweedfs_servers
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    seaweedfs_release_url: "https://github.com/seaweedfs/seaweedfs/releases/download/{{ seaweedfs_version }}/linux_amd64.tar.gz"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Directories
+    # -------------------------------------------------------------------------
+    - name: Create SeaweedFS config directory
+      ansible.builtin.file:
+        path: "{{ seaweedfs_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Create SeaweedFS data directory
+      ansible.builtin.file:
+        path: "{{ seaweedfs_data_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    # -------------------------------------------------------------------------
+    # Pinned weed binary install
+    # -------------------------------------------------------------------------
+    - name: Download pinned weed release tarball
+      ansible.builtin.get_url:
+        url: "{{ seaweedfs_release_url }}"
+        dest: "/tmp/seaweedfs-{{ seaweedfs_version }}-linux_amd64.tar.gz"
+        mode: "0644"
+        force: true
+
+    - name: Extract weed binary to /usr/local/bin
+      ansible.builtin.unarchive:
+        src: "/tmp/seaweedfs-{{ seaweedfs_version }}-linux_amd64.tar.gz"
+        dest: /usr/local/bin
+        remote_src: true
+        include:
+          - weed
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart SeaweedFS
+
+    - name: Clean up downloaded tarball
+      ansible.builtin.file:
+        path: "/tmp/seaweedfs-{{ seaweedfs_version }}-linux_amd64.tar.gz"
+        state: absent
+
+    # -------------------------------------------------------------------------
+    # S3 identity config
+    # -------------------------------------------------------------------------
+    - name: Deploy SeaweedFS S3 config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/seaweedfs/s3.json.j2"
+        dest: "{{ seaweedfs_config_dir }}/s3.json"
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart SeaweedFS
+
+    # -------------------------------------------------------------------------
+    # systemd unit
+    # -------------------------------------------------------------------------
+    - name: Deploy SeaweedFS systemd unit
+      ansible.builtin.template:
+        src: "{{ repo_root }}/seaweedfs/seaweedfs.service.j2"
+        dest: /etc/systemd/system/seaweedfs.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart SeaweedFS
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start SeaweedFS
+      ansible.builtin.systemd:
+        name: seaweedfs
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Restart SeaweedFS
+      ansible.builtin.systemd:
+        name: seaweedfs
+        state: restarted
+        daemon_reload: true

@@ -50,6 +50,9 @@ service_mapping:
   tack_qa:
     hostname: tack-qa
     ipv6: "3d06:bad:b01:204::400"
+  seaweedfs:
+    hostname: seaweedfs
+    ipv6: "3d06:bad:b01:204::410"
   dns64_suburban:
     hostname: dns64-suburban
     ipv6: "3d06:bad:b01:204::464"

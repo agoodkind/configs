@@ -175,6 +175,42 @@
         group: root
         mode: "0750"
 
+    - name: Fetch fdb-overlay/fdb.bash from the tack repo SOT
+      ansible.builtin.get_url:
+        url: "https://api.github.com/repos/agoodkind/tack/contents/fdb-overlay/fdb.bash?ref={{ tack_commit }}"
+        dest: "{{ tack_install_dir }}/fdb-overlay/fdb.bash"
+        headers:
+          Authorization: "Bearer {{ tack_repo_read_token }}"
+          Accept: "application/vnd.github.raw"
+        owner: root
+        group: root
+        mode: "0755"
+        force: true
+      no_log: true
+      notify: Restart Tack
+
+    - name: Create Tack yugabyte-overlay directory
+      ansible.builtin.file:
+        path: "{{ tack_install_dir }}/yugabyte-overlay"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Fetch yugabyte-overlay/yugabyted from the tack repo SOT (PR #23158 patch)
+      ansible.builtin.get_url:
+        url: "https://api.github.com/repos/agoodkind/tack/contents/yugabyte-overlay/yugabyted?ref={{ tack_commit }}"
+        dest: "{{ tack_install_dir }}/yugabyte-overlay/yugabyted"
+        headers:
+          Authorization: "Bearer {{ tack_repo_read_token }}"
+          Accept: "application/vnd.github.raw"
+        owner: root
+        group: root
+        mode: "0755"
+        force: true
+      no_log: true
+      notify: Restart Tack
+
     - name: Deploy Tack environment file
       ansible.builtin.template:
         src: "{{ repo_root }}/tack/tack.env.j2"
@@ -184,14 +220,39 @@
         mode: "0600"
       notify: Restart Tack
 
-    - name: Deploy Tack docker-compose.yml
-      ansible.builtin.template:
-        src: "{{ repo_root }}/tack/docker-compose.yml"
+    # The tack docker-compose.yml is the single source of truth and lives in the
+    # tack repo. Ansible fetches it (and the overlays above) from the GitHub SOT
+    # at the deployed ref; the rendered .env above is the env override. tack_commit
+    # is the tack ref to deploy (a branch or a full SHA), passed as an extra var.
+    - name: Fetch docker-compose.yml from the tack repo SOT
+      ansible.builtin.get_url:
+        url: "https://api.github.com/repos/agoodkind/tack/contents/docker-compose.yml?ref={{ tack_commit }}"
         dest: "{{ tack_install_dir }}/docker-compose.yml"
+        headers:
+          Authorization: "Bearer {{ tack_repo_read_token }}"
+          Accept: "application/vnd.github.raw"
         owner: root
         group: root
         mode: "0644"
+        force: true
+      no_log: true
       notify: Restart Tack
+
+    # -------------------------------------------------------------------------
+    # GHCR auth and image pull
+    # -------------------------------------------------------------------------
+    - name: Authenticate Docker to ghcr.io
+      ansible.builtin.command:
+        cmd: docker login ghcr.io -u agoodkind --password-stdin
+        stdin: "{{ ghcr_pull_token }}"
+      changed_when: true
+      no_log: true
+
+    - name: Pull Tack images from ghcr.io
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: "{{ tack_install_dir }}"
+      changed_when: true
 
     # -------------------------------------------------------------------------
     # Compose stack up

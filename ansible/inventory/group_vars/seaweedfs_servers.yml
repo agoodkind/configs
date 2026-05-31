@@ -1,0 +1,39 @@
+---
+# Internal-only SeaweedFS object-store LXC (CT 410 on suburban).
+# Lives on the opnsense-test MANAGEMENT segment (3d06:bad:b01:204::/64) beside
+# tack-qa. Runs the weed binary under systemd (not Docker). Provides an S3
+# endpoint for tack backups and audit archives. Container creation is handled
+# by OpenTofu (opentofu/suburban/seaweedfs.tf); this group configures the
+# deploy playbook (playbooks/deploy-seaweedfs.yml).
+
+service_hostname: "{{ service_mapping.seaweedfs.hostname }}"
+service_ipv6_address: "{{ service_mapping.seaweedfs.ipv6 }}/64"
+service_mac_address: "BC:24:11:04:10:00"
+
+# Pinned weed release. Bump in lockstep with the release URL the playbook
+# builds from this version.
+seaweedfs_version: "3.71"
+
+# On-disk layout owned by the weed server process.
+seaweedfs_data_dir: /var/lib/seaweedfs
+seaweedfs_config_dir: /etc/seaweedfs
+seaweedfs_bin_path: /usr/local/bin/weed
+
+# Listener ports for the all-in-one weed server.
+seaweedfs_s3_port: 8333
+seaweedfs_master_port: 9333
+seaweedfs_volume_port: 8080
+
+# Bind on the LXC's own IPv6 address. The S3 endpoint is internal only; it is
+# never proxied or exposed off the suburban segment.
+seaweedfs_bind_address: "{{ service_mapping.seaweedfs.ipv6 }}"
+
+# S3 identity for the tack object store. Credentials come from the vault; the
+# two keys below must exist before deploy.
+seaweedfs_s3_access_key: "{{ vault_seaweedfs_s3_access_key }}"
+seaweedfs_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"
+
+# Buckets the single S3 identity is granted full access to.
+seaweedfs_s3_buckets:
+  - tack-backups
+  - tack-audit-archive
