@@ -121,16 +121,6 @@ http:
       tls:
         certResolver: letsencrypt
 
-    plane-ingress:
-      rule: "Host(`plane.{{ traefik_ingress_domain }}`)"
-      service: plane-service
-      middlewares:
-        - secure-headers
-      entryPoints:
-        - websecure
-      tls:
-        certResolver: letsencrypt
-
     tack-ingress:
       rule: "Host(`tack.{{ traefik_ingress_domain }}`)"
       service: tack-service
@@ -201,11 +191,6 @@ http:
         servers:
           - url: "https://[3d06:bad:b01::109]:8443"
         serversTransport: insecure-transport
-
-    plane-service:
-      loadBalancer:
-        servers:
-          - url: "http://[{{ service_mapping.plane.ipv6 }}]:80"
 
     tack-service:
       loadBalancer:
