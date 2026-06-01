@@ -178,6 +178,8 @@
 
     - name: Install and configure cloudflared
       ansible.builtin.include_tasks: tasks/install-cloudflared.yml
+      vars:
+        cloudflared_token: "{{ vault_mwan_cloudflared_token }}"
 
     - name: Install required packages
       ansible.builtin.apt:
@@ -279,47 +281,21 @@
         dest: /etc/wpa_supplicant/wpa_supplicant.conf
         mode: "0600"
 
-    - name: Check for AT&T certificates on Ansible host
-      delegate_to: localhost
-      ansible.builtin.stat:
-        path: "{{ mwan_att_certs_path }}/{{ item }}"
-      loop:
-        - ca_cert.pem
-        - client_cert.pem
-        - private_key.pem
-      register: local_cert_check
-
-    - name: Copy AT&T certificates from Ansible host
+    - name: Deploy AT&T 802.1X certificates from vault
       ansible.builtin.copy:
-        src: "{{ mwan_att_certs_path }}/{{ item.item }}"
-        dest: "/etc/wpa_supplicant/{{ item.item }}"
+        content: "{{ item.content }}"
+        dest: "/etc/wpa_supplicant/{{ item.name }}"
         mode: "0600"
         owner: root
         group: root
-      when: item.stat.exists
-      loop: "{{ local_cert_check.results }}"
-
-    - name: Check for AT&T certificates on target
-      ansible.builtin.stat:
-        path: "/etc/wpa_supplicant/{{ item }}"
       loop:
-        - ca_cert.pem
-        - client_cert.pem
-        - private_key.pem
-      register: cert_check
-
-    - name: Warn if certificates missing
-      ansible.builtin.debug:
-        msg: |
-          ⚠️  Certificate {{ item.item }} missing!
-          Place certificates on Ansible controller at:
-            {{ mwan_att_certs_path }}/
-          Or manually upload to target:
-            scp 'agoodkind@router:/conf/opnatt/wpa/*.pem' \
-              root@{{ inventory_hostname }}:/etc/wpa_supplicant/
-          Then restart: systemctl restart wpa_supplicant-mwan
-      when: not item.stat.exists
-      loop: "{{ cert_check.results }}"
+        - { name: "ca_cert.pem", content: "{{ vault_mwan_wpa_ca_cert }}" }
+        - { name: "client_cert.pem", content: "{{ vault_mwan_wpa_client_cert }}" }
+        - { name: "private_key.pem", content: "{{ vault_mwan_wpa_private_key }}" }
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+      notify: Restart wpa_supplicant
 
     - name: Deploy OpenSSL config for legacy provider support
       ansible.builtin.copy:

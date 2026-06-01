@@ -722,6 +722,8 @@
   tasks:
     - name: Install and configure cloudflared
       ansible.builtin.include_tasks: tasks/install-cloudflared.yml
+      vars:
+        cloudflared_token: "{{ vault_cloudflared_tunnel_token }}"
 
     - name: Verify cloudflared service status
       ansible.builtin.systemd:

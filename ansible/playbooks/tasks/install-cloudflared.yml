@@ -5,7 +5,7 @@
 # to Cloudflare's edge servers. This is required for IPv6-only container environments.
 #
 # Required variables:
-#   cloudflared_token_src: path to token file on Ansible controller
+#   cloudflared_token: the tunnel token content, passed by the caller from vault
 #
 # Optional variables:
 #   cloudflared_service_src: path to custom service file (default: generic)
@@ -55,32 +55,15 @@
     group: cloudflared
     mode: "0750"
 
-- name: Check if local cloudflared token exists (file based)
-  ansible.builtin.stat:
-    path: "{{ cloudflared_token_src | default('') }}"
-  delegate_to: localhost
-  register: local_cloudflared_token
-  when: cloudflared_token_src is defined
-
-- name: Copy cloudflared tunnel token (from file)
+- name: Write the cloudflared tunnel token
   ansible.builtin.copy:
-    src: "{{ cloudflared_token_src }}"
+    content: "{{ cloudflared_token }}"
     dest: /etc/cloudflared/token
     owner: root
     group: cloudflared
     mode: "0640"
-  when:
-    - cloudflared_token_src is defined
-    - local_cloudflared_token.stat.exists
-
-- name: Copy cloudflared tunnel token (from content)
-  ansible.builtin.copy:
-    content: "{{ vault_cloudflared_tunnel_token }}"
-    dest: /etc/cloudflared/token
-    owner: root
-    group: cloudflared
-    mode: "0640"
-  when: vault_cloudflared_tunnel_token is defined
+  no_log: true
+  notify: Restart cloudflared
 
 - name: Deploy cloudflared systemd service (custom)
   ansible.builtin.copy:

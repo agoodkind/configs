@@ -61,8 +61,6 @@ mwan_monkeybrains_iface: "{{ detected_monkeybrains_iface | default('enmbrains0')
 # AT&T 802.1X authentication (via X710 VF passthrough)
 # ----------------------------------------------------------------------------
 
-# Path to AT&T certificates on Ansible controller (persistent across Semaphore runs)
-mwan_att_certs_path: "/var/lib/semaphore/certs/mwan/wpa"
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "d0:fc:d0:7c:85:30"
 
@@ -373,9 +371,6 @@ mwan_smtp_port: "{{ smtp_port }}"
 # ----------------------------------------------------------------------------
 # Cloudflared
 # ----------------------------------------------------------------------------
-
-# Path to cloudflared tunnel token on Ansible controller
-cloudflared_token_src: "/var/lib/semaphore/tokens/mwan/cloudflared/token"
 
 # Custom service file with mwan-specific dependencies
 cloudflared_service_src: "{{ repo_root }}/mwan/services/cloudflared.service"
