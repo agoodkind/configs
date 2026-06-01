@@ -21,7 +21,7 @@
         else (
           'host-' ~
           (
-            inventory_hostname
+            service_hostname
             | lower
             | regex_replace('[^a-z0-9]+','-')
             | regex_replace('(^-+|-+$)','')
@@ -140,13 +140,13 @@
       {{
         (smtp_from | trim)
         if (smtp_from | trim) | length > 0
-        else (ansible_hostname ~ '@' ~ (smtp_from_domain | trim))
+        else (service_hostname.split('.')[0] ~ '@' ~ (smtp_from_domain | trim))
       }}
     smtp_effective_sender_name: >-
       {{
         (smtp_sender_name | trim)
         if (smtp_sender_name | trim) | length > 0
-        else ansible_hostname
+        else service_hostname.split('.')[0]
       }}
   when: (smtp_enabled | string) != '0'
 

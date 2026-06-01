@@ -62,6 +62,10 @@
         prep_ct_service_effective: "{{ target_hosts | regex_replace('_servers$', '') | trim }}"
         login_dir_effective: "{{ login_dir }}"
 
+    - name: Set the guest hostname to its canonical service name
+      ansible.builtin.hostname:
+        name: "{{ service_hostname.split('.')[0] }}"
+
     - name: Set debconf frontend to noninteractive
       ansible.builtin.debconf:
         name: debconf
