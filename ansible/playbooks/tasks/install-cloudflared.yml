@@ -70,7 +70,7 @@
     src: "{{ cloudflared_service_src }}"
     dest: /etc/systemd/system/cloudflared.service
     mode: "0644"
-  when: cloudflared_service_src is defined
+  when: cloudflared_service_src | length > 0
 
 - name: Deploy cloudflared systemd service (generic)
   ansible.builtin.copy:
@@ -79,8 +79,8 @@
     content: |
       [Unit]
       Description=cloudflared tunnel
-      After={{ cloudflared_service_after | default('network-online.target') }}
-      Wants={{ cloudflared_service_wants | default('network-online.target') }}
+      After={{ cloudflared_service_after }}
+      Wants={{ cloudflared_service_wants }}
 
       [Service]
       TimeoutStartSec=15
@@ -93,7 +93,7 @@
 
       [Install]
       WantedBy=multi-user.target
-  when: cloudflared_service_src is not defined
+  when: cloudflared_service_src | length == 0
   notify: Restart cloudflared
 
 - name: Enable cloudflared service

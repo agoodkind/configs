@@ -3,19 +3,13 @@
   hosts: "{{ target_hosts }}"
   gather_facts: false
   tasks:
-    - name: Filter by container/VM ID if specified
-      ansible.builtin.meta: end_host
-      when:
-        - container_id | length > 0
-        - hostvars[inventory_hostname].get('ansible_proxmox_vmid', '') | string != container_id | string
-
     - name: Store container/VM info on each host
       ansible.builtin.set_fact:
         guest_info:
           vmid: "{{ ansible_proxmox_vmid }}"
           host: "{{ ansible_proxmox_host }}"
           name: "{{ inventory_hostname }}"
-          type: "{{ hostvars[inventory_hostname].get('proxmox_vmtype', '') }}"
+          type: "{{ proxmox_vmtype }}"
 
 - name: Deploy SSH keys to containers/VMs via Proxmox
   hosts: localhost
@@ -27,7 +21,7 @@
     guests: >-
       {{
         (
-          groups.get(target_group, [])
+          groups[target_group]
           if target_group in groups
           else [target_group]
         )

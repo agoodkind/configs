@@ -18,7 +18,7 @@ http:
           X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
           Server: ""
 
-{% if traefik_dashboard_enabled | default(false) %}
+{% if traefik_dashboard_enabled %}
     # Dashboard Authentication
     # Uses external auth file for better security
     # File is generated from TRAEFIK_DASHBOARD_USER and TRAEFIK_DASHBOARD_PASS env vars

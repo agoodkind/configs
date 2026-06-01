@@ -46,12 +46,6 @@
     - name: Gather facts
       ansible.builtin.setup:
 
-    - name: Filter by container/VM ID if specified
-      ansible.builtin.meta: end_host
-      when:
-        - container_id | length > 0
-        - hostvars[inventory_hostname].get('ansible_proxmox_vmid', '') | string != container_id | string
-
     - name: Detect if running in LXC container or VM
       ansible.builtin.set_fact:
         is_lxc: "{{ ansible_facts['virtualization_type'] == 'lxc' }}"
@@ -248,7 +242,7 @@
       ansible.builtin.command: timedatectl set-timezone "{{ host_timezone.stdout }}"
       changed_when: true
       when:
-        - host_timezone.stdout | default('') | trim | length > 0
+        - host_timezone.stdout | trim | length > 0
         - container_timezone.stdout != host_timezone.stdout
 
     - name: Configure rsyslog for local time
@@ -301,7 +295,6 @@
         dest: /usr/local/bin/debug
         mode: "0755"
       when:
-        - (prep_ct_service_effective | trim) | length > 0
         - prep_ct_service_effective | lower in ['adguard', 'traefik', 'powerdns']
 
     - name: Install debug helper command (generic fallback)
@@ -309,9 +302,7 @@
         src: "{{ repo_root }}/ansible/templates/debug/debug-generic.sh.j2"
         dest: /usr/local/bin/debug
         mode: "0755"
-      when: >-
-        (prep_ct_service_effective | trim) | length == 0
-        or (prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns'])
+      when: prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns']
 
     - name: Configure auto-login for root (LXC only)
       ansible.builtin.blockinfile:
@@ -358,7 +349,7 @@
       when:
         - consul_agent_enabled | bool
         - consul_server_address | length > 0
-        - inventory_hostname not in groups.get('consul_servers', [])
+        - inventory_hostname not in groups['consul_servers']
 
     - name: Disable SSH password authentication (keys only)
       ansible.builtin.copy:

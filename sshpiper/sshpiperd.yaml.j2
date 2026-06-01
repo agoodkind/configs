@@ -2,7 +2,7 @@
 version: "1.0"
 pipes:
 {% for service_name, service_info in service_mapping.items() %}
-{% if service_name != 'proxy' and service_info.ipv6 is defined %}
+{% if service_name != 'proxy' and 'ipv6' in service_info %}
   # Route for {{ service_name }}: user@{{ service_name }} -> user@{{ service_info.ipv6 }}
   - from:
       - username: '^(.+)@{{ service_name | regex_escape }}$'
@@ -21,7 +21,7 @@ pipes:
         username_regex_match: true
         authorized_keys: /etc/sshpiper/authorized_keys
     to:
-      host: "[{{ service_mapping.proxy.ipv6 | default('::1') }}]:2222"
+      host: "[{{ service_mapping.proxy.ipv6 }}]:2222"
       username: "$1"
       private_key: /etc/sshpiper/upstream_id_ed25519
       ignore_hostkey: true

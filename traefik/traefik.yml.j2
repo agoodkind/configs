@@ -7,7 +7,7 @@ global:
   sendAnonymousUsage: false
 
 api:
-  dashboard: {{ 'true' if (traefik_dashboard_enabled | default(false)) else 'false' }}
+  dashboard: {{ 'true' if traefik_dashboard_enabled else 'false' }}
   insecure: false
 
 log:
@@ -69,8 +69,8 @@ certificatesResolvers:
       email: {{ traefik_acme_email }}
       storage: /etc/traefik/acme.json
       dnsChallenge:
-        provider: {{ traefik_acme_dns_provider | default('cloudflare') }}
-{% if (traefik_acme_dns_provider | default('cloudflare')) == 'rfc2136' %}
+        provider: {{ traefik_acme_dns_provider }}
+{% if traefik_acme_dns_provider == 'rfc2136' %}
         resolvers:
           - "{{ traefik_rfc2136_nameserver }}"
         delayBeforeCheck: 10

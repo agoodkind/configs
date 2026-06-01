@@ -56,7 +56,8 @@ cloudflare_api_token: >-
      default=vault_cloudflare_api_token))) }}
 
 # Traefik Dashboard Authentication
-# Set TRAEFIK_DASHBOARD_USER and TRAEFIK_DASHBOARD_PASS environment variables
+# Dashboard is off by default; set the user and pass to enable it.
+traefik_dashboard_enabled: false
 traefik_dashboard_user: "{{ lookup('env', 'TRAEFIK_DASHBOARD_USER', default='') }}"
 traefik_dashboard_pass: "{{ lookup('env', 'TRAEFIK_DASHBOARD_PASS', default='') }}"
 

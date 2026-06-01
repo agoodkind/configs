@@ -33,9 +33,6 @@ smtp_pass: ""
 service_ssh_port: 22
 # Console auto-login for LXC guests.
 console_autologin_enabled: true
-# Optional single-host filter. Empty prepares every host in the target group;
-# pass -e container_id=<vmid> to target one container.
-container_id: ""
 # Default target group for a bare prep-guests run; every deploy overrides this at import.
 target_hosts: proxmox_all_lxc
 # Interactive login directory inside each guest; a service overrides it per group_vars.
@@ -57,6 +54,14 @@ consul_version: "1.20.1"
 consul_data_dir: /var/lib/consul
 # eth0 on every guest; the vault hypervisor overrides this to vmbr0 in the inventory.
 consul_bind_interface: eth0
+
+# ----------------------------------------------------------------------------
+# cloudflared (Cloudflare Tunnel) systemd service defaults
+# ----------------------------------------------------------------------------
+# Empty service file means the generic unit; a service overrides it with its own.
+cloudflared_service_src: ""
+cloudflared_service_after: network-online.target
+cloudflared_service_wants: network-online.target
 
 # Static IP fallbacks (used when Consul is unavailable)
 # Derived from service_mapping (single source of truth)
