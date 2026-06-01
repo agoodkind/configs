@@ -55,14 +55,10 @@ The deploy is split cleanly across two repos plus the ops command surface.
 
 ## Deployment workflow
 
-OpenTofu is the forward path for provisioning. Run `tofu apply` from
-[opentofu/](opentofu/) first, then run the matching `deploy-<service>.yml`
-playbook from [ansible/playbooks/](ansible/playbooks/).
-
-Legacy guest-creation playbooks such as
-[ansible/playbooks/create-ct.yml](ansible/playbooks/create-ct.yml) still exist
-for older hosts. Treat them as migration-era exceptions, not as the default
-provisioning path.
+OpenTofu provisions every guest. Run `tofu apply` from [opentofu/](opentofu/)
+first to create or update the LXC, then run the matching `deploy-<service>.yml`
+playbook from [ansible/playbooks/](ansible/playbooks/), which registers the guest
+in inventory and configures what runs inside it.
 
 The canonical playbook invocation is:
 

@@ -4,9 +4,6 @@
   vars:
     container_group: consul_servers
     group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/consul_servers.yml"
-    disk_size: "4"
-    memory: "512"
-    cores: "1"
 
 - name: Deploy and Configure Consul Server
   hosts: consul_servers

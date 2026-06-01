@@ -1,183 +1,25 @@
 ---
-# Reusable playbook wrapper for service containers
+# Register an OpenTofu-created service container in inventory, then the importing
+# deploy runs the inside setup. OpenTofu owns the LXC, its creation and sizing.
+# Ansible owns what runs inside it.
 #
-# Required variables:
-#   container_group: Inventory group name (e.g., adguard_servers)
-#   group_vars_file: Path to group_vars file (relative to playbook_dir)
-#
-# Standard variables from group_vars (derived from service_mapping):
-#   service_hostname: Container FQDN (e.g., adguard.home.goodkind.io)
-#   service_mac_address: Stable MAC for DHCP reservations (optional)
-#   service_ipv6_address: IPv6 CIDR from service_mapping
-#   service_ipv4_address: IPv4 CIDR (when dual-stack needed)
-#   service_ipv6_only: Boolean (default: true)
-#   service_memory: Container memory in MB
-#   service_cores: Container CPU cores
-#   service_disk_size: Container disk in GB
-#   service_tags: Container tags
-#
-# Optional variables (set in deploy playbooks to override group_vars):
-#   target_node: Proxmox node (default: vault)
-#   container_vmid: Specific VMID to use (default: "")
-#   disk_size: Override service_disk_size
-#   memory: Override service_memory
-#   cores: Override service_cores
-#   container_tags: Override service_tags
-- name: Load service configuration and create/setup container
+# Required variables, provided by the importing deploy via import_playbook vars:
+#   container_group: the service inventory group to register the host into,
+#                    for example consul_servers.
+#   group_vars_file: path to the service group_vars, which define
+#                    service_hostname and service_ipv6_address from service_mapping.
+- name: Register the OpenTofu-created service container in inventory
   hosts: localhost
   gather_facts: false
-  vars:
-    target_node_default: vault
-    container_vmid_default: ""
-    disk_size_default: "8"
-    memory_default: "2048"
-    cores_default: "2"
-    container_tags_default: >-
-      lxc,{{ container_group | replace('_servers', '') }}
   vars_files:
     - "{{ playbook_dir }}/../inventory/group_vars/all/service_mapping.yml"
     - "{{ group_vars_file }}"
   tasks:
-    - name: Validate required variables
-      ansible.builtin.assert:
-        that:
-          - container_group is defined
-          - group_vars_file is defined
-          - service_hostname is defined
-        fail_msg: >-
-          container_group, group_vars_file must be provided when importing
-          setup-service-ct.yml. service_hostname must be defined in group_vars.
-
-    - name: Persist service identity variables to hostvars
-      ansible.builtin.set_fact:
-        service_hostname: "{{ service_hostname }}"
-        service_ipv6_address: "{{ service_ipv6_address | default('') }}"
-        service_mac_address: "{{ service_mac_address | default('') }}"
-
-    - name: Use service_ipv4_address from group_vars (if defined)
-      ansible.builtin.set_fact:
-        service_ip_address: "{{ service_ipv4_address }}"
-      when:
-        - service_ipv4_address is defined
-        - (service_ipv4_address | default('') | trim) | length > 0
-
-    - name: Set IPv6-only flag from group_vars
-      ansible.builtin.set_fact:
-        effective_ipv6_only: "{{ service_ipv6_only | default(true) | bool }}"
-
-    - name: Compute effective container settings (caller overrides defaults)
-      ansible.builtin.set_fact:
-        service_target_node: >-
-          {{
-            (target_node | default('') | trim)
-            if (target_node | default('') | trim) | length > 0
-            else (target_node_default | string)
-          }}
-        service_container_vmid: >-
-          {{
-            (container_vmid | default('') | string | trim)
-            if (container_vmid | default('') | string | trim) | length > 0
-            else (container_vmid_default | default('') | string | trim)
-          }}
-        effective_disk_size: >-
-          {{
-            (disk_size | default('') | string | trim)
-            if (disk_size | default('') | string | trim) | length > 0
-            else (
-              (service_disk_size | default('') | string | trim)
-              if (service_disk_size | default('') | string | trim) | length > 0
-              else (disk_size_default | string)
-            )
-          }}
-        effective_memory: >-
-          {{
-            (memory | default('') | string | trim)
-            if (memory | default('') | string | trim) | length > 0
-            else (
-              (service_memory | default('') | string | trim)
-              if (service_memory | default('') | string | trim) | length > 0
-              else (memory_default | string)
-            )
-          }}
-        effective_cores: >-
-          {{
-            (cores | default('') | string | trim)
-            if (cores | default('') | string | trim) | length > 0
-            else (
-              (service_cores | default('') | string | trim)
-              if (service_cores | default('') | string | trim) | length > 0
-              else (cores_default | string)
-            )
-          }}
-        effective_container_tags: >-
-          {{
-            (container_tags | default('') | string | trim)
-            if (container_tags | default('') | string | trim) | length > 0
-            else (
-              (service_tags | default('') | string | trim)
-              if (service_tags | default('') | string | trim) | length > 0
-              else (container_tags_default | string)
-            )
-          }}
-        service_container_features: "{{ container_features | default('') }}"
-
-- name: Create or ensure container exists
-  ansible.builtin.import_playbook: create-ct.yml
-  vars:
-    container_hostname: "{{ hostvars['localhost']['service_hostname'] }}"
-    target_node: >-
-      {{ hostvars['localhost']['service_target_node'] | default('vault') }}
-    vmid: "{{ hostvars['localhost']['service_container_vmid'] | default('') }}"
-    ip_address: "{{ hostvars['localhost']['service_ip_address'] | default('') }}"
-    ipv6_address: >-
-      {{ hostvars['localhost']['service_ipv6_address'] | default('') }}
-    ipv6_only: >-
-      {{ hostvars['localhost']['effective_ipv6_only'] | default(true) | bool }}
-    disk_size: "{{ hostvars['localhost']['effective_disk_size'] | default('8') }}"
-    memory: "{{ hostvars['localhost']['effective_memory'] | default('2048') }}"
-    cores: "{{ hostvars['localhost']['effective_cores'] | default('2') }}"
-    container_tags: "{{ hostvars['localhost']['effective_container_tags'] }}"
-    mac_address: >-
-      {{ hostvars['localhost']['service_mac_address'] | default('') }}
-    container_features: >-
-      {{ hostvars['localhost']['service_container_features'] | default('') }}
-
-- name: Add container to service group
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Ensure container primary IP is available
-      ansible.builtin.assert:
-        that:
-          - hostvars['localhost']['container_primary_ip'] is defined
-          - >-
-            (hostvars['localhost']['container_primary_ip']
-            | default('') | trim) | length > 0
-        fail_msg: >-
-          container_primary_ip was not discovered for
-          {{ hostvars['localhost']['service_hostname'] }}.
-      when: not ansible_check_mode
-
-    - name: Add container to service-specific inventory group
+    - name: Add the container to its service inventory group
       ansible.builtin.add_host:
-        name: "{{ hostvars['localhost']['service_hostname'] }}"
+        name: "{{ service_hostname }}"
         groups: "{{ container_group }}"
-        ansible_host: "{{ hostvars['localhost']['container_primary_ip'] }}"
+        ansible_host: "{{ service_ipv6_address | ansible.utils.ipaddr('address') }}"
         ansible_user: root
         ansible_ssh_common_args: >-
           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-        ansible_proxmox_vmid: >-
-          {{
-            hostvars[hostvars['localhost']['service_hostname']
-            ].ansible_proxmox_vmid | default('')
-          }}
-        ansible_proxmox_host: >-
-          {{
-            hostvars[hostvars['localhost']['service_hostname']
-            ].ansible_proxmox_host | default('vault')
-          }}
-        proxmox_vmtype: >-
-          {{
-            hostvars[hostvars['localhost']['service_hostname']
-            ].proxmox_vmtype | default('lxc')
-          }}
