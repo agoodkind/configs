@@ -77,9 +77,10 @@ shape of a command result, for example `cmd.rc | default(1)` or
 (`ip_list[0] if (ip_list | length > 0) else ''`).
 
 Enforced by `scripts/lint_ansible_defaults.py`: the ansible helper runs it before
-every deploy, the lint path runs it, and pre-commit runs it on staged files. A
-genuine command-result exception the check cannot classify takes a
-`# noqa: input-default` comment.
+every deploy, the lint path runs it, and pre-commit runs it on staged files.
+There is no per-line escape hatch. A genuine command-result read must take a form
+the allowlist recognizes, such as a registered name or a result attribute like
+`.rc`, `.stdout`, or `.stat`.
 
 ## Line length
 
