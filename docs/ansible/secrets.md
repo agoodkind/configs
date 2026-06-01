@@ -12,7 +12,6 @@ invoke `ansible`, `ansible-vault`, `ansible-playbook`, `ansible-inventory`, or
 - Vault file: [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml) (encrypted, committed to git)
 - Shared vars file: [ansible/inventory/group_vars/all/vars.yml](../../ansible/inventory/group_vars/all/vars.yml) (plaintext, committed to git)
 - CLI password: `~/.config/ansible/vault.pass` (not in git, must be 600 permissions)
-- Semaphore password: environment variable `ANSIBLE_VAULT_PASSWORD` in the Semaphore database
 
 ## Safe key listing
 
@@ -37,8 +36,6 @@ printed.
 If decryption fails, verify `~/.config/ansible/vault.pass` exists and contains the
 correct password. If a playbook reports an undefined `vault_*` variable, verify that
 the key exists in [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml) and that the consumer is not still using a removed alias.
-If Semaphore fails, check that `ANSIBLE_VAULT_PASSWORD` is set in the Semaphore project
-environment.
 
 ## Lost vault password
 

@@ -38,7 +38,7 @@ http:
       tls:
         certResolver: letsencrypt
 
-    # Ansible/Semaphore - Public service via Cloudflare
+    # Ansible - Public service via Cloudflare
     ansible-ingress:
       rule: "Host(`ansible.{{ traefik_ingress_domain }}`)"
       service: ansible-service

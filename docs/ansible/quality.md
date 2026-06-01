@@ -241,8 +241,7 @@ Use one identifier per reservation. Prefer `hw-address` when the MAC is pinned.
 
 ## Secrets
 
-Vault-first. Do not rely on local files on the controller (for example
-`/var/lib/semaphore/...`). Store secrets in
+Vault-first. Do not rely on local files on the controller. Store secrets in
 [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml)
 and inject with `content: "{{ vault_var }}"` in `copy` tasks rather than `src:`.
 Full contract in [docs/ansible/secrets.md](secrets.md).

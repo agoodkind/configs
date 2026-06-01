@@ -26,8 +26,8 @@ The `home-mini`, `home-nas`, and `home-vault` connectors are not deployed via
 the Ansible playbooks in this repo; they appear to be standalone installs on those hosts.
 The `home-berylax` connector is indefinitely offline for now. Historical berylax
 routing state lives in [berylax.md](berylax.md).
-Tunnel tokens are stored in Ansible Vault (`vault_cloudflared_tunnel_token`) for the proxy and
-on the Semaphore controller (`/var/lib/semaphore/tokens/mwan/cloudflared/token`) for mwan.
+Tunnel tokens are stored in Ansible Vault: `vault_cloudflared_tunnel_token` for the proxy and
+`vault_mwan_cloudflared_token` for mwan.
 
 **WARP tunnel routes (private network access via Cloudflare WARP client):**
 

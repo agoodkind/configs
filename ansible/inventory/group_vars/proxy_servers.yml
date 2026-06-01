@@ -35,7 +35,7 @@ traefik_acme_dns_provider: >-
 
 # DNS Challenge Configuration
 # For RFC2136 (BIND/nsupdate with TSIG):
-# Set TRAEFIK_RFC2136_* environment variables in Semaphore
+# Provide the TRAEFIK_RFC2136_* environment variables in the deploy environment
 traefik_rfc2136_nameserver: >-
   {{ lookup('env', 'TRAEFIK_RFC2136_NAMESERVER',
      default='[3d06:bad:b01::6]:53') }}

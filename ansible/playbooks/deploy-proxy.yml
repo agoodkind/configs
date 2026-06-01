@@ -195,7 +195,7 @@
         fail_msg: |
           ERROR: Traefik dashboard is enabled but credentials are not set!
 
-          Set the environment variables in Semaphore:
+          Provide these in the deploy environment:
             TRAEFIK_DASHBOARD_USER
             TRAEFIK_DASHBOARD_PASS
       when: traefik_dashboard_enabled | default(false)
@@ -261,7 +261,7 @@
         fail_msg: |
           ERROR: RFC2136 TSIG credentials are not set!
 
-          Set the environment variables in Semaphore:
+          Provide these in the deploy environment:
             TRAEFIK_RFC2136_TSIG_KEY: "letsencrypt"
             TRAEFIK_RFC2136_TSIG_SECRET: "your-tsig-secret-here"
             TRAEFIK_RFC2136_NAMESERVER: >-
@@ -278,7 +278,7 @@
         fail_msg: |
           ERROR: Cloudflare API token is not set!
 
-          Set one of these environment variables in Semaphore:
+          Provide one of these in the deploy environment:
             CLOUDFLARE_API_TOKEN (preferred)
             CF_DNS_API_TOKEN
         success_msg: "✓ Cloudflare API token is configured"
