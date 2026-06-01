@@ -62,7 +62,7 @@ mwan_monkeybrains_iface: "{{ detected_monkeybrains_iface | default('enmbrains0')
 # ----------------------------------------------------------------------------
 
 mwan_att_vlan_id: 3242
-mwan_att_eap_identity: "d0:fc:d0:7c:85:30"
+mwan_att_eap_identity: "f8:9b:6e:f8:86:11"
 
 # Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
 
@@ -88,7 +88,7 @@ mwan_mbrains_mac: "bc:24:11:e6:58:31"
 # DUID generated from the PFAtt Script
 mwan_att_duid: "00:02:00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
 mwan_att_duid_raw_data: "00:00:0d:e9:44:30:46:43:44:30:2d:44:39:33:4c:44:32:50:58:33:30:39:32:33:37"
-mwan_att_mac: "d0:fc:d0:7c:85:30" # MAC for DHCP (different from EAP identity)
+mwan_att_mac: "f8:9b:6e:f8:86:11" # MAC for DHCP (different from EAP identity)
 
 # ----------------------------------------------------------------------------
 # WAN addressing
