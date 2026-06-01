@@ -23,6 +23,17 @@ smtp_host: "{{ lookup('env', 'SMTP2GO_SMTP_HOST', default='mail.smtp2go.com') }}
 smtp_port: "{{ lookup('env', 'SMTP2GO_SMTP_PORT', default='587') }}"
 
 # ----------------------------------------------------------------------------
+# Guest prep defaults (prep-guests), shared by every service
+# ----------------------------------------------------------------------------
+# SSH port every guest listens on; proxy overrides this to 2222 in its group_vars.
+service_ssh_port: 22
+# Console auto-login for LXC guests.
+console_autologin_enabled: true
+# Optional single-host filter. Empty prepares every host in the target group;
+# pass -e container_id=<vmid> to target one container.
+container_id: ""
+
+# ----------------------------------------------------------------------------
 # Cloudflare DNS (automatic DNS record updates)
 # ----------------------------------------------------------------------------
 cloudflare_dns_update_enabled: true
@@ -34,6 +45,10 @@ consul_server_address: "consul.home.goodkind.io"
 consul_datacenter: home
 consul_domain: int
 consul_agent_enabled: true
+consul_version: "1.20.1"
+consul_data_dir: /var/lib/consul
+# eth0 on every guest; the vault hypervisor overrides this to vmbr0 in the inventory.
+consul_bind_interface: eth0
 
 # Huly route defaults (used by Traefik route templating)
 huly_http_port: 8087
