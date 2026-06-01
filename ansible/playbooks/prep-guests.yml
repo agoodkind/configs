@@ -13,7 +13,7 @@
   ansible.builtin.import_playbook: deploy-ssh-keys.yml
 
 - name: Prepare CT/VM guests
-  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
+  hosts: "{{ target_hosts }}"
   gather_facts: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
@@ -25,8 +25,8 @@
         ssh -v -o ConnectTimeout=5 \
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
-          -p {{ service_ssh_port | default(22) }} \
-          {{ ansible_user | default('root') }}@{{ ansible_host | default(inventory_hostname) }} \
+          -p {{ service_ssh_port }} \
+          {{ ansible_user }}@{{ ansible_host }} \
           'echo "SSH connection successful"; whoami' 2>&1 | tail -20
       delegate_to: localhost
       register: ssh_test
@@ -49,18 +49,18 @@
     - name: Filter by container/VM ID if specified
       ansible.builtin.meta: end_host
       when:
-        - container_id | default('') | length > 0
-        - ansible_proxmox_vmid | default('') | string != container_id | string
+        - container_id | length > 0
+        - hostvars[inventory_hostname].get('ansible_proxmox_vmid', '') | string != container_id | string
 
     - name: Detect if running in LXC container or VM
       ansible.builtin.set_fact:
-        is_lxc: "{{ ansible_virtualization_type | default('') == 'lxc' }}"
-        is_vm: "{{ ansible_virtualization_type | default('') in ['kvm', 'qemu'] }}"
+        is_lxc: "{{ ansible_facts['virtualization_type'] == 'lxc' }}"
+        is_vm: "{{ ansible_facts['virtualization_type'] in ['kvm', 'qemu'] }}"
 
     - name: Compute effective prep-guests service name and login directory
       ansible.builtin.set_fact:
         prep_ct_service_effective: "{{ target_hosts | regex_replace('_servers$', '') | trim }}"
-        login_dir_effective: "{{ login_dir | default('/root') }}"
+        login_dir_effective: "{{ login_dir }}"
 
     - name: Set debconf frontend to noninteractive
       ansible.builtin.debconf:
@@ -182,183 +182,21 @@
     - name: Install package-updater (script, service, timer)
       ansible.builtin.include_tasks: tasks/package-updater.yml
 
-    - name: Compute SMTP username for this host
-      ansible.builtin.set_fact:
-        smtp_effective_user: >-
-          {{
-            (smtp_user | default('') | trim)
-            if (smtp_user | default('') | trim) | length > 0
-            else (
-              'host-' ~
-              (
-                inventory_hostname
-                | lower
-                | regex_replace('[^a-z0-9]+','-')
-                | regex_replace('(^-+|-+$)','')
-              )
-            )
-          }}
-      when: (smtp_enabled | default('1') | string) != '0'
-
-    - name: Generate random SMTP password (used if SMTP2GO API key is set)
-      ansible.builtin.set_fact:
-        smtp_generated_pass: >-
-          {{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_pass | default('') | trim) | length == 0
-        - (vault_smtp2go_api_key | default('') | trim) | length > 0
-
-    - name: Ensure SMTP2GO SMTP user exists (API add)
-      ansible.builtin.uri:
-        url: https://api.smtp2go.com/v3/users/smtp/add
-        method: POST
-        headers:
-          Content-Type: application/json
-          X-Smtp2go-Api-Key: "{{ vault_smtp2go_api_key }}"
-        body_format: json
-        body:
-          username: "{{ smtp_effective_user }}"
-          email_password: "{{ smtp_generated_pass }}"
-          description: "Host {{ inventory_hostname }}"
-          status: allowed
-        return_content: true
-        status_code: [200, 400, 409]
-      register: smtp2go_add_user
-      changed_when: (smtp2go_add_user.status | default(0)) == 200
-      failed_when: >-
-        (smtp2go_add_user.status | default(0)) not in [200, 400, 409]
-        or
-        (
-          (smtp2go_add_user.status | default(0)) == 400
-          and
-          (
-            (
-              (smtp2go_add_user.json.data.error | default('') | lower)
-              | regex_search('already have smtp user')
-            ) == none
-          )
-        )
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_user | default('') | trim) | length == 0
-        - (smtp_pass | default('') | trim) | length == 0
-        - (vault_smtp2go_api_key | default('') | trim) | length > 0
-
-    - name: Detect if SMTP2GO SMTP user already exists (API semantics vary)
-      ansible.builtin.set_fact:
-        smtp2go_user_exists: >-
-          {{
-            (smtp2go_add_user is defined)
-            and
-            (
-              (smtp2go_add_user.status | default(0)) == 409
-              or
-              (
-                (smtp2go_add_user.status | default(0)) == 400
-                and
-                (
-                  (
-                    (smtp2go_add_user.json.data.error | default('') | lower)
-                    | regex_search('already have smtp user')
-                  ) != none
-                )
-              )
-            )
-          }}
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_user | default('') | trim) | length == 0
-        - (smtp_pass | default('') | trim) | length == 0
-        - (vault_smtp2go_api_key | default('') | trim) | length > 0
-        - smtp2go_add_user is defined
-
-    - name: Update SMTP2GO SMTP user password if user already exists (API edit)
-      ansible.builtin.uri:
-        url: https://api.smtp2go.com/v3/users/smtp/edit
-        method: POST
-        headers:
-          Content-Type: application/json
-          X-Smtp2go-Api-Key: "{{ vault_smtp2go_api_key }}"
-        body_format: json
-        body:
-          username: "{{ smtp_effective_user }}"
-          email_password: "{{ smtp_generated_pass }}"
-          status: allowed
-        return_content: true
-        status_code: [200]
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_user | default('') | trim) | length == 0
-        - (smtp_pass | default('') | trim) | length == 0
-        - (vault_smtp2go_api_key | default('') | trim) | length > 0
-        - smtp2go_user_exists | default(false)
-
-    - name: Set effective SMTP password (manual or generated)
-      ansible.builtin.set_fact:
-        smtp_effective_pass: >-
-          {{
-            (smtp_pass | trim)
-            if (smtp_pass | default('') | trim) | length > 0
-            else (smtp_generated_pass | default(''))
-          }}
-      when: (smtp_enabled | default('1') | string) != '0'
-
-    - name: Compute SMTP From address and sender name (defaults to hostname)
-      ansible.builtin.set_fact:
-        smtp_effective_from: >-
-          {{
-            (smtp_from | trim)
-            if (smtp_from | default('') | trim) | length > 0
-            else (ansible_hostname ~ '@' ~ (smtp_from_domain | default('goodkind.io') | trim))
-          }}
-        smtp_effective_sender_name: >-
-          {{
-            (smtp_sender_name | trim)
-            if (smtp_sender_name | default('') | trim) | length > 0
-            else (ansible_hostname | default(inventory_hostname))
-          }}
-      when: (smtp_enabled | default('1') | string) != '0'
-
-    - name: Deploy /etc/msmtprc
-      ansible.builtin.copy:
-        dest: /etc/msmtprc
-        mode: "0600"
-        content: |
-          defaults
-          auth           on
-          tls            on
-          tls_starttls   on
-          tls_trust_file /etc/ssl/certs/ca-certificates.crt
-          logfile        /var/log/msmtp.log
-
-          account smtp2go
-          host {{ smtp_host }}
-          port {{ smtp_port }}
-          user {{ smtp_effective_user }}
-          auth           login
-          password {{ smtp_effective_pass }}
-          from {{ smtp_effective_from }}
-
-          account default : smtp2go
-      when:
-        - (smtp_enabled | default('1') | string) != '0'
-        - (smtp_effective_user | default('') | trim) | length > 0
-        - (smtp_effective_pass | default('') | trim) | length > 0
-        - (smtp_effective_from | default('') | trim) | length > 0
+    - name: Configure outbound SMTP (msmtp via SMTP2GO)
+      ansible.builtin.include_tasks: tasks/smtp.yml
 
     - name: Install qemu-guest-agent (VMs only)
       ansible.builtin.apt:
         name: qemu-guest-agent
         state: present
-      when: is_vm | default(false)
+      when: is_vm
 
     - name: Enable and start qemu-guest-agent (VMs only)
       ansible.builtin.systemd:
         name: qemu-guest-agent
         enabled: true
         state: started
-      when: is_vm | default(false)
+      when: is_vm
 
     - name: Remove unnecessary packages
       ansible.builtin.apt:
@@ -442,8 +280,8 @@
           #
           # Set a service-oriented default working directory for interactive shells.
           # Override per-container with `login_dir` in the vars file.
-          export PREP_CTS_SERVICE="{{ prep_ct_service_effective | default('') | trim }}"
-          export PREP_CTS_LOGIN_DIR="{{ login_dir_effective | default('') | trim }}"
+          export PREP_CTS_SERVICE="{{ prep_ct_service_effective | trim }}"
+          export PREP_CTS_LOGIN_DIR="{{ login_dir_effective | trim }}"
 
           if [ -n "${PS1-}" ] && [ -n "${PREP_CTS_LOGIN_DIR-}" ]; then
             if [ -d "${PREP_CTS_LOGIN_DIR}" ] && [ "${PWD-}" != "${PREP_CTS_LOGIN_DIR}" ]; then
@@ -459,8 +297,7 @@
         dest: /usr/local/bin/debug
         mode: "0755"
       when:
-        - prep_ct_service_effective is defined
-        - (prep_ct_service_effective | default('') | trim) | length > 0
+        - (prep_ct_service_effective | trim) | length > 0
         - prep_ct_service_effective | lower in ['adguard', 'traefik', 'powerdns']
 
     - name: Install debug helper command (generic fallback)
@@ -469,7 +306,7 @@
         dest: /usr/local/bin/debug
         mode: "0755"
       when: >-
-        (prep_ct_service_effective | default('') | trim) | length == 0
+        (prep_ct_service_effective | trim) | length == 0
         or (prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns'])
 
     - name: Configure auto-login for root (LXC only)
@@ -483,8 +320,8 @@
           ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
       register: configure_auto_login
       when:
-        - is_lxc | default(false)
-        - console_autologin_enabled | default(true) | bool
+        - is_lxc
+        - console_autologin_enabled | bool
       notify: Restart getty service
 
     - name: Remove auto-login override (if disabled)
@@ -493,8 +330,8 @@
         state: absent
       register: remove_auto_login
       when:
-        - is_lxc | default(false)
-        - not (console_autologin_enabled | default(true) | bool)
+        - is_lxc
+        - not (console_autologin_enabled | bool)
       notify: Restart getty service
 
     - name: Create systemd system.conf.d directory
@@ -515,9 +352,9 @@
     - name: Install and configure Consul agent
       ansible.builtin.include_tasks: tasks/install-consul-agent.yml
       when:
-        - consul_agent_enabled | default(true) | bool
-        - consul_server_address | default('') | length > 0
-        - inventory_hostname not in groups['consul_servers'] | default([])
+        - consul_agent_enabled | bool
+        - consul_server_address | length > 0
+        - inventory_hostname not in groups.get('consul_servers', [])
 
     - name: Disable SSH password authentication (keys only)
       ansible.builtin.copy:
@@ -590,7 +427,7 @@
       ansible.builtin.systemd:
         name: container-getty@1.service
         state: restarted
-      when: is_lxc | default(false)
+      when: is_lxc
 
     - name: Restart rsyslog
       ansible.builtin.systemd:
@@ -601,12 +438,6 @@
       ansible.builtin.systemd:
         name: ssh
         state: restarted
-
-    - name: Reload Consul
-      ansible.builtin.systemd:
-        name: consul
-        state: reloaded
-      when: ansible_facts.services['consul.service'] is defined
 
     - name: Restart Consul
       ansible.builtin.systemd:

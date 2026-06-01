@@ -21,6 +21,10 @@ smtp_sender_name: "{{ lookup('env', 'SMTP_SENDER_NAME', default='') }}"
 # SMTP2GO (preferred): provide a single API key, Ansible provisions per-host SMTP users.
 smtp_host: "{{ lookup('env', 'SMTP2GO_SMTP_HOST', default='mail.smtp2go.com') }}"
 smtp_port: "{{ lookup('env', 'SMTP2GO_SMTP_PORT', default='587') }}"
+# Per-host SMTP credentials. Empty derives the user from the service name and
+# auto-provisions through SMTP2GO; a service can pin both in its vault to opt out.
+smtp_user: ""
+smtp_pass: ""
 
 # ----------------------------------------------------------------------------
 # Guest prep defaults (prep-guests), shared by every service
@@ -32,6 +36,10 @@ console_autologin_enabled: true
 # Optional single-host filter. Empty prepares every host in the target group;
 # pass -e container_id=<vmid> to target one container.
 container_id: ""
+# Default target group for a bare prep-guests run; every deploy overrides this at import.
+target_hosts: proxmox_all_lxc
+# Interactive login directory inside each guest; a service overrides it per group_vars.
+login_dir: /root
 
 # ----------------------------------------------------------------------------
 # Cloudflare DNS (automatic DNS record updates)
