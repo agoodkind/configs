@@ -72,18 +72,19 @@ to paper over a missing value or to infer presence. When you need a branch, driv
 `when:` from an explicit flag, not from whether a variable happens to be set.
 
 Inferring a value from whether it was set is banned in every form: `| default(...)`,
-`is defined`, `.get(key, default)` (a default in disguise), and
-`(value | trim) | length` (an "is this set" presence check in disguise). All four
-are allowed only on module or register output (the shape of a command result, for
-example `cmd.rc | default(1)` or `stat_result.stat.exists | default(false)`). A
-sequence size check on a real list (`ip_list[0] if (ip_list | length > 0) else ''`)
-is fine, because it asks how many items there are, not whether a scalar is set.
+`is defined`, `.get(key, default)` (a default in disguise), and any `| length`
+comparison (an "is this set" or "how big" check in disguise). There is no
+automatic exception and no escape hatch. The only defensible reason to read a
+value defensively is a command result from an outside service that is unset more
+often than not, and that judgment is the author's to make and defend in review.
+Restructure instead: declare the value, gate a task with the module's own
+`failed_when` or `changed_when`, or initialize an accumulator with `set_fact`
+before the loop.
 
 Enforced by `scripts/lint_ansible_defaults.py`: the ansible helper runs it before
-every deploy, the lint path runs it, and pre-commit runs it on staged files.
-There is no per-line escape hatch. A genuine command-result read must take a form
-the allowlist recognizes, such as a registered name or a result attribute like
-`.rc`, `.stdout`, or `.stat`.
+every deploy, the lint path runs it, and pre-commit runs it on staged files. The
+check flags every occurrence; it grants no exception, so a genuine outside-service
+case is the author's call to defend, not the check's to allow.
 
 ## Line length
 
