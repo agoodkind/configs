@@ -38,17 +38,6 @@ http:
       tls:
         certResolver: letsencrypt
 
-    # Ansible - Public service via Cloudflare
-    ansible-ingress:
-      rule: "Host(`ansible.{{ traefik_ingress_domain }}`)"
-      service: ansible-service
-      middlewares:
-        - secure-headers
-      entryPoints:
-        - websecure
-      tls:
-        certResolver: letsencrypt
-
     vault-ingress:
       rule: "Host(`vault.{{ traefik_ingress_domain }}`)"
       service: vault-service
@@ -132,15 +121,6 @@ http:
         certResolver: letsencrypt
 
   services:
-    ansible-service:
-      loadBalancer:
-        servers:
-          - url: "http://[3d06:bad:b01::107]:3000"
-        healthCheck:
-          path: /api/ping
-          interval: 30s
-          timeout: 5s
-
     vault-service:
       loadBalancer:
         servers:
