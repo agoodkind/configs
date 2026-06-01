@@ -71,10 +71,13 @@ it is missing. Do not use `| default(...)` or `is defined` on an input variable
 to paper over a missing value or to infer presence. When you need a branch, drive
 `when:` from an explicit flag, not from whether a variable happens to be set.
 
-`default()` and `is defined` are allowed only on module or register output (the
-shape of a command result, for example `cmd.rc | default(1)` or
-`stat_result.stat.exists | default(false)`) and on empty-sequence safety
-(`ip_list[0] if (ip_list | length > 0) else ''`).
+Inferring a value from whether it was set is banned in every form: `| default(...)`,
+`is defined`, `.get(key, default)` (a default in disguise), and
+`(value | trim) | length` (an "is this set" presence check in disguise). All four
+are allowed only on module or register output (the shape of a command result, for
+example `cmd.rc | default(1)` or `stat_result.stat.exists | default(false)`). A
+sequence size check on a real list (`ip_list[0] if (ip_list | length > 0) else ''`)
+is fine, because it asks how many items there are, not whether a scalar is set.
 
 Enforced by `scripts/lint_ansible_defaults.py`: the ansible helper runs it before
 every deploy, the lint path runs it, and pre-commit runs it on staged files.
