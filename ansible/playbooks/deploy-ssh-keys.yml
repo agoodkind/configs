@@ -1,13 +1,13 @@
 ---
 - name: Gather container/VM information
-  hosts: "{{ target_hosts | default('proxmox_all_lxc') }}"
+  hosts: "{{ target_hosts }}"
   gather_facts: false
   tasks:
     - name: Filter by container/VM ID if specified
       ansible.builtin.meta: end_host
       when:
-        - container_id | default('') | length > 0
-        - ansible_proxmox_vmid | default('') | string != container_id | string
+        - container_id | length > 0
+        - hostvars[inventory_hostname].get('ansible_proxmox_vmid', '') | string != container_id | string
 
     - name: Store container/VM info on each host
       ansible.builtin.set_fact:
@@ -15,7 +15,7 @@
           vmid: "{{ ansible_proxmox_vmid }}"
           host: "{{ ansible_proxmox_host }}"
           name: "{{ inventory_hostname }}"
-          type: "{{ proxmox_vmtype | default('') }}"
+          type: "{{ hostvars[inventory_hostname].get('proxmox_vmtype', '') }}"
 
 - name: Deploy SSH keys to containers/VMs via Proxmox
   hosts: localhost
@@ -23,7 +23,7 @@
   vars:
     deploy_authorized_keys_script: "{{ playbook_dir }}/../deploy-authorized-keys"
     work_tmp_dir: "{{ playbook_dir }}/../.tmp"
-    target_group: "{{ target_hosts | default('proxmox_all_lxc') }}"
+    target_group: "{{ target_hosts }}"
     guests: >-
       {{
         (
