@@ -304,6 +304,12 @@
         mode: "0644"
       notify: Restart wpa_supplicant
 
+    - name: Deploy legacy SSH client config for the ONT SFP stick
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/config/ssh_config.d/10-ont-sfp-stick-ssh.conf"
+        dest: /etc/ssh/ssh_config.d/10-ont-sfp-stick-ssh.conf
+        mode: "0644"
+
     - name: Deploy wpa_supplicant systemd service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/wpa_supplicant.service"
