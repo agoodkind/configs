@@ -11,16 +11,10 @@ service_ipv6_address: "{{ service_mapping.adguard.ipv6 }}/64"
 service_mac_address: "bc:24:11:ee:f9:50"
 
 # AdGuard Home Configuration Variables
-# Override these in your own environment or use ansible-vault for sensitive values
 
 # ACME / Let's Encrypt (certbot DNS-01 via Cloudflare)
 adguard_acme_email: "alex@goodkind.io"
-# Local env override wrapper. Falls back to vault when env vars are unset.
-cloudflare_api_token: >-
-  {{ lookup('env', 'CLOUDFLARE_API_TOKEN',
-     default=lookup('env', 'CF_DNS_API_TOKEN',
-     default=lookup('env', 'CLOUDFLARE_API_KEY',
-     default=vault_cloudflare_api_token))) }}
+cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
 
 # Web interface configuration (non-default: IPv6 bind address)
 adguard_bind_host: "::"
