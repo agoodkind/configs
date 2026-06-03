@@ -70,7 +70,7 @@
     src: "{{ cloudflared_service_src }}"
     dest: /etc/systemd/system/cloudflared.service
     mode: "0644"
-  when: cloudflared_service_src | length > 0
+  when: cloudflared_service_src
 
 - name: Deploy cloudflared systemd service (generic)
   ansible.builtin.copy:
@@ -93,7 +93,7 @@
 
       [Install]
       WantedBy=multi-user.target
-  when: cloudflared_service_src | length == 0
+  when: not cloudflared_service_src
   notify: Restart cloudflared
 
 - name: Enable cloudflared service
