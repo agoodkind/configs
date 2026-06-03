@@ -17,14 +17,13 @@
   vars:
     deploy_authorized_keys_script: "{{ playbook_dir }}/../deploy-authorized-keys"
     work_tmp_dir: "{{ playbook_dir }}/../.tmp"
-    target_group: "{{ target_hosts }}"
+    # Build the guest list from whichever hosts the gather play set guest_info
+    # on, so it is correct whether target_hosts is a group, a group-union
+    # pattern (a:b), or a single host. Ansible already resolved target_hosts to
+    # those hosts in the gather play above.
     guests: >-
       {{
-        (
-          groups[target_group]
-          if target_group in groups
-          else [target_group]
-        )
+        groups['all']
         | map('extract', hostvars, 'guest_info')
         | select('defined')
         | list
