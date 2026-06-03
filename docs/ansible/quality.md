@@ -84,10 +84,18 @@ Restructure instead: declare the value, gate a task with the module's own
 `failed_when` or `changed_when`, or initialize an accumulator with `set_fact`
 before the loop.
 
-Enforced by `configs lint`: the ansible helper runs it before
-every deploy, the lint path runs it, and pre-commit runs it on staged files. The
-check flags every occurrence; it grants no exception, so a genuine outside-service
-case is the author's call to defend, not the check's to allow.
+Enforced by `configs lint`: the deploy command runs it before every deploy, the
+lint path runs it, and pre-commit runs it on staged files. The check flags every
+occurrence; it grants no exception, so a genuine outside-service case is the
+author's call to defend, not the check's to allow.
+
+The linter parses each Jinja expression with a Go engine and resolves the operand
+each default or presence construct reads. A few Ansible-Jinja forms the Go engine
+cannot parse, such as a parenthesized conditional piped into a filter, are routed
+to a jinja2 reference parser ([scripts/lint_ansible_ast.py](../../scripts/lint_ansible_ast.py)),
+whose resolved violations are enforced the same as any other. The router runs as a
+`python3` subprocess, so `configs lint` requires `python3` with the `jinja2`
+package on PATH. A form neither parser can read is listed for review.
 
 ## Line length
 

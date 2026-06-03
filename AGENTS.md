@@ -90,8 +90,12 @@ anything important. Workflow details live in
   value explicitly in the service's group_vars, `service_mapping.yml`, or
   OpenTofu, and read it bare; a missing value fails at load time. `default()` and
   `is defined` are allowed only on module or register output (a command result's
-  shape). Enforced by `configs lint`, which the ansible helper
-  runs before every deploy and the lint path runs; see `docs/ansible/quality.md`.
+  shape). Enforced by `configs lint`, which the deploy command runs before every
+  deploy and pre-commit runs on staged files; see `docs/ansible/quality.md`. The
+  linter parses each Jinja expression with a Go engine and routes the few
+  Ansible-Jinja forms that engine cannot read to a jinja2 reference parser
+  (`scripts/lint_ansible_ast.py`), so it requires `python3` with the `jinja2`
+  package on PATH.
 - The Proxmox inventory plugins read `token_secret` directly from
   [ansible/inventory/group_vars/all/vault.yml](ansible/inventory/group_vars/all/vault.yml).
   Do not move those secrets into shell startup files just to make a playbook work.
