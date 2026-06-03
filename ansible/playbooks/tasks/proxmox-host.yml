@@ -101,25 +101,6 @@
     - mwan_ifmgr_enabled | bool
     - not (mwan_ifmgr_host_ipv6_policy_enabled | bool)
 
-- name: Assert cloudflared-oob inputs are defined
-  ansible.builtin.assert:
-    that:
-      - cloudflared_oob_tunnel_id is defined
-      - cloudflared_oob_tunnel_id | length > 0
-      - cloudflared_oob_ingress is defined
-      - cloudflared_oob_ingress | length > 0
-      - cloudflared_oob_nextdns_resolvers is defined
-      - cloudflared_oob_nextdns_resolvers | length > 0
-      - vault_cloudflared_oob_credentials_json is defined
-      - vault_cloudflared_oob_credentials_json | length > 0
-    fail_msg: >-
-      cloudflared_oob_enabled=true but a required input is missing on
-      {{ inventory_hostname }}. Set cloudflared_oob_tunnel_id,
-      cloudflared_oob_ingress, cloudflared_oob_nextdns_resolvers in
-      <hypervisor>_servers.yml, and vault_cloudflared_oob_credentials_json
-      in inventory/group_vars/all/vault.yml.
-  when: cloudflared_oob_enabled | bool
-
 - name: Ensure cloudflared-oob group exists
   ansible.builtin.group:
     name: "{{ cloudflared_oob_user }}"

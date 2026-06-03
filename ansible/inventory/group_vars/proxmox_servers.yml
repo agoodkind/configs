@@ -31,6 +31,18 @@ mwan_watchdog_wan_interfaces:
   - "enwebpass0"
   - "enmbrains0"
 
+# Watchdog runtime tunables (seconds unless noted).
+mwan_watchdog_deploy_window_minutes: 30
+mwan_watchdog_connectivity_timeout: 60
+mwan_watchdog_check_interval_healthy: 30
+mwan_watchdog_check_interval_degraded: 10
+mwan_watchdog_alert_cooldown: 300
+mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
+mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"
+mwan_watchdog_state_file: "/run/mwan-rollback.state"
+# Watchdog email detail: quiet | normal | verbose.
+mwan_email_verbosity: "normal"
+
 # Cloudflared OOB tunnel paths (non-secret). The enabled flag and per-host
 # resolvers/credentials live in the per-hypervisor group_vars.
 cloudflared_oob_enabled: false
