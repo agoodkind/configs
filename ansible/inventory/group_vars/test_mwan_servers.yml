@@ -207,6 +207,24 @@ mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
 mwan_ifmgr_cloudflared_oob_user: ""
 mwan_ifmgr_host_ipv6_policy_enabled: false
+# No OOB cloudflared tunnel on the testbed, so its uid policy rule is not emitted.
+cloudflared_oob_enabled: false
+
+# Interface-manager cloudflared-tap module (off; downgrade automation).
+mwan_ifmgr_cloudflared_tap_enabled: false
+mwan_ifmgr_cloudflared_tap_unit: "cloudflared-oob"
+mwan_ifmgr_cloudflared_tap_downgrade_patterns: []
+
+# Interface-manager WireGuard health module (off).
+mwan_ifmgr_wg_enabled: false
+mwan_ifmgr_wg_ssh_host: ""
+mwan_ifmgr_wg_identity_file: ""
+mwan_ifmgr_wg_iface: "wg0"
+mwan_ifmgr_wg_sudo: false
+mwan_ifmgr_wg_warn_handshake_age: "180s"
+mwan_ifmgr_wg_error_handshake_age: "300s"
+mwan_ifmgr_wg_timeout: "10s"
+mwan_ifmgr_wg_ignore_peers: []
 
 # ----------------------------------------------------------------------------
 # SMTP defaults (shared non-secret settings)

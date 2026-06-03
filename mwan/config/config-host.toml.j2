@@ -113,7 +113,7 @@ cleanup_ra_default = true
 
 {% endfor %}
 {% endif %}
-{% if mwan_ifmgr_cloudflared_oob_user | length > 0 %}
+{% if cloudflared_oob_enabled %}
 [[ifmgr.modules.policy_rules.rule]]
 family = "inet6"
 priority = 5
@@ -129,7 +129,7 @@ from = "{{ mwan_ifmgr_policy_from_v6 }}"
 table = "oob"
 table_id = 500
 
-{% if mwan_ifmgr_cloudflared_oob_user | length > 0 %}
+{% if cloudflared_oob_enabled %}
 [[ifmgr.modules.policy_rules.rule]]
 family = "inet"
 priority = 5
@@ -138,26 +138,20 @@ table = "oob"
 table_id = 500
 {% endif %}
 
-{% if mwan_ifmgr_cloudflared_tap_enabled | default(false) | bool %}
+{% if mwan_ifmgr_cloudflared_tap_enabled | bool %}
 [ifmgr.modules.cloudflared_tap]
-unit = "{{ mwan_ifmgr_cloudflared_tap_unit | default('cloudflared-oob') }}"
-{% if mwan_ifmgr_cloudflared_tap_downgrade_patterns | default([]) | length > 0 %}
+unit = "{{ mwan_ifmgr_cloudflared_tap_unit }}"
 downgrade_patterns = {{ mwan_ifmgr_cloudflared_tap_downgrade_patterns | to_json }}
 {% endif %}
-{% endif %}
 
-{% if mwan_ifmgr_wg_enabled | default(false) | bool %}
+{% if mwan_ifmgr_wg_enabled | bool %}
 [ifmgr.modules.wg]
-ssh_host = "{{ mwan_ifmgr_wg_ssh_host | default('') }}"
-{% if mwan_ifmgr_wg_identity_file | default('') | length > 0 %}
+ssh_host = "{{ mwan_ifmgr_wg_ssh_host }}"
 identity_file = "{{ mwan_ifmgr_wg_identity_file }}"
-{% endif %}
-iface = "{{ mwan_ifmgr_wg_iface | default('wg0') }}"
-sudo = {{ mwan_ifmgr_wg_sudo | default(false) | ternary('true', 'false') }}
-warn_handshake_age = "{{ mwan_ifmgr_wg_warn_handshake_age | default('180s') }}"
-error_handshake_age = "{{ mwan_ifmgr_wg_error_handshake_age | default('300s') }}"
-timeout = "{{ mwan_ifmgr_wg_timeout | default('10s') }}"
-{% if mwan_ifmgr_wg_ignore_peers | default([]) | length > 0 %}
+iface = "{{ mwan_ifmgr_wg_iface }}"
+sudo = {{ mwan_ifmgr_wg_sudo | ternary('true', 'false') }}
+warn_handshake_age = "{{ mwan_ifmgr_wg_warn_handshake_age }}"
+error_handshake_age = "{{ mwan_ifmgr_wg_error_handshake_age }}"
+timeout = "{{ mwan_ifmgr_wg_timeout }}"
 ignore_peers = {{ mwan_ifmgr_wg_ignore_peers | to_json }}
-{% endif %}
 {% endif %}

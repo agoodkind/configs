@@ -13,7 +13,17 @@ mwan_ifmgr_cloudflared_oob_user: ""
 # config; the module's Init then returns ifmgr.ErrModuleDisabled and
 # the daemon drops it from its dispatch list.
 mwan_ifmgr_cloudflared_tap_enabled: false
+mwan_ifmgr_cloudflared_tap_unit: "cloudflared-oob"
+mwan_ifmgr_cloudflared_tap_downgrade_patterns: []
 mwan_ifmgr_wg_enabled: false
+mwan_ifmgr_wg_ssh_host: ""
+mwan_ifmgr_wg_identity_file: ""
+mwan_ifmgr_wg_iface: "wg0"
+mwan_ifmgr_wg_sudo: false
+mwan_ifmgr_wg_warn_handshake_age: "180s"
+mwan_ifmgr_wg_error_handshake_age: "300s"
+mwan_ifmgr_wg_timeout: "10s"
+mwan_ifmgr_wg_ignore_peers: []
 mwan_watchdog_enabled: true
 mwan_watchdog_service_name: "mwan-watchdog"
 mwan_watchdog_unit_description: "MWAN Auto-Rollback Watchdog"
