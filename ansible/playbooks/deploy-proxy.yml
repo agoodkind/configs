@@ -261,17 +261,6 @@
             - {{ cloudflare_ips_v6_url }}
         success_msg: "✓ Cloudflare IPv4/IPv6 ranges downloaded"
 
-    - name: Resolve service IPs from Consul
-      ansible.builtin.include_tasks: tasks/resolve-consul-services.yml
-      vars:
-        consul_services_to_resolve:
-          - adguard
-          - ansible
-          - mwan
-          - router
-          - vault
-      when: consul_agent_enabled | bool
-
     - name: Create systemd-resolved config directory
       ansible.builtin.file:
         path: /etc/systemd/resolved.conf.d
