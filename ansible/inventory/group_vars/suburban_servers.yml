@@ -83,6 +83,9 @@ mwan_watchdog_wan_interfaces:
 # mwan-opnsense host bridge service on suburban.
 mwan_opnsense_host_upstream: "unix:///var/run/qemu-server/101.mwanrpc"
 mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
+mwan_opnsense_host_reconnect: "2s"
+mwan_opnsense_host_hb_interval: "30s"
+mwan_opnsense_host_hb_timeout: "10s"
 mwan_opnsense_host_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-linux"
 
 # mwan-ifmgr service on the host

@@ -34,7 +34,7 @@
       ansible.builtin.apt:
         name: nftables
         state: present
-      when: mwan_failover_install_nftables | default(false) | bool
+      when: mwan_failover_install_nftables | bool
 
     - name: Deploy MWAN secrets environment file
       # The failover LXC config.toml has an [email] block but no
@@ -119,7 +119,7 @@
         name: nftables
         enabled: true
         daemon_reload: true
-      when: mwan_failover_install_nftables | default(false) | bool
+      when: mwan_failover_install_nftables | bool
 
   handlers:
     - name: Reload systemd

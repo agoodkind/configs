@@ -1,8 +1,8 @@
 tunnel: {{ cloudflared_oob_tunnel_id }}
 credentials-file: {{ cloudflared_oob_config_dir }}/credentials.json
-edge-ip-version: "{{ cloudflared_oob_edge_ip_version | default('6') }}"
+edge-ip-version: "{{ cloudflared_oob_edge_ip_version }}"
 warp-routing:
-  enabled: {{ cloudflared_oob_warp_routing_enabled | default(true) | string | lower }}
+  enabled: {{ cloudflared_oob_warp_routing_enabled | string | lower }}
 ingress:
 {% for entry in cloudflared_oob_ingress %}
   - {% if entry.hostname is defined %}hostname: {{ entry.hostname }}

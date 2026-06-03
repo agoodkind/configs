@@ -7,7 +7,7 @@ iface lo inet loopback
 
 auto eth0
 iface eth0 inet dhcp
-{% if mwan_failover_eth0_inet6_manual | default(false) %}
+{% if mwan_failover_eth0_inet6_manual %}
 
 iface eth0 inet6 manual
 {% endif %}
@@ -15,7 +15,7 @@ iface eth0 inet6 manual
 auto eth1
 iface eth1 inet static
 	address {{ mwan_failover_ipv4_address }}
-{% if mwan_failover_ipv4_return_route | default('') | length > 0 %}
+{% if mwan_failover_ipv4_return_route %}
 	post-up ip -4 route replace {{ mwan_failover_ipv4_return_route }}
 	post-down ip -4 route del {{ mwan_failover_ipv4_return_route }} || true
 {% endif %}

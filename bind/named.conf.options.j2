@@ -22,7 +22,7 @@ options {
     dns64 {{ dns64_prefix }} {
         clients { any; };
         break-dnssec yes;
-{% if dns64_force_synth | default(false) | bool %}
+{% if dns64_force_synth | bool %}
         // Force synthesis even when the upstream returns a native AAAA. Used
         // on segments where native IPv6 to the public internet does not
         // work, so every name has to route through the NAT64 translator.

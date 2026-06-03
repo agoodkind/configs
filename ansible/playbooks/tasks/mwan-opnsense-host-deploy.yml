@@ -60,10 +60,10 @@
 
       [opnsense.host]
       upstream = "{{ mwan_opnsense_host_upstream }}"
-      listen = "{{ mwan_opnsense_host_listen_path | default('/var/run/mwan-opnsense.sock') }}"
-      reconnect = "{{ mwan_opnsense_host_reconnect | default('2s') }}"
-      heartbeat_interval = "{{ mwan_opnsense_host_hb_interval | default('30s') }}"
-      heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout | default('10s') }}"
+      listen = "{{ mwan_opnsense_host_listen_path }}"
+      reconnect = "{{ mwan_opnsense_host_reconnect }}"
+      heartbeat_interval = "{{ mwan_opnsense_host_hb_interval }}"
+      heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout }}"
   become: true
   register: mwan_opnsense_host_toml
   notify: Restart mwan-opnsense-host

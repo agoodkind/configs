@@ -11,3 +11,7 @@ service_memory: "512"
 service_cores: "1"
 service_disk_size: "4"
 service_tags: "lxc,dns,dns64"
+
+# Force DNS64 synthesis even when upstream returns native AAAA. Suburban
+# overrides this to true; production resolvers leave it off.
+dns64_force_synth: false

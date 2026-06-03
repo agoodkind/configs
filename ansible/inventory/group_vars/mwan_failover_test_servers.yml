@@ -20,4 +20,6 @@ mwan_failover_ipv6_return_route: >-
   3d06:bad:b01:211::/64 via 3d06:bad:b01:201::2 dev eth1
 mwan_failover_eth0_inet6_manual: true
 mwan_failover_enable_mainv4: true
+# Source interface for outbound failover alert email (empty = default route).
+mwan_failover_email_bind_iface: ""
 mwan_failover_install_nftables: true

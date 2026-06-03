@@ -5,7 +5,7 @@ hostname = "{{ mwan_failover_hostname }}"
 alert_email = "{{ mwan_email_recipient }}"
 from = "{{ mwan_failover_email_from }}"
 subject_prefix = "{{ mwan_failover_subject_prefix }}"
-bind_iface = "{{ mwan_failover_email_bind_iface | default('') }}"
+bind_iface = "{{ mwan_failover_email_bind_iface }}"
 min_level = "{{ mwan_email_min_level }}"
 cooldown = "{{ mwan_email_cooldown }}"
 
@@ -78,7 +78,7 @@ unhealthy_after = "10s"
 iface = "eth0"
 ra_lost_alert_after = "5m"
 
-{% if mwan_failover_enable_mainv4 | default(false) %}
+{% if mwan_failover_enable_mainv4 %}
 [ifmgr.modules.mainv4]
 iface = "eth0"
 {% endif %}
