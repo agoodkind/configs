@@ -24,7 +24,7 @@ repos:
         files: 'mwan/go/.*\.go$'
 
       - id: ansible-input-defaults
-        name: ban input-side default()/is defined in ansible
-        entry: python3 scripts/lint_ansible_defaults.py
+        name: ban input-side defaults and presence checks in ansible
+        entry: go run goodkind.io/configs/cmd/configs lint
         language: system
         files: '(^ansible/.*\.ya?ml$|\.j2$)'

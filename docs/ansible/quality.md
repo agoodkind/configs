@@ -84,7 +84,7 @@ Restructure instead: declare the value, gate a task with the module's own
 `failed_when` or `changed_when`, or initialize an accumulator with `set_fact`
 before the loop.
 
-Enforced by `scripts/lint_ansible_defaults.py`: the ansible helper runs it before
+Enforced by `configs lint`: the ansible helper runs it before
 every deploy, the lint path runs it, and pre-commit runs it on staged files. The
 check flags every occurrence; it grants no exception, so a genuine outside-service
 case is the author's call to defend, not the check's to allow.
@@ -297,4 +297,4 @@ Before committing Ansible changes, verify:
    `lineinfile` instead.
 10. No `| default()` or `is defined` on an input variable. Declare it in
     group_vars and read it bare; both are allowed only on command or register
-    output. `scripts/lint_ansible_defaults.py` enforces this.
+    output. `configs lint` enforces this.

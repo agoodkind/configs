@@ -3,7 +3,7 @@
 All secret values live in [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml), encrypted with Ansible
 Vault. [ansible/inventory/group_vars/all/vars.yml](../../ansible/inventory/group_vars/all/vars.yml) stores shared non-secret variables only.
 List vault key names with
-[scripts/ansible_helper.py](../../scripts/ansible_helper.py) `keys`. Do not
+the configs binary `keys`. Do not
 invoke `ansible`, `ansible-vault`, `ansible-playbook`, `ansible-inventory`, or
 `ansible-console` directly.
 
@@ -16,7 +16,7 @@ invoke `ansible`, `ansible-vault`, `ansible-playbook`, `ansible-inventory`, or
 ## Safe key listing
 
 ```bash
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py keys
+go run goodkind.io/configs/cmd/configs keys
 ```
 
 Prints key paths such as `vault_proxmox_token_secret`. Decrypted values are not

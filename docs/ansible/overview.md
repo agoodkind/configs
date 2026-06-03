@@ -3,7 +3,7 @@
 Automated deployment and configuration management for goodkind.io infrastructure.
 
 Playbooks run from the controller via
-[scripts/ansible_helper.py](../../scripts/ansible_helper.py) or the Rake
+the configs binary or the Rake
 helpers, both of which pick up `~/.config/ansible/vault.pass`. The canonical
 deploy invocation lives in [AGENTS.md](../../AGENTS.md). See
 [docs/ansible/secrets.md](secrets.md) for the vault contract,

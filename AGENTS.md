@@ -63,7 +63,7 @@ in inventory and configures what runs inside it.
 The canonical playbook invocation is:
 
 ```bash
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy <name> [--limit <host>] [--check] [--diff]
+go run goodkind.io/configs/cmd/configs deploy <name> [--limit <host>] [--check] [--diff]
 ```
 
 `rake -C /Users/agoodkind/Sites/configs/ansible deploy:<service>[<limit>]` is
@@ -90,7 +90,7 @@ anything important. Workflow details live in
   value explicitly in the service's group_vars, `service_mapping.yml`, or
   OpenTofu, and read it bare; a missing value fails at load time. `default()` and
   `is defined` are allowed only on module or register output (a command result's
-  shape). Enforced by `scripts/lint_ansible_defaults.py`, which the ansible helper
+  shape). Enforced by `configs lint`, which the ansible helper
   runs before every deploy and the lint path runs; see `docs/ansible/quality.md`.
 - The Proxmox inventory plugins read `token_secret` directly from
   [ansible/inventory/group_vars/all/vault.yml](ansible/inventory/group_vars/all/vault.yml).
@@ -99,7 +99,7 @@ anything important. Workflow details live in
   chat. If you only need key names, run:
 
 ```bash
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py keys
+go run goodkind.io/configs/cmd/configs keys
 ```
 
 ## Production change protocol

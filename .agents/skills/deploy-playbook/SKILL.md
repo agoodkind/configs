@@ -10,7 +10,7 @@ disable-model-invocation: true
 # Deploy Ansible Playbook
 
 The vault password file at `~/.config/ansible/vault.pass` is required. Use
-[scripts/ansible_helper.py](../../../scripts/ansible_helper.py) `deploy` to run
+the configs binary `deploy` to run
 playbooks. Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
 `ansible-inventory`, or `ansible-console` directly.
 
@@ -31,7 +31,7 @@ flags.
 ## Invocation Pattern
 
 ```bash
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy <name> [--limit <host>] [--check] [--diff]
+go run goodkind.io/configs/cmd/configs deploy <name> [--limit <host>] [--check] [--diff]
 ```
 
 `<name>` is the playbook stem, such as `deploy-proxmox` or `deploy-mwan`. The
@@ -46,22 +46,22 @@ doubt.
 
 ```bash
 # Configure both Proxmox hypervisors
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-proxmox
+go run goodkind.io/configs/cmd/configs deploy deploy-proxmox
 
 # Configure only vault
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-proxmox --limit vault
+go run goodkind.io/configs/cmd/configs deploy deploy-proxmox --limit vault
 
 # Dry-run the MWAN VM playbook
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-mwan --check --diff
+go run goodkind.io/configs/cmd/configs deploy deploy-mwan --check --diff
 
 # Configure the testbed failover LXC
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-mwan-failover --limit mwan_failover_test_servers
+go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover --limit mwan_failover_test_servers
 
 # Configure the testbed OPNsense
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-opnsense --limit opnsense_test_servers
+go run goodkind.io/configs/cmd/configs deploy deploy-opnsense --limit opnsense_test_servers
 
 # Suburban-only testbed extras
-python3 /Users/agoodkind/Sites/configs/scripts/ansible_helper.py deploy deploy-testbed --limit suburban
+go run goodkind.io/configs/cmd/configs deploy deploy-testbed --limit suburban
 ```
 
 ## Rake Shortcuts

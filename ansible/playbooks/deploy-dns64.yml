@@ -6,13 +6,13 @@
 #
 # Usage:
 #   # Production (vault):
-#   python3 scripts/ansible_helper.py deploy deploy-dns64 --limit dns64_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-dns64 --limit dns64_servers
 #
 #   # Suburban testbed:
-#   python3 scripts/ansible_helper.py deploy deploy-dns64 --limit dns64_suburban_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-dns64 --limit dns64_suburban_servers
 #
 #   # Both at once:
-#   python3 scripts/ansible_helper.py deploy deploy-dns64 --limit dns64_all
+#   go run goodkind.io/configs/cmd/configs deploy deploy-dns64 --limit dns64_all
 
 - name: Prepare dns64 guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml
