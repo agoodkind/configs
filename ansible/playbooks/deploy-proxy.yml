@@ -152,26 +152,8 @@
         group: "{{ traefik_group }}"
         mode: "0600"
       when:
-        - traefik_acme_dns_provider | default('cloudflare') == 'cloudflare'
         - cloudflare_api_token is defined
-        - (cloudflare_api_token | default('') | trim) | length > 0
-      no_log: true
-
-    - name: Create RFC2136 credentials file
-      ansible.builtin.copy:
-        content: |
-          RFC2136_NAMESERVER={{ traefik_rfc2136_nameserver }}
-          RFC2136_TSIG_ALGORITHM={{ traefik_rfc2136_tsig_algorithm }}
-          RFC2136_TSIG_KEY={{ traefik_rfc2136_tsig_key }}
-          RFC2136_TSIG_SECRET={{ traefik_rfc2136_tsig_secret }}
-        dest: "{{ traefik_config_dir }}/.rfc2136.env"
-        owner: "{{ traefik_user }}"
-        group: "{{ traefik_group }}"
-        mode: "0600"
-      when:
-        - traefik_acme_dns_provider | default('cloudflare') == 'rfc2136'
-        - traefik_rfc2136_tsig_key is defined
-        - (traefik_rfc2136_tsig_key | default('') | trim) | length > 0
+        - (cloudflare_api_token | trim) | length > 0
       no_log: true
 
     - name: Install apache2-utils for htpasswd
@@ -190,15 +172,15 @@
     - name: Validate Traefik dashboard credentials are configured (if dashboard enabled)
       ansible.builtin.assert:
         that:
-          - (traefik_dashboard_user | default('') | trim) | length > 0
-          - (traefik_dashboard_pass | default('') | trim) | length > 0
+          - (traefik_dashboard_user | trim) | length > 0
+          - (traefik_dashboard_pass | trim) | length > 0
         fail_msg: |
           ERROR: Traefik dashboard is enabled but credentials are not set!
 
           Provide these in the deploy environment:
             TRAEFIK_DASHBOARD_USER
             TRAEFIK_DASHBOARD_PASS
-      when: traefik_dashboard_enabled | default(false)
+      when: traefik_dashboard_enabled
 
     - name: Generate dashboard htpasswd entry (dashboard enabled)
       ansible.builtin.command:
@@ -208,7 +190,7 @@
           - "{{ traefik_dashboard_user }}"
           - "{{ traefik_dashboard_pass }}"
       register: traefik_dashboard_htpasswd
-      when: traefik_dashboard_enabled | default(false)
+      when: traefik_dashboard_enabled
       no_log: true
       changed_when: false
 
@@ -220,7 +202,7 @@
         group: "{{ traefik_group }}"
         mode: "0600"
       when:
-        - traefik_dashboard_enabled | default(false)
+        - traefik_dashboard_enabled
         - traefik_dashboard_htpasswd.stdout is defined
         - (traefik_dashboard_htpasswd.stdout | trim) | length > 0
       no_log: true
@@ -251,30 +233,11 @@
           | select('match', '^[0-9a-f:]') | list
           }}
 
-    - name: Validate RFC2136 credentials are configured
-      ansible.builtin.assert:
-        that:
-          - traefik_rfc2136_tsig_key is defined
-          - traefik_rfc2136_tsig_key | length > 0
-          - traefik_rfc2136_tsig_secret is defined
-          - traefik_rfc2136_tsig_secret | length > 0
-        fail_msg: |
-          ERROR: RFC2136 TSIG credentials are not set!
-
-          Provide these in the deploy environment:
-            TRAEFIK_RFC2136_TSIG_KEY: "letsencrypt"
-            TRAEFIK_RFC2136_TSIG_SECRET: "your-tsig-secret-here"
-            TRAEFIK_RFC2136_NAMESERVER: >-
-              "ns1.home.goodkind.io:53" (optional, defaults to this)
-            TRAEFIK_RFC2136_TSIG_ALGORITHM: "hmac-sha256." (optional, defaults to this)
-        success_msg: "✓ RFC2136 TSIG credentials are configured"
-      when: traefik_acme_dns_provider | default('cloudflare') == 'rfc2136'
-
     - name: Validate Cloudflare API token is configured
       ansible.builtin.assert:
         that:
           - cloudflare_api_token is defined
-          - (cloudflare_api_token | default('') | trim) | length > 0
+          - (cloudflare_api_token | trim) | length > 0
         fail_msg: |
           ERROR: Cloudflare API token is not set!
 
@@ -282,7 +245,6 @@
             CLOUDFLARE_API_TOKEN (preferred)
             CF_DNS_API_TOKEN
         success_msg: "✓ Cloudflare API token is configured"
-      when: traefik_acme_dns_provider | default('cloudflare') == 'cloudflare'
 
     - name: Ensure Cloudflare IP ranges were retrieved
       ansible.builtin.assert:
@@ -308,7 +270,7 @@
           - mwan
           - router
           - vault
-      when: consul_agent_enabled | default(true) | bool
+      when: consul_agent_enabled | bool
 
     - name: Create systemd-resolved config directory
       ansible.builtin.file:
@@ -326,7 +288,7 @@
         group: root
         mode: "0644"
       notify: Restart systemd-resolved
-      when: consul_agent_enabled | default(true) | bool
+      when: consul_agent_enabled | bool
 
     - name: Template Traefik static configuration
       ansible.builtin.template:
@@ -750,7 +712,7 @@
             interval: "30s"
             timeout: "5s"
       notify: Reload Consul
-      when: consul_agent_enabled | default(true) | bool
+      when: consul_agent_enabled | bool
 
   handlers:
     - name: Restart cloudflared

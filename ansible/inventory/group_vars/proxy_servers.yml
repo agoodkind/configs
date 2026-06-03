@@ -27,39 +27,14 @@ traefik_upstream_domain: "home.goodkind.io"
 # ACME/Let's Encrypt configuration
 traefik_acme_email: "alex@goodkind.io"
 
-# ACME DNS challenge provider
-# - cloudflare: uses CF_DNS_API_TOKEN
-# - rfc2136: uses RFC2136_* (nsupdate/TSIG)
-traefik_acme_dns_provider: >-
-  {{ lookup('env', 'TRAEFIK_ACME_DNS_PROVIDER', default='cloudflare') }}
-
-# DNS Challenge Configuration
-# For RFC2136 (BIND/nsupdate with TSIG):
-# Provide the TRAEFIK_RFC2136_* environment variables in the deploy environment
-traefik_rfc2136_nameserver: >-
-  {{ lookup('env', 'TRAEFIK_RFC2136_NAMESERVER',
-     default='[3d06:bad:b01::6]:53') }}
-traefik_rfc2136_tsig_algorithm: >-
-  {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_ALGORITHM',
-     default='hmac-sha256.') }}
-traefik_rfc2136_tsig_key: >-
-  {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_KEY', default='') }}
-traefik_rfc2136_tsig_secret: >-
-  {{ lookup('env', 'TRAEFIK_RFC2136_TSIG_SECRET', default='') }}
-
-# Cloudflare API configuration
-# Traefik expects CF_DNS_API_TOKEN. Support common env var names.
-cloudflare_api_token: >-
-  {{ lookup('env', 'CLOUDFLARE_API_TOKEN',
-     default=lookup('env', 'CF_DNS_API_TOKEN',
-     default=lookup('env', 'CLOUDFLARE_API_KEY',
-     default=vault_cloudflare_api_token))) }}
+# Cloudflare API token for the DNS-01 challenge.
+cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
 
 # Traefik Dashboard Authentication
-# Dashboard is off by default; set the user and pass to enable it.
+# Dashboard is off; the user and pass are empty.
 traefik_dashboard_enabled: false
-traefik_dashboard_user: "{{ lookup('env', 'TRAEFIK_DASHBOARD_USER', default='') }}"
-traefik_dashboard_pass: "{{ lookup('env', 'TRAEFIK_DASHBOARD_PASS', default='') }}"
+traefik_dashboard_user: ""
+traefik_dashboard_pass: ""
 
 # Cloudflare IP ranges for trusted proxies (X-Forwarded-For)
 # Fetched dynamically in the playbook from Cloudflare's official IP list
