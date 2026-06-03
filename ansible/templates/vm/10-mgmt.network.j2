@@ -10,14 +10,3 @@ DNS={{ vm_mgmt_dns_servers }}
 Domains={{ vm_mgmt_dns_domain }}
 DHCP=no
 IPv6AcceptRA=no
-{% if vm_mgmt_gateway6 is defined and vm_mgmt_gateway6 %}
-
-[Route]
-Gateway={{ vm_mgmt_gateway6 }}
-Table={{ vm_mgmt_route_table | default(500) }}
-
-[RoutingPolicyRule]
-From={{ vm_mgmt_ipv6 }}
-Table={{ vm_mgmt_route_table | default(500) }}
-Priority=5
-{% endif %}
