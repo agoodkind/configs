@@ -2,7 +2,7 @@ datacenter = "{{ consul_datacenter }}"
 domain = "{{ consul_domain }}"
 data_dir = "{{ consul_data_dir }}"
 
-bind_addr = "{{ '{{' }} GetAllInterfaces | include \"name\" \"{{ consul_bind_interface }}\" | include \"type\" \"IPv6\" | attr \"address\" {{ '}}' }}"
+bind_addr = "{% raw %}{{ GetAllInterfaces | include \"name\" \"{% endraw %}{{ consul_bind_interface }}{% raw %}\" | include \"type\" \"IPv6\" | attr \"address\" }}{% endraw %}"
 
 # IPv6-only for all client interfaces (avoids dual-stack port conflict)
 client_addr = "[::]"
