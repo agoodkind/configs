@@ -691,7 +691,7 @@
             interval: "30s"
             timeout: "5s"
       notify: Reload Consul
-      when: consul_agent_enabled | default(true) | bool
+      when: consul_agent_enabled | bool
 
     - name: Deploy complete - scheduling reboot
       ansible.builtin.debug:

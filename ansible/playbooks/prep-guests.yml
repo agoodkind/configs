@@ -348,7 +348,6 @@
       ansible.builtin.include_tasks: tasks/install-consul-agent.yml
       when:
         - consul_agent_enabled | bool
-        - consul_server_address | length > 0
         - inventory_hostname not in groups['consul_servers']
 
     - name: Disable SSH password authentication (keys only)
