@@ -1,8 +1,9 @@
 ---
 # Outbound SMTP wiring for a guest. Derive the per-host SMTP2GO user, provision
-# or update it through the SMTP2GO API (idempotent add then edit), compute the
-# effective credentials and From address, and render /etc/msmtprc. Included by
-# prep-guests.yml. Reads smtp_* and vault_smtp2go_api_key from group_vars.
+# or update it through the SMTP2GO API (idempotent add then edit) with a
+# generated password, compute the From address from the hostname, and render
+# /etc/msmtprc. Included by prep-guests.yml. Reads smtp_* and
+# vault_smtp2go_api_key from group_vars. Set smtp_enabled to "0" to skip.
 - name: Initialize SMTP working values
   ansible.builtin.set_fact:
     smtp_generated_pass: ""
@@ -10,34 +11,23 @@
     smtp_effective_user: ""
     smtp_effective_pass: ""
     smtp_effective_from: ""
-    smtp_effective_sender_name: ""
 
 - name: Compute SMTP username for this host
   ansible.builtin.set_fact:
     smtp_effective_user: >-
-      {{
-        (smtp_user | trim)
-        if (smtp_user | trim) | length > 0
-        else (
-          'host-' ~
-          (
-            service_hostname
-            | lower
-            | regex_replace('[^a-z0-9]+','-')
-            | regex_replace('(^-+|-+$)','')
-          )
-        )
+      host-{{
+        service_hostname
+        | lower
+        | regex_replace('[^a-z0-9]+','-')
+        | regex_replace('(^-+|-+$)','')
       }}
   when: (smtp_enabled | string) != '0'
 
-- name: Generate random SMTP password (used if SMTP2GO API key is set)
+- name: Generate random SMTP password
   ansible.builtin.set_fact:
     smtp_generated_pass: >-
       {{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}
-  when:
-    - (smtp_enabled | string) != '0'
-    - (smtp_pass | trim) | length == 0
-    - (vault_smtp2go_api_key | trim) | length > 0
+  when: (smtp_enabled | string) != '0'
 
 - name: Ensure SMTP2GO SMTP user exists (API add)
   ansible.builtin.uri:
@@ -69,11 +59,7 @@
         ) == none
       )
     )
-  when:
-    - (smtp_enabled | string) != '0'
-    - (smtp_user | trim) | length == 0
-    - (smtp_pass | trim) | length == 0
-    - (vault_smtp2go_api_key | trim) | length > 0
+  when: (smtp_enabled | string) != '0'
 
 - name: Detect if SMTP2GO SMTP user already exists (API semantics vary)
   ansible.builtin.set_fact:
@@ -98,9 +84,6 @@
       }}
   when:
     - (smtp_enabled | string) != '0'
-    - (smtp_user | trim) | length == 0
-    - (smtp_pass | trim) | length == 0
-    - (vault_smtp2go_api_key | trim) | length > 0
     - smtp2go_add_user is defined
 
 - name: Update SMTP2GO SMTP user password if user already exists (API edit)
@@ -119,35 +102,16 @@
     status_code: [200]
   when:
     - (smtp_enabled | string) != '0'
-    - (smtp_user | trim) | length == 0
-    - (smtp_pass | trim) | length == 0
-    - (vault_smtp2go_api_key | trim) | length > 0
     - smtp2go_user_exists
 
-- name: Set effective SMTP password (manual or generated)
+- name: Set effective SMTP password (generated)
   ansible.builtin.set_fact:
-    smtp_effective_pass: >-
-      {{
-        (smtp_pass | trim)
-        if (smtp_pass | trim) | length > 0
-        else smtp_generated_pass
-      }}
+    smtp_effective_pass: "{{ smtp_generated_pass }}"
   when: (smtp_enabled | string) != '0'
 
-- name: Compute SMTP From address and sender name (defaults to hostname)
+- name: Compute SMTP From address (derived from hostname)
   ansible.builtin.set_fact:
-    smtp_effective_from: >-
-      {{
-        (smtp_from | trim)
-        if (smtp_from | trim) | length > 0
-        else (service_hostname.split('.')[0] ~ '@' ~ (smtp_from_domain | trim))
-      }}
-    smtp_effective_sender_name: >-
-      {{
-        (smtp_sender_name | trim)
-        if (smtp_sender_name | trim) | length > 0
-        else service_hostname.split('.')[0]
-      }}
+    smtp_effective_from: "{{ service_hostname.split('.')[0] }}@{{ smtp_from_domain }}"
   when: (smtp_enabled | string) != '0'
 
 - name: Deploy /etc/msmtprc

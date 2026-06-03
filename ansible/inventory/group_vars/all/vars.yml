@@ -13,18 +13,14 @@ mwan_watchdog_pve_token_id: "root@pam!watchdog"
 # SMTP (outbound) defaults for all CTs/VMs (via prep-guests)
 # ----------------------------------------------------------------------------
 smtp_enabled: "1"
-# When smtp_from is empty, prep-guests derives "<hostname>@<domain>".
-smtp_from: ""
 smtp_from_domain: goodkind.io
-smtp_sender_name: ""
 
-# SMTP2GO (preferred): provide a single API key, Ansible provisions per-host SMTP users.
+# SMTP2GO per-host provisioning. prep-guests derives the SMTP user
+# host-<hostname>, generates its password, provisions it through the SMTP2GO API
+# with vault_smtp2go_api_key, and sets the From address to
+# <hostname>@<smtp_from_domain>. Set smtp_enabled to "0" to skip.
 smtp_host: mail.smtp2go.com
 smtp_port: "587"
-# Per-host SMTP credentials. Empty derives the user from the service name and
-# auto-provisions through SMTP2GO; a service can pin both in its vault to opt out.
-smtp_user: ""
-smtp_pass: ""
 
 # ----------------------------------------------------------------------------
 # Guest prep defaults (prep-guests), shared by every service
