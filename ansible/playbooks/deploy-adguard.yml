@@ -1,9 +1,8 @@
 ---
-- name: Setup AdGuard container
-  ansible.builtin.import_playbook: setup-service-ct.yml
+- name: Prepare AdGuard container (SSH keys, packages, base config)
+  ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    container_group: adguard_servers
-    group_vars_file: "{{ playbook_dir }}/../inventory/group_vars/adguard_servers.yml"
+    target_hosts: adguard_servers
 
 - name: Deploy and Configure AdGuard Home
   hosts: adguard_servers
