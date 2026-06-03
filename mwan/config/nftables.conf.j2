@@ -9,10 +9,10 @@
 flush ruleset
 
 # Define variables - use actual kernel interface names
-define MGMT_IFACE = "{{ actual_mgmt_iface | default(mwan_mgmt_iface) }}"
-define ATT_IFACE = "{{ actual_att_iface | default(mwan_att_iface) }}{% if mwan_att_vlan_id %}.{{ mwan_att_vlan_id }}{% endif %}"
-define WEBPASS_IFACE = "{{ actual_webpass_iface | default(mwan_webpass_iface) }}"
-define INTERNAL_IFACE = "{{ actual_internal_iface | default(mwan_internal_iface) }}"
+define MGMT_IFACE = "{{ actual_mgmt_iface }}"
+define ATT_IFACE = "{{ actual_att_iface }}{% if mwan_att_vlan_id %}.{{ mwan_att_vlan_id }}{% endif %}"
+define WEBPASS_IFACE = "{{ actual_webpass_iface }}"
+define INTERNAL_IFACE = "{{ actual_internal_iface }}"
 define MB_IFACE = "{{ mwan_monkeybrains_iface }}"
 
 # Internal network (mwan <-> OPNsense link)
@@ -168,7 +168,7 @@ table inet mangle {
         type ipv4_addr;
         flags interval;
         auto-merge;
-{% if mwan_att_pinned_v4_seed_cidrs | default([]) | length > 0 %}
+{% if mwan_att_pinned_v4_seed_cidrs %}
         elements = {
 {% for cidr in mwan_att_pinned_v4_seed_cidrs %}
             {{ cidr }}{% if not loop.last %},{% endif %}
@@ -181,7 +181,7 @@ table inet mangle {
         type ipv6_addr;
         flags interval;
         auto-merge;
-{% if mwan_att_pinned_v6_seed_cidrs | default([]) | length > 0 %}
+{% if mwan_att_pinned_v6_seed_cidrs %}
         elements = {
 {% for cidr in mwan_att_pinned_v6_seed_cidrs %}
             {{ cidr }}{% if not loop.last %},{% endif %}
@@ -211,7 +211,7 @@ table inet mangle {
         # Mirror of the IPv4 pin in `table ip nat / chain prerouting` above.
         # See note there for rationale; covers the case where suburban's WG peer
         # is reachable over IPv6 (and prone to Comcast prefix renumbers).
-        ip6 saddr {{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}/128 udp sport 51820 udp dport 51821 ct state new meta mark set 1
+        ip6 saddr {{ mwan_opnsense_edge_ipv6 }}/128 udp sport 51820 udp dport 51821 ct state new meta mark set 1
 
         # Load-balance outbound IPv6 from OPNsense-edge /128 as well.
         #
@@ -220,7 +220,7 @@ table inet mangle {
         # - Replies sourced from that address MUST be marked so policy routing sends them
         #   back out the same WAN (and so postrouting SNAT selects the correct WAN ::1).
         # `meta mark 0` guard preserves the WG pin set above.
-        ip6 saddr {{ mwan_opnsense_edge_ipv6 | default('3d06:bad:b01:fe::2') }}/128 meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
+        ip6 saddr {{ mwan_opnsense_edge_ipv6 }}/128 meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
 
         # Load-balance IPv6 from internal /60 prefix
         ip6 saddr {{ mwan_internal_prefix }} meta mark 0 ct state new meta mark set numgen random mod 2 map { 0 : 1, 1 : 2 }
