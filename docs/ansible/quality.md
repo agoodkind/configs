@@ -72,9 +72,12 @@ to paper over a missing value or to infer presence. When you need a branch, driv
 `when:` from an explicit flag, not from whether a variable happens to be set.
 
 Inferring a value from whether it was set is banned in every form: `| default(...)`,
-`is defined`, `.get(key, default)` (a default in disguise), and any `| length`
-comparison (an "is this set" or "how big" check in disguise). There is no
-automatic exception and no escape hatch. The only defensible reason to read a
+`is defined`, `.get(key, default)` (a default in disguise), any `| length`
+comparison (an "is this set" or "how big" check in disguise), and
+`lookup(..., default=...)` (an env-presence default in disguise; the place the
+declared value stops being deterministic). There is no automatic exception and no
+escape hatch, and the linter lists every banned line, not one per repeated
+snippet. The only defensible reason to read a
 value defensively is a command result from an outside service that is unset more
 often than not, and that judgment is the author's to make and defend in review.
 Restructure instead: declare the value, gate a task with the module's own
