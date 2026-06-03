@@ -2,6 +2,8 @@ module goodkind.io/mwan
 
 go 1.26.4
 
+toolchain go1.26.4
+
 replace github.com/agoodkind/send-email => ../../../send-email
 
 require (
