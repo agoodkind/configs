@@ -2,10 +2,11 @@ package email
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/agoodkind/send-email/mailer"
+	"goodkind.io/send-email/mailer"
 )
 
 // Sender sends email with automatic fallback: try the default route first,
@@ -76,5 +77,12 @@ func (s *Sender) sendVia(ctx context.Context, bindIface string, msg mailer.Messa
 	m := mailer.New(cfg)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	return m.Send(ctx, msg)
+	err := m.Send(ctx, msg)
+	if err != nil {
+		slog.WarnContext(ctx, "mwan.email.send_attempt_failed",
+			slog.String("bind_iface", bindIface),
+			slog.String("err", err.Error()))
+		return fmt.Errorf("send email via %q: %w", bindIface, err)
+	}
+	return nil
 }

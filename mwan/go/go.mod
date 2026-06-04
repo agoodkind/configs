@@ -2,13 +2,8 @@ module goodkind.io/mwan
 
 go 1.26.4
 
-toolchain go1.26.4
-
-replace github.com/agoodkind/send-email => ../../../send-email
-
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/agoodkind/send-email v0.0.0-20260507024032-8eec7e659c87
 	github.com/antchfx/xmlquery v1.5.1
 	github.com/beevik/etree v1.6.0
 	github.com/google/renameio/v2 v2.0.2
@@ -21,6 +16,7 @@ require (
 	golang.org/x/net v0.54.0
 	golang.org/x/sys v0.44.0
 	goodkind.io/gklog v0.2.1
+	goodkind.io/send-email v0.0.0-20260604011720-40a2ede56cd9
 	google.golang.org/grpc v1.81.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
