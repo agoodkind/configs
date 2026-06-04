@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"goodkind.io/mwan/internal/rollback"
 )
@@ -103,11 +104,11 @@ func deleteChildSnapshots(ctx context.Context, deps Deps, vmid, target string) e
 		return fmt.Errorf("upgrade.Rollback: VMSnapshots: %w", err)
 	}
 	children := rollback.SnapshotsAfter(listing, target)
-	for i := len(children) - 1; i >= 0; i-- {
-		if err := deps.Snap.VMDelSnapshot(ctx, vmid, children[i]); err != nil {
+	for _, child := range slices.Backward(children) {
+		if err := deps.Snap.VMDelSnapshot(ctx, vmid, child); err != nil {
 			if logger := deps.Log; logger != nil {
 				logger.WarnContext(ctx, "upgrade.Rollback: child snapshot delete failed",
-					"vmid", vmid, "snap", children[i], "err", err)
+					"vmid", vmid, "snap", child, "err", err)
 			}
 		}
 	}

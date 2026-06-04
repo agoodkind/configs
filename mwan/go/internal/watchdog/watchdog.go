@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -825,8 +826,7 @@ func (w *watchdog) executeRollbackVM(ctx context.Context, snap string) error {
 	// Proxmox/ZFS only allows rollback to the leaf snapshot in the chain.
 	if listOut, lErr := w.ops.VMSnapshots(ctx, w.cfg.MwanVMID); lErr == nil {
 		toDelete := rollback.SnapshotsAfter(listOut, snap)
-		for i := len(toDelete) - 1; i >= 0; i-- {
-			child := toDelete[i]
+		for _, child := range slices.Backward(toDelete) {
 			log.DebugContext(ctx, "Deleting intermediate snapshot before rollback",
 				"snapshot", child, "target", snap)
 			if dErr := w.ops.VMDelSnapshot(ctx, w.cfg.MwanVMID, child); dErr != nil {

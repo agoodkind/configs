@@ -144,7 +144,7 @@ func TestManager_StateChangeOnlyByDefault(t *testing.T) {
 	m := mustManager(log, Config{RepeatEvery: 0, PerKind: nil}, nil)
 
 	start := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 240; i++ {
+	for i := range 240 {
 		now := start.Add(time.Duration(i) * time.Minute)
 		m.notifyAt(context.Background(), now, slog.LevelWarn, "wg-peer-stalled", "peer1", "stalled")
 	}
@@ -166,7 +166,7 @@ func TestManager_RepeatEveryGlobal(t *testing.T) {
 	m := mustManager(log, Config{RepeatEvery: 30 * time.Minute, PerKind: nil}, nil)
 
 	start := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 120; i++ {
+	for i := range 120 {
 		now := start.Add(time.Duration(i) * time.Minute)
 		m.notifyAt(context.Background(), now, slog.LevelWarn, "wg-peer-stalled", "peer1", "stalled")
 	}
@@ -193,7 +193,7 @@ func TestManager_PerKindOverride(t *testing.T) {
 	}, nil)
 
 	start := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 120; i++ {
+	for i := range 120 {
 		now := start.Add(time.Duration(i) * time.Minute)
 		m.notifyAt(context.Background(), now, slog.LevelWarn, "wg-peer-stalled", "peer1", "stalled")
 	}
@@ -202,7 +202,7 @@ func TestManager_PerKindOverride(t *testing.T) {
 		t.Fatalf("wg-peer-stalled with 24h override: expected 1 emit, got %d", stalledCount)
 	}
 
-	for i := 0; i < 120; i++ {
+	for i := range 120 {
 		now := start.Add(time.Duration(i) * time.Minute)
 		m.notifyAt(context.Background(), now, slog.LevelWarn, "wg-reconcile-failed", "peer1", "reconcile failed")
 	}

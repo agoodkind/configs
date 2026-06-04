@@ -130,5 +130,5 @@ settle_after_upgrade = ""
 	}
 	// errors.Is on a wrapped fmt.Errorf is too coarse here; the assertion
 	// on the message text is the contract.
-	var _ error = errors.New("placeholder")
+	_ = errors.New("placeholder")
 }

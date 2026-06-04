@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -56,12 +57,12 @@ func (f *resetFixture) writeState(t *testing.T, snapshot string, deployID string
 // snapshot names. The shape is the indented box-drawing form
 // parseSnapshotNames already handles.
 func listingWith(names ...string) string {
-	out := ""
+	var b strings.Builder
 	for _, n := range names {
-		out += " `-> " + n + " 0 desc\n"
+		b.WriteString(" `-> " + n + " 0 desc\n")
 	}
-	out += " `-> current\n"
-	return out
+	b.WriteString(" `-> current\n")
+	return b.String()
 }
 
 func TestResetDryRunPrintsPlan(t *testing.T) {
