@@ -83,3 +83,7 @@ terraform.tfvars
 /mwan-binary
 /bin/
 HANDOFF_MWAN_OPNSENSE_TESTBED.txt
+
+# Ansible local data home (collections/roles/modules cache), created by the
+# ansible tooling at runtime. Never tracked.
+.ansible/
