@@ -9,7 +9,9 @@ container_features: "nesting=1"
 
 tack_install_dir: /root/tack
 
-tack_yugabyte_user: tack
+# Matches the live database role. Hardening to a non-superuser tack_app role
+# is tracked in TACK-180.
+tack_yugabyte_user: yugabyte
 tack_yugabyte_db: tack
 
 # Each environment generates its own key at this path on first deploy. The
