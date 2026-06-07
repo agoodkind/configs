@@ -11,6 +11,10 @@ tack_audit_writer_password: "{{ vault_tack_qa_audit_writer_password }}"
 tack_audit_reader_password: "{{ vault_tack_qa_audit_reader_password }}"
 tack_audit_redactor_password: "{{ vault_tack_qa_audit_redactor_password }}"
 
+# Phase C audit cutover (TACK-232). The cluster id pins Kafka's storage uuid so
+# a recreate does not orphan the log.
+tack_kafka_cluster_id: "qsUvMozrSTCj9bmZ4_VozA"
+
 # GHCR pull token. Classic PAT with read:packages scope.
 ghcr_pull_token: "{{ vault_tack_qa_ghcr_pull_token }}"
 
