@@ -14,6 +14,11 @@ tack_audit_redactor_password: "{{ vault_tack_audit_redactor_password }}"
 # Phase C audit cutover (TACK-232). Kafka storage uuid; distinct from QA.
 tack_kafka_cluster_id: "r8jB0c2ISFubOB2oWkKmEQ"
 
+# Provision entrypoint (TACK-303). NEVER auto-configure FoundationDB on prod:
+# it is already provisioned and `fdbcli configure new` is destructive. Provision
+# still runs every deploy as a safe idempotent no-op (migrate, seed roles).
+tack_allow_fdb_init: false
+
 # GHCR pull token. Classic PAT with read:packages scope.
 ghcr_pull_token: "{{ vault_tack_ghcr_pull_token }}"
 

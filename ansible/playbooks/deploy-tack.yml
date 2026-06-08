@@ -257,7 +257,21 @@
     # -------------------------------------------------------------------------
     # Compose stack up
     # -------------------------------------------------------------------------
-    - name: Start Tack services
+    - name: Start Tack services (first pass; tolerant of an unconfigured fdb on first boot)
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ tack_install_dir }}"
+      register: tack_compose_up_first
+      changed_when: true
+      failed_when: false
+
+    - name: Provision (idempotent first boot; configure fresh fdb only where allowed, migrate, seed audit roles, seed product)
+      ansible.builtin.command:
+        cmd: "docker compose run --rm tack-ops ops provision{{ ' --allow-fdb-init' if tack_allow_fdb_init else '' }}"
+        chdir: "{{ tack_install_dir }}"
+      changed_when: true
+
+    - name: Start Tack services (second pass; fdb configured, app and audit-consumer come up)
       ansible.builtin.command:
         cmd: docker compose up -d
         chdir: "{{ tack_install_dir }}"

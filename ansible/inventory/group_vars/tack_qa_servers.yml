@@ -15,6 +15,10 @@ tack_audit_redactor_password: "{{ vault_tack_qa_audit_redactor_password }}"
 # a recreate does not orphan the log.
 tack_kafka_cluster_id: "qsUvMozrSTCj9bmZ4_VozA"
 
+# Provision entrypoint (TACK-303). QA is disposable and recreated from empty, so
+# provision may run the one-time `fdbcli configure new` on a fresh fdb volume.
+tack_allow_fdb_init: true
+
 # GHCR pull token. Classic PAT with read:packages scope.
 ghcr_pull_token: "{{ vault_tack_qa_ghcr_pull_token }}"
 
