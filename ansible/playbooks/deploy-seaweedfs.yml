@@ -1,21 +1,28 @@
 ---
-# Deploy the SeaweedFS object store on any host in seaweedfs_servers.
-# Container creation is handled by OpenTofu (opentofu/suburban/seaweedfs.tf).
-# This playbook runs after the LXC is provisioned and reachable via SSH. It
-# installs the pinned weed binary and runs it under systemd (no Docker).
+# Deploy the SeaweedFS object store on any host in seaweedfs_servers (prod) or
+# seaweedfs_suburban_servers (testbed). Container creation is handled by
+# OpenTofu (opentofu/vault/containers.tf for prod, opentofu/suburban/seaweedfs.tf
+# for testbed). This playbook runs after the LXC is provisioned and reachable
+# via SSH. It installs the pinned weed binary and runs it under systemd (no
+# Docker).
 #
-# The LXC reaches GitHub for the release download via opnsense-test NAT64.
+# The suburban LXC reaches GitHub for the release download via opnsense-test
+# NAT64; the prod LXC reaches it over native IPv6.
 #
 # Usage:
+#   # Production
 #   ansible-playbook playbooks/deploy-seaweedfs.yml -l seaweedfs_servers
+#
+#   # Testbed
+#   ansible-playbook playbooks/deploy-seaweedfs.yml -l seaweedfs_suburban_servers
 
 - name: Prepare seaweedfs guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    target_hosts: seaweedfs_servers
+    target_hosts: seaweedfs_servers:seaweedfs_suburban_servers
 
 - name: Provision SeaweedFS via binary and systemd
-  hosts: seaweedfs_servers
+  hosts: seaweedfs_servers:seaweedfs_suburban_servers
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive

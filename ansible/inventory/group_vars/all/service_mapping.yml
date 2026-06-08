@@ -51,6 +51,9 @@ service_mapping:
     hostname: tack-qa
     ipv6: "3d06:bad:b01:204::400"
   seaweedfs:
+    hostname: seaweedfs.home.goodkind.io
+    ipv6: "3d06:bad:b01::118"
+  seaweedfs_suburban:
     hostname: seaweedfs
     ipv6: "3d06:bad:b01:204::410"
   dns64_suburban:
@@ -103,3 +106,6 @@ group_children:
   dns64_all:
     - dns64_servers
     - dns64_suburban_servers
+  seaweedfs_all:
+    - seaweedfs_servers
+    - seaweedfs_suburban_servers

@@ -1,0 +1,29 @@
+---
+# Shared SeaweedFS service vars (prod + suburban testbed).
+# Per-environment host identity lives in seaweedfs_servers.yml (prod) and
+# seaweedfs_suburban_servers.yml (testbed).
+
+# Pinned weed release. Bump in lockstep with the release URL the playbook
+# builds from this version.
+seaweedfs_version: "3.71"
+
+# On-disk layout owned by the weed server process.
+seaweedfs_data_dir: /var/lib/seaweedfs
+seaweedfs_config_dir: /etc/seaweedfs
+seaweedfs_bin_path: /usr/local/bin/weed
+
+# Listener ports for the all-in-one weed server.
+seaweedfs_s3_port: 8333
+seaweedfs_master_port: 9333
+seaweedfs_volume_port: 8080
+
+# S3 identity for the tack object store. One identity, shared by both
+# environments, sourced from the vault; the two keys below must exist before
+# deploy.
+seaweedfs_s3_access_key: "{{ vault_seaweedfs_s3_access_key }}"
+seaweedfs_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"
+
+# Buckets the single S3 identity is granted full access to.
+seaweedfs_s3_buckets:
+  - tack-backups
+  - tack-audit-archive

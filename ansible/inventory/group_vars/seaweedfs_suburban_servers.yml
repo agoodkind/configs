@@ -1,0 +1,16 @@
+---
+# Suburban testbed SeaweedFS object-store LXC (CT 410 on suburban).
+# Lives on the opnsense-test MANAGEMENT segment (3d06:bad:b01:204::/64) beside
+# tack-qa. Runs the weed binary under systemd (not Docker). Provides an S3
+# endpoint for tack backups and audit archives. Container creation is handled
+# by OpenTofu (opentofu/suburban/seaweedfs.tf); this group configures the
+# deploy playbook (playbooks/deploy-seaweedfs.yml). Shared keys live in
+# seaweedfs_all.yml.
+
+service_hostname: "{{ service_mapping.seaweedfs_suburban.hostname }}"
+service_ipv6_address: "{{ service_mapping.seaweedfs_suburban.ipv6 }}/64"
+service_mac_address: "BC:24:11:04:10:00"
+
+# Bind on the LXC's own IPv6 address. The S3 endpoint is internal only; it is
+# never proxied or exposed off the suburban segment.
+seaweedfs_bind_address: "{{ service_mapping.seaweedfs_suburban.ipv6 }}"
