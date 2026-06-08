@@ -245,3 +245,67 @@ resource "proxmox_virtual_environment_container" "adguard" {
     ]
   }
 }
+
+# Internal-only SeaweedFS object-store LXC on vault (VMID 118). The production
+# twin of the suburban CT 410 store, on the same prod VMNET segment as the tack
+# LXC so the prod tack host reaches its S3 endpoint without crossing segments.
+# Runs the weed binary under systemd (deploy-seaweedfs.yml); never exposed off
+# the segment. Backup destination for the prod tack stores.
+resource "proxmox_virtual_environment_container" "seaweedfs" {
+  node_name = "vault"
+  vm_id     = 118
+
+  initialization {
+    hostname = "seaweedfs.home.goodkind.io"
+    ip_config {
+      ipv6 {
+        address = "3d06:bad:b01::118/64"
+        gateway = "3d06:bad:b01::1"
+      }
+    }
+    user_account {
+      keys = [var.ssh_keys]
+    }
+  }
+
+  features {
+    nesting = true
+  }
+
+  network_interface {
+    name        = "eth0"
+    bridge      = "vmbr0"
+    mac_address = "BC:24:11:00:01:18"
+  }
+
+  disk {
+    datastore_id = "local-lvm"
+    size         = 100
+  }
+
+  memory {
+    dedicated = 4096
+  }
+
+  cpu {
+    cores = 2
+  }
+
+  tags = ["lxc", "seaweedfs", "s3"]
+
+  operating_system {
+    template_file_id = "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    type             = "debian"
+  }
+
+  started       = true
+  start_on_boot = true
+  unprivileged  = true
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      operating_system[0].template_file_id,
+    ]
+  }
+}
