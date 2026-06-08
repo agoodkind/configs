@@ -33,5 +33,14 @@ tack_docker_v6_subnet: "3d06:bad:b01:0:7ac::/96"
 tack_docker_v6_gateway: "3d06:bad:b01:0:7ac::1"
 tack_ndp_proxy_prefix: "3d06:bad:b01:0:7ac::/96"
 
-# No object store on production yet, so the backup env block is not rendered.
-tack_backup_enabled: false
+# Backup object store: the production SeaweedFS LXC on the same prod VMNET
+# segment (3d06:bad:b01::/64). Same S3 identity the SeaweedFS s3.json grants
+# (single source in vault).
+tack_backup_enabled: true
+tack_backup_s3_endpoint: "http://[{{ service_mapping.seaweedfs.ipv6 }}]:8333"
+tack_backup_s3_host: "{{ service_mapping.seaweedfs.ipv6 }}"
+tack_backup_s3_access_key: "{{ vault_seaweedfs_s3_access_key }}"
+tack_backup_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"
+tack_backup_s3_region: us-east-1
+tack_backup_s3_bucket_main: tack-backups
+tack_backup_s3_bucket_audit: tack-audit-archive
