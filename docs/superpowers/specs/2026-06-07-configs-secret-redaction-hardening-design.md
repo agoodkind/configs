@@ -37,28 +37,38 @@ Three units, each independently testable.
 ### 1. `internal/redact` (generic, no vault knowledge)
 
 A streaming, multi-pattern redactor over an arbitrary `io.Writer`, backed by an
-Aho-Corasick automaton so matching is a single pass independent of how many
-secrets there are.
+Aho-Corasick automaton so finding matches is a single pass independent of how
+many secrets there are, plus an interval-merge step so overlapping secrets can
+never leak a fragment.
 
 - `New(dst io.Writer, patterns []Pattern) *Writer`, where a `Pattern` is a
-  `{Value []byte, Label string}` pair. The writer replaces every occurrence of
-  any `Value` with `<redacted:Label>`.
+  `{Value []byte, Label string}` pair. The writer replaces every covered region
+  with `<redacted:Label>`.
 - Construction builds the Aho-Corasick goto, failure, and output links once from
-  all pattern values. Writing scans incoming bytes through the automaton.
+  all pattern values. Writing scans incoming bytes through the automaton, which
+  reports the end position and length of every pattern occurrence.
+- Overlap safety by merge: the occurrences are collected as `[start,end)` spans
+  and merged when they overlap or touch, then each merged span is redacted as one
+  unit. This is the property a plain longest-match or `bytes.ReplaceAll` lacks:
+  when secret A's suffix is secret B's prefix and they sit adjacent, neither
+  byte of either secret survives, because the two spans merge into one redaction.
+  The label on a merged span is the label of its earliest-starting occurrence
+  (ties broken by lexicographically first label) so the placeholder is
+  deterministic.
 - Streaming-safe: the automaton state persists across `Write` calls, and the
-  writer holds back the trailing bytes that are still a live prefix of some
-  pattern (at most `maxPatternLen-1` bytes) until a later write or `Close`
-  resolves them, so a secret split across two writes is still matched.
-- Match resolution is leftmost-longest: at each position the longest pattern
-  ending there wins, and emitted output never contains a fragment of a matched
-  secret, including when one secret is a substring of another.
+  writer holds back the trailing bytes that could still be part of an
+  in-progress match or an unresolved merge (at most `maxPatternLen-1` bytes)
+  until a later write or `Close` resolves them, so a secret split across two
+  writes is still matched.
 - An empty pattern set is a transparent passthrough.
 - `Validate(patterns []Pattern) (badKey string, ok bool)` reports the first
   pattern whose non-empty value is shorter than `MinLen`, returning its label so
   the caller can build an error that names a key, never a value.
 
 The package depends on nothing in this repo and is fully unit tested without a
-vault.
+vault. A test asserts the overlap case (`SECRETab` + `abVALUE` over
+`xSECRETabVALUEx` yields no surviving `VALUE`), which a non-merging matcher
+fails.
 
 ### 2. Secret source (vault side)
 
@@ -163,7 +173,8 @@ The value never reaches stdout, so the global redactor needs no carve-out for
 ## Resolved decisions
 
 - Mechanism: global `os.Stdout`/`os.Stderr` wrap installed in `main`.
-- Detection: value-based, tool-wide, via an Aho-Corasick automaton.
+- Detection: value-based, tool-wide, via an Aho-Corasick automaton that finds all
+  occurrence spans, which are then merged so overlapping secrets cannot leak.
 - Load timing: install the redactors first, then synchronously read and validate
   the vault, then dispatch, so fail-closed precedes any command's work.
 - Streams: stdout and stderr redacted independently, ordering-locked by a shared
