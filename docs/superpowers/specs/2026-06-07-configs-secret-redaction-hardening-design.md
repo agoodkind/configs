@@ -69,35 +69,34 @@ vault.
   empty values, and resolves a duplicate value to its lexicographically first
   key.
 
-### 3. The install point (`main.run`) with a lazy barrier
+### 3. The install point (`main.run`): hide, then read, then run
 
-Output protection is installed before any command runs, but the vault decrypt
-happens concurrently behind a barrier so output is never emitted before the
-secret set is ready.
+Order matters for fail-closed: the secret set is read and validated before any
+subcommand runs, so a too-short secret or an unreadable vault stops every
+command (including the side-effecting `deploy`) before it does any work.
 
-1. Immediately replace `os.Stdout` and `os.Stderr` with the write ends of two OS
-   pipes. From this point nothing can write around the redactor.
-2. Start one background loader: decrypt the vault, build `Pattern`s, run
-   `Validate`. The result is a ready-signal carrying either the built automaton
-   or a fail-closed error.
-3. Start two drain goroutines, one per pipe. Each blocks before emitting its
-   first byte until the loader signals. On success it streams its pipe through a
-   `redact.Writer`; the two writers share one mutex so a flush to a real
-   descriptor is never interleaved mid-write with the other stream, preserving
-   readable ordering. On loader failure the drains discard any buffered bytes
-   (which may contain secrets), the tool writes the key-named error to the saved
-   real stderr, and exits non-zero.
-4. Dispatch the subcommand. `inventory-dump` and `deploy --diff` need no
+1. Replace `os.Stdout` and `os.Stderr` with the write ends of two OS pipes, and
+   start two drain goroutines that stream each pipe through a `redact.Writer`
+   into the saved real descriptor. The two writers share one mutex so a flush to
+   a real descriptor is never interleaved mid-write with the other stream,
+   preserving readable ordering. From this point nothing can write around the
+   redactor. The redactors start with an empty pattern set, which is a
+   transparent passthrough until step 2 supplies the patterns.
+2. Synchronously decrypt the vault, build `Pattern`s, and run `Validate`. This
+   read takes a few milliseconds and completes before the command dispatches.
+   - On a fail-closed result (a non-empty value shorter than `MinLen`, or an
+     existing vault that will not decrypt): write the key-named error to the
+     saved real stderr and exit non-zero, before dispatching anything.
+   - On success: hand the built patterns to the two redactors.
+   - `set-secrets` is exempt: it reads the new value from stdin and prints only
+     key names, so it cannot leak a value, and it is the path that rotates a
+     too-short secret. For it, a fail-closed result is downgraded to running with
+     an empty pattern set instead of aborting.
+3. Dispatch the subcommand. `inventory-dump` and `deploy --diff` need no
    command-specific code; their output and their child processes' output (via
    `cmd.Stdout = os.Stdout`) flow through the pipes.
-5. On return, close the pipe write ends, wait for the drains to flush their held
+4. On return, close the pipe write ends, wait for the drains to flush their held
    bytes, and restore the real descriptors so nothing is dropped or leaked.
-
-`set-secrets` is exempt from the fail-closed abort: it reads the new value from
-stdin and prints only key names, so it cannot leak a value, and it is the path
-that rotates a too-short secret. Under the barrier this means its drains proceed
-with an empty pattern set rather than aborting when the loader reports a
-too-short secret.
 
 The bespoke `inventory-dump` redaction added earlier is deleted; this layer
 replaces it, and `InventoryDump` returns to streaming `ansible-inventory` output
@@ -120,10 +119,10 @@ The value never reaches stdout, so the global redactor needs no carve-out for
 
 ## Fail-closed semantics
 
-- Vault present and a non-empty value shorter than `MinLen`: the loader returns a
-  fail-closed error, the drains discard buffered output, the tool prints a
-  key-named error to the real stderr and exits non-zero, for every command
-  except `set-secrets`.
+- Vault present and a non-empty value shorter than `MinLen`: validation fails
+  before dispatch, the tool prints a key-named error to the real stderr and exits
+  non-zero, for every command except `set-secrets`. Because the check precedes
+  dispatch, a side-effecting command like `deploy` never starts.
 - Vault present but undecryptable (wrong or missing password against an existing
   vault): same fail-closed path. Printing nothing is safer than risking
   unredacted output, and ansible would fail the same way.
@@ -146,10 +145,10 @@ The value never reaches stdout, so the global redactor needs no carve-out for
   (leftmost-longest); duplicate value mapping to the first key label; empty
   pattern set passthrough; `Validate` accepting `>= MinLen`, rejecting a shorter
   non-empty value, and ignoring an empty value.
-- A barrier test: output written before the loader signals is held, then either
-  redacted on success or discarded on a fail-closed load, and never emitted raw.
 - An ordering test: concurrent stdout and stderr writes are never interleaved
   mid-write under the shared mutex.
+- A fail-closed test: with a too-short secret in the vault, a dispatched command
+  is never reached (validation returns the key-named error before dispatch).
 - A `secret` command test: the written file is `0600`, its dir `0700`, the value
   is in the file, and the value is absent from stdout.
 
@@ -165,7 +164,8 @@ The value never reaches stdout, so the global redactor needs no carve-out for
 
 - Mechanism: global `os.Stdout`/`os.Stderr` wrap installed in `main`.
 - Detection: value-based, tool-wide, via an Aho-Corasick automaton.
-- Load timing: lazy background loader behind an output barrier.
+- Load timing: install the redactors first, then synchronously read and validate
+  the vault, then dispatch, so fail-closed precedes any command's work.
 - Streams: stdout and stderr redacted independently, ordering-locked by a shared
   mutex.
 - Placeholder: `<redacted:KEY>`.
