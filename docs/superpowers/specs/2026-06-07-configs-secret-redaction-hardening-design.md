@@ -79,29 +79,34 @@ fails.
   empty values, and resolves a duplicate value to its lexicographically first
   key.
 
-### 3. The install point (`main.run`): hide, then read, then run
+### 3. The install point (`main.run`): read, then hide, then run
 
 Order matters for fail-closed: the secret set is read and validated before any
 subcommand runs, so a too-short secret or an unreadable vault stops every
-command (including the side-effecting `deploy`) before it does any work.
+command (including the side-effecting `deploy`) before it does any work. Reading
+before installing the pipes is leak-safe because the load step only ever logs a
+generic decrypt error (never a secret value) to the still-real stderr, and it
+avoids a drain-startup deadlock that an install-first ordering would create when
+the patterns never arrive on the fail-closed path.
 
-1. Replace `os.Stdout` and `os.Stderr` with the write ends of two OS pipes, and
-   start two drain goroutines that stream each pipe through a `redact.Writer`
-   into the saved real descriptor. The two writers share one mutex so a flush to
-   a real descriptor is never interleaved mid-write with the other stream,
-   preserving readable ordering. From this point nothing can write around the
-   redactor. The redactors start with an empty pattern set, which is a
-   transparent passthrough until step 2 supplies the patterns.
-2. Synchronously decrypt the vault, build `Pattern`s, and run `Validate`. This
-   read takes a few milliseconds and completes before the command dispatches.
+1. Decrypt the vault, build `Pattern`s, and run `Validate`. This read takes a few
+   milliseconds.
    - On a fail-closed result (a non-empty value shorter than `MinLen`, or an
-     existing vault that will not decrypt): write the key-named error to the
-     saved real stderr and exit non-zero, before dispatching anything.
-   - On success: hand the built patterns to the two redactors.
+     existing vault that will not decrypt): write the key-named error to stderr
+     and exit non-zero, before installing anything or dispatching.
    - `set-secrets` is exempt: it reads the new value from stdin and prints only
      key names, so it cannot leak a value, and it is the path that rotates a
      too-short secret. For it, a fail-closed result is downgraded to running with
      an empty pattern set instead of aborting.
+2. Install the redactors with the known patterns: replace `os.Stdout` and
+   `os.Stderr` with the write ends of two OS pipes, and start two drain
+   goroutines that stream each pipe through a `redact.Writer` into the saved real
+   descriptor. The two writers share one mutex so a flush to a real descriptor is
+   never interleaved mid-write with the other stream, preserving readable
+   ordering. An empty pattern set is a no-op that leaves the real descriptors in
+   place. A pipe-creation failure is fatal: with secrets present and no way to
+   filter, the tool must not run, so the error propagates and no command
+   dispatches.
 3. Dispatch the subcommand. `inventory-dump` and `deploy --diff` need no
    command-specific code; their output and their child processes' output (via
    `cmd.Stdout = os.Stdout`) flow through the pipes.
@@ -175,8 +180,9 @@ The value never reaches stdout, so the global redactor needs no carve-out for
 - Mechanism: global `os.Stdout`/`os.Stderr` wrap installed in `main`.
 - Detection: value-based, tool-wide, via an Aho-Corasick automaton that finds all
   occurrence spans, which are then merged so overlapping secrets cannot leak.
-- Load timing: install the redactors first, then synchronously read and validate
-  the vault, then dispatch, so fail-closed precedes any command's work.
+- Load timing: synchronously read and validate the vault first, then install the
+  redactors with the known patterns, then dispatch, so fail-closed precedes any
+  command's work and the drains never deadlock waiting for patterns.
 - Streams: stdout and stderr redacted independently, ordering-locked by a shared
   mutex.
 - Placeholder: `<redacted:KEY>`.
