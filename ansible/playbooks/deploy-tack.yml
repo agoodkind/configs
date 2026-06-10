@@ -278,8 +278,15 @@
       changed_when: true
 
   handlers:
+    # Apply only this playbook's sysctl file, not `sysctl --system`. The tack
+    # LXC is unprivileged, so host-namespaced kernel.* keys from the base image's
+    # other /etc/sysctl.d files (kernel.core_pattern, kernel.sysrq,
+    # kernel.core_uses_pid) are read-only inside the container and make
+    # `sysctl --system` exit non-zero, failing the deploy on an unrelated key.
+    # The net.ipv6 keys we set live in the container's own network namespace and
+    # are writable, so `-p <our file>` applies them and exits 0. Keep unprivileged.
     - name: Apply sysctl
-      ansible.builtin.command: sysctl --system
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-tack-ipv6.conf
       changed_when: true
 
     - name: Restart ndppd
