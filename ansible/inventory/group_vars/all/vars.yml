@@ -54,8 +54,8 @@ consul_bind_interface: eth0
 # ----------------------------------------------------------------------------
 # cloudflared (Cloudflare Tunnel) systemd service defaults
 # ----------------------------------------------------------------------------
-# Empty service file means the generic unit; a service overrides it with its own.
-cloudflared_service_src: ""
+# Unit ordering for the cloudflared service; a service overrides these to add its
+# own dependencies (e.g. mwan orders cloudflared after mwan-update-routes).
 cloudflared_service_after: network-online.target
 cloudflared_service_wants: network-online.target
 

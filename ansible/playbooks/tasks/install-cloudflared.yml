@@ -8,7 +8,6 @@
 #   cloudflared_token: the tunnel token content, passed by the caller from vault
 #
 # Optional variables:
-#   cloudflared_service_src: path to custom service file (default: generic)
 #   cloudflared_service_after: systemd After= dependencies (default: network-online.target)
 #   cloudflared_service_wants: systemd Wants= dependencies (default: network-online.target)
 
@@ -65,35 +64,11 @@
   no_log: true
   notify: Restart cloudflared
 
-- name: Deploy cloudflared systemd service (custom)
-  ansible.builtin.copy:
-    src: "{{ cloudflared_service_src }}"
+- name: Deploy cloudflared systemd service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/services/cloudflared.service.j2"
     dest: /etc/systemd/system/cloudflared.service
     mode: "0644"
-  when: cloudflared_service_src
-
-- name: Deploy cloudflared systemd service (generic)
-  ansible.builtin.copy:
-    dest: /etc/systemd/system/cloudflared.service
-    mode: "0644"
-    content: |
-      [Unit]
-      Description=cloudflared tunnel
-      After={{ cloudflared_service_after }}
-      Wants={{ cloudflared_service_wants }}
-
-      [Service]
-      TimeoutStartSec=15
-      Type=notify
-      User=cloudflared
-      Group=cloudflared
-      ExecStart=/usr/bin/cloudflared --edge-ip-version 6 tunnel run --token-file /etc/cloudflared/token
-      Restart=on-failure
-      RestartSec=5s
-
-      [Install]
-      WantedBy=multi-user.target
-  when: not cloudflared_service_src
   notify: Restart cloudflared
 
 - name: Enable cloudflared service

@@ -441,8 +441,9 @@ mwan_smtp_port: "{{ smtp_port }}"
 # Cloudflared
 # ----------------------------------------------------------------------------
 
-# Custom service file with mwan-specific dependencies
-cloudflared_service_src: "{{ repo_root }}/mwan/services/cloudflared.service"
+# cloudflared must start after MWAN routing is up.
+cloudflared_service_after: "network-online.target mwan-update-routes.service"
+cloudflared_service_wants: "network-online.target mwan-update-routes.service"
 
 # ----------------------------------------------------------------------------
 # Debug

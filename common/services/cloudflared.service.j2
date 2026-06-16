@@ -1,0 +1,16 @@
+[Unit]
+Description=cloudflared tunnel
+After={{ cloudflared_service_after }}
+Wants={{ cloudflared_service_wants }}
+
+[Service]
+TimeoutStartSec=15
+Type=notify
+User=cloudflared
+Group=cloudflared
+ExecStart=/usr/bin/cloudflared --edge-ip-version 6 tunnel run --token-file /etc/cloudflared/token
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
