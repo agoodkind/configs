@@ -242,6 +242,23 @@ mwan_att_pinned_v4_seed_cidrs:
   - "141.207.0.0/16"
   - "162.115.0.0/16"
 
+  # Hulu first-party (AS23286). Pinned to one WAN so Hulu sees a stable egress
+  # IP; load-balancing across WANs triggers Hulu "location changed".
+  - "8.28.124.0/24"
+  - "8.28.125.0/24"
+  - "199.60.116.0/24"
+  - "199.200.50.0/23"
+  - "208.91.156.0/23"
+  - "208.91.158.0/23"
+
+  # Hulu CDN host IPs observed leaking to a second WAN during a live capture
+  # (2026-06-15). These are rotating Akamai/CloudFront neighbors not covered by
+  # the FQDN snapshot. Kept as exact hosts (not /24s) to bound CDN overpin.
+  - "13.249.74.54/32"
+  - "23.67.33.68/32"
+  - "23.67.33.92/32"
+  - "23.67.33.97/32"
+
 # Verizon Wi-Fi Calling: resolve these FQDNs periodically and pin their A records to AT&T.
 mwan_att_pinned_v4_fqdns:
   - "wo.vzwwo.com"
@@ -255,6 +272,20 @@ mwan_att_pinned_v4_fqdns:
   - "cnc.epdg.att.erricson.net"
   - "vtc.epdg.att.ericsson.net"
 
+  # Hulu / Disney Streaming (Hulu runs on the Disney/BAMTech stack).
+  # Starter control-plane and playback names; expand from a live DNS capture
+  # while streaming, since rotating CDN hosts are not covered by apexes.
+  - "hulu.com"
+  - "www.hulu.com"
+  - "auth.hulu.com"
+  - "home.hulu.com"
+  - "discover.hulu.com"
+  - "play.hulu.com"
+  - "guide.hulu.com"
+  - "assets.huluim.com"
+  - "img.hulu.com"
+  - "hulu.playback.edge.bamgrid.com"
+
 # Zoom: pull published IPv4 prefixes periodically and pin to AT&T.
 # This is a plain-text list of prefixes (one per line).
 mwan_zoom_ipranges_url: "https://assets.zoom.us/docs/ipranges/ZoomMeetings.txt"
@@ -265,6 +296,13 @@ mwan_att_pinned_v6_seed_cidrs:
   - "2607:fb90::/32"
   - "2001:1890::/32"
 
+  # Hulu CDN host IPs observed leaking to a second WAN during a live capture
+  # (2026-06-15). Akamai (2600:1406:3a00:33::/64) and CloudFront neighbors not
+  # covered by the FQDN snapshot. Kept as exact /128s to bound CDN overpin.
+  - "2600:1406:3a00:33::170b:cfe7/128"
+  - "2600:1406:3a00:33::170b:cff0/128"
+  - "2600:9000:211f:ce00:15:74ef:49c0:93a1/128"
+
 # AT&T ePDG infrastructure - IPv6 FQDNs to resolve
 mwan_att_pinned_v6_fqdns:
   - "epdg.epc.att.net"
@@ -272,6 +310,19 @@ mwan_att_pinned_v6_fqdns:
   - "tvvm.mobile.att.net"
   - "cnc.epdg.att.erricson.net"
   - "vtc.epdg.att.ericsson.net"
+
+  # Hulu / Disney Streaming (AAAA records; AS23286 announces no IPv6, so v6
+  # coverage comes from resolving these names). Mirrors the v4 FQDN list.
+  - "hulu.com"
+  - "www.hulu.com"
+  - "auth.hulu.com"
+  - "home.hulu.com"
+  - "discover.hulu.com"
+  - "play.hulu.com"
+  - "guide.hulu.com"
+  - "assets.huluim.com"
+  - "img.hulu.com"
+  - "hulu.playback.edge.bamgrid.com"
 
 # ----------------------------------------------------------------------------
 # Routing table IDs
