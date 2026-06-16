@@ -200,6 +200,7 @@
           - ipcalc
           - ipv6calc
           - fping
+          - conntrack
         state: present
 
     - name: Create MWAN runtime config directory
