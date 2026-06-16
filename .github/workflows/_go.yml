@@ -1,0 +1,43 @@
+name: Go CI
+
+on:
+  workflow_call:
+
+jobs:
+  scripts:
+    name: scripts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: scripts/go.mod
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+      - run: make check
+
+  mwan-go:
+    name: mwan/go
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mwan/go
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: mwan/go/go.mod
+      - name: Install buf
+        run: go install github.com/bufbuild/buf/cmd/buf@latest
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+      - run: make check
