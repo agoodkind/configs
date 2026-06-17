@@ -18,6 +18,16 @@ mwan_proxmox_delegate: suburban
 # prep-guests sets the guest hostname to the first label.
 service_hostname: "test-mwan.home.goodkind.io"
 
+# VM 950 management is on the vmbrtrunk 204:: services LAN, off-segment from the
+# controller (which reaches the testbed over a WARP tunnel). Like prod mwan,
+# whose mgmt is reached on-link via the OPNsense-routed LAN, VM 950 has no mgmt
+# policy route and its main default route is a WAN, so off-segment replies do not
+# return. Reach it on-link through the suburban hypervisor, which sits on the
+# same 204:: segment (204::5 on vmbrtrunk), mirroring the opnsense_test pattern.
+ansible_ssh_common_args: >-
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+  -o ProxyJump=root@[3d06:bad:b01:200::1]
+
 mwan_dns_domain: "home.goodkind.io"
 # VM 950 management is on the vmbrtrunk 204:: services LAN, so it resolves
 # against the testbed OPNsense Unbound on that segment (MANAGEMENT iface 204::1),
@@ -120,7 +130,10 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-mwan_ifmgr_wan_enabled: true
+# Baseline mirrors prod (pre-cutover): wan_routes is OFF and shell update-routes.sh
+# owns convergence, exactly like prod. The cutover test flips this to enabled in
+# shadow, then dual-write, per the cutover sequence in the plan.
+mwan_ifmgr_wan_enabled: false
 mwan_ifmgr_wan_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
