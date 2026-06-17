@@ -414,7 +414,7 @@
         vm_mgmt_ipv6_prefix: "64"
         vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
-        vm_mgmt_ipv6: "3d06:bad:b01::{{ actual_vmid | string | trim }}"
+        vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
         hostname: "{{ service_hostname }}"
 
     - name: Deploy management interface networkd configuration
