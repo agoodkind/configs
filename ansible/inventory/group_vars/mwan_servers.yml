@@ -13,6 +13,7 @@ mwan_environment: "prod"
 # Derived from service_mapping (single source of truth)
 mwan_vmid: 113
 mwan_proxmox_node: vault
+mwan_proxmox_delegate: vault
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
 # Override the dynamic inventory plugin's IPv4-first compose so SSH targets
@@ -107,6 +108,7 @@ mwan_webpass_gateway: "136.25.91.241"
 
 mwan_internal_ipv4: "10.250.250.3/29"
 mwan_internal_ipv6: "3d06:bad:b01:fe::3/64"
+mwan_internal_net_v4: "10.250.250.0/29"
 
 # MWAN IPv6 address on the MWAN↔OPNsense link (used as a /128 in some SNAT cases).
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::3"
@@ -334,6 +336,28 @@ mwan_rt_tables:
   webpass: 200
   monkeybrains: 300
   cloudflared: 400
+
+# ----------------------------------------------------------------------------
+# Interface manager WAN route module
+# ----------------------------------------------------------------------------
+
+# Off on prod until the testbed e2e passes and we sign off on the cutover.
+# Testbed (test_mwan_servers.yml) runs it first in shadow mode.
+mwan_ifmgr_wan_enabled: false
+mwan_ifmgr_wan_shadow_mode: true
+mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
+mwan_ifmgr_wan_fw_marks:
+  att: 1
+  webpass: 2
+  monkeybrains: 3
+mwan_ifmgr_wan_fw_mark_prios:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+mwan_ifmgr_wan_from_prios:
+  att: 55
+  webpass: 56
+  monkeybrains: 57
 
 # ----------------------------------------------------------------------------
 # Notifications

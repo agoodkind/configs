@@ -11,6 +11,7 @@
 mwan_environment: "testbed"
 mwan_vmid: 950
 mwan_proxmox_node: hypervisor
+mwan_proxmox_delegate: suburban
 
 mwan_dns_domain: "home.goodkind.io"
 mwan_dns_servers: "3d06:bad:b01::1 10.250.0.1"
@@ -71,6 +72,7 @@ mwan_static_mappings:
 
 mwan_internal_ipv4: "10.250.250.3/29"
 mwan_internal_ipv6: "3d06:bad:b01:201::3/64"
+mwan_internal_net_v4: "10.250.250.0/29"
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:201::3"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
@@ -105,6 +107,26 @@ mwan_rt_tables:
   webpass: 200
   monkeybrains: 300
   cloudflared: 400
+
+# ----------------------------------------------------------------------------
+# Interface manager WAN route module
+# ----------------------------------------------------------------------------
+
+mwan_ifmgr_wan_enabled: true
+mwan_ifmgr_wan_shadow_mode: true
+mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
+mwan_ifmgr_wan_fw_marks:
+  att: 1
+  webpass: 2
+  monkeybrains: 3
+mwan_ifmgr_wan_fw_mark_prios:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+mwan_ifmgr_wan_from_prios:
+  att: 55
+  webpass: 56
+  monkeybrains: 57
 
 # ----------------------------------------------------------------------------
 # Notifications

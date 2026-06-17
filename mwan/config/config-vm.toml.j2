@@ -141,6 +141,44 @@ oob_table_id = 500
 iface = "{{ mwan_ifmgr_iface_name }}"
 ra_lost_alert_after = "5m"
 
+{% if mwan_ifmgr_wan_enabled | bool %}
+[ifmgr.modules.wan_routes]
+internal_iface = "{{ mwan_internal_iface }}"
+opnsense_wan_ll = "{{ mwan_opnsense_wan_ll }}"
+opnsense_edge_v6 = "{{ mwan_opnsense_edge_ipv6 }}"
+internal_prefix = "{{ mwan_internal_prefix }}"
+internal_net_v4 = "{{ mwan_internal_net_v4 }}"
+health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
+shadow_mode = {{ mwan_ifmgr_wan_shadow_mode | ternary('true', 'false') }}
+
+[[ifmgr.modules.wan_routes.wan]]
+name = "att"
+iface = "{{ mwan_att_iface }}"
+table_id = {{ mwan_rt_tables.att }}
+fw_mark = {{ mwan_ifmgr_wan_fw_marks.att }}
+fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.att }}
+from_prio = {{ mwan_ifmgr_wan_from_prios.att }}
+npt_prefix = "{{ mwan_npt_att_prefix }}"
+
+[[ifmgr.modules.wan_routes.wan]]
+name = "webpass"
+iface = "{{ mwan_webpass_iface }}"
+table_id = {{ mwan_rt_tables.webpass }}
+fw_mark = {{ mwan_ifmgr_wan_fw_marks.webpass }}
+fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.webpass }}
+from_prio = {{ mwan_ifmgr_wan_from_prios.webpass }}
+npt_prefix = "{{ mwan_npt_webpass_prefix }}"
+
+[[ifmgr.modules.wan_routes.wan]]
+name = "monkeybrains"
+iface = "{{ mwan_monkeybrains_iface }}"
+table_id = {{ mwan_rt_tables.monkeybrains }}
+fw_mark = {{ mwan_ifmgr_wan_fw_marks.monkeybrains }}
+fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.monkeybrains }}
+from_prio = {{ mwan_ifmgr_wan_from_prios.monkeybrains }}
+npt_prefix = "{{ mwan_npt_monkeybrains_prefix }}"
+
+{% endif %}
 {% if mwan_ifmgr_host_ipv6_policy_enabled %}
 [ifmgr.modules.host_ipv6_policy]
 missing_iface_grace_period = "{{ mwan_ifmgr_host_ipv6_missing_iface_grace_period }}"
