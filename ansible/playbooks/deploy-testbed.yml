@@ -41,18 +41,10 @@
         mode: "0755"
       notify: Restart mwan-ifmgr
 
-    - name: Create mwan config directory
-      ansible.builtin.file:
-        path: /etc/mwan
-        state: directory
-        mode: "0755"
-
-    - name: Deploy hypervisor config (rendered from .j2)
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/config.toml.j2"
-        dest: /etc/mwan/config.toml
-        mode: "0600"
-      notify: Restart mwan-ifmgr
+    # The hypervisor /etc/mwan/config.toml (rendered from config-host.toml.j2)
+    # and the /etc/mwan directory are owned by deploy-proxmox.yml via
+    # tasks/proxmox-host.yml, which also notifies the ifmgr and watchdog
+    # restarts. This play intentionally does not render that config.
 
     - name: Deploy sysctl
       ansible.builtin.copy:
