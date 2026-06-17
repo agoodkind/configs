@@ -12,8 +12,9 @@ ground truth and update this page when it changes.
 | Bridge | Role                       | Notes                                            |
 | ------ | -------------------------- | ------------------------------------------------ |
 | vmbr0  | Comcast uplink             | Suburban-managed management plus outbound NAT    |
-| vmbr1  | VM management              | Suburban's testbed management subnet             |
-| vmbr2  | MWAN internal (OPNsense)   | `10.250.250.0/29` and `3d06:bad:b01:fe::/64` (testbed-side) |
+| vmbr1  | VM management              | Suburban's testbed management subnet; no longer carries VM 950 |
+| vmbr2  | MWAN internal (OPNsense)   | `10.250.250.0/29` and `3d06:bad:b01:201::5/64` (testbed-side) |
+| vmbrtrunk | Services LAN (OPNsense MANAGEMENT) | VLAN-aware trunk, vids `64 100 200 300`, host `3d06:bad:b01:204::5/64`. Untagged `204::` LAN holds OPNsense MANAGEMENT `204::1`, DNS64 LXC `204::464`, seaweedfs `204::410`, tack-qa `204::400`, and VM 950 mgmt `204::950`. "MWAN-140 slice 1". |
 | vmbr4  | Simulated Webpass ISP      | bare L2                                          |
 | vmbr5  | Simulated AT&T ISP         | bare L2                                          |
 | vmbr6  | Simulated Monkeybrains ISP | bare L2 plus failover-test eth0                  |

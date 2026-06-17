@@ -63,22 +63,26 @@ root-owned Unbound and Tayga; without it they falsely report nothing on `:53`.
 | --- | --- |
 | Testbed OPNsense | `ssh -J root@[3d06:bad:b01:200::1] agoodkind@10.250.250.2` (ProxyJump through the suburban hypervisor; relax host-key checking after a rebuild) |
 | DNS64 LXC (CT 464) | `pct exec 464 ...` from the suburban hypervisor `root@[3d06:bad:b01:200::1]` |
-| Testbed MWAN VM 950 | `ssh root@3d06:bad:b01:200::950` |
+| Testbed MWAN VM 950 | `ssh root@3d06:bad:b01:204::950` |
 
-## Known parity gap: VM 950 cannot reach the testbed resolvers
+## How VM 950 reaches DNS (MWAN-140 parity)
 
-`test_mwan_servers.yml` sets `mwan_dns_servers` to the production OPNsense
-(`3d06:bad:b01::1` and `10.250.0.1`), which the isolated testbed cannot reach, so
-VM 950 fails every lookup. Pointing it at a testbed resolver is not enough on its
-own: VM 950 routes the testbed internal segments (`3d06:bad:b01:204::/64`,
-`:211::/64`, `:201::/64`) out its WAN default, so it has no path to the OPNsense
-Unbound or the DNS64 LXC. In production the MWAN VM `enmgmt0` sits on the same
-`/64` as the OPNsense LAN address `3d06:bad:b01::1`, so it reaches DNS directly;
-the testbed places VM 950 management on `3d06:bad:b01:200::950`, a different
-segment from the resolvers. Closing this is the MWAN-140 axis-parity work and
-needs a routing or segment change, not just a resolver address. Until then VM 950
-has working IPv4 internet and can resolve against a v4 reachable resolver
-directly.
+VM 950 management sits on the `vmbrtrunk` `204::` services LAN, the same segment
+as the testbed OPNsense MANAGEMENT interface (`opt9`, `3d06:bad:b01:204::1`) and
+the DNS64 LXC (`3d06:bad:b01:204::464`). This mirrors production, where the MWAN
+VM `enmgmt0` shares the OPNsense LAN `/64` (`3d06:bad:b01::1`) and reaches DNS
+on-link. `test_mwan_servers.yml` sets `mwan_dns_servers` to the on-link testbed
+OPNsense Unbound at `3d06:bad:b01:204::1` (the prod-parity analog of prod mwan
+using OPNsense `::1`), so VM 950 resolves A records there and reaches them over
+its working IPv4 WAN. The OPNsense Unbound does not synthesize DNS64; that path
+is for the IPv6-only LAN guests that point at the DNS64 LXC instead.
+
+Earlier the gap was that VM 950 management lived on `3d06:bad:b01:200::950`
+(the `vmbr1` management segment), which routed the testbed internal segments out
+its WAN default and could reach no testbed resolver. The re-segment in
+[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) and
+[test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml)
+closed it.
 
 ## Making it reproducible
 
@@ -93,6 +97,8 @@ These belong in code, not as live edits:
 - The Unbound forwarders inherited from prod point at vault addresses unreachable
   on the testbed (MWAN-174); the transform should rewrite them to a
   testbed-reachable resolver.
-- VM 950 DNS target and the routing or segment fix that lets it reach a testbed
-  resolver belong in [test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml)
-  and [opentofu/suburban/](../../opentofu/suburban/) (MWAN-140).
+- VM 950 DNS target and the segment fix that lets it reach a testbed resolver are
+  now codified: the `204::` re-segment lives in
+  [opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) and the resolver in
+  [test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml)
+  (MWAN-140).
