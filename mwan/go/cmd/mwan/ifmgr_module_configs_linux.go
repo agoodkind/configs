@@ -19,6 +19,7 @@ import (
 	policyrules "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
 	ralost "goodkind.io/mwan/internal/ifmgr/modules/ralost"
 	slaachealth "goodkind.io/mwan/internal/ifmgr/modules/slaachealth"
+	wanroutes "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 	wg "goodkind.io/mwan/internal/ifmgr/modules/wg"
 	"goodkind.io/mwan/internal/netif"
 )
@@ -80,6 +81,12 @@ func buildIfMgrModuleConfigs(
 		return nil, err
 	}
 	moduleConfigs["host_ipv6_policy"] = hostIPv6PolicyConfig
+
+	wanRoutesConfig, err := buildWANRoutesConfig(modules.WANRoutes)
+	if err != nil {
+		return nil, err
+	}
+	moduleConfigs["wan_routes"] = wanRoutesConfig
 
 	return moduleConfigs, nil
 }
@@ -377,6 +384,41 @@ func buildHostIPv6PolicyConfig(
 			AcceptRADefRtr:   policy.AcceptRADefRtr,
 			SolicitRA:        policy.SolicitRA,
 			CleanupRADefault: policy.CleanupRADefault,
+		})
+	}
+	return cfg, nil
+}
+
+func buildWANRoutesConfig(
+	section *config.IfMgrWANRoutesSection,
+) (wanroutes.Config, error) {
+	cfg := wanroutes.Config{}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.InternalIface = section.InternalIface
+	cfg.OpnsenseWanLL = section.OpnsenseWanLL
+	cfg.OpnsenseEdgeV6 = section.OpnsenseEdgeV6
+	cfg.InternalPrefix = section.InternalPrefix
+	cfg.InternalNetV4 = section.InternalNetV4
+	cfg.HealthStateFile = section.HealthStateFile
+	cfg.ShadowMode = section.ShadowMode
+	cfg.WANs = make([]wanroutes.WAN, 0, len(section.WAN))
+	for i, wan := range section.WAN {
+		if wan.FwMark < 0 {
+			return wanroutes.Config{}, fmt.Errorf(
+				"wan_routes.wan[%d].fw_mark must be >= 0",
+				i,
+			)
+		}
+		cfg.WANs = append(cfg.WANs, wanroutes.WAN{
+			Name:       wan.Name,
+			Iface:      wan.Iface,
+			TableID:    wan.TableID,
+			FwMark:     uint32(wan.FwMark),
+			FwMarkPrio: wan.FwMarkPrio,
+			FromPrio:   wan.FromPrio,
+			NptPrefix:  wan.NptPrefix,
 		})
 	}
 	return cfg, nil

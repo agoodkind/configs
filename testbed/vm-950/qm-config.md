@@ -38,7 +38,7 @@ Inside the VM the kernel modules `vmw_vsock_virtio_transport` and `vsock` should
 be loaded and `/dev/vsock` should be present.
 
 ```shell
-ssh -J suburban root@3d06:bad:b01:200::950 'lsmod | grep vsock; ls /dev/vsock'
+ssh root@3d06:bad:b01:204::950 'lsmod | grep vsock; ls /dev/vsock'
 ```
 
 On suburban, after restarting the watchdog, the journal should show

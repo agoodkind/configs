@@ -11,9 +11,28 @@
 mwan_environment: "testbed"
 mwan_vmid: 950
 mwan_proxmox_node: hypervisor
+mwan_proxmox_delegate: suburban
+
+# Identity. service_mapping.test_mwan carries only the bare label (test-mwan),
+# so set the canonical FQDN here directly to match prod's FQDN-form hostname.
+# prep-guests sets the guest hostname to the first label.
+service_hostname: "test-mwan.home.goodkind.io"
+
+# VM 950 management is on the vmbrtrunk 204:: services LAN, off-segment from the
+# controller (which reaches the testbed over a WARP tunnel). Like prod mwan,
+# whose mgmt is reached on-link via the OPNsense-routed LAN, VM 950 has no mgmt
+# policy route and its main default route is a WAN, so off-segment replies do not
+# return. Reach it on-link through the suburban hypervisor, which sits on the
+# same 204:: segment (204::5 on vmbrtrunk), mirroring the opnsense_test pattern.
+ansible_ssh_common_args: >-
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+  -o ProxyJump=root@[3d06:bad:b01:200::1]
 
 mwan_dns_domain: "home.goodkind.io"
-mwan_dns_servers: "3d06:bad:b01::1 10.250.0.1"
+# VM 950 management is on the vmbrtrunk 204:: services LAN, so it resolves
+# against the testbed OPNsense Unbound on that segment (MANAGEMENT iface 204::1),
+# the prod-parity analog of prod mwan using the OPNsense LAN resolver ::1.
+mwan_dns_servers: "3d06:bad:b01:204::1"
 
 # ----------------------------------------------------------------------------
 # Interfaces (testbed uses virtio, simpler than production passthrough)
@@ -25,6 +44,19 @@ mwan_webpass_iface: "enwebpass0"
 mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 
+# systemd-networkd files deployed to VM 950. Testbed AT&T/webpass are direct
+# links (no VLAN, no 802.1X) from mwan/networkd/testbed/; monkeybrains and the
+# internal mwanbr link reuse the shared prod templates (no prod-only vars).
+mwan_networkd_files:
+  - testbed/20-att.link
+  - testbed/20-att.network
+  - testbed/20-webpass.link
+  - testbed/20-webpass.network
+  - 30-monkeybrains.link
+  - 30-monkeybrains.network
+  - 40-mwanbr.link
+  - 40-mwanbr.network
+
 # MAC addresses (from PVE config, used by .link files for stable naming)
 mwan_mgmt_mac: "BC:24:11:B3:9E:46"
 mwan_att_mac: "BC:24:11:C0:D7:60"
@@ -32,8 +64,22 @@ mwan_webpass_mac: "BC:24:11:BE:8E:B4"
 mwan_mbrains_mac: "BC:24:11:3D:CE:CC"
 mwan_net1_mac: "BC:24:11:49:5D:94"
 
-# AT&T: testbed has no VLAN (direct link to ISP LXC).
+# AT&T on the testbed is a simulated ISP LXC on a direct link: no 802.1X, no
+# ONT, no VLAN. The prod wpa_supplicant/ONT/VLAN-bringup tasks are skipped.
+mwan_att_8021x_enabled: false
 mwan_att_vlan_id: ""
+
+# systemd units enabled at the end of the deploy. No AT&T 802.1X units on the
+# testbed (wpa_supplicant-mwan, wpa-cli-action, wpa-authenticated.path,
+# bringup-att-vlan are prod-only).
+mwan_enabled_services:
+  - mwan-trace-boot
+  - mwan-update-npt
+  - mwan-update-att-pinned-dests.timer
+  - systemd-networkd
+  - networkd-dispatcher
+  - nftables
+  - mwan-health
 
 # ----------------------------------------------------------------------------
 # WAN addressing (static, ISP LXCs have no DHCPv4 server)
@@ -71,6 +117,7 @@ mwan_static_mappings:
 
 mwan_internal_ipv4: "10.250.250.3/29"
 mwan_internal_ipv6: "3d06:bad:b01:201::3/64"
+mwan_internal_net_v4: "10.250.250.0/29"
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:201::3"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
@@ -82,6 +129,34 @@ mwan_opnsense_ansible_ssh_common_args: >-
 mwan_opnsense_ansible_user: root
 mwan_opnsense_wan_ll: "fe80::be24:11ff:feec:efcc"
 mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
+# OPNsense API URL target for the agent (config-vm.toml.j2). Prod uses the
+# OPNsense address on the mwan-mgmt segment (::1); the testbed analog reachable
+# on-link from VM 950's 204:: management interface is the OPNsense MANAGEMENT
+# address 204::1.
+opnsense_addr: "3d06:bad:b01:204::1"
+# OPNsense BGP integration the agent renders into config.toml (config-vm.toml.j2
+# [opnsense.bgp]). Testbed values mirror suburban_servers.yml's OPNsense view:
+# VM 950 (.3) is the primary BGP peer and LXC 100 (.4) the backup, over the
+# 201:: internal link.
+opnsense_gateway_names:
+  - WAN_GW4
+  - WAN_GW6
+opnsense_bgp_router_id: "10.250.250.2"
+opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
+opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
+opnsense_bgp_neighbors:
+  - address: "10.250.250.3"
+    description: "VM950-IPv4"
+    preference: "primary"
+  - address: "3d06:bad:b01:201::3"
+    description: "VM950-IPv6"
+    preference: "primary"
+  - address: "10.250.250.4"
+    description: "LXC100-IPv4"
+    preference: "backup"
+  - address: "3d06:bad:b01:201::4"
+    description: "LXC100-IPv6"
+    preference: "backup"
 failover_lxc_id: "100"
 
 # ----------------------------------------------------------------------------
@@ -105,6 +180,31 @@ mwan_rt_tables:
   webpass: 200
   monkeybrains: 300
   cloudflared: 400
+
+# ----------------------------------------------------------------------------
+# Interface manager WAN route module
+# ----------------------------------------------------------------------------
+
+# Cutover test step 2 (dual-write): wan_routes @wan now writes the live state
+# alongside shell update-routes.sh. Both produce the same idempotent rules, so
+# the data plane is unchanged; watch the @wan json log for thrash. Reset point is
+# the prod-mirror-pre-cutover snapshot. Step 1 (shadow) validated the match and
+# the event-driven late-RA fix.
+mwan_ifmgr_wan_enabled: true
+mwan_ifmgr_wan_shadow_mode: false
+mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
+mwan_ifmgr_wan_fw_marks:
+  att: 1
+  webpass: 2
+  monkeybrains: 3
+mwan_ifmgr_wan_fw_mark_prios:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+mwan_ifmgr_wan_from_prios:
+  att: 55
+  webpass: 56
+  monkeybrains: 57
 
 # ----------------------------------------------------------------------------
 # Notifications
@@ -193,9 +293,9 @@ mwan_bgp_graceful_restart_notification_enabled: true
 
 # Shared runtime config values consumed by mwan/config/config.toml.j2.
 mwan_config_hostname: "suburban-testbed"
-mwan_config_mgmt_addr: "3d06:bad:b01:200::950"
+mwan_config_mgmt_addr: "3d06:bad:b01:204::950"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
-mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:200::950]:50052"
+mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:204::950]:50052"
 mwan_watchdog_log_file: "/var/log/mwan-watchdog-testbed.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog-testbed.jsonl"
 mwan_watchdog_state_file: "/run/mwan-rollback-testbed.state"

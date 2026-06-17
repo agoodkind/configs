@@ -63,6 +63,12 @@ var roleModules = map[string][]string{
 		"ra_lost",
 		"mainv4",
 	},
+	// wan owns the MWAN VM policy-routing inventory. It runs as a
+	// separate instance from any OOB role so shadow-mode rollout can be
+	// enabled without changing the existing failover scripts yet.
+	"wan": {
+		"wan_routes",
+	},
 }
 
 // modulesForRole returns the module name list for the named role, or an

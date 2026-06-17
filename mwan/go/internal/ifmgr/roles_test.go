@@ -63,6 +63,36 @@ func TestModulesForRoleFailover(t *testing.T) {
 	}
 }
 
+// TestModulesForRoleWAN pins the module list for the MWAN VM policy-routing
+// role.
+func TestModulesForRoleWAN(t *testing.T) {
+	t.Parallel()
+
+	got, err := modulesForRole("wan")
+	if err != nil {
+		t.Fatalf("modulesForRole(\"wan\") returned err: %v", err)
+	}
+	want := []string{
+		"wan_routes",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("wan role module count = %d, want %d (got=%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("wan[%d] = %q, want %q (got=%v)", i, got[i], want[i], got)
+		}
+	}
+
+	known := KnownRoles()
+	for _, role := range known {
+		if role == "wan" {
+			return
+		}
+	}
+	t.Fatalf("KnownRoles does not contain wan (known=%v)", known)
+}
+
 // TestKnownRolesDropsLegacyNames protects against accidental
 // reintroduction of any role that slice 1 collapsed or renamed away.
 func TestKnownRolesDropsLegacyNames(t *testing.T) {

@@ -8,24 +8,61 @@ import (
 )
 
 func TestRulesMatch(t *testing.T) {
-	cur := CurrentRule{Priority: 5, UIDRange: "997-997", TableID: 500}
+	cur := CurrentRule{Priority: 5, Mark: 0x42, IifName: "lan0", UIDRange: "997-997", TableID: 500}
 	cases := []struct {
 		name string
 		want DesiredRule
 		ok   bool
 	}{
-		{"exact", DesiredRule{Priority: 5, UIDRange: "997-997", TableID: 500}, true},
-		{"diff prio", DesiredRule{Priority: 6, UIDRange: "997-997", TableID: 500}, false},
-		{"diff uid", DesiredRule{Priority: 5, UIDRange: "996-996", TableID: 500}, false},
-		{"diff table", DesiredRule{Priority: 5, UIDRange: "997-997", TableID: 254}, false},
+		{"exact", DesiredRule{Priority: 5, Mark: 0x42, IifName: "lan0", UIDRange: "997-997", TableID: 500}, true},
+		{"diff prio", DesiredRule{Priority: 6, Mark: 0x42, IifName: "lan0", UIDRange: "997-997", TableID: 500}, false},
+		{"diff mark", DesiredRule{Priority: 5, Mark: 0x43, IifName: "lan0", UIDRange: "997-997", TableID: 500}, false},
+		{"diff iif", DesiredRule{Priority: 5, Mark: 0x42, IifName: "lan1", UIDRange: "997-997", TableID: 500}, false},
+		{"diff uid", DesiredRule{Priority: 5, Mark: 0x42, IifName: "lan0", UIDRange: "996-996", TableID: 500}, false},
+		{"diff table", DesiredRule{Priority: 5, Mark: 0x42, IifName: "lan0", UIDRange: "997-997", TableID: 254}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if rulesMatch(cur, tc.want) != tc.ok {
+			got := rulesMatch(cur, tc.want)
+			if got != tc.ok {
 				t.Fatalf("rulesMatch(%+v, %+v) = %v, want %v",
-					cur, tc.want, !tc.ok, tc.ok)
+					cur, tc.want, got, tc.ok)
 			}
 		})
+	}
+}
+
+func TestRuleMarkAndIifRoundTrip(t *testing.T) {
+	want := DesiredRule{
+		Family:   "inet",
+		Priority: 100,
+		From:     "192.0.2.10",
+		Mark:     0x42,
+		IifName:  "lan0",
+		UIDRange: "997-997",
+		TableID:  500,
+	}
+
+	rule, err := buildNetlinkRule("inet", want)
+	if err != nil {
+		t.Fatalf("buildNetlinkRule: %v", err)
+	}
+	if rule.Mark != want.Mark {
+		t.Fatalf("mark got %#x, want %#x", rule.Mark, want.Mark)
+	}
+	if rule.IifName != want.IifName {
+		t.Fatalf("iif got %q, want %q", rule.IifName, want.IifName)
+	}
+
+	current := ruleToCurrent(*rule)
+	if current.Mark != want.Mark {
+		t.Fatalf("current mark got %#x, want %#x", current.Mark, want.Mark)
+	}
+	if current.IifName != want.IifName {
+		t.Fatalf("current iif got %q, want %q", current.IifName, want.IifName)
+	}
+	if !rulesMatch(current, want) {
+		t.Fatalf("rulesMatch should match round-tripped rule: current=%+v want=%+v", current, want)
 	}
 }
 

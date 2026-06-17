@@ -13,6 +13,7 @@ mwan_environment: "prod"
 # Derived from service_mapping (single source of truth)
 mwan_vmid: 113
 mwan_proxmox_node: vault
+mwan_proxmox_delegate: vault
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
 # Override the dynamic inventory plugin's IPv4-first compose so SSH targets
@@ -56,10 +57,42 @@ mwan_internal_iface: "enmwanbr0"
 # Monkeybrains fallback WAN (virtio)
 mwan_monkeybrains_iface: "enmbrains0"
 
+# systemd-networkd files deployed to the VM (under mwan/networkd/). Prod AT&T is
+# an 802.1X VLAN (21-att-vlan.*); the testbed overrides att/webpass with the
+# direct-link variants under mwan/networkd/testbed/.
+mwan_networkd_files:
+  - 20-att.link
+  - 20-att.network
+  - 20-webpass.link
+  - 20-webpass.network
+  - 30-monkeybrains.link
+  - 30-monkeybrains.network
+  - 21-att-vlan.netdev
+  - 21-att-vlan.network
+  - 40-mwanbr.link
+  - 40-mwanbr.network
+
 # ----------------------------------------------------------------------------
 # AT&T 802.1X authentication (via X710 VF passthrough)
 # ----------------------------------------------------------------------------
 
+# Production AT&T is an 802.1X (EAP-TLS) GPON uplink behind an ONT.
+mwan_att_8021x_enabled: true
+
+# systemd units enabled at the end of the deploy. Prod includes the AT&T 802.1X
+# units; the testbed list omits them (gated off there).
+mwan_enabled_services:
+  - mwan-trace-boot
+  - mwan-update-npt
+  - mwan-update-att-pinned-dests.timer
+  - bringup-att-vlan
+  - systemd-networkd
+  - networkd-dispatcher
+  - nftables
+  - mwan-health
+  - wpa_supplicant-mwan
+  - wpa-cli-action
+  - wpa-authenticated.path
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "f8:9b:6e:f8:86:11"
 
@@ -107,6 +140,7 @@ mwan_webpass_gateway: "136.25.91.241"
 
 mwan_internal_ipv4: "10.250.250.3/29"
 mwan_internal_ipv6: "3d06:bad:b01:fe::3/64"
+mwan_internal_net_v4: "10.250.250.0/29"
 
 # MWAN IPv6 address on the MWAN↔OPNsense link (used as a /128 in some SNAT cases).
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::3"
@@ -334,6 +368,28 @@ mwan_rt_tables:
   webpass: 200
   monkeybrains: 300
   cloudflared: 400
+
+# ----------------------------------------------------------------------------
+# Interface manager WAN route module
+# ----------------------------------------------------------------------------
+
+# Off on prod until the testbed e2e passes and we sign off on the cutover.
+# Testbed (test_mwan_servers.yml) runs it first in shadow mode.
+mwan_ifmgr_wan_enabled: false
+mwan_ifmgr_wan_shadow_mode: true
+mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
+mwan_ifmgr_wan_fw_marks:
+  att: 1
+  webpass: 2
+  monkeybrains: 3
+mwan_ifmgr_wan_fw_mark_prios:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+mwan_ifmgr_wan_from_prios:
+  att: 55
+  webpass: 56
+  monkeybrains: 57
 
 # ----------------------------------------------------------------------------
 # Notifications

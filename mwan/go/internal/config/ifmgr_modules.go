@@ -14,6 +14,7 @@ type IfMgrModulesSection struct {
 	MainV4            *IfMgrMainV4Section            `toml:"mainv4"`
 	PolicyRules       *IfMgrPolicyRulesSection       `toml:"policy_rules"`
 	HostIPv6Policy    *IfMgrHostIPv6PolicySection    `toml:"host_ipv6_policy"`
+	WANRoutes         *IfMgrWANRoutesSection         `toml:"wan_routes"`
 }
 
 type IfMgrWGHealthSection struct {
@@ -80,6 +81,31 @@ type IfMgrMainV4Section struct {
 
 type IfMgrPolicyRulesSection struct {
 	Rule []IfMgrPolicyRuleSection `toml:"rule"`
+}
+
+// IfMgrWANRoutesSection is the explicit TOML schema for
+// [ifmgr.modules.wan_routes].
+type IfMgrWANRoutesSection struct {
+	InternalIface   string                     `toml:"internal_iface"`
+	OpnsenseWanLL   string                     `toml:"opnsense_wan_ll"`
+	OpnsenseEdgeV6  string                     `toml:"opnsense_edge_v6"`
+	InternalPrefix  string                     `toml:"internal_prefix"`
+	InternalNetV4   string                     `toml:"internal_net_v4"`
+	HealthStateFile string                     `toml:"health_state_file"`
+	ShadowMode      bool                       `toml:"shadow_mode"`
+	WAN             []IfMgrWANRoutesWANSection `toml:"wan"`
+}
+
+// IfMgrWANRoutesWANSection is one [[ifmgr.modules.wan_routes.wan]]
+// table in the config file.
+type IfMgrWANRoutesWANSection struct {
+	Name       string `toml:"name"`
+	Iface      string `toml:"iface"`
+	TableID    int    `toml:"table_id"`
+	FwMark     int    `toml:"fw_mark"`
+	FwMarkPrio int    `toml:"fw_mark_prio"`
+	FromPrio   int    `toml:"from_prio"`
+	NptPrefix  string `toml:"npt_prefix"`
 }
 
 // IfMgrHostIPv6PolicySection is the explicit TOML schema for

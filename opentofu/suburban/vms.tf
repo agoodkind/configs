@@ -58,8 +58,12 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
     discard      = "on"
   }
 
+  # MWAN-140 parity: VM 950 management lives on the vmbrtrunk 204:: services
+  # LAN, the same untagged segment as the testbed OPNsense LAN (204::1) and the
+  # DNS64 LXC (204::464), mirroring prod where the mwan VM enmgmt0 shares the
+  # OPNsense LAN /64 and reaches the resolver on-link.
   network_device {
-    bridge      = "vmbr1"
+    bridge      = "vmbrtrunk"
     model       = "virtio"
     mac_address = "BC:24:11:B3:9E:46"
   }
@@ -89,15 +93,17 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
   }
 
   initialization {
-    datastore_id = "local-lvm"
+    # local-lvm is disabled on suburban; the cloud-init drive lives on the same
+    # active zfs pool as the disk.
+    datastore_id = "local-zfs"
 
     ip_config {
       ipv4 {
         address = "dhcp"
       }
       ipv6 {
-        address = "3d06:bad:b01:200::950/64"
-        gateway = "fe80::1"
+        address = "3d06:bad:b01:204::950/64"
+        gateway = "3d06:bad:b01:204::1"
       }
     }
 
@@ -111,6 +117,9 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
     prevent_destroy = true
     ignore_changes = [
       initialization[0].user_account[0].keys,
+      # Ansible owns the live `args` field (vhost-vsock-pci); the Proxmox API
+      # rejects token writes to it, so tofu must not try to change or null it.
+      kvm_arguments,
     ]
   }
 }

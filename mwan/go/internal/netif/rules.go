@@ -24,6 +24,8 @@ type DesiredRule struct {
 	Family   string // "inet" or "inet6"; empty defaults to "inet6"
 	Priority int    // numeric priority (0..32766)
 	From     string // source selector (CIDR or single addr); empty == "all"
+	Mark     uint32 // fwmark selector; zero means no fwmark clause
+	IifName  string // input interface selector; empty means no iif clause
 	UIDRange string // "lo-hi" or "u-u"; empty means no uidrange clause
 	Table    string // table name (kept for log readability; not authoritative)
 	TableID  int    // numeric routing table ID; required (was Table string)
@@ -34,6 +36,8 @@ type DesiredRule struct {
 type CurrentRule struct {
 	Priority int
 	From     string
+	Mark     uint32
+	IifName  string
 	UIDRange string
 	Table    string // historical name, parsed reverse-mapped from TableID where possible
 	TableID  int
@@ -142,7 +146,7 @@ func RemoveRuleAtPriority(
 
 // rulesMatch returns true if a current rule equals a desired rule on the
 // dimensions the daemon manages. Compares TableID (authoritative) and the
-// optional From / UIDRange selectors.
+// optional From / Mark / IifName / UIDRange selectors.
 func rulesMatch(c CurrentRule, w DesiredRule) bool {
 	if c.Priority != w.Priority {
 		return false
@@ -151,6 +155,12 @@ func rulesMatch(c CurrentRule, w DesiredRule) bool {
 		return false
 	}
 	if c.From != w.From {
+		return false
+	}
+	if c.Mark != w.Mark {
+		return false
+	}
+	if c.IifName != w.IifName {
 		return false
 	}
 	if c.UIDRange != w.UIDRange {
@@ -189,6 +199,11 @@ func listRulesNetlink(log *slog.Logger, family string) ([]CurrentRule, error) {
 func ruleToCurrent(r netlink.Rule) CurrentRule {
 	c := CurrentRule{
 		Priority: r.Priority,
+		From:     "",
+		Mark:     r.Mark,
+		IifName:  r.IifName,
+		UIDRange: "",
+		Table:    "",
 		TableID:  r.Table,
 	}
 	if r.Src != nil && !isAllAddr(r.Src) {
@@ -262,7 +277,10 @@ func delRuleNetlink(
 		Family:   family,
 		Priority: c.Priority,
 		From:     c.From,
+		Mark:     c.Mark,
+		IifName:  c.IifName,
 		UIDRange: c.UIDRange,
+		Table:    c.Table,
 		TableID:  c.TableID,
 	})
 	if err != nil {
@@ -291,6 +309,8 @@ func buildNetlinkRule(family string, w DesiredRule) (*netlink.Rule, error) {
 	r.Family = familyToNetlink(family)
 	r.Priority = w.Priority
 	r.Table = w.TableID
+	r.Mark = w.Mark
+	r.IifName = w.IifName
 
 	if w.From != "" {
 		ipnet, err := parseSelector(family, w.From)

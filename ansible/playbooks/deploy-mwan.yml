@@ -10,17 +10,18 @@
 # Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
-# MWAN VM membership in mwan_servers is provided by service_mapping.yml,
-# so no localhost add_host bootstrap is needed here. The MWAN failover LXC
-# lives in mwan_failover_servers and is configured by deploy-mwan-failover.yml.
+# MWAN VM membership in mwan_servers and test_mwan_servers is provided by
+# service_mapping.yml, so no localhost add_host bootstrap is needed here. The
+# MWAN failover LXC lives in mwan_failover_servers or mwan_failover_test_servers
+# and is configured by deploy-mwan-failover.yml.
 
 - name: Prepare MWAN VM (base packages, SSH keys, etc.)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    target_hosts: mwan_servers
+    target_hosts: mwan_servers:test_mwan_servers
 
 - name: Configure MWAN VM
-  hosts: mwan_servers
+  hosts: mwan_servers:test_mwan_servers
   become: false
   environment:
     DEBIAN_FRONTEND: noninteractive
@@ -69,7 +70,7 @@
           {{ ansible_distribution_version }}
 
     - name: Get actual VMID from Proxmox
-      delegate_to: vault
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.shell:
         cmd: |
           set -o pipefail
@@ -89,7 +90,7 @@
     # ============================================================================
 
     - name: Verify internet connectivity before deploy
-      delegate_to: vault
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.shell: |
         ping6 -c 2 -W 3 2606:4700:4700::1111 >/dev/null 2>&1 || \
         ping -c 2 -W 3 1.1.1.1 >/dev/null 2>&1
@@ -104,7 +105,7 @@
       when: pre_deploy_connectivity.rc == 0
 
     - name: Create pre-deploy snapshot on Proxmox
-      delegate_to: vault
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.command:
         cmd: >-
           qm snapshot {{ actual_vmid }}
@@ -115,7 +116,7 @@
       when: pre_deploy_connectivity.rc == 0
 
     - name: Prune old pre-deploy snapshots (keep last 3)
-      delegate_to: vault
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.shell:
         cmd: |
           {% raw %}
@@ -227,12 +228,14 @@
         group: root
         mode: "0640"
       no_log: true
+      notify: Restart mwan-ifmgr@wan
 
     - name: Deploy MWAN runtime config
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/config-vm.toml.j2"
         dest: /etc/mwan/config.toml
         mode: "0600"
+      notify: Restart mwan-ifmgr@wan
 
     - name: Discover MWAN VM runtime network (MACs + NIC presence)
       ansible.builtin.include_tasks: tasks/mwan-vm/discover-runtime-network.yml
@@ -262,12 +265,21 @@
         src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
         dest: /usr/local/bin/mwan
         mode: "0755"
+      notify: Restart mwan-ifmgr@wan
 
     - name: Deploy mwan agent systemd unit on MWAN VM
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
         dest: /etc/systemd/system/mwan-agent.service
         mode: "0644"
+
+    - name: Deploy mwan ifmgr instanced systemd unit on MWAN VM
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-ifmgr@.service"
+        dest: /etc/systemd/system/mwan-ifmgr@.service
+        mode: "0644"
+      notify: Restart mwan-ifmgr@wan
+      when: mwan_ifmgr_wan_enabled | bool
 
     - name: Enable mwan-agent service
       ansible.builtin.systemd:
@@ -276,106 +288,17 @@
         daemon_reload: true
         state: started
 
-    - name: Deploy wpa_supplicant config for AT&T 802.1X
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/wpa_supplicant.conf.j2"
-        dest: /etc/wpa_supplicant/wpa_supplicant.conf
-        mode: "0600"
-
-    - name: Deploy AT&T 802.1X certificates from vault
-      ansible.builtin.copy:
-        content: "{{ item.content }}"
-        dest: "/etc/wpa_supplicant/{{ item.name }}"
-        mode: "0600"
-        owner: root
-        group: root
-      loop:
-        - { name: "ca_cert.pem", content: "{{ vault_mwan_wpa_ca_cert }}" }
-        - { name: "client_cert.pem", content: "{{ vault_mwan_wpa_client_cert }}" }
-        - { name: "private_key.pem", content: "{{ vault_mwan_wpa_private_key }}" }
-      loop_control:
-        label: "{{ item.name }}"
-      no_log: true
-      notify: Restart wpa_supplicant
-
-    - name: Deploy OpenSSL config for legacy provider support
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/config/openssl.cnf"
-        dest: /etc/wpa_supplicant/openssl.cnf
-        mode: "0644"
-      notify: Restart wpa_supplicant
-
-    - name: Deploy legacy SSH client config for the ONT SFP stick
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/config/ssh_config.d/10-ont-sfp-stick-ssh.conf"
-        dest: /etc/ssh/ssh_config.d/10-ont-sfp-stick-ssh.conf
-        mode: "0644"
-
-    - name: Deploy wpa_supplicant systemd service
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/services/wpa_supplicant.service"
-        dest: /etc/systemd/system/wpa_supplicant-mwan.service
-        mode: "0644"
-
-    - name: Enable wpa_supplicant service
+    - name: Enable mwan-ifmgr@wan service
       ansible.builtin.systemd:
-        name: wpa_supplicant-mwan
+        name: mwan-ifmgr@wan
         enabled: true
         daemon_reload: true
+        state: started
+      when: mwan_ifmgr_wan_enabled | bool
 
-    - name: Deploy wpa-cli-action service
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/services/wpa-cli-action.service"
-        dest: /etc/systemd/system/wpa-cli-action.service
-        mode: "0644"
-
-    - name: Enable wpa-cli-action service
-      ansible.builtin.systemd:
-        name: wpa-cli-action
-        enabled: true
-        daemon_reload: true
-
-    - name: Deploy wpa_supplicant action script
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/scripts/wpa-action.sh"
-        dest: /usr/local/bin/wpa-action.sh
-        mode: "0755"
-
-    - name: Deploy wpa-authenticated path unit
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/paths/wpa-authenticated.path"
-        dest: /etc/systemd/system/wpa-authenticated.path
-        mode: "0644"
-
-    - name: Deploy wpa-authenticated service unit
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/services/wpa-authenticated.service"
-        dest: /etc/systemd/system/wpa-authenticated.service
-        mode: "0644"
-
-    - name: Enable wpa-authenticated path unit
-      ansible.builtin.systemd:
-        name: wpa-authenticated.path
-        enabled: true
-        daemon_reload: true
-
-    - name: Deploy AT&T VLAN bringup script
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/scripts/bringup-att-vlan.sh"
-        dest: /usr/local/bin/bringup-att-vlan.sh
-        mode: "0755"
-
-    - name: Deploy AT&T VLAN bringup systemd service
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/services/bringup-att-vlan.service"
-        dest: /etc/systemd/system/bringup-att-vlan.service
-        mode: "0644"
-
-    - name: Enable AT&T VLAN bringup service
-      ansible.builtin.systemd:
-        name: bringup-att-vlan
-        enabled: true
-        daemon_reload: true
+    - name: Configure AT&T 802.1X, ONT, and VLAN bringup (prod WAN only)
+      ansible.builtin.include_tasks: tasks/mwan-vm/att-8021x.yml
+      when: mwan_att_8021x_enabled | bool
 
     - name: Empty systemd-networkd directory
       ansible.builtin.file:
@@ -394,7 +317,7 @@
         vm_mgmt_ipv6_prefix: "64"
         vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
-        vm_mgmt_ipv6: "3d06:bad:b01::{{ actual_vmid | string | trim }}"
+        vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
         hostname: "{{ service_hostname }}"
 
     - name: Deploy management interface networkd configuration
@@ -409,19 +332,9 @@
     - name: Deploy systemd-networkd configuration files
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/networkd/{{ item }}.j2"
-        dest: /etc/systemd/network/{{ item }}
+        dest: /etc/systemd/network/{{ item | basename }}
         mode: "0644"
-      loop:
-        - 20-att.link
-        - 20-att.network
-        - 20-webpass.link
-        - 20-webpass.network
-        - 30-monkeybrains.link
-        - 30-monkeybrains.network
-        - 21-att-vlan.netdev
-        - 21-att-vlan.network
-        - 40-mwanbr.link
-        - 40-mwanbr.network
+      loop: "{{ mwan_networkd_files }}"
 
     - name: Reload udev rules
       ansible.builtin.command: udevadm control --reload
@@ -657,18 +570,7 @@
         name: "{{ item }}"
         enabled: true
         daemon_reload: true
-      loop:
-        - mwan-trace-boot
-        - mwan-update-npt
-        - mwan-update-att-pinned-dests.timer
-        - bringup-att-vlan
-        - systemd-networkd
-        - networkd-dispatcher
-        - nftables
-        - mwan-health
-        - wpa_supplicant-mwan
-        - wpa-cli-action
-        - wpa-authenticated.path
+      loop: "{{ mwan_enabled_services }}"
 
     # ============================================================================
     # POST-DEPLOY: Reboot for clean state
@@ -709,8 +611,8 @@
       async: 1
       poll: 0
 
-    - name: Post-deploy health gate (poll from vault up to 90 seconds)
-      delegate_to: vault
+    - name: Post-deploy health gate from Proxmox host
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.shell:
         cmd: |
           {% raw %}
@@ -730,7 +632,7 @@
       changed_when: false
 
     - name: Stop MWAN VM for rollback after failed health gate
-      delegate_to: vault
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.command:
         cmd: qm stop {{ actual_vmid }}
       when:
@@ -739,7 +641,7 @@
       changed_when: true
 
     - name: Rollback MWAN VM to pre-deploy snapshot
-      delegate_to: vault
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.command:
         cmd: >-
           qm rollback {{ actual_vmid }} {{ mwan_pre_deploy_snapshot_name }}
@@ -749,7 +651,7 @@
       changed_when: true
 
     - name: Start MWAN VM after rollback
-      delegate_to: vault
+      delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.command:
         cmd: qm start {{ actual_vmid }}
       when:
@@ -761,7 +663,8 @@
       ansible.builtin.fail:
         msg: >-
           Post-deploy health gate failed after 90s (ping6 2606:4700:4700::1111
-          from vault). Rolled back to {{ mwan_pre_deploy_snapshot_name }}.
+          from {{ mwan_proxmox_delegate }}). Rolled back to
+          {{ mwan_pre_deploy_snapshot_name }}.
       when:
         - mwan_health_gate.rc != 0
         - mwan_pre_deploy_snapshot_name is defined
@@ -779,8 +682,8 @@
       ansible.builtin.debug:
         msg: >-
           Deploy playbook complete. MWAN VM will reboot in ~5 seconds.
-          Post-deploy health gate passed (ping6 from vault).
-          Monitor watchdog logs: ssh root@3d06:bad:b01::254 "tail -f /var/log/mwan-watchdog.log"
+          Post-deploy health gate passed on {{ mwan_proxmox_delegate }}.
+          Monitor watchdog logs on {{ mwan_proxmox_delegate }}.
       when: mwan_health_gate.rc == 0
 
   handlers:
@@ -795,6 +698,13 @@
         name: cloudflared
         state: restarted
         daemon_reload: true
+
+    - name: Restart mwan-ifmgr@wan
+      ansible.builtin.systemd:
+        name: mwan-ifmgr@wan
+        state: restarted
+        daemon_reload: true
+      when: mwan_ifmgr_wan_enabled | bool
 
     - name: Reload Consul
       ansible.builtin.systemd:
