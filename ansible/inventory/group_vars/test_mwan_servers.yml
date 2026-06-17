@@ -51,7 +51,9 @@ mwan_webpass_mac: "BC:24:11:BE:8E:B4"
 mwan_mbrains_mac: "BC:24:11:3D:CE:CC"
 mwan_net1_mac: "BC:24:11:49:5D:94"
 
-# AT&T: testbed has no VLAN (direct link to ISP LXC).
+# AT&T on the testbed is a simulated ISP LXC on a direct link: no 802.1X, no
+# ONT, no VLAN. The prod wpa_supplicant/ONT/VLAN-bringup tasks are skipped.
+mwan_att_8021x_enabled: false
 mwan_att_vlan_id: ""
 
 # ----------------------------------------------------------------------------

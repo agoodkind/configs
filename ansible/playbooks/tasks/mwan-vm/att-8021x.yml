@@ -1,0 +1,106 @@
+---
+# AT&T 802.1X (EAP-TLS) supplicant, ONT access, and VLAN bringup for the MWAN
+# VM. Prod-only: production AT&T is a 802.1X-authenticated GPON uplink behind an
+# ONT, while the testbed AT&T is a simulated ISP LXC on a direct link with no
+# 802.1X. Included by deploy-mwan.yml gated on mwan_att_8021x_enabled.
+
+- name: Deploy wpa_supplicant config for AT&T 802.1X
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/wpa_supplicant.conf.j2"
+    dest: /etc/wpa_supplicant/wpa_supplicant.conf
+    mode: "0600"
+
+- name: Deploy AT&T 802.1X certificates from vault
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "/etc/wpa_supplicant/{{ item.name }}"
+    mode: "0600"
+    owner: root
+    group: root
+  loop:
+    - { name: "ca_cert.pem", content: "{{ vault_mwan_wpa_ca_cert }}" }
+    - { name: "client_cert.pem", content: "{{ vault_mwan_wpa_client_cert }}" }
+    - { name: "private_key.pem", content: "{{ vault_mwan_wpa_private_key }}" }
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+  notify: Restart wpa_supplicant
+
+- name: Deploy OpenSSL config for legacy provider support
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/config/openssl.cnf"
+    dest: /etc/wpa_supplicant/openssl.cnf
+    mode: "0644"
+  notify: Restart wpa_supplicant
+
+- name: Deploy legacy SSH client config for the ONT SFP stick
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/config/ssh_config.d/10-ont-sfp-stick-ssh.conf"
+    dest: /etc/ssh/ssh_config.d/10-ont-sfp-stick-ssh.conf
+    mode: "0644"
+
+- name: Deploy wpa_supplicant systemd service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/services/wpa_supplicant.service"
+    dest: /etc/systemd/system/wpa_supplicant-mwan.service
+    mode: "0644"
+
+- name: Enable wpa_supplicant service
+  ansible.builtin.systemd:
+    name: wpa_supplicant-mwan
+    enabled: true
+    daemon_reload: true
+
+- name: Deploy wpa-cli-action service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/services/wpa-cli-action.service"
+    dest: /etc/systemd/system/wpa-cli-action.service
+    mode: "0644"
+
+- name: Enable wpa-cli-action service
+  ansible.builtin.systemd:
+    name: wpa-cli-action
+    enabled: true
+    daemon_reload: true
+
+- name: Deploy wpa_supplicant action script
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/scripts/wpa-action.sh"
+    dest: /usr/local/bin/wpa-action.sh
+    mode: "0755"
+
+- name: Deploy wpa-authenticated path unit
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/paths/wpa-authenticated.path"
+    dest: /etc/systemd/system/wpa-authenticated.path
+    mode: "0644"
+
+- name: Deploy wpa-authenticated service unit
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/services/wpa-authenticated.service"
+    dest: /etc/systemd/system/wpa-authenticated.service
+    mode: "0644"
+
+- name: Enable wpa-authenticated path unit
+  ansible.builtin.systemd:
+    name: wpa-authenticated.path
+    enabled: true
+    daemon_reload: true
+
+- name: Deploy AT&T VLAN bringup script
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/scripts/bringup-att-vlan.sh"
+    dest: /usr/local/bin/bringup-att-vlan.sh
+    mode: "0755"
+
+- name: Deploy AT&T VLAN bringup systemd service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/services/bringup-att-vlan.service"
+    dest: /etc/systemd/system/bringup-att-vlan.service
+    mode: "0644"
+
+- name: Enable AT&T VLAN bringup service
+  ansible.builtin.systemd:
+    name: bringup-att-vlan
+    enabled: true
+    daemon_reload: true
