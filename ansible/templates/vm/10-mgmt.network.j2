@@ -10,20 +10,3 @@ DNS={{ vm_mgmt_dns_servers }}
 Domains={{ vm_mgmt_dns_domain }}
 DHCP=no
 IPv6AcceptRA=no
-{% if vm_mgmt_policy_route_enabled | bool %}
-
-# Symmetric-return path for management traffic. The VM's main default route is a
-# WAN, so without a dedicated table replies to off-segment management clients
-# would egress a WAN. This sends traffic sourced from the management address out
-# the management gateway instead. Needed when the management /64 is not on-link
-# to its clients (the testbed 204:: services LAN); prod's management /64 is, so
-# it leaves this disabled.
-[Route]
-Gateway={{ vm_mgmt_gateway }}
-Table=500
-
-[RoutingPolicyRule]
-From={{ vm_mgmt_ipv6 }}
-Table=500
-Priority=5
-{% endif %}

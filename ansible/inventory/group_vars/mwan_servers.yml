@@ -29,14 +29,6 @@ ansible_host: "{{ service_mapping.mwan.ipv6 }}"
 mwan_dns_domain: "home.goodkind.io"
 mwan_dns_servers: "3d06:bad:b01::1 10.250.0.1"
 
-# The prod management /64 (3d06:bad:b01::/64) is on-link to the OPNsense LAN
-# (::1) and its clients, so no dedicated management return-path table is needed.
-# The gateway is declared for the shared template input but goes unrendered while
-# the flag is false. The testbed enables this (its 204:: management LAN is not
-# on-link to the controller).
-mwan_mgmt_policy_route_enabled: false
-mwan_mgmt_gateway: "3d06:bad:b01::1"
-
 # ----------------------------------------------------------------------------
 # Proxmox / VM hardware
 # ----------------------------------------------------------------------------
