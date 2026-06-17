@@ -112,3 +112,29 @@ the cutover test concludes.
 Per the plan: shadow, then dual-write, then remove the dispatcher hook, then the
 health-daemon call, then the boot oneshot, then delete the shell. Validate the
 late-RA convergence fix at the shadow step. Any failure resets to the snapshot.
+
+### Step 1 (shadow): VALIDATED 2026-06-17
+
+Deployed `mwan-ifmgr@wan` with `shadow_mode=true` (ok=150, failed=0). After
+reboot `@wan` is active and logs intended ops while mutating nothing.
+
+- Steady-state match: `@wan`'s intended rules equal the live shell rules,
+  family by family: fwmark prio 100/200 (att/webpass), from-PD prio 55/56
+  (`230::/60`/`220::/60`), per-WAN tables 100/200/300 (default + `/29` + edge
+  `/128` + `210::/60`), main `210::/60` metric 1024. Monkeybrains (prio 300/57)
+  and the prio-50 fallback are correctly computed disabled and absent in both.
+- Late-RA fix proven: deleting the webpass v6 default without bouncing the
+  interface left the shell's `56`/`200` webpass rules in place (the shell missed
+  it), while `@wan` fired `OnKernelEvent` and reconciled in under 1 ms. It also
+  reconciles on AT&T's periodic RA-refresh churn. The kernel re-added the cached
+  RA default (so a manual re-add returned File exists), and `@wan` converged
+  correctly on both the delete and the re-add.
+
+Watch at dual-write: the v4 `from <edge> lookup <wan>` rules at prio 100/200 are
+installed by networkd (`testbed/20-att.network.j2` `[RoutingPolicyRule]`), and
+`@wan` also owns prio 100/200 for its fwmark rule. Confirm `@wan`'s owned-slot
+logic adds its fwmark rule without removing the co-located networkd from-edge
+rule.
+
+Noise: the `@wan` daemon runs a DHCP poller on its base iface `enmbrains0` that
+fails on the sim (no DHCP server); non-fatal, unrelated to wan_routes.
