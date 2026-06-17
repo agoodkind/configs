@@ -21,7 +21,8 @@ runbooks that explain how those pieces fit together.
   [docs/opnsense/operational-notes.md](docs/opnsense/operational-notes.md),
   [docs/opnsense/config-import.md](docs/opnsense/config-import.md),
   [docs/opnsense/testbed-baseline.md](docs/opnsense/testbed-baseline.md),
-  [docs/opnsense/testbed-config-import.md](docs/opnsense/testbed-config-import.md)
+  [docs/opnsense/testbed-config-import.md](docs/opnsense/testbed-config-import.md),
+  [docs/opnsense/testbed-dns-nat64.md](docs/opnsense/testbed-dns-nat64.md)
 - Historical and forward-looking notes: [docs/infra/berylax.md](docs/infra/berylax.md),
   [docs/infra/wireguard-roaming.md](docs/infra/wireguard-roaming.md),
   [docs/plans/mwan-email-routing.plan.md](docs/plans/mwan-email-routing.plan.md)
