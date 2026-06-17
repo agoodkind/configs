@@ -570,18 +570,7 @@
         name: "{{ item }}"
         enabled: true
         daemon_reload: true
-      loop:
-        - mwan-trace-boot
-        - mwan-update-npt
-        - mwan-update-att-pinned-dests.timer
-        - bringup-att-vlan
-        - systemd-networkd
-        - networkd-dispatcher
-        - nftables
-        - mwan-health
-        - wpa_supplicant-mwan
-        - wpa-cli-action
-        - wpa-authenticated.path
+      loop: "{{ mwan_enabled_services }}"
 
     # ============================================================================
     # POST-DEPLOY: Reboot for clean state

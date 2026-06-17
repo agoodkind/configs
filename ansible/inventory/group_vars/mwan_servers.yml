@@ -78,6 +78,21 @@ mwan_networkd_files:
 
 # Production AT&T is an 802.1X (EAP-TLS) GPON uplink behind an ONT.
 mwan_att_8021x_enabled: true
+
+# systemd units enabled at the end of the deploy. Prod includes the AT&T 802.1X
+# units; the testbed list omits them (gated off there).
+mwan_enabled_services:
+  - mwan-trace-boot
+  - mwan-update-npt
+  - mwan-update-att-pinned-dests.timer
+  - bringup-att-vlan
+  - systemd-networkd
+  - networkd-dispatcher
+  - nftables
+  - mwan-health
+  - wpa_supplicant-mwan
+  - wpa-cli-action
+  - wpa-authenticated.path
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "f8:9b:6e:f8:86:11"
 

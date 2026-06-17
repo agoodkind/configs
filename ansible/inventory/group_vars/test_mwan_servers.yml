@@ -69,6 +69,18 @@ mwan_net1_mac: "BC:24:11:49:5D:94"
 mwan_att_8021x_enabled: false
 mwan_att_vlan_id: ""
 
+# systemd units enabled at the end of the deploy. No AT&T 802.1X units on the
+# testbed (wpa_supplicant-mwan, wpa-cli-action, wpa-authenticated.path,
+# bringup-att-vlan are prod-only).
+mwan_enabled_services:
+  - mwan-trace-boot
+  - mwan-update-npt
+  - mwan-update-att-pinned-dests.timer
+  - systemd-networkd
+  - networkd-dispatcher
+  - nftables
+  - mwan-health
+
 # ----------------------------------------------------------------------------
 # WAN addressing (static, ISP LXCs have no DHCPv4 server)
 # ----------------------------------------------------------------------------
