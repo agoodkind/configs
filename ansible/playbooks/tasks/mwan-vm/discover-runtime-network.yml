@@ -10,7 +10,10 @@
 # MWAN VM host (mwan_servers or test_mwan_servers).
 
 - name: Get VM network config from Proxmox
-  delegate_to: "{{ ansible_proxmox_host | default('vault') }}"
+  # Delegate to the hypervisor inventory host (vault for prod, suburban for the
+  # testbed), not the PVE node name; the suburban node is named "hypervisor"
+  # which is not a resolvable inventory host.
+  delegate_to: "{{ mwan_proxmox_delegate }}"
   ansible.builtin.command:
     cmd: qm config {{ actual_vmid }}
   register: vm_config
