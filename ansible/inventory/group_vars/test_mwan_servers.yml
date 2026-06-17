@@ -185,12 +185,13 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-# Cutover test step 1 (shadow): wan_routes @wan runs and logs intended netlink
-# ops but mutates nothing; shell update-routes.sh stays authoritative. Baseline
-# (prod mirror) had this disabled; the prod-mirror-pre-cutover snapshot is the
-# reset point. Next step flips shadow_mode to false (dual-write).
+# Cutover test step 2 (dual-write): wan_routes @wan now writes the live state
+# alongside shell update-routes.sh. Both produce the same idempotent rules, so
+# the data plane is unchanged; watch the @wan json log for thrash. Reset point is
+# the prod-mirror-pre-cutover snapshot. Step 1 (shadow) validated the match and
+# the event-driven late-RA fix.
 mwan_ifmgr_wan_enabled: true
-mwan_ifmgr_wan_shadow_mode: true
+mwan_ifmgr_wan_shadow_mode: false
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
