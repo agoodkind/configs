@@ -63,15 +63,49 @@ These are latent prod-relevant issues surfaced by the testbed work.
 - `mwan_ifmgr_wan_enabled: false` on the testbed baseline (shell convergence,
   like prod).
 
-## Open items before the prod-mirror baseline is complete
+## Prod-mirror baseline VERIFIED and snapshotted (2026-06-17)
 
-- Run the deploy chain so VM 950 runs current binaries/config like prod
-  (`deploy-mwan --limit test_mwan_servers`, then failover/opnsense/testbed as
-  needed). VM 950 was last on an old binary.
-- `mwan-watchdog-testbed` is stopped (to end the snapshot storm) and its host
-  config now targets `204::950`; redeploy its config and fix the storm cause
-  before restarting.
-- Snapshot the clean prod mirror as the cutover reset point.
+`deploy-mwan --limit test_mwan_servers` ran green (ok=148, failed=0; the lone
+`unreachable` is the post-reboot disconnect). The deploy itself rewrote the
+durable `10-mgmt.network`, replacing the one-time QGA bootstrap. Verified on
+VM 950 after reboot:
+
+- Services active: `mwan-agent`, `mwan-health`, `systemd-networkd`,
+  `networkd-dispatcher`, `nftables`. `wan_routes` (`mwan-ifmgr@wan`) is
+  not-found/inactive (baseline off, like prod).
+- BGP established to the testbed OPNsense (`201::2`, `10.250.250.2`), defaults
+  `0.0.0.0/0` and `::/0` announced.
+- Shell `update-routes.sh` converged: v4+v6 fwmark rules (100/200/300) and v6
+  from-PD rules (55/56/57), per-WAN tables with the internal `210::/60` and the
+  webpass default. Health `att:healthy webpass:healthy`.
+- DNS resolves via `204::1`. Reachable via the suburban ProxyJump.
+
+Snapshot `prod-mirror-pre-cutover` (VM 950, disk-only, no saved RAM) is the
+cutover reset point.
+
+### Deploy-path fixes made to reach a green testbed deploy (prod-safe)
+
+The deploy-mwan -> testbed path was new (Phase 3) and never run; each gap was
+fixed by parameterizing per environment, not patching:
+
+- `opnsense_addr` = `204::1` (on-link OPNsense for VM 950).
+- OPNsense BGP cluster (`opnsense_gateway_names`, `opnsense_bgp_*`) declared for
+  the testbed.
+- `discover-runtime-network.yml` delegates to `mwan_proxmox_delegate` (inventory
+  host), not the PVE node name.
+- AT&T 802.1X/ONT/VLAN tasks extracted to `tasks/mwan-vm/att-8021x.yml`, gated on
+  `mwan_att_8021x_enabled` (true prod, false testbed).
+- `mwan_networkd_files` per environment (testbed uses the direct-link att/webpass
+  under `mwan/networkd/testbed/`, no VLAN).
+- `mwan_enabled_services` per environment (testbed omits the 802.1X units).
+
+### Watchdog: intentionally stopped during the cutover test
+
+`mwan-watchdog-testbed` stays stopped through the controlled cutover test so its
+auto-rollback cannot fight the manual reset-to-snapshot discipline, and to avoid
+the snapshot-storm bug. Its host config now targets `204::950` (committed,
+`deploy-testbed` pending). Restore it (config redeploy + storm-cause fix) after
+the cutover test concludes.
 
 ## Cutover sequence (after the baseline snapshot)
 
