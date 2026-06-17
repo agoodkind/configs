@@ -140,6 +140,26 @@ Investigated before restarting so the restart cannot re-storm.
   reachable) means the watchdog will not roll back; it monitors and snapshots at
   the gated cadence. The restart with the corrected `204::950` cannot storm.
 
+### Watchdog RESTORED and VERIFIED 2026-06-17
+
+`deploy-proxmox --limit suburban` ran green (ok=21, changed=5, unreachable=0,
+failed=0), re-rendering the host config and restarting the watchdog via the
+handler. Verified:
+
+- Live `/etc/mwan/config.toml` now has `mwan_mgmt_addr` and
+  `[watchdog] mwan_agent_tcp_addr` both at `204::950`.
+- `mwan-watchdog-testbed` active; reaches the VM 950 agent over vsock
+  (`ops transport succeeded channel=vsock`, `config hash check: no drift`); host
+  probes `ipv4 OK ipv6 OK`; no rollback, no new `known-good` snapshot, no lock,
+  snapshot chain unchanged. No storm.
+- VM 950 dual-write state intact across the restart: all six services active
+  (incl. `mwan-ifmgr@wan`), `shadow_mode=false`, health
+  `att:healthy webpass:healthy monkeybrains:unhealthy`, v6 rules 55/56/100/200,
+  v4 prio 100/200 carry both the networkd from-edge `proto static` rule and the
+  `@wan` fwmark rule (coexistence holds). seaweedfs `204::410` up (9333/8888/8333/8080).
+
+The prod mirror is now complete: parity (A) plus the restored watchdog (B).
+
 ## Cutover sequence (after the baseline snapshot)
 
 Per the plan: shadow, then dual-write, then remove the dispatcher hook, then the
