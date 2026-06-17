@@ -107,6 +107,39 @@ the snapshot-storm bug. Its host config now targets `204::950` (committed,
 `deploy-testbed` pending). Restore it (config redeploy + storm-cause fix) after
 the cutover test concludes.
 
+### Watchdog restore: root cause and safe restart (2026-06-17)
+
+Investigated before restarting so the restart cannot re-storm.
+
+- State at restore time: `mwan-watchdog-testbed` inactive but enabled; VM 950 has
+  no lock; the snapshot chain is clean (recent `pre-deploy-*` snaps are the
+  deploy auto-rollback ones, all `OK`); today's watchdog journal has one line, so
+  the storm predates today and was already recovered.
+- Snapshot-storm root cause: the live `/etc/mwan/config.toml` still carried the
+  pre-re-segment address. Top-level `mwan_mgmt_addr` and `[watchdog]
+  mwan_agent_tcp_addr` both pointed at `3d06:bad:b01:200::950`, dead after VM 950
+  moved to `204::950`. The watchdog health probe (`GuestExec`) tries vsock
+  (cid 950, port 50051) first, then the TCP agent address, then the PVE QGA
+  fallback, so the dead TCP address degrades probing to fallbacks rather than
+  breaking it. The qmsnapshot churn was the deploy/rollback path contending on a
+  wedged snapshot lock, not the well-gated `maybeSnapshot` (which requires 20
+  consecutive healthy checks, a 5-minute floor via `min_snapshot_interval_seconds`,
+  and a clear deploy window).
+- Render path correction: the host config is owned by `deploy-proxmox` via
+  `tasks/proxmox-host.yml` (renders `config-host.toml.j2`, notifies both
+  `Restart mwan-ifmgr` and `Restart mwan-watchdog`), NOT `deploy-testbed`. The
+  committed `suburban_servers.yml` already sets `mwan_config_mgmt_addr` and
+  `mwan_watchdog_agent_tcp_addr` to `204::950`, and the template wires them to
+  `mwan_mgmt_addr` and `mwan_agent_tcp_addr`. Restored via
+  `deploy-proxmox --limit suburban`.
+- Deploy-path bug fixed: `deploy-testbed.yml` rendered a non-existent
+  `mwan/config/config.toml.j2` to `/etc/mwan/config.toml`, so a clean run would
+  fail and it duplicated the canonical proxmox-host render. Removed that task
+  (and its orphaned config-dir) with a comment pointing at the owner.
+- Safe-restart reasoning: a healthy VM 950 (BGP up, `att:healthy webpass:healthy`,
+  reachable) means the watchdog will not roll back; it monitors and snapshots at
+  the gated cadence. The restart with the corrected `204::950` cannot storm.
+
 ## Cutover sequence (after the baseline snapshot)
 
 Per the plan: shadow, then dual-write, then remove the dispatcher hook, then the
