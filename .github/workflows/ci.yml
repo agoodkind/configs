@@ -14,7 +14,23 @@ permissions:
   contents: read
 
 jobs:
-  go:
-    uses: ./.github/workflows/_go.yml
+  scripts:
+    name: scripts
+    uses: agoodkind/go-makefile/.github/workflows/_ci.yml@main
     permissions:
       contents: read
+      id-token: write
+    with:
+      go_version_file: scripts/go.mod
+      working_directory: scripts
+
+  mwan-go:
+    name: mwan/go
+    uses: agoodkind/go-makefile/.github/workflows/_ci.yml@main
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      go_tool_packages: github.com/bufbuild/buf/cmd/buf@latest
+      go_version_file: mwan/go/go.mod
+      working_directory: mwan/go
