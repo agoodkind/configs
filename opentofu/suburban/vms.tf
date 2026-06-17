@@ -93,7 +93,9 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
   }
 
   initialization {
-    datastore_id = "local-lvm"
+    # local-lvm is disabled on suburban; the cloud-init drive lives on the same
+    # active zfs pool as the disk.
+    datastore_id = "local-zfs"
 
     ip_config {
       ipv4 {
