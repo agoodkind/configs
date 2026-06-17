@@ -31,6 +31,7 @@ import (
 	_ "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/ralost"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/slaachealth"
+	_ "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/wg"
 )
 
