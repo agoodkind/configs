@@ -185,10 +185,11 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-# Baseline mirrors prod (pre-cutover): wan_routes is OFF and shell update-routes.sh
-# owns convergence, exactly like prod. The cutover test flips this to enabled in
-# shadow, then dual-write, per the cutover sequence in the plan.
-mwan_ifmgr_wan_enabled: false
+# Cutover test step 1 (shadow): wan_routes @wan runs and logs intended netlink
+# ops but mutates nothing; shell update-routes.sh stays authoritative. Baseline
+# (prod mirror) had this disabled; the prod-mirror-pre-cutover snapshot is the
+# reset point. Next step flips shadow_mode to false (dual-write).
+mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
