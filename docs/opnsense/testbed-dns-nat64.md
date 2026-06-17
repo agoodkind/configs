@@ -65,40 +65,29 @@ root-owned Unbound and Tayga; without it they falsely report nothing on `:53`.
 | DNS64 LXC (CT 464) | `pct exec 464 ...` from the suburban hypervisor `root@[3d06:bad:b01:200::1]` |
 | Testbed MWAN VM 950 | `ssh root@3d06:bad:b01:204::950` |
 
-## How VM 950 reaches DNS (MWAN-140 parity)
+## How VM 950 reaches DNS
 
 VM 950 management sits on the `vmbrtrunk` `204::` services LAN, the same segment
 as the testbed OPNsense MANAGEMENT interface (`opt9`, `3d06:bad:b01:204::1`) and
 the DNS64 LXC (`3d06:bad:b01:204::464`). This mirrors production, where the MWAN
-VM `enmgmt0` shares the OPNsense LAN `/64` (`3d06:bad:b01::1`) and reaches DNS
-on-link. `test_mwan_servers.yml` sets `mwan_dns_servers` to the on-link testbed
-OPNsense Unbound at `3d06:bad:b01:204::1` (the prod-parity analog of prod mwan
-using OPNsense `::1`), so VM 950 resolves A records there and reaches them over
-its working IPv4 WAN. The OPNsense Unbound does not synthesize DNS64; that path
-is for the IPv6-only LAN guests that point at the DNS64 LXC instead.
-
-Earlier the gap was that VM 950 management lived on `3d06:bad:b01:200::950`
-(the `vmbr1` management segment), which routed the testbed internal segments out
-its WAN default and could reach no testbed resolver. The re-segment in
+VM `enmgmt0` shares the OPNsense LAN `/64` and reaches DNS on-link.
+`test_mwan_servers.yml` sets `mwan_dns_servers` to the on-link OPNsense Unbound at
+`3d06:bad:b01:204::1`, so VM 950 resolves A records there and reaches them over
+its IPv4 WAN. The OPNsense Unbound does not synthesize DNS64; that path is for the
+IPv6-only LAN guests that point at the DNS64 LXC instead. The `204::` segment and
+the resolver are codified in
 [opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) and
-[test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml)
-closed it.
+[test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml).
 
-## Making it reproducible
+## Reproducibility gaps
 
-These belong in code, not as live edits:
+These still need to move from manual recovery into the deploy path:
 
-- The Unbound DNSBL breakage and the Tayga and Unbound start should be handled by
-  the testbed OPNsense deploy path. The config transform
+- The config transform
   ([testbed/opnsense/substitutions.yaml](../../testbed/opnsense/substitutions.yaml))
   should disable the Unbound DNSBL python module for the testbed (it carries no
-  blocklist data), and `deploy-opnsense.yml` should reconfigure or restart Unbound
-  and Tayga after the import so they come up without manual `configctl` calls.
+  blocklist data), and `deploy-opnsense.yml` should restart Unbound and Tayga
+  after the import so they come up without manual `configctl` calls.
 - The Unbound forwarders inherited from prod point at vault addresses unreachable
-  on the testbed (MWAN-174); the transform should rewrite them to a
-  testbed-reachable resolver.
-- VM 950 DNS target and the segment fix that lets it reach a testbed resolver are
-  now codified: the `204::` re-segment lives in
-  [opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) and the resolver in
-  [test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml)
-  (MWAN-140).
+  on the testbed; the transform should rewrite them to a testbed-reachable
+  resolver.

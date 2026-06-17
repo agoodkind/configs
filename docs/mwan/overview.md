@@ -218,6 +218,25 @@ the BGP speaker:
   call [update-routes.sh](../../mwan/scripts/update-routes.sh) so the system
   converges back to the healthy WAN automatically once it recovers.
 
+### wan_routes ifmgr module (event-driven successor)
+
+The `wan_routes` module in `mwan ifmgr` is the Go successor to the
+[update-routes.sh](../../mwan/scripts/update-routes.sh) policy-route trigger. It
+watches each WAN interface over netlink and reconciles the per-WAN tables and
+the `ip rule` set on every default-route change plus a periodic tick, so it does
+not depend on the `networkd-dispatcher` hook and does not miss a late RA-learned
+default route (the race the dispatcher hook loses because it fires once and never
+replays). It owns priorities 50/55/56/57/100/200/300 and ports the full
+`update-routes.sh` rule inventory; a shadow mode logs intended operations while
+mutating nothing.
+
+It is gated off in production (`mwan_ifmgr_wan_enabled: false`), where the shell
+remains authoritative, and runs as the instanced `mwan-ifmgr@wan` unit. It was
+validated on the suburban testbed in shadow (intended ops match the shell, the
+late-RA delete reconciles sub-millisecond) and dual-write (the module's fwmark
+rules coexist with the networkd from-edge rules at the same priority, no thrash).
+The shell triggers stay until production cuts over after sign-off.
+
 ### Health state persistence and email guard
 
 The shell daemon `health-check.sh --daemon` keeps two state files:
