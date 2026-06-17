@@ -212,3 +212,24 @@ Both critical cutover steps are validated on the prod mirror. Remaining steps
 (3-6) decommission the shell triggers (dispatcher hook, health-daemon call, boot
 oneshot, then delete `update-routes.sh`), gated per environment so prod keeps the
 shell until its own cutover after sign-off.
+
+## Prod render unchanged: VERIFIED 2026-06-17
+
+The testbed-enabling refactor leaves the prod (`mwan_servers`) render and deploy
+behavior byte-identical:
+
+- `config-vm.toml.j2`: the only change is one `{% if mwan_ifmgr_wan_enabled | bool %}`
+  block. Prod sets that flag false, and a Jinja render with Ansible's settings
+  (`trim_blocks=True`) shows the false block emits zero bytes, so the prod config
+  is unchanged.
+- `ansible/templates/vm/10-mgmt.network.j2`: zero diff versus `origin/main`.
+- `deploy-mwan.yml`: every change is either gated on `mwan_ifmgr_wan_enabled`
+  (the new `mwan-ifmgr@.service` deploy, `@wan` enable, and the restart handler,
+  all skipped for prod) or var-driven with prod values that reproduce the old
+  literals: `mwan_proxmox_delegate: vault` (every `delegate_to`), `vm_mgmt_ipv6`
+  from `mwan_config_mgmt_addr: 3d06:bad:b01::113`, `mwan_networkd_files` listing
+  the same 10 files in order (bare, so `| basename` is a no-op and `src` resolves
+  identically), and `mwan_enabled_services` listing the same 11 services. The
+  AT&T 802.1X/ONT/VLAN stack moved verbatim into `tasks/mwan-vm/att-8021x.yml`,
+  gated on `mwan_att_8021x_enabled: true`, so prod still deploys it.
+- `configs lint` passes; no banned `default()`/`is defined`/`| length` on inputs.
