@@ -138,3 +138,24 @@ rule.
 
 Noise: the `@wan` daemon runs a DHCP poller on its base iface `enmbrains0` that
 fails on the sim (no DHCP server); non-fatal, unrelated to wan_routes.
+
+### Step 2 (dual-write): VALIDATED 2026-06-17
+
+Deployed `shadow_mode=false` (ok=150, failed=0). Post-reboot `@wan` applies the
+live state alongside shell `update-routes.sh`:
+
+- `config.toml` has `shadow_mode = false`; `@wan` logs no `shadow` prefix and
+  reacts to a triggered route event (`monitor: route event` +
+  `default route event, reconciling`) with no subscribe errors. The subscribe
+  errors seen in a window spanning the reboot were boot-transient and cleared.
+- Live rules are unchanged and correct: v6 prio 55/56 (from-PD), 100/200
+  (fwmark); v4 prio 100/200 carry BOTH the networkd `from <edge> proto static`
+  rule and the `fwmark` rule at the same priority. `@wan` adds its fwmark rule
+  without removing the co-located networkd from-edge rule (Linux allows multiple
+  rules per priority), so the watch item from step 1 is resolved.
+- No thrash; BGP and health active.
+
+Both critical cutover steps are validated on the prod mirror. Remaining steps
+(3-6) decommission the shell triggers (dispatcher hook, health-daemon call, boot
+oneshot, then delete `update-routes.sh`), gated per environment so prod keeps the
+shell until its own cutover after sign-off.
