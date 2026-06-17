@@ -102,6 +102,11 @@ mwan_opnsense_ansible_ssh_common_args: >-
 mwan_opnsense_ansible_user: root
 mwan_opnsense_wan_ll: "fe80::be24:11ff:feec:efcc"
 mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
+# OPNsense API URL target for the agent (config-vm.toml.j2). Prod uses the
+# OPNsense address on the mwan-mgmt segment (::1); the testbed analog reachable
+# on-link from VM 950's 204:: management interface is the OPNsense MANAGEMENT
+# address 204::1.
+opnsense_addr: "3d06:bad:b01:204::1"
 failover_lxc_id: "100"
 
 # ----------------------------------------------------------------------------
