@@ -249,6 +249,18 @@ func ReconcileTableDefault(
 	return replaceTableDefaultNetlink(ctx, log, want)
 }
 
+// ReconcileTableRoute ensures the table contains the desired non-default
+// prefix route. Other entries in the table are not touched.
+func ReconcileTableRoute(
+	ctx context.Context, log *slog.Logger,
+	want RouteSpec,
+) error {
+	log = log.With("component", "route",
+		"family", want.Family, "table_id", want.TableID, "op", "reconcile-prefix")
+	log.Debug("route: reconcile prefix entry", "want", want)
+	return replaceTableRouteNetlink(ctx, log, want)
+}
+
 // getTableDefaultNetlink finds the default route in the named table for the
 // given family. Returns (nil, nil) when no default route exists. Returns
 // (nil, nil) for ENOENT-equivalent errors so callers can treat "table empty"
@@ -316,6 +328,8 @@ func isDefaultRoute(r netlink.Route, family int) bool {
 func routeToCurrent(log *slog.Logger, r netlink.Route) (*CurrentRoute, error) {
 	cur := &CurrentRoute{
 		Dest:   "default",
+		Via:    "",
+		Dev:    "",
 		Metric: r.Priority,
 	}
 	if r.Gw != nil {
@@ -371,6 +385,57 @@ func replaceTableDefaultNetlink(
 		"err", err,
 	)
 	return err
+}
+
+func replaceTableRouteNetlink(
+	ctx context.Context, log *slog.Logger, want RouteSpec,
+) error {
+	_ = ctx
+	link, err := linkByName(log, want.Dev)
+	if err != nil {
+		return err
+	}
+	route, err := buildTableRoute(want, link)
+	if err != nil {
+		return err
+	}
+
+	start := time.Now()
+	err = netlink.RouteReplace(route)
+	dur := time.Since(start)
+	log.Debug("route: RouteReplace (prefix)",
+		"family", want.Family, "table_id", want.TableID,
+		"dest", want.Dest, "via", want.Via, "dev", want.Dev,
+		"duration_ms", dur.Milliseconds(),
+		"err", err,
+	)
+	return err
+}
+
+func buildTableRoute(want RouteSpec, link netlink.Link) (*netlink.Route, error) {
+	_, dst, err := net.ParseCIDR(want.Dest)
+	if err != nil {
+		return nil, fmt.Errorf("parse destination %q: %w", want.Dest, err)
+	}
+
+	route := &netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Table:     want.TableID,
+		Dst:       dst,
+		Family:    familyToNetlink(want.Family),
+		Priority:  want.Metric,
+	}
+	if want.Via == "" {
+		route.Scope = netlink.SCOPE_LINK
+		return route, nil
+	}
+
+	gateway := net.ParseIP(want.Via)
+	if gateway == nil {
+		return nil, fmt.Errorf("parse gateway %q: not a valid IP", want.Via)
+	}
+	route.Gw = gateway
+	return route, nil
 }
 
 // delTableDefaultNetlink removes the default route from the table. ENOENT
@@ -444,6 +509,52 @@ func FindMainRADefault(
 		return routeToCurrent(log, r)
 	}
 	return nil, nil
+}
+
+// IfaceDefaultGateway returns the main-table default-route gateway for iface.
+func IfaceDefaultGateway(family string, iface string) (string, error) {
+	log := slog.Default().With(
+		"component", "route", "iface", iface, "family", family, "op", "iface-default-gateway")
+	link, err := linkByName(log, iface)
+	if err != nil {
+		return "", err
+	}
+
+	famConst := familyToNetlink(family)
+	filter := &netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Table:     unix.RT_TABLE_MAIN,
+	}
+	mask := netlink.RT_FILTER_OIF | netlink.RT_FILTER_TABLE
+
+	start := time.Now()
+	routes, err := netlink.RouteListFiltered(famConst, filter, mask)
+	dur := time.Since(start)
+	log.Debug("route: RouteListFiltered (iface default gateway)",
+		"count", len(routes),
+		"duration_ms", dur.Milliseconds(),
+		"err", err,
+	)
+	if err != nil {
+		if errors.Is(err, syscall.ENOENT) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	for _, route := range routes {
+		if !isDefaultRoute(route, famConst) {
+			continue
+		}
+		current, err := routeToCurrent(log, route)
+		if err != nil {
+			return "", err
+		}
+		if current.Via != "" {
+			return current.Via, nil
+		}
+	}
+	return "", nil
 }
 
 // DeleteMainRADefaults removes every RA-learned IPv6 default route from the
