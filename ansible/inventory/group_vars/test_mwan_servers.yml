@@ -44,6 +44,19 @@ mwan_webpass_iface: "enwebpass0"
 mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 
+# systemd-networkd files deployed to VM 950. Testbed AT&T/webpass are direct
+# links (no VLAN, no 802.1X) from mwan/networkd/testbed/; monkeybrains and the
+# internal mwanbr link reuse the shared prod templates (no prod-only vars).
+mwan_networkd_files:
+  - testbed/20-att.link
+  - testbed/20-att.network
+  - testbed/20-webpass.link
+  - testbed/20-webpass.network
+  - 30-monkeybrains.link
+  - 30-monkeybrains.network
+  - 40-mwanbr.link
+  - 40-mwanbr.network
+
 # MAC addresses (from PVE config, used by .link files for stable naming)
 mwan_mgmt_mac: "BC:24:11:B3:9E:46"
 mwan_att_mac: "BC:24:11:C0:D7:60"

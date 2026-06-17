@@ -332,19 +332,9 @@
     - name: Deploy systemd-networkd configuration files
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/networkd/{{ item }}.j2"
-        dest: /etc/systemd/network/{{ item }}
+        dest: /etc/systemd/network/{{ item | basename }}
         mode: "0644"
-      loop:
-        - 20-att.link
-        - 20-att.network
-        - 20-webpass.link
-        - 20-webpass.network
-        - 30-monkeybrains.link
-        - 30-monkeybrains.network
-        - 21-att-vlan.netdev
-        - 21-att-vlan.network
-        - 40-mwanbr.link
-        - 40-mwanbr.network
+      loop: "{{ mwan_networkd_files }}"
 
     - name: Reload udev rules
       ansible.builtin.command: udevadm control --reload

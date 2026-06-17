@@ -57,6 +57,21 @@ mwan_internal_iface: "enmwanbr0"
 # Monkeybrains fallback WAN (virtio)
 mwan_monkeybrains_iface: "enmbrains0"
 
+# systemd-networkd files deployed to the VM (under mwan/networkd/). Prod AT&T is
+# an 802.1X VLAN (21-att-vlan.*); the testbed overrides att/webpass with the
+# direct-link variants under mwan/networkd/testbed/.
+mwan_networkd_files:
+  - 20-att.link
+  - 20-att.network
+  - 20-webpass.link
+  - 20-webpass.network
+  - 30-monkeybrains.link
+  - 30-monkeybrains.network
+  - 21-att-vlan.netdev
+  - 21-att-vlan.network
+  - 40-mwanbr.link
+  - 40-mwanbr.network
+
 # ----------------------------------------------------------------------------
 # AT&T 802.1X authentication (via X710 VF passthrough)
 # ----------------------------------------------------------------------------
