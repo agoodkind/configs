@@ -115,6 +115,9 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
     prevent_destroy = true
     ignore_changes = [
       initialization[0].user_account[0].keys,
+      # Ansible owns the live `args` field (vhost-vsock-pci); the Proxmox API
+      # rejects token writes to it, so tofu must not try to change or null it.
+      kvm_arguments,
     ]
   }
 }
