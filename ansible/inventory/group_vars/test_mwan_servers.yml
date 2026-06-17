@@ -24,6 +24,14 @@ mwan_dns_domain: "home.goodkind.io"
 # the prod-parity analog of prod mwan using the OPNsense LAN resolver ::1.
 mwan_dns_servers: "3d06:bad:b01:204::1"
 
+# Management lives on the 204:: services LAN, which is not on-link to the
+# off-segment controller, and VM 950's main default route is a WAN. A dedicated
+# table sends management-sourced replies out the OPNsense MANAGEMENT gateway
+# (204::1) so they reach the controller symmetrically, the way the other 204::
+# guests reply via their default gateway.
+mwan_mgmt_policy_route_enabled: true
+mwan_mgmt_gateway: "3d06:bad:b01:204::1"
+
 # ----------------------------------------------------------------------------
 # Interfaces (testbed uses virtio, simpler than production passthrough)
 # ----------------------------------------------------------------------------

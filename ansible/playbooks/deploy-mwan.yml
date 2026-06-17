@@ -415,6 +415,8 @@
         vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
         vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
         vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
+        vm_mgmt_policy_route_enabled: "{{ mwan_mgmt_policy_route_enabled }}"
+        vm_mgmt_gateway: "{{ mwan_mgmt_gateway }}"
         hostname: "{{ service_hostname }}"
 
     - name: Deploy management interface networkd configuration
