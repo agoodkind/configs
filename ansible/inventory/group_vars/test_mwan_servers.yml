@@ -107,6 +107,29 @@ mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
 # on-link from VM 950's 204:: management interface is the OPNsense MANAGEMENT
 # address 204::1.
 opnsense_addr: "3d06:bad:b01:204::1"
+# OPNsense BGP integration the agent renders into config.toml (config-vm.toml.j2
+# [opnsense.bgp]). Testbed values mirror suburban_servers.yml's OPNsense view:
+# VM 950 (.3) is the primary BGP peer and LXC 100 (.4) the backup, over the
+# 201:: internal link.
+opnsense_gateway_names:
+  - WAN_GW4
+  - WAN_GW6
+opnsense_bgp_router_id: "10.250.250.2"
+opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
+opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
+opnsense_bgp_neighbors:
+  - address: "10.250.250.3"
+    description: "VM950-IPv4"
+    preference: "primary"
+  - address: "3d06:bad:b01:201::3"
+    description: "VM950-IPv6"
+    preference: "primary"
+  - address: "10.250.250.4"
+    description: "LXC100-IPv4"
+    preference: "backup"
+  - address: "3d06:bad:b01:201::4"
+    description: "LXC100-IPv6"
+    preference: "backup"
 failover_lxc_id: "100"
 
 # ----------------------------------------------------------------------------
