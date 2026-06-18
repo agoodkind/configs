@@ -193,13 +193,13 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-# Prod-mirror baseline: matches prod (mwan_servers.yml) so the testbed is a true
-# pre-cutover mirror. @wan is off; shell update-routes.sh is the sole convergence
-# path, exactly as on prod. The cutover sequence (shadow, dual-write, then steps
-# 3-6) is run from this baseline against the prod-mirror-pre-cutover snapshot once
-# the full sequence is implemented; the prior dual-write run used an off-main
-# binary, so the testbed is reset to clean main here.
-mwan_ifmgr_wan_enabled: false
+# Testbed cutover validation: @wan runs in SHADOW on the 3-WAN prod-mirror. It
+# computes and logs intended routes/rules but mutates nothing; the shell
+# update-routes.sh stays authoritative, exactly as on prod. This is the first
+# cutover step, validated here against the prod-mirror-pre-cutover snapshot
+# before any prod cutover. Advance to dual-write (shadow_mode: false) only after
+# the shadow intended-ops are confirmed to match the shell across all three WANs.
+mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
