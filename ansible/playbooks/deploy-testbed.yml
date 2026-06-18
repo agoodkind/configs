@@ -272,36 +272,45 @@
       changed_when: false
       tags: ["vfio"]
 
-    - name: Assert IOMMU is enabled in the running cmdline
-      ansible.builtin.assert:
-        that:
-          - "'intel_iommu=on' in (vfio_proc_cmdline.content | b64decode)"
-          - "'iommu=pt' in (vfio_proc_cmdline.content | b64decode)"
-        fail_msg: >-
-          /proc/cmdline is missing intel_iommu=on or iommu=pt. The kernel
-          cmdline edit lives in /etc/default/grub and is intentionally NOT
-          managed by this playbook. Fix /etc/default/grub by hand, then
-          run: update-initramfs -u -k all && proxmox-boot-tool refresh,
-          then reboot.
-      tags: ["vfio"]
-
-    - name: Confirm Radeon is bound to vfio-pci
-      ansible.builtin.command:
-        cmd: lspci -nnk -d 1002:6658
-      register: vfio_radeon_lspci
-      check_mode: false
-      changed_when: false
-      failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_lspci.stdout"
-      tags: ["vfio"]
-
-    - name: Confirm Radeon HDMI audio is bound to vfio-pci
-      ansible.builtin.command:
-        cmd: lspci -nnk -d 1002:aac0
-      register: vfio_radeon_audio_lspci
-      check_mode: false
-      changed_when: false
-      failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_audio_lspci.stdout"
-      tags: ["vfio"]
+    # REVISIT (silenced 2026-06-17): the Radeon GPU was removed from suburban,
+    # and the host cmdline has no intel_iommu=on/iommu=pt, so the IOMMU assertion
+    # and the two vfio-pci bind confirmations below were aborting deploy-testbed.
+    # They are commented out (not deleted) so the GPU-passthrough setup can be
+    # restored when a GPU is re-added: re-enable these checks, add
+    # intel_iommu=on iommu=pt to /etc/default/grub, update-initramfs -u -k all,
+    # proxmox-boot-tool refresh, and reboot. The vfio.conf/blacklist/modules
+    # deploys above are harmless no-ops with no GPU present.
+    #
+    # - name: Assert IOMMU is enabled in the running cmdline
+    #   ansible.builtin.assert:
+    #     that:
+    #       - "'intel_iommu=on' in (vfio_proc_cmdline.content | b64decode)"
+    #       - "'iommu=pt' in (vfio_proc_cmdline.content | b64decode)"
+    #     fail_msg: >-
+    #       /proc/cmdline is missing intel_iommu=on or iommu=pt. The kernel
+    #       cmdline edit lives in /etc/default/grub and is intentionally NOT
+    #       managed by this playbook. Fix /etc/default/grub by hand, then
+    #       run: update-initramfs -u -k all && proxmox-boot-tool refresh,
+    #       then reboot.
+    #   tags: ["vfio"]
+    #
+    # - name: Confirm Radeon is bound to vfio-pci
+    #   ansible.builtin.command:
+    #     cmd: lspci -nnk -d 1002:6658
+    #   register: vfio_radeon_lspci
+    #   check_mode: false
+    #   changed_when: false
+    #   failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_lspci.stdout"
+    #   tags: ["vfio"]
+    #
+    # - name: Confirm Radeon HDMI audio is bound to vfio-pci
+    #   ansible.builtin.command:
+    #     cmd: lspci -nnk -d 1002:aac0
+    #   register: vfio_radeon_audio_lspci
+    #   check_mode: false
+    #   changed_when: false
+    #   failed_when: "'Kernel driver in use: vfio-pci' not in vfio_radeon_audio_lspci.stdout"
+    #   tags: ["vfio"]
 
   handlers:
     - name: Refresh initramfs

@@ -260,6 +260,34 @@
         path: /usr/local/bin/mwan-agent
         state: absent
 
+    # Legacy static if-up.d hook + service (hand-deployed on the testbed VM in an
+    # earlier era) hardcoded per-WAN PD anchors, ip rules, and routes. It is
+    # superseded by update-routes.sh / update-npt.sh (dynamic, env-driven) and
+    # actively conflicts: it re-adds stale anchors/rules for the old prefixes.
+    # Remove it so convergence has a single source of truth. No-op on prod.
+    - name: Remove legacy testbed static if-up.d hook on MWAN VM if present
+      ansible.builtin.file:
+        path: /etc/network/if-up.d/mwan-testbed
+        state: absent
+
+    - name: Disable legacy testbed routes service on MWAN VM if present
+      ansible.builtin.command:
+        cmd: systemctl disable --now mwan-testbed-routes.service
+      register: mwan_testbed_routes_disable
+      changed_when: mwan_testbed_routes_disable.rc == 0
+      failed_when: false
+
+    - name: Remove legacy testbed routes service unit on MWAN VM if present
+      ansible.builtin.file:
+        path: /etc/systemd/system/mwan-testbed-routes.service
+        state: absent
+      register: mwan_testbed_routes_unit_removed
+
+    - name: Reload systemd after removing legacy testbed routes service
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: mwan_testbed_routes_unit_removed is changed
+
     - name: Deploy mwan unified binary to MWAN VM
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/go/bin/mwan-linux"

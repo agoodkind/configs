@@ -140,22 +140,53 @@ suburban_ddns_ipv6_priority_subnets:
 
 # Testbed-only: ISP LXCs simulating WANs. Consumed by deploy-testbed.yml
 # to provision the per-WAN LXCs on suburban. No production equivalent.
+# Each entry carries the full capability schema so the shared sim templates
+# (kea-dhcp6, radvd, kea-dhcp4) never reference an undefined key. Capabilities:
+#   pd_len         : DHCPv6-PD delegation length (prod parity: webpass /56, att
+#                    /60, mbrains /56). NPT uses the first /60 of the delegation.
+#   dynamic_v4     : sim runs kea-dhcp4 (DHCPv4) instead of the VM holding static v4
+#   ia_na          : sim's kea-dhcp6 hands out IA_NA addresses (not just PD)
+#   slaac_prefix   : /64 advertised by radvd with AdvAutonomous on (SLAAC); "" off
+#   v4_reservations: kea-dhcp4 host reservations (stable lease by MAC); [] for none
+# PD prefixes use the 22/23/24 /56-clean scheme (webpass 2200::/56, att 2300::/60,
+# mbrains 2400::/56), kept clear of the 02xx mgmt/LAN/internal/SLAAC space.
 testbed_isp_lxcs:
   - id: 200
     name: webpass
     pd_prefix: "3d06:bad:b01:220::/60"
+    pd_len: 60
     v4_subnet: "10.240.204.0/24"
     vm950_ll: "fe80::be24:11ff:febe:8eb4"
+    dynamic_v4: false
+    ia_na: false
+    slaac_prefix: ""
+    v4_reservations: []
   - id: 201
     name: att
     pd_prefix: "3d06:bad:b01:230::/60"
+    pd_len: 60
     v4_subnet: "10.240.205.0/24"
     vm950_ll: "fe80::be24:11ff:fec0:d760"
+    dynamic_v4: false
+    ia_na: false
+    slaac_prefix: ""
+    v4_reservations: []
   - id: 202
     name: mbrains
-    pd_prefix: "3d06:bad:b01:240::/60"
+    pd_prefix: "3d06:bad:b01:2400::/56"
+    pd_len: 56
     v4_subnet: "10.240.206.0/24"
     vm950_ll: "fe80::be24:11ff:fe3d:cecc"
+    # Full dynamic parity with prod Monkeybrains: DHCPv4 + DHCPv6 IA_NA + PD + SLAAC.
+    # mbrains has no routed static block on prod; it egresses via masquerade.
+    dynamic_v4: true
+    v4_gateway: "10.240.206.1"
+    v4_pool: "10.240.206.100 - 10.240.206.200"
+    v4_dns: "1.1.1.1"
+    ia_na: true
+    slaac_prefix: "3d06:bad:b01:250::/64"
+    ia_na_pool: "3d06:bad:b01:250::1000 - 3d06:bad:b01:250::1fff"
+    v4_reservations: []
 
 # Testbed-only: testbed failover LXC id used by deploy-testbed.yml
 failover_lxc_id: "100"

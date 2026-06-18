@@ -2,8 +2,9 @@
 # Render and push config files to a single ISP LXC.
 # Called from deploy-testbed.yml with loop_var: isp
 #
-# isp fields: id, name, pd_prefix, v4_subnet, vm950_ll
-# repo_root is set in the parent play.
+# isp fields: id, name, pd_prefix, pd_len, v4_subnet, vm950_ll, dynamic_v4,
+#   ia_na, slaac_prefix, v4_reservations (and v4_gateway/v4_pool/v4_dns/ia_na_pool
+#   when dynamic_v4/ia_na). repo_root is set in the parent play.
 
 - name: Render ISP templates to suburban /tmp
   ansible.builtin.template:
@@ -15,6 +16,13 @@
     - { src: radvd.conf.j2, name: radvd.conf }
     - { src: nftables.conf.j2, name: nftables.conf }
     - { src: pd-route.service.j2, name: pd-route.service }
+
+- name: Render ISP kea-dhcp4 config (dynamic-v4 ISPs only)
+  ansible.builtin.template:
+    src: "{{ repo_root }}/testbed/isp-lxc/kea-dhcp4.conf.j2"
+    dest: "/tmp/isp-{{ isp.id }}-kea-dhcp4.conf"
+    mode: "0644"
+  when: isp.dynamic_v4 | bool
 
 - name: Copy ISP sysctl to suburban /tmp
   ansible.builtin.copy:
@@ -36,12 +44,22 @@
     - { tmp: sysctl-isp.conf, dest: /etc/sysctl.d/99-isp.conf }
   changed_when: true
 
+- name: Push ISP kea-dhcp4 config into LXC (dynamic-v4 ISPs only)
+  ansible.builtin.command:
+    cmd: >-
+      pct push {{ isp.id }}
+      /tmp/isp-{{ isp.id }}-kea-dhcp4.conf
+      /etc/kea/kea-dhcp4.conf
+  changed_when: true
+  when: isp.dynamic_v4 | bool
+
 - name: Clean up ISP temp files
   ansible.builtin.file:
     path: "/tmp/isp-{{ isp.id }}-{{ item }}"
     state: absent
   loop:
     - kea-dhcp6.conf
+    - kea-dhcp4.conf
     - radvd.conf
     - nftables.conf
     - pd-route.service
@@ -61,3 +79,12 @@
       && systemctl enable --now nftables kea-dhcp6-server radvd pd-route
       && systemctl restart nftables kea-dhcp6-server radvd pd-route'
   changed_when: true
+
+- name: Enable and restart kea-dhcp4 (dynamic-v4 ISPs only)
+  ansible.builtin.command:
+    cmd: >-
+      pct exec {{ isp.id }} -- sh -c
+      'systemctl enable --now kea-dhcp4-server
+      && systemctl restart kea-dhcp4-server'
+  changed_when: true
+  when: isp.dynamic_v4 | bool
