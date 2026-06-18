@@ -153,6 +153,17 @@
       changed_when: false
       tags: ["isp-lxcs"]
 
+    - name: Install kea-dhcp4 on dynamic-v4 ISP LXCs
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ item.id }} -- sh -c
+          'which kea-dhcp4 >/dev/null 2>&1 ||
+           (apt-get update -qq && apt-get install -y -qq kea-dhcp4-server)'
+      loop: "{{ testbed_isp_lxcs }}"
+      when: item.dynamic_v4 | bool
+      changed_when: false
+      tags: ["isp-lxcs"]
+
     - name: Render and push ISP LXC configs
       ansible.builtin.include_tasks: tasks/deploy-testbed-isp-lxc.yml
       loop: "{{ testbed_isp_lxcs }}"
