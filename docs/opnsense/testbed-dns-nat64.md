@@ -88,6 +88,8 @@ These still need to move from manual recovery into the deploy path:
   should disable the Unbound DNSBL python module for the testbed (it carries no
   blocklist data), and `deploy-opnsense.yml` should restart Unbound and Tayga
   after the import so they come up without manual `configctl` calls.
-- The Unbound forwarders inherited from prod point at vault addresses unreachable
-  on the testbed; the transform should rewrite them to a testbed-reachable
-  resolver.
+- The config transform rewrites the prod Unbound forwarder
+  (`3d06:bad:b01:200::53`) to a public resolver (`2606:4700:4700::1111`). On the
+  IPv6-only testbed that target is only reachable through NAT64, so forwarding
+  still depends on the testbed having working upstream transit; a rebuilt
+  OPNsense that has not converged BGP/DNS yet returns no answers until it does.
