@@ -278,12 +278,14 @@ func TestReconcile_RecoveryEmitsResolveOnce(t *testing.T) {
 	if len(parseMatches) != 0 {
 		t.Errorf("got %d records for (wg-reconcile-failed, parse-wg-dump), want 0 (Resolve on inactive key is no-op)", len(parseMatches))
 	}
-	// The second remote-wg-show record is the Resolve emit. AlertManager
-	// emits Resolve at INFO with resolved=true on this branch (subtask A,
-	// which would change the level and message prefix, is not yet merged).
+	// The second remote-wg-show record is the Resolve emit. The notify
+	// Manager re-emits the recovery line at the level the original Notify
+	// used (ERROR here) so it crosses the same EmailConfig.MinLevel
+	// threshold the open alert did; see internal/notify/manager.go
+	// resolveAt. The record carries resolved=true.
 	resolve := failureMatches[1]
-	if resolve.Level != slog.LevelInfo {
-		t.Errorf("resolve level=%v, want INFO", resolve.Level)
+	if resolve.Level != slog.LevelError {
+		t.Errorf("resolve level=%v, want ERROR", resolve.Level)
 	}
 	var resolved bool
 	resolve.Attrs(func(a slog.Attr) bool {
