@@ -115,31 +115,7 @@ enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
 restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
 notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
 
-[ifmgr]
-role = "{{ mwan_ifmgr_role }}"
-reconcile_interval = "60s"
-log_file = "/var/log/mwan-ifmgr.log"
-json_log_file = "/var/log/mwan-ifmgr.jsonl"
-
-[ifmgr.iface.{{ mwan_ifmgr_iface_key }}]
-name = "{{ mwan_ifmgr_iface_name }}"
-dhcp_v4 = true
-ra_solicit = true
-dhcp_initial_backoff = "5s"
-dhcp_max_backoff = "5m"
-
-[ifmgr.modules.oobv6]
-iface = "{{ mwan_ifmgr_iface_name }}"
-oob_addr = "{{ mwan_ifmgr_oob_addr }}"
-oob_table_id = 500
-
-[ifmgr.modules.oobv4]
-iface = "{{ mwan_ifmgr_iface_name }}"
-oob_table_id = 500
-
-[ifmgr.modules.ra_lost]
-iface = "{{ mwan_ifmgr_iface_name }}"
-ra_lost_alert_after = "5m"
+{% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_wan_enabled | bool %}
 [ifmgr.modules.wan_routes]
