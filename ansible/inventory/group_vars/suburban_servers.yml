@@ -170,7 +170,6 @@ testbed_isp_lxcs:
     static_v4_block: "10.241.204.0/29"
     static_v4_route_to: "10.240.204.2"
   - id: 201
-  - id: 201
     name: att
     pd_prefix: "3d06:bad:b01:2300::/60"
     pd_len: 60
