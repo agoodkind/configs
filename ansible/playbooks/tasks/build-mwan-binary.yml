@@ -11,9 +11,11 @@
 #
 # `make build-linux` depends on `check`, which fans out to vet, lint,
 # test, govulncheck, and staticcheck-extra. That is the acceptance gate
-# documented in mwan/go/Makefile and AGENTS.md. To force a fresh build,
-# remove mwan/go/bin/mwan-linux first; otherwise the `creates:`
-# short-circuit keeps re-runs cheap.
+# documented in mwan/go/Makefile and AGENTS.md. The build runs on EVERY
+# deploy: there is deliberately no `creates:` short-circuit, because a
+# stale bin/mwan-linux left from an earlier commit would otherwise ship
+# silently. make's own source-mtime tracking decides whether to relink,
+# while check always re-runs the gate.
 
 - name: Build unified mwan Go binary (make build-linux)
   delegate_to: localhost
@@ -21,5 +23,22 @@
   ansible.builtin.command:
     cmd: make build-linux
     chdir: "{{ repo_root }}/mwan/go"
-    creates: "{{ repo_root }}/mwan/go/bin/mwan-linux"
-  changed_when: false
+  register: mwan_build_linux
+  changed_when: "'go build' in mwan_build_linux.stdout"
+
+- name: Confirm mwan-linux binary exists after build
+  delegate_to: localhost
+  run_once: true
+  ansible.builtin.stat:
+    path: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+  register: mwan_linux_binary_stat
+
+- name: Fail if mwan-linux binary missing after build
+  delegate_to: localhost
+  run_once: true
+  ansible.builtin.fail:
+    msg: >-
+      Expected {{ repo_root }}/mwan/go/bin/mwan-linux after build, but it
+      does not exist. Run `cd mwan/go && make build-linux` manually and
+      inspect the output.
+  when: not mwan_linux_binary_stat.stat.exists

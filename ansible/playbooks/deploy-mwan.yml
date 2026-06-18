@@ -296,6 +296,42 @@
         state: started
       when: mwan_ifmgr_wan_enabled | bool
 
+    # Baseline / pre-cutover teardown. Gating the deploy+enable above is not
+    # enough: a prior dual-write deploy leaves mwan-ifmgr@wan running and
+    # enabled, so flipping mwan_ifmgr_wan_enabled back to false must actively
+    # stop, disable, and remove the instanced unit to return the host to a
+    # never-cut-over baseline.
+    - name: Check for instanced ifmgr unit (teardown path)
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mwan-ifmgr@.service
+      register: ifmgr_instanced_unit
+      when: not (mwan_ifmgr_wan_enabled | bool)
+
+    - name: Stop and disable mwan-ifmgr@wan when WAN module disabled
+      ansible.builtin.systemd:
+        name: mwan-ifmgr@wan
+        state: stopped
+        enabled: false
+      when:
+        - not (mwan_ifmgr_wan_enabled | bool)
+        - ifmgr_instanced_unit.stat.exists
+
+    - name: Remove instanced ifmgr unit when WAN module disabled
+      ansible.builtin.file:
+        path: /etc/systemd/system/mwan-ifmgr@.service
+        state: absent
+      register: ifmgr_unit_removed
+      when:
+        - not (mwan_ifmgr_wan_enabled | bool)
+        - ifmgr_instanced_unit.stat.exists
+
+    - name: Reload systemd after removing instanced ifmgr unit
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when:
+        - not (mwan_ifmgr_wan_enabled | bool)
+        - ifmgr_unit_removed is changed
+
     - name: Configure AT&T 802.1X, ONT, and VLAN bringup (prod WAN only)
       ansible.builtin.include_tasks: tasks/mwan-vm/att-8021x.yml
       when: mwan_att_8021x_enabled | bool
