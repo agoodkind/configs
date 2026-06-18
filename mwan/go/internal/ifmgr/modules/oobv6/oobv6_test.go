@@ -21,16 +21,17 @@ func testLog(t *testing.T) *slog.Logger {
 	}))
 }
 
-// TestNew_DefaultsApplied confirms the constructor enables SLAAC rule
-// management by default with priority 7.
+// TestNew_DefaultsApplied confirms New's registry-default path (cfg ==
+// nil) enables SLAAC rule management with priority 7. The production path
+// applies the same defaults in buildOOBV6Config, which distinguishes an
+// unset field from an explicit zero via its pointer-typed TOML section;
+// New itself receives a fully-formed Config and does not re-default a
+// plain-bool field, since an unset bool and an explicit false are
+// indistinguishable.
 func TestNew_DefaultsApplied(t *testing.T) {
-	mod, err := New(Config{
-		Iface:      "mbrains",
-		OOBAddr:    "3d06:bad:b01:ff::1/128",
-		OOBTableID: 500,
-	})
+	mod, err := New(nil)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("New(nil): %v", err)
 	}
 	m := mod.(*Module)
 	if !m.cfg.ManageSLAACRule {
@@ -41,14 +42,17 @@ func TestNew_DefaultsApplied(t *testing.T) {
 	}
 }
 
-// TestNew_ExplicitDisable confirms manage_slaac_source_rule=false
-// disables rule management (off-switch for problematic deploys).
+// TestNew_ExplicitDisable confirms a fully-formed config with
+// manage_slaac_source_rule=false is honored (off-switch for problematic
+// deploys). buildOOBV6Config produces a complete Config, so New receives
+// the priority already set.
 func TestNew_ExplicitDisable(t *testing.T) {
 	mod, err := New(Config{
-		Iface:           "mbrains",
-		OOBAddr:         "3d06:bad:b01:ff::1/128",
-		OOBTableID:      500,
-		ManageSLAACRule: false,
+		Iface:             "mbrains",
+		OOBAddr:           "3d06:bad:b01:ff::1/128",
+		OOBTableID:        500,
+		ManageSLAACRule:   false,
+		SLAACRulePriority: 7,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
