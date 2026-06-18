@@ -6,9 +6,16 @@
         "valid-lifetime": 4000,
         "subnet6": [{
             "id": 1,
+{% if isp.ia_na %}
+            "subnet": "{{ isp.slaac_prefix }}",
+            "interface": "eth0",
+            "pools": [{ "pool": "{{ isp.ia_na_pool }}" }],
+            "pd-pools": [{ "prefix": "{{ isp.pd_prefix | regex_replace('/[0-9]+$', '') }}", "prefix-len": {{ isp.pd_len }}, "delegated-len": {{ isp.pd_len }} }]
+{% else %}
             "subnet": "fe80::/10",
             "interface": "eth0",
-            "pd-pools": [{ "prefix": "{{ isp.pd_prefix | regex_replace('::/60$', '::') }}", "prefix-len": 60, "delegated-len": 60 }]
+            "pd-pools": [{ "prefix": "{{ isp.pd_prefix | regex_replace('/[0-9]+$', '') }}", "prefix-len": {{ isp.pd_len }}, "delegated-len": {{ isp.pd_len }} }]
+{% endif %}
         }]
     }
 }

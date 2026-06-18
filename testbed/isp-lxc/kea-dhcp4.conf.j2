@@ -1,0 +1,22 @@
+{
+    "Dhcp4": {
+        "interfaces-config": { "interfaces": ["eth0"] },
+        "lease-database": { "type": "memfile", "persist": false },
+        "valid-lifetime": 4000,
+        "subnet4": [{
+            "id": 1,
+            "subnet": "{{ isp.v4_subnet }}",
+            "interface": "eth0",
+            "pools": [{ "pool": "{{ isp.v4_pool }}" }],
+            "option-data": [
+                { "name": "routers", "data": "{{ isp.v4_gateway }}" },
+                { "name": "domain-name-servers", "data": "{{ isp.v4_dns }}" }
+            ],
+            "reservations": [
+{% for r in isp.v4_reservations %}
+                { "hw-address": "{{ r.mac | lower }}", "ip-address": "{{ r.addr }}" }{% if not loop.last %},{% endif %}
+{% endfor %}
+            ]
+        }]
+    }
+}

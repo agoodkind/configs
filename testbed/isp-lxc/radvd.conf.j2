@@ -5,10 +5,15 @@ interface eth0
     MaxRtrAdvInterval 100;
     AdvManagedFlag on;
     AdvOtherConfigFlag on;
-    prefix {{ isp.pd_prefix }}
+{% if isp.slaac_prefix %}
+    # SLAAC /64 (AdvAutonomous on) so the WAN VM autoconfigures a global address,
+    # mirroring prod where the ISP RA yields a SLAAC mngtmpaddr. The PD prefix is
+    # delegated by kea-dhcp6, not advertised for autoconf here.
+    prefix {{ isp.slaac_prefix }}
     {
-        AdvOnLink off;
+        AdvOnLink on;
         AdvAutonomous on;
         AdvRouterAddr off;
     };
+{% endif %}
 };
