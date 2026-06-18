@@ -41,9 +41,26 @@ guest IPs are encoded in
 [ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
 and in the matching OpenTofu resources.
 
-The ISP LXCs (200/201/202) provide kea-dhcp6 (DHCPv6-PD), radvd (RA), and
-nftables masquerade out via Comcast on vmbr0. IPv4 on the testbed MWAN VM is
-statically assigned; the ISP LXCs do not run a DHCPv4 server.
+The ISP LXCs (200/201/202) each provide DHCPv6-PD (kea-dhcp6) and radvd (RA), and
+masquerade out via Comcast on vmbr0. Per-ISP addressing is parameterized in
+[suburban_servers.yml](../../ansible/inventory/group_vars/suburban_servers.yml)
+`testbed_isp_lxcs`, mirroring how prod addresses each WAN. DHCPv6-PD sizes match
+prod: webpass `/56`, att `/60`, monkeybrains `/56`, with NPT using the first `/60`
+of each delegation. The PD prefixes use the 22/23/24 `/56`-clean scheme to stay
+clear of the `02xx` mgmt/LAN/internal/SLAAC space:
+
+| WAN | sim LXC | DHCPv6-PD | NPT (first /60) | v4 | SLAAC |
+| --- | ------- | --------- | --------------- | -- | ----- |
+| Monkeybrains | 202 | `3d06:bad:b01:2400::/56` | `3d06:bad:b01:2400::/60` | DHCPv4 (kea-dhcp4) + DHCPv6 IA_NA, masquerade egress | `3d06:bad:b01:0250::/64` |
+| AT&T | 201 | `3d06:bad:b01:230::/60` | `3d06:bad:b01:230::/60` | static on VM 950 (no 802.1X/VLAN on the testbed) | none |
+| Webpass | 200 | `3d06:bad:b01:220::/60` | `3d06:bad:b01:220::/60` | static on VM 950 | none |
+
+Monkeybrains (202) runs the full prod dynamic stack: DHCPv4, DHCPv6 IA_NA,
+DHCPv6-PD, and SLAAC, so VM 950 gets a dynamic v4, a DHCPv6 address, the PD, and a
+SLAAC address exactly as prod's real Monkeybrains delivers. AT&T (201) and Webpass
+(200) currently provide DHCPv6-PD plus RA only, with static v4 on VM 950; both are
+being brought to full prod parity in later phases (att dynamic link plus routed
+static /29, webpass static /29).
 
 ## Production vs testbed
 

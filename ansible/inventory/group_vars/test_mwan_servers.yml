@@ -163,13 +163,17 @@ failover_lxc_id: "100"
 # IPv6 prefixes (simulated ISPs on suburban)
 # ----------------------------------------------------------------------------
 
+# NPT targets are the first /60 of each WAN's DHCPv6-PD delegation, mirroring prod.
+# PD sizes match prod: webpass /56, att /60, monkeybrains /56. Sim delegation
+# prefixes (the 22/23/24 /56-clean scheme) live in suburban_servers.yml
+# testbed_isp_lxcs. att and webpass keep their /60 bases here until their phases.
 mwan_npt_att_prefix: "3d06:bad:b01:230::/60"
 mwan_npt_webpass_prefix: "3d06:bad:b01:220::/60"
-mwan_npt_monkeybrains_prefix: "3d06:bad:b01:240::/60"
+mwan_npt_monkeybrains_prefix: "3d06:bad:b01:2400::/60"
 
 mwan_att_pd_prefix: "3d06:bad:b01:230::/60"
 mwan_webpass_pd_prefix: "3d06:bad:b01:220::/60"
-mwan_monkeybrains_pd_prefix: "3d06:bad:b01:240::/60"
+mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 
 # ----------------------------------------------------------------------------
 # Routing tables
