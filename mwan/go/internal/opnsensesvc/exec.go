@@ -7,10 +7,19 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
+
+// execWaitDelay bounds how long cmd.Run may block on inherited stdout/stderr
+// pipes after the per-call timeout has killed the process group. It is a
+// safety net only: the process-group kill below already terminates the whole
+// command tree at the deadline, so this is reached only if some process still
+// holds the pipe open.
+const execWaitDelay = 2 * time.Second
 
 const (
 	defaultExecTimeout = 30 * time.Second
@@ -73,6 +82,30 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 		cmdArgs = append([]string{"-n", args.Command}, args.Args...)
 	}
 	cmd := exec.CommandContext(cctx, cmdName, cmdArgs...)
+	// Run the child in its own process group and kill the whole group when
+	// the per-call timeout fires. Without this, a grandchild (e.g. the
+	// `sleep` under `sh -c "sleep 5"`) inherits the stdout/stderr pipe and
+	// keeps cmd.Run() blocked until it exits on its own, so the timeout is
+	// detected but not enforced and the grandchild is left orphaned. Killing
+	// the negative PID (the process group) terminates the whole tree at the
+	// deadline. WaitDelay is the I/O safety net for the rare case where a
+	// process still holds the pipe after the group kill.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			if errors.Is(err, syscall.ESRCH) {
+				return os.ErrProcessDone
+			}
+			return logWrappedErrorContext(cctx, args.Log,
+				"opnsensesvc: kill process group failed", "runExec cancel", err,
+				slog.Int("pid", cmd.Process.Pid))
+		}
+		return nil
+	}
+	cmd.WaitDelay = execWaitDelay
 	if len(args.StdinBytes) > 0 {
 		cmd.Stdin = bytes.NewReader(args.StdinBytes)
 	}
