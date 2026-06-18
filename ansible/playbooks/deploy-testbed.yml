@@ -143,12 +143,17 @@
     # ISP LXCs (200 webpass, 201 att, 202 mbrains) via pct
     # ----------------------------------------------------------------------
 
+    # apt runs non-interactively with --force-confold: kea ships a default
+    # /etc/kea/*.conf conffile, and our rendered config may already be present
+    # from a prior partial run, which otherwise triggers an interactive conffile
+    # prompt that hangs the deploy. Our config is pushed after install regardless.
     - name: Install packages on ISP LXCs
       ansible.builtin.command:
         cmd: >-
           pct exec {{ item.id }} -- sh -c
           'which kea-dhcp6 >/dev/null 2>&1 ||
-           (apt-get update -qq && apt-get install -y -qq kea-dhcp6-server radvd nftables)'
+           (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+            -o Dpkg::Options::=--force-confold kea-dhcp6-server radvd nftables)'
       loop: "{{ testbed_isp_lxcs }}"
       changed_when: false
       tags: ["isp-lxcs"]
@@ -158,7 +163,8 @@
         cmd: >-
           pct exec {{ item.id }} -- sh -c
           'which kea-dhcp4 >/dev/null 2>&1 ||
-           (apt-get update -qq && apt-get install -y -qq kea-dhcp4-server)'
+           (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+            -o Dpkg::Options::=--force-confold kea-dhcp4-server)'
       loop: "{{ testbed_isp_lxcs }}"
       when: item.dynamic_v4 | bool
       changed_when: false
