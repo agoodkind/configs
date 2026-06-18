@@ -148,6 +148,10 @@ suburban_ddns_ipv6_priority_subnets:
 #   ia_na          : sim's kea-dhcp6 hands out IA_NA addresses (not just PD)
 #   slaac_prefix   : /64 advertised by radvd with AdvAutonomous on (SLAAC); "" off
 #   v4_reservations: kea-dhcp4 host reservations (stable lease by MAC); [] for none
+#   static_v4_block: a "routed public" /29 the sim routes to the WAN VM and
+#                    masquerades out (models AT&T routing a static block over a
+#                    dynamic link); "" disables. static_v4_route_to is the VM
+#                    link address the block routes to.
 # PD prefixes use the 22/23/24 /56-clean scheme (webpass 2200::/56, att 2300::/60,
 # mbrains 2400::/56), kept clear of the 02xx mgmt/LAN/internal/SLAAC space.
 testbed_isp_lxcs:
@@ -161,16 +165,27 @@ testbed_isp_lxcs:
     ia_na: false
     slaac_prefix: ""
     v4_reservations: []
+    static_v4_block: ""
+    static_v4_route_to: ""
   - id: 201
     name: att
-    pd_prefix: "3d06:bad:b01:230::/60"
+    pd_prefix: "3d06:bad:b01:2300::/60"
     pd_len: 60
     v4_subnet: "10.240.205.0/24"
     vm950_ll: "fe80::be24:11ff:fec0:d760"
-    dynamic_v4: false
+    # Models prod AT&T: a dynamic v4 link (DHCP) pinned stable by a MAC
+    # reservation, plus a routed static /29 that AT&T 1:1-NATs to services. The
+    # testbed cannot reproduce 802.1X/VLAN, so the link is a direct DHCP NIC.
+    dynamic_v4: true
+    v4_gateway: "10.240.205.1"
+    v4_pool: "10.240.205.100 - 10.240.205.200"
+    v4_dns: "1.1.1.1"
     ia_na: false
     slaac_prefix: ""
-    v4_reservations: []
+    v4_reservations:
+      - { mac: "BC:24:11:C0:D7:60", addr: "10.240.205.2" }
+    static_v4_block: "10.241.205.0/29"
+    static_v4_route_to: "10.240.205.2"
   - id: 202
     name: mbrains
     pd_prefix: "3d06:bad:b01:2400::/56"
@@ -187,6 +202,8 @@ testbed_isp_lxcs:
     slaac_prefix: "3d06:bad:b01:250::/64"
     ia_na_pool: "3d06:bad:b01:250::1000 - 3d06:bad:b01:250::1fff"
     v4_reservations: []
+    static_v4_block: ""
+    static_v4_route_to: ""
 
 # Testbed-only: testbed failover LXC id used by deploy-testbed.yml
 failover_lxc_id: "100"
