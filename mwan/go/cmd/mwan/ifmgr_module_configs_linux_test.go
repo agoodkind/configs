@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,5 +193,71 @@ func TestBuildWANRoutesConfigNilSection(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg, wanroutes.Config{}) {
 		t.Fatalf("buildWANRoutesConfig nil = %#v, want zero Config", cfg)
+	}
+}
+
+// modulesWithUnresolvableUIDRule is a [ifmgr.modules] section that carries a
+// policy_rules rule referencing a user that does not exist on the build host,
+// plus a wan_routes section. It models the production MWAN VM config, where the
+// shared config.toml carries an oob policy_rules rule (cloudflared-oob, a
+// hypervisor-host user) even though the VM only runs the wan role.
+func modulesWithUnresolvableUIDRule() config.IfMgrModulesSection {
+	return config.IfMgrModulesSection{
+		PolicyRules: &config.IfMgrPolicyRulesSection{
+			Rule: []config.IfMgrPolicyRuleSection{
+				{
+					Family:   "inet6",
+					Priority: 5,
+					UIDUser:  "mwan-test-no-such-user",
+					Table:    "oob",
+					TableID:  500,
+				},
+			},
+		},
+		WANRoutes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"},
+	}
+}
+
+// TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules is the regression test for
+// the mwan-ifmgr@wan crash-loop. The wan role must build only wan_routes, so it
+// never resolves the policy_rules uid_user (which would fail on a host lacking
+// that user) even when the shared config carries that rule.
+func TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules(t *testing.T) {
+	t.Parallel()
+
+	set, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), "wan")
+	if err != nil {
+		t.Fatalf("buildIfMgrModuleConfigs(wan) returned error: %v", err)
+	}
+	if _, ok := set["policy_rules"]; ok {
+		t.Fatal("wan role must not build a policy_rules config")
+	}
+	if _, ok := set["wan_routes"]; !ok {
+		t.Fatal("wan role must build a wan_routes config")
+	}
+}
+
+// TestBuildIfMgrModuleConfigsOOBRoleBuildsPolicyRules pins that the oob role
+// does build policy_rules (and surfaces the uid lookup failure), so the
+// role-scoped build does not silently drop a module the role actually runs.
+func TestBuildIfMgrModuleConfigsOOBRoleBuildsPolicyRules(t *testing.T) {
+	t.Parallel()
+
+	_, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), "oob")
+	if err == nil {
+		t.Fatal("oob role must build policy_rules and surface the uid lookup failure")
+	}
+	if !strings.Contains(err.Error(), "policy_rules") {
+		t.Fatalf("oob build error = %q, want it to mention policy_rules", err)
+	}
+}
+
+// TestBuildIfMgrModuleConfigsUnknownRole confirms an unknown role is rejected
+// rather than silently producing an empty config set.
+func TestBuildIfMgrModuleConfigsUnknownRole(t *testing.T) {
+	t.Parallel()
+
+	if _, err := buildIfMgrModuleConfigs(config.IfMgrModulesSection{}, "bogus"); err == nil {
+		t.Fatal("buildIfMgrModuleConfigs with an unknown role must error")
 	}
 }

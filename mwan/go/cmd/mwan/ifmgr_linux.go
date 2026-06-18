@@ -181,7 +181,7 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		rec = d
 	}
 
-	moduleConfigs, err := buildIfMgrModuleConfigs(cfg.IfMgr.Modules)
+	moduleConfigs, err := buildIfMgrModuleConfigs(cfg.IfMgr.Modules, role)
 	if err != nil {
 		return ifmgr.DaemonConfig{}, err
 	}

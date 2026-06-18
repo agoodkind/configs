@@ -24,69 +24,111 @@ import (
 	"goodkind.io/mwan/internal/netif"
 )
 
+// buildIfMgrModuleConfigs builds module configs for ONLY the modules in the
+// active role. Building is role-scoped (not build-everything) so an instanced
+// daemon (e.g. mwan-ifmgr@wan) never builds or validates a module config that
+// belongs to a different role sharing the same /etc/mwan/config.toml. Without
+// this, an eager build of policy_rules (which resolves uid_user at build time)
+// would crash @wan on a host lacking that user, even though @wan never runs
+// policy_rules.
 func buildIfMgrModuleConfigs(
 	modules config.IfMgrModulesSection,
+	role string,
 ) (ifmgr.ModuleConfigSet, error) {
+	names, err := ifmgr.ModulesForRole(role)
+	if err != nil {
+		return nil, err
+	}
+	want := make(map[string]bool, len(names))
+	for _, name := range names {
+		want[name] = true
+	}
+
 	moduleConfigs := make(ifmgr.ModuleConfigSet)
 
-	wgConfig, err := buildWGConfig(modules.WG)
-	if err != nil {
-		return nil, err
+	if want["wg"] {
+		wgConfig, err := buildWGConfig(modules.WG)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["wg"] = wgConfig
 	}
-	moduleConfigs["wg"] = wgConfig
 
-	oobV6Config, err := buildOOBV6Config(modules.OOBV6)
-	if err != nil {
-		return nil, err
+	if want["oobv6"] {
+		oobV6Config, err := buildOOBV6Config(modules.OOBV6)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["oobv6"] = oobV6Config
 	}
-	moduleConfigs["oobv6"] = oobV6Config
 
-	moduleConfigs["oobv4"] = buildOOBV4Config(modules.OOBV4)
-
-	slaacHealthConfig, err := buildSLAACHealthConfig(modules.SLAACHealth)
-	if err != nil {
-		return nil, err
+	if want["oobv4"] {
+		moduleConfigs["oobv4"] = buildOOBV4Config(modules.OOBV4)
 	}
-	moduleConfigs["slaac_health"] = slaacHealthConfig
 
-	raLostConfig, err := buildRALostConfig(modules.RALost)
-	if err != nil {
-		return nil, err
+	if want["slaac_health"] {
+		slaacHealthConfig, err := buildSLAACHealthConfig(modules.SLAACHealth)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["slaac_health"] = slaacHealthConfig
 	}
-	moduleConfigs["ra_lost"] = raLostConfig
 
-	connectivityProbeConfig, err := buildConnectivityProbeConfig(modules.ConnectivityProbe)
-	if err != nil {
-		return nil, err
+	if want["ra_lost"] {
+		raLostConfig, err := buildRALostConfig(modules.RALost)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["ra_lost"] = raLostConfig
 	}
-	moduleConfigs["connectivity_probe"] = connectivityProbeConfig
 
-	bridgeProbeConfig, err := buildBridgeProbeConfig(modules.BridgeProbe)
-	if err != nil {
-		return nil, err
+	if want["connectivity_probe"] {
+		connectivityProbeConfig, err := buildConnectivityProbeConfig(modules.ConnectivityProbe)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["connectivity_probe"] = connectivityProbeConfig
 	}
-	moduleConfigs["bridge_probe"] = bridgeProbeConfig
 
-	moduleConfigs["cloudflared_tap"] = buildCloudflaredTapConfig(modules.CloudflaredTap)
-	moduleConfigs["mainv4"] = buildMainV4Config(modules.MainV4)
-
-	policyRulesConfig, err := buildPolicyRulesConfig(modules.PolicyRules)
-	if err != nil {
-		return nil, err
+	if want["bridge_probe"] {
+		bridgeProbeConfig, err := buildBridgeProbeConfig(modules.BridgeProbe)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["bridge_probe"] = bridgeProbeConfig
 	}
-	moduleConfigs["policy_rules"] = policyRulesConfig
 
-	hostIPv6PolicyConfig, err := buildHostIPv6PolicyConfig(modules.HostIPv6Policy)
-	if err != nil {
-		return nil, err
+	if want["cloudflared_tap"] {
+		moduleConfigs["cloudflared_tap"] = buildCloudflaredTapConfig(modules.CloudflaredTap)
 	}
-	moduleConfigs["host_ipv6_policy"] = hostIPv6PolicyConfig
 
-	wanRoutesConfig, err := buildWANRoutesConfig(modules.WANRoutes)
-	if err != nil {
-		return nil, err
+	if want["mainv4"] {
+		moduleConfigs["mainv4"] = buildMainV4Config(modules.MainV4)
 	}
-	moduleConfigs["wan_routes"] = wanRoutesConfig
+
+	if want["policy_rules"] {
+		policyRulesConfig, err := buildPolicyRulesConfig(modules.PolicyRules)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["policy_rules"] = policyRulesConfig
+	}
+
+	if want["host_ipv6_policy"] {
+		hostIPv6PolicyConfig, err := buildHostIPv6PolicyConfig(modules.HostIPv6Policy)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["host_ipv6_policy"] = hostIPv6PolicyConfig
+	}
+
+	if want["wan_routes"] {
+		wanRoutesConfig, err := buildWANRoutesConfig(modules.WANRoutes)
+		if err != nil {
+			return nil, err
+		}
+		moduleConfigs["wan_routes"] = wanRoutesConfig
+	}
 
 	return moduleConfigs, nil
 }

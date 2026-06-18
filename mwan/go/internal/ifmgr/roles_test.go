@@ -3,6 +3,7 @@
 package ifmgr
 
 import (
+	"reflect"
 	"sort"
 	"testing"
 )
@@ -134,5 +135,25 @@ func TestLookupDoesNotResolveLegacyWGHealthName(t *testing.T) {
 
 	if _, ok := Lookup("wg_health"); ok {
 		t.Errorf("Lookup(\"wg_health\") resolved; legacy module name should not be registered")
+	}
+}
+
+// TestModulesForRoleExported confirms the exported ModulesForRole accessor
+// (used by package main to build only the active role's module configs)
+// mirrors the unexported modulesForRole.
+func TestModulesForRoleExported(t *testing.T) {
+	t.Parallel()
+
+	got, err := ModulesForRole("wan")
+	if err != nil {
+		t.Fatalf("ModulesForRole(\"wan\") returned err: %v", err)
+	}
+	want := []string{"wan_routes"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ModulesForRole(\"wan\") = %v, want %v", got, want)
+	}
+
+	if _, err := ModulesForRole("bogus"); err == nil {
+		t.Error("ModulesForRole(\"bogus\") returned nil err; unknown role should error")
 	}
 }

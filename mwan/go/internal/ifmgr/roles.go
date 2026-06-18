@@ -85,6 +85,13 @@ func modulesForRole(role string) ([]string, error) {
 	return names, nil
 }
 
+// ModulesForRole is the exported accessor for modulesForRole, used by the
+// daemon entrypoint (package main) to build only the active role's module
+// configs. Returns an error for an unknown role.
+func ModulesForRole(role string) ([]string, error) {
+	return modulesForRole(role)
+}
+
 // KnownRoles returns the sorted list of role names this binary supports.
 // Used by the CLI --help and config validation.
 func KnownRoles() []string {
