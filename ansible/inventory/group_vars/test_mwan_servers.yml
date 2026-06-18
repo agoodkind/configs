@@ -185,13 +185,14 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-# Cutover test step 2 (dual-write): wan_routes @wan now writes the live state
-# alongside shell update-routes.sh. Both produce the same idempotent rules, so
-# the data plane is unchanged; watch the @wan json log for thrash. Reset point is
-# the prod-mirror-pre-cutover snapshot. Step 1 (shadow) validated the match and
-# the event-driven late-RA fix.
-mwan_ifmgr_wan_enabled: true
-mwan_ifmgr_wan_shadow_mode: false
+# Prod-mirror baseline: matches prod (mwan_servers.yml) so the testbed is a true
+# pre-cutover mirror. @wan is off; shell update-routes.sh is the sole convergence
+# path, exactly as on prod. The cutover sequence (shadow, dual-write, then steps
+# 3-6) is run from this baseline against the prod-mirror-pre-cutover snapshot once
+# the full sequence is implemented; the prior dual-write run used an off-main
+# binary, so the testbed is reset to clean main here.
+mwan_ifmgr_wan_enabled: false
+mwan_ifmgr_wan_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
@@ -305,10 +306,7 @@ mwan_ifmgr_iface_key: "enmbrains0"
 mwan_ifmgr_iface_name: "enmbrains0"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
-mwan_ifmgr_cloudflared_oob_user: ""
 mwan_ifmgr_host_ipv6_policy_enabled: false
-# No OOB cloudflared tunnel on the testbed, so its uid policy rule is not emitted.
-cloudflared_oob_enabled: false
 
 # Interface-manager cloudflared-tap module (off; downgrade automation).
 mwan_ifmgr_cloudflared_tap_enabled: false
