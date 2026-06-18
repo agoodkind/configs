@@ -431,7 +431,6 @@ mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:ff::1"
-mwan_ifmgr_cloudflared_oob_user: "cloudflared-oob"
 mwan_ifmgr_host_ipv6_policy_enabled: false
 
 # Interface-manager cloudflared-tap module (off; downgrade automation).
@@ -449,18 +448,6 @@ mwan_ifmgr_wg_warn_handshake_age: "180s"
 mwan_ifmgr_wg_error_handshake_age: "300s"
 mwan_ifmgr_wg_timeout: "10s"
 mwan_ifmgr_wg_ignore_peers: []
-
-# ----------------------------------------------------------------------------
-# Vault OOB Cloudflare tunnel
-# ----------------------------------------------------------------------------
-
-cloudflared_oob_enabled: true
-cloudflared_oob_user: "cloudflared-oob"
-cloudflared_oob_bin: "/usr/local/bin/cloudflared"
-cloudflared_oob_config_dir: "/etc/cloudflared-oob"
-cloudflared_oob_nextdns_resolvers:
-  - "2a07:a8c0::7d:698e"
-  - "2a07:a8c1::7d:698e"
 
 # ----------------------------------------------------------------------------
 # Failover LXC runtime config
