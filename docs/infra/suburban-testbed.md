@@ -53,7 +53,7 @@ clear of the `02xx` mgmt/LAN/internal/SLAAC space:
 | --- | ------- | --------- | --------------- | -- | ----- |
 | Monkeybrains | 202 | `3d06:bad:b01:2400::/56` | `3d06:bad:b01:2400::/60` | DHCPv4 (kea-dhcp4) + DHCPv6 IA_NA, masquerade egress | `3d06:bad:b01:0250::/64` |
 | AT&T | 201 | `3d06:bad:b01:2300::/60` | `3d06:bad:b01:2300::/60` | dynamic DHCPv4 link (MAC-pinned to `10.240.205.2`) + routed static `/29` `10.241.205.0/29` 1:1-NAT'd to services; no 802.1X/VLAN | none |
-| Webpass | 200 | `3d06:bad:b01:220::/60` | `3d06:bad:b01:220::/60` | static on VM 950 | none |
+| Webpass | 200 | `3d06:bad:b01:2200::/56` | `3d06:bad:b01:2200::/60` | static v4 link + routed static `/29` `10.241.204.0/29` 1:1-NAT'd to services | none |
 
 Monkeybrains (202) runs the full prod dynamic stack: DHCPv4, DHCPv6 IA_NA,
 DHCPv6-PD, and SLAAC, so VM 950 gets a dynamic v4, a DHCPv6 address, the PD, and a
@@ -61,8 +61,9 @@ SLAAC address exactly as prod's real Monkeybrains delivers. AT&T (201) models pr
 AT&T: a dynamic DHCPv4 link (pinned stable by a sim MAC reservation) over which
 the sim routes a static `/29` (`10.241.205.0/29`) that VM 950 1:1-NATs to the five
 internal services, plus DHCPv6-PD; the testbed cannot reproduce 802.1X/VLAN, so
-the link is a direct NIC. Webpass (200) still provides DHCPv6-PD plus RA with a
-static v4 on VM 950; it reaches full prod parity (static `/29` block) in its phase.
+the link is a direct NIC. Webpass (200) models prod Webpass: a static v4 link plus
+a static `/29` (`10.241.204.0/29`) 1:1-NAT'd to the five services, with DHCPv6-PD
+`/56` (NPT on its first `/60`).
 
 ## Production vs testbed
 

@@ -157,16 +157,19 @@ suburban_ddns_ipv6_priority_subnets:
 testbed_isp_lxcs:
   - id: 200
     name: webpass
-    pd_prefix: "3d06:bad:b01:220::/60"
-    pd_len: 60
+    # Models prod Webpass: a static v4 link plus a static /29 (1:1-NAT'd to
+    # services) and DHCPv6-PD /56. The sim routes the /29 to the static link.
+    pd_prefix: "3d06:bad:b01:2200::/56"
+    pd_len: 56
     v4_subnet: "10.240.204.0/24"
     vm950_ll: "fe80::be24:11ff:febe:8eb4"
     dynamic_v4: false
     ia_na: false
     slaac_prefix: ""
     v4_reservations: []
-    static_v4_block: ""
-    static_v4_route_to: ""
+    static_v4_block: "10.241.204.0/29"
+    static_v4_route_to: "10.240.204.2"
+  - id: 201
   - id: 201
     name: att
     pd_prefix: "3d06:bad:b01:2300::/60"

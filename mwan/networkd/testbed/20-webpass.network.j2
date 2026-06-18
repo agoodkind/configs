@@ -14,7 +14,8 @@ IPv4Forwarding=yes
 IPv6Forwarding=yes
 
 [DHCPv6]
-PrefixDelegationHint=::/60
+# Prod Webpass is delegated a /56 (NPT uses its first /60).
+PrefixDelegationHint=::/56
 {% if mwan_webpass_duid_raw_data %}
 DUIDType=link-layer-time
 DUIDRawData={{ mwan_webpass_duid_raw_data }}

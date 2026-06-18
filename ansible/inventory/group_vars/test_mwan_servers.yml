@@ -99,9 +99,8 @@ mwan_webpass_duid_raw_data: ""
 mwan_monkeybrains_duid_raw_data: ""
 
 # 1:1 NAT of services to each WAN's routed static block, mirroring prod (att
-# 104.57.226.192/29, webpass 136.25.91.240/29). The att sim routes 10.241.205.0/29
-# to VM 950 over the dynamic link; webpass keeps a single static link IP until its
-# phase. Five services (10.250.250.2-6) map 1:1 to .2-.6 of each block.
+# 104.57.226.192/29, webpass 136.25.91.240/29). Each sim routes its /29 to VM 950;
+# five services (10.250.250.2-6) map 1:1 to .2-.6 of each block.
 mwan_static_mappings:
   att:
     - { internal: "10.250.250.2", external: "10.241.205.2" }
@@ -110,10 +109,11 @@ mwan_static_mappings:
     - { internal: "10.250.250.5", external: "10.241.205.5" }
     - { internal: "10.250.250.6", external: "10.241.205.6" }
   webpass:
-    - { internal: "10.250.250.2", external: "10.240.204.2" }
-    - { internal: "10.250.250.3", external: "10.240.204.2" }
-    - { internal: "10.250.250.4", external: "10.240.204.2" }
-    - { internal: "10.250.250.5", external: "10.240.204.2" }
+    - { internal: "10.250.250.2", external: "10.241.204.2" }
+    - { internal: "10.250.250.3", external: "10.241.204.3" }
+    - { internal: "10.250.250.4", external: "10.241.204.4" }
+    - { internal: "10.250.250.5", external: "10.241.204.5" }
+    - { internal: "10.250.250.6", external: "10.241.204.6" }
 
 # ----------------------------------------------------------------------------
 # Internal link (to OPNsense)
@@ -170,13 +170,13 @@ failover_lxc_id: "100"
 # NPT targets are the first /60 of each WAN's DHCPv6-PD delegation, mirroring prod.
 # PD sizes match prod: webpass /56, att /60, monkeybrains /56. Sim delegation
 # prefixes (the 22/23/24 /56-clean scheme) live in suburban_servers.yml
-# testbed_isp_lxcs. webpass keeps its /60 base here until its phase.
+# testbed_isp_lxcs.
 mwan_npt_att_prefix: "3d06:bad:b01:2300::/60"
-mwan_npt_webpass_prefix: "3d06:bad:b01:220::/60"
+mwan_npt_webpass_prefix: "3d06:bad:b01:2200::/60"
 mwan_npt_monkeybrains_prefix: "3d06:bad:b01:2400::/60"
 
 mwan_att_pd_prefix: "3d06:bad:b01:2300::/60"
-mwan_webpass_pd_prefix: "3d06:bad:b01:220::/60"
+mwan_webpass_pd_prefix: "3d06:bad:b01:2200::/56"
 mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 
 # ----------------------------------------------------------------------------
