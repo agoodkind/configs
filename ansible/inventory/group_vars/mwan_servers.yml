@@ -373,9 +373,10 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-# Off on prod until the testbed e2e passes and we sign off on the cutover.
-# Testbed (test_mwan_servers.yml) runs it first in shadow mode.
-mwan_ifmgr_wan_enabled: false
+# Cutover (MWAN-210) step 1: @wan enabled in shadow on prod VM 113. Shadow logs
+# intended ops and mutates nothing; advances to dual-write then shell-trigger
+# removal per step after sign-off.
+mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
