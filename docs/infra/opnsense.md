@@ -6,7 +6,9 @@ steady-state BGP and operational foot-guns, use
 [../opnsense/operational-notes.md](../opnsense/operational-notes.md). For the
 current testbed baseline and import workflow, use
 [../opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md) and
-[../opnsense/testbed-config-import.md](../opnsense/testbed-config-import.md).
+[../opnsense/testbed-config-import.md](../opnsense/testbed-config-import.md). For the
+out-of-band serial control channel into this router, use the
+[OPNsense OOB daemon](../opnsense/daemon.md).
 
 ## Role
 
