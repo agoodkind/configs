@@ -46,7 +46,8 @@ daemon_toml_path="${daemon_toml_dir}/daemon.toml"
 pidfile="/var/run/${name}.pid"
 child_pidfile="/var/run/${name}.child.pid"
 command="/usr/local/sbin/mwan-opnsense"
-required_files="${command}"
+run_shim="/usr/local/libexec/mwan-opnsense-run"
+required_files="${command} ${run_shim}"
 
 start_cmd="${name}_start"
 stop_cmd="${name}_stop"
@@ -105,48 +106,25 @@ EOF
 	}
 }
 
-mwan_opnsense_preflight() {
-	# Self-deploy revert path. If the previous start was a fresh deploy
-	# (pending-verify marker present) and the daemon never reported
-	# health=ok, swap .current with .previous before this start.
-	pending="/var/run/mwan-opnsense.pending-verify"
-	state="/var/run/mwan-opnsense.deploy.state"
-	sbin_dir="/usr/local/sbin"
-
-	[ -f "${pending}" ] || return 0
-
-	if awk -F: '$1=="health" && $2=="ok"' "${state}" 2>/dev/null | grep -q .; then
-		rm -f "${pending}"
-		return 0
-	fi
-
-	if [ ! -f "${sbin_dir}/mwan-opnsense.previous" ]; then
-		echo "${name}: pending-verify present but no .previous to revert to" >&2
-		rm -f "${pending}"
-		return 0
-	fi
-
-	logger -t mwan-opnsense-deploy "self-check failed; reverting to .previous"
-	cp -f "${sbin_dir}/mwan-opnsense.previous" "${sbin_dir}/mwan-opnsense.current" \
-		|| { echo "${name}: revert copy failed" >&2; return 1; }
-	rm -f "${pending}"
-}
-
 mwan_opnsense_start() {
 	if mwan_opnsense_status >/dev/null 2>&1; then
 		echo "${name} already running"
 		return 0
 	fi
 
-	mwan_opnsense_preflight || return 1
 	mwan_opnsense_write_daemon_toml || return 1
 
 	rm -f "${pidfile}" "${child_pidfile}"
-	# daemon(8) backgrounds the foreground binary and redirects
-	# stdout/stderr to ${mwan_opnsense_logfile}. -P records the supervisor
-	# pid; -p records the child's own pid so a forced stop can signal the
-	# actual daemon, not just the supervisor.
-	/usr/sbin/daemon -P "${pidfile}" -p "${child_pidfile}" -o "${mwan_opnsense_logfile}" "${command}"
+	# daemon(8) supervises and restarts the child on an unsolicited exit
+	# (-r), records the supervisor pid (-P) and the child pid (-p) so a
+	# forced stop can signal the actual daemon, and redirects stdout/stderr
+	# to ${mwan_opnsense_logfile}. The supervised target is the preflight
+	# shim, not the daemon directly: daemon(8) re-execs the shim on every
+	# (re)spawn, so the deploy preflight (revert a bad self-deploy to
+	# .previous) runs before the first start and before every respawn. A
+	# SIGTERM to the supervisor (service stop) forwards to the child and
+	# exits without respawning, so stop still means down.
+	/usr/sbin/daemon -r -P "${pidfile}" -p "${child_pidfile}" -o "${mwan_opnsense_logfile}" "${run_shim}"
 
 	count=0
 	while [ "${count}" -lt 10 ]; do

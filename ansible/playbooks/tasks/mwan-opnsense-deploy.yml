@@ -48,6 +48,19 @@
     mode: "0755"
   become: true
 
+# The supervised entry point for daemon(8) -r. rc.d launches this shim, which
+# runs the deploy preflight (revert a bad self-deploy to .previous) before
+# exec'ing the daemon on every (re)spawn.
+- name: Install mwan-opnsense-run preflight shim
+  ansible.builtin.copy:
+    src: >-
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/usr/local/libexec/mwan-opnsense-run
+    dest: /usr/local/libexec/mwan-opnsense-run
+    owner: root
+    group: wheel
+    mode: "0755"
+  become: true
+
 - name: Install rc.conf.d settings
   ansible.builtin.copy:
     src: >-
