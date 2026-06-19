@@ -90,6 +90,17 @@ func (s *Server) AttachTransferManager(tm *TransferManager) {
 	s.transfer = tm
 }
 
+// CleanStaleDeployTemps removes orphaned deploy scratch files left by a
+// prior crash. The daemon main calls this once at startup, before the
+// serial port opens, so an interrupted deploy or upload cannot leave a
+// stale .staged/.staged.tmp/upload temp wedged in the binary dir.
+func (s *Server) CleanStaleDeployTemps(ctx context.Context) (int, error) {
+	if s.deploy == nil {
+		return 0, nil
+	}
+	return s.deploy.CleanStaleTemps(ctx)
+}
+
 // clampToInt32 saturates n to the int32 range for proto fields that
 // carry small counts but originate from int-typed callees.
 func clampToInt32(n int) int32 {

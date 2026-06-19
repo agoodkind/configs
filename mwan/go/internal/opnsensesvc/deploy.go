@@ -103,6 +103,55 @@ func (d *DeployManager) PreviousSHA256() (string, error) {
 // file on the same filesystem (renames must be cross-mount-free).
 func (d *DeployManager) BinaryDir() string { return d.cfg.BinaryDir }
 
+// CleanStaleTemps removes orphaned deploy scratch files from BinaryDir.
+// The daemon calls this once at startup, before opening the serial
+// port. A hard kill mid-Deploy leaves a .staged (intermediate rename
+// target) or .staged.tmp (intermediate write target); a hard kill mid
+// TransferService upload into the binary dir leaves a ".<name>.upload.
+// <id>" dotfile. None of these can be in flight at startup, so any that
+// exist are orphans from a prior crash. The promotable .current and
+// .previous slots are never matched, and finishSwap sha-verifies before
+// the rename, so a removed orphan was never promoted. Returns the count
+// of files removed.
+func (d *DeployManager) CleanStaleTemps(ctx context.Context) (int, error) {
+	entries, err := os.ReadDir(d.cfg.BinaryDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("clean stale temps: read %s: %w", d.cfg.BinaryDir, err)
+	}
+	removed := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !isStaleDeployTemp(name) {
+			continue
+		}
+		path := filepath.Join(d.cfg.BinaryDir, name)
+		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			d.log.WarnContext(ctx, "deploy: clean stale temp failed", "path", path, "err", rmErr)
+			continue
+		}
+		d.log.DebugContext(ctx, "deploy: removed orphaned deploy temp", "path", path)
+		removed++
+	}
+	return removed, nil
+}
+
+// isStaleDeployTemp reports whether name is an orphaned deploy scratch
+// file: an intermediate staged slot, or an interrupted upload temp
+// (".<base>.upload.<id>"). The .current and .previous slots and the
+// symlink never match, so a promotable binary is never removed.
+func isStaleDeployTemp(name string) bool {
+	if name == BinaryStaged || name == BinaryStagedTmp {
+		return true
+	}
+	return strings.HasPrefix(name, ".") && strings.Contains(name, ".upload.")
+}
+
 // DeployFromPath is the streaming entry point. The caller has already
 // written the binary to srcPath (typically a temp file produced by
 // the streaming Deploy handler). DeployFromPath verifies sha256
