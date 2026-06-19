@@ -28,6 +28,15 @@ const (
 	// only rc.d supervision details stay compiled in here.
 	defaultRCName = "mwan_opnsense"
 	defaultRCSubr = "/etc/rc.subr"
+
+	// daemonStopTimeout bounds the in-Serve graceful shutdown: a stuck
+	// in-flight RPC is force-stopped after this, so Serve always returns on a
+	// stop. The fd close in Serve makes the idle case return well inside the
+	// bound. The guaranteed last resort for a wedged process is the rc.d
+	// process-group SIGKILL in the mwan_opnsense service script, not an
+	// in-process [os.Exit] (which the os_exit_outside_main gate forbids in a
+	// watcher goroutine).
+	daemonStopTimeout = 8 * time.Second
 )
 
 // runOPNsenseDaemonServe starts the MWN1 dispatcher daemon with the
@@ -99,7 +108,16 @@ func runOPNsenseDaemonServe(args []string) int {
 		OnSerialOpen: nil,
 		OnGRPCAccept: nil,
 		Transfer:     transferMgr,
-		StopTimeout:  0,
+		StopTimeout:  daemonStopTimeout,
+	}
+
+	// Sweep orphaned deploy scratch (.staged/.staged.tmp/upload temps)
+	// from a prior crash before the serial port opens, so an interrupted
+	// deploy or upload never wedges a stale temp into the binary dir.
+	if removed, cleanErr := srv.CleanStaleDeployTemps(ctx); cleanErr != nil {
+		logger.Warn("daemon serve: clean stale deploy temps", "err", cleanErr)
+	} else if removed > 0 {
+		logger.Info("daemon serve: removed orphaned deploy temps", "removed", removed)
 	}
 
 	slog.Info("mwan-opnsense: serving",
