@@ -1,5 +1,8 @@
 #!/bin/sh
-# shellcheck shell=sh disable=SC2034
+# shellcheck shell=sh disable=SC2034,SC2223,SC1091
+# SC2034: rcvar/cmd vars are consumed by rc.subr, not this file.
+# SC2223: the `: ${var:=default}` rc.conf idiom assigns static literals.
+# SC1091: /etc/rc.subr is a FreeBSD system file, not resolvable here.
 # PROVIDE: mwan_opnsense
 # REQUIRE: NETWORKING FILESYSTEMS
 # KEYWORD: shutdown
@@ -41,6 +44,7 @@ daemon_toml_dir="/var/lib/mwan"
 daemon_toml_path="${daemon_toml_dir}/daemon.toml"
 
 pidfile="/var/run/${name}.pid"
+child_pidfile="/var/run/${name}.child.pid"
 command="/usr/local/sbin/mwan-opnsense"
 required_files="${command}"
 
@@ -137,10 +141,12 @@ mwan_opnsense_start() {
 	mwan_opnsense_preflight || return 1
 	mwan_opnsense_write_daemon_toml || return 1
 
-	rm -f "${pidfile}"
-	# daemon(8) backgrounds the foreground binary, owns the pidfile,
-	# and redirects stdout/stderr to ${mwan_opnsense_logfile}.
-	/usr/sbin/daemon -P "${pidfile}" -o "${mwan_opnsense_logfile}" "${command}"
+	rm -f "${pidfile}" "${child_pidfile}"
+	# daemon(8) backgrounds the foreground binary and redirects
+	# stdout/stderr to ${mwan_opnsense_logfile}. -P records the supervisor
+	# pid; -p records the child's own pid so a forced stop can signal the
+	# actual daemon, not just the supervisor.
+	/usr/sbin/daemon -P "${pidfile}" -p "${child_pidfile}" -o "${mwan_opnsense_logfile}" "${command}"
 
 	count=0
 	while [ "${count}" -lt 10 ]; do
@@ -171,15 +177,17 @@ mwan_opnsense_stop() {
 
 	if ! kill -0 "${pid}" 2>/dev/null; then
 		echo "${name} not running; removing stale pidfile"
-		rm -f "${pidfile}"
+		rm -f "${pidfile}" "${child_pidfile}"
 		return 0
 	fi
 
+	# TERM the daemon(8) supervisor; it forwards SIGTERM to the child and
+	# waits for the child to exit.
 	kill -TERM "${pid}" 2>/dev/null || true
 	count=0
 	while [ "${count}" -lt "${mwan_opnsense_stop_timeout}" ]; do
 		if ! kill -0 "${pid}" 2>/dev/null; then
-			rm -f "${pidfile}"
+			rm -f "${pidfile}" "${child_pidfile}"
 			echo "${name} stopped"
 			return 0
 		fi
@@ -187,9 +195,27 @@ mwan_opnsense_stop() {
 		sleep 1
 	done
 
+	# Forced path. A child wedged in a blocking serial read does not exit
+	# on SIGTERM, and a SIGKILL aimed only at the supervisor cannot be
+	# forwarded, so the wedged child would orphan holding the serial
+	# device. The order is load-bearing: kill the supervisor FIRST, so that
+	# under daemon(8) -r (added later) it stops supervising and cannot
+	# respawn the child we are about to kill. Then signal the supervisor's
+	# process group: daemon(8) calls setsid, so the supervisor leads the
+	# group the child shares, and the group id outlives the dead leader, so
+	# a negative pid still reaches the wedged child. Finally signal the
+	# tracked child directly as a fallback in case it sits in its own group.
 	echo "${name} did not stop after TERM; sending KILL" >&2
 	kill -KILL "${pid}" 2>/dev/null || true
-	rm -f "${pidfile}"
+	kill -KILL -- "-${pid}" 2>/dev/null || true
+	child_pid=$(cat "${child_pidfile}" 2>/dev/null)
+	case "${child_pid}" in
+		*[!0-9]* | "") child_pid="" ;;
+	esac
+	if [ -n "${child_pid}" ]; then
+		kill -KILL "${child_pid}" 2>/dev/null || true
+	fi
+	rm -f "${pidfile}" "${child_pidfile}"
 }
 
 run_rc_command "$1"
