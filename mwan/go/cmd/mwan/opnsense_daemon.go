@@ -23,15 +23,16 @@ import (
 type daemonVerb string
 
 const (
-	daemonVerbServe     daemonVerb = "serve"
-	daemonVerbIsEnabled daemonVerb = "is-enabled"
-	daemonVerbVersion   daemonVerb = "version"
-	daemonVerbState     daemonVerb = "state"
-	daemonVerbPush      daemonVerb = "push"
-	daemonVerbStage     daemonVerb = "stage"
-	daemonVerbRestart   daemonVerb = "restart"
-	daemonVerbRevert    daemonVerb = "revert"
-	daemonVerbGC        daemonVerb = "gc"
+	daemonVerbServe       daemonVerb = "serve"
+	daemonVerbIsEnabled   daemonVerb = "is-enabled"
+	daemonVerbVersion     daemonVerb = "version"
+	daemonVerbState       daemonVerb = "state"
+	daemonVerbPush        daemonVerb = "push"
+	daemonVerbStage       daemonVerb = "stage"
+	daemonVerbRestart     daemonVerb = "restart"
+	daemonVerbRevert      daemonVerb = "revert"
+	daemonVerbGC          daemonVerb = "gc"
+	daemonVerbMarkHealthy daemonVerb = "mark-healthy"
 )
 
 func daemonUsage(out *os.File) {
@@ -47,6 +48,7 @@ func daemonUsage(out *os.File) {
 	fmt.Fprintln(out, "  restart                     trigger the daemon to exit so rc.d respawns it")
 	fmt.Fprintln(out, "  revert                      restore the previous staged binary")
 	fmt.Fprintln(out, "  gc                          probe the GC surface (daemon runs sweep on startup)")
+	fmt.Fprintln(out, "  mark-healthy                clear pending-verify and stamp health=ok for the active binary")
 }
 
 func runOPNsenseDaemon(args []string) int {
@@ -75,6 +77,8 @@ func runOPNsenseDaemon(args []string) int {
 		return runDaemonRevert()
 	case daemonVerbGC:
 		return runDaemonGC()
+	case daemonVerbMarkHealthy:
+		return runDaemonMarkHealthy()
 	default:
 		fmt.Fprintf(os.Stderr, "mwan opnsense daemon: unknown verb %q\n", string(verb))
 		daemonUsage(os.Stderr)
@@ -146,6 +150,29 @@ func runDaemonState() int {
 	resp, err := cli.RPC().DeployStatus(ctx, &mwanv1.DeployStatusRequest{})
 	if err != nil {
 		return printAndExit("daemon state", err)
+	}
+	fmt.Printf("active=%s previous=%s health=%s deployed_at=%d\n",
+		resp.GetActiveSha256(), resp.GetPreviousSha256(), resp.GetHealth(), resp.GetDeployedAt())
+	return 0
+}
+
+// runDaemonMarkHealthy stamps the active binary healthy: it clears the
+// pending-verify marker and sets health=ok in the deploy state, so the
+// rc.d preflight does not revert the deploy on a later respawn. This is
+// the step that completes a self-deploy round-trip; without it the
+// preflight treats every deploy as unverified.
+func runDaemonMarkHealthy() int {
+	cli, ctx, cancel, err := dialProbe()
+	if err != nil {
+		return printAndExit("daemon mark-healthy", err)
+	}
+	defer cancel()
+	defer func() { _ = cli.Close() }()
+	resp, err := cli.RPC().DeployStatus(ctx, &mwanv1.DeployStatusRequest{
+		Mark: mwanv1.DeployStatusRequest_MARK_HEALTHY,
+	})
+	if err != nil {
+		return printAndExit("daemon mark-healthy", err)
 	}
 	fmt.Printf("active=%s previous=%s health=%s deployed_at=%d\n",
 		resp.GetActiveSha256(), resp.GetPreviousSha256(), resp.GetHealth(), resp.GetDeployedAt())
