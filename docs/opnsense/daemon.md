@@ -136,14 +136,11 @@ These are the load-bearing invariants. Changing any of them re-opens a documente
 
 ## Operating it
 
-The practiced install and recovery steps live in the runbooks:
+Two guides cover the daemon end to end:
 
-- [serial VM from-scratch runbook](../runbooks/opnsense-serial-vm-from-scratch.md)
-- [upgrade rehearsal runbook](../runbooks/opnsense-upgrade-rehearsal-vm102.md)
-
-These are point-in-time records from the 2026-05 bring-up and reference the predecessor
-transport in places, but their device, port, reboot, rollback, and break-glass steps remain
-the authoritative testbed reference.
+- [install](install.md) brings up OPNsense and the daemon on a fresh VM.
+- [operations](operations.md) covers updating the binary, the firmware-upgrade use case,
+  and recovering a wedged channel.
 
 ## Further reading
 
