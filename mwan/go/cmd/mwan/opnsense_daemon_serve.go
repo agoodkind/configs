@@ -92,8 +92,11 @@ func runOPNsenseDaemonServe(args []string) int {
 	// We do not `defer cancel()` because we explicitly call it before
 	// returning from this subcommand.
 	srv.SetRestartHook(func() {
-		logger.Info("mwan-opnsense: RestartDaemon hook firing, cancelling serve ctx")
-		cancel()
+		logger.Info("mwan-opnsense: RestartDaemon hook firing, re-exec onto active binary")
+		if err := reExecCurrent(logger, opnsensesvc.DefaultBinaryDir, syscall.Exec); err != nil {
+			logger.Error("mwan-opnsense: re-exec failed; falling back to ctx cancel", "err", err)
+			cancel()
+		}
 	})
 
 	openSerial := func(path string) (io.ReadWriteCloser, error) {
