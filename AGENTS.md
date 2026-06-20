@@ -137,7 +137,8 @@ capture forensics, and reset to a known-good state instead of improvising.
   [docs/opnsense/config-import.md](docs/opnsense/config-import.md)
 - OPNsense testbed baseline and import gate:
   [docs/opnsense/testbed-baseline.md](docs/opnsense/testbed-baseline.md),
-  [docs/opnsense/testbed-config-import.md](docs/opnsense/testbed-config-import.md)
+  [docs/opnsense/testbed-config-import.md](docs/opnsense/testbed-config-import.md),
+  [docs/opnsense/ui-testing.md](docs/opnsense/ui-testing.md)
 - MWAN runtime design and rollout behavior:
   [docs/mwan/overview.md](docs/mwan/overview.md)
 - MWAN email routing target state:

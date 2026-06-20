@@ -4,7 +4,9 @@ Current state for the OPNsense testbed VM (`opnsense-test`) on suburban. Use
 [docs/opnsense/testbed-config-import.md](testbed-config-import.md) for the
 config-import gate. Broader testbed topology lives in
 [docs/infra/suburban-testbed.md](../infra/suburban-testbed.md). The MWAN
-runtime story lives in [docs/mwan/overview.md](../mwan/overview.md).
+runtime story lives in [docs/mwan/overview.md](../mwan/overview.md). Local
+browser forwarding for headless Chrome or Playwright lives in
+[docs/opnsense/ui-testing.md](ui-testing.md).
 
 ## Current state
 
