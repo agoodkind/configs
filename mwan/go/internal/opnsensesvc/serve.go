@@ -53,6 +53,25 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 	}
 	log.InfoContext(ctx, "opnsensesvc: serial opened", "path", opts.SerialPath)
 
+	// Close the real serial fd when the serve ctx is cancelled (a terminal
+	// stop: SIGTERM, SIGINT, or the RestartDaemon hook). The yamux read loop
+	// parks in a blocking serial read that the FreeBSD virtio_console driver
+	// never wakes on its own, so without this close the shutdown path waits
+	// on a read that never returns and the daemon hangs on stop and orphans
+	// its child. This is the only place the fd is closed during a run;
+	// serialStream.Close stays a no-op so the fd outlives individual yamux
+	// sessions while the daemon is up.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.ErrorContext(ctx, "opnsensesvc: serial-close watcher panic",
+					"panic", r, "err", fmt.Errorf("panic: %v", r))
+			}
+		}()
+		<-ctx.Done()
+		_ = rwc.Close()
+	}()
+
 	// One yamux session at a time runs over the shared chardev. If the
 	// session ends (peer disconnect, protocol-version mismatch from
 	// leftover bytes after a restart, transport error), build a fresh
@@ -62,7 +81,7 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
-		if err := serveOneSession(ctx, log, rwc, opts.Server); err != nil {
+		if err := serveOneSession(ctx, log, rwc, opts.Server, opts.StopTimeout); err != nil {
 			log.WarnContext(ctx, "opnsensesvc: session ended, restarting", "err", err)
 			if !sleepOK(ctx, time.Second) {
 				return nil
@@ -77,7 +96,7 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 // fresh gRPC server, and serves until the session terminates or ctx
 // is cancelled. Any returned error is non-fatal at the daemon level
 // so the outer loop can build a new session.
-func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteCloser, srv *Server) error {
+func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteCloser, srv *Server, stopTimeout time.Duration) error {
 	yamuxCfg := yamux.DefaultConfig()
 	yamuxCfg.EnableKeepAlive = false
 	yamuxCfg.LogOutput = io.Discard
@@ -105,7 +124,33 @@ func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteClos
 			}
 		}()
 		<-stopCtx.Done()
-		grpcServer.GracefulStop()
+		// Bound the graceful stop. GracefulStop waits for in-flight RPCs,
+		// which a long Exec or Transfer can stretch; force grpcServer.Stop()
+		// if it does not finish within stopTimeout so the shutdown is always
+		// bounded. The fd close in Serve unblocks the read loop, so the idle
+		// case completes gracefully well within the bound.
+		gracefulDone := make(chan struct{})
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.ErrorContext(stopCtx, "opnsensesvc: graceful-stop panic",
+						"panic", r, "err", fmt.Errorf("panic: %v", r))
+				}
+			}()
+			grpcServer.GracefulStop()
+			close(gracefulDone)
+		}()
+		if stopTimeout > 0 {
+			t := time.NewTimer(stopTimeout)
+			defer t.Stop()
+			select {
+			case <-gracefulDone:
+			case <-t.C:
+				grpcServer.Stop()
+			}
+		} else {
+			<-gracefulDone
+		}
 		_ = session.Close()
 	}()
 

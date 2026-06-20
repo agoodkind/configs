@@ -305,6 +305,51 @@ func TestFileSHA256_MissingReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestCleanStaleTemps_RemovesOrphansKeepsSlots(t *testing.T) {
+	dm, binDir := newTestDeployManager(t)
+	// Orphan scratch from an interrupted deploy/upload: must be removed.
+	writeBinary(t, filepath.Join(binDir, BinaryStaged), []byte("staged"))
+	writeBinary(t, filepath.Join(binDir, BinaryStagedTmp), []byte("staged-tmp"))
+	uploadTemp := filepath.Join(binDir, "."+BinaryCurrent+".upload.deadbeef")
+	writeBinary(t, uploadTemp, []byte("upload"))
+	// Promotable slots and the symlink name: must be kept.
+	writeBinary(t, filepath.Join(binDir, BinaryCurrent), []byte("current"))
+	writeBinary(t, filepath.Join(binDir, BinaryPrevious), []byte("previous"))
+
+	removed, err := dm.CleanStaleTemps(context.Background())
+	if err != nil {
+		t.Fatalf("CleanStaleTemps: %v", err)
+	}
+	if removed != 3 {
+		t.Errorf("removed=%d, want 3", removed)
+	}
+	for _, gone := range []string{BinaryStaged, BinaryStagedTmp} {
+		if _, statErr := os.Stat(filepath.Join(binDir, gone)); !errors.Is(statErr, fs.ErrNotExist) {
+			t.Errorf("%s should be removed, statErr=%v", gone, statErr)
+		}
+	}
+	if _, statErr := os.Stat(uploadTemp); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("upload temp should be removed, statErr=%v", statErr)
+	}
+	for _, kept := range []string{BinaryCurrent, BinaryPrevious} {
+		if _, statErr := os.Stat(filepath.Join(binDir, kept)); statErr != nil {
+			t.Errorf("%s should be kept, statErr=%v", kept, statErr)
+		}
+	}
+}
+
+func TestCleanStaleTemps_MissingDirNoError(t *testing.T) {
+	cfg := DeployConfig{BinaryDir: filepath.Join(t.TempDir(), "does-not-exist")}
+	dm := NewDeployManager(slog.Default(), cfg)
+	removed, err := dm.CleanStaleTemps(context.Background())
+	if err != nil {
+		t.Fatalf("want nil err for missing dir, got %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("removed=%d, want 0", removed)
+	}
+}
+
 // helpers
 
 func sha256Hex(b []byte) string {
