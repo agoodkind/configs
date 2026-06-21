@@ -144,6 +144,11 @@ fw_mark = {{ mwan_ifmgr_wan_fw_marks.webpass }}
 fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.webpass }}
 from_prio = {{ mwan_ifmgr_wan_from_prios.webpass }}
 npt_prefix = "{{ mwan_npt_webpass_prefix }}"
+# Webpass is the only static-link WAN, so @wan owns its v4 source pin (the IPv4
+# twin of npt_prefix) at from_prio. AT&T and Monkeybrains are dynamic and set no
+# v4_source. See 20-webpass.network.j2, which drops the networkd [RoutingPolicyRule]
+# once @wan is authoritative.
+v4_source = "{{ mwan_webpass_ipv4_addr }}"
 
 [[ifmgr.modules.wan_routes.wan]]
 name = "monkeybrains"
