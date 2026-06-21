@@ -10,30 +10,11 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"syscall"
 	"time"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv6"
-	"golang.org/x/sys/unix"
 )
-
-// bindToDevice returns a net.Dialer Control function that sets
-// SO_BINDTODEVICE on the dialed socket so traffic egresses via iface
-// regardless of the kernel's default routing decision.
-func bindToDevice(iface string) func(network, address string, c syscall.RawConn) error {
-	return func(_, _ string, c syscall.RawConn) error {
-		var sockErr error
-		err := c.Control(func(fd uintptr) {
-			sockErr = unix.SetsockoptString(int(fd), unix.SOL_SOCKET,
-				unix.SO_BINDTODEVICE, iface)
-		})
-		if err != nil {
-			return err
-		}
-		return sockErr
-	}
-}
 
 // V6Probe sends ICMPv6 Echo Requests from a specific interface and waits
 // for the reply. Used by slaac_health and connectivity_probe to verify
@@ -166,34 +147,4 @@ func (p *V6Probe) PingICMP6(
 			"from", peer.String(), "rtt_ms", dur.Milliseconds())
 		return dur, nil
 	}
-}
-
-// TCPConnect attempts a TCP connection to (target, port) bound to the
-// configured interface, returning nil on success. Used as a fallback
-// probe for hosts that drop ICMP. Bound via SO_BINDTODEVICE so source
-// selection respects the interface even when the kernel might prefer
-// another route.
-func (p *V6Probe) TCPConnect(
-	ctx context.Context, target netip.Addr, port int, timeout time.Duration,
-) error {
-	op := p.log.With("op", "TCPConnect",
-		"target", target.String(), "port", port,
-		"timeout_ms", timeout.Milliseconds())
-	op.Debug("v6probe: TCPConnect entry")
-
-	d := net.Dialer{
-		Timeout: timeout,
-		Control: bindToDevice(p.iface),
-	}
-	addr := net.JoinHostPort(target.String(), fmt.Sprintf("%d", port))
-	start := time.Now()
-	conn, err := d.DialContext(ctx, "tcp6", addr)
-	dur := time.Since(start)
-	op.Debug("v6probe: DialContext result",
-		"duration_ms", dur.Milliseconds(), "err", err)
-	if err != nil {
-		return err
-	}
-	_ = conn.Close()
-	return nil
 }

@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
+	"goodkind.io/mwan/internal/notify"
 )
 
 // newTestModule builds a Module wired with a real AlertManager so we can
@@ -20,7 +22,7 @@ func newTestModule(t *testing.T, unhealthyAfter time.Duration) *Module {
 	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	env := &ifmgr.Env{
 		Log:    log,
-		Alerts: ifmgr.NewAlertManager(log, ifmgr.AlertConfig{}),
+		Alerts: ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, log, "mwan-ifmgr")),
 	}
 	m := &Module{
 		cfg: Config{
