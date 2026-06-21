@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 )
 
 // SysctlRunner reads and writes /proc/sys keys via direct file I/O. Used
@@ -31,16 +30,18 @@ type SysctlRunner interface {
 type ProcSysctlRunner struct {
 	log    *slog.Logger
 	dryRun bool
+	clock  clock
 }
 
 // NewProcSysctlRunner constructs a runner. log must be non-nil.
 func NewProcSysctlRunner(log *slog.Logger, dryRun bool) *ProcSysctlRunner {
 	if log == nil {
-		panic("netif.NewProcSysctlRunner: log is required")
+		log = slog.Default()
 	}
 	r := &ProcSysctlRunner{
 		log:    log.With("component", "sysctl"),
 		dryRun: dryRun,
+		clock:  realClock{},
 	}
 	r.log.Debug("sysctl: constructed", "dry_run", dryRun)
 	return r
@@ -49,18 +50,18 @@ func NewProcSysctlRunner(log *slog.Logger, dryRun bool) *ProcSysctlRunner {
 // Get reads the sysctl value at key (e.g. "net.ipv6.conf.eth0.disable_ipv6").
 // Returns the trimmed string contents.
 func (r *ProcSysctlRunner) Get(ctx context.Context, key string) (string, error) {
-	_ = ctx // file read is fast; we don't honour ctx here for simplicity
 	path := keyToPath(key)
-	start := time.Now()
+	startTime := r.clock.Now()
 	data, err := os.ReadFile(path)
-	dur := time.Since(start)
+	dur := r.clock.Now().Sub(startTime)
 	val := strings.TrimRight(string(data), "\n\t ")
-	r.log.Debug("sysctl: read",
+	r.log.DebugContext(ctx, "sysctl: read",
 		"key", key, "path", path, "value", val,
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
 	)
 	if err != nil {
+		r.log.WarnContext(ctx, "sysctl: read failed", "key", key, "path", path, "err", err)
 		return "", fmt.Errorf("sysctl read %s: %w", key, err)
 	}
 	return val, nil
@@ -70,22 +71,23 @@ func (r *ProcSysctlRunner) Get(ctx context.Context, key string) (string, error) 
 // Returns wrapped error if the write fails (most commonly EACCES when the
 // process lacks the systemd capability or ProtectKernelTunables blocks it).
 func (r *ProcSysctlRunner) Set(ctx context.Context, key, value string) error {
-	_ = ctx
 	path := keyToPath(key)
 	if r.dryRun {
-		r.log.Info("sysctl: dry-run skipping write",
+		r.log.InfoContext(ctx, "sysctl: dry-run skipping write",
 			"key", key, "path", path, "value", value)
 		return nil
 	}
-	start := time.Now()
+	startTime := r.clock.Now()
 	err := os.WriteFile(path, []byte(value), 0o644)
-	dur := time.Since(start)
-	r.log.Debug("sysctl: write",
+	dur := r.clock.Now().Sub(startTime)
+	r.log.DebugContext(ctx, "sysctl: write",
 		"key", key, "path", path, "value", value,
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
 	)
 	if err != nil {
+		r.log.WarnContext(ctx, "sysctl: write failed",
+			"key", key, "path", path, "value", value, "err", err)
 		// Surface EACCES specifically; it's the most common operator
 		// misconfiguration and the diagnostic message helps unblock.
 		if errors.Is(err, os.ErrPermission) {

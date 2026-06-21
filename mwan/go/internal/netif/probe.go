@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,9 +30,12 @@ func bindToDevice(iface string) func(network, address string, c syscall.RawConn)
 				unix.SO_BINDTODEVICE, iface)
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("bindToDevice(%s): raw control: %w", iface, err)
 		}
-		return sockErr
+		if sockErr != nil {
+			return fmt.Errorf("bindToDevice(%s): setsockopt: %w", iface, sockErr)
+		}
+		return nil
 	}
 }
 
@@ -49,16 +53,18 @@ func bindToDevice(iface string) func(network, address string, c syscall.RawConn)
 type V6Probe struct {
 	iface string
 	log   *slog.Logger
+	clock clock
 }
 
 // NewV6Probe constructs a V6Probe. log must be non-nil.
 func NewV6Probe(iface string, log *slog.Logger) *V6Probe {
 	if log == nil {
-		panic("netif.NewV6Probe: log is required")
+		log = slog.Default()
 	}
 	return &V6Probe{
 		iface: iface,
 		log:   log.With("component", "v6probe", "iface", iface),
+		clock: realClock{},
 	}
 }
 
@@ -102,8 +108,9 @@ func (p *V6Probe) PingICMP6(
 	}
 
 	// Build Echo Request.
+	startTime := p.clock.Now()
 	id := os.Getpid() & 0xffff
-	seq := int(time.Now().UnixNano() & 0x7fff)
+	seq := int(startTime.UnixNano() & 0x7fff)
 	msg := icmp.Message{
 		Type: ipv6.ICMPTypeEchoRequest,
 		Code: 0,
@@ -115,16 +122,17 @@ func (p *V6Probe) PingICMP6(
 	}
 	wb, err := msg.Marshal(nil)
 	if err != nil {
+		op.Warn("v6probe: marshal echo failed", "err", err)
 		return 0, fmt.Errorf("marshal echo: %w", err)
 	}
 
-	deadline := time.Now().Add(timeout)
+	deadline := startTime.Add(timeout)
 	if err := conn.SetReadDeadline(deadline); err != nil {
+		op.Warn("v6probe: SetReadDeadline failed", "err", err)
 		return 0, fmt.Errorf("SetReadDeadline: %w", err)
 	}
 
 	dst := &net.IPAddr{IP: target.AsSlice()}
-	start := time.Now()
 	if _, err := conn.WriteTo(wb, dst); err != nil {
 		op.Warn("v6probe: WriteTo failed", "err", err)
 		return 0, fmt.Errorf("WriteTo(%s): %w", target, err)
@@ -136,18 +144,19 @@ func (p *V6Probe) PingICMP6(
 		select {
 		case <-ctx.Done():
 			op.Debug("v6probe: ctx cancelled while waiting for reply")
-			return 0, ctx.Err()
+			return 0, fmt.Errorf("PingICMP6: %w", ctx.Err())
 		default:
 		}
 		n, peer, err := conn.ReadFrom(rb)
-		dur := time.Since(start)
+		dur := p.clock.Now().Sub(startTime)
 		if err != nil {
 			var nerr net.Error
 			if errors.As(err, &nerr) && nerr.Timeout() {
 				op.Debug("v6probe: deadline exceeded waiting for reply",
-					"waited_ms", dur.Milliseconds())
+				"waited_ms", dur.Milliseconds())
 				return 0, context.DeadlineExceeded
 			}
+			op.Warn("v6probe: ReadFrom failed", "err", err)
 			return 0, fmt.Errorf("ReadFrom: %w", err)
 		}
 		rm, err := icmp.ParseMessage(58, rb[:n])
@@ -185,14 +194,15 @@ func (p *V6Probe) TCPConnect(
 		Timeout: timeout,
 		Control: bindToDevice(p.iface),
 	}
-	addr := net.JoinHostPort(target.String(), fmt.Sprintf("%d", port))
-	start := time.Now()
+	addr := net.JoinHostPort(target.String(), strconv.Itoa(port))
+	startTime := p.clock.Now()
 	conn, err := d.DialContext(ctx, "tcp6", addr)
-	dur := time.Since(start)
+	dur := p.clock.Now().Sub(startTime)
 	op.Debug("v6probe: DialContext result",
 		"duration_ms", dur.Milliseconds(), "err", err)
 	if err != nil {
-		return err
+		op.Warn("v6probe: DialContext failed", "err", err)
+		return fmt.Errorf("DialContext(%s): %w", addr, err)
 	}
 	_ = conn.Close()
 	return nil
