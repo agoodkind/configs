@@ -9,7 +9,7 @@ package netif
 // from a CIDR config field) need it.
 //
 // This is the only string-level CIDR helper we need; everything else operates
-// on parsed netip.Addr/netip.Prefix or the netlink type system. Keeping it
+// on parsed [netip.Addr], [netip.Prefix], or the netlink type system. Keeping it
 // minimal and intentional.
 func StripPrefix(cidr string) string {
 	for i, c := range cidr {
