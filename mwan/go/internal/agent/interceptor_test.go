@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-func TestUnaryTraceInterceptorUsesIncomingTraceID(t *testing.T) {
+func TestTraceStatsHandlerUsesIncomingTraceID(t *testing.T) {
 	t.Parallel()
 
 	var buffer bytes.Buffer
@@ -26,7 +26,7 @@ func TestUnaryTraceInterceptorUsesIncomingTraceID(t *testing.T) {
 
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer(
-		grpc.UnaryInterceptor(unaryTraceInterceptor(logger)),
+		grpc.StatsHandler(newTraceStatsHandler(logger)),
 	)
 	mwanv1.RegisterMWANAgentServer(
 		server,

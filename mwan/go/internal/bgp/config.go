@@ -1,3 +1,4 @@
+// Package bgp defines the speaker-side BGP configuration model.
 package bgp
 
 // Config holds BGP speaker configuration.

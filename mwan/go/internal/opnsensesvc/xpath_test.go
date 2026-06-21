@@ -2,12 +2,13 @@ package opnsensesvc
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 )
 
 func TestXPathGet_Hostname(t *testing.T) {
-	got, err := xpathGet([]byte(sampleConfig), "//opnsense/system/hostname")
+	got, err := xpathGetWithLog(context.Background(), nil, []byte(sampleConfig), "//opnsense/system/hostname")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +21,7 @@ func TestXPathGet_Hostname(t *testing.T) {
 }
 
 func TestXPathGet_Multiple(t *testing.T) {
-	got, err := xpathGet([]byte(sampleConfig), "//opnsense/interfaces/*/if")
+	got, err := xpathGetWithLog(context.Background(), nil, []byte(sampleConfig), "//opnsense/interfaces/*/if")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func TestXPathGet_Multiple(t *testing.T) {
 }
 
 func TestXPathGet_NoMatch(t *testing.T) {
-	got, err := xpathGet([]byte(sampleConfig), "//opnsense/nonexistent/key")
+	got, err := xpathGetWithLog(context.Background(), nil, []byte(sampleConfig), "//opnsense/nonexistent/key")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,13 +41,19 @@ func TestXPathGet_NoMatch(t *testing.T) {
 }
 
 func TestXPathGet_EmptyExpr(t *testing.T) {
-	if _, err := xpathGet([]byte(sampleConfig), ""); err == nil {
+	if _, err := xpathGetWithLog(context.Background(), nil, []byte(sampleConfig), ""); err == nil {
 		t.Fatal("expected error on empty expr")
 	}
 }
 
 func TestXPathSet_ChangesValue(t *testing.T) {
-	out, n, err := xpathSet([]byte(sampleConfig), "//opnsense/system/hostname", "newhost")
+	out, n, err := xpathSetWithLog(
+		context.Background(),
+		nil,
+		[]byte(sampleConfig),
+		"//opnsense/system/hostname",
+		"newhost",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +66,7 @@ func TestXPathSet_ChangesValue(t *testing.T) {
 }
 
 func TestXPathSet_NoMatch(t *testing.T) {
-	out, n, err := xpathSet([]byte(sampleConfig), "//opnsense/nonexistent", "x")
+	out, n, err := xpathSetWithLog(context.Background(), nil, []byte(sampleConfig), "//opnsense/nonexistent", "x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +79,12 @@ func TestXPathSet_NoMatch(t *testing.T) {
 }
 
 func TestXPathDelete_RemovesNode(t *testing.T) {
-	out, n, err := xpathDelete([]byte(sampleConfig), "//opnsense/interfaces/wan/gatewayv6")
+	out, n, err := xpathDeleteWithLog(
+		context.Background(),
+		nil,
+		[]byte(sampleConfig),
+		"//opnsense/interfaces/wan/gatewayv6",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +97,7 @@ func TestXPathDelete_RemovesNode(t *testing.T) {
 }
 
 func TestXPathDelete_NoMatch(t *testing.T) {
-	out, n, err := xpathDelete([]byte(sampleConfig), "//opnsense/nonexistent")
+	out, n, err := xpathDeleteWithLog(context.Background(), nil, []byte(sampleConfig), "//opnsense/nonexistent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,11 +110,17 @@ func TestXPathDelete_NoMatch(t *testing.T) {
 }
 
 func TestXPathSet_Then_XPathGet_RoundTrip(t *testing.T) {
-	out, _, err := xpathSet([]byte(sampleConfig), "//opnsense/system/hostname", "rt-host")
+	out, _, err := xpathSetWithLog(
+		context.Background(),
+		nil,
+		[]byte(sampleConfig),
+		"//opnsense/system/hostname",
+		"rt-host",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := xpathGet(out, "//opnsense/system/hostname")
+	got, err := xpathGetWithLog(context.Background(), nil, out, "//opnsense/system/hostname")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +130,7 @@ func TestXPathSet_Then_XPathGet_RoundTrip(t *testing.T) {
 }
 
 func TestNodeToString_NotEmpty(t *testing.T) {
-	got, err := xpathGet([]byte(sampleConfig), "//opnsense/interfaces/wan")
+	got, err := xpathGetWithLog(context.Background(), nil, []byte(sampleConfig), "//opnsense/interfaces/wan")
 	if err != nil {
 		t.Fatal(err)
 	}

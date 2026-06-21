@@ -1,3 +1,4 @@
+// Package ops wraps external host, guest, and transport operations for mwan.
 package ops
 
 import (
@@ -9,12 +10,16 @@ import (
 	"time"
 )
 
+// ChannelName identifies one guest-management transport channel.
 type ChannelName string
 
 const (
+	// ChanVsock is the primary gRPC-over-vsock channel to the guest agent.
 	ChanVsock ChannelName = "vsock"
-	ChanTCP   ChannelName = "tcp_mgmt"
-	ChanPVE   ChannelName = "pve_rest"
+	// ChanTCP is the fallback TCP management channel to the guest agent.
+	ChanTCP ChannelName = "tcp_mgmt"
+	// ChanPVE is the Proxmox REST guest-exec fallback channel.
+	ChanPVE ChannelName = "pve_rest"
 )
 
 type channelHealth struct {
@@ -25,21 +30,25 @@ type channelHealth struct {
 	healthy          bool
 }
 
+// ChannelTracker records success and failure state for each transport channel.
 type ChannelTracker struct {
 	mu       sync.Mutex
 	channels map[ChannelName]*channelHealth
 	now      func() time.Time
 }
 
+// NewChannelTracker returns a tracker backed by the real wall clock.
 func NewChannelTracker() *ChannelTracker {
 	return NewChannelTrackerWithClock(time.Now)
 }
 
+// NewChannelTrackerWithClock returns a tracker that uses now for timestamps.
 func NewChannelTrackerWithClock(now func() time.Time) *ChannelTracker {
 	if now == nil {
 		now = time.Now
 	}
 	return &ChannelTracker{
+		mu: sync.Mutex{},
 		channels: map[ChannelName]*channelHealth{
 			ChanVsock: {},
 			ChanTCP:   {},

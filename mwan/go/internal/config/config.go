@@ -1,10 +1,11 @@
+// Package config loads and validates the shared mwan TOML configuration.
 package config
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type NetworkConfig struct {
 	LastChangePath string         `toml:"last_change_path"`
 }
 
+// WanIfaceNames returns the configured WAN interface names in config order.
 func (nc NetworkConfig) WanIfaceNames() []string {
 	names := make([]string, len(nc.WANInterfaces))
 	for i, w := range nc.WANInterfaces {
@@ -90,14 +92,17 @@ type WatchdogSection struct {
 
 // Duration helper methods for WatchdogSection.
 
+// HealthyInterval returns the steady-state watchdog poll interval.
 func (ws WatchdogSection) HealthyInterval() time.Duration {
 	return time.Duration(ws.CheckIntervalHealthy) * time.Second
 }
 
+// DegradedInterval returns the poll interval used after a failed probe.
 func (ws WatchdogSection) DegradedInterval() time.Duration {
 	return time.Duration(ws.CheckIntervalDegraded) * time.Second
 }
 
+// PostRollbackGrace returns the grace period after a rollback completes.
 func (ws WatchdogSection) PostRollbackGrace() time.Duration {
 	return time.Duration(ws.PostRollbackGraceSeconds) * time.Second
 }
@@ -486,40 +491,39 @@ func defaultConfigBase() Config {
 	// exhaustruct lint does not require enumerating every zero-value
 	// sub-section (OPNsense, IfMgr, and their many nested sub-structs).
 	var cfg Config
-	cfg.Email = EmailConfig{MinLevel: "ERROR", Cooldown: "5m"}
-	cfg.PVE = PVEConfig{BaseURL: "https://127.0.0.1:8006/api2/json"}
-	cfg.Network = NetworkConfig{
-		PingTargetIPv4: "1.1.1.1",
-		PingTargetIPv6: "2606:4700:4700::1111",
-		LastDeployPath: "/var/lib/mwan/last-deploy",
-		LastChangePath: "/var/run/mwan-last-change",
-	}
-	cfg.Watchdog = WatchdogSection{
-		DeployWindowMinutes: 30, ConnectivityTimeoutSeconds: 60,
-		CheckIntervalHealthy: 30, CheckIntervalDegraded: 10,
-		PostRollbackGraceSeconds: 120, AlertCooldownSeconds: 300,
-		DeployGracePeriodSeconds: 60, MaxRollbackAttempts: 3,
-		SnapshotHealthyThreshold: 20, MaxKnownGoodSnapshots: 3,
-		HashCheckEveryNHealthy: 10, MinSnapshotIntervalSeconds: 300,
-		MaxTotalSnapshots: 15,
-		LogFile:           "/var/log/mwan-watchdog.log", JSONLogFile: "/var/log/mwan-watchdog.jsonl",
-		RollbackStateFile: "/run/mwan-rollback.state",
-		RollbackLockFile:  "/run/mwan-watchdog-rollback.lock",
-		ServiceName:       "mwan-watchdog",
-	}
-	cfg.Agent = AgentSection{
-		VsockPort: 50051, TCPAddr: "[::]:50052",
-		DeployFile:     "/var/lib/mwan/last-deploy",
-		DeployExpected: true,
-		LogFile:        "/var/log/mwan-agent.log",
-	}
-	cfg.BGP = BGPSection{
-		GracefulRestart: BGPGracefulRestart{
-			Enabled:             true,
-			RestartTime:         30,
-			NotificationEnabled: true,
-		},
-	}
+	cfg.Email.MinLevel = "ERROR"
+	cfg.Email.Cooldown = "5m"
+	cfg.PVE.BaseURL = "https://127.0.0.1:8006/api2/json"
+	cfg.Network.PingTargetIPv4 = "1.1.1.1"
+	cfg.Network.PingTargetIPv6 = "2606:4700:4700::1111"
+	cfg.Network.LastDeployPath = "/var/lib/mwan/last-deploy"
+	cfg.Network.LastChangePath = "/var/run/mwan-last-change"
+	cfg.Watchdog.DeployWindowMinutes = 30
+	cfg.Watchdog.ConnectivityTimeoutSeconds = 60
+	cfg.Watchdog.CheckIntervalHealthy = 30
+	cfg.Watchdog.CheckIntervalDegraded = 10
+	cfg.Watchdog.PostRollbackGraceSeconds = 120
+	cfg.Watchdog.AlertCooldownSeconds = 300
+	cfg.Watchdog.DeployGracePeriodSeconds = 60
+	cfg.Watchdog.MaxRollbackAttempts = 3
+	cfg.Watchdog.SnapshotHealthyThreshold = 20
+	cfg.Watchdog.MaxKnownGoodSnapshots = 3
+	cfg.Watchdog.HashCheckEveryNHealthy = 10
+	cfg.Watchdog.MinSnapshotIntervalSeconds = 300
+	cfg.Watchdog.MaxTotalSnapshots = 15
+	cfg.Watchdog.LogFile = "/var/log/mwan-watchdog.log"
+	cfg.Watchdog.JSONLogFile = "/var/log/mwan-watchdog.jsonl"
+	cfg.Watchdog.RollbackStateFile = "/run/mwan-rollback.state"
+	cfg.Watchdog.RollbackLockFile = "/run/mwan-watchdog-rollback.lock"
+	cfg.Watchdog.ServiceName = "mwan-watchdog"
+	cfg.Agent.VsockPort = 50051
+	cfg.Agent.TCPAddr = "[::]:50052"
+	cfg.Agent.DeployFile = "/var/lib/mwan/last-deploy"
+	cfg.Agent.DeployExpected = true
+	cfg.Agent.LogFile = "/var/log/mwan-agent.log"
+	cfg.BGP.GracefulRestart.Enabled = true
+	cfg.BGP.GracefulRestart.RestartTime = 30
+	cfg.BGP.GracefulRestart.NotificationEnabled = true
 	return cfg
 }
 
@@ -538,16 +542,17 @@ func Load() (*Config, error) {
 		}
 	}
 
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	data, err := os.ReadFile(cleanPath)
 	if err != nil {
-		slog.Error("read config failed", "path", path, "error", err)
-		return nil, fmt.Errorf("read config %s: %w", path, err)
+		slog.Error("read config failed", "path", cleanPath, "error", err)
+		return nil, fmt.Errorf("read config %s: %w", cleanPath, err)
 	}
 
 	cfg := defaultConfig()
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		slog.Error("parse config failed", "path", path, "error", err)
-		return nil, fmt.Errorf("parse config %s: %w", path, err)
+		slog.Error("parse config failed", "path", cleanPath, "error", err)
+		return nil, fmt.Errorf("parse config %s: %w", cleanPath, err)
 	}
 
 	// Env overrides for secrets
@@ -562,156 +567,4 @@ func Load() (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-// Subcommand is the typed enum of subcommand names that Validate
-// dispatches on.
-type Subcommand string
-
-// Subcommand constants enumerate the subcommands recognized by Validate.
-const (
-	// SubWatchdog routes config validation through validateWatchdog.
-	SubWatchdog Subcommand = "watchdog"
-	// SubAgent routes config validation through validateAgent.
-	SubAgent Subcommand = "agent"
-	// SubIfMgr routes config validation through validateIfMgr.
-	SubIfMgr Subcommand = "ifmgr"
-	// SubOpnsense routes config validation through validateOpnsense for
-	// the mwan-opnsense-host / mwan-probe / mwan-upgrade / mwan-validate family.
-	SubOpnsense Subcommand = "opnsense"
-)
-
-// Validate validates the Config for a specific subcommand.
-func Validate(cfg *Config, sub string, dryRun bool) error {
-	if cfg.Hostname == "" {
-		return errors.New("hostname is required")
-	}
-	switch Subcommand(sub) {
-	case SubWatchdog:
-		return validateWatchdog(cfg, dryRun)
-	case SubAgent:
-		return validateAgent(cfg)
-	case SubIfMgr:
-		return validateIfMgr(cfg)
-	case SubOpnsense:
-		return validateOpnsense(cfg)
-	}
-	return nil
-}
-
-// validateOpnsense is a no-op stub today. The [opnsense.*] subsections are
-// schema-only at this layer.
-func validateOpnsense(_ *Config) error {
-	return nil
-}
-
-// validateIfMgr sanity-checks the [ifmgr] section. Module-specific
-// validation lives in the module Constructor (Init); here we only catch
-// gross structural issues so the CLI fails fast instead of surfacing a
-// confusing runtime error from a module Init far down the call stack.
-func validateIfMgr(cfg *Config) error {
-	if cfg.IfMgr.Role == "" {
-		return errors.New("ifmgr.role is required (or pass --role on the CLI)")
-	}
-	if len(cfg.IfMgr.Iface) == 0 {
-		return errors.New("ifmgr: at least one [ifmgr.iface.<name>] section is required")
-	}
-	if len(cfg.IfMgr.Iface) > 1 {
-		return errors.New("ifmgr: multi-iface configurations are not yet supported")
-	}
-	if cfg.IfMgr.ReconcileInterval != "" {
-		if _, err := time.ParseDuration(cfg.IfMgr.ReconcileInterval); err != nil {
-			slog.Error("config: reconcile_interval invalid", "err", err, "value", cfg.IfMgr.ReconcileInterval)
-			return fmt.Errorf("ifmgr.reconcile_interval %q: %w", cfg.IfMgr.ReconcileInterval, err)
-		}
-	}
-	for name, iface := range cfg.IfMgr.Iface {
-		if iface.DHCPInitialBackoff != "" {
-			if _, err := time.ParseDuration(iface.DHCPInitialBackoff); err != nil {
-				slog.Error("config: dhcp_initial_backoff invalid", "err", err, "iface", name, "value", iface.DHCPInitialBackoff)
-				return fmt.Errorf("ifmgr.iface.%s.dhcp_initial_backoff %q: %w", name, iface.DHCPInitialBackoff, err)
-			}
-		}
-		if iface.DHCPMaxBackoff != "" {
-			if _, err := time.ParseDuration(iface.DHCPMaxBackoff); err != nil {
-				slog.Error("config: dhcp_max_backoff invalid", "err", err, "iface", name, "value", iface.DHCPMaxBackoff)
-				return fmt.Errorf("ifmgr.iface.%s.dhcp_max_backoff %q: %w", name, iface.DHCPMaxBackoff, err)
-			}
-		}
-	}
-	if cfg.IfMgr.Alerts.RepeatEvery != "" {
-		if _, err := time.ParseDuration(cfg.IfMgr.Alerts.RepeatEvery); err != nil {
-			slog.Error("config: alerts.repeat_every invalid", "err", err, "value", cfg.IfMgr.Alerts.RepeatEvery)
-			return fmt.Errorf("ifmgr.alerts.repeat_every %q: %w", cfg.IfMgr.Alerts.RepeatEvery, err)
-		}
-	}
-	for kind, val := range cfg.IfMgr.Alerts.PerModule {
-		if val == "" {
-			continue
-		}
-		if _, err := time.ParseDuration(val); err != nil {
-			slog.Error("config: alerts.per_module invalid", "err", err, "kind", kind, "value", val)
-			return fmt.Errorf("ifmgr.alerts.per_module.%s %q: %w", kind, val, err)
-		}
-	}
-	return nil
-}
-
-func validateWatchdog(cfg *Config, dryRun bool) error {
-	if cfg.MwanVMID == "" {
-		return errors.New("mwan_vmid is required")
-	}
-	if !dryRun && cfg.Email.SMTP2GOAPIKey == "" {
-		return errors.New("[email] smtp2go_api_key is required (set in TOML or SMTP2GO_API_KEY env)")
-	}
-	if cfg.PVE.TokenID != "" && cfg.PVE.TokenSecret == "" {
-		return errors.New("[pve] token_id set but token_secret empty")
-	}
-	if len(cfg.Network.WANInterfaces) == 0 {
-		return errors.New("[network] wan_interfaces must not be empty")
-	}
-	return nil
-}
-
-func validateAgent(cfg *Config) error {
-	if cfg.BGP.Enabled {
-		return validateBGP(&cfg.BGP)
-	}
-	return nil
-}
-
-func validateBGP(b *BGPSection) error {
-	if b.ASN == 0 {
-		return errors.New("[bgp] asn is required")
-	}
-	if b.RouterID == "" {
-		return errors.New("[bgp] router_id is required")
-	}
-	if b.ListenPort == 0 {
-		return errors.New("[bgp] listen_port is required")
-	}
-	if b.KeepaliveSeconds == 0 {
-		return errors.New("[bgp] keepalive_seconds is required")
-	}
-	if b.HoldSeconds == 0 {
-		return errors.New("[bgp] hold_seconds is required")
-	}
-	if b.HoldSeconds < 3*b.KeepaliveSeconds {
-		return fmt.Errorf("[bgp] hold_seconds (%d) must be >= 3 * keepalive_seconds (%d)", b.HoldSeconds, b.KeepaliveSeconds)
-	}
-	if len(b.Neighbors) == 0 && len(b.NeighborsV6) == 0 {
-		return errors.New("[bgp] at least one neighbor (v4 or v6) is required")
-	}
-	if len(b.Announce.IPv4) == 0 && len(b.Announce.IPv6) == 0 {
-		return errors.New("[bgp.announce] at least one prefix (ipv4 or ipv6) is required")
-	}
-	if b.GracefulRestart.Enabled {
-		if b.GracefulRestart.RestartTime == 0 {
-			return errors.New("[bgp.graceful_restart] restart_time is required when enabled")
-		}
-		if b.GracefulRestart.RestartTime > 600 {
-			return fmt.Errorf("[bgp.graceful_restart] restart_time (%d) must be <= 600", b.GracefulRestart.RestartTime)
-		}
-	}
-	return nil
 }

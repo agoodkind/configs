@@ -144,7 +144,7 @@ func (s *Speaker) Start(ctx context.Context) error {
 				return
 			}
 			s.log.InfoContext(ctx, "bgp peer established", "peer", ev.Peer.State.NeighborAddress)
-			if s.IsEstablished() {
+			if s.IsEstablished(ctx) {
 				if err := s.AnnounceDefault(); err != nil {
 					s.log.ErrorContext(ctx, "bgp auto-announce failed", "error", err)
 				} else {
@@ -450,22 +450,24 @@ func (s *Speaker) deleteIPv6Path(prefix string) error {
 }
 
 // Status returns the current state of all BGP peers.
-func (s *Speaker) Status() Status {
+func (s *Speaker) Status(ctx context.Context) Status {
 	s.mu.Lock()
 	announcing := s.announcing
 	started := s.started
 	s.mu.Unlock()
 
-	st := Status{Announcing: announcing}
+	st := Status{Announcing: announcing, Peers: nil}
 	if !started {
 		return st
 	}
 
-	ctx := context.Background()
 	err := s.server.ListPeer(ctx, &apipb.ListPeerRequest{}, func(p *apipb.Peer) {
 		ps := PeerState{
-			Address: p.GetConf().GetNeighborAddress(),
-			State:   p.GetState().GetSessionState().String(),
+			Address:     p.GetConf().GetNeighborAddress(),
+			AFI:         "",
+			State:       p.GetState().GetSessionState().String(),
+			Established: false,
+			UpSince:     0,
 		}
 
 		if p.GetState().GetSessionState() == apipb.PeerState_SESSION_STATE_ESTABLISHED {
@@ -491,15 +493,15 @@ func (s *Speaker) Status() Status {
 		st.Peers = append(st.Peers, ps)
 	})
 	if err != nil {
-		s.log.Error("list peers failed", "error", err)
+		s.log.ErrorContext(ctx, "list peers failed", "error", err)
 	}
 
 	return st
 }
 
 // IsEstablished returns true when all configured peers are in ESTABLISHED state.
-func (s *Speaker) IsEstablished() bool {
-	st := s.Status()
+func (s *Speaker) IsEstablished(ctx context.Context) bool {
+	st := s.Status(ctx)
 	if len(st.Peers) == 0 {
 		return false
 	}

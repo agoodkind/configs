@@ -128,7 +128,7 @@ func Run(cfg *config.Config) error {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(unaryTraceInterceptor(logger)),
+		grpc.StatsHandler(newTraceStatsHandler(logger)),
 	)
 	agentServer := NewServer(*deployFile, logger, bgpSpeaker, notifier)
 	agentServer.SetDeployExpected(*deployExpected)

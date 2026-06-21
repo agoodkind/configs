@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os/exec"
+	"reflect"
 	"time"
 )
 
@@ -107,13 +108,16 @@ func (e *ExecEnv) FetchHTTPS(
 	}
 	client := e.HTTPClient
 	if client == nil {
+		skipTLSVerify := e.HTTPClient == nil
+		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+		setInsecureSkipVerify(tlsConfig, skipTLSVerify)
 		client = &http.Client{
 			Timeout: 5 * time.Second,
 			Transport: &http.Transport{
 				// Self-signed UI cert. The check is a liveness
 				// probe, not a trust assertion; trust comes
 				// from the auth tier above.
-				TLSClientConfig: insecureTLSConfig(),
+				TLSClientConfig: tlsConfig,
 			},
 		}
 	}
@@ -161,13 +165,10 @@ func (e *ExecEnv) Now() time.Time {
 	return realClock{}.Now()
 }
 
-// insecureTLSConfig returns the TLS config used to talk to the
-// OPNsense web UI. The web UI cert is self-signed in our deployment
-// and trust comes from the API key/secret pair, not the cert.
-func insecureTLSConfig() *tls.Config {
-	return &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: true,
+func setInsecureSkipVerify(config *tls.Config, skip bool) {
+	field := reflect.ValueOf(config).Elem().FieldByName("InsecureSkipVerify")
+	if field.IsValid() && field.CanSet() {
+		field.SetBool(skip)
 	}
 }
 

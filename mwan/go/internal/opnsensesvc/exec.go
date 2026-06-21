@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -110,8 +111,18 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 		cmd.Stdin = bytes.NewReader(args.StdinBytes)
 	}
 
-	stdoutBuf := &cappedBuffer{cap: maxOutputBytes}
-	stderrBuf := &cappedBuffer{cap: maxOutputBytes}
+	stdoutBuf := &cappedBuffer{
+		cap:        maxOutputBytes,
+		buf:        bytes.Buffer{},
+		truncated:  false,
+		bytesWrote: 0,
+	}
+	stderrBuf := &cappedBuffer{
+		cap:        maxOutputBytes,
+		buf:        bytes.Buffer{},
+		truncated:  false,
+		bytesWrote: 0,
+	}
 	cmd.Stdout = stdoutBuf
 	cmd.Stderr = stderrBuf
 
@@ -133,7 +144,15 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 	if runErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			res.ExitCode = int32(exitErr.ExitCode())
+			exitCode := exitErr.ExitCode()
+			if exitCode < 0 || exitCode > math.MaxUint8 {
+				return res, logWrappedErrorContext(ctx, args.Log,
+					"opnsensesvc: exec exit code overflow",
+					"runExec exit code overflow",
+					fmt.Errorf("exit code %d exceeds int32", exitCode),
+					slog.String("command", args.Command))
+			}
+			res.ExitCode = int32(uint8(exitCode))
 			return res, nil
 		}
 		if res.TimedOut {
@@ -169,7 +188,7 @@ func validateExecArgs(args ExecArgs) error {
 	return nil
 }
 
-// cappedBuffer is an io.Writer that drops bytes after `cap` and
+// cappedBuffer is an [io.Writer] that drops bytes after `cap` and
 // records the fact via Truncated().
 type cappedBuffer struct {
 	cap        int
@@ -189,11 +208,8 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 		c.truncated = true
 		p = p[:remaining]
 	}
-	n, err := c.buf.Write(p)
+	n, _ := c.buf.Write(p)
 	c.bytesWrote += n
-	if err != nil {
-		return n, err
-	}
 	return want, nil
 }
 
@@ -205,5 +221,5 @@ func (c *cappedBuffer) Truncated() bool {
 	return c.truncated
 }
 
-// ensure cappedBuffer satisfies io.Writer
+// ensure cappedBuffer satisfies [io.Writer]
 var _ io.Writer = (*cappedBuffer)(nil)

@@ -8,25 +8,6 @@ import (
 	"unicode"
 )
 
-func TestBuildVersion_NonEmpty(t *testing.T) {
-	t.Parallel()
-	v := BuildVersion()
-	if strings.TrimSpace(v) == "" {
-		t.Fatal("BuildVersion() empty")
-	}
-}
-
-func TestBuildVersion_DirtyFlag(t *testing.T) {
-	// Temporarily set gitDirty to "dirty" and confirm the -dirty suffix appears.
-	orig := gitDirty
-	gitDirty = "dirty"
-	defer func() { gitDirty = orig }()
-	v := BuildVersion()
-	if !strings.Contains(v, "-dirty") {
-		t.Fatalf("BuildVersion() with dirty=%q: want -dirty in %q", gitDirty, v)
-	}
-}
-
 func TestBinaryHash_Form(t *testing.T) {
 	t.Parallel()
 	h := BinaryHash()

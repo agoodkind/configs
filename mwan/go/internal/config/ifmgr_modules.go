@@ -17,6 +17,7 @@ type IfMgrModulesSection struct {
 	WANRoutes         *IfMgrWANRoutesSection         `toml:"wan_routes"`
 }
 
+// IfMgrWGHealthSection configures the WireGuard health probe module.
 type IfMgrWGHealthSection struct {
 	SSHHost           string   `toml:"ssh_host"`
 	SSHPort           *int     `toml:"ssh_port"`
@@ -29,6 +30,7 @@ type IfMgrWGHealthSection struct {
 	IgnorePeers       []string `toml:"ignore_peers"`
 }
 
+// IfMgrOOBV6Section configures IPv6 out-of-band routing state.
 type IfMgrOOBV6Section struct {
 	Iface                 string `toml:"iface"`
 	OOBAddr               string `toml:"oob_addr"`
@@ -37,11 +39,13 @@ type IfMgrOOBV6Section struct {
 	SLAACRulePriority     *int   `toml:"slaac_rule_priority"`
 }
 
+// IfMgrOOBV4Section configures IPv4 out-of-band routing state.
 type IfMgrOOBV4Section struct {
 	Iface      string `toml:"iface"`
 	OOBTableID int    `toml:"oob_table_id"`
 }
 
+// IfMgrSLAACHealthSection configures SLAAC health monitoring.
 type IfMgrSLAACHealthSection struct {
 	Iface             string   `toml:"iface"`
 	DegradedAfter     string   `toml:"degraded_after"`
@@ -52,11 +56,13 @@ type IfMgrSLAACHealthSection struct {
 	ProbeTimeout      string   `toml:"probe_timeout"`
 }
 
+// IfMgrRALostSection configures router advertisement loss detection.
 type IfMgrRALostSection struct {
 	Iface            string `toml:"iface"`
 	RALostAlertAfter string `toml:"ra_lost_alert_after"`
 }
 
+// IfMgrConnectivityProbeSection configures the IPv6 connectivity probe module.
 type IfMgrConnectivityProbeSection struct {
 	Iface          string   `toml:"iface"`
 	TargetsV6      []string `toml:"targets_v6"`
@@ -64,21 +70,25 @@ type IfMgrConnectivityProbeSection struct {
 	UnhealthyAfter string   `toml:"unhealthy_after"`
 }
 
+// IfMgrBridgeProbeSection configures the bridge carrier probe module.
 type IfMgrBridgeProbeSection struct {
 	Iface              string `toml:"iface"`
 	NoSignalAlertAfter string `toml:"no_signal_alert_after"`
 }
 
+// IfMgrCloudflaredTapSection configures cloudflared journal scanning.
 type IfMgrCloudflaredTapSection struct {
 	Unit              string   `toml:"unit"`
 	DowngradePatterns []string `toml:"downgrade_patterns"`
 	JournalctlPath    string   `toml:"journalctl_path"`
 }
 
+// IfMgrMainV4Section configures the primary IPv4 uplink module.
 type IfMgrMainV4Section struct {
 	Iface string `toml:"iface"`
 }
 
+// IfMgrPolicyRulesSection configures the policy-rules module.
 type IfMgrPolicyRulesSection struct {
 	Rule []IfMgrPolicyRuleSection `toml:"rule"`
 }
@@ -127,6 +137,7 @@ type IfMgrHostIPv6PolicyIfaceSection struct {
 	CleanupRADefault bool   `toml:"cleanup_ra_default"`
 }
 
+// IfMgrPolicyRuleSection is one [[ifmgr.modules.policy_rules.rule]] table.
 type IfMgrPolicyRuleSection struct {
 	Family   string `toml:"family"`
 	Priority int    `toml:"priority"`

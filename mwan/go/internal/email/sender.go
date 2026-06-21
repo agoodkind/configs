@@ -1,3 +1,4 @@
+// Package email sends notification email through SMTP2GO with route fallback.
 package email
 
 import (
@@ -31,6 +32,7 @@ func NewSender(smtp2goAPIKey, from, bindIface, caller string, log *slog.Logger) 
 	}
 }
 
+// Send delivers one message, then retries over the OOB route if configured.
 func (s *Sender) Send(ctx context.Context, to, subject, body string) error {
 	if s.apiKey == "" {
 		return nil

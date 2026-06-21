@@ -1,3 +1,4 @@
+// Package version reports build and binary identity for mwan.
 package version
 
 import (
@@ -6,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 )
 
 // These are injected at build time via:
@@ -21,35 +21,6 @@ var (
 	gitDirty  = ""
 )
 
-// BuildVersion returns a human-readable build fingerprint of the form:
-//
-//	<commit>[-dirty]+<binhash>
-//
-// where <binhash> is the first 12 hex characters of SHA-256 of the running
-// binary. This ensures that even an uncommitted build gets a stable,
-// log-searchable identifier that matches the file on disk.
-func BuildVersion() string {
-	commit := gitCommit
-	if commit == "" {
-		commit = "unknown"
-	}
-	dirty := gitDirty
-	if dirty == "" {
-		dirty = "unknown"
-	}
-
-	binHash := BinaryHash()
-
-	var sb strings.Builder
-	sb.WriteString(commit)
-	if dirty == "dirty" {
-		sb.WriteString("-dirty")
-	}
-	sb.WriteString("+")
-	sb.WriteString(binHash)
-	return sb.String()
-}
-
 // BinaryHash returns the first 12 hex characters of SHA-256 of the running
 // binary. Returns "unknown" on any error.
 func BinaryHash() string {
@@ -57,7 +28,7 @@ func BinaryHash() string {
 }
 
 // binaryHashFrom hashes the file at path. If path is empty it falls back to
-// os.Executable(). Not exported (used internally and by tests).
+// [os.Executable]. Not exported (used internally and by tests).
 func binaryHashFrom(path string) string {
 	if path == "" {
 		var err error

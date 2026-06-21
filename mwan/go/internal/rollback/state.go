@@ -1,3 +1,4 @@
+// Package rollback reads and writes watchdog rollback state on disk.
 package rollback
 
 import (
@@ -12,7 +13,9 @@ import (
 )
 
 var (
+	// PreDeploySnapRE matches watchdog-managed pre-deploy snapshot names.
 	PreDeploySnapRE = regexp.MustCompile(`pre-deploy-[^\s]+`)
+	// KnownGoodSnapRE matches watchdog-managed known-good snapshot names.
 	KnownGoodSnapRE = regexp.MustCompile(`known-good-[^\s]+`)
 )
 
@@ -22,6 +25,7 @@ var (
 	knownGoodSnapRE = KnownGoodSnapRE
 )
 
+// ExtractLatestSnapshot returns the newest watchdog-managed snapshot name.
 func ExtractLatestSnapshot(qmOutput []byte) string {
 	s := string(qmOutput)
 	pre := preDeploySnapRE.FindAllString(s, -1)
@@ -79,7 +83,8 @@ func parseRollbackStateFile(
 ) (deployTS string, status string, snapshot string, attempts string, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", "", "", "", err
+		slog.Error("read rollback state failed", "path", path, "err", err)
+		return "", "", "", "", fmt.Errorf("read rollback state %q: %w", path, err)
 	}
 	kv := make(map[string]string)
 	for line := range strings.SplitSeq(string(data), "\n") {
@@ -101,6 +106,7 @@ func parseRollbackStateFile(
 	return kv["deploy_timestamp"], st, kv["snapshot"], kv["rollback_attempts"], nil
 }
 
+// AlreadyDone reports whether deployTS already completed or exhausted rollback.
 func AlreadyDone(
 	statePath string, deployTS int64,
 ) (done bool, attempts int, err error) {
@@ -142,5 +148,9 @@ func WriteState(
 		snapshot,
 		attempts,
 	)
-	return os.WriteFile(path, []byte(content), 0o644)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		slog.Error("write rollback state failed", "path", path, "err", err)
+		return fmt.Errorf("write rollback state %q: %w", path, err)
+	}
+	return nil
 }

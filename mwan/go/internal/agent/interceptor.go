@@ -7,9 +7,8 @@ import (
 	"strings"
 
 	"goodkind.io/mwan/internal/tracing"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
+	grpcstats "google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 )
 
@@ -19,53 +18,67 @@ var traceMetadataKeys = []string{
 	"trace_id",
 }
 
-func unaryTraceInterceptor(
+type traceStatsHandler struct {
+	logger *slog.Logger
+}
+
+func newTraceStatsHandler(
 	logger *slog.Logger,
-) grpc.UnaryServerInterceptor {
-	clock := realClock{}
-	return func(
-		ctx context.Context,
-		req any,
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (any, error) {
-		methodName := path.Base(info.FullMethod)
-		traceID := incomingTraceID(ctx)
-		if traceID == "" {
-			traceID = tracing.NewID()
-		}
+) *traceStatsHandler {
+	return &traceStatsHandler{logger: logger}
+}
 
-		ctx = tracing.WithTraceID(ctx, traceID)
-		ctx = tracing.WithOperation(ctx, methodName)
-		ctx, _ = tracing.StartTrace(ctx, "", methodName)
-		log := tracing.Logger(ctx, logger)
+func (h *traceStatsHandler) TagConn(
+	ctx context.Context,
+	info *grpcstats.ConnTagInfo,
+) context.Context {
+	if info == nil || info.RemoteAddr == nil {
+		return ctx
+	}
+	return tracing.WithAttrs(ctx,
+		slog.String("peer_addr", info.RemoteAddr.String()),
+		slog.String("transport", info.RemoteAddr.Network()),
+	)
+}
 
-		peerAddr := ""
-		transport := ""
-		if peerInfo, ok := peer.FromContext(ctx); ok && peerInfo.Addr != nil {
-			peerAddr = peerInfo.Addr.String()
-			transport = peerInfo.Addr.Network()
-		}
+func (h *traceStatsHandler) HandleConn(context.Context, grpcstats.ConnStats) {}
 
-		startTime := clock.Now()
-		log.InfoContext(
-			ctx,
-			"grpc request started",
-			"rpc_method", info.FullMethod,
-			"peer_addr", peerAddr,
-			"transport", transport,
-		)
+func (h *traceStatsHandler) TagRPC(
+	ctx context.Context,
+	info *grpcstats.RPCTagInfo,
+) context.Context {
+	if info == nil {
+		return ctx
+	}
+	methodName := path.Base(info.FullMethodName)
+	traceID := incomingTraceID(ctx)
+	if traceID == "" {
+		traceID = tracing.NewID()
+	}
+	ctx = tracing.WithTraceID(ctx, traceID)
+	ctx = tracing.WithComponent(ctx, "agent")
+	ctx = tracing.WithOperation(ctx, methodName)
+	ctx = tracing.WithEvent(ctx, "grpc_request")
+	ctx = tracing.WithAttrs(ctx, slog.String("rpc_method", info.FullMethodName))
+	ctx, _ = tracing.StartTrace(ctx, "", methodName)
+	return ctx
+}
 
-		resp, err := handler(ctx, req)
-		code := status.Code(err).String()
+func (h *traceStatsHandler) HandleRPC(ctx context.Context, rpcStats grpcstats.RPCStats) {
+	if rpcStats.IsClient() {
+		return
+	}
+	log := tracing.Logger(ctx, h.logger)
+	switch stat := rpcStats.(type) {
+	case *grpcstats.Begin:
+		log.InfoContext(ctx, "grpc request started")
+	case *grpcstats.End:
 		log.InfoContext(
 			ctx,
 			"grpc request finished",
-			"rpc_method", info.FullMethod,
-			"grpc_code", code,
-			"duration_ms", clock.Now().Sub(startTime).Milliseconds(),
+			"grpc_code", status.Code(stat.Error).String(),
+			"duration_ms", stat.EndTime.Sub(stat.BeginTime).Milliseconds(),
 		)
-		return resp, err
 	}
 }
 

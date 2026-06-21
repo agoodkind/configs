@@ -1,3 +1,4 @@
+// Package tracing stores slog-friendly trace attributes in context.
 package tracing
 
 import (
@@ -9,14 +10,22 @@ import (
 )
 
 const (
-	TraceIDKey      = "trace_id"
-	SpanIDKey       = "span_id"
+	// TraceIDKey is the slog attribute key for the trace identifier.
+	TraceIDKey = "trace_id"
+	// SpanIDKey is the slog attribute key for the current span identifier.
+	SpanIDKey = "span_id"
+	// ParentSpanIDKey is the slog attribute key for the parent span identifier.
 	ParentSpanIDKey = "parent_span_id"
-	RunIDKey        = "run_id"
-	ComponentKey    = "component"
-	OperationKey    = "operation"
-	EventKey        = "event"
-	AttemptKey      = "attempt"
+	// RunIDKey is the slog attribute key for a watchdog or command run ID.
+	RunIDKey = "run_id"
+	// ComponentKey is the slog attribute key for the emitting component.
+	ComponentKey = "component"
+	// OperationKey is the slog attribute key for the current operation.
+	OperationKey = "operation"
+	// EventKey is the slog attribute key for the current event label.
+	EventKey = "event"
+	// AttemptKey is the slog attribute key for the current retry attempt.
+	AttemptKey = "attempt"
 )
 
 type contextKey struct{}
@@ -25,18 +34,21 @@ type traceContext struct {
 	attrs map[string]slog.Attr
 }
 
+// Span is the tracing identity attached to one logical operation span.
 type Span struct {
 	TraceID      string
 	SpanID       string
 	ParentSpanID string
 }
 
+// NewID returns a random 16-hex-character identifier for tracing.
 func NewID() string {
 	var buf [8]byte
 	_, _ = rand.Read(buf[:])
 	return hex.EncodeToString(buf[:])
 }
 
+// WithAttrs adds or replaces slog attrs on ctx.
 func WithAttrs(ctx context.Context, attrs ...slog.Attr) context.Context {
 	if len(attrs) == 0 {
 		return ctx
@@ -54,6 +66,7 @@ func WithAttrs(ctx context.Context, attrs ...slog.Attr) context.Context {
 	return context.WithValue(ctx, contextKey{}, traceContext{attrs: merged})
 }
 
+// WithTraceID adds traceID to ctx when it is non-empty.
 func WithTraceID(ctx context.Context, traceID string) context.Context {
 	if traceID == "" {
 		return ctx
@@ -61,6 +74,7 @@ func WithTraceID(ctx context.Context, traceID string) context.Context {
 	return WithAttrs(ctx, slog.String(TraceIDKey, traceID))
 }
 
+// WithRunID adds runID to ctx when it is non-empty.
 func WithRunID(ctx context.Context, runID string) context.Context {
 	if runID == "" {
 		return ctx
@@ -68,6 +82,7 @@ func WithRunID(ctx context.Context, runID string) context.Context {
 	return WithAttrs(ctx, slog.String(RunIDKey, runID))
 }
 
+// WithComponent adds component to ctx when it is non-empty.
 func WithComponent(ctx context.Context, component string) context.Context {
 	if component == "" {
 		return ctx
@@ -75,6 +90,7 @@ func WithComponent(ctx context.Context, component string) context.Context {
 	return WithAttrs(ctx, slog.String(ComponentKey, component))
 }
 
+// WithOperation adds operation to ctx when it is non-empty.
 func WithOperation(ctx context.Context, operation string) context.Context {
 	if operation == "" {
 		return ctx
@@ -82,6 +98,7 @@ func WithOperation(ctx context.Context, operation string) context.Context {
 	return WithAttrs(ctx, slog.String(OperationKey, operation))
 }
 
+// WithEvent adds event to ctx when it is non-empty.
 func WithEvent(ctx context.Context, event string) context.Context {
 	if event == "" {
 		return ctx
@@ -89,10 +106,12 @@ func WithEvent(ctx context.Context, event string) context.Context {
 	return WithAttrs(ctx, slog.String(EventKey, event))
 }
 
+// WithAttempt records the current retry attempt on ctx.
 func WithAttempt(ctx context.Context, attempt int) context.Context {
 	return WithAttrs(ctx, slog.Int(AttemptKey, attempt))
 }
 
+// StartTrace ensures ctx carries a trace and starts a child span for it.
 func StartTrace(ctx context.Context, component string, operation string) (
 	context.Context, Span,
 ) {
@@ -125,6 +144,7 @@ func StartTrace(ctx context.Context, component string, operation string) (
 	}
 }
 
+// AttrsFromContext returns tracing attrs from ctx in a stable log order.
 func AttrsFromContext(ctx context.Context) []slog.Attr {
 	current := fromContext(ctx)
 	if len(current.attrs) == 0 {
@@ -160,6 +180,7 @@ func AttrsFromContext(ctx context.Context) []slog.Attr {
 	return out
 }
 
+// Logger returns base with the tracing attrs from ctx already attached.
 func Logger(ctx context.Context, base *slog.Logger) *slog.Logger {
 	if base == nil {
 		return nil
@@ -177,16 +198,14 @@ func Logger(ctx context.Context, base *slog.Logger) *slog.Logger {
 	return base.With(args...)
 }
 
+// TraceID returns the trace ID recorded on ctx.
 func TraceID(ctx context.Context) string {
 	return stringValue(ctx, TraceIDKey)
 }
 
+// SpanID returns the current span ID recorded on ctx.
 func SpanID(ctx context.Context) string {
 	return stringValue(ctx, SpanIDKey)
-}
-
-func RunID(ctx context.Context) string {
-	return stringValue(ctx, RunIDKey)
 }
 
 func fromContext(ctx context.Context) traceContext {

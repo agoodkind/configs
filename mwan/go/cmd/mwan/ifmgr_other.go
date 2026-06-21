@@ -1,5 +1,6 @@
 //go:build !linux
 
+// Package main provides the mwan CLI entrypoint.
 package main
 
 import (

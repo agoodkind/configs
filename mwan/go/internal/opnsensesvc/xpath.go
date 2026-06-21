@@ -10,14 +10,6 @@ import (
 	"github.com/antchfx/xmlquery"
 )
 
-// xpathGet evaluates expr against the XML in input and returns string
-// representations of every matching node. Element matches are
-// serialized as XML; attribute and text matches are returned as their
-// string value.
-func xpathGet(input []byte, expr string) ([]string, error) {
-	return xpathGetWithLog(context.Background(), nil, input, expr)
-}
-
 func xpathGetWithLog(
 	ctx context.Context,
 	log *slog.Logger,
@@ -43,12 +35,6 @@ func xpathGetWithLog(
 		out = append(out, nodeToString(n))
 	}
 	return out, nil
-}
-
-// xpathSet sets the InnerText of every node matched by expr to
-// newValue. Returns the new bytes and the count of changed nodes.
-func xpathSet(input []byte, expr, newValue string) ([]byte, int, error) {
-	return xpathSetWithLog(context.Background(), nil, input, expr, newValue)
 }
 
 func xpathSetWithLog(
@@ -85,12 +71,6 @@ func xpathSetWithLog(
 	}
 	out := []byte(doc.OutputXML(true))
 	return out, len(nodes), nil
-}
-
-// xpathDelete removes every node matched by expr from its parent.
-// Returns new bytes and the count of deleted nodes.
-func xpathDelete(input []byte, expr string) ([]byte, int, error) {
-	return xpathDeleteWithLog(context.Background(), nil, input, expr)
 }
 
 func xpathDeleteWithLog(
@@ -132,13 +112,20 @@ func nodeToString(n *xmlquery.Node) string {
 		return n.InnerText()
 	case xmlquery.TextNode:
 		return n.Data
-	default:
+	case xmlquery.DocumentNode,
+		xmlquery.DeclarationNode,
+		xmlquery.ElementNode,
+		xmlquery.CharDataNode,
+		xmlquery.CommentNode,
+		xmlquery.NotationNode,
+		xmlquery.ProcessingInstruction:
 		// ElementNode and friends: emit XML so the caller can see
 		// children.
 		var b strings.Builder
 		b.WriteString(n.OutputXML(true))
 		return b.String()
 	}
+	return ""
 }
 
 // stripChildText removes every child text node from n. Used by

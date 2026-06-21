@@ -2,6 +2,7 @@ package opnsensesvc
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,7 @@ const sampleConfig = `<?xml version="1.0"?>
 `
 
 func TestStripGatewayV6_Removes(t *testing.T) {
-	out, changed, err := stripGatewayV6([]byte(sampleConfig))
+	out, changed, err := stripGatewayV6WithLog(context.Background(), nil, []byte(sampleConfig))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -46,11 +47,11 @@ func TestStripGatewayV6_Removes(t *testing.T) {
 }
 
 func TestStripGatewayV6_Idempotent(t *testing.T) {
-	first, _, err := stripGatewayV6([]byte(sampleConfig))
+	first, _, err := stripGatewayV6WithLog(context.Background(), nil, []byte(sampleConfig))
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	out, changed, err := stripGatewayV6(first)
+	out, changed, err := stripGatewayV6WithLog(context.Background(), nil, first)
 	if err != nil {
 		t.Fatalf("second: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestStripGatewayV6_Idempotent(t *testing.T) {
 
 func TestStripGatewayV6_NoWan(t *testing.T) {
 	noWan := `<?xml version="1.0"?><opnsense><system><hostname>x</hostname></system></opnsense>`
-	out, changed, err := stripGatewayV6([]byte(noWan))
+	out, changed, err := stripGatewayV6WithLog(context.Background(), nil, []byte(noWan))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -77,11 +78,11 @@ func TestStripGatewayV6_NoWan(t *testing.T) {
 }
 
 func TestInjectGatewayV6_Inserts(t *testing.T) {
-	stripped, _, err := stripGatewayV6([]byte(sampleConfig))
+	stripped, _, err := stripGatewayV6WithLog(context.Background(), nil, []byte(sampleConfig))
 	if err != nil {
 		t.Fatalf("strip: %v", err)
 	}
-	out, changed, err := injectGatewayV6(stripped, "WAN_GW6")
+	out, changed, err := injectGatewayV6WithLog(context.Background(), nil, stripped, "WAN_GW6")
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestInjectGatewayV6_Inserts(t *testing.T) {
 }
 
 func TestInjectGatewayV6_AlreadyPresent(t *testing.T) {
-	out, changed, err := injectGatewayV6([]byte(sampleConfig), "WAN_GW6")
+	out, changed, err := injectGatewayV6WithLog(context.Background(), nil, []byte(sampleConfig), "WAN_GW6")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -107,17 +108,17 @@ func TestInjectGatewayV6_AlreadyPresent(t *testing.T) {
 }
 
 func TestInjectGatewayV6_RequiresName(t *testing.T) {
-	if _, _, err := injectGatewayV6([]byte(sampleConfig), ""); err == nil {
+	if _, _, err := injectGatewayV6WithLog(context.Background(), nil, []byte(sampleConfig), ""); err == nil {
 		t.Fatal("expected error on empty gateway name")
 	}
 }
 
 func TestStripThenInjectRoundTrip(t *testing.T) {
-	stripped, _, err := stripGatewayV6([]byte(sampleConfig))
+	stripped, _, err := stripGatewayV6WithLog(context.Background(), nil, []byte(sampleConfig))
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, _, err := injectGatewayV6(stripped, "WAN_GW6")
+	restored, _, err := injectGatewayV6WithLog(context.Background(), nil, stripped, "WAN_GW6")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestReadWriteConfig_AtomicAndExactBytes(t *testing.T) {
 	if err := os.WriteFile(path, []byte(sampleConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readConfig(path)
+	got, err := readConfigWithLog(context.Background(), nil, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,10 +147,10 @@ func TestReadWriteConfig_AtomicAndExactBytes(t *testing.T) {
 		t.Fatal("readConfig altered bytes")
 	}
 	updated := bytes.ReplaceAll(got, []byte("opnsense"), []byte("opnsense2"))
-	if err := writeConfig(path, updated); err != nil {
+	if err := writeConfigWithLog(context.Background(), nil, path, updated); err != nil {
 		t.Fatal(err)
 	}
-	got2, err := readConfig(path)
+	got2, err := readConfigWithLog(context.Background(), nil, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +173,7 @@ func TestBackupConfig_LandsInDirAndPreservesContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupDir := filepath.Join(dir, "backup")
-	dest, err := backupConfig(src, backupDir, "before-strip")
+	dest, err := backupConfigWithLog(context.Background(), nil, nil, src, backupDir, "before-strip")
 	if err != nil {
 		t.Fatal(err)
 	}
