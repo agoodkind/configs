@@ -33,6 +33,12 @@ GO_BUILD_LDFLAGS := \
 # packaging path and via rsync deploy-live, not GoReleaser.
 GO_MK_MODULES := go-build.mk
 
+# Run every lint gate once per shipped platform, not just the host. mwan is
+# almost entirely linux-tagged with a freebsd serial path, so a single host
+# pass (linux on CI, darwin locally) skips most of the package. This is the one
+# committed source of truth, so local and CI analyze the same targets.
+GO_MK_PLATFORMS := linux/amd64 freebsd/amd64
+
 include bootstrap.mk
 
 .DEFAULT_GOAL := check
