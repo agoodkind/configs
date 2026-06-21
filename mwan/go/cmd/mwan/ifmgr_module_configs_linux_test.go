@@ -143,6 +143,7 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 				FwMarkPrio: 200,
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/56",
+				V4Source:   "203.0.113.2",
 			},
 		},
 	})
@@ -176,6 +177,7 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 				FwMarkPrio: 200,
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/56",
+				V4Source:   "203.0.113.2",
 			},
 		},
 	}

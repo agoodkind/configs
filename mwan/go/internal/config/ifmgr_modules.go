@@ -106,6 +106,7 @@ type IfMgrWANRoutesWANSection struct {
 	FwMarkPrio int    `toml:"fw_mark_prio"`
 	FromPrio   int    `toml:"from_prio"`
 	NptPrefix  string `toml:"npt_prefix"`
+	V4Source   string `toml:"v4_source"`
 }
 
 // IfMgrHostIPv6PolicySection is the explicit TOML schema for

@@ -461,6 +461,7 @@ func buildWANRoutesConfig(
 			FwMarkPrio: wan.FwMarkPrio,
 			FromPrio:   wan.FromPrio,
 			NptPrefix:  wan.NptPrefix,
+			V4Source:   wan.V4Source,
 		})
 	}
 	return cfg, nil
