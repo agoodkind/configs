@@ -53,24 +53,15 @@ func Serve(ctx context.Context, opts ServeOpts) error {
 	}
 	log.InfoContext(ctx, "opnsensesvc: serial opened", "path", opts.SerialPath)
 
-	// Close the real serial fd when the serve ctx is cancelled (a terminal
-	// stop: SIGTERM, SIGINT, or the RestartDaemon hook). The yamux read loop
-	// parks in a blocking serial read that the FreeBSD virtio_console driver
-	// never wakes on its own, so without this close the shutdown path waits
-	// on a read that never returns and the daemon hangs on stop and orphans
-	// its child. This is the only place the fd is closed during a run;
+	// The yamux read loop parks in a blocking serial read that the FreeBSD
+	// virtio_console driver never wakes on its own (no host-disconnect
+	// signal, and a fd close from another goroutine does not interrupt the
+	// parked read), so Serve does not return cleanly on a true stop. That is
+	// handled outside this process: a terminal SIGTERM relies on the rc.d
+	// process-group SIGKILL plus daemon -r respawn, and a binary update
+	// re-execs in place (the RestartDaemon hook) so there is no stop at all.
 	// serialStream.Close stays a no-op so the fd outlives individual yamux
 	// sessions while the daemon is up.
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.ErrorContext(ctx, "opnsensesvc: serial-close watcher panic",
-					"panic", r, "err", fmt.Errorf("panic: %v", r))
-			}
-		}()
-		<-ctx.Done()
-		_ = rwc.Close()
-	}()
 
 	// One yamux session at a time runs over the shared chardev. If the
 	// session ends (peer disconnect, protocol-version mismatch from
@@ -126,9 +117,10 @@ func serveOneSession(ctx context.Context, log *slog.Logger, rwc io.ReadWriteClos
 		<-stopCtx.Done()
 		// Bound the graceful stop. GracefulStop waits for in-flight RPCs,
 		// which a long Exec or Transfer can stretch; force grpcServer.Stop()
-		// if it does not finish within stopTimeout so the shutdown is always
-		// bounded. The fd close in Serve unblocks the read loop, so the idle
-		// case completes gracefully well within the bound.
+		// if it does not finish within stopTimeout so the gRPC layer is
+		// always torn down within the bound. The subsequent session.Close
+		// still parks on the un-interruptible serial read, so a true stop
+		// ultimately completes via the rc.d process-group kill, not here.
 		gracefulDone := make(chan struct{})
 		go func() {
 			defer func() {
