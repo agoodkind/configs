@@ -99,6 +99,7 @@ func TestDesiredState(t *testing.T) {
 				fwmarkRule(familyV6, 100, 1, 100),
 				fromRule(55, "3d06:bad:b01:1100::/56", 100),
 				fwmarkRule(familyV4, 200, 2, 200),
+				fromRuleV4(56, "203.0.113.2", 200),
 				fwmarkRule(familyV6, 200, 2, 200),
 				fwmarkRule(familyV4, 300, 3, 300),
 				fwmarkRule(familyV6, 300, 3, 300),
@@ -165,6 +166,7 @@ func testConfig() Config {
 				FwMarkPrio: 200,
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/56",
+				V4Source:   "203.0.113.2",
 			},
 			{
 				Name:       wanNameMonkeybrains,
@@ -202,6 +204,7 @@ func allHealthyRules(cfg Config) []netif.DesiredRule {
 		fwmarkRule(familyV6, 100, 1, 100),
 		fromRule(55, cfg.WANs[0].NptPrefix, 100),
 		fwmarkRule(familyV4, 200, 2, 200),
+		fromRuleV4(56, cfg.WANs[1].V4Source, 200),
 		fwmarkRule(familyV6, 200, 2, 200),
 		fromRule(56, cfg.WANs[1].NptPrefix, 200),
 		fwmarkRule(familyV4, 300, 3, 300),
@@ -260,6 +263,15 @@ func fwmarkRule(family string, priority int, mark uint32, tableID int) netif.Des
 func fromRule(priority int, from string, tableID int) netif.DesiredRule {
 	return netif.DesiredRule{
 		Family:   familyV6,
+		Priority: priority,
+		From:     from,
+		TableID:  tableID,
+	}
+}
+
+func fromRuleV4(priority int, from string, tableID int) netif.DesiredRule {
+	return netif.DesiredRule{
+		Family:   familyV4,
 		Priority: priority,
 		From:     from,
 		TableID:  tableID,

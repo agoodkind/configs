@@ -51,6 +51,12 @@ type WAN struct {
 	FwMarkPrio int
 	FromPrio   int
 	NptPrefix  string
+	// V4Source is the WAN's static IPv4 link address. When set, traffic the box
+	// sources from that address is pinned to this WAN's table via a v4 source
+	// rule at FromPrio, the IPv4 twin of the NptPrefix v6 source rule. Only
+	// static-link WANs (Webpass) set it; dynamic-link WANs (AT&T, Monkeybrains)
+	// leave it empty and get no v4 source rule.
+	V4Source string
 }
 
 type gatewaySet struct {
@@ -233,6 +239,14 @@ func desiredState(
 				Mark:     wan.FwMark,
 				TableID:  wan.TableID,
 			})
+			if wan.V4Source != "" {
+				rules = append(rules, netif.DesiredRule{
+					Family:   familyV4,
+					Priority: wan.FromPrio,
+					From:     wan.V4Source,
+					TableID:  wan.TableID,
+				})
+			}
 		}
 		if wanEnabled(wanGateways.V6, health.State(wan.Name)) {
 			rules = append(rules, netif.DesiredRule{
@@ -407,8 +421,8 @@ func desiredRuleSlots(rules []netif.DesiredRule) map[ruleSlot]bool {
 }
 
 func ownedRuleSlots(cfg Config) []ruleSlot {
-	seenSlots := make(map[ruleSlot]bool, len(cfg.WANs)*3+2)
-	slots := make([]ruleSlot, 0, len(cfg.WANs)*3+2)
+	seenSlots := make(map[ruleSlot]bool, len(cfg.WANs)*4+2)
+	slots := make([]ruleSlot, 0, len(cfg.WANs)*4+2)
 	appendSlot := func(slot ruleSlot) {
 		if seenSlots[slot] {
 			return
@@ -421,6 +435,7 @@ func ownedRuleSlots(cfg Config) []ruleSlot {
 	for _, wan := range cfg.WANs {
 		appendSlot(ruleSlot{family: familyV4, priority: wan.FwMarkPrio})
 		appendSlot(ruleSlot{family: familyV6, priority: wan.FwMarkPrio})
+		appendSlot(ruleSlot{family: familyV4, priority: wan.FromPrio})
 		appendSlot(ruleSlot{family: familyV6, priority: wan.FromPrio})
 	}
 	return slots
@@ -510,6 +525,7 @@ func wanRuleSlots(wan WAN) []ruleSlot {
 	return []ruleSlot{
 		{family: familyV4, priority: wan.FwMarkPrio},
 		{family: familyV6, priority: wan.FwMarkPrio},
+		{family: familyV4, priority: wan.FromPrio},
 		{family: familyV6, priority: wan.FromPrio},
 	}
 }
