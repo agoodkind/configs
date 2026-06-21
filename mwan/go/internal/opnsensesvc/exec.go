@@ -145,14 +145,14 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			exitCode := exitErr.ExitCode()
-			if exitCode < 0 || exitCode > math.MaxUint8 {
+			if exitCode < math.MinInt32 || exitCode > math.MaxInt32 {
 				return res, logWrappedErrorContext(ctx, args.Log,
 					"opnsensesvc: exec exit code overflow",
 					"runExec exit code overflow",
 					fmt.Errorf("exit code %d exceeds int32", exitCode),
 					slog.String("command", args.Command))
 			}
-			res.ExitCode = int32(uint8(exitCode))
+			res.ExitCode = int32(exitCode)
 			return res, nil
 		}
 		if res.TimedOut {

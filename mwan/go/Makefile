@@ -8,8 +8,8 @@
 # mwan Makefile.
 # Build/lint pipeline lives in go-makefile and is fetched at runtime.
 # Project-local: protobuf codegen, cross-builds for the Linux and FreeBSD
-# monolith entrypoints, plus a govulncheck wrapper that allowlists a
-# specific known gobgp CVE.
+# monolith entrypoints, plus a govulncheck install spec that wraps a
+# specific known gobgp advisory false positive.
 
 # Identity. mwan's internal/version pkg uses lowercase unexported fields
 # (gitCommit, gitDirty), so VPKG canonical stamping is skipped. Pre-populate
@@ -32,6 +32,9 @@ GO_BUILD_LDFLAGS := \
 # Pipeline modules. Skip go-release.mk: mwan ships via the OPNsense plugin
 # packaging path and via rsync deploy-live, not GoReleaser.
 GO_MK_MODULES := go-build.mk
+# Route go-mk's inline govulncheck to mwan's local wrapper so `make build` and
+# `make govulncheck` share the same allowlist for the stale gobgp advisory.
+GOVULNCHECK_INSTALL := ./tools/cmd/govulncheck
 
 include bootstrap.mk
 
@@ -54,8 +57,6 @@ export PATH := $(GOBIN):$(PATH)
 HOST_GOOS   := $(shell go env GOOS)
 HOST_GOARCH := $(shell go env GOARCH)
 
-GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
-
 .PHONY: proto build-linux build-mwan-opnsense \
         tidy fix clean
 
@@ -75,9 +76,8 @@ define build_platform
 		-o $(DIST_DIR)/$(1) $(4)
 endef
 
-# build-linux and build-mwan-opnsense depend on `check`, which fans
-# out to: build vet lint test govulncheck staticcheck-extra. Full lint
-# pass is mandatory before any deploy artifact lands in $(DIST_DIR)/.
+# build-linux and build-mwan-opnsense depend on `check` so the shared lint
+# chain passes before any deploy artifact lands in $(DIST_DIR)/.
 build-linux: check
 	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD))
 
@@ -90,11 +90,5 @@ tidy:
 # Run golangci-lint with --fix using the central config.
 fix:
 	$(GOLANGCI_LINT) run --fix $(GOLANGCI_LINT_FLAGS) $(GOLANGCI_LINT_TARGETS)
-
-# Override go.mk's govulncheck with mwan's wrapper, which knows about a
-# specific known gobgp vulnerability (GO-2026-4736) that was patched in
-# v4.3.0 and is filtered out of the report.
-govulncheck:
-	$(GOVULNCHECK_WRAPPER)
 
 clean: clean-dist

@@ -4,3 +4,5 @@
 /mwan-watchdog
 /mwan-change-detect
 .make/
+go.mk
+go.work
