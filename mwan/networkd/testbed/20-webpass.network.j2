@@ -29,7 +29,12 @@ Metric=10
 Gateway={{ mwan_webpass_gateway }}
 Table={{ mwan_rt_tables.webpass }}
 
+{% if (not (mwan_ifmgr_wan_enabled | bool)) or (mwan_ifmgr_wan_shadow_mode | bool) %}
 [RoutingPolicyRule]
+# Only emitted when @wan is NOT authoritative (disabled or shadow). Once @wan is
+# authoritative it owns this pin at from_prio (config-vm.toml.j2 v4_source), so
+# networkd drops it here to avoid colliding at priority 200.
 From={{ mwan_webpass_ipv4_addr }}
 Table={{ mwan_rt_tables.webpass }}
 Priority=200
+{% endif %}
