@@ -125,14 +125,15 @@ func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Ti
 	suspected := raStale && dhcpStale && linkObservedUp && slaacActive
 
 	if suspected {
-		m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
+		m.env.Alerts.NotifyContext(
+			ctx, now, slog.LevelWarn,
 			"bridge-suspected-dangling", m.cfg.Iface,
 			"bridge_probe: bridge-side veth attachment suspected dangling "+
 				"(no RA, no DHCP, link observed up, SLAAC self-heal exhausted)",
-			"last_ra", lastRA.Format(time.RFC3339),
-			"last_dhcp", lastDHCP.Format(time.RFC3339),
-			"threshold_s", int(thresh.Seconds()),
-			"hint", "host-side: verify veth is attached to expected bridge",
+			slog.String("last_ra", lastRA.Format(time.RFC3339)),
+			slog.String("last_dhcp", lastDHCP.Format(time.RFC3339)),
+			slog.Int("threshold_s", int(thresh.Seconds())),
+			slog.String("hint", "host-side: verify veth is attached to expected bridge"),
 		)
 	} else if m.env.Alerts.Active("bridge-suspected-dangling", m.cfg.Iface) {
 		m.env.Alerts.ResolveContext(ctx, now,

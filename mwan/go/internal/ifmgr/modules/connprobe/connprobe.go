@@ -58,7 +58,8 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	if m.clock == nil {
 		m.clock = internalclock.Real{}
 	}
-	m.log.InfoContext(ctx, "connectivity_probe: Init",
+	m.log.InfoContext(
+		ctx, "connectivity_probe: Init",
 		"target_count", len(m.cfg.TargetsV6),
 		"timeout", m.cfg.Timeout.String(),
 		"unhealthy_after", m.cfg.UnhealthyAfter.String(),
@@ -167,13 +168,14 @@ func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.
 			"unhealthy_after_s", int(m.cfg.UnhealthyAfter.Seconds()))
 		return
 	}
-	m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
+	m.env.Alerts.NotifyContext(
+		ctx, now, slog.LevelWarn,
 		"connectivity-down", m.cfg.Iface,
 		"connectivity_probe: one or more upstream targets unreachable",
-		"failing_targets", failingTargets,
-		"pending_targets", pendingTargets,
-		"target_count", len(results),
-		"unhealthy_after_s", int(m.cfg.UnhealthyAfter.Seconds()),
+		slog.Any("failing_targets", failingTargets),
+		slog.Any("pending_targets", pendingTargets),
+		slog.Int("target_count", len(results)),
+		slog.Int("unhealthy_after_s", int(m.cfg.UnhealthyAfter.Seconds())),
 	)
 }
 
