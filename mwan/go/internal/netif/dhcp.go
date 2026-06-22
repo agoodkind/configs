@@ -6,8 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +30,7 @@ type DHCPConfig struct {
 // LeaseState is the simplified RFC 2131 client state machine.
 type LeaseState int
 
+// LeaseState values mirror the DHCPv4 client state transitions we emit.
 const (
 	LeaseInit LeaseState = iota
 	LeaseSelecting
@@ -37,6 +40,7 @@ const (
 	LeaseExpired
 )
 
+// String returns the stable log-friendly name of the lease state.
 func (s LeaseState) String() string {
 	switch s {
 	case LeaseInit:
@@ -82,11 +86,11 @@ func (l LeaseInfo) String() string {
 // DHCPClient runs a long-lived DHCPv4 state machine in its own goroutine
 // and emits LeaseInfo on Events whenever the state changes.
 type DHCPClient struct {
-	cfg  DHCPConfig
-	log  *slog.Logger
+	cfg   DHCPConfig
+	log   *slog.Logger
 	clock clock
-	mu   sync.Mutex
-	last LeaseInfo
+	mu    sync.Mutex
+	last  LeaseInfo
 
 	Events chan LeaseInfo
 }
@@ -114,9 +118,20 @@ func StartDHCPClient(
 	}
 
 	c := &DHCPClient{
-		cfg:    cfg,
-		log:    log.With("component", "dhcp", "iface", cfg.Iface),
-		clock:  realClock{},
+		cfg:   cfg,
+		log:   log.With("component", "dhcp", "iface", cfg.Iface),
+		clock: realClock{},
+		mu:    sync.Mutex{},
+		last: LeaseInfo{
+			State:      LeaseInit,
+			IP:         nil,
+			PrefixLen:  0,
+			Gateway:    nil,
+			Server:     nil,
+			LeaseTime:  0,
+			AcquiredAt: time.Time{},
+			Err:        nil,
+		},
 		Events: make(chan LeaseInfo, 8),
 	}
 	go func() {
@@ -164,7 +179,16 @@ func (c *DHCPClient) run(ctx context.Context) {
 		if err != nil {
 			logger.WarnContext(ctx, "dhcp: acquire failed; will retry",
 				"err", err, "backoff", backoff.String())
-			c.emit(LeaseInfo{State: LeaseSelecting, Err: err})
+			c.emit(LeaseInfo{
+				State:      LeaseSelecting,
+				IP:         nil,
+				PrefixLen:  0,
+				Gateway:    nil,
+				Server:     nil,
+				LeaseTime:  0,
+				AcquiredAt: time.Time{},
+				Err:        err,
+			})
 			sleepOrCancel(ctx, backoff)
 			backoff = nextBackoff(backoff, c.cfg.MaxBackoff)
 			continue
@@ -179,11 +203,21 @@ func (c *DHCPClient) run(ctx context.Context) {
 // acquire performs full DORA. On success returns a Lease; on failure
 // returns wrapped error.
 func (c *DHCPClient) acquire(ctx context.Context) (*nclient4.Lease, error) {
-	c.emit(LeaseInfo{State: LeaseInit})
+	c.emit(LeaseInfo{
+		State:      LeaseInit,
+		IP:         nil,
+		PrefixLen:  0,
+		Gateway:    nil,
+		Server:     nil,
+		LeaseTime:  0,
+		AcquiredAt: time.Time{},
+		Err:        nil,
+	})
 
-	client, err := nclient4.New(c.cfg.Iface,
+	client, err := nclient4.New(
+		c.cfg.Iface,
 		nclient4.WithTimeout(c.cfg.DiscoverTimeout),
-		nclient4.WithLogger(slogDHCPLogger{base: c.log}),
+		nclient4.WithLogger(newSlogDHCPLogger(c.log)),
 	)
 	if err != nil {
 		c.log.WarnContext(ctx, "dhcp: nclient4.New failed", "err", err)
@@ -192,7 +226,16 @@ func (c *DHCPClient) acquire(ctx context.Context) (*nclient4.Lease, error) {
 	defer client.Close()
 
 	c.log.DebugContext(ctx, "dhcp: DISCOVER")
-	c.emit(LeaseInfo{State: LeaseSelecting})
+	c.emit(LeaseInfo{
+		State:      LeaseSelecting,
+		IP:         nil,
+		PrefixLen:  0,
+		Gateway:    nil,
+		Server:     nil,
+		LeaseTime:  0,
+		AcquiredAt: time.Time{},
+		Err:        nil,
+	})
 
 	dctx, cancel := context.WithTimeout(ctx, c.cfg.DiscoverTimeout)
 	offer, err := client.DiscoverOffer(dctx)
@@ -202,11 +245,21 @@ func (c *DHCPClient) acquire(ctx context.Context) (*nclient4.Lease, error) {
 		return nil, fmt.Errorf("DiscoverOffer: %w", err)
 	}
 
-	c.log.Debug("dhcp: OFFER received",
+	c.log.DebugContext(
+		ctx, "dhcp: OFFER received",
 		"yiaddr", offer.YourIPAddr.String(),
 		"siaddr", offer.ServerIdentifier(),
 	)
-	c.emit(LeaseInfo{State: LeaseRequesting})
+	c.emit(LeaseInfo{
+		State:      LeaseRequesting,
+		IP:         nil,
+		PrefixLen:  0,
+		Gateway:    nil,
+		Server:     nil,
+		LeaseTime:  0,
+		AcquiredAt: time.Time{},
+		Err:        nil,
+	})
 
 	rctx, cancel := context.WithTimeout(ctx, c.cfg.RequestTimeout)
 	lease, err := client.RequestFromOffer(rctx, offer)
@@ -215,7 +268,8 @@ func (c *DHCPClient) acquire(ctx context.Context) (*nclient4.Lease, error) {
 		c.log.WarnContext(ctx, "dhcp: RequestFromOffer failed", "err", err)
 		return nil, fmt.Errorf("RequestFromOffer: %w", err)
 	}
-	c.log.Debug("dhcp: ACK received",
+	c.log.DebugContext(
+		ctx, "dhcp: ACK received",
 		"yiaddr", lease.ACK.YourIPAddr.String(),
 		"lease_time", lease.ACK.IPAddressLeaseTime(0).String(),
 	)
@@ -232,13 +286,13 @@ func (c *DHCPClient) bound(
 
 	leaseTime := lease.ACK.IPAddressLeaseTime(0)
 	if leaseTime <= 0 {
-		logger.Warn("dhcp: lease time missing or zero; defaulting to 1h")
+		logger.WarnContext(ctx, "dhcp: lease time missing or zero; defaulting to 1h")
 		leaseTime = time.Hour
 	}
 	t1 := leaseTime / 2
 
 	for {
-		logger.Debug("dhcp: scheduling renewal",
+		logger.DebugContext(ctx, "dhcp: scheduling renewal",
 			"in", t1.String(), "lease_time", leaseTime.String())
 		select {
 		case <-ctx.Done():
@@ -247,19 +301,33 @@ func (c *DHCPClient) bound(
 		}
 
 		c.emit(LeaseInfo{
-			State: LeaseRenewing, IP: current.IP,
-			PrefixLen: current.PrefixLen, Gateway: current.Gateway,
-			Server: current.Server, LeaseTime: current.LeaseTime,
+			State:      LeaseRenewing,
+			IP:         current.IP,
+			PrefixLen:  current.PrefixLen,
+			Gateway:    current.Gateway,
+			Server:     current.Server,
+			LeaseTime:  current.LeaseTime,
 			AcquiredAt: current.AcquiredAt,
+			Err:        nil,
 		})
 
-		client, err := nclient4.New(c.cfg.Iface,
+		client, err := nclient4.New(
+			c.cfg.Iface,
 			nclient4.WithTimeout(c.cfg.RenewTimeout),
-			nclient4.WithLogger(slogDHCPLogger{base: c.log}),
+			nclient4.WithLogger(newSlogDHCPLogger(c.log)),
 		)
 		if err != nil {
-			logger.Warn("dhcp: nclient4.New for renew failed", "err", err)
-			c.emit(LeaseInfo{State: LeaseExpired, Err: err, AcquiredAt: current.AcquiredAt})
+			logger.WarnContext(ctx, "dhcp: nclient4.New for renew failed", "err", err)
+			c.emit(LeaseInfo{
+				State:      LeaseExpired,
+				IP:         nil,
+				PrefixLen:  0,
+				Gateway:    nil,
+				Server:     nil,
+				LeaseTime:  0,
+				AcquiredAt: current.AcquiredAt,
+				Err:        err,
+			})
 			return
 		}
 		rctx, cancel := context.WithTimeout(ctx, c.cfg.RenewTimeout)
@@ -269,13 +337,22 @@ func (c *DHCPClient) bound(
 		if err != nil {
 			var nakErr *nclient4.ErrNak
 			if errors.As(err, &nakErr) {
-				logger.Warn("dhcp: server NAK on renew; restarting DORA",
+				logger.WarnContext(ctx, "dhcp: server NAK on renew; restarting DORA",
 					"err", err)
 			} else {
-				logger.Warn("dhcp: renew failed; lease expiring",
+				logger.WarnContext(ctx, "dhcp: renew failed; lease expiring",
 					"err", err)
 			}
-			c.emit(LeaseInfo{State: LeaseExpired, Err: err, AcquiredAt: current.AcquiredAt})
+			c.emit(LeaseInfo{
+				State:      LeaseExpired,
+				IP:         nil,
+				PrefixLen:  0,
+				Gateway:    nil,
+				Server:     nil,
+				LeaseTime:  0,
+				AcquiredAt: current.AcquiredAt,
+				Err:        err,
+			})
 			return
 		}
 		lease = newLease
@@ -294,7 +371,16 @@ func (c *DHCPClient) bound(
 func leaseToInfo(
 	state LeaseState, lease *nclient4.Lease, acquired time.Time, err error,
 ) LeaseInfo {
-	info := LeaseInfo{State: state, AcquiredAt: acquired, Err: err}
+	info := LeaseInfo{
+		State:      state,
+		IP:         nil,
+		PrefixLen:  0,
+		Gateway:    nil,
+		Server:     nil,
+		LeaseTime:  0,
+		AcquiredAt: acquired,
+		Err:        err,
+	}
 	if lease == nil || lease.ACK == nil {
 		return info
 	}
@@ -320,18 +406,33 @@ func nextBackoff(cur, maxB time.Duration) time.Duration {
 	return n
 }
 
+// slogDHCPWriter forwards nclient4 text logs into slog at DEBUG.
+type slogDHCPWriter struct{ base *slog.Logger }
+
+// Write implements [io.Writer] for the standard [log.Logger] used by nclient4.
+func (w slogDHCPWriter) Write(bytes []byte) (int, error) {
+	w.base.Debug("dhcp: " + strings.TrimSpace(string(bytes)))
+	return len(bytes), nil
+}
+
 // slogDHCPLogger adapts slog to the nclient4.Logger interface so DHCP
 // packet exchanges appear in our structured logs at DEBUG.
-type slogDHCPLogger struct{ base *slog.Logger }
+type slogDHCPLogger struct {
+	*log.Logger
+	base *slog.Logger
+}
 
-// Printf implements nclient4.Logger.
-func (l slogDHCPLogger) Printf(format string, v ...any) {
-	l.base.Debug("dhcp: " + fmt.Sprintf(format, v...))
+func newSlogDHCPLogger(base *slog.Logger) slogDHCPLogger {
+	return slogDHCPLogger{
+		Logger: log.New(slogDHCPWriter{base: base}, "", 0),
+		base:   base,
+	}
 }
 
 // PrintMessage implements nclient4.Logger.
 func (l slogDHCPLogger) PrintMessage(prefix string, message *dhcpv4.DHCPv4) {
-	l.base.Debug("dhcp: packet",
+	l.base.Debug(
+		"dhcp: packet",
 		"dir", prefix,
 		"type", message.MessageType().String(),
 		"yiaddr", message.YourIPAddr.String(),
