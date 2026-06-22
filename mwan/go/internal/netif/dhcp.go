@@ -84,6 +84,7 @@ func (l LeaseInfo) String() string {
 type DHCPClient struct {
 	cfg  DHCPConfig
 	log  *slog.Logger
+	clock clock
 	mu   sync.Mutex
 	last LeaseInfo
 
@@ -115,9 +116,19 @@ func StartDHCPClient(
 	c := &DHCPClient{
 		cfg:    cfg,
 		log:    log.With("component", "dhcp", "iface", cfg.Iface),
+		clock:  realClock{},
 		Events: make(chan LeaseInfo, 8),
 	}
-	go c.run(ctx)
+	go func() {
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			c.log.ErrorContext(ctx, "dhcp: run panicked", "err", fmt.Sprint(recovered))
+		}()
+		c.run(ctx)
+	}()
 	return c
 }
 
@@ -151,7 +162,7 @@ func (c *DHCPClient) run(ctx context.Context) {
 		}
 		lease, err := c.acquire(ctx)
 		if err != nil {
-			logger.Warn("dhcp: acquire failed; will retry",
+			logger.WarnContext(ctx, "dhcp: acquire failed; will retry",
 				"err", err, "backoff", backoff.String())
 			c.emit(LeaseInfo{State: LeaseSelecting, Err: err})
 			sleepOrCancel(ctx, backoff)
@@ -175,17 +186,19 @@ func (c *DHCPClient) acquire(ctx context.Context) (*nclient4.Lease, error) {
 		nclient4.WithLogger(slogDHCPLogger{base: c.log}),
 	)
 	if err != nil {
+		c.log.WarnContext(ctx, "dhcp: nclient4.New failed", "err", err)
 		return nil, fmt.Errorf("nclient4.New: %w", err)
 	}
 	defer client.Close()
 
-	c.log.Debug("dhcp: DISCOVER")
+	c.log.DebugContext(ctx, "dhcp: DISCOVER")
 	c.emit(LeaseInfo{State: LeaseSelecting})
 
 	dctx, cancel := context.WithTimeout(ctx, c.cfg.DiscoverTimeout)
 	offer, err := client.DiscoverOffer(dctx)
 	cancel()
 	if err != nil {
+		c.log.WarnContext(ctx, "dhcp: DiscoverOffer failed", "err", err)
 		return nil, fmt.Errorf("DiscoverOffer: %w", err)
 	}
 
@@ -199,6 +212,7 @@ func (c *DHCPClient) acquire(ctx context.Context) (*nclient4.Lease, error) {
 	lease, err := client.RequestFromOffer(rctx, offer)
 	cancel()
 	if err != nil {
+		c.log.WarnContext(ctx, "dhcp: RequestFromOffer failed", "err", err)
 		return nil, fmt.Errorf("RequestFromOffer: %w", err)
 	}
 	c.log.Debug("dhcp: ACK received",
@@ -213,7 +227,7 @@ func (c *DHCPClient) acquire(ctx context.Context) (*nclient4.Lease, error) {
 func (c *DHCPClient) bound(
 	ctx context.Context, logger *slog.Logger, lease *nclient4.Lease,
 ) {
-	current := leaseToInfo(LeaseBound, lease, time.Now(), nil)
+	current := leaseToInfo(LeaseBound, lease, c.clock.Now(), nil)
 	c.emit(current)
 
 	leaseTime := lease.ACK.IPAddressLeaseTime(0)
@@ -265,7 +279,7 @@ func (c *DHCPClient) bound(
 			return
 		}
 		lease = newLease
-		current = leaseToInfo(LeaseBound, lease, time.Now(), nil)
+		current = leaseToInfo(LeaseBound, lease, c.clock.Now(), nil)
 		c.emit(current)
 		leaseTime = lease.ACK.IPAddressLeaseTime(0)
 		if leaseTime <= 0 {
@@ -311,7 +325,7 @@ func nextBackoff(cur, maxB time.Duration) time.Duration {
 type slogDHCPLogger struct{ base *slog.Logger }
 
 // Printf implements nclient4.Logger.
-func (l slogDHCPLogger) Printf(format string, v ...interface{}) {
+func (l slogDHCPLogger) Printf(format string, v ...any) {
 	l.base.Debug("dhcp: " + fmt.Sprintf(format, v...))
 }
 
