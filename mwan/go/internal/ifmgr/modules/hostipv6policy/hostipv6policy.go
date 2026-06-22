@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -41,6 +42,7 @@ type Config struct {
 	Policies                []InterfacePolicy
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "host_ipv6_policy" }
 
 type routerSoliciter interface {
@@ -70,14 +72,15 @@ func (m *Module) Name() string { return "host_ipv6_policy" }
 // [ifmgr.modules.host_ipv6_policy] section was rendered for this host,
 // so Init returns ifmgr.ErrModuleDisabled and the daemon drops the
 // module from its dispatch list.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "host_ipv6_policy")
-	m.log.Info("host_ipv6_policy: Init",
+	m.log.InfoContext(ctx, "host_ipv6_policy: Init",
 		"policy_count", len(m.cfg.Policies),
 		"missing_iface_grace_period", m.cfg.MissingIfaceGracePeriod.String(),
 	)
 	if len(m.cfg.Policies) == 0 {
+		m.log.WarnContext(ctx, "host_ipv6_policy: module disabled because no policies were configured")
 		return fmt.Errorf("%w: host_ipv6_policy: no [ifmgr.modules.host_ipv6_policy] section", ifmgr.ErrModuleDisabled)
 	}
 	if m.cfg.MissingIfaceGracePeriod <= 0 {
@@ -143,7 +146,7 @@ func (m *Module) reconcilePolicySysctls(
 		key  string
 		want string
 	}{
-		{key: acceptRAKey(policy.Name), want: fmt.Sprintf("%d", policy.AcceptRA)},
+		{key: acceptRAKey(policy.Name), want: strconv.Itoa(policy.AcceptRA)},
 		{key: autoconfKey(policy.Name), want: boolToSysctl(policy.AutoConf)},
 		{key: acceptRADefRtrKey(policy.Name), want: boolToSysctl(policy.AcceptRADefRtr)},
 	}
@@ -164,24 +167,30 @@ func (m *Module) reconcileSysctl(
 ) (bool, error) {
 	currentValue, err := m.env.Sysctl.Get(ctx, key)
 	if err != nil {
+		wrappedErr := fmt.Errorf("host_ipv6_policy: get %s: %w", key, err)
 		if errors.Is(err, os.ErrNotExist) {
-			return true, err
+			log.WarnContext(ctx, "host_ipv6_policy: sysctl key unavailable", "key", key, "err", wrappedErr)
+			return true, wrappedErr
 		}
-		return false, err
+		log.WarnContext(ctx, "host_ipv6_policy: failed to read sysctl", "key", key, "err", wrappedErr)
+		return false, wrappedErr
 	}
 	if currentValue == want {
 		return false, nil
 	}
-	log.Info("host_ipv6_policy: updating sysctl",
+	log.InfoContext(ctx, "host_ipv6_policy: updating sysctl",
 		"key", key,
 		"current", currentValue,
 		"want", want,
 	)
 	if err := m.env.Sysctl.Set(ctx, key, want); err != nil {
+		wrappedErr := fmt.Errorf("host_ipv6_policy: set %s=%s: %w", key, want, err)
 		if errors.Is(err, os.ErrNotExist) {
-			return true, err
+			log.WarnContext(ctx, "host_ipv6_policy: sysctl key disappeared during update", "key", key, "err", wrappedErr)
+			return true, wrappedErr
 		}
-		return false, err
+		log.WarnContext(ctx, "host_ipv6_policy: failed to update sysctl", "key", key, "want", want, "err", wrappedErr)
+		return false, wrappedErr
 	}
 	return false, nil
 }
@@ -198,7 +207,7 @@ func (m *Module) cleanupDeniedRADefault(
 	if currentRoute == nil {
 		return nil
 	}
-	log.Info("host_ipv6_policy: removing denied RA default",
+	log.InfoContext(ctx, "host_ipv6_policy: removing denied RA default",
 		"via", currentRoute.Via,
 		"dev", currentRoute.Dev,
 	)
@@ -207,7 +216,7 @@ func (m *Module) cleanupDeniedRADefault(
 		return err
 	}
 	if deletedCount > 0 {
-		log.Info("host_ipv6_policy: removed denied RA defaults",
+		log.InfoContext(ctx, "host_ipv6_policy: removed denied RA defaults",
 			"count", deletedCount,
 		)
 	}
@@ -232,12 +241,12 @@ func (m *Module) solicitAllowedIfaceRA(
 	}
 	defer func() {
 		if closeErr := client.Close(); closeErr != nil {
-			log.Debug("host_ipv6_policy: RA client close failed", "err", closeErr)
+			log.DebugContext(ctx, "host_ipv6_policy: RA client close failed", "err", closeErr)
 		}
 	}()
-	log.Info("host_ipv6_policy: soliciting RA on allowed iface")
+	log.InfoContext(ctx, "host_ipv6_policy: soliciting RA on allowed iface")
 	if _, err := client.SolicitRA(ctx, raSolicitTimeout); err != nil {
-		log.Warn("host_ipv6_policy: RA solicit did not yield a usable advertisement", "err", err)
+		log.WarnContext(ctx, "host_ipv6_policy: RA solicit did not yield a usable advertisement", "err", err)
 		return nil
 	}
 	currentRoute, err = m.findMainRADefault(ctx, iface)
@@ -245,12 +254,12 @@ func (m *Module) solicitAllowedIfaceRA(
 		return err
 	}
 	if currentRoute != nil {
-		log.Info("host_ipv6_policy: RA default learned",
+		log.InfoContext(ctx, "host_ipv6_policy: RA default learned",
 			"via", currentRoute.Via,
 			"dev", currentRoute.Dev,
 		)
 	} else {
-		log.Warn("host_ipv6_policy: RA solicit completed without a main-table default")
+		log.WarnContext(ctx, "host_ipv6_policy: RA solicit completed without a main-table default")
 	}
 	return nil
 }
@@ -274,6 +283,12 @@ func (m *Module) handleMissingIface(log *slog.Logger, iface string, cause error)
 		)
 		return nil
 	}
+	log.Warn("host_ipv6_policy: iface still missing after grace period",
+		"iface", iface,
+		"age", missingDuration.Truncate(time.Second).String(),
+		"grace_period", m.cfg.MissingIfaceGracePeriod.String(),
+		"err", cause,
+	)
 	return fmt.Errorf(
 		"host_ipv6_policy: iface %q still missing after %s: %w",
 		iface,
@@ -306,6 +321,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) 
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	parsedConfig := Config{
 		MissingIfaceGracePeriod: defaultMissingIfaceGracePeriod,
+		Policies:                nil,
 	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
@@ -319,6 +335,9 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	}
 	return &Module{
 		cfg:                  parsedConfig,
+		env:                  nil,
+		log:                  nil,
+		mu:                   sync.Mutex{},
 		missingSince:         make(map[string]time.Time),
 		now:                  time.Now,
 		findMainRADefault:    netif.FindMainRADefault,
