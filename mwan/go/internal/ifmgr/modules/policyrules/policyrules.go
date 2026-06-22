@@ -33,16 +33,17 @@ type Config struct {
 	Rules []netif.DesiredRule
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "policy_rules" }
 
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "policy_rules" }
 
 // Init implements ifmgr.Module. Sanity-checks each rule.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "policy_rules")
-	m.log.Info("policy_rules: Init", "rule_count", len(m.cfg.Rules))
+	m.log.InfoContext(ctx, "policy_rules: Init", "rule_count", len(m.cfg.Rules))
 	for i, r := range m.cfg.Rules {
 		if r.Priority <= 0 {
 			return fmt.Errorf("policy_rules[%d]: priority must be > 0", i)
@@ -56,7 +57,11 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 
 // Reconcile implements ifmgr.Module.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
-	return netif.ReconcileRules(ctx, log, m.cfg.Rules)
+	if err := netif.ReconcileRules(ctx, log, m.cfg.Rules); err != nil {
+		log.WarnContext(ctx, "policy_rules: ReconcileRules failed", "err", err)
+		return fmt.Errorf("reconcile policy rules: %w", err)
+	}
+	return nil
 }
 
 // OnKernelEvent implements ifmgr.Module. Rule events are not subscribed
@@ -76,7 +81,9 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) 
 
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
-	c := Config{}
+	c := Config{
+		Rules: nil,
+	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
@@ -84,7 +91,11 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 		c = typedConfig
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg: c,
+		env: nil,
+		log: nil,
+	}, nil
 }
 
 func init() { ifmgr.Register("policy_rules", New) }
