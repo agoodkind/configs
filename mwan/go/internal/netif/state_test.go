@@ -3,6 +3,7 @@
 package netif
 
 import (
+	"log/slog"
 	"net"
 	"testing"
 
@@ -91,7 +92,7 @@ func TestBuildTableRoute(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			route, err := buildTableRoute(tc.want, link)
+			route, err := buildTableRoute(slog.Default(), tc.want, link)
 			if err != nil {
 				t.Fatalf("buildTableRoute: %v", err)
 			}
