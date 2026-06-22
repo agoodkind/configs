@@ -14,19 +14,22 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/netip"
 	"sync"
 	"time"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
 
 // Module owns the connectivity health state.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	cfg   Config
+	env   *ifmgr.Env
+	log   *slog.Logger
+	clock internalclock.Clock
 
 	mu            sync.Mutex
 	lastResult    map[string]bool // key=target string, val=last probe healthy?
@@ -42,16 +45,20 @@ type Config struct {
 	UnhealthyAfter time.Duration // a single failed probe must persist this long before alert
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "connectivity_probe" }
 
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "connectivity_probe" }
 
 // Init implements ifmgr.Module.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "connectivity_probe", "iface", m.cfg.Iface)
-	m.log.Info("connectivity_probe: Init",
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
+	}
+	m.log.InfoContext(ctx, "connectivity_probe: Init",
 		"target_count", len(m.cfg.TargetsV6),
 		"timeout", m.cfg.Timeout.String(),
 		"unhealthy_after", m.cfg.UnhealthyAfter.String(),
@@ -71,13 +78,13 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 // per-target failure-onset tracking used by the unhealthy_after debounce.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	probe := netif.NewV6Probe(m.cfg.Iface, log)
-	now := time.Now()
+	now := m.clock.Now()
 	results := map[string]bool{}
 	for _, t := range m.cfg.TargetsV6 {
 		_, err := probe.PingICMP6(ctx, t, m.cfg.Timeout)
 		ok := err == nil
 		results[t.String()] = ok
-		log.Debug("connectivity_probe: probe result",
+		log.DebugContext(ctx, "connectivity_probe: probe result",
 			"target", t.String(), "ok", ok, "err", err)
 	}
 	m.mu.Lock()
@@ -88,7 +95,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		}
 		if _, already := m.firstFailedAt[tgt]; !already {
 			m.firstFailedAt[tgt] = now
-			log.Debug("connectivity_probe: target entered failing state",
+			log.DebugContext(ctx, "connectivity_probe: target entered failing state",
 				"target", tgt, "unhealthy_after", m.cfg.UnhealthyAfter.String())
 		}
 	}
@@ -112,14 +119,12 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 // into a single iface-level alert: a target is debounced past UnhealthyAfter
 // before contributing. All failing targets must be past their debounce
 // before the alert fires. Resolution is immediate once all targets succeed.
-func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Time) {
+func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.Time) {
 	m.mu.Lock()
 	results := m.lastResult
 	last := m.lastRunAt
 	firstFailed := make(map[string]time.Time, len(m.firstFailedAt))
-	for k, v := range m.firstFailedAt {
-		firstFailed[k] = v
-	}
+	maps.Copy(firstFailed, m.firstFailedAt)
 	m.mu.Unlock()
 
 	if last.IsZero() {
@@ -149,7 +154,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 
 	if allOK {
 		if m.env.Alerts.Active("connectivity-down", m.cfg.Iface) {
-			m.env.Alerts.Resolve(now,
+			m.env.Alerts.ResolveContext(ctx, now,
 				"connectivity-down", m.cfg.Iface,
 				"connectivity_probe: all targets responding again")
 		}
@@ -157,12 +162,12 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 	}
 	if len(failingTargets) == 0 {
 		// Some failures, none debounced past threshold yet. Stay quiet but trace it.
-		log.Debug("connectivity_probe: failures within debounce window",
+		log.DebugContext(ctx, "connectivity_probe: failures within debounce window",
 			"pending_targets", pendingTargets,
 			"unhealthy_after_s", int(m.cfg.UnhealthyAfter.Seconds()))
 		return
 	}
-	m.env.Alerts.Notify(now, slog.LevelWarn,
+	m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
 		"connectivity-down", m.cfg.Iface,
 		"connectivity_probe: one or more upstream targets unreachable",
 		"failing_targets", failingTargets,
@@ -175,6 +180,8 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
+		Iface:          "",
+		TargetsV6:      nil,
 		Timeout:        2 * time.Second,
 		UnhealthyAfter: 10 * time.Second,
 	}
@@ -185,7 +192,16 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 		c = typedConfig
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:           c,
+		env:           nil,
+		log:           nil,
+		clock:         nil,
+		mu:            sync.Mutex{},
+		lastResult:    nil,
+		lastRunAt:     time.Time{},
+		firstFailedAt: nil,
+	}, nil
 }
 
 func init() { ifmgr.Register("connectivity_probe", New) }
