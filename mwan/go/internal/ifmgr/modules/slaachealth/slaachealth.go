@@ -20,15 +20,17 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
 
 // Module owns SLAAC health for one iface.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	cfg   Config
+	env   *ifmgr.Env
+	log   *slog.Logger
+	clock internalclock.Clock
 
 	mu              sync.Mutex
 	degradedSince   time.Time
@@ -48,16 +50,20 @@ type Config struct {
 	ProbeTimeout      time.Duration
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "slaac_health" }
 
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "slaac_health" }
 
 // Init implements ifmgr.Module.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "slaac_health", "iface", m.cfg.Iface)
-	m.log.Info("slaac_health: Init",
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
+	}
+	m.log.InfoContext(ctx, "slaac_health: Init",
 		"degraded_after", m.cfg.DegradedAfter.String(),
 		"escalate_after", m.cfg.EscalateAfter.String(),
 		"alert_after", m.cfg.AlertAfter.String(),
@@ -83,10 +89,10 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	log = log.With("op", "reconcile")
 
 	healthy := m.checkHealth(ctx, log)
-	now := time.Now()
+	now := m.clock.Now()
 
 	if healthy {
-		m.handleHealthy(now, log)
+		m.handleHealthy(ctx, now, log)
 		return nil
 	}
 	m.handleDegraded(ctx, now, log)
@@ -96,14 +102,14 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 // checkHealth runs the cheap health probes. Returns true iff all pass.
 func (m *Module) checkHealth(ctx context.Context, log *slog.Logger) bool {
 	if !m.hasNonDeprecatedGlobalV6(log) {
-		log.Debug("slaac_health: no non-deprecated global v6")
+		log.DebugContext(ctx, "slaac_health: no non-deprecated global v6")
 		return false
 	}
 	probe := netif.NewV6Probe(m.cfg.Iface, log)
 	for _, t := range m.cfg.ProbeTargetsV6 {
 		_, err := probe.PingICMP6(ctx, t, m.cfg.ProbeTimeout)
 		if err != nil {
-			log.Debug("slaac_health: probe failed",
+			log.DebugContext(ctx, "slaac_health: probe failed",
 				"target", t.String(), "err", err)
 			return false
 		}
@@ -141,15 +147,15 @@ func (m *Module) hasNonDeprecatedGlobalV6(log *slog.Logger) bool {
 }
 
 // handleHealthy resets the degraded clock and resolves any active alert.
-func (m *Module) handleHealthy(now time.Time, log *slog.Logger) {
+func (m *Module) handleHealthy(ctx context.Context, now time.Time, log *slog.Logger) {
 	m.mu.Lock()
 	wasDegraded := !m.degradedSince.IsZero()
 	m.degradedSince = time.Time{}
 	m.mu.Unlock()
 
 	if wasDegraded {
-		log.Info("slaac_health: recovered to healthy")
-		m.env.Alerts.Resolve(now, "slaac-degraded", m.cfg.Iface,
+		log.InfoContext(ctx, "slaac_health: recovered to healthy")
+		m.env.Alerts.ResolveContext(ctx, now, "slaac-degraded", m.cfg.Iface,
 			"slaac_health: recovered")
 	}
 }
@@ -164,11 +170,11 @@ func (m *Module) handleDegraded(ctx context.Context, now time.Time, log *slog.Lo
 	m.mu.Unlock()
 
 	age := now.Sub(since)
-	log.Debug("slaac_health: degraded", "age_s", int(age.Seconds()))
+	log.DebugContext(ctx, "slaac_health: degraded", "age_s", int(age.Seconds()))
 
 	switch {
 	case age >= m.cfg.AlertAfter:
-		m.env.Alerts.Notify(now, slog.LevelWarn,
+		m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
 			"slaac-degraded", m.cfg.Iface,
 			"slaac_health: degraded beyond alert threshold",
 			"age_s", int(age.Seconds()),
@@ -186,13 +192,13 @@ func (m *Module) handleDegraded(ctx context.Context, now time.Time, log *slog.Lo
 // Non-fatal on failure.
 func (m *Module) trySolicit(ctx context.Context, log *slog.Logger) {
 	if m.env.RA == nil {
-		log.Debug("slaac_health: no RA client; skipping solicit")
+		log.DebugContext(ctx, "slaac_health: no RA client; skipping solicit")
 		return
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err := m.env.RA.SolicitRA(cctx, 5*time.Second)
-	log.Info("slaac_health: sent Router Solicitation", "err", err)
+	log.InfoContext(ctx, "slaac_health: sent Router Solicitation", "err", err)
 }
 
 // tryToggle performs disable_ipv6=1; sleep 1; disable_ipv6=0 to force
@@ -206,7 +212,7 @@ func (m *Module) tryToggle(ctx context.Context, now time.Time, log *slog.Logger)
 	}
 	if m.togglesThisHour >= m.cfg.MaxTogglesPerHour {
 		m.mu.Unlock()
-		log.Warn("slaac_health: throttled (max toggles per hour reached)",
+		log.WarnContext(ctx, "slaac_health: throttled (max toggles per hour reached)",
 			"toggles", m.togglesThisHour,
 			"max", m.cfg.MaxTogglesPerHour,
 		)
@@ -217,16 +223,24 @@ func (m *Module) tryToggle(ctx context.Context, now time.Time, log *slog.Logger)
 	count := m.togglesThisHour
 	m.mu.Unlock()
 
-	log.Warn("slaac_health: toggling disable_ipv6 to refresh SLAAC",
+	log.WarnContext(ctx, "slaac_health: toggling disable_ipv6 to refresh SLAAC",
 		"toggle_count_this_hour", count)
 	key := "net.ipv6.conf." + m.cfg.Iface + ".disable_ipv6"
 	if err := m.env.Sysctl.Set(ctx, key, "1"); err != nil {
-		log.Error("slaac_health: failed to set disable_ipv6=1", "err", err)
+		log.ErrorContext(ctx, "slaac_health: failed to set disable_ipv6=1", "err", err)
 		return
 	}
-	time.Sleep(1 * time.Second)
+	timer := time.NewTimer(1 * time.Second)
+	select {
+	case <-ctx.Done():
+		if !timer.Stop() {
+			<-timer.C
+		}
+		return
+	case <-timer.C:
+	}
 	if err := m.env.Sysctl.Set(ctx, key, "0"); err != nil {
-		log.Error("slaac_health: failed to set disable_ipv6=0", "err", err)
+		log.ErrorContext(ctx, "slaac_health: failed to set disable_ipv6=0", "err", err)
 		return
 	}
 	// Re-issue RS so the kernel relearns immediately.
@@ -251,7 +265,12 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) 
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
+		Iface:             "",
+		DegradedAfter:     0,
+		EscalateAfter:     0,
+		AlertAfter:        0,
 		MaxTogglesPerHour: 4,
+		ProbeTargetsV6:    nil,
 		ProbeTimeout:      2 * time.Second,
 	}
 	if cfg != nil {
@@ -261,7 +280,17 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 		c = typedConfig
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:             c,
+		env:             nil,
+		log:             nil,
+		clock:           nil,
+		mu:              sync.Mutex{},
+		degradedSince:   time.Time{},
+		lastToggle:      time.Time{},
+		togglesThisHour: 0,
+		hourBucketStart: time.Time{},
+	}, nil
 }
 
 func init() { ifmgr.Register("slaac_health", New) }
