@@ -15,15 +15,17 @@ import (
 	"sync"
 	"time"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
 
 // Module owns the ra-lost alert decision.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	cfg   Config
+	env   *ifmgr.Env
+	log   *slog.Logger
+	clock internalclock.Clock
 
 	mu         sync.Mutex
 	lastRASeen time.Time // updated on EvRouteAdded for ra-learned defaults
@@ -35,16 +37,20 @@ type Config struct {
 	RALostAfter time.Duration
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "ra_lost" }
 
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "ra_lost" }
 
 // Init implements ifmgr.Module.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "ra_lost", "iface", m.cfg.Iface)
-	m.log.Info("ra_lost: Init", "ra_lost_after", m.cfg.RALostAfter.String())
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
+	}
+	m.log.InfoContext(ctx, "ra_lost: Init", "ra_lost_after", m.cfg.RALostAfter.String())
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("ra_lost: iface is required")
 	}
@@ -61,7 +67,7 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	cur, err := netif.FindMainRADefault(ctx, m.cfg.Iface)
 	if err != nil {
-		log.Debug("ra_lost: FindMainRADefault failed (non-fatal)", "err", err)
+		log.DebugContext(ctx, "ra_lost: FindMainRADefault failed (non-fatal)", "err", err)
 		return nil
 	}
 	if cur != nil {
@@ -89,7 +95,7 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 
 // EvaluateAlerts implements ifmgr.Module. Compares last-seen against the
 // configured threshold. Notify is idempotent per AlertManager semantics.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time) {
+func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Time) {
 	m.mu.Lock()
 	last := m.lastRASeen
 	m.mu.Unlock()
@@ -104,7 +110,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 	}
 	age := now.Sub(last)
 	if age > m.cfg.RALostAfter {
-		m.env.Alerts.Notify(now, slog.LevelWarn,
+		m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
 			"ra-lost", m.cfg.Iface,
 			"ra_lost: no RA observed within threshold",
 			"last_seen", last.Format(time.RFC3339),
@@ -112,7 +118,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 			"threshold_s", int(m.cfg.RALostAfter.Seconds()),
 		)
 	} else if m.env.Alerts.Active("ra-lost", m.cfg.Iface) {
-		m.env.Alerts.Resolve(now, "ra-lost", m.cfg.Iface,
+		m.env.Alerts.ResolveContext(ctx, now, "ra-lost", m.cfg.Iface,
 			"ra_lost: RA observed again",
 			"last_seen", last.Format(time.RFC3339),
 		)
@@ -121,13 +127,16 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 
 func (m *Module) markSeen() {
 	m.mu.Lock()
-	m.lastRASeen = time.Now()
+	m.lastRASeen = m.clock.Now()
 	m.mu.Unlock()
 }
 
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
-	c := Config{}
+	c := Config{
+		Iface:       "",
+		RALostAfter: 0,
+	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
@@ -138,7 +147,14 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	if c.RALostAfter == 0 {
 		c.RALostAfter = 5 * time.Minute
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:        c,
+		env:        nil,
+		log:        nil,
+		clock:      nil,
+		mu:         sync.Mutex{},
+		lastRASeen: time.Time{},
+	}, nil
 }
 
 func init() { ifmgr.Register("ra_lost", New) }
