@@ -26,14 +26,17 @@ package wg
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
@@ -43,6 +46,9 @@ type Module struct {
 	cfg Config
 	env *ifmgr.Env
 	log *slog.Logger
+	// clock is the wall-clock seam used for handshake-age comparisons and
+	// command timing so tests can drive time deterministically.
+	clock internalclock.Clock
 
 	// disabled is true when New received a nil ModuleConfig, meaning the
 	// adapter saw no [ifmgr.modules.wg] section. Init returns
@@ -104,6 +110,7 @@ type Config struct {
 	Timeout time.Duration
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "wg" }
 
 type peerState struct {
@@ -118,10 +125,10 @@ type peerState struct {
 func (m *Module) Name() string { return "wg" }
 
 // Init implements ifmgr.Module.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	if m.disabled {
-		env.Log.With("module", "wg").Info("wg: Init (disabled)")
+		env.Log.With("module", "wg").InfoContext(ctx, "wg: Init (disabled)")
 		return fmt.Errorf("%w: wg: no [ifmgr.modules.wg] section", ifmgr.ErrModuleDisabled)
 	}
 	mode := "local"
@@ -129,7 +136,7 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 		mode = "ssh"
 	}
 	m.log = env.Log.With("module", "wg", "mode", mode, "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
-	m.log.Info("wg: Init",
+	m.log.InfoContext(ctx, "wg: Init",
 		"warn_handshake_age", m.cfg.WarnHandshakeAge.String(),
 		"error_handshake_age", m.cfg.ErrorHandshakeAge.String(),
 		"ignored_peer_count", len(m.cfg.IgnorePeers),
@@ -137,7 +144,11 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 		"timeout", m.cfg.Timeout.String(),
 	)
 	if m.cfg.Iface == "" {
+		m.log.WarnContext(ctx, "wg: Init missing iface")
 		return fmt.Errorf("wg: iface is required")
+	}
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
 	}
 	m.lastPeers = map[string]peerState{}
 	return nil
@@ -145,7 +156,7 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 
 // Reconcile fetches the current peer table from the remote and updates state.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
-	now := time.Now()
+	now := m.clock.Now()
 	runner := m.runWGShow
 	if runner == nil {
 		runner = m.runRemoteWGShow
@@ -224,9 +235,7 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Time) {
 	m.mu.Lock()
 	peers := make(map[string]peerState, len(m.lastPeers))
-	for k, v := range m.lastPeers {
-		peers[k] = v
-	}
+	maps.Copy(peers, m.lastPeers)
 	last := m.lastRunAt
 	m.mu.Unlock()
 	if last.IsZero() {
@@ -326,16 +335,17 @@ func (m *Module) runRemoteWGShow(ctx context.Context, log *slog.Logger) (string,
 	args = append(args, remoteCmd)
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	start := time.Now()
+	start := m.clock.Now()
 	cmd := exec.CommandContext(cctx, "ssh", args...)
 	out, err := cmd.Output()
-	dur := time.Since(start)
+	dur := m.clock.Now().Sub(start)
 	if err != nil {
 		stderr := ""
-		if ee, ok := err.(*exec.ExitError); ok {
-			stderr = string(ee.Stderr)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			stderr = string(exitErr.Stderr)
 		}
-		log.Debug("wg: ssh wg show failed",
+		log.WarnContext(ctx, "wg: ssh wg show failed",
 			"duration_ms", dur.Milliseconds(),
 			"err", err,
 			"stderr", stderr,
@@ -361,15 +371,16 @@ func (m *Module) runLocalWGShow(ctx context.Context, log *slog.Logger, timeout t
 	} else {
 		cmd = exec.CommandContext(cctx, "wg", "show", m.cfg.Iface, "dump")
 	}
-	start := time.Now()
+	start := m.clock.Now()
 	out, err := cmd.Output()
-	dur := time.Since(start)
+	dur := m.clock.Now().Sub(start)
 	if err != nil {
 		stderr := ""
-		if ee, ok := err.(*exec.ExitError); ok {
-			stderr = string(ee.Stderr)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			stderr = string(exitErr.Stderr)
 		}
-		log.Debug("wg: local wg show failed",
+		log.WarnContext(ctx, "wg: local wg show failed",
 			"duration_ms", dur.Milliseconds(),
 			"iface", m.cfg.Iface,
 			"sudo", m.cfg.Sudo,
@@ -409,29 +420,34 @@ func parseWGShowDump(s string) (map[string]peerState, error) {
 			continue // interface header line
 		}
 		if len(fields) < 8 {
+			slog.Warn("wg: malformed dump line", "line_no", lineNo, "line", line)
 			return nil, fmt.Errorf("line %d: want 8 tab-separated fields, got %d (%q)", lineNo, len(fields), line)
 		}
 		pubkey := fields[0]
 		endpoint := fields[2]
 		hsEpoch, err := strconv.ParseInt(fields[4], 10, 64)
 		if err != nil {
+			slog.Warn("wg: invalid handshake epoch", "line_no", lineNo, "value", fields[4], "err", err)
 			return nil, fmt.Errorf("line %d: handshake epoch %q: %w", lineNo, fields[4], err)
 		}
 		rx, err := strconv.ParseInt(fields[5], 10, 64)
 		if err != nil {
+			slog.Warn("wg: invalid rx bytes", "line_no", lineNo, "value", fields[5], "err", err)
 			return nil, fmt.Errorf("line %d: rx %q: %w", lineNo, fields[5], err)
 		}
 		tx, err := strconv.ParseInt(fields[6], 10, 64)
 		if err != nil {
+			slog.Warn("wg: invalid tx bytes", "line_no", lineNo, "value", fields[6], "err", err)
 			return nil, fmt.Errorf("line %d: tx %q: %w", lineNo, fields[6], err)
 		}
 		var ka time.Duration
-		switch fields[7] {
-		case "off", "0":
+		switch keepaliveToken(fields[7]) {
+		case keepaliveOff, keepaliveZero:
 			ka = 0
 		default:
 			n, err := strconv.Atoi(fields[7])
 			if err != nil {
+				slog.Warn("wg: invalid keepalive", "line_no", lineNo, "value", fields[7], "err", err)
 				return nil, fmt.Errorf("line %d: keepalive %q: %w", lineNo, fields[7], err)
 			}
 			ka = time.Duration(n) * time.Second
@@ -441,6 +457,7 @@ func parseWGShowDump(s string) (map[string]peerState, error) {
 			rxBytes:   rx,
 			txBytes:   tx,
 			keepalive: ka,
+			handshake: time.Time{},
 		}
 		if hsEpoch > 0 {
 			ps.handshake = time.Unix(hsEpoch, 0)
@@ -448,10 +465,18 @@ func parseWGShowDump(s string) (map[string]peerState, error) {
 		out[pubkey] = ps
 	}
 	if err := scanner.Err(); err != nil {
+		slog.Warn("wg: scanner failed", "err", err)
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return out, nil
 }
+
+type keepaliveToken string
+
+const (
+	keepaliveOff  keepaliveToken = "off"
+	keepaliveZero keepaliveToken = "0"
+)
 
 // shortKey returns a short, log-friendly form of the peer pubkey
 // (first 8 chars) so log messages stay readable. Pubkeys are 44 chars
@@ -470,6 +495,9 @@ func shortKey(pub string) string {
 // wg0) and must not flip the disabled flag.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
+		SSHHost:           "",
+		SSHPort:           0,
+		IdentityFile:      "",
 		Iface:             "wg0",
 		Sudo:              false,
 		WarnHandshakeAge:  180 * time.Second,
@@ -478,7 +506,17 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		IgnorePeers:       map[string]bool{},
 	}
 	if cfg == nil {
-		return &Module{cfg: c, disabled: true}, nil
+		return &Module{
+			cfg:       c,
+			env:       nil,
+			log:       nil,
+			clock:     nil,
+			disabled:  true,
+			runWGShow: nil,
+			mu:        sync.Mutex{},
+			lastPeers: nil,
+			lastRunAt: time.Time{},
+		}, nil
 	}
 	typedConfig, ok := cfg.(Config)
 	if !ok {
@@ -490,7 +528,17 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	if typedConfig.IgnorePeers == nil {
 		typedConfig.IgnorePeers = map[string]bool{}
 	}
-	return &Module{cfg: typedConfig}, nil
+	return &Module{
+		cfg:       typedConfig,
+		env:       nil,
+		log:       nil,
+		clock:     nil,
+		disabled:  false,
+		runWGShow: nil,
+		mu:        sync.Mutex{},
+		lastPeers: nil,
+		lastRunAt: time.Time{},
+	}, nil
 }
 
 func init() { ifmgr.Register("wg", New) }
