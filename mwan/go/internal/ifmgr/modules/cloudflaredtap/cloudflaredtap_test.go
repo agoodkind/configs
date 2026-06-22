@@ -99,39 +99,15 @@ func TestMatchAny(t *testing.T) {
 	}
 }
 
-func TestStrField(t *testing.T) {
-	e := map[string]any{
-		"MESSAGE":      "hello",
-		"_PID":         "1234",
-		"_NUMBER_LIKE": float64(7),
+func TestParsePriority(t *testing.T) {
+	if got := parsePriority("6"); got != 6 {
+		t.Errorf("parsePriority(6) = %d", got)
 	}
-	if got := strField(e, "MESSAGE"); got != "hello" {
-		t.Errorf("MESSAGE = %q", got)
-	}
-	if got := strField(e, "_PID"); got != "1234" {
-		t.Errorf("_PID = %q", got)
-	}
-	if got := strField(e, "_NUMBER_LIKE"); got != "" {
-		t.Errorf("non-string field should return empty; got %q", got)
-	}
-	if got := strField(e, "MISSING"); got != "" {
-		t.Errorf("missing field should return empty; got %q", got)
-	}
-}
-
-func TestIntField(t *testing.T) {
-	e := map[string]any{
-		"PRIORITY": "6",
-		"BAD":      "not-a-number",
-	}
-	if got := intField(e, "PRIORITY"); got != 6 {
-		t.Errorf("PRIORITY = %d", got)
-	}
-	if got := intField(e, "BAD"); got != 0 {
+	if got := parsePriority("not-a-number"); got != 0 {
 		t.Errorf("non-numeric should return 0; got %d", got)
 	}
-	if got := intField(e, "MISSING"); got != 0 {
-		t.Errorf("missing should return 0; got %d", got)
+	if got := parsePriority(""); got != 0 {
+		t.Errorf("empty should return 0; got %d", got)
 	}
 }
 
@@ -143,8 +119,8 @@ func TestInitReturnsDisabledSentinelWhenUnitEmpty(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 	env := &ifmgr.Env{
-		Iface:  "lo",
-		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Iface: "lo",
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Alerts: ifmgr.WrapNotifier(notify.FromConfig(
 			&config.Config{},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),

@@ -34,6 +34,14 @@ import (
 	"goodkind.io/mwan/internal/netif"
 )
 
+type journalEntry struct {
+	Message     string `json:"MESSAGE"`
+	Priority    string `json:"PRIORITY"`
+	SystemdUnit string `json:"_SYSTEMD_UNIT"`
+	PID         string `json:"_PID"`
+	Comm        string `json:"_COMM"`
+}
+
 // Module owns the journal-tail goroutine for one unit.
 type Module struct {
 	cfg      Config
@@ -41,10 +49,9 @@ type Module struct {
 	log      *slog.Logger
 	patterns []*regexp.Regexp
 
-	mu       sync.Mutex
-	running  bool
-	stopOnce sync.Once
-	stop     chan struct{}
+	mu      sync.Mutex
+	running bool
+	stop    chan struct{}
 }
 
 // Config is the parsed [ifmgr.modules.cloudflared_tap] sub-config.
@@ -64,6 +71,7 @@ type Config struct {
 	JournalctlPath string
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "cloudflared_tap" }
 
 // Name implements ifmgr.Module.
@@ -77,18 +85,22 @@ func (m *Module) Name() string { return "cloudflared_tap" }
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "cloudflared_tap", "unit", m.cfg.Unit)
-	m.log.Info("cloudflared_tap: Init",
+	m.log.InfoContext(ctx, "cloudflared_tap: Init",
 		"unit", m.cfg.Unit,
 		"downgrade_patterns", len(m.cfg.DowngradePatterns),
 		"journalctl_path", m.cfg.JournalctlPath)
 
 	if m.cfg.Unit == "" {
+		m.log.WarnContext(ctx,
+			"cloudflared_tap: missing unit; disabling module")
 		return fmt.Errorf("%w: cloudflared_tap: no [ifmgr.modules.cloudflared_tap] section", ifmgr.ErrModuleDisabled)
 	}
 
 	for i, p := range m.cfg.DowngradePatterns {
 		re, err := regexp.Compile(p)
 		if err != nil {
+			m.log.WarnContext(ctx, "cloudflared_tap: invalid downgrade pattern",
+				"index", i, "pattern", p, "err", err)
 			return fmt.Errorf("cloudflared_tap: invalid downgrade_patterns[%d] %q: %w", i, p, err)
 		}
 		m.patterns = append(m.patterns, re)
@@ -102,7 +114,17 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.mu.Lock()
 	m.running = true
 	m.mu.Unlock()
-	go m.tailLoop(ctx)
+	go func() {
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			m.log.ErrorContext(ctx, "cloudflared_tap: tailLoop panicked",
+				"err", fmt.Sprint(recovered))
+		}()
+		m.tailLoop(ctx)
+	}()
 	return nil
 }
 
@@ -139,10 +161,10 @@ func (m *Module) tailLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			m.log.Info("cloudflared_tap: tail loop exiting (context cancelled)")
+			m.log.DebugContext(ctx, "cloudflared_tap: tail loop exiting (context cancelled)")
 			return
 		case <-m.stop:
-			m.log.Info("cloudflared_tap: tail loop exiting (stop signalled)")
+			m.log.DebugContext(ctx, "cloudflared_tap: tail loop exiting (stop signalled)")
 			return
 		default:
 		}
@@ -152,7 +174,7 @@ func (m *Module) tailLoop(ctx context.Context) {
 			return
 		}
 
-		m.log.Warn("cloudflared_tap: journalctl exited; will restart after backoff",
+		m.log.WarnContext(ctx, "cloudflared_tap: journalctl exited; will restart after backoff",
 			"backoff", backoff.String(), "err", errMsg(err))
 		select {
 		case <-ctx.Done():
@@ -182,40 +204,47 @@ func (m *Module) runJournalctl(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, m.cfg.JournalctlPath, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		m.log.WarnContext(ctx, "cloudflared_tap: stdout pipe failed", "err", err)
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
+		m.log.WarnContext(ctx, "cloudflared_tap: journalctl start failed", "err", err)
 		return fmt.Errorf("start: %w", err)
 	}
-	m.log.Info("cloudflared_tap: journalctl started",
+	m.log.DebugContext(ctx, "cloudflared_tap: journalctl started",
 		"pid", cmd.Process.Pid, "args", args)
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // up to 1 MiB per line
 	for scanner.Scan() {
-		m.processLine(scanner.Bytes())
+		m.processLine(ctx, scanner.Bytes())
 	}
 	scanErr := scanner.Err()
 	waitErr := cmd.Wait()
 	if scanErr != nil {
+		m.log.WarnContext(ctx, "cloudflared_tap: scanner failed", "err", scanErr)
 		return fmt.Errorf("scanner: %w", scanErr)
+	}
+	if waitErr != nil {
+		m.log.WarnContext(ctx, "cloudflared_tap: journalctl wait failed", "err", waitErr)
 	}
 	return waitErr
 }
 
 // processLine parses one journalctl JSON output line and re-emits it.
-func (m *Module) processLine(line []byte) {
-	var entry map[string]any
+func (m *Module) processLine(ctx context.Context, line []byte) {
+	var entry journalEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
-		m.log.Debug("cloudflared_tap: skip non-json line", "raw", string(line), "err", err.Error())
+		m.log.DebugContext(ctx, "cloudflared_tap: skip non-json line",
+			"raw", string(line), "err", err.Error())
 		return
 	}
 
-	msg := strField(entry, "MESSAGE")
+	msg := entry.Message
 	if msg == "" {
 		return
 	}
-	priority := intField(entry, "PRIORITY")
+	priority := parsePriority(entry.Priority)
 	level := mapPriority(priority)
 
 	// Demote routine cloudflared lines so the email handler does not page
@@ -228,14 +257,14 @@ func (m *Module) processLine(line []byte) {
 		level = slog.LevelDebug
 	}
 
-	args := []any{
-		"src_unit", strField(entry, "_SYSTEMD_UNIT"),
-		"src_pid", strField(entry, "_PID"),
-		"src_comm", strField(entry, "_COMM"),
-		"src_priority", priority,
-		"msg", msg,
+	attrs := []slog.Attr{
+		slog.String("src_unit", entry.SystemdUnit),
+		slog.String("src_pid", entry.PID),
+		slog.String("src_comm", entry.Comm),
+		slog.Int("src_priority", priority),
+		slog.String("msg", msg),
 	}
-	m.log.Log(context.Background(), level, "cloudflared_tap", args...)
+	m.log.LogAttrs(ctx, level, "cloudflared_tap", attrs...)
 }
 
 // mapPriority converts a syslog severity 0..7 to the closest slog.Level.
@@ -271,27 +300,11 @@ func matchAny(patterns []*regexp.Regexp, s string) bool {
 	return false
 }
 
-// strField extracts a string field from a parsed journal entry. journalctl
-// emits all field values as strings (or arrays of strings); we take the
-// scalar form only for now.
-func strField(entry map[string]any, key string) string {
-	v, ok := entry[key]
-	if !ok {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
-
-// intField extracts a numeric field that journalctl encodes as a string.
-func intField(entry map[string]any, key string) int {
-	s := strField(entry, key)
-	if s == "" {
+func parsePriority(priority string) int {
+	if priority == "" {
 		return 0
 	}
-	n, err := strconv.Atoi(s)
+	n, err := strconv.Atoi(priority)
 	if err != nil {
 		return 0
 	}
@@ -307,7 +320,11 @@ func errMsg(err error) string {
 
 // New is the Constructor registered with ifmgr. Parses cfg into Config.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
-	c := Config{}
+	c := Config{
+		Unit:              "",
+		DowngradePatterns: nil,
+		JournalctlPath:    "",
+	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
@@ -315,7 +332,15 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 		c = typedConfig
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:      c,
+		env:      nil,
+		log:      nil,
+		patterns: nil,
+		mu:       sync.Mutex{},
+		running:  false,
+		stop:     nil,
+	}, nil
 }
 
 func init() { ifmgr.Register("cloudflared_tap", New) }
