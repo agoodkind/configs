@@ -2,7 +2,10 @@
 
 package ifmgr
 
-import "fmt"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // roleModules maps each known role to the ordered list of module names
 // that should run for it. Order matters: modules execute in the listed
@@ -74,12 +77,14 @@ var roleModules = map[string][]string{
 // modulesForRole returns the module name list for the named role, or an
 // error if the role is not known.
 func modulesForRole(role string) ([]string, error) {
+	logger := slog.Default().With("component", "ifmgr")
 	names, ok := roleModules[role]
 	if !ok {
 		valid := make([]string, 0, len(roleModules))
 		for k := range roleModules {
 			valid = append(valid, k)
 		}
+		logger.Warn("ifmgr: unknown role requested", "role", role, "valid", valid)
 		return nil, fmt.Errorf("unknown ifmgr role %q (valid: %v)", role, valid)
 	}
 	return names, nil
