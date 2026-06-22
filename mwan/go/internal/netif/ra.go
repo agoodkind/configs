@@ -75,13 +75,14 @@ func NewRAClient(iface string, log *slog.Logger) (*RAClient, error) {
 		linkLoc: ll,
 		log:     log,
 		clock:   realClock{},
+		mu:      sync.Mutex{},
 	}, nil
 }
 
 // SolicitRA sends one Router Solicitation and waits up to timeout for a
 // Router Advertisement. Returns the first RA received, or an error if
 // the deadline elapses or the socket fails. On timeout, returns the
-// wrapped context.DeadlineExceeded so callers can errors.Is the case.
+// wrapped [context.DeadlineExceeded] so callers can [errors.Is] the case.
 //
 // Concurrent callers serialise on a mutex: the underlying ndp.Conn is
 // not goroutine-safe.
@@ -92,12 +93,13 @@ func (c *RAClient) SolicitRA(
 	defer c.mu.Unlock()
 
 	op := c.log.With("op", "SolicitRA", "timeout_ms", timeout.Milliseconds())
-	op.Debug("ra: SolicitRA entry")
+	op.DebugContext(ctx, "ra: SolicitRA entry")
 
 	startTime := c.clock.Now()
 	deadline := startTime.Add(timeout)
 	if err := c.conn.SetReadDeadline(deadline); err != nil {
-		op.Warn("ra: SetReadDeadline failed", "err", err)
+		c.log.WarnContext(ctx, "ra: SetReadDeadline failed",
+			"op", "SolicitRA", "timeout_ms", timeout.Milliseconds(), "err", err)
 		return nil, fmt.Errorf("SetReadDeadline: %w", err)
 	}
 
@@ -112,16 +114,19 @@ func (c *RAClient) SolicitRA(
 	allRouters := netip.MustParseAddr("ff02::2")
 
 	if err := c.conn.WriteTo(rs, nil, allRouters); err != nil {
-		op.Warn("ra: WriteTo(RouterSolicitation) failed", "err", err)
+		c.log.WarnContext(ctx, "ra: WriteTo(RouterSolicitation) failed",
+			"op", "SolicitRA", "timeout_ms", timeout.Milliseconds(), "err", err)
 		return nil, fmt.Errorf("send RS: %w", err)
 	}
-	op.Debug("ra: RouterSolicitation sent", "to", allRouters.String())
+	op.DebugContext(ctx, "ra: RouterSolicitation sent", "to", allRouters.String())
 
 	for {
 		select {
 		case <-ctx.Done():
-			op.Debug("ra: ctx cancelled while waiting for RA")
-			return nil, ctx.Err()
+			ctxErr := ctx.Err()
+			c.log.WarnContext(ctx, "ra: ctx cancelled while waiting for RA",
+				"op", "SolicitRA", "timeout_ms", timeout.Milliseconds(), "err", ctxErr)
+			return nil, fmt.Errorf("ctx cancelled while waiting for RA: %w", ctxErr)
 		default:
 		}
 		msg, _, from, err := c.conn.ReadFrom()
@@ -130,24 +135,30 @@ func (c *RAClient) SolicitRA(
 			// Treat netConn timeout as DeadlineExceeded for the caller.
 			var nerr net.Error
 			if errors.As(err, &nerr) && nerr.Timeout() {
-				op.Debug("ra: deadline exceeded waiting for RA",
+				c.log.WarnContext(ctx, "ra: deadline exceeded waiting for RA",
+					"op", "SolicitRA", "timeout_ms", timeout.Milliseconds(),
 					"waited_ms", dur.Milliseconds())
 				return nil, context.DeadlineExceeded
 			}
-			op.Warn("ra: ReadFrom failed", "err", err)
+			c.log.WarnContext(ctx, "ra: ReadFrom failed",
+				"op", "SolicitRA", "timeout_ms", timeout.Milliseconds(), "err", err)
 			return nil, fmt.Errorf("read RA: %w", err)
 		}
-		op.Debug("ra: ICMPv6 message received",
+		op.DebugContext(
+			ctx,
+			"ra: ICMPv6 message received",
 			"from", from.String(),
 			"msg_type", fmt.Sprintf("%T", msg),
 			"waited_ms", dur.Milliseconds(),
 		)
 		ra, ok := msg.(*ndp.RouterAdvertisement)
 		if !ok {
-			op.Debug("ra: not a RA, continuing wait")
+			op.DebugContext(ctx, "ra: not a RA, continuing wait")
 			continue
 		}
-		op.Debug("ra: RouterAdvertisement received",
+		op.DebugContext(
+			ctx,
+			"ra: RouterAdvertisement received",
 			"from", from.String(),
 			"router_lifetime_s", ra.RouterLifetime.Seconds(),
 			"managed_config", ra.ManagedConfiguration,
@@ -171,5 +182,9 @@ func (c *RAClient) Close() error {
 	c.log.Debug("ra: Close entry")
 	err := c.conn.Close()
 	c.conn = nil
-	return err
+	if err != nil {
+		c.log.Warn("ra: Close failed", "err", err)
+		return fmt.Errorf("close RA client: %w", err)
+	}
+	return nil
 }
