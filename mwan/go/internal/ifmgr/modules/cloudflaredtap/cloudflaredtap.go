@@ -2,7 +2,7 @@
 
 // Package cloudflaredtap implements an ifmgr log-sink module that tails
 // a configured systemd unit's journal and re-emits each entry through
-// the daemon's slog.Logger. The intent is to fold cloudflared-oob (or
+// the daemon's [slog.Logger]. The intent is to fold cloudflared-oob (or
 // any other systemd unit) events into the same JSON log file, the same
 // email-on-WARN+ pipeline, and the same trace context as everything
 // else mwan-ifmgr produces.
@@ -109,6 +109,11 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	if m.cfg.JournalctlPath == "" {
 		m.cfg.JournalctlPath = "journalctl"
 	}
+	if m.cfg.JournalctlPath != "journalctl" {
+		m.log.WarnContext(ctx, "cloudflared_tap: unsupported journalctl_path override",
+			"journalctl_path", m.cfg.JournalctlPath)
+		return fmt.Errorf("cloudflared_tap: journalctl_path must be \"journalctl\"")
+	}
 
 	m.stop = make(chan struct{})
 	m.mu.Lock()
@@ -142,7 +147,7 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 }
 
 // EvaluateAlerts is a no-op; alerts (if any) are emitted inline by the
-// re-emit path with the appropriate slog level.
+// re-emit path with the appropriate [slog.Level].
 func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {}
 
 // tailLoop is the long-lived goroutine that runs journalctl --follow,
@@ -201,7 +206,7 @@ func (m *Module) runJournalctl(ctx context.Context) error {
 		"--no-pager",
 		"-n", "0", // start at the tail; do not replay history
 	}
-	cmd := exec.CommandContext(ctx, m.cfg.JournalctlPath, args...)
+	cmd := exec.CommandContext(ctx, "journalctl", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		m.log.WarnContext(ctx, "cloudflared_tap: stdout pipe failed", "err", err)
@@ -227,8 +232,9 @@ func (m *Module) runJournalctl(ctx context.Context) error {
 	}
 	if waitErr != nil {
 		m.log.WarnContext(ctx, "cloudflared_tap: journalctl wait failed", "err", waitErr)
+		return fmt.Errorf("wait: %w", waitErr)
 	}
-	return waitErr
+	return nil
 }
 
 // processLine parses one journalctl JSON output line and re-emits it.
@@ -267,7 +273,7 @@ func (m *Module) processLine(ctx context.Context, line []byte) {
 	m.log.LogAttrs(ctx, level, "cloudflared_tap", attrs...)
 }
 
-// mapPriority converts a syslog severity 0..7 to the closest slog.Level.
+// mapPriority converts a syslog severity 0..7 to the closest [slog.Level].
 //
 //	0..3 (emerg/alert/crit/err) -> ERROR
 //	4    (warning)              -> WARN
