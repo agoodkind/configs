@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/mdlayher/ndp"
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/notify"
 )
 
 type fakeSysctlRunner struct {
@@ -62,11 +64,12 @@ func (f *fakeRAClient) SolicitRA(_ context.Context, _ time.Duration) (*ndp.Route
 func (f *fakeRAClient) Close() error { return nil }
 
 func newTestEnv(sysctl netif.SysctlRunner) *ifmgr.Env {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return &ifmgr.Env{
 		Iface:  "lo",
 		Sysctl: sysctl,
-		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Alerts: ifmgr.NewAlertManager(slog.New(slog.NewTextHandler(io.Discard, nil)), ifmgr.AlertConfig{}),
+		Log:    log,
+		Alerts: ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, log, "mwan-ifmgr")),
 	}
 }
 

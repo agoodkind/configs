@@ -10,7 +10,9 @@ import (
 	"regexp"
 	"testing"
 
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
+	"goodkind.io/mwan/internal/notify"
 )
 
 func TestNew_DefaultsApplied(t *testing.T) {
@@ -143,7 +145,11 @@ func TestInitReturnsDisabledSentinelWhenUnitEmpty(t *testing.T) {
 	env := &ifmgr.Env{
 		Iface:  "lo",
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Alerts: ifmgr.NewAlertManager(slog.New(slog.NewTextHandler(io.Discard, nil)), ifmgr.AlertConfig{}),
+		Alerts: ifmgr.WrapNotifier(notify.FromConfig(
+			&config.Config{},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			"mwan-ifmgr",
+		)),
 	}
 	initErr := module.Init(context.Background(), env)
 	if initErr == nil {

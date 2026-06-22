@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/notify"
 )
 
@@ -22,39 +21,6 @@ import (
 // Notify and Resolve calls.
 type AlertManager struct {
 	n notify.Notifier
-}
-
-// AlertConfig is retained as the test/legacy entry point. RepeatEvery
-// maps to notify.Config.RepeatEvery. The old RepeatResolver field has
-// been removed since per-kind cadence now flows through cfg.Notify in
-// the production path; tests that need per-kind overrides should
-// construct a notify.Manager directly.
-type AlertConfig struct {
-	// RepeatEvery applied to every (kind, key). Zero disables repeats so
-	// alerts fire once per transition.
-	RepeatEvery time.Duration
-}
-
-// NewAlertManager builds an AlertManager wired to a notify.Manager. log
-// must be non-nil; the wrapped Manager journals through it. The Manager
-// has a nil email Sink, which is the right default for tests and for
-// daemon paths that have not been wired through notify.FromConfig yet.
-//
-// Implementation note: this constructor builds a synthetic *config.Config
-// so notify.FromConfig can be used without exposing an additional
-// constructor on the notify package. cfg.Notify.RepeatEvery feeds the
-// global cadence; PerKind is left empty here because the test surface
-// does not exercise it.
-func NewAlertManager(log *slog.Logger, cfg AlertConfig) *AlertManager {
-	if log == nil {
-		panic("ifmgr.NewAlertManager: log is required")
-	}
-	syntheticCfg := &config.Config{}
-	if cfg.RepeatEvery > 0 {
-		syntheticCfg.Notify.RepeatEvery = cfg.RepeatEvery.String()
-	}
-	n := notify.FromConfig(syntheticCfg, log, "mwan-ifmgr")
-	return &AlertManager{n: n}
 }
 
 // WrapNotifier adapts an existing notify.Notifier to the AlertManager
