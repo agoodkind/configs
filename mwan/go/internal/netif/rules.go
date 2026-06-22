@@ -182,14 +182,16 @@ func listRulesNetlink(log *slog.Logger, family string) ([]CurrentRule, error) {
 	startTime := realClock{}.Now()
 	rules, err := netlink.RuleList(famConst)
 	dur := realClock{}.Now().Sub(startTime)
-	log.Debug("rules: RuleList",
+	log.Debug(
+		"rules: RuleList",
 		"family", family,
 		"count", len(rules),
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
 	)
 	if err != nil {
-		return nil, err
+		log.Warn("rules: RuleList failed", "family", family, "err", err)
+		return nil, fmt.Errorf("RuleList(%s): %w", family, err)
 	}
 
 	out := make([]CurrentRule, 0, len(rules))
@@ -259,7 +261,8 @@ func addRuleNetlink(
 	startTime := realClock{}.Now()
 	err = netlink.RuleAdd(r)
 	dur := realClock{}.Now().Sub(startTime)
-	log.DebugContext(ctx, "rules: RuleAdd",
+	log.DebugContext(
+		ctx, "rules: RuleAdd",
 		"family", family, "priority", w.Priority, "table_id", w.TableID,
 		"from", w.From, "uidrange", w.UIDRange,
 		"duration_ms", dur.Milliseconds(),
@@ -298,7 +301,8 @@ func delRuleNetlink(
 	startTime := realClock{}.Now()
 	err = netlink.RuleDel(r)
 	dur := realClock{}.Now().Sub(startTime)
-	log.DebugContext(ctx, "rules: RuleDel",
+	log.DebugContext(
+		ctx, "rules: RuleDel",
 		"family", family, "priority", c.Priority, "table_id", c.TableID,
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
@@ -335,11 +339,11 @@ func buildNetlinkRule(family string, w DesiredRule) (*netlink.Rule, error) {
 	}
 
 	if w.UIDRange != "" {
-		start, end, err := parseUIDRange(w.UIDRange)
+		start, end, err := parseUIDRangeUint32(w.UIDRange)
 		if err != nil {
 			return nil, err
 		}
-		r.UIDRange = netlink.NewRuleUIDRange(uint32(start), uint32(end))
+		r.UIDRange = netlink.NewRuleUIDRange(start, end)
 	}
 
 	return r, nil
@@ -354,7 +358,7 @@ func parseSelector(family, s string) (*net.IPNet, error) {
 			slog.Warn("rules: ParseCIDR failed", "selector", s, "err", err)
 			return nil, fmt.Errorf("ParseCIDR(%q): %w", s, err)
 		}
-		return ipnet, err
+		return ipnet, nil
 	}
 	ip := net.ParseIP(s)
 	if ip == nil {
@@ -371,31 +375,22 @@ func parseSelector(family, s string) (*net.IPNet, error) {
 	return &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}, nil
 }
 
-// parseUIDRange splits "lo-hi" (or "u-u" or "u").
-func parseUIDRange(s string) (lo, hi int, err error) {
+func parseUIDRangeUint32(s string) (uint32, uint32, error) {
 	parts := strings.SplitN(s, "-", 2)
-	lo, err = strconv.Atoi(parts[0])
+	lo, err := strconv.ParseUint(parts[0], 10, 32)
 	if err != nil {
-		slog.Warn("rules: Atoi failed", "uidrange", s, "part", parts[0], "err", err)
-		return 0, 0, fmt.Errorf("Atoi(%q): %w", parts[0], err)
+		slog.Warn("rules: ParseUint failed", "uidrange", s, "part", parts[0], "err", err)
+		return 0, 0, fmt.Errorf("ParseUint(%q): %w", parts[0], err)
 	}
 	if len(parts) == 1 {
-		if lo < 0 {
-			slog.Warn("rules: negative uidrange", "uidrange", s)
-			return 0, 0, fmt.Errorf("uidrange %q must be non-negative", s)
-		}
-		return lo, lo, nil
+		return uint32(lo), uint32(lo), nil
 	}
-	hi, err = strconv.Atoi(parts[1])
+	hi, err := strconv.ParseUint(parts[1], 10, 32)
 	if err != nil {
-		slog.Warn("rules: Atoi failed", "uidrange", s, "part", parts[1], "err", err)
-		return 0, 0, fmt.Errorf("Atoi(%q): %w", parts[1], err)
+		slog.Warn("rules: ParseUint failed", "uidrange", s, "part", parts[1], "err", err)
+		return 0, 0, fmt.Errorf("ParseUint(%q): %w", parts[1], err)
 	}
-	if lo < 0 || hi < 0 {
-		slog.Warn("rules: negative uidrange", "uidrange", s)
-		return 0, 0, fmt.Errorf("uidrange %q must be non-negative", s)
-	}
-	return lo, hi, nil
+	return uint32(lo), uint32(hi), nil
 }
 
 // af_unspec_unused is here to silence unused-import warnings on unix when
