@@ -5,6 +5,7 @@ package netif
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -107,16 +108,17 @@ func NewMonitor(
 	ctx context.Context, log *slog.Logger, cfg MonitorConfig,
 ) *Monitor {
 	mlog := log.With("component", "monitor", "iface", cfg.Iface)
-	mlog.Debug("monitor: NewMonitor entry")
+	mlog.DebugContext(ctx, "monitor: NewMonitor entry")
 
 	link, err := netlink.LinkByName(cfg.Iface)
 	idx := 0
 	if err != nil {
-		mlog.Warn("monitor: iface not found at startup; events filtered to nothing until reconcile",
+		mlog.WarnContext(ctx,
+			"monitor: iface not found at startup; events filtered to nothing until reconcile",
 			"err", err)
 	} else {
 		idx = link.Attrs().Index
-		mlog.Debug("monitor: resolved iface index", "index", idx)
+		mlog.DebugContext(ctx, "monitor: resolved iface index", "index", idx)
 	}
 
 	m := &Monitor{
@@ -127,13 +129,32 @@ func NewMonitor(
 		ifIndex: idx,
 	}
 
-	go m.subscribeAddr(ctx)
-	go m.subscribeRoute(ctx)
-	go m.subscribeLink(ctx)
-	go m.shutdownOnCtx(ctx)
+	m.startWorker(ctx, "subscribe-addr", m.subscribeAddr)
+	m.startWorker(ctx, "subscribe-route", m.subscribeRoute)
+	m.startWorker(ctx, "subscribe-link", m.subscribeLink)
+	m.startWorker(ctx, "shutdown-on-ctx", m.shutdownOnCtx)
 
-	mlog.Debug("monitor: subscriptions started")
+	mlog.DebugContext(ctx, "monitor: subscriptions started")
 	return m
+}
+
+func (m *Monitor) startWorker(
+	ctx context.Context,
+	name string,
+	run func(context.Context),
+) {
+	go func() {
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			panicMessage := fmt.Sprint(recovered)
+			m.log.ErrorContext(ctx, "monitor: worker panicked",
+				"worker", name, "err", panicMessage, "panic", panicMessage)
+		}()
+		run(ctx)
+	}()
 }
 
 // shutdownOnCtx closes the done channel when ctx is cancelled. Centralised
@@ -154,12 +175,12 @@ func (m *Monitor) shutdownOnCtx(ctx context.Context) {
 // AddrUpdate into an Event and forwarding to Events.
 func (m *Monitor) subscribeAddr(ctx context.Context) {
 	log := m.log.With("goroutine", "subscribe-addr")
-	log.Debug("monitor: subscribe-addr starting")
+	log.DebugContext(ctx, "monitor: subscribe-addr starting")
 
 	ch := make(chan netlink.AddrUpdate, 64)
 	if err := netlink.AddrSubscribeWithOptions(ch, m.done, netlink.AddrSubscribeOptions{
 		ErrorCallback: func(err error) {
-			log.Warn("monitor: AddrSubscribe error", "err", err)
+			log.WarnContext(ctx, "monitor: AddrSubscribe error", "err", err)
 		},
 		// ListExisting=true: emit synthetic events for existing addresses
 		// at subscribe time. Modules track first-observed timestamps via
@@ -167,7 +188,8 @@ func (m *Monitor) subscribeAddr(ctx context.Context) {
 		// when the daemon started, not just deltas going forward.
 		ListExisting: true,
 	}); err != nil {
-		log.Error("monitor: AddrSubscribeWithOptions failed; goroutine exiting",
+		log.ErrorContext(ctx,
+			"monitor: AddrSubscribeWithOptions failed; goroutine exiting",
 			"err", err)
 		return
 	}
@@ -175,18 +197,18 @@ func (m *Monitor) subscribeAddr(ctx context.Context) {
 	for {
 		select {
 		case <-m.done:
-			log.Debug("monitor: subscribe-addr exiting (done)")
+			log.DebugContext(ctx, "monitor: subscribe-addr exiting (done)")
 			return
 		case upd, ok := <-ch:
 			if !ok {
-				log.Debug("monitor: subscribe-addr channel closed")
+				log.DebugContext(ctx, "monitor: subscribe-addr channel closed")
 				return
 			}
 			ev := m.addrUpdateToEvent(upd)
 			if ev.Kind == EvUnknown {
 				continue
 			}
-			log.Debug("monitor: addr event",
+			log.DebugContext(ctx, "monitor: addr event",
 				"kind", ev.Kind.String(), "cidr", ev.CIDR, "family", ev.Family)
 			m.emit(ctx, ev)
 		}
@@ -196,19 +218,20 @@ func (m *Monitor) subscribeAddr(ctx context.Context) {
 // subscribeRoute runs the netlink route subscription.
 func (m *Monitor) subscribeRoute(ctx context.Context) {
 	log := m.log.With("goroutine", "subscribe-route")
-	log.Debug("monitor: subscribe-route starting")
+	log.DebugContext(ctx, "monitor: subscribe-route starting")
 
 	ch := make(chan netlink.RouteUpdate, 64)
 	if err := netlink.RouteSubscribeWithOptions(ch, m.done, netlink.RouteSubscribeOptions{
 		ErrorCallback: func(err error) {
-			log.Warn("monitor: RouteSubscribe error", "err", err)
+			log.WarnContext(ctx, "monitor: RouteSubscribe error", "err", err)
 		},
 		// ListExisting=true: emit synthetic events for existing routes so
 		// modules see RA-installed defaults that arrived before the daemon
 		// started. Otherwise lastRA stays zero and bridge_probe never fires.
 		ListExisting: true,
 	}); err != nil {
-		log.Error("monitor: RouteSubscribeWithOptions failed; goroutine exiting",
+		log.ErrorContext(ctx,
+			"monitor: RouteSubscribeWithOptions failed; goroutine exiting",
 			"err", err)
 		return
 	}
@@ -216,18 +239,18 @@ func (m *Monitor) subscribeRoute(ctx context.Context) {
 	for {
 		select {
 		case <-m.done:
-			log.Debug("monitor: subscribe-route exiting (done)")
+			log.DebugContext(ctx, "monitor: subscribe-route exiting (done)")
 			return
 		case upd, ok := <-ch:
 			if !ok {
-				log.Debug("monitor: subscribe-route channel closed")
+				log.DebugContext(ctx, "monitor: subscribe-route channel closed")
 				return
 			}
 			ev := m.routeUpdateToEvent(upd)
 			if ev.Kind == EvUnknown {
 				continue
 			}
-			log.Debug("monitor: route event",
+			log.DebugContext(ctx, "monitor: route event",
 				"kind", ev.Kind.String(), "dest", ev.Dest, "via", ev.Via,
 				"family", ev.Family)
 			m.emit(ctx, ev)
@@ -240,19 +263,20 @@ func (m *Monitor) subscribeRoute(ctx context.Context) {
 // boundary on the watched iface.
 func (m *Monitor) subscribeLink(ctx context.Context) {
 	log := m.log.With("goroutine", "subscribe-link")
-	log.Debug("monitor: subscribe-link starting")
+	log.DebugContext(ctx, "monitor: subscribe-link starting")
 
 	ch := make(chan netlink.LinkUpdate, 64)
 	if err := netlink.LinkSubscribeWithOptions(ch, m.done, netlink.LinkSubscribeOptions{
 		ErrorCallback: func(err error) {
-			log.Warn("monitor: LinkSubscribe error", "err", err)
+			log.WarnContext(ctx, "monitor: LinkSubscribe error", "err", err)
 		},
 		// ListExisting=true: emit a synthetic LinkUpdate for the watched
 		// iface so EvLinkUp fires once at startup if the iface is already
 		// up. bridge_probe sets lastLinkUp from this event.
 		ListExisting: true,
 	}); err != nil {
-		log.Error("monitor: LinkSubscribeWithOptions failed; goroutine exiting",
+		log.ErrorContext(ctx,
+			"monitor: LinkSubscribeWithOptions failed; goroutine exiting",
 			"err", err)
 		return
 	}
@@ -260,18 +284,18 @@ func (m *Monitor) subscribeLink(ctx context.Context) {
 	for {
 		select {
 		case <-m.done:
-			log.Debug("monitor: subscribe-link exiting (done)")
+			log.DebugContext(ctx, "monitor: subscribe-link exiting (done)")
 			return
 		case upd, ok := <-ch:
 			if !ok {
-				log.Debug("monitor: subscribe-link channel closed")
+				log.DebugContext(ctx, "monitor: subscribe-link channel closed")
 				return
 			}
 			ev := m.linkUpdateToEvent(upd)
 			if ev.Kind == EvUnknown {
 				continue
 			}
-			log.Debug("monitor: link event",
+			log.DebugContext(ctx, "monitor: link event",
 				"kind", ev.Kind.String(), "iface", ev.Iface)
 			m.emit(ctx, ev)
 		}
@@ -285,7 +309,7 @@ func (m *Monitor) emit(ctx context.Context, ev Event) {
 	case m.Events <- ev:
 	case <-ctx.Done():
 	default:
-		m.log.Warn("monitor: Events channel full; dropping event",
+		m.log.WarnContext(ctx, "monitor: Events channel full; dropping event",
 			"kind", ev.Kind.String(), "iface", ev.Iface)
 	}
 }

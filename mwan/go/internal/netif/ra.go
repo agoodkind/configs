@@ -30,6 +30,7 @@ type RAClient struct {
 	conn    *ndp.Conn
 	linkLoc netip.Addr
 	log     *slog.Logger
+	clock   clock
 	mu      sync.Mutex // serialises SolicitRA so concurrent callers don't fight on the conn
 }
 
@@ -42,6 +43,7 @@ func NewRAClient(iface string, log *slog.Logger) (*RAClient, error) {
 
 	netIface, err := net.InterfaceByName(iface)
 	if err != nil {
+		log.Warn("ra: InterfaceByName failed", "iface", iface, "err", err)
 		return nil, fmt.Errorf("InterfaceByName(%q): %w", iface, err)
 	}
 	log.Debug("ra: InterfaceByName ok",
@@ -52,6 +54,7 @@ func NewRAClient(iface string, log *slog.Logger) (*RAClient, error) {
 	// brought up just before this call.
 	conn, ll, err := ndp.Listen(netIface, ndp.LinkLocal)
 	if err != nil {
+		log.Warn("ra: ndp.Listen failed", "iface", iface, "err", err)
 		return nil, fmt.Errorf("ndp.Listen(%q, link-local): %w", iface, err)
 	}
 	log.Debug("ra: ndp.Listen ok", "link_local", ll.String())
@@ -61,6 +64,7 @@ func NewRAClient(iface string, log *slog.Logger) (*RAClient, error) {
 	allRouters := netip.MustParseAddr("ff02::2")
 	if err := conn.JoinGroup(allRouters); err != nil {
 		_ = conn.Close()
+		log.Warn("ra: JoinGroup failed", "iface", iface, "err", err)
 		return nil, fmt.Errorf("JoinGroup(ff02::2): %w", err)
 	}
 	log.Debug("ra: joined all-routers multicast group")
@@ -70,6 +74,7 @@ func NewRAClient(iface string, log *slog.Logger) (*RAClient, error) {
 		conn:    conn,
 		linkLoc: ll,
 		log:     log,
+		clock:   realClock{},
 	}, nil
 }
 
@@ -89,8 +94,10 @@ func (c *RAClient) SolicitRA(
 	op := c.log.With("op", "SolicitRA", "timeout_ms", timeout.Milliseconds())
 	op.Debug("ra: SolicitRA entry")
 
-	deadline := time.Now().Add(timeout)
+	startTime := c.clock.Now()
+	deadline := startTime.Add(timeout)
 	if err := c.conn.SetReadDeadline(deadline); err != nil {
+		op.Warn("ra: SetReadDeadline failed", "err", err)
 		return nil, fmt.Errorf("SetReadDeadline: %w", err)
 	}
 
@@ -104,7 +111,6 @@ func (c *RAClient) SolicitRA(
 	}
 	allRouters := netip.MustParseAddr("ff02::2")
 
-	start := time.Now()
 	if err := c.conn.WriteTo(rs, nil, allRouters); err != nil {
 		op.Warn("ra: WriteTo(RouterSolicitation) failed", "err", err)
 		return nil, fmt.Errorf("send RS: %w", err)
@@ -119,7 +125,7 @@ func (c *RAClient) SolicitRA(
 		default:
 		}
 		msg, _, from, err := c.conn.ReadFrom()
-		dur := time.Since(start)
+		dur := c.clock.Now().Sub(startTime)
 		if err != nil {
 			// Treat netConn timeout as DeadlineExceeded for the caller.
 			var nerr net.Error
