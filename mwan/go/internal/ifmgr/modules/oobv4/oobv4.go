@@ -14,15 +14,17 @@ import (
 	"sync"
 	"time"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
 
 // Module owns the OOB v4 state for one iface.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	cfg   Config
+	env   *ifmgr.Env
+	log   *slog.Logger
+	clock internalclock.Clock
 
 	mu          sync.Mutex
 	currentCIDR string    // last-applied address (e.g. "158.247.70.13/26")
@@ -36,16 +38,20 @@ type Config struct {
 	OOBTableID int
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "oobv4" }
 
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "oobv4" }
 
 // Init implements ifmgr.Module.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "oobv4", "iface", m.cfg.Iface)
-	m.log.Info("oobv4: Init", "oob_table_id", m.cfg.OOBTableID)
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
+	}
+	m.log.InfoContext(ctx, "oobv4: Init", "oob_table_id", m.cfg.OOBTableID)
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("oobv4: iface is required")
 	}
@@ -75,13 +81,15 @@ func (m *Module) OnDHCPLease(
 	ctx context.Context, log *slog.Logger, lease netif.LeaseInfo,
 ) error {
 	log = log.With("op", "lease-event", "state", lease.State.String())
-	log.Debug("oobv4: lease event", "info", lease.String())
+	log.DebugContext(ctx, "oobv4: lease event", "info", lease.String())
 
 	switch lease.State {
 	case netif.LeaseBound:
 		return m.applyBound(ctx, log, lease)
 	case netif.LeaseExpired:
 		return m.applyExpired(ctx, log)
+	case netif.LeaseInit, netif.LeaseSelecting, netif.LeaseRequesting, netif.LeaseRenewing:
+		return nil
 	}
 	return nil
 }
@@ -94,7 +102,7 @@ func (m *Module) applyBound(
 	}
 	prefix := lease.PrefixLen
 	if prefix <= 0 || prefix > 32 {
-		log.Warn("oobv4: lease has unusable subnet mask, defaulting to /32",
+		log.WarnContext(ctx, "oobv4: lease has unusable subnet mask, defaulting to /32",
 			"prefix_len", lease.PrefixLen)
 		prefix = 32
 	}
@@ -110,6 +118,8 @@ func (m *Module) applyBound(
 		Family:  "inet",
 		Dest:    "default",
 		Dev:     m.cfg.Iface,
+		Via:     "",
+		Metric:  0,
 		TableID: m.cfg.OOBTableID,
 	}
 	if lease.Gateway != nil {
@@ -122,24 +132,28 @@ func (m *Module) applyBound(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.currentCIDR != "" && m.currentCIDR != cidr {
-		log.Info("oobv4: lease IP changed", "old", m.currentCIDR, "new", cidr)
+		log.InfoContext(ctx, "oobv4: lease IP changed", "old", m.currentCIDR, "new", cidr)
 	}
 	if m.currentGW != "" && m.currentGW != want.Via {
-		log.Info("oobv4: lease gateway changed", "old", m.currentGW, "new", want.Via)
+		log.InfoContext(ctx, "oobv4: lease gateway changed", "old", m.currentGW, "new", want.Via)
 	}
 	m.currentCIDR = cidr
 	m.currentGW = want.Via
-	m.lastBound = time.Now()
+	m.lastBound = m.clock.Now()
 	return nil
 }
 
 func (m *Module) applyExpired(ctx context.Context, log *slog.Logger) error {
-	log.Warn("oobv4: lease expired; clearing oob default v4")
-	clear := netif.RouteSpec{
-		Family: "inet", Dest: "default",
-		Dev: m.cfg.Iface, TableID: m.cfg.OOBTableID,
+	log.WarnContext(ctx, "oobv4: lease expired; clearing oob default v4")
+	clearRoute := netif.RouteSpec{
+		Family:  "inet",
+		Dest:    "default",
+		Dev:     m.cfg.Iface,
+		Via:     "",
+		Metric:  0,
+		TableID: m.cfg.OOBTableID,
 	}
-	if err := netif.ReconcileTableDefault(ctx, log, clear); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, log, clearRoute); err != nil {
 		return fmt.Errorf("clear oob default v4: %w", err)
 	}
 	// Address removal intentionally NOT done; kernel keeps lease IP until
@@ -165,7 +179,10 @@ func (m *Module) LastBound() time.Time {
 
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
-	c := Config{}
+	c := Config{
+		Iface:      "",
+		OOBTableID: 0,
+	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
@@ -173,7 +190,16 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 		c = typedConfig
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:         c,
+		env:         nil,
+		log:         nil,
+		clock:       nil,
+		mu:          sync.Mutex{},
+		currentCIDR: "",
+		currentGW:   "",
+		lastBound:   time.Time{},
+	}, nil
 }
 
 func init() { ifmgr.Register("oobv4", New) }
