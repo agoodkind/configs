@@ -47,7 +47,7 @@ func NewV6Probe(iface string, log *slog.Logger) *V6Probe {
 
 // PingICMP6 sends one ICMPv6 Echo Request to target via the configured
 // interface and returns the round-trip time on success. The wait is
-// bounded by timeout; on timeout returns a context.DeadlineExceeded.
+// bounded by timeout; on timeout returns a [context.DeadlineExceeded].
 //
 // Source address selection: we open the listen socket with "::"; the
 // kernel picks an appropriate source from the iface based on its source-
@@ -59,7 +59,7 @@ func (p *V6Probe) PingICMP6(
 ) (time.Duration, error) {
 	op := p.log.With("op", "PingICMP6",
 		"target", target.String(), "timeout_ms", timeout.Milliseconds())
-	op.Debug("v6probe: PingICMP6 entry")
+	op.DebugContext(ctx, "v6probe: PingICMP6 entry")
 
 	if !target.Is6() {
 		return 0, fmt.Errorf("PingICMP6: target %q is not IPv6", target)
@@ -67,7 +67,8 @@ func (p *V6Probe) PingICMP6(
 
 	conn, err := icmp.ListenPacket("ip6:ipv6-icmp", "::")
 	if err != nil {
-		op.Warn("v6probe: ListenPacket failed", "err", err)
+		p.log.WarnContext(ctx, "v6probe: ListenPacket failed",
+			"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
 		return 0, fmt.Errorf("ListenPacket: %w", err)
 	}
 	defer conn.Close()
@@ -76,52 +77,48 @@ func (p *V6Probe) PingICMP6(
 	pktConn := ipv6.NewPacketConn(conn.IPv6PacketConn().PacketConn)
 	netIface, err := net.InterfaceByName(p.iface)
 	if err != nil {
-		op.Warn("v6probe: InterfaceByName failed", "err", err)
+		p.log.WarnContext(ctx, "v6probe: InterfaceByName failed",
+			"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
 		return 0, fmt.Errorf("InterfaceByName: %w", err)
 	}
 	if err := pktConn.SetMulticastInterface(netIface); err != nil {
-		op.Debug("v6probe: SetMulticastInterface failed (non-fatal)",
+		op.DebugContext(ctx, "v6probe: SetMulticastInterface failed (non-fatal)",
 			"err", err)
 	}
 
 	// Build Echo Request.
 	startTime := p.clock.Now()
-	id := os.Getpid() & 0xffff
-	seq := int(startTime.UnixNano() & 0x7fff)
-	msg := icmp.Message{
-		Type: ipv6.ICMPTypeEchoRequest,
-		Code: 0,
-		Body: &icmp.Echo{
-			ID:   id,
-			Seq:  seq,
-			Data: []byte("mwan-v6probe"),
-		},
-	}
+	msg, id, seq := newEchoRequest(startTime)
 	wb, err := msg.Marshal(nil)
 	if err != nil {
-		op.Warn("v6probe: marshal echo failed", "err", err)
+		p.log.WarnContext(ctx, "v6probe: marshal echo failed",
+			"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
 		return 0, fmt.Errorf("marshal echo: %w", err)
 	}
 
 	deadline := startTime.Add(timeout)
 	if err := conn.SetReadDeadline(deadline); err != nil {
-		op.Warn("v6probe: SetReadDeadline failed", "err", err)
+		p.log.WarnContext(ctx, "v6probe: SetReadDeadline failed",
+			"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
 		return 0, fmt.Errorf("SetReadDeadline: %w", err)
 	}
 
 	dst := &net.IPAddr{IP: target.AsSlice()}
 	if _, err := conn.WriteTo(wb, dst); err != nil {
-		op.Warn("v6probe: WriteTo failed", "err", err)
+		p.log.WarnContext(ctx, "v6probe: WriteTo failed",
+			"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
 		return 0, fmt.Errorf("WriteTo(%s): %w", target, err)
 	}
-	op.Debug("v6probe: echo sent", "id", id, "seq", seq)
+	op.DebugContext(ctx, "v6probe: echo sent", "id", id, "seq", seq)
 
 	rb := make([]byte, 1500)
 	for {
 		select {
 		case <-ctx.Done():
-			op.Debug("v6probe: ctx cancelled while waiting for reply")
-			return 0, fmt.Errorf("PingICMP6: %w", ctx.Err())
+			ctxErr := ctx.Err()
+			p.log.WarnContext(ctx, "v6probe: ctx cancelled while waiting for reply",
+				"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", ctxErr)
+			return 0, fmt.Errorf("PingICMP6: %w", ctxErr)
 		default:
 		}
 		n, peer, err := conn.ReadFrom(rb)
@@ -129,16 +126,17 @@ func (p *V6Probe) PingICMP6(
 		if err != nil {
 			var networkError net.Error
 			if errors.As(err, &networkError) && networkError.Timeout() {
-				op.Debug("v6probe: deadline exceeded waiting for reply",
+				op.DebugContext(ctx, "v6probe: deadline exceeded waiting for reply",
 					"waited_ms", dur.Milliseconds())
 				return 0, context.DeadlineExceeded
 			}
-			op.Warn("v6probe: ReadFrom failed", "err", err)
+			p.log.WarnContext(ctx, "v6probe: ReadFrom failed",
+				"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
 			return 0, fmt.Errorf("ReadFrom: %w", err)
 		}
 		rm, err := icmp.ParseMessage(58, rb[:n])
 		if err != nil {
-			op.Debug("v6probe: parse failed (continuing)", "err", err)
+			op.DebugContext(ctx, "v6probe: parse failed (continuing)", "err", err)
 			continue
 		}
 		if rm.Type != ipv6.ICMPTypeEchoReply {
@@ -148,8 +146,22 @@ func (p *V6Probe) PingICMP6(
 		if !ok || echo.ID != id || echo.Seq != seq {
 			continue
 		}
-		op.Debug("v6probe: echo reply received",
+		op.DebugContext(ctx, "v6probe: echo reply received",
 			"from", peer.String(), "rtt_ms", dur.Milliseconds())
 		return dur, nil
 	}
+}
+
+func newEchoRequest(startTime time.Time) (icmp.Message, int, int) {
+	id := os.Getpid() & 0xffff
+	seq := int(startTime.UnixNano() & 0x7fff)
+	return icmp.Message{
+		Type: ipv6.ICMPTypeEchoRequest,
+		Code: 0,
+		Body: &icmp.Echo{
+			ID:   id,
+			Seq:  seq,
+			Data: []byte("mwan-v6probe"),
+		},
+	}, id, seq
 }
