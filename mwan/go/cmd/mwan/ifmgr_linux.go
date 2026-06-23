@@ -1,5 +1,6 @@
 //go:build linux
 
+// Package main wires the Linux-only `mwan ifmgr` command entrypoint.
 package main
 
 import (
@@ -49,16 +50,14 @@ func runIfMgr(cfg *config.Config) error {
 		return fmt.Errorf("ifmgr: role required (set [ifmgr].role in config or pass --role)")
 	}
 
-	logger, err := buildIfMgrLogger(cfg, flags.debug)
-	if err != nil {
-		return fmt.Errorf("build logger: %w", err)
-	}
+	logger := buildIfMgrLogger(cfg, flags.debug)
 	runID := tracing.NewID()
 	logger = logger.With(
 		slog.String(tracing.RunIDKey, runID),
 		slog.String(tracing.ComponentKey, "ifmgr"),
 	)
-	logger.Info("ifmgr: starting",
+	logger.Info(
+		"ifmgr: starting",
 		"build", version.BuildVersionString(),
 		"role", role,
 		"dry_run", flags.dryRun,
@@ -67,6 +66,7 @@ func runIfMgr(cfg *config.Config) error {
 
 	dcfg, err := buildIfMgrDaemonConfig(cfg, role)
 	if err != nil {
+		logger.Warn("ifmgr: build daemon config failed", "err", err)
 		return fmt.Errorf("build daemon config: %w", err)
 	}
 
@@ -74,6 +74,7 @@ func runIfMgr(cfg *config.Config) error {
 
 	d, err := ifmgr.NewDaemon(logger, dcfg)
 	if err != nil {
+		logger.Warn("ifmgr: new daemon failed", "err", err)
 		return fmt.Errorf("new daemon: %w", err)
 	}
 
@@ -82,6 +83,7 @@ func runIfMgr(cfg *config.Config) error {
 	defer cancel()
 
 	if err := d.Run(ctx); err != nil {
+		logger.WarnContext(ctx, "ifmgr: daemon run failed", "err", err)
 		return fmt.Errorf("ifmgr daemon: %w", err)
 	}
 	logShutdownReason(ctx, logger)
@@ -103,7 +105,7 @@ func parseIfMgrFlags() ifmgrFlags {
 	return ifmgrFlags{role: *role, debug: *debug, dryRun: *dryRun}
 }
 
-func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
+func buildIfMgrLogger(cfg *config.Config, debug bool) *slog.Logger {
 	handlers := []slog.Handler{logging.StdoutJSON()}
 	if p := cfg.IfMgr.LogFile; p != "" {
 		handlers = append(handlers, logging.FileText(p, "[mwan-ifmgr]"))
@@ -120,13 +122,13 @@ func buildIfMgrLogger(cfg *config.Config, debug bool) (*slog.Logger, error) {
 	if debug || cfg.IfMgr.Debug {
 		logger.Info("ifmgr: debug logging enabled")
 	}
-	return logger, nil
+	return logger
 }
 
 // logShutdownReason logs the signal that triggered ctx cancellation.
 func logShutdownReason(ctx context.Context, log *slog.Logger) {
 	if err := ctx.Err(); err != nil {
-		log.Info("ifmgr: shutdown", "reason", err.Error())
+		log.InfoContext(ctx, "ifmgr: shutdown", "reason", err.Error())
 	}
 }
 
@@ -134,6 +136,7 @@ func logShutdownReason(ctx context.Context, log *slog.Logger) {
 // shape ifmgr.Daemon expects. Module configs are adapted from the explicit
 // TOML schema into typed runtime configs before daemon startup.
 func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig, error) {
+	logger := slog.Default().With("component", "ifmgr")
 	ifaceName := ""
 	enableDHCP := false
 	enableRA := false
@@ -145,7 +148,8 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		if ifaceName != "" {
 			return ifmgr.DaemonConfig{}, fmt.Errorf(
 				"ifmgr: multi-iface not supported yet (saw %q and %q)",
-				ifaceName, name)
+				ifaceName, name,
+			)
 		}
 		ifaceName = iface.Name
 		if ifaceName == "" {
@@ -156,6 +160,8 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		if iface.DHCPInitialBackoff != "" {
 			d, err := time.ParseDuration(iface.DHCPInitialBackoff)
 			if err != nil {
+				logger.Warn("ifmgr: invalid dhcp_initial_backoff",
+					"iface", name, "value", iface.DHCPInitialBackoff, "err", err)
 				return ifmgr.DaemonConfig{}, fmt.Errorf("ifmgr.iface.%s.dhcp_initial_backoff: %w", name, err)
 			}
 			dhcpInit = d
@@ -163,6 +169,8 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		if iface.DHCPMaxBackoff != "" {
 			d, err := time.ParseDuration(iface.DHCPMaxBackoff)
 			if err != nil {
+				logger.Warn("ifmgr: invalid dhcp_max_backoff",
+					"iface", name, "value", iface.DHCPMaxBackoff, "err", err)
 				return ifmgr.DaemonConfig{}, fmt.Errorf("ifmgr.iface.%s.dhcp_max_backoff: %w", name, err)
 			}
 			dhcpMax = d
@@ -176,6 +184,8 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 	if cfg.IfMgr.ReconcileInterval != "" {
 		d, err := time.ParseDuration(cfg.IfMgr.ReconcileInterval)
 		if err != nil {
+			logger.Warn("ifmgr: invalid reconcile_interval",
+				"value", cfg.IfMgr.ReconcileInterval, "err", err)
 			return ifmgr.DaemonConfig{}, fmt.Errorf("ifmgr.reconcile_interval: %w", err)
 		}
 		rec = d
@@ -183,6 +193,7 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 
 	moduleConfigs, err := buildIfMgrModuleConfigs(cfg.IfMgr.Modules, role)
 	if err != nil {
+		logger.Warn("ifmgr: build module configs failed", "role", role, "err", err)
 		return ifmgr.DaemonConfig{}, err
 	}
 
@@ -196,6 +207,7 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		DHCPInitial:       dhcpInit,
 		DHCPMax:           dhcpMax,
 		EnableRA:          enableRA,
+		Notifier:          nil,
 		ModuleConfigs:     moduleConfigs,
 	}, nil
 }
