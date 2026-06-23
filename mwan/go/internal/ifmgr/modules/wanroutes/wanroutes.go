@@ -87,7 +87,8 @@ func (m *Module) Name() string { return moduleName }
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", moduleName)
-	m.log.InfoContext(ctx, "wan_routes: Init",
+	m.log.InfoContext(
+		ctx, "wan_routes: Init",
 		"wan_count", len(m.cfg.WANs),
 		"health_state_file", m.cfg.HealthStateFile,
 		"shadow_mode", m.cfg.ShadowMode,
@@ -135,7 +136,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	health, err := netif.ReadHealthState(m.cfg.HealthStateFile)
 	if err != nil {
 		log.WarnContext(ctx, "wan_routes: ReadHealthState failed", "err", err)
-		return err
+		return fmt.Errorf("read health state %q: %w", m.cfg.HealthStateFile, err)
 	}
 	rules, routes := desiredState(currentGateways, health, m.cfg)
 
@@ -227,107 +228,123 @@ func desiredState(
 
 	for _, wan := range cfg.WANs {
 		wanGateways := currentGateways[wan.Name]
-		if wanGateways.V4 != "" {
-			routes = append(routes, netif.RouteSpec{
-				Family:  familyV4,
-				Dest:    "default",
-				Via:     wanGateways.V4,
-				Dev:     wan.Iface,
-				TableID: wan.TableID,
-				Metric:  0,
-			})
-		}
-		if wanGateways.V6 != "" {
-			routes = append(routes, netif.RouteSpec{
-				Family:  familyV6,
-				Dest:    "default",
-				Via:     wanGateways.V6,
-				Dev:     wan.Iface,
-				TableID: wan.TableID,
-				Metric:  0,
-			})
-		}
+		routes = appendWANDefaultRoutes(routes, wan, wanGateways)
 		routes = appendWANInternalRoutes(routes, cfg, wan.TableID)
 
-		if wanEnabled(wanGateways.V4, health.State(wan.Name)) {
-			rules = append(rules, netif.DesiredRule{
-				Family:   familyV4,
-				Priority: wan.FwMarkPrio,
-				From:     "",
-				Mark:     wan.FwMark,
-				IifName:  "",
-				UIDRange: "",
-				Table:    "",
-				TableID:  wan.TableID,
-			})
-			if wan.V4Source != "" {
-				rules = append(rules, netif.DesiredRule{
-					Family:   familyV4,
-					Priority: wan.FromPrio,
-					From:     wan.V4Source,
-					Mark:     0,
-					IifName:  "",
-					UIDRange: "",
-					Table:    "",
-					TableID:  wan.TableID,
-				})
-			}
-		}
-		if wanEnabled(wanGateways.V6, health.State(wan.Name)) {
-			rules = append(rules, netif.DesiredRule{
-				Family:   familyV6,
-				Priority: wan.FwMarkPrio,
-				From:     "",
-				Mark:     wan.FwMark,
-				IifName:  "",
-				UIDRange: "",
-				Table:    "",
-				TableID:  wan.TableID,
-			})
-			if wan.NptPrefix != "" {
-				rules = append(rules, netif.DesiredRule{
-					Family:   familyV6,
-					Priority: wan.FromPrio,
-					From:     wan.NptPrefix,
-					Mark:     0,
-					IifName:  "",
-					UIDRange: "",
-					Table:    "",
-					TableID:  wan.TableID,
-				})
-			}
-		}
+		rules = appendWANRules(rules, wan, wanGateways, health)
 	}
 
 	routes = appendMainInternalRoute(routes, cfg)
 
 	monkeybrains := findWAN(cfg, wanNameMonkeybrains)
 	if monkeybrains != nil && fallbackEnabled(health) {
-			rules = append(rules,
-				netif.DesiredRule{
-					Family:   familyV4,
-					Priority: fallbackPriority,
-					From:     "",
-					Mark:     0,
-					IifName:  cfg.InternalIface,
-					UIDRange: "",
-					Table:    "",
-					TableID:  monkeybrains.TableID,
-				},
-				netif.DesiredRule{
-					Family:   familyV6,
-					Priority: fallbackPriority,
-					From:     "",
-					Mark:     0,
-					IifName:  cfg.InternalIface,
-					UIDRange: "",
-					Table:    "",
-					TableID:  monkeybrains.TableID,
-				},
-			)
+		rules = append(
+			rules,
+			netif.DesiredRule{
+				Family:   familyV4,
+				Priority: fallbackPriority,
+				From:     "",
+				Mark:     0,
+				IifName:  cfg.InternalIface,
+				UIDRange: "",
+				Table:    "",
+				TableID:  monkeybrains.TableID,
+			},
+			netif.DesiredRule{
+				Family:   familyV6,
+				Priority: fallbackPriority,
+				From:     "",
+				Mark:     0,
+				IifName:  cfg.InternalIface,
+				UIDRange: "",
+				Table:    "",
+				TableID:  monkeybrains.TableID,
+			},
+		)
 	}
 
 	return rules, routes
+}
+
+func appendWANDefaultRoutes(routes []netif.RouteSpec, wan WAN, gateways gatewaySet) []netif.RouteSpec {
+	if gateways.V4 != "" {
+		routes = append(routes, netif.RouteSpec{
+			Family:  familyV4,
+			Dest:    "default",
+			Via:     gateways.V4,
+			Dev:     wan.Iface,
+			TableID: wan.TableID,
+			Metric:  0,
+		})
+	}
+	if gateways.V6 != "" {
+		routes = append(routes, netif.RouteSpec{
+			Family:  familyV6,
+			Dest:    "default",
+			Via:     gateways.V6,
+			Dev:     wan.Iface,
+			TableID: wan.TableID,
+			Metric:  0,
+		})
+	}
+	return routes
+}
+
+func appendWANRules(
+	rules []netif.DesiredRule,
+	wan WAN,
+	gateways gatewaySet,
+	health netif.HealthStates,
+) []netif.DesiredRule {
+	if wanEnabled(gateways.V4, health.State(wan.Name)) {
+		rules = append(rules, netif.DesiredRule{
+			Family:   familyV4,
+			Priority: wan.FwMarkPrio,
+			From:     "",
+			Mark:     wan.FwMark,
+			IifName:  "",
+			UIDRange: "",
+			Table:    "",
+			TableID:  wan.TableID,
+		})
+		if wan.V4Source != "" {
+			rules = append(rules, netif.DesiredRule{
+				Family:   familyV4,
+				Priority: wan.FromPrio,
+				From:     wan.V4Source,
+				Mark:     0,
+				IifName:  "",
+				UIDRange: "",
+				Table:    "",
+				TableID:  wan.TableID,
+			})
+		}
+	}
+	if wanEnabled(gateways.V6, health.State(wan.Name)) {
+		rules = append(rules, netif.DesiredRule{
+			Family:   familyV6,
+			Priority: wan.FwMarkPrio,
+			From:     "",
+			Mark:     wan.FwMark,
+			IifName:  "",
+			UIDRange: "",
+			Table:    "",
+			TableID:  wan.TableID,
+		})
+		if wan.NptPrefix != "" {
+			rules = append(rules, netif.DesiredRule{
+				Family:   familyV6,
+				Priority: wan.FromPrio,
+				From:     wan.NptPrefix,
+				Mark:     0,
+				IifName:  "",
+				UIDRange: "",
+				Table:    "",
+				TableID:  wan.TableID,
+			})
+		}
+	}
+	return rules
 }
 
 func appendWANInternalRoutes(
@@ -335,18 +352,23 @@ func appendWANInternalRoutes(
 	cfg Config,
 	tableID int,
 ) []netif.RouteSpec {
-	routes = append(routes,
+	routes = append(
+		routes,
 		netif.RouteSpec{
 			Family:  familyV4,
 			Dest:    cfg.InternalNetV4,
+			Via:     "",
 			Dev:     cfg.InternalIface,
 			TableID: tableID,
+			Metric:  0,
 		},
 		netif.RouteSpec{
 			Family:  familyV6,
 			Dest:    withPrefix(cfg.OpnsenseEdgeV6, "128"),
+			Via:     "",
 			Dev:     cfg.InternalIface,
 			TableID: tableID,
+			Metric:  0,
 		},
 		netif.RouteSpec{
 			Family:  familyV6,
@@ -354,6 +376,7 @@ func appendWANInternalRoutes(
 			Via:     cfg.OpnsenseWanLL,
 			Dev:     cfg.InternalIface,
 			TableID: tableID,
+			Metric:  0,
 		},
 	)
 	return routes
@@ -436,17 +459,18 @@ func logShadowOps(
 	routes []netif.RouteSpec,
 ) {
 	for _, route := range routes {
-		log.Info("wan_routes: shadow reconcile route", "route", route)
+		log.Debug("wan_routes: shadow reconcile route", "route", route)
 	}
 	for _, rule := range rules {
-		log.Info("wan_routes: shadow reconcile rule", "rule", rule)
+		log.Debug("wan_routes: shadow reconcile rule", "rule", rule)
 	}
 	desiredSlots := desiredRuleSlots(rules)
 	for _, slot := range ownedRuleSlots(cfg) {
 		if desiredSlots[slot] {
 			continue
 		}
-		log.Info("wan_routes: shadow remove disabled rule",
+		log.Debug(
+			"wan_routes: shadow remove disabled rule",
 			"family", slot.family,
 			"priority", slot.priority,
 		)
