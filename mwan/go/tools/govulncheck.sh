@@ -4,6 +4,7 @@ set -euo pipefail
 KNOWN_GOBGP_VULN_ID="GO-2026-4736"
 KNOWN_GOBGP_FIXED_VERSION="v4.3.0"
 GOBGP_MODULE="github.com/osrg/gobgp/v4"
+UPSTREAM_GOVULNCHECK_VERSION="v1.3.0"
 
 function semver_gte() {
     local left="${1#v}"
@@ -75,7 +76,7 @@ function main() {
     output_file="$(mktemp)"
     trap 'rm -f "${output_file:-}"' EXIT
 
-    go install golang.org/x/vuln/cmd/govulncheck@latest
+    go install "golang.org/x/vuln/cmd/govulncheck@${UPSTREAM_GOVULNCHECK_VERSION}"
 
     if govulncheck ./... >"$output_file" 2>&1; then
         cat "$output_file"
