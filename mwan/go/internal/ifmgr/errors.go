@@ -10,9 +10,9 @@ import "errors"
 // its dispatch list so subsequent Reconcile, OnKernelEvent, OnDHCPLease,
 // and EvaluateAlerts calls bypass it entirely.
 //
-// Modules wrap this with extra context (e.g. via fmt.Errorf("%w: ...",
+// Modules wrap this with extra context (e.g. via [fmt.Errorf]("%w: ...",
 // ifmgr.ErrModuleDisabled, ...)) and the daemon detects it with
-// errors.Is. The unified `oob` role uses this so a single role definition
+// [errors.Is]. The unified `oob` role uses this so a single role definition
 // can list every OOB-style module, with each module turning itself off
 // where its config block is absent (cloudflared_tap, wg, host_ipv6_policy
 // today).
