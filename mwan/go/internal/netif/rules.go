@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -253,25 +252,29 @@ func ipNetToString(n *net.IPNet) string {
 func addRuleNetlink(
 	ctx context.Context, log *slog.Logger, family string, w DesiredRule,
 ) error {
-	_ = ctx
 	r, err := buildNetlinkRule(family, w)
 	if err != nil {
 		return err
 	}
-	start := time.Now()
+	startTime := realClock{}.Now()
 	err = netlink.RuleAdd(r)
-	dur := time.Since(start)
-	log.Debug("rules: RuleAdd",
+	dur := realClock{}.Now().Sub(startTime)
+	log.DebugContext(ctx, "rules: RuleAdd",
 		"family", family, "priority", w.Priority, "table_id", w.TableID,
 		"from", w.From, "uidrange", w.UIDRange,
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
 	)
 	if err != nil && errors.Is(err, syscall.EEXIST) {
-		log.Debug("rules: RuleAdd EEXIST (already present)")
+		log.DebugContext(ctx, "rules: RuleAdd EEXIST (already present)")
 		return nil
 	}
-	return err
+	if err != nil {
+		log.WarnContext(ctx, "rules: RuleAdd failed",
+			"family", family, "priority", w.Priority, "err", err)
+		return fmt.Errorf("RuleAdd(prio=%d): %w", w.Priority, err)
+	}
+	return nil
 }
 
 // delRuleNetlink removes the rule at the given (family, priority, table)
@@ -279,7 +282,6 @@ func addRuleNetlink(
 func delRuleNetlink(
 	ctx context.Context, log *slog.Logger, family string, c CurrentRule,
 ) error {
-	_ = ctx
 	r, err := buildNetlinkRule(family, DesiredRule{
 		Family:   family,
 		Priority: c.Priority,
@@ -293,19 +295,24 @@ func delRuleNetlink(
 	if err != nil {
 		return err
 	}
-	start := time.Now()
+	startTime := realClock{}.Now()
 	err = netlink.RuleDel(r)
-	dur := time.Since(start)
-	log.Debug("rules: RuleDel",
+	dur := realClock{}.Now().Sub(startTime)
+	log.DebugContext(ctx, "rules: RuleDel",
 		"family", family, "priority", c.Priority, "table_id", c.TableID,
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
 	)
 	if err != nil && (errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ESRCH)) {
-		log.Debug("rules: RuleDel ENOENT (already absent)")
+		log.DebugContext(ctx, "rules: RuleDel ENOENT (already absent)")
 		return nil
 	}
-	return err
+	if err != nil {
+		log.WarnContext(ctx, "rules: RuleDel failed",
+			"family", family, "priority", c.Priority, "err", err)
+		return fmt.Errorf("RuleDel(prio=%d): %w", c.Priority, err)
+	}
+	return nil
 }
 
 // buildNetlinkRule constructs the netlink.Rule struct from our DesiredRule.
@@ -339,10 +346,14 @@ func buildNetlinkRule(family string, w DesiredRule) (*netlink.Rule, error) {
 }
 
 // parseSelector accepts either a bare address ("1.2.3.4" or "::1") or a
-// CIDR, and returns an *net.IPNet sized for the family.
+// CIDR, and returns a [net.IPNet] sized for the family.
 func parseSelector(family, s string) (*net.IPNet, error) {
 	if strings.Contains(s, "/") {
 		_, ipnet, err := net.ParseCIDR(s)
+		if err != nil {
+			slog.Warn("rules: ParseCIDR failed", "selector", s, "err", err)
+			return nil, fmt.Errorf("ParseCIDR(%q): %w", s, err)
+		}
 		return ipnet, err
 	}
 	ip := net.ParseIP(s)
@@ -365,14 +376,24 @@ func parseUIDRange(s string) (lo, hi int, err error) {
 	parts := strings.SplitN(s, "-", 2)
 	lo, err = strconv.Atoi(parts[0])
 	if err != nil {
-		return 0, 0, err
+		slog.Warn("rules: Atoi failed", "uidrange", s, "part", parts[0], "err", err)
+		return 0, 0, fmt.Errorf("Atoi(%q): %w", parts[0], err)
 	}
 	if len(parts) == 1 {
+		if lo < 0 {
+			slog.Warn("rules: negative uidrange", "uidrange", s)
+			return 0, 0, fmt.Errorf("uidrange %q must be non-negative", s)
+		}
 		return lo, lo, nil
 	}
 	hi, err = strconv.Atoi(parts[1])
 	if err != nil {
-		return 0, 0, err
+		slog.Warn("rules: Atoi failed", "uidrange", s, "part", parts[1], "err", err)
+		return 0, 0, fmt.Errorf("Atoi(%q): %w", parts[1], err)
+	}
+	if lo < 0 || hi < 0 {
+		slog.Warn("rules: negative uidrange", "uidrange", s)
+		return 0, 0, fmt.Errorf("uidrange %q must be non-negative", s)
 	}
 	return lo, hi, nil
 }
