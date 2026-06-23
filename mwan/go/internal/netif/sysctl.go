@@ -55,7 +55,8 @@ func (r *ProcSysctlRunner) Get(ctx context.Context, key string) (string, error) 
 	data, err := os.ReadFile(path)
 	dur := r.clock.Now().Sub(startTime)
 	val := strings.TrimRight(string(data), "\n\t ")
-	r.log.DebugContext(ctx, "sysctl: read",
+	r.log.DebugContext(
+		ctx, "sysctl: read",
 		"key", key, "path", path, "value", val,
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
@@ -78,9 +79,10 @@ func (r *ProcSysctlRunner) Set(ctx context.Context, key, value string) error {
 		return nil
 	}
 	startTime := r.clock.Now()
-	err := os.WriteFile(path, []byte(value), 0o644)
+	err := os.WriteFile(path, []byte(value), 0o600)
 	dur := r.clock.Now().Sub(startTime)
-	r.log.DebugContext(ctx, "sysctl: write",
+	r.log.DebugContext(
+		ctx, "sysctl: write",
 		"key", key, "path", path, "value", value,
 		"duration_ms", dur.Milliseconds(),
 		"err", err,
@@ -125,8 +127,8 @@ func keyToPath(key string) string {
 	// Special-case interface tunables: net.ipv{4,6}.conf.<NAME>.<leaf>.
 	// The NAME may itself contain dots (e.g. "enatt0.3242").
 	for _, prefix := range []string{"net.ipv4.conf.", "net.ipv6.conf."} {
-		if strings.HasPrefix(key, prefix) {
-			rest := strings.TrimPrefix(key, prefix)
+		rest, ok := strings.CutPrefix(key, prefix)
+		if ok {
 			// rest is "<NAME>.<leaf>" where leaf is a single token without
 			// dots in the kernel's tree. Split on the LAST dot.
 			lastDot := strings.LastIndex(rest, ".")
