@@ -123,6 +123,48 @@ The fix has two coupled halves.
    runs the preflight then execs the daemon, so a restart round-trips and a bad self-deploy
    auto-reverts. The forced stop kills the process group so a wedged child can never orphan.
 
+## The mid-transfer write wedge
+
+A bridge disconnect while the guest is writing to the host can hang the guest until you hard
+reset the VM. The mechanism below is the best-evidenced explanation, with the evidence named
+beside each claim. Reproduction depends on a guest write being in flight, so treat it as a
+real risk on guest-to-host transfers, not a guaranteed repro.
+
+The trigger needs a guest-to-host write in flight when the host side drops. A `file pull` or
+a large command output keeps the guest writing host-ward, so a bridge restart or crash during
+one can wedge the guest. A `file push` rarely wedges, because the guest is mostly reading. In
+testing, more than a dozen mid-push bridge kills produced no wedge, while a mid-pull bridge
+restart wedged on the first try.
+
+What you observe: the gRPC channel stops answering and both guest vCPUs peg in the kernel.
+sshd, the QEMU Guest Agent, and the serial console all stop responding, because no thread
+gets a CPU slice.
+
+The evidenced mechanism is a single guest write stranded in the kernel.
+
+- A guest write to the virtio-serial port enters the FreeBSD driver, takes the port mutex
+  `vtcpmtx`, and busy-spins in `virtqueue_poll` waiting for the host to consume the buffer.
+  Evidence: live `info registers` sampling on a wedged VM held CPU0 in `virtqueue_poll` across
+  repeated reads.
+- When the host chardev disconnects mid-write, qemu does not complete that in-flight
+  descriptor, so the poll never returns. Evidence: `info chardev` showed the port
+  `disconnected` during the wedge while the write never finished. This matches a known qemu
+  limitation present through qemu 11.0 (Red Hat bug 1352977).
+- A second guest thread needs `vtcpmtx` and busy-spins for it. Evidence: the second vCPU sat
+  in `lock_delay`, and a guest memory dump showed the `vtcpmtx` lock held by the stuck write
+  thread.
+
+Both vCPUs then spin in the kernel and the guest starves. The write is an uninterruptible
+kernel spin, so you cannot signal or kill it. Only a hard reset clears it, because that
+recreates the qemu device. Run `qm reset <vmid>`.
+
+Do not restart the bridge while a deploy or any guest-to-host transfer is in flight.
+
+To inspect a wedged guest, use the kernel debugger, because userland is starved. Set
+`debug.kdb.break_to_debugger=1` on the guest, then run `echo nmi | qm monitor <vmid>` from the
+Proxmox host. The guest enters DDB on the serial console and dumps every thread's backtrace,
+which you read over the `serial0` socket.
+
 ## What not to touch
 
 These are the load-bearing invariants. Changing any of them re-opens a documented wedge.
