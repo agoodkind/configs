@@ -24,9 +24,9 @@ import (
 
 // Module owns the OOB v6 state for one iface. One Module per Daemon.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	cfg   Config
+	env   *ifmgr.Env
+	log   *slog.Logger
 	clock internalclock.Clock
 
 	mu          sync.Mutex
@@ -120,7 +120,9 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			ctxErr := ctx.Err()
+			log.WarnContext(ctx, "oobv6: reconcile cancelled after solicit", "err", ctxErr)
+			return fmt.Errorf("oobv6: reconcile cancelled after solicit: %w", ctxErr)
 		case <-timer.C:
 		}
 		cur, err = netif.FindMainRADefault(ctx, m.cfg.Iface)
@@ -150,8 +152,10 @@ func (m *Module) syncOOBDefault(
 	want := netif.RouteSpec{
 		Family:  "inet6",
 		Dest:    "default",
+		Via:     "",
 		Dev:     m.cfg.Iface,
 		TableID: m.cfg.OOBTableID,
+		Metric:  0,
 	}
 	if cur != nil {
 		want.Via = cur.Via
@@ -212,7 +216,8 @@ func (m *Module) OnKernelEvent(
 		if old != "" && old != ev.CIDR {
 			// The Alerts.Notify path below is the single email surface;
 			// the prior log.Warn here was a double-emit (audit-flagged).
-			m.env.Alerts.Notify(time.Now(), slog.LevelWarn,
+			m.env.Alerts.NotifyContext(
+				ctx, m.clock.Now(), slog.LevelWarn,
 				"slaac-renumber", m.cfg.Iface,
 				"oobv6: SLAAC prefix changed",
 				"old", old, "new", ev.CIDR,
@@ -239,6 +244,8 @@ func (m *Module) OnKernelEvent(
 			log.WarnContext(ctx, "oobv6: reconcileSLAACSrcRule on AddrDeleted failed", "err", err)
 			return fmt.Errorf("reconcile slaac src rule on AddrDeleted: %w", err)
 		}
+	case netif.EvUnknown, netif.EvLinkUp, netif.EvLinkDown:
+		return nil
 	}
 	return nil
 }
@@ -323,6 +330,10 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 			Family:   "inet6",
 			Priority: m.cfg.SLAACRulePriority,
 			From:     current,
+			Mark:     0,
+			IifName:  "",
+			UIDRange: "",
+			Table:    "",
 			TableID:  m.cfg.OOBTableID,
 		}}
 		if err := netif.ReconcileRules(ctx, log, desired); err != nil {
@@ -361,7 +372,8 @@ func (m *Module) findCurrentGlobalSLAAC(
 ) (string, error) {
 	addrs, err := netif.ListAddrs(ctx, log, m.cfg.Iface)
 	if err != nil {
-		return "", err
+		log.WarnContext(ctx, "oobv6: ListAddrs failed", "err", err)
+		return "", fmt.Errorf("list addrs on %s: %w", m.cfg.Iface, err)
 	}
 	oobBare := netif.StripPrefix(m.cfg.OOBAddr)
 	for _, a := range addrs {
