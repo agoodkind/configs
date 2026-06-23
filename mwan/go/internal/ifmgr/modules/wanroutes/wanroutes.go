@@ -40,6 +40,7 @@ type Config struct {
 	WANs            []WAN
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return moduleName }
 
 // WAN is one configured uplink and its owned policy-routing slots.
@@ -86,22 +87,34 @@ func (m *Module) Name() string { return moduleName }
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", moduleName)
-	m.log.Info("wan_routes: Init",
+	m.log.InfoContext(ctx, "wan_routes: Init",
 		"wan_count", len(m.cfg.WANs),
 		"health_state_file", m.cfg.HealthStateFile,
 		"shadow_mode", m.cfg.ShadowMode,
 	)
 
 	if len(m.cfg.WANs) == 0 {
+		m.log.WarnContext(ctx, "wan_routes: missing WAN config; disabling module")
 		return fmt.Errorf("%w: wan_routes: no [ifmgr.modules.wan_routes] section", ifmgr.ErrModuleDisabled)
 	}
 	if err := validateConfig(m.cfg); err != nil {
+		m.log.WarnContext(ctx, "wan_routes: validateConfig failed", "err", err)
 		return err
 	}
 
 	for _, iface := range watchedIfaces(m.cfg) {
 		monitor := netif.NewMonitor(ctx, m.log, netif.MonitorConfig{Iface: iface})
-		go m.drainMonitor(ctx, monitor, iface)
+		go func(monitoredIface string, monitored *netif.Monitor) {
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					return
+				}
+				m.log.ErrorContext(ctx, "wan_routes: drainMonitor panicked",
+					"iface", monitoredIface, "err", fmt.Sprint(recovered))
+			}()
+			m.drainMonitor(ctx, monitored, monitoredIface)
+		}(iface, monitor)
 	}
 	return nil
 }
@@ -112,14 +125,16 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	defer m.mu.Unlock()
 
 	log = log.With("op", "reconcile")
-	log.Debug("wan_routes: Reconcile entry")
+	log.DebugContext(ctx, "wan_routes: Reconcile entry")
 
 	currentGateways, err := discoverGateways(m.cfg)
 	if err != nil {
+		log.WarnContext(ctx, "wan_routes: discoverGateways failed", "err", err)
 		return err
 	}
 	health, err := netif.ReadHealthState(m.cfg.HealthStateFile)
 	if err != nil {
+		log.WarnContext(ctx, "wan_routes: ReadHealthState failed", "err", err)
 		return err
 	}
 	rules, routes := desiredState(currentGateways, health, m.cfg)
@@ -179,11 +194,11 @@ func (m *Module) drainMonitor(ctx context.Context, monitor *netif.Monitor, iface
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info("wan_routes: monitor drain exiting")
+			log.DebugContext(ctx, "wan_routes: monitor drain exiting")
 			return
 		case event, ok := <-monitor.Events:
 			if !ok {
-				log.Warn("wan_routes: monitor event channel closed")
+				log.WarnContext(ctx, "wan_routes: monitor event channel closed")
 				return
 			}
 			if !isDefaultRouteEvent(event) {
@@ -194,9 +209,9 @@ func (m *Module) drainMonitor(ctx context.Context, monitor *netif.Monitor, iface
 				"family", event.Family,
 				"via", event.Via,
 			)
-			eventLog.Info("wan_routes: default route event, reconciling")
+			eventLog.DebugContext(ctx, "wan_routes: default route event, reconciling")
 			if err := m.Reconcile(ctx, eventLog); err != nil {
-				eventLog.Warn("wan_routes: reconcile after route event failed", "err", err)
+				eventLog.WarnContext(ctx, "wan_routes: reconcile after route event failed", "err", err)
 			}
 		}
 	}
@@ -219,6 +234,7 @@ func desiredState(
 				Via:     wanGateways.V4,
 				Dev:     wan.Iface,
 				TableID: wan.TableID,
+				Metric:  0,
 			})
 		}
 		if wanGateways.V6 != "" {
@@ -228,6 +244,7 @@ func desiredState(
 				Via:     wanGateways.V6,
 				Dev:     wan.Iface,
 				TableID: wan.TableID,
+				Metric:  0,
 			})
 		}
 		routes = appendWANInternalRoutes(routes, cfg, wan.TableID)
@@ -236,7 +253,11 @@ func desiredState(
 			rules = append(rules, netif.DesiredRule{
 				Family:   familyV4,
 				Priority: wan.FwMarkPrio,
+				From:     "",
 				Mark:     wan.FwMark,
+				IifName:  "",
+				UIDRange: "",
+				Table:    "",
 				TableID:  wan.TableID,
 			})
 			if wan.V4Source != "" {
@@ -244,6 +265,10 @@ func desiredState(
 					Family:   familyV4,
 					Priority: wan.FromPrio,
 					From:     wan.V4Source,
+					Mark:     0,
+					IifName:  "",
+					UIDRange: "",
+					Table:    "",
 					TableID:  wan.TableID,
 				})
 			}
@@ -252,7 +277,11 @@ func desiredState(
 			rules = append(rules, netif.DesiredRule{
 				Family:   familyV6,
 				Priority: wan.FwMarkPrio,
+				From:     "",
 				Mark:     wan.FwMark,
+				IifName:  "",
+				UIDRange: "",
+				Table:    "",
 				TableID:  wan.TableID,
 			})
 			if wan.NptPrefix != "" {
@@ -260,6 +289,10 @@ func desiredState(
 					Family:   familyV6,
 					Priority: wan.FromPrio,
 					From:     wan.NptPrefix,
+					Mark:     0,
+					IifName:  "",
+					UIDRange: "",
+					Table:    "",
 					TableID:  wan.TableID,
 				})
 			}
@@ -270,20 +303,28 @@ func desiredState(
 
 	monkeybrains := findWAN(cfg, wanNameMonkeybrains)
 	if monkeybrains != nil && fallbackEnabled(health) {
-		rules = append(rules,
-			netif.DesiredRule{
-				Family:   familyV4,
-				Priority: fallbackPriority,
-				IifName:  cfg.InternalIface,
-				TableID:  monkeybrains.TableID,
-			},
-			netif.DesiredRule{
-				Family:   familyV6,
-				Priority: fallbackPriority,
-				IifName:  cfg.InternalIface,
-				TableID:  monkeybrains.TableID,
-			},
-		)
+			rules = append(rules,
+				netif.DesiredRule{
+					Family:   familyV4,
+					Priority: fallbackPriority,
+					From:     "",
+					Mark:     0,
+					IifName:  cfg.InternalIface,
+					UIDRange: "",
+					Table:    "",
+					TableID:  monkeybrains.TableID,
+				},
+				netif.DesiredRule{
+					Family:   familyV6,
+					Priority: fallbackPriority,
+					From:     "",
+					Mark:     0,
+					IifName:  cfg.InternalIface,
+					UIDRange: "",
+					Table:    "",
+					TableID:  monkeybrains.TableID,
+				},
+			)
 	}
 
 	return rules, routes
@@ -334,7 +375,7 @@ func discoverGateways(cfg Config) (gateways, error) {
 	currentGateways := make(gateways, len(cfg.WANs))
 	var gatewayErr error
 	for _, wan := range cfg.WANs {
-		wanGateways := gatewaySet{}
+		wanGateways := gatewaySet{V4: "", V6: ""}
 		gatewayV4, err := netif.IfaceDefaultGateway(familyV4, wan.Iface)
 		if err != nil {
 			gatewayErr = errors.Join(gatewayErr, fmt.Errorf(
@@ -460,18 +501,23 @@ func watchedIfaces(cfg Config) []string {
 
 func validateConfig(cfg Config) error {
 	if cfg.InternalIface == "" {
+		slog.Warn("wan_routes: missing internal_iface")
 		return fmt.Errorf("wan_routes: internal_iface is required")
 	}
 	if cfg.OpnsenseWanLL == "" {
+		slog.Warn("wan_routes: missing opnsense_wan_ll")
 		return fmt.Errorf("wan_routes: opnsense_wan_ll is required")
 	}
 	if cfg.OpnsenseEdgeV6 == "" {
+		slog.Warn("wan_routes: missing opnsense_edge_v6")
 		return fmt.Errorf("wan_routes: opnsense_edge_v6 is required")
 	}
 	if cfg.InternalPrefix == "" {
+		slog.Warn("wan_routes: missing internal_prefix")
 		return fmt.Errorf("wan_routes: internal_prefix is required")
 	}
 	if cfg.InternalNetV4 == "" {
+		slog.Warn("wan_routes: missing internal_net_v4")
 		return fmt.Errorf("wan_routes: internal_net_v4 is required")
 	}
 	seenNames := make(map[string]bool, len(cfg.WANs))
@@ -481,11 +527,14 @@ func validateConfig(cfg Config) error {
 			return fmt.Errorf("wan_routes.wan[%d]: %w", i, err)
 		}
 		if seenNames[wan.Name] {
+			slog.Warn("wan_routes: duplicate WAN name", "name", wan.Name)
 			return fmt.Errorf("wan_routes.wan[%d]: duplicate name %q", i, wan.Name)
 		}
 		seenNames[wan.Name] = true
 		for _, slot := range wanRuleSlots(wan) {
 			if seenSlots[slot] {
+				slog.Warn("wan_routes: duplicate rule slot",
+					"family", slot.family, "priority", slot.priority)
 				return fmt.Errorf(
 					"wan_routes.wan[%d]: duplicate rule slot family=%s priority=%d",
 					i,
@@ -578,7 +627,16 @@ func isFromPriority(priority int) bool {
 
 // New is the Constructor registered with ifmgr.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
-	c := Config{}
+	c := Config{
+		InternalIface:   "",
+		OpnsenseWanLL:   "",
+		OpnsenseEdgeV6:  "",
+		InternalPrefix:  "",
+		InternalNetV4:   "",
+		HealthStateFile: "",
+		ShadowMode:      false,
+		WANs:            nil,
+	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
@@ -589,7 +647,12 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	if c.HealthStateFile == "" && len(c.WANs) > 0 {
 		c.HealthStateFile = netif.DefaultHealthStatePath
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg: c,
+		env: nil,
+		log: nil,
+		mu:  sync.Mutex{},
+	}, nil
 }
 
 func init() { ifmgr.Register(moduleName, New) }
