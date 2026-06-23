@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
@@ -34,6 +35,7 @@ type Daemon struct {
 	log     *slog.Logger
 	role    string
 	modules []Module
+	clock   internalclock.Clock
 	env     *Env
 
 	mu        sync.Mutex
@@ -94,7 +96,8 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 	}
 
 	dlog := log.With("daemon", "ifmgr", "role", cfg.Role, "iface", cfg.Iface)
-	dlog.Info("ifmgr: NewDaemon entry",
+	dlog.Info(
+		"ifmgr: NewDaemon entry",
 		"reconcile_interval", cfg.ReconcileInterval.String(),
 		"enable_dhcp", cfg.EnableDHCP,
 		"enable_ra", cfg.EnableRA,
@@ -103,6 +106,7 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 
 	names, err := modulesForRole(cfg.Role)
 	if err != nil {
+		dlog.Warn("ifmgr: modulesForRole failed", "err", err)
 		return nil, err
 	}
 
@@ -110,6 +114,7 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 	for _, name := range names {
 		ctor, ok := Lookup(name)
 		if !ok {
+			dlog.Warn("ifmgr: module not registered", "module", name)
 			return nil, fmt.Errorf(
 				"ifmgr: role %q references module %q which is not registered "+
 					"(registered: %v)", cfg.Role, name, RegisteredNames(),
@@ -118,6 +123,7 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 		mcfg := cfg.ModuleConfigs[name]
 		mod, err := ctor(mcfg)
 		if err != nil {
+			dlog.Warn("ifmgr: construct module failed", "module", name, "err", err)
 			return nil, fmt.Errorf("construct module %q: %w", name, err)
 		}
 		dlog.Debug("ifmgr: module constructed", "module", name, "config_type", moduleConfigType(mcfg))
@@ -125,10 +131,14 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 	}
 
 	d := &Daemon{
-		cfg:     cfg,
-		log:     dlog,
-		role:    cfg.Role,
-		modules: modules,
+		cfg:       cfg,
+		log:       dlog,
+		role:      cfg.Role,
+		modules:   modules,
+		clock:     nil,
+		env:       nil,
+		mu:        sync.Mutex{},
+		startedAt: time.Time{},
 	}
 	dlog.Info("ifmgr: Daemon ready", "module_count", len(modules))
 	return d, nil
@@ -139,26 +149,32 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 // Blocks until ctx is cancelled. Returns the first error from Init or
 // the main loop; transient Reconcile errors are logged but do not exit.
 func (d *Daemon) Run(ctx context.Context) error {
+	if d.clock == nil {
+		d.clock = internalclock.Real{}
+	}
 	d.mu.Lock()
-	d.startedAt = time.Now()
+	d.startedAt = d.clock.Now()
 	d.mu.Unlock()
 
-	d.log.Info("ifmgr: Run entry")
+	d.log.InfoContext(ctx, "ifmgr: Run entry")
 
 	// Start the kernel event monitor first so any module Init that
 	// triggers a netlink change (rare but possible) sees its own event.
 	mon := netif.NewMonitor(ctx, d.log, netif.MonitorConfig{Iface: d.cfg.Iface})
-	d.log.Debug("ifmgr: monitor started")
+	d.log.DebugContext(ctx, "ifmgr: monitor started")
 
 	// Start DHCP client if requested.
 	var dhcpClient *netif.DHCPClient
 	if d.cfg.EnableDHCP {
 		dhcpClient = netif.StartDHCPClient(ctx, d.log, netif.DHCPConfig{
-			Iface:          d.cfg.Iface,
-			InitialBackoff: d.cfg.DHCPInitial,
-			MaxBackoff:     d.cfg.DHCPMax,
+			Iface:           d.cfg.Iface,
+			InitialBackoff:  d.cfg.DHCPInitial,
+			MaxBackoff:      d.cfg.DHCPMax,
+			DiscoverTimeout: 0,
+			RequestTimeout:  0,
+			RenewTimeout:    0,
 		})
-		d.log.Debug("ifmgr: DHCP client started")
+		d.log.DebugContext(ctx, "ifmgr: DHCP client started")
 	}
 
 	// Open RA client if requested. Failure to open is non-fatal; modules
@@ -167,11 +183,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.cfg.EnableRA {
 		ra, err := netif.NewRAClient(d.cfg.Iface, d.log)
 		if err != nil {
-			d.log.Warn("ifmgr: RAClient open failed; modules will operate in passive RA mode",
+			d.log.WarnContext(ctx, "ifmgr: RAClient open failed; modules will operate in passive RA mode",
 				"err", err)
 		} else {
 			raClient = ra
-			d.log.Debug("ifmgr: RA client opened",
+			d.log.DebugContext(ctx, "ifmgr: RA client opened",
 				"link_local", ra.LinkLocal().String())
 		}
 	}
@@ -186,6 +202,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 		RA:      raClient,
 	}
 
+	if err := d.initModules(ctx); err != nil {
+		return err
+	}
+
+	return d.runLoop(ctx, mon, dhcpClient, raClient)
+}
+
+func (d *Daemon) initModules(ctx context.Context) error {
 	// Init every module in role order. Failure here is fatal unless the
 	// module returns ifmgr.ErrModuleDisabled, in which case the module
 	// removes itself from this daemon's dispatch list for the rest of
@@ -197,20 +221,29 @@ func (d *Daemon) Run(ctx context.Context) error {
 	enabledModules := make([]Module, 0, len(d.modules))
 	for _, m := range d.modules {
 		mlog := d.log.With("module", m.Name(), "phase", "init")
-		mlog.Debug("ifmgr: module Init")
+		mlog.DebugContext(ctx, "ifmgr: module Init")
 		err := m.Init(ctx, d.env)
 		if errors.Is(err, ErrModuleDisabled) {
-			mlog.Info("ifmgr: module disabled, skipping for daemon lifetime",
+			mlog.DebugContext(ctx, "ifmgr: module disabled, skipping for daemon lifetime",
 				"reason", err.Error())
 			continue
 		}
 		if err != nil {
+			mlog.WarnContext(ctx, "ifmgr: module init failed", "err", err)
 			return fmt.Errorf("module %s Init: %w", m.Name(), err)
 		}
 		enabledModules = append(enabledModules, m)
 	}
 	d.modules = enabledModules
+	return nil
+}
 
+func (d *Daemon) runLoop(
+	ctx context.Context,
+	mon *netif.Monitor,
+	dhcpClient *netif.DHCPClient,
+	raClient *netif.RAClient,
+) error {
 	// Initial reconcile pass.
 	initialCtx := tracing.WithOperation(ctx, "initial_reconcile")
 	initialCtx, _ = tracing.StartTrace(initialCtx, "", "initial_reconcile")
@@ -220,11 +253,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	tick := time.NewTicker(d.cfg.ReconcileInterval)
 	defer tick.Stop()
 
-	d.log.Info("ifmgr: entering main loop")
+	d.log.InfoContext(ctx, "ifmgr: entering main loop")
 	for {
 		select {
 		case <-ctx.Done():
-			d.log.Info("ifmgr: ctx cancelled; exiting (kernel state preserved)")
+			d.log.DebugContext(ctx, "ifmgr: ctx cancelled; exiting (kernel state preserved)")
 			if raClient != nil {
 				_ = raClient.Close()
 			}
@@ -232,12 +265,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 		case ev, ok := <-mon.Events:
 			if !ok {
-				d.log.Warn("ifmgr: monitor events channel closed")
+				d.log.WarnContext(ctx, "ifmgr: monitor events channel closed")
 				continue
 			}
 			eventCtx := tracing.WithOperation(ctx, "kernel_event")
 			eventCtx = tracing.WithEvent(eventCtx, ev.Kind.String())
-			eventCtx = tracing.WithAttrs(eventCtx,
+			eventCtx = tracing.WithAttrs(
+				eventCtx,
 				slog.String("iface", ev.Iface),
 			)
 			eventCtx, _ = tracing.StartTrace(eventCtx, "", "kernel_event")
@@ -265,9 +299,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			tickCtx := tracing.WithOperation(ctx, "periodic_reconcile")
 			tickCtx, _ = tracing.StartTrace(tickCtx, "", "periodic_reconcile")
 			tlog := tracing.Logger(tickCtx, d.log).With("phase", "periodic-reconcile")
-			tlog.Debug("ifmgr: tick")
+			tlog.DebugContext(tickCtx, "ifmgr: tick")
 			d.reconcileAll(tickCtx, tlog)
-			d.evaluateAlertsAll(tickCtx, tlog, time.Now())
+			d.evaluateAlertsAll(tickCtx, tlog, d.clock.Now())
 		}
 	}
 }
@@ -278,9 +312,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) reconcileAll(ctx context.Context, log *slog.Logger) {
 	for _, m := range d.modules {
 		mlog := log.With("module", m.Name())
-		mlog.Debug("ifmgr: Reconcile")
+		mlog.DebugContext(ctx, "ifmgr: Reconcile")
 		if err := m.Reconcile(ctx, mlog); err != nil {
-			mlog.Warn("ifmgr: module Reconcile failed", "err", err)
+			mlog.WarnContext(ctx, "ifmgr: module Reconcile failed", "err", err)
 		}
 	}
 }
@@ -290,7 +324,7 @@ func (d *Daemon) dispatchEvent(ctx context.Context, log *slog.Logger, ev netif.E
 	for _, m := range d.modules {
 		mlog := log.With("module", m.Name())
 		if err := m.OnKernelEvent(ctx, mlog, ev); err != nil {
-			mlog.Warn("ifmgr: module OnKernelEvent failed", "err", err)
+			mlog.WarnContext(ctx, "ifmgr: module OnKernelEvent failed", "err", err)
 		}
 	}
 }
@@ -300,7 +334,7 @@ func (d *Daemon) dispatchLease(ctx context.Context, log *slog.Logger, lease neti
 	for _, m := range d.modules {
 		mlog := log.With("module", m.Name())
 		if err := m.OnDHCPLease(ctx, mlog, lease); err != nil {
-			mlog.Warn("ifmgr: module OnDHCPLease failed", "err", err)
+			mlog.WarnContext(ctx, "ifmgr: module OnDHCPLease failed", "err", err)
 		}
 	}
 }
