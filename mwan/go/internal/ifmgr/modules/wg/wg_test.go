@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
+	"goodkind.io/mwan/internal/notify"
 )
 
 // canonical wg show wg0 dump output: first line is the interface, rest are peers.
@@ -207,7 +209,7 @@ func newModuleForReconcileTest(t *testing.T) (*Module, *captureHandler) {
 	t.Helper()
 	h := &captureHandler{}
 	log := slog.New(h)
-	alerts := ifmgr.NewAlertManager(log, ifmgr.AlertConfig{})
+	alerts := ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, log, "mwan-ifmgr"))
 	m := &Module{
 		cfg: Config{Iface: "wg0"},
 		env: &ifmgr.Env{
@@ -312,7 +314,11 @@ func TestInitReturnsDisabledSentinelWhenConfigNil(t *testing.T) {
 	env := &ifmgr.Env{
 		Iface:  "lo",
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Alerts: ifmgr.NewAlertManager(slog.New(slog.NewTextHandler(io.Discard, nil)), ifmgr.AlertConfig{}),
+		Alerts: ifmgr.WrapNotifier(notify.FromConfig(
+			&config.Config{},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			"mwan-ifmgr",
+		)),
 	}
 	initErr := module.Init(context.Background(), env)
 	if initErr == nil {
@@ -337,7 +343,11 @@ func TestInitDoesNotDisableOnDefaultLocalExecConfig(t *testing.T) {
 	env := &ifmgr.Env{
 		Iface:  "lo",
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Alerts: ifmgr.NewAlertManager(slog.New(slog.NewTextHandler(io.Discard, nil)), ifmgr.AlertConfig{}),
+		Alerts: ifmgr.WrapNotifier(notify.FromConfig(
+			&config.Config{},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			"mwan-ifmgr",
+		)),
 	}
 	initErr := module.Init(context.Background(), env)
 	if initErr != nil {

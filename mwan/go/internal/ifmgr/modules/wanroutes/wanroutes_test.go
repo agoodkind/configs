@@ -11,8 +11,10 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/notify"
 )
 
 func TestDesiredState(t *testing.T) {
@@ -294,14 +296,12 @@ func configWithoutWebpassNPT(cfg Config) Config {
 }
 
 func testEnv() *ifmgr.Env {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return &ifmgr.Env{
 		Iface: "vmbr250",
 		Log: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 			Level: slog.LevelDebug,
 		})),
-		Alerts: ifmgr.NewAlertManager(
-			slog.New(slog.NewTextHandler(io.Discard, nil)),
-			ifmgr.AlertConfig{},
-		),
+		Alerts: ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, log, "mwan-ifmgr")),
 	}
 }

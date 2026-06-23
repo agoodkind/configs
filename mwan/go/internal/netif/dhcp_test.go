@@ -65,8 +65,8 @@ func TestStripPrefix(t *testing.T) {
 		"":                       "",
 	}
 	for in, want := range cases {
-		if got := stripPrefix(in); got != want {
-			t.Errorf("stripPrefix(%q)=%q want %q", in, got, want)
+		if got := StripPrefix(in); got != want {
+			t.Errorf("StripPrefix(%q)=%q want %q", in, got, want)
 		}
 	}
 }
