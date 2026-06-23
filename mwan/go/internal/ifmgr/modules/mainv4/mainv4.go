@@ -21,15 +21,17 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
 
 // Module owns the main-table v4 state for one iface.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	cfg   Config
+	env   *ifmgr.Env
+	log   *slog.Logger
+	clock internalclock.Clock
 
 	mu          sync.Mutex
 	currentCIDR string
@@ -42,6 +44,7 @@ type Config struct {
 	Iface string
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "mainv4" }
 
 // Name implements ifmgr.Module.
@@ -51,20 +54,23 @@ func (m *Module) Name() string { return "mainv4" }
 // shared failover role still works on hosts that do not own DHCPv4
 // (prod LXC 116 today). A no-op Init lets the role include this module
 // unconditionally without breaking those hosts.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "mainv4", "iface", m.cfg.Iface)
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
+	}
 	if env.DHCP == nil {
 		// Inert when DHCPv4 is disabled. iface is unused in this mode, so
 		// don't require it; lets roles include the module unconditionally
 		// without forcing every host's config to declare a placeholder iface.
-		m.log.Info("mainv4: Init (inert: dhcp_v4 is disabled)")
+		m.log.InfoContext(ctx, "mainv4: Init (inert: dhcp_v4 is disabled)")
 		return nil
 	}
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("mainv4: iface is required when dhcp_v4 is enabled")
 	}
-	m.log.Info("mainv4: Init (active)")
+	m.log.InfoContext(ctx, "mainv4: Init (active)")
 	return nil
 }
 
@@ -89,12 +95,14 @@ func (m *Module) OnDHCPLease(
 		return nil
 	}
 	log = log.With("op", "lease-event", "state", lease.State.String())
-	log.Debug("mainv4: lease event", "info", lease.String())
+	log.DebugContext(ctx, "mainv4: lease event", "info", lease.String())
 	switch lease.State {
 	case netif.LeaseBound:
 		return m.applyBound(ctx, log, lease)
 	case netif.LeaseExpired:
 		return m.applyExpired(ctx, log)
+	case netif.LeaseInit, netif.LeaseSelecting, netif.LeaseRequesting, netif.LeaseRenewing:
+		return nil
 	}
 	return nil
 }
@@ -107,7 +115,7 @@ func (m *Module) applyBound(
 	}
 	prefix := lease.PrefixLen
 	if prefix <= 0 || prefix > 32 {
-		log.Warn("mainv4: lease has unusable subnet mask, defaulting to /32",
+		log.WarnContext(ctx, "mainv4: lease has unusable subnet mask, defaulting to /32",
 			"prefix_len", lease.PrefixLen)
 		prefix = 32
 	}
@@ -123,6 +131,8 @@ func (m *Module) applyBound(
 		Family:  "inet",
 		Dest:    "default",
 		Dev:     m.cfg.Iface,
+		Via:     "",
+		Metric:  0,
 		TableID: unix.RT_TABLE_MAIN,
 	}
 	if lease.Gateway != nil {
@@ -135,24 +145,28 @@ func (m *Module) applyBound(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.currentCIDR != "" && m.currentCIDR != cidr {
-		log.Info("mainv4: lease IP changed", "old", m.currentCIDR, "new", cidr)
+		log.InfoContext(ctx, "mainv4: lease IP changed", "old", m.currentCIDR, "new", cidr)
 	}
 	if m.currentGW != "" && m.currentGW != want.Via {
-		log.Info("mainv4: lease gateway changed", "old", m.currentGW, "new", want.Via)
+		log.InfoContext(ctx, "mainv4: lease gateway changed", "old", m.currentGW, "new", want.Via)
 	}
 	m.currentCIDR = cidr
 	m.currentGW = want.Via
-	m.lastBound = time.Now()
+	m.lastBound = m.clock.Now()
 	return nil
 }
 
 func (m *Module) applyExpired(ctx context.Context, log *slog.Logger) error {
-	log.Warn("mainv4: lease expired; clearing main-table default v4")
-	clear := netif.RouteSpec{
-		Family: "inet", Dest: "default",
-		Dev: m.cfg.Iface, TableID: unix.RT_TABLE_MAIN,
+	log.WarnContext(ctx, "mainv4: lease expired; clearing main-table default v4")
+	clearRoute := netif.RouteSpec{
+		Family:  "inet",
+		Dest:    "default",
+		Dev:     m.cfg.Iface,
+		Via:     "",
+		Metric:  0,
+		TableID: unix.RT_TABLE_MAIN,
 	}
-	if err := netif.ReconcileTableDefault(ctx, log, clear); err != nil {
+	if err := netif.ReconcileTableDefault(ctx, log, clearRoute); err != nil {
 		return fmt.Errorf("clear main-table default v4: %w", err)
 	}
 	m.mu.Lock()
@@ -175,7 +189,9 @@ func (m *Module) LastBound() time.Time {
 
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
-	c := Config{}
+	c := Config{
+		Iface: "",
+	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
@@ -183,7 +199,16 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 		c = typedConfig
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:         c,
+		env:         nil,
+		log:         nil,
+		clock:       nil,
+		mu:          sync.Mutex{},
+		currentCIDR: "",
+		currentGW:   "",
+		lastBound:   time.Time{},
+	}, nil
 }
 
 func init() { ifmgr.Register("mainv4", New) }
