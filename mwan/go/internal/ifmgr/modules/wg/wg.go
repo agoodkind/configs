@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sys/execabs"
 	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
@@ -136,7 +137,8 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		mode = "ssh"
 	}
 	m.log = env.Log.With("module", "wg", "mode", mode, "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
-	m.log.InfoContext(ctx, "wg: Init",
+	m.log.InfoContext(
+		ctx, "wg: Init",
 		"warn_handshake_age", m.cfg.WarnHandshakeAge.String(),
 		"error_handshake_age", m.cfg.ErrorHandshakeAge.String(),
 		"ignored_peer_count", len(m.cfg.IgnorePeers),
@@ -167,30 +169,34 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		// single transition email plus one recovery email when SSH comes
 		// back, instead of one log.Error per ~6 minutes governed by the
 		// gklog email subject cooldown.
-		m.env.Alerts.Notify(now, slog.LevelError,
+		m.env.Alerts.NotifyContext(
+			ctx, now, slog.LevelError,
 			"wg-reconcile-failed", "remote-wg-show",
 			"wg: remote wg show failed",
-			"err", err.Error(),
+			slog.String("err", err.Error()),
 		)
 		return nil // do not fail the whole reconcile loop
 	}
 	peers, parseErr := parseWGShowDump(out)
 	if parseErr != nil {
-		m.env.Alerts.Notify(now, slog.LevelError,
+		m.env.Alerts.NotifyContext(
+			ctx, now, slog.LevelError,
 			"wg-reconcile-failed", "parse-wg-dump",
 			"wg: parse wg dump failed",
-			"err", parseErr.Error(),
-			"raw_lines", strings.Count(out, "\n"),
+			slog.String("err", parseErr.Error()),
+			slog.Int("raw_lines", strings.Count(out, "\n")),
 		)
 		return nil
 	}
 	// Healthy tick: clear any previously-active reconcile-failure alert so the
 	// inbox sees a recovery email. Resolve is a no-op when no alert is active.
-	m.env.Alerts.Resolve(now,
+	m.env.Alerts.ResolveContext(
+		ctx, now,
 		"wg-reconcile-failed", "remote-wg-show",
 		"wg: remote wg show recovered",
 	)
-	m.env.Alerts.Resolve(now,
+	m.env.Alerts.ResolveContext(
+		ctx, now,
 		"wg-reconcile-failed", "parse-wg-dump",
 		"wg: parse wg dump recovered",
 	)
@@ -206,7 +212,8 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			ageS = int(age.Seconds())
 			ageStr = age.Truncate(time.Second).String()
 		}
-		log.Debug("wg: peer",
+		log.DebugContext(
+			ctx, "wg: peer",
 			"peer", shortKey(pubkey),
 			"endpoint", p.endpoint,
 			"handshake_age", ageStr,
@@ -217,7 +224,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			"ignored", m.cfg.IgnorePeers[pubkey],
 		)
 	}
-	log.Debug("wg: reconcile complete", "peer_count", len(peers))
+	log.DebugContext(ctx, "wg: reconcile complete", "peer_count", len(peers))
 	return nil
 }
 
@@ -232,7 +239,7 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 }
 
 // EvaluateAlerts emits per-peer WARN/ERROR/recovery transitions.
-func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Time) {
+func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.Time) {
 	m.mu.Lock()
 	peers := make(map[string]peerState, len(m.lastPeers))
 	maps.Copy(peers, m.lastPeers)
@@ -256,38 +263,44 @@ func (m *Module) EvaluateAlerts(_ context.Context, log *slog.Logger, now time.Ti
 			// peer that "never handshaked since daemon start" from one
 			// that "never handshaked ever". Skipping is the safe default.
 			// Use ignore_peers explicitly if a peer should not be tracked.
-			log.Debug("wg: peer has never handshaked, skipping alert",
+			log.DebugContext(ctx, "wg: peer has never handshaked, skipping alert",
 				"peer", key, "endpoint", p.endpoint)
 			continue
 		}
 		age := now.Sub(p.handshake)
 		switch {
 		case age >= m.cfg.ErrorHandshakeAge:
-			m.env.Alerts.Notify(now, slog.LevelError,
+			m.env.Alerts.NotifyContext(
+				ctx,
+				now, slog.LevelError,
 				"wg-peer-stalled", key,
 				"wg: peer handshake stalled past error threshold",
-				"peer", key,
-				"endpoint", p.endpoint,
-				"handshake_age_s", int(age.Seconds()),
-				"threshold_s", int(m.cfg.ErrorHandshakeAge.Seconds()),
+				slog.String("peer", key),
+				slog.String("endpoint", p.endpoint),
+				slog.Int("handshake_age_s", int(age.Seconds())),
+				slog.Int("threshold_s", int(m.cfg.ErrorHandshakeAge.Seconds())),
 			)
 		case age >= m.cfg.WarnHandshakeAge:
-			m.env.Alerts.Notify(now, slog.LevelWarn,
+			m.env.Alerts.NotifyContext(
+				ctx,
+				now, slog.LevelWarn,
 				"wg-peer-stalled", key,
 				"wg: peer handshake stalled past warn threshold",
-				"peer", key,
-				"endpoint", p.endpoint,
-				"handshake_age_s", int(age.Seconds()),
-				"threshold_s", int(m.cfg.WarnHandshakeAge.Seconds()),
+				slog.String("peer", key),
+				slog.String("endpoint", p.endpoint),
+				slog.Int("handshake_age_s", int(age.Seconds())),
+				slog.Int("threshold_s", int(m.cfg.WarnHandshakeAge.Seconds())),
 			)
 		default:
 			if m.env.Alerts.Active("wg-peer-stalled", key) {
-				m.env.Alerts.Resolve(now,
+				m.env.Alerts.ResolveContext(
+					ctx,
+					now,
 					"wg-peer-stalled", key,
 					"wg: peer handshake recovered",
-					"peer", key,
-					"endpoint", p.endpoint,
-					"handshake_age_s", int(age.Seconds()),
+					slog.String("peer", key),
+					slog.String("endpoint", p.endpoint),
+					slog.Int("handshake_age_s", int(age.Seconds())),
 				)
 			}
 		}
@@ -345,14 +358,17 @@ func (m *Module) runRemoteWGShow(ctx context.Context, log *slog.Logger) (string,
 		if errors.As(err, &exitErr) {
 			stderr = string(exitErr.Stderr)
 		}
-		log.WarnContext(ctx, "wg: ssh wg show failed",
+		log.WarnContext(
+			ctx, "wg: ssh wg show failed",
 			"duration_ms", dur.Milliseconds(),
 			"err", err,
 			"stderr", stderr,
 		)
 		return "", fmt.Errorf("ssh %s: %w (stderr=%q)", m.cfg.SSHHost, err, stderr)
 	}
-	log.Debug("wg: ssh wg show ok",
+	log.DebugContext(
+		ctx,
+		"wg: ssh wg show ok",
 		"duration_ms", dur.Milliseconds(),
 		"out_bytes", len(out),
 	)
@@ -367,9 +383,9 @@ func (m *Module) runLocalWGShow(ctx context.Context, log *slog.Logger, timeout t
 	defer cancel()
 	var cmd *exec.Cmd
 	if m.cfg.Sudo {
-		cmd = exec.CommandContext(cctx, "sudo", "-n", "wg", "show", m.cfg.Iface, "dump")
+		cmd = execabs.CommandContext(cctx, "sudo", "-n", "wg", "show", m.cfg.Iface, "dump")
 	} else {
-		cmd = exec.CommandContext(cctx, "wg", "show", m.cfg.Iface, "dump")
+		cmd = execabs.CommandContext(cctx, "wg", "show", m.cfg.Iface, "dump")
 	}
 	start := m.clock.Now()
 	out, err := cmd.Output()
@@ -380,7 +396,8 @@ func (m *Module) runLocalWGShow(ctx context.Context, log *slog.Logger, timeout t
 		if errors.As(err, &exitErr) {
 			stderr = string(exitErr.Stderr)
 		}
-		log.WarnContext(ctx, "wg: local wg show failed",
+		log.WarnContext(
+			ctx, "wg: local wg show failed",
 			"duration_ms", dur.Milliseconds(),
 			"iface", m.cfg.Iface,
 			"sudo", m.cfg.Sudo,
@@ -389,7 +406,9 @@ func (m *Module) runLocalWGShow(ctx context.Context, log *slog.Logger, timeout t
 		)
 		return "", fmt.Errorf("local wg show %s: %w (stderr=%q)", m.cfg.Iface, err, stderr)
 	}
-	log.Debug("wg: local wg show ok",
+	log.DebugContext(
+		ctx,
+		"wg: local wg show ok",
 		"duration_ms", dur.Milliseconds(),
 		"iface", m.cfg.Iface,
 		"out_bytes", len(out),

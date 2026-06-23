@@ -110,17 +110,19 @@ func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Ti
 	}
 	age := now.Sub(last)
 	if age > m.cfg.RALostAfter {
-		m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
+		m.env.Alerts.NotifyContext(
+			ctx, now, slog.LevelWarn,
 			"ra-lost", m.cfg.Iface,
 			"ra_lost: no RA observed within threshold",
-			"last_seen", last.Format(time.RFC3339),
-			"age_s", int(age.Seconds()),
-			"threshold_s", int(m.cfg.RALostAfter.Seconds()),
+			slog.String("last_seen", last.Format(time.RFC3339)),
+			slog.Int("age_s", int(age.Seconds())),
+			slog.Int("threshold_s", int(m.cfg.RALostAfter.Seconds())),
 		)
 	} else if m.env.Alerts.Active("ra-lost", m.cfg.Iface) {
-		m.env.Alerts.ResolveContext(ctx, now, "ra-lost", m.cfg.Iface,
+		m.env.Alerts.ResolveContext(
+			ctx, now, "ra-lost", m.cfg.Iface,
 			"ra_lost: RA observed again",
-			"last_seen", last.Format(time.RFC3339),
+			slog.String("last_seen", last.Format(time.RFC3339)),
 		)
 	}
 }

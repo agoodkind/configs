@@ -220,7 +220,8 @@ func (m *Module) OnKernelEvent(
 				ctx, m.clock.Now(), slog.LevelWarn,
 				"slaac-renumber", m.cfg.Iface,
 				"oobv6: SLAAC prefix changed",
-				"old", old, "new", ev.CIDR,
+				slog.String("old", old),
+				slog.String("new", ev.CIDR),
 			)
 		}
 		// Re-run the SLAAC source-rule reconcile so the rule tracks the

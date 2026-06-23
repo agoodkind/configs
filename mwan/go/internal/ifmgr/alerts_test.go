@@ -14,8 +14,8 @@ import (
 // what the wrapped notify.Manager emitted via the journald path. The
 // notify package owns the broader state-change tests under
 // internal/notify/manager_test.go; this file covers only the
-// AlertManager → notify.Notifier adapter surface (variadic ...any tail
-// translation, signature preservation for module callers).
+// AlertManager → notify.Notifier adapter surface (attr passthrough and
+// signature preservation for module callers).
 type captureHandler struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -43,7 +43,7 @@ func (h *captureHandler) snapshot() []slog.Record {
 
 // TestAlertManager_NotifyResolveAdapter checks that the adapter forwards
 // a Notify and a Resolve through to the wrapped Notifier and that both
-// the alert_kind and alert_key attributes survive the variadic-to-Attr
+// the alert_kind and alert_key attributes survive the attr passthrough
 // conversion. The notify package separately tests the state machine, so
 // this test only confirms the bridge.
 func TestAlertManager_NotifyResolveAdapter(t *testing.T) {
@@ -52,7 +52,7 @@ func TestAlertManager_NotifyResolveAdapter(t *testing.T) {
 	a := NewAlertManager(log, AlertConfig{})
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
-	a.Notify(now, slog.LevelWarn, "kind", "key", "broken", "extra", "ctx")
+	a.Notify(now, slog.LevelWarn, "kind", "key", "broken", slog.String("extra", "ctx"))
 	if !a.Active("kind", "key") {
 		t.Fatal("expected Active=true after Notify")
 	}
@@ -75,8 +75,7 @@ func TestAlertManager_NotifyResolveAdapter(t *testing.T) {
 		t.Errorf("resolve message=%q, want %q", got, "RECOVERED: fixed")
 	}
 
-	// Confirm the variadic ...any tail produced an extra=ctx attr on the
-	// notify record. The adapter pairs alternating string/any entries.
+	// Confirm the attr tail produced an extra=ctx attr on the notify record.
 	var sawExtra bool
 	records[0].Attrs(func(a slog.Attr) bool {
 		if a.Key == "extra" && a.Value.String() == "ctx" {
@@ -85,43 +84,43 @@ func TestAlertManager_NotifyResolveAdapter(t *testing.T) {
 		return true
 	})
 	if !sawExtra {
-		t.Error("expected variadic field extra=ctx to survive translation")
+		t.Error("expected attr extra=ctx to survive translation")
 	}
 }
 
-// TestAlertManager_OddVariadicTailDropsDanglingKey confirms the adapter
-// does not panic on an odd-length tail and silently drops the dangling
-// key (mirrors slog's loose-pair tolerance).
-func TestAlertManager_OddVariadicTailDropsDanglingKey(t *testing.T) {
+// TestAlertManager_AttrTailPassesThrough confirms the adapter preserves
+// the provided slog attrs unchanged.
+func TestAlertManager_AttrTailPassesThrough(t *testing.T) {
 	h := &captureHandler{}
 	log := slog.New(h)
 	a := NewAlertManager(log, AlertConfig{})
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
-	a.Notify(now, slog.LevelError, "kind", "key", "msg",
-		"complete_pair_key", "complete_pair_val",
-		"dangling_key",
+	a.Notify(
+		now, slog.LevelError, "kind", "key", "msg",
+		slog.String("complete_pair_key", "complete_pair_val"),
+		slog.Int("count", 7),
 	)
 
 	records := h.snapshot()
 	if len(records) != 1 {
 		t.Fatalf("got %d records, want 1", len(records))
 	}
-	var sawComplete, sawDangling bool
+	var sawComplete, sawCount bool
 	records[0].Attrs(func(a slog.Attr) bool {
 		switch a.Key {
 		case "complete_pair_key":
 			sawComplete = true
-		case "dangling_key":
-			sawDangling = true
+		case "count":
+			sawCount = true
 		}
 		return true
 	})
 	if !sawComplete {
-		t.Error("expected complete pair to survive translation")
+		t.Error("expected complete attr to survive translation")
 	}
-	if sawDangling {
-		t.Error("dangling key should be dropped, not emitted")
+	if !sawCount {
+		t.Error("expected numeric attr to survive translation")
 	}
 }
 

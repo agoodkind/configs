@@ -63,7 +63,8 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	if m.clock == nil {
 		m.clock = internalclock.Real{}
 	}
-	m.log.InfoContext(ctx, "slaac_health: Init",
+	m.log.InfoContext(
+		ctx, "slaac_health: Init",
 		"degraded_after", m.cfg.DegradedAfter.String(),
 		"escalate_after", m.cfg.EscalateAfter.String(),
 		"alert_after", m.cfg.AlertAfter.String(),
@@ -174,11 +175,12 @@ func (m *Module) handleDegraded(ctx context.Context, now time.Time, log *slog.Lo
 
 	switch {
 	case age >= m.cfg.AlertAfter:
-		m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
+		m.env.Alerts.NotifyContext(
+			ctx, now, slog.LevelWarn,
 			"slaac-degraded", m.cfg.Iface,
 			"slaac_health: degraded beyond alert threshold",
-			"age_s", int(age.Seconds()),
-			"alert_after_s", int(m.cfg.AlertAfter.Seconds()),
+			slog.Int("age_s", int(age.Seconds())),
+			slog.Int("alert_after_s", int(m.cfg.AlertAfter.Seconds())),
 		)
 		fallthrough
 	case age >= m.cfg.EscalateAfter:
@@ -212,7 +214,8 @@ func (m *Module) tryToggle(ctx context.Context, now time.Time, log *slog.Logger)
 	}
 	if m.togglesThisHour >= m.cfg.MaxTogglesPerHour {
 		m.mu.Unlock()
-		log.WarnContext(ctx, "slaac_health: throttled (max toggles per hour reached)",
+		log.WarnContext(
+			ctx, "slaac_health: throttled (max toggles per hour reached)",
 			"toggles", m.togglesThisHour,
 			"max", m.cfg.MaxTogglesPerHour,
 		)
