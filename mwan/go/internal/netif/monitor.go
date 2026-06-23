@@ -39,8 +39,11 @@ const (
 	EvLinkDown
 )
 
+// String returns the stable log-friendly name of the event kind.
 func (k EventKind) String() string {
 	switch k {
+	case EvUnknown:
+		return "unknown"
 	case EvRouteAdded:
 		return "route-added"
 	case EvRouteDeleted:
@@ -53,9 +56,8 @@ func (k EventKind) String() string {
 		return "link-up"
 	case EvLinkDown:
 		return "link-down"
-	default:
-		return "unknown"
 	}
+	return "unknown"
 }
 
 // Event is one parsed netlink event the daemon should react to. Mirrors
@@ -126,6 +128,8 @@ func NewMonitor(
 		log:     mlog,
 		Events:  make(chan Event, 64),
 		done:    make(chan struct{}),
+		doneMu:  sync.Mutex{},
+		closed:  false,
 		ifIndex: idx,
 	}
 
@@ -168,7 +172,7 @@ func (m *Monitor) shutdownOnCtx(ctx context.Context) {
 	}
 	m.closed = true
 	close(m.done)
-	m.log.Debug("monitor: ctx cancelled, done closed; subscribe goroutines will exit")
+	m.log.DebugContext(ctx, "monitor: ctx cancelled, done closed; subscribe goroutines will exit")
 }
 
 // subscribeAddr runs the netlink address subscription, translating each
@@ -318,11 +322,11 @@ func (m *Monitor) emit(ctx context.Context, ev Event) {
 // EvUnknown for events on other interfaces or with empty CIDR.
 func (m *Monitor) addrUpdateToEvent(u netlink.AddrUpdate) Event {
 	if m.ifIndex != 0 && u.LinkIndex != m.ifIndex {
-		return Event{Kind: EvUnknown}
+		return unknownEvent()
 	}
 	cidr := u.LinkAddress.String()
 	if cidr == "<nil>" || cidr == "" {
-		return Event{Kind: EvUnknown}
+		return unknownEvent()
 	}
 	fam := "inet"
 	if u.LinkAddress.IP.To4() == nil {
@@ -336,6 +340,8 @@ func (m *Monitor) addrUpdateToEvent(u netlink.AddrUpdate) Event {
 		Kind:   kind,
 		Family: fam,
 		Iface:  m.cfg.Iface,
+		Dest:   "",
+		Via:    "",
 		CIDR:   cidr,
 	}
 }
@@ -345,7 +351,7 @@ func (m *Monitor) addrUpdateToEvent(u netlink.AddrUpdate) Event {
 func (m *Monitor) routeUpdateToEvent(u netlink.RouteUpdate) Event {
 	r := u.Route
 	if m.ifIndex != 0 && r.LinkIndex != m.ifIndex {
-		return Event{Kind: EvUnknown}
+		return unknownEvent()
 	}
 	famConst := r.Family
 	if famConst == 0 {
@@ -362,21 +368,21 @@ func (m *Monitor) routeUpdateToEvent(u netlink.RouteUpdate) Event {
 		}
 	}
 	if !isDefaultRoute(r, famConst) {
-		return Event{Kind: EvUnknown}
+		return unknownEvent()
 	}
 	fam := "inet6"
 	if famConst == unix.AF_INET {
 		fam = "inet"
 	}
 
-	kind := EvRouteAdded
+	var kind EventKind
 	switch u.Type {
 	case unix.RTM_DELROUTE:
 		kind = EvRouteDeleted
 	case unix.RTM_NEWROUTE:
 		kind = EvRouteAdded
 	default:
-		return Event{Kind: EvUnknown}
+		return unknownEvent()
 	}
 
 	via := ""
@@ -389,6 +395,7 @@ func (m *Monitor) routeUpdateToEvent(u netlink.RouteUpdate) Event {
 		Iface:  m.cfg.Iface,
 		Dest:   "default",
 		Via:    via,
+		CIDR:   "",
 	}
 }
 
@@ -397,29 +404,40 @@ func (m *Monitor) routeUpdateToEvent(u netlink.RouteUpdate) Event {
 // many LinkUpdates for unrelated state bits; we suppress noise.
 func (m *Monitor) linkUpdateToEvent(u netlink.LinkUpdate) Event {
 	if m.ifIndex != 0 && int(u.Index) != m.ifIndex {
-		return Event{Kind: EvUnknown}
+		return unknownEvent()
 	}
 	switch u.Header.Type {
 	case unix.RTM_NEWLINK:
 		// IFF_UP set means administratively up. We use OperState for "really up".
 		if u.Attrs() == nil {
-			return Event{Kind: EvUnknown}
+			return unknownEvent()
 		}
 		switch u.Attrs().OperState {
 		case netlink.OperUp, netlink.OperUnknown:
-			return Event{Kind: EvLinkUp, Iface: m.cfg.Iface}
+			return Event{Kind: EvLinkUp, Family: "", Iface: m.cfg.Iface, Dest: "", Via: "", CIDR: ""}
 		case netlink.OperDown, netlink.OperLowerLayerDown, netlink.OperNotPresent:
-			return Event{Kind: EvLinkDown, Iface: m.cfg.Iface}
+			return Event{Kind: EvLinkDown, Family: "", Iface: m.cfg.Iface, Dest: "", Via: "", CIDR: ""}
 		}
 	case unix.RTM_DELLINK:
-		return Event{Kind: EvLinkDown, Iface: m.cfg.Iface}
+		return Event{Kind: EvLinkDown, Family: "", Iface: m.cfg.Iface, Dest: "", Via: "", CIDR: ""}
 	}
-	return Event{Kind: EvUnknown}
+	return unknownEvent()
 }
 
 // IfIndex returns the netlink index of the watched interface (0 if unknown).
 // Exposed for diagnostic logging by callers.
 func (m *Monitor) IfIndex() int { return m.ifIndex }
+
+func unknownEvent() Event {
+	return Event{
+		Kind:   EvUnknown,
+		Family: "",
+		Iface:  "",
+		Dest:   "",
+		Via:    "",
+		CIDR:   "",
+	}
+}
 
 // sleepOrCancel sleeps for d or until ctx is cancelled, whichever first.
 // Used by dhcp.go's backoff loop. Lives here (not in dhcp.go) so the
