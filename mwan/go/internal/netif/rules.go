@@ -59,7 +59,7 @@ func ReconcileRules(
 	desired []DesiredRule,
 ) error {
 	log = log.With("component", "rules")
-	log.Debug("rules: reconcile entry", "desired_count", len(desired))
+	log.DebugContext(ctx, "rules: reconcile entry", "desired_count", len(desired))
 
 	// Group desired by family so we list each family at most once.
 	byFamily := map[string][]DesiredRule{}
@@ -73,13 +73,14 @@ func ReconcileRules(
 
 	for fam, want := range byFamily {
 		flog := log.With("family", fam)
-		flog.Debug("rules: starting family reconcile", "want_count", len(want))
+		flog.DebugContext(ctx, "rules: starting family reconcile", "want_count", len(want))
 
 		current, err := listRulesNetlink(flog, fam)
 		if err != nil {
+			flog.WarnContext(ctx, "rules: listRulesNetlink failed", "err", err)
 			return fmt.Errorf("list %s rules: %w", fam, err)
 		}
-		flog.Debug("rules: current snapshot",
+		flog.DebugContext(ctx, "rules: current snapshot",
 			"count", len(current), "rules", current)
 
 		byPrio := map[int]CurrentRule{}
@@ -91,27 +92,31 @@ func ReconcileRules(
 			cur, exists := byPrio[w.Priority]
 			matches := exists && rulesMatch(cur, w)
 			if matches {
-				flog.Debug("rules: already present",
+				flog.DebugContext(ctx, "rules: already present",
 					"priority", w.Priority, "table_id", w.TableID)
 				continue
 			}
 			if exists {
-				flog.Info("rules: replacing rule at priority",
+				flog.DebugContext(ctx, "rules: replacing rule at priority",
 					"priority", w.Priority, "old", cur, "new", w)
 				if err := delRuleNetlink(ctx, flog, fam, cur); err != nil {
+					flog.WarnContext(ctx, "rules: delRuleNetlink failed",
+						"priority", w.Priority, "err", err)
 					return fmt.Errorf("del rule prio=%d: %w", w.Priority, err)
 				}
 			} else {
-				flog.Info("rules: adding new rule",
+				flog.DebugContext(ctx, "rules: adding new rule",
 					"priority", w.Priority,
 					"from", w.From, "uidrange", w.UIDRange, "table_id", w.TableID)
 			}
 			if err := addRuleNetlink(ctx, flog, fam, w); err != nil {
+				flog.WarnContext(ctx, "rules: addRuleNetlink failed",
+					"priority", w.Priority, "err", err)
 				return fmt.Errorf("add rule prio=%d: %w", w.Priority, err)
 			}
 		}
 	}
-	log.Debug("rules: reconcile complete")
+	log.DebugContext(ctx, "rules: reconcile complete")
 	return nil
 }
 
@@ -127,6 +132,7 @@ func RemoveRuleAtPriority(
 		"family", family, "priority", priority)
 	current, err := listRulesNetlink(log, family)
 	if err != nil {
+		log.WarnContext(ctx, "rules: listRulesNetlink failed", "err", err)
 		return fmt.Errorf("list %s rules: %w", family, err)
 	}
 	removed := 0
@@ -134,13 +140,14 @@ func RemoveRuleAtPriority(
 		if c.Priority != priority {
 			continue
 		}
-		log.Info("rules: removing rule at priority", "rule", c)
+		log.DebugContext(ctx, "rules: removing rule at priority", "rule", c)
 		if err := delRuleNetlink(ctx, log, family, c); err != nil {
+			log.WarnContext(ctx, "rules: delRuleNetlink failed", "err", err)
 			return fmt.Errorf("del rule prio=%d: %w", priority, err)
 		}
 		removed++
 	}
-	log.Debug("rules: remove-at-priority done", "removed", removed)
+	log.DebugContext(ctx, "rules: remove-at-priority done", "removed", removed)
 	return nil
 }
 
@@ -173,9 +180,9 @@ func rulesMatch(c CurrentRule, w DesiredRule) bool {
 func listRulesNetlink(log *slog.Logger, family string) ([]CurrentRule, error) {
 	famConst := familyToNetlink(family)
 
-	start := time.Now()
+	startTime := realClock{}.Now()
 	rules, err := netlink.RuleList(famConst)
-	dur := time.Since(start)
+	dur := realClock{}.Now().Sub(startTime)
 	log.Debug("rules: RuleList",
 		"family", family,
 		"count", len(rules),
@@ -315,7 +322,7 @@ func buildNetlinkRule(family string, w DesiredRule) (*netlink.Rule, error) {
 	if w.From != "" {
 		ipnet, err := parseSelector(family, w.From)
 		if err != nil {
-			return nil, fmt.Errorf("parse from %q: %w", w.From, err)
+			return nil, err
 		}
 		r.Src = ipnet
 	}
@@ -323,7 +330,7 @@ func buildNetlinkRule(family string, w DesiredRule) (*netlink.Rule, error) {
 	if w.UIDRange != "" {
 		start, end, err := parseUIDRange(w.UIDRange)
 		if err != nil {
-			return nil, fmt.Errorf("parse uidrange %q: %w", w.UIDRange, err)
+			return nil, err
 		}
 		r.UIDRange = netlink.NewRuleUIDRange(uint32(start), uint32(end))
 	}
