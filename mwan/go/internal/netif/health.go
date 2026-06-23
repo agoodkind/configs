@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 )
@@ -31,6 +32,7 @@ func ReadHealthState(path string) (HealthStates, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return HealthStates{}, nil
 		}
+		slog.Error("netif: ReadHealthState open failed", "path", path, "err", err)
 		return nil, fmt.Errorf("open health state %q: %w", path, err)
 	}
 	defer func() {
@@ -51,6 +53,7 @@ func ReadHealthState(path string) (HealthStates, error) {
 		states[strings.TrimSpace(wanName)] = strings.TrimSpace(state)
 	}
 	if err := scanner.Err(); err != nil {
+		slog.Error("netif: ReadHealthState scan failed", "path", path, "err", err)
 		return nil, fmt.Errorf("scan health state %q: %w", path, err)
 	}
 	return states, nil
