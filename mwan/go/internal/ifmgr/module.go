@@ -4,7 +4,6 @@ package ifmgr
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
@@ -54,10 +53,12 @@ type Module interface {
 	EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.Time)
 }
 
+// ModuleConfig is the typed runtime config surface each module constructor reads.
 type ModuleConfig interface {
 	ModuleConfigName() string
 }
 
+// ModuleConfigSet maps module names to their typed runtime configs.
 type ModuleConfigSet map[string]ModuleConfig
 
 // Constructor builds a Module from its typed runtime config. Config-file
@@ -113,7 +114,9 @@ func Register(name string, ctor Constructor) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	if _, exists := registry[name]; exists {
-		panic(fmt.Sprintf("ifmgr: duplicate module registration: %q", name))
+		slog.Default().Error("ifmgr: duplicate module registration",
+			"module", name)
+		return
 	}
 	registry[name] = ctor
 }
