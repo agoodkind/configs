@@ -19,7 +19,7 @@
 //   - github.com/mdlayher/ndp for Router Solicitation/Advertisement
 //   - github.com/insomniacslk/dhcp/dhcpv4/nclient4 for DHCPv4 (DORA + renew)
 //   - golang.org/x/net/icmp + ipv6 for connectivity probes
-//   - os.ReadFile/WriteFile on /proc/sys for sysctl
+//   - [os.ReadFile] and [os.WriteFile] on /proc/sys for sysctl
 //
 // No /sbin/ip, rdisc6, dhclient, sysctl, or ping shellouts. Capabilities
 // required at the systemd unit level: CAP_NET_ADMIN (route/rule/addr
@@ -27,7 +27,7 @@
 // writes additionally need ReadWritePaths=/proc/sys/net/... or
 // ProtectKernelTunables=false.
 //
-// All implementations log every boundary at slog.LevelDebug with op name,
+// All implementations log every boundary at [slog.LevelDebug] with op name,
 // parameters, duration, and error.
 //
 // Package is Linux-only.

@@ -66,11 +66,11 @@ func TestRuleMarkAndIifRoundTrip(t *testing.T) {
 	}
 }
 
-func TestParseUIDRange(t *testing.T) {
+func TestParseUIDRangeUint32(t *testing.T) {
 	cases := []struct {
 		in      string
-		wantLo  int
-		wantHi  int
+		wantLo  uint32
+		wantHi  uint32
 		wantErr bool
 	}{
 		{"997-997", 997, 997, false},
@@ -81,7 +81,7 @@ func TestParseUIDRange(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
-			lo, hi, err := parseUIDRange(tc.in)
+			lo, hi, err := parseUIDRangeUint32(tc.in)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err=%v wantErr=%v", err, tc.wantErr)
 			}
