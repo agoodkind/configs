@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
@@ -26,6 +27,7 @@ type Module struct {
 	cfg Config
 	env *ifmgr.Env
 	log *slog.Logger
+	clock internalclock.Clock
 
 	mu          sync.Mutex
 	lastRAGW    string    // last RA-learned default gateway in main table
@@ -59,24 +61,31 @@ type Config struct {
 	SLAACRulePriority int
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "oobv6" }
 
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "oobv6" }
 
 // Init implements ifmgr.Module. Captures env and validates config.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "oobv6", "iface", m.cfg.Iface)
-	m.log.Info("oobv6: Init", "oob_addr", m.cfg.OOBAddr, "oob_table_id", m.cfg.OOBTableID)
+	m.log.InfoContext(ctx, "oobv6: Init", "oob_addr", m.cfg.OOBAddr, "oob_table_id", m.cfg.OOBTableID)
 	if m.cfg.Iface == "" {
+		m.log.WarnContext(ctx, "oobv6: missing iface")
 		return fmt.Errorf("oobv6: iface is required")
 	}
 	if m.cfg.OOBAddr == "" {
+		m.log.WarnContext(ctx, "oobv6: missing oob_addr")
 		return fmt.Errorf("oobv6: oob_addr is required")
 	}
 	if m.cfg.OOBTableID <= 0 {
+		m.log.WarnContext(ctx, "oobv6: invalid oob_table_id", "oob_table_id", m.cfg.OOBTableID)
 		return fmt.Errorf("oobv6: oob_table_id must be > 0")
+	}
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
 	}
 	return nil
 }
@@ -84,35 +93,45 @@ func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
 // Reconcile implements ifmgr.Module. Idempotent.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	log = log.With("op", "reconcile")
-	log.Debug("oobv6: Reconcile entry")
+	log.DebugContext(ctx, "oobv6: Reconcile entry")
 
 	// Ensure the static OOB v6 address is present.
 	if err := netif.ReconcileAddrs(ctx, log, m.cfg.Iface, []netif.AddrSpec{
 		{CIDR: m.cfg.OOBAddr, Family: "inet6"},
 	}); err != nil {
+		log.WarnContext(ctx, "oobv6: ReconcileAddrs failed", "err", err)
 		return fmt.Errorf("reconcile OOB v6 addr: %w", err)
 	}
 
 	// Find the RA-learned default in the main table.
 	cur, err := netif.FindMainRADefault(ctx, m.cfg.Iface)
 	if err != nil {
+		log.WarnContext(ctx, "oobv6: FindMainRADefault failed", "err", err)
 		return fmt.Errorf("find main RA default: %w", err)
 	}
 
 	// If absent and we have an RA client, send a Router Solicitation to nudge.
 	if cur == nil && m.env.RA != nil {
-		log.Debug("oobv6: no RA default in main, sending Router Solicitation")
+		log.DebugContext(ctx, "oobv6: no RA default in main, sending Router Solicitation")
 		ra, sErr := m.env.RA.SolicitRA(ctx, 5*time.Second)
-		log.Debug("oobv6: RS result", "got_ra", ra != nil, "err", sErr)
+		log.DebugContext(ctx, "oobv6: RS result", "got_ra", ra != nil, "err", sErr)
 		// Re-check after solicit; brief delay to let kernel install RA.
-		time.Sleep(500 * time.Millisecond)
+		timer := time.NewTimer(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 		cur, err = netif.FindMainRADefault(ctx, m.cfg.Iface)
 		if err != nil {
+			log.WarnContext(ctx, "oobv6: FindMainRADefault after solicit failed", "err", err)
 			return fmt.Errorf("find main RA default after solicit: %w", err)
 		}
 	}
 
 	if err := m.syncOOBDefault(ctx, log, cur); err != nil {
+		log.WarnContext(ctx, "oobv6: syncOOBDefault failed", "err", err)
 		return err
 	}
 
@@ -139,19 +158,20 @@ func (m *Module) syncOOBDefault(
 	}
 
 	if err := netif.ReconcileTableDefault(ctx, log, want); err != nil {
+		log.WarnContext(ctx, "oobv6: ReconcileTableDefault failed", "err", err)
 		return fmt.Errorf("reconcile oob default: %w", err)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if cur == nil {
-		log.Debug("oobv6: no RA default; oob table cleared")
+		log.DebugContext(ctx, "oobv6: no RA default; oob table cleared")
 	} else {
 		if m.lastRAGW != "" && m.lastRAGW != cur.Via {
-			log.Info("oobv6: RA gateway changed", "old", m.lastRAGW, "new", cur.Via)
+			log.InfoContext(ctx, "oobv6: RA gateway changed", "old", m.lastRAGW, "new", cur.Via)
 		}
 		m.lastRAGW = cur.Via
-		m.lastRASeen = time.Now()
+		m.lastRASeen = m.clock.Now()
 	}
 	return nil
 }
@@ -170,9 +190,10 @@ func (m *Module) OnKernelEvent(
 			return nil
 		}
 		log = log.With("op", "route-event", "kind", ev.Kind.String(), "via", ev.Via)
-		log.Debug("oobv6: route event for mbrains default")
+		log.DebugContext(ctx, "oobv6: route event for mbrains default")
 		cur, err := netif.FindMainRADefault(ctx, m.cfg.Iface)
 		if err != nil {
+			log.WarnContext(ctx, "oobv6: FindMainRADefault after route event failed", "err", err)
 			return fmt.Errorf("find main RA default after event: %w", err)
 		}
 		return m.syncOOBDefault(ctx, log, cur)
@@ -212,9 +233,10 @@ func (m *Module) OnKernelEvent(
 		// A non-OOB SLAAC address went away. The rule may now point at a
 		// stale source; let reconcile remove it (or replace if another
 		// SLAAC is still present).
-		log.Debug("oobv6: SLAAC addr deleted, re-evaluating src rule",
+		log.DebugContext(ctx, "oobv6: SLAAC addr deleted, re-evaluating src rule",
 			"addr", ev.CIDR)
 		if err := m.reconcileSLAACSrcRule(ctx, log); err != nil {
+			log.WarnContext(ctx, "oobv6: reconcileSLAACSrcRule on AddrDeleted failed", "err", err)
 			return fmt.Errorf("reconcile slaac src rule on AddrDeleted: %w", err)
 		}
 	}
@@ -254,7 +276,7 @@ func (m *Module) LastRASeen() time.Time {
 //   - SLAAC present, different address    -> remove old, install new
 func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) error {
 	if !m.cfg.ManageSLAACRule {
-		log.Debug("oobv6: SLAAC source-rule management disabled")
+		log.DebugContext(ctx, "oobv6: SLAAC source-rule management disabled")
 		return nil
 	}
 
@@ -269,7 +291,7 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 	installed := m.installedSLAACAddr
 	m.mu.Unlock()
 
-	log.Debug("oobv6: SLAAC src rule state",
+	log.DebugContext(ctx, "oobv6: SLAAC src rule state",
 		"installed", installed, "current", current,
 		"priority", m.cfg.SLAACRulePriority, "table_id", m.cfg.OOBTableID)
 
@@ -282,7 +304,7 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 	// first (covers stale-installed cleanup and the renumber case), then
 	// install the new one if we have a current SLAAC.
 	if installed != "" || current != "" {
-		log.Info("oobv6: SLAAC source-rule update",
+		log.InfoContext(ctx, "oobv6: SLAAC source-rule update",
 			"old", installed, "new", current,
 			"priority", m.cfg.SLAACRulePriority)
 	}
@@ -291,6 +313,7 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 		if err := netif.RemoveRuleAtPriority(
 			ctx, log, "inet6", m.cfg.SLAACRulePriority,
 		); err != nil {
+			log.WarnContext(ctx, "oobv6: RemoveRuleAtPriority failed", "err", err)
 			return fmt.Errorf("remove stale SLAAC src rule: %w", err)
 		}
 	}
@@ -303,6 +326,7 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 			TableID:  m.cfg.OOBTableID,
 		}}
 		if err := netif.ReconcileRules(ctx, log, desired); err != nil {
+			log.WarnContext(ctx, "oobv6: ReconcileRules failed", "err", err)
 			return fmt.Errorf("install SLAAC src rule: %w", err)
 		}
 	}
@@ -374,6 +398,9 @@ func (m *Module) findCurrentGlobalSLAAC(
 // disable the rule entirely.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
+		Iface:             "",
+		OOBAddr:           "",
+		OOBTableID:        0,
 		ManageSLAACRule:   true,
 		SLAACRulePriority: 7,
 	}
@@ -387,7 +414,17 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	if c.SLAACRulePriority <= 0 || c.SLAACRulePriority >= 32766 {
 		return nil, fmt.Errorf("oobv6: slaac_rule_priority out of range (1..32765): %d", c.SLAACRulePriority)
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:                c,
+		env:                nil,
+		log:                nil,
+		clock:              nil,
+		mu:                 sync.Mutex{},
+		lastRAGW:           "",
+		lastRASeen:         time.Time{},
+		lastSLAACPx:        "",
+		installedSLAACAddr: "",
+	}, nil
 }
 
 func init() { ifmgr.Register("oobv6", New) }
