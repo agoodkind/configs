@@ -37,12 +37,18 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 
 	f, err := os.OpenFile(path, os.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
+		log.Warn("opnsensesvc: open serial failed",
+			slog.String("path", path),
+			slog.Any("err", err))
 		return nil, fmt.Errorf("OpenVirtioSerial: open %s: %w", path, err)
 	}
 
 	t, err := unix.IoctlGetTermios(int(f.Fd()), unix.TIOCGETA)
 	if err != nil {
 		_ = f.Close()
+		log.Warn("opnsensesvc: TIOCGETA failed",
+			slog.String("path", path),
+			slog.Any("err", err))
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCGETA %s: %w", path, err)
 	}
 
@@ -72,6 +78,9 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 
 	if err := unix.IoctlSetTermios(int(f.Fd()), unix.TIOCSETA, t); err != nil {
 		_ = f.Close()
+		log.Warn("opnsensesvc: TIOCSETA failed",
+			slog.String("path", path),
+			slog.Any("err", err))
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCSETA %s: %w", path, err)
 	}
 
@@ -84,6 +93,9 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 	const ttyReadQueue = 1
 	if err := unix.IoctlSetPointerInt(int(f.Fd()), unix.TIOCFLUSH, ttyReadQueue); err != nil {
 		_ = f.Close()
+		log.Warn("opnsensesvc: TIOCFLUSH failed",
+			slog.String("path", path),
+			slog.Any("err", err))
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCFLUSH %s: %w", path, err)
 	}
 
@@ -93,6 +105,9 @@ func OpenVirtioSerial(path string, baud uint32, log *slog.Logger) (io.ReadWriteC
 	applied, err := unix.IoctlGetTermios(int(f.Fd()), unix.TIOCGETA)
 	if err != nil {
 		_ = f.Close()
+		log.Warn("opnsensesvc: TIOCGETA readback failed",
+			slog.String("path", path),
+			slog.Any("err", err))
 		return nil, fmt.Errorf("OpenVirtioSerial: TIOCGETA readback %s: %w", path, err)
 	}
 
