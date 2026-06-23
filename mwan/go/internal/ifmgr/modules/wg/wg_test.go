@@ -312,8 +312,8 @@ func TestInitReturnsDisabledSentinelWhenConfigNil(t *testing.T) {
 		t.Fatalf("New(nil) returned error: %v", err)
 	}
 	env := &ifmgr.Env{
-		Iface:  "lo",
-		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Iface: "lo",
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Alerts: ifmgr.WrapNotifier(notify.FromConfig(
 			&config.Config{},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -341,8 +341,8 @@ func TestInitDoesNotDisableOnDefaultLocalExecConfig(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 	env := &ifmgr.Env{
-		Iface:  "lo",
-		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Iface: "lo",
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Alerts: ifmgr.WrapNotifier(notify.FromConfig(
 			&config.Config{},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),

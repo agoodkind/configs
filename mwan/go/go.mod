@@ -13,8 +13,8 @@ require (
 	github.com/mdlayher/vsock v1.2.1
 	github.com/osrg/gobgp/v4 v4.5.0
 	github.com/vishvananda/netlink v1.3.1
-	golang.org/x/net v0.54.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/net v0.55.0
+	golang.org/x/sys v0.45.0
 	goodkind.io/gklog v0.2.1
 	goodkind.io/send-email v0.0.0-20260604011720-40a2ede56cd9
 	google.golang.org/grpc v1.81.0

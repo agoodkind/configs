@@ -158,6 +158,9 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 
 // Reconcile fetches the current peer table from the remote and updates state.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
+	}
 	now := m.clock.Now()
 	runner := m.runWGShow
 	if runner == nil {
