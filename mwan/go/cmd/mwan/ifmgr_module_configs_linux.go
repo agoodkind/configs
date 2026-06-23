@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"time"
 
@@ -35,9 +36,11 @@ func buildIfMgrModuleConfigs(
 	modules config.IfMgrModulesSection,
 	role string,
 ) (ifmgr.ModuleConfigSet, error) {
+	logger := slog.Default().With("component", "ifmgr")
 	names, err := ifmgr.ModulesForRole(role)
 	if err != nil {
-		return nil, err
+		logger.Warn("ifmgr: ModulesForRole failed", "role", role, "err", err)
+		return nil, fmt.Errorf("ModulesForRole(%q): %w", role, err)
 	}
 	want := make(map[string]bool, len(names))
 	for _, name := range names {
@@ -55,10 +58,7 @@ func buildIfMgrModuleConfigs(
 	}
 
 	if want["oobv6"] {
-		oobV6Config, err := buildOOBV6Config(modules.OOBV6)
-		if err != nil {
-			return nil, err
-		}
+		oobV6Config := buildOOBV6Config(modules.OOBV6)
 		moduleConfigs["oobv6"] = oobV6Config
 	}
 
@@ -143,6 +143,9 @@ func buildWGConfig(section *config.IfMgrWGHealthSection) (ifmgr.ModuleConfig, er
 		return nil, nil
 	}
 	cfg := wg.Config{
+		SSHHost:           "",
+		SSHPort:           0,
+		IdentityFile:      "",
 		Iface:             "wg0",
 		Sudo:              false,
 		WarnHandshakeAge:  180 * time.Second,
@@ -191,13 +194,16 @@ func buildWGConfig(section *config.IfMgrWGHealthSection) (ifmgr.ModuleConfig, er
 	return cfg, nil
 }
 
-func buildOOBV6Config(section *config.IfMgrOOBV6Section) (oobv6.Config, error) {
+func buildOOBV6Config(section *config.IfMgrOOBV6Section) oobv6.Config {
 	cfg := oobv6.Config{
+		Iface:             "",
+		OOBAddr:           "",
+		OOBTableID:        0,
 		ManageSLAACRule:   true,
 		SLAACRulePriority: 7,
 	}
 	if section == nil {
-		return cfg, nil
+		return cfg
 	}
 	cfg.Iface = section.Iface
 	cfg.OOBAddr = section.OOBAddr
@@ -208,11 +214,14 @@ func buildOOBV6Config(section *config.IfMgrOOBV6Section) (oobv6.Config, error) {
 	if section.SLAACRulePriority != nil {
 		cfg.SLAACRulePriority = *section.SLAACRulePriority
 	}
-	return cfg, nil
+	return cfg
 }
 
 func buildOOBV4Config(section *config.IfMgrOOBV4Section) oobv4.Config {
-	cfg := oobv4.Config{}
+	cfg := oobv4.Config{
+		Iface:      "",
+		OOBTableID: 0,
+	}
 	if section == nil {
 		return cfg
 	}
@@ -223,7 +232,12 @@ func buildOOBV4Config(section *config.IfMgrOOBV4Section) oobv4.Config {
 
 func buildSLAACHealthConfig(section *config.IfMgrSLAACHealthSection) (slaachealth.Config, error) {
 	cfg := slaachealth.Config{
+		Iface:             "",
+		DegradedAfter:     0,
+		EscalateAfter:     0,
+		AlertAfter:        0,
 		MaxTogglesPerHour: 4,
+		ProbeTargetsV6:    nil,
 		ProbeTimeout:      2 * time.Second,
 	}
 	if section == nil {
@@ -278,7 +292,10 @@ func buildSLAACHealthConfig(section *config.IfMgrSLAACHealthSection) (slaachealt
 }
 
 func buildRALostConfig(section *config.IfMgrRALostSection) (ralost.Config, error) {
-	cfg := ralost.Config{RALostAfter: 5 * time.Minute}
+	cfg := ralost.Config{
+		Iface:       "",
+		RALostAfter: 5 * time.Minute,
+	}
 	if section == nil {
 		return cfg, nil
 	}
@@ -299,6 +316,8 @@ func buildConnectivityProbeConfig(
 	section *config.IfMgrConnectivityProbeSection,
 ) (connprobe.Config, error) {
 	cfg := connprobe.Config{
+		Iface:          "",
+		TargetsV6:      nil,
 		Timeout:        2 * time.Second,
 		UnhealthyAfter: 10 * time.Second,
 	}
@@ -335,7 +354,10 @@ func buildConnectivityProbeConfig(
 }
 
 func buildBridgeProbeConfig(section *config.IfMgrBridgeProbeSection) (bridgeprobe.Config, error) {
-	cfg := bridgeprobe.Config{NoSignalAlertAfter: 120 * time.Second}
+	cfg := bridgeprobe.Config{
+		Iface:              "",
+		NoSignalAlertAfter: 120 * time.Second,
+	}
 	if section == nil {
 		return cfg, nil
 	}
@@ -353,7 +375,11 @@ func buildBridgeProbeConfig(section *config.IfMgrBridgeProbeSection) (bridgeprob
 }
 
 func buildCloudflaredTapConfig(section *config.IfMgrCloudflaredTapSection) cloudflaredtap.Config {
-	cfg := cloudflaredtap.Config{}
+	cfg := cloudflaredtap.Config{
+		Unit:              "",
+		DowngradePatterns: nil,
+		JournalctlPath:    "",
+	}
 	if section == nil {
 		return cfg
 	}
@@ -364,7 +390,9 @@ func buildCloudflaredTapConfig(section *config.IfMgrCloudflaredTapSection) cloud
 }
 
 func buildMainV4Config(section *config.IfMgrMainV4Section) mainv4.Config {
-	cfg := mainv4.Config{}
+	cfg := mainv4.Config{
+		Iface: "",
+	}
 	if section == nil {
 		return cfg
 	}
@@ -375,7 +403,10 @@ func buildMainV4Config(section *config.IfMgrMainV4Section) mainv4.Config {
 func buildPolicyRulesConfig(
 	section *config.IfMgrPolicyRulesSection,
 ) (policyrules.Config, error) {
-	cfg := policyrules.Config{}
+	logger := slog.Default().With("component", "ifmgr")
+	cfg := policyrules.Config{
+		Rules: nil,
+	}
 	if section == nil {
 		return cfg, nil
 	}
@@ -383,6 +414,8 @@ func buildPolicyRulesConfig(
 	for i, rule := range section.Rule {
 		uidRange, err := buildPolicyRuleUIDRange(rule, lookupUserID)
 		if err != nil {
+			logger.Warn("ifmgr: build policy rule uid range failed",
+				"index", i, "err", err)
 			return policyrules.Config{}, fmt.Errorf(
 				"policy_rules.rule[%d]: %w", i, err,
 			)
@@ -391,6 +424,8 @@ func buildPolicyRulesConfig(
 			Family:   rule.Family,
 			Priority: rule.Priority,
 			From:     rule.From,
+			Mark:     0,
+			IifName:  "",
 			UIDRange: uidRange,
 			Table:    rule.Table,
 			TableID:  rule.TableID,
@@ -404,6 +439,7 @@ func buildHostIPv6PolicyConfig(
 ) (hostipv6policy.Config, error) {
 	cfg := hostipv6policy.Config{
 		MissingIfaceGracePeriod: 2 * time.Minute,
+		Policies:                nil,
 	}
 	if section == nil {
 		return cfg, nil
@@ -434,7 +470,16 @@ func buildHostIPv6PolicyConfig(
 func buildWANRoutesConfig(
 	section *config.IfMgrWANRoutesSection,
 ) (wanroutes.Config, error) {
-	cfg := wanroutes.Config{}
+	cfg := wanroutes.Config{
+		InternalIface:   "",
+		OpnsenseWanLL:   "",
+		OpnsenseEdgeV6:  "",
+		InternalPrefix:  "",
+		InternalNetV4:   "",
+		HealthStateFile: "",
+		ShadowMode:      false,
+		WANs:            nil,
+	}
 	if section == nil {
 		return cfg, nil
 	}
@@ -451,6 +496,13 @@ func buildWANRoutesConfig(
 			return wanroutes.Config{}, fmt.Errorf(
 				"wan_routes.wan[%d].fw_mark must be >= 0",
 				i,
+			)
+		}
+		if wan.FwMark > int(^uint32(0)) {
+			return wanroutes.Config{}, fmt.Errorf(
+				"wan_routes.wan[%d].fw_mark %d exceeds uint32",
+				i,
+				wan.FwMark,
 			)
 		}
 		cfg.WANs = append(cfg.WANs, wanroutes.WAN{
@@ -472,21 +524,27 @@ func parseDurationSetting(
 	defaultValue time.Duration,
 	fieldName string,
 ) (time.Duration, error) {
+	logger := slog.Default().With("component", "ifmgr")
 	if raw == "" {
 		return defaultValue, nil
 	}
 	durationValue, err := time.ParseDuration(raw)
 	if err != nil {
+		logger.Warn("ifmgr: parse duration setting failed",
+			"field", fieldName, "value", raw, "err", err)
 		return 0, fmt.Errorf("%s %q: %w", fieldName, raw, err)
 	}
 	return durationValue, nil
 }
 
 func parseAddrList(values []string, fieldName string) ([]netip.Addr, error) {
+	logger := slog.Default().With("component", "ifmgr")
 	addresses := make([]netip.Addr, 0, len(values))
 	for i, value := range values {
 		address, err := netip.ParseAddr(value)
 		if err != nil {
+			logger.Warn("ifmgr: parse address failed",
+				"field", fieldName, "index", i, "value", value, "err", err)
 			return nil, fmt.Errorf("%s[%d] %q: %w", fieldName, i, value, err)
 		}
 		addresses = append(addresses, address)
