@@ -34,6 +34,27 @@ func WrapNotifier(n notify.Notifier) *AlertManager {
 	return &AlertManager{n: n}
 }
 
+// NotifyContext emits an alert with the caller's context.
+func (a *AlertManager) NotifyContext(
+	ctx context.Context,
+	now time.Time,
+	level slog.Level,
+	kind,
+	key,
+	msg string,
+	fields ...any,
+) {
+	a.n.Notify(ctx, notify.Event{
+		Now:        now,
+		Level:      level,
+		Kind:       kind,
+		Key:        key,
+		Message:    msg,
+		Fields:     fieldsToAttrs(fields),
+		IsRecovery: false,
+	})
+}
+
 // Notify emits an alert at the given level via the wrapped Notifier.
 // The fields tail accepts the slog ...any pattern existing modules use
 // (alternating key/value pairs) and is normalised into []slog.Attr
@@ -41,14 +62,23 @@ func WrapNotifier(n notify.Notifier) *AlertManager {
 func (a *AlertManager) Notify(
 	now time.Time, level slog.Level, kind, key, msg string, fields ...any,
 ) {
-	a.n.Notify(context.Background(), notify.Event{
-		Now:     now,
-		Level:   level,
-		Kind:    kind,
-		Key:     key,
-		Message: msg,
-		Fields:  fieldsToAttrs(fields),
-	})
+	a.NotifyContext(context.Background(), now, level, kind, key, msg, fields...)
+}
+
+// ResolveContext clears an alert with the caller's context.
+func (a *AlertManager) ResolveContext(
+	ctx context.Context,
+	now time.Time,
+	kind,
+	key,
+	msg string,
+	fields ...any,
+) {
+	// notify.Notifier.Resolve does not take a now; the wrapped Manager
+	// reads its clock internally. The now argument is preserved on this
+	// adapter only so module call sites stay unchanged.
+	_ = now
+	a.n.Resolve(ctx, kind, key, msg, fieldsToAttrs(fields)...)
 }
 
 // Resolve clears the (kind, key) so the next Notify is treated as a
@@ -56,11 +86,7 @@ func (a *AlertManager) Notify(
 // the level the original Notify used; see notify.Manager for the
 // state-change semantics.
 func (a *AlertManager) Resolve(now time.Time, kind, key, msg string, fields ...any) {
-	// notify.Notifier.Resolve does not take a now; the wrapped Manager
-	// reads its clock internally. The now argument is preserved on this
-	// adapter only so module call sites stay unchanged.
-	_ = now
-	a.n.Resolve(context.Background(), kind, key, msg, fieldsToAttrs(fields)...)
+	a.ResolveContext(context.Background(), now, kind, key, msg, fields...)
 }
 
 // Active reports whether the named alert is currently in the "fired

@@ -19,15 +19,17 @@ import (
 	"sync"
 	"time"
 
+	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
 
 // Module owns the bridge-suspected alert decision.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	cfg   Config
+	env   *ifmgr.Env
+	log   *slog.Logger
+	clock internalclock.Clock
 
 	mu         sync.Mutex
 	lastRA     time.Time
@@ -41,16 +43,20 @@ type Config struct {
 	NoSignalAlertAfter time.Duration
 }
 
+// ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "bridge_probe" }
 
 // Name implements ifmgr.Module.
 func (m *Module) Name() string { return "bridge_probe" }
 
 // Init implements ifmgr.Module.
-func (m *Module) Init(_ context.Context, env *ifmgr.Env) error {
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	m.env = env
 	m.log = env.Log.With("module", "bridge_probe", "iface", m.cfg.Iface)
-	m.log.Info("bridge_probe: Init",
+	if m.clock == nil {
+		m.clock = internalclock.Real{}
+	}
+	m.log.InfoContext(ctx, "bridge_probe: Init",
 		"no_signal_alert_after", m.cfg.NoSignalAlertAfter.String())
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("bridge_probe: iface is required")
@@ -70,7 +76,7 @@ func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, ev netif.Event
 	if ev.Iface != m.cfg.Iface {
 		return nil
 	}
-	now := time.Now()
+	now := m.clock.Now()
 	switch ev.Kind {
 	case netif.EvRouteAdded:
 		if ev.Family == "inet6" && ev.Dest == "default" {
@@ -82,6 +88,8 @@ func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, ev netif.Event
 		m.mu.Lock()
 		m.lastLinkUp = now
 		m.mu.Unlock()
+	case netif.EvUnknown, netif.EvRouteDeleted, netif.EvAddrAdded, netif.EvAddrDeleted, netif.EvLinkDown:
+		return nil
 	}
 	return nil
 }
@@ -90,7 +98,7 @@ func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, ev netif.Event
 func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, lease netif.LeaseInfo) error {
 	if lease.State == netif.LeaseBound {
 		m.mu.Lock()
-		m.lastDHCP = time.Now()
+		m.lastDHCP = m.clock.Now()
 		m.mu.Unlock()
 	}
 	return nil
@@ -101,7 +109,7 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, lease netif.Leas
 //   - link is observed up, AND
 //   - the slaac_health alert is currently active (so we know slaac_health
 //     has already exhausted its self-heal options).
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time) {
+func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Time) {
 	m.mu.Lock()
 	lastRA := m.lastRA
 	lastDHCP := m.lastDHCP
@@ -117,7 +125,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 	suspected := raStale && dhcpStale && linkObservedUp && slaacActive
 
 	if suspected {
-		m.env.Alerts.Notify(now, slog.LevelWarn,
+		m.env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
 			"bridge-suspected-dangling", m.cfg.Iface,
 			"bridge_probe: bridge-side veth attachment suspected dangling "+
 				"(no RA, no DHCP, link observed up, SLAAC self-heal exhausted)",
@@ -127,7 +135,7 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 			"hint", "host-side: verify veth is attached to expected bridge",
 		)
 	} else if m.env.Alerts.Active("bridge-suspected-dangling", m.cfg.Iface) {
-		m.env.Alerts.Resolve(now,
+		m.env.Alerts.ResolveContext(ctx, now,
 			"bridge-suspected-dangling", m.cfg.Iface,
 			"bridge_probe: signal returned")
 	}
@@ -135,7 +143,10 @@ func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, now time.Time
 
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
-	c := Config{NoSignalAlertAfter: 120 * time.Second}
+	c := Config{
+		Iface:              "",
+		NoSignalAlertAfter: 120 * time.Second,
+	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
@@ -143,7 +154,16 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 		c = typedConfig
 	}
-	return &Module{cfg: c}, nil
+	return &Module{
+		cfg:        c,
+		env:        nil,
+		log:        nil,
+		clock:      nil,
+		mu:         sync.Mutex{},
+		lastRA:     time.Time{},
+		lastDHCP:   time.Time{},
+		lastLinkUp: time.Time{},
+	}, nil
 }
 
 func init() { ifmgr.Register("bridge_probe", New) }
