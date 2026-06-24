@@ -133,6 +133,11 @@ func runOPNsenseHostDrain(args []string) int {
 	// acceptLoop's Accept, so no separate ctx-watcher goroutine is needed.
 	defer func() { _ = ln.Close() }()
 
+	// Signal readiness once the relay socket is up, independent of the chardev.
+	// The drainer can accept the bridge while it re-dials a chardev whose VM is
+	// down, so a Type=notify start must not hang waiting for the VM to boot.
+	_, _ = daemon.SdNotify(false, daemon.SdNotifyReady)
+
 	// openChardev adopts the systemd-reclaimed chardev on the first call, then
 	// dials fresh and re-stores on later re-opens (a VM restart).
 	first := true
@@ -152,7 +157,6 @@ func runOPNsenseHostDrain(args []string) int {
 			// storeChardevFD logs the failure.
 			_ = storeChardevFD(c, log, conn)
 		}
-		_, _ = daemon.SdNotify(false, daemon.SdNotifyReady)
 		return conn, nil
 	}
 

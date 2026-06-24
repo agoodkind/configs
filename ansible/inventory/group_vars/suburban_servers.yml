@@ -80,8 +80,16 @@ mwan_watchdog_wan_interfaces:
   - "enwebpass0"
   - "enmbrains0"
 
-# mwan-opnsense host bridge service on suburban.
-mwan_opnsense_host_upstream: "unix:///var/run/qemu-server/101.mwanrpc"
+# mwan-opnsense chardev drainer service on suburban. The drainer holds the
+# qemu virtio-serial chardev open and re-exposes it on the relay socket, so a
+# bridge restart never disconnects the chardev and strands a guest write in the
+# kernel. See docs/opnsense/wedge.md.
+mwan_opnsense_drain_chardev: "unix:///var/run/qemu-server/101.mwanrpc"
+mwan_opnsense_drain_listen: /var/run/mwan-opnsense-drain.sock
+
+# mwan-opnsense host bridge service on suburban. The bridge now dials the
+# drainer's relay socket in place of the qemu chardev directly.
+mwan_opnsense_host_upstream: "unix://{{ mwan_opnsense_drain_listen }}"
 mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
 mwan_opnsense_host_reconnect: "2s"
 mwan_opnsense_host_hb_interval: "30s"
