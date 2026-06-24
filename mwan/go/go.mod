@@ -24,6 +24,7 @@ require (
 
 require (
 	github.com/antchfx/xpath v1.3.6 // indirect
+	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/dgryski/go-farm v0.0.0-20240924180020-3414d57e47da // indirect
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect

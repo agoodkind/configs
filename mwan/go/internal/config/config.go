@@ -128,6 +128,7 @@ type OPNsenseSection struct {
 	// subsections for the gRPC-over-virtio-serial transport between the Proxmox
 	// host and the OPNsense guest.
 	Host         OpnsenseHostSection         `toml:"host"`
+	Drain        OpnsenseDrainSection        `toml:"drain"`
 	Probe        OpnsenseProbeSection        `toml:"probe"`
 	Upgrade      OpnsenseUpgradeSection      `toml:"upgrade"`
 	Validate     OpnsenseValidateSection     `toml:"validate"`
@@ -169,6 +170,17 @@ type OpnsenseHostSection struct {
 	ReconnectDuration         string `toml:"reconnect"`
 	HeartbeatIntervalDuration string `toml:"heartbeat_interval"`
 	HeartbeatTimeoutDuration  string `toml:"heartbeat_timeout"`
+}
+
+// OpnsenseDrainSection configures the mwan-opnsense-drain daemon that runs
+// on the Proxmox host. The drainer holds the qemu virtio-serial chardev open
+// and always reads it so a bridge restart never disconnects the host side and
+// strands a guest write in the kernel. Chardev is the qemu chardev unix socket
+// the drainer dials and holds; Listen is the relay socket the bridge dials in
+// place of the chardev. See docs/opnsense/wedge.md.
+type OpnsenseDrainSection struct {
+	Chardev string `toml:"chardev"`
+	Listen  string `toml:"listen"`
 }
 
 // OpnsenseProbeSection configures the mwan-probe client that talks to
@@ -412,11 +424,15 @@ func defaultConfig() Config {
 	cfg := defaultConfigBase()
 	// Populate the [opnsense.*] subsections outside the base Config literal.
 	cfg.OPNsense.Host = OpnsenseHostSection{
-		Upstream:                  "unix:///var/run/qemu-server/101.mwanrpc",
+		Upstream:                  "unix:///var/run/mwan-opnsense-drain.sock",
 		Listen:                    "/var/run/mwan-opnsense.sock",
 		ReconnectDuration:         "2s",
 		HeartbeatIntervalDuration: "30s",
 		HeartbeatTimeoutDuration:  "10s",
+	}
+	cfg.OPNsense.Drain = OpnsenseDrainSection{
+		Chardev: "unix:///var/run/qemu-server/101.mwanrpc",
+		Listen:  "/var/run/mwan-opnsense-drain.sock",
 	}
 	cfg.OPNsense.Probe = OpnsenseProbeSection{
 		Target:           "unix:///var/run/mwan-opnsense.sock",

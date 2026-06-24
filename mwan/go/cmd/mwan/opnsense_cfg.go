@@ -94,6 +94,24 @@ func requireHostListen(cfg *config.Config) (string, error) {
 	return v, nil
 }
 
+// requireDrainChardev returns [opnsense.drain].chardev or an error.
+func requireDrainChardev(cfg *config.Config) (string, error) {
+	v := strings.TrimSpace(cfg.OPNsense.Drain.Chardev)
+	if v == "" {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].chardev is required in /etc/mwan/config.toml")
+	}
+	return v, nil
+}
+
+// requireDrainListen returns [opnsense.drain].listen or an error.
+func requireDrainListen(cfg *config.Config) (string, error) {
+	v := strings.TrimSpace(cfg.OPNsense.Drain.Listen)
+	if v == "" {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].listen is required in /etc/mwan/config.toml")
+	}
+	return v, nil
+}
+
 // parseHostDurations returns reconnect, heartbeat-interval, and
 // heartbeat-timeout from the [opnsense.host] section. An empty string
 // means the field is absent from TOML, which is a hard error.

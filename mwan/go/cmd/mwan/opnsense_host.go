@@ -28,6 +28,7 @@ type hostVerb string
 
 const (
 	hostVerbServe hostVerb = "serve"
+	hostVerbDrain hostVerb = "drain"
 )
 
 func hostUsage(out *os.File) {
@@ -35,6 +36,7 @@ func hostUsage(out *os.File) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Verbs:")
 	fmt.Fprintln(out, "  serve   run the Proxmox-host-side yamux bridge")
+	fmt.Fprintln(out, "  drain   run the chardev drainer that holds the qemu chardev open")
 }
 
 func runOPNsenseHost(args []string) int {
@@ -47,6 +49,8 @@ func runOPNsenseHost(args []string) int {
 	switch verb {
 	case hostVerbServe:
 		return runOPNsenseHostServe(rest)
+	case hostVerbDrain:
+		return runOPNsenseHostDrain(rest)
 	default:
 		fmt.Fprintf(os.Stderr, "mwan opnsense host: unknown verb %q\n", string(verb))
 		hostUsage(os.Stderr)
