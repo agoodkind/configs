@@ -45,6 +45,36 @@ bridge restart alone and a guest daemon restart do not clear it.
 
 Do not restart the bridge while a deploy or any guest-to-host transfer is in flight.
 
+## Fix status
+
+The fix is prototyped and validated, but not yet in the repo. A persistent host-side drainer
+holds the chardev open and always reads it, so qemu's host side stays connected and guest
+writes always complete while the bridge restarts behind it. In testing, the identical
+wedge-positive case (a pull plus a bridge restart) wedged 0 of 12 times through the drainer,
+against 3 of 4 directly.
+
+Do not implement the production version ad hoc. The implementation must follow a written design
+produced through the brainstorming process and committed under `docs/superpowers/specs/`. Treat
+that design as a required gate, not a suggestion: write the spec, get it approved, then write
+the code.
+
+## Reproduce
+
+Reproduce the wedge on a testbed VM, never on production. The wedge needs a guest-to-host write
+in flight when the host side drops.
+
+1. Start a guest-to-host transfer that keeps the guest writing, such as a `file pull` of a
+   large file, or a command whose output is large.
+2. A few seconds in, while the transfer is mid-flight, restart or kill the host bridge so the
+   chardev disconnects under the guest's write.
+3. Watch the guest from the hypervisor, not from inside it, with `info registers` over the qemu
+   monitor. A wedge shows both vCPUs in the kernel (`CPL=0`, `HLT=0`), one in `virtqueue_poll`
+   and one in `lock_delay`. A healthy guest shows both vCPUs halted at the idle loop.
+
+It is probabilistic. A mid-pull restart wedged on roughly three of four genuine attempts in
+testing, while a `file push` did not wedge, because the guest is mostly reading. Recover with
+`qm reset <vmid>` between attempts, which reboots the guest and clears the tmpfs scratch file.
+
 ## Inspect a wedged guest
 
 Userland is starved, so sshd, the guest agent, and the serial-console shell do not respond. Use
