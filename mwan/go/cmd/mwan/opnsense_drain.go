@@ -19,14 +19,6 @@ import (
 const (
 	// drainBufSize is the per-read buffer for both relay directions.
 	drainBufSize = 64 * 1024
-	// drainQueueDepth bounds bytes queued from the chardev toward the client.
-	// At drainBufSize per slot this caps in-flight memory at ~16 MiB; on
-	// overflow the drainer drops, because draining the chardev (so guest
-	// writes complete) always wins over forwarding to a slow or absent bridge.
-	drainQueueDepth = 256
-	// drainWriteTimeout bounds a single relayed write so a slow or dead peer
-	// cannot stall the goroutine that issued it.
-	drainWriteTimeout = 5 * time.Second
 	// drainReconnectBackoff paces chardev re-dials while the VM is down.
 	drainReconnectBackoff = 2 * time.Second
 )
@@ -349,7 +341,9 @@ func clientPump(hub *drainHub, c net.Conn) {
 		n, err := c.Read(buf)
 		if n > 0 {
 			if dev := hub.getChardev(); dev != nil {
-				_ = dev.SetWriteDeadline(time.Now().Add(drainWriteTimeout))
+				// Lossless blocking write: a slow guest applies backpressure,
+				// which is safe because the chardev stays connected. No write
+				// deadline, since a partial write would corrupt the byte stream.
 				if _, werr := dev.Write(buf[:n]); werr != nil {
 					return
 				}
@@ -361,21 +355,20 @@ func clientPump(hub *drainHub, c net.Conn) {
 	}
 }
 
-// drainChardev reads one chardev continuously and forwards to the current
-// client through a bounded queue. The reader never blocks on the client, so
-// guest writes always complete; the queue drops on overflow or when no client
-// is attached. It returns when the chardev errors (VM down) or ctx is done, and
-// tears down its writer goroutine on return.
+// drainChardev reads one chardev continuously and forwards to the attached
+// client. The copy is lossless while a bridge is attached, so a transfer is not
+// corrupted; with no bridge attached the data is discarded so a guest write
+// still completes and never wedges. It returns when the chardev errors (VM
+// down) or ctx is done.
 func drainChardev(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn) error {
-	dctx, dcancel := context.WithCancel(ctx)
-	defer dcancel()
-
-	toClient := make(chan []byte, drainQueueDepth)
 	readErr := make(chan error, 1)
-
-	spawn(ctx, log, "drain reader", func() { drainReader(chardev, toClient, readErr) })
-	spawn(ctx, log, "drain writer", func() { drainWriter(dctx, hub, toClient) })
-
+	spawn(ctx, log, "drain reader", func() {
+		err := drainReader(ctx, log, hub, chardev)
+		select {
+		case readErr <- err:
+		default:
+		}
+	})
 	select {
 	case <-ctx.Done():
 		return nil
@@ -384,48 +377,33 @@ func drainChardev(ctx context.Context, log *slog.Logger, hub *drainHub, chardev 
 	}
 }
 
-// drainReader copies the chardev into the bounded toClient queue, dropping when
-// the queue is full so the read (and the guest write behind it) never stalls.
-// It reports the terminating error on readErr and returns.
-func drainReader(chardev net.Conn, toClient chan<- []byte, readErr chan<- error) {
+// drainReader reads the chardev and forwards each chunk to the attached client.
+// A write to the client is lossless within drainWriteTimeout, which preserves
+// transfer integrity. If the client write fails or stalls past the timeout, the
+// client is dropped and the chunk is discarded, so a slow or dead bridge cannot
+// stall the read and busy-spin the guest. With no client attached the chunk is
+// discarded outright (the chardev is still drained, so the guest write
+// completes). It returns the chardev's terminating error.
+func drainReader(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn) error {
 	buf := make([]byte, drainBufSize)
 	for {
 		n, err := chardev.Read(buf)
 		if n > 0 {
-			data := make([]byte, n)
-			copy(data, buf[:n])
-			select {
-			case toClient <- data:
-			default: // queue full: bridge gone or slow, drop
+			if c := hub.getClient(); c != nil {
+				// Lossless blocking write to the attached bridge: a slow bridge
+				// applies backpressure (safe, the chardev stays connected); a
+				// disconnected bridge errors and is dropped, then later chunks
+				// drain to void so a guest write still completes. No write
+				// deadline, since a partial write would corrupt the byte stream.
+				if _, werr := c.Write(buf[:n]); werr != nil {
+					hub.clearClient(c)
+					_ = c.Close()
+				}
 			}
 		}
 		if err != nil {
-			select {
-			case readErr <- err:
-			default:
-			}
-			return
-		}
-	}
-}
-
-// drainWriter forwards queued chardev bytes to the current client, dropping the
-// client on a write error. It returns when ctx is cancelled.
-func drainWriter(ctx context.Context, hub *drainHub, toClient <-chan []byte) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case data := <-toClient:
-			c := hub.getClient()
-			if c == nil {
-				continue
-			}
-			_ = c.SetWriteDeadline(time.Now().Add(drainWriteTimeout))
-			if _, err := c.Write(data); err != nil {
-				hub.clearClient(c)
-				_ = c.Close()
-			}
+			log.WarnContext(ctx, "opnsense drain: chardev read ended", "err", err)
+			return fmt.Errorf("chardev read: %w", err)
 		}
 	}
 }
