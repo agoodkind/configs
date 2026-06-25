@@ -66,6 +66,33 @@ func requireProbeTimeout(cfg *config.Config) (time.Duration, error) {
 	return d, nil
 }
 
+// probeTransferStallDefault is the fallback used when
+// [opnsense.probe].transfer_stall_timeout is absent. Transfers are bounded by
+// lack of progress, not total time, so this only needs to be long enough that a
+// healthy channel never has a gap this large between chunks.
+const probeTransferStallDefault = 30 * time.Second
+
+// requireProbeTransferStall parses [opnsense.probe].transfer_stall_timeout.
+// Unlike requireProbeTimeout, an empty value is NOT an error: it falls back to
+// probeTransferStallDefault. A rendered or test config may omit this key (or the
+// whole section), and a transfer must never fail to start over a missing knob. A
+// present-but-malformed value still errors so operator typos are caught.
+func requireProbeTransferStall(cfg *config.Config) (time.Duration, error) {
+	raw := strings.TrimSpace(cfg.OPNsense.Probe.TransferStallDuration)
+	if raw == "" {
+		return probeTransferStallDefault, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		slog.Error("opnsense: parse probe transfer_stall_timeout", "err", err, "value", raw)
+		return 0, fmt.Errorf("opnsense: [opnsense.probe].transfer_stall_timeout %q is not a Go duration: %w", raw, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("opnsense: [opnsense.probe].transfer_stall_timeout %q must be positive", raw)
+	}
+	return d, nil
+}
+
 // requireProbeUploadChunk returns [opnsense.probe].upload_chunk_bytes
 // or a default when not set. Zero or negative values are rejected.
 func requireProbeUploadChunk(cfg *config.Config) (int, error) {

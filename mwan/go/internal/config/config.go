@@ -189,6 +189,12 @@ type OpnsenseProbeSection struct {
 	Target           string `toml:"target"`
 	TimeoutDuration  string `toml:"timeout"`
 	UploadChunkBytes int    `toml:"upload_chunk_bytes"`
+	// TransferStallDuration bounds file transfers by lack of progress
+	// rather than total wall-clock time. A transfer succeeds as long as
+	// bytes keep flowing and fails only after this much time with no
+	// progress. Empty falls back to a built-in default, because a large
+	// transfer must never be killed by a fixed whole-transfer deadline.
+	TransferStallDuration string `toml:"transfer_stall_timeout"`
 }
 
 // OpnsenseUpgradeSection configures the mwan upgrade orchestrator. Operator
@@ -435,9 +441,10 @@ func defaultConfig() Config {
 		Listen:  "/var/run/mwan-opnsense-drain.sock",
 	}
 	cfg.OPNsense.Probe = OpnsenseProbeSection{
-		Target:           "unix:///var/run/mwan-opnsense.sock",
-		TimeoutDuration:  "10s",
-		UploadChunkBytes: 16384,
+		Target:                "unix:///var/run/mwan-opnsense.sock",
+		TimeoutDuration:       "10s",
+		UploadChunkBytes:      16384,
+		TransferStallDuration: "30s",
 	}
 	cfg.OPNsense.Upgrade = OpnsenseUpgradeSection{
 		VMID:                     101,
