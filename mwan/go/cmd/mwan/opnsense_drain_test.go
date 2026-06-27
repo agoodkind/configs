@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -318,6 +319,60 @@ func TestDrainRelayEndToEnd(t *testing.T) {
 	writeAll(t, guest, []byte("again!"))
 	if got := readN(t, bridge2, 6); got != "again!" {
 		t.Fatalf("bridge2 got %q from guest, want again!", got)
+	}
+}
+
+// TestDrainReaderNeverBlocksOnHungClient proves the chardev reader goroutine
+// never blocks on the client write: a guest write of 4 MiB completes even when
+// the attached bridge socket is full and never reads.
+func TestDrainReaderNeverBlocksOnHungClient(t *testing.T) {
+	chLocal, chRemote := socketPair(t)
+	defer func() { _ = chLocal.Close() }()
+	defer func() { _ = chRemote.Close() }()
+	hubClient, hungBridge := socketPair(t)
+	defer func() { _ = hubClient.Close() }()
+	defer func() { _ = hungBridge.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub := &drainHub{}
+	hub.setClient(hubClient)
+	go func() { _ = drainChardev(ctx, testLog(), hub, chLocal) }()
+	payload := make([]byte, 4<<20)
+	done := make(chan error, 1)
+	go func() {
+		_ = chRemote.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_, e := chRemote.Write(payload)
+		done <- e
+	}()
+	select {
+	case e := <-done:
+		if e != nil {
+			t.Fatalf("guest write stalled, reader blocked on hung client: %v", e)
+		}
+	case <-time.After(6 * time.Second):
+		t.Fatal("guest write did not complete: reader blocked on the hung client (wedge risk)")
+	}
+}
+
+// TestDrainNoByteLossToReadingClient proves that a client actively reading
+// receives every byte the guest writes, with no loss.
+func TestDrainNoByteLossToReadingClient(t *testing.T) {
+	chLocal, chRemote := socketPair(t)
+	defer func() { _ = chLocal.Close() }()
+	defer func() { _ = chRemote.Close() }()
+	hubClient, bridge := socketPair(t)
+	defer func() { _ = hubClient.Close() }()
+	defer func() { _ = bridge.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub := &drainHub{}
+	hub.setClient(hubClient)
+	go func() { _ = drainChardev(ctx, testLog(), hub, chLocal) }()
+	msg := bytes.Repeat([]byte("MWN1"), 4096) // 16 KiB
+	go func() { _, _ = chRemote.Write(msg) }()
+	got := readN(t, bridge, len(msg))
+	if got != string(msg) {
+		t.Fatalf("byte loss to a reading client")
 	}
 }
 

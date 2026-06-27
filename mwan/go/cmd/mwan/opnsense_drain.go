@@ -22,6 +22,10 @@ const (
 	drainBufSize = 64 * 1024
 	// drainReconnectBackoff paces chardev re-dials while the VM is down.
 	drainReconnectBackoff = 2 * time.Second
+	// drainQueueDepth is the number of chunks the reader can stage before
+	// the writer catches up. At drainBufSize each, 256 slots is ~16 MiB.
+	// A client that keeps reading never comes close to filling it.
+	drainQueueDepth = 256
 )
 
 // drainHub holds the current client and chardev connections. Both sides have
@@ -29,16 +33,32 @@ const (
 // and the chardev is re-dialed only when the VM restarts. The pumps read the
 // current peer from the hub on each iteration, so a swap on either side is
 // picked up without tearing the other side down.
+//
+// toClient is the bounded queue from the chardev reader goroutine to the
+// writer goroutine. The reader never blocks on the client; on overflow it
+// drops the client instead of bytes. toClient is set by drainChardev and
+// flushed by setClient on a client swap.
 type drainHub struct {
-	mu      sync.Mutex
-	client  net.Conn
-	chardev net.Conn
+	mu       sync.Mutex
+	client   net.Conn
+	chardev  net.Conn
+	toClient chan []byte
 }
 
+// setClient swaps the client and flushes any queued bytes from the prior
+// session, so a reconnecting bridge never receives the dead session's tail.
 func (h *drainHub) setClient(c net.Conn) {
 	h.mu.Lock()
 	old := h.client
 	h.client = c
+	for h.toClient != nil {
+		select {
+		case <-h.toClient:
+			continue
+		default:
+		}
+		break
+	}
 	h.mu.Unlock()
 	if old != nil {
 		_ = old.Close()
@@ -366,19 +386,29 @@ func clientPump(hub *drainHub, c net.Conn) {
 }
 
 // drainChardev reads one chardev continuously and forwards to the attached
-// client. The copy is lossless while a bridge is attached, so a transfer is not
-// corrupted; with no bridge attached the data is discarded so a guest write
-// still completes and never wedges. It returns when the chardev errors (VM
-// down) or ctx is done.
+// client. A reader goroutine always drains the chardev into a bounded queue; a
+// writer goroutine forwards from the queue to the current client. The reader
+// never blocks on the client write: on queue overflow the client is dropped
+// (never bytes), so a hung bridge cannot stall a guest write. With no client
+// attached, queued chunks are discarded by the writer so the guest write still
+// completes. It returns when the chardev errors (VM down) or ctx is done.
 func drainChardev(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn) error {
+	dctx, dcancel := context.WithCancel(ctx)
+	defer dcancel()
+
+	q := make(chan []byte, drainQueueDepth)
+	hub.mu.Lock()
+	hub.toClient = q
+	hub.mu.Unlock()
+	defer func() {
+		hub.mu.Lock()
+		hub.toClient = nil
+		hub.mu.Unlock()
+	}()
+
 	readErr := make(chan error, 1)
-	spawn(ctx, log, "drain reader", func() {
-		err := drainReader(ctx, log, hub, chardev)
-		select {
-		case readErr <- err:
-		default:
-		}
-	})
+	spawn(ctx, log, "drain reader", func() { chardevReadLoop(ctx, log, hub, chardev, q, readErr) })
+	spawn(ctx, log, "drain writer", func() { chardevWriteLoop(dctx, hub, q) })
 	select {
 	case <-ctx.Done():
 		return nil
@@ -387,25 +417,22 @@ func drainChardev(ctx context.Context, log *slog.Logger, hub *drainHub, chardev 
 	}
 }
 
-// drainReader reads the chardev and forwards each chunk to the attached client.
-// A write to the client is lossless within drainWriteTimeout, which preserves
-// transfer integrity. If the client write fails or stalls past the timeout, the
-// client is dropped and the chunk is discarded, so a slow or dead bridge cannot
-// stall the read and busy-spin the guest. With no client attached the chunk is
-// discarded outright (the chardev is still drained, so the guest write
-// completes). It returns the chardev's terminating error.
-func drainReader(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn) error {
+// chardevReadLoop drains the chardev into q. It never blocks on the client:
+// on queue overflow it drops the client instead of bytes, because dropping
+// bytes corrupts the framed yamux stream (rejected design from commit 2f5f419).
+func chardevReadLoop(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn, q chan []byte, readErr chan error) {
 	buf := make([]byte, drainBufSize)
 	for {
 		n, err := chardev.Read(buf)
 		if n > 0 {
-			if c := hub.getClient(); c != nil {
-				// Lossless blocking write to the attached bridge: a slow bridge
-				// applies backpressure (safe, the chardev stays connected); a
-				// disconnected bridge errors and is dropped, then later chunks
-				// drain to void so a guest write still completes. No write
-				// deadline, since a partial write would corrupt the byte stream.
-				if _, werr := c.Write(buf[:n]); werr != nil {
+			data := make([]byte, n)
+			copy(data, buf[:n])
+			select {
+			case q <- data:
+			default:
+				// Queue full: client is hung or too slow. Drop the client;
+				// never drop bytes to a surviving session.
+				if c := hub.getClient(); c != nil {
 					hub.clearClient(c)
 					_ = c.Close()
 				}
@@ -413,7 +440,30 @@ func drainReader(ctx context.Context, log *slog.Logger, hub *drainHub, chardev n
 		}
 		if err != nil {
 			log.WarnContext(ctx, "opnsense drain: chardev read ended", "err", err)
-			return fmt.Errorf("chardev read: %w", err)
+			select {
+			case readErr <- fmt.Errorf("chardev read: %w", err):
+			default:
+			}
+			return
+		}
+	}
+}
+
+// chardevWriteLoop forwards chunks from q to the current client. With no
+// client the chunk is discarded so the chardev still drains and guest writes
+// complete. It returns when ctx is done.
+func chardevWriteLoop(ctx context.Context, hub *drainHub, q chan []byte) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data := <-q:
+			if c := hub.getClient(); c != nil {
+				if _, werr := c.Write(data); werr != nil {
+					hub.clearClient(c)
+					_ = c.Close()
+				}
+			}
 		}
 	}
 }
