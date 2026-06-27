@@ -81,7 +81,7 @@ DDB on the stock kernel shows each thread's stack, but it cannot name the owner 
 lock. The stock OPNsense kernel ships without `WITNESS`. To attribute `vtcpmtx` to the thread
 that holds it, build a debug kernel.
 
-## Build a kernel-debug (WITNESS) build
+## Build a WITNESS debug kernel
 
 A WITNESS kernel lets DDB print lock ownership with `show alllocks` and `show lockchain`. That
 turns "a thread is spinning in `lock_delay`" into "this thread holds `vtcpmtx`". The stock kernel
