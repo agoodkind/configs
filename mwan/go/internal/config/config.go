@@ -426,11 +426,16 @@ type IfMgrIfaceSection struct {
 	DHCPMaxBackoff     string `toml:"dhcp_max_backoff"`
 }
 
+// defaultDrainSocket is the relay socket the chardev drainer listens on and the
+// host bridge dials. [opnsense.host].upstream and [opnsense.drain].listen must
+// name the same path, so both derive from this one constant to avoid drift.
+const defaultDrainSocket = "/var/run/mwan-opnsense-drain.sock"
+
 func defaultConfig() Config {
 	cfg := defaultConfigBase()
 	// Populate the [opnsense.*] subsections outside the base Config literal.
 	cfg.OPNsense.Host = OpnsenseHostSection{
-		Upstream:                  "unix:///var/run/mwan-opnsense-drain.sock",
+		Upstream:                  "unix://" + defaultDrainSocket,
 		Listen:                    "/var/run/mwan-opnsense.sock",
 		ReconnectDuration:         "2s",
 		HeartbeatIntervalDuration: "30s",
@@ -438,7 +443,7 @@ func defaultConfig() Config {
 	}
 	cfg.OPNsense.Drain = OpnsenseDrainSection{
 		Chardev: "unix:///var/run/qemu-server/101.mwanrpc",
-		Listen:  "/var/run/mwan-opnsense-drain.sock",
+		Listen:  defaultDrainSocket,
 	}
 	cfg.OPNsense.Probe = OpnsenseProbeSection{
 		Target:                "unix:///var/run/mwan-opnsense.sock",
