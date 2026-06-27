@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/antchfx/xmlquery v1.5.1
 	github.com/beevik/etree v1.6.0
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/google/renameio/v2 v2.0.2
 	github.com/hashicorp/yamux v0.1.2
 	github.com/insomniacslk/dhcp v0.0.0-20260407060928-11b94ed970f2
@@ -24,7 +25,6 @@ require (
 
 require (
 	github.com/antchfx/xpath v1.3.6 // indirect
-	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/dgryski/go-farm v0.0.0-20240924180020-3414d57e47da // indirect
 	github.com/eapache/channels v1.1.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
