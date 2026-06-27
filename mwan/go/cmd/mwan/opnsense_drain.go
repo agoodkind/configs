@@ -28,6 +28,15 @@ const (
 	drainQueueDepth = 256
 )
 
+// drainChunk carries a byte slice and the hub epoch at which it was enqueued.
+// The writer discards any chunk whose epoch does not match the current hub epoch,
+// so a chunk that was dequeued by the writer before a client swap is never
+// delivered to the new client.
+type drainChunk struct {
+	data  []byte
+	epoch uint64
+}
+
 // drainHub holds the current client and chardev connections. Both sides have
 // independent lifecycles: the bridge (client) reconnects on its own schedule,
 // and the chardev is re-dialed only when the VM restarts. The pumps read the
@@ -38,19 +47,26 @@ const (
 // writer goroutine. The reader never blocks on the client; on overflow it
 // drops the client instead of bytes. toClient is set by drainChardev and
 // flushed by setClient on a client swap.
+//
+// epoch is incremented by setClient on every swap so the writer can detect
+// a chunk that was dequeued from a prior session and drop it.
 type drainHub struct {
 	mu       sync.Mutex
 	client   net.Conn
 	chardev  net.Conn
-	toClient chan []byte
+	epoch    uint64
+	toClient chan drainChunk
 }
 
 // setClient swaps the client and flushes any queued bytes from the prior
 // session, so a reconnecting bridge never receives the dead session's tail.
+// It also increments the epoch so the writer can drop any chunk it has already
+// dequeued but not yet written (the in-flight race that the queue flush cannot catch).
 func (h *drainHub) setClient(c net.Conn) {
 	h.mu.Lock()
 	old := h.client
 	h.client = c
+	h.epoch++
 	for h.toClient != nil {
 		select {
 		case <-h.toClient:
@@ -424,7 +440,7 @@ func drainChardev(ctx context.Context, log *slog.Logger, hub *drainHub, chardev 
 	dctx, dcancel := context.WithCancel(ctx)
 	defer dcancel()
 
-	q := make(chan []byte, drainQueueDepth)
+	q := make(chan drainChunk, drainQueueDepth)
 	hub.mu.Lock()
 	hub.toClient = q
 	hub.mu.Unlock()
@@ -448,15 +464,20 @@ func drainChardev(ctx context.Context, log *slog.Logger, hub *drainHub, chardev 
 // chardevReadLoop drains the chardev into q. It never blocks on the client:
 // on queue overflow it drops the client instead of bytes, because dropping
 // bytes corrupts the framed yamux stream (rejected design from commit 2f5f419).
-func chardevReadLoop(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn, q chan []byte, readErr chan error) {
+// Each chunk is stamped with the current hub epoch so the writer can drop
+// chunks that belong to a prior session.
+func chardevReadLoop(ctx context.Context, log *slog.Logger, hub *drainHub, chardev net.Conn, q chan drainChunk, readErr chan error) {
 	buf := make([]byte, drainBufSize)
 	for {
 		n, err := chardev.Read(buf)
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
+			hub.mu.Lock()
+			ep := hub.epoch
+			hub.mu.Unlock()
 			select {
-			case q <- data:
+			case q <- drainChunk{data: data, epoch: ep}:
 			default:
 				// Queue full: client is hung or too slow. Drop the client;
 				// never drop bytes to a surviving session.
@@ -477,17 +498,26 @@ func chardevReadLoop(ctx context.Context, log *slog.Logger, hub *drainHub, chard
 	}
 }
 
-// chardevWriteLoop forwards chunks from q to the current client. With no
-// client the chunk is discarded so the chardev still drains and guest writes
-// complete. It returns when ctx is done.
-func chardevWriteLoop(ctx context.Context, hub *drainHub, q chan []byte) {
+// chardevWriteLoop forwards chunks from q to the current client. It drops any
+// chunk whose epoch does not match the current hub epoch, which covers the race
+// where the writer dequeued a chunk before a setClient swap could flush it.
+// With no client the chunk is discarded so the chardev still drains and guest
+// writes complete. It returns when ctx is done.
+func chardevWriteLoop(ctx context.Context, hub *drainHub, q chan drainChunk) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case data := <-q:
-			if c := hub.getClient(); c != nil {
-				if _, werr := c.Write(data); werr != nil {
+		case chunk := <-q:
+			hub.mu.Lock()
+			cur := hub.epoch
+			c := hub.client
+			hub.mu.Unlock()
+			if chunk.epoch != cur {
+				continue // stale chunk from a prior session: drop it
+			}
+			if c != nil {
+				if _, werr := c.Write(chunk.data); werr != nil {
 					hub.clearClient(c)
 					_ = c.Close()
 				}

@@ -428,6 +428,48 @@ func TestFreshDialAfterStoreIsFlagged(t *testing.T) {
 	}
 }
 
+// TestStaleChunkDroppedOnClientSwap proves that a chunk enqueued for client A is
+// not delivered to client B after a setClient swap. It exercises the epoch-check
+// path in chardevWriteLoop directly, simulating the race where the writer has
+// already dequeued a chunk stamped for the prior session before the new client
+// swaps in (the window the queue flush in setClient cannot catch).
+func TestStaleChunkDroppedOnClientSwap(t *testing.T) {
+	hub := &drainHub{}
+
+	// Attach client A. Epoch increments to 1.
+	c1Local, c1Remote := socketPair(t)
+	defer func() { _ = c1Local.Close() }()
+	defer func() { _ = c1Remote.Close() }()
+	hub.setClient(c1Local)
+
+	// Attach client B. Epoch increments to 2. setClient closes c1Local.
+	c2Local, c2Remote := socketPair(t)
+	defer func() { _ = c2Local.Close() }()
+	defer func() { _ = c2Remote.Close() }()
+	hub.setClient(c2Local)
+
+	q := make(chan drainChunk, 8)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run the writer with the current hub state (epoch=2, client=c2Local).
+	go chardevWriteLoop(ctx, hub, q)
+
+	// Enqueue a stale chunk stamped with epoch 1 (client A's session).
+	// The writer must drop it rather than delivering it to client B.
+	q <- drainChunk{data: []byte("stale"), epoch: 1}
+
+	// Enqueue a fresh chunk stamped with epoch 2 (current session).
+	// The writer must deliver it to client B.
+	q <- drainChunk{data: []byte("fresh"), epoch: 2}
+
+	// Client B should receive exactly the fresh chunk.
+	if got := readN(t, c2Remote, 5); got != "fresh" {
+		t.Fatalf("client B got %q, want fresh (stale chunk was not dropped)", got)
+	}
+}
+
 // TestAcquireListenerNoUnlink proves a socket-activated listener does not unlink
 // its path on Close, since systemd owns it.
 func TestAcquireListenerNoUnlink(t *testing.T) {
