@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -209,7 +210,10 @@ func acquireListener(ctx context.Context, log *slog.Logger, byName map[string][]
 		log.InfoContext(ctx, "opnsense drain: adopted socket-activated relay listener")
 		return ln, nil
 	}
-	_ = os.Remove(listenPath)
+	if err := os.Remove(listenPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.ErrorContext(ctx, "opnsense drain: clear stale relay socket", "path", listenPath, "err", err)
+		return nil, fmt.Errorf("clear stale relay socket %s: %w", listenPath, err)
+	}
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "unix", listenPath)
 	if err != nil {
