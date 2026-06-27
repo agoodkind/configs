@@ -151,31 +151,59 @@ func runOPNsenseHostDrain(args []string) int {
 	// down, so a Type=notify start must not hang waiting for the VM to boot.
 	_, _ = daemon.SdNotify(false, daemon.SdNotifyReady)
 
-	// openChardev adopts the systemd-reclaimed chardev on the first call, then
-	// dials fresh and re-stores on later re-opens (a VM restart).
+	openChardev := makeChardevOpener(log, byName, chardevPath, acquireChardev)
+
+	log.InfoContext(ctx, "opnsense drain: serving", "chardev", chardevPath, "listen", listenPath)
+	runDrainRelay(ctx, log, ln, openChardev)
+	return 0
+}
+
+// makeChardevOpener returns the stateful openChardev func passed to runDrainRelay.
+// On the first call it offers byName to acquire for fd-store adoption; on all
+// later calls it passes nil so a VM-restart re-dial is always fresh (systemd
+// auto-prunes the stored fd on POLLHUP when the VM goes down, so there is
+// nothing to adopt). After the first successful store or adopt, reclaimExpected
+// is true. A subsequent fresh dial while it is true means the previous drainer
+// process died without having stored the fd; that is the only window in which
+// qemu can see a chardev disconnect while the VM is up.
+//
+// No path in the returned function closes the chardev fd. The fd outlives the
+// drainer process in the systemd fd-store and is reclaimed by the next instance.
+// The only intentional fd-close windows are:
+//   - runDrainRelay closes the local fd after drainChardev returns (the VM went
+//     down; systemd already pruned the store entry on POLLHUP before this point).
+//   - ctx cancellation tears down the process; the fd-store carries the fd forward.
+func makeChardevOpener(
+	log *slog.Logger,
+	byName map[string][]*os.File,
+	chardevPath string,
+	acquire func(context.Context, *slog.Logger, map[string][]*os.File, string) (net.Conn, bool, error),
+) func(context.Context) (net.Conn, error) {
 	first := true
-	openChardev := func(c context.Context) (net.Conn, error) {
+	reclaimExpected := false
+	return func(ctx context.Context) (net.Conn, error) {
 		var reclaimable map[string][]*os.File
 		if first {
 			reclaimable = byName
 		}
-		conn, adopted, err := acquireChardev(c, log, reclaimable, chardevPath)
+		conn, adopted, err := acquire(ctx, log, reclaimable, chardevPath)
 		first = false
 		if err != nil {
 			return nil, err
 		}
 		if !adopted {
+			if reclaimExpected {
+				log.ErrorContext(ctx, "opnsense drain: fresh chardev dial while a stored fd was expected; this is the only wedge window",
+					"err", errors.New("no stored fd reclaimed; drainer restarted without fd-store handoff"))
+			}
 			// A failed fdstore upload is non-fatal: the drainer still serves,
 			// it just loses the zero-window hand-off on its next restart.
 			// storeChardevFD logs the failure.
-			_ = storeChardevFD(c, log, conn)
+			_ = storeChardevFD(ctx, log, conn)
 		}
+		reclaimExpected = true
 		return conn, nil
 	}
-
-	log.InfoContext(ctx, "opnsense drain: serving", "chardev", chardevPath, "listen", listenPath)
-	runDrainRelay(ctx, log, ln, openChardev)
-	return 0
 }
 
 // runDrainRelay owns the relay. It accepts bridge clients on ln and keeps a

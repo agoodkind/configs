@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -373,6 +374,57 @@ func TestDrainNoByteLossToReadingClient(t *testing.T) {
 	got := readN(t, bridge, len(msg))
 	if got != string(msg) {
 		t.Fatalf("byte loss to a reading client")
+	}
+}
+
+// TestFreshDialAfterStoreIsFlagged proves that a second consecutive fresh dial
+// (adopted=false) after an fd has been stored is logged as an ERROR, since it is
+// the only window in which qemu can see a chardev disconnect while the VM is up.
+func TestFreshDialAfterStoreIsFlagged(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	ctx := context.Background()
+
+	// Two socketpairs simulate two consecutive fresh chardev dials. Only the
+	// "a" side of each pair is returned by fakeAcquire; "b" sides are closed on
+	// test exit.
+	c1a, c1b := socketPair(t)
+	c2a, c2b := socketPair(t)
+	defer func() { _ = c1b.Close() }()
+	defer func() { _ = c2b.Close() }()
+
+	dialCount := 0
+	conns := []net.Conn{c1a, c2a}
+	fakeAcquire := func(_ context.Context, _ *slog.Logger, _ map[string][]*os.File, _ string) (net.Conn, bool, error) {
+		conn := conns[dialCount]
+		dialCount++
+		return conn, false, nil // always fresh dial, never adopt
+	}
+
+	opener := makeChardevOpener(logger, nil, "/fake/chardev", fakeAcquire)
+
+	// First call: reclaimExpected=false, so no error is logged.
+	conn1, err := opener(ctx)
+	if err != nil {
+		t.Fatalf("opener call 1: %v", err)
+	}
+	defer func() { _ = conn1.Close() }()
+
+	const wantMsg = "fresh chardev dial while a stored fd was expected"
+	if strings.Contains(buf.String(), wantMsg) {
+		t.Fatalf("first fresh dial should not log the error, got: %q", buf.String())
+	}
+
+	// Second call: reclaimExpected=true (set after the first store), so the
+	// disconnect-window ERROR must appear in the log.
+	conn2, err := opener(ctx)
+	if err != nil {
+		t.Fatalf("opener call 2: %v", err)
+	}
+	defer func() { _ = conn2.Close() }()
+
+	if !strings.Contains(buf.String(), wantMsg) {
+		t.Fatalf("second fresh dial did not log the expected error; log: %q", buf.String())
 	}
 }
 
