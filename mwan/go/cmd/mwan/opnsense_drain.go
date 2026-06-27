@@ -320,6 +320,12 @@ func acceptLoop(ctx context.Context, log *slog.Logger, hub *drainHub, ln net.Lis
 	for {
 		c, err := ln.Accept()
 		if err != nil {
+			// A normal stop closes the listener on ctx cancel, so only an
+			// Accept failure with the context still live is unexpected and
+			// worth a log signal (the relay stops accepting after it).
+			if ctx.Err() == nil {
+				log.WarnContext(ctx, "opnsense drain: relay accept failed; stopping accept loop", "err", err)
+			}
 			return
 		}
 		hub.setClient(c)
