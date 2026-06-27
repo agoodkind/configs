@@ -91,6 +91,28 @@ func TestTransferWatchdogFailureMessages(t *testing.T) {
 	}
 }
 
+// TestTransferWatchdogZeroStallNoPanic proves that a zero or sub-millisecond stall
+// does not cause a NewTicker(0) panic, and that stop() returns cleanly without
+// hanging. The 10ms floor fix makes the watchdog still operational in that state.
+func TestTransferWatchdogZeroStallNoPanic(t *testing.T) {
+	for _, stall := range []time.Duration{0, time.Nanosecond} {
+		t.Run(stall.String(), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			// Must not panic: the 10ms floor prevents NewTicker(0).
+			wd := startTransferWatchdog(cancel, stall)
+			wd.stop()
+			// Brief settle so the goroutine exits before the test ends.
+			time.Sleep(50 * time.Millisecond)
+			// A zero stall may fire before stop(); either is valid.
+			// The critical invariant: context canceled implies watchdog fired.
+			if ctx.Err() != nil && !wd.fired() {
+				t.Fatal("context canceled but watchdog did not record a stall")
+			}
+		})
+	}
+}
+
 // TestRequireProbeTransferStall covers the fallback-on-empty behavior plus the
 // parse and positivity checks.
 func TestRequireProbeTransferStall(t *testing.T) {

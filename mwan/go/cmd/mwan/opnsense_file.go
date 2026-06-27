@@ -76,7 +76,11 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 	w.last.Store(time.Now().UnixNano())
 	// Tick at stall/4 for prompt detection, capped at 1s so a long stall still
 	// samples often; min (not max) keeps the 1s cap from delaying a short stall.
+	// The 10ms floor prevents a NewTicker(0) panic on a misconfigured tiny stall.
 	tick := min(stall/4, time.Second)
+	if tick <= 0 {
+		tick = 10 * time.Millisecond
+	}
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
