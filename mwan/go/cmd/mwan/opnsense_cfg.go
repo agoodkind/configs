@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -66,6 +67,33 @@ func requireProbeTimeout(cfg *config.Config) (time.Duration, error) {
 	return d, nil
 }
 
+// probeTransferStallDefault is the fallback used when
+// [opnsense.probe].transfer_stall_timeout is absent. Transfers are bounded by
+// lack of progress, not total time, so this only needs to be long enough that a
+// healthy channel never has a gap this large between chunks.
+const probeTransferStallDefault = 30 * time.Second
+
+// requireProbeTransferStall parses [opnsense.probe].transfer_stall_timeout.
+// Unlike requireProbeTimeout, an empty value is NOT an error: it falls back to
+// probeTransferStallDefault. A rendered or test config may omit this key (or the
+// whole section), and a transfer must never fail to start over a missing knob. A
+// present-but-malformed value still errors so operator typos are caught.
+func requireProbeTransferStall(cfg *config.Config) (time.Duration, error) {
+	raw := strings.TrimSpace(cfg.OPNsense.Probe.TransferStallDuration)
+	if raw == "" {
+		return probeTransferStallDefault, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		slog.Error("opnsense: parse probe transfer_stall_timeout", "err", err, "value", raw)
+		return 0, fmt.Errorf("opnsense: [opnsense.probe].transfer_stall_timeout %q is not a Go duration: %w", raw, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("opnsense: [opnsense.probe].transfer_stall_timeout %q must be positive", raw)
+	}
+	return d, nil
+}
+
 // requireProbeUploadChunk returns [opnsense.probe].upload_chunk_bytes
 // or a default when not set. Zero or negative values are rejected.
 func requireProbeUploadChunk(cfg *config.Config) (int, error) {
@@ -90,6 +118,32 @@ func requireHostListen(cfg *config.Config) (string, error) {
 	v := strings.TrimSpace(cfg.OPNsense.Host.Listen)
 	if v == "" {
 		return "", fmt.Errorf("opnsense: [opnsense.host].listen is required in /etc/mwan/config.toml")
+	}
+	return v, nil
+}
+
+// requireDrainChardev returns [opnsense.drain].chardev or an error.
+func requireDrainChardev(cfg *config.Config) (string, error) {
+	v := strings.TrimSpace(cfg.OPNsense.Drain.Chardev)
+	if v == "" {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].chardev is required in /etc/mwan/config.toml")
+	}
+	return v, nil
+}
+
+// requireDrainListen returns [opnsense.drain].listen or an error. The value
+// must be an absolute filesystem path: unix:// URLs and relative paths are
+// rejected so callers always get a path that [net.Listen]("unix", v) can use.
+func requireDrainListen(cfg *config.Config) (string, error) {
+	v := strings.TrimSpace(cfg.OPNsense.Drain.Listen)
+	if v == "" {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].listen is required in /etc/mwan/config.toml")
+	}
+	if strings.HasPrefix(v, "unix://") {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].listen %q must be an absolute path, not a unix:// URL", v)
+	}
+	if !filepath.IsAbs(v) {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].listen %q must be an absolute path", v)
 	}
 	return v, nil
 }

@@ -128,6 +128,7 @@ type OPNsenseSection struct {
 	// subsections for the gRPC-over-virtio-serial transport between the Proxmox
 	// host and the OPNsense guest.
 	Host         OpnsenseHostSection         `toml:"host"`
+	Drain        OpnsenseDrainSection        `toml:"drain"`
 	Probe        OpnsenseProbeSection        `toml:"probe"`
 	Upgrade      OpnsenseUpgradeSection      `toml:"upgrade"`
 	Validate     OpnsenseValidateSection     `toml:"validate"`
@@ -171,12 +172,29 @@ type OpnsenseHostSection struct {
 	HeartbeatTimeoutDuration  string `toml:"heartbeat_timeout"`
 }
 
+// OpnsenseDrainSection configures the mwan-opnsense-drain daemon that runs
+// on the Proxmox host. The drainer holds the qemu virtio-serial chardev open
+// and always reads it so a bridge restart never disconnects the host side and
+// strands a guest write in the kernel. Chardev is the qemu chardev unix socket
+// the drainer dials and holds; Listen is the relay socket the bridge dials in
+// place of the chardev. See docs/opnsense/wedge.md.
+type OpnsenseDrainSection struct {
+	Chardev string `toml:"chardev"`
+	Listen  string `toml:"listen"`
+}
+
 // OpnsenseProbeSection configures the mwan-probe client that talks to
 // the host daemon over the local Unix socket.
 type OpnsenseProbeSection struct {
 	Target           string `toml:"target"`
 	TimeoutDuration  string `toml:"timeout"`
 	UploadChunkBytes int    `toml:"upload_chunk_bytes"`
+	// TransferStallDuration bounds file transfers by lack of progress
+	// rather than total wall-clock time. A transfer succeeds as long as
+	// bytes keep flowing and fails only after this much time with no
+	// progress. Empty falls back to a built-in default, because a large
+	// transfer must never be killed by a fixed whole-transfer deadline.
+	TransferStallDuration string `toml:"transfer_stall_timeout"`
 }
 
 // OpnsenseUpgradeSection configures the mwan upgrade orchestrator. Operator
@@ -408,20 +426,30 @@ type IfMgrIfaceSection struct {
 	DHCPMaxBackoff     string `toml:"dhcp_max_backoff"`
 }
 
+// defaultDrainSocket is the relay socket the chardev drainer listens on and the
+// host bridge dials. [opnsense.host].upstream and [opnsense.drain].listen must
+// name the same path, so both derive from this one constant to avoid drift.
+const defaultDrainSocket = "/var/run/mwan-opnsense-drain.sock"
+
 func defaultConfig() Config {
 	cfg := defaultConfigBase()
 	// Populate the [opnsense.*] subsections outside the base Config literal.
 	cfg.OPNsense.Host = OpnsenseHostSection{
-		Upstream:                  "unix:///var/run/qemu-server/101.mwanrpc",
+		Upstream:                  "unix://" + defaultDrainSocket,
 		Listen:                    "/var/run/mwan-opnsense.sock",
 		ReconnectDuration:         "2s",
 		HeartbeatIntervalDuration: "30s",
 		HeartbeatTimeoutDuration:  "10s",
 	}
+	cfg.OPNsense.Drain = OpnsenseDrainSection{
+		Chardev: "unix:///var/run/qemu-server/101.mwanrpc",
+		Listen:  defaultDrainSocket,
+	}
 	cfg.OPNsense.Probe = OpnsenseProbeSection{
-		Target:           "unix:///var/run/mwan-opnsense.sock",
-		TimeoutDuration:  "10s",
-		UploadChunkBytes: 16384,
+		Target:                "unix:///var/run/mwan-opnsense.sock",
+		TimeoutDuration:       "10s",
+		UploadChunkBytes:      16384,
+		TransferStallDuration: "30s",
 	}
 	cfg.OPNsense.Upgrade = OpnsenseUpgradeSection{
 		VMID:                     101,

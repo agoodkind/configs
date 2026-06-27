@@ -213,6 +213,14 @@
           start 101) for the new args to take effect.
       tags: ["args"]
 
+    - name: Restart mwan-opnsense-drain
+      ansible.builtin.systemd:
+        name: mwan-opnsense-drain
+        state: restarted
+        daemon_reload: true
+      become: true
+      tags: ["opnsense-host-bridge"]
+
     - name: Restart mwan-opnsense-host
       ansible.builtin.systemd:
         name: mwan-opnsense-host

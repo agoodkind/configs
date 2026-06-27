@@ -5,15 +5,20 @@
 # Pairs with mwan-opnsense-deploy.yml which installs the daemon inside the
 # OPNsense guest.
 #
+# A chardev drainer (mwan opnsense host drain) sits in front of the bridge: it
+# holds the qemu chardev open and re-exposes it on a relay socket, so a bridge
+# restart never disconnects the chardev and strands a guest write in the kernel.
+# The bridge dials the relay instead of the chardev. See docs/opnsense/wedge.md.
+#
 # Required vars:
 #   mwan_opnsense_host_binary_local      local path to bin/mwan-linux
-#   mwan_opnsense_host_upstream          unix:///var/run/qemu-server/<vmid>.mwanrpc
-#
-# Optional vars (with defaults):
-#   mwan_opnsense_host_listen_path       default "/var/run/mwan-opnsense.sock"
-#   mwan_opnsense_host_reconnect         default "2s"
-#   mwan_opnsense_host_hb_interval       default "30s"
-#   mwan_opnsense_host_hb_timeout        default "10s"
+#   mwan_opnsense_host_upstream          the drainer relay socket the bridge dials
+#   mwan_opnsense_drain_chardev          unix:///var/run/qemu-server/<vmid>.mwanrpc
+#   mwan_opnsense_drain_listen           relay socket path the drainer serves
+#   mwan_opnsense_host_listen_path       the probe socket the bridge serves
+#   mwan_opnsense_host_reconnect         bridge reconnect backoff
+#   mwan_opnsense_host_hb_interval       bridge heartbeat interval
+#   mwan_opnsense_host_hb_timeout        bridge heartbeat timeout
 
 - name: Install mwan monolith binary
   ansible.builtin.copy:
@@ -24,7 +29,33 @@
     mode: "0755"
   become: true
   register: mwan_opnsense_host_binary
-  notify: Restart mwan-opnsense-host
+  notify:
+    - Restart mwan-opnsense-drain
+    - Restart mwan-opnsense-host
+
+- name: Install mwan-opnsense-drain systemd service
+  ansible.builtin.copy:
+    src: >-
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-drain.service
+    dest: /etc/systemd/system/mwan-opnsense-drain.service
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: mwan_opnsense_drain_unit
+  notify: Restart mwan-opnsense-drain
+
+- name: Install mwan-opnsense-drain systemd socket
+  ansible.builtin.template:
+    src: >-
+      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-drain.socket.j2
+    dest: /etc/systemd/system/mwan-opnsense-drain.socket
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: mwan_opnsense_drain_socket
+  notify: Restart mwan-opnsense-drain
 
 - name: Install systemd unit
   ansible.builtin.copy:
@@ -55,7 +86,7 @@
     mode: "0644"
     content: |
       # Managed by ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml.
-      # The host bridge reads every input from this section.
+      # The host bridge and the chardev drainer read their inputs from here.
       hostname = "{{ inventory_hostname }}"
 
       [opnsense.host]
@@ -64,9 +95,30 @@
       reconnect = "{{ mwan_opnsense_host_reconnect }}"
       heartbeat_interval = "{{ mwan_opnsense_host_hb_interval }}"
       heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout }}"
+
+      [opnsense.drain]
+      chardev = "{{ mwan_opnsense_drain_chardev }}"
+      listen = "{{ mwan_opnsense_drain_listen }}"
   become: true
   register: mwan_opnsense_host_toml
-  notify: Restart mwan-opnsense-host
+  notify:
+    - Restart mwan-opnsense-drain
+    - Restart mwan-opnsense-host
+
+- name: Enable and start mwan-opnsense-drain socket
+  ansible.builtin.systemd:
+    name: mwan-opnsense-drain.socket
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+
+- name: Enable and start mwan-opnsense-drain service
+  ansible.builtin.systemd:
+    name: mwan-opnsense-drain.service
+    enabled: true
+    state: started
+  become: true
 
 - name: Enable and start mwan-opnsense-host
   ansible.builtin.systemd:

@@ -2,11 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -112,6 +108,30 @@ func dialProbe() (*opnsense.Client, context.Context, context.CancelFunc, error) 
 	return cli, ctx, cancel, nil
 }
 
+// dialProbeTransfer is the dial helper for file transfers. It is identical to
+// dialProbe except the returned context has no overall deadline. A whole-
+// transfer wall-clock deadline cannot be 100% reliable, because any file large
+// enough exceeds any fixed timeout; transfers are instead bounded by a progress
+// stall watchdog (see transferWatchdog). The caller must Close the client and
+// cancel the context.
+func dialProbeTransfer() (*opnsense.Client, context.Context, context.CancelFunc, error) {
+	cfg, err := loadOpnsenseConfig()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	target, err := requireProbeTarget(cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cli, err := opnsense.Dial(target)
+	if err != nil {
+		slog.Error("opnsense: dial", "err", err, "target", target)
+		return nil, nil, nil, fmt.Errorf("opnsense: dial %s: %w", target, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return cli, ctx, cancel, nil
+}
+
 // printAndExit prints an error to stderr in the conventional
 // "mwan opnsense <path>: <err>" form and returns 1.
 func printAndExit(path string, err error) int {
@@ -179,18 +199,18 @@ func runDaemonMarkHealthy() int {
 	return 0
 }
 
+// runDaemonPush stages BINARY through the shared TransferService Upload path
+// with FINISH_STEP_STAGE. It reuses streamUpload (the same writer as `file
+// push`) so the upload protocol and the progress-stall deadline live in one
+// place. The daemon writes the staged file to its standard staging path and
+// returns the canonical sha256 in the terminal, which a follow-up `daemon
+// stage` refers to.
 func runDaemonPush(args []string) int {
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "usage: mwan opnsense daemon push BINARY")
 		return 2
 	}
-	binaryPath := args[0]
-	cli, ctx, cancel, err := dialProbe()
-	if err != nil {
-		return printAndExit("daemon push", err)
-	}
-	defer cancel()
-	defer func() { _ = cli.Close() }()
+	binaryPath := filepath.Clean(args[0])
 	cfg, err := loadOpnsenseConfig()
 	if err != nil {
 		return printAndExit("daemon push", err)
@@ -199,91 +219,35 @@ func runDaemonPush(args []string) int {
 	if err != nil {
 		return printAndExit("daemon push", err)
 	}
-	sha, err := pushBinaryToDaemon(ctx, cli, binaryPath, chunk)
+	stall, err := requireProbeTransferStall(cfg)
 	if err != nil {
 		return printAndExit("daemon push", err)
 	}
-	fmt.Printf("pushed sha256=%s\n", sha)
-	return 0
-}
+	content, err := os.ReadFile(binaryPath)
+	if err != nil {
+		return printAndExit("daemon push", fmt.Errorf("read %s: %w", binaryPath, err))
+	}
+	cli, ctx, cancel, err := dialProbeTransfer()
+	if err != nil {
+		return printAndExit("daemon push", err)
+	}
+	defer cancel()
+	defer func() { _ = cli.Close() }()
 
-// pushBinaryToDaemon stages BINARY through the TransferService Upload
-// stream with FINISH_STEP_STAGE. The daemon writes the staged file to
-// its standard staging path and returns the canonical sha256 in the
-// terminal message. Returns the hex sha so a follow-up `daemon stage`
-// can refer to the same artefact.
-func pushBinaryToDaemon(ctx context.Context, cli *opnsense.Client, binaryPath string, chunk int) (string, error) {
-	clean := filepath.Clean(binaryPath)
-	content, err := os.ReadFile(clean)
+	header := &mwanv1.TransferHeader{
+		Path:       filepath.Join("/usr/local/sbin", "mwan-opnsense"),
+		Direction:  mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+		FinishStep: mwanv1.FinishStep_FINISH_STEP_STAGE,
+		TotalSize:  int64(len(content)),
+	}
+	term, err := streamUpload(ctx, cli, header, content, chunk, stall)
 	if err != nil {
-		return "", wrapErr(ctx, "daemon push: read "+clean, err)
+		return printAndExit("daemon push", err)
 	}
-	stream, err := cli.TransferClient().Upload(ctx)
-	if err != nil {
-		return "", wrapErr(ctx, "daemon push: open upload stream", err)
-	}
-	target := filepath.Join("/usr/local/sbin", "mwan-opnsense")
-	if sendErr := stream.Send(&mwanv1.UploadRequest{
-		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
-			Path:       target,
-			Direction:  mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
-			FinishStep: mwanv1.FinishStep_FINISH_STEP_STAGE,
-			TotalSize:  int64(len(content)),
-		}},
-	}); sendErr != nil {
-		return "", wrapErr(ctx, "daemon push: send header", sendErr)
-	}
-	if _, recvErr := stream.Recv(); recvErr != nil {
-		return "", wrapErr(ctx, "daemon push: recv header ack", recvErr)
-	}
-	offset := int64(0)
-	total := int64(len(content))
-	for offset < total {
-		end := min(offset+int64(chunk), total)
-		if sendErr := stream.Send(&mwanv1.UploadRequest{
-			Body: &mwanv1.UploadRequest_Data{Data: &mwanv1.TransferDataChunk{
-				Offset: offset, Data: content[offset:end],
-			}},
-		}); sendErr != nil {
-			return "", wrapErr(ctx, "daemon push: send data", sendErr)
-		}
-		ackMsg, recvErr := stream.Recv()
-		if recvErr != nil {
-			return "", wrapErr(ctx, "daemon push: recv data ack", recvErr)
-		}
-		dataAck, ok := ackMsg.GetBody().(*mwanv1.UploadResponse_DataAck)
-		if !ok {
-			return "", wrapErr(ctx, "daemon push: expected data ack", fmt.Errorf("got %T at offset %d", ackMsg.GetBody(), end))
-		}
-		if dataAck.DataAck.GetCommittedOffset() != end {
-			return "", wrapErr(ctx, "daemon push: data ack offset", fmt.Errorf("got %d want %d", dataAck.DataAck.GetCommittedOffset(), end))
-		}
-		offset = end
-	}
-	sum := sha256.Sum256(content)
-	finalHex := hex.EncodeToString(sum[:])
-	if sendErr := stream.Send(&mwanv1.UploadRequest{
-		Body: &mwanv1.UploadRequest_Final{Final: &mwanv1.TransferFinal{Sha256Hex: finalHex}},
-	}); sendErr != nil {
-		return "", wrapErr(ctx, "daemon push: send final", sendErr)
-	}
-	if closeErr := stream.CloseSend(); closeErr != nil {
-		return "", wrapErr(ctx, "daemon push: close send", closeErr)
-	}
-	for {
-		msg, recvErr := stream.Recv()
-		if errors.Is(recvErr, io.EOF) {
-			return "", wrapErr(ctx, "daemon push: stream ended", errors.New("no terminal message"))
-		}
-		if recvErr != nil {
-			return "", wrapErr(ctx, "daemon push: recv terminal", recvErr)
-		}
-		if term := msg.GetTerminal(); term != nil {
-			fmt.Printf("daemon push: bytes=%d sha256=%s staged_path=%s\n",
-				term.GetTotalBytes(), term.GetSha256Hex(), term.GetStagedPath())
-			return term.GetSha256Hex(), nil
-		}
-	}
+	fmt.Printf("daemon push: bytes=%d sha256=%s staged_path=%s\n",
+		term.GetTotalBytes(), term.GetSha256Hex(), term.GetStagedPath())
+	fmt.Printf("pushed sha256=%s\n", term.GetSha256Hex())
+	return 0
 }
 
 func runDaemonStage(args []string) int {
