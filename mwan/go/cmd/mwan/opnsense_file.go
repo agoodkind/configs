@@ -74,7 +74,9 @@ type transferWatchdog struct {
 func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *transferWatchdog {
 	w := &transferWatchdog{done: make(chan struct{}), stall: stall}
 	w.last.Store(time.Now().UnixNano())
-	tick := max(stall/4, time.Second)
+	// Tick at stall/4 for prompt detection, capped at 1s so a long stall still
+	// samples often; min (not max) keeps the 1s cap from delaying a short stall.
+	tick := min(stall/4, time.Second)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
