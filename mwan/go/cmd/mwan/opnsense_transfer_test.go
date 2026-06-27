@@ -113,6 +113,36 @@ func TestTransferWatchdogZeroStallNoPanic(t *testing.T) {
 	}
 }
 
+// TestTransferWatchdogStopIdempotent proves that calling stop() twice does not
+// panic and does not trigger a spurious stall.
+func TestTransferWatchdogStopIdempotent(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wd := startTransferWatchdog(cancel, 5*time.Second)
+	wd.stop()
+	wd.stop() // must not panic
+	if wd.fired() {
+		t.Fatal("double stop caused a spurious stall")
+	}
+}
+
+// TestTransferWatchdogPanicFailClosed proves that handleWatchdogPanic sets the
+// stalled flag and cancels the context.
+func TestTransferWatchdogPanicFailClosed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	wd := startTransferWatchdog(cancel, 10*time.Second)
+	defer wd.stop()
+
+	wd.handleWatchdogPanic(cancel, errors.New("test panic"))
+
+	if !wd.fired() {
+		t.Fatal("handleWatchdogPanic did not set the stalled flag")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("handleWatchdogPanic did not cancel the context")
+	}
+}
+
 // TestRequireProbeTransferStall covers the fallback-on-empty behavior plus the
 // parse and positivity checks.
 func TestRequireProbeTransferStall(t *testing.T) {

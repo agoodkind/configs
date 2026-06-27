@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -130,11 +131,19 @@ func requireDrainChardev(cfg *config.Config) (string, error) {
 	return v, nil
 }
 
-// requireDrainListen returns [opnsense.drain].listen or an error.
+// requireDrainListen returns [opnsense.drain].listen or an error. The value
+// must be an absolute filesystem path: unix:// URLs and relative paths are
+// rejected so callers always get a path that [net.Listen]("unix", v) can use.
 func requireDrainListen(cfg *config.Config) (string, error) {
 	v := strings.TrimSpace(cfg.OPNsense.Drain.Listen)
 	if v == "" {
 		return "", fmt.Errorf("opnsense: [opnsense.drain].listen is required in /etc/mwan/config.toml")
+	}
+	if strings.HasPrefix(v, "unix://") {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].listen %q must be an absolute path, not a unix:// URL", v)
+	}
+	if !filepath.IsAbs(v) {
+		return "", fmt.Errorf("opnsense: [opnsense.drain].listen %q must be an absolute path", v)
 	}
 	return v, nil
 }

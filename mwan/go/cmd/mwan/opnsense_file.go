@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -62,6 +63,7 @@ func runOPNsenseFile(args []string) int {
 type transferWatchdog struct {
 	last    atomic.Int64 // unix nanos of last progress
 	stalled atomic.Bool
+	once    sync.Once
 	done    chan struct{}
 	stall   time.Duration
 }
@@ -84,7 +86,7 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error("mwan opnsense: transfer watchdog panic", "err", fmt.Errorf("panic: %v", r))
+				w.handleWatchdogPanic(cancel, fmt.Errorf("panic: %v", r))
 			}
 		}()
 		t := time.NewTicker(tick)
@@ -107,7 +109,16 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 
 func (w *transferWatchdog) markProgress() { w.last.Store(time.Now().UnixNano()) }
 
-func (w *transferWatchdog) stop() { close(w.done) }
+// handleWatchdogPanic records the stall and cancels the transfer context after a
+// panic in the watchdog goroutine so the caller fails closed rather than hanging.
+// The caller is responsible for converting the recover() value to an error.
+func (w *transferWatchdog) handleWatchdogPanic(cancel context.CancelFunc, panicErr error) {
+	slog.Error("mwan opnsense: transfer watchdog panic", "err", panicErr)
+	w.stalled.Store(true)
+	cancel()
+}
+
+func (w *transferWatchdog) stop() { w.once.Do(func() { close(w.done) }) }
 
 // fired reports whether the watchdog tripped the cancel due to a stall.
 func (w *transferWatchdog) fired() bool { return w.stalled.Load() }

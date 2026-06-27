@@ -132,3 +132,54 @@ settle_after_upgrade = ""
 	// on the message text is the contract.
 	_ = errors.New("placeholder")
 }
+
+// TestRequireDrainListen covers unix:// URL rejection, relative path rejection,
+// and acceptance of an absolute path.
+func TestRequireDrainListen(t *testing.T) {
+	cases := []struct {
+		name    string
+		listen  string
+		wantErr bool
+	}{
+		{
+			name:    "unix:// URL is rejected",
+			listen:  "unix:///var/run/mwan.sock",
+			wantErr: true,
+		},
+		{
+			name:    "relative path is rejected",
+			listen:  "var/run/mwan.sock",
+			wantErr: true,
+		},
+		{
+			name:    "absolute path is accepted",
+			listen:  "/var/run/mwan.sock",
+			wantErr: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			writeTempTOML(t, "hostname = \"drain-test\"\n\n[opnsense.drain]\nlisten = \""+tc.listen+"\"\n")
+			cfg, err := loadOpnsenseConfig()
+			if err != nil {
+				t.Fatalf("loadOpnsenseConfig: %v", err)
+			}
+			got, err := requireDrainListen(cfg)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for listen=%q, got nil", tc.listen)
+				}
+				if !strings.Contains(err.Error(), "[opnsense.drain].listen") {
+					t.Fatalf("error %q does not name [opnsense.drain].listen", err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got != tc.listen {
+					t.Fatalf("got %q, want %q", got, tc.listen)
+				}
+			}
+		})
+	}
+}
