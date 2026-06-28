@@ -135,8 +135,9 @@ across testbed accumulation runs (162 genuine kill-mid-transfer trials, zero wed
 stalls).
 
 This is why no liveness frames are added to the serial stream and yamux keepalive stays off
-(see What not to touch). Recovery does not depend on the host bridge heartbeat firing; the
-heartbeat is a backstop, and the common path is the immediate duplicate-stream rebuild.
+(see [What not to touch](#what-not-to-touch)). Recovery does not depend on the host bridge
+heartbeat firing; the heartbeat is a backstop, and the common path is the immediate
+duplicate-stream rebuild.
 
 To inspect the guest's serial reads and writes at the syscall level, run dtrace on the
 OPNsense guest with `-xnolibs`. The bundled dtrace libraries (`ip.d`, `socket.d`) fail to
