@@ -123,6 +123,27 @@ The fix has two coupled halves.
    runs the preflight then execs the daemon, so a restart round-trips and a bad self-deploy
    auto-reverts. The forced stop kills the process group so a wedged child can never orphan.
 
+## Session recovery after a host-side disruption
+
+When the host bridge or the chardev drainer restarts or dies mid-transfer, the guest keeps
+its serial fd open and its old yamux session live, because the byte stream never breaks. The
+host re-dials and opens a fresh yamux session over the same stream. The guest's old session
+reads the new session's first framing as a collision and ends with the error
+`grpc serve: duplicate stream initiated`, and the serve loop rebuilds. Recovery is driven by
+that collision event, not by a timer, and is observed to complete in under five seconds
+across testbed accumulation runs (162 genuine kill-mid-transfer trials, zero wedges, zero
+stalls).
+
+This is why no liveness frames are added to the serial stream and yamux keepalive stays off
+(see [What not to touch](#what-not-to-touch)). Recovery does not depend on the host bridge
+heartbeat firing; the heartbeat is a backstop, and the common path is the immediate
+duplicate-stream rebuild.
+
+To inspect the guest's serial reads and writes at the syscall level, run dtrace on the
+OPNsense guest with `-xnolibs`. The bundled dtrace libraries (`ip.d`, `socket.d`) fail to
+compile on this kernel for lack of CTF, so the default invocation aborts; `-xnolibs` skips
+the libraries and the `syscall` provider still works.
+
 ## What not to touch
 
 These are the load-bearing invariants. Changing any of them re-opens a documented wedge.
