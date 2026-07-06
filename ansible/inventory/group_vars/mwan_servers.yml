@@ -179,7 +179,7 @@ mwan_webpass_pd_prefix: "2604:5500:c271:be00::/56"
 
 # Monkeybrains delegated prefix (DHCPv6-PD).
 # Hardcoded to avoid unreliable per-iface PD discovery. Update if Monkeybrains changes the PD.
-mwan_monkeybrains_pd_prefix: "2607:f598:d3e8:3100::/56"
+mwan_monkeybrains_pd_prefix: "2607:f598:d3e8:4500::/56"
 
 # ----------------------------------------------------------------------------
 # Static IP mappings (1:1 NAT)
