@@ -103,20 +103,7 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		return err
 	}
 
-	for _, iface := range watchedIfaces(m.cfg) {
-		monitor := netif.NewMonitor(ctx, m.log, netif.MonitorConfig{Iface: iface})
-		go func(monitoredIface string, monitored *netif.Monitor) {
-			defer func() {
-				recovered := recover()
-				if recovered == nil {
-					return
-				}
-				m.log.ErrorContext(ctx, "wan_routes: drainMonitor panicked",
-					"iface", monitoredIface, "err", fmt.Sprint(recovered))
-			}()
-			m.drainMonitor(ctx, monitored, monitoredIface)
-		}(iface, monitor)
-	}
+	ifmgr.StartIfaceMonitors(ctx, m.log, moduleName, watchedIfaces(m.cfg), m.onMonitorEvent)
 	return nil
 }
 
@@ -190,31 +177,18 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 // EvaluateAlerts is a no-op for this phase.
 func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {}
 
-func (m *Module) drainMonitor(ctx context.Context, monitor *netif.Monitor, iface string) {
-	log := m.log.With("monitor_iface", iface)
-	for {
-		select {
-		case <-ctx.Done():
-			log.DebugContext(ctx, "wan_routes: monitor drain exiting")
-			return
-		case event, ok := <-monitor.Events:
-			if !ok {
-				log.WarnContext(ctx, "wan_routes: monitor event channel closed")
-				return
-			}
-			if !isDefaultRouteEvent(event) {
-				continue
-			}
-			eventLog := log.With(
-				"kind", event.Kind.String(),
-				"family", event.Family,
-				"via", event.Via,
-			)
-			eventLog.DebugContext(ctx, "wan_routes: default route event, reconciling")
-			if err := m.Reconcile(ctx, eventLog); err != nil {
-				eventLog.WarnContext(ctx, "wan_routes: reconcile after route event failed", "err", err)
-			}
-		}
+func (m *Module) onMonitorEvent(ctx context.Context, log *slog.Logger, event netif.Event) {
+	if !isDefaultRouteEvent(event) {
+		return
+	}
+	eventLog := log.With(
+		"kind", event.Kind.String(),
+		"family", event.Family,
+		"via", event.Via,
+	)
+	eventLog.DebugContext(ctx, "wan_routes: default route event, reconciling")
+	if err := m.Reconcile(ctx, eventLog); err != nil {
+		eventLog.WarnContext(ctx, "wan_routes: reconcile after route event failed", "err", err)
 	}
 }
 
