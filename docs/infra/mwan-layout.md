@@ -117,4 +117,4 @@ journalctl -u wpa_supplicant-mwan --no-pager --since "1 hour ago"
 journalctl -u bringup-att-vlan --no-pager --since "1 hour ago"
 networkctl status enatt0.3242
 ```
-| `enmbrains0` | Monkeybrains | `158.247.70.6/26` (public) | SLAAC `2607:f598:d3e0:131::/64` (no PD) | 5000 (tertiary) | RA restored. DHCPv6-PD not delegated (provider-side). NAT66 masquerade fallback active. IPv4 upgraded from CG-NAT to public. |
+| `enmbrains0` | Monkeybrains | `158.247.70.19/26` (public, DHCPv4) | SLAAC `2607:f598:d3e0:131::/64` (mngtmpaddr) plus DHCPv6-PD `2607:f598:d3e8:4500::/56` (dynamic, renumbers) | 5000 (tertiary) | NPT is active (not masquerade): the PD's first `/60` (`2607:f598:d3e8:4500::/60`) is prefix-translated to internal `3d06:bad:b01::/60`. The prefix is tracked from the live delegation via `find-pd-prefixes.sh`, not the hardcoded `MWAN_PD_MONKEYBRAINS_PREFIX`, which is stale (`3100::/56`) after a renumber. Excluded from health checks via `MWAN_HEALTH_EXCLUDE_WANS`. Verified live on VM 113 on 2026-07-06. |
