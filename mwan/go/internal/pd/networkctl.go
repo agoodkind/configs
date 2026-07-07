@@ -51,6 +51,15 @@ func UnmarshalNetworkctlPrefixes(data []byte) ([]netip.Prefix, error) {
 	if err := unmarshalNetworkctlPrefixFields(raw, &prefixes); err != nil {
 		return nil, errors.New("decode networkctl delegated prefixes: " + err.Error())
 	}
+	// Fallback matching find-pd-prefixes.sh: networkctl output shape varies
+	// across systemd versions, so when no DelegatedPrefix* key is present,
+	// scan every string value for an IPv6 CIDR no longer than /60. Without
+	// this a valid delegation can be missed and the slower probes take over.
+	if len(prefixes) == 0 {
+		if err := unmarshalCIDRStrings(raw, maxNetworkctlPrefixBits, &prefixes); err != nil {
+			return nil, errors.New("scan networkctl CIDRs: " + err.Error())
+		}
+	}
 	return uniqueSortedPrefixes(prefixes), nil
 }
 

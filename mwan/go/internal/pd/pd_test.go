@@ -79,3 +79,27 @@ func TestParseNetworkctlPrefixesFiltersLongPrefixes(t *testing.T) {
 		t.Fatalf("prefixes=%v, want %v", got, want)
 	}
 }
+
+func TestParseNetworkctlPrefixesScanFallbackWithoutDelegatedKeys(t *testing.T) {
+	t.Parallel()
+
+	// No DelegatedPrefix* key is present, so the generic scan fallback must
+	// still find the short IPv6 CIDR and skip the on-link /64, matching the
+	// last resort in find-pd-prefixes.sh.
+	fixture := []byte(`{
+		"Name": "enmbrains0",
+		"SomeVaryingKey": "2607:f598:d3e8:4500::/56",
+		"Addresses": ["2607:f598:d3e8:4500:1::/64"]
+	}`)
+
+	got, err := UnmarshalNetworkctlPrefixes(fixture)
+	if err != nil {
+		t.Fatalf("UnmarshalNetworkctlPrefixes returned error: %v", err)
+	}
+	want := []netip.Prefix{
+		netip.MustParsePrefix("2607:f598:d3e8:4500::/56"),
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("prefixes=%v, want %v", got, want)
+	}
+}
