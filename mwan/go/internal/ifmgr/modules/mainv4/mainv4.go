@@ -16,7 +16,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -28,12 +27,11 @@ import (
 
 // Module owns the main-table v4 state for one iface.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg   Config
-	env   *ifmgr.Env
-	log   *slog.Logger
 	clock internalclock.Clock
 
-	mu          sync.Mutex
 	currentCIDR string
 	currentGW   string
 	lastBound   time.Time
@@ -47,16 +45,12 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "mainv4" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "mainv4" }
-
 // Init implements ifmgr.Module. Inert when DHCP is disabled so that the
 // shared failover role still works on hosts that do not own DHCPv4
 // (prod LXC 116 today). A no-op Init lets the role include this module
 // unconditionally without breaking those hosts.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "mainv4", "iface", m.cfg.Iface)
+	log := m.InitBase(env, "module", "mainv4", "iface", m.cfg.Iface)
 	if m.clock == nil {
 		m.clock = internalclock.Real{}
 	}
@@ -64,23 +58,18 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		// Inert when DHCPv4 is disabled. iface is unused in this mode, so
 		// don't require it; lets roles include the module unconditionally
 		// without forcing every host's config to declare a placeholder iface.
-		m.log.InfoContext(ctx, "mainv4: Init (inert: dhcp_v4 is disabled)")
+		log.InfoContext(ctx, "mainv4: Init (inert: dhcp_v4 is disabled)")
 		return nil
 	}
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("mainv4: iface is required when dhcp_v4 is enabled")
 	}
-	m.log.InfoContext(ctx, "mainv4: Init (active)")
+	log.InfoContext(ctx, "mainv4: Init (active)")
 	return nil
 }
 
 // Reconcile implements ifmgr.Module. v4 reacts to lease events.
 func (m *Module) Reconcile(_ context.Context, _ *slog.Logger) error {
-	return nil
-}
-
-// OnKernelEvent implements ifmgr.Module.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
 	return nil
 }
 
@@ -91,7 +80,7 @@ func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event)
 func (m *Module) OnDHCPLease(
 	ctx context.Context, log *slog.Logger, lease netif.LeaseInfo,
 ) error {
-	if m.env.DHCP == nil {
+	if m.Env.DHCP == nil {
 		return nil
 	}
 	log = log.With("op", "lease-event", "state", lease.State.String())
@@ -142,8 +131,8 @@ func (m *Module) applyBound(
 		return fmt.Errorf("apply lease default route: %w", err)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	if m.currentCIDR != "" && m.currentCIDR != cidr {
 		log.InfoContext(ctx, "mainv4: lease IP changed", "old", m.currentCIDR, "new", cidr)
 	}
@@ -169,21 +158,16 @@ func (m *Module) applyExpired(ctx context.Context, log *slog.Logger) error {
 	if err := netif.ReconcileTableDefault(ctx, log, clearRoute); err != nil {
 		return fmt.Errorf("clear main-table default v4: %w", err)
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	m.currentGW = ""
 	return nil
 }
 
-// EvaluateAlerts implements ifmgr.Module. Lease-loss alerting is owned
-// by ralost; this module just exposes lastBound.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
-}
-
 // LastBound exposes the last BOUND timestamp for ralost.
 func (m *Module) LastBound() time.Time {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	return m.lastBound
 }
 
@@ -200,11 +184,9 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c = typedConfig
 	}
 	return &Module{
+		BaseModule:  ifmgr.NewBaseModule("mainv4"),
 		cfg:         c,
-		env:         nil,
-		log:         nil,
 		clock:       nil,
-		mu:          sync.Mutex{},
 		currentCIDR: "",
 		currentGW:   "",
 		lastBound:   time.Time{},

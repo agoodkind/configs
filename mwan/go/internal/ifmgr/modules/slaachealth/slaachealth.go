@@ -14,7 +14,6 @@ import (
 	"log/slog"
 	"net/netip"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/vishvananda/netlink"
@@ -27,12 +26,11 @@ import (
 
 // Module owns SLAAC health for one iface.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg   Config
-	env   *ifmgr.Env
-	log   *slog.Logger
 	clock internalclock.Clock
 
-	mu              sync.Mutex
 	degradedSince   time.Time
 	lastToggle      time.Time
 	togglesThisHour int
@@ -53,17 +51,13 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "slaac_health" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "slaac_health" }
-
 // Init implements ifmgr.Module.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "slaac_health", "iface", m.cfg.Iface)
+	log := m.InitBase(env, "module", "slaac_health", "iface", m.cfg.Iface)
 	if m.clock == nil {
 		m.clock = internalclock.Real{}
 	}
-	m.log.InfoContext(
+	log.InfoContext(
 		ctx, "slaac_health: Init",
 		"degraded_after", m.cfg.DegradedAfter.String(),
 		"escalate_after", m.cfg.EscalateAfter.String(),
@@ -149,33 +143,33 @@ func (m *Module) hasNonDeprecatedGlobalV6(log *slog.Logger) bool {
 
 // handleHealthy resets the degraded clock and resolves any active alert.
 func (m *Module) handleHealthy(ctx context.Context, now time.Time, log *slog.Logger) {
-	m.mu.Lock()
+	m.Lock()
 	wasDegraded := !m.degradedSince.IsZero()
 	m.degradedSince = time.Time{}
-	m.mu.Unlock()
+	m.Unlock()
 
 	if wasDegraded {
 		log.InfoContext(ctx, "slaac_health: recovered to healthy")
-		m.env.Alerts.ResolveContext(ctx, now, "slaac-degraded", m.cfg.Iface,
+		m.Env.Alerts.ResolveContext(ctx, now, "slaac-degraded", m.cfg.Iface,
 			"slaac_health: recovered")
 	}
 }
 
 // handleDegraded escalates per the staged strategy.
 func (m *Module) handleDegraded(ctx context.Context, now time.Time, log *slog.Logger) {
-	m.mu.Lock()
+	m.Lock()
 	if m.degradedSince.IsZero() {
 		m.degradedSince = now
 	}
 	since := m.degradedSince
-	m.mu.Unlock()
+	m.Unlock()
 
 	age := now.Sub(since)
 	log.DebugContext(ctx, "slaac_health: degraded", "age_s", int(age.Seconds()))
 
 	switch {
 	case age >= m.cfg.AlertAfter:
-		m.env.Alerts.NotifyContext(
+		m.Env.Alerts.NotifyContext(
 			ctx, now, slog.LevelWarn,
 			"slaac-degraded", m.cfg.Iface,
 			"slaac_health: degraded beyond alert threshold",
@@ -193,13 +187,13 @@ func (m *Module) handleDegraded(ctx context.Context, now time.Time, log *slog.Lo
 // trySolicit sends one Router Solicitation if the RA client is available.
 // Non-fatal on failure.
 func (m *Module) trySolicit(ctx context.Context, log *slog.Logger) {
-	if m.env.RA == nil {
+	if m.Env.RA == nil {
 		log.DebugContext(ctx, "slaac_health: no RA client; skipping solicit")
 		return
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_, err := m.env.RA.SolicitRA(cctx, 5*time.Second)
+	_, err := m.Env.RA.SolicitRA(cctx, 5*time.Second)
 	log.InfoContext(ctx, "slaac_health: sent Router Solicitation", "err", err)
 }
 
@@ -207,13 +201,13 @@ func (m *Module) trySolicit(ctx context.Context, log *slog.Logger) {
 // the kernel to discard SLAAC state and accept fresh RAs. Throttled to
 // MaxTogglesPerHour to prevent flapping.
 func (m *Module) tryToggle(ctx context.Context, now time.Time, log *slog.Logger) {
-	m.mu.Lock()
+	m.Lock()
 	if now.Sub(m.hourBucketStart) >= time.Hour {
 		m.hourBucketStart = now
 		m.togglesThisHour = 0
 	}
 	if m.togglesThisHour >= m.cfg.MaxTogglesPerHour {
-		m.mu.Unlock()
+		m.Unlock()
 		log.WarnContext(
 			ctx, "slaac_health: throttled (max toggles per hour reached)",
 			"toggles", m.togglesThisHour,
@@ -224,12 +218,12 @@ func (m *Module) tryToggle(ctx context.Context, now time.Time, log *slog.Logger)
 	m.togglesThisHour++
 	m.lastToggle = now
 	count := m.togglesThisHour
-	m.mu.Unlock()
+	m.Unlock()
 
 	log.WarnContext(ctx, "slaac_health: toggling disable_ipv6 to refresh SLAAC",
 		"toggle_count_this_hour", count)
 	key := "net.ipv6.conf." + m.cfg.Iface + ".disable_ipv6"
-	if err := m.env.Sysctl.Set(ctx, key, "1"); err != nil {
+	if err := m.Env.Sysctl.Set(ctx, key, "1"); err != nil {
 		log.ErrorContext(ctx, "slaac_health: failed to set disable_ipv6=1", "err", err)
 		return
 	}
@@ -242,27 +236,12 @@ func (m *Module) tryToggle(ctx context.Context, now time.Time, log *slog.Logger)
 		return
 	case <-timer.C:
 	}
-	if err := m.env.Sysctl.Set(ctx, key, "0"); err != nil {
+	if err := m.Env.Sysctl.Set(ctx, key, "0"); err != nil {
 		log.ErrorContext(ctx, "slaac_health: failed to set disable_ipv6=0", "err", err)
 		return
 	}
 	// Re-issue RS so the kernel relearns immediately.
 	m.trySolicit(ctx, log)
-}
-
-// OnKernelEvent implements ifmgr.Module.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
-	return nil
-}
-
-// OnDHCPLease implements ifmgr.Module.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
-	return nil
-}
-
-// EvaluateAlerts implements ifmgr.Module. Decision logic lives inside
-// Reconcile to keep the staged escalation in one place; this is a no-op.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
 }
 
 // New is the Constructor.
@@ -284,11 +263,9 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c = typedConfig
 	}
 	return &Module{
+		BaseModule:      ifmgr.NewBaseModule("slaac_health"),
 		cfg:             c,
-		env:             nil,
-		log:             nil,
 		clock:           nil,
-		mu:              sync.Mutex{},
 		degradedSince:   time.Time{},
 		lastToggle:      time.Time{},
 		togglesThisHour: 0,

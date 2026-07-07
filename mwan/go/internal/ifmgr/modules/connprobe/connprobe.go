@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"maps"
 	"net/netip"
-	"sync"
 	"time"
 
 	internalclock "goodkind.io/mwan/internal/clock"
@@ -26,12 +25,11 @@ import (
 
 // Module owns the connectivity health state.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg   Config
-	env   *ifmgr.Env
-	log   *slog.Logger
 	clock internalclock.Clock
 
-	mu            sync.Mutex
 	lastResult    map[string]bool // key=target string, val=last probe healthy?
 	lastRunAt     time.Time
 	firstFailedAt map[string]time.Time // key=target string, val=first time it began failing in current run
@@ -48,17 +46,13 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "connectivity_probe" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "connectivity_probe" }
-
 // Init implements ifmgr.Module.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "connectivity_probe", "iface", m.cfg.Iface)
+	log := m.InitBase(env, "module", "connectivity_probe", "iface", m.cfg.Iface)
 	if m.clock == nil {
 		m.clock = internalclock.Real{}
 	}
-	m.log.InfoContext(
+	log.InfoContext(
 		ctx, "connectivity_probe: Init",
 		"target_count", len(m.cfg.TargetsV6),
 		"timeout", m.cfg.Timeout.String(),
@@ -88,7 +82,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		log.DebugContext(ctx, "connectivity_probe: probe result",
 			"target", t.String(), "ok", ok, "err", err)
 	}
-	m.mu.Lock()
+	m.Lock()
 	for tgt, ok := range results {
 		if ok {
 			delete(m.firstFailedAt, tgt)
@@ -102,17 +96,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	}
 	m.lastResult = results
 	m.lastRunAt = now
-	m.mu.Unlock()
-	return nil
-}
-
-// OnKernelEvent implements ifmgr.Module.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
-	return nil
-}
-
-// OnDHCPLease implements ifmgr.Module.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
+	m.Unlock()
 	return nil
 }
 
@@ -121,12 +105,12 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInf
 // before contributing. All failing targets must be past their debounce
 // before the alert fires. Resolution is immediate once all targets succeed.
 func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.Time) {
-	m.mu.Lock()
+	m.Lock()
 	results := m.lastResult
 	last := m.lastRunAt
 	firstFailed := make(map[string]time.Time, len(m.firstFailedAt))
 	maps.Copy(firstFailed, m.firstFailedAt)
-	m.mu.Unlock()
+	m.Unlock()
 
 	if last.IsZero() {
 		return // no probes have run yet
@@ -154,8 +138,8 @@ func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.
 	}
 
 	if allOK {
-		if m.env.Alerts.Active("connectivity-down", m.cfg.Iface) {
-			m.env.Alerts.ResolveContext(ctx, now,
+		if m.Env.Alerts.Active("connectivity-down", m.cfg.Iface) {
+			m.Env.Alerts.ResolveContext(ctx, now,
 				"connectivity-down", m.cfg.Iface,
 				"connectivity_probe: all targets responding again")
 		}
@@ -168,7 +152,7 @@ func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.
 			"unhealthy_after_s", int(m.cfg.UnhealthyAfter.Seconds()))
 		return
 	}
-	m.env.Alerts.NotifyContext(
+	m.Env.Alerts.NotifyContext(
 		ctx, now, slog.LevelWarn,
 		"connectivity-down", m.cfg.Iface,
 		"connectivity_probe: one or more upstream targets unreachable",
@@ -195,11 +179,9 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c = typedConfig
 	}
 	return &Module{
+		BaseModule:    ifmgr.NewBaseModule("connectivity_probe"),
 		cfg:           c,
-		env:           nil,
-		log:           nil,
 		clock:         nil,
-		mu:            sync.Mutex{},
 		lastResult:    nil,
 		lastRunAt:     time.Time{},
 		firstFailedAt: nil,

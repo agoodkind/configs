@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	internalclock "goodkind.io/mwan/internal/clock"
@@ -24,12 +23,11 @@ import (
 
 // Module owns the OOB v6 state for one iface. One Module per Daemon.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg   Config
-	env   *ifmgr.Env
-	log   *slog.Logger
 	clock internalclock.Clock
 
-	mu          sync.Mutex
 	lastRAGW    string    // last RA-learned default gateway in main table
 	lastRASeen  time.Time // last successful observation of RA default
 	lastSLAACPx string    // last observed non-OOB global SLAAC prefix
@@ -64,24 +62,20 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "oobv6" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "oobv6" }
-
 // Init implements ifmgr.Module. Captures env and validates config.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "oobv6", "iface", m.cfg.Iface)
-	m.log.InfoContext(ctx, "oobv6: Init", "oob_addr", m.cfg.OOBAddr, "oob_table_id", m.cfg.OOBTableID)
+	log := m.InitBase(env, "module", "oobv6", "iface", m.cfg.Iface)
+	log.InfoContext(ctx, "oobv6: Init", "oob_addr", m.cfg.OOBAddr, "oob_table_id", m.cfg.OOBTableID)
 	if m.cfg.Iface == "" {
-		m.log.WarnContext(ctx, "oobv6: missing iface")
+		log.WarnContext(ctx, "oobv6: missing iface")
 		return fmt.Errorf("oobv6: iface is required")
 	}
 	if m.cfg.OOBAddr == "" {
-		m.log.WarnContext(ctx, "oobv6: missing oob_addr")
+		log.WarnContext(ctx, "oobv6: missing oob_addr")
 		return fmt.Errorf("oobv6: oob_addr is required")
 	}
 	if m.cfg.OOBTableID <= 0 {
-		m.log.WarnContext(ctx, "oobv6: invalid oob_table_id", "oob_table_id", m.cfg.OOBTableID)
+		log.WarnContext(ctx, "oobv6: invalid oob_table_id", "oob_table_id", m.cfg.OOBTableID)
 		return fmt.Errorf("oobv6: oob_table_id must be > 0")
 	}
 	if m.clock == nil {
@@ -111,9 +105,9 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	}
 
 	// If absent and we have an RA client, send a Router Solicitation to nudge.
-	if cur == nil && m.env.RA != nil {
+	if cur == nil && m.Env.RA != nil {
 		log.DebugContext(ctx, "oobv6: no RA default in main, sending Router Solicitation")
-		ra, sErr := m.env.RA.SolicitRA(ctx, 5*time.Second)
+		ra, sErr := m.Env.RA.SolicitRA(ctx, 5*time.Second)
 		log.DebugContext(ctx, "oobv6: RS result", "got_ra", ra != nil, "err", sErr)
 		// Re-check after solicit; brief delay to let kernel install RA.
 		timer := time.NewTimer(500 * time.Millisecond)
@@ -166,8 +160,8 @@ func (m *Module) syncOOBDefault(
 		return fmt.Errorf("reconcile oob default: %w", err)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	if cur == nil {
 		log.DebugContext(ctx, "oobv6: no RA default; oob table cleared")
 	} else {
@@ -209,14 +203,14 @@ func (m *Module) OnKernelEvent(
 		if strings.HasPrefix(strings.ToLower(ev.CIDR), "fe80") || ev.CIDR == m.cfg.OOBAddr {
 			return nil
 		}
-		m.mu.Lock()
+		m.Lock()
 		old := m.lastSLAACPx
 		m.lastSLAACPx = ev.CIDR
-		m.mu.Unlock()
+		m.Unlock()
 		if old != "" && old != ev.CIDR {
 			// The Alerts.Notify path below is the single email surface;
 			// the prior log.Warn here was a double-emit (audit-flagged).
-			m.env.Alerts.NotifyContext(
+			m.Env.Alerts.NotifyContext(
 				ctx, m.clock.Now(), slog.LevelWarn,
 				"slaac-renumber", m.cfg.Iface,
 				"oobv6: SLAAC prefix changed",
@@ -251,24 +245,12 @@ func (m *Module) OnKernelEvent(
 	return nil
 }
 
-// OnDHCPLease implements ifmgr.Module. v6 module ignores DHCPv4.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
-	return nil
-}
-
-// EvaluateAlerts implements ifmgr.Module. Resolves the slaac-renumber
-// alert when the SLAAC prefix has been stable for some time. ra-lost is
-// owned by the ralost module (separate concern, role-specific threshold).
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
-	// No alerts owned here; ralost handles RA-loss.
-}
-
 // LastRASeen exposes the last RA observation timestamp for the ralost
 // module to consume. Cross-module communication via accessor methods,
 // not via shared mutable state.
 func (m *Module) LastRASeen() time.Time {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	return m.lastRASeen
 }
 
@@ -295,9 +277,9 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 		return fmt.Errorf("find current SLAAC: %w", err)
 	}
 
-	m.mu.Lock()
+	m.Lock()
 	installed := m.installedSLAACAddr
-	m.mu.Unlock()
+	m.Unlock()
 
 	log.DebugContext(ctx, "oobv6: SLAAC src rule state",
 		"installed", installed, "current", current,
@@ -343,9 +325,9 @@ func (m *Module) reconcileSLAACSrcRule(ctx context.Context, log *slog.Logger) er
 		}
 	}
 
-	m.mu.Lock()
+	m.Lock()
 	m.installedSLAACAddr = current
-	m.mu.Unlock()
+	m.Unlock()
 	return nil
 }
 
@@ -428,11 +410,9 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		return nil, fmt.Errorf("oobv6: slaac_rule_priority out of range (1..32765): %d", c.SLAACRulePriority)
 	}
 	return &Module{
+		BaseModule:         ifmgr.NewBaseModule("oobv6"),
 		cfg:                c,
-		env:                nil,
-		log:                nil,
 		clock:              nil,
-		mu:                 sync.Mutex{},
 		lastRAGW:           "",
 		lastRASeen:         time.Time{},
 		lastSLAACPx:        "",

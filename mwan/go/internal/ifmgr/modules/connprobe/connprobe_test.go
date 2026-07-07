@@ -25,16 +25,18 @@ func newTestModule(t *testing.T, unhealthyAfter time.Duration) *Module {
 		Alerts: ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, log, "mwan-ifmgr")),
 	}
 	m := &Module{
+		BaseModule: ifmgr.NewBaseModule("connectivity_probe"),
 		cfg: Config{
 			Iface:          "test0",
 			Timeout:        2 * time.Second,
 			UnhealthyAfter: unhealthyAfter,
 		},
-		env:           env,
-		log:           log,
+		clock:         nil,
 		lastResult:    map[string]bool{},
+		lastRunAt:     time.Time{},
 		firstFailedAt: map[string]time.Time{},
 	}
+	m.InitBase(env, "module", "connectivity_probe", "iface", m.cfg.Iface)
 	return m
 }
 
@@ -47,9 +49,9 @@ func TestEvaluateAlerts_DebounceSuppressesPremature(t *testing.T) {
 	m.lastResult = map[string]bool{"2001:db8::1": false}
 	m.firstFailedAt = map[string]time.Time{"2001:db8::1": now.Add(-5 * time.Second)}
 
-	m.EvaluateAlerts(context.Background(), m.log, now)
+	m.EvaluateAlerts(context.Background(), m.Log, now)
 
-	if m.env.Alerts.Active("connectivity-down", "test0") {
+	if m.Env.Alerts.Active("connectivity-down", "test0") {
 		t.Fatalf("alert fired before debounce elapsed (expected suppressed)")
 	}
 }
@@ -63,9 +65,9 @@ func TestEvaluateAlerts_DebounceFiresAfterThreshold(t *testing.T) {
 	m.lastResult = map[string]bool{"2001:db8::1": false}
 	m.firstFailedAt = map[string]time.Time{"2001:db8::1": now.Add(-15 * time.Second)}
 
-	m.EvaluateAlerts(context.Background(), m.log, now)
+	m.EvaluateAlerts(context.Background(), m.Log, now)
 
-	if !m.env.Alerts.Active("connectivity-down", "test0") {
+	if !m.Env.Alerts.Active("connectivity-down", "test0") {
 		t.Fatalf("alert should fire after debounce elapsed")
 	}
 }
@@ -86,9 +88,9 @@ func TestEvaluateAlerts_PartialDebounce_OnlyMatureFailureFires(t *testing.T) {
 		"2001:db8::2": now.Add(-3 * time.Second),
 	}
 
-	m.EvaluateAlerts(context.Background(), m.log, now)
+	m.EvaluateAlerts(context.Background(), m.Log, now)
 
-	if !m.env.Alerts.Active("connectivity-down", "test0") {
+	if !m.Env.Alerts.Active("connectivity-down", "test0") {
 		t.Fatalf("alert should fire when at least one target is past debounce")
 	}
 }
@@ -109,9 +111,9 @@ func TestEvaluateAlerts_AllPending_StaysQuiet(t *testing.T) {
 		"2001:db8::2": now.Add(-2 * time.Second),
 	}
 
-	m.EvaluateAlerts(context.Background(), m.log, now)
+	m.EvaluateAlerts(context.Background(), m.Log, now)
 
-	if m.env.Alerts.Active("connectivity-down", "test0") {
+	if m.Env.Alerts.Active("connectivity-down", "test0") {
 		t.Fatalf("alert fired despite all failures still within debounce window")
 	}
 }
@@ -125,8 +127,8 @@ func TestEvaluateAlerts_RecoveryResolvesAlert(t *testing.T) {
 	m.lastRunAt = now
 	m.lastResult = map[string]bool{"2001:db8::1": false}
 	m.firstFailedAt = map[string]time.Time{"2001:db8::1": now.Add(-15 * time.Second)}
-	m.EvaluateAlerts(context.Background(), m.log, now)
-	if !m.env.Alerts.Active("connectivity-down", "test0") {
+	m.EvaluateAlerts(context.Background(), m.Log, now)
+	if !m.Env.Alerts.Active("connectivity-down", "test0") {
 		t.Fatalf("setup: alert should be active before recovery")
 	}
 
@@ -134,9 +136,9 @@ func TestEvaluateAlerts_RecoveryResolvesAlert(t *testing.T) {
 	// cleared by Reconcile, but EvaluateAlerts must work independently.
 	m.lastResult = map[string]bool{"2001:db8::1": true}
 	m.firstFailedAt = map[string]time.Time{}
-	m.EvaluateAlerts(context.Background(), m.log, now.Add(1*time.Second))
+	m.EvaluateAlerts(context.Background(), m.Log, now.Add(1*time.Second))
 
-	if m.env.Alerts.Active("connectivity-down", "test0") {
+	if m.Env.Alerts.Active("connectivity-down", "test0") {
 		t.Fatalf("alert should be resolved after all targets recover")
 	}
 }
@@ -151,7 +153,7 @@ func TestReconcile_DebounceBookkeeping(t *testing.T) {
 
 	// Cycle 1: target fails. firstFailedAt should be populated.
 	now1 := time.Now()
-	m.mu.Lock()
+	m.Lock()
 	for tgt, ok := range map[string]bool{"2001:db8::1": false} {
 		if ok {
 			delete(m.firstFailedAt, tgt)
@@ -163,7 +165,7 @@ func TestReconcile_DebounceBookkeeping(t *testing.T) {
 	}
 	m.lastResult = map[string]bool{"2001:db8::1": false}
 	m.lastRunAt = now1
-	m.mu.Unlock()
+	m.Unlock()
 
 	if got, want := m.firstFailedAt["2001:db8::1"], now1; got != want {
 		t.Fatalf("cycle 1: firstFailedAt not set correctly: got %v want %v", got, want)
@@ -171,7 +173,7 @@ func TestReconcile_DebounceBookkeeping(t *testing.T) {
 
 	// Cycle 2: target still fails. firstFailedAt must NOT advance.
 	now2 := now1.Add(5 * time.Second)
-	m.mu.Lock()
+	m.Lock()
 	for tgt, ok := range map[string]bool{"2001:db8::1": false} {
 		if ok {
 			delete(m.firstFailedAt, tgt)
@@ -183,7 +185,7 @@ func TestReconcile_DebounceBookkeeping(t *testing.T) {
 	}
 	m.lastResult = map[string]bool{"2001:db8::1": false}
 	m.lastRunAt = now2
-	m.mu.Unlock()
+	m.Unlock()
 
 	if got := m.firstFailedAt["2001:db8::1"]; got != now1 {
 		t.Fatalf("cycle 2: firstFailedAt should not advance: got %v want %v", got, now1)
@@ -191,7 +193,7 @@ func TestReconcile_DebounceBookkeeping(t *testing.T) {
 
 	// Cycle 3: target recovers. firstFailedAt must be deleted.
 	now3 := now2.Add(5 * time.Second)
-	m.mu.Lock()
+	m.Lock()
 	for tgt, ok := range map[string]bool{"2001:db8::1": true} {
 		if ok {
 			delete(m.firstFailedAt, tgt)
@@ -203,7 +205,7 @@ func TestReconcile_DebounceBookkeeping(t *testing.T) {
 	}
 	m.lastResult = map[string]bool{"2001:db8::1": true}
 	m.lastRunAt = now3
-	m.mu.Unlock()
+	m.Unlock()
 
 	if _, ok := m.firstFailedAt["2001:db8::1"]; ok {
 		t.Fatalf("cycle 3: firstFailedAt should be cleared on recovery")

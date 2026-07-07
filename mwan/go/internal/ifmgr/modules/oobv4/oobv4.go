@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	internalclock "goodkind.io/mwan/internal/clock"
@@ -21,12 +20,11 @@ import (
 
 // Module owns the OOB v4 state for one iface.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg   Config
-	env   *ifmgr.Env
-	log   *slog.Logger
 	clock internalclock.Clock
 
-	mu          sync.Mutex
 	currentCIDR string    // last-applied address (e.g. "158.247.70.13/26")
 	currentGW   string    // last-applied default gateway in oob table
 	lastBound   time.Time // last time State==BOUND was observed
@@ -41,17 +39,13 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "oobv4" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "oobv4" }
-
 // Init implements ifmgr.Module.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "oobv4", "iface", m.cfg.Iface)
+	log := m.InitBase(env, "module", "oobv4", "iface", m.cfg.Iface)
 	if m.clock == nil {
 		m.clock = internalclock.Real{}
 	}
-	m.log.InfoContext(ctx, "oobv4: Init", "oob_table_id", m.cfg.OOBTableID)
+	log.InfoContext(ctx, "oobv4: Init", "oob_table_id", m.cfg.OOBTableID)
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("oobv4: iface is required")
 	}
@@ -67,11 +61,6 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 // Reconcile implements ifmgr.Module. v4 reacts to lease events; nothing
 // to do on the periodic tick beyond what OnDHCPLease already applied.
 func (m *Module) Reconcile(_ context.Context, _ *slog.Logger) error {
-	return nil
-}
-
-// OnKernelEvent implements ifmgr.Module. v4 module ignores kernel events.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
 	return nil
 }
 
@@ -129,8 +118,8 @@ func (m *Module) applyBound(
 		return fmt.Errorf("apply lease default route: %w", err)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	if m.currentCIDR != "" && m.currentCIDR != cidr {
 		log.InfoContext(ctx, "oobv4: lease IP changed", "old", m.currentCIDR, "new", cidr)
 	}
@@ -158,22 +147,16 @@ func (m *Module) applyExpired(ctx context.Context, log *slog.Logger) error {
 	}
 	// Address removal intentionally NOT done; kernel keeps lease IP until
 	// next BOUND replaces it atomically.
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	m.currentGW = ""
 	return nil
 }
 
-// EvaluateAlerts implements ifmgr.Module. Owns the v4-lease-lost alert.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
-	// Lease-loss alert is owned by ralost (it knows the threshold). v4
-	// just exposes lastBound via LastBound() for ralost to consume.
-}
-
 // LastBound exposes the last BOUND timestamp for ralost.
 func (m *Module) LastBound() time.Time {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 	return m.lastBound
 }
 
@@ -191,11 +174,9 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c = typedConfig
 	}
 	return &Module{
+		BaseModule:  ifmgr.NewBaseModule("oobv4"),
 		cfg:         c,
-		env:         nil,
-		log:         nil,
 		clock:       nil,
-		mu:          sync.Mutex{},
 		currentCIDR: "",
 		currentGW:   "",
 		lastBound:   time.Time{},

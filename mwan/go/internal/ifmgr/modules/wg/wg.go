@@ -33,20 +33,18 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/sys/execabs"
 	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
-	"goodkind.io/mwan/internal/netif"
 )
 
 // Module owns wg state.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
 	// clock is the wall-clock seam used for handshake-age comparisons and
 	// command timing so tests can drive time deterministically.
 	clock internalclock.Clock
@@ -64,7 +62,6 @@ type Module struct {
 	// calling Reconcile to avoid execing ssh or wg.
 	runWGShow func(ctx context.Context, log *slog.Logger) (string, error)
 
-	mu        sync.Mutex
 	lastPeers map[string]peerState // key = peer pubkey
 	lastRunAt time.Time
 }
@@ -122,22 +119,19 @@ type peerState struct {
 	keepalive time.Duration
 }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "wg" }
-
 // Init implements ifmgr.Module.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
 	if m.disabled {
-		env.Log.With("module", "wg").InfoContext(ctx, "wg: Init (disabled)")
+		log := m.InitBase(env, "module", "wg")
+		log.InfoContext(ctx, "wg: Init (disabled)")
 		return fmt.Errorf("%w: wg: no [ifmgr.modules.wg] section", ifmgr.ErrModuleDisabled)
 	}
 	mode := "local"
 	if m.cfg.SSHHost != "" {
 		mode = "ssh"
 	}
-	m.log = env.Log.With("module", "wg", "mode", mode, "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
-	m.log.InfoContext(
+	log := m.InitBase(env, "module", "wg", "mode", mode, "ssh_host", m.cfg.SSHHost, "iface", m.cfg.Iface)
+	log.InfoContext(
 		ctx, "wg: Init",
 		"warn_handshake_age", m.cfg.WarnHandshakeAge.String(),
 		"error_handshake_age", m.cfg.ErrorHandshakeAge.String(),
@@ -146,7 +140,7 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		"timeout", m.cfg.Timeout.String(),
 	)
 	if m.cfg.Iface == "" {
-		m.log.WarnContext(ctx, "wg: Init missing iface")
+		log.WarnContext(ctx, "wg: Init missing iface")
 		return fmt.Errorf("wg: iface is required")
 	}
 	if m.clock == nil {
@@ -172,7 +166,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		// single transition email plus one recovery email when SSH comes
 		// back, instead of one log.Error per ~6 minutes governed by the
 		// gklog email subject cooldown.
-		m.env.Alerts.NotifyContext(
+		m.Env.Alerts.NotifyContext(
 			ctx, now, slog.LevelError,
 			"wg-reconcile-failed", "remote-wg-show",
 			"wg: remote wg show failed",
@@ -182,7 +176,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	}
 	peers, parseErr := parseWGShowDump(out)
 	if parseErr != nil {
-		m.env.Alerts.NotifyContext(
+		m.Env.Alerts.NotifyContext(
 			ctx, now, slog.LevelError,
 			"wg-reconcile-failed", "parse-wg-dump",
 			"wg: parse wg dump failed",
@@ -193,20 +187,20 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	}
 	// Healthy tick: clear any previously-active reconcile-failure alert so the
 	// inbox sees a recovery email. Resolve is a no-op when no alert is active.
-	m.env.Alerts.ResolveContext(
+	m.Env.Alerts.ResolveContext(
 		ctx, now,
 		"wg-reconcile-failed", "remote-wg-show",
 		"wg: remote wg show recovered",
 	)
-	m.env.Alerts.ResolveContext(
+	m.Env.Alerts.ResolveContext(
 		ctx, now,
 		"wg-reconcile-failed", "parse-wg-dump",
 		"wg: parse wg dump recovered",
 	)
-	m.mu.Lock()
+	m.Lock()
 	m.lastPeers = peers
 	m.lastRunAt = now
-	m.mu.Unlock()
+	m.Unlock()
 	for pubkey, p := range peers {
 		ageStr := "never"
 		ageS := -1
@@ -231,23 +225,13 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	return nil
 }
 
-// OnKernelEvent implements ifmgr.Module.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
-	return nil
-}
-
-// OnDHCPLease implements ifmgr.Module.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
-	return nil
-}
-
 // EvaluateAlerts emits per-peer WARN/ERROR/recovery transitions.
 func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.Time) {
-	m.mu.Lock()
+	m.Lock()
 	peers := make(map[string]peerState, len(m.lastPeers))
 	maps.Copy(peers, m.lastPeers)
 	last := m.lastRunAt
-	m.mu.Unlock()
+	m.Unlock()
 	if last.IsZero() {
 		return
 	}
@@ -273,7 +257,7 @@ func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.
 		age := now.Sub(p.handshake)
 		switch {
 		case age >= m.cfg.ErrorHandshakeAge:
-			m.env.Alerts.NotifyContext(
+			m.Env.Alerts.NotifyContext(
 				ctx,
 				now, slog.LevelError,
 				"wg-peer-stalled", key,
@@ -284,7 +268,7 @@ func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.
 				slog.Int("threshold_s", int(m.cfg.ErrorHandshakeAge.Seconds())),
 			)
 		case age >= m.cfg.WarnHandshakeAge:
-			m.env.Alerts.NotifyContext(
+			m.Env.Alerts.NotifyContext(
 				ctx,
 				now, slog.LevelWarn,
 				"wg-peer-stalled", key,
@@ -295,8 +279,8 @@ func (m *Module) EvaluateAlerts(ctx context.Context, log *slog.Logger, now time.
 				slog.Int("threshold_s", int(m.cfg.WarnHandshakeAge.Seconds())),
 			)
 		default:
-			if m.env.Alerts.Active("wg-peer-stalled", key) {
-				m.env.Alerts.ResolveContext(
+			if m.Env.Alerts.Active("wg-peer-stalled", key) {
+				m.Env.Alerts.ResolveContext(
 					ctx,
 					now,
 					"wg-peer-stalled", key,
@@ -529,15 +513,13 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	}
 	if cfg == nil {
 		return &Module{
-			cfg:       c,
-			env:       nil,
-			log:       nil,
-			clock:     nil,
-			disabled:  true,
-			runWGShow: nil,
-			mu:        sync.Mutex{},
-			lastPeers: nil,
-			lastRunAt: time.Time{},
+			BaseModule: ifmgr.NewBaseModule("wg"),
+			cfg:        c,
+			clock:      nil,
+			disabled:   true,
+			runWGShow:  nil,
+			lastPeers:  nil,
+			lastRunAt:  time.Time{},
 		}, nil
 	}
 	typedConfig, ok := cfg.(Config)
@@ -551,15 +533,13 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		typedConfig.IgnorePeers = map[string]bool{}
 	}
 	return &Module{
-		cfg:       typedConfig,
-		env:       nil,
-		log:       nil,
-		clock:     nil,
-		disabled:  false,
-		runWGShow: nil,
-		mu:        sync.Mutex{},
-		lastPeers: nil,
-		lastRunAt: time.Time{},
+		BaseModule: ifmgr.NewBaseModule("wg"),
+		cfg:        typedConfig,
+		clock:      nil,
+		disabled:   false,
+		runWGShow:  nil,
+		lastPeers:  nil,
+		lastRunAt:  time.Time{},
 	}, nil
 }
 
