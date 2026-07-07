@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"goodkind.io/mwan/internal/ifmgr"
@@ -74,20 +72,15 @@ type ruleSlot struct {
 
 // Module owns the WAN policy-routing rules and routes.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
-	mu  sync.Mutex
-}
+	ifmgr.BaseModule
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return moduleName }
+	cfg Config
+}
 
 // Init implements ifmgr.Module.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", moduleName)
-	m.log.InfoContext(
+	log := m.InitBase(env, "module", moduleName)
+	log.InfoContext(
 		ctx, "wan_routes: Init",
 		"wan_count", len(m.cfg.WANs),
 		"health_state_file", m.cfg.HealthStateFile,
@@ -95,22 +88,22 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	)
 
 	if len(m.cfg.WANs) == 0 {
-		m.log.WarnContext(ctx, "wan_routes: missing WAN config; disabling module")
+		log.WarnContext(ctx, "wan_routes: missing WAN config; disabling module")
 		return fmt.Errorf("%w: wan_routes: no [ifmgr.modules.wan_routes] section", ifmgr.ErrModuleDisabled)
 	}
 	if err := validateConfig(m.cfg); err != nil {
-		m.log.WarnContext(ctx, "wan_routes: validateConfig failed", "err", err)
+		log.WarnContext(ctx, "wan_routes: validateConfig failed", "err", err)
 		return err
 	}
 
-	ifmgr.StartIfaceMonitors(ctx, m.log, moduleName, watchedIfaces(m.cfg), m.onMonitorEvent)
+	ifmgr.StartIfaceMonitors(ctx, log, moduleName, watchedIfaces(m.cfg), m.onMonitorEvent)
 	return nil
 }
 
 // Reconcile implements ifmgr.Module.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Lock()
+	defer m.Unlock()
 
 	log = log.With("op", "reconcile")
 	log.DebugContext(ctx, "wan_routes: Reconcile entry")
@@ -163,19 +156,6 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	}
 	return reconcileErr
 }
-
-// OnKernelEvent is a no-op. wan_routes uses its own per-interface monitors.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
-	return nil
-}
-
-// OnDHCPLease is a no-op for this phase.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
-	return nil
-}
-
-// EvaluateAlerts is a no-op for this phase.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {}
 
 func (m *Module) onMonitorEvent(ctx context.Context, log *slog.Logger, event netif.Event) {
 	if !isDefaultRouteEvent(event) {
@@ -646,10 +626,8 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c.HealthStateFile = netif.DefaultHealthStatePath
 	}
 	return &Module{
-		cfg: c,
-		env: nil,
-		log: nil,
-		mu:  sync.Mutex{},
+		BaseModule: ifmgr.NewBaseModule(moduleName),
+		cfg:        c,
 	}, nil
 }
 

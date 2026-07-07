@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/mdlayher/ndp"
@@ -52,11 +51,10 @@ type routerSoliciter interface {
 
 // Module owns the host-side IPv6 RA policy.
 type Module struct {
-	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
+	ifmgr.BaseModule
 
-	mu           sync.Mutex
+	cfg Config
+
 	missingSince map[string]time.Time
 
 	now                  func() time.Time
@@ -65,22 +63,18 @@ type Module struct {
 	newRAClient          func(string, *slog.Logger) (routerSoliciter, error)
 }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "host_ipv6_policy" }
-
 // Init implements ifmgr.Module. An empty Policies list means no
 // [ifmgr.modules.host_ipv6_policy] section was rendered for this host,
 // so Init returns ifmgr.ErrModuleDisabled and the daemon drops the
 // module from its dispatch list.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "host_ipv6_policy")
-	m.log.InfoContext(ctx, "host_ipv6_policy: Init",
+	log := m.InitBase(env, "module", "host_ipv6_policy")
+	log.InfoContext(ctx, "host_ipv6_policy: Init",
 		"policy_count", len(m.cfg.Policies),
 		"missing_iface_grace_period", m.cfg.MissingIfaceGracePeriod.String(),
 	)
 	if len(m.cfg.Policies) == 0 {
-		m.log.WarnContext(ctx, "host_ipv6_policy: module disabled because no policies were configured")
+		log.WarnContext(ctx, "host_ipv6_policy: module disabled because no policies were configured")
 		return fmt.Errorf("%w: host_ipv6_policy: no [ifmgr.modules.host_ipv6_policy] section", ifmgr.ErrModuleDisabled)
 	}
 	if m.cfg.MissingIfaceGracePeriod <= 0 {
@@ -165,7 +159,7 @@ func (m *Module) reconcileSysctl(
 	key string,
 	want string,
 ) (bool, error) {
-	currentValue, err := m.env.Sysctl.Get(ctx, key)
+	currentValue, err := m.Env.Sysctl.Get(ctx, key)
 	if err != nil {
 		wrappedErr := fmt.Errorf("host_ipv6_policy: get %s: %w", key, err)
 		if errors.Is(err, os.ErrNotExist) {
@@ -183,7 +177,7 @@ func (m *Module) reconcileSysctl(
 		"current", currentValue,
 		"want", want,
 	)
-	if err := m.env.Sysctl.Set(ctx, key, want); err != nil {
+	if err := m.Env.Sysctl.Set(ctx, key, want); err != nil {
 		wrappedErr := fmt.Errorf("host_ipv6_policy: set %s=%s: %w", key, want, err)
 		if errors.Is(err, os.ErrNotExist) {
 			log.WarnContext(ctx, "host_ipv6_policy: sysctl key disappeared during update", "key", key, "err", wrappedErr)
@@ -266,13 +260,13 @@ func (m *Module) solicitAllowedIfaceRA(
 
 func (m *Module) handleMissingIface(log *slog.Logger, iface string, cause error) error {
 	now := m.now()
-	m.mu.Lock()
+	m.Lock()
 	firstSeenAt, exists := m.missingSince[iface]
 	if !exists {
 		firstSeenAt = now
 		m.missingSince[iface] = now
 	}
-	m.mu.Unlock()
+	m.Unlock()
 
 	missingDuration := now.Sub(firstSeenAt)
 	if missingDuration < m.cfg.MissingIfaceGracePeriod {
@@ -298,23 +292,9 @@ func (m *Module) handleMissingIface(log *slog.Logger, iface string, cause error)
 }
 
 func (m *Module) clearMissingIface(iface string) {
-	m.mu.Lock()
+	m.Lock()
 	delete(m.missingSince, iface)
-	m.mu.Unlock()
-}
-
-// OnKernelEvent implements ifmgr.Module.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
-	return nil
-}
-
-// OnDHCPLease implements ifmgr.Module.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
-	return nil
-}
-
-// EvaluateAlerts implements ifmgr.Module.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
+	m.Unlock()
 }
 
 // New is the Constructor.
@@ -334,10 +314,8 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		}
 	}
 	return &Module{
+		BaseModule:           ifmgr.NewBaseModule("host_ipv6_policy"),
 		cfg:                  parsedConfig,
-		env:                  nil,
-		log:                  nil,
-		mu:                   sync.Mutex{},
 		missingSince:         make(map[string]time.Time),
 		now:                  time.Now,
 		findMainRADefault:    netif.FindMainRADefault,

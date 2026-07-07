@@ -110,11 +110,11 @@ func TestReconcileWaitsDuringMissingIfaceGracePeriod(t *testing.T) {
 	if err := concreteModule.Init(context.Background(), newTestEnv(sysctl)); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
-	if err := concreteModule.Reconcile(context.Background(), concreteModule.log); err != nil {
+	if err := concreteModule.Reconcile(context.Background(), concreteModule.Log); err != nil {
 		t.Fatalf("Reconcile returned error during grace period: %v", err)
 	}
 	concreteModule.now = func() time.Time { return baseTime.Add(3 * time.Minute) }
-	if err := concreteModule.Reconcile(context.Background(), concreteModule.log); err == nil {
+	if err := concreteModule.Reconcile(context.Background(), concreteModule.Log); err == nil {
 		t.Fatal("Reconcile returned nil error after missing iface grace expired")
 	}
 }
@@ -151,7 +151,7 @@ func TestReconcileCleansDeniedRADefault(t *testing.T) {
 	if err := concreteModule.Init(context.Background(), newTestEnv(sysctl)); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
-	if err := concreteModule.Reconcile(context.Background(), concreteModule.log); err != nil {
+	if err := concreteModule.Reconcile(context.Background(), concreteModule.Log); err != nil {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 	if got := sysctl.values[acceptRAKey("vmbr4")]; got != "0" {
@@ -204,7 +204,7 @@ func TestReconcileSolicitsAllowedIfaceRA(t *testing.T) {
 	if err := concreteModule.Init(context.Background(), newTestEnv(sysctl)); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
-	if err := concreteModule.Reconcile(context.Background(), concreteModule.log); err != nil {
+	if err := concreteModule.Reconcile(context.Background(), concreteModule.Log); err != nil {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 	if got := sysctl.values[acceptRAKey("vmbr0")]; got != "2" {

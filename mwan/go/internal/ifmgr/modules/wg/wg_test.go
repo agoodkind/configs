@@ -210,16 +210,17 @@ func newModuleForReconcileTest(t *testing.T) (*Module, *captureHandler) {
 	h := &captureHandler{}
 	log := slog.New(h)
 	alerts := ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, log, "mwan-ifmgr"))
-	m := &Module{
-		cfg: Config{Iface: "wg0"},
-		env: &ifmgr.Env{
-			Iface:  "wg0",
-			Log:    log,
-			Alerts: alerts,
-		},
-		log:       log,
-		lastPeers: map[string]peerState{},
+	env := &ifmgr.Env{
+		Iface:  "wg0",
+		Log:    log,
+		Alerts: alerts,
 	}
+	m := &Module{
+		BaseModule: ifmgr.NewBaseModule("wg"),
+		cfg:        Config{Iface: "wg0"},
+		lastPeers:  map[string]peerState{},
+	}
+	m.InitBase(env)
 	return m, h
 }
 
@@ -234,7 +235,7 @@ func TestReconcile_RemoteWGShowFailure_CollapsesToSingleEmit(t *testing.T) {
 	}
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		if err := m.Reconcile(ctx, m.log); err != nil {
+		if err := m.Reconcile(ctx, m.Log); err != nil {
 			t.Fatalf("Reconcile #%d returned err: %v", i+1, err)
 		}
 	}
@@ -265,7 +266,7 @@ func TestReconcile_RecoveryEmitsResolveOnce(t *testing.T) {
 	}
 	ctx := context.Background()
 	for i := 0; i < 4; i++ {
-		if err := m.Reconcile(ctx, m.log); err != nil {
+		if err := m.Reconcile(ctx, m.Log); err != nil {
 			t.Fatalf("Reconcile #%d returned err: %v", i+1, err)
 		}
 	}

@@ -16,7 +16,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	internalclock "goodkind.io/mwan/internal/clock"
@@ -26,12 +25,11 @@ import (
 
 // Module owns the bridge-suspected alert decision.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg   Config
-	env   *ifmgr.Env
-	log   *slog.Logger
 	clock internalclock.Clock
 
-	mu         sync.Mutex
 	lastRA     time.Time
 	lastDHCP   time.Time
 	lastLinkUp time.Time
@@ -46,17 +44,13 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "bridge_probe" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "bridge_probe" }
-
 // Init implements ifmgr.Module.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "bridge_probe", "iface", m.cfg.Iface)
+	log := m.InitBase(env, "module", "bridge_probe", "iface", m.cfg.Iface)
 	if m.clock == nil {
 		m.clock = internalclock.Real{}
 	}
-	m.log.InfoContext(ctx, "bridge_probe: Init",
+	log.InfoContext(ctx, "bridge_probe: Init",
 		"no_signal_alert_after", m.cfg.NoSignalAlertAfter.String())
 	if m.cfg.Iface == "" {
 		return fmt.Errorf("bridge_probe: iface is required")
@@ -80,14 +74,14 @@ func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, ev netif.Event
 	switch ev.Kind {
 	case netif.EvRouteAdded:
 		if ev.Family == "inet6" && ev.Dest == "default" {
-			m.mu.Lock()
+			m.Lock()
 			m.lastRA = now
-			m.mu.Unlock()
+			m.Unlock()
 		}
 	case netif.EvLinkUp:
-		m.mu.Lock()
+		m.Lock()
 		m.lastLinkUp = now
-		m.mu.Unlock()
+		m.Unlock()
 	case netif.EvUnknown, netif.EvRouteDeleted, netif.EvAddrAdded, netif.EvAddrDeleted, netif.EvLinkDown:
 		return nil
 	}
@@ -97,9 +91,9 @@ func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, ev netif.Event
 // OnDHCPLease implements ifmgr.Module. Tracks DHCP server-reply timing.
 func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, lease netif.LeaseInfo) error {
 	if lease.State == netif.LeaseBound {
-		m.mu.Lock()
+		m.Lock()
 		m.lastDHCP = m.clock.Now()
-		m.mu.Unlock()
+		m.Unlock()
 	}
 	return nil
 }
@@ -110,22 +104,22 @@ func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, lease netif.Leas
 //   - the slaac_health alert is currently active (so we know slaac_health
 //     has already exhausted its self-heal options).
 func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Time) {
-	m.mu.Lock()
+	m.Lock()
 	lastRA := m.lastRA
 	lastDHCP := m.lastDHCP
 	lastUp := m.lastLinkUp
-	m.mu.Unlock()
+	m.Unlock()
 
 	thresh := m.cfg.NoSignalAlertAfter
 	raStale := !lastRA.IsZero() && now.Sub(lastRA) > thresh
 	dhcpStale := !lastDHCP.IsZero() && now.Sub(lastDHCP) > thresh
 	linkObservedUp := !lastUp.IsZero()
-	slaacActive := m.env.Alerts.Active("slaac-degraded", m.cfg.Iface)
+	slaacActive := m.Env.Alerts.Active("slaac-degraded", m.cfg.Iface)
 
 	suspected := raStale && dhcpStale && linkObservedUp && slaacActive
 
 	if suspected {
-		m.env.Alerts.NotifyContext(
+		m.Env.Alerts.NotifyContext(
 			ctx, now, slog.LevelWarn,
 			"bridge-suspected-dangling", m.cfg.Iface,
 			"bridge_probe: bridge-side veth attachment suspected dangling "+
@@ -135,8 +129,8 @@ func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Ti
 			slog.Int("threshold_s", int(thresh.Seconds())),
 			slog.String("hint", "host-side: verify veth is attached to expected bridge"),
 		)
-	} else if m.env.Alerts.Active("bridge-suspected-dangling", m.cfg.Iface) {
-		m.env.Alerts.ResolveContext(ctx, now,
+	} else if m.Env.Alerts.Active("bridge-suspected-dangling", m.cfg.Iface) {
+		m.Env.Alerts.ResolveContext(ctx, now,
 			"bridge-suspected-dangling", m.cfg.Iface,
 			"bridge_probe: signal returned")
 	}
@@ -156,11 +150,9 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c = typedConfig
 	}
 	return &Module{
+		BaseModule: ifmgr.NewBaseModule("bridge_probe"),
 		cfg:        c,
-		env:        nil,
-		log:        nil,
 		clock:      nil,
-		mu:         sync.Mutex{},
 		lastRA:     time.Time{},
 		lastDHCP:   time.Time{},
 		lastLinkUp: time.Time{},

@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
@@ -21,9 +20,9 @@ import (
 
 // Module owns the policy-rules state.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg Config
-	env *ifmgr.Env
-	log *slog.Logger
 }
 
 // Config is the parsed [ifmgr.modules.policy_rules] sub-config. Note the
@@ -36,14 +35,10 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "policy_rules" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "policy_rules" }
-
 // Init implements ifmgr.Module. Sanity-checks each rule.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "policy_rules")
-	m.log.InfoContext(ctx, "policy_rules: Init", "rule_count", len(m.cfg.Rules))
+	log := m.InitBase(env, "module", "policy_rules")
+	log.InfoContext(ctx, "policy_rules: Init", "rule_count", len(m.cfg.Rules))
 	for i, r := range m.cfg.Rules {
 		if r.Priority <= 0 {
 			return fmt.Errorf("policy_rules[%d]: priority must be > 0", i)
@@ -64,21 +59,6 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	return nil
 }
 
-// OnKernelEvent implements ifmgr.Module. Rule events are not subscribed
-// today; rely on the periodic Reconcile to catch external mutations.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
-	return nil
-}
-
-// OnDHCPLease implements ifmgr.Module.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
-	return nil
-}
-
-// EvaluateAlerts implements ifmgr.Module.
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {
-}
-
 // New is the Constructor.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
@@ -92,9 +72,8 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c = typedConfig
 	}
 	return &Module{
-		cfg: c,
-		env: nil,
-		log: nil,
+		BaseModule: ifmgr.NewBaseModule("policy_rules"),
+		cfg:        c,
 	}, nil
 }
 

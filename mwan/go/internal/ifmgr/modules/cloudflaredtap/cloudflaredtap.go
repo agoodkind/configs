@@ -27,11 +27,9 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
-	"sync"
 	"time"
 
 	"goodkind.io/mwan/internal/ifmgr"
-	"goodkind.io/mwan/internal/netif"
 )
 
 type journalEntry struct {
@@ -44,12 +42,11 @@ type journalEntry struct {
 
 // Module owns the journal-tail goroutine for one unit.
 type Module struct {
+	ifmgr.BaseModule
+
 	cfg      Config
-	env      *ifmgr.Env
-	log      *slog.Logger
 	patterns []*regexp.Regexp
 
-	mu      sync.Mutex
 	running bool
 	stop    chan struct{}
 }
@@ -74,24 +71,20 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return "cloudflared_tap" }
 
-// Name implements ifmgr.Module.
-func (m *Module) Name() string { return "cloudflared_tap" }
-
 // Init validates config, compiles regex patterns, and spawns the
 // long-lived journal-tail goroutine. An empty Unit means the operator did
 // not render an [ifmgr.modules.cloudflared_tap] section for this host, so
 // Init returns ifmgr.ErrModuleDisabled and the daemon drops the module
 // from its dispatch list.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
-	m.env = env
-	m.log = env.Log.With("module", "cloudflared_tap", "unit", m.cfg.Unit)
-	m.log.InfoContext(ctx, "cloudflared_tap: Init",
+	log := m.InitBase(env, "module", "cloudflared_tap", "unit", m.cfg.Unit)
+	log.InfoContext(ctx, "cloudflared_tap: Init",
 		"unit", m.cfg.Unit,
 		"downgrade_patterns", len(m.cfg.DowngradePatterns),
 		"journalctl_path", m.cfg.JournalctlPath)
 
 	if m.cfg.Unit == "" {
-		m.log.WarnContext(ctx,
+		log.WarnContext(ctx,
 			"cloudflared_tap: missing unit; disabling module")
 		return fmt.Errorf("%w: cloudflared_tap: no [ifmgr.modules.cloudflared_tap] section", ifmgr.ErrModuleDisabled)
 	}
@@ -99,7 +92,7 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	for i, p := range m.cfg.DowngradePatterns {
 		re, err := regexp.Compile(p)
 		if err != nil {
-			m.log.WarnContext(ctx, "cloudflared_tap: invalid downgrade pattern",
+			log.WarnContext(ctx, "cloudflared_tap: invalid downgrade pattern",
 				"index", i, "pattern", p, "err", err)
 			return fmt.Errorf("cloudflared_tap: invalid downgrade_patterns[%d] %q: %w", i, p, err)
 		}
@@ -110,22 +103,22 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		m.cfg.JournalctlPath = "journalctl"
 	}
 	if m.cfg.JournalctlPath != "journalctl" {
-		m.log.WarnContext(ctx, "cloudflared_tap: unsupported journalctl_path override",
+		log.WarnContext(ctx, "cloudflared_tap: unsupported journalctl_path override",
 			"journalctl_path", m.cfg.JournalctlPath)
 		return fmt.Errorf("cloudflared_tap: journalctl_path must be \"journalctl\"")
 	}
 
 	m.stop = make(chan struct{})
-	m.mu.Lock()
+	m.Lock()
 	m.running = true
-	m.mu.Unlock()
+	m.Unlock()
 	go func() {
 		defer func() {
 			recovered := recover()
 			if recovered == nil {
 				return
 			}
-			m.log.ErrorContext(ctx, "cloudflared_tap: tailLoop panicked",
+			m.Log.ErrorContext(ctx, "cloudflared_tap: tailLoop panicked",
 				"err", fmt.Sprint(recovered))
 		}()
 		m.tailLoop(ctx)
@@ -136,29 +129,15 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 // Reconcile is a no-op; this module reacts only to journal stream events.
 func (m *Module) Reconcile(_ context.Context, _ *slog.Logger) error { return nil }
 
-// OnKernelEvent is a no-op.
-func (m *Module) OnKernelEvent(_ context.Context, _ *slog.Logger, _ netif.Event) error {
-	return nil
-}
-
-// OnDHCPLease is a no-op.
-func (m *Module) OnDHCPLease(_ context.Context, _ *slog.Logger, _ netif.LeaseInfo) error {
-	return nil
-}
-
-// EvaluateAlerts is a no-op; alerts (if any) are emitted inline by the
-// re-emit path with the appropriate [slog.Level].
-func (m *Module) EvaluateAlerts(_ context.Context, _ *slog.Logger, _ time.Time) {}
-
 // tailLoop is the long-lived goroutine that runs journalctl --follow,
 // parses each JSON line, and re-emits via the module logger. On
 // subprocess exit it backs off exponentially (cap 30s) and retries
 // until the daemon context is cancelled.
 func (m *Module) tailLoop(ctx context.Context) {
 	defer func() {
-		m.mu.Lock()
+		m.Lock()
 		m.running = false
-		m.mu.Unlock()
+		m.Unlock()
 	}()
 
 	backoff := time.Second
@@ -166,10 +145,10 @@ func (m *Module) tailLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			m.log.DebugContext(ctx, "cloudflared_tap: tail loop exiting (context cancelled)")
+			m.Log.DebugContext(ctx, "cloudflared_tap: tail loop exiting (context cancelled)")
 			return
 		case <-m.stop:
-			m.log.DebugContext(ctx, "cloudflared_tap: tail loop exiting (stop signalled)")
+			m.Log.DebugContext(ctx, "cloudflared_tap: tail loop exiting (stop signalled)")
 			return
 		default:
 		}
@@ -179,7 +158,7 @@ func (m *Module) tailLoop(ctx context.Context) {
 			return
 		}
 
-		m.log.WarnContext(ctx, "cloudflared_tap: journalctl exited; will restart after backoff",
+		m.Log.WarnContext(ctx, "cloudflared_tap: journalctl exited; will restart after backoff",
 			"backoff", backoff.String(), "err", errMsg(err))
 		select {
 		case <-ctx.Done():
@@ -209,14 +188,14 @@ func (m *Module) runJournalctl(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "journalctl", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		m.log.WarnContext(ctx, "cloudflared_tap: stdout pipe failed", "err", err)
+		m.Log.WarnContext(ctx, "cloudflared_tap: stdout pipe failed", "err", err)
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		m.log.WarnContext(ctx, "cloudflared_tap: journalctl start failed", "err", err)
+		m.Log.WarnContext(ctx, "cloudflared_tap: journalctl start failed", "err", err)
 		return fmt.Errorf("start: %w", err)
 	}
-	m.log.DebugContext(ctx, "cloudflared_tap: journalctl started",
+	m.Log.DebugContext(ctx, "cloudflared_tap: journalctl started",
 		"pid", cmd.Process.Pid, "args", args)
 
 	scanner := bufio.NewScanner(stdout)
@@ -227,11 +206,11 @@ func (m *Module) runJournalctl(ctx context.Context) error {
 	scanErr := scanner.Err()
 	waitErr := cmd.Wait()
 	if scanErr != nil {
-		m.log.WarnContext(ctx, "cloudflared_tap: scanner failed", "err", scanErr)
+		m.Log.WarnContext(ctx, "cloudflared_tap: scanner failed", "err", scanErr)
 		return fmt.Errorf("scanner: %w", scanErr)
 	}
 	if waitErr != nil {
-		m.log.WarnContext(ctx, "cloudflared_tap: journalctl wait failed", "err", waitErr)
+		m.Log.WarnContext(ctx, "cloudflared_tap: journalctl wait failed", "err", waitErr)
 		return fmt.Errorf("wait: %w", waitErr)
 	}
 	return nil
@@ -241,7 +220,7 @@ func (m *Module) runJournalctl(ctx context.Context) error {
 func (m *Module) processLine(ctx context.Context, line []byte) {
 	var entry journalEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
-		m.log.DebugContext(ctx, "cloudflared_tap: skip non-json line",
+		m.Log.DebugContext(ctx, "cloudflared_tap: skip non-json line",
 			"raw", string(line), "err", err.Error())
 		return
 	}
@@ -270,7 +249,7 @@ func (m *Module) processLine(ctx context.Context, line []byte) {
 		slog.Int("src_priority", priority),
 		slog.String("msg", msg),
 	}
-	m.log.LogAttrs(ctx, level, "cloudflared_tap", attrs...)
+	m.Log.LogAttrs(ctx, level, "cloudflared_tap", attrs...)
 }
 
 // mapPriority converts a syslog severity 0..7 to the closest [slog.Level].
@@ -339,13 +318,11 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		c = typedConfig
 	}
 	return &Module{
-		cfg:      c,
-		env:      nil,
-		log:      nil,
-		patterns: nil,
-		mu:       sync.Mutex{},
-		running:  false,
-		stop:     nil,
+		BaseModule: ifmgr.NewBaseModule("cloudflared_tap"),
+		cfg:        c,
+		patterns:   nil,
+		running:    false,
+		stop:       nil,
 	}, nil
 }
 
