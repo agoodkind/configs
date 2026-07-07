@@ -24,6 +24,7 @@ const (
 	subcmdHealthCheck subcommand = "health-check"
 	subcmdOPNsense    subcommand = "opnsense"
 	subcmdNotify      subcommand = "notify"
+	subcmdPD          subcommand = "pd"
 )
 
 // dispatchResult describes how dispatchConfigLess handled a subcommand.
@@ -42,7 +43,7 @@ func main() {
 		os.Exit(runOPNsenseDaemonServe(os.Args[1:]))
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|notify> [args]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|notify|pd> [args]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -84,6 +85,8 @@ func dispatchConfigLess(sub subcommand) dispatchResult {
 		return dispatchResult{handled: true, code: 0}
 	case subcmdOPNsense:
 		return dispatchResult{handled: true, code: runOPNsense(os.Args[1:])}
+	case subcmdPD:
+		return dispatchResult{handled: true, code: runPDProbe(os.Args[1:])}
 	case subcmdAgent, subcmdWatchdog, subcmdIfmgr, subcmdNotify:
 		return dispatchResult{handled: false}
 	}
@@ -109,7 +112,7 @@ func dispatchWithConfig(rawSub string, sub subcommand, cfg *config.Config) int {
 		runErr = runIfMgr(cfg)
 	case subcmdNotify:
 		runErr = runNotify(cfg)
-	case subcmdHealthCheck, subcmdOPNsense:
+	case subcmdHealthCheck, subcmdOPNsense, subcmdPD:
 		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", rawSub)
 		return 1
 	default:
