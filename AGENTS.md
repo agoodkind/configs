@@ -114,6 +114,14 @@ change on their own. Read the live host before you trust repo templates, state a
 hypothesis, test the smallest reversible change, verify no regression, and only
 then codify the change in git.
 
+Deploy every change to its testbed twin and verify it there before the prod host
+runs it. The testbed exists to catch a broken render, a wedged handler, or a
+missing var before production sees it. The twins are `test_mwan_servers` for
+`mwan_servers`, `mwan_failover_test_servers` for `mwan_failover_servers`, and the
+suburban host for the vault host. Testbed deploys are autonomous; prod deploys
+need explicit permission. A change that has not passed on its testbed twin does
+not reach prod.
+
 Do not bulk-change MWAN, OPNsense, or the vault hypervisor. Do not restart
 networking services without a rollback path. When a runbook says `STOP`, stop,
 capture forensics, and reset to a known-good state instead of improvising.
