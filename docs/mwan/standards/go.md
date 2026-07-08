@@ -8,7 +8,7 @@ See [docs/mwan/overview.md](../overview.md) for the runtime architecture and
 
 All Go infrastructure code lives in one binary built from
 [mwan/go/cmd/mwan/](../../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan` on targets and `mwan-linux` in
-[mwan/go/bin/](../../../mwan/go/bin/) on the local host. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
+`mwan/go/bin/` on the local host. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
 where it auto-dispatches into the `opnsense` daemon based on `argv[0]`.
 
 Subcommands (as defined in [mwan/go/cmd/mwan/main.go](../../../mwan/go/cmd/mwan/main.go)):
@@ -42,8 +42,7 @@ Shared code lives under
 [mwan/go/internal/ops/](../../../mwan/go/internal/ops/),
 [mwan/go/internal/bgp/](../../../mwan/go/internal/bgp/),
 [mwan/go/internal/alert/](../../../mwan/go/internal/alert/),
-[mwan/go/internal/tracing/](../../../mwan/go/internal/tracing/),
-[mwan/go/internal/mwn1/](../../../mwan/go/internal/mwn1/), and
+[mwan/go/internal/tracing/](../../../mwan/go/internal/tracing/), and
 [mwan/go/internal/rollback/](../../../mwan/go/internal/rollback/).
 
 ## Code standards

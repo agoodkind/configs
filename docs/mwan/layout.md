@@ -16,11 +16,11 @@ the same roles on matching guests:
 
 | Role | Command surface | Unit files | Repo source | Config template |
 | ---- | --------------- | ---------- | ----------- | --------------- |
-| MWAN VM (agent host) | `mwan agent` | `mwan-agent.service` | [mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service) | [config.toml.j2](../../mwan/config/config.toml.j2) |
+| MWAN VM (agent host) | `mwan agent` | `mwan-agent.service` | [mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service) | [config-vm.toml.j2](../../mwan/config/config-vm.toml.j2) |
 | Failover LXC | `mwan agent`, `mwan ifmgr` | `mwan-agent.service`, `mwan-ifmgr.service` | [mwan-failover/mwan-ifmgr.service](../../mwan-failover/mwan-ifmgr.service) | [mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2) |
-| Proxmox host (OOB ifmgr + watchdog) | `mwan ifmgr`, `mwan watchdog` | `mwan-ifmgr.service`, watchdog unit (host-only) | [mwan-ifmgr.service](../../mwan/go/cmd/mwan/mwan-ifmgr.service) | [config.toml.j2](../../mwan/config/config.toml.j2) |
+| Proxmox host (OOB ifmgr + watchdog) | `mwan ifmgr`, `mwan watchdog` | `mwan-ifmgr.service`, watchdog unit (host-only) | [mwan-ifmgr.service](../../mwan/go/cmd/mwan/mwan-ifmgr.service) | [config-host.toml.j2](../../mwan/config/config-host.toml.j2) |
 | OPNsense VM (router helper) | `mwan opnsense serve` | `rc.d/mwan_opnsense`, no `/etc/mwan/` | [rc.d/mwan_opnsense](../../mwan/go/cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense) | settings in `rc.conf.d` |
-| Testbed host (suburban only) | adds `mwan opnsense host serve` | adds `mwan-opnsense-host.service` | [mwan-opnsense-host.service](../../mwan/go/cmd/mwan/mwan-opnsense-host.service) | [config.toml.j2](../../mwan/config/config.toml.j2) |
+| Testbed host (suburban only) | adds `mwan opnsense host serve` | adds `mwan-opnsense-host.service` | [mwan-opnsense-host.service](../../mwan/go/cmd/mwan/mwan-opnsense-host.service) | [config-host.toml.j2](../../mwan/config/config-host.toml.j2) |
 
 The ISP-simulator LXCs and unrelated service containers on these hosts run no MWAN
 command surface.
@@ -30,7 +30,7 @@ Repo layout for these files:
 | Path | Purpose |
 | ---- | --------------- |
 | [mwan/](../../mwan/) | Linux MWAN VM runtime files and the [mwan/go/](../../mwan/go/) monolith source tree |
-| [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | Unified Linux MWAN VM TOML template for the production and testbed MWAN VMs |
+| [mwan/config/](../../mwan/config/) | Linux MWAN TOML templates: `config-vm.toml.j2` for the MWAN VMs and `config-host.toml.j2` for the Proxmox hosts |
 | [mwan-failover/](../../mwan-failover/) | Shared failover LXC artifacts for the production and testbed failover LXCs |
 | [mwan-failover/sysctl.conf](../../mwan-failover/sysctl.conf) | Canonical failover LXC sysctl file, including IPv6 forwarding and router-advertisement acceptance |
 | [testbed/](../../testbed/) | Canonical testbed topology assets, OPNsense test files, ISP LXC files, and testbed VM snippets |
@@ -59,7 +59,7 @@ the binary swap.
 ## MWAN WAN Links
 
 Interface names and route metrics are config, rendered from group_vars into
-[config.toml.j2](../../mwan/config/config.toml.j2); the priority order below is the
+[config-vm.toml.j2](../../mwan/config/config-vm.toml.j2); the priority order below is the
 structural fact. Provider addresses and delegated prefixes are dynamic and are not
 authoritative here: the live DHCPv6-PD is read by `find-pd-prefixes.sh`, and any
 address shown is a last-checked example.
