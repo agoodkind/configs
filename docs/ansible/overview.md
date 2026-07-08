@@ -34,9 +34,8 @@ partitioned by source type, not by host group:
 - [ansible/inventory/group_vars/all/vars.yml](../../ansible/inventory/group_vars/all/vars.yml):
   shared non-secret defaults.
 - [ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml):
-  Ansible Vault-encrypted file holding every secret under a `vault_*` name.
-  Playbooks and templates reference these names directly.
-  See [docs/ansible/secrets.md](secrets.md) for the full contract.
+  Ansible Vault-encrypted secrets. The naming and reference contract is in
+  [docs/ansible/secrets.md](secrets.md).
 
 Target-specific variables live in files under
 [ansible/inventory/group_vars/](../../ansible/inventory/group_vars/), named

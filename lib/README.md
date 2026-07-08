@@ -2,7 +2,7 @@
 
 This directory contains common code shared across all configuration project Rakefiles.
 
-## Files
+## Helpers
 
 ### `rake_common.rb`
 
