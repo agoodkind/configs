@@ -1,34 +1,37 @@
 # OPNsense testbed baseline
 
 Current state for the OPNsense testbed VM (`opnsense-test`) on suburban. Use
-[docs/opnsense/testbed-config-import.md](testbed-config-import.md) for the
-config-import gate. Broader testbed topology lives in
-[docs/infra/suburban-testbed.md](../infra/suburban-testbed.md). The MWAN
-runtime story lives in [docs/mwan/overview.md](../mwan/overview.md). Local
-browser forwarding for headless Chrome or Playwright lives in
-[docs/opnsense/ui-testing.md](ui-testing.md).
+[docs/opnsense/testbed/import.md](import.md) for the config-import gate. Broader
+testbed topology lives in [docs/mwan/testbed.md](../../mwan/testbed.md), the MWAN
+runtime story in [docs/mwan/overview.md](../../mwan/overview.md), and local browser
+forwarding for headless Chrome or Playwright in [docs/opnsense/ui.md](../ui.md).
 
 ## Current state
 
-- VM `101` (`opnsense-test`) is the suburban OPNsense testbed VM.
-- The OPNsense VM has one NIC backed by the `vmbrtrunk` VLAN-aware bridge.
-  FreeBSD names it `vtnet0`.
-- The MANAGEMENT interface (`opt9` in `config.xml`) carries `10.240.4.1/24` and
-  `3d06:bad:b01:204::1/64`. Suburban joins the same broadcast domain via a
-  `vmbrtrunk` stub at `10.240.4.5/24` and `3d06:bad:b01:204::5/64`, defined in
-  [opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf).
-- The LAN interface (`lan` in `config.xml`) carries `192.168.1.1/24` and
-  `3d06:bad:b01:211::1/64`.
-- The WAN/internal interface carries `10.250.250.2/29` and
-  `3d06:bad:b01:201::2/64`. Suburban reaches that interface through `vmbr2`,
-  and TCP port 22 is open there.
-- The host-side OPNsense gRPC target is
-  `unix:///var/run/qemu-server/101.mwanrpc`.
-- The named virtio-console port is `io.goodkind.mwan-opnsense.0`.
-- The guest-side daemon serial path is `/dev/ttyV0.1` when
-  `/dev/vtcon/io.goodkind.mwan-opnsense.0` points there.
+The testbed OPNsense guest and its bridges are provisioned by
+[opentofu/suburban/](../../../opentofu/suburban/), which owns the VM id, the
+`vmbrtrunk` NIC, and the suburban-side stub. Its interface addresses come from the
+imported `config.xml`. This page states the structural shape, not the literal VMID
+or management, LAN, and WAN addresses, which live in those sources:
+
+- The guest has one NIC on the `vmbrtrunk` VLAN-aware bridge; FreeBSD names it
+  `vtnet0`.
+- The MANAGEMENT interface (`opt9` in `config.xml`) shares its broadcast domain
+  with a `vmbrtrunk` stub on suburban defined in
+  [opentofu/suburban/networks.tf](../../../opentofu/suburban/networks.tf).
+- The LAN interface (`lan`) and the WAN/internal interface carry the imported
+  testbed addresses. Suburban reaches the WAN/internal interface through `vmbr2`
+  with TCP port 22 open.
+- The host-side OPNsense gRPC socket, the named virtio-console port, and the guest
+  serial path are the daemon transport contract, fixed by the VM `args` in
+  [testbed/vm-101/qm-config.md](../../../testbed/vm-101/qm-config.md).
 
 ## Pre-flight checks
+
+The commands below target the testbed OPNsense VM whose id and `args` live in
+[opentofu/suburban/](../../../opentofu/suburban/) and
+[testbed/vm-101/qm-config.md](../../../testbed/vm-101/qm-config.md); they use its
+current id `101`.
 
 Verify the guest-side virtio-console symlink before assuming the serial device:
 
@@ -49,7 +52,6 @@ The command should return the daemon build banner.
 
 ## Reset rule
 
-Use Proxmox snapshot rollback for VM 101 reset. Do not use snapshots created
-with `--vmstate 1`, because RAM snapshots can resume stale network and clock
-state. See [docs/opnsense/operational-notes.md](operational-notes.md) for the
-full snapshot rule and the post-rollback verification list.
+Reset the testbed OPNsense by Proxmox snapshot rollback. The snapshot rule (no
+saved RAM) and the post-rollback verification list are in
+[docs/opnsense/notes.md](../notes.md).

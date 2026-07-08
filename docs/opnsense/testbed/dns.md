@@ -4,7 +4,7 @@ How name resolution works on the suburban testbed, and how to recover it when a
 rebuilt testbed OPNsense comes up with DNS broken. The testbed is IPv6 primary:
 its simulated ISPs (LXC 200/201/202) carry IPv4 transit only and no public IPv6,
 so IPv6-only guests reach the IPv4 internet through NAT64 plus DNS64. Live
-definitions are owned by [opentofu/suburban/](../../opentofu/suburban/) and the
+definitions are owned by [opentofu/suburban/](../../../opentofu/suburban/) and the
 testbed group vars; update this page when they change.
 
 ## Components
@@ -12,7 +12,7 @@ testbed group vars; update this page when they change.
 | Piece | Where | Address / prefix | Source of truth |
 | --- | --- | --- | --- |
 | Tayga (NAT64 translator) | testbed OPNsense (VM 101/102), `os-tayga` plugin | v6 prefix `3d06:bad:b01:2664::/96`, tun `nat64` at `3d06:bad:b01:264::ffff:1`, v4 pool `10.250.64.0/24` | `<tayga>` block in the imported `config.xml` (prod prefix `3d06:bad:b01:6464::/96` rewritten to `3d06:bad:b01:2664::/96` by the config transform) |
-| DNS64 resolver (bind9) | LXC 464 `dns64-suburban` | `3d06:bad:b01:204::464`, synthesizes AAAA into `2664::/96` | [dns64_suburban_servers.yml](../../ansible/inventory/group_vars/dns64_suburban_servers.yml), deployed by `deploy-dns64.yml --limit dns64_suburban_servers` |
+| DNS64 resolver (bind9) | LXC 464 `dns64-suburban` | `3d06:bad:b01:204::464`, synthesizes AAAA into `2664::/96` | [dns64_suburban_servers.yml](../../../ansible/inventory/group_vars/dns64_suburban_servers.yml), deployed by `deploy-dns64.yml --limit dns64_suburban_servers` |
 | Unbound (LAN resolver) | testbed OPNsense | binds all interfaces, `:53` | imported `config.xml` |
 
 The DNS64 LXC forwards upstream to `3d06:bad:b01:2664::101:101`, which is
@@ -76,15 +76,15 @@ VM `enmgmt0` shares the OPNsense LAN `/64` and reaches DNS on-link.
 its IPv4 WAN. The OPNsense Unbound does not synthesize DNS64; that path is for the
 IPv6-only LAN guests that point at the DNS64 LXC instead. The `204::` segment and
 the resolver are codified in
-[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) and
-[test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml).
+[opentofu/suburban/vms.tf](../../../opentofu/suburban/vms.tf) and
+[test_mwan_servers.yml](../../../ansible/inventory/group_vars/test_mwan_servers.yml).
 
 ## Reproducibility gaps
 
 These still need to move from manual recovery into the deploy path:
 
 - The config transform
-  ([testbed/opnsense/substitutions.yaml](../../testbed/opnsense/substitutions.yaml))
+  ([testbed/opnsense/substitutions.yaml](../../../testbed/opnsense/substitutions.yaml))
   should disable the Unbound DNSBL python module for the testbed (it carries no
   blocklist data), and `deploy-opnsense.yml` should restart Unbound and Tayga
   after the import so they come up without manual `configctl` calls.

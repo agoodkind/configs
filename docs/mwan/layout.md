@@ -1,31 +1,39 @@
 # MWAN Layout
 
-This page maps each MWAN host to its command surface, unit files, repo source,
-config template, role, and management address. The state below was captured on
-2026-05-07 against main commit `4c754f4`. Each management address matches
-`[main].mwan_mgmt_addr` in that host's `/etc/mwan/config.toml`.
+This page maps the MWAN host roles to their command surface, unit files, and repo
+source. It does not repeat concrete VMIDs, management addresses, or per-host roles.
+Those live in config: guest hostnames and IPv6 in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
+VMIDs in the per-hypervisor Proxmox inventory
+([vault.proxmox.yml](../../ansible/inventory/vault.proxmox.yml),
+[suburban.proxmox.yml](../../ansible/inventory/suburban.proxmox.yml)), and the ifmgr
+role plus other per-host values in each group's
+[group_vars](../../ansible/inventory/group_vars/). For a live host inventory, see
+[docs/infra/vault.md](../infra/vault.md).
 
-| Host | OS | MWAN command surface | Unit files on host | Repo source | Config template | Role | VMID | Management access |
-| ---- | -- | -------------------- | ------------------ | ----------- | --------------- | ---- | ---- | ----------------- |
-| vault, the San Francisco Proxmox host | Linux/amd64 | `mwan ifmgr`, `mwan watchdog` | `mwan-ifmgr.service`, `mwan-watchdog.service` | [mwan/go/cmd/mwan/mwan-ifmgr.service](../../mwan/go/cmd/mwan/mwan-ifmgr.service); watchdog unit lives only on host | [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | `vault-oob` | 113 | `3d06:bad:b01::254` |
-| mwan VM 113 on vault | Linux/amd64 | `mwan agent` | `mwan-agent.service` | [mwan/go/cmd/mwan/mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service) | [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | agent host | 113 | `3d06:bad:b01::113` |
-| mwan-failover LXC 116 on vault | Linux/amd64 | `mwan agent`, `mwan ifmgr` | `mwan-agent.service`, `mwan-ifmgr.service` | [mwan/go/cmd/mwan/mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service), [mwan-failover/mwan-ifmgr.service](../../mwan-failover/mwan-ifmgr.service) | [mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2) | `lxc-failover-backup` | 116 | reachable from vault with `pct exec 116` |
-| OPNsense VM 101 on vault | FreeBSD 14.3 | `mwan opnsense serve` | `/usr/local/etc/rc.d/mwan_opnsense`, enabled by `/etc/rc.conf.d/mwan_opnsense` | [mwan/go/cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense](../../mwan/go/cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense) | no `/etc/mwan/`; settings live in `rc.conf.d` | router helper | 101 | `agoodkind@3d06:bad:b01::1` through vault |
-| suburban, the New Jersey Proxmox testbed host | Linux/amd64 | `mwan ifmgr`, `mwan opnsense host serve`, `mwan watchdog` | `mwan-ifmgr.service`, `mwan-opnsense-host.service`, `mwan-watchdog-testbed.service` | [mwan/go/cmd/mwan/mwan-ifmgr.service](../../mwan/go/cmd/mwan/mwan-ifmgr.service), [mwan/go/cmd/mwan/mwan-opnsense-host.service](../../mwan/go/cmd/mwan/mwan-opnsense-host.service); watchdog-testbed unit lives only on host | [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | `suburban-wg` | 950 | `suburban` SSH alias |
-| testbed VM 950 on suburban | Linux/amd64 | `mwan agent` | `mwan-agent.service` | [mwan/go/cmd/mwan/mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service) | [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | agent host | 950 | `3d06:bad:b01:204::950` on the vmbrtrunk 204:: services LAN |
-| testbed LXC 100 on suburban | Linux/amd64 | `mwan agent`, `mwan ifmgr` | `mwan-agent.service`, `mwan-ifmgr.service` | [mwan/go/cmd/mwan/mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service), [mwan-failover/mwan-ifmgr.service](../../mwan-failover/mwan-ifmgr.service) | [mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2) | `lxc-failover-backup` | 100 | reachable from suburban with `pct exec 100` |
-| testbed LXCs 200, 201, and 202 on suburban | Linux/amd64 | none | none | none | none | ISP simulators | n/a | reachable from suburban with `pct exec` |
-| tack LXC 117 on vault | Linux/amd64 | none | none | none | none | unrelated service container | 117 | `tack` SSH alias |
+Production runs on the vault hypervisor and the testbed mirrors it on suburban, with
+the same roles on matching guests:
 
-Current tracked layout:
+| Role | Command surface | Unit files | Repo source | Config template |
+| ---- | --------------- | ---------- | ----------- | --------------- |
+| MWAN VM (agent host) | `mwan agent` | `mwan-agent.service` | [mwan-agent.service](../../mwan/go/cmd/mwan/mwan-agent.service) | [config.toml.j2](../../mwan/config/config.toml.j2) |
+| Failover LXC | `mwan agent`, `mwan ifmgr` | `mwan-agent.service`, `mwan-ifmgr.service` | [mwan-failover/mwan-ifmgr.service](../../mwan-failover/mwan-ifmgr.service) | [mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2) |
+| Proxmox host (OOB ifmgr + watchdog) | `mwan ifmgr`, `mwan watchdog` | `mwan-ifmgr.service`, watchdog unit (host-only) | [mwan-ifmgr.service](../../mwan/go/cmd/mwan/mwan-ifmgr.service) | [config.toml.j2](../../mwan/config/config.toml.j2) |
+| OPNsense VM (router helper) | `mwan opnsense serve` | `rc.d/mwan_opnsense`, no `/etc/mwan/` | [rc.d/mwan_opnsense](../../mwan/go/cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense) | settings in `rc.conf.d` |
+| Testbed host (suburban only) | adds `mwan opnsense host serve` | adds `mwan-opnsense-host.service` | [mwan-opnsense-host.service](../../mwan/go/cmd/mwan/mwan-opnsense-host.service) | [config.toml.j2](../../mwan/config/config.toml.j2) |
 
-| Path | Current purpose |
+The ISP-simulator LXCs and unrelated service containers on these hosts run no MWAN
+command surface.
+
+Repo layout for these files:
+
+| Path | Purpose |
 | ---- | --------------- |
 | [mwan/](../../mwan/) | Linux MWAN VM runtime files and the [mwan/go/](../../mwan/go/) monolith source tree |
-| [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | Unified Linux MWAN VM TOML template for production VM 113 and testbed VM 950 |
-| [mwan-failover/](../../mwan-failover/) | Shared failover LXC artifacts for production LXC 116 and testbed LXC 100 |
+| [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) | Unified Linux MWAN VM TOML template for the production and testbed MWAN VMs |
+| [mwan-failover/](../../mwan-failover/) | Shared failover LXC artifacts for the production and testbed failover LXCs |
 | [mwan-failover/sysctl.conf](../../mwan-failover/sysctl.conf) | Canonical failover LXC sysctl file, including IPv6 forwarding and router-advertisement acceptance |
-| [testbed/](../../testbed/) | Canonical testbed topology assets, OPNsense test files, ISP LXC files, and VM 950 snippets |
+| [testbed/](../../testbed/) | Canonical testbed topology assets, OPNsense test files, ISP LXC files, and testbed VM snippets |
 | [proxmox/](../../proxmox/) | Canonical Proxmox host artifacts, including host-side watchdog files and host config snippets |
 | [proxmox/config/10-mwan-retention.conf](../../proxmox/config/10-mwan-retention.conf) | Canonical vault journald retention file |
 | [docs/](../../docs/) | Canonical documentation location |
@@ -50,12 +58,18 @@ the binary swap.
 
 ## MWAN WAN Links
 
-| Interface | Provider | IPv4 | IPv6 | Route metric | Notes |
-| --------- | -------- | ---- | ---- | ------------ | ----- |
-| `enwebpass0` | Webpass | `dynamic/CGNAT (not recorded)` | `delegated /64 from provider (not recorded)` | 10 (primary) | Google Fiber. RTT to `2001:4860:4860::8888` ~2.6 ms. |
-| `enatt0.3242` | AT&T (802.1X) | `dynamic/CGNAT (not recorded)` | Provider-delegated IPv6 from AT&T (not recorded) | 1024 (secondary) | IPv6 gateway pings fine but `ping6 8.8.8.8` is 100% loss. NPT rule or PD routing issue suspected. |
-| `enatt0` (parent) | AT&T mgmt to ONT | `192.168.1.2/24` (link to ONT) | n/a | n/a | Untagged parent of `enatt0.3242`. Hosts the link to the AT&T ONT at `192.168.1.1`. |
-| `enmbrains0` | Monkeybrains | `158.247.70.19/26` (public) | SLAAC `2607:f598:d3e0:131::/64` plus a DHCPv6-PD `/56`, currently `2607:f598:d3e8:4500::/56` | 5000 (tertiary) | NPT maps the internal `/60` onto the PD's first `/60`. The PD renumbers, so `find-pd-prefixes.sh` reads the live delegation and the literal here is only the value at last check. Health-checked but excluded from alerts as a lossy fallback. |
+Interface names and route metrics are config, rendered from group_vars into
+[config.toml.j2](../../mwan/config/config.toml.j2); the priority order below is the
+structural fact. Provider addresses and delegated prefixes are dynamic and are not
+authoritative here: the live DHCPv6-PD is read by `find-pd-prefixes.sh`, and any
+address shown is a last-checked example.
+
+| Interface | Provider | Priority | Notes |
+| --------- | -------- | -------- | ----- |
+| `enwebpass0` | Webpass | primary | Google Fiber, dynamic CGNAT v4 and a provider-delegated v6 `/64`. |
+| `enatt0.3242` | AT&T (802.1X) | secondary | Dynamic CGNAT v4 and an AT&T-delegated v6. IPv6 gateway pings fine but `ping6 8.8.8.8` is 100% loss; NPT rule or PD routing issue suspected. |
+| `enatt0` (parent) | AT&T mgmt to ONT | n/a | Untagged parent of `enatt0.3242`. Carries the link to the AT&T ONT. |
+| `enmbrains0` | Monkeybrains | tertiary | Public static v4, SLAAC v6, and a DHCPv6-PD `/56`. NPT maps the internal `/60` onto the PD's first `/60`; the PD renumbers, so `find-pd-prefixes.sh` reads the live delegation. Health-checked but excluded from alerts as a lossy fallback. |
 
 ## AT&T ONT access
 
