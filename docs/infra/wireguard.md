@@ -125,23 +125,23 @@ DNS-LB symmetry. Breaks all DNS-LB-routed traffic, not just WG.
 
 ## Detection plus manual reconciliation
 
-Run wghealth on BOTH sides. On endpoint mismatch (post-NAT-normalization),
+Run wg_health on BOTH sides. On endpoint mismatch (post-NAT-normalization),
 alert. Operator restarts wg-quick on one side. Both sides converge.
 
 Pros: zero protocol-level change, observable.
 Cons: requires manual intervention. The whole point of WG is "set and forget."
 
-## Implementation note for bidirectional wghealth
+## Implementation note for bidirectional wg_health
 
 Today's `wg_health` ([mwan/go/internal/ifmgr/modules/wg/](../../mwan/go/internal/ifmgr/modules/wg/)) polls OPNsense via SSH.
 
 Two paths can add the suburban side:
 
 - **Local-exec mode**. Run `mwan-ifmgr` on suburban with a `suburban-wg` role
-  and a wghealth instance that reads the local WireGuard interface. Each daemon
+  and a wg_health instance that reads the local WireGuard interface. Each daemon
   emits per-peer logs from its own viewpoint. Cross-checking happens by log
   analysis or a correlation layer.
-- **Remote SSH mode**. Extend wghealth to support multiple SSH targets. The
+- **Remote SSH mode**. Extend wg_health to support multiple SSH targets. The
   vault daemon polls both OPNsense and suburban over SSH. `wg` is only readable
   via root or the `wg-quick` group.
 
