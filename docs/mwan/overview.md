@@ -193,11 +193,9 @@ Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 3) and
 `MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
-silently. Put the full intent in `--description` and keep the name short. See
-[docs/opnsense/notes.md](../opnsense/notes.md) for the
-`--vmstate 1` rule for testbed snapshots, which applies equally to MWAN
-snapshots: do not save RAM, because rollback then resumes with stale
-networking and clock state.
+silently. Put the full intent in `--description` and keep the name short. The
+no-saved-RAM snapshot rule in [docs/opnsense/notes.md](../opnsense/notes.md)
+applies equally to MWAN snapshots.
 
 ## Data-plane convergence
 

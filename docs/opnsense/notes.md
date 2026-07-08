@@ -204,3 +204,15 @@ Most likely cause: the manual NAT rules are missing. Check Firewall / NAT /
 Outbound for the two manual rules. Verify with `pfctl -sn | grep ^nat` from
 OPNsense shell; should see at least one `nat on vtnet1 inet from <internal_net>
 to any -> (vtnet1:0)` rule.
+
+## Snapshots without saved RAM
+
+Take every OPNsense snapshot with `--vmstate 0` (no saved RAM), on production and
+testbed alike. A snapshot that includes RAM resumes on rollback with a stale wall
+clock, dead TCP sockets, and a stale resolver cache, which has produced hours of
+confusing failures. The web GUI defaults RAM snapshots on for a running VM, so do
+not snapshot from the GUI for this work.
+
+After a rollback, verify the guest agent and serial console respond, SSH and the
+web UI (TCP 443) are reachable, DNS returns `NOERROR`, and the default routes, pf
+rules, and FRR/BGP state are sane before trusting the router again.
