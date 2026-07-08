@@ -247,8 +247,12 @@ instead. Linux `ping6` defaults to a 56-byte payload and is unaffected.
 
 ### MWAN dataplane state for the customer prefix
 
-Three pieces of state on MWAN must be present for OPNsense LAN traffic to
-reach the public IPv6 internet:
+The internal `/60` block and the per-segment `/64` gateways in the diagnostics
+below are the internal addressing plan (service hostnames and addresses in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml));
+the provider PD is dynamic and read live by `find-pd-prefixes.sh`. Three pieces of
+state on MWAN must be present for OPNsense LAN traffic to reach the public IPv6
+internet:
 
 - **Webpass PD lease.** `find-pd-prefixes.sh enwebpass0` returns the live
   `/56` delegated by Webpass (currently `2604:5500:c271:be00::/56`).
