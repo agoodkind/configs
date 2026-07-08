@@ -9,61 +9,55 @@ ground truth and update this page when it changes.
 
 ## Bridges
 
-| Bridge | Role                       | Notes                                            |
-| ------ | -------------------------- | ------------------------------------------------ |
-| vmbr0  | Comcast uplink             | Suburban-managed management plus outbound NAT    |
-| vmbr1  | VM management              | Suburban's testbed management subnet; no longer carries VM 950 |
-| vmbr2  | MWAN internal (OPNsense)   | `10.250.250.0/29` and `3d06:bad:b01:201::5/64` (testbed-side) |
-| vmbrtrunk | Services LAN (OPNsense MANAGEMENT) | VLAN-aware trunk, vids `64 100 200 300`, host `3d06:bad:b01:204::5/64`. Untagged `204::` LAN holds OPNsense MANAGEMENT `204::1`, DNS64 LXC `204::464`, seaweedfs `204::410`, tack-qa `204::400`, and VM 950 mgmt `204::950`. "MWAN-140 slice 1". |
-| vmbr4  | Simulated Webpass ISP      | bare L2                                          |
-| vmbr5  | Simulated AT&T ISP         | bare L2                                          |
-| vmbr6  | Simulated Monkeybrains ISP | bare L2 plus failover-test eth0                  |
+The bridge addresses and the `vmbrtrunk` VLAN ids live in
+[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf); this table is
+the role mapping.
+
+| Bridge | Role |
+| ------ | ---- |
+| vmbr0  | Comcast uplink: suburban-managed management plus outbound NAT |
+| vmbr1  | VM management: suburban's testbed management subnet (no longer carries the testbed MWAN VM) |
+| vmbr2  | MWAN internal link to OPNsense |
+| vmbrtrunk | Services LAN and OPNsense MANAGEMENT: VLAN-aware trunk whose untagged services LAN holds the OPNsense MANAGEMENT, DNS64, seaweedfs, tack-qa, and testbed MWAN VM management addresses |
+| vmbr4  | Simulated Webpass ISP (bare L2) |
+| vmbr5  | Simulated AT&T ISP (bare L2) |
+| vmbr6  | Simulated Monkeybrains ISP (bare L2 plus failover-test eth0) |
 
 ## Guests
 
-OpenTofu owns every suburban guest below. Cross-check VMID, type, and bridges
-against [opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf),
+OpenTofu owns every suburban guest. The VMIDs, names, types, and bridges live in
+[opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf),
 [opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf), and
-[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf) when in doubt.
+[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf); guest IPs are
+in [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+The roles they play:
 
-| VMID | Name               | Type | Role                                                  |
-| ---- | ------------------ | ---- | ----------------------------------------------------- |
-| 101  | opnsense-test      | QEMU | Testbed OPNsense gateway                              |
-| 950  | test-mwan          | QEMU | Testbed MWAN router (mirrors prod MWAN VM)            |
-| 100  | mwan-failover-test | LXC  | BGP failover backup (mirrors prod failover LXC)       |
-| 200  | isp-webpass        | LXC  | Simulated Webpass ISP                                 |
-| 201  | isp-att            | LXC  | Simulated AT&T ISP                                    |
-| 202  | isp-mbrains        | LXC  | Simulated Monkeybrains ISP                            |
+- Testbed OPNsense gateway (QEMU).
+- Testbed MWAN router, mirroring the production MWAN VM (QEMU).
+- BGP failover backup, mirroring the production failover LXC (LXC).
+- Three simulated ISP LXCs for Webpass, AT&T, and Monkeybrains.
 
-Authoritative connection addresses for the OPNsense testbed are documented in
-[docs/opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md). Other
-guest IPs are encoded in
-[ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
-and in the matching OpenTofu resources.
+Authoritative connection addresses for the OPNsense testbed are in
+[docs/opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md).
 
-The ISP LXCs (200/201/202) each provide DHCPv6-PD (kea-dhcp6) and radvd (RA), and
-masquerade out via Comcast on vmbr0. Per-ISP addressing is parameterized in
+The ISP LXCs each provide DHCPv6-PD (kea-dhcp6) and radvd (RA) and masquerade out
+via Comcast on vmbr0. Per-ISP addressing (PD prefixes, NPT, the v4 links and routed
+`/29`s, and SLAAC) is parameterized in
 [suburban_servers.yml](../../ansible/inventory/group_vars/suburban_servers.yml)
-`testbed_isp_lxcs`, mirroring how prod addresses each WAN. DHCPv6-PD sizes match
-prod: webpass `/56`, att `/60`, monkeybrains `/56`, with NPT using the first `/60`
-of each delegation. The PD prefixes use the 22/23/24 `/56`-clean scheme to stay
-clear of the `02xx` mgmt/LAN/internal/SLAAC space:
+`testbed_isp_lxcs`, so this page does not restate the literal prefixes. NPT uses
+the first `/60` of each delegation, and the PD prefixes use a `/56`-clean scheme
+that stays clear of the management, LAN, internal, and SLAAC space. The structural
+parity with prod:
 
-| WAN | sim LXC | DHCPv6-PD | NPT (first /60) | v4 | SLAAC |
-| --- | ------- | --------- | --------------- | -- | ----- |
-| Monkeybrains | 202 | `3d06:bad:b01:2400::/56` | `3d06:bad:b01:2400::/60` | DHCPv4 (kea-dhcp4) + DHCPv6 IA_NA, masquerade egress | `3d06:bad:b01:0250::/64` |
-| AT&T | 201 | `3d06:bad:b01:2300::/60` | `3d06:bad:b01:2300::/60` | dynamic DHCPv4 link (MAC-pinned to `10.240.205.2`) + routed static `/29` `10.241.205.0/29` 1:1-NAT'd to services; no 802.1X/VLAN | none |
-| Webpass | 200 | `3d06:bad:b01:2200::/56` | `3d06:bad:b01:2200::/60` | static v4 link + routed static `/29` `10.241.204.0/29` 1:1-NAT'd to services | none |
-
-Monkeybrains (202) runs the full prod dynamic stack: DHCPv4, DHCPv6 IA_NA,
-DHCPv6-PD, and SLAAC, so VM 950 gets a dynamic v4, a DHCPv6 address, the PD, and a
-SLAAC address exactly as prod's real Monkeybrains delivers. AT&T (201) models prod
-AT&T: a dynamic DHCPv4 link (pinned stable by a sim MAC reservation) over which
-the sim routes a static `/29` (`10.241.205.0/29`) that VM 950 1:1-NATs to the five
-internal services, plus DHCPv6-PD; the testbed cannot reproduce 802.1X/VLAN, so
-the link is a direct NIC. Webpass (200) models prod Webpass: a static v4 link plus
-a static `/29` (`10.241.204.0/29`) 1:1-NAT'd to the five services, with DHCPv6-PD
-`/56` (NPT on its first `/60`).
+- Monkeybrains runs the full prod dynamic stack: DHCPv4, DHCPv6 IA_NA, DHCPv6-PD
+  `/56`, and SLAAC, so the testbed MWAN VM gets a dynamic v4, a DHCPv6 address, the
+  PD, and a SLAAC address exactly as prod's real Monkeybrains delivers.
+- AT&T models prod AT&T: a dynamic DHCPv4 link (pinned stable by a sim MAC
+  reservation) over which the sim routes a static `/29` that the MWAN VM 1:1-NATs
+  to the internal services, plus DHCPv6-PD `/60`. The testbed cannot reproduce
+  802.1X/VLAN, so the link is a direct NIC.
+- Webpass models prod Webpass: a static v4 link plus a routed static `/29` 1:1-NAT'd
+  to the services, with DHCPv6-PD `/56`.
 
 ## Production vs testbed
 
@@ -102,9 +96,9 @@ unknown.
   `args` writes from a token. OpenTofu must not manage `kvm_arguments` for those
   VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the
   field and the apply fails with `VM is locked`. See
-  [docs/opnsense/operational-notes.md](../opnsense/operational-notes.md) Rule 8.
-- **Management return path.** VM 950 management has no policy route, mirroring
-  prod, so on-link replies to peers on the `204::` services LAN return directly.
+  [docs/opnsense/notes.md](../opnsense/notes.md) Rule 8.
+- **Management return path.** The testbed MWAN VM management has no policy route,
+  mirroring prod, so on-link replies to peers on the services LAN return directly.
   A management policy table carrying only a default route shadows the connected
   route and triangles on-link replies through the gateway, which breaks
   reachability.
@@ -112,8 +106,9 @@ unknown.
   but allows TCP, so measure reachability with TCP or SSH, not `ping6`, or a
   healthy host reads as down.
 - **Watchdog host config address.** `mwan-watchdog-testbed` on the suburban host
-  must target VM 950's current management address (`204::950`) in
-  `/etc/mwan/config.toml`. A stale address degrades its VM health probe to the
+  must target the testbed MWAN VM's current management address on the services LAN
+  (owned by service_mapping.yml) in `/etc/mwan/config.toml`. A stale address
+  degrades its VM health probe to the
   TCP and PVE fallback channels (the vsock channel still works because it is
   CID-based), and a wedged snapshot plus a tight retry loop can hold the VM lock.
   The config is rendered by `deploy-proxmox --limit suburban`.
