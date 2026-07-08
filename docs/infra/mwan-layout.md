@@ -1,8 +1,9 @@
 # MWAN Layout
 
-Live MWAN state was captured on 2026-05-07 against main commit `4c754f4`.
-Management addresses are the values used in `[main].mwan_mgmt_addr` in each
-host's `/etc/mwan/config.toml`.
+This page maps each MWAN host to its command surface, unit files, repo source,
+config template, role, and management address. The state below was captured on
+2026-05-07 against main commit `4c754f4`. Each management address matches
+`[main].mwan_mgmt_addr` in that host's `/etc/mwan/config.toml`.
 
 | Host | OS | MWAN command surface | Unit files on host | Repo source | Config template | Role | VMID | Management access |
 | ---- | -- | -------------------- | ------------------ | ----------- | --------------- | ---- | ---- | ----------------- |
@@ -30,11 +31,22 @@ Current tracked layout:
 | [docs/](../../docs/) | Canonical documentation location |
 | [opentofu/](../../opentofu/) | OpenTofu configuration for provisioned containers and VMs |
 
-Manual MWAN binary rollout remains testbed-first, then production. The order is
-suburban host, testbed VM 950, testbed LXC 100, testbed OPNsense, production
-LXC 116, production VM 113, vault, and production OPNsense. Production changes
-need a live surgical verification step and a rollback copy before a binary
-swap.
+## MWAN binary rollout order
+
+Roll a manual MWAN binary out on the testbed first, then production. Verify each
+host before moving to the next, in this order:
+
+1. suburban host
+2. testbed VM 950
+3. testbed LXC 100
+4. testbed OPNsense
+5. production LXC 116
+6. production VM 113
+7. vault
+8. production OPNsense
+
+A production step needs a live surgical verification and a rollback copy before
+the binary swap.
 
 ## MWAN WAN Links
 
@@ -52,7 +64,7 @@ The AT&T ONT is a Realtek-based GPON SFP ("ONT-on-a-stick", firmware
 parent `enatt0`. MWAN reaches its management plane at `192.168.1.1` over
 that link.
 
-- Credentials: stock vendor defaults for this Humax SFP unit. Not stored in the repo. Operator memory or the Humax operator doc.
+- Credentials are the stock vendor defaults for this Humax SFP unit. They are not stored in the repo, so use operator memory or the Humax operator doc.
 - SSH: dropbear 0.48, requires legacy KEX, host key, and cipher.
 - Telnet: also open on port 23.
 
