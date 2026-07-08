@@ -50,8 +50,8 @@ if [[ -n "$hits" ]]; then flag "em/en dash"; printf '%s\n' "$hits"; fi
 # ---------------------------------------------------------------------------
 # 5. Stale / renamed / removed path fragments (docs + source comments).
 # ---------------------------------------------------------------------------
-stale_targets=$(git ls-files '*.md' 'mwan/go/**/*.go' 'ansible/**/*.yml' 'ansible/**/*.j2' 'mwan/**/*.j2' 'README.md' 'AGENTS.md' 2>/dev/null)
-hits="$(grep -rInE 'mwan/config/config\.toml\.j2|internal/mwn1|modules/wghealth|mwan-layout\.md|suburban-testbed\.md|operational-notes\.md|config-import\.md|testbed-baseline\.md|testbed-config-import\.md|testbed-dns-nat64\.md|ui-testing\.md|wireguard-roaming\.md|dscp-wan-pinning\.md|go-standards\.md|script-style\.md|proxmox-api\.md|mwan-email-routing' $stale_targets 2>/dev/null)"
+mapfile -t stale_targets < <(git ls-files '*.md' 'mwan/go/**/*.go' 'ansible/**/*.yml' 'ansible/**/*.j2' 'mwan/**/*.j2' 'README.md' 'AGENTS.md' 2>/dev/null)
+hits="$(grep -rInE 'mwan/config/config\.toml\.j2|internal/mwn1|modules/wghealth|mwan-layout\.md|suburban-testbed\.md|operational-notes\.md|config-import\.md|testbed-baseline\.md|testbed-config-import\.md|testbed-dns-nat64\.md|ui-testing\.md|wireguard-roaming\.md|dscp-wan-pinning\.md|go-standards\.md|script-style\.md|proxmox-api\.md|mwan-email-routing' "${stale_targets[@]}" 2>/dev/null)"
 if [[ -n "$hits" ]]; then flag "stale/renamed path fragment"; printf '%s\n' "$hits"; fi
 
 # ---------------------------------------------------------------------------
