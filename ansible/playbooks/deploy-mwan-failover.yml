@@ -147,7 +147,10 @@
         daemon_reload: true
 
     - name: Reload sysctl
-      ansible.builtin.command: sysctl --system
+      # `sysctl --system` exits non-zero in the LXC because it hits
+      # host-protected keys a container cannot set, which aborts the deploy.
+      # The failover file holds only writable net keys, so apply just it.
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-mwan-failover.conf
       changed_when: false
 
     - name: Restart mwan-agent
