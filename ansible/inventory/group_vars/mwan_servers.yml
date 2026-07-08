@@ -410,7 +410,7 @@ mwan_systemd_check_interval: 600
 mwan_email_from: "mwan@goodkind.io"
 mwan_email_sender_name: "MWAN"
 
-# Variables consumed by mwan/config/config.toml.j2 [email] block.
+# Email/alert tuning for the MWAN [email] config block.
 mwan_email_min_level: "ERROR"
 mwan_email_subject_prefix: "[MWAN-vault]"
 mwan_email_bind_iface: "enmbrains0"

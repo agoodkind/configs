@@ -229,7 +229,7 @@ mwan_systemd_check_interval: 600
 mwan_email_sender_name: "MWAN-TESTBED"
 mwan_debug_logging: true
 
-# Variables consumed by mwan/config/config.toml.j2 [email] block.
+# Email/alert tuning for the MWAN [email] config block.
 mwan_email_min_level: "ERROR"
 mwan_email_subject_prefix: "[MWAN-suburban]"
 mwan_email_bind_iface: ""
@@ -300,7 +300,7 @@ mwan_bgp_graceful_restart_enabled: true
 mwan_bgp_graceful_restart_time_seconds: 30
 mwan_bgp_graceful_restart_notification_enabled: true
 
-# Shared runtime config values consumed by mwan/config/config.toml.j2.
+# Shared runtime config values for the MWAN VM and host.
 mwan_config_hostname: "suburban-testbed"
 mwan_config_mgmt_addr: "3d06:bad:b01:204::950"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
