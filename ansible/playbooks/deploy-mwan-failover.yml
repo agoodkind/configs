@@ -30,6 +30,26 @@
         state: directory
         mode: "0755"
 
+    - name: Ensure persistent mwan state directory exists
+      ansible.builtin.file:
+        path: /var/lib/mwan
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # The failover config sets deploy_expected = true, which makes the agent
+    # emit a deploy-file-missing warning when /var/lib/mwan/last-deploy is
+    # absent. Write it here (as the primary deploy does) so the gate is
+    # satisfied and the failover does not alert on a file it never receives.
+    - name: Write deploy timestamp to failover LXC
+      ansible.builtin.copy:
+        content: "{{ ansible_date_time.epoch }}"
+        dest: /var/lib/mwan/last-deploy
+        owner: root
+        group: root
+        mode: "0644"
+
     - name: Install nftables (testbed only; gated by group_vars)
       ansible.builtin.apt:
         name: nftables
