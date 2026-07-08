@@ -26,3 +26,27 @@ mwan_failover_enable_mainv4: false
 mwan_failover_install_nftables: false
 # Source interface for outbound failover alert email (empty = default route).
 mwan_failover_email_bind_iface: ""
+
+# Shared BGP tunables. The failover config template reads the bare bgp_*
+# names, so they are declared here to mirror the primary (mwan_servers)
+# values. TODO(MWAN-229 follow-up): promote these to group_vars/all so the
+# primary and failover inherit one definition instead of duplicating.
+bgp_keepalive_seconds: 3
+bgp_hold_seconds: 9
+bgp_listen_port: 179
+bgp_announce_ipv4:
+  - "0.0.0.0/0"
+bgp_announce_ipv6:
+  - "::/0"
+
+# BGP graceful restart (RFC 4724). Mirrors the primary so a failover agent
+# restart holds routes in the OPNsense helper instead of flapping the session.
+mwan_bgp_graceful_restart_enabled: true
+mwan_bgp_graceful_restart_time_seconds: 30
+mwan_bgp_graceful_restart_notification_enabled: true
+
+# Alert email routing. Recipient/level/cooldown mirror the other mwan groups;
+# the failover keeps its own from-address and subject prefix above.
+mwan_email_recipient: "alex@goodkind.io"
+mwan_email_min_level: "ERROR"
+mwan_email_cooldown: "5m"
