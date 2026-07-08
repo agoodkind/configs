@@ -7,7 +7,7 @@ so IPv6-only guests reach the IPv4 internet through NAT64 plus DNS64. Live
 definitions are owned by [opentofu/suburban/](../../../opentofu/suburban/) and the
 testbed group vars; update this page when they change.
 
-## Components
+## Resolution path
 
 | Piece | Where | Address / prefix | Source of truth |
 | --- | --- | --- | --- |

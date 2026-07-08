@@ -49,7 +49,7 @@ Files in the new package (forward-looking, slice A):
 - `internal/notify/email.go`: `Sink` wrapping `internal/email.Sender` plus subject prefix.
 - `internal/notify/null.go`: `NullNotifier` for when `[email]` is unconfigured.
 
-## Sources
+## Call sites and notify kinds
 
 Each source below identifies the call site, the kind string used by `notify`, the shape
 of the per-event key, the level, and which subsystem calls `Resolve` to clear the active
