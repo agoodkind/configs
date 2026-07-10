@@ -136,13 +136,12 @@ static-route reference but never be selected as default.
 
 ### Rule 4: If you must enable a gateway temporarily
 
-Restart FRR after to recover BGP defaults:
+Restart FRR afterward to recover the BGP default, deleting only the family whose gateway you enabled so the healthy family is not disturbed:
 
 ```shell
-ssh agoodkind@3d06:bad:b01::1 "sudo service frr stop && sudo route -n delete -inet default 2>/dev/null; sudo route -n delete -inet6 default 2>/dev/null; sudo service frr start"
+# Replace <family> with inet (IPv4) or inet6 (IPv6) to match the gateway you enabled.
+ssh agoodkind@3d06:bad:b01::1 "sudo service frr stop && sudo route -n delete -<family> default 2>/dev/null; sudo service frr start"
 ```
-
-(Adjust which family to delete based on which gateway you enabled.)
 
 ### Rule 5: GUI Apply consequences are conditional
 
@@ -196,7 +195,8 @@ ping6 <synthesized addr from above>
 
 If DNS64 returns synth but ping fails, check the `:6464::/96` static route
 on OPNsense (`netstat -rn -f inet6 | grep 6464`). If missing, check that
-NAT64_GW is `disabled=0` AND the static route is `disabled=0`.
+NAT64_GW is `disabled=0` and `force_down=1` (not merely `disabled=0`, or it
+becomes a default-route candidate) and that the static route is `disabled=0`.
 
 ### Outbound NAT stops working (LAN clients lose v4 Internet but v6 works)
 

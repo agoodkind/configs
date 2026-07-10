@@ -18,7 +18,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   <user>@192.168.1.1
 ```
 
-The terminal exposes diagnostic tools such as `ShowStatus`, `pondetect`, `checkomci`, `omci_app`, `omcicli`, and `oamcli`, and status files under `/proc` such as `/proc/omci`, `/proc/fiber_debug`, `/proc/fiber_mode`, and `/proc/internet_flag`. It accepts only a few connections at once and wedges its SSH and telnet daemons when hit rapidly, so keep to one connection at a time. If both daemons stop answering while TCP still accepts, reboot the terminal over SSH.
+The terminal exposes diagnostic tools such as `ShowStatus`, `pondetect`, `checkomci`, `omci_app`, `omcicli`, and `oamcli`, and status files under `/proc` such as `/proc/omci`, `/proc/fiber_debug`, `/proc/fiber_mode`, and `/proc/internet_flag`. It accepts only a few connections at once and wedges its SSH and telnet daemons when hit rapidly, so keep to one connection at a time. If a daemon wedges but SSH still answers, reboot the terminal over SSH; if SSH itself stops answering, power-cycle the terminal to recover.
 
 ## 802.1X authentication
 
