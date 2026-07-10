@@ -160,7 +160,7 @@ These are the load-bearing invariants. Changing any of them re-opens a documente
 Two guides cover the daemon end to end:
 
 - [install](install.md) brings up OPNsense and the daemon on a fresh VM.
-- [operations](operations.md) covers updating the binary, the firmware-upgrade use case,
+- [operations](daemon/operations.md) covers updating the binary, the firmware-upgrade use case,
   and recovering a wedged channel.
 - [wedge](wedge.md) explains the mid-transfer write wedge: its trigger, the evidenced
   mechanism, recovery, and how to inspect a wedged guest with a kernel-debug build.

@@ -18,7 +18,7 @@ runbooks that explain how those pieces fit together.
   [docs/mwan/go-standards.md](docs/mwan/go-standards.md),
   [docs/mwan/script-style.md](docs/mwan/script-style.md)
 - OPNsense steady-state behavior and import runbooks:
-  [docs/opnsense/operational-notes.md](docs/opnsense/operational-notes.md),
+  [docs/opnsense/operations.md](docs/opnsense/operations.md),
   [docs/opnsense/config-import.md](docs/opnsense/config-import.md),
   [docs/opnsense/testbed-baseline.md](docs/opnsense/testbed-baseline.md),
   [docs/opnsense/testbed-config-import.md](docs/opnsense/testbed-config-import.md),
@@ -122,7 +122,7 @@ capture forensics, and reset to a known-good state instead of improvising.
 
 - Vault hypervisor state: [docs/infra/vault.md](docs/infra/vault.md)
 - MWAN host layout:
-  [docs/infra/mwan-layout.md](docs/infra/mwan-layout.md)
+  [docs/mwan/layout.md](docs/mwan/layout.md)
 - Suburban testbed bridges and guests:
   [docs/infra/suburban-testbed.md](docs/infra/suburban-testbed.md)
 - Production OPNsense topology: [docs/infra/opnsense.md](docs/infra/opnsense.md)
@@ -132,7 +132,7 @@ capture forensics, and reset to a known-good state instead of improvising.
   [docs/infra/cloudflare.md](docs/infra/cloudflare.md)
 - Emergency out-of-band status: [docs/infra/oob.md](docs/infra/oob.md)
 - OPNsense steady-state foot-guns:
-  [docs/opnsense/operational-notes.md](docs/opnsense/operational-notes.md)
+  [docs/opnsense/operations.md](docs/opnsense/operations.md)
 - OPNsense import internals:
   [docs/opnsense/config-import.md](docs/opnsense/config-import.md)
 - OPNsense testbed baseline and import gate:

@@ -51,5 +51,5 @@ The command should return the daemon build banner.
 
 Use Proxmox snapshot rollback for VM 101 reset. Do not use snapshots created
 with `--vmstate 1`, because RAM snapshots can resume stale network and clock
-state. See [docs/opnsense/operational-notes.md](operational-notes.md) for the
+state. See [docs/opnsense/operations.md](operations.md) for the
 full snapshot rule and the post-rollback verification list.

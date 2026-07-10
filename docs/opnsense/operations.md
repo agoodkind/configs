@@ -1,100 +1,71 @@
-# Operate the OPNsense OOB daemon
+# OPNsense router operations
 
-This guide covers the day-to-day operations you run against the `mwan-opnsense`
-out-of-band (OOB) daemon: update its binary, upgrade the OPNsense firmware through it,
-and recover it when a channel wedges. For why the daemon is built the way it is, read
-[OPNsense OOB daemon](daemon.md). To install it on a fresh VM, read [install](install.md).
+OPNsense runs as a BGP-only edge router, so the FRR routing daemon owns the kernel default route and the static WAN gateways do not. This page is the operating contract for the router: the steady state it holds, the foot-guns that break it, and how to recover. To stand up a replacement, treat the steady state below as the target and the foot-guns as the list to avoid.
 
-Exact command flags drift, so this guide describes behavior and names the verbs. Run
-`mwan opnsense <verb> --help` for the current flag set; that help text is the source of
-truth.
+## How the default route works
 
-## Pick the right channel
+FRR installs and owns the kernel default route from BGP. MWAN peers announce a default route from a primary and a backup, and FRR selects the primary. No static WAN gateway is selected as the default, on purpose, because OPNsense would otherwise reinstall its own default and clobber the one BGP installed.
 
-The daemon is one of three OOB channels into OPNsense, and each fits a different job.
+## Steady state
 
-- The gRPC-over-serial daemon is reliable for short calls: `version`, `state`, xpath
-  reads, and the upgrade validation matrix. Prefer it for control-plane operations,
-  because it survives a packet-filter or routing break that would silently fail the
-  guest agent.
-- The QEMU Guest Agent (QGA) is fine for read-only probes such as `qm guest exec`.
-- SSH over the privileged admin path carries large file pushes and long exec runs better
-  than the serial daemon does.
-- The serial console is the kernel-level last resort. It is the only signal that survives
-  a kernel panic, a botched bootloader, or lost network state.
+The router holds four pieces of configuration, and each exists to keep BGP's default route intact while the rest of the router works.
 
-## Update the daemon binary
+The NAT64 gateway, the translator that lets IPv6-only clients reach IPv4, is enabled but forced down. Forcing it down keeps it from ever winning default selection, while its static route still installs and the translator keeps working. That gateway carries one static route, which sends the NAT64 prefix to the translator.
 
-You update the daemon over the same serial channel it serves, so the update works even
-when the network is down. The flow is push, stage, restart, verify.
+Outbound NAT runs in manual mode with two rules, because OPNsense generates automatic NAT only when an interface has a configured gateway and none does here. One rule translates every internal network to the WAN address, and one translates the firewall's own outbound traffic. The internal-networks rule matches an alias that resolves to every internal interface, so a new VLAN added to that alias is covered without a rule change.
 
-1. Push the new binary to the staging slot: `mwan opnsense daemon push <binary>`.
-2. Promote it: `mwan opnsense daemon stage <sha256>`. This swaps the new binary into the
-   active slot, keeps the previous binary as the rollback slot, and drops a
-   pending-verify marker.
-3. Restart onto it: `mwan opnsense daemon restart`. The daemon exits and the supervisor
-   respawns it on the new binary.
-4. Verify: `mwan opnsense daemon version` shows the new commit, and `mwan opnsense daemon
-   state` shows the active and previous hashes and the health.
+MWAN peers as two BGP neighbors per address family, a primary and a backup, and a route-map prefers the primary by local preference. FRR installs the winning default into the kernel, where it shows the flag that marks a zebra-installed route.
 
-A new binary that never reports healthy auto-reverts to the previous binary on the next
-respawn, so a bad self-deploy heals itself. To revert by hand, run `mwan opnsense daemon
-revert`. The daemon stamps itself healthy once it serves cleanly, which clears the
-pending-verify marker so later restarts keep the new binary.
+## Foot-guns
 
-## Use case: upgrade the OPNsense firmware
+These are the ways an operator breaks the router, each with its cause and its fix.
 
-The `mwan opnsense upgrade` verb drives a firmware upgrade as a state machine, so each
-phase records an artifact and refuses to run out of order. Run the phases by hand the
-first time on a target, then use one-shot mode for repeat cycles.
+Enabling any v4 or v6 gateway as a selectable default clobbers the BGP route. When a selectable default gateway exists, an OPNsense Apply reinstalls its own default route, and FRR's zebra does not see the delete, so its BGP default goes stale while the kernel holds whatever OPNsense reinstalled. Keep every gateway either deleted, disabled, or forced down, so no gateway is selectable as default and Apply leaves BGP's route alone. If you must enable a gateway briefly, restart FRR afterward to reinstall the BGP default.
 
-The phases run in order.
+Automatic outbound NAT also needs a gateway, which is why the manual rules exist. With no gateway on the WAN interface, OPNsense generates no automatic NAT for internal traffic, and the two manual rules cover that ground regardless of gateway state.
 
-1. `prepare`: take a Proxmox snapshot, capture the pre-upgrade config and routing state,
-   and move the state to prepared.
-2. `execute`: run the in-guest upgrade, stream its log, and reboot onto the new firmware.
-3. `validate`: run the post-upgrade check matrix and compare it against the pre-upgrade
-   baseline.
-4. `commit` or `rollback`: commit deletes the snapshot and locks the cycle; rollback
-   restores the snapshot and re-validates.
+The NAT64 gateway must be forced down, never disabled. A disabled gateway is excluded from the route lookup, so its static route fails to install and NAT64 breaks; a forced-down gateway is still seen by the route lookup, so the route installs and translation keeps working, while it is skipped for default selection either way.
 
-Use `mwan opnsense upgrade run` to chain prepare, execute, and validate under one set of
-flags, with auto-rollback on a hard failure. Use it only after a manual cycle has
-succeeded on that target, so you have seen each artifact land.
+A GUI Apply behaves differently depending on gateway state. The default-route step runs only when a gateway is selectable, so it is safe as long as no gateway is selectable. The static-route rebuild always runs, but it only touches the specific networks its routes cover, not the default.
 
-Prefer the gRPC transport for the upgrade so the control path survives a routing break
-during the upgrade itself. Proxmox-host and LAN-client checks still run over SSH, because
-the daemon does not proxy those surfaces.
+Two interface entries on the same untagged device silently drop one. OPNsense keys its interface map by device name, so the second entry overwrites the first, and the losing interface keeps its GUI config but binds no address to any kernel interface. Keep one interface per untagged device.
 
-Watch three signals during the execute window, which runs 10 to 30 minutes:
+A firmware install needs a package upgrade before any package install. The install image ships a frozen package set while the mirror has moved on, so installing a package against the frozen set pulls a library built for a newer base and breaks tools such as `vtysh` with a version-mismatch error at startup. Run the package upgrade first, then install packages.
 
-- The upgrade log the daemon streams to its state directory.
-- The OPNsense system log over the admin SSH path, which drops during the reboot and
-  returns when the guest is back.
-- The serial console, which is the only signal that survives a panic or a failed reboot.
+The Proxmox API refuses to set a VM's `args` field, which any virtio-serial VM needs. The check is hard-coded to allow only the bare root user, so no API token can set it. Create such a VM by hand as root over SSH, then import it into OpenTofu.
 
-## Take snapshots without saved RAM
+Hot-adding a NIC needs an interface reconfigure. Adding the NIC at the hypervisor makes the guest kernel see the new device, but the OPNsense interface config does not bind to it until you run an interface reconfigure on the guest for whichever interface should own the device.
 
-Always take testbed snapshots with `--vmstate 0`. A snapshot that includes RAM resumes on
-rollback with a stale wall clock, dead TCP sockets, and a stale resolver cache, which
-produced hours of confusing failures in past sessions. Production OPNsense never uses RAM
-snapshots. The web GUI defaults RAM snapshots on for a running VM, so do not take
-snapshots from the GUI for this work.
+## Recovery
 
-## Recover a wedged daemon
+Run these on the OPNsense router at `router.home.goodkind.io`.
 
-The daemon can wedge under a heavy exec or a large stdin payload. Recover in order of
-least disruption.
+When the BGP default route is wiped on both families, restart FRR and clear the stale kernel defaults so FRR reinstalls its own.
 
-1. Retry over SSH or the serial console for the operation that wedged it, since those
-   channels do not share the daemon's state.
-2. Reset the guest with `qm reset <vmid>`. This recovers the guest agent and usually
-   recovers the daemon.
-3. If the daemon stays down, reach the Proxmox host over the pinned OOB tunnel at
-   `root@3d06:bad:b01:ff::1` and restart the service from there.
-4. For a guest that will not come back over any network path, attach the serial console
-   and recover at the kernel level.
+```bash
+ssh agoodkind@router.home.goodkind.io 'sudo service frr stop'
+ssh agoodkind@router.home.goodkind.io 'sudo route -n delete -inet default 2>/dev/null'
+ssh agoodkind@router.home.goodkind.io 'sudo route -n delete -inet6 default 2>/dev/null'
+ssh agoodkind@router.home.goodkind.io 'sudo service frr start'
+sleep 5
+ssh agoodkind@router.home.goodkind.io 'sudo netstat -rn | grep ^default'
+```
 
-After a `qm rollback`, the guest reboots and the daemon starts with it. The daemon is
-reachable as soon as the virtio-serial socket is up, which is the same liveness signal the
-upgrade validator waits on.
+The default entries should return with the zebra-installed flag.
+
+When NAT64 stops working, confirm resolution and translation from a v6-capable LAN host, then check the NAT64 static route and the forced-down gateway on the router.
+
+```bash
+dig @3d06:bad:b01::64 +short AAAA ipv4.google.com
+ping6 <synthesized address from above>
+```
+
+If DNS64 returns a synthesized address but the ping fails, the NAT64 static route is missing. Confirm the route exists on the router and that the NAT64 gateway is forced down rather than disabled.
+
+When outbound NAT stops and LAN clients lose IPv4 while IPv6 still works, the manual NAT rules are most likely gone. Confirm them under Firewall, NAT, Outbound, and check the running rules on the router shell for a NAT rule on the WAN interface.
+
+## Snapshots without saved RAM
+
+Take every OPNsense snapshot without saved RAM, on production and testbed alike. A snapshot that saves RAM resumes on rollback with a stale wall clock, dead TCP sockets, and a stale resolver cache, which wastes hours chasing a failure that is really stale state. The web GUI defaults saved RAM on for a running VM, so do not take these snapshots from the GUI.
+
+After a rollback, confirm the guest agent and serial console respond, SSH and the web UI answer, DNS resolves, and the default routes, firewall rules, and BGP state are sane before trusting the router again.

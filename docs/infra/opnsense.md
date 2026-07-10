@@ -3,7 +3,7 @@
 This file records the current production OPNsense role and topology. It is a
 state document, not the architectural source of truth for MWAN behavior. For
 steady-state BGP and operational foot-guns, use
-[../opnsense/operational-notes.md](../opnsense/operational-notes.md). For the
+[../opnsense/operations.md](../opnsense/operations.md). For the
 current testbed baseline and import workflow, use
 [../opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md) and
 [../opnsense/testbed-config-import.md](../opnsense/testbed-config-import.md). For the

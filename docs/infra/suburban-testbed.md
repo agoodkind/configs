@@ -102,7 +102,7 @@ unknown.
   `args` writes from a token. OpenTofu must not manage `kvm_arguments` for those
   VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the
   field and the apply fails with `VM is locked`. See
-  [docs/opnsense/operational-notes.md](../opnsense/operational-notes.md) Rule 8.
+  [docs/opnsense/operations.md](../opnsense/operations.md) Rule 8.
 - **Management return path.** VM 950 management has no policy route, mirroring
   prod, so on-link replies to peers on the `204::` services LAN return directly.
   A management policy table carrying only a default route shadows the connected

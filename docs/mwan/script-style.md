@@ -3,7 +3,7 @@
 Working rules for shell scripts and Ansible templates under
 [mwan/scripts/](../../mwan/scripts/),
 [ansible/playbooks/](../../ansible/playbooks/), and the OPNsense daemon
-deployment. Live host topology lives in [docs/infra/mwan-layout.md](../infra/mwan-layout.md)
+deployment. Live host topology lives in [docs/mwan/layout.md](layout.md)
 and [docs/infra/opnsense.md](../infra/opnsense.md). Go code rules live in
 [docs/mwan/go-standards.md](go-standards.md).
 
@@ -114,5 +114,5 @@ programming (for example NPT) must be re-applied via:
 - When updating existing docs, avoid giant pasted code blocks; prefer short
   excerpts and direct pointers to files.
 - When you encounter and fix issues, document them in
-  [docs/opnsense/operational-notes.md](../opnsense/operational-notes.md) using
+  [docs/opnsense/operations.md](../opnsense/operations.md) using
   the established format.
