@@ -25,6 +25,20 @@ the same roles on matching guests:
 The ISP-simulator LXCs and unrelated service containers on these hosts run no MWAN
 command surface.
 
+Repo layout for these files:
+
+| Path | Purpose |
+| ---- | --------------- |
+| [mwan/](../../mwan/) | Linux MWAN VM runtime files and the [mwan/go/](../../mwan/go/) monolith source tree |
+| [mwan/config/](../../mwan/config/) | Linux MWAN TOML templates: `config-vm.toml.j2` for the MWAN VMs and `config-host.toml.j2` for the Proxmox hosts |
+| [mwan-failover/](../../mwan-failover/) | Shared failover LXC artifacts for the production and testbed failover LXCs |
+| [mwan-failover/sysctl.conf](../../mwan-failover/sysctl.conf) | Canonical failover LXC sysctl file, including IPv6 forwarding and router-advertisement acceptance |
+| [testbed/](../../testbed/) | Canonical testbed topology assets, OPNsense test files, ISP LXC files, and testbed VM snippets |
+| [proxmox/](../../proxmox/) | Canonical Proxmox host artifacts, including host-side watchdog files and host config snippets |
+| [proxmox/config/10-mwan-retention.conf](../../proxmox/config/10-mwan-retention.conf) | Canonical vault journald retention file |
+| [docs/](../../docs/) | Canonical documentation location |
+| [opentofu/](../../opentofu/) | OpenTofu configuration for provisioned containers and VMs |
+
 ## MWAN binary rollout order
 
 Roll a manual MWAN binary out on the testbed first, then production. Verify each
