@@ -1,41 +1,9 @@
 # Infrastructure overview
 
-This directory is the point-in-time infrastructure snapshot for `goodkind.io`.
-Treat every IP address, route, bridge, and service state here as potentially
-stale, because these files are not a live feed.
+This area records the current state of the goodkind.io homelab: the hypervisors, the hosts that are not guests, the network, and how to reach any of them. It is a point-in-time snapshot rather than a live feed, so when a page here disagrees with a live host, the live host wins, and you read the host before you change production.
 
-Use this directory for current state and inventory-shaped facts. Use
-[docs/ansible/](../ansible/) for Ansible contracts and policies,
-[docs/mwan/](../mwan/) for MWAN architecture and coding rules, and
-[docs/opnsense/](../opnsense/) for OPNsense operational notes and import
-runbooks.
+The vault hypervisor in San Francisco runs production, and [vault.md](vault.md) records its containers, VMs, and host services. Hosts that are not vault guests, including the suburban testbed hypervisor, the workstations, and the NAS, are in [hosts.md](hosts.md), and the offline berylax device keeps its own record in [berylax.md](berylax.md). The Cloudflare account, its tunnels, and its DNS are in [cloudflare.md](cloudflare.md), and the emergency out-of-band access paths are in [oob.md](oob.md).
 
-## Current state docs
+Three pages support that state work rather than describing a host. [access.md](access.md) covers how to reach a host and which entry point to prefer, [network.md](network.md) covers diagnosing IPv6 and DHCP, and [wireguard.md](wireguard.md) covers the WireGuard roaming behavior.
 
-- [vault.md](vault.md): Proxmox vault hypervisor, vault LXCs, QEMU VMs, stopped
-  VMs, and vault host services.
-- [mwan/layout.md](../mwan/layout.md): MWAN command surfaces, per-host runtime
-  layout, rollout order, and WAN links.
-- [suburban-testbed.md](suburban-testbed.md): suburban bridges, testbed guests,
-  and production versus testbed shape.
-- [opnsense.md](opnsense.md): current production OPNsense topology and its role
-  relative to MWAN.
-- [hosts.md](hosts.md): non-vault host state, including suburban itself, mini,
-  NAS, and historical berylax notes.
-- [cloudflare.md](cloudflare.md): Cloudflare account, tunnels, WARP routes,
-  load balancers, Pages, Workers, email routing, and DNS records.
-- [oob.md](oob.md): emergency out-of-band access state.
-
-## Reference docs that support state work
-
-- [access.md](access.md): SSH entry points and host access patterns.
-- [network.md](network.md): IPv6 and DHCP diagnosis rules and workflows.
-- [berylax.md](berylax.md): historical berylax host and serial-console notes.
-- [wireguard-roaming.md](wireguard-roaming.md): WireGuard roaming research and
-  split-brain analysis.
-
-## Operating note
-
-If a state doc conflicts with a live host, the live host wins. Read the host
-before changing production. The repo rules for that live-first workflow are in
-[AGENTS.md](../../AGENTS.md).
+MWAN and OPNsense are large enough to own their own areas. The multi-WAN router lives under [docs/mwan/](../mwan/), and the OPNsense router and its out-of-band daemon live under [docs/opnsense/](../opnsense/).
