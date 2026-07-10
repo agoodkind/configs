@@ -1,14 +1,6 @@
-# Ansible configuration
+# Ansible
 
-Automated deployment and configuration management for goodkind.io infrastructure.
-
-Playbooks run from the controller via
-the configs binary or the Rake
-helpers, both of which pick up `~/.config/ansible/vault.pass`. The canonical
-deploy invocation lives in [AGENTS.md](../../AGENTS.md). See
-[docs/ansible/secrets.md](secrets.md) for the vault contract,
-[docs/ansible/quality.md](quality.md) for style and safety rules, and
-[docs/ansible/proxmox-api.md](proxmox-api.md) for Proxmox API token setup.
+Ansible configures every guest in the homelab from a single controller. It takes a freshly provisioned container or virtual machine, brings it up to a running and deployable state, and keeps it there as the fleet changes. What each guest should be comes from an inventory assembled out of several sources, and the secrets those guests need come from an encrypted vault. This page explains how that inventory fits together and where each kind of task actually runs. Playbooks run through the configs binary or the Rake helpers, both of which read the vault password from `~/.config/ansible/vault.pass`.
 
 ## Inventory layout
 
@@ -101,13 +93,6 @@ on one hypervisor shares its Proxmox `name` with a guest on another, Ansible
 merges them into one inventory host, and the second-loaded plugin file wins on
 conflicting attributes such as `ansible_host`. When this happens, rename one
 of the guests in Proxmox itself.
-
-## Secrets management
-
-All secret values live in Ansible Vault under `vault_*` names. Files that need
-a vault-stored secret reference the `vault_*` name directly. See
-[docs/ansible/secrets.md](secrets.md) for the naming rule, allowed env-wrapper
-exceptions, and the safe key listing command.
 
 ## Setup for new operators
 
