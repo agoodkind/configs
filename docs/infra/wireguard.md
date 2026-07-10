@@ -133,7 +133,7 @@ Cons: requires manual intervention. The whole point of WG is "set and forget."
 
 ## Implementation note for bidirectional wghealth
 
-Today's `wg_health` ([mwan/go/internal/ifmgr/modules/wghealth/](../../mwan/go/internal/ifmgr/modules/wghealth/)) polls OPNsense via SSH.
+Today's `wg_health` ([mwan/go/internal/ifmgr/modules/wg/](../../mwan/go/internal/ifmgr/modules/wg/)) polls OPNsense via SSH.
 
 Two paths can add the suburban side:
 

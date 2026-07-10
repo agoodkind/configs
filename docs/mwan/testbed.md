@@ -36,7 +36,7 @@ against [opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf)
 | 202  | isp-mbrains        | LXC  | Simulated Monkeybrains ISP                            |
 
 Authoritative connection addresses for the OPNsense testbed are documented in
-[docs/opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md). Other
+[docs/opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md). Other
 guest IPs are encoded in
 [ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
 and in the matching OpenTofu resources.
@@ -102,7 +102,7 @@ unknown.
   `args` writes from a token. OpenTofu must not manage `kvm_arguments` for those
   VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the
   field and the apply fails with `VM is locked`. See
-  [docs/opnsense/operational-notes.md](../opnsense/operational-notes.md) Rule 8.
+  [docs/opnsense/operations.md](../opnsense/operations.md) Rule 8.
 - **Management return path.** VM 950 management has no policy route, mirroring
   prod, so on-link replies to peers on the `204::` services LAN return directly.
   A management policy table carrying only a default route shadows the connected

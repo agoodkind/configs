@@ -9,9 +9,9 @@ site-specific ports.
 
 Read the current access path before opening a tunnel:
 
-- [Suburban testbed](../infra/suburban-testbed.md) defines the testbed host and
+- [Suburban testbed](../mwan/testbed.md) defines the testbed host and
   virtual machine layout.
-- [OPNsense testbed baseline](testbed-baseline.md) defines the OPNsense guest
+- [OPNsense testbed baseline](testbed/baseline.md) defines the OPNsense guest
   role and management expectations.
 - [Access](../infra/access.md) defines operator access patterns.
 

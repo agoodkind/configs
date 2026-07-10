@@ -1,100 +1,214 @@
-# Operate the OPNsense OOB daemon
+# OPNsense Operational Notes
 
-This guide covers the day-to-day operations you run against the `mwan-opnsense`
-out-of-band (OOB) daemon: update its binary, upgrade the OPNsense firmware through it,
-and recover it when a channel wedges. For why the daemon is built the way it is, read
-[OPNsense OOB daemon](daemon.md). To install it on a fresh VM, read [install](install.md).
+These are the non-obvious behaviors and configurations that matter when running
+OPNsense as a BGP-only edge router. Static WAN gateways do not own the default
+route. FRR owns the kernel default route.
 
-Exact command flags drift, so this guide describes behavior and names the verbs. Run
-`mwan opnsense <verb> --help` for the current flag set; that help text is the source of
-truth.
+If you stand up another OPNsense to replace this one, the steady-state config
+section is the canonical end target. The operational rules section is the
+list of foot-guns to avoid.
 
-## Pick the right channel
+---
 
-The daemon is one of three OOB channels into OPNsense, and each fits a different job.
+## Steady-state OPNsense config
 
-- The gRPC-over-serial daemon is reliable for short calls: `version`, `state`, xpath
-  reads, and the upgrade validation matrix. Prefer it for control-plane operations,
-  because it survives a packet-filter or routing break that would silently fail the
-  guest agent.
-- The QEMU Guest Agent (QGA) is fine for read-only probes such as `qm guest exec`.
-- SSH over the privileged admin path carries large file pushes and long exec runs better
-  than the serial daemon does.
-- The serial console is the kernel-level last resort. It is the only signal that survives
-  a kernel panic, a botched bootloader, or lost network state.
+Validated on prod (`router.home.goodkind.io`).
 
-## Update the daemon binary
+### Gateways (System / Gateways / Configuration)
 
-You update the daemon over the same serial channel it serves, so the update works even
-when the network is down. The flow is push, stage, restart, verify.
+| Gateway | Disabled | force_down | defaultgw | Notes |
+|---|---|---|---|---|
+| NAT64_GW | 0 | **1** | 0 | Enabled but force_down so it does NOT win default selection. Static route to `:6464::/96` still installs because the route lookup ignores `force_down`. Tayga keeps translating. |
 
-1. Push the new binary to the staging slot: `mwan opnsense daemon push <binary>`.
-2. Promote it: `mwan opnsense daemon stage <sha256>`. This swaps the new binary into the
-   active slot, keeps the previous binary as the rollback slot, and drops a
-   pending-verify marker.
-3. Restart onto it: `mwan opnsense daemon restart`. The daemon exits and the supervisor
-   respawns it on the new binary.
-4. Verify: `mwan opnsense daemon version` shows the new commit, and `mwan opnsense daemon
-   state` shows the active and previous hashes and the health.
+### Static routes (System / Routes / Configuration)
 
-A new binary that never reports healthy auto-reverts to the previous binary on the next
-respawn, so a bad self-deploy heals itself. To revert by hand, run `mwan opnsense daemon
-revert`. The daemon stamps itself healthy once it serves cleanly, which clears the
-pending-verify marker so later restarts keep the new binary.
+| Network | Gateway | Why |
+|---|---|---|
+| `3d06:bad:b01:6464::/96` | NAT64_GW | NAT64 prefix delegated to Tayga for v6 to v4 translation |
 
-## Use case: upgrade the OPNsense firmware
+Only the NAT64 static route belongs here.
 
-The `mwan opnsense upgrade` verb drives a firmware upgrade as a state machine, so each
-phase records an artifact and refuses to run out of order. Run the phases by hand the
-first time on a target, then use one-shot mode for repeat cycles.
+### Outbound NAT (Firewall / NAT / Outbound)
 
-The phases run in order.
+Mode: **Manual** (or Hybrid; either works as long as the manual rules below exist).
 
-1. `prepare`: take a Proxmox snapshot, capture the pre-upgrade config and routing state,
-   and move the state to prepared.
-2. `execute`: run the in-guest upgrade, stream its log, and reboot onto the new firmware.
-3. `validate`: run the post-upgrade check matrix and compare it against the pre-upgrade
-   baseline.
-4. `commit` or `rollback`: commit deletes the snapshot and locks the cycle; rollback
-   restores the snapshot and re-validates.
+Explicit manual NAT rules are required because the OPNsense auto-NAT loop only
+runs when an interface gateway is configured. BGP owns the default route here,
+so these manual rules provide the outbound NAT contract.
 
-Use `mwan opnsense upgrade run` to chain prepare, execute, and validate under one set of
-flags, with auto-rollback on a hard failure. Use it only after a manual cycle has
-succeeded on that target, so you have seen each artifact land.
+| # | Interface | Source | Translation | Static port | Purpose |
+|---|---|---|---|---|---|
+| 1 | WAN | INTERNAL net (alias) | Interface address | NO | All LAN-side networks NAT to WAN address |
+| 2 | WAN | THIS FIREWALL | Interface address | NO | OPNsense itself (loopback + interface IPs) NAT when egressing WAN |
 
-Prefer the gRPC transport for the upgrade so the control path survives a routing break
-during the upgrade itself. Proxmox-host and LAN-client checks still run over SSH, because
-the daemon does not proxy those surfaces.
+INTERNAL net resolves to all v4 networks of every interface in the INTERNAL
+group. When you add a new VLAN to INTERNAL, the rule auto-includes it.
 
-Watch three signals during the execute window, which runs 10 to 30 minutes:
+THIS FIREWALL (`(self)` in pf) covers OPNsense-initiated outbound for
+services that bind to loopback or any LAN-side address.
 
-- The upgrade log the daemon streams to its state directory.
-- The OPNsense system log over the admin SSH path, which drops during the reboot and
-  returns when the guest is back.
-- The serial console, which is the only signal that survives a panic or a failed reboot.
+Optional rule for IPsec/IKE if used: same source as #1 but dst port 500 with
+`Static port` checked (auto-NAT generates this; if you do IPsec, replicate it).
 
-## Take snapshots without saved RAM
+### Default routes (kernel, owned by FRR/zebra)
 
-Always take testbed snapshots with `--vmstate 0`. A snapshot that includes RAM resumes on
-rollback with a stale wall clock, dead TCP sockets, and a stale resolver cache, which
-produced hours of confusing failures in past sessions. Production OPNsense never uses RAM
-snapshots. The web GUI defaults RAM snapshots on for a running VM, so do not take
-snapshots from the GUI for this work.
+```text
+default            10.250.250.3       UG1          vtnet1   # BGP via VM 113 primary
+default            3d06:bad:b01:fe::3 UG1          vtnet1   # BGP via VM 113 primary
+```
 
-## Recover a wedged daemon
+`UG1` flag indicates installed by zebra (FRR). Status in `vtysh -c "show ip[v6] route 0.0.0.0/0"`
+should be `Status: Installed, Selected` for the BGP entry.
 
-The daemon can wedge under a heavy exec or a large stdin payload. Recover in order of
-least disruption.
+### FRR / Quagga
 
-1. Retry over SSH or the serial console for the operation that wedged it, since those
-   channels do not share the daemon's state.
-2. Reset the guest with `qm reset <vmid>`. This recovers the guest agent and usually
-   recovers the daemon.
-3. If the daemon stays down, reach the Proxmox host over the pinned OOB tunnel at
-   `root@3d06:bad:b01:ff::1` and restart the service from there.
-4. For a guest that will not come back over any network path, attach the serial console
-   and recover at the kernel level.
+- Plugin: `os-frr` installed
+- BGP mode enabled
+- Two neighbors per family:
+  - `10.250.250.3` and `3d06:bad:b01:fe::3` (VM 113, primary, route-map sets local-pref 200)
+  - `10.250.250.4` and `3d06:bad:b01:fe::4` (LXC 116, backup, route-map sets local-pref 100)
 
-After a `qm rollback`, the guest reboots and the daemon starts with it. The daemon is
-reachable as soon as the virtio-serial socket is up, which is the same liveness signal the
-upgrade validator waits on.
+---
+
+## Operational rules (foot-guns)
+
+### Rule 1: Never enable a v4 or v6 gateway entity at top priority
+
+Source evidence: `src/etc/inc/system.inc` lines 703-723 + 651-654.
+
+```php
+$gateway = $gateways->getDefaultGW($down_gateways, $ipproto);
+if (empty($gateway['gateway'])) {
+    continue;       // SKIP because no default gateway candidate
+}
+...
+system_default_route($gateway, $routes);  // route delete + add
+```
+
+`system_routing_configure` runs `system_default_route` for each address family
+**only if** `getDefaultGW` returns a non-empty gateway. `system_default_route`
+unconditionally calls:
+
+```shell
+route delete -inet6 default
+route add -inet6 default <new_gateway>
+```
+
+zebra on FreeBSD does not see `RTM_DELROUTE`, so its BGP-installed default
+stays `Status: None` while the kernel sits with whatever OPNsense reinstalled
+(or nothing). Recovery requires `service frr stop && route delete + route start`.
+
+| Gateway state for family | system_default_route called? | BGP route survives Apply? |
+|---|---|---|
+| Any enabled non-down gateway exists | YES | NO (kernel default replaced) |
+| All gateways for family are deleted/disabled/force_down | NO (early `continue`) | YES |
+
+So: when no v4 or v6 gateway is selectable as default, future Apply events
+skip `system_default_route` and leave BGP's kernel default untouched.
+
+### Rule 2: Auto outbound NAT also requires a gateway
+
+Source: `src/etc/inc/filter.inc` lines 220-238.
+
+```php
+foreach ($fw->getInterfaceMapping() as $intf => $ifcfg) {
+    if (substr($ifcfg['if'], 0, 4) != 'ovpn' && !empty($ifcfg['gateway'])) {
+        // generate auto outbound NAT rule
+    }
+}
+```
+
+When the WAN interface has no configured gateway, this condition is false and
+OPNsense does not generate auto-NAT for v4 LAN to WAN traffic.
+
+Replacement: the two manual rules in the steady-state section. They cover
+the same ground regardless of gateway state.
+
+### Rule 3: NAT64_GW disabled vs force_down
+
+| Setting | Effect on `getDefaultGW` | Effect on static route install |
+|---|---|---|
+| `disabled=1` | Skipped (good, doesn't grab default) | **Skipped**. `gatewaysIndexedByName(false, ...)` excludes disabled gateways. The `:6464::/96` static route logs `gateway IP could not be found` and is NOT installed. NAT64 breaks. |
+| `disabled=0` + `force_down=1` | Skipped (good) | **Installed**. `gatewaysIndexedByName` ignores `force_down`. NAT64 keeps working. |
+
+Use `force_down`, not `disabled`, when you want a gateway to exist for
+static-route reference but never be selected as default.
+
+### Rule 4: If you must enable a gateway temporarily
+
+Restart FRR after to recover BGP defaults:
+
+```shell
+ssh agoodkind@3d06:bad:b01::1 "sudo service frr stop && sudo route -n delete -inet default 2>/dev/null; sudo route -n delete -inet6 default 2>/dev/null; sudo service frr start"
+```
+
+(Adjust which family to delete based on which gateway you enabled.)
+
+### Rule 5: GUI Apply consequences are conditional
+
+For most gateway/route/interface changes, the Apply triggers
+`system_routing_configure`. The defaults steps run per the rules above.
+The static-route rebuild always runs (delete + add for every
+`<staticroutes><route>` entry) but only affects whatever specific networks
+those routes cover, not the default. So it's safe assuming Rule 1 holds.
+
+### Rule 6: Duplicate `<if>device</if>` declarations silently drop the loser
+
+`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but binds no address to any kernel interface. The testbed substitutions transform strips `opt6` so MANAGEMENT remains the only untagged interface mapped to `vtnet0`.
+
+### Rule 7: `pkg upgrade -y` must run BEFORE `pkg install`
+
+The OPNsense install ISO ships one snapshot of the package set. The mirror has moved on by the time you install anything. Running `pkg update -f` then jumping straight to `pkg install os-frr` pulls a libyang2 built against `pcre2-10.47` onto a system that still has `pcre2-10.45`. `vtysh` then fails at startup with `ld-elf.so.1: /usr/local/lib/libpcre2-8.so.0: version PCRE2_10.47 required by libyang2.so.2 not defined`. Insert `pkg upgrade -y` between `pkg update -f` and the first `pkg install`.
+
+### Rule 8: Proxmox restricts `args` qemu-server field to literal `root@pam`
+
+Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only root can set 'args' config" for any API token, regardless of `privsep` or assigned role. The check is hard-coded in Proxmox, not policy-driven. For VMs that need `args` (any VM with a virtio-serial chardev, including the mwan-opnsense VMs): `qm create` manually as root via SSH, then `tofu import` the resulting VM. The pattern is documented in [opentofu/imports.md](../../opentofu/imports.md).
+
+### Rule 9: Hot-adding a NIC needs `configctl interface reconfigure`
+
+`qm set <vmid> --netN ...` adds the NIC at the hypervisor level. OPNsense's kernel sees the new `vtnetN` device, but the in-OPNsense interface config does not auto-bind to it. The new device comes up `IFDISABLED` until `configctl interface reconfigure <wan|opt...>` runs on the guest. Run reconfigure for whichever OPNsense interface is supposed to bind to the new device.
+
+---
+
+## Recovery snippets
+
+### BGP default got wiped on v4 + v6
+
+```shell
+ssh agoodkind@3d06:bad:b01::1 'sudo service frr stop'
+ssh agoodkind@3d06:bad:b01::1 'sudo route -n delete -inet default 2>/dev/null'
+ssh agoodkind@3d06:bad:b01::1 'sudo route -n delete -inet6 default 2>/dev/null'
+ssh agoodkind@3d06:bad:b01::1 'sudo service frr start'
+sleep 5
+ssh agoodkind@3d06:bad:b01::1 'sudo netstat -rn | grep ^default'
+```
+
+Should show BGP defaults restored (`UG1` flag).
+
+### NAT64 stops working
+
+Check (from any v6-capable host on LAN):
+
+```shell
+dig @3d06:bad:b01::64 +short AAAA ipv4.google.com
+ping6 <synthesized addr from above>
+```
+
+If DNS64 returns synth but ping fails, check the `:6464::/96` static route
+on OPNsense (`netstat -rn -f inet6 | grep 6464`). If missing, check that
+NAT64_GW is `disabled=0` AND the static route is `disabled=0`.
+
+### Outbound NAT stops working (LAN clients lose v4 Internet but v6 works)
+
+Most likely cause: the manual NAT rules are missing. Check Firewall / NAT /
+Outbound for the two manual rules. Verify with `pfctl -sn | grep ^nat` from
+OPNsense shell; should see at least one `nat on vtnet1 inet from <internal_net>
+to any -> (vtnet1:0)` rule.
+
+---
+
+## Snapshots without saved RAM
+
+Take every OPNsense snapshot without saved RAM, on production and testbed alike. A snapshot that saves RAM resumes on rollback with a stale wall clock, dead TCP sockets, and a stale resolver cache, which wastes hours chasing a failure that is really stale state. The web GUI defaults saved RAM on for a running VM, so do not take these snapshots from the GUI.
+
+After a rollback, confirm the guest agent and serial console respond, SSH and the web UI answer, DNS resolves, and the default routes, firewall rules, and BGP state are sane before trusting the router again.

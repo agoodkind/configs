@@ -1,13 +1,7 @@
-# Emergency Out-of-band Access
+# Emergency out-of-band access
 
-Berylax is indefinitely offline for now, so the berylax USB-serial OOB path is not
-available. Historical berylax serial-console procedure, host notes, and Cloudflare
-routing state live in [berylax.md](berylax.md).
+When a host's network is down, an out-of-band path can still reach it, and which path works depends on what is down.
 
-JetKVM devices (`vault-jetkvm`, `nas-jetkvm`) are also on the Monkeybrains
-segment and may provide an alternate KVM-over-IP console path, though their DNS
-names (`vault-jetkvm.goodkind.io`, `nas-jetkvm.goodkind.io`) and credentials are
-not confirmed at this time.
+The production OPNsense router has a serial control channel that does not depend on its network stack, so you reach the router even when its network is down. It is described in [the OPNsense out-of-band daemon](../opnsense/daemon.md).
 
-The production OPNsense router has its own OOB control channel over qemu virtio-serial,
-independent of the network stack. See the [OPNsense OOB daemon](../opnsense/daemon.md).
+The berylax USB-serial path to the vault console is unavailable while berylax is offline. Its record and its last-known serial procedure are in [berylax.md](berylax.md).

@@ -2,34 +2,12 @@
 
 This repository manages the `goodkind.io` homelab. It contains OpenTofu for
 provisioning, Ansible for configuration, MWAN runtime code, and the operator
-runbooks that explain how those pieces fit together.
-
-## Topics index
-
-- Current infrastructure state: [docs/infra/overview.md](docs/infra/overview.md)
-- SSH access and network diagnosis: [docs/infra/access.md](docs/infra/access.md),
-  [docs/infra/network.md](docs/infra/network.md)
-- Ansible inventory, quality rules, secrets, and Proxmox API setup:
-  [docs/ansible/overview.md](docs/ansible/overview.md),
-  [docs/ansible/quality.md](docs/ansible/quality.md),
-  [docs/ansible/secrets.md](docs/ansible/secrets.md),
-  [docs/ansible/proxmox-api.md](docs/ansible/proxmox-api.md)
-- MWAN architecture and coding rules: [docs/mwan/overview.md](docs/mwan/overview.md),
-  [docs/mwan/go-standards.md](docs/mwan/go-standards.md),
-  [docs/mwan/script-style.md](docs/mwan/script-style.md)
-- OPNsense steady-state behavior and import runbooks:
-  [docs/opnsense/operational-notes.md](docs/opnsense/operational-notes.md),
-  [docs/opnsense/config-import.md](docs/opnsense/config-import.md),
-  [docs/opnsense/testbed-baseline.md](docs/opnsense/testbed-baseline.md),
-  [docs/opnsense/testbed-config-import.md](docs/opnsense/testbed-config-import.md),
-  [docs/opnsense/testbed-dns-nat64.md](docs/opnsense/testbed-dns-nat64.md)
-- Historical and forward-looking notes: [docs/infra/berylax.md](docs/infra/berylax.md),
-  [docs/infra/wireguard-roaming.md](docs/infra/wireguard-roaming.md),
-  [docs/plans/mwan-email-routing.plan.md](docs/plans/mwan-email-routing.plan.md)
+runbooks that explain how those pieces fit together. Those runbooks live under
+[docs/](docs/), organized by area.
 
 ## Sources of truth
 
-- Infrastructure state, host notes, and point-in-time topology live under
+- Point-in-time infrastructure state and topology live under
   [docs/infra/](docs/infra/).
 - Canonical service names, hostnames, IPv6 addresses, and service-group entries
   live in
@@ -117,35 +95,6 @@ then codify the change in git.
 Do not bulk-change MWAN, OPNsense, or the vault hypervisor. Do not restart
 networking services without a rollback path. When a runbook says `STOP`, stop,
 capture forensics, and reset to a known-good state instead of improvising.
-
-## Operational pointers
-
-- Vault hypervisor state: [docs/infra/vault.md](docs/infra/vault.md)
-- MWAN host layout:
-  [docs/infra/mwan-layout.md](docs/infra/mwan-layout.md)
-- Suburban testbed bridges and guests:
-  [docs/infra/suburban-testbed.md](docs/infra/suburban-testbed.md)
-- Production OPNsense topology: [docs/infra/opnsense.md](docs/infra/opnsense.md)
-- Non-vault hosts and historical berylax state:
-  [docs/infra/hosts.md](docs/infra/hosts.md)
-- Cloudflare tunnels, WARP routes, and DNS state:
-  [docs/infra/cloudflare.md](docs/infra/cloudflare.md)
-- Emergency out-of-band status: [docs/infra/oob.md](docs/infra/oob.md)
-- OPNsense steady-state foot-guns:
-  [docs/opnsense/operational-notes.md](docs/opnsense/operational-notes.md)
-- OPNsense import internals:
-  [docs/opnsense/config-import.md](docs/opnsense/config-import.md)
-- OPNsense testbed baseline and import gate:
-  [docs/opnsense/testbed-baseline.md](docs/opnsense/testbed-baseline.md),
-  [docs/opnsense/testbed-config-import.md](docs/opnsense/testbed-config-import.md),
-  [docs/opnsense/ui-testing.md](docs/opnsense/ui-testing.md)
-- MWAN runtime design and rollout behavior:
-  [docs/mwan/overview.md](docs/mwan/overview.md)
-- MWAN email routing target state:
-  [docs/plans/mwan-email-routing.plan.md](docs/plans/mwan-email-routing.plan.md)
-
-Treat the MWAN email-routing plan as forward-looking until a live check proves
-that a specific slice is deployed.
 
 ## Repository rules
 
