@@ -1,16 +1,9 @@
-# Hosts Not On Vault Proxmox
+# Hosts outside the vault hypervisor
 
-This file tracks host state that does not belong under the vault hypervisor
-inventory. For suburban guest inventory and bridge layout, use
-[suburban-testbed.md](suburban-testbed.md).
+A few machines matter to the homelab without being guests of the vault hypervisor, so they never appear in its inventory. This page is their manual record, and the addresses here are noted by hand rather than pulled from a live source, so read them as a snapshot.
 
-| Host | OS / type | Network | Email setup | Ansible-managed? | Notes |
-| ---- | --------- | ------- | ----------- | ---------------- | ----- |
-| `home-assistant` | Home Assistant OS | `vlan0200`, `10.250.2.3` / `3d06:bad:b01:2::3` | N/A | No | KEA reservation confirmed. SSH on port `22222`. |
-| `mini` | Ubuntu 24.04.4 LTS | `vlan0100`, `10.250.1.2` / `3d06:bad:b01:1::2` | Postfix with `send-email` at `/opt/scripts/send-email` | Partial | Has `scripts-updater.timer`. Needs [ansible/playbooks/prep-guests.yml](../../ansible/playbooks/prep-guests.yml). |
-| `nas` | Ubuntu 24.04.3 LTS | `vlan0100`, `3d06:bad:b01:1::3` | Postfix with `send-email` at `/opt/scripts/send-email` | Partial | SSH via `ssh nas`. OPNsense alias `nas_host` points at `::3`. |
-| `vault` | Debian 13, Proxmox VE | `3d06:bad:b01::254` | Postfix with `send-email` at `/opt/scripts/send-email` | No | [ansible/playbooks/deploy-consul-external.yml](../../ansible/playbooks/deploy-consul-external.yml) still carries a `consul_arch: arm64` bug for this host. |
-| `suburban` | Debian 13, Proxmox VE | `3d06:bad:b01:200::1` on `vmbr1`, `10.240.0.148` on `vmbr0`, WireGuard `3d06:bad:b01:10::240` | Postfix with `send-email` at `/opt/scripts/send-email` | Partial | Remote NJ hypervisor. Bridge layout and guest set live in [suburban-testbed.md](suburban-testbed.md). SSH currently works by direct IPv4 to `root@10.240.0.148`. |
-| `imac` | Intel iMac, macOS 18 | Comcast NJ LAN, reachable via suburban | macOS `send-email` | No | Not represented in current inventory. This entry remains a manual note until a source of truth exists. |
-| `berylax` | OpenWrt 24.10.5, GL.iNet | Offline for now | `msmtp` with SMTP2GO wrappers in `/usr/local/bin/` | No | Historical host and serial-console notes live in [berylax.md](berylax.md). |
-| `jetkvm` (x2) | JetKVM embedded Linux | Monkeybrains L2 segment | Unknown | No | Two KVM-over-IP devices on the Monkeybrains segment. They are not represented in inventory. |
+The suburban hypervisor in New Jersey is the most important of them. It is a second Proxmox host that carries the testbed and reaches production over a WireGuard tunnel, and you reach it by direct SSH over its Comcast address. Two workstations sit on the physical-device VLAN, a Linux mini PC that runs a nightly scripts-updater timer and a network-attached storage box that OPNsense knows by a DNS alias. A Home Assistant appliance runs on the home-automation VLAN behind a fixed DHCP reservation and listens for SSH on a nonstandard port. An Intel iMac in New Jersey reaches the network through suburban and has no place in any inventory yet.
+
+Two more machines survive only as records. The berylax travel router is offline, and a pair of JetKVM console devices on the Monkeybrains segment are noted but unmanaged.
+
+Every one of these hosts sends its mail through the same local send-email wrapper, and none is fully managed by Ansible, though a couple are partway there.
