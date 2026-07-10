@@ -12,7 +12,7 @@ testbed group vars; update this page when they change.
 | Piece | Where | Address / prefix | Source of truth |
 | --- | --- | --- | --- |
 | Tayga (NAT64 translator) | testbed OPNsense (VM 101/102), `os-tayga` plugin | v6 prefix `3d06:bad:b01:2664::/96`, tun `nat64` at `3d06:bad:b01:264::ffff:1`, v4 pool `10.250.64.0/24` | `<tayga>` block in the imported `config.xml` (prod prefix `3d06:bad:b01:6464::/96` rewritten to `3d06:bad:b01:2664::/96` by the config transform) |
-| DNS64 resolver (bind9) | LXC 464 `dns64-suburban` | `3d06:bad:b01:204::464`, synthesizes AAAA into `2664::/96` | [dns64_suburban_servers.yml](../../../ansible/inventory/group_vars/dns64_suburban_servers.yml), deployed by `deploy-dns64.yml --limit dns64_suburban_servers` |
+| DNS64 resolver (bind9) | LXC 464 `dns64-suburban` | `3d06:bad:b01:204::464`, synthesizes AAAA into `2664::/96` | [dns64_suburban_servers.yml](../../../ansible/inventory/group_vars/dns64_suburban_servers.yml), deployed with `configs deploy dns64 --limit dns64_suburban_servers` |
 | Unbound (LAN resolver) | testbed OPNsense | binds all interfaces, `:53` | imported `config.xml` |
 
 The DNS64 LXC forwards upstream to `3d06:bad:b01:2664::101:101`, which is
