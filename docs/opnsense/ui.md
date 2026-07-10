@@ -5,12 +5,15 @@ an SSH forward. The forwarding values come from the current testbed inventory
 and access documentation, so this page does not own hostnames, addresses, or
 site-specific ports.
 
-## Before you start
+## Sources
 
-Read the current access path before opening a tunnel. The testbed host and virtual
-machine layout is in [Suburban testbed](../mwan/testbed.md), the OPNsense guest role
-and management expectations in [OPNsense testbed baseline](testbed/baseline.md), and
-operator access patterns in [Access](../infra/access.md).
+Read the current access path before opening a tunnel:
+
+- [Suburban testbed](../mwan/testbed.md) defines the testbed host and
+  virtual machine layout.
+- [OPNsense testbed baseline](testbed/baseline.md) defines the OPNsense guest
+  role and management expectations.
+- [Access](../infra/access.md) defines operator access patterns.
 
 Use the service repository for service-specific UI paths. For the Cloudflared
 OPNsense plugin, the settings page path is:

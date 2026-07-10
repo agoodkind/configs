@@ -122,7 +122,3 @@ cat /tmp/vault-serial.log
 - vault fully powered off or kernel-panicked: requires physical access or IPMI/iDRAC.
 - berylax unreachable: no remote OOB path available; physical access to the rack
   is required.
-- JetKVM devices (`vault-jetkvm`, `nas-jetkvm`) are also on the Monkeybrains
-  segment and may provide an alternate KVM-over-IP console path, though their DNS
-  names (`vault-jetkvm.goodkind.io`, `nas-jetkvm.goodkind.io`) and credentials
-  were not confirmed at the last recorded check.

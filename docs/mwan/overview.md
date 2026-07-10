@@ -2,12 +2,12 @@
 
 Single-VM multi-WAN load balancer for AT&T (802.1X + VLAN) and Webpass on
 goodkind.io, with optional Monkeybrains failover. This page describes how
-production MWAN looks today and is the entry point for the MWAN area. Per-host
-layout is in [layout.md](layout.md), the suburban testbed in
-[testbed.md](testbed.md), DSCP WAN pinning in [dscp.md](dscp.md), email routing
-in [email.md](email.md), and the Go and script conventions under
-[standards/](standards/). Runtime-correctness gotchas that cross into OPNsense
-live in [docs/opnsense/notes.md](../opnsense/notes.md).
+production MWAN looks today. Go and binary rules live in
+[docs/mwan/go.md](go.md); shell and OPNsense script
+conventions live in [docs/mwan/script.md](script.md); per-host
+layout lives in [docs/mwan/layout.md](layout.md);
+runtime-correctness gotchas live in
+[docs/opnsense/operations.md](../opnsense/operations.md).
 
 ## Architectural shape
 
@@ -26,7 +26,8 @@ policy routing, NAT44 1:1, NPTv6, health checks, and BGP-driven HA).
   route-map to prefer the primary. See [HA failover](#ha-failover-bgp) below.
 
 For per-host details (which guest carries which role, internal prefix, BGP
-ASN, interface naming), see [layout.md](layout.md). For exact public IPv4
+ASN, interface naming), see
+[docs/mwan/layout.md](layout.md). For exact public IPv4
 mappings, addressing, and ISP-level detail, see
 [docs/infra/overview.md](../infra/overview.md).
 
@@ -34,7 +35,7 @@ mappings, addressing, and ISP-level detail, see
 
 All Go code is one binary built from [mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/).
 The full subcommand list and ownership boundary live in
-[docs/mwan/standards/go.md](standards/go.md#monolith-contract). The runtime
+[docs/mwan/go.md](go.md#monolith-contract). The runtime
 units that matter day-to-day:
 
 - **`mwan agent`** runs inside the MWAN VM and the failover LXC. It hosts the
@@ -93,8 +94,7 @@ BGP Graceful Restart (RFC 4724) lets the agent restart its BGP process without
 flapping its routes in the helper. The helper retains the restarter's prefixes
 for `restart_time` seconds and only flushes them if the session does not come
 back. The agent restarts on every deploy, so GR is the path to zero-flap
-deploys; the 2026-05-07 deploy measured a 1.7s WAN outage at agent restart
-with GR off.
+deploys, because with GR off the agent restart briefly drops the WAN route.
 
 The wiring lives in [mwan/go/internal/bgp/speaker.go](../../mwan/go/internal/bgp/speaker.go),
 fed by `BGPGracefulRestart` in
@@ -127,8 +127,10 @@ vtysh -c 'show running-config router bgp' | grep 'bgp graceful-restart'
 
 BFD is the natural follow-up. GR is only safe-by-default with BFD when a real
 WAN link dies inside the GR window, because without BFD the helper holds stale
-routes for the full `restart_time`. There is no BFD wired today; fast WAN
-failure detection relies on the watchdog gRPC withdraw path.
+routes for the full `restart_time`. OPNsense carries a BFD stanza toward the
+neighbor, but the mwan agent's embedded speaker does not participate yet, so no
+BFD session forms; fast WAN failure detection relies on the watchdog gRPC
+withdraw path.
 
 ## Watchdog rollback design
 
@@ -193,9 +195,11 @@ Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 3) and
 `MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
-silently. Put the full intent in `--description` and keep the name short. The
-no-saved-RAM snapshot rule in [docs/opnsense/notes.md](../opnsense/notes.md)
-applies equally to MWAN snapshots.
+silently. Put the full intent in `--description` and keep the name short. See
+[docs/opnsense/operations.md](../opnsense/operations.md) for the
+`--vmstate 1` rule for testbed snapshots, which applies equally to MWAN
+snapshots: do not save RAM, because rollback then resumes with stale
+networking and clock state.
 
 ## Data-plane convergence
 
@@ -281,10 +285,13 @@ The contract: every email exits through `notify.Notifier`, which owns
 per-(kind, key) state-change suppression and per-kind repeat cadence.
 
 `SMTP2GO_API_KEY` is injected via systemd `EnvironmentFile=/etc/mwan/secrets.env`
-rather than templated into `config.toml`. This secret-handling contract is also
-documented in [docs/ansible/secrets.md](../ansible/secrets.md).
+rather than templated into `config.toml`. [needs verification/investigation: the
+live rendered `config.toml` on the mwan VM currently contains this key.] This
+secret-handling contract is also documented in
+[docs/ansible/secrets.md](../ansible/secrets.md).
 
-In-flight plan and full routing detail: see [email.md](email.md).
+In-flight plan and full routing detail: see
+[docs/mwan/email.md](email.md).
 
 ## Tracing
 
@@ -317,7 +324,6 @@ ssh root@mwan.home.goodkind.io
 wpa_cli status
 systemctl status wpa_supplicant-mwan systemd-networkd networkd-dispatcher \
   nftables mwan-health cloudflared
-mwan health-check --status
 /usr/local/bin/mwan-debug
 ```
 
@@ -333,4 +339,4 @@ nft -a list chain ip6 nat prerouting
 
 For troubleshooting AT&T 802.1X, Webpass DHCP, virtio-serial wedges,
 OPNsense REST behaviour, and the upgrade-snapshot pitfalls, see
-[docs/opnsense/notes.md](../opnsense/notes.md).
+[docs/opnsense/operations.md](../opnsense/operations.md).

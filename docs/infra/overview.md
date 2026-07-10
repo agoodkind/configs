@@ -1,22 +1,7 @@
 # Infrastructure overview
 
-This directory holds the point-in-time infrastructure snapshot for `goodkind.io`.
-Every IP address, route, bridge, and service state here can be stale, because
-these files are not a live feed. When a state doc conflicts with a live host, the
-live host wins, so read the host before changing production. The live-first
-workflow rules are in [AGENTS.md](../../AGENTS.md).
+The goodkind.io homelab runs on two Proxmox hypervisors. Vault, in San Francisco, carries production: the containers and virtual machines that sit behind the OPNsense router and serve the household every day. Suburban, in New Jersey, carries a testbed that mirrors production closely enough to rehearse a risky change before it reaches the real thing. A few machines belong to neither hypervisor, and one of them, a travel router named berylax, is offline now and kept only as a record.
 
-Production runs on the vault Proxmox hypervisor in San Francisco, whose LXCs, VMs,
-and host services are in [vault.md](vault.md). Other hosts, including the suburban
-testbed hypervisor, the mini, the NAS, and the offline berylax, are in
-[hosts.md](hosts.md), with the deeper berylax history in [berylax.md](berylax.md).
-The production OPNsense router and its role relative to MWAN are in
-[opnsense.md](opnsense.md), and MWAN itself lives under [docs/mwan/](../mwan/).
-Cloudflare tunnels, WARP routes, load balancers, and DNS are in
-[cloudflare.md](cloudflare.md), and emergency out-of-band access is in
-[oob.md](oob.md).
+These pages are point-in-time snapshots, not a live feed, so trust the running host over any page here and read the host before you change production.
 
-Three docs support that state work rather than describing a host:
-[access.md](access.md) for SSH entry points and jump-host patterns,
-[network.md](network.md) for IPv6 and DHCP diagnosis, and
-[wireguard.md](wireguard.md) for WireGuard roaming research.
+The homelab meets the internet through Cloudflare, which fronts its public services with tunnels and answers DNS for the domain. Reaching a host yourself, whether from a laptop or from the Ansible controller, runs through a small set of SSH entry points that try IPv6 first and fall back to a jump host when a machine cannot be reached directly.

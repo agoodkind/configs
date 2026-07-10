@@ -1,8 +1,9 @@
 # SSH and host access
 
-How to reach hosts in the homelab and which entry point to prefer. Live IPs for
-each host belong in [docs/infra/overview.md](overview.md) and
-[docs/infra/hosts.md](hosts.md), not here.
+How to reach hosts in the homelab and which entry point to prefer. Per-host
+addresses live in the Ansible inventory, in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
+and [ansible/inventory/hosts](../../ansible/inventory/hosts), not here.
 
 ## Proxy container access
 

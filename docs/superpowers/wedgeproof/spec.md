@@ -58,9 +58,9 @@ This bounds and shrinks the transient. Requirements:
 - Minimize the respawn gap so a `kill -9` unread window shrinks from ~3s toward sub-second:
   `RestartSec` near 0 and minimal startup work before reading resumes.
 
-## Implementation surface
+## Components
 
-- [mwan/go/cmd/mwan/opnsense_drain.go](../../../mwan/go/cmd/mwan/opnsense_drain.go): the reader/writer decouple (invariant 2) and the
+- `mwan/go/cmd/mwan/opnsense_drain.go`: the reader/writer decouple (invariant 2) and the
   fd-store store/preserve/never-close paths plus the fresh-dial startup guard (invariant 1).
 - The `mwan-opnsense-drain.service` unit and its ansible template:
   `FileDescriptorStorePreserve=yes`, `RestartSec` near 0.

@@ -2,33 +2,27 @@
 
 This repository manages the `goodkind.io` homelab. It contains OpenTofu for
 provisioning, Ansible for configuration, MWAN runtime code, and the operator
-runbooks that explain how those pieces fit together.
+runbooks that explain how those pieces fit together. Those runbooks live under
+[docs/](docs/), organized by area.
 
-## Documentation
+## Sources of truth
 
-Each subsystem has one overview that is the entry point for that area. Start
-there and follow its links, rather than hunting individual files.
-
-- Infrastructure state and inventory: [docs/infra/overview.md](docs/infra/overview.md).
-- Ansible inventory, quality, and secret contracts: [docs/ansible/overview.md](docs/ansible/overview.md).
-- MWAN runtime, per-host layout, and the suburban testbed: [docs/mwan/overview.md](docs/mwan/overview.md).
-- OPNsense steady-state behavior and config import: [docs/opnsense/notes.md](docs/opnsense/notes.md).
-
-## Canonical inputs
-
-Read values from config, never from a doc. Service names, hostnames, IPv6
-addresses, and service-group entries come from
-[service_mapping.yml](ansible/inventory/group_vars/all/service_mapping.yml); static
-inventory parents and hand-managed groups from
-[ansible/inventory/hosts](ansible/inventory/hosts); and each hypervisor's guests
-from its Proxmox dynamic inventory
-([vault.proxmox.yml](ansible/inventory/vault.proxmox.yml),
-[suburban.proxmox.yml](ansible/inventory/suburban.proxmox.yml)). Shared non-secret
-variables live in
-[vars.yml](ansible/inventory/group_vars/all/vars.yml) and secrets in
-[vault.yml](ansible/inventory/group_vars/all/vault.yml). OpenTofu provisions every
-guest from [opentofu/](opentofu/), and point-in-time infrastructure state is
-described under [docs/infra/](docs/infra/).
+- Point-in-time infrastructure state and topology live under
+  [docs/infra/](docs/infra/).
+- Canonical service names, hostnames, IPv6 addresses, and service-group entries
+  live in
+  [ansible/inventory/group_vars/all/service_mapping.yml](ansible/inventory/group_vars/all/service_mapping.yml).
+- Static inventory parents and hand-managed inventory groups live in
+  [ansible/inventory/hosts](ansible/inventory/hosts).
+- Per-hypervisor Proxmox dynamic inventory lives in
+  [ansible/inventory/vault.proxmox.yml](ansible/inventory/vault.proxmox.yml)
+  and
+  [ansible/inventory/suburban.proxmox.yml](ansible/inventory/suburban.proxmox.yml).
+- Shared non-secret variables live in
+  [ansible/inventory/group_vars/all/vars.yml](ansible/inventory/group_vars/all/vars.yml).
+- Shared secrets live in
+  [ansible/inventory/group_vars/all/vault.yml](ansible/inventory/group_vars/all/vault.yml).
+- Provisioned guest resources live in [opentofu/](opentofu/).
 
 ## Deployment contract
 
@@ -62,10 +56,15 @@ anything important. Workflow details live in
 
 ## Ansible and secret contract
 
-- The Ansible variable and secret contract lives in
-  [docs/ansible/secrets.md](docs/ansible/secrets.md): the `vault_*` naming rule, the
-  no-pure-alias rule, the env-wrapper exception, and where non-secret vars and
-  secrets live.
+- [ansible/inventory/group_vars/all/vars.yml](ansible/inventory/group_vars/all/vars.yml)
+  stores shared non-secret values only.
+- [ansible/inventory/group_vars/all/vault.yml](ansible/inventory/group_vars/all/vault.yml)
+  stores all shared secrets, and every secret name starts with `vault_`.
+- Files that need a vault-backed secret reference the `vault_*` name directly.
+  Do not add pure aliases like `api_key: "{{ vault_api_key }}"`.
+- Env-wrapper variables are allowed only when they represent a real environment
+  override with a vault fallback and stay local to the service or play that
+  needs them.
 - Never use `default()` or `is defined` on an input variable. Declare every input
   value explicitly in the service's group_vars, `service_mapping.yml`, or
   OpenTofu, and read it bare; a missing value fails at load time. `default()` and

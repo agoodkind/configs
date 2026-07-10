@@ -1,32 +1,32 @@
 # MWAN Go standards
 
-Standards for Go code under [mwan/go/](../../../mwan/go/). Violations block merge.
-See [docs/mwan/overview.md](../overview.md) for the runtime architecture and
-[docs/mwan/standards/script.md](script.md) for shell and OPNsense conventions.
+Standards for Go code under [mwan/go/](../../mwan/go/). Violations block merge.
+See [docs/mwan/overview.md](overview.md) for the runtime architecture and
+[docs/mwan/script.md](script.md) for shell and OPNsense conventions.
 
 ## Monolith contract
 
 All Go infrastructure code lives in one binary built from
-[mwan/go/cmd/mwan/](../../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan` on targets and `mwan-linux` in
-`mwan/go/bin/` on the local host. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
+[mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan` on targets and `mwan-linux` in
+[mwan/go/bin/](../../mwan/go/bin/) on the local host. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
 where it auto-dispatches into the `opnsense` daemon based on `argv[0]`.
 
-Subcommands (as defined in [mwan/go/cmd/mwan/main.go](../../../mwan/go/cmd/mwan/main.go)):
+Subcommands (as defined in [mwan/go/cmd/mwan/main.go](../../mwan/go/cmd/mwan/main.go)):
 
 - `mwan agent` runs the gRPC agent (vsock + TCP) inside the MWAN VM. Source:
-  [mwan/go/internal/agent/](../../../mwan/go/internal/agent/).
+  [mwan/go/internal/agent/](../../mwan/go/internal/agent/).
 - `mwan watchdog` runs the connectivity and rollback daemon. Source:
-  [mwan/go/internal/watchdog/](../../../mwan/go/internal/watchdog/).
+  [mwan/go/internal/watchdog/](../../mwan/go/internal/watchdog/).
   `mwan watchdog failover` is the BGP-aware failover variant.
 - `mwan ifmgr` runs the per-host interface manager. Role is read from
   `[ifmgr].role` in `/etc/mwan/config.toml`. Source:
-  [mwan/go/internal/ifmgr/](../../../mwan/go/internal/ifmgr/).
+  [mwan/go/internal/ifmgr/](../../mwan/go/internal/ifmgr/).
 - `mwan health-check` is a one-shot probe. Source:
-  [mwan/go/internal/healthcheck/](../../../mwan/go/internal/healthcheck/).
+  [mwan/go/internal/healthcheck/](../../mwan/go/internal/healthcheck/).
 - `mwan opnsense` is the FreeBSD config daemon (config.xml mutation over
   virtio serial). Reached via the explicit subcommand or by invoking the
   binary as `mwan-opnsense`. Source:
-  [mwan/go/internal/opnsense/](../../../mwan/go/internal/opnsense/).
+  [mwan/go/internal/opnsense/](../../mwan/go/internal/opnsense/).
 - `mwan opnsense version` probes the OPNsense daemon through a configured
   gRPC target.
 - `mwan opnsense host serve` runs the Proxmox host-side Unix socket bridge to
@@ -36,14 +36,14 @@ There are no separate Go binaries. New tools become subcommands of this
 monolith.
 
 Shared code lives under
-[mwan/go/internal/config/](../../../mwan/go/internal/config/),
-[mwan/go/internal/email/](../../../mwan/go/internal/email/),
-[mwan/go/internal/logging/](../../../mwan/go/internal/logging/),
-[mwan/go/internal/ops/](../../../mwan/go/internal/ops/),
-[mwan/go/internal/bgp/](../../../mwan/go/internal/bgp/),
-[mwan/go/internal/alert/](../../../mwan/go/internal/alert/),
-[mwan/go/internal/tracing/](../../../mwan/go/internal/tracing/), and
-[mwan/go/internal/rollback/](../../../mwan/go/internal/rollback/).
+[mwan/go/internal/config/](../../mwan/go/internal/config/),
+[mwan/go/internal/email/](../../mwan/go/internal/email/),
+[mwan/go/internal/logging/](../../mwan/go/internal/logging/),
+[mwan/go/internal/ops/](../../mwan/go/internal/ops/),
+[mwan/go/internal/bgp/](../../mwan/go/internal/bgp/),
+[mwan/go/internal/alert/](../../mwan/go/internal/alert/),
+[mwan/go/internal/tracing/](../../mwan/go/internal/tracing/), and
+[mwan/go/internal/rollback/](../../mwan/go/internal/rollback/).
 
 ## Code standards
 
@@ -71,9 +71,9 @@ Shared code lives under
   code. Do not add `// Foo does X` when the function name already says X.
 - **Secrets in Ansible Vault.** TOML templates use `{{ vault_* }}` Jinja2
   variables. Never commit plaintext secrets. The `.j2` suffix signals a
-  template. Full vault contract in [docs/ansible/secrets.md](../../ansible/secrets.md).
+  template. Full vault contract in [docs/ansible/secrets.md](../ansible/secrets.md).
 - **Linting enforced.** `make lint` (golangci-lint) must pass. Config in
-  [mwan/go/.golangci.yml](../../../mwan/go/.golangci.yml).
+  [mwan/go/.golangci.yml](../../mwan/go/.golangci.yml).
 ## Build rules
 
 Every implementation agent or person making changes must:
