@@ -242,10 +242,9 @@ VM 101 import checks:
 - **The reboot-vs-hot-apply asymmetry**. Rollback without reboot must call the same `*_configure()` chain `rc.bootup` runs, in order. There is no single helper for that on `25.7`; expect to call them individually.
 - **No transaction across services.** Once `interfaces_configure` runs and the new IPs come up, a later `plugins_configure('vpn')` failure does not roll the interfaces back. The rollback tool must be designed around "apply, observe, decide" rather than "all-or-nothing".
 
-## Verification
+## Sources
 
-This flow was verified against the live OPNsense and the upstream source. Live reads
-on VM 101 (`OPNsense 25.7 (amd64)` build `25.7-n271606-9af17f0102ca`, FreeBSD 14.3-RELEASE-p1):
+Live reads on VM 101 (`OPNsense 25.7 (amd64)` build `25.7-n271606-9af17f0102ca`, FreeBSD 14.3-RELEASE-p1):
 
 - `/conf/config.xml` (`<version>v9</version>`).
 - `/usr/local/opnsense/mvc/app/controllers/OPNsense/Core/Api/BackupController.php` (210 lines).

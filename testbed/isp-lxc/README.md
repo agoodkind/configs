@@ -7,7 +7,7 @@ capabilities are driven by its entry in `testbed_isp_lxcs`
 (`ansible/inventory/group_vars/suburban_servers.yml`): `pd_len`, `dynamic_v4`,
 `ia_na`, `slaac_prefix`, `v4_reservations`.
 
-## Templates
+## Files
 
 - `radvd.conf.j2`: radvd configuration. Always advertises the router (default
   route) with `AdvManagedFlag on` + `AdvOtherConfigFlag on` so the WAN VM runs
