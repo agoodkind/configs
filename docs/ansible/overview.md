@@ -8,7 +8,7 @@ helpers, both of which pick up `~/.config/ansible/vault.pass`. The canonical
 deploy invocation lives in [AGENTS.md](../../AGENTS.md). See
 [docs/ansible/secrets.md](secrets.md) for the vault contract,
 [docs/ansible/quality.md](quality.md) for style and safety rules, and
-[docs/ansible/proxmox.md](proxmox.md) for Proxmox API token setup.
+[docs/ansible/proxmox-api.md](proxmox-api.md) for Proxmox API token setup.
 
 ## Inventory layout
 
@@ -101,6 +101,13 @@ on one hypervisor shares its Proxmox `name` with a guest on another, Ansible
 merges them into one inventory host, and the second-loaded plugin file wins on
 conflicting attributes such as `ansible_host`. When this happens, rename one
 of the guests in Proxmox itself.
+
+## Secrets management
+
+All secret values live in Ansible Vault under `vault_*` names. Files that need
+a vault-stored secret reference the `vault_*` name directly. See
+[docs/ansible/secrets.md](secrets.md) for the naming rule, allowed env-wrapper
+exceptions, and the safe key listing command.
 
 ## Setup for new operators
 

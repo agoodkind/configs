@@ -72,7 +72,7 @@ land with the implementing slice; if a slice diverges, that slice is the source 
 ## Config
 
 Two TOML blocks govern routing. The non-secret fields live in `/etc/mwan/config.toml`
-(rendered by Ansible from [config-vm.toml.j2](../../mwan/config/config-vm.toml.j2) or
+(rendered by Ansible from [mwan/config/config.toml.j2](../../mwan/config/config.toml.j2) or
 [mwan-failover/config.toml.j2](../../mwan-failover/config.toml.j2)). The SMTP2GO API key is injected at runtime via a
 systemd `EnvironmentFile`.
 
@@ -142,7 +142,8 @@ through the same path as the rest.
 
 ## Pointers
 
-- Plan and parent ticket: MWAN-132.
+- Plan: [docs/MWAN-132-email-unification-plan.md](../MWAN-132-email-unification-plan.md).
+- Parent ticket: MWAN-132.
 - Env-var injection standard: MWAN-131.
 - Existing state-machine source (carved into `notify` in slice A):
   [mwan/go/internal/ifmgr/alerts.go](../../mwan/go/internal/ifmgr/alerts.go) and

@@ -2,12 +2,12 @@
 
 Single-VM multi-WAN load balancer for AT&T (802.1X + VLAN) and Webpass on
 goodkind.io, with optional Monkeybrains failover. This page describes how
-production MWAN looks today and is the entry point for the MWAN area. Per-host
-layout is in [layout.md](layout.md), the suburban testbed in
-[testbed.md](testbed.md), DSCP WAN pinning in [dscp.md](dscp.md), email routing
-in [email.md](email.md), and the Go and script conventions under
-[standards/](standards/). Runtime-correctness gotchas that cross into OPNsense
-live in [docs/opnsense/notes.md](../opnsense/notes.md).
+production MWAN looks today. Go and binary rules live in
+[docs/mwan/go-standards.md](go-standards.md); shell and OPNsense script
+conventions live in [docs/mwan/script-style.md](script-style.md); per-host
+layout lives in [docs/infra/mwan-layout.md](../infra/mwan-layout.md);
+runtime-correctness gotchas live in
+[docs/opnsense/operational-notes.md](../opnsense/operational-notes.md).
 
 ## Architectural shape
 
@@ -26,7 +26,8 @@ policy routing, NAT44 1:1, NPTv6, health checks, and BGP-driven HA).
   route-map to prefer the primary. See [HA failover](#ha-failover-bgp) below.
 
 For per-host details (which guest carries which role, internal prefix, BGP
-ASN, interface naming), see [layout.md](layout.md). For exact public IPv4
+ASN, interface naming), see
+[docs/infra/mwan-layout.md](../infra/mwan-layout.md). For exact public IPv4
 mappings, addressing, and ISP-level detail, see
 [docs/infra/overview.md](../infra/overview.md).
 
@@ -34,7 +35,7 @@ mappings, addressing, and ISP-level detail, see
 
 All Go code is one binary built from [mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/).
 The full subcommand list and ownership boundary live in
-[docs/mwan/standards/go.md](standards/go.md#monolith-contract). The runtime
+[docs/mwan/go-standards.md](go-standards.md#monolith-contract). The runtime
 units that matter day-to-day:
 
 - **`mwan agent`** runs inside the MWAN VM and the failover LXC. It hosts the
@@ -193,9 +194,11 @@ Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 3) and
 `MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
-silently. Put the full intent in `--description` and keep the name short. The
-no-saved-RAM snapshot rule in [docs/opnsense/notes.md](../opnsense/notes.md)
-applies equally to MWAN snapshots.
+silently. Put the full intent in `--description` and keep the name short. See
+[docs/opnsense/operational-notes.md](../opnsense/operational-notes.md) for the
+`--vmstate 1` rule for testbed snapshots, which applies equally to MWAN
+snapshots: do not save RAM, because rollback then resumes with stale
+networking and clock state.
 
 ## Data-plane convergence
 
@@ -284,7 +287,8 @@ per-(kind, key) state-change suppression and per-kind repeat cadence.
 rather than templated into `config.toml`. This secret-handling contract is also
 documented in [docs/ansible/secrets.md](../ansible/secrets.md).
 
-In-flight plan and full routing detail: see [email.md](email.md).
+In-flight plan and full routing detail: see
+[docs/plans/mwan-email-routing.plan.md](../plans/mwan-email-routing.plan.md).
 
 ## Tracing
 
@@ -333,4 +337,4 @@ nft -a list chain ip6 nat prerouting
 
 For troubleshooting AT&T 802.1X, Webpass DHCP, virtio-serial wedges,
 OPNsense REST behaviour, and the upgrade-snapshot pitfalls, see
-[docs/opnsense/notes.md](../opnsense/notes.md).
+[docs/opnsense/operational-notes.md](../opnsense/operational-notes.md).

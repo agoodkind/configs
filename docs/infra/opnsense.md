@@ -1,23 +1,18 @@
 # Production OPNsense State
 
 This file records the current production OPNsense role and topology. It is a
-point-in-time snapshot, not the source of truth: the interface plan and the DHCP
-and DNS reservations live in the router's `config.xml`, and Ansible-managed
-service hostnames and IPv6 addresses live in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
-The live router wins when they disagree. For steady-state BGP and operational
-foot-guns, use [../opnsense/notes.md](../opnsense/notes.md). For the current
-testbed baseline and import workflow, use
-[../opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md) and
-[../opnsense/testbed/import.md](../opnsense/testbed/import.md). For the
+state document, not the architectural source of truth for MWAN behavior. For
+steady-state BGP and operational foot-guns, use
+[../opnsense/operational-notes.md](../opnsense/operational-notes.md). For the
+current testbed baseline and import workflow, use
+[../opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md) and
+[../opnsense/testbed-config-import.md](../opnsense/testbed-config-import.md). For the
 out-of-band serial control channel into this router, use the
 [OPNsense OOB daemon](../opnsense/daemon.md).
 
 ## Role
 
-Production OPNsense runs as the QEMU VM whose id lives in the vault Proxmox
-inventory ([vault.proxmox.yml](../../ansible/inventory/vault.proxmox.yml)), on
-`vault`. It is the LAN router and
+Production OPNsense runs as QEMU VM `101` on `vault`. It is the LAN router and
 services edge, but it is not the WAN edge. All upstream Internet traffic flows
 through the production MWAN VM, and OPNsense treats that VM as its upstream for
 both IPv4 and IPv6.

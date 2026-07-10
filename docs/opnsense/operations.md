@@ -75,9 +75,11 @@ Watch three signals during the execute window, which runs 10 to 30 minutes:
 
 ## Take snapshots without saved RAM
 
-The `prepare` phase snapshot must exclude RAM (`--vmstate 0`), and never come from the
-web GUI, which defaults RAM on. The full rationale and the post-rollback checks are in
-[notes.md](notes.md).
+Always take testbed snapshots with `--vmstate 0`. A snapshot that includes RAM resumes on
+rollback with a stale wall clock, dead TCP sockets, and a stale resolver cache, which
+produced hours of confusing failures in past sessions. Production OPNsense never uses RAM
+snapshots. The web GUI defaults RAM snapshots on for a running VM, so do not take
+snapshots from the GUI for this work.
 
 ## Recover a wedged daemon
 

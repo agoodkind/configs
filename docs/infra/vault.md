@@ -1,14 +1,8 @@
 # Vault Proxmox Hypervisor
 
-Probe-time snapshot of what runs on the vault hypervisor. Guest VMIDs and names are
-owned by the vault Proxmox inventory
-([vault.proxmox.yml](../../ansible/inventory/vault.proxmox.yml)), and Ansible-managed
-service hostnames and IPv6 addresses by
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml). The
-running-service, version, and disk observations below have no other source of truth
-and can be stale. Host: 12-core i7-1255U, 94 GB RAM, kernel 6.17.4-2-pve.
+`3d06:bad:b01::254`, 12-core i7-1255U, 94 GB RAM, kernel 6.17.4-2-pve.
 
-**LXC containers (on the internal `::/64`):**
+**LXC containers (all on `3d06:bad:b01::/64`):**
 
 | VMID | Name      | IPv6    | Services observed running                                                                                                                                                                               |
 | ---- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
