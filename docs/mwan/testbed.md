@@ -36,7 +36,7 @@ against [opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf)
 | 202  | isp-mbrains        | LXC  | Simulated Monkeybrains ISP                            |
 
 Authoritative connection addresses for the OPNsense testbed are documented in
-[docs/opnsense/testbed-baseline.md](../opnsense/testbed-baseline.md). Other
+[docs/opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md). Other
 guest IPs are encoded in
 [ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
 and in the matching OpenTofu resources.

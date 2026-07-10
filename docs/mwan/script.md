@@ -4,8 +4,8 @@ Working rules for shell scripts and Ansible templates under
 [mwan/scripts/](../../mwan/scripts/),
 [ansible/playbooks/](../../ansible/playbooks/), and the OPNsense daemon
 deployment. Live host topology lives in [docs/mwan/layout.md](layout.md)
-and [docs/infra/opnsense.md](../infra/opnsense.md). Go code rules live in
-[docs/mwan/go-standards.md](go-standards.md).
+and [docs/opnsense/overview.md](../opnsense/overview.md). Go code rules live in
+[docs/mwan/go.md](go.md).
 
 ## SSH and host access
 

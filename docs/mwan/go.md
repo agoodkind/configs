@@ -2,7 +2,7 @@
 
 Standards for Go code under [mwan/go/](../../mwan/go/). Violations block merge.
 See [docs/mwan/overview.md](overview.md) for the runtime architecture and
-[docs/mwan/script-style.md](script-style.md) for shell and OPNsense conventions.
+[docs/mwan/script.md](script.md) for shell and OPNsense conventions.
 
 ## Monolith contract
 
@@ -42,8 +42,7 @@ Shared code lives under
 [mwan/go/internal/ops/](../../mwan/go/internal/ops/),
 [mwan/go/internal/bgp/](../../mwan/go/internal/bgp/),
 [mwan/go/internal/alert/](../../mwan/go/internal/alert/),
-[mwan/go/internal/tracing/](../../mwan/go/internal/tracing/),
-[mwan/go/internal/mwn1/](../../mwan/go/internal/mwn1/), and
+[mwan/go/internal/tracing/](../../mwan/go/internal/tracing/), and
 [mwan/go/internal/rollback/](../../mwan/go/internal/rollback/).
 
 ## Code standards
