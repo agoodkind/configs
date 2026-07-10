@@ -17,3 +17,18 @@ A few services run on the router itself rather than on a guest. OPNsense runs Un
 ## WireGuard
 
 OPNsense is the single WireGuard hub for the homelab, so every roaming tunnel terminates on it. The tunnel that matters for infrastructure connects the suburban testbed hypervisor back to production, and the rest are personal access paths that let a few laptops and a phone reach the network from outside. An old tunnel to berylax remains in the configuration but does nothing while berylax is offline.
+
+## Where the current values live
+
+The service hosts behind the router, with their canonical hostnames and IPv6 addresses, live in [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml), and the static and hand-managed inventory groups live in [ansible/inventory/hosts](../../ansible/inventory/hosts). The router's own interface addressing, VLANs, DHCP reservations, gateways, and aliases live in its `config.xml`, which you read through the OPNsense GUI or over the out-of-band serial channel described in [daemon.md](daemon.md).
+
+## Reading the current state
+
+To see the router's live state rather than what a doc claims, reach it over SSH, preferring IPv6 per [access.md](../infra/access.md), and read it directly. These are read-only:
+
+```bash
+ssh agoodkind@<router> 'ifconfig -a'                       # interfaces and their addresses
+ssh agoodkind@<router> 'netstat -rn'                       # the kernel routing table
+ssh agoodkind@<router> 'sudo vtysh -c "show bgp summary"'  # BGP neighbors and state
+ssh agoodkind@<router> 'sudo pfctl -sn'                    # the loaded NAT rules
+```

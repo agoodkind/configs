@@ -1,68 +1,211 @@
-# OPNsense router operations
+# OPNsense Operational Notes
 
-OPNsense runs as a BGP-only edge router, so the FRR routing daemon owns the kernel default route and the static WAN gateways do not. This page is the operating contract for the router: the steady state it holds, the foot-guns that break it, and how to recover. To stand up a replacement, treat the steady state below as the target and the foot-guns as the list to avoid.
+These are the non-obvious behaviors and configurations that matter when running
+OPNsense as a BGP-only edge router. Static WAN gateways do not own the default
+route. FRR owns the kernel default route.
 
-## How the default route works
+If you stand up another OPNsense to replace this one, the steady-state config
+section is the canonical end target. The operational rules section is the
+list of foot-guns to avoid.
 
-FRR installs and owns the kernel default route from BGP. MWAN peers announce a default route from a primary and a backup, and FRR selects the primary. No static WAN gateway is selected as the default, on purpose, because OPNsense would otherwise reinstall its own default and clobber the one BGP installed.
+---
 
-## Steady state
+## Steady-state OPNsense config
 
-The router holds four pieces of configuration, and each exists to keep BGP's default route intact while the rest of the router works.
+Validated on prod (`router.home.goodkind.io`).
 
-The NAT64 gateway, the translator that lets IPv6-only clients reach IPv4, is enabled but forced down. Forcing it down keeps it from ever winning default selection, while its static route still installs and the translator keeps working. That gateway carries one static route, which sends the NAT64 prefix to the translator.
+### Gateways (System / Gateways / Configuration)
 
-Outbound NAT runs in manual mode with two rules, because OPNsense generates automatic NAT only when an interface has a configured gateway and none does here. One rule translates every internal network to the WAN address, and one translates the firewall's own outbound traffic. The internal-networks rule matches an alias that resolves to every internal interface, so a new VLAN added to that alias is covered without a rule change.
+| Gateway | Disabled | force_down | defaultgw | Notes |
+|---|---|---|---|---|
+| NAT64_GW | 0 | **1** | 0 | Enabled but force_down so it does NOT win default selection. Static route to `:6464::/96` still installs because the route lookup ignores `force_down`. Tayga keeps translating. |
 
-MWAN peers as two BGP neighbors per address family, a primary and a backup, and a route-map prefers the primary by local preference. FRR installs the winning default into the kernel, where it shows the flag that marks a zebra-installed route.
+### Static routes (System / Routes / Configuration)
 
-## Foot-guns
+| Network | Gateway | Why |
+|---|---|---|
+| `3d06:bad:b01:6464::/96` | NAT64_GW | NAT64 prefix delegated to Tayga for v6 to v4 translation |
 
-These are the ways an operator breaks the router, each with its cause and its fix.
+Only the NAT64 static route belongs here.
 
-Enabling any v4 or v6 gateway as a selectable default clobbers the BGP route. When a selectable default gateway exists, an OPNsense Apply reinstalls its own default route, and FRR's zebra does not see the delete, so its BGP default goes stale while the kernel holds whatever OPNsense reinstalled. Keep every gateway either deleted, disabled, or forced down, so no gateway is selectable as default and Apply leaves BGP's route alone. If you must enable a gateway briefly, restart FRR afterward to reinstall the BGP default.
+### Outbound NAT (Firewall / NAT / Outbound)
 
-Automatic outbound NAT also needs a gateway, which is why the manual rules exist. With no gateway on the WAN interface, OPNsense generates no automatic NAT for internal traffic, and the two manual rules cover that ground regardless of gateway state.
+Mode: **Manual** (or Hybrid; either works as long as the manual rules below exist).
 
-The NAT64 gateway must be forced down, never disabled. A disabled gateway is excluded from the route lookup, so its static route fails to install and NAT64 breaks; a forced-down gateway is still seen by the route lookup, so the route installs and translation keeps working, while it is skipped for default selection either way.
+Explicit manual NAT rules are required because the OPNsense auto-NAT loop only
+runs when an interface gateway is configured. BGP owns the default route here,
+so these manual rules provide the outbound NAT contract.
 
-A GUI Apply behaves differently depending on gateway state. The default-route step runs only when a gateway is selectable, so it is safe as long as no gateway is selectable. The static-route rebuild always runs, but it only touches the specific networks its routes cover, not the default.
+| # | Interface | Source | Translation | Static port | Purpose |
+|---|---|---|---|---|---|
+| 1 | WAN | INTERNAL net (alias) | Interface address | NO | All LAN-side networks NAT to WAN address |
+| 2 | WAN | THIS FIREWALL | Interface address | NO | OPNsense itself (loopback + interface IPs) NAT when egressing WAN |
 
-Two interface entries on the same untagged device silently drop one. OPNsense keys its interface map by device name, so the second entry overwrites the first, and the losing interface keeps its GUI config but binds no address to any kernel interface. Keep one interface per untagged device.
+INTERNAL net resolves to all v4 networks of every interface in the INTERNAL
+group. When you add a new VLAN to INTERNAL, the rule auto-includes it.
 
-A firmware install needs a package upgrade before any package install. The install image ships a frozen package set while the mirror has moved on, so installing a package against the frozen set pulls a library built for a newer base and breaks tools such as `vtysh` with a version-mismatch error at startup. Run the package upgrade first, then install packages.
+THIS FIREWALL (`(self)` in pf) covers OPNsense-initiated outbound for
+services that bind to loopback or any LAN-side address.
 
-The Proxmox API refuses to set a VM's `args` field, which any virtio-serial VM needs. The check is hard-coded to allow only the bare root user, so no API token can set it. Create such a VM by hand as root over SSH, then import it into OpenTofu.
+Optional rule for IPsec/IKE if used: same source as #1 but dst port 500 with
+`Static port` checked (auto-NAT generates this; if you do IPsec, replicate it).
 
-Hot-adding a NIC needs an interface reconfigure. Adding the NIC at the hypervisor makes the guest kernel see the new device, but the OPNsense interface config does not bind to it until you run an interface reconfigure on the guest for whichever interface should own the device.
+### Default routes (kernel, owned by FRR/zebra)
 
-## Recovery
+```text
+default            10.250.250.3       UG1          vtnet1   # BGP via VM 113 primary
+default            3d06:bad:b01:fe::3 UG1          vtnet1   # BGP via VM 113 primary
+```
 
-Run these on the OPNsense router at `router.home.goodkind.io`.
+`UG1` flag indicates installed by zebra (FRR). Status in `vtysh -c "show ip[v6] route 0.0.0.0/0"`
+should be `Status: Installed, Selected` for the BGP entry.
 
-When the BGP default route is wiped on both families, restart FRR and clear the stale kernel defaults so FRR reinstalls its own.
+### FRR / Quagga
 
-```bash
-ssh agoodkind@router.home.goodkind.io 'sudo service frr stop'
-ssh agoodkind@router.home.goodkind.io 'sudo route -n delete -inet default 2>/dev/null'
-ssh agoodkind@router.home.goodkind.io 'sudo route -n delete -inet6 default 2>/dev/null'
-ssh agoodkind@router.home.goodkind.io 'sudo service frr start'
+- Plugin: `os-frr` installed
+- BGP mode enabled
+- Two neighbors per family:
+  - `10.250.250.3` and `3d06:bad:b01:fe::3` (VM 113, primary, route-map sets local-pref 200)
+  - `10.250.250.4` and `3d06:bad:b01:fe::4` (LXC 116, backup, route-map sets local-pref 100)
+
+---
+
+## Operational rules (foot-guns)
+
+### Rule 1: Never enable a v4 or v6 gateway entity at top priority
+
+Source evidence: `src/etc/inc/system.inc` lines 703-723 + 651-654.
+
+```php
+$gateway = $gateways->getDefaultGW($down_gateways, $ipproto);
+if (empty($gateway['gateway'])) {
+    continue;       // SKIP because no default gateway candidate
+}
+...
+system_default_route($gateway, $routes);  // route delete + add
+```
+
+`system_routing_configure` runs `system_default_route` for each address family
+**only if** `getDefaultGW` returns a non-empty gateway. `system_default_route`
+unconditionally calls:
+
+```shell
+route delete -inet6 default
+route add -inet6 default <new_gateway>
+```
+
+zebra on FreeBSD does not see `RTM_DELROUTE`, so its BGP-installed default
+stays `Status: None` while the kernel sits with whatever OPNsense reinstalled
+(or nothing). Recovery requires `service frr stop && route delete + route start`.
+
+| Gateway state for family | system_default_route called? | BGP route survives Apply? |
+|---|---|---|
+| Any enabled non-down gateway exists | YES | NO (kernel default replaced) |
+| All gateways for family are deleted/disabled/force_down | NO (early `continue`) | YES |
+
+So: when no v4 or v6 gateway is selectable as default, future Apply events
+skip `system_default_route` and leave BGP's kernel default untouched.
+
+### Rule 2: Auto outbound NAT also requires a gateway
+
+Source: `src/etc/inc/filter.inc` lines 220-238.
+
+```php
+foreach ($fw->getInterfaceMapping() as $intf => $ifcfg) {
+    if (substr($ifcfg['if'], 0, 4) != 'ovpn' && !empty($ifcfg['gateway'])) {
+        // generate auto outbound NAT rule
+    }
+}
+```
+
+When the WAN interface has no configured gateway, this condition is false and
+OPNsense does not generate auto-NAT for v4 LAN to WAN traffic.
+
+Replacement: the two manual rules in the steady-state section. They cover
+the same ground regardless of gateway state.
+
+### Rule 3: NAT64_GW disabled vs force_down
+
+| Setting | Effect on `getDefaultGW` | Effect on static route install |
+|---|---|---|
+| `disabled=1` | Skipped (good, doesn't grab default) | **Skipped**. `gatewaysIndexedByName(false, ...)` excludes disabled gateways. The `:6464::/96` static route logs `gateway IP could not be found` and is NOT installed. NAT64 breaks. |
+| `disabled=0` + `force_down=1` | Skipped (good) | **Installed**. `gatewaysIndexedByName` ignores `force_down`. NAT64 keeps working. |
+
+Use `force_down`, not `disabled`, when you want a gateway to exist for
+static-route reference but never be selected as default.
+
+### Rule 4: If you must enable a gateway temporarily
+
+Restart FRR after to recover BGP defaults:
+
+```shell
+ssh agoodkind@3d06:bad:b01::1 "sudo service frr stop && sudo route -n delete -inet default 2>/dev/null; sudo route -n delete -inet6 default 2>/dev/null; sudo service frr start"
+```
+
+(Adjust which family to delete based on which gateway you enabled.)
+
+### Rule 5: GUI Apply consequences are conditional
+
+For most gateway/route/interface changes, the Apply triggers
+`system_routing_configure`. The defaults steps run per the rules above.
+The static-route rebuild always runs (delete + add for every
+`<staticroutes><route>` entry) but only affects whatever specific networks
+those routes cover, not the default. So it's safe assuming Rule 1 holds.
+
+### Rule 6: Duplicate `<if>device</if>` declarations silently drop the loser
+
+`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but binds no address to any kernel interface. The testbed substitutions transform strips `opt6` so MANAGEMENT remains the only untagged interface mapped to `vtnet0`.
+
+### Rule 7: `pkg upgrade -y` must run BEFORE `pkg install`
+
+The OPNsense install ISO ships one snapshot of the package set. The mirror has moved on by the time you install anything. Running `pkg update -f` then jumping straight to `pkg install os-frr` pulls a libyang2 built against `pcre2-10.47` onto a system that still has `pcre2-10.45`. `vtysh` then fails at startup with `ld-elf.so.1: /usr/local/lib/libpcre2-8.so.0: version PCRE2_10.47 required by libyang2.so.2 not defined`. Insert `pkg upgrade -y` between `pkg update -f` and the first `pkg install`.
+
+### Rule 8: Proxmox restricts `args` qemu-server field to literal `root@pam`
+
+Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only root can set 'args' config" for any API token, regardless of `privsep` or assigned role. The check is hard-coded in Proxmox, not policy-driven. For VMs that need `args` (any VM with a virtio-serial chardev, including the mwan-opnsense VMs): `qm create` manually as root via SSH, then `tofu import` the resulting VM. The pattern is documented in [opentofu/imports.md](../../opentofu/imports.md).
+
+### Rule 9: Hot-adding a NIC needs `configctl interface reconfigure`
+
+`qm set <vmid> --netN ...` adds the NIC at the hypervisor level. OPNsense's kernel sees the new `vtnetN` device, but the in-OPNsense interface config does not auto-bind to it. The new device comes up `IFDISABLED` until `configctl interface reconfigure <wan|opt...>` runs on the guest. Run reconfigure for whichever OPNsense interface is supposed to bind to the new device.
+
+---
+
+## Recovery snippets
+
+### BGP default got wiped on v4 + v6
+
+```shell
+ssh agoodkind@3d06:bad:b01::1 'sudo service frr stop'
+ssh agoodkind@3d06:bad:b01::1 'sudo route -n delete -inet default 2>/dev/null'
+ssh agoodkind@3d06:bad:b01::1 'sudo route -n delete -inet6 default 2>/dev/null'
+ssh agoodkind@3d06:bad:b01::1 'sudo service frr start'
 sleep 5
-ssh agoodkind@router.home.goodkind.io 'sudo netstat -rn | grep ^default'
+ssh agoodkind@3d06:bad:b01::1 'sudo netstat -rn | grep ^default'
 ```
 
-The default entries should return with the zebra-installed flag.
+Should show BGP defaults restored (`UG1` flag).
 
-When NAT64 stops working, confirm resolution and translation from a v6-capable LAN host, then check the NAT64 static route and the forced-down gateway on the router.
+### NAT64 stops working
 
-```bash
+Check (from any v6-capable host on LAN):
+
+```shell
 dig @3d06:bad:b01::64 +short AAAA ipv4.google.com
-ping6 <synthesized address from above>
+ping6 <synthesized addr from above>
 ```
 
-If DNS64 returns a synthesized address but the ping fails, the NAT64 static route is missing. Confirm the route exists on the router and that the NAT64 gateway is forced down rather than disabled.
+If DNS64 returns synth but ping fails, check the `:6464::/96` static route
+on OPNsense (`netstat -rn -f inet6 | grep 6464`). If missing, check that
+NAT64_GW is `disabled=0` AND the static route is `disabled=0`.
 
-When outbound NAT stops and LAN clients lose IPv4 while IPv6 still works, the manual NAT rules are most likely gone. Confirm them under Firewall, NAT, Outbound, and check the running rules on the router shell for a NAT rule on the WAN interface.
+### Outbound NAT stops working (LAN clients lose v4 Internet but v6 works)
+
+Most likely cause: the manual NAT rules are missing. Check Firewall / NAT /
+Outbound for the two manual rules. Verify with `pfctl -sn | grep ^nat` from
+OPNsense shell; should see at least one `nat on vtnet1 inet from <internal_net>
+to any -> (vtnet1:0)` rule.
+
+---
 
 ## Snapshots without saved RAM
 
