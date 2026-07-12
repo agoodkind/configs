@@ -231,12 +231,14 @@ replays). It owns priorities 50/55/56/57/100/200/300 and ports the full
 `update-routes.sh` rule inventory; a shadow mode logs intended operations while
 mutating nothing.
 
-It is gated off in production (`mwan_ifmgr_wan_enabled: false`), where the shell
-remains authoritative, and runs as the instanced `mwan-ifmgr@wan` unit. It was
-validated on the suburban testbed in shadow (intended ops match the shell, the
-late-RA delete reconciles sub-millisecond) and dual-write (the module's fwmark
-rules coexist with the networkd from-edge rules at the same priority, no thrash).
-The shell triggers stay until production cuts over after sign-off.
+In production it runs in shadow (`mwan_ifmgr_wan_enabled: true` with
+`mwan_ifmgr_wan_shadow_mode: true`) as the instanced `mwan-ifmgr@wan` unit, so it
+logs the operations it would perform and mutates nothing while the shell stays
+authoritative. It was validated on the suburban testbed in shadow (intended ops
+match the shell, the late-RA delete reconciles sub-millisecond) and dual-write
+(the module's fwmark rules coexist with the networkd from-edge rules at the same
+priority, no thrash). Advancing production to dual-write (`shadow_mode: false`)
+is gated on testbed end-to-end sign-off, so the shell triggers stay until then.
 
 ### Health state persistence and email guard
 
