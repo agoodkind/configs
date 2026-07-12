@@ -50,11 +50,7 @@ The fix is a persistent host-side drainer. The drainer holds the chardev open an
 it, so the host side stays connected and guest writes complete while the bridge restarts behind
 it. The bridge dials the drainer instead of the chardev.
 
-The drainer runs on the suburban testbed, where the `mwan-opnsense-drain` and `mwan-opnsense-host`
-units stay active. Production does not run it yet: the vault host has no drainer or bridge unit,
-and the prod OPNsense daemon still uses the older rc.d. Rolling the drainer to production is
-tracked as MWAN-220. Change the drainer only from a written design, such as the one under
-[docs/superpowers/wedgeproof/spec.md](../superpowers/wedgeproof/spec.md), never ad hoc.
+The drainer is the fix. Change it only from a written design, never ad hoc.
 
 ## Reproduce
 
