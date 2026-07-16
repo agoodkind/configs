@@ -373,16 +373,8 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-# Prod baseline: @wan runs in SHADOW. The module computes intended routes/rules
-# and logs them, mutating nothing, while the shell (update-routes.sh /
-# update-npt.sh) stays authoritative. This is the declared baseline so a deploy
-# keeps @wan in shadow rather than tearing it down. Advancing to dual-write
-# (shadow_mode: false) is gated on testbed e2e sign-off.
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: true
-# npt rides the same @wan instance as wan_routes. Prod baseline is SHADOW: the
-# module computes and logs intended NPT rules, mutating nothing, while
-# update-npt.sh stays authoritative.
 mwan_ifmgr_npt_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:

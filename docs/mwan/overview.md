@@ -219,6 +219,15 @@ the BGP speaker:
   call [update-routes.sh](../../mwan/scripts/update-routes.sh) so the system
   converges back to the healthy WAN automatically once it recovers.
 
+### Shared per-WAN foundation
+
+`wan_routes` and `npt` run in the `wan` role and read one WAN list from the
+`[ifmgr.wan]` config section. That section names each WAN and its interface once,
+and holds the internal prefix and edge addresses both modules translate against.
+Each module joins its own per-WAN fields to that shared list by WAN name:
+`wan_routes` adds routing tables and fwmarks, `npt` adds none. The WAN set and
+the shared prefixes live in one place instead of once per module.
+
 ### wan_routes ifmgr module (event-driven successor)
 
 The `wan_routes` module in `mwan ifmgr` is the Go successor to the
@@ -231,12 +240,40 @@ replays). It owns priorities 50/55/56/57/100/200/300 and ports the full
 `update-routes.sh` rule inventory; a shadow mode logs intended operations while
 mutating nothing.
 
-It is gated off in production (`mwan_ifmgr_wan_enabled: false`), where the shell
-remains authoritative, and runs as the instanced `mwan-ifmgr@wan` unit. It was
-validated on the suburban testbed in shadow (intended ops match the shell, the
-late-RA delete reconciles sub-millisecond) and dual-write (the module's fwmark
-rules coexist with the networkd from-edge rules at the same priority, no thrash).
-The shell triggers stay until production cuts over after sign-off.
+It runs in the `mwan-ifmgr@wan` unit, gated by its own `shadow_mode`. In shadow
+it logs intended operations and changes nothing, so the shell trigger stays
+authoritative until the cutover. Its fwmark rules share a priority with the
+networkd from-edge rules without thrash, so both can run during the dual-write
+step.
+
+### npt ifmgr module
+
+The `npt` module in `mwan ifmgr` is the Go successor to
+[update-npt.sh](../../mwan/scripts/update-npt.sh). It runs as a second module in
+the `mwan-ifmgr@wan` instance alongside `wan_routes`, with its own `shadow_mode`.
+In shadow it logs the `ip6 nat` operations it would perform and changes nothing,
+so `update-npt.sh` stays authoritative. With shadow off it owns and programs the
+`ip6 nat` chains. It self-disables when `[ifmgr.wan]` lists no WANs.
+
+npt derives every WAN's `/60` from the live DHCPv6-PD delegation on that WAN's
+interface, with no static fallback. A WAN with no delegated prefix is skipped for
+that reconcile and alerted, rather than translated against a guessed prefix.
+
+With shadow off, npt owns the `prerouting` and `postrouting` chains of the
+runtime `table ip6 nat` and replaces each chain's full rule set in one atomic
+`google/nftables` transaction, so no packet sees an empty chain mid-update. This
+removes the duplicate-rule failure mode of `update-npt.sh`, which deletes a WAN's
+rules by matched handle before re-adding them and leaves a duplicate whenever a
+handle match misses.
+
+npt does not tear its rules down when the module stops. A binary swap or an
+`mwan-ifmgr@wan` restart leaves the kernel forwarding on the last-applied rules,
+and the next reconcile after restart re-applies them atomically. Forwarding never
+stops, and no swap leaves a chain empty or double-programmed.
+
+The shell trio stays authoritative for the `ip6 nat` chains until the
+authoritative cutover: the `55-update-npt.sh` dispatcher hook, `update-npt.sh`,
+and the `mwan-update-npt.service` safety net.
 
 ### Health state persistence and email guard
 
