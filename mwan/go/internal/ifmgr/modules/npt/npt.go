@@ -1,0 +1,354 @@
+//go:build linux
+
+// Package npt ports mwan/scripts/update-npt.sh into an ifmgr module. It programs
+// the ip6 nat prerouting and postrouting chains for stateless IPv6 NPT, deriving
+// each WAN's /60 from the live DHCPv6-PD delegation and translating the internal
+// /60 onto it. It runs as a second module in the wan role, gated by its own
+// shadow_mode, and never tears its rules down on stop so the kernel keeps
+// forwarding across a binary swap.
+package npt
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"maps"
+	"net/netip"
+	"time"
+
+	"goodkind.io/mwan/internal/ifmgr"
+	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/pd"
+)
+
+const (
+	moduleName         = "npt"
+	alertKindPDMissing = "npt_pd_missing"
+	pdMaskBits         = 60
+)
+
+// reconcileAddrsFunc and listAddrsFunc are the netif address seams the module
+// depends on. Injecting them lets module tests run without netlink.
+type reconcileAddrsFunc func(context.Context, *slog.Logger, string, []netif.AddrSpec) error
+
+type listAddrsFunc func(context.Context, *slog.Logger, string) ([]netif.CurrentAddr, error)
+
+// Config is the runtime config for the npt module. The WAN list, internal
+// prefix, and edge addresses come from the shared [ifmgr.wan] section;
+// ShadowMode is the module's own [ifmgr.modules.npt] toggle.
+type Config struct {
+	ShadowMode     bool
+	InternalPrefix string
+	OpnsenseEdgeV6 string
+	MwanbrEdgeV6   string
+	WANs           []ifmgr.WANRef
+}
+
+// ModuleConfigName returns the registry key for this module's config block.
+func (Config) ModuleConfigName() string { return moduleName }
+
+// Module owns the ip6 nat NPT rules for the configured WANs.
+type Module struct {
+	ifmgr.BaseModule
+
+	cfg Config
+
+	// Parsed once at Init from cfg.
+	internal     netip.Prefix
+	opnsenseEdge netip.Addr
+	mwanbrEdge   netip.Addr
+
+	// Injectable seams (real implementations wired at Init when nil).
+	src            pd.Source
+	reconcileAddrs reconcileAddrsFunc
+	listAddrs      listAddrsFunc
+	apply          applier
+
+	// pdMissing records which WAN ifaces had no delegated prefix on the last
+	// reconcile, read by EvaluateAlerts. Guarded by the embedded mutex.
+	pdMissing map[string]bool
+}
+
+// Init implements ifmgr.Module. Self-disables when the shared WAN list is empty
+// so the wan role can list npt unconditionally.
+func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
+	log := m.InitBase(env, "module", moduleName)
+	log.InfoContext(ctx, "npt: Init",
+		"wan_count", len(m.cfg.WANs), "shadow_mode", m.cfg.ShadowMode)
+
+	if len(m.cfg.WANs) == 0 {
+		log.WarnContext(ctx, "npt: no WAN config; disabling module")
+		return fmt.Errorf("%w: npt: no [ifmgr.wan] WANs", ifmgr.ErrModuleDisabled)
+	}
+	if err := m.parse(); err != nil {
+		log.WarnContext(ctx, "npt: config parse failed", "err", err)
+		return err
+	}
+
+	if m.src == nil {
+		m.src = pd.New(env.Log)
+	}
+	if m.apply == nil {
+		m.apply = newNFTApplier()
+	}
+	if m.reconcileAddrs == nil {
+		m.reconcileAddrs = netif.ReconcileAddrs
+	}
+	if m.listAddrs == nil {
+		m.listAddrs = netif.ListAddrs
+	}
+
+	ifmgr.StartIfaceMonitors(ctx, log, moduleName, watchedIfaces(m.cfg), m.onMonitorEvent)
+	return nil
+}
+
+// parse validates and stores the shared prefixes and edge addresses.
+func (m *Module) parse() error {
+	if err := validateWANs(m.cfg.WANs); err != nil {
+		return err
+	}
+	internal, err := netip.ParsePrefix(m.cfg.InternalPrefix)
+	if err != nil {
+		slog.Warn("npt: invalid internal_prefix", "value", m.cfg.InternalPrefix, "err", err)
+		return fmt.Errorf("npt: internal_prefix %q: %w", m.cfg.InternalPrefix, err)
+	}
+	edge, err := netip.ParseAddr(m.cfg.OpnsenseEdgeV6)
+	if err != nil {
+		slog.Warn("npt: invalid opnsense_edge_v6", "value", m.cfg.OpnsenseEdgeV6, "err", err)
+		return fmt.Errorf("npt: opnsense_edge_v6 %q: %w", m.cfg.OpnsenseEdgeV6, err)
+	}
+	mwanbr, err := netip.ParseAddr(m.cfg.MwanbrEdgeV6)
+	if err != nil {
+		slog.Warn("npt: invalid mwanbr_edge_v6", "value", m.cfg.MwanbrEdgeV6, "err", err)
+		return fmt.Errorf("npt: mwanbr_edge_v6 %q: %w", m.cfg.MwanbrEdgeV6, err)
+	}
+	m.internal = internal.Masked()
+	m.opnsenseEdge = edge
+	m.mwanbrEdge = mwanbr
+	return nil
+}
+
+func validateWANs(wans []ifmgr.WANRef) error {
+	seen := make(map[string]bool, len(wans))
+	for i, wan := range wans {
+		if wan.Name == "" {
+			return fmt.Errorf("npt: wan[%d]: name is required", i)
+		}
+		if wan.Iface == "" {
+			return fmt.Errorf("npt: wan[%d] (%s): iface is required", i, wan.Name)
+		}
+		if seen[wan.Iface] {
+			return fmt.Errorf("npt: wan[%d]: duplicate iface %q", i, wan.Iface)
+		}
+		seen[wan.Iface] = true
+	}
+	return nil
+}
+
+// Reconcile implements ifmgr.Module. It computes the union of every WAN's NPT
+// rules from the live PD, then either logs (shadow) or applies them in one
+// atomic transaction.
+func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
+	m.Lock()
+	defer m.Unlock()
+
+	log = log.With("op", "reconcile")
+
+	var desired desiredRules
+	missing := make(map[string]bool, len(m.cfg.WANs))
+	var reconcileErr error
+
+	for _, wan := range m.cfg.WANs {
+		rules, present, err := m.buildWANDesired(ctx, log, wan)
+		if err != nil {
+			reconcileErr = errors.Join(reconcileErr, err)
+			continue
+		}
+		if !present {
+			missing[wan.Iface] = true
+			continue
+		}
+		desired.add(rules)
+	}
+	m.pdMissing = missing
+
+	if m.cfg.ShadowMode {
+		logShadowOps(log, desired)
+		return reconcileErr
+	}
+	if err := m.apply.Apply(ctx, log, desired); err != nil {
+		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("apply: %w", err))
+	}
+	return reconcileErr
+}
+
+// buildWANDesired resolves one WAN's live /60 and returns its typed rules.
+// present is false (skip + alert, no static fallback) when the PD source has no
+// prefix or errors; err is returned only for a hard address-op failure.
+func (m *Module) buildWANDesired(
+	ctx context.Context, log *slog.Logger, wan ifmgr.WANRef,
+) ([]natRule, bool, error) {
+	pfx, ok, err := m.src.Prefix(ctx, wan.Iface)
+	if err != nil {
+		log.WarnContext(ctx, "npt: pd lookup failed; skipping WAN",
+			"wan", wan.Name, "iface", wan.Iface, "err", err)
+		return nil, false, nil
+	}
+	if !ok {
+		log.WarnContext(ctx, "npt: no delegated prefix; skipping WAN",
+			"wan", wan.Name, "iface", wan.Iface)
+		return nil, false, nil
+	}
+
+	pd60 := netip.PrefixFrom(pfx.Addr(), pdMaskBits).Masked()
+	pd1 := pdHostOne(pd60)
+
+	ensure := []netif.AddrSpec{{CIDR: netip.PrefixFrom(pd1, 128).String(), Family: "inet6"}}
+	if err := m.reconcileAddrs(ctx, log, wan.Iface, ensure); err != nil {
+		return nil, false, fmt.Errorf("ensure %s on %s: %w", pd1, wan.Iface, err)
+	}
+
+	extra, err := m.extraGlobal128s(ctx, log, wan.Iface, pd1)
+	if err != nil {
+		return nil, false, fmt.Errorf("enumerate extra /128 on %s: %w", wan.Iface, err)
+	}
+
+	rules := buildWANRules(wanRuleInput{
+		Iface:        wan.Iface,
+		PD60:         pd60,
+		Internal:     m.internal,
+		OpnsenseEdge: m.opnsenseEdge,
+		MwanbrEdge:   m.mwanbrEdge,
+		ExtraDNAT:    extra,
+	})
+	return rules, true, nil
+}
+
+// extraGlobal128s returns the global-scope /128 addresses on iface, excluding
+// <pd>::1, each of which gets a reverse DNAT to the OPNsense edge. Mirrors the
+// shell's `ip -6 addr show scope global` /128 scan.
+func (m *Module) extraGlobal128s(
+	ctx context.Context, log *slog.Logger, iface string, pd1 netip.Addr,
+) ([]netip.Addr, error) {
+	addrs, err := m.listAddrs(ctx, log, iface)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]netip.Addr, 0, len(addrs))
+	for _, current := range addrs {
+		if current.Family != "inet6" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(current.CIDR)
+		if err != nil {
+			continue
+		}
+		if prefix.Bits() != 128 {
+			continue
+		}
+		addr := prefix.Addr()
+		if !addr.IsGlobalUnicast() {
+			continue
+		}
+		if addr == pd1 {
+			continue
+		}
+		out = append(out, addr)
+	}
+	return out, nil
+}
+
+// EvaluateAlerts fires a per-iface WARN for each WAN that had no delegated
+// prefix on the last reconcile, and resolves it once the prefix returns.
+func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Time) {
+	if m.Env == nil || m.Env.Alerts == nil {
+		return
+	}
+	m.Lock()
+	missing := make(map[string]bool, len(m.pdMissing))
+	maps.Copy(missing, m.pdMissing)
+	m.Unlock()
+
+	for _, wan := range m.cfg.WANs {
+		fields := []slog.Attr{slog.String("wan", wan.Name), slog.String("iface", wan.Iface)}
+		if missing[wan.Iface] {
+			m.Env.Alerts.NotifyContext(ctx, now, slog.LevelWarn, alertKindPDMissing, wan.Iface,
+				"npt: no delegated prefix for WAN", fields...)
+			continue
+		}
+		m.Env.Alerts.ResolveContext(ctx, now, alertKindPDMissing, wan.Iface,
+			"npt: delegated prefix restored", fields...)
+	}
+}
+
+func (m *Module) onMonitorEvent(ctx context.Context, log *slog.Logger, event netif.Event) {
+	if !isAddrEvent(event) {
+		return
+	}
+	eventLog := log.With("kind", event.Kind.String(), "iface", event.Iface, "cidr", event.CIDR)
+	eventLog.DebugContext(ctx, "npt: addr event, reconciling")
+	if err := m.Reconcile(ctx, eventLog); err != nil {
+		eventLog.WarnContext(ctx, "npt: reconcile after addr event failed", "err", err)
+	}
+}
+
+// isAddrEvent selects address add/delete events: a PD renumber surfaces as an
+// address change on the WAN iface, which is what should trigger a reconcile.
+func isAddrEvent(event netif.Event) bool {
+	return event.Kind == netif.EvAddrAdded || event.Kind == netif.EvAddrDeleted
+}
+
+func logShadowOps(log *slog.Logger, desired desiredRules) {
+	for _, rule := range desired.Postrouting {
+		log.Debug("npt: shadow reconcile rule", "rule", rule.String())
+	}
+	for _, rule := range desired.Prerouting {
+		log.Debug("npt: shadow reconcile rule", "rule", rule.String())
+	}
+}
+
+func watchedIfaces(cfg Config) []string {
+	seen := make(map[string]bool, len(cfg.WANs))
+	ifaces := make([]string, 0, len(cfg.WANs))
+	for _, wan := range cfg.WANs {
+		if wan.Iface == "" || seen[wan.Iface] {
+			continue
+		}
+		seen[wan.Iface] = true
+		ifaces = append(ifaces, wan.Iface)
+	}
+	return ifaces
+}
+
+// New is the Constructor registered with ifmgr.
+func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
+	c := Config{
+		ShadowMode:     false,
+		InternalPrefix: "",
+		OpnsenseEdgeV6: "",
+		MwanbrEdgeV6:   "",
+		WANs:           nil,
+	}
+	if cfg != nil {
+		typedConfig, ok := cfg.(Config)
+		if !ok {
+			return nil, fmt.Errorf("npt: invalid config type %T", cfg)
+		}
+		c = typedConfig
+	}
+	return &Module{
+		BaseModule:     ifmgr.NewBaseModule(moduleName),
+		cfg:            c,
+		internal:       netip.Prefix{},
+		opnsenseEdge:   netip.Addr{},
+		mwanbrEdge:     netip.Addr{},
+		src:            nil,
+		reconcileAddrs: nil,
+		listAddrs:      nil,
+		apply:          nil,
+		pdMissing:      nil,
+	}, nil
+}
+
+func init() { ifmgr.Register(moduleName, New) }

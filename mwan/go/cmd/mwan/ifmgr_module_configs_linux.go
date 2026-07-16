@@ -16,6 +16,7 @@ import (
 	connprobe "goodkind.io/mwan/internal/ifmgr/modules/connprobe"
 	hostipv6policy "goodkind.io/mwan/internal/ifmgr/modules/hostipv6policy"
 	mainv4 "goodkind.io/mwan/internal/ifmgr/modules/mainv4"
+	npt "goodkind.io/mwan/internal/ifmgr/modules/npt"
 	oobv4 "goodkind.io/mwan/internal/ifmgr/modules/oobv4"
 	oobv6 "goodkind.io/mwan/internal/ifmgr/modules/oobv6"
 	policyrules "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
@@ -124,15 +125,53 @@ func buildIfMgrModuleConfigs(
 		moduleConfigs["host_ipv6_policy"] = hostIPv6PolicyConfig
 	}
 
-	if want["wan_routes"] {
-		wanRoutesConfig, err := buildWANRoutesConfig(buildWANRefs(wan), modules.WANRoutes)
-		if err != nil {
-			return nil, err
-		}
-		moduleConfigs["wan_routes"] = wanRoutesConfig
+	if err := addWANRoleConfigs(moduleConfigs, want, modules, wan); err != nil {
+		return nil, err
 	}
 
 	return moduleConfigs, nil
+}
+
+// addWANRoleConfigs builds the wan-role module configs (wan_routes and npt) from
+// the one shared [ifmgr.wan] section, so both modules read the same WAN list and
+// prefixes. Kept out of buildIfMgrModuleConfigs to hold its complexity down.
+func addWANRoleConfigs(
+	moduleConfigs ifmgr.ModuleConfigSet,
+	want map[string]bool,
+	modules config.IfMgrModulesSection,
+	wan config.IfMgrWANSection,
+) error {
+	shared := buildWANRefs(wan)
+	if want["wan_routes"] {
+		wanRoutesConfig, err := buildWANRoutesConfig(shared, modules.WANRoutes)
+		if err != nil {
+			return err
+		}
+		moduleConfigs["wan_routes"] = wanRoutesConfig
+	}
+	if want["npt"] {
+		moduleConfigs["npt"] = buildNPTConfig(shared, modules.NPT)
+	}
+	return nil
+}
+
+// buildNPTConfig joins the shared [ifmgr.wan] prefixes and WAN identity list
+// with the npt section's own shadow toggle. The WAN list and prefixes come from
+// the shared inputs, so npt and wan_routes always agree on the same WAN set; a
+// nil section keeps ShadowMode off. Reading shared.MwanbrEdgeV6 here makes it a
+// real consumer of the shared field.
+func buildNPTConfig(shared sharedWANInputs, section *config.IfMgrNPTSection) npt.Config {
+	cfg := npt.Config{
+		ShadowMode:     false,
+		InternalPrefix: shared.InternalPrefix,
+		OpnsenseEdgeV6: shared.OpnsenseEdgeV6,
+		MwanbrEdgeV6:   shared.MwanbrEdgeV6,
+		WANs:           append([]ifmgr.WANRef(nil), shared.WANs...),
+	}
+	if section != nil {
+		cfg.ShadowMode = section.ShadowMode
+	}
+	return cfg
 }
 
 // buildWGConfig returns nil when section is nil so the wg module's
@@ -477,6 +516,7 @@ type sharedWANInputs struct {
 	WANs           []ifmgr.WANRef
 	InternalPrefix string
 	OpnsenseEdgeV6 string
+	MwanbrEdgeV6   string
 }
 
 // buildWANRefs turns the shared [ifmgr.wan] section into the shared runtime
@@ -487,6 +527,7 @@ func buildWANRefs(section config.IfMgrWANSection) sharedWANInputs {
 		WANs:           make([]ifmgr.WANRef, 0, len(section.WANs)),
 		InternalPrefix: section.InternalPrefix,
 		OpnsenseEdgeV6: section.OpnsenseEdgeV6,
+		MwanbrEdgeV6:   section.MwanbrEdgeV6,
 	}
 	names := make([]string, 0, len(section.WANs))
 	for name := range section.WANs {

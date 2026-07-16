@@ -8,6 +8,7 @@ require (
 	github.com/beevik/etree v1.6.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/godbus/dbus/v5 v5.1.0
+	github.com/google/nftables v0.3.0
 	github.com/google/renameio/v2 v2.0.2
 	github.com/hashicorp/yamux v0.1.2
 	github.com/insomniacslk/dhcp v0.0.0-20260407060928-11b94ed970f2
@@ -34,11 +35,13 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/k-sone/critbitgo v1.4.0 // indirect
+	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
 	github.com/mdlayher/packet v1.1.2 // indirect
-	github.com/mdlayher/socket v0.4.1 // indirect
+	github.com/mdlayher/socket v0.5.0 // indirect
 	github.com/orcaman/concurrent-map/v2 v2.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.14 // indirect
