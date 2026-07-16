@@ -5,6 +5,7 @@ package npt
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/netip"
 	"reflect"
@@ -224,7 +225,12 @@ func TestReconcileShadowSkipsApplier(t *testing.T) {
 		ok:  map[string]bool{"enatt0.3242": true, "webpass0": true},
 		err: map[string]error{},
 	}
-	m.reconcileAddrs = func(_ context.Context, _ *slog.Logger, _ string, _ []netif.AddrSpec) error { return nil }
+	// Shadow must mutate nothing, so the address-add seam must never be called.
+	addrCalls := 0
+	m.reconcileAddrs = func(_ context.Context, _ *slog.Logger, _ string, _ []netif.AddrSpec) error {
+		addrCalls++
+		return nil
+	}
 	m.listAddrs = func(_ context.Context, _ *slog.Logger, _ string) ([]netif.CurrentAddr, error) { return nil, nil }
 	app := &fakeApplier{calls: 0, last: desiredRules{Postrouting: nil, Prerouting: nil}, err: nil}
 	m.apply = app
@@ -236,6 +242,9 @@ func TestReconcileShadowSkipsApplier(t *testing.T) {
 	}
 	if app.calls != 0 {
 		t.Fatalf("shadow mode called applier %d times, want 0", app.calls)
+	}
+	if addrCalls != 0 {
+		t.Fatalf("shadow mode performed %d address mutations, want 0", addrCalls)
 	}
 	if !strings.Contains(buf.String(), "shadow reconcile rule") {
 		t.Fatalf("shadow mode did not log intended ops; log:\n%s", buf.String())
@@ -285,6 +294,65 @@ func TestReconcilePDMissSkipsWAN(t *testing.T) {
 	}
 	if ev.Key != "enatt0.3242" {
 		t.Fatalf("alert key = %q, want the att iface", ev.Key)
+	}
+}
+
+// TestReconcileAddrOpErrorSkipsWAN checks a WAN whose address op fails is skipped
+// under the same skip-and-alert contract as a PD miss: its rules are absent from
+// the union, EvaluateAlerts fires a WARN for it, and it is not falsely resolved.
+func TestReconcileAddrOpErrorSkipsWAN(t *testing.T) {
+	t.Parallel()
+
+	m, notifier := newTestModule(t, testConfig())
+	m.src = &fakeSource{
+		prefixes: map[string]netip.Prefix{
+			"enatt0.3242": netip.MustParsePrefix("2600:1700:2f71:c80::/60"),
+			"webpass0":    netip.MustParsePrefix("2001:db8:1:20::/60"),
+		},
+		ok:  map[string]bool{"enatt0.3242": true, "webpass0": true},
+		err: map[string]error{},
+	}
+	// att's address op fails; webpass succeeds. att must be excluded and alerted.
+	m.reconcileAddrs = func(_ context.Context, _ *slog.Logger, iface string, _ []netif.AddrSpec) error {
+		if iface == "enatt0.3242" {
+			return errors.New("netlink: address op failed")
+		}
+		return nil
+	}
+	m.listAddrs = func(_ context.Context, _ *slog.Logger, _ string) ([]netif.CurrentAddr, error) { return nil, nil }
+	app := &fakeApplier{calls: 0, last: desiredRules{Postrouting: nil, Prerouting: nil}, err: nil}
+	m.apply = app
+
+	if err := m.Reconcile(context.Background(), slog.Default()); err == nil {
+		t.Fatal("Reconcile should surface the address-op error")
+	}
+	// Only webpass programmed: 4 postrouting rules, not 8.
+	if len(app.last.Postrouting) != 4 {
+		t.Fatalf("postrouting rule count = %d, want 4 (att excluded)", len(app.last.Postrouting))
+	}
+	for _, rule := range app.last.Postrouting {
+		if rule.Iface == "enatt0.3242" {
+			t.Fatal("att rules present despite address-op failure")
+		}
+	}
+
+	m.EvaluateAlerts(context.Background(), slog.Default(), time.Now())
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	if len(notifier.notifies) != 1 {
+		t.Fatalf("alert count = %d, want 1", len(notifier.notifies))
+	}
+	ev := notifier.notifies[0]
+	if ev.Level != slog.LevelWarn {
+		t.Fatalf("alert level = %v, want WARN", ev.Level)
+	}
+	if ev.Key != "enatt0.3242" {
+		t.Fatalf("alert key = %q, want the att iface", ev.Key)
+	}
+	for _, resolved := range notifier.resolves {
+		if strings.Contains(resolved, "enatt0.3242") {
+			t.Fatalf("att was falsely resolved despite the address-op failure: %v", notifier.resolves)
+		}
 	}
 }
 

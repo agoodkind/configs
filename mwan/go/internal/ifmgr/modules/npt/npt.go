@@ -160,16 +160,32 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	var reconcileErr error
 
 	for _, wan := range m.cfg.WANs {
-		rules, present, err := m.buildWANDesired(ctx, log, wan)
+		built, present, err := m.buildWANDesired(ctx, log, wan)
 		if err != nil {
+			// A hard address-op error follows the same skip-and-alert contract
+			// as a PD miss: exclude the WAN from the union and mark it missing so
+			// EvaluateAlerts fires rather than falsely resolving it.
 			reconcileErr = errors.Join(reconcileErr, err)
+			missing[wan.Iface] = true
 			continue
 		}
 		if !present {
 			missing[wan.Iface] = true
 			continue
 		}
-		desired.add(rules)
+		// The <pd>::1/128 address add is the only write in a reconcile. Gate it on
+		// shadow so shadow mode mutates nothing; in shadow npt still computes and
+		// logs the rules that reference <pd>::1 but adds no address. A failure to
+		// ensure the address skips and alerts the WAN like any other address op.
+		if !m.cfg.ShadowMode {
+			if err := m.reconcileAddrs(ctx, log, wan.Iface, built.ensure); err != nil {
+				reconcileErr = errors.Join(reconcileErr,
+					fmt.Errorf("ensure %s on %s: %w", built.ensure[0].CIDR, wan.Iface, err))
+				missing[wan.Iface] = true
+				continue
+			}
+		}
+		desired.add(built.rules)
 	}
 	m.pdMissing = missing
 
@@ -183,35 +199,43 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	return reconcileErr
 }
 
-// buildWANDesired resolves one WAN's live /60 and returns its typed rules.
+// wanDesired is one WAN's computed reconcile plan: the typed rules to program
+// and the <pd>::1/128 address to ensure on the iface. Building the plan is a
+// pure read; ensure is applied by the caller only in the non-shadow path.
+type wanDesired struct {
+	rules  []natRule
+	ensure []netif.AddrSpec
+}
+
+// buildWANDesired resolves one WAN's live /60 and returns its reconcile plan.
+// It only reads (PD lookup plus the extra-/128 enumeration) so shadow mode can
+// reuse it without mutating anything; the caller performs the address write.
 // present is false (skip + alert, no static fallback) when the PD source has no
-// prefix or errors; err is returned only for a hard address-op failure.
+// prefix or errors; err is returned only for a hard address-op read failure.
 func (m *Module) buildWANDesired(
 	ctx context.Context, log *slog.Logger, wan ifmgr.WANRef,
-) ([]natRule, bool, error) {
+) (wanDesired, bool, error) {
 	pfx, ok, err := m.src.Prefix(ctx, wan.Iface)
 	if err != nil {
 		log.WarnContext(ctx, "npt: pd lookup failed; skipping WAN",
 			"wan", wan.Name, "iface", wan.Iface, "err", err)
-		return nil, false, nil
+		return wanDesired{rules: nil, ensure: nil}, false, nil
 	}
 	if !ok {
 		log.WarnContext(ctx, "npt: no delegated prefix; skipping WAN",
 			"wan", wan.Name, "iface", wan.Iface)
-		return nil, false, nil
+		return wanDesired{rules: nil, ensure: nil}, false, nil
 	}
 
 	pd60 := netip.PrefixFrom(pfx.Addr(), pdMaskBits).Masked()
 	pd1 := pdHostOne(pd60)
 
 	ensure := []netif.AddrSpec{{CIDR: netip.PrefixFrom(pd1, 128).String(), Family: "inet6"}}
-	if err := m.reconcileAddrs(ctx, log, wan.Iface, ensure); err != nil {
-		return nil, false, fmt.Errorf("ensure %s on %s: %w", pd1, wan.Iface, err)
-	}
 
 	extra, err := m.extraGlobal128s(ctx, log, wan.Iface, pd1)
 	if err != nil {
-		return nil, false, fmt.Errorf("enumerate extra /128 on %s: %w", wan.Iface, err)
+		return wanDesired{rules: nil, ensure: nil}, false,
+			fmt.Errorf("enumerate extra /128 on %s: %w", wan.Iface, err)
 	}
 
 	rules := buildWANRules(wanRuleInput{
@@ -222,7 +246,7 @@ func (m *Module) buildWANDesired(
 		MwanbrEdge:   m.mwanbrEdge,
 		ExtraDNAT:    extra,
 	})
-	return rules, true, nil
+	return wanDesired{rules: rules, ensure: ensure}, true, nil
 }
 
 // extraGlobal128s returns the global-scope /128 addresses on iface, excluding
