@@ -201,6 +201,9 @@ mwan_rt_tables:
 # the shadow intended-ops are confirmed to match the shell across all three WANs.
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: false
+# npt rides the same @wan instance as wan_routes. Testbed loads npt in SHADOW
+# for validation, independent of wan_routes' shadow_mode above.
+mwan_ifmgr_npt_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
