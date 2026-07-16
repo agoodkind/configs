@@ -399,6 +399,7 @@ type IfMgrSection struct {
 	Iface             map[string]IfMgrIfaceSection `toml:"iface"`
 	Modules           IfMgrModulesSection          `toml:"modules"`
 	Alerts            IfMgrAlertsSection           `toml:"alerts"`
+	WAN               IfMgrWANSection              `toml:"wan"`
 }
 
 // IfMgrAlertsSection controls the per-alert repeat cadence for the
