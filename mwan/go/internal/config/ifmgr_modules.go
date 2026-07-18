@@ -83,24 +83,44 @@ type IfMgrPolicyRulesSection struct {
 	Rule []IfMgrPolicyRuleSection `toml:"rule"`
 }
 
+// IfMgrWANSection is the explicit TOML schema for [ifmgr.wan], the shared
+// per-WAN foundation both wan_routes and npt read. It declares the WAN identity
+// map (name -> iface) plus the shared edge addresses and internal prefix once,
+// instead of repeating them inside each module block. MwanbrEdgeV6 is consumed
+// by npt; it lives here so all shared edge addresses share one home.
+type IfMgrWANSection struct {
+	InternalPrefix string                   `toml:"internal_prefix"`
+	OpnsenseEdgeV6 string                   `toml:"opnsense_edge_v6"`
+	MwanbrEdgeV6   string                   `toml:"mwanbr_edge_v6"`
+	WANs           map[string]IfMgrWANEntry `toml:"wan"`
+}
+
+// IfMgrWANEntry is one [ifmgr.wan.<name>] table: the shared identity of a single
+// WAN uplink, keyed by WAN name. Modules join their per-WAN data to these by the
+// map key, which is the WAN name.
+type IfMgrWANEntry struct {
+	Iface string `toml:"iface"`
+}
+
 // IfMgrWANRoutesSection is the explicit TOML schema for
-// [ifmgr.modules.wan_routes].
+// [ifmgr.modules.wan_routes]. The WAN identity list and the shared prefixes
+// (internal_prefix, opnsense_edge_v6) now live in [ifmgr.wan]; this section
+// keeps only wan_routes-specific inputs plus the per-WAN routing data, joined
+// to the shared WAN list by name.
 type IfMgrWANRoutesSection struct {
 	InternalIface   string                     `toml:"internal_iface"`
 	OpnsenseWanLL   string                     `toml:"opnsense_wan_ll"`
-	OpnsenseEdgeV6  string                     `toml:"opnsense_edge_v6"`
-	InternalPrefix  string                     `toml:"internal_prefix"`
 	InternalNetV4   string                     `toml:"internal_net_v4"`
 	HealthStateFile string                     `toml:"health_state_file"`
 	ShadowMode      bool                       `toml:"shadow_mode"`
 	WAN             []IfMgrWANRoutesWANSection `toml:"wan"`
 }
 
-// IfMgrWANRoutesWANSection is one [[ifmgr.modules.wan_routes.wan]]
-// table in the config file.
+// IfMgrWANRoutesWANSection is one [[ifmgr.modules.wan_routes.wan]] table: the
+// policy-routing slots wan_routes owns for a single WAN. Name is the join key
+// into the shared [ifmgr.wan] list, which supplies the interface.
 type IfMgrWANRoutesWANSection struct {
 	Name       string `toml:"name"`
-	Iface      string `toml:"iface"`
 	TableID    int    `toml:"table_id"`
 	FwMark     int    `toml:"fw_mark"`
 	FwMarkPrio int    `toml:"fw_mark_prio"`

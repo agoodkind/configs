@@ -41,10 +41,11 @@ type Config struct {
 // ModuleConfigName returns the registry key for this module's config block.
 func (Config) ModuleConfigName() string { return moduleName }
 
-// WAN is one configured uplink and its owned policy-routing slots.
+// WAN is one configured uplink and its owned policy-routing slots. The
+// embedded ifmgr.WANRef carries the shared per-WAN identity (Name, Iface); the
+// remaining fields are the wan_routes-specific per-WAN routing data.
 type WAN struct {
-	Name       string
-	Iface      string
+	ifmgr.WANRef
 	TableID    int
 	FwMark     uint32
 	FwMarkPrio int

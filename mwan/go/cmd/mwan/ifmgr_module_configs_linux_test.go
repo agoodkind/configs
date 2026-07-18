@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/ifmgr"
 	wanroutes "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 )
 
@@ -114,21 +115,54 @@ func TestBuildHostIPv6PolicyConfig(t *testing.T) {
 	}
 }
 
+// sharedWANForTest is the [ifmgr.wan] section both module builders read: the
+// WAN identity list (name -> iface) plus the shared edge addresses and internal
+// prefix. wan_routes joins its per-WAN routing data to these by name.
+func sharedWANForTest() config.IfMgrWANSection {
+	return config.IfMgrWANSection{
+		InternalPrefix: "3d06:bad:b01::/60",
+		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
+		MwanbrEdgeV6:   "3d06:bad:b01:200::1",
+		WANs: map[string]config.IfMgrWANEntry{
+			"att":     {Iface: "att0"},
+			"webpass": {Iface: "webpass0"},
+		},
+	}
+}
+
+// TestBuildWANRefs pins that the generic per-WAN builder turns the shared
+// [ifmgr.wan] section into the []ifmgr.WANRef identity list plus the shared
+// prefixes every module builder reuses.
+func TestBuildWANRefs(t *testing.T) {
+	t.Parallel()
+
+	got := buildWANRefs(sharedWANForTest())
+	want := sharedWANInputs{
+		InternalPrefix: "3d06:bad:b01::/60",
+		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
+		WANs: []ifmgr.WANRef{
+			{Name: "att", Iface: "att0"},
+			{Name: "webpass", Iface: "webpass0"},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buildWANRefs mismatch\ngot:  %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestBuildWANRoutesConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := buildWANRoutesConfig(&config.IfMgrWANRoutesSection{
+	shared := buildWANRefs(sharedWANForTest())
+	cfg, err := buildWANRoutesConfig(shared, &config.IfMgrWANRoutesSection{
 		InternalIface:   "vmbr250",
 		OpnsenseWanLL:   "fe80::1",
-		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
-		InternalPrefix:  "3d06:bad:b01::/60",
 		InternalNetV4:   "10.250.250.0/29",
 		HealthStateFile: "/var/run/mwan-health.state",
 		ShadowMode:      true,
 		WAN: []config.IfMgrWANRoutesWANSection{
 			{
 				Name:       "att",
-				Iface:      "att0",
 				TableID:    100,
 				FwMark:     1,
 				FwMarkPrio: 100,
@@ -137,7 +171,6 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 			},
 			{
 				Name:       "webpass",
-				Iface:      "webpass0",
 				TableID:    200,
 				FwMark:     2,
 				FwMarkPrio: 200,
@@ -161,8 +194,7 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 		ShadowMode:      true,
 		WANs: []wanroutes.WAN{
 			{
-				Name:       "att",
-				Iface:      "att0",
+				WANRef:     ifmgr.WANRef{Name: "att", Iface: "att0"},
 				TableID:    100,
 				FwMark:     1,
 				FwMarkPrio: 100,
@@ -170,8 +202,7 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 				NptPrefix:  "3d06:bad:b01:1100::/56",
 			},
 			{
-				Name:       "webpass",
-				Iface:      "webpass0",
+				WANRef:     ifmgr.WANRef{Name: "webpass", Iface: "webpass0"},
 				TableID:    200,
 				FwMark:     2,
 				FwMarkPrio: 200,
@@ -189,7 +220,7 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 func TestBuildWANRoutesConfigNilSection(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := buildWANRoutesConfig(nil)
+	cfg, err := buildWANRoutesConfig(buildWANRefs(sharedWANForTest()), nil)
 	if err != nil {
 		t.Fatalf("buildWANRoutesConfig returned error: %v", err)
 	}
@@ -227,7 +258,7 @@ func modulesWithUnresolvableUIDRule() config.IfMgrModulesSection {
 func TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules(t *testing.T) {
 	t.Parallel()
 
-	set, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), "wan")
+	set, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), sharedWANForTest(), "wan")
 	if err != nil {
 		t.Fatalf("buildIfMgrModuleConfigs(wan) returned error: %v", err)
 	}
@@ -245,7 +276,7 @@ func TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules(t *testing.T) {
 func TestBuildIfMgrModuleConfigsOOBRoleBuildsPolicyRules(t *testing.T) {
 	t.Parallel()
 
-	_, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), "oob")
+	_, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), sharedWANForTest(), "oob")
 	if err == nil {
 		t.Fatal("oob role must build policy_rules and surface the uid lookup failure")
 	}
@@ -259,7 +290,7 @@ func TestBuildIfMgrModuleConfigsOOBRoleBuildsPolicyRules(t *testing.T) {
 func TestBuildIfMgrModuleConfigsUnknownRole(t *testing.T) {
 	t.Parallel()
 
-	if _, err := buildIfMgrModuleConfigs(config.IfMgrModulesSection{}, "bogus"); err == nil {
+	if _, err := buildIfMgrModuleConfigs(config.IfMgrModulesSection{}, config.IfMgrWANSection{}, "bogus"); err == nil {
 		t.Fatal("buildIfMgrModuleConfigs with an unknown role must error")
 	}
 }
