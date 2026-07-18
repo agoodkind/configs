@@ -195,7 +195,7 @@ mwan_rt_tables:
 
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: false
-mwan_ifmgr_npt_shadow_mode: false
+mwan_ifmgr_npt_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
