@@ -222,11 +222,12 @@ the BGP speaker:
 ### Shared per-WAN foundation
 
 `wan_routes` and `npt` run in the `wan` role and read one WAN list from the
-`[ifmgr.wan]` config section. That section names each WAN and its interface once,
-and holds the internal prefix and edge addresses both modules translate against.
-Each module joins its own per-WAN fields to that shared list by WAN name:
-`wan_routes` adds routing tables and fwmarks, `npt` adds none. The WAN set and
-the shared prefixes live in one place instead of once per module.
+`[ifmgr.wan]` config section. Each `[ifmgr.wan.<name>]` table is one WAN's full
+config: its interface plus the policy-routing slots `wan_routes` programs (table,
+fwmark, priorities, prefixes). The internal prefix and edge addresses both
+modules translate against live on `[ifmgr]` itself. Each module reads the fields
+it needs from that one per-WAN entry, so each WAN has a single home instead of a
+per-module list matched by name.
 
 ### wan_routes ifmgr module (event-driven successor)
 

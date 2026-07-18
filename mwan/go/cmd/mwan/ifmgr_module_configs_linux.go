@@ -165,7 +165,7 @@ func buildNPTConfig(shared sharedWANInputs, section *config.IfMgrNPTSection) npt
 		InternalPrefix: shared.InternalPrefix,
 		OpnsenseEdgeV6: shared.OpnsenseEdgeV6,
 		MwanbrEdgeV6:   shared.MwanbrEdgeV6,
-		WANs:           append([]ifmgr.WANRef(nil), shared.WANs...),
+		WANs:           shared.refs(),
 	}
 	if section != nil {
 		cfg.ShadowMode = section.ShadowMode
@@ -507,24 +507,45 @@ func buildHostIPv6PolicyConfig(
 	return cfg, nil
 }
 
-// sharedWANInputs is the runtime projection of the shared [ifmgr.wan] section:
-// the per-WAN identity list plus the shared prefixes every ifmgr module builder
-// reuses. Each module builder joins its own per-WAN data to WANs by name rather
-// than re-reading a per-module WAN list.
+// sharedWAN is one WAN's full config from [ifmgr.wan.<name>]: the identity
+// (WANRef) plus the policy-routing slots wan_routes consumes. npt reads only the
+// embedded WANRef; wan_routes reads the routing fields. One home per WAN.
+type sharedWAN struct {
+	ifmgr.WANRef
+	TableID    int
+	FwMark     int
+	FwMarkPrio int
+	FromPrio   int
+	NptPrefix  string
+	V4Source   string
+}
+
+// sharedWANInputs is the runtime projection of the shared [ifmgr.wan] map and
+// the [ifmgr] prefixes every ifmgr module builder reuses. WANs is sorted by name
+// for deterministic output. Each module builder projects the fields it needs.
 type sharedWANInputs struct {
-	WANs           []ifmgr.WANRef
+	WANs           []sharedWAN
 	InternalPrefix string
 	OpnsenseEdgeV6 string
 	MwanbrEdgeV6   string
 }
 
+// refs projects the shared WAN list down to the identity list (name -> iface)
+// that npt consumes.
+func (s sharedWANInputs) refs() []ifmgr.WANRef {
+	refs := make([]ifmgr.WANRef, 0, len(s.WANs))
+	for _, wan := range s.WANs {
+		refs = append(refs, wan.WANRef)
+	}
+	return refs
+}
+
 // buildWANRefs turns the shared WAN map ([ifmgr.wan.<name>]) and the [ifmgr]
-// prefixes into the shared runtime pieces module builders consume: the
-// []ifmgr.WANRef identity list (sorted by name for deterministic output) and the
-// shared prefixes.
+// prefixes into the shared runtime pieces module builders consume: the per-WAN
+// list (sorted by name) and the shared prefixes.
 func buildWANRefs(ifmgrCfg config.IfMgrSection) sharedWANInputs {
 	inputs := sharedWANInputs{
-		WANs:           make([]ifmgr.WANRef, 0, len(ifmgrCfg.WAN)),
+		WANs:           make([]sharedWAN, 0, len(ifmgrCfg.WAN)),
 		InternalPrefix: ifmgrCfg.InternalPrefix,
 		OpnsenseEdgeV6: ifmgrCfg.OpnsenseEdgeV6,
 		MwanbrEdgeV6:   ifmgrCfg.MwanbrEdgeV6,
@@ -535,9 +556,15 @@ func buildWANRefs(ifmgrCfg config.IfMgrSection) sharedWANInputs {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		inputs.WANs = append(inputs.WANs, ifmgr.WANRef{
-			Name:  name,
-			Iface: ifmgrCfg.WAN[name].Iface,
+		entry := ifmgrCfg.WAN[name]
+		inputs.WANs = append(inputs.WANs, sharedWAN{
+			WANRef:     ifmgr.WANRef{Name: name, Iface: entry.Iface},
+			TableID:    entry.TableID,
+			FwMark:     entry.FwMark,
+			FwMarkPrio: entry.FwMarkPrio,
+			FromPrio:   entry.FromPrio,
+			NptPrefix:  entry.NptPrefix,
+			V4Source:   entry.V4Source,
 		})
 	}
 	return inputs
@@ -568,31 +595,23 @@ func buildWANRoutesConfig(
 	cfg.HealthStateFile = section.HealthStateFile
 	cfg.ShadowMode = section.ShadowMode
 
-	ifaceByName := make(map[string]string, len(shared.WANs))
-	for _, ref := range shared.WANs {
-		ifaceByName[ref.Name] = ref.Iface
-	}
-
-	cfg.WANs = make([]wanroutes.WAN, 0, len(section.WAN))
-	for i, wan := range section.WAN {
+	cfg.WANs = make([]wanroutes.WAN, 0, len(shared.WANs))
+	for _, wan := range shared.WANs {
 		if wan.FwMark < 0 {
 			return wanroutes.Config{}, fmt.Errorf(
-				"wan_routes.wan[%d].fw_mark must be >= 0",
-				i,
+				"ifmgr.wan.%s.fw_mark must be >= 0",
+				wan.Name,
 			)
 		}
 		if wan.FwMark > int(^uint32(0)) {
 			return wanroutes.Config{}, fmt.Errorf(
-				"wan_routes.wan[%d].fw_mark %d exceeds uint32",
-				i,
+				"ifmgr.wan.%s.fw_mark %d exceeds uint32",
+				wan.Name,
 				wan.FwMark,
 			)
 		}
 		cfg.WANs = append(cfg.WANs, wanroutes.WAN{
-			WANRef: ifmgr.WANRef{
-				Name:  wan.Name,
-				Iface: ifaceByName[wan.Name],
-			},
+			WANRef:     wan.WANRef,
 			TableID:    wan.TableID,
 			FwMark:     uint32(wan.FwMark),
 			FwMarkPrio: wan.FwMarkPrio,

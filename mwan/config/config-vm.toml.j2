@@ -120,30 +120,14 @@ notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | terna
 {% if mwan_ifmgr_wan_enabled | bool %}
 [ifmgr.wan.att]
 iface = "{{ mwan_att_iface }}{% if mwan_att_vlan_id %}.{{ mwan_att_vlan_id }}{% endif %}"
-
-[ifmgr.wan.webpass]
-iface = "{{ mwan_webpass_iface }}"
-
-[ifmgr.wan.monkeybrains]
-iface = "{{ mwan_monkeybrains_iface }}"
-
-[ifmgr.modules.wan_routes]
-internal_iface = "{{ mwan_internal_iface }}"
-opnsense_wan_ll = "{{ mwan_opnsense_wan_ll }}"
-internal_net_v4 = "{{ mwan_internal_net_v4 }}"
-health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
-shadow_mode = {{ mwan_ifmgr_wan_shadow_mode | ternary('true', 'false') }}
-
-[[ifmgr.modules.wan_routes.wan]]
-name = "att"
 table_id = {{ mwan_rt_tables.att }}
 fw_mark = {{ mwan_ifmgr_wan_fw_marks.att }}
 fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.att }}
 from_prio = {{ mwan_ifmgr_wan_from_prios.att }}
 npt_prefix = "{{ mwan_npt_att_prefix }}"
 
-[[ifmgr.modules.wan_routes.wan]]
-name = "webpass"
+[ifmgr.wan.webpass]
+iface = "{{ mwan_webpass_iface }}"
 table_id = {{ mwan_rt_tables.webpass }}
 fw_mark = {{ mwan_ifmgr_wan_fw_marks.webpass }}
 fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.webpass }}
@@ -155,13 +139,20 @@ npt_prefix = "{{ mwan_npt_webpass_prefix }}"
 # once @wan is authoritative.
 v4_source = "{{ mwan_webpass_ipv4_addr }}"
 
-[[ifmgr.modules.wan_routes.wan]]
-name = "monkeybrains"
+[ifmgr.wan.monkeybrains]
+iface = "{{ mwan_monkeybrains_iface }}"
 table_id = {{ mwan_rt_tables.monkeybrains }}
 fw_mark = {{ mwan_ifmgr_wan_fw_marks.monkeybrains }}
 fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.monkeybrains }}
 from_prio = {{ mwan_ifmgr_wan_from_prios.monkeybrains }}
 npt_prefix = "{{ mwan_npt_monkeybrains_prefix }}"
+
+[ifmgr.modules.wan_routes]
+internal_iface = "{{ mwan_internal_iface }}"
+opnsense_wan_ll = "{{ mwan_opnsense_wan_ll }}"
+internal_net_v4 = "{{ mwan_internal_net_v4 }}"
+health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
+shadow_mode = {{ mwan_ifmgr_wan_shadow_mode | ternary('true', 'false') }}
 
 [ifmgr.modules.npt]
 shadow_mode = {{ mwan_ifmgr_npt_shadow_mode | ternary('true', 'false') }}
