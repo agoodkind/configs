@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BurntSushi/toml"
+
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	npt "goodkind.io/mwan/internal/ifmgr/modules/npt"
@@ -116,19 +118,28 @@ func TestBuildHostIPv6PolicyConfig(t *testing.T) {
 	}
 }
 
-// sharedWANForTest is the [ifmgr.wan] section both module builders read: the
-// WAN identity list (name -> iface) plus the shared edge addresses and internal
-// prefix. wan_routes joins its per-WAN routing data to these by name.
-func sharedWANForTest() config.IfMgrWANSection {
-	return config.IfMgrWANSection{
+// sharedWANForTest is the [ifmgr] shared per-WAN foundation both module builders
+// read: the WAN map ([ifmgr.wan.<name>]) plus the shared edge addresses and
+// internal prefix that live on [ifmgr] itself. wan_routes joins its per-WAN
+// routing data to these by name.
+func sharedWANForTest() config.IfMgrSection {
+	return config.IfMgrSection{
 		InternalPrefix: "3d06:bad:b01::/60",
 		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
 		MwanbrEdgeV6:   "3d06:bad:b01:200::1",
-		WANs: map[string]config.IfMgrWANEntry{
+		WAN: map[string]config.IfMgrWANEntry{
 			"att":     {Iface: "att0"},
 			"webpass": {Iface: "webpass0"},
 		},
 	}
+}
+
+// ifmgrForTest is sharedWANForTest with the given modules attached, for the
+// role-scoped buildIfMgrModuleConfigs tests.
+func ifmgrForTest(mods config.IfMgrModulesSection) config.IfMgrSection {
+	s := sharedWANForTest()
+	s.Modules = mods
+	return s
 }
 
 // TestBuildWANRefs pins that the generic per-WAN builder turns the shared
@@ -260,7 +271,7 @@ func modulesWithUnresolvableUIDRule() config.IfMgrModulesSection {
 func TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules(t *testing.T) {
 	t.Parallel()
 
-	set, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), sharedWANForTest(), "wan")
+	set, err := buildIfMgrModuleConfigs(ifmgrForTest(modulesWithUnresolvableUIDRule()), "wan")
 	if err != nil {
 		t.Fatalf("buildIfMgrModuleConfigs(wan) returned error: %v", err)
 	}
@@ -278,7 +289,7 @@ func TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules(t *testing.T) {
 func TestBuildIfMgrModuleConfigsOOBRoleBuildsPolicyRules(t *testing.T) {
 	t.Parallel()
 
-	_, err := buildIfMgrModuleConfigs(modulesWithUnresolvableUIDRule(), sharedWANForTest(), "oob")
+	_, err := buildIfMgrModuleConfigs(ifmgrForTest(modulesWithUnresolvableUIDRule()), "oob")
 	if err == nil {
 		t.Fatal("oob role must build policy_rules and surface the uid lookup failure")
 	}
@@ -292,7 +303,7 @@ func TestBuildIfMgrModuleConfigsOOBRoleBuildsPolicyRules(t *testing.T) {
 func TestBuildIfMgrModuleConfigsUnknownRole(t *testing.T) {
 	t.Parallel()
 
-	if _, err := buildIfMgrModuleConfigs(config.IfMgrModulesSection{}, config.IfMgrWANSection{}, "bogus"); err == nil {
+	if _, err := buildIfMgrModuleConfigs(config.IfMgrSection{}, "bogus"); err == nil {
 		t.Fatal("buildIfMgrModuleConfigs with an unknown role must error")
 	}
 }
@@ -348,7 +359,7 @@ func TestBuildIfMgrModuleConfigsWANRoleBuildsBoth(t *testing.T) {
 		WANRoutes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"},
 		NPT:       &config.IfMgrNPTSection{ShadowMode: true},
 	}
-	set, err := buildIfMgrModuleConfigs(modules, sharedWANForTest(), "wan")
+	set, err := buildIfMgrModuleConfigs(ifmgrForTest(modules), "wan")
 	if err != nil {
 		t.Fatalf("buildIfMgrModuleConfigs(wan) returned error: %v", err)
 	}
@@ -361,5 +372,79 @@ func TestBuildIfMgrModuleConfigsWANRoleBuildsBoth(t *testing.T) {
 	}
 	if _, ok := nptCfg.(npt.Config); !ok {
 		t.Fatalf("npt config type = %T, want npt.Config", nptCfg)
+	}
+}
+
+// TestIfMgrWANConfigRoundTrips parses a config.toml snippet exactly as the
+// template renders it (the shared prefixes on [ifmgr], keyed [ifmgr.wan.<name>]
+// tables, and per-WAN routing under [ifmgr.modules.wan_routes]) and drives it
+// through buildIfMgrModuleConfigs. A render-vs-schema mismatch that the
+// struct-built fixtures cannot catch (for example the keyed WAN map failing to
+// populate, which crash-looped mwan-ifmgr@wan with "iface is required") fails
+// here instead of in production.
+func TestIfMgrWANConfigRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	const configTOML = `
+[ifmgr]
+role = "wan"
+internal_prefix = "3d06:bad:b01:210::/60"
+opnsense_edge_v6 = "3d06:bad:b01:201::2"
+mwanbr_edge_v6 = "3d06:bad:b01:201::3"
+
+[ifmgr.wan.att]
+iface = "enatt0"
+
+[ifmgr.wan.webpass]
+iface = "enwebpass0"
+
+[ifmgr.modules.wan_routes]
+internal_iface = "enmwanbr0"
+shadow_mode = false
+
+[[ifmgr.modules.wan_routes.wan]]
+name = "att"
+table_id = 100
+
+[[ifmgr.modules.wan_routes.wan]]
+name = "webpass"
+table_id = 200
+
+[ifmgr.modules.npt]
+shadow_mode = true
+`
+	var cfg config.Config
+	if err := toml.Unmarshal([]byte(configTOML), &cfg); err != nil {
+		t.Fatalf("toml.Unmarshal: %v", err)
+	}
+	// The keyed [ifmgr.wan.<name>] tables must populate the WAN map, and the
+	// shared prefixes must land on [ifmgr] itself.
+	if got := len(cfg.IfMgr.WAN); got != 2 {
+		t.Fatalf("[ifmgr.wan] map size = %d, want 2 (render/schema mismatch)", got)
+	}
+	if got := cfg.IfMgr.WAN["att"].Iface; got != "enatt0" {
+		t.Fatalf("cfg.IfMgr.WAN[att].Iface = %q, want enatt0", got)
+	}
+	if cfg.IfMgr.InternalPrefix != "3d06:bad:b01:210::/60" {
+		t.Fatalf("internal_prefix did not parse onto [ifmgr]: %q", cfg.IfMgr.InternalPrefix)
+	}
+
+	set, err := buildIfMgrModuleConfigs(cfg.IfMgr, "wan")
+	if err != nil {
+		t.Fatalf("buildIfMgrModuleConfigs(wan) from parsed config: %v", err)
+	}
+	wr, ok := set["wan_routes"].(wanroutes.Config)
+	if !ok {
+		t.Fatalf("wan_routes config missing or wrong type: %T", set["wan_routes"])
+	}
+	byName := map[string]string{}
+	for _, w := range wr.WANs {
+		byName[w.Name] = w.Iface
+	}
+	if byName["att"] != "enatt0" || byName["webpass"] != "enwebpass0" {
+		t.Fatalf("wan_routes ifaces did not resolve from [ifmgr.wan]: %#v", byName)
+	}
+	if _, ok := set["npt"]; !ok {
+		t.Fatal("wan role must build an npt config from the round-tripped config")
 	}
 }

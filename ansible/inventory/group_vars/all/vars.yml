@@ -52,6 +52,15 @@ consul_data_dir: /var/lib/consul
 consul_bind_interface: eth0
 
 # ----------------------------------------------------------------------------
+# mwan ifmgr
+# ----------------------------------------------------------------------------
+# Base off. Only the MWAN VM scopes (mwan_servers, test_mwan_servers) enable the
+# wan role, which renders the shared [ifmgr] translation prefixes and the
+# [ifmgr.wan.<name>] map. Every other ifmgr consumer (the hypervisor host oob
+# role) leaves this false, so the common include skips the wan-only keys.
+mwan_ifmgr_wan_enabled: false
+
+# ----------------------------------------------------------------------------
 # cloudflared (Cloudflare Tunnel) systemd service defaults
 # ----------------------------------------------------------------------------
 # Unit ordering for the cloudflared service; a service overrides these to add its

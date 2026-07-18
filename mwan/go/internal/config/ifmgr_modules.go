@@ -84,21 +84,13 @@ type IfMgrPolicyRulesSection struct {
 	Rule []IfMgrPolicyRuleSection `toml:"rule"`
 }
 
-// IfMgrWANSection is the explicit TOML schema for [ifmgr.wan], the shared
-// per-WAN foundation both wan_routes and npt read. It declares the WAN identity
-// map (name -> iface) plus the shared edge addresses and internal prefix once,
-// instead of repeating them inside each module block. MwanbrEdgeV6 is consumed
-// by npt; it lives here so all shared edge addresses share one home.
-type IfMgrWANSection struct {
-	InternalPrefix string                   `toml:"internal_prefix"`
-	OpnsenseEdgeV6 string                   `toml:"opnsense_edge_v6"`
-	MwanbrEdgeV6   string                   `toml:"mwanbr_edge_v6"`
-	WANs           map[string]IfMgrWANEntry `toml:"wan"`
-}
-
-// IfMgrWANEntry is one [ifmgr.wan.<name>] table: the shared identity of a single
-// WAN uplink, keyed by WAN name. Modules join their per-WAN data to these by the
-// map key, which is the WAN name.
+// IfMgrWANEntry is one [ifmgr.wan.<name>] table: the shared per-WAN identity that
+// both wan_routes and npt read, keyed by WAN name. The map lives on
+// IfMgrSection.WAN (toml:"wan") so it renders as keyed sub-tables
+// [ifmgr.wan.<name>], mirroring [ifmgr.iface.<name>]. The shared internal prefix
+// and edge addresses live on [ifmgr] itself (IfMgrSection.InternalPrefix,
+// OpnsenseEdgeV6, MwanbrEdgeV6) because a TOML table cannot hold both scalar keys
+// and a map of sub-tables. Modules join their per-WAN data by the map key.
 type IfMgrWANEntry struct {
 	Iface string `toml:"iface"`
 }
