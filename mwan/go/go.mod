@@ -14,7 +14,7 @@ require (
 	github.com/insomniacslk/dhcp v0.0.0-20260407060928-11b94ed970f2
 	github.com/mdlayher/ndp v1.1.0
 	github.com/mdlayher/vsock v1.2.1
-	github.com/osrg/gobgp/v4 v4.5.0
+	github.com/osrg/gobgp/v4 v4.7.0
 	github.com/vishvananda/netlink v1.3.1
 	golang.org/x/net v0.55.0
 	golang.org/x/sys v0.45.0
