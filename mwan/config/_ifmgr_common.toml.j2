@@ -3,6 +3,11 @@ role = "{{ mwan_ifmgr_role }}"
 reconcile_interval = "60s"
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
+{% if mwan_ifmgr_wan_enabled | bool %}
+internal_prefix = "{{ mwan_internal_prefix }}"
+opnsense_edge_v6 = "{{ mwan_opnsense_edge_ipv6 }}"
+mwanbr_edge_v6 = "{{ mwan_mwanbr_edge_ipv6 }}"
+{% endif %}
 
 [ifmgr.iface.{{ mwan_ifmgr_iface_key }}]
 name = "{{ mwan_ifmgr_iface_name }}"

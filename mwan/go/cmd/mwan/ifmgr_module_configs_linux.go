@@ -35,10 +35,10 @@ import (
 // would crash @wan on a host lacking that user, even though @wan never runs
 // policy_rules.
 func buildIfMgrModuleConfigs(
-	modules config.IfMgrModulesSection,
-	wan config.IfMgrWANSection,
+	ifmgrCfg config.IfMgrSection,
 	role string,
 ) (ifmgr.ModuleConfigSet, error) {
+	modules := ifmgrCfg.Modules
 	logger := slog.Default().With("component", "ifmgr")
 	names, err := ifmgr.ModulesForRole(role)
 	if err != nil {
@@ -125,7 +125,7 @@ func buildIfMgrModuleConfigs(
 		moduleConfigs["host_ipv6_policy"] = hostIPv6PolicyConfig
 	}
 
-	if err := addWANRoleConfigs(moduleConfigs, want, modules, wan); err != nil {
+	if err := addWANRoleConfigs(moduleConfigs, want, ifmgrCfg); err != nil {
 		return nil, err
 	}
 
@@ -138,19 +138,18 @@ func buildIfMgrModuleConfigs(
 func addWANRoleConfigs(
 	moduleConfigs ifmgr.ModuleConfigSet,
 	want map[string]bool,
-	modules config.IfMgrModulesSection,
-	wan config.IfMgrWANSection,
+	ifmgrCfg config.IfMgrSection,
 ) error {
-	shared := buildWANRefs(wan)
+	shared := buildWANRefs(ifmgrCfg)
 	if want["wan_routes"] {
-		wanRoutesConfig, err := buildWANRoutesConfig(shared, modules.WANRoutes)
+		wanRoutesConfig, err := buildWANRoutesConfig(shared, ifmgrCfg.Modules.WANRoutes)
 		if err != nil {
 			return err
 		}
 		moduleConfigs["wan_routes"] = wanRoutesConfig
 	}
 	if want["npt"] {
-		moduleConfigs["npt"] = buildNPTConfig(shared, modules.NPT)
+		moduleConfigs["npt"] = buildNPTConfig(shared, ifmgrCfg.Modules.NPT)
 	}
 	return nil
 }
@@ -519,25 +518,26 @@ type sharedWANInputs struct {
 	MwanbrEdgeV6   string
 }
 
-// buildWANRefs turns the shared [ifmgr.wan] section into the shared runtime
-// pieces module builders consume: the []ifmgr.WANRef identity list and the
+// buildWANRefs turns the shared WAN map ([ifmgr.wan.<name>]) and the [ifmgr]
+// prefixes into the shared runtime pieces module builders consume: the
+// []ifmgr.WANRef identity list (sorted by name for deterministic output) and the
 // shared prefixes.
-func buildWANRefs(section config.IfMgrWANSection) sharedWANInputs {
+func buildWANRefs(ifmgrCfg config.IfMgrSection) sharedWANInputs {
 	inputs := sharedWANInputs{
-		WANs:           make([]ifmgr.WANRef, 0, len(section.WANs)),
-		InternalPrefix: section.InternalPrefix,
-		OpnsenseEdgeV6: section.OpnsenseEdgeV6,
-		MwanbrEdgeV6:   section.MwanbrEdgeV6,
+		WANs:           make([]ifmgr.WANRef, 0, len(ifmgrCfg.WAN)),
+		InternalPrefix: ifmgrCfg.InternalPrefix,
+		OpnsenseEdgeV6: ifmgrCfg.OpnsenseEdgeV6,
+		MwanbrEdgeV6:   ifmgrCfg.MwanbrEdgeV6,
 	}
-	names := make([]string, 0, len(section.WANs))
-	for name := range section.WANs {
+	names := make([]string, 0, len(ifmgrCfg.WAN))
+	for name := range ifmgrCfg.WAN {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
 		inputs.WANs = append(inputs.WANs, ifmgr.WANRef{
 			Name:  name,
-			Iface: section.WANs[name].Iface,
+			Iface: ifmgrCfg.WAN[name].Iface,
 		})
 	}
 	return inputs

@@ -118,11 +118,6 @@ notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | terna
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_wan_enabled | bool %}
-[ifmgr.wan]
-internal_prefix = "{{ mwan_internal_prefix }}"
-opnsense_edge_v6 = "{{ mwan_opnsense_edge_ipv6 }}"
-mwanbr_edge_v6 = "{{ mwan_mwanbr_edge_ipv6 }}"
-
 [ifmgr.wan.att]
 iface = "{{ mwan_att_iface }}{% if mwan_att_vlan_id %}.{{ mwan_att_vlan_id }}{% endif %}"
 
