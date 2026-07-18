@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"sort"
 	"time"
 
 	"goodkind.io/mwan/internal/config"
@@ -34,6 +35,7 @@ import (
 // policy_rules.
 func buildIfMgrModuleConfigs(
 	modules config.IfMgrModulesSection,
+	wan config.IfMgrWANSection,
 	role string,
 ) (ifmgr.ModuleConfigSet, error) {
 	logger := slog.Default().With("component", "ifmgr")
@@ -123,7 +125,7 @@ func buildIfMgrModuleConfigs(
 	}
 
 	if want["wan_routes"] {
-		wanRoutesConfig, err := buildWANRoutesConfig(modules.WANRoutes)
+		wanRoutesConfig, err := buildWANRoutesConfig(buildWANRefs(wan), modules.WANRoutes)
 		if err != nil {
 			return nil, err
 		}
@@ -467,7 +469,41 @@ func buildHostIPv6PolicyConfig(
 	return cfg, nil
 }
 
+// sharedWANInputs is the runtime projection of the shared [ifmgr.wan] section:
+// the per-WAN identity list plus the shared prefixes every ifmgr module builder
+// reuses. Each module builder joins its own per-WAN data to WANs by name rather
+// than re-reading a per-module WAN list.
+type sharedWANInputs struct {
+	WANs           []ifmgr.WANRef
+	InternalPrefix string
+	OpnsenseEdgeV6 string
+}
+
+// buildWANRefs turns the shared [ifmgr.wan] section into the shared runtime
+// pieces module builders consume: the []ifmgr.WANRef identity list and the
+// shared prefixes.
+func buildWANRefs(section config.IfMgrWANSection) sharedWANInputs {
+	inputs := sharedWANInputs{
+		WANs:           make([]ifmgr.WANRef, 0, len(section.WANs)),
+		InternalPrefix: section.InternalPrefix,
+		OpnsenseEdgeV6: section.OpnsenseEdgeV6,
+	}
+	names := make([]string, 0, len(section.WANs))
+	for name := range section.WANs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		inputs.WANs = append(inputs.WANs, ifmgr.WANRef{
+			Name:  name,
+			Iface: section.WANs[name].Iface,
+		})
+	}
+	return inputs
+}
+
 func buildWANRoutesConfig(
+	shared sharedWANInputs,
 	section *config.IfMgrWANRoutesSection,
 ) (wanroutes.Config, error) {
 	cfg := wanroutes.Config{
@@ -485,11 +521,17 @@ func buildWANRoutesConfig(
 	}
 	cfg.InternalIface = section.InternalIface
 	cfg.OpnsenseWanLL = section.OpnsenseWanLL
-	cfg.OpnsenseEdgeV6 = section.OpnsenseEdgeV6
-	cfg.InternalPrefix = section.InternalPrefix
+	cfg.OpnsenseEdgeV6 = shared.OpnsenseEdgeV6
+	cfg.InternalPrefix = shared.InternalPrefix
 	cfg.InternalNetV4 = section.InternalNetV4
 	cfg.HealthStateFile = section.HealthStateFile
 	cfg.ShadowMode = section.ShadowMode
+
+	ifaceByName := make(map[string]string, len(shared.WANs))
+	for _, ref := range shared.WANs {
+		ifaceByName[ref.Name] = ref.Iface
+	}
+
 	cfg.WANs = make([]wanroutes.WAN, 0, len(section.WAN))
 	for i, wan := range section.WAN {
 		if wan.FwMark < 0 {
@@ -506,8 +548,10 @@ func buildWANRoutesConfig(
 			)
 		}
 		cfg.WANs = append(cfg.WANs, wanroutes.WAN{
-			Name:       wan.Name,
-			Iface:      wan.Iface,
+			WANRef: ifmgr.WANRef{
+				Name:  wan.Name,
+				Iface: ifaceByName[wan.Name],
+			},
 			TableID:    wan.TableID,
 			FwMark:     uint32(wan.FwMark),
 			FwMarkPrio: wan.FwMarkPrio,

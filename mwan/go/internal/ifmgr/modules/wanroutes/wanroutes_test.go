@@ -152,8 +152,7 @@ func testConfig() Config {
 		HealthStateFile: "/run/mwan-health.state",
 		WANs: []WAN{
 			{
-				Name:       wanNameATT,
-				Iface:      "att0",
+				WANRef:     ifmgr.WANRef{Name: wanNameATT, Iface: "att0"},
 				TableID:    100,
 				FwMark:     1,
 				FwMarkPrio: 100,
@@ -161,8 +160,7 @@ func testConfig() Config {
 				NptPrefix:  "3d06:bad:b01:1100::/56",
 			},
 			{
-				Name:       wanNameWebpass,
-				Iface:      "webpass0",
+				WANRef:     ifmgr.WANRef{Name: wanNameWebpass, Iface: "webpass0"},
 				TableID:    200,
 				FwMark:     2,
 				FwMarkPrio: 200,
@@ -171,8 +169,7 @@ func testConfig() Config {
 				V4Source:   "203.0.113.2",
 			},
 			{
-				Name:       wanNameMonkeybrains,
-				Iface:      "mbrains0",
+				WANRef:     ifmgr.WANRef{Name: wanNameMonkeybrains, Iface: "mbrains0"},
 				TableID:    300,
 				FwMark:     3,
 				FwMarkPrio: 300,
