@@ -15,6 +15,7 @@ type IfMgrModulesSection struct {
 	PolicyRules       *IfMgrPolicyRulesSection       `toml:"policy_rules"`
 	HostIPv6Policy    *IfMgrHostIPv6PolicySection    `toml:"host_ipv6_policy"`
 	WANRoutes         *IfMgrWANRoutesSection         `toml:"wan_routes"`
+	NPT               *IfMgrNPTSection               `toml:"npt"`
 }
 
 type IfMgrWGHealthSection struct {
@@ -127,6 +128,14 @@ type IfMgrWANRoutesWANSection struct {
 	FromPrio   int    `toml:"from_prio"`
 	NptPrefix  string `toml:"npt_prefix"`
 	V4Source   string `toml:"v4_source"`
+}
+
+// IfMgrNPTSection is the explicit TOML schema for [ifmgr.modules.npt]. It
+// carries only the module's own shadow toggle; the WAN list, internal prefix,
+// and edge addresses come from the shared [ifmgr.wan] section, so they are not
+// duplicated here.
+type IfMgrNPTSection struct {
+	ShadowMode bool `toml:"shadow_mode"`
 }
 
 // IfMgrHostIPv6PolicySection is the explicit TOML schema for

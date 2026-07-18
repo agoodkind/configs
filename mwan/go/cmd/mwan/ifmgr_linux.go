@@ -27,6 +27,7 @@ import (
 	_ "goodkind.io/mwan/internal/ifmgr/modules/connprobe"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/hostipv6policy"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/mainv4"
+	_ "goodkind.io/mwan/internal/ifmgr/modules/npt"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/oobv4"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/oobv6"
 	_ "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
