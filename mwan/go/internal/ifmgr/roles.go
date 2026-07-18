@@ -71,6 +71,10 @@ var roleModules = map[string][]string{
 	// enabled without changing the existing failover scripts yet.
 	"wan": {
 		"wan_routes",
+		// npt programs the ip6 nat NPT chains from the live DHCPv6-PD.
+		// Gated by its own shadow_mode; self-disables when [ifmgr.wan]
+		// lists no WANs.
+		"npt",
 	},
 }
 

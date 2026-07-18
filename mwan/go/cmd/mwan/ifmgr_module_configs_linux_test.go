@@ -11,6 +11,7 @@ import (
 
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
+	npt "goodkind.io/mwan/internal/ifmgr/modules/npt"
 	wanroutes "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 )
 
@@ -140,6 +141,7 @@ func TestBuildWANRefs(t *testing.T) {
 	want := sharedWANInputs{
 		InternalPrefix: "3d06:bad:b01::/60",
 		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
+		MwanbrEdgeV6:   "3d06:bad:b01:200::1",
 		WANs: []ifmgr.WANRef{
 			{Name: "att", Iface: "att0"},
 			{Name: "webpass", Iface: "webpass0"},
@@ -292,5 +294,72 @@ func TestBuildIfMgrModuleConfigsUnknownRole(t *testing.T) {
 
 	if _, err := buildIfMgrModuleConfigs(config.IfMgrModulesSection{}, config.IfMgrWANSection{}, "bogus"); err == nil {
 		t.Fatal("buildIfMgrModuleConfigs with an unknown role must error")
+	}
+}
+
+// TestBuildNPTConfig pins that the npt builder joins the shared [ifmgr.wan]
+// prefixes and WAN identity list with the npt section's shadow toggle. This is
+// what makes MwanbrEdgeV6 a real consumer of the shared field.
+func TestBuildNPTConfig(t *testing.T) {
+	t.Parallel()
+
+	shared := buildWANRefs(sharedWANForTest())
+	cfg := buildNPTConfig(shared, &config.IfMgrNPTSection{ShadowMode: true})
+
+	want := npt.Config{
+		ShadowMode:     true,
+		InternalPrefix: "3d06:bad:b01::/60",
+		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
+		MwanbrEdgeV6:   "3d06:bad:b01:200::1",
+		WANs: []ifmgr.WANRef{
+			{Name: "att", Iface: "att0"},
+			{Name: "webpass", Iface: "webpass0"},
+		},
+	}
+	if !reflect.DeepEqual(cfg, want) {
+		t.Fatalf("buildNPTConfig mismatch\ngot:  %#v\nwant: %#v", cfg, want)
+	}
+}
+
+// TestBuildNPTConfigNilSection checks a nil npt section still yields the shared
+// prefixes and WAN list with shadow off, so the module builds even when only
+// [ifmgr.wan] is present.
+func TestBuildNPTConfigNilSection(t *testing.T) {
+	t.Parallel()
+
+	cfg := buildNPTConfig(buildWANRefs(sharedWANForTest()), nil)
+	if cfg.ShadowMode {
+		t.Fatal("nil npt section must default ShadowMode to false")
+	}
+	if cfg.MwanbrEdgeV6 != "3d06:bad:b01:200::1" {
+		t.Fatalf("MwanbrEdgeV6 = %q, want the shared value", cfg.MwanbrEdgeV6)
+	}
+	if len(cfg.WANs) != 2 {
+		t.Fatalf("WAN count = %d, want 2 from the shared list", len(cfg.WANs))
+	}
+}
+
+// TestBuildIfMgrModuleConfigsWANRoleBuildsBoth confirms the wan role now yields
+// both the wan_routes and npt module configs from one shared config.
+func TestBuildIfMgrModuleConfigsWANRoleBuildsBoth(t *testing.T) {
+	t.Parallel()
+
+	modules := config.IfMgrModulesSection{
+		WANRoutes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"},
+		NPT:       &config.IfMgrNPTSection{ShadowMode: true},
+	}
+	set, err := buildIfMgrModuleConfigs(modules, sharedWANForTest(), "wan")
+	if err != nil {
+		t.Fatalf("buildIfMgrModuleConfigs(wan) returned error: %v", err)
+	}
+	if _, ok := set["wan_routes"]; !ok {
+		t.Fatal("wan role must build a wan_routes config")
+	}
+	nptCfg, ok := set["npt"]
+	if !ok {
+		t.Fatal("wan role must build an npt config")
+	}
+	if _, ok := nptCfg.(npt.Config); !ok {
+		t.Fatalf("npt config type = %T, want npt.Config", nptCfg)
 	}
 }
