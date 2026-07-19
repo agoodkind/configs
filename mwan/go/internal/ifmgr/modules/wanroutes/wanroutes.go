@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	moduleName          = "wan_routes"
+	moduleName          = "wan.routes"
 	familyV4            = "inet"
 	familyV6            = "inet6"
 	fallbackPriority    = 50
@@ -26,7 +26,7 @@ const (
 	wanNameMonkeybrains = "monkeybrains"
 )
 
-// Config is the parsed [ifmgr.modules.wan_routes] runtime config.
+// Config is the parsed [ifmgr.modules.wan.routes] runtime config.
 type Config struct {
 	InternalIface   string
 	OpnsenseWanLL   string
@@ -43,7 +43,7 @@ func (Config) ModuleConfigName() string { return moduleName }
 
 // WAN is one configured uplink and its owned policy-routing slots. The
 // embedded ifmgr.WANRef carries the shared per-WAN identity (Name, Iface); the
-// remaining fields are the wan_routes-specific per-WAN routing data.
+// remaining fields are the wan.routes-specific per-WAN routing data.
 type WAN struct {
 	ifmgr.WANRef
 	TableID    int
@@ -82,18 +82,18 @@ type Module struct {
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	log := m.InitBase(env, "module", moduleName)
 	log.InfoContext(
-		ctx, "wan_routes: Init",
+		ctx, "wan.routes: Init",
 		"wan_count", len(m.cfg.WANs),
 		"health_state_file", m.cfg.HealthStateFile,
 		"shadow_mode", m.cfg.ShadowMode,
 	)
 
 	if len(m.cfg.WANs) == 0 {
-		log.WarnContext(ctx, "wan_routes: missing WAN config; disabling module")
-		return fmt.Errorf("%w: wan_routes: no [ifmgr.modules.wan_routes] section", ifmgr.ErrModuleDisabled)
+		log.WarnContext(ctx, "wan.routes: missing WAN config; disabling module")
+		return fmt.Errorf("%w: wan.routes: no [ifmgr.modules.wan.routes] section", ifmgr.ErrModuleDisabled)
 	}
 	if err := validateConfig(m.cfg); err != nil {
-		log.WarnContext(ctx, "wan_routes: validateConfig failed", "err", err)
+		log.WarnContext(ctx, "wan.routes: validateConfig failed", "err", err)
 		return err
 	}
 
@@ -107,16 +107,16 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	defer m.Unlock()
 
 	log = log.With("op", "reconcile")
-	log.DebugContext(ctx, "wan_routes: Reconcile entry")
+	log.DebugContext(ctx, "wan.routes: Reconcile entry")
 
 	currentGateways, err := discoverGateways(m.cfg)
 	if err != nil {
-		log.WarnContext(ctx, "wan_routes: discoverGateways failed", "err", err)
+		log.WarnContext(ctx, "wan.routes: discoverGateways failed", "err", err)
 		return err
 	}
 	health, err := netif.ReadHealthState(m.cfg.HealthStateFile)
 	if err != nil {
-		log.WarnContext(ctx, "wan_routes: ReadHealthState failed", "err", err)
+		log.WarnContext(ctx, "wan.routes: ReadHealthState failed", "err", err)
 		return fmt.Errorf("read health state %q: %w", m.cfg.HealthStateFile, err)
 	}
 	rules, routes := desiredState(currentGateways, health, m.cfg)
@@ -167,9 +167,9 @@ func (m *Module) onMonitorEvent(ctx context.Context, log *slog.Logger, event net
 		"family", event.Family,
 		"via", event.Via,
 	)
-	eventLog.DebugContext(ctx, "wan_routes: default route event, reconciling")
+	eventLog.DebugContext(ctx, "wan.routes: default route event, reconciling")
 	if err := m.Reconcile(ctx, eventLog); err != nil {
-		eventLog.WarnContext(ctx, "wan_routes: reconcile after route event failed", "err", err)
+		eventLog.WarnContext(ctx, "wan.routes: reconcile after route event failed", "err", err)
 	}
 }
 
@@ -414,10 +414,10 @@ func logShadowOps(
 	routes []netif.RouteSpec,
 ) {
 	for _, route := range routes {
-		log.Debug("wan_routes: shadow reconcile route", "route", route)
+		log.Debug("wan.routes: shadow reconcile route", "route", route)
 	}
 	for _, rule := range rules {
-		log.Debug("wan_routes: shadow reconcile rule", "rule", rule)
+		log.Debug("wan.routes: shadow reconcile rule", "rule", rule)
 	}
 	desiredSlots := desiredRuleSlots(rules)
 	for _, slot := range ownedRuleSlots(cfg) {
@@ -425,7 +425,7 @@ func logShadowOps(
 			continue
 		}
 		log.Debug(
-			"wan_routes: shadow remove disabled rule",
+			"wan.routes: shadow remove disabled rule",
 			"family", slot.family,
 			"priority", slot.priority,
 		)
@@ -480,42 +480,42 @@ func watchedIfaces(cfg Config) []string {
 
 func validateConfig(cfg Config) error {
 	if cfg.InternalIface == "" {
-		slog.Warn("wan_routes: missing internal_iface")
-		return fmt.Errorf("wan_routes: internal_iface is required")
+		slog.Warn("wan.routes: missing internal_iface")
+		return fmt.Errorf("wan.routes: internal_iface is required")
 	}
 	if cfg.OpnsenseWanLL == "" {
-		slog.Warn("wan_routes: missing opnsense_wan_ll")
-		return fmt.Errorf("wan_routes: opnsense_wan_ll is required")
+		slog.Warn("wan.routes: missing opnsense_wan_ll")
+		return fmt.Errorf("wan.routes: opnsense_wan_ll is required")
 	}
 	if cfg.OpnsenseEdgeV6 == "" {
-		slog.Warn("wan_routes: missing opnsense_edge_v6")
-		return fmt.Errorf("wan_routes: opnsense_edge_v6 is required")
+		slog.Warn("wan.routes: missing opnsense_edge_v6")
+		return fmt.Errorf("wan.routes: opnsense_edge_v6 is required")
 	}
 	if cfg.InternalPrefix == "" {
-		slog.Warn("wan_routes: missing internal_prefix")
-		return fmt.Errorf("wan_routes: internal_prefix is required")
+		slog.Warn("wan.routes: missing internal_prefix")
+		return fmt.Errorf("wan.routes: internal_prefix is required")
 	}
 	if cfg.InternalNetV4 == "" {
-		slog.Warn("wan_routes: missing internal_net_v4")
-		return fmt.Errorf("wan_routes: internal_net_v4 is required")
+		slog.Warn("wan.routes: missing internal_net_v4")
+		return fmt.Errorf("wan.routes: internal_net_v4 is required")
 	}
 	seenNames := make(map[string]bool, len(cfg.WANs))
 	seenSlots := map[ruleSlot]bool{}
 	for i, wan := range cfg.WANs {
 		if err := validateWAN(wan); err != nil {
-			return fmt.Errorf("wan_routes.wan[%d]: %w", i, err)
+			return fmt.Errorf("wan.routes.wan[%d]: %w", i, err)
 		}
 		if seenNames[wan.Name] {
-			slog.Warn("wan_routes: duplicate WAN name", "name", wan.Name)
-			return fmt.Errorf("wan_routes.wan[%d]: duplicate name %q", i, wan.Name)
+			slog.Warn("wan.routes: duplicate WAN name", "name", wan.Name)
+			return fmt.Errorf("wan.routes.wan[%d]: duplicate name %q", i, wan.Name)
 		}
 		seenNames[wan.Name] = true
 		for _, slot := range wanRuleSlots(wan) {
 			if seenSlots[slot] {
-				slog.Warn("wan_routes: duplicate rule slot",
+				slog.Warn("wan.routes: duplicate rule slot",
 					"family", slot.family, "priority", slot.priority)
 				return fmt.Errorf(
-					"wan_routes.wan[%d]: duplicate rule slot family=%s priority=%d",
+					"wan.routes.wan[%d]: duplicate rule slot family=%s priority=%d",
 					i,
 					slot.family,
 					slot.priority,
@@ -619,7 +619,7 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
 		if !ok {
-			return nil, fmt.Errorf("wan_routes: invalid config type %T", cfg)
+			return nil, fmt.Errorf("wan.routes: invalid config type %T", cfg)
 		}
 		c = typedConfig
 	}

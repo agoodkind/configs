@@ -221,17 +221,17 @@ the BGP speaker:
 
 ### Shared per-WAN foundation
 
-`wan_routes` and `npt` run in the `wan` role and read one WAN list from the
+`wan.routes` and `npt` run in the `wan` role and read one WAN list from the
 `[ifmgr.wan]` config section. Each `[ifmgr.wan.<name>]` table is one WAN's full
-config: its interface plus the policy-routing slots `wan_routes` programs (table,
+config: its interface plus the policy-routing slots `wan.routes` programs (table,
 fwmark, priorities, prefixes). The internal prefix and edge addresses both
 modules translate against live on `[ifmgr]` itself. Each module reads the fields
 it needs from that one per-WAN entry, so each WAN has a single home instead of a
 per-module list matched by name.
 
-### wan_routes ifmgr module (event-driven successor)
+### wan.routes ifmgr module (event-driven successor)
 
-The `wan_routes` module in `mwan ifmgr` is the Go successor to the
+The `wan.routes` module in `mwan ifmgr` is the Go successor to the
 [update-routes.sh](../../mwan/scripts/update-routes.sh) policy-route trigger. It
 watches each WAN interface over netlink and reconciles the per-WAN tables and
 the `ip rule` set on every default-route change plus a periodic tick, so it does
@@ -251,7 +251,7 @@ step.
 
 The `npt` module in `mwan ifmgr` is the Go successor to
 [update-npt.sh](../../mwan/scripts/update-npt.sh). It runs as a second module in
-the `mwan-ifmgr@wan` instance alongside `wan_routes`, with its own `shadow_mode`.
+the `mwan-ifmgr@wan` instance alongside `wan.routes`, with its own `shadow_mode`.
 In shadow it logs the `ip6 nat` operations it would perform and changes nothing,
 so `update-npt.sh` stays authoritative. With shadow off it owns and programs the
 `ip6 nat` chains. It self-disables when `[ifmgr.wan]` lists no WANs.

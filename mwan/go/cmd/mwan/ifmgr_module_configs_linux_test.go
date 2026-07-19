@@ -120,7 +120,7 @@ func TestBuildHostIPv6PolicyConfig(t *testing.T) {
 
 // sharedWANForTest is the [ifmgr] shared per-WAN foundation both module builders
 // read: the WAN map ([ifmgr.wan.<name>]) with each WAN's full config (iface plus
-// the routing slots wan_routes owns), plus the shared edge addresses and internal
+// the routing slots wan.routes owns), plus the shared edge addresses and internal
 // prefix on [ifmgr] itself. One home per WAN; modules read the fields they need.
 func sharedWANForTest() config.IfMgrSection {
 	return config.IfMgrSection{
@@ -209,7 +209,7 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 	}
 
 	// The per-WAN routing data comes from the shared [ifmgr.wan.<name>] map
-	// (sharedWANForTest), not a wan_routes-local list.
+	// (sharedWANForTest), not a wan.routes-local list.
 	want := wanroutes.Config{
 		InternalIface:   "vmbr250",
 		OpnsenseWanLL:   "fe80::1",
@@ -257,7 +257,7 @@ func TestBuildWANRoutesConfigNilSection(t *testing.T) {
 
 // modulesWithUnresolvableUIDRule is a [ifmgr.modules] section that carries a
 // policy_rules rule referencing a user that does not exist on the build host,
-// plus a wan_routes section. It models the production MWAN VM config, where the
+// plus a wan.routes section. It models the production MWAN VM config, where the
 // shared config.toml carries an oob policy_rules rule (cloudflared-oob, a
 // hypervisor-host user) even though the VM only runs the wan role.
 func modulesWithUnresolvableUIDRule() config.IfMgrModulesSection {
@@ -273,12 +273,12 @@ func modulesWithUnresolvableUIDRule() config.IfMgrModulesSection {
 				},
 			},
 		},
-		WANRoutes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"},
+		WAN: &config.IfMgrModulesWANSection{Routes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"}},
 	}
 }
 
 // TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules is the regression test for
-// the mwan-ifmgr@wan crash-loop. The wan role must build only wan_routes, so it
+// the mwan-ifmgr@wan crash-loop. The wan role must build only wan.routes, so it
 // never resolves the policy_rules uid_user (which would fail on a host lacking
 // that user) even when the shared config carries that rule.
 func TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules(t *testing.T) {
@@ -291,8 +291,8 @@ func TestBuildIfMgrModuleConfigsWANRoleSkipsPolicyRules(t *testing.T) {
 	if _, ok := set["policy_rules"]; ok {
 		t.Fatal("wan role must not build a policy_rules config")
 	}
-	if _, ok := set["wan_routes"]; !ok {
-		t.Fatal("wan role must build a wan_routes config")
+	if _, ok := set["wan.routes"]; !ok {
+		t.Fatal("wan role must build a wan.routes config")
 	}
 }
 
@@ -364,20 +364,20 @@ func TestBuildNPTConfigNilSection(t *testing.T) {
 }
 
 // TestBuildIfMgrModuleConfigsWANRoleBuildsBoth confirms the wan role now yields
-// both the wan_routes and npt module configs from one shared config.
+// both the wan.routes and npt module configs from one shared config.
 func TestBuildIfMgrModuleConfigsWANRoleBuildsBoth(t *testing.T) {
 	t.Parallel()
 
 	modules := config.IfMgrModulesSection{
-		WANRoutes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"},
-		NPT:       &config.IfMgrNPTSection{ShadowMode: true},
+		WAN: &config.IfMgrModulesWANSection{Routes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"}},
+		NPT: &config.IfMgrNPTSection{ShadowMode: true},
 	}
 	set, err := buildIfMgrModuleConfigs(ifmgrForTest(modules), "wan")
 	if err != nil {
 		t.Fatalf("buildIfMgrModuleConfigs(wan) returned error: %v", err)
 	}
-	if _, ok := set["wan_routes"]; !ok {
-		t.Fatal("wan role must build a wan_routes config")
+	if _, ok := set["wan.routes"]; !ok {
+		t.Fatal("wan role must build a wan.routes config")
 	}
 	nptCfg, ok := set["npt"]
 	if !ok {
@@ -391,7 +391,7 @@ func TestBuildIfMgrModuleConfigsWANRoleBuildsBoth(t *testing.T) {
 // TestIfMgrWANConfigRoundTrips parses a config.toml snippet exactly as the
 // template renders it (the shared prefixes on [ifmgr], keyed [ifmgr.wan.<name>]
 // tables carrying each WAN's full config, and the module-wide
-// [ifmgr.modules.wan_routes] scalars) and drives it through
+// [ifmgr.modules.wan.routes] scalars) and drives it through
 // buildIfMgrModuleConfigs. A render-vs-schema mismatch that the struct-built
 // fixtures cannot catch (for example the keyed WAN map failing to populate,
 // which crash-looped mwan-ifmgr@wan with "iface is required") fails here instead
@@ -423,7 +423,7 @@ from_prio = 56
 npt_prefix = "3d06:bad:b01:2200::/60"
 v4_source = "10.240.204.2"
 
-[ifmgr.modules.wan_routes]
+[ifmgr.modules.wan.routes]
 internal_iface = "enmwanbr0"
 shadow_mode = false
 
@@ -453,19 +453,19 @@ shadow_mode = true
 	if err != nil {
 		t.Fatalf("buildIfMgrModuleConfigs(wan) from parsed config: %v", err)
 	}
-	wr, ok := set["wan_routes"].(wanroutes.Config)
+	wr, ok := set["wan.routes"].(wanroutes.Config)
 	if !ok {
-		t.Fatalf("wan_routes config missing or wrong type: %T", set["wan_routes"])
+		t.Fatalf("wan.routes config missing or wrong type: %T", set["wan.routes"])
 	}
 	byName := map[string]wanroutes.WAN{}
 	for _, w := range wr.WANs {
 		byName[w.Name] = w
 	}
 	if byName["att"].Iface != "enatt0" || byName["webpass"].Iface != "enwebpass0" {
-		t.Fatalf("wan_routes ifaces did not resolve from [ifmgr.wan]: %#v", byName)
+		t.Fatalf("wan.routes ifaces did not resolve from [ifmgr.wan]: %#v", byName)
 	}
 	if byName["webpass"].V4Source != "10.240.204.2" || byName["att"].TableID != 100 {
-		t.Fatalf("wan_routes routing fields did not resolve from [ifmgr.wan]: %#v", byName)
+		t.Fatalf("wan.routes routing fields did not resolve from [ifmgr.wan]: %#v", byName)
 	}
 	if _, ok := set["npt"]; !ok {
 		t.Fatal("wan role must build an npt config from the round-tripped config")

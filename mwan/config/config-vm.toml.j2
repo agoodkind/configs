@@ -147,7 +147,7 @@ fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.monkeybrains }}
 from_prio = {{ mwan_ifmgr_wan_from_prios.monkeybrains }}
 npt_prefix = "{{ mwan_npt_monkeybrains_prefix }}"
 
-[ifmgr.modules.wan_routes]
+[ifmgr.modules.wan.routes]
 internal_iface = "{{ mwan_internal_iface }}"
 opnsense_wan_ll = "{{ mwan_opnsense_wan_ll }}"
 internal_net_v4 = "{{ mwan_internal_net_v4 }}"

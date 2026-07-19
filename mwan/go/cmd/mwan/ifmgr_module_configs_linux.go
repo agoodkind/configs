@@ -132,7 +132,7 @@ func buildIfMgrModuleConfigs(
 	return moduleConfigs, nil
 }
 
-// addWANRoleConfigs builds the wan-role module configs (wan_routes and npt) from
+// addWANRoleConfigs builds the wan-role module configs (wan.routes and npt) from
 // the one shared [ifmgr.wan] section, so both modules read the same WAN list and
 // prefixes. Kept out of buildIfMgrModuleConfigs to hold its complexity down.
 func addWANRoleConfigs(
@@ -141,12 +141,16 @@ func addWANRoleConfigs(
 	ifmgrCfg config.IfMgrSection,
 ) error {
 	shared := buildWANRefs(ifmgrCfg)
-	if want["wan_routes"] {
-		wanRoutesConfig, err := buildWANRoutesConfig(shared, ifmgrCfg.Modules.WANRoutes)
+	if want["wan.routes"] {
+		var routesSection *config.IfMgrWANRoutesSection
+		if ifmgrCfg.Modules.WAN != nil {
+			routesSection = ifmgrCfg.Modules.WAN.Routes
+		}
+		wanRoutesConfig, err := buildWANRoutesConfig(shared, routesSection)
 		if err != nil {
 			return err
 		}
-		moduleConfigs["wan_routes"] = wanRoutesConfig
+		moduleConfigs["wan.routes"] = wanRoutesConfig
 	}
 	if want["npt"] {
 		moduleConfigs["npt"] = buildNPTConfig(shared, ifmgrCfg.Modules.NPT)
@@ -156,7 +160,7 @@ func addWANRoleConfigs(
 
 // buildNPTConfig joins the shared [ifmgr.wan] prefixes and WAN identity list
 // with the npt section's own shadow toggle. The WAN list and prefixes come from
-// the shared inputs, so npt and wan_routes always agree on the same WAN set; a
+// the shared inputs, so npt and wan.routes always agree on the same WAN set; a
 // nil section keeps ShadowMode off. Reading shared.MwanbrEdgeV6 here makes it a
 // real consumer of the shared field.
 func buildNPTConfig(shared sharedWANInputs, section *config.IfMgrNPTSection) npt.Config {
@@ -508,8 +512,8 @@ func buildHostIPv6PolicyConfig(
 }
 
 // sharedWAN is one WAN's full config from [ifmgr.wan.<name>]: the identity
-// (WANRef) plus the policy-routing slots wan_routes consumes. npt reads only the
-// embedded WANRef; wan_routes reads the routing fields. One home per WAN.
+// (WANRef) plus the policy-routing slots wan.routes consumes. npt reads only the
+// embedded WANRef; wan.routes reads the routing fields. One home per WAN.
 type sharedWAN struct {
 	ifmgr.WANRef
 	TableID    int
