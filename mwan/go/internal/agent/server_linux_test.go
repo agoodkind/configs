@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"context"
+	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 )
 
 func TestGetSystemInfo_Linux(t *testing.T) {

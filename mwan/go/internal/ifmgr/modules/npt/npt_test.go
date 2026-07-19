@@ -357,7 +357,7 @@ func TestReconcileAddrOpErrorSkipsWAN(t *testing.T) {
 }
 
 // TestModuleDisablesWithoutWANs checks Init self-disables when the shared WAN
-// list is empty, like wan_routes.
+// list is empty, like wan.routes.
 func TestModuleDisablesWithoutWANs(t *testing.T) {
 	t.Parallel()
 

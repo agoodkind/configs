@@ -14,8 +14,15 @@ type IfMgrModulesSection struct {
 	MainV4            *IfMgrMainV4Section            `toml:"mainv4"`
 	PolicyRules       *IfMgrPolicyRulesSection       `toml:"policy_rules"`
 	HostIPv6Policy    *IfMgrHostIPv6PolicySection    `toml:"host_ipv6_policy"`
-	WANRoutes         *IfMgrWANRoutesSection         `toml:"wan_routes"`
+	WAN               *IfMgrModulesWANSection        `toml:"wan"`
 	NPT               *IfMgrNPTSection               `toml:"npt"`
+}
+
+// IfMgrModulesWANSection is the [ifmgr.modules.wan] table. It nests the
+// wan.routes module config under the key `routes`, so the module renders as
+// [ifmgr.modules.wan.routes].
+type IfMgrModulesWANSection struct {
+	Routes *IfMgrWANRoutesSection `toml:"routes"`
 }
 
 type IfMgrWGHealthSection struct {
@@ -87,7 +94,7 @@ type IfMgrPolicyRulesSection struct {
 // IfMgrWANEntry is one [ifmgr.wan.<name>] table: all per-WAN config, keyed by
 // WAN name. The map lives on IfMgrSection.WAN (toml:"wan") so it renders as
 // keyed sub-tables [ifmgr.wan.<name>], mirroring [ifmgr.iface.<name>]. Each WAN
-// has one home here: the interface plus the policy-routing slots wan_routes owns
+// has one home here: the interface plus the policy-routing slots wan.routes owns
 // (table_id, fw_mark, fw_mark_prio, from_prio, npt_prefix, v4_source). Modules
 // read the fields they need; npt uses only iface. The shared internal prefix and
 // edge addresses live on [ifmgr] itself (IfMgrSection.InternalPrefix,
@@ -104,7 +111,7 @@ type IfMgrWANEntry struct {
 }
 
 // IfMgrWANRoutesSection is the explicit TOML schema for
-// [ifmgr.modules.wan_routes]. The WAN list, shared prefixes, and per-WAN routing
+// [ifmgr.modules.wan.routes]. The WAN list, shared prefixes, and per-WAN routing
 // data live in [ifmgr.wan.<name>] and on [ifmgr]; this section keeps only the
 // module-wide inputs that are not per-WAN.
 type IfMgrWANRoutesSection struct {
