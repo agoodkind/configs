@@ -3,11 +3,13 @@
 package npt
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"testing"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 )
 
@@ -95,11 +97,22 @@ func TestApplierGuardRuleShape(t *testing.T) {
 
 	// The guard is the first postrouting rule.
 	guard := fake.rules[0]
-	var sawCt, sawVerdict, sawNAT bool
+	var sawCt, sawVerdict, sawNAT, sawMask bool
 	for _, e := range guard.Exprs {
 		switch v := e.(type) {
 		case *expr.Ct:
 			sawCt = true
+			if v.Key != expr.CtKeySTATUS {
+				t.Fatalf("guard ct key = %v, want STATUS", v.Key)
+			}
+		case *expr.Bitwise:
+			sawMask = true
+			// The guard must mask IPS_DST_NAT (0x20), the bit nft's
+			// `ct status dnat` sets, not any other conntrack status bit.
+			want := binaryutil.NativeEndian.PutUint32(0x20)
+			if !bytes.Equal(v.Mask, want) {
+				t.Fatalf("guard mask = %v, want IPS_DST_NAT %v", v.Mask, want)
+			}
 		case *expr.Verdict:
 			if v.Kind != expr.VerdictReturn {
 				t.Fatalf("guard verdict kind = %v, want Return", v.Kind)
@@ -109,8 +122,8 @@ func TestApplierGuardRuleShape(t *testing.T) {
 			sawNAT = true
 		}
 	}
-	if !sawCt || !sawVerdict {
-		t.Fatalf("guard exprs missing ct/verdict: ct=%v verdict=%v", sawCt, sawVerdict)
+	if !sawCt || !sawVerdict || !sawMask {
+		t.Fatalf("guard exprs missing ct/mask/verdict: ct=%v mask=%v verdict=%v", sawCt, sawMask, sawVerdict)
 	}
 	if sawNAT {
 		t.Fatal("guard rule must not carry a NAT expression")

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 	"golang.org/x/sys/unix"
 )
@@ -202,6 +203,157 @@ func TestRenderTableRejectsEqualPrefixRegisters(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("render = %v, want %v", got, want)
 	}
+}
+
+// TestRenderTableDecodesKernelForm exercises the rule shapes the live table
+// actually holds when update-npt.sh writes it via nft: interface matched by
+// index (meta iif/oif, not iifname/oifname), single NAT with RegAddrMax equal to
+// RegAddrMin, and the guard masking IPS_DST_NAT (0x20). The applier round-trip
+// test cannot catch these because the kernel normalizes what it echoes back.
+func TestRenderTableDecodesKernelForm(t *testing.T) {
+	t.Parallel()
+
+	const ifindex uint32 = 4
+	iface := "enatt0"
+	edge := netip.MustParseAddr("3d06:bad:b01:201::2")
+	pd1 := netip.MustParseAddr("3d06:bad:b01:2300::1")
+	internal := netip.MustParsePrefix("3d06:bad:b01:210::/60")
+	pd := netip.MustParsePrefix("3d06:bad:b01:2300::/60")
+
+	fake := &fakeReadConn{
+		rules: map[string][]*nftables.Rule{
+			preroutingChain: {
+				{Exprs: kernelSingleNATExprs(chainPrerouting, ifindex, netip.PrefixFrom(pd1, 128), expr.NATTypeDestNAT, edge)},
+				{Exprs: kernelPrefixNATExprs(chainPrerouting, ifindex, pd, expr.NATTypeDestNAT, internal)},
+			},
+			postroutingChain: {
+				{Exprs: kernelGuardExprs(ifindex, netip.PrefixFrom(edge, 128))},
+				{Exprs: kernelSingleNATExprs(chainPostrouting, ifindex, netip.PrefixFrom(edge, 128), expr.NATTypeSourceNAT, pd1)},
+				{Exprs: kernelPrefixNATExprs(chainPostrouting, ifindex, internal, expr.NATTypeSourceNAT, pd)},
+			},
+		},
+		errs: nil,
+	}
+	reader := &nftReader{
+		newConn: func() (nftReadConn, error) { return fake, nil },
+		ifaceName: func(index uint32) (string, bool) {
+			if index == ifindex {
+				return iface, true
+			}
+			return "", false
+		},
+	}
+
+	got, err := reader.renderTable(context.Background(), discardLogger())
+	if err != nil {
+		t.Fatalf("renderTable returned error: %v", err)
+	}
+	want := RenderedTable{
+		Prerouting: []string{
+			`iif "enatt0" ip6 daddr 3d06:bad:b01:2300::1 dnat to 3d06:bad:b01:201::2`,
+			`iif "enatt0" ip6 daddr 3d06:bad:b01:2300::/60 dnat prefix to 3d06:bad:b01:210::/60`,
+		},
+		Postrouting: []string{
+			`oif "enatt0" ip6 saddr 3d06:bad:b01:201::2 ct status dnat return`,
+			`oif "enatt0" ip6 saddr 3d06:bad:b01:201::2 snat to 3d06:bad:b01:2300::1`,
+			`oif "enatt0" ip6 saddr 3d06:bad:b01:210::/60 snat prefix to 3d06:bad:b01:2300::/60`,
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("renderTable mismatch\ngot:  %#v\nwant: %#v", got, want)
+	}
+}
+
+// TestDecodeInterfaceIndexFallsBackToNumber checks that an index with no current
+// interface still renders, using the numeric index.
+func TestDecodeInterfaceIndexFallsBackToNumber(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeReadConn{
+		rules: map[string][]*nftables.Rule{
+			postroutingChain: {
+				{Exprs: kernelSingleNATExprs(
+					chainPostrouting, 9,
+					netip.MustParsePrefix("3d06:bad:b01:201::2/128"),
+					expr.NATTypeSourceNAT,
+					netip.MustParseAddr("3d06:bad:b01:2300::1"),
+				)},
+			},
+		},
+		errs: nil,
+	}
+	reader := &nftReader{
+		newConn:   func() (nftReadConn, error) { return fake, nil },
+		ifaceName: func(uint32) (string, bool) { return "", false },
+	}
+	got, err := reader.renderTable(context.Background(), discardLogger())
+	if err != nil {
+		t.Fatalf("renderTable returned error: %v", err)
+	}
+	want := []string{`oif "index 9" ip6 saddr 3d06:bad:b01:201::2 snat to 3d06:bad:b01:2300::1`}
+	if !reflect.DeepEqual(got.Postrouting, want) {
+		t.Fatalf("postrouting = %v, want %v", got.Postrouting, want)
+	}
+}
+
+func kernelIfaceMatchExprs(chain ruleChain, ifindex uint32) []expr.Any {
+	key := expr.MetaKeyOIF
+	if chain == chainPrerouting {
+		key = expr.MetaKeyIIF
+	}
+	return []expr.Any{
+		&expr.Meta{Key: key, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(ifindex)},
+	}
+}
+
+func kernelAddrMatchExprs(chain ruleChain, match netip.Prefix) []expr.Any {
+	offset := ip6SaddrOffset
+	if chain == chainPrerouting {
+		offset = ip6DaddrOffset
+	}
+	return addrMatchExprs(match, offset)
+}
+
+func kernelSingleNATExprs(
+	chain ruleChain,
+	ifindex uint32,
+	match netip.Prefix,
+	natType expr.NATType,
+	to netip.Addr,
+) []expr.Any {
+	exprs := kernelIfaceMatchExprs(chain, ifindex)
+	exprs = append(exprs, kernelAddrMatchExprs(chain, match)...)
+	exprs = append(exprs,
+		&expr.Immediate{Register: 1, Data: addr16(to)},
+		// The kernel echoes RegAddrMax equal to RegAddrMin for a single address.
+		&expr.NAT{Type: natType, Family: unix.NFPROTO_IPV6, RegAddrMin: 1, RegAddrMax: 1},
+	)
+	return exprs
+}
+
+func kernelPrefixNATExprs(
+	chain ruleChain,
+	ifindex uint32,
+	match netip.Prefix,
+	natType expr.NATType,
+	to netip.Prefix,
+) []expr.Any {
+	to = to.Masked()
+	exprs := kernelIfaceMatchExprs(chain, ifindex)
+	exprs = append(exprs, kernelAddrMatchExprs(chain, match)...)
+	exprs = append(exprs,
+		&expr.Immediate{Register: 1, Data: addr16(to.Addr())},
+		&expr.Immediate{Register: 2, Data: addr16(lastAddr(to))},
+		&expr.NAT{Type: natType, Family: unix.NFPROTO_IPV6, RegAddrMin: 1, RegAddrMax: 2, Prefix: true},
+	)
+	return exprs
+}
+
+func kernelGuardExprs(ifindex uint32, match netip.Prefix) []expr.Any {
+	exprs := kernelIfaceMatchExprs(chainPostrouting, ifindex)
+	exprs = append(exprs, kernelAddrMatchExprs(chainPostrouting, match)...)
+	return append(exprs, guardExprs()...)
 }
 
 func renderChainForTest(t *testing.T, chainName string, rules ...*nftables.Rule) []string {

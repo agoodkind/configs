@@ -29,11 +29,23 @@ type nftReadConn interface {
 }
 
 type nftReader struct {
-	newConn func() (nftReadConn, error)
+	newConn   func() (nftReadConn, error)
+	ifaceName func(index uint32) (string, bool)
 }
 
 func newNFTReader() *nftReader {
-	return &nftReader{newConn: defaultNFTReadConn}
+	return &nftReader{newConn: defaultNFTReadConn, ifaceName: ifaceNameByIndex}
+}
+
+// ifaceNameByIndex resolves a kernel interface index to its name, matching how
+// nft renders an index-based `iif`/`oif` match. It returns false when the index
+// no longer maps to an interface.
+func ifaceNameByIndex(index uint32) (string, bool) {
+	iface, err := net.InterfaceByIndex(int(index))
+	if err != nil || iface == nil || iface.Name == "" {
+		return "", false
+	}
+	return iface.Name, true
 }
 
 func defaultNFTReadConn() (nftReadConn, error) {
@@ -117,7 +129,7 @@ func (r *nftReader) readChain(
 		log.WarnContext(ctx, "npt: read nftables chain failed", "chain", chain.Name, "err", err)
 		return nil, false, fmt.Errorf("get rules for %s: %w", chain.Name, err)
 	}
-	return renderRules(rules), false, nil
+	return r.renderRules(rules), false, nil
 }
 
 func isNFTObjectMissing(err error) bool {
@@ -130,13 +142,13 @@ func isNFTObjectMissing(err error) bool {
 		strings.Contains(message, "enoent")
 }
 
-func renderRules(rules []*nftables.Rule) []string {
+func (r *nftReader) renderRules(rules []*nftables.Rule) []string {
 	lines := make([]string, 0, len(rules))
 	for _, rule := range rules {
 		expressionCount := 0
 		if rule != nil {
 			expressionCount = len(rule.Exprs)
-			if decoded, ok := decodeRule(rule.Exprs); ok {
+			if decoded, ok := decodeRule(r.ifaceName, rule.Exprs); ok {
 				lines = append(lines, formatRule(decoded))
 				continue
 			}
@@ -149,8 +161,11 @@ func renderRules(rules []*nftables.Rule) []string {
 	return lines
 }
 
-func decodeRule(expressions []expr.Any) (natRule, bool) {
-	chain, iface, ok := decodeInterfaceMatch(expressions)
+func decodeRule(
+	ifaceName func(uint32) (string, bool),
+	expressions []expr.Any,
+) (natRule, bool) {
+	chain, iface, ok := decodeInterfaceMatch(ifaceName, expressions)
 	if !ok {
 		return emptyNatRule(), false
 	}
@@ -185,7 +200,14 @@ func emptyNatRule() natRule {
 	}
 }
 
-func decodeInterfaceMatch(expressions []expr.Any) (ruleChain, string, bool) {
+// decodeInterfaceMatch recognizes either form the ip6 nat rules use to select a
+// WAN. The Go applier writes an iifname/oifname string match, while nft's `iif
+// "name"` from update-npt.sh compiles to an iif/oif match on the interface
+// index. Both are rendered by resolving to the interface name.
+func decodeInterfaceMatch(
+	ifaceName func(uint32) (string, bool),
+	expressions []expr.Any,
+) (ruleChain, string, bool) {
 	if len(expressions) < 2 {
 		return chainPostrouting, "", false
 	}
@@ -197,18 +219,41 @@ func decodeInterfaceMatch(expressions []expr.Any) (ruleChain, string, bool) {
 	if !ok || compare.Op != expr.CmpOpEq || compare.Register != meta.Register {
 		return chainPostrouting, "", false
 	}
-	iface, ok := decodeInterfaceName(compare.Data)
+
+	chain, byName, ok := chainForMetaKey(meta.Key)
 	if !ok {
 		return chainPostrouting, "", false
 	}
 
-	if meta.Key == expr.MetaKeyIIFNAME {
-		return chainPrerouting, iface, true
+	var iface string
+	if byName {
+		iface, ok = decodeInterfaceName(compare.Data)
+	} else {
+		iface, ok = decodeInterfaceIndex(compare.Data, ifaceName)
 	}
-	if meta.Key == expr.MetaKeyOIFNAME {
-		return chainPostrouting, iface, true
+	if !ok {
+		return chainPostrouting, "", false
 	}
-	return chainPostrouting, "", false
+	return chain, iface, true
+}
+
+// chainForMetaKey maps a meta key to the chain it selects and whether the paired
+// compare holds an interface name (true) or an interface index (false). The
+// third return is false for any key the ip6 nat rules never use.
+func chainForMetaKey(key expr.MetaKey) (ruleChain, bool, bool) {
+	if key == expr.MetaKeyIIFNAME {
+		return chainPrerouting, true, true
+	}
+	if key == expr.MetaKeyOIFNAME {
+		return chainPostrouting, true, true
+	}
+	if key == expr.MetaKeyIIF {
+		return chainPrerouting, false, true
+	}
+	if key == expr.MetaKeyOIF {
+		return chainPostrouting, false, true
+	}
+	return chainPostrouting, false, false
 }
 
 func decodeInterfaceName(data []byte) (string, bool) {
@@ -217,6 +262,25 @@ func decodeInterfaceName(data []byte) (string, bool) {
 		return "", false
 	}
 	return string(data[:terminator]), true
+}
+
+func decodeInterfaceIndex(
+	data []byte,
+	ifaceName func(uint32) (string, bool),
+) (string, bool) {
+	if len(data) != 4 {
+		return "", false
+	}
+	index := binaryutil.NativeEndian.Uint32(data)
+	if index == 0 {
+		return "", false
+	}
+	if ifaceName != nil {
+		if name, ok := ifaceName(index); ok {
+			return name, true
+		}
+	}
+	return fmt.Sprintf("index %d", index), true
 }
 
 func decodeAddressMatch(
@@ -334,11 +398,13 @@ func decodeSingleNAT(
 		return opGuard, netip.Addr{}, netip.Prefix{}, false
 	}
 	nat, ok := expressions[1].(*expr.NAT)
+	// A single-address NAT has no range: the applier leaves RegAddrMax zero,
+	// while the kernel echoes it back equal to RegAddrMin. Accept both.
 	if !ok ||
 		nat.Family != unix.NFPROTO_IPV6 ||
 		nat.Prefix ||
 		nat.RegAddrMin != immediate.Register ||
-		nat.RegAddrMax != 0 ||
+		(nat.RegAddrMax != 0 && nat.RegAddrMax != nat.RegAddrMin) ||
 		!natHasNoExtraFlags(nat) {
 		return opGuard, netip.Addr{}, netip.Prefix{}, false
 	}
