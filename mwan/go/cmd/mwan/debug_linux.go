@@ -323,18 +323,18 @@ func showDebugSimulation(
 	}
 
 	printDebugSimulationHeader(output, family, target)
-	result, err := netif.RouteLookup(ctx, logger, family, target, source, 0)
+	result, ok, err := netif.RouteLookup(ctx, logger, family, target, source, 0)
 	if err != nil {
 		return debugWrappedError(logger, "default lookup", err)
 	}
-	printDebugRouteLookup(output, target, result)
+	printDebugRouteLookup(output, target, result, ok)
 
 	for _, wan := range debugWANs(cfg) {
 		if wan.FwMark < 0 || uint64(wan.FwMark) > math.MaxUint32 {
 			return fmt.Errorf("WAN %s fw_mark %d is outside uint32", wan.Name, wan.FwMark)
 		}
 		fmt.Fprintf(output, "-- mark %d (%s) --\n", wan.FwMark, wan.Name)
-		result, err := netif.RouteLookup(
+		result, ok, err := netif.RouteLookup(
 			ctx,
 			logger,
 			family,
@@ -346,7 +346,7 @@ func showDebugSimulation(
 			message := fmt.Sprintf("mark %d (%s)", wan.FwMark, wan.Name)
 			return debugWrappedError(logger, message, err)
 		}
-		printDebugRouteLookup(output, target, result)
+		printDebugRouteLookup(output, target, result, ok)
 	}
 	return nil
 }
@@ -394,7 +394,12 @@ func printDebugRouteLookup(
 	output io.Writer,
 	target string,
 	result netif.RouteLookupResult,
+	ok bool,
 ) {
+	if !ok {
+		fmt.Fprintf(output, "%s: no route\n", target)
+		return
+	}
 	fmt.Fprintf(
 		output,
 		"%s via %s oif %s src %s\n",
