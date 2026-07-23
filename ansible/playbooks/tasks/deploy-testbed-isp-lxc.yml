@@ -30,6 +30,15 @@
     dest: "/tmp/isp-{{ isp.id }}-sysctl-isp.conf"
     mode: "0644"
 
+- name: Copy ISP kea-rebind helpers to suburban /tmp
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/testbed/isp-lxc/{{ item }}"
+    dest: "/tmp/isp-{{ isp.id }}-{{ item }}"
+    mode: "0644"
+  loop:
+    - kea-rebind.sh
+    - kea-rebind.service
+
 - name: Push ISP configs into LXC
   ansible.builtin.command:
     cmd: >-
@@ -41,7 +50,17 @@
     - { tmp: radvd.conf, dest: /etc/radvd.conf }
     - { tmp: nftables.conf, dest: /etc/nftables.conf }
     - { tmp: pd-route.service, dest: /etc/systemd/system/pd-route.service }
+    - { tmp: kea-rebind.service, dest: /etc/systemd/system/kea-rebind.service }
     - { tmp: sysctl-isp.conf, dest: /etc/sysctl.d/99-isp.conf }
+  changed_when: true
+
+- name: Push ISP kea-rebind watcher into LXC
+  ansible.builtin.command:
+    cmd: >-
+      pct push {{ isp.id }}
+      /tmp/isp-{{ isp.id }}-kea-rebind.sh
+      /usr/local/sbin/kea-rebind
+      --perms 0755
   changed_when: true
 
 - name: Push ISP kea-dhcp4 config into LXC (dynamic-v4 ISPs only)
@@ -63,6 +82,8 @@
     - radvd.conf
     - nftables.conf
     - pd-route.service
+    - kea-rebind.sh
+    - kea-rebind.service
     - sysctl-isp.conf
 
 - name: Apply ISP sysctl
@@ -76,8 +97,8 @@
     cmd: >-
       pct exec {{ isp.id }} -- sh -c
       'systemctl daemon-reload
-      && systemctl enable --now nftables kea-dhcp6-server radvd pd-route
-      && systemctl restart nftables kea-dhcp6-server radvd pd-route'
+      && systemctl enable --now nftables kea-dhcp6-server radvd pd-route kea-rebind
+      && systemctl restart nftables kea-dhcp6-server radvd pd-route kea-rebind'
   changed_when: true
 
 - name: Enable and restart kea-dhcp4 (dynamic-v4 ISPs only)

@@ -1,0 +1,13 @@
+[Unit]
+Description=Rebind kea DHCP servers when eth0 is recreated (testbed WAN sim)
+After=network-online.target kea-dhcp6-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/kea-rebind
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
