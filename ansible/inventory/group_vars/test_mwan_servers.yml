@@ -193,14 +193,9 @@ mwan_rt_tables:
 # Interface manager WAN route module
 # ----------------------------------------------------------------------------
 
-# Testbed cutover validation: @wan runs in SHADOW on the 3-WAN prod-mirror. It
-# computes and logs intended routes/rules but mutates nothing; the shell
-# update-routes.sh stays authoritative, exactly as on prod. This is the first
-# cutover step, validated here against the prod-mirror-pre-cutover snapshot
-# before any prod cutover. Advance to dual-write (shadow_mode: false) only after
-# the shadow intended-ops are confirmed to match the shell across all three WANs.
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: false
+mwan_ifmgr_npt_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1

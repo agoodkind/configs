@@ -396,10 +396,13 @@ type IfMgrSection struct {
 	LogFile           string                       `toml:"log_file"`
 	JSONLogFile       string                       `toml:"json_log_file"`
 	Debug             bool                         `toml:"debug"`
+	InternalPrefix    string                       `toml:"internal_prefix"`
+	OpnsenseEdgeV6    string                       `toml:"opnsense_edge_v6"`
+	MwanbrEdgeV6      string                       `toml:"mwanbr_edge_v6"`
 	Iface             map[string]IfMgrIfaceSection `toml:"iface"`
 	Modules           IfMgrModulesSection          `toml:"modules"`
 	Alerts            IfMgrAlertsSection           `toml:"alerts"`
-	WAN               IfMgrWANSection              `toml:"wan"`
+	WAN               map[string]IfMgrWANEntry     `toml:"wan"`
 }
 
 // IfMgrAlertsSection controls the per-alert repeat cadence for the
