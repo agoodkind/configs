@@ -50,8 +50,7 @@ The fix is a persistent host-side drainer. The drainer holds the chardev open an
 it, so the host side stays connected and guest writes complete while the bridge restarts behind
 it. The bridge dials the drainer instead of the chardev.
 
-The production version is not yet implemented. Implement it only from a written design committed
-under `docs/superpowers/specs/`, never ad hoc.
+The drainer is the fix. Change it only from a written design, never ad hoc.
 
 ## Reproduce
 
