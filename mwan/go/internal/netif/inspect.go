@@ -163,7 +163,11 @@ func ReadLinkStats(log *slog.Logger, iface string) (LinkStats, error) {
 	}, nil
 }
 
-// RouteLookup resolves a route for target, source, and fwmark in one address family.
+// RouteLookup resolves a route for target, source, and fwmark in one address
+// family. ok is false when the kernel returns no route, which includes an
+// unreachable answer; that is a normal negative outcome, not an error, so a
+// probe caller can report it and keep going. err is reserved for real failures
+// such as an unparseable address or a link lookup that fails.
 func RouteLookup(
 	ctx context.Context,
 	log *slog.Logger,
@@ -171,14 +175,14 @@ func RouteLookup(
 	target string,
 	source string,
 	fwmark uint32,
-) (RouteLookupResult, error) {
+) (RouteLookupResult, bool, error) {
 	targetIP, err := parseFamilyIP(family, target)
 	if err != nil {
-		return RouteLookupResult{}, fmt.Errorf("target: %w", err)
+		return RouteLookupResult{}, false, fmt.Errorf("target: %w", err)
 	}
 	sourceIP, err := parseFamilyIP(family, source)
 	if err != nil {
-		return RouteLookupResult{}, fmt.Errorf("source: %w", err)
+		return RouteLookupResult{}, false, fmt.Errorf("source: %w", err)
 	}
 
 	startTime := realClock{}.Now()
@@ -206,8 +210,11 @@ func RouteLookup(
 		"err", err,
 	)
 	if err != nil {
+		if isNoRouteError(err) {
+			return RouteLookupResult{OIF: "", Gateway: "", Source: ""}, false, nil
+		}
 		log.WarnContext(ctx, "route: RouteGetWithOptions failed", "err", err)
-		return RouteLookupResult{}, fmt.Errorf(
+		return RouteLookupResult{}, false, fmt.Errorf(
 			"RouteGetWithOptions(%s,%s,mark=%d): %w",
 			target,
 			source,
@@ -216,14 +223,21 @@ func RouteLookup(
 		)
 	}
 	if len(routes) == 0 {
-		return RouteLookupResult{}, fmt.Errorf(
-			"RouteGetWithOptions(%s,%s,mark=%d): no route",
-			target,
-			source,
-			fwmark,
-		)
+		return RouteLookupResult{OIF: "", Gateway: "", Source: ""}, false, nil
 	}
-	return routeLookupResult(log, routes[0], source)
+	result, err := routeLookupResult(log, routes[0], source)
+	if err != nil {
+		return RouteLookupResult{}, false, err
+	}
+	return result, true, nil
+}
+
+// isNoRouteError reports whether err is the kernel telling us there is no route
+// to the target, rather than an operational failure.
+func isNoRouteError(err error) bool {
+	return errors.Is(err, syscall.ENETUNREACH) ||
+		errors.Is(err, syscall.EHOSTUNREACH) ||
+		errors.Is(err, syscall.ENETDOWN)
 }
 
 func parseFamilyIP(family string, rawIP string) (net.IP, error) {
