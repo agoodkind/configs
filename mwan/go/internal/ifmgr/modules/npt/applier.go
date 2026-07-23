@@ -20,10 +20,11 @@ const (
 	postroutingChain = "postrouting"
 	preroutingChain  = "prerouting"
 
-	// ipsDstNat is IPS_DST_NAT from linux/netfilter/nf_conntrack_common.h: the
-	// conntrack status bit set once a flow has been destination-NATed. The
-	// guard rule matches it so a hairpinned DNAT reply is not re-SNATed.
-	ipsDstNat uint32 = 0x08
+	// ipsDstNat is IPS_DST_NAT (bit 5) from linux/netfilter/nf_conntrack_common.h:
+	// the conntrack status bit set once a flow has been destination-NATed. The
+	// guard rule matches it so a hairpinned DNAT reply is not re-SNATed. This is
+	// the value nft's `ct status dnat` compiles to, matching update-npt.sh.
+	ipsDstNat uint32 = 0x20
 
 	// IPv6 header field offsets and length, relative to the network header.
 	ip6SaddrOffset uint32 = 8
