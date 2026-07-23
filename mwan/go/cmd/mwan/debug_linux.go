@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/ifmgr/modules/npt"
 	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/pd"
 )
@@ -28,6 +29,7 @@ const (
 type debugView string
 
 const (
+	debugViewNPT      debugView = "npt"
 	debugViewPolicy   debugView = "policy"
 	debugViewPrefixes debugView = "prefixes"
 	debugViewRoutes   debugView = "routes"
@@ -50,6 +52,8 @@ func runDebug(args []string, cfg *config.Config) int {
 	view := debugView(args[0])
 	var err error
 	switch view {
+	case debugViewNPT:
+		err = showDebugNPT(ctx, os.Stdout, logger)
 	case debugViewPrefixes:
 		err = showDebugPrefixes(ctx, os.Stdout, logger, cfg)
 	case debugViewRoutes:
@@ -78,8 +82,36 @@ func runDebug(args []string, cfg *config.Config) int {
 func printDebugUsage(output io.Writer) {
 	fmt.Fprintln(
 		output,
-		"usage: mwan debug <prefixes|routes|policy|status|stats|sim4|sim6>",
+		"usage: mwan debug <npt|prefixes|routes|policy|status|stats|sim4|sim6>",
 	)
+}
+
+func showDebugNPT(
+	ctx context.Context,
+	output io.Writer,
+	logger *slog.Logger,
+) error {
+	table, err := npt.RenderTable(ctx, logger)
+	if err != nil {
+		return debugWrappedError(logger, "read ip6 nat table", err)
+	}
+	if len(table.Prerouting) == 0 && len(table.Postrouting) == 0 {
+		return nil
+	}
+
+	fmt.Fprintln(output, "table ip6 nat {")
+	fmt.Fprintln(output, "    chain prerouting {")
+	for _, line := range table.Prerouting {
+		fmt.Fprintf(output, "        %s\n", line)
+	}
+	fmt.Fprintln(output, "    }")
+	fmt.Fprintln(output, "    chain postrouting {")
+	for _, line := range table.Postrouting {
+		fmt.Fprintf(output, "        %s\n", line)
+	}
+	fmt.Fprintln(output, "    }")
+	fmt.Fprintln(output, "}")
+	return nil
 }
 
 func showDebugPrefixes(
