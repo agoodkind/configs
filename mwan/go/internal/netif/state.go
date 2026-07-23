@@ -341,12 +341,18 @@ func isDefaultRoute(r netlink.Route, family int) bool {
 	return false
 }
 
-// routeToCurrent converts a netlink.Route to our CurrentRoute. The Via field
-// becomes either the Gw IP or the multipath next-hop (we only consume single
-// next-hop routes today; multipath returns the first one).
+// routeToCurrent converts a netlink.Route to our CurrentRoute. Multipath routes
+// use the first next hop because CurrentRoute models one gateway and interface.
 func routeToCurrent(log *slog.Logger, r netlink.Route) (*CurrentRoute, error) {
+	dest := "default"
+	if r.Dst != nil {
+		prefixLength, _ := r.Dst.Mask.Size()
+		if prefixLength != 0 {
+			dest = r.Dst.String()
+		}
+	}
 	cur := &CurrentRoute{
-		Dest:   "default",
+		Dest:   dest,
 		Via:    "",
 		Dev:    "",
 		Metric: r.Priority,
@@ -355,14 +361,18 @@ func routeToCurrent(log *slog.Logger, r netlink.Route) (*CurrentRoute, error) {
 		cur.Via = r.Gw.String()
 	} else if len(r.MultiPath) > 0 && r.MultiPath[0].Gw != nil {
 		cur.Via = r.MultiPath[0].Gw.String()
-		log.Debug("route: multipath default observed; using first nexthop",
+		log.Debug("route: multipath route observed; using first nexthop",
 			"hop_count", len(r.MultiPath), "first_via", cur.Via)
 	}
-	if r.LinkIndex != 0 {
-		link, err := netlink.LinkByIndex(r.LinkIndex)
+	linkIndex := r.LinkIndex
+	if linkIndex == 0 && len(r.MultiPath) > 0 {
+		linkIndex = r.MultiPath[0].LinkIndex
+	}
+	if linkIndex != 0 {
+		link, err := netlink.LinkByIndex(linkIndex)
 		if err != nil {
-			log.Warn("route: LinkByIndex failed", "index", r.LinkIndex, "err", err)
-			return nil, fmt.Errorf("LinkByIndex(%d): %w", r.LinkIndex, err)
+			log.Warn("route: LinkByIndex failed", "index", linkIndex, "err", err)
+			return nil, fmt.Errorf("LinkByIndex(%d): %w", linkIndex, err)
 		}
 		cur.Dev = link.Attrs().Name
 	}

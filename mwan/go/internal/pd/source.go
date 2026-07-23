@@ -35,23 +35,40 @@ type DefaultSource struct {
 	log        *slog.Logger
 	stateDir   string
 	runCommand commandRunner
+	readOnly   bool
 
 	mu    sync.Mutex
 	cache map[string]netip.Prefix
 }
 
+// Option configures a DefaultSource at construction.
+type Option func(*DefaultSource)
+
+// ReadOnly makes the source skip the persistent state-file write after a live
+// discovery, so inspection callers do not mutate /var/lib/mwan/pd-<iface>.
+func ReadOnly() Option {
+	return func(s *DefaultSource) {
+		s.readOnly = true
+	}
+}
+
 // New returns the default delegated-prefix source.
-func New(log *slog.Logger) *DefaultSource {
+func New(log *slog.Logger, opts ...Option) *DefaultSource {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &DefaultSource{
+	source := &DefaultSource{
 		log:        log,
 		stateDir:   defaultStateDir,
 		runCommand: runCommandOutput,
+		readOnly:   false,
 		mu:         sync.Mutex{},
 		cache:      make(map[string]netip.Prefix),
 	}
+	for _, opt := range opts {
+		opt(source)
+	}
+	return source
 }
 
 // Prefix returns the first delegated prefix found for iface.
@@ -89,7 +106,9 @@ func (s *DefaultSource) Prefix(
 			continue
 		}
 		s.setCachedPrefix(iface, prefix)
-		s.writeStateFile(ctx, iface, prefix)
+		if !s.readOnly {
+			s.writeStateFile(ctx, iface, prefix)
+		}
 		return prefix, true, nil
 	}
 

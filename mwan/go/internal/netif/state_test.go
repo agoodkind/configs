@@ -126,3 +126,19 @@ func TestBuildTableRoute(t *testing.T) {
 		})
 	}
 }
+
+func TestRouteToCurrentPreservesDestination(t *testing.T) {
+	t.Parallel()
+
+	_, destination, err := net.ParseCIDR("2001:db8:1234::/48")
+	if err != nil {
+		t.Fatalf("ParseCIDR returned error: %v", err)
+	}
+	current, err := routeToCurrent(slog.Default(), netlink.Route{Dst: destination})
+	if err != nil {
+		t.Fatalf("routeToCurrent returned error: %v", err)
+	}
+	if current.Dest != "2001:db8:1234::/48" {
+		t.Fatalf("routeToCurrent destination = %q, want %q", current.Dest, "2001:db8:1234::/48")
+	}
+}
