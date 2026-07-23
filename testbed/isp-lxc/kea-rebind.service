@@ -1,6 +1,6 @@
 [Unit]
-Description=Rebind kea DHCP servers when eth0 is recreated (testbed WAN sim)
-After=network-online.target kea-dhcp6-server.service
+Description=Re-establish eth0-bound sim services (kea, pd-route) when eth0 is recreated
+After=network-online.target kea-dhcp6-server.service pd-route.service
 Wants=network-online.target
 
 [Service]
