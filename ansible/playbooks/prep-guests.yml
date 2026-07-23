@@ -141,6 +141,7 @@
           - curl
           - wget
           - net-tools
+          - tcpdump
           - gpg
           - rsyslog
           - git
