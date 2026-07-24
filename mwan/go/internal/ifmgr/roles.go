@@ -70,6 +70,8 @@ var roleModules = map[string][]string{
 	// separate instance from any OOB role so shadow-mode rollout can be
 	// enabled without changing the existing failover scripts yet.
 	"wan": {
+		// health writes the state consumed by later WAN-role modules.
+		"health",
 		"wan.routes",
 		// npt programs the ip6 nat NPT chains from the live DHCPv6-PD.
 		// Gated by its own shadow_mode; self-disables when [ifmgr.wan]
