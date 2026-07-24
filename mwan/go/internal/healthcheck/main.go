@@ -55,7 +55,7 @@ func Run() error {
 	)
 	slog.SetDefault(logger)
 
-	slog.Info("health-check started", "interval", interval.String(),
+	slog.Info("health started", "interval", interval.String(),
 		"v4_targets", len(defaultV4Targets), "v6_targets", len(defaultV6Targets), "http_sites", len(defaultHTTPSites))
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
