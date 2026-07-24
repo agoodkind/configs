@@ -38,6 +38,13 @@ type Daemon struct {
 	clock   internalclock.Clock
 	env     *Env
 
+	// reconcileReq lets a module ask for an immediate reconcile pass instead
+	// of waiting for the periodic tick. It is buffered with capacity 1 so a
+	// burst of requests coalesces into a single pass; senders drop their
+	// request when one is already queued. This is what makes health-driven
+	// failover event-driven rather than tick-latency-bound.
+	reconcileReq chan struct{}
+
 	mu        sync.Mutex
 	startedAt time.Time
 }
@@ -131,14 +138,15 @@ func NewDaemon(log *slog.Logger, cfg DaemonConfig) (*Daemon, error) {
 	}
 
 	d := &Daemon{
-		cfg:       cfg,
-		log:       dlog,
-		role:      cfg.Role,
-		modules:   modules,
-		clock:     nil,
-		env:       nil,
-		mu:        sync.Mutex{},
-		startedAt: time.Time{},
+		cfg:          cfg,
+		log:          dlog,
+		role:         cfg.Role,
+		modules:      modules,
+		clock:        nil,
+		env:          nil,
+		reconcileReq: make(chan struct{}, 1),
+		mu:           sync.Mutex{},
+		startedAt:    time.Time{},
 	}
 	dlog.Info("ifmgr: Daemon ready", "module_count", len(modules))
 	return d, nil
@@ -193,13 +201,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	d.env = &Env{
-		Iface:   d.cfg.Iface,
-		Sysctl:  netif.NewProcSysctlRunner(d.log, false),
-		Log:     d.log,
-		Alerts:  WrapNotifier(d.cfg.Notifier),
-		Monitor: mon,
-		DHCP:    dhcpClient,
-		RA:      raClient,
+		Iface:            d.cfg.Iface,
+		Sysctl:           netif.NewProcSysctlRunner(d.log, false),
+		Log:              d.log,
+		Alerts:           WrapNotifier(d.cfg.Notifier),
+		Monitor:          mon,
+		DHCP:             dhcpClient,
+		RA:               raClient,
+		RequestReconcile: d.requestReconcile,
 	}
 
 	if err := d.initModules(ctx); err != nil {
@@ -302,7 +311,30 @@ func (d *Daemon) runLoop(
 			tlog.DebugContext(tickCtx, "ifmgr: tick")
 			d.reconcileAll(tickCtx, tlog)
 			d.evaluateAlertsAll(tickCtx, tlog, d.clock.Now())
+
+		case <-d.reconcileReq:
+			reqCtx := tracing.WithOperation(ctx, "requested_reconcile")
+			reqCtx, _ = tracing.StartTrace(reqCtx, "", "requested_reconcile")
+			rlog := tracing.Logger(reqCtx, d.log).With("phase", "requested-reconcile")
+			rlog.DebugContext(reqCtx, "ifmgr: reconcile on request")
+			d.reconcileAll(reqCtx, rlog)
+			d.evaluateAlertsAll(reqCtx, rlog, d.clock.Now())
 		}
+	}
+}
+
+// requestReconcile asks the main loop to run a reconcile pass promptly. The
+// send is non-blocking: reconcileReq is buffered with capacity 1, so when a
+// pass is already queued the request coalesces into it rather than blocking the
+// caller. Modules call this via Env.RequestReconcile after a state change that
+// downstream modules must act on now, for example a health transition that
+// should drive an immediate wan.routes failover instead of waiting for the tick.
+func (d *Daemon) requestReconcile(reason string) {
+	select {
+	case d.reconcileReq <- struct{}{}:
+		d.log.Debug("ifmgr: reconcile requested", "reason", reason)
+	default:
+		d.log.Debug("ifmgr: reconcile already queued; coalescing", "reason", reason)
 	}
 }
 

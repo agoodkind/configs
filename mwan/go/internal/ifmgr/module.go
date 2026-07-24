@@ -97,6 +97,13 @@ type Env struct {
 	// RA is the Router Solicitation client, or nil when the iface section
 	// did not request ra_solicit.
 	RA *netif.RAClient
+	// RequestReconcile asks the daemon to run a reconcile pass promptly
+	// instead of waiting for the periodic tick. A module calls it after a
+	// state change that a downstream module must act on now, for example a
+	// health transition that should drive an immediate wan.routes failover.
+	// The call is non-blocking and coalescing. It is nil in unit tests that
+	// construct an Env without a daemon; callers must nil-check.
+	RequestReconcile func(reason string)
 }
 
 // registry maps module name to constructor. Populated at package init

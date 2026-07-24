@@ -821,6 +821,58 @@ func TestEmitTransitionAlertsFromUnknownUnhealthy(t *testing.T) {
 	}
 }
 
+func TestEmitTransitionRequestsReconcile(t *testing.T) {
+	t.Parallel()
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tests := []struct {
+		name       string
+		shadowMode bool
+		wantCalls  int
+	}{
+		{name: "authoritative requests reconcile", shadowMode: false, wantCalls: 1},
+		{name: "shadow does not request reconcile", shadowMode: true, wantCalls: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var reconcileReasons []string
+			module := &Module{
+				BaseModule: ifmgr.NewBaseModule(moduleName),
+				cfg:        Config{ShadowMode: test.shadowMode},
+				clock:      fixedClock{now: time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)},
+			}
+			module.InitBase(&ifmgr.Env{
+				Log:    log,
+				Alerts: ifmgr.WrapNotifier(&recordingNotifier{}),
+				RequestReconcile: func(reason string) {
+					reconcileReasons = append(reconcileReasons, reason)
+				},
+			}, "module", moduleName)
+
+			// An authoritative health transition must ask the daemon to
+			// reconcile now so wan.routes fails over event-driven, not on the
+			// tick. In shadow the Go verdict does not drive wan.routes, so no
+			// reconcile is requested.
+			module.emitTransitions(context.Background(), log, []transition{
+				{
+					WAN:  WAN{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}},
+					From: StateHealthy,
+					To:   StateUnhealthy,
+				},
+			})
+
+			if len(reconcileReasons) != test.wantCalls {
+				t.Fatalf(
+					"RequestReconcile calls = %d, want %d",
+					len(reconcileReasons), test.wantCalls,
+				)
+			}
+		})
+	}
+}
+
 func testProbeModule(probeV6 pingFunc, probeV4 pingFunc) *Module {
 	return &Module{
 		cfg: Config{
