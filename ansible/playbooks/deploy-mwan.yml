@@ -629,12 +629,37 @@
           ExecStartPost=/bin/sh -c 'date +%s > /var/run/mwan-last-change'
       when: scripts_updater_svc.stat.exists
 
+    # When the native Go health module runs in shadow (prod baseline), the shell
+    # mwan-health daemon stays authoritative, so it must not be masked. Unmask it
+    # before the enable loop so a host reverting from an authoritative testbed
+    # back to shadow can re-enable it.
+    - name: Unmask shell mwan-health when Go health module is in shadow
+      ansible.builtin.systemd:
+        name: mwan-health
+        masked: false
+      when: mwan_ifmgr_health_shadow_mode | bool
+
     - name: Enable services
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: true
         daemon_reload: true
       loop: "{{ mwan_enabled_services }}"
+
+    # When the native Go health module is authoritative, it writes
+    # /var/run/mwan-health.state itself. Stop, disable, and mask the shell
+    # mwan-health daemon so the two never both write that file and so the shell
+    # never re-runs update-routes.sh on its own health transitions. mwan-health
+    # is absent from mwan_enabled_services on authoritative hosts, so the enable
+    # loop above never touches it here.
+    - name: Stop, disable, and mask shell mwan-health when Go health is authoritative
+      ansible.builtin.systemd:
+        name: mwan-health
+        state: stopped
+        enabled: false
+        masked: true
+        daemon_reload: true
+      when: not (mwan_ifmgr_health_shadow_mode | bool)
 
     # ============================================================================
     # POST-DEPLOY: Reboot for clean state
