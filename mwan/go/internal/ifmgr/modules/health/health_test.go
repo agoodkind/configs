@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +89,194 @@ func TestAdvanceHealthAppliesConsecutiveThresholds(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("states = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestAdvanceHealthUsesResolvedPerWANThresholds(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		FailureThreshold:  2,
+		RecoveryThreshold: 2,
+	}
+	wan := WAN{
+		FailureThreshold:  5,
+		RecoveryThreshold: 3,
+	}
+	status := wanStatus{State: StateUnknown}
+	for range 4 {
+		status, _ = advanceHealth(
+			status,
+			false,
+			wan.failureThreshold(cfg),
+			wan.recoveryThreshold(cfg),
+		)
+	}
+	if status.State != StateUnknown {
+		t.Fatalf("state after 4 failures = %s, want %s", status.State, StateUnknown)
+	}
+	status, _ = advanceHealth(
+		status,
+		false,
+		wan.failureThreshold(cfg),
+		wan.recoveryThreshold(cfg),
+	)
+	if status.State != StateUnhealthy {
+		t.Fatalf("state after 5 failures = %s, want %s", status.State, StateUnhealthy)
+	}
+	for range 2 {
+		status, _ = advanceHealth(
+			status,
+			true,
+			wan.failureThreshold(cfg),
+			wan.recoveryThreshold(cfg),
+		)
+	}
+	if status.State != StateUnhealthy {
+		t.Fatalf("state after 2 recoveries = %s, want %s", status.State, StateUnhealthy)
+	}
+	status, _ = advanceHealth(
+		status,
+		true,
+		wan.failureThreshold(cfg),
+		wan.recoveryThreshold(cfg),
+	)
+	if status.State != StateHealthy {
+		t.Fatalf("state after 3 recoveries = %s, want %s", status.State, StateHealthy)
+	}
+}
+
+func TestWANResolversFallBackToModuleConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		TargetsV4:         []netip.Addr{netip.MustParseAddr("192.0.2.1")},
+		TargetsV6:         []netip.Addr{netip.MustParseAddr("2001:db8::1")},
+		HTTPURLs:          []string{"https://example.test/health"},
+		PingCount:         3,
+		SuccessThreshold:  2,
+		FailureThreshold:  4,
+		RecoveryThreshold: 5,
+	}
+	wan := WAN{}
+	if !reflect.DeepEqual(wan.targetsV4(cfg), cfg.TargetsV4) {
+		t.Fatal("targetsV4 did not fall back to the module config")
+	}
+	if !reflect.DeepEqual(wan.targetsV6(cfg), cfg.TargetsV6) {
+		t.Fatal("targetsV6 did not fall back to the module config")
+	}
+	if !reflect.DeepEqual(wan.httpURLs(cfg), cfg.HTTPURLs) {
+		t.Fatal("httpURLs did not fall back to the module config")
+	}
+	if wan.pingCount(cfg) != cfg.PingCount {
+		t.Fatal("pingCount did not fall back to the module config")
+	}
+	if wan.successThreshold(cfg) != cfg.SuccessThreshold {
+		t.Fatal("successThreshold did not fall back to the module config")
+	}
+	if wan.failureThreshold(cfg) != cfg.FailureThreshold {
+		t.Fatal("failureThreshold did not fall back to the module config")
+	}
+	if wan.recoveryThreshold(cfg) != cfg.RecoveryThreshold {
+		t.Fatal("recoveryThreshold did not fall back to the module config")
+	}
+}
+
+func TestValidateConfigUsesResolvedPerWANPolicy(t *testing.T) {
+	t.Parallel()
+
+	base := Config{
+		ShadowMode:       true,
+		StateFile:        "/run/health",
+		PersistStateFile: "/var/lib/health",
+		TargetsV4: []netip.Addr{
+			netip.MustParseAddr("192.0.2.1"),
+			netip.MustParseAddr("192.0.2.2"),
+		},
+		TargetsV6: []netip.Addr{
+			netip.MustParseAddr("2001:db8::1"),
+			netip.MustParseAddr("2001:db8::2"),
+		},
+		HTTPURLs:          nil,
+		Timeout:           time.Second,
+		Interval:          10 * time.Second,
+		PingCount:         3,
+		SuccessThreshold:  2,
+		FailureThreshold:  2,
+		RecoveryThreshold: 2,
+		WANs:              nil,
+	}
+	tests := []struct {
+		name      string
+		wan       WAN
+		wantError string
+	}{
+		{
+			name: "valid overrides",
+			wan: WAN{
+				WANRef:            ifmgr.WANRef{Name: "monkeybrains", Iface: "mbrains0"},
+				TargetsV4:         []netip.Addr{netip.MustParseAddr("198.51.100.1")},
+				TargetsV6:         []netip.Addr{netip.MustParseAddr("2001:db8:1::1")},
+				HTTPURLs:          nil,
+				PingCount:         5,
+				SuccessThreshold:  1,
+				FailureThreshold:  5,
+				RecoveryThreshold: 3,
+				CheckInterval:     30 * time.Second,
+			},
+			wantError: "",
+		},
+		{
+			name: "success threshold exceeds IPv6 targets",
+			wan: WAN{
+				WANRef:           ifmgr.WANRef{Name: "att", Iface: "att0"},
+				TargetsV6:        []netip.Addr{netip.MustParseAddr("2001:db8::1")},
+				SuccessThreshold: 2,
+			},
+			wantError: "success_threshold exceeds an address-family target count",
+		},
+		{
+			name: "negative ping count",
+			wan: WAN{
+				WANRef:    ifmgr.WANRef{Name: "att", Iface: "att0"},
+				PingCount: -1,
+			},
+			wantError: "ping_count must be > 0",
+		},
+		{
+			name: "negative failure threshold",
+			wan: WAN{
+				WANRef:           ifmgr.WANRef{Name: "att", Iface: "att0"},
+				FailureThreshold: -1,
+			},
+			wantError: "failure_threshold must be > 0",
+		},
+		{
+			name: "negative recovery threshold",
+			wan: WAN{
+				WANRef:            ifmgr.WANRef{Name: "att", Iface: "att0"},
+				RecoveryThreshold: -1,
+			},
+			wantError: "recovery_threshold must be > 0",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := base
+			cfg.WANs = []WAN{test.wan}
+			err := validateConfig(cfg)
+			if test.wantError == "" {
+				if err != nil {
+					t.Fatalf("validateConfig returned error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("validateConfig error = %v, want %q", err, test.wantError)
 			}
 		})
 	}
@@ -191,6 +380,73 @@ func TestProbeWANVerdictIsV6OrV4AndAlwaysProbesBoth(t *testing.T) {
 			wantCalls := []string{"v6", "v6", "v4", "v4"}
 			if !reflect.DeepEqual(calls, wantCalls) {
 				t.Fatalf("probe calls = %v, want %v", calls, wantCalls)
+			}
+		})
+	}
+}
+
+func TestProbeWANUsesPerWANSuccessThreshold(t *testing.T) {
+	t.Parallel()
+
+	v6PassingTarget := netip.MustParseAddr("2001:db8::1")
+	v4PassingTarget := netip.MustParseAddr("192.0.2.1")
+	module := testProbeModule(
+		func(
+			_ context.Context,
+			_ string,
+			target netip.Addr,
+			_ time.Duration,
+		) (time.Duration, error) {
+			if target == v6PassingTarget {
+				return time.Millisecond, nil
+			}
+			return 0, errors.New("IPv6 target unavailable")
+		},
+		func(
+			_ context.Context,
+			_ string,
+			target netip.Addr,
+			_ time.Duration,
+		) (time.Duration, error) {
+			if target == v4PassingTarget {
+				return time.Millisecond, nil
+			}
+			return 0, errors.New("IPv4 target unavailable")
+		},
+	)
+	module.cfg.WANs = []WAN{
+		{
+			WANRef:           ifmgr.WANRef{Name: "monkeybrains", Iface: "mbrains0"},
+			SuccessThreshold: 1,
+		},
+		{
+			WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"},
+		},
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tests := []struct {
+		name     string
+		wan      WAN
+		wantPass bool
+	}{
+		{
+			name:     "per-WAN threshold accepts one target",
+			wan:      module.cfg.WANs[0],
+			wantPass: true,
+		},
+		{
+			name:     "module threshold still requires two targets",
+			wan:      module.cfg.WANs[1],
+			wantPass: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := module.probeWAN(context.Background(), test.wan, log)
+			if result.Passed != test.wantPass {
+				t.Fatalf("Passed = %t, want %t", result.Passed, test.wantPass)
 			}
 		})
 	}

@@ -43,14 +43,69 @@ const (
 	StateUnhealthy State = "unhealthy"
 )
 
-// WAN embeds the shared identity so every WAN-role module uses the same name
-// and source-bound interface.
+// WAN embeds the shared identity and carries optional health-policy overrides.
 type WAN struct {
 	ifmgr.WANRef
+	TargetsV4         []netip.Addr
+	TargetsV6         []netip.Addr
+	HTTPURLs          []string
+	PingCount         int
+	SuccessThreshold  int
+	FailureThreshold  int
+	RecoveryThreshold int
+	CheckInterval     time.Duration
 }
 
-// Config keeps probe policy module-wide while the shared WAN section owns WAN
-// identity and interface selection.
+func (wan WAN) targetsV4(cfg Config) []netip.Addr {
+	if len(wan.TargetsV4) > 0 {
+		return wan.TargetsV4
+	}
+	return cfg.TargetsV4
+}
+
+func (wan WAN) targetsV6(cfg Config) []netip.Addr {
+	if len(wan.TargetsV6) > 0 {
+		return wan.TargetsV6
+	}
+	return cfg.TargetsV6
+}
+
+func (wan WAN) httpURLs(cfg Config) []string {
+	if len(wan.HTTPURLs) > 0 {
+		return wan.HTTPURLs
+	}
+	return cfg.HTTPURLs
+}
+
+func (wan WAN) pingCount(cfg Config) int {
+	if wan.PingCount != 0 {
+		return wan.PingCount
+	}
+	return cfg.PingCount
+}
+
+func (wan WAN) successThreshold(cfg Config) int {
+	if wan.SuccessThreshold != 0 {
+		return wan.SuccessThreshold
+	}
+	return cfg.SuccessThreshold
+}
+
+func (wan WAN) failureThreshold(cfg Config) int {
+	if wan.FailureThreshold != 0 {
+		return wan.FailureThreshold
+	}
+	return cfg.FailureThreshold
+}
+
+func (wan WAN) recoveryThreshold(cfg Config) int {
+	if wan.RecoveryThreshold != 0 {
+		return wan.RecoveryThreshold
+	}
+	return cfg.RecoveryThreshold
+}
+
+// Config keeps module-wide probe policy as the fallback for per-WAN overrides.
 type Config struct {
 	ShadowMode        bool
 	StateFile         string
@@ -141,11 +196,9 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	if err := m.loadStatuses(ctx, log); err != nil {
 		return err
 	}
-	// Seed the state files. writeStateFiles already tolerates a persist-mirror
-	// failure (best-effort restart recovery under the read-only /var/lib
-	// sandbox), so any error here is a runtime-file write failure. The runtime
-	// file is the required output, so fail Init rather than run blind on a
-	// genuinely broken /var/run.
+	// Seed the state files. writeStateFiles tolerates a persist-mirror failure,
+	// so any error here is a runtime-file write failure. The runtime file is the
+	// required output, so fail Init rather than run blind on broken /var/run.
 	if err := m.writeStateFiles(ctx, log, m.snapshotStatuses()); err != nil {
 		log.WarnContext(ctx, "health: initialize runtime state failed", "err", err)
 		return fmt.Errorf("health: initialize state files: %w", err)
@@ -242,8 +295,8 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 		next, changed := advanceHealth(
 			current,
 			result.Passed,
-			m.cfg.FailureThreshold,
-			m.cfg.RecoveryThreshold,
+			wan.failureThreshold(m.cfg),
+			wan.recoveryThreshold(m.cfg),
 		)
 		nextStatuses[wan.Name] = next
 		if changed {
@@ -277,10 +330,10 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 }
 
 func (m *Module) probeWAN(ctx context.Context, wan WAN, log *slog.Logger) probeResult {
-	v6Successes := m.probeTargets(ctx, wan, m.cfg.TargetsV6, m.probeV6)
-	v4Successes := m.probeTargets(ctx, wan, m.cfg.TargetsV4, m.probeV4)
+	v6Successes := m.probeTargets(ctx, wan, wan.targetsV6(m.cfg), m.probeV6)
+	v4Successes := m.probeTargets(ctx, wan, wan.targetsV4(m.cfg), m.probeV4)
 	httpSuccesses := 0
-	for _, url := range m.cfg.HTTPURLs {
+	for _, url := range wan.httpURLs(m.cfg) {
 		statusCode, err := m.probeHTTP(ctx, wan.Iface, url, m.cfg.Timeout)
 		reachable := err == nil
 		if reachable {
@@ -302,8 +355,9 @@ func (m *Module) probeWAN(ctx context.Context, wan WAN, log *slog.Logger) probeR
 	// (fallback), or any HTTP probe succeeds. Both families are always probed
 	// (v6 primary, v4 always); v6 leads, but v4 or HTTP alone can still keep a
 	// WAN up, so a v4 flap never marks a healthy-v6 WAN down.
-	passed := v6Successes >= m.cfg.SuccessThreshold ||
-		v4Successes >= m.cfg.SuccessThreshold ||
+	successThreshold := wan.successThreshold(m.cfg)
+	passed := v6Successes >= successThreshold ||
+		v4Successes >= successThreshold ||
 		httpSuccesses >= 1
 	return probeResult{
 		Passed:        passed,
@@ -322,7 +376,7 @@ func (m *Module) probeTargets(
 	successes := 0
 	for _, target := range targets {
 		targetReached := false
-		for range m.cfg.PingCount {
+		for range wan.pingCount(m.cfg) {
 			if _, err := probe(ctx, wan.Iface, target, m.cfg.Timeout); err == nil {
 				targetReached = true
 			}

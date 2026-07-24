@@ -154,6 +154,25 @@ internal_net_v4 = "{{ mwan_internal_net_v4 }}"
 health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 shadow_mode = {{ mwan_ifmgr_wan_shadow_mode | ternary('true', 'false') }}
 
+[ifmgr.modules.health]
+shadow_mode = {{ mwan_ifmgr_health_shadow_mode | ternary('true', 'false') }}
+state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
+persist_state_file = "/var/lib/mwan/health-state"
+timeout = "2s"
+
+{% for name, health_check in mwan_health_checks.items() %}
+[ifmgr.modules.health.wan.{{ name }}]
+enabled = {{ health_check.enabled | ternary('true', 'false') }}
+ping_count = {{ health_check.ping_count }}
+success_threshold = {{ health_check.success_threshold }}
+check_interval = "{{ health_check.check_interval }}s"
+failure_threshold = {{ health_check.failure_threshold }}
+recovery_threshold = {{ health_check.recovery_threshold }}
+targets_v4 = {{ health_check.targets_v4 | to_json }}
+targets_v6 = {{ health_check.targets_v6 | to_json }}
+http_urls = {{ health_check.http_targets | to_json }}
+
+{% endfor %}
 [ifmgr.modules.npt]
 shadow_mode = {{ mwan_ifmgr_npt_shadow_mode | ternary('true', 'false') }}
 

@@ -165,8 +165,7 @@ func addWANRoleConfigs(
 	return nil
 }
 
-// buildHealthConfig projects shared WAN identities into the health module and
-// parses only the health section's module-wide probe policy.
+// buildHealthConfig joins shared WAN identities with keyed health policy.
 func buildHealthConfig(
 	shared sharedWANInputs,
 	section *config.IfMgrHealthSection,
@@ -186,37 +185,28 @@ func buildHealthConfig(
 		RecoveryThreshold: 0,
 		WANs:              make([]health.WAN, 0, len(shared.WANs)),
 	}
-	for _, wan := range shared.WANs {
-		cfg.WANs = append(cfg.WANs, health.WAN{WANRef: wan.WANRef})
-	}
 	if section == nil {
+		for _, wan := range shared.WANs {
+			cfg.WANs = append(cfg.WANs, health.WAN{
+				WANRef:            wan.WANRef,
+				TargetsV4:         nil,
+				TargetsV6:         nil,
+				HTTPURLs:          nil,
+				PingCount:         0,
+				SuccessThreshold:  0,
+				FailureThreshold:  0,
+				RecoveryThreshold: 0,
+				CheckInterval:     0,
+			})
+		}
 		return cfg, nil
 	}
 
 	cfg.ShadowMode = section.ShadowMode
 	cfg.StateFile = section.StateFile
 	cfg.PersistStateFile = section.PersistStateFile
-	cfg.HTTPURLs = append([]string(nil), section.HTTPURLs...)
-	cfg.PingCount = section.PingCount
-	cfg.SuccessThreshold = section.SuccessThreshold
-	cfg.FailureThreshold = section.FailureThreshold
-	cfg.RecoveryThreshold = section.RecoveryThreshold
 
 	var err error
-	cfg.TargetsV4, err = parseAddrList(
-		section.TargetsV4,
-		"ifmgr.modules.health.targets_v4",
-	)
-	if err != nil {
-		return health.Config{}, err
-	}
-	cfg.TargetsV6, err = parseAddrList(
-		section.TargetsV6,
-		"ifmgr.modules.health.targets_v6",
-	)
-	if err != nil {
-		return health.Config{}, err
-	}
 	cfg.Timeout, err = parseDurationSetting(
 		section.Timeout,
 		0,
@@ -225,15 +215,103 @@ func buildHealthConfig(
 	if err != nil {
 		return health.Config{}, err
 	}
-	cfg.Interval, err = parseDurationSetting(
-		section.Interval,
-		0,
-		"ifmgr.modules.health.interval",
-	)
-	if err != nil {
-		return health.Config{}, err
+	for _, wan := range shared.WANs {
+		wanSection, ok := section.WAN[wan.Name]
+		if !ok || !wanSection.Enabled {
+			continue
+		}
+		// Require an enabled WAN to fully specify its policy. Go's TOML cannot
+		// tell an omitted scalar from an explicit 0, so the health module's
+		// resolver treats 0/empty as "inherit the module-wide default". The
+		// rendered config always populates every field for every WAN, so an
+		// enabled WAN missing a threshold or a ping-target family is a config
+		// error, not an intentional inherit. Reject it here rather than let it
+		// silently fall back to the public defaults.
+		if err := validateHealthWANSection(wan.Name, wanSection); err != nil {
+			return health.Config{}, err
+		}
+		healthWAN := health.WAN{
+			WANRef:            wan.WANRef,
+			TargetsV4:         nil,
+			TargetsV6:         nil,
+			HTTPURLs:          append([]string(nil), wanSection.HTTPURLs...),
+			PingCount:         wanSection.PingCount,
+			SuccessThreshold:  wanSection.SuccessThreshold,
+			FailureThreshold:  wanSection.FailureThreshold,
+			RecoveryThreshold: wanSection.RecoveryThreshold,
+			CheckInterval:     0,
+		}
+		fieldPrefix := "ifmgr.modules.health.wan." + wan.Name
+		healthWAN.TargetsV4, err = parseAddrList(
+			wanSection.TargetsV4,
+			fieldPrefix+".targets_v4",
+		)
+		if err != nil {
+			return health.Config{}, err
+		}
+		healthWAN.TargetsV6, err = parseAddrList(
+			wanSection.TargetsV6,
+			fieldPrefix+".targets_v6",
+		)
+		if err != nil {
+			return health.Config{}, err
+		}
+		healthWAN.CheckInterval, err = parseDurationSetting(
+			wanSection.CheckInterval,
+			0,
+			fieldPrefix+".check_interval",
+		)
+		if err != nil {
+			return health.Config{}, err
+		}
+		if healthWAN.CheckInterval != 0 &&
+			(cfg.Interval == 0 || healthWAN.CheckInterval < cfg.Interval) {
+			cfg.Interval = healthWAN.CheckInterval
+		}
+		cfg.WANs = append(cfg.WANs, healthWAN)
 	}
 	return cfg, nil
+}
+
+// validateHealthWANSection rejects an enabled health WAN that under-specifies
+// its probe policy. Every threshold must be positive, both ping-target families
+// must be non-empty, and success_threshold must not exceed either family's
+// target count. http_urls stays optional because HTTP is only an OR fallback
+// leg of the verdict. This turns a malformed hand-edited section into a load
+// error instead of a silent inherit of the module-wide defaults.
+func validateHealthWANSection(name string, s config.IfMgrHealthWANSection) error {
+	prefix := "ifmgr.modules.health.wan." + name
+	if s.PingCount <= 0 {
+		return fmt.Errorf("%s.ping_count must be > 0", prefix)
+	}
+	if s.SuccessThreshold <= 0 {
+		return fmt.Errorf("%s.success_threshold must be > 0", prefix)
+	}
+	if s.FailureThreshold <= 0 {
+		return fmt.Errorf("%s.failure_threshold must be > 0", prefix)
+	}
+	if s.RecoveryThreshold <= 0 {
+		return fmt.Errorf("%s.recovery_threshold must be > 0", prefix)
+	}
+	if len(s.TargetsV4) == 0 {
+		return fmt.Errorf("%s.targets_v4 must have at least one entry", prefix)
+	}
+	if len(s.TargetsV6) == 0 {
+		return fmt.Errorf("%s.targets_v6 must have at least one entry", prefix)
+	}
+	if s.SuccessThreshold > len(s.TargetsV4) {
+		return fmt.Errorf(
+			"%s.success_threshold %d exceeds targets_v4 count %d",
+			prefix, s.SuccessThreshold, len(s.TargetsV4),
+		)
+	}
+	if s.SuccessThreshold > len(s.TargetsV6) {
+		return fmt.Errorf(
+			"%s.success_threshold %d exceeds targets_v6 count %d",
+			prefix, s.SuccessThreshold, len(s.TargetsV6),
+		)
+	}
+	return nil
 }
 
 // buildNPTConfig joins the shared [ifmgr.wan] prefixes and WAN identity list

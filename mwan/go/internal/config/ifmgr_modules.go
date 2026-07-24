@@ -123,21 +123,26 @@ type IfMgrWANRoutesSection struct {
 	ShadowMode      bool   `toml:"shadow_mode"`
 }
 
-// IfMgrHealthSection keeps the probe policy in [ifmgr.modules.health] while
-// [ifmgr.wan] remains the only source for WAN names and interfaces.
+// IfMgrHealthSection keeps shared health settings and keyed per-WAN policy.
 type IfMgrHealthSection struct {
-	ShadowMode        bool     `toml:"shadow_mode"`
-	StateFile         string   `toml:"state_file"`
-	PersistStateFile  string   `toml:"persist_state_file"`
+	ShadowMode       bool                             `toml:"shadow_mode"`
+	StateFile        string                           `toml:"state_file"`
+	PersistStateFile string                           `toml:"persist_state_file"`
+	Timeout          string                           `toml:"timeout"`
+	WAN              map[string]IfMgrHealthWANSection `toml:"wan"`
+}
+
+// IfMgrHealthWANSection is one [ifmgr.modules.health.wan.<name>] table.
+type IfMgrHealthWANSection struct {
+	Enabled           bool     `toml:"enabled"`
+	PingCount         int      `toml:"ping_count"`
+	SuccessThreshold  int      `toml:"success_threshold"`
+	CheckInterval     string   `toml:"check_interval"`
+	FailureThreshold  int      `toml:"failure_threshold"`
+	RecoveryThreshold int      `toml:"recovery_threshold"`
 	TargetsV4         []string `toml:"targets_v4"`
 	TargetsV6         []string `toml:"targets_v6"`
 	HTTPURLs          []string `toml:"http_urls"`
-	Timeout           string   `toml:"timeout"`
-	Interval          string   `toml:"interval"`
-	PingCount         int      `toml:"ping_count"`
-	SuccessThreshold  int      `toml:"success_threshold"`
-	FailureThreshold  int      `toml:"failure_threshold"`
-	RecoveryThreshold int      `toml:"recovery_threshold"`
 }
 
 // IfMgrNPTSection is the explicit TOML schema for [ifmgr.modules.npt]. It
