@@ -50,7 +50,9 @@ PrivateTmp=true
 # This default keeps prod vault locked down by default and forces an
 # explicit, reviewable change to relax it.
 ProtectKernelTunables=true
-ReadWritePaths=/var/log /var/run /run
+# The health persist mirror needs restart-recovery state under /var/lib/mwan.
+StateDirectory=mwan
+ReadWritePaths=/var/log /var/run /run /var/lib/mwan
 
 # Allow reading SSH credentials for outbound SSH from modules like
 # wg that probe remote WG endpoints. ProtectHome=true otherwise

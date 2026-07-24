@@ -99,13 +99,10 @@ func (m *Module) writeStateFiles(
 	if err := writeFileAtomic(ctx, log, statePath, contents); err != nil {
 		return stateFileError(ctx, log, "write runtime state", statePath, err)
 	}
-	// The persist mirror is best-effort restart-recovery state. The ifmgr daemon
-	// runs with ProtectSystem=strict and does not list /var/lib in
-	// ReadWritePaths, so the persist write fails read-only; the shell tolerates
-	// the same limitation, and pd.Source's cache write is best-effort for the
-	// same reason. Log and continue rather than failing the cycle or killing the
-	// module: losing the mirror only costs restart recovery, and the module
-	// re-converges within a couple of cycles.
+	// The persist mirror is best-effort restart-recovery state. Log and continue
+	// rather than failing the cycle or killing the module: losing the mirror
+	// only costs restart recovery, and the module re-converges within a couple
+	// of cycles.
 	if err := writeFileAtomic(ctx, log, persistPath, contents); err != nil {
 		log.WarnContext(
 			ctx,

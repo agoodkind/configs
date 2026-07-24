@@ -370,48 +370,217 @@ func TestBuildHealthConfig(t *testing.T) {
 
 	shared := buildWANRefs(sharedWANForTest())
 	cfg, err := buildHealthConfig(shared, &config.IfMgrHealthSection{
-		ShadowMode:        true,
-		StateFile:         "/run/health",
-		PersistStateFile:  "/var/lib/health",
-		TargetsV4:         []string{"192.0.2.1", "192.0.2.2"},
-		TargetsV6:         []string{"2001:db8::1", "2001:db8::2"},
-		HTTPURLs:          []string{"https://example.com/health"},
-		Timeout:           "3s",
-		Interval:          "15s",
-		PingCount:         4,
-		SuccessThreshold:  2,
-		FailureThreshold:  3,
-		RecoveryThreshold: 4,
+		ShadowMode:       true,
+		StateFile:        "/run/health",
+		PersistStateFile: "/var/lib/health",
+		Timeout:          "3s",
+		WAN: map[string]config.IfMgrHealthWANSection{
+			"att": {
+				Enabled:           true,
+				PingCount:         4,
+				SuccessThreshold:  2,
+				CheckInterval:     "15s",
+				FailureThreshold:  3,
+				RecoveryThreshold: 4,
+				TargetsV4:         []string{"192.0.2.1", "192.0.2.2"},
+				TargetsV6:         []string{"2001:db8::1", "2001:db8::2"},
+				HTTPURLs:          []string{"https://example.com/health"},
+			},
+			"webpass": {
+				Enabled:           true,
+				PingCount:         5,
+				SuccessThreshold:  1,
+				CheckInterval:     "30s",
+				FailureThreshold:  5,
+				RecoveryThreshold: 3,
+				TargetsV4:         []string{"198.51.100.1", "198.51.100.2"},
+				TargetsV6:         []string{"2001:db8:1::1", "2001:db8:1::2"},
+				HTTPURLs:          []string{"https://example.net/health"},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("buildHealthConfig returned error: %v", err)
 	}
 	want := health.Config{
-		ShadowMode:       true,
-		StateFile:        "/run/health",
-		PersistStateFile: "/var/lib/health",
-		TargetsV4: []netip.Addr{
-			netip.MustParseAddr("192.0.2.1"),
-			netip.MustParseAddr("192.0.2.2"),
-		},
-		TargetsV6: []netip.Addr{
-			netip.MustParseAddr("2001:db8::1"),
-			netip.MustParseAddr("2001:db8::2"),
-		},
-		HTTPURLs:          []string{"https://example.com/health"},
+		ShadowMode:        true,
+		StateFile:         "/run/health",
+		PersistStateFile:  "/var/lib/health",
+		TargetsV4:         nil,
+		TargetsV6:         nil,
+		HTTPURLs:          nil,
 		Timeout:           3 * time.Second,
 		Interval:          15 * time.Second,
-		PingCount:         4,
-		SuccessThreshold:  2,
-		FailureThreshold:  3,
-		RecoveryThreshold: 4,
+		PingCount:         0,
+		SuccessThreshold:  0,
+		FailureThreshold:  0,
+		RecoveryThreshold: 0,
 		WANs: []health.WAN{
-			{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}},
-			{WANRef: ifmgr.WANRef{Name: "webpass", Iface: "webpass0"}},
+			{
+				WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"},
+				TargetsV4: []netip.Addr{
+					netip.MustParseAddr("192.0.2.1"),
+					netip.MustParseAddr("192.0.2.2"),
+				},
+				TargetsV6: []netip.Addr{
+					netip.MustParseAddr("2001:db8::1"),
+					netip.MustParseAddr("2001:db8::2"),
+				},
+				HTTPURLs:          []string{"https://example.com/health"},
+				PingCount:         4,
+				SuccessThreshold:  2,
+				FailureThreshold:  3,
+				RecoveryThreshold: 4,
+				CheckInterval:     15 * time.Second,
+			},
+			{
+				WANRef: ifmgr.WANRef{Name: "webpass", Iface: "webpass0"},
+				TargetsV4: []netip.Addr{
+					netip.MustParseAddr("198.51.100.1"),
+					netip.MustParseAddr("198.51.100.2"),
+				},
+				TargetsV6: []netip.Addr{
+					netip.MustParseAddr("2001:db8:1::1"),
+					netip.MustParseAddr("2001:db8:1::2"),
+				},
+				HTTPURLs:          []string{"https://example.net/health"},
+				PingCount:         5,
+				SuccessThreshold:  1,
+				FailureThreshold:  5,
+				RecoveryThreshold: 3,
+				CheckInterval:     30 * time.Second,
+			},
 		},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("buildHealthConfig mismatch\ngot:  %#v\nwant: %#v", cfg, want)
+	}
+}
+
+// enabledHealthWANSection returns a fully specified, valid enabled health WAN
+// section so filter and threshold tests do not trip the enabled-WAN policy
+// validation in buildHealthConfig.
+func enabledHealthWANSection(interval string) config.IfMgrHealthWANSection {
+	return config.IfMgrHealthWANSection{
+		Enabled:           true,
+		PingCount:         3,
+		SuccessThreshold:  2,
+		CheckInterval:     interval,
+		FailureThreshold:  2,
+		RecoveryThreshold: 2,
+		TargetsV4:         []string{"1.1.1.1", "8.8.8.8"},
+		TargetsV6:         []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+		HTTPURLs:          []string{"https://ifconfig.co/ip"},
+	}
+}
+
+func TestBuildHealthConfigSkipsDisabledAndAbsentWANs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		wan      map[string]config.IfMgrHealthWANSection
+		wantName string
+	}{
+		{
+			name: "disabled WAN",
+			wan: map[string]config.IfMgrHealthWANSection{
+				"att":     {Enabled: false, CheckInterval: "10s"},
+				"webpass": enabledHealthWANSection("30s"),
+			},
+			wantName: "webpass",
+		},
+		{
+			name: "absent WAN",
+			wan: map[string]config.IfMgrHealthWANSection{
+				"att": enabledHealthWANSection("10s"),
+			},
+			wantName: "att",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := buildHealthConfig(
+				buildWANRefs(sharedWANForTest()),
+				&config.IfMgrHealthSection{ShadowMode: true, WAN: test.wan},
+			)
+			if err != nil {
+				t.Fatalf("buildHealthConfig returned error: %v", err)
+			}
+			if len(cfg.WANs) != 1 {
+				t.Fatalf("WAN count = %d, want 1", len(cfg.WANs))
+			}
+			if cfg.WANs[0].Name != test.wantName {
+				t.Fatalf("included WAN = %q, want %q", cfg.WANs[0].Name, test.wantName)
+			}
+		})
+	}
+}
+
+func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
+	t.Parallel()
+
+	base := enabledHealthWANSection("10s")
+	tests := []struct {
+		name    string
+		mutate  func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection
+		wantSub string
+	}{
+		{
+			name: "zero ping_count",
+			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
+				s.PingCount = 0
+				return s
+			},
+			wantSub: "ping_count",
+		},
+		{
+			name: "zero success_threshold",
+			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
+				s.SuccessThreshold = 0
+				return s
+			},
+			wantSub: "success_threshold",
+		},
+		{
+			name: "empty targets_v6",
+			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
+				s.TargetsV6 = nil
+				return s
+			},
+			wantSub: "targets_v6",
+		},
+		{
+			name: "success_threshold exceeds targets",
+			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
+				s.SuccessThreshold = 3
+				return s
+			},
+			wantSub: "exceeds targets_v4",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := buildHealthConfig(
+				buildWANRefs(sharedWANForTest()),
+				&config.IfMgrHealthSection{
+					ShadowMode: true,
+					WAN: map[string]config.IfMgrHealthWANSection{
+						"att": test.mutate(base),
+					},
+				},
+			)
+			if err == nil {
+				t.Fatal("buildHealthConfig must reject an under-specified enabled WAN")
+			}
+			if !strings.Contains(err.Error(), test.wantSub) {
+				t.Fatalf("error %q does not mention %q", err, test.wantSub)
+			}
+		})
 	}
 }
 
@@ -506,15 +675,29 @@ shadow_mode = false
 shadow_mode = true
 state_file = "/run/mwan-health.state"
 persist_state_file = "/var/lib/mwan/health-state"
+timeout = "2s"
+
+[ifmgr.modules.health.wan.att]
+enabled = true
+ping_count = 3
+success_threshold = 2
+check_interval = "10s"
+failure_threshold = 2
+recovery_threshold = 2
 targets_v4 = ["1.1.1.1", "8.8.8.8"]
 targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
 http_urls = ["https://ifconfig.co/ip"]
-timeout = "2s"
-interval = "10s"
+
+[ifmgr.modules.health.wan.webpass]
+enabled = true
 ping_count = 3
 success_threshold = 2
+check_interval = "30s"
 failure_threshold = 2
 recovery_threshold = 2
+targets_v4 = ["1.1.1.1", "8.8.8.8"]
+targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+http_urls = ["https://ifconfig.co/ip"]
 
 [ifmgr.modules.npt]
 shadow_mode = true
@@ -565,6 +748,7 @@ shadow_mode = true
 	}
 	if !healthConfig.ShadowMode ||
 		healthConfig.StateFile != "/run/mwan-health.state" ||
+		healthConfig.Interval != 10*time.Second ||
 		len(healthConfig.WANs) != 2 {
 		t.Fatalf("health config did not round-trip shared WANs and module fields: %#v", healthConfig)
 	}

@@ -41,7 +41,7 @@ func defaultTargetsV6() []netip.Addr {
 func validateConfig(cfg Config) error {
 	var validationError error
 	validationError = errors.Join(validationError, validateProbeConfig(cfg))
-	validationError = errors.Join(validationError, validateWANs(cfg.WANs))
+	validationError = errors.Join(validationError, validateWANs(cfg))
 	return validationError
 }
 
@@ -105,11 +105,12 @@ func validateProbeConfig(cfg Config) error {
 	return validationError
 }
 
-func validateWANs(wans []WAN) error {
+func validateWANs(cfg Config) error {
 	var validationError error
-	seenNames := make(map[string]bool, len(wans))
-	seenIfaces := make(map[string]bool, len(wans))
-	for i, wan := range wans {
+	seenNames := make(map[string]bool, len(cfg.WANs))
+	seenIfaces := make(map[string]bool, len(cfg.WANs))
+	for i, wan := range cfg.WANs {
+		wanLabel := fmt.Sprintf("wan[%d] (%s)", i, wan.Name)
 		if wan.Name == "" {
 			validationError = errors.Join(
 				validationError,
@@ -132,6 +133,41 @@ func validateWANs(wans []WAN) error {
 			validationError = errors.Join(
 				validationError,
 				fmt.Errorf("wan[%d]: duplicate iface %q", i, wan.Iface),
+			)
+		}
+		successThreshold := wan.successThreshold(cfg)
+		if successThreshold <= 0 {
+			validationError = errors.Join(
+				validationError,
+				fmt.Errorf("%s: success_threshold must be > 0", wanLabel),
+			)
+		}
+		if successThreshold > len(wan.targetsV6(cfg)) ||
+			successThreshold > len(wan.targetsV4(cfg)) {
+			validationError = errors.Join(
+				validationError,
+				fmt.Errorf(
+					"%s: success_threshold exceeds an address-family target count",
+					wanLabel,
+				),
+			)
+		}
+		if wan.pingCount(cfg) <= 0 {
+			validationError = errors.Join(
+				validationError,
+				fmt.Errorf("%s: ping_count must be > 0", wanLabel),
+			)
+		}
+		if wan.failureThreshold(cfg) <= 0 {
+			validationError = errors.Join(
+				validationError,
+				fmt.Errorf("%s: failure_threshold must be > 0", wanLabel),
+			)
+		}
+		if wan.recoveryThreshold(cfg) <= 0 {
+			validationError = errors.Join(
+				validationError,
+				fmt.Errorf("%s: recovery_threshold must be > 0", wanLabel),
 			)
 		}
 		seenNames[wan.Name] = true
