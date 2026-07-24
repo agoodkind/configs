@@ -8,6 +8,13 @@ table ip nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
         oifname "eth1" ip saddr {{ isp.v4_subnet }} masquerade
+{% if isp.static_v4_block %}
+        # Masquerade the routed static /29 out to Comcast. The WAN VM 1:1-SNATs
+        # the internal /29 into this block (mirroring prod, where the ISP routes
+        # a real public /29); the sim ISP must carry it onward or that traffic
+        # egresses with a private source and is dropped.
+        oifname "eth1" ip saddr {{ isp.static_v4_block }} masquerade
+{% endif %}
     }
 }
 
