@@ -336,6 +336,85 @@ func TestWriteStateFilesUsesShellFormatAndShadowPaths(t *testing.T) {
 	}
 }
 
+func TestWriteStateFilesToleratesPersistFailure(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	blocker := filepath.Join(tempDir, "blocked")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile blocker: %v", err)
+	}
+	statePath := filepath.Join(tempDir, "run", "mwan-health.state")
+	module := &Module{
+		cfg: Config{
+			ShadowMode:       false,
+			StateFile:        statePath,
+			PersistStateFile: filepath.Join(blocker, "health-state"),
+			WANs:             []WAN{{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}}},
+		},
+		statuses: map[string]wanStatus{"att": {State: StateHealthy}},
+	}
+
+	// The persist mirror lives under an unwritable path, mirroring the ifmgr
+	// sandbox where /var/lib is read-only. The runtime write must still succeed
+	// and the call must not error.
+	if err := module.writeStateFiles(
+		context.Background(),
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		module.statuses,
+	); err != nil {
+		t.Fatalf("writeStateFiles must tolerate a persist failure: %v", err)
+	}
+	contents, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("runtime state not written: %v", err)
+	}
+	if string(contents) != "att:healthy\n" {
+		t.Fatalf("runtime state = %q, want %q", contents, "att:healthy\n")
+	}
+}
+
+func TestInitFailsWhenRuntimeStateUnwritable(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	blocker := filepath.Join(tempDir, "blocked")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile blocker: %v", err)
+	}
+	module := &Module{
+		cfg: Config{
+			ShadowMode:       false,
+			StateFile:        filepath.Join(blocker, "mwan-health.state"),
+			PersistStateFile: filepath.Join(tempDir, "health-state"),
+			TargetsV6: []netip.Addr{
+				netip.MustParseAddr("2001:db8::1"),
+				netip.MustParseAddr("2001:db8::2"),
+			},
+			TargetsV4: []netip.Addr{
+				netip.MustParseAddr("192.0.2.1"),
+				netip.MustParseAddr("192.0.2.2"),
+			},
+			Timeout:           time.Second,
+			Interval:          10 * time.Second,
+			PingCount:         1,
+			SuccessThreshold:  1,
+			FailureThreshold:  1,
+			RecoveryThreshold: 1,
+			WANs:              []WAN{{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}}},
+		},
+	}
+	env := &ifmgr.Env{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	// The runtime state file lives under an unwritable path. The runtime output
+	// is required, so Init must fail rather than start the loop with no state
+	// file. A persist-only failure is tolerated separately (see the persist
+	// test), so this asserts the runtime path stays load-bearing.
+	if err := module.Init(context.Background(), env); err == nil {
+		t.Fatal("Init must fail when the runtime state file cannot be written")
+	}
+}
+
 func TestRunCycleDoesNotCommitStateWhenPublicationFails(t *testing.T) {
 	t.Parallel()
 
