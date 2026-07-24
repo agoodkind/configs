@@ -18,14 +18,14 @@ import (
 type subcommand string
 
 const (
-	subcmdAgent       subcommand = "agent"
-	subcmdWatchdog    subcommand = "watchdog"
-	subcmdIfmgr       subcommand = "ifmgr"
-	subcmdHealthCheck subcommand = "health-check"
-	subcmdOPNsense    subcommand = "opnsense"
-	subcmdNotify      subcommand = "notify"
-	subcmdPD          subcommand = "pd"
-	subcmdDebug       subcommand = "debug"
+	subcmdAgent    subcommand = "agent"
+	subcmdWatchdog subcommand = "watchdog"
+	subcmdIfmgr    subcommand = "ifmgr"
+	subcmdHealth   subcommand = "health"
+	subcmdOPNsense subcommand = "opnsense"
+	subcmdNotify   subcommand = "notify"
+	subcmdPD       subcommand = "pd"
+	subcmdDebug    subcommand = "debug"
 )
 
 // dispatchResult describes how dispatchConfigLess handled a subcommand.
@@ -44,7 +44,7 @@ func main() {
 		os.Exit(runOPNsenseDaemonServe(os.Args[1:]))
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health-check|ifmgr|opnsense|notify|pd|debug> [args]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health|ifmgr|opnsense|notify|pd|debug> [args]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -78,9 +78,9 @@ func main() {
 // the per-verb runners that need it.
 func dispatchConfigLess(sub subcommand) dispatchResult {
 	switch sub {
-	case subcmdHealthCheck:
+	case subcmdHealth:
 		if err := healthcheck.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "mwan health-check: %v\n", err)
+			fmt.Fprintf(os.Stderr, "mwan health: %v\n", err)
 			return dispatchResult{handled: true, code: 1}
 		}
 		return dispatchResult{handled: true, code: 0}
@@ -115,7 +115,7 @@ func dispatchWithConfig(rawSub string, sub subcommand, cfg *config.Config) int {
 		runErr = runNotify(cfg)
 	case subcmdDebug:
 		return runDebug(os.Args[1:], cfg)
-	case subcmdHealthCheck, subcmdOPNsense, subcmdPD:
+	case subcmdHealth, subcmdOPNsense, subcmdPD:
 		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", rawSub)
 		return 1
 	default:
