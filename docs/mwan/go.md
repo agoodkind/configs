@@ -7,43 +7,22 @@ See [docs/mwan/overview.md](overview.md) for the runtime architecture and
 ## Monolith contract
 
 All Go infrastructure code lives in one binary built from
-[mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan` on targets and `mwan-linux` in
-[mwan/go/bin/](../../mwan/go/bin/) on the local host. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
-where it auto-dispatches into the `opnsense` daemon based on `argv[0]`.
+[mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan` on
+targets. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
+where it auto-dispatches into the opnsense daemon based on `argv[0]`.
 
-Subcommands (as defined in [mwan/go/cmd/mwan/main.go](../../mwan/go/cmd/mwan/main.go)):
+New tools become subcommands of this binary, never separate binaries. The
+authoritative subcommand set is the dispatch in
+[mwan/go/cmd/mwan/main.go](../../mwan/go/cmd/mwan/main.go); run `mwan` with no
+arguments for current usage. Subcommands are of two kinds: long-running daemons
+(the agent, the watchdog, the interface manager, and the opnsense config daemon)
+and one-shot operator tools (health probes, delegated-prefix and firewall-state
+inspection, and an alert self-test). The interface manager's behavior comes from
+`[ifmgr].role` in `/etc/mwan/config.toml`.
 
-- `mwan agent` runs the gRPC agent (vsock + TCP) inside the MWAN VM. Source:
-  [mwan/go/internal/agent/](../../mwan/go/internal/agent/).
-- `mwan watchdog` runs the connectivity and rollback daemon. Source:
-  [mwan/go/internal/watchdog/](../../mwan/go/internal/watchdog/).
-  `mwan watchdog failover` is the BGP-aware failover variant.
-- `mwan ifmgr` runs the per-host interface manager. Role is read from
-  `[ifmgr].role` in `/etc/mwan/config.toml`. Source:
-  [mwan/go/internal/ifmgr/](../../mwan/go/internal/ifmgr/).
-- `mwan health-check` is a one-shot probe. Source:
-  [mwan/go/internal/healthcheck/](../../mwan/go/internal/healthcheck/).
-- `mwan opnsense` is the FreeBSD config daemon (config.xml mutation over
-  virtio serial). Reached via the explicit subcommand or by invoking the
-  binary as `mwan-opnsense`. Source:
-  [mwan/go/internal/opnsense/](../../mwan/go/internal/opnsense/).
-- `mwan opnsense version` probes the OPNsense daemon through a configured
-  gRPC target.
-- `mwan opnsense host serve` runs the Proxmox host-side Unix socket bridge to
-  the OPNsense VM's `mwanrpc` chardev.
-
-There are no separate Go binaries. New tools become subcommands of this
-monolith.
-
-Shared code lives under
-[mwan/go/internal/config/](../../mwan/go/internal/config/),
-[mwan/go/internal/email/](../../mwan/go/internal/email/),
-[mwan/go/internal/logging/](../../mwan/go/internal/logging/),
-[mwan/go/internal/ops/](../../mwan/go/internal/ops/),
-[mwan/go/internal/bgp/](../../mwan/go/internal/bgp/),
-[mwan/go/internal/alert/](../../mwan/go/internal/alert/),
-[mwan/go/internal/tracing/](../../mwan/go/internal/tracing/), and
-[mwan/go/internal/rollback/](../../mwan/go/internal/rollback/).
+Each subcommand composes the shared packages under `mwan/go/internal/` (config
+loader, email sender, logger factory, ops layer, BGP speaker, alerting, tracing,
+rollback state) rather than reimplementing them.
 
 ## Code standards
 

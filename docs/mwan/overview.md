@@ -34,9 +34,10 @@ mappings, addressing, and ISP-level detail, see
 ## The monolith and its runtime services
 
 All Go code is one binary built from [mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/).
-The full subcommand list and ownership boundary live in
-[docs/mwan/go.md](go.md#monolith-contract). The runtime
-units that matter day-to-day:
+The monolith contract lives in [docs/mwan/go.md](go.md#monolith-contract), and
+the authoritative subcommand set is the dispatch in
+[mwan/go/cmd/mwan/main.go](../../mwan/go/cmd/mwan/main.go). The runtime units that
+matter day-to-day:
 
 - **`mwan agent`** runs inside the MWAN VM and the failover LXC. It hosts the
   gRPC surface (vsock + TCP), drives the embedded GoBGP speaker, and applies
@@ -362,7 +363,8 @@ ssh root@mwan.home.goodkind.io
 wpa_cli status
 systemctl status wpa_supplicant-mwan systemd-networkd networkd-dispatcher \
   nftables mwan-health cloudflared
-/usr/local/bin/mwan-debug
+mwan debug npt              # native inspection: prefixes|routes|policy|status|stats|sim4|sim6|npt
+/usr/local/bin/mwan-debug   # legacy shell inspector, being ported to mwan debug
 ```
 
 IPv6 sanity checks:
