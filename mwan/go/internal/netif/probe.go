@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv6"
+	"golang.org/x/sys/unix"
 )
 
 // V6Probe sends ICMPv6 Echo Requests from a specific interface and waits
@@ -74,18 +75,16 @@ func (p *V6Probe) PingICMP6(
 	defer conn.Close()
 
 	if p.iface != "" {
-		// Bind to the iface so the kernel picks a source from it.
-		pktConn := ipv6.NewPacketConn(conn.IPv6PacketConn().PacketConn)
-		netIface, err := net.InterfaceByName(p.iface)
-		if err != nil {
-			p.log.WarnContext(ctx, "v6probe: InterfaceByName failed",
-				"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
-			return 0, fmt.Errorf("InterfaceByName: %w", err)
+		// Pin egress to the interface with SO_BINDTODEVICE so unicast probes
+		// actually leave via this WAN. Without it the kernel routes a unicast
+		// target by the main table and the probe can leave via another WAN,
+		// giving a verdict that is not interface-specific. Fail the probe if the
+		// bind fails rather than run an unpinned probe that could report a dead
+		// WAN as healthy.
+		if err := p.bindProbeToDevice(ctx, conn); err != nil {
+			return 0, fmt.Errorf("PingICMP6: %w", err)
 		}
-		if err := pktConn.SetMulticastInterface(netIface); err != nil {
-			op.DebugContext(ctx, "v6probe: SetMulticastInterface failed (non-fatal)",
-				"err", err)
-		}
+		p.setMulticastInterface(ctx, op, conn)
 	}
 
 	// Build Echo Request.
@@ -151,6 +150,65 @@ func (p *V6Probe) PingICMP6(
 		op.DebugContext(ctx, "v6probe: echo reply received",
 			"from", peer.String(), "rtt_ms", dur.Milliseconds())
 		return dur, nil
+	}
+}
+
+// bindProbeToDevice pins the raw ICMPv6 socket to p.iface via SO_BINDTODEVICE so
+// unicast probes egress that interface, matching the shell's `ping6 -I <iface>`
+// and the v4 probe. The socket is a raw ip6:ipv6-icmp endpoint, so the
+// underlying conn is a [net.IPConn] whose fd accepts the sockopt.
+func (p *V6Probe) bindProbeToDevice(ctx context.Context, conn *icmp.PacketConn) error {
+	ipConn, ok := conn.IPv6PacketConn().PacketConn.(*net.IPConn)
+	if !ok {
+		err := fmt.Errorf(
+			"bind v6 probe: unexpected packet conn type %T",
+			conn.IPv6PacketConn().PacketConn,
+		)
+		p.log.WarnContext(ctx, "v6probe: bind to device failed", "iface", p.iface, "err", err)
+		return err
+	}
+	syscallConn, err := ipConn.SyscallConn()
+	if err != nil {
+		p.log.WarnContext(ctx, "v6probe: SyscallConn failed", "iface", p.iface, "err", err)
+		return fmt.Errorf("bind v6 probe: SyscallConn: %w", err)
+	}
+	var bindErr error
+	controlErr := syscallConn.Control(func(fileDescriptor uintptr) {
+		bindErr = unix.SetsockoptString(
+			int(fileDescriptor),
+			unix.SOL_SOCKET,
+			unix.SO_BINDTODEVICE,
+			p.iface,
+		)
+	})
+	if controlErr != nil {
+		p.log.WarnContext(ctx, "v6probe: socket control failed", "iface", p.iface, "err", controlErr)
+		return fmt.Errorf("bind v6 probe: access socket for %q: %w", p.iface, controlErr)
+	}
+	if bindErr != nil {
+		p.log.WarnContext(ctx, "v6probe: SO_BINDTODEVICE failed", "iface", p.iface, "err", bindErr)
+		return fmt.Errorf("bind v6 probe: setsockopt SO_BINDTODEVICE %q: %w", p.iface, bindErr)
+	}
+	return nil
+}
+
+// setMulticastInterface keeps the multicast egress interface pinned to the same
+// device for parity with the multicast and link-local targets slaac_health uses.
+// It is best-effort: SO_BINDTODEVICE already pins unicast egress, so a failure
+// here does not change the unicast health verdict.
+func (p *V6Probe) setMulticastInterface(
+	ctx context.Context, op *slog.Logger, conn *icmp.PacketConn,
+) {
+	netIface, err := net.InterfaceByName(p.iface)
+	if err != nil {
+		op.DebugContext(ctx, "v6probe: InterfaceByName failed (non-fatal)",
+			"iface", p.iface, "err", err)
+		return
+	}
+	pktConn := ipv6.NewPacketConn(conn.IPv6PacketConn().PacketConn)
+	if err := pktConn.SetMulticastInterface(netIface); err != nil {
+		op.DebugContext(ctx, "v6probe: SetMulticastInterface failed (non-fatal)",
+			"iface", p.iface, "err", err)
 	}
 }
 
