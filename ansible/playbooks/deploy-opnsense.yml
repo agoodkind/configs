@@ -30,3 +30,16 @@
   tasks:
     - name: Run in-guest install task
       ansible.builtin.include_tasks: tasks/mwan-opnsense-deploy.yml
+
+    # Restart Tayga so NAT64 comes up with fresh routes, gateway monitor, and
+    # firewall state. A WAN outage or config import can leave Tayga running with
+    # stale routes while the daemon and tun stay up, silently breaking NAT64 for
+    # hours. The sub-second blip from a deliberate deploy-time restart is far
+    # cheaper than that, so this runs on prod and testbed alike. See
+    # docs/opnsense/testbed/dns.md.
+    - name: Restart Tayga to re-install NAT64 routes and firewall state
+      ansible.builtin.command:
+        cmd: configctl tayga restart
+      changed_when: true
+      when: not ansible_check_mode
+      become: true

@@ -83,11 +83,13 @@ the resolver are codified in
 
 These still need to move from manual recovery into the deploy path:
 
-- The config transform
+- `deploy-opnsense.yml` restarts Tayga after the daemon deploy
+  (`configctl tayga restart`, prod and testbed), so a WAN outage or config
+  import that leaves Tayga with stale routes, gateway monitor, and firewall
+  state no longer needs a manual restart. Unbound is still manual: the config transform
   ([testbed/opnsense/substitutions.yaml](../../../testbed/opnsense/substitutions.yaml))
   should disable the Unbound DNSBL python module for the testbed (it carries no
-  blocklist data), and `deploy-opnsense.yml` should restart Unbound and Tayga
-  after the import so they come up without manual `configctl` calls.
+  blocklist data) so Unbound can restart without the missing-module crash.
 - The config transform rewrites the prod Unbound forwarder
   (`3d06:bad:b01:200::53`) to a public resolver (`2606:4700:4700::1111`). On the
   IPv6-only testbed that target is only reachable through NAT64, so forwarding
