@@ -79,7 +79,12 @@ mwan_enabled_services:
   - systemd-networkd
   - networkd-dispatcher
   - nftables
-  - mwan-health
+  # mwan-health (the shell health daemon) is intentionally absent: the testbed
+  # runs the native Go health module authoritatively (mwan_ifmgr_health_shadow_mode
+  # false), so the Go module writes /var/run/mwan-health.state. The shell daemon
+  # is stopped, disabled, and masked by deploy-mwan.yml so the two never both
+  # write that file. Re-add it here and set mwan_ifmgr_health_shadow_mode true to
+  # revert to the shell-authoritative baseline.
 
 # ----------------------------------------------------------------------------
 # WAN addressing (static, ISP LXCs have no DHCPv4 server)
@@ -195,7 +200,7 @@ mwan_rt_tables:
 
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: false
-mwan_ifmgr_health_shadow_mode: true
+mwan_ifmgr_health_shadow_mode: false
 mwan_ifmgr_npt_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
