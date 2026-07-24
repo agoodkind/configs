@@ -14,6 +14,7 @@ import (
 	bridgeprobe "goodkind.io/mwan/internal/ifmgr/modules/bridgeprobe"
 	cloudflaredtap "goodkind.io/mwan/internal/ifmgr/modules/cloudflaredtap"
 	connprobe "goodkind.io/mwan/internal/ifmgr/modules/connprobe"
+	health "goodkind.io/mwan/internal/ifmgr/modules/health"
 	hostipv6policy "goodkind.io/mwan/internal/ifmgr/modules/hostipv6policy"
 	mainv4 "goodkind.io/mwan/internal/ifmgr/modules/mainv4"
 	npt "goodkind.io/mwan/internal/ifmgr/modules/npt"
@@ -132,15 +133,21 @@ func buildIfMgrModuleConfigs(
 	return moduleConfigs, nil
 }
 
-// addWANRoleConfigs builds the wan-role module configs (wan.routes and npt) from
-// the one shared [ifmgr.wan] section, so both modules read the same WAN list and
-// prefixes. Kept out of buildIfMgrModuleConfigs to hold its complexity down.
+// addWANRoleConfigs builds the wan-role module configs from the one shared
+// [ifmgr.wan] section, so health, wan.routes, and npt read the same WAN list.
 func addWANRoleConfigs(
 	moduleConfigs ifmgr.ModuleConfigSet,
 	want map[string]bool,
 	ifmgrCfg config.IfMgrSection,
 ) error {
 	shared := buildWANRefs(ifmgrCfg)
+	if want["health"] {
+		healthConfig, err := buildHealthConfig(shared, ifmgrCfg.Modules.Health)
+		if err != nil {
+			return err
+		}
+		moduleConfigs["health"] = healthConfig
+	}
 	if want["wan.routes"] {
 		var routesSection *config.IfMgrWANRoutesSection
 		if ifmgrCfg.Modules.WAN != nil {
@@ -156,6 +163,77 @@ func addWANRoleConfigs(
 		moduleConfigs["npt"] = buildNPTConfig(shared, ifmgrCfg.Modules.NPT)
 	}
 	return nil
+}
+
+// buildHealthConfig projects shared WAN identities into the health module and
+// parses only the health section's module-wide probe policy.
+func buildHealthConfig(
+	shared sharedWANInputs,
+	section *config.IfMgrHealthSection,
+) (health.Config, error) {
+	cfg := health.Config{
+		ShadowMode:        true,
+		StateFile:         "",
+		PersistStateFile:  "",
+		TargetsV4:         nil,
+		TargetsV6:         nil,
+		HTTPURLs:          nil,
+		Timeout:           0,
+		Interval:          0,
+		PingCount:         0,
+		SuccessThreshold:  0,
+		FailureThreshold:  0,
+		RecoveryThreshold: 0,
+		WANs:              make([]health.WAN, 0, len(shared.WANs)),
+	}
+	for _, wan := range shared.WANs {
+		cfg.WANs = append(cfg.WANs, health.WAN{WANRef: wan.WANRef})
+	}
+	if section == nil {
+		return cfg, nil
+	}
+
+	cfg.ShadowMode = section.ShadowMode
+	cfg.StateFile = section.StateFile
+	cfg.PersistStateFile = section.PersistStateFile
+	cfg.HTTPURLs = append([]string(nil), section.HTTPURLs...)
+	cfg.PingCount = section.PingCount
+	cfg.SuccessThreshold = section.SuccessThreshold
+	cfg.FailureThreshold = section.FailureThreshold
+	cfg.RecoveryThreshold = section.RecoveryThreshold
+
+	var err error
+	cfg.TargetsV4, err = parseAddrList(
+		section.TargetsV4,
+		"ifmgr.modules.health.targets_v4",
+	)
+	if err != nil {
+		return health.Config{}, err
+	}
+	cfg.TargetsV6, err = parseAddrList(
+		section.TargetsV6,
+		"ifmgr.modules.health.targets_v6",
+	)
+	if err != nil {
+		return health.Config{}, err
+	}
+	cfg.Timeout, err = parseDurationSetting(
+		section.Timeout,
+		0,
+		"ifmgr.modules.health.timeout",
+	)
+	if err != nil {
+		return health.Config{}, err
+	}
+	cfg.Interval, err = parseDurationSetting(
+		section.Interval,
+		0,
+		"ifmgr.modules.health.interval",
+	)
+	if err != nil {
+		return health.Config{}, err
+	}
+	return cfg, nil
 }
 
 // buildNPTConfig joins the shared [ifmgr.wan] prefixes and WAN identity list

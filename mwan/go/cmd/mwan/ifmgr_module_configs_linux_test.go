@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
+	health "goodkind.io/mwan/internal/ifmgr/modules/health"
 	npt "goodkind.io/mwan/internal/ifmgr/modules/npt"
 	wanroutes "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 )
@@ -363,14 +365,80 @@ func TestBuildNPTConfigNilSection(t *testing.T) {
 	}
 }
 
-// TestBuildIfMgrModuleConfigsWANRoleBuildsBoth confirms the wan role now yields
-// both the wan.routes and npt module configs from one shared config.
-func TestBuildIfMgrModuleConfigsWANRoleBuildsBoth(t *testing.T) {
+func TestBuildHealthConfig(t *testing.T) {
+	t.Parallel()
+
+	shared := buildWANRefs(sharedWANForTest())
+	cfg, err := buildHealthConfig(shared, &config.IfMgrHealthSection{
+		ShadowMode:        true,
+		StateFile:         "/run/health",
+		PersistStateFile:  "/var/lib/health",
+		TargetsV4:         []string{"192.0.2.1", "192.0.2.2"},
+		TargetsV6:         []string{"2001:db8::1", "2001:db8::2"},
+		HTTPURLs:          []string{"https://example.com/health"},
+		Timeout:           "3s",
+		Interval:          "15s",
+		PingCount:         4,
+		SuccessThreshold:  2,
+		FailureThreshold:  3,
+		RecoveryThreshold: 4,
+	})
+	if err != nil {
+		t.Fatalf("buildHealthConfig returned error: %v", err)
+	}
+	want := health.Config{
+		ShadowMode:       true,
+		StateFile:        "/run/health",
+		PersistStateFile: "/var/lib/health",
+		TargetsV4: []netip.Addr{
+			netip.MustParseAddr("192.0.2.1"),
+			netip.MustParseAddr("192.0.2.2"),
+		},
+		TargetsV6: []netip.Addr{
+			netip.MustParseAddr("2001:db8::1"),
+			netip.MustParseAddr("2001:db8::2"),
+		},
+		HTTPURLs:          []string{"https://example.com/health"},
+		Timeout:           3 * time.Second,
+		Interval:          15 * time.Second,
+		PingCount:         4,
+		SuccessThreshold:  2,
+		FailureThreshold:  3,
+		RecoveryThreshold: 4,
+		WANs: []health.WAN{
+			{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}},
+			{WANRef: ifmgr.WANRef{Name: "webpass", Iface: "webpass0"}},
+		},
+	}
+	if !reflect.DeepEqual(cfg, want) {
+		t.Fatalf("buildHealthConfig mismatch\ngot:  %#v\nwant: %#v", cfg, want)
+	}
+}
+
+func TestBuildHealthConfigNilSectionDefaultsToShadow(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := buildHealthConfig(buildWANRefs(sharedWANForTest()), nil)
+	if err != nil {
+		t.Fatalf("buildHealthConfig returned error: %v", err)
+	}
+	if !cfg.ShadowMode {
+		t.Fatal("nil health section must default ShadowMode to true")
+	}
+	if len(cfg.WANs) != 2 {
+		t.Fatalf("WAN count = %d, want 2 from the shared list", len(cfg.WANs))
+	}
+}
+
+// TestBuildIfMgrModuleConfigsWANRoleBuildsAll confirms the wan role yields the
+// health, wan.routes, and npt module configs from one shared config.
+func TestBuildIfMgrModuleConfigsWANRoleBuildsAll(t *testing.T) {
 	t.Parallel()
 
 	modules := config.IfMgrModulesSection{
-		WAN: &config.IfMgrModulesWANSection{Routes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"}},
-		NPT: &config.IfMgrNPTSection{ShadowMode: true},
+		Health: &config.IfMgrHealthSection{ShadowMode: true},
+		WAN:    &config.IfMgrModulesWANSection{Routes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"}},
+		NPT:    &config.IfMgrNPTSection{ShadowMode: true},
 	}
 	set, err := buildIfMgrModuleConfigs(ifmgrForTest(modules), "wan")
 	if err != nil {
@@ -378,6 +446,13 @@ func TestBuildIfMgrModuleConfigsWANRoleBuildsBoth(t *testing.T) {
 	}
 	if _, ok := set["wan.routes"]; !ok {
 		t.Fatal("wan role must build a wan.routes config")
+	}
+	healthCfg, ok := set["health"]
+	if !ok {
+		t.Fatal("wan role must build a health config")
+	}
+	if _, ok := healthCfg.(health.Config); !ok {
+		t.Fatalf("health config type = %T, want health.Config", healthCfg)
 	}
 	nptCfg, ok := set["npt"]
 	if !ok {
@@ -427,6 +502,20 @@ v4_source = "10.240.204.2"
 internal_iface = "enmwanbr0"
 shadow_mode = false
 
+[ifmgr.modules.health]
+shadow_mode = true
+state_file = "/run/mwan-health.state"
+persist_state_file = "/var/lib/mwan/health-state"
+targets_v4 = ["1.1.1.1", "8.8.8.8"]
+targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+http_urls = ["https://ifconfig.co/ip"]
+timeout = "2s"
+interval = "10s"
+ping_count = 3
+success_threshold = 2
+failure_threshold = 2
+recovery_threshold = 2
+
 [ifmgr.modules.npt]
 shadow_mode = true
 `
@@ -469,5 +558,14 @@ shadow_mode = true
 	}
 	if _, ok := set["npt"]; !ok {
 		t.Fatal("wan role must build an npt config from the round-tripped config")
+	}
+	healthConfig, ok := set["health"].(health.Config)
+	if !ok {
+		t.Fatalf("health config missing or wrong type: %T", set["health"])
+	}
+	if !healthConfig.ShadowMode ||
+		healthConfig.StateFile != "/run/mwan-health.state" ||
+		len(healthConfig.WANs) != 2 {
+		t.Fatalf("health config did not round-trip shared WANs and module fields: %#v", healthConfig)
 	}
 }
