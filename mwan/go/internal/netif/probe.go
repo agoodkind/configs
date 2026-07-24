@@ -73,17 +73,19 @@ func (p *V6Probe) PingICMP6(
 	}
 	defer conn.Close()
 
-	// Bind to the iface so the kernel picks a source from it.
-	pktConn := ipv6.NewPacketConn(conn.IPv6PacketConn().PacketConn)
-	netIface, err := net.InterfaceByName(p.iface)
-	if err != nil {
-		p.log.WarnContext(ctx, "v6probe: InterfaceByName failed",
-			"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
-		return 0, fmt.Errorf("InterfaceByName: %w", err)
-	}
-	if err := pktConn.SetMulticastInterface(netIface); err != nil {
-		op.DebugContext(ctx, "v6probe: SetMulticastInterface failed (non-fatal)",
-			"err", err)
+	if p.iface != "" {
+		// Bind to the iface so the kernel picks a source from it.
+		pktConn := ipv6.NewPacketConn(conn.IPv6PacketConn().PacketConn)
+		netIface, err := net.InterfaceByName(p.iface)
+		if err != nil {
+			p.log.WarnContext(ctx, "v6probe: InterfaceByName failed",
+				"op", "PingICMP6", "target", target.String(), "timeout_ms", timeout.Milliseconds(), "err", err)
+			return 0, fmt.Errorf("InterfaceByName: %w", err)
+		}
+		if err := pktConn.SetMulticastInterface(netIface); err != nil {
+			op.DebugContext(ctx, "v6probe: SetMulticastInterface failed (non-fatal)",
+				"err", err)
+		}
 	}
 
 	// Build Echo Request.
