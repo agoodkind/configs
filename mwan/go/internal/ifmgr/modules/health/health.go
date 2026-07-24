@@ -444,6 +444,15 @@ func (m *Module) emitTransition(
 		"to", event.To,
 		"shadow_mode", m.cfg.ShadowMode,
 	)
+	// A health transition changes routing eligibility, so ask the daemon to
+	// reconcile now rather than wait for the periodic tick; this makes
+	// wan.routes failover event-driven. Only when authoritative: in shadow the
+	// Go verdict does not drive wan.routes, which reads the shell's state file.
+	if !m.cfg.ShadowMode && m.Env != nil && m.Env.RequestReconcile != nil {
+		m.Env.RequestReconcile(
+			"health " + event.WAN.Name + " " + string(event.From) + "->" + string(event.To),
+		)
+	}
 	if m.Env == nil || m.Env.Alerts == nil {
 		return
 	}
