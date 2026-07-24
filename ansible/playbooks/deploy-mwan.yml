@@ -594,11 +594,15 @@
         enabled: true
         daemon_reload: true
 
+    # Only deploy the shell mwan-health unit when it is authoritative (Go health
+    # in shadow). On an authoritative-Go host the unit is removed below, so
+    # copying it here would recreate the file the teardown just deleted.
     - name: Deploy mwan-health systemd service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-health.service"
         dest: /etc/systemd/system/mwan-health.service
         mode: "0644"
+      when: mwan_ifmgr_health_shadow_mode | bool
 
     - name: Ensure local build cache directory exists
       delegate_to: localhost
@@ -629,16 +633,6 @@
           ExecStartPost=/bin/sh -c 'date +%s > /var/run/mwan-last-change'
       when: scripts_updater_svc.stat.exists
 
-    # When the native Go health module runs in shadow (prod baseline), the shell
-    # mwan-health daemon stays authoritative, so it must not be masked. Unmask it
-    # before the enable loop so a host reverting from an authoritative testbed
-    # back to shadow can re-enable it.
-    - name: Unmask shell mwan-health when Go health module is in shadow
-      ansible.builtin.systemd:
-        name: mwan-health
-        masked: false
-      when: mwan_ifmgr_health_shadow_mode | bool
-
     - name: Enable services
       ansible.builtin.systemd:
         name: "{{ item }}"
@@ -647,19 +641,44 @@
       loop: "{{ mwan_enabled_services }}"
 
     # When the native Go health module is authoritative, it writes
-    # /var/run/mwan-health.state itself. Stop, disable, and mask the shell
-    # mwan-health daemon so the two never both write that file and so the shell
-    # never re-runs update-routes.sh on its own health transitions. mwan-health
-    # is absent from mwan_enabled_services on authoritative hosts, so the enable
-    # loop above never touches it here.
-    - name: Stop, disable, and mask shell mwan-health when Go health is authoritative
+    # /var/run/mwan-health.state itself. Stop, disable, and remove the shell
+    # mwan-health unit so the two never both write that file and the shell never
+    # re-runs update-routes.sh on its own health transitions. Removing the unit
+    # file (rather than masking) avoids the mask-vs-existing-file conflict and
+    # mirrors the instanced-ifmgr teardown above. On a shadow host the unit is
+    # copied and enabled above, so this teardown is skipped and the daemon stays
+    # authoritative. mwan-health is absent from mwan_enabled_services on
+    # authoritative hosts, so the enable loop never touches it here.
+    - name: Stat shell mwan-health unit (authoritative teardown)
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mwan-health.service
+      register: mwan_health_unit
+      when: not (mwan_ifmgr_health_shadow_mode | bool)
+
+    - name: Stop and disable shell mwan-health when Go health is authoritative
       ansible.builtin.systemd:
         name: mwan-health
         state: stopped
         enabled: false
-        masked: true
+      when:
+        - not (mwan_ifmgr_health_shadow_mode | bool)
+        - mwan_health_unit.stat.exists
+
+    - name: Remove shell mwan-health unit when Go health is authoritative
+      ansible.builtin.file:
+        path: /etc/systemd/system/mwan-health.service
+        state: absent
+      register: mwan_health_unit_removed
+      when:
+        - not (mwan_ifmgr_health_shadow_mode | bool)
+        - mwan_health_unit.stat.exists
+
+    - name: Reload systemd after removing shell mwan-health unit
+      ansible.builtin.systemd:
         daemon_reload: true
-      when: not (mwan_ifmgr_health_shadow_mode | bool)
+      when:
+        - not (mwan_ifmgr_health_shadow_mode | bool)
+        - mwan_health_unit_removed.changed | default(false)
 
     # ============================================================================
     # POST-DEPLOY: Reboot for clean state
