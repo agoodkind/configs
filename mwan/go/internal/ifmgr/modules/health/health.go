@@ -141,8 +141,13 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	if err := m.loadStatuses(ctx, log); err != nil {
 		return err
 	}
+	// Seed the state files. writeStateFiles already tolerates a persist-mirror
+	// failure (best-effort restart recovery under the read-only /var/lib
+	// sandbox), so any error here is a runtime-file write failure. The runtime
+	// file is the required output, so fail Init rather than run blind on a
+	// genuinely broken /var/run.
 	if err := m.writeStateFiles(ctx, log, m.snapshotStatuses()); err != nil {
-		log.WarnContext(ctx, "health: initialize state files failed", "err", err)
+		log.WarnContext(ctx, "health: initialize runtime state failed", "err", err)
 		return fmt.Errorf("health: initialize state files: %w", err)
 	}
 	// The per-cycle recover in runCycleGuarded keeps a panicking cycle from

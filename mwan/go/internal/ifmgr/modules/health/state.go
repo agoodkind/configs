@@ -92,17 +92,27 @@ func (m *Module) writeStateFiles(
 ) error {
 	contents := m.serializeState(statuses)
 	statePath, persistPath := m.stateFilePaths()
-	// Write the runtime file before the persist mirror. The persist file is the
-	// restart recovery source, so it must never advance past a cycle that failed
-	// to publish: if the runtime write fails, persist stays at the last committed
-	// state, matching the in-memory rollback in runCycle. The ephemeral runtime
-	// file is never read for recovery, so a persist failure after a runtime
-	// success is corrected on the next cycle.
+	// The runtime file is the load-bearing output, so a failure to write it is an
+	// error the caller must see. Write it before the persist mirror so a runtime
+	// failure leaves persist at the last committed state, matching runCycle's
+	// in-memory rollback.
 	if err := writeFileAtomic(ctx, log, statePath, contents); err != nil {
 		return stateFileError(ctx, log, "write runtime state", statePath, err)
 	}
+	// The persist mirror is best-effort restart-recovery state. The ifmgr daemon
+	// runs with ProtectSystem=strict and does not list /var/lib in
+	// ReadWritePaths, so the persist write fails read-only; the shell tolerates
+	// the same limitation, and pd.Source's cache write is best-effort for the
+	// same reason. Log and continue rather than failing the cycle or killing the
+	// module: losing the mirror only costs restart recovery, and the module
+	// re-converges within a couple of cycles.
 	if err := writeFileAtomic(ctx, log, persistPath, contents); err != nil {
-		return stateFileError(ctx, log, "write persistent state", persistPath, err)
+		log.WarnContext(
+			ctx,
+			"health: persist mirror write failed (best-effort); continuing",
+			"path", persistPath,
+			"err", err,
+		)
 	}
 	log.DebugContext(
 		ctx,
