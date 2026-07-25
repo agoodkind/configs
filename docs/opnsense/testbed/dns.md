@@ -79,17 +79,19 @@ the resolver are codified in
 [opentofu/suburban/vms.tf](../../../opentofu/suburban/vms.tf) and
 [test_mwan_servers.yml](../../../ansible/inventory/group_vars/test_mwan_servers.yml).
 
+After a daemon deploy, `deploy-opnsense.yml` restarts Tayga
+(`configctl tayga restart`) and regenerates the Unbound DNSBL python module
+before restarting Unbound (`configctl unbound dnsbl` then
+`configctl unbound restart`), on prod and testbed. OPNsense core always renders
+`python-script: unbound-dnsbl/dnsbl_module.py` into `unbound.conf` even with
+DNSBL disabled, so a freshly imported box crashed Unbound at startup until the
+module file existed; the deploy now creates it, and the Tayga restart re-installs
+NAT64 routes after a WAN outage or import. Neither needs a manual recovery step.
+
 ## Reproducibility gaps
 
 These still need to move from manual recovery into the deploy path:
 
-- `deploy-opnsense.yml` restarts Tayga after the daemon deploy
-  (`configctl tayga restart`, prod and testbed), so a WAN outage or config
-  import that leaves Tayga with stale routes, gateway monitor, and firewall
-  state no longer needs a manual restart. Unbound is still manual: the config transform
-  ([testbed/opnsense/substitutions.yaml](../../../testbed/opnsense/substitutions.yaml))
-  should disable the Unbound DNSBL python module for the testbed (it carries no
-  blocklist data) so Unbound can restart without the missing-module crash.
 - The config transform rewrites the prod Unbound forwarder
   (`3d06:bad:b01:200::53`) to a public resolver (`2606:4700:4700::1111`). On the
   IPv6-only testbed that target is only reachable through NAT64, so forwarding
