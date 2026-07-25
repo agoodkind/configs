@@ -109,3 +109,17 @@
       && systemctl restart kea-dhcp4-server'
   changed_when: true
   when: isp.dynamic_v4 | bool
+
+# The ISP sims serve DHCP with Kea. Some LXC base images still carry an enabled
+# dnsmasq unit that binds the same DHCP socket, so it fails "address already in
+# use" on every boot and leaves the sim in systemd `degraded`. It is a leftover,
+# not part of this deploy, so stop, disable, and mask it. The `|| true` keeps the
+# task idempotent on images that never had dnsmasq.
+- name: Mask leftover dnsmasq on ISP LXC (Kea owns DHCP)
+  ansible.builtin.command:
+    cmd: >-
+      pct exec {{ isp.id }} -- sh -c
+      'systemctl disable --now dnsmasq 2>/dev/null || true;
+      systemctl mask dnsmasq 2>/dev/null || true;
+      systemctl reset-failed dnsmasq 2>/dev/null || true'
+  changed_when: true
