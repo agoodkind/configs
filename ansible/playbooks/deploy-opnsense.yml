@@ -43,3 +43,23 @@
       changed_when: true
       when: not ansible_check_mode
       become: true
+
+    # Regenerate the Unbound DNSBL python module before restarting Unbound.
+    # OPNsense core always renders `python-script: unbound-dnsbl/dnsbl_module.py`
+    # into unbound.conf even with DNSBL disabled (confirmed on 26.1 and 26.7),
+    # so a freshly imported box crashes Unbound at startup until the module file
+    # exists. Regenerating it makes the file present; on an existing box this is
+    # a no-op. See docs/opnsense/testbed/dns.md.
+    - name: Regenerate Unbound DNSBL module so a fresh import has the python file
+      ansible.builtin.command:
+        cmd: configctl unbound dnsbl
+      changed_when: true
+      when: not ansible_check_mode
+      become: true
+
+    - name: Restart Unbound so it loads cleanly with the DNSBL module present
+      ansible.builtin.command:
+        cmd: configctl unbound restart
+      changed_when: true
+      when: not ansible_check_mode
+      become: true
