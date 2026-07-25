@@ -100,6 +100,23 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	}
 
 	ifmgr.StartIfaceMonitors(ctx, log, moduleName, watchedIfaces(m.cfg), m.onMonitorEvent)
+
+	// Watch the nftables ruleset so a reload that deletes the ip6 nat table
+	// (nft -f or an nftables restart) triggers an immediate reconcile that
+	// re-adds npt's rules, rather than waiting for the periodic tick. Those
+	// reloads recreate the base table and chains from the static ruleset; a
+	// bare `nft flush ruleset` with no reload is not repairable here because
+	// Apply does not recreate the base structure. The recover keeps a monitor
+	// panic from taking down the daemon.
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.ErrorContext(ctx, "npt: nft-watch panicked",
+					"err", fmt.Sprint(recovered))
+			}
+		}()
+		m.watchNFTChanges(ctx, log)
+	}()
 	return nil
 }
 
