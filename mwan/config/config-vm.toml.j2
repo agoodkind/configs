@@ -200,8 +200,7 @@ cleanup_ra_default = true
 
 {% endfor %}
 {% endif %}
-# The MWAN VM has no cloudflared-oob tunnel; that runs on the hypervisor host
-# (config-host.toml.j2). Only the VM's own OOB-source policy rule belongs here.
+{% if mwan_ifmgr_oob_enabled | bool %}
 [[ifmgr.modules.policy_rules.rule]]
 family = "inet6"
 priority = 6
@@ -209,6 +208,7 @@ from = "{{ mwan_ifmgr_policy_from_v6 }}"
 table = "oob"
 table_id = 500
 
+{% endif %}
 {% if mwan_ifmgr_cloudflared_tap_enabled | bool %}
 [ifmgr.modules.cloudflared_tap]
 unit = "{{ mwan_ifmgr_cloudflared_tap_unit }}"

@@ -80,12 +80,11 @@ mwan_watchdog_wan_interfaces:
   - "enwebpass0"
   - "enmbrains0"
 
-# mwan-ifmgr service on the host
+# mwan-ifmgr service on the host. Suburban has no OOB tunnel, so it enables
+# none of the OOB modules and declares no OOB interface or address. The role
+# name is the shared hypervisor role; which modules run is decided by which
+# sections render below.
 mwan_ifmgr_role: "oob"
-mwan_ifmgr_iface_key: "enmbrains0"
-mwan_ifmgr_iface_name: "enmbrains0"
-mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
-mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
 mwan_ifmgr_host_ipv6_policy_enabled: true
 mwan_ifmgr_host_ipv6_missing_iface_grace_period: "2m"
 mwan_ifmgr_host_ipv6_allowed_ra_uplink:
@@ -104,6 +103,16 @@ mwan_ifmgr_host_ipv6_denied_ra_ifaces:
   - "vmbrtrunk"
 
 # Cloudflared OOB stays off on suburban (no host OOB tunnel today).
+
+# Suburban is the only host with a WireGuard interface, so it is the only one
+# that watches peer handshake age. Local-exec mode: an empty ssh_host makes the
+# module run `wg show` on this host instead of over SSH, and the daemon already
+# runs as root so it needs no sudo.
+mwan_ifmgr_wg_enabled: true
+mwan_ifmgr_wg_ssh_host: ""
+mwan_ifmgr_wg_identity_file: ""
+mwan_ifmgr_wg_iface: "wg0"
+mwan_ifmgr_wg_sudo: false
 
 # Suburban DDNS is owned by deploy-testbed.yml.
 cfddns_version: "4.4.4"

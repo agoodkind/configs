@@ -30,10 +30,8 @@ var roleModules = map[string][]string{
 	// at Init time via ifmgr.ErrModuleDisabled and are dropped from the
 	// daemon's dispatch list.
 	//
-	// Vault enables: policy_rules, oobv6, oobv4, ra_lost, cloudflared_tap, wg.
-	// Suburban hypervisor enables: policy_rules, host_ipv6_policy, oobv6,
-	// oobv4, ra_lost, wg (local-exec mode against the hypervisor's own
-	// wg0 endpoint).
+	// Vault enables policy_rules, oobv6, oobv4, ra_lost, cloudflared_tap.
+	// Suburban enables policy_rules, host_ipv6_policy, wg (local-exec).
 	"oob": {
 		"policy_rules",
 		"host_ipv6_policy",
