@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+// HTTPResult is the observed status and response body from HTTPGet.
+type HTTPResult struct {
+	StatusCode int
+	Body       string
+}
+
 // Ping4 reports that raw interface-bound probes require Linux.
 func Ping4(
 	_ context.Context, _ string, _ netip.Addr, _ time.Duration,
@@ -48,4 +54,15 @@ func HTTPCheck(
 		_ = response.Body.Close()
 	}()
 	return response.StatusCode, nil
+}
+
+// HTTPGet reports that active interface and family probes require Linux.
+func HTTPGet(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ string,
+	_ time.Duration,
+) (HTTPResult, error) {
+	return HTTPResult{}, fmt.Errorf("HTTPGet: active HTTP probes require Linux")
 }

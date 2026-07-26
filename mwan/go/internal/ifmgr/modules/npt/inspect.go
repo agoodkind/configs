@@ -24,6 +24,24 @@ type RenderedTable struct {
 	Postrouting []string
 }
 
+// HasInterface reports whether either rendered chain contains an exact
+// interface match for iface.
+func (table RenderedTable) HasInterface(iface string) bool {
+	inputToken := fmt.Sprintf(`iif %q`, iface)
+	outputToken := fmt.Sprintf(`oif %q`, iface)
+	for _, line := range table.Prerouting {
+		if strings.Contains(line, inputToken) {
+			return true
+		}
+	}
+	for _, line := range table.Postrouting {
+		if strings.Contains(line, outputToken) {
+			return true
+		}
+	}
+	return false
+}
+
 type nftReadConn interface {
 	GetRules(table *nftables.Table, chain *nftables.Chain) ([]*nftables.Rule, error)
 }

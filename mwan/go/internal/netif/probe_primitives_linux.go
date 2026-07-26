@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,7 +21,24 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const icmpV4Protocol = 1
+const (
+	icmpV4Protocol     = 1
+	httpResponseMaxLen = 4 * 1024
+)
+
+type httpAddressFamily string
+
+const (
+	httpFamilyAny httpAddressFamily = ""
+	httpFamilyV4  httpAddressFamily = "inet"
+	httpFamilyV6  httpAddressFamily = "inet6"
+)
+
+// HTTPResult is the observed status and trimmed response body from HTTPGet.
+type HTTPResult struct {
+	StatusCode int
+	Body       string
+}
 
 // Ping4 keeps IPv4 reachability checks in-process so callers do not depend on
 // platform ping binaries.
@@ -151,43 +170,121 @@ func Ping6(
 func HTTPCheck(
 	ctx context.Context, iface string, url string, timeout time.Duration,
 ) (int, error) {
-	log := slog.With("component", "httpcheck", "iface", iface, "url", url)
+	result, err := httpGet(ctx, iface, "", url, timeout, false, "HTTPCheck")
+	if err != nil {
+		return 0, err
+	}
+	return result.StatusCode, nil
+}
+
+// HTTPGet sends one interface-bound request with an optional address family.
+// The family accepts "inet" for IPv4, "inet6" for IPv6, or empty for the
+// default dual-stack behavior.
+func HTTPGet(
+	ctx context.Context,
+	iface string,
+	family string,
+	url string,
+	timeout time.Duration,
+) (HTTPResult, error) {
+	return httpGet(ctx, iface, family, url, timeout, true, "HTTPGet")
+}
+
+func httpGet(
+	ctx context.Context,
+	iface string,
+	family string,
+	url string,
+	timeout time.Duration,
+	readBody bool,
+	operation string,
+) (HTTPResult, error) {
+	log := slog.With(
+		"component", strings.ToLower(operation),
+		"iface", iface,
+		"family", family,
+		"url", url,
+	)
+	network, err := httpNetwork(family)
+	if err != nil {
+		return HTTPResult{}, fmt.Errorf("%s family: %w", operation, err)
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		log.WarnContext(ctx, "netif: HTTPCheck request failed", "err", err)
-		return 0, fmt.Errorf("HTTPCheck request: %w", err)
+		log.WarnContext(ctx, "netif: HTTP request failed", "err", err)
+		return HTTPResult{}, fmt.Errorf("%s request: %w", operation, err)
 	}
 
 	client := &http.Client{Timeout: timeout}
-	if iface != "" {
-		dialer := &net.Dialer{Control: bindToDevice(iface)}
+	if iface != "" || family != "" {
+		dialer := &net.Dialer{}
+		if iface != "" {
+			dialer.Control = bindToDevice(iface)
+		}
 		defaultTransport, ok := http.DefaultTransport.(*http.Transport)
 		if !ok {
 			transportError := fmt.Errorf(
-				"HTTPCheck: default transport has type %T",
+				"%s: default transport has type %T",
+				operation,
 				http.DefaultTransport,
 			)
 			log.ErrorContext(
-				ctx, "netif: HTTPCheck default transport is incompatible",
+				ctx, "netif: HTTP default transport is incompatible",
 				"err", transportError,
 			)
-			return 0, transportError
+			return HTTPResult{}, transportError
 		}
 		transport := defaultTransport.Clone()
-		transport.DialContext = dialer.DialContext
+		transport.DialContext = func(
+			dialContext context.Context,
+			_ string,
+			address string,
+		) (net.Conn, error) {
+			return dialer.DialContext(dialContext, network, address)
+		}
 		client.Transport = transport
 		defer transport.CloseIdleConnections()
 	}
 
 	response, err := client.Do(request)
 	if err != nil {
-		log.WarnContext(ctx, "netif: HTTPCheck GET failed", "err", err)
-		return 0, fmt.Errorf("HTTPCheck GET %q: %w", url, err)
+		log.WarnContext(ctx, "netif: HTTP GET failed", "err", err)
+		return HTTPResult{}, fmt.Errorf("%s GET %q: %w", operation, url, err)
 	}
 	defer func() {
 		_ = response.Body.Close()
 	}()
-	return response.StatusCode, nil
+	result := HTTPResult{StatusCode: response.StatusCode, Body: ""}
+	if !readBody {
+		return result, nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, httpResponseMaxLen+1))
+	if err != nil {
+		return HTTPResult{}, fmt.Errorf("%s read %q response body: %w", operation, url, err)
+	}
+	if len(body) > httpResponseMaxLen {
+		return HTTPResult{}, fmt.Errorf(
+			"%s GET %q: response body exceeds 4 KiB",
+			operation,
+			url,
+		)
+	}
+	result.Body = strings.TrimSpace(string(body))
+	return result, nil
+}
+
+func httpNetwork(family string) (string, error) {
+	switch httpAddressFamily(family) {
+	case httpFamilyAny:
+		return "tcp", nil
+	case httpFamilyV4:
+		return "tcp4", nil
+	case httpFamilyV6:
+		return "tcp6", nil
+	default:
+		return "", fmt.Errorf("unsupported address family %q", family)
+	}
 }
 
 func bindToDevice(
