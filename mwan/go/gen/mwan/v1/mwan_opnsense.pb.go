@@ -1392,7 +1392,6 @@ func (*RevertRequest) Descriptor() ([]byte, []int) {
 type RevertResponse struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	RevertedToSha256 string                 `protobuf:"bytes,1,opt,name=reverted_to_sha256,json=revertedToSha256,proto3" json:"reverted_to_sha256,omitempty"`
-	ReExecStarted    bool                   `protobuf:"varint,2,opt,name=re_exec_started,json=reExecStarted,proto3" json:"re_exec_started,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1432,13 +1431,6 @@ func (x *RevertResponse) GetRevertedToSha256() string {
 		return x.RevertedToSha256
 	}
 	return ""
-}
-
-func (x *RevertResponse) GetReExecStarted() bool {
-	if x != nil {
-		return x.ReExecStarted
-	}
-	return false
 }
 
 // StageBinary verifies the previously staged binary's sha256, atomic-
@@ -2580,10 +2572,9 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\x06health\x18\x03 \x01(\tR\x06health\x12\x1f\n" +
 	"\vdeployed_at\x18\x04 \x01(\x03R\n" +
 	"deployedAt\"\x0f\n" +
-	"\rRevertRequest\"f\n" +
+	"\rRevertRequest\">\n" +
 	"\x0eRevertResponse\x12,\n" +
-	"\x12reverted_to_sha256\x18\x01 \x01(\tR\x10revertedToSha256\x12&\n" +
-	"\x0fre_exec_started\x18\x02 \x01(\bR\rreExecStarted\"Z\n" +
+	"\x12reverted_to_sha256\x18\x01 \x01(\tR\x10revertedToSha256\"Z\n" +
 	"\x12StageBinaryRequest\x12#\n" +
 	"\rstaged_sha256\x18\x01 \x01(\tR\fstagedSha256\x12\x1f\n" +
 	"\vversion_str\x18\x02 \x01(\tR\n" +
