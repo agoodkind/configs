@@ -41,11 +41,6 @@
         mode: "0755"
       notify: Restart mwan-ifmgr
 
-    # The hypervisor /etc/mwan/config.toml (rendered from config-host.toml.j2)
-    # and the /etc/mwan directory are owned by deploy-proxmox.yml via
-    # tasks/proxmox-host.yml, which also notifies the ifmgr and watchdog
-    # restarts. This play intentionally does not render that config.
-
     - name: Deploy sysctl
       ansible.builtin.copy:
         src: "{{ repo_root }}/testbed/suburban-sysctl.conf"
@@ -178,14 +173,6 @@
       loop_control:
         loop_var: isp
       tags: ["isp-lxcs"]
-
-    # ----------------------------------------------------------------------
-    # mwan-opnsense host bridge (Unix socket to /var/run/qemu-server/101.mwanrpc)
-    # ----------------------------------------------------------------------
-
-    - name: Install mwan-opnsense host bridge
-      ansible.builtin.include_tasks: tasks/mwan-opnsense-host-deploy.yml
-      tags: ["opnsense-host-bridge"]
 
   handlers:
     - name: Reload sysctl

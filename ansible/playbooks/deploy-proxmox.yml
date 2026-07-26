@@ -53,3 +53,17 @@
         state: restarted
         daemon_reload: true
       when: mwan_watchdog_enabled | bool
+
+    - name: Restart mwan-opnsense-drain
+      ansible.builtin.systemd:
+        name: mwan-opnsense-drain
+        enabled: true
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart mwan-opnsense-host
+      ansible.builtin.systemd:
+        name: mwan-opnsense-host
+        enabled: true
+        state: restarted
+        daemon_reload: true

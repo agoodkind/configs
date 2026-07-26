@@ -64,6 +64,17 @@ rollback_lock_file = "{{ mwan_watchdog_lock_file }}"
 [failover]
 lxc_id = "{{ failover_lxc_id }}"
 
+[opnsense.host]
+upstream = "{{ mwan_opnsense_host_upstream }}"
+listen = "{{ mwan_opnsense_host_listen_path }}"
+reconnect = "{{ mwan_opnsense_host_reconnect }}"
+heartbeat_interval = "{{ mwan_opnsense_host_hb_interval }}"
+heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout }}"
+
+[opnsense.drain]
+chardev = "{{ mwan_opnsense_drain_chardev }}"
+listen = "{{ mwan_opnsense_drain_listen }}"
+
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_host_ipv6_policy_enabled %}
