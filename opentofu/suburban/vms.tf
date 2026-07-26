@@ -162,10 +162,13 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
     type = "serial0"
   }
 
+  # Sized to match the live VM, which was grown in place to hold the firmware
+  # upgrades and the snapshot chain. Proxmox cannot shrink a disk, so understating
+  # this makes a plan propose a shrink.
   disk {
     datastore_id = "local-zfs"
     interface    = "scsi0"
-    size         = 16
+    size         = 40
   }
 
   network_device {

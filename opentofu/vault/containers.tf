@@ -27,17 +27,20 @@ resource "proxmox_virtual_environment_container" "tack" {
     mac_address = "BC:24:11:A3:52:17"
   }
 
+  # Sized to match the live container. It was grown in place, and Proxmox cannot
+  # shrink a container disk, so understating these here makes a plan propose a
+  # shrink that either fails or damages the store.
   disk {
     datastore_id = "local-lvm"
-    size         = 40
+    size         = 300
   }
 
   memory {
-    dedicated = 8192
+    dedicated = 16384
   }
 
   cpu {
-    cores = 2
+    cores = 6
   }
 
   tags = ["lxc", "tack", "docker"]
