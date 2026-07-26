@@ -21,7 +21,7 @@ variable "tack_qa" {
     dns_servers      = list(string)
   })
   default = {
-    vm_id            = 400
+    vm_id            = 117
     hostname         = "tack-qa"
     ipv6_address     = "3d06:bad:b01:204::400/64"
     ipv6_gateway     = "3d06:bad:b01:204::1"
@@ -55,7 +55,7 @@ variable "seaweedfs" {
     dns_servers      = list(string)
   })
   default = {
-    vm_id            = 410
+    vm_id            = 118
     hostname         = "seaweedfs"
     ipv6_address     = "3d06:bad:b01:204::410/64"
     ipv6_gateway     = "3d06:bad:b01:204::1"
@@ -89,7 +89,7 @@ variable "dns64" {
     dns_servers      = list(string)
   })
   default = {
-    vm_id            = 464
+    vm_id            = 103
     hostname         = "dns64-suburban"
     ipv6_address     = "3d06:bad:b01:204::464/64"
     ipv6_gateway     = "3d06:bad:b01:204::1"

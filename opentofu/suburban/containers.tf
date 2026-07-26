@@ -2,7 +2,7 @@
 
 resource "proxmox_virtual_environment_container" "mwan_failover_test" {
   node_name = "hypervisor"
-  vm_id     = 100
+  vm_id     = 116
 
   depends_on = [
     proxmox_network_linux_bridge.mwan_internal,

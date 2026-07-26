@@ -1,5 +1,5 @@
 ---
-# Testbed MWAN failover LXC (lxc-100 on suburban) target vars.
+# Testbed MWAN failover LXC (lxc-116 on suburban) target vars.
 # Consumed by deploy-mwan-failover.yml when targeting `mwan_failover_test_servers`.
 
 mwan_failover_hostname: "mwan-failover-test"

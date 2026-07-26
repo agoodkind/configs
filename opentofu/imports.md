@@ -30,9 +30,9 @@ The suburban node name is `hypervisor`.
 
 ```bash
 ssh suburban 'pvesh get /nodes/hypervisor/network --output-format json'
-ssh suburban 'qm config 950'
+ssh suburban 'qm config 113'
 ssh suburban 'qm config 101'
-ssh suburban 'pct config 100'
+ssh suburban 'pct config 116'
 ssh suburban 'pct config 200'
 ssh suburban 'pct config 201'
 ssh suburban 'pct config 202'
@@ -76,10 +76,16 @@ tofu import \
 
 Run from [opentofu/](./):
 
+Testbed VMIDs match production's, so a guest and its prod counterpart share a
+number: the MWAN VM is 113, the failover LXC 116, tack 117, seaweedfs 118, dns64
+103, and the router 101. The simulated ISPs have no prod counterpart.
+
+Run from [opentofu/](./):
+
 ```bash
 tofu import \
-  'module.suburban.proxmox_virtual_environment_vm.vm950_test_mwan' \
-  'hypervisor/950'
+  'module.suburban.proxmox_virtual_environment_vm.test_mwan' \
+  'hypervisor/113'
 
 tofu import \
   'module.suburban.proxmox_virtual_environment_vm.opnsense_test' \
@@ -87,7 +93,19 @@ tofu import \
 
 tofu import \
   'module.suburban.proxmox_virtual_environment_container.mwan_failover_test' \
-  'hypervisor/100'
+  'hypervisor/116'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
+  'hypervisor/117'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.seaweedfs' \
+  'hypervisor/118'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.dns64' \
+  'hypervisor/103'
 
 tofu import \
   'module.suburban.proxmox_virtual_environment_container.isp_webpass' \
@@ -102,22 +120,74 @@ tofu import \
   'hypervisor/202'
 ```
 
-If `tack-qa` already exists live and is not yet in state, import it with:
+### Change a guest's VMID
 
-```bash
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
-  'hypervisor/400'
-```
+Proxmox treats the VMID as the guest's identity and `vm_id` cannot be updated in
+place, so a VMID change is a rename on the hypervisor plus a state re-attach. It is
+never a destroy.
+
+Renaming the dataset carries its snapshots, because they are children of it.
+
+1. Stop the guest.
+2. Rename each ZFS dataset from the old id to the new one.
+3. Rewrite the volume reference in the guest conf. It appears once in the active
+   config and once in every `[snapname]` section, so rewrite all of them.
+4. Move the conf to the new id and start the guest.
+5. Run `tofu state rm` on the resource, then `tofu import` it at the new id.
+
+Do not use `tofu state mv` for this. It renames the address and leaves the old
+`vm_id` in state, which the next plan reads as a replacement.
+
+## Keep prevent_destroy on every resource
+
+Each guest, bridge, and VLAN in both modules sets `lifecycle.prevent_destroy = true`,
+and a newly imported one needs it too. These resources are adopted from running
+infrastructure, so a destroy is never the intended outcome of a plan.
+
+The guard refuses a destroy or a replacement. An accidental delete, or a change to an
+attribute that forces replacement, fails the plan instead of running. The guard does
+nothing about an update in place, so it is not protection against a destructive
+attribute change.
+
+## Read a plan by kind, not by count
+
+`Plan: N to change` says nothing about whether a change is safe.
+
+A freshly imported resource makes the provider propose its own defaults, so a plan
+routinely adds `timeout_*` values and blocks that the import could not populate. That
+is bookkeeping. The same count can also hold an attribute change that damages a
+running guest.
+
+Read the attribute diffs before any apply and separate the two. Treat a `~` on a
+`cpu`, `memory`, or `disk` block as a real hardware change and confirm it is intended.
+
+The dangerous direction is config that understates the live guest. Proxmox cannot
+shrink a container or VM disk, so config declaring less than the hypervisor has
+becomes a shrink proposal, which either fails or damages the guest's data. Resizing a
+guest on the hypervisor without updating the config is what produces that state, so
+change the config as part of the resize.
+
+A plan that has been failing for a while is its own hazard, because drift accumulates
+behind the error where nobody sees it. After fixing whatever broke the plan, read the
+whole plan again rather than applying the first clean run.
 
 ## Drift expectations
 
-- `kvm_arguments` is intentionally absent from VM 950 and VM 101 resources.
-  Ansible owns the live `args` values because the Proxmox API rejects token
-  writes to that field.
-- `initialization.user_account.keys` can change when GitHub public keys rotate.
-  Resources ignore that field where it would otherwise create noise.
+- Ansible owns the live `args` on the MWAN and OPNsense VMs, because the Proxmox API
+  rejects token writes to that field. Neither resource declares `kvm_arguments`, and
+  both name it in `ignore_changes`. Without the ignore, the provider reads the live
+  value as removed and an apply nulls it. On the OPNsense VM that field carries the
+  virtio-serial chardev the mwan-opnsense out-of-band daemon serves on. The MWAN VM's
+  args carry its vsock CID, which tracks its VMID.
+- The provider does not persist `initialization.user_account`, because Proxmox never
+  returns injected SSH keys. Resources ignore the whole block rather than `keys`
+  alone. A re-imported guest has no `user_account` at all, so the configured keys
+  read as an addition, and that forces a replacement.
 - `operating_system.template_file_id` on imported LXCs is informational because
   Proxmox does not store the original template name in `pct config`.
 - `/etc/network/interfaces.d/testbed-masquerade.conf` and the extra routable
   `vmbr1` IPv6 address remain Ansible-owned sourced files.
+- A container's state `id` is the bare VMID, so the unique key is the pair of
+  `node_name` and `id`. Testbed VMIDs match production's, so the same id appears
+  twice across the two hypervisors. Match resources on the pair, never on the id
+  or the resource name alone.

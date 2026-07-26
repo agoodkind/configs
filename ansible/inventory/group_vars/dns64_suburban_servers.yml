@@ -1,5 +1,5 @@
 ---
-# Suburban testbed dns64 LXC (CT 464 on suburban).
+# Suburban testbed dns64 LXC (CT 103 on suburban).
 # Shared keys live in dns64_all.yml.
 
 service_hostname: "{{ service_mapping.dns64_suburban.hostname }}"

@@ -823,5 +823,5 @@
 # targeting mwan_failover_servers (prod) or mwan_failover_test_servers
 # (testbed).
 #
-# Suburban-specific host work (VM 950 args, ISP LXCs, OPNsense host bridge)
+# Suburban-specific host work (MWAN VM args, ISP LXCs, OPNsense host bridge)
 # lives in deploy-testbed.yml.

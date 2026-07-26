@@ -20,7 +20,7 @@ mwan_config_mgmt_addr: "3d06:bad:b01:204::950"
 
 # Shared testbed MWAN topology values consumed by the suburban host config.
 mwan_environment: "testbed"
-mwan_vmid: 950
+mwan_vmid: 113
 mwan_proxmox_node: "hypervisor"
 mwan_internal_iface: "enmwanbr0"
 mwan_email_recipient: "alex@goodkind.io"
@@ -38,16 +38,16 @@ opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
 opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
 opnsense_bgp_neighbors:
   - address: "10.250.250.3"
-    description: "VM950-IPv4"
+    description: "VM113-IPv4"
     preference: "primary"
   - address: "3d06:bad:b01:201::3"
-    description: "VM950-IPv6"
+    description: "VM113-IPv6"
     preference: "primary"
   - address: "10.250.250.4"
-    description: "LXC100-IPv4"
+    description: "LXC116-IPv4"
     preference: "backup"
   - address: "3d06:bad:b01:201::4"
-    description: "LXC100-IPv6"
+    description: "LXC116-IPv6"
     preference: "backup"
 bgp_asn: 4200000001
 bgp_router_id: "10.250.250.3"
@@ -216,4 +216,4 @@ testbed_isp_lxcs:
     static_v4_route_to: ""
 
 # Testbed-only: testbed failover LXC id used by deploy-testbed.yml
-failover_lxc_id: "100"
+failover_lxc_id: "116"

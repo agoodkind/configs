@@ -27,17 +27,20 @@ resource "proxmox_virtual_environment_container" "tack" {
     mac_address = "BC:24:11:A3:52:17"
   }
 
+  # Sized to match the live container. It was grown in place, and Proxmox cannot
+  # shrink a container disk, so understating these here makes a plan propose a
+  # shrink that either fails or damages the store.
   disk {
     datastore_id = "local-lvm"
-    size         = 40
+    size         = 300
   }
 
   memory {
-    dedicated = 8192
+    dedicated = 16384
   }
 
   cpu {
-    cores = 2
+    cores = 6
   }
 
   tags = ["lxc", "tack", "docker"]
@@ -53,6 +56,12 @@ resource "proxmox_virtual_environment_container" "tack" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes = [
+      # Proxmox does not return injected SSH keys, and the template name is not
+      # stored in pct config, so both read as changes that force replacement.
+      initialization[0].user_account,
+      operating_system[0].template_file_id,
+    ]
   }
 }
 
@@ -305,6 +314,7 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }

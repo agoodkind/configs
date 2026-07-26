@@ -3,11 +3,11 @@
 #
 # Targets the `suburban` hypervisor (in suburban_servers group). The play
 # pulls together: sysctl, masquerade interface stub, suburban DDNS,
-# VM `args` ownership for VM 950 and VM 101 (Proxmox API rejects `args`
+# VM `args` ownership for the MWAN and OPNsense VMs (Proxmox API rejects `args`
 # writes for any actor other than `root@pam`, so Ansible owns them as root
 # over SSH), ISP-LXC provisioning for the testbed WAN simulators (200/201/202),
 # the mwan-opnsense Unix socket bridge that proxies the OPNsense VM 101 over
-# virtio-serial, and the VFIO host setup for VM 950's WAN passthrough.
+# virtio-serial, and the VFIO host setup for the MWAN VM's WAN passthrough.
 #
 # Run examples:
 #   ansible-playbook playbooks/deploy-testbed.yml --limit suburban
@@ -15,7 +15,7 @@
 #
 # The shared Proxmox host services (mwan ifmgr, mwan watchdog, cloudflared
 # OOB, base packages) come from deploy-proxmox.yml. The testbed MWAN VM
-# itself (VM 950) and the testbed failover LXC (LXC 100) are configured by
+# itself and the testbed failover LXC are configured by
 # deploy-mwan.yml and deploy-mwan-failover.yml respectively when targeted
 # with --limit test_mwan_servers and --limit mwan_failover_test_servers.
 
@@ -81,7 +81,7 @@
       tags: ["ddns"]
 
     # ----------------------------------------------------------------------
-    # qm args ownership (VM 950 vsock, VM 101 mwanrpc virtio-serial)
+    # qm args ownership (MWAN VM vsock, OPNsense VM mwanrpc virtio-serial)
     # ----------------------------------------------------------------------
     # Proxmox API rejects writes to the `args` field for any actor other
     # than the bare `root@pam` user (API tokens cannot bypass this). Tofu
@@ -90,22 +90,24 @@
     # live config does not already match. `args` only takes effect at QEMU
     # process start, so a change here requires a cold reboot of the VM.
 
-    - name: Read current VM 950 args
+    - name: Read current MWAN VM args
       ansible.builtin.command:
-        cmd: qm config 950
-      register: vm_950_config
+        cmd: qm config {{ mwan_vmid }}
+      register: mwan_vm_config
       changed_when: false
       check_mode: false
       tags: ["args"]
 
-    - name: Set vsock device on VM 950 args
+    # The vsock guest CID equals the VMID, so both track mwan_vmid and a
+    # renumber cannot leave the watchdog dialing a CID the VM no longer has.
+    - name: Set vsock device on MWAN VM args
       ansible.builtin.command:
-        cmd: qm set 950 --args "-device vhost-vsock-pci,guest-cid=950"
+        cmd: qm set {{ mwan_vmid }} --args "-device vhost-vsock-pci,guest-cid={{ mwan_vmid }}"
       when: >-
-        vm_950_config.stdout is not search('args:\s*-device\s+vhost-vsock-pci,guest-cid=950')
-      register: vm_950_args_set
-      changed_when: vm_950_args_set is not skipped and vm_950_args_set.rc == 0
-      notify: Note VM 950 args reboot required
+        mwan_vm_config.stdout is not search('args:\s*-device\s+vhost-vsock-pci,guest-cid=' ~ mwan_vmid)
+      register: mwan_vm_args_set
+      changed_when: mwan_vm_args_set is not skipped and mwan_vm_args_set.rc == 0
+      notify: Note MWAN VM args reboot required
       tags: ["args"]
 
     - name: Read current VM 101 args
@@ -197,12 +199,12 @@
         state: restarted
       become: true
 
-    - name: Note VM 950 args reboot required
+    - name: Note MWAN VM args reboot required
       ansible.builtin.debug:
         msg: >-
-          VM 950 args were updated. The vsock device only attaches on a
-          fresh QEMU process. Stop and start VM 950 (qm stop 950 then qm
-          start 950) for the new args to take effect.
+          MWAN VM args were updated. The vsock device only attaches on a
+          fresh QEMU process. Stop and start the VM (qm stop {{ mwan_vmid }}
+          then qm start {{ mwan_vmid }}) for the new args to take effect.
       tags: ["args"]
 
     - name: Note VM 101 args reboot required
