@@ -1,12 +1,14 @@
 # Suburban testbed VMs managed by OpenTofu.
 #
-# The live `args` fields on VM 950 and VM 101 are owned by Ansible because the
-# Proxmox API rejects API-token writes to that field. The bpg/proxmox provider
+# The live `args` fields on the MWAN VM and VM 101 are owned by Ansible because
+# the Proxmox API rejects API-token writes to that field. The bpg/proxmox provider
 # leaves undeclared fields alone, so live `args` drift does not surface in plan.
+# The MWAN VM's args also carry its vsock CID, which tracks its vm_id.
 
-resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
+# Resource name deliberately omits the VMID so it cannot go stale again.
+resource "proxmox_virtual_environment_vm" "test_mwan" {
   node_name = "hypervisor"
-  vm_id     = 950
+  vm_id     = 113
   name      = "test-mwan"
 
   depends_on = [
@@ -180,5 +182,11 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes = [
+      # Ansible owns the live `args` field, which carries the virtio-serial
+      # chardev the mwan-opnsense out-of-band daemon serves on. Undeclared here,
+      # tofu reads it as removed and an apply would null the break-glass channel.
+      kvm_arguments,
+    ]
   }
 }

@@ -30,9 +30,9 @@ The suburban node name is `hypervisor`.
 
 ```bash
 ssh suburban 'pvesh get /nodes/hypervisor/network --output-format json'
-ssh suburban 'qm config 950'
+ssh suburban 'qm config 113'
 ssh suburban 'qm config 101'
-ssh suburban 'pct config 100'
+ssh suburban 'pct config 116'
 ssh suburban 'pct config 200'
 ssh suburban 'pct config 201'
 ssh suburban 'pct config 202'
@@ -76,10 +76,16 @@ tofu import \
 
 Run from [opentofu/](./):
 
+Testbed VMIDs match production's, so a guest and its prod counterpart share a
+number: the MWAN VM is 113, the failover LXC 116, tack 117, seaweedfs 118, dns64
+103, and the router 101. The simulated ISPs have no prod counterpart.
+
+Run from [opentofu/](./):
+
 ```bash
 tofu import \
-  'module.suburban.proxmox_virtual_environment_vm.vm950_test_mwan' \
-  'hypervisor/950'
+  'module.suburban.proxmox_virtual_environment_vm.test_mwan' \
+  'hypervisor/113'
 
 tofu import \
   'module.suburban.proxmox_virtual_environment_vm.opnsense_test' \
@@ -87,7 +93,19 @@ tofu import \
 
 tofu import \
   'module.suburban.proxmox_virtual_environment_container.mwan_failover_test' \
-  'hypervisor/100'
+  'hypervisor/116'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
+  'hypervisor/117'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.seaweedfs' \
+  'hypervisor/118'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.dns64' \
+  'hypervisor/103'
 
 tofu import \
   'module.suburban.proxmox_virtual_environment_container.isp_webpass' \
@@ -102,19 +120,22 @@ tofu import \
   'hypervisor/202'
 ```
 
-If `tack-qa` already exists live and is not yet in state, import it with:
+### Changing a guest's VMID
 
-```bash
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
-  'hypervisor/400'
-```
+`vm_id` cannot be updated in place, so a VMID change is a rename on the hypervisor
+followed by re-attaching state, never a destroy. Rename the ZFS datasets, which
+carries their snapshots, rewrite the volume reference in every `[snapname]` section
+of the guest conf as well as the active one, move the conf to the new id, and start
+the guest. Then `tofu state rm` the resource and `tofu import` it at the new id.
+`tofu state mv` alone is wrong here: it renames the address but leaves the old
+`vm_id` in state, which the next plan reads as a replacement.
 
 ## Drift expectations
 
-- `kvm_arguments` is intentionally absent from VM 950 and VM 101 resources.
+- `kvm_arguments` is intentionally absent from the MWAN VM and VM 101 resources.
   Ansible owns the live `args` values because the Proxmox API rejects token
-  writes to that field.
+  writes to that field. The MWAN VM's args also carry its vsock CID, which
+  tracks its VMID.
 - `initialization.user_account.keys` can change when GitHub public keys rotate.
   Resources ignore that field where it would otherwise create noise.
 - `operating_system.template_file_id` on imported LXCs is informational because

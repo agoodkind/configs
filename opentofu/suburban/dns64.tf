@@ -58,6 +58,9 @@ resource "proxmox_virtual_environment_container" "dns64" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      # Proxmox does not return injected SSH keys, so a re-import would read
+      # the configured keys as an addition that forces replacement.
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }

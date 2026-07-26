@@ -53,6 +53,12 @@ resource "proxmox_virtual_environment_container" "tack" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes = [
+      # Proxmox does not return injected SSH keys, and the template name is not
+      # stored in pct config, so both read as changes that force replacement.
+      initialization[0].user_account,
+      operating_system[0].template_file_id,
+    ]
   }
 }
 
@@ -305,6 +311,7 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
