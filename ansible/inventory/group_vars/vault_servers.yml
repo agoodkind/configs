@@ -53,6 +53,8 @@ mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: true
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
+mwan_ifmgr_iface_dhcp_v4: true
+mwan_ifmgr_iface_ra_solicit: true
 mwan_ifmgr_oob_addr: "3d06:bad:b01:ff::1/128"
 mwan_ifmgr_policy_from_v6: "3d06:bad:b01:ff::1"
 mwan_ifmgr_cloudflared_oob_user: "cloudflared-oob"

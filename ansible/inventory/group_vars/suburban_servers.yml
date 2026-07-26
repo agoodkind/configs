@@ -85,6 +85,13 @@ mwan_watchdog_wan_interfaces:
 # name is the shared hypervisor role; which modules run is decided by which
 # sections render below.
 mwan_ifmgr_role: "oob"
+# vmbr0 is the upstream bridge and the interface the event monitor watches.
+# DHCP and router solicitation stay off: the host gets its own addressing from
+# the uplink, and ifmgr only observes here.
+mwan_ifmgr_iface_key: "vmbr0"
+mwan_ifmgr_iface_name: "vmbr0"
+mwan_ifmgr_iface_dhcp_v4: false
+mwan_ifmgr_iface_ra_solicit: false
 mwan_ifmgr_host_ipv6_policy_enabled: true
 mwan_ifmgr_host_ipv6_missing_iface_grace_period: "2m"
 mwan_ifmgr_host_ipv6_allowed_ra_uplink:

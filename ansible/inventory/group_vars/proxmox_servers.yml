@@ -11,6 +11,11 @@ mwan_ifmgr_enabled: true
 # the OOB-source policy rule, so a host without a tunnel renders none of them
 # and those modules self-disable at Init.
 mwan_ifmgr_oob_enabled: false
+# The daemon needs exactly one iface section naming the interface its kernel
+# event monitor watches. These decide whether it also runs a DHCPv4 client and
+# a router solicitor there.
+mwan_ifmgr_iface_dhcp_v4: true
+mwan_ifmgr_iface_ra_solicit: true
 mwan_ifmgr_host_ipv6_policy_enabled: false
 mwan_ifmgr_cloudflared_oob_user: ""
 # Opt-in ifmgr modules under the unified `oob` role. Each absent flag
