@@ -56,6 +56,8 @@
   notify:
     - Restart mwan-ifmgr
     - Restart mwan-watchdog
+    - Restart mwan-opnsense-drain
+    - Restart mwan-opnsense-host
   when: proxmox_mwan_host_role_enabled | bool
 
 - name: Deploy mwan-ifmgr service
@@ -240,3 +242,6 @@
     state: started
     daemon_reload: true
   when: mwan_watchdog_enabled | bool
+
+- name: Install the mwan opnsense host bridge and chardev drainer
+  ansible.builtin.import_tasks: mwan-opnsense-host-deploy.yml

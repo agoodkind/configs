@@ -12,13 +12,10 @@
 #
 # Required vars:
 #   mwan_opnsense_host_binary_local      local path to bin/mwan-linux
-#   mwan_opnsense_host_upstream          the drainer relay socket the bridge dials
-#   mwan_opnsense_drain_chardev          unix:///var/run/qemu-server/<vmid>.mwanrpc
 #   mwan_opnsense_drain_listen           relay socket path the drainer serves
-#   mwan_opnsense_host_listen_path       the probe socket the bridge serves
-#   mwan_opnsense_host_reconnect         bridge reconnect backoff
-#   mwan_opnsense_host_hb_interval       bridge heartbeat interval
-#   mwan_opnsense_host_hb_timeout        bridge heartbeat timeout
+#
+# Both units read their runtime inputs from /etc/mwan/config.toml, which
+# config-host.toml.j2 renders earlier in proxmox-host.yml.
 
 - name: Install mwan monolith binary
   ansible.builtin.copy:
@@ -68,42 +65,6 @@
   become: true
   register: mwan_opnsense_host_unit
   notify: Restart mwan-opnsense-host
-
-- name: Ensure /etc/mwan exists
-  ansible.builtin.file:
-    path: /etc/mwan
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-  become: true
-
-- name: Template [opnsense.host] into /etc/mwan/config.toml
-  ansible.builtin.copy:
-    dest: /etc/mwan/config.toml
-    owner: root
-    group: root
-    mode: "0644"
-    content: |
-      # Managed by ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml.
-      # The host bridge and the chardev drainer read their inputs from here.
-      hostname = "{{ inventory_hostname }}"
-
-      [opnsense.host]
-      upstream = "{{ mwan_opnsense_host_upstream }}"
-      listen = "{{ mwan_opnsense_host_listen_path }}"
-      reconnect = "{{ mwan_opnsense_host_reconnect }}"
-      heartbeat_interval = "{{ mwan_opnsense_host_hb_interval }}"
-      heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout }}"
-
-      [opnsense.drain]
-      chardev = "{{ mwan_opnsense_drain_chardev }}"
-      listen = "{{ mwan_opnsense_drain_listen }}"
-  become: true
-  register: mwan_opnsense_host_toml
-  notify:
-    - Restart mwan-opnsense-drain
-    - Restart mwan-opnsense-host
 
 - name: Enable and start mwan-opnsense-drain socket
   ansible.builtin.systemd:
