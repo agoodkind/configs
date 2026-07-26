@@ -50,6 +50,14 @@ var roleModules = map[string][]string{
 		// own wg0). Read-only observer; no kernel state.
 		"wg",
 	},
+	// host is the hypervisor role for a Proxmox host with no OOB tunnel.
+	// It omits oobv6, oobv4 and ra_lost, which require an OOB interface
+	// and address and fail Init without them. Suburban runs this.
+	"host": {
+		"policy_rules",
+		"host_ipv6_policy",
+		"wg",
+	},
 	// failover is the iface-monitor role for prod LXC 116 and testbed
 	// LXC 100. mainv4 is included so that when dhcp_v4 is enabled for
 	// the iface, the daemon's DHCP client also drives kernel addr and
