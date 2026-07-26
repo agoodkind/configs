@@ -9,14 +9,14 @@ opnsense_edge_v6 = "{{ mwan_opnsense_edge_ipv6 }}"
 mwanbr_edge_v6 = "{{ mwan_mwanbr_edge_ipv6 }}"
 {% endif %}
 
-{% if mwan_ifmgr_oob_enabled | bool %}
 [ifmgr.iface.{{ mwan_ifmgr_iface_key }}]
 name = "{{ mwan_ifmgr_iface_name }}"
-dhcp_v4 = true
-ra_solicit = true
+dhcp_v4 = {{ mwan_ifmgr_iface_dhcp_v4 | ternary('true', 'false') }}
+ra_solicit = {{ mwan_ifmgr_iface_ra_solicit | ternary('true', 'false') }}
 dhcp_initial_backoff = "5s"
 dhcp_max_backoff = "5m"
 
+{% if mwan_ifmgr_oob_enabled | bool %}
 [ifmgr.modules.oobv6]
 iface = "{{ mwan_ifmgr_iface_name }}"
 oob_addr = "{{ mwan_ifmgr_oob_addr }}"

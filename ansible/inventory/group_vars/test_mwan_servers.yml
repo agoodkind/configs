@@ -317,6 +317,10 @@ mwan_watchdog_lock_file: "/run/mwan-watchdog-testbed-rollback.lock"
 # address and renders none of the OOB modules.
 mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: false
+mwan_ifmgr_iface_key: "enmbrains0"
+mwan_ifmgr_iface_name: "enmbrains0"
+mwan_ifmgr_iface_dhcp_v4: true
+mwan_ifmgr_iface_ra_solicit: true
 mwan_ifmgr_host_ipv6_policy_enabled: false
 
 # Interface-manager cloudflared-tap module (off; downgrade automation).
