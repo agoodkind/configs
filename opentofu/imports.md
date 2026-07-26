@@ -130,15 +130,55 @@ the guest. Then `tofu state rm` the resource and `tofu import` it at the new id.
 `tofu state mv` alone is wrong here: it renames the address but leaves the old
 `vm_id` in state, which the next plan reads as a replacement.
 
+## Every resource carries prevent_destroy
+
+Each guest, bridge, and VLAN in both modules sets `lifecycle.prevent_destroy = true`,
+and a newly imported one must too. These resources are adopted from running
+infrastructure, so a destroy is never the intended outcome of a plan.
+
+Understand what the guard covers. It refuses a destroy or a replacement, which is why
+an accidental delete or a ForceNew attribute change fails the plan instead of running.
+It does nothing about an update in place, so it is not protection against a
+destructive attribute change. Read the plan for that.
+
+## Read the plan by kind, not by count
+
+`Plan: N to change` says nothing about whether a change is safe. The provider records
+its own defaults on a freshly imported resource, so a plan routinely proposes adding
+`timeout_*` values and blocks the import could not populate. Those are bookkeeping.
+In the same count can sit an attribute mutation that damages a running guest.
+
+Before any apply, read the attribute diffs and separate the two. Treat any `~` on a
+`cpu`, `memory`, or `disk` block as a real hardware change and confirm it is intended.
+
+The dangerous direction is config that understates the live guest. Proxmox cannot
+shrink a container or VM disk, so a config declaring less than the hypervisor has
+turns into a shrink proposal that either fails or damages the store. That happens
+whenever a guest is resized on the hypervisor and the config does not follow, so make
+the config change part of the resize rather than a later cleanup.
+
+A plan that has been failing for a while is its own hazard, because drift keeps
+accumulating behind the error and none of it is visible. After fixing whatever broke
+the plan, read the whole thing again rather than applying the first clean run.
+
 ## Drift expectations
 
-- `kvm_arguments` is intentionally absent from the MWAN VM and VM 101 resources.
+- `kvm_arguments` is intentionally absent from the MWAN and OPNsense VM resources.
   Ansible owns the live `args` values because the Proxmox API rejects token
-  writes to that field. The MWAN VM's args also carry its vsock CID, which
-  tracks its VMID.
-- `initialization.user_account.keys` can change when GitHub public keys rotate.
-  Resources ignore that field where it would otherwise create noise.
+  writes to that field. Both resources list it in `ignore_changes`, because
+  undeclared and unignored the provider reads the live value as removed and an
+  apply nulls it. On the OPNsense VM that field carries the virtio-serial chardev
+  the mwan-opnsense out-of-band daemon serves on. The MWAN VM's args also carry its
+  vsock CID, which tracks its VMID.
+- `initialization.user_account` is not persisted by the provider, because Proxmox
+  never returns injected SSH keys. Resources ignore the whole block, not just
+  `keys`: a re-imported guest has no `user_account` at all, so the configured keys
+  read as an addition that forces a replacement.
 - `operating_system.template_file_id` on imported LXCs is informational because
   Proxmox does not store the original template name in `pct config`.
 - `/etc/network/interfaces.d/testbed-masquerade.conf` and the extra routable
   `vmbr1` IPv6 address remain Ansible-owned sourced files.
+- A container's state `id` is the bare VMID, so the unique key is the pair of
+  `node_name` and `id`. Testbed VMIDs match production's, so the same id appears
+  twice across the two hypervisors. Match resources on the pair, never on the id
+  or the resource name alone.
