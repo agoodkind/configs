@@ -47,8 +47,10 @@ mwan_email_bind_iface: "enmbrains0"
 mwan_email_min_level: "ERROR"
 mwan_email_cooldown: "5m"
 
-# mwan-ifmgr service on the host
+# mwan-ifmgr service on the host. Vault owns the OOB tunnel, reached over its
+# own mbrains link, so it is the one host that enables the OOB modules.
 mwan_ifmgr_role: "oob"
+mwan_ifmgr_oob_enabled: true
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
 mwan_ifmgr_oob_addr: "3d06:bad:b01:ff::1/128"

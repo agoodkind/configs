@@ -9,6 +9,7 @@ opnsense_edge_v6 = "{{ mwan_opnsense_edge_ipv6 }}"
 mwanbr_edge_v6 = "{{ mwan_mwanbr_edge_ipv6 }}"
 {% endif %}
 
+{% if mwan_ifmgr_oob_enabled | bool %}
 [ifmgr.iface.{{ mwan_ifmgr_iface_key }}]
 name = "{{ mwan_ifmgr_iface_name }}"
 dhcp_v4 = true
@@ -28,3 +29,4 @@ oob_table_id = 500
 [ifmgr.modules.ra_lost]
 iface = "{{ mwan_ifmgr_iface_name }}"
 ra_lost_alert_after = "5m"
+{%- endif %}

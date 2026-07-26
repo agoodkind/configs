@@ -6,6 +6,11 @@
 # task file fails loudly if inventory stops defining a required value.
 proxmox_mwan_host_role_enabled: true
 mwan_ifmgr_enabled: true
+# Whether this host owns an out-of-band tunnel. Only vault does. The flag
+# gates the OOB interface block, the oobv6, oobv4, and ra_lost modules, and
+# the OOB-source policy rule, so a host without a tunnel renders none of them
+# and those modules self-disable at Init.
+mwan_ifmgr_oob_enabled: false
 mwan_ifmgr_host_ipv6_policy_enabled: false
 mwan_ifmgr_cloudflared_oob_user: ""
 # Opt-in ifmgr modules under the unified `oob` role. Each absent flag
