@@ -73,7 +73,7 @@ resource "proxmox_network_linux_bridge" "trunk" {
   autostart  = true
 
   address  = "10.240.4.5/24"
-  address6 = "3d06:bad:b01:204::5/64"
+  address6 = "3d06:bad:b01:214::5/64"
 
   lifecycle {
     prevent_destroy = true

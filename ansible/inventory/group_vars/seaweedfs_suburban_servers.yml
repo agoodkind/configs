@@ -1,7 +1,7 @@
 ---
 # Suburban testbed SeaweedFS object-store LXC (CT 410 on suburban).
-# Lives on the opnsense-test MANAGEMENT segment (3d06:bad:b01:204::/64) beside
-# tack-qa. Runs the weed binary under systemd (not Docker). Provides an S3
+# Lives on the opnsense-test MANAGEMENT segment beside tack-qa; its address comes
+# from service_mapping.yml. Runs the weed binary under systemd (not Docker). Provides an S3
 # endpoint for tack backups and audit archives. Container creation is handled
 # by OpenTofu (opentofu/suburban/seaweedfs.tf); this group configures the
 # deploy playbook (playbooks/deploy-seaweedfs.yml). Shared keys live in

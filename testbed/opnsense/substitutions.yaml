@@ -4,8 +4,14 @@
 # Addressing rules:
 #   * The WAN IPv4 transit link stays on `10.250.250.0/29`.
 #   * Testbed IPv4 tenant VLANs use `10.240.x.0/24`.
-#   * Testbed IPv6 tenant VLANs use the `3d06:bad:b01:2xx::/64` family.
-#   * MANAGEMENT uses `10.240.4.0/24` and `3d06:bad:b01:204::/64`.
+#   * Testbed LAN IPv6 /64s sit inside the `3d06:bad:b01:210::/60` aggregate that
+#     MWAN NPTs (`mwan_internal_prefix` in test_mwan_servers.yml), at the same
+#     offsets production uses inside its own `/60`: VMNET 0, PRIVILEGED 1,
+#     GENERAL 2, CAPTIVE 3, MANAGEMENT 4. A LAN outside that aggregate gets no
+#     native IPv6 egress, because NPT only translates the aggregate.
+#   * MANAGEMENT uses `10.240.4.0/24` and `3d06:bad:b01:214::/64`.
+#   * The WAN transit link (`201::`), the NAT64 prefix (`2664::`), and the
+#     IPv6-only VLAN (`264::`) stay outside the aggregate, mirroring production.
 
 device_names:
   - name: "MANAGEMENT and four VLAN parents: iavf0 to vtnet0"
@@ -25,10 +31,10 @@ xpath_sets:
     new_value: "3d06:bad:b01:201::2"
   - name: "PRIVILEGED LAN ipv6"
     xpath: "//opnsense/interfaces/lan/ipaddrv6"
-    new_value: "3d06:bad:b01:21::1"
+    new_value: "3d06:bad:b01:211::1"
   - name: "GENERAL ipv6"
     xpath: "//opnsense/interfaces/opt4/ipaddrv6"
-    new_value: "3d06:bad:b01:22::1"
+    new_value: "3d06:bad:b01:212::1"
   - name: "IPv6OnlyVLAN ipv6"
     xpath: "//opnsense/interfaces/opt8/ipaddrv6"
     new_value: "3d06:bad:b01:264::1"
@@ -37,7 +43,7 @@ xpath_sets:
     new_value: "10.240.4.1"
   - name: "MANAGEMENT v6"
     xpath: "//opnsense/interfaces/opt9/ipaddrv6"
-    new_value: "3d06:bad:b01:204::1"
+    new_value: "3d06:bad:b01:214::1"
 
   - name: "NAT64 / Tayga prefix"
     xpath: "//opnsense/OPNsense/tayga/general/v6prefix"
@@ -80,16 +86,16 @@ text_literals:
     to:   "3d06:bad:b01:2664::"
   - name: "v6 PRIVILEGED prefix shift"
     from: "3d06:bad:b01:1::"
-    to:   "3d06:bad:b01:21::"
+    to:   "3d06:bad:b01:211::"
   - name: "v6 GENERAL prefix shift"
     from: "3d06:bad:b01:2::"
-    to:   "3d06:bad:b01:22::"
+    to:   "3d06:bad:b01:212::"
   - name: "v6 CAPTIVE prefix shift"
     from: "3d06:bad:b01:3::"
-    to:   "3d06:bad:b01:23::"
+    to:   "3d06:bad:b01:213::"
   - name: "v6 MANAGEMENT prefix shift"
     from: "3d06:bad:b01:4::"
-    to:   "3d06:bad:b01:204::"
+    to:   "3d06:bad:b01:214::"
   - name: "v6 IPv6OnlyVLAN prefix shift"
     from: "3d06:bad:b01:64::"
     to:   "3d06:bad:b01:264::"
@@ -98,7 +104,7 @@ text_literals:
     to:   "3d06:bad:b01:201::"
   - name: "v6 VMNET prefix shift"
     from: "3d06:bad:b01::"
-    to:   "3d06:bad:b01:200::"
+    to:   "3d06:bad:b01:210::"
 
   - name: "domain literal"
     from: "home.goodkind.io"
@@ -109,6 +115,8 @@ text_literals:
   - name: "chaotic.dog domain literal"
     from: "chaotic.dog"
     to:   "test.home.goodkind.io"
+  # Runs after the VMNET shift above, so the prod forwarder 3d06:bad:b01::53 has
+  # already become 3d06:bad:b01:210::53 by this point.
   - name: "v6 DNS forwarder"
-    from: "3d06:bad:b01:200::53"
+    from: "3d06:bad:b01:210::53"
     to:   "2606:4700:4700::1111"

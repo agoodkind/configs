@@ -16,8 +16,11 @@ mwan_failover_bgp_neighbors_v6:
 mwan_failover_ipv4_address: "10.250.250.4/29"
 mwan_failover_ipv6_address: "3d06:bad:b01:201::4/64"
 mwan_failover_ipv4_return_route: ""
+# Return route for traffic the failover LXC forwards back behind OPNsense. It
+# covers the whole LAN aggregate that MWAN NPTs (mwan_internal_prefix in
+# test_mwan_servers.yml), not one LAN /64, so failover reaches every testbed LAN.
 mwan_failover_ipv6_return_route: >-
-  3d06:bad:b01:211::/64 via 3d06:bad:b01:201::2 dev eth1
+  3d06:bad:b01:210::/60 via 3d06:bad:b01:201::2 dev eth1
 mwan_failover_eth0_inet6_manual: true
 mwan_failover_enable_mainv4: true
 # Source interface for outbound failover alert email (empty = default route).

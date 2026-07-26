@@ -37,8 +37,12 @@ Run `qm stop 950` then `qm start 950` to pick up the new args.
 Inside the VM the kernel modules `vmw_vsock_virtio_transport` and `vsock` should
 be loaded and `/dev/vsock` should be present.
 
+Run this against VM 950's management address, which `test_mwan` in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
+owns.
+
 ```shell
-ssh root@3d06:bad:b01:204::950 'lsmod | grep vsock; ls /dev/vsock'
+ssh root@"$VM950" 'lsmod | grep vsock; ls /dev/vsock'
 ```
 
 On suburban, after restarting the watchdog, the journal should show

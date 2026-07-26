@@ -10,16 +10,14 @@ service_mac_address: "BC:24:11:04:64:00"
 # (3d06:bad:b01:264::ffff:1 tun endpoint, route in opnsense pf to nat64).
 dns64_prefix: "3d06:bad:b01:2664::/96"
 
-# Cloudflare 1.1.1.1 reached through opnsense-test's NAT64 translator. The
-# testbed's simulated ISPs only carry IPv4 transit, so native IPv6 to public
-# resolvers does not work; the synthesized address routes via Tayga and
-# returns over the NAT64 path. Same address is set in tofu as the LXC's
-# bootstrap resolver in /etc/resolv.conf so bind9 can resolve its own apt
-# mirrors before the daemon comes up.
+# Cloudflare 1.1.1.1 expressed in the NAT64 prefix, so this resolver's own
+# recursion rides opnsense-test's Tayga translator and reaches an IPv4-only
+# upstream. Tofu sets the same address as the LXC's bootstrap resolver in
+# /etc/resolv.conf, so bind9 can resolve its own apt mirrors before the daemon
+# comes up.
 dns64_upstream_dns: "3d06:bad:b01:2664::101:101"
 
-# Force AAAA synthesis for every name, including dual-stack ones. Without
-# this, dual-stack domains like deb.debian.org return their native AAAA and
-# clients try native IPv6, which fails on the testbed because the simulated
-# ISPs do not carry public IPv6 transit.
-dns64_force_synth: true
+# Synthesis stays off for dual-stack names, matching production (the shared
+# default in dns64_all.yml). Testbed LAN /64s sit inside the aggregate MWAN NPTs,
+# so a native AAAA is reachable; only IPv4-only names need NAT64.
+dns64_force_synth: false

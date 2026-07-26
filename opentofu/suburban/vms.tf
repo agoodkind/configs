@@ -58,10 +58,10 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
     discard      = "on"
   }
 
-  # MWAN-140 parity: VM 950 management lives on the vmbrtrunk 204:: services
-  # LAN, the same untagged segment as the testbed OPNsense LAN (204::1) and the
-  # DNS64 LXC (204::464), mirroring prod where the mwan VM enmgmt0 shares the
-  # OPNsense LAN /64 and reaches the resolver on-link.
+  # MWAN-140 parity: VM 950 management lives on the vmbrtrunk services LAN, the
+  # same untagged segment as the testbed OPNsense MANAGEMENT interface and the
+  # DNS64 LXC, mirroring prod where the mwan VM enmgmt0 shares the OPNsense LAN
+  # /64 and reaches the resolver on-link.
   network_device {
     bridge      = "vmbrtrunk"
     model       = "virtio"
@@ -102,8 +102,8 @@ resource "proxmox_virtual_environment_vm" "vm950_test_mwan" {
         address = "dhcp"
       }
       ipv6 {
-        address = "3d06:bad:b01:204::950/64"
-        gateway = "3d06:bad:b01:204::1"
+        address = "3d06:bad:b01:214::950/64"
+        gateway = "3d06:bad:b01:214::1"
       }
     }
 

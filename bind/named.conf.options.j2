@@ -23,9 +23,10 @@ options {
         clients { any; };
         break-dnssec yes;
 {% if dns64_force_synth | bool %}
-        // Force synthesis even when the upstream returns a native AAAA. Used
-        // on segments where native IPv6 to the public internet does not
-        // work, so every name has to route through the NAT64 translator.
+        // Force synthesis even when the upstream returns a native AAAA, sending
+        // every name through the NAT64 translator. Off in every environment: on
+        // a segment whose native IPv6 egress works, this only hides that path,
+        // and on a segment where it is broken it hides the breakage.
         exclude { any; };
 {% endif %}
     };

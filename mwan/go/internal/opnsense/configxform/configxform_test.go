@@ -41,7 +41,7 @@ func defaultSubs() Substitutions {
 			{Name: "wan ipaddr", XPath: "//opnsense/interfaces/wan/ipaddr", NewValue: "10.240.250.2"},
 			{Name: "wan ipaddrv6", XPath: "//opnsense/interfaces/wan/ipaddrv6", NewValue: "3d06:bad:b01:2fe::2"},
 			{Name: "mgmt v4", XPath: "//opnsense/interfaces/opt9/ipaddr", NewValue: "10.240.4.1"},
-			{Name: "mgmt v6", XPath: "//opnsense/interfaces/opt9/ipaddrv6", NewValue: "3d06:bad:b01:204::1"},
+			{Name: "mgmt v6", XPath: "//opnsense/interfaces/opt9/ipaddrv6", NewValue: "3d06:bad:b01:214::1"},
 		},
 		RemoveElements: []ElementRemove{
 			{Name: "wireguard peers", XPath: "//opnsense/OPNsense/wireguard/client/clients/client"},
@@ -90,7 +90,7 @@ func TestApplyXPathHostnameAndDomain(t *testing.T) {
 		{"//opnsense/interfaces/wan/ipaddr", "10.240.250.2"},
 		{"//opnsense/interfaces/wan/ipaddrv6", "3d06:bad:b01:2fe::2"},
 		{"//opnsense/interfaces/opt9/ipaddr", "10.240.4.1"},
-		{"//opnsense/interfaces/opt9/ipaddrv6", "3d06:bad:b01:204::1"},
+		{"//opnsense/interfaces/opt9/ipaddrv6", "3d06:bad:b01:214::1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.xpath, func(t *testing.T) {

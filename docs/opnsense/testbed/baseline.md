@@ -13,15 +13,16 @@ browser forwarding for headless Chrome or Playwright lives in
 - VM `101` (`opnsense-test`) is the suburban OPNsense testbed VM.
 - The OPNsense VM has one NIC backed by the `vmbrtrunk` VLAN-aware bridge.
   FreeBSD names it `vtnet0`.
-- The MANAGEMENT interface (`opt9` in `config.xml`) carries `10.240.4.1/24` and
-  `3d06:bad:b01:204::1/64`. Suburban joins the same broadcast domain via a
-  `vmbrtrunk` stub at `10.240.4.5/24` and `3d06:bad:b01:204::5/64`, defined in
-  [opentofu/suburban/networks.tf](../../../opentofu/suburban/networks.tf).
-- The LAN interface (`lan` in `config.xml`) carries `192.168.1.1/24` and
-  `3d06:bad:b01:211::1/64`.
-- The WAN/internal interface carries `10.250.250.2/29` and
-  `3d06:bad:b01:201::2/64`. Suburban reaches that interface through `vmbr2`,
-  and TCP port 22 is open there.
+- Every interface address comes from the config transform
+  ([substitutions.yaml](../../../testbed/opnsense/substitutions.yaml)), which
+  places the LAN `/64`s inside the aggregate MWAN translates so they reach native
+  IPv6. Read that file for the current values.
+- The MANAGEMENT interface (`opt9` in `config.xml`) is the services LAN. It holds
+  the testbed guests (tack-qa, SeaweedFS, the DNS64 LXC, and VM 950 management),
+  and suburban joins the same broadcast domain through a `vmbrtrunk` stub defined
+  in [opentofu/suburban/networks.tf](../../../opentofu/suburban/networks.tf).
+- The WAN/internal interface faces MWAN on `vmbr2` and carries the BGP transit
+  session. Suburban reaches it there, and TCP port 22 is open on it.
 - The host-side OPNsense gRPC target is
   `unix:///var/run/qemu-server/101.mwanrpc`.
 - The named virtio-console port is `io.goodkind.mwan-opnsense.0`.

@@ -12,6 +12,7 @@ service_cores: "1"
 service_disk_size: "4"
 service_tags: "lxc,dns,dns64"
 
-# Force DNS64 synthesis even when upstream returns native AAAA. Suburban
-# overrides this to true; production resolvers leave it off.
+# Force DNS64 synthesis even when upstream returns a native AAAA. Off everywhere:
+# every environment's LAN /64s reach native IPv6, so only IPv4-only names need
+# NAT64. Turning this on hides a broken native-IPv6 path instead of fixing it.
 dns64_force_synth: false

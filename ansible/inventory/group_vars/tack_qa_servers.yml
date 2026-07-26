@@ -26,13 +26,14 @@ ghcr_pull_token: "{{ vault_tack_qa_ghcr_pull_token }}"
 # by deploy-tack to fetch docker-compose.yml and the overlays from the SOT.
 tack_repo_read_token: "{{ vault_tack_qa_repo_read_token }}"
 
-# /96 carved from the suburban VMNET segment 3d06:bad:b01:204::/64
-# (opt9 on opnsense-test). ndp prefix must match the docker subnet.
-tack_docker_v6_subnet: "3d06:bad:b01:204:7ac::/96"
-tack_docker_v6_gateway: "3d06:bad:b01:204:7ac::1"
-tack_ndp_proxy_prefix: "3d06:bad:b01:204:7ac::/96"
+# /96 carved from the suburban MANAGEMENT segment 3d06:bad:b01:214::/64 (opt9 on
+# opnsense-test), mirroring how prod tack carves its /96 from the on-link LAN /64.
+# The ndp prefix must match the docker subnet so container GUAs appear on-link.
+tack_docker_v6_subnet: "3d06:bad:b01:214:7ac::/96"
+tack_docker_v6_gateway: "3d06:bad:b01:214:7ac::1"
+tack_ndp_proxy_prefix: "3d06:bad:b01:214:7ac::/96"
 
-# Backup object store: the SeaweedFS LXC on the same suburban 204:: segment.
+# Backup object store: the SeaweedFS LXC on the same suburban services segment.
 # Same S3 identity the SeaweedFS s3.json grants (single source in vault).
 tack_backup_enabled: true
 tack_backup_s3_endpoint: "http://[{{ service_mapping.seaweedfs_suburban.ipv6 }}]:8333"
