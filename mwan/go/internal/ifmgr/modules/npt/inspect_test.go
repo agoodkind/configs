@@ -108,6 +108,84 @@ func TestRenderTableRoundTripsRuleExprs(t *testing.T) {
 	}
 }
 
+func TestRenderedTableHasInterface(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		table RenderedTable
+		iface string
+		want  bool
+	}{
+		{
+			name: "prerouting exact match",
+			table: RenderedTable{
+				Prerouting: []string{
+					`iif "enatt0" ip6 daddr 2001:db8::/64 dnat prefix to fd00::/64`,
+				},
+			},
+			iface: "enatt0",
+			want:  true,
+		},
+		{
+			name: "postrouting exact match",
+			table: RenderedTable{
+				Postrouting: []string{
+					`oif "enatt0" ip6 saddr fd00::/64 snat prefix to 2001:db8::/64`,
+				},
+			},
+			iface: "enatt0",
+			want:  true,
+		},
+		{
+			name: "absent interface",
+			table: RenderedTable{
+				Prerouting: []string{
+					`iif "enatt0" ip6 daddr 2001:db8::/64 dnat prefix to fd00::/64`,
+				},
+			},
+			iface: "enwebpass0",
+			want:  false,
+		},
+		{
+			name: "shorter substring collision",
+			table: RenderedTable{
+				Prerouting: []string{
+					`iif "enatt0.3242" ip6 daddr 2001:db8::/64 dnat prefix to fd00::/64`,
+				},
+			},
+			iface: "enatt0",
+			want:  false,
+		},
+		{
+			name: "longer substring collision",
+			table: RenderedTable{
+				Postrouting: []string{
+					`oif "enatt0" ip6 saddr fd00::/64 snat prefix to 2001:db8::/64`,
+				},
+			},
+			iface: "enatt0.3242",
+			want:  false,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := testCase.table.HasInterface(testCase.iface)
+			if got != testCase.want {
+				t.Fatalf(
+					"HasInterface(%q) = %v, want %v",
+					testCase.iface,
+					got,
+					testCase.want,
+				)
+			}
+		})
+	}
+}
+
 func TestRenderTableFallsBackForUnrecognizedRule(t *testing.T) {
 	t.Parallel()
 

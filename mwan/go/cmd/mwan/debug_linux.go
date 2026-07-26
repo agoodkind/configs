@@ -29,22 +29,56 @@ const (
 type debugView string
 
 const (
-	debugViewNPT      debugView = "npt"
-	debugViewPolicy   debugView = "policy"
-	debugViewPrefixes debugView = "prefixes"
-	debugViewRoutes   debugView = "routes"
-	debugViewSim4     debugView = "sim4"
-	debugViewSim6     debugView = "sim6"
-	debugViewStats    debugView = "stats"
-	debugViewStatus   debugView = "status"
+	debugViewConnectivity debugView = "connectivity"
+	debugViewCurl4        debugView = "curl4"
+	debugViewCurl6        debugView = "curl6"
+	debugViewLB4          debugView = "lb4"
+	debugViewLB4Ifaces    debugView = "lb4-ifaces"
+	debugViewLB6          debugView = "lb6"
+	debugViewLB6Ifaces    debugView = "lb6-ifaces"
+	debugViewNPT          debugView = "npt"
+	debugViewPing4        debugView = "ping4"
+	debugViewPing6        debugView = "ping6"
+	debugViewPolicy       debugView = "policy"
+	debugViewPrefixes     debugView = "prefixes"
+	debugViewRoutes       debugView = "routes"
+	debugViewSim4         debugView = "sim4"
+	debugViewSim6         debugView = "sim6"
+	debugViewStats        debugView = "stats"
+	debugViewStatus       debugView = "status"
 )
 
+type debugProbeDispatcher func(
+	context.Context,
+	io.Writer,
+	*slog.Logger,
+	*config.Config,
+	string,
+	[]string,
+) error
+
 func runDebug(args []string, cfg *config.Config) int {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	return runDebugWithWriters(
+		args,
+		cfg,
+		os.Stdout,
+		os.Stderr,
+		runDebugProbeView,
+	)
+}
+
+func runDebugWithWriters(
+	args []string,
+	cfg *config.Config,
+	output io.Writer,
+	diagnostics io.Writer,
+	probeDispatcher debugProbeDispatcher,
+) int {
+	logger := slog.New(slog.NewTextHandler(diagnostics, &slog.HandlerOptions{
 		Level: slog.LevelWarn,
 	}))
 	if len(args) < 1 || args[0] == "" {
-		printDebugUsage(os.Stderr)
+		printDebugUsage(diagnostics)
 		return 1
 	}
 
@@ -53,27 +87,44 @@ func runDebug(args []string, cfg *config.Config) int {
 	var err error
 	switch view {
 	case debugViewNPT:
-		err = showDebugNPT(ctx, os.Stdout, logger)
+		err = showDebugNPT(ctx, output, logger)
 	case debugViewPrefixes:
-		err = showDebugPrefixes(ctx, os.Stdout, logger, cfg)
+		err = showDebugPrefixes(ctx, output, logger, cfg)
 	case debugViewRoutes:
-		err = showDebugRoutes(ctx, os.Stdout, logger)
+		err = showDebugRoutes(ctx, output, logger)
 	case debugViewPolicy:
-		err = showDebugPolicy(ctx, os.Stdout, logger, cfg)
+		err = showDebugPolicy(ctx, output, logger, cfg)
 	case debugViewStatus:
-		err = showDebugStatus(ctx, os.Stdout, logger, cfg)
+		err = showDebugStatus(ctx, output, logger, cfg)
 	case debugViewStats:
-		err = showDebugStats(os.Stdout, logger, cfg)
+		err = showDebugStats(output, logger, cfg)
 	case debugViewSim4:
-		err = showDebugSimulation(ctx, os.Stdout, os.Stderr, logger, cfg, debugFamilyV4)
+		err = showDebugSimulation(ctx, output, diagnostics, logger, cfg, debugFamilyV4)
 	case debugViewSim6:
-		err = showDebugSimulation(ctx, os.Stdout, os.Stderr, logger, cfg, debugFamilyV6)
+		err = showDebugSimulation(ctx, output, diagnostics, logger, cfg, debugFamilyV6)
+	case debugViewConnectivity,
+		debugViewPing4,
+		debugViewPing6,
+		debugViewCurl4,
+		debugViewCurl6,
+		debugViewLB4,
+		debugViewLB6,
+		debugViewLB4Ifaces,
+		debugViewLB6Ifaces:
+		err = probeDispatcher(
+			ctx,
+			output,
+			logger,
+			cfg,
+			string(view),
+			args[1:],
+		)
 	default:
-		printDebugUsage(os.Stderr)
+		printDebugUsage(diagnostics)
 		return 1
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mwan debug %s: %v\n", view, err)
+		fmt.Fprintf(diagnostics, "mwan debug %s: %v\n", view, err)
 		return 1
 	}
 	return 0
@@ -82,7 +133,10 @@ func runDebug(args []string, cfg *config.Config) int {
 func printDebugUsage(output io.Writer) {
 	fmt.Fprintln(
 		output,
-		"usage: mwan debug <npt|prefixes|routes|policy|status|stats|sim4|sim6>",
+		"usage: mwan debug "+
+			"<npt|prefixes|routes|policy|status|stats|sim4|sim6|"+
+			"connectivity|ping4|ping6|curl4|curl6|lb4|lb6|"+
+			"lb4-ifaces|lb6-ifaces>",
 	)
 }
 
