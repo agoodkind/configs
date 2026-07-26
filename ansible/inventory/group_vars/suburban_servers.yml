@@ -84,7 +84,7 @@ mwan_watchdog_wan_interfaces:
 # none of the OOB modules and declares no OOB interface or address. The role
 # name is the shared hypervisor role; which modules run is decided by which
 # sections render below.
-mwan_ifmgr_role: "oob"
+mwan_ifmgr_role: "host"
 # vmbr0 is the upstream bridge and the interface the event monitor watches.
 # DHCP and router solicitation stay off: the host gets its own addressing from
 # the uplink, and ifmgr only observes here.
