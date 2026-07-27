@@ -4,7 +4,7 @@ variable "ssh_keys" {
 }
 
 variable "tack_qa" {
-  description = "Settings for the tack-qa LXC on suburban. Lives on the opnsense-test MANAGEMENT segment (opt9, vmbrtrunk untagged, 3d06:bad:b01:204::/64), the closest mirror of prod's opt6 VMNET where the prod tack LXC lives. Default gateway is opnsense-test at 3d06:bad:b01:204::1. Outbound IPv4 reach is via NAT64 (3d06:bad:b01:2664::/96) on opnsense-test."
+  description = "Settings for the tack-qa LXC on suburban. Lives on the opnsense-test VMNET segment (opt6, vmbrtrunk untagged, 3d06:bad:b01:210::/64), matching prod where the tack LXC sits on opt6. Default gateway is opnsense-test at 3d06:bad:b01:210::1. Outbound IPv4 reach is via NAT64 (3d06:bad:b01:2664::/96) on opnsense-test."
   type = object({
     vm_id            = number
     hostname         = string
@@ -23,8 +23,8 @@ variable "tack_qa" {
   default = {
     vm_id            = 117
     hostname         = "tack-qa"
-    ipv6_address     = "3d06:bad:b01:204::400/64"
-    ipv6_gateway     = "3d06:bad:b01:204::1"
+    ipv6_address     = "3d06:bad:b01:210::117/64"
+    ipv6_gateway     = "3d06:bad:b01:210::1"
     bridge           = "vmbrtrunk"
     mac_address      = "BC:24:11:04:00:00"
     disk_size_gb     = 40
@@ -33,12 +33,12 @@ variable "tack_qa" {
     tags             = ["lxc", "tack", "qa", "docker"]
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     datastore_id     = "local-zfs"
-    dns_servers      = ["3d06:bad:b01:204::464"]
+    dns_servers      = ["3d06:bad:b01:210::64"]
   }
 }
 
 variable "seaweedfs" {
-  description = "Settings for the internal-only SeaweedFS object-store LXC on suburban. Lives on the opnsense-test MANAGEMENT segment (opt9, vmbrtrunk untagged, 3d06:bad:b01:204::/64) beside tack-qa. Default gateway is opnsense-test at 3d06:bad:b01:204::1. Outbound IPv4 reach (for example GitHub release downloads) is via NAT64 (3d06:bad:b01:2664::/96) on opnsense-test. Runs the weed binary under systemd and exposes an S3 endpoint for tack backups and audit archives. Internal only; never exposed off the segment."
+  description = "Settings for the internal-only SeaweedFS object-store LXC on suburban. Lives on the opnsense-test VMNET segment (opt6, vmbrtrunk untagged, 3d06:bad:b01:210::/64) beside tack-qa. Default gateway is opnsense-test at 3d06:bad:b01:210::1. Outbound IPv4 reach (for example GitHub release downloads) is via NAT64 (3d06:bad:b01:2664::/96) on opnsense-test. Runs the weed binary under systemd and exposes an S3 endpoint for tack backups and audit archives. Internal only; never exposed off the segment."
   type = object({
     vm_id            = number
     hostname         = string
@@ -57,8 +57,8 @@ variable "seaweedfs" {
   default = {
     vm_id            = 118
     hostname         = "seaweedfs"
-    ipv6_address     = "3d06:bad:b01:204::410/64"
-    ipv6_gateway     = "3d06:bad:b01:204::1"
+    ipv6_address     = "3d06:bad:b01:210::118/64"
+    ipv6_gateway     = "3d06:bad:b01:210::1"
     bridge           = "vmbrtrunk"
     mac_address      = "BC:24:11:04:10:00"
     disk_size_gb     = 100
@@ -67,7 +67,7 @@ variable "seaweedfs" {
     tags             = ["lxc", "seaweedfs", "s3"]
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     datastore_id     = "local-zfs"
-    dns_servers      = ["3d06:bad:b01:204::464"]
+    dns_servers      = ["3d06:bad:b01:210::64"]
   }
 }
 
@@ -91,8 +91,8 @@ variable "dns64" {
   default = {
     vm_id            = 103
     hostname         = "dns64-suburban"
-    ipv6_address     = "3d06:bad:b01:204::464/64"
-    ipv6_gateway     = "3d06:bad:b01:204::1"
+    ipv6_address     = "3d06:bad:b01:210::64/64"
+    ipv6_gateway     = "3d06:bad:b01:210::1"
     bridge           = "vmbrtrunk"
     mac_address      = "BC:24:11:04:64:00"
     disk_size_gb     = 4
