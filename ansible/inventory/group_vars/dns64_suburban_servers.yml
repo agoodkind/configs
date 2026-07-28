@@ -7,9 +7,7 @@
 # router sends anything outside 3d06:bad:b01:210::/60 out a simulated WAN, and
 # the controller is on the prod side at 3d06:bad:b01:a::. Same jump as
 # test_mwan_servers and opnsense_test_servers.
-ansible_ssh_common_args: >-
-  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-  -o ProxyJump=root@[3d06:bad:b01:200::1]
+ansible_ssh_common_args: "{{ ssh_base_args }} -o ProxyJump=root@[3d06:bad:b01:200::1]"
 
 service_hostname: "{{ service_mapping.dns64_suburban.hostname }}"
 service_ipv6_address: "{{ service_mapping.dns64_suburban.ipv6 }}/64"
