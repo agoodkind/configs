@@ -207,7 +207,10 @@ mwan_rt_tables:
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: false
 mwan_ifmgr_health_shadow_mode: false
-mwan_ifmgr_npt_shadow_mode: true
+# Authoritative on the testbed. In shadow mode npt computes its rules and never
+# programs them, so the guest segment gets no translation and native IPv6 does
+# not leave. Prod stays in shadow until MWAN-246 flips it there.
+mwan_ifmgr_npt_shadow_mode: false
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
