@@ -138,7 +138,11 @@ mwan_opnsense_ansible_ssh_common_args: >-
   -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
   -o ProxyJump=root@[3d06:bad:b01:200::1]
 mwan_opnsense_ansible_user: root
-mwan_opnsense_wan_ll: "fe80::be24:11ff:feec:efcc"
+# Derived from the testbed OPNsense's net1 MAC BC:24:11:0F:66:FA, which the VM
+# config pins, so it is stable across reboots. The return route for the guest
+# segment points here, and a wrong value leaves that route with an unresolvable
+# next hop and no reply path back to the guests.
+mwan_opnsense_wan_ll: "fe80::be24:11ff:fe0f:66fa"
 mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
 # OPNsense API URL target for the agent (config-vm.toml.j2). Prod uses the
 # OPNsense address on the mwan-mgmt segment (::1); the testbed analog reachable
