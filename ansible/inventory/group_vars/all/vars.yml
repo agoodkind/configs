@@ -23,6 +23,15 @@ smtp_host: mail.smtp2go.com
 smtp_port: "587"
 
 # ----------------------------------------------------------------------------
+# SSH connection defaults
+# ----------------------------------------------------------------------------
+# Base connection options for every host, so the value is always defined and a
+# play never has to invent one. A group that needs a jump host restates these
+# and appends its own ProxyJump, which outranks this file.
+ansible_ssh_common_args: >-
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+
+# ----------------------------------------------------------------------------
 # Guest prep defaults (prep-guests), shared by every service
 # ----------------------------------------------------------------------------
 # SSH port every guest listens on; proxy overrides this to 2222 in its group_vars.
