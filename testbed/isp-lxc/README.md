@@ -1,7 +1,7 @@
 # isp-lxc templates
 
-Jinja2 templates rendered onto ISP simulator LXCs 900 (Webpass), 901 (AT&T),
-and 902 (Monkeybrains / mbrains) by the testbed deploy playbook
+Jinja2 templates rendered onto the Webpass, AT&T, and Monkeybrains ISP
+simulator LXCs by the testbed deploy playbook
 (`deploy-testbed.yml` via `tasks/deploy-testbed-isp-lxc.yml`). Each LXC's
 capabilities are driven by its entry in `testbed_isp_lxcs`
 (`ansible/inventory/group_vars/suburban_servers.yml`): `pd_len`, `dynamic_v4`,
@@ -24,14 +24,14 @@ capabilities are driven by its entry in `testbed_isp_lxcs`
 - `pd-route.service.j2`, `pd-route.service.tmpl`: systemd unit that installs the
   delegated-prefix return route after the DHCP-PD exchange completes.
 - `sysctl-isp.conf`: kernel tuning applied to ISP LXCs.
-- `900/`, `901/`, `902/`: rendered per-LXC reference snapshots.
+- `webpass/`, `att/`, `mbrains/`: rendered per-LXC reference snapshots.
 
 ## Per-ISP IPv6/IPv4 behavior
 
 Capabilities mirror how prod addresses each WAN:
 
-- Monkeybrains (902): full dynamic stack. DHCPv4 + DHCPv6 IA_NA + DHCPv6-PD
+- Monkeybrains: full dynamic stack. DHCPv4 + DHCPv6 IA_NA + DHCPv6-PD
   (`/56`) + SLAAC (on `slaac_prefix`). v4 egress is masquerade.
-- AT&T (901) and Webpass (900): DHCPv6-PD + RA only (no `slaac_prefix`, no
+- AT&T and Webpass: DHCPv6-PD + RA only (no `slaac_prefix`, no
   `dynamic_v4`); the WAN VM holds a static v4. These reach full prod parity in
   later phases (att dynamic link plus routed static /29, webpass static /29).

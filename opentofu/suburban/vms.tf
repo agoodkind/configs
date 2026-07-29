@@ -1,6 +1,6 @@
 # Suburban testbed VMs managed by OpenTofu.
 #
-# The live `args` fields on the MWAN VM and VM 201 are owned by Ansible because
+# The live `args` fields on the MWAN VM and the OPNsense VM are owned by Ansible because
 # the Proxmox API rejects API-token writes to that field. The bpg/proxmox provider
 # leaves undeclared fields alone, so live `args` drift does not surface in plan.
 # The MWAN VM's args also carry its vsock CID, which tracks its vm_id.
