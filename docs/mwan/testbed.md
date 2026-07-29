@@ -21,49 +21,45 @@ ground truth and update this page when it changes.
 
 ## Guests
 
-OpenTofu owns every suburban guest below. Cross-check VMID, type, and bridges
-against [opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf),
-[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf), and
-[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf) when in doubt.
+OpenTofu provisions every suburban guest, and Ansible configures what runs inside
+it. Both read the same
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
+for a guest's id, hostname, and address, so that file answers which guest is
+which and a renumber changes one line. The
+[suburban module](../../opentofu/suburban/) holds the rest of the guest shape:
+type, bridges, disk, and memory.
 
-| VMID | Name               | Type | Role                                                  |
-| ---- | ------------------ | ---- | ----------------------------------------------------- |
-| 101  | opnsense-test      | QEMU | Testbed OPNsense gateway                              |
-| 950  | test-mwan          | QEMU | Testbed MWAN router (mirrors prod MWAN VM)            |
-| 100  | mwan-failover-test | LXC  | BGP failover backup (mirrors prod failover LXC)       |
-| 200  | isp-webpass        | LXC  | Simulated Webpass ISP                                 |
-| 201  | isp-att            | LXC  | Simulated AT&T ISP                                    |
-| 202  | isp-mbrains        | LXC  | Simulated Monkeybrains ISP                            |
+A guest that mirrors a production service takes its counterpart's VMID plus 100,
+so the MWAN VM answers at 213 against production's 113. The simulated ISPs have
+no production counterpart and sit in the 9xx range. No id is shared between the
+two hypervisors.
 
-Authoritative connection addresses for the OPNsense testbed are documented in
-[docs/opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md). Other
-guest IPs are encoded in
-[ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
-and in the matching OpenTofu resources.
+That separation is what makes a misdirected command safe. The hypervisors are
+independent Proxmox installations rather than a cluster, so a shared id is legal,
+but a command that lands on the wrong host then finds a guest at that id and
+succeeds against it. With no id in common the same mistake fails outright.
 
-The ISP LXCs (200/201/202) each provide DHCPv6-PD (kea-dhcp6) and radvd (RA), and
-masquerade out via Comcast on vmbr0. Per-ISP addressing is parameterized in
+Connection addresses for the OPNsense testbed are in
+[docs/opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md).
+
+Each ISP simulator terminates one WAN link for the MWAN VM, serves DHCPv6-PD
+through kea-dhcp6 and router advertisements through radvd, and masquerades out
+via Comcast on vmbr0. Every per-ISP value lives in
 [suburban_servers.yml](../../ansible/inventory/group_vars/suburban_servers.yml)
-`testbed_isp_lxcs`, mirroring how prod addresses each WAN. DHCPv6-PD sizes match
-prod: webpass `/56`, att `/60`, monkeybrains `/56`, with NPT using the first `/60`
-of each delegation. The PD prefixes use the 22/23/24 `/56`-clean scheme to stay
-clear of the `02xx` mgmt/LAN/internal/SLAAC space:
+under `testbed_isp_lxcs`, which carries a comment explaining each capability
+flag.
 
-| WAN | sim LXC | DHCPv6-PD | NPT (first /60) | v4 | SLAAC |
-| --- | ------- | --------- | --------------- | -- | ----- |
-| Monkeybrains | 202 | `3d06:bad:b01:2400::/56` | `3d06:bad:b01:2400::/60` | DHCPv4 (kea-dhcp4) + DHCPv6 IA_NA, masquerade egress | `3d06:bad:b01:0250::/64` |
-| AT&T | 201 | `3d06:bad:b01:2300::/60` | `3d06:bad:b01:2300::/60` | dynamic DHCPv4 link (MAC-pinned to `10.240.205.2`) + routed static `/29` `10.241.205.0/29` 1:1-NAT'd to services; no 802.1X/VLAN | none |
-| Webpass | 200 | `3d06:bad:b01:2200::/56` | `3d06:bad:b01:2200::/60` | static v4 link + routed static `/29` `10.241.204.0/29` 1:1-NAT'd to services | none |
+The three sims differ because the real WANs do. Monkeybrains runs the full
+dynamic stack, so the MWAN VM receives a DHCPv4 lease, a DHCPv6 address, a
+delegated prefix, and a SLAAC address exactly as the real Monkeybrains delivers.
+AT&T offers a dynamic DHCPv4 link pinned stable by a MAC reservation, over which
+the sim routes a static block that the MWAN VM translates one-to-one to its
+internal services; the testbed cannot reproduce 802.1X or the VLAN, so that link
+is a plain NIC. Webpass offers a static link plus its own routed static block.
 
-Monkeybrains (202) runs the full prod dynamic stack: DHCPv4, DHCPv6 IA_NA,
-DHCPv6-PD, and SLAAC, so VM 950 gets a dynamic v4, a DHCPv6 address, the PD, and a
-SLAAC address exactly as prod's real Monkeybrains delivers. AT&T (201) models prod
-AT&T: a dynamic DHCPv4 link (pinned stable by a sim MAC reservation) over which
-the sim routes a static `/29` (`10.241.205.0/29`) that VM 950 1:1-NATs to the five
-internal services, plus DHCPv6-PD; the testbed cannot reproduce 802.1X/VLAN, so
-the link is a direct NIC. Webpass (200) models prod Webpass: a static v4 link plus
-a static `/29` (`10.241.204.0/29`) 1:1-NAT'd to the five services, with DHCPv6-PD
-`/56` (NPT on its first `/60`).
+Prefix delegation sizes match production, and NPT translates the first `/60` of
+each delegation. The delegated prefixes deliberately avoid the `02xx` space that
+management, LAN, internal, and SLAAC already use.
 
 ## Production vs testbed
 
@@ -82,7 +78,7 @@ a static `/29` (`10.241.204.0/29`) 1:1-NAT'd to the five services, with DHCPv6-P
 
 ## Testbed-only infrastructure
 
-ISP LXCs 200/201/202, suburban-side safe IPv6 sysctl defaults, and suburban
+ISP LXCs 900/901/902, suburban-side safe IPv6 sysctl defaults, and suburban
 masquerade rules (`vmbr1` to `vmbr0`/`wg0`) only exist on the testbed. The
 bridge shape stays in OpenTofu, the safe early-boot sysctl defaults stay in
 [ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml),
@@ -97,7 +93,7 @@ unknown.
 - **Cloud-init drive storage.** `local-lvm` is disabled on suburban; only
   `local-zfs` is active. Guest `initialization.datastore_id` must be `local-zfs`,
   or a cloud-init drive regen fails with `storage 'local-lvm' is not available`.
-- **`args` ownership.** VMs with a virtio-serial or vsock device (VM 950, VM 101)
+- **`args` ownership.** VMs with a virtio-serial or vsock device (VM 213, VM 201)
   carry their `args` set by Ansible as `root@pam`, because the Proxmox API rejects
   `args` writes from a token. OpenTofu must not manage `kvm_arguments` for those
   VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the

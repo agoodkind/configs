@@ -1,6 +1,6 @@
 # Suburban testbed VMs managed by OpenTofu.
 #
-# The live `args` fields on the MWAN VM and VM 101 are owned by Ansible because
+# The live `args` fields on the MWAN VM and VM 201 are owned by Ansible because
 # the Proxmox API rejects API-token writes to that field. The bpg/proxmox provider
 # leaves undeclared fields alone, so live `args` drift does not surface in plan.
 # The MWAN VM's args also carry its vsock CID, which tracks its vm_id.
@@ -8,7 +8,7 @@
 # Resource name deliberately omits the VMID so it cannot go stale again.
 resource "proxmox_virtual_environment_vm" "test_mwan" {
   node_name = "hypervisor"
-  vm_id     = 113
+  vm_id     = local.service_mapping.test_mwan.vmid
   name      = "test-mwan"
 
   depends_on = [
@@ -128,7 +128,7 @@ resource "proxmox_virtual_environment_vm" "test_mwan" {
 
 resource "proxmox_virtual_environment_vm" "opnsense_test" {
   node_name = "hypervisor"
-  vm_id     = 101
+  vm_id     = local.service_mapping.opnsense_test.vmid
   name      = "opnsense-test"
 
   depends_on = [

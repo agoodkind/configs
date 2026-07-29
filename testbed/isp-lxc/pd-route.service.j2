@@ -1,11 +1,11 @@
 [Unit]
-Description=Route delegated prefix back to VM 950
+Description=Route delegated prefix back to the MWAN VM
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/sbin/ip -6 route replace {{ isp.pd_prefix }} via {{ isp.vm950_ll }} dev eth0
+ExecStart=/sbin/ip -6 route replace {{ isp.pd_prefix }} via {{ isp.mwan_vm_ll }} dev eth0
 {% if isp.static_v4_block %}
 # Routed static /29: deliver the block to the WAN VM's stable link address so
 # inbound 1:1-NAT'd traffic reaches it (models AT&T routing a static block).

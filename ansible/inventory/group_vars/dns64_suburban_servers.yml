@@ -1,5 +1,5 @@
 ---
-# Suburban testbed dns64 LXC (CT 103 on suburban).
+# Suburban testbed dns64 LXC (CT 203 on suburban).
 # Shared keys live in dns64_all.yml.
 
 # Reach this LXC on-link through the suburban hypervisor, which holds 210::5 on

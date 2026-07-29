@@ -1,5 +1,5 @@
 [hosts.opnsense]
-device = "unix:///var/run/qemu-server/101.serial0"
+device = "unix:///var/run/qemu-server/201.serial0"
 prompt = '(?m)(~|/) # '
 
 [hosts.mwan]
