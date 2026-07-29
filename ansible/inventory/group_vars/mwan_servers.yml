@@ -11,7 +11,7 @@ mwan_environment: "prod"
 
 # VM details (known/static)
 # Derived from service_mapping (single source of truth)
-mwan_vmid: 113
+mwan_vmid: "{{ service_mapping.mwan.vmid }}"
 mwan_proxmox_node: vault
 mwan_proxmox_delegate: vault
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
@@ -149,11 +149,6 @@ mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::3"
 # Keep LAN /64 on the bridge, but NPT the broader /60
 mwan_internal_prefix: "3d06:bad:b01::/60"
 
-# OPNsense WAN link-local (next-hop on the MWAN internal link).
-# Used for correct routing of the internal IPv6 /60 in MWAN policy tables.
-# NOTE: This is derived from OPNsense WAN MAC (EUI-64). If the WAN MAC changes,
-# update this value accordingly.
-mwan_opnsense_wan_ll: "fe80::be24:11ff:fe77:500c"
 
 # OPNsense IPv6 address on the MWAN link (DNAT target for "hairpinned" WAN /128 interface addresses).
 # This does not need to be globally routable; it is only used on the MWAN↔OPNsense link.
@@ -425,7 +420,7 @@ mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"
 mwan_watchdog_state_file: "/run/mwan-rollback.state"
 mwan_watchdog_lock_file: "/run/mwan-watchdog-rollback.lock"
-failover_lxc_id: "116"
+failover_lxc_id: "{{ service_mapping.mwan_failover.vmid }}"
 # The VM runs only the wan role, whose modules are health, wan.routes, and npt.
 # The OOB tunnel lives on the hypervisor, so the VM declares no OOB interface
 # or address and renders none of the OOB modules.

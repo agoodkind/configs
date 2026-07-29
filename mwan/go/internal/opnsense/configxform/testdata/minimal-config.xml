@@ -11,6 +11,13 @@
       <ipaddr>10.250.250.2</ipaddr>
       <ipaddrv6>3d06:bad:b01:fe::2</ipaddrv6>
     </wan>
+    <opt6>
+      <if>iavf0</if>
+      <descr>VMNET</descr>
+      <lock>1</lock>
+      <ipaddr>10.250.0.1</ipaddr>
+      <ipaddrv6>3d06:bad:b01::1</ipaddrv6>
+    </opt6>
     <opt9>
       <if>iavf0</if>
       <descr>MANAGEMENT</descr>

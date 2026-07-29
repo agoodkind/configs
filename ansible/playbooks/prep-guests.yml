@@ -17,14 +17,20 @@
   gather_facts: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   tasks:
+    # Uses the host's own ansible_ssh_common_args so the probe takes the same
+    # path the play does. Setting the options here instead would drop the
+    # ProxyJump that the suburban testbed groups depend on, since a play var
+    # outranks group_vars, and every guest behind the hypervisor would read as
+    # unreachable.
     - name: Test SSH connection with verbose output
       ansible.builtin.shell: |
+        # A ProxyJump to a bracketed IPv6 literal reads as a glob, so disable
+        # filename expansion before the options are interpolated.
+        set -f
         echo "=== Attempting SSH connection ==="
         ssh -v -o ConnectTimeout=5 \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
+          {{ ansible_ssh_common_args }} \
           -p {{ service_ssh_port }} \
           {{ ansible_user }}@{{ ansible_host }} \
           'echo "SSH connection successful"; whoami' 2>&1 | tail -20

@@ -117,7 +117,6 @@ type IfMgrWANEntry struct {
 // module-wide inputs that are not per-WAN.
 type IfMgrWANRoutesSection struct {
 	InternalIface   string `toml:"internal_iface"`
-	OpnsenseWanLL   string `toml:"opnsense_wan_ll"`
 	InternalNetV4   string `toml:"internal_net_v4"`
 	HealthStateFile string `toml:"health_state_file"`
 	ShadowMode      bool   `toml:"shadow_mode"`

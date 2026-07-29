@@ -18,7 +18,7 @@ mwan_config_hostname: "vault"
 mwan_config_mgmt_addr: "3d06:bad:b01::113"
 # VMID of the MWAN VM that vault's mwan-watchdog monitors and that the
 # config.toml template references via mwan_vmid and vsock_cid.
-mwan_vmid: 113
+mwan_vmid: "{{ service_mapping.mwan.vmid }}"
 
 # mwan-watchdog service on the host (separate from the BGP watchdog in
 # the MWAN agent on the VM)
@@ -27,7 +27,7 @@ mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"
 mwan_watchdog_state_file: "/run/mwan-rollback.state"
 mwan_watchdog_lock_file: "/run/mwan-watchdog-rollback.lock"
-failover_lxc_id: "116"
+failover_lxc_id: "{{ service_mapping.mwan_failover.vmid }}"
 
 # Distinguishes prod vault from suburban testbed when the config template
 # picks between vault_mwan_watchdog_pve_token_secret (prod) and

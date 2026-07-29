@@ -1,15 +1,17 @@
-# VM 101 qm config (suburban testbed)
+# OPNsense testbed guest: qm config
 
 ## Target args
 
-The suburban OPNsense testbed VM `101` runs with the following Proxmox
-`args` field. The named `io.goodkind.mwan-opnsense.0` virtio console maps
+The suburban OPNsense testbed guest runs with the Proxmox `args` field below.
+Every VMID in it comes from `mwan_opnsense_vmid`, so the example shows the
+current shape rather than defining it. The named `io.goodkind.mwan-opnsense.0`
+virtio console maps
 to `/dev/ttyV0.1` inside the OPNsense guest, and the `mwan_opnsense` rc.d
 service writes that path into `/var/lib/mwan/daemon.toml` before the
 daemon connects to the host-side bridge over this virtio-serial chardev.
 
 ```text
-args: -device virtio-serial-pci,id=mwanrpc -chardev socket,id=mwanchr,path=/var/run/qemu-server/101.mwanrpc,server=on,wait=off -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0
+args: -device virtio-serial-pci,id=mwanrpc -chardev socket,id=mwanchr,path=/var/run/qemu-server/201.mwanrpc,server=on,wait=off -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0
 ```
 
 ## Why Tofu does not manage this field
@@ -32,12 +34,11 @@ carries an idempotent `qm set` task in the `Configure suburban testbed extras`
 play.
 The task only runs `qm set` when the live `args` does not already match
 the target string. Look for the task tagged `args` named
-`Set mwanrpc chardev on VM 101 args`.
+`Set mwanrpc chardev on OPNsense VM args`.
 
-`args` only takes effect at QEMU process start, so an `args` change
-requires a cold reboot of VM 101. The playbook prints a notice when it
-changes the value. Run `qm stop 101` then `qm start 101` to pick up the
-new args.
+`args` only takes effect at QEMU process start, so an `args` change requires a
+cold stop and start rather than a reboot. The playbook prints a notice naming
+the guest when it changes the value.
 
 ## Verification
 
@@ -46,11 +47,11 @@ that the named virtio console resolves to `/dev/ttyV0.1` and that the
 rc.d wrapper wrote the daemon contract file:
 
 ```bash
-ssh root@<vm-101-mgmt-ip> 'service mwan_opnsense start'
-ssh root@<vm-101-mgmt-ip> 'service mwan_opnsense status'
-ssh root@<vm-101-mgmt-ip> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
-ssh root@<vm-101-mgmt-ip> 'ls -l /var/lib/mwan/daemon.toml'
-ssh root@<vm-101-mgmt-ip> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
+ssh root@<opnsense-test-mgmt-ip> 'service mwan_opnsense start'
+ssh root@<opnsense-test-mgmt-ip> 'service mwan_opnsense status'
+ssh root@<opnsense-test-mgmt-ip> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
+ssh root@<opnsense-test-mgmt-ip> 'ls -l /var/lib/mwan/daemon.toml'
+ssh root@<opnsense-test-mgmt-ip> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
 ```
 
 Expect `/dev/vtcon/io.goodkind.mwan-opnsense.0` to point at `../ttyV0.1`.
@@ -61,15 +62,16 @@ Expect `/var/lib/mwan/daemon.toml` to be owned by `root` with mode
 symlink target as the live truth and update `mwan_opnsense_listen_serial`
 to match before re-testing.
 
-On suburban, the host-side socket exists while VM 101 is running.
+On suburban, the host-side socket exists while the guest is running. Read its
+path from the rendered config rather than typing a VMID:
 
 ```bash
-ssh suburban 'ls -l /var/run/qemu-server/101.mwanrpc'
+ssh suburban 'grep chardev /etc/mwan/config.toml'
 ```
 
 The host-side mwan-opnsense bridge daemon reads
 `/etc/mwan/config.toml` `[opnsense.host].upstream` to find this socket.
 The deploy task in
 [ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml](../../ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml)
-sets `mwan_opnsense_host_vmid=101` so the rendered upstream is
-`unix:///var/run/qemu-server/101.mwanrpc`.
+reads `mwan_opnsense_vmid` from group_vars, so the rendered upstream
+tracks the guest's id rather than a literal in this page.

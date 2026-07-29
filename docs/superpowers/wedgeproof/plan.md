@@ -233,7 +233,7 @@ git commit -m "Preserve the drainer fd-store across crashes and respawn immediat
 
 ## Validation (acceptance, run during execution, not a code task)
 
-Deploy the new binary and unit to testbed VM 101 via the surgical path, then run the sub-second wedge-proof harness: `qmp_sampler.py` (~60 ms QMP register sampling) plus the matrix driver. Drive both directions at >=256 MB cut deep mid-transfer, against every chardev-touching disruption, accumulation with no reset between trials, >=30 genuine trials per cell, with per-trial `.reg`, `.health`, and adopted-fd artifacts retained.
+Deploy the new binary and unit to the testbed OPNsense guest via the surgical path, then run the sub-second wedge-proof harness: `qmp_sampler.py` (~60 ms QMP register sampling) plus the matrix driver. Drive both directions at >=256 MB cut deep mid-transfer, against every chardev-touching disruption, accumulation with no reset between trials, >=30 genuine trials per cell, with per-trial `.reg`, `.health`, and adopted-fd artifacts retained.
 
 Pass criteria:
 1. Zero PERMANENT wedge: every trial self-recovers to a working exec probe, recover-at recorded over a >=180 s window.

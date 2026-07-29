@@ -1,0 +1,136 @@
+package configxform
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// repoPath resolves a path relative to the repository root. The package lives
+// at mwan/go/internal/opnsense/configxform, so the root is five levels up.
+func repoPath(parts ...string) string {
+	base := filepath.Join("..", "..", "..", "..", "..")
+	return filepath.Join(append([]string{base}, parts...)...)
+}
+
+// transformRealCapture applies the committed substitution table to the
+// committed prod capture and returns the candidate bytes.
+func transformRealCapture(t *testing.T) []byte {
+	t.Helper()
+	capturePath := repoPath("testbed", "opnsense", "prod-config-redacted.xml")
+	input, err := os.ReadFile(capturePath) //nolint:gosec // fixed repo-relative path
+	if err != nil {
+		t.Fatalf("read capture %q: %v", capturePath, err)
+	}
+
+	subsPath := repoPath("testbed", "opnsense", "substitutions.yaml")
+	subs, err := Load(subsPath)
+	if err != nil {
+		t.Fatalf("load substitutions %q: %v", subsPath, err)
+	}
+
+	out, err := Apply(input, subs)
+	if err != nil {
+		t.Fatalf("Apply on real capture: %v", err)
+	}
+	return out
+}
+
+// TestApplyRealCaptureWithCommittedSubstitutions runs the committed
+// substitution table against the committed prod capture. Every other test in
+// this package uses a small hand-written fixture, so nothing else notices when
+// the capture and the substitutions drift apart. A refreshed capture whose
+// shape no longer matches the table fails here rather than at import time on
+// the testbed router.
+func TestApplyRealCaptureWithCommittedSubstitutions(t *testing.T) {
+	doc := mustParse(t, transformRealCapture(t))
+
+	if el := doc.FindElement("//opnsense/system/hostname"); el == nil {
+		t.Error("transformed capture has no hostname element")
+	} else if got := strings.TrimSpace(el.Text()); got != "router-test" {
+		t.Errorf("hostname = %q, want router-test", got)
+	}
+
+	for _, el := range doc.FindElements("//opnsense//if") {
+		if strings.TrimSpace(el.Text()) == "iavf0" {
+			t.Errorf("stale prod device iavf0 survives at %s", el.GetPath())
+		}
+	}
+
+	for _, xpath := range []string{
+		"//opnsense/interfaces/opt9",
+		"//opnsense/cert",
+		"//opnsense/OPNsense/wireguard/client/clients/client",
+		"//opnsense/OPNsense/wireguard/server/servers/server",
+	} {
+		if n := len(doc.FindElements(xpath)); n != 0 {
+			t.Errorf("%s: %d elements survive, want 0", xpath, n)
+		}
+	}
+
+	// The capture must carry the post-26.7 shape. Router advertisements moved
+	// out of the per-interface dhcpdv6 model into OPNsense/radvd, so a ramode
+	// element means the capture predates the migration the live router ran.
+	if n := len(doc.FindElements("//ramode")); n != 0 {
+		t.Errorf("capture carries %d pre-26.7 ramode elements", n)
+	}
+}
+
+// TestApplyRealCapturePlacesGuestsOnVMNET checks the renumber end to end on the
+// real capture: the guest segment lands on VMNET inside the translated /60, the
+// MANAGEMENT segment is gone along with everything that referenced it, and the
+// transit, IPv6-only, and NAT64 addresses are left alone.
+func TestApplyRealCapturePlacesGuestsOnVMNET(t *testing.T) {
+	out := transformRealCapture(t)
+	doc := mustParse(t, out)
+
+	for _, tc := range []struct{ xpath, want string }{
+		{"//opnsense/interfaces/opt6/if", "vtnet0"},
+		{"//opnsense/interfaces/opt6/ipaddr", "10.240.4.1"},
+		{"//opnsense/interfaces/opt6/ipaddrv6", "3d06:bad:b01:210::1"},
+		{"//opnsense/interfaces/lan/ipaddrv6", "3d06:bad:b01:211::1"},
+		{"//opnsense/interfaces/opt4/ipaddrv6", "3d06:bad:b01:212::1"},
+		// Transit, IPv6-only, and NAT64 keep their existing testbed values.
+		{"//opnsense/interfaces/wan/ipaddr", "10.250.250.2"},
+		{"//opnsense/interfaces/wan/ipaddrv6", "3d06:bad:b01:201::2"},
+		{"//opnsense/interfaces/opt8/ipaddrv6", "3d06:bad:b01:264::1"},
+		{"//opnsense/OPNsense/tayga/general/v6prefix", "3d06:bad:b01:2664::/96"},
+	} {
+		el := doc.FindElement(tc.xpath)
+		if el == nil {
+			t.Errorf("%s matched no element", tc.xpath)
+			continue
+		}
+		if got := strings.TrimSpace(el.Text()); got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.xpath, got, tc.want)
+		}
+	}
+
+	// Every VLAN must hang off the device the testbed VM actually has.
+	for _, el := range doc.FindElements("//opnsense/vlans/vlan/if") {
+		if got := strings.TrimSpace(el.Text()); got != "vtnet0" {
+			t.Errorf("VLAN parent = %q, want vtnet0", got)
+		}
+	}
+
+	// Removing MANAGEMENT has to take its references with it, or the candidate
+	// carries rules, a virtual IP, and a group member pointing at an interface
+	// that no longer exists.
+	if strings.Contains(string(out), "opt9") {
+		t.Error("candidate still references the removed MANAGEMENT interface")
+	}
+
+	// Any surviving prod literal means a shift was missed. 10.250.250. is the
+	// transit link and stays, so it is excluded by checking the octet forms
+	// that belong to tenant segments.
+	for _, stale := range []string{
+		"3d06:bad:b01:21::", "3d06:bad:b01:22::", "3d06:bad:b01:23::",
+		"3d06:bad:b01:204::", "3d06:bad:b01:200::",
+		"10.250.0.", "10.250.1.", "10.250.2.", "10.250.3.", "10.250.4.",
+	} {
+		if n := strings.Count(string(out), stale); n != 0 {
+			t.Errorf("stale literal %q appears %d times in the candidate", stale, n)
+		}
+	}
+}

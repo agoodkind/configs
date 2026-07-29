@@ -2,7 +2,7 @@
 
 resource "proxmox_virtual_environment_container" "mwan_failover_test" {
   node_name = "hypervisor"
-  vm_id     = 116
+  vm_id     = local.service_mapping.mwan_failover_test.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.mwan_internal,
@@ -88,7 +88,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_test" {
 
 resource "proxmox_virtual_environment_container" "isp_webpass" {
   node_name = "hypervisor"
-  vm_id     = 200
+  vm_id     = local.service_mapping.isp_webpass.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.isp_webpass,
@@ -167,7 +167,7 @@ resource "proxmox_virtual_environment_container" "isp_webpass" {
 
 resource "proxmox_virtual_environment_container" "isp_att" {
   node_name = "hypervisor"
-  vm_id     = 201
+  vm_id     = local.service_mapping.isp_att.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.isp_att,
@@ -246,7 +246,7 @@ resource "proxmox_virtual_environment_container" "isp_att" {
 
 resource "proxmox_virtual_environment_container" "isp_mbrains" {
   node_name = "hypervisor"
-  vm_id     = 202
+  vm_id     = local.service_mapping.isp_mbrains.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.isp_mbrains,

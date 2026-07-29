@@ -1,6 +1,6 @@
 resource "proxmox_virtual_environment_container" "dns64" {
   node_name = "hypervisor"
-  vm_id     = var.dns64.vm_id
+  vm_id     = local.service_mapping.dns64_suburban.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.trunk,
@@ -10,7 +10,7 @@ resource "proxmox_virtual_environment_container" "dns64" {
     hostname = var.dns64.hostname
     ip_config {
       ipv6 {
-        address = var.dns64.ipv6_address
+        address = "${local.service_mapping.dns64_suburban.ipv6}/64"
         gateway = var.dns64.ipv6_gateway
       }
     }
@@ -22,9 +22,11 @@ resource "proxmox_virtual_environment_container" "dns64" {
     }
   }
 
-  features {
-    nesting = false
-  }
+  # No features block. bind9 needs none of the advanced container features, and
+  # Proxmox writes no features line when every flag is off, so declaring
+  # nesting = false asserted a block the container never has. That mismatch made
+  # the provider send fuse, keyctl and mknod on the first update, which Proxmox
+  # refuses for anyone but root@pam.
 
   network_interface {
     name        = "eth0"

@@ -30,13 +30,14 @@ The suburban node name is `hypervisor`.
 
 ```bash
 ssh suburban 'pvesh get /nodes/hypervisor/network --output-format json'
-ssh suburban 'qm config 113'
-ssh suburban 'qm config 101'
-ssh suburban 'pct config 116'
-ssh suburban 'pct config 200'
-ssh suburban 'pct config 201'
-ssh suburban 'pct config 202'
+ssh suburban 'qm list; pct list'
 ```
+
+Compare that listing against
+[service_mapping.yml](../ansible/inventory/group_vars/all/service_mapping.yml),
+then read the config of each guest you are about to import with `qm config` or
+`pct config`. [testbed/pve-configs.txt](../testbed/pve-configs.txt) holds a
+capture of the same output if you want a diff target.
 
 ## Network imports
 
@@ -74,51 +75,44 @@ tofu import \
 
 ## Guest imports
 
-Run from [opentofu/](./):
+No testbed VMID equals a production one. A guest that mirrors a production
+service takes its counterpart's id plus 100, and the simulated ISPs, which have
+no production counterpart, sit in 9xx.
 
-Testbed VMIDs match production's, so a guest and its prod counterpart share a
-number: the MWAN VM is 113, the failover LXC 116, tack 117, seaweedfs 118, dns64
-103, and the router 101. The simulated ISPs have no prod counterpart.
+The separation is what keeps a misdirected command safe. The two hypervisors are
+independent installations rather than a cluster, so a shared id is legal, but a
+command that lands on the wrong host then finds a guest there and succeeds
+against it. With no id in common, the same mistake fails with "no such guest".
 
-Run from [opentofu/](./):
+Import each guest at the id
+[service_mapping.yml](../ansible/inventory/group_vars/all/service_mapping.yml)
+gives it. The script below reads those ids rather than repeating them, so it
+stays correct through a renumber. Run it from [opentofu/](./):
 
 ```bash
-tofu import \
-  'module.suburban.proxmox_virtual_environment_vm.test_mwan' \
-  'hypervisor/113'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_vm.opnsense_test' \
-  'hypervisor/101'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.mwan_failover_test' \
-  'hypervisor/116'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
-  'hypervisor/117'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.seaweedfs' \
-  'hypervisor/118'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.dns64' \
-  'hypervisor/103'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_webpass' \
-  'hypervisor/200'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_att' \
-  'hypervisor/201'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_mbrains' \
-  'hypervisor/202'
+python3 - <<'PY' | sh
+import yaml
+mapping = yaml.safe_load(
+    open("../ansible/inventory/group_vars/all/service_mapping.yml")
+)["service_mapping"]
+# OpenTofu resource name -> service_mapping key
+guests = {
+    "proxmox_virtual_environment_vm.opnsense_test": "opnsense_test",
+    "proxmox_virtual_environment_vm.test_mwan": "test_mwan",
+    "proxmox_virtual_environment_container.mwan_failover_test": "mwan_failover_test",
+    "proxmox_virtual_environment_container.dns64": "dns64_suburban",
+    "proxmox_virtual_environment_container.tack_qa": "tack_qa",
+    "proxmox_virtual_environment_container.seaweedfs": "seaweedfs_suburban",
+    "proxmox_virtual_environment_container.isp_webpass": "isp_webpass",
+    "proxmox_virtual_environment_container.isp_att": "isp_att",
+    "proxmox_virtual_environment_container.isp_mbrains": "isp_mbrains",
+}
+for resource, service in guests.items():
+    print(f"tofu import 'module.suburban.{resource}' 'hypervisor/{mapping[service]['vmid']}'")
+PY
 ```
+
+Drop the `| sh` to read the commands before running them.
 
 ### Change a guest's VMID
 
@@ -188,6 +182,6 @@ whole plan again rather than applying the first clean run.
 - `/etc/network/interfaces.d/testbed-masquerade.conf` and the extra routable
   `vmbr1` IPv6 address remain Ansible-owned sourced files.
 - A container's state `id` is the bare VMID, so the unique key is the pair of
-  `node_name` and `id`. Testbed VMIDs match production's, so the same id appears
-  twice across the two hypervisors. Match resources on the pair, never on the id
-  or the resource name alone.
+  `node_name` and `id`. No id is shared across the two hypervisors today, but
+  match resources on the pair anyway, because the id alone carries no hypervisor
+  and a future guest could reintroduce an overlap.

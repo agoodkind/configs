@@ -1,6 +1,6 @@
 resource "proxmox_virtual_environment_container" "tack_qa" {
   node_name = "hypervisor"
-  vm_id     = var.tack_qa.vm_id
+  vm_id     = local.service_mapping.tack_qa.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.trunk,
@@ -10,7 +10,7 @@ resource "proxmox_virtual_environment_container" "tack_qa" {
     hostname = var.tack_qa.hostname
     ip_config {
       ipv6 {
-        address = var.tack_qa.ipv6_address
+        address = "${local.service_mapping.tack_qa.ipv6}/64"
         gateway = var.tack_qa.ipv6_gateway
       }
     }
