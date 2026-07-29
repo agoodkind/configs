@@ -6,6 +6,16 @@ proxmox_api_host: 3d06:bad:b01::254
 proxmox_api_user: ansible@pam
 proxmox_token_id: ansible-token
 
+# PVE node name to the inventory host that owns it. A play that runs pct or qm
+# must delegate to the inventory host, never to ansible_proxmox_host: suburban's
+# node is named "hypervisor", which resolves through DNS to vault instead, and
+# both hypervisors carry the same VMIDs, so the command lands on the wrong
+# guest. mwan_proxmox_delegate is the per-group form of the same mapping.
+# A node missing here fails the lookup rather than guessing.
+proxmox_node_delegates:
+  vault: vault
+  hypervisor: suburban
+
 # mwan-watchdog Proxmox API token (separate token on vault, root@pam!watchdog)
 mwan_watchdog_pve_token_id: "root@pam!watchdog"
 
