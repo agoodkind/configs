@@ -3,11 +3,15 @@
   hosts: "{{ target_hosts }}"
   gather_facts: false
   tasks:
+    # host is the inventory host every later pct and qm command delegates to,
+    # resolved from the PVE node name. Using ansible_proxmox_host directly sends
+    # suburban's guests to vault, because that node is named "hypervisor", DNS
+    # answers for it, and both hypervisors carry the same VMIDs.
     - name: Store container/VM info on each host
       ansible.builtin.set_fact:
         guest_info:
           vmid: "{{ ansible_proxmox_vmid }}"
-          host: "{{ ansible_proxmox_host }}"
+          host: "{{ proxmox_node_delegates[ansible_proxmox_host] }}"
           name: "{{ inventory_hostname }}"
           type: "{{ proxmox_vmtype }}"
 
