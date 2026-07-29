@@ -736,7 +736,6 @@ func buildWANRoutesConfig(
 ) (wanroutes.Config, error) {
 	cfg := wanroutes.Config{
 		InternalIface:   "",
-		OpnsenseWanLL:   "",
 		OpnsenseEdgeV6:  "",
 		InternalPrefix:  "",
 		InternalNetV4:   "",
@@ -748,7 +747,6 @@ func buildWANRoutesConfig(
 		return cfg, nil
 	}
 	cfg.InternalIface = section.InternalIface
-	cfg.OpnsenseWanLL = section.OpnsenseWanLL
 	cfg.OpnsenseEdgeV6 = shared.OpnsenseEdgeV6
 	cfg.InternalPrefix = shared.InternalPrefix
 	cfg.InternalNetV4 = section.InternalNetV4

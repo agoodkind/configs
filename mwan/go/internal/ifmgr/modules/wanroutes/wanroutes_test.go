@@ -145,7 +145,6 @@ func TestInitReturnsDisabledSentinelWhenWANsEmpty(t *testing.T) {
 func testConfig() Config {
 	return Config{
 		InternalIface:   "vmbr250",
-		OpnsenseWanLL:   "fe80::1",
 		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
 		InternalPrefix:  "3d06:bad:b01::/60",
 		InternalNetV4:   "10.250.250.0/29",

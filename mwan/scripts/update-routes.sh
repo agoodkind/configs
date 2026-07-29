@@ -87,7 +87,6 @@ ATT_IFACE="${MWAN_ATT_VLAN_IFACE:-}"  # AT&T uses VLAN subinterface
 WEBPASS_IFACE="${MWAN_WEBPASS_IFACE:-}"
 MB_IFACE="${MWAN_MONKEYBRAINS_IFACE:-enmbrains0}"
 INTERNAL_IFACE="${MWAN_INTERNAL_IFACE:-}"
-OPNSENSE_WAN_LL="${MWAN_OPNSENSE_WAN_LL:-}"
 OPNSENSE_EDGE_V6="${MWAN_OPNSENSE_EDGE_IPV6:-}"
 INTERNAL_PREFIX="${MWAN_INTERNAL_PREFIX:-}"
 ATT_TABLE="${MWAN_RT_ATT:-100}"
@@ -315,11 +314,11 @@ for table in "$ATT_TABLE" "$WEBPASS_TABLE" "$MB_TABLE"; do
     # causes MWAN to attempt neighbor discovery for each internal host and will break
     # stateless return traffic (e.g. ICMPv6 echo replies) because those packets won't
     # reliably use conntrack marks.
-    ip -6 route replace "$INTERNAL_PREFIX" via "$OPNSENSE_WAN_LL" dev "$INTERNAL_IFACE" table "$table" || true
+    ip -6 route replace "$INTERNAL_PREFIX" via "$OPNSENSE_EDGE_V6" dev "$INTERNAL_IFACE" table "$table" || true
 done
 
 # Ensure the main table can also reach the internal IPv6 /60 (for locally-generated traffic).
-ip -6 route replace "$INTERNAL_PREFIX" via "$OPNSENSE_WAN_LL" dev "$INTERNAL_IFACE" metric 1024 || true
+ip -6 route replace "$INTERNAL_PREFIX" via "$OPNSENSE_EDGE_V6" dev "$INTERNAL_IFACE" metric 1024 || true
 
 
 # Finally, enable/disable the policy rules we own based on health + gateway presence.

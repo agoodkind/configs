@@ -29,7 +29,6 @@ const (
 // Config is the parsed [ifmgr.modules.wan.routes] runtime config.
 type Config struct {
 	InternalIface   string
-	OpnsenseWanLL   string
 	OpnsenseEdgeV6  string
 	InternalPrefix  string
 	InternalNetV4   string
@@ -328,7 +327,7 @@ func appendWANInternalRoutes(
 		netif.RouteSpec{
 			Family:  familyV6,
 			Dest:    cfg.InternalPrefix,
-			Via:     cfg.OpnsenseWanLL,
+			Via:     cfg.OpnsenseEdgeV6,
 			Dev:     cfg.InternalIface,
 			TableID: tableID,
 			Metric:  0,
@@ -341,7 +340,7 @@ func appendMainInternalRoute(routes []netif.RouteSpec, cfg Config) []netif.Route
 	routes = append(routes, netif.RouteSpec{
 		Family:  familyV6,
 		Dest:    cfg.InternalPrefix,
-		Via:     cfg.OpnsenseWanLL,
+		Via:     cfg.OpnsenseEdgeV6,
 		Dev:     cfg.InternalIface,
 		TableID: unix.RT_TABLE_MAIN,
 		Metric:  mainInternalMetric,
@@ -483,10 +482,6 @@ func validateConfig(cfg Config) error {
 		slog.Warn("wan.routes: missing internal_iface")
 		return fmt.Errorf("wan.routes: internal_iface is required")
 	}
-	if cfg.OpnsenseWanLL == "" {
-		slog.Warn("wan.routes: missing opnsense_wan_ll")
-		return fmt.Errorf("wan.routes: opnsense_wan_ll is required")
-	}
 	if cfg.OpnsenseEdgeV6 == "" {
 		slog.Warn("wan.routes: missing opnsense_edge_v6")
 		return fmt.Errorf("wan.routes: opnsense_edge_v6 is required")
@@ -608,7 +603,6 @@ func isFromPriority(priority int) bool {
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
 		InternalIface:   "",
-		OpnsenseWanLL:   "",
 		OpnsenseEdgeV6:  "",
 		InternalPrefix:  "",
 		InternalNetV4:   "",
