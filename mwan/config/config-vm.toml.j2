@@ -149,7 +149,6 @@ npt_prefix = "{{ mwan_npt_monkeybrains_prefix }}"
 
 [ifmgr.modules.wan.routes]
 internal_iface = "{{ mwan_internal_iface }}"
-opnsense_wan_ll = "{{ mwan_opnsense_wan_ll }}"
 internal_net_v4 = "{{ mwan_internal_net_v4 }}"
 health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 shadow_mode = {{ mwan_ifmgr_wan_shadow_mode | ternary('true', 'false') }}

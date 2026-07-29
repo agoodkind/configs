@@ -201,7 +201,6 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 	shared := buildWANRefs(sharedWANForTest())
 	cfg, err := buildWANRoutesConfig(shared, &config.IfMgrWANRoutesSection{
 		InternalIface:   "vmbr250",
-		OpnsenseWanLL:   "fe80::1",
 		InternalNetV4:   "10.250.250.0/29",
 		HealthStateFile: "/var/run/mwan-health.state",
 		ShadowMode:      true,
@@ -214,7 +213,6 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 	// (sharedWANForTest), not a wan.routes-local list.
 	want := wanroutes.Config{
 		InternalIface:   "vmbr250",
-		OpnsenseWanLL:   "fe80::1",
 		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
 		InternalPrefix:  "3d06:bad:b01::/60",
 		InternalNetV4:   "10.250.250.0/29",

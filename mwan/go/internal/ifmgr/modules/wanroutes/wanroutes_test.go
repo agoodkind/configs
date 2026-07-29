@@ -145,7 +145,6 @@ func TestInitReturnsDisabledSentinelWhenWANsEmpty(t *testing.T) {
 func testConfig() Config {
 	return Config{
 		InternalIface:   "vmbr250",
-		OpnsenseWanLL:   "fe80::1",
 		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
 		InternalPrefix:  "3d06:bad:b01::/60",
 		InternalNetV4:   "10.250.250.0/29",
@@ -225,13 +224,16 @@ func routesForGateways(cfg Config, currentGateways gateways) []netif.RouteSpec {
 		routes = append(routes,
 			route(familyV4, "10.250.250.0/29", "", "vmbr250", wan.TableID, 0),
 			route(familyV6, "3d06:bad:b01:201::1/128", "", "vmbr250", wan.TableID, 0),
-			route(familyV6, "3d06:bad:b01::/60", "fe80::1", "vmbr250", wan.TableID, 0),
+			// The internal prefix routes via the OPNsense edge address, which the
+			// on-link /128 above makes reachable, rather than via a link-local
+			// derived from the router's MAC.
+			route(familyV6, "3d06:bad:b01::/60", cfg.OpnsenseEdgeV6, "vmbr250", wan.TableID, 0),
 		)
 	}
 	routes = append(routes, route(
 		familyV6,
 		"3d06:bad:b01::/60",
-		"fe80::1",
+		cfg.OpnsenseEdgeV6,
 		"vmbr250",
 		unix.RT_TABLE_MAIN,
 		mainInternalMetric,
