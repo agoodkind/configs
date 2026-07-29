@@ -1,9 +1,10 @@
 # MWAN runtime config for Proxmox hypervisor hosts (vault, suburban).
 # Rendered by Ansible (proxmox-host.yml), deployed to /etc/mwan/config.toml.
 # Consumed by `mwan ifmgr` and `mwan watchdog` running on the hypervisor.
-# The MWAN VM (VM 113 on vault, VM 950 on suburban) uses the sibling
-# template config-vm.toml.j2, which also includes [agent], [bgp], and
-# [opnsense] sections that this host template intentionally omits.
+# The MWAN VM uses the sibling template config-vm.toml.j2, which also includes
+# the [agent] and [bgp] sections that this host template omits. Of the [opnsense]
+# sections, the host renders only the two it owns: [opnsense.host] and
+# [opnsense.drain] run here, and [opnsense.upgrade] names the guest they act on.
 
 hostname = "{{ mwan_config_hostname }}"
 mwan_vmid = "{{ mwan_vmid }}"

@@ -26,8 +26,10 @@ Run this gate for every config change, including small XML edits.
 ### 1. Scope Check
 
 - Confirm the target is suburban OPNsense VM `201` (`opnsense-test`).
-- Confirm commands do not reference `vault`, production OPNsense, production VM
-  `213`, or production LXC `116`.
+- Confirm commands do not reference `vault`, production OPNsense VM `101`,
+  production MWAN VM `113`, or production LXC `116`. No testbed guest shares a
+  VMID with production, so a command aimed at the wrong hypervisor fails rather
+  than hitting its counterpart, but the target still has to be right.
 - Confirm the intended hypervisor is `suburban`.
 
 ### 2. Baseline Capture

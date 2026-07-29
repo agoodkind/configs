@@ -46,11 +46,11 @@ that the named virtio console resolves to `/dev/ttyV0.1` and that the
 rc.d wrapper wrote the daemon contract file:
 
 ```bash
-ssh root@<vm-101-mgmt-ip> 'service mwan_opnsense start'
-ssh root@<vm-101-mgmt-ip> 'service mwan_opnsense status'
-ssh root@<vm-101-mgmt-ip> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
-ssh root@<vm-101-mgmt-ip> 'ls -l /var/lib/mwan/daemon.toml'
-ssh root@<vm-101-mgmt-ip> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
+ssh root@<opnsense-test-mgmt-ip> 'service mwan_opnsense start'
+ssh root@<opnsense-test-mgmt-ip> 'service mwan_opnsense status'
+ssh root@<opnsense-test-mgmt-ip> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
+ssh root@<opnsense-test-mgmt-ip> 'ls -l /var/lib/mwan/daemon.toml'
+ssh root@<opnsense-test-mgmt-ip> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
 ```
 
 Expect `/dev/vtcon/io.goodkind.mwan-opnsense.0` to point at `../ttyV0.1`.
@@ -71,5 +71,5 @@ The host-side mwan-opnsense bridge daemon reads
 `/etc/mwan/config.toml` `[opnsense.host].upstream` to find this socket.
 The deploy task in
 [ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml](../../ansible/playbooks/tasks/mwan-opnsense-host-deploy.yml)
-sets `mwan_opnsense_vmid=201` so the rendered upstream is
-`unix:///var/run/qemu-server/201.mwanrpc`.
+reads `mwan_opnsense_vmid` from group_vars, so the rendered upstream
+tracks the guest's id rather than a literal in this page.

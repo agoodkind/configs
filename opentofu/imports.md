@@ -30,9 +30,12 @@ The suburban node name is `hypervisor`.
 
 ```bash
 ssh suburban 'pvesh get /nodes/hypervisor/network --output-format json'
-ssh suburban 'qm config 213'
 ssh suburban 'qm config 201'
+ssh suburban 'qm config 213'
+ssh suburban 'pct config 203'
 ssh suburban 'pct config 216'
+ssh suburban 'pct config 217'
+ssh suburban 'pct config 218'
 ssh suburban 'pct config 900'
 ssh suburban 'pct config 901'
 ssh suburban 'pct config 902'
