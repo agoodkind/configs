@@ -4,9 +4,15 @@
 
 The testbed MWAN VM must run with a `vhost-vsock-pci` device whose guest CID equals
 its VMID, so the suburban watchdog reaches the in-VM `mwan-agent` over native vsock.
-Both values come from `mwan_vmid` in
+Both values resolve from `mwan_vmid` in
 [test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml),
-which matches production's MWAN VM id.
+which reads the id from
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+The id deliberately differs from production's MWAN VM, so renumbering one guest
+does not silently point the other's tooling at it.
+
+A renumber therefore has to change the CID too. The example below shows the
+current value rather than defining it.
 
 ```text
 args: -device vhost-vsock-pci,guest-cid=213

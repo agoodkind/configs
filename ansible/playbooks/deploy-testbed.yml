@@ -105,35 +105,36 @@
       notify: Note MWAN VM args reboot required
       tags: ["args"]
 
-    - name: Read current VM 201 args
+    - name: Read current OPNsense VM args
       ansible.builtin.command:
-        cmd: qm config 201
-      register: vm_101_config
+        cmd: qm config {{ mwan_opnsense_vmid }}
+      register: opnsense_vm_config
       changed_when: false
       failed_when: false
       check_mode: false
       tags: ["args"]
 
-    - name: Set mwanrpc chardev on VM 201 args
+    - name: Set mwanrpc chardev on OPNsense VM args
       # The expected args string carries the virtio-serial-pci controller,
-      # the chardev that bridges to /var/run/qemu-server/201.mwanrpc, and
-      # the virtserialport that exposes the chardev as /dev/ttyV0.0 inside
-      # the guest. The regex below pins the three device IDs (mwanrpc,
-      # mwanchr, the chardev path 201.mwanrpc) so the task is idempotent
+      # the chardev that bridges to the guest's mwanrpc socket, and the
+      # virtserialport that exposes the chardev as /dev/ttyV0.0 inside the
+      # guest. The regex below pins the three device IDs (mwanrpc, mwanchr,
+      # and the chardev path, which tracks the VMID) so the task is idempotent
       # across whitespace differences.
       ansible.builtin.command:
         cmd: >-
-          qm set 201 --args "-device virtio-serial-pci,id=mwanrpc -chardev
-          socket,id=mwanchr,path=/var/run/qemu-server/201.mwanrpc,server=on,wait=off
+          qm set {{ mwan_opnsense_vmid }} --args "-device virtio-serial-pci,id=mwanrpc -chardev
+          socket,id=mwanchr,path=/var/run/qemu-server/{{ mwan_opnsense_vmid }}.mwanrpc,server=on,wait=off
           -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0"
       when: >-
-        vm_101_config.rc == 0
-        and (vm_101_config.stdout is not search('id=mwanrpc')
-             or vm_101_config.stdout is not search('path=/var/run/qemu-server/201\.mwanrpc')
-             or vm_101_config.stdout is not search('name=io\.goodkind\.mwan-opnsense\.0'))
-      register: vm_101_args_set
-      changed_when: vm_101_args_set is not skipped and vm_101_args_set.rc == 0
-      notify: Note VM 201 args reboot required
+        opnsense_vm_config.rc == 0
+        and (opnsense_vm_config.stdout is not search('id=mwanrpc')
+             or opnsense_vm_config.stdout is not search('path=/var/run/qemu-server/'
+                                                        ~ mwan_opnsense_vmid ~ '\.mwanrpc')
+             or opnsense_vm_config.stdout is not search('name=io\.goodkind\.mwan-opnsense\.0'))
+      register: opnsense_vm_args_set
+      changed_when: opnsense_vm_args_set is not skipped and opnsense_vm_args_set.rc == 0
+      notify: Note OPNsense VM args reboot required
       tags: ["args"]
 
     # ----------------------------------------------------------------------
@@ -194,12 +195,13 @@
           then qm start {{ mwan_vmid }}) for the new args to take effect.
       tags: ["args"]
 
-    - name: Note VM 201 args reboot required
+    - name: Note OPNsense VM args reboot required
       ansible.builtin.debug:
         msg: >-
-          VM 201 args were updated. The mwanrpc chardev only attaches on a
-          fresh QEMU process. Stop and start VM 201 (qm stop 201 then qm
-          start 201) for the new args to take effect.
+          OPNsense VM args were updated. The mwanrpc chardev only attaches on a
+          fresh QEMU process. Stop and start the VM (qm stop
+          {{ mwan_opnsense_vmid }} then qm start {{ mwan_opnsense_vmid }}) for
+          the new args to take effect.
       tags: ["args"]
 
     - name: Restart mwan-opnsense-drain

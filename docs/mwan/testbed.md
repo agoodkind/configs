@@ -21,10 +21,13 @@ ground truth and update this page when it changes.
 
 ## Guests
 
-OpenTofu owns every suburban guest below. Cross-check VMID, type, and bridges
-against [opentofu/suburban/containers.tf](../../opentofu/suburban/containers.tf),
-[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf), and
-[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf) when in doubt.
+OpenTofu provisions every suburban guest, and Ansible configures what runs inside
+it. Both read the same
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
+for a guest's id, hostname, and address, so that file answers which guest is
+which and a renumber changes one line. The
+[suburban module](../../opentofu/suburban/) holds the rest of the guest shape:
+type, bridges, disk, and memory.
 
 A guest that mirrors a production service takes its counterpart's VMID plus 100,
 so the MWAN VM answers at 213 against production's 113. The simulated ISPs have
@@ -36,10 +39,7 @@ independent Proxmox installations rather than a cluster, so a shared id is legal
 but a command that lands on the wrong host then finds a guest at that id and
 succeeds against it. With no id in common the same mistake fails outright.
 
-Every guest's id, hostname, and address live in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
-which both Ansible and OpenTofu read, so a renumber changes one line. Connection
-addresses for the OPNsense testbed are in
+Connection addresses for the OPNsense testbed are in
 [docs/opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md).
 
 Each ISP simulator terminates one WAN link for the MWAN VM, serves DHCPv6-PD
