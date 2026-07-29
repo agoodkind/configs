@@ -16,11 +16,15 @@ proxmox_api_host: "3d06:bad:b01:200::1"
 # /etc/mwan/config.toml that suburban's `mwan ifmgr` and `mwan watchdog`
 # services read.
 mwan_config_hostname: "suburban-testbed"
-mwan_config_mgmt_addr: "3d06:bad:b01:210::113"
+mwan_config_mgmt_addr: "3d06:bad:b01:210::213"
 
 # Shared testbed MWAN topology values consumed by the suburban host config.
 mwan_environment: "testbed"
-mwan_vmid: 113
+mwan_vmid: "{{ service_mapping.test_mwan.vmid }}"
+# The testbed router. Overrides the 101 in proxmox_servers.yml, which is vault's
+# production router, so the drainer's chardev path and the upgrade target both
+# follow the testbed guest rather than production's.
+mwan_opnsense_vmid: "{{ service_mapping.opnsense_test.vmid }}"
 mwan_proxmox_node: "hypervisor"
 mwan_internal_iface: "enmwanbr0"
 mwan_email_recipient: "alex@goodkind.io"
@@ -68,7 +72,7 @@ mwan_bgp_graceful_restart_time_seconds: 30
 mwan_bgp_graceful_restart_notification_enabled: true
 
 # mwan-watchdog service on the host
-mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:210::113]:50052"
+mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:210::213]:50052"
 mwan_watchdog_log_file: "/var/log/mwan-watchdog-testbed.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog-testbed.jsonl"
 mwan_watchdog_state_file: "/run/mwan-rollback-testbed.state"
@@ -163,7 +167,7 @@ suburban_ddns_ipv6_priority_subnets:
 # PD prefixes use the 22/23/24 /56-clean scheme (webpass 2200::/56, att 2300::/60,
 # mbrains 2400::/56), kept clear of the 02xx mgmt/LAN/internal/SLAAC space.
 testbed_isp_lxcs:
-  - id: 200
+  - id: "{{ service_mapping.isp_webpass.vmid }}"
     name: webpass
     # Models prod Webpass: a static v4 link plus a static /29 (1:1-NAT'd to
     # services) and DHCPv6-PD /56. The sim routes the /29 to the static link.
@@ -177,7 +181,7 @@ testbed_isp_lxcs:
     v4_reservations: []
     static_v4_block: "10.241.204.0/29"
     static_v4_route_to: "10.240.204.2"
-  - id: 201
+  - id: "{{ service_mapping.isp_att.vmid }}"
     name: att
     pd_prefix: "3d06:bad:b01:2300::/60"
     pd_len: 60
@@ -196,7 +200,7 @@ testbed_isp_lxcs:
       - { mac: "BC:24:11:C0:D7:60", addr: "10.240.205.2" }
     static_v4_block: "10.241.205.0/29"
     static_v4_route_to: "10.240.205.2"
-  - id: 202
+  - id: "{{ service_mapping.isp_mbrains.vmid }}"
     name: mbrains
     pd_prefix: "3d06:bad:b01:2400::/56"
     pd_len: 56
@@ -216,4 +220,4 @@ testbed_isp_lxcs:
     static_v4_route_to: ""
 
 # Testbed-only: testbed failover LXC id used by deploy-testbed.yml
-failover_lxc_id: "116"
+failover_lxc_id: "{{ service_mapping.mwan_failover_test.vmid }}"

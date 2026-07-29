@@ -9,7 +9,7 @@ Both values come from `mwan_vmid` in
 which matches production's MWAN VM id.
 
 ```text
-args: -device vhost-vsock-pci,guest-cid=113
+args: -device vhost-vsock-pci,guest-cid=213
 ```
 
 ## Ownership

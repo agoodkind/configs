@@ -71,6 +71,9 @@ reconnect = "{{ mwan_opnsense_host_reconnect }}"
 heartbeat_interval = "{{ mwan_opnsense_host_hb_interval }}"
 heartbeat_timeout = "{{ mwan_opnsense_host_hb_timeout }}"
 
+[opnsense.upgrade]
+vmid = {{ mwan_opnsense_vmid }}
+
 [opnsense.drain]
 chardev = "{{ mwan_opnsense_drain_chardev }}"
 listen = "{{ mwan_opnsense_drain_listen }}"

@@ -1,63 +1,89 @@
 ---
-# Single source of truth for service hostnames and IPv6 addresses
+# Single source of truth for service hostnames, VMIDs, and IPv6 addresses
 # All services use <service>.home.goodkind.io pattern (or alternate domain)
 #
 # Usage:
 #   - group_vars: service_ipv6_address: "{{ service_mapping.<service>.ipv6 }}/64"
 #   - templates: {{ service_mapping.<service>.hostname }}
+#   - OpenTofu: local.service_mapping.<service>.vmid, via yamldecode of this file
 #   - SSHPiper: iterates over service_mapping for routing
+#
+# vmid is the Proxmox guest id, and it belongs here rather than in each consumer
+# so a renumber changes one line. A testbed guest that mirrors a production
+# service takes its counterpart's id plus 100, and the simulated ISPs, which have
+# no production counterpart, sit in 9xx. No id is shared between the two
+# hypervisors: they are independent installations, so a shared id is legal, but a
+# command that lands on the wrong host would then find a guest there and succeed
+# against it.
 
 service_mapping:
   # LXC Containers
   debianct:
     hostname: debianct.home.goodkind.io
+    vmid: 100
     ipv6: "3d06:bad:b01::100"
   unifi:
     hostname: unifi.home.goodkind.io
+    vmid: 102
     ipv6: "3d06:bad:b01::102"
     ipv4: "10.250.0.102"
   dns64:
     hostname: dns64.home.goodkind.io
-    ipv6: "3d06:bad:b01::64" # id: 103
+    vmid: 103
+    ipv6: "3d06:bad:b01::64"
   consul:
     hostname: consul.home.goodkind.io
+    vmid: 106
     ipv6: "3d06:bad:b01::106"
   freebsd_dev_home:
     hostname: freebsd-dev.home.goodkind.io
+    vmid: 108
     ipv6: "3d06:bad:b01::108"
   mc:
     hostname: mc.home.goodkind.io
+    vmid: 109
     ipv6: "3d06:bad:b01::109"
   proxy:
     hostname: proxy.home.goodkind.io
+    vmid: 110
     ipv6: "3d06:bad:b01::110"
     ipv4: "10.250.0.110"
   adguard:
     hostname: adguard.home.goodkind.io
-    ipv6: "3d06:bad:b01::53" # id: 112
+    vmid: 112
+    ipv6: "3d06:bad:b01::53"
   mwan:
     hostname: mwan.home.goodkind.io
+    vmid: 113
     ipv6: "3d06:bad:b01::113"
   mwan_failover:
     hostname: mwan-failover.home.goodkind.io
+    vmid: 116
     # LXC BGP backup peer; eth1 on mwanbr (vault is on same bridge so
     # this address is the natural Ansible SSH target). eth0 lives on mbrains
     # for the upstream-ISP iface that mwan-ifmgr monitors.
     ipv6: "3d06:bad:b01:fe::4"
   tack:
     hostname: tack.home.goodkind.io
+    vmid: 117
     ipv6: "3d06:bad:b01::117"
   tack_qa:
     hostname: tack-qa
-    ipv6: "3d06:bad:b01:210::117"
+    vmid: 217
+    ipv6: "3d06:bad:b01:210::217"
   seaweedfs:
     hostname: seaweedfs.home.goodkind.io
+    vmid: 118
     ipv6: "3d06:bad:b01::118"
   seaweedfs_suburban:
     hostname: seaweedfs
-    ipv6: "3d06:bad:b01:210::118"
+    vmid: 218
+    ipv6: "3d06:bad:b01:210::218"
   dns64_suburban:
     hostname: dns64-suburban
+    vmid: 203
+    # Keeps prod's ::64 service address rather than taking its VMID suffix,
+    # because every guest points at this address as its resolver.
     ipv6: "3d06:bad:b01:210::64"
 
   # Static Hosts (different subnet or external)
@@ -75,24 +101,57 @@ service_mapping:
   # 3d06:bad:b01::/48 tunnel, so no ProxyJump.
   test_mwan:
     hostname: test-mwan
-    ipv6: "3d06:bad:b01:210::113"
+    vmid: 213
+    ipv6: "3d06:bad:b01:210::213"
   mwan_failover_test:
     hostname: mwan-failover-test
-    # eth1 static OPNsense-side address; eth0 is DHCP on vmbr6
+    vmid: 216
+    # eth1 static OPNsense-side address; eth0 is DHCP on vmbr6. The address
+    # mirrors prod's fe::4 rather than taking a VMID suffix, because this is a
+    # BGP peering address and that peering shape is what the testbed tests.
     ipv6: "3d06:bad:b01:201::4"
   # OPNsense (one logical machine per environment). The plugin uses ipv6 as
   # ansible_host by default, which is correct for prod. Testbed sets
   # ansible_host to the WAN/internal address reachable on vmbr2.
   opnsense:
     hostname: router.home.goodkind.io
+    vmid: 101
     ipv6: "3d06:bad:b01::1"
   opnsense_test:
     hostname: opnsense-test
+    vmid: 201
+    # Keeps prod's ::1 gateway address rather than taking its VMID suffix,
+    # because every guest on the segment points at it as their default route.
     ipv6: "3d06:bad:b01:210::1"
     ipv4: "10.250.250.2"
     # Testbed OPNsense SSH lands on the WAN/internal address through suburban.
     # SSH user and ProxyJump live in group_vars/opnsense_test_servers.yml.
     ansible_host: "10.250.250.2"
+
+  # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM
+  # and serves DHCPv6-PD and RA on it. They have no production counterpart, so
+  # they sit in 9xx and their addresses are gateways on their own simulated
+  # subnets that production never uses.
+  #
+  # inventory: false keeps them out of the SSH inventory. deploy-testbed.yml
+  # configures them through pct from the hypervisor, so Ansible never connects
+  # to one, but OpenTofu still needs their VMIDs from here.
+  isp_webpass:
+    hostname: isp-webpass
+    vmid: 900
+    inventory: false
+    ipv4: "10.240.204.1"
+  isp_att:
+    hostname: isp-att
+    vmid: 901
+    inventory: false
+    ipv4: "10.240.205.1"
+  isp_mbrains:
+    hostname: isp-mbrains
+    vmid: 902
+    inventory: false
+    ipv6: "3d06:bad:b01:250::1"
+    ipv4: "10.240.206.1"
 
 group_children:
   tack_all:

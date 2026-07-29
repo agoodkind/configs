@@ -1,7 +1,7 @@
 # OPNsense Testbed Config Import
 
 This runbook is current guidance for importing a production-shaped OPNsense
-`config.xml` into suburban testbed VM `101` (`opnsense-test`).
+`config.xml` into suburban testbed VM `201` (`opnsense-test`).
 
 ## Core Rules
 
@@ -25,9 +25,9 @@ Run this gate for every config change, including small XML edits.
 
 ### 1. Scope Check
 
-- Confirm the target is suburban OPNsense VM `101` (`opnsense-test`).
+- Confirm the target is suburban OPNsense VM `201` (`opnsense-test`).
 - Confirm commands do not reference `vault`, production OPNsense, production VM
-  `113`, or production LXC `116`.
+  `213`, or production LXC `116`.
 - Confirm the intended hypervisor is `suburban`.
 
 ### 2. Baseline Capture

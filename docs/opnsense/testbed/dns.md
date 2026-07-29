@@ -2,7 +2,7 @@
 
 How name resolution works on the suburban testbed, and how to recover it when a
 rebuilt testbed OPNsense comes up with DNS broken. The testbed is IPv6 primary:
-its simulated ISPs (LXC 200/201/202) carry IPv4 transit only and no public IPv6,
+its simulated ISPs (LXC 900/901/902) carry IPv4 transit only and no public IPv6,
 so IPv6-only guests reach the IPv4 internet through NAT64 plus DNS64. Live
 definitions are owned by [opentofu/suburban/](../../../opentofu/suburban/) and the
 testbed group vars; update this page when they change.

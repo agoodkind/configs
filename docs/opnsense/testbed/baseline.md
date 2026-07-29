@@ -10,7 +10,7 @@ browser forwarding for headless Chrome or Playwright lives in
 
 ## Current state
 
-- VM `101` (`opnsense-test`) is the suburban OPNsense testbed VM.
+- VM `201` (`opnsense-test`) is the suburban OPNsense testbed VM.
 - The OPNsense VM has one NIC backed by the `vmbrtrunk` VLAN-aware bridge.
   FreeBSD names it `vtnet0`.
 - The MANAGEMENT interface (`opt9` in `config.xml`) carries `10.240.4.1/24` and
@@ -23,7 +23,7 @@ browser forwarding for headless Chrome or Playwright lives in
   `3d06:bad:b01:201::2/64`. Suburban reaches that interface through `vmbr2`,
   and TCP port 22 is open there.
 - The host-side OPNsense gRPC target is
-  `unix:///var/run/qemu-server/101.mwanrpc`.
+  `unix:///var/run/qemu-server/201.mwanrpc`.
 - The named virtio-console port is `io.goodkind.mwan-opnsense.0`.
 - The guest-side daemon serial path is `/dev/ttyV0.1` when
   `/dev/vtcon/io.goodkind.mwan-opnsense.0` points there.
@@ -42,14 +42,14 @@ before starting `mwan_opnsense`.
 Verify the host-side OPNsense gRPC path from suburban:
 
 ```sh
-mwan opnsense version -target unix:///var/run/qemu-server/101.mwanrpc
+mwan opnsense version -target unix:///var/run/qemu-server/201.mwanrpc
 ```
 
 The command should return the daemon build banner.
 
 ## Reset rule
 
-Use Proxmox snapshot rollback for VM 101 reset. Do not use snapshots created
+Use Proxmox snapshot rollback for VM 201 reset. Do not use snapshots created
 with `--vmstate 1`, because RAM snapshots can resume stale network and clock
 state. See [docs/opnsense/operations.md](../operations.md) for the
 full snapshot rule and the post-rollback verification list.

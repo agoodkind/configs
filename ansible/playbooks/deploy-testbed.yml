@@ -5,8 +5,8 @@
 # pulls together: sysctl, masquerade interface stub, suburban DDNS,
 # VM `args` ownership for the MWAN and OPNsense VMs (Proxmox API rejects `args`
 # writes for any actor other than `root@pam`, so Ansible owns them as root
-# over SSH), ISP-LXC provisioning for the testbed WAN simulators (200/201/202),
-# the mwan-opnsense Unix socket bridge that proxies the OPNsense VM 101 over
+# over SSH), ISP-LXC provisioning for the testbed WAN simulators (900/901/902),
+# the mwan-opnsense Unix socket bridge that proxies the OPNsense VM 201 over
 # virtio-serial, and the VFIO host setup for the MWAN VM's WAN passthrough.
 #
 # Run examples:
@@ -105,39 +105,39 @@
       notify: Note MWAN VM args reboot required
       tags: ["args"]
 
-    - name: Read current VM 101 args
+    - name: Read current VM 201 args
       ansible.builtin.command:
-        cmd: qm config 101
+        cmd: qm config 201
       register: vm_101_config
       changed_when: false
       failed_when: false
       check_mode: false
       tags: ["args"]
 
-    - name: Set mwanrpc chardev on VM 101 args
+    - name: Set mwanrpc chardev on VM 201 args
       # The expected args string carries the virtio-serial-pci controller,
-      # the chardev that bridges to /var/run/qemu-server/101.mwanrpc, and
+      # the chardev that bridges to /var/run/qemu-server/201.mwanrpc, and
       # the virtserialport that exposes the chardev as /dev/ttyV0.0 inside
       # the guest. The regex below pins the three device IDs (mwanrpc,
-      # mwanchr, the chardev path 101.mwanrpc) so the task is idempotent
+      # mwanchr, the chardev path 201.mwanrpc) so the task is idempotent
       # across whitespace differences.
       ansible.builtin.command:
         cmd: >-
-          qm set 101 --args "-device virtio-serial-pci,id=mwanrpc -chardev
-          socket,id=mwanchr,path=/var/run/qemu-server/101.mwanrpc,server=on,wait=off
+          qm set 201 --args "-device virtio-serial-pci,id=mwanrpc -chardev
+          socket,id=mwanchr,path=/var/run/qemu-server/201.mwanrpc,server=on,wait=off
           -device virtserialport,chardev=mwanchr,name=io.goodkind.mwan-opnsense.0"
       when: >-
         vm_101_config.rc == 0
         and (vm_101_config.stdout is not search('id=mwanrpc')
-             or vm_101_config.stdout is not search('path=/var/run/qemu-server/101\.mwanrpc')
+             or vm_101_config.stdout is not search('path=/var/run/qemu-server/201\.mwanrpc')
              or vm_101_config.stdout is not search('name=io\.goodkind\.mwan-opnsense\.0'))
       register: vm_101_args_set
       changed_when: vm_101_args_set is not skipped and vm_101_args_set.rc == 0
-      notify: Note VM 101 args reboot required
+      notify: Note VM 201 args reboot required
       tags: ["args"]
 
     # ----------------------------------------------------------------------
-    # ISP LXCs (200 webpass, 201 att, 202 mbrains) via pct
+    # ISP LXCs (900 webpass, 901 att, 902 mbrains) via pct
     # ----------------------------------------------------------------------
 
     # apt runs non-interactively with --force-confold: kea ships a default
@@ -194,12 +194,12 @@
           then qm start {{ mwan_vmid }}) for the new args to take effect.
       tags: ["args"]
 
-    - name: Note VM 101 args reboot required
+    - name: Note VM 201 args reboot required
       ansible.builtin.debug:
         msg: >-
-          VM 101 args were updated. The mwanrpc chardev only attaches on a
-          fresh QEMU process. Stop and start VM 101 (qm stop 101 then qm
-          start 101) for the new args to take effect.
+          VM 201 args were updated. The mwanrpc chardev only attaches on a
+          fresh QEMU process. Stop and start VM 201 (qm stop 201 then qm
+          start 201) for the new args to take effect.
       tags: ["args"]
 
     - name: Restart mwan-opnsense-drain

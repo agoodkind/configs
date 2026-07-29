@@ -30,12 +30,12 @@ The suburban node name is `hypervisor`.
 
 ```bash
 ssh suburban 'pvesh get /nodes/hypervisor/network --output-format json'
-ssh suburban 'qm config 113'
-ssh suburban 'qm config 101'
-ssh suburban 'pct config 116'
-ssh suburban 'pct config 200'
-ssh suburban 'pct config 201'
-ssh suburban 'pct config 202'
+ssh suburban 'qm config 213'
+ssh suburban 'qm config 201'
+ssh suburban 'pct config 216'
+ssh suburban 'pct config 900'
+ssh suburban 'pct config 901'
+ssh suburban 'pct config 902'
 ```
 
 ## Network imports
@@ -76,48 +76,55 @@ tofu import \
 
 Run from [opentofu/](./):
 
-Testbed VMIDs match production's, so a guest and its prod counterpart share a
-number: the MWAN VM is 113, the failover LXC 116, tack 117, seaweedfs 118, dns64
-103, and the router 101. The simulated ISPs have no prod counterpart.
+No testbed VMID equals a production one. A guest that mirrors a production
+service takes its counterpart's id plus 100, so the MWAN VM is 213 against
+production's 113, the failover LXC 216, tack 217, seaweedfs 218, dns64 203, and
+the router 201. The simulated ISPs have no production counterpart and sit in
+900, 901, and 902.
+
+The separation is what keeps a misdirected command safe. The two hypervisors are
+independent installations rather than a cluster, so a shared id is legal, but a
+command that lands on the wrong host then finds a guest there and succeeds
+against it. With no id in common, the same mistake fails with "no such guest".
 
 Run from [opentofu/](./):
 
 ```bash
 tofu import \
   'module.suburban.proxmox_virtual_environment_vm.test_mwan' \
-  'hypervisor/113'
+  'hypervisor/213'
 
 tofu import \
   'module.suburban.proxmox_virtual_environment_vm.opnsense_test' \
-  'hypervisor/101'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.mwan_failover_test' \
-  'hypervisor/116'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
-  'hypervisor/117'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.seaweedfs' \
-  'hypervisor/118'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.dns64' \
-  'hypervisor/103'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_webpass' \
-  'hypervisor/200'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_att' \
   'hypervisor/201'
 
 tofu import \
+  'module.suburban.proxmox_virtual_environment_container.mwan_failover_test' \
+  'hypervisor/216'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
+  'hypervisor/217'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.seaweedfs' \
+  'hypervisor/218'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.dns64' \
+  'hypervisor/203'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.isp_webpass' \
+  'hypervisor/900'
+
+tofu import \
+  'module.suburban.proxmox_virtual_environment_container.isp_att' \
+  'hypervisor/901'
+
+tofu import \
   'module.suburban.proxmox_virtual_environment_container.isp_mbrains' \
-  'hypervisor/202'
+  'hypervisor/902'
 ```
 
 ### Change a guest's VMID
@@ -188,6 +195,6 @@ whole plan again rather than applying the first clean run.
 - `/etc/network/interfaces.d/testbed-masquerade.conf` and the extra routable
   `vmbr1` IPv6 address remain Ansible-owned sourced files.
 - A container's state `id` is the bare VMID, so the unique key is the pair of
-  `node_name` and `id`. Testbed VMIDs match production's, so the same id appears
-  twice across the two hypervisors. Match resources on the pair, never on the id
-  or the resource name alone.
+  `node_name` and `id`. No id is shared across the two hypervisors today, but
+  match resources on the pair anyway, because the id alone carries no hypervisor
+  and a future guest could reintroduce an overlap.

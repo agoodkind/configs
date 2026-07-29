@@ -15,7 +15,7 @@ output "tack_qa_vmid" {
 
 output "tack_qa_ipv6" {
   description = "IPv6 address assigned to the suburban Tack QA LXC."
-  value       = var.tack_qa.ipv6_address
+  value       = local.service_mapping.tack_qa.ipv6
 }
 
 output "seaweedfs_vmid" {
@@ -25,7 +25,7 @@ output "seaweedfs_vmid" {
 
 output "seaweedfs_ipv6" {
   description = "IPv6 address assigned to the suburban SeaweedFS LXC."
-  value       = var.seaweedfs.ipv6_address
+  value       = local.service_mapping.seaweedfs_suburban.ipv6
 }
 
 output "dns64_vmid" {
@@ -35,5 +35,5 @@ output "dns64_vmid" {
 
 output "dns64_ipv6" {
   description = "IPv6 address assigned to the suburban DNS64 LXC."
-  value       = var.dns64.ipv6_address
+  value       = local.service_mapping.dns64_suburban.ipv6
 }

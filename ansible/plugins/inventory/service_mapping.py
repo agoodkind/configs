@@ -8,6 +8,10 @@ Reads service_mapping from group_vars/all/service_mapping.yml and creates:
   - Optional parent groups declared under top-level `group_children`, with
     children resolved against the plugin-created {service}_servers groups.
 
+An entry with `inventory: false` is skipped. That lets the mapping stay the
+single source of truth for a guest's VMID and addresses even when Ansible never
+connects to it directly.
+
 Usage:
   Create inventory/service_mapping.yml with:
     plugin: service_mapping
@@ -119,6 +123,15 @@ class InventoryModule(BaseInventoryPlugin):
             hostname = service_data.get("hostname")
             ipv6 = service_data.get("ipv6")
             ipv4 = service_data.get("ipv4")
+
+            # An entry can declare itself out of the inventory while still
+            # carrying its identity for other consumers. The simulated ISPs do
+            # this: OpenTofu needs their VMIDs, but they are configured through
+            # pct from the hypervisor rather than over SSH, so they are not
+            # hosts Ansible connects to. Without the opt-out the loop would warn
+            # on every run about an address they are not supposed to have.
+            if service_data.get("inventory", True) is False:
+                continue
 
             if not hostname:
                 self.display.warning(
