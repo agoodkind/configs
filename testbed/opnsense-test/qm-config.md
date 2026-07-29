@@ -1,9 +1,11 @@
-# VM 201 qm config (suburban testbed)
+# OPNsense testbed guest: qm config
 
 ## Target args
 
-The suburban OPNsense testbed VM `201` runs with the following Proxmox
-`args` field. The named `io.goodkind.mwan-opnsense.0` virtio console maps
+The suburban OPNsense testbed guest runs with the Proxmox `args` field below.
+Every VMID in it comes from `mwan_opnsense_vmid`, so the example shows the
+current shape rather than defining it. The named `io.goodkind.mwan-opnsense.0`
+virtio console maps
 to `/dev/ttyV0.1` inside the OPNsense guest, and the `mwan_opnsense` rc.d
 service writes that path into `/var/lib/mwan/daemon.toml` before the
 daemon connects to the host-side bridge over this virtio-serial chardev.
@@ -32,12 +34,11 @@ carries an idempotent `qm set` task in the `Configure suburban testbed extras`
 play.
 The task only runs `qm set` when the live `args` does not already match
 the target string. Look for the task tagged `args` named
-`Set mwanrpc chardev on VM 201 args`.
+`Set mwanrpc chardev on OPNsense VM args`.
 
-`args` only takes effect at QEMU process start, so an `args` change
-requires a cold reboot of VM 201. The playbook prints a notice when it
-changes the value. Run `qm stop 201` then `qm start 201` to pick up the
-new args.
+`args` only takes effect at QEMU process start, so an `args` change requires a
+cold stop and start rather than a reboot. The playbook prints a notice naming
+the guest when it changes the value.
 
 ## Verification
 
@@ -61,10 +62,11 @@ Expect `/var/lib/mwan/daemon.toml` to be owned by `root` with mode
 symlink target as the live truth and update `mwan_opnsense_listen_serial`
 to match before re-testing.
 
-On suburban, the host-side socket exists while VM 201 is running.
+On suburban, the host-side socket exists while the guest is running. Read its
+path from the rendered config rather than typing a VMID:
 
 ```bash
-ssh suburban 'ls -l /var/run/qemu-server/201.mwanrpc'
+ssh suburban 'grep chardev /etc/mwan/config.toml'
 ```
 
 The host-side mwan-opnsense bridge daemon reads

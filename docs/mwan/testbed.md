@@ -30,9 +30,8 @@ which and a renumber changes one line. The
 type, bridges, disk, and memory.
 
 A guest that mirrors a production service takes its counterpart's VMID plus 100,
-so the MWAN VM answers at 213 against production's 113. The simulated ISPs have
-no production counterpart and sit in the 9xx range. No id is shared between the
-two hypervisors.
+and the simulated ISPs, which have no production counterpart, sit in the 9xx
+range. No id is shared between the two hypervisors.
 
 That separation is what makes a misdirected command safe. The hypervisors are
 independent Proxmox installations rather than a cluster, so a shared id is legal,
@@ -93,7 +92,7 @@ unknown.
 - **Cloud-init drive storage.** `local-lvm` is disabled on suburban; only
   `local-zfs` is active. Guest `initialization.datastore_id` must be `local-zfs`,
   or a cloud-init drive regen fails with `storage 'local-lvm' is not available`.
-- **`args` ownership.** VMs with a virtio-serial or vsock device (VM 213, VM 201)
+- **`args` ownership.** VMs with a virtio-serial or vsock device (the MWAN VM and the OPNsense guest)
   carry their `args` set by Ansible as `root@pam`, because the Proxmox API rejects
   `args` writes from a token. OpenTofu must not manage `kvm_arguments` for those
   VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the

@@ -1,4 +1,4 @@
-# Tack project management LXC on vault (VMID 117).
+# Tack project management LXC on vault.
 
 resource "proxmox_virtual_environment_container" "tack" {
   node_name = "vault"
@@ -255,7 +255,7 @@ resource "proxmox_virtual_environment_container" "adguard" {
   }
 }
 
-# Internal-only SeaweedFS object-store LXC on vault (VMID 118). The production
+# Internal-only SeaweedFS object-store LXC on vault. The production
 # twin of the suburban CT 410 store, on the same prod VMNET segment as the tack
 # LXC so the prod tack host reaches its S3 endpoint without crossing segments.
 # Runs the weed binary under systemd (deploy-seaweedfs.yml); never exposed off

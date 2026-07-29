@@ -30,16 +30,14 @@ The suburban node name is `hypervisor`.
 
 ```bash
 ssh suburban 'pvesh get /nodes/hypervisor/network --output-format json'
-ssh suburban 'qm config 201'
-ssh suburban 'qm config 213'
-ssh suburban 'pct config 203'
-ssh suburban 'pct config 216'
-ssh suburban 'pct config 217'
-ssh suburban 'pct config 218'
-ssh suburban 'pct config 900'
-ssh suburban 'pct config 901'
-ssh suburban 'pct config 902'
+ssh suburban 'qm list; pct list'
 ```
+
+Compare that listing against
+[service_mapping.yml](../ansible/inventory/group_vars/all/service_mapping.yml),
+then read the config of each guest you are about to import with `qm config` or
+`pct config`. [testbed/pve-configs.txt](../testbed/pve-configs.txt) holds a
+capture of the same output if you want a diff target.
 
 ## Network imports
 
@@ -77,58 +75,44 @@ tofu import \
 
 ## Guest imports
 
-Run from [opentofu/](./):
-
 No testbed VMID equals a production one. A guest that mirrors a production
-service takes its counterpart's id plus 100, so the MWAN VM is 213 against
-production's 113, the failover LXC 216, tack 217, seaweedfs 218, dns64 203, and
-the router 201. The simulated ISPs have no production counterpart and sit in
-900, 901, and 902.
+service takes its counterpart's id plus 100, and the simulated ISPs, which have
+no production counterpart, sit in 9xx.
 
 The separation is what keeps a misdirected command safe. The two hypervisors are
 independent installations rather than a cluster, so a shared id is legal, but a
 command that lands on the wrong host then finds a guest there and succeeds
 against it. With no id in common, the same mistake fails with "no such guest".
 
-Run from [opentofu/](./):
+Import each guest at the id
+[service_mapping.yml](../ansible/inventory/group_vars/all/service_mapping.yml)
+gives it. The script below reads those ids rather than repeating them, so it
+stays correct through a renumber. Run it from [opentofu/](./):
 
 ```bash
-tofu import \
-  'module.suburban.proxmox_virtual_environment_vm.test_mwan' \
-  'hypervisor/213'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_vm.opnsense_test' \
-  'hypervisor/201'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.mwan_failover_test' \
-  'hypervisor/216'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.tack_qa' \
-  'hypervisor/217'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.seaweedfs' \
-  'hypervisor/218'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.dns64' \
-  'hypervisor/203'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_webpass' \
-  'hypervisor/900'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_att' \
-  'hypervisor/901'
-
-tofu import \
-  'module.suburban.proxmox_virtual_environment_container.isp_mbrains' \
-  'hypervisor/902'
+python3 - <<'PY' | sh
+import yaml
+mapping = yaml.safe_load(
+    open("../ansible/inventory/group_vars/all/service_mapping.yml")
+)["service_mapping"]
+# OpenTofu resource name -> service_mapping key
+guests = {
+    "proxmox_virtual_environment_vm.opnsense_test": "opnsense_test",
+    "proxmox_virtual_environment_vm.test_mwan": "test_mwan",
+    "proxmox_virtual_environment_container.mwan_failover_test": "mwan_failover_test",
+    "proxmox_virtual_environment_container.dns64": "dns64_suburban",
+    "proxmox_virtual_environment_container.tack_qa": "tack_qa",
+    "proxmox_virtual_environment_container.seaweedfs": "seaweedfs_suburban",
+    "proxmox_virtual_environment_container.isp_webpass": "isp_webpass",
+    "proxmox_virtual_environment_container.isp_att": "isp_att",
+    "proxmox_virtual_environment_container.isp_mbrains": "isp_mbrains",
+}
+for resource, service in guests.items():
+    print(f"tofu import 'module.suburban.{resource}' 'hypervisor/{mapping[service]['vmid']}'")
+PY
 ```
+
+Drop the `| sh` to read the commands before running them.
 
 ### Change a guest's VMID
 
