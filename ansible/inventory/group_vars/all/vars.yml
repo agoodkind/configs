@@ -6,6 +6,18 @@ proxmox_api_host: 3d06:bad:b01::254
 proxmox_api_user: ansible@pam
 proxmox_token_id: ansible-token
 
+# PVE node name to the inventory host that owns it. A play that runs pct or qm
+# must delegate to the inventory host, never to ansible_proxmox_host: suburban's
+# node is named "hypervisor", which resolves through DNS to vault instead, so the
+# command runs on the wrong machine. No VMID is shared between the two
+# hypervisors now, which turns that mistake into a clean failure rather than a
+# write to the wrong guest, but the delegation still has to be right for a
+# command to reach its target at all. mwan_proxmox_delegate is the per-group form
+# of the same mapping. A node missing here fails the lookup rather than guessing.
+proxmox_node_delegates:
+  vault: vault
+  hypervisor: suburban
+
 # mwan-watchdog Proxmox API token (separate token on vault, root@pam!watchdog)
 mwan_watchdog_pve_token_id: "root@pam!watchdog"
 
@@ -21,6 +33,20 @@ smtp_from_domain: goodkind.io
 # <hostname>@<smtp_from_domain>. Set smtp_enabled to "0" to skip.
 smtp_host: mail.smtp2go.com
 smtp_port: "587"
+
+# ----------------------------------------------------------------------------
+# SSH connection defaults
+# ----------------------------------------------------------------------------
+# The single source of the base options. A group that needs a jump host composes
+# this value rather than restating it, so a change here reaches every group.
+# ansible.cfg already sets host_key_checking = False repo-wide, so the strict
+# check is not disabled here for the first time; UserKnownHostsFile keeps a
+# rebuilt guest from failing on a changed key.
+ssh_base_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+# Applied to every host, so ansible_ssh_common_args is always defined and a play
+# never has to invent one. A group override outranks this file.
+ansible_ssh_common_args: "{{ ssh_base_args }}"
 
 # ----------------------------------------------------------------------------
 # Guest prep defaults (prep-guests), shared by every service

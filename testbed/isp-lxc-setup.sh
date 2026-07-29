@@ -2,7 +2,7 @@
 # Configure an ISP LXC as a simulated ISP gateway for MWAN testbed.
 # Run inside the LXC: sh /tmp/isp-lxc-setup.sh <isp-name> <pd-prefix> <v4-subnet>
 #
-# eth0 = simulated ISP link (facing VM 950)
+# eth0 = simulated ISP link (facing the MWAN VM)
 # eth1 = real uplink (Comcast/vmbr0)
 set -eu
 
@@ -51,7 +51,7 @@ echo "  Masquerade: ${V4_SUBNET} + IPv6 -> eth1"
 nft list ruleset > /etc/nftables.conf
 systemctl enable nftables 2>/dev/null || true
 
-# 3. Route PD /60 to VM 950 via link-local on eth0
+# 3. Route PD /60 to the MWAN VM via link-local on eth0
 VM950_LL=$(ip -6 neigh show dev eth0 | grep -v FAILED | head -1 | awk '{print $1}')
 if [ -z "$VM950_LL" ]; then
     ping6 -c1 -W2 ff02::1%eth0 >/dev/null 2>&1 || true
@@ -72,7 +72,7 @@ VM950_LL=\$(ip -6 neigh show dev eth0 | grep -v FAILED | head -1 | awk '{print \
 IFUP
     chmod +x /etc/network/if-up.d/isp-route
 else
-    echo "  ERROR: Could not discover VM 950 link-local on eth0"
+    echo "  ERROR: Could not discover the MWAN VM link-local on eth0"
 fi
 
 echo "=== ${ISP_NAME} done ==="

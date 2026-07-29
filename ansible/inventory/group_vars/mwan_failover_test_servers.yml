@@ -1,5 +1,5 @@
 ---
-# Testbed MWAN failover LXC (lxc-116 on suburban) target vars.
+# Testbed MWAN failover LXC (lxc-216 on suburban) target vars.
 # Consumed by deploy-mwan-failover.yml when targeting `mwan_failover_test_servers`.
 
 mwan_failover_hostname: "mwan-failover-test"
@@ -16,8 +16,10 @@ mwan_failover_bgp_neighbors_v6:
 mwan_failover_ipv4_address: "10.250.250.4/29"
 mwan_failover_ipv6_address: "3d06:bad:b01:201::4/64"
 mwan_failover_ipv4_return_route: ""
+# The whole translated aggregate, not one LAN, so failover reaches every
+# testbed segment: VMNET 210::, PRIVILEGED 211::, GENERAL 212::, CAPTIVE 213::.
 mwan_failover_ipv6_return_route: >-
-  3d06:bad:b01:211::/64 via 3d06:bad:b01:201::2 dev eth1
+  3d06:bad:b01:210::/60 via 3d06:bad:b01:201::2 dev eth1
 mwan_failover_eth0_inet6_manual: true
 mwan_failover_enable_mainv4: true
 # Source interface for outbound failover alert email (empty = default route).

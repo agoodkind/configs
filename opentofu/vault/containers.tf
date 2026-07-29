@@ -1,8 +1,8 @@
-# Tack project management LXC on vault (VMID 117).
+# Tack project management LXC on vault.
 
 resource "proxmox_virtual_environment_container" "tack" {
   node_name = "vault"
-  vm_id     = 117
+  vm_id     = local.service_mapping.tack.vmid
 
   initialization {
     hostname = "tack.home.goodkind.io"
@@ -68,7 +68,7 @@ resource "proxmox_virtual_environment_container" "tack" {
 # Consul service-discovery LXC on vault (VMID 106).
 resource "proxmox_virtual_environment_container" "consul" {
   node_name = "vault"
-  vm_id     = 106
+  vm_id     = local.service_mapping.consul.vmid
 
   initialization {
     hostname = "consul.home.goodkind.io"
@@ -130,7 +130,7 @@ resource "proxmox_virtual_environment_container" "consul" {
 # Minecraft LXC on vault (VMID 109).
 resource "proxmox_virtual_environment_container" "mc" {
   node_name = "vault"
-  vm_id     = 109
+  vm_id     = local.service_mapping.mc.vmid
 
   initialization {
     hostname = "mc.home.goodkind.io"
@@ -192,7 +192,7 @@ resource "proxmox_virtual_environment_container" "mc" {
 # AdGuard Home LXC on vault (VMID 112).
 resource "proxmox_virtual_environment_container" "adguard" {
   node_name = "vault"
-  vm_id     = 112
+  vm_id     = local.service_mapping.adguard.vmid
 
   initialization {
     hostname = "adguard.home.goodkind.io"
@@ -255,14 +255,14 @@ resource "proxmox_virtual_environment_container" "adguard" {
   }
 }
 
-# Internal-only SeaweedFS object-store LXC on vault (VMID 118). The production
+# Internal-only SeaweedFS object-store LXC on vault. The production
 # twin of the suburban CT 410 store, on the same prod VMNET segment as the tack
 # LXC so the prod tack host reaches its S3 endpoint without crossing segments.
 # Runs the weed binary under systemd (deploy-seaweedfs.yml); never exposed off
 # the segment. Backup destination for the prod tack stores.
 resource "proxmox_virtual_environment_container" "seaweedfs" {
   node_name = "vault"
-  vm_id     = 118
+  vm_id     = local.service_mapping.seaweedfs.vmid
 
   initialization {
     hostname = "seaweedfs.home.goodkind.io"

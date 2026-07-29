@@ -1,5 +1,5 @@
 ---
-# Testbed MWAN VM (VM 113 on suburban) target vars.
+# Testbed MWAN VM (VM 213 on suburban) target vars.
 # Consumed by deploy-mwan.yml when targeting `test_mwan_servers`.
 # Uses the same variable names as mwan_servers.yml so config.toml.j2
 # and other shared templates render correctly for both environments.
@@ -9,9 +9,10 @@
 # ----------------------------------------------------------------------------
 
 mwan_environment: "testbed"
-# Matches prod's mwan VM id so the two sites read alike. Also the vsock CID the
+# Deliberately differs from prod's mwan VM id, so a command aimed at the wrong
+# hypervisor finds no guest instead of the wrong one. Also the vsock CID the
 # suburban watchdog dials, so a change here needs the guest's args updated too.
-mwan_vmid: 113
+mwan_vmid: "{{ service_mapping.test_mwan.vmid }}"
 mwan_proxmox_node: hypervisor
 mwan_proxmox_delegate: suburban
 
@@ -20,9 +21,9 @@ mwan_proxmox_delegate: suburban
 # prep-guests sets the guest hostname to the first label.
 service_hostname: "test-mwan.home.goodkind.io"
 
-# VM 113 management is on the vmbrtrunk 204:: services LAN, off-segment from the
+# VM 213 management is on the vmbrtrunk 204:: services LAN, off-segment from the
 # controller (which reaches the testbed over a WARP tunnel). Like prod mwan,
-# whose mgmt is reached on-link via the OPNsense-routed LAN, VM 113 has no mgmt
+# whose mgmt is reached on-link via the OPNsense-routed LAN, VM 213 has no mgmt
 # policy route and its main default route is a WAN, so off-segment replies do not
 # return. Reach it on-link through the suburban hypervisor, which sits on the
 # same 204:: segment (204::5 on vmbrtrunk), mirroring the opnsense_test pattern.
@@ -31,10 +32,10 @@ ansible_ssh_common_args: >-
   -o ProxyJump=root@[3d06:bad:b01:200::1]
 
 mwan_dns_domain: "home.goodkind.io"
-# VM 113 management is on the vmbrtrunk 204:: services LAN, so it resolves
+# VM 213 management is on the vmbrtrunk 204:: services LAN, so it resolves
 # against the testbed OPNsense Unbound on that segment (MANAGEMENT iface 204::1),
 # the prod-parity analog of prod mwan using the OPNsense LAN resolver ::1.
-mwan_dns_servers: "3d06:bad:b01:204::1"
+mwan_dns_servers: "3d06:bad:b01:210::1"
 
 # ----------------------------------------------------------------------------
 # Interfaces (testbed uses virtio, simpler than production passthrough)
@@ -46,7 +47,7 @@ mwan_webpass_iface: "enwebpass0"
 mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 
-# systemd-networkd files deployed to VM 113. Testbed AT&T/webpass are direct
+# systemd-networkd files deployed to VM 213. Testbed AT&T/webpass are direct
 # links (no VLAN, no 802.1X) from mwan/networkd/testbed/; monkeybrains and the
 # internal mwanbr link reuse the shared prod templates (no prod-only vars).
 mwan_networkd_files:
@@ -106,7 +107,7 @@ mwan_webpass_duid_raw_data: ""
 mwan_monkeybrains_duid_raw_data: ""
 
 # 1:1 NAT of services to each WAN's routed static block, mirroring prod (att
-# 104.57.226.192/29, webpass 136.25.91.240/29). Each sim routes its /29 to VM 113;
+# 104.57.226.192/29, webpass 136.25.91.240/29). Each sim routes its /29 to VM 213;
 # five services (10.250.250.2-6) map 1:1 to .2-.6 of each block.
 mwan_static_mappings:
   att:
@@ -132,22 +133,26 @@ mwan_internal_net_v4: "10.250.250.0/29"
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:201::3"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
-# OPNsense addresses (testbed OPNsense VM 101).
+# OPNsense addresses (testbed OPNsense VM 201).
 mwan_opnsense_ansible_host: "10.250.250.2"
 mwan_opnsense_ansible_ssh_common_args: >-
   -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
   -o ProxyJump=root@[3d06:bad:b01:200::1]
 mwan_opnsense_ansible_user: root
-mwan_opnsense_wan_ll: "fe80::be24:11ff:feec:efcc"
+# Derived from the testbed OPNsense's net1 MAC BC:24:11:0F:66:FA, which the VM
+# config pins, so it is stable across reboots. The return route for the guest
+# segment points here, and a wrong value leaves that route with an unresolvable
+# next hop and no reply path back to the guests.
+mwan_opnsense_wan_ll: "fe80::be24:11ff:fe0f:66fa"
 mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
 # OPNsense API URL target for the agent (config-vm.toml.j2). Prod uses the
 # OPNsense address on the mwan-mgmt segment (::1); the testbed analog reachable
-# on-link from VM 113's 204:: management interface is the OPNsense MANAGEMENT
+# on-link from VM 213's 204:: management interface is the OPNsense MANAGEMENT
 # address 204::1.
-opnsense_addr: "3d06:bad:b01:204::1"
+opnsense_addr: "3d06:bad:b01:210::1"
 # OPNsense BGP integration the agent renders into config.toml (config-vm.toml.j2
 # [opnsense.bgp]). Testbed values mirror suburban_servers.yml's OPNsense view:
-# VM 113 (.3) is the primary BGP peer and LXC 116 (.4) the backup, over the
+# VM 213 (.3) is the primary BGP peer and LXC 216 (.4) the backup, over the
 # 201:: internal link.
 opnsense_gateway_names:
   - WAN_GW4
@@ -168,7 +173,7 @@ opnsense_bgp_neighbors:
   - address: "3d06:bad:b01:201::4"
     description: "LXC116-IPv6"
     preference: "backup"
-failover_lxc_id: "116"
+failover_lxc_id: "{{ service_mapping.mwan_failover_test.vmid }}"
 
 # ----------------------------------------------------------------------------
 # IPv6 prefixes (simulated ISPs on suburban)
@@ -203,7 +208,10 @@ mwan_rt_tables:
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: false
 mwan_ifmgr_health_shadow_mode: false
-mwan_ifmgr_npt_shadow_mode: true
+# Authoritative on the testbed. In shadow mode npt computes its rules and never
+# programs them, so the guest segment gets no translation and native IPv6 does
+# not leave. Prod stays in shadow until MWAN-246 flips it there.
+mwan_ifmgr_npt_shadow_mode: false
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
@@ -305,9 +313,9 @@ mwan_bgp_graceful_restart_notification_enabled: true
 
 # Shared runtime config values consumed by mwan/config/config.toml.j2.
 mwan_config_hostname: "suburban-testbed"
-mwan_config_mgmt_addr: "3d06:bad:b01:204::950"
+mwan_config_mgmt_addr: "3d06:bad:b01:210::213"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
-mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:204::950]:50052"
+mwan_watchdog_agent_tcp_addr: "[3d06:bad:b01:210::213]:50052"
 mwan_watchdog_log_file: "/var/log/mwan-watchdog-testbed.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog-testbed.jsonl"
 mwan_watchdog_state_file: "/run/mwan-rollback-testbed.state"

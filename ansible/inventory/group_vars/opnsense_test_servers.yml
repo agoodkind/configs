@@ -1,5 +1,5 @@
 ---
-# Testbed OPNsense (VM 101 on suburban) target vars.
+# Testbed OPNsense (VM 201 on suburban) target vars.
 # Consumed by deploy-opnsense.yml when targeting `opnsense_test_servers`.
 # Static `[opnsense_test_servers]` group in hosts owns the SSH identity.
 # SSH targets the WAN/internal address on vmbr2.

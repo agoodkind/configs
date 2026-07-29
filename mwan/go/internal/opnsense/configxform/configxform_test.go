@@ -40,11 +40,12 @@ func defaultSubs() Substitutions {
 			{Name: "hostname", XPath: "//opnsense/system/hostname", NewValue: "router-test"},
 			{Name: "wan ipaddr", XPath: "//opnsense/interfaces/wan/ipaddr", NewValue: "10.240.250.2"},
 			{Name: "wan ipaddrv6", XPath: "//opnsense/interfaces/wan/ipaddrv6", NewValue: "3d06:bad:b01:2fe::2"},
-			{Name: "mgmt v4", XPath: "//opnsense/interfaces/opt9/ipaddr", NewValue: "10.240.4.1"},
-			{Name: "mgmt v6", XPath: "//opnsense/interfaces/opt9/ipaddrv6", NewValue: "3d06:bad:b01:204::1"},
+			{Name: "vmnet v4", XPath: "//opnsense/interfaces/opt6/ipaddr", NewValue: "10.240.4.1"},
+			{Name: "vmnet v6", XPath: "//opnsense/interfaces/opt6/ipaddrv6", NewValue: "3d06:bad:b01:210::1"},
 		},
 		RemoveElements: []ElementRemove{
 			{Name: "wireguard peers", XPath: "//opnsense/OPNsense/wireguard/client/clients/client"},
+			{Name: "management interface", XPath: "//opnsense/interfaces/opt9"},
 		},
 		TextLiterals: []TextLiteral{
 			{Name: "nat source net", From: "10.250.0.0/24", To: "10.240.0.0/24"},
@@ -89,8 +90,8 @@ func TestApplyXPathHostnameAndDomain(t *testing.T) {
 		{"//opnsense/system/domain", "test.home.goodkind.io"},
 		{"//opnsense/interfaces/wan/ipaddr", "10.240.250.2"},
 		{"//opnsense/interfaces/wan/ipaddrv6", "3d06:bad:b01:2fe::2"},
-		{"//opnsense/interfaces/opt9/ipaddr", "10.240.4.1"},
-		{"//opnsense/interfaces/opt9/ipaddrv6", "3d06:bad:b01:204::1"},
+		{"//opnsense/interfaces/opt6/ipaddr", "10.240.4.1"},
+		{"//opnsense/interfaces/opt6/ipaddrv6", "3d06:bad:b01:210::1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.xpath, func(t *testing.T) {
@@ -103,6 +104,43 @@ func TestApplyXPathHostnameAndDomain(t *testing.T) {
 				t.Errorf("xpath %q: got %q, want %q", tc.xpath, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestApplyKeepsVMNETAndDropsManagement locks in which interface the testbed
+// guests land on. MANAGEMENT ends in a terminal reject that would deny servers
+// outbound HTTP, DNS, and apt, so the transform drops it and keeps VMNET, which
+// carries server-appropriate rules. Swapping the two would leave the guests
+// reachable but unable to reach anything.
+func TestApplyKeepsVMNETAndDropsManagement(t *testing.T) {
+	out, err := Apply(loadFixture(t), defaultSubs())
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	doc := mustParse(t, out)
+
+	if el := doc.FindElement("//opnsense/interfaces/opt9"); el != nil {
+		t.Error("MANAGEMENT interface opt9 survives the transform")
+	}
+
+	vmnet := doc.FindElement("//opnsense/interfaces/opt6")
+	if vmnet == nil {
+		t.Fatal("VMNET interface opt6 is missing after the transform")
+	}
+	for _, tc := range []struct{ child, want string }{
+		{"if", "vtnet0"},
+		{"ipaddr", "10.240.4.1"},
+		{"ipaddrv6", "3d06:bad:b01:210::1"},
+		{"lock", "1"},
+	} {
+		el := vmnet.FindElement(tc.child)
+		if el == nil {
+			t.Errorf("opt6 has no %s child", tc.child)
+			continue
+		}
+		if got := strings.TrimSpace(el.Text()); got != tc.want {
+			t.Errorf("opt6/%s = %q, want %q", tc.child, got, tc.want)
+		}
 	}
 }
 

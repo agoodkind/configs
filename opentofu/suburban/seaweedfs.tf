@@ -1,6 +1,6 @@
 resource "proxmox_virtual_environment_container" "seaweedfs" {
   node_name = "hypervisor"
-  vm_id     = var.seaweedfs.vm_id
+  vm_id     = local.service_mapping.seaweedfs_suburban.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.trunk,
@@ -10,7 +10,7 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
     hostname = var.seaweedfs.hostname
     ip_config {
       ipv6 {
-        address = var.seaweedfs.ipv6_address
+        address = "${local.service_mapping.seaweedfs_suburban.ipv6}/64"
         gateway = var.seaweedfs.ipv6_gateway
       }
     }

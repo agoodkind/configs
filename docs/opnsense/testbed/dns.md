@@ -2,23 +2,35 @@
 
 How name resolution works on the suburban testbed, and how to recover it when a
 rebuilt testbed OPNsense comes up with DNS broken. The testbed is IPv6 primary:
-its simulated ISPs (LXC 200/201/202) carry IPv4 transit only and no public IPv6,
+its simulated ISPs carry IPv4 transit only and no public IPv6,
 so IPv6-only guests reach the IPv4 internet through NAT64 plus DNS64. Live
 definitions are owned by [opentofu/suburban/](../../../opentofu/suburban/) and the
 testbed group vars; update this page when they change.
 
 ## Components
 
-| Piece | Where | Address / prefix | Source of truth |
-| --- | --- | --- | --- |
-| Tayga (NAT64 translator) | testbed OPNsense (VM 101/102), `os-tayga` plugin | v6 prefix `3d06:bad:b01:2664::/96`, tun `nat64` at `3d06:bad:b01:264::ffff:1`, v4 pool `10.250.64.0/24` | `<tayga>` block in the imported `config.xml` (prod prefix `3d06:bad:b01:6464::/96` rewritten to `3d06:bad:b01:2664::/96` by the config transform) |
-| DNS64 resolver (bind9) | LXC 464 `dns64-suburban` | `3d06:bad:b01:204::464`, synthesizes AAAA into `2664::/96` | [dns64_suburban_servers.yml](../../../ansible/inventory/group_vars/dns64_suburban_servers.yml), deployed with `configs deploy dns64 --limit dns64_suburban_servers` |
-| Unbound (LAN resolver) | testbed OPNsense | binds all interfaces, `:53` | imported `config.xml` |
+Three pieces cooperate, and each one's exact values live with the config that
+owns them.
 
-The DNS64 LXC forwards upstream to `3d06:bad:b01:2664::101:101`, which is
-`1.1.1.1` expressed in the NAT64 prefix, so its own recursion rides the Tayga
-path. `dns64_force_synth` is true so dual-stack names also resolve over NAT64
-(native testbed IPv6 has no public transit).
+Tayga translates between the two families on the testbed OPNsense through the
+`os-tayga` plugin. Its prefix and pool come from the `<tayga>` block in the
+imported `config.xml`, where the transform rewrites production's prefix to the
+testbed's.
+
+The `dns64-suburban` LXC runs bind9 and synthesizes AAAA records into that
+prefix, so an IPv4-only name resolves to an address Tayga can translate. Its
+address, resolver, and synthesis settings live in
+[dns64_suburban_servers.yml](../../../ansible/inventory/group_vars/dns64_suburban_servers.yml)
+and deploy with `configs deploy dns64 --limit dns64_suburban_servers`. It
+forwards to the testbed OPNsense's Unbound over native IPv6, so its own recursion
+no longer rides the Tayga path.
+
+Unbound on the testbed OPNsense answers for the LAN and is configured from the
+imported `config.xml`.
+
+Synthesis applies only to names that lack a real AAAA. A dual-stack name keeps
+its native address and reaches it over native IPv6, which is what the testbed is
+meant to exercise.
 
 ## Recovering DNS on a rebuilt testbed OPNsense
 
