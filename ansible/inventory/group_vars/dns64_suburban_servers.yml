@@ -17,16 +17,15 @@ service_mac_address: "BC:24:11:04:64:00"
 # (3d06:bad:b01:264::ffff:1 tun endpoint, route in opnsense pf to nat64).
 dns64_prefix: "3d06:bad:b01:2664::/96"
 
-# Cloudflare 1.1.1.1 reached through opnsense-test's NAT64 translator. The
-# testbed's simulated ISPs only carry IPv4 transit, so native IPv6 to public
-# resolvers does not work; the synthesized address routes via Tayga and
-# returns over the NAT64 path. Same address is set in tofu as the LXC's
-# bootstrap resolver in /etc/resolv.conf so bind9 can resolve its own apt
-# mirrors before the daemon comes up.
-dns64_upstream_dns: "3d06:bad:b01:2664::101:101"
+# The on-net resolver this bind9 forwards to, mirroring prod, where the dns64
+# LXC forwards to AdGuard on the VMNET segment rather than straight to a public
+# resolver. The testbed has no AdGuard, so its on-net equivalent is the
+# opnsense-test Unbound, which the transform already points at a public
+# resolver. Reached over native IPv6, not through NAT64.
+dns64_upstream_dns: "3d06:bad:b01:210::1"
 
-# Force AAAA synthesis for every name, including dual-stack ones. Without
-# this, dual-stack domains like deb.debian.org return their native AAAA and
-# clients try native IPv6, which fails on the testbed because the simulated
-# ISPs do not carry public IPv6 transit.
-dns64_force_synth: true
+# dns64_force_synth stays at the dns64_all.yml default of false. The override
+# that forced synthesis for every name existed because the simulated ISPs
+# carried no public IPv6 transit, so a native AAAA was unreachable. They do
+# carry it now, and forcing synthesis would keep dual-stack names off the
+# native path that MWAN-256 exists to prove.

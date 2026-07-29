@@ -72,7 +72,7 @@ variable "seaweedfs" {
 }
 
 variable "dns64" {
-  description = "Settings for the suburban-segment DNS64 LXC. Mirrors the vault-side dns64 service. Lives on the opnsense-test VMNET segment alongside tack-qa. Synthesises AAAA records into 3d06:bad:b01:2664::/96 so guests on the segment can reach IPv4 services via opnsense-test's Tayga NAT64. Bootstrap resolver is NextDNS direct, which is also the bind9 upstream the playbook configures, so the LXC can resolve its own apt mirrors before bind9 starts and continues to use the same upstream after."
+  description = "Settings for the suburban-segment DNS64 LXC. Mirrors the vault-side dns64 service. Lives on the opnsense-test VMNET segment alongside tack-qa. Synthesises AAAA records into 3d06:bad:b01:2664::/96 so guests on the segment can reach IPv4 services via opnsense-test's Tayga NAT64. Resolves through itself, as every prod guest does including prod's own dns64 and adguard containers, so one resolver serves the whole segment."
   type = object({
     vm_id            = number
     hostname         = string
@@ -101,6 +101,6 @@ variable "dns64" {
     tags             = ["lxc", "dns", "dns64"]
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     datastore_id     = "local-zfs"
-    dns_servers      = ["3d06:bad:b01:2664::101:101"]
+    dns_servers      = ["3d06:bad:b01:210::64"]
   }
 }
