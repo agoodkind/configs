@@ -22,9 +22,11 @@ resource "proxmox_virtual_environment_container" "dns64" {
     }
   }
 
-  features {
-    nesting = false
-  }
+  # No features block. bind9 needs none of the advanced container features, and
+  # Proxmox writes no features line when every flag is off, so declaring
+  # nesting = false asserted a block the container never has. That mismatch made
+  # the provider send fuse, keyctl and mknod on the first update, which Proxmox
+  # refuses for anyone but root@pam.
 
   network_interface {
     name        = "eth0"
