@@ -103,6 +103,10 @@ service_mapping:
     hostname: test-mwan
     vmid: 213
     ipv6: "3d06:bad:b01:210::213"
+    # eth1 on the OPNsense transit link. The testbed transit network is
+    # 10.240.240.0/29 rather than prod's 10.250.250.0/29, so no address is
+    # shared between the two environments.
+    ipv4: "10.240.240.3"
   mwan_failover_test:
     hostname: mwan-failover-test
     vmid: 216
@@ -110,6 +114,7 @@ service_mapping:
     # mirrors prod's fe::4 rather than taking a VMID suffix, because this is a
     # BGP peering address and that peering shape is what the testbed tests.
     ipv6: "3d06:bad:b01:201::4"
+    ipv4: "10.240.240.4"
   # OPNsense (one logical machine per environment). The plugin uses ipv6 as
   # ansible_host by default, which is correct for prod. Testbed sets
   # ansible_host to the WAN/internal address reachable on vmbr2.
@@ -123,10 +128,13 @@ service_mapping:
     # Keeps prod's ::1 gateway address rather than taking its VMID suffix,
     # because every guest on the segment points at it as their default route.
     ipv6: "3d06:bad:b01:210::1"
-    ipv4: "10.250.250.2"
+    ipv4: "10.240.240.2"
+    # The OPNsense-to-guest transit network. Every group that peers on this link
+    # reads it from here, so a renumber changes one line.
+    transit_v4_net: "10.240.240.0/29"
     # Testbed OPNsense SSH lands on the WAN/internal address through suburban.
     # SSH user and ProxyJump live in group_vars/opnsense_test_servers.yml.
-    ansible_host: "10.250.250.2"
+    ansible_host: "10.240.240.2"
 
   # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM
   # and serves DHCPv6-PD and RA on it. They have no production counterpart, so

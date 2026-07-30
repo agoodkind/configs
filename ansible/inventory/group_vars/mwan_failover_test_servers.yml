@@ -7,24 +7,21 @@ mwan_failover_email_from: "mwan-testbed@goodkind.io"
 mwan_failover_subject_prefix: "[MWAN-suburban-failover]"
 
 mwan_failover_bgp_asn: 4200000001
-mwan_failover_bgp_router_id: "10.250.250.4"
+mwan_failover_bgp_router_id: "{{ service_mapping.mwan_failover_test.ipv4 }}"
 mwan_failover_bgp_next_hop_v6: "3d06:bad:b01:201::4"
 mwan_failover_bgp_neighbors:
-  - "10.250.250.2"
+  - "{{ service_mapping.opnsense_test.ipv4 }}"
 mwan_failover_bgp_neighbors_v6:
   - "3d06:bad:b01:201::2"
-mwan_failover_ipv4_address: "10.250.250.4/29"
+mwan_failover_ipv4_address: "{{ service_mapping.mwan_failover_test.ipv4 }}/29"
 mwan_failover_ipv6_address: "3d06:bad:b01:201::4/64"
 mwan_failover_ipv4_return_route: ""
 # The whole translated aggregate, not one LAN, so failover reaches every
 # testbed segment: VMNET 210::, PRIVILEGED 211::, GENERAL 212::, CAPTIVE 213::.
 mwan_failover_ipv6_return_route: >-
   3d06:bad:b01:210::/60 via 3d06:bad:b01:201::2 dev eth1
-mwan_failover_eth0_inet6_manual: true
-mwan_failover_enable_mainv4: true
 # Source interface for outbound failover alert email (empty = default route).
 mwan_failover_email_bind_iface: ""
-mwan_failover_install_nftables: true
 
 # Shared BGP tunables. The failover config template reads the bare bgp_*
 # names, so they are declared here to mirror the primary values.

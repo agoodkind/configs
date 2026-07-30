@@ -108,33 +108,33 @@ mwan_monkeybrains_duid_raw_data: ""
 
 # 1:1 NAT of services to each WAN's routed static block, mirroring prod (att
 # 104.57.226.192/29, webpass 136.25.91.240/29). Each sim routes its /29 to VM 213;
-# five services (10.250.250.2-6) map 1:1 to .2-.6 of each block.
+# five services on the transit /29 map 1:1 to .2-.6 of each block.
 mwan_static_mappings:
   att:
-    - { internal: "10.250.250.2", external: "10.241.205.2" }
-    - { internal: "10.250.250.3", external: "10.241.205.3" }
-    - { internal: "10.250.250.4", external: "10.241.205.4" }
-    - { internal: "10.250.250.5", external: "10.241.205.5" }
-    - { internal: "10.250.250.6", external: "10.241.205.6" }
+    - { internal: "10.240.240.2", external: "10.241.205.2" }
+    - { internal: "10.240.240.3", external: "10.241.205.3" }
+    - { internal: "10.240.240.4", external: "10.241.205.4" }
+    - { internal: "10.240.240.5", external: "10.241.205.5" }
+    - { internal: "10.240.240.6", external: "10.241.205.6" }
   webpass:
-    - { internal: "10.250.250.2", external: "10.241.204.2" }
-    - { internal: "10.250.250.3", external: "10.241.204.3" }
-    - { internal: "10.250.250.4", external: "10.241.204.4" }
-    - { internal: "10.250.250.5", external: "10.241.204.5" }
-    - { internal: "10.250.250.6", external: "10.241.204.6" }
+    - { internal: "10.240.240.2", external: "10.241.204.2" }
+    - { internal: "10.240.240.3", external: "10.241.204.3" }
+    - { internal: "10.240.240.4", external: "10.241.204.4" }
+    - { internal: "10.240.240.5", external: "10.241.204.5" }
+    - { internal: "10.240.240.6", external: "10.241.204.6" }
 
 # ----------------------------------------------------------------------------
 # Internal link (to OPNsense)
 # ----------------------------------------------------------------------------
 
-mwan_internal_ipv4: "10.250.250.3/29"
+mwan_internal_ipv4: "{{ service_mapping.test_mwan.ipv4 }}/29"
 mwan_internal_ipv6: "3d06:bad:b01:201::3/64"
-mwan_internal_net_v4: "10.250.250.0/29"
+mwan_internal_net_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
 mwan_mwanbr_edge_ipv6: "3d06:bad:b01:201::3"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
-# OPNsense addresses (testbed OPNsense VM 201).
-mwan_opnsense_ansible_host: "10.250.250.2"
+# OPNsense addresses (testbed OPNsense).
+mwan_opnsense_ansible_host: "{{ service_mapping.opnsense_test.ipv4 }}"
 mwan_opnsense_ansible_ssh_common_args: >-
   -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
   -o ProxyJump=root@[3d06:bad:b01:200::1]
@@ -152,21 +152,21 @@ opnsense_addr: "3d06:bad:b01:210::1"
 opnsense_gateway_names:
   - WAN_GW4
   - WAN_GW6
-opnsense_bgp_router_id: "10.250.250.2"
-opnsense_bgp_firewall_source_v4: "10.250.250.0/29"
+opnsense_bgp_router_id: "{{ service_mapping.opnsense_test.ipv4 }}"
+opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
 opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
 opnsense_bgp_neighbors:
-  - address: "10.250.250.3"
-    description: "VM113-IPv4"
+  - address: "{{ service_mapping.test_mwan.ipv4 }}"
+    description: "mwan-IPv4"
     preference: "primary"
   - address: "3d06:bad:b01:201::3"
-    description: "VM113-IPv6"
+    description: "mwan-IPv6"
     preference: "primary"
-  - address: "10.250.250.4"
-    description: "LXC116-IPv4"
+  - address: "{{ service_mapping.mwan_failover_test.ipv4 }}"
+    description: "failover-IPv4"
     preference: "backup"
   - address: "3d06:bad:b01:201::4"
-    description: "LXC116-IPv6"
+    description: "failover-IPv6"
     preference: "backup"
 failover_lxc_id: "{{ service_mapping.mwan_failover_test.vmid }}"
 
@@ -287,13 +287,13 @@ mwan_health_exclude_wans: ["monkeybrains"]
 # ----------------------------------------------------------------------------
 
 bgp_asn: 4200000001
-bgp_router_id: "10.250.250.3"
+bgp_router_id: "{{ service_mapping.test_mwan.ipv4 }}"
 bgp_next_hop_v6: "3d06:bad:b01:201::3"
 bgp_keepalive_seconds: 3
 bgp_hold_seconds: 9
 bgp_listen_port: 179
 bgp_neighbors:
-  - "10.250.250.2"
+  - "{{ service_mapping.opnsense_test.ipv4 }}"
 bgp_neighbors_v6:
   - "3d06:bad:b01:201::2"
 bgp_announce_ipv4:
