@@ -86,6 +86,51 @@ remove_elements:
   - name: "Inline certs"
     xpath: "//opnsense/cert"
 
+# Production's vault sits on the transit bridge and reaches its failover over
+# that segment directly, so production needs no rule for it. Suburban holds no
+# address there, by design, and routes to the transit segment through this
+# router instead. That extra hop is the one sanctioned divergence from
+# production, and it only works if the router passes VMNET traffic to the
+# transit networks. Without these, suburban and the workstation reach neither
+# the MWAN VM nor the failover.
+insert_elements:
+  - name: "VMNET to transit pass rule, IPv6"
+    parent_xpath: "//opnsense/filter"
+    xml: |
+      <rule uuid="b7f1c2a0-5d3e-4a91-9c64-0f2a1d8e3b70">
+        <type>pass</type>
+        <interface>opt6</interface>
+        <ipprotocol>inet6</ipprotocol>
+        <statetype>keep state</statetype>
+        <descr>VMNET to transit: suburban reaches the MWAN VM and the failover through this router rather than across the bridge</descr>
+        <direction>in</direction>
+        <quick>1</quick>
+        <source>
+          <any>1</any>
+        </source>
+        <destination>
+          <address>3d06:bad:b01:201::/64</address>
+        </destination>
+      </rule>
+  - name: "VMNET to transit pass rule, IPv4"
+    parent_xpath: "//opnsense/filter"
+    xml: |
+      <rule uuid="c8a2d3b1-6e4f-4b02-8d75-1a3b2c9f4e81">
+        <type>pass</type>
+        <interface>opt6</interface>
+        <ipprotocol>inet</ipprotocol>
+        <statetype>keep state</statetype>
+        <descr>VMNET to transit: suburban reaches the MWAN VM and the failover through this router rather than across the bridge</descr>
+        <direction>in</direction>
+        <quick>1</quick>
+        <source>
+          <any>1</any>
+        </source>
+        <destination>
+          <address>10.240.240.0/29</address>
+        </destination>
+      </rule>
+
 text_literals:
   # Runs before the tenant shifts so they cannot match inside a transit address.
   - name: "WAN transit v4 prefix shift"
