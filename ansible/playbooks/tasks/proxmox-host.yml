@@ -9,6 +9,13 @@
 # the task body stays branchless and the play definition does not depend
 # on inventory_hostname.
 
+- name: Install hypervisor packages
+  ansible.builtin.apt:
+    name: "{{ proxmox_apt_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
 - name: Build mwan binary on controller
   ansible.builtin.import_tasks: build-mwan-binary.yml
 

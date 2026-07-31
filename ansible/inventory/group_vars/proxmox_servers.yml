@@ -83,3 +83,106 @@ cloudflared_oob_enabled: false
 cloudflared_oob_user: "cloudflared-oob"
 cloudflared_oob_bin: "/usr/local/bin/cloudflared"
 cloudflared_oob_config_dir: "/etc/cloudflared-oob"
+
+# Packages both hypervisors carry. This is the superset of what vault and
+# suburban had installed by hand, minus anything Proxmox or Debian owns
+# through its own packaging. Declaring them here means a rebuilt or new
+# hypervisor gets the same toolkit instead of whatever an operator
+# remembered to install.
+#
+# netcat-openbsd is load bearing rather than a convenience:
+# netcat-traditional cannot open an IPv6 socket at all, so a reachability
+# probe run through it reports a healthy IPv6 host as closed.
+proxmox_apt_packages:
+  # Network diagnostics and IPv6-capable probes
+  - bridge-utils
+  - conntrack
+  - ebtables
+  - ethtool
+  - fping
+  - gping
+  - ipcalc-ng
+  - iproute2
+  - ipset
+  - iptables
+  - ipv6calc
+  - ndisc6
+  - net-tools
+  - netcat-openbsd
+  - nmap
+  - ripcalc
+  - sipcalc
+  - socat
+  - speedtest-cli
+  - sshuttle
+  - tcpdump
+  - tshark
+  - wireguard
+
+  # Storage and filesystems
+  - btrfs-progs
+  - cifs-utils
+  - dosfstools
+  - gdisk
+  - lvm2
+  - nfs-common
+  - open-iscsi
+  - parted
+  - smartmontools
+  - smbclient
+  - xfsprogs
+  - zfsutils-linux
+
+  # Operator shell and file tools
+  - bat
+  - bc
+  - btop
+  - curl
+  - dtach
+  - eza
+  - fd-find
+  - fzf
+  - hdparm
+  - htop
+  - jq
+  - moreutils
+  - most
+  - neovim
+  - pigz
+  - psmisc
+  - pv
+  - ripgrep
+  - rsync
+  - screen
+  - sqlite3
+  - strace
+  - tmux
+  - tree
+  - unzip
+  - usbutils
+  - vim
+  - yq
+  - zoxide
+  - zsh
+  - zstd
+
+  # Source control and automation
+  - ansible
+  - ansible-lint
+  - expect
+  - gh
+  - git
+  - git-delta
+  - git-lfs
+  - lazygit
+  - make
+  - openssh-server
+  - sshpass
+
+  # Host services
+  - bsd-mailx
+  - chrony
+  - fail2ban
+  - ifupdown2
+  - nut
+  - postfix
