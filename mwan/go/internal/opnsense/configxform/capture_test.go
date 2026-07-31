@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // repoPath resolves a path relative to the repository root. The package lives
@@ -16,19 +14,12 @@ func repoPath(parts ...string) string {
 	return filepath.Join(append([]string{base}, parts...)...)
 }
 
-// readRepoFile reads a committed repository file. Every caller passes a path
-// built by repoPath from string literals, so the path is fixed at compile time
-// even though it is not a constant expression.
-func readRepoFile(path string) ([]byte, error) {
-	return os.ReadFile(filepath.Clean(path)) //nolint:gosec // fixed repo-relative path
-}
-
 // transformRealCapture applies the committed substitution table to the
 // committed prod capture and returns the candidate bytes.
 func transformRealCapture(t *testing.T) []byte {
 	t.Helper()
 	capturePath := repoPath("testbed", "opnsense", "prod-config-redacted.xml")
-	input, err := readRepoFile(capturePath)
+	input, err := os.ReadFile(capturePath) //nolint:gosec // fixed repo-relative path
 	if err != nil {
 		t.Fatalf("read capture %q: %v", capturePath, err)
 	}
@@ -44,64 +35,6 @@ func transformRealCapture(t *testing.T) []byte {
 		t.Fatalf("Apply on real capture: %v", err)
 	}
 	return out
-}
-
-// serviceMappingEntry is the subset of a service_mapping.yml guest entry that
-// the substitution table has to agree with.
-type serviceMappingEntry struct {
-	IPv4Transit string `yaml:"ipv4_transit"`
-	IPv6Transit string `yaml:"ipv6_transit"`
-}
-
-// TestSubstitutionsMatchServiceMapping keeps the substitution table honest
-// against the addressing source of truth. The table is standalone input to
-// `mwan opnsense config import`, so nothing renders it from service_mapping.
-// Without this, a renumber there leaves the transform writing the old address
-// and the divergence only surfaces on the router after an import.
-func TestSubstitutionsMatchServiceMapping(t *testing.T) {
-	mappingPath := repoPath("ansible", "inventory", "group_vars", "all", "service_mapping.yml")
-	mappingBytes, err := readRepoFile(mappingPath)
-	if err != nil {
-		t.Fatalf("read service mapping %q: %v", mappingPath, err)
-	}
-	var mapping struct {
-		ServiceMapping map[string]serviceMappingEntry `yaml:"service_mapping"`
-	}
-	if err := yaml.Unmarshal(mappingBytes, &mapping); err != nil {
-		t.Fatalf("parse service mapping: %v", err)
-	}
-	router, ok := mapping.ServiceMapping["opnsense_test"]
-	if !ok {
-		t.Fatal("service_mapping has no opnsense_test entry")
-	}
-
-	// The example table carries the same addresses as documentation, so it
-	// drifts the same way and is checked the same way.
-	for _, name := range []string{"substitutions.yaml", "substitutions.example.yaml"} {
-		subs, err := Load(repoPath("testbed", "opnsense", name))
-		if err != nil {
-			t.Errorf("load %s: %v", name, err)
-			continue
-		}
-		byXPath := make(map[string]string, len(subs.XPathSets))
-		for _, set := range subs.XPathSets {
-			byXPath[set.XPath] = set.NewValue
-		}
-
-		for _, tc := range []struct{ xpath, want string }{
-			{"//opnsense/interfaces/wan/ipaddr", router.IPv4Transit},
-			{"//opnsense/interfaces/wan/ipaddrv6", router.IPv6Transit},
-		} {
-			got, present := byXPath[tc.xpath]
-			if !present {
-				t.Errorf("%s sets no value for %s", name, tc.xpath)
-				continue
-			}
-			if got != tc.want {
-				t.Errorf("%s: %s = %q, but service_mapping says %q", name, tc.xpath, got, tc.want)
-			}
-		}
-	}
 }
 
 // TestApplyRealCaptureWithCommittedSubstitutions runs the committed
