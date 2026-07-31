@@ -16,7 +16,8 @@ define INTERNAL_IFACE = "{{ actual_internal_iface }}"
 define MB_IFACE = "{{ mwan_monkeybrains_iface }}"
 
 # Internal network (mwan <-> OPNsense link)
-define INTERNAL_NET = 10.250.250.0/29
+define INTERNAL_NET = {{ mwan_internal_net_v4 }}
+define OPNSENSE_INTERNAL = {{ mwan_opnsense_internal_v4 }}
 
 table inet filter {
     chain input {
@@ -100,7 +101,7 @@ table ip nat {
         # pin, the mod-2 LB below would split rekey attempts 50/50 across AT&T
         # and Webpass; the resulting peer-IP flapping (via WG roaming) destabilizes
         # long-lived peers like suburban whose Comcast IPv6 also renumbers.
-        iifname $INTERNAL_IFACE ip saddr 10.250.250.2 udp sport 51820 udp dport 51821 ct state new meta mark set 1
+        iifname $INTERNAL_IFACE ip saddr $OPNSENSE_INTERNAL udp sport 51820 udp dport 51821 ct state new meta mark set 1
 
         # Mark new connections for load balancing (fwmark)
         # `meta mark 0` guard preserves the WG pin set above.
@@ -199,7 +200,7 @@ table inet mangle {
         iifname $MB_IFACE ct state new meta mark set 3
 
         # NOTE: IPv4 load balancing is driven by the per-flow random mark in `table ip nat prerouting`.
-        # Do NOT override marks for 10.250.250.2-10.250.250.6 here, or IPv4 will pin to one WAN.
+        # Do NOT override marks for hosts in $INTERNAL_NET here, or IPv4 will pin to one WAN.
 
         # Pin latency-sensitive traffic to AT&T (mark 1)
         # Failover: If AT&T down, update-routes.sh removes the fwmark rule,

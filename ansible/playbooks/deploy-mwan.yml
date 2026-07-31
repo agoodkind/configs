@@ -394,11 +394,16 @@
         - 10-mgmt.network
 
     - name: Deploy systemd-networkd configuration files
+      # Reloaded by handler: networkctl reload applies changed .network files
+      # without bouncing an interface, so an address change converges on the
+      # deploy that renders it rather than on the next manual intervention.
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/networkd/{{ item }}.j2"
         dest: /etc/systemd/network/{{ item | basename }}
         mode: "0644"
       loop: "{{ mwan_networkd_files }}"
+      notify:
+        - Reload networkd
 
     - name: Reload udev rules
       ansible.builtin.command: udevadm control --reload
@@ -447,16 +452,29 @@
         mode: "0644"
 
     - name: Deploy nftables config
+      # Reloaded by handler: without it the file lands on disk and the kernel
+      # keeps the previous ruleset, so a renumber renders correctly and never
+      # takes effect. The ifmgr npt module reprograms its own ip6 nat rules on
+      # its next reconcile after the flush.
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/nftables.conf.j2"
         dest: /etc/nftables.conf
         mode: "0644"
         backup: true
+        validate: /usr/sbin/nft -c -f %s
+      notify:
+        - Reload nftables
       vars:
         actual_mgmt_iface: "{{ mwan_mgmt_iface }}"
         actual_att_iface: "{{ mwan_att_iface }}"
         actual_webpass_iface: "{{ mwan_webpass_iface }}"
         actual_internal_iface: "{{ mwan_internal_iface }}"
+
+    # Converge the network layer here rather than at the end of the play, so
+    # the services deployed below start against the addresses and rules this
+    # run rendered, and a reload failure stops the deploy at its cause.
+    - name: Apply pending network reloads
+      ansible.builtin.meta: flush_handlers
 
     - name: Create systemd override for nftables
       ansible.builtin.file:
@@ -795,6 +813,15 @@
       when: mwan_health_gate.rc == 0
 
   handlers:
+    - name: Reload networkd
+      ansible.builtin.command: networkctl reload
+      changed_when: true
+
+    - name: Reload nftables
+      ansible.builtin.systemd:
+        name: nftables
+        state: reloaded
+
     - name: Restart wpa_supplicant
       ansible.builtin.systemd:
         name: wpa_supplicant-mwan
