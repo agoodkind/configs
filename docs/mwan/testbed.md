@@ -53,10 +53,12 @@ in [docs/opnsense/testbed/access.md](../opnsense/testbed/access.md).
 Each ISP simulator terminates one WAN link for the MWAN VM, serves DHCPv6-PD
 through kea-dhcp6 and router advertisements through radvd, and uplinks through
 suburban, which returns tunnel and testbed traffic and masquerades internet
-traffic out to Comcast. Every per-ISP value lives in
+traffic out to Comcast. Each sim's capability flags and downstream subnets
+live in
 [suburban_servers.yml](../../ansible/inventory/group_vars/suburban_servers.yml)
-under `testbed_isp_lxcs`, which carries a comment explaining each capability
-flag.
+under `testbed_isp_lxcs`, which carries a comment explaining each flag; ids,
+hostnames, and uplink addresses live in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
 
 The three sims differ because the real WANs do. Monkeybrains runs the full
 dynamic stack, so the MWAN VM receives a DHCPv4 lease, a DHCPv6 address, a

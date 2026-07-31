@@ -10,7 +10,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_test" {
   ]
 
   initialization {
-    hostname = "mwan-failover-test"
+    hostname = local.service_mapping.mwan_failover_test.hostname
     ip_config {
       ipv4 {
         address = "dhcp"
@@ -93,7 +93,7 @@ resource "proxmox_virtual_environment_container" "isp_webpass" {
   ]
 
   initialization {
-    hostname = "isp-webpass"
+    hostname = local.service_mapping.isp_webpass.hostname
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
@@ -181,7 +181,7 @@ resource "proxmox_virtual_environment_container" "isp_att" {
   ]
 
   initialization {
-    hostname = "isp-att"
+    hostname = local.service_mapping.isp_att.hostname
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
@@ -269,7 +269,7 @@ resource "proxmox_virtual_environment_container" "isp_mbrains" {
   ]
 
   initialization {
-    hostname = "isp-mbrains"
+    hostname = local.service_mapping.isp_mbrains.hostname
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
