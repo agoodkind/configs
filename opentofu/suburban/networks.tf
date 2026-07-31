@@ -22,8 +22,6 @@ resource "proxmox_network_linux_bridge" "mwan_internal" {
   name      = "vmbr2"
 
   autostart = true
-  address   = "10.250.250.5/29"
-  address6  = "3d06:bad:b01:201::5/64"
 
   lifecycle {
     prevent_destroy = true

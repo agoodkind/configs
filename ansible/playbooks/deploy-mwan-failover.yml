@@ -50,11 +50,10 @@
         group: root
         mode: "0644"
 
-    - name: Install nftables (testbed only; gated by group_vars)
+    - name: Install nftables
       ansible.builtin.apt:
         name: nftables
         state: present
-      when: mwan_failover_install_nftables | bool
 
     - name: Deploy MWAN secrets environment file
       # The failover LXC config.toml has an [email] block but no
@@ -107,6 +106,20 @@
         dest: /etc/network/interfaces
         mode: "0644"
 
+    - name: Remove the cutover leftover if-up script
+      ansible.builtin.file:
+        path: /etc/network/if-up.d/mwan-failover
+        state: absent
+
+    - name: Deploy nftables ruleset
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan-failover/nftables.conf"
+        dest: /etc/nftables.conf
+        mode: "0644"
+        validate: /usr/sbin/nft -c -f %s
+      notify:
+        - Reload nftables
+
     - name: Deploy mwan-agent systemd unit
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
@@ -134,17 +147,21 @@
         - mwan-agent
         - mwan-ifmgr
 
-    - name: Enable nftables (testbed only; matches install task above)
+    - name: Enable nftables
       ansible.builtin.systemd:
         name: nftables
         enabled: true
         daemon_reload: true
-      when: mwan_failover_install_nftables | bool
 
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
+
+    - name: Reload nftables
+      ansible.builtin.systemd:
+        name: nftables
+        state: reloaded
 
     - name: Reload sysctl
       # `sysctl --system` exits non-zero in the LXC because it hits

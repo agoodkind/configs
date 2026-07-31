@@ -7,10 +7,6 @@ iface lo inet loopback
 
 auto eth0
 iface eth0 inet dhcp
-{% if mwan_failover_eth0_inet6_manual %}
-
-iface eth0 inet6 manual
-{% endif %}
 
 auto eth1
 iface eth1 inet static

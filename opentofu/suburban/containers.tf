@@ -15,16 +15,13 @@ resource "proxmox_virtual_environment_container" "mwan_failover_test" {
       ipv4 {
         address = "dhcp"
       }
-      ipv6 {
-        address = "auto"
-      }
     }
     ip_config {
       ipv4 {
-        address = "10.250.250.4/29"
+        address = "${local.service_mapping.mwan_failover_test.ipv4_transit}/29"
       }
       ipv6 {
-        address = "3d06:bad:b01:201::4/64"
+        address = "${local.service_mapping.mwan_failover_test.ipv6_transit}/64"
       }
     }
   }

@@ -22,10 +22,12 @@ which owns its VMID and addresses.
   [opentofu/suburban/networks.tf](../../../opentofu/suburban/networks.tf).
 - The LAN interface (`lan` in `config.xml`) carries `192.168.1.1/24` and
   `3d06:bad:b01:211::1/64`.
-- The WAN/internal interface carries `10.250.250.2/29` and
-  `3d06:bad:b01:201::2/64`. Suburban reaches that interface through `vmbr2`,
-  and TCP port 22 is open there. This is also the BGP peering segment, and it
-  mirrors production's rather than following the VMID scheme.
+- The WAN/internal interface carries `10.240.240.2/29` and
+  `3d06:bad:b01:201::2/64`, and TCP port 22 is open there. This is the BGP
+  peering segment. Host suffixes mirror production's `.2`, `.3`, `.4` rather
+  than following the VMID scheme, but the network itself does not, so no
+  address is shared between the two environments. Suburban holds no address on
+  `vmbr2`, matching vault, and reaches this interface through VMNET.
 - The host-side OPNsense gRPC target is a socket named for the guest's VMID,
   under `/var/run/qemu-server/`. Ansible renders it from `mwan_opnsense_vmid`.
 - The named virtio-console port is `io.goodkind.mwan-opnsense.0`.

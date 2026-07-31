@@ -18,7 +18,7 @@ xpath_sets:
     new_value: "router-test"
   - name: "WAN ipv4"
     xpath: "//opnsense/interfaces/wan/ipaddr"
-    new_value: "10.250.250.2"
+    new_value: "10.240.240.2"
   - name: "WAN ipv6"
     xpath: "//opnsense/interfaces/wan/ipaddrv6"
     new_value: "3d06:bad:b01:201::2"

@@ -2,7 +2,6 @@
 # OPNsense testbed. Values here describe the current testbed shape.
 
 # Addressing rules:
-#   * The WAN IPv4 transit link stays on `10.250.250.0/29`.
 #   * Testbed IPv4 tenant VLANs use `10.240.x.0/24`.
 #   * The testbed guest segment is VMNET on untagged vtnet0, as prod is. It
 #     keeps the `.4` IPv4 third octet, which must not move.
@@ -24,7 +23,7 @@ xpath_sets:
 
   - name: "WAN ipv4"
     xpath: "//opnsense/interfaces/wan/ipaddr"
-    new_value: "10.250.250.2"
+    new_value: "10.240.240.2"
   - name: "WAN ipv6"
     xpath: "//opnsense/interfaces/wan/ipaddrv6"
     new_value: "3d06:bad:b01:201::2"
@@ -88,6 +87,10 @@ remove_elements:
     xpath: "//opnsense/cert"
 
 text_literals:
+  # Runs before the tenant shifts so they cannot match inside a transit address.
+  - name: "WAN transit v4 prefix shift"
+    from: "10.250.250."
+    to:   "10.240.240."
   - name: "PRIVILEGED v4 prefix shift"
     from: "10.250.1."
     to:   "10.240.1."

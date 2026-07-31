@@ -77,8 +77,3 @@ unhealthy_after = "10s"
 [ifmgr.modules.ra_lost]
 iface = "eth0"
 ra_lost_alert_after = "5m"
-
-{% if mwan_failover_enable_mainv4 %}
-[ifmgr.modules.mainv4]
-iface = "eth0"
-{% endif %}

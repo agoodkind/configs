@@ -71,6 +71,16 @@
         mode: "0644"
       tags: ["vmbr1"]
 
+    - name: Deploy transit routes sourced file
+      # The sourced file installs these at ifup. Reloading networking on the
+      # hypervisor to pick them up would bounce every guest bridge, so the
+      # handler installs the same routes live instead.
+      ansible.builtin.template:
+        src: "{{ repo_root }}/testbed/suburban-interfaces.d-transit-routes.conf.j2"
+        dest: /etc/network/interfaces.d/testbed-transit-routes.conf
+        mode: "0644"
+      notify: Install transit routes
+
     - name: Deploy suburban DDNS
       ansible.builtin.import_tasks: tasks/suburban-ddns.yml
       tags: ["ddns"]
@@ -176,6 +186,23 @@
       tags: ["isp-lxcs"]
 
   handlers:
+    - name: Install transit routes
+      # IPv6 first, because it carries the guest segment and the failover's
+      # only reachable address.
+      ansible.builtin.command:
+        cmd: >-
+          ip -{{ item.family }} route replace {{ item.net }}
+          via {{ item.via }} dev vmbrtrunk
+      loop:
+        - family: 6
+          net: "{{ service_mapping.opnsense_test.transit_v6_net }}"
+          via: "{{ service_mapping.opnsense_test.ipv6_vmnet }}"
+        - family: 4
+          net: "{{ service_mapping.opnsense_test.transit_v4_net }}"
+          via: "{{ service_mapping.opnsense_test.ipv4_vmnet }}"
+      changed_when: true
+      become: true
+
     - name: Reload sysctl
       ansible.builtin.command: sysctl --system
       changed_when: false

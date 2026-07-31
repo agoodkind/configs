@@ -104,8 +104,8 @@ resource "proxmox_virtual_environment_vm" "test_mwan" {
         address = "dhcp"
       }
       ipv6 {
-        address = "3d06:bad:b01:210::113/64"
-        gateway = "3d06:bad:b01:210::1"
+        address = "${local.service_mapping.test_mwan.ipv6}/64"
+        gateway = local.service_mapping.opnsense_test.ipv6_vmnet
       }
     }
 
