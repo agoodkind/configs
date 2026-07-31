@@ -4,7 +4,9 @@
 # Static `[opnsense_test_servers]` group in hosts owns the SSH identity.
 # SSH targets the WAN/internal address on vmbr2.
 
-ansible_user: root
+# OPNsense expects agoodkind for SSH, same as production; root logins are
+# refused, so the default `ansible_user: root` in [all:vars] fails here.
+ansible_user: agoodkind
 ansible_ssh_common_args: >-
   -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
   -o ProxyJump=root@[3d06:bad:b01:200::1]
