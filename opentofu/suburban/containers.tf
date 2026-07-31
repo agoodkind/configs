@@ -10,7 +10,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_test" {
   ]
 
   initialization {
-    hostname = "mwan-failover-test"
+    hostname = local.service_mapping.mwan_failover_test.hostname
     ip_config {
       ipv4 {
         address = "dhcp"
@@ -89,18 +89,27 @@ resource "proxmox_virtual_environment_container" "isp_webpass" {
 
   depends_on = [
     proxmox_network_linux_bridge.isp_webpass,
+    proxmox_network_linux_bridge.vm_management,
   ]
 
   initialization {
-    hostname = "isp-webpass"
+    hostname = local.service_mapping.isp_webpass.hostname
+    dns {
+      servers = ["2606:4700:4700::1111", "1.1.1.1"]
+    }
     ip_config {
       ipv4 {
-        address = "10.240.204.1/24"
+        address = "${local.service_mapping.isp_webpass.ipv4}/24"
       }
     }
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "${local.service_mapping.isp_webpass.ipv4_uplink}/24"
+        gateway = local.service_mapping.suburban_vmbr1.ipv4
+      }
+      ipv6 {
+        address = "${local.service_mapping.isp_webpass.ipv6_uplink}/64"
+        gateway = local.service_mapping.suburban_vmbr1.ipv6
       }
     }
   }
@@ -117,7 +126,7 @@ resource "proxmox_virtual_environment_container" "isp_webpass" {
 
   network_interface {
     name        = "eth1"
-    bridge      = "vmbr0"
+    bridge      = proxmox_network_linux_bridge.vm_management.name
     mac_address = "BC:24:11:FC:17:A7"
   }
 
@@ -168,18 +177,27 @@ resource "proxmox_virtual_environment_container" "isp_att" {
 
   depends_on = [
     proxmox_network_linux_bridge.isp_att,
+    proxmox_network_linux_bridge.vm_management,
   ]
 
   initialization {
-    hostname = "isp-att"
+    hostname = local.service_mapping.isp_att.hostname
+    dns {
+      servers = ["2606:4700:4700::1111", "1.1.1.1"]
+    }
     ip_config {
       ipv4 {
-        address = "10.240.205.1/24"
+        address = "${local.service_mapping.isp_att.ipv4}/24"
       }
     }
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "${local.service_mapping.isp_att.ipv4_uplink}/24"
+        gateway = local.service_mapping.suburban_vmbr1.ipv4
+      }
+      ipv6 {
+        address = "${local.service_mapping.isp_att.ipv6_uplink}/64"
+        gateway = local.service_mapping.suburban_vmbr1.ipv6
       }
     }
   }
@@ -196,7 +214,7 @@ resource "proxmox_virtual_environment_container" "isp_att" {
 
   network_interface {
     name        = "eth1"
-    bridge      = "vmbr0"
+    bridge      = proxmox_network_linux_bridge.vm_management.name
     mac_address = "BC:24:11:6C:B8:2B"
   }
 
@@ -247,21 +265,30 @@ resource "proxmox_virtual_environment_container" "isp_mbrains" {
 
   depends_on = [
     proxmox_network_linux_bridge.isp_mbrains,
+    proxmox_network_linux_bridge.vm_management,
   ]
 
   initialization {
-    hostname = "isp-mbrains"
+    hostname = local.service_mapping.isp_mbrains.hostname
+    dns {
+      servers = ["2606:4700:4700::1111", "1.1.1.1"]
+    }
     ip_config {
       ipv4 {
-        address = "10.240.206.1/24"
+        address = "${local.service_mapping.isp_mbrains.ipv4}/24"
       }
       ipv6 {
-        address = "3d06:bad:b01:250::1/64"
+        address = "${local.service_mapping.isp_mbrains.ipv6}/64"
       }
     }
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "${local.service_mapping.isp_mbrains.ipv4_uplink}/24"
+        gateway = local.service_mapping.suburban_vmbr1.ipv4
+      }
+      ipv6 {
+        address = "${local.service_mapping.isp_mbrains.ipv6_uplink}/64"
+        gateway = local.service_mapping.suburban_vmbr1.ipv6
       }
     }
   }
@@ -278,7 +305,7 @@ resource "proxmox_virtual_environment_container" "isp_mbrains" {
 
   network_interface {
     name        = "eth1"
-    bridge      = "vmbr0"
+    bridge      = proxmox_network_linux_bridge.vm_management.name
     mac_address = "BC:24:11:DF:62:D3"
   }
 

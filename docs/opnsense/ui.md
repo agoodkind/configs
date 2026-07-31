@@ -11,8 +11,8 @@ Read the current access path before opening a tunnel:
 
 - [Suburban testbed](../mwan/testbed.md) defines the testbed host and
   virtual machine layout.
-- [OPNsense testbed baseline](testbed/baseline.md) defines the OPNsense guest
-  role and management expectations.
+- [Reaching the testbed OPNsense guest](testbed/access.md) covers the
+  out-of-band channel to use when SSH fails.
 - [Access](../infra/access.md) defines operator access patterns.
 
 Use the service repository for service-specific UI paths. For the Cloudflared

@@ -9,15 +9,24 @@ ground truth and update this page when it changes.
 
 ## Bridges
 
-| Bridge | Role                       | Notes                                            |
-| ------ | -------------------------- | ------------------------------------------------ |
-| vmbr0  | Comcast uplink             | Suburban-managed management plus outbound NAT    |
-| vmbr1  | VM management              | Suburban's testbed management subnet; no longer carries VM 950 |
-| vmbr2  | MWAN internal (OPNsense)   | Transit link, `10.240.240.0/29` and `3d06:bad:b01:201::/64`. Suburban holds no address here, matching vault, so it reaches the guests through OPNsense rather than across the bridge. |
-| vmbrtrunk | Services LAN (OPNsense MANAGEMENT) | VLAN-aware trunk, vids `64 100 200 300`, host `3d06:bad:b01:204::5/64`. Untagged `204::` LAN holds OPNsense MANAGEMENT `204::1`, DNS64 LXC `204::464`, seaweedfs `204::410`, tack-qa `204::400`, and VM 950 mgmt `204::950`. "MWAN-140 slice 1". |
-| vmbr4  | Simulated Webpass ISP      | bare L2                                          |
-| vmbr5  | Simulated AT&T ISP         | bare L2                                          |
-| vmbr6  | Simulated Monkeybrains ISP | bare L2 plus failover-test eth0                  |
+Bridge names, addresses, and VLAN ids live in
+[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf); guest
+addresses live in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+What the doc adds is the behavior each bridge carries:
+
+- The Comcast uplink bridge is suburban's own internet path and the outbound
+  NAT boundary. Nothing testbed-internal attaches to it.
+- The VM management bridge is the uplink behind suburban: the ISP sims default
+  through it, so replies to tunnel and testbed sources drain to suburban, and
+  their internet traffic masquerades onward to Comcast.
+- The MWAN internal bridge is the OPNsense transit link. Suburban holds no
+  address on it, matching vault, so it reaches the guests through the router
+  rather than across the bridge.
+- The VLAN-aware trunk carries VMNET, the guest segment every testbed guest
+  and the router share, plus the tagged VLANs mirroring production.
+- Each simulated ISP has its own bare-L2 bridge terminating one WAN link for
+  the MWAN VM; the Monkeybrains one also carries the failover's upstream NIC.
 
 ## Guests
 
@@ -38,15 +47,18 @@ independent Proxmox installations rather than a cluster, so a shared id is legal
 but a command that lands on the wrong host then finds a guest at that id and
 succeeds against it. With no id in common the same mistake fails outright.
 
-Connection addresses for the OPNsense testbed are in
-[docs/opnsense/testbed/baseline.md](../opnsense/testbed/baseline.md).
+When SSH to the testbed OPNsense fails, reach it over the out-of-band channel
+in [docs/opnsense/testbed/access.md](../opnsense/testbed/access.md).
 
 Each ISP simulator terminates one WAN link for the MWAN VM, serves DHCPv6-PD
-through kea-dhcp6 and router advertisements through radvd, and masquerades out
-via Comcast on vmbr0. Every per-ISP value lives in
+through kea-dhcp6 and router advertisements through radvd, and uplinks through
+suburban, which returns tunnel and testbed traffic and masquerades internet
+traffic out to Comcast. Each sim's capability flags and downstream subnets
+live in
 [suburban_servers.yml](../../ansible/inventory/group_vars/suburban_servers.yml)
-under `testbed_isp_lxcs`, which carries a comment explaining each capability
-flag.
+under `testbed_isp_lxcs`, which carries a comment explaining each flag; ids,
+hostnames, and uplink addresses live in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
 
 The three sims differ because the real WANs do. Monkeybrains runs the full
 dynamic stack, so the MWAN VM receives a DHCPv4 lease, a DHCPv6 address, a
@@ -77,7 +89,7 @@ management, LAN, internal, and SLAAC already use.
 
 ## Testbed-only infrastructure
 
-ISP LXCs 900/901/902, suburban-side safe IPv6 sysctl defaults, and suburban
+The ISP sim LXCs, suburban-side safe IPv6 sysctl defaults, and suburban
 masquerade rules (`vmbr1` to `vmbr0`/`wg0`) only exist on the testbed. The
 bridge shape stays in OpenTofu, the safe early-boot sysctl defaults stay in
 [ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml),
@@ -98,17 +110,18 @@ unknown.
   VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the
   field and the apply fails with `VM is locked`. See
   [docs/opnsense/operations.md](../opnsense/operations.md) Rule 8.
-- **Management return path.** VM 950 management has no policy route, mirroring
-  prod, so on-link replies to peers on the `204::` services LAN return directly.
-  A management policy table carrying only a default route shadows the connected
-  route and triangles on-link replies through the gateway, which breaks
-  reachability.
+- **Management return path.** The MWAN VM's management interface has no policy
+  route, mirroring prod, so on-link replies to peers on the shared guest
+  segment return directly. A management policy table carrying only a default
+  route shadows the connected route and triangles on-link replies through the
+  gateway, which breaks reachability.
 - **Reachability probing.** The testbed OPNsense blocks ICMP echo to LAN hosts
   but allows TCP, so measure reachability with TCP or SSH, not `ping6`, or a
   healthy host reads as down.
 - **Watchdog host config address.** `mwan-watchdog-testbed` on the suburban host
-  must target VM 950's current management address (`204::950`) in
-  `/etc/mwan/config.toml`. A stale address degrades its VM health probe to the
+  must target the MWAN VM's current management address, from
+  [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
+  in `/etc/mwan/config.toml`. A stale address degrades its VM health probe to the
   TCP and PVE fallback channels (the vsock channel still works because it is
   CID-based), and a wedged snapshot plus a tight retry loop can hold the VM lock.
   The config is rendered by `deploy-proxmox --limit suburban`.

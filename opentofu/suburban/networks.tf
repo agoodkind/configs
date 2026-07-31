@@ -9,7 +9,7 @@ resource "proxmox_network_linux_bridge" "vm_management" {
   name      = "vmbr1"
 
   autostart = true
-  address   = "10.240.200.1/24"
+  address   = "${local.service_mapping.suburban_vmbr1.ipv4}/24"
   address6  = "fe80::1/64"
 
   lifecycle {

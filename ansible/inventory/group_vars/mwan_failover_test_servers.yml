@@ -15,11 +15,12 @@ mwan_failover_bgp_neighbors_v6:
   - "{{ service_mapping.opnsense_test.ipv6_transit }}"
 mwan_failover_ipv4_address: "{{ service_mapping.mwan_failover_test.ipv4_transit }}/29"
 mwan_failover_ipv6_address: "{{ service_mapping.mwan_failover_test.ipv6_transit }}/64"
+# Empty on the testbed: replies to off-link sources leave by eth0 and drain
+# through the ISP sim's vmbr1 uplink to suburban, which owns the return
+# routing for the tunnel and testbed ranges. Production sets real values
+# because its ISPs cannot return private ranges.
 mwan_failover_ipv4_return_route: ""
-# The whole translated aggregate, not one LAN, so failover reaches every
-# testbed segment: VMNET 210::, PRIVILEGED 211::, GENERAL 212::, CAPTIVE 213::.
-mwan_failover_ipv6_return_route: >-
-  3d06:bad:b01:210::/60 via {{ service_mapping.opnsense_test.ipv6_transit }} dev eth1
+mwan_failover_ipv6_return_route: ""
 # Source interface for outbound failover alert email (empty = default route).
 mwan_failover_email_bind_iface: ""
 
