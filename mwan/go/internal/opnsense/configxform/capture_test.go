@@ -75,26 +75,31 @@ func TestSubstitutionsMatchServiceMapping(t *testing.T) {
 		t.Fatal("service_mapping has no opnsense_test entry")
 	}
 
-	subs, err := Load(repoPath("testbed", "opnsense", "substitutions.yaml"))
-	if err != nil {
-		t.Fatalf("load substitutions: %v", err)
-	}
-	byXPath := make(map[string]string, len(subs.XPathSets))
-	for _, set := range subs.XPathSets {
-		byXPath[set.XPath] = set.NewValue
-	}
-
-	for _, tc := range []struct{ xpath, want string }{
-		{"//opnsense/interfaces/wan/ipaddr", router.IPv4Transit},
-		{"//opnsense/interfaces/wan/ipaddrv6", router.IPv6Transit},
-	} {
-		got, present := byXPath[tc.xpath]
-		if !present {
-			t.Errorf("substitutions set no value for %s", tc.xpath)
+	// The example table carries the same addresses as documentation, so it
+	// drifts the same way and is checked the same way.
+	for _, name := range []string{"substitutions.yaml", "substitutions.example.yaml"} {
+		subs, err := Load(repoPath("testbed", "opnsense", name))
+		if err != nil {
+			t.Errorf("load %s: %v", name, err)
 			continue
 		}
-		if got != tc.want {
-			t.Errorf("%s = %q, but service_mapping says %q", tc.xpath, got, tc.want)
+		byXPath := make(map[string]string, len(subs.XPathSets))
+		for _, set := range subs.XPathSets {
+			byXPath[set.XPath] = set.NewValue
+		}
+
+		for _, tc := range []struct{ xpath, want string }{
+			{"//opnsense/interfaces/wan/ipaddr", router.IPv4Transit},
+			{"//opnsense/interfaces/wan/ipaddrv6", router.IPv6Transit},
+		} {
+			got, present := byXPath[tc.xpath]
+			if !present {
+				t.Errorf("%s sets no value for %s", name, tc.xpath)
+				continue
+			}
+			if got != tc.want {
+				t.Errorf("%s: %s = %q, but service_mapping says %q", name, tc.xpath, got, tc.want)
+			}
 		}
 	}
 }
