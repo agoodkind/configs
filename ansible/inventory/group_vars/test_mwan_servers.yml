@@ -127,19 +127,19 @@ mwan_static_mappings:
 # Internal link (to OPNsense)
 # ----------------------------------------------------------------------------
 
-mwan_internal_ipv4: "{{ service_mapping.test_mwan.ipv4 }}/29"
-mwan_internal_ipv6: "3d06:bad:b01:201::3/64"
+mwan_internal_ipv4: "{{ service_mapping.test_mwan.ipv4_transit }}/29"
+mwan_internal_ipv6: "{{ service_mapping.test_mwan.ipv6_transit }}/64"
 mwan_internal_net_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
-mwan_mwanbr_edge_ipv6: "3d06:bad:b01:201::3"
+mwan_mwanbr_edge_ipv6: "{{ service_mapping.test_mwan.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
 # OPNsense addresses (testbed OPNsense).
-mwan_opnsense_ansible_host: "{{ service_mapping.opnsense_test.ipv4 }}"
+mwan_opnsense_ansible_host: "{{ service_mapping.opnsense_test.ipv4_transit }}"
 mwan_opnsense_ansible_ssh_common_args: >-
   -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
   -o ProxyJump=root@[3d06:bad:b01:200::1]
 mwan_opnsense_ansible_user: root
-mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
+mwan_opnsense_edge_ipv6: "{{ service_mapping.opnsense_test.ipv6_transit }}"
 # OPNsense API URL target for the agent (config-vm.toml.j2). Prod uses the
 # OPNsense address on the mwan-mgmt segment (::1); the testbed analog reachable
 # on-link from VM 213's 204:: management interface is the OPNsense MANAGEMENT
@@ -147,25 +147,25 @@ mwan_opnsense_edge_ipv6: "3d06:bad:b01:201::2"
 opnsense_addr: "3d06:bad:b01:210::1"
 # OPNsense BGP integration the agent renders into config.toml (config-vm.toml.j2
 # [opnsense.bgp]). Testbed values mirror suburban_servers.yml's OPNsense view:
-# VM 213 (.3) is the primary BGP peer and LXC 216 (.4) the backup, over the
-# 201:: internal link.
+# the MWAN VM is the primary BGP peer and the failover the backup, over the
+# transit link.
 opnsense_gateway_names:
   - WAN_GW4
   - WAN_GW6
-opnsense_bgp_router_id: "{{ service_mapping.opnsense_test.ipv4 }}"
+opnsense_bgp_router_id: "{{ service_mapping.opnsense_test.ipv4_transit }}"
 opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
-opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
+opnsense_bgp_firewall_source_v6: "{{ service_mapping.opnsense_test.transit_v6_net }}"
 opnsense_bgp_neighbors:
-  - address: "{{ service_mapping.test_mwan.ipv4 }}"
+  - address: "{{ service_mapping.test_mwan.ipv4_transit }}"
     description: "mwan-IPv4"
     preference: "primary"
-  - address: "3d06:bad:b01:201::3"
+  - address: "{{ service_mapping.test_mwan.ipv6_transit }}"
     description: "mwan-IPv6"
     preference: "primary"
-  - address: "{{ service_mapping.mwan_failover_test.ipv4 }}"
+  - address: "{{ service_mapping.mwan_failover_test.ipv4_transit }}"
     description: "failover-IPv4"
     preference: "backup"
-  - address: "3d06:bad:b01:201::4"
+  - address: "{{ service_mapping.mwan_failover_test.ipv6_transit }}"
     description: "failover-IPv6"
     preference: "backup"
 failover_lxc_id: "{{ service_mapping.mwan_failover_test.vmid }}"
@@ -287,15 +287,15 @@ mwan_health_exclude_wans: ["monkeybrains"]
 # ----------------------------------------------------------------------------
 
 bgp_asn: 4200000001
-bgp_router_id: "{{ service_mapping.test_mwan.ipv4 }}"
-bgp_next_hop_v6: "3d06:bad:b01:201::3"
+bgp_router_id: "{{ service_mapping.test_mwan.ipv4_transit }}"
+bgp_next_hop_v6: "{{ service_mapping.test_mwan.ipv6_transit }}"
 bgp_keepalive_seconds: 3
 bgp_hold_seconds: 9
 bgp_listen_port: 179
 bgp_neighbors:
-  - "{{ service_mapping.opnsense_test.ipv4 }}"
+  - "{{ service_mapping.opnsense_test.ipv4_transit }}"
 bgp_neighbors_v6:
-  - "3d06:bad:b01:201::2"
+  - "{{ service_mapping.opnsense_test.ipv6_transit }}"
 bgp_announce_ipv4:
   - "0.0.0.0/0"
 bgp_announce_ipv6:

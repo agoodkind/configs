@@ -71,6 +71,12 @@
         mode: "0644"
       tags: ["vmbr1"]
 
+    - name: Deploy transit routes sourced file
+      ansible.builtin.template:
+        src: "{{ repo_root }}/testbed/suburban-interfaces.d-transit-routes.conf.j2"
+        dest: /etc/network/interfaces.d/testbed-transit-routes.conf
+        mode: "0644"
+
     - name: Deploy suburban DDNS
       ansible.builtin.import_tasks: tasks/suburban-ddns.yml
       tags: ["ddns"]

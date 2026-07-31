@@ -73,7 +73,7 @@ root-owned Unbound and Tayga; without it they falsely report nothing on `:53`.
 
 | Target | Path |
 | --- | --- |
-| Testbed OPNsense | `ssh -J root@[3d06:bad:b01:200::1] agoodkind@10.250.250.2` (ProxyJump through the suburban hypervisor; relax host-key checking after a rebuild) |
+| Testbed OPNsense | `ssh -J root@[3d06:bad:b01:200::1] agoodkind@10.240.240.2` (ProxyJump through the suburban hypervisor; relax host-key checking after a rebuild) |
 | DNS64 LXC (CT 464) | `pct exec 464 ...` from the suburban hypervisor `root@[3d06:bad:b01:200::1]` |
 | Testbed MWAN VM 950 | `ssh root@3d06:bad:b01:204::950` |
 

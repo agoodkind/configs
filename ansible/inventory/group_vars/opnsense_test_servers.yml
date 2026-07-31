@@ -17,19 +17,19 @@ opnsense_gateway_names:
   - WAN_GW6
 
 # OPNsense BGP (from OPNsense's perspective).
-opnsense_bgp_router_id: "{{ service_mapping.opnsense_test.ipv4 }}"
+opnsense_bgp_router_id: "{{ service_mapping.opnsense_test.ipv4_transit }}"
 opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
-opnsense_bgp_firewall_source_v6: "3d06:bad:b01:201::/64"
+opnsense_bgp_firewall_source_v6: "{{ service_mapping.opnsense_test.transit_v6_net }}"
 opnsense_bgp_neighbors:
-  - address: "{{ service_mapping.test_mwan.ipv4 }}"
+  - address: "{{ service_mapping.test_mwan.ipv4_transit }}"
     description: "mwan-IPv4"
     preference: "primary"
-  - address: "3d06:bad:b01:201::3"
+  - address: "{{ service_mapping.test_mwan.ipv6_transit }}"
     description: "mwan-IPv6"
     preference: "primary"
-  - address: "{{ service_mapping.mwan_failover_test.ipv4 }}"
+  - address: "{{ service_mapping.mwan_failover_test.ipv4_transit }}"
     description: "failover-IPv4"
     preference: "backup"
-  - address: "3d06:bad:b01:201::4"
+  - address: "{{ service_mapping.mwan_failover_test.ipv6_transit }}"
     description: "failover-IPv6"
     preference: "backup"

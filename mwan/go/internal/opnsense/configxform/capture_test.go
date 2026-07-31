@@ -91,8 +91,7 @@ func TestApplyRealCapturePlacesGuestsOnVMNET(t *testing.T) {
 		{"//opnsense/interfaces/opt6/ipaddrv6", "3d06:bad:b01:210::1"},
 		{"//opnsense/interfaces/lan/ipaddrv6", "3d06:bad:b01:211::1"},
 		{"//opnsense/interfaces/opt4/ipaddrv6", "3d06:bad:b01:212::1"},
-		// Transit, IPv6-only, and NAT64 keep their existing testbed values.
-		{"//opnsense/interfaces/wan/ipaddr", "10.250.250.2"},
+		{"//opnsense/interfaces/wan/ipaddr", "10.240.240.2"},
 		{"//opnsense/interfaces/wan/ipaddrv6", "3d06:bad:b01:201::2"},
 		{"//opnsense/interfaces/opt8/ipaddrv6", "3d06:bad:b01:264::1"},
 		{"//opnsense/OPNsense/tayga/general/v6prefix", "3d06:bad:b01:2664::/96"},
@@ -121,12 +120,11 @@ func TestApplyRealCapturePlacesGuestsOnVMNET(t *testing.T) {
 		t.Error("candidate still references the removed MANAGEMENT interface")
 	}
 
-	// Any surviving prod literal means a shift was missed. 10.250.250. is the
-	// transit link and stays, so it is excluded by checking the octet forms
-	// that belong to tenant segments.
+	// Any surviving prod literal means a shift was missed.
 	for _, stale := range []string{
 		"3d06:bad:b01:21::", "3d06:bad:b01:22::", "3d06:bad:b01:23::",
 		"3d06:bad:b01:204::", "3d06:bad:b01:200::",
+		"10.250.250.",
 		"10.250.0.", "10.250.1.", "10.250.2.", "10.250.3.", "10.250.4.",
 	} {
 		if n := strings.Count(string(out), stale); n != 0 {

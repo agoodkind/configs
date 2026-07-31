@@ -103,18 +103,20 @@ service_mapping:
     hostname: test-mwan
     vmid: 213
     ipv6: "3d06:bad:b01:210::213"
-    # eth1 on the OPNsense transit link. The testbed transit network is
-    # 10.240.240.0/29 rather than prod's 10.250.250.0/29, so no address is
-    # shared between the two environments.
-    ipv4: "10.240.240.3"
+    # eth1 on the OPNsense transit link, where it peers BGP with the router.
+    ipv4_transit: "10.240.240.3"
+    ipv6_transit: "3d06:bad:b01:201::3"
   mwan_failover_test:
     hostname: mwan-failover-test
     vmid: 216
-    # eth1 static OPNsense-side address; eth0 is DHCP on vmbr6. The address
-    # mirrors prod's fe::4 rather than taking a VMID suffix, because this is a
-    # BGP peering address and that peering shape is what the testbed tests.
-    ipv6: "3d06:bad:b01:201::4"
-    ipv4: "10.240.240.4"
+    # eth1 on the OPNsense transit link; eth0 is DHCP on vmbr6. Host suffixes
+    # mirror prod's rather than taking a VMID suffix, because these are BGP
+    # peering addresses and that peering shape is what the testbed tests.
+    ipv4_transit: "10.240.240.4"
+    ipv6_transit: &mwan_failover_test_transit_v6 "3d06:bad:b01:201::4"
+    # The inventory plugin reads ipv6 as its default ansible_host, and this
+    # guest holds no other address, so it aliases rather than repeating.
+    ipv6: *mwan_failover_test_transit_v6
   # OPNsense (one logical machine per environment). The plugin uses ipv6 as
   # ansible_host by default, which is correct for prod. Testbed sets
   # ansible_host to the WAN/internal address reachable on vmbr2.
@@ -125,16 +127,27 @@ service_mapping:
   opnsense_test:
     hostname: opnsense-test
     vmid: 201
-    # Keeps prod's ::1 gateway address rather than taking its VMID suffix,
+    # The router's addresses on VMNET, the guest segment. Both families are
+    # first-class; anything reaching a testbed guest routes via one of them.
+    # Keeps prod's ::1 gateway suffix rather than taking its VMID suffix,
     # because every guest on the segment points at it as their default route.
-    ipv6: "3d06:bad:b01:210::1"
-    ipv4: "10.240.240.2"
-    # The OPNsense-to-guest transit network. Every group that peers on this link
-    # reads it from here, so a renumber changes one line.
+    ipv4_vmnet: "10.240.4.1"
+    ipv6_vmnet: &opnsense_test_vmnet_v6 "3d06:bad:b01:210::1"
+    # The inventory plugin reads ipv6 as its default ansible_host, so it aliases
+    # the VMNET address rather than repeating it.
+    ipv6: *opnsense_test_vmnet_v6
+    # The router's addresses on the transit link it shares with the MWAN VM and
+    # the failover, and the networks those sit in. Every group that peers on
+    # this link reads them from here, so a renumber changes one line. The
+    # transit network is 10.240.240.0/29 rather than prod's 10.250.250.0/29, so
+    # no address is shared between the two environments.
+    ipv4_transit: &opnsense_test_transit_v4 "10.240.240.2"
+    ipv6_transit: "3d06:bad:b01:201::2"
     transit_v4_net: "10.240.240.0/29"
-    # Testbed OPNsense SSH lands on the WAN/internal address through suburban.
+    transit_v6_net: "3d06:bad:b01:201::/64"
+    # Testbed OPNsense SSH lands on the transit address through suburban.
     # SSH user and ProxyJump live in group_vars/opnsense_test_servers.yml.
-    ansible_host: "10.240.240.2"
+    ansible_host: *opnsense_test_transit_v4
 
   # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM
   # and serves DHCPv6-PD and RA on it. They have no production counterpart, so
