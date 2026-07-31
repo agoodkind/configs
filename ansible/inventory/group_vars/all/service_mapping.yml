@@ -149,10 +149,22 @@ service_mapping:
     # SSH user and ProxyJump live in group_vars/opnsense_test_servers.yml.
     ansible_host: *opnsense_test_transit_v4
 
+  # Suburban's own addresses on vmbr1, the uplink the ISP sims route through.
+  # OpenTofu derives the vmbr1 bridge address from ipv4; the routable IPv6 is
+  # deployed by deploy-testbed.yml as a sourced interfaces.d fragment.
+  suburban_vmbr1:
+    inventory: false
+    ipv4: "10.240.200.1"
+    ipv6: "3d06:bad:b01:200::1"
+
   # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM
   # and serves DHCPv6-PD and RA on it. They have no production counterpart, so
   # they sit in 9xx and their addresses are gateways on their own simulated
   # subnets that production never uses.
+  #
+  # The uplink addresses sit on vmbr1 behind suburban, which routes the sims'
+  # internet traffic out to Comcast and returns tunnel and testbed traffic.
+  # Uplink host suffixes are 90-92, below 100, so they can never read as VMIDs.
   #
   # inventory: false keeps them out of the SSH inventory. deploy-testbed.yml
   # configures them through pct from the hypervisor, so Ansible never connects
@@ -162,17 +174,23 @@ service_mapping:
     vmid: 900
     inventory: false
     ipv4: "10.240.204.1"
+    ipv4_uplink: "10.240.200.90"
+    ipv6_uplink: "3d06:bad:b01:200::90"
   isp_att:
     hostname: isp-att
     vmid: 901
     inventory: false
     ipv4: "10.240.205.1"
+    ipv4_uplink: "10.240.200.91"
+    ipv6_uplink: "3d06:bad:b01:200::91"
   isp_mbrains:
     hostname: isp-mbrains
     vmid: 902
     inventory: false
     ipv6: "3d06:bad:b01:250::1"
     ipv4: "10.240.206.1"
+    ipv4_uplink: "10.240.200.92"
+    ipv6_uplink: "3d06:bad:b01:200::92"
 
 group_children:
   tack_all:

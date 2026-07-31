@@ -1,7 +1,7 @@
 #!/usr/sbin/nft -f
 # ISP LXC masquerade rules
 # eth0 = simulated ISP link (facing the MWAN VM)
-# eth1 = real uplink (Comcast/vmbr0)
+# eth1 = uplink (vmbr1, behind suburban)
 flush ruleset
 
 table ip nat {
@@ -9,19 +9,25 @@ table ip nat {
         type nat hook postrouting priority srcnat; policy accept;
         oifname "eth1" ip saddr {{ isp.v4_subnet }} masquerade
 {% if isp.static_v4_block %}
-        # Masquerade the routed static /29 out to Comcast. The WAN VM 1:1-SNATs
-        # the internal /29 into this block (mirroring prod, where the ISP routes
-        # a real public /29); the sim ISP must carry it onward or that traffic
-        # egresses with a private source and is dropped.
+        # Masquerade the routed static /29 toward the uplink. The WAN VM
+        # 1:1-SNATs the internal /29 into this block (mirroring prod, where the
+        # ISP routes a real public /29); the sim ISP must carry it onward or
+        # that traffic egresses with a private source and is dropped.
         oifname "eth1" ip saddr {{ isp.static_v4_block }} masquerade
 {% endif %}
     }
 }
 
+# Both families masquerade only the sim's own downstream sources. Return
+# traffic the sim forwards toward suburban (tunnel and testbed destinations)
+# keeps its original source, so the far end's TCP sees the address it dialed.
 table ip6 nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-        oifname "eth1" masquerade
+        oifname "eth1" ip6 saddr {{ isp.pd_prefix }} masquerade
+{% if isp.slaac_prefix %}
+        oifname "eth1" ip6 saddr {{ isp.slaac_prefix }} masquerade
+{% endif %}
     }
 }
 
