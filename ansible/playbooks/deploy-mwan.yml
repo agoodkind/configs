@@ -470,6 +470,12 @@
         actual_webpass_iface: "{{ mwan_webpass_iface }}"
         actual_internal_iface: "{{ mwan_internal_iface }}"
 
+    # Converge the network layer here rather than at the end of the play, so
+    # the services deployed below start against the addresses and rules this
+    # run rendered, and a reload failure stops the deploy at its cause.
+    - name: Apply pending network reloads
+      ansible.builtin.meta: flush_handlers
+
     - name: Create systemd override for nftables
       ansible.builtin.file:
         path: /etc/systemd/system/nftables.service.d
