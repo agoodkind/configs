@@ -106,11 +106,6 @@
         dest: /etc/network/interfaces
         mode: "0644"
 
-    - name: Remove the cutover leftover if-up script
-      ansible.builtin.file:
-        path: /etc/network/if-up.d/mwan-failover
-        state: absent
-
     - name: Deploy nftables ruleset
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan-failover/nftables.conf"
