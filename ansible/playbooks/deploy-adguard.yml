@@ -506,4 +506,4 @@
       ansible.builtin.debug:
         msg: >-
           ✅ AdGuard Home deployed successfully on
-          {{ hostvars['localhost']['service_hostname'] }}
+          {{ hostvars['localhost'].get('service_hostname', 'adguard.home.goodkind.io') }}
