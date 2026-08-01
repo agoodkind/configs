@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -38,6 +39,7 @@ var handlers = map[string]func([]string) error{
 	"secret":         runSecret,
 	"set-secrets":    runSetSecrets,
 	"deploy":         runDeploy,
+	"tofu":           runTofu,
 	"syntax-check":   runSyntaxCheck,
 	"inventory-dump": runInventoryDump,
 }
@@ -231,6 +233,52 @@ func runDeploy(args []string) error {
 	}
 	if err := ansible.Deploy(opts); err != nil {
 		return errors.New("deploy failed")
+	}
+	return nil
+}
+
+// tofuProxmoxTokenID is the Proxmox API token id both hypervisors issue for
+// automation. The tofu provider wants "tokenid=secret" in one string; the
+// secret half lives in the vault.
+const tofuProxmoxTokenID = "ansible@pam!ansible-token"
+
+// runTofu execs tofu in opentofu/ with credentials injected from the vault:
+// the R2 state-backend keys and both Proxmox provider tokens. Output flows
+// through the redaction pipes installed in run, so secret values never reach
+// the terminal.
+func runTofu(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: configs tofu <tofu args...>")
+	}
+	passwordFile, err := vaultPassPath()
+	if err != nil {
+		return err
+	}
+	env := os.Environ()
+	for _, pair := range []struct {
+		envName  string
+		vaultKey string
+		prefix   string
+	}{
+		{"AWS_ACCESS_KEY_ID", "vault_r2_tofu_access_key_id", ""},
+		{"AWS_SECRET_ACCESS_KEY", "vault_r2_tofu_secret_access_key", ""},
+		{"TF_VAR_proxmox_api_token", "vault_proxmox_token_secret", tofuProxmoxTokenID + "="},
+		{"TF_VAR_suburban_proxmox_api_token", "vault_suburban_testbed_pve_token_secret", tofuProxmoxTokenID + "="},
+	} {
+		value, secretErr := vault.Secret(pair.vaultKey, defaultVaultFile, passwordFile)
+		if secretErr != nil {
+			return fmt.Errorf("read vault secret %q", pair.vaultKey)
+		}
+		env = append(env, pair.envName+"="+pair.prefix+value)
+	}
+	cmd := exec.Command("tofu", args...)
+	cmd.Dir = "opentofu"
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return errors.New("tofu failed")
 	}
 	return nil
 }

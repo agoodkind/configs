@@ -20,13 +20,11 @@ The suburban node name is `hypervisor`.
 
 ## Prerequisites
 
-1. `terraform.tfvars` is populated with both Proxmox API tokens
-   (`proxmox_api_token` for vault, `suburban_proxmox_api_token` for
-   suburban). The example file at [terraform.tfvars.example](./terraform.tfvars.example)
-   lists the fields. Real token values come from the Ansible vault, never the
-   repo.
-2. `tofu init` has run against the local backend; the state file lives at
-   `opentofu/terraform.tfstate` on the operator workstation and is gitignored.
+1. Run every tofu command through `go run goodkind.io/configs/cmd/configs tofu`,
+   which injects the backend and both Proxmox provider credentials from the
+   Ansible vault. No `terraform.tfvars` file is needed; [backend.md](./backend.md)
+   describes the state backend and credential contract.
+2. `configs tofu init` has run once on this checkout.
 3. The live suburban shape matches the target resources before import:
 
 ```bash
