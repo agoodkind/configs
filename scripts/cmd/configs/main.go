@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -237,10 +239,10 @@ func runDeploy(args []string) error {
 	return nil
 }
 
-// tofuProxmoxTokenID is the Proxmox API token id both hypervisors issue for
-// automation. The tofu provider wants "tokenid=secret" in one string; the
-// secret half lives in the vault.
-const tofuProxmoxTokenID = "ansible@pam!ansible-token"
+// proxmoxAutomationPrincipal is the Proxmox API principal both hypervisors
+// issue for automation. The tofu provider wants "principal=secret" in one
+// string; the secret half lives in the vault.
+const proxmoxAutomationPrincipal = "ansible@pam!ansible-token"
 
 // runTofu execs tofu in opentofu/ with credentials injected from the vault:
 // the R2 state-backend keys and both Proxmox provider tokens. Output flows
@@ -262,8 +264,8 @@ func runTofu(args []string) error {
 	}{
 		{"AWS_ACCESS_KEY_ID", "vault_r2_tofu_access_key_id", ""},
 		{"AWS_SECRET_ACCESS_KEY", "vault_r2_tofu_secret_access_key", ""},
-		{"TF_VAR_proxmox_api_token", "vault_proxmox_token_secret", tofuProxmoxTokenID + "="},
-		{"TF_VAR_suburban_proxmox_api_token", "vault_suburban_testbed_pve_token_secret", tofuProxmoxTokenID + "="},
+		{"TF_VAR_proxmox_api_token", "vault_proxmox_token_secret", proxmoxAutomationPrincipal + "="},
+		{"TF_VAR_suburban_proxmox_api_token", "vault_suburban_testbed_pve_token_secret", proxmoxAutomationPrincipal + "="},
 	} {
 		value, secretErr := vault.Secret(pair.vaultKey, defaultVaultFile, passwordFile)
 		if secretErr != nil {
@@ -271,16 +273,40 @@ func runTofu(args []string) error {
 		}
 		env = append(env, pair.envName+"="+pair.prefix+value)
 	}
-	cmd := exec.Command("tofu", args...)
+	safeArgs, err := sanitizeTofuArgs(args)
+	if err != nil {
+		return err
+	}
+	slog.Info("tofu run", "args", strings.Join(safeArgs, " "))
+	cmd := exec.CommandContext(context.Background(), "tofu", safeArgs...)
 	cmd.Dir = "opentofu"
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		slog.Error("tofu command failed", "err", err)
 		return errors.New("tofu failed")
 	}
 	return nil
+}
+
+// tofuArgPattern accepts printable characters only. Arguments go to tofu as
+// an argv vector, never through a shell, so this exists to reject control
+// characters and to give the taint analysis a validation boundary.
+var tofuArgPattern = regexp.MustCompile(`^[\x20-\x7E]+$`)
+
+// sanitizeTofuArgs validates each argument and returns the validated copies.
+func sanitizeTofuArgs(args []string) ([]string, error) {
+	safe := make([]string, 0, len(args))
+	for _, arg := range args {
+		match := tofuArgPattern.FindString(arg)
+		if match != arg {
+			return nil, fmt.Errorf("tofu argument %q contains non-printable characters", arg)
+		}
+		safe = append(safe, match)
+	}
+	return safe, nil
 }
 
 func runSyntaxCheck(args []string) error {
