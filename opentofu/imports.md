@@ -25,7 +25,8 @@ The suburban node name is `hypervisor`.
    suburban). The example file at [terraform.tfvars.example](./terraform.tfvars.example)
    lists the fields. Real token values come from the Ansible vault, never the
    repo.
-2. `tofu init` has run against the Consul backend at `[3d06:bad:b01::106]:8500`.
+2. `tofu init` has run against the local backend; the state file lives at
+   `opentofu/terraform.tfstate` on the operator workstation and is gitignored.
 3. The live suburban shape matches the target resources before import:
 
 ```bash

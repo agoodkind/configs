@@ -601,7 +601,7 @@ show_systemd() {
     echo
     echo "== systemd-analyze critical-chain (mwan services) =="
     for svc in mwan-health.service bringup-att-vlan.service \
-                systemd-networkd.service consul.service cloudflared.service; do
+                systemd-networkd.service cloudflared.service; do
         echo "-- $svc --"
         systemd-analyze critical-chain "$svc" --no-pager 2>/dev/null || true
     done

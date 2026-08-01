@@ -5,9 +5,6 @@
 # host-bridge work that has no production equivalent.
 # Shared defaults live in proxmox_servers.yml.
 
-# Consul agent settings
-consul_bind_interface: enmgmt0
-
 # Proxmox HTTP API host for `community.proxmox.proxmox_*` modules when
 # operating against suburban.
 proxmox_api_host: "3d06:bad:b01:200::1"

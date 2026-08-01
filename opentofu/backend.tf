@@ -1,7 +1,7 @@
 terraform {
-  backend "consul" {
-    address = "[3d06:bad:b01::106]:8500"
-    path    = "opentofu/state"
-    scheme  = "http"
+  # Local state on the operator workstation. The state file sits next to this
+  # configuration and is gitignored; treat it as the single live copy.
+  backend "local" {
+    path = "terraform.tfstate"
   }
 }

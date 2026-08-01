@@ -351,12 +351,6 @@
         mode: "0644"
       register: lower_shutdown_timeout
 
-    - name: Install and configure Consul agent
-      ansible.builtin.include_tasks: tasks/install-consul-agent.yml
-      when:
-        - consul_agent_enabled | bool
-        - inventory_hostname not in groups['consul_servers']
-
     - name: Disable SSH password authentication (keys only)
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
@@ -439,9 +433,3 @@
       ansible.builtin.systemd:
         name: ssh
         state: restarted
-
-    - name: Restart Consul
-      ansible.builtin.systemd:
-        name: consul
-        state: restarted
-        daemon_reload: true

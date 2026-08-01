@@ -704,24 +704,6 @@
     # All services are enabled and will start on boot.
     # Watchdog monitors post-reboot and auto-rolls back if connectivity fails.
 
-    - name: Register service with Consul
-      ansible.builtin.template:
-        src: "{{ repo_root }}/consul/services/service-definition.json.j2"
-        dest: /etc/consul.d/mwan.json
-        owner: consul
-        group: consul
-        mode: "0640"
-      vars:
-        consul_service_name: mwan
-        consul_service_tags: ["gateway", "vm"]
-        consul_service_port: 22
-        consul_service_checks:
-          - tcp: "localhost:22"
-            interval: "30s"
-            timeout: "5s"
-      notify: Reload Consul
-      when: consul_agent_enabled | bool
-
     - name: Deploy complete - scheduling reboot
       ansible.builtin.debug:
         msg: >-
@@ -840,11 +822,6 @@
         state: restarted
         daemon_reload: true
       when: mwan_ifmgr_wan_enabled | bool
-
-    - name: Reload Consul
-      ansible.builtin.systemd:
-        name: consul
-        state: reloaded
 
 # The MWAN failover LXC is configured by deploy-mwan-failover.yml,
 # targeting mwan_failover_servers (prod) or mwan_failover_test_servers

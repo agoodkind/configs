@@ -31,10 +31,6 @@ service_mapping:
     hostname: dns64.home.goodkind.io
     vmid: 103
     ipv6: "3d06:bad:b01::64"
-  consul:
-    hostname: consul.home.goodkind.io
-    vmid: 106
-    ipv6: "3d06:bad:b01::106"
   freebsd_dev_home:
     hostname: freebsd-dev.home.goodkind.io
     vmid: 108
