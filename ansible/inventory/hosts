@@ -9,7 +9,7 @@ localhost ansible_connection=local
 # also has a matching ansible/inventory/proxmox-<name>.yml dynamic plugin
 # that discovers its guests as separate inventory hosts.
 [vault_servers]
-vault ansible_host=3d06:bad:b01::254 consul_bind_interface=vmbr0
+vault ansible_host=3d06:bad:b01::254
 
 [suburban_servers]
 suburban ansible_host=3d06:bad:b01:200::1

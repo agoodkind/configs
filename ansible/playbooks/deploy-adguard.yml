@@ -474,31 +474,6 @@
           https://localhost:{{ adguard_tls_port_https }}.
       when: adguard_tls_enabled | bool
 
-    - name: Register service with Consul
-      ansible.builtin.template:
-        src: "{{ repo_root }}/consul/services/service-definition.json.j2"
-        dest: /etc/consul.d/adguard.json
-        owner: consul
-        group: consul
-        mode: "0640"
-      vars:
-        consul_service_name: adguard
-        consul_service_tags: ["dns", "lxc"]
-        consul_service_port: 53
-        consul_service_checks:
-          - args:
-              - "bash"
-              - "-c"
-              - >-
-                dig @localhost ipv4.google.com A
-                +short +time=2 | grep -q .
-                && dig @localhost ipv6.google.com AAAA
-                +short +time=2 | grep -q .
-            interval: "30s"
-            timeout: "5s"
-      notify: Reload Consul
-      when: consul_agent_enabled | bool
-
     - name: Report health check result
       ansible.builtin.debug:
         msg: >-
@@ -522,11 +497,6 @@
       ansible.builtin.systemd:
         name: AdGuardHome
         state: restarted
-
-    - name: Reload Consul
-      ansible.builtin.systemd:
-        name: consul
-        state: reloaded
 
 - name: Summary
   hosts: localhost

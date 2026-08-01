@@ -20,12 +20,11 @@ The suburban node name is `hypervisor`.
 
 ## Prerequisites
 
-1. `terraform.tfvars` is populated with both Proxmox API tokens
-   (`proxmox_api_token` for vault, `suburban_proxmox_api_token` for
-   suburban). The example file at [terraform.tfvars.example](./terraform.tfvars.example)
-   lists the fields. Real token values come from the Ansible vault, never the
-   repo.
-2. `tofu init` has run against the Consul backend at `[3d06:bad:b01::106]:8500`.
+1. Run every tofu command through `go run goodkind.io/configs/cmd/configs tofu`,
+   which injects the backend and both Proxmox provider credentials from the
+   Ansible vault. No `terraform.tfvars` file is needed; [backend.md](./backend.md)
+   describes the state backend and credential contract.
+2. `configs tofu init` has run once on this checkout.
 3. The live suburban shape matches the target resources before import:
 
 ```bash
@@ -44,31 +43,31 @@ capture of the same output if you want a diff target.
 Run from [opentofu/](./):
 
 ```bash
-tofu import \
+go run goodkind.io/configs/cmd/configs tofu import \
   'module.suburban.proxmox_network_linux_bridge.vm_management' \
   'hypervisor:vmbr1'
 
-tofu import \
+go run goodkind.io/configs/cmd/configs tofu import \
   'module.suburban.proxmox_network_linux_bridge.mwan_internal' \
   'hypervisor:vmbr2'
 
-tofu import \
+go run goodkind.io/configs/cmd/configs tofu import \
   'module.suburban.proxmox_network_linux_bridge.isp_webpass' \
   'hypervisor:vmbr4'
 
-tofu import \
+go run goodkind.io/configs/cmd/configs tofu import \
   'module.suburban.proxmox_network_linux_bridge.isp_att' \
   'hypervisor:vmbr5'
 
-tofu import \
+go run goodkind.io/configs/cmd/configs tofu import \
   'module.suburban.proxmox_network_linux_bridge.isp_mbrains' \
   'hypervisor:vmbr6'
 
-tofu import \
+go run goodkind.io/configs/cmd/configs tofu import \
   'module.suburban.proxmox_network_linux_bridge.trunk' \
   'hypervisor:vmbrtrunk'
 
-tofu import \
+go run goodkind.io/configs/cmd/configs tofu import \
   'module.suburban.proxmox_network_linux_vlan.trunk_vlan_100' \
   'hypervisor:vmbrtrunk.100'
 ```
@@ -108,7 +107,7 @@ guests = {
     "proxmox_virtual_environment_container.isp_mbrains": "isp_mbrains",
 }
 for resource, service in guests.items():
-    print(f"tofu import 'module.suburban.{resource}' 'hypervisor/{mapping[service]['vmid']}'")
+    print(f"go run goodkind.io/configs/cmd/configs tofu import 'module.suburban.{resource}' 'hypervisor/{mapping[service]['vmid']}'")
 PY
 ```
 
@@ -127,7 +126,7 @@ Renaming the dataset carries its snapshots, because they are children of it.
 3. Rewrite the volume reference in the guest conf. It appears once in the active
    config and once in every `[snapname]` section, so rewrite all of them.
 4. Move the conf to the new id and start the guest.
-5. Run `tofu state rm` on the resource, then `tofu import` it at the new id.
+5. Run `configs tofu state rm` on the resource, then `configs tofu import` it at the new id.
 
 Do not use `tofu state mv` for this. It renames the address and leaves the old
 `vm_id` in state, which the next plan reads as a replacement.

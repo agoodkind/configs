@@ -66,18 +66,6 @@ login_dir: /root
 cloudflare_dns_update_enabled: true
 
 # ----------------------------------------------------------------------------
-# Consul service discovery
-# ----------------------------------------------------------------------------
-consul_server_address: "consul.home.goodkind.io"
-consul_datacenter: home
-consul_domain: int
-consul_agent_enabled: true
-consul_version: "1.20.1"
-consul_data_dir: /var/lib/consul
-# eth0 on every guest; the vault hypervisor overrides this to vmbr0 in the inventory.
-consul_bind_interface: eth0
-
-# ----------------------------------------------------------------------------
 # mwan ifmgr
 # ----------------------------------------------------------------------------
 # Base off. Only the MWAN VM scopes (mwan_servers, test_mwan_servers) enable the
@@ -94,18 +82,3 @@ mwan_ifmgr_wan_enabled: false
 cloudflared_service_after: network-online.target
 cloudflared_service_wants: network-online.target
 
-# Static IP fallbacks (used when Consul is unavailable)
-# Derived from service_mapping (single source of truth)
-consul_static_ips: >-
-  {{
-    dict(
-      service_mapping | dict2items
-      | selectattr('value.ipv6', 'defined')
-      | map(attribute='key')
-      | zip(
-          service_mapping | dict2items
-          | selectattr('value.ipv6', 'defined')
-          | map(attribute='value.ipv6')
-        )
-    )
-  }}

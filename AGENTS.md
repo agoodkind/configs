@@ -108,7 +108,6 @@ capture forensics, and reset to a known-good state instead of improvising.
 - Do not create new docs unless the operator asks for them.
 - Use `git -C /Users/agoodkind/Sites/configs ...` because shell cwd is not
   reliable across worktrees and subshells.
-- Berylax is offline. Treat its notes as historical only.
 
 ## Implementation rules for agents
 

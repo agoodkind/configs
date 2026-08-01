@@ -3,9 +3,6 @@
 # Consumed by deploy-proxmox.yml when targeting `vault` in `vault_servers`.
 # Shared defaults live in proxmox_servers.yml.
 
-# Consul agent settings
-consul_bind_interface: vmbr0
-
 # Proxmox HTTP API host for `community.proxmox.proxmox_*` modules when
 # operating against vault. The dynamic inventory plugin uses its own URL.
 proxmox_api_host: "3d06:bad:b01::254"

@@ -16,7 +16,7 @@ A few services run on the router itself rather than on a guest. OPNsense runs Un
 
 ## WireGuard
 
-OPNsense is the single WireGuard hub for the homelab, so every roaming tunnel terminates on it. The tunnel that matters for infrastructure connects the suburban testbed hypervisor back to production, and the rest are personal access paths that let a few laptops and a phone reach the network from outside. An old tunnel to berylax remains in the configuration but does nothing while berylax is offline.
+OPNsense is the single WireGuard hub for the homelab, so every roaming tunnel terminates on it. The tunnel that matters for infrastructure connects the suburban testbed hypervisor back to production, and the rest are personal access paths that let a few laptops and a phone reach the network from outside.
 
 ## Where the current values live
 

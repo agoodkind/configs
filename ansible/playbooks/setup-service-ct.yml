@@ -5,7 +5,7 @@
 #
 # Required variables, provided by the importing deploy via import_playbook vars:
 #   container_group: the service inventory group to register the host into,
-#                    for example consul_servers.
+#                    for example adguard_servers.
 #   group_vars_file: path to the service group_vars, which define
 #                    service_hostname and service_ipv6_address from service_mapping.
 - name: Register the OpenTofu-created service container in inventory
