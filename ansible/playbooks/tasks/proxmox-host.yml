@@ -16,6 +16,16 @@
     update_cache: true
     cache_valid_time: 3600
 
+# Debian lets both netcat providers coexist and picks `nc` by alternatives
+# priority, so installing the openbsd build takes the name only while the
+# alternative stays in auto mode. Removing the traditional build makes the
+# outcome independent of that selection. Nothing on either hypervisor depends
+# on it.
+- name: Remove IPv6-incapable netcat
+  ansible.builtin.apt:
+    name: netcat-traditional
+    state: absent
+
 - name: Build mwan binary on controller
   ansible.builtin.import_tasks: build-mwan-binary.yml
 
