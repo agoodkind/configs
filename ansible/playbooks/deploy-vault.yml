@@ -1,0 +1,44 @@
+---
+# Vault-only host work that has no suburban equivalent, mirroring how
+# deploy-testbed.yml carries suburban-only host work.
+#
+# Vault carries the mbrains bridge, the Monkeybrains out-of-band uplink. The
+# bridge declaration is static; the host mwan-ifmgr oob role owns its dynamic
+# addressing. The two sysctl fragments keep RA learning on the bridge and
+# forwarding for the failover LXC transit path correct from boot.
+#
+# Shared hypervisor services (mwan ifmgr, watchdog, cloudflared OOB, base
+# packages) come from deploy-proxmox.yml.
+
+- name: Configure vault host extras
+  hosts: vault_servers
+  become: false
+  force_handlers: true
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Deploy mbrains bridge declaration
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/vault/mbrains-interfaces.conf"
+        dest: /etc/network/interfaces.d/mbrains
+        mode: "0644"
+
+    - name: Deploy mbrains sysctl settings
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/vault/mbrains-sysctl.conf"
+        dest: /etc/sysctl.d/60-mbrains.conf
+        mode: "0644"
+      notify: Reload sysctl settings
+
+    - name: Deploy forwarding sysctl for the failover LXC transit path
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/vault/forwarding-sysctl.conf"
+        dest: /etc/sysctl.d/99-ha-forwarding.conf
+        mode: "0644"
+      notify: Reload sysctl settings
+
+  handlers:
+    - name: Reload sysctl settings
+      ansible.builtin.command: sysctl --system
+      changed_when: true

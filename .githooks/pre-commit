@@ -12,7 +12,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Find all staged files that look like vault files
-staged_vault_files=$(git diff --cached --name-only | grep -E 'vault\.yml$|group_vars/.*/vault$|host_vars/.*/vault$' || true)
+staged_vault_files=$(git diff --cached --name-only | grep -E '(^|/)vault\.yml$|group_vars/.*/vault$|host_vars/.*/vault$' || true)
 
 if [ -z "$staged_vault_files" ]; then
   exit 0
