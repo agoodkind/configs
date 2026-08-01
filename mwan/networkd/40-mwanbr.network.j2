@@ -13,3 +13,11 @@ Address={{ mwan_internal_ipv6 }}
 # Enable forwarding for policy routing
 IPv4Forwarding=yes
 IPv6Forwarding=yes
+
+# Return route for the internal prefix via the OPNsense edge address. Without
+# it, replies to off-link LAN sources follow the WAN default and die upstream.
+# Declared here so networkd owns it and a reload cannot flush it, which
+# previously severed management SSH mid-deploy.
+[Route]
+Destination={{ mwan_internal_prefix }}
+Gateway={{ mwan_opnsense_edge_ipv6 }}
