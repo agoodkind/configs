@@ -29,6 +29,10 @@ const defaultVaultFile = "ansible/inventory/group_vars/all/vault.yml"
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		slog.Error("configs failed", "err", err)
+		var exitErr *exitCodeError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.code)
+		}
 		os.Exit(1)
 	}
 }
@@ -286,9 +290,22 @@ func runTofu(args []string) error {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		slog.Error("tofu command failed", "err", err)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return &exitCodeError{code: exitErr.ExitCode()}
+		}
 		return errors.New("tofu failed")
 	}
 	return nil
+}
+
+// exitCodeError carries a child process exit status to main, which exits with
+// the same code. Tofu distinguishes status 2 (pending changes under
+// -detailed-exitcode) from status 1 (error), and that distinction survives.
+type exitCodeError struct{ code int }
+
+func (e *exitCodeError) Error() string {
+	return fmt.Sprintf("tofu exited with status %d", e.code)
 }
 
 // tofuArgPattern accepts printable characters only. Arguments go to tofu as
