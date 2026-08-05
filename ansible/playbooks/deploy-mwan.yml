@@ -800,8 +800,8 @@
     - name: Playbook complete
       ansible.builtin.debug:
         msg: >-
-          Deploy playbook complete. MWAN VM will reboot in ~5 seconds.
-          Post-deploy health gate passed on {{ mwan_proxmox_delegate }}.
+          Deploy playbook complete. The MWAN VM rebooted and the post-deploy
+          health gate passed on {{ mwan_proxmox_delegate }}.
           Monitor watchdog logs on {{ mwan_proxmox_delegate }}.
       when: mwan_health_gate.rc == 0
 
