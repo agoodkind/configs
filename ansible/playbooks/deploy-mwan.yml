@@ -721,12 +721,14 @@
 
     # The gate watches the guest go down before it trusts an egress probe.
     # Without this phase a probe answered in the pre-reboot window passes
-    # trivially and proves nothing about the rebooted config.
+    # trivially and proves nothing about the rebooted config. The 180s budget
+    # covers the full service-stop sequence: prod's shutdown took over 60s on
+    # 2026-08-06 and a tighter budget failed the play on a reboot that fired.
     - name: Wait for the MWAN VM to drop for its reboot
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.script: >-
         {{ repo_root }}/proxmox/scripts/mwan-deploy-gate.sh
-        wait-down {{ mwan_config_mgmt_addr }} 60
+        wait-down {{ mwan_config_mgmt_addr }} 180
       register: mwan_reboot_observed
       failed_when: false
       changed_when: false
@@ -737,7 +739,7 @@
       ansible.builtin.fail:
         msg: >-
           The scheduled reboot never took {{ mwan_config_mgmt_addr }} down
-          within 60s, observed from {{ mwan_proxmox_delegate }}. The VM still
+          within 180s, observed from {{ mwan_proxmox_delegate }}. The VM still
           runs the config this deploy wrote, so no rollback was performed.
       when: mwan_reboot_observed.rc != 0
 
