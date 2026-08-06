@@ -9,10 +9,12 @@ want_facts: true
 # management address). Suppress the plugin's API-derived node IP so the
 # static entry stays authoritative.
 want_proxmox_nodes_ansible_host: false
+# LXC addresses live on net0. VMs carry no address in their net0 config, so
+# this compose silently skips them and the service_mapping plugin's
+# ansible_host stays authoritative. Cloud-init ipconfig0 is deliberately not
+# read: a stale value there once steered a deploy at a dead address (MWAN-204).
 compose:
-  ansible_host: >-
-    (proxmox_ipconfig0.ip6 if proxmox_ipconfig0 is defined
-    else proxmox_net0.ip6) | ansible.utils.ipaddr('address')
+  ansible_host: proxmox_net0.ip6 | ansible.utils.ipaddr('address')
   ansible_proxmox_host: proxmox_node
   ansible_proxmox_vmid: proxmox_vmid
   proxmox_vmtype: proxmox_type

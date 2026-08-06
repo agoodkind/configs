@@ -165,37 +165,14 @@ resource "proxmox_virtual_environment_vm" "mwan" {
     mac_address = "BC:24:11:E6:58:31"
   }
 
-  initialization {
-    datastore_id = "local-lvm"
-
-    ip_config {
-      ipv4 {
-        address = "10.250.0.113/24"
-        gateway = "10.250.0.1"
-      }
-      ipv6 {
-        address = "${local.service_mapping.mwan.ipv6}/64"
-        gateway = "3d06:bad:b01::1"
-      }
-    }
-
-    dns {
-      domain  = "home.goodkind.io"
-      servers = ["3d06:bad:b01::6", "10.250.0.6"]
-    }
-
-    user_account {
-      username = "root"
-    }
-  }
+  # No initialization block: the VM carries no cloud-init drive or values.
+  # The guest configures its addresses statically via systemd-networkd, and
+  # inventory reads them from service_mapping (MWAN-204).
 
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
       kvm_arguments,
-      # The live VM carries cloud-init values without an attached cloud-init
-      # drive; managing initialization would attach one on apply.
-      initialization,
     ]
   }
 }
