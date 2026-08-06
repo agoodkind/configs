@@ -206,9 +206,14 @@
     # The mwan VMs boot from the static systemd-networkd config this deploy
     # renders; cloud-init only ever fed inventory drift (MWAN-204), so its
     # package stays absent.
-    - name: Remove cloud-init package
+    - name: Remove cloud-init and cloud-image helper packages
       ansible.builtin.apt:
-        name: cloud-init
+        name:
+          - cloud-init
+          - cloud-guest-utils
+          - cloud-image-utils
+          - cloud-initramfs-growroot
+          - cloud-utils
         state: absent
         purge: true
 
