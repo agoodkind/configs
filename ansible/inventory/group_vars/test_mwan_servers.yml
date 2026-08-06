@@ -83,8 +83,8 @@ mwan_enabled_services:
   - nftables
   # mwan-update-npt (the shell NPT oneshot) is intentionally absent: the
   # testbed runs the native Go npt module authoritatively
-  # (mwan_ifmgr_npt_shadow_mode false), so deploy-mwan.yml removes the unit
-  # and the 55-update-npt.sh dispatcher hook. Re-add it here and set
+  # (mwan_ifmgr_npt_shadow_mode false), so deploy-mwan.yml never deploys the
+  # unit or the 55-update-npt.sh dispatcher hook here. Re-add it here and set
   # mwan_ifmgr_npt_shadow_mode true to revert to the shell baseline.
   # mwan-health (the shell health daemon) is intentionally absent: the testbed
   # runs the native Go health module authoritatively (mwan_ifmgr_health_shadow_mode

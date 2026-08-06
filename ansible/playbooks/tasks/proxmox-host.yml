@@ -242,16 +242,6 @@
   notify: Restart mwan-watchdog
   when: mwan_watchdog_enabled | bool
 
-- name: Remove legacy default-name mwan-watchdog unit when custom name is in use
-  ansible.builtin.file:
-    path: /etc/systemd/system/mwan-watchdog.service
-    state: absent
-  register: proxmox_mwan_watchdog_legacy_unit_removed
-  notify: Restart mwan-watchdog
-  when:
-    - mwan_watchdog_enabled | bool
-    - mwan_watchdog_service_name != 'mwan-watchdog'
-
 - name: Ensure mwan-watchdog service is enabled and started
   ansible.builtin.systemd:
     name: "{{ mwan_watchdog_service_name }}"
