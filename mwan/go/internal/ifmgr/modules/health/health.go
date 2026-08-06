@@ -132,10 +132,11 @@ type wanStatus struct {
 }
 
 type probeResult struct {
-	Passed        bool
-	V6Successes   int
-	V4Successes   int
-	HTTPSuccesses int
+	Passed         bool
+	V6Successes    int
+	V4Successes    int
+	HTTP6Successes int
+	HTTP4Successes int
 }
 
 type transition struct {
@@ -157,9 +158,10 @@ type Module struct {
 	reconcilePending bool
 	statuses         map[string]wanStatus
 
-	probeV4   pingFunc
-	probeV6   pingFunc
-	probeHTTP httpFunc
+	probeV4    pingFunc
+	probeV6    pingFunc
+	probeHTTP6 httpFunc
+	probeHTTP4 httpFunc
 }
 
 // Init implements ifmgr.Module and binds the steady-state loop to daemon
@@ -190,8 +192,11 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	if m.probeV6 == nil {
 		m.probeV6 = netif.Ping6
 	}
-	if m.probeHTTP == nil {
-		m.probeHTTP = netif.HTTPCheck
+	if m.probeHTTP6 == nil {
+		m.probeHTTP6 = netif.HTTPCheck6
+	}
+	if m.probeHTTP4 == nil {
+		m.probeHTTP4 = netif.HTTPCheck4
 	}
 	if err := m.loadStatuses(ctx, log); err != nil {
 		return err
@@ -312,7 +317,8 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 			"passed", result.Passed,
 			"v6_successes", result.V6Successes,
 			"v4_successes", result.V4Successes,
-			"http_successes", result.HTTPSuccesses,
+			"http6_successes", result.HTTP6Successes,
+			"http4_successes", result.HTTP4Successes,
 			"state", next.State,
 			"ok_count", next.OKCount,
 			"fail_count", next.FailCount,
@@ -332,39 +338,57 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 func (m *Module) probeWAN(ctx context.Context, wan WAN, log *slog.Logger) probeResult {
 	v6Successes := m.probeTargets(ctx, wan, wan.targetsV6(m.cfg), m.probeV6)
 	v4Successes := m.probeTargets(ctx, wan, wan.targetsV4(m.cfg), m.probeV4)
-	httpSuccesses := 0
+	http6Successes := m.probeHTTPURLs(ctx, wan, "inet6", m.probeHTTP6, log)
+	http4Successes := m.probeHTTPURLs(ctx, wan, "inet", m.probeHTTP4, log)
+	// Verdict matches health-check.sh check_wan_health: each address family
+	// forms its own leg (ping threshold OR at least one HTTP success in that
+	// family), and the WAN is healthy when the IPv6 leg (preferred, the P0
+	// signal) or the IPv4 leg (fallback) passes. Both families always probe
+	// (v6 primary, v4 always); an IPv4-only HTTP success never vouches for
+	// IPv6 and the reverse.
+	successThreshold := wan.successThreshold(m.cfg)
+	passed := v6Successes >= successThreshold ||
+		http6Successes >= 1 ||
+		v4Successes >= successThreshold ||
+		http4Successes >= 1
+	return probeResult{
+		Passed:         passed,
+		V6Successes:    v6Successes,
+		V4Successes:    v4Successes,
+		HTTP6Successes: http6Successes,
+		HTTP4Successes: http4Successes,
+	}
+}
+
+// probeHTTPURLs runs every configured HTTP URL through one family-forced
+// probe and counts successes for that family's verdict leg.
+func (m *Module) probeHTTPURLs(
+	ctx context.Context,
+	wan WAN,
+	family string,
+	probe httpFunc,
+	log *slog.Logger,
+) int {
+	successes := 0
 	for _, url := range wan.httpURLs(m.cfg) {
-		statusCode, err := m.probeHTTP(ctx, wan.Iface, url, m.cfg.Timeout)
+		statusCode, err := probe(ctx, wan.Iface, url, m.cfg.Timeout)
 		reachable := err == nil
 		if reachable {
-			httpSuccesses++
+			successes++
 		}
 		log.DebugContext(
 			ctx,
 			"health: HTTP probe result",
 			"wan", wan.Name,
 			"iface", wan.Iface,
+			"family", family,
 			"url", url,
 			"status_code", statusCode,
 			"reachable", reachable,
 			"err", err,
 		)
 	}
-	// Verdict matches health-check.sh check_wan_health: the WAN is healthy when
-	// IPv6 meets the threshold (preferred, the P0 signal) OR IPv4 meets it
-	// (fallback), or any HTTP probe succeeds. Both families are always probed
-	// (v6 primary, v4 always); v6 leads, but v4 or HTTP alone can still keep a
-	// WAN up, so a v4 flap never marks a healthy-v6 WAN down.
-	successThreshold := wan.successThreshold(m.cfg)
-	passed := v6Successes >= successThreshold ||
-		v4Successes >= successThreshold ||
-		httpSuccesses >= 1
-	return probeResult{
-		Passed:        passed,
-		V6Successes:   v6Successes,
-		V4Successes:   v4Successes,
-		HTTPSuccesses: httpSuccesses,
-	}
+	return successes
 }
 
 func (m *Module) probeTargets(
