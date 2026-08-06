@@ -26,6 +26,12 @@ tack_kafka_cluster_id: "qsUvMozrSTCj9bmZ4_VozA"
 # provision may run the one-time `fdbcli configure new` on a fresh fdb volume.
 tack_allow_fdb_init: true
 
+# QA data generator (TACK-245/TACK-338). `ops qa datagen` writes only when this
+# marker is exactly qa or local, so QA opts in here and production renders it
+# empty. Run the generator through the app service, which reaches FoundationDB
+# and holds the audit DSNs.
+tack_datagen_allow_target: "qa"
+
 # GHCR pull token. Classic PAT with read:packages scope.
 ghcr_pull_token: "{{ vault_tack_qa_ghcr_pull_token }}"
 

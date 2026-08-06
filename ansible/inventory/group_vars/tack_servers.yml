@@ -19,6 +19,12 @@ tack_kafka_cluster_id: "r8jB0c2ISFubOB2oWkKmEQ"
 # still runs every deploy as a safe idempotent no-op (migrate, seed roles).
 tack_allow_fdb_init: false
 
+# QA data generator (TACK-245/TACK-338). NEVER set this on production. The
+# generator writes only when the marker is exactly qa or local, so an empty
+# value makes `ops qa datagen --commit` refuse here. It also refuses on any
+# production-signature endpoint, but this marker is the primary gate.
+tack_datagen_allow_target: ""
+
 # GHCR pull token. Classic PAT with read:packages scope.
 ghcr_pull_token: "{{ vault_tack_ghcr_pull_token }}"
 
