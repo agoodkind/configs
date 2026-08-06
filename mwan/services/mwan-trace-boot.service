@@ -7,7 +7,7 @@ Wants=network-pre.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/mwan-trace-boot.sh
+ExecStart=/usr/local/bin/mwan trace-boot
 
 [Install]
 WantedBy=multi-user.target

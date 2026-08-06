@@ -364,7 +364,9 @@ wpa_cli status
 systemctl status wpa_supplicant-mwan systemd-networkd networkd-dispatcher \
   nftables mwan-health cloudflared
 mwan debug npt              # native inspection: prefixes|routes|policy|status|stats|sim4|sim6|npt
-/usr/local/bin/mwan-debug   # legacy shell inspector, being ported to mwan debug
+mwan debug connectivity     # active probes: ping4|ping6|curl4|curl6|lb4|lb6|lb4-ifaces|lb6-ifaces
+mwan debug systemd          # failed/stuck units and slowest starters over D-Bus
+mwan debug trace-tail       # follow the daemon JSON log, one line per event, filter by trace id
 ```
 
 IPv6 sanity checks:

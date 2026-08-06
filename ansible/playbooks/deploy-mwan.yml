@@ -513,26 +513,7 @@
         - scripts/mwan-update-npt-all.sh
         - scripts/mwan-wait-npt-prereqs.sh
         - scripts/mwan-wait-routes-prereqs.sh
-        - scripts/mwan-trace-boot.sh
         - scripts/wpa-wait-att-iface.sh
-
-    - name: Ensure /usr/local/share/mwan exists
-      ansible.builtin.file:
-        path: /usr/local/share/mwan
-        state: directory
-        mode: "0755"
-
-    - name: Deploy jq helper for `mwan trace-tail`
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/scripts/trace-tail.jq"
-        dest: /usr/local/share/mwan/trace-tail.jq
-        mode: "0644"
-
-    - name: Deploy mwan debug helper (shell entrypoint)
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/scripts/mwan-debug.sh"
-        dest: /usr/local/bin/mwan-debug
-        mode: "0755"
 
     - name: Deploy DHCPv6-PD prefix finder helper
       ansible.builtin.copy:

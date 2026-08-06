@@ -46,6 +46,10 @@ const (
 	debugViewSim6         debugView = "sim6"
 	debugViewStats        debugView = "stats"
 	debugViewStatus       debugView = "status"
+	debugViewSystemd      debugView = "systemd"
+	debugViewTraceStart   debugView = "trace-start"
+	debugViewTraceStop    debugView = "trace-stop"
+	debugViewTraceTail    debugView = "trace-tail"
 )
 
 type debugProbeDispatcher func(
@@ -102,6 +106,14 @@ func runDebugWithWriters(
 		err = showDebugSimulation(ctx, output, diagnostics, logger, cfg, debugFamilyV4)
 	case debugViewSim6:
 		err = showDebugSimulation(ctx, output, diagnostics, logger, cfg, debugFamilyV6)
+	case debugViewSystemd:
+		err = showDebugSystemd(ctx, output, logger)
+	case debugViewTraceStart:
+		err = showDebugTraceStart(ctx, output, logger, cfg, args[1:])
+	case debugViewTraceTail:
+		err = showDebugTraceTail(ctx, output, logger, cfg, args[1:])
+	case debugViewTraceStop:
+		err = showDebugTraceStop(output)
 	case debugViewConnectivity,
 		debugViewPing4,
 		debugViewPing6,
@@ -136,7 +148,8 @@ func printDebugUsage(output io.Writer) {
 		"usage: mwan debug "+
 			"<npt|prefixes|routes|policy|status|stats|sim4|sim6|"+
 			"connectivity|ping4|ping6|curl4|curl6|lb4|lb6|"+
-			"lb4-ifaces|lb6-ifaces>",
+			"lb4-ifaces|lb6-ifaces|systemd|"+
+			"trace-start|trace-tail|trace-stop>",
 	)
 }
 
