@@ -77,11 +77,15 @@ mwan_att_vlan_id: ""
 # bringup-att-vlan are prod-only).
 mwan_enabled_services:
   - mwan-trace-boot
-  - mwan-update-npt
   - mwan-update-att-pinned-dests.timer
   - systemd-networkd
   - networkd-dispatcher
   - nftables
+  # mwan-update-npt (the shell NPT oneshot) is intentionally absent: the
+  # testbed runs the native Go npt module authoritatively
+  # (mwan_ifmgr_npt_shadow_mode false), so deploy-mwan.yml removes the unit
+  # and the 55-update-npt.sh dispatcher hook. Re-add it here and set
+  # mwan_ifmgr_npt_shadow_mode true to revert to the shell baseline.
   # mwan-health (the shell health daemon) is intentionally absent: the testbed
   # runs the native Go health module authoritatively (mwan_ifmgr_health_shadow_mode
   # false), so the Go module writes /var/run/mwan-health.state. The shell daemon
