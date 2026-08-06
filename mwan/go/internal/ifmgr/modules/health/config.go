@@ -212,7 +212,8 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		statuses:         nil,
 		probeV4:          netif.Ping4,
 		probeV6:          netif.Ping6,
-		probeHTTP:        netif.HTTPCheck,
+		probeHTTP6:       netif.HTTPCheck6,
+		probeHTTP4:       netif.HTTPCheck4,
 	}, nil
 }
 

@@ -177,6 +177,34 @@ func HTTPCheck(
 	return result.StatusCode, nil
 }
 
+// HTTPCheck6 forces the probe over IPv6 (tcp6) so the HTTP leg contributes to
+// the same address family as the ping leg it backs, matching the shell's
+// separate curl -6 probe.
+func HTTPCheck6(
+	ctx context.Context, iface string, url string, timeout time.Duration,
+) (int, error) {
+	result, err := httpGet(
+		ctx, iface, string(httpFamilyV6), url, timeout, false, "HTTPCheck6",
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.StatusCode, nil
+}
+
+// HTTPCheck4 forces the probe over IPv4 (tcp4), the curl -4 twin of HTTPCheck6.
+func HTTPCheck4(
+	ctx context.Context, iface string, url string, timeout time.Duration,
+) (int, error) {
+	result, err := httpGet(
+		ctx, iface, string(httpFamilyV4), url, timeout, false, "HTTPCheck4",
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.StatusCode, nil
+}
+
 // HTTPGet sends one interface-bound request with an optional address family.
 // The family accepts "inet" for IPv4, "inet6" for IPv6, or empty for the
 // default dual-stack behavior.

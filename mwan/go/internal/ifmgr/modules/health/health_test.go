@@ -463,9 +463,7 @@ func TestProbeWANHTTPSucceedsWhenBothPingFamiliesFail(t *testing.T) {
 	) (time.Duration, error) {
 		return 0, errors.New("ping unavailable")
 	}
-	module := testProbeModule(pingFail, pingFail)
-	module.cfg.HTTPURLs = []string{"http://example.test/probe"}
-	module.probeHTTP = func(
+	httpOK := func(
 		_ context.Context,
 		_ string,
 		_ string,
@@ -473,14 +471,38 @@ func TestProbeWANHTTPSucceedsWhenBothPingFamiliesFail(t *testing.T) {
 	) (int, error) {
 		return 200, nil
 	}
+	httpFail := func(
+		_ context.Context,
+		_ string,
+		_ string,
+		_ time.Duration,
+	) (int, error) {
+		return 0, errors.New("http unavailable")
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	result := module.probeWAN(
-		context.Background(),
-		module.cfg.WANs[0],
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
-	if !result.Passed {
-		t.Fatal("a successful HTTP probe must keep the WAN healthy when both ping families fail")
+	cases := []struct {
+		name     string
+		probe6   httpFunc
+		probe4   httpFunc
+		wantPass bool
+	}{
+		{name: "http6 alone keeps the WAN healthy", probe6: httpOK, probe4: httpFail, wantPass: true},
+		{name: "http4 alone keeps the WAN healthy", probe6: httpFail, probe4: httpOK, wantPass: true},
+		{name: "both HTTP families failing marks the cycle failed", probe6: httpFail, probe4: httpFail, wantPass: false},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			module := testProbeModule(pingFail, pingFail)
+			module.cfg.HTTPURLs = []string{"http://example.test/probe"}
+			module.probeHTTP6 = testCase.probe6
+			module.probeHTTP4 = testCase.probe4
+			result := module.probeWAN(context.Background(), module.cfg.WANs[0], log)
+			if result.Passed != testCase.wantPass {
+				t.Fatalf("Passed = %t, want %t", result.Passed, testCase.wantPass)
+			}
+		})
 	}
 }
 
