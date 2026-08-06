@@ -420,11 +420,22 @@
         dest: /etc/networkd-dispatcher/routable.d/50-update-routes.sh
         mode: "0755"
 
+    # Only deploy the shell NPT trigger while the shell owns the ip6 nat table
+    # (Go npt in shadow). On an authoritative-Go host the hook is removed so the
+    # module is the single writer; the module's own nft watcher covers the
+    # dispatcher's job of reconverging after network events.
     - name: Deploy networkd-dispatcher hook for NPT updates
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/hooks/55-update-npt.sh"
         dest: /etc/networkd-dispatcher/routable.d/55-update-npt.sh
         mode: "0755"
+      when: mwan_ifmgr_npt_shadow_mode | bool
+
+    - name: Remove the NPT dispatcher hook when Go npt is authoritative
+      ansible.builtin.file:
+        path: /etc/networkd-dispatcher/routable.d/55-update-npt.sh
+        state: absent
+      when: not (mwan_ifmgr_npt_shadow_mode | bool)
 
     - name: Enable networkd-dispatcher
       ansible.builtin.systemd:
@@ -593,11 +604,14 @@
         dest: /etc/systemd/system/mwan-update-routes.service
         mode: "0644"
 
+    # Only deploy the shell NPT oneshot while the shell owns the ip6 nat table
+    # (Go npt in shadow); the authoritative-Go teardown below removes it.
     - name: Deploy mwan update-npt oneshot service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-update-npt.service"
         dest: /etc/systemd/system/mwan-update-npt.service
         mode: "0644"
+      when: mwan_ifmgr_npt_shadow_mode | bool
 
     - name: Deploy mwan boot trace service
       ansible.builtin.copy:
@@ -696,6 +710,43 @@
       when:
         - not (mwan_ifmgr_health_shadow_mode | bool)
         - mwan_health_unit_removed.changed | default(false)
+
+    # When the native Go npt module is authoritative, it owns the ip6 nat
+    # table. Stop, disable, and remove the shell oneshot so nothing else
+    # rewrites those rules; the dispatcher hook was removed above. Mirrors the
+    # mwan-health teardown. mwan-update-npt is absent from
+    # mwan_enabled_services on authoritative hosts, so the enable loop never
+    # touches it here.
+    - name: Stat shell mwan-update-npt unit (authoritative teardown)
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mwan-update-npt.service
+      register: mwan_update_npt_unit
+      when: not (mwan_ifmgr_npt_shadow_mode | bool)
+
+    - name: Stop and disable shell mwan-update-npt when Go npt is authoritative
+      ansible.builtin.systemd:
+        name: mwan-update-npt
+        state: stopped
+        enabled: false
+      when:
+        - not (mwan_ifmgr_npt_shadow_mode | bool)
+        - mwan_update_npt_unit.stat.exists
+
+    - name: Remove shell mwan-update-npt unit when Go npt is authoritative
+      ansible.builtin.file:
+        path: /etc/systemd/system/mwan-update-npt.service
+        state: absent
+      register: mwan_update_npt_unit_removed
+      when:
+        - not (mwan_ifmgr_npt_shadow_mode | bool)
+        - mwan_update_npt_unit.stat.exists
+
+    - name: Reload systemd after removing shell mwan-update-npt unit
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when:
+        - not (mwan_ifmgr_npt_shadow_mode | bool)
+        - mwan_update_npt_unit_removed.changed | default(false)
 
     # ============================================================================
     # POST-DEPLOY: Reboot for clean state
