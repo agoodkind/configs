@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"goodkind.io/mwan/internal/ifmgr"
@@ -24,6 +25,14 @@ const (
 	wanNameATT          = "att"
 	wanNameWebpass      = "webpass"
 	wanNameMonkeybrains = "monkeybrains"
+
+	// alertKindNextHopUnresolved is the alert kind for an internal next hop
+	// with no usable neighbour entry.
+	alertKindNextHopUnresolved = "wan_routes_next_hop_unresolved"
+	// nextHopAlertThreshold is how many consecutive reconciles the next hop
+	// must fail to resolve before the alert fires. Two ticks tolerate one
+	// in-flight NDP resolution without a false alert.
+	nextHopAlertThreshold = 2
 )
 
 // Config is the parsed [ifmgr.modules.wan.routes] runtime config.
@@ -75,6 +84,18 @@ type Module struct {
 	ifmgr.BaseModule
 
 	cfg Config
+
+	// resolveNextHop checks whether the internal next hop resolves in the
+	// neighbour table. Injectable for tests; defaults to netif.NextHopResolves.
+	resolveNextHop func(
+		ctx context.Context, log *slog.Logger, dev string, addr string,
+	) (bool, error)
+
+	// nextHopMisses counts consecutive reconciles on which the internal next
+	// hop did not resolve. Guarded by the embedded mutex; read by
+	// EvaluateAlerts, which fires once the count reaches
+	// nextHopAlertThreshold so one in-flight NDP resolution never alerts.
+	nextHopMisses int
 }
 
 // Init implements ifmgr.Module.
@@ -94,6 +115,9 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	if err := validateConfig(m.cfg); err != nil {
 		log.WarnContext(ctx, "wan.routes: validateConfig failed", "err", err)
 		return err
+	}
+	if m.resolveNextHop == nil {
+		m.resolveNextHop = netif.NextHopResolves
 	}
 
 	ifmgr.StartIfaceMonitors(ctx, log, moduleName, watchedIfaces(m.cfg), m.onMonitorEvent)
@@ -154,7 +178,58 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	if err := removeDisabledRuleSlots(ctx, log, m.cfg, rules); err != nil {
 		reconcileErr = errors.Join(reconcileErr, err)
 	}
+	m.checkNextHopLocked(ctx, log)
 	return reconcileErr
+}
+
+// checkNextHopLocked probes the internal next hop's neighbour entry and
+// updates the consecutive-miss counter EvaluateAlerts reads. The internal
+// prefix routes just installed use this address as their Via, so an
+// unresolvable entry means they black-hole. A check error changes nothing:
+// unknown is not evidence in either direction. Callers hold the module lock.
+func (m *Module) checkNextHopLocked(ctx context.Context, log *slog.Logger) {
+	resolved, err := m.resolveNextHop(ctx, log, m.cfg.InternalIface, m.cfg.OpnsenseEdgeV6)
+	if err != nil {
+		log.WarnContext(ctx, "wan.routes: next hop check failed",
+			"iface", m.cfg.InternalIface, "next_hop", m.cfg.OpnsenseEdgeV6, "err", err)
+		return
+	}
+	if resolved {
+		m.nextHopMisses = 0
+		return
+	}
+	m.nextHopMisses++
+	log.WarnContext(ctx, "wan.routes: internal next hop did not resolve",
+		"iface", m.cfg.InternalIface,
+		"next_hop", m.cfg.OpnsenseEdgeV6,
+		"consecutive_misses", m.nextHopMisses)
+}
+
+// EvaluateAlerts implements ifmgr.Module. It raises a standing alert once the
+// internal next hop has failed to resolve on nextHopAlertThreshold
+// consecutive reconciles, and resolves it when resolution returns.
+func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Time) {
+	if m.Env == nil || m.Env.Alerts == nil {
+		return
+	}
+	m.Lock()
+	misses := m.nextHopMisses
+	m.Unlock()
+
+	fields := []slog.Attr{
+		slog.String("iface", m.cfg.InternalIface),
+		slog.String("next_hop", m.cfg.OpnsenseEdgeV6),
+	}
+	if misses >= nextHopAlertThreshold {
+		m.Env.Alerts.NotifyContext(ctx, now, slog.LevelWarn,
+			alertKindNextHopUnresolved, m.cfg.OpnsenseEdgeV6,
+			"wan.routes: internal next hop does not resolve; routes via it black-hole",
+			fields...)
+		return
+	}
+	m.Env.Alerts.ResolveContext(ctx, now,
+		alertKindNextHopUnresolved, m.cfg.OpnsenseEdgeV6,
+		"wan.routes: internal next hop resolves again", fields...)
 }
 
 func (m *Module) onMonitorEvent(ctx context.Context, log *slog.Logger, event netif.Event) {
@@ -623,6 +698,10 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	return &Module{
 		BaseModule: ifmgr.NewBaseModule(moduleName),
 		cfg:        c,
+		// Init fills resolveNextHop with the netif implementation; the
+		// counter starts at zero misses.
+		resolveNextHop: nil,
+		nextHopMisses:  0,
 	}, nil
 }
 
