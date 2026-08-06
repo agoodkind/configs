@@ -203,6 +203,15 @@
           - conntrack
         state: present
 
+    # The mwan VMs boot from the static systemd-networkd config this deploy
+    # renders; cloud-init only ever fed inventory drift (MWAN-204), so its
+    # package stays absent.
+    - name: Remove cloud-init package
+      ansible.builtin.apt:
+        name: cloud-init
+        state: absent
+        purge: true
+
     - name: Create MWAN runtime config directory
       ansible.builtin.file:
         path: /etc/mwan

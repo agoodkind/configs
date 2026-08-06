@@ -94,31 +94,13 @@ resource "proxmox_virtual_environment_vm" "test_mwan" {
     mac_address = "BC:24:11:3D:CE:CC"
   }
 
-  initialization {
-    # local-lvm is disabled on suburban; the cloud-init drive lives on the same
-    # active zfs pool as the disk.
-    datastore_id = "local-zfs"
-
-    ip_config {
-      ipv4 {
-        address = "dhcp"
-      }
-      ipv6 {
-        address = "${local.service_mapping.test_mwan.ipv6}/64"
-        gateway = local.service_mapping.opnsense_test.ipv6_vmnet
-      }
-    }
-
-    user_account {
-      username = "root"
-      keys     = [var.ssh_keys]
-    }
-  }
+  # No initialization block: the VM carries no cloud-init drive or values.
+  # The guest configures its addresses statically via systemd-networkd, and
+  # inventory reads them from service_mapping (MWAN-204).
 
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
-      initialization[0].user_account[0].keys,
       # Ansible owns the live `args` field (vhost-vsock-pci); the Proxmox API
       # rejects token writes to it, so tofu must not try to change or null it.
       kvm_arguments,
