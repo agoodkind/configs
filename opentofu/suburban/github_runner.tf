@@ -29,7 +29,7 @@ resource "proxmox_virtual_environment_container" "github_runner" {
   network_interface {
     name        = "eth0"
     bridge      = var.github_runner.bridge
-    mac_address = var.github_runner.mac_address
+    mac_address = local.service_mapping.github_runner.mac_address
   }
 
   disk {

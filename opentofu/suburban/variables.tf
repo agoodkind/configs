@@ -39,7 +39,6 @@ variable "github_runner" {
     hostname         = string
     ipv6_gateway     = string
     bridge           = string
-    mac_address      = string
     disk_size_gb     = number
     memory_mb        = number
     cpu_cores        = number
@@ -52,7 +51,6 @@ variable "github_runner" {
     hostname         = "github-runner"
     ipv6_gateway     = "3d06:bad:b01:210::1"
     bridge           = "vmbrtrunk"
-    mac_address      = "BC:24:11:04:20:00"
     disk_size_gb     = 80
     memory_mb        = 12288
     cpu_cores        = 6
