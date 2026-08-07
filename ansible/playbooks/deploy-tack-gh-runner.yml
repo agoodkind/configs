@@ -4,7 +4,7 @@
   vars:
     target_hosts: github_runner_servers
 
-- name: Provision repository-scoped GitHub runners
+- name: Provision Tack repository-scoped GitHub Actions runners
   hosts: github_runner_servers
   become: true
   environment:

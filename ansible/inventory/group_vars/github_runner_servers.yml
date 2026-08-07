@@ -5,7 +5,7 @@ service_hostname: "{{ service_mapping.github_runner.hostname }}"
 service_ipv6_address: "{{ service_mapping.github_runner.ipv6 }}/64"
 service_mac_address: "{{ service_mapping.github_runner.mac_address }}"
 
-github_runner_enabled: false
+github_runner_enabled: true
 github_runner_install_dir: /opt/github-runner
 github_runner_image_tag: myoung34/github-runner:2.336.0-ubuntu-noble
 github_runner_image_digest: >-
