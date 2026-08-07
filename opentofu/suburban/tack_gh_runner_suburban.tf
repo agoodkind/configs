@@ -1,16 +1,16 @@
-resource "proxmox_virtual_environment_container" "tack_qa_suburban" {
+resource "proxmox_virtual_environment_container" "tack_gh_runner_suburban" {
   node_name = "hypervisor"
-  vm_id     = local.service_mapping.tack_qa_suburban.vmid
+  vm_id     = local.service_mapping.tack_gh_runner_suburban.vmid
 
   depends_on = [
     proxmox_network_linux_bridge.trunk_suburban,
   ]
 
   initialization {
-    hostname = local.service_mapping.tack_qa_suburban.hostname
+    hostname = local.service_mapping.tack_gh_runner_suburban.hostname
     ip_config {
       ipv6 {
-        address = "${local.service_mapping.tack_qa_suburban.ipv6}/64"
+        address = "${local.service_mapping.tack_gh_runner_suburban.ipv6}/64"
         gateway = local.service_mapping.opnsense_suburban.ipv6_vmnet
       }
     }
@@ -29,37 +29,36 @@ resource "proxmox_virtual_environment_container" "tack_qa_suburban" {
   network_interface {
     name        = "eth0"
     bridge      = proxmox_network_linux_bridge.trunk_suburban.name
-    mac_address = "BC:24:11:04:00:00"
+    mac_address = local.service_mapping.tack_gh_runner_suburban.mac_address
   }
 
   disk {
     datastore_id = "local-zfs"
-    size         = 40
+    size         = 80
   }
 
   memory {
-    dedicated = 8192
+    dedicated = 12288
   }
 
   cpu {
-    cores = 2
+    cores = 6
   }
 
-  tags = ["lxc", "tack", "qa", "docker"]
+  tags = ["ci", "docker", "github-runner", "lxc"]
 
   operating_system {
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     type             = "debian"
   }
 
-  started      = true
-  unprivileged = true
+  started       = true
+  start_on_boot = true
+  unprivileged  = true
 
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
-      # Proxmox does not return injected SSH keys, so a re-import would read
-      # the configured keys as an addition that forces replacement.
       initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
