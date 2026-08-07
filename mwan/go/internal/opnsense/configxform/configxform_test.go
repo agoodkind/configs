@@ -37,7 +37,7 @@ func defaultSubs() Substitutions {
 			// Note: domain is intentionally absent here. The domain text_literal
 			// below rewrites the prod "home.goodkind.io" value in the serialized
 			// XML and avoids double-prefixing the testbed domain.
-			{Name: "hostname", XPath: "//opnsense/system/hostname", NewValue: "router-test"},
+			{Name: "hostname", XPath: "//opnsense/system/hostname", NewValue: "router"},
 			{Name: "wan ipaddr", XPath: "//opnsense/interfaces/wan/ipaddr", NewValue: "10.240.250.2"},
 			{Name: "wan ipaddrv6", XPath: "//opnsense/interfaces/wan/ipaddrv6", NewValue: "3d06:bad:b01:2fe::2"},
 			{Name: "vmnet v4", XPath: "//opnsense/interfaces/opt6/ipaddr", NewValue: "10.240.4.1"},
@@ -49,7 +49,7 @@ func defaultSubs() Substitutions {
 		},
 		TextLiterals: []TextLiteral{
 			{Name: "nat source net", From: "10.250.0.0/24", To: "10.240.0.0/24"},
-			{Name: "domain literal", From: "home.goodkind.io", To: "test.home.goodkind.io"},
+			{Name: "domain literal", From: "home.goodkind.io", To: "suburban.goodkind.io"},
 		},
 	}
 }
@@ -86,8 +86,8 @@ func TestApplyXPathHostnameAndDomain(t *testing.T) {
 		xpath string
 		want  string
 	}{
-		{"//opnsense/system/hostname", "router-test"},
-		{"//opnsense/system/domain", "test.home.goodkind.io"},
+		{"//opnsense/system/hostname", "router"},
+		{"//opnsense/system/domain", "suburban.goodkind.io"},
 		{"//opnsense/interfaces/wan/ipaddr", "10.240.250.2"},
 		{"//opnsense/interfaces/wan/ipaddrv6", "3d06:bad:b01:2fe::2"},
 		{"//opnsense/interfaces/opt6/ipaddr", "10.240.4.1"},
@@ -210,7 +210,7 @@ func TestDecodeRoundTrip(t *testing.T) {
 xpath_sets:
   - name: "hostname"
     xpath: "//opnsense/system/hostname"
-    new_value: "router-test"
+    new_value: "router"
 remove_elements:
   - name: "wg peers"
     xpath: "//opnsense/OPNsense/wireguard/client/clients/client"
@@ -230,7 +230,7 @@ text_literals:
 	if len(got.DeviceNames) != 1 || got.DeviceNames[0].From != "iavf0" || got.DeviceNames[0].To != "vtnet0" {
 		t.Errorf("DeviceNames roundtrip mismatch: %+v", got.DeviceNames)
 	}
-	if len(got.XPathSets) != 1 || got.XPathSets[0].NewValue != "router-test" {
+	if len(got.XPathSets) != 1 || got.XPathSets[0].NewValue != "router" {
 		t.Errorf("XPathSets roundtrip mismatch: %+v", got.XPathSets)
 	}
 	if len(got.RemoveElements) != 1 {
@@ -354,8 +354,8 @@ func TestApplyDomainLiteralNoDoublePrefix(t *testing.T) {
 		t.Fatal("xpath //opnsense/system/domain matched no element")
 	}
 	gotDomain := strings.TrimSpace(domainEl.Text())
-	if gotDomain != "test.home.goodkind.io" {
-		t.Errorf("<domain> got %q, want %q", gotDomain, "test.home.goodkind.io")
+	if gotDomain != "suburban.goodkind.io" {
+		t.Errorf("<domain> got %q, want %q", gotDomain, "suburban.goodkind.io")
 	}
 
 	// The dnssearchdomain embedded copy must also be rewritten exactly once.
@@ -364,13 +364,13 @@ func TestApplyDomainLiteralNoDoublePrefix(t *testing.T) {
 		t.Fatal("xpath //opnsense/system/dnssearchdomain matched no element")
 	}
 	gotDS := strings.TrimSpace(dsEl.Text())
-	if gotDS != "router.test.home.goodkind.io" {
-		t.Errorf("<dnssearchdomain> got %q, want %q", gotDS, "router.test.home.goodkind.io")
+	if gotDS != "router.suburban.goodkind.io" {
+		t.Errorf("<dnssearchdomain> got %q, want %q", gotDS, "router.suburban.goodkind.io")
 	}
 
 	// No doubled prefix anywhere in the output.
-	if strings.Contains(string(out), "test.test.") {
-		t.Errorf("output contains doubled prefix 'test.test.'")
+	if strings.Contains(string(out), "suburban.suburban.goodkind.io") {
+		t.Error("output contains doubled suburban domain")
 	}
 }
 

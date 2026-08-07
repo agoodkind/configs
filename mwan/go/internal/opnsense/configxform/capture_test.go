@@ -44,12 +44,24 @@ func transformRealCapture(t *testing.T) []byte {
 // shape no longer matches the table fails here rather than at import time on
 // the testbed router.
 func TestApplyRealCaptureWithCommittedSubstitutions(t *testing.T) {
-	doc := mustParse(t, transformRealCapture(t))
+	out := transformRealCapture(t)
+	doc := mustParse(t, out)
 
-	if el := doc.FindElement("//opnsense/system/hostname"); el == nil {
-		t.Error("transformed capture has no hostname element")
-	} else if got := strings.TrimSpace(el.Text()); got != "router-test" {
-		t.Errorf("hostname = %q, want router-test", got)
+	for _, tc := range []struct{ xpath, want string }{
+		{"//opnsense/system/hostname", "router"},
+		{"//opnsense/system/domain", "suburban.goodkind.io"},
+	} {
+		el := doc.FindElement(tc.xpath)
+		if el == nil {
+			t.Errorf("%s matched no element", tc.xpath)
+			continue
+		}
+		if got := strings.TrimSpace(el.Text()); got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.xpath, got, tc.want)
+		}
+	}
+	if strings.Contains(string(out), "test.home.goodkind.io") {
+		t.Error("transformed capture retains the retired test.home.goodkind.io domain")
 	}
 
 	for _, el := range doc.FindElements("//opnsense//if") {
