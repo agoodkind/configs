@@ -56,6 +56,9 @@ func showDebugTraceStart(
 	if traceID == "" {
 		traceID = time.Now().Format("20060102-150405") + "-debug"
 	}
+	// Sanitize here, not only inside writeTraceID, so the printed id, the log
+	// event, and the trace-tail hint all match the value on disk.
+	traceID = sanitizeTraceID(traceID)
 	if err := writeTraceID(traceID); err != nil {
 		return debugWrappedError(logger, "write trace id files", err)
 	}
