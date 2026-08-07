@@ -82,7 +82,11 @@ mwan_att_8021x_enabled: true
 # units; the testbed list omits them (gated off there).
 mwan_enabled_services:
   - mwan-trace-boot
-  - mwan-update-npt
+  # mwan-update-npt (the shell NPT oneshot) is intentionally absent: prod
+  # runs the native Go npt module authoritatively
+  # (mwan_ifmgr_npt_shadow_mode false), so deploy-mwan.yml never deploys
+  # the unit or the 55-update-npt.sh dispatcher hook here. Re-add it here
+  # and set mwan_ifmgr_npt_shadow_mode true to revert to the shell baseline.
   - mwan-update-att-pinned-dests.timer
   - bringup-att-vlan
   - systemd-networkd
@@ -376,9 +380,9 @@ mwan_rt_tables:
 # ----------------------------------------------------------------------------
 
 mwan_ifmgr_wan_enabled: true
-mwan_ifmgr_wan_shadow_mode: true
+mwan_ifmgr_wan_shadow_mode: false
 mwan_ifmgr_health_shadow_mode: false
-mwan_ifmgr_npt_shadow_mode: true
+mwan_ifmgr_npt_shadow_mode: false
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1

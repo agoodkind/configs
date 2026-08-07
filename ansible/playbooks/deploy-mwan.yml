@@ -381,11 +381,15 @@
       changed_when: false
       failed_when: false
 
+    # The shell route trigger deploys only where the shell owns policy routing
+    # (Go wan.routes in shadow). An authoritative-Go host never receives it;
+    # the module's iface monitors cover reconvergence after network events.
     - name: Deploy networkd-dispatcher hook for route updates
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/hooks/50-update-routes.sh"
         dest: /etc/networkd-dispatcher/routable.d/50-update-routes.sh
         mode: "0755"
+      when: mwan_ifmgr_wan_shadow_mode | bool
 
     # The shell NPT trigger deploys only where the shell owns the ip6 nat
     # table (Go npt in shadow). An authoritative-Go host never receives it;
@@ -507,13 +511,41 @@
         dest: /usr/local/bin/{{ item | basename }}
         mode: "0755"
       loop:
+        - scripts/wpa-wait-att-iface.sh
+
+    # Shell routing helpers deploy only where the shell owns policy routing
+    # (Go wan.routes in shadow).
+    - name: Deploy shell route helper scripts
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/{{ item }}"
+        dest: /usr/local/bin/{{ item | basename }}
+        mode: "0755"
+      loop:
         - scripts/update-routes.sh
-        - scripts/health-check.sh
+        - scripts/mwan-wait-routes-prereqs.sh
+      when: mwan_ifmgr_wan_shadow_mode | bool
+
+    # Shell NPT helpers deploy only where the shell owns the ip6 nat table
+    # (Go npt in shadow).
+    - name: Deploy shell NPT helper scripts
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/{{ item }}"
+        dest: /usr/local/bin/{{ item | basename }}
+        mode: "0755"
+      loop:
         - scripts/update-npt.sh
         - scripts/mwan-update-npt-all.sh
         - scripts/mwan-wait-npt-prereqs.sh
-        - scripts/mwan-wait-routes-prereqs.sh
-        - scripts/wpa-wait-att-iface.sh
+      when: mwan_ifmgr_npt_shadow_mode | bool
+
+    # The shell health daemon script deploys only where it is authoritative
+    # (Go health in shadow).
+    - name: Deploy shell health-check script
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/scripts/health-check.sh"
+        dest: /usr/local/bin/health-check.sh
+        mode: "0755"
+      when: mwan_ifmgr_health_shadow_mode | bool
 
     - name: Deploy DHCPv6-PD prefix finder helper
       ansible.builtin.copy:
@@ -539,11 +571,14 @@
         dest: /etc/systemd/system/mwan-update-att-pinned-dests.timer
         mode: "0644"
 
+    # The shell route oneshot deploys only where the shell owns policy routing
+    # (Go wan.routes in shadow).
     - name: Deploy mwan update-routes oneshot service
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/services/mwan-update-routes.service"
         dest: /etc/systemd/system/mwan-update-routes.service
         mode: "0644"
+      when: mwan_ifmgr_wan_shadow_mode | bool
 
     # The shell NPT oneshot deploys only where the shell owns the ip6 nat
     # table (Go npt in shadow).
@@ -565,6 +600,7 @@
         name: mwan-update-routes
         enabled: true
         daemon_reload: true
+      when: mwan_ifmgr_wan_shadow_mode | bool
 
     # Only deploy the shell mwan-health unit when it is authoritative (Go health
     # in shadow). On an authoritative-Go host the unit is removed below, so
