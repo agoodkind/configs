@@ -24,8 +24,8 @@ flags.
 | --- | --- | --- |
 | [ansible/playbooks/deploy-proxmox.yml](../../../ansible/playbooks/deploy-proxmox.yml) | `proxmox_servers` | mwan-ifmgr, mwan-watchdog, cloudflared-oob, package-updater on hypervisors |
 | [ansible/playbooks/deploy-mwan.yml](../../../ansible/playbooks/deploy-mwan.yml) | `mwan_servers` | MWAN VM, prod VM 113 on vault |
-| [ansible/playbooks/deploy-mwan-failover.yml](../../../ansible/playbooks/deploy-mwan-failover.yml) | `mwan_failover_servers` or `mwan_failover_test_servers` | MWAN failover LXC |
-| [ansible/playbooks/deploy-opnsense.yml](../../../ansible/playbooks/deploy-opnsense.yml) | `opnsense_servers` or `opnsense_test_servers` | mwan-opnsense daemon on OPNsense host |
+| [ansible/playbooks/deploy-mwan-failover.yml](../../../ansible/playbooks/deploy-mwan-failover.yml) | `mwan_failover_servers` or `mwan_failover_suburban_servers` | MWAN failover LXC |
+| [ansible/playbooks/deploy-opnsense.yml](../../../ansible/playbooks/deploy-opnsense.yml) | `opnsense_servers` or `opnsense_suburban_servers` | mwan-opnsense daemon on OPNsense host |
 | [ansible/playbooks/deploy-testbed.yml](../../../ansible/playbooks/deploy-testbed.yml) | `suburban_servers` | Suburban-only extras, including `qm args`, ISP LXCs, host bridge, and VFIO |
 
 ## Invocation Pattern
@@ -55,10 +55,10 @@ go run goodkind.io/configs/cmd/configs deploy deploy-proxmox --limit vault
 go run goodkind.io/configs/cmd/configs deploy deploy-mwan --check --diff
 
 # Configure the testbed failover LXC
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover --limit mwan_failover_test_servers
+go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover --limit mwan_failover_suburban_servers
 
 # Configure the testbed OPNsense
-go run goodkind.io/configs/cmd/configs deploy deploy-opnsense --limit opnsense_test_servers
+go run goodkind.io/configs/cmd/configs deploy deploy-opnsense --limit opnsense_suburban_servers
 
 # Suburban-only testbed extras
 go run goodkind.io/configs/cmd/configs deploy deploy-testbed --limit suburban

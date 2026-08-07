@@ -1,6 +1,6 @@
 ---
 # Single source of truth for service hostnames, VMIDs, and IPv6 addresses
-# All services use <service>.home.goodkind.io pattern (or alternate domain)
+# Services use either the home.goodkind.io or suburban.goodkind.io domain.
 #
 # Usage:
 #   - group_vars: service_ipv6_address: "{{ service_mapping.<service>.ipv6 }}/64"
@@ -63,8 +63,8 @@ service_mapping:
     hostname: tack.home.goodkind.io
     vmid: 117
     ipv6: "3d06:bad:b01::117"
-  tack_qa:
-    hostname: tack-qa
+  tack_qa_suburban:
+    hostname: tack-qa.suburban.goodkind.io
     vmid: 217
     ipv6: "3d06:bad:b01:210::217"
   seaweedfs:
@@ -72,16 +72,16 @@ service_mapping:
     vmid: 118
     ipv6: "3d06:bad:b01::118"
   seaweedfs_suburban:
-    hostname: seaweedfs
+    hostname: seaweedfs.suburban.goodkind.io
     vmid: 218
     ipv6: "3d06:bad:b01:210::218"
-  github_runner:
-    hostname: github-runner
+  tack_gh_runner_suburban:
+    hostname: tack-gh-runner.suburban.goodkind.io
     vmid: 219
     ipv6: "3d06:bad:b01:210::219"
     mac_address: "BC:24:11:04:20:00"
   dns64_suburban:
-    hostname: dns64-suburban
+    hostname: dns64.suburban.goodkind.io
     vmid: 203
     # Keeps prod's ::64 service address rather than taking its VMID suffix,
     # because every guest points at this address as its resolver.
@@ -100,24 +100,24 @@ service_mapping:
   # where the guests sit on opt6 rather than on MANAGEMENT. Host suffixes match
   # each guest's VMID. Directly reachable from the controller over the
   # 3d06:bad:b01::/48 tunnel, so no ProxyJump.
-  test_mwan:
-    hostname: test-mwan
+  mwan_suburban:
+    hostname: mwan.suburban.goodkind.io
     vmid: 213
     ipv6: "3d06:bad:b01:210::213"
     # eth1 on the OPNsense transit link, where it peers BGP with the router.
     ipv4_transit: "10.240.240.3"
     ipv6_transit: "3d06:bad:b01:201::3"
-  mwan_failover_test:
-    hostname: mwan-failover-test
+  mwan_failover_suburban:
+    hostname: mwan-failover.suburban.goodkind.io
     vmid: 216
     # eth1 on the OPNsense transit link; eth0 is DHCP on vmbr6. Host suffixes
     # mirror prod's rather than taking a VMID suffix, because these are BGP
     # peering addresses and that peering shape is what the testbed tests.
     ipv4_transit: "10.240.240.4"
-    ipv6_transit: &mwan_failover_test_transit_v6 "3d06:bad:b01:201::4"
+    ipv6_transit: &mwan_failover_suburban_transit_v6 "3d06:bad:b01:201::4"
     # The inventory plugin reads ipv6 as its default ansible_host, and this
     # guest holds no other address, so it aliases rather than repeating.
-    ipv6: *mwan_failover_test_transit_v6
+    ipv6: *mwan_failover_suburban_transit_v6
   # OPNsense (one logical machine per environment). The plugin uses ipv6 as
   # ansible_host by default, which is correct for prod. Testbed sets
   # ansible_host to the WAN/internal address reachable on vmbr2.
@@ -125,35 +125,35 @@ service_mapping:
     hostname: router.home.goodkind.io
     vmid: 101
     ipv6: "3d06:bad:b01::1"
-  opnsense_test:
-    hostname: opnsense-test
+  opnsense_suburban:
+    hostname: router.suburban.goodkind.io
     vmid: 201
     # The router's addresses on VMNET, the guest segment. Both families are
     # first-class; anything reaching a testbed guest routes via one of them.
     # Keeps prod's ::1 gateway suffix rather than taking its VMID suffix,
     # because every guest on the segment points at it as their default route.
     ipv4_vmnet: "10.240.4.1"
-    ipv6_vmnet: &opnsense_test_vmnet_v6 "3d06:bad:b01:210::1"
+    ipv6_vmnet: &opnsense_suburban_vmnet_v6 "3d06:bad:b01:210::1"
     # The inventory plugin reads ipv6 as its default ansible_host, so it aliases
     # the VMNET address rather than repeating it.
-    ipv6: *opnsense_test_vmnet_v6
+    ipv6: *opnsense_suburban_vmnet_v6
     # The router's addresses on the transit link it shares with the MWAN VM and
     # the failover, and the networks those sit in. Every group that peers on
     # this link reads them from here, so a renumber changes one line. The
     # transit network is 10.240.240.0/29 rather than prod's 10.250.250.0/29, so
     # no address is shared between the two environments.
-    ipv4_transit: &opnsense_test_transit_v4 "10.240.240.2"
+    ipv4_transit: &opnsense_suburban_transit_v4 "10.240.240.2"
     ipv6_transit: "3d06:bad:b01:201::2"
     transit_v4_net: "10.240.240.0/29"
     transit_v6_net: "3d06:bad:b01:201::/64"
     # Testbed OPNsense SSH lands on the transit address through suburban.
-    # SSH user and ProxyJump live in group_vars/opnsense_test_servers.yml.
-    ansible_host: *opnsense_test_transit_v4
+    # SSH user and ProxyJump live in group_vars/opnsense_suburban_servers.yml.
+    ansible_host: *opnsense_suburban_transit_v4
 
   # Suburban's own addresses on vmbr1, the uplink the ISP sims route through.
   # OpenTofu derives the vmbr1 bridge address from ipv4; the routable IPv6 is
   # deployed by deploy-testbed.yml as a sourced interfaces.d fragment.
-  suburban_vmbr1:
+  vmbr1_suburban:
     inventory: false
     ipv4: "10.240.200.1"
     ipv6: "3d06:bad:b01:200::1"
@@ -170,22 +170,22 @@ service_mapping:
   # inventory: false keeps them out of the SSH inventory. deploy-testbed.yml
   # configures them through pct from the hypervisor, so Ansible never connects
   # to one, but OpenTofu still needs their VMIDs from here.
-  isp_webpass:
-    hostname: isp-webpass
+  isp_webpass_suburban:
+    hostname: isp-webpass.suburban.goodkind.io
     vmid: 900
     inventory: false
     ipv4: "10.240.204.1"
     ipv4_uplink: "10.240.200.90"
     ipv6_uplink: "3d06:bad:b01:200::90"
-  isp_att:
-    hostname: isp-att
+  isp_att_suburban:
+    hostname: isp-att.suburban.goodkind.io
     vmid: 901
     inventory: false
     ipv4: "10.240.205.1"
     ipv4_uplink: "10.240.200.91"
     ipv6_uplink: "3d06:bad:b01:200::91"
-  isp_mbrains:
-    hostname: isp-mbrains
+  isp_mbrains_suburban:
+    hostname: isp-mbrains.suburban.goodkind.io
     vmid: 902
     inventory: false
     ipv6: "3d06:bad:b01:250::1"
@@ -196,16 +196,16 @@ service_mapping:
 group_children:
   tack_all:
     - tack_servers
-    - tack_qa_servers
+    - tack_qa_suburban_servers
   mwan_all:
     - mwan_servers
-    - test_mwan_servers
+    - mwan_suburban_servers
   mwan_failover_all:
     - mwan_failover_servers
-    - mwan_failover_test_servers
+    - mwan_failover_suburban_servers
   opnsense_all:
     - opnsense_servers
-    - opnsense_test_servers
+    - opnsense_suburban_servers
   dns64_all:
     - dns64_servers
     - dns64_suburban_servers

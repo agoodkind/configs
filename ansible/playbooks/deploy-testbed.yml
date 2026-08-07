@@ -17,7 +17,7 @@
 # OOB, base packages) come from deploy-proxmox.yml. The testbed MWAN VM
 # itself and the testbed failover LXC are configured by
 # deploy-mwan.yml and deploy-mwan-failover.yml respectively when targeted
-# with --limit test_mwan_servers and --limit mwan_failover_test_servers.
+# with --limit mwan_suburban_servers and --limit mwan_failover_suburban_servers.
 
 - name: Configure suburban testbed extras
   hosts: suburban_servers
@@ -92,11 +92,11 @@
           via {{ item.via }} dev vmbrtrunk
       loop:
         - family: 6
-          net: "{{ service_mapping.opnsense_test.transit_v6_net }}"
-          via: "{{ service_mapping.opnsense_test.ipv6_vmnet }}"
+          net: "{{ service_mapping.opnsense_suburban.transit_v6_net }}"
+          via: "{{ service_mapping.opnsense_suburban.ipv6_vmnet }}"
         - family: 4
-          net: "{{ service_mapping.opnsense_test.transit_v4_net }}"
-          via: "{{ service_mapping.opnsense_test.ipv4_vmnet }}"
+          net: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
+          via: "{{ service_mapping.opnsense_suburban.ipv4_vmnet }}"
       changed_when: false
 
     - name: Deploy suburban DDNS

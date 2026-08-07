@@ -17,11 +17,11 @@ mwan_config_mgmt_addr: "3d06:bad:b01:210::213"
 
 # Shared testbed MWAN topology values consumed by the suburban host config.
 mwan_environment: "testbed"
-mwan_vmid: "{{ service_mapping.test_mwan.vmid }}"
+mwan_vmid: "{{ service_mapping.mwan_suburban.vmid }}"
 # The testbed router. Overrides the 101 in proxmox_servers.yml, which is vault's
 # production router, so the drainer's chardev path and the upgrade target both
 # follow the testbed guest rather than production's.
-mwan_opnsense_vmid: "{{ service_mapping.opnsense_test.vmid }}"
+mwan_opnsense_vmid: "{{ service_mapping.opnsense_suburban.vmid }}"
 mwan_proxmox_node: "hypervisor"
 mwan_internal_iface: "enmwanbr0"
 mwan_email_recipient: "alex@goodkind.io"
@@ -34,32 +34,32 @@ opnsense_addr: "3d06:bad:b01:211::1"
 opnsense_gateway_names:
   - WAN_GW4
   - WAN_GW6
-opnsense_bgp_router_id: "{{ service_mapping.opnsense_test.ipv4_transit }}"
-opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
-opnsense_bgp_firewall_source_v6: "{{ service_mapping.opnsense_test.transit_v6_net }}"
+opnsense_bgp_router_id: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
+opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
+opnsense_bgp_firewall_source_v6: "{{ service_mapping.opnsense_suburban.transit_v6_net }}"
 opnsense_bgp_neighbors:
-  - address: "{{ service_mapping.test_mwan.ipv4_transit }}"
+  - address: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
     description: "mwan-IPv4"
     preference: "primary"
-  - address: "{{ service_mapping.test_mwan.ipv6_transit }}"
+  - address: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
     description: "mwan-IPv6"
     preference: "primary"
-  - address: "{{ service_mapping.mwan_failover_test.ipv4_transit }}"
+  - address: "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}"
     description: "failover-IPv4"
     preference: "backup"
-  - address: "{{ service_mapping.mwan_failover_test.ipv6_transit }}"
+  - address: "{{ service_mapping.mwan_failover_suburban.ipv6_transit }}"
     description: "failover-IPv6"
     preference: "backup"
 bgp_asn: 4200000001
-bgp_router_id: "{{ service_mapping.test_mwan.ipv4_transit }}"
-bgp_next_hop_v6: "{{ service_mapping.test_mwan.ipv6_transit }}"
+bgp_router_id: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
+bgp_next_hop_v6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 bgp_keepalive_seconds: 3
 bgp_hold_seconds: 9
 bgp_listen_port: 179
 bgp_neighbors:
-  - "{{ service_mapping.opnsense_test.ipv4_transit }}"
+  - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 bgp_neighbors_v6:
-  - "{{ service_mapping.opnsense_test.ipv6_transit }}"
+  - "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
 bgp_announce_ipv4:
   - "0.0.0.0/0"
 bgp_announce_ipv6:
@@ -166,7 +166,7 @@ suburban_ddns_ipv6_priority_subnets:
 # PD prefixes use the 22/23/24 /56-clean scheme (webpass 2200::/56, att 2300::/60,
 # mbrains 2400::/56), kept clear of the 02xx mgmt/LAN/internal/SLAAC space.
 testbed_isp_lxcs:
-  - id: "{{ service_mapping.isp_webpass.vmid }}"
+  - id: "{{ service_mapping.isp_webpass_suburban.vmid }}"
     name: webpass
     # Models prod Webpass: a static v4 link plus a static /29 (1:1-NAT'd to
     # services) and DHCPv6-PD /56. The sim routes the /29 to the static link.
@@ -180,7 +180,7 @@ testbed_isp_lxcs:
     v4_reservations: []
     static_v4_block: "10.241.204.0/29"
     static_v4_route_to: "10.240.204.2"
-  - id: "{{ service_mapping.isp_att.vmid }}"
+  - id: "{{ service_mapping.isp_att_suburban.vmid }}"
     name: att
     pd_prefix: "3d06:bad:b01:2300::/60"
     pd_len: 60
@@ -199,7 +199,7 @@ testbed_isp_lxcs:
       - { mac: "BC:24:11:C0:D7:60", addr: "10.240.205.2" }
     static_v4_block: "10.241.205.0/29"
     static_v4_route_to: "10.240.205.2"
-  - id: "{{ service_mapping.isp_mbrains.vmid }}"
+  - id: "{{ service_mapping.isp_mbrains_suburban.vmid }}"
     name: mbrains
     pd_prefix: "3d06:bad:b01:2400::/56"
     pd_len: 56
@@ -219,4 +219,4 @@ testbed_isp_lxcs:
     static_v4_route_to: ""
 
 # Testbed-only: testbed failover LXC id used by deploy-testbed.yml
-failover_lxc_id: "{{ service_mapping.mwan_failover_test.vmid }}"
+failover_lxc_id: "{{ service_mapping.mwan_failover_suburban.vmid }}"

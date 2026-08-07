@@ -1,7 +1,7 @@
 iface vmbrtrunk inet manual
-	post-up ip -4 route replace {{ service_mapping.opnsense_test.transit_v4_net }} via {{ service_mapping.opnsense_test.ipv4_vmnet }} dev vmbrtrunk
-	post-down ip -4 route del {{ service_mapping.opnsense_test.transit_v4_net }} || true
+	post-up ip -4 route replace {{ service_mapping.opnsense_suburban.transit_v4_net }} via {{ service_mapping.opnsense_suburban.ipv4_vmnet }} dev vmbrtrunk
+	post-down ip -4 route del {{ service_mapping.opnsense_suburban.transit_v4_net }} || true
 
 iface vmbrtrunk inet6 manual
-	post-up ip -6 route replace {{ service_mapping.opnsense_test.transit_v6_net }} via {{ service_mapping.opnsense_test.ipv6_vmnet }} dev vmbrtrunk
-	post-down ip -6 route del {{ service_mapping.opnsense_test.transit_v6_net }} || true
+	post-up ip -6 route replace {{ service_mapping.opnsense_suburban.transit_v6_net }} via {{ service_mapping.opnsense_suburban.ipv6_vmnet }} dev vmbrtrunk
+	post-down ip -6 route del {{ service_mapping.opnsense_suburban.transit_v6_net }} || true

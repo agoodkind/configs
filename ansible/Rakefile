@@ -112,7 +112,7 @@ task :help do
   puts 'Limit to one host (passes --limit):'
   puts '  rake deploy:proxmox[vault]'
   puts '  rake deploy:mwan[mwan.home.goodkind.io]'
-  puts '  rake deploy:failover[mwan_failover_test_servers]'
+  puts '  rake deploy:failover[mwan_failover_suburban_servers]'
   puts ''
   puts 'Dry-run (--check --diff):'
   puts '  rake check:proxmox[vault]'

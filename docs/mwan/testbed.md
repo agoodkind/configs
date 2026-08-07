@@ -2,7 +2,7 @@
 
 Suburban is the NJ Proxmox hypervisor. The testbed mirrors production MWAN
 using the same Ansible templates with different group vars
-([test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml)).
+([mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml)).
 Live suburban definitions live in
 [opentofu/suburban/](../../opentofu/suburban/); treat that module as
 ground truth and update this page when it changes.
@@ -76,15 +76,15 @@ management, LAN, internal, and SLAAC already use.
 
 | Component                  | Production (vault)                              | Testbed (suburban)                                                |
 | -------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- |
-| MWAN VM                    | mwan                                            | test-mwan                                                         |
-| Failover LXC               | mwan-failover                                   | mwan-failover-test                                                |
-| OPNsense                   | router.home.goodkind.io                         | opnsense-test                                                     |
+| MWAN VM                    | mwan                                            | mwan.suburban.goodkind.io                                         |
+| Failover LXC               | mwan-failover                                   | mwan-failover.suburban.goodkind.io                                |
+| OPNsense                   | router.home.goodkind.io                         | router.suburban.goodkind.io                                       |
 | Hypervisor                 | vault                                           | suburban                                                          |
-| Group vars (MWAN)          | [ansible/inventory/group_vars/mwan_servers.yml](../../ansible/inventory/group_vars/mwan_servers.yml) | [ansible/inventory/group_vars/test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml) |
-| Group vars (OPNsense)      | [ansible/inventory/group_vars/opnsense_servers.yml](../../ansible/inventory/group_vars/opnsense_servers.yml) | [ansible/inventory/group_vars/opnsense_test_servers.yml](../../ansible/inventory/group_vars/opnsense_test_servers.yml) |
-| Deploy playbook (MWAN)     | [ansible/playbooks/deploy-mwan.yml](../../ansible/playbooks/deploy-mwan.yml) `--limit mwan_servers` | [ansible/playbooks/deploy-mwan.yml](../../ansible/playbooks/deploy-mwan.yml) `--limit test_mwan_servers` |
-| Deploy playbook (failover) | [ansible/playbooks/deploy-mwan-failover.yml](../../ansible/playbooks/deploy-mwan-failover.yml) `--limit mwan_failover_servers` | [ansible/playbooks/deploy-mwan-failover.yml](../../ansible/playbooks/deploy-mwan-failover.yml) `--limit mwan_failover_test_servers` |
-| Deploy playbook (OPNsense) | [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml) `--limit opnsense_servers` | [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml) `--limit opnsense_test_servers` |
+| Group vars (MWAN)          | [ansible/inventory/group_vars/mwan_servers.yml](../../ansible/inventory/group_vars/mwan_servers.yml) | [ansible/inventory/group_vars/mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml) |
+| Group vars (OPNsense)      | [ansible/inventory/group_vars/opnsense_servers.yml](../../ansible/inventory/group_vars/opnsense_servers.yml) | [ansible/inventory/group_vars/opnsense_suburban_servers.yml](../../ansible/inventory/group_vars/opnsense_suburban_servers.yml) |
+| Deploy playbook (MWAN)     | [ansible/playbooks/deploy-mwan.yml](../../ansible/playbooks/deploy-mwan.yml) `--limit mwan_servers` | [ansible/playbooks/deploy-mwan.yml](../../ansible/playbooks/deploy-mwan.yml) `--limit mwan_suburban_servers` |
+| Deploy playbook (failover) | [ansible/playbooks/deploy-mwan-failover.yml](../../ansible/playbooks/deploy-mwan-failover.yml) `--limit mwan_failover_servers` | [ansible/playbooks/deploy-mwan-failover.yml](../../ansible/playbooks/deploy-mwan-failover.yml) `--limit mwan_failover_suburban_servers` |
+| Deploy playbook (OPNsense) | [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml) `--limit opnsense_servers` | [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml) `--limit opnsense_suburban_servers` |
 | Suburban-only extras       | n/a | [ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml) `--limit suburban` |
 
 ## Testbed-only infrastructure

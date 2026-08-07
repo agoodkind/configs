@@ -47,11 +47,11 @@ that the named virtio console resolves to `/dev/ttyV0.1` and that the
 rc.d wrapper wrote the daemon contract file:
 
 ```bash
-ssh root@<opnsense-test-mgmt-ip> 'service mwan_opnsense start'
-ssh root@<opnsense-test-mgmt-ip> 'service mwan_opnsense status'
-ssh root@<opnsense-test-mgmt-ip> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
-ssh root@<opnsense-test-mgmt-ip> 'ls -l /var/lib/mwan/daemon.toml'
-ssh root@<opnsense-test-mgmt-ip> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
+ssh root@<service_mapping.opnsense_suburban.ansible_host> 'service mwan_opnsense start'
+ssh root@<service_mapping.opnsense_suburban.ansible_host> 'service mwan_opnsense status'
+ssh root@<service_mapping.opnsense_suburban.ansible_host> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
+ssh root@<service_mapping.opnsense_suburban.ansible_host> 'ls -l /var/lib/mwan/daemon.toml'
+ssh root@<service_mapping.opnsense_suburban.ansible_host> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
 ```
 
 Expect `/dev/vtcon/io.goodkind.mwan-opnsense.0` to point at `../ttyV0.1`.
