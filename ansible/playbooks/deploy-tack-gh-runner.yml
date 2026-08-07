@@ -223,6 +223,80 @@
         != (github_runner_names | sort)
       when: github_runner_enabled | bool
 
+    - name: List registered repository GitHub runners
+      ansible.builtin.uri:
+        url: "{{ github_runner_api_url }}?per_page=100"
+        method: GET
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ vault_github_runner_access_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+        status_code: 200
+        return_content: true
+      register: github_runner_repository_runners
+      changed_when: false
+      check_mode: false
+      no_log: true
+      when: github_runner_enabled | bool
+
+    - name: Verify expected GitHub runner registrations
+      ansible.builtin.assert:
+        that:
+          - >-
+            (
+              github_runner_names
+              | difference(
+                  github_runner_repository_runners.json.runners
+                  | map(attribute='name')
+                  | list
+                )
+            ) == []
+        fail_msg: >-
+          Missing registered GitHub runners: {{
+            github_runner_names
+            | difference(
+                github_runner_repository_runners.json.runners
+                | map(attribute='name')
+                | list
+              )
+          }}
+      when: github_runner_enabled | bool
+
+    - name: Set repository GitHub runner custom labels
+      ansible.builtin.uri:
+        url: "{{ github_runner_api_url }}/{{ item.id }}/labels"
+        method: PUT
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ vault_github_runner_access_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+        body_format: json
+        body:
+          labels:
+            - "{{ github_runner_labels[item.name] }}"
+        status_code: 200
+      loop: >-
+        {{
+          github_runner_repository_runners.json.runners
+          | selectattr('name', 'in', github_runner_names)
+          | list
+        }}
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: true
+      no_log: true
+      when:
+        - github_runner_enabled | bool
+        - not ansible_check_mode
+        - >-
+          (
+            item.labels
+            | selectattr('type', 'equalto', 'custom')
+            | map(attribute='name')
+            | list
+            | sort
+          ) != ([github_runner_labels[item.name]] | sort)
+
   handlers:
     - name: Restart Docker
       ansible.builtin.systemd:

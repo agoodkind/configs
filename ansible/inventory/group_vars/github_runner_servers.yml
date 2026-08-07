@@ -13,9 +13,12 @@ github_runner_image_digest: >-
 github_runner_image: >-
   {{ github_runner_image_tag }}@{{ github_runner_image_digest }}
 github_runner_repo_url: https://github.com/agoodkind/tack
-github_runner_registration_url: >-
-  https://api.github.com/repos/agoodkind/tack/actions/runners/registration-token
-github_runner_labels: tack
+github_runner_api_url: https://api.github.com/repos/agoodkind/tack/actions/runners
+github_runner_registration_url: "{{ github_runner_api_url }}/registration-token"
+github_runner_labels:
+  tack-runner-1: tack-docker
+  tack-runner-2: tack
+  tack-runner-3: tack
 github_runner_names:
   - tack-runner-1
   - tack-runner-2
