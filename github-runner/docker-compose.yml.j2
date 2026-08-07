@@ -11,7 +11,7 @@ services:
     environment:
       REPO_URL: {{ github_runner_repo_url }}
       RUNNER_NAME: {{ runner_name }}
-      LABELS: {{ github_runner_labels }}
+      LABELS: {{ github_runner_labels[runner_name] }}
       RUN_AS_ROOT: "true"
       RANDOM_RUNNER_SUFFIX: "false"
       RUNNER_WORKDIR: {{ github_runner_install_dir }}/work/{{ runner_name }}
