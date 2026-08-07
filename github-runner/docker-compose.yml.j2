@@ -20,8 +20,8 @@ services:
       UNSET_CONFIG_VARS: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - >-
-        {{ github_runner_install_dir }}/work/{{ runner_name }}:
-        {{- github_runner_install_dir }}/work/{{ runner_name }}
+      - type: bind
+        source: {{ github_runner_install_dir }}/work/{{ runner_name }}
+        target: {{ github_runner_install_dir }}/work/{{ runner_name }}
       - {{ github_runner_install_dir }}/config/{{ runner_name }}:/runner-config
 {% endfor %}
