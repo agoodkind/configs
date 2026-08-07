@@ -2,10 +2,10 @@
 - name: Prepare GitHub runner guest
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    target_hosts: github_runner_servers
+    target_hosts: tack_gh_runner_suburban_servers
 
 - name: Provision Tack repository-scoped GitHub Actions runners
-  hosts: github_runner_servers
+  hosts: tack_gh_runner_suburban_servers
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive

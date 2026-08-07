@@ -6,15 +6,17 @@
 # via SSH. It installs the pinned weed binary and runs it under systemd (no
 # Docker).
 #
-# The suburban LXC reaches GitHub for the release download via opnsense-test
+# The suburban LXC reaches GitHub for the release download via router.suburban.goodkind.io
 # NAT64; the prod LXC reaches it over native IPv6.
 #
 # Usage:
 #   # Production
-#   ansible-playbook playbooks/deploy-seaweedfs.yml -l seaweedfs_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-seaweedfs \
+#     --limit seaweedfs_servers
 #
 #   # Testbed
-#   ansible-playbook playbooks/deploy-seaweedfs.yml -l seaweedfs_suburban_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-seaweedfs \
+#     --limit seaweedfs_suburban_servers
 
 - name: Prepare seaweedfs guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml

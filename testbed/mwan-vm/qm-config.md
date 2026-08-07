@@ -5,7 +5,7 @@
 The testbed MWAN VM must run with a `vhost-vsock-pci` device whose guest CID equals
 its VMID, so the suburban watchdog reaches the in-VM `mwan-agent` over native vsock.
 Both values resolve from `mwan_vmid` in
-[test_mwan_servers.yml](../../ansible/inventory/group_vars/test_mwan_servers.yml),
+[mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml),
 which reads the id from
 [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
 The id deliberately differs from production's MWAN VM, so renumbering one guest
@@ -42,7 +42,7 @@ start rather than a reboot. The playbook prints a notice when it changes the val
 
 Inside the VM the kernel modules `vmw_vsock_virtio_transport` and `vsock` should be
 loaded and `/dev/vsock` should be present. Reach the VM at the management address
-`test_mwan` owns in
+`mwan.suburban.goodkind.io` owns in
 [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
 
 ```shell

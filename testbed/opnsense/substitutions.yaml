@@ -19,7 +19,7 @@ device_names:
 xpath_sets:
   - name: "hostname"
     xpath: "//opnsense/system/hostname"
-    new_value: "router-test"
+    new_value: "router"
 
   - name: "WAN ipv4"
     xpath: "//opnsense/interfaces/wan/ipaddr"
@@ -185,13 +185,13 @@ text_literals:
 
   - name: "domain literal"
     from: "home.goodkind.io"
-    to:   "test.home.goodkind.io"
+    to:   "suburban.goodkind.io"
   - name: "captive portal FQDN"
     from: "captive.chaotic.dog"
-    to:   "captive.test.home.goodkind.io"
+    to:   "captive.suburban.goodkind.io"
   - name: "chaotic.dog domain literal"
     from: "chaotic.dog"
-    to:   "test.home.goodkind.io"
+    to:   "suburban.goodkind.io"
   # Runs after the VMNET shift, so it matches what that shift produced from
   # prod's 3d06:bad:b01::53 rather than any literal present in the capture.
   - name: "v6 DNS forwarder"

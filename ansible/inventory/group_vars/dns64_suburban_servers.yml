@@ -6,21 +6,21 @@
 # the same guest segment. A direct connection does not return: the testbed
 # router sends anything outside 3d06:bad:b01:210::/60 out a simulated WAN, and
 # the controller is on the prod side at 3d06:bad:b01:a::. Same jump as
-# test_mwan_servers and opnsense_test_servers.
+# mwan_suburban_servers and opnsense_suburban_servers.
 ansible_ssh_common_args: "{{ ssh_base_args }} -o ProxyJump=root@[3d06:bad:b01:200::1]"
 
 service_hostname: "{{ service_mapping.dns64_suburban.hostname }}"
 service_ipv6_address: "{{ service_mapping.dns64_suburban.ipv6 }}/64"
 service_mac_address: "BC:24:11:04:64:00"
 
-# Suburban DNS64 prefix matches the opnsense-test Tayga setup
+# Suburban DNS64 prefix matches the router.suburban.goodkind.io Tayga setup
 # (3d06:bad:b01:264::ffff:1 tun endpoint, route in opnsense pf to nat64).
 dns64_prefix: "3d06:bad:b01:2664::/96"
 
 # The on-net resolver this bind9 forwards to, mirroring prod, where the dns64
 # LXC forwards to AdGuard on the VMNET segment rather than straight to a public
 # resolver. The testbed has no AdGuard, so its on-net equivalent is the
-# opnsense-test Unbound, which the transform already points at a public
+# router.suburban.goodkind.io Unbound, which the transform already points at a public
 # resolver. Reached over native IPv6, not through NAT64.
 dns64_upstream_dns: "3d06:bad:b01:210::1"
 

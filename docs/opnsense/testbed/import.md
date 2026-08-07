@@ -1,7 +1,7 @@
 # OPNsense Testbed Config Import
 
 This runbook is current guidance for importing a production-shaped OPNsense
-`config.xml` into the suburban testbed OPNsense guest, `opnsense-test`.
+`config.xml` into the suburban testbed OPNsense guest, `router.suburban.goodkind.io`.
 
 ## Core Rules
 
@@ -25,7 +25,7 @@ Run this gate for every config change, including small XML edits.
 
 ### 1. Scope Check
 
-- Confirm the target is the testbed OPNsense guest, `opnsense-test`.
+- Confirm the target is the testbed OPNsense guest, `router.suburban.goodkind.io`.
 - Confirm no command names `vault` or a production guest. No testbed guest
   shares a VMID with production, so a command aimed at the wrong hypervisor
   fails rather than reaching a counterpart, but the target still has to be

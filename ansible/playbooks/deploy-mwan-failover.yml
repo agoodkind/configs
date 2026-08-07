@@ -2,18 +2,20 @@
 # Configure the MWAN failover LXC.
 #
 # Targets either mwan_failover_servers (prod LXC-116 on vault) or
-# mwan_failover_test_servers (testbed LXC-100 on suburban). Per-target
+# mwan_failover_suburban_servers (testbed LXC-216 on suburban). Per-target
 # vars in inventory/group_vars/mwan_failover_servers.yml and
-# inventory/group_vars/mwan_failover_test_servers.yml carry every value
+# inventory/group_vars/mwan_failover_suburban_servers.yml carry every value
 # that differs between environments, so this play body is branchless on
 # inventory_hostname.
 #
 # Run examples:
-#   ansible-playbook playbooks/deploy-mwan-failover.yml --limit mwan_failover_servers
-#   ansible-playbook playbooks/deploy-mwan-failover.yml --limit mwan_failover_test_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover \
+#     --limit mwan_failover_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover \
+#     --limit mwan_failover_suburban_servers
 
 - name: Configure MWAN failover LXC
-  hosts: mwan_failover_servers:mwan_failover_test_servers
+  hosts: mwan_failover_servers:mwan_failover_suburban_servers
   become: false
   environment:
     DEBIAN_FRONTEND: noninteractive

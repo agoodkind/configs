@@ -1,23 +1,24 @@
 ---
-# Deploy the Tack Compose stack on any host in tack_servers or tack_qa_servers.
+# Deploy the Tack Compose stack on any host in tack_servers or tack_qa_suburban_servers.
 # Container creation is handled by OpenTofu (opentofu/vault/ for
 # production; opentofu/suburban/ for QA). This playbook runs after the LXC
 # is provisioned and reachable via SSH.
 #
 # Usage:
 #   # Production
-#   ansible-playbook playbooks/deploy-tack.yml -l tack_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-tack --limit tack_servers
 #
 #   # QA
-#   ansible-playbook playbooks/deploy-tack.yml -l tack_qa_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-tack \
+#     --limit tack_qa_suburban_servers
 
 - name: Prepare tack guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    target_hosts: tack_servers:tack_qa_servers
+    target_hosts: tack_servers:tack_qa_suburban_servers
 
 - name: Provision Tack via Docker Compose
-  hosts: tack_servers:tack_qa_servers
+  hosts: tack_servers:tack_qa_suburban_servers
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive

@@ -1,21 +1,21 @@
-resource "proxmox_virtual_environment_container" "dns64" {
+resource "proxmox_virtual_environment_container" "dns64_suburban" {
   node_name = "hypervisor"
   vm_id     = local.service_mapping.dns64_suburban.vmid
 
   depends_on = [
-    proxmox_network_linux_bridge.trunk,
+    proxmox_network_linux_bridge.trunk_suburban,
   ]
 
   initialization {
-    hostname = var.dns64.hostname
+    hostname = local.service_mapping.dns64_suburban.hostname
     ip_config {
       ipv6 {
         address = "${local.service_mapping.dns64_suburban.ipv6}/64"
-        gateway = var.dns64.ipv6_gateway
+        gateway = local.service_mapping.opnsense_suburban.ipv6_vmnet
       }
     }
     dns {
-      servers = var.dns64.dns_servers
+      servers = [local.service_mapping.dns64_suburban.ipv6]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -30,27 +30,27 @@ resource "proxmox_virtual_environment_container" "dns64" {
 
   network_interface {
     name        = "eth0"
-    bridge      = var.dns64.bridge
-    mac_address = var.dns64.mac_address
+    bridge      = proxmox_network_linux_bridge.trunk_suburban.name
+    mac_address = "BC:24:11:04:64:00"
   }
 
   disk {
-    datastore_id = var.dns64.datastore_id
-    size         = var.dns64.disk_size_gb
+    datastore_id = "local-zfs"
+    size         = 4
   }
 
   memory {
-    dedicated = var.dns64.memory_mb
+    dedicated = 512
   }
 
   cpu {
-    cores = var.dns64.cpu_cores
+    cores = 1
   }
 
-  tags = var.dns64.tags
+  tags = ["lxc", "dns", "dns64"]
 
   operating_system {
-    template_file_id = var.dns64.template_file_id
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
     type             = "debian"
   }
 

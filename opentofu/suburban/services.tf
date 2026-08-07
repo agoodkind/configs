@@ -3,8 +3,8 @@
 # keeps OpenTofu and Ansible from drifting apart on the same fact, and makes a
 # renumber a one-line change in that file rather than a sweep through both tools.
 #
-# A VMID change is a rename on the hypervisor plus a state re-attach, never a
-# destroy. See ../imports.md.
+# A VMID change is a rename on the hypervisor plus state reattachment, never a
+# destroy. See ../backend.md#reattach-a-renumbered-guest.
 locals {
   service_mapping = yamldecode(
     file("${path.module}/../../ansible/inventory/group_vars/all/service_mapping.yml")
