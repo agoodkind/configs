@@ -7,7 +7,7 @@
 #   - mwan_mbrains_mac (inventory override wins, plugin-parsed value falls back)
 #
 # Assumes the calling play already set `actual_vmid` and runs against an
-# MWAN VM host (mwan_servers or test_mwan_servers).
+# MWAN VM host (mwan_servers or mwan_suburban_servers).
 
 - name: Get VM network config from Proxmox
   # Delegate to the hypervisor inventory host (vault for prod, suburban for the

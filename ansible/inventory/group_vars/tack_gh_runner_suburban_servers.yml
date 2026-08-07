@@ -1,9 +1,9 @@
 ---
 ansible_ssh_common_args: "{{ ssh_base_args }}"
 
-service_hostname: "{{ service_mapping.github_runner.hostname }}"
-service_ipv6_address: "{{ service_mapping.github_runner.ipv6 }}/64"
-service_mac_address: "{{ service_mapping.github_runner.mac_address }}"
+service_hostname: "{{ service_mapping.tack_gh_runner_suburban.hostname }}"
+service_ipv6_address: "{{ service_mapping.tack_gh_runner_suburban.ipv6 }}/64"
+service_mac_address: "{{ service_mapping.tack_gh_runner_suburban.mac_address }}"
 
 github_runner_enabled: true
 github_runner_install_dir: /opt/github-runner

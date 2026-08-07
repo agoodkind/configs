@@ -17,7 +17,7 @@ Tayga translates between the two families on the testbed OPNsense through the
 imported `config.xml`, where the transform rewrites production's prefix to the
 testbed's.
 
-The `dns64-suburban` LXC runs bind9 and synthesizes AAAA records into that
+The `dns64.suburban.goodkind.io` LXC runs bind9 and synthesizes AAAA records into that
 prefix, so an IPv4-only name resolves to an address Tayga can translate. Its
 address, resolver, and synthesis settings live in
 [dns64_suburban_servers.yml](../../../ansible/inventory/group_vars/dns64_suburban_servers.yml)
@@ -73,7 +73,7 @@ root-owned Unbound and Tayga; without it they falsely report nothing on `:53`.
 
 | Target | Path |
 | --- | --- |
-| Testbed OPNsense | `ssh -J root@[3d06:bad:b01:200::1] agoodkind@10.240.240.2` (ProxyJump through the suburban hypervisor; relax host-key checking after a rebuild) |
+| Testbed OPNsense | `ssh -J root@[3d06:bad:b01:200::1] agoodkind@<service_mapping.opnsense_suburban.ansible_host>` (ProxyJump through the suburban hypervisor; relax host-key checking after a rebuild) |
 | DNS64 LXC (CT 464) | `pct exec 464 ...` from the suburban hypervisor `root@[3d06:bad:b01:200::1]` |
 | Testbed MWAN VM 950 | `ssh root@3d06:bad:b01:204::950` |
 
@@ -83,13 +83,13 @@ VM 950 management sits on the `vmbrtrunk` `204::` services LAN, the same segment
 as the testbed OPNsense MANAGEMENT interface (`opt9`, `3d06:bad:b01:204::1`) and
 the DNS64 LXC (`3d06:bad:b01:204::464`). This mirrors production, where the MWAN
 VM `enmgmt0` shares the OPNsense LAN `/64` and reaches DNS on-link.
-`test_mwan_servers.yml` sets `mwan_dns_servers` to the on-link OPNsense Unbound at
+`mwan_suburban_servers.yml` sets `mwan_dns_servers` to the on-link OPNsense Unbound at
 `3d06:bad:b01:204::1`, so VM 950 resolves A records there and reaches them over
 its IPv4 WAN. The OPNsense Unbound does not synthesize DNS64; that path is for the
 IPv6-only LAN guests that point at the DNS64 LXC instead. The `204::` segment and
 the resolver are codified in
 [opentofu/suburban/vms.tf](../../../opentofu/suburban/vms.tf) and
-[test_mwan_servers.yml](../../../ansible/inventory/group_vars/test_mwan_servers.yml).
+[mwan_suburban_servers.yml](../../../ansible/inventory/group_vars/mwan_suburban_servers.yml).
 
 After a daemon deploy, `deploy-opnsense.yml` restarts Tayga
 (`configctl tayga restart`) and regenerates the Unbound DNSBL python module

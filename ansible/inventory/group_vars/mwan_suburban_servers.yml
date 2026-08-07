@@ -1,6 +1,6 @@
 ---
 # Testbed MWAN VM (VM 213 on suburban) target vars.
-# Consumed by deploy-mwan.yml when targeting `test_mwan_servers`.
+# Consumed by deploy-mwan.yml when targeting `mwan_suburban_servers`.
 # Uses the same variable names as mwan_servers.yml so config.toml.j2
 # and other shared templates render correctly for both environments.
 
@@ -12,21 +12,19 @@ mwan_environment: "testbed"
 # Deliberately differs from prod's mwan VM id, so a command aimed at the wrong
 # hypervisor finds no guest instead of the wrong one. Also the vsock CID the
 # suburban watchdog dials, so a change here needs the guest's args updated too.
-mwan_vmid: "{{ service_mapping.test_mwan.vmid }}"
+mwan_vmid: "{{ service_mapping.mwan_suburban.vmid }}"
 mwan_proxmox_node: hypervisor
 mwan_proxmox_delegate: suburban
 
-# Identity. service_mapping.test_mwan carries only the bare label (test-mwan),
-# so set the canonical FQDN here directly to match prod's FQDN-form hostname.
 # prep-guests sets the guest hostname to the first label.
-service_hostname: "test-mwan.home.goodkind.io"
+service_hostname: "{{ service_mapping.mwan_suburban.hostname }}"
 
 # VM 213 management is on the vmbrtrunk 204:: services LAN, off-segment from the
 # controller (which reaches the testbed over a WARP tunnel). Like prod mwan,
 # whose mgmt is reached on-link via the OPNsense-routed LAN, VM 213 has no mgmt
 # policy route and its main default route is a WAN, so off-segment replies do not
 # return. Reach it on-link through the suburban hypervisor, which sits on the
-# same 204:: segment (204::5 on vmbrtrunk), mirroring the opnsense_test pattern.
+# same 204:: segment (204::5 on vmbrtrunk), mirroring the opnsense_suburban pattern.
 ansible_ssh_common_args: >-
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
   -o ProxyJump=root@[3d06:bad:b01:200::1]
@@ -116,11 +114,11 @@ mwan_monkeybrains_duid_raw_data: ""
 # failover, and two spares; .1 is the VRRP virtual address and is not mapped.
 # Each maps onto the matching host of the ISP block, so last octets line up.
 mwan_static_internal_hosts:
-  - "{{ service_mapping.opnsense_test.ipv4_transit }}"
-  - "{{ service_mapping.test_mwan.ipv4_transit }}"
-  - "{{ service_mapping.mwan_failover_test.ipv4_transit }}"
-  - "{{ service_mapping.opnsense_test.transit_v4_net | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}"
-  - "{{ service_mapping.opnsense_test.transit_v4_net | ansible.utils.ipaddr('6') | ansible.utils.ipaddr('address') }}"
+  - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
+  - "{{ service_mapping.mwan_suburban.ipv4_transit }}"
+  - "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}"
+  - "{{ service_mapping.opnsense_suburban.transit_v4_net | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}"
+  - "{{ service_mapping.opnsense_suburban.transit_v4_net | ansible.utils.ipaddr('6') | ansible.utils.ipaddr('address') }}"
 mwan_static_mappings:
   att:
     - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
@@ -139,27 +137,27 @@ mwan_static_mappings:
 # Internal link (to OPNsense)
 # ----------------------------------------------------------------------------
 
-mwan_internal_ipv4: "{{ service_mapping.test_mwan.ipv4_transit }}/29"
-mwan_internal_ipv6: "{{ service_mapping.test_mwan.ipv6_transit }}/64"
-mwan_internal_net_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
+mwan_internal_ipv4: "{{ service_mapping.mwan_suburban.ipv4_transit }}/29"
+mwan_internal_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}/64"
+mwan_internal_net_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
 # The OPNsense end of that link. The nftables template pins the router's
 # WireGuard control plane to one WAN by this source address.
-mwan_opnsense_internal_v4: "{{ service_mapping.opnsense_test.ipv4_transit }}"
-mwan_mwanbr_edge_ipv6: "{{ service_mapping.test_mwan.ipv6_transit }}"
+mwan_opnsense_internal_v4: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
+mwan_mwanbr_edge_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
 # OPNsense addresses (testbed OPNsense).
-mwan_opnsense_ansible_host: "{{ service_mapping.opnsense_test.ipv4_transit }}"
+mwan_opnsense_ansible_host: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_opnsense_ansible_ssh_common_args: >-
   -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
   -o ProxyJump=root@[3d06:bad:b01:200::1]
 mwan_opnsense_ansible_user: root
-mwan_opnsense_edge_ipv6: "{{ service_mapping.opnsense_test.ipv6_transit }}"
+mwan_opnsense_edge_ipv6: "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
 # OPNsense API URL target for the agent (config-vm.toml.j2). Prod uses the
 # OPNsense address on the mwan-mgmt segment; the testbed analog is the router's
 # VMNET address, which this VM is on-link with. MANAGEMENT has no testbed
 # counterpart, because the config transform removes that interface.
-opnsense_addr: "{{ service_mapping.opnsense_test.ipv6_vmnet }}"
+opnsense_addr: "{{ service_mapping.opnsense_suburban.ipv6_vmnet }}"
 # OPNsense BGP integration the agent renders into config.toml (config-vm.toml.j2
 # [opnsense.bgp]). Testbed values mirror suburban_servers.yml's OPNsense view:
 # the MWAN VM is the primary BGP peer and the failover the backup, over the
@@ -167,23 +165,23 @@ opnsense_addr: "{{ service_mapping.opnsense_test.ipv6_vmnet }}"
 opnsense_gateway_names:
   - WAN_GW4
   - WAN_GW6
-opnsense_bgp_router_id: "{{ service_mapping.opnsense_test.ipv4_transit }}"
-opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_test.transit_v4_net }}"
-opnsense_bgp_firewall_source_v6: "{{ service_mapping.opnsense_test.transit_v6_net }}"
+opnsense_bgp_router_id: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
+opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
+opnsense_bgp_firewall_source_v6: "{{ service_mapping.opnsense_suburban.transit_v6_net }}"
 opnsense_bgp_neighbors:
-  - address: "{{ service_mapping.test_mwan.ipv4_transit }}"
+  - address: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
     description: "mwan-IPv4"
     preference: "primary"
-  - address: "{{ service_mapping.test_mwan.ipv6_transit }}"
+  - address: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
     description: "mwan-IPv6"
     preference: "primary"
-  - address: "{{ service_mapping.mwan_failover_test.ipv4_transit }}"
+  - address: "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}"
     description: "failover-IPv4"
     preference: "backup"
-  - address: "{{ service_mapping.mwan_failover_test.ipv6_transit }}"
+  - address: "{{ service_mapping.mwan_failover_suburban.ipv6_transit }}"
     description: "failover-IPv6"
     preference: "backup"
-failover_lxc_id: "{{ service_mapping.mwan_failover_test.vmid }}"
+failover_lxc_id: "{{ service_mapping.mwan_failover_suburban.vmid }}"
 
 # ----------------------------------------------------------------------------
 # IPv6 prefixes (simulated ISPs on suburban)
@@ -302,15 +300,15 @@ mwan_health_exclude_wans: ["monkeybrains"]
 # ----------------------------------------------------------------------------
 
 bgp_asn: 4200000001
-bgp_router_id: "{{ service_mapping.test_mwan.ipv4_transit }}"
-bgp_next_hop_v6: "{{ service_mapping.test_mwan.ipv6_transit }}"
+bgp_router_id: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
+bgp_next_hop_v6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 bgp_keepalive_seconds: 3
 bgp_hold_seconds: 9
 bgp_listen_port: 179
 bgp_neighbors:
-  - "{{ service_mapping.opnsense_test.ipv4_transit }}"
+  - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 bgp_neighbors_v6:
-  - "{{ service_mapping.opnsense_test.ipv6_transit }}"
+  - "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
 bgp_announce_ipv4:
   - "0.0.0.0/0"
 bgp_announce_ipv6:

@@ -1,7 +1,7 @@
 ---
 # Suburban testbed SeaweedFS object-store LXC (CT 218 on suburban).
-# Lives on the opnsense-test VMNET segment (3d06:bad:b01:210::/64) beside
-# tack-qa. Runs the weed binary under systemd (not Docker). Provides an S3
+# Lives on the router.suburban.goodkind.io VMNET segment (3d06:bad:b01:210::/64) beside
+# tack-qa.suburban.goodkind.io. Runs the weed binary under systemd (not Docker). Provides an S3
 # endpoint for tack backups and audit archives. Container creation is handled
 # by OpenTofu (opentofu/suburban/seaweedfs.tf); this group configures the
 # deploy playbook (playbooks/deploy-seaweedfs.yml). Shared keys live in
@@ -11,7 +11,7 @@
 # the same guest segment. A direct connection does not return: the testbed
 # router sends anything outside 3d06:bad:b01:210::/60 out a simulated WAN, and
 # the controller is on the prod side at 3d06:bad:b01:a::. Same jump as
-# test_mwan_servers and opnsense_test_servers.
+# mwan_suburban_servers and opnsense_suburban_servers.
 ansible_ssh_common_args: "{{ ssh_base_args }} -o ProxyJump=root@[3d06:bad:b01:200::1]"
 
 service_hostname: "{{ service_mapping.seaweedfs_suburban.hostname }}"

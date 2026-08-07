@@ -41,22 +41,22 @@ enumerated here.
 OPNsense is a special case worth calling out, because it is the easiest place
 to introduce drift:
 
-- The `opnsense` and `opnsense_test` entries in
+- The `opnsense` and `opnsense_suburban` entries in
   [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
-  create the `opnsense_servers` and `opnsense_test_servers` groups via the
+  create the `opnsense_servers` and `opnsense_suburban_servers` groups via the
   `service_mapping` plugin. There is no static `[opnsense_servers]` group in
   [inventory/hosts](../../ansible/inventory/hosts).
 - The plugin sets `ansible_host` from the canonical IPv6 by default. The
-  `opnsense_test` entry overrides `ansible_host` to its LAN IPv4 because the
-  testbed IPv6 is not reachable from the controller.
+  `opnsense_suburban` entry sets `ansible_host` to
+  `service_mapping.opnsense_suburban.ansible_host`, its transit IPv4 address.
 - Connection vars (SSH user, ProxyJump, BGP identity, gateway names, etc.) live
   in
   [ansible/inventory/group_vars/opnsense_servers.yml](../../ansible/inventory/group_vars/opnsense_servers.yml)
   and
-  [ansible/inventory/group_vars/opnsense_test_servers.yml](../../ansible/inventory/group_vars/opnsense_test_servers.yml).
+  [ansible/inventory/group_vars/opnsense_suburban_servers.yml](../../ansible/inventory/group_vars/opnsense_suburban_servers.yml).
 
 [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml)
-runs against `opnsense_servers:opnsense_test_servers` and is branchless on
+runs against `opnsense_servers:opnsense_suburban_servers` and is branchless on
 `inventory_hostname`. All connection differences are absorbed by the two
 group_vars files.
 

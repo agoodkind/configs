@@ -68,7 +68,7 @@ cloudflare_dns_update_enabled: true
 # ----------------------------------------------------------------------------
 # mwan ifmgr
 # ----------------------------------------------------------------------------
-# Base off. Only the MWAN VM scopes (mwan_servers, test_mwan_servers) enable the
+# Base off. Only the MWAN VM scopes (mwan_servers, mwan_suburban_servers) enable the
 # wan role, which renders the shared [ifmgr] translation prefixes and the
 # [ifmgr.wan.<name>] map. Every other ifmgr consumer (the hypervisor host oob
 # role) leaves this false, so the common include skips the wan-only keys.
@@ -81,4 +81,3 @@ mwan_ifmgr_wan_enabled: false
 # own dependencies (e.g. mwan orders cloudflared after mwan-update-routes).
 cloudflared_service_after: network-online.target
 cloudflared_service_wants: network-online.target
-

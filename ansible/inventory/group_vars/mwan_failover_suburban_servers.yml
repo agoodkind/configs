@@ -1,20 +1,20 @@
 ---
 # Testbed MWAN failover LXC (lxc-216 on suburban) target vars.
-# Consumed by deploy-mwan-failover.yml when targeting `mwan_failover_test_servers`.
+# Consumed by deploy-mwan-failover.yml when targeting `mwan_failover_suburban_servers`.
 
-mwan_failover_hostname: "mwan-failover-test"
+mwan_failover_hostname: "{{ service_mapping.mwan_failover_suburban.hostname.split('.')[0] }}"
 mwan_failover_email_from: "mwan-testbed@goodkind.io"
 mwan_failover_subject_prefix: "[MWAN-suburban-failover]"
 
 mwan_failover_bgp_asn: 4200000001
-mwan_failover_bgp_router_id: "{{ service_mapping.mwan_failover_test.ipv4_transit }}"
-mwan_failover_bgp_next_hop_v6: "{{ service_mapping.mwan_failover_test.ipv6_transit }}"
+mwan_failover_bgp_router_id: "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}"
+mwan_failover_bgp_next_hop_v6: "{{ service_mapping.mwan_failover_suburban.ipv6_transit }}"
 mwan_failover_bgp_neighbors:
-  - "{{ service_mapping.opnsense_test.ipv4_transit }}"
+  - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_failover_bgp_neighbors_v6:
-  - "{{ service_mapping.opnsense_test.ipv6_transit }}"
-mwan_failover_ipv4_address: "{{ service_mapping.mwan_failover_test.ipv4_transit }}/29"
-mwan_failover_ipv6_address: "{{ service_mapping.mwan_failover_test.ipv6_transit }}/64"
+  - "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
+mwan_failover_ipv4_address: "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}/29"
+mwan_failover_ipv6_address: "{{ service_mapping.mwan_failover_suburban.ipv6_transit }}/64"
 # Empty on the testbed: replies to off-link sources leave by eth0 and drain
 # through the ISP sim's vmbr1 uplink to suburban, which owns the return
 # routing for the tunnel and testbed ranges. Production sets real values

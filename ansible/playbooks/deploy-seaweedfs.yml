@@ -6,7 +6,7 @@
 # via SSH. It installs the pinned weed binary and runs it under systemd (no
 # Docker).
 #
-# The suburban LXC reaches GitHub for the release download via opnsense-test
+# The suburban LXC reaches GitHub for the release download via router.suburban.goodkind.io
 # NAT64; the prod LXC reaches it over native IPv6.
 #
 # Usage:

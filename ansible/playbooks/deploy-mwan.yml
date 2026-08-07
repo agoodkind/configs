@@ -10,18 +10,18 @@
 # Required: VF must be created on Proxmox host first (x710-vf-setup.service)
 # ============================================================================
 
-# MWAN VM membership in mwan_servers and test_mwan_servers is provided by
+# MWAN VM membership in mwan_servers and mwan_suburban_servers is provided by
 # service_mapping.yml, so no localhost add_host bootstrap is needed here. The
-# MWAN failover LXC lives in mwan_failover_servers or mwan_failover_test_servers
+# MWAN failover LXC lives in mwan_failover_servers or mwan_failover_suburban_servers
 # and is configured by deploy-mwan-failover.yml.
 
 - name: Prepare MWAN VM (base packages, SSH keys, etc.)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    target_hosts: mwan_servers:test_mwan_servers
+    target_hosts: mwan_servers:mwan_suburban_servers
 
 - name: Configure MWAN VM
-  hosts: mwan_servers:test_mwan_servers
+  hosts: mwan_servers:mwan_suburban_servers
   become: false
   environment:
     DEBIAN_FRONTEND: noninteractive
@@ -771,7 +771,7 @@
       when: mwan_ifmgr_wan_enabled | bool
 
 # The MWAN failover LXC is configured by deploy-mwan-failover.yml,
-# targeting mwan_failover_servers (prod) or mwan_failover_test_servers
+# targeting mwan_failover_servers (prod) or mwan_failover_suburban_servers
 # (testbed).
 #
 # Suburban-specific host work (MWAN VM args, ISP LXCs, OPNsense host bridge)

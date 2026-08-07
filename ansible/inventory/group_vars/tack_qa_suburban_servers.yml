@@ -3,11 +3,11 @@
 # the same guest segment. A direct connection does not return: the testbed
 # router sends anything outside 3d06:bad:b01:210::/60 out a simulated WAN, and
 # the controller is on the prod side at 3d06:bad:b01:a::. Same jump as
-# test_mwan_servers and opnsense_test_servers.
+# mwan_suburban_servers and opnsense_suburban_servers.
 ansible_ssh_common_args: "{{ ssh_base_args }} -o ProxyJump=root@[3d06:bad:b01:200::1]"
 
-service_hostname: "{{ service_mapping.tack_qa.hostname }}"
-service_ipv6_address: "{{ service_mapping.tack_qa.ipv6 }}/64"
+service_hostname: "{{ service_mapping.tack_qa_suburban.hostname }}"
+service_ipv6_address: "{{ service_mapping.tack_qa_suburban.ipv6 }}/64"
 service_mac_address: "bc:24:11:04:00:00"
 
 tack_domain: "tack-qa"
@@ -40,7 +40,7 @@ ghcr_pull_token: "{{ vault_tack_qa_ghcr_pull_token }}"
 tack_repo_read_token: "{{ vault_tack_qa_repo_read_token }}"
 
 # /96 carved from the suburban VMNET segment 3d06:bad:b01:210::/64
-# (opt6 on opnsense-test), mirroring prod's 0:7ac::/96 carved from its own
+# (opt6 on router.suburban.goodkind.io), mirroring prod's 0:7ac::/96 carved from its own
 # VMNET /64. ndp prefix must match the docker subnet.
 tack_docker_v6_subnet: "3d06:bad:b01:210:7ac::/96"
 tack_docker_v6_gateway: "3d06:bad:b01:210:7ac::1"
