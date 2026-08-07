@@ -161,7 +161,15 @@ The OPNsense install ISO ships one snapshot of the package set. The mirror has m
 
 ### Rule 8: Proxmox restricts `args` qemu-server field to literal `root@pam`
 
-Setting the `args` field (used by Tofu's `kvm_arguments`) returns HTTP 500 "only root can set 'args' config" for any API token, regardless of `privsep` or assigned role. The check is hard-coded in Proxmox, not policy-driven. For VMs that need `args` (any VM with a virtio-serial chardev, including the mwan-opnsense VMs): `qm create` manually as root via SSH, then `tofu import` the resulting VM. The pattern is documented in [opentofu/imports.md](../../opentofu/imports.md).
+Setting `args`, which OpenTofu exposes as `kvm_arguments`, fails with HTTP 500
+for every API token. Proxmox reports `only root can set 'args' config` regardless
+of `privsep` or assigned role. Proxmox hard-codes this restriction.
+
+Create virtual machines that need `args` manually with `qm create` as root over
+SSH. This includes virtual machines with a virtio-serial chardev, such as the
+MWAN OPNsense guests. Import the completed virtual machine through the repo
+control tool. [OpenTofu state operations](../../opentofu/backend.md) documents
+state attachment and drift review.
 
 ### Rule 9: Hot-adding a NIC needs `configctl interface reconfigure`
 

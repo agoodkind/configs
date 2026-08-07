@@ -5,18 +5,18 @@
 # leaves undeclared fields alone, so live `args` drift does not surface in plan.
 # The MWAN VM's args also carry its vsock CID, which tracks its vm_id.
 
-# Resource name deliberately omits the VMID so it cannot go stale again.
-resource "proxmox_virtual_environment_vm" "test_mwan" {
+# Resource name follows the canonical suburban mapping key.
+resource "proxmox_virtual_environment_vm" "mwan_suburban" {
   node_name = "hypervisor"
-  vm_id     = local.service_mapping.test_mwan.vmid
-  name      = "test-mwan"
+  vm_id     = local.service_mapping.mwan_suburban.vmid
+  name      = local.service_mapping.mwan_suburban.hostname
 
   depends_on = [
-    proxmox_network_linux_bridge.vm_management,
-    proxmox_network_linux_bridge.mwan_internal,
-    proxmox_network_linux_bridge.isp_webpass,
-    proxmox_network_linux_bridge.isp_att,
-    proxmox_network_linux_bridge.isp_mbrains,
+    proxmox_network_linux_bridge.vm_management_suburban,
+    proxmox_network_linux_bridge.mwan_suburban,
+    proxmox_network_linux_bridge.isp_webpass_suburban,
+    proxmox_network_linux_bridge.isp_att_suburban,
+    proxmox_network_linux_bridge.isp_mbrains_suburban,
   ]
 
   machine       = "q35"
@@ -60,36 +60,36 @@ resource "proxmox_virtual_environment_vm" "test_mwan" {
     discard      = "on"
   }
 
-  # MWAN-140 parity: VM 950 management lives on the vmbrtrunk 204:: services
-  # LAN, the same untagged segment as the testbed OPNsense LAN (204::1) and the
-  # DNS64 LXC (204::464), mirroring prod where the mwan VM enmgmt0 shares the
+  # MWAN-140 parity: the suburban MWAN management interface lives on the vmbrtrunk
+  # services LAN, the same untagged segment as the suburban OPNsense LAN and DNS64
+  # LXC, mirroring prod where the mwan VM enmgmt0 shares the
   # OPNsense LAN /64 and reaches the resolver on-link.
   network_device {
-    bridge      = "vmbrtrunk"
+    bridge      = proxmox_network_linux_bridge.trunk_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:B3:9E:46"
   }
 
   network_device {
-    bridge      = "vmbr2"
+    bridge      = proxmox_network_linux_bridge.mwan_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:49:5D:94"
   }
 
   network_device {
-    bridge      = "vmbr4"
+    bridge      = proxmox_network_linux_bridge.isp_webpass_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:BE:8E:B4"
   }
 
   network_device {
-    bridge      = "vmbr5"
+    bridge      = proxmox_network_linux_bridge.isp_att_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:C0:D7:60"
   }
 
   network_device {
-    bridge      = "vmbr6"
+    bridge      = proxmox_network_linux_bridge.isp_mbrains_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:3D:CE:CC"
   }
@@ -108,14 +108,14 @@ resource "proxmox_virtual_environment_vm" "test_mwan" {
   }
 }
 
-resource "proxmox_virtual_environment_vm" "opnsense_test" {
+resource "proxmox_virtual_environment_vm" "opnsense_suburban" {
   node_name = "hypervisor"
-  vm_id     = local.service_mapping.opnsense_test.vmid
-  name      = "opnsense-test"
+  vm_id     = local.service_mapping.opnsense_suburban.vmid
+  name      = local.service_mapping.opnsense_suburban.hostname
 
   depends_on = [
-    proxmox_network_linux_bridge.mwan_internal,
-    proxmox_network_linux_bridge.trunk,
+    proxmox_network_linux_bridge.mwan_suburban,
+    proxmox_network_linux_bridge.trunk_suburban,
   ]
 
   scsi_hardware   = "virtio-scsi-pci"
@@ -154,13 +154,13 @@ resource "proxmox_virtual_environment_vm" "opnsense_test" {
   }
 
   network_device {
-    bridge      = "vmbrtrunk"
+    bridge      = proxmox_network_linux_bridge.trunk_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:7D:6D:87"
   }
 
   network_device {
-    bridge      = "vmbr2"
+    bridge      = proxmox_network_linux_bridge.mwan_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:0F:66:FA"
   }
