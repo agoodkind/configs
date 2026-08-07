@@ -1,119 +1,90 @@
 # SSH and host access
 
-How to reach hosts in the homelab and which entry point to prefer. Per-host
-addresses live in the Ansible inventory, in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
-and [ansible/inventory/hosts](../../ansible/inventory/hosts), not here.
+Direct SSH is the normal path to every routed host. WireGuard and Cloudflare
+private access carry the same homelab routes, so the target does not change
+between them.
 
-## Proxy container access
+Canonical hostnames, IPv6 addresses, and virtual machine identifiers live in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+Static hypervisor names live in
+[ansible/inventory/hosts](../../ansible/inventory/hosts).
 
-The proxy container has two SSH entry points:
+## 1. Connect directly
 
-- **Port 22 (SSHPiper)**: public-facing. Routes traffic to other containers by
-username pattern.
-- **Port 2222 (OpenSSH)**: admin-facing. Direct access to the proxy container
-itself.
+Use the fully qualified domain name when private DNS resolves it. Otherwise,
+use the IPv6 address from `service_mapping.yml`. Both paths connect directly.
 
-### Proxy shortcut
+```bash
+ssh root@<service-hostname-or-ipv6>
+ssh agoodkind@<opnsense-hostname-or-ipv6>
+```
 
-To reach the proxy container via the public port (SSHPiper), use the
-`@proxy` suffix when configured, or the matching `~/.ssh/config` alias:
+The proxy container runs OpenSSH on port 2222 because SSHPiper owns port 22:
+
+```bash
+ssh -p 2222 root@proxy.home.goodkind.io
+```
+
+## 2. Connect through SSHPiper
+
+SSHPiper is the fallback when the proxy is reachable but direct SSH is not.
+It routes the first SSH username component to a managed service target:
+
+```bash
+ssh <route-name>@ssh.home.goodkind.io
+```
+
+Reach the proxy container itself through SSHPiper with the `@proxy` suffix:
 
 ```bash
 ssh root@proxy@ssh.home.goodkind.io
-# Or, with ~/.ssh/config:
-ssh root@proxy
 ```
 
-This matches the `^(.+)@proxy` regex in `sshpiperd.yaml` and is routed to
-`[::1]:2222`.
+## 3. Use break-glass access
 
-## Primary method: SSHPiper routing
+Use an out-of-band path when the target network or SSH daemon is unavailable.
+Read the guest identifier from `service_mapping.yml` first.
 
-All `*.ssh.home.goodkind.io` DNS resolves to the proxy host, where SSHPiper
-routes by username:
+Run a command inside an LXC container or QEMU virtual machine from its Proxmox
+host:
 
 ```bash
-ssh adguard@ssh.home.goodkind.io
-ssh pdns@ssh.home.goodkind.io
-ssh mwan@ssh.home.goodkind.io
+ssh root@<proxmox-host> 'pct exec <vmid> -- <command>'
+ssh root@<proxmox-host> 'qm guest exec <vmid> -- <command>'
 ```
 
-Pattern: `ssh <short-hostname>@ssh.home.goodkind.io`. The short hostname is the
-first label of the full container name (`adguard` from
-`adguard.home.goodkind.io`).
-
-## Direct IP access (bypass SSHPiper)
-
-When SSHPiper is unavailable or for troubleshooting, use IPs directly. Prefer
-IPv6.
+For a QEMU virtual machine with a configured serial console:
 
 ```bash
-ssh root@<ipv6-address>
+ssh -t root@<proxmox-host> 'qm terminal <vmid>'
 ```
 
-### Finding a container or VM IP
-
-```bash
-# 1. SSH to the Proxmox host that owns the guest.
-# 2. Find the guest by name.
-pct list | grep -i <name>            # LXC containers
-qm list | grep -i <name>             # QEMU VMs
-
-# 3. Read its primary IP. Prefer inet6.
-pct exec <vmid> -- ip addr show eth0
-qm guest cmd <vmid> network-get-interfaces
-
-# 4. SSH directly. Prefer IPv6.
-ssh root@<ipv6-address>
-```
-
-## Jump host access (last resort)
-
-If direct IP access fails, jump through OPNsense, then to the hypervisor, then
-to the target:
-
-```bash
-ssh agoodkind@<opnsense>
-# from there:
-ssh root@<proxmox-host>
-ssh root@<container-ip>
-```
+OPNsense also has a serial control channel described in
+[the OPNsense out-of-band daemon](../opnsense/daemon.md). Hypervisor recovery
+paths live in [emergency out-of-band access](oob.md).
 
 ## Diagnostics-only SSH options
 
-Disable strict host key checking for automation or diagnostics only:
+Disable strict host key checking only for automation or diagnostics:
 
 ```bash
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>
-```
-
-## Direct access to the proxy host
-
-To reach the proxy host itself (bypassing SSHPiper):
-
-```bash
-ssh -p 2222 root@<proxy-ipv6>
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<host>
 ```
 
 ## SSH user conventions
 
-- Proxmox hosts: `root` over IPv6.
-- LXC containers: `root` over IPv6 via SSHPiper or direct.
-- OPNsense (FreeBSD): `agoodkind`. Use `sudo` for privileged tasks.
-- Proxy host (port 2222): `root`.
-- Ansible controller container: has `PROXMOX_API_TOKEN` available.
+- Proxmox hosts and Linux guests use `root`.
+- OPNsense uses `agoodkind`; run privileged commands with `sudo`.
+- The proxy container uses `root` on direct port 2222.
 
-## SSH from automation (zsh quoting)
+## SSH from automation
 
-When passing a command to `ssh host <command>`, quote the entire remote command
-string in single quotes so that the local shell passes the argument verbatim
-without glob expansion:
+Quote a remote command in single quotes so the local shell passes it
+verbatim:
 
 ```bash
 ssh host 'somecommand --flag=value[index]'
 ```
 
-For anything more complex than a single command, write the logic to a temp
-file via `mktemp`, `scp` it to the host, execute it there, and clean up
-afterward.
+For a longer command, write it to a temporary file, copy it to the host, run
+it, and remove it afterward.

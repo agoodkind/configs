@@ -48,8 +48,8 @@ independent Proxmox installations rather than a cluster, so a shared id is legal
 but a command that lands on the wrong host then finds a guest at that id and
 succeeds against it. With no id in common the same mistake fails outright.
 
-When SSH to the testbed OPNsense fails, reach it over the out-of-band channel
-in [docs/opnsense/testbed/access.md](../opnsense/testbed/access.md).
+The [testbed OPNsense recovery guide](../opnsense/testbed/access.md) uses the
+serial channel when network access is unavailable.
 
 Each ISP simulator terminates one WAN link for the MWAN VM, serves DHCPv6-PD
 through kea-dhcp6 and router advertisements through radvd, and uplinks through

@@ -7,9 +7,6 @@
 # OPNsense expects agoodkind for SSH, same as production; root logins are
 # refused, so the default `ansible_user: root` in [all:vars] fails here.
 ansible_user: agoodkind
-ansible_ssh_common_args: >-
-  -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-  -o ProxyJump=root@[3d06:bad:b01:200::1]
 
 # OPNsense identity for MWAN-side config rendering. Use IPv6 LAN address
 # so testbed templates exercise the same URL-parsing path as production.

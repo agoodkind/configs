@@ -11,8 +11,8 @@ Read the current access path before opening a tunnel:
 
 - [Suburban testbed](../mwan/testbed.md) defines the testbed host and
   virtual machine layout.
-- [Reaching the testbed OPNsense guest](testbed/access.md) covers the
-  out-of-band channel to use when SSH fails.
+- [Recover testbed OPNsense without network access](testbed/access.md) covers
+  the serial control path.
 - [Access](../infra/access.md) defines operator access patterns.
 
 Use the service repository for service-specific UI paths. For the Cloudflared
@@ -29,31 +29,19 @@ Set these values from the current inventory or the service under test:
 ```sh
 LOCAL_BIND_HOST='<local browser bind host>'
 LOCAL_PORT='<unused local port>'
-JUMP_HOST='<optional ssh jump host>'
 TARGET_SSH='<ssh target for the OPNsense host>'
 REMOTE_HOST='<host as seen from TARGET_SSH>'
 REMOTE_PORT='<OPNsense UI port as seen from TARGET_SSH>'
 REMOTE_PATH='<OPNsense UI path for the page under test>'
 ```
 
-Leave `JUMP_HOST` empty when direct SSH access reaches `TARGET_SSH`.
-
 ## Forward
 
-Run the direct form when the target is reachable without a jump host:
+Open the SSH forward:
 
 ```sh
 ssh -N \
     -L "${LOCAL_BIND_HOST}:${LOCAL_PORT}:${REMOTE_HOST}:${REMOTE_PORT}" \
-    "${TARGET_SSH}"
-```
-
-Run the jump form when the access documentation requires a jump host:
-
-```sh
-ssh -N \
-    -L "${LOCAL_BIND_HOST}:${LOCAL_PORT}:${REMOTE_HOST}:${REMOTE_PORT}" \
-    -J "${JUMP_HOST}" \
     "${TARGET_SSH}"
 ```
 

@@ -98,8 +98,7 @@ service_mapping:
   # Testbed guests on suburban. They share the VMNET segment on untagged
   # vtnet0 beside the testbed OPNsense VMNET interface (210::1), mirroring prod
   # where the guests sit on opt6 rather than on MANAGEMENT. Host suffixes match
-  # each guest's VMID. Directly reachable from the controller over the
-  # 3d06:bad:b01::/48 tunnel, so no ProxyJump.
+  # each guest's VMID.
   mwan_suburban:
     hostname: mwan.suburban.goodkind.io
     vmid: 213
@@ -119,8 +118,8 @@ service_mapping:
     # guest holds no other address, so it aliases rather than repeating.
     ipv6: *mwan_failover_suburban_transit_v6
   # OPNsense (one logical machine per environment). The plugin uses ipv6 as
-  # ansible_host by default, which is correct for prod. Testbed sets
-  # ansible_host to the WAN/internal address reachable on vmbr2.
+  # ansible_host by default, which is correct for prod. Testbed targets the
+  # routed IPv6 address on the WAN/internal link.
   opnsense:
     hostname: router.home.goodkind.io
     vmid: 101
@@ -142,13 +141,11 @@ service_mapping:
     # this link reads them from here, so a renumber changes one line. The
     # transit network is 10.240.240.0/29 rather than prod's 10.250.250.0/29, so
     # no address is shared between the two environments.
-    ipv4_transit: &opnsense_suburban_transit_v4 "10.240.240.2"
-    ipv6_transit: "3d06:bad:b01:201::2"
+    ipv4_transit: "10.240.240.2"
+    ipv6_transit: &opnsense_suburban_transit_v6 "3d06:bad:b01:201::2"
     transit_v4_net: "10.240.240.0/29"
     transit_v6_net: "3d06:bad:b01:201::/64"
-    # Testbed OPNsense SSH lands on the transit address through suburban.
-    # SSH user and ProxyJump live in group_vars/opnsense_suburban_servers.yml.
-    ansible_host: *opnsense_suburban_transit_v4
+    ansible_host: *opnsense_suburban_transit_v6
 
   # Suburban's own addresses on vmbr1, the uplink the ISP sims route through.
   # OpenTofu derives the vmbr1 bridge address from ipv4; the routable IPv6 is

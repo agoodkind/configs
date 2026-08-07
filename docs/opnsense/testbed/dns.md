@@ -70,16 +70,6 @@ order you hit them.
 Diagnostic note: `sockstat` and `pgrep` need `sudo` on the OPNsense to show the
 root-owned Unbound and Tayga; without it they falsely report nothing on `:53`.
 
-## Access paths
-
-- Testbed OPNsense:
-  `ssh -J 'root@[3d06:bad:b01:200::1]' agoodkind@10.240.240.2`.
-  The transit address comes from
-  `service_mapping.opnsense_suburban.ansible_host`.
-- DNS64 LXC, CT 203: Run `pct exec 203 ...` from
-  `root@[3d06:bad:b01:200::1]`.
-- Testbed MWAN VM 213: Run `ssh root@3d06:bad:b01:210::213`.
-
 ## How VM 213 reaches DNS
 
 VM 213 management sits on the `vmbrtrunk` `210::` services LAN, the same segment

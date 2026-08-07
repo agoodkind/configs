@@ -7,16 +7,6 @@ deployment. Live host topology lives in [docs/mwan/layout.md](layout.md)
 and [docs/opnsense/overview.md](../opnsense/overview.md). Go code rules live in
 [docs/mwan/go.md](go.md).
 
-## SSH and host access
-
-Use jump hosts explicitly when the environment requires it (for example, when
-the controller cannot reach a testbed IPv6 directly). Disable strict host key
-checking only for automation or diagnostics:
-
-```bash
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ...
-```
-
 Prefer non-disruptive actions on the MWAN VM. Avoid
 `systemctl restart systemd-networkd` unless necessary.
 
