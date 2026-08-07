@@ -23,6 +23,7 @@ resource "proxmox_virtual_environment_container" "github_runner" {
   }
 
   features {
+    keyctl  = true
     nesting = true
   }
 
