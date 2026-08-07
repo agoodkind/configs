@@ -84,6 +84,8 @@
           {{
             [
               deploy_authorized_keys_script,
+              '--github-user',
+              github_ssh_keys_user,
               '--out',
               work_tmp_dir + '/authorized_keys.bundle'
             ]

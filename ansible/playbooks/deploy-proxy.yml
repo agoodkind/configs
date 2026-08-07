@@ -526,7 +526,7 @@
 
     - name: Fetch GitHub SSH keys
       ansible.builtin.get_url:
-        url: https://github.com/agoodkind.keys
+        url: "https://github.com/{{ github_ssh_keys_user }}.keys"
         dest: /tmp/github_keys
         mode: "0644"
         force: true

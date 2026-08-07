@@ -21,9 +21,3 @@ variable "suburban_proxmox_endpoint" {
   type        = string
   default     = "https://[3d06:bad:b01:200::1]:8006/"
 }
-
-variable "github_ssh_keys_user" {
-  description = "GitHub username whose public keys are injected into new containers"
-  type        = string
-  default     = "agoodkind"
-}

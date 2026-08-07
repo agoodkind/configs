@@ -10,17 +10,16 @@ Generate an authorized_keys bundle (newline-separated).
 Bundle sources:
 - All local ~/.ssh/id_*.pub files
 - SSH agent keys (ssh-add -L)
-- GitHub keys for a username (default: agoodkind)
+- GitHub keys for an explicit username
 - Optional extra public key file
 
 Usage:
-  deploy-authorized-keys [--out <path>] [--github-user <user>] \
+  deploy-authorized-keys --github-user <user> [--out <path>] \
     [--extra-pubkey <path>]
 
 Examples:
-  deploy-authorized-keys --out /tmp/authorized_keys.bundle
-  deploy-authorized-keys --github-user agoodkind > /tmp/bundle
-  deploy-authorized-keys --extra-pubkey /tmp/sshpiper_upstream.pub
+  deploy-authorized-keys --github-user agoodkind --out /tmp/authorized_keys.bundle
+  deploy-authorized-keys --github-user agoodkind --extra-pubkey /tmp/sshpiper_upstream.pub
 USAGE
 }
 
@@ -30,7 +29,7 @@ die() {
 }
 
 OUT_PATH=""
-GITHUB_USER="agoodkind"
+GITHUB_USER=""
 EXTRA_PUBKEY=""
 
 while [ $# -gt 0 ]; do
@@ -43,7 +42,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$GITHUB_USER" ] || die "--github-user must be non-empty"
+[ -n "$GITHUB_USER" ] || die "--github-user is required"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
