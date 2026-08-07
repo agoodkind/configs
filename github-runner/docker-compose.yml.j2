@@ -1,0 +1,27 @@
+services:
+{% for runner_name in github_runner_names %}
+  {{ runner_name }}:
+    image: {{ github_runner_image }}
+    container_name: {{ runner_name }}
+    restart: unless-stopped
+    stop_grace_period: 2m
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REPO_URL: {{ github_runner_repo_url }}
+      RUNNER_NAME: {{ runner_name }}
+      LABELS: {{ github_runner_labels }}
+      RUN_AS_ROOT: "true"
+      RANDOM_RUNNER_SUFFIX: "false"
+      RUNNER_WORKDIR: {{ github_runner_install_dir }}/work/{{ runner_name }}
+      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /runner-config
+      DISABLE_AUTOMATIC_DEREGISTRATION: "true"
+      UNSET_CONFIG_VARS: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - >-
+        {{ github_runner_install_dir }}/work/{{ runner_name }}:
+        {{- github_runner_install_dir }}/work/{{ runner_name }}
+      - {{ github_runner_install_dir }}/config/{{ runner_name }}:/runner-config
+{% endfor %}

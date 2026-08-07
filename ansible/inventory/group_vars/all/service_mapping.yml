@@ -75,6 +75,10 @@ service_mapping:
     hostname: seaweedfs
     vmid: 218
     ipv6: "3d06:bad:b01:210::218"
+  github_runner:
+    hostname: github-runner
+    vmid: 219
+    ipv6: "3d06:bad:b01:210::219"
   dns64_suburban:
     hostname: dns64-suburban
     vmid: 203
