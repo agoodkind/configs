@@ -43,14 +43,21 @@
         state: present
         update_cache: true
 
-    - name: Configure Docker log rotation
+    - name: Configure Docker daemon
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
         owner: root
         group: root
         mode: "0644"
+        validate: "dockerd --validate --config-file %s"
         content: |
           {
+            "default-network-opts": {
+              "bridge": {
+                "com.docker.network.enable_ipv6": "true"
+              }
+            },
+            "ipv6": true,
             "log-driver": "json-file",
             "log-opts": {
               "max-file": "3",
