@@ -25,3 +25,7 @@ services:
         target: {{ github_runner_install_dir }}/work/{{ runner_name }}
       - {{ github_runner_install_dir }}/config/{{ runner_name }}:/runner-config
 {% endfor %}
+
+networks:
+  default:
+    enable_ipv6: true
