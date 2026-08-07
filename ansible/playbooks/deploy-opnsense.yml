@@ -9,8 +9,10 @@
 # inventory_hostname.
 #
 # Run examples:
-#   ansible-playbook playbooks/deploy-opnsense.yml --limit opnsense_servers
-#   ansible-playbook playbooks/deploy-opnsense.yml --limit opnsense_suburban_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-opnsense \
+#     --limit opnsense_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-opnsense \
+#     --limit opnsense_suburban_servers
 
 - name: Build mwan-opnsense binary
   hosts: localhost

@@ -3,9 +3,10 @@
 Suburban is the NJ Proxmox hypervisor. The testbed mirrors production MWAN
 using the same Ansible templates with different group vars
 ([mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml)).
-Live suburban definitions live in
-[opentofu/suburban/](../../opentofu/suburban/); treat that module as
-ground truth and update this page when it changes.
+Guest identities live in
+[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+The [suburban OpenTofu module](../../opentofu/suburban/) owns the remaining
+resource shape.
 
 ## Bridges
 
@@ -76,8 +77,8 @@ management, LAN, internal, and SLAAC already use.
 
 | Component                  | Production (vault)                              | Testbed (suburban)                                                |
 | -------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- |
-| MWAN VM                    | mwan                                            | mwan.suburban.goodkind.io                                         |
-| Failover LXC               | mwan-failover                                   | mwan-failover.suburban.goodkind.io                                |
+| MWAN VM                    | mwan.home.goodkind.io                           | mwan.suburban.goodkind.io                                         |
+| Failover LXC               | mwan-failover.home.goodkind.io                  | mwan-failover.suburban.goodkind.io                                |
 | OPNsense                   | router.home.goodkind.io                         | router.suburban.goodkind.io                                       |
 | Hypervisor                 | vault                                           | suburban                                                          |
 | Group vars (MWAN)          | [ansible/inventory/group_vars/mwan_servers.yml](../../ansible/inventory/group_vars/mwan_servers.yml) | [ansible/inventory/group_vars/mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml) |

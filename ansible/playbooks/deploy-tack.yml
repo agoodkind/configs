@@ -6,10 +6,11 @@
 #
 # Usage:
 #   # Production
-#   ansible-playbook playbooks/deploy-tack.yml -l tack_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-tack --limit tack_servers
 #
 #   # QA
-#   ansible-playbook playbooks/deploy-tack.yml -l tack_qa_suburban_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-tack \
+#     --limit tack_qa_suburban_servers
 
 - name: Prepare tack guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml

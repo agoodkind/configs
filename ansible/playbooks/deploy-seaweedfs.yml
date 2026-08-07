@@ -11,10 +11,12 @@
 #
 # Usage:
 #   # Production
-#   ansible-playbook playbooks/deploy-seaweedfs.yml -l seaweedfs_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-seaweedfs \
+#     --limit seaweedfs_servers
 #
 #   # Testbed
-#   ansible-playbook playbooks/deploy-seaweedfs.yml -l seaweedfs_suburban_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-seaweedfs \
+#     --limit seaweedfs_suburban_servers
 
 - name: Prepare seaweedfs guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml

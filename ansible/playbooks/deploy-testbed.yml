@@ -10,8 +10,9 @@
 # virtio-serial, and the VFIO host setup for the MWAN VM's WAN passthrough.
 #
 # Run examples:
-#   ansible-playbook playbooks/deploy-testbed.yml --limit suburban
-#   ansible-playbook playbooks/deploy-testbed.yml --limit suburban --tags args
+#   go run goodkind.io/configs/cmd/configs deploy deploy-testbed --limit suburban
+#   go run goodkind.io/configs/cmd/configs deploy deploy-testbed \
+#     --limit suburban --tags args
 #
 # The shared Proxmox host services (mwan ifmgr, mwan watchdog, cloudflared
 # OOB, base packages) come from deploy-proxmox.yml. The testbed MWAN VM

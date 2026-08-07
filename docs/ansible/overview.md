@@ -47,8 +47,8 @@ to introduce drift:
   `service_mapping` plugin. There is no static `[opnsense_servers]` group in
   [inventory/hosts](../../ansible/inventory/hosts).
 - The plugin sets `ansible_host` from the canonical IPv6 by default. The
-  `opnsense_suburban` entry sets `ansible_host` to
-  `service_mapping.opnsense_suburban.ansible_host`, its transit IPv4 address.
+  `opnsense_suburban` entry aliases `ansible_host` to its `ipv4_transit`
+  address, which SSH reaches through suburban.
 - Connection vars (SSH user, ProxyJump, BGP identity, gateway names, etc.) live
   in
   [ansible/inventory/group_vars/opnsense_servers.yml](../../ansible/inventory/group_vars/opnsense_servers.yml)

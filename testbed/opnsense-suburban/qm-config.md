@@ -47,12 +47,22 @@ that the named virtio console resolves to `/dev/ttyV0.1` and that the
 rc.d wrapper wrote the daemon contract file:
 
 ```bash
-ssh root@<service_mapping.opnsense_suburban.ansible_host> 'service mwan_opnsense start'
-ssh root@<service_mapping.opnsense_suburban.ansible_host> 'service mwan_opnsense status'
-ssh root@<service_mapping.opnsense_suburban.ansible_host> 'ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
-ssh root@<service_mapping.opnsense_suburban.ansible_host> 'ls -l /var/lib/mwan/daemon.toml'
-ssh root@<service_mapping.opnsense_suburban.ansible_host> 'sed -n "1,20p" /var/lib/mwan/daemon.toml'
+OPNSENSE_SUBURBAN=10.240.240.2
+
+ssh -J 'root@[3d06:bad:b01:200::1]' "agoodkind@$OPNSENSE_SUBURBAN" \
+    'sudo service mwan_opnsense start'
+ssh -J 'root@[3d06:bad:b01:200::1]' "agoodkind@$OPNSENSE_SUBURBAN" \
+    'sudo service mwan_opnsense status'
+ssh -J 'root@[3d06:bad:b01:200::1]' "agoodkind@$OPNSENSE_SUBURBAN" \
+    'sudo ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0 /dev/ttyV0.1'
+ssh -J 'root@[3d06:bad:b01:200::1]' "agoodkind@$OPNSENSE_SUBURBAN" \
+    'sudo ls -l /var/lib/mwan/daemon.toml'
+ssh -J 'root@[3d06:bad:b01:200::1]' "agoodkind@$OPNSENSE_SUBURBAN" \
+    'sudo sed -n "1,20p" /var/lib/mwan/daemon.toml'
 ```
+
+`OPNSENSE_SUBURBAN` is the current
+`service_mapping.opnsense_suburban.ansible_host` value.
 
 Expect `/dev/vtcon/io.goodkind.mwan-opnsense.0` to point at `../ttyV0.1`.
 Expect `/var/lib/mwan/daemon.toml` to be owned by `root` with mode
