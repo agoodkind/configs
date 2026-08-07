@@ -1,0 +1,223 @@
+---
+- name: Prepare GitHub runner guest
+  ansible.builtin.import_playbook: prep-guests.yml
+  vars:
+    target_hosts: github_runner_servers
+
+- name: Provision Tack repository-scoped GitHub Actions runners
+  hosts: github_runner_servers
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Install prerequisites for Docker repository
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Add Docker apt repository
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: deb
+        uris: https://download.docker.com/linux/debian
+        suites: trixie
+        components: stable
+        architectures: amd64
+        signed_by: https://download.docker.com/linux/debian/gpg
+        state: present
+
+    - name: Install Docker Engine
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Configure Docker log rotation
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-file": "3",
+              "max-size": "25m"
+            }
+          }
+      notify: Restart Docker
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Apply Docker configuration before starting runners
+      ansible.builtin.meta: flush_handlers
+
+    - name: Create GitHub runner base directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - "{{ github_runner_install_dir }}"
+        - "{{ github_runner_install_dir }}/work"
+        - "{{ github_runner_install_dir }}/config"
+
+    - name: Create GitHub runner work directories
+      ansible.builtin.file:
+        path: "{{ github_runner_install_dir }}/work/{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop: "{{ github_runner_names }}"
+
+    - name: Create GitHub runner configuration directories
+      ansible.builtin.file:
+        path: "{{ github_runner_install_dir }}/config/{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop: "{{ github_runner_names }}"
+
+    - name: Deploy GitHub runner Compose file
+      ansible.builtin.template:
+        src: "{{ repo_root }}/github-runner/docker-compose.yml.j2"
+        dest: "{{ github_runner_install_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Read persistent GitHub runner configurations
+      ansible.builtin.stat:
+        path: "{{ github_runner_install_dir }}/config/{{ item }}/.runner"
+      loop: "{{ github_runner_names }}"
+      register: github_runner_config_files
+
+    - name: Determine whether GitHub runners need registration
+      ansible.builtin.set_fact:
+        github_runner_bootstrap_required: >-
+          {{
+            not (
+              github_runner_config_files.results
+              | map(attribute='stat.exists')
+              | min
+            )
+          }}
+
+    - name: Bootstrap GitHub runners
+      when:
+        - github_runner_enabled | bool
+        - github_runner_bootstrap_required | bool
+      block:
+        - name: Create short-lived GitHub runner registration token
+          ansible.builtin.uri:
+            url: "{{ github_runner_registration_url }}"
+            method: POST
+            headers:
+              Accept: application/vnd.github+json
+              Authorization: "Bearer {{ vault_github_runner_access_token }}"
+              X-GitHub-Api-Version: "2022-11-28"
+            status_code: 201
+            return_content: true
+          register: github_runner_registration_response
+          changed_when: true
+          no_log: true
+
+        - name: Deploy short-lived GitHub runner registration token
+          ansible.builtin.copy:
+            dest: "{{ github_runner_install_dir }}/.env"
+            owner: root
+            group: root
+            mode: "0600"
+            content: >-
+              RUNNER_TOKEN={{ github_runner_registration_response.json.token }}
+
+          no_log: true
+
+        - name: Pull GitHub runner image for bootstrap
+          ansible.builtin.command:
+            cmd: docker compose pull
+            chdir: "{{ github_runner_install_dir }}"
+          changed_when: true
+
+        - name: Register GitHub runners
+          ansible.builtin.command:
+            cmd: docker compose up -d --remove-orphans
+            chdir: "{{ github_runner_install_dir }}"
+          changed_when: true
+
+        - name: Wait for persistent GitHub runner configurations
+          ansible.builtin.wait_for:
+            path: "{{ github_runner_install_dir }}/config/{{ item }}/.runner"
+            state: present
+            timeout: 120
+          loop: "{{ github_runner_names }}"
+
+      always:
+        - name: Remove short-lived GitHub runner registration token
+          ansible.builtin.file:
+            path: "{{ github_runner_install_dir }}/.env"
+            state: absent
+
+    - name: Pull GitHub runner image for existing registrations
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: "{{ github_runner_install_dir }}"
+      changed_when: true
+      when:
+        - github_runner_enabled | bool
+        - not (github_runner_bootstrap_required | bool)
+
+    - name: Restart registered GitHub runners without token
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans --force-recreate
+        chdir: "{{ github_runner_install_dir }}"
+      changed_when: true
+      when:
+        - github_runner_enabled | bool
+        - github_runner_bootstrap_required | bool
+
+    - name: Start existing GitHub runners
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ github_runner_install_dir }}"
+      changed_when: true
+      when:
+        - github_runner_enabled | bool
+        - not (github_runner_bootstrap_required | bool)
+
+    - name: Read running GitHub runner services
+      ansible.builtin.command:
+        cmd: docker compose ps --services --status running
+        chdir: "{{ github_runner_install_dir }}"
+      register: github_runner_running_services
+      changed_when: false
+      failed_when: >-
+        (github_runner_running_services.stdout_lines | sort)
+        != (github_runner_names | sort)
+      when: github_runner_enabled | bool
+
+  handlers:
+    - name: Restart Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted

@@ -1,0 +1,22 @@
+---
+ansible_ssh_common_args: "{{ ssh_base_args }}"
+
+service_hostname: "{{ service_mapping.github_runner.hostname }}"
+service_ipv6_address: "{{ service_mapping.github_runner.ipv6 }}/64"
+service_mac_address: "{{ service_mapping.github_runner.mac_address }}"
+
+github_runner_enabled: true
+github_runner_install_dir: /opt/github-runner
+github_runner_image_tag: myoung34/github-runner:2.336.0-ubuntu-noble
+github_runner_image_digest: >-
+  sha256:c803ddbc5b91961aabf3411c6336cb2c838cdaa2f917f76654c15a1948934817
+github_runner_image: >-
+  {{ github_runner_image_tag }}@{{ github_runner_image_digest }}
+github_runner_repo_url: https://github.com/agoodkind/tack
+github_runner_registration_url: >-
+  https://api.github.com/repos/agoodkind/tack/actions/runners/registration-token
+github_runner_labels: tack
+github_runner_names:
+  - tack-runner-1
+  - tack-runner-2
+  - tack-runner-3
