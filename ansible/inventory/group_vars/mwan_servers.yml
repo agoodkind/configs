@@ -88,7 +88,12 @@ mwan_enabled_services:
   - systemd-networkd
   - networkd-dispatcher
   - nftables
-  - mwan-health
+  # mwan-health (the shell health daemon) is intentionally absent: prod
+  # runs the native Go health module authoritatively
+  # (mwan_ifmgr_health_shadow_mode false), so the Go module writes
+  # /var/run/mwan-health.state and the shell daemon must not also write
+  # that file. Re-add it here and set mwan_ifmgr_health_shadow_mode true
+  # to revert to the shell baseline.
   - wpa_supplicant-mwan
   - wpa-cli-action
   - wpa-authenticated.path
@@ -372,7 +377,7 @@ mwan_rt_tables:
 
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_shadow_mode: true
-mwan_ifmgr_health_shadow_mode: true
+mwan_ifmgr_health_shadow_mode: false
 mwan_ifmgr_npt_shadow_mode: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
