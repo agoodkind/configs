@@ -17,6 +17,7 @@
 - Allocations are v6 only, must be disjoint across routers, and must sit inside the internal block (`3d06:bad:b01::/60` production, the testbed twin in its group vars).
 - Shadow-first: both new shadow flags default to shadow on every host; authoritative flips are separate, operator-approved deploys, testbed before production.
 - Files stay under 500 lines; split by responsibility.
+- A slice must contain both a new primitive and its consumer. The deadcode gate rejects an unreachable function, and `exhaustruct` forces every literal of a struct to name a newly added field, so splitting a primitive from the code that calls it cannot pass the gate. Adding a field to `netif.RouteSpec` means updating every existing literal in the same change.
 - Commits are signed (`git commit -S`) with the `Co-authored-by: Claude <noreply@anthropic.com>` trailer.
 
 ---
