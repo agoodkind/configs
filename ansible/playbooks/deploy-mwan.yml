@@ -89,10 +89,25 @@
     # PRE-DEPLOY: Auto-rollback setup
     # ============================================================================
 
+    # The deploy gates run through the mwan binary on the Proxmox delegate, so
+    # the binary is built and pushed there before the first gate call. The
+    # dedicated filename keeps the watchdog's own /usr/local/bin/mwan
+    # untouched; deploy-proxmox.yml owns that copy. The MWAN VM also needs
+    # this build so the agent unit on the VM has something to copy.
+    - name: Build unified mwan Go binary on controller
+      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
+
+    - name: Push the deploy-gate binary to the Proxmox delegate
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        dest: /usr/local/sbin/mwan-deploy-gate
+        mode: "0755"
+
     - name: Verify internet connectivity before deploy
       delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.script: >-
-        {{ repo_root }}/proxmox/scripts/mwan-deploy-gate.sh check-egress
+      ansible.builtin.command:
+        cmd: /usr/local/sbin/mwan-deploy-gate deploy-gate check-egress
       register: pre_deploy_connectivity
       changed_when: false
       failed_when: false
@@ -165,12 +180,9 @@
 
     # ============================================================================
     # WATCHDOG: Proxmox-host watchdog config + binary deploy live in
-    # deploy-proxmox.yml / tasks/proxmox-host.yml. The MWAN VM only needs
-    # the binary built so the agent unit on the VM has something to copy.
+    # deploy-proxmox.yml / tasks/proxmox-host.yml. The mwan binary was built
+    # in the pre-deploy section above, before the first deploy gate.
     # ============================================================================
-
-    - name: Build unified mwan Go binary on controller
-      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
 
     # ============================================================================
     # DEPLOY: MWAN configuration on the MWAN VM
@@ -684,12 +696,19 @@
     # observable down window is shorter than any ping cadence, which is how a
     # prod reboot evaded the previous ping-based probe. The 180s budget covers
     # the full service-stop sequence plus boot to agent readiness.
+    #
+    # Exit codes: 0 the boot_id changed; 1 the guest still answered with the
+    # old boot_id, so the reboot definitively never fired; 2 the guest was
+    # unobservable at the deadline, so the verdict falls through to the
+    # egress gate below, whose failure path owns rollback for a guest that
+    # went down and never came back.
     - name: Wait for the MWAN VM boot id to change for its reboot
       delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.script: >-
-        {{ repo_root }}/proxmox/scripts/mwan-deploy-gate.sh
-        wait-reboot {{ actual_vmid }}
-        {{ mwan_pre_reboot_boot_id.stdout | trim }} 180
+      ansible.builtin.command:
+        cmd: >-
+          /usr/local/sbin/mwan-deploy-gate deploy-gate
+          wait-reboot {{ actual_vmid }}
+          {{ mwan_pre_reboot_boot_id.stdout | trim }} 180
       register: mwan_reboot_observed
       failed_when: false
       changed_when: false
@@ -700,15 +719,16 @@
       ansible.builtin.fail:
         msg: >-
           The boot id of VM {{ actual_vmid }} never changed within 180s,
-          observed from {{ mwan_proxmox_delegate }}, so the scheduled reboot
-          never fired. The VM still runs the config this deploy wrote, so no
+          observed from {{ mwan_proxmox_delegate }}, and the guest was still
+          answering with the old boot id, so the scheduled reboot never
+          fired. The VM still runs the config this deploy wrote, so no
           rollback was performed.
-      when: mwan_reboot_observed.rc != 0
+      when: mwan_reboot_observed.rc not in [0, 2]
 
     - name: Post-deploy health gate from Proxmox host
       delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.script: >-
-        {{ repo_root }}/proxmox/scripts/mwan-deploy-gate.sh wait-egress 180
+      ansible.builtin.command:
+        cmd: /usr/local/sbin/mwan-deploy-gate deploy-gate wait-egress 180
       register: mwan_health_gate
       failed_when: false
       changed_when: false

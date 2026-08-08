@@ -1,0 +1,319 @@
+//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/netip"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/ops"
+)
+
+const (
+	deployGateEgressTargetV6   = "2606:4700:4700::1111"
+	deployGateEgressTargetV4   = "1.1.1.1"
+	deployGateProbeTimeout     = 2 * time.Second
+	deployGatePollInterval     = 1 * time.Second
+	deployGateRebootPoll       = 3 * time.Second
+	deployGateGuestExecTimeout = 5 * time.Second
+
+	exitDeployGateOK           = 0
+	exitDeployGateFailed       = 1
+	exitDeployGateUnobservable = 2
+	exitDeployGateUsage        = 64
+)
+
+// deployGateMode is the typed enum of deploy-gate verbs.
+type deployGateMode string
+
+const (
+	gateModeCheckEgress deployGateMode = "check-egress"
+	gateModeWaitReboot  deployGateMode = "wait-reboot"
+	gateModeWaitEgress  deployGateMode = "wait-egress"
+)
+
+// bootIDPattern matches the kernel's boot_id UUID exactly, so a truncated or
+// error-shaped guest-agent response never passes as a boot id.
+var bootIDPattern = regexp.MustCompile(
+	`^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
+
+// deployGateDeps carries the gate's side-effecting operations so the verdict
+// logic is testable without a hypervisor. The real wiring lives in
+// newDeployGateDeps; tests substitute canned readers and probes.
+type deployGateDeps struct {
+	out        io.Writer
+	ping6      func(context.Context, netip.Addr, time.Duration) (time.Duration, error)
+	ping4      func(context.Context, string, netip.Addr, time.Duration) (time.Duration, error)
+	readBootID func(ctx context.Context, vmid int) (string, error)
+	now        func() time.Time
+	sleep      func(d time.Duration)
+}
+
+func newDeployGateDeps() deployGateDeps {
+	probe := netif.NewV6Probe("", nil)
+	return deployGateDeps{
+		out:        os.Stdout,
+		ping6:      probe.PingICMP6,
+		ping4:      netif.Ping4,
+		readBootID: readGuestBootID,
+		now:        time.Now,
+		sleep:      time.Sleep,
+	}
+}
+
+// The egress targets are parsed once; probe errors stay local to the gate
+// verdicts, which report them in the deploy log instead of returning them.
+var (
+	deployGateTargetV6 = netip.MustParseAddr(deployGateEgressTargetV6)
+	deployGateTargetV4 = netip.MustParseAddr(deployGateEgressTargetV4)
+)
+
+// runDeployGate dispatches the deploy-gate modes, the deploy-time
+// reachability and reboot gates deploy-mwan.yml runs on the Proxmox host
+// that owns the MWAN guest. The host is the only vantage point that stays up
+// while the guest reboots, so the playbook pushes this binary there and
+// delegates the gates to it.
+//
+// Exit codes: 0 on success, 1 on a definitive failure, 64 on a usage error,
+// and, for wait-reboot only, 2 when the guest is unobservable at the
+// deadline. Exit 2 means the verdict belongs to the egress gate: a guest
+// that went down and never came back must reach the rollback chain, not a
+// fail-without-rollback stop.
+//
+// args excludes the subcommand name itself.
+func runDeployGate(args []string) int {
+	deps := newDeployGateDeps()
+	ctx := context.Background()
+	if len(args) < 1 {
+		printDeployGateUsage()
+		return exitDeployGateUsage
+	}
+	rest := args[1:]
+	switch deployGateMode(args[0]) {
+	case gateModeCheckEgress:
+		if len(rest) != 0 {
+			printDeployGateUsage()
+			return exitDeployGateUsage
+		}
+		return checkEgress(ctx, deps)
+	case gateModeWaitReboot:
+		if len(rest) != 3 {
+			printDeployGateUsage()
+			return exitDeployGateUsage
+		}
+		vmid, err := parseVMID(rest[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mwan deploy-gate: %v\n", err)
+			return exitDeployGateUsage
+		}
+		budget, err := parseBudgetSeconds(rest[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mwan deploy-gate: %v\n", err)
+			return exitDeployGateUsage
+		}
+		if !bootIDPattern.MatchString(rest[1]) {
+			fmt.Fprintf(os.Stderr,
+				"mwan deploy-gate: old_boot_id %q is not a boot_id UUID\n", rest[1])
+			return exitDeployGateUsage
+		}
+		return waitReboot(ctx, deps, vmid, rest[1], budget)
+	case gateModeWaitEgress:
+		if len(rest) != 1 {
+			printDeployGateUsage()
+			return exitDeployGateUsage
+		}
+		budget, err := parseBudgetSeconds(rest[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mwan deploy-gate: %v\n", err)
+			return exitDeployGateUsage
+		}
+		return waitEgress(ctx, deps, budget)
+	default:
+		printDeployGateUsage()
+		return exitDeployGateUsage
+	}
+}
+
+// parseVMID accepts only a plain positive integer, which both rules out
+// command-injection shapes before the vmid reaches qm and rejects obviously
+// wrong operator input.
+func parseVMID(raw string) (int, error) {
+	vmid, err := strconv.Atoi(raw)
+	if err != nil || vmid <= 0 {
+		return 0, fmt.Errorf("vmid %q is not a positive integer", raw)
+	}
+	return vmid, nil
+}
+
+func printDeployGateUsage() {
+	fmt.Fprintln(os.Stderr,
+		"usage: mwan deploy-gate check-egress"+
+			" | wait-reboot <vmid> <old_boot_id> <seconds>"+
+			" | wait-egress <seconds>")
+}
+
+func parseBudgetSeconds(raw string) (time.Duration, error) {
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds <= 0 {
+		return 0, fmt.Errorf("budget %q is not a positive integer of seconds", raw)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+// checkEgress probes both families once. Either family answering is enough,
+// because this mode only gates whether a pre-deploy snapshot is worth taking.
+func checkEgress(ctx context.Context, deps deployGateDeps) int {
+	_, err6 := deps.ping6(ctx, deployGateTargetV6, deployGateProbeTimeout)
+	_, err4 := deps.ping4(ctx, "", deployGateTargetV4, deployGateProbeTimeout)
+	fmt.Fprintf(deps.out, "egress probe: ipv6=%s ipv4=%s\n",
+		yesNo(err6 == nil), yesNo(err4 == nil))
+	if err6 == nil || err4 == nil {
+		return exitDeployGateOK
+	}
+	fmt.Fprintf(deps.out, "no egress on either family; last v4 error: %v\n", err4)
+	return exitDeployGateFailed
+}
+
+// waitReboot polls the guest's boot_id until it differs from oldBootID. At the
+// deadline one final read decides the verdict: a guest still answering with
+// the old boot_id definitively never rebooted (exit 1, the playbook fails
+// without rollback because the VM still runs the deployed config), while an
+// unreachable guest is deferred to the egress gate (exit 2), whose failure
+// path owns rollback for a guest that went down and never came back.
+func waitReboot(
+	ctx context.Context,
+	deps deployGateDeps,
+	vmid int,
+	oldBootID string,
+	budget time.Duration,
+) int {
+	deadline := deps.now().Add(budget)
+	var lastReadErr error
+	for deps.now().Before(deadline) {
+		current, err := deps.readBootID(ctx, vmid)
+		if err != nil {
+			// The guest agent is unreachable through shutdown and early
+			// boot, so a failed read is a normal poll outcome while the
+			// reboot is in flight.
+			lastReadErr = err
+		} else if current != oldBootID {
+			fmt.Fprintf(deps.out, "guest %d rebooted: boot_id %s changed to %s\n",
+				vmid, oldBootID, current)
+			return exitDeployGateOK
+		}
+		deps.sleep(deployGateRebootPoll)
+	}
+	final, err := deps.readBootID(ctx, vmid)
+	if err == nil && final == oldBootID {
+		fmt.Fprintf(deps.out,
+			"guest %d still runs boot_id %s after %s, so the reboot never fired\n",
+			vmid, oldBootID, budget)
+		return exitDeployGateFailed
+	}
+	if err == nil {
+		fmt.Fprintf(deps.out, "guest %d rebooted: boot_id %s changed to %s\n",
+			vmid, oldBootID, final)
+		return exitDeployGateOK
+	}
+	fmt.Fprintf(deps.out,
+		"guest %d was unobservable at the %s deadline (last agent error: %v);"+
+			" deferring the reboot verdict to the egress gate\n",
+		vmid, budget, errorOrPrior(err, lastReadErr))
+	return exitDeployGateUnobservable
+}
+
+// errorOrPrior prefers the final read error but falls back to the last error
+// seen during polling, so the log names a cause even when the final error is
+// generic.
+func errorOrPrior(final error, prior error) error {
+	if final != nil {
+		return final
+	}
+	return prior
+}
+
+// waitEgress polls until IPv6 egress returns. IPv6 decides the verdict
+// because IPv6 is the primary family here; the IPv4 result rides along in
+// the success line for the deploy log.
+func waitEgress(ctx context.Context, deps deployGateDeps, budget time.Duration) int {
+	deadline := deps.now().Add(budget)
+	var lastErr error
+	for deps.now().Before(deadline) {
+		_, err6 := deps.ping6(ctx, deployGateTargetV6, deployGateProbeTimeout)
+		_, err4 := deps.ping4(ctx, "", deployGateTargetV4, deployGateProbeTimeout)
+		if err6 == nil {
+			fmt.Fprintf(deps.out, "egress restored: ipv6=yes ipv4=%s\n",
+				yesNo(err4 == nil))
+			return exitDeployGateOK
+		}
+		lastErr = err6
+		deps.sleep(deployGatePollInterval)
+	}
+	fmt.Fprintf(deps.out, "no IPv6 egress within %s; last probe error: %v\n",
+		budget, lastErr)
+	return exitDeployGateFailed
+}
+
+func yesNo(ok bool) string {
+	if ok {
+		return "yes"
+	}
+	return "no"
+}
+
+// guestExecResponse is the JSON shape `qm guest exec` prints on success.
+type guestExecResponse struct {
+	ExitCode int    `json:"exitcode"`
+	OutData  string `json:"out-data"`
+}
+
+// readGuestBootID reads /proc/sys/kernel/random/boot_id inside the guest
+// through the QEMU guest agent and validates the response shape, so a
+// partial or error-shaped reply never compares equal or unequal by accident.
+func readGuestBootID(ctx context.Context, vmid int) (string, error) {
+	log := slog.With("component", "deploy-gate", "op", "readGuestBootID", "vmid", vmid)
+	log.DebugContext(ctx, "deploy-gate: reading guest boot_id")
+	raw, err := ops.GuestExecViaQm(ctx,
+		deployGateGuestExecTimeout+5*time.Second, deployGateGuestExecTimeout,
+		vmid, "cat", "/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		log.WarnContext(ctx, "deploy-gate: qm guest exec failed", "err", err)
+		return "", fmt.Errorf("qm guest exec %d: %w", vmid, err)
+	}
+	bootID, err := unmarshalGuestBootID(raw)
+	if err != nil {
+		log.WarnContext(ctx, "deploy-gate: guest boot_id response invalid", "err", err)
+		return "", err
+	}
+	return bootID, nil
+}
+
+// unmarshalGuestBootID extracts and validates the boot_id from a qm guest
+// exec JSON response.
+func unmarshalGuestBootID(raw []byte) (string, error) {
+	var response guestExecResponse
+	if err := json.Unmarshal(raw, &response); err != nil {
+		slog.Warn("deploy-gate: qm guest exec response is not JSON", "err", err)
+		return "", fmt.Errorf("parse qm guest exec response: %w", err)
+	}
+	if response.ExitCode != 0 {
+		return "", fmt.Errorf(
+			"guest command exited %d (exit code from cat inside the guest)",
+			response.ExitCode)
+	}
+	bootID := strings.TrimSpace(response.OutData)
+	if !bootIDPattern.MatchString(bootID) {
+		return "", fmt.Errorf("guest returned %q, which is not a boot_id UUID", bootID)
+	}
+	return bootID, nil
+}
