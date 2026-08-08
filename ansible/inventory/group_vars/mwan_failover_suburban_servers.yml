@@ -28,8 +28,8 @@ mwan_failover_email_bind_iface: ""
 # names, so they are declared here to mirror the primary values.
 # TODO(MWAN-229 follow-up): promote these to group_vars/all so every group
 # inherits one definition instead of duplicating.
-bgp_keepalive_seconds: 3
-bgp_hold_seconds: 9
+bgp_keepalive_seconds: 10
+bgp_hold_seconds: 30
 bgp_listen_port: 179
 bgp_announce_ipv4:
   - "0.0.0.0/0"

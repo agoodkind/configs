@@ -539,8 +539,13 @@ opnsense_bgp_neighbors:
 bgp_asn: 4200000001
 bgp_router_id: "10.250.250.3"
 bgp_next_hop_v6: "3d06:bad:b01:fe::3"
-bgp_keepalive_seconds: 3
-bgp_hold_seconds: 9
+# Hold must outlast the watchdog snapshot freeze pause, which stalls the
+# speaker long enough that a 9s hold dropped the session and blackholed
+# traffic ~10s per occurrence (MWAN-303). A hard speaker crash now keeps
+# FRR forwarding to the dead peer for up to hold_seconds; the watchdog
+# failover path is the primary crash responder.
+bgp_keepalive_seconds: 10
+bgp_hold_seconds: 30
 bgp_listen_port: 179
 bgp_neighbors:
   - "10.250.250.2"

@@ -302,8 +302,10 @@ mwan_health_exclude_wans: ["monkeybrains"]
 bgp_asn: 4200000001
 bgp_router_id: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
 bgp_next_hop_v6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
-bgp_keepalive_seconds: 3
-bgp_hold_seconds: 9
+# Hold must outlast the watchdog snapshot freeze pause (MWAN-303); mirrors
+# the prod value.
+bgp_keepalive_seconds: 10
+bgp_hold_seconds: 30
 bgp_listen_port: 179
 bgp_neighbors:
   - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
