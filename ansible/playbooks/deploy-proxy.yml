@@ -342,6 +342,7 @@
 
   tasks:
     - name: Create sshpiper user
+      tags: [sshpiper_authorized_keys]
       ansible.builtin.user:
         name: "{{ sshpiper_user }}"
         system: true
@@ -350,6 +351,7 @@
         create_home: false
 
     - name: Create sshpiper directories
+      tags: [sshpiper_authorized_keys]
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -360,6 +362,7 @@
         - "{{ sshpiper_config_dir }}"
 
     - name: Set SSHPiper authorized keys ownership
+      tags: [sshpiper_authorized_keys]
       ansible.builtin.file:
         path: "{{ sshpiper_config_dir }}/authorized_keys"
         state: file
@@ -368,6 +371,7 @@
         mode: "0600"
 
     - name: Remove unused SSHPiper upstream authorization file
+      tags: [sshpiper_authorized_keys]
       ansible.builtin.file:
         path: /etc/ssh/authorized_keys.d/sshpiper_upstream
         state: absent
