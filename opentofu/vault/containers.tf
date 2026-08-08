@@ -36,7 +36,7 @@ resource "proxmox_virtual_environment_container" "tack" {
   }
 
   memory {
-    dedicated = 16384
+    dedicated = 24576
   }
 
   cpu {
