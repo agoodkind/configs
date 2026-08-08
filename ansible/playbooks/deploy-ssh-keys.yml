@@ -38,6 +38,7 @@
         path: "{{ work_tmp_dir }}"
         state: directory
         mode: "0755"
+      check_mode: false
 
     - name: Use guest list with proxmox type
       ansible.builtin.set_fact:
@@ -64,6 +65,7 @@
         dest: "{{ work_tmp_dir }}/sshpiper_upstream_id_ed25519.pub"
         mode: "0644"
       delegate_to: localhost
+      check_mode: false
 
     - name: Build proxy IPv6 allowlist from service_mapping
       ansible.builtin.set_fact:
@@ -77,6 +79,7 @@
         dest: "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
         mode: "0644"
       delegate_to: localhost
+      check_mode: false
 
     - name: Build authorized_keys bundle
       ansible.builtin.command:
@@ -91,6 +94,7 @@
           - --extra-out
           - "{{ work_tmp_dir }}/authorized_keys.bundle"
       changed_when: false
+      check_mode: false
 
     - name: Copy bundle to Proxmox hosts
       ansible.builtin.copy:

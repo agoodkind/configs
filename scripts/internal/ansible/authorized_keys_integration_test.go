@@ -121,6 +121,18 @@ func requireNoFile(t *testing.T, path string) {
 	}
 }
 
+func requireFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("mode %s = %04o, want %04o", path, got, want)
+	}
+}
+
 func TestDeployAuthorizedKeysWritesGitHubAndRestrictedBundles(t *testing.T) {
 	harness := newAuthorizedKeysHarness(t)
 	outputDirectory := t.TempDir()
@@ -151,6 +163,8 @@ func TestDeployAuthorizedKeysWritesGitHubAndRestrictedBundles(t *testing.T) {
 
 	requireBundleLines(t, humanBundle, []string{githubKeyA, githubKeyB})
 	requireBundleLines(t, combinedBundle, []string{extraKey, githubKeyA, githubKeyB})
+	requireFileMode(t, humanBundle, 0o644)
+	requireFileMode(t, combinedBundle, 0o644)
 }
 
 func TestDeployAuthorizedKeysRejectsFetchFailureWithoutOutputs(t *testing.T) {
