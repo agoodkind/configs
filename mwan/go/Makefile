@@ -33,6 +33,9 @@ GO_BUILD_LDFLAGS := \
 # packaging path and via rsync deploy-live, not GoReleaser.
 GO_MK_MODULES := go-build.mk
 
+# gobgp's only cgo symbol is a memory-reporting helper used solely by its tests.
+export GO_MK_CGO_OPTIONAL := github.com/osrg/gobgp/v4/internal/pkg/table
+
 # Run every lint gate once per shipped platform, not just the host. mwan is
 # almost entirely linux-tagged with a freebsd serial path, so a single host
 # pass (linux on CI, darwin locally) skips most of the package. This is the one
