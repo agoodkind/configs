@@ -650,8 +650,15 @@ func (w *watchdog) maybeSnapshot(ctx context.Context) {
 		return
 	}
 	name := "known-good-" + w.now().Format("20060102-150405")
-	if err := w.ops.VMSnapshot(ctx, w.cfg.MwanVMID, name); err != nil {
-		log.ErrorContext(ctx, "vmSnapshot failed", "err", err, "snapshot", name)
+	snapErr := w.ops.VMSnapshot(ctx, w.cfg.MwanVMID, name)
+	// The snapshot freezes guest filesystems through the guest agent, and a
+	// thaw that never lands leaves the guest wedged with guest-exec disabled
+	// and new logins hanging. Verify the thaw after every attempt, failed
+	// ones included, because an aborted snapshot is exactly when the thaw
+	// goes missing.
+	w.ensureGuestThawed(ctx, "post-snapshot")
+	if snapErr != nil {
+		log.ErrorContext(ctx, "vmSnapshot failed", "err", snapErr, "snapshot", name)
 		return
 	}
 	log.InfoContext(ctx, "created known-good snapshot", "snapshot", name)
@@ -660,7 +667,37 @@ func (w *watchdog) maybeSnapshot(ctx context.Context) {
 	if err := w.pruneSnapshots(ctx); err != nil {
 		log.ErrorContext(ctx, "pruneSnapshots failed", "err", err)
 	}
-	log.InfoContext(ctx, "Interface monitor stopped (context cancelled)")
+}
+
+// ensureGuestThawed checks the guest agent's filesystem freeze state and
+// releases a freeze that outlived its snapshot. An unreachable agent is a
+// normal outcome (the VM may be down or mid-boot) and changes nothing.
+func (w *watchdog) ensureGuestThawed(ctx context.Context, phase string) {
+	log := w.tracedLogger(ctx)
+	status, err := w.ops.VMFSFreezeStatus(ctx, w.cfg.MwanVMID)
+	if err != nil {
+		log.DebugContext(ctx, "fsfreeze-status unavailable",
+			"phase", phase, "err", err)
+		return
+	}
+	if !strings.Contains(status, "frozen") {
+		return
+	}
+	log.WarnContext(ctx, "guest filesystems left frozen; thawing",
+		"phase", phase, "status", status)
+	if err := w.ops.VMFSFreezeThaw(ctx, w.cfg.MwanVMID); err != nil {
+		log.ErrorContext(ctx, "fsfreeze-thaw failed",
+			"phase", phase, "err", err)
+		return
+	}
+	after, err := w.ops.VMFSFreezeStatus(ctx, w.cfg.MwanVMID)
+	if err != nil {
+		log.WarnContext(ctx, "fsfreeze-status recheck unavailable after thaw",
+			"phase", phase, "err", err)
+		return
+	}
+	log.InfoContext(ctx, "guest thawed after stuck freeze",
+		"phase", phase, "status_after", after)
 }
 
 func (w *watchdog) pruneSnapshots(ctx context.Context) error {
@@ -1134,6 +1171,11 @@ func (w *watchdog) logStartupConfig(ctx context.Context) {
 func (w *watchdog) runStartupChecks(ctx context.Context) {
 	log := w.tracedLogger(ctx)
 	w.recoverInterrupted(ctx)
+
+	// A watchdog that died mid-snapshot can leave the guest frozen with no
+	// process left to thaw it; recover that state before anything else
+	// depends on guest-exec.
+	w.ensureGuestThawed(ctx, "startup")
 
 	// Startup checks.
 	if listOut, lErr := w.ops.VMSnapshots(ctx, w.cfg.MwanVMID); lErr == nil {
