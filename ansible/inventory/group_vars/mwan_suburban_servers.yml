@@ -69,17 +69,6 @@ mwan_enabled_services:
   - systemd-networkd
   - networkd-dispatcher
   - nftables
-  # mwan-update-npt (the shell NPT oneshot) is intentionally absent: the
-  # testbed runs the native Go npt module authoritatively
-  # (mwan_ifmgr_npt_shadow_mode false), so deploy-mwan.yml never deploys the
-  # unit or the 55-update-npt.sh dispatcher hook here. Re-add it here and set
-  # mwan_ifmgr_npt_shadow_mode true to revert to the shell baseline.
-  # mwan-health (the shell health daemon) is intentionally absent: the testbed
-  # runs the native Go health module authoritatively (mwan_ifmgr_health_shadow_mode
-  # false), so the Go module writes /var/run/mwan-health.state. The shell daemon
-  # is stopped, disabled, and masked by deploy-mwan.yml so the two never both
-  # write that file. Re-add it here and set mwan_ifmgr_health_shadow_mode true to
-  # revert to the shell-authoritative baseline.
 
 # ----------------------------------------------------------------------------
 # WAN addressing (static, ISP LXCs have no DHCPv4 server)
@@ -199,12 +188,6 @@ mwan_rt_tables:
 # ----------------------------------------------------------------------------
 
 mwan_ifmgr_wan_enabled: true
-mwan_ifmgr_wan_shadow_mode: false
-mwan_ifmgr_health_shadow_mode: false
-# Authoritative on the testbed. In shadow mode npt computes its rules and never
-# programs them, so the guest segment gets no translation and native IPv6 does
-# not leave. Prod stays in shadow until MWAN-246 flips it there.
-mwan_ifmgr_npt_shadow_mode: false
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
@@ -227,9 +210,6 @@ mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_from: "mwan-testbed@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
-
-# health-check.sh: how often to recheck systemd unit health (seconds)
-mwan_systemd_check_interval: 600
 mwan_email_sender_name: "MWAN-TESTBED"
 mwan_debug_logging: true
 
@@ -278,7 +258,6 @@ mwan_att_pinned_v4_fqdns: []
 mwan_att_pinned_v6_seed_cidrs: []
 mwan_att_pinned_v6_fqdns: []
 mwan_zoom_ipranges_url: ""
-mwan_health_exclude_wans: ["monkeybrains"]
 
 # ----------------------------------------------------------------------------
 # BGP (embedded GoBGP in agent)

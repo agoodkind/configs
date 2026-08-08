@@ -203,7 +203,6 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 		InternalIface:   "vmbr250",
 		InternalNetV4:   "10.250.250.0/29",
 		HealthStateFile: "/var/run/mwan-health.state",
-		ShadowMode:      true,
 	})
 	if err != nil {
 		t.Fatalf("buildWANRoutesConfig returned error: %v", err)
@@ -217,7 +216,6 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 		InternalPrefix:  "3d06:bad:b01::/60",
 		InternalNetV4:   "10.250.250.0/29",
 		HealthStateFile: "/var/run/mwan-health.state",
-		ShadowMode:      true,
 		WANs: []wanroutes.WAN{
 			{
 				WANRef:     ifmgr.WANRef{Name: "att", Iface: "att0"},
@@ -321,17 +319,16 @@ func TestBuildIfMgrModuleConfigsUnknownRole(t *testing.T) {
 	}
 }
 
-// TestBuildNPTConfig pins that the npt builder joins the shared [ifmgr.wan]
-// prefixes and WAN identity list with the npt section's shadow toggle. This is
-// what makes MwanbrEdgeV6 a real consumer of the shared field.
+// TestBuildNPTConfig pins that the npt builder projects the shared [ifmgr.wan]
+// prefixes and WAN identity list. This is what makes MwanbrEdgeV6 a real
+// consumer of the shared field.
 func TestBuildNPTConfig(t *testing.T) {
 	t.Parallel()
 
 	shared := buildWANRefs(sharedWANForTest())
-	cfg := buildNPTConfig(shared, &config.IfMgrNPTSection{ShadowMode: true})
+	cfg := buildNPTConfig(shared)
 
 	want := npt.Config{
-		ShadowMode:     true,
 		InternalPrefix: "3d06:bad:b01::/60",
 		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
 		MwanbrEdgeV6:   "3d06:bad:b01:200::1",
@@ -345,30 +342,11 @@ func TestBuildNPTConfig(t *testing.T) {
 	}
 }
 
-// TestBuildNPTConfigNilSection checks a nil npt section still yields the shared
-// prefixes and WAN list with shadow off, so the module builds even when only
-// [ifmgr.wan] is present.
-func TestBuildNPTConfigNilSection(t *testing.T) {
-	t.Parallel()
-
-	cfg := buildNPTConfig(buildWANRefs(sharedWANForTest()), nil)
-	if cfg.ShadowMode {
-		t.Fatal("nil npt section must default ShadowMode to false")
-	}
-	if cfg.MwanbrEdgeV6 != "3d06:bad:b01:200::1" {
-		t.Fatalf("MwanbrEdgeV6 = %q, want the shared value", cfg.MwanbrEdgeV6)
-	}
-	if len(cfg.WANs) != 2 {
-		t.Fatalf("WAN count = %d, want 2 from the shared list", len(cfg.WANs))
-	}
-}
-
 func TestBuildHealthConfig(t *testing.T) {
 	t.Parallel()
 
 	shared := buildWANRefs(sharedWANForTest())
 	cfg, err := buildHealthConfig(shared, &config.IfMgrHealthSection{
-		ShadowMode:       true,
 		StateFile:        "/run/health",
 		PersistStateFile: "/var/lib/health",
 		Timeout:          "3s",
@@ -401,7 +379,6 @@ func TestBuildHealthConfig(t *testing.T) {
 		t.Fatalf("buildHealthConfig returned error: %v", err)
 	}
 	want := health.Config{
-		ShadowMode:        true,
 		StateFile:         "/run/health",
 		PersistStateFile:  "/var/lib/health",
 		TargetsV4:         nil,
@@ -502,7 +479,7 @@ func TestBuildHealthConfigSkipsDisabledAndAbsentWANs(t *testing.T) {
 
 			cfg, err := buildHealthConfig(
 				buildWANRefs(sharedWANForTest()),
-				&config.IfMgrHealthSection{ShadowMode: true, WAN: test.wan},
+				&config.IfMgrHealthSection{WAN: test.wan},
 			)
 			if err != nil {
 				t.Fatalf("buildHealthConfig returned error: %v", err)
@@ -566,7 +543,6 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 			_, err := buildHealthConfig(
 				buildWANRefs(sharedWANForTest()),
 				&config.IfMgrHealthSection{
-					ShadowMode: true,
 					WAN: map[string]config.IfMgrHealthWANSection{
 						"att": test.mutate(base),
 					},
@@ -582,15 +558,12 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 	}
 }
 
-func TestBuildHealthConfigNilSectionDefaultsToShadow(t *testing.T) {
+func TestBuildHealthConfigNilSection(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := buildHealthConfig(buildWANRefs(sharedWANForTest()), nil)
 	if err != nil {
 		t.Fatalf("buildHealthConfig returned error: %v", err)
-	}
-	if !cfg.ShadowMode {
-		t.Fatal("nil health section must default ShadowMode to true")
 	}
 	if len(cfg.WANs) != 2 {
 		t.Fatalf("WAN count = %d, want 2 from the shared list", len(cfg.WANs))
@@ -603,9 +576,8 @@ func TestBuildIfMgrModuleConfigsWANRoleBuildsAll(t *testing.T) {
 	t.Parallel()
 
 	modules := config.IfMgrModulesSection{
-		Health: &config.IfMgrHealthSection{ShadowMode: true},
+		Health: &config.IfMgrHealthSection{},
 		WAN:    &config.IfMgrModulesWANSection{Routes: &config.IfMgrWANRoutesSection{InternalIface: "enmwanbr0"}},
-		NPT:    &config.IfMgrNPTSection{ShadowMode: true},
 	}
 	set, err := buildIfMgrModuleConfigs(ifmgrForTest(modules), "wan")
 	if err != nil {
@@ -667,10 +639,8 @@ v4_source = "10.240.204.2"
 
 [ifmgr.modules.wan.routes]
 internal_iface = "enmwanbr0"
-shadow_mode = false
 
 [ifmgr.modules.health]
-shadow_mode = true
 state_file = "/run/mwan-health.state"
 persist_state_file = "/var/lib/mwan/health-state"
 timeout = "2s"
@@ -696,9 +666,6 @@ recovery_threshold = 2
 targets_v4 = ["1.1.1.1", "8.8.8.8"]
 targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
 http_urls = ["https://ifconfig.co/ip"]
-
-[ifmgr.modules.npt]
-shadow_mode = true
 `
 	var cfg config.Config
 	if err := toml.Unmarshal([]byte(configTOML), &cfg); err != nil {
@@ -744,8 +711,7 @@ shadow_mode = true
 	if !ok {
 		t.Fatalf("health config missing or wrong type: %T", set["health"])
 	}
-	if !healthConfig.ShadowMode ||
-		healthConfig.StateFile != "/run/mwan-health.state" ||
+	if healthConfig.StateFile != "/run/mwan-health.state" ||
 		healthConfig.Interval != 10*time.Second ||
 		len(healthConfig.WANs) != 2 {
 		t.Fatalf("health config did not round-trip shared WANs and module fields: %#v", healthConfig)

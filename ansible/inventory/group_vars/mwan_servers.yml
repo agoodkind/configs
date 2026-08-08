@@ -82,22 +82,11 @@ mwan_att_8021x_enabled: true
 # units; the testbed list omits them (gated off there).
 mwan_enabled_services:
   - mwan-trace-boot
-  # mwan-update-npt (the shell NPT oneshot) is intentionally absent: prod
-  # runs the native Go npt module authoritatively
-  # (mwan_ifmgr_npt_shadow_mode false), so deploy-mwan.yml never deploys
-  # the unit or the 55-update-npt.sh dispatcher hook here. Re-add it here
-  # and set mwan_ifmgr_npt_shadow_mode true to revert to the shell baseline.
   - mwan-update-att-pinned-dests.timer
   - bringup-att-vlan
   - systemd-networkd
   - networkd-dispatcher
   - nftables
-  # mwan-health (the shell health daemon) is intentionally absent: prod
-  # runs the native Go health module authoritatively
-  # (mwan_ifmgr_health_shadow_mode false), so the Go module writes
-  # /var/run/mwan-health.state and the shell daemon must not also write
-  # that file. Re-add it here and set mwan_ifmgr_health_shadow_mode true
-  # to revert to the shell baseline.
   - wpa_supplicant-mwan
   - wpa-cli-action
   - wpa-authenticated.path
@@ -184,7 +173,8 @@ mwan_att_pd_prefix: "2600:1700:2f71:c80::/60"
 mwan_webpass_pd_prefix: "2604:5500:c271:be00::/56"
 
 # Monkeybrains delegated prefix (DHCPv6-PD), reference only.
-# The runtime tracks the live PD via find-pd-prefixes.sh, so this value lags a renumber.
+# The runtime tracks the live PD through the ifmgr pd source (`mwan pd` shows
+# it), so this value lags a renumber.
 mwan_monkeybrains_pd_prefix: "2607:f598:d3e8:4500::/56"
 
 # ----------------------------------------------------------------------------
@@ -255,9 +245,6 @@ mwan_health_checks:
       - "2001:4860:4860::8888"
     http_targets:
       - "https://ifconfig.co/ip"
-
-# WANs excluded from health notifications/alerts (lossy links).
-mwan_health_exclude_wans: ["monkeybrains"]
 
 # ----------------------------------------------------------------------------
 # Latency-sensitive services pinned to AT&T
@@ -380,9 +367,6 @@ mwan_rt_tables:
 # ----------------------------------------------------------------------------
 
 mwan_ifmgr_wan_enabled: true
-mwan_ifmgr_wan_shadow_mode: false
-mwan_ifmgr_health_shadow_mode: false
-mwan_ifmgr_npt_shadow_mode: false
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
 mwan_ifmgr_wan_fw_marks:
   att: 1
@@ -405,9 +389,6 @@ mwan_ifmgr_wan_from_prios:
 mwan_email_enabled: true
 mwan_email_recipient: "alex@goodkind.io"
 mwan_email_script: "/opt/scripts/send-email"
-
-# health-check.sh: how often to recheck systemd unit health (seconds)
-mwan_systemd_check_interval: 600
 
 # Sender identity (must be allowed by SMTP2GO/domain config)
 mwan_email_from: "mwan@goodkind.io"
@@ -491,9 +472,10 @@ mwan_smtp_port: "{{ smtp_port }}"
 # Cloudflared
 # ----------------------------------------------------------------------------
 
-# cloudflared must start after MWAN routing is up.
-cloudflared_service_after: "network-online.target mwan-update-routes.service"
-cloudflared_service_wants: "network-online.target mwan-update-routes.service"
+# cloudflared must start after MWAN routing is up. The ifmgr wan instance
+# owns policy routing, so its unit is the ordering anchor.
+cloudflared_service_after: "network-online.target mwan-ifmgr@wan.service"
+cloudflared_service_wants: "network-online.target mwan-ifmgr@wan.service"
 
 # ----------------------------------------------------------------------------
 # Debug

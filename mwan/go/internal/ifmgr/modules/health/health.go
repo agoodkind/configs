@@ -107,7 +107,6 @@ func (wan WAN) recoveryThreshold(cfg Config) int {
 
 // Config keeps module-wide probe policy as the fallback for per-WAN overrides.
 type Config struct {
-	ShadowMode        bool
 	StateFile         string
 	PersistStateFile  string
 	TargetsV4         []netip.Addr
@@ -172,7 +171,6 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		ctx,
 		"health: Init",
 		"wan_count", len(m.cfg.WANs),
-		"shadow_mode", m.cfg.ShadowMode,
 		"interval", m.cfg.Interval.String(),
 	)
 	if len(m.cfg.WANs) == 0 {
@@ -466,13 +464,11 @@ func (m *Module) emitTransition(
 		"iface", event.WAN.Iface,
 		"from", event.From,
 		"to", event.To,
-		"shadow_mode", m.cfg.ShadowMode,
 	)
 	// A health transition changes routing eligibility, so ask the daemon to
 	// reconcile now rather than wait for the periodic tick; this makes
-	// wan.routes failover event-driven. Only when authoritative: in shadow the
-	// Go verdict does not drive wan.routes, which reads the shell's state file.
-	if !m.cfg.ShadowMode && m.Env != nil && m.Env.RequestReconcile != nil {
+	// wan.routes failover event-driven.
+	if m.Env != nil && m.Env.RequestReconcile != nil {
 		m.Env.RequestReconcile(
 			"health " + event.WAN.Name + " " + string(event.From) + "->" + string(event.To),
 		)

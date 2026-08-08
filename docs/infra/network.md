@@ -250,14 +250,17 @@ instead. Linux `ping6` defaults to a 56-byte payload and is unaffected.
 Three pieces of state on MWAN must be present for OPNsense LAN traffic to
 reach the public IPv6 internet:
 
-- **Webpass PD lease.** `find-pd-prefixes.sh enwebpass0` returns the live
-  `/56` delegated by Webpass (currently `2604:5500:c271:be00::/56`).
-- **NPT rules** in `nft list table ip6 nat`. `update-npt.sh` programs them
-  from the live PD lease. `mwan-update-npt.service` is the boot safety net.
-- **Internal `/60` return route** in MWAN's main + tables 100/200/300:
-  `3d06:bad:b01::/60 via fe80::be24:11ff:fe77:500c dev enmwanbr0`.
-  `update-routes.sh` writes this. Without it, MWAN cannot forward conntrack
-  replies for any non-shared LAN `/64` back to OPNsense.
+- **Webpass PD lease.** `mwan pd enwebpass0` shows the live delegation.
+  The delegation renumbers, so the command output is the source of truth,
+  never a stored value.
+- **NPT rules** in `nft list table ip6 nat`. The ifmgr npt module programs
+  them from the live delegation and reconverges after any nftables reload.
+  `mwan debug npt` renders the intended rules against the live table.
+- **Internal return route.** The internal prefix (`mwan_internal_prefix`
+  in the MWAN group vars) must route to the OPNsense edge over the
+  internal link, in the main table and in every WAN table. The ifmgr
+  wan.routes module writes these routes. Without them, MWAN cannot forward
+  conntrack replies for any non-shared LAN `/64` back to OPNsense.
 
 ### Source-sweep diagnostic
 
@@ -283,23 +286,24 @@ Interpretation:
   route because OPNsense `vtnet0` and MWAN `enmgmt0` are L2 neighbors on
   that subnet.
 
-### Verify and recover the internal /60 return route
+### Verify and recover the internal return route
 
-On MWAN:
+On MWAN, grep the route table dump for the internal prefix
+(`mwan_internal_prefix` in the MWAN group vars):
 
 ```bash
 ip -6 route show table all | grep '3d06:bad:b01::/60'
 ```
 
-Expected: one entry in main + one in each of tables 100, 200, 300.
+Expected: one entry in the main table and one in each WAN table
+(`mwan_rt_tables` names the ids).
 
-If empty, recover with `systemctl start mwan-update-routes` to re-run
-`update-routes.sh`. The script is idempotent.
+If empty, recover with `systemctl restart mwan-ifmgr@wan`, which forces a
+full reconcile pass; the pass is idempotent.
 
-The dispatcher hook `routable.d/50-update-routes.sh` fires
-`update-routes.sh` on any routable transition for `enwebpass0`,
-`enatt0.3242`, `enmbrains0`, or `enmwanbr0` (the internal link), so any
-flap of those interfaces reinstalls the route automatically.
+The wan.routes module watches every WAN interface and the internal link
+over netlink and reconciles on each default-route change plus a periodic
+tick, so any flap of those interfaces reinstalls the route automatically.
 
 ## Pre-commit checklist
 

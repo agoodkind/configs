@@ -3,7 +3,6 @@
 package npt
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -73,7 +72,6 @@ func (r *recordingNotifier) Active(_, _ string) bool { return false }
 
 func testConfig() Config {
 	return Config{
-		ShadowMode:     false,
 		InternalPrefix: "3d06:bad:b01::/60",
 		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
 		MwanbrEdgeV6:   "3d06:bad:b01:200::1",
@@ -206,48 +204,6 @@ func TestReconcileAppliesUnion(t *testing.T) {
 	}
 	if !seen["enatt0.3242"] || !seen["webpass0"] {
 		t.Fatalf("not every WAN had its <pd>::1 ensured: %v", seen)
-	}
-}
-
-// TestReconcileShadowSkipsApplier checks shadow mode logs the intended ops and
-// never calls the applier.
-func TestReconcileShadowSkipsApplier(t *testing.T) {
-	t.Parallel()
-
-	cfg := testConfig()
-	cfg.ShadowMode = true
-	m, _ := newTestModule(t, cfg)
-	m.src = &fakeSource{
-		prefixes: map[string]netip.Prefix{
-			"enatt0.3242": netip.MustParsePrefix("2600:1700:2f71:c80::/60"),
-			"webpass0":    netip.MustParsePrefix("2001:db8:1:20::/60"),
-		},
-		ok:  map[string]bool{"enatt0.3242": true, "webpass0": true},
-		err: map[string]error{},
-	}
-	// Shadow must mutate nothing, so the address-add seam must never be called.
-	addrCalls := 0
-	m.reconcileAddrs = func(_ context.Context, _ *slog.Logger, _ string, _ []netif.AddrSpec) error {
-		addrCalls++
-		return nil
-	}
-	m.listAddrs = func(_ context.Context, _ *slog.Logger, _ string) ([]netif.CurrentAddr, error) { return nil, nil }
-	app := &fakeApplier{calls: 0, last: desiredRules{Postrouting: nil, Prerouting: nil}, err: nil}
-	m.apply = app
-
-	var buf bytes.Buffer
-	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	if err := m.Reconcile(context.Background(), log); err != nil {
-		t.Fatalf("Reconcile: %v", err)
-	}
-	if app.calls != 0 {
-		t.Fatalf("shadow mode called applier %d times, want 0", app.calls)
-	}
-	if addrCalls != 0 {
-		t.Fatalf("shadow mode performed %d address mutations, want 0", addrCalls)
-	}
-	if !strings.Contains(buf.String(), "shadow reconcile rule") {
-		t.Fatalf("shadow mode did not log intended ops; log:\n%s", buf.String())
 	}
 }
 

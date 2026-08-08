@@ -76,6 +76,6 @@ mwan_ifmgr_wan_enabled: false
 # cloudflared (Cloudflare Tunnel) systemd service defaults
 # ----------------------------------------------------------------------------
 # Unit ordering for the cloudflared service; a service overrides these to add its
-# own dependencies (e.g. mwan orders cloudflared after mwan-update-routes).
+# own dependencies (e.g. mwan orders cloudflared after mwan-ifmgr@wan).
 cloudflared_service_after: network-online.target
 cloudflared_service_wants: network-online.target

@@ -180,7 +180,6 @@ func validateWANs(cfg Config) error {
 // module so omitted TOML fields still produce the same baseline probe cadence.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	healthConfig := Config{
-		ShadowMode:        true,
 		StateFile:         "",
 		PersistStateFile:  "",
 		TargetsV4:         nil,

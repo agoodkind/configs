@@ -134,10 +134,7 @@ func (m *Module) serializeState(statuses map[string]wanStatus) []byte {
 }
 
 func (m *Module) stateFilePaths() (string, string) {
-	if !m.cfg.ShadowMode {
-		return m.cfg.StateFile, m.cfg.PersistStateFile
-	}
-	return m.cfg.StateFile + ".shadow", m.cfg.PersistStateFile + ".shadow"
+	return m.cfg.StateFile, m.cfg.PersistStateFile
 }
 
 func writeFileAtomic(

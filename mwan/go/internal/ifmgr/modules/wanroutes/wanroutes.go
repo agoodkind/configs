@@ -42,7 +42,6 @@ type Config struct {
 	InternalPrefix  string
 	InternalNetV4   string
 	HealthStateFile string
-	ShadowMode      bool
 	WANs            []WAN
 }
 
@@ -105,7 +104,6 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 		ctx, "wan.routes: Init",
 		"wan_count", len(m.cfg.WANs),
 		"health_state_file", m.cfg.HealthStateFile,
-		"shadow_mode", m.cfg.ShadowMode,
 	)
 
 	if len(m.cfg.WANs) == 0 {
@@ -143,11 +141,6 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		return fmt.Errorf("read health state %q: %w", m.cfg.HealthStateFile, err)
 	}
 	rules, routes := desiredState(currentGateways, health, m.cfg)
-
-	if m.cfg.ShadowMode {
-		logShadowOps(log, m.cfg, rules, routes)
-		return nil
-	}
 
 	var reconcileErr error
 	for _, route := range routes {
@@ -481,31 +474,6 @@ func removeDisabledRuleSlots(
 	return removeErr
 }
 
-func logShadowOps(
-	log *slog.Logger,
-	cfg Config,
-	rules []netif.DesiredRule,
-	routes []netif.RouteSpec,
-) {
-	for _, route := range routes {
-		log.Debug("wan.routes: shadow reconcile route", "route", route)
-	}
-	for _, rule := range rules {
-		log.Debug("wan.routes: shadow reconcile rule", "rule", rule)
-	}
-	desiredSlots := desiredRuleSlots(rules)
-	for _, slot := range ownedRuleSlots(cfg) {
-		if desiredSlots[slot] {
-			continue
-		}
-		log.Debug(
-			"wan.routes: shadow remove disabled rule",
-			"family", slot.family,
-			"priority", slot.priority,
-		)
-	}
-}
-
 func desiredRuleSlots(rules []netif.DesiredRule) map[ruleSlot]bool {
 	slots := make(map[ruleSlot]bool, len(rules))
 	for _, rule := range rules {
@@ -682,7 +650,6 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		InternalPrefix:  "",
 		InternalNetV4:   "",
 		HealthStateFile: "",
-		ShadowMode:      false,
 		WANs:            nil,
 	}
 	if cfg != nil {
