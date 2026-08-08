@@ -110,6 +110,13 @@ mwan_ifmgr_host_ipv6_denied_ra_ifaces:
   - "vmbr6"
   - "vmbrtrunk"
 
+# Pinned locally administered MAC for the vmbrtrunk bridge. Without a pin the
+# kernel derives the bridge MAC from the numerically lowest port MAC, so any
+# guest start or stop can change it and invalidate every guest's neighbour
+# cache for the host address at once (MWAN-286). An explicitly set MAC is
+# sticky: the kernel stops recomputing it from ports.
+suburban_vmbrtrunk_hwaddress: "2e:00:00:21:00:05"
+
 # Cloudflared OOB stays off on suburban (no host OOB tunnel today).
 
 # Suburban is the only host with a WireGuard interface, so it is the only one

@@ -1,4 +1,5 @@
 iface vmbrtrunk inet manual
+	hwaddress {{ suburban_vmbrtrunk_hwaddress }}
 	post-up ip -4 route replace {{ service_mapping.opnsense_suburban.transit_v4_net }} via {{ service_mapping.opnsense_suburban.ipv4_vmnet }} dev vmbrtrunk
 	post-down ip -4 route del {{ service_mapping.opnsense_suburban.transit_v4_net }} || true
 
