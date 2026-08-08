@@ -188,6 +188,14 @@ func (r *Ops) VMDelSnapshot(
 	return r.inner.VMDelSnapshot(ctx, vmid, snapName)
 }
 
+func (r *Ops) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
+	return r.inner.VMFSFreezeStatus(ctx, vmid)
+}
+
+func (r *Ops) VMFSFreezeThaw(ctx context.Context, vmid string) error {
+	return r.inner.VMFSFreezeThaw(ctx, vmid)
+}
+
 func (r *Ops) GuestExec(
 	ctx context.Context, vmid string, args ...string,
 ) (ops.GuestExecResult, error) {
