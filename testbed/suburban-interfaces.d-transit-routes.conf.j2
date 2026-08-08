@@ -6,3 +6,12 @@ iface vmbrtrunk inet manual
 iface vmbrtrunk inet6 manual
 	post-up ip -6 route replace {{ service_mapping.opnsense_suburban.transit_v6_net }} via {{ service_mapping.opnsense_suburban.ipv6_vmnet }} dev vmbrtrunk
 	post-down ip -6 route del {{ service_mapping.opnsense_suburban.transit_v6_net }} || true
+
+# The vlan subinterface must share the bridge MAC. A vlan device whose MAC
+# differs from its parent forces the parent promiscuous, and on this kernel
+# the bridge netfilter path scrubs conntrack state on packets locally
+# delivered on a promiscuous bridge, so multicast neighbor solicitations
+# arrive as ctstate INVALID and the pve-firewall host chain drops them,
+# killing cold NDP resolution of the host bridge address (MWAN-286).
+iface vmbrtrunk.100 inet manual
+	hwaddress {{ suburban_vmbrtrunk_hwaddress }}
