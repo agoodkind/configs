@@ -36,6 +36,11 @@ func (w *watchdog) ensureGuestThawed(ctx context.Context, phase string) {
 			"phase", phase, "err", err)
 		return
 	}
+	if strings.Contains(after, "frozen") {
+		log.WarnContext(ctx, "guest still frozen after thaw",
+			"phase", phase, "status_after", after)
+		return
+	}
 	log.InfoContext(ctx, "guest thawed after stuck freeze",
 		"phase", phase, "status_after", after)
 }
