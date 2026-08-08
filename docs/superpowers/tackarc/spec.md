@@ -16,18 +16,16 @@ script.
 
 ## Keep the approved host boundary
 
-OpenTofu declares the service-mapped runner guest as a privileged LXC with
-nesting enabled. The resource keeps its configured compute, storage, identity,
-and network allocations. Tack's application LXC remains unchanged.
+OpenTofu declares the service-mapped runner guest as a QEMU virtual machine
+from a pinned Debian cloud image. The resource keeps its configured compute,
+storage, identity, and network allocations. Tack's application LXC remains
+unchanged.
 
-The runner resource keeps `prevent_destroy`. It does not enable `keyctl`.
+Cloud-init installs the QEMU guest agent before Ansible connects. The runner
+resource keeps `prevent_destroy`.
 
-Proxmox recommends a virtual machine for application containers. K3s does not
-publish a supported LXC profile. Live validation must prove this accepted host
-boundary.
-
-Reject the LXC design if K3s needs unconfined AppArmor, unrestricted devices,
-or custom cgroup mounts.
+The virtual machine provides the kernel and device boundary required by K3s
+and Docker-in-Docker. OpenTofu adds no host device or cgroup exceptions.
 
 ## Preserve IPv6 networking
 
@@ -80,7 +78,7 @@ cluster, not individual job resources.
 ## Verify the result
 
 1. OpenTofu keeps the runner's allocations and Tack's application LXC unchanged.
-2. The runner needs only privileged mode and nesting.
+2. The runner uses a virtual machine without host device exceptions.
 3. K3s reports its node ready on IPv6.
 4. Pods resolve through DNS64 and reach GitHub and GHCR.
 5. Two `tack` jobs run concurrently while a third waits.

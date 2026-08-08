@@ -7,9 +7,10 @@
 **Goal:** Run up to two normal Tack jobs and one Docker job on disposable,
 repository-scoped runners.
 
-**Architecture:** OpenTofu changes only the runner guest's privilege boundary.
-Ansible installs K3s, Helm, and GitHub's Actions Runner Controller. The
-controller creates one pod per job and removes its temporary state afterward.
+**Architecture:** OpenTofu runs the runner guest as a QEMU virtual machine from
+a pinned Debian cloud image. Ansible installs K3s, Helm, and GitHub's Actions
+Runner Controller. The controller creates one pod per job and removes its
+temporary state afterward.
 
 ## Global constraints
 
@@ -19,9 +20,7 @@ controller creates one pod per job and removes its temporary state afterward.
 - Keep removal, deregistration, replacement, and deployment steps manual.
 - Keep `prevent_destroy` and every existing guest allocation.
 - Do not change Tack's application LXC.
-- Use privileged mode and nesting only. Do not enable `keyctl`.
-- Reject the LXC design if K3s needs unconfined AppArmor, unrestricted devices,
-  or custom cgroup mounts.
+- Use a QEMU virtual machine without host device or cgroup exceptions.
 - Do not install Docker Engine on the guest or mount a host Docker socket.
 - Do not add lifecycle scripts, cleanup scripts, webhooks, or janitors.
 - Keep Tack's default branch on GitHub-hosted runners until the selector pull
@@ -33,19 +32,25 @@ controller creates one pod per job and removes its temporary state afterward.
 ## Stack
 
 1. Document the runner design and implementation boundary.
-2. Declare the privileged runner LXC.
+2. Declare the runner virtual machine.
 3. Install K3s and Helm.
 4. Install the controller and standard runner scale set.
 5. Add the isolated Docker runner scale set.
 
-## Task 1: Declare the privileged runner guest
+## Task 1: Declare the runner virtual machine
 
-**File:** `opentofu/suburban/tack_gh_runner_suburban.tf`
+**Files:**
 
-- [ ] Set `unprivileged = false`.
-- [ ] Keep `nesting = true`, `prevent_destroy`, and every allocation unchanged.
-- [ ] Add no feature, device rule, cgroup rule, replacement resource, or
-      lifecycle exception.
+- [runner guest declaration](../../../opentofu/suburban/tack_gh_runner_suburban.tf)
+- [Proxmox provider configuration](../../../opentofu/providers.tf)
+- [runner inventory](../../../ansible/inventory/group_vars/tack_gh_runner_suburban_servers.yml)
+
+- [ ] Pin the Debian cloud image URL and checksum.
+- [ ] Install and start the QEMU guest agent through cloud-init.
+- [ ] Use the existing root SSH agent access to upload cloud-init.
+- [ ] Keep `prevent_destroy` and every allocation unchanged.
+- [ ] Use the virtual machine's primary interface for Flannel.
+- [ ] Add no host device or cgroup exception.
 - [ ] Run:
 
 ```bash
@@ -53,7 +58,7 @@ go run goodkind.io/configs/cmd/configs tofu fmt -check -recursive
 go run goodkind.io/configs/cmd/configs tofu validate
 ```
 
-Do not run a live plan while the existing guest remains in state.
+Do not apply while the existing guest remains in Proxmox.
 
 ## Task 2: Install K3s and Helm
 
@@ -183,7 +188,7 @@ Obtain explicit operator approval immediately before deletion.
       change.
 - [ ] Run `configs tofu apply`.
 - [ ] Run the playbook with `--check --diff`, then deploy it.
-- [ ] Confirm the LXC uses privileged mode and nesting only.
+- [ ] Confirm the QEMU guest agent and serial console work.
 - [ ] Confirm the K3s node, controller, scale sets, and listeners report ready.
 - [ ] Reboot the idle guest. Confirm runner service returns without repair.
 
