@@ -19,7 +19,6 @@
   hosts: localhost
   gather_facts: false
   vars:
-    deploy_authorized_keys_script: "{{ playbook_dir }}/../deploy-authorized-keys"
     work_tmp_dir: "{{ playbook_dir }}/../.tmp"
     # Build the guest list from whichever hosts the gather play set guest_info
     # on, so it is correct whether target_hosts is a group, a group-union
@@ -38,6 +37,7 @@
         path: "{{ work_tmp_dir }}"
         state: directory
         mode: "0755"
+      check_mode: false
 
     - name: Use guest list with proxmox type
       ansible.builtin.set_fact:
@@ -64,6 +64,7 @@
         dest: "{{ work_tmp_dir }}/sshpiper_upstream_id_ed25519.pub"
         mode: "0644"
       delegate_to: localhost
+      check_mode: false
 
     - name: Build proxy IPv6 allowlist from service_mapping
       ansible.builtin.set_fact:
@@ -77,40 +78,40 @@
         dest: "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
         mode: "0644"
       delegate_to: localhost
+      check_mode: false
 
     - name: Build authorized_keys bundle
       ansible.builtin.command:
-        argv: >-
-          {{
-            [
-              deploy_authorized_keys_script,
-              '--out',
-              work_tmp_dir + '/authorized_keys.bundle'
-            ]
-            + (
-              [
-                '--extra-pubkey',
-                work_tmp_dir + '/sshpiper_restricted_key.pub'
-              ]
-            )
-          }}
-      register: build_bundle
+        argv:
+          - go
+          - run
+          - ./cmd/deploy-authorized-keys
+          - --github-user
+          - "{{ github_ssh_keys_user }}"
+          - --out
+          - "{{ work_tmp_dir }}/github_authorized_keys.bundle"
+          - --extra-pubkey
+          - "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
+          - --extra-out
+          - "{{ work_tmp_dir }}/authorized_keys.bundle"
+        chdir: "{{ playbook_dir }}/../../scripts"
       changed_when: false
-      become: true
-
-    - name: Show bundle preview
-      ansible.builtin.debug:
-        msg: >-
-          Bundle built with {{ build_bundle.stdout_lines |
-          length }} keys
-          (includes sshpiper upstream key: {{
-            'yes' if (sshpiper_upstream_pubkey | length > 0) else 'no'
-          }})
+      check_mode: false
 
     - name: Copy bundle to Proxmox hosts
       ansible.builtin.copy:
         src: "{{ work_tmp_dir }}/authorized_keys.bundle"
         dest: "/tmp/authorized_keys_deploy.bundle"
+        mode: "0644"
+      delegate_to: "{{ item }}"
+      loop: >-
+        {{ guests_with_type
+           | map(attribute='host') | unique | list }}
+
+    - name: Copy GitHub SSH bundle to Proxmox hosts
+      ansible.builtin.copy:
+        src: "{{ work_tmp_dir }}/github_authorized_keys.bundle"
+        dest: /tmp/github_authorized_keys_deploy.bundle
         mode: "0644"
       delegate_to: "{{ item }}"
       loop: >-
@@ -188,6 +189,10 @@
         set -e
         pct push {{ item.vmid }} /tmp/authorized_keys_deploy.bundle \
           /tmp/new_keys.pub
+        {% if item.name in groups['proxy_servers'] %}
+        pct push {{ item.vmid }} /tmp/github_authorized_keys_deploy.bundle \
+          /tmp/new_sshpiper_keys.pub
+        {% endif %}
         pct push {{ item.vmid }} /tmp/sshd-disable-password-auth.conf \
           /tmp/sshd-disable-password-auth.conf
         pct push {{ item.vmid }} /tmp/sshd-global-authorized-keys.conf \
@@ -212,11 +217,14 @@
           cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
           chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
           chown root:root /etc/ssh/authorized_keys.d/authorized_keys
-          {% if (item.name | lower) == "proxy.home.goodkind.io" %}
+          {% if item.name in groups['proxy_servers'] %}
           mkdir -p /etc/sshpiper
-          cat /tmp/new_keys.pub > /etc/sshpiper/authorized_keys
+          cat /tmp/new_sshpiper_keys.pub > /etc/sshpiper/authorized_keys
           chmod 0600 /etc/sshpiper/authorized_keys
-          chown sshpiper:sshpiper /etc/sshpiper/authorized_keys || true
+          if id sshpiper >/dev/null 2>&1; then
+            chown sshpiper:sshpiper /etc/sshpiper/authorized_keys
+          fi
+          rm -f /tmp/new_sshpiper_keys.pub
           {% endif %}
           sshd -t
           systemctl reset-failed ssh || true
