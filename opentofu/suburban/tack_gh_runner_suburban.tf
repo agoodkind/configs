@@ -54,7 +54,8 @@ resource "proxmox_virtual_environment_container" "tack_gh_runner_suburban" {
 
   started       = true
   start_on_boot = true
-  unprivileged  = true
+  # ARC's private Docker-in-Docker pod requires a privileged runner LXC.
+  unprivileged = false
 
   lifecycle {
     prevent_destroy = true
