@@ -61,6 +61,11 @@ LANs.
   The active-standby same-prefix pattern exists only between the two MWAN
   speakers toward each router, resolved by the router-side local-preference
   policy that runs today.
+- Router-side peer configuration is out of scope. Each router configures
+  its own sessions toward the two speakers; mwan's only per-router
+  artifact is the config entry. Direct router-to-router peering is not
+  needed, because inter-router traffic transits mwan on the learned
+  routes.
 
 ## Acceptance criteria
 
@@ -79,3 +84,13 @@ LANs.
   routes installed throughout; no probe loss attributable to route churn.
 - AC7: Shadow mode shows parity between the static internal route and the
   intended learned installs before any authoritative flip.
+- AC8: Every OPNsense config change cycle on the testbed runs the
+  every-change gate: pre-change snapshot without saved RAM, the change,
+  simulated traffic proof, then reset to the snapshot until the change is
+  proven. The router config change is the brittle step and never lands
+  unproven.
+- AC9: A serial-channel recovery drill passes on the testbed before any
+  production change: with the router's network path treated as dead, the
+  FRR announcement change is fully reverted over the out-of-band serial
+  daemon alone (config write, Quagga template reload, FRR restart), and
+  the router returns to the pre-change routing state.
