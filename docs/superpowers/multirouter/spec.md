@@ -46,26 +46,9 @@ LANs.
    Testbed first; the production flip needs an explicit operator go.
 6. **Routers announce what they own.** Every router announces its declared
    prefixes over iBGP in AS 4200000001. For OPNsense that is FRR network
-   statements per family; the owner of that router-side configuration is
-   the MWAN-276 decision.
-
-## Boundaries
-
-- NPT is out of scope. It keeps translating the whole internal block per
-  WAN, so allocations inside the block translate unchanged. A future /56
-  internal block requires delegations that carry it.
-- The watchdog is out of scope. Router loss is handled by the hold timer
-  withdrawing that router's prefixes; VM failover already covers the
-  defaults direction.
-- Same-prefix announcements from two routers are rejected by contract 2.
-  The active-standby same-prefix pattern exists only between the two MWAN
-  speakers toward each router, resolved by the router-side local-preference
-  policy that runs today.
-- Router-side peer configuration is out of scope. Each router configures
-  its own sessions toward the two speakers; mwan's only per-router
-  artifact is the config entry. Direct router-to-router peering is not
-  needed, because inter-router traffic transits mwan on the learned
-  routes.
+   statements per family, applied by hand through the GUI (over the
+   documented SSH forward on the testbed) or through the serial daemon,
+   followed by the Quagga template reload and an FRR restart.
 
 ## Acceptance criteria
 
@@ -94,3 +77,25 @@ LANs.
   FRR announcement change is fully reverted over the out-of-band serial
   daemon alone (config write, Quagga template reload, FRR restart), and
   the router returns to the pre-change routing state.
+
+
+## Boundaries
+
+- NPT is out of scope. It keeps translating the whole internal block per
+  WAN, so allocations inside the block translate unchanged. A future /56
+  internal block requires delegations that carry it.
+- The watchdog is out of scope. Router loss is handled by the hold timer
+  withdrawing that router's prefixes; VM failover already covers the
+  defaults direction.
+- Same-prefix announcements from two routers are rejected by contract 2.
+  The active-standby same-prefix pattern exists only between the two MWAN
+  speakers toward each router, resolved by the router-side local-preference
+  policy that runs today.
+- Router-side peer configuration is out of scope. Each router configures
+  its own sessions toward the two speakers; mwan's only per-router
+  artifact is the config entry. Direct router-to-router peering is not
+  needed, because inter-router traffic transits mwan on the learned
+  routes.
+- Automating the router-side BGP config is out of scope. The FRR
+  announcement change stays a manual exercise; who eventually owns pushing
+  that config is the separate MWAN-276 decision and gates nothing here.
