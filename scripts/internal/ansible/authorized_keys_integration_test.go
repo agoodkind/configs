@@ -1,12 +1,20 @@
 package ansible
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"goodkind.io/configs/internal/authorizedkeys"
 )
 
 const (
@@ -18,10 +26,15 @@ const (
 )
 
 type authorizedKeysHarness struct {
-	scriptPath string
 	path       string
 	home       string
-	counter    string
+	fetchCount *atomic.Int32
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
 }
 
 func newAuthorizedKeysHarness(t *testing.T) authorizedKeysHarness {
@@ -31,14 +44,7 @@ func newAuthorizedKeysHarness(t *testing.T) authorizedKeysHarness {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
-	repositoryRoot := filepath.Clean(filepath.Join(workingDirectory, "..", "..", ".."))
-
 	fakeBin := t.TempDir()
-	installExecutable(
-		t,
-		filepath.Join(workingDirectory, "testdata", "fake-curl.sh"),
-		filepath.Join(fakeBin, "curl"),
-	)
 	installExecutable(
 		t,
 		filepath.Join(workingDirectory, "testdata", "fake-ssh-add.sh"),
@@ -59,10 +65,9 @@ func newAuthorizedKeysHarness(t *testing.T) authorizedKeysHarness {
 	}
 
 	return authorizedKeysHarness{
-		scriptPath: filepath.Join(repositoryRoot, "ansible", "deploy-authorized-keys"),
 		path:       fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
 		home:       home,
-		counter:    filepath.Join(t.TempDir(), "curl-count"),
+		fetchCount: &atomic.Int32{},
 	}
 }
 
@@ -86,16 +91,37 @@ func (h authorizedKeysHarness) run(
 ) ([]byte, error) {
 	t.Helper()
 
-	command := exec.Command(h.scriptPath, arguments...)
-	command.Env = []string{
-		"FAKE_CURL_BODY=" + githubBody,
-		"FAKE_CURL_COUNTER=" + h.counter,
-		"FAKE_CURL_ERROR=" + githubError,
-		"FAKE_SSH_ADD_KEY=" + agentKey,
-		"HOME=" + h.home,
-		"PATH=" + h.path,
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		h.fetchCount.Add(1)
+		if githubError != "" {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+		}
+		_, _ = writer.Write([]byte(githubBody + githubError))
+	}))
+	t.Cleanup(server.Close)
+
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("Parse test server URL: %v", err)
 	}
-	return command.CombinedOutput()
+	client := server.Client()
+	baseTransport := client.Transport
+	client.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		return baseTransport.RoundTrip(cloned)
+	})
+	t.Setenv("FAKE_SSH_ADD_KEY", agentKey)
+	t.Setenv("HOME", h.home)
+	t.Setenv("PATH", h.path)
+
+	var output bytes.Buffer
+	runErr := authorizedkeys.Run(context.Background(), arguments, &output, client)
+	if runErr != nil {
+		_, _ = fmt.Fprintln(&output, runErr)
+	}
+	return output.Bytes(), runErr
 }
 
 func requireBundleLines(t *testing.T, path string, want []string) {
@@ -165,6 +191,9 @@ func TestDeployAuthorizedKeysWritesGitHubAndRestrictedBundles(t *testing.T) {
 	requireBundleLines(t, combinedBundle, []string{extraKey, githubKeyA, githubKeyB})
 	requireFileMode(t, humanBundle, 0o644)
 	requireFileMode(t, combinedBundle, 0o644)
+	if got := harness.fetchCount.Load(); got != 1 {
+		t.Fatalf("GitHub fetch count = %d, want 1", got)
+	}
 }
 
 func TestDeployAuthorizedKeysRejectsFetchFailureWithoutOutputs(t *testing.T) {

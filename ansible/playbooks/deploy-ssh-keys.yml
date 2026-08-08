@@ -19,7 +19,6 @@
   hosts: localhost
   gather_facts: false
   vars:
-    deploy_authorized_keys_script: "{{ playbook_dir }}/../deploy-authorized-keys"
     work_tmp_dir: "{{ playbook_dir }}/../.tmp"
     # Build the guest list from whichever hosts the gather play set guest_info
     # on, so it is correct whether target_hosts is a group, a group-union
@@ -84,7 +83,9 @@
     - name: Build authorized_keys bundle
       ansible.builtin.command:
         argv:
-          - "{{ deploy_authorized_keys_script }}"
+          - go
+          - run
+          - ./cmd/deploy-authorized-keys
           - --github-user
           - "{{ github_ssh_keys_user }}"
           - --out
@@ -93,6 +94,7 @@
           - "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
           - --extra-out
           - "{{ work_tmp_dir }}/authorized_keys.bundle"
+        chdir: "{{ playbook_dir }}/../../scripts"
       changed_when: false
       check_mode: false
 
