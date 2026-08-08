@@ -144,12 +144,13 @@ func (m *Module) syncOOBDefault(
 	ctx context.Context, log *slog.Logger, cur *netif.CurrentRoute,
 ) error {
 	want := netif.RouteSpec{
-		Family:  "inet6",
-		Dest:    "default",
-		Via:     "",
-		Dev:     m.cfg.Iface,
-		TableID: m.cfg.OOBTableID,
-		Metric:  0,
+		Family:   "inet6",
+		Dest:     "default",
+		Via:      "",
+		Dev:      m.cfg.Iface,
+		TableID:  m.cfg.OOBTableID,
+		Metric:   0,
+		Protocol: 0,
 	}
 	if cur != nil {
 		want.Via = cur.Via

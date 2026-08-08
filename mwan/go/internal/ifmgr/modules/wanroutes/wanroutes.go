@@ -292,22 +292,24 @@ func desiredState(
 func appendWANDefaultRoutes(routes []netif.RouteSpec, wan WAN, gateways gatewaySet) []netif.RouteSpec {
 	if gateways.V4 != "" {
 		routes = append(routes, netif.RouteSpec{
-			Family:  familyV4,
-			Dest:    "default",
-			Via:     gateways.V4,
-			Dev:     wan.Iface,
-			TableID: wan.TableID,
-			Metric:  0,
+			Family:   familyV4,
+			Dest:     "default",
+			Via:      gateways.V4,
+			Dev:      wan.Iface,
+			TableID:  wan.TableID,
+			Metric:   0,
+			Protocol: 0,
 		})
 	}
 	if gateways.V6 != "" {
 		routes = append(routes, netif.RouteSpec{
-			Family:  familyV6,
-			Dest:    "default",
-			Via:     gateways.V6,
-			Dev:     wan.Iface,
-			TableID: wan.TableID,
-			Metric:  0,
+			Family:   familyV6,
+			Dest:     "default",
+			Via:      gateways.V6,
+			Dev:      wan.Iface,
+			TableID:  wan.TableID,
+			Metric:   0,
+			Protocol: 0,
 		})
 	}
 	return routes
@@ -378,30 +380,33 @@ func appendWANInternalRoutes(
 	routes = append(
 		routes,
 		netif.RouteSpec{
-			Family:  familyV4,
-			Dest:    cfg.InternalNetV4,
-			Via:     "",
-			Dev:     cfg.InternalIface,
-			TableID: tableID,
-			Metric:  0,
+			Family:   familyV4,
+			Dest:     cfg.InternalNetV4,
+			Via:      "",
+			Dev:      cfg.InternalIface,
+			TableID:  tableID,
+			Metric:   0,
+			Protocol: 0,
 		},
 		netif.RouteSpec{
-			Family:  familyV6,
-			Dest:    withPrefix(cfg.OpnsenseEdgeV6, "128"),
-			Via:     "",
-			Dev:     cfg.InternalIface,
-			TableID: tableID,
-			Metric:  0,
+			Family:   familyV6,
+			Dest:     withPrefix(cfg.OpnsenseEdgeV6, "128"),
+			Via:      "",
+			Dev:      cfg.InternalIface,
+			TableID:  tableID,
+			Metric:   0,
+			Protocol: 0,
 		},
 	)
 	if cfg.BGPRoutesShadowMode {
 		routes = append(routes, netif.RouteSpec{
-			Family:  familyV6,
-			Dest:    cfg.InternalPrefix,
-			Via:     cfg.OpnsenseEdgeV6,
-			Dev:     cfg.InternalIface,
-			TableID: tableID,
-			Metric:  0,
+			Family:   familyV6,
+			Dest:     cfg.InternalPrefix,
+			Via:      cfg.OpnsenseEdgeV6,
+			Dev:      cfg.InternalIface,
+			TableID:  tableID,
+			Metric:   0,
+			Protocol: 0,
 		})
 	}
 	return routes
@@ -412,12 +417,13 @@ func appendMainInternalRoute(routes []netif.RouteSpec, cfg Config) []netif.Route
 		return routes
 	}
 	routes = append(routes, netif.RouteSpec{
-		Family:  familyV6,
-		Dest:    cfg.InternalPrefix,
-		Via:     cfg.OpnsenseEdgeV6,
-		Dev:     cfg.InternalIface,
-		TableID: unix.RT_TABLE_MAIN,
-		Metric:  mainInternalMetric,
+		Family:   familyV6,
+		Dest:     cfg.InternalPrefix,
+		Via:      cfg.OpnsenseEdgeV6,
+		Dev:      cfg.InternalIface,
+		TableID:  unix.RT_TABLE_MAIN,
+		Metric:   mainInternalMetric,
+		Protocol: 0,
 	})
 	return routes
 }

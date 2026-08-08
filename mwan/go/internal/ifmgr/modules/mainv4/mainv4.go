@@ -117,12 +117,13 @@ func (m *Module) applyBound(
 	}
 
 	want := netif.RouteSpec{
-		Family:  "inet",
-		Dest:    "default",
-		Dev:     m.cfg.Iface,
-		Via:     "",
-		Metric:  0,
-		TableID: unix.RT_TABLE_MAIN,
+		Family:   "inet",
+		Dest:     "default",
+		Dev:      m.cfg.Iface,
+		Via:      "",
+		Metric:   0,
+		TableID:  unix.RT_TABLE_MAIN,
+		Protocol: 0,
 	}
 	if lease.Gateway != nil {
 		want.Via = lease.Gateway.String()
@@ -148,12 +149,13 @@ func (m *Module) applyBound(
 func (m *Module) applyExpired(ctx context.Context, log *slog.Logger) error {
 	log.WarnContext(ctx, "mainv4: lease expired; clearing main-table default v4")
 	clearRoute := netif.RouteSpec{
-		Family:  "inet",
-		Dest:    "default",
-		Dev:     m.cfg.Iface,
-		Via:     "",
-		Metric:  0,
-		TableID: unix.RT_TABLE_MAIN,
+		Family:   "inet",
+		Dest:     "default",
+		Dev:      m.cfg.Iface,
+		Via:      "",
+		Metric:   0,
+		TableID:  unix.RT_TABLE_MAIN,
+		Protocol: 0,
 	}
 	if err := netif.ReconcileTableDefault(ctx, log, clearRoute); err != nil {
 		return fmt.Errorf("clear main-table default v4: %w", err)
