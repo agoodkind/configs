@@ -120,6 +120,9 @@
         enabled: true
         state: started
 
+    - name: Install Docker prune timer
+      ansible.builtin.include_tasks: tasks/docker-prune.yml
+
   handlers:
     # Apply only this playbook's sysctl file, not `sysctl --system`. The tack
     # LXC is unprivileged, so host-namespaced kernel.* keys from the base image's
