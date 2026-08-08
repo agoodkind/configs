@@ -17,21 +17,15 @@ receiver to overwrite the peer's stored endpoint with the source IP and port of
 the received packet. This includes handshake init, handshake response, transport
 packets, and keepalives.
 
-Source path in `wireguard-go`:
+Verified in the `wireguard-go` reference implementation: every authenticated
+packet type (handshake init, handshake response, first transport, and every
+subsequent transport) ends in the same set-endpoint-from-packet call, which
+locks and overwrites the stored peer endpoint.
 
-- `device/receive.go:374`. Handshake init: `peer.SetEndpointFromPacket(elem.endpoint)`.
-- `device/receive.go:401`. Handshake response: same.
-- `device/receive.go:459`. First authenticated transport: same.
-- `device/receive.go:515`. Every subsequent authenticated transport: same.
-- `device/peer.go:279-287`. `SetEndpointFromPacket` locks endpoint and overwrites
-`peer.endpoint.val` with the new endpoint.
-
-There is a `disableRoaming` flag at `device/peer.go:32`. It cannot be set via
-standard config. No standard `wg`/`wg-quick` config keyword sets it. It is only
-set true via private API `device.DisableSomeRoamingForBrokenMobileSemantics()`
-at `device/mobilequirks.go:9`, or via the internal uapi field `brokenRoaming`
-at `device/uapi.go:263`. Neither path is exposed. The flag is designed for
-"broken mobile semantics" on iOS/Android, not for general use.
+A roaming-disable flag exists in the implementation, but no standard `wg` or
+`wg-quick` config keyword sets it. Its only setters are a private API meant
+for broken mobile semantics on iOS and Android and an unexposed internal uapi
+field. Neither path is usable here.
 
 The kernel module behaves identically. Same protocol. Same author.
 
@@ -43,12 +37,12 @@ Architecture facts:
 (`2600:1700:2f71:c80::1`) and Webpass-side address (`2604:5500:c271:be00::1`).
 - Suburban dials `home.goodkind.io:51820` on a periodic basis. DNS resolution
 happens per dial, not cached forever.
-- VM 113 has DNAT rules for both AT&T and Webpass IPv6 addresses. Both forward
+- The MWAN VM has DNAT rules for both AT&T and Webpass IPv6 addresses. Both forward
 to OPNsense `:fe::2:51820`.
-- VM 113 mangle prerouting: inbound iif sets ct mark, so reply egresses the
+- The MWAN VM's mangle prerouting: inbound iif sets ct mark, so reply egresses the
 same WAN suburban dialed. This is DNS-LB symmetry. It works for general
 traffic.
-- VM 113 mangle prerouting also has a mod-2 random LB rule for OPNsense-initiated
+- The MWAN VM's mangle prerouting also has a mod-2 random LB rule for OPNsense-initiated
 outbound: `ip6 saddr :fe::2 ct state new mark set numgen random mod 2`.
 
 Two flows that break consistency:
@@ -57,9 +51,9 @@ Two flows that break consistency:
 
 1. Suburban resolves `home.goodkind.io`. Cloudflare returns AT&T address.
 2. Suburban dials `[2600:1700:2f71:c80::1]:51820`.
-3. VM 113 DNATs to OPNsense. OPNsense's wg sees endpoint `:7bf2`, suburban's
-  public Comcast SLAAC.
-4. Inbound iif rule on VM 113 marks the conntrack AT&T (`mark=1`).
+3. The MWAN VM DNATs to OPNsense. OPNsense's wg sees endpoint `:7bf2`,
+  suburban's public Comcast SLAAC.
+4. The inbound iif rule on the MWAN VM marks the conntrack AT&T (`mark=1`).
 5. OPNsense replies. Reply ct state established. Mark restored from ct. AT&T.
 6. Suburban's wg sees authenticated reply with src `:c80::1` after SNAT
   reverse. `SetEndpointFromPacket` keeps suburban's stored endpoint at
@@ -98,9 +92,9 @@ paths have different reachability to the new prefix, then split-brain occurs.
 Each side validly sees its peer at a different IP. Each side's outbound
 continues to that stored IP. Asymmetric routing kills the session.
 
-### Flow C: VM 113 reboots or conntrack flush
+### Flow C: the MWAN VM reboots or conntrack flush
 
-If VM 113 mwan-router reboots, all flows from `:fe::2` become "ct state new"
+If the MWAN VM reboots, all flows from `:fe::2` become "ct state new"
 again on next packet. The mod-2 random LB rule re-runs. If suburban's stored
 endpoint at the time was `:c80::1` but the new mod-2 picks Webpass, OPNsense's
 reply egresses Webpass. Suburban's roaming sets endpoint to `:be00::1`. Flow
@@ -110,8 +104,8 @@ in lockstep with mod-2 randomness on every conntrack flush.
 
 ## What CAN'T fix it
 
-- **Pinning OPNsense-initiated to AT&T at VM 113** (commit `e2e17a1` shipped
-earlier). Does not help because most traffic is suburban-initiated.
+- **Pinning OPNsense-initiated to AT&T at the MWAN VM**. Does not help
+because most traffic is suburban-initiated.
 OPNsense-initiated rekeys also exist, but they only hit `ct state new` in
 the brief window after conntrack expiry. The existing flow is usually in
 `ct state established` from suburban's prior dial. So the pin rule rarely
@@ -120,7 +114,7 @@ fires. Effectively inert in practice.
 custom-built wireguard-go. Not feasible.
 - **Static `Endpoint=` on suburban config**. Defeats DNS-LB failover. Goes
 against active-active intent.
-- **Pinning inbound on VM 113 to a single WAN regardless of iif**. Defeats
+- **Pinning inbound on the MWAN VM to a single WAN regardless of iif**. Defeats
 DNS-LB symmetry. Breaks all DNS-LB-routed traffic, not just WG.
 
 ## Detection plus manual reconciliation
@@ -133,7 +127,7 @@ Cons: requires manual intervention. The whole point of WG is "set and forget."
 
 ## Implementation note for bidirectional wghealth
 
-Today's `wg_health` ([mwan/go/internal/ifmgr/modules/wg/](../../mwan/go/internal/ifmgr/modules/wg/)) polls OPNsense via SSH.
+Today's `wg_health` ifmgr module polls OPNsense via SSH.
 
 Two paths can add the suburban side:
 

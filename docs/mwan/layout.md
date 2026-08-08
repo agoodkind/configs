@@ -7,9 +7,9 @@ MWAN runs as one Go binary spread across a few hosts, and each host runs only th
 The `mwan` binary is a monolith whose subcommands each do one job, and a host runs the subset its role requires.
 
 - The MWAN VM is the WAN router. It runs `mwan agent`, the gRPC service that drives the embedded BGP speaker and applies health-driven route decisions, under the `mwan-agent.service` unit.
-- The failover LXC is the backup BGP peer. It runs `mwan agent` and `mwan ifmgr`, the interface manager that applies interface-mode configuration read from `/etc/mwan/config.toml`, under the `mwan-agent.service` and `mwan-ifmgr.service` units.
+- The failover LXC is the backup BGP peer. It runs `mwan agent` and `mwan ifmgr`, the interface manager that applies interface-mode configuration for its configured role, under the same agent unit plus `mwan-ifmgr.service`.
 - The Proxmox host watches and recovers the VM from outside it. It runs `mwan ifmgr` for its own out-of-band interface and `mwan watchdog`, the daemon that probes connectivity and rolls the VM back to a known-good snapshot when a change breaks it. The testbed host additionally runs `mwan opnsense host serve`, the Unix-socket bridge to the testbed OPNsense serial channel.
-- The OPNsense VM runs `mwan opnsense serve`, the FreeBSD daemon that edits `config.xml` over the serial channel. It has no `/etc/mwan/`; its settings live in `rc.conf.d`.
+- The OPNsense VM runs `mwan opnsense serve`, the FreeBSD daemon that edits the router config over the serial channel. It has no `/etc/mwan/`; its settings are FreeBSD `rc.conf.d` entries.
 
 The ISP-simulator containers and the unrelated service containers on these hosts run no MWAN command.
 

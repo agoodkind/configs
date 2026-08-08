@@ -8,8 +8,7 @@ Hulu shows a "location changed" notification when its flows load-balance across
 WANs, because each WAN egresses a different ISP IP (AT&T `104.57.226.x`, Webpass
 `136.25.91.x`, Monkeybrains `158.247.70.x`) and Hulu reads the account as hopping
 networks. The first fix was destination-IP pinning via the `att_pinned_v4/v6`
-nftables sets (see [overview.md](overview.md) and
-`ansible/inventory/group_vars/mwan_servers.yml`). A live capture on 2026-06-15
+nftables sets. A live capture on 2026-06-15
 showed that approach loses to Hulu's CDN: Hulu sprays video segments across
 Akamai, Fastly, and CloudFront `/24`s (and v6 `/64`s) faster than the 6h refresh
 can track, so new rotated IPs keep leaking to the load-balanced WAN.
@@ -25,9 +24,9 @@ Checked against `/proc/net/nf_conntrack` and `conntrack -L` on the mwan VM:
 
 - IPv4: mwan sees `src=10.250.250.2` for every LAN flow. OPNsense source-NATs all
   IPv4 LAN clients to its `10.250.250.2` edge before handing traffic to mwan
-  (consistent with the masquerade rule matching only `ip saddr 10.250.250.0/29`
-  in `mwan/config/nftables.conf.j2`). So mwan cannot tell v4 devices apart by
-  source, and a v4 source pin at mwan would pin all LAN v4 traffic.
+  (consistent with the masquerade rule matching only `ip saddr 10.250.250.0/29`).
+  So mwan cannot tell v4 devices apart by source, and a v4 source pin at mwan
+  would pin all LAN v4 traffic.
 - IPv6: mwan sees the real client `/128` (e.g. `3d06:bad:b01:2:9121:f8:be06:8f4a`)
   because the internal `3d06:bad:b01::/60` is routed end to end with no NAT. A v6
   source pin at mwan works, though SLAAC privacy addresses rotate, so pin a
@@ -40,15 +39,15 @@ node that sees the real `10.250.2.x` client.
 
 OPNsense can only SET DSCP through legacy scrub/normalization rules:
 
-- `opnsense-core-25.7/src/etc/inc/filter.inc:534` emits `set-tos <value>` from
-  `$config['filter']['scrub']['rule']`. Live on 26.1.9 the same line is
-  `filter.inc:555`, and the GUI field is `firewall_scrub_edit.php:580`
-  ("TOS / DSCP").
-- Allowed values come from `get_tos_values()` (filter.inc:781-807): named
-  (`lowdelay`, `ef`, ...), `af11`-`af43`, `cs0`-`cs7`, and raw hex `0x00`-`0xFF`.
-- The MVC firewall filter-rule `tos` field (`Filter.xml`, `TosField.php`) and the
-  Traffic Shaper `dscp` field are MATCH-only, not set. There is no ipfw
-  `setdscp`. So scrub `set-tos` is the only set primitive.
+- The filter generator emits `set-tos <value>` from the scrub rules in the
+  router config, and the GUI exposes the value as the "TOS / DSCP" field on a
+  Normalization rule. Verified in the OPNsense core source on 25.7 and live on
+  26.1.9.
+- Allowed values are the named classes (`lowdelay`, `ef`, ...), `af11`-`af43`,
+  `cs0`-`cs7`, and raw hex `0x00`-`0xFF`.
+- The MVC firewall filter-rule `tos` field and the Traffic Shaper `dscp` field
+  are MATCH-only, not set. There is no ipfw `setdscp`. So scrub `set-tos` is
+  the only set primitive.
 
 Scrub runs before OPNsense's outbound NAT, so a scrub rule can match the real
 v4/v6 client source, stamp a codepoint, and the bits ride through the NAT to
@@ -56,17 +55,16 @@ mwan.
 
 ## Automation reach (verified in source)
 
-- The `opnsense-go` REST client cannot do this: its `Filter` struct has no
-  `tos`/`dscp` field (`opnsense-go/pkg/firewall/filter.go:21-39`), and it
-  implements no traffic-shaper or scrub resource.
-- The configs stack does not use that REST client. It drives OPNsense through the
-  `mwan-opnsense` gRPC daemon over virtio-serial, which mutates `config.xml` via
-  `XPathSet`/`XPathGet`/`XPathDelete` plus `Exec`
-  (`mwan/go/internal/opnsense/rpc_typed.go:71-170`, `docs/mwan/overview.md`).
-  Scrub rules live at `config.xml` `filter/scrub/rule`, so that daemon can
-  program the tag with `XPathSet` and a filter reload. It currently only touches
-  BGP, gateways, and upgrades, so this would be a new use of an existing
-  mechanism.
+- The `opnsense-go` REST client cannot do this: its firewall filter model has
+  no `tos` or `dscp` field, and it implements no traffic-shaper or scrub
+  resource.
+- The configs stack does not use that REST client. It drives OPNsense through
+  the `mwan-opnsense` gRPC daemon over virtio-serial, which mutates the router
+  config via XPath set, get, and delete calls plus command execution. Scrub
+  rules sit under `filter/scrub/rule` in that config, so the daemon can
+  program the tag with an XPath write and a filter reload. It currently only
+  touches BGP, gateways, and upgrades, so this would be a new use of an
+  existing mechanism.
 
 ## Design
 
@@ -78,7 +76,7 @@ else here uses. nft accepts `ip dscp cs1`; OPNsense scrub stores `set-tos` as
 
 One Normalization rule per family (or one rule with an alias holding both
 addresses): match the streaming device source, set TOS/DSCP to `cs1`. Config
-shape under `config.xml` `filter/scrub/rule`:
+shape of the scrub rule:
 
 ```
 interface = lan
@@ -91,9 +89,10 @@ descr     = Tag streaming device for AT&T pin
 
 ### mwan half (nft ip dscp)
 
-In `mwan/config/nftables.conf.j2`, `table inet mangle` / `chain prerouting`,
-right after the existing `@att_pinned` rules (currently lines 207-208) and before
-the v6 numgen load-balancer and the `ct state established,related` restore:
+In [nftables.conf.j2](../../mwan/config/nftables.conf.j2), `table inet
+mangle` / `chain prerouting`, right after the existing `@att_pinned` rules and
+before the v6 numgen load-balancer and the `ct state established,related`
+restore:
 
 ```
 # Pin DSCP-tagged app traffic (set by OPNsense scrub set-tos) to AT&T (mark 1).
@@ -138,9 +137,9 @@ This proves the path end to end before any Ansible or daemon work.
    show `mark=1` regardless of which CDN IP Hulu rotates to, since the pin now
    keys on DSCP, not destination.
 
-If it works, promote it: add the two nft lines to `nftables.conf.j2`, and either
-keep the scrub rule in OPNsense config or program it from `mwan-opnsense` via
-`XPathSet` into `filter/scrub/rule`.
+If it works, promote it: add the two nft lines to the mwan nftables template,
+and either keep the scrub rule in the router config or program it from
+`mwan-opnsense` with an XPath write.
 
 ## Verification
 
@@ -153,9 +152,10 @@ keep the scrub rule in OPNsense config or program it from `mwan-opnsense` via
 
 ## Caveats
 
-- It is config.xml, not the REST API. Automating it means the `mwan-opnsense`
-  XPath path, which has not yet been used for firewall rules; verify the daemon
-  can insert a rule subtree, not just scalar values, before relying on it.
+- It is the router's on-disk config, not the REST API. Automating it means the
+  `mwan-opnsense` XPath path, which has not yet been used for firewall rules;
+  verify the daemon can insert a rule subtree, not just scalar values, before
+  relying on it.
 - Verify nothing else re-normalizes ToS to 0 between OPNsense and mwan (a quick
   live capture settles this).
 - Pick a codepoint not otherwise in use. CS1 (`0x20`) is the assumed free value

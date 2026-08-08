@@ -4,15 +4,12 @@ Direct SSH is the normal path to every routed host. WireGuard and Cloudflare
 private access carry the same homelab routes, so the target does not change
 between them.
 
-Canonical hostnames, IPv6 addresses, and virtual machine identifiers live in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
-Static hypervisor names live in
-[ansible/inventory/hosts](../../ansible/inventory/hosts).
-
 ## 1. Connect directly
 
 Use the fully qualified domain name when private DNS resolves it. Otherwise,
-use the IPv6 address from `service_mapping.yml`. Both paths connect directly.
+look up the host's IPv6 address in
+[the service inventory](../../ansible/inventory/group_vars/all/service_mapping.yml).
+Both paths connect directly.
 
 ```bash
 ssh root@<service-hostname-or-ipv6>
@@ -43,7 +40,7 @@ ssh root@proxy@ssh.home.goodkind.io
 ## 3. Use break-glass access
 
 Use an out-of-band path when the target network or SSH daemon is unavailable.
-Read the guest identifier from `service_mapping.yml` first.
+Look up the guest identifier in the service inventory first.
 
 Run a command inside an LXC container or QEMU virtual machine from its Proxmox
 host:
@@ -59,9 +56,9 @@ For a QEMU virtual machine with a configured serial console:
 ssh -t root@<proxmox-host> 'qm terminal <vmid>'
 ```
 
-OPNsense also has a serial control channel described in
-[the OPNsense out-of-band daemon](../opnsense/daemon.md). Hypervisor recovery
-paths live in [emergency out-of-band access](oob.md).
+OPNsense also has a serial control channel; see
+[the OPNsense out-of-band daemon](../opnsense/daemon.md). For hypervisor
+recovery, see [emergency out-of-band access](oob.md).
 
 ## Diagnostics-only SSH options
 

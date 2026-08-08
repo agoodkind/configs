@@ -1,20 +1,11 @@
 # Suburban MWAN testbed
 
 Suburban is the NJ Proxmox hypervisor. The testbed mirrors production MWAN
-using the same Ansible templates with different group vars
-([mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml)).
-Guest identities live in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
-The [suburban OpenTofu module](../../opentofu/suburban/) owns the remaining
-resource shape.
+using the same Ansible templates with testbed group vars.
 
 ## Bridges
 
-Bridge names, addresses, and VLAN ids live in
-[opentofu/suburban/networks.tf](../../opentofu/suburban/networks.tf); guest
-addresses live in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
-What the doc adds is the behavior each bridge carries:
+Each bridge carries one role:
 
 - The Comcast uplink bridge is suburban's own internet path and the outbound
   NAT boundary. Nothing testbed-internal attaches to it.
@@ -31,13 +22,8 @@ What the doc adds is the behavior each bridge carries:
 
 ## Guests
 
-OpenTofu provisions every suburban guest, and Ansible configures what runs inside
-it. Both read the same
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml)
-for a guest's id, hostname, and address, so that file answers which guest is
-which and a renumber changes one line. The
-[suburban module](../../opentofu/suburban/) holds the rest of the guest shape:
-type, bridges, disk, and memory.
+OpenTofu provisions every suburban guest, and Ansible configures what runs
+inside it.
 
 A guest that mirrors a production service takes its counterpart's VMID plus 100,
 and the simulated ISPs, which have no production counterpart, sit in the 9xx
@@ -54,12 +40,9 @@ serial channel when network access is unavailable.
 Each ISP simulator terminates one WAN link for the MWAN VM, serves DHCPv6-PD
 through kea-dhcp6 and router advertisements through radvd, and uplinks through
 suburban, which returns tunnel and testbed traffic and masquerades internet
-traffic out to Comcast. Each sim's capability flags and downstream subnets
-live in
-[suburban_servers.yml](../../ansible/inventory/group_vars/suburban_servers.yml)
-under `testbed_isp_lxcs`, which carries a comment explaining each flag; ids,
-hostnames, and uplink addresses live in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+traffic out to Comcast. Each sim declares capability flags and downstream
+subnets in the suburban group vars, with a comment beside each flag
+explaining it.
 
 The three sims differ because the real WANs do. Monkeybrains runs the full
 dynamic stack, so the MWAN VM receives a DHCPv4 lease, a DHCPv6 address, a
@@ -75,27 +58,27 @@ management, LAN, internal, and SLAAC already use.
 
 ## Production vs testbed
 
-| Component                  | Production (vault)                              | Testbed (suburban)                                                |
-| -------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- |
-| MWAN VM                    | mwan.home.goodkind.io                           | mwan.suburban.goodkind.io                                         |
-| Failover LXC               | mwan-failover.home.goodkind.io                  | mwan-failover.suburban.goodkind.io                                |
-| OPNsense                   | router.home.goodkind.io                         | router.suburban.goodkind.io                                       |
-| Hypervisor                 | vault                                           | suburban                                                          |
-| Group vars (MWAN)          | [ansible/inventory/group_vars/mwan_servers.yml](../../ansible/inventory/group_vars/mwan_servers.yml) | [ansible/inventory/group_vars/mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml) |
-| Group vars (OPNsense)      | [ansible/inventory/group_vars/opnsense_servers.yml](../../ansible/inventory/group_vars/opnsense_servers.yml) | [ansible/inventory/group_vars/opnsense_suburban_servers.yml](../../ansible/inventory/group_vars/opnsense_suburban_servers.yml) |
-| Deploy playbook (MWAN)     | [ansible/playbooks/deploy-mwan.yml](../../ansible/playbooks/deploy-mwan.yml) `--limit mwan_servers` | [ansible/playbooks/deploy-mwan.yml](../../ansible/playbooks/deploy-mwan.yml) `--limit mwan_suburban_servers` |
-| Deploy playbook (failover) | [ansible/playbooks/deploy-mwan-failover.yml](../../ansible/playbooks/deploy-mwan-failover.yml) `--limit mwan_failover_servers` | [ansible/playbooks/deploy-mwan-failover.yml](../../ansible/playbooks/deploy-mwan-failover.yml) `--limit mwan_failover_suburban_servers` |
-| Deploy playbook (OPNsense) | [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml) `--limit opnsense_servers` | [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml) `--limit opnsense_suburban_servers` |
-| Suburban-only extras       | n/a | [ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml) `--limit suburban` |
+Every deploy playbook serves both environments; the `--limit` group selects
+which one, and the matching group vars carry each side's values.
+
+| Component      | Production (vault)             | Testbed (suburban)                 |
+| -------------- | ------------------------------ | ---------------------------------- |
+| MWAN VM        | mwan.home.goodkind.io          | mwan.suburban.goodkind.io          |
+| Failover LXC   | mwan-failover.home.goodkind.io | mwan-failover.suburban.goodkind.io |
+| OPNsense       | router.home.goodkind.io        | router.suburban.goodkind.io        |
+| Hypervisor     | vault                          | suburban                           |
+| MWAN limit     | `mwan_servers`                 | `mwan_suburban_servers`            |
+| Failover limit | `mwan_failover_servers`        | `mwan_failover_suburban_servers`   |
+| OPNsense limit | `opnsense_servers`             | `opnsense_suburban_servers`        |
+| Extras limit   | n/a                            | `suburban` (deploy-testbed)        |
 
 ## Testbed-only infrastructure
 
 The ISP sim LXCs, suburban-side safe IPv6 sysctl defaults, and suburban
-masquerade rules (`vmbr1` to `vmbr0`/`wg0`) only exist on the testbed. The
-bridge shape stays in OpenTofu, the safe early-boot sysctl defaults stay in
-[ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml),
-and the live per-bridge Router Advertisement policy is reconciled continuously by
-`mwan-ifmgr` from the suburban host config rendered by the Proxmox host tasks.
+masquerade rules only exist on the testbed. The bridge shape stays in
+OpenTofu, the testbed deploy ships the early-boot sysctl defaults, and
+`mwan-ifmgr` reconciles the live per-bridge Router Advertisement policy
+continuously from the suburban host config.
 
 ## Suburban gotchas
 
@@ -116,19 +99,16 @@ unknown.
   segment return directly. A management policy table carrying only a default
   route shadows the connected route and triangles on-link replies through the
   gateway, which breaks reachability.
-- **Reachability probing.** ICMP echo to testbed guests works end to end,
-  including from the workstation over WARP and WireGuard. A proxied flow only
-  survives when its reply path is symmetric: the suburban cloudflared
-  connector pins its ICMP proxy source to the VMNET address
-  ([testbed/cloudflared-icmp-src.conf.j2](../../testbed/cloudflared-icmp-src.conf.j2))
-  so guest replies return on-link. A flow whose reply crosses the testbed
-  router stateless toward a destination outside the tunnel ranges hits the
-  router's default deny, so a probe sourced from an off-link address reads a
-  healthy host as down.
-- **Watchdog host config address.** `mwan-watchdog-testbed` on the suburban host
-  must target the MWAN VM's current management address, from
-  [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
-  in `/etc/mwan/config.toml`. A stale address degrades its VM health probe to the
-  TCP and PVE fallback channels (the vsock channel still works because it is
-  CID-based), and a wedged snapshot plus a tight retry loop can hold the VM lock.
-  The config is rendered by `deploy-proxmox --limit suburban`.
+- **Reachability probing.** ICMP echo to testbed guests works from the
+  workstation. A probe flow survives only when its reply returns the way the
+  request came. The suburban cloudflared connector therefore sources proxied
+  pings from its own address on the guest segment, so replies come back
+  on-link. A probe sourced from an off-link address reads a healthy guest as
+  down, because the reply crosses the testbed router stateless and its
+  default deny drops it.
+- **Watchdog host config address.** The suburban watchdog must target the
+  MWAN VM's current management address. A stale address degrades its VM
+  health probe to the TCP and PVE fallback channels (the vsock channel still
+  works because it is CID-based), and a wedged snapshot plus a tight retry
+  loop can hold the VM lock. Redeploying the suburban Proxmox host converges
+  the config.

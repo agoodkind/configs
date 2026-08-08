@@ -1,9 +1,9 @@
 # Networking and DHCP diagnosis
 
 IPv6 connectivity is P0. Treat IPv6 issues as critical priority and diagnose the
-IPv6 stack first, then IPv4. See [docs/infra/overview.md](overview.md) for the
-current live network state and [docs/infra/access.md](access.md) for SSH paths
-between hosts.
+IPv6 stack first, then IPv4. See [the infrastructure overview](overview.md) for
+the current live network state and [access.md](access.md) for SSH paths between
+hosts.
 
 ## Configuration preferences
 

@@ -13,23 +13,20 @@ lifecycle operations, config changes, console access, and datastore allocation.
 If a workflow needs a narrower ACL later, document the missing capability before
 you tighten it.
 
-## Where Ansible reads the token secrets
+## Rotate a token
 
-The per-hypervisor inventory plugins keep the API URL, username, and token ID in
-plaintext, and they read the token secret directly from
-[ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml):
-
-- [ansible/inventory/vault.proxmox.yml](../../ansible/inventory/vault.proxmox.yml) reads `vault_proxmox_token_secret`
-- [ansible/inventory/suburban.proxmox.yml](../../ansible/inventory/suburban.proxmox.yml) reads `vault_suburban_testbed_pve_token_secret`
-
-Update those `vault_*` values when a token rotates. Do not move the token
-secrets into shell startup files just to satisfy inventory.
+The per-hypervisor inventory plugins keep the API URL, username, and token ID
+in plaintext and read the token secret from the vault. When a token rotates,
+update `vault_proxmox_token_secret` for the production hypervisor or
+`vault_suburban_testbed_pve_token_secret` for suburban with
+`configs set-secrets`. Do not move the token secrets into shell startup files
+just to satisfy inventory.
 
 ## Verification
 
-Check the ACL list and confirm `ansible@pam` has `PVEVMAdmin` on `/`. Then run a
-read-only inventory load from [ansible/](../../ansible/) and confirm the
-Proxmox plugin can list guests without an authentication failure.
+Check the ACL list and confirm `ansible@pam` has `PVEVMAdmin` on `/`. Then run
+a read-only inventory load and confirm the Proxmox plugin can list guests
+without an authentication failure.
 
 ## Troubleshooting
 

@@ -1,9 +1,9 @@
 # Install OPNsense with the OOB daemon
 
 This guide creates a fresh OPNsense VM and brings it to a working state with SSH, the
-QEMU Guest Agent (QGA), and the `mwan-opnsense` out-of-band (OOB) daemon. For why the
-daemon is built the way it is, read [OPNsense OOB daemon](daemon.md). To operate the
-daemon once it runs, read [OPNsense OOB daemon](daemon.md).
+QEMU Guest Agent (QGA), and the `mwan-opnsense` out-of-band (OOB) daemon. For the
+daemon's design and how to operate it once it runs, read
+[OPNsense OOB daemon](daemon.md).
 
 Run every command from the operator workstation against the target Proxmox host. The
 examples use placeholders: set `VMID`, `LAN_IP`, and `PVE` (the Proxmox host) once and

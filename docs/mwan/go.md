@@ -1,28 +1,24 @@
 # MWAN Go standards
 
-Standards for Go code under [mwan/go/](../../mwan/go/). Violations block merge.
-See [docs/mwan/overview.md](overview.md) for the runtime architecture and
-[docs/mwan/script.md](script.md) for shell and OPNsense conventions.
+Standards for the MWAN Go code. Violations block merge.
 
 ## Monolith contract
 
-All Go infrastructure code lives in one binary built from
-[mwan/go/cmd/mwan/](../../mwan/go/cmd/mwan/). The linux/amd64 build is `mwan` on
-targets. The freebsd/amd64 build is `mwan-opnsense` and runs only on OPNsense,
-where it auto-dispatches into the opnsense daemon based on `argv[0]`.
+All Go infrastructure code ships as one binary. The linux/amd64 build is
+`mwan` on targets. The freebsd/amd64 build is `mwan-opnsense` and runs only on
+OPNsense, where it auto-dispatches into the opnsense daemon based on
+`argv[0]`.
 
-New tools become subcommands of this binary, never separate binaries. The
-authoritative subcommand set is the dispatch in
-[mwan/go/cmd/mwan/main.go](../../mwan/go/cmd/mwan/main.go); run `mwan` with no
-arguments for current usage. Subcommands are of two kinds: long-running daemons
-(the agent, the watchdog, the interface manager, and the opnsense config daemon)
-and one-shot operator tools (health probes, delegated-prefix and firewall-state
-inspection, and an alert self-test). The interface manager's behavior comes from
-`[ifmgr].role` in `/etc/mwan/config.toml`.
+New tools become subcommands of this binary, never separate binaries. Run
+`mwan` with no arguments for the current subcommand set. Subcommands are of
+two kinds: long-running daemons (the agent, the watchdog, the interface
+manager, and the opnsense config daemon) and one-shot operator tools (health
+probes, delegated-prefix and firewall-state inspection, and an alert
+self-test). The interface manager's behavior comes from its configured role.
 
-Each subcommand composes the shared packages under `mwan/go/internal/` (config
-loader, email sender, logger factory, ops layer, BGP speaker, alerting, tracing,
-rollback state) rather than reimplementing them.
+Each subcommand composes the shared internal packages (config loader, email
+sender, logger factory, ops layer, BGP speaker, alerting, tracing, rollback
+state) rather than reimplementing them.
 
 ## Code standards
 
@@ -50,9 +46,8 @@ rollback state) rather than reimplementing them.
   code. Do not add `// Foo does X` when the function name already says X.
 - **Secrets in Ansible Vault.** TOML templates use `{{ vault_* }}` Jinja2
   variables. Never commit plaintext secrets. The `.j2` suffix signals a
-  template. Full vault contract in [docs/ansible/secrets.md](../ansible/secrets.md).
-- **Linting enforced.** `make lint` (golangci-lint) must pass. Config in
-  [mwan/go/.golangci.yml](../../mwan/go/.golangci.yml).
+  template. The vault contract is in [secrets.md](../ansible/secrets.md).
+- **Linting enforced.** `make lint` (golangci-lint) must pass.
 ## Build rules
 
 Every implementation agent or person making changes must:
