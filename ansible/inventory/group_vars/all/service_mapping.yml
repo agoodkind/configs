@@ -64,51 +64,77 @@ service_mapping:
     vmid: 117
     ipv6: "3d06:bad:b01::117"
     mac_address: "BC:24:11:A3:52:17"
+    # /96 carved from the on-link 3d06:bad:b01::/64, NDP-proxied via ndppd
+    # so container GUAs appear on-link to the upstream router. The NDP prefix
+    # must match the Docker subnet.
+    docker_v6_subnet: "3d06:bad:b01:0:7ac::/96"
+    docker_v6_gateway: "3d06:bad:b01:0:7ac::1"
   tack_data1:
     hostname: tack-data1.home.goodkind.io
     vmid: 120
     ipv6: "3d06:bad:b01::120"
     mac_address: "BC:24:11:A3:52:20"
+    docker_v6_subnet: "3d06:bad:b01:0:7ad::/96"
+    docker_v6_gateway: "3d06:bad:b01:0:7ad::1"
   tack_data2:
     hostname: tack-data2.home.goodkind.io
     vmid: 121
     ipv6: "3d06:bad:b01::121"
     mac_address: "BC:24:11:A3:52:21"
+    docker_v6_subnet: "3d06:bad:b01:0:7ae::/96"
+    docker_v6_gateway: "3d06:bad:b01:0:7ae::1"
   tack_data3:
     hostname: tack-data3.home.goodkind.io
     vmid: 122
     ipv6: "3d06:bad:b01::122"
     mac_address: "BC:24:11:A3:52:22"
+    docker_v6_subnet: "3d06:bad:b01:0:7af::/96"
+    docker_v6_gateway: "3d06:bad:b01:0:7af::1"
   tack_app2:
     hostname: tack-app2.home.goodkind.io
     vmid: 123
     ipv6: "3d06:bad:b01::123"
     mac_address: "BC:24:11:A3:52:23"
+    docker_v6_subnet: "3d06:bad:b01:0:7b0::/96"
+    docker_v6_gateway: "3d06:bad:b01:0:7b0::1"
   tack_qa_suburban:
     hostname: tack-qa.suburban.goodkind.io
     vmid: 217
     ipv6: "3d06:bad:b01:210::217"
     mac_address: "BC:24:11:04:00:00"
+    # /96 carved from the suburban VMNET segment 3d06:bad:b01:210::/64
+    # (opt6 on router.suburban.goodkind.io), mirroring prod's 0:7ac::/96
+    # carved from its own VMNET /64. The NDP prefix must match the Docker subnet.
+    docker_v6_subnet: "3d06:bad:b01:210:7ac::/96"
+    docker_v6_gateway: "3d06:bad:b01:210:7ac::1"
   tack_data1_suburban:
     hostname: tack-data1.suburban.goodkind.io
     vmid: 220
     ipv6: "3d06:bad:b01:210::220"
     mac_address: "BC:24:11:04:01:20"
+    docker_v6_subnet: "3d06:bad:b01:210:7ad::/96"
+    docker_v6_gateway: "3d06:bad:b01:210:7ad::1"
   tack_data2_suburban:
     hostname: tack-data2.suburban.goodkind.io
     vmid: 221
     ipv6: "3d06:bad:b01:210::221"
     mac_address: "BC:24:11:04:01:21"
+    docker_v6_subnet: "3d06:bad:b01:210:7ae::/96"
+    docker_v6_gateway: "3d06:bad:b01:210:7ae::1"
   tack_data3_suburban:
     hostname: tack-data3.suburban.goodkind.io
     vmid: 222
     ipv6: "3d06:bad:b01:210::222"
     mac_address: "BC:24:11:04:01:22"
+    docker_v6_subnet: "3d06:bad:b01:210:7af::/96"
+    docker_v6_gateway: "3d06:bad:b01:210:7af::1"
   tack_app2_suburban:
     hostname: tack-app2.suburban.goodkind.io
     vmid: 223
     ipv6: "3d06:bad:b01:210::223"
     mac_address: "BC:24:11:04:01:23"
+    docker_v6_subnet: "3d06:bad:b01:210:7b0::/96"
+    docker_v6_gateway: "3d06:bad:b01:210:7b0::1"
   seaweedfs:
     hostname: seaweedfs.home.goodkind.io
     vmid: 118
@@ -265,6 +291,18 @@ group_children:
     - tack_data2_suburban_servers
     - tack_data3_suburban_servers
     - tack_app2_suburban_servers
+  tack_prod_all:
+    - tack_servers
+    - tack_app2_servers
+    - tack_data1_servers
+    - tack_data2_servers
+    - tack_data3_servers
+  tack_qa_all:
+    - tack_qa_suburban_servers
+    - tack_app2_suburban_servers
+    - tack_data1_suburban_servers
+    - tack_data2_suburban_servers
+    - tack_data3_suburban_servers
   tack_data_servers:
     - tack_data1_servers
     - tack_data2_servers

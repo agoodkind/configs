@@ -1,0 +1,44 @@
+---
+tack_domain: "tack.home.goodkind.io"
+
+tack_yugabyte_password: "{{ vault_tack_yugabyte_password }}"
+tack_meili_master_key: "{{ vault_tack_meili_master_key }}"
+tack_audit_writer_password: "{{ vault_tack_audit_writer_password }}"
+tack_audit_reader_password: "{{ vault_tack_audit_reader_password }}"
+tack_audit_redactor_password: "{{ vault_tack_audit_redactor_password }}"
+
+# Phase C audit cutover (TACK-232). Kafka storage uuid; distinct from QA.
+tack_kafka_cluster_id: "r8jB0c2ISFubOB2oWkKmEQ"
+
+# Provision entrypoint (TACK-303). NEVER auto-configure FoundationDB on prod:
+# it is already provisioned and `fdbcli configure new` is destructive. Provision
+# still runs every deploy as a safe idempotent no-op (migrate, seed roles).
+tack_allow_fdb_init: false
+
+# QA data generator (TACK-245/TACK-338). NEVER set this on production. The
+# generator writes only when the marker is exactly qa or local, so an empty
+# value makes `ops qa datagen --commit` refuse here. It also refuses on any
+# production-signature endpoint, but this marker is the primary gate.
+tack_datagen_allow_target: ""
+
+# GHCR pull token. Classic PAT with read:packages scope.
+ghcr_pull_token: "{{ vault_tack_ghcr_pull_token }}"
+
+# Repo read token. Fine-grained PAT with contents:read on agoodkind/tack, used
+# by deploy-tack to fetch docker-compose.yml and the overlays from the SOT.
+tack_repo_read_token: "{{ vault_tack_repo_read_token }}"
+
+tack_docker_v6_subnet: "{{ service_mapping[service_name].docker_v6_subnet }}"
+tack_docker_v6_gateway: "{{ service_mapping[service_name].docker_v6_gateway }}"
+tack_ndp_proxy_prefix: "{{ service_mapping[service_name].docker_v6_subnet }}"
+
+# Backup object store: the production SeaweedFS LXC on the same prod VMNET
+# segment (3d06:bad:b01::/64). Same S3 identity the SeaweedFS s3.json grants
+# (single source in vault).
+tack_backup_enabled: true
+tack_backup_s3_endpoint: "http://[{{ service_mapping.seaweedfs.ipv6 }}]:8333"
+tack_backup_s3_host: "{{ service_mapping.seaweedfs.ipv6 }}"
+tack_backup_s3_access_key: "{{ vault_seaweedfs_s3_access_key }}"
+tack_backup_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"
+tack_backup_s3_region: us-east-1
+tack_backup_s3_bucket_main: tack-backups
