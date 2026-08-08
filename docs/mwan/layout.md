@@ -34,6 +34,6 @@ MWAN drives three wide-area networks. It load-balances outbound traffic across A
 
 - `enwebpass0` carries Webpass, a Google Fiber line. It takes a dynamic carrier-grade NAT IPv4 address and a provider-delegated IPv6 prefix.
 - `enatt0.3242` carries AT&T over an 802.1X-authenticated VLAN, and takes a dynamic IPv4 address and an AT&T-delegated IPv6 prefix.
-- `enmbrains0` carries Monkeybrains as the lossy fallback. It takes a public static IPv4 address, a SLAAC IPv6 address, and a DHCPv6 prefix delegation, and MWAN maps its internal IPv6 range onto the first block of that delegation with network prefix translation. The delegation renumbers, so `find-pd-prefixes.sh` reads the live prefix rather than a stored one.
+- `enmbrains0` carries Monkeybrains as the lossy fallback. It takes a public static IPv4 address, a SLAAC IPv6 address, and a DHCPv6 prefix delegation, and MWAN maps its internal IPv6 range onto the first block of that delegation with network prefix translation. The delegation renumbers, so the ifmgr pd source reads the live prefix rather than a stored one (`mwan pd` shows it).
 
 The untagged parent interface `enatt0` carries the management link to the AT&T optical network terminal and is the Layer 2 parent of the tagged `enatt0.3242`. That terminal's access and the 802.1X bring-up chain are in [ont.md](ont.md).

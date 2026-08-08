@@ -56,13 +56,10 @@ matter day-to-day:
   runs on the Proxmox host as the Unix-socket bridge to the OPNsense VM's
   `mwanrpc` chardev.
 
-Shell-era control flow (per-interface `networkd-dispatcher` hooks plus
-[update-routes.sh](../../mwan/scripts/update-routes.sh) and
-[update-npt.sh](../../mwan/scripts/update-npt.sh)) still exists on the MWAN VM for
-data-plane convergence (policy routes and the dynamic `ip6 nat` table). Those
-are described in [data-plane convergence](#data-plane-convergence) below. They
-are not the source of truth for failover; the BGP speaker inside `mwan agent`
-is.
+Data-plane convergence (policy routes, WAN health, and the dynamic `ip6 nat`
+table) belongs to the `mwan ifmgr` modules described in
+[data-plane convergence](#data-plane-convergence) below. They are not the
+source of truth for failover; the BGP speaker inside `mwan agent` is.
 
 ## HA failover (BGP)
 
@@ -204,21 +201,12 @@ networking and clock state.
 
 ## Data-plane convergence
 
-These pieces live on the MWAN VM and converge the data plane independently of
-the BGP speaker:
-
-- `/usr/local/bin/update-routes.sh` programs `ip rule` and per-WAN routing
-  tables. It is called by `networkd-dispatcher` "routable" hooks, by
-  `mwan-update-routes.service` as a boot safety net, and by
-  `mwan health-check --daemon` when a WAN transitions healthy or unhealthy.
-- `/usr/local/bin/update-npt.sh` programs the IPv6 NPT and DNPT rules in the
-  runtime `table ip6 nat`. It is called by the dispatcher hook, by
-  `mwan-update-npt.service` as a boot safety net, and again after deploy-time
-  `nftables` reloads.
-- `mwan-health.service` (running `mwan health-check --daemon`) is the source
-  of WAN health state at `/var/run/mwan-health.state`. WAN health transitions
-  call [update-routes.sh](../../mwan/scripts/update-routes.sh) so the system
-  converges back to the healthy WAN automatically once it recovers.
+Three `mwan ifmgr` modules in the `mwan-ifmgr@wan` unit converge the data
+plane independently of the BGP speaker: `wan.routes` owns `ip rule` and the
+per-WAN routing tables, `health` owns the WAN health verdicts and state
+files, and `npt` owns the runtime `table ip6 nat`. A health transition
+requests an immediate reconcile in-process, so a failed WAN reroutes without
+waiting for a periodic tick.
 
 ### Shared per-WAN foundation
 
@@ -230,87 +218,62 @@ modules translate against live on `[ifmgr]` itself. Each module reads the fields
 it needs from that one per-WAN entry, so each WAN has a single home instead of a
 per-module list matched by name.
 
-### wan.routes ifmgr module (event-driven successor)
+### wan.routes ifmgr module
 
-The `wan.routes` module in `mwan ifmgr` is the Go successor to the
-[update-routes.sh](../../mwan/scripts/update-routes.sh) policy-route trigger. It
-watches each WAN interface over netlink and reconciles the per-WAN tables and
-the `ip rule` set on every default-route change plus a periodic tick, so it does
-not depend on the `networkd-dispatcher` hook and does not miss a late RA-learned
-default route (the race the dispatcher hook loses because it fires once and never
-replays). It owns priorities 50/55/56/57/100/200/300 and ports the full
-`update-routes.sh` rule inventory; a shadow mode logs intended operations while
-mutating nothing.
-
-It runs in the `mwan-ifmgr@wan` unit, gated by its own `shadow_mode`. In shadow
-it logs intended operations and changes nothing, so the shell trigger stays
-authoritative until the cutover. Its fwmark rules share a priority with the
-networkd from-edge rules without thrash, so both can run during the dual-write
-step.
+The `wan.routes` module owns policy routing. It watches each WAN interface
+over netlink and reconciles the per-WAN tables and the `ip rule` set on every
+default-route change plus a periodic tick, so it does not miss a late
+RA-learned default route. It owns priorities 50/55/56/57/100/200/300. Its
+fwmark rules share a priority with the networkd from-edge rules without
+thrash.
 
 ### npt ifmgr module
 
-The `npt` module in `mwan ifmgr` is the Go successor to
-[update-npt.sh](../../mwan/scripts/update-npt.sh). It runs as a second module in
-the `mwan-ifmgr@wan` instance alongside `wan.routes`, with its own `shadow_mode`.
-In shadow it logs the `ip6 nat` operations it would perform and changes nothing,
-so `update-npt.sh` stays authoritative. With shadow off it owns and programs the
-`ip6 nat` chains. It self-disables when `[ifmgr.wan]` lists no WANs.
+The `npt` module owns the runtime `table ip6 nat`. It runs as a second module
+in the `mwan-ifmgr@wan` instance alongside `wan.routes` and self-disables when
+`[ifmgr.wan]` lists no WANs.
 
 npt derives every WAN's `/60` from the live DHCPv6-PD delegation on that WAN's
 interface, with no static fallback. A WAN with no delegated prefix is skipped for
 that reconcile and alerted, rather than translated against a guessed prefix.
 
-With shadow off, npt owns the `prerouting` and `postrouting` chains of the
-runtime `table ip6 nat` and replaces each chain's full rule set in one atomic
-`google/nftables` transaction, so no packet sees an empty chain mid-update. This
-removes the duplicate-rule failure mode of `update-npt.sh`, which deletes a WAN's
-rules by matched handle before re-adding them and leaves a duplicate whenever a
-handle match misses.
+npt owns the `prerouting` and `postrouting` chains and replaces each chain's
+full rule set in one atomic `google/nftables` transaction, so no packet sees an
+empty chain mid-update and no reconcile can leave a duplicate rule. An nft
+watcher requests a reconcile when the `ip6 nat` table changes underneath the
+module, so an external `nftables` reload converges back within one pass.
 
 npt does not tear its rules down when the module stops. A binary swap or an
 `mwan-ifmgr@wan` restart leaves the kernel forwarding on the last-applied rules,
 and the next reconcile after restart re-applies them atomically. Forwarding never
 stops, and no swap leaves a chain empty or double-programmed.
 
-The shell trio stays authoritative for the `ip6 nat` chains until the
-authoritative cutover: the `55-update-npt.sh` dispatcher hook, `update-npt.sh`,
-and the `mwan-update-npt.service` safety net.
-
 ### Health state persistence and email guard
 
-The shell daemon `health-check.sh --daemon` keeps two state files:
+The `health` module keeps two state files:
 
-- **Runtime state** at `/var/run/mwan-health.state`. This is the file
-  `update-routes.sh` and `--status` read.
-- **Persistent state** at `/var/lib/mwan/health-state`. This is the
-  daemon's memory of last-known WAN states across its own restarts. The
-  systemd unit declares `StateDirectory=mwan` so this path exists with
-  the right ownership before the daemon starts.
+- **Runtime state** at `/var/run/mwan-health.state`, the file `--status`
+  consumers read.
+- **Persistent state** at `/var/lib/mwan/health-state`, the module's memory of
+  last-known WAN states across daemon restarts.
 
-On daemon start, the runtime file is seeded from the persistent file when
-it exists, and only WANs missing from the persistent file get `unknown`.
-On every `set_health` call the daemon writes both files atomically.
+On start, the runtime file is seeded from the persistent file when it exists,
+and only WANs missing from the persistent file get `unknown`. Both files are
+written atomically on every verdict change.
 
-This avoids a previous bug where every transition immediately after a
-daemon restart was logged as `(was unknown)` and the email guard
-`[[ "$old_state" != "unknown" ]]` then suppressed legitimate alerts. A
-brand-new host has no persistent file, so first-ever transitions still
-read `unknown -> X` and email correctly stays off; every subsequent
-restart sees the prior state and emails real transitions.
-
-Lock files in `/run/...` serialise writers, so dispatcher hooks, safety-net
-services, and the health daemon cannot collide on `ip rule`, `ip route`, or
-`nft` updates.
+The persistent seed keeps restarts honest: a brand-new host has no persistent
+file, so first-ever transitions read `unknown -> X` and email correctly stays
+off, while every subsequent restart sees the prior state and emails real
+transitions.
 
 Failure modes worth knowing:
 
 - **Empty `table ip6 nat`** means runtime programming did not happen or was
-  flushed. The recovery is `mwan-update-npt.service` or running
-  [update-npt.sh](../../mwan/scripts/update-npt.sh) with `<wan-if> <wan-pd>` directly.
+  flushed. The npt module's nft watcher reconverges it within one reconcile;
+  `systemctl restart mwan-ifmgr@wan` forces the pass immediately.
 - **Boot ordering**: PCI/virtio devices and AT&T 802.1X authentication can be
-  late, and `networkd-dispatcher` is event-driven (no replay). The
-  safety-net services are mandatory, not optional.
+  late. The ifmgr modules replay on netlink events and periodic ticks, so a
+  late device converges without a dispatcher-style one-shot race.
 
 For terminology, prefer **healthy / unhealthy / unknown** for WAN state. Avoid
 **up / down** for health, because that conflicts with `ip link` administrative
@@ -334,12 +297,10 @@ In-flight plan and full routing detail: see
 
 ## Tracing
 
-MWAN scripts emit structured JSON logs to `/var/log/mwan-debug.log` when
-`mwan_debug_logging: true`. Each log line includes a `traceId` so events
-across `systemd-networkd`, `networkd-dispatcher`,
-[update-routes.sh](../../mwan/scripts/update-routes.sh),
-[update-npt.sh](../../mwan/scripts/update-npt.sh), and `health-check` can be
-correlated.
+The ifmgr daemon emits structured JSON logs to `/var/log/mwan-ifmgr.jsonl`,
+and each line carries the active `traceId` so events across a deploy or a
+boot correlate. `update-att-pinned-dests.sh` still writes shell-side JSON to
+`/var/log/mwan-debug.log` when `mwan_debug_logging: true`.
 
 Trace ID sources:
 
@@ -351,7 +312,7 @@ Quick check on MWAN:
 
 ```bash
 cat /run/mwan-trace-id
-tail -n 200 /var/log/mwan-debug.log
+mwan debug trace-tail
 ```
 
 ## Operational quick reference
@@ -362,7 +323,7 @@ On MWAN:
 ssh root@mwan.home.goodkind.io
 wpa_cli status
 systemctl status wpa_supplicant-mwan systemd-networkd networkd-dispatcher \
-  nftables mwan-health cloudflared
+  nftables mwan-ifmgr@wan cloudflared
 mwan debug npt              # native inspection: prefixes|routes|policy|status|stats|sim4|sim6|npt
 mwan debug connectivity     # active probes: ping4|ping6|curl4|curl6|lb4|lb6|lb4-ifaces|lb6-ifaces
 mwan debug systemd          # failed/stuck units and slowest starters over D-Bus

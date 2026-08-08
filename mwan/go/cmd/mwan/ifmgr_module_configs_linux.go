@@ -160,7 +160,7 @@ func addWANRoleConfigs(
 		moduleConfigs["wan.routes"] = wanRoutesConfig
 	}
 	if want["npt"] {
-		moduleConfigs["npt"] = buildNPTConfig(shared, ifmgrCfg.Modules.NPT)
+		moduleConfigs["npt"] = buildNPTConfig(shared)
 	}
 	return nil
 }
@@ -171,7 +171,6 @@ func buildHealthConfig(
 	section *config.IfMgrHealthSection,
 ) (health.Config, error) {
 	cfg := health.Config{
-		ShadowMode:        true,
 		StateFile:         "",
 		PersistStateFile:  "",
 		TargetsV4:         nil,
@@ -202,7 +201,6 @@ func buildHealthConfig(
 		return cfg, nil
 	}
 
-	cfg.ShadowMode = section.ShadowMode
 	cfg.StateFile = section.StateFile
 	cfg.PersistStateFile = section.PersistStateFile
 
@@ -314,23 +312,18 @@ func validateHealthWANSection(name string, s config.IfMgrHealthWANSection) error
 	return nil
 }
 
-// buildNPTConfig joins the shared [ifmgr.wan] prefixes and WAN identity list
-// with the npt section's own shadow toggle. The WAN list and prefixes come from
-// the shared inputs, so npt and wan.routes always agree on the same WAN set; a
-// nil section keeps ShadowMode off. Reading shared.MwanbrEdgeV6 here makes it a
-// real consumer of the shared field.
-func buildNPTConfig(shared sharedWANInputs, section *config.IfMgrNPTSection) npt.Config {
-	cfg := npt.Config{
-		ShadowMode:     false,
+// buildNPTConfig projects the shared [ifmgr.wan] prefixes and WAN identity
+// list into the npt module config. The WAN list and prefixes come from the
+// shared inputs, so npt and wan.routes always agree on the same WAN set.
+// Reading shared.MwanbrEdgeV6 here makes it a real consumer of the shared
+// field.
+func buildNPTConfig(shared sharedWANInputs) npt.Config {
+	return npt.Config{
 		InternalPrefix: shared.InternalPrefix,
 		OpnsenseEdgeV6: shared.OpnsenseEdgeV6,
 		MwanbrEdgeV6:   shared.MwanbrEdgeV6,
 		WANs:           shared.refs(),
 	}
-	if section != nil {
-		cfg.ShadowMode = section.ShadowMode
-	}
-	return cfg
 }
 
 // buildWGConfig returns nil when section is nil so the wg module's
@@ -740,7 +733,6 @@ func buildWANRoutesConfig(
 		InternalPrefix:  "",
 		InternalNetV4:   "",
 		HealthStateFile: "",
-		ShadowMode:      false,
 		WANs:            nil,
 	}
 	if section == nil {
@@ -751,7 +743,6 @@ func buildWANRoutesConfig(
 	cfg.InternalPrefix = shared.InternalPrefix
 	cfg.InternalNetV4 = section.InternalNetV4
 	cfg.HealthStateFile = section.HealthStateFile
-	cfg.ShadowMode = section.ShadowMode
 
 	cfg.WANs = make([]wanroutes.WAN, 0, len(shared.WANs))
 	for _, wan := range shared.WANs {
