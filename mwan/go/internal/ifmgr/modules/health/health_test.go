@@ -188,7 +188,6 @@ func TestValidateConfigUsesResolvedPerWANPolicy(t *testing.T) {
 	t.Parallel()
 
 	base := Config{
-		ShadowMode:       true,
 		StateFile:        "/run/health",
 		PersistStateFile: "/var/lib/health",
 		TargetsV4: []netip.Addr{
@@ -279,22 +278,6 @@ func TestValidateConfigUsesResolvedPerWANPolicy(t *testing.T) {
 				t.Fatalf("validateConfig error = %v, want %q", err, test.wantError)
 			}
 		})
-	}
-}
-
-func TestNewWithoutConfigDefaultsToShadow(t *testing.T) {
-	t.Parallel()
-
-	untypedModule, err := New(nil)
-	if err != nil {
-		t.Fatalf("New returned error: %v", err)
-	}
-	module, ok := untypedModule.(*Module)
-	if !ok {
-		t.Fatalf("New returned %T, want *Module", untypedModule)
-	}
-	if !module.cfg.ShadowMode {
-		t.Fatal("New(nil) must default ShadowMode to true")
 	}
 }
 
@@ -546,71 +529,44 @@ func TestProbeTargetsUsesEveryConfiguredPing(t *testing.T) {
 	}
 }
 
-func TestWriteStateFilesUsesShellFormatAndShadowPaths(t *testing.T) {
+func TestWriteStateFilesUsesShellFormat(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name       string
-		shadowMode bool
-		suffix     string
-	}{
-		{name: "authoritative paths", shadowMode: false, suffix: ""},
-		{name: "shadow paths", shadowMode: true, suffix: ".shadow"},
+	tempDir := t.TempDir()
+	stateFile := filepath.Join(tempDir, "run", "mwan-health.state")
+	persistStateFile := filepath.Join(tempDir, "lib", "health-state")
+	module := &Module{
+		cfg: Config{
+			StateFile:        stateFile,
+			PersistStateFile: persistStateFile,
+			WANs: []WAN{
+				{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}},
+				{WANRef: ifmgr.WANRef{Name: "webpass", Iface: "webpass0"}},
+			},
+		},
+		statuses: map[string]wanStatus{
+			"att":     {State: StateHealthy},
+			"webpass": {State: StateUnhealthy},
+		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+	if err := module.writeStateFiles(
+		context.Background(),
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		module.statuses,
+	); err != nil {
+		t.Fatalf("writeStateFiles: %v", err)
+	}
 
-			tempDir := t.TempDir()
-			stateFile := filepath.Join(tempDir, "run", "mwan-health.state")
-			persistStateFile := filepath.Join(tempDir, "lib", "health-state")
-			module := &Module{
-				cfg: Config{
-					ShadowMode:       test.shadowMode,
-					StateFile:        stateFile,
-					PersistStateFile: persistStateFile,
-					WANs: []WAN{
-						{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}},
-						{WANRef: ifmgr.WANRef{Name: "webpass", Iface: "webpass0"}},
-					},
-				},
-				statuses: map[string]wanStatus{
-					"att":     {State: StateHealthy},
-					"webpass": {State: StateUnhealthy},
-				},
-			}
-
-			if err := module.writeStateFiles(
-				context.Background(),
-				slog.New(slog.NewTextHandler(io.Discard, nil)),
-				module.statuses,
-			); err != nil {
-				t.Fatalf("writeStateFiles: %v", err)
-			}
-
-			wantContents := "att:healthy\nwebpass:unhealthy\n"
-			for _, path := range []string{
-				stateFile + test.suffix,
-				persistStateFile + test.suffix,
-			} {
-				contents, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatalf("ReadFile(%q): %v", path, err)
-				}
-				if string(contents) != wantContents {
-					t.Fatalf("%s contents = %q, want %q", path, contents, wantContents)
-				}
-			}
-
-			unselectedPath := stateFile
-			if !test.shadowMode {
-				unselectedPath += ".shadow"
-			}
-			if _, err := os.Stat(unselectedPath); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("unselected state path %q exists or returned err=%v", unselectedPath, err)
-			}
-		})
+	wantContents := "att:healthy\nwebpass:unhealthy\n"
+	for _, path := range []string{stateFile, persistStateFile} {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", path, err)
+		}
+		if string(contents) != wantContents {
+			t.Fatalf("%s contents = %q, want %q", path, contents, wantContents)
+		}
 	}
 }
 
@@ -625,7 +581,6 @@ func TestWriteStateFilesToleratesPersistFailure(t *testing.T) {
 	statePath := filepath.Join(tempDir, "run", "mwan-health.state")
 	module := &Module{
 		cfg: Config{
-			ShadowMode:       false,
 			StateFile:        statePath,
 			PersistStateFile: filepath.Join(blocker, "health-state"),
 			WANs:             []WAN{{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}}},
@@ -662,7 +617,6 @@ func TestInitFailsWhenRuntimeStateUnwritable(t *testing.T) {
 	}
 	module := &Module{
 		cfg: Config{
-			ShadowMode:       false,
 			StateFile:        filepath.Join(blocker, "mwan-health.state"),
 			PersistStateFile: filepath.Join(tempDir, "health-state"),
 			TargetsV6: []netip.Addr{
@@ -783,10 +737,8 @@ func TestEmitTransitionsUsesInjectedClock(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	module := &Module{
 		BaseModule: ifmgr.NewBaseModule(moduleName),
-		cfg: Config{
-			ShadowMode: false,
-		},
-		clock: fixedClock{now: now},
+		cfg:        Config{},
+		clock:      fixedClock{now: now},
 	}
 	module.InitBase(&ifmgr.Env{
 		Iface:   "",
@@ -821,7 +773,7 @@ func TestEmitTransitionAlertsFromUnknownUnhealthy(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	module := &Module{
 		BaseModule: ifmgr.NewBaseModule(moduleName),
-		cfg:        Config{ShadowMode: false},
+		cfg:        Config{},
 		clock:      fixedClock{now: time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)},
 	}
 	module.InitBase(&ifmgr.Env{Log: log, Alerts: ifmgr.WrapNotifier(notifier)}, "module", moduleName)
@@ -847,51 +799,32 @@ func TestEmitTransitionRequestsReconcile(t *testing.T) {
 	t.Parallel()
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	tests := []struct {
-		name       string
-		shadowMode bool
-		wantCalls  int
-	}{
-		{name: "authoritative requests reconcile", shadowMode: false, wantCalls: 1},
-		{name: "shadow does not request reconcile", shadowMode: true, wantCalls: 0},
+	var reconcileReasons []string
+	module := &Module{
+		BaseModule: ifmgr.NewBaseModule(moduleName),
+		cfg:        Config{},
+		clock:      fixedClock{now: time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+	module.InitBase(&ifmgr.Env{
+		Log:    log,
+		Alerts: ifmgr.WrapNotifier(&recordingNotifier{}),
+		RequestReconcile: func(reason string) {
+			reconcileReasons = append(reconcileReasons, reason)
+		},
+	}, "module", moduleName)
 
-			var reconcileReasons []string
-			module := &Module{
-				BaseModule: ifmgr.NewBaseModule(moduleName),
-				cfg:        Config{ShadowMode: test.shadowMode},
-				clock:      fixedClock{now: time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)},
-			}
-			module.InitBase(&ifmgr.Env{
-				Log:    log,
-				Alerts: ifmgr.WrapNotifier(&recordingNotifier{}),
-				RequestReconcile: func(reason string) {
-					reconcileReasons = append(reconcileReasons, reason)
-				},
-			}, "module", moduleName)
+	// A health transition must ask the daemon to reconcile now so wan.routes
+	// fails over event-driven, not on the tick.
+	module.emitTransitions(context.Background(), log, []transition{
+		{
+			WAN:  WAN{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}},
+			From: StateHealthy,
+			To:   StateUnhealthy,
+		},
+	})
 
-			// An authoritative health transition must ask the daemon to
-			// reconcile now so wan.routes fails over event-driven, not on the
-			// tick. In shadow the Go verdict does not drive wan.routes, so no
-			// reconcile is requested.
-			module.emitTransitions(context.Background(), log, []transition{
-				{
-					WAN:  WAN{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}},
-					From: StateHealthy,
-					To:   StateUnhealthy,
-				},
-			})
-
-			if len(reconcileReasons) != test.wantCalls {
-				t.Fatalf(
-					"RequestReconcile calls = %d, want %d",
-					len(reconcileReasons), test.wantCalls,
-				)
-			}
-		})
+	if len(reconcileReasons) != 1 {
+		t.Fatalf("RequestReconcile calls = %d, want 1", len(reconcileReasons))
 	}
 }
 
