@@ -53,10 +53,7 @@ opnsense_bgp_neighbors:
 bgp_asn: 4200000001
 bgp_router_id: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
 bgp_next_hop_v6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
-# Hold must outlast the watchdog snapshot freeze pause (MWAN-303); mirrors
-# the prod value.
-bgp_keepalive_seconds: 10
-bgp_hold_seconds: 30
+# Session timers live in group_vars/all/vars.yml (MWAN-303 rationale there).
 bgp_listen_port: 179
 bgp_neighbors:
   - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"

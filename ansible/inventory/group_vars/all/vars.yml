@@ -79,3 +79,15 @@ mwan_ifmgr_wan_enabled: false
 # own dependencies (e.g. mwan orders cloudflared after mwan-ifmgr@wan).
 cloudflared_service_after: network-online.target
 cloudflared_service_wants: network-online.target
+
+# ----------------------------------------------------------------------------
+# BGP session timers, shared by every speaker (primary and failover, prod and
+# testbed) and by the OPNsense peer templates.
+# ----------------------------------------------------------------------------
+# Hold must outlast the watchdog snapshot freeze pause, which stalls the
+# speaker long enough that a 9s hold dropped the session and blackholed
+# traffic ~10s per occurrence (MWAN-303). A hard speaker crash keeps FRR
+# forwarding to the dead peer for up to hold_seconds; the watchdog failover
+# path is the primary crash responder.
+bgp_keepalive_seconds: 10
+bgp_hold_seconds: 30
