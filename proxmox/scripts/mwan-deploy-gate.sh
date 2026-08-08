@@ -8,9 +8,14 @@
 #                               to decide whether a rollback snapshot is worth
 #                               taking. Either address family answering is
 #                               enough, because this only gates the snapshot.
-#   wait-down <addr> <seconds>  wait until <addr> misses two consecutive pings,
-#                               which proves the scheduled reboot took the guest
-#                               down. A guest that never drops is still serving
+#   wait-reboot <vmid> <old_boot_id> <seconds>
+#                               wait until the guest's /proc/sys/kernel/random/
+#                               boot_id, read through the QEMU guest agent,
+#                               differs from <old_boot_id>. A changed boot_id
+#                               proves the kernel rebooted regardless of how
+#                               short the observable down window was, which a
+#                               ping-cadence probe can miss entirely. A guest
+#                               whose boot_id never changes is still serving
 #                               the config the deploy just wrote.
 #   wait-egress <seconds>       wait until internet egress returns after the
 #                               reboot. IPv6 decides the verdict because IPv6 is
@@ -26,7 +31,8 @@ readonly EGRESS_TARGET_V6="2606:4700:4700::1111"
 readonly EGRESS_TARGET_V4="1.1.1.1"
 readonly PROBE_TIMEOUT_SECONDS=2
 readonly POLL_INTERVAL_SECONDS=1
-readonly CONSECUTIVE_MISSES_FOR_DOWN=2
+readonly REBOOT_POLL_INTERVAL_SECONDS=3
+readonly UUID_PATTERN='[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}'
 
 last_probe_error=""
 
@@ -60,26 +66,33 @@ check_egress() {
     return 1
 }
 
-wait_down() {
-    local target="$1"
-    local budget_seconds="$2"
+wait_reboot() {
+    local vmid="$1"
+    local old_boot_id="$2"
+    local budget_seconds="$3"
     local deadline=$(($(date +%s) + budget_seconds))
-    local misses=0
+    local raw
+    local current
     while [[ "$(date +%s)" -lt "$deadline" ]]; do
-        if probe -6 "$target"; then
-            misses=0
-        else
-            misses=$((misses + 1))
-            if [[ "$misses" -ge "$CONSECUTIVE_MISSES_FOR_DOWN" ]]; then
-                printf 'guest %s went down after %d consecutive missed pings\n' \
-                    "$target" "$misses"
+        # The guest agent is unreachable through shutdown and early boot, so a
+        # failed exec is a normal poll outcome while the reboot is in flight.
+        if raw=$(qm guest exec "$vmid" --timeout 5 -- \
+            cat /proc/sys/kernel/random/boot_id 2>&1); then
+            # The exec response is JSON whose only UUID is the boot_id, so a
+            # pattern match extracts it without depending on the JSON layout.
+            current=$(printf '%s' "$raw" | grep -oE "$UUID_PATTERN" || true)
+            if [[ -n "$current" && "$current" != "$old_boot_id" ]]; then
+                printf 'guest %s rebooted: boot_id %s changed to %s\n' \
+                    "$vmid" "$old_boot_id" "$current"
                 return 0
             fi
+        else
+            last_probe_error="qm guest exec $vmid: $(printf '%s' "$raw" | tr '\n' ' ')"
         fi
-        sleep "$POLL_INTERVAL_SECONDS"
+        sleep "$REBOOT_POLL_INTERVAL_SECONDS"
     done
-    printf 'guest %s stayed reachable for %ds, so the reboot never fired\n' \
-        "$target" "$budget_seconds"
+    printf 'guest %s boot_id never changed from %s within %ds, so the reboot never fired; last agent error: %s\n' \
+        "$vmid" "$old_boot_id" "$budget_seconds" "${last_probe_error:-none}"
     return 1
 }
 
@@ -109,7 +122,7 @@ wait_egress() {
 }
 
 usage() {
-    printf 'usage: %s check-egress | wait-down <addr> <seconds> | wait-egress <seconds>\n' \
+    printf 'usage: %s check-egress | wait-reboot <vmid> <old_boot_id> <seconds> | wait-egress <seconds>\n' \
         "$(basename "$0")" >&2
     exit 1
 }
@@ -125,11 +138,11 @@ main() {
             usage
         fi
         check_egress
-    elif [[ "$mode" == "wait-down" ]]; then
-        if [[ $# -ne 2 ]]; then
+    elif [[ "$mode" == "wait-reboot" ]]; then
+        if [[ $# -ne 3 ]]; then
             usage
         fi
-        wait_down "$1" "$2"
+        wait_reboot "$1" "$2" "$3"
     elif [[ "$mode" == "wait-egress" ]]; then
         if [[ $# -ne 1 ]]; then
             usage

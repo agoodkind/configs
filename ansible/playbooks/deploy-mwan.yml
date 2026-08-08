@@ -662,6 +662,14 @@
           ✓ Timestamp preserved: /var/lib/mwan/last-deploy
           ✓ Watchdog will monitor post-reboot and auto-rollback if needed
 
+    # The gate proves the reboot by a boot_id change, so the pre-reboot value
+    # must be captured while the guest still runs the old kernel.
+    - name: Capture the pre-reboot boot id
+      ansible.builtin.command:
+        cmd: cat /proc/sys/kernel/random/boot_id
+      register: mwan_pre_reboot_boot_id
+      changed_when: false
+
     # systemd owns the reboot timer, so the trigger survives the SSH session
     # teardown. The previous nohup-under-async form was reaped by the async
     # wrapper and never rebooted the VM.
@@ -670,28 +678,31 @@
         cmd: systemd-run --on-active=5 /usr/sbin/reboot
       changed_when: true
 
-    # The gate watches the guest go down before it trusts an egress probe.
-    # Without this phase a probe answered in the pre-reboot window passes
-    # trivially and proves nothing about the rebooted config. The 180s budget
-    # covers the full service-stop sequence: prod's shutdown took over 60s on
-    # 2026-08-06 and a tighter budget failed the play on a reboot that fired.
-    - name: Wait for the MWAN VM to drop for its reboot
+    # The gate proves the reboot before it trusts an egress probe. It compares
+    # the guest's boot_id against the pre-reboot capture through the QEMU guest
+    # agent: a changed boot_id proves the kernel rebooted even when the
+    # observable down window is shorter than any ping cadence, which is how a
+    # prod reboot evaded the previous ping-based probe. The 180s budget covers
+    # the full service-stop sequence plus boot to agent readiness.
+    - name: Wait for the MWAN VM boot id to change for its reboot
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.script: >-
         {{ repo_root }}/proxmox/scripts/mwan-deploy-gate.sh
-        wait-down {{ mwan_config_mgmt_addr }} 180
+        wait-reboot {{ actual_vmid }}
+        {{ mwan_pre_reboot_boot_id.stdout | trim }} 180
       register: mwan_reboot_observed
       failed_when: false
       changed_when: false
 
-    # A VM that never dropped still runs the config this deploy wrote, so
+    # A VM that never rebooted still runs the config this deploy wrote, so
     # rolling it back would revert a healthy deploy. Fail without rollback.
     - name: Fail playbook when the scheduled reboot never fired
       ansible.builtin.fail:
         msg: >-
-          The scheduled reboot never took {{ mwan_config_mgmt_addr }} down
-          within 180s, observed from {{ mwan_proxmox_delegate }}. The VM still
-          runs the config this deploy wrote, so no rollback was performed.
+          The boot id of VM {{ actual_vmid }} never changed within 180s,
+          observed from {{ mwan_proxmox_delegate }}, so the scheduled reboot
+          never fired. The VM still runs the config this deploy wrote, so no
+          rollback was performed.
       when: mwan_reboot_observed.rc != 0
 
     - name: Post-deploy health gate from Proxmox host
