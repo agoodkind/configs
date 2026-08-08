@@ -102,6 +102,20 @@
           ip link set dev vmbrtrunk address {{ suburban_vmbrtrunk_hwaddress }}
       changed_when: false
 
+    - name: Pin the vmbrtrunk.100 vlan MAC to the bridge MAC
+      # A vlan device whose MAC differs from its parent forces the parent
+      # promiscuous, and this kernel's bridge netfilter path scrubs conntrack
+      # state on packets locally delivered on a promiscuous bridge, so
+      # multicast neighbor solicitations reach the firewall as ctstate
+      # INVALID and cold NDP resolution of the host bridge address fails
+      # (MWAN-286). PVE creates the vlan device at boot with the bridge MAC
+      # of that moment, so this asserts the shared MAC on every run, exactly
+      # like the bridge pin above.
+      ansible.builtin.command:
+        cmd: >-
+          ip link set dev vmbrtrunk.100 address {{ suburban_vmbrtrunk_hwaddress }}
+      changed_when: false
+
     - name: Install transit routes
       # The sourced file only installs these at ifup, and reloading networking
       # on the hypervisor would bounce every guest bridge. This asserts the same
