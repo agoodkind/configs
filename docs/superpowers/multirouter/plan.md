@@ -192,7 +192,7 @@ git commit -S -m "Add per-router allocation guard and adj-rib-in audit" -m "Co-a
 
 **Files:**
 - Create: `mwan/go/internal/bgp/fib_linux.go`, `mwan/go/internal/bgp/fib_stub.go` (non-linux no-op)
-- Modify: `mwan/go/internal/netif/state.go` (add `Protocol int` to `RouteSpec`; thread into `replaceTableRouteNetlink`), `mwan/go/internal/netif/inspect.go` (add `ListProtocolRoutes(ctx, log, family, tableID, protocol int)` beside `ListDHCPRoutes`)
+- Modify: `mwan/go/internal/netif/state.go` (add `Protocol int` to `RouteSpec`; set it in `buildTableRoute` on the `netlink.Route`; add a new `DeleteTableRoute(ctx, log, want RouteSpec) error` plus its `delTableRouteNetlink` helper, because only the default-route delete exists today and `RouteDel` on a prefix needs `Dst` and `Table` set, swallowing ENOENT and ESRCH the way the default deleter does), `mwan/go/internal/netif/inspect.go` (add `ListProtocolRoutes(ctx, log, family, tableID, protocol int)` beside `ListDHCPRoutes`, using `RT_FILTER_TABLE|RT_FILTER_PROTOCOL`)
 - Test: `mwan/go/internal/bgp/fib_linux_test.go`
 
 **Interfaces:**
