@@ -70,8 +70,8 @@ resource "proxmox_network_linux_bridge" "trunk_suburban" {
   vids       = "64 100 200 300"
   autostart  = true
 
-  address  = "10.240.4.5/24"
-  address6 = "3d06:bad:b01:210::5/64"
+  address  = "${local.service_mapping.vmbrtrunk_suburban.ipv4}/24"
+  address6 = "${local.service_mapping.vmbrtrunk_suburban.ipv6}/64"
 
   lifecycle {
     prevent_destroy = true

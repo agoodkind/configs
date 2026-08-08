@@ -69,6 +69,21 @@
         path: /etc/sysctl.d/99-vmbr0-ipv6.conf
         state: absent
 
+    - name: Create the cloudflared drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/cloudflared.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Deploy the cloudflared ICMP source drop-in
+      # Restarting cloudflared drops the operator's tunnel access for a few
+      # seconds, so the restart fires only when the drop-in changes.
+      ansible.builtin.template:
+        src: "{{ repo_root }}/testbed/cloudflared-icmp-src.conf.j2"
+        dest: /etc/systemd/system/cloudflared.service.d/icmp-src.conf
+        mode: "0644"
+      notify: Restart cloudflared
+
     - name: Deploy masquerade sourced file
       ansible.builtin.copy:
         src: "{{ repo_root }}/testbed/suburban-interfaces.d-testbed-masquerade.conf"
@@ -243,6 +258,12 @@
       tags: ["isp-lxcs"]
 
   handlers:
+    - name: Restart cloudflared
+      ansible.builtin.systemd:
+        name: cloudflared
+        state: restarted
+        daemon_reload: true
+
     - name: Restart mwan-ifmgr
       ansible.builtin.systemd:
         name: mwan-ifmgr

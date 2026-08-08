@@ -1,0 +1,14 @@
+# Suburban cloudflared: pin the ICMP proxy source to the VMNET address.
+# Deploy to: /etc/systemd/system/cloudflared.service.d/icmp-src.conf
+#
+# The connector serves the Cloudflare private-network route for the testbed
+# prefix, and it re-originates proxied pings from this host. Without a pinned
+# source, cloudflared dials a local address to pick one and lands on the
+# Comcast interface address, which is off-link for the guests, so guest
+# replies drain through the testbed router as stateless packets toward an
+# internet destination and the router's default deny drops them. Sourcing
+# from the VMNET address keeps proxied pings on-link and symmetric, matching
+# how proxied TCP already behaves.
+[Service]
+Environment=TUNNEL_ICMPV6_SRC={{ service_mapping.vmbrtrunk_suburban.ipv6 }}%%vmbrtrunk
+Environment=TUNNEL_ICMPV4_SRC={{ service_mapping.vmbrtrunk_suburban.ipv4 }}

@@ -116,9 +116,15 @@ unknown.
   segment return directly. A management policy table carrying only a default
   route shadows the connected route and triangles on-link replies through the
   gateway, which breaks reachability.
-- **Reachability probing.** The testbed OPNsense blocks ICMP echo to LAN hosts
-  but allows TCP, so measure reachability with TCP or SSH, not `ping6`, or a
-  healthy host reads as down.
+- **Reachability probing.** ICMP echo to testbed guests works end to end,
+  including from the workstation over WARP and WireGuard. A proxied flow only
+  survives when its reply path is symmetric: the suburban cloudflared
+  connector pins its ICMP proxy source to the VMNET address
+  ([testbed/cloudflared-icmp-src.conf.j2](../../testbed/cloudflared-icmp-src.conf.j2))
+  so guest replies return on-link. A flow whose reply crosses the testbed
+  router stateless toward a destination outside the tunnel ranges hits the
+  router's default deny, so a probe sourced from an off-link address reads a
+  healthy host as down.
 - **Watchdog host config address.** `mwan-watchdog-testbed` on the suburban host
   must target the MWAN VM's current management address, from
   [service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
