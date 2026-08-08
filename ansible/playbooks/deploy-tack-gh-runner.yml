@@ -253,7 +253,7 @@
           - kubectl
           - apply
           - -f
-          - -
+          - "-"
         stdin: |
           apiVersion: v1
           kind: Namespace
@@ -269,7 +269,7 @@
           - kubectl
           - apply
           - -f
-          - -
+          - "-"
         stdin: |
           apiVersion: v1
           kind: Secret
