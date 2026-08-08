@@ -153,7 +153,7 @@ service_mapping:
   vmbr1_suburban:
     inventory: false
     ipv4: "10.240.200.1"
-    ipv6: "3d06:bad:b01:200::1"
+    ipv6: &suburban_hypervisor_ipv6 "3d06:bad:b01:200::1"
 
   # Vault's primary and out-of-band addresses for deploy-gate collection. The
   # Monkeybrains tunnel stays reachable while the household WAN reboots.
@@ -165,7 +165,7 @@ service_mapping:
   # Suburban's primary address for deploy-gate collection.
   suburban_hypervisor:
     inventory: false
-    ipv6: "3d06:bad:b01:200::1"
+    ipv6: *suburban_hypervisor_ipv6
 
   # Suburban's own addresses on the VLAN-aware trunk, the guest segment every
   # testbed guest shares. OpenTofu derives the bridge addresses from here, and
