@@ -37,11 +37,31 @@ REMOTE_PATH='<OPNsense UI path for the page under test>'
 
 ## Forward
 
-Open the SSH forward:
+OpenSSH requires brackets around IPv6 literals in forwarding specifications.
+Format both address fields, then open the forward:
 
-```sh
+```bash
+format_forward_host() {
+    local host="$1"
+
+    if [[ "${host}" == \[*\] ]]; then
+        printf '%s\n' "${host}"
+        return
+    fi
+
+    if [[ "${host}" == *:* ]]; then
+        printf '[%s]\n' "${host}"
+        return
+    fi
+
+    printf '%s\n' "${host}"
+}
+
+LOCAL_BIND_SPEC="$(format_forward_host "${LOCAL_BIND_HOST}")"
+REMOTE_SPEC="$(format_forward_host "${REMOTE_HOST}")"
+
 ssh -N \
-    -L "${LOCAL_BIND_HOST}:${LOCAL_PORT}:${REMOTE_HOST}:${REMOTE_PORT}" \
+    -L "${LOCAL_BIND_SPEC}:${LOCAL_PORT}:${REMOTE_SPEC}:${REMOTE_PORT}" \
     "${TARGET_SSH}"
 ```
 
@@ -52,7 +72,7 @@ Keep this terminal open while the browser test runs.
 Build the local browser URL from the forwarding inputs:
 
 ```sh
-LOCAL_URL="https://${LOCAL_BIND_HOST}:${LOCAL_PORT}${REMOTE_PATH}"
+LOCAL_URL="https://${LOCAL_BIND_SPEC}:${LOCAL_PORT}${REMOTE_PATH}"
 printf '%s\n' "${LOCAL_URL}"
 ```
 
