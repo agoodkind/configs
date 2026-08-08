@@ -14,6 +14,11 @@ mwan_environment: "prod"
 mwan_vmid: "{{ service_mapping.mwan.vmid }}"
 mwan_proxmox_node: vault
 mwan_proxmox_delegate: vault
+# Ordered addresses the deploy's verdict collector tries: tunnel first, then
+# out-of-band on production.
+mwan_gate_collect_addresses:
+  - "{{ service_mapping.vault_hypervisor.ipv6 }}"
+  - "{{ service_mapping.vault_hypervisor.ipv6_oob }}"
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
 # Override the dynamic inventory plugin's IPv4-first compose so SSH targets
