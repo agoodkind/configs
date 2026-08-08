@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- All Go gates run through make: `make -C mwan/go check`, `make -C mwan/go test`, `make -C mwan/go build-linux`. Never raw `go`.
+- Every Go slice must pass the full acceptance gate end to end before it commits: `make -C mwan/go build`. That target runs `proto`, then `build-linux` and `build-mwan-opnsense`, each of which depends on `check` (build, vet, lint, test, govulncheck, staticcheck-extra). It is stronger than `check` alone because it cross-compiles the FreeBSD binary, so a linux-only file missing its non-linux stub fails here rather than on a target host. Never run raw `go`.
 - Single TOML config: every new knob lives in `/etc/mwan/config.toml`, rendered from group vars. No env-var config.
 - No `| default()` or `is defined` on Ansible input variables; `configs lint` enforces.
 - iBGP AS is `4200000001`. Learned kernel routes carry protocol `unix.RTPROT_BGP` (186).
@@ -72,7 +72,7 @@ Also assert missing `Name`, missing addresses, and duplicate names fail.
 
 - [ ] **Step 2: Run and verify failure**
 
-Run: `make -C mwan/go test` (expect compile failure: `BGPRouter` undefined).
+Run: `make -C mwan/go build`
 
 - [ ] **Step 3: Implement**
 
@@ -80,7 +80,7 @@ Add to `BGPSection`: `Routers []BGPRouter` (`toml:"routers"`), `RoutesShadowMode
 
 - [ ] **Step 4: Verify pass**
 
-Run: `make -C mwan/go test` and `make -C mwan/go check`.
+Run: `make -C mwan/go build`
 
 - [ ] **Step 5: Commit**
 
@@ -125,13 +125,13 @@ func TestStartAddsPeersPerRouterBothFamilies(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and verify failure** (`Routers` undefined).
+- [ ] **Step 2: Run and verify failure** (`make -C mwan/go build`; expect `Routers` undefined).
 
 - [ ] **Step 3: Implement**
 
 Add `Router` to `bgp/config.go`. In `Speaker.Start`, when `cfg.Routers` is non-empty, loop routers calling the existing `addPeer(ctx, r.AddressV4, false)` and `addPeer(ctx, r.AddressV6, true)`; keep the legacy `Neighbors`/`NeighborsV6` loops for an empty router list so nothing breaks mid-migration. Add `routerForPeer(addr string) *Router` (exact match against either family address) for Tasks 3 and 4. In `agent/main.go`, map `cfg.BGP.Routers` into `bgpCfg.Routers`.
 
-- [ ] **Step 4: Verify pass** (`make -C mwan/go test`, `make -C mwan/go check`).
+- [ ] **Step 4: Verify pass** (`make -C mwan/go build`).
 
 - [ ] **Step 5: Commit**
 
@@ -171,13 +171,13 @@ func TestAllowedPathInsideAllocation(t *testing.T) {
 
 Add an `AuditAdjRibIn` test feeding the fake a path outside the allocation and asserting one `Violation` naming the router.
 
-- [ ] **Step 2: Run and verify failure.**
+- [ ] **Step 2: Run and verify failure** (`make -C mwan/go build`).
 
 - [ ] **Step 3: Implement**
 
 `AllowedPath`: containment check, prefix inside any of the peer's router allocations (`alloc.Contains(prefix.Addr()) && prefix.Bits() >= alloc.Bits()` via `Prefix.Overlaps` plus bits comparison). `AuditAdjRibIn`: iterate peers, `ListPath` adj-rib-in, collect violations. The agent runs the audit on a one-minute ticker and raises the notifier alert kind `bgp-undeclared-prefix` with router and prefix fields, resolving when the audit is clean (wire the notifier call in Task 5 where the agent owns a notifier).
 
-- [ ] **Step 4: Verify pass.**
+- [ ] **Step 4: Verify pass** (`make -C mwan/go build`).
 
 - [ ] **Step 5: Commit**
 
@@ -208,11 +208,11 @@ Semantics (from spec contract 3):
 
 - [ ] **Step 1: Write the failing tests** with a recorded `routeWriter` fake: install fan-out across `Tables`, withdraw removes only the withdrawn prefix, shadow records zero writes, sweep removes a stale route and spares desired ones.
 
-- [ ] **Step 2: Run and verify failure.**
+- [ ] **Step 2: Run and verify failure** (`make -C mwan/go build`).
 
 - [ ] **Step 3: Implement** `fib_linux.go` plus the two netif extensions. Wire the speaker: register a `WatchEvent` table/best-path callback that converts GoBGP path updates into `PathEvent` (guard through `AllowedPath`; a rejected event increments the audit path, never reaches the FIB) and a peer-down hook that synthesizes withdraws for that peer's allocations.
 
-- [ ] **Step 4: Verify pass** (`make -C mwan/go test`, `make -C mwan/go check`, `make -C mwan/go build-linux`).
+- [ ] **Step 4: Verify pass** (`make -C mwan/go build`).
 
 - [ ] **Step 5: Commit**
 
@@ -234,9 +234,9 @@ git commit -S -m "Install BGP-learned router prefixes into the kernel tables wit
 - Produces: the agent constructs `bgp.FIB` when `cfg.BGP.Routers` is non-empty, passes `Shadow: cfg.BGP.RoutesShadowMode`, starts the one-minute adj-rib-in audit ticker, and routes `bgp-undeclared-prefix` through the existing `notifier`.
 
 - [ ] **Step 1: Write the failing test** for `TablesFromConfig(cfg *config.Config) []int` (main only without WANs; main plus WAN tables with them).
-- [ ] **Step 2: Run and verify failure.**
+- [ ] **Step 2: Run and verify failure** (`make -C mwan/go build`).
 - [ ] **Step 3: Implement** the helper and the `agent/main.go` wiring, including the GR shutdown path: `Stop` never calls into the FIB.
-- [ ] **Step 4: Verify pass.**
+- [ ] **Step 4: Verify pass** (`make -C mwan/go build`).
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -257,9 +257,9 @@ git commit -S -m "Wire the learned-route FIB and adj-rib-in audit into the agent
 - Behavior: shadow true keeps today's exact route set. Shadow false omits only the `InternalPrefix` via-edge route from `appendWANInternalRoutes` and `appendMainInternalRoute`; the transit v4 net route and the edge `/128` on-link route stay in every case, because the learned routes still need the edge next hop resolvable.
 
 - [ ] **Step 1: Write the failing test**: with `BGPRoutesShadowMode: false`, `desiredState` returns no route whose `Dest == cfg.InternalPrefix`; with true, the returned set equals today's `routesForGateways` expectation unchanged.
-- [ ] **Step 2: Run and verify failure.**
+- [ ] **Step 2: Run and verify failure** (`make -C mwan/go build`).
 - [ ] **Step 3: Implement** the two-line gates plus the config threading.
-- [ ] **Step 4: Verify pass.**
+- [ ] **Step 4: Verify pass** (`make -C mwan/go build`).
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -277,7 +277,7 @@ git commit -S -m "Gate the static internal-prefix route behind the BGP routes sh
 - Modify: `ansible/inventory/group_vars/all/service_mapping.yml` only if the router transit addresses are not already entries
 
 **Interfaces:**
-- Produces: `mwan_bgp_routers`, a list of `{name, address_v4, address_v6, allocations_v6}` read from `service_mapping` references, and `mwan_bgp_routes_shadow_mode: true` in all four MWAN group var files. The template renders:
+- Produces: `mwan_bgp_routers`, a list of `{name, address_v4, address_v6, allocations_v6}` read from `service_mapping` references, and `mwan_bgp_routes_shadow_mode: true` in all four MWAN group var files. Every address and allocation comes from an existing service inventory entry; this task adds no new address to the inventory. The template renders:
 
 ```jinja
 routes_shadow_mode = {{ mwan_bgp_routes_shadow_mode | ternary('true', 'false') }}
@@ -293,7 +293,7 @@ allocations_v6 = {{ router.allocations_v6 | to_json }}
 ```
 
 - The legacy `[[bgp.neighbors]]` / `[[bgp.neighbors_v6]]` loops render only while `mwan_bgp_routers` is empty on a host, expressed with an explicit flag variable, never `is defined`.
-- Day-one values: one router entry per environment (production OPNsense, testbed OPNsense) whose allocation is the whole internal block, byte-identical behavior to today.
+- Day-one values: one router entry per environment, the OPNsense router, whose allocations are the specific `/64`s that router actually serves inside the internal block, read from the inventory and the router's own interface set. Not the whole block: spec contract 1 requires allocations disjoint across routers, so a whole-block entry would reject every later router by construction.
 
 - [ ] **Step 1: Edit the group vars and template.**
 - [ ] **Step 2: Verify**: `go run goodkind.io/configs/cmd/configs lint` exits 0; a `--check --diff` render on the testbed limit shows the expected `[bgp]` block.
