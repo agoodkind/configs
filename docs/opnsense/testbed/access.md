@@ -1,46 +1,42 @@
-# Reaching the testbed OPNsense guest
+# Recover testbed OPNsense without network access
 
-The testbed OPNsense guest carries a virtio-serial channel that works when its
-network does not. Reach it with `mwan opnsense exec` and `mwan opnsense config`
-from the suburban hypervisor. The channel does not depend on the guest's
-addresses, its packet filter, or its routing, so it survives a renumber, a
-filter that drops your source, and a rebuild that changes the host key.
+Use the serial channel when the testbed router's network or SSH daemon is
+unavailable. The channel connects suburban to the guest without using the
+guest's addresses, packet filter, or routing.
 
-Use it whenever SSH fails. A connection that times out means the packet filter
-dropped it, and a rebuild changes the host key, so both send you here. Use the
-config-import gate in [import.md](import.md) for a rebuild, and
-[dns.md](dns.md) when a rebuilt guest comes up with name resolution broken.
+Open a direct SSH session to suburban using the
+[infrastructure access guide](../../infra/access.md). Run the commands below
+from that host.
 
 ## Verify the channel
 
-Confirm the guest-side virtio-console symlink before assuming the serial device:
-
 ```sh
-ls -l /dev/vtcon/io.goodkind.mwan-opnsense.0
+mwan opnsense daemon version
+mwan opnsense exec /bin/hostname
 ```
 
-If the symlink points somewhere other than the configured device, update
-`mwan_opnsense_listen_serial` before starting `mwan_opnsense`.
+The first command returns the running daemon's build identity. The second
+returns the guest hostname. Both commands must succeed before recovery work.
 
-Confirm the host-side path from suburban. The socket is named for the guest's
-id, so read it from the rendered config rather than typing it:
+## Run a recovery command
+
+Run a guest command through the serial channel:
 
 ```sh
-ssh suburban 'mwan opnsense version -target "$(sed -n "s/^chardev = \"\(.*\)\"/\1/p" /etc/mwan/config.toml)"'
+mwan opnsense exec <command> [args...]
 ```
 
-The command returns the daemon build banner.
+Inspect the current configuration commands before changing the router:
 
-## Why suburban reaches the guests through the router
+```sh
+mwan opnsense config --help
+```
 
-Suburban holds no address on the transit bridge, matching vault, and routes to
-that segment through the guest segment instead. Production's vault sits on the
-transit bridge and reaches its failover across it directly, so this extra hop is
-the one sanctioned divergence between the two environments. It exists because
-the testbed router is destroyed and rebuilt often, and suburban must keep
-reaching the guests across those rebuilds.
+The [OPNsense serial daemon](../daemon.md) defines the channel's operating and
+recovery limits.
 
-The hop depends on a firewall rule passing guest-segment traffic to the transit
-networks, which the config transform inserts. Without that rule, suburban and
-the workstation reach neither the MWAN VM nor the failover, and both fail as a
-timeout rather than a refusal.
+## Escalate when the channel is unavailable
+
+Use the serial-console path in the
+[infrastructure access guide](../../infra/access.md). Repair the guest endpoint
+with the [OPNsense installation guide](../install.md).

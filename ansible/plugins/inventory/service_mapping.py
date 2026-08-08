@@ -153,9 +153,8 @@ class InventoryModule(BaseInventoryPlugin):
             self.inventory.add_host(hostname, group=group_name)
 
             # Set host variables. ansible_host defaults to the canonical
-            # IPv6, but the entry may override it with an explicit
-            # ansible_host field (e.g. when the IPv6 is not reachable from
-            # the controller and SSH actually goes via IPv4 + ProxyJump).
+            # IPv6, but the entry may select another canonical address with an
+            # explicit ansible_host field.
             ansible_host = service_data.get("ansible_host", ipv6)
             self.inventory.set_variable(hostname, "ansible_host", ansible_host)
             self.inventory.set_variable(hostname, "service_name", service_name)

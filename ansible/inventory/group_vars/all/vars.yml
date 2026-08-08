@@ -37,15 +37,13 @@ smtp_port: "587"
 # ----------------------------------------------------------------------------
 # SSH connection defaults
 # ----------------------------------------------------------------------------
-# The single source of the base options. A group that needs a jump host composes
-# this value rather than restating it, so a change here reaches every group.
+# The single source of the SSH options used by every inventory host.
 # ansible.cfg already sets host_key_checking = False repo-wide, so the strict
 # check is not disabled here for the first time; UserKnownHostsFile keeps a
 # rebuilt guest from failing on a changed key.
 ssh_base_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
-# Applied to every host, so ansible_ssh_common_args is always defined and a play
-# never has to invent one. A group override outranks this file.
+# Applied to every host, so a play never has to invent connection options.
 ansible_ssh_common_args: "{{ ssh_base_args }}"
 
 # ----------------------------------------------------------------------------

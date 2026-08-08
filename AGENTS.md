@@ -100,7 +100,7 @@ capture forensics, and reset to a known-good state instead of improvising.
 
 - IPv6 is P0. Prefer IPv6 literals in configs and test IPv6 reachability first.
   Diagnosis rules live in [docs/infra/network.md](docs/infra/network.md).
-- SSH entry points and jump-host patterns live in
+- SSH entry points and access paths live in
   [docs/infra/access.md](docs/infra/access.md).
 - Keep current-state facts in [docs/infra/](docs/infra/). Keep subject-specific
   contracts and policies in [docs/ansible/](docs/ansible/),
