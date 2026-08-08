@@ -728,12 +728,13 @@ func buildWANRoutesConfig(
 	section *config.IfMgrWANRoutesSection,
 ) (wanroutes.Config, error) {
 	cfg := wanroutes.Config{
-		InternalIface:   "",
-		OpnsenseEdgeV6:  "",
-		InternalPrefix:  "",
-		InternalNetV4:   "",
-		HealthStateFile: "",
-		WANs:            nil,
+		InternalIface:       "",
+		OpnsenseEdgeV6:      "",
+		InternalPrefix:      "",
+		InternalNetV4:       "",
+		HealthStateFile:     "",
+		BGPRoutesShadowMode: true,
+		WANs:                nil,
 	}
 	if section == nil {
 		return cfg, nil
@@ -743,6 +744,9 @@ func buildWANRoutesConfig(
 	cfg.InternalPrefix = shared.InternalPrefix
 	cfg.InternalNetV4 = section.InternalNetV4
 	cfg.HealthStateFile = section.HealthStateFile
+	if section.BGPRoutesShadowMode != nil {
+		cfg.BGPRoutesShadowMode = *section.BGPRoutesShadowMode
+	}
 
 	cfg.WANs = make([]wanroutes.WAN, 0, len(shared.WANs))
 	for _, wan := range shared.WANs {

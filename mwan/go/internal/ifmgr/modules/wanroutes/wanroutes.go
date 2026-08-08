@@ -37,12 +37,13 @@ const (
 
 // Config is the parsed [ifmgr.modules.wan.routes] runtime config.
 type Config struct {
-	InternalIface   string
-	OpnsenseEdgeV6  string
-	InternalPrefix  string
-	InternalNetV4   string
-	HealthStateFile string
-	WANs            []WAN
+	InternalIface       string
+	OpnsenseEdgeV6      string
+	InternalPrefix      string
+	InternalNetV4       string
+	HealthStateFile     string
+	BGPRoutesShadowMode bool
+	WANs                []WAN
 }
 
 // ModuleConfigName returns the registry key for this module's config block.
@@ -392,19 +393,24 @@ func appendWANInternalRoutes(
 			TableID: tableID,
 			Metric:  0,
 		},
-		netif.RouteSpec{
+	)
+	if cfg.BGPRoutesShadowMode {
+		routes = append(routes, netif.RouteSpec{
 			Family:  familyV6,
 			Dest:    cfg.InternalPrefix,
 			Via:     cfg.OpnsenseEdgeV6,
 			Dev:     cfg.InternalIface,
 			TableID: tableID,
 			Metric:  0,
-		},
-	)
+		})
+	}
 	return routes
 }
 
 func appendMainInternalRoute(routes []netif.RouteSpec, cfg Config) []netif.RouteSpec {
+	if !cfg.BGPRoutesShadowMode {
+		return routes
+	}
 	routes = append(routes, netif.RouteSpec{
 		Family:  familyV6,
 		Dest:    cfg.InternalPrefix,
@@ -645,12 +651,13 @@ func isFromPriority(priority int) bool {
 // New is the Constructor registered with ifmgr.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
-		InternalIface:   "",
-		OpnsenseEdgeV6:  "",
-		InternalPrefix:  "",
-		InternalNetV4:   "",
-		HealthStateFile: "",
-		WANs:            nil,
+		InternalIface:       "",
+		OpnsenseEdgeV6:      "",
+		InternalPrefix:      "",
+		InternalNetV4:       "",
+		HealthStateFile:     "",
+		BGPRoutesShadowMode: true,
+		WANs:                nil,
 	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)
