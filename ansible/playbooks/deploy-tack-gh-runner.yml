@@ -13,6 +13,158 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
+    - name: Install K3s and Helm prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - tar
+        state: present
+        update_cache: true
+
+    - name: Read installed K3s version
+      ansible.builtin.command: k3s --version
+      register: k3s_installed_version
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Determine whether the installed K3s release matches
+      ansible.builtin.set_fact:
+        k3s_installed_release_matches: >-
+          {{
+            (
+              k3s_installed_version.stdout
+              | regex_findall('(?m)^k3s version (\S+)')
+            )
+            == [k3s_version]
+          }}
+      changed_when: false
+
+    - name: Download pinned K3s installer
+      ansible.builtin.get_url:
+        url: "{{ k3s_installer_url }}"
+        dest: /tmp/k3s-install.sh
+        checksum: "{{ k3s_installer_checksum }}"
+        owner: root
+        group: root
+        mode: "0755"
+      when:
+        - not ansible_check_mode
+        - not k3s_installed_release_matches
+
+    - name: Install pinned K3s release without starting it
+      ansible.builtin.command: /tmp/k3s-install.sh
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: server
+        INSTALL_K3S_SKIP_START: "true"
+      changed_when: true
+      notify: Restart K3s
+      when:
+        - not ansible_check_mode
+        - not k3s_installed_release_matches
+
+    - name: Read K3s configuration directory
+      ansible.builtin.stat:
+        path: "{{ k3s_config_dir }}"
+      register: k3s_config_directory
+      check_mode: false
+
+    - name: Create K3s and ARC configuration directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - "{{ k3s_config_dir }}"
+        - "{{ arc_values_dir }}"
+
+    - name: Configure K3s
+      ansible.builtin.template:
+        src: "{{ repo_root }}/github-runner/k3s-config.yaml.j2"
+        dest: "{{ k3s_config_dir }}/config.yaml"
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart K3s
+      when:
+        - not ansible_check_mode or k3s_config_directory.stat.exists
+
+    - name: Enable and start K3s
+      ansible.builtin.systemd:
+        name: k3s
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: not ansible_check_mode
+
+    - name: Apply K3s changes before validation
+      ansible.builtin.meta: flush_handlers
+      when: not ansible_check_mode
+
+    - name: Validate K3s host configuration
+      ansible.builtin.command: k3s check-config
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Wait for the K3s node to report Ready
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - nodes
+          - -o
+          - >-
+            jsonpath={.items[0].status.conditions[?(@.type=="Ready")].status}
+      register: k3s_node_ready
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: k3s_node_ready.stdout == "True"
+      when: not ansible_check_mode
+
+    - name: Read installed Helm version
+      ansible.builtin.command: helm version --short
+      register: helm_installed_version
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Install pinned Helm release
+      when:
+        - not ansible_check_mode
+        - >-
+          (helm_installed_version.stdout | regex_replace('\\+.*$', ''))
+          != helm_version
+      block:
+        - name: Download pinned Helm archive
+          ansible.builtin.get_url:
+            url: "{{ helm_archive_url }}"
+            dest: /tmp/helm-linux-amd64.tar.gz
+            checksum: "{{ helm_archive_checksum }}"
+            owner: root
+            group: root
+            mode: "0644"
+
+        - name: Extract pinned Helm archive
+          ansible.builtin.unarchive:
+            src: /tmp/helm-linux-amd64.tar.gz
+            dest: /tmp
+            remote_src: true
+
+        - name: Install Helm binary
+          ansible.builtin.copy:
+            src: /tmp/linux-amd64/helm
+            dest: /usr/local/bin/helm
+            owner: root
+            group: root
+            mode: "0755"
+            remote_src: true
+
     - name: Install prerequisites for Docker repository
       ansible.builtin.apt:
         name:
@@ -217,6 +369,13 @@
       when: github_runner_enabled | bool
 
   handlers:
+    - name: Restart K3s
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+        daemon_reload: true
+      when: not ansible_check_mode
+
     - name: Restart Docker
       ansible.builtin.systemd:
         name: docker
