@@ -222,20 +222,37 @@ func TestDeployAuthorizedKeysRejectsEmptyGitHubKeysWithoutOutputs(t *testing.T) 
 
 func TestDeployAuthorizedKeysRequiresArguments(t *testing.T) {
 	testCases := []struct {
-		name      string
-		arguments []string
+		name              string
+		includeGitHubUser bool
+		includeOutput     bool
+		trailingOption    string
 	}{
-		{name: "GitHub user", arguments: []string{"--out", "unused"}},
-		{name: "output", arguments: []string{"--github-user", "agoodkind"}},
-		{name: "option value", arguments: []string{"--github-user"}},
+		{name: "GitHub user", includeOutput: true},
+		{name: "output", includeGitHubUser: true},
+		{name: "option value", trailingOption: "--github-user"},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			harness := newAuthorizedKeysHarness(t)
-			if output, err := harness.run(t, githubKeyA+"\n", "", testCase.arguments...); err == nil {
+			outputDirectory := t.TempDir()
+			humanBundle := filepath.Join(outputDirectory, "human")
+			combinedBundle := filepath.Join(outputDirectory, "combined")
+			arguments := make([]string, 0, 4)
+			if testCase.includeGitHubUser {
+				arguments = append(arguments, "--github-user", "agoodkind")
+			}
+			if testCase.includeOutput {
+				arguments = append(arguments, "--out", humanBundle)
+			}
+			if testCase.trailingOption != "" {
+				arguments = append(arguments, testCase.trailingOption)
+			}
+			if output, err := harness.run(t, githubKeyA+"\n", "", arguments...); err == nil {
 				t.Fatalf("deploy-authorized-keys succeeded, want failure\n%s", output)
 			}
+			requireNoFile(t, humanBundle)
+			requireNoFile(t, combinedBundle)
 		})
 	}
 }
