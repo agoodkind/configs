@@ -63,10 +63,52 @@ service_mapping:
     hostname: tack.home.goodkind.io
     vmid: 117
     ipv6: "3d06:bad:b01::117"
+    mac_address: "BC:24:11:A3:52:17"
+  tack_data1:
+    hostname: tack-data1.home.goodkind.io
+    vmid: 120
+    ipv6: "3d06:bad:b01::120"
+    mac_address: "BC:24:11:A3:52:20"
+  tack_data2:
+    hostname: tack-data2.home.goodkind.io
+    vmid: 121
+    ipv6: "3d06:bad:b01::121"
+    mac_address: "BC:24:11:A3:52:21"
+  tack_data3:
+    hostname: tack-data3.home.goodkind.io
+    vmid: 122
+    ipv6: "3d06:bad:b01::122"
+    mac_address: "BC:24:11:A3:52:22"
+  tack_app2:
+    hostname: tack-app2.home.goodkind.io
+    vmid: 123
+    ipv6: "3d06:bad:b01::123"
+    mac_address: "BC:24:11:A3:52:23"
   tack_qa_suburban:
     hostname: tack-qa.suburban.goodkind.io
     vmid: 217
     ipv6: "3d06:bad:b01:210::217"
+    mac_address: "BC:24:11:04:00:00"
+  tack_data1_suburban:
+    hostname: tack-data1.suburban.goodkind.io
+    vmid: 220
+    ipv6: "3d06:bad:b01:210::220"
+    mac_address: "BC:24:11:04:01:20"
+  tack_data2_suburban:
+    hostname: tack-data2.suburban.goodkind.io
+    vmid: 221
+    ipv6: "3d06:bad:b01:210::221"
+    mac_address: "BC:24:11:04:01:21"
+  tack_data3_suburban:
+    hostname: tack-data3.suburban.goodkind.io
+    vmid: 222
+    ipv6: "3d06:bad:b01:210::222"
+    mac_address: "BC:24:11:04:01:22"
+  tack_app2_suburban:
+    hostname: tack-app2.suburban.goodkind.io
+    vmid: 223
+    ipv6: "3d06:bad:b01:210::223"
+    mac_address: "BC:24:11:04:01:23"
   seaweedfs:
     hostname: seaweedfs.home.goodkind.io
     vmid: 118
@@ -215,6 +257,28 @@ group_children:
   tack_all:
     - tack_servers
     - tack_qa_suburban_servers
+    - tack_data1_servers
+    - tack_data2_servers
+    - tack_data3_servers
+    - tack_app2_servers
+    - tack_data1_suburban_servers
+    - tack_data2_suburban_servers
+    - tack_data3_suburban_servers
+    - tack_app2_suburban_servers
+  tack_data_servers:
+    - tack_data1_servers
+    - tack_data2_servers
+    - tack_data3_servers
+  tack_data_suburban_servers:
+    - tack_data1_suburban_servers
+    - tack_data2_suburban_servers
+    - tack_data3_suburban_servers
+  tack_app_servers:
+    - tack_servers
+    - tack_app2_servers
+  tack_app_suburban_servers:
+    - tack_qa_suburban_servers
+    - tack_app2_suburban_servers
   mwan_all:
     - mwan_servers
     - mwan_suburban_servers
