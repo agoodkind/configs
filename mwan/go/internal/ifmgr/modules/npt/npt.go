@@ -1,11 +1,10 @@
 //go:build linux
 
-// Package npt ports mwan/scripts/update-npt.sh into an ifmgr module. It programs
-// the ip6 nat prerouting and postrouting chains for stateless IPv6 NPT, deriving
-// each WAN's /60 from the live DHCPv6-PD delegation and translating the internal
-// /60 onto it. It runs as a second module in the wan role, gated by its own
-// shadow_mode, and never tears its rules down on stop so the kernel keeps
-// forwarding across a binary swap.
+// Package npt programs the ip6 nat prerouting and postrouting chains for
+// stateless IPv6 NPT, deriving each WAN's /60 from the live DHCPv6-PD
+// delegation and translating the internal /60 onto it. It runs as a second
+// module in the wan role and never tears its rules down on stop so the kernel
+// keeps forwarding across a binary swap.
 package npt
 
 import (
@@ -35,10 +34,8 @@ type reconcileAddrsFunc func(context.Context, *slog.Logger, string, []netif.Addr
 type listAddrsFunc func(context.Context, *slog.Logger, string) ([]netif.CurrentAddr, error)
 
 // Config is the runtime config for the npt module. The WAN list, internal
-// prefix, and edge addresses come from the shared [ifmgr.wan] section;
-// ShadowMode is the module's own [ifmgr.modules.npt] toggle.
+// prefix, and edge addresses come from the shared [ifmgr.wan] section.
 type Config struct {
-	ShadowMode     bool
 	InternalPrefix string
 	OpnsenseEdgeV6 string
 	MwanbrEdgeV6   string
@@ -74,8 +71,7 @@ type Module struct {
 // so the wan role can list npt unconditionally.
 func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	log := m.InitBase(env, "module", moduleName)
-	log.InfoContext(ctx, "npt: Init",
-		"wan_count", len(m.cfg.WANs), "shadow_mode", m.cfg.ShadowMode)
+	log.InfoContext(ctx, "npt: Init", "wan_count", len(m.cfg.WANs))
 
 	if len(m.cfg.WANs) == 0 {
 		log.WarnContext(ctx, "npt: no WAN config; disabling module")
@@ -164,8 +160,7 @@ func validateWANs(wans []ifmgr.WANRef) error {
 }
 
 // Reconcile implements ifmgr.Module. It computes the union of every WAN's NPT
-// rules from the live PD, then either logs (shadow) or applies them in one
-// atomic transaction.
+// rules from the live PD, then applies them in one atomic transaction.
 func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	m.Lock()
 	defer m.Unlock()
@@ -190,26 +185,19 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			missing[wan.Iface] = true
 			continue
 		}
-		// The <pd>::1/128 address add is the only write in a reconcile. Gate it on
-		// shadow so shadow mode mutates nothing; in shadow npt still computes and
-		// logs the rules that reference <pd>::1 but adds no address. A failure to
-		// ensure the address skips and alerts the WAN like any other address op.
-		if !m.cfg.ShadowMode {
-			if err := m.reconcileAddrs(ctx, log, wan.Iface, built.ensure); err != nil {
-				reconcileErr = errors.Join(reconcileErr,
-					fmt.Errorf("ensure %s on %s: %w", built.ensure[0].CIDR, wan.Iface, err))
-				missing[wan.Iface] = true
-				continue
-			}
+		// The <pd>::1/128 address add is the only address write in a reconcile. A
+		// failure to ensure the address skips and alerts the WAN like any other
+		// address op.
+		if err := m.reconcileAddrs(ctx, log, wan.Iface, built.ensure); err != nil {
+			reconcileErr = errors.Join(reconcileErr,
+				fmt.Errorf("ensure %s on %s: %w", built.ensure[0].CIDR, wan.Iface, err))
+			missing[wan.Iface] = true
+			continue
 		}
 		desired.add(built.rules)
 	}
 	m.pdMissing = missing
 
-	if m.cfg.ShadowMode {
-		logShadowOps(log, desired)
-		return reconcileErr
-	}
 	if err := m.apply.Apply(ctx, log, desired); err != nil {
 		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("apply: %w", err))
 	}
@@ -218,17 +206,17 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 
 // wanDesired is one WAN's computed reconcile plan: the typed rules to program
 // and the <pd>::1/128 address to ensure on the iface. Building the plan is a
-// pure read; ensure is applied by the caller only in the non-shadow path.
+// pure read; the caller applies ensure.
 type wanDesired struct {
 	rules  []natRule
 	ensure []netif.AddrSpec
 }
 
 // buildWANDesired resolves one WAN's live /60 and returns its reconcile plan.
-// It only reads (PD lookup plus the extra-/128 enumeration) so shadow mode can
-// reuse it without mutating anything; the caller performs the address write.
-// present is false (skip + alert, no static fallback) when the PD source has no
-// prefix or errors; err is returned only for a hard address-op read failure.
+// It only reads (PD lookup plus the extra-/128 enumeration); the caller
+// performs the address write. present is false (skip + alert, no static
+// fallback) when the PD source has no prefix or errors; err is returned only
+// for a hard address-op read failure.
 func (m *Module) buildWANDesired(
 	ctx context.Context, log *slog.Logger, wan ifmgr.WANRef,
 ) (wanDesired, bool, error) {
@@ -340,15 +328,6 @@ func isAddrEvent(event netif.Event) bool {
 	return event.Kind == netif.EvAddrAdded || event.Kind == netif.EvAddrDeleted
 }
 
-func logShadowOps(log *slog.Logger, desired desiredRules) {
-	for _, rule := range desired.Postrouting {
-		log.Debug("npt: shadow reconcile rule", "rule", rule.String())
-	}
-	for _, rule := range desired.Prerouting {
-		log.Debug("npt: shadow reconcile rule", "rule", rule.String())
-	}
-}
-
 func watchedIfaces(cfg Config) []string {
 	seen := make(map[string]bool, len(cfg.WANs))
 	ifaces := make([]string, 0, len(cfg.WANs))
@@ -365,7 +344,6 @@ func watchedIfaces(cfg Config) []string {
 // New is the Constructor registered with ifmgr.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
-		ShadowMode:     false,
 		InternalPrefix: "",
 		OpnsenseEdgeV6: "",
 		MwanbrEdgeV6:   "",
