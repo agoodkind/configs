@@ -4,9 +4,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +36,19 @@ func newTestDeps(out *strings.Builder, clock *fakeClock) deployGateDeps {
 		now:   clock.Now,
 		sleep: clock.Sleep,
 	}
+}
+
+func readTestVerdict(t *testing.T, path string) gateVerdict {
+	t.Helper()
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read verdict: %v", err)
+	}
+	var verdict gateVerdict
+	if err := json.Unmarshal(payload, &verdict); err != nil {
+		t.Fatalf("unmarshal verdict: %v", err)
+	}
+	return verdict
 }
 
 func TestWaitRebootDetectsBootIDChange(t *testing.T) {
@@ -136,6 +152,185 @@ func TestWaitRebootRecoveryOnFinalRead(t *testing.T) {
 
 	if code != exitDeployGateOK {
 		t.Fatalf("exit code = %d, want %d\noutput: %s", code, exitDeployGateOK, out.String())
+	}
+}
+
+func TestWaitDeployRecordsSuccessfulVerdict(t *testing.T) {
+	var out strings.Builder
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+	deps := newTestDeps(&out, clock)
+	deps.readBootID = func(_ context.Context, _ int) (string, error) {
+		return testNewBootID, nil
+	}
+	deps.ping6 = func(context.Context, netip.Addr, time.Duration) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	deps.ping4 = func(
+		context.Context, string, netip.Addr, time.Duration,
+	) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	verdictPath := filepath.Join(t.TempDir(), "verdict.json")
+
+	code := waitDeploy(context.Background(), deps, waitDeployInputs{
+		vmid:         113,
+		oldBootID:    testOldBootID,
+		rebootBudget: time.Minute,
+		egressBudget: time.Minute,
+		traceID:      "trace-123",
+		verdictPath:  verdictPath,
+	})
+
+	if code != exitDeployGateOK {
+		t.Fatalf("exit code = %d, want %d\noutput: %s", code, exitDeployGateOK, out.String())
+	}
+	if !strings.Contains(out.String(), "verdict recorded") {
+		t.Fatalf("output does not confirm verdict recording: %s", out.String())
+	}
+	verdict := readTestVerdict(t, verdictPath)
+	if verdict.TraceID != "trace-123" {
+		t.Fatalf("trace_id = %q, want %q", verdict.TraceID, "trace-123")
+	}
+	if verdict.OldBootID != testOldBootID {
+		t.Fatalf("old_boot_id = %q, want %q", verdict.OldBootID, testOldBootID)
+	}
+	if verdict.RebootRC != exitDeployGateOK {
+		t.Fatalf("reboot_rc = %d, want %d", verdict.RebootRC, exitDeployGateOK)
+	}
+	if verdict.EgressRC != exitDeployGateOK {
+		t.Fatalf("egress_rc = %d, want %d", verdict.EgressRC, exitDeployGateOK)
+	}
+	if verdict.StartedAt == "" || verdict.FinishedAt == "" {
+		t.Fatalf("timestamps are not populated: started_at=%q finished_at=%q",
+			verdict.StartedAt, verdict.FinishedAt)
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(verdictPath))
+	if err != nil {
+		t.Fatalf("read verdict directory: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != filepath.Base(verdictPath) {
+		t.Fatalf("verdict directory entries = %v, want only %q", entries, filepath.Base(verdictPath))
+	}
+}
+
+func TestWaitDeploySkipsEgressAfterDefinitiveRebootFailure(t *testing.T) {
+	var out strings.Builder
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+	deps := newTestDeps(&out, clock)
+	deps.readBootID = func(_ context.Context, _ int) (string, error) {
+		return testOldBootID, nil
+	}
+	deps.ping6 = func(context.Context, netip.Addr, time.Duration) (time.Duration, error) {
+		t.Fatalf("IPv6 egress probe ran after definitive reboot failure")
+		return 0, nil
+	}
+	deps.ping4 = func(
+		context.Context, string, netip.Addr, time.Duration,
+	) (time.Duration, error) {
+		t.Fatalf("IPv4 egress probe ran after definitive reboot failure")
+		return 0, nil
+	}
+	verdictPath := filepath.Join(t.TempDir(), "verdict.json")
+
+	code := waitDeploy(context.Background(), deps, waitDeployInputs{
+		vmid:         113,
+		oldBootID:    testOldBootID,
+		rebootBudget: 3 * time.Second,
+		egressBudget: time.Minute,
+		traceID:      "trace-123",
+		verdictPath:  verdictPath,
+	})
+
+	if code != exitDeployGateOK {
+		t.Fatalf("exit code = %d, want %d\noutput: %s", code, exitDeployGateOK, out.String())
+	}
+	verdict := readTestVerdict(t, verdictPath)
+	if verdict.RebootRC != exitDeployGateFailed {
+		t.Fatalf("reboot_rc = %d, want %d", verdict.RebootRC, exitDeployGateFailed)
+	}
+	if verdict.EgressRC != egressNotRun {
+		t.Fatalf("egress_rc = %d, want %d", verdict.EgressRC, egressNotRun)
+	}
+}
+
+func TestWaitDeployRunsEgressAfterUnobservableReboot(t *testing.T) {
+	var out strings.Builder
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+	deps := newTestDeps(&out, clock)
+	deps.readBootID = func(_ context.Context, _ int) (string, error) {
+		return "", errors.New("guest agent not running")
+	}
+	egressProbes := 0
+	deps.ping6 = func(context.Context, netip.Addr, time.Duration) (time.Duration, error) {
+		egressProbes++
+		return 0, errors.New("no route to host")
+	}
+	deps.ping4 = func(
+		context.Context, string, netip.Addr, time.Duration,
+	) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	verdictPath := filepath.Join(t.TempDir(), "verdict.json")
+
+	code := waitDeploy(context.Background(), deps, waitDeployInputs{
+		vmid:         113,
+		oldBootID:    testOldBootID,
+		rebootBudget: 3 * time.Second,
+		egressBudget: 3 * time.Second,
+		traceID:      "trace-123",
+		verdictPath:  verdictPath,
+	})
+
+	if code != exitDeployGateOK {
+		t.Fatalf("exit code = %d, want %d\noutput: %s", code, exitDeployGateOK, out.String())
+	}
+	if egressProbes == 0 {
+		t.Fatalf("egress probe count = %d, want greater than zero", egressProbes)
+	}
+	if !strings.Contains(out.String(), "no IPv6 egress") {
+		t.Fatalf("output does not confirm the egress verdict: %s", out.String())
+	}
+	verdict := readTestVerdict(t, verdictPath)
+	if verdict.RebootRC != exitDeployGateUnobservable {
+		t.Fatalf("reboot_rc = %d, want %d", verdict.RebootRC, exitDeployGateUnobservable)
+	}
+	if verdict.EgressRC != exitDeployGateFailed {
+		t.Fatalf("egress_rc = %d, want %d", verdict.EgressRC, exitDeployGateFailed)
+	}
+}
+
+func TestWaitDeployReturnsFailureWhenVerdictWriteFails(t *testing.T) {
+	var out strings.Builder
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+	deps := newTestDeps(&out, clock)
+	deps.readBootID = func(_ context.Context, _ int) (string, error) {
+		return testNewBootID, nil
+	}
+	deps.ping6 = func(context.Context, netip.Addr, time.Duration) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	deps.ping4 = func(
+		context.Context, string, netip.Addr, time.Duration,
+	) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("create blocker file: %v", err)
+	}
+
+	code := waitDeploy(context.Background(), deps, waitDeployInputs{
+		vmid:         113,
+		oldBootID:    testOldBootID,
+		rebootBudget: time.Minute,
+		egressBudget: time.Minute,
+		traceID:      "trace-123",
+		verdictPath:  filepath.Join(blocker, "verdict.json"),
+	})
+
+	if code != exitDeployGateFailed {
+		t.Fatalf("exit code = %d, want %d", code, exitDeployGateFailed)
 	}
 }
 
@@ -243,6 +438,13 @@ func TestRunDeployGateUsageErrors(t *testing.T) {
 	cases := [][]string{
 		{},
 		{"bogus-mode"},
+		{"wait-deploy"},
+		{"wait-deploy", "not-a-vmid", testOldBootID, "180", "180", "trace-123", "/tmp/verdict.json"},
+		{"wait-deploy", "113", "not-a-uuid", "180", "180", "trace-123", "/tmp/verdict.json"},
+		{"wait-deploy", "113", testOldBootID, "0", "180", "trace-123", "/tmp/verdict.json"},
+		{"wait-deploy", "113", testOldBootID, "180", "0", "trace-123", "/tmp/verdict.json"},
+		{"wait-deploy", "113", testOldBootID, "180", "180", "trace/123", "/tmp/verdict.json"},
+		{"wait-deploy", "113", testOldBootID, "180", "180", "trace 123", "/tmp/verdict.json"},
 		{"wait-reboot", "113", "not-a-uuid", "180"},
 		{"wait-reboot", "113", testOldBootID, "0"},
 		{"wait-reboot", "113; rm", testOldBootID, "180"},
