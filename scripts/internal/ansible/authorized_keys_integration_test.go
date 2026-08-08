@@ -3,6 +3,7 @@ package ansible
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,12 @@ type authorizedKeysHarness struct {
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write unavailable")
+}
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return function(request)
@@ -325,5 +332,77 @@ func TestDeployAuthorizedKeysRequiresPairedExtraOutputs(t *testing.T) {
 			requireNoFile(t, humanBundle)
 			requireNoFile(t, combinedBundle)
 		})
+	}
+}
+
+func TestDeployAuthorizedKeysRejectsEquivalentOutputPaths(t *testing.T) {
+	testCases := []struct {
+		name        string
+		outputPaths func(*testing.T) (string, string)
+	}{
+		{
+			name: "relative component",
+			outputPaths: func(t *testing.T) (string, string) {
+				t.Helper()
+				directory := t.TempDir()
+				return filepath.Join(directory, "keys"), directory + "/./keys"
+			},
+		},
+		{
+			name: "symlinked parent",
+			outputPaths: func(t *testing.T) (string, string) {
+				t.Helper()
+				realDirectory := t.TempDir()
+				linkDirectory := filepath.Join(t.TempDir(), "keys-dir")
+				if err := os.Symlink(realDirectory, linkDirectory); err != nil {
+					t.Fatalf("Symlink: %v", err)
+				}
+				return filepath.Join(realDirectory, "keys"), filepath.Join(linkDirectory, "keys")
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			harness := newAuthorizedKeysHarness(t)
+			humanBundle, combinedBundle := testCase.outputPaths(t)
+			extraPublicKey := filepath.Join(t.TempDir(), "upstream.pub")
+			if err := os.WriteFile(extraPublicKey, []byte(extraKey+"\n"), 0o600); err != nil {
+				t.Fatalf("WriteFile extra key: %v", err)
+			}
+
+			output, err := harness.run(
+				t,
+				githubKeyA+"\n",
+				"",
+				"--github-user",
+				"agoodkind",
+				"--out",
+				humanBundle,
+				"--extra-pubkey",
+				extraPublicKey,
+				"--extra-out",
+				combinedBundle,
+			)
+			if err == nil {
+				t.Fatalf("deploy-authorized-keys succeeded, want failure\n%s", output)
+			}
+			if !strings.Contains(string(output), "--out and --extra-out must differ") {
+				t.Fatalf("unexpected error:\n%s", output)
+			}
+			requireNoFile(t, humanBundle)
+		})
+	}
+}
+
+func TestDeployAuthorizedKeysReportsUsageWriteFailure(t *testing.T) {
+	err := authorizedkeys.Run(
+		context.Background(),
+		[]string{"--help"},
+		failingWriter{},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "write unavailable") {
+		t.Fatalf("Run error = %v, want usage write failure", err)
 	}
 }

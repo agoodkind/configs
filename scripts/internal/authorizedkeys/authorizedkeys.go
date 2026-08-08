@@ -42,6 +42,24 @@ type pendingFile struct {
 	temp   string
 }
 
+type loggedError struct {
+	err error
+}
+
+func (e *loggedError) Error() string {
+	return e.err.Error()
+}
+
+func (e *loggedError) Unwrap() error {
+	return e.err
+}
+
+// IsLogged reports whether the error already produced a structured log event.
+func IsLogged(err error) bool {
+	var target *loggedError
+	return errors.As(err, &target)
+}
+
 // Run parses the command arguments, fetches GitHub keys, and replaces each bundle.
 func Run(
 	ctx context.Context,
@@ -50,7 +68,7 @@ func Run(
 	client *http.Client,
 ) error {
 	slog.DebugContext(ctx, "deploy authorized keys started")
-	parsed, err := parseOptions(arguments, stdout)
+	parsed, err := parseOptions(ctx, arguments, stdout)
 	if err != nil {
 		return err
 	}
@@ -69,7 +87,11 @@ func Run(
 	return writeBundles(ctx, parsed, humanKeys, extraKeys)
 }
 
-func parseOptions(arguments []string, stdout io.Writer) (options, error) {
+func parseOptions(
+	ctx context.Context,
+	arguments []string,
+	stdout io.Writer,
+) (options, error) {
 	empty := options{githubUser: "", outPath: "", extraKey: "", extraOut: ""}
 	parsed := empty
 	flags := flag.NewFlagSet("deploy-authorized-keys", flag.ContinueOnError)
@@ -80,7 +102,9 @@ func parseOptions(arguments []string, stdout io.Writer) (options, error) {
 	flags.StringVar(&parsed.extraOut, "extra-out", "", "combined bundle path")
 	if err := flags.Parse(arguments); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			printUsage(stdout)
+			if usageErr := printUsage(ctx, stdout); usageErr != nil {
+				return empty, usageErr
+			}
 			return empty, ErrHelp
 		}
 		return empty, errors.New(err.Error())
@@ -103,14 +127,21 @@ func parseOptions(arguments []string, stdout io.Writer) (options, error) {
 	if parsed.extraKey == "" && parsed.extraOut != "" {
 		return empty, errors.New("--extra-pubkey is required with --extra-out")
 	}
-	if parsed.extraOut != "" && parsed.outPath == parsed.extraOut {
-		return empty, errors.New("--out and --extra-out must differ")
+	if parsed.extraOut != "" {
+		equivalent, err := sameOutputPath(ctx, parsed.outPath, parsed.extraOut)
+		if err != nil {
+			return empty, err
+		}
+		if equivalent {
+			return empty, errors.New("--out and --extra-out must differ")
+		}
 	}
 	return parsed, nil
 }
 
-func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, `deploy-authorized-keys
+func printUsage(ctx context.Context, writer io.Writer) error {
+	slog.DebugContext(ctx, "write deploy authorized keys usage")
+	_, err := fmt.Fprintln(writer, `deploy-authorized-keys
 
 Fetch GitHub SSH keys and write an authorized_keys bundle.
 
@@ -120,6 +151,34 @@ Usage:
 
 The human bundle contains GitHub keys only. The combined bundle adds the
 optional public key.`)
+	if err != nil {
+		return logWrap(ctx, "write deploy authorized keys usage", err)
+	}
+	return nil
+}
+
+func sameOutputPath(ctx context.Context, first string, second string) (bool, error) {
+	firstCanonical, err := readCanonicalOutputPath(ctx, first)
+	if err != nil {
+		return false, err
+	}
+	secondCanonical, err := readCanonicalOutputPath(ctx, second)
+	if err != nil {
+		return false, err
+	}
+	return firstCanonical == secondCanonical, nil
+}
+
+func readCanonicalOutputPath(ctx context.Context, path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", logWrap(ctx, "resolve absolute output path", err)
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
+	if err != nil {
+		return "", logWrap(ctx, "resolve output parent", err)
+	}
+	return filepath.Join(parent, filepath.Base(absolute)), nil
 }
 
 func readExtraKey(ctx context.Context, path string) ([]byte, error) {
@@ -294,5 +353,6 @@ func (p *pendingFile) cleanup() {
 
 func logWrap(ctx context.Context, message string, err error) error {
 	slog.ErrorContext(ctx, message, "err", err)
-	return fmt.Errorf("%s: %w", message, err)
+	wrapped := fmt.Errorf("%s: %w", message, err)
+	return &loggedError{err: wrapped}
 }

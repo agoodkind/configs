@@ -18,7 +18,9 @@ func main() {
 		return
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "deploy-authorized-keys: %v\n", err)
+		if !authorizedkeys.IsLogged(err) {
+			fmt.Fprintf(os.Stderr, "deploy-authorized-keys: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }
