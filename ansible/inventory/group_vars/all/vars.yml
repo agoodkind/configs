@@ -37,6 +37,8 @@ smtp_port: "587"
 # ----------------------------------------------------------------------------
 # SSH connection defaults
 # ----------------------------------------------------------------------------
+github_ssh_keys_user: agoodkind
+
 # The single source of the SSH options used by every inventory host.
 # ansible.cfg already sets host_key_checking = False repo-wide, so the strict
 # check is not disabled here for the first time; UserKnownHostsFile keeps a
