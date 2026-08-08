@@ -78,6 +78,20 @@
         dest: /etc/network/interfaces.d/testbed-transit-routes.conf
         mode: "0644"
 
+    - name: Pin the vmbrtrunk bridge MAC
+      # The sourced file's hwaddress only applies at ifup, and reloading
+      # networking on the hypervisor would bounce every guest bridge. This
+      # asserts the pinned MAC on every run for the same reason the transit
+      # routes are asserted below. Setting the address is idempotent when it
+      # already matches, and an explicitly set MAC stops the kernel from
+      # re-deriving the bridge MAC from whichever port is numerically lowest
+      # after guest churn (MWAN-286). The one-time change from an unpinned MAC
+      # invalidates guest neighbour caches once; guests re-resolve via NDP.
+      ansible.builtin.command:
+        cmd: >-
+          ip link set dev vmbrtrunk address {{ suburban_vmbrtrunk_hwaddress }}
+      changed_when: false
+
     - name: Install transit routes
       # The sourced file only installs these at ifup, and reloading networking
       # on the hypervisor would bounce every guest bridge. This asserts the same
