@@ -1,0 +1,17 @@
+githubConfigUrl: {{ github_runner_repo_url }}
+githubConfigSecret: {{ arc_github_secret_name }}
+
+minRunners: {{ arc_runner_min }}
+maxRunners: {{ arc_runner_max }}
+
+controllerServiceAccount:
+  namespace: {{ arc_controller_namespace }}
+  name: {{ arc_controller_service_account }}
+
+template:
+  spec:
+    containers:
+      - name: runner
+        image: "{{ arc_runner_image_repository }}:{{ arc_runner_image_tag }}@{{ arc_runner_image_digest }}"
+        command:
+          - /home/runner/run.sh

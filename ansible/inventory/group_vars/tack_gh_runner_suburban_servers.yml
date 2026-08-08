@@ -18,20 +18,30 @@ k3s_service_ipv6_cidr: fd21:9:43::/112
 k3s_cluster_dns_ipv6: fd21:9:43::a
 k3s_flannel_interface: eth0
 k3s_config_dir: /etc/rancher/k3s
+k3s_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
 arc_values_dir: /etc/arc
 
-github_runner_enabled: true
-github_runner_install_dir: /opt/github-runner
-github_runner_image_tag: myoung34/github-runner:2.336.0-ubuntu-noble
-github_runner_image_digest: >-
-  sha256:c803ddbc5b91961aabf3411c6336cb2c838cdaa2f917f76654c15a1948934817
-github_runner_image: >-
-  {{ github_runner_image_tag }}@{{ github_runner_image_digest }}
+arc_chart_version: 0.14.2
+arc_controller_chart: >-
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+arc_runner_chart: >-
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+arc_controller_namespace: arc-systems
+arc_runner_namespace: arc-runners
+arc_controller_release: arc
+arc_runner_release: tack
+arc_controller_service_account: arc-controller
 github_runner_repo_url: https://github.com/agoodkind/tack
-github_runner_registration_url: >-
-  https://api.github.com/repos/agoodkind/tack/actions/runners/registration-token
-github_runner_labels: tack
-github_runner_names:
-  - tack-runner-1
-  - tack-runner-2
-  - tack-runner-3
+arc_github_secret_name: tack-gh-runner
+arc_runner_min: 0
+arc_runner_max: 2
+arc_helm_timeout: 10m
+arc_controller_image_repository: >-
+  ghcr.io/actions/gha-runner-scale-set-controller
+arc_controller_image_tag: 0.14.2
+arc_controller_image_digest: >-
+  sha256:32f89ba454a42398f0b46f7271e2885d8ec976f155a3a3b1c50329f8d38f8e6f
+arc_runner_image_repository: ghcr.io/actions/actions-runner
+arc_runner_image_tag: 2.336.0
+arc_runner_image_digest: >-
+  sha256:a1919047b038c38871d667c58cfdc7a878452711ab1212fb6036188f27a7ab16

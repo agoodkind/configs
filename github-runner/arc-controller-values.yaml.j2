@@ -1,0 +1,7 @@
+image:
+  repository: {{ arc_controller_image_repository }}
+  tag: "{{ arc_controller_image_tag }}@{{ arc_controller_image_digest }}"
+
+serviceAccount:
+  create: true
+  name: {{ arc_controller_service_account }}
