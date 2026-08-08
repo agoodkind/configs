@@ -188,12 +188,25 @@ func (r *Ops) VMDelSnapshot(
 	return r.inner.VMDelSnapshot(ctx, vmid, snapName)
 }
 
+// VMFSFreezeStatus passes the freeze-state query through to the wrapped ops;
+// no red-team preset injects freeze faults.
 func (r *Ops) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
-	return r.inner.VMFSFreezeStatus(ctx, vmid)
+	status, err := r.inner.VMFSFreezeStatus(ctx, vmid)
+	if err != nil {
+		r.log.WarnContext(ctx, "fsfreeze-status query failed", "vmid", vmid, "err", err)
+		return "", fmt.Errorf("fsfreeze-status: %w", err)
+	}
+	return status, nil
 }
 
+// VMFSFreezeThaw passes the thaw through to the wrapped ops; no red-team
+// preset injects freeze faults.
 func (r *Ops) VMFSFreezeThaw(ctx context.Context, vmid string) error {
-	return r.inner.VMFSFreezeThaw(ctx, vmid)
+	if err := r.inner.VMFSFreezeThaw(ctx, vmid); err != nil {
+		r.log.WarnContext(ctx, "fsfreeze-thaw failed", "vmid", vmid, "err", err)
+		return fmt.Errorf("fsfreeze-thaw: %w", err)
+	}
+	return nil
 }
 
 func (r *Ops) GuestExec(

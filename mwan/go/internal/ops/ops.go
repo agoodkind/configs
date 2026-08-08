@@ -918,12 +918,3 @@ func (d *DryRunOps) WithdrawRoutes(ctx context.Context, vmid string) error {
 	d.log.InfoContext(ctx, "[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
 	return nil
 }
-
-func (d *DryRunOps) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
-	return d.inner.VMFSFreezeStatus(ctx, vmid)
-}
-
-func (d *DryRunOps) VMFSFreezeThaw(ctx context.Context, vmid string) error {
-	d.log.InfoContext(ctx, "[DRY-RUN] would thaw guest filesystems", "vmid", vmid)
-	return nil
-}

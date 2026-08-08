@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -91,7 +92,12 @@ func (d *dryRunOps) WithdrawRoutes(ctx context.Context, vmid string) error {
 }
 
 func (d *dryRunOps) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
-	return d.inner.VMFSFreezeStatus(ctx, vmid)
+	status, err := d.inner.VMFSFreezeStatus(ctx, vmid)
+	if err != nil {
+		d.log.WarnContext(ctx, "fsfreeze-status query failed", "vmid", vmid, "err", err)
+		return "", fmt.Errorf("fsfreeze-status: %w", err)
+	}
+	return status, nil
 }
 
 func (d *dryRunOps) VMFSFreezeThaw(ctx context.Context, vmid string) error {
