@@ -2,71 +2,125 @@
 set -euo pipefail
 
 usage() {
-  cat <<'USAGE'
+    cat <<'USAGE'
 deploy-authorized-keys
 
-Generate an authorized_keys bundle (newline-separated).
-
-Bundle sources:
-- All local ~/.ssh/id_*.pub files
-- SSH agent keys (ssh-add -L)
-- GitHub keys for an explicit username
-- Optional extra public key file
+Fetch GitHub SSH keys and write an authorized_keys bundle.
 
 Usage:
-  deploy-authorized-keys --github-user <user> [--out <path>] \
-    [--extra-pubkey <path>]
+  deploy-authorized-keys --github-user <user> --out <human-bundle> \
+    [--extra-pubkey <path> --extra-out <combined-bundle>]
 
-Examples:
-  deploy-authorized-keys --github-user agoodkind --out /tmp/authorized_keys.bundle
-  deploy-authorized-keys --github-user agoodkind --extra-pubkey /tmp/sshpiper_upstream.pub
+The human bundle contains GitHub keys only. The combined bundle adds the
+optional public key.
 USAGE
 }
 
 die() {
-  echo "deploy-authorized-keys: $*" >&2
-  exit 1
+    printf '%s\n' "deploy-authorized-keys: $*" >&2
+    exit 1
+}
+
+cleanup() {
+    if [[ -n "$HUMAN_TMP" ]]; then
+        rm -f -- "$HUMAN_TMP"
+    fi
+    if [[ -n "$COMBINED_TMP" ]]; then
+        rm -f -- "$COMBINED_TMP"
+    fi
 }
 
 OUT_PATH=""
 GITHUB_USER=""
 EXTRA_PUBKEY=""
+EXTRA_OUT=""
+HUMAN_TMP=""
+COMBINED_TMP=""
 
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --out) OUT_PATH="${2:-}"; shift 2;;
-    --github-user) GITHUB_USER="${2:-}"; shift 2;;
-    --extra-pubkey) EXTRA_PUBKEY="${2:-}"; shift 2;;
-    -h|--help) usage; exit 0;;
-    *) die "unknown arg: $1";;
-  esac
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --out)
+        if [[ $# -lt 2 || -z "$2" ]]; then
+            die "--out requires a value"
+        fi
+        OUT_PATH="$2"
+        shift 2
+        ;;
+    --github-user)
+        if [[ $# -lt 2 || -z "$2" ]]; then
+            die "--github-user requires a value"
+        fi
+        GITHUB_USER="$2"
+        shift 2
+        ;;
+    --extra-pubkey)
+        if [[ $# -lt 2 || -z "$2" ]]; then
+            die "--extra-pubkey requires a value"
+        fi
+        EXTRA_PUBKEY="$2"
+        shift 2
+        ;;
+    --extra-out)
+        if [[ $# -lt 2 || -z "$2" ]]; then
+            die "--extra-out requires a value"
+        fi
+        EXTRA_OUT="$2"
+        shift 2
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        die "unknown arg: $1"
+        ;;
+    esac
 done
 
-[ -n "$GITHUB_USER" ] || die "--github-user is required"
+if [[ -z "$GITHUB_USER" ]]; then
+    die "--github-user is required"
+fi
+if [[ -z "$OUT_PATH" ]]; then
+    die "--out is required"
+fi
+if [[ -n "$EXTRA_PUBKEY" && -z "$EXTRA_OUT" ]]; then
+    die "--extra-out is required with --extra-pubkey"
+fi
+if [[ -z "$EXTRA_PUBKEY" && -n "$EXTRA_OUT" ]]; then
+    die "--extra-pubkey is required with --extra-out"
+fi
+if [[ -n "$EXTRA_PUBKEY" && ! -f "$EXTRA_PUBKEY" ]]; then
+    die "extra pubkey not found: $EXTRA_PUBKEY"
+fi
+if [[ -n "$EXTRA_OUT" && "$OUT_PATH" == "$EXTRA_OUT" ]]; then
+    die "--out and --extra-out must differ"
+fi
 
-tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
+trap cleanup EXIT
 
-bundle_tmp="$tmpdir/authorized_keys"
+HUMAN_TMP="$(mktemp "${OUT_PATH}.tmp.XXXXXX")"
+if ! curl -fsSL "https://github.com/${GITHUB_USER}.keys" |
+    tr -d '\r' |
+    awk 'NF { print }' |
+    sort -u >"$HUMAN_TMP"; then
+    die "GitHub SSH key fetch failed for $GITHUB_USER"
+fi
+if [[ ! -s "$HUMAN_TMP" ]]; then
+    die "GitHub returned no SSH keys for $GITHUB_USER"
+fi
 
-{
-  for f in "$HOME"/.ssh/id_*.pub; do
-    [ -f "$f" ] || continue
-    awk 'NF {print}' "$f"
-  done
+if [[ -n "$EXTRA_PUBKEY" ]]; then
+    COMBINED_TMP="$(mktemp "${EXTRA_OUT}.tmp.XXXXXX")"
+    {
+        awk 'NF { print }' "$HUMAN_TMP"
+        tr -d '\r' <"$EXTRA_PUBKEY"
+    } | awk 'NF { print }' | sort -u >"$COMBINED_TMP"
+fi
 
-  ssh-add -L 2>/dev/null || true
+mv -- "$HUMAN_TMP" "$OUT_PATH"
+HUMAN_TMP=""
 
-  curl -fsSL "https://github.com/${GITHUB_USER}.keys" | awk 'NF {print}'
-
-  if [ -n "$EXTRA_PUBKEY" ]; then
-    [ -f "$EXTRA_PUBKEY" ] || die "extra pubkey not found: $EXTRA_PUBKEY"
-    awk 'NF {print}' "$EXTRA_PUBKEY"
-  fi
-} | tr -d '\r' | awk 'NF {print}' | sort -u >"$bundle_tmp"
-
-if [ -n "$OUT_PATH" ]; then
-  cp "$bundle_tmp" "$OUT_PATH"
-else
-  cat "$bundle_tmp"
+if [[ -n "$COMBINED_TMP" ]]; then
+    mv -- "$COMBINED_TMP" "$EXTRA_OUT"
+    COMBINED_TMP=""
 fi
