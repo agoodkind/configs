@@ -19,16 +19,6 @@ mwan_proxmox_delegate: suburban
 # prep-guests sets the guest hostname to the first label.
 service_hostname: "{{ service_mapping.mwan_suburban.hostname }}"
 
-# VM 213 management is on the vmbrtrunk 210:: services LAN, off-segment from the
-# controller (which reaches the testbed over a WARP tunnel). Like prod mwan,
-# whose mgmt is reached on-link via the OPNsense-routed LAN, VM 213 has no mgmt
-# policy route and its main default route is a WAN, so off-segment replies do not
-# return. Reach it on-link through the suburban hypervisor, which sits on the
-# same 210:: segment (210::5 on vmbrtrunk), mirroring the opnsense_suburban pattern.
-ansible_ssh_common_args: >-
-  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-  -o ProxyJump=root@[3d06:bad:b01:200::1]
-
 mwan_dns_domain: "home.goodkind.io"
 # VM 213 management is on the vmbrtrunk 210:: services LAN, so it resolves
 # against the testbed OPNsense Unbound on that segment (VMNET iface 210::1),
@@ -136,11 +126,6 @@ mwan_mwanbr_edge_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
 
 # OPNsense addresses (testbed OPNsense).
-mwan_opnsense_ansible_host: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
-mwan_opnsense_ansible_ssh_common_args: >-
-  -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-  -o ProxyJump=root@[3d06:bad:b01:200::1]
-mwan_opnsense_ansible_user: root
 mwan_opnsense_edge_ipv6: "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
 # OPNsense API URL target for the agent (config-vm.toml.j2). Prod uses the
 # OPNsense address on the mwan-mgmt segment; the testbed analog is the router's

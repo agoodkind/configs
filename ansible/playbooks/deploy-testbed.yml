@@ -47,7 +47,17 @@
         src: "{{ repo_root }}/testbed/suburban-sysctl.conf"
         dest: /etc/sysctl.d/99-mwan-testbed.conf
         mode: "0644"
-      notify: Reload sysctl
+
+    - name: Apply testbed sysctl values
+      # Asserted on every run rather than through a change-notified handler:
+      # a run that writes the file and dies before its handler leaves the
+      # values on disk but not live, and the retry sees no file change and
+      # never fires the handler. `sysctl -p` is idempotent, so this costs
+      # nothing when the values already match (same reasoning as the transit
+      # routes assert below).
+      ansible.builtin.command:
+        cmd: sysctl -p /etc/sysctl.d/99-mwan-testbed.conf
+      changed_when: false
 
     - name: Remove legacy suburban IPv6 forward snippet
       ansible.builtin.file:
@@ -77,6 +87,20 @@
         src: "{{ repo_root }}/testbed/suburban-interfaces.d-transit-routes.conf.j2"
         dest: /etc/network/interfaces.d/testbed-transit-routes.conf
         mode: "0644"
+
+    - name: Pin the vmbrtrunk bridge MAC
+      # The sourced file's hwaddress only applies at ifup, and reloading
+      # networking on the hypervisor would bounce every guest bridge. This
+      # asserts the pinned MAC on every run for the same reason the transit
+      # routes are asserted below. Setting the address is idempotent when it
+      # already matches, and an explicitly set MAC stops the kernel from
+      # re-deriving the bridge MAC from whichever port is numerically lowest
+      # after guest churn (MWAN-286). The one-time change from an unpinned MAC
+      # invalidates guest neighbour caches once; guests re-resolve via NDP.
+      ansible.builtin.command:
+        cmd: >-
+          ip link set dev vmbrtrunk address {{ suburban_vmbrtrunk_hwaddress }}
+      changed_when: false
 
     - name: Install transit routes
       # The sourced file only installs these at ifup, and reloading networking
@@ -205,10 +229,6 @@
       tags: ["isp-lxcs"]
 
   handlers:
-    - name: Reload sysctl
-      ansible.builtin.command: sysctl --system
-      changed_when: false
-
     - name: Restart mwan-ifmgr
       ansible.builtin.systemd:
         name: mwan-ifmgr
