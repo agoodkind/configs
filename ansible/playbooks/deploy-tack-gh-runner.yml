@@ -189,6 +189,15 @@
         mode: "0600"
       when: not ansible_check_mode or arc_values_directory.stat.exists
 
+    - name: Render Tack Docker runner values
+      ansible.builtin.template:
+        src: "{{ repo_root }}/github-runner/arc-tack-docker-values.yaml.j2"
+        dest: "{{ arc_values_dir }}/tack-docker-values.yaml"
+        owner: root
+        group: root
+        mode: "0600"
+      when: not ansible_check_mode
+
     - name: Validate ARC controller release
       ansible.builtin.command:
         argv:
@@ -218,6 +227,22 @@
           - "{{ arc_runner_namespace }}"
           - --values
           - "{{ arc_values_dir }}/tack-values.yaml"
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Validate Tack Docker runner release
+      ansible.builtin.command:
+        argv:
+          - helm
+          - template
+          - "{{ arc_docker_runner_release }}"
+          - "{{ arc_runner_chart }}"
+          - --version
+          - "{{ arc_chart_version }}"
+          - --namespace
+          - "{{ arc_runner_namespace }}"
+          - --values
+          - "{{ arc_values_dir }}/tack-docker-values.yaml"
       changed_when: false
       when: not ansible_check_mode
 
@@ -369,6 +394,83 @@
           - pod
           - >-
             --selector=actions.github.com/scale-set-name={{ arc_runner_release -}},
+            app.kubernetes.io/component=runner-scale-set-listener
+          - "--timeout={{ arc_helm_timeout }}"
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Install Tack Docker runner scale set
+      ansible.builtin.command:
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - "{{ arc_docker_runner_release }}"
+          - "{{ arc_runner_chart }}"
+          - --version
+          - "{{ arc_chart_version }}"
+          - --namespace
+          - "{{ arc_runner_namespace }}"
+          - --values
+          - "{{ arc_values_dir }}/tack-docker-values.yaml"
+          - --kubeconfig
+          - "{{ k3s_kubeconfig_path }}"
+          - --atomic
+          - --wait
+          - --timeout
+          - "{{ arc_helm_timeout }}"
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Verify Tack Docker autoscaling runner set readiness
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - wait
+          - --namespace
+          - "{{ arc_runner_namespace }}"
+          - "--for=jsonpath={.status.phase}=Running"
+          - autoscalingrunnerset.actions.github.com
+          - "{{ arc_docker_runner_release }}"
+          - "--timeout={{ arc_helm_timeout }}"
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Wait for Tack Docker listener pod creation
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - pod
+          - --namespace
+          - "{{ arc_controller_namespace }}"
+          - >-
+            --selector=actions.github.com/scale-set-name={{
+            arc_docker_runner_release -}},
+            app.kubernetes.io/component=runner-scale-set-listener
+          - --output=name
+      register: arc_docker_listener_pods
+      changed_when: false
+      retries: 60
+      delay: 5
+      until: arc_docker_listener_pods.stdout != ""
+      when: not ansible_check_mode
+
+    - name: Verify Tack Docker listener readiness
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - wait
+          - --namespace
+          - "{{ arc_controller_namespace }}"
+          - --for=condition=Ready
+          - pod
+          - >-
+            --selector=actions.github.com/scale-set-name={{
+            arc_docker_runner_release -}},
             app.kubernetes.io/component=runner-scale-set-listener
           - "--timeout={{ arc_helm_timeout }}"
       changed_when: false

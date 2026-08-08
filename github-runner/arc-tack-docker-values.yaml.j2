@@ -1,0 +1,84 @@
+githubConfigUrl: {{ github_runner_repo_url }}
+githubConfigSecret: {{ arc_github_secret_name }}
+
+minRunners: {{ arc_docker_runner_min }}
+maxRunners: {{ arc_docker_runner_max }}
+
+controllerServiceAccount:
+  namespace: {{ arc_controller_namespace }}
+  name: {{ arc_controller_service_account }}
+
+template:
+  spec:
+    initContainers:
+      - name: init-dind-externals
+        image: >-
+          {{ arc_runner_image_repository }}:{{ arc_runner_image_tag -}}
+          @{{ arc_runner_image_digest }}
+        command:
+          - cp
+          - -r
+          - /home/runner/externals/.
+          - /home/runner/tmpDir/
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      - name: dind
+        image: >-
+          {{ arc_docker_image_repository }}:{{ arc_docker_image_tag -}}
+          @{{ arc_docker_image_digest }}
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=$(DOCKER_GROUP_GID)
+          - --ipv6
+          - --default-network-opt=bridge=com.docker.network.enable_ipv6=true
+        env:
+          - name: DOCKER_GROUP_GID
+            value: "123"
+        securityContext:
+          privileged: true
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+              - docker
+              - info
+          initialDelaySeconds: 0
+          failureThreshold: 24
+          periodSeconds: 5
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-data
+            mountPath: /var/lib/docker
+          - name: dind-externals
+            mountPath: /home/runner/externals
+    containers:
+      - name: runner
+        image: >-
+          {{ arc_runner_image_repository }}:{{ arc_runner_image_tag -}}
+          @{{ arc_runner_image_digest }}
+        command:
+          - /home/runner/run.sh
+        env:
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+    volumes:
+      - name: work
+        emptyDir: {}
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-data
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir: {}
