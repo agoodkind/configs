@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,7 +41,29 @@ const (
 	gateModeCheckEgress deployGateMode = "check-egress"
 	gateModeWaitReboot  deployGateMode = "wait-reboot"
 	gateModeWaitEgress  deployGateMode = "wait-egress"
+	gateModeWaitDeploy  deployGateMode = "wait-deploy"
 )
+
+// traceIDPattern bounds the trace id because it lands in the verdict file
+// and in a systemd unit name; anything outside this shape is operator error.
+var traceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// egressNotRun marks the egress slot of a verdict whose reboot verdict was
+// definitive failure, where the egress gate deliberately does not run.
+const egressNotRun = -1
+
+// gateVerdict is the JSON contract between wait-deploy on the hypervisor
+// and the deploy play's collector on the controller. TraceID and OldBootID
+// key the verdict to one deploy run, so a stale file from an earlier run is
+// never accepted as this run's result.
+type gateVerdict struct {
+	TraceID    string `json:"trace_id"`
+	OldBootID  string `json:"old_boot_id"`
+	RebootRC   int    `json:"reboot_rc"`
+	EgressRC   int    `json:"egress_rc"`
+	StartedAt  string `json:"started_at"`
+	FinishedAt string `json:"finished_at"`
+}
 
 // bootIDPattern matches the kernel's boot_id UUID exactly, so a truncated or
 // error-shaped guest-agent response never passes as a boot id.
@@ -138,10 +161,152 @@ func runDeployGate(args []string) int {
 			return exitDeployGateUsage
 		}
 		return waitEgress(ctx, deps, budget)
+	case gateModeWaitDeploy:
+		inputs, ok := parseWaitDeployArgs(rest)
+		if !ok {
+			return exitDeployGateUsage
+		}
+		return waitDeploy(ctx, deps, inputs)
 	default:
 		printDeployGateUsage()
 		return exitDeployGateUsage
 	}
+}
+
+// waitDeployInputs carries the wait-deploy arguments as one value, because
+// six positional parameters invite transposition bugs at the call site.
+type waitDeployInputs struct {
+	vmid         int
+	oldBootID    string
+	rebootBudget time.Duration
+	egressBudget time.Duration
+	traceID      string
+	verdictPath  string
+}
+
+func parseWaitDeployArgs(rest []string) (waitDeployInputs, bool) {
+	if len(rest) != 6 {
+		printDeployGateUsage()
+		return waitDeployInputs{}, false
+	}
+	vmid, err := parseVMID(rest[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mwan deploy-gate: %v\n", err)
+		return waitDeployInputs{}, false
+	}
+	if !bootIDPattern.MatchString(rest[1]) {
+		fmt.Fprintf(os.Stderr,
+			"mwan deploy-gate: old_boot_id %q is not a boot_id UUID\n", rest[1])
+		return waitDeployInputs{}, false
+	}
+	rebootBudget, err := parseBudgetSeconds(rest[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mwan deploy-gate: %v\n", err)
+		return waitDeployInputs{}, false
+	}
+	egressBudget, err := parseBudgetSeconds(rest[3])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mwan deploy-gate: %v\n", err)
+		return waitDeployInputs{}, false
+	}
+	if !traceIDPattern.MatchString(rest[4]) {
+		fmt.Fprintf(os.Stderr,
+			"mwan deploy-gate: trace_id %q must match %s\n",
+			rest[4], traceIDPattern.String())
+		return waitDeployInputs{}, false
+	}
+	return waitDeployInputs{
+		vmid:         vmid,
+		oldBootID:    rest[1],
+		rebootBudget: rebootBudget,
+		egressBudget: egressBudget,
+		traceID:      rest[4],
+		verdictPath:  rest[5],
+	}, true
+}
+
+// waitDeploy chains the reboot and egress verdicts and records both in one
+// atomically written verdict file. The process exit code reports only
+// whether the verdict was recorded: the verdicts themselves travel in the
+// file, so the collector on the controller reads outcomes from there and a
+// failed transient unit always means the gate itself died.
+//
+// The egress gate deliberately does not run when the reboot verdict is
+// definitive failure, because the play then fails without rollback and an
+// egress verdict would have nothing to decide; that slot records the
+// not-run marker instead.
+func waitDeploy(ctx context.Context, deps deployGateDeps, in waitDeployInputs) int {
+	log := slog.With("component", "deploy-gate", "op", "waitDeploy")
+	verdict := gateVerdict{
+		TraceID:   in.traceID,
+		OldBootID: in.oldBootID,
+		StartedAt: deps.now().UTC().Format(time.RFC3339),
+		EgressRC:  egressNotRun,
+	}
+	verdict.RebootRC = waitReboot(ctx, deps, in.vmid, in.oldBootID, in.rebootBudget)
+	if verdict.RebootRC != exitDeployGateFailed {
+		verdict.EgressRC = waitEgress(ctx, deps, in.egressBudget)
+	}
+	verdict.FinishedAt = deps.now().UTC().Format(time.RFC3339)
+	if err := writeVerdictFile(in.verdictPath, verdict); err != nil {
+		fmt.Fprintf(os.Stderr, "mwan deploy-gate: write verdict: %v\n", err)
+		return exitDeployGateFailed
+	}
+	log.InfoContext(ctx, "deploy-gate: verdict recorded",
+		"trace_id", verdict.TraceID,
+		"reboot_rc", verdict.RebootRC,
+		"egress_rc", verdict.EgressRC,
+		"path", in.verdictPath)
+	fmt.Fprintf(deps.out, "verdict recorded: reboot_rc=%d egress_rc=%d path=%s\n",
+		verdict.RebootRC, verdict.EgressRC, in.verdictPath)
+	return exitDeployGateOK
+}
+
+// writeVerdictFile writes the verdict via a temp file in the target
+// directory plus rename, so the collector never reads a partial file: it
+// sees either no verdict or a complete one.
+func writeVerdictFile(path string, verdict gateVerdict) error {
+	log := slog.With("component", "deploy-gate", "op", "writeVerdictFile", "path", path)
+	payload, err := json.Marshal(verdict)
+	if err != nil {
+		log.Warn("deploy-gate: marshal verdict failed", "err", err)
+		return fmt.Errorf("marshal verdict: %w", err)
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Warn("deploy-gate: create verdict dir failed", "err", err)
+		return fmt.Errorf("create verdict dir %s: %w", dir, err)
+	}
+	tmp, err := os.CreateTemp(dir, ".verdict-*")
+	if err != nil {
+		log.Warn("deploy-gate: create verdict temp file failed", "err", err)
+		return fmt.Errorf("create verdict temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(payload); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		log.Warn("deploy-gate: write verdict temp file failed", "err", err)
+		return fmt.Errorf("write verdict temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		log.Warn("deploy-gate: close verdict temp file failed", "err", err)
+		return fmt.Errorf("close verdict temp file: %w", err)
+	}
+	// The collector reads over SSH as a non-root probe in some paths, so the
+	// verdict is world-readable; it carries no secrets.
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		_ = os.Remove(tmpName)
+		log.Warn("deploy-gate: chmod verdict temp file failed", "err", err)
+		return fmt.Errorf("chmod verdict temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		log.Warn("deploy-gate: rename verdict into place failed", "err", err)
+		return fmt.Errorf("rename verdict into place: %w", err)
+	}
+	return nil
 }
 
 // parseVMID accepts only a plain positive integer, which both rules out
@@ -159,7 +324,9 @@ func printDeployGateUsage() {
 	fmt.Fprintln(os.Stderr,
 		"usage: mwan deploy-gate check-egress"+
 			" | wait-reboot <vmid> <old_boot_id> <seconds>"+
-			" | wait-egress <seconds>")
+			" | wait-egress <seconds>"+
+			" | wait-deploy <vmid> <old_boot_id> <reboot_seconds>"+
+			" <egress_seconds> <trace_id> <verdict_path>")
 }
 
 func parseBudgetSeconds(raw string) (time.Duration, error) {
