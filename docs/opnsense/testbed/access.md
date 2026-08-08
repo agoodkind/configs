@@ -37,6 +37,5 @@ recovery limits.
 
 ## Escalate when the channel is unavailable
 
-Use the serial-console path in the
-[infrastructure access guide](../../infra/access.md). Repair the guest endpoint
-with the [OPNsense installation guide](../install.md).
+Use the serial-console path in the same access guide. Repair the guest
+endpoint with the [OPNsense installation guide](../install.md).

@@ -1,11 +1,7 @@
 # MWAN and OPNsense script style
 
-Working rules for shell scripts and Ansible templates under
-[mwan/scripts/](../../mwan/scripts/),
-[ansible/playbooks/](../../ansible/playbooks/), and the OPNsense daemon
-deployment. Live host topology lives in [docs/mwan/layout.md](layout.md)
-and [docs/opnsense/overview.md](../opnsense/overview.md). Go code rules live in
-[docs/mwan/go.md](go.md).
+Working rules for MWAN and OPNsense shell scripts and the Ansible templates
+that deploy them.
 
 Prefer non-disruptive actions on the MWAN VM. Avoid
 `systemctl restart systemd-networkd` unless necessary.
@@ -104,5 +100,4 @@ programming (for example NPT) must be re-applied via:
 - When updating existing docs, avoid giant pasted code blocks; prefer short
   excerpts and direct pointers to files.
 - When you encounter and fix issues, document them in
-  [docs/opnsense/operations.md](../opnsense/operations.md) using
-  the established format.
+  [operations.md](../opnsense/operations.md) using the established format.
