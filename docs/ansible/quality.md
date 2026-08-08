@@ -1,8 +1,6 @@
 # Ansible quality checks
 
 Style and safety rules for Ansible playbooks, roles, and templates in this repo.
-See [docs/ansible/overview.md](overview.md) for inventory layout and
-[docs/ansible/secrets.md](secrets.md) for the vault contract.
 
 ## Debugging: fix root causes, not symptoms
 
@@ -49,7 +47,7 @@ type: "{{ proxmox_vmtype | default('lxc') }}"
   when: enable_ipv6 | bool
 
 # Good - fix at the source
-# If proxmox_vmtype is missing, add it to the proxmox.yml compose block:
+# If proxmox_vmtype is missing, add it to the inventory compose block:
 #   compose:
 #     proxmox_vmtype: proxmox_type
 ```
@@ -92,8 +90,8 @@ author's call to defend, not the check's to allow.
 The linter parses each Jinja expression with a Go engine and resolves the operand
 each default or presence construct reads. A few Ansible-Jinja forms the Go engine
 cannot parse, such as a parenthesized conditional piped into a filter, are routed
-to a jinja2 reference parser ([scripts/lint_ansible_ast.py](../../scripts/lint_ansible_ast.py)),
-whose resolved violations are enforced the same as any other. The router runs as a
+to a jinja2 reference parser, whose resolved violations are enforced the same as
+any other. The router runs as a
 `python3` subprocess, so `configs lint` requires `python3` with the `jinja2`
 package on PATH. A form neither parser can read is listed for review.
 
@@ -257,9 +255,8 @@ Use one identifier per reservation. Prefer `hw-address` when the MAC is pinned.
 ## Secrets
 
 Vault-first. Do not rely on local files on the controller. Store secrets in
-[ansible/inventory/group_vars/all/vault.yml](../../ansible/inventory/group_vars/all/vault.yml)
-and inject with `content: "{{ vault_var }}"` in `copy` tasks rather than `src:`.
-Full contract in [docs/ansible/secrets.md](secrets.md).
+the vault and inject with `content: "{{ vault_var }}"` in `copy` tasks rather
+than `src:`. The contract is in [secrets.md](secrets.md).
 
 ## Dynamic list parsing
 

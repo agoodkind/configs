@@ -1,7 +1,9 @@
 # OPNsense Testbed Config Import
 
-This runbook is current guidance for importing a production-shaped OPNsense
-`config.xml` into the suburban testbed OPNsense guest, `router.suburban.goodkind.io`.
+This runbook is current guidance for importing a production-shaped router
+config into the suburban testbed OPNsense guest,
+`router.suburban.goodkind.io`. The import mechanics and rollback constraints
+are in [the import mechanics page](../import.md).
 
 ## Core Rules
 
@@ -17,7 +19,7 @@ again.
 Use the serial console while reloads or reboots are in progress. If SSH drops,
 continue observing through the console path.
 
-`revertBackup` swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and write the resulting key and secret into [ansible/inventory/group_vars/all/vault.yml](../../../ansible/inventory/group_vars/all/vault.yml).
+An import swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and store the resulting key and secret in the vault with `configs set-secrets`.
 
 ## Every Change Gate
 
@@ -35,7 +37,7 @@ Run this gate for every config change, including small XML edits.
 ### 2. Baseline Capture
 
 - Capture Proxmox VM state and QEMU config.
-- Capture OPNsense `/conf/config.xml` hash and byte size.
+- Capture the router config's hash and byte size.
 - Verify QEMU Guest Agent ping and guest hostname.
 - Verify the serial console path is reachable.
 - Verify SSH reachability only as a convenience signal, not as recovery proof.
@@ -43,7 +45,7 @@ Run this gate for every config change, including small XML edits.
 ### 3. Backup Before Mutation
 
 - Take a Proxmox snapshot without `--vmstate 1`.
-- Back up the raw `/conf/config.xml`.
+- Back up the raw router config file.
 - Record the pre-change config hash.
 - Write down the rollback command before applying anything.
 
