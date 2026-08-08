@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"sync"
 	"testing"
+	"time"
 
 	apipb "github.com/osrg/gobgp/v4/api"
 	"github.com/osrg/gobgp/v4/pkg/apiutil"
@@ -25,6 +26,7 @@ type fakeBGPServer struct {
 	listPathReqs    []apiutil.ListPathRequest
 	adjRIBIn        map[string][]listPathResponse
 	watchRegistered bool
+	watchCallbacks  server.WatchEventMessageCallbacks
 }
 
 type listPathResponse struct {
@@ -67,10 +69,11 @@ func (f *fakeBGPServer) AddPeer(_ context.Context, r *apipb.AddPeerRequest) erro
 	return nil
 }
 
-func (f *fakeBGPServer) WatchEvent(_ context.Context, _ server.WatchEventMessageCallbacks, _ ...server.WatchOption) error {
+func (f *fakeBGPServer) WatchEvent(_ context.Context, callbacks server.WatchEventMessageCallbacks, _ ...server.WatchOption) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.watchRegistered = true
+	f.watchCallbacks = callbacks
 	return nil
 }
 
@@ -96,6 +99,24 @@ func (f *fakeBGPServer) setAdjRIBIn(peer string, responses []listPathResponse) {
 	f.adjRIBIn[peer] = responses
 }
 
+func (f *fakeBGPServer) emitBestPaths(paths []*apiutil.Path) {
+	f.mu.Lock()
+	callback := f.watchCallbacks.OnBestPath
+	f.mu.Unlock()
+	if callback != nil {
+		callback(paths, time.Time{})
+	}
+}
+
+func (f *fakeBGPServer) emitPeerUpdate(event *apiutil.WatchEventMessage_PeerEvent) {
+	f.mu.Lock()
+	callback := f.watchCallbacks.OnPeerUpdate
+	f.mu.Unlock()
+	if callback != nil {
+		callback(event, time.Time{})
+	}
+}
+
 func (f *fakeBGPServer) AddPath(_ apiutil.AddPathRequest) ([]apiutil.AddPathResponse, error) {
 	return nil, nil
 }
@@ -118,10 +139,14 @@ func newSpeakerWithFake(cfg Config, fake *fakeBGPServer) *Speaker {
 		cfg:        cfg,
 		log:        discardLogger(),
 		server:     nil,
+		fib:        nil,
 		newServer:  func(_ *slog.Logger) bgpServerAPI { return fake },
 		mu:         sync.Mutex{},
 		announcing: false,
 		started:    false,
+		watchMu:    sync.Mutex{},
+		seenPeers:  make(map[string]bool),
+		upPeers:    make(map[string]bool),
 	}
 }
 
@@ -181,6 +206,40 @@ func TestStartAddsPeersPerRouterBothFamilies(t *testing.T) {
 	}
 	if got := s.routerForPeer(nextPeerAddress(t, cfg.Routers[1].AddressV4)); got != nil {
 		t.Fatalf("routerForPeer returned %p for an unknown peer", got)
+	}
+}
+
+func watchPath(t *testing.T, peer string, prefix netip.Prefix, withdrawn bool) *apiutil.Path {
+	t.Helper()
+	nlri, err := bgppkt.NewIPAddrPrefix(prefix)
+	if err != nil {
+		t.Fatalf("create NLRI: %v", err)
+	}
+	nextHop := netip.MustParseAddr(peer)
+	attribute, err := bgppkt.NewPathAttributeMpReachNLRI(
+		bgppkt.RF_IPv6_UC,
+		[]bgppkt.PathNLRI{{NLRI: nlri}},
+		nextHop,
+	)
+	if err != nil {
+		t.Fatalf("create MP_REACH_NLRI: %v", err)
+	}
+	return &apiutil.Path{
+		Family:      bgppkt.RF_IPv6_UC,
+		Nlri:        nlri,
+		Attrs:       []bgppkt.PathAttributeInterface{attribute},
+		Withdrawal:  withdrawn,
+		PeerAddress: nextHop,
+	}
+}
+
+func peerStateEvent(peer string, state bgppkt.FSMState) *apiutil.WatchEventMessage_PeerEvent {
+	return &apiutil.WatchEventMessage_PeerEvent{
+		Type: apiutil.PEER_EVENT_STATE,
+		Peer: apiutil.Peer{State: apiutil.PeerState{
+			NeighborAddress: netip.MustParseAddr(peer),
+			SessionState:    state,
+		}},
 	}
 }
 

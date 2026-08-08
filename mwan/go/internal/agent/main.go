@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/mdlayher/vsock"
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
-	"goodkind.io/mwan/internal/bgp"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/logging"
 	"goodkind.io/mwan/internal/notify"
@@ -75,59 +73,19 @@ func Run(cfg *config.Config) error {
 		"tcp_addr", *tcpAddr,
 	)
 
-	var bgpSpeaker *bgp.Speaker
-	if cfg.BGP.Enabled {
-		bgpCfg := bgp.Config{
-			Enabled:          true,
-			ASN:              cfg.BGP.ASN,
-			RouterID:         cfg.BGP.RouterID,
-			NextHopV6:        cfg.BGP.NextHopV6,
-			KeepaliveSeconds: cfg.BGP.KeepaliveSeconds,
-			HoldSeconds:      cfg.BGP.HoldSeconds,
-			ListenPort:       cfg.BGP.ListenPort,
-			Announce: bgp.AnnounceConfig{
-				IPv4: cfg.BGP.Announce.IPv4,
-				IPv6: cfg.BGP.Announce.IPv6,
-			},
-			GracefulRestart: bgp.GracefulRestartConfig{
-				Enabled:             cfg.BGP.GracefulRestart.Enabled,
-				RestartTime:         cfg.BGP.GracefulRestart.RestartTime,
-				NotificationEnabled: cfg.BGP.GracefulRestart.NotificationEnabled,
-			},
-		}
-		for _, n := range cfg.BGP.Neighbors {
-			bgpCfg.Neighbors = append(bgpCfg.Neighbors, bgp.NeighborConfig{Address: n.Address})
-		}
-		for _, n := range cfg.BGP.NeighborsV6 {
-			bgpCfg.NeighborsV6 = append(bgpCfg.NeighborsV6, bgp.NeighborConfig{Address: n.Address})
-		}
-		for _, configuredRouter := range cfg.BGP.Routers {
-			router := bgp.Router{
-				Name:          configuredRouter.Name,
-				AddressV4:     configuredRouter.AddressV4,
-				AddressV6:     configuredRouter.AddressV6,
-				AllocationsV6: make([]netip.Prefix, 0, len(configuredRouter.AllocationsV6)),
-			}
-			for _, allocationText := range configuredRouter.AllocationsV6 {
-				allocation, err := netip.ParsePrefix(allocationText)
-				if err != nil {
-					return fmt.Errorf(
-						"parse BGP router %q allocation %q: %w",
-						configuredRouter.Name,
-						allocationText,
-						err,
-					)
-				}
-				router.AllocationsV6 = append(router.AllocationsV6, allocation)
-			}
-			bgpCfg.Routers = append(bgpCfg.Routers, router)
-		}
-		bgpSpeaker = bgp.New(bgpCfg, logger)
+	bgpSpeaker, err := newBGPSpeaker(cfg, logger)
+	if err != nil {
+		return err
+	}
+	var stopBGPAudit func()
+	if bgpSpeaker != nil {
+		configurePlatformBGP(cfg, bgpSpeaker, logger)
 		if err := bgpSpeaker.Start(context.Background()); err != nil {
 			logger.Error("bgp speaker start failed", "error", err)
 			return fmt.Errorf("bgp speaker start: %w", err)
 		}
 		logger.Info("bgp speaker started", "asn", cfg.BGP.ASN, "router_id", cfg.BGP.RouterID)
+		stopBGPAudit = startPlatformBGPAudit(cfg, bgpSpeaker, notifier, logger)
 	}
 
 	var vsockLis net.Listener
@@ -213,6 +171,9 @@ func Run(cfg *config.Config) error {
 		}
 	case sig := <-sigCh:
 		logger.Info("shutdown signal", "signal", sig.String())
+		if stopBGPAudit != nil {
+			stopBGPAudit()
+		}
 		if bgpSpeaker != nil {
 			// When BGP Graceful Restart is enabled, skip the pre-emptive
 			// route withdrawal: an explicit WITHDRAW defeats GR semantics
