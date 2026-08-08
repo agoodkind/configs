@@ -15,6 +15,9 @@ mwan_environment: "testbed"
 mwan_vmid: "{{ service_mapping.mwan_suburban.vmid }}"
 mwan_proxmox_node: hypervisor
 mwan_proxmox_delegate: suburban
+# The deploy's verdict collector tries the testbed's single hypervisor path.
+mwan_gate_collect_addresses:
+  - "{{ service_mapping.suburban_hypervisor.ipv6 }}"
 
 # prep-guests sets the guest hostname to the first label.
 service_hostname: "{{ service_mapping.mwan_suburban.hostname }}"
