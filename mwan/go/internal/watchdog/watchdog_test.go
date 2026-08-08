@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -117,16 +118,53 @@ type mockOps struct {
 	// Defaults to an empty response (not established) if the key is missing.
 	bgpStatusByVMID map[string]*mwanv1.GetBGPStatusResponse
 
+	// freezeStatus seeds VMFSFreezeStatus; VMFSFreezeThaw flips it to
+	// "thawed" so a guard that thaws observes the recovery on recheck.
+	// thawErr fails the thaw call; thawKeepsFrozen makes the thaw return
+	// success while the guest still reports frozen on recheck.
+	freezeStatus    string
+	freezeStatusErr error
+	thawErr         error
+	thawKeepsFrozen bool
+
 	vmStatusCalls       int
 	vmStartCalls        int
 	vmStopCalls         int
 	vmSnapshotsCalls    int
+	freezeStatusCalls   int
+	thawCalls           int
 	pingCalls           []string
 	guestCalls          []string
 	vmRollbackCalls     []vmRollbackCall
 	announceRoutesCalls []string
 	withdrawRoutesCalls []string
 	getBGPStatusCalls   []string
+}
+
+func (m *mockOps) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.freezeStatusCalls++
+	if m.freezeStatusErr != nil {
+		return "", m.freezeStatusErr
+	}
+	if m.freezeStatus == "" {
+		return "thawed", nil
+	}
+	return m.freezeStatus, nil
+}
+
+func (m *mockOps) VMFSFreezeThaw(ctx context.Context, vmid string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.thawCalls++
+	if m.thawErr != nil {
+		return m.thawErr
+	}
+	if !m.thawKeepsFrozen {
+		m.freezeStatus = "thawed"
+	}
+	return nil
 }
 
 func (m *mockOps) VMStatus(ctx context.Context, vmid string) (bool, error) {
@@ -297,6 +335,116 @@ func newTestWatchdog(
 		coord:  &alert.Coord{},
 	}
 	return w
+}
+
+func TestEnsureGuestThawedRecoversStuckFreeze(t *testing.T) {
+	mock := &mockOps{freezeStatus: "frozen"}
+	w := newTestWatchdog(t, mock)
+
+	w.ensureGuestThawed(context.Background(), "test")
+
+	if mock.thawCalls != 1 {
+		t.Fatalf("thawCalls = %d, want 1", mock.thawCalls)
+	}
+	if mock.freezeStatus != "thawed" {
+		t.Fatalf("freezeStatus = %q, want thawed", mock.freezeStatus)
+	}
+}
+
+func TestEnsureGuestThawedNoopWhenThawed(t *testing.T) {
+	mock := &mockOps{freezeStatus: "thawed"}
+	w := newTestWatchdog(t, mock)
+
+	w.ensureGuestThawed(context.Background(), "test")
+
+	if mock.thawCalls != 0 {
+		t.Fatalf("thawCalls = %d, want 0", mock.thawCalls)
+	}
+}
+
+func TestEnsureGuestThawedToleratesUnreachableAgent(t *testing.T) {
+	mock := &mockOps{freezeStatusErr: errors.New("guest agent is not running")}
+	w := newTestWatchdog(t, mock)
+
+	w.ensureGuestThawed(context.Background(), "test")
+
+	if mock.thawCalls != 0 {
+		t.Fatalf("thawCalls = %d, want 0", mock.thawCalls)
+	}
+}
+
+func TestEnsureGuestThawedSkipsRecheckWhenThawFails(t *testing.T) {
+	mock := &mockOps{
+		freezeStatus: "frozen",
+		thawErr:      errors.New("guest agent timeout"),
+	}
+	w := newTestWatchdog(t, mock)
+
+	w.ensureGuestThawed(context.Background(), "test")
+
+	if mock.thawCalls != 1 {
+		t.Fatalf("thawCalls = %d, want 1", mock.thawCalls)
+	}
+	if mock.freezeStatusCalls != 1 {
+		t.Fatalf("freezeStatusCalls = %d, want 1: no recheck after a failed thaw", mock.freezeStatusCalls)
+	}
+	if mock.freezeStatus != "frozen" {
+		t.Fatalf("freezeStatus = %q, want frozen", mock.freezeStatus)
+	}
+}
+
+func TestEnsureGuestThawedRechecksWhenThawIsIneffective(t *testing.T) {
+	mock := &mockOps{
+		freezeStatus:    "frozen",
+		thawKeepsFrozen: true,
+	}
+	w := newTestWatchdog(t, mock)
+
+	w.ensureGuestThawed(context.Background(), "test")
+
+	if mock.thawCalls != 1 {
+		t.Fatalf("thawCalls = %d, want 1", mock.thawCalls)
+	}
+	if mock.freezeStatusCalls != 2 {
+		t.Fatalf("freezeStatusCalls = %d, want 2: the recheck must observe the surviving freeze", mock.freezeStatusCalls)
+	}
+	if mock.freezeStatus != "frozen" {
+		t.Fatalf("freezeStatus = %q, want frozen", mock.freezeStatus)
+	}
+}
+
+func TestEnsureGuestThawedRunsWithCancelledCaller(t *testing.T) {
+	mock := &mockOps{freezeStatus: "frozen"}
+	w := newTestWatchdog(t, mock)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w.ensureGuestThawed(ctx, "test")
+
+	if mock.thawCalls != 1 {
+		t.Fatalf("thawCalls = %d, want 1: the guard must survive a cancelled snapshot context", mock.thawCalls)
+	}
+	if mock.freezeStatus != "thawed" {
+		t.Fatalf("freezeStatus = %q, want thawed", mock.freezeStatus)
+	}
+}
+
+func TestMaybeSnapshotThawsAfterFailedSnapshot(t *testing.T) {
+	mock := &mockOps{
+		freezeStatus: "frozen",
+		vmSnapErr:    errors.New("snapshot task aborted"),
+	}
+	w := newTestWatchdog(t, mock, func(cfg *config.Config) {
+		cfg.Watchdog.SnapshotHealthyThreshold = 1
+	})
+	w.consecutiveHealthy = 1
+	w.lastHashCheckOK = true
+
+	w.maybeSnapshot(context.Background())
+
+	if mock.thawCalls != 1 {
+		t.Fatalf("thawCalls = %d, want 1: the guard must run on the failed-snapshot path", mock.thawCalls)
+	}
 }
 
 // fakeNotifierFrom retrieves the fake notifier wired into a test

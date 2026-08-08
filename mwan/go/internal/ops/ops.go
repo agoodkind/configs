@@ -29,6 +29,7 @@ const (
 	timeoutQmListSnapshot = 10 * time.Second
 	TimeoutQmSnapshot     = 120 * time.Second
 	timeoutQmDelSnapshot  = 120 * time.Second
+	timeoutQmAgentFreeze  = 30 * time.Second
 	timeoutHostProbe      = 20 * time.Second
 	timeoutVsockRPC       = 15 * time.Second
 	timeoutTCPRPC         = 15 * time.Second
@@ -79,6 +80,8 @@ type SysOps interface {
 	) (*mwanv1.GetBGPStatusResponse, error)
 	AnnounceRoutes(ctx context.Context, vmid string) error
 	WithdrawRoutes(ctx context.Context, vmid string) error
+	VMFSFreezeStatus(ctx context.Context, vmid string) (string, error)
+	VMFSFreezeThaw(ctx context.Context, vmid string) error
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +200,26 @@ func (r *RealOps) VMDelSnapshot(
 	_, err := runQm(
 		ctx, timeoutQmDelSnapshot, "delsnapshot", vmid, snapName,
 	)
+	return err
+}
+
+// VMFSFreezeStatus reports the guest agent's filesystem freeze state via
+// `qm agent fsfreeze-status` ("thawed" or "frozen"). Snapshots freeze the
+// guest through the agent, and a thaw that never lands leaves the guest
+// wedged with guest-exec disabled, so the watchdog checks this after every
+// snapshot and at startup.
+func (r *RealOps) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
+	out, err := runQm(ctx, timeoutQmAgentFreeze, "agent", vmid, "fsfreeze-status")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// VMFSFreezeThaw releases a stuck filesystem freeze via
+// `qm agent fsfreeze-thaw`.
+func (r *RealOps) VMFSFreezeThaw(ctx context.Context, vmid string) error {
+	_, err := runQm(ctx, timeoutQmAgentFreeze, "agent", vmid, "fsfreeze-thaw")
 	return err
 }
 

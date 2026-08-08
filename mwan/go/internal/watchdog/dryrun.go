@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
@@ -87,5 +88,19 @@ func (d *dryRunOps) AnnounceRoutes(ctx context.Context, vmid string) error {
 
 func (d *dryRunOps) WithdrawRoutes(ctx context.Context, vmid string) error {
 	d.log.InfoContext(ctx, "[DRY-RUN] would withdraw BGP routes", "vmid", vmid)
+	return nil
+}
+
+func (d *dryRunOps) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
+	status, err := d.inner.VMFSFreezeStatus(ctx, vmid)
+	if err != nil {
+		d.log.WarnContext(ctx, "fsfreeze-status query failed", "vmid", vmid, "err", err)
+		return "", fmt.Errorf("fsfreeze-status: %w", err)
+	}
+	return status, nil
+}
+
+func (d *dryRunOps) VMFSFreezeThaw(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would thaw guest filesystems", "vmid", vmid)
 	return nil
 }

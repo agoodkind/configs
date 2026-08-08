@@ -521,8 +521,7 @@ opnsense_bgp_neighbors:
 bgp_asn: 4200000001
 bgp_router_id: "10.250.250.3"
 bgp_next_hop_v6: "3d06:bad:b01:fe::3"
-bgp_keepalive_seconds: 3
-bgp_hold_seconds: 9
+# Session timers live in group_vars/all/vars.yml (MWAN-303 rationale there).
 bgp_listen_port: 179
 bgp_neighbors:
   - "10.250.250.2"
