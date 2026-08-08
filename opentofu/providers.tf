@@ -23,4 +23,9 @@ provider "proxmox" {
   endpoint  = var.suburban_proxmox_endpoint
   api_token = var.suburban_proxmox_api_token
   insecure  = true
+
+  ssh {
+    agent    = true
+    username = "root"
+  }
 }

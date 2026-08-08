@@ -16,7 +16,7 @@ k3s_node_ipv6: "{{ service_mapping.tack_gh_runner_suburban.ipv6 }}"
 k3s_cluster_ipv6_cidr: fd21:9:42::/56
 k3s_service_ipv6_cidr: fd21:9:43::/112
 k3s_cluster_dns_ipv6: fd21:9:43::a
-k3s_flannel_interface: eth0
+k3s_flannel_interface: ens18
 k3s_config_dir: /etc/rancher/k3s
 k3s_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
 arc_values_dir: /etc/arc
