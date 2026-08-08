@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"testing"
 
 	apipb "github.com/osrg/gobgp/v4/api"
 	"github.com/osrg/gobgp/v4/pkg/apiutil"
+	bgppkt "github.com/osrg/gobgp/v4/pkg/packet/bgp"
 	"github.com/osrg/gobgp/v4/pkg/server"
 )
 
@@ -20,7 +22,14 @@ type fakeBGPServer struct {
 	startReq        *apipb.StartBgpRequest
 	stopReq         *apipb.StopBgpRequest
 	addPeerReqs     []*apipb.AddPeerRequest
+	listPathReqs    []apiutil.ListPathRequest
+	adjRIBIn        map[string][]listPathResponse
 	watchRegistered bool
+}
+
+type listPathResponse struct {
+	prefix bgppkt.NLRI
+	paths  []*apiutil.Path
 }
 
 func newFakeBGPServer() *fakeBGPServer {
@@ -29,6 +38,8 @@ func newFakeBGPServer() *fakeBGPServer {
 		startReq:        nil,
 		stopReq:         nil,
 		addPeerReqs:     nil,
+		listPathReqs:    nil,
+		adjRIBIn:        make(map[string][]listPathResponse),
 		watchRegistered: false,
 	}
 }
@@ -65,6 +76,24 @@ func (f *fakeBGPServer) WatchEvent(_ context.Context, _ server.WatchEventMessage
 
 func (f *fakeBGPServer) ListPeer(_ context.Context, _ *apipb.ListPeerRequest, _ func(*apipb.Peer)) error {
 	return nil
+}
+
+func (f *fakeBGPServer) ListPath(r apiutil.ListPathRequest, fn func(bgppkt.NLRI, []*apiutil.Path)) error {
+	f.mu.Lock()
+	f.listPathReqs = append(f.listPathReqs, r)
+	responses := append([]listPathResponse(nil), f.adjRIBIn[r.Name]...)
+	f.mu.Unlock()
+
+	for _, response := range responses {
+		fn(response.prefix, response.paths)
+	}
+	return nil
+}
+
+func (f *fakeBGPServer) setAdjRIBIn(peer string, responses []listPathResponse) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.adjRIBIn[peer] = responses
 }
 
 func (f *fakeBGPServer) AddPath(_ apiutil.AddPathRequest) ([]apiutil.AddPathResponse, error) {
@@ -120,6 +149,52 @@ func baseGRConfig(grEnabled bool) Config {
 			NotificationEnabled: true,
 		},
 	}
+}
+
+func TestStartAddsPeersPerRouterBothFamilies(t *testing.T) {
+	fake := newFakeBGPServer()
+	cfg := baseGRConfig(true)
+	firstV4 := cfg.Neighbors[0].Address
+	firstV6 := cfg.NeighborsV6[0].Address
+	cfg.Neighbors = nil
+	cfg.NeighborsV6 = nil
+	cfg.Routers = []Router{
+		{AddressV4: firstV4, AddressV6: firstV6},
+		{AddressV4: nextPeerAddress(t, firstV4), AddressV6: nextPeerAddress(t, firstV6)},
+	}
+	s := newSpeakerWithFake(cfg, fake)
+
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if got := len(fake.addPeerReqs); got != 4 {
+		t.Fatalf("AddPeer call count = %d; want 4", got)
+	}
+	for routerIndex := range cfg.Routers {
+		router := &cfg.Routers[routerIndex]
+		if got := s.routerForPeer(router.AddressV4); got != router {
+			t.Fatalf("routerForPeer(%q) = %p; want %p", router.AddressV4, got, router)
+		}
+		if got := s.routerForPeer(router.AddressV6); got != router {
+			t.Fatalf("routerForPeer(%q) = %p; want %p", router.AddressV6, got, router)
+		}
+	}
+	if got := s.routerForPeer(nextPeerAddress(t, cfg.Routers[1].AddressV4)); got != nil {
+		t.Fatalf("routerForPeer returned %p for an unknown peer", got)
+	}
+}
+
+func nextPeerAddress(t *testing.T, address string) string {
+	t.Helper()
+	parsed, err := netip.ParseAddr(address)
+	if err != nil {
+		t.Fatalf("parse peer address %q: %v", address, err)
+	}
+	next := parsed.Next()
+	if !next.IsValid() {
+		t.Fatalf("peer address %q has no next address", address)
+	}
+	return next.String()
 }
 
 func TestStartPropagatesGracefulRestartToGlobal(t *testing.T) {
