@@ -30,11 +30,14 @@ arc_controller_namespace: arc-systems
 arc_runner_namespace: arc-runners
 arc_controller_release: arc
 arc_runner_release: tack
+arc_docker_runner_release: tack-docker
 arc_controller_service_account: arc-controller
 github_runner_repo_url: https://github.com/agoodkind/tack
 arc_github_secret_name: tack-gh-runner
 arc_runner_min: 0
 arc_runner_max: 2
+arc_docker_runner_min: 0
+arc_docker_runner_max: 1
 arc_helm_timeout: 10m
 arc_controller_image_repository: >-
   ghcr.io/actions/gha-runner-scale-set-controller
@@ -45,3 +48,7 @@ arc_runner_image_repository: ghcr.io/actions/actions-runner
 arc_runner_image_tag: 2.336.0
 arc_runner_image_digest: >-
   sha256:a1919047b038c38871d667c58cfdc7a878452711ab1212fb6036188f27a7ab16
+arc_docker_image_repository: docker.io/library/docker
+arc_docker_image_tag: 29.6.2-dind
+arc_docker_image_digest: >-
+  sha256:8d335fc12e365d1fbfab43a20140162cff4a5ff544bb951104e079137300e593
