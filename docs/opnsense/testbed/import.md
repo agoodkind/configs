@@ -75,8 +75,7 @@ Run this gate for every config change, including small XML edits.
 - pf rules load.
 - NAT sanity checks pass.
 - FRR/BGP state is sane if FRR is expected.
-- `mwan opnsense version -target <target>` returns a daemon build banner after
-  the router is stable.
+- The [serial recovery checks](access.md) pass after the router is stable.
 
 ### 7. Failure Rule
 

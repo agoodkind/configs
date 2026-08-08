@@ -62,7 +62,3 @@ sshpiper_config_dir: /etc/sshpiper
 sshpiper_upstream_pubkey: >-
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMKsQiX/lf0UIaDahZjvceOmsySygUpvs+yQe+33ZfoJ
   sshpiper-upstream
-# Manual SSH access patterns:
-#   ssh -p 2222 root@proxy.home.goodkind.io  → direct sshd
-#   ssh proxy@ssh.home.goodkind.io           → sshpiper route to localhost:2222 as root
-#   ssh adguard@ssh.home.goodkind.io         → sshpiper route to adguard container

@@ -4,4 +4,5 @@ The goodkind.io homelab runs on two Proxmox hypervisors. Vault, in San Francisco
 
 These pages are point-in-time snapshots, not a live feed, so trust the running host over any page here and read the host before you change production.
 
-The homelab meets the internet through Cloudflare, which fronts its public services with tunnels and answers DNS for the domain. Reaching a host yourself, whether from a laptop or from the Ansible controller, runs through a small set of SSH entry points that try IPv6 first and fall back to a jump host when a machine cannot be reached directly.
+The homelab meets the internet through Cloudflare, which fronts its public
+services with tunnels and answers DNS for the domain.

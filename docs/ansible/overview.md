@@ -47,18 +47,16 @@ to introduce drift:
   `service_mapping` plugin. There is no static `[opnsense_servers]` group in
   [inventory/hosts](../../ansible/inventory/hosts).
 - The plugin sets `ansible_host` from the canonical IPv6 by default. The
-  `opnsense_suburban` entry aliases `ansible_host` to its `ipv4_transit`
-  address, which SSH reaches through suburban.
-- Connection vars (SSH user, ProxyJump, BGP identity, gateway names, etc.) live
+  `opnsense_suburban` entry selects its routed `ipv6_transit` address.
+- Target variables such as the SSH user, BGP identity, and gateway names live
   in
   [ansible/inventory/group_vars/opnsense_servers.yml](../../ansible/inventory/group_vars/opnsense_servers.yml)
   and
   [ansible/inventory/group_vars/opnsense_suburban_servers.yml](../../ansible/inventory/group_vars/opnsense_suburban_servers.yml).
 
 [ansible/playbooks/deploy-opnsense.yml](../../ansible/playbooks/deploy-opnsense.yml)
-runs against `opnsense_servers:opnsense_suburban_servers` and is branchless on
-`inventory_hostname`. All connection differences are absorbed by the two
-group_vars files.
+runs against `opnsense_servers:opnsense_suburban_servers` and connects directly
+to each routed address. The play is branchless on `inventory_hostname`.
 
 ## Where each task runs
 
