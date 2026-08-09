@@ -47,3 +47,14 @@ tack_backup_s3_bucket_main: tack-backups
 # reaches the store here rather than assuming it is local. The phase that
 # moves the store onto the data tier changes this one line.
 tack_store_host: "{{ service_mapping.tack.ipv6 }}"
+
+# Ledger node identity. The engine stores whatever identity a node announces
+# in its own catalog, so an announced address goes stale when the address
+# moves and the engine can no longer assemble itself. Each node announces a
+# permanent name instead, and every ledger container carries these entries in
+# its own hosts file. A guest renumber changes the address here and nothing
+# the engine stored.
+tack_ledger_node_addresses:
+  yb1: "{{ service_mapping.tack_data1.ipv6 }}"
+  yb2: "{{ service_mapping.tack_data2.ipv6 }}"
+  yb3: "{{ service_mapping.tack_data3.ipv6 }}"

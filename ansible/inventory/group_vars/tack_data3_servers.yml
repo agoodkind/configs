@@ -1,3 +1,7 @@
 ---
 tack_cluster_role: data
 tack_provision_owner: false
+
+# The permanent name this guest's ledger node announces. The engine stores
+# it, so it never changes for the life of the node.
+tack_ledger_node_name: "yb3"
