@@ -89,6 +89,7 @@ resource "proxmox_virtual_environment_vm" "tack_gh_runner_suburban" {
 
   cpu {
     cores = 6
+    type  = "host"
   }
 
   operating_system {
