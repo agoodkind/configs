@@ -1,0 +1,16 @@
+[Unit]
+Description=Hold the announced prefix on the loopback
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The /64 on lo installs a connected route, which the FRR network statement
+# requires before it will originate the prefix.
+ExecStart=/sbin/ip -6 addr replace {{ service_mapping.router2_suburban.announced_prefix_v6 | regex_replace('::/64$', '::1/64') }} dev lo
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

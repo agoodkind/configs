@@ -1,0 +1,73 @@
+---
+# Router-2 simulator (LXC 905 on suburban), testbed only.
+#
+# An FRR speaker on the transit link that peers with both MWAN speakers in the
+# iBGP AS and announces the prefix it owns. It exists to prove zero-deploy
+# router onboarding: MWAN accepts its session through the dynamic transit
+# neighbors and installs its announced prefix with no MWAN config change.
+#
+# Like the ISP sims the LXC stays out of the SSH inventory; this play runs on
+# the suburban hypervisor and configures the guest through pct.
+#
+# Run example:
+#   go run goodkind.io/configs/cmd/configs deploy deploy-router2-sim --limit suburban
+
+- name: Configure the router-2 simulator LXC
+  hosts: suburban_servers
+  become: false
+  force_handlers: true
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    router2_vmid: "{{ service_mapping.router2_suburban.vmid }}"
+
+  tasks:
+    - name: Install FRR in the simulator
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ router2_vmid }} -- sh -c
+          'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq frr'
+      changed_when: true
+
+    - name: Render simulator configs to suburban /tmp
+      ansible.builtin.template:
+        src: "{{ repo_root }}/testbed/router2-sim/{{ item.src }}"
+        dest: "/tmp/router2-{{ item.name }}"
+        mode: "0644"
+      loop:
+        - { src: frr.conf.j2, name: frr.conf }
+        - { src: announced-prefix.service.j2, name: announced-prefix.service }
+
+    - name: Push simulator configs into the LXC
+      ansible.builtin.command:
+        cmd: >-
+          pct push {{ router2_vmid }}
+          /tmp/router2-{{ item.tmp }}
+          {{ item.dest }}
+      loop:
+        - { tmp: frr.conf, dest: /etc/frr/frr.conf }
+        - { tmp: announced-prefix.service, dest: /etc/systemd/system/announced-prefix.service }
+      changed_when: true
+
+    - name: Enable bgpd in the FRR daemons file
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ router2_vmid }} -- sh -c
+          'sed -i "s/^bgpd=no/bgpd=yes/" /etc/frr/daemons'
+      changed_when: true
+
+    - name: Clean up simulator temp files
+      ansible.builtin.file:
+        path: "/tmp/router2-{{ item }}"
+        state: absent
+      loop:
+        - frr.conf
+        - announced-prefix.service
+
+    - name: Enable and restart simulator services
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ router2_vmid }} -- sh -c
+          'systemctl daemon-reload
+          && systemctl enable --now announced-prefix frr
+          && systemctl restart announced-prefix frr'
+      changed_when: true
