@@ -1,6 +1,0 @@
----
-# The suburban Proxmox plugin derives ansible_host from net0.ip6, but eth0
-# here is SLAAC, so the compose yields the boolean false. host_vars outranks
-# the plugin-composed value, so pin the eth1 address (the service_mapping
-# ipv6, reachable from the controller) as the SSH target.
-ansible_host: "{{ service_mapping.mwan_failover_suburban.ipv6_transit }}"
