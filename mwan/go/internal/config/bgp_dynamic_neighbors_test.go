@@ -30,6 +30,30 @@ func TestValidateBGPRequiresLearnedRouteIfaceForDynamicNeighbors(t *testing.T) {
 	}
 }
 
+func TestValidateBGPDynamicNeighborsRejectsDefaultRoutes(t *testing.T) {
+	testCases := []struct {
+		name   string
+		prefix string
+	}{
+		{name: "IPv4", prefix: "0.0.0.0/0"},
+		{name: "IPv6", prefix: "::/0"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			invalid := minimalBGPSection()
+			invalid.DynamicNeighbors = []string{testCase.prefix}
+			invalid.LearnedRouteIface = "enmwanbr0"
+			err := validateBGP(&invalid)
+			if err == nil {
+				t.Fatal("default-route dynamic neighbor must fail validation")
+			}
+			if !strings.Contains(err.Error(), "must not be a default route") {
+				t.Fatalf("validation error = %q, want default-route rejection", err)
+			}
+		})
+	}
+}
+
 func TestLoadRequiresLearnedRouteIfaceForDynamicNeighbors(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.toml")
 	configText := "[bgp]\ndynamic_neighbors = [\"10.250.250.0/29\"]\n"

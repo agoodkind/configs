@@ -108,6 +108,15 @@
         dest: /etc/network/interfaces
         mode: "0644"
 
+    - name: Remove stale IPv6 return route
+      ansible.builtin.command:
+        cmd: >-
+          ip -6 route del {{ mwan_failover_ipv6_return_route }}
+      changed_when: false
+      failed_when: false
+      when: >-
+        not mwan_bgp_routes_shadow_mode and mwan_failover_ipv6_return_route != ""
+
     - name: Deploy nftables ruleset
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan-failover/nftables.conf"

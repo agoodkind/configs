@@ -183,6 +183,7 @@ func Run(cfg *config.Config) error {
 			}
 			_ = bgpSpeaker.Stop()
 		}
+		cancel()
 		grpcServer.GracefulStop()
 		for i := 0; i < serveCount; i++ {
 			if err := <-errCh; err != nil {

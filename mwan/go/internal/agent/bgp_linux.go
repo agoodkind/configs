@@ -60,7 +60,7 @@ func configurePlatformBGP(
 	speaker *bgp.Speaker,
 	log *slog.Logger,
 ) {
-	if len(cfg.BGP.DynamicNeighbors) == 0 {
+	if cfg.BGP.LearnedRouteIface == "" {
 		return
 	}
 	speaker.SetFIB(bgp.NewFIB(bgp.FIBConfig{
@@ -79,9 +79,11 @@ func startStaleSweepReconciler(
 ) {
 	reconciler := staleSweepReconciler{sweeper: sweeper, clock: clock, log: log}
 	go func() {
+		// Last resort only: each tick recovers its own sweep panic in
+		// sweep(), so this catches nothing short of a loop-level failure.
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				log.ErrorContext(ctx, "BGP stale sweep reconcile panic", "error", fmt.Errorf("panic: %v", recovered))
+				log.ErrorContext(ctx, "BGP stale sweep reconciler crashed", "error", fmt.Errorf("panic: %v", recovered))
 			}
 		}()
 		reconciler.run(ctx)
@@ -96,10 +98,19 @@ func (r staleSweepReconciler) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.Channel():
-			if err := r.sweeper.SweepStale(ctx); err != nil {
-				r.log.ErrorContext(ctx, "reconcile BGP stale routes", "error", err)
-			}
+			r.sweep(ctx)
 		}
+	}
+}
+
+func (r staleSweepReconciler) sweep(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			r.log.ErrorContext(ctx, "BGP stale sweep reconcile panic", "error", fmt.Errorf("panic: %v", recovered))
+		}
+	}()
+	if err := r.sweeper.SweepStale(ctx); err != nil {
+		r.log.ErrorContext(ctx, "reconcile BGP stale routes", "error", err)
 	}
 }
 

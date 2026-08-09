@@ -246,10 +246,13 @@ func bestPathNextHop(path *apiutil.Path) (netip.Addr, error) {
 }
 
 func (s *Speaker) handlePeerDown(ctx context.Context, peer string) {
-	if s.fib == nil {
+	s.mu.Lock()
+	fib := s.fib
+	s.mu.Unlock()
+	if fib == nil {
 		return
 	}
-	if err := s.fib.WithdrawPeer(ctx, peer); err != nil {
+	if err := fib.WithdrawPeer(ctx, peer); err != nil {
 		s.log.ErrorContext(ctx, "withdraw BGP peer routes failed", "peer", peer, "error", err)
 	}
 }

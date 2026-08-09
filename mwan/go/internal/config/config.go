@@ -766,8 +766,12 @@ func validateBGPDynamicConfig(b *BGPSection) error {
 
 func validateBGPDynamicNeighbors(prefixes []string) error {
 	for index, prefixText := range prefixes {
-		if _, err := netip.ParsePrefix(prefixText); err != nil {
+		prefix, err := netip.ParsePrefix(prefixText)
+		if err != nil {
 			return fmt.Errorf("[bgp] dynamic_neighbors[%d] %q must be a CIDR prefix: %s", index, prefixText, err.Error())
+		}
+		if prefix.Bits() == 0 {
+			return fmt.Errorf("[bgp] dynamic_neighbors[%d] %q must not be a default route", index, prefixText)
 		}
 	}
 	return nil
