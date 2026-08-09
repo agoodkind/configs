@@ -24,16 +24,41 @@ const (
 	TimeoutQmStatus       = 10 * time.Second
 	timeoutQmGuestExec    = 30 * time.Second
 	TimeoutQmStop         = 60 * time.Second
-	TimeoutQmRollback     = 120 * time.Second
 	TimeoutQmStart        = 60 * time.Second
 	timeoutQmListSnapshot = 10 * time.Second
-	TimeoutQmSnapshot     = 120 * time.Second
-	timeoutQmDelSnapshot  = 120 * time.Second
 	timeoutQmAgentFreeze  = 30 * time.Second
 	timeoutHostProbe      = 20 * time.Second
 	timeoutVsockRPC       = 15 * time.Second
 	timeoutTCPRPC         = 15 * time.Second
 	timeoutPVEExec        = 45 * time.Second
+)
+
+// Budgets for the qm operations that take a Proxmox configuration lock.
+//
+// Creating a snapshot, deleting a snapshot, and rolling back each write a
+// lock into the guest configuration and clear it when they finish. runQm
+// kills the qm client once its budget expires, and a client killed while
+// the lock is held orphans the Proxmox worker: the lock is never cleared,
+// so every later operation on that guest is refused until an operator
+// unlocks it by hand. A snapshot killed mid-freeze also leaves the guest
+// filesystems frozen.
+//
+// These budgets outlast Proxmox's own failure paths so Proxmox always
+// resolves first and the failure arrives as an ordinary command error.
+// Proxmox allows a guest filesystem freeze 60 minutes; snapshot deletion
+// and rollback are bounded by storage work with no comparable ceiling.
+// The asymmetry sets the value: an over-long budget costs one stalled
+// watchdog cycle that resolves itself, while an under-short one costs a
+// guest that cannot start until a human intervenes.
+const (
+	TimeoutQmSnapshot    = 75 * time.Minute
+	timeoutQmDelSnapshot = 75 * time.Minute
+	TimeoutQmRollback    = 75 * time.Minute
+
+	// minLockHoldingTimeout is the floor each budget above must clear. A
+	// test enforces it so a later edit cannot quietly drop one back under
+	// the Proxmox ceiling and reintroduce the stranded-lock failure.
+	minLockHoldingTimeout = 65 * time.Minute
 )
 
 // ErrGuestExecUnavailable is returned by pveExec when the PVE client is
