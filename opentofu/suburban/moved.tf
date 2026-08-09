@@ -14,11 +14,6 @@ moved {
 }
 
 moved {
-  from = proxmox_virtual_environment_container.github_runner
-  to   = proxmox_virtual_environment_container.tack_gh_runner_suburban
-}
-
-moved {
   from = proxmox_virtual_environment_container.mwan_failover_test
   to   = proxmox_virtual_environment_container.mwan_failover_suburban
 }

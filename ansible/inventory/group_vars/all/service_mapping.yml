@@ -143,11 +143,6 @@ service_mapping:
     hostname: seaweedfs.suburban.goodkind.io
     vmid: 218
     ipv6: "3d06:bad:b01:210::218"
-  tack_gh_runner_suburban:
-    hostname: tack-gh-runner.suburban.goodkind.io
-    vmid: 219
-    ipv6: "3d06:bad:b01:210::219"
-    mac_address: "BC:24:11:04:20:00"
   dns64_suburban:
     hostname: dns64.suburban.goodkind.io
     vmid: 203
