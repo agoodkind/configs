@@ -1,3 +1,7 @@
 ---
 tack_cluster_role: app
 tack_provision_owner: true
+
+# The name the ledger node on this guest announces today. It retires when the
+# three data guest nodes hold every copy.
+tack_ledger_node_name: "yugabyte"

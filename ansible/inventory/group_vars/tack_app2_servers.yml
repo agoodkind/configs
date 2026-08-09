@@ -1,3 +1,6 @@
 ---
 tack_cluster_role: app
 tack_provision_owner: false
+
+# This guest runs no ledger node.
+tack_ledger_node_name: ""
