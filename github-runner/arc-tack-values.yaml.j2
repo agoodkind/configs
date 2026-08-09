@@ -15,3 +15,11 @@ template:
         image: "{{ arc_runner_image_repository }}:{{ arc_runner_image_tag }}@{{ arc_runner_image_digest }}"
         command:
           - /home/runner/run.sh
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+    volumes:
+      - name: work
+        emptyDir:
+          medium: Memory
+          sizeLimit: {{ arc_runner_work_size_limit }}

@@ -36,6 +36,7 @@ github_runner_repo_url: https://github.com/agoodkind/tack
 arc_github_secret_name: tack-gh-runner
 arc_runner_min: 0
 arc_runner_max: 2
+arc_runner_work_size_limit: 2Gi
 arc_docker_runner_min: 0
 arc_docker_runner_max: 1
 arc_helm_timeout: 10m
