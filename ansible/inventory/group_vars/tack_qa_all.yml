@@ -41,3 +41,8 @@ tack_backup_s3_access_key: "{{ vault_seaweedfs_s3_access_key }}"
 tack_backup_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"
 tack_backup_s3_region: us-east-1
 tack_backup_s3_bucket_main: tack-backups
+
+# The guest that serves the product store for this environment. Every guest
+# reaches the store here rather than assuming it is local. The phase that
+# moves the store onto the data tier changes this one line.
+tack_store_host: "{{ service_mapping.tack_qa_suburban.ipv6 }}"
