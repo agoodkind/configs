@@ -181,10 +181,17 @@ service_mapping:
     # mirror prod's rather than taking a VMID suffix, because these are BGP
     # peering addresses and that peering shape is what the testbed tests.
     ipv4_transit: "10.240.240.4"
-    ipv6_transit: &mwan_failover_suburban_transit_v6 "3d06:bad:b01:201::4"
-    # The inventory plugin reads ipv6 as its default ansible_host, and this
-    # guest holds no other address, so it aliases rather than repeating.
-    ipv6: *mwan_failover_suburban_transit_v6
+    ipv6_transit: "3d06:bad:b01:201::4"
+    # eth2 on the guest segment, carrying the VMID suffix like every other
+    # guest there. Deploys reach this guest here rather than on the transit
+    # link, because the transit addresses sit on a point-to-point BGP link
+    # whose replies leave by the ISP-sim default route, so a bulk transfer
+    # addressed to them stalls while small commands succeed.
+    ipv4_vmnet: "10.240.4.216"
+    ipv6_vmnet: &mwan_failover_suburban_vmnet_v6 "3d06:bad:b01:210::216"
+    # The inventory plugin reads ipv6 as its default ansible_host, so it
+    # aliases the guest-segment address rather than repeating it.
+    ipv6: *mwan_failover_suburban_vmnet_v6
   # OPNsense (one logical machine per environment). The plugin uses ipv6 as
   # ansible_host by default, which is correct for prod. Testbed targets the
   # routed IPv6 address on the WAN/internal link.
