@@ -53,37 +53,6 @@ second router has no way to receive return traffic for its own LANs.
    documented SSH forward on the testbed) or through the serial daemon,
    followed by the Quagga template reload and an FRR restart.
 
-## Acceptance criteria
-
-- AC1: A testbed router-2 simulator is onboarded with no MWAN change: the
-  simulator peers over the transit link, and its LAN prefix routes appear
-  in the main and WAN tables on the VM and in the main table on the
-  failover LXC.
-- AC2: Traffic sourced behind router-2 egresses a WAN and returns through
-  router-2, while OPNsense-testbed traffic is unaffected.
-- AC3: A prefix the simulator adds to its announcements installs within
-  seconds, and withdrawing it removes the route without touching any
-  other router's routes.
-- AC4: Killing the simulator's BGP session removes its routes within the
-  hold timer and leaves every other router's routes in place.
-- AC5: During a forced VM failover, router-2 return traffic flows through
-  the failover LXC.
-- AC6: An agent restart with graceful restart enabled leaves the learned
-  routes installed throughout; no probe loss attributable to route churn.
-- AC7: Shadow mode shows parity between the static internal route and the
-  intended learned installs before any authoritative flip.
-- AC8: Every OPNsense config change cycle on the testbed runs the
-  every-change gate: pre-change snapshot without saved RAM, the change,
-  simulated traffic proof, then reset to the snapshot until the change is
-  proven. The router config change is the brittle step and never lands
-  unproven.
-- AC9: A serial-channel recovery drill passes on the testbed before any
-  production change: with the router's network path treated as dead, the
-  FRR announcement change is fully reverted over the out-of-band serial
-  daemon alone (config write, Quagga template reload, FRR restart), and
-  the router returns to the pre-change routing state.
-
-
 ## Boundaries
 
 - NPT is out of scope. It keeps translating the whole internal block per
