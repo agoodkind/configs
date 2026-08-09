@@ -45,9 +45,9 @@ arc_controller_image_tag: 0.14.2
 arc_controller_image_digest: >-
   sha256:32f89ba454a42398f0b46f7271e2885d8ec976f155a3a3b1c50329f8d38f8e6f
 arc_runner_image_repository: ghcr.io/agoodkind/tack-actions-runner
-arc_runner_image_tag: 2.336.0-1
+arc_runner_image_tag: 2.336.0-2
 arc_runner_image_digest: >-
-  sha256:40f8d32edeb504cbf49b084fd452d61568fce38c5473459b756fd9e17e20419c
+  sha256:75f27c577acd14eaefc41706e1531ef35013577ff9577c107bf80b9e38f99ef5
 arc_docker_image_repository: docker.io/library/docker
 arc_docker_image_tag: 29.6.2-dind
 arc_docker_image_digest: >-
