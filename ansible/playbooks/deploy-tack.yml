@@ -304,10 +304,36 @@
           changed_when: true
           failed_when: false
 
+        # --execute is the action gate every audited operator command now
+        # carries (TACK-328). Without it the command prints its plan and
+        # changes nothing, so provisioning would silently no-op and the next
+        # task would start services against an unmigrated database.
+        #
+        # The operator identity names the human running this deploy in the
+        # compliance ledger. The ops container has no git config, so the
+        # deploy reads the control machine's git config instead; lookups run
+        # on the control machine, never on the guest. The id is derived from
+        # the lowercased email with the same version 5 UUID namespace the
+        # application uses (internal/cli/operator_git.go), verified to produce
+        # byte-identical ids, so one person keeps one actor id everywhere.
+        #
+        # The deploy commit ties the run to the code it installed (TACK-443):
+        # the actor answers who deployed, the commit answers what. It is the
+        # same ref the docker-compose fetch above pinned.
         - name: Provision (idempotent first boot; configure fresh fdb only where allowed, migrate, seed audit roles, seed product)
           ansible.builtin.command:
-            cmd: "docker compose run --rm tack-ops ops provision{{ ' --allow-fdb-init' if tack_allow_fdb_init else '' }}"
+            cmd: >-
+              docker compose run --rm tack-ops ops provision --execute
+              --operator-id {{ deploy_operator_id }}
+              --operator-email {{ deploy_operator_email }}
+              --operator-name "{{ deploy_operator_name }}"
+              --deploy-commit {{ tack_commit }}
+              {{ '--allow-fdb-init' if tack_allow_fdb_init else '' }}
             chdir: "{{ tack_install_dir }}"
+          vars:
+            deploy_operator_email: "{{ lookup('pipe', 'git config user.email') | lower }}"
+            deploy_operator_name: "{{ lookup('pipe', 'git config user.name') }}"
+            deploy_operator_id: "{{ deploy_operator_email | to_uuid(namespace='0a6f7572-cafe-dead-beef-000000000004') }}"
           changed_when: true
 
         - name: Start Tack services (second pass; fdb configured, app and audit-consumer come up)
