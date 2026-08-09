@@ -1,0 +1,18 @@
+! FRR config for the router-2 simulator (rendered by deploy-router2-sim.yml).
+! Peers with both MWAN speakers over iBGP on the transit link and announces
+! the prefix it owns. The announced prefix sits on the loopback (installed by
+! announced-prefix.service), so the network statement always has a RIB route.
+frr defaults traditional
+hostname {{ service_mapping.router2_suburban.hostname.split('.')[0] }}
+!
+router bgp {{ bgp_asn }}
+ bgp router-id {{ service_mapping.router2_suburban.ipv4_transit }}
+ neighbor {{ service_mapping.mwan_suburban.ipv6_transit }} remote-as {{ bgp_asn }}
+ neighbor {{ service_mapping.mwan_failover_suburban.ipv6_transit }} remote-as {{ bgp_asn }}
+ !
+ address-family ipv6 unicast
+  network {{ service_mapping.router2_suburban.announced_prefix_v6 }}
+  neighbor {{ service_mapping.mwan_suburban.ipv6_transit }} activate
+  neighbor {{ service_mapping.mwan_failover_suburban.ipv6_transit }} activate
+ exit-address-family
+!

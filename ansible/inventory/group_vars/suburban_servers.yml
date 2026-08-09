@@ -34,6 +34,11 @@ opnsense_addr: "3d06:bad:b01:211::1"
 opnsense_gateway_names:
   - WAN_GW4
   - WAN_GW6
+# iBGP AS shared with the MWAN speakers; consumed by the router-2 simulator
+# FRR template rendered on this host by deploy-router2-sim.yml.
+# TODO(MWAN-229 follow-up): promote the shared BGP identity vars to
+# group_vars/all so every group inherits one definition.
+bgp_asn: 4200000001
 opnsense_bgp_router_id: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 opnsense_bgp_firewall_source_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
 opnsense_bgp_firewall_source_v6: "{{ service_mapping.opnsense_suburban.transit_v6_net }}"

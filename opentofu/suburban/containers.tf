@@ -349,3 +349,78 @@ resource "proxmox_virtual_environment_container" "isp_mbrains_suburban" {
     ]
   }
 }
+
+# Router-2 simulator: an FRR speaker on the transit link that proves router
+# N+1 onboarding needs no MWAN change. One interface, on the transit bridge;
+# the announced prefix lives on its loopback, configured by
+# deploy-router2-sim.yml through pct alongside FRR itself.
+resource "proxmox_virtual_environment_container" "router2_suburban" {
+  node_name = "hypervisor"
+  vm_id     = local.service_mapping.router2_suburban.vmid
+
+  depends_on = [
+    proxmox_network_linux_bridge.mwan_suburban,
+  ]
+
+  initialization {
+    hostname = local.service_mapping.router2_suburban.hostname
+    ip_config {
+      ipv4 {
+        address = "${local.service_mapping.router2_suburban.ipv4_transit}/29"
+      }
+      ipv6 {
+        address = "${local.service_mapping.router2_suburban.ipv6_transit}/64"
+      }
+    }
+  }
+
+  features {
+    nesting = true
+  }
+
+  network_interface {
+    name        = "eth0"
+    bridge      = proxmox_network_linux_bridge.mwan_suburban.name
+    mac_address = "BC:24:11:02:09:05"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    size         = 4
+  }
+
+  memory {
+    dedicated = 512
+    swap      = 512
+  }
+
+  cpu {
+    architecture = "amd64"
+    cores        = 1
+    limit        = 0
+  }
+
+  console {
+    enabled   = true
+    tty_count = 2
+    type      = "tty"
+  }
+
+  tags = []
+
+  operating_system {
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    type             = "debian"
+  }
+
+  started       = true
+  start_on_boot = true
+  unprivileged  = false
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      operating_system[0].template_file_id,
+    ]
+  }
+}

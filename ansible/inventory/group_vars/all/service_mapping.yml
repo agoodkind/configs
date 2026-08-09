@@ -279,6 +279,20 @@ service_mapping:
     ipv4_uplink: "10.240.200.92"
     ipv6_uplink: "3d06:bad:b01:200::92"
 
+  # Second-router simulator, testbed only. An FRR speaker on the transit link
+  # that peers with both MWAN speakers in the iBGP AS and announces the prefix
+  # it owns, proving router N+1 onboarding needs no MWAN change. Like the ISP
+  # sims it stays out of the SSH inventory; deploy-router2-sim.yml configures
+  # it through pct from the hypervisor.
+  router2_suburban:
+    hostname: router2.suburban.goodkind.io
+    vmid: 905
+    inventory: false
+    ipv4_transit: "10.240.240.5"
+    ipv6_transit: "3d06:bad:b01:201::5"
+    # The prefix the simulator announces over BGP and holds on its loopback.
+    announced_prefix_v6: "3d06:bad:b01:230::/64"
+
 group_children:
   tack_all:
     - tack_servers
