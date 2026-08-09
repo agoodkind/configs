@@ -1,6 +1,15 @@
 ---
 service_ipv6_only: true
 
+# Guest identity, derived from each guest's own inventory entry. The inventory
+# plugin sets service_name on every host to that guest's mapping key, so one
+# declaration here serves every tack guest and a renumber changes one line in
+# the mapping.
+service_hostname: "{{ service_mapping[service_name].hostname }}"
+service_ipv6_address: "{{ service_mapping[service_name].ipv6 }}/64"
+service_mac_address: "{{ service_mapping[service_name].mac_address }}"
+
+
 # Container resources are reference values only; OpenTofu owns the live shape.
 service_memory: 8192
 service_cores: 2
