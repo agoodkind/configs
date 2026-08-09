@@ -37,40 +37,13 @@ func newBGPSpeaker(cfg *config.Config, log *slog.Logger) (*bgp.Speaker, error) {
 	for _, neighbor := range cfg.BGP.NeighborsV6 {
 		bgpCfg.NeighborsV6 = append(bgpCfg.NeighborsV6, bgp.NeighborConfig{Address: neighbor.Address})
 	}
-	for _, configuredRouter := range cfg.BGP.Routers {
-		router, err := newBGPRouter(configuredRouter, log)
+	for _, prefixText := range cfg.BGP.DynamicNeighbors {
+		prefix, err := netip.ParsePrefix(prefixText)
 		if err != nil {
-			return nil, err
+			log.Error("parse BGP dynamic neighbor failed", "dynamic_neighbor", prefixText, "error", err)
+			return nil, fmt.Errorf("parse BGP dynamic neighbor %q: %w", prefixText, err)
 		}
-		bgpCfg.Routers = append(bgpCfg.Routers, router)
+		bgpCfg.DynamicNeighborPrefixes = append(bgpCfg.DynamicNeighborPrefixes, prefix.Masked())
 	}
 	return bgp.New(bgpCfg, log), nil
-}
-
-func newBGPRouter(configuredRouter config.BGPRouter, log *slog.Logger) (bgp.Router, error) {
-	router := bgp.Router{
-		Name:          configuredRouter.Name,
-		AddressV4:     configuredRouter.AddressV4,
-		AddressV6:     configuredRouter.AddressV6,
-		AllocationsV6: make([]netip.Prefix, 0, len(configuredRouter.AllocationsV6)),
-	}
-	for _, allocationText := range configuredRouter.AllocationsV6 {
-		allocation, err := netip.ParsePrefix(allocationText)
-		if err != nil {
-			log.Error(
-				"parse BGP router allocation failed",
-				"error", err,
-				"router", configuredRouter.Name,
-				"allocation", allocationText,
-			)
-			return bgp.Router{}, fmt.Errorf(
-				"parse BGP router %q allocation %q: %w",
-				configuredRouter.Name,
-				allocationText,
-				err,
-			)
-		}
-		router.AllocationsV6 = append(router.AllocationsV6, allocation)
-	}
-	return router, nil
 }

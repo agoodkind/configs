@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/netip"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -294,19 +293,20 @@ type OpnsenseValidateSection struct {
 
 // BGPSection holds embedded GoBGP speaker configuration.
 type BGPSection struct {
-	Enabled          bool               `toml:"enabled"`
-	ASN              uint32             `toml:"asn"`
-	RouterID         string             `toml:"router_id"`
-	NextHopV6        string             `toml:"next_hop_v6"` // IPv6 next-hop for announced routes (optional, defaults to RouterID)
-	KeepaliveSeconds uint32             `toml:"keepalive_seconds"`
-	HoldSeconds      uint32             `toml:"hold_seconds"`
-	ListenPort       int32              `toml:"listen_port"`
-	Neighbors        []BGPNeighbor      `toml:"neighbors"`
-	NeighborsV6      []BGPNeighbor      `toml:"neighbors_v6"`
-	Routers          []BGPRouter        `toml:"routers"`
-	RoutesShadowMode bool               `toml:"routes_shadow_mode"`
-	Announce         BGPAnnounce        `toml:"announce"`
-	GracefulRestart  BGPGracefulRestart `toml:"graceful_restart"`
+	Enabled           bool               `toml:"enabled"`
+	ASN               uint32             `toml:"asn"`
+	RouterID          string             `toml:"router_id"`
+	NextHopV6         string             `toml:"next_hop_v6"` // IPv6 next-hop for announced routes (optional, defaults to RouterID)
+	KeepaliveSeconds  uint32             `toml:"keepalive_seconds"`
+	HoldSeconds       uint32             `toml:"hold_seconds"`
+	ListenPort        int32              `toml:"listen_port"`
+	Neighbors         []BGPNeighbor      `toml:"neighbors"`
+	NeighborsV6       []BGPNeighbor      `toml:"neighbors_v6"`
+	DynamicNeighbors  []string           `toml:"dynamic_neighbors"`
+	LearnedRouteIface string             `toml:"learned_route_iface"`
+	RoutesShadowMode  bool               `toml:"routes_shadow_mode"`
+	Announce          BGPAnnounce        `toml:"announce"`
+	GracefulRestart   BGPGracefulRestart `toml:"graceful_restart"`
 }
 
 // BGPGracefulRestart configures BGP Graceful Restart (RFC 4724) on the
@@ -327,14 +327,6 @@ type BGPGracefulRestart struct {
 // BGPNeighbor identifies a single BGP peer.
 type BGPNeighbor struct {
 	Address string `toml:"address"`
-}
-
-// BGPRouter identifies a downstream BGP router and its IPv6 allocations.
-type BGPRouter struct {
-	Name          string   `toml:"name"`
-	AddressV4     string   `toml:"address_v4"`
-	AddressV6     string   `toml:"address_v6"`
-	AllocationsV6 []string `toml:"allocations_v6"`
 }
 
 // BGPAnnounce specifies prefixes to originate via BGP.
@@ -603,11 +595,9 @@ func Load() (*Config, error) {
 	if v := strings.TrimSpace(os.Getenv("OPNSENSE_API_SECRET")); v != "" {
 		cfg.OPNsense.APISecret = v
 	}
-	if len(cfg.BGP.Routers) > 0 {
-		if err := validateBGPRouters(cfg.BGP.Routers, cfg.IfMgr.InternalPrefix); err != nil {
-			slog.Error("validate BGP routers failed", "error", err)
-			return nil, fmt.Errorf("validate BGP routers: %w", err)
-		}
+	if err := validateBGPDynamicConfig(&cfg.BGP); err != nil {
+		slog.Error("validate BGP dynamic configuration failed", "error", err)
+		return nil, fmt.Errorf("validate BGP dynamic configuration: %w", err)
 	}
 
 	return &cfg, nil
@@ -640,7 +630,7 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 		return validateWatchdog(cfg, dryRun)
 	case SubAgent:
 		if cfg.BGP.Enabled {
-			return validateBGP(&cfg.BGP, cfg.IfMgr.InternalPrefix)
+			return validateBGP(&cfg.BGP)
 		}
 		return nil
 	case SubIfMgr:
@@ -725,7 +715,7 @@ func validateWatchdog(cfg *Config, dryRun bool) error {
 	return nil
 }
 
-func validateBGP(b *BGPSection, internalBlock string) error {
+func validateBGP(b *BGPSection) error {
 	if b.ASN == 0 {
 		return errors.New("[bgp] asn is required")
 	}
@@ -744,11 +734,11 @@ func validateBGP(b *BGPSection, internalBlock string) error {
 	if b.HoldSeconds < 3*b.KeepaliveSeconds {
 		return fmt.Errorf("[bgp] hold_seconds (%d) must be >= 3 * keepalive_seconds (%d)", b.HoldSeconds, b.KeepaliveSeconds)
 	}
-	if err := validateBGPRouters(b.Routers, internalBlock); err != nil {
+	if err := validateBGPDynamicConfig(b); err != nil {
 		return err
 	}
-	if len(b.Neighbors) == 0 && len(b.NeighborsV6) == 0 && len(b.Routers) == 0 {
-		return errors.New("[bgp] at least one neighbor (v4 or v6) or router is required")
+	if len(b.Neighbors) == 0 && len(b.NeighborsV6) == 0 && len(b.DynamicNeighbors) == 0 {
+		return errors.New("[bgp] at least one neighbor (v4 or v6) or dynamic neighbor is required")
 	}
 	if len(b.Announce.IPv4) == 0 && len(b.Announce.IPv6) == 0 {
 		return errors.New("[bgp.announce] at least one prefix (ipv4 or ipv6) is required")
@@ -764,98 +754,25 @@ func validateBGP(b *BGPSection, internalBlock string) error {
 	return nil
 }
 
-func validateBGPRouters(routers []BGPRouter, internalBlock string) error {
-	if len(routers) == 0 {
-		return nil
+func validateBGPDynamicConfig(b *BGPSection) error {
+	if err := validateBGPDynamicNeighbors(b.DynamicNeighbors); err != nil {
+		return err
 	}
-
-	internal, err := netip.ParsePrefix(internalBlock)
-	if err != nil {
-		return fmt.Errorf("[ifmgr] internal_prefix %q: %s", internalBlock, err.Error())
-	}
-	internal = internal.Masked()
-
-	names := make(map[string]struct{}, len(routers))
-	allocations := make([]netip.Prefix, 0)
-	for routerIndex, router := range routers {
-		fieldPrefix := fmt.Sprintf("[bgp.routers.%d]", routerIndex)
-		if router.Name == "" {
-			return fmt.Errorf("%s name is required", fieldPrefix)
-		}
-		if _, exists := names[router.Name]; exists {
-			return fmt.Errorf("%s name %q is duplicated", fieldPrefix, router.Name)
-		}
-		names[router.Name] = struct{}{}
-
-		if err := validateBGPRouterAddresses(router, fieldPrefix); err != nil {
-			return err
-		}
-		newAllocations, err := validateBGPRouterAllocations(router, fieldPrefix, internal, internalBlock, allocations)
-		if err != nil {
-			return err
-		}
-		allocations = append(allocations, newAllocations...)
+	if len(b.DynamicNeighbors) > 0 && b.LearnedRouteIface == "" {
+		return errors.New("[bgp] learned_route_iface is required when dynamic_neighbors is configured")
 	}
 	return nil
 }
 
-func validateBGPRouterAddresses(router BGPRouter, fieldPrefix string) error {
-	if router.AddressV4 == "" {
-		return fmt.Errorf("%s address_v4 is required", fieldPrefix)
-	}
-	addressV4, err := netip.ParseAddr(router.AddressV4)
-	if err != nil {
-		return fmt.Errorf("%s address_v4 %q: %s", fieldPrefix, router.AddressV4, err.Error())
-	}
-	if !addressV4.Is4() {
-		return fmt.Errorf("%s address_v4 %q must be IPv4", fieldPrefix, router.AddressV4)
-	}
-
-	if router.AddressV6 == "" {
-		return fmt.Errorf("%s address_v6 is required", fieldPrefix)
-	}
-	addressV6, err := netip.ParseAddr(router.AddressV6)
-	if err != nil {
-		return fmt.Errorf("%s address_v6 %q: %s", fieldPrefix, router.AddressV6, err.Error())
-	}
-	if !addressV6.Is6() {
-		return fmt.Errorf("%s address_v6 %q must be IPv6", fieldPrefix, router.AddressV6)
+func validateBGPDynamicNeighbors(prefixes []string) error {
+	for index, prefixText := range prefixes {
+		prefix, err := netip.ParsePrefix(prefixText)
+		if err != nil {
+			return fmt.Errorf("[bgp] dynamic_neighbors[%d] %q must be a CIDR prefix: %s", index, prefixText, err.Error())
+		}
+		if prefix.Bits() == 0 {
+			return fmt.Errorf("[bgp] dynamic_neighbors[%d] %q must not be a default route", index, prefixText)
+		}
 	}
 	return nil
-}
-
-func validateBGPRouterAllocations(
-	router BGPRouter,
-	fieldPrefix string,
-	internal netip.Prefix,
-	internalBlock string,
-	existingAllocations []netip.Prefix,
-) ([]netip.Prefix, error) {
-	if len(router.AllocationsV6) == 0 {
-		return nil, fmt.Errorf("%s allocations_v6 is required", fieldPrefix)
-	}
-
-	allocations := make([]netip.Prefix, 0, len(router.AllocationsV6))
-	for allocationIndex, allocationText := range router.AllocationsV6 {
-		allocation, err := netip.ParsePrefix(allocationText)
-		if err != nil {
-			return nil, fmt.Errorf("%s allocations_v6[%d] %q: %s", fieldPrefix, allocationIndex, allocationText, err.Error())
-		}
-		if !allocation.Addr().Is6() {
-			return nil, fmt.Errorf("%s allocations_v6[%d] %q must be IPv6", fieldPrefix, allocationIndex, allocationText)
-		}
-		allocation = allocation.Masked()
-		if allocation.Bits() < internal.Bits() || !internal.Contains(allocation.Addr()) {
-			return nil, fmt.Errorf("%s allocations_v6[%d] %q must be inside internal_prefix %q", fieldPrefix, allocationIndex, allocationText, internalBlock)
-		}
-		if bgpAllocationOverlaps(allocation, existingAllocations) || bgpAllocationOverlaps(allocation, allocations) {
-			return nil, fmt.Errorf("%s allocations_v6[%d] %q overlaps another allocation", fieldPrefix, allocationIndex, allocationText)
-		}
-		allocations = append(allocations, allocation)
-	}
-	return allocations, nil
-}
-
-func bgpAllocationOverlaps(allocation netip.Prefix, existingAllocations []netip.Prefix) bool {
-	return slices.ContainsFunc(existingAllocations, allocation.Overlaps)
 }

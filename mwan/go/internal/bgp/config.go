@@ -12,9 +12,9 @@ type Config struct {
 	HoldSeconds      uint32
 	ListenPort       int32
 
-	Neighbors   []NeighborConfig
-	NeighborsV6 []NeighborConfig
-	Routers     []Router
+	Neighbors               []NeighborConfig
+	NeighborsV6             []NeighborConfig
+	DynamicNeighborPrefixes []netip.Prefix
 
 	Announce AnnounceConfig
 
@@ -34,14 +34,6 @@ type GracefulRestartConfig struct {
 // NeighborConfig identifies a single BGP peer.
 type NeighborConfig struct {
 	Address string
-}
-
-// Router identifies a downstream BGP router and its accepted IPv6 allocations.
-type Router struct {
-	Name          string
-	AddressV4     string
-	AddressV6     string
-	AllocationsV6 []netip.Prefix
 }
 
 // AnnounceConfig specifies prefixes to originate.

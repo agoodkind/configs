@@ -269,6 +269,7 @@ mwan_zoom_ipranges_url: ""
 bgp_asn: 4200000001
 bgp_router_id: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
 bgp_next_hop_v6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
+mwan_bgp_learned_route_iface: "{{ mwan_internal_iface }}"
 # Session timers live in group_vars/all/vars.yml (MWAN-303 rationale there).
 bgp_listen_port: 179
 bgp_neighbors:
@@ -279,6 +280,14 @@ bgp_announce_ipv4:
   - "0.0.0.0/0"
 bgp_announce_ipv6:
   - "::/0"
+
+# Transit networks the speaker accepts dynamic BGP sessions from, mirroring
+# mwan_servers.yml with the testbed transit link.
+mwan_bgp_dynamic_neighbors:
+  - "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
+  - "{{ service_mapping.opnsense_suburban.transit_v6_net }}"
+
+mwan_bgp_routes_shadow_mode: true
 
 # BGP Graceful Restart (RFC 4724). Mirrors mwan_servers.yml.
 mwan_bgp_graceful_restart_enabled: true

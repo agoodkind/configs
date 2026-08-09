@@ -9,6 +9,7 @@ mwan_failover_subject_prefix: "[MWAN-suburban-failover]"
 mwan_failover_bgp_asn: 4200000001
 mwan_failover_bgp_router_id: "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}"
 mwan_failover_bgp_next_hop_v6: "{{ service_mapping.mwan_failover_suburban.ipv6_transit }}"
+mwan_bgp_learned_route_iface: "eth1"
 mwan_failover_bgp_neighbors:
   - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_failover_bgp_neighbors_v6:
@@ -32,6 +33,14 @@ bgp_announce_ipv4:
   - "0.0.0.0/0"
 bgp_announce_ipv6:
   - "::/0"
+
+# Transit networks the speaker accepts dynamic BGP sessions from, matching the
+# testbed primary so both speakers serve every router during a failover.
+mwan_bgp_dynamic_neighbors:
+  - "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
+  - "{{ service_mapping.opnsense_suburban.transit_v6_net }}"
+
+mwan_bgp_routes_shadow_mode: true
 
 # BGP graceful restart (RFC 4724). Mirrors the primary so a failover agent
 # restart holds routes in the helper instead of flapping the session.
