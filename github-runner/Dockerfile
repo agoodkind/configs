@@ -5,7 +5,13 @@ LABEL org.opencontainers.image.source="https://github.com/agoodkind/configs"
 USER root
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        docker-compose-v2 \
+    && mkdir -p /usr/local/lib/docker/cli-plugins \
+    && ln -s \
+        /usr/libexec/docker/cli-plugins/docker-compose \
+        /usr/local/lib/docker/cli-plugins/docker-compose \
     && rm -rf /var/lib/apt/lists/*
 
 USER runner
