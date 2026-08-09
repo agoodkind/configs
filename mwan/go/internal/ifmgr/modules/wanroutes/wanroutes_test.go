@@ -319,12 +319,13 @@ func containsRoute(routes []netif.RouteSpec, want netif.RouteSpec) bool {
 
 func route(family string, dest string, via string, dev string, tableID int, metric int) netif.RouteSpec {
 	return netif.RouteSpec{
-		Family:  family,
-		Dest:    dest,
-		Via:     via,
-		Dev:     dev,
-		TableID: tableID,
-		Metric:  metric,
+		Family:   family,
+		Dest:     dest,
+		Via:      via,
+		Dev:      dev,
+		TableID:  tableID,
+		Metric:   metric,
+		Protocol: 0,
 	}
 }
 

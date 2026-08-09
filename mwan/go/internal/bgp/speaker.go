@@ -51,6 +51,7 @@ type Speaker struct {
 	cfg    Config
 	log    *slog.Logger
 	server bgpServerAPI
+	fib    *FIB
 
 	// newServer constructs the underlying GoBGP server. Production code
 	// leaves this nil so Start defaults to server.NewBgpServer; tests
@@ -60,6 +61,9 @@ type Speaker struct {
 	mu         sync.Mutex
 	announcing bool
 	started    bool
+	watchMu    sync.Mutex
+	seenPeers  map[string]bool
+	upPeers    map[string]bool
 }
 
 // New creates a BGP speaker. Call Start to begin peering.
@@ -68,11 +72,22 @@ func New(cfg Config, log *slog.Logger) *Speaker {
 		cfg:        cfg,
 		log:        log,
 		server:     nil,
+		fib:        nil,
 		newServer:  nil,
 		mu:         sync.Mutex{},
 		announcing: false,
 		started:    false,
+		watchMu:    sync.Mutex{},
+		seenPeers:  make(map[string]bool),
+		upPeers:    make(map[string]bool),
 	}
+}
+
+// SetFIB attaches the learned-route consumer before the speaker starts.
+func (s *Speaker) SetFIB(fib *FIB) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fib = fib
 }
 
 // Start initializes the GoBGP server and configures all peers.
@@ -124,26 +139,16 @@ func (s *Speaker) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Watch for peer state changes. When all peers reach ESTABLISHED,
-	// announce default routes automatically. No polling, no timeout.
+	// One watch keeps route installation and peer-loss cleanup ordered with
+	// GoBGP's view of the session.
 	if err := s.server.WatchEvent(ctx, server.WatchEventMessageCallbacks{
-		OnPeerUpdate: func(ev *apiutil.WatchEventMessage_PeerEvent, _ time.Time) {
-			if ev.Type != apiutil.PEER_EVENT_STATE {
-				return
-			}
-			if ev.Peer.State.SessionState != bgppkt.BGP_FSM_ESTABLISHED {
-				return
-			}
-			s.log.InfoContext(ctx, "bgp peer established", "peer", ev.Peer.State.NeighborAddress)
-			if s.IsEstablished() {
-				if err := s.AnnounceDefault(); err != nil {
-					s.log.ErrorContext(ctx, "bgp auto-announce failed", "error", err)
-				} else {
-					s.log.InfoContext(ctx, "bgp routes announced (all peers established)")
-				}
-			}
+		OnPeerUpdate: func(event *apiutil.WatchEventMessage_PeerEvent, _ time.Time) {
+			s.handlePeerUpdate(ctx, event)
 		},
-	}, server.WatchPeer()); err != nil {
+		OnBestPath: func(paths []*apiutil.Path, _ time.Time) {
+			s.handleBestPaths(ctx, paths)
+		},
+	}, server.WatchPeer(), server.WatchBestPath(true)); err != nil {
 		s.log.ErrorContext(ctx, "bgp watch event registration failed", "error", err)
 	}
 
@@ -154,6 +159,134 @@ func (s *Speaker) Start(ctx context.Context) error {
 		"port", s.cfg.ListenPort,
 	)
 	return nil
+}
+
+func (s *Speaker) handlePeerUpdate(ctx context.Context, event *apiutil.WatchEventMessage_PeerEvent) {
+	if event.Type != apiutil.PEER_EVENT_STATE {
+		return
+	}
+	peer := event.Peer.State.NeighborAddress.String()
+	if event.Peer.State.SessionState == bgppkt.BGP_FSM_ESTABLISHED {
+		s.log.InfoContext(ctx, "bgp peer established", "peer", peer)
+		s.markPeerEstablished(peer)
+		if s.IsEstablished() {
+			if err := s.AnnounceDefault(); err != nil {
+				s.log.ErrorContext(ctx, "bgp auto-announce failed", "error", err)
+			} else {
+				s.log.InfoContext(ctx, "bgp routes announced (all peers established)")
+			}
+		}
+		return
+	}
+
+	s.handlePeerDown(ctx, peer)
+	if event.Peer.State.DisconnectReason == apipb.PeerState_DISCONNECT_REASON_HOLD_TIMER_EXPIRED {
+		s.markPeerTimedOut(peer)
+	}
+}
+
+func (s *Speaker) handleBestPaths(ctx context.Context, paths []*apiutil.Path) {
+	if s.fib == nil {
+		return
+	}
+	for _, path := range paths {
+		if path == nil || path.Family != bgppkt.RF_IPv6_UC || path.Nlri == nil {
+			continue
+		}
+		peer := path.PeerAddress.String()
+		prefix, err := netip.ParsePrefix(path.Nlri.String())
+		if err != nil {
+			s.log.WarnContext(ctx, "ignore BGP best path with invalid prefix", "peer", peer, "error", err)
+			continue
+		}
+		if !s.AllowedPath(peer, prefix) {
+			s.log.WarnContext(ctx, "reject BGP best path outside router allocation", "peer", peer, "prefix", prefix)
+			continue
+		}
+		event := PathEvent{
+			Peer:      peer,
+			Prefix:    prefix,
+			NextHop:   netip.Addr{},
+			Withdrawn: path.Withdrawal,
+		}
+		if !path.Withdrawal {
+			nextHop, err := bestPathNextHop(path)
+			if err != nil {
+				s.log.WarnContext(ctx, "ignore BGP best path with invalid next hop", "peer", peer, "prefix", prefix, "error", err)
+				continue
+			}
+			event.NextHop = nextHop
+		}
+		if err := s.fib.Apply(ctx, event); err != nil {
+			s.log.ErrorContext(ctx, "reconcile BGP best path failed", "peer", peer, "prefix", prefix, "error", err)
+		}
+	}
+}
+
+func bestPathNextHop(path *apiutil.Path) (netip.Addr, error) {
+	for _, attribute := range path.Attrs {
+		switch value := attribute.(type) {
+		case *bgppkt.PathAttributeMpReachNLRI:
+			if value.Nexthop.IsValid() {
+				return value.Nexthop, nil
+			}
+		case *bgppkt.PathAttributeNextHop:
+			if value.Value.IsValid() {
+				return value.Value, nil
+			}
+		}
+	}
+	return netip.Addr{}, fmt.Errorf("missing next hop")
+}
+
+func (s *Speaker) markPeerEstablished(peer string) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	s.upPeers[peer] = true
+	s.markPeerSeenLocked(peer)
+}
+
+func (s *Speaker) markPeerTimedOut(peer string) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	s.markPeerSeenLocked(peer)
+}
+
+func (s *Speaker) markPeerSeenLocked(peer string) {
+	router := s.routerForPeer(peer)
+	if router == nil || peer != router.AddressV6 {
+		return
+	}
+	s.seenPeers[peer] = true
+	if len(s.seenPeers) != len(s.cfg.Routers) || s.fib == nil {
+		return
+	}
+	s.fib.ArmSweep()
+}
+
+func (s *Speaker) handlePeerDown(ctx context.Context, peer string) {
+	router := s.routerForPeer(peer)
+	if router == nil || peer != router.AddressV6 || s.fib == nil {
+		return
+	}
+	s.watchMu.Lock()
+	wasUp := s.upPeers[peer]
+	s.upPeers[peer] = false
+	s.watchMu.Unlock()
+	if !wasUp {
+		return
+	}
+	for _, allocation := range router.AllocationsV6 {
+		event := PathEvent{
+			Peer:      peer,
+			Prefix:    allocation,
+			NextHop:   netip.Addr{},
+			Withdrawn: true,
+		}
+		if err := s.fib.Apply(ctx, event); err != nil {
+			s.log.ErrorContext(ctx, "withdraw BGP router allocation failed", "router", router.Name, "peer", peer, "prefix", allocation, "error", err)
+		}
+	}
 }
 
 func (s *Speaker) addConfiguredPeers(ctx context.Context) error {

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 func TestNormalizeCIDR(t *testing.T) {
@@ -52,17 +53,20 @@ func TestBuildTableRoute(t *testing.T) {
 		wantDest  string
 		wantGw    string
 		wantScope netlink.Scope
+		wantProto int
 	}{
 		{
 			name: "on-link ipv4 /29",
 			want: RouteSpec{
-				Family:  "inet",
-				Dest:    "192.0.2.0/29",
-				Dev:     "uplink0",
-				TableID: 500,
+				Family:   "inet",
+				Dest:     "192.0.2.0/29",
+				Dev:      "uplink0",
+				TableID:  500,
+				Protocol: unix.RTPROT_BGP,
 			},
 			wantDest:  "192.0.2.0/29",
 			wantScope: netlink.SCOPE_LINK,
+			wantProto: unix.RTPROT_BGP,
 		},
 		{
 			name: "on-link ipv6 /128",
@@ -78,15 +82,17 @@ func TestBuildTableRoute(t *testing.T) {
 		{
 			name: "via-gateway ipv6 /60",
 			want: RouteSpec{
-				Family:  "inet6",
-				Dest:    "2001:db8:3::/60",
-				Via:     "2001:db8:2::1",
-				Dev:     "uplink0",
-				TableID: 502,
-				Metric:  20,
+				Family:   "inet6",
+				Dest:     "2001:db8:3::/60",
+				Via:      "2001:db8:2::1",
+				Dev:      "uplink0",
+				TableID:  502,
+				Metric:   20,
+				Protocol: unix.RTPROT_BGP,
 			},
-			wantDest: "2001:db8:3::/60",
-			wantGw:   "2001:db8:2::1",
+			wantDest:  "2001:db8:3::/60",
+			wantGw:    "2001:db8:2::1",
+			wantProto: unix.RTPROT_BGP,
 		},
 	}
 
@@ -107,6 +113,9 @@ func TestBuildTableRoute(t *testing.T) {
 			}
 			if route.Priority != tc.want.Metric {
 				t.Fatalf("metric got %d, want %d", route.Priority, tc.want.Metric)
+			}
+			if int(route.Protocol) != tc.wantProto {
+				t.Fatalf("protocol got %d, want %d", route.Protocol, tc.wantProto)
 			}
 			if route.Dst == nil || route.Dst.String() != tc.wantDest {
 				t.Fatalf("dest got %v, want %s", route.Dst, tc.wantDest)

@@ -67,6 +67,25 @@ func ListDHCPRoutes(
 	)
 }
 
+// ListProtocolRoutes returns routes installed with protocol in tableID for one family.
+func ListProtocolRoutes(
+	ctx context.Context,
+	log *slog.Logger,
+	family string,
+	tableID int,
+	protocol int,
+) ([]CurrentRoute, error) {
+	filter := &netlink.Route{Table: tableID, Protocol: netlink.RouteProtocol(protocol)}
+	return listRoutesFiltered(
+		ctx,
+		log,
+		family,
+		filter,
+		netlink.RT_FILTER_TABLE|netlink.RT_FILTER_PROTOCOL,
+		fmt.Sprintf("table-%d-protocol-%d", tableID, protocol),
+	)
+}
+
 // ListTableRoutes returns all routes in tableID for one address family.
 func ListTableRoutes(
 	ctx context.Context,
