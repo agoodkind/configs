@@ -7,6 +7,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
   depends_on = [
     proxmox_network_linux_bridge.mwan_suburban,
     proxmox_network_linux_bridge.isp_mbrains_suburban,
+    proxmox_network_linux_bridge.trunk_suburban,
   ]
 
   initialization {
@@ -24,11 +25,25 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
         address = "${local.service_mapping.mwan_failover_suburban.ipv6_transit}/64"
       }
     }
+    # Guest segment. Deploys target this address, so it carries no gateway:
+    # the ISP-sim default route on eth0 is what this guest uses for egress,
+    # and a second default would fight it.
+    ip_config {
+      ipv4 {
+        address = "${local.service_mapping.mwan_failover_suburban.ipv4_vmnet}/24"
+      }
+      ipv6 {
+        address = "${local.service_mapping.mwan_failover_suburban.ipv6_vmnet}/64"
+      }
+    }
+    user_account {
+      keys = [var.ssh_keys]
+    }
   }
 
-  features {
-    nesting = true
-  }
+  # No features block. The failover runs systemd, the mwan binary, and
+  # nftables, none of which need container features, and Proxmox refuses
+  # feature-flag writes from non-root@pam actors on privileged containers.
 
   network_interface {
     name        = "eth0"
@@ -40,6 +55,12 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
     name        = "eth1"
     bridge      = proxmox_network_linux_bridge.mwan_suburban.name
     mac_address = "BC:24:11:00:97:29"
+  }
+
+  network_interface {
+    name        = "eth2"
+    bridge      = proxmox_network_linux_bridge.trunk_suburban.name
+    mac_address = "BC:24:11:04:21:60"
   }
 
   disk {
@@ -73,10 +94,10 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
 
   started       = true
   start_on_boot = true
-  unprivileged  = false
+  unprivileged  = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       operating_system[0].template_file_id,
     ]
@@ -374,9 +395,10 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
     }
   }
 
-  features {
-    nesting = true
-  }
+  # No features block. FRR needs none of the advanced container features, and
+  # Proxmox writes no features line when every flag is off. Declaring one here
+  # makes the provider send fuse, keyctl and mknod on create, which Proxmox
+  # refuses for any actor but root@pam on a privileged container.
 
   network_interface {
     name        = "eth0"
