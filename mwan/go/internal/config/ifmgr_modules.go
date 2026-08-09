@@ -115,9 +115,10 @@ type IfMgrWANEntry struct {
 // data live in [ifmgr.wan.<name>] and on [ifmgr]; this section keeps only the
 // module-wide inputs that are not per-WAN.
 type IfMgrWANRoutesSection struct {
-	InternalIface   string `toml:"internal_iface"`
-	InternalNetV4   string `toml:"internal_net_v4"`
-	HealthStateFile string `toml:"health_state_file"`
+	InternalIface       string `toml:"internal_iface"`
+	InternalNetV4       string `toml:"internal_net_v4"`
+	HealthStateFile     string `toml:"health_state_file"`
+	BGPRoutesShadowMode *bool  `toml:"bgp_routes_shadow_mode"`
 }
 
 // IfMgrHealthSection keeps shared health settings and keyed per-WAN policy.

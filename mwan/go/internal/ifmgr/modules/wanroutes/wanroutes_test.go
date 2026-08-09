@@ -142,13 +142,74 @@ func TestInitReturnsDisabledSentinelWhenWANsEmpty(t *testing.T) {
 	}
 }
 
+func TestDesiredStateBGPRoutesShadowMode(t *testing.T) {
+	t.Parallel()
+
+	gateways := testGateways()
+	health := netif.HealthStates{
+		wanNameATT:          netif.HealthStateHealthy,
+		wanNameWebpass:      netif.HealthStateHealthy,
+		wanNameMonkeybrains: netif.HealthStateHealthy,
+	}
+
+	t.Run("shadow keeps the existing route set", func(t *testing.T) {
+		cfg := testConfig()
+		_, got := desiredState(gateways, health, cfg)
+		want := routesForGateways(cfg, gateways)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("routes mismatch\\ngot:  %#v\\nwant: %#v", got, want)
+		}
+	})
+
+	t.Run("authoritative BGP omits only the static internal prefix", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.BGPRoutesShadowMode = false
+		_, got := desiredState(gateways, health, cfg)
+		want := routesForGateways(cfg, gateways)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("routes mismatch\\ngot:  %#v\\nwant: %#v", got, want)
+		}
+
+		for _, gotRoute := range got {
+			if gotRoute.Dest == cfg.InternalPrefix {
+				t.Fatalf("static internal prefix route remains: %#v", gotRoute)
+			}
+		}
+		for _, wan := range cfg.WANs {
+			wantTransit := route(
+				familyV4,
+				cfg.InternalNetV4,
+				"",
+				cfg.InternalIface,
+				wan.TableID,
+				0,
+			)
+			wantEdge := route(
+				familyV6,
+				withPrefix(cfg.OpnsenseEdgeV6, "128"),
+				"",
+				cfg.InternalIface,
+				wan.TableID,
+				0,
+			)
+			if !containsRoute(got, wantTransit) {
+				t.Fatalf("missing transit route: %#v", wantTransit)
+			}
+			if !containsRoute(got, wantEdge) {
+				t.Fatalf("missing edge route: %#v", wantEdge)
+			}
+		}
+	})
+}
+
 func testConfig() Config {
 	return Config{
-		InternalIface:   "vmbr250",
-		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
-		InternalPrefix:  "3d06:bad:b01::/60",
-		InternalNetV4:   "10.250.250.0/29",
-		HealthStateFile: "/run/mwan-health.state",
+		InternalIface:       "vmbr250",
+		OpnsenseEdgeV6:      "3d06:bad:b01:201::1",
+		InternalPrefix:      "3d06:bad:b01::/60",
+		InternalNetV4:       "10.250.250.0/29",
+		HealthStateFile:     "/run/mwan-health.state",
+		BGPRoutesShadowMode: true,
 		WANs: []WAN{
 			{
 				WANRef:     ifmgr.WANRef{Name: wanNameATT, Iface: "att0"},
@@ -222,23 +283,38 @@ func routesForGateways(cfg Config, currentGateways gateways) []netif.RouteSpec {
 			routes = append(routes, route(familyV6, "default", wanGateways.V6, wan.Iface, wan.TableID, 0))
 		}
 		routes = append(routes,
-			route(familyV4, "10.250.250.0/29", "", "vmbr250", wan.TableID, 0),
-			route(familyV6, "3d06:bad:b01:201::1/128", "", "vmbr250", wan.TableID, 0),
-			// The internal prefix routes via the OPNsense edge address, which the
-			// on-link /128 above makes reachable, rather than via a link-local
-			// derived from the router's MAC.
-			route(familyV6, "3d06:bad:b01::/60", cfg.OpnsenseEdgeV6, "vmbr250", wan.TableID, 0),
+			route(familyV4, cfg.InternalNetV4, "", cfg.InternalIface, wan.TableID, 0),
+			route(familyV6, withPrefix(cfg.OpnsenseEdgeV6, "128"), "", cfg.InternalIface, wan.TableID, 0),
 		)
+		if cfg.BGPRoutesShadowMode {
+			routes = append(routes,
+				// The internal prefix routes via the OPNsense edge address, which the
+				// on-link /128 above makes reachable, rather than via a link-local
+				// derived from the router's MAC.
+				route(familyV6, cfg.InternalPrefix, cfg.OpnsenseEdgeV6, cfg.InternalIface, wan.TableID, 0),
+			)
+		}
 	}
-	routes = append(routes, route(
-		familyV6,
-		"3d06:bad:b01::/60",
-		cfg.OpnsenseEdgeV6,
-		"vmbr250",
-		unix.RT_TABLE_MAIN,
-		mainInternalMetric,
-	))
+	if cfg.BGPRoutesShadowMode {
+		routes = append(routes, route(
+			familyV6,
+			cfg.InternalPrefix,
+			cfg.OpnsenseEdgeV6,
+			cfg.InternalIface,
+			unix.RT_TABLE_MAIN,
+			mainInternalMetric,
+		))
+	}
 	return routes
+}
+
+func containsRoute(routes []netif.RouteSpec, want netif.RouteSpec) bool {
+	for _, got := range routes {
+		if got == want {
+			return true
+		}
+	}
+	return false
 }
 
 func route(family string, dest string, via string, dev string, tableID int, metric int) netif.RouteSpec {
