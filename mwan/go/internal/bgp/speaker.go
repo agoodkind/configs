@@ -41,6 +41,7 @@ type bgpServerAPI interface {
 	AddPeer(ctx context.Context, r *apipb.AddPeerRequest) error
 	WatchEvent(ctx context.Context, callbacks server.WatchEventMessageCallbacks, opts ...server.WatchOption) error
 	ListPeer(ctx context.Context, r *apipb.ListPeerRequest, fn func(*apipb.Peer)) error
+	ListPath(r apiutil.ListPathRequest, fn func(prefix bgppkt.NLRI, paths []*apiutil.Path)) error
 	AddPath(req apiutil.AddPathRequest) ([]apiutil.AddPathResponse, error)
 	DeletePath(req apiutil.DeletePathRequest) error
 }
@@ -119,18 +120,8 @@ func (s *Speaker) Start(ctx context.Context) error {
 		return fmt.Errorf("start bgp: %w", err)
 	}
 
-	for _, n := range s.cfg.Neighbors {
-		if err := s.addPeer(ctx, n.Address, false); err != nil {
-			s.log.ErrorContext(ctx, "add bgp peer failed", "peer", n.Address, "error", err)
-			return fmt.Errorf("add peer %s: %w", n.Address, err)
-		}
-	}
-
-	for _, n := range s.cfg.NeighborsV6 {
-		if err := s.addPeer(ctx, n.Address, true); err != nil {
-			s.log.ErrorContext(ctx, "add bgp peer failed", "peer", n.Address, "error", err)
-			return fmt.Errorf("add peer %s: %w", n.Address, err)
-		}
+	if err := s.addConfiguredPeers(ctx); err != nil {
+		return err
 	}
 
 	// Watch for peer state changes. When all peers reach ESTABLISHED,
@@ -165,7 +156,57 @@ func (s *Speaker) Start(ctx context.Context) error {
 	return nil
 }
 
+func (s *Speaker) addConfiguredPeers(ctx context.Context) error {
+	if len(s.cfg.Routers) == 0 {
+		return s.addLegacyPeers(ctx)
+	}
+	return s.addRouterPeers(ctx)
+}
+
+func (s *Speaker) addRouterPeers(ctx context.Context) error {
+	for _, router := range s.cfg.Routers {
+		if err := s.addPeer(ctx, router.AddressV4, false); err != nil {
+			s.log.ErrorContext(ctx, "add BGP peer failed", "peer", router.AddressV4, "error", err)
+			return fmt.Errorf("add peer %s: %w", router.AddressV4, err)
+		}
+		if err := s.addPeer(ctx, router.AddressV6, true); err != nil {
+			s.log.ErrorContext(ctx, "add BGP peer failed", "peer", router.AddressV6, "error", err)
+			return fmt.Errorf("add peer %s: %w", router.AddressV6, err)
+		}
+	}
+	return nil
+}
+
+func (s *Speaker) addLegacyPeers(ctx context.Context) error {
+	for _, neighbor := range s.cfg.Neighbors {
+		if err := s.addPeer(ctx, neighbor.Address, false); err != nil {
+			s.log.ErrorContext(ctx, "add BGP peer failed", "peer", neighbor.Address, "error", err)
+			return fmt.Errorf("add peer %s: %w", neighbor.Address, err)
+		}
+	}
+	for _, neighbor := range s.cfg.NeighborsV6 {
+		if err := s.addPeer(ctx, neighbor.Address, true); err != nil {
+			s.log.ErrorContext(ctx, "add BGP peer failed", "peer", neighbor.Address, "error", err)
+			return fmt.Errorf("add peer %s: %w", neighbor.Address, err)
+		}
+	}
+	return nil
+}
+
+func (s *Speaker) routerForPeer(addr string) *Router {
+	for routerIndex := range s.cfg.Routers {
+		router := &s.cfg.Routers[routerIndex]
+		if router.AddressV4 == addr || router.AddressV6 == addr {
+			return router
+		}
+	}
+	return nil
+}
+
 func (s *Speaker) addPeer(ctx context.Context, addr string, ipv6 bool) error {
+	if router := s.routerForPeer(addr); router != nil {
+		s.log.DebugContext(ctx, "add BGP router peer", "router", router.Name, "peer", addr)
+	}
 	peer := &apipb.Peer{
 		Conf: &apipb.PeerConf{
 			NeighborAddress: addr,

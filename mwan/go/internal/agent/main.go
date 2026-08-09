@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
@@ -99,6 +100,27 @@ func Run(cfg *config.Config) error {
 		}
 		for _, n := range cfg.BGP.NeighborsV6 {
 			bgpCfg.NeighborsV6 = append(bgpCfg.NeighborsV6, bgp.NeighborConfig{Address: n.Address})
+		}
+		for _, configuredRouter := range cfg.BGP.Routers {
+			router := bgp.Router{
+				Name:          configuredRouter.Name,
+				AddressV4:     configuredRouter.AddressV4,
+				AddressV6:     configuredRouter.AddressV6,
+				AllocationsV6: make([]netip.Prefix, 0, len(configuredRouter.AllocationsV6)),
+			}
+			for _, allocationText := range configuredRouter.AllocationsV6 {
+				allocation, err := netip.ParsePrefix(allocationText)
+				if err != nil {
+					return fmt.Errorf(
+						"parse BGP router %q allocation %q: %w",
+						configuredRouter.Name,
+						allocationText,
+						err,
+					)
+				}
+				router.AllocationsV6 = append(router.AllocationsV6, allocation)
+			}
+			bgpCfg.Routers = append(bgpCfg.Routers, router)
 		}
 		bgpSpeaker = bgp.New(bgpCfg, logger)
 		if err := bgpSpeaker.Start(context.Background()); err != nil {

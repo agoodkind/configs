@@ -1,5 +1,7 @@
 package bgp
 
+import "net/netip"
+
 // Config holds BGP speaker configuration.
 type Config struct {
 	Enabled          bool
@@ -12,6 +14,7 @@ type Config struct {
 
 	Neighbors   []NeighborConfig
 	NeighborsV6 []NeighborConfig
+	Routers     []Router
 
 	Announce AnnounceConfig
 
@@ -31,6 +34,14 @@ type GracefulRestartConfig struct {
 // NeighborConfig identifies a single BGP peer.
 type NeighborConfig struct {
 	Address string
+}
+
+// Router identifies a downstream BGP router and its accepted IPv6 allocations.
+type Router struct {
+	Name          string
+	AddressV4     string
+	AddressV6     string
+	AllocationsV6 []netip.Prefix
 }
 
 // AnnounceConfig specifies prefixes to originate.
