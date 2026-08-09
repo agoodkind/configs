@@ -1,0 +1,29 @@
+---
+- name: Deploy docker-prune service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/common/services/docker-prune.service"
+    dest: /etc/systemd/system/docker-prune.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: docker_prune_service
+
+- name: Deploy docker-prune timer
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/common/timers/docker-prune.timer"
+    dest: /etc/systemd/system/docker-prune.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: docker_prune_timer
+
+- name: Enable docker-prune timer
+  ansible.builtin.systemd:
+    name: docker-prune.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        docker_prune_service.changed
+        or docker_prune_timer.changed
+      }}

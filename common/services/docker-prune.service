@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune unused Docker data
+After=docker.service
+
+[Service]
+Type=oneshot
+# Removes stopped containers, unused networks, unreferenced images, and build
+# cache. It never removes volumes because --volumes is absent, and anything
+# the running Compose stack references remains in use.
+ExecStart=/usr/bin/docker system prune -af --filter until=168h
+TimeoutStartSec=1800
