@@ -526,6 +526,7 @@ opnsense_bgp_neighbors:
 bgp_asn: 4200000001
 bgp_router_id: "10.250.250.3"
 bgp_next_hop_v6: "3d06:bad:b01:fe::3"
+mwan_bgp_learned_route_iface: "{{ mwan_internal_iface }}"
 # Session timers live in group_vars/all/vars.yml (MWAN-303 rationale there).
 bgp_listen_port: 179
 bgp_neighbors:
@@ -536,6 +537,18 @@ bgp_announce_ipv4:
   - "0.0.0.0/0"
 bgp_announce_ipv6:
   - "::/0"
+
+# Transit networks the speaker accepts dynamic BGP sessions from. Any router
+# on the MWAN-OPNsense link peers and announces its prefixes with no MWAN
+# config change; the speaker installs what it announces.
+mwan_bgp_dynamic_neighbors:
+  - "{{ mwan_internal_net_v4 }}"
+  - "3d06:bad:b01:fe::/64"
+
+# Shadow mode keeps the static internal-prefix return route authoritative while
+# the agent logs the routes it would install from BGP, so the two can be
+# compared before the static route retires. The flip is a separate deploy.
+mwan_bgp_routes_shadow_mode: true
 
 # BGP Graceful Restart (RFC 4724). When enabled the embedded GoBGP speaker
 # negotiates the GR capability so a planned restart of mwan-agent does not
