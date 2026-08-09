@@ -26,6 +26,11 @@ func (*FIB) Apply(_ context.Context, _ PathEvent) error {
 	return nil
 }
 
+// WithdrawPeer accepts a peer disconnect without mutating unsupported platforms.
+func (*FIB) WithdrawPeer(_ context.Context, _ string) error {
+	return nil
+}
+
 // SweepStale leaves unsupported platforms unchanged.
 func (*FIB) SweepStale(_ context.Context) error {
 	return nil

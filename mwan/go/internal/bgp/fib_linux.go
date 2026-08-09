@@ -114,9 +114,9 @@ func newFIB(cfg FIBConfig, log *slog.Logger, writer routeWriter) *FIB {
 	}
 }
 
-// ArmSweep permits stale-route cleanup after the peer watcher has observed
-// every configured peer establish or expire. Starting earlier would delete
-// retained BGP routes before graceful restart can repopulate desired state.
+// ArmSweep permits stale-route cleanup after a dynamic session proves recovery
+// or the no-peer fallback expires. Earlier sweeping could delete retained live
+// routes before their sessions repopulate desired state.
 func (f *FIB) ArmSweep() {
 	f.sweep.Do(func() {
 		f.mu.Lock()
@@ -147,8 +147,8 @@ func (f *FIB) Apply(ctx context.Context, event PathEvent) error {
 }
 
 // SweepStale removes owned BGP routes absent from accepted best paths only after
-// ArmSweep. Before every peer has established or timed out, cleanup would erase
-// routes retained across an agent restart before the peers can repopulate state.
+// ArmSweep. The recovery gate lets dynamic sessions repopulate retained routes
+// before cleanup runs.
 func (f *FIB) SweepStale(ctx context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -209,6 +209,28 @@ func (f *FIB) withdraw(ctx context.Context, peer string, prefix netip.Prefix) er
 	for _, matchedPrefix := range matched {
 		delete(f.desired, matchedPrefix.String())
 		if err := f.deletePrefix(ctx, peer, matchedPrefix); err != nil {
+			withdrawErr = errors.Join(withdrawErr, err)
+		}
+	}
+	return withdrawErr
+}
+
+// WithdrawPeer removes every desired route that the disconnected peer announced.
+func (f *FIB) WithdrawPeer(ctx context.Context, peer string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var withdrawErr error
+	for prefixText, desired := range f.desired {
+		if desired.peer != peer {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(prefixText)
+		if err != nil {
+			continue
+		}
+		delete(f.desired, prefixText)
+		if err := f.deletePrefix(ctx, peer, prefix); err != nil {
 			withdrawErr = errors.Join(withdrawErr, err)
 		}
 	}

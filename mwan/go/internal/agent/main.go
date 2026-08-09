@@ -73,19 +73,20 @@ func Run(cfg *config.Config) error {
 		"tcp_addr", *tcpAddr,
 	)
 
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	bgpSpeaker, err := newBGPSpeaker(cfg, logger)
 	if err != nil {
 		return err
 	}
-	var stopBGPAudit func()
 	if bgpSpeaker != nil {
-		configurePlatformBGP(cfg, bgpSpeaker, logger)
-		if err := bgpSpeaker.Start(context.Background()); err != nil {
+		configurePlatformBGP(runCtx, cfg, bgpSpeaker, logger)
+		if err := bgpSpeaker.Start(runCtx); err != nil {
 			logger.Error("bgp speaker start failed", "error", err)
 			return fmt.Errorf("bgp speaker start: %w", err)
 		}
 		logger.Info("bgp speaker started", "asn", cfg.BGP.ASN, "router_id", cfg.BGP.RouterID)
-		stopBGPAudit = startPlatformBGPAudit(cfg, bgpSpeaker, notifier, logger)
 	}
 
 	var vsockLis net.Listener
@@ -171,9 +172,6 @@ func Run(cfg *config.Config) error {
 		}
 	case sig := <-sigCh:
 		logger.Info("shutdown signal", "signal", sig.String())
-		if stopBGPAudit != nil {
-			stopBGPAudit()
-		}
 		if bgpSpeaker != nil {
 			// When BGP Graceful Restart is enabled, skip the pre-emptive
 			// route withdrawal: an explicit WITHDRAW defeats GR semantics

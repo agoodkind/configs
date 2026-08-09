@@ -19,30 +19,25 @@ import (
 // install one via Speaker.newServer to assert that the GR-related
 // fields propagate into the GoBGP API requests built by the speaker.
 type fakeBGPServer struct {
-	mu              sync.Mutex
-	startReq        *apipb.StartBgpRequest
-	stopReq         *apipb.StopBgpRequest
-	addPeerReqs     []*apipb.AddPeerRequest
-	listPathReqs    []apiutil.ListPathRequest
-	adjRIBIn        map[string][]listPathResponse
-	watchRegistered bool
-	watchCallbacks  server.WatchEventMessageCallbacks
-}
-
-type listPathResponse struct {
-	prefix bgppkt.NLRI
-	paths  []*apiutil.Path
+	mu                     sync.Mutex
+	startReq               *apipb.StartBgpRequest
+	stopReq                *apipb.StopBgpRequest
+	addPeerReqs            []*apipb.AddPeerRequest
+	addPeerGroupReqs       []*apipb.AddPeerGroupRequest
+	addDynamicNeighborReqs []*apipb.AddDynamicNeighborRequest
+	watchRegistered        bool
+	watchCallbacks         server.WatchEventMessageCallbacks
 }
 
 func newFakeBGPServer() *fakeBGPServer {
 	return &fakeBGPServer{
-		mu:              sync.Mutex{},
-		startReq:        nil,
-		stopReq:         nil,
-		addPeerReqs:     nil,
-		listPathReqs:    nil,
-		adjRIBIn:        make(map[string][]listPathResponse),
-		watchRegistered: false,
+		mu:                     sync.Mutex{},
+		startReq:               nil,
+		stopReq:                nil,
+		addPeerReqs:            nil,
+		addPeerGroupReqs:       nil,
+		addDynamicNeighborReqs: nil,
+		watchRegistered:        false,
 	}
 }
 
@@ -69,6 +64,20 @@ func (f *fakeBGPServer) AddPeer(_ context.Context, r *apipb.AddPeerRequest) erro
 	return nil
 }
 
+func (f *fakeBGPServer) AddPeerGroup(_ context.Context, r *apipb.AddPeerGroupRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.addPeerGroupReqs = append(f.addPeerGroupReqs, r)
+	return nil
+}
+
+func (f *fakeBGPServer) AddDynamicNeighbor(_ context.Context, r *apipb.AddDynamicNeighborRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.addDynamicNeighborReqs = append(f.addDynamicNeighborReqs, r)
+	return nil
+}
+
 func (f *fakeBGPServer) WatchEvent(_ context.Context, callbacks server.WatchEventMessageCallbacks, _ ...server.WatchOption) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -79,24 +88,6 @@ func (f *fakeBGPServer) WatchEvent(_ context.Context, callbacks server.WatchEven
 
 func (f *fakeBGPServer) ListPeer(_ context.Context, _ *apipb.ListPeerRequest, _ func(*apipb.Peer)) error {
 	return nil
-}
-
-func (f *fakeBGPServer) ListPath(r apiutil.ListPathRequest, fn func(bgppkt.NLRI, []*apiutil.Path)) error {
-	f.mu.Lock()
-	f.listPathReqs = append(f.listPathReqs, r)
-	responses := append([]listPathResponse(nil), f.adjRIBIn[r.Name]...)
-	f.mu.Unlock()
-
-	for _, response := range responses {
-		fn(response.prefix, response.paths)
-	}
-	return nil
-}
-
-func (f *fakeBGPServer) setAdjRIBIn(peer string, responses []listPathResponse) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.adjRIBIn[peer] = responses
 }
 
 func (f *fakeBGPServer) emitBestPaths(paths []*apiutil.Path) {
@@ -136,17 +127,17 @@ func discardLogger() *slog.Logger {
 // GoBGP constructor so Start does not bind a TCP listener.
 func newSpeakerWithFake(cfg Config, fake *fakeBGPServer) *Speaker {
 	return &Speaker{
-		cfg:        cfg,
-		log:        discardLogger(),
-		server:     nil,
-		fib:        nil,
-		newServer:  func(_ *slog.Logger) bgpServerAPI { return fake },
-		mu:         sync.Mutex{},
-		announcing: false,
-		started:    false,
-		watchMu:    sync.Mutex{},
-		seenPeers:  make(map[string]bool),
-		upPeers:    make(map[string]bool),
+		cfg:               cfg,
+		log:               discardLogger(),
+		server:            nil,
+		fib:               nil,
+		newServer:         func(_ *slog.Logger) bgpServerAPI { return fake },
+		mu:                sync.Mutex{},
+		announcing:        false,
+		started:           false,
+		sweepArmed:        false,
+		startupGraceTimer: nil,
+		afterFunc:         nil,
 	}
 }
 
@@ -176,36 +167,78 @@ func baseGRConfig(grEnabled bool) Config {
 	}
 }
 
-func TestStartAddsPeersPerRouterBothFamilies(t *testing.T) {
+func TestStartRegistersDynamicPeerGroupAndNeighbors(t *testing.T) {
 	fake := newFakeBGPServer()
 	cfg := baseGRConfig(true)
-	firstV4 := cfg.Neighbors[0].Address
-	firstV6 := cfg.NeighborsV6[0].Address
-	cfg.Neighbors = nil
-	cfg.NeighborsV6 = nil
-	cfg.Routers = []Router{
-		{AddressV4: firstV4, AddressV6: firstV6},
-		{AddressV4: nextPeerAddress(t, firstV4), AddressV6: nextPeerAddress(t, firstV6)},
+	cfg.DynamicNeighborPrefixes = []netip.Prefix{
+		netip.MustParsePrefix("10.250.250.0/29"),
+		netip.MustParsePrefix("3d06:bad:b01:fe::/64"),
 	}
 	s := newSpeakerWithFake(cfg, fake)
 
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatalf("Start returned error: %v", err)
 	}
-	if got := len(fake.addPeerReqs); got != 4 {
-		t.Fatalf("AddPeer call count = %d; want 4", got)
+	if got, want := len(fake.addPeerReqs), 2; got != want {
+		t.Fatalf("AddPeer call count = %d, want %d", got, want)
 	}
-	for routerIndex := range cfg.Routers {
-		router := &cfg.Routers[routerIndex]
-		if got := s.routerForPeer(router.AddressV4); got != router {
-			t.Fatalf("routerForPeer(%q) = %p; want %p", router.AddressV4, got, router)
+	if got, want := len(fake.addPeerGroupReqs), 1; got != want {
+		t.Fatalf("AddPeerGroup call count = %d, want %d", got, want)
+	}
+	peerGroup := fake.addPeerGroupReqs[0].PeerGroup
+	if peerGroup == nil || peerGroup.Conf == nil {
+		t.Fatal("dynamic peer group configuration is nil")
+	}
+	if got, want := peerGroup.Conf.PeerAsn, cfg.ASN; got != want {
+		t.Fatalf("dynamic peer group ASN = %d, want %d", got, want)
+	}
+	if peerGroup.Transport == nil || !peerGroup.Transport.PassiveMode {
+		t.Fatal("dynamic peer group must be passive")
+	}
+	if got, want := len(peerGroup.AfiSafis), 2; got != want {
+		t.Fatalf("dynamic peer group AFI-SAFI count = %d, want %d", got, want)
+	}
+	for index, afiSafi := range peerGroup.AfiSafis {
+		if afiSafi.MpGracefulRestart == nil || afiSafi.MpGracefulRestart.Config == nil {
+			t.Fatalf("dynamic peer group AFI-SAFI[%d] MP graceful restart is nil", index)
 		}
-		if got := s.routerForPeer(router.AddressV6); got != router {
-			t.Fatalf("routerForPeer(%q) = %p; want %p", router.AddressV6, got, router)
+		if !afiSafi.MpGracefulRestart.Config.Enabled {
+			t.Errorf("dynamic peer group AFI-SAFI[%d] MP graceful restart enabled = false, want true", index)
 		}
 	}
-	if got := s.routerForPeer(nextPeerAddress(t, cfg.Routers[1].AddressV4)); got != nil {
-		t.Fatalf("routerForPeer returned %p for an unknown peer", got)
+	if got, want := len(fake.addDynamicNeighborReqs), len(cfg.DynamicNeighborPrefixes); got != want {
+		t.Fatalf("AddDynamicNeighbor call count = %d, want %d", got, want)
+	}
+	for index, prefix := range cfg.DynamicNeighborPrefixes {
+		dynamicNeighbor := fake.addDynamicNeighborReqs[index].DynamicNeighbor
+		if dynamicNeighbor == nil {
+			t.Fatalf("AddDynamicNeighbor[%d] is nil", index)
+		}
+		if got, want := dynamicNeighbor.Prefix, prefix.String(); got != want {
+			t.Fatalf("AddDynamicNeighbor[%d] prefix = %q, want %q", index, got, want)
+		}
+		if got, want := dynamicNeighbor.PeerGroup, dynamicPeerGroupName; got != want {
+			t.Fatalf("AddDynamicNeighbor[%d] peer group = %q, want %q", index, got, want)
+		}
+	}
+}
+
+func TestDynamicPeerGroupOmitsMpGracefulRestartWhenDisabled(t *testing.T) {
+	fake := newFakeBGPServer()
+	cfg := baseGRConfig(false)
+	cfg.DynamicNeighborPrefixes = []netip.Prefix{netip.MustParsePrefix("10.250.250.0/29")}
+	s := newSpeakerWithFake(cfg, fake)
+
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if got, want := len(fake.addPeerGroupReqs), 1; got != want {
+		t.Fatalf("AddPeerGroup call count = %d, want %d", got, want)
+	}
+	for index, afiSafi := range fake.addPeerGroupReqs[0].PeerGroup.AfiSafis {
+		if afiSafi.MpGracefulRestart != nil {
+			t.Errorf("dynamic peer group AFI-SAFI[%d] MP graceful restart = %+v, want nil", index, afiSafi.MpGracefulRestart)
+		}
 	}
 }
 
@@ -241,19 +274,6 @@ func peerStateEvent(peer string, state bgppkt.FSMState) *apiutil.WatchEventMessa
 			SessionState:    state,
 		}},
 	}
-}
-
-func nextPeerAddress(t *testing.T, address string) string {
-	t.Helper()
-	parsed, err := netip.ParseAddr(address)
-	if err != nil {
-		t.Fatalf("parse peer address %q: %v", address, err)
-	}
-	next := parsed.Next()
-	if !next.IsValid() {
-		t.Fatalf("peer address %q has no next address", address)
-	}
-	return next.String()
 }
 
 func TestStartPropagatesGracefulRestartToGlobal(t *testing.T) {
