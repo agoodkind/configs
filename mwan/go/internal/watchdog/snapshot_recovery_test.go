@@ -74,20 +74,53 @@ func TestSnapshotBackoffGrowsThenStops(t *testing.T) {
 func TestSuccessClearsTheFailureState(t *testing.T) {
 	mock := &mockOps{}
 	w := snapshotTestWatchdog(t, mock)
+	now := time.Unix(1_700_000_000, 0)
+	w.nowFn = func() time.Time { return now }
 	w.consecutiveSnapshotFails = 2
-	w.snapshotBackoffUntil = time.Time{}
+	// An active wait, so clearing it is observable rather than assumed.
+	w.snapshotBackoffUntil = now.Add(10 * time.Minute)
 	w.forcedDeletes = 1
 
-	w.maybeSnapshot(context.Background())
+	w.noteSnapshotSuccess(context.Background())
 
 	if w.consecutiveSnapshotFails != 0 {
 		t.Fatalf("consecutiveSnapshotFails = %d, want 0", w.consecutiveSnapshotFails)
+	}
+	if !w.snapshotBackoffUntil.IsZero() {
+		t.Fatalf("snapshotBackoffUntil = %s, want the zero time",
+			w.snapshotBackoffUntil)
 	}
 	if w.snapshotBackoffActive() {
 		t.Fatal("a successful snapshot must clear the wait")
 	}
 	if w.forcedDeletes != 0 {
 		t.Fatalf("forcedDeletes = %d, want 0", w.forcedDeletes)
+	}
+}
+
+// TestAlertFiresOnlyAfterRepeatedFailures covers the alert threshold. One
+// failure is routine; a run of them is what needs a person.
+func TestAlertFiresOnlyAfterRepeatedFailures(t *testing.T) {
+	mock := &mockOps{vmSnapErr: errors.New("snapshot task aborted")}
+	w := snapshotTestWatchdog(t, mock)
+	now := time.Unix(1_700_000_000, 0)
+	w.nowFn = func() time.Time { return now }
+	ctx := context.Background()
+	fn := fakeNotifierFrom(t, w)
+
+	for i := 1; i < snapshotFailureAlertThreshold; i++ {
+		w.noteSnapshotFailure(ctx, "known-good-x", errors.New("boom"))
+		if fn.Active(alertKindSnapshotFailed, w.cfg.MwanVMID) {
+			t.Fatalf("alert fired after %d failures, before the threshold of %d",
+				i, snapshotFailureAlertThreshold)
+		}
+	}
+
+	w.noteSnapshotFailure(ctx, "known-good-x", errors.New("boom"))
+
+	if !fn.Active(alertKindSnapshotFailed, w.cfg.MwanVMID) {
+		t.Fatalf("no alert after %d failures in a row",
+			snapshotFailureAlertThreshold)
 	}
 }
 
@@ -219,18 +252,29 @@ func TestForcedDeletesStopAfterTheLimit(t *testing.T) {
 		delSnapshotErr: errors.New(
 			"qm delsnapshot: exit status 255: " + storageSnapshotMissingMarker,
 		),
+		// Every forced delete fails, which is the case that must still
+		// consume the limit rather than retrying without bound.
+		forceDelSnapshotErr: errors.New("qm delsnapshot --force: exit status 255"),
 	}
 	w := newTestWatchdog(t, mock)
-	w.forcedDeletes = maxConsecutiveForcedDeletes
+	ctx := context.Background()
 
-	if err := w.deleteSnapshot(
-		context.Background(), "known-good-20260809-120000",
-	); err == nil {
+	for i := range maxConsecutiveForcedDeletes {
+		if err := w.deleteSnapshot(ctx, "known-good-20260809-120000"); err == nil {
+			t.Fatalf("attempt %d: a failed forced delete must report its failure", i+1)
+		}
+	}
+	if len(mock.forceDelSnapshotCalls) != maxConsecutiveForcedDeletes {
+		t.Fatalf("forced deletes = %d, want %d",
+			len(mock.forceDelSnapshotCalls), maxConsecutiveForcedDeletes)
+	}
+
+	if err := w.deleteSnapshot(ctx, "known-good-20260809-120000"); err == nil {
 		t.Fatal("past the limit the delete must report its failure")
 	}
-	if len(mock.forceDelSnapshotCalls) != 0 {
-		t.Fatalf("forced deletes = %d, want 0 past the limit",
-			len(mock.forceDelSnapshotCalls))
+	if len(mock.forceDelSnapshotCalls) != maxConsecutiveForcedDeletes {
+		t.Fatalf("forced deletes = %d, want the limit to stop further attempts at %d",
+			len(mock.forceDelSnapshotCalls), maxConsecutiveForcedDeletes)
 	}
 }
 

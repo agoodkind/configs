@@ -205,14 +205,18 @@ func (w *watchdog) deleteSnapshot(ctx context.Context, name string) error {
 		return fmt.Errorf("delete snapshot %s: %w", name, err)
 	}
 	log := w.tracedLogger(ctx)
+	// Count the attempt before making it. Counting only successes would let
+	// a forced delete that keeps failing retry without ever reaching the
+	// limit, which is the case the limit exists for.
+	w.forcedDeletes++
 	if forceErr := w.ops.VMDelSnapshotForce(
 		ctx, w.cfg.MwanVMID, name,
 	); forceErr != nil {
 		log.ErrorContext(ctx, "forced snapshot delete failed",
-			"snapshot", name, "err", forceErr)
+			"snapshot", name, "forced_deletes", w.forcedDeletes,
+			"err", forceErr)
 		return errors.Join(err, forceErr)
 	}
-	w.forcedDeletes++
 	log.WarnContext(ctx,
 		"removed a snapshot entry whose disk snapshot was already gone",
 		"snapshot", name, "forced_deletes", w.forcedDeletes)
