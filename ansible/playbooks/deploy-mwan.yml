@@ -79,6 +79,10 @@
       register: vmid_lookup
       changed_when: false
       failed_when: vmid_lookup.stdout | length == 0
+      # check_mode false: read-only lookup whose result every later template
+      # consumes; check mode otherwise skips it and aborts the run at the
+      # MAC parse, so drift checks never cover the rest of the play.
+      check_mode: false
 
     - name: Set actual VMID
       ansible.builtin.set_fact:

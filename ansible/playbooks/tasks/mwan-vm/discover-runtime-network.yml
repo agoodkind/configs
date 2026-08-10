@@ -13,11 +13,17 @@
   # Delegate to the hypervisor inventory host (vault for prod, suburban for the
   # testbed), not the PVE node name; the suburban node is named "hypervisor"
   # which is not a resolvable inventory host.
+  #
+  # check_mode false: this is a read whose output every later template
+  # consumes. Check mode skips command tasks, which left the parsed facts
+  # empty and aborted every `--check` run at the parse step, so drift checks
+  # never covered the rest of the play.
   delegate_to: "{{ mwan_proxmox_delegate }}"
   ansible.builtin.command:
     cmd: qm config {{ actual_vmid }}
   register: vm_config
   changed_when: false
+  check_mode: false
 
 - name: Parse virtio MAC addresses from VM config
   delegate_to: localhost
