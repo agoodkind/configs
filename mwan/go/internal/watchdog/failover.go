@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"goodkind.io/mwan/internal/alert"
@@ -308,20 +307,9 @@ func FailoverRun(cfg *config.Config) error {
 	notifier := notify.FromConfig(cfg, logger, "mwan-watchdog")
 
 	// Create watchdog instance
-	w := &watchdog{
-		cfg:               cfg,
-		ops:               ops.NewRealOps(cfg, logger),
-		notify:            notifier,
-		coord:             &alert.Coord{},
-		limiter:           alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
-		log:               logger,
-		runID:             runID,
-		nowFn:             time.Now,
-		failoverMu:        sync.Mutex{},
-		failoverActive:    false,
-		failoverStartedAt: time.Time{},
-		failoverReason:    "",
-	}
+	w := newWatchdog(
+		cfg, ops.NewRealOps(cfg, logger), notifier, &alert.Coord{}, logger, runID,
+	)
 
 	ctx := context.Background()
 	logger.InfoContext(ctx, "Manual failover requested")

@@ -68,6 +68,12 @@ type watchdog struct {
 	lastSnapshotAt        time.Time
 	healthyCyclesForHash  int
 
+	// Snapshot failure state. See snapshot_recovery.go for how a failed
+	// snapshot cycle is paced and how its leftovers are cleaned up.
+	consecutiveSnapshotFails int
+	snapshotBackoffUntil     time.Time
+	forcedDeletes            int
+
 	postRollbackGraceUntil time.Time
 	lastHashCheckOK        bool
 	totalFailStart         time.Time
@@ -79,6 +85,62 @@ type watchdog struct {
 	failoverActive    bool
 	failoverStartedAt time.Time
 	failoverReason    string
+}
+
+// newWatchdog builds a watchdog with every field set, so the zero values
+// the loop relies on are stated rather than implied. Both the daemon and
+// the manual failover command construct through here.
+func newWatchdog(
+	cfg *config.Config,
+	sysOps ops.SysOps,
+	notifier notify.Notifier,
+	coord *alert.Coord,
+	logger *slog.Logger,
+	runID string,
+) *watchdog {
+	return &watchdog{
+		cfg:     cfg,
+		ops:     sysOps,
+		notify:  notifier,
+		coord:   coord,
+		limiter: alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
+		log:     logger,
+		runID:   runID,
+
+		exitFn:                nil,
+		testHeartbeatInterval: 0,
+		nowFn:                 time.Now,
+
+		lastState:             "",
+		vmStoppedLogged:       false,
+		recoveredFromRollback: false,
+		consecutiveTotalFails: 0,
+		totalDownStartUnix:    0,
+		lastHeartbeat:         time.Time{},
+
+		probeLog: nil,
+		tracker:  nil,
+
+		lastConfigHash:        "",
+		lastManifest:          nil,
+		hashChangeWindowStart: 0,
+		consecutiveHealthy:    0,
+		lastSnapshotAt:        time.Time{},
+		healthyCyclesForHash:  0,
+
+		consecutiveSnapshotFails: 0,
+		snapshotBackoffUntil:     time.Time{},
+		forcedDeletes:            0,
+
+		postRollbackGraceUntil: time.Time{},
+		lastHashCheckOK:        false,
+		totalFailStart:         time.Time{},
+
+		failoverMu:        sync.Mutex{},
+		failoverActive:    false,
+		failoverStartedAt: time.Time{},
+		failoverReason:    "",
+	}
 }
 
 func (w *watchdog) heartbeatTick() time.Duration {
@@ -151,6 +213,9 @@ func (w *watchdog) maybeSnapshot(ctx context.Context) {
 	if w.consecutiveHealthy < w.cfg.Watchdog.SnapshotHealthyThreshold {
 		return
 	}
+	if w.snapshotBackoffActive() {
+		return
+	}
 	windowSec := int64(w.cfg.Watchdog.DeployWindowMinutes) * 60
 	if w.hashChangeWindowStart > 0 {
 		elapsed := w.now().Unix() - w.hashChangeWindowStart
@@ -178,14 +243,17 @@ func (w *watchdog) maybeSnapshot(ctx context.Context) {
 	// goes missing.
 	w.ensureGuestThawed(ctx, "post-snapshot")
 	if snapErr != nil {
-		log.ErrorContext(ctx, "vmSnapshot failed", "err", snapErr, "snapshot", name)
+		w.noteSnapshotFailure(ctx, name, snapErr)
+		w.clearStaleGuestLock(ctx, "post-snapshot")
 		return
 	}
 	log.InfoContext(ctx, "created known-good snapshot", "snapshot", name)
 	w.lastSnapshotAt = w.now()
 	w.consecutiveHealthy = 0
+	w.noteSnapshotSuccess(ctx)
 	if err := w.pruneSnapshots(ctx); err != nil {
 		log.ErrorContext(ctx, "pruneSnapshots failed", "err", err)
+		w.clearStaleGuestLock(ctx, "post-prune")
 	}
 }
 
@@ -201,19 +269,23 @@ func (w *watchdog) pruneSnapshots(ctx context.Context) error {
 	preDeploys := rollback.PreDeploySnapRE.FindAllString(s, -1)
 	total := len(knownGoods) + len(preDeploys)
 
+	var firstErr error
 	if w.cfg.Watchdog.MaxKnownGoodSnapshots > 0 &&
 		len(knownGoods) > w.cfg.Watchdog.MaxKnownGoodSnapshots {
 		toDrop := len(knownGoods) - w.cfg.Watchdog.MaxKnownGoodSnapshots
 		for i := range toDrop {
-			if err := w.ops.VMDelSnapshot(
-				ctx, w.cfg.MwanVMID, knownGoods[i],
-			); err != nil {
+			// One snapshot that refuses to go must not hold back the
+			// rest of the rotation, so the pass keeps going and reports
+			// the first failure at the end.
+			if err := w.deleteSnapshot(ctx, knownGoods[i]); err != nil {
 				log.ErrorContext(ctx,
 					"vmDelSnapshot",
 					"snapshot", knownGoods[i],
 					"err", err,
 				)
-				return err
+				if firstErr == nil {
+					firstErr = err
+				}
 			}
 		}
 		out, err = w.ops.VMSnapshots(ctx, w.cfg.MwanVMID)
@@ -229,22 +301,22 @@ func (w *watchdog) pruneSnapshots(ctx context.Context) error {
 
 	if w.cfg.Watchdog.MaxTotalSnapshots <= 0 ||
 		total <= w.cfg.Watchdog.MaxTotalSnapshots || len(knownGoods) == 0 {
-		return nil
+		return firstErr
 	}
 	excess := min(total-w.cfg.Watchdog.MaxTotalSnapshots, len(knownGoods))
 	for i := range excess {
-		if err := w.ops.VMDelSnapshot(
-			ctx, w.cfg.MwanVMID, knownGoods[i],
-		); err != nil {
+		if err := w.deleteSnapshot(ctx, knownGoods[i]); err != nil {
 			log.ErrorContext(ctx,
 				"vmDelSnapshot max total",
 				"snapshot", knownGoods[i],
 				"err", err,
 			)
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
-	return nil
+	return firstErr
 }
 
 // executeRollbackVM performs the stop-rollback-start cycle on the MWAN VM.
@@ -295,7 +367,7 @@ func (w *watchdog) executeRollbackVM(ctx context.Context, snap string) error {
 		"Running qm rollback",
 		"vmid", w.cfg.MwanVMID,
 		"snapshot", snap,
-		"timeout", ops.TimeoutQmRollback,
+		"timeout", ops.TimeoutQmLockHolding,
 	)
 	if err := w.ops.VMRollback(ctx, w.cfg.MwanVMID, snap); err != nil {
 		rollbackErr = err

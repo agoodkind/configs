@@ -58,6 +58,45 @@ func (d *dryRunOps) VMDelSnapshot(ctx context.Context, vmid, snapName string) er
 	return nil
 }
 
+func (d *dryRunOps) VMDelSnapshotForce(
+	ctx context.Context, vmid, snapName string,
+) error {
+	d.log.InfoContext(
+		ctx,
+		"[DRY-RUN] would force-delete snapshot",
+		"vmid", vmid,
+		"snapshot", snapName,
+	)
+	return nil
+}
+
+// VMLock reads state and changes nothing, so it passes through.
+func (d *dryRunOps) VMLock(ctx context.Context, vmid string) (string, error) {
+	lock, err := d.inner.VMLock(ctx, vmid)
+	if err != nil {
+		d.log.WarnContext(ctx, "read guest lock failed", "vmid", vmid, "err", err)
+		return "", fmt.Errorf("read guest lock: %w", err)
+	}
+	return lock, nil
+}
+
+func (d *dryRunOps) VMUnlock(ctx context.Context, vmid string) error {
+	d.log.InfoContext(ctx, "[DRY-RUN] would clear the guest lock", "vmid", vmid)
+	return nil
+}
+
+// VMHasRunningTask reads state and changes nothing, so it passes through.
+func (d *dryRunOps) VMHasRunningTask(
+	ctx context.Context, vmid string,
+) (bool, error) {
+	running, err := d.inner.VMHasRunningTask(ctx, vmid)
+	if err != nil {
+		d.log.WarnContext(ctx, "task liveness check failed", "vmid", vmid, "err", err)
+		return false, fmt.Errorf("task liveness: %w", err)
+	}
+	return running, nil
+}
+
 func (d *dryRunOps) GuestExec(
 	ctx context.Context, vmid string, args ...string,
 ) (ops.GuestExecResult, error) {

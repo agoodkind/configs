@@ -139,6 +139,20 @@ type mockOps struct {
 	announceRoutesCalls []string
 	withdrawRoutesCalls []string
 	getBGPStatusCalls   []string
+
+	// Snapshot cleanup surface. delSnapshotErr fails every plain delete;
+	// forceDelSnapshotErr fails every forced one. guestLock is the lock
+	// the guest reports, cleared by a successful VMUnlock.
+	delSnapshotCalls      []string
+	delSnapshotErr        error
+	forceDelSnapshotCalls []string
+	forceDelSnapshotErr   error
+	guestLock             string
+	guestLockErr          error
+	unlockCalls           int
+	unlockErr             error
+	taskRunning           bool
+	taskRunningErr        error
 }
 
 func (m *mockOps) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
@@ -243,7 +257,44 @@ func (m *mockOps) VMSnapshot(ctx context.Context, vmid, snapname string) error {
 func (m *mockOps) VMDelSnapshot(ctx context.Context, vmid, snapname string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.delSnapshotCalls = append(m.delSnapshotCalls, snapname)
+	return m.delSnapshotErr
+}
+
+func (m *mockOps) VMDelSnapshotForce(ctx context.Context, vmid, snapname string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.forceDelSnapshotCalls = append(m.forceDelSnapshotCalls, snapname)
+	return m.forceDelSnapshotErr
+}
+
+func (m *mockOps) VMLock(ctx context.Context, vmid string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.guestLockErr != nil {
+		return "", m.guestLockErr
+	}
+	return m.guestLock, nil
+}
+
+func (m *mockOps) VMUnlock(ctx context.Context, vmid string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.unlockCalls++
+	if m.unlockErr != nil {
+		return m.unlockErr
+	}
+	m.guestLock = ""
 	return nil
+}
+
+func (m *mockOps) VMHasRunningTask(ctx context.Context, vmid string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.taskRunningErr != nil {
+		return false, m.taskRunningErr
+	}
+	return m.taskRunning, nil
 }
 
 func (m *mockOps) VMRollback(ctx context.Context, vmid, snapname string) error {

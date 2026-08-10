@@ -188,6 +188,53 @@ func (r *Ops) VMDelSnapshot(
 	return r.inner.VMDelSnapshot(ctx, vmid, snapName)
 }
 
+// VMDelSnapshotForce passes the forced delete through to the wrapped ops;
+// no red-team preset injects snapshot-cleanup faults.
+func (r *Ops) VMDelSnapshotForce(
+	ctx context.Context, vmid, snapName string,
+) error {
+	if err := r.inner.VMDelSnapshotForce(ctx, vmid, snapName); err != nil {
+		r.log.WarnContext(ctx, "delsnapshot force failed",
+			"vmid", vmid, "snapshot", snapName, "err", err)
+		return fmt.Errorf("delsnapshot force: %w", err)
+	}
+	return nil
+}
+
+// VMLock passes the guest-lock query through to the wrapped ops; no
+// red-team preset injects guest-lock faults.
+func (r *Ops) VMLock(ctx context.Context, vmid string) (string, error) {
+	lock, err := r.inner.VMLock(ctx, vmid)
+	if err != nil {
+		r.log.WarnContext(ctx, "read guest lock failed", "vmid", vmid, "err", err)
+		return "", fmt.Errorf("read guest lock: %w", err)
+	}
+	return lock, nil
+}
+
+// VMUnlock passes the unlock through to the wrapped ops; no red-team
+// preset injects guest-lock faults.
+func (r *Ops) VMUnlock(ctx context.Context, vmid string) error {
+	if err := r.inner.VMUnlock(ctx, vmid); err != nil {
+		r.log.WarnContext(ctx, "clear guest lock failed", "vmid", vmid, "err", err)
+		return fmt.Errorf("clear guest lock: %w", err)
+	}
+	return nil
+}
+
+// VMHasRunningTask passes the task-liveness query through to the wrapped
+// ops; no red-team preset injects task faults.
+func (r *Ops) VMHasRunningTask(
+	ctx context.Context, vmid string,
+) (bool, error) {
+	running, err := r.inner.VMHasRunningTask(ctx, vmid)
+	if err != nil {
+		r.log.WarnContext(ctx, "task liveness check failed", "vmid", vmid, "err", err)
+		return false, fmt.Errorf("task liveness: %w", err)
+	}
+	return running, nil
+}
+
 // VMFSFreezeStatus passes the freeze-state query through to the wrapped ops;
 // no red-team preset injects freeze faults.
 func (r *Ops) VMFSFreezeStatus(ctx context.Context, vmid string) (string, error) {
