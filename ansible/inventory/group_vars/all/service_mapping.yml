@@ -292,6 +292,12 @@ service_mapping:
     inventory: false
     ipv4_transit: "10.240.240.5"
     ipv6_transit: "3d06:bad:b01:201::5"
+    # Uplink on the management bridge, matching the ISP sims and continuing
+    # their host-suffix run. The transit link is the router's WAN side, so it
+    # reaches neither the guest segment nor the internet; package installs
+    # need this second path.
+    ipv4_uplink: "10.240.200.93"
+    ipv6_uplink: "3d06:bad:b01:200::93"
     # The prefix the simulator announces over BGP and holds on its loopback.
     announced_prefix_v6: "3d06:bad:b01:230::/64"
 

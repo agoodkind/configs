@@ -381,10 +381,20 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
 
   depends_on = [
     proxmox_network_linux_bridge.mwan_suburban,
+    proxmox_network_linux_bridge.vm_management_suburban,
   ]
 
   initialization {
     hostname = local.service_mapping.router2_suburban.hostname
+    # Public resolvers, matching the ISP sims. The transit link is the
+    # router's WAN side, so this guest cannot reach the guest-segment
+    # resolver through it.
+    dns {
+      servers = ["2606:4700:4700::1111", "1.1.1.1"]
+    }
+    # Transit link, where it peers BGP. No gateway here: the router does not
+    # forward this guest to the guest segment or the internet, so egress
+    # rides the management uplink below.
     ip_config {
       ipv4 {
         address = "${local.service_mapping.router2_suburban.ipv4_transit}/29"
@@ -392,6 +402,19 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
       ipv6 {
         address = "${local.service_mapping.router2_suburban.ipv6_transit}/64"
       }
+    }
+    ip_config {
+      ipv4 {
+        address = "${local.service_mapping.router2_suburban.ipv4_uplink}/24"
+        gateway = local.service_mapping.vmbr1_suburban.ipv4
+      }
+      ipv6 {
+        address = "${local.service_mapping.router2_suburban.ipv6_uplink}/64"
+        gateway = local.service_mapping.vmbr1_suburban.ipv6
+      }
+    }
+    user_account {
+      keys = [var.ssh_keys]
     }
   }
 
@@ -404,6 +427,12 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
     name        = "eth0"
     bridge      = proxmox_network_linux_bridge.mwan_suburban.name
     mac_address = "BC:24:11:02:09:05"
+  }
+
+  network_interface {
+    name        = "eth1"
+    bridge      = proxmox_network_linux_bridge.vm_management_suburban.name
+    mac_address = "BC:24:11:02:09:93"
   }
 
   disk {
@@ -437,10 +466,12 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
 
   started       = true
   start_on_boot = true
-  unprivileged  = false
+  unprivileged  = true
 
+  # The simulator holds no state worth protecting: its FRR config is rendered
+  # by its deploy play, so recreating it costs one deploy.
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       operating_system[0].template_file_id,
     ]

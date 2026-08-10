@@ -287,7 +287,7 @@ mwan_bgp_dynamic_neighbors:
   - "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
   - "{{ service_mapping.opnsense_suburban.transit_v6_net }}"
 
-mwan_bgp_routes_shadow_mode: true
+mwan_bgp_routes_shadow_mode: false
 
 # BGP Graceful Restart (RFC 4724). Mirrors mwan_servers.yml.
 mwan_bgp_graceful_restart_enabled: true
