@@ -33,34 +33,6 @@ const (
 	timeoutPVEExec        = 45 * time.Second
 )
 
-// Budgets for the qm operations that take a Proxmox configuration lock.
-//
-// Creating a snapshot, deleting a snapshot, and rolling back each write a
-// lock into the guest configuration and clear it when they finish. runQm
-// kills the qm client once its budget expires, and a client killed while
-// the lock is held orphans the Proxmox worker: the lock is never cleared,
-// so every later operation on that guest is refused until an operator
-// unlocks it by hand. A snapshot killed mid-freeze also leaves the guest
-// filesystems frozen.
-//
-// These budgets outlast Proxmox's own failure paths so Proxmox always
-// resolves first and the failure arrives as an ordinary command error.
-// Proxmox allows a guest filesystem freeze 60 minutes; snapshot deletion
-// and rollback are bounded by storage work with no comparable ceiling.
-// The asymmetry sets the value: an over-long budget costs one stalled
-// watchdog cycle that resolves itself, while an under-short one costs a
-// guest that cannot start until a human intervenes.
-const (
-	TimeoutQmSnapshot    = 75 * time.Minute
-	timeoutQmDelSnapshot = 75 * time.Minute
-	TimeoutQmRollback    = 75 * time.Minute
-
-	// minLockHoldingTimeout is the floor each budget above must clear. A
-	// test enforces it so a later edit cannot quietly drop one back under
-	// the Proxmox ceiling and reintroduce the stranded-lock failure.
-	minLockHoldingTimeout = 65 * time.Minute
-)
-
 // ErrGuestExecUnavailable is returned by pveExec when the PVE client is
 // not configured (missing token). Callers can distinguish this from a
 // command that ran and returned a non-zero exit code.
@@ -93,6 +65,10 @@ type SysOps interface {
 	VMSnapshots(ctx context.Context, vmid string) ([]byte, error)
 	VMSnapshot(ctx context.Context, vmid, snapName string) error
 	VMDelSnapshot(ctx context.Context, vmid, snapName string) error
+	VMDelSnapshotForce(ctx context.Context, vmid, snapName string) error
+	VMLock(ctx context.Context, vmid string) (string, error)
+	VMUnlock(ctx context.Context, vmid string) error
+	VMHasRunningTask(ctx context.Context, vmid string) (bool, error)
 	GuestExec(
 		ctx context.Context, vmid string, args ...string,
 	) (GuestExecResult, error)
@@ -191,12 +167,6 @@ func (r *RealOps) VMStop(ctx context.Context, vmid string) error {
 	return err
 }
 
-// VMRollback rolls the VM back to the named snapshot via `qm rollback`.
-func (r *RealOps) VMRollback(ctx context.Context, vmid, snap string) error {
-	_, err := runQm(ctx, TimeoutQmRollback, "rollback", vmid, snap)
-	return err
-}
-
 // VMStart starts the VM with the given vmid via `qm start`.
 func (r *RealOps) VMStart(ctx context.Context, vmid string) error {
 	_, err := runQm(ctx, TimeoutQmStart, "start", vmid)
@@ -206,26 +176,6 @@ func (r *RealOps) VMStart(ctx context.Context, vmid string) error {
 // VMSnapshots returns the raw output of `qm listsnapshot` for the given vmid.
 func (r *RealOps) VMSnapshots(ctx context.Context, vmid string) ([]byte, error) {
 	return runQm(ctx, timeoutQmListSnapshot, "listsnapshot", vmid)
-}
-
-// VMSnapshot creates a new snapshot named snapName on the given VM via
-// `qm snapshot`.
-func (r *RealOps) VMSnapshot(
-	ctx context.Context, vmid, snapName string,
-) error {
-	_, err := runQm(ctx, TimeoutQmSnapshot, "snapshot", vmid, snapName)
-	return err
-}
-
-// VMDelSnapshot deletes the snapshot named snapName from the given VM via
-// `qm delsnapshot`.
-func (r *RealOps) VMDelSnapshot(
-	ctx context.Context, vmid, snapName string,
-) error {
-	_, err := runQm(
-		ctx, timeoutQmDelSnapshot, "delsnapshot", vmid, snapName,
-	)
-	return err
 }
 
 // VMFSFreezeStatus reports the guest agent's filesystem freeze state via

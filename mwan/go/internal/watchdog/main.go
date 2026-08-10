@@ -8,9 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
-	"time"
 
 	"goodkind.io/mwan/internal/alert"
 	"goodkind.io/mwan/internal/config"
@@ -189,20 +187,7 @@ func Run(cfg *config.Config) error {
 	}()
 
 	// Create watchdog instance and run
-	w := &watchdog{
-		cfg:               cfg,
-		ops:               baseOps,
-		notify:            notifier,
-		coord:             coord,
-		limiter:           alert.NewLimiter(cfg.Watchdog.AlertCooldownSeconds),
-		log:               logger,
-		runID:             runID,
-		nowFn:             time.Now,
-		failoverMu:        sync.Mutex{},
-		failoverActive:    false,
-		failoverStartedAt: time.Time{},
-		failoverReason:    "",
-	}
+	w := newWatchdog(cfg, baseOps, notifier, coord, logger, runID)
 
 	// Try to extract channel tracker for diagnostics
 	w.tracker = extractTracker(baseOps)
