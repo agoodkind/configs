@@ -1,0 +1,33 @@
+[logging]
+level = "info"
+
+[conversation.semantic]
+enabled = false
+search_enabled = false
+
+[adapter]
+enabled = true
+host = "::1"
+port = 11434
+max_concurrent = 4
+
+[adapter.codex]
+enabled = true
+auth_file = "/root/.codex/auth.json"
+reasoning_summary = "detailed"
+websocket_enabled = true
+
+[adapter.client_identity]
+system_prompt_prefix = "You are Codex."
+stainless_package_version = "0.81.0"
+stainless_runtime = "node"
+stainless_runtime_version = "v24.3.0"
+cc_version = "2.1.114"
+cc_entrypoint = "sdk-cli"
+
+[[adapter.model_routes]]
+match = "gpt-*"
+surfaces = ["cursor", "openai"]
+provider = "codex"
+wire_model_policy = "preserve"
+capability_policy = "passthrough"

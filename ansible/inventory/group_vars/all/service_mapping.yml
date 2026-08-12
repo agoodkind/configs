@@ -1,5 +1,6 @@
 ---
-# Single source of truth for service hostnames, VMIDs, and IPv6 addresses
+# Single source of truth for service hostnames, VMIDs, IP addresses, and pinned
+# MAC addresses
 # Services use either the home.goodkind.io or suburban.goodkind.io domain.
 #
 # Usage:
@@ -149,6 +150,11 @@ service_mapping:
     # Keeps prod's ::64 service address rather than taking its VMID suffix,
     # because every guest points at this address as its resolver.
     ipv6: "3d06:bad:b01:210::64"
+  clyde_suburban:
+    hostname: clyde.suburban.goodkind.io
+    vmid: 224
+    ipv6: "3d06:bad:b01:210::224"
+    mac_address: "BC:24:11:04:02:24"
 
   # Static Hosts (different subnet or external)
   mini:
