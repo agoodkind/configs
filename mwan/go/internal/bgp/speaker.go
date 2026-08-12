@@ -35,6 +35,13 @@ type Status struct {
 // on Stop, MpGracefulRestart on AddPeer). The production constructor
 // New wires the real *server.BgpServer; tests use newWithServer.
 type bgpServerAPI interface {
+	bgpServerPeering
+	bgpServerRIB
+}
+
+// bgpServerPeering is the session surface: server lifecycle, peer
+// configuration, and event watches.
+type bgpServerPeering interface {
 	Serve()
 	StartBgp(ctx context.Context, r *apipb.StartBgpRequest) error
 	StopBgp(ctx context.Context, r *apipb.StopBgpRequest) error
@@ -43,8 +50,14 @@ type bgpServerAPI interface {
 	AddDynamicNeighbor(ctx context.Context, r *apipb.AddDynamicNeighborRequest) error
 	WatchEvent(ctx context.Context, callbacks server.WatchEventMessageCallbacks, opts ...server.WatchOption) error
 	ListPeer(ctx context.Context, r *apipb.ListPeerRequest, fn func(*apipb.Peer)) error
+}
+
+// bgpServerRIB is the table surface: paths announced, withdrawn, and read
+// back out of the RIB.
+type bgpServerRIB interface {
 	AddPath(req apiutil.AddPathRequest) ([]apiutil.AddPathResponse, error)
 	DeletePath(req apiutil.DeletePathRequest) error
+	ListPath(r apiutil.ListPathRequest, fn func(prefix bgppkt.NLRI, paths []*apiutil.Path)) error
 }
 
 // Speaker wraps a GoBGP embedded server for programmatic route control.
@@ -197,35 +210,84 @@ func (s *Speaker) handleBestPaths(ctx context.Context, paths []*apiutil.Path) {
 		return
 	}
 	for _, path := range paths {
-		if path == nil || path.Family != bgppkt.RF_IPv6_UC || path.Nlri == nil {
-			continue
-		}
-		if !path.PeerAddress.IsValid() {
-			continue
-		}
-		peer := path.PeerAddress.String()
-		prefix, err := netip.ParsePrefix(path.Nlri.String())
+		s.applyBestPath(ctx, path)
+	}
+}
+
+// applyBestPath converts one accepted best path into a FIB event and
+// applies it. Paths without a peer address are locally originated
+// announcements and never touch the kernel.
+func (s *Speaker) applyBestPath(ctx context.Context, path *apiutil.Path) {
+	if s.fib == nil {
+		return
+	}
+	if path == nil || path.Family != bgppkt.RF_IPv6_UC || path.Nlri == nil {
+		return
+	}
+	if !path.PeerAddress.IsValid() {
+		return
+	}
+	peer := path.PeerAddress.String()
+	prefix, err := netip.ParsePrefix(path.Nlri.String())
+	if err != nil {
+		s.log.WarnContext(ctx, "ignore BGP best path with invalid prefix", "peer", peer, "error", err)
+		return
+	}
+	event := PathEvent{
+		Peer:      peer,
+		Prefix:    prefix,
+		NextHop:   netip.Addr{},
+		Withdrawn: path.Withdrawal,
+	}
+	if !path.Withdrawal {
+		nextHop, err := bestPathNextHop(path)
 		if err != nil {
-			s.log.WarnContext(ctx, "ignore BGP best path with invalid prefix", "peer", peer, "error", err)
-			continue
+			s.log.WarnContext(ctx, "ignore BGP best path with invalid next hop", "peer", peer, "prefix", prefix, "error", err)
+			return
 		}
-		event := PathEvent{
-			Peer:      peer,
-			Prefix:    prefix,
-			NextHop:   netip.Addr{},
-			Withdrawn: path.Withdrawal,
-		}
-		if !path.Withdrawal {
-			nextHop, err := bestPathNextHop(path)
-			if err != nil {
-				s.log.WarnContext(ctx, "ignore BGP best path with invalid next hop", "peer", peer, "prefix", prefix, "error", err)
+		event.NextHop = nextHop
+	}
+	if err := s.fib.Apply(ctx, event); err != nil {
+		s.log.ErrorContext(ctx, "reconcile BGP best path failed", "peer", peer, "prefix", prefix, "error", err)
+	}
+}
+
+// reapplyBestPaths re-applies the table's current best paths into the FIB.
+// The watch reports only best-path changes, and a peer flap deletes that
+// peer's kernel routes; when the session comes back re-announcing a path
+// identical to the one the table retained, no change event fires and the
+// deleted routes stay missing until the process restarts. Re-applying from
+// the table on each sweep heals that within one sweep interval, and the
+// installs are idempotent kernel replaces. Stale paths are skipped so a
+// currently-down peer's retained paths do not resurrect routes the
+// peer-down handler removed on purpose.
+func (s *Speaker) reapplyBestPaths(ctx context.Context) {
+	s.mu.Lock()
+	started := s.started
+	srv := s.server
+	fib := s.fib
+	s.mu.Unlock()
+	if !started || srv == nil || fib == nil {
+		return
+	}
+	request := apiutil.ListPathRequest{
+		TableType:      apipb.TableType_TABLE_TYPE_GLOBAL,
+		Name:           "",
+		Family:         bgppkt.RF_IPv6_UC,
+		Prefixes:       nil,
+		SortType:       0,
+		EnableFiltered: false,
+	}
+	err := srv.ListPath(request, func(_ bgppkt.NLRI, paths []*apiutil.Path) {
+		for _, path := range paths {
+			if path == nil || !path.Best || path.Stale || path.Withdrawal {
 				continue
 			}
-			event.NextHop = nextHop
+			s.applyBestPath(ctx, path)
 		}
-		if err := s.fib.Apply(ctx, event); err != nil {
-			s.log.ErrorContext(ctx, "reconcile BGP best path failed", "peer", peer, "prefix", prefix, "error", err)
-		}
+	})
+	if err != nil {
+		s.log.ErrorContext(ctx, "list BGP best paths failed", "error", err)
 	}
 }
 
@@ -411,7 +473,12 @@ func (s *Speaker) scheduleSweepArm(delay time.Duration) sweepTimer {
 }
 
 // SweepStale reconciles retained BGP routes against accepted best paths.
+// It first re-applies the table's current best paths, so a route deleted
+// by a peer flap comes back even when the re-established session produced
+// no best-path change event, then prunes owned routes absent from the
+// desired set.
 func (s *Speaker) SweepStale(ctx context.Context) error {
+	s.reapplyBestPaths(ctx)
 	s.mu.Lock()
 	fib := s.fib
 	s.mu.Unlock()

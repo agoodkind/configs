@@ -27,6 +27,11 @@ type fakeBGPServer struct {
 	addDynamicNeighborReqs []*apipb.AddDynamicNeighborRequest
 	watchRegistered        bool
 	watchCallbacks         server.WatchEventMessageCallbacks
+
+	// listPaths is what ListPath serves as the table's current best paths;
+	// listPathErr fails the listing instead.
+	listPaths   []*apiutil.Path
+	listPathErr error
 }
 
 func newFakeBGPServer() *fakeBGPServer {
@@ -38,6 +43,8 @@ func newFakeBGPServer() *fakeBGPServer {
 		addPeerGroupReqs:       nil,
 		addDynamicNeighborReqs: nil,
 		watchRegistered:        false,
+		listPaths:              nil,
+		listPathErr:            nil,
 	}
 }
 
@@ -88,6 +95,28 @@ func (f *fakeBGPServer) WatchEvent(_ context.Context, callbacks server.WatchEven
 
 func (f *fakeBGPServer) ListPeer(_ context.Context, _ *apipb.ListPeerRequest, _ func(*apipb.Peer)) error {
 	return nil
+}
+
+func (f *fakeBGPServer) ListPath(
+	_ apiutil.ListPathRequest, fn func(bgppkt.NLRI, []*apiutil.Path),
+) error {
+	f.mu.Lock()
+	paths := f.listPaths
+	err := f.listPathErr
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		fn(path.Nlri, []*apiutil.Path{path})
+	}
+	return nil
+}
+
+func (f *fakeBGPServer) setListPaths(paths []*apiutil.Path) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listPaths = paths
 }
 
 func (f *fakeBGPServer) emitBestPaths(paths []*apiutil.Path) {
