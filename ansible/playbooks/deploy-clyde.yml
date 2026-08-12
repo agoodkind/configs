@@ -148,6 +148,26 @@
         state: started
         daemon_reload: true
 
+    - name: Install the weekly package updater
+      ansible.builtin.include_tasks: tasks/package-updater.yml
+
+    - name: Create the package updater override directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/package-updater.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Update Codex after weekly APT updates
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/clyde/package-updater-codex.conf"
+        dest: /etc/systemd/system/package-updater.service.d/codex.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd
+
     - name: Install and configure cloudflared
       ansible.builtin.include_tasks: tasks/install-cloudflared.yml
       vars:
@@ -172,25 +192,16 @@
           - codex_version_result.stdout is match('^codex-cli ')
           - clyde_version in clyde_version_result.stdout
 
-    - name: Verify the local Clyde model catalog
+    - name: Verify the local Clyde endpoint
       ansible.builtin.uri:
         url: "{{ clyde_adapter_url }}/v1/models"
         headers:
           Authorization: "Bearer {{ vault_clyde_adapter_token }}"
-        return_content: true
         status_code: 200
-      register: clyde_models_result
       retries: 12
       delay: 2
-      until: clyde_models_result.status == 200
-      no_log: true
-
-    - name: Verify the expected Clyde model is advertised
-      ansible.builtin.assert:
-        that:
-          - >-
-            'gpt-5.6-luna' in
-            (clyde_models_result.json.data | map(attribute='id') | list)
+      register: clyde_local_result
+      until: clyde_local_result.status == 200
       no_log: true
 
     - name: Verify local requests require authentication
@@ -210,20 +221,11 @@
         url: "{{ clyde_public_url }}/v1/models"
         headers:
           Authorization: "Bearer {{ vault_clyde_adapter_token }}"
-        return_content: true
         status_code: 200
       register: clyde_public_result
       retries: 12
       delay: 5
       until: clyde_public_result.status == 200
-      no_log: true
-
-    - name: Verify the expected Clyde model is public
-      ansible.builtin.assert:
-        that:
-          - >-
-            'gpt-5.6-luna' in
-            (clyde_public_result.json.data | map(attribute='id') | list)
       no_log: true
 
   handlers:
@@ -237,4 +239,8 @@
       ansible.builtin.systemd:
         name: cloudflared
         state: restarted
+        daemon_reload: true
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
         daemon_reload: true

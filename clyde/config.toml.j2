@@ -9,7 +9,6 @@ search_enabled = false
 enabled = true
 host = "::1"
 port = 11434
-default_model = "gpt-5.6-luna"
 max_concurrent = 4
 
 [adapter.codex]
@@ -25,30 +24,6 @@ stainless_runtime = "node"
 stainless_runtime_version = "v24.3.0"
 cc_version = "2.1.114"
 cc_entrypoint = "sdk-cli"
-
-[adapter.model_profiles."gpt-5.6-luna"]
-contexts = [
-  { name = "standard", tokens = 272000, transport_limits = [
-    { transport = "codex_http", tokens = 272000 },
-    { transport = "codex_websocket", tokens = 272000 },
-  ] },
-]
-max_output_tokens = 128000
-reasoning_efforts = ["low", "medium", "high", "xhigh", "max"]
-default_effort = "medium"
-supports_tools = true
-supports_vision = true
-
-[adapter.models."gpt-5.6-luna"]
-provider = "codex"
-wire_model = "gpt-5.6-luna"
-profile = "gpt-5.6-luna"
-advertise = true
-aliases = [
-  { id = "gpt-5.6", advertise = true },
-  { id = "clyde-codex-5.6-luna", advertise = true },
-]
-generated_aliases = { prefix = "clyde-codex-5.6-luna", advertise = true, dimensions = ["reasoning_effort"] }
 
 [[adapter.model_routes]]
 match = "gpt-*"
