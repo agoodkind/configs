@@ -51,7 +51,11 @@ second router has no way to receive return traffic for its own LANs.
    prefixes over iBGP in AS 4200000001. For OPNsense that is FRR network
    statements per family, applied by hand through the GUI (over the
    documented SSH forward on the testbed) or through the serial daemon,
-   followed by the Quagga template reload and an FRR restart.
+   followed by the Quagga template reload and `configctl quagga reload`,
+   which diffs the regenerated file against the running config and issues
+   the matching `no` commands. A plain FRR restart cycles only the
+   watchfrr supervisor and merges config additively, so it never removes
+   a withdrawn statement.
 
 ## Boundaries
 
