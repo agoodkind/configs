@@ -27,6 +27,11 @@ type fakeBGPServer struct {
 	addDynamicNeighborReqs []*apipb.AddDynamicNeighborRequest
 	watchRegistered        bool
 	watchCallbacks         server.WatchEventMessageCallbacks
+
+	// listPaths is what ListPath serves as the table's current best paths;
+	// listPathErr fails the listing instead.
+	listPaths   []*apiutil.Path
+	listPathErr error
 }
 
 func newFakeBGPServer() *fakeBGPServer {
@@ -38,6 +43,8 @@ func newFakeBGPServer() *fakeBGPServer {
 		addPeerGroupReqs:       nil,
 		addDynamicNeighborReqs: nil,
 		watchRegistered:        false,
+		listPaths:              nil,
+		listPathErr:            nil,
 	}
 }
 
@@ -88,6 +95,41 @@ func (f *fakeBGPServer) WatchEvent(_ context.Context, callbacks server.WatchEven
 
 func (f *fakeBGPServer) ListPeer(_ context.Context, _ *apipb.ListPeerRequest, _ func(*apipb.Peer)) error {
 	return nil
+}
+
+func (f *fakeBGPServer) ListPath(
+	_ apiutil.ListPathRequest, fn func(bgppkt.NLRI, []*apiutil.Path),
+) error {
+	f.mu.Lock()
+	paths := f.listPaths
+	err := f.listPathErr
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	// Group per prefix like the real table listing, so a test that
+	// serves several paths for one prefix exercises a multi-path
+	// callback rather than one call per path.
+	groups := make(map[string][]*apiutil.Path, len(paths))
+	order := make([]string, 0, len(paths))
+	for _, path := range paths {
+		key := path.Nlri.String()
+		if _, seen := groups[key]; !seen {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], path)
+	}
+	for _, key := range order {
+		group := groups[key]
+		fn(group[0].Nlri, group)
+	}
+	return nil
+}
+
+func (f *fakeBGPServer) setListPaths(paths []*apiutil.Path) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listPaths = paths
 }
 
 func (f *fakeBGPServer) emitBestPaths(paths []*apiutil.Path) {
