@@ -25,7 +25,7 @@ resource "proxmox_virtual_environment_container" "clyde_suburban" {
   network_interface {
     name        = "eth0"
     bridge      = proxmox_network_linux_bridge.trunk_suburban.name
-    mac_address = "BC:24:11:04:02:24"
+    mac_address = local.service_mapping.clyde_suburban.mac_address
   }
 
   disk {
