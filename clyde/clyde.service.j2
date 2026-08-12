@@ -1,0 +1,19 @@
+[Unit]
+Description=Clyde daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/clyde/clyde.env
+ExecStart=/usr/local/bin/clyde daemon run
+WorkingDirectory=/root
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

@@ -149,6 +149,10 @@ service_mapping:
     # Keeps prod's ::64 service address rather than taking its VMID suffix,
     # because every guest points at this address as its resolver.
     ipv6: "3d06:bad:b01:210::64"
+  clyde_suburban:
+    hostname: clyde.suburban.goodkind.io
+    vmid: 224
+    ipv6: "3d06:bad:b01:210::224"
 
   # Static Hosts (different subnet or external)
   mini:

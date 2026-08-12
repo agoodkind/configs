@@ -1,0 +1,240 @@
+---
+- name: Install Codex, Clyde, and cloudflared on the suburban testbed
+  hosts: clyde_suburban_servers
+  become: true
+  gather_facts: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Wait for the Clyde guest
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+        delay: 2
+        sleep: 2
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Download the official Codex installer
+      ansible.builtin.get_url:
+        url: https://chatgpt.com/codex/install.sh
+        dest: /tmp/codex-install.sh
+        mode: "0755"
+
+    - name: Install Codex
+      ansible.builtin.command:
+        cmd: /tmp/codex-install.sh
+        creates: /usr/local/bin/codex
+      environment:
+        CODEX_HOME: /root/.codex
+        CODEX_INSTALL_DIR: /usr/local/bin
+        CODEX_NON_INTERACTIVE: "true"
+
+    - name: Remove the Codex installer
+      ansible.builtin.file:
+        path: /tmp/codex-install.sh
+        state: absent
+
+    - name: Download the pinned Clyde release
+      ansible.builtin.get_url:
+        url: "{{ clyde_archive_url }}"
+        dest: "/tmp/clyde-{{ clyde_version }}.tar.gz"
+        checksum: "{{ clyde_archive_checksum }}"
+        mode: "0644"
+
+    - name: Install Clyde
+      ansible.builtin.unarchive:
+        src: "/tmp/clyde-{{ clyde_version }}.tar.gz"
+        dest: /usr/local/bin
+        remote_src: true
+        include:
+          - clyde
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart Clyde
+
+    - name: Remove the Clyde release archive
+      ansible.builtin.file:
+        path: "/tmp/clyde-{{ clyde_version }}.tar.gz"
+        state: absent
+
+    - name: Create the Codex configuration directory
+      ansible.builtin.file:
+        path: /root/.codex
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install Codex authentication for Clyde
+      ansible.builtin.copy:
+        content: >-
+          {{
+            {
+              'auth_mode': 'chatgpt',
+              'tokens': {
+                'id_token': vault_clyde_codex_id_token,
+                'access_token': vault_clyde_codex_access_token,
+                'refresh_token': vault_clyde_codex_refresh_token,
+                'account_id': vault_clyde_codex_account_id
+              },
+              'last_refresh': vault_clyde_codex_last_refresh
+            } | to_nice_json
+          }}
+        dest: /root/.codex/auth.json
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Restart Clyde
+
+    - name: Create the Clyde configuration directory
+      ansible.builtin.file:
+        path: /root/.config/clyde
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install the Clyde adapter configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/clyde/config.toml.j2"
+        dest: /root/.config/clyde/config.toml
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart Clyde
+
+    - name: Create the Clyde service configuration directory
+      ansible.builtin.file:
+        path: /etc/clyde
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install the Clyde adapter token
+      ansible.builtin.copy:
+        content: "CLYDE_ADAPTER_TOKEN={{ vault_clyde_adapter_token }}\n"
+        dest: /etc/clyde/clyde.env
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Restart Clyde
+
+    - name: Install the Clyde systemd service
+      ansible.builtin.template:
+        src: "{{ repo_root }}/clyde/clyde.service.j2"
+        dest: /etc/systemd/system/clyde.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Clyde
+
+    - name: Enable and start Clyde
+      ansible.builtin.systemd:
+        name: clyde
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Install and configure cloudflared
+      ansible.builtin.include_tasks: tasks/install-cloudflared.yml
+      vars:
+        cloudflared_token: "{{ vault_clyde_cloudflared_tunnel_token }}"
+
+    - name: Apply Clyde service changes before verification
+      ansible.builtin.meta: flush_handlers
+
+    - name: Read the Codex version
+      ansible.builtin.command: /usr/local/bin/codex --version
+      register: codex_version_result
+      changed_when: false
+
+    - name: Read the Clyde version
+      ansible.builtin.command: /usr/local/bin/clyde --version
+      register: clyde_version_result
+      changed_when: false
+
+    - name: Verify the installed versions
+      ansible.builtin.assert:
+        that:
+          - codex_version_result.stdout is match('^codex-cli ')
+          - clyde_version in clyde_version_result.stdout
+
+    - name: Verify the local Clyde model catalog
+      ansible.builtin.uri:
+        url: "{{ clyde_adapter_url }}/v1/models"
+        headers:
+          Authorization: "Bearer {{ vault_clyde_adapter_token }}"
+        return_content: true
+        status_code: 200
+      register: clyde_models_result
+      retries: 12
+      delay: 2
+      until: clyde_models_result.status == 200
+      no_log: true
+
+    - name: Verify the expected Clyde model is advertised
+      ansible.builtin.assert:
+        that:
+          - >-
+            'gpt-5.6-luna' in
+            (clyde_models_result.json.data | map(attribute='id') | list)
+      no_log: true
+
+    - name: Verify local requests require authentication
+      ansible.builtin.uri:
+        url: "{{ clyde_adapter_url }}/v1/models"
+        status_code: 401
+      no_log: true
+
+    - name: Verify public requests require authentication
+      ansible.builtin.uri:
+        url: "{{ clyde_public_url }}/v1/models"
+        status_code: 401
+      no_log: true
+
+    - name: Verify the public Clyde endpoint
+      ansible.builtin.uri:
+        url: "{{ clyde_public_url }}/v1/models"
+        headers:
+          Authorization: "Bearer {{ vault_clyde_adapter_token }}"
+        return_content: true
+        status_code: 200
+      register: clyde_public_result
+      retries: 12
+      delay: 5
+      until: clyde_public_result.status == 200
+      no_log: true
+
+    - name: Verify the expected Clyde model is public
+      ansible.builtin.assert:
+        that:
+          - >-
+            'gpt-5.6-luna' in
+            (clyde_public_result.json.data | map(attribute='id') | list)
+      no_log: true
+
+  handlers:
+    - name: Restart Clyde
+      ansible.builtin.systemd:
+        name: clyde
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart cloudflared
+      ansible.builtin.systemd:
+        name: cloudflared
+        state: restarted
+        daemon_reload: true
