@@ -107,8 +107,21 @@ func (f *fakeBGPServer) ListPath(
 	if err != nil {
 		return err
 	}
+	// Group per prefix like the real table listing, so a test that
+	// serves several paths for one prefix exercises a multi-path
+	// callback rather than one call per path.
+	groups := make(map[string][]*apiutil.Path, len(paths))
+	order := make([]string, 0, len(paths))
 	for _, path := range paths {
-		fn(path.Nlri, []*apiutil.Path{path})
+		key := path.Nlri.String()
+		if _, seen := groups[key]; !seen {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], path)
+	}
+	for _, key := range order {
+		group := groups[key]
+		fn(group[0].Nlri, group)
 	}
 	return nil
 }
