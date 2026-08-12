@@ -1,0 +1,16 @@
+{
+  "name": "agoodkind-pr-agent-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --test test/*.test.js && wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "wrangler": "4.122.0"
+  }
+}

@@ -1,0 +1,3 @@
+FROM pragent/pr-agent:0.42.0-github_app@sha256:e044769467726ce4b9533f9537438ef83d024eab035433f75c6e1debc334597f
+
+EXPOSE 3000

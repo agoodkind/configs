@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "agoodkind-nano-pr-reviewer",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-08-12",
+  "workers_dev": true,
+  "containers": [
+    {
+      "class_name": "PrAgentContainer",
+      "image": "./Dockerfile",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PR_AGENT",
+        "class_name": "PrAgentContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PrAgentContainer"]
+    }
+  ]
+}
