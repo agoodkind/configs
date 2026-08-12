@@ -1,4 +1,5 @@
 import { Container } from "@cloudflare/containers";
+import { env } from "cloudflare:workers";
 
 import { routeRequest } from "./router.js";
 
@@ -17,10 +18,10 @@ export class PrAgentContainer extends Container {
     GITHUB_APP__PUSH_COMMANDS: '["/review"]',
     GITHUB__APP_ID: "4571682",
     GITHUB__DEPLOYMENT_TYPE: "app",
-    GITHUB__PRIVATE_KEY: this.env.GITHUB_PRIVATE_KEY,
-    GITHUB__WEBHOOK_SECRET: this.env.GITHUB_WEBHOOK_SECRET,
+    GITHUB__PRIVATE_KEY: env.GITHUB_PRIVATE_KEY,
+    GITHUB__WEBHOOK_SECRET: env.GITHUB_WEBHOOK_SECRET,
     GUNICORN_WORKERS: "1",
-    OPENAI__KEY: this.env.OPENAI_KEY,
+    OPENAI__KEY: env.OPENAI_KEY,
   };
 }
 
