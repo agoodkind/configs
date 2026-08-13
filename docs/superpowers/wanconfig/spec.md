@@ -57,19 +57,35 @@ hot reload.
    the live value. A WAN with a static delegation sets `prefix_v6`, which
    overrides the live reading. No WAN sets it today.
 
-6. **Link bring-up is composable flags, not profiles.** Each entry's
-   `link` block exposes independent knobs: `dhcp4`, `dhcp6`, `pd` with
-   `pd_hint`, `slaac`, `route_metric`, static `addr4`/`gw4` and
-   `addr6`/`gw6`, and DUID fields. One generic networkd template renders
-   exactly the sections the flags enable, and the sysctl file loops over
-   the same map. 802.1X is the exception, outside the schema: a WAN with
-   `link.managed: false` is skipped by the generic renderer and keeps its
-   hand-authored bring-up stack (production att: parent interface
-   template, VLAN child template, wpa_supplicant, auth-gated DHCP bringup
-   service). Every layer downstream of link bring-up treats an excepted
-   WAN generically by interface name.
+6. **Every link renders through one path.** Each entry's `link` block
+   exposes independent knobs: `dhcp4`, `dhcp6`, `pd` with `pd_hint`,
+   `slaac`, `route_metric`, static `addr4`/`gw4` and `addr6`/`gw6`, DUID
+   fields, an optional `vlan` block (`parent`, `id`), and an optional
+   `dot1x` block (supplicant identity, certificate paths, and the parent
+   port's helper address). One generic networkd template renders exactly
+   the sections a WAN's fields enable, and the sysctl file loops over the
+   same map. A WAN differs from its peers only in data, never in which
+   code path builds it; no entry is exempt from the renderer. systemd
+   networkd is the single link authority for every WAN, which keeps link
+   creation and DHCP under one owner and keeps the delegated-prefix lease
+   that pd.Source reads where the daemon already finds it.
 
-7. **Failure is closed and inert.** A daemon start with invalid config
+   A `vlan` block makes the WAN a tagged child: the renderer emits the
+   netdev, the parent's VLAN declaration, and the child's own network
+   file from the same flags any other WAN uses. A `dot1x` block adds the
+   supplicant on the parent port and gates the child's DHCP start on
+   authentication succeeding. Production att carries both blocks;
+   testbed att carries neither and is otherwise the same entry.
+
+7. **The watchdog probes every WAN.** The rollback watchdog pings out of
+   each configured WAN interface to tell a real outage apart from a
+   routing failure, and it returns healthy on the first interface that
+   answers, so the probe list is a logical OR and an added member can
+   only reduce false rollbacks. Every WAN in the map is probed. This
+   closes a live gap: att is absent from the current probe list, so a VM
+   reachable only through att reads as a total outage.
+
+8. **Failure is closed and inert.** A daemon start with invalid config
    (duplicate index, empty tier set, malformed CIDR, derived-identifier
    collision) fails validation before programming anything, and the
    existing kernel ruleset stays. A daemon stop or crash leaves the
@@ -89,9 +105,23 @@ mwan_wans:
     iface: "enatt0.3242"    # steering/health/npt iface (the VLAN child)
     tier: 1
     weight: 1
-    watchdog_probe: false   # excluded from the watchdog probe set
     link:
-      managed: false        # 802.1X exception: hand-authored bring-up
+      vlan:
+        parent: "enatt0"
+        id: 3242
+      dot1x:                # supplicant on the parent port
+        identity: "..."
+        cert: "..."
+        key: "..."
+        parent_addr4: "192.168.1.2/24"   # SFP module management access
+        parent_peer4: "192.168.1.1"
+      dhcp4: true
+      dhcp6: true
+      pd: true
+      pd_hint: "::/60"
+      slaac: true
+      duid_type: "vendor"
+      duid_raw: "..."
     health: { ... }         # same shape as the per-WAN health block today
     static_mappings:        # 1:1 IPv4 NAT pairs
       - { external: "x.x.x.x", internal: "10.250.250.x" }
@@ -131,12 +161,13 @@ mwan_wans:
 ```
 
 The map replaces these scalars, which are deleted: `mwan_att_iface`,
-`mwan_webpass_iface`, `mwan_monkeybrains_iface`, `mwan_npt_*_prefix`,
-`mwan_rt_tables` WAN entries, `mwan_ifmgr_wan_fw_marks`,
-`mwan_ifmgr_wan_fw_mark_prios`, `mwan_ifmgr_wan_from_prios`,
-`mwan_health_checks`, `mwan_static_mappings`,
-`mwan_att_pinned_v4_seed_cidrs`, `mwan_att_pinned_v6_seed_cidrs`, and the
-per-WAN DUID, address, and gateway scalars.
+`mwan_webpass_iface`, `mwan_monkeybrains_iface`, `mwan_att_vlan_id`,
+`mwan_npt_*_prefix`, `mwan_rt_tables` WAN entries,
+`mwan_ifmgr_wan_fw_marks`, `mwan_ifmgr_wan_fw_mark_prios`,
+`mwan_ifmgr_wan_from_prios`, `mwan_health_checks`,
+`mwan_static_mappings`, `mwan_att_pinned_v4_seed_cidrs`,
+`mwan_att_pinned_v6_seed_cidrs`, and the per-WAN DUID, address, and
+gateway scalars.
 
 ## Config pipeline
 
@@ -145,15 +176,18 @@ carrying `index`, `iface`, `tier`, `weight`, `prefix_v6` when set, the
 pinned CIDR lists, and the static mappings. `table_id`, `fw_mark`,
 `fw_mark_prio`, `from_prio`, and `npt_prefix` leave the rendered config;
 Go derives the first four from `index` and reads the delegated prefix
-live. A `[ifmgr.lb]` block carries the hash mode. The health loop,
-`rt_tables.j2`, and `sysctl-mwan.conf.j2` render from the same map. The
-`[[network.wan_interfaces]]` list, which selects the interfaces the
-watchdog probes, renders one entry per WAN whose `watchdog_probe` field
-is true; the field defaults to true, and production att sets false,
-which preserves the current probe set as data. `nftables.conf.j2` is
-replaced by the bootstrap template. The per-ISP networkd templates,
-including the testbed forks, are replaced by the generic template plus
-the 802.1X exception files.
+live. A `[ifmgr.lb]` block carries the hash mode. The health loop, the
+`[[network.wan_interfaces]]` watchdog probe list, `rt_tables.j2`, and
+`sysctl-mwan.conf.j2` render one entry per map entry. `nftables.conf.j2`
+is replaced by the bootstrap template.
+
+Link rendering is one template set driven by the same map: a network
+file per WAN, a netdev per WAN carrying a `vlan` block, a parent network
+file and supplicant configuration per WAN carrying a `dot1x` block, and
+the auth-gated DHCP start unit for those same WANs. Every per-ISP
+networkd file is deleted, including both AT&T files, the webpass and
+monkeybrains files, and the separate testbed forks of att and webpass.
+The testbed and production difference becomes data in the map.
 
 ## Firewall module ruleset
 
@@ -194,7 +228,8 @@ throughout:
 1. **Byte equivalence.** Deploy the migrated inventory with today's WAN
    set. `mwan debug firewall` output matches the live ruleset, and rules,
    routes, marks, and steering match the pre-migration state
-   one-for-one.
+   one-for-one. The rendered link files match the hand-authored ones they
+   replace, section for section, including the tagged-child case.
 2. **Add.** Add a synthetic fourth WAN backed by a testbed ISP simulator
    at tier 1 weight 1 by inventory edit and config deploy. Three-way
    balancing distributes new connections; failing the new WAN's health
@@ -211,4 +246,8 @@ throughout:
 - Load balancing within an activated fallback tier.
 - The daemon running its own DHCPv6-PD client (MWAN-227) and dynamic
   pinned-destination refresh (MWAN-237); both layer on top unchanged.
-- 802.1X bring-up in the daemon or the generic schema.
+- Moving link creation from systemd networkd into the daemon. That step
+  is gated on the daemon owning DHCP (MWAN-227), because splitting link
+  creation from lease ownership would put one interface under two
+  authorities. When it happens it moves every WAN at once, since the
+  schema already describes them identically.
