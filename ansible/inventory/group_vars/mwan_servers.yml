@@ -548,7 +548,7 @@ mwan_bgp_dynamic_neighbors:
 # Shadow mode keeps the static internal-prefix return route authoritative while
 # the agent logs the routes it would install from BGP, so the two can be
 # compared before the static route retires. The flip is a separate deploy.
-mwan_bgp_routes_shadow_mode: true
+mwan_bgp_routes_shadow_mode: false
 
 # BGP Graceful Restart (RFC 4724). When enabled the embedded GoBGP speaker
 # negotiates the GR capability so a planned restart of mwan-agent does not
