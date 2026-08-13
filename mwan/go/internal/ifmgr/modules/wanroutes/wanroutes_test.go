@@ -177,10 +177,10 @@ func TestDesiredStateOmitsStaticInternalRoute(t *testing.T) {
 
 func testConfig() Config {
 	return Config{
-		InternalIface:       "vmbr250",
-		OpnsenseEdgeV6:      "3d06:bad:b01:201::1",
-		InternalNetV4:       "10.250.250.0/29",
-		HealthStateFile:     "/run/mwan-health.state",
+		InternalIface:   "vmbr250",
+		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
+		InternalNetV4:   "10.250.250.0/29",
+		HealthStateFile: "/run/mwan-health.state",
 		WANs: []WAN{
 			{
 				WANRef:     ifmgr.WANRef{Name: wanNameATT, Iface: "att0"},
