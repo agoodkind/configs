@@ -18,11 +18,3 @@ iface eth1 inet static
 
 iface eth1 inet6 static
 	address {{ mwan_failover_ipv6_address }}
-{% if mwan_failover_ipv6_return_route and mwan_bgp_routes_shadow_mode %}
-{# The static IPv6 return route retires behind the BGP shadow flag: once the #}
-{# flip is authoritative, BGP-learned routes own the return path and this    #}
-{# render drops the static route on the next deploy. IPv4 keeps its route    #}
-{# because routers source-NAT v4 onto their transit address.                 #}
-	post-up ip -6 route replace {{ mwan_failover_ipv6_return_route }}
-	post-down ip -6 route del {{ mwan_failover_ipv6_return_route }} || true
-{% endif %}

@@ -43,10 +43,10 @@ second router has no way to receive return traffic for its own LANs.
 4. **Both speakers serve every router.** Each router peers with the MWAN VM
    and the failover LXC. The LXC runs the same receive path into its main
    table, so return traffic to every router flows during failover.
-5. **The static internal route retires behind a shadow flag.** In shadow
-   mode the static route stays authoritative while the agent logs intended
-   installs for parity. The authoritative flip removes the static route.
-   Testbed first; the production flip needs an explicit operator go.
+5. **BGP-learned routes are authoritative.** The speakers install learned
+   IPv6 return routes into the kernel, and no static internal return route
+   exists on either speaker. IPv4 keeps a static return route on the
+   failover LXC because routers source-NAT v4 onto their transit address.
 6. **Routers announce what they own.** Every router announces its own
    prefixes over iBGP in AS 4200000001. For OPNsense that is FRR network
    statements per family, applied by hand through the GUI (over the

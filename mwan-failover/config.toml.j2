@@ -26,7 +26,6 @@ keepalive_seconds = {{ bgp_keepalive_seconds }}
 hold_seconds = {{ bgp_hold_seconds }}
 listen_port = {{ bgp_listen_port }}
 learned_route_iface = "{{ mwan_bgp_learned_route_iface }}"
-routes_shadow_mode = {{ mwan_bgp_routes_shadow_mode | ternary('true', 'false') }}
 dynamic_neighbors = {{ mwan_bgp_dynamic_neighbors | to_json }}
 
 {% for neighbor in mwan_failover_bgp_neighbors %}

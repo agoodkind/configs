@@ -304,7 +304,6 @@ type BGPSection struct {
 	NeighborsV6       []BGPNeighbor      `toml:"neighbors_v6"`
 	DynamicNeighbors  []string           `toml:"dynamic_neighbors"`
 	LearnedRouteIface string             `toml:"learned_route_iface"`
-	RoutesShadowMode  bool               `toml:"routes_shadow_mode"`
 	Announce          BGPAnnounce        `toml:"announce"`
 	GracefulRestart   BGPGracefulRestart `toml:"graceful_restart"`
 }

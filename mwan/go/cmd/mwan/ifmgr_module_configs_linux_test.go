@@ -211,12 +211,10 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 	// The per-WAN routing data comes from the shared [ifmgr.wan.<name>] map
 	// (sharedWANForTest), not a wan.routes-local list.
 	want := wanroutes.Config{
-		InternalIface:       "vmbr250",
-		OpnsenseEdgeV6:      "3d06:bad:b01:201::1",
-		InternalPrefix:      "3d06:bad:b01::/60",
-		InternalNetV4:       "10.250.250.0/29",
-		HealthStateFile:     "/var/run/mwan-health.state",
-		BGPRoutesShadowMode: true,
+		InternalIface:   "vmbr250",
+		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
+		InternalNetV4:   "10.250.250.0/29",
+		HealthStateFile: "/var/run/mwan-health.state",
 		WANs: []wanroutes.WAN{
 			{
 				WANRef:     ifmgr.WANRef{Name: "att", Iface: "att0"},
@@ -249,7 +247,7 @@ func TestBuildWANRoutesConfigNilSection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWANRoutesConfig returned error: %v", err)
 	}
-	want := wanroutes.Config{BGPRoutesShadowMode: true}
+	want := wanroutes.Config{}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("buildWANRoutesConfig nil = %#v, want %#v", cfg, want)
 	}
@@ -641,7 +639,6 @@ v4_source = "10.240.204.2"
 
 [ifmgr.modules.wan.routes]
 internal_iface = "enmwanbr0"
-bgp_routes_shadow_mode = false
 
 [ifmgr.modules.health]
 state_file = "/run/mwan-health.state"
@@ -706,9 +703,6 @@ http_urls = ["https://ifconfig.co/ip"]
 	}
 	if byName["webpass"].V4Source != "10.240.204.2" || byName["att"].TableID != 100 {
 		t.Fatalf("wan.routes routing fields did not resolve from [ifmgr.wan]: %#v", byName)
-	}
-	if wr.BGPRoutesShadowMode {
-		t.Fatal("wan.routes BGP routes shadow mode did not resolve from TOML")
 	}
 	if _, ok := set["npt"]; !ok {
 		t.Fatal("wan role must build an npt config from the round-tripped config")
