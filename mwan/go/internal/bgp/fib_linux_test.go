@@ -53,7 +53,7 @@ func TestFIBApplyInstallsEveryTable(t *testing.T) {
 
 	tables := []int{100, 200, 300}
 	writer := &recordedRouteWriter{routes: make(map[int][]netif.CurrentRoute)}
-	fib := newFIB(FIBConfig{Tables: tables, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: tables, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	event := PathEvent{
 		Peer:      "router-2",
 		Prefix:    netip.MustParsePrefix("3d06:bad:b01:4::/64"),
@@ -87,7 +87,7 @@ func TestFIBWithdrawDeletesOnlyWithdrawnPrefix(t *testing.T) {
 
 	tables := []int{100, 200}
 	writer := &recordedRouteWriter{routes: make(map[int][]netif.CurrentRoute)}
-	fib := newFIB(FIBConfig{Tables: tables, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: tables, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	first := PathEvent{
 		Peer:      "router-1",
 		Prefix:    netip.MustParsePrefix("3d06:bad:b01::/64"),
@@ -125,34 +125,6 @@ func TestFIBWithdrawDeletesOnlyWithdrawnPrefix(t *testing.T) {
 	}
 }
 
-func TestFIBShadowWritesNothing(t *testing.T) {
-	t.Parallel()
-
-	writer := &recordedRouteWriter{routes: map[int][]netif.CurrentRoute{
-		100: {{Dest: "3d06:bad:b01:8::/64", Via: "3d06:bad:b01:fe::9", Dev: "vmbr250", Metric: 0}},
-	}}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: true}, testFIBLogger(), writer)
-	event := PathEvent{
-		Peer:      "router-2",
-		Prefix:    netip.MustParsePrefix("3d06:bad:b01:4::/64"),
-		NextHop:   netip.MustParseAddr("3d06:bad:b01:fe::5"),
-		Withdrawn: false,
-	}
-
-	if err := fib.Apply(context.Background(), event); err != nil {
-		t.Fatalf("shadow apply: %v", err)
-	}
-	if err := fib.Apply(context.Background(), PathEvent{Peer: event.Peer, Prefix: event.Prefix, Withdrawn: true}); err != nil {
-		t.Fatalf("shadow withdraw: %v", err)
-	}
-	if err := fib.SweepStale(context.Background()); err != nil {
-		t.Fatalf("shadow sweep: %v", err)
-	}
-	if got := len(writer.installs) + len(writer.deletes); got != 0 {
-		t.Fatalf("shadow write count = %d, want 0", got)
-	}
-}
-
 func TestFIBSweepStaleRemovesOnlyUndesiredRoutes(t *testing.T) {
 	t.Parallel()
 
@@ -169,7 +141,7 @@ func TestFIBSweepStaleRemovesOnlyUndesiredRoutes(t *testing.T) {
 			stale,
 		},
 	}}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 
 	if err := fib.Apply(context.Background(), desired); err != nil {
 		t.Fatalf("apply desired path: %v", err)

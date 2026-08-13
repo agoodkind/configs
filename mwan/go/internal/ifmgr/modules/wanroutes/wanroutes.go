@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"time"
 
-	"golang.org/x/sys/unix"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 )
@@ -21,7 +20,6 @@ const (
 	familyV4            = "inet"
 	familyV6            = "inet6"
 	fallbackPriority    = 50
-	mainInternalMetric  = 1024
 	wanNameATT          = "att"
 	wanNameWebpass      = "webpass"
 	wanNameMonkeybrains = "monkeybrains"
@@ -37,13 +35,11 @@ const (
 
 // Config is the parsed [ifmgr.modules.wan.routes] runtime config.
 type Config struct {
-	InternalIface       string
-	OpnsenseEdgeV6      string
-	InternalPrefix      string
-	InternalNetV4       string
-	HealthStateFile     string
-	BGPRoutesShadowMode bool
-	WANs                []WAN
+	InternalIface   string
+	OpnsenseEdgeV6  string
+	InternalNetV4   string
+	HealthStateFile string
+	WANs            []WAN
 }
 
 // ModuleConfigName returns the registry key for this module's config block.
@@ -257,8 +253,6 @@ func desiredState(
 		rules = appendWANRules(rules, wan, wanGateways, health)
 	}
 
-	routes = appendMainInternalRoute(routes, cfg)
-
 	monkeybrains := findWAN(cfg, wanNameMonkeybrains)
 	if monkeybrains != nil && fallbackEnabled(health) {
 		rules = append(
@@ -398,33 +392,6 @@ func appendWANInternalRoutes(
 			Protocol: 0,
 		},
 	)
-	if cfg.BGPRoutesShadowMode {
-		routes = append(routes, netif.RouteSpec{
-			Family:   familyV6,
-			Dest:     cfg.InternalPrefix,
-			Via:      cfg.OpnsenseEdgeV6,
-			Dev:      cfg.InternalIface,
-			TableID:  tableID,
-			Metric:   0,
-			Protocol: 0,
-		})
-	}
-	return routes
-}
-
-func appendMainInternalRoute(routes []netif.RouteSpec, cfg Config) []netif.RouteSpec {
-	if !cfg.BGPRoutesShadowMode {
-		return routes
-	}
-	routes = append(routes, netif.RouteSpec{
-		Family:   familyV6,
-		Dest:     cfg.InternalPrefix,
-		Via:      cfg.OpnsenseEdgeV6,
-		Dev:      cfg.InternalIface,
-		TableID:  unix.RT_TABLE_MAIN,
-		Metric:   mainInternalMetric,
-		Protocol: 0,
-	})
 	return routes
 }
 
@@ -541,10 +508,6 @@ func validateConfig(cfg Config) error {
 		slog.Warn("wan.routes: missing opnsense_edge_v6")
 		return fmt.Errorf("wan.routes: opnsense_edge_v6 is required")
 	}
-	if cfg.InternalPrefix == "" {
-		slog.Warn("wan.routes: missing internal_prefix")
-		return fmt.Errorf("wan.routes: internal_prefix is required")
-	}
 	if cfg.InternalNetV4 == "" {
 		slog.Warn("wan.routes: missing internal_net_v4")
 		return fmt.Errorf("wan.routes: internal_net_v4 is required")
@@ -657,13 +620,11 @@ func isFromPriority(priority int) bool {
 // New is the Constructor registered with ifmgr.
 func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	c := Config{
-		InternalIface:       "",
-		OpnsenseEdgeV6:      "",
-		InternalPrefix:      "",
-		InternalNetV4:       "",
-		HealthStateFile:     "",
-		BGPRoutesShadowMode: true,
-		WANs:                nil,
+		InternalIface:   "",
+		OpnsenseEdgeV6:  "",
+		InternalNetV4:   "",
+		HealthStateFile: "",
+		WANs:            nil,
 	}
 	if cfg != nil {
 		typedConfig, ok := cfg.(Config)

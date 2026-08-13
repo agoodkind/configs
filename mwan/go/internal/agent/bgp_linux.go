@@ -66,7 +66,6 @@ func configurePlatformBGP(
 	speaker.SetFIB(bgp.NewFIB(bgp.FIBConfig{
 		Tables:        tablesFromConfig(cfg),
 		InternalIface: cfg.BGP.LearnedRouteIface,
-		Shadow:        cfg.BGP.RoutesShadowMode,
 	}, log))
 	startStaleSweepReconciler(ctx, speaker, log, realStaleSweepClock{})
 }

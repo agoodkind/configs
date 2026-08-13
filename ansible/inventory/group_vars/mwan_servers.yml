@@ -467,7 +467,6 @@ mwan_failover_bgp_neighbors_v6:
 mwan_failover_ipv4_address: "10.250.250.4/29"
 mwan_failover_ipv6_address: "3d06:bad:b01:fe::4/64"
 mwan_failover_ipv4_return_route: "10.250.0.0/16 via 10.250.250.2 dev eth1"
-mwan_failover_ipv6_return_route: "3d06:bad:b01::/56 via 3d06:bad:b01:fe::2 dev eth1"
 
 # SMTP2GO defaults (shared non-secret settings)
 mwan_smtp_host: "{{ smtp_host }}"
@@ -544,11 +543,6 @@ bgp_announce_ipv6:
 mwan_bgp_dynamic_neighbors:
   - "{{ mwan_internal_net_v4 }}"
   - "3d06:bad:b01:fe::/64"
-
-# Shadow mode keeps the static internal-prefix return route authoritative while
-# the agent logs the routes it would install from BGP, so the two can be
-# compared before the static route retires. The flip is a separate deploy.
-mwan_bgp_routes_shadow_mode: false
 
 # BGP Graceful Restart (RFC 4724). When enabled the embedded GoBGP speaker
 # negotiates the GR capability so a planned restart of mwan-agent does not

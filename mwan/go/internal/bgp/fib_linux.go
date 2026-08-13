@@ -19,7 +19,6 @@ import (
 type FIBConfig struct {
 	Tables        []int
 	InternalIface string
-	Shadow        bool
 }
 
 // PathEvent is the accepted best-path change received from a BGP peer.
@@ -143,7 +142,7 @@ func (f *FIB) Apply(ctx context.Context, event PathEvent) error {
 	}
 
 	f.desired[prefix.String()] = desiredRoute{peer: event.Peer, nextHop: event.NextHop}
-	return f.installPrefix(ctx, event.Peer, prefix, event.NextHop)
+	return f.installPrefix(ctx, prefix, event.NextHop)
 }
 
 // SweepStale removes owned BGP routes absent from accepted best paths only after
@@ -153,10 +152,6 @@ func (f *FIB) SweepStale(ctx context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.armed {
-		return nil
-	}
-	if f.cfg.Shadow {
-		f.log.InfoContext(ctx, "BGP FIB stale sweep", "shadow", true)
 		return nil
 	}
 
@@ -246,25 +241,9 @@ func pathPrefix(prefix netip.Prefix) (netip.Prefix, error) {
 
 func (f *FIB) installPrefix(
 	ctx context.Context,
-	peer string,
 	prefix netip.Prefix,
 	nextHop netip.Addr,
 ) error {
-	if f.cfg.Shadow {
-		f.log.InfoContext(
-			ctx,
-			"BGP FIB install",
-			"shadow",
-			true,
-			"peer",
-			peer,
-			"prefix",
-			prefix,
-			"table_count",
-			len(f.cfg.Tables),
-		)
-		return nil
-	}
 	var installErr error
 	for _, tableID := range f.cfg.Tables {
 		route := f.route(prefix, nextHop, tableID)
@@ -276,21 +255,6 @@ func (f *FIB) installPrefix(
 }
 
 func (f *FIB) deletePrefix(ctx context.Context, peer string, prefix netip.Prefix) error {
-	if f.cfg.Shadow {
-		f.log.InfoContext(
-			ctx,
-			"BGP FIB delete",
-			"shadow",
-			true,
-			"peer",
-			peer,
-			"prefix",
-			prefix,
-			"table_count",
-			len(f.cfg.Tables),
-		)
-		return nil
-	}
 	var deleteErr error
 	for _, tableID := range f.cfg.Tables {
 		route := f.route(prefix, netip.Addr{}, tableID)

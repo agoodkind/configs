@@ -16,12 +16,12 @@ mwan_failover_bgp_neighbors_v6:
   - "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
 mwan_failover_ipv4_address: "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}/29"
 mwan_failover_ipv6_address: "{{ service_mapping.mwan_failover_suburban.ipv6_transit }}/64"
-# Empty on the testbed: replies to off-link sources leave by eth0 and drain
-# through the ISP sim's vmbr1 uplink to suburban, which owns the return
-# routing for the tunnel and testbed ranges. Production sets real values
-# because its ISPs cannot return private ranges.
+# Empty on the testbed: IPv4 replies to off-link sources leave by eth0 and
+# drain through the ISP sim's vmbr1 uplink to suburban, which owns the return
+# routing for the tunnel and testbed ranges. Production sets a real value
+# because its ISPs cannot return private ranges. IPv6 return routes are
+# BGP-learned on every speaker.
 mwan_failover_ipv4_return_route: ""
-mwan_failover_ipv6_return_route: ""
 # Source interface for outbound failover alert email (empty = default route).
 mwan_failover_email_bind_iface: ""
 
@@ -39,8 +39,6 @@ bgp_announce_ipv6:
 mwan_bgp_dynamic_neighbors:
   - "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
   - "{{ service_mapping.opnsense_suburban.transit_v6_net }}"
-
-mwan_bgp_routes_shadow_mode: false
 
 # BGP graceful restart (RFC 4724). Mirrors the primary so a failover agent
 # restart holds routes in the helper instead of flapping the session.

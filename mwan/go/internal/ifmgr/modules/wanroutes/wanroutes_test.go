@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"testing"
 
-	"golang.org/x/sys/unix"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
@@ -142,7 +141,7 @@ func TestInitReturnsDisabledSentinelWhenWANsEmpty(t *testing.T) {
 	}
 }
 
-func TestDesiredStateBGPRoutesShadowMode(t *testing.T) {
+func TestDesiredStateOmitsStaticInternalRoute(t *testing.T) {
 	t.Parallel()
 
 	gateways := testGateways()
@@ -151,65 +150,37 @@ func TestDesiredStateBGPRoutesShadowMode(t *testing.T) {
 		wanNameWebpass:      netif.HealthStateHealthy,
 		wanNameMonkeybrains: netif.HealthStateHealthy,
 	}
+	cfg := testConfig()
 
-	t.Run("shadow keeps the existing route set", func(t *testing.T) {
-		cfg := testConfig()
-		_, got := desiredState(gateways, health, cfg)
-		want := routesForGateways(cfg, gateways)
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("routes mismatch\\ngot:  %#v\\nwant: %#v", got, want)
-		}
-	})
+	_, got := desiredState(gateways, health, cfg)
 
-	t.Run("authoritative BGP omits only the static internal prefix", func(t *testing.T) {
-		cfg := testConfig()
-		cfg.BGPRoutesShadowMode = false
-		_, got := desiredState(gateways, health, cfg)
-		want := routesForGateways(cfg, gateways)
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("routes mismatch\\ngot:  %#v\\nwant: %#v", got, want)
+	want := routesForGateways(cfg, gateways)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("routes mismatch\ngot:  %#v\nwant: %#v", got, want)
+	}
+	for _, gotRoute := range got {
+		if gotRoute.Via == cfg.OpnsenseEdgeV6 {
+			t.Fatalf("static internal route via the edge address remains: %#v", gotRoute)
 		}
-
-		for _, gotRoute := range got {
-			if gotRoute.Dest == cfg.InternalPrefix {
-				t.Fatalf("static internal prefix route remains: %#v", gotRoute)
-			}
+	}
+	for _, wan := range cfg.WANs {
+		wantTransit := route(familyV4, cfg.InternalNetV4, "", cfg.InternalIface, wan.TableID, 0)
+		wantEdge := route(familyV6, withPrefix(cfg.OpnsenseEdgeV6, "128"), "", cfg.InternalIface, wan.TableID, 0)
+		if !containsRoute(got, wantTransit) {
+			t.Fatalf("missing transit route: %#v", wantTransit)
 		}
-		for _, wan := range cfg.WANs {
-			wantTransit := route(
-				familyV4,
-				cfg.InternalNetV4,
-				"",
-				cfg.InternalIface,
-				wan.TableID,
-				0,
-			)
-			wantEdge := route(
-				familyV6,
-				withPrefix(cfg.OpnsenseEdgeV6, "128"),
-				"",
-				cfg.InternalIface,
-				wan.TableID,
-				0,
-			)
-			if !containsRoute(got, wantTransit) {
-				t.Fatalf("missing transit route: %#v", wantTransit)
-			}
-			if !containsRoute(got, wantEdge) {
-				t.Fatalf("missing edge route: %#v", wantEdge)
-			}
+		if !containsRoute(got, wantEdge) {
+			t.Fatalf("missing edge route: %#v", wantEdge)
 		}
-	})
+	}
 }
 
 func testConfig() Config {
 	return Config{
 		InternalIface:       "vmbr250",
 		OpnsenseEdgeV6:      "3d06:bad:b01:201::1",
-		InternalPrefix:      "3d06:bad:b01::/60",
 		InternalNetV4:       "10.250.250.0/29",
 		HealthStateFile:     "/run/mwan-health.state",
-		BGPRoutesShadowMode: true,
 		WANs: []WAN{
 			{
 				WANRef:     ifmgr.WANRef{Name: wanNameATT, Iface: "att0"},
@@ -286,24 +257,6 @@ func routesForGateways(cfg Config, currentGateways gateways) []netif.RouteSpec {
 			route(familyV4, cfg.InternalNetV4, "", cfg.InternalIface, wan.TableID, 0),
 			route(familyV6, withPrefix(cfg.OpnsenseEdgeV6, "128"), "", cfg.InternalIface, wan.TableID, 0),
 		)
-		if cfg.BGPRoutesShadowMode {
-			routes = append(routes,
-				// The internal prefix routes via the OPNsense edge address, which the
-				// on-link /128 above makes reachable, rather than via a link-local
-				// derived from the router's MAC.
-				route(familyV6, cfg.InternalPrefix, cfg.OpnsenseEdgeV6, cfg.InternalIface, wan.TableID, 0),
-			)
-		}
-	}
-	if cfg.BGPRoutesShadowMode {
-		routes = append(routes, route(
-			familyV6,
-			cfg.InternalPrefix,
-			cfg.OpnsenseEdgeV6,
-			cfg.InternalIface,
-			unix.RT_TABLE_MAIN,
-			mainInternalMetric,
-		))
 	}
 	return routes
 }

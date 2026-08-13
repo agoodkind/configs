@@ -20,7 +20,7 @@ func TestBestPathWatchInstallsRemotePathAndSkipsLocalPath(t *testing.T) {
 	fake := newFakeBGPServer()
 	cfg := baseGRConfig(true)
 	writer := &recordedRouteWriter{routes: make(map[int][]netif.CurrentRoute)}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	speaker := newSpeakerWithFake(cfg, fake)
 	speaker.SetFIB(fib)
 	if err := speaker.Start(context.Background()); err != nil {
@@ -51,7 +51,7 @@ func TestPeerDownWithdrawsTrackedRoutes(t *testing.T) {
 	fake := newFakeBGPServer()
 	cfg := baseGRConfig(true)
 	writer := &recordedRouteWriter{routes: make(map[int][]netif.CurrentRoute)}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	speaker := newSpeakerWithFake(cfg, fake)
 	speaker.SetFIB(fib)
 	if err := speaker.Start(context.Background()); err != nil {
@@ -81,7 +81,7 @@ func TestSweepStaleReinstallsRoutesDeletedByPeerFlap(t *testing.T) {
 	fake := newFakeBGPServer()
 	cfg := baseGRConfig(true)
 	writer := &recordedRouteWriter{routes: make(map[int][]netif.CurrentRoute)}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	speaker := newSpeakerWithFake(cfg, fake)
 	speaker.SetFIB(fib)
 	if err := speaker.Start(context.Background()); err != nil {
@@ -127,7 +127,7 @@ func TestSweepStaleSkipsStaleLocalAndNonBestPaths(t *testing.T) {
 	fake := newFakeBGPServer()
 	cfg := baseGRConfig(true)
 	writer := &recordedRouteWriter{routes: make(map[int][]netif.CurrentRoute)}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	speaker := newSpeakerWithFake(cfg, fake)
 	speaker.SetFIB(fib)
 	if err := speaker.Start(context.Background()); err != nil {
@@ -186,7 +186,7 @@ func TestStaleSweepDoesNotArmBeforePeerEstablishes(t *testing.T) {
 	cfg := baseGRConfig(true)
 	stale := netif.CurrentRoute{Dest: "3d06:bad:b01:8::/64", Via: "3d06:bad:b01:fe::5", Dev: "vmbr250", Metric: 0}
 	writer := &recordedRouteWriter{routes: map[int][]netif.CurrentRoute{100: {stale}}}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	speaker := newSpeakerWithFake(cfg, fake)
 	speaker.SetFIB(fib)
 	scheduled := captureSweepArms(speaker)
@@ -216,7 +216,7 @@ func TestFirstEstablishedPeerDoesNotArmStaleSweepEarly(t *testing.T) {
 	cfg := baseGRConfig(true)
 	stale := netif.CurrentRoute{Dest: "3d06:bad:b01:8::/64", Via: "3d06:bad:b01:fe::5", Dev: "vmbr250", Metric: 0}
 	writer := &recordedRouteWriter{routes: map[int][]netif.CurrentRoute{100: {stale}}}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	speaker := newSpeakerWithFake(cfg, fake)
 	speaker.SetFIB(fib)
 	scheduled := captureSweepArms(speaker)
@@ -253,7 +253,7 @@ func TestStaleSweepArmsAfterStartupGraceWithoutPeerEstablishment(t *testing.T) {
 	cfg := baseGRConfig(true)
 	stale := netif.CurrentRoute{Dest: "3d06:bad:b01:8::/64", Via: "3d06:bad:b01:fe::5", Dev: "vmbr250", Metric: 0}
 	writer := &recordedRouteWriter{routes: map[int][]netif.CurrentRoute{100: {stale}}}
-	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250", Shadow: false}, testFIBLogger(), writer)
+	fib := newFIB(FIBConfig{Tables: []int{100}, InternalIface: "vmbr250"}, testFIBLogger(), writer)
 	speaker := newSpeakerWithFake(cfg, fake)
 	speaker.SetFIB(fib)
 	scheduled := captureSweepArms(speaker)
