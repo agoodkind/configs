@@ -22,6 +22,12 @@ import (
 // holding it for the life of the read.
 const providerTimeout = 5 * time.Second
 
+// operGetCallback holds the trampoline sysrepo invokes. The only real
+// caller is C, through the exported symbol, and no Go analysis can see
+// that edge; this reference states it so reachability analysis agrees
+// with what the program does.
+var operGetCallback = yangpubOperCB
+
 // callProvider runs one provider with a deadline and turns a panic into
 // an error. The panic case is the load-bearing one: this runs on a
 // thread that entered Go from C, and a panic that unwinds past this
