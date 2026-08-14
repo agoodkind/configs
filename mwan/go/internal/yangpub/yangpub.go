@@ -5,10 +5,12 @@
 // so the package holds no write acceptance, no validation, and no
 // transaction machinery beyond apply.
 //
-// The real implementation binds libsysrepo through cgo and exists only
-// on linux with cgo enabled, which is the docker builder lane. Every
-// other build gets a stub whose constructor returns ErrUnavailable, so
-// no other target carries C.
+// The real implementation binds libsysrepo through cgo on linux, the only
+// platform sysrepo supports (it requires robust pthread mutexes, which
+// darwin lacks). The go-makefile cgo hook provisions the pinned libraries
+// where the gates run, so linux CI checks these files fully; every other
+// build gets a stub whose constructor returns ErrUnavailable, and no
+// pure-Go target carries C.
 package yangpub
 
 import (
