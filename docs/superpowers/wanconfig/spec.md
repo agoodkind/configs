@@ -1,7 +1,7 @@
-# A standards-modelled MWAN gateway
+# A standards-modeled MWAN gateway
 
 The MWAN gateway VM terminates several internet provider links and steers
-traffic across them. It has no model. Each behaviour was added where it was
+traffic across them. It has no model. Each behavior was added where it was
 needed, so IPv4 and IPv6 reach the same goal by different mechanisms, owned
 by different components, sharing no vocabulary. Adding a provider takes about
 forty scattered inventory edits, four hand-written link files, new rules in a
@@ -53,7 +53,7 @@ listed in dependency order, and each one is deployable on its own.
 
 **One, the model and the read-only surface.** Define the model for the whole
 daemon, bind it, and serve it against today's configuration. Changes no
-behaviour. Every later piece is verified against it.
+behavior. Every later piece is verified against it.
 [surface.md](surface.md)
 
 **Two, the configuration format.** Inventory renders the model's JSON
@@ -90,7 +90,7 @@ from the top tier, so a fallback tier serves through one member at a time.
 Splitting the health verdict per address family. A provider with dead IPv6
 and working IPv4 currently reads healthy and keeps receiving IPv6 traffic.
 Fixing it changes the health state file format and every consumer's
-signature, which would break the behavioural equivalence the migration relies
+signature, which would break the behavioral equivalence the migration relies
 on. It has its own ticket and follows this work.
 
 The daemon running its own delegation client, and moving link creation off

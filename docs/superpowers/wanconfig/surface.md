@@ -1,7 +1,7 @@
 # One: the model and the read-only surface
 
 Define the model for the whole daemon and serve it against the system as it
-stands, before any behaviour moves. This piece changes nothing an operator
+stands, before any behavior moves. This piece changes nothing an operator
 would notice in the data path, and it produces the instrument every later
 piece is verified against.
 
@@ -22,12 +22,12 @@ The whole daemon, not only the provider path. That includes the modules an
 operator reaches for during an incident and cannot currently see without a
 shell: the rollback watchdog's thresholds and its probe targets, the
 out-of-band access policy, and the tunnel tap. A module whose configuration
-is not in the tree is a module whose behaviour has to be guessed at from
+is not in the tree is a module whose behavior has to be guessed at from
 logs.
 
 **Live state.** The delegation each provider currently holds. Each member's
 health and the probe results behind it. Which tier is active and which member
-is carrying traffic. Whether each translation instance is realised in the
+is carrying traffic. Whether each translation instance is realized in the
 kernel. Whether the routing session is established. The firewall ruleset the
 daemon intends, which subsumes the ad-hoc debug views.
 
@@ -50,7 +50,7 @@ one thing whose purpose is to describe reality is worse than no description.
 
 ## What must not change
 
-No data-path behaviour. This piece adds a reader and nothing else.
+No data-path behavior. This piece adds a reader and nothing else.
 
 The surface listens on the management interface only, which is where the
 existing management access already terminates. It is a read-only surface, but

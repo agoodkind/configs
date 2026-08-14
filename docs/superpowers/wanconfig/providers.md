@@ -51,7 +51,7 @@ member list removes all three.
 
 An unknown health state reads as healthy, so before the health module writes
 its first state every member reads healthy and the first tier activates. That
-matches today's startup behaviour and must be preserved.
+matches today's startup behavior and must be preserved.
 
 ## One renderer builds every link
 
@@ -121,7 +121,7 @@ Deleting the priority validators and introducing derivation in separate
 changes leaves a window where a fourth member is accepted by one layer and
 rejected by another. Do both in one change.
 
-The ordering within the firewall's translation chain decides behaviour,
+The ordering within the firewall's translation chain decides behavior,
 because a translation statement stops rule evaluation. Grouping rules by
 member is equivalent to today's grouping only because every rule carries an
 outgoing-interface match. Assert that invariant rather than relying on it.

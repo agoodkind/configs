@@ -3,7 +3,7 @@
 The gateway describes itself with published IETF models. Only the steering
 concepts have no published model, so they live in one local module that
 extends the others. This page is the single home for the model's shape; the
-five specifications express their behaviour in its terms.
+five specifications express their behavior in its terms.
 
 ## What the published models give
 
@@ -17,7 +17,7 @@ entries in that one list.
 `forwarding`, `mtu`, an `address` list, and a `neighbor` list; the IPv6
 container adds an `autoconf` container. This is the single most valuable
 thing the model brings. Every asymmetry in the current system exists because
-there is nowhere per-family to put behaviour, so behaviour landed wherever it
+there is nowhere per-family to put behavior, so behavior landed wherever it
 was first needed. With these containers, treating the two families alike is
 structural rather than a thing to remember.
 
@@ -49,7 +49,7 @@ source and destination.
 A member is an interface with steering properties, not a parallel object.
 That keeps one identity per link.
 
-## What today's behaviour becomes
+## What today's behavior becomes
 
 Each row is a current special case and the model element that replaces it.
 
@@ -59,13 +59,13 @@ Each row is a current special case and the model element that replaces it.
 | One-to-one mapping exists only for IPv4, and only for the two providers named in a template | `mapping-table` entries of type `static`, on any interface, either family |
 | No way to express address masquerade, a statically routed prefix, or no translation | the instance `type`; no instance means no translation |
 | A delegation is forced to a fixed length, and a shorter one is widened onto space the gateway does not hold | both prefixes are explicit leaves, and RFC 6296 defines the rest |
-| Nothing checks the two prefix lengths against each other | both are modelled, so the check is schema-level |
+| Nothing checks the two prefix lengths against each other | both are modeled, so the check is schema-level |
 | The load balancer is hardcoded in three expressions and cannot select the fallback provider | derived from the member list of the active tier |
-| A provider with no delegation keeps receiving IPv6 and discarding it | the IPv6 container's operational status is down when its instance cannot be realised |
+| A provider with no delegation keeps receiving IPv6 and discarding it | the IPv6 container's operational status is down when its instance cannot be realized |
 | The health verdict merges both families | probe policy per family, because there is now a per-family container to hold it |
 | Forwarding is enabled globally before any firewall exists | the `forwarding` leaf, per interface per family |
 | The rollback watchdog's probe list is hand-maintained and omits one provider | derived from the member list |
-| Four routing identifiers are hand-assigned per provider | derived from the member index, and not modelled at all |
+| Four routing identifiers are hand-assigned per provider | derived from the member index, and not modeled at all |
 
 ## Prefixes of differing length
 

@@ -39,7 +39,7 @@ address set names, so retiring it is separate work.
 
 ## What must not change
 
-The daemon's behaviour, given equivalent input. This piece changes how
+The daemon's behavior, given equivalent input. This piece changes how
 configuration is written and read, not what any value means.
 
 Validation must remain strict in the same places it is strict today. A

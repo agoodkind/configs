@@ -10,7 +10,7 @@ member.
 
 ## The problem this solves
 
-IPv6 has exactly one translation behaviour and no way to express another.
+IPv6 has exactly one translation behavior and no way to express another.
 Every provider gets the same prefix-translation rule set, built
 unconditionally, with no type field anywhere. A provider with no readable
 delegation is dropped from the translation table entirely, so a statically
@@ -19,7 +19,7 @@ translation are all inexpressible.
 
 The exclusivity is already load-bearing and recorded only as a comment in the
 firewall template, warning that a static masquerade on one provider would
-override prefix translation through rule ordering. Two behaviours that cannot
+override prefix translation through rule ordering. Two behaviors that cannot
 coexist, with nothing in configuration saying which applies, is the shape of
 a bug waiting for a fourth provider.
 
@@ -74,7 +74,7 @@ moment fallback exists to prevent it. Neither the deploy gate nor a normal
 testbed run exercises that path, because fallback is not active during a
 deploy.
 
-## Realisation is coupled to steering
+## Realization is coupled to steering
 
 A member whose family cannot translate stops receiving that family's traffic.
 
@@ -85,7 +85,7 @@ with an untranslated source and are discarded upstream. The only signal is a
 warning alert.
 
 The per-family operational status the read-only surface already exposes is
-where this coupling becomes visible: a family whose instance is not realised
+where this coupling becomes visible: a family whose instance is not realized
 reports down, and steering reads that.
 
 ## Inbound survives every mode that can support it
@@ -109,7 +109,7 @@ A member with a delegation shorter than the internal prefix translates
 correctly under the standard's rule rather than onto space the gateway does
 not hold.
 
-A member whose IPv6 cannot be realised receives no IPv6 traffic, and its
+A member whose IPv6 cannot be realized receives no IPv6 traffic, and its
 per-family status reports down.
 
 Outbound traffic is translated while a fallback tier is active, in both
