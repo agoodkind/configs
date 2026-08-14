@@ -27,8 +27,12 @@ modified by any part of this work.
 
 **Read-only.** The served model exposes configuration as loaded and live
 state. It accepts no writes, so the deploy path and its rollback keep their
-role and configuration still applies at daemon restart. Opening writes is a
-later decision with its own safety work, not part of this epic.
+role and configuration still applies at daemon restart. The stack enforces
+this at the protocol layer: its access control (RFC 8341) denies every write
+by default, so a RESTCONF write method or a NETCONF edit receives the
+standard protocol error, and live state is served from the operational
+datastore, which accepts no writes at all. Opening writes is a later
+decision with its own safety work, not part of this epic.
 
 **The mature management stack serves the model.** libyang reads the
 description files and its validator gates the build, sysrepo holds the
@@ -96,7 +100,9 @@ Splitting the health verdict per address family. A provider with dead IPv6
 and working IPv4 currently reads healthy and keeps receiving IPv6 traffic.
 Fixing it changes the health state file format and every consumer's
 signature, which would break the behavioral equivalence the migration relies
-on. It has its own ticket and follows this work.
+on. It has its own ticket and follows this work. Until it lands, steering
+reads the combined verdict, and the probe policy sits on the interface; the
+per-family containers only give the later split a home.
 
 The daemon running its own delegation client, and moving link creation off
 systemd networkd. The second is gated on the first, because splitting link

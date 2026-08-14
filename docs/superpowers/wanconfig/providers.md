@@ -35,9 +35,11 @@ that introduces derivation, not after it.
 The active tier is the lowest-numbered tier holding at least one healthy
 member. New connections from internal sources are assigned a mark computed
 over that tier's members: a generated number modulo the sum of their weights,
-mapped onto member marks with one slot per weight unit. The hash mode selects
-whether that number is random per connection, derived from the source
-address, or derived from source and destination.
+mapped onto member marks with one slot per weight unit. A weight is a
+positive integer, and validation rejects anything else, so the sum the
+modulo divides by is never zero. The hash mode selects whether that number
+is random per connection, derived from the source address, or derived from
+source and destination.
 
 When a tier above the first is active, the catch-all rules point at that
 tier's healthy member with the lowest index. An unhealthy member's policy

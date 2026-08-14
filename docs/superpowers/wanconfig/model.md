@@ -39,8 +39,13 @@ One module extends the interface list with the steering properties no
 published model covers:
 
 - `tier`, a small integer. Lower is preferred.
-- `weight`, for unequal balancing among members of one tier.
+- `weight`, a positive integer, for unequal balancing among members of one
+  tier. Validation rejects zero and negative values, so the slot sum the
+  balancer divides by is never zero.
 - `probe-policy`, naming the health probes that decide the member's state.
+  It sits on the interface and covers both families, because the health
+  verdict stays combined in this work; the per-family containers give a
+  later per-family policy a home.
 
 Alongside the interface list it adds the group's `hash-mode`, selecting how a
 new connection is assigned to a member: at random, by source address, or by
@@ -48,6 +53,11 @@ source and destination.
 
 A member is an interface with steering properties, not a parallel object.
 That keeps one identity per link.
+
+The module also carries the daemon settings that no published model covers
+and the surface serves: the rollback watchdog's thresholds and probe
+targets, the out-of-band access policy, and the tunnel tap. They are plain
+configuration nodes with no steering semantics.
 
 ## What today's behavior becomes
 
@@ -62,7 +72,7 @@ Each row is a current special case and the model element that replaces it.
 | Nothing checks the two prefix lengths against each other | both are modeled, so the check is schema-level |
 | The load balancer is hardcoded in three expressions and cannot select the fallback provider | derived from the member list of the active tier |
 | A provider with no delegation keeps receiving IPv6 and discarding it | the IPv6 container's operational status is down when its instance cannot be realized |
-| The health verdict merges both families | probe policy per family, because there is now a per-family container to hold it |
+| The health verdict merges both families | unchanged in this work; the per-family containers give a later split a home, and it follows with its own ticket |
 | Forwarding is enabled globally before any firewall exists | the `forwarding` leaf, per interface per family |
 | The rollback watchdog's probe list is hand-maintained and omits one provider | derived from the member list |
 | Four routing identifiers are hand-assigned per provider | derived from the member index, and not modeled at all |

@@ -79,6 +79,9 @@ deletions are emitted by the module's own chain clears, and matching them is
 an endless loop. Set element deletions are emitted by the pinned-destination
 refresher every six hours.
 
+No stop or exit path flushes. Rules live in the kernel, not the process, so
+a stopped daemon leaves its last programmed ruleset protecting the gateway.
+
 ## Address sets
 
 Create each pinned-destination set if absent and never write its contents.
@@ -119,7 +122,11 @@ Nothing else in the deploy validates a firewall ruleset.
 
 Replace it with a check that programs the intended ruleset into a throwaway
 network namespace and compares it against a stored reference per environment.
-That reference doubles as this piece's equivalence artifact.
+That reference doubles as this piece's equivalence artifact. The comparison
+excludes kernel handles and counters, which change on every program, and
+excludes the refresher-owned set contents, which the refresher rewrites
+every six hours; set membership is checked separately, for freshness rather
+than equality.
 
 The deploy gate is not a substitute and must be hardened before this piece
 lands, not after. It decides on IPv6 alone and returns on its first
@@ -147,8 +154,9 @@ replace, one for one.
 A bare ruleset flush is fully repaired, including the tables the translation
 module owns, which it cannot do today.
 
-The gateway is closed and reachable when configuration is invalid, and when
-the daemon has been stopped.
+The gateway is closed and reachable when configuration is invalid. A
+stopped daemon leaves its last programmed ruleset in the kernel, so the
+gateway stays closed and reachable then too.
 
 The firewall service is masked and no path reloads a file.
 
