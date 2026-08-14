@@ -66,11 +66,36 @@ HOST_GOARCH := $(shell go env GOARCH)
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
 .PHONY: proto build-linux build-mwan-opnsense \
-        tidy fix clean
+        tidy fix clean yang-validate
 
 proto:
 	@mkdir -p gen/mwan/v1
 	$(BUF) generate
+
+# Model gate. yanglint (ships with libyang) validates the YANG modules the
+# gateway serves itself with; any parse error or unresolved reference fails
+# check. yanglint installs manually per the wanconfig toolchain decision:
+# `brew install libyang` locally, apt package libyang2-tools in CI.
+# The IETF modules come from the third_party/yang submodule (YangModels).
+# They are loaded as an explicit file list at exact revisions, because the
+# submodule tree also carries newer revisions that yanglint would otherwise
+# prefer for unversioned imports.
+YANG_DIR ?= ../yang
+YANG_RFC_DIR ?= ../../third_party/yang/standard/ietf/RFC
+YANGLINT ?= yanglint
+YANG_IETF_MODULES := \
+	$(YANG_RFC_DIR)/ietf-yang-types@2025-12-22.yang \
+	$(YANG_RFC_DIR)/ietf-inet-types@2025-12-22.yang \
+	$(YANG_RFC_DIR)/ietf-interfaces@2018-02-20.yang \
+	$(YANG_RFC_DIR)/ietf-ip@2018-02-22.yang \
+	$(YANG_RFC_DIR)/ietf-routing@2018-03-13.yang \
+	$(YANG_RFC_DIR)/ietf-nat@2019-01-10.yang
+
+yang-validate:
+	$(YANGLINT) --version
+	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_DIR)/*.yang
+
+check: yang-validate
 
 # Reusable cross-platform build template. Pulls GO_BUILD_LDFLAGS and
 # GO_BUILD_EXTRA_FLAGS from the canonical pipeline so every binary, host
