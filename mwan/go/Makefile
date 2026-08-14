@@ -84,8 +84,8 @@ YANG_DIR ?= ../yang
 YANG_RFC_DIR ?= ../../third_party/yang/standard/ietf/RFC
 YANGLINT ?= yanglint
 YANG_IETF_MODULES := \
-	$(YANG_RFC_DIR)/ietf-yang-types@2013-07-15.yang \
-	$(YANG_RFC_DIR)/ietf-inet-types@2013-07-15.yang \
+	$(YANG_RFC_DIR)/ietf-yang-types@2025-12-22.yang \
+	$(YANG_RFC_DIR)/ietf-inet-types@2025-12-22.yang \
 	$(YANG_RFC_DIR)/ietf-interfaces@2018-02-20.yang \
 	$(YANG_RFC_DIR)/ietf-ip@2018-02-22.yang \
 	$(YANG_RFC_DIR)/ietf-routing@2018-03-13.yang \
