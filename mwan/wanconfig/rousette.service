@@ -1,0 +1,15 @@
+[Unit]
+Description=Rousette RESTCONF server (wanconfig management stack)
+Documentation=https://github.com/CESNET/rousette
+After=network.target
+
+[Service]
+Type=simple
+# rousette binds ::1:10080 only; the nghttpx-wanconfig proxy exposes it on
+# the management address. Journald is detected automatically, no --syslog.
+ExecStart=/usr/local/bin/rousette
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,271 @@
+---
+# Install the wanconfig management stack on the MWAN gateway (MWAN-357).
+# libyang, sysrepo, their C++ bindings, nghttp2-asio, and rousette build
+# from source at the versions pinned in group_vars/all/vars.yml and install
+# to /usr/local. The vendored YANG model loads into the sysrepo datastore,
+# and rousette serves RESTCONF on ::1 behind an nghttpx front end bound to
+# the management address only. Read-only: NACM denies every write and grants
+# anonymous read per rousette's contract.
+#
+# Usage:
+#   # Suburban testbed (first, always):
+#   go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --limit mwan_suburban_servers
+#
+#   # Production (only with explicit operator approval):
+#   go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --limit mwan_servers
+
+- name: Install the wanconfig management stack
+  hosts: mwan_servers:mwan_suburban_servers
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    wanconfig_src_dir: /usr/local/src
+    wanconfig_stamp_dir: /usr/local/share/wanconfig-stack
+    wanconfig_yang_dir: /usr/local/share/wanconfig/yang
+    wanconfig_components:
+      - name: libyang
+        repo: https://github.com/CESNET/libyang.git
+        version: "{{ wanconfig_libyang_version }}"
+        jobs: 2
+      - name: sysrepo
+        repo: https://github.com/sysrepo/sysrepo.git
+        version: "{{ wanconfig_sysrepo_version }}"
+        jobs: 2
+      - name: libyang-cpp
+        repo: https://github.com/CESNET/libyang-cpp.git
+        version: "{{ wanconfig_libyang_cpp_version }}"
+        jobs: 1
+      - name: sysrepo-cpp
+        repo: https://github.com/sysrepo/sysrepo-cpp.git
+        version: "{{ wanconfig_sysrepo_cpp_version }}"
+        jobs: 1
+      - name: nghttp2-asio
+        repo: https://github.com/nghttp2/nghttp2-asio.git
+        version: "{{ wanconfig_nghttp2_asio_version }}"
+        jobs: 1
+      - name: rousette
+        repo: https://github.com/CESNET/rousette.git
+        version: "{{ wanconfig_rousette_version }}"
+        jobs: 1
+    wanconfig_yang_modules:
+      - ietf-interfaces@2018-02-20
+      - ietf-ip@2018-02-22
+      - ietf-routing@2018-03-13
+      - ietf-nat@2019-01-10
+      - goodkind-mwan-steering@2026-08-13
+  tasks:
+    - name: Install build and runtime dependencies
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        name:
+          - build-essential
+          - cmake
+          - pkg-config
+          - git
+          - libpcre2-dev
+          - libpam0g-dev
+          - libspdlog-dev
+          - libdocopt-dev
+          - libboost-system-dev
+          - libboost-thread-dev
+          - libssl-dev
+          - libnghttp2-dev
+          - libsystemd-dev
+          - nghttp2-proxy
+        state: present
+
+    - name: Create stack directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ wanconfig_src_dir }}"
+        - "{{ wanconfig_stamp_dir }}"
+        - "{{ wanconfig_yang_dir }}"
+        - /etc/nghttpx
+
+    - name: Create the anonymous-access system user
+      ansible.builtin.user:
+        name: yangnobody
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Check component stamps
+      ansible.builtin.stat:
+        path: "{{ wanconfig_stamp_dir }}/{{ item.name }}-{{ item.version }}.stamp"
+      loop: "{{ wanconfig_components }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: wanconfig_stamps
+
+    - name: Clone component sources at pinned versions
+      ansible.builtin.git:
+        repo: "{{ item.item.repo }}"
+        dest: "{{ wanconfig_src_dir }}/{{ item.item.name }}"
+        version: "{{ item.item.version }}"
+        force: true
+      loop: "{{ wanconfig_stamps.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: not item.stat.exists
+
+    - name: Configure, build, and install components
+      ansible.builtin.command:
+        argv:
+          - /bin/sh
+          - -ec
+          - >-
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_TESTING=OFF &&
+            make -C build -j{{ item.item.jobs }} &&
+            make -C build install &&
+            ldconfig
+        chdir: "{{ wanconfig_src_dir }}/{{ item.item.name }}"
+      loop: "{{ wanconfig_stamps.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: not item.stat.exists
+      changed_when: true
+
+    - name: Write component stamps
+      ansible.builtin.file:
+        path: "{{ wanconfig_stamp_dir }}/{{ item.item.name }}-{{ item.item.version }}.stamp"
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ wanconfig_stamps.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: not item.stat.exists
+
+    - name: Copy the gateway model and its IETF imports
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ wanconfig_yang_dir }}/"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - "../../third_party/yang/standard/ietf/RFC/ietf-yang-types@2025-12-22.yang"
+        - "../../third_party/yang/standard/ietf/RFC/ietf-inet-types@2025-12-22.yang"
+        - "../../third_party/yang/standard/ietf/RFC/ietf-interfaces@2018-02-20.yang"
+        - "../../third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang"
+        - "../../third_party/yang/standard/ietf/RFC/ietf-routing@2018-03-13.yang"
+        - "../../third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang"
+        - "../../mwan/yang/goodkind-mwan-steering@2026-08-13.yang"
+
+    - name: List installed sysrepo modules
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/sysrepoctl
+          - --list
+      register: wanconfig_sysrepo_modules
+      changed_when: false
+
+    - name: Install rousette's required models into sysrepo
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/sysrepoctl
+          - --install
+          - "{{ wanconfig_src_dir }}/rousette/yang/{{ item }}.yang"
+          - --search-dirs
+          - "{{ wanconfig_src_dir }}/rousette/yang"
+      loop:
+        - ietf-restconf@2017-01-26
+        - ietf-restconf-monitoring@2017-01-26
+        - ietf-yang-patch@2017-02-22
+      when: item.split('@')[0] not in wanconfig_sysrepo_modules.stdout
+      changed_when: true
+
+    - name: Install the gateway model into sysrepo
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/sysrepoctl
+          - --install
+          - "{{ wanconfig_yang_dir }}/{{ item }}.yang"
+          - --search-dirs
+          - "{{ wanconfig_yang_dir }}"
+      loop: "{{ wanconfig_yang_modules }}"
+      when: item.split('@')[0] not in wanconfig_sysrepo_modules.stdout
+      changed_when: true
+
+    - name: Import the read-only NACM policy
+      ansible.builtin.copy:
+        src: ../../mwan/wanconfig/nacm-anonymous.xml
+        dest: /etc/sysrepo-nacm-anonymous.xml
+        owner: root
+        group: root
+        mode: "0644"
+      register: wanconfig_nacm_file
+
+    - name: Apply the NACM policy to the running and startup datastores
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/sysrepocfg
+          - --import=/etc/sysrepo-nacm-anonymous.xml
+          - --datastore
+          - "{{ item }}"
+          - --module
+          - ietf-netconf-acm
+      loop:
+        - startup
+        - running
+      when: wanconfig_nacm_file.changed
+      changed_when: true
+
+    - name: Install the rousette unit
+      ansible.builtin.copy:
+        src: ../../mwan/wanconfig/rousette.service
+        dest: /etc/systemd/system/rousette.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart rousette
+
+    - name: Render the nghttpx front-end configuration
+      ansible.builtin.template:
+        src: ../../mwan/wanconfig/nghttpx-wanconfig.conf.j2
+        dest: /etc/nghttpx/wanconfig.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart nghttpx-wanconfig
+
+    - name: Install the nghttpx front-end unit
+      ansible.builtin.copy:
+        src: ../../mwan/wanconfig/nghttpx-wanconfig.service
+        dest: /etc/systemd/system/nghttpx-wanconfig.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart nghttpx-wanconfig
+
+    - name: Enable and start the stack services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+        daemon_reload: true
+      loop:
+        - rousette
+        - nghttpx-wanconfig
+
+  handlers:
+    - name: Restart rousette
+      ansible.builtin.systemd:
+        name: rousette
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart nghttpx-wanconfig
+      ansible.builtin.systemd:
+        name: nghttpx-wanconfig
+        state: restarted
+        daemon_reload: true
