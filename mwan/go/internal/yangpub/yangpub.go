@@ -45,9 +45,15 @@ type ProviderFunc func(ctx context.Context, xpath string) ([]Item, error)
 
 // Publisher is the daemon's handle on the management datastore.
 type Publisher interface {
+	// GetItem reads one value by path in ds. It reports found=false when
+	// the path holds no value, which lets a publisher leave state it did
+	// not own unchanged.
+	GetItem(ctx context.Context, ds Datastore, path string) (value string, found bool, err error)
 	// SetItems sets every item by path in ds and applies them as one
 	// change.
 	SetItems(ctx context.Context, ds Datastore, items []Item) error
+	// DeleteItem removes the value at path in ds and applies the change.
+	DeleteItem(ctx context.Context, ds Datastore, path string) error
 	// RegisterProvider registers fn as the operational provider of
 	// xpath inside module, so a read reaches the daemon at request
 	// time. Registrations live until Close.

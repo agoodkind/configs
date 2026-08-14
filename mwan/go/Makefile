@@ -168,7 +168,8 @@ define wanconfig_cgo_dep_build
 		-DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_INSTALL_PREFIX="$${GO_MK_CGO_PREFIX}" \
 		-DCMAKE_PREFIX_PATH="$${GO_MK_CGO_PREFIX}" \
-		-DCMAKE_C_FLAGS="$$(pkg-config --cflags-only-I libpcre2-8) -D_DARWIN_C_SOURCE" \
+		-DCMAKE_C_FLAGS="$$(pkg-config --cflags-only-I libpcre2-8)" \
+		-DREPO_PATH="$${GO_MK_CGO_PREFIX}/etc/sysrepo" \
 		-DBUILD_TESTING=OFF; \
 	cmake --build $(WANCONFIG_CGO_SRC)/$(1)/build --parallel; \
 	cmake --install $(WANCONFIG_CGO_SRC)/$(1)/build; \

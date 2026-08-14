@@ -6,6 +6,7 @@ package yangpub
 #cgo pkg-config: sysrepo libyang
 #include <stdlib.h>
 #include <sysrepo.h>
+#include <sysrepo/values.h>
 #include <libyang/libyang.h>
 
 extern int yangpubOperCB(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name,
@@ -16,6 +17,7 @@ import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/cgo"
@@ -27,13 +29,36 @@ import (
 // stall the caller indefinitely.
 const applyTimeoutMS = 5000
 
+// getTimeoutMS bounds sr_get_item so a stuck datastore cannot stall a
+// read indefinitely.
+const getTimeoutMS = 5000
+
+// ErrClosed means the publisher was already closed. Every entry point
+// rejects a closed publisher rather than passing a freed connection back
+// into sysrepo.
+var ErrClosed = errors.New("yangpub: publisher is closed")
+
 // publisher is the cgo-backed Publisher over one sysrepo connection.
+// Every field below mu is guarded by it, including the connection itself,
+// because Close frees the connection and any later call must see that.
 type publisher struct {
-	log  *slog.Logger
-	conn *C.sr_conn_ctx_t
+	log *slog.Logger
 
 	mu            sync.Mutex
+	conn          *C.sr_conn_ctx_t
+	closed        bool
 	subscriptions []*operSubscription
+}
+
+// connection returns the live connection, or an error once Close ran.
+// The caller holds no lock; this takes and releases mu itself.
+func (p *publisher) connection() (*C.sr_conn_ctx_t, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.conn == nil {
+		return nil, ErrClosed
+	}
+	return p.conn, nil
 }
 
 // operSubscription holds everything one provider registration owns: the
@@ -93,8 +118,13 @@ func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) er
 		return err
 	}
 
+	conn, err := p.connection()
+	if err != nil {
+		return err
+	}
+
 	var session *C.sr_session_ctx_t
-	if rc := C.sr_session_start(p.conn, srDS, &session); rc != C.SR_ERR_OK {
+	if rc := C.sr_session_start(conn, srDS, &session); rc != C.SR_ERR_OK {
 		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
 		return fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
 	}
@@ -128,8 +158,13 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 		return fmt.Errorf("yangpub: registration aborted: %w", err)
 	}
 
+	conn, err := p.connection()
+	if err != nil {
+		return err
+	}
+
 	var session *C.sr_session_ctx_t
-	if rc := C.sr_session_start(p.conn, C.SR_DS_OPERATIONAL, &session); rc != C.SR_ERR_OK {
+	if rc := C.sr_session_start(conn, C.SR_DS_OPERATIONAL, &session); rc != C.SR_ERR_OK {
 		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
 		return fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
 	}
@@ -166,9 +201,99 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 	return nil
 }
 
-// Close releases every registration and the connection.
+// GetItem reads one value by path in ds.
+func (p *publisher) GetItem(ctx context.Context, ds Datastore, path string) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		p.log.Error("read aborted before start", "err", err)
+		return "", false, fmt.Errorf("yangpub: read aborted: %w", err)
+	}
+	srDS, err := datastoreOf(ds)
+	if err != nil {
+		p.log.Error("read rejected", "err", err)
+		return "", false, err
+	}
+	conn, err := p.connection()
+	if err != nil {
+		return "", false, err
+	}
+
+	var session *C.sr_session_ctx_t
+	if rc := C.sr_session_start(conn, srDS, &session); rc != C.SR_ERR_OK {
+		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
+		return "", false, fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
+	}
+	defer C.sr_session_stop(session)
+
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+	var value *C.sr_val_t
+	rc := C.sr_get_item(session, cPath, C.uint32_t(getTimeoutMS), &value)
+	if rc == C.SR_ERR_NOT_FOUND {
+		return "", false, nil
+	}
+	if rc != C.SR_ERR_OK {
+		p.log.Error("sysrepo get failed", "path", path, "detail", srErrorString(rc))
+		return "", false, fmt.Errorf("yangpub: sr_get_item %s: %s", path, srErrorString(rc))
+	}
+	defer C.sr_free_val(value)
+
+	printed := C.sr_val_to_str(value)
+	if printed == nil {
+		return "", false, fmt.Errorf("yangpub: sr_val_to_str %s returned no value", path)
+	}
+	defer C.free(unsafe.Pointer(printed))
+	return C.GoString(printed), true, nil
+}
+
+// DeleteItem removes the value at path in ds and applies the change.
+func (p *publisher) DeleteItem(ctx context.Context, ds Datastore, path string) error {
+	if err := ctx.Err(); err != nil {
+		p.log.Error("delete aborted before start", "err", err)
+		return fmt.Errorf("yangpub: delete aborted: %w", err)
+	}
+	srDS, err := datastoreOf(ds)
+	if err != nil {
+		p.log.Error("delete rejected", "err", err)
+		return err
+	}
+	conn, err := p.connection()
+	if err != nil {
+		return err
+	}
+
+	var session *C.sr_session_ctx_t
+	if rc := C.sr_session_start(conn, srDS, &session); rc != C.SR_ERR_OK {
+		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
+		return fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
+	}
+	defer C.sr_session_stop(session)
+
+	cPath := C.CString(path)
+	rc := C.sr_delete_item(session, cPath, C.sr_edit_options_t(0))
+	C.free(unsafe.Pointer(cPath))
+	if rc != C.SR_ERR_OK {
+		p.log.Error("sysrepo delete failed", "path", path, "detail", srErrorString(rc))
+		return fmt.Errorf("yangpub: sr_delete_item %s: %s", path, srErrorString(rc))
+	}
+	if rc := C.sr_apply_changes(session, C.uint32_t(applyTimeoutMS)); rc != C.SR_ERR_OK {
+		p.log.Error("sysrepo apply failed", "detail", srErrorString(rc))
+		return fmt.Errorf("yangpub: sr_apply_changes: %s", srErrorString(rc))
+	}
+	return nil
+}
+
+// Close releases every registration and the connection. It is idempotent:
+// a second call finds the connection already surrendered and returns nil
+// rather than handing a freed pointer back to sysrepo.
 func (p *publisher) Close() error {
 	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return nil
+	}
+	p.closed = true
+	conn := p.conn
+	p.conn = nil
 	subs := p.subscriptions
 	p.subscriptions = nil
 	p.mu.Unlock()
@@ -181,7 +306,7 @@ func (p *publisher) Close() error {
 		C.free(sub.handleCell)
 		sub.handle.Delete()
 	}
-	if rc := C.sr_disconnect(p.conn); rc != C.SR_ERR_OK {
+	if rc := C.sr_disconnect(conn); rc != C.SR_ERR_OK {
 		p.log.Error("sysrepo disconnect failed", "detail", srErrorString(rc))
 		return fmt.Errorf("yangpub: sr_disconnect: %s", srErrorString(rc))
 	}

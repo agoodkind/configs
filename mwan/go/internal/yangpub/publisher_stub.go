@@ -2,7 +2,9 @@
 
 package yangpub
 
-import "log/slog"
+import (
+	"log/slog"
+)
 
 // New reports the binding unavailable: this binary was built without cgo
 // or for a platform sysrepo cannot run on. sysrepo requires robust

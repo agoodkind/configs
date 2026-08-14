@@ -17,10 +17,17 @@ const selftestTimeout = 30 * time.Second
 // an external RESTCONF read to hit it during testbed validation.
 const selftestHoldTime = 20 * time.Second
 
-// selftestHashModePath is the one config leaf the selftest publishes: the
-// steering group's hash mode, set to its default value so a repeated run
-// changes nothing an operator would notice.
-const selftestHashModePath = "/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group/goodkind-mwan-steering:hash-mode"
+// selftestHashModePath is the one config leaf the selftest publishes,
+// the steering group's hash mode, and selftestHashModeValue is what it
+// writes there for the duration of the run.
+const (
+	selftestHashModePath  = "/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group/goodkind-mwan-steering:hash-mode"
+	selftestHashModeValue = "random"
+)
+
+// restoreSelftestTimeout bounds the restore, which runs after the main
+// context has already expired.
+const restoreSelftestTimeout = 10 * time.Second
 
 // selftestProviderModule and selftestProviderPath place a throwaway
 // operational provider on the interfaces list, so an external read
@@ -51,14 +58,26 @@ func runWanconfigSelftest(_ []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), selftestTimeout)
 	defer cancel()
 
+	// The selftest writes a real config leaf, so it snapshots the current
+	// value first and puts it back on the way out. Without that, a run
+	// against a gateway whose operator chose a non-default hash mode would
+	// silently change how traffic is spread.
+	priorValue, priorFound, err := pub.GetItem(ctx, yangpub.DatastoreRunning, selftestHashModePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mwan wanconfig-selftest: read current value: %v\n", err)
+		return 1
+	}
+	defer restoreSelftestLeaf(pub, log, priorValue, priorFound)
+
 	publishItems := []yangpub.Item{
-		{Path: selftestHashModePath, Value: "random"},
+		{Path: selftestHashModePath, Value: selftestHashModeValue},
 	}
 	if err := pub.SetItems(ctx, yangpub.DatastoreRunning, publishItems); err != nil {
 		fmt.Fprintf(os.Stderr, "mwan wanconfig-selftest: publish: %v\n", err)
 		return 1
 	}
-	log.Info("published selftest leaf", "path", selftestHashModePath)
+	log.Info("published selftest leaf",
+		"path", selftestHashModePath, "prior_value_present", priorFound)
 
 	providerFn := func(_ context.Context, xpath string) ([]yangpub.Item, error) {
 		log.Info("provider read", "xpath", xpath)
@@ -86,4 +105,30 @@ func runWanconfigSelftest(_ []string) int {
 	time.Sleep(selftestHoldTime)
 	log.Info("wanconfig selftest complete")
 	return 0
+}
+
+// restoreSelftestLeaf puts the hash mode back the way the selftest found
+// it: the prior value when one was set, and no value at all when the leaf
+// was absent and the schema default applied. A restore failure is logged
+// rather than returned, because it runs from a deferred call after the
+// exit code is decided.
+func restoreSelftestLeaf(pub yangpub.Publisher, log *slog.Logger, priorValue string, priorFound bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), restoreSelftestTimeout)
+	defer cancel()
+
+	if priorFound {
+		items := []yangpub.Item{{Path: selftestHashModePath, Value: priorValue}}
+		if err := pub.SetItems(ctx, yangpub.DatastoreRunning, items); err != nil {
+			log.Error("selftest leaf restore failed",
+				"path", selftestHashModePath, "value", priorValue, "err", err)
+			return
+		}
+		log.Info("selftest leaf restored", "path", selftestHashModePath, "value", priorValue)
+		return
+	}
+	if err := pub.DeleteItem(ctx, yangpub.DatastoreRunning, selftestHashModePath); err != nil {
+		log.Error("selftest leaf removal failed", "path", selftestHashModePath, "err", err)
+		return
+	}
+	log.Info("selftest leaf removed", "path", selftestHashModePath)
 }

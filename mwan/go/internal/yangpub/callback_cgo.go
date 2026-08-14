@@ -11,9 +11,32 @@ import "C"
 
 import (
 	"context"
+	"fmt"
 	"runtime/cgo"
+	"time"
 	"unsafe"
 )
+
+// providerTimeout bounds one provider call. A provider that blocks past
+// it loses its sysrepo worker thread to a cancelled context rather than
+// holding it for the life of the read.
+const providerTimeout = 5 * time.Second
+
+// callProvider runs one provider with a deadline and turns a panic into
+// an error. The panic case is the load-bearing one: this runs on a
+// thread that entered Go from C, and a panic that unwinds past this
+// frame aborts the whole process, so one bad provider would take the
+// daemon down with it.
+func callProvider(registration *providerReg, xpath string) (items []Item, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("yangpub: provider panicked: %v", recovered)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
+	defer cancel()
+	return registration.fn(ctx, xpath)
+}
 
 // yangpubOperCB is the C-visible trampoline sysrepo invokes for every
 // operational read under a registered provider. It recovers the Go
@@ -37,7 +60,7 @@ func yangpubOperCB(session *C.sr_session_ctx_t, subID C.uint32_t, moduleName *C.
 	if requestXPath != nil && *requestXPath != 0 {
 		requested = C.GoString(requestXPath)
 	}
-	items, err := registration.fn(context.Background(), requested)
+	items, err := callProvider(registration, requested)
 	if err != nil {
 		registration.log.Error("provider callback failed",
 			"xpath", requested, "err", err)
