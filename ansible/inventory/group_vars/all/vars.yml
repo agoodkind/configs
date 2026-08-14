@@ -100,8 +100,12 @@ bgp_hold_seconds: 30
 # by the distribution; a version change rebuilds that component on the next
 # deploy. nghttp2-asio has no release tags, so it pins a commit.
 # ----------------------------------------------------------------------------
-wanconfig_libyang_version: "v5.8.6"
-wanconfig_sysrepo_version: "v5.1.0"
+# libyang and sysrepo stay on the 3.x series: libyang-cpp v4 compiles
+# against the libyang 3.x API only (5.x renamed print/parse symbols), and
+# sysrepo v3.7.11 declares its libyang dependency as 3.13.x. The cpp
+# bindings' ">=" bounds state a floor, not upper compatibility.
+wanconfig_libyang_version: "v3.13.6"
+wanconfig_sysrepo_version: "v3.7.11"
 wanconfig_libyang_cpp_version: "v4"
 wanconfig_sysrepo_cpp_version: "v6"
 wanconfig_nghttp2_asio_version: "e877868abe"
