@@ -40,11 +40,16 @@ require the interface to exist.
 The daemon signals readiness only after its first successful apply, so units
 that order themselves after it get the guarantee they already assume.
 
-Startup is two transactions. The first programs the closed baseline: drop
-policy, established traffic, loopback, the control messages each family
-needs, management access, and the internal routing protocol. The second
-programs the full ruleset. Invalid configuration stops the daemon after the
-first, so the gateway is closed and reachable rather than open.
+Startup validates the whole configuration before touching the kernel, then
+runs two transactions. The first programs the closed baseline: drop policy,
+established traffic, loopback, the control messages each family needs,
+management access, and the internal routing protocol. The second programs
+the full ruleset. Invalid configuration stops the daemon after the first,
+so the gateway is closed and reachable rather than open. The baseline is
+programmed only when the few values it is built from, the management and
+internal interface names among them, are themselves valid; when they are
+not, the daemon stops without touching the kernel, so a wrong baseline
+never replaces rules already protecting the gateway.
 
 The accepted residual is narrow and stated deliberately: if the binary cannot
 execute at all, nothing is programmed. The deploy gate and the snapshot
@@ -134,6 +139,12 @@ successful probe, so a ruleset with no working IPv4 translation passes it,
 and a half-broken balancer passes as soon as the retry loop reaches the
 working member. Require both families and several consecutive successes, and
 assert the intended ruleset against the kernel on the guest after the reboot.
+
+The namespace check proves the ruleset's shape, not that the host stays
+reachable. Management reachability is the deploy gate's job: its post-reboot
+probes ride the management path, and the snapshot rollback restores the
+previous state when they fail, so a valid but wrong management rule is
+caught by the gate instead of becoming a lockout.
 
 ## Drift detection
 
