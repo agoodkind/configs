@@ -1,310 +1,98 @@
-# Config-driven WAN
+# A standards-modelled MWAN gateway
 
-One mwan binary handles any WAN set. Adding, removing, re-tiering, or
-re-weighting an ISP is an inventory edit plus a config deploy and service
-restart. No ISP name appears in Go code, and no per-ISP scalar variable or
-per-ISP template file exists. Changes apply at daemon restart; there is no
-hot reload.
+The MWAN gateway VM terminates several internet provider links and steers
+traffic across them. It has no model. Each behaviour was added where it was
+needed, so IPv4 and IPv6 reach the same goal by different mechanisms, owned
+by different components, sharing no vocabulary. Adding a provider takes about
+forty scattered inventory edits, four hand-written link files, new rules in a
+240-line firewall template, and Go changes, and two validators reject a
+fourth provider outright.
 
-## Design contract
+This work adopts an existing standard model rather than inventing one. Every
+provider becomes an interface with a container per address family, carrying
+its own addressing, forwarding, and translation. Translation becomes an
+instance with a declared type, so prefix translation, address masquerade,
+one-to-one mapping, and no translation at all are values instead of code
+paths. Steering becomes members with a tier, a weight, and a probe policy.
+The daemon then serves that model, so an operator can answer why traffic is
+leaving a given provider without logging in.
 
-1. **One inventory source per environment.** A `mwan_wans` map in the
-   environment's group_vars carries every per-WAN fact. Each entry holds
-   identity (`index`, `iface`), steering (`tier`, `weight`), link bring-up
-   flags, health parameters, static IPv4 NAT mappings, pinned-destination
-   CIDRs, and an optional static delegated prefix. A global `mwan_lb_hash`
-   key beside the map selects the load-balance hash mode.
+The model is defined once in [model.md](model.md). Everything below is
+expressed in its terms.
 
-2. **Identifiers derive from a stable index.** Each WAN declares one small
-   integer `index`, never reused, never dependent on map order. From index
-   i the system derives: routing table 100*i, firewall mark i, mark-rule
-   priority 100*i, from-rule priority 54+i. Operators never write a table
-   id, mark, or rule priority. Validation enforces unique names and
-   indexes and rejects any derived identifier that collides with a
-   registered non-WAN routing table. That reserved set is read from the
-   same inventory that renders `/etc/iproute2/rt_tables`, so it cannot
-   drift from the live registrations, which today are 400 for the
-   Cloudflare tunnel, 500 for the out-of-band table, and the kernel's
-   253, 254, and 255. The current WANs are att index 1, webpass index 2,
-   monkeybrains index 3, which reproduces every previously hand-assigned
-   value exactly.
+OPNsense at `router.home.goodkind.io` sits behind the gateway and is not
+modified by any part of this work.
 
-3. **The daemon is the firewall authority.** A `firewall` ifmgr module
-   builds the complete ruleset from config at startup and programs it into
-   the kernel atomically over netlink via github.com/google/nftables, the
-   same ownership pattern the npt module uses for `table ip6 nat`. The
-   rendered `/etc/nftables.conf` is a minimal bootstrap: input drop with
-   established, loopback, ICMP, management SSH, management gRPC, internal
-   BGP and BFD, and the DHCP and DHCPv6 client accepts. Those client
-   accepts are written without naming an interface, so the bootstrap
-   carries no WAN name while still admitting the traffic every WAN needs.
-   They are not optional: systemd-networkd requests a delegated prefix
-   over an ordinary UDP socket subject to the input hook, so a bootstrap
-   without them drops every delegation request until the daemon starts,
-   and no delegation means npt has nothing to program and IPv6 egress
-   never comes up. The bootstrap also declares an empty `table ip6 nat`
-   with its two base chains, which npt requires and which loads the
-   kernel's NAT backend for a daemon running under
-   `ProtectKernelModules`. `nftables.service` loads the bootstrap at boot
-   so the box is closed and reachable before the daemon starts; the
-   daemon's ruleset replaces it. An nft watcher re-applies the daemon's
-   tables within seconds when anything external flushes them.
+## Decisions that bind every piece
 
-4. **Steering is tier plus weight plus hash mode.** Lower tier is
-   preferred. The active tier is the lowest-numbered tier with at least
-   one healthy WAN. New connections from internal sources receive a
-   firewall mark computed over the tier-1 members: a numgen expression
-   modulo the sum of tier-1 weights, mapped onto member marks with one
-   slot per weight unit. `mwan_lb_hash` selects the expression: `random`
-   (per-connection random), `source` (hash of source address), or
-   `source_dest` (hash of source and destination). Health prunes an
-   unhealthy WAN's ip rules and marked strays fall through to the main
-   table. When a tier above 1 is active, wan.routes emits the priority-50
-   catch-all rules to the healthy member of that tier with the lowest
-   index. A fallback tier serves through one member at a time; mark
-   assignment is computed from tier 1 at startup, so load balancing
-   within an activated fallback tier is out of scope.
+**Read-only.** The served model exposes configuration as loaded and live
+state. It accepts no writes, so the deploy path and its rollback keep their
+role and configuration still applies at daemon restart. The library provides
+no staged-change workflow, which is the only safe way to accept writes, so
+writes wait for one.
 
-5. **Delegated prefixes are live by default.** The pd.Source live
-   DHCPv6-PD reading is authoritative for each WAN's delegated prefix,
-   and npt consumes it. A WAN with a static delegation sets `prefix_v6`,
-   which overrides the live reading.
+**RESTCONF and gNMI.** RESTCONF for reading the tree, gNMI for subscribing to
+state that today can only be polled. NETCONF is out: its distinguishing
+feature is staged change, which read-only does not use.
 
-   The wan.routes IPv6 source-pin rule still reads a configured prefix,
-   so every WAN carries one through this work. That rule is built from
-   the configured value and its cleanup pass claims rule priorities 55
-   through 57 unconditionally, so rendering the value empty does not skip
-   the rule, it deletes the live one. Moving the source pin onto the live
-   reading is its own change with its own failure mode, since at daemon
-   start the delegation may not be readable yet.
+**The model's own encoding is the configuration format.** Inventory renders
+the model as JSON rather than as TOML, so one representation runs from
+inventory through to the served tree.
 
-6. **Every link renders through one path.** Each entry's `link` block
-   exposes independent knobs: `dhcp4`, `dhcp6`, `pd` with `pd_hint`,
-   `slaac`, `route_metric`, static `addr4`/`gw4` and `addr6`/`gw6`, DUID
-   fields, an optional `vlan` block (`parent`, `id`), and an optional
-   `dot1x` block (supplicant identity, certificate paths, and the parent
-   port's helper address). One generic networkd template renders exactly
-   the sections a WAN's fields enable, and the sysctl file loops over the
-   same map. A WAN differs from its peers only in data, never in which
-   code path builds it; no entry is exempt from the renderer. systemd
-   networkd is the single link authority for every WAN, which keeps link
-   creation and DHCP under one owner and keeps the delegated-prefix lease
-   that pd.Source reads where the daemon already finds it.
+**The daemon is the only thing that writes the firewall.** The ruleset file
+is deleted and the firewall service is masked.
 
-   A `vlan` block makes the WAN a tagged child: the renderer emits the
-   netdev, the parent's VLAN declaration, and the child's own network
-   file from the same flags any other WAN uses. A `dot1x` block adds the
-   supplicant on the parent port and gates the child's DHCP start on
-   authentication succeeding. Production att carries both blocks;
-   testbed att carries neither and is otherwise the same entry.
+**Nothing is written from scratch.** `freeconf` parses the model, serves
+RESTCONF, and speaks gNMI; `openconfig/ygot` is the fallback if binding by
+reflection proves insufficient. Do not run both.
 
-7. **The watchdog probes every WAN.** The rollback watchdog pings out of
-   each configured WAN interface to tell a real outage apart from a
-   routing failure, and it returns healthy on the first interface that
-   answers, so the probe list is a logical OR and an added member can
-   only reduce false rollbacks. Every WAN in the map is probed. This
-   closes a live gap: att is absent from the current probe list, so a VM
-   reachable only through att reads as a total outage.
+## The five pieces
 
-8. **Failure is closed and inert.** A daemon start with invalid config
-   (duplicate index, empty tier set, malformed CIDR, derived-identifier
-   collision) fails validation before programming anything, and the
-   existing kernel ruleset stays. A daemon stop or crash leaves the
-   last-programmed rules serving traffic. A boot where the daemon never
-   starts leaves the bootstrap: no forwarding, no NAT, management access
-   intact.
+Each has its own specification and its own implementation plan. They are
+listed in dependency order, and each one is deployable on its own.
 
-## Inventory schema
+**One, the model and the read-only surface.** Define the model for the whole
+daemon, bind it, and serve it against today's configuration. Changes no
+behaviour. Every later piece is verified against it.
+[surface.md](surface.md)
 
-```yaml
-mwan_lb_hash: random        # random | source | source_dest
-mwan_wg_pin_wan: att        # WAN carrying the WireGuard control-plane pin
+**Two, the configuration format.** Inventory renders the model's JSON
+encoding, the daemon loads it, and TOML retires. The rendered file becomes
+checkable against the schema before it reaches the gateway.
+[config.md](config.md)
 
-mwan_wans:
-  att:
-    index: 1
-    iface: "enatt0.3242"    # steering/health/npt iface (the VLAN child)
-    tier: 1
-    weight: 1
-    link:
-      vlan:
-        parent: "enatt0"
-        id: 3242
-      dot1x:                # supplicant on the parent port
-        identity: "..."
-        cert: "..."
-        key: "..."
-        parent_addr4: "192.168.1.2/24"   # SFP module management access
-        parent_peer4: "192.168.1.1"
-      dhcp4: true
-      dhcp6: true
-      pd: true
-      pd_hint: "::/60"
-      slaac: true
-      duid_type: "vendor"
-      duid_raw: "..."
-    npt_prefix: "..."       # source-pin prefix, see design contract 5
-    health: { ... }         # same shape as the per-WAN health block today
-    static_mappings:        # 1:1 IPv4 NAT pairs
-      - { external: "x.x.x.x", internal: "10.250.250.x" }
-    pinned_v4_cidrs: []     # destinations pinned to this WAN
-    pinned_v6_cidrs: []
-  webpass:
-    index: 2
-    iface: "enwebpass0"
-    tier: 1
-    weight: 1
-    link:
-      addr4: "x.x.x.x/29"
-      gw4: "x.x.x.x"
-      dhcp6: true
-      pd: true
-      pd_hint: "::/56"
-      slaac: true
-      duid_type: "link-layer-time"
-      duid_raw: "..."
-    health: { ... }
-    static_mappings: [ ... ]
-  monkeybrains:
-    index: 3
-    iface: "enmbrains0"
-    tier: 2
-    weight: 1
-    link:
-      dhcp4: true
-      dhcp6: true
-      pd: true
-      pd_hint: "::/56"
-      slaac: true
-      route_metric: 5000
-      duid_type: "link-layer-time"
-      duid_raw: "..."
-    health: { ... }
-```
+**Three, the provider set becomes data.** Inventory takes the model's shape,
+routing identifiers derive from a member index, steering becomes tier and
+weight, and one renderer builds every link. Adding a provider becomes an
+inventory edit and a config deploy. [providers.md](providers.md)
 
-The map absorbs these scalars, which are deleted: `mwan_att_iface`,
-`mwan_webpass_iface`, `mwan_monkeybrains_iface`, `mwan_att_vlan_id`,
-`mwan_npt_*_prefix`, `mwan_rt_tables` WAN entries,
-`mwan_ifmgr_wan_fw_marks`, `mwan_ifmgr_wan_fw_mark_prios`,
-`mwan_ifmgr_wan_from_prios`, `mwan_health_checks`,
-`mwan_static_mappings`, `mwan_att_pinned_v4_seed_cidrs`,
-`mwan_att_pinned_v6_seed_cidrs`, and the per-WAN DUID, address, and
-gateway scalars. Their values survive as map fields; only
-`mwan_ifmgr_wan_fw_marks`, `mwan_ifmgr_wan_fw_mark_prios`,
-`mwan_ifmgr_wan_from_prios`, and the WAN routing table numbers disappear
-outright, because `index` derives them.
+**Four, translation becomes typed instances.** Each family of each provider
+declares its translation type, one-to-one mapping works in both families, and
+prefixes of differing length follow the standard's rule rather than a
+hardcoded length. [translation.md](translation.md)
 
-The catalogue lives in `group_vars/all/`, keyed by environment, the way
-guest identities already do. The watchdog's probe list is rendered on the
-hypervisor, whose variable group cannot read the router's, so a
-router-group map would leave that list hand-maintained and free to drift.
-
-## Config pipeline
-
-`config-vm.toml.j2` renders one `[ifmgr.wan.<name>]` block per map entry
-carrying `index`, `iface`, `tier`, `weight`, `prefix_v6` when set, the
-pinned CIDR lists, the static mappings, and the source-pin prefix.
-`table_id`, `fw_mark`, `fw_mark_prio`, and `from_prio` leave the rendered
-config, because Go derives all four from `index`. A `[ifmgr.lb]` block
-carries the hash mode. The health loop, the
-`[[network.wan_interfaces]]` watchdog probe list, `rt_tables.j2`, and
-`sysctl-mwan.conf.j2` render one entry per map entry. `nftables.conf.j2`
-is replaced by the bootstrap template.
-
-Link rendering is one template set driven by the same map: a network
-file per WAN, a netdev per WAN carrying a `vlan` block, a parent network
-file and supplicant configuration per WAN carrying a `dot1x` block, and
-the auth-gated DHCP start unit for those same WANs. Every per-ISP
-networkd file is deleted, including both AT&T files, the webpass and
-monkeybrains files, and the separate testbed forks of att and webpass.
-The testbed and production difference becomes data in the map.
-
-## Firewall module ruleset
-
-From config, the module programs:
-
-- `inet filter`: input drop with the fixed accepts (established,
-  loopback, ICMP, management SSH, management gRPC, internal BGP and BFD)
-  plus per-WAN DHCP and DHCPv6 accepts, which narrow the bootstrap's
-  interface-agnostic client accepts to the configured WAN interfaces;
-  forward drop with internal-to-WAN and WAN-to-internal accepts generated
-  from the WAN list; rate-limited drop logging.
-- `ip nat`: per-WAN 1:1 DNAT and SNAT from `static_mappings`; per-WAN
-  masquerade keyed on the outbound interface and the internal source,
-  never on a firewall mark; the IPv4 steering mark rules.
-
-  The mark must stay out of the masquerade match. Internal IPv4 flows
-  carry only the marks the steering expression assigns, which are the
-  tier-1 members' marks. When tier 1 goes unhealthy, wan.routes steers
-  those flows out the activated fallback member without rewriting the
-  mark, so a mark-scoped rule would not match them, they would leave with
-  a private source, and IPv4 would fail at the moment fallback exists to
-  prevent that. Keying on the outbound interface is also strictly safer
-  than today's rules, because it translates a stray mark leaving the
-  wrong WAN instead of leaking it.
-- `inet mangle`: per-WAN ingress marks (mark = index) for reply symmetry;
-  pinned-destination sets for each WAN that declares pinned CIDRs; the
-  WireGuard control-plane pin, whose target WAN is named by the global
-  `mwan_wg_pin_wan` key; the IPv6 steering mark rules; conntrack mark
-  save and restore.
-
-The npt module keeps sole ownership of `table ip6 nat`.
-
-## Go surface changes
-
-- `wanroutes` drops the ISP name constants, the named fallback function,
-  and the exact-set priority validators; tier activation and derivation
-  validation replace them.
-- The `firewall` module is new, structured like npt: a desired-state
-  builder, an atomic applier, an nft watcher, and a
-  `mwan debug firewall` renderer that prints the desired ruleset for
-  parity checks against `nft list`.
-- `debug` probe commands iterate the configured WAN set ordered by index;
-  the default probe interface is the lowest-index WAN.
-
-## Validation
-
-Runs on the suburban testbed, in order, with the binary unchanged
-throughout:
-
-1. **Byte equivalence.** Deploy the migrated inventory with today's WAN
-   set. `mwan debug firewall` output matches the live ruleset, and rules,
-   routes, marks, and steering match the pre-migration state
-   one-for-one. The rendered link files match the hand-authored ones they
-   replace, section for section, including the tagged-child case.
-2. **Add.** Add a synthetic fourth WAN backed by a testbed ISP simulator
-   at tier 1 weight 1 by inventory edit and config deploy. Three-way
-   balancing distributes new connections; failing the new WAN's health
-   prunes it; recovery restores it.
-3. **Re-tier.** Move the fourth WAN to tier 2. It carries no traffic
-   while tier 1 has a healthy member; failing all of tier 1 activates it.
-   While the fallback tier is active, outbound IPv4 is translated, which
-   is the behaviour the interface-keyed masquerade guarantees.
-4. **Remove.** Delete the entry and deploy. The ruleset, rules, routes,
-   and tables converge to the state recorded in step 1.
-
-The deploy gate does not substitute for any of these. It decides on IPv6
-alone and returns on its first successful probe, so a ruleset with no
-working IPv4 translation passes it, and a half-broken load balancer
-passes as soon as the retry loop lands on the working member. Requiring
-both families and several consecutive successes, and asserting the parity
-check on the guest after the reboot, is a precondition of the firewall
-step.
+**Five, the daemon owns the firewall.** The ruleset file is deleted, the
+daemon takes the pre-network slot and programs a closed baseline before
+anything else, and the kernel backends it needs are declared for load. The
+only piece that touches live traffic. [firewall.md](firewall.md)
 
 ## Out of scope
 
-- Hot reload: config applies at daemon restart only.
-- Quality-based steering (latency, jitter, loss SLA selection).
-- Load balancing within an activated fallback tier.
-- The daemon running its own DHCPv6-PD client (MWAN-227) and dynamic
-  pinned-destination refresh (MWAN-237); both layer on top unchanged.
-  The pinned-destination sets stay owned by the refresher: the firewall
-  module creates each set if absent, with interval matching and automatic
-  merging, and never writes its elements.
-- Moving the wan.routes IPv6 source pin onto the live delegation
-  (MWAN-333), for the reason in design contract 5.
-- Moving link creation from systemd networkd into the daemon. That step
-  is gated on the daemon owning DHCP (MWAN-227), because splitting link
-  creation from lease ownership would put one interface under two
-  authorities. When it happens it moves every WAN at once, since the
-  schema already describes them identically.
+Writing configuration over the management interface, and the hot reload that
+would come with it. Both need a staged-change workflow the library does not
+provide.
+
+Quality-based steering, meaning selection on latency, jitter, or loss.
+
+Load balancing within an activated fallback tier. Mark assignment is computed
+from the top tier, so a fallback tier serves through one member at a time.
+
+Splitting the health verdict per address family. A provider with dead IPv6
+and working IPv4 currently reads healthy and keeps receiving IPv6 traffic.
+Fixing it changes the health state file format and every consumer's
+signature, which would break the behavioural equivalence the migration relies
+on. It has its own ticket and follows this work.
+
+The daemon running its own delegation client, and moving link creation off
+systemd networkd. The second is gated on the first, because splitting link
+creation from lease ownership would put one interface under two authorities.
