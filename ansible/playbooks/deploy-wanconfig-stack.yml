@@ -66,6 +66,7 @@
           - git
           - libpcre2-dev
           - libpam0g-dev
+          - libaudit-dev
           - libhowardhinnant-date-dev
           - libspdlog-dev
           - libdocopt-dev
