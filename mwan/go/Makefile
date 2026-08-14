@@ -66,11 +66,24 @@ HOST_GOARCH := $(shell go env GOARCH)
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
 .PHONY: proto build-linux build-mwan-opnsense \
-        tidy fix clean
+        tidy fix clean yang-validate
 
 proto:
 	@mkdir -p gen/mwan/v1
 	$(BUF) generate
+
+# Model gate. yanglint (ships with libyang) validates the YANG modules the
+# gateway serves itself with; any parse error or unresolved reference fails
+# check. yanglint installs manually per the wanconfig toolchain decision:
+# `brew install libyang` locally, apt package libyang2-tools in CI.
+YANG_DIR ?= ../yang
+YANGLINT ?= yanglint
+
+yang-validate:
+	$(YANGLINT) --version
+	$(YANGLINT) -p $(YANG_DIR) $(YANG_DIR)/*.yang
+
+check: yang-validate
 
 # Reusable cross-platform build template. Pulls GO_BUILD_LDFLAGS and
 # GO_BUILD_EXTRA_FLAGS from the canonical pipeline so every binary, host
