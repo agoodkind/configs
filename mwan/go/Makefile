@@ -18,8 +18,11 @@ BINARY   := mwan
 CMD      := ./cmd/$(BINARY)
 DIST_DIR := bin
 
-# Build flags applied to every binary.
-export CGO_ENABLED   := 0
+# Build flags applied to every binary. cgo is not globally disabled: Go
+# itself defaults CGO_ENABLED=0 for cross-compiles when no C toolchain is
+# configured, which keeps the from-macOS cross builds pure Go, and the
+# wanconfig publishing binding (linux && cgo) compiles only in the docker
+# builder lane. The freebsd target pins CGO_ENABLED=0 explicitly.
 GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
 
 MWAN_VERSION_PKG := goodkind.io/mwan/internal/version
@@ -101,10 +104,11 @@ check: yang-validate
 # GO_BUILD_EXTRA_FLAGS from the canonical pipeline so every binary, host
 # and cross-compile, lands with the same flag set.
 #
-# $(1)=output binary name, $(2)=GOOS, $(3)=GOARCH, $(4)=cmd path
+# $(1)=output binary name, $(2)=GOOS, $(3)=GOARCH, $(4)=cmd path,
+# $(5)=extra env (for example CGO_ENABLED=0)
 define build_platform
 	@mkdir -p $(DIST_DIR)
-	GOOS=$(2) GOARCH=$(3) CGO_ENABLED=0 go build $(GO_BUILD_EXTRA_FLAGS) \
+	GOOS=$(2) GOARCH=$(3) $(5) go build $(GO_BUILD_EXTRA_FLAGS) \
 		-ldflags='$(GO_BUILD_LDFLAGS)' \
 		-o $(DIST_DIR)/$(1) $(4)
 endef
@@ -112,11 +116,39 @@ endef
 # build-linux and build-mwan-opnsense depend on `check`, which fans
 # out to: build vet lint test govulncheck staticcheck-extra. Full lint
 # pass is mandatory before any deploy artifact lands in $(DIST_DIR)/.
+# Both deployable artifacts pin CGO_ENABLED=0: they must stay static and
+# portable, and the linux one also builds natively in CI where cgo would
+# otherwise default on and demand the sysrepo headers. The
+# publishing-enabled gateway binary comes from the docker builder lane.
 build-linux: check
-	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD))
+	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD),CGO_ENABLED=0)
 
 build-mwan-opnsense: check
-	$(call build_platform,mwan-opnsense,freebsd,amd64,$(CMD))
+	$(call build_platform,mwan-opnsense,freebsd,amd64,$(CMD),CGO_ENABLED=0)
+
+# Publishing-enabled gateway binary (MWAN-358). Builds inside a Debian
+# trixie golang image carrying the pinned libyang/sysrepo, so the cgo
+# binding links the library generation the gateway runs. The version pins
+# are passed in by the caller; the deploy reads them from group_vars.
+WANCONFIG_BUILDER_IMAGE := mwan-wanconfig-builder
+
+.PHONY: build-linux-wanconfig
+build-linux-wanconfig:
+	$(if $(WANCONFIG_LIBYANG_VERSION),,$(error WANCONFIG_LIBYANG_VERSION is required))
+	$(if $(WANCONFIG_SYSREPO_VERSION),,$(error WANCONFIG_SYSREPO_VERSION is required))
+	docker build --platform linux/amd64 \
+		--build-arg LIBYANG_VERSION=$(WANCONFIG_LIBYANG_VERSION) \
+		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
+		-t $(WANCONFIG_BUILDER_IMAGE) ../wanconfig/builder
+	@mkdir -p $(DIST_DIR)
+	docker run --rm --platform linux/amd64 \
+		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
+		-v mwan-wanconfig-gomod:/go/pkg/mod \
+		-e GOWORK=off -e CGO_ENABLED=1 \
+		$(WANCONFIG_BUILDER_IMAGE) \
+		go build $(GO_BUILD_EXTRA_FLAGS) \
+		-ldflags='$(GO_BUILD_LDFLAGS)' \
+		-o $(DIST_DIR)/$(BINARY)-linux-wanconfig $(CMD)
 
 tidy:
 	go mod tidy
