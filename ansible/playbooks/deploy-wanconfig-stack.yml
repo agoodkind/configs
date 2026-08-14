@@ -48,12 +48,25 @@
         repo: https://github.com/CESNET/rousette.git
         version: "{{ wanconfig_rousette_version }}"
         jobs: 1
+    # ietf-nat guards every enum value behind its nat-type features, so an
+    # install with no features enabled leaves leaves with zero valid values
+    # and libyang rejects the module. Enable exactly the translation types
+    # the model uses.
     wanconfig_yang_modules:
-      - ietf-interfaces@2018-02-20
-      - ietf-ip@2018-02-22
-      - ietf-routing@2018-03-13
-      - ietf-nat@2019-01-10
-      - goodkind-mwan-steering@2026-08-13
+      - name: ietf-interfaces@2018-02-20
+        features: []
+      - name: ietf-ip@2018-02-22
+        features: []
+      - name: ietf-routing@2018-03-13
+        features: []
+      - name: ietf-nat@2019-01-10
+        features:
+          - basic-nat44
+          - napt44
+          - dst-nat
+          - nptv6
+      - name: goodkind-mwan-steering@2026-08-13
+        features: []
   tasks:
     - name: Install build and runtime dependencies
       ansible.builtin.apt:
@@ -188,14 +201,17 @@
 
     - name: Install the gateway model into sysrepo
       ansible.builtin.command:
-        argv:
-          - /usr/local/bin/sysrepoctl
-          - --install
-          - "{{ wanconfig_yang_dir }}/{{ item }}.yang"
-          - --search-dirs
-          - "{{ wanconfig_yang_dir }}"
+        argv: >-
+          {{
+            ['/usr/local/bin/sysrepoctl', '--install',
+             wanconfig_yang_dir ~ '/' ~ item.name ~ '.yang',
+             '--search-dirs', wanconfig_yang_dir]
+            + (item.features | map('regex_replace', '^', '--enable-feature=') | list)
+          }}
       loop: "{{ wanconfig_yang_modules }}"
-      when: item.split('@')[0] not in wanconfig_sysrepo_modules.stdout
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.name.split('@')[0] not in wanconfig_sysrepo_modules.stdout
       changed_when: true
 
     - name: Import the read-only NACM policy
