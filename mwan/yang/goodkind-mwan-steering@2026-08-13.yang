@@ -5,6 +5,7 @@ module goodkind-mwan-steering {
 
   import ietf-interfaces {
     prefix if;
+    revision-date 2018-02-20;
     reference
       "RFC 8343: A YANG Data Model for Interface Management";
   }

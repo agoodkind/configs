@@ -1,0 +1,4 @@
+[submodule "third_party/yang"]
+	path = third_party/yang
+	url = https://github.com/YangModels/yang.git
+	shallow = true
