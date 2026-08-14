@@ -80,15 +80,19 @@ length regardless of what the provider delegated, so a shorter delegation is
 widened onto address space the gateway does not hold. The model carries both
 prefixes explicitly, so the standard's rule can be applied as written.
 
-## Libraries
+## Toolchain
 
-`freeconf` parses the model, binds an existing Go value to the tree by
-reflection, and serves RESTCONF and gNMI. Its compliance page lists YANG 1.1,
-JSON encoding, and the YANG library as implemented, and RESTCONF as
-implemented without XML or entity tags, which means JSON only. It does not
-list the staged-change datastores, access control, or subscriptions, which is
-why the served surface is read-only.
+libyang reads and validates the modules, and its validator, `yanglint`, is
+the build gate. sysrepo holds the datastore the daemon publishes into.
+rousette serves RESTCONF over that datastore, and netopeer2 serves NETCONF
+from the same stack when wanted. The stack installs directly on the gateway.
 
-`openconfig/ygot` generates validated Go structures from any model and
-renders the same JSON encoding. Reach for it only if binding by reflection
-proves insufficient, and do not run both approaches at once.
+The one piece that is ours is the publishing binding: a small Go-to-C layer
+through which the daemon sets values by path and applies them. It carries no
+write acceptance, no validation, and no transaction machinery, because the
+surface accepts no edits.
+
+The Go-only alternatives were probed and set aside. The single-dependency
+library fails to parse the translation module at its only tagged release,
+and the mature Go parser has no server, so pairing it with a served surface
+means writing the protocol layer ourselves, which this work does not do.

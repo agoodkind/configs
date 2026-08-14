@@ -27,13 +27,16 @@ modified by any part of this work.
 
 **Read-only.** The served model exposes configuration as loaded and live
 state. It accepts no writes, so the deploy path and its rollback keep their
-role and configuration still applies at daemon restart. The library provides
-no staged-change workflow, which is the only safe way to accept writes, so
-writes wait for one.
+role and configuration still applies at daemon restart. Opening writes is a
+later decision with its own safety work, not part of this epic.
 
-**RESTCONF and gNMI.** RESTCONF for reading the tree, gNMI for subscribing to
-state that today can only be polled. NETCONF is out: its distinguishing
-feature is staged change, which read-only does not use.
+**The mature management stack serves the model.** libyang reads the
+description files and its validator gates the build, sysrepo holds the
+datastore, and the stack's own servers speak the protocols: RESTCONF, with
+NETCONF available from the same stack at no extra work. None of the protocol
+work is ours. The stack installs directly on the gateway. The subscription
+transport is settled when the streaming piece lands; the model is identical
+either way.
 
 **The model's own encoding is the configuration format.** Inventory renders
 the model as JSON rather than as TOML, so one representation runs from
@@ -42,9 +45,11 @@ inventory through to the served tree.
 **The daemon is the only thing that writes the firewall.** The ruleset file
 is deleted and the firewall service is masked.
 
-**Nothing is written from scratch.** `freeconf` parses the model, serves
-RESTCONF, and speaks gNMI; `openconfig/ygot` is the fallback if binding by
-reflection proves insufficient. Do not run both.
+**We write exactly one small piece: the publishing binding.** The daemon
+publishes its state into the datastore through a Go-to-C binding of ours. It
+stays small because this work only publishes and never accepts edits:
+connect, open a session, set values by path, apply. Nothing protocol-shaped
+is written from scratch.
 
 ## The five pieces
 

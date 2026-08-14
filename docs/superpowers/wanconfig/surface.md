@@ -37,16 +37,21 @@ provider is not carrying any, without opening a shell on the gateway.
 
 ## How it is served
 
-RESTCONF for reading the tree over ordinary web requests carrying JSON. gNMI
-for subscribing to the state that changes, so a failover produces a stream
-rather than requiring a poll.
+The mature management stack serves the tree. libyang reads the model,
+sysrepo holds the data, and the stack's own servers answer requests:
+RESTCONF for reading over ordinary web requests carrying JSON, with NETCONF
+available from the same stack. How a subscriber is told about changes is
+settled in the streaming piece; the model is identical either way.
 
-NETCONF is out. Its distinguishing feature is writing into a staged copy of
-the configuration and committing it, and this surface accepts no writes.
+The daemon registers as the provider of its own subtrees, so a read reaches
+into the daemon at request time rather than reading a copy that can drift.
+Where a value is pushed instead, the push happens at the moment the value
+changes. Drift in the one thing whose purpose is to describe reality is
+worse than no description.
 
-Bind the daemon's existing values to the tree by reflection rather than
-copying them into a parallel structure. A copy would drift, and drift in the
-one thing whose purpose is to describe reality is worse than no description.
+The daemon's own part is one small publishing binding: connect, open a
+session, set values by path, apply. Everything protocol-shaped is off the
+shelf.
 
 ## What must not change
 
