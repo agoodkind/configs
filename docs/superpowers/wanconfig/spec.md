@@ -20,21 +20,35 @@ hot reload.
    i the system derives: routing table 100*i, firewall mark i, mark-rule
    priority 100*i, from-rule priority 54+i. Operators never write a table
    id, mark, or rule priority. Validation enforces unique names and
-   indexes and rejects any derived identifier that collides with the
-   reserved set: tables 900 (cloudflared), 253, 254, 255. The current
-   WANs are att index 1, webpass index 2, monkeybrains index 3, which
-   reproduces every previously hand-assigned value exactly.
+   indexes and rejects any derived identifier that collides with a
+   registered non-WAN routing table. That reserved set is read from the
+   same inventory that renders `/etc/iproute2/rt_tables`, so it cannot
+   drift from the live registrations, which today are 400 for the
+   Cloudflare tunnel, 500 for the out-of-band table, and the kernel's
+   253, 254, and 255. The current WANs are att index 1, webpass index 2,
+   monkeybrains index 3, which reproduces every previously hand-assigned
+   value exactly.
 
 3. **The daemon is the firewall authority.** A `firewall` ifmgr module
    builds the complete ruleset from config at startup and programs it into
    the kernel atomically over netlink via github.com/google/nftables, the
    same ownership pattern the npt module uses for `table ip6 nat`. The
-   rendered `/etc/nftables.conf` is a minimal WAN-free bootstrap: input
-   drop with established, loopback, ICMP, management SSH, and management
-   gRPC accepted. `nftables.service` loads the bootstrap at boot so the
-   box is closed and reachable before the daemon starts; the daemon's
-   ruleset replaces it. An nft watcher re-applies the daemon's tables
-   within seconds when anything external flushes them.
+   rendered `/etc/nftables.conf` is a minimal bootstrap: input drop with
+   established, loopback, ICMP, management SSH, management gRPC, internal
+   BGP and BFD, and the DHCP and DHCPv6 client accepts. Those client
+   accepts are written without naming an interface, so the bootstrap
+   carries no WAN name while still admitting the traffic every WAN needs.
+   They are not optional: systemd-networkd requests a delegated prefix
+   over an ordinary UDP socket subject to the input hook, so a bootstrap
+   without them drops every delegation request until the daemon starts,
+   and no delegation means npt has nothing to program and IPv6 egress
+   never comes up. The bootstrap also declares an empty `table ip6 nat`
+   with its two base chains, which npt requires and which loads the
+   kernel's NAT backend for a daemon running under
+   `ProtectKernelModules`. `nftables.service` loads the bootstrap at boot
+   so the box is closed and reachable before the daemon starts; the
+   daemon's ruleset replaces it. An nft watcher re-applies the daemon's
+   tables within seconds when anything external flushes them.
 
 4. **Steering is tier plus weight plus hash mode.** Lower tier is
    preferred. The active tier is the lowest-numbered tier with at least
@@ -52,10 +66,17 @@ hot reload.
    within an activated fallback tier is out of scope.
 
 5. **Delegated prefixes are live by default.** The pd.Source live
-   DHCPv6-PD reading is authoritative for each WAN's delegated prefix.
-   The npt module and the wan.routes IPv6 source-pin rule both consume
-   the live value. A WAN with a static delegation sets `prefix_v6`, which
-   overrides the live reading. No WAN sets it today.
+   DHCPv6-PD reading is authoritative for each WAN's delegated prefix,
+   and npt consumes it. A WAN with a static delegation sets `prefix_v6`,
+   which overrides the live reading.
+
+   The wan.routes IPv6 source-pin rule still reads a configured prefix,
+   so every WAN carries one through this work. That rule is built from
+   the configured value and its cleanup pass claims rule priorities 55
+   through 57 unconditionally, so rendering the value empty does not skip
+   the rule, it deletes the live one. Moving the source pin onto the live
+   reading is its own change with its own failure mode, since at daemon
+   start the delegation may not be readable yet.
 
 6. **Every link renders through one path.** Each entry's `link` block
    exposes independent knobs: `dhcp4`, `dhcp6`, `pd` with `pd_hint`,
@@ -122,6 +143,7 @@ mwan_wans:
       slaac: true
       duid_type: "vendor"
       duid_raw: "..."
+    npt_prefix: "..."       # source-pin prefix, see design contract 5
     health: { ... }         # same shape as the per-WAN health block today
     static_mappings:        # 1:1 IPv4 NAT pairs
       - { external: "x.x.x.x", internal: "10.250.250.x" }
@@ -160,23 +182,31 @@ mwan_wans:
     health: { ... }
 ```
 
-The map replaces these scalars, which are deleted: `mwan_att_iface`,
+The map absorbs these scalars, which are deleted: `mwan_att_iface`,
 `mwan_webpass_iface`, `mwan_monkeybrains_iface`, `mwan_att_vlan_id`,
 `mwan_npt_*_prefix`, `mwan_rt_tables` WAN entries,
 `mwan_ifmgr_wan_fw_marks`, `mwan_ifmgr_wan_fw_mark_prios`,
 `mwan_ifmgr_wan_from_prios`, `mwan_health_checks`,
 `mwan_static_mappings`, `mwan_att_pinned_v4_seed_cidrs`,
 `mwan_att_pinned_v6_seed_cidrs`, and the per-WAN DUID, address, and
-gateway scalars.
+gateway scalars. Their values survive as map fields; only
+`mwan_ifmgr_wan_fw_marks`, `mwan_ifmgr_wan_fw_mark_prios`,
+`mwan_ifmgr_wan_from_prios`, and the WAN routing table numbers disappear
+outright, because `index` derives them.
+
+The catalogue lives in `group_vars/all/`, keyed by environment, the way
+guest identities already do. The watchdog's probe list is rendered on the
+hypervisor, whose variable group cannot read the router's, so a
+router-group map would leave that list hand-maintained and free to drift.
 
 ## Config pipeline
 
 `config-vm.toml.j2` renders one `[ifmgr.wan.<name>]` block per map entry
 carrying `index`, `iface`, `tier`, `weight`, `prefix_v6` when set, the
-pinned CIDR lists, and the static mappings. `table_id`, `fw_mark`,
-`fw_mark_prio`, `from_prio`, and `npt_prefix` leave the rendered config;
-Go derives the first four from `index` and reads the delegated prefix
-live. A `[ifmgr.lb]` block carries the hash mode. The health loop, the
+pinned CIDR lists, the static mappings, and the source-pin prefix.
+`table_id`, `fw_mark`, `fw_mark_prio`, and `from_prio` leave the rendered
+config, because Go derives all four from `index`. A `[ifmgr.lb]` block
+carries the hash mode. The health loop, the
 `[[network.wan_interfaces]]` watchdog probe list, `rt_tables.j2`, and
 `sysctl-mwan.conf.j2` render one entry per map entry. `nftables.conf.j2`
 is replaced by the bootstrap template.
@@ -195,11 +225,23 @@ From config, the module programs:
 
 - `inet filter`: input drop with the fixed accepts (established,
   loopback, ICMP, management SSH, management gRPC, internal BGP and BFD)
-  plus DHCP and DHCPv6 accepts per WAN; forward drop with internal-to-WAN
-  and WAN-to-internal accepts generated from the WAN list; rate-limited
-  drop logging.
+  plus per-WAN DHCP and DHCPv6 accepts, which narrow the bootstrap's
+  interface-agnostic client accepts to the configured WAN interfaces;
+  forward drop with internal-to-WAN and WAN-to-internal accepts generated
+  from the WAN list; rate-limited drop logging.
 - `ip nat`: per-WAN 1:1 DNAT and SNAT from `static_mappings`; per-WAN
-  mark-scoped masquerade; the IPv4 steering mark rules.
+  masquerade keyed on the outbound interface and the internal source,
+  never on a firewall mark; the IPv4 steering mark rules.
+
+  The mark must stay out of the masquerade match. Internal IPv4 flows
+  carry only the marks the steering expression assigns, which are the
+  tier-1 members' marks. When tier 1 goes unhealthy, wan.routes steers
+  those flows out the activated fallback member without rewriting the
+  mark, so a mark-scoped rule would not match them, they would leave with
+  a private source, and IPv4 would fail at the moment fallback exists to
+  prevent that. Keying on the outbound interface is also strictly safer
+  than today's rules, because it translates a stray mark leaving the
+  wrong WAN instead of leaking it.
 - `inet mangle`: per-WAN ingress marks (mark = index) for reply symmetry;
   pinned-destination sets for each WAN that declares pinned CIDRs; the
   WireGuard control-plane pin, whose target WAN is named by the global
@@ -236,8 +278,18 @@ throughout:
    prunes it; recovery restores it.
 3. **Re-tier.** Move the fourth WAN to tier 2. It carries no traffic
    while tier 1 has a healthy member; failing all of tier 1 activates it.
+   While the fallback tier is active, outbound IPv4 is translated, which
+   is the behaviour the interface-keyed masquerade guarantees.
 4. **Remove.** Delete the entry and deploy. The ruleset, rules, routes,
    and tables converge to the state recorded in step 1.
+
+The deploy gate does not substitute for any of these. It decides on IPv6
+alone and returns on its first successful probe, so a ruleset with no
+working IPv4 translation passes it, and a half-broken load balancer
+passes as soon as the retry loop lands on the working member. Requiring
+both families and several consecutive successes, and asserting the parity
+check on the guest after the reboot, is a precondition of the firewall
+step.
 
 ## Out of scope
 
@@ -246,6 +298,11 @@ throughout:
 - Load balancing within an activated fallback tier.
 - The daemon running its own DHCPv6-PD client (MWAN-227) and dynamic
   pinned-destination refresh (MWAN-237); both layer on top unchanged.
+  The pinned-destination sets stay owned by the refresher: the firewall
+  module creates each set if absent, with interval matching and automatic
+  merging, and never writes its elements.
+- Moving the wan.routes IPv6 source pin onto the live delegation
+  (MWAN-333), for the reason in design contract 5.
 - Moving link creation from systemd networkd into the daemon. That step
   is gated on the daemon owning DHCP (MWAN-227), because splitting link
   creation from lease ownership would put one interface under two
