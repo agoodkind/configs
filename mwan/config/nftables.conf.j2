@@ -40,6 +40,10 @@ table inet filter {
         # Allow mwan-agent gRPC (TCP) from hypervisor (vault)
         iifname $MGMT_IFACE tcp dport 50052 accept
 
+        # Allow the wanconfig RESTCONF surface (nghttpx front end) on the
+        # management interface only (MWAN-357)
+        iifname $MGMT_IFACE tcp dport {{ wanconfig_restconf_port }} accept
+
         # Allow DHCP on management interface
         # iif $MGMT_IFACE udp sport 67 udp dport 68 accept
         # iif $MGMT_IFACE udp sport 547 udp dport 546 accept

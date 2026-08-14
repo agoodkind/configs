@@ -196,6 +196,8 @@
         - ietf-restconf@2017-01-26
         - ietf-restconf-monitoring@2017-01-26
         - ietf-yang-patch@2017-02-22
+        - ietf-subscribed-notifications@2019-09-09
+        - ietf-restconf-subscribed-notifications@2019-11-17
       when: item.split('@')[0] not in wanconfig_sysrepo_modules.stdout
       changed_when: true
 

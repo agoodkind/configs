@@ -3,4 +3,6 @@
 # is the sanctioned exposure per docs/superpowers/wanconfig/surface.md.
 frontend={{ mwan_config_mgmt_addr }},{{ wanconfig_restconf_port }};no-tls
 backend=::1,10080;/restconf/:/yang/:/streams/:/.well-known/;proto=h2
+# nghttpx refuses to start without a catch-all backend (no path pattern).
+backend=::1,10080;;proto=h2
 workers=1
