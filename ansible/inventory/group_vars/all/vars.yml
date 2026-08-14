@@ -93,3 +93,19 @@ cloudflared_service_wants: network-online.target
 # path is the primary crash responder.
 bgp_keepalive_seconds: 10
 bgp_hold_seconds: 30
+
+# ----------------------------------------------------------------------------
+# Wanconfig management stack (epic MWAN-338), source-built on the gateway at
+# /usr/local by deploy-wanconfig-stack.yml. The stack is versioned here, not
+# by the distribution; a version change rebuilds that component on the next
+# deploy. nghttp2-asio has no release tags, so it pins a commit.
+# ----------------------------------------------------------------------------
+wanconfig_libyang_version: "v5.8.6"
+wanconfig_sysrepo_version: "v5.1.0"
+wanconfig_libyang_cpp_version: "v4"
+wanconfig_sysrepo_cpp_version: "v6"
+wanconfig_nghttp2_asio_version: "e877868abe"
+wanconfig_rousette_version: "v2"
+# The nghttpx front end exposes rousette on the management address at this
+# port; rousette itself binds ::1:10080 only.
+wanconfig_restconf_port: 10080
