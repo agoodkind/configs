@@ -158,7 +158,12 @@ build-mwan-opnsense: check
 # darwin has never shipped, so the libraries cannot exist on macOS and the
 # yangpub files stay linux-tagged. Linux CI checks them fully; macOS builds
 # the gateway binary through the docker lane.
-WANCONFIG_CGO_SRC := .make/cgo-src
+# The sources live outside this Go module on purpose. Each clone carries its
+# own .git, and a checkout inside the module makes the lint gates treat the
+# tree as holding nested working trees, which changes how they name their
+# targets and turns a package that is absent on one platform of the matrix
+# into a hard error.
+WANCONFIG_CGO_SRC := $(abspath $(CURDIR)/../../.make/wanconfig-cgo-src)
 
 define wanconfig_cgo_dep_build
 	@if [ "$$(uname -s)" = "Darwin" ]; then \
