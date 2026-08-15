@@ -18,16 +18,17 @@ import (
 type subcommand string
 
 const (
-	subcmdAgent    subcommand = "agent"
-	subcmdWatchdog subcommand = "watchdog"
-	subcmdIfmgr    subcommand = "ifmgr"
-	subcmdHealth   subcommand = "health"
-	subcmdOPNsense subcommand = "opnsense"
-	subcmdNotify   subcommand = "notify"
-	subcmdPD       subcommand = "pd"
-	subcmdDebug    subcommand = "debug"
-	subcmdTrace    subcommand = "trace-boot"
-	subcmdGate     subcommand = "deploy-gate"
+	subcmdAgent             subcommand = "agent"
+	subcmdWatchdog          subcommand = "watchdog"
+	subcmdIfmgr             subcommand = "ifmgr"
+	subcmdHealth            subcommand = "health"
+	subcmdOPNsense          subcommand = "opnsense"
+	subcmdNotify            subcommand = "notify"
+	subcmdPD                subcommand = "pd"
+	subcmdDebug             subcommand = "debug"
+	subcmdTrace             subcommand = "trace-boot"
+	subcmdGate              subcommand = "deploy-gate"
+	subcmdWanconfigSelftest subcommand = "wanconfig-selftest"
 )
 
 // dispatchResult describes how dispatchConfigLess handled a subcommand.
@@ -46,7 +47,7 @@ func main() {
 		os.Exit(runOPNsenseDaemonServe(os.Args[1:]))
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health|ifmgr|opnsense|notify|pd|debug|trace-boot|deploy-gate> [args]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health|ifmgr|opnsense|notify|pd|debug|trace-boot|deploy-gate|wanconfig-selftest> [args]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -94,6 +95,8 @@ func dispatchConfigLess(sub subcommand) dispatchResult {
 		return dispatchResult{handled: true, code: runTraceBoot()}
 	case subcmdGate:
 		return dispatchResult{handled: true, code: runDeployGate(os.Args[1:])}
+	case subcmdWanconfigSelftest:
+		return dispatchResult{handled: true, code: runWanconfigSelftest(os.Args[1:])}
 	case subcmdAgent, subcmdWatchdog, subcmdIfmgr, subcmdNotify, subcmdDebug:
 		return dispatchResult{handled: false}
 	}
@@ -121,7 +124,8 @@ func dispatchWithConfig(rawSub string, sub subcommand, cfg *config.Config) int {
 		runErr = runNotify(cfg)
 	case subcmdDebug:
 		return runDebug(os.Args[1:], cfg)
-	case subcmdHealth, subcmdOPNsense, subcmdPD, subcmdTrace, subcmdGate:
+	case subcmdHealth, subcmdOPNsense, subcmdPD, subcmdTrace, subcmdGate,
+		subcmdWanconfigSelftest:
 		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", rawSub)
 		return 1
 	default:
