@@ -96,8 +96,9 @@ func yangpubOperCB(session *C.sr_session_ctx_t, subID C.uint32_t, moduleName *C.
 		C.free(unsafe.Pointer(cPath))
 		C.free(unsafe.Pointer(cValue))
 		if lyFailed(lyErr) {
+			buildErr := fmt.Errorf("yangpub: lyd_new_path %s: libyang code %d", item.Path, int(lyErr))
 			registration.log.Error("provider tree build failed",
-				"path", item.Path, "code", int(lyErr))
+				"path", item.Path, "err", buildErr)
 			return C.SR_ERR_CALLBACK_FAILED
 		}
 	}

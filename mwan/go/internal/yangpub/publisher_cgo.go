@@ -84,8 +84,9 @@ type providerReg struct {
 func New(log *slog.Logger) (Publisher, error) {
 	var conn *C.sr_conn_ctx_t
 	if rc := C.sr_connect(C.sr_conn_options_t(0), &conn); srFailed(rc) {
-		log.Error("sysrepo connect failed", "detail", srErrorString(rc))
-		return nil, fmt.Errorf("yangpub: sr_connect: %s", srErrorString(rc))
+		connectErr := srError("sr_connect", rc)
+		log.Error("sysrepo connect failed", "err", connectErr)
+		return nil, connectErr
 	}
 	return &publisher{
 		log:           log,
@@ -108,10 +109,17 @@ func srFailed(returnCode C.int) bool {
 	return returnCode != C.SR_ERR_OK
 }
 
+// srError names the failed sysrepo call and carries its message, so a
+// caller returns and logs one value instead of formatting the same text
+// twice.
+func srError(operation string, returnCode C.int) error {
+	return fmt.Errorf("yangpub: %s: %s", operation, srErrorString(returnCode))
+}
+
 // startSession opens a sysrepo session on ds over the live connection.
 // Every entry point needs one, and each previously repeated the same
 // call, check, and error wording.
-func (p *publisher) startSession(ds C.sr_datastore_t) (*C.sr_session_ctx_t, error) {
+func (p *publisher) startSession(ctx context.Context, ds C.sr_datastore_t) (*C.sr_session_ctx_t, error) {
 	conn, err := p.connection()
 	if err != nil {
 		return nil, err
@@ -119,8 +127,9 @@ func (p *publisher) startSession(ds C.sr_datastore_t) (*C.sr_session_ctx_t, erro
 	var session *C.sr_session_ctx_t
 	returnCode := C.sr_session_start(conn, ds, &session)
 	if srFailed(returnCode) {
-		p.log.Error("sysrepo session start failed", "detail", srErrorString(returnCode))
-		return nil, fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(returnCode))
+		startErr := srError("sr_session_start", returnCode)
+		p.log.ErrorContext(ctx, "sysrepo session start failed", "err", startErr)
+		return nil, startErr
 	}
 	return session, nil
 }
@@ -139,16 +148,16 @@ func datastoreOf(ds Datastore) (C.sr_datastore_t, error) {
 // SetItems sets every item by path in ds and applies them as one change.
 func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) error {
 	if err := ctx.Err(); err != nil {
-		p.log.Error("publish aborted before start", "err", err)
+		p.log.ErrorContext(ctx, "publish aborted before start", "err", err)
 		return fmt.Errorf("yangpub: publish aborted: %w", err)
 	}
 	srDS, err := datastoreOf(ds)
 	if err != nil {
-		p.log.Error("publish rejected", "err", err)
+		p.log.ErrorContext(ctx, "publish rejected", "err", err)
 		return err
 	}
 
-	session, err := p.startSession(srDS)
+	session, err := p.startSession(ctx, srDS)
 	if err != nil {
 		return err
 	}
@@ -161,15 +170,16 @@ func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) er
 		C.free(unsafe.Pointer(cPath))
 		C.free(unsafe.Pointer(cValue))
 		if srFailed(rc) {
-			p.log.Error("sysrepo set failed",
-				"path", item.Path, "detail", srErrorString(rc))
-			return fmt.Errorf("yangpub: sr_set_item_str %s: %s", item.Path, srErrorString(rc))
+			setErr := srError("sr_set_item_str "+item.Path, rc)
+			p.log.ErrorContext(ctx, "sysrepo set failed", "path", item.Path, "err", setErr)
+			return setErr
 		}
 	}
 
 	if rc := C.sr_apply_changes(session, C.uint32_t(applyTimeoutMS)); srFailed(rc) {
-		p.log.Error("sysrepo apply failed", "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_apply_changes: %s", srErrorString(rc))
+		applyErr := srError("sr_apply_changes", rc)
+		p.log.ErrorContext(ctx, "sysrepo apply failed", "err", applyErr)
+		return applyErr
 	}
 	return nil
 }
@@ -178,11 +188,11 @@ func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) er
 // inside module. The subscription and its session live until Close.
 func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath string, fn ProviderFunc) error {
 	if err := ctx.Err(); err != nil {
-		p.log.Error("provider registration aborted before start", "err", err)
+		p.log.ErrorContext(ctx, "provider registration aborted before start", "err", err)
 		return fmt.Errorf("yangpub: registration aborted: %w", err)
 	}
 
-	session, err := p.startSession(C.SR_DS_OPERATIONAL)
+	session, err := p.startSession(ctx, C.SR_DS_OPERATIONAL)
 	if err != nil {
 		return err
 	}
@@ -203,9 +213,10 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 		C.free(handleCell)
 		handle.Delete()
 		C.sr_session_stop(session)
-		p.log.Error("sysrepo oper subscribe failed",
-			"module", module, "path", xpath, "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_oper_get_subscribe %s: %s", xpath, srErrorString(rc))
+		subscribeErr := srError("sr_oper_get_subscribe "+xpath, rc)
+		p.log.ErrorContext(ctx, "sysrepo oper subscribe failed",
+			"module", module, "path", xpath, "err", subscribeErr)
+		return subscribeErr
 	}
 
 	p.mu.Lock()
@@ -222,15 +233,15 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 // GetItem reads one value by path in ds.
 func (p *publisher) GetItem(ctx context.Context, ds Datastore, path string) (string, bool, error) {
 	if err := ctx.Err(); err != nil {
-		p.log.Error("read aborted before start", "err", err)
+		p.log.ErrorContext(ctx, "read aborted before start", "err", err)
 		return "", false, fmt.Errorf("yangpub: read aborted: %w", err)
 	}
 	srDS, err := datastoreOf(ds)
 	if err != nil {
-		p.log.Error("read rejected", "err", err)
+		p.log.ErrorContext(ctx, "read rejected", "err", err)
 		return "", false, err
 	}
-	session, err := p.startSession(srDS)
+	session, err := p.startSession(ctx, srDS)
 	if err != nil {
 		return "", false, err
 	}
@@ -244,8 +255,9 @@ func (p *publisher) GetItem(ctx context.Context, ds Datastore, path string) (str
 		return "", false, nil
 	}
 	if srFailed(rc) {
-		p.log.Error("sysrepo get failed", "path", path, "detail", srErrorString(rc))
-		return "", false, fmt.Errorf("yangpub: sr_get_item %s: %s", path, srErrorString(rc))
+		getErr := srError("sr_get_item "+path, rc)
+		p.log.ErrorContext(ctx, "sysrepo get failed", "path", path, "err", getErr)
+		return "", false, getErr
 	}
 	defer C.sr_free_val(value)
 
@@ -260,15 +272,15 @@ func (p *publisher) GetItem(ctx context.Context, ds Datastore, path string) (str
 // DeleteItem removes the value at path in ds and applies the change.
 func (p *publisher) DeleteItem(ctx context.Context, ds Datastore, path string) error {
 	if err := ctx.Err(); err != nil {
-		p.log.Error("delete aborted before start", "err", err)
+		p.log.ErrorContext(ctx, "delete aborted before start", "err", err)
 		return fmt.Errorf("yangpub: delete aborted: %w", err)
 	}
 	srDS, err := datastoreOf(ds)
 	if err != nil {
-		p.log.Error("delete rejected", "err", err)
+		p.log.ErrorContext(ctx, "delete rejected", "err", err)
 		return err
 	}
-	session, err := p.startSession(srDS)
+	session, err := p.startSession(ctx, srDS)
 	if err != nil {
 		return err
 	}
@@ -278,12 +290,14 @@ func (p *publisher) DeleteItem(ctx context.Context, ds Datastore, path string) e
 	rc := C.sr_delete_item(session, cPath, C.sr_edit_options_t(0))
 	C.free(unsafe.Pointer(cPath))
 	if srFailed(rc) {
-		p.log.Error("sysrepo delete failed", "path", path, "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_delete_item %s: %s", path, srErrorString(rc))
+		deleteErr := srError("sr_delete_item "+path, rc)
+		p.log.ErrorContext(ctx, "sysrepo delete failed", "path", path, "err", deleteErr)
+		return deleteErr
 	}
 	if rc := C.sr_apply_changes(session, C.uint32_t(applyTimeoutMS)); srFailed(rc) {
-		p.log.Error("sysrepo apply failed", "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_apply_changes: %s", srErrorString(rc))
+		applyErr := srError("sr_apply_changes", rc)
+		p.log.ErrorContext(ctx, "sysrepo apply failed", "err", applyErr)
+		return applyErr
 	}
 	return nil
 }
@@ -306,15 +320,16 @@ func (p *publisher) Close() error {
 
 	for _, sub := range subs {
 		if rc := C.sr_unsubscribe(sub.subscription); srFailed(rc) {
-			p.log.Error("sysrepo unsubscribe failed", "detail", srErrorString(rc))
+			p.log.Error("sysrepo unsubscribe failed", "err", srError("sr_unsubscribe", rc))
 		}
 		C.sr_session_stop(sub.session)
 		C.free(sub.handleCell)
 		sub.handle.Delete()
 	}
 	if rc := C.sr_disconnect(conn); srFailed(rc) {
-		p.log.Error("sysrepo disconnect failed", "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_disconnect: %s", srErrorString(rc))
+		disconnectErr := srError("sr_disconnect", rc)
+		p.log.Error("sysrepo disconnect failed", "err", disconnectErr)
+		return disconnectErr
 	}
 	return nil
 }
