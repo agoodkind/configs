@@ -38,3 +38,7 @@ jobs:
       go_tool_packages: github.com/bufbuild/buf/cmd/buf@latest google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
       go_version_file: mwan/go/go.mod
       working_directory: mwan/go
+      # Match release.yml. Adding a release workflow switches this job's build
+      # gate into the compile matrix, which would otherwise dry-run platforms
+      # this module never ships.
+      release_platforms: linux/amd64 freebsd/amd64

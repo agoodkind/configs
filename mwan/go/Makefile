@@ -16,7 +16,14 @@
 # GO_BUILD_LDFLAGS BEFORE -include $(GO_MK); go-build.mk's ?= preserves it.
 BINARY   := mwan
 CMD      := ./cmd/$(BINARY)
-DIST_DIR := bin
+
+# The release engine writes dist/<name>_<goos>_<goarch>/, and the reusable
+# build workflow uploads exactly that directory, so DIST_DIR is dist and the
+# host build lands there too. The local cross-build targets keep writing to
+# bin/, which is where the deploy playbooks read from until the fetch path
+# replaces them.
+DIST_DIR  := dist
+LOCAL_BIN := bin
 
 # Build flags applied to every binary. cgo is never pinned anywhere: Go
 # defaults CGO_ENABLED=0 for cross-compiles without a matching C toolchain,
@@ -32,9 +39,18 @@ GO_BUILD_LDFLAGS := \
 	-X $(MWAN_VERSION_PKG).gitCommit=$(GIT_COMMIT) \
 	-X $(MWAN_VERSION_PKG).gitDirty=$(GIT_DIRTY)
 
-# Pipeline modules. Skip go-release.mk: mwan ships via the OPNsense plugin
-# packaging path and via rsync deploy-live, not GoReleaser.
-GO_MK_MODULES := go-build.mk
+# Pipeline modules. go-release.mk turns every shipped artifact into a signed,
+# checksummed, attested GitHub release, which is what the deploy path installs
+# instead of a binary built on whoever ran the playbook.
+GO_MK_MODULES := go-build.mk go-release.mk
+
+# The release set: one binary per platform, the same artifact on every host.
+# The linux build links libyang and libsysrepo statically, so it can publish on
+# the gateway while still running on a host that has neither, which is what the
+# scp-and-run deploy contract needs. freebsd stays pure Go because the yangpub
+# files are linux-tagged and the C libraries have no cross toolchain here.
+RELEASE_PLATFORMS := linux/amd64 freebsd/amd64
+RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64 mwan:$(CMD):platforms=freebsd/amd64
 
 # gobgp's only cgo symbol is a memory-reporting helper used solely by its tests.
 export GO_MK_CGO_OPTIONAL := github.com/osrg/gobgp/v4/internal/pkg/table
@@ -70,6 +86,17 @@ include bootstrap.mk
 # the pkg-config path is exported by the shared pipeline, which covers
 # compiling but not running.
 export LD_LIBRARY_PATH := $(GO_MK_CGO_PREFIX)/lib$(if $(strip $(LD_LIBRARY_PATH)),:$(LD_LIBRARY_PATH))
+
+# Static linking of the C dependencies. The release engine builds with a fixed
+# command whose -ldflags carries the version stamps, so these two values are the
+# only way to reach the compiler and the external linker; the engine appends
+# them to the inherited environment. netgo and osusergo keep name and user
+# lookup in pure Go, so the binary needs no glibc name service at runtime, and
+# pcre2 and libm are named explicitly because a static archive carries no
+# transitive dependencies and these land last on the link line, which is where
+# a static linker resolves a dependency of an earlier archive.
+export GOFLAGS := -tags=osusergo,netgo$(if $(strip $(GOFLAGS)), $(GOFLAGS))
+export CGO_LDFLAGS := -static -lpcre2-8 -lm
 
 .DEFAULT_GOAL := check
 
@@ -130,10 +157,10 @@ check: yang-validate
 #
 # $(1)=output binary name, $(2)=GOOS, $(3)=GOARCH, $(4)=cmd path
 define build_platform
-	@mkdir -p $(DIST_DIR)
+	@mkdir -p $(LOCAL_BIN)
 	GOOS=$(2) GOARCH=$(3) go build $(GO_BUILD_EXTRA_FLAGS) \
 		-ldflags='$(GO_BUILD_LDFLAGS)' \
-		-o $(DIST_DIR)/$(1) $(4)
+		-o $(LOCAL_BIN)/$(1) $(4)
 endef
 
 # build-linux and build-mwan-opnsense depend on `check`, which fans
@@ -165,35 +192,62 @@ build-mwan-opnsense: check
 # into a hard error.
 WANCONFIG_CGO_SRC := $(abspath $(CURDIR)/../../.make/wanconfig-cgo-src)
 
+# sysrepo compiles its repository path into the library, so this must be the
+# path the gateway actually uses. Building with the build directory's prefix
+# instead makes sr_connect fail on the gateway with "Operation not supported",
+# which reads like a version mismatch and is not one. The install is staged
+# through DESTDIR because a CI runner cannot create this directory.
+WANCONFIG_SYSREPO_REPO_PATH := /etc/sysrepo
+
 define wanconfig_cgo_dep_build
 	@if [ "$$(uname -s)" = "Darwin" ]; then \
 		echo "cgo dep $(1) skipped: sysrepo needs robust pthread mutexes, absent on darwin"; \
+		exit 0; \
+	fi; \
+	if [ -n "$${GO_MK_TARGET_GOOS}" ] && [ "$${GO_MK_TARGET_GOOS}" != "linux" ]; then \
+		echo "cgo dep $(1) skipped: no cross toolchain for $${GO_MK_TARGET_GOOS}, and only the linux artifact links it"; \
 		exit 0; \
 	fi; \
 	if [ -f "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2).stamp" ]; then \
 		exit 0; \
 	fi; \
 	set -e; \
-	rm -rf $(WANCONFIG_CGO_SRC)/$(1); \
+	rm -rf $(WANCONFIG_CGO_SRC)/$(1) $(WANCONFIG_CGO_SRC)/stage-$(1); \
 	git clone --depth 1 --branch $(2) $(3) $(WANCONFIG_CGO_SRC)/$(1); \
 	cmake -S $(WANCONFIG_CGO_SRC)/$(1) -B $(WANCONFIG_CGO_SRC)/$(1)/build \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_INSTALL_PREFIX="$${GO_MK_CGO_PREFIX}" \
 		-DCMAKE_PREFIX_PATH="$${GO_MK_CGO_PREFIX}" \
 		-DCMAKE_C_FLAGS="$$(pkg-config --cflags-only-I libpcre2-8)" \
-		-DREPO_PATH="$${GO_MK_CGO_PREFIX}/etc/sysrepo" \
+		-DBUILD_SHARED_LIBS=OFF \
+		$(4) \
 		-DBUILD_TESTING=OFF; \
 	cmake --build $(WANCONFIG_CGO_SRC)/$(1)/build --parallel; \
-	cmake --install $(WANCONFIG_CGO_SRC)/$(1)/build; \
+	DESTDIR=$(WANCONFIG_CGO_SRC)/stage-$(1) \
+		cmake --install $(WANCONFIG_CGO_SRC)/$(1)/build; \
+	mkdir -p "$${GO_MK_CGO_PREFIX}"; \
+	cp -R $(WANCONFIG_CGO_SRC)/stage-$(1)$${GO_MK_CGO_PREFIX}/. "$${GO_MK_CGO_PREFIX}/"; \
 	touch "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2).stamp"
 endef
 
 .PHONY: go-mk-cgo-dep-libyang go-mk-cgo-dep-sysrepo
+
+# Only the archives and headers are wanted. Each project's own executables link
+# against static libyang without naming its pcre2 and libm dependencies, which
+# a static archive cannot carry, so building them fails the install.
+WANCONFIG_LIBYANG_CMAKE_FLAGS := -DENABLE_TOOLS=OFF
+WANCONFIG_SYSREPO_CMAKE_FLAGS := \
+	-DREPO_PATH=$(WANCONFIG_SYSREPO_REPO_PATH) \
+	-DENABLE_EXAMPLES=OFF \
+	-DENABLE_SYSREPOCTL=OFF \
+	-DENABLE_SYSREPOCFG=OFF \
+	-DENABLE_SYSREPO_PLUGIND=OFF
+
 go-mk-cgo-dep-libyang:
-	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git)
+	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git,$(WANCONFIG_LIBYANG_CMAKE_FLAGS))
 
 go-mk-cgo-dep-sysrepo: go-mk-cgo-dep-libyang
-	$(call wanconfig_cgo_dep_build,sysrepo,$(WANCONFIG_SYSREPO_VERSION),https://github.com/sysrepo/sysrepo.git)
+	$(call wanconfig_cgo_dep_build,sysrepo,$(WANCONFIG_SYSREPO_VERSION),https://github.com/sysrepo/sysrepo.git,$(WANCONFIG_SYSREPO_CMAKE_FLAGS))
 
 # Publishing-enabled gateway binary (MWAN-358). Builds inside a Debian
 # trixie golang image carrying the pinned libyang/sysrepo, so the cgo
@@ -207,7 +261,7 @@ build-linux-wanconfig:
 		--build-arg LIBYANG_VERSION=$(WANCONFIG_LIBYANG_VERSION) \
 		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
 		-t $(WANCONFIG_BUILDER_IMAGE) ../wanconfig/builder
-	@mkdir -p $(DIST_DIR)
+	@mkdir -p $(LOCAL_BIN)
 	docker run --rm --platform linux/amd64 \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
 		-v mwan-wanconfig-gomod:/go/pkg/mod \
@@ -215,7 +269,7 @@ build-linux-wanconfig:
 		$(WANCONFIG_BUILDER_IMAGE) \
 		go build $(GO_BUILD_EXTRA_FLAGS) \
 		-ldflags='$(GO_BUILD_LDFLAGS)' \
-		-o $(DIST_DIR)/$(BINARY)-linux-wanconfig $(CMD)
+		-o $(LOCAL_BIN)/$(BINARY)-linux-wanconfig $(CMD)
 
 tidy:
 	go mod tidy
@@ -231,3 +285,4 @@ govulncheck:
 	$(GOVULNCHECK_WRAPPER)
 
 clean: clean-dist
+	rm -rf $(LOCAL_BIN)
