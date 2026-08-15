@@ -64,6 +64,13 @@ GO_MK_CGO_CACHE_VERSIONS := libyang=$(WANCONFIG_LIBYANG_VERSION) sysrepo=$(WANCO
 
 include bootstrap.mk
 
+# The test gate runs the binary it just linked, and that binary loads libyang
+# and libsysrepo at runtime. The hook installs them into a per-target prefix
+# rather than a system directory, so the loader is told where they are. Only
+# the pkg-config path is exported by the shared pipeline, which covers
+# compiling but not running.
+export LD_LIBRARY_PATH := $(GO_MK_CGO_PREFIX)/lib$(if $(strip $(LD_LIBRARY_PATH)),:$(LD_LIBRARY_PATH))
+
 .DEFAULT_GOAL := check
 
 # Acceptance gate. `make build` fails unless every shipped output compiles

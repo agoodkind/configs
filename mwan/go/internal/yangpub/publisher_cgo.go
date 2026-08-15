@@ -83,16 +83,46 @@ type providerReg struct {
 // management surface.
 func New(log *slog.Logger) (Publisher, error) {
 	var conn *C.sr_conn_ctx_t
-	if rc := C.sr_connect(C.sr_conn_options_t(0), &conn); rc != C.SR_ERR_OK {
+	if rc := C.sr_connect(C.sr_conn_options_t(0), &conn); srFailed(rc) {
 		log.Error("sysrepo connect failed", "detail", srErrorString(rc))
 		return nil, fmt.Errorf("yangpub: sr_connect: %s", srErrorString(rc))
 	}
-	return &publisher{log: log, conn: conn}, nil
+	return &publisher{
+		log:           log,
+		mu:            sync.Mutex{},
+		conn:          conn,
+		closed:        false,
+		subscriptions: nil,
+	}, nil
 }
 
 // srErrorString renders a sysrepo return code as its message.
 func srErrorString(returnCode C.int) string {
 	return C.GoString(C.sr_strerror(returnCode))
+}
+
+// srFailed reports whether a sysrepo call returned anything other than
+// success. Every call site reads the same way through it, so no caller
+// open-codes the comparison against the success constant.
+func srFailed(returnCode C.int) bool {
+	return returnCode != C.SR_ERR_OK
+}
+
+// startSession opens a sysrepo session on ds over the live connection.
+// Every entry point needs one, and each previously repeated the same
+// call, check, and error wording.
+func (p *publisher) startSession(ds C.sr_datastore_t) (*C.sr_session_ctx_t, error) {
+	conn, err := p.connection()
+	if err != nil {
+		return nil, err
+	}
+	var session *C.sr_session_ctx_t
+	returnCode := C.sr_session_start(conn, ds, &session)
+	if srFailed(returnCode) {
+		p.log.Error("sysrepo session start failed", "detail", srErrorString(returnCode))
+		return nil, fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(returnCode))
+	}
+	return session, nil
 }
 
 // datastoreOf maps the package datastore names onto sysrepo's enum.
@@ -118,15 +148,9 @@ func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) er
 		return err
 	}
 
-	conn, err := p.connection()
+	session, err := p.startSession(srDS)
 	if err != nil {
 		return err
-	}
-
-	var session *C.sr_session_ctx_t
-	if rc := C.sr_session_start(conn, srDS, &session); rc != C.SR_ERR_OK {
-		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
 	}
 	defer C.sr_session_stop(session)
 
@@ -136,14 +160,14 @@ func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) er
 		rc := C.sr_set_item_str(session, cPath, cValue, nil, C.sr_edit_options_t(0))
 		C.free(unsafe.Pointer(cPath))
 		C.free(unsafe.Pointer(cValue))
-		if rc != C.SR_ERR_OK {
+		if srFailed(rc) {
 			p.log.Error("sysrepo set failed",
 				"path", item.Path, "detail", srErrorString(rc))
 			return fmt.Errorf("yangpub: sr_set_item_str %s: %s", item.Path, srErrorString(rc))
 		}
 	}
 
-	if rc := C.sr_apply_changes(session, C.uint32_t(applyTimeoutMS)); rc != C.SR_ERR_OK {
+	if rc := C.sr_apply_changes(session, C.uint32_t(applyTimeoutMS)); srFailed(rc) {
 		p.log.Error("sysrepo apply failed", "detail", srErrorString(rc))
 		return fmt.Errorf("yangpub: sr_apply_changes: %s", srErrorString(rc))
 	}
@@ -158,15 +182,9 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 		return fmt.Errorf("yangpub: registration aborted: %w", err)
 	}
 
-	conn, err := p.connection()
+	session, err := p.startSession(C.SR_DS_OPERATIONAL)
 	if err != nil {
 		return err
-	}
-
-	var session *C.sr_session_ctx_t
-	if rc := C.sr_session_start(conn, C.SR_DS_OPERATIONAL, &session); rc != C.SR_ERR_OK {
-		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
 	}
 
 	handle := cgo.NewHandle(&providerReg{log: p.log, fn: fn})
@@ -181,7 +199,7 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 		C.sr_subscr_options_t(0), &subscription)
 	C.free(unsafe.Pointer(cModule))
 	C.free(unsafe.Pointer(cPath))
-	if rc != C.SR_ERR_OK {
+	if srFailed(rc) {
 		C.free(handleCell)
 		handle.Delete()
 		C.sr_session_stop(session)
@@ -212,15 +230,9 @@ func (p *publisher) GetItem(ctx context.Context, ds Datastore, path string) (str
 		p.log.Error("read rejected", "err", err)
 		return "", false, err
 	}
-	conn, err := p.connection()
+	session, err := p.startSession(srDS)
 	if err != nil {
 		return "", false, err
-	}
-
-	var session *C.sr_session_ctx_t
-	if rc := C.sr_session_start(conn, srDS, &session); rc != C.SR_ERR_OK {
-		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
-		return "", false, fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
 	}
 	defer C.sr_session_stop(session)
 
@@ -231,7 +243,7 @@ func (p *publisher) GetItem(ctx context.Context, ds Datastore, path string) (str
 	if rc == C.SR_ERR_NOT_FOUND {
 		return "", false, nil
 	}
-	if rc != C.SR_ERR_OK {
+	if srFailed(rc) {
 		p.log.Error("sysrepo get failed", "path", path, "detail", srErrorString(rc))
 		return "", false, fmt.Errorf("yangpub: sr_get_item %s: %s", path, srErrorString(rc))
 	}
@@ -256,26 +268,20 @@ func (p *publisher) DeleteItem(ctx context.Context, ds Datastore, path string) e
 		p.log.Error("delete rejected", "err", err)
 		return err
 	}
-	conn, err := p.connection()
+	session, err := p.startSession(srDS)
 	if err != nil {
 		return err
-	}
-
-	var session *C.sr_session_ctx_t
-	if rc := C.sr_session_start(conn, srDS, &session); rc != C.SR_ERR_OK {
-		p.log.Error("sysrepo session start failed", "detail", srErrorString(rc))
-		return fmt.Errorf("yangpub: sr_session_start: %s", srErrorString(rc))
 	}
 	defer C.sr_session_stop(session)
 
 	cPath := C.CString(path)
 	rc := C.sr_delete_item(session, cPath, C.sr_edit_options_t(0))
 	C.free(unsafe.Pointer(cPath))
-	if rc != C.SR_ERR_OK {
+	if srFailed(rc) {
 		p.log.Error("sysrepo delete failed", "path", path, "detail", srErrorString(rc))
 		return fmt.Errorf("yangpub: sr_delete_item %s: %s", path, srErrorString(rc))
 	}
-	if rc := C.sr_apply_changes(session, C.uint32_t(applyTimeoutMS)); rc != C.SR_ERR_OK {
+	if rc := C.sr_apply_changes(session, C.uint32_t(applyTimeoutMS)); srFailed(rc) {
 		p.log.Error("sysrepo apply failed", "detail", srErrorString(rc))
 		return fmt.Errorf("yangpub: sr_apply_changes: %s", srErrorString(rc))
 	}
@@ -299,14 +305,14 @@ func (p *publisher) Close() error {
 	p.mu.Unlock()
 
 	for _, sub := range subs {
-		if rc := C.sr_unsubscribe(sub.subscription); rc != C.SR_ERR_OK {
+		if rc := C.sr_unsubscribe(sub.subscription); srFailed(rc) {
 			p.log.Error("sysrepo unsubscribe failed", "detail", srErrorString(rc))
 		}
 		C.sr_session_stop(sub.session)
 		C.free(sub.handleCell)
 		sub.handle.Delete()
 	}
-	if rc := C.sr_disconnect(conn); rc != C.SR_ERR_OK {
+	if rc := C.sr_disconnect(conn); srFailed(rc) {
 		p.log.Error("sysrepo disconnect failed", "detail", srErrorString(rc))
 		return fmt.Errorf("yangpub: sr_disconnect: %s", srErrorString(rc))
 	}

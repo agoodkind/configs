@@ -22,6 +22,13 @@ import (
 // holding it for the life of the read.
 const providerTimeout = 5 * time.Second
 
+// lyFailed reports whether a libyang call returned anything other than
+// success, so no caller open-codes the comparison against the success
+// constant.
+func lyFailed(result C.LY_ERR) bool {
+	return result != C.LY_SUCCESS
+}
+
 // operGetCallback holds the trampoline sysrepo invokes. The only real
 // caller is C, through the exported symbol, and no Go analysis can see
 // that edge; this reference states it so reachability analysis agrees
@@ -88,7 +95,7 @@ func yangpubOperCB(session *C.sr_session_ctx_t, subID C.uint32_t, moduleName *C.
 		}
 		C.free(unsafe.Pointer(cPath))
 		C.free(unsafe.Pointer(cValue))
-		if lyErr != C.LY_SUCCESS {
+		if lyFailed(lyErr) {
 			registration.log.Error("provider tree build failed",
 				"path", item.Path, "code", int(lyErr))
 			return C.SR_ERR_CALLBACK_FAILED
