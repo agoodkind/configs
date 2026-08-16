@@ -307,31 +307,47 @@ connectivity rolls back.
 Forwarded packets stay in the kernel. MWAN programs routing tables, policy
 rules, and nftables. It does not read or copy that traffic in userspace.
 
-When the chokepoint is a hypervisor guest, how a NIC is attached decides
-whether the hypervisor copies the packet.
+The scale question is the hop list at a high line rate, here 100 Gbit/s per
+link. This is a path walk, not a measurement.
 
-| Attach | Used on | What happens to a packet |
-| --- | --- | --- |
-| PCI passthrough | ISP-1 and ISP-2 | The guest talks to the physical NIC directly. |
-| virtio | ISP-3, management, the router link, and every testbed WAN | The hypervisor implements a virtual NIC. Each packet crosses the host on the way into the guest. |
+At 100 Gbit/s the guest still only forwards and NATs in its own kernel.
+What changes is how many other kernels copy the packet before that.
+
+**ISP passthrough (ISP-1, ISP-2).** The physical NIC DMAs into the
+chokepoint guest. The guest kernel forwards and applies nftables. The
+hypervisor stays out of the packet path. The guest keeps the NIC's own
+offloads. This is the same class of path as a physical router.
+
+**ISP virtio (ISP-3, and every testbed WAN).** The packet hits a host NIC,
+then a host Linux bridge, then a virtio-net virtqueue into the guest.
+Proxmox virtio-net uses vhost-net, which keeps that copy in the host
+kernel. See
+[Virtio-networking and vhost-net](https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net).
+The host kernel and the guest kernel both touch the packet. The guest sees
+a virtio NIC, so it loses the physical NIC's DMA fast path and uses virtio
+offloads instead.
+
+**Internal bridge (mwanbr).** Every packet between a LAN router and the
+chokepoint crosses this path, even when the WAN is passthrough. Example:
+client `3eef::10` behind `router-1` goes to ISP-1.
+
+1. The router guest forwards onto virtio.
+2. The hypervisor copies that into the host kernel and L2-forwards on the
+   Linux bridge.
+3. The hypervisor copies again into the chokepoint guest over virtio.
+4. The chokepoint kernel NATs and forwards.
+5. ISP-1 passthrough DMAs out the physical NIC.
+
+Steps 1 to 3 are extra kernel work that passthrough on the WAN does not
+remove. Two virtio hops plus a software bridge. The internal side is the
+part that does not keep a bare-metal fast path.
+
+| Path | Host work | Guest fast path | Duplicate work |
+| --- | --- | --- | --- |
+| ISP passthrough | None | Physical NIC offloads in the guest | No |
+| ISP virtio | Host kernel, Linux bridge, vhost-net virtqueue | virtio-net offloads | Host kernel, then guest kernel |
+| Internal bridge | Two vhost-net virtqueues and a Linux bridge | virtio-net on both guests | Two guests plus the host bridge |
 
 PCI passthrough gives the guest exclusive use of a physical WAN NIC. The
 hypervisor cannot inspect or filter that NIC. Live migration is unavailable
 while the NIC is attached.
-
-A virtio NIC is a virtual device the hypervisor implements. Packets enter
-the guest through the host, so the host can still see the traffic. The
-virtio path copies each packet once on the way in.
-
-| Attach | Used on | What happens to a packet |
-| --- | --- | --- |
-| PCI passthrough | ISP-1 and ISP-2 | The guest talks to the physical NIC directly. |
-| virtio | ISP-3, management, the router link, and every testbed WAN | The hypervisor implements a virtual NIC. Each packet crosses the host on the way into the guest. |
-
-PCI passthrough gives the guest exclusive use of a physical WAN NIC. The
-hypervisor cannot inspect or filter that NIC. Live migration is unavailable
-while the NIC is attached.
-
-A virtio NIC is a virtual device the hypervisor implements. Packets enter
-the guest through the host, so the host can still see the traffic. The
-virtio path copies each packet once on the way in.
