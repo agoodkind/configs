@@ -28,45 +28,41 @@ MWAN names three things:
 
 ## Architecture
 
+Traffic crosses four layers.
+
+| Layer | Job |
+| --- | --- |
+| WAN | ISP links terminate on the MWAN virtual machine |
+| Chokepoint | The virtual machine load-balances, fails over, and translates |
+| LAN | Each router announces a prefix. Clients see one upstream |
+| Control | The virtual machine, the standby, and every router share one iBGP |
+
 | Mark | Meaning |
 | --- | --- |
 | Solid line | A path in production today |
 | Dashed line | A future drop-in ISP, or an extra LAN router |
-| Primary VM | Terminates every WAN |
-| ISP-1, ISP-2 | Load-balance members |
-| ISP-3 | Health fallback, and the standby uplink |
-| Shared iBGP | The virtual machine, the standby, and every router share one session |
 
 ```mermaid
 flowchart LR
-  subgraph sharedIbgp [shared_iBGP]
-    mwanVm[MWAN_VM]
-    standby[Standby_LXC]
-    r1[router_1]
-    r2[router_2]
-    rN[router_N]
-  end
   isp1[ISP_1]
   isp2[ISP_2]
   isp3[ISP_3]
-  ispN[ISP_N_drop_in]
-  watchdog[Host_watchdog]
+  ispN[ISP_N]
+  mwanVm[MWAN_VM]
+  r1[router_1]
+  r2[router_2]
+  rN[router_N]
   lan1[LAN_1]
   lan2[LAN_2]
   isp1 --> mwanVm
   isp2 --> mwanVm
   isp3 --> mwanVm
   ispN -.-> mwanVm
-  isp3 --> standby
-  watchdog -.-> mwanVm
-  r1 --> mwanVm
-  r1 --> standby
-  r2 -.-> mwanVm
-  r2 -.-> standby
-  rN -.-> mwanVm
-  rN -.-> standby
+  mwanVm --> r1
   r1 --> lan1
+  mwanVm -.-> r2
   r2 -.-> lan2
+  mwanVm -.-> rN
 ```
 
 ## Major components
@@ -94,52 +90,95 @@ Numbers below are documentation-only. IPv4 uses TEST-NET from
 [RFC 5398](https://www.rfc-editor.org/rfc/rfc5398.html). Names use
 `example.test`. This is not production.
 
-The general IPv6 unit is `/56`. The general IPv4 unit is `/29`. NPT maps the
-whole internal `/56` onto the chosen WAN `/56`. Each WAN public IPv4 is a
-`/29`. Transit IPv4 is one `/29` that every router source-NATs onto.
+The general IPv6 unit is `/56`. The general IPv4 unit is `/29`.
+
+### WAN
+
+| Member | Attach | IPv4 | IPv6 PD | Role |
+| --- | --- | --- | --- | --- |
+| ISP-1 | PCI passthrough | `192.0.2.0/29` | `2001:db8:1::/56` | Load-balance |
+| ISP-2 | PCI VF passthrough | `198.51.100.0/29` | `2001:db8:2::/56` | Load-balance |
+| ISP-3 | virtio | `203.0.113.0/29` | `2001:db8:3::/56` | Health fallback, and the standby uplink |
+| ISP-N | Drop-in | `192.0.2.16/29` | `2001:db8:10::/56` | Future member |
+
+ISP-3's prefix can renumber. Adding ISP-N is an inventory edit once the
+[provider model](superpowers/wanconfig/spec.md) lands. No Go change. No
+per-ISP template.
+
+```mermaid
+flowchart LR
+  isp1[ISP_1]
+  isp2[ISP_2]
+  isp3[ISP_3]
+  ispN[ISP_N]
+  mwanVm[MWAN_VM]
+  standby[Standby_LXC]
+  isp1 -->|load_balance| mwanVm
+  isp2 -->|load_balance| mwanVm
+  isp3 -->|fallback| mwanVm
+  isp3 -->|standby_uplink| standby
+  ispN -.->|drop_in| mwanVm
+```
+
+### Chokepoint
+
+NPT maps the whole internal `/56` onto the chosen WAN `/56`. Each WAN public
+IPv4 is a `/29`. Transit IPv4 is one `/29` that every router source-NATs
+onto. MWAN then 1:1 SNATs that transit `/29` onto the chosen WAN `/29`.
+
+```mermaid
+flowchart LR
+  client[Client]
+  r1[router_1]
+  mwanVm[MWAN_VM]
+  isp1[ISP_1]
+  client -->|"2001:db8:0:0::10"| r1
+  r1 -->|forward| mwanVm
+  mwanVm -->|"NPT 2001:db8:1:0::10"| isp1
+```
+
+### LAN
 
 Today there is one router and one `/60`, and that `/60` is fully allocated.
 The example widens the internal block to a `/56` so each router can take a
 `/60` slice and announce it.
 
-### Current members
-
-- **ISP-1** (today Webpass): PCI passthrough, `192.0.2.0/29`, PD
-  `2001:db8:1::/56`, interface `enisp1`. Load-balance member.
-- **ISP-2** (today AT&T): PCI VF passthrough, 802.1X then VLAN `100` on
-  `enisp2.100`, `198.51.100.0/29`, PD `2001:db8:2::/56`. Load-balance member.
-  Untagged `enisp2` is ONT management only.
-- **ISP-3** (today Monkeybrains): virtio, `203.0.113.0/29`, PD
-  `2001:db8:3::/56` that can renumber. Health fallback on the primary. Also
-  the standby LXC uplink.
-
-### Future drop-in
-
-**ISP-N** is another member with a `/29` and a `/56`, example `192.0.2.16/29`
-and `2001:db8:10::/56`. Adding it is an inventory edit once the
-[provider model](superpowers/wanconfig/spec.md) lands. No Go change. No
-per-ISP template.
-
-### Internal space and BGP
-
-- **Internal IPv6:** `2001:db8:0::/56`. Current analogue: only `router-1`,
-  announcing `2001:db8:0:0::/60`. That one allocated slice matches today's
-  single full `/60`. `router-2` would announce `2001:db8:0:10::/60`.
+- **Internal IPv6:** `2001:db8:0::/56`. `router-1` announces
+  `2001:db8:0:0::/60`. `router-2` would announce `2001:db8:0:10::/60`.
   `router-N` would announce the next `/60`. NPT still translates the whole
   `/56` per WAN. Each slice maps unchanged.
 - **Transit IPv4:** `192.0.2.8/29`. `router-1` SNATs LAN RFC1918 (example
-  `10.0.0.0/24`) to `192.0.2.9`. `router-2` would SNAT to `192.0.2.10`. MWAN
-  1:1 SNATs that transit `/29` onto the chosen WAN `/29`.
+  `10.0.0.0/24`) to `192.0.2.9`. `router-2` would SNAT to `192.0.2.10`.
+
+### Control
+
+The MWAN VM, the standby, and every router share one iBGP. ASN `64496`.
+`router-1` prefers the primary speaker with local-pref.
+
+```mermaid
+flowchart LR
+  subgraph sharedIbgp [shared_iBGP]
+    mwanVm[MWAN_VM]
+    standby[Standby_LXC]
+    r1[router_1]
+    r2[router_2]
+    rN[router_N]
+  end
+  mwanVm --- r1
+  standby --- r1
+  mwanVm -.-> r2
+  standby -.-> r2
+  mwanVm -.-> rN
+  standby -.-> rN
+```
+
 - **Hosts:** `gateway.example.test`, `standby.example.test`,
   `router-1.example.test`, `hypervisor.example.test`.
   `router-2.example.test` is the extension slot.
-- **Shared iBGP:** ASN `64496`. The MWAN VM, the standby, and every router
-  are in the same BGP. `router-1` prefers the primary speaker with
-  local-pref.
 - **More routers:** `router-2` through `router-N` join that same BGP. Each
   announces its own `/60` of the `/56`. No MWAN config change. See
   [multiple downstream routers](superpowers/multirouter/spec.md). Extra
-  routers are dashed on the diagram.
+  routers are dashed.
 
 ### Flows
 
