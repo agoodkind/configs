@@ -1,7 +1,7 @@
 # Networking and DHCP diagnosis
 
 IPv6 connectivity is P0. Treat IPv6 issues as critical priority and diagnose the
-IPv6 stack first, then IPv4. See [the infrastructure overview](overview.md) for
+IPv6 stack first, then IPv4. See [the infrastructure overview](../../infra.md) for
 the current live network state and [access.md](access.md) for SSH paths between
 hosts.
 
@@ -93,7 +93,7 @@ ssh root@<host> "ip link show eth0 | grep -i link/ether"
 ssh <kea-host> "sudo cat /var/db/kea/kea-leases6.csv | grep -i '<mac>'"
 ```
 
-The [kea/Rakefile](../../kea/Rakefile) provides higher-level helpers, for
+The [kea/Rakefile](../../../kea/Rakefile) provides higher-level helpers, for
 example `rake lease:get6_by_ip[<ip>]` and
 `rake lease:cleanup6_by_mac[<mac>]`.
 

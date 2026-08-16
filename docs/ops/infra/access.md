@@ -8,7 +8,7 @@ between them.
 
 Use the fully qualified domain name when private DNS resolves it. Otherwise,
 look up the host's IPv6 address in
-[the service inventory](../../ansible/inventory/group_vars/all/service_mapping.yml).
+[the service inventory](../../../ansible/inventory/group_vars/all/service_mapping.yml).
 Both paths connect directly.
 
 ```bash

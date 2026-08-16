@@ -5,7 +5,7 @@ After=network.target qemu-server.service
 Wants=network.target
 # The bridge dials the drainer's relay socket, not the qemu chardev directly,
 # so the drainer holds the chardev open across bridge restarts. See
-# docs/opnsense/wedge.md.
+# docs/ops/opnsense/wedge.md.
 After=mwan-opnsense-drain.service
 Wants=mwan-opnsense-drain.service
 

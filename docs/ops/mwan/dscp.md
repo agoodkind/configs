@@ -89,7 +89,7 @@ descr     = Tag streaming device for AT&T pin
 
 ### mwan half (nft ip dscp)
 
-In [nftables.conf.j2](../../mwan/config/nftables.conf.j2), `table inet
+In [nftables.conf.j2](../../../mwan/config/nftables.conf.j2), `table inet
 mangle` / `chain prerouting`, right after the existing `@att_pinned` rules and
 before the v6 numgen load-balancer and the `ct state established,related`
 restore:

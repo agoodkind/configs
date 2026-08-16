@@ -110,7 +110,7 @@ func (h *drainHub) getChardev() net.Conn {
 // runOPNsenseHostDrain runs the host-side chardev drainer. It holds the qemu
 // virtio-serial chardev open and always reads it, so a bridge restart never
 // disconnects the host side and strands a guest write in the kernel (see
-// docs/opnsense/wedge.md). The bridge dials the relay socket this serves in
+// docs/ops/opnsense/wedge.md). The bridge dials the relay socket this serves in
 // place of the chardev. The chardev connection survives a drainer restart via
 // the systemd file descriptor store, so a deploy opens no wedge window.
 func runOPNsenseHostDrain(args []string) int {

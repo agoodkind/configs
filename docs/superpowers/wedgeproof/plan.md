@@ -12,7 +12,7 @@
 
 - The wedge signature: a CPU at RIP `ffffffff809e3xx` (virtqueue_poll) AND a CPU at `ffffffff80c32c5x` (lock_delay), both HLT=0. Idle: both HLT=1 at `ffffffff810b37c6`.
 - Never drop chardev BYTES to a surviving client. Dropping bytes corrupts the framed yamux stream (the rejected design from commit 2f5f419). Drop the whole CLIENT instead, and flush queued bytes on a client swap.
-- Do not change the documented transport invariants in `docs/opnsense/daemon.md` ("What not to touch"): no-op `serialStream.Close`, termios, 8 KiB write cap, ack pacing, yamux keepalive off, named virtio port, TIOCFLUSH-on-open, session-rebuild loop.
+- Do not change the documented transport invariants in `docs/ops/opnsense/daemon.md` ("What not to touch"): no-op `serialStream.Close`, termios, 8 KiB write cap, ack pacing, yamux keepalive off, named virtio port, TIOCFLUSH-on-open, session-rebuild loop.
 - All Go build, lint, and test run via `make -C mwan/go check` and `make -C mwan/go test`, never raw go.
 - Deploy units only via the ansible template path, never hand-edited on hosts.
 

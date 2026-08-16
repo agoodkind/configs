@@ -20,7 +20,7 @@ hypervisor talks to that node's API and emits its guests as inventory hosts;
 the plugin only loads files whose names end in `proxmox.yml`, so name a new
 per-hypervisor file with that suffix and put the hypervisor qualifier first.
 Shared non-secret defaults and the encrypted vault complete the merge; the
-secret contract is in [secrets.md](secrets.md).
+secret contract is in [secrets.md](ops/ansible/secrets.md).
 
 Target-specific variables sit in one per-group file per service, named
 `<group>_servers.yml`. The directory listing is the authoritative set; it

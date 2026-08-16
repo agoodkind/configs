@@ -67,7 +67,7 @@ mwan_opnsense_vmid: "{{ service_mapping.opnsense.vmid }}"
 # virtio-serial chardev open and re-exposes it on a relay socket, so a bridge
 # restart never disconnects the chardev and strands a guest write in the kernel.
 # The bridge dials that relay and serves the probe socket the `mwan opnsense`
-# verbs connect to. See docs/opnsense/wedge.md.
+# verbs connect to. See docs/ops/opnsense/wedge.md.
 mwan_opnsense_drain_chardev: "unix:///var/run/qemu-server/{{ mwan_opnsense_vmid }}.mwanrpc"
 mwan_opnsense_drain_listen: /var/run/mwan-opnsense-drain.sock
 mwan_opnsense_host_upstream: "unix://{{ mwan_opnsense_drain_listen }}"

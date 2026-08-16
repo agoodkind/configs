@@ -38,7 +38,7 @@
     # stale routes while the daemon and tun stay up, silently breaking NAT64 for
     # hours. The sub-second blip from a deliberate deploy-time restart is far
     # cheaper than that, so this runs on prod and testbed alike. See
-    # docs/opnsense/testbed/dns.md.
+    # docs/ops/opnsense/testbed/dns.md.
     - name: Restart Tayga to re-install NAT64 routes and firewall state
       ansible.builtin.command:
         cmd: configctl tayga restart
@@ -51,7 +51,7 @@
     # into unbound.conf even with DNSBL disabled (confirmed on 26.1 and 26.7),
     # so a freshly imported box crashes Unbound at startup until the module file
     # exists. Regenerating it makes the file present; on an existing box this is
-    # a no-op. See docs/opnsense/testbed/dns.md.
+    # a no-op. See docs/ops/opnsense/testbed/dns.md.
     - name: Regenerate Unbound DNSBL module so a fresh import has the python file
       ansible.builtin.command:
         cmd: configctl unbound dnsbl

@@ -88,4 +88,4 @@ artifacts retained:
 ## Out of scope
 
 - A qemu-layer or AF_VSOCK transport change.
-- Changing the documented transport invariants in docs/opnsense/daemon.md ("what not to touch").
+- Changing the documented transport invariants in docs/ops/opnsense/daemon.md ("what not to touch").

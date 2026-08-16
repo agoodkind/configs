@@ -26,7 +26,7 @@ Trace the variable source before patching:
 3. Are play and task ordering correct? Variables set in one play are not
    automatically available in another without `hostvars`.
 4. Is the inventory composition right? See `compose:` in
-   [ansible/inventory/vault.proxmox.yml](../../ansible/inventory/vault.proxmox.yml).
+   [ansible/inventory/vault.proxmox.yml](../../../ansible/inventory/vault.proxmox.yml).
 
 ```yaml
 # Bad - bandaid that hides the real problem
@@ -63,7 +63,7 @@ Checklist before adding `| default()` or `is defined`:
 ## Default values policy
 
 Every input value is declared explicitly: in the service's group_vars, in
-[ansible/inventory/group_vars/all/service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml),
+[ansible/inventory/group_vars/all/service_mapping.yml](../../../ansible/inventory/group_vars/all/service_mapping.yml),
 or in OpenTofu. A playbook or template reads it bare and fails at load time when
 it is missing. Do not use `| default(...)` or `is defined` on an input variable
 to paper over a missing value or to infer presence. When you need a branch, drive

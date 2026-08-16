@@ -168,7 +168,7 @@ of `privsep` or assigned role. Proxmox hard-codes this restriction.
 Create virtual machines that need `args` manually with `qm create` as root over
 SSH. This includes virtual machines with a virtio-serial chardev, such as the
 MWAN OPNsense guests. Import the completed virtual machine through the repo
-control tool. [OpenTofu state operations](../../opentofu/backend.md) documents
+control tool. [OpenTofu state operations](../../../opentofu/backend.md) documents
 state attachment and drift review.
 
 ### Rule 9: Hot-adding a NIC needs `configctl interface reconfigure`

@@ -19,7 +19,7 @@ SyslogIdentifier=mwan-opnsense-drain
 
 # The file descriptor store keeps the live chardev connection across a restart
 # (a deploy), so the host side of the chardev never disconnects and no guest
-# write is stranded in the kernel. See docs/opnsense/wedge.md.
+# write is stranded in the kernel. See docs/ops/opnsense/wedge.md.
 FileDescriptorStoreMax=4
 FileDescriptorStorePreserve=yes
 
