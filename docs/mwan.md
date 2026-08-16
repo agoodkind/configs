@@ -77,20 +77,14 @@ flowchart LR
 
 ## Major components
 
-The chokepoint terminates the ISPs, marks new flows onto a WAN, and
-translates addresses.
-
-The fallback is a second BGP speaker. Its uplink is ISP-3. Only the
-chokepoint load-balances.
-
-The watchdog watches the chokepoint from outside it. A bad deploy rolls
-the chokepoint back to a snapshot.
-
-The LAN router, today one OPNsense box, never sees ISP membership. It
-forwards to MWAN and announces the prefixes it routes.
-
-The Go binary is one artifact. Each host runs the subcommands its role
-needs.
+- **Chokepoint.** Terminates the ISPs, marks new flows onto a WAN, and
+  translates addresses. Only the chokepoint load-balances.
+- **Fallback.** A second BGP speaker. Its uplink is ISP-3.
+- **Watchdog.** Watches the chokepoint from outside it. A bad deploy rolls
+  the chokepoint back to a snapshot.
+- **LAN router.** Today one OPNsense box. Never sees ISP membership.
+  Forwards to MWAN and announces the prefixes it routes.
+- **Binary.** One artifact. Each host runs the subcommands its role needs.
 
 ## Worked example
 
