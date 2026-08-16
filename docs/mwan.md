@@ -17,14 +17,14 @@ and extra ISPs.
 
 MWAN names three things:
 
-- **Chokepoint.** The host that runs the main MWAN binary and terminates
+- **Chokepoint:** The host that runs the main MWAN binary and terminates
   ISP links.
-- **System.** That host plus a fallback speaker, a watchdog, and LAN
-  routers that share BGP. A watchdog is a process that continuously
-  monitors health and recovers the chokepoint when a change breaks
-  connectivity.
-- **Binary.** A single Go program that the chokepoint, the fallback, the
-  watchdog host, and the LAN router run in different roles.
+- **System:** That host plus a fallback speaker, a watchdog that recovers
+  the chokepoint when a change breaks connectivity, and LAN routers that
+  share BGP.
+- **Binary:** A single monolith that the chokepoint, the fallback, the
+  watchdog host, and the LAN router each run as the subcommands their
+  role needs.
 
 ## Architecture
 
@@ -77,14 +77,15 @@ flowchart LR
 
 ## Major components
 
-- **Chokepoint.** Terminates the ISPs, marks new flows onto a WAN, and
-  translates addresses. Only the chokepoint load-balances.
-- **Fallback.** A second BGP speaker. Its uplink is ISP-3.
-- **Watchdog.** Watches the chokepoint from outside it. A bad deploy rolls
-  the chokepoint back to a snapshot.
-- **LAN router.** Today one OPNsense box. Never sees ISP membership.
-  Forwards to MWAN and announces the prefixes it routes.
-- **Binary.** One artifact. Each host runs the subcommands its role needs.
+- **Chokepoint:** The host that terminates the ISPs, marks new flows onto
+  a WAN, translates addresses, and is the only speaker that load-balances.
+- **Fallback:** A second BGP speaker whose uplink is ISP-3.
+- **Watchdog:** A process outside the chokepoint that rolls it back to a
+  snapshot when a bad deploy breaks connectivity.
+- **LAN router:** Today's OPNsense box, which never sees ISP membership,
+  forwards to MWAN, and announces the prefixes it routes.
+- **Binary:** A single monolith that each host runs as the subcommands its
+  role needs.
 
 ## Worked example
 
@@ -96,14 +97,21 @@ Numbers below are documentation-only. IPv4 uses TEST-NET from
 
 Prefix sizes in the tables are examples. Any prefix length works.
 
+WAN documentation addresses stay in `2001:db8::/32`. Internal addresses use
+a made-up GUA `3eef::/56` so the two sides stay distinct. That `/56` covers
+the largest WAN delegation in the example.
+
 ### Upstream
 
 | Member | IPv4 | IPv6 PD | Role |
 | --- | --- | --- | --- |
 | ISP-1 | `192.0.2.0/29` | `2001:db8:1::/56` | Load-balance |
 | ISP-2 | `198.51.100.0/29` | `2001:db8:2::/56` | Load-balance |
-| ISP-3 | `203.0.113.0/29` | `2001:db8:3::/56` | Fallback, and the fallback speaker's uplink |
+| ISP-3 | `203.0.113.0/29` | `2001:db8:3::/56` | Health fallback on the chokepoint, and the failover speaker's uplink |
 | ISP-N | `192.0.2.16/29` | `2001:db8:10::/56` | Future. Neither load-balance nor fallback |
+
+The failover speaker masquerades out ISP-3. That ISP does not need to
+match any prefix size. Failover does not serve inbound traffic.
 
 Once the [provider model](superpowers/wanconfig/spec.md) lands, any ISP
 can be added, removed, or renumbered. That is an inventory edit. No Go
@@ -126,6 +134,10 @@ flowchart LR
 
 ### Chokepoint
 
+The chokepoint uses NPT and 1:1 SNAT. The failover speaker does not. It
+masquerades, so the failover ISP's prefix size does not matter and inbound
+is not served.
+
 NPT replaces the internal prefix with the chosen WAN prefix. Remaining
 bits stay. Prefix lengths need not match. If they differ, the shorter is
 zero-extended first, per [RFC 6296](https://www.rfc-editor.org/rfc/rfc6296.html)
@@ -139,9 +151,9 @@ flowchart LR
   r1[router_1]
   mwan[MWAN]
   isp1[ISP_1]
-  client -->|"2001:db8:0:0::10"| r1
+  client -->|"3eef::10"| r1
   r1 -->|forward| mwan
-  mwan -->|"NPT 2001:db8:1:0::10"| isp1
+  mwan -->|"NPT 2001:db8:1::10"| isp1
 ```
 
 | Step | IPv4 address |
@@ -178,9 +190,9 @@ flowchart LR
 
 | Router | Announces | Example host | After NPT onto ISP-1 `2001:db8:1::/56` |
 | --- | --- | --- | --- |
-| `router-1` | `2001:db8:0:0::/64` | `2001:db8:0:0::10` | `2001:db8:1:0::10` |
-| `router-1` | `2001:db8:0:4::/62` | `2001:db8:0:5::10` | `2001:db8:1:5::10` |
-| `router-2` | `2001:db8:0:10::/60` | `2001:db8:0:10::10` | `2001:db8:1:10::10` |
+| `router-1` | `3eef::/64` | `3eef::10` | `2001:db8:1::10` |
+| `router-1` | `3eef:0:0:4::/62` | `3eef:0:0:5::10` | `2001:db8:1:5::10` |
+| `router-2` | `3eef:0:0:10::/60` | `3eef:0:0:10::10` | `2001:db8:1:10::10` |
 
 `router-2` is future. Adding it is a new iBGP peer that announces what it
 routes. No MWAN config change. See
@@ -194,18 +206,47 @@ routes. No MWAN config change. See
 | `router-2.example.test` | Future LAN router |
 | `hypervisor.example.test` | Watchdog host |
 
+### Failover
+
+Failover reuses ordinary iBGP. The chokepoint and the fallback both
+announce a default. Routers prefer the chokepoint with local-pref. When
+that default goes away, they use the fallback. There is no extra failover
+protocol.
+
+The failover speaker masquerades out ISP-3, the safest NAT that still
+forwards every outbound flow. That ISP does not need to match any prefix
+size. Failover does not serve inbound traffic.
+
+```mermaid
+flowchart LR
+  r1[router_1]
+  mwan[MWAN]
+  fb[Fallback]
+  isp12[ISP_1_or_2]
+  isp3[ISP_3]
+  r1 -->|"healthy preferred"| mwan
+  r1 -->|"unexpected down or planned drain"| fb
+  mwan --> isp12
+  fb -->|masquerade| isp3
+```
+
+| Situation | What BGP does |
+| --- | --- |
+| Unexpected chokepoint down | The iBGP session drops. Routers take the fallback's default after the hold timer. |
+| Planned maintenance | The chokepoint withdraws its default first. Routers take the fallback's default before the host goes away. |
+
 ### Flows
 
 | Flow | What happens |
 | --- | --- |
-| Outbound IPv6 | Client `2001:db8:0:0::10` behind `router-1`. MWAN marks onto ISP-1. NPT rewrites to `2001:db8:1:0::10`. Return reverse-NPTs to `router-1`. |
+| Outbound IPv6 | Client `3eef::10` behind `router-1`. MWAN marks onto ISP-1. NPT rewrites to `2001:db8:1::10`. Return reverse-NPTs to `router-1`. |
 | Outbound IPv4 | Client `10.0.0.10`. `router-1` SNATs to `192.0.2.9`. MWAN marks onto ISP-2 and 1:1 SNATs to `198.51.100.1`. |
-| Inbound IPv6 | Packet to `2001:db8:1:0::10` on ISP-1. MWAN reverse-NPTs to `2001:db8:0:0::10` and forwards to `router-1`. The router does not know ISP-1 exists. |
+| Inbound IPv6 | Packet to `2001:db8:1::10` on ISP-1. MWAN reverse-NPTs to `3eef::10` and forwards to `router-1`. The router does not know ISP-1 exists. |
 | WAN health fallback | ISP-2 goes unhealthy. New flows use ISP-1. ISP-3 stays unused while a load-balance member is healthy. Both load-balance members unhealthy: new flows use ISP-3. |
-| Speaker failover | The chokepoint is unhealthy. Its iBGP session drops, or the watchdog withdraws its prefixes. `router-1` still has the fallback in the same BGP. Fallback egresses on ISP-3. |
+| Speaker failover | The chokepoint's default goes away. `router-1` uses the fallback. Egress masquerades on ISP-3. No inbound. |
 | Deploy rollback | A config push on `gateway.example.test` breaks connectivity. The watchdog rolls the chokepoint back to the latest `pre-deploy-*` snapshot, else a `known-good-*` snapshot. |
 | Future ISP-N | The operator adds ISP-N with `192.0.2.16/29` and `2001:db8:10::/56`. `router-1` still sees one upstream. No router firewall change. |
-| Second router | `router-2` joins iBGP and announces `2001:db8:0:10::/60`. Return traffic follows that announcement. MWAN config does not change. |
+| Second router | `router-2` joins iBGP and announces `3eef:0:0:10::/60`. Return traffic follows that announcement. MWAN config does not change. |
 
 ## By component
 
@@ -219,9 +260,9 @@ binary is one artifact with many roles.
 **Load balancing.** New flows get a mark. Policy routing plus 1:1 SNAT or
 NPT sends them out ISP-1 or ISP-2.
 
-**Failover.** The fallback stays in the same BGP. When the primary speaker
-leaves, `router-1` keeps a path. WAN health fallback is separate: ISP-3
-takes new flows only after both load-balance members are unhealthy.
+**WAN health fallback.** ISP-3 takes new flows only after both load-balance
+members are unhealthy. Speaker failover is ordinary iBGP. The failover
+ISP masquerades, so prefix size does not matter and inbound is not served.
 
 **Future ISP.** Another WAN member on the chokepoint. It need not be
 load-balance or fallback. The router firewall does not change.
