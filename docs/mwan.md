@@ -105,9 +105,9 @@ Prefix sizes in the tables are examples. Any prefix length works.
 | ISP-3 | `203.0.113.0/29` | `2001:db8:3::/56` | Fallback, and the fallback speaker's uplink |
 | ISP-N | `192.0.2.16/29` | `2001:db8:10::/56` | Future. Neither load-balance nor fallback |
 
-ISP-3's prefix can renumber. Adding ISP-N is an inventory edit once the
-[provider model](superpowers/wanconfig/spec.md) lands. No Go change. No
-per-ISP template.
+Once the [provider model](superpowers/wanconfig/spec.md) lands, any ISP
+can be added, removed, or renumbered. That is an inventory edit. No Go
+change. No per-ISP template.
 
 ```mermaid
 flowchart LR
