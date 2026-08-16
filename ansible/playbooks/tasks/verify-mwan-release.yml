@@ -17,7 +17,10 @@
   register: mwan_installed_version
   changed_when: false
 
+# In check mode the copy above did not happen and the command did not run, so
+# there is nothing to assert; the real run is where the identity is checked.
 - name: Fail unless the installed mwan reports the released commit
+  when: not ansible_check_mode
   ansible.builtin.assert:
     that:
       - mwan_installed_version.stdout is search('commit=[0-9a-f]+')
