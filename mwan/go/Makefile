@@ -87,23 +87,23 @@ include bootstrap.mk
 # compiling but not running.
 export LD_LIBRARY_PATH := $(GO_MK_CGO_PREFIX)/lib$(if $(strip $(LD_LIBRARY_PATH)),:$(LD_LIBRARY_PATH))
 
-# Static linking of the C dependencies. The release engine builds with a fixed
-# command whose -ldflags carries the version stamps, so these two values are the
-# only way to reach the compiler and the external linker; the engine appends
-# them to the inherited environment. netgo and osusergo keep name and user
-# lookup in pure Go, so the binary needs no glibc name service at runtime, and
-# pcre2 and libm are named explicitly because a static archive carries no
-# transitive dependencies and these land last on the link line, which is where
-# a static linker resolves a dependency of an earlier archive.
+# Fully static release binary. The release engine builds with a fixed command
+# whose -ldflags carries the version stamps, so these two values are the only
+# way to reach the compiler and the external linker; the engine appends them
+# to the inherited environment. netgo and osusergo keep name and user lookup in
+# pure Go, so the binary needs no glibc name service at runtime. What the static
+# archives themselves need to link (pcre2, libm) is not here: that is metadata
+# of the archives, and the dependency recipe writes it into their pkg-config
+# files, which cgo already reads.
 #
-# They attach to the release target rather than the file, so they reach the
+# Both attach to the release target rather than the file, so they reach the
 # release build and nothing else. A plain export puts them in the environment of
 # every child process, which hands a host tool the target's link flags: building
 # golangci-lint on macOS then fails with "library 'crt0.o' not found", because
 # darwin has no static libc. go-makefile keeps its own cross-compiler settings
 # out of the global environment for the same reason.
 release: export GOFLAGS := -tags=osusergo,netgo$(if $(strip $(GOFLAGS)), $(GOFLAGS))
-release: export CGO_LDFLAGS := -static -lpcre2-8 -lm
+release: export CGO_LDFLAGS := -static
 
 .DEFAULT_GOAL := check
 
@@ -234,6 +234,11 @@ define wanconfig_cgo_dep_build
 		cmake --install $(WANCONFIG_CGO_SRC)/$(1)/build; \
 	mkdir -p "$${GO_MK_CGO_PREFIX}"; \
 	cp -R $(WANCONFIG_CGO_SRC)/stage-$(1)$${GO_MK_CGO_PREFIX}/. "$${GO_MK_CGO_PREFIX}/"; \
+	if [ -n "$(strip $(5))" ]; then \
+		pc="$${GO_MK_CGO_PREFIX}/lib/pkgconfig/$(1).pc"; \
+		awk -v extra="$(strip $(5))" '/^Libs:/ {print $$0 " " extra; next} {print}' "$$pc" > "$$pc.tmp" \
+			&& mv "$$pc.tmp" "$$pc"; \
+	fi; \
 	touch "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2).stamp"
 endef
 
@@ -243,6 +248,13 @@ endef
 # against static libyang without naming its pcre2 and libm dependencies, which
 # a static archive cannot carry, so building them fails the install.
 WANCONFIG_LIBYANG_CMAKE_FLAGS := -DENABLE_TOOLS=OFF
+
+# What a consumer of the static libyang archive must link after it. The
+# generated pkg-config file lists pcre2 only under Libs.private and omits libm,
+# which is right for a shared library and wrong for the archive, so the recipe
+# writes these onto the Libs line and cgo picks them up through its ordinary
+# pkg-config lookup, in every build that links libyang: test, lint, release.
+WANCONFIG_LIBYANG_STATIC_LIBS := -lpcre2-8 -lm
 WANCONFIG_SYSREPO_CMAKE_FLAGS := \
 	-DREPO_PATH=$(WANCONFIG_SYSREPO_REPO_PATH) \
 	-DENABLE_EXAMPLES=OFF \
@@ -251,7 +263,7 @@ WANCONFIG_SYSREPO_CMAKE_FLAGS := \
 	-DENABLE_SYSREPO_PLUGIND=OFF
 
 go-mk-cgo-dep-libyang:
-	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git,$(WANCONFIG_LIBYANG_CMAKE_FLAGS))
+	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git,$(WANCONFIG_LIBYANG_CMAKE_FLAGS),$(WANCONFIG_LIBYANG_STATIC_LIBS))
 
 go-mk-cgo-dep-sysrepo: go-mk-cgo-dep-libyang
 	$(call wanconfig_cgo_dep_build,sysrepo,$(WANCONFIG_SYSREPO_VERSION),https://github.com/sysrepo/sysrepo.git,$(WANCONFIG_SYSREPO_CMAKE_FLAGS))
