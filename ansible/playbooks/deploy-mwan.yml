@@ -90,19 +90,23 @@
     # ============================================================================
 
     # The deploy gates run through the mwan binary on the Proxmox delegate, so
-    # the binary is built and pushed there before the first gate call. The
+    # the released binary is pushed there before the first gate call. The
     # dedicated filename keeps the watchdog's own /usr/local/bin/mwan
-    # untouched; deploy-proxmox.yml owns that copy. The MWAN VM also needs
-    # this build so the agent unit on the VM has something to copy.
-    - name: Build unified mwan Go binary on controller
-      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
-
+    # untouched; deploy-proxmox.yml owns that copy. The binary comes from the
+    # release the operator named with `configs deploy --release <tag>`, which
+    # staged it under mwan_release_dir after verifying its attestation.
     - name: Push the deploy-gate binary to the Proxmox delegate
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        src: "{{ mwan_release_dir }}/linux_amd64/mwan"
         dest: /usr/local/sbin/mwan-deploy-gate
         mode: "0755"
+
+    - name: Verify the deploy-gate binary is the released commit
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.import_tasks: tasks/verify-mwan-release.yml
+      vars:
+        mwan_installed_binary: /usr/local/sbin/mwan-deploy-gate
 
     - name: Verify internet connectivity before deploy
       delegate_to: "{{ mwan_proxmox_delegate }}"
@@ -268,10 +272,15 @@
 
     - name: Deploy mwan unified binary to MWAN VM
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        src: "{{ mwan_release_dir }}/linux_amd64/mwan"
         dest: /usr/local/bin/mwan
         mode: "0755"
       notify: Restart mwan-ifmgr@wan
+
+    - name: Verify the MWAN VM binary is the released commit
+      ansible.builtin.import_tasks: tasks/verify-mwan-release.yml
+      vars:
+        mwan_installed_binary: /usr/local/bin/mwan
 
     - name: Deploy mwan agent systemd unit on MWAN VM
       ansible.builtin.copy:

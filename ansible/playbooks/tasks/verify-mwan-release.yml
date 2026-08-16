@@ -1,0 +1,30 @@
+---
+# Confirms the mwan binary just installed on a Linux target is the one the
+# deploy staged: it must report the commit the release tag points at.
+#
+# `configs deploy <playbook> --release <tag>` downloads the release, verifies
+# its GitHub attestations, unpacks it, and passes mwan_release_commit into the
+# play; a run without --release fails when the first task reads it. The
+# caller sets mwan_installed_binary to the path it just copied to.
+#
+# Not used inside the OPNsense guest: there the binary is installed under a
+# mwan-opnsense name, and that name fast-paths straight into the daemon serve
+# loop, so its identity is read through the daemon's Version RPC instead.
+
+- name: Read installed mwan build identity
+  ansible.builtin.command:
+    cmd: "{{ mwan_installed_binary }} opnsense version"
+  register: mwan_installed_version
+  changed_when: false
+
+- name: Fail unless the installed mwan reports the released commit
+  ansible.builtin.assert:
+    that:
+      - mwan_installed_version.stdout is search('commit=[0-9a-f]+')
+      - mwan_release_commit is match('^' ~ (mwan_installed_version.stdout | regex_search('commit=([0-9a-f]+)', '\\1') | first))
+    fail_msg: >-
+      {{ mwan_installed_binary }} reports "{{ mwan_installed_version.stdout }}"
+      but release {{ mwan_release_tag }} is commit {{ mwan_release_commit }}.
+    success_msg: >-
+      {{ mwan_installed_binary }} is release {{ mwan_release_tag }}
+      ({{ mwan_release_commit[:8] }}).

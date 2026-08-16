@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"goodkind.io/configs/internal/baseline"
 	"goodkind.io/configs/internal/lint"
 	"goodkind.io/configs/internal/redact"
+	"goodkind.io/configs/internal/release"
 	"goodkind.io/configs/internal/vault"
 )
 
@@ -232,15 +234,76 @@ func runSetSecrets(_ []string) error {
 	return nil
 }
 
+// releaseCacheRoot is where staged releases live, relative to the repository
+// root the binary runs from. It sits under the ignored .make tree.
+const releaseCacheRoot = ".make/releases"
+
 func runDeploy(args []string) error {
 	opts, err := parseDeploy(args)
 	if err != nil {
 		return err
 	}
+	if opts.ReleaseTag != "" {
+		extraVars, err := stageRelease(context.Background(), opts.ReleaseTag)
+		if err != nil {
+			slog.Error("release stage failed", "tag", opts.ReleaseTag, "err", err)
+			return errors.New("release stage failed")
+		}
+		opts.ExtraVars = append(opts.ExtraVars, extraVars...)
+	}
 	if err := ansible.Deploy(opts); err != nil {
 		return errors.New("deploy failed")
 	}
 	return nil
+}
+
+// stageRelease downloads and verifies the tagged release and returns the extra
+// vars that tell the playbook where the staged binaries are and which commit
+// they must report. The playbooks read those variables bare, so a deploy that
+// installs mwan without --release fails at load rather than shipping whatever
+// was built last.
+func stageRelease(ctx context.Context, tag string) ([]string, error) {
+	staged, err := release.Fetch(ctx, release.FetchOptions{
+		Tag:        tag,
+		CacheRoot:  releaseCacheRoot,
+		Token:      githubToken(ctx),
+		APIBaseURL: "",
+		Client:     nil,
+		Verify:     nil,
+		Log:        slog.Default(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stage release %s: %w", tag, err)
+	}
+	vars := map[string]string{
+		"mwan_release_tag":    staged.Tag,
+		"mwan_release_commit": staged.Commit,
+		"mwan_release_dir":    staged.Dir,
+	}
+	encoded, err := json.Marshal(vars)
+	if err != nil {
+		slog.ErrorContext(ctx, "release vars encode failed", "err", err)
+		return nil, fmt.Errorf("encode release vars: %w", err)
+	}
+	slog.InfoContext(ctx, "release staged", "tag", staged.Tag, "commit", staged.Commit, "dir", staged.Dir)
+	return []string{string(encoded)}, nil
+}
+
+// githubToken returns the token the GitHub API calls use: GITHUB_TOKEN when
+// set, otherwise the gh CLI's stored login, otherwise empty. The releases are
+// public, so an empty token still works and only lowers the rate limit.
+func githubToken(ctx context.Context) string {
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+		slog.DebugContext(ctx, "github token from environment")
+		return token
+	}
+	out, err := exec.CommandContext(ctx, "gh", "auth", "token").Output()
+	if err != nil {
+		slog.WarnContext(ctx, "gh auth token unavailable, continuing anonymously", "err", err)
+		return ""
+	}
+	slog.DebugContext(ctx, "github token from gh")
+	return strings.TrimSpace(string(out))
 }
 
 // proxmoxAutomationPrincipal is the Proxmox API principal both hypervisors
@@ -375,6 +438,11 @@ func applyDeployArg(opts *ansible.DeployOptions, args []string, index int) (int,
 		return 2, nil
 	case strings.HasPrefix(arg, "--limit="):
 		opts.Limit = strings.TrimPrefix(arg, "--limit=")
+	case arg == "--release" && index+1 < len(args):
+		opts.ReleaseTag = args[index+1]
+		return 2, nil
+	case strings.HasPrefix(arg, "--release="):
+		opts.ReleaseTag = strings.TrimPrefix(arg, "--release=")
 	case arg == "--extra-var" && index+1 < len(args):
 		opts.ExtraVars = append(opts.ExtraVars, args[index+1])
 		return 2, nil

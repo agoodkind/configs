@@ -75,7 +75,9 @@ mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
 mwan_opnsense_host_reconnect: "2s"
 mwan_opnsense_host_hb_interval: "30s"
 mwan_opnsense_host_hb_timeout: "10s"
-mwan_opnsense_host_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+# The released linux binary the deploy staged; mwan_release_dir comes from
+# `configs deploy --release <tag>` and is unset without it.
+mwan_opnsense_host_binary_local: "{{ mwan_release_dir }}/linux_amd64/mwan"
 
 # Cloudflared OOB tunnel paths (non-secret). The enabled flag and per-host
 # resolvers/credentials live in the per-hypervisor group_vars.

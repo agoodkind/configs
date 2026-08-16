@@ -23,9 +23,6 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
-    - name: Build mwan binary on controller
-      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
-
     - name: Ensure /etc/mwan exists
       ansible.builtin.file:
         path: /etc/mwan
@@ -75,12 +72,17 @@
 
     - name: Deploy mwan unified binary
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        src: "{{ mwan_release_dir }}/linux_amd64/mwan"
         dest: /usr/local/bin/mwan
         mode: "0755"
       notify:
         - Restart mwan-agent
         - Restart mwan-ifmgr
+
+    - name: Verify the failover binary is the released commit
+      ansible.builtin.import_tasks: tasks/verify-mwan-release.yml
+      vars:
+        mwan_installed_binary: /usr/local/bin/mwan
 
     - name: Deploy /etc/mwan/config.toml
       ansible.builtin.template:
