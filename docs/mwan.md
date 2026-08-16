@@ -307,35 +307,69 @@ connectivity rolls back.
 The worry is whether a packet leaves the NIC fast path and gets processed
 twice.
 
+**Re-done work:** A second kernel copies or forwards a packet that one
+kernel already handled. Impact: extra host CPU, extra memory copies, and
+virtio offloads instead of the NIC's DMA path. MWAN's nftables still run
+once, in the chokepoint guest.
+
 MWAN never pulls forwarded traffic into userspace. It only programs
 routing tables, policy rules, and nftables. Any slower path is the
 hypervisor attach, not the daemon.
 
-**ISP passthrough (ISP-1, ISP-2).** No. The NIC DMAs into the chokepoint
-guest. One kernel forwards and NATs. The hypervisor does not see the
-packet. The guest keeps the NIC's offloads.
+**ISP passthrough (ISP-1, ISP-2).** No re-done work. The NIC DMAs into the
+chokepoint. One kernel forwards and NATs.
 
-**ISP virtio (ISP-3, and every testbed WAN).** Yes. The host kernel
-already received the packet on a bridged NIC. vhost-net then copies it
-into the guest, and the guest kernel forwards and NATs it again. The
-guest sees virtio-net, so it uses virtio offloads instead of the physical
-NIC's DMA path. vhost-net keeps that copy in the host kernel. See
+```mermaid
+flowchart LR
+  nic[Physical_NIC]
+  guest[Chokepoint_kernel]
+  nic -->|DMA| guest
+```
+
+**ISP virtio (ISP-3, and every testbed WAN).** Re-done work. The host
+kernel already received the packet. vhost-net copies it into the guest,
+and the guest kernel forwards and NATs it again. The guest uses virtio
+offloads instead of NIC DMA. vhost-net keeps that copy in the host
+kernel. See
 [Virtio-networking and vhost-net](https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net).
 
-**Internal bridge (mwanbr).** Yes, on every LAN packet, even when the WAN
-is passthrough. Client `3eef::10` behind `router-1` out ISP-1:
+```mermaid
+flowchart LR
+  nic[Physical_NIC]
+  host[Host_kernel_and_bridge]
+  vq[vhost-net]
+  guest[Chokepoint_kernel]
+  nic --> host
+  host --> vq
+  vq --> guest
+```
 
-1. The router guest already forwarded the packet.
-2. The host kernel copies it in, L2-forwards on the Linux bridge, and
-   copies it out again.
-3. The chokepoint guest forwards and NATs.
-4. ISP-1 passthrough DMAs it to the wire.
+**Internal bridge (mwanbr).** Re-done work on every LAN packet, even when
+the WAN is passthrough. Client `3eef::10` behind `router-1` out ISP-1.
 
-The WAN passthrough does not undo steps 1 to 3. That is the re-done work
-at 100 Gbit/s.
+```mermaid
+flowchart LR
+  lan[LAN]
+  r1[router_1_kernel]
+  vq1[vhost-net]
+  br[Host_mwanbr]
+  vq2[vhost-net]
+  mwan[Chokepoint_kernel]
+  nic[ISP_1_NIC]
+  lan --> r1
+  r1 --> vq1
+  vq1 --> br
+  br --> vq2
+  vq2 --> mwan
+  mwan -->|DMA| nic
+```
 
-| Path | Leaves the NIC fast path? | Re-does work? |
+The router already forwarded. The host copies in, L2-forwards, and copies
+out. The chokepoint forwards and NATs. WAN passthrough does not undo the
+two virtio hops.
+
+| Path | Re-done work | Impact at 100 Gbit/s |
 | --- | --- | --- |
-| ISP passthrough | No | No. One guest kernel. |
-| ISP virtio | Yes. Host kernel, then virtio. | Yes. Host kernel, then guest kernel. |
-| Internal bridge | Yes. Two virtio hops and a software bridge. | Yes. Router guest, host bridge, then chokepoint guest. |
+| ISP passthrough | None. One guest kernel. | NIC DMA and offloads stay in the guest. |
+| ISP virtio | Host kernel, then guest kernel. | Extra copy and host CPU. Guest loses NIC DMA. |
+| Internal bridge | Router guest, host bridge, then chokepoint guest. | Two extra copies on every LAN packet. WAN passthrough does not remove them. |
