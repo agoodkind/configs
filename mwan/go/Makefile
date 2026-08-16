@@ -45,7 +45,14 @@ GO_MK_MODULES := go-build.mk go-release.mk
 # the gateway while still running on a host that has neither, which is what the
 # scp-and-run deploy contract needs. freebsd stays pure Go because the yangpub
 # files are linux-tagged and the C libraries have no cross toolchain here.
-RELEASE_PLATFORMS := linux/amd64 freebsd/amd64
+#
+# RELEASE_PLATFORMS is a default, not an override: each job of the release
+# matrix passes its own single platform in the environment, and this must yield
+# to it. Forcing both here made every job build and archive both platforms, and
+# once BuildTime was stamped the two jobs' copies of one archive stopped being
+# identical; the publish step's merged download then carried a freebsd archive
+# no job had attested, and release 202608161945-4-9244335 failed verification.
+RELEASE_PLATFORMS ?= linux/amd64 freebsd/amd64
 RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64 mwan:$(CMD):platforms=freebsd/amd64
 
 # gobgp's only cgo symbol is a memory-reporting helper used solely by its tests.
