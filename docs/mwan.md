@@ -368,7 +368,10 @@ The router already forwarded. The host copies in, L2-forwards, and copies
 out. The chokepoint forwards and NATs. WAN passthrough does not undo the
 two virtio hops.
 
-| Path | Re-done work | Impact at 100 Gbit/s |
+Worked example: one ISP at 100 Gbit/s. The hop list does not change with
+rate. The extra copies are what would run out of host CPU first.
+
+| Path | Re-done work | Impact |
 | --- | --- | --- |
 | ISP passthrough | None. One guest kernel. | NIC DMA and offloads stay in the guest. |
 | ISP virtio | Host kernel, then guest kernel. | Extra copy and host CPU. Guest loses NIC DMA. |
