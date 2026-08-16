@@ -304,50 +304,38 @@ connectivity rolls back.
 
 ## Scalability
 
-Forwarded packets stay in the kernel. MWAN programs routing tables, policy
-rules, and nftables. It does not read or copy that traffic in userspace.
+The worry is whether a packet leaves the NIC fast path and gets processed
+twice.
 
-The scale question is the hop list at a high line rate, here 100 Gbit/s per
-link. This is a path walk, not a measurement.
+MWAN never pulls forwarded traffic into userspace. It only programs
+routing tables, policy rules, and nftables. Any slower path is the
+hypervisor attach, not the daemon.
 
-At 100 Gbit/s the guest still only forwards and NATs in its own kernel.
-What changes is how many other kernels copy the packet before that.
+**ISP passthrough (ISP-1, ISP-2).** No. The NIC DMAs into the chokepoint
+guest. One kernel forwards and NATs. The hypervisor does not see the
+packet. The guest keeps the NIC's offloads.
 
-**ISP passthrough (ISP-1, ISP-2).** The physical NIC DMAs into the
-chokepoint guest. The guest kernel forwards and applies nftables. The
-hypervisor stays out of the packet path. The guest keeps the NIC's own
-offloads. This is the same class of path as a physical router.
-
-**ISP virtio (ISP-3, and every testbed WAN).** The packet hits a host NIC,
-then a host Linux bridge, then a virtio-net virtqueue into the guest.
-Proxmox virtio-net uses vhost-net, which keeps that copy in the host
-kernel. See
+**ISP virtio (ISP-3, and every testbed WAN).** Yes. The host kernel
+already received the packet on a bridged NIC. vhost-net then copies it
+into the guest, and the guest kernel forwards and NATs it again. The
+guest sees virtio-net, so it uses virtio offloads instead of the physical
+NIC's DMA path. vhost-net keeps that copy in the host kernel. See
 [Virtio-networking and vhost-net](https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net).
-The host kernel and the guest kernel both touch the packet. The guest sees
-a virtio NIC, so it loses the physical NIC's DMA fast path and uses virtio
-offloads instead.
 
-**Internal bridge (mwanbr).** Every packet between a LAN router and the
-chokepoint crosses this path, even when the WAN is passthrough. Example:
-client `3eef::10` behind `router-1` goes to ISP-1.
+**Internal bridge (mwanbr).** Yes, on every LAN packet, even when the WAN
+is passthrough. Client `3eef::10` behind `router-1` out ISP-1:
 
-1. The router guest forwards onto virtio.
-2. The hypervisor copies that into the host kernel and L2-forwards on the
-   Linux bridge.
-3. The hypervisor copies again into the chokepoint guest over virtio.
-4. The chokepoint kernel NATs and forwards.
-5. ISP-1 passthrough DMAs out the physical NIC.
+1. The router guest already forwarded the packet.
+2. The host kernel copies it in, L2-forwards on the Linux bridge, and
+   copies it out again.
+3. The chokepoint guest forwards and NATs.
+4. ISP-1 passthrough DMAs it to the wire.
 
-Steps 1 to 3 are extra kernel work that passthrough on the WAN does not
-remove. Two virtio hops plus a software bridge. The internal side is the
-part that does not keep a bare-metal fast path.
+The WAN passthrough does not undo steps 1 to 3. That is the re-done work
+at 100 Gbit/s.
 
-| Path | Host work | Guest fast path | Duplicate work |
-| --- | --- | --- | --- |
-| ISP passthrough | None | Physical NIC offloads in the guest | No |
-| ISP virtio | Host kernel, Linux bridge, vhost-net virtqueue | virtio-net offloads | Host kernel, then guest kernel |
-| Internal bridge | Two vhost-net virtqueues and a Linux bridge | virtio-net on both guests | Two guests plus the host bridge |
-
-PCI passthrough gives the guest exclusive use of a physical WAN NIC. The
-hypervisor cannot inspect or filter that NIC. Live migration is unavailable
-while the NIC is attached.
+| Path | Leaves the NIC fast path? | Re-does work? |
+| --- | --- | --- |
+| ISP passthrough | No | No. One guest kernel. |
+| ISP virtio | Yes. Host kernel, then virtio. | Yes. Host kernel, then guest kernel. |
+| Internal bridge | Yes. Two virtio hops and a software bridge. | Yes. Router guest, host bridge, then chokepoint guest. |
