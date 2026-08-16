@@ -34,7 +34,7 @@ Traffic crosses three layers.
 | --- | --- |
 | Upstream | ISP links terminate on the chokepoint |
 | Chokepoint | The main MWAN binary load-balances, translates, and speaks BGP |
-| Downstream | LAN routers peer over iBGP and announce the prefixes they route |
+| Downstream | LAN routers and the LANs behind them. Routers peer over iBGP and announce the prefixes they route |
 
 | Mark | Meaning |
 | --- | --- |
@@ -57,9 +57,9 @@ flowchart LR
     r1[router_1]
     r2[router_2]
     rN[router_N]
+    lan1[LAN_1]
+    lan2[LAN_2]
   end
-  lan1[LAN_1]
-  lan2[LAN_2]
   isp1 --> mwan
   isp2 --> mwan
   isp3 --> mwan
