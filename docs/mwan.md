@@ -15,23 +15,27 @@ and extra ISPs.
 
 ## What MWAN names
 
-MWAN names three things.
+MWAN names three things:
 
-1. The WAN VM, the chokepoint that terminates the ISPs.
-2. The whole system: that VM, the standby, the watchdog, and the LAN routers
-   in the same BGP.
-3. The one Go binary that runs on the VM, the standby, the hypervisor, and
-   the LAN router.
+- **WAN virtual machine.** A guest that terminates ISP links and is the
+  chokepoint.
+- **System.** A WAN virtual machine plus a standby speaker, a watchdog, and
+  LAN routers that share BGP. A watchdog is a process that continuously
+  monitors health and recovers the virtual machine when a change breaks
+  connectivity.
+- **Binary.** A single Go program that the virtual machine, the standby, the
+  hypervisor, and the LAN router run in different roles.
 
 ## Architecture
 
-Solid lines are current. Dashed lines are a future drop-in ISP and extra
-routers. The primary VM terminates every WAN. ISP-1 and ISP-2 load-balance.
-ISP-3 is health fallback and the standby uplink.
-
-The MWAN VM, the standby, and every router share one iBGP. Each router
-announces a `/60` slice of the internal `/56`. Each WAN carries a `/29` of
-IPv4 and a `/56` of IPv6.
+| Mark | Meaning |
+| --- | --- |
+| Solid line | A path in production today |
+| Dashed line | A future drop-in ISP, or an extra LAN router |
+| Primary VM | Terminates every WAN |
+| ISP-1, ISP-2 | Load-balance members |
+| ISP-3 | Health fallback, and the standby uplink |
+| Shared iBGP | The virtual machine, the standby, and every router share one session |
 
 ```mermaid
 flowchart LR
@@ -49,18 +53,18 @@ flowchart LR
   watchdog[Host_watchdog]
   lan1[LAN_1]
   lan2[LAN_2]
-  isp1 -->|"v4 /29 v6 /56"| mwanVm
-  isp2 -->|"v4 /29 v6 /56"| mwanVm
-  isp3 -->|"v4 /29 v6 /56"| mwanVm
-  ispN -.->|"v4 /29 v6 /56"| mwanVm
+  isp1 --> mwanVm
+  isp2 --> mwanVm
+  isp3 --> mwanVm
+  ispN -.-> mwanVm
   isp3 --> standby
   watchdog -.-> mwanVm
-  r1 -->|"/60 slice"| mwanVm
-  r1 -->|"/60 slice"| standby
-  r2 -.->|"/60 slice"| mwanVm
-  r2 -.->|"/60 slice"| standby
-  rN -.->|"/60 slice"| mwanVm
-  rN -.->|"/60 slice"| standby
+  r1 --> mwanVm
+  r1 --> standby
+  r2 -.-> mwanVm
+  r2 -.-> standby
+  rN -.-> mwanVm
+  rN -.-> standby
   r1 --> lan1
   r2 -.-> lan2
 ```
@@ -70,14 +74,14 @@ flowchart LR
 The MWAN VM terminates the ISPs, marks new flows onto a WAN, and translates
 addresses. It is the chokepoint.
 
-The standby LXC is a second speaker in the same BGP. It is not a second load
-balancer. Its uplink is ISP-3.
+The standby LXC is a second BGP speaker. Its uplink is ISP-3. Only the
+primary VM load-balances.
 
 The hypervisor watchdog watches the VM from outside it. A bad deploy rolls
 the VM back to a snapshot.
 
 The LAN router, today one OPNsense box, never sees ISP membership. It
-forwards to MWAN and announces its own `/60`.
+forwards to MWAN and announces its own LAN prefix.
 
 The Go binary is one artifact. Each host runs the subcommands its role
 needs.
@@ -200,16 +204,21 @@ rolls back.
 
 ## Scalability
 
-Packet work in the guest is kernel forward plus nftables. It is not a
-userspace copy.
+The guest kernel forwards each packet and applies nftables translation on
+the way through.
 
-Hypervisor copy depends on NIC attach. PCI passthrough on ISP-1 and ISP-2
-gives guest DMA with no host packet copy. virtio on ISP-3, management, and
-the router link copies or forwards through the host. The testbed uses virtio
-for every WAN.
+How a NIC is attached to the guest decides whether the hypervisor copies
+the packet.
 
-Passthrough risk: the host cannot filter those NICs. Live migration is
-blocked. A wedged VM takes the physical link until watchdog rollback.
+| Attach | Used on | What happens to a packet |
+| --- | --- | --- |
+| PCI passthrough | ISP-1 and ISP-2 | The guest talks to the physical NIC directly. |
+| virtio | ISP-3, management, the router link, and every testbed WAN | The hypervisor implements a virtual NIC. Each packet crosses the host on the way into the guest. |
 
-virtio risk: extra copy and a shared host path. The host can still see the
-NIC.
+PCI passthrough gives the guest exclusive use of a physical WAN NIC. The
+hypervisor cannot inspect or filter that NIC. Live migration is unavailable
+while the NIC is attached.
+
+A virtio NIC is a virtual device the hypervisor implements. Packets enter
+the guest through the host, so the host can still see the traffic. The
+virtio path copies each packet once on the way in.
