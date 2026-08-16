@@ -304,11 +304,24 @@ connectivity rolls back.
 
 ## Scalability
 
-The guest kernel forwards each packet and applies nftables translation on
-the way through.
+Forwarded packets stay in the kernel. MWAN programs routing tables, policy
+rules, and nftables. It does not read or copy that traffic in userspace.
 
 When the chokepoint is a hypervisor guest, how a NIC is attached decides
 whether the hypervisor copies the packet.
+
+| Attach | Used on | What happens to a packet |
+| --- | --- | --- |
+| PCI passthrough | ISP-1 and ISP-2 | The guest talks to the physical NIC directly. |
+| virtio | ISP-3, management, the router link, and every testbed WAN | The hypervisor implements a virtual NIC. Each packet crosses the host on the way into the guest. |
+
+PCI passthrough gives the guest exclusive use of a physical WAN NIC. The
+hypervisor cannot inspect or filter that NIC. Live migration is unavailable
+while the NIC is attached.
+
+A virtio NIC is a virtual device the hypervisor implements. Packets enter
+the guest through the host, so the host can still see the traffic. The
+virtio path copies each packet once on the way in.
 
 | Attach | Used on | What happens to a packet |
 | --- | --- | --- |
