@@ -1,3 +1,9 @@
+// Package version reports the running binary's build identity. The identity
+// itself is gklog's: goodkind.io/gklog/version carries the stamped Commit,
+// Dirty, and BuildTime, written at link time by go-makefile through GKLOG_VPKG
+// for local builds and by the release engine for released archives. This
+// package adds the one thing the stamp cannot carry, a hash of the binary as
+// it sits on disk, and presents both in the forms mwan logs and RPCs use.
 package version
 
 import (
@@ -7,18 +13,22 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	gklogversion "goodkind.io/gklog/version"
 )
 
-// These are injected at build time via:
-//
-//	go build -ldflags="-X goodkind.io/mwan/internal/version.gitCommit=$(git rev-parse --short HEAD) \
-//	                    -X goodkind.io/mwan/internal/version.gitDirty=$(git diff --quiet HEAD -- . && echo clean || echo dirty)"
-//
-// When building without ldflags (e.g. go run or plain go build) they stay
-// as the empty-string sentinel values below.
-var (
-	gitCommit = ""
-	gitDirty  = ""
+const unknown = "unknown"
+
+// dirtyStamp is the value gklog's Dirty field carries. The pipeline writes a
+// boolean word; the older "clean" and "dirty" spellings are accepted so a
+// binary stamped by hand still reports correctly.
+type dirtyStamp string
+
+const (
+	dirtyStampTrue  dirtyStamp = "true"
+	dirtyStampFalse dirtyStamp = "false"
+	dirtyStampDirty dirtyStamp = "dirty"
+	dirtyStampClean dirtyStamp = "clean"
 )
 
 // BuildVersion returns a human-readable build fingerprint of the form:
@@ -29,24 +39,13 @@ var (
 // binary. This ensures that even an uncommitted build gets a stable,
 // log-searchable identifier that matches the file on disk.
 func BuildVersion() string {
-	commit := gitCommit
-	if commit == "" {
-		commit = "unknown"
-	}
-	dirty := gitDirty
-	if dirty == "" {
-		dirty = "unknown"
-	}
-
-	binHash := BinaryHash()
-
 	var sb strings.Builder
-	sb.WriteString(commit)
-	if dirty == "dirty" {
+	sb.WriteString(GitCommit())
+	if GitDirty() == "dirty" {
 		sb.WriteString("-dirty")
 	}
 	sb.WriteString("+")
-	sb.WriteString(binHash)
+	sb.WriteString(BinaryHash())
 	return sb.String()
 }
 
@@ -63,47 +62,48 @@ func binaryHashFrom(path string) string {
 		var err error
 		path, err = os.Executable()
 		if err != nil {
-			return "unknown"
+			return unknown
 		}
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return "unknown"
+		return unknown
 	}
 	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return "unknown"
+		return unknown
 	}
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }
 
 // BuildVersionString returns a full one-line summary for startup logs.
 func BuildVersionString() string {
-	commit := gitCommit
-	if commit == "" {
-		commit = "unknown"
-	}
-	dirty := gitDirty
-	if dirty == "" {
-		dirty = "unknown"
-	}
-	return fmt.Sprintf("commit=%s dirty=%s binhash=%s", commit, dirty, BinaryHash())
+	return fmt.Sprintf("commit=%s dirty=%s binhash=%s", GitCommit(), GitDirty(), BinaryHash())
 }
 
-// GitCommit returns the build-time-injected git commit, or "unknown".
+// GitCommit returns the stamped git commit, or "unknown".
 func GitCommit() string {
-	if gitCommit == "" {
-		return "unknown"
-	}
-	return gitCommit
+	return stampedOrUnknown(gklogversion.Commit)
 }
 
-// GitDirty returns "clean", "dirty", or "unknown" based on the
-// build-time-injected flag.
+// GitDirty returns "clean", "dirty", or "unknown".
 func GitDirty() string {
-	if gitDirty == "" {
-		return "unknown"
+	switch dirtyStamp(gklogversion.Dirty) {
+	case dirtyStampTrue, dirtyStampDirty:
+		return "dirty"
+	case dirtyStampFalse, dirtyStampClean:
+		return "clean"
+	default:
+		return unknown
 	}
-	return gitDirty
+}
+
+// stampedOrUnknown normalizes an unstamped value: gklog's own default and an
+// empty string both mean the field was never written.
+func stampedOrUnknown(value string) string {
+	if value == "" {
+		return unknown
+	}
+	return value
 }

@@ -11,11 +11,14 @@
 # monolith entrypoints, plus a govulncheck wrapper that allowlists a
 # specific known gobgp CVE.
 
-# Identity. mwan's internal/version pkg uses lowercase unexported fields
-# (gitCommit, gitDirty), so VPKG canonical stamping is skipped. Pre-populate
-# GO_BUILD_LDFLAGS BEFORE -include $(GO_MK); go-build.mk's ?= preserves it.
-BINARY   := mwan
-CMD      := ./cmd/$(BINARY)
+# Identity. Build identity is gklog's: go-makefile stamps Commit, Dirty, and
+# BuildTime into goodkind.io/gklog/version for local builds and the release
+# engine does the same for released archives, so a released binary reports the
+# commit it was cut from and a deploy can check it after the copy. mwan's own
+# internal/version reads those stamps and adds the on-disk binary hash.
+BINARY     := mwan
+CMD        := ./cmd/$(BINARY)
+GKLOG_VPKG := goodkind.io/gklog/version
 
 # The release engine writes dist/<name>_<goos>_<goarch>/, and the reusable
 # build workflow uploads exactly that directory, so DIST_DIR is dist and the
@@ -31,13 +34,6 @@ LOCAL_BIN := bin
 # builds (linux CI gates, a darwin host with the cgo deps provisioned) keep
 # cgo on and compile the yangpub binding.
 GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
-
-MWAN_VERSION_PKG := goodkind.io/mwan/internal/version
-GIT_COMMIT       := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-GIT_DIRTY        := $(shell git diff --quiet HEAD -- . 2>/dev/null && echo clean || echo dirty)
-GO_BUILD_LDFLAGS := \
-	-X $(MWAN_VERSION_PKG).gitCommit=$(GIT_COMMIT) \
-	-X $(MWAN_VERSION_PKG).gitDirty=$(GIT_DIRTY)
 
 # Pipeline modules. go-release.mk turns every shipped artifact into a signed,
 # checksummed, attested GitHub release, which is what the deploy path installs
