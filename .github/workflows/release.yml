@@ -1,15 +1,15 @@
 name: Release
 
 # Releases the mwan artifacts every deploy installs. The deploy playbooks fetch
-# a published archive by pinned version and checksum, so this workflow is the
-# only place a shipped binary is built.
+# a published archive by version, so this workflow is the only place a shipped
+# binary is built.
 #
-# cgo stays off at the workflow level on purpose. The release set declares the
-# gateway variant with its own cgo=1 flag, so only that binary links libyang
-# and libsysrepo; every other artifact stays pure Go and statically linked,
-# which is what the scp-and-run deploy contract needs. The C libraries are
-# still provisioned, because the release engine runs the cgo-deps hook for any
-# consumer that declares GO_MK_CGO_DEPS regardless of this input.
+# cgo stays off at the workflow level on purpose. The release set declares
+# which binary links libyang and libsysrepo through its own cgo=1 flag, so the
+# linux artifact carries the publishing binding, statically linked, and the
+# freebsd artifact stays pure Go. The C libraries are still provisioned,
+# because the release engine runs the cgo-deps hook for any consumer that
+# declares GO_MK_CGO_DEPS regardless of this input.
 
 on:
   push:
@@ -29,6 +29,7 @@ jobs:
       submodules: "true"
       apt_packages: libpcre2-dev
       platforms: linux/amd64 freebsd/amd64
-      # Both asset names are verified after publish, so a release that dropped
-      # the gateway variant fails the run instead of shipping a partial set.
-      binary: mwan mwan-wanconfig
+      # One binary name, verified after publish for every platform, so a
+      # release that dropped an archive fails the run instead of shipping a
+      # partial set.
+      binary: mwan
