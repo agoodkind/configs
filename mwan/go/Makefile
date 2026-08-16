@@ -95,8 +95,15 @@ export LD_LIBRARY_PATH := $(GO_MK_CGO_PREFIX)/lib$(if $(strip $(LD_LIBRARY_PATH)
 # pcre2 and libm are named explicitly because a static archive carries no
 # transitive dependencies and these land last on the link line, which is where
 # a static linker resolves a dependency of an earlier archive.
-export GOFLAGS := -tags=osusergo,netgo$(if $(strip $(GOFLAGS)), $(GOFLAGS))
-export CGO_LDFLAGS := -static -lpcre2-8 -lm
+#
+# They attach to the release target rather than the file, so they reach the
+# release build and nothing else. A plain export puts them in the environment of
+# every child process, which hands a host tool the target's link flags: building
+# golangci-lint on macOS then fails with "library 'crt0.o' not found", because
+# darwin has no static libc. go-makefile keeps its own cross-compiler settings
+# out of the global environment for the same reason.
+release: export GOFLAGS := -tags=osusergo,netgo$(if $(strip $(GOFLAGS)), $(GOFLAGS))
+release: export CGO_LDFLAGS := -static -lpcre2-8 -lm
 
 .DEFAULT_GOAL := check
 
