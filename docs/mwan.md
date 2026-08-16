@@ -248,6 +248,36 @@ flowchart LR
 | Future ISP-N | The operator adds ISP-N with `192.0.2.16/29` and `2001:db8:10::/56`. `router-1` still sees one upstream. No router firewall change. |
 | Second router | `router-2` joins iBGP and announces `3eef:0:0:10::/60`. Return traffic follows that announcement. MWAN config does not change. |
 
+## Out-of-band management
+
+The hypervisor reaches guests without using their IP stack.
+
+vsock is a host-to-guest socket family (`AF_VSOCK`). It rides virtio and
+does not use Ethernet or the guest IP stack. See
+[vsock(7)](https://www.man7.org/linux/man-pages/man7/vsock.7.html).
+Proxmox attaches it as a qemu virtio device on the guest. See
+[QEMU/KVM Virtual Machines](https://pve.proxmox.com/pve-docs/chapter-qm.html).
+
+- **Chokepoint and fallback:** Each speaker's agent serves gRPC over
+  vsock. The hypervisor uses that channel for health, config state, and
+  BGP withdraw, so those calls still work when the guest network is down.
+- **OPNsense:** FreeBSD has no vsock to the host, so the path is
+  virtio-serial, a paravirtual serial port. gRPC runs over that serial.
+  A wedge-proof host path keeps the qemu chardev open so the guest never
+  permanently wedges. See
+  [wedge-proof serial](superpowers/wedgeproof/spec.md).
+
+```mermaid
+flowchart LR
+  host[Hypervisor]
+  mwan[MWAN]
+  fb[Fallback]
+  r1[router_1]
+  host -->|"vsock gRPC"| mwan
+  host -->|"vsock gRPC"| fb
+  host -->|"virtio-serial gRPC"| r1
+```
+
 ## By component
 
 The chokepoint terminates ISPs and translates. The fallback is a second
