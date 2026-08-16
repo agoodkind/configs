@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package yangpub publishes daemon state into the wanconfig management
 // datastore (sysrepo) and registers operational providers. It carries
 // exactly what publishing needs: connect, open a session, set values by
@@ -5,12 +7,16 @@
 // so the package holds no write acceptance, no validation, and no
 // transaction machinery beyond apply.
 //
-// The real implementation binds libsysrepo through cgo on linux, the only
-// platform sysrepo supports (it requires robust pthread mutexes, which
-// darwin lacks). The go-makefile cgo hook provisions the pinned libraries
-// where the gates run, so linux CI checks these files fully; every other
-// build gets a stub whose constructor returns ErrUnavailable, and no
-// pure-Go target carries C.
+// The package is linux-only. sysrepo requires robust pthread mutexes,
+// which darwin lacks, and the FreeBSD router build has no management
+// surface to publish into, so those binaries leave the package out entirely
+// rather than carrying a stub of a feature they can never use; the one
+// caller in cmd/mwan is split by platform the same way. On linux the real
+// implementation binds libsysrepo through cgo, and the go-makefile cgo hook
+// provisions the pinned libraries where the gates run, so linux CI checks
+// these files fully. A linux build with cgo off gets a stub whose
+// constructor returns ErrUnavailable, so a development build still compiles
+// and reports why it cannot publish; the release guard rejects shipping it.
 package yangpub
 
 import (

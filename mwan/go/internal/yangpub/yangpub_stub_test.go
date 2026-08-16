@@ -1,4 +1,4 @@
-//go:build !linux || !cgo
+//go:build linux && !cgo
 
 package yangpub
 
@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// TestNewReportsUnavailableWithoutBinding pins the contract every non-cgo
+// TestNewReportsUnavailableWithoutBinding pins the contract a cgo-off linux
 // build serves: the constructor yields no publisher and an error callers
-// can recognize, so a daemon on a platform without the binding keeps
-// running instead of failing to start.
+// can recognize, so a daemon built without the binding keeps running
+// instead of failing to start.
 func TestNewReportsUnavailableWithoutBinding(t *testing.T) {
 	publisher, err := New(slog.New(slog.DiscardHandler))
 	if publisher != nil {
