@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	gklogversion "goodkind.io/gklog/version"
 )
 
 func TestBuildVersion_NonEmpty(t *testing.T) {
@@ -17,13 +19,45 @@ func TestBuildVersion_NonEmpty(t *testing.T) {
 }
 
 func TestBuildVersion_DirtyFlag(t *testing.T) {
-	// Temporarily set gitDirty to "dirty" and confirm the -dirty suffix appears.
-	orig := gitDirty
-	gitDirty = "dirty"
-	defer func() { gitDirty = orig }()
-	v := BuildVersion()
-	if !strings.Contains(v, "-dirty") {
-		t.Fatalf("BuildVersion() with dirty=%q: want -dirty in %q", gitDirty, v)
+	// gklog stamps Dirty as a boolean word; confirm the -dirty suffix appears
+	// for it and for the older spelling a hand build might use.
+	orig := gklogversion.Dirty
+	defer func() { gklogversion.Dirty = orig }()
+	for _, stamp := range []string{"true", "dirty"} {
+		gklogversion.Dirty = stamp
+		v := BuildVersion()
+		if !strings.Contains(v, "-dirty") {
+			t.Fatalf("BuildVersion() with Dirty=%q: want -dirty in %q", stamp, v)
+		}
+	}
+}
+
+func TestGitDirty_MapsGklogStamps(t *testing.T) {
+	orig := gklogversion.Dirty
+	defer func() { gklogversion.Dirty = orig }()
+	cases := map[string]string{
+		"true": "dirty", "dirty": "dirty",
+		"false": "clean", "clean": "clean",
+		"": "unknown", "unknown": "unknown", "maybe": "unknown",
+	}
+	for stamp, want := range cases {
+		gklogversion.Dirty = stamp
+		if got := GitDirty(); got != want {
+			t.Fatalf("GitDirty() with Dirty=%q = %q, want %q", stamp, got, want)
+		}
+	}
+}
+
+func TestGitCommit_ReadsGklogStamp(t *testing.T) {
+	orig := gklogversion.Commit
+	defer func() { gklogversion.Commit = orig }()
+	gklogversion.Commit = "03cf29ac"
+	if got := GitCommit(); got != "03cf29ac" {
+		t.Fatalf("GitCommit() = %q, want the gklog stamp", got)
+	}
+	gklogversion.Commit = ""
+	if got := GitCommit(); got != "unknown" {
+		t.Fatalf("GitCommit() with empty stamp = %q, want unknown", got)
 	}
 }
 
