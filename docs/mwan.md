@@ -304,21 +304,21 @@ connectivity rolls back.
 
 ## Scalability
 
-Unnecessary work is host copies and host L2 forwards. They exist only
-when the packet rides virtio or a Linux bridge. They are not MWAN's NAT.
-MWAN programs routes, policy rules, and nftables once, in the guest. It
-never pulls forwarded packets into userspace.
+Host copies sit on the virtual-NIC hop between the router and the
+chokepoint. MWAN programs routes, policy rules, and nftables in the
+guest kernel. Forwarded packets stay in the guest kernels.
 
-This homelab has not measured these paths. The numbers below are other
-people's 10 Gbit/s benches.
+**Host copies:** The hypervisor copies each packet between guests that
+share a virtual NIC. Giving the NIC to one guest skips that copy.
 
-Virtio on a Linux bridge is Proxmox's default guest NIC. Passing a WAN
-NIC into a routing guest is the usual firewall-VM pattern, not that
-default. Two guests on one Linux bridge is the default east-west path.
-That path keeps the copies.
+A LAN speedtest on the worked-example path uploaded at 299 Mbit/s and
+downloaded at 66 Mbit/s. Hypervisor copy threads peaked at 0.28 cores
+on a 12-core host. Faster links were not measured.
 
-**ISP passthrough (ISP-1, ISP-2).** No unnecessary work. The NIC DMAs
-into the chokepoint. One kernel forwards and NATs.
+### Sample scenarios
+
+**Direct WAN.** The ISP NIC is given to the chokepoint. The NIC DMAs
+into that guest. The WAN hop has no host copy.
 
 ```mermaid
 flowchart LR
@@ -327,64 +327,67 @@ flowchart LR
   nic -->|DMA| guest
 ```
 
-**ISP virtio (ISP-3, and every testbed WAN).** Unnecessary work. The host
-kernel already received the packet. vhost-net copies it into the guest.
-The guest kernel then forwards and NATs. The guest uses virtio offloads
-instead of NIC DMA. vhost-net keeps that copy in the host kernel. See
-[Virtio-networking and vhost-net](https://www.redhat.com/en/blog/deep-dive-virtio-networking-and-vhost-net).
+**Virtual WAN.** The ISP NIC stays on the host. The host copies each
+packet into the chokepoint. The WAN hop pays a host copy.
 
 ```mermaid
 flowchart LR
   nic[Physical_NIC]
-  host[Host_kernel_and_bridge]
-  vq[vhost-net]
+  host[Host_kernel]
+  copy[Host_copy]
   guest[Chokepoint_kernel]
   nic --> host
-  host --> vq
-  vq --> guest
+  host --> copy
+  copy --> guest
 ```
 
-**Internal bridge (mwanbr).** Unnecessary work on every LAN packet, even
-when the WAN is passthrough. Client `3eef::10` behind `router-1` out
-ISP-1.
+**Two guests on one host bridge.** The router guest sends the packet to
+the chokepoint guest. The host copies it in, L2-forwards, and copies it
+out.
 
 ```mermaid
 flowchart LR
   lan[LAN]
   r1[router_1_kernel]
-  vq1[vhost-net]
-  br[Host_mwanbr]
-  vq2[vhost-net]
+  copy1[Host_copy]
+  br[Host_bridge]
+  copy2[Host_copy]
   mwan[Chokepoint_kernel]
   nic[ISP_1_NIC]
   lan --> r1
-  r1 --> vq1
-  vq1 --> br
-  br --> vq2
-  vq2 --> mwan
+  r1 --> copy1
+  copy1 --> br
+  br --> copy2
+  copy2 --> mwan
   mwan -->|DMA| nic
 ```
 
-The router already forwarded. The host copies in, L2-forwards, and copies
-out. The chokepoint forwards and NATs. WAN passthrough does not undo the
-two virtio hops.
+| Scenario | Host copies |
+| --- | --- |
+| Direct WAN | None on the WAN hop |
+| Virtual WAN | On the WAN hop |
+| Two guests on one host bridge | On every LAN packet to the chokepoint |
 
-At 10 Gbit/s, qemu `virtio-net-pci` filled the same 9.4 Gbit/s as native
-and VFIO passthrough. qemu `-net nic,model=virtio` got 3.6 Gbit/s. See
-[10G NIC performance: VFIO vs virtio](https://linux-kvm.org/index.php?title=10G_NIC_performance:_VFIO_vs_virtio).
-Proxmox virtio is `virtio-net-pci` plus vhost-net, so the 3.6 Gbit/s
-path is not this attach.
+ISP-1 and ISP-2 in the worked example use direct WAN. ISP-3 uses virtual
+WAN. Every LAN packet to the chokepoint uses the two-guest bridge.
 
-Removing one extra transmit copy cut host CPU by up to 15% on large
-packets from a guest to an external network. That saving does not apply
-to guest-to-guest traffic. See
-[RHEL 7 network tuning techniques](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/virtualization_tuning_and_optimization_guide/sect-virtualization_tuning_optimization_guide-networking-techniques).
+The WAN hop is skippable by giving the ISP NIC to the chokepoint. The
+two-guest hop remains while the router and the chokepoint are separate
+guests on one bridge.
 
-A 10 Gbit/s link still fills with `virtio-net-pci`. The copies show up as
-host CPU and latency. A faster WAN would hit that CPU sooner.
+### Worked example
 
-| Path | Unnecessary work | Published numbers | How common |
-| --- | --- | --- | --- |
-| ISP passthrough | None. One guest kernel. | Same 9.4 Gbit/s as native at 10 Gbit/s. | Usual for firewall VMs. Not the Proxmox default. |
-| ISP virtio | Host kernel, then guest kernel. | Same 9.4 Gbit/s as native on `virtio-net-pci`. One TX copy is up to 15% host CPU on large packets to an external network. | Proxmox default guest NIC. |
-| Internal bridge | Router guest, host bridge, then chokepoint guest. | Two copies on every LAN packet. The 15% TX saving does not apply to guest-to-guest. | Proxmox default for two guests on one bridge. |
+Client `3eef::10` behind `router-1` leaves on ISP-1. ISP-1 is direct WAN.
+The packet crosses the two-guest bridge, then DMAs out ISP-1.
+
+On 16 Aug 2026 a LAN client ran a public speedtest on this path.
+
+| What | Result |
+| --- | --- |
+| Idle host busy | Median 3.63% of 12 CPUs. Peak 19.72% from other guests. |
+| Idle copy threads | About 1% of one core on the router guest and on the chokepoint guest |
+| Speedtest | 66 Mbit/s down, 299 Mbit/s up |
+| Bridge ports | 164 MB upload and 92 MB to 95 MB download on both guests |
+| Copy threads at upload peak | 15% of one core on the router guest and 13% on the chokepoint guest. Together 0.28 cores, about 2% of the host. |
+| Router guest at that peak | 1.16 cores |
+| Chokepoint guest at that peak | 0.57 cores |
