@@ -369,23 +369,22 @@ The router already forwarded. The host copies in, L2-forwards, and copies
 out. The chokepoint forwards and NATs. WAN passthrough does not undo the
 two virtio hops.
 
-At 10 Gbit/s, a well-configured virtio guest filled the same 9.4 Gbit/s
-as native and VFIO passthrough. A misconfigured virtio guest got
-3.6 Gbit/s. See
+At 10 Gbit/s, qemu `virtio-net-pci` filled the same 9.4 Gbit/s as native
+and VFIO passthrough. qemu `-net nic,model=virtio` got 3.6 Gbit/s. See
 [10G NIC performance: VFIO vs virtio](https://linux-kvm.org/index.php?title=10G_NIC_performance:_VFIO_vs_virtio).
-SR-IOV latency was close to bare metal, and about three times better
-than virtio. See
-[Increasing performance in KVM virtualization within a Tier-1 environment](https://iopscience.iop.org/article/10.1088/1742-6596/396/3/032024).
+Proxmox virtio is `virtio-net-pci` plus vhost-net, so the 3.6 Gbit/s
+path is not this attach.
+
 Removing one extra transmit copy cut host CPU by up to 15% on large
 packets from a guest to an external network. That saving does not apply
 to guest-to-guest traffic. See
 [RHEL 7 network tuning techniques](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/virtualization_tuning_and_optimization_guide/sect-virtualization_tuning_optimization_guide-networking-techniques).
 
-A 10 Gbit/s link still fills with well-configured virtio. The copies
-show up as host CPU and latency. A faster WAN would hit that CPU sooner.
+A 10 Gbit/s link still fills with `virtio-net-pci`. The copies show up as
+host CPU and latency. A faster WAN would hit that CPU sooner.
 
 | Path | Unnecessary work | Published numbers | How common |
 | --- | --- | --- | --- |
 | ISP passthrough | None. One guest kernel. | Same 9.4 Gbit/s as native at 10 Gbit/s. | Usual for firewall VMs. Not the Proxmox default. |
-| ISP virtio | Host kernel, then guest kernel. | Same 9.4 Gbit/s when configured. 3.6 Gbit/s when not. Latency about 3 times worse than SR-IOV. One TX copy is up to 15% host CPU on large packets to an external network. | Proxmox default guest NIC. |
+| ISP virtio | Host kernel, then guest kernel. | Same 9.4 Gbit/s as native on `virtio-net-pci`. One TX copy is up to 15% host CPU on large packets to an external network. | Proxmox default guest NIC. |
 | Internal bridge | Router guest, host bridge, then chokepoint guest. | Two copies on every LAN packet. The 15% TX saving does not apply to guest-to-guest. | Proxmox default for two guests on one bridge. |
