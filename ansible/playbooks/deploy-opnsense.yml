@@ -12,23 +12,18 @@
 #   go run goodkind.io/configs/cmd/configs deploy deploy-opnsense \
 #     --limit opnsense_servers
 #   go run goodkind.io/configs/cmd/configs deploy deploy-opnsense \
-#     --limit opnsense_suburban_servers
-
-- name: Build mwan-opnsense binary
-  hosts: localhost
-  gather_facts: false
-  vars:
-    repo_root: "{{ playbook_dir | dirname | dirname }}"
-  tasks:
-    - name: Build via Make
-      ansible.builtin.import_tasks: tasks/build-mwan-opnsense-binary.yml
+#     --release <tag> --limit opnsense_suburban_servers
+#
+# The binary comes from the named release: the deploy command downloads it,
+# verifies its GitHub attestation, and stages it under mwan_release_dir; a run
+# without --release fails at the first read of that variable.
 
 - name: Deploy mwan-opnsense daemon
   hosts: opnsense_servers:opnsense_suburban_servers
   gather_facts: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    mwan_opnsense_binary_local: "{{ repo_root }}/mwan/go/bin/mwan-opnsense"
+    mwan_opnsense_binary_local: "{{ mwan_release_dir }}/freebsd_amd64/mwan"
   tasks:
     - name: Run in-guest install task
       ansible.builtin.include_tasks: tasks/mwan-opnsense-deploy.yml

@@ -1,0 +1,41 @@
+---
+# Confirms the mwan binary just installed on a Linux target is the one the
+# deploy staged: it must report the commit the release tag points at.
+#
+# `configs deploy <playbook> --release <tag>` downloads the release, verifies
+# its GitHub attestations, unpacks it, and passes mwan_release_commit into the
+# play; a run without --release fails when the first task reads it. The
+# caller sets mwan_installed_binary to the path it just copied to.
+#
+# Not used inside the OPNsense guest: there the binary is installed under a
+# mwan-opnsense name, and that name fast-paths straight into the daemon serve
+# loop, so its identity is read through the daemon's Version RPC instead.
+
+- name: Read installed mwan build identity
+  ansible.builtin.command:
+    cmd: "{{ mwan_installed_binary }} opnsense version"
+  register: mwan_installed_version
+  changed_when: false
+
+# In check mode the copy above did not happen and the command did not run, so
+# there is nothing to assert; the real run is where the identity is checked.
+# The reported commit must be a real short SHA (seven hex digits or more) and a
+# prefix of the release commit; a binary reporting "unknown" or a truncated
+# value fails.
+- name: Fail unless the installed mwan reports the released commit
+  when: not ansible_check_mode
+  vars:
+    # A missing match renders as the string "None", which the hex pattern below
+    # rejects, so no presence check is needed.
+    mwan_reported_commit: >-
+      {{ mwan_installed_version.stdout | regex_search('commit=[0-9a-f]{7,40}') | string | regex_replace('^commit=', '') }}
+  ansible.builtin.assert:
+    that:
+      - mwan_reported_commit is match('^[0-9a-f]{7,40}$')
+      - mwan_release_commit.startswith(mwan_reported_commit)
+    fail_msg: >-
+      {{ mwan_installed_binary }} reports "{{ mwan_installed_version.stdout }}"
+      but release {{ mwan_release_tag }} is commit {{ mwan_release_commit }}.
+    success_msg: >-
+      {{ mwan_installed_binary }} is release {{ mwan_release_tag }}
+      ({{ mwan_release_commit[:8] }}).
