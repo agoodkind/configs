@@ -287,38 +287,48 @@ binary is one artifact with many roles.
 
 ## By function
 
-**Load balancing.** New flows get a mark. Policy routing plus 1:1 SNAT or
-NPT sends them out ISP-1 or ISP-2.
+**Load balancing:** New flows receive a mark. Policy routing plus 1:1 SNAT
+or NPT sends them out ISP-1 or ISP-2.
 
-**WAN health fallback.** ISP-3 takes new flows only after both load-balance
-members are unhealthy. Speaker failover is ordinary iBGP. The failover
-ISP masquerades, so prefix size does not matter and inbound is not served.
+**WAN health fallback:** ISP-3 takes new flows only after both
+load-balance members are unhealthy. Speaker failover is ordinary iBGP.
+The failover ISP masquerades, so prefix size does not matter and inbound
+is not served.
 
-**Future ISP.** Another WAN member on the chokepoint. It need not be
-load-balance or fallback. The router firewall does not change.
+**Future ISP:** The operator adds another WAN member on the chokepoint.
+That member need not be load-balance or fallback. The router firewall
+does not change.
 
-**Health.** WAN state is healthy, unhealthy, or unknown.
+**Health:** WAN state is healthy, unhealthy, or unknown.
 
-**Rollback.** The watchdog host takes snapshots. A deploy that breaks
+**Rollback:** The watchdog host takes snapshots. A deploy that breaks
 connectivity rolls back.
 
 ## Scalability
 
-Host copies sit on the virtual-NIC hop between the router and the
-chokepoint. MWAN programs routes, policy rules, and nftables in the
-guest kernel. Forwarded packets stay in the guest kernels.
+When the LAN router and the chokepoint run as separate guests on a
+virtual NIC, the hypervisor copies each packet on that hop.
+
+MWAN programs routes, policy rules, and nftables in the guest kernel.
+Forwarded packets stay in the guest kernels. The daemon does not copy
+packet bytes in userspace.
 
 **Host copies:** The hypervisor copies each packet between guests that
-share a virtual NIC. Giving the NIC to one guest skips that copy.
+share a virtual NIC. Giving the physical NIC to one guest skips that copy
+on that hop.
 
-A LAN speedtest on the worked-example path uploaded at 299 Mbit/s and
-downloaded at 66 Mbit/s. Hypervisor copy threads peaked at 0.28 cores
-on a 12-core host. Faster links were not measured.
+A LAN client on the worked-example path ran a public speedtest on
+16 August 2026. Upload reached 299 Mbit/s and download reached 66 Mbit/s.
+Hypervisor copy threads peaked at 0.28 cores on a 12-core host. Faster
+links were not measured.
 
 ### Sample scenarios
 
-**Direct WAN.** The ISP NIC is given to the chokepoint. The NIC DMAs
-into that guest. The WAN hop has no host copy.
+The WAN hop and the router-to-chokepoint hop are independent attach
+choices.
+
+**Direct WAN:** The ISP NIC is given to the chokepoint, so the NIC places
+packets directly into that guest. The WAN hop has no host copy.
 
 ```mermaid
 flowchart LR
@@ -327,7 +337,7 @@ flowchart LR
   nic -->|DMA| guest
 ```
 
-**Virtual WAN.** The ISP NIC stays on the host. The host copies each
+**Virtual WAN:** The ISP NIC stays on the host, so the host copies each
 packet into the chokepoint. The WAN hop pays a host copy.
 
 ```mermaid
@@ -341,9 +351,9 @@ flowchart LR
   copy --> guest
 ```
 
-**Two guests on one host bridge.** The router guest sends the packet to
-the chokepoint guest. The host copies it in, L2-forwards, and copies it
-out.
+**Two guests on one host bridge:** The router and the chokepoint run as
+separate guests. Every LAN packet to the chokepoint is copied into the
+host, forwarded on the bridge, and copied out to the chokepoint.
 
 ```mermaid
 flowchart LR
@@ -362,25 +372,29 @@ flowchart LR
   mwan -->|DMA| nic
 ```
 
-| Scenario | Host copies |
+| Scenario | Where host copies run |
 | --- | --- |
 | Direct WAN | None on the WAN hop |
 | Virtual WAN | On the WAN hop |
 | Two guests on one host bridge | On every LAN packet to the chokepoint |
 
-ISP-1 and ISP-2 in the worked example use direct WAN. ISP-3 uses virtual
-WAN. Every LAN packet to the chokepoint uses the two-guest bridge.
+In the worked example, ISP-1 and ISP-2 use Direct WAN, and ISP-3 uses
+Virtual WAN. Every LAN packet to the chokepoint also takes the two-guest
+bridge.
 
-The WAN hop is skippable by giving the ISP NIC to the chokepoint. The
-two-guest hop remains while the router and the chokepoint are separate
-guests on one bridge.
+Giving the ISP NIC to the chokepoint removes host copies from the WAN
+hop. Host copies remain on the two-guest hop for as long as the router
+and the chokepoint stay separate guests on one bridge.
 
 ### Worked example
 
-Client `3eef::10` behind `router-1` leaves on ISP-1. ISP-1 is direct WAN.
-The packet crosses the two-guest bridge, then DMAs out ISP-1.
+Client `3eef::10` sits behind `router-1` and leaves on ISP-1. ISP-1 uses
+Direct WAN, so the WAN hop has no host copy. The packet crosses the
+two-guest bridge and then DMAs out ISP-1.
 
-On 16 Aug 2026 a LAN client ran a public speedtest on this path.
+On 16 August 2026, a LAN client ran a public speedtest on this path.
+The table records idle CPU, the speedtest rates, and CPU during the
+upload peak.
 
 | What | Result |
 | --- | --- |
