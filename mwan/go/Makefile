@@ -7,9 +7,11 @@
 #
 # mwan Makefile.
 # Build/lint pipeline lives in go-makefile and is fetched at runtime.
-# Project-local: protobuf codegen, cross-builds for the Linux and FreeBSD
-# monolith entrypoints, plus a govulncheck wrapper that allowlists a
-# specific known gobgp CVE.
+# Project-local: protobuf codegen, the YANG model gate, the cgo dependency
+# recipes for the publishing binding, a docker lane for building the linux
+# gateway binary on macOS, and a govulncheck wrapper that allowlists a specific
+# known gobgp CVE. Shipped binaries come only from the CI release; nothing
+# here cross-compiles a deploy artifact.
 
 # Identity. Build identity is gklog's: go-makefile stamps Commit, Dirty, and
 # BuildTime into goodkind.io/gklog/version for local builds and the release
@@ -22,17 +24,14 @@ GKLOG_VPKG := goodkind.io/gklog/version
 
 # The release engine writes dist/<name>_<goos>_<goarch>/, and the reusable
 # build workflow uploads exactly that directory, so DIST_DIR is dist and the
-# host build lands there too. The local cross-build targets keep writing to
-# bin/, which is where the deploy playbooks read from until the fetch path
-# replaces them.
+# host build lands there too. bin/ holds only the docker lane's output.
 DIST_DIR  := dist
 LOCAL_BIN := bin
 
-# Build flags applied to every binary. cgo is never pinned anywhere: Go
-# defaults CGO_ENABLED=0 for cross-compiles without a matching C toolchain,
-# so the from-macOS cross artifacts stay pure-Go and static, while native
-# builds (linux CI gates, a darwin host with the cgo deps provisioned) keep
-# cgo on and compile the yangpub binding.
+# Build flags applied to every binary. cgo is never pinned anywhere: native
+# builds (linux CI gates, the release engine's linux job, a darwin host with
+# the cgo deps provisioned) keep cgo on and compile the yangpub binding, and
+# the freebsd release job builds pure Go because that package is linux-only.
 GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
 
 # Pipeline modules. go-release.mk turns every shipped artifact into a signed,
@@ -110,10 +109,10 @@ release: export CGO_LDFLAGS := -static
 
 .DEFAULT_GOAL := check
 
-# Acceptance gate. `make build` fails unless every shipped output compiles
-# cleanly, the publishing-enabled wanconfig binary included. Add new outputs
-# to this prerequisite list when we start shipping them.
-build: proto build-linux build-mwan-opnsense build-linux-wanconfig
+# `build` is go-build.mk's: the host binary into $(DIST_DIR) behind the check
+# gate. Shipped artifacts are the release engine's, and `make release` runs it
+# locally; the two cross-build targets that used to feed the playbooks are gone
+# because the deploy installs a published release instead.
 
 # ---------------------------------------------------------------------------
 # Project-local
@@ -124,13 +123,9 @@ BUF    ?= buf
 GOBIN  ?= $(shell go env GOPATH)/bin
 export PATH := $(GOBIN):$(PATH)
 
-HOST_GOOS   := $(shell go env GOOS)
-HOST_GOARCH := $(shell go env GOARCH)
-
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
-.PHONY: proto build-linux build-mwan-opnsense \
-        tidy fix clean yang-validate
+.PHONY: proto tidy fix clean yang-validate
 
 proto:
 	@mkdir -p gen/mwan/v1
@@ -160,30 +155,6 @@ yang-validate:
 	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_DIR)/*.yang
 
 check: yang-validate
-
-# Reusable cross-platform build template. Pulls GO_BUILD_LDFLAGS and
-# GO_BUILD_EXTRA_FLAGS from the canonical pipeline so every binary, host
-# and cross-compile, lands with the same flag set.
-#
-# $(1)=output binary name, $(2)=GOOS, $(3)=GOARCH, $(4)=cmd path
-define build_platform
-	@mkdir -p $(LOCAL_BIN)
-	GOOS=$(2) GOARCH=$(3) go build $(GO_BUILD_EXTRA_FLAGS) \
-		-ldflags='$(GO_BUILD_LDFLAGS)' \
-		-o $(LOCAL_BIN)/$(1) $(4)
-endef
-
-# build-linux and build-mwan-opnsense depend on `check`, which fans
-# out to: build vet lint test govulncheck staticcheck-extra. Full lint
-# pass is mandatory before any deploy artifact lands in $(DIST_DIR)/.
-# No CGO_ENABLED pins: both are cross-compiles from every deploy host, so
-# Go's toolchain default keeps them static; the publishing-enabled gateway
-# binary comes from the docker builder lane below.
-build-linux: check
-	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD))
-
-build-mwan-opnsense: check
-	$(call build_platform,mwan-opnsense,freebsd,amd64,$(CMD))
 
 # Cgo dependency recipes for the go-makefile hook. Each clones its pinned
 # tag and installs into the per-target prefix go.mk supplies through the
@@ -271,14 +242,19 @@ go-mk-cgo-dep-libyang:
 go-mk-cgo-dep-sysrepo: go-mk-cgo-dep-libyang
 	$(call wanconfig_cgo_dep_build,sysrepo,$(WANCONFIG_SYSREPO_VERSION),https://github.com/sysrepo/sysrepo.git,$(WANCONFIG_SYSREPO_CMAKE_FLAGS))
 
-# Publishing-enabled gateway binary (MWAN-358). Builds inside a Debian
-# trixie golang image carrying the pinned libyang/sysrepo, so the cgo
-# binding links the exact library generation and glibc the gateway runs;
-# the version pins come from the same group_vars home as the cgo hook.
+# Development lane for the publishing binding on macOS, where the C libraries
+# cannot be built natively. It builds the linux gateway binary inside a Debian
+# trixie golang image carrying the pinned libyang/sysrepo, so the cgo binding
+# links the exact library generation and glibc the gateway runs; the version
+# pins come from the same group_vars home as the cgo hook. Nothing deploys its
+# output: shipped binaries come from the CI release.
 WANCONFIG_BUILDER_IMAGE := mwan-wanconfig-builder
 
-.PHONY: build-linux-wanconfig
-build-linux-wanconfig:
+.PHONY: build-wanconfig
+build-wanconfig:
+	@command -v docker >/dev/null 2>&1 || { \
+		echo "build-wanconfig: docker is required; the binding's C libraries cannot be built on this host" >&2; \
+		exit 1; }
 	docker build --platform linux/amd64 \
 		--build-arg LIBYANG_VERSION=$(WANCONFIG_LIBYANG_VERSION) \
 		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
@@ -287,11 +263,11 @@ build-linux-wanconfig:
 	docker run --rm --platform linux/amd64 \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
 		-v mwan-wanconfig-gomod:/go/pkg/mod \
-		-e GOWORK=off -e CGO_ENABLED=1 \
+		-e GOWORK=off \
 		$(WANCONFIG_BUILDER_IMAGE) \
 		go build $(GO_BUILD_EXTRA_FLAGS) \
 		-ldflags='$(GO_BUILD_LDFLAGS)' \
-		-o $(LOCAL_BIN)/$(BINARY)-linux-wanconfig $(CMD)
+		-o $(LOCAL_BIN)/$(BINARY)-wanconfig $(CMD)
 
 tidy:
 	go mod tidy
