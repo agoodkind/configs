@@ -392,16 +392,25 @@ Client `3eef::10` sits behind `router-1` and leaves on ISP-1. ISP-1 uses
 Direct WAN, so the WAN hop has no host copy. The packet crosses the
 two-guest bridge and then DMAs out ISP-1.
 
-On 16 August 2026, a LAN client ran a public speedtest on this path.
-The table records idle CPU, the speedtest rates, and CPU during the
-upload peak.
+On 16 August 2026, a LAN client ran a public speedtest on this path and
+reached 693 Mbit/s down and 1782 Mbit/s up. The two-guest bridge cost
+1.11 CPU cores at the upload peak. That is the copy work the hypervisor
+would not do if the router and the chokepoint shared one kernel.
 
-| What | Result |
-| --- | --- |
-| Idle host busy | Median 3.79% of 12 CPUs. Peak 38.39% from other guests. |
-| Idle copy threads | About 1% of one core on the router guest and on the chokepoint guest |
-| Speedtest | 693 Mbit/s down, 1782 Mbit/s up |
-| Bridge ports | 2442 MB upload and 992 MB to 1026 MB download on both guests |
-| Copy threads at upload peak | 59% of one core on the router guest and 52% on the chokepoint guest. Together 1.11 cores, about 9% of the host. |
-| Router guest at that peak | 4.54 cores |
-| Chokepoint guest at that peak | 2.01 cores |
+The table compares CPU on the 12-core host before the test and at the
+upload peak. Copy threads are the hypervisor threads that move packets
+between the two guests. Guest forwarding is the CPU each guest kernel
+spent on routing and NAT.
+
+| Measure | Before the test | At the upload peak |
+| --- | --- | --- |
+| Copy threads, router guest | 0.01 cores | 0.59 cores |
+| Copy threads, chokepoint guest | 0.01 cores | 0.52 cores |
+| Copy threads, both guests | 0.02 cores | 1.11 cores, about 9% of the host |
+| Guest forwarding, router guest | not measured | 4.54 cores |
+| Guest forwarding, chokepoint guest | not measured | 2.01 cores |
+
+At 1782 Mbit/s the copies cost about one core, and the guests' own
+forwarding cost about six and a half cores. The copies were about 15% of
+the CPU the traffic used. Faster links were not measured, so this page
+does not state a cost at 10 Gbit/s or above.
