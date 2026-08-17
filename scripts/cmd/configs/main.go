@@ -238,20 +238,33 @@ func runSetSecrets(_ []string) error {
 // root the binary runs from. It sits under the ignored .make tree.
 const releaseCacheRoot = ".make/releases"
 
+// releaseFetcher stages a release; release.Fetch in production, a fake in tests.
+type releaseFetcher func(ctx context.Context, opts release.FetchOptions) (release.Staged, error)
+
+// deployRunner runs the play; ansible.Deploy in production, a fake in tests.
+type deployRunner func(opts ansible.DeployOptions) error
+
 func runDeploy(args []string) error {
+	return runDeployWith(args, release.Fetch, ansible.Deploy)
+}
+
+// runDeployWith is runDeploy with its two process boundaries injectable, so the
+// staging contract (which extra vars reach the play, and that a failed stage
+// never reaches it) is testable without the network or ansible.
+func runDeployWith(args []string, fetch releaseFetcher, deploy deployRunner) error {
 	opts, err := parseDeploy(args)
 	if err != nil {
 		return err
 	}
 	if opts.ReleaseTag != "" {
-		extraVars, err := stageRelease(context.Background(), opts.ReleaseTag)
+		extraVars, err := stageRelease(context.Background(), opts.ReleaseTag, fetch)
 		if err != nil {
 			slog.Error("release stage failed", "tag", opts.ReleaseTag, "err", err)
 			return errors.New("release stage failed")
 		}
 		opts.ExtraVars = append(opts.ExtraVars, extraVars...)
 	}
-	if err := ansible.Deploy(opts); err != nil {
+	if err := deploy(opts); err != nil {
 		return errors.New("deploy failed")
 	}
 	return nil
@@ -262,8 +275,8 @@ func runDeploy(args []string) error {
 // they must report. The playbooks read those variables bare, so a deploy that
 // installs mwan without --release fails at load rather than shipping whatever
 // was built last.
-func stageRelease(ctx context.Context, tag string) ([]string, error) {
-	staged, err := release.Fetch(ctx, release.FetchOptions{
+func stageRelease(ctx context.Context, tag string, fetch releaseFetcher) ([]string, error) {
+	staged, err := fetch(ctx, release.FetchOptions{
 		Tag:        tag,
 		CacheRoot:  releaseCacheRoot,
 		Token:      githubToken(ctx),

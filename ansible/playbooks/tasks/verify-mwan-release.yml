@@ -19,12 +19,20 @@
 
 # In check mode the copy above did not happen and the command did not run, so
 # there is nothing to assert; the real run is where the identity is checked.
+# The reported commit must be a real short SHA (seven hex digits or more) and a
+# prefix of the release commit; a binary reporting "unknown" or a truncated
+# value fails.
 - name: Fail unless the installed mwan reports the released commit
   when: not ansible_check_mode
+  vars:
+    # A missing match renders as the string "None", which the hex pattern below
+    # rejects, so no presence check is needed.
+    mwan_reported_commit: >-
+      {{ mwan_installed_version.stdout | regex_search('commit=[0-9a-f]{7,40}') | string | regex_replace('^commit=', '') }}
   ansible.builtin.assert:
     that:
-      - mwan_installed_version.stdout is search('commit=[0-9a-f]+')
-      - mwan_release_commit is match('^' ~ (mwan_installed_version.stdout | regex_search('commit=([0-9a-f]+)', '\\1') | first))
+      - mwan_reported_commit is match('^[0-9a-f]{7,40}$')
+      - mwan_release_commit.startswith(mwan_reported_commit)
     fail_msg: >-
       {{ mwan_installed_binary }} reports "{{ mwan_installed_version.stdout }}"
       but release {{ mwan_release_tag }} is commit {{ mwan_release_commit }}.

@@ -20,7 +20,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	"goodkind.io/go-makefile/selfupdate"
 )
@@ -45,6 +47,18 @@ const archiveMemberREADME = "README.md"
 
 // defaultAPIBaseURL is the GitHub API root the tag lookup uses.
 const defaultAPIBaseURL = "https://api.github.com"
+
+// defaultHTTPTimeout bounds one request when the caller supplies no client. It
+// covers the archive downloads too, so it is sized for a 30 MB asset on a slow
+// link rather than for an API call.
+const defaultHTTPTimeout = 10 * time.Minute
+
+// tagPattern is the character set a release tag may use. The tag becomes a
+// path segment under the cache root and a path segment of the GitHub API URL,
+// so anything that could escape either (a slash, a dot-dot, a query or
+// fragment character) is refused before it reaches them. Release tags here are
+// either <yyyymmddHHMM>-<n>-<sha7> or a v-prefixed version.
+var tagPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 // gitObjectType is the type field of a git object the GitHub API returns.
 type gitObjectType string
@@ -114,6 +128,11 @@ func Fetch(ctx context.Context, opts FetchOptions) (Staged, error) {
 		log.ErrorContext(ctx, "release: fetch refused", "err", err)
 		return Staged{}, err
 	}
+	if !tagPattern.MatchString(opts.Tag) || strings.Contains(opts.Tag, "..") {
+		err := fmt.Errorf("release: tag %q may only use letters, digits, dot, underscore, and dash, without a dot-dot sequence", opts.Tag)
+		log.ErrorContext(ctx, "release: fetch refused", "err", err)
+		return Staged{}, err
+	}
 	if strings.TrimSpace(opts.CacheRoot) == "" {
 		err := errors.New("release: cache root is required")
 		log.ErrorContext(ctx, "release: fetch refused", "err", err)
@@ -132,7 +151,7 @@ func Fetch(ctx context.Context, opts FetchOptions) (Staged, error) {
 		s.apiBaseURL = defaultAPIBaseURL
 	}
 	if s.client == nil {
-		s.client = http.DefaultClient
+		s.client = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 	if s.verify == nil {
 		s.verify = selfupdate.VerifyReleaseAssets

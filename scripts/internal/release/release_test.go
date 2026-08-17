@@ -198,3 +198,33 @@ func TestFetchRequiresTag(t *testing.T) {
 		t.Fatalf("Fetch error = %v", err)
 	}
 }
+
+// TestFetchRefusesTagThatCouldEscapeAPathOrURL pins that a tag never reaches
+// the cache path or the API URL unless it is plain tag characters: nothing is
+// created under the cache root and the verifier is never called.
+func TestFetchRefusesTagThatCouldEscapeAPathOrURL(t *testing.T) {
+	t.Parallel()
+	for _, tag := range []string{"../../tmp/x", "a/b", "v1?x=1", "v1#frag", "..", "-lead", "v1..2", "with space"} {
+		root := t.TempDir()
+		called := false
+		_, err := Fetch(context.Background(), FetchOptions{
+			Tag: tag, CacheRoot: root,
+			Verify: func(_ context.Context, _ selfupdate.Options, _ string) error { called = true; return nil },
+		})
+		if err == nil || !strings.Contains(err.Error(), "may only use") {
+			t.Fatalf("Fetch(%q) error = %v, want the tag refused", tag, err)
+		}
+		if called {
+			t.Fatalf("Fetch(%q) reached the verifier", tag)
+		}
+		entries, _ := os.ReadDir(root)
+		if len(entries) != 0 {
+			t.Fatalf("Fetch(%q) created %v under the cache root", tag, entries)
+		}
+	}
+	for _, tag := range []string{"202608162055-5-8ce01a2", "v1.2.3", "v1.2.3-rc.1", "release_2026"} {
+		if !tagPattern.MatchString(tag) {
+			t.Fatalf("tagPattern rejects legitimate tag %q", tag)
+		}
+	}
+}
