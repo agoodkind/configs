@@ -318,8 +318,8 @@ share a virtual NIC. Giving the physical NIC to one guest skips that copy
 on that hop.
 
 A LAN client on the worked-example path ran a public speedtest on
-16 August 2026. Upload reached 1847 Mbit/s and download reached 305 Mbit/s.
-Hypervisor copy threads peaked at 1.06 cores on a 12-core host. Faster
+16 August 2026. Upload reached 1782 Mbit/s and download reached 693 Mbit/s.
+Hypervisor copy threads peaked at 1.11 cores on a 12-core host. Faster
 links were not measured.
 
 ### Sample scenarios
@@ -398,10 +398,10 @@ upload peak.
 
 | What | Result |
 | --- | --- |
-| Idle host busy | Median 3.35% of 12 CPUs. Peak 21.94% from other guests. |
+| Idle host busy | Median 3.79% of 12 CPUs. Peak 38.39% from other guests. |
 | Idle copy threads | About 1% of one core on the router guest and on the chokepoint guest |
-| Speedtest | 305 Mbit/s down, 1847 Mbit/s up |
-| Bridge ports | 2094 MB upload and 360 MB to 370 MB download on both guests |
-| Copy threads at upload peak | 58% of one core on the router guest and 48% on the chokepoint guest. Together 1.06 cores, about 9% of the host. |
-| Router guest at that peak | 4.14 cores |
-| Chokepoint guest at that peak | 1.75 cores |
+| Speedtest | 693 Mbit/s down, 1782 Mbit/s up |
+| Bridge ports | 2442 MB upload and 992 MB to 1026 MB download on both guests |
+| Copy threads at upload peak | 59% of one core on the router guest and 52% on the chokepoint guest. Together 1.11 cores, about 9% of the host. |
+| Router guest at that peak | 4.54 cores |
+| Chokepoint guest at that peak | 2.01 cores |
