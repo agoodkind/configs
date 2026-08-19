@@ -89,7 +89,7 @@ flowchart LR
 
 ## Worked example
 
-Numbers below are documentation-only and do not reflect : 
+Numbers below are documentation-only and do not reflect :
 - IPv4 uses TEST-NET from
 [RFC 5737](https://www.rfc-editor.org/rfc/rfc5737.html).
 - IPv6 uses
@@ -98,7 +98,7 @@ Numbers below are documentation-only and do not reflect :
 - [RFC 5398](https://www.rfc-editor.org/rfc/rfc5398.html). Names use
 `example.test`.
 
-All valid prefix lengths are supported and prefix sizes in the tables are only examples. 
+All valid prefix lengths are supported and prefix sizes in the tables are only examples.
 
 Internal addresses use `fd06::/56` for simplicity.
 
@@ -111,12 +111,14 @@ Internal addresses use `fd06::/56` for simplicity.
 | ISP-3 | `203.0.113.0/29` | `2001:db8:3::/56` | Health fallback on the chokepoint, and the failover speaker's uplink |
 | ISP-N | `192.0.2.16/29` | `2001:db8:10::/56` | Future. Neither load-balance nor fallback |
 
-The failover speaker masquerades out ISP-3. That ISP does not need to
-match any prefix size. Failover does not serve inbound traffic.
+The failover speaker masquerades outbound traffic onto ISP-3 instead of
+translating prefixes in both directions. That NAT hides every internal
+address behind the failover ISP's own address. Prefix size does not
+matter for the failover ISP. Failover only forwards outbound flows
+and does not accept inbound traffic.
 
-Once the [provider model](superpowers/wanconfig/spec.md) lands, any ISP
-can be added, removed, or renumbered. That is an inventory edit. No Go
-change. No per-ISP template.
+An operator adds an ISP at the chokepoint, not at the LAN router. The LAN
+router never sees ISP membership, so its firewall does not change.
 
 ```mermaid
 flowchart LR
@@ -135,14 +137,14 @@ flowchart LR
 
 ### Chokepoint
 
-The chokepoint uses NPT and 1:1 SNAT. The failover speaker does not. It
-masquerades, so the failover ISP's prefix size does not matter and inbound
-is not served.
+The chokepoint uses NPT and 1:1 SNAT on load-balanced flows. The failover
+speaker masquerades instead of using NPT or 1:1 SNAT.
 
-NPT replaces the internal prefix with the chosen WAN prefix. Remaining
-bits stay. Prefix lengths need not match. If they differ, the shorter is
-zero-extended first, per [RFC 6296](https://www.rfc-editor.org/rfc/rfc6296.html)
-section 3.1. The longer prefix limits which subnets translate.
+NPT replaces the internal prefix with the chosen WAN prefix and leaves
+the rest of the address alone. The two prefixes can be different lengths.
+When they differ, the shorter prefix is zero-extended first, per
+[RFC 6296](https://www.rfc-editor.org/rfc/rfc6296.html) section 3.1. The
+longer prefix then limits which subnets translate.
 
 IPv4 is a 1:1 SNAT of each router's transit address onto the chosen WAN.
 
@@ -214,9 +216,10 @@ announce a default. Routers prefer the chokepoint with local-pref. When
 that default goes away, they use the fallback. There is no extra failover
 protocol.
 
-The failover speaker masquerades out ISP-3, the safest NAT that still
-forwards every outbound flow. That ISP does not need to match any prefix
-size. Failover does not serve inbound traffic.
+The failover speaker masquerades outbound traffic onto ISP-3, and that
+NAT still forwards every outbound flow. Prefix size does not matter for
+the failover ISP. Failover does not accept inbound traffic through the
+failover ISP.
 
 ```mermaid
 flowchart LR
@@ -240,14 +243,14 @@ flowchart LR
 
 | Flow | What happens |
 | --- | --- |
-| Outbound IPv6 | Client `fd06::10` behind `router-1`. MWAN marks onto ISP-1. NPT rewrites to `2001:db8:1::10`. Return reverse-NPTs to `router-1`. |
-| Outbound IPv4 | Client `10.0.0.10`. `router-1` SNATs to `192.0.2.9`. MWAN marks onto ISP-2 and 1:1 SNATs to `198.51.100.1`. |
-| Inbound IPv6 | Packet to `2001:db8:1::10` on ISP-1. MWAN reverse-NPTs to `fd06::10` and forwards to `router-1`. The router does not know ISP-1 exists. |
-| WAN health fallback | ISP-2 goes unhealthy. New flows use ISP-1. ISP-3 stays unused while a load-balance member is healthy. Both load-balance members unhealthy: new flows use ISP-3. |
-| Speaker failover | The chokepoint's default goes away. `router-1` uses the fallback. Egress masquerades on ISP-3. No inbound. |
-| Deploy rollback | A config push on `gateway.example.test` breaks connectivity. The watchdog rolls the chokepoint back to the latest `pre-deploy-*` snapshot, else a `known-good-*` snapshot. |
-| Future ISP-N | The operator adds ISP-N with `192.0.2.16/29` and `2001:db8:10::/56`. `router-1` still sees one upstream. No router firewall change. |
-| Second router | `router-2` joins iBGP and announces `fd06:0:0:10::/60`. Return traffic follows that announcement. MWAN config does not change. |
+| Outbound IPv6 | A client at `fd06::10` sits behind `router-1` and sends the packet toward MWAN. MWAN marks that new flow onto ISP-1, and NPT rewrites the source to `2001:db8:1::10`. Return traffic reverse-NPTs the destination and returns to `router-1`. |
+| Outbound IPv4 | A client at `10.0.0.10` is SNATed by `router-1` to `192.0.2.9`. MWAN then marks the flow onto ISP-2 and applies 1:1 SNAT to `198.51.100.1`. |
+| Inbound IPv6 | A packet addressed to `2001:db8:1::10` arrives on ISP-1. MWAN reverse-NPTs the destination to `fd06::10` and forwards the packet to `router-1`. The router does not know that ISP-1 exists. |
+| WAN health fallback | When ISP-2 becomes unhealthy, new flows move to ISP-1 rather than to ISP-3. ISP-3 stays unused while any load-balance member remains healthy. New flows use ISP-3 only after both load-balance members are unhealthy. |
+| Speaker failover | When the chokepoint's default route goes away, `router-1` uses the fallback speaker. Egress from that speaker masquerades onto ISP-3. The fallback path does not accept inbound traffic. |
+| Deploy rollback | If a config push on `gateway.example.test` breaks connectivity, the watchdog restores the chokepoint from a snapshot. It prefers the latest `pre-deploy-*` snapshot, and it uses a `known-good-*` snapshot when none of those exist. |
+| Future ISP-N | The operator adds ISP-N with `192.0.2.16/29` and `2001:db8:10::/56`. `router-1` still sees one upstream, so the router firewall does not change. |
+| Second router | `router-2` joins iBGP and announces `fd06:0:0:10::/60`. Return traffic follows that announcement, and MWAN configuration does not change. |
 
 ## Out-of-band management
 
@@ -262,10 +265,11 @@ Proxmox attaches it as a qemu virtio device on the guest. See
 - **Chokepoint and fallback:** Each speaker's agent serves gRPC over
   vsock. The hypervisor uses that channel for health, config state, and
   BGP withdraw, so those calls still work when the guest network is down.
-- **OPNsense:** FreeBSD has no vsock to the host, so the path is
-  virtio-serial, a paravirtual serial port. gRPC runs over that serial.
-  A wedge-proof host path keeps the qemu chardev open so the guest never
-  permanently wedges. See
+- **OPNsense:** FreeBSD guests cannot use vsock to the hypervisor, so
+  OPNsense talks over virtio-serial instead. Virtio-serial is a
+  paravirtual serial port that carries gRPC between the host and the
+  guest. A wedge-proof host path keeps the qemu character device open so
+  the guest cannot wedge that channel permanently. See
   [wedge-proof serial](superpowers/wedgeproof/spec.md).
 
 ```mermaid
@@ -281,24 +285,28 @@ flowchart LR
 
 ## By component
 
-The chokepoint terminates ISPs and translates. The fallback is a second
-BGP speaker. Only the chokepoint load-balances. The watchdog recovers the
-chokepoint from outside it. The LAN router never sees ISP membership. The
-binary is one artifact with many roles.
+Traffic hits the chokepoint first, where the main MWAN binary terminates
+the ISP links, translates addresses, and load-balances new flows. A
+second BGP speaker on ISP-3 is the fallback, and it does not load-balance.
+A watchdog outside the chokepoint restores that host when a change breaks
+connectivity. The LAN router never sees which ISPs exist, so it forwards
+to MWAN as one upstream. Each of those hosts runs one binary as the
+subcommands its role needs.
 
 ## By function
 
 **Load balancing:** New flows receive a mark. Policy routing plus 1:1 SNAT
 or NPT sends them out ISP-1 or ISP-2.
 
-**WAN health fallback:** ISP-3 takes new flows only after both
-load-balance members are unhealthy. Speaker failover is ordinary iBGP.
-The failover ISP masquerades, so prefix size does not matter and inbound
-is not served.
+**WAN health fallback:** New flows use ISP-3 only after both load-balance
+members are unhealthy. On speaker failover, the LAN routers switch to the
+fallback speaker over ordinary iBGP. The failover ISP masquerades
+outbound traffic, so prefix size does not matter. Failover does not
+accept inbound traffic through the failover ISP.
 
-**Future ISP:** The operator adds another WAN member on the chokepoint.
-That member need not be load-balance or fallback. The router firewall
-does not change.
+**Future ISP:** The operator adds another WAN member at the chokepoint.
+That member can be neither a load-balance member nor a fallback member.
+The LAN router firewall does not change when that member is added.
 
 **Health:** WAN state is healthy, unhealthy, or unknown.
 
@@ -310,26 +318,28 @@ connectivity rolls back.
 When the LAN router and the chokepoint run as separate guests on a
 virtual NIC, the hypervisor copies each packet on that hop.
 
-MWAN programs routes, policy rules, and nftables in the guest kernel.
-Forwarded packets stay in the guest kernels. The daemon does not copy
+MWAN programs routes, policy rules, and nftables in the guest kernel, so
+forwarded packets stay inside those kernels. The daemon does not copy
 packet bytes in userspace.
 
 **Host copies:** The hypervisor copies each packet between guests that
-share a virtual NIC. Giving the physical NIC to one guest skips that copy
-on that hop.
+share a virtual NIC on the same host. Giving the physical NIC to one
+guest skips that copy on that hop.
 
 A LAN client on the worked-example path ran a public speedtest on
-16 August 2026. Upload reached 1782 Mbit/s and download reached 693 Mbit/s.
-Hypervisor copy threads peaked at 1.11 cores on a 12-core host. Faster
-links were not measured.
+16 August 2026. Upload reached 1782 Mbit/s, and download reached
+693 Mbit/s. Hypervisor copy threads peaked at 1.11 cores on a 12-core
+host. Faster links were not measured, so this page has no figure for
+them.
 
 ### Sample scenarios
 
 The WAN hop and the router-to-chokepoint hop are independent attach
 choices.
 
-**Direct WAN:** The ISP NIC is given to the chokepoint, so the NIC places
-packets directly into that guest. The WAN hop has no host copy.
+**Direct WAN:** The ISP network interface is given to the chokepoint, so
+the NIC places packets directly into that guest's kernel. The WAN hop
+has no hypervisor copy of those packets.
 
 ```mermaid
 flowchart LR
@@ -338,8 +348,9 @@ flowchart LR
   nic -->|DMA| guest
 ```
 
-**Virtual WAN:** The ISP NIC stays on the host, so the host copies each
-packet into the chokepoint. The WAN hop pays a host copy.
+**Virtual WAN:** The ISP network interface stays attached to the host, so
+the host copies each packet into the chokepoint guest. The WAN hop pays a
+host copy for every packet.
 
 ```mermaid
 flowchart LR
@@ -415,3 +426,5 @@ At 1782 Mbit/s the copies cost about one core, and the guests' own
 forwarding cost about six and a half cores. The copies were about 15% of
 the CPU the traffic used. Faster links were not measured, so this page
 does not state a cost at 10 Gbit/s or above.
+
+Conclusion: A future optimization could move the chokepoint into an LXC th
