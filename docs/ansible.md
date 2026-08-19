@@ -3,8 +3,8 @@
 Ansible configures every guest in the homelab from a single controller. It
 takes a freshly provisioned container or virtual machine, brings it up to a
 running and deployable state, and keeps it there as the fleet changes.
-Playbooks run through the configs binary or the Rake helpers; the repository
-guide carries the canonical deploy invocation.
+Each app repo owns the stack that runs on that guest, Ansible fetches that
+stack at the deployed ref, and playbooks run through the configs binary.
 
 ## Inventory layout
 
