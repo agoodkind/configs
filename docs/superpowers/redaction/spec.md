@@ -55,11 +55,15 @@ never leak a fragment.
   The label on a merged span is the label of its earliest-starting occurrence
   (ties broken by lexicographically first label) so the placeholder is
   deterministic.
-- Streaming-safe: the automaton state persists across `Write` calls, and the
-  writer holds back the trailing bytes that could still be part of an
-  in-progress match or an unresolved merge (at most `maxPatternLen-1` bytes)
-  until a later write or `Close` resolves them, so a secret split across two
-  writes is still matched.
+- Streaming-safe: the writer holds back only the trailing bytes that could still
+  be part of an in-progress match or an unresolved merge, until a later write or
+  `Close` resolves them, so a secret split across two writes is still matched.
+  The held-back length is the buffer's longest suffix that is a prefix of some
+  secret, which the automaton reports as the trie depth of the state its scan
+  ends in. Text that ends in no such suffix is emitted whole on the write that
+  produced it. That matters for the deploy log, which an operator tails: a fixed
+  `maxPatternLen-1` hold-back would leave the reader thousands of bytes behind
+  the play.
 - An empty pattern set is a transparent passthrough.
 - `Validate(patterns []Pattern) (badKey string, ok bool)` reports the first
   pattern whose non-empty value is shorter than `MinLen`, returning its label so
@@ -107,9 +111,14 @@ the patterns never arrive on the fail-closed path.
    place. A pipe-creation failure is fatal: with secrets present and no way to
    filter, the tool must not run, so the error propagates and no command
    dispatches.
-3. Dispatch the subcommand. `inventory-dump` and `deploy --diff` need no
-   command-specific code; their output and their child processes' output (via
-   `cmd.Stdout = os.Stdout`) flow through the pipes.
+3. Dispatch the subcommand. `inventory-dump` needs no command-specific code; its
+   output and its child process's output (via `cmd.Stdout = os.Stdout`) flow
+   through the pipes. The commands that stream progress for minutes are the
+   exception: a deploy, and a `tofu` run that does not stop for an approval
+   prompt, send the child's output to a run log file instead of the terminal, so
+   each builds its own `redact.Writer` over that file from the same patterns. A
+   log is a durable artifact and a diffing run prints file contents into it, so
+   it gets the same filtering the terminal gets rather than none.
 4. On return, close the pipe write ends, wait for the drains to flush their held
    bytes, and restore the real descriptors so nothing is dropped or leaked.
 
