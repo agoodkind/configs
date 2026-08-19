@@ -89,17 +89,18 @@ flowchart LR
 
 ## Worked example
 
-Numbers below are documentation-only. IPv4 uses TEST-NET from
-[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737.html). IPv6 uses
-[RFC 3849](https://www.rfc-editor.org/rfc/rfc3849.html). The ASN uses
-[RFC 5398](https://www.rfc-editor.org/rfc/rfc5398.html). Names use
-`example.test`. This is not production.
+Numbers below are documentation-only and do not reflect : 
+- IPv4 uses TEST-NET from
+[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737.html).
+- IPv6 uses
+[RFC 3849](https://www.rfc-editor.org/rfc/rfc3849.html).
+- The ASN uses
+- [RFC 5398](https://www.rfc-editor.org/rfc/rfc5398.html). Names use
+`example.test`.
 
-Prefix sizes in the tables are examples. Any prefix length works.
+All valid prefix lengths are supported and prefix sizes in the tables are only examples. 
 
-WAN documentation addresses stay in `2001:db8::/32`. Internal addresses use
-a made-up GUA `3eef::/56` so the two sides stay distinct. That `/56` covers
-the largest WAN delegation in the example.
+Internal addresses use `fd06::/56` for simplicity.
 
 ### Upstream
 
@@ -151,7 +152,7 @@ flowchart LR
   r1[router_1]
   mwan[MWAN]
   isp1[ISP_1]
-  client -->|"3eef::10"| r1
+  client -->|"fd06::10"| r1
   r1 -->|forward| mwan
   mwan -->|"NPT 2001:db8:1::10"| isp1
 ```
@@ -190,9 +191,9 @@ flowchart LR
 
 | Router | Announces | Example host | After NPT onto ISP-1 `2001:db8:1::/56` |
 | --- | --- | --- | --- |
-| `router-1` | `3eef::/64` | `3eef::10` | `2001:db8:1::10` |
-| `router-1` | `3eef:0:0:4::/62` | `3eef:0:0:5::10` | `2001:db8:1:5::10` |
-| `router-2` | `3eef:0:0:10::/60` | `3eef:0:0:10::10` | `2001:db8:1:10::10` |
+| `router-1` | `fd06::/64` | `fd06::10` | `2001:db8:1::10` |
+| `router-1` | `fd06:0:0:4::/62` | `fd06:0:0:5::10` | `2001:db8:1:5::10` |
+| `router-2` | `fd06:0:0:10::/60` | `fd06:0:0:10::10` | `2001:db8:1:10::10` |
 
 `router-2` is future. Adding it is a new iBGP peer that announces what it
 routes. No MWAN config change. See
@@ -239,14 +240,14 @@ flowchart LR
 
 | Flow | What happens |
 | --- | --- |
-| Outbound IPv6 | Client `3eef::10` behind `router-1`. MWAN marks onto ISP-1. NPT rewrites to `2001:db8:1::10`. Return reverse-NPTs to `router-1`. |
+| Outbound IPv6 | Client `fd06::10` behind `router-1`. MWAN marks onto ISP-1. NPT rewrites to `2001:db8:1::10`. Return reverse-NPTs to `router-1`. |
 | Outbound IPv4 | Client `10.0.0.10`. `router-1` SNATs to `192.0.2.9`. MWAN marks onto ISP-2 and 1:1 SNATs to `198.51.100.1`. |
-| Inbound IPv6 | Packet to `2001:db8:1::10` on ISP-1. MWAN reverse-NPTs to `3eef::10` and forwards to `router-1`. The router does not know ISP-1 exists. |
+| Inbound IPv6 | Packet to `2001:db8:1::10` on ISP-1. MWAN reverse-NPTs to `fd06::10` and forwards to `router-1`. The router does not know ISP-1 exists. |
 | WAN health fallback | ISP-2 goes unhealthy. New flows use ISP-1. ISP-3 stays unused while a load-balance member is healthy. Both load-balance members unhealthy: new flows use ISP-3. |
 | Speaker failover | The chokepoint's default goes away. `router-1` uses the fallback. Egress masquerades on ISP-3. No inbound. |
 | Deploy rollback | A config push on `gateway.example.test` breaks connectivity. The watchdog rolls the chokepoint back to the latest `pre-deploy-*` snapshot, else a `known-good-*` snapshot. |
 | Future ISP-N | The operator adds ISP-N with `192.0.2.16/29` and `2001:db8:10::/56`. `router-1` still sees one upstream. No router firewall change. |
-| Second router | `router-2` joins iBGP and announces `3eef:0:0:10::/60`. Return traffic follows that announcement. MWAN config does not change. |
+| Second router | `router-2` joins iBGP and announces `fd06:0:0:10::/60`. Return traffic follows that announcement. MWAN config does not change. |
 
 ## Out-of-band management
 
@@ -388,7 +389,7 @@ and the chokepoint stay separate guests on one bridge.
 
 ### Worked example
 
-Client `3eef::10` sits behind `router-1` and leaves on ISP-1. ISP-1 uses
+Client `fd06::10` sits behind `router-1` and leaves on ISP-1. ISP-1 uses
 Direct WAN, so the WAN hop has no host copy. The packet crosses the
 two-guest bridge and then DMAs out ISP-1.
 
