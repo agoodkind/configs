@@ -1,6 +1,6 @@
 # Homelab docs
 
-Exec pages describe what each area does. Operator runbooks sit under
+These pages describe what each area does, and operator runbooks sit under
 operations.
 
 - [MWAN](mwan.md)
