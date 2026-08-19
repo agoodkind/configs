@@ -3,12 +3,14 @@
 This repository manages the `goodkind.io` homelab. It contains OpenTofu for
 provisioning, Ansible for configuration, MWAN runtime code, and the operator
 runbooks that explain how those pieces fit together. Those runbooks live under
-[docs/](docs/), organized by area.
+[docs/ops/](docs/ops/), organized by area. Exec pages live at
+[docs/mwan.md](docs/mwan.md), [docs/opnsense.md](docs/opnsense.md),
+[docs/ansible.md](docs/ansible.md), and [docs/infra.md](docs/infra.md).
 
 ## Sources of truth
 
 - Point-in-time infrastructure state and topology live under
-  [docs/infra/](docs/infra/).
+  [docs/ops/infra/](docs/ops/infra/).
 - Canonical service names, hostnames, IPv6 addresses, and service-group entries
   live in
   [ansible/inventory/group_vars/all/service_mapping.yml](ansible/inventory/group_vars/all/service_mapping.yml).
@@ -70,7 +72,7 @@ anything important. Workflow details live in
   OpenTofu, and read it bare; a missing value fails at load time. `default()` and
   `is defined` are allowed only on module or register output (a command result's
   shape). Enforced by `configs lint`, which the deploy command runs before every
-  deploy and pre-commit runs on staged files; see `docs/ansible/quality.md`. The
+  deploy and pre-commit runs on staged files; see [docs/ops/ansible/quality.md](docs/ops/ansible/quality.md). The
   linter parses each Jinja expression with a Go engine and routes the few
   Ansible-Jinja forms that engine cannot read to a jinja2 reference parser
   (`scripts/lint_ansible_ast.py`), so it requires `python3` with the `jinja2`
@@ -99,12 +101,12 @@ capture forensics, and reset to a known-good state instead of improvising.
 ## Repository rules
 
 - IPv6 is P0. Prefer IPv6 literals in configs and test IPv6 reachability first.
-  Diagnosis rules live in [docs/infra/network.md](docs/infra/network.md).
+  Diagnosis rules live in [docs/ops/infra/network.md](docs/ops/infra/network.md).
 - SSH entry points and access paths live in
-  [docs/infra/access.md](docs/infra/access.md).
-- Keep current-state facts in [docs/infra/](docs/infra/). Keep subject-specific
-  contracts and policies in [docs/ansible/](docs/ansible/),
-  [docs/mwan/](docs/mwan/), or [docs/opnsense/](docs/opnsense/).
+  [docs/ops/infra/access.md](docs/ops/infra/access.md).
+- Keep current-state facts in [docs/ops/infra/](docs/ops/infra/). Keep subject-specific
+  contracts and policies in [docs/ops/ansible/](docs/ops/ansible/),
+  [docs/ops/mwan/](docs/ops/mwan/), or [docs/ops/opnsense/](docs/ops/opnsense/).
 - Do not create new docs unless the operator asks for them.
 - Use `git -C /Users/agoodkind/Sites/configs ...` because shell cwd is not
   reliable across worktrees and subshells.

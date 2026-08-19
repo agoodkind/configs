@@ -20,7 +20,7 @@ OPNsense is the single WireGuard hub for the homelab, so every roaming tunnel te
 
 ## Reading the current state
 
-To see the router's live state rather than what a doc claims, reach it over SSH, preferring IPv6 per [access.md](../infra/access.md), and read it directly. Read the router's own configuration (interfaces, VLANs, DHCP reservations, gateways, aliases) through the GUI, or over the out-of-band serial channel per [daemon.md](daemon.md). These commands are read-only:
+To see the router's live state rather than what a doc claims, reach it over SSH, preferring IPv6 per [access.md](ops/infra/access.md), and read it directly. Read the router's own configuration (interfaces, VLANs, DHCP reservations, gateways, aliases) through the GUI, or over the out-of-band serial channel per [daemon.md](ops/opnsense/daemon.md). These commands are read-only:
 
 ```bash
 ssh agoodkind@<router> 'ifconfig -a'                       # interfaces and their addresses

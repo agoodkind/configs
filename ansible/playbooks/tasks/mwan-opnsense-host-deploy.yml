@@ -8,7 +8,7 @@
 # A chardev drainer (mwan opnsense host drain) sits in front of the bridge: it
 # holds the qemu chardev open and re-exposes it on a relay socket, so a bridge
 # restart never disconnects the chardev and strands a guest write in the kernel.
-# The bridge dials the relay instead of the chardev. See docs/opnsense/wedge.md.
+# The bridge dials the relay instead of the chardev. See docs/ops/opnsense/wedge.md.
 #
 # Required vars:
 #   mwan_opnsense_host_binary_local      controller path of the staged released linux binary

@@ -179,7 +179,7 @@ type OpnsenseHostSection struct {
 // and always reads it so a bridge restart never disconnects the host side and
 // strands a guest write in the kernel. Chardev is the qemu chardev unix socket
 // the drainer dials and holds; Listen is the relay socket the bridge dials in
-// place of the chardev. See docs/opnsense/wedge.md.
+// place of the chardev. See docs/ops/opnsense/wedge.md.
 type OpnsenseDrainSection struct {
 	Chardev string `toml:"chardev"`
 	Listen  string `toml:"listen"`
