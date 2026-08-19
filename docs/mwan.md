@@ -30,15 +30,15 @@ MWAN names three things:
 
 Traffic crosses three layers.
 
-| Layer | Job |
-| --- | --- |
-| Upstream | ISP links terminate on the chokepoint |
-| Chokepoint | The main MWAN binary load-balances, translates, and speaks BGP |
+| Layer      | Job                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------- |
+| Upstream   | ISP links terminate on the chokepoint                                                             |
+| Chokepoint | The main MWAN binary load-balances, translates, and speaks BGP                                    |
 | Downstream | LAN routers and the LANs behind them. Routers peer over iBGP and announce the prefixes they route |
 
-| Mark | Meaning |
-| --- | --- |
-| Solid line | A path in production today |
+| Mark        | Meaning                              |
+| ----------- | ------------------------------------ |
+| Solid line  | A path in production today           |
 | Dashed line | A future ISP, or an extra LAN router |
 
 ```mermaid
@@ -90,13 +90,14 @@ flowchart LR
 ## Worked example
 
 Numbers below are documentation-only and do not reflect :
+
 - IPv4 uses TEST-NET from
-[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737.html).
+  [RFC 5737](https://www.rfc-editor.org/rfc/rfc5737.html).
 - IPv6 uses
-[RFC 3849](https://www.rfc-editor.org/rfc/rfc3849.html).
+  [RFC 3849](https://www.rfc-editor.org/rfc/rfc3849.html).
 - The ASN uses
 - [RFC 5398](https://www.rfc-editor.org/rfc/rfc5398.html). Names use
-`example.test`.
+  `example.test`.
 
 All valid prefix lengths are supported and prefix sizes in the tables are only examples.
 
@@ -104,12 +105,12 @@ Internal addresses use `fd06::/56` for simplicity.
 
 ### Upstream
 
-| Member | IPv4 | IPv6 PD | Role |
-| --- | --- | --- | --- |
-| ISP-1 | `192.0.2.0/29` | `2001:db8:1::/56` | Load-balance |
-| ISP-2 | `198.51.100.0/29` | `2001:db8:2::/56` | Load-balance |
-| ISP-3 | `203.0.113.0/29` | `2001:db8:3::/56` | Health fallback on the chokepoint, and the failover speaker's uplink |
-| ISP-N | `192.0.2.16/29` | `2001:db8:10::/56` | Future. Neither load-balance nor fallback |
+| Member | IPv4              | IPv6 PD            | Role                                                                 |
+| ------ | ----------------- | ------------------ | -------------------------------------------------------------------- |
+| ISP-1  | `192.0.2.0/29`    | `2001:db8:1::/56`  | Load-balance                                                         |
+| ISP-2  | `198.51.100.0/29` | `2001:db8:2::/56`  | Load-balance                                                         |
+| ISP-3  | `203.0.113.0/29`  | `2001:db8:3::/56`  | Health fallback on the chokepoint, and the failover speaker's uplink |
+| ISP-N  | `192.0.2.16/29`   | `2001:db8:10::/56` | Future. Neither load-balance nor fallback                            |
 
 The failover speaker masquerades outbound traffic onto ISP-3 instead of
 translating prefixes in both directions. That NAT hides every internal
@@ -159,10 +160,10 @@ flowchart LR
   mwan -->|"NPT 2001:db8:1::10"| isp1
 ```
 
-| Step | IPv4 address |
-| --- | --- |
-| Client | `10.0.0.10` |
-| After `router-1` SNAT | `192.0.2.9` |
+| Step                           | IPv4 address   |
+| ------------------------------ | -------------- |
+| Client                         | `10.0.0.10`    |
+| After `router-1` SNAT          | `192.0.2.9`    |
 | After MWAN 1:1 SNAT onto ISP-2 | `198.51.100.1` |
 
 ### Downstream
@@ -191,23 +192,23 @@ flowchart LR
   fallback -.-> rN
 ```
 
-| Router | Announces | Example host | After NPT onto ISP-1 `2001:db8:1::/56` |
-| --- | --- | --- | --- |
-| `router-1` | `fd06::/64` | `fd06::10` | `2001:db8:1::10` |
-| `router-1` | `fd06:0:0:4::/62` | `fd06:0:0:5::10` | `2001:db8:1:5::10` |
-| `router-2` | `fd06:0:0:10::/60` | `fd06:0:0:10::10` | `2001:db8:1:10::10` |
+| Router     | Announces          | Example host      | After NPT onto ISP-1 `2001:db8:1::/56` |
+| ---------- | ------------------ | ----------------- | -------------------------------------- |
+| `router-1` | `fd06::/64`        | `fd06::10`        | `2001:db8:1::10`                       |
+| `router-1` | `fd06:0:0:4::/62`  | `fd06:0:0:5::10`  | `2001:db8:1:5::10`                     |
+| `router-2` | `fd06:0:0:10::/60` | `fd06:0:0:10::10` | `2001:db8:1:10::10`                    |
 
 `router-2` is future. Adding it is a new iBGP peer that announces what it
 routes. No MWAN config change. See
 [multiple downstream routers](superpowers/multirouter/spec.md).
 
-| Host | Role |
-| --- | --- |
-| `gateway.example.test` | Chokepoint |
-| `fallback.example.test` | Fallback speaker |
-| `router-1.example.test` | LAN router |
-| `router-2.example.test` | Future LAN router |
-| `hypervisor.example.test` | Watchdog host |
+| Host                      | Role              |
+| ------------------------- | ----------------- |
+| `gateway.example.test`    | Chokepoint        |
+| `fallback.example.test`   | Fallback speaker  |
+| `router-1.example.test`   | LAN router        |
+| `router-2.example.test`   | Future LAN router |
+| `hypervisor.example.test` | Watchdog host     |
 
 ### Failover
 
@@ -234,23 +235,23 @@ flowchart LR
   fb -->|masquerade| isp3
 ```
 
-| Situation | What BGP does |
-| --- | --- |
-| Unexpected chokepoint down | The iBGP session drops. Routers take the fallback's default after the hold timer. |
-| Planned maintenance | The chokepoint withdraws its default first. Routers take the fallback's default before the host goes away. |
+| Situation                  | What BGP does                                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Unexpected chokepoint down | The iBGP session drops. Routers take the fallback's default after the hold timer.                          |
+| Planned maintenance        | The chokepoint withdraws its default first. Routers take the fallback's default before the host goes away. |
 
 ### Flows
 
-| Flow | What happens |
-| --- | --- |
-| Outbound IPv6 | A client at `fd06::10` sits behind `router-1` and sends the packet toward MWAN. MWAN marks that new flow onto ISP-1, and NPT rewrites the source to `2001:db8:1::10`. Return traffic reverse-NPTs the destination and returns to `router-1`. |
-| Outbound IPv4 | A client at `10.0.0.10` is SNATed by `router-1` to `192.0.2.9`. MWAN then marks the flow onto ISP-2 and applies 1:1 SNAT to `198.51.100.1`. |
-| Inbound IPv6 | A packet addressed to `2001:db8:1::10` arrives on ISP-1. MWAN reverse-NPTs the destination to `fd06::10` and forwards the packet to `router-1`. The router does not know that ISP-1 exists. |
-| WAN health fallback | When ISP-2 becomes unhealthy, new flows move to ISP-1 rather than to ISP-3. ISP-3 stays unused while any load-balance member remains healthy. New flows use ISP-3 only after both load-balance members are unhealthy. |
-| Speaker failover | When the chokepoint's default route goes away, `router-1` uses the fallback speaker. Egress from that speaker masquerades onto ISP-3. The fallback path does not accept inbound traffic. |
-| Deploy rollback | If a config push on `gateway.example.test` breaks connectivity, the watchdog restores the chokepoint from a snapshot. It prefers the latest `pre-deploy-*` snapshot, and it uses a `known-good-*` snapshot when none of those exist. |
-| Future ISP-N | The operator adds ISP-N with `192.0.2.16/29` and `2001:db8:10::/56`. `router-1` still sees one upstream, so the router firewall does not change. |
-| Second router | `router-2` joins iBGP and announces `fd06:0:0:10::/60`. Return traffic follows that announcement, and MWAN configuration does not change. |
+| Flow                | What happens                                                                                                                                                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Outbound IPv6       | A client at `fd06::10` sits behind `router-1` and sends the packet toward MWAN. MWAN marks that new flow onto ISP-1, and NPT rewrites the source to `2001:db8:1::10`. Return traffic reverse-NPTs the destination and returns to `router-1`. |
+| Outbound IPv4       | A client at `10.0.0.10` is SNATed by `router-1` to `192.0.2.9`. MWAN then marks the flow onto ISP-2 and applies 1:1 SNAT to `198.51.100.1`.                                                                                                  |
+| Inbound IPv6        | A packet addressed to `2001:db8:1::10` arrives on ISP-1. MWAN reverse-NPTs the destination to `fd06::10` and forwards the packet to `router-1`. The router does not know that ISP-1 exists.                                                  |
+| WAN health fallback | When ISP-2 becomes unhealthy, new flows move to ISP-1 rather than to ISP-3. ISP-3 stays unused while any load-balance member remains healthy. New flows use ISP-3 only after both load-balance members are unhealthy.                        |
+| Speaker failover    | When the chokepoint's default route goes away, `router-1` uses the fallback speaker. Egress from that speaker masquerades onto ISP-3. The fallback path does not accept inbound traffic.                                                     |
+| Deploy rollback     | If a config push on `gateway.example.test` breaks connectivity, the watchdog restores the chokepoint from a snapshot. It prefers the latest `pre-deploy-*` snapshot, and it uses a `known-good-*` snapshot when none of those exist.         |
+| Future ISP-N        | The operator adds ISP-N with `192.0.2.16/29` and `2001:db8:10::/56`. `router-1` still sees one upstream, so the router firewall does not change.                                                                                             |
+| Second router       | `router-2` joins iBGP and announces `fd06:0:0:10::/60`. Return traffic follows that announcement, and MWAN configuration does not change.                                                                                                    |
 
 ## Out-of-band management
 
@@ -384,10 +385,10 @@ flowchart LR
   mwan -->|DMA| nic
 ```
 
-| Scenario | Where host copies run |
-| --- | --- |
-| Direct WAN | None on the WAN hop |
-| Virtual WAN | On the WAN hop |
+| Scenario                      | Where host copies run                 |
+| ----------------------------- | ------------------------------------- |
+| Direct WAN                    | None on the WAN hop                   |
+| Virtual WAN                   | On the WAN hop                        |
 | Two guests on one host bridge | On every LAN packet to the chokepoint |
 
 In the worked example, ISP-1 and ISP-2 use Direct WAN, and ISP-3 uses
@@ -414,17 +415,22 @@ upload peak. Copy threads are the hypervisor threads that move packets
 between the two guests. Guest forwarding is the CPU each guest kernel
 spent on routing and NAT.
 
-| Measure | Before the test | At the upload peak |
-| --- | --- | --- |
-| Copy threads, router guest | 0.01 cores | 0.59 cores |
-| Copy threads, chokepoint guest | 0.01 cores | 0.52 cores |
-| Copy threads, both guests | 0.02 cores | 1.11 cores, about 9% of the host |
-| Guest forwarding, router guest | not measured | 4.54 cores |
-| Guest forwarding, chokepoint guest | not measured | 2.01 cores |
+| Measure                            | Before the test | At the upload peak               |
+| ---------------------------------- | --------------- | -------------------------------- |
+| Copy threads, router guest         | 0.01 cores      | 0.59 cores                       |
+| Copy threads, chokepoint guest     | 0.01 cores      | 0.52 cores                       |
+| Copy threads, both guests          | 0.02 cores      | 1.11 cores, about 9% of the host |
+| Guest forwarding, router guest     | not measured    | 4.54 cores                       |
+| Guest forwarding, chokepoint guest | not measured    | 2.01 cores                       |
 
 At 1782 Mbit/s the copies cost about one core, and the guests' own
 forwarding cost about six and a half cores. The copies were about 15% of
 the CPU the traffic used. Faster links were not measured, so this page
 does not state a cost at 10 Gbit/s or above.
 
-Conclusion: A future optimization could move the chokepoint into an LXC which enables the host and chokepoint to share a kernel which avoids copying packets unecessarily. Furthermore, because the host was a large hypervisor with ample CPU, the extra work did not affect speeds. The download speed being lower than upload is likely explained about active clients using download bandwidth at the same time of the test.
+### Conclusion
+
+A future optimization could move the chokepoint into an LXC which enables the host and chokepoint to share a kernel which avoids copying packets unecessarily.
+Moving OPNsense onto its own physical machine would also avoid the vhost cost on that hop.
+
+Furthermore, because the host was a large hypervisor with ample CPU, the extra work did not affect speeds. The download speed being lower than upload is likely explained about active clients using download bandwidth at the same time of the test.
