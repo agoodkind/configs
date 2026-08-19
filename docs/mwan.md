@@ -427,4 +427,4 @@ forwarding cost about six and a half cores. The copies were about 15% of
 the CPU the traffic used. Faster links were not measured, so this page
 does not state a cost at 10 Gbit/s or above.
 
-Conclusion: A future optimization could move the chokepoint into an LXC th
+Conclusion: A future optimization could move the chokepoint into an LXC that avoids copying packets unecessarily. The host was a large hypervisor with ample CPU so despite the extra work, it did not affect speeds. The download speed being lower than upload is likely explained about active clients using download bandwidth at the same time of the test.
