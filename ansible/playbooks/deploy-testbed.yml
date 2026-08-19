@@ -32,15 +32,17 @@
     # mwan binary on suburban host (used by mwan-opnsense host bridge below)
     # ----------------------------------------------------------------------
 
-    - name: Build mwan binary on controller
-      ansible.builtin.import_tasks: tasks/build-mwan-binary.yml
-
     - name: Deploy mwan binary
       ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+        src: "{{ mwan_release_dir }}/linux_amd64/mwan"
         dest: /usr/local/bin/mwan
         mode: "0755"
       notify: Restart mwan-ifmgr
+
+    - name: Verify the suburban host binary is the released commit
+      ansible.builtin.import_tasks: tasks/verify-mwan-release.yml
+      vars:
+        mwan_installed_binary: /usr/local/bin/mwan
 
     - name: Deploy sysctl
       ansible.builtin.copy:

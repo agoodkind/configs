@@ -26,9 +26,6 @@
     name: netcat-traditional
     state: absent
 
-- name: Build mwan binary on controller
-  ansible.builtin.import_tasks: build-mwan-binary.yml
-
 - name: Install package-updater (script, service, timer)
   ansible.builtin.import_tasks: package-updater.yml
 
@@ -44,13 +41,19 @@
 
 - name: Deploy unified mwan binary
   ansible.builtin.copy:
-    src: "{{ repo_root }}/mwan/go/bin/mwan-linux"
+    src: "{{ mwan_release_dir }}/linux_amd64/mwan"
     dest: /usr/local/bin/mwan
     mode: "0755"
   register: proxmox_mwan_binary
   notify:
     - Restart mwan-ifmgr
     - Restart mwan-watchdog
+  when: proxmox_mwan_host_role_enabled | bool
+
+- name: Verify the hypervisor binary is the released commit
+  ansible.builtin.import_tasks: verify-mwan-release.yml
+  vars:
+    mwan_installed_binary: /usr/local/bin/mwan
   when: proxmox_mwan_host_role_enabled | bool
 
 - name: Ensure MWAN config directory exists

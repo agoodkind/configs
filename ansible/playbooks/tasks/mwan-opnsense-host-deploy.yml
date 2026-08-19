@@ -11,7 +11,7 @@
 # The bridge dials the relay instead of the chardev. See docs/ops/opnsense/wedge.md.
 #
 # Required vars:
-#   mwan_opnsense_host_binary_local      local path to bin/mwan-linux
+#   mwan_opnsense_host_binary_local      controller path of the staged released linux binary
 #   mwan_opnsense_drain_listen           relay socket path the drainer serves
 #
 # Both units read their runtime inputs from /etc/mwan/config.toml, which

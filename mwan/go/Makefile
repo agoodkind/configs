@@ -7,37 +7,32 @@
 #
 # mwan Makefile.
 # Build/lint pipeline lives in go-makefile and is fetched at runtime.
-# Project-local: protobuf codegen, cross-builds for the Linux and FreeBSD
-# monolith entrypoints, plus a govulncheck wrapper that allowlists a
-# specific known gobgp CVE.
+# Project-local: protobuf codegen, the YANG model gate, the cgo dependency
+# recipes for the publishing binding, a docker lane for building the linux
+# gateway binary on macOS, and a govulncheck wrapper that allowlists a specific
+# known gobgp CVE. Shipped binaries come only from the CI release; nothing
+# here cross-compiles a deploy artifact.
 
-# Identity. mwan's internal/version pkg uses lowercase unexported fields
-# (gitCommit, gitDirty), so VPKG canonical stamping is skipped. Pre-populate
-# GO_BUILD_LDFLAGS BEFORE -include $(GO_MK); go-build.mk's ?= preserves it.
-BINARY   := mwan
-CMD      := ./cmd/$(BINARY)
+# Identity. Build identity is gklog's: go-makefile stamps Commit, Dirty, and
+# BuildTime into goodkind.io/gklog/version for local builds and the release
+# engine does the same for released archives, so a released binary reports the
+# commit it was cut from and a deploy can check it after the copy. mwan's own
+# internal/version reads those stamps and adds the on-disk binary hash.
+BINARY     := mwan
+CMD        := ./cmd/$(BINARY)
+GKLOG_VPKG := goodkind.io/gklog/version
 
 # The release engine writes dist/<name>_<goos>_<goarch>/, and the reusable
 # build workflow uploads exactly that directory, so DIST_DIR is dist and the
-# host build lands there too. The local cross-build targets keep writing to
-# bin/, which is where the deploy playbooks read from until the fetch path
-# replaces them.
+# host build lands there too. bin/ holds only the docker lane's output.
 DIST_DIR  := dist
 LOCAL_BIN := bin
 
-# Build flags applied to every binary. cgo is never pinned anywhere: Go
-# defaults CGO_ENABLED=0 for cross-compiles without a matching C toolchain,
-# so the from-macOS cross artifacts stay pure-Go and static, while native
-# builds (linux CI gates, a darwin host with the cgo deps provisioned) keep
-# cgo on and compile the yangpub binding.
+# Build flags applied to every binary. cgo is never pinned anywhere: native
+# builds (linux CI gates, the release engine's linux job, a darwin host with
+# the cgo deps provisioned) keep cgo on and compile the yangpub binding, and
+# the freebsd release job builds pure Go because that package is linux-only.
 GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
-
-MWAN_VERSION_PKG := goodkind.io/mwan/internal/version
-GIT_COMMIT       := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-GIT_DIRTY        := $(shell git diff --quiet HEAD -- . 2>/dev/null && echo clean || echo dirty)
-GO_BUILD_LDFLAGS := \
-	-X $(MWAN_VERSION_PKG).gitCommit=$(GIT_COMMIT) \
-	-X $(MWAN_VERSION_PKG).gitDirty=$(GIT_DIRTY)
 
 # Pipeline modules. go-release.mk turns every shipped artifact into a signed,
 # checksummed, attested GitHub release, which is what the deploy path installs
@@ -49,7 +44,14 @@ GO_MK_MODULES := go-build.mk go-release.mk
 # the gateway while still running on a host that has neither, which is what the
 # scp-and-run deploy contract needs. freebsd stays pure Go because the yangpub
 # files are linux-tagged and the C libraries have no cross toolchain here.
-RELEASE_PLATFORMS := linux/amd64 freebsd/amd64
+#
+# RELEASE_PLATFORMS is a default, not an override: each job of the release
+# matrix passes its own single platform in the environment, and this must yield
+# to it. Forcing both here made every job build and archive both platforms, and
+# once BuildTime was stamped the two jobs' copies of one archive stopped being
+# identical; the publish step's merged download then carried a freebsd archive
+# no job had attested, and release 202608161945-4-9244335 failed verification.
+RELEASE_PLATFORMS ?= linux/amd64 freebsd/amd64
 RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64 mwan:$(CMD):platforms=freebsd/amd64
 
 # gobgp's only cgo symbol is a memory-reporting helper used solely by its tests.
@@ -87,23 +89,30 @@ include bootstrap.mk
 # compiling but not running.
 export LD_LIBRARY_PATH := $(GO_MK_CGO_PREFIX)/lib$(if $(strip $(LD_LIBRARY_PATH)),:$(LD_LIBRARY_PATH))
 
-# Static linking of the C dependencies. The release engine builds with a fixed
-# command whose -ldflags carries the version stamps, so these two values are the
-# only way to reach the compiler and the external linker; the engine appends
-# them to the inherited environment. netgo and osusergo keep name and user
-# lookup in pure Go, so the binary needs no glibc name service at runtime, and
-# pcre2 and libm are named explicitly because a static archive carries no
-# transitive dependencies and these land last on the link line, which is where
-# a static linker resolves a dependency of an earlier archive.
-export GOFLAGS := -tags=osusergo,netgo$(if $(strip $(GOFLAGS)), $(GOFLAGS))
-export CGO_LDFLAGS := -static -lpcre2-8 -lm
+# Fully static release binary. The release engine builds with a fixed command
+# whose -ldflags carries the version stamps, so these two values are the only
+# way to reach the compiler and the external linker; the engine appends them
+# to the inherited environment. netgo and osusergo keep name and user lookup in
+# pure Go, so the binary needs no glibc name service at runtime. What the static
+# archives themselves need to link (pcre2, libm) is not here: that is metadata
+# of the archives, and the dependency recipe writes it into their pkg-config
+# files, which cgo already reads.
+#
+# Both attach to the release target rather than the file, so they reach the
+# release build and nothing else. A plain export puts them in the environment of
+# every child process, which hands a host tool the target's link flags: building
+# golangci-lint on macOS then fails with "library 'crt0.o' not found", because
+# darwin has no static libc. go-makefile keeps its own cross-compiler settings
+# out of the global environment for the same reason.
+release: export GOFLAGS := -tags=osusergo,netgo$(if $(strip $(GOFLAGS)), $(GOFLAGS))
+release: export CGO_LDFLAGS := -static
 
 .DEFAULT_GOAL := check
 
-# Acceptance gate. `make build` fails unless every shipped output compiles
-# cleanly, the publishing-enabled wanconfig binary included. Add new outputs
-# to this prerequisite list when we start shipping them.
-build: proto build-linux build-mwan-opnsense build-linux-wanconfig
+# `build` is go-build.mk's: the host binary into $(DIST_DIR) behind the check
+# gate. Shipped artifacts are the release engine's, and `make release` runs it
+# locally; the two cross-build targets that used to feed the playbooks are gone
+# because the deploy installs a published release instead.
 
 # ---------------------------------------------------------------------------
 # Project-local
@@ -114,13 +123,9 @@ BUF    ?= buf
 GOBIN  ?= $(shell go env GOPATH)/bin
 export PATH := $(GOBIN):$(PATH)
 
-HOST_GOOS   := $(shell go env GOOS)
-HOST_GOARCH := $(shell go env GOARCH)
-
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
-.PHONY: proto build-linux build-mwan-opnsense \
-        tidy fix clean yang-validate
+.PHONY: proto tidy fix clean yang-validate
 
 proto:
 	@mkdir -p gen/mwan/v1
@@ -150,30 +155,6 @@ yang-validate:
 	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_DIR)/*.yang
 
 check: yang-validate
-
-# Reusable cross-platform build template. Pulls GO_BUILD_LDFLAGS and
-# GO_BUILD_EXTRA_FLAGS from the canonical pipeline so every binary, host
-# and cross-compile, lands with the same flag set.
-#
-# $(1)=output binary name, $(2)=GOOS, $(3)=GOARCH, $(4)=cmd path
-define build_platform
-	@mkdir -p $(LOCAL_BIN)
-	GOOS=$(2) GOARCH=$(3) go build $(GO_BUILD_EXTRA_FLAGS) \
-		-ldflags='$(GO_BUILD_LDFLAGS)' \
-		-o $(LOCAL_BIN)/$(1) $(4)
-endef
-
-# build-linux and build-mwan-opnsense depend on `check`, which fans
-# out to: build vet lint test govulncheck staticcheck-extra. Full lint
-# pass is mandatory before any deploy artifact lands in $(DIST_DIR)/.
-# No CGO_ENABLED pins: both are cross-compiles from every deploy host, so
-# Go's toolchain default keeps them static; the publishing-enabled gateway
-# binary comes from the docker builder lane below.
-build-linux: check
-	$(call build_platform,$(BINARY)-linux,linux,amd64,$(CMD))
-
-build-mwan-opnsense: check
-	$(call build_platform,mwan-opnsense,freebsd,amd64,$(CMD))
 
 # Cgo dependency recipes for the go-makefile hook. Each clones its pinned
 # tag and installs into the per-target prefix go.mk supplies through the
@@ -227,6 +208,11 @@ define wanconfig_cgo_dep_build
 		cmake --install $(WANCONFIG_CGO_SRC)/$(1)/build; \
 	mkdir -p "$${GO_MK_CGO_PREFIX}"; \
 	cp -R $(WANCONFIG_CGO_SRC)/stage-$(1)$${GO_MK_CGO_PREFIX}/. "$${GO_MK_CGO_PREFIX}/"; \
+	if [ -n "$(strip $(5))" ]; then \
+		pc="$${GO_MK_CGO_PREFIX}/lib/pkgconfig/$(1).pc"; \
+		awk -v extra="$(strip $(5))" '/^Libs:/ {print $$0 " " extra; next} {print}' "$$pc" > "$$pc.tmp" \
+			&& mv "$$pc.tmp" "$$pc"; \
+	fi; \
 	touch "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2).stamp"
 endef
 
@@ -236,6 +222,13 @@ endef
 # against static libyang without naming its pcre2 and libm dependencies, which
 # a static archive cannot carry, so building them fails the install.
 WANCONFIG_LIBYANG_CMAKE_FLAGS := -DENABLE_TOOLS=OFF
+
+# What a consumer of the static libyang archive must link after it. The
+# generated pkg-config file lists pcre2 only under Libs.private and omits libm,
+# which is right for a shared library and wrong for the archive, so the recipe
+# writes these onto the Libs line and cgo picks them up through its ordinary
+# pkg-config lookup, in every build that links libyang: test, lint, release.
+WANCONFIG_LIBYANG_STATIC_LIBS := -lpcre2-8 -lm
 WANCONFIG_SYSREPO_CMAKE_FLAGS := \
 	-DREPO_PATH=$(WANCONFIG_SYSREPO_REPO_PATH) \
 	-DENABLE_EXAMPLES=OFF \
@@ -244,19 +237,24 @@ WANCONFIG_SYSREPO_CMAKE_FLAGS := \
 	-DENABLE_SYSREPO_PLUGIND=OFF
 
 go-mk-cgo-dep-libyang:
-	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git,$(WANCONFIG_LIBYANG_CMAKE_FLAGS))
+	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git,$(WANCONFIG_LIBYANG_CMAKE_FLAGS),$(WANCONFIG_LIBYANG_STATIC_LIBS))
 
 go-mk-cgo-dep-sysrepo: go-mk-cgo-dep-libyang
 	$(call wanconfig_cgo_dep_build,sysrepo,$(WANCONFIG_SYSREPO_VERSION),https://github.com/sysrepo/sysrepo.git,$(WANCONFIG_SYSREPO_CMAKE_FLAGS))
 
-# Publishing-enabled gateway binary (MWAN-358). Builds inside a Debian
-# trixie golang image carrying the pinned libyang/sysrepo, so the cgo
-# binding links the exact library generation and glibc the gateway runs;
-# the version pins come from the same group_vars home as the cgo hook.
+# Development lane for the publishing binding on macOS, where the C libraries
+# cannot be built natively. It builds the linux gateway binary inside a Debian
+# trixie golang image carrying the pinned libyang/sysrepo, so the cgo binding
+# links the exact library generation and glibc the gateway runs; the version
+# pins come from the same group_vars home as the cgo hook. Nothing deploys its
+# output: shipped binaries come from the CI release.
 WANCONFIG_BUILDER_IMAGE := mwan-wanconfig-builder
 
-.PHONY: build-linux-wanconfig
-build-linux-wanconfig:
+.PHONY: build-wanconfig
+build-wanconfig:
+	@command -v docker >/dev/null 2>&1 || { \
+		echo "build-wanconfig: docker is required; the binding's C libraries cannot be built on this host" >&2; \
+		exit 1; }
 	docker build --platform linux/amd64 \
 		--build-arg LIBYANG_VERSION=$(WANCONFIG_LIBYANG_VERSION) \
 		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
@@ -265,11 +263,11 @@ build-linux-wanconfig:
 	docker run --rm --platform linux/amd64 \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
 		-v mwan-wanconfig-gomod:/go/pkg/mod \
-		-e GOWORK=off -e CGO_ENABLED=1 \
+		-e GOWORK=off \
 		$(WANCONFIG_BUILDER_IMAGE) \
 		go build $(GO_BUILD_EXTRA_FLAGS) \
 		-ldflags='$(GO_BUILD_LDFLAGS)' \
-		-o $(LOCAL_BIN)/$(BINARY)-linux-wanconfig $(CMD)
+		-o $(LOCAL_BIN)/$(BINARY)-wanconfig $(CMD)
 
 tidy:
 	go mod tidy
