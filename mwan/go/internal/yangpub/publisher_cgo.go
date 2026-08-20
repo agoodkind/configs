@@ -147,6 +147,21 @@ func datastoreOf(ds Datastore) (C.sr_datastore_t, error) {
 
 // SetItems sets every item by path in ds and applies them as one change.
 func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) error {
+	return p.edit(ctx, ds, nil, items)
+}
+
+// ReplaceItems deletes deletePaths, sets items, and applies the edit as one
+// change. Deletes are non-strict, so a path that holds nothing is a no-op
+// rather than an error; that is what lets a publisher clear a subtree it
+// may or may not have written on an earlier run.
+func (p *publisher) ReplaceItems(ctx context.Context, ds Datastore, deletePaths []string, items []Item) error {
+	return p.edit(ctx, ds, deletePaths, items)
+}
+
+// edit is the one write path: open a session on ds, stage every delete and
+// then every set, and apply once. SetItems and ReplaceItems are the two
+// public shapes of it.
+func (p *publisher) edit(ctx context.Context, ds Datastore, deletePaths []string, items []Item) error {
 	if err := ctx.Err(); err != nil {
 		p.log.ErrorContext(ctx, "publish aborted before start", "err", err)
 		return fmt.Errorf("yangpub: publish aborted: %w", err)
@@ -162,6 +177,17 @@ func (p *publisher) SetItems(ctx context.Context, ds Datastore, items []Item) er
 		return err
 	}
 	defer C.sr_session_stop(session)
+
+	for _, path := range deletePaths {
+		cPath := C.CString(path)
+		rc := C.sr_delete_item(session, cPath, C.sr_edit_options_t(0))
+		C.free(unsafe.Pointer(cPath))
+		if srFailed(rc) {
+			deleteErr := srError("sr_delete_item "+path, rc)
+			p.log.ErrorContext(ctx, "sysrepo delete failed", "path", path, "err", deleteErr)
+			return deleteErr
+		}
+	}
 
 	for _, item := range items {
 		cPath := C.CString(item.Path)

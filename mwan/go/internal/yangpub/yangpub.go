@@ -58,6 +58,13 @@ type Publisher interface {
 	// SetItems sets every item by path in ds and applies them as one
 	// change.
 	SetItems(ctx context.Context, ds Datastore, items []Item) error
+	// ReplaceItems deletes every path in deletePaths, then sets every item,
+	// and applies the whole edit as one change. A publisher that owns a
+	// subtree uses it to make the datastore hold exactly what it publishes:
+	// stale entries from an earlier run disappear in the same transaction
+	// that writes the current ones, so a reader never sees the subtree
+	// empty or half-replaced. A path that holds nothing deletes as a no-op.
+	ReplaceItems(ctx context.Context, ds Datastore, deletePaths []string, items []Item) error
 	// DeleteItem removes the value at path in ds and applies the change.
 	DeleteItem(ctx context.Context, ds Datastore, path string) error
 	// RegisterProvider registers fn as the operational provider of
