@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"net/netip"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 const (
@@ -156,6 +158,9 @@ type Module struct {
 	reconcileMu      sync.Mutex
 	reconcilePending bool
 	statuses         map[string]wanStatus
+	// lastTransition records when each WAN's verdict last changed, for
+	// the management surface. Guarded by cycleMu: only runCycle writes it.
+	lastTransition map[string]time.Time
 
 	probeV4    pingFunc
 	probeV6    pingFunc
@@ -292,8 +297,10 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 
 	nextStatuses := m.snapshotStatuses()
 	transitions := make([]transition, 0, len(m.cfg.WANs))
+	results := make(map[string]probeResult, len(m.cfg.WANs))
 	for _, wan := range m.cfg.WANs {
 		result := m.probeWAN(ctx, wan, log)
+		results[wan.Name] = result
 		current := nextStatuses[wan.Name]
 		next, changed := advanceHealth(
 			current,
@@ -306,6 +313,14 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 			transitions = append(transitions, transition{
 				WAN: wan, From: current.State, To: next.State,
 			})
+			// The clock is set by the constructor; a test that builds the
+			// struct bare records the transition without its timestamp.
+			if m.clock != nil {
+				if m.lastTransition == nil {
+					m.lastTransition = map[string]time.Time{}
+				}
+				m.lastTransition[wan.Name] = m.clock.Now()
+			}
 		}
 		log.DebugContext(
 			ctx,
@@ -329,8 +344,59 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 	m.Lock()
 	m.statuses = nextStatuses
 	m.Unlock()
+	m.publishLiveState(nextStatuses, results)
 	m.emitTransitions(ctx, log, transitions)
 	return nil
+}
+
+// publishLiveState writes the cycle's outcome to the management surface's
+// snapshot store, when this host serves one. Each family's result is its
+// verdict leg, the same rule probeWAN combines: the ping success threshold
+// or at least one HTTP success in that family.
+func (m *Module) publishLiveState(
+	statuses map[string]wanStatus,
+	results map[string]probeResult,
+) {
+	if m.Env == nil || m.Env.LiveState == nil {
+		return
+	}
+	members := make(map[string]wanstate.MemberHealth, len(m.cfg.WANs))
+	for _, wan := range m.cfg.WANs {
+		status := statuses[wan.Name]
+		member := wanstate.MemberHealth{
+			Verdict:             wanstate.HealthUnknown,
+			ConsecutiveFailures: 0,
+			LastTransition:      m.lastTransition[wan.Name],
+			V4:                  wanstate.ProbeNone,
+			V6:                  wanstate.ProbeNone,
+		}
+		switch status.State {
+		case StateHealthy:
+			member.Verdict = wanstate.HealthHealthy
+		case StateUnhealthy:
+			member.Verdict = wanstate.HealthUnhealthy
+		case StateUnknown:
+			member.Verdict = wanstate.HealthUnknown
+		}
+		if status.FailCount > 0 && status.FailCount <= math.MaxUint32 {
+			member.ConsecutiveFailures = uint32(status.FailCount)
+		}
+		if result, probed := results[wan.Name]; probed {
+			threshold := wan.successThreshold(m.cfg)
+			member.V6 = legResult(result.V6Successes, result.HTTP6Successes, threshold)
+			member.V4 = legResult(result.V4Successes, result.HTTP4Successes, threshold)
+		}
+		members[wan.Name] = member
+	}
+	m.Env.LiveState.SetHealth(members)
+}
+
+// legResult reduces one family's probe counts to its served outcome.
+func legResult(pingSuccesses int, httpSuccesses int, threshold int) wanstate.ProbeResult {
+	if pingSuccesses >= threshold || httpSuccesses >= 1 {
+		return wanstate.ProbePass
+	}
+	return wanstate.ProbeFail
 }
 
 func (m *Module) probeWAN(ctx context.Context, wan WAN, log *slog.Logger) probeResult {

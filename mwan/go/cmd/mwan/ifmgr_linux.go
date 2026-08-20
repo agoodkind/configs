@@ -74,17 +74,25 @@ func runIfMgr(cfg *config.Config) error {
 
 	dcfg.Notifier = notify.FromConfig(cfg, logger, "mwan-ifmgr")
 
+	ctx, cancel := signal.NotifyContext(context.Background(),
+		os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	// The management surface starts before the daemon so its snapshot
+	// store can be handed to the modules, and it stays open for the
+	// daemon's lifetime so the operational providers keep answering.
+	// A nil surface means this host does not publish one.
+	surface := startWanconfigSurface(ctx, logger, cfg, dcfg.ModuleConfigs)
+	if surface != nil {
+		dcfg.LiveState = surface.store
+		defer surface.Close()
+	}
+
 	d, err := ifmgr.NewDaemon(logger, dcfg)
 	if err != nil {
 		logger.Warn("ifmgr: new daemon failed", "err", err)
 		return fmt.Errorf("new daemon: %w", err)
 	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(),
-		os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	publishWanconfig(ctx, logger, cfg, dcfg.ModuleConfigs)
 
 	if err := d.Run(ctx); err != nil {
 		logger.WarnContext(ctx, "ifmgr: daemon run failed", "err", err)
@@ -213,5 +221,6 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		EnableRA:          enableRA,
 		Notifier:          nil,
 		ModuleConfigs:     moduleConfigs,
+		LiveState:         nil,
 	}, nil
 }

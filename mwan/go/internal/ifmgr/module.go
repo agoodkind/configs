@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 // Module is one feature plug-in for the ifmgr daemon. Each role
@@ -104,6 +105,12 @@ type Env struct {
 	// The call is non-blocking and coalescing. It is nil in unit tests that
 	// construct an Env without a daemon; callers must nil-check.
 	RequestReconcile func(reason string)
+	// LiveState is the snapshot store the management surface serves from.
+	// Modules write what they just reconciled; the operational-datastore
+	// provider reads it at request time. It is nil when the host does not
+	// publish a management surface; writers must nil-check, and a nil
+	// store costs the reconcile path nothing.
+	LiveState *wanstate.Store
 }
 
 // registry maps module name to constructor. Populated at package init

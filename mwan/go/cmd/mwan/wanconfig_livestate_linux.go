@@ -1,0 +1,233 @@
+//go:build linux
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"strconv"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/wanconfig"
+	"goodkind.io/mwan/internal/wanstate"
+	"goodkind.io/mwan/internal/yangpub"
+)
+
+const (
+	// bgpPollInterval paces the agent poller. The provider marks the
+	// answer stale after bgpStaleAfter without a successful read, so a
+	// dead agent yields an explicit stale marker rather than a hang.
+	bgpPollInterval = 15 * time.Second
+	bgpStaleAfter   = 3 * bgpPollInterval
+	// bgpPollTimeout bounds one poll so a wedged agent cannot pile up
+	// concurrent polls.
+	bgpPollTimeout = 5 * time.Second
+
+	steeringPrefix = "goodkind-mwan-steering"
+)
+
+// registerLiveStateProviders registers the operational-datastore
+// providers for the subtrees the daemon owns. Each read answers from the
+// store's latest snapshot: bounded, lock-cheap, and independent of the
+// reconcile path.
+func registerLiveStateProviders(
+	ctx context.Context,
+	log *slog.Logger,
+	pub yangpub.Publisher,
+	store *wanstate.Store,
+	gateway wanconfig.Gateway,
+) error {
+	interfacesProvider := func(_ context.Context, _ string) ([]yangpub.Item, error) {
+		return interfacesLiveItems(store.Snapshot(), gateway), nil
+	}
+	if err := pub.RegisterProvider(ctx, "ietf-interfaces", "/ietf-interfaces:interfaces", interfacesProvider); err != nil {
+		log.ErrorContext(ctx, "wanconfig: register interfaces provider failed", "err", err)
+		return fmt.Errorf("register interfaces provider: %w", err)
+	}
+	natProvider := func(_ context.Context, _ string) ([]yangpub.Item, error) {
+		return natLiveItems(store.Snapshot(), gateway), nil
+	}
+	if err := pub.RegisterProvider(ctx, "ietf-nat", "/ietf-nat:nat", natProvider); err != nil {
+		log.ErrorContext(ctx, "wanconfig: register nat provider failed", "err", err)
+		return fmt.Errorf("register nat provider: %w", err)
+	}
+	log.DebugContext(ctx, "wanconfig: providers registered")
+	return nil
+}
+
+// interfacesLiveItems renders the steering state, delegated prefixes, and
+// group state from one snapshot. A value the daemon does not hold is left
+// out rather than served empty.
+func interfacesLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []yangpub.Item {
+	items := make([]yangpub.Item, 0, len(gateway.Members)*8+4)
+	for _, member := range gateway.Members {
+		base := "/ietf-interfaces:interfaces/interface[name='" + member.Iface +
+			"']/" + steeringPrefix + ":steering/state"
+		if health, known := snap.Health[member.Name]; known {
+			items = append(items,
+				yangpub.Item{Path: base + "/health", Value: string(health.Verdict)},
+				yangpub.Item{
+					Path:  base + "/consecutive-failures",
+					Value: strconv.FormatUint(uint64(health.ConsecutiveFailures), 10),
+				},
+				yangpub.Item{
+					Path:  base + "/probe[family='ipv4']/last-result",
+					Value: string(health.V4),
+				},
+				yangpub.Item{
+					Path:  base + "/probe[family='ipv6']/last-result",
+					Value: string(health.V6),
+				},
+			)
+			if !health.LastTransition.IsZero() {
+				items = append(items, yangpub.Item{
+					Path:  base + "/last-transition",
+					Value: health.LastTransition.UTC().Format(time.RFC3339),
+				})
+			}
+		}
+		if routing, known := snap.Routing[member.Name]; known {
+			items = append(items, yangpub.Item{
+				Path:  base + "/carrying",
+				Value: boolValue(routing.Carrying),
+			})
+		}
+		if translation, known := snap.Translation[member.Name]; known && translation.Delegated.IsValid() {
+			items = append(items, yangpub.Item{
+				Path: "/ietf-interfaces:interfaces/interface[name='" + member.Iface +
+					"']/ietf-ip:ipv6/" + steeringPrefix + ":delegated-prefix",
+				Value: translation.Delegated.String(),
+			})
+		}
+	}
+	groupBase := "/ietf-interfaces:interfaces/" + steeringPrefix + ":steering-group/state"
+	if snap.TierValid {
+		items = append(items, yangpub.Item{
+			Path:  groupBase + "/active-tier",
+			Value: strconv.FormatUint(uint64(snap.ActiveTier), 10),
+		})
+	}
+	stale := !snap.BGP.Reached || time.Since(snap.BGP.ReadAt) > bgpStaleAfter
+	for _, peer := range snap.BGP.Peers {
+		peerBase := groupBase + "/bgp-peer[address='" + peer.Address + "']"
+		items = append(items,
+			yangpub.Item{Path: peerBase + "/established", Value: boolValue(peer.Established)},
+			yangpub.Item{Path: peerBase + "/stale", Value: boolValue(stale)},
+		)
+	}
+	return items
+}
+
+// natLiveItems renders each translation instance's kernel presence, using
+// the same instance numbering the configuration publish assigned:
+// sequential ids over the translating members in member order.
+func natLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []yangpub.Item {
+	items := make([]yangpub.Item, 0, len(gateway.Members))
+	instanceID := 0
+	for _, member := range gateway.Members {
+		if !member.NPTInternal.IsValid() || !member.NPTExternal.IsValid() {
+			continue
+		}
+		instanceID++
+		translation, known := snap.Translation[member.Name]
+		if !known {
+			continue
+		}
+		items = append(items, yangpub.Item{
+			Path: fmt.Sprintf("/ietf-nat:nat/instances/instance[id='%d']/%s:kernel-present",
+				instanceID, steeringPrefix),
+			Value: boolValue(translation.KernelPresent),
+		})
+	}
+	return items
+}
+
+func boolValue(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+// pollAgentBGP feeds the store's routing-session snapshot from the local
+// agent over its gRPC surface. The speaker lives in the agent process,
+// so this poller is the boundary between the two daemons; it runs
+// outside every provider callback and every reconcile, and each poll is
+// bounded. A failed poll records nothing, which lets the provider's
+// staleness rule mark the last answer stale.
+func pollAgentBGP(
+	ctx context.Context,
+	log *slog.Logger,
+	cfg *config.Config,
+	store *wanstate.Store,
+) {
+	target, err := agentDialTarget(cfg.Agent.TCPAddr)
+	if err != nil {
+		log.WarnContext(ctx, "wanconfig: agent address unusable; serving no routing-session state",
+			"tcp_addr", cfg.Agent.TCPAddr, "err", err)
+		return
+	}
+	ticker := time.NewTicker(bgpPollInterval)
+	defer ticker.Stop()
+	for {
+		pollOnce(ctx, log, target, store)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// agentDialTarget turns the agent's listen address into a dialable
+// same-host target: a wildcard or empty host becomes the loopback.
+func agentDialTarget(listenAddr string) (string, error) {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		slog.Warn("wanconfig: agent tcp_addr unparsable", "tcp_addr", listenAddr, "err", err)
+		return "", fmt.Errorf("split agent tcp_addr %q: %w", listenAddr, err)
+	}
+	if host == "" || host == "::" || host == "0.0.0.0" {
+		host = "::1"
+	}
+	return net.JoinHostPort(host, port), nil
+}
+
+func pollOnce(ctx context.Context, log *slog.Logger, target string, store *wanstate.Store) {
+	pollCtx, cancel := context.WithTimeout(ctx, bgpPollTimeout)
+	defer cancel()
+
+	conn, err := grpc.NewClient("passthrough:///"+target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(dialCtx context.Context, _ string) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(dialCtx, "tcp", target)
+		}),
+	)
+	if err != nil {
+		log.WarnContext(pollCtx, "wanconfig: agent client build failed", "err", err)
+		return
+	}
+	defer func() { _ = conn.Close() }()
+
+	resp, err := mwanv1.NewMWANAgentClient(conn).GetBGPStatus(pollCtx, &mwanv1.GetBGPStatusRequest{})
+	if err != nil {
+		log.DebugContext(pollCtx, "wanconfig: agent bgp poll failed", "err", err)
+		return
+	}
+	peers := make([]wanstate.BGPPeer, 0, len(resp.GetPeers()))
+	for _, peer := range resp.GetPeers() {
+		peers = append(peers, wanstate.BGPPeer{
+			Address:     peer.GetAddress(),
+			Established: peer.GetEstablished(),
+		})
+	}
+	store.SetBGP(wanstate.BGP{Peers: peers, ReadAt: time.Now(), Reached: true})
+}

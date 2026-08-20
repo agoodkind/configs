@@ -124,6 +124,13 @@ module goodkind-mwan-steering {
           description
             "When the health verdict last changed.";
         }
+        leaf consecutive-failures {
+          type uint32;
+          description
+            "How many combined probe cycles in a row have failed. The
+             verdict's hysteresis counts whole cycles, not families, so
+             the counter sits beside the verdict.";
+        }
         list probe {
           key "family";
           description
@@ -159,11 +166,6 @@ module goodkind-mwan-steering {
             }
             description
               "The most recent probe outcome.";
-          }
-          leaf consecutive-failures {
-            type uint32;
-            description
-              "How many probes in a row have failed.";
           }
         }
       }

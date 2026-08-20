@@ -14,6 +14,7 @@ import (
 	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 // Daemon is the long-lived ifmgr process. One Daemon serves one role on
@@ -82,6 +83,11 @@ type DaemonConfig struct {
 	// ModuleConfigs holds per-module runtime configs keyed by module name.
 	// Each module's Constructor receives ModuleConfigs[Name()].
 	ModuleConfigs ModuleConfigSet
+
+	// LiveState, when non-nil, receives each module's reconciled snapshot
+	// for the management surface to serve. Hosts without a surface leave
+	// it nil and modules skip the write.
+	LiveState *wanstate.Store
 }
 
 // NewDaemon constructs a Daemon for the given config and role. Resolves
@@ -209,6 +215,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		DHCP:             dhcpClient,
 		RA:               raClient,
 		RequestReconcile: d.requestReconcile,
+		LiveState:        d.cfg.LiveState,
 	}
 
 	if err := d.initModules(ctx); err != nil {

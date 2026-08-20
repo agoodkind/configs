@@ -209,6 +209,7 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		reconcileMu:      sync.Mutex{},
 		reconcilePending: true,
 		statuses:         nil,
+		lastTransition:   nil,
 		probeV4:          netif.Ping4,
 		probeV6:          netif.Ping6,
 		probeHTTP6:       netif.HTTPCheck6,
