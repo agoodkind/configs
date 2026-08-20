@@ -132,14 +132,15 @@ What each acceptance item reads, and where the value comes from:
   existing local RPC; a dead agent yields an explicit stale marker, never
   a hang, because the cache refresh is bounded and runs outside the
   callback.
-- **Intended firewall ruleset.** The ruleset the daemon would program,
-  rendered in its own text form as one opaque leaf. Modeling firewall
-  rules structurally is its own published-model project and is not this
-  piece.
+- **Intended firewall ruleset.** The model carries one opaque leaf for
+  the ruleset the daemon would program, rendered in its own text form;
+  it is served once the daemon gains a render hook for it, with the
+  remaining modules. Modeling firewall rules structurally is its own
+  published-model project and is not this work.
 
-Operational interface state the published models already define rides
-along where the daemon holds it: each interface's oper-status and its
-current addresses. Values the daemon does not hold are not served.
+Values the daemon does not hold are not served, and nothing is
+reconstructed from files or the kernel at read time beyond the
+snapshots above.
 
 The steering module gains the state nodes this needs, marked as
 non-configuration so the running datastore is untouched; yanglint gates

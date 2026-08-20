@@ -116,8 +116,10 @@ module goodkind-mwan-steering {
         leaf carrying {
           type boolean;
           description
-            "Whether the member is currently carrying traffic under
-             the last reconciled steering decision.";
+            "Whether new connections are steered to this member under
+             the last reconciled decision. Existing flows pinned by
+             connection tracking may keep riding a member after this
+             turns false, until they end.";
         }
         leaf last-transition {
           type yang:date-and-time;
