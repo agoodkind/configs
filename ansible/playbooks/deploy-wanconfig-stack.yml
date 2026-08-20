@@ -65,7 +65,7 @@
           - napt44
           - dst-nat
           - nptv6
-      - name: goodkind-mwan-steering@2026-08-13
+      - name: goodkind-mwan-steering@2026-08-20
         features: []
   tasks:
     - name: Install build and runtime dependencies
@@ -174,7 +174,7 @@
         - "../../third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang"
         - "../../third_party/yang/standard/ietf/RFC/ietf-routing@2018-03-13.yang"
         - "../../third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang"
-        - "../../mwan/yang/goodkind-mwan-steering@2026-08-13.yang"
+        - "../../mwan/yang/goodkind-mwan-steering@2026-08-20.yang"
 
     - name: List installed sysrepo modules
       ansible.builtin.command:
@@ -215,6 +215,27 @@
       loop_control:
         label: "{{ item.name }}"
       when: item.name.split('@')[0] not in wanconfig_sysrepo_modules.stdout
+      changed_when: true
+
+    # A module that is installed at an older revision is updated in place.
+    # --update replaces the schema and keeps the stored data and enabled
+    # features, which is what a revision that only adds nodes needs. The
+    # revision check matches the module listing's "name | revision" row.
+    - name: Update gateway models installed at an older revision
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['/usr/local/bin/sysrepoctl', '--update',
+             wanconfig_yang_dir ~ '/' ~ item.name ~ '.yang',
+             '--search-dirs', wanconfig_yang_dir]
+          }}
+      loop: "{{ wanconfig_yang_modules }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: >-
+        item.name.split('@')[0] in wanconfig_sysrepo_modules.stdout
+        and wanconfig_sysrepo_modules.stdout is not
+          regex(item.name.split('@')[0] ~ '\s*\|\s*' ~ item.name.split('@')[1])
       changed_when: true
 
     - name: Import the read-only NACM policy

@@ -13,6 +13,7 @@ import (
 
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 const (
@@ -194,7 +195,38 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		reconcileErr = errors.Join(reconcileErr, err)
 	}
 	m.checkNextHopLocked(ctx, log)
+	m.publishLiveState(currentGateways, health)
 	return reconcileErr
+}
+
+// publishLiveState writes this pass's steering decision to the management
+// surface's snapshot store, when this host serves one. A member is
+// carrying when the pass installed its steering rules: it has a gateway
+// in at least one family and its health verdict allows it. The active
+// tier is the fallback tier exactly when the fallback rules engaged.
+func (m *Module) publishLiveState(currentGateways gateways, health netif.HealthStates) {
+	if m.Env == nil || m.Env.LiveState == nil {
+		return
+	}
+	members := make(map[string]wanstate.MemberRouting, len(m.cfg.WANs))
+	fallback := fallbackEnabled(health)
+	for _, wan := range m.cfg.WANs {
+		wanGateways := currentGateways[wan.Name]
+		enabled := wanEnabled(wanGateways.V4, health.State(wan.Name)) ||
+			wanEnabled(wanGateways.V6, health.State(wan.Name))
+		carrying := enabled
+		if fallback {
+			carrying = wan.Name == wanNameMonkeybrains && enabled
+		} else if TierOf(wan.Name) != TierPreferred {
+			carrying = false
+		}
+		members[wan.Name] = wanstate.MemberRouting{Carrying: carrying}
+	}
+	activeTier := TierPreferred
+	if fallback {
+		activeTier = TierFallback
+	}
+	m.Env.LiveState.SetRouting(activeTier, members)
 }
 
 // checkNextHopLocked probes the internal next hop's neighbour entry and
