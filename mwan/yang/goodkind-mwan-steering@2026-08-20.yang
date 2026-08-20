@@ -1,0 +1,268 @@
+module goodkind-mwan-steering {
+  yang-version 1.1;
+  namespace "urn:goodkind:mwan-steering";
+  prefix mwan-steer;
+
+  import ietf-interfaces {
+    prefix if;
+    revision-date 2018-02-20;
+    reference
+      "RFC 8343: A YANG Data Model for Interface Management";
+  }
+  import ietf-ip {
+    prefix ip;
+    revision-date 2018-02-22;
+    reference
+      "RFC 8344: A YANG Data Model for IP Management";
+  }
+  import ietf-nat {
+    prefix nat;
+    revision-date 2019-01-10;
+    reference
+      "RFC 8512: A YANG Module for Network Address Translation (NAT)
+       and Network Prefix Translation (NPT)";
+  }
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 6991: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 6991: Common YANG Data Types";
+  }
+
+  organization
+    "goodkind.io";
+  contact
+    "alex@goodkind.io";
+  description
+    "Steering properties for the MWAN gateway that no published model
+     covers. A member is an interface with steering properties, not a
+     parallel object, so this module augments the interface list and
+     adds the group's hash mode beside it. State nodes carry what is
+     true right now, served from the running daemon.";
+
+  revision 2026-08-20 {
+    description
+      "Add the live-state nodes the daemon serves from the operational
+       datastore: per-member health with its probe evidence, the live
+       delegated prefix, the active tier and traffic carrier, kernel
+       presence per translation instance, routing session state, and
+       the intended firewall ruleset.";
+  }
+  revision 2026-08-13 {
+    description
+      "Initial revision.";
+  }
+
+  augment "/if:interfaces/if:interface" {
+    description
+      "Marks an interface as a steering member.";
+    container steering {
+      presence
+        "This interface is a steering member.";
+      description
+        "The member's steering properties.";
+      leaf tier {
+        type uint8;
+        mandatory true;
+        description
+          "Preference tier. Lower is preferred. The active tier is the
+           lowest-numbered tier holding at least one healthy member.";
+      }
+      leaf weight {
+        type uint16 {
+          range "1..max";
+        }
+        default "1";
+        description
+          "Weight for unequal balancing among members of one tier. A
+           positive integer, so the slot sum the balancer divides by is
+           never zero.";
+      }
+      leaf probe-policy {
+        type string;
+        description
+          "Names the health probes that decide the member's state. Sits
+           on the interface and covers both address families, because
+           the health verdict is combined.";
+      }
+      container state {
+        config false;
+        description
+          "The member's live steering state, answered by the running
+           daemon at request time.";
+        leaf health {
+          type enumeration {
+            enum healthy {
+              description
+                "The member passed its probes and is usable.";
+            }
+            enum unhealthy {
+              description
+                "The member failed its probes and carries no new
+                 traffic.";
+            }
+            enum unknown {
+              description
+                "No verdict has been recorded for the member.";
+            }
+          }
+          description
+            "The member's combined health verdict.";
+        }
+        leaf carrying {
+          type boolean;
+          description
+            "Whether the member is currently carrying traffic under
+             the last reconciled steering decision.";
+        }
+        leaf last-transition {
+          type yang:date-and-time;
+          description
+            "When the health verdict last changed.";
+        }
+        list probe {
+          key "family";
+          description
+            "The per-family probe evidence behind the verdict.";
+          leaf family {
+            type enumeration {
+              enum ipv4 {
+                description
+                  "The IPv4 probe.";
+              }
+              enum ipv6 {
+                description
+                  "The IPv6 probe.";
+              }
+            }
+            description
+              "The address family the probe exercises.";
+          }
+          leaf last-result {
+            type enumeration {
+              enum pass {
+                description
+                  "The most recent probe succeeded.";
+              }
+              enum fail {
+                description
+                  "The most recent probe failed.";
+              }
+              enum none {
+                description
+                  "No probe has completed yet.";
+              }
+            }
+            description
+              "The most recent probe outcome.";
+          }
+          leaf consecutive-failures {
+            type uint32;
+            description
+              "How many probes in a row have failed.";
+          }
+        }
+      }
+    }
+  }
+
+  augment "/if:interfaces/if:interface/ip:ipv6" {
+    description
+      "The delegation the provider on this interface currently holds.";
+    leaf delegated-prefix {
+      config false;
+      type inet:ipv6-prefix;
+      description
+        "The IPv6 prefix currently delegated to this interface, as the
+         daemon's prefix tracking sees it. Absent when the provider
+         holds no delegation.";
+    }
+  }
+
+  augment "/nat:nat/nat:instances/nat:instance" {
+    description
+      "Whether the translation instance is realized in the kernel.";
+    leaf kernel-present {
+      config false;
+      type boolean;
+      description
+        "Whether the daemon found this instance's rules present in the
+         kernel on its last reconcile pass.";
+    }
+  }
+
+  augment "/if:interfaces" {
+    description
+      "Group-wide steering settings.";
+    container steering-group {
+      description
+        "Settings that apply to the member group as a whole.";
+      leaf hash-mode {
+        type enumeration {
+          enum random {
+            description
+              "A new connection is assigned to a member at random.";
+          }
+          enum source {
+            description
+              "Assignment is derived from the source address.";
+          }
+          enum source-destination {
+            description
+              "Assignment is derived from source and destination.";
+          }
+        }
+        default "random";
+        description
+          "How a new connection is assigned to a member of the active
+           tier.";
+      }
+      container state {
+        config false;
+        description
+          "The group's live steering state.";
+        leaf active-tier {
+          type uint8;
+          description
+            "The lowest-numbered tier currently holding at least one
+             healthy member.";
+        }
+        list bgp-peer {
+          key "address";
+          description
+            "The routing sessions the gateway's speaker holds. The
+             speaker runs in the agent process, so these values are
+             read over its local RPC and cached briefly.";
+          leaf address {
+            type inet:ip-address;
+            description
+              "The peer's address.";
+          }
+          leaf established {
+            type boolean;
+            description
+              "Whether the session is established.";
+          }
+          leaf stale {
+            type boolean;
+            description
+              "Whether this answer came from an expired cache because
+               the agent could not be reached; a stale answer reports
+               the last known state, not the current one.";
+          }
+        }
+        leaf intended-ruleset {
+          type string;
+          description
+            "The firewall ruleset the daemon intends, rendered in its
+             own text form. Served opaquely; modeling firewall rules
+             structurally is out of scope for this module.";
+        }
+      }
+    }
+  }
+}
