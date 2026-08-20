@@ -11,7 +11,7 @@ require (
 	github.com/google/nftables v0.3.0
 	github.com/google/renameio/v2 v2.0.2
 	github.com/hashicorp/yamux v0.1.2
-	github.com/insomniacslk/dhcp v0.0.0-20260407060928-11b94ed970f2
+	github.com/insomniacslk/dhcp v0.0.0-20260719225207-c76316d4aa82
 	github.com/mdlayher/ndp v1.1.0
 	github.com/mdlayher/vsock v1.2.1
 	github.com/osrg/gobgp/v4 v4.7.0
