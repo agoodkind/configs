@@ -24,15 +24,8 @@ SyslogIdentifier=mwan-ifmgr@%i
 #   CAP_NET_RAW          - ICMPv6 sockets for NDP and connectivity probes,
 #                          plus DHCPv4 raw sockets (insomniacslk/dhcp)
 #   CAP_NET_BIND_SERVICE - reserved for any future low-port bind
-#   CAP_DAC_OVERRIDE     - the wanconfig publish's sysrepo connection opens
-#                          peer event pipes under /etc/sysrepo whose
-#                          write-only modes deny even root without DAC
-#                          override; sr_connect fails SR_ERR_SYS without
-#                          it (bisected live on the testbed gateway,
-#                          2026-08-19). Harmless where publish is off: the
-#                          daemon never opens a datastore connection there.
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
 
 # Lock down the rest of the filesystem.
 NoNewPrivileges=true

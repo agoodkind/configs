@@ -78,7 +78,6 @@ ifeq ($(WANCONFIG_SYSREPO_VERSION),)
 $(error wanconfig_sysrepo_version not found in $(WANCONFIG_PINS_FILE))
 endif
 GO_MK_CGO_DEPS := libyang sysrepo
-GO_MK_CGO_CACHE_VERSIONS := libyang=$(WANCONFIG_LIBYANG_VERSION) sysrepo=$(WANCONFIG_SYSREPO_VERSION)
 
 include bootstrap.mk
 
@@ -189,7 +188,7 @@ define wanconfig_cgo_dep_build
 		echo "cgo dep $(1) skipped: no cross toolchain for $${GO_MK_TARGET_GOOS}, and only the linux artifact links it"; \
 		exit 0; \
 	fi; \
-	if [ -f "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2).stamp" ]; then \
+	if [ -f "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2)-f$(6).stamp" ]; then \
 		exit 0; \
 	fi; \
 	set -e; \
@@ -213,7 +212,7 @@ define wanconfig_cgo_dep_build
 		awk -v extra="$(strip $(5))" '/^Libs:/ {print $$0 " " extra; next} {print}' "$$pc" > "$$pc.tmp" \
 			&& mv "$$pc.tmp" "$$pc"; \
 	fi; \
-	touch "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2).stamp"
+	touch "$${GO_MK_CGO_PREFIX}/.dep-$(1)-$(2)-f$(6).stamp"
 endef
 
 .PHONY: go-mk-cgo-dep-libyang go-mk-cgo-dep-sysrepo
@@ -229,18 +228,34 @@ WANCONFIG_LIBYANG_CMAKE_FLAGS := -DENABLE_TOOLS=OFF
 # writes these onto the Libs line and cgo picks them up through its ordinary
 # pkg-config lookup, in every build that links libyang: test, lint, release.
 WANCONFIG_LIBYANG_STATIC_LIBS := -lpcre2-8 -lm
+# SR_HAVE_DLOPEN=OFF compiles sysrepo's external-plugin machinery out of the
+# library. The daemon uses no external sysrepo plugins, and the default build
+# bakes the plugin directory's build-time prefix into the binary: in CI that
+# is the runner's workspace under /home, and scanning it under the ifmgr
+# unit's ProtectHome=true returns EACCES where a missing directory would be
+# tolerated, so sr_connect failed with SR_ERR_SYS on the gateway (bisected
+# live 2026-08-19). With dlopen support off there is no scan, no baked path,
+# and no environment override to carry.
 WANCONFIG_SYSREPO_CMAKE_FLAGS := \
 	-DREPO_PATH=$(WANCONFIG_SYSREPO_REPO_PATH) \
+	-DSR_HAVE_DLOPEN=OFF \
 	-DENABLE_EXAMPLES=OFF \
 	-DENABLE_SYSREPOCTL=OFF \
 	-DENABLE_SYSREPOCFG=OFF \
 	-DENABLE_SYSREPO_PLUGIND=OFF
 
+# The build stamps and the CI cache key both carry a checksum of each
+# dependency's flags, so a flag change at the same upstream version rebuilds
+# everywhere instead of silently reusing the previously built archive.
+WANCONFIG_LIBYANG_FLAGS_REV := $(shell printf '%s' '$(WANCONFIG_LIBYANG_CMAKE_FLAGS) $(WANCONFIG_LIBYANG_STATIC_LIBS)' | cksum | cut -d' ' -f1)
+WANCONFIG_SYSREPO_FLAGS_REV := $(shell printf '%s' '$(WANCONFIG_SYSREPO_CMAKE_FLAGS)' | cksum | cut -d' ' -f1)
+GO_MK_CGO_CACHE_VERSIONS := libyang=$(WANCONFIG_LIBYANG_VERSION)-f$(WANCONFIG_LIBYANG_FLAGS_REV) sysrepo=$(WANCONFIG_SYSREPO_VERSION)-f$(WANCONFIG_SYSREPO_FLAGS_REV)
+
 go-mk-cgo-dep-libyang:
-	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git,$(WANCONFIG_LIBYANG_CMAKE_FLAGS),$(WANCONFIG_LIBYANG_STATIC_LIBS))
+	$(call wanconfig_cgo_dep_build,libyang,$(WANCONFIG_LIBYANG_VERSION),https://github.com/CESNET/libyang.git,$(WANCONFIG_LIBYANG_CMAKE_FLAGS),$(WANCONFIG_LIBYANG_STATIC_LIBS),$(WANCONFIG_LIBYANG_FLAGS_REV))
 
 go-mk-cgo-dep-sysrepo: go-mk-cgo-dep-libyang
-	$(call wanconfig_cgo_dep_build,sysrepo,$(WANCONFIG_SYSREPO_VERSION),https://github.com/sysrepo/sysrepo.git,$(WANCONFIG_SYSREPO_CMAKE_FLAGS))
+	$(call wanconfig_cgo_dep_build,sysrepo,$(WANCONFIG_SYSREPO_VERSION),https://github.com/sysrepo/sysrepo.git,$(WANCONFIG_SYSREPO_CMAKE_FLAGS),,$(WANCONFIG_SYSREPO_FLAGS_REV))
 
 # Development lane for the publishing binding on macOS, where the C libraries
 # cannot be built natively. It builds the linux gateway binary inside a Debian
@@ -258,6 +273,8 @@ build-wanconfig:
 	docker build --platform linux/amd64 \
 		--build-arg LIBYANG_VERSION=$(WANCONFIG_LIBYANG_VERSION) \
 		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
+		--build-arg "LIBYANG_CMAKE_FLAGS=$(WANCONFIG_LIBYANG_CMAKE_FLAGS)" \
+		--build-arg "SYSREPO_CMAKE_FLAGS=$(WANCONFIG_SYSREPO_CMAKE_FLAGS)" \
 		-t $(WANCONFIG_BUILDER_IMAGE) ../wanconfig/builder
 	@mkdir -p $(LOCAL_BIN)
 	docker run --rm --platform linux/amd64 \
