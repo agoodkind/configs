@@ -93,6 +93,59 @@ If the datastore cannot be reached or rejects the publish, the daemon logs
 the failure and runs exactly as it would have without a management surface.
 A publish is bounded in time so a stalled datastore cannot delay startup.
 
+## How live state is served
+
+The same interface-manager process serves the live half of the tree, from
+the operational datastore, as a provider: it registers for its owned
+subtrees once at startup, right after the configuration publish and behind
+the same gate, and each read then reaches into the daemon at request time.
+Nothing is copied on a schedule, so the answer cannot drift from the
+process. The provider connection stays open for the daemon's lifetime;
+losing it is logged and the daemon runs on, exactly like a failed publish.
+
+A provider callback answers from a snapshot the modules already maintain,
+never by taking a lock the reconcile path holds and never by probing
+on demand. A read is bounded in time, and a reader that stalls or asks for
+a malformed path costs the daemon one bounded callback and nothing else.
+
+What each acceptance item reads, and where the value comes from:
+
+- **Delegated prefix.** Each member's currently held delegation, as the
+  daemon's prefix tracking sees it, on the member's ipv6 container through
+  a leaf the steering module adds. A member holding no delegation has no
+  leaf.
+- **Health and probe results.** Each member's verdict plus the evidence
+  behind it: per-family last result, consecutive failures, and the time of
+  the last transition, as steering-module state under the member. The
+  health module owns these values today; the provider serves the module's
+  snapshot.
+- **Active tier and carrier.** The steering group's active tier and, per
+  member, whether it is currently carrying traffic, from the routing
+  module's last reconciled decision.
+- **Translation realized.** Per translation instance, whether the daemon
+  found its rules present in the kernel on the last reconcile, as a
+  steering-module leaf on the nat instance. The published model has no
+  such node, so the local module augments it.
+- **Routing session.** Whether the BGP session is established, per peer.
+  The speaker lives in the agent process, not the interface manager, so
+  the provider answers from a short-lived cache filled over the agent's
+  existing local RPC; a dead agent yields an explicit stale marker, never
+  a hang, because the cache refresh is bounded and runs outside the
+  callback.
+- **Intended firewall ruleset.** The ruleset the daemon would program,
+  rendered in its own text form as one opaque leaf. Modeling firewall
+  rules structurally is its own published-model project and is not this
+  piece.
+
+Operational interface state the published models already define rides
+along where the daemon holds it: each interface's oper-status and its
+current addresses. Values the daemon does not hold are not served.
+
+The steering module gains the state nodes this needs, marked as
+non-configuration so the running datastore is untouched; yanglint gates
+the change like any model edit. Streaming of these values is the next
+piece; this one serves reads.
+
 ## What must not change
 
 No data-path behavior. This piece adds a reader and nothing else.
