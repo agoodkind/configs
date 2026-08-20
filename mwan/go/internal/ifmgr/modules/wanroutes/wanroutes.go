@@ -33,6 +33,31 @@ const (
 	nextHopAlertThreshold = 2
 )
 
+// Tier values the router assigns today. The balancer spreads new connections
+// across the preferred tier; the fallback tier carries traffic only while
+// every preferred member is unhealthy (see fallbackEnabled).
+const (
+	// TierPreferred is the tier the balancer uses while any member of it is
+	// healthy.
+	TierPreferred uint8 = 0
+	// TierFallback is the tier that serves only when the preferred tier has
+	// no healthy member.
+	TierFallback uint8 = 1
+)
+
+// TierOf reports the steering tier this router assigns to the named WAN.
+// Today that assignment is fixed in code: the Monkeybrains link is the
+// fallback, every other member is preferred. The management surface
+// publishes this value for each member, so it reads from the same rule the
+// router applies rather than a second copy of it; when tier becomes
+// configuration (the provider-set piece), this function reads it from there.
+func TierOf(name string) uint8 {
+	if name == wanNameMonkeybrains {
+		return TierFallback
+	}
+	return TierPreferred
+}
+
 // Config is the parsed [ifmgr.modules.wan.routes] runtime config.
 type Config struct {
 	InternalIface   string
