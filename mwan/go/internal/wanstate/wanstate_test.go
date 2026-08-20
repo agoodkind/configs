@@ -15,8 +15,10 @@ func TestStore_SnapshotCarriesEveryWrite(t *testing.T) {
 	store := New()
 	transition := time.Date(2026, 8, 20, 1, 2, 3, 0, time.UTC)
 	store.SetHealth(map[string]MemberHealth{
-		"att": {Verdict: HealthHealthy, ConsecutiveFailures: 0,
-			LastTransition: transition, V4: ProbePass, V6: ProbePass},
+		"att": {
+			Verdict: HealthHealthy, ConsecutiveFailures: 0,
+			LastTransition: transition, V4: ProbePass, V6: ProbePass,
+		},
 	})
 	store.SetRouting(1, map[string]MemberRouting{
 		"att":          {Carrying: false},

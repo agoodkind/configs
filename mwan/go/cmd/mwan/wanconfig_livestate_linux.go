@@ -71,7 +71,8 @@ func interfacesLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []ya
 		base := "/ietf-interfaces:interfaces/interface[name='" + member.Iface +
 			"']/" + steeringPrefix + ":steering/state"
 		if health, known := snap.Health[member.Name]; known {
-			items = append(items,
+			items = append(
+				items,
 				yangpub.Item{Path: base + "/health", Value: string(health.Verdict)},
 				yangpub.Item{
 					Path:  base + "/consecutive-failures",
@@ -117,7 +118,8 @@ func interfacesLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []ya
 	stale := !snap.BGP.Reached || time.Since(snap.BGP.ReadAt) > bgpStaleAfter
 	for _, peer := range snap.BGP.Peers {
 		peerBase := groupBase + "/bgp-peer[address='" + peer.Address + "']"
-		items = append(items,
+		items = append(
+			items,
 			yangpub.Item{Path: peerBase + "/established", Value: boolValue(peer.Established)},
 			yangpub.Item{Path: peerBase + "/stale", Value: boolValue(stale)},
 		)
@@ -204,7 +206,8 @@ func pollOnce(ctx context.Context, log *slog.Logger, target string, store *wanst
 	pollCtx, cancel := context.WithTimeout(ctx, bgpPollTimeout)
 	defer cancel()
 
-	conn, err := grpc.NewClient("passthrough:///"+target,
+	conn, err := grpc.NewClient(
+		"passthrough:///"+target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(dialCtx context.Context, _ string) (net.Conn, error) {
 			var dialer net.Dialer
