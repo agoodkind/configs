@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package netif provides Go-native implementations of low-level Linux
 // network state operations: address and route reconciliation, policy-rule
 // reconciliation, kernel event monitoring, DHCPv4 client, Router

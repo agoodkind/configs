@@ -53,6 +53,46 @@ The daemon's own part is one small publishing binding: connect, open a
 session, set values by path, apply. Everything protocol-shaped is off the
 shelf.
 
+## How the configuration is published
+
+The interface-manager process that runs the gateway's steering role owns the
+configuration part of the tree. It publishes once, at startup, after it has
+loaded and validated its configuration and before it programs anything, and
+it publishes from the typed configuration it is about to run with, not from
+the file. Editing the file on disk without restarting the daemon therefore
+changes nothing in the tree, which is the acceptance test.
+
+Publishing is gated on one configuration setting. A host whose rendered
+configuration does not turn it on never opens a connection to the datastore,
+so the hypervisors, the failover container, and production before its stack
+is installed do not attempt a publish they cannot complete. The gate is off
+unless stated.
+
+The publish replaces the subtrees the daemon owns in one transaction: the
+interface list with its per-family containers and steering properties, and
+the translation instances. Whatever an earlier run left there disappears in
+the same change that writes the current values, so a reader never sees the
+tree empty or half-replaced, and nothing from a retired configuration
+survives a restart.
+
+Only values the daemon holds are published. Each steering member appears as
+an interface entry named by its link, marked as a member with its tier and
+the name of the probe policy that decides its health. Its address-family
+containers are present and enabled, because the daemon steers and probes
+both families on every member; the internal link appears the same way. Each
+member whose loaded configuration carries a translation prefix appears as a
+prefix-translation instance with both prefixes explicit. A value the
+configuration does not carry is left to the schema default or left out: the
+interface type is published as unspecified because the configuration has no
+type, the hash mode and member weight are not published because the balancer
+that holds them is still the firewall file, and addresses, routes, and
+routing tables are not published because the daemon holds them only as live
+state, which the live-state piece serves from the operational datastore.
+
+If the datastore cannot be reached or rejects the publish, the daemon logs
+the failure and runs exactly as it would have without a management surface.
+A publish is bounded in time so a stalled datastore cannot delay startup.
+
 ## What must not change
 
 No data-path behavior. This piece adds a reader and nothing else.

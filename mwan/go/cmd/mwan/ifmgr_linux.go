@@ -84,6 +84,8 @@ func runIfMgr(cfg *config.Config) error {
 		os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	publishWanconfig(ctx, logger, cfg, dcfg.ModuleConfigs)
+
 	if err := d.Run(ctx); err != nil {
 		logger.WarnContext(ctx, "ifmgr: daemon run failed", "err", err)
 		return fmt.Errorf("ifmgr daemon: %w", err)

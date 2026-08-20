@@ -125,7 +125,7 @@ export PATH := $(GOBIN):$(PATH)
 
 GOVULNCHECK_WRAPPER := ./tools/govulncheck.sh
 
-.PHONY: proto tidy fix clean yang-validate
+.PHONY: proto tidy fix clean yang-validate buildtag-validate
 
 proto:
 	@mkdir -p gen/mwan/v1
@@ -154,7 +154,14 @@ yang-validate:
 	$(YANGLINT) --version
 	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_DIR)/*.yang
 
-check: yang-validate
+# Build-tag gate. Fails any package whose linux-only files are forced by
+# neither cgo nor a platform-only import: that is portable code opted out
+# of the freebsd build, and it belongs in untagged files behind an
+# interface instead. The rule itself is documented in the tool.
+buildtag-validate:
+	go run ./tools/buildtagcheck
+
+check: yang-validate buildtag-validate
 
 # Cgo dependency recipes for the go-makefile hook. Each clones its pinned
 # tag and installs into the per-target prefix go.mk supplies through the

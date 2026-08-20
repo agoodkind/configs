@@ -1,5 +1,3 @@
-//go:build linux
-
 package netif
 
 import internalclock "goodkind.io/mwan/internal/clock"

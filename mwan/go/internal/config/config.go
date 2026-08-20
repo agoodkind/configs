@@ -362,13 +362,26 @@ type Config struct {
 	PVE     PVEConfig     `toml:"pve"`
 	Network NetworkConfig `toml:"network"`
 
-	Watchdog WatchdogSection `toml:"watchdog"`
-	Failover FailoverSection `toml:"failover"`
-	Agent    AgentSection    `toml:"agent"`
-	BGP      BGPSection      `toml:"bgp"`
-	OPNsense OPNsenseSection `toml:"opnsense"`
-	IfMgr    IfMgrSection    `toml:"ifmgr"`
-	Notify   NotifySection   `toml:"notify"`
+	Watchdog  WatchdogSection  `toml:"watchdog"`
+	Failover  FailoverSection  `toml:"failover"`
+	Agent     AgentSection     `toml:"agent"`
+	BGP       BGPSection       `toml:"bgp"`
+	OPNsense  OPNsenseSection  `toml:"opnsense"`
+	IfMgr     IfMgrSection     `toml:"ifmgr"`
+	Notify    NotifySection    `toml:"notify"`
+	Wanconfig WanconfigSection `toml:"wanconfig"`
+}
+
+// WanconfigSection gates the gateway's management surface: whether this
+// host's ifmgr publishes the configuration it loaded into the wanconfig
+// datastore (sysrepo) for RESTCONF readers. It is false unless the rendered
+// config says otherwise, so a host without a sysrepo repository (the
+// hypervisors, the failover container, production until its stack is
+// installed) never opens a connection it cannot complete. Publishing is
+// never a precondition for running: a failed publish is logged and the
+// daemon carries on without a management surface.
+type WanconfigSection struct {
+	Publish bool `toml:"publish"`
 }
 
 // NotifySection controls the per-(kind, key) repeat cadence that the
