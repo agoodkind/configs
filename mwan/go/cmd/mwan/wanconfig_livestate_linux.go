@@ -249,9 +249,9 @@ func pollOnce(ctx context.Context, log *slog.Logger, target string, store *wanst
 
 // usablePeers keeps the peers whose address parses as an IP address, the
 // type the model's list key requires, and returns the raw addresses it
-// dropped. The agent copies GoBGP's neighbor address verbatim, and a peer
-// GoBGP holds without one prints as the zero address, which the testbed
-// gateway reports today.
+// dropped. The agent reports each session's address, so a drop here means
+// the agent sent something that cannot be a key; serving it would fail
+// the whole subtree read instead of one peer.
 func usablePeers(reported []*mwanv1.BGPPeerStatus) ([]wanstate.BGPPeer, []string) {
 	peers := make([]wanstate.BGPPeer, 0, len(reported))
 	dropped := make([]string, 0)

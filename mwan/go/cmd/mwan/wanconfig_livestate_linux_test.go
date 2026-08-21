@@ -143,10 +143,11 @@ func TestNatLiveItems_NumbersInstancesLikeTheConfigPublish(t *testing.T) {
 }
 
 // TestUsablePeers_DropsPeersWithoutAnAddress pins the guard that keeps a
-// peer the agent reports with the zero address (printed "invalid IP")
-// out of the store. That address is the bgp-peer list key; libyang
-// rejects it and the whole ietf-interfaces operational read fails, which
-// is what the testbed gateway did on the first live read.
+// peer reported with an unparseable address (the zero address prints as
+// "invalid IP") out of the store. That address is the bgp-peer list key;
+// libyang rejects it and the whole ietf-interfaces operational read
+// fails, which is what the testbed gateway did on the first live read
+// before the agent reported session addresses.
 func TestUsablePeers_DropsPeersWithoutAnAddress(t *testing.T) {
 	t.Parallel()
 	reported := []*mwanv1.BGPPeerStatus{
