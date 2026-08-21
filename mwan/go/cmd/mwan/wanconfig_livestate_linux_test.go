@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/wanconfig"
 	"goodkind.io/mwan/internal/wanstate"
 	"goodkind.io/mwan/internal/yangpub"
@@ -138,6 +139,32 @@ func TestNatLiveItems_NumbersInstancesLikeTheConfigPublish(t *testing.T) {
 		if items[i] != want[i] {
 			t.Fatalf("item[%d] = %v, want %v", i, items[i], want[i])
 		}
+	}
+}
+
+// TestUsablePeers_DropsPeersWithoutAnAddress pins the guard that keeps a
+// peer reported with an unparseable address (the zero address prints as
+// "invalid IP") out of the store. That address is the bgp-peer list key;
+// libyang rejects it and the whole ietf-interfaces operational read
+// fails, which is what the testbed gateway did on the first live read
+// before the agent reported session addresses.
+func TestUsablePeers_DropsPeersWithoutAnAddress(t *testing.T) {
+	t.Parallel()
+	reported := []*mwanv1.BGPPeerStatus{
+		{Address: "3d06:bad:b01:201::2", Established: true},
+		{Address: netip.Addr{}.String(), Established: false},
+		{Address: "", Established: false},
+		{Address: "10.240.240.2", Established: false},
+	}
+	peers, dropped := usablePeers(reported)
+	if len(peers) != 2 || peers[0].Address != "3d06:bad:b01:201::2" || peers[1].Address != "10.240.240.2" {
+		t.Fatalf("peers = %+v", peers)
+	}
+	if !peers[0].Established || peers[1].Established {
+		t.Fatalf("established flags lost: %+v", peers)
+	}
+	if len(dropped) != 2 || dropped[0] != "invalid IP" || dropped[1] != "" {
+		t.Fatalf("dropped = %q", dropped)
 	}
 }
 
