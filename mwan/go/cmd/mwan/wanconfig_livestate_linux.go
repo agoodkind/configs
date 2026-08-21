@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -178,8 +180,20 @@ func pollAgentBGP(
 	}
 	ticker := time.NewTicker(bgpPollInterval)
 	defer ticker.Stop()
+	lastDropped := ""
 	for {
-		pollOnce(ctx, log, target, store)
+		dropped := pollOnce(ctx, log, target, store)
+		// A peer the agent reports without a usable address is dropped
+		// rather than served: its address is the list key, and a key
+		// libyang rejects would fail the whole subtree read. Log once per
+		// change, not once per poll.
+		if dropped != lastDropped {
+			if dropped != "" {
+				log.WarnContext(ctx, "wanconfig: agent reported peers without a usable address; not served",
+					"addresses", dropped)
+			}
+			lastDropped = dropped
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -202,7 +216,10 @@ func agentDialTarget(listenAddr string) (string, error) {
 	return net.JoinHostPort(host, port), nil
 }
 
-func pollOnce(ctx context.Context, log *slog.Logger, target string, store *wanstate.Store) {
+// pollOnce reads the agent once and records the usable peers. It returns
+// the addresses it dropped, joined for logging, so the caller can report
+// a change without repeating itself every poll.
+func pollOnce(ctx context.Context, log *slog.Logger, target string, store *wanstate.Store) string {
 	pollCtx, cancel := context.WithTimeout(ctx, bgpPollTimeout)
 	defer cancel()
 
@@ -216,21 +233,38 @@ func pollOnce(ctx context.Context, log *slog.Logger, target string, store *wanst
 	)
 	if err != nil {
 		log.WarnContext(pollCtx, "wanconfig: agent client build failed", "err", err)
-		return
+		return ""
 	}
 	defer func() { _ = conn.Close() }()
 
 	resp, err := mwanv1.NewMWANAgentClient(conn).GetBGPStatus(pollCtx, &mwanv1.GetBGPStatusRequest{})
 	if err != nil {
 		log.DebugContext(pollCtx, "wanconfig: agent bgp poll failed", "err", err)
-		return
+		return ""
 	}
-	peers := make([]wanstate.BGPPeer, 0, len(resp.GetPeers()))
-	for _, peer := range resp.GetPeers() {
+	peers, dropped := usablePeers(resp.GetPeers())
+	store.SetBGP(wanstate.BGP{Peers: peers, ReadAt: time.Now(), Reached: true})
+	return strings.Join(dropped, ",")
+}
+
+// usablePeers keeps the peers whose address parses as an IP address, the
+// type the model's list key requires, and returns the raw addresses it
+// dropped. The agent copies GoBGP's neighbor address verbatim, and a peer
+// GoBGP holds without one prints as the zero address, which the testbed
+// gateway reports today.
+func usablePeers(reported []*mwanv1.BGPPeerStatus) ([]wanstate.BGPPeer, []string) {
+	peers := make([]wanstate.BGPPeer, 0, len(reported))
+	dropped := make([]string, 0)
+	for _, peer := range reported {
+		address, err := netip.ParseAddr(peer.GetAddress())
+		if err != nil {
+			dropped = append(dropped, peer.GetAddress())
+			continue
+		}
 		peers = append(peers, wanstate.BGPPeer{
-			Address:     peer.GetAddress(),
+			Address:     address.String(),
 			Established: peer.GetEstablished(),
 		})
 	}
-	store.SetBGP(wanstate.BGP{Peers: peers, ReadAt: time.Now(), Reached: true})
+	return peers, dropped
 }
