@@ -234,9 +234,14 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 	cModule := C.CString(module)
 	cPath := C.CString(xpath)
 	var subscription *C.sr_subscription_ctx_t
+	// Merge mode keeps whatever the datastore already holds under xpath
+	// and grafts the provider's items onto it. Without it sysrepo removes
+	// every existing node under the path before the callback runs, which
+	// discards the owned configuration an operational read is meant to
+	// carry beside the state.
 	rc := C.sr_oper_get_subscribe(session, cModule, cPath,
 		C.sr_oper_get_items_cb(C.yangpubOperCB), handleCell,
-		C.sr_subscr_options_t(0), &subscription)
+		C.sr_subscr_options_t(C.SR_SUBSCR_OPER_MERGE), &subscription)
 	C.free(unsafe.Pointer(cModule))
 	C.free(unsafe.Pointer(cPath))
 	if srFailed(rc) {
@@ -301,6 +306,94 @@ func (p *publisher) OwnModule(ctx context.Context, module string) error {
 	})
 	p.mu.Unlock()
 	return nil
+}
+
+// InstallModules installs each model in order over the live connection.
+func (p *publisher) InstallModules(ctx context.Context, models []Model, searchDirs string) error {
+	if err := ctx.Err(); err != nil {
+		p.log.ErrorContext(ctx, "module install aborted before start", "err", err)
+		return fmt.Errorf("yangpub: install aborted: %w", err)
+	}
+	conn, err := p.connection()
+	if err != nil {
+		return err
+	}
+	cSearch := C.CString(searchDirs)
+	defer C.free(unsafe.Pointer(cSearch))
+	for _, model := range models {
+		if err := installModule(conn, model, cSearch); err != nil {
+			p.log.ErrorContext(ctx, "sysrepo module install failed", "path", model.Path, "err", err)
+			return err
+		}
+	}
+	return nil
+}
+
+// installModule installs one model with its features, handing sysrepo a
+// NULL-terminated array of feature names or NULL when there are none.
+func installModule(conn *C.sr_conn_ctx_t, model Model, cSearch *C.char) error {
+	cPath := C.CString(model.Path)
+	defer C.free(unsafe.Pointer(cPath))
+
+	var cFeatures **C.char
+	if len(model.Features) > 0 {
+		slotSize := C.size_t(unsafe.Sizeof((*C.char)(nil)))
+		block := C.malloc(slotSize * C.size_t(len(model.Features)+1))
+		defer C.free(block)
+		slots := unsafe.Slice((**C.char)(block), len(model.Features)+1)
+		for i, feature := range model.Features {
+			slots[i] = C.CString(feature)
+			defer C.free(unsafe.Pointer(slots[i]))
+		}
+		slots[len(model.Features)] = nil
+		cFeatures = (**C.char)(block)
+	}
+	if rc := C.sr_install_module(conn, cPath, cSearch, cFeatures); srFailed(rc) {
+		return srError("sr_install_module "+model.Path, rc)
+	}
+	return nil
+}
+
+// ExportJSON reads the subtree at xpath in ds and prints it as JSON.
+func (p *publisher) ExportJSON(ctx context.Context, ds Datastore, xpath string) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		p.log.ErrorContext(ctx, "export aborted before start", "err", err)
+		return "", false, fmt.Errorf("yangpub: export aborted: %w", err)
+	}
+	srDS, err := datastoreOf(ds)
+	if err != nil {
+		p.log.ErrorContext(ctx, "export rejected", "err", err)
+		return "", false, err
+	}
+	session, err := p.startSession(ctx, srDS)
+	if err != nil {
+		return "", false, err
+	}
+	defer C.sr_session_stop(session)
+
+	cPath := C.CString(xpath)
+	defer C.free(unsafe.Pointer(cPath))
+	var data *C.sr_data_t
+	rc := C.sr_get_data(session, cPath, 0, C.uint32_t(getTimeoutMS), C.sr_get_options_t(0), &data)
+	if srFailed(rc) {
+		getErr := srError("sr_get_data "+xpath, rc)
+		p.log.ErrorContext(ctx, "sysrepo get data failed", "path", xpath, "err", getErr)
+		return "", false, getErr
+	}
+	if data == nil || data.tree == nil {
+		if data != nil {
+			C.sr_release_data(data)
+		}
+		return "", false, nil
+	}
+	defer C.sr_release_data(data)
+
+	var printed *C.char
+	if lyErr := C.lyd_print_mem(&printed, data.tree, C.LYD_JSON, C.LYD_PRINT_WITHSIBLINGS); lyFailed(lyErr) {
+		return "", false, fmt.Errorf("yangpub: lyd_print_mem %s: libyang code %d", xpath, int(lyErr))
+	}
+	defer C.free(unsafe.Pointer(printed))
+	return C.GoString(printed), true, nil
 }
 
 // GetItem reads one value by path in ds.
