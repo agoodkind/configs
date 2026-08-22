@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -155,7 +155,7 @@ func runDaemonRPCVersion() int {
 	if err != nil {
 		return printAndExit("daemon version", err)
 	}
-	fmt.Printf("version=%s commit=%s dirty=%t binhash=%s\n",
+	fmt.Fprintf(os.Stdout, "version=%s commit=%s dirty=%t binhash=%s\n",
 		resp.GetVersion(), resp.GetBuildCommit(), resp.GetBuildDirty(), resp.GetBuildBinhash())
 	return 0
 }
@@ -283,7 +283,7 @@ func runDaemonRestart() int {
 	if _, err := cli.OpnsenseClient().RestartDaemon(ctx, &mwanv1.RestartDaemonRequest{}); err != nil {
 		return printAndExit("daemon restart", err)
 	}
-	fmt.Println("daemon restart: initiated")
+	fmt.Fprintln(os.Stdout, "daemon restart: initiated")
 	return 0
 }
 

@@ -28,5 +28,7 @@
 // All implementations log every boundary at [slog.LevelDebug] with op name,
 // parameters, duration, and error.
 //
-// Package is Linux-only.
+// The kernel-facing implementations are Linux-only; portable helpers
+// (CIDR parsing, health-state file reads, sysctl paths) and stub probe
+// entry points build everywhere so cross-platform callers typecheck.
 package netif

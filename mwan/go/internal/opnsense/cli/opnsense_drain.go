@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -228,7 +228,13 @@ func makeChardevOpener(
 // transport detail lives in openChardev, so this loop is the same under systemd
 // and in tests.
 func runDrainRelay(ctx context.Context, log *slog.Logger, ln net.Listener, openChardev func(context.Context) (net.Conn, error)) {
-	hub := &drainHub{}
+	hub := &drainHub{
+		mu:       sync.Mutex{},
+		client:   nil,
+		chardev:  nil,
+		epoch:    0,
+		toClient: nil,
+	}
 	spawn(ctx, log, "drain accept", func() { acceptLoop(ctx, log, hub, ln) })
 	for {
 		if ctx.Err() != nil {

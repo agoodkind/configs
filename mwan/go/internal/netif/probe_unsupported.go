@@ -1,6 +1,5 @@
 //go:build !linux
 
-// Package netif provides portable probe entry points for non-Linux builds.
 package netif
 
 import (

@@ -79,6 +79,8 @@ func (r runningReplacer) ReplaceConfig(ctx context.Context, ownedPaths []string,
 		published = append(published, yangpub.Item{Path: item.Path, Value: item.Value})
 	}
 	if err := r.pub.ReplaceItems(ctx, yangpub.DatastoreRunning, ownedPaths, published); err != nil {
+		slog.ErrorContext(ctx, "wanconfig: datastore replace failed",
+			"items", len(published), "err", err)
 		return fmt.Errorf("replace running config: %w", err)
 	}
 	return nil

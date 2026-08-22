@@ -166,9 +166,9 @@ The check run stages the release without touching the guest. Copy the daemon
 binary and its service files onto the guest:
 
 - `.make/releases/<tag>/freebsd_amd64/mwan` to `/usr/local/sbin/mwan-opnsense.current`
-- `cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense` to `/usr/local/etc/rc.d/mwan_opnsense`
-- `cmd/mwan/opnsense-src/etc/rc.conf.d/mwan_opnsense.sample` to `/etc/rc.conf.d/mwan_opnsense`
-- `cmd/mwan/opnsense-src/boot/loader.conf.d/mwan_opnsense.conf` to `/boot/loader.conf.d/mwan_opnsense.conf`
+- `internal/opnsense/cli/opnsense-src/etc/rc.d/mwan_opnsense` to `/usr/local/etc/rc.d/mwan_opnsense`
+- `internal/opnsense/cli/opnsense-src/etc/rc.conf.d/mwan_opnsense.sample` to `/etc/rc.conf.d/mwan_opnsense`
+- `internal/opnsense/cli/opnsense-src/boot/loader.conf.d/mwan_opnsense.conf` to `/boot/loader.conf.d/mwan_opnsense.conf`
 
 Point the daemon at the named port, symlink the active slot, and start it:
 

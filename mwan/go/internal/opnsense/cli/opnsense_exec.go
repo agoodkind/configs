@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"crypto/rand"
@@ -45,10 +45,10 @@ func runOPNsenseExec(args []string) int {
 	if err != nil {
 		return printAndExit("exec", err)
 	}
-	fmt.Printf("exit_code=%d duration_ms=%d timed_out=%t\n",
+	fmt.Fprintf(os.Stdout, "exit_code=%d duration_ms=%d timed_out=%t\n",
 		res.ExitCode, res.DurationMs, res.TimedOut)
 	if len(res.Stdout) > 0 {
-		fmt.Printf("---stdout---\n%s\n", res.Stdout)
+		fmt.Fprintf(os.Stdout, "---stdout---\n%s\n", res.Stdout)
 	}
 	if len(res.Stderr) > 0 {
 		fmt.Printf("---stderr---\n%s\n", res.Stderr)

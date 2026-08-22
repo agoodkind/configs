@@ -41,7 +41,7 @@
 - name: Install rc.d script
   ansible.builtin.copy:
     src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense
+      {{ playbook_dir }}/../../mwan/go/internal/opnsense/cli/opnsense-src/etc/rc.d/mwan_opnsense
     dest: /usr/local/etc/rc.d/mwan_opnsense
     owner: root
     group: wheel
@@ -54,7 +54,7 @@
 - name: Install mwan-opnsense-run preflight shim
   ansible.builtin.copy:
     src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/usr/local/libexec/mwan-opnsense-run
+      {{ playbook_dir }}/../../mwan/go/internal/opnsense/cli/opnsense-src/usr/local/libexec/mwan-opnsense-run
     dest: /usr/local/libexec/mwan-opnsense-run
     owner: root
     group: wheel
@@ -64,7 +64,7 @@
 - name: Install rc.conf.d settings
   ansible.builtin.copy:
     src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/etc/rc.conf.d/mwan_opnsense.sample
+      {{ playbook_dir }}/../../mwan/go/internal/opnsense/cli/opnsense-src/etc/rc.conf.d/mwan_opnsense.sample
     dest: /etc/rc.conf.d/mwan_opnsense
     owner: root
     group: wheel
@@ -74,7 +74,7 @@
 - name: Install loader.conf.d entry (virtio_console autoload)
   ansible.builtin.copy:
     src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/boot/loader.conf.d/mwan_opnsense.conf
+      {{ playbook_dir }}/../../mwan/go/internal/opnsense/cli/opnsense-src/boot/loader.conf.d/mwan_opnsense.conf
     dest: /boot/loader.conf.d/mwan_opnsense.conf
     owner: root
     group: wheel

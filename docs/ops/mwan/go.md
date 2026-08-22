@@ -4,17 +4,24 @@ Standards for the MWAN Go code. Violations block merge.
 
 ## Monolith contract
 
-All Go infrastructure code ships as one binary. The linux/amd64 build is
-`mwan` on targets. The freebsd/amd64 build is `mwan-opnsense` and runs only on
-OPNsense, where it auto-dispatches into the opnsense daemon based on
-`argv[0]`.
+All Go infrastructure code lives in one module and ships as one binary name
+per platform, from one entry point per platform. The linux/amd64 artifact is
+the monolith `cmd/mwan`, installed as `mwan` on every linux target. The
+freebsd/amd64 artifact is `cmd/mwan-opnsense`, installed as `mwan-opnsense`
+on the OPNsense router; it carries only the opnsense subcommand family and
+auto-dispatches into the daemon based on `argv[0]`. Each platform's build
+graph therefore contains only the code that platform runs, which is what
+keeps every per-platform gate meaningful without build-tag stub pairs.
 
-New tools become subcommands of this binary, never separate binaries. Run
+New tools become subcommands of the monolith, never separate binaries. Run
 `mwan` with no arguments for the current subcommand set. Subcommands are of
 two kinds: long-running daemons (the agent, the watchdog, the interface
 manager, and the opnsense config daemon) and one-shot operator tools (health
 probes, delegated-prefix and firewall-state inspection, and an alert
 self-test). The interface manager's behavior comes from its configured role.
+Subcommand dispatch stays thin: the behavior lives in an internal package
+(the opnsense family in `internal/opnsense/cli`, for example), so an entry
+point is only a dispatcher over packages.
 
 Each subcommand composes the shared internal packages (config loader, email
 sender, logger factory, ops layer, BGP speaker, alerting, tracing, rollback

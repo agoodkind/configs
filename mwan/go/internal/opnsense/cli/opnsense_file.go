@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	"goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/opnsense"
 )
 
@@ -66,6 +67,7 @@ type transferWatchdog struct {
 	once    sync.Once
 	done    chan struct{}
 	stall   time.Duration
+	clk     clock.Clock
 }
 
 // startTransferWatchdog arms a watchdog that cancels via cancel when no progress
@@ -74,8 +76,15 @@ type transferWatchdog struct {
 // exits on stop or after firing; cancel is idempotent, so a watchdog cancel plus
 // the caller's deferred cancel is safe.
 func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *transferWatchdog {
-	w := &transferWatchdog{done: make(chan struct{}), stall: stall}
-	w.last.Store(time.Now().UnixNano())
+	w := &transferWatchdog{
+		last:    atomic.Int64{},
+		stalled: atomic.Bool{},
+		once:    sync.Once{},
+		done:    make(chan struct{}),
+		stall:   stall,
+		clk:     clock.Real{},
+	}
+	w.last.Store(w.clk.Now().UnixNano())
 	// Tick at stall/4 for prompt detection, capped at 1s so a long stall still
 	// samples often; min (not max) keeps the 1s cap from delaying a short stall.
 	// The 10ms floor prevents a NewTicker(0) panic on a misconfigured tiny stall.
@@ -96,7 +105,7 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 			case <-w.done:
 				return
 			case <-t.C:
-				if time.Since(time.Unix(0, w.last.Load())) >= w.stall {
+				if w.clk.Now().Sub(time.Unix(0, w.last.Load())) >= w.stall {
 					w.stalled.Store(true)
 					cancel()
 					return
@@ -107,7 +116,7 @@ func startTransferWatchdog(cancel context.CancelFunc, stall time.Duration) *tran
 	return w
 }
 
-func (w *transferWatchdog) markProgress() { w.last.Store(time.Now().UnixNano()) }
+func (w *transferWatchdog) markProgress() { w.last.Store(w.clk.Now().UnixNano()) }
 
 // handleWatchdogPanic records the stall and cancels the transfer context after a
 // panic in the watchdog goroutine so the caller fails closed rather than hanging.
@@ -180,7 +189,7 @@ func runFilePush(args []string) int {
 	if err != nil {
 		return printAndExit("file push", err)
 	}
-	fmt.Printf("file push: bytes=%d sha256=%s backup_path=%s\n",
+	fmt.Fprintf(os.Stdout, "file push: bytes=%d sha256=%s backup_path=%s\n",
 		term.GetTotalBytes(), term.GetSha256Hex(), term.GetBackupPath())
 	return 0
 }

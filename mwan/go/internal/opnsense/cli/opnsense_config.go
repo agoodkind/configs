@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"errors"
@@ -107,7 +107,7 @@ func runConfigWrite(args []string) int {
 	if err != nil {
 		return printAndExit("config write", err)
 	}
-	fmt.Printf("backup_path=%s bytes_written=%d\n", resp.BackupPath, resp.BytesWritten)
+	fmt.Fprintf(os.Stdout, "backup_path=%s bytes_written=%d\n", resp.BackupPath, resp.BytesWritten)
 	return 0
 }
 
@@ -265,7 +265,7 @@ func runConfigXPathGet(args []string) int {
 		return printAndExit("config xpath get", err)
 	}
 	for _, m := range matches {
-		fmt.Println(m)
+		fmt.Fprintln(os.Stdout, m)
 	}
 	return 0
 }

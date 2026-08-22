@@ -39,11 +39,13 @@ GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
 # instead of a binary built on whoever ran the playbook.
 GO_MK_MODULES := go-build.mk go-release.mk
 
-# The release set: one binary per platform, the same artifact on every host.
-# The linux build links libyang and libsysrepo statically, so it can publish on
-# the gateway while still running on a host that has neither, which is what the
-# scp-and-run deploy contract needs. freebsd stays pure Go because the yangpub
-# files are linux-tagged and the C libraries have no cross toolchain here.
+# The release set: one binary name per platform, each from its own entry
+# point. The linux monolith (cmd/mwan) links libyang and libsysrepo
+# statically, so it can publish on the gateway while still running on a host
+# that has neither, which is what the scp-and-run deploy contract needs. The
+# freebsd artifact is cmd/mwan-opnsense, pure Go, carrying only the router
+# daemon's subcommand family, so the router binary's build graph never
+# includes linux-only code.
 #
 # RELEASE_PLATFORMS is a default, not an override: each job of the release
 # matrix passes its own single platform in the environment, and this must yield
@@ -52,7 +54,7 @@ GO_MK_MODULES := go-build.mk go-release.mk
 # identical; the publish step's merged download then carried a freebsd archive
 # no job had attested, and release 202608161945-4-9244335 failed verification.
 RELEASE_PLATFORMS ?= linux/amd64 freebsd/amd64
-RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64 mwan:$(CMD):platforms=freebsd/amd64
+RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64 mwan:./cmd/mwan-opnsense:platforms=freebsd/amd64
 
 # gobgp's only cgo symbol is a memory-reporting helper used solely by its tests.
 export GO_MK_CGO_OPTIONAL := github.com/osrg/gobgp/v4/internal/pkg/table

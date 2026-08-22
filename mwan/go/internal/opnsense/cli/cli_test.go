@@ -1,8 +1,8 @@
-package main
+package cli
 
 import "testing"
 
-func TestInvokedAsOPNsenseDaemon(t *testing.T) {
+func TestInvokedAsDaemon(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -19,8 +19,8 @@ func TestInvokedAsOPNsenseDaemon(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := invokedAsOPNsenseDaemon(tt.argv); got != tt.want {
-				t.Fatalf("invokedAsOPNsenseDaemon(%q) = %v, want %v", tt.argv, got, tt.want)
+			if got := InvokedAsDaemon(tt.argv); got != tt.want {
+				t.Fatalf("InvokedAsDaemon(%q) = %v, want %v", tt.argv, got, tt.want)
 			}
 		})
 	}

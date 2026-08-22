@@ -1,15 +1,16 @@
+//go:build linux
+
 package main
 
 import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"goodkind.io/mwan/internal/agent"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/healthcheck"
+	opnsensecli "goodkind.io/mwan/internal/opnsense/cli"
 	"goodkind.io/mwan/internal/version"
 	"goodkind.io/mwan/internal/watchdog"
 )
@@ -43,8 +44,8 @@ func main() {
 	// When invoked via the in-VM symlink (mwan-opnsense or
 	// mwan-opnsense.<sha>), the binary fast-paths directly into the
 	// daemon serve loop so rc.d can keep its existing ExecStart.
-	if invokedAsOPNsenseDaemon(os.Args[0]) {
-		os.Exit(runOPNsenseDaemonServe(os.Args[1:]))
+	if opnsensecli.InvokedAsDaemon(os.Args[0]) {
+		os.Exit(opnsensecli.RunDaemonServe(os.Args[1:]))
 	}
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health|ifmgr|opnsense|notify|pd|debug|trace-boot|deploy-gate|wanconfig-selftest> [args]")
@@ -88,7 +89,7 @@ func dispatchConfigLess(sub subcommand) dispatchResult {
 		}
 		return dispatchResult{handled: true, code: 0}
 	case subcmdOPNsense:
-		return dispatchResult{handled: true, code: runOPNsense(os.Args[1:])}
+		return dispatchResult{handled: true, code: opnsensecli.Run(os.Args[1:])}
 	case subcmdPD:
 		return dispatchResult{handled: true, code: runPDProbe(os.Args[1:])}
 	case subcmdTrace:
@@ -137,9 +138,4 @@ func dispatchWithConfig(rawSub string, sub subcommand, cfg *config.Config) int {
 		return 1
 	}
 	return 0
-}
-
-func invokedAsOPNsenseDaemon(argv0 string) bool {
-	binaryName := filepath.Base(argv0)
-	return binaryName == "mwan-opnsense" || strings.HasPrefix(binaryName, "mwan-opnsense.")
 }

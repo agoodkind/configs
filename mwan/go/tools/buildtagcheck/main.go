@@ -140,7 +140,7 @@ func fileForced(
 ) (bool, error) {
 	source, err := os.ReadFile(filepath.Join(pkg.Dir, file))
 	if err != nil {
-		log.Error("buildtagcheck: read source failed", "file", file, "err", err)
+		log.ErrorContext(ctx, "buildtagcheck: read source failed", "file", file, "err", err)
 		return false, fmt.Errorf("read %s: %w", file, err)
 	}
 	for imported := range unusable {
@@ -165,15 +165,15 @@ func stripOracle(
 ) (bool, error) {
 	tempDir, err := os.MkdirTemp("", "buildtagcheck")
 	if err != nil {
-		log.Error("buildtagcheck: temp dir failed", "err", err)
+		log.ErrorContext(ctx, "buildtagcheck: temp dir failed", "err", err)
 		return false, fmt.Errorf("temp dir: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
 	stripped := buildTagLine.ReplaceAll(source, nil)
 	strippedPath := filepath.Join(tempDir, "stripped.go")
-	if err := os.WriteFile(strippedPath, stripped, 0o644); err != nil {
-		log.Error("buildtagcheck: write stripped copy failed", "file", file, "err", err)
+	if err := os.WriteFile(strippedPath, stripped, 0o600); err != nil {
+		log.ErrorContext(ctx, "buildtagcheck: write stripped copy failed", "file", file, "err", err)
 		return false, fmt.Errorf("write stripped %s: %w", file, err)
 	}
 	neutralName := strings.TrimSuffix(file, ".go") + "_buildtagcheck.go"
@@ -187,11 +187,11 @@ func stripOracle(
 	overlayPath := filepath.Join(tempDir, "overlay.json")
 	encoded, err := json.Marshal(overlay)
 	if err != nil {
-		log.Error("buildtagcheck: encode overlay failed", "err", err)
+		log.ErrorContext(ctx, "buildtagcheck: encode overlay failed", "err", err)
 		return false, fmt.Errorf("encode overlay: %w", err)
 	}
-	if err := os.WriteFile(overlayPath, encoded, 0o644); err != nil {
-		log.Error("buildtagcheck: write overlay failed", "err", err)
+	if err := os.WriteFile(overlayPath, encoded, 0o600); err != nil {
+		log.ErrorContext(ctx, "buildtagcheck: write overlay failed", "err", err)
 		return false, fmt.Errorf("write overlay: %w", err)
 	}
 
@@ -245,7 +245,7 @@ func unusableImports(
 	for decoder.More() {
 		var pkg listedImport
 		if err := decoder.Decode(&pkg); err != nil {
-			log.Error("buildtagcheck: decode go list output", "err", err)
+			log.ErrorContext(ctx, "buildtagcheck: decode go list output", "err", err)
 			return nil, fmt.Errorf("decode go list output: %w", err)
 		}
 		if pkg.Error != nil || len(pkg.GoFiles)+len(pkg.CgoFiles) == 0 {
@@ -291,7 +291,7 @@ func listPackages(ctx context.Context, log *slog.Logger, goos string) ([]listedP
 	for decoder.More() {
 		var pkg listedPackage
 		if err := decoder.Decode(&pkg); err != nil {
-			log.Error("buildtagcheck: decode go list output", "goos", goos, "err", err)
+			log.ErrorContext(ctx, "buildtagcheck: decode go list output", "goos", goos, "err", err)
 			return nil, fmt.Errorf("decode go list output for %s: %w", goos, err)
 		}
 		packages = append(packages, pkg)
@@ -308,7 +308,7 @@ func goList(ctx context.Context, log *slog.Logger, goos string, arguments []stri
 	command.Stderr = &stderr
 	output, err := command.Output()
 	if err != nil {
-		log.Error("buildtagcheck: go list failed",
+		log.ErrorContext(ctx, "buildtagcheck: go list failed",
 			"goos", goos, "err", err, "stderr", stderr.String())
 		return nil, fmt.Errorf("go list (GOOS=%s): %w", goos, err)
 	}
