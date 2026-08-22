@@ -181,7 +181,7 @@ WANCONFIG_SYSREPO_REPO_PATH := /etc/sysrepo
 
 define wanconfig_cgo_dep_build
 	@if [ "$$(uname -s)" = "Darwin" ]; then \
-		echo "cgo dep $(1) skipped: sysrepo needs robust pthread mutexes, absent on darwin"; \
+		echo "cgo dep $(1) skipped: this does not compile on macOS. Run: make build-wanconfig"; \
 		exit 0; \
 	fi; \
 	if [ -n "$${GO_MK_TARGET_GOOS}" ] && [ "$${GO_MK_TARGET_GOOS}" != "linux" ]; then \
