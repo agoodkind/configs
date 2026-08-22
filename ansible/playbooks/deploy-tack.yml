@@ -296,9 +296,17 @@
         # ---------------------------------------------------------------------
         # Compose stack up
         # ---------------------------------------------------------------------
-        - name: Start Tack services (first pass; tolerant of an unconfigured fdb on first boot)
+        # The first pass starts only the stores provision needs. It must not
+        # start app or audit-consumer: serve is audited (TACK-444) and records
+        # its start through the tack_audit_operator login, which provision
+        # creates below. An app started here refuses that login and sits in
+        # Docker's restart backoff until a retry lands after provision; on
+        # 2026-08-22 that was four minutes of production downtime (TACK-453).
+        # On a warm host the running app keeps serving through provision and
+        # the second pass recreates it only when its image or config changed.
+        - name: Start Tack stores (first pass; tolerant of an unconfigured fdb on first boot)
           ansible.builtin.command:
-            cmd: docker compose up -d
+            cmd: docker compose up -d fdb yugabyte meilisearch temporal-db temporal kafka clickhouse
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
