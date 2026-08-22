@@ -33,6 +33,11 @@ The logs sit outside the repository, so a run leaves the working tree clean and
 the host reclaims old logs on its own schedule. Copy a log you need to keep
 before the host clears it.
 
+A run refuses to start when something other than its own private directory sits
+at that path, and the error names both the path and the reason. On a host where
+the temp directory is shared, another user can create that name first. Remove
+the path it names, then run the command again.
+
 A `tofu apply` or `tofu destroy` without `-auto-approve` keeps the terminal
 instead, because you cannot answer an approval prompt you cannot see. The same
 holds for every other tofu subcommand; only `plan`, `refresh`, and an

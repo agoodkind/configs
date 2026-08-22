@@ -58,20 +58,11 @@ func TestRunLogRootIsOutsideTheRepository(t *testing.T) {
 	}
 }
 
-// TestOpenRunLogTightensTheDirectory pins that the run log directory is private
-// to the operator. It lives in a temp directory other users can write to, so a
-// pre-existing world-readable directory under the same name must be tightened
-// rather than trusted.
-func TestOpenRunLogTightensTheDirectory(t *testing.T) {
+// TestOpenRunLogCreatesAPrivateDirectory pins the mode of a directory this tool
+// creates. The host temp directory is world-writable on many systems, so a
+// listing of what an operator deployed and when must not be readable by others.
+func TestOpenRunLogCreatesAPrivateDirectory(t *testing.T) {
 	privateTempDir(t)
-	root := runLogRoot()
-	if err := os.MkdirAll(root, 0o777); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.Chmod(root, 0o777); err != nil {
-		t.Fatalf("Chmod: %v", err)
-	}
-
 	log, err := openRunLog("deploy-mwan", nil)
 	if err != nil {
 		t.Fatalf("openRunLog: %v", err)
@@ -80,12 +71,172 @@ func TestOpenRunLogTightensTheDirectory(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	info, err := os.Stat(root)
+	info, err := os.Stat(runLogRoot())
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
 	if got := info.Mode().Perm(); got != fs.FileMode(runLogDirPerm) {
 		t.Fatalf("run log dir mode = %v, want %v", got, fs.FileMode(runLogDirPerm))
+	}
+}
+
+// TestOpenRunLogRefusesASymlinkedDirectory is the reason this code does not
+// simply create-or-adjust the directory. Another local user can plant a symlink
+// under the predictable name before a run starts. Acting on it would send the
+// mode change, and every log write, to whatever that link points at.
+func TestOpenRunLogRefusesASymlinkedDirectory(t *testing.T) {
+	privateTempDir(t)
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.Mkdir(victim, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := os.Symlink(victim, runLogRoot()); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	log, err := openRunLog("deploy-mwan", nil)
+	if err == nil {
+		_ = log.Close()
+		t.Fatal("openRunLog accepted a symlinked run log directory")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("error = %v, want it to name the symlink", err)
+	}
+
+	info, err := os.Stat(victim)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("the symlink target's mode changed to %v, want it untouched at %v", got, fs.FileMode(0o755))
+	}
+	entries, err := os.ReadDir(victim)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the symlink target received %d entries, want none", len(entries))
+	}
+}
+
+// TestOpenRunLogRefusesAWorldReadableDirectory pins that a loose directory left
+// under this name is refused rather than tightened. Tightening means chmod on a
+// path somebody else may control, which is the operation this code avoids.
+func TestOpenRunLogRefusesAWorldReadableDirectory(t *testing.T) {
+	privateTempDir(t)
+	root := runLogRoot()
+	if err := os.Mkdir(root, 0o777); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := os.Chmod(root, 0o777); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	log, err := openRunLog("deploy-mwan", nil)
+	if err == nil {
+		_ = log.Close()
+		t.Fatal("openRunLog accepted a world-readable run log directory")
+	}
+	if !strings.Contains(err.Error(), "mode") {
+		t.Fatalf("error = %v, want it to name the mode", err)
+	}
+}
+
+// TestOpenRunLogRefusesAFileUnderTheDirectoryName pins that a plain file planted
+// under the name is refused, rather than reported as some later open failure the
+// operator has to decode.
+func TestOpenRunLogRefusesAFileUnderTheDirectoryName(t *testing.T) {
+	privateTempDir(t)
+	if err := os.WriteFile(runLogRoot(), []byte("not a directory\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	log, err := openRunLog("deploy-mwan", nil)
+	if err == nil {
+		_ = log.Close()
+		t.Fatal("openRunLog accepted a file as the run log directory")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("error = %v, want it to say the path is not a directory", err)
+	}
+}
+
+// TestOpenRunLogReusesItsOwnDirectory pins that the check does not reject the
+// directory this tool made on an earlier run. Every deploy after the first one
+// takes that path.
+func TestOpenRunLogReusesItsOwnDirectory(t *testing.T) {
+	privateTempDir(t)
+	first, err := openRunLog("deploy-mwan", nil)
+	if err != nil {
+		t.Fatalf("openRunLog first: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("Close first: %v", err)
+	}
+
+	second, err := openRunLog("deploy-proxmox", nil)
+	if err != nil {
+		t.Fatalf("openRunLog second: %v", err)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatalf("Close second: %v", err)
+	}
+
+	entries, err := os.ReadDir(runLogRoot())
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("run log dir holds %d files after two runs, want 2", len(entries))
+	}
+}
+
+// TestCreateRunLogFileStaysInsideTheDirectory pins that opening happens through
+// the directory handle. A symlink planted inside the directory after the check
+// must not redirect a log write to the file it points at.
+func TestCreateRunLogFileStaysInsideTheDirectory(t *testing.T) {
+	privateTempDir(t)
+	root := runLogRoot()
+	if err := os.Mkdir(root, runLogDirPerm); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("original\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	const stamp = "20260821T000000Z"
+	planted := "deploy-mwan-" + stamp + ".log"
+	if err := os.Symlink(outside, filepath.Join(root, planted)); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	t.Cleanup(func() { _ = dir.Close() })
+
+	file, err := createRunLogFile(dir, "deploy-mwan", stamp)
+	if err != nil {
+		t.Fatalf("createRunLogFile: %v", err)
+	}
+	if _, err := file.WriteString("run output\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	body, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(body) != "original\n" {
+		t.Fatalf("the file outside the directory was written through the symlink: %q", body)
+	}
+	if filepath.Base(file.Name()) == planted {
+		t.Fatalf("createRunLogFile reused the planted name %q", planted)
 	}
 }
 
@@ -200,13 +351,19 @@ func TestOpenRunLogPermissions(t *testing.T) {
 // while an operator was still reading it.
 func TestCreateRunLogFileNeverOverwrites(t *testing.T) {
 	privateTempDir(t)
-	if err := os.MkdirAll(runLogRoot(), runLogDirPerm); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	if err := os.Mkdir(runLogRoot(), runLogDirPerm); err != nil {
+		t.Fatalf("Mkdir: %v", err)
 	}
+	dir, err := os.OpenRoot(runLogRoot())
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	t.Cleanup(func() { _ = dir.Close() })
+
 	const stamp = "20260819T151126Z"
 	names := map[string]bool{}
 	for run := 1; run <= 3; run++ {
-		file, err := createRunLogFile("deploy-mwan", stamp)
+		file, err := createRunLogFile(dir, "deploy-mwan", stamp)
 		if err != nil {
 			t.Fatalf("createRunLogFile run %d: %v", run, err)
 		}
