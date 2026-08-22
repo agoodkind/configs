@@ -96,11 +96,11 @@ func (b *builder) fail(ctx context.Context, msg string, err error, attrs ...slog
 // carries the compiler and packaging output verbatim.
 func (b *builder) run(ctx context.Context, c command) error {
 	argv := strings.Join(c.args, " ")
-	b.log.InfoContext(ctx, "wanconfigstack: run", "program", c.program, "args", argv, "dir", c.dir)
 	proc, err := c.program.process(ctx, c.args)
 	if err != nil {
 		return b.fail(ctx, "resolve program", err)
 	}
+	b.log.InfoContext(ctx, "wanconfigstack: run", "program", proc.Path, "args", argv, "dir", c.dir)
 	proc.Dir = c.dir
 	proc.Env = append(os.Environ(), c.env...)
 	proc.Stdout = os.Stderr

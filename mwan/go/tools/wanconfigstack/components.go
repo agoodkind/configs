@@ -19,9 +19,11 @@ const apkgVersion = "1.0.0"
 // carries the pkg-config file that names the unit directory on trixie; the
 // sysrepo template's Build-Depends predate that split and its sysrepo-tools
 // package expects the sysrepo-plugind unit that cmake only installs when the
-// directory resolves.
+// directory resolves. git is not for cloning (the tool clones through a
+// library) but for the C++ components' cmake, which requires the git
+// program to stamp their version.
 var buildPackages = []string{
-	"ca-certificates", "build-essential", "cmake", "pkg-config",
+	"ca-certificates", "build-essential", "cmake", "pkg-config", "git",
 	"debhelper", "dpkg-dev", "fakeroot", "python3", "python3-venv", "python3-pip", "systemd-dev",
 	"libpcre2-dev", "libpam0g-dev", "libaudit-dev", "libhowardhinnant-date-dev",
 	"libspdlog-dev", "libdocopt-dev", "libboost-system-dev", "libboost-thread-dev",
