@@ -44,7 +44,7 @@ flowchart LR
     ispN[ISP_N]
   end
   subgraph chokepoint [Chokepoint]
-    mwan[MWAN]
+    mwan[MWAN (Primary Speaker)]
     failover[Failover]
   end
   subgraph downstream [Downstream]
@@ -74,6 +74,7 @@ flowchart LR
 ## Major components
 
 The chokepoint is the layer all traffic passes through.
+Each speaker in the chokepoint is a BGP speaker that announces routes to LAN routers.
 
 - **Primary speaker:** The primary speaker is the only speaker that
 load-balances.
