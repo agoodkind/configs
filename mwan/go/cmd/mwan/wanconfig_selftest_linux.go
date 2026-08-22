@@ -277,15 +277,34 @@ func runPrivateSelftest(log *slog.Logger, flags selftestFlags) int {
 	return 0
 }
 
+// sysrepoSHMDir is where sysrepo keeps its shared-memory segments. A
+// disconnect leaves the main and per-module segments behind, so the
+// private selftest removes its own prefixed set on the way out.
+const sysrepoSHMDir = "/dev/shm"
+
 func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 	if err := os.MkdirAll(flags.repository, 0o750); err != nil {
 		return failStep(log, "create repository", err)
 	}
+	// The repository must be this run's own. Pointing the selftest at a
+	// populated one, the host's included, would leave connection records
+	// in it and test a datastore the host may be serving.
+	entries, err := os.ReadDir(flags.repository)
+	if err != nil {
+		return failStep(log, "read repository", err)
+	}
+	if len(entries) > 0 {
+		return fmt.Errorf("repository %s is not empty; the private selftest needs a fresh directory", flags.repository)
+	}
 	// sysrepo reads its repository path and shared-memory prefix from the
 	// environment at connect time; a distinct prefix keeps this run apart
 	// from any datastore the host serves.
+	shmPrefix := fmt.Sprintf("mwanselftest%d", os.Getpid())
 	os.Setenv("SYSREPO_REPOSITORY_PATH", flags.repository)
-	os.Setenv("SYSREPO_SHM_PREFIX", fmt.Sprintf("mwanselftest%d", os.Getpid()))
+	os.Setenv("SYSREPO_SHM_PREFIX", shmPrefix)
+	// Registered before the connections' own deferred closes, so it runs
+	// after both have disconnected.
+	defer removeSelftestSHM(log, shmPrefix)
 
 	ctx, cancel := context.WithTimeout(context.Background(), selftestTimeout)
 	defer cancel()
@@ -345,6 +364,22 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 		return failStep(log, "interfaces tree after close: "+after, err)
 	}
 	return nil
+}
+
+// removeSelftestSHM deletes the shared-memory segments this run's prefix
+// created. A failure is logged, not returned: the verdict is already
+// decided when this runs.
+func removeSelftestSHM(log *slog.Logger, prefix string) {
+	segments, err := filepath.Glob(filepath.Join(sysrepoSHMDir, prefix+"*"))
+	if err != nil {
+		log.Warn("selftest shared memory listing failed", "prefix", prefix, "err", err)
+		return
+	}
+	for _, segment := range segments {
+		if err := os.Remove(segment); err != nil {
+			log.Warn("selftest shared memory removal failed", "segment", segment, "err", err)
+		}
+	}
 }
 
 // unmarshalObject decodes one JSON object level, so a check reaches into

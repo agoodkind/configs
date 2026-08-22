@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,5 +48,15 @@ func TestWanconfigSelftest_PrivateRepository(t *testing.T) {
 	code := runWanconfigSelftest([]string{"--repository", repository, "--models-dir", modelsDir})
 	if code != 0 {
 		t.Fatalf("private selftest exit code = %d, want 0", code)
+	}
+
+	// The run's shared-memory segments carry this process's prefix and
+	// must be gone, or every run leaves a set behind on the host.
+	leftovers, err := filepath.Glob(filepath.Join(sysrepoSHMDir, fmt.Sprintf("mwanselftest%d*", os.Getpid())))
+	if err != nil {
+		t.Fatalf("list shared memory: %v", err)
+	}
+	if len(leftovers) != 0 {
+		t.Fatalf("shared memory left behind: %v", leftovers)
 	}
 }
