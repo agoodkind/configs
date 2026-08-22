@@ -43,13 +43,13 @@ var moduleChangeCallback = yangpubChangeCB
 // running data in use; the daemon applies nothing on a change because
 // the surface accepts no writes, so every event is acknowledged as is.
 //
+// The parameters are named because cgo emits the C prototype from them
+// and rejects blank identifiers; the callback reads none of them.
+//
 //export yangpubChangeCB
 func yangpubChangeCB(session *C.sr_session_ctx_t, subID C.uint32_t, moduleName *C.char,
 	xpath *C.char, event C.sr_event_t, requestID C.uint32_t, privateData unsafe.Pointer,
 ) C.int {
-	// cgo emits a C prototype from these names, so they cannot be blank;
-	// the callback reads none of them.
-	_, _, _, _, _, _, _ = session, subID, moduleName, xpath, event, requestID, privateData
 	return C.SR_ERR_OK
 }
 
