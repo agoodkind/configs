@@ -22,14 +22,27 @@ import (
 // something that keeps only a tail. A file does not have that problem: the whole
 // stream lands on disk as it is produced, and the command prints the path.
 
-// runLogRoot holds one file per run, relative to the repository root the binary
-// runs from. It sits under the ignored .make tree.
-const runLogRoot = ".make/runs"
+// runLogDirName holds one file per run. It sits in the host's temp directory
+// rather than the repository, so a run leaves no artifact in the working tree
+// and the host's own cleanup reclaims old logs.
+const runLogDirName = "configs-runs"
+
+// runLogDirPerm keeps the directory listing private to the operator. The host
+// temp directory is shared between users on some systems, so the mode matters
+// here in a way it does not for a repository-local path.
+const runLogDirPerm = 0o700
 
 // runLogPerm keeps a log readable only by the operator who ran the command. A
 // run prints host names, paths, and diffs, and a diffing run prints file
 // contents, so the file is not world-readable even though secrets are redacted.
 const runLogPerm = 0o600
+
+// runLogRoot returns the directory that holds run logs. It resolves the host
+// temp directory on every call rather than at init, so a test that redirects
+// TMPDIR gets its own directory and never writes to the operator's.
+func runLogRoot() string {
+	return filepath.Join(os.TempDir(), runLogDirName)
+}
 
 // runLogAttempts bounds the search for an unused name. The timestamp has
 // one-second resolution, so two runs started in the same second want the same
@@ -51,9 +64,17 @@ type runLog struct {
 // repeated runs never share a file and the directory listing sorts
 // chronologically.
 func openRunLog(label string, secrets []redact.Pattern) (*runLog, error) {
-	if err := os.MkdirAll(runLogRoot, 0o755); err != nil {
-		slog.Error("create run log dir failed", "dir", runLogRoot, "err", err)
+	root := runLogRoot()
+	if err := os.MkdirAll(root, runLogDirPerm); err != nil {
+		slog.Error("create run log dir failed", "dir", root, "err", err)
 		return nil, fmt.Errorf("create run log dir: %w", err)
+	}
+	// MkdirAll leaves an existing directory's mode alone, so a directory created
+	// by an earlier version, or by anything else under this name, is tightened
+	// here rather than trusted.
+	if err := os.Chmod(root, runLogDirPerm); err != nil {
+		slog.Error("chmod run log dir failed", "dir", root, "err", err)
+		return nil, fmt.Errorf("chmod run log dir: %w", err)
 	}
 	file, err := createRunLogFile(runLogName(label), clock.FileStamp())
 	if err != nil {
@@ -75,7 +96,7 @@ func createRunLogFile(stem, stamp string) (*os.File, error) {
 		if attempt > 1 {
 			name = fmt.Sprintf("%s-%s-%d.log", stem, stamp, attempt)
 		}
-		file, err := os.OpenFile(filepath.Join(runLogRoot, name), os.O_CREATE|os.O_WRONLY|os.O_EXCL, runLogPerm)
+		file, err := os.OpenFile(filepath.Join(runLogRoot(), name), os.O_CREATE|os.O_WRONLY|os.O_EXCL, runLogPerm)
 		if err == nil {
 			return file, nil
 		}

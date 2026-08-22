@@ -12,19 +12,28 @@ import (
 	"goodkind.io/configs/internal/redact"
 )
 
+// privateTempDir points the host temp directory at one this test owns, so the
+// run logs it creates are isolated from the operator's and from other tests.
+// runLogRoot resolves os.TempDir on every call, which reads TMPDIR first.
+func privateTempDir(t *testing.T) {
+	t.Helper()
+	t.Setenv("TMPDIR", t.TempDir())
+}
+
 // readOnlyRunLog returns the single file under the run log root, with its
 // contents. It fails the test unless exactly one log exists, so a test that
 // expects one run cannot pass against a stray second file.
 func readOnlyRunLog(t *testing.T) (path, contents string) {
 	t.Helper()
-	entries, err := os.ReadDir(runLogRoot)
+	root := runLogRoot()
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		t.Fatalf("ReadDir(%s): %v", runLogRoot, err)
+		t.Fatalf("ReadDir(%s): %v", root, err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("run log dir holds %d entries, want 1", len(entries))
 	}
-	path = filepath.Join(runLogRoot, entries[0].Name())
+	path = filepath.Join(root, entries[0].Name())
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile(%s): %v", path, err)
@@ -32,11 +41,59 @@ func readOnlyRunLog(t *testing.T) (path, contents string) {
 	return path, string(body)
 }
 
+// TestRunLogRootIsOutsideTheRepository pins that a run leaves no artifact in the
+// working tree. The operator runs these commands from a git checkout, and a log
+// written there would show up in status and in a build.
+func TestRunLogRootIsOutsideTheRepository(t *testing.T) {
+	privateTempDir(t)
+	root := runLogRoot()
+	if !filepath.IsAbs(root) {
+		t.Fatalf("runLogRoot() = %q, want an absolute path", root)
+	}
+	if filepath.Base(root) != runLogDirName {
+		t.Fatalf("runLogRoot() = %q, want it to end in %q", root, runLogDirName)
+	}
+	if got, want := filepath.Dir(root), os.TempDir(); got != want {
+		t.Fatalf("run log dir sits in %q, want the host temp dir %q", got, want)
+	}
+}
+
+// TestOpenRunLogTightensTheDirectory pins that the run log directory is private
+// to the operator. It lives in a temp directory other users can write to, so a
+// pre-existing world-readable directory under the same name must be tightened
+// rather than trusted.
+func TestOpenRunLogTightensTheDirectory(t *testing.T) {
+	privateTempDir(t)
+	root := runLogRoot()
+	if err := os.MkdirAll(root, 0o777); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chmod(root, 0o777); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	log, err := openRunLog("deploy-mwan", nil)
+	if err != nil {
+		t.Fatalf("openRunLog: %v", err)
+	}
+	if err := log.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	info, err := os.Stat(root)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != fs.FileMode(runLogDirPerm) {
+		t.Fatalf("run log dir mode = %v, want %v", got, fs.FileMode(runLogDirPerm))
+	}
+}
+
 // TestRunDeployWritesThePlayOutputToTheLogFile is the whole point of the log:
 // what the play writes lands on disk, in full, no matter what the caller does
 // with the tool's own stdout.
 func TestRunDeployWritesThePlayOutputToTheLogFile(t *testing.T) {
-	t.Chdir(t.TempDir())
+	privateTempDir(t)
 	play := "TASK [install packages] ****\nok: [mwan]\nPLAY RECAP ****\n"
 	deploy := func(opts ansible.DeployOptions) error {
 		if opts.Output == nil {
@@ -67,7 +124,7 @@ func TestRunDeployWritesThePlayOutputToTheLogFile(t *testing.T) {
 // same redaction the terminal gets. The file is a durable artifact, so a secret
 // the play echoes must not reach it.
 func TestRunDeployRedactsSecretsInTheLogFile(t *testing.T) {
-	t.Chdir(t.TempDir())
+	privateTempDir(t)
 	secret := "supersecrettokenvalue0123456789"
 	env := cmdEnv{secrets: []redact.Pattern{{Value: []byte(secret), Label: "vault_token"}}}
 	deploy := func(opts ansible.DeployOptions) error {
@@ -92,7 +149,7 @@ func TestRunDeployRedactsSecretsInTheLogFile(t *testing.T) {
 // leaves its output on disk, and that the returned error names the log so the
 // operator does not have to hunt for it.
 func TestRunDeployFlushesTheLogWhenThePlayFails(t *testing.T) {
-	t.Chdir(t.TempDir())
+	privateTempDir(t)
 	deploy := func(opts ansible.DeployOptions) error {
 		if _, err := opts.Output.Write([]byte("fatal: [mwan]: UNREACHABLE!\n")); err != nil {
 			return err
@@ -120,7 +177,7 @@ func TestRunDeployFlushesTheLogWhenThePlayFails(t *testing.T) {
 // TestOpenRunLogPermissions pins that a log is readable only by the operator who
 // ran the command. A diffing run prints file contents into it.
 func TestOpenRunLogPermissions(t *testing.T) {
-	t.Chdir(t.TempDir())
+	privateTempDir(t)
 	log, err := openRunLog("deploy-mwan", nil)
 	if err != nil {
 		t.Fatalf("openRunLog: %v", err)
@@ -142,8 +199,8 @@ func TestOpenRunLogPermissions(t *testing.T) {
 // counter the second run would either fail or clobber the first run's output
 // while an operator was still reading it.
 func TestCreateRunLogFileNeverOverwrites(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(runLogRoot, 0o755); err != nil {
+	privateTempDir(t)
+	if err := os.MkdirAll(runLogRoot(), runLogDirPerm); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	const stamp = "20260819T151126Z"
@@ -165,7 +222,7 @@ func TestCreateRunLogFileNeverOverwrites(t *testing.T) {
 		names[file.Name()] = true
 	}
 
-	entries, err := os.ReadDir(runLogRoot)
+	entries, err := os.ReadDir(runLogRoot())
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
