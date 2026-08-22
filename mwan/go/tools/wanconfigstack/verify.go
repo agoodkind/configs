@@ -90,7 +90,7 @@ func (b *builder) unpackBundle(ctx context.Context, bundlePath string) error {
 		if header.Name == manifestName {
 			continue
 		}
-		if !strings.HasSuffix(header.Name, ".deb") {
+		if !strings.HasSuffix(header.Name, ".deb") || strings.Contains(header.Name, "..") {
 			return b.fail(ctx, "unpack bundle", errBundleMember, slog.String("member", header.Name))
 		}
 		target := filepath.Join(verifyRoot, "debs", filepath.Base(header.Name))
