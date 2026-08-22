@@ -49,8 +49,22 @@ type Item struct {
 // arrives, so the served tree cannot drift from the daemon.
 type ProviderFunc func(ctx context.Context, xpath string) ([]Item, error)
 
+// Model is one YANG module file to install, with the features to enable.
+type Model struct {
+	Path     string
+	Features []string
+}
+
 // Publisher is the daemon's handle on the management datastore.
 type Publisher interface {
+	// InstallModules installs each model into the datastore's repository
+	// in the given order, resolving imports from the colon-separated
+	// searchDirs. The selftest uses it to stand up a private repository;
+	// the gateway's repository is installed by the deploy.
+	InstallModules(ctx context.Context, models []Model, searchDirs string) error
+	// ExportJSON reads the subtree at xpath in ds and returns it printed
+	// as JSON. It reports found=false when nothing is served there.
+	ExportJSON(ctx context.Context, ds Datastore, xpath string) (tree string, found bool, err error)
 	// GetItem reads one value by path in ds. It reports found=false when
 	// the path holds no value, which lets a publisher leave state it did
 	// not own unchanged.
@@ -71,6 +85,11 @@ type Publisher interface {
 	// xpath inside module, so a read reaches the daemon at request
 	// time. Registrations live until Close.
 	RegisterProvider(ctx context.Context, module string, xpath string, fn ProviderFunc) error
+	// OwnModule marks module's running data as in use by holding a change
+	// subscription that applies nothing, so the configuration appears in
+	// the operational datastore beside the live state. The subscription
+	// lives until Close.
+	OwnModule(ctx context.Context, module string) error
 	// Close releases every registration and the connection.
 	Close() error
 }

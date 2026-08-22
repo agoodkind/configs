@@ -84,6 +84,11 @@ func startWanconfigSurface(
 	defer cancel()
 	// Publish logs its own failure detail; the daemon carries on either way.
 	_ = wanconfig.Publish(publishCtx, log, runningReplacer{pub: pub}, gateway)
+	// Ownership is startup work like the publish, so it carries the same
+	// bound: the daemon's main loop must not wait on the datastore.
+	ownCtx, ownCancel := context.WithTimeout(ctx, wanconfigPublishTimeout)
+	ownPublishedModules(ownCtx, log, pub)
+	ownCancel()
 
 	store := wanstate.New()
 	surface := &wanconfigSurface{
