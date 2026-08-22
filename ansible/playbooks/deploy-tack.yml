@@ -304,13 +304,27 @@
         # 2026-08-22 that was four minutes of production downtime (TACK-453).
         # On a warm host the running app keeps serving through provision and
         # the second pass recreates it only when its image or config changed.
-        - name: Start Tack stores (first pass; tolerant of an unconfigured fdb on first boot)
+        #
+        # Provision connects to YugabyteDB at once, so the stores must be
+        # healthy before it runs. The unnamed first pass used to wait by
+        # accident, through the app's depends_on; naming the stores removed
+        # that wait, and provision then failed with connection refused on a
+        # recreated QA. fdb starts without a wait because a fresh fdb is not
+        # healthy until provision configures it.
+        - name: Start fdb (first pass; tolerant of an unconfigured fdb on first boot)
           ansible.builtin.command:
-            cmd: docker compose up -d fdb yugabyte meilisearch temporal-db temporal kafka clickhouse
+            cmd: docker compose up -d fdb
+            chdir: "{{ tack_install_dir }}"
+          register: tack_compose_up_fdb
+          changed_when: true
+          failed_when: false
+
+        - name: Start the other stores and wait until they are healthy
+          ansible.builtin.command:
+            cmd: docker compose up -d --wait --wait-timeout 300 yugabyte meilisearch temporal-db temporal kafka clickhouse
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
-          failed_when: false
 
         # --execute is the action gate every audited operator command now
         # carries (TACK-328). Without it the command prints its plan and
