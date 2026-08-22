@@ -32,6 +32,8 @@ type fakeBGPServer struct {
 	// listPathErr fails the listing instead.
 	listPaths   []*apiutil.Path
 	listPathErr error
+	// listPeers is what ListPeer serves as the current sessions.
+	listPeers []*apipb.Peer
 }
 
 func newFakeBGPServer() *fakeBGPServer {
@@ -45,6 +47,7 @@ func newFakeBGPServer() *fakeBGPServer {
 		watchRegistered:        false,
 		listPaths:              nil,
 		listPathErr:            nil,
+		listPeers:              nil,
 	}
 }
 
@@ -93,8 +96,20 @@ func (f *fakeBGPServer) WatchEvent(_ context.Context, callbacks server.WatchEven
 	return nil
 }
 
-func (f *fakeBGPServer) ListPeer(_ context.Context, _ *apipb.ListPeerRequest, _ func(*apipb.Peer)) error {
+func (f *fakeBGPServer) ListPeer(_ context.Context, _ *apipb.ListPeerRequest, fn func(*apipb.Peer)) error {
+	f.mu.Lock()
+	peers := f.listPeers
+	f.mu.Unlock()
+	for _, peer := range peers {
+		fn(peer)
+	}
 	return nil
+}
+
+func (f *fakeBGPServer) setListPeers(peers []*apipb.Peer) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listPeers = peers
 }
 
 func (f *fakeBGPServer) ListPath(
@@ -262,6 +277,51 @@ func TestStartRegistersDynamicPeerGroupAndNeighbors(t *testing.T) {
 		if got, want := dynamicNeighbor.PeerGroup, dynamicPeerGroupName; got != want {
 			t.Fatalf("AddDynamicNeighbor[%d] peer group = %q, want %q", index, got, want)
 		}
+	}
+}
+
+// TestStatus_ReportsTheSessionAddressForDynamicPeers pins the address a
+// peer is reported under. GoBGP leaves the configured address zero for a
+// neighbor it accepted from a dynamic prefix and carries the router's
+// address only in the session state; reporting the configured one named
+// every dynamic session "invalid IP", which the management surface could
+// not key. A configured neighbor whose session state carries no address
+// still reports its configured address.
+func TestStatus_ReportsTheSessionAddressForDynamicPeers(t *testing.T) {
+	fake := newFakeBGPServer()
+	cfg := baseGRConfig(false)
+	cfg.DynamicNeighborPrefixes = []netip.Prefix{netip.MustParsePrefix("10.250.250.0/29")}
+	s := newSpeakerWithFake(cfg, fake)
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	fake.setListPeers([]*apipb.Peer{
+		{
+			Conf: &apipb.PeerConf{NeighborAddress: netip.Addr{}.String()},
+			State: &apipb.PeerState{
+				NeighborAddress: "10.250.250.4",
+				SessionState:    apipb.PeerState_SESSION_STATE_ESTABLISHED,
+			},
+		},
+		{
+			Conf: &apipb.PeerConf{NeighborAddress: "10.0.0.2"},
+			State: &apipb.PeerState{
+				NeighborAddress: "",
+				SessionState:    apipb.PeerState_SESSION_STATE_ACTIVE,
+			},
+		},
+	})
+
+	st := s.Status()
+
+	if len(st.Peers) != 2 {
+		t.Fatalf("peers = %+v", st.Peers)
+	}
+	if st.Peers[0].Address != "10.250.250.4" || !st.Peers[0].Established {
+		t.Fatalf("dynamic peer = %+v, want its session address, established", st.Peers[0])
+	}
+	if st.Peers[1].Address != "10.0.0.2" || st.Peers[1].Established {
+		t.Fatalf("configured peer = %+v, want its configured address, not established", st.Peers[1])
 	}
 }
 

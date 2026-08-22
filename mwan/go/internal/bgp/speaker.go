@@ -177,7 +177,8 @@ func (s *Speaker) Start(ctx context.Context) error {
 
 	s.started = true
 	s.armSweepAfterStartupLocked()
-	s.log.InfoContext(ctx, "bgp speaker started",
+	s.log.InfoContext(
+		ctx, "bgp speaker started",
 		"asn", s.cfg.ASN,
 		"router_id", s.cfg.RouterID,
 		"port", s.cfg.ListenPort,
@@ -540,7 +541,8 @@ func (s *Speaker) AnnounceDefault() error {
 	}
 
 	s.announcing = true
-	s.log.Info("bgp routes announced",
+	s.log.Info(
+		"bgp routes announced",
 		"ipv4", s.cfg.Announce.IPv4,
 		"ipv6", s.cfg.Announce.IPv6,
 	)
@@ -728,6 +730,19 @@ func (s *Speaker) deleteIPv6Path(prefix string) error {
 	return nil
 }
 
+// peerAddress returns the address of the router on the other end of a
+// session. GoBGP fills the session state's address for every peer but
+// leaves the configured address zero for a dynamic neighbor, which it
+// accepted from a prefix rather than an explicit entry; reading the
+// configured one reported those sessions as the zero address.
+func peerAddress(p *apipb.Peer) string {
+	sessionAddress := p.GetState().GetNeighborAddress()
+	if _, err := netip.ParseAddr(sessionAddress); err == nil {
+		return sessionAddress
+	}
+	return p.GetConf().GetNeighborAddress()
+}
+
 // Status returns the current state of all BGP peers.
 func (s *Speaker) Status() Status {
 	s.mu.Lock()
@@ -743,7 +758,7 @@ func (s *Speaker) Status() Status {
 	ctx := context.Background()
 	err := s.server.ListPeer(ctx, &apipb.ListPeerRequest{}, func(p *apipb.Peer) {
 		ps := PeerState{
-			Address: p.GetConf().GetNeighborAddress(),
+			Address: peerAddress(p),
 			State:   p.GetState().GetSessionState().String(),
 		}
 

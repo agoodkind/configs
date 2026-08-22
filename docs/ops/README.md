@@ -21,12 +21,22 @@ with `--check --diff` before a mutating run.
 
 ## Run logs
 
-Both commands write their output to a file under `.make/runs/` and print that
-path before the run starts. The output arrives over minutes and is the record
-you need when a run goes wrong, so it goes somewhere nothing can truncate,
-buffer, or pipe it away. Follow a run with `tail -f <path>`. Secret values are
-redacted in the file exactly as they are on the terminal, and each run gets its
-own file, so an earlier run's record survives.
+Both commands write their output to a file in the host temp directory, under a
+`configs-runs` directory, and print that path before the run starts. The output
+arrives over minutes and is the record you need when a run goes wrong, so it
+goes somewhere nothing can truncate, buffer, or pipe it away. Follow a run with
+`tail -f <path>`. Secret values are redacted in the file exactly as they are on
+the terminal, and each run gets its own file, so an earlier run's record
+survives.
+
+The logs sit outside the repository, so a run leaves the working tree clean and
+the host reclaims old logs on its own schedule. Copy a log you need to keep
+before the host clears it.
+
+A run refuses to start when something other than its own private directory sits
+at that path, and the error names both the path and the reason. On a host where
+the temp directory is shared, another user can create that name first. Remove
+the path it names, then run the command again.
 
 A `tofu apply` or `tofu destroy` without `-auto-approve` keeps the terminal
 instead, because you cannot answer an approval prompt you cannot see. The same

@@ -19,6 +19,7 @@ import (
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/pd"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 const (
@@ -169,6 +170,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 
 	var desired desiredRules
 	missing := make(map[string]bool, len(m.cfg.WANs))
+	delegated := make(map[string]netip.Prefix, len(m.cfg.WANs))
 	var reconcileErr error
 
 	for _, wan := range m.cfg.WANs {
@@ -194,14 +196,51 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			missing[wan.Iface] = true
 			continue
 		}
+		delegated[wan.Name] = built.pd60
 		desired.add(built.rules)
 	}
 	m.pdMissing = missing
 
-	if err := m.apply.Apply(ctx, log, desired); err != nil {
-		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("apply: %w", err))
+	applyErr := m.apply.Apply(ctx, log, desired)
+	if applyErr != nil {
+		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("apply: %w", applyErr))
 	}
+	m.publishLiveState(ctx, log, delegated, applyErr == nil)
 	return reconcileErr
+}
+
+// publishLiveState writes this pass's translation outcome to the
+// management surface's snapshot store, when this host serves one. Kernel
+// presence is read back from the live ip6 nat table after the apply, so
+// the served value reports what the kernel holds rather than what the
+// apply intended; a failed apply or read-back reports absent.
+func (m *Module) publishLiveState(
+	ctx context.Context,
+	log *slog.Logger,
+	delegated map[string]netip.Prefix,
+	applied bool,
+) {
+	if m.Env == nil || m.Env.LiveState == nil {
+		return
+	}
+	rendered := emptyRenderedTable()
+	if applied {
+		table, err := RenderTable(ctx, log)
+		if err != nil {
+			log.WarnContext(ctx, "npt: kernel read-back for the surface failed",
+				"err", err)
+		} else {
+			rendered = table
+		}
+	}
+	members := make(map[string]wanstate.MemberTranslation, len(m.cfg.WANs))
+	for _, wan := range m.cfg.WANs {
+		members[wan.Name] = wanstate.MemberTranslation{
+			Delegated:     delegated[wan.Name],
+			KernelPresent: applied && rendered.HasInterface(wan.Iface),
+		}
+	}
+	m.Env.LiveState.SetTranslation(members)
 }
 
 // wanDesired is one WAN's computed reconcile plan: the typed rules to program
@@ -210,6 +249,9 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 type wanDesired struct {
 	rules  []natRule
 	ensure []netif.AddrSpec
+	// pd60 is the resolved live delegation, retained for the management
+	// surface.
+	pd60 netip.Prefix
 }
 
 // buildWANDesired resolves one WAN's live /60 and returns its reconcile plan.
@@ -224,12 +266,12 @@ func (m *Module) buildWANDesired(
 	if err != nil {
 		log.WarnContext(ctx, "npt: pd lookup failed; skipping WAN",
 			"wan", wan.Name, "iface", wan.Iface, "err", err)
-		return wanDesired{rules: nil, ensure: nil}, false, nil
+		return wanDesired{rules: nil, ensure: nil, pd60: netip.Prefix{}}, false, nil
 	}
 	if !ok {
 		log.WarnContext(ctx, "npt: no delegated prefix; skipping WAN",
 			"wan", wan.Name, "iface", wan.Iface)
-		return wanDesired{rules: nil, ensure: nil}, false, nil
+		return wanDesired{rules: nil, ensure: nil, pd60: netip.Prefix{}}, false, nil
 	}
 
 	pd60 := netip.PrefixFrom(pfx.Addr(), pdMaskBits).Masked()
@@ -239,7 +281,7 @@ func (m *Module) buildWANDesired(
 
 	extra, err := m.extraGlobal128s(ctx, log, wan.Iface, pd1)
 	if err != nil {
-		return wanDesired{rules: nil, ensure: nil}, false,
+		return wanDesired{rules: nil, ensure: nil, pd60: netip.Prefix{}}, false,
 			fmt.Errorf("enumerate extra /128 on %s: %w", wan.Iface, err)
 	}
 
@@ -251,7 +293,7 @@ func (m *Module) buildWANDesired(
 		MwanbrEdge:   m.mwanbrEdge,
 		ExtraDNAT:    extra,
 	})
-	return wanDesired{rules: rules, ensure: ensure}, true, nil
+	return wanDesired{rules: rules, ensure: ensure, pd60: pd60}, true, nil
 }
 
 // extraGlobal128s returns the global-scope /128 addresses on iface, excluding

@@ -53,6 +53,107 @@ The daemon's own part is one small publishing binding: connect, open a
 session, set values by path, apply. Everything protocol-shaped is off the
 shelf.
 
+## How the configuration is published
+
+The interface-manager process that runs the gateway's steering role owns the
+configuration part of the tree. It publishes once, at startup, after it has
+loaded and validated its configuration and before it programs anything, and
+it publishes from the typed configuration it is about to run with, not from
+the file. Editing the file on disk without restarting the daemon therefore
+changes nothing in the tree, which is the acceptance test.
+
+Publishing is gated on one configuration setting. A host whose rendered
+configuration does not turn it on never opens a connection to the datastore,
+so the hypervisors, the failover container, and production before its stack
+is installed do not attempt a publish they cannot complete. The gate is off
+unless stated.
+
+The publish replaces the subtrees the daemon owns in one transaction: the
+interface list with its per-family containers and steering properties, and
+the translation instances. Whatever an earlier run left there disappears in
+the same change that writes the current values, so a reader never sees the
+tree empty or half-replaced, and nothing from a retired configuration
+survives a restart.
+
+Only values the daemon holds are published. Each steering member appears as
+an interface entry named by its link, marked as a member with its tier and
+the name of the probe policy that decides its health. Its address-family
+containers are present and enabled, because the daemon steers and probes
+both families on every member; the internal link appears the same way. Each
+member whose loaded configuration carries a translation prefix appears as a
+prefix-translation instance with both prefixes explicit. A value the
+configuration does not carry is left to the schema default or left out: the
+interface type is published as unspecified because the configuration has no
+type, the hash mode and member weight are not published because the balancer
+that holds them is still the firewall file, and addresses, routes, and
+routing tables are not published because the daemon holds them only as live
+state, which the live-state piece serves from the operational datastore.
+
+If the datastore cannot be reached or rejects the publish, the daemon logs
+the failure and runs exactly as it would have without a management surface.
+A publish is bounded in time so a stalled datastore cannot delay startup.
+
+## How live state is served
+
+The same interface-manager process serves the live half of the tree, from
+the operational datastore, as a provider: it registers for its owned
+subtrees once at startup, right after the configuration publish and behind
+the same gate, and each read then reaches into the daemon at request time.
+Nothing is copied on a schedule, so the answer cannot drift from the
+process. The provider connection stays open for the daemon's lifetime;
+losing it is logged and the daemon runs on, exactly like a failed publish.
+
+The daemon also holds the change subscription for the modules it
+publishes, because the datastore shows a module's configuration in the
+operational view only while some application owns it. That subscription
+observes and never applies anything, since the surface accepts no writes;
+its effect is that one operational read carries the configuration and the
+live state together, which is what the two operator questions need.
+
+A provider callback answers from a snapshot the modules already maintain,
+never by taking a lock the reconcile path holds and never by probing
+on demand. A read is bounded in time, and a reader that stalls or asks for
+a malformed path costs the daemon one bounded callback and nothing else.
+
+What each acceptance item reads, and where the value comes from:
+
+- **Delegated prefix.** Each member's currently held delegation, as the
+  daemon's prefix tracking sees it, on the member's ipv6 container through
+  a leaf the steering module adds. A member holding no delegation has no
+  leaf.
+- **Health and probe results.** Each member's verdict plus the evidence
+  behind it: per-family last result, consecutive failures, and the time of
+  the last transition, as steering-module state under the member. The
+  health module owns these values today; the provider serves the module's
+  snapshot.
+- **Active tier and carrier.** The steering group's active tier and, per
+  member, whether it is currently carrying traffic, from the routing
+  module's last reconciled decision.
+- **Translation realized.** Per translation instance, whether the daemon
+  found its rules present in the kernel on the last reconcile, as a
+  steering-module leaf on the nat instance. The published model has no
+  such node, so the local module augments it.
+- **Routing session.** Whether the BGP session is established, per peer.
+  The speaker lives in the agent process, not the interface manager, so
+  the provider answers from a short-lived cache filled over the agent's
+  existing local RPC; a dead agent yields an explicit stale marker, never
+  a hang, because the cache refresh is bounded and runs outside the
+  callback.
+- **Intended firewall ruleset.** The model carries one opaque leaf for
+  the ruleset the daemon would program, rendered in its own text form;
+  it is served once the daemon gains a render hook for it, with the
+  remaining modules. Modeling firewall rules structurally is its own
+  published-model project and is not this work.
+
+Values the daemon does not hold are not served, and nothing is
+reconstructed from files or the kernel at read time beyond the
+snapshots above.
+
+The steering module gains the state nodes this needs, marked as
+non-configuration so the running datastore is untouched; yanglint gates
+the change like any model edit. Streaming of these values is the next
+piece; this one serves reads.
+
 ## What must not change
 
 No data-path behavior. This piece adds a reader and nothing else.

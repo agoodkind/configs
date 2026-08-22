@@ -13,6 +13,7 @@ import (
 
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 const (
@@ -32,6 +33,31 @@ const (
 	// in-flight NDP resolution without a false alert.
 	nextHopAlertThreshold = 2
 )
+
+// Tier values the router assigns today. The balancer spreads new connections
+// across the preferred tier; the fallback tier carries traffic only while
+// every preferred member is unhealthy (see fallbackEnabled).
+const (
+	// TierPreferred is the tier the balancer uses while any member of it is
+	// healthy.
+	TierPreferred uint8 = 0
+	// TierFallback is the tier that serves only when the preferred tier has
+	// no healthy member.
+	TierFallback uint8 = 1
+)
+
+// TierOf reports the steering tier this router assigns to the named WAN.
+// Today that assignment is fixed in code: the Monkeybrains link is the
+// fallback, every other member is preferred. The management surface
+// publishes this value for each member, so it reads from the same rule the
+// router applies rather than a second copy of it; when tier becomes
+// configuration (the provider-set piece), this function reads it from there.
+func TierOf(name string) uint8 {
+	if name == wanNameMonkeybrains {
+		return TierFallback
+	}
+	return TierPreferred
+}
 
 // Config is the parsed [ifmgr.modules.wan.routes] runtime config.
 type Config struct {
@@ -169,7 +195,38 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 		reconcileErr = errors.Join(reconcileErr, err)
 	}
 	m.checkNextHopLocked(ctx, log)
+	m.publishLiveState(currentGateways, health)
 	return reconcileErr
+}
+
+// publishLiveState writes this pass's steering decision to the management
+// surface's snapshot store, when this host serves one. A member is
+// carrying when the pass installed its steering rules: it has a gateway
+// in at least one family and its health verdict allows it. The active
+// tier is the fallback tier exactly when the fallback rules engaged.
+func (m *Module) publishLiveState(currentGateways gateways, health netif.HealthStates) {
+	if m.Env == nil || m.Env.LiveState == nil {
+		return
+	}
+	members := make(map[string]wanstate.MemberRouting, len(m.cfg.WANs))
+	fallback := fallbackEnabled(health)
+	for _, wan := range m.cfg.WANs {
+		wanGateways := currentGateways[wan.Name]
+		enabled := wanEnabled(wanGateways.V4, health.State(wan.Name)) ||
+			wanEnabled(wanGateways.V6, health.State(wan.Name))
+		carrying := enabled
+		if fallback {
+			carrying = wan.Name == wanNameMonkeybrains && enabled
+		} else if TierOf(wan.Name) != TierPreferred {
+			carrying = false
+		}
+		members[wan.Name] = wanstate.MemberRouting{Carrying: carrying}
+	}
+	activeTier := TierPreferred
+	if fallback {
+		activeTier = TierFallback
+	}
+	m.Env.LiveState.SetRouting(activeTier, members)
 }
 
 // checkNextHopLocked probes the internal next hop's neighbour entry and

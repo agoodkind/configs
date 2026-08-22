@@ -117,6 +117,13 @@ enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
 restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
 notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
 
+# Gates whether ifmgr publishes its loaded configuration into the wanconfig
+# management datastore (sysrepo) at startup. Only a gateway carrying the
+# wanconfig stack turns this on; everywhere else the daemon never opens a
+# datastore connection.
+[wanconfig]
+publish = {{ mwan_wanconfig_publish | ternary('true', 'false') }}
+
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_wan_enabled | bool %}
