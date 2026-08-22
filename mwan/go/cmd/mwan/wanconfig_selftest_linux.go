@@ -56,7 +56,15 @@ type selftestFlags struct {
 	modelsDir  string
 }
 
-func parseSelftestFlags(args []string) (selftestFlags, error) {
+// failStep logs a failed selftest step and returns it wrapped under the
+// step's name, so the operator reads the step both in the journal and in
+// the exit message.
+func failStep(log *slog.Logger, step string, err error) error {
+	log.Error("wanconfig selftest step failed", "step", step, "err", err)
+	return fmt.Errorf("%s: %w", step, err)
+}
+
+func parseSelftestFlags(log *slog.Logger, args []string) (selftestFlags, error) {
 	flags := selftestFlags{repository: "", modelsDir: ""}
 	set := flag.NewFlagSet("wanconfig-selftest", flag.ContinueOnError)
 	set.SetOutput(os.Stderr)
@@ -65,7 +73,7 @@ func parseSelftestFlags(args []string) (selftestFlags, error) {
 	set.StringVar(&flags.modelsDir, "models-dir", "",
 		"directory holding the gateway's model files, installed into the private repository")
 	if err := set.Parse(args); err != nil {
-		return flags, fmt.Errorf("parse flags: %w", err)
+		return flags, failStep(log, "parse flags", err)
 	}
 	if (flags.repository == "") != (flags.modelsDir == "") {
 		return flags, errors.New("--repository and --models-dir go together")
@@ -77,12 +85,12 @@ func parseSelftestFlags(args []string) (selftestFlags, error) {
 // builds without the binding it reports unavailability and exits nonzero
 // without touching anything.
 func runWanconfigSelftest(args []string) int {
-	flags, err := parseSelftestFlags(args)
+	log := slog.Default()
+	flags, err := parseSelftestFlags(log, args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mwan wanconfig-selftest: %v\n", err)
 		return 2
 	}
-	log := slog.Default()
 	if flags.repository != "" {
 		return runPrivateSelftest(log, flags)
 	}
@@ -200,16 +208,16 @@ var selftestModels = []struct {
 }
 
 // resolveSelftestModels finds exactly one file per model in dir.
-func resolveSelftestModels(dir string) ([]yangpub.Model, error) {
+func resolveSelftestModels(log *slog.Logger, dir string) ([]yangpub.Model, error) {
 	models := make([]yangpub.Model, 0, len(selftestModels))
 	for _, entry := range selftestModels {
 		matches, err := filepath.Glob(filepath.Join(dir, entry.pattern))
 		if err != nil {
-			return nil, fmt.Errorf("match %s: %w", entry.pattern, err)
+			return nil, failStep(log, "match "+entry.pattern, err)
 		}
 		if len(matches) != 1 {
-			return nil, fmt.Errorf("%s: want exactly one file matching %s in %s, found %d",
-				entry.pattern, entry.pattern, dir, len(matches))
+			return nil, fmt.Errorf("want exactly one file matching %s in %s, found %d",
+				entry.pattern, dir, len(matches))
 		}
 		models = append(models, yangpub.Model{Path: matches[0], Features: entry.features})
 	}
@@ -271,7 +279,7 @@ func runPrivateSelftest(log *slog.Logger, flags selftestFlags) int {
 
 func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 	if err := os.MkdirAll(flags.repository, 0o750); err != nil {
-		return fmt.Errorf("create repository: %w", err)
+		return failStep(log, "create repository", err)
 	}
 	// sysrepo reads its repository path and shared-memory prefix from the
 	// environment at connect time; a distinct prefix keeps this run apart
@@ -282,50 +290,50 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 	ctx, cancel := context.WithTimeout(context.Background(), selftestTimeout)
 	defer cancel()
 
-	models, err := resolveSelftestModels(flags.modelsDir)
+	models, err := resolveSelftestModels(log, flags.modelsDir)
 	if err != nil {
 		return err
 	}
 	reader, err := yangpub.New(log)
 	if err != nil {
-		return fmt.Errorf("reader connection: %w", err)
+		return failStep(log, "reader connection", err)
 	}
 	defer func() { _ = reader.Close() }()
 	if err := reader.InstallModules(ctx, models, flags.modelsDir); err != nil {
-		return fmt.Errorf("install models: %w", err)
+		return failStep(log, "install models", err)
 	}
 
 	daemon, err := yangpub.New(log)
 	if err != nil {
-		return fmt.Errorf("daemon connection: %w", err)
+		return failStep(log, "daemon connection", err)
 	}
 	defer func() { _ = daemon.Close() }()
 
 	gateway := selftestGateway()
 	if err := wanconfig.Publish(ctx, log, runningReplacer{pub: daemon}, gateway); err != nil {
-		return fmt.Errorf("publish configuration: %w", err)
+		return failStep(log, "publish configuration", err)
 	}
 	for _, module := range publishedModules {
 		if err := daemon.OwnModule(ctx, module); err != nil {
-			return fmt.Errorf("own %s: %w", module, err)
+			return failStep(log, "own "+module, err)
 		}
 	}
 	if err := registerLiveStateProviders(ctx, log, daemon, selftestStore(), gateway); err != nil {
-		return fmt.Errorf("register providers: %w", err)
+		return failStep(log, "register providers", err)
 	}
 
-	if err := checkSelftestTree(ctx, reader); err != nil {
+	if err := checkSelftestTree(ctx, log, reader); err != nil {
 		return err
 	}
 	if err := wanconfig.Publish(ctx, log, runningReplacer{pub: daemon}, gateway); err != nil {
-		return fmt.Errorf("publish configuration with ownership alive: %w", err)
+		return failStep(log, "publish configuration with ownership alive", err)
 	}
 	if err := daemon.Close(); err != nil {
-		return fmt.Errorf("close daemon connection: %w", err)
+		return failStep(log, "close daemon connection", err)
 	}
 	after, found, err := reader.ExportJSON(ctx, yangpub.DatastoreOperational, "/ietf-interfaces:*")
 	if err != nil {
-		return fmt.Errorf("operational read after close: %w", err)
+		return failStep(log, "operational read after close", err)
 	}
 	if !found {
 		return nil
@@ -333,72 +341,26 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 	// With nothing owned and nothing provided the datastore may still
 	// print the bare container; what must be gone is the member's
 	// configuration and its state.
-	if err := checkSelftestInterfacesBare(json.RawMessage(after)); err != nil {
-		return fmt.Errorf("%w\ninterfaces tree after close: %s", err, after)
+	if err := checkSelftestInterfacesBare(log, json.RawMessage(after)); err != nil {
+		return failStep(log, "interfaces tree after close: "+after, err)
 	}
 	return nil
 }
 
-// checkSelftestInterfacesBare fails when the interfaces tree still carries
-// the member's steering configuration or state.
-func checkSelftestInterfacesBare(tree json.RawMessage) error {
-	root, err := jsonObject(tree, "interfaces tree")
-	if err != nil {
-		return err
-	}
-	raw, present := root["ietf-interfaces:interfaces"]
-	if !present {
-		return nil
-	}
-	interfaces, err := jsonObject(raw, "interfaces container")
-	if err != nil {
-		return err
-	}
-	rawList, present := interfaces["interface"]
-	if !present {
-		return nil
-	}
-	entries, err := jsonArray(rawList, "interface list")
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		decoded, err := jsonObject(entry, "interface entry")
-		if err != nil {
-			return err
-		}
-		rawSteering, present := decoded["goodkind-mwan-steering:steering"]
-		if !present {
-			continue
-		}
-		steering, err := jsonObject(rawSteering, "steering container")
-		if err != nil {
-			return err
-		}
-		if _, present := steering["tier"]; present {
-			return errors.New("configuration still enabled after close")
-		}
-		if _, present := steering["state"]; present {
-			return errors.New("live state still served after close")
-		}
-	}
-	return nil
-}
-
-// jsonObject decodes one JSON object level, so a check reaches into the
-// tree without committing to its full shape.
-func jsonObject(raw json.RawMessage, what string) (map[string]json.RawMessage, error) {
+// unmarshalObject decodes one JSON object level, so a check reaches into
+// the tree without committing to its full shape.
+func unmarshalObject(log *slog.Logger, raw json.RawMessage, what string) (map[string]json.RawMessage, error) {
 	object := map[string]json.RawMessage{}
 	if err := json.Unmarshal(raw, &object); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", what, err)
+		return nil, failStep(log, "decode "+what, err)
 	}
 	return object, nil
 }
 
-func jsonArray(raw json.RawMessage, what string) ([]json.RawMessage, error) {
+func unmarshalArray(log *slog.Logger, raw json.RawMessage, what string) ([]json.RawMessage, error) {
 	var array []json.RawMessage
 	if err := json.Unmarshal(raw, &array); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", what, err)
+		return nil, failStep(log, "decode "+what, err)
 	}
 	return array, nil
 }
@@ -418,46 +380,46 @@ func expectLeaf(object map[string]json.RawMessage, name string, want string, whe
 // checkSelftestTree reads both owned subtrees from the operational
 // datastore and checks that the configuration and the live state arrive
 // together.
-func checkSelftestTree(ctx context.Context, reader yangpub.Publisher) error {
+func checkSelftestTree(ctx context.Context, log *slog.Logger, reader yangpub.Publisher) error {
 	interfacesJSON, found, err := reader.ExportJSON(ctx, yangpub.DatastoreOperational, "/ietf-interfaces:*")
 	if err != nil {
-		return fmt.Errorf("operational interfaces read: %w", err)
+		return failStep(log, "operational interfaces read", err)
 	}
 	if !found {
 		return errors.New("operational interfaces read: nothing served")
 	}
-	if err := checkSelftestInterfaces(json.RawMessage(interfacesJSON)); err != nil {
-		return fmt.Errorf("%w\ninterfaces tree: %s", err, interfacesJSON)
+	if err := checkSelftestInterfaces(log, json.RawMessage(interfacesJSON)); err != nil {
+		return failStep(log, "interfaces tree: "+interfacesJSON, err)
 	}
 	natJSON, found, err := reader.ExportJSON(ctx, yangpub.DatastoreOperational, "/ietf-nat:*")
 	if err != nil {
-		return fmt.Errorf("operational nat read: %w", err)
+		return failStep(log, "operational nat read", err)
 	}
 	if !found {
 		return errors.New("operational nat read: nothing served")
 	}
-	if err := checkSelftestNAT(json.RawMessage(natJSON)); err != nil {
-		return fmt.Errorf("%w\nnat tree: %s", err, natJSON)
+	if err := checkSelftestNAT(log, json.RawMessage(natJSON)); err != nil {
+		return failStep(log, "nat tree: "+natJSON, err)
 	}
 	return nil
 }
 
-func checkSelftestInterfaces(tree json.RawMessage) error {
-	root, err := jsonObject(tree, "interfaces tree")
+func checkSelftestInterfaces(log *slog.Logger, tree json.RawMessage) error {
+	root, err := unmarshalObject(log, tree, "interfaces tree")
 	if err != nil {
 		return err
 	}
-	interfaces, err := jsonObject(root["ietf-interfaces:interfaces"], "interfaces container")
+	interfaces, err := unmarshalObject(log, root["ietf-interfaces:interfaces"], "interfaces container")
 	if err != nil {
 		return err
 	}
-	entries, err := jsonArray(interfaces["interface"], "interface list")
+	entries, err := unmarshalArray(log, interfaces["interface"], "interface list")
 	if err != nil {
 		return err
 	}
 	var member map[string]json.RawMessage
 	for _, entry := range entries {
-		decoded, err := jsonObject(entry, "interface entry")
+		decoded, err := unmarshalObject(log, entry, "interface entry")
 		if err != nil {
 			return err
 		}
@@ -468,7 +430,7 @@ func checkSelftestInterfaces(tree json.RawMessage) error {
 	if member == nil {
 		return errors.New("interface enatt0 is absent")
 	}
-	steering, err := jsonObject(member["goodkind-mwan-steering:steering"], "steering container")
+	steering, err := unmarshalObject(log, member["goodkind-mwan-steering:steering"], "steering container")
 	if err != nil {
 		return err
 	}
@@ -478,7 +440,7 @@ func checkSelftestInterfaces(tree json.RawMessage) error {
 	if err := expectLeaf(steering, "probe-policy", `"att"`, "configuration"); err != nil {
 		return err
 	}
-	state, err := jsonObject(steering["state"], "steering state")
+	state, err := unmarshalObject(log, steering["state"], "steering state")
 	if err != nil {
 		return err
 	}
@@ -488,38 +450,38 @@ func checkSelftestInterfaces(tree json.RawMessage) error {
 	if err := expectLeaf(state, "carrying", "true", "live state"); err != nil {
 		return err
 	}
-	group, err := jsonObject(interfaces["goodkind-mwan-steering:steering-group"], "steering group")
+	group, err := unmarshalObject(log, interfaces["goodkind-mwan-steering:steering-group"], "steering group")
 	if err != nil {
 		return err
 	}
-	groupState, err := jsonObject(group["state"], "steering group state")
+	groupState, err := unmarshalObject(log, group["state"], "steering group state")
 	if err != nil {
 		return err
 	}
 	return expectLeaf(groupState, "active-tier", "0", "live state")
 }
 
-func checkSelftestNAT(tree json.RawMessage) error {
-	root, err := jsonObject(tree, "nat tree")
+func checkSelftestNAT(log *slog.Logger, tree json.RawMessage) error {
+	root, err := unmarshalObject(log, tree, "nat tree")
 	if err != nil {
 		return err
 	}
-	nat, err := jsonObject(root["ietf-nat:nat"], "nat container")
+	nat, err := unmarshalObject(log, root["ietf-nat:nat"], "nat container")
 	if err != nil {
 		return err
 	}
-	instances, err := jsonObject(nat["instances"], "instances container")
+	instances, err := unmarshalObject(log, nat["instances"], "instances container")
 	if err != nil {
 		return err
 	}
-	entries, err := jsonArray(instances["instance"], "instance list")
+	entries, err := unmarshalArray(log, instances["instance"], "instance list")
 	if err != nil {
 		return err
 	}
 	if len(entries) != 1 {
 		return fmt.Errorf("nat instances = %d, want 1", len(entries))
 	}
-	instance, err := jsonObject(entries[0], "nat instance")
+	instance, err := unmarshalObject(log, entries[0], "nat instance")
 	if err != nil {
 		return err
 	}
@@ -532,4 +494,50 @@ func checkSelftestNAT(tree json.RawMessage) error {
 		return err
 	}
 	return expectLeaf(instance, "goodkind-mwan-steering:kernel-present", "true", "live state")
+}
+
+// checkSelftestInterfacesBare fails when the interfaces tree still carries
+// the member's steering configuration or state.
+func checkSelftestInterfacesBare(log *slog.Logger, tree json.RawMessage) error {
+	root, err := unmarshalObject(log, tree, "interfaces tree")
+	if err != nil {
+		return err
+	}
+	raw, present := root["ietf-interfaces:interfaces"]
+	if !present {
+		return nil
+	}
+	interfaces, err := unmarshalObject(log, raw, "interfaces container")
+	if err != nil {
+		return err
+	}
+	rawList, present := interfaces["interface"]
+	if !present {
+		return nil
+	}
+	entries, err := unmarshalArray(log, rawList, "interface list")
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		decoded, err := unmarshalObject(log, entry, "interface entry")
+		if err != nil {
+			return err
+		}
+		rawSteering, present := decoded["goodkind-mwan-steering:steering"]
+		if !present {
+			continue
+		}
+		steering, err := unmarshalObject(log, rawSteering, "steering container")
+		if err != nil {
+			return err
+		}
+		if _, present := steering["tier"]; present {
+			return errors.New("configuration still enabled after close")
+		}
+		if _, present := steering["state"]; present {
+			return errors.New("live state still served after close")
+		}
+	}
+	return nil
 }
