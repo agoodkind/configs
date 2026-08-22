@@ -33,7 +33,29 @@ const (
 	bgpPollTimeout = 5 * time.Second
 
 	steeringPrefix = "goodkind-mwan-steering"
+
+	// moduleInterfaces and moduleNAT name the modules whose subtrees the
+	// daemon publishes, provides live state for, and owns.
+	moduleInterfaces = "ietf-interfaces"
+	moduleNAT        = "ietf-nat"
 )
+
+// publishedModules lists the modules the daemon owns in the operational
+// view, in the order they are claimed.
+var publishedModules = []string{moduleInterfaces, moduleNAT}
+
+// ownPublishedModules marks each published module's running data in use
+// so its configuration appears in the operational datastore beside the
+// live state. A failure degrades to state-only operational reads; the
+// running datastore still serves the configuration.
+func ownPublishedModules(ctx context.Context, log *slog.Logger, pub yangpub.Publisher) {
+	for _, module := range publishedModules {
+		if err := pub.OwnModule(ctx, module); err != nil {
+			log.ErrorContext(ctx, "wanconfig: owning module failed; operational reads carry state only",
+				"module", module, "err", err)
+		}
+	}
+}
 
 // registerLiveStateProviders registers the operational-datastore
 // providers for the subtrees the daemon owns. Each read answers from the
@@ -49,14 +71,14 @@ func registerLiveStateProviders(
 	interfacesProvider := func(_ context.Context, _ string) ([]yangpub.Item, error) {
 		return interfacesLiveItems(store.Snapshot(), gateway), nil
 	}
-	if err := pub.RegisterProvider(ctx, "ietf-interfaces", "/ietf-interfaces:interfaces", interfacesProvider); err != nil {
+	if err := pub.RegisterProvider(ctx, moduleInterfaces, "/ietf-interfaces:interfaces", interfacesProvider); err != nil {
 		log.ErrorContext(ctx, "wanconfig: register interfaces provider failed", "err", err)
 		return fmt.Errorf("register interfaces provider: %w", err)
 	}
 	natProvider := func(_ context.Context, _ string) ([]yangpub.Item, error) {
 		return natLiveItems(store.Snapshot(), gateway), nil
 	}
-	if err := pub.RegisterProvider(ctx, "ietf-nat", "/ietf-nat:nat", natProvider); err != nil {
+	if err := pub.RegisterProvider(ctx, moduleNAT, "/ietf-nat:nat", natProvider); err != nil {
 		log.ErrorContext(ctx, "wanconfig: register nat provider failed", "err", err)
 		return fmt.Errorf("register nat provider: %w", err)
 	}

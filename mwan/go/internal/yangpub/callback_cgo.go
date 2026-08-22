@@ -35,6 +35,24 @@ func lyFailed(result C.LY_ERR) bool {
 // with what the program does.
 var operGetCallback = yangpubOperCB
 
+// moduleChangeCallback holds the change trampoline for the same reason.
+var moduleChangeCallback = yangpubChangeCB
+
+// yangpubChangeCB is the C-visible trampoline for the change
+// subscriptions OwnModule holds. They exist only to mark a module's
+// running data in use; the daemon applies nothing on a change because
+// the surface accepts no writes, so every event is acknowledged as is.
+//
+//export yangpubChangeCB
+func yangpubChangeCB(session *C.sr_session_ctx_t, subID C.uint32_t, moduleName *C.char,
+	xpath *C.char, event C.sr_event_t, requestID C.uint32_t, privateData unsafe.Pointer,
+) C.int {
+	// cgo emits a C prototype from these names, so they cannot be blank;
+	// the callback reads none of them.
+	_, _, _, _, _, _, _ = session, subID, moduleName, xpath, event, requestID, privateData
+	return C.SR_ERR_OK
+}
+
 // callProvider runs one provider with a deadline and turns a panic into
 // an error. The panic case is the load-bearing one: this runs on a
 // thread that entered Go from C, and a panic that unwinds past this

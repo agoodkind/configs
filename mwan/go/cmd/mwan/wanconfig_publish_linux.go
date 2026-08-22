@@ -84,6 +84,7 @@ func startWanconfigSurface(
 	defer cancel()
 	// Publish logs its own failure detail; the daemon carries on either way.
 	_ = wanconfig.Publish(publishCtx, log, runningReplacer{pub: pub}, gateway)
+	ownPublishedModules(ctx, log, pub)
 
 	store := wanstate.New()
 	surface := &wanconfigSurface{

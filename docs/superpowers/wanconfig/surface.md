@@ -103,6 +103,13 @@ Nothing is copied on a schedule, so the answer cannot drift from the
 process. The provider connection stays open for the daemon's lifetime;
 losing it is logged and the daemon runs on, exactly like a failed publish.
 
+The daemon also holds the change subscription for the modules it
+publishes, because the datastore shows a module's configuration in the
+operational view only while some application owns it. That subscription
+observes and never applies anything, since the surface accepts no writes;
+its effect is that one operational read carries the configuration and the
+live state together, which is what the two operator questions need.
+
 A provider callback answers from a snapshot the modules already maintain,
 never by taking a lock the reconcile path holds and never by probing
 on demand. A read is bounded in time, and a reader that stalls or asks for

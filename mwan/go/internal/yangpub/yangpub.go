@@ -71,6 +71,11 @@ type Publisher interface {
 	// xpath inside module, so a read reaches the daemon at request
 	// time. Registrations live until Close.
 	RegisterProvider(ctx context.Context, module string, xpath string, fn ProviderFunc) error
+	// OwnModule marks module's running data as in use by holding a change
+	// subscription that applies nothing, so the configuration appears in
+	// the operational datastore beside the live state. The subscription
+	// lives until Close.
+	OwnModule(ctx context.Context, module string) error
 	// Close releases every registration and the connection.
 	Close() error
 }

@@ -12,6 +12,8 @@ package yangpub
 extern int yangpubOperCB(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name,
         const char *path, const char *request_xpath, uint32_t operation_id,
         struct lyd_node **parent, void *private_data);
+extern int yangpubChangeCB(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name,
+        const char *xpath, sr_event_t event, uint32_t request_id, void *private_data);
 */
 import "C"
 
@@ -61,10 +63,12 @@ func (p *publisher) connection() (*C.sr_conn_ctx_t, error) {
 	return p.conn, nil
 }
 
-// operSubscription holds everything one provider registration owns: the
+// operSubscription holds everything one registration owns: the
 // long-lived session the subscription is tied to, the subscription
-// itself, the cgo handle the C callback resolves, and the C-allocated
-// cell that carries the handle across the language boundary.
+// itself, and, for a provider registration, the cgo handle the C
+// callback resolves with the C-allocated cell that carries it across the
+// language boundary. A module ownership registration carries no handle;
+// its cell is nil.
 type operSubscription struct {
 	session      *C.sr_session_ctx_t
 	subscription *C.sr_subscription_ctx_t
@@ -256,6 +260,49 @@ func (p *publisher) RegisterProvider(ctx context.Context, module string, xpath s
 	return nil
 }
 
+// OwnModule holds a change subscription on module until Close. The
+// subscription is registered done-only, so sysrepo never asks it to
+// verify or deny a change and the surface stays read-only through its
+// access control. Its one effect is that sysrepo treats the module's
+// running data as in use, which is what makes the configuration appear in
+// the operational datastore beside the live state; without it an
+// operational read returns only the state nodes.
+func (p *publisher) OwnModule(ctx context.Context, module string) error {
+	if err := ctx.Err(); err != nil {
+		p.log.ErrorContext(ctx, "module ownership aborted before start", "err", err)
+		return fmt.Errorf("yangpub: ownership aborted: %w", err)
+	}
+
+	session, err := p.startSession(ctx, C.SR_DS_RUNNING)
+	if err != nil {
+		return err
+	}
+
+	cModule := C.CString(module)
+	var subscription *C.sr_subscription_ctx_t
+	rc := C.sr_module_change_subscribe(session, cModule, nil,
+		C.sr_module_change_cb(C.yangpubChangeCB), nil, 0,
+		C.sr_subscr_options_t(C.SR_SUBSCR_DONE_ONLY), &subscription)
+	C.free(unsafe.Pointer(cModule))
+	if srFailed(rc) {
+		C.sr_session_stop(session)
+		subscribeErr := srError("sr_module_change_subscribe "+module, rc)
+		p.log.ErrorContext(ctx, "sysrepo change subscribe failed",
+			"module", module, "err", subscribeErr)
+		return subscribeErr
+	}
+
+	p.mu.Lock()
+	p.subscriptions = append(p.subscriptions, &operSubscription{
+		session:      session,
+		subscription: subscription,
+		handle:       0,
+		handleCell:   nil,
+	})
+	p.mu.Unlock()
+	return nil
+}
+
 // GetItem reads one value by path in ds.
 func (p *publisher) GetItem(ctx context.Context, ds Datastore, path string) (string, bool, error) {
 	if err := ctx.Err(); err != nil {
@@ -349,8 +396,10 @@ func (p *publisher) Close() error {
 			p.log.Error("sysrepo unsubscribe failed", "err", srError("sr_unsubscribe", rc))
 		}
 		C.sr_session_stop(sub.session)
-		C.free(sub.handleCell)
-		sub.handle.Delete()
+		if sub.handleCell != nil {
+			C.free(sub.handleCell)
+			sub.handle.Delete()
+		}
 	}
 	if rc := C.sr_disconnect(conn); srFailed(rc) {
 		disconnectErr := srError("sr_disconnect", rc)
