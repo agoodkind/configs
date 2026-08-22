@@ -171,7 +171,7 @@ func runDaemonState() int {
 	if err != nil {
 		return printAndExit("daemon state", err)
 	}
-	fmt.Printf("active=%s previous=%s health=%s deployed_at=%d\n",
+	fmt.Fprintf(os.Stdout, "active=%s previous=%s health=%s deployed_at=%d\n",
 		resp.GetActiveSha256(), resp.GetPreviousSha256(), resp.GetHealth(), resp.GetDeployedAt())
 	return 0
 }
@@ -194,7 +194,7 @@ func runDaemonMarkHealthy() int {
 	if err != nil {
 		return printAndExit("daemon mark-healthy", err)
 	}
-	fmt.Printf("active=%s previous=%s health=%s deployed_at=%d\n",
+	fmt.Fprintf(os.Stdout, "active=%s previous=%s health=%s deployed_at=%d\n",
 		resp.GetActiveSha256(), resp.GetPreviousSha256(), resp.GetHealth(), resp.GetDeployedAt())
 	return 0
 }
@@ -244,9 +244,9 @@ func runDaemonPush(args []string) int {
 	if err != nil {
 		return printAndExit("daemon push", err)
 	}
-	fmt.Printf("daemon push: bytes=%d sha256=%s staged_path=%s\n",
+	fmt.Fprintf(os.Stdout, "daemon push: bytes=%d sha256=%s staged_path=%s\n",
 		term.GetTotalBytes(), term.GetSha256Hex(), term.GetStagedPath())
-	fmt.Printf("pushed sha256=%s\n", term.GetSha256Hex())
+	fmt.Fprintf(os.Stdout, "pushed sha256=%s\n", term.GetSha256Hex())
 	return 0
 }
 
@@ -268,7 +268,7 @@ func runDaemonStage(args []string) int {
 	if err != nil {
 		return printAndExit("daemon stage", err)
 	}
-	fmt.Printf("staged active=%s previous=%s\n",
+	fmt.Fprintf(os.Stdout, "staged active=%s previous=%s\n",
 		resp.GetActiveSha256(), resp.GetPreviousPath())
 	return 0
 }
@@ -298,7 +298,7 @@ func runDaemonRevert() int {
 	if err != nil {
 		return printAndExit("daemon revert", err)
 	}
-	fmt.Printf("reverted_to=%s\n", resp.GetRevertedToSha256())
+	fmt.Fprintf(os.Stdout, "reverted_to=%s\n", resp.GetRevertedToSha256())
 	return 0
 }
 
@@ -312,6 +312,6 @@ func runDaemonGC() int {
 	if _, err := cli.TransferClient().Cancel(ctx, &mwanv1.CancelRequest{TransferId: ""}); err != nil {
 		slog.WarnContext(ctx, "daemon gc: cancel surface", "err", err)
 	}
-	fmt.Println("daemon gc: server runs GC on startup; nothing to drive from probe")
+	fmt.Fprintln(os.Stdout, "daemon gc: server runs GC on startup; nothing to drive from probe")
 	return 0
 }

@@ -366,7 +366,7 @@ func runFilePull(args []string) int {
 			wd.markProgress()
 		}
 		if term := msg.GetTerminal(); term != nil {
-			fmt.Printf("file pull: bytes=%d sha256=%s server_sha256=%s dest=%s\n",
+			fmt.Fprintf(os.Stdout, "file pull: bytes=%d sha256=%s server_sha256=%s dest=%s\n",
 				total, hex.EncodeToString(hasher.Sum(nil)), term.GetSha256Hex(), dest)
 			return 0
 		}

@@ -170,11 +170,25 @@ func stripOracle(
 	}
 	defer os.RemoveAll(tempDir)
 
+	// The stripped copy is created inside the temp directory rather than
+	// written to a path built by hand, so no caller-derived name reaches a
+	// filesystem write. Its on-disk name is arbitrary: the overlay below is
+	// what gives it a build path.
 	stripped := buildTagLine.ReplaceAll(source, nil)
-	strippedPath := filepath.Join(tempDir, "stripped.go")
-	if err := os.WriteFile(strippedPath, stripped, 0o600); err != nil {
-		log.ErrorContext(ctx, "buildtagcheck: write stripped copy failed", "file", file, "err", err)
-		return false, fmt.Errorf("write stripped %s: %w", file, err)
+	strippedFile, err := os.CreateTemp(tempDir, "stripped-*.go")
+	if err != nil {
+		log.ErrorContext(ctx, "buildtagcheck: create stripped copy failed", "file", file, "err", err)
+		return false, fmt.Errorf("create stripped %s: %w", file, err)
+	}
+	strippedPath := strippedFile.Name()
+	if _, writeErr := strippedFile.Write(stripped); writeErr != nil {
+		_ = strippedFile.Close()
+		log.ErrorContext(ctx, "buildtagcheck: write stripped copy failed", "file", file, "err", writeErr)
+		return false, fmt.Errorf("write stripped %s: %w", file, writeErr)
+	}
+	if closeErr := strippedFile.Close(); closeErr != nil {
+		log.ErrorContext(ctx, "buildtagcheck: close stripped copy failed", "file", file, "err", closeErr)
+		return false, fmt.Errorf("close stripped %s: %w", file, closeErr)
 	}
 	neutralName := strings.TrimSuffix(file, ".go") + "_buildtagcheck.go"
 	overlay := map[string]map[string]string{"Replace": {

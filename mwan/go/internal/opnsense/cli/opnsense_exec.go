@@ -51,7 +51,7 @@ func runOPNsenseExec(args []string) int {
 		fmt.Fprintf(os.Stdout, "---stdout---\n%s\n", res.Stdout)
 	}
 	if len(res.Stderr) > 0 {
-		fmt.Printf("---stderr---\n%s\n", res.Stderr)
+		fmt.Fprintf(os.Stdout, "---stderr---\n%s\n", res.Stderr)
 	}
 	return 0
 }
@@ -78,7 +78,7 @@ func runOPNsenseSelftest(args []string) int {
 	if err != nil {
 		return printAndExit("selftest", err)
 	}
-	fmt.Printf("selftest size=%d exit=%d stdout_bytes=%d stderr_bytes=%d duration_ms=%d\n",
+	fmt.Fprintf(os.Stdout, "selftest size=%d exit=%d stdout_bytes=%d stderr_bytes=%d duration_ms=%d\n",
 		selftestDefaultSize, res.ExitCode, len(res.Stdout), len(res.Stderr), res.DurationMs)
 	return 0
 }

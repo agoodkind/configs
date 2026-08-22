@@ -83,7 +83,7 @@ func runConfigRead(args []string) int {
 	if err != nil {
 		return printAndExit("config read", err)
 	}
-	fmt.Printf("config_bytes=%d sha256=%s\n", resp.SizeBytes, resp.Sha256)
+	fmt.Fprintf(os.Stdout, "config_bytes=%d sha256=%s\n", resp.SizeBytes, resp.Sha256)
 	return 0
 }
 
@@ -126,7 +126,7 @@ func runConfigBackup(args []string) int {
 	if err != nil {
 		return printAndExit("config backup", err)
 	}
-	fmt.Printf("backup_path=%s size_bytes=%d\n", resp.GetBackupPath(), resp.GetSizeBytes())
+	fmt.Fprintf(os.Stdout, "backup_path=%s size_bytes=%d\n", resp.GetBackupPath(), resp.GetSizeBytes())
 	return 0
 }
 
@@ -174,7 +174,7 @@ func runConfigImport(args []string) int {
 	if err := writeOutputAtomic(cleanOutput, transformed); err != nil {
 		return printAndExit("config import", fmt.Errorf("write %s: %w", cleanOutput, err))
 	}
-	fmt.Printf("config import: bytes=%d output=%s\n", len(transformed), cleanOutput)
+	fmt.Fprintf(os.Stdout, "config import: bytes=%d output=%s\n", len(transformed), cleanOutput)
 	return 0
 }
 
@@ -285,7 +285,7 @@ func runConfigXPathSet(args []string) int {
 	if err != nil {
 		return printAndExit("config xpath set", err)
 	}
-	fmt.Printf("backup_path=%s changed_count=%d\n", resp.GetBackupPath(), resp.GetChangedCount())
+	fmt.Fprintf(os.Stdout, "backup_path=%s changed_count=%d\n", resp.GetBackupPath(), resp.GetChangedCount())
 	return 0
 }
 
@@ -304,7 +304,7 @@ func runConfigXPathDelete(args []string) int {
 	if err != nil {
 		return printAndExit("config xpath delete", err)
 	}
-	fmt.Printf("backup_path=%s deleted_count=%d\n", resp.GetBackupPath(), resp.GetDeletedCount())
+	fmt.Fprintf(os.Stdout, "backup_path=%s deleted_count=%d\n", resp.GetBackupPath(), resp.GetDeletedCount())
 	return 0
 }
 
@@ -327,7 +327,7 @@ func runConfigStripGatewayV6(args []string) int {
 	if err != nil {
 		return printAndExit("config strip-gateway-v6", err)
 	}
-	fmt.Printf("backup_path=%s changed=%t\n", resp.GetBackupPath(), resp.GetChanged())
+	fmt.Fprintf(os.Stdout, "backup_path=%s changed=%t\n", resp.GetBackupPath(), resp.GetChanged())
 	return 0
 }
 
@@ -346,6 +346,6 @@ func runConfigInjectGatewayV6(args []string) int {
 	if err != nil {
 		return printAndExit("config inject-gateway-v6", err)
 	}
-	fmt.Printf("backup_path=%s changed=%t\n", resp.GetBackupPath(), resp.GetChanged())
+	fmt.Fprintf(os.Stdout, "backup_path=%s changed=%t\n", resp.GetBackupPath(), resp.GetChanged())
 	return 0
 }
