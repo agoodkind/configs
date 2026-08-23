@@ -38,7 +38,8 @@ decision with its own safety work, not part of this epic.
 description files and its validator gates the build, sysrepo holds the
 datastore, and the stack's own servers speak the protocols: RESTCONF, with
 NETCONF available from the same stack at no extra work. None of the protocol
-work is ours. The stack installs directly on the gateway. The subscription
+work is ours. The stack ships as Debian packages the mwan release builds
+and proves, installed on the gateway with apt. The subscription
 transport is settled when the streaming piece lands; the model is identical
 either way.
 

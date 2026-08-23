@@ -1,18 +1,20 @@
 ---
-# Install the wanconfig management stack on the MWAN gateway (MWAN-357).
-# libyang, sysrepo, their C++ bindings, nghttp2-asio, and rousette build
-# from source at the versions pinned in group_vars/all/vars.yml and install
-# to /usr/local. The vendored YANG model loads into the sysrepo datastore,
-# and rousette serves RESTCONF on ::1 behind an nghttpx front end bound to
-# the management address only. Read-only: NACM denies every write and grants
-# anonymous read per rousette's contract.
+# Install the wanconfig management stack on the MWAN gateway (MWAN-434).
+# The stack arrives as Debian packages built, proven, and attested by the
+# mwan release: the controller stages the bundle beside the binaries, and
+# this play copies the packages to the gateway and installs them with apt.
+# No gateway runs a compiler, a clone, or cmake. The vendored YANG model
+# loads into the sysrepo datastore, and rousette serves RESTCONF on ::1
+# behind an nghttpx front end bound to the management address only.
+# Read-only: NACM denies every write and grants anonymous read per
+# rousette's contract.
 #
 # Usage:
 #   # Suburban testbed (first, always):
-#   go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --limit mwan_suburban_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --release <tag> --limit mwan_suburban_servers
 #
 #   # Production (only with explicit operator approval):
-#   go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --limit mwan_servers
+#   go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --release <tag> --limit mwan_servers
 
 - name: Install the wanconfig management stack
   hosts: mwan_servers:mwan_suburban_servers
@@ -20,34 +22,13 @@
   environment:
     DEBIAN_FRONTEND: noninteractive
   vars:
-    wanconfig_src_dir: /usr/local/src
-    wanconfig_stamp_dir: /usr/local/share/wanconfig-stack
+    # The controller sets wanconfig_stack_dir and mwan_release_tag when
+    # --release stages the bundle. Reading them bare makes a deploy without
+    # --release fail at load rather than installing nothing.
+    wanconfig_deb_dir: "/var/lib/mwan-wanconfig/debs/{{ mwan_release_tag }}"
     wanconfig_yang_dir: /usr/local/share/wanconfig/yang
-    wanconfig_components:
-      - name: libyang
-        repo: https://github.com/CESNET/libyang.git
-        version: "{{ wanconfig_libyang_version }}"
-        jobs: 2
-      - name: sysrepo
-        repo: https://github.com/sysrepo/sysrepo.git
-        version: "{{ wanconfig_sysrepo_version }}"
-        jobs: 2
-      - name: libyang-cpp
-        repo: https://github.com/CESNET/libyang-cpp.git
-        version: "{{ wanconfig_libyang_cpp_version }}"
-        jobs: 1
-      - name: sysrepo-cpp
-        repo: https://github.com/sysrepo/sysrepo-cpp.git
-        version: "{{ wanconfig_sysrepo_cpp_version }}"
-        jobs: 1
-      - name: nghttp2-asio
-        repo: https://github.com/nghttp2/nghttp2-asio.git
-        version: "{{ wanconfig_nghttp2_asio_version }}"
-        jobs: 1
-      - name: rousette
-        repo: https://github.com/CESNET/rousette.git
-        version: "{{ wanconfig_rousette_version }}"
-        jobs: 1
+    # The rousette package ships the models its RESTCONF contract needs.
+    wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
     # ietf-nat guards every enum value behind its nat-type features, so an
     # install with no features enabled leaves leaves with zero valid values
     # and libyang rejects the module. Enable exactly the translation types
@@ -68,26 +49,11 @@
       - name: goodkind-mwan-steering@2026-08-20
         features: []
   tasks:
-    - name: Install build and runtime dependencies
+    - name: Install the front-end proxy
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
         name:
-          - build-essential
-          - cmake
-          - pkg-config
-          - git
-          - libpcre2-dev
-          - libpam0g-dev
-          - libaudit-dev
-          - libhowardhinnant-date-dev
-          - libspdlog-dev
-          - libdocopt-dev
-          - libboost-system-dev
-          - libboost-thread-dev
-          - libssl-dev
-          - libnghttp2-dev
-          - libsystemd-dev
           - nghttp2-proxy
         state: present
 
@@ -99,8 +65,7 @@
         group: root
         mode: "0755"
       loop:
-        - "{{ wanconfig_src_dir }}"
-        - "{{ wanconfig_stamp_dir }}"
+        - "{{ wanconfig_deb_dir }}"
         - "{{ wanconfig_yang_dir }}"
         - /etc/nghttpx
 
@@ -111,54 +76,48 @@
         shell: /usr/sbin/nologin
         create_home: false
 
-    - name: Check component stamps
-      ansible.builtin.stat:
-        path: "{{ wanconfig_stamp_dir }}/{{ item.name }}-{{ item.version }}.stamp"
-      loop: "{{ wanconfig_components }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: wanconfig_stamps
-
-    - name: Clone component sources at pinned versions
-      ansible.builtin.git:
-        repo: "{{ item.item.repo }}"
-        dest: "{{ wanconfig_src_dir }}/{{ item.item.name }}"
-        version: "{{ item.item.version }}"
-        force: true
-      loop: "{{ wanconfig_stamps.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when: not item.stat.exists
-
-    - name: Configure, build, and install components
-      ansible.builtin.command:
-        argv:
-          - /bin/sh
-          - -ec
-          - >-
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-            -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_TESTING=OFF &&
-            make -C build -j{{ item.item.jobs }} &&
-            make -C build install &&
-            ldconfig
-        chdir: "{{ wanconfig_src_dir }}/{{ item.item.name }}"
-      loop: "{{ wanconfig_stamps.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when: not item.stat.exists
-      changed_when: true
-
-    - name: Write component stamps
-      ansible.builtin.file:
-        path: "{{ wanconfig_stamp_dir }}/{{ item.item.name }}-{{ item.item.version }}.stamp"
-        state: touch
+    - name: Copy the staged stack packages
+      ansible.builtin.copy:
+        src: "{{ wanconfig_stack_dir }}/debs/"
+        dest: "{{ wanconfig_deb_dir }}/"
         owner: root
         group: root
         mode: "0644"
-      loop: "{{ wanconfig_stamps.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when: not item.stat.exists
+
+    - name: List the copied packages
+      ansible.builtin.find:
+        paths: "{{ wanconfig_deb_dir }}"
+        patterns: "*.deb"
+      register: wanconfig_debs
+
+    - name: Refuse a stage with no packages
+      ansible.builtin.assert:
+        that:
+          - wanconfig_debs.files | length > 0
+        fail_msg: "no .deb files under {{ wanconfig_deb_dir }}; stage the release with --release"
+
+    # apt resolves the packages' interdependencies in one transaction. A
+    # same-version reinstall is a no-op, which apt reports as 0 upgraded
+    # and 0 newly installed.
+    - name: Install the stack packages with apt
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['apt-get', 'install', '--yes', '--no-install-recommends']
+            + (wanconfig_debs.files | map(attribute='path') | sort)
+          }}
+      register: wanconfig_apt_install
+      changed_when: "'0 upgraded, 0 newly installed' not in wanconfig_apt_install.stdout"
+
+    # sysrepo-tools ships a sysrepo-plugind unit that debhelper enables and
+    # starts on install. Nothing on the gateway uses plugins; the daemon
+    # would only hold the shared memory open across deploys.
+    - name: Mask the sysrepo plugin daemon
+      ansible.builtin.systemd:
+        name: sysrepo-plugind.service
+        state: stopped
+        enabled: false
+        masked: true
 
     - name: Copy the gateway model and its IETF imports
       ansible.builtin.copy:
@@ -179,7 +138,7 @@
     - name: List installed sysrepo modules
       ansible.builtin.command:
         argv:
-          - /usr/local/bin/sysrepoctl
+          - /usr/bin/sysrepoctl
           - --list
       register: wanconfig_sysrepo_modules
       changed_when: false
@@ -187,11 +146,11 @@
     - name: Install rousette's required models into sysrepo
       ansible.builtin.command:
         argv:
-          - /usr/local/bin/sysrepoctl
+          - /usr/bin/sysrepoctl
           - --install
-          - "{{ wanconfig_src_dir }}/rousette/yang/{{ item }}.yang"
+          - "{{ wanconfig_rousette_yang_dir }}/{{ item }}.yang"
           - --search-dirs
-          - "{{ wanconfig_src_dir }}/rousette/yang"
+          - "{{ wanconfig_rousette_yang_dir }}"
       loop:
         - ietf-restconf@2017-01-26
         - ietf-restconf-monitoring@2017-01-26
@@ -206,7 +165,7 @@
       ansible.builtin.command:
         argv: >-
           {{
-            ['/usr/local/bin/sysrepoctl', '--install',
+            ['/usr/bin/sysrepoctl', '--install',
              wanconfig_yang_dir ~ '/' ~ item.name ~ '.yang',
              '--search-dirs', wanconfig_yang_dir]
             + (item.features | map('regex_replace', '^', '--enable-feature=') | list)
@@ -225,7 +184,7 @@
       ansible.builtin.command:
         argv: >-
           {{
-            ['/usr/local/bin/sysrepoctl', '--update',
+            ['/usr/bin/sysrepoctl', '--update',
              wanconfig_yang_dir ~ '/' ~ item.name ~ '.yang',
              '--search-dirs', wanconfig_yang_dir]
           }}
@@ -250,7 +209,7 @@
     - name: Apply the NACM policy to the running and startup datastores
       ansible.builtin.command:
         argv:
-          - /usr/local/bin/sysrepocfg
+          - /usr/bin/sysrepocfg
           - --import=/etc/sysrepo-nacm-anonymous.xml
           - --datastore
           - "{{ item }}"
