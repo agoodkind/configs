@@ -416,7 +416,9 @@ func (s stager) stackMemberPath(ctx context.Context, member, stackDir string) (s
 		s.log.WarnContext(ctx, "release: stack bundle member rejected", "member", member, "err", err)
 		return "", err
 	}
-	return filepath.Join(stackDir, stackMemberPrefix, base), nil
+	// filepath.Base in the join keeps the destination inside the debs
+	// directory whatever the member name held.
+	return filepath.Join(stackDir, stackMemberPrefix, filepath.Base(base)), nil
 }
 
 // writeStackMember streams one member to destPath through a temporary file in
