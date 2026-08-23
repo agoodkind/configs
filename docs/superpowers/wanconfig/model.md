@@ -97,17 +97,6 @@ the build gate. sysrepo holds the datastore the daemon publishes into.
 rousette serves RESTCONF over that datastore, and netopeer2 serves NETCONF
 from the same stack when wanted. The stack installs directly on the gateway.
 
-Every mwan release builds the six components (libyang, sysrepo, their C++
-bindings, nghttp2-asio, rousette) at their pinned versions inside a stock
-Debian trixie container and publishes one bundle of Debian packages beside
-the binaries, checksummed and attested like them. libyang and sysrepo build
-through their upstream Debian packaging and keep the upstream package names
-and access policy; the other four install under one prefix of their own.
-Package versions are the pinned upstream versions, so a release that
-changes no pin ships packages that install as a no-op. The gateway deploy
-does not consume the bundle yet; it still builds the stack from source on
-the gateway.
-
 The one piece that is ours is the publishing binding: a small Go-to-C layer
 through which the daemon sets values by path and applies them. It carries no
 write acceptance, no validation, and no transaction machinery, because the
