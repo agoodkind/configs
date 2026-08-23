@@ -9,8 +9,8 @@
 # the linux gateway binary on macOS, the wanconfig stack packaging, and a
 # govulncheck wrapper that allowlists one known gobgp CVE.
 #
-# Shipped binaries come only from the CI release. Nothing here cross-compiles
-# a deploy artifact.
+# Shipped binaries come only from the CI release. The one cross build here is
+# the packaging tool, which runs inside a container and never ships.
 
 # ---------------------------------------------------------------------------
 # Identity
@@ -343,7 +343,11 @@ $(WANCONFIG_STACK_TOOL): $(WANCONFIG_STACK_SOURCES)
 # fresh one: every package installs through apt, every shared library the
 # stack binaries need resolves, and the datastore tool and the RESTCONF
 # server start. A bundle that fails the proof is never cached.
-$(WANCONFIG_STACK_CACHED): $(WANCONFIG_STACK_TOOL)
+#
+# The tool is an order-only prerequisite: the cache key already hashes the
+# tool sources, and a restored cache carries an older tool than the fresh
+# checkout, so a timestamp dependency would rebuild the stack on every run.
+$(WANCONFIG_STACK_CACHED): | $(WANCONFIG_STACK_TOOL)
 	docker run --rm --platform linux/$(WANCONFIG_STACK_ARCH) \
 		-v $(WANCONFIG_STACK_TOOL):/usr/local/bin/wanconfigstack:ro \
 		-v $(WANCONFIG_STACK_CACHE):/out \
@@ -383,7 +387,7 @@ endif
 # Maintenance
 # ---------------------------------------------------------------------------
 
-.PHONY: tidy fix govulncheck clean
+.PHONY: tidy govulncheck clean
 
 tidy:
 	go mod tidy
