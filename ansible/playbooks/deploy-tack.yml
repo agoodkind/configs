@@ -296,13 +296,35 @@
         # ---------------------------------------------------------------------
         # Compose stack up
         # ---------------------------------------------------------------------
-        - name: Start Tack services (first pass; tolerant of an unconfigured fdb on first boot)
+        # The first pass starts only the stores provision needs. It must not
+        # start app or audit-consumer: serve is audited (TACK-444) and records
+        # its start through the tack_audit_operator login, which provision
+        # creates below. An app started here refuses that login and sits in
+        # Docker's restart backoff until a retry lands after provision; on
+        # 2026-08-22 that was four minutes of production downtime (TACK-453).
+        # On a warm host the running app keeps serving through provision and
+        # the second pass recreates it only when its image or config changed.
+        #
+        # Provision connects to YugabyteDB at once, so the stores must be
+        # healthy before it runs. The unnamed first pass used to wait by
+        # accident, through the app's depends_on; naming the stores removed
+        # that wait, and provision then failed with connection refused on a
+        # recreated QA. fdb starts without a wait because a fresh fdb is not
+        # healthy until provision configures it.
+        - name: Start fdb (first pass; tolerant of an unconfigured fdb on first boot)
           ansible.builtin.command:
-            cmd: docker compose up -d
+            cmd: docker compose up -d fdb
+            chdir: "{{ tack_install_dir }}"
+          register: tack_compose_up_fdb
+          changed_when: true
+          failed_when: false
+
+        - name: Start the other stores and wait until they are healthy
+          ansible.builtin.command:
+            cmd: docker compose up -d --wait --wait-timeout 300 yugabyte meilisearch temporal-db temporal kafka clickhouse
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
-          failed_when: false
 
         # --execute is the action gate every audited operator command now
         # carries (TACK-328). Without it the command prints its plan and
