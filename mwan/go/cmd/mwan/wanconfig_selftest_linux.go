@@ -302,6 +302,13 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 	shmPrefix := fmt.Sprintf("mwanselftest%d", os.Getpid())
 	os.Setenv("SYSREPO_REPOSITORY_PATH", flags.repository)
 	os.Setenv("SYSREPO_SHM_PREFIX", shmPrefix)
+	// The static sysrepo compiles with the upstream group policy
+	// (SYSREPO_GROUP=sysrepo, MWAN-435), and sr_is_prod_env() gates every
+	// group chown on this variable being absent. The private repository is
+	// this run's own, so the group policy has nothing to protect here, and
+	// without this the selftest needs a sysrepo group with the running
+	// user in it on every machine that runs it.
+	os.Setenv("SR_ENV_RUN_TESTS", "1")
 	// Registered before the connections' own deferred closes, so it runs
 	// after both have disconnected.
 	defer removeSelftestSHM(log, shmPrefix)
