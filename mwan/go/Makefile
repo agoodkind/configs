@@ -74,15 +74,28 @@ WANCONFIG_SYSREPO_CPP_VERSION  := $(call wanconfig_pin,wanconfig_sysrepo_cpp_ver
 WANCONFIG_NGHTTP2_ASIO_VERSION := $(call wanconfig_pin,wanconfig_nghttp2_asio_version)
 WANCONFIG_ROUSETTE_VERSION     := $(call wanconfig_pin,wanconfig_rousette_version)
 
+WANCONFIG_LIBYANG_COMMIT      := $(call wanconfig_pin,wanconfig_libyang_commit)
+WANCONFIG_SYSREPO_COMMIT      := $(call wanconfig_pin,wanconfig_sysrepo_commit)
+WANCONFIG_LIBYANG_CPP_COMMIT  := $(call wanconfig_pin,wanconfig_libyang_cpp_commit)
+WANCONFIG_SYSREPO_CPP_COMMIT  := $(call wanconfig_pin,wanconfig_sysrepo_cpp_commit)
+WANCONFIG_NGHTTP2_ASIO_COMMIT := $(call wanconfig_pin,wanconfig_nghttp2_asio_commit)
+WANCONFIG_ROUSETTE_COMMIT     := $(call wanconfig_pin,wanconfig_rousette_commit)
+
 WANCONFIG_PINS := \
 	$(WANCONFIG_LIBYANG_VERSION) \
 	$(WANCONFIG_SYSREPO_VERSION) \
 	$(WANCONFIG_LIBYANG_CPP_VERSION) \
 	$(WANCONFIG_SYSREPO_CPP_VERSION) \
 	$(WANCONFIG_NGHTTP2_ASIO_VERSION) \
-	$(WANCONFIG_ROUSETTE_VERSION)
+	$(WANCONFIG_ROUSETTE_VERSION) \
+	$(WANCONFIG_LIBYANG_COMMIT) \
+	$(WANCONFIG_SYSREPO_COMMIT) \
+	$(WANCONFIG_LIBYANG_CPP_COMMIT) \
+	$(WANCONFIG_SYSREPO_CPP_COMMIT) \
+	$(WANCONFIG_NGHTTP2_ASIO_COMMIT) \
+	$(WANCONFIG_ROUSETTE_COMMIT)
 
-ifneq ($(words $(WANCONFIG_PINS)),6)
+ifneq ($(words $(WANCONFIG_PINS)),12)
 $(error wanconfig pins missing in $(WANCONFIG_PINS_FILE): got "$(WANCONFIG_PINS)")
 endif
 
@@ -324,7 +337,13 @@ WANCONFIG_STACK_FLAGS := \
 	-wanconfig_libyang_cpp_version $(WANCONFIG_LIBYANG_CPP_VERSION) \
 	-wanconfig_sysrepo_cpp_version $(WANCONFIG_SYSREPO_CPP_VERSION) \
 	-wanconfig_nghttp2_asio_version $(WANCONFIG_NGHTTP2_ASIO_VERSION) \
-	-wanconfig_rousette_version $(WANCONFIG_ROUSETTE_VERSION)
+	-wanconfig_rousette_version $(WANCONFIG_ROUSETTE_VERSION) \
+	-wanconfig_libyang_commit $(WANCONFIG_LIBYANG_COMMIT) \
+	-wanconfig_sysrepo_commit $(WANCONFIG_SYSREPO_COMMIT) \
+	-wanconfig_libyang_cpp_commit $(WANCONFIG_LIBYANG_CPP_COMMIT) \
+	-wanconfig_sysrepo_cpp_commit $(WANCONFIG_SYSREPO_CPP_COMMIT) \
+	-wanconfig_nghttp2_asio_commit $(WANCONFIG_NGHTTP2_ASIO_COMMIT) \
+	-wanconfig_rousette_commit $(WANCONFIG_ROUSETTE_COMMIT)
 
 GO_MK_CGO_CACHE_VERSIONS := \
 	libyang=$(WANCONFIG_LIBYANG_VERSION)-f$(WANCONFIG_LIBYANG_FLAGS_REV) \

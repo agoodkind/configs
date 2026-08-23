@@ -302,14 +302,21 @@ func TestParseFlagsRequiresEveryPin(t *testing.T) {
 	}
 	args := []string{"-out", "/tmp/x"}
 	for _, c := range components {
-		args = append(args, "-"+c.pinVar, "v1")
+		args = append(args, "-"+c.pinVar, "v1", "-"+c.commitVar, strings.Repeat("a", 40))
 	}
 	opts, err := parseFlags(log, args)
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	if opts.outDir != "/tmp/x" || len(opts.pins) != len(components) {
+	if opts.outDir != "/tmp/x" || len(opts.pins) != 2*len(components) {
 		t.Fatalf("parseFlags = %+v", opts)
+	}
+	short := []string{"-out", "/tmp/x"}
+	for _, c := range components {
+		short = append(short, "-"+c.pinVar, "v1", "-"+c.commitVar, "e877868abe")
+	}
+	if _, err := parseFlags(log, short); err == nil {
+		t.Fatal("parseFlags accepted a truncated commit pin")
 	}
 	verify, err := parseFlags(log, []string{"-verify", "/out/wanconfig-stack_linux_amd64.tar.gz"})
 	if err != nil {

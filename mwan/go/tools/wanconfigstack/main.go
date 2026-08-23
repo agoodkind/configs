@@ -34,6 +34,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -55,7 +56,10 @@ type component struct {
 	url  string
 	// pinVar is the group_vars key the pin comes from, and the flag name.
 	pinVar string
-	how    packaging
+	// commitVar is the group_vars key of the pin's immutable commit hash,
+	// and the flag name. The clone refuses a pin that resolves elsewhere.
+	commitVar string
+	how       packaging
 	// cmakeFlags are extra configure flags for nfpm components.
 	cmakeFlags []string
 	// description is the package description for nfpm components.
@@ -69,22 +73,32 @@ type component struct {
 }
 
 var components = []component{
-	{name: "libyang", url: "https://github.com/CESNET/libyang.git", pinVar: "wanconfig_libyang_version", how: packagingApkg},
-	{name: "sysrepo", url: "https://github.com/sysrepo/sysrepo.git", pinVar: "wanconfig_sysrepo_version", how: packagingApkg},
 	{
-		name: "libyang-cpp", url: "https://github.com/CESNET/libyang-cpp.git", pinVar: "wanconfig_libyang_cpp_version", how: packagingNfpm,
+		name: "libyang", url: "https://github.com/CESNET/libyang.git",
+		pinVar: "wanconfig_libyang_version", commitVar: "wanconfig_libyang_commit", how: packagingApkg,
+	},
+	{
+		name: "sysrepo", url: "https://github.com/sysrepo/sysrepo.git",
+		pinVar: "wanconfig_sysrepo_version", commitVar: "wanconfig_sysrepo_commit", how: packagingApkg,
+	},
+	{
+		name: "libyang-cpp", url: "https://github.com/CESNET/libyang-cpp.git",
+		pinVar: "wanconfig_libyang_cpp_version", commitVar: "wanconfig_libyang_cpp_commit", how: packagingNfpm,
 		cmakeFlags: []string{"-DWITH_DOCS=OFF"}, description: "C++ bindings for libyang (wanconfig management stack)", loaderConf: true,
 	},
 	{
-		name: "sysrepo-cpp", url: "https://github.com/sysrepo/sysrepo-cpp.git", pinVar: "wanconfig_sysrepo_cpp_version", how: packagingNfpm,
+		name: "sysrepo-cpp", url: "https://github.com/sysrepo/sysrepo-cpp.git",
+		pinVar: "wanconfig_sysrepo_cpp_version", commitVar: "wanconfig_sysrepo_cpp_commit", how: packagingNfpm,
 		cmakeFlags: []string{"-DWITH_DOCS=OFF", "-DWITH_EXAMPLES=OFF"}, description: "C++ bindings for sysrepo (wanconfig management stack)",
 	},
 	{
-		name: "nghttp2-asio", url: "https://github.com/nghttp2/nghttp2-asio.git", pinVar: "wanconfig_nghttp2_asio_version", how: packagingNfpm,
+		name: "nghttp2-asio", url: "https://github.com/nghttp2/nghttp2-asio.git",
+		pinVar: "wanconfig_nghttp2_asio_version", commitVar: "wanconfig_nghttp2_asio_commit", how: packagingNfpm,
 		description: "HTTP/2 C++ library over Boost ASIO (wanconfig management stack)", versionFromCMake: true,
 	},
 	{
-		name: "rousette", url: "https://github.com/CESNET/rousette.git", pinVar: "wanconfig_rousette_version", how: packagingNfpm,
+		name: "rousette", url: "https://github.com/CESNET/rousette.git",
+		pinVar: "wanconfig_rousette_version", commitVar: "wanconfig_rousette_commit", how: packagingNfpm,
 		cmakeFlags: []string{"-DWITH_DOCS=OFF"}, description: "RESTCONF server over sysrepo (wanconfig management stack)",
 	},
 }
@@ -132,6 +146,7 @@ func (b *builder) srcDir(c component) string   { return filepath.Join(buildRoot,
 func (b *builder) stageDir(c component) string { return filepath.Join(buildRoot, "stage", c.name) }
 func (b *builder) pkgDir(c component) string   { return filepath.Join(buildRoot, "pkgs", c.name) }
 func (b *builder) pin(c component) string      { return b.pins[c.pinVar] }
+func (b *builder) commit(c component) string   { return b.pins[c.commitVar] }
 
 // pinVersion is the pin as a Debian version: the tag without its v.
 func (b *builder) pinVersion(c component) string { return strings.TrimPrefix(b.pin(c), "v") }
@@ -150,6 +165,7 @@ func parseFlags(log *slog.Logger, args []string) (options, error) {
 	pins := map[string]*string{}
 	for _, c := range components {
 		pins[c.pinVar] = flags.String(c.pinVar, "", c.name+" pin")
+		pins[c.commitVar] = flags.String(c.commitVar, "", c.name+" pinned commit hash")
 	}
 	outDir := flags.String("out", "", "directory that receives the bundle")
 	verifyBundle := flags.String("verify", "", "bundle to install and prove on this system instead of building")
@@ -178,8 +194,19 @@ func parseFlags(log *slog.Logger, args []string) (options, error) {
 		log.Error("wanconfigstack: bad arguments", "err", err)
 		return options{}, err
 	}
+	for _, c := range components {
+		if !commitPattern.MatchString(opts.pins[c.commitVar]) {
+			err := fmt.Errorf("%s must be a full lowercase 40-hex commit hash; got %q", c.commitVar, opts.pins[c.commitVar])
+			log.Error("wanconfigstack: bad arguments", "err", err)
+			return options{}, err
+		}
+	}
 	return opts, nil
 }
+
+// commitPattern is the only form a pinned commit may take: a full hash, so
+// the checkout comparison in the clone can never pass on a prefix.
+var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func (b *builder) build(ctx context.Context) error {
 	if err := b.installBuildTools(ctx); err != nil {
