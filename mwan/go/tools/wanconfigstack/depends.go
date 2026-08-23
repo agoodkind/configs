@@ -4,6 +4,7 @@ import (
 	"context"
 	"debug/elf"
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -36,8 +37,7 @@ func (b *builder) elfNeeded(ctx context.Context, dir string) ([]string, error) {
 			return nil
 		}
 		file, err := elf.Open(path)
-		var formatErr *elf.FormatError
-		if errors.As(err, &formatErr) {
+		if isNotELF(err) {
 			return nil
 		}
 		if err != nil {
@@ -73,6 +73,17 @@ func (b *builder) elfNeeded(ctx context.Context, dir string) ([]string, error) {
 	slices.Sort(result)
 	b.log.InfoContext(ctx, "wanconfigstack: shared libraries needed", "dir", dir, "sonames", strings.Join(result, " "))
 	return result, nil
+}
+
+// isNotELF reports whether [elf.Open] refused the file for its content: a
+// format error for a file with a foreign header, or an EOF for a file too
+// short to hold one. Either is a text or data file in the staged tree.
+func isNotELF(err error) bool {
+	var formatErr *elf.FormatError
+	if errors.As(err, &formatErr) {
+		return true
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // findLibrary locates an installed shared library by soname.

@@ -302,8 +302,8 @@ build-wanconfig:
 # dist/*.tar.gz, so it rides the release unchanged.
 #
 # The built bundle is kept under the cgo prefix, which CI caches under a key
-# that carries the stack pins and the tool sources. An unchanged stack is
-# copied, not rebuilt.
+# that carries the stack pins, the tool sources, and the module files that
+# pin the tool's dependencies. An unchanged stack is copied, not rebuilt.
 #
 # The architecture is amd64 unless the release engine names another: the
 # gateway is amd64, and the upstream sysrepo deb template hardcodes amd64
@@ -311,7 +311,7 @@ build-wanconfig:
 # under emulation rather than producing packages no gateway installs.
 WANCONFIG_STACK_ARCH    ?= $(if $(strip $(GO_MK_TARGET_GOARCH)),$(GO_MK_TARGET_GOARCH),amd64)
 WANCONFIG_STACK_IMAGE   := debian:trixie
-WANCONFIG_STACK_SOURCES := $(wildcard tools/wanconfigstack/*.go)
+WANCONFIG_STACK_SOURCES := $(wildcard tools/wanconfigstack/*.go) go.mod go.sum
 WANCONFIG_STACK_BUNDLE  := wanconfig-stack_linux_$(WANCONFIG_STACK_ARCH).tar.gz
 WANCONFIG_STACK_CACHE   := $(GO_MK_CGO_PREFIX)/wanconfig-stack
 WANCONFIG_STACK_KEY     := $(shell printf '%s' '$(WANCONFIG_PINS) $(WANCONFIG_STACK_IMAGE)' | cat - $(WANCONFIG_STACK_SOURCES) | cksum | cut -d' ' -f1)

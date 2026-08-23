@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,11 @@ import (
 
 // manifestName is the bundle member that lists every package it carries.
 const manifestName = "manifest.txt"
+
+var (
+	errDuplicatePackage = errors.New("two built packages carry the same runtime package name")
+	errMissingPackage   = errors.New("a runtime package has no built .deb")
+)
 
 // bundleMember is one package in the bundle.
 type bundleMember struct {
@@ -58,6 +64,7 @@ func (b *builder) runtimeMembers(ctx context.Context) ([]bundleMember, error) {
 		return nil, b.fail(ctx, "list built packages", err)
 	}
 	members := []bundleMember{}
+	found := map[string]string{}
 	for _, debPath := range debs {
 		name, version, err := b.debIdentity(ctx, debPath)
 		if err != nil {
@@ -66,15 +73,24 @@ func (b *builder) runtimeMembers(ctx context.Context) ([]bundleMember, error) {
 		if !slices.Contains(runtimePackages, name) {
 			continue
 		}
+		if previous, ok := found[name]; ok {
+			return nil, b.fail(ctx, "collect runtime packages", errDuplicatePackage, slog.String("package", name), slog.String("first", previous), slog.String("second", debPath))
+		}
+		found[name] = debPath
 		sum, err := b.fileSHA256(ctx, debPath)
 		if err != nil {
 			return nil, err
 		}
 		members = append(members, bundleMember{name: name, version: version, path: debPath, sha256: sum})
 	}
-	if len(members) != len(runtimePackages) {
-		err := fmt.Errorf("expected %d runtime packages, found %d", len(runtimePackages), len(members))
-		return nil, b.fail(ctx, "collect runtime packages", err)
+	missing := []string{}
+	for _, name := range runtimePackages {
+		if _, ok := found[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, b.fail(ctx, "collect runtime packages", errMissingPackage, slog.String("missing", strings.Join(missing, " ")))
 	}
 	slices.SortFunc(members, func(x, y bundleMember) int { return strings.Compare(x.name, y.name) })
 	return members, nil

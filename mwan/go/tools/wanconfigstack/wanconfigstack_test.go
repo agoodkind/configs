@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -142,7 +144,7 @@ func TestWriteBundleRoundTrips(t *testing.T) {
 	order := []string{}
 	for {
 		header, err := reader.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -164,6 +166,80 @@ func TestWriteBundleRoundTrips(t *testing.T) {
 	wantLine := "libyang3 3.13.6-1 amd64 " + sum + " debs/libyang3_3.13.6-1_amd64.deb"
 	if !strings.Contains(got[manifestName], wantLine) {
 		t.Fatalf("manifest = %q, want line %q", got[manifestName], wantLine)
+	}
+}
+
+// TestElfNeededSkipsFilesTooShortForAHeader pins that a staged tree holding
+// text and data files shorter than an ELF header, as a cmake install of
+// headers and pkg-config files can, is walked without error.
+func TestElfNeededSkipsFilesTooShortForAHeader(t *testing.T) {
+	t.Parallel()
+	stage := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stage, "empty"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "version"), []byte("3.7\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "libyang.pc"), []byte("Name: libyang\nVersion: 3.13.6\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	needed, err := testBuilder(t).elfNeeded(context.Background(), stage)
+	if err != nil {
+		t.Fatalf("elfNeeded: %v", err)
+	}
+	if len(needed) != 0 {
+		t.Fatalf("elfNeeded = %v, want none", needed)
+	}
+}
+
+// TestUnpackBundleRejectsForeignMembers pins the unpack contract the proof
+// relies on: a member that is not a .deb, or whose name climbs out of the
+// bundle, stops the unpack before anything is written.
+func TestUnpackBundleRejectsForeignMembers(t *testing.T) {
+	t.Parallel()
+	for _, member := range []string{"../../etc/passwd.deb", "debs/../escape.deb", "notes.txt"} {
+		t.Run(member, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			bundlePath := filepath.Join(dir, "bundle.tar.gz")
+			writeTestBundle(t, bundlePath, member)
+			root := filepath.Join(dir, "unpack")
+			err := testBuilder(t).unpackBundle(context.Background(), bundlePath, root)
+			if !errors.Is(err, errBundleMember) {
+				t.Fatalf("unpackBundle error = %v, want %v", err, errBundleMember)
+			}
+			if _, statErr := os.Stat(root); !errors.Is(statErr, fs.ErrNotExist) {
+				t.Fatalf("unpack root exists after a rejected member: stat = %v", statErr)
+			}
+		})
+	}
+}
+
+// writeTestBundle writes a gzip tar holding the manifest and one member.
+func writeTestBundle(t *testing.T, path string, member string) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(file)
+	tw := tar.NewWriter(gz)
+	b := testBuilder(t)
+	if err := b.writeMember(context.Background(), tw, manifestName, []byte("# manifest\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.writeMember(context.Background(), tw, member, []byte("payload")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

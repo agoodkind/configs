@@ -33,7 +33,7 @@ var errBundleMember = errors.New("bundle member is neither the manifest nor a .d
 // through apt, every shared library each stack binary needs resolves, and
 // the datastore tool and the RESTCONF server both start.
 func (b *builder) verify(ctx context.Context, bundlePath string) error {
-	if err := b.unpackBundle(ctx, bundlePath); err != nil {
+	if err := b.unpackBundle(ctx, bundlePath, verifyRoot); err != nil {
 		return err
 	}
 	debs, err := filepath.Glob(filepath.Join(verifyRoot, "debs", "*.deb"))
@@ -65,10 +65,10 @@ func (b *builder) verify(ctx context.Context, bundlePath string) error {
 	return nil
 }
 
-// unpackBundle extracts the bundle's packages under verifyRoot/debs by their
-// base name, so a member path can never land anywhere else. The manifest is
-// read for its listing only.
-func (b *builder) unpackBundle(ctx context.Context, bundlePath string) error {
+// unpackBundle extracts the bundle's packages under root/debs by their base
+// name, so a member path can never land anywhere else. The manifest is read
+// for its listing only.
+func (b *builder) unpackBundle(ctx context.Context, bundlePath string, root string) error {
 	file, err := os.Open(bundlePath)
 	if err != nil {
 		return b.fail(ctx, "open bundle", err, slog.String("path", bundlePath))
@@ -93,12 +93,12 @@ func (b *builder) unpackBundle(ctx context.Context, bundlePath string) error {
 		if !strings.HasSuffix(header.Name, ".deb") || strings.Contains(header.Name, "..") {
 			return b.fail(ctx, "unpack bundle", errBundleMember, slog.String("member", header.Name))
 		}
-		target := filepath.Join(verifyRoot, "debs", filepath.Base(header.Name))
+		target := filepath.Join(root, "debs", filepath.Base(header.Name))
 		if err := b.writeUnpacked(ctx, target, reader); err != nil {
 			return err
 		}
 	}
-	b.log.InfoContext(ctx, "wanconfigstack: bundle unpacked", "path", bundlePath, "dir", verifyRoot)
+	b.log.InfoContext(ctx, "wanconfigstack: bundle unpacked", "path", bundlePath, "dir", root)
 	return nil
 }
 
