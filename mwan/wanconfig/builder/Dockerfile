@@ -22,6 +22,11 @@ RUN apt-get update \
         build-essential cmake pkg-config git libpcre2-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# The static sysrepo compiles with SYSREPO_GROUP=sysrepo (upstream access
+# policy, MWAN-435), and sr_connect resolves that group at runtime, so the
+# tests that run inside this image need it.
+RUN groupadd --system sysrepo
+
 RUN git clone --depth 1 --branch "${LIBYANG_VERSION}" \
         https://github.com/CESNET/libyang.git /usr/local/src/libyang \
     && cmake -S /usr/local/src/libyang -B /usr/local/src/libyang/build \
