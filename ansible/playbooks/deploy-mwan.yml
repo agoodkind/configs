@@ -288,6 +288,16 @@
         dest: /etc/systemd/system/mwan-agent.service
         mode: "0644"
 
+    # The ifmgr unit joins group sysrepo (upstream sysrepo access policy,
+    # MWAN-435), and a unit naming an absent group fails to start, so the
+    # group exists on every gateway. Where the packaged stack installs,
+    # libsysrepo7's postinst creates the same group first and this is a
+    # no-op.
+    - name: Create the sysrepo access group
+      ansible.builtin.group:
+        name: sysrepo
+        system: true
+
     - name: Deploy mwan ifmgr instanced systemd unit on MWAN VM
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-ifmgr@.service"

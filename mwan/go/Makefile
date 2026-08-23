@@ -194,9 +194,17 @@ WANCONFIG_LIBYANG_STATIC_LIBS := -lpcre2-8 -lm
 # default build bakes the plugin directory's build-time prefix into the
 # binary, and scanning it under the ifmgr unit's ProtectHome=true returned
 # EACCES, so sr_connect failed with SR_ERR_SYS on the gateway.
+#
+# The group, umask, and NACM data mode match the upstream sysrepo Debian
+# packaging (MWAN-435), so the static copy inside the mwan binary and the
+# packaged libsysrepo7 agree on the ownership and modes of /etc/sysrepo
+# and the shared memory. The daemon's unit joins group sysrepo.
 WANCONFIG_SYSREPO_CMAKE_FLAGS := \
 	-DREPO_PATH=$(WANCONFIG_SYSREPO_REPO_PATH) \
 	-DSR_HAVE_DLOPEN=OFF \
+	-DSYSREPO_UMASK=007 \
+	-DSYSREPO_GROUP=sysrepo \
+	-DNACM_SRMON_DATA_PERM=660 \
 	-DENABLE_EXAMPLES=OFF \
 	-DENABLE_SYSREPOCTL=OFF \
 	-DENABLE_SYSREPOCFG=OFF \
