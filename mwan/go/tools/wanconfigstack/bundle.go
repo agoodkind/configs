@@ -63,6 +63,12 @@ func (b *builder) runtimeMembers(ctx context.Context) ([]bundleMember, error) {
 	if err != nil {
 		return nil, b.fail(ctx, "list built packages", err)
 	}
+	return b.collectRuntimeMembers(ctx, debs)
+}
+
+// collectRuntimeMembers reads each built package's identity and keeps the
+// runtime ones, refusing a duplicate name and naming every missing package.
+func (b *builder) collectRuntimeMembers(ctx context.Context, debs []string) ([]bundleMember, error) {
 	members := []bundleMember{}
 	found := map[string]string{}
 	for _, debPath := range debs {

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/goreleaser/nfpm/v2"
+	"github.com/goreleaser/nfpm/v2/deb"
 	"github.com/goreleaser/nfpm/v2/files"
 )
 
@@ -166,6 +168,53 @@ func TestWriteBundleRoundTrips(t *testing.T) {
 	wantLine := "libyang3 3.13.6-1 amd64 " + sum + " debs/libyang3_3.13.6-1_amd64.deb"
 	if !strings.Contains(got[manifestName], wantLine) {
 		t.Fatalf("manifest = %q, want line %q", got[manifestName], wantLine)
+	}
+}
+
+// writeTestDeb builds a minimal real Debian package with nfpm, the same
+// packager the build uses, so debIdentity reads it the production way.
+func writeTestDeb(t *testing.T, dir, name, version string) string {
+	t.Helper()
+	info := nfpm.WithDefaults(&nfpm.Info{
+		Name:        name,
+		Arch:        "amd64",
+		Platform:    "linux",
+		Version:     version,
+		Maintainer:  "test <test@example.com>",
+		Description: "test package",
+	})
+	if err := nfpm.PrepareForPackager(info, "deb"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, name+"_"+version+"_amd64.deb")
+	out, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deb.Default.Package(info, out); err != nil {
+		_ = out.Close()
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestCollectRuntimeMembersRefusesDuplicatesAndNamesMissing pins the
+// collection contract behind the bundle: a second package carrying an
+// already-collected runtime name fails the build, and a missing runtime
+// package is reported by name rather than by count.
+func TestCollectRuntimeMembersRefusesDuplicatesAndNamesMissing(t *testing.T) {
+	t.Parallel()
+	b := testBuilder(t)
+	first := writeTestDeb(t, t.TempDir(), "libyang3", "3.13.6")
+	duplicate := writeTestDeb(t, t.TempDir(), "libyang3", "3.13.7")
+	if _, err := b.collectRuntimeMembers(context.Background(), []string{first, duplicate}); !errors.Is(err, errDuplicatePackage) {
+		t.Fatalf("duplicate error = %v, want %v", err, errDuplicatePackage)
+	}
+	if _, err := b.collectRuntimeMembers(context.Background(), []string{first}); !errors.Is(err, errMissingPackage) {
+		t.Fatalf("missing error = %v, want %v", err, errMissingPackage)
 	}
 }
 
