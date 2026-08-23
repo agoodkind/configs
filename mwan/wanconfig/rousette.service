@@ -7,7 +7,7 @@ After=network.target
 Type=simple
 # rousette binds ::1:10080 only; the nghttpx-wanconfig proxy exposes it on
 # the management address. Journald is detected automatically, no --syslog.
-ExecStart=/usr/local/bin/rousette
+ExecStart=/opt/mwan-wanconfig/bin/rousette
 Restart=on-failure
 RestartSec=2
 

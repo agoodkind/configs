@@ -95,7 +95,9 @@ prefixes explicitly, so the standard's rule can be applied as written.
 libyang reads and validates the modules, and its validator, `yanglint`, is
 the build gate. sysrepo holds the datastore the daemon publishes into.
 rousette serves RESTCONF over that datastore, and netopeer2 serves NETCONF
-from the same stack when wanted. The stack installs directly on the gateway.
+from the same stack when wanted. The stack ships as Debian packages that
+every mwan release builds and proves in a container, so a gateway installs
+them with apt and never compiles.
 
 The one piece that is ours is the publishing binding: a small Go-to-C layer
 through which the daemon sets values by path and applies them. It carries no
