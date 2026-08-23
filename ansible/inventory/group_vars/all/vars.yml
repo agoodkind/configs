@@ -110,6 +110,16 @@ wanconfig_libyang_cpp_version: "v4"
 wanconfig_sysrepo_cpp_version: "v6"
 wanconfig_nghttp2_asio_version: "e877868abe"
 wanconfig_rousette_version: "v2"
+# Each version pin carries the full commit hash its tag pointed at when it
+# was reviewed. The packaging build refuses a tag that resolves elsewhere,
+# so a force-moved upstream tag cannot change what a release packages.
+# A version bump updates both lines together.
+wanconfig_libyang_commit: "c2ddd01b9b810a30d6a7d6749a3bc9adeb7b01fb"
+wanconfig_sysrepo_commit: "1b720b196f630f348d9e0c131d326b3fb8c6aca7"
+wanconfig_libyang_cpp_commit: "249da7280864fbda5fccb340b455b7000ebfe67d"
+wanconfig_sysrepo_cpp_commit: "01bed8d91bfb746c20cc53ae4e8d64e2c78d2a9e"
+wanconfig_nghttp2_asio_commit: "e877868abe06a83ed0a6ac6e245c07f6f20866b5"
+wanconfig_rousette_commit: "4685b3379b259bc1b4aca79c92ca47d2b1e48e5e"
 # The nghttpx front end exposes rousette on the management address at this
 # port; rousette itself binds ::1:10080 only.
 wanconfig_restconf_port: 10080
