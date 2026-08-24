@@ -48,6 +48,10 @@ tack_backup_s3_bucket_main: tack-backups
 # moves the store onto the data tier changes this one line.
 tack_store_host: "{{ service_mapping.tack_qa_suburban.ipv6 }}"
 
+# QA retired the legacy ledger node on 2026-08-24: the ledger runs only on
+# the three data guests, and the owner guest no longer deploys the service.
+tack_ledger_legacy_node_present: false
+
 # Ledger node identity. The engine stores whatever identity a node announces
 # in its own catalog, so an announced address goes stale when the address
 # moves and the engine can no longer assemble itself. Each node announces a

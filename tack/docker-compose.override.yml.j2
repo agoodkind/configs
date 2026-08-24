@@ -28,6 +28,12 @@ services:
 {% endfor %}
 {% endif %}
   yugabyte:
+{% if tack_provision_owner and not tack_ledger_legacy_node_present %}
+    # Retired on this guest: the inactive profile keeps every compose up
+    # from starting the service here, and the deploy's --remove-orphans
+    # removes the stopped container. The data guests keep their nodes.
+    profiles: ["retired"]
+{% endif %}
     hostname: {{ tack_ledger_node_name }}
     extra_hosts:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}
