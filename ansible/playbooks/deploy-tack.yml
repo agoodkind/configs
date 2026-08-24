@@ -353,10 +353,24 @@
 
         - name: Start the other stores and wait until they are healthy
           ansible.builtin.command:
-            cmd: docker compose up -d --wait --wait-timeout 300 yugabyte meilisearch temporal-db temporal kafka clickhouse
+            cmd: >-
+              docker compose up -d --wait --wait-timeout 300
+              {{ 'yugabyte' if tack_ledger_legacy_node_present else '' }}
+              meilisearch temporal-db temporal kafka clickhouse
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
+
+        # A service parked in an inactive profile is unmanaged, not an
+        # orphan, so --remove-orphans leaves its container running; remove
+        # the retired ledger container explicitly. Idempotent when absent.
+        - name: Remove the retired ledger container
+          ansible.builtin.command:
+            cmd: docker compose --profile retired rm -sf yugabyte
+            chdir: "{{ tack_install_dir }}"
+          register: tack_ledger_retired_rm
+          changed_when: "'Removed' in tack_ledger_retired_rm.stderr"
+          when: not tack_ledger_legacy_node_present
 
       when: tack_provision_owner
 
@@ -455,8 +469,10 @@
     # Provision and the app start run after the data-guest ledger nodes are
     # up, because the ops and app database URLs point at the data nodes. On
     # a cold environment the order is: the owner's stores come up (block
-    # above), the data nodes join the owner's ledger node, provision dials
-    # the data nodes, then the app starts.
+    # above), the data nodes come up (joining the legacy node while it
+    # exists; on a from-empty rebuild of a retired environment, pass
+    # --extra-var tack_ledger_bootstrap=true so yb1 creates the universe),
+    # provision dials the data nodes, then the app starts.
     - block:
 
         # --execute is the action gate every audited operator command now
