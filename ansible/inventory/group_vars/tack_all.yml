@@ -27,12 +27,15 @@ tack_yugabyte_db: tack
 # path is shared; the key material is not.
 tack_audit_signing_key_path: /etc/tack/audit-signing.pem
 
-# The ops sidecar runs on host networking and reaches the product store at its
-# published port. It names the guest that serves the store rather than the host
-# loopback, because loopback only works while the store shares the guest, and
-# the phase that moves the store off this guest repoints one value here.
+# The ops sidecar runs on host networking, where the ledger node names do
+# not resolve, so it lists the three data guests' pinned addresses and the
+# driver fails over across them. Retiring the node on the app guest changes
+# nothing here. Keyword form, because the URL form rejects a comma list of
+# bracketed IPv6 hosts (invalid IP-literal).
 tack_ops_database_url: >-
-  postgres://{{ tack_yugabyte_user }}:{{ tack_yugabyte_password }}@[{{ tack_store_host }}]:5433/{{ tack_yugabyte_db }}?sslmode=disable
+  host={{ tack_ledger_node_addresses.yb1 }},{{ tack_ledger_node_addresses.yb2 }},{{ tack_ledger_node_addresses.yb3 }}
+  port=5433 user={{ tack_yugabyte_user }} password={{ tack_yugabyte_password }}
+  dbname={{ tack_yugabyte_db }} sslmode=disable
 
 tack_log_level: debug
 tack_log_max_backups: 0
