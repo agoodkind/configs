@@ -1,0 +1,33 @@
+# Rendered by Ansible from tack/docker-compose.override.yml.j2 at deploy time.
+# Compose merges this file over docker-compose.yml automatically. Only final
+# values appear here, so the file on the guest reads exactly as it runs.
+#
+# The ledger engine persists the announced identity in its internal catalog,
+# so each node announces a permanent name and never an address. The hostname
+# maps this node's own name to its container address; extra_hosts map every
+# other ledger name to the owning guest's pinned address, reached on the
+# published node ports.
+services:
+  yugabyte:
+    hostname: {{ tack_ledger_node_name }}
+    extra_hosts:
+{% for peer_name, peer_address in tack_ledger_peers.items() %}
+      - "{{ peer_name }}:{{ peer_address }}"
+{% endfor %}
+    # Whole-command replacement: compose replaces a command list wholesale.
+    # Only the announced name and the join target differ from the base file;
+    # the flagfile argument stays verbatim, because dropping it reverts the
+    # tserver to self-sizing (the 2026-08-05 incident).
+    command:
+      - /home/yugabyte/bin/yugabyted
+      - start
+      - --daemon=false
+      - --base_dir=/home/yugabyte/var
+      - --advertise_address={{ tack_ledger_node_name }}
+      - --listen={{ tack_ledger_node_name }}
+{% if tack_ledger_join_target %}
+      # First start enrolls into the cluster at the join target; without it
+      # the engine bootstraps a second universe instead of joining.
+      - --join={{ tack_ledger_join_target }}
+{% endif %}
+      - --tserver_flags=flagfile=/home/yugabyte/tserver.flags

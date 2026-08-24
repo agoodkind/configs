@@ -44,3 +44,18 @@ tack_port: 8000
 # Container image tag. Production uses latest; QA overrides with a branch SHA
 # passed at deploy time.
 tack_image_tag: latest
+
+# Ledger node peer map, derived per guest: every ledger name except this
+# guest's own, each mapped to the owning guest's pinned address. During the
+# transition the legacy node's name also maps to the guest serving the store
+# today, so joining nodes can reach it; the guest announcing that name skips
+# the entry. Rendered into the compose override's extra_hosts.
+tack_ledger_peers: >-
+  {{ (tack_ledger_node_addresses | dict2items
+      | rejectattr('key', 'eq', tack_ledger_node_name) | items2dict)
+     | combine({} if tack_ledger_node_name == 'yugabyte'
+               else {'yugabyte': tack_store_host}) }}
+
+# Data guests enroll into the cluster at the legacy node's name on first
+# start; every other guest starts its node standalone.
+tack_ledger_join_target: "{{ 'yugabyte' if tack_cluster_role == 'data' else '' }}"
