@@ -8,6 +8,25 @@
 # other ledger name to the owning guest's pinned address, reached on the
 # published node ports.
 services:
+{% if tack_provision_owner %}
+  # The app and the audit consumer reach the ledger at its permanent node
+  # names, which resolve here to the owning guests' pinned addresses. The
+  # multi-host database URL fails over across the three data nodes, so
+  # retiring the node on this guest does not cut the app off from SQL.
+  # Secrets stay compose interpolations from .env, never rendered values.
+  app:
+    extra_hosts:
+{% for peer_name, peer_address in tack_ledger_peers.items() %}
+      - "{{ peer_name }}:{{ peer_address }}"
+{% endfor %}
+    environment:
+      DATABASE_URL: postgres://${YUGABYTE_USER:?}:${YUGABYTE_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/${YUGABYTE_DB:?}?sslmode=disable
+  audit-consumer:
+    extra_hosts:
+{% for peer_name, peer_address in tack_ledger_peers.items() %}
+      - "{{ peer_name }}:{{ peer_address }}"
+{% endfor %}
+{% endif %}
   yugabyte:
     hostname: {{ tack_ledger_node_name }}
     extra_hosts:
