@@ -250,6 +250,26 @@
           no_log: true
           notify: Restart Tack
 
+        # The compose yugabyte service bind-mounts this flags file and hands it
+        # to the tserver via flagfile; a missing source path would make Docker
+        # create a directory there and break the tserver's flag read. The file
+        # exists only at tack refs that carry the flagfile compose change, so
+        # tack_commit must point at or past it.
+        - name: Fetch yugabyte-overlay/tserver.flags from the tack repo SOT
+          ansible.builtin.get_url:
+            url: >-
+              https://api.github.com/repos/agoodkind/tack/contents/yugabyte-overlay/tserver.flags?ref={{ tack_commit }}
+            dest: "{{ tack_install_dir }}/yugabyte-overlay/tserver.flags"
+            headers:
+              Authorization: "Bearer {{ tack_repo_read_token }}"
+              Accept: "application/vnd.github.raw"
+            owner: root
+            group: root
+            mode: "0644"
+            force: true
+          no_log: true
+          notify: Restart Tack
+
         - name: Deploy Tack environment file
           ansible.builtin.template:
             src: "{{ repo_root }}/tack/tack.env.j2"
