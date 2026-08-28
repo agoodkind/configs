@@ -458,6 +458,17 @@
           no_log: true
           notify: Restart Tack ledger node
 
+        # The ledger image is public, but the per-node archive command runs
+        # the private tack-server image through the ops sidecar on this
+        # guest, so the data guests authenticate to the registry like the
+        # owner does.
+        - name: Authenticate Docker to ghcr.io (ledger node)
+          ansible.builtin.command:
+            cmd: docker login ghcr.io -u agoodkind --password-stdin
+            stdin: "{{ ghcr_pull_token }}"
+          changed_when: true
+          no_log: true
+
         - name: Start the ledger node and wait until it is healthy (first start joins)
           ansible.builtin.command:
             cmd: docker compose up -d --wait --wait-timeout 300 yugabyte
