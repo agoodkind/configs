@@ -411,15 +411,12 @@ func checkSelftestNotifications(
 	notifier := newSurfaceNotifier(log, selftestGateway())
 	store.Observe(notifier)
 	notifierCtx, stopNotifier := context.WithCancel(ctx)
-	defer stopNotifier()
-	go func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.ErrorContext(notifierCtx, "selftest notifier panicked",
-					"err", fmt.Sprint(recovered))
-			}
-		}()
-		notifier.run(notifierCtx, daemon)
+	senderDone := startNotifierSender(notifierCtx, log, notifier, daemon)
+	// The sender must have left the binding before the caller closes the
+	// daemon connection, the same contract the surface's Close keeps.
+	defer func() {
+		stopNotifier()
+		<-senderDone
 	}()
 
 	// The two transitions the acceptance names: a committed health

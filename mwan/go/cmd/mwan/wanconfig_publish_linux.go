@@ -32,14 +32,24 @@ type wanconfigSurface struct {
 	pub   yangpub.Publisher
 	log   *slog.Logger
 	stop  context.CancelFunc
+	// senderDone closes when the notifier's sender goroutine has
+	// returned. Close waits on it before releasing the connection,
+	// because a send still inside the binding when the connection is
+	// freed crashes the process.
+	senderDone <-chan struct{}
 }
 
-// Close stops the poller and the notifier and releases the datastore
-// connection with its registrations. Safe on a surface whose parts
-// partly failed.
+// Close stops the poller and the notifier, waits for the sender to leave
+// the binding, and releases the datastore connection with its
+// registrations. Safe on a surface whose parts partly failed. The wait
+// is bounded: a send blocks at most for sysrepo's internal subscriber
+// timeout.
 func (s *wanconfigSurface) Close() {
 	if s.stop != nil {
 		s.stop()
+	}
+	if s.senderDone != nil {
+		<-s.senderDone
 	}
 	if s.pub != nil {
 		if err := s.pub.Close(); err != nil {
@@ -95,25 +105,17 @@ func startWanconfigSurface(
 	store := wanstate.New()
 	surfaceCtx, stopSurface := context.WithCancel(ctx)
 	surface := &wanconfigSurface{
-		store: store,
-		pub:   pub,
-		log:   log,
-		stop:  stopSurface,
+		store:      store,
+		pub:        pub,
+		log:        log,
+		stop:       stopSurface,
+		senderDone: nil,
 	}
 	// The notifier observes the store before any module writes, so the
 	// first real transition already streams.
 	notifier := newSurfaceNotifier(log, gateway)
 	store.Observe(notifier)
-	go func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.ErrorContext(surfaceCtx,
-					"wanconfig: notifier panicked; transitions stop streaming",
-					"err", fmt.Sprint(recovered))
-			}
-		}()
-		notifier.run(surfaceCtx, pub)
-	}()
+	surface.senderDone = startNotifierSender(surfaceCtx, log, notifier, pub)
 	if err := registerLiveStateProviders(ctx, log, pub, store, gateway); err != nil {
 		log.ErrorContext(ctx, "wanconfig: provider registration failed; serving configuration only", "err", err)
 		return surface

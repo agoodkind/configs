@@ -3,10 +3,13 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	"goodkind.io/mwan/internal/wanstate"
+	"goodkind.io/mwan/internal/yangpub"
 )
 
 // quietLogger keeps the notifier's drop warnings out of test output.
@@ -54,6 +57,57 @@ func assertItems(t *testing.T, event surfaceEvent, want map[string]string) {
 		if got[leaf] != value {
 			t.Fatalf("leaf %s = %q, want %q", leaf, got[leaf], value)
 		}
+	}
+}
+
+// blockingNotifier stands in for the sysrepo binding at its interface
+// boundary: SendNotification parks inside the call until released, the
+// way a real send parks on a wedged subscriber, so the test can hold a
+// send in flight deliberately.
+type blockingNotifier struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingNotifier) SendNotification(_ context.Context, _ string, _ []yangpub.Item) error {
+	close(b.entered)
+	<-b.release
+	return nil
+}
+
+func (b *blockingNotifier) SubscribeNotifications(_ context.Context, _ string, _ yangpub.NotificationFunc) error {
+	return nil
+}
+
+// TestStartNotifierSender_DoneWaitsForTheInFlightSend pins the shutdown
+// contract the surface's Close relies on: after the context is
+// cancelled, the done channel stays open while a send is still inside
+// the binding and closes once the send returns. Without that wait the
+// daemon frees the sysrepo connection under the send and crashes.
+func TestStartNotifierSender_DoneWaitsForTheInFlightSend(t *testing.T) {
+	t.Parallel()
+	notifier := newSurfaceNotifier(quietLogger(), liveTestGateway())
+	binding := &blockingNotifier{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := startNotifierSender(ctx, quietLogger(), notifier, binding)
+
+	notifier.TierChange(0, 1)
+	<-binding.entered
+	cancel()
+	select {
+	case <-done:
+		t.Fatal("done closed while the send was still inside the binding")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(binding.release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("done never closed after the send returned")
 	}
 }
 

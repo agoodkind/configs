@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
@@ -93,6 +94,32 @@ func (n *surfaceNotifier) enqueue(event surfaceEvent) {
 	default:
 		n.log.Warn("wanconfig: notification queue full; event dropped", "path", event.path)
 	}
+}
+
+// startNotifierSender launches the sender goroutine and returns a
+// channel that closes when the goroutine has fully returned. The caller
+// must wait on it before releasing the datastore connection: a send can
+// sit inside the binding for sysrepo's internal subscriber timeout, and
+// freeing the connection under it crashes the process.
+func startNotifierSender(
+	ctx context.Context,
+	log *slog.Logger,
+	notifier *surfaceNotifier,
+	pub yangpub.Notifier,
+) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.ErrorContext(ctx,
+					"wanconfig: notifier panicked; transitions stop streaming",
+					"err", fmt.Sprint(recovered))
+			}
+		}()
+		notifier.run(ctx, pub)
+	}()
+	return done
 }
 
 // run delivers queued events one at a time until ctx ends. Each send is
