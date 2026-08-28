@@ -92,7 +92,8 @@ func yangpubNotifCB(session *C.sr_session_ctx_t, subID C.uint32_t, notifType C.s
 
 	cPath := C.lyd_path(notif, C.LYD_PATH_STD, nil, 0)
 	if cPath == nil {
-		registration.log.Error("notification path render failed")
+		registration.log.Error("notification path render failed",
+			"err", "lyd_path returned no path")
 		return
 	}
 	defer C.free(unsafe.Pointer(cPath))
