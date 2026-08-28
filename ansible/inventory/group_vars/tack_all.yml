@@ -76,6 +76,18 @@ tack_ledger_peers: >-
 # universe. The flag is explicit and never defaults on, because a
 # join-less node whose volume was wiped would create a second universe
 # beside a surviving cluster instead of rejoining it.
+# Master quorum addresses for the backup one-shot containers (snapshot
+# create, metadata export, schema dump). One-shots run on the compose
+# network with no extra_hosts, so node names do not resolve there: while
+# the legacy node exists the local service name works; after retirement
+# the list names the data guests' pinned addresses on the published
+# master port, bracketed because each carries a port.
+tack_backup_yb_master_addresses: >-
+  {{ 'yugabyte:7100' if tack_ledger_legacy_node_present
+     else '[' + tack_ledger_node_addresses.yb1 + ']:7100,['
+          + tack_ledger_node_addresses.yb2 + ']:7100,['
+          + tack_ledger_node_addresses.yb3 + ']:7100' }}
+
 tack_ledger_bootstrap: false
 tack_ledger_join_target: >-
   {{ ('' if (tack_ledger_bootstrap | bool and tack_ledger_node_name == 'yb1')
