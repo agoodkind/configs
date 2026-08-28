@@ -59,6 +59,10 @@ and the surface serves: the rollback watchdog's thresholds and probe
 targets, the out-of-band access policy, and the tunnel tap. They are plain
 configuration nodes with no steering semantics.
 
+The module defines two notifications, a member health transition and an
+active-tier change, each carrying the value before and after. How and when
+the daemon sends them is the surface specification's streaming section.
+
 ## What today's behavior becomes
 
 Each row is a current special case and the model element that replaces it.

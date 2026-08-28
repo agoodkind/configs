@@ -78,6 +78,18 @@ type BGP struct {
 	Reached bool
 }
 
+// Observer is told, after a write commits, that the write changed a
+// member's verdict or the active tier. The store calls it outside its
+// lock, on the writer's goroutine, so an observer must hand the event
+// off quickly rather than doing the delivery work inline.
+type Observer interface {
+	// HealthTransition reports one committed verdict change.
+	HealthTransition(member string, from Health, to Health)
+	// TierChange reports that a routing pass installed a different
+	// active tier than the previous pass.
+	TierChange(from uint8, to uint8)
+}
+
 // Store is the concurrent snapshot store. The zero value is unusable;
 // construct with New.
 type Store struct {
@@ -88,6 +100,7 @@ type Store struct {
 	activeTier  uint8
 	tierValid   bool
 	bgp         BGP
+	observer    Observer
 }
 
 // New returns an empty store.
@@ -100,6 +113,29 @@ func New() *Store {
 		activeTier:  0,
 		tierValid:   false,
 		bgp:         BGP{Peers: nil, ReadAt: time.Time{}, Reached: false},
+		observer:    nil,
+	}
+}
+
+// Observe registers the store's one observer. Set it before the modules
+// start writing; events from earlier writes are not replayed.
+func (s *Store) Observe(observer Observer) {
+	s.mu.Lock()
+	s.observer = observer
+	s.mu.Unlock()
+}
+
+// NotifyHealthTransition forwards a committed verdict change to the
+// observer. The health module calls it at its real transition point,
+// after hysteresis, because the store cannot infer transitions from
+// snapshot writes alone: the first write after a restart restores
+// persisted verdicts without any transition having happened.
+func (s *Store) NotifyHealthTransition(member string, from Health, to Health) {
+	s.mu.RLock()
+	observer := s.observer
+	s.mu.RUnlock()
+	if observer != nil {
+		observer.HealthTransition(member, from, to)
 	}
 }
 
@@ -113,15 +149,23 @@ func (s *Store) SetHealth(members map[string]MemberHealth) {
 }
 
 // SetRouting replaces the routing decision snapshot, the active tier and
-// each member's carrying flag, in one write.
+// each member's carrying flag, in one write. A write whose tier differs
+// from the previous valid write is a tier change and reaches the
+// observer; the first valid write only establishes the baseline.
 func (s *Store) SetRouting(activeTier uint8, members map[string]MemberRouting) {
 	copied := make(map[string]MemberRouting, len(members))
 	maps.Copy(copied, members)
 	s.mu.Lock()
+	previousTier := s.activeTier
+	previousValid := s.tierValid
 	s.activeTier = activeTier
 	s.tierValid = true
 	s.routing = copied
+	observer := s.observer
 	s.mu.Unlock()
+	if observer != nil && previousValid && previousTier != activeTier {
+		observer.TierChange(previousTier, activeTier)
+	}
 }
 
 // SetTranslation replaces the translation snapshot in one write.

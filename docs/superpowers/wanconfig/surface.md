@@ -40,8 +40,8 @@ provider is not carrying any, without opening a shell on the gateway.
 The mature management stack serves the tree. libyang reads the model,
 sysrepo holds the data, and the stack's own servers answer requests:
 RESTCONF for reading over ordinary web requests carrying JSON, with NETCONF
-available from the same stack. How a subscriber is told about changes is
-settled in the streaming piece; the model is identical either way.
+available from the same stack. The same servers deliver change
+notifications on their event stream, described below.
 
 The daemon registers as the provider of its own subtrees, so a read reaches
 into the daemon at request time rather than reading a copy that can drift.
@@ -151,8 +151,34 @@ snapshots above.
 
 The steering module gains the state nodes this needs, marked as
 non-configuration so the running datastore is untouched; yanglint gates
-the change like any model edit. Streaming of these values is the next
-piece; this one serves reads.
+the change like any model edit.
+
+## How changes are streamed
+
+A subscriber is told when state changes rather than asking repeatedly,
+on the event stream the stack's servers already publish at the same
+management address the reads use. The steering module defines the two
+notifications the acceptance names: a health transition and a tier
+change, each carrying the value before and after, and the health
+transition naming the member by its interface like everything else in
+the tree.
+
+The daemon sends each notification at the moment the change commits.
+A health transition streams after its hysteresis has been applied, so a
+subscriber never sees a raw probe result, and after the snapshot the
+tree serves has been updated, so a read that follows the notification
+sees the new state. A tier change streams when a routing pass installs
+a different active tier than the previous pass; the first pass after
+startup establishes the baseline and streams nothing.
+
+Delivery cannot reach back into the daemon. A writer hands the event to
+a bounded queue and moves on; one sender goroutine publishes each event
+without waiting for any subscriber, and a queue the datastore has let
+fill drops the event with a log line rather than delaying a reconcile
+pass. Subscriber lifecycle belongs to the stack's servers, so an
+abandoned subscription costs the daemon nothing. A dropped or lost
+notification loses only the event itself: the tree still carries the
+current state for any reader.
 
 ## What must not change
 

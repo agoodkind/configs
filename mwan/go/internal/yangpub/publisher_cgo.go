@@ -14,6 +14,8 @@ extern int yangpubOperCB(sr_session_ctx_t *session, uint32_t sub_id, const char 
         struct lyd_node **parent, void *private_data);
 extern int yangpubChangeCB(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name,
         const char *xpath, sr_event_t event, uint32_t request_id, void *private_data);
+extern void yangpubNotifCB(sr_session_ctx_t *session, uint32_t sub_id, sr_ev_notif_type_t notif_type,
+        struct lyd_node *notif, struct timespec *timestamp, void *private_data);
 */
 import "C"
 
@@ -80,6 +82,13 @@ type operSubscription struct {
 type providerReg struct {
 	log *slog.Logger
 	fn  ProviderFunc
+}
+
+// notifReg is the value the notification callback recovers through its
+// handle.
+type notifReg struct {
+	log *slog.Logger
+	fn  NotificationFunc
 }
 
 // New connects to sysrepo and returns the cgo-backed publisher. A failed
@@ -303,6 +312,104 @@ func (p *publisher) OwnModule(ctx context.Context, module string) error {
 		subscription: subscription,
 		handle:       0,
 		handleCell:   nil,
+	})
+	p.mu.Unlock()
+	return nil
+}
+
+// SendNotification builds the notification instance with libyang and
+// publishes it without waiting for any subscriber, so delivery cost never
+// reaches the caller beyond the send itself.
+func (p *publisher) SendNotification(ctx context.Context, path string, items []Item) error {
+	if err := ctx.Err(); err != nil {
+		p.log.ErrorContext(ctx, "notification aborted before start", "err", err)
+		return fmt.Errorf("yangpub: notification aborted: %w", err)
+	}
+	session, err := p.startSession(ctx, C.SR_DS_RUNNING)
+	if err != nil {
+		return err
+	}
+	defer C.sr_session_stop(session)
+
+	connection := C.sr_session_get_connection(session)
+	lyContext := C.sr_acquire_context(connection)
+	defer C.sr_release_context(connection)
+
+	cPath := C.CString(path)
+	var tree *C.struct_lyd_node
+	lyErr := C.lyd_new_path(nil, lyContext, cPath, nil, 0, &tree)
+	C.free(unsafe.Pointer(cPath))
+	if lyFailed(lyErr) {
+		buildErr := fmt.Errorf("yangpub: lyd_new_path %s: libyang code %d", path, int(lyErr))
+		p.log.ErrorContext(ctx, "notification build failed", "path", path, "err", buildErr)
+		return buildErr
+	}
+	defer C.lyd_free_all(tree)
+
+	for _, item := range items {
+		cLeaf := C.CString(item.Path)
+		cValue := C.CString(item.Value)
+		lyErr := C.lyd_new_path(tree, nil, cLeaf, cValue, 0, nil)
+		C.free(unsafe.Pointer(cLeaf))
+		C.free(unsafe.Pointer(cValue))
+		if lyFailed(lyErr) {
+			buildErr := fmt.Errorf("yangpub: lyd_new_path %s/%s: libyang code %d",
+				path, item.Path, int(lyErr))
+			p.log.ErrorContext(ctx, "notification build failed",
+				"path", path, "leaf", item.Path, "err", buildErr)
+			return buildErr
+		}
+	}
+
+	// wait=0 publishes without waiting for subscriber callbacks, so the
+	// timeout is irrelevant and a slow subscriber cannot slow the sender.
+	if rc := C.sr_notif_send_tree(session, tree, 0, 0); srFailed(rc) {
+		sendErr := srError("sr_notif_send_tree "+path, rc)
+		p.log.ErrorContext(ctx, "notification send failed", "path", path, "err", sendErr)
+		return sendErr
+	}
+	return nil
+}
+
+// SubscribeNotifications registers fn for every notification sent under
+// module. The subscription and its session live until Close.
+func (p *publisher) SubscribeNotifications(ctx context.Context, module string, fn NotificationFunc) error {
+	if err := ctx.Err(); err != nil {
+		p.log.ErrorContext(ctx, "notification subscription aborted before start", "err", err)
+		return fmt.Errorf("yangpub: subscription aborted: %w", err)
+	}
+
+	session, err := p.startSession(ctx, C.SR_DS_RUNNING)
+	if err != nil {
+		return err
+	}
+
+	handle := cgo.NewHandle(&notifReg{log: p.log, fn: fn})
+	handleCell := C.malloc(C.size_t(unsafe.Sizeof(C.uintptr_t(0))))
+	*(*C.uintptr_t)(handleCell) = C.uintptr_t(handle)
+
+	cModule := C.CString(module)
+	var subscription *C.sr_subscription_ctx_t
+	rc := C.sr_notif_subscribe_tree(session, cModule, nil, nil, nil,
+		C.sr_event_notif_tree_cb(C.yangpubNotifCB), handleCell,
+		C.sr_subscr_options_t(0), &subscription)
+	C.free(unsafe.Pointer(cModule))
+	if srFailed(rc) {
+		C.free(handleCell)
+		handle.Delete()
+		C.sr_session_stop(session)
+		subscribeErr := srError("sr_notif_subscribe_tree "+module, rc)
+		p.log.ErrorContext(ctx, "sysrepo notification subscribe failed",
+			"module", module, "err", subscribeErr)
+		return subscribeErr
+	}
+
+	p.mu.Lock()
+	p.subscriptions = append(p.subscriptions, &operSubscription{
+		session:      session,
+		subscription: subscription,
+		handle:       handle,
+		handleCell:   handleCell,
 	})
 	p.mu.Unlock()
 	return nil

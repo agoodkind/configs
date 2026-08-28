@@ -351,6 +351,9 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 	if err := checkSelftestTree(ctx, log, reader); err != nil {
 		return err
 	}
+	if err := checkSelftestNotifications(ctx, log, reader, daemon); err != nil {
+		return err
+	}
 	if err := wanconfig.Publish(ctx, log, runningReplacer{pub: daemon}, gateway); err != nil {
 		return failStep(log, "publish configuration with ownership alive", err)
 	}
@@ -371,6 +374,116 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 		return failStep(log, "interfaces tree after close: "+after, err)
 	}
 	return nil
+}
+
+// selftestNotifTimeout bounds the wait for each notification to reach the
+// subscriber.
+const selftestNotifTimeout = 10 * time.Second
+
+// receivedNotification is one notification as the subscriber saw it.
+type receivedNotification struct {
+	xpath   string
+	payload string
+}
+
+// checkSelftestNotifications proves the streaming seam end to end: the
+// reader subscribes the way the stack's servers do, the daemon side is
+// driven through the same store transitions the modules commit, and both
+// notifications arrive with their leaves.
+func checkSelftestNotifications(
+	ctx context.Context,
+	log *slog.Logger,
+	reader yangpub.Publisher,
+	daemon yangpub.Publisher,
+) error {
+	received := make(chan receivedNotification, 4)
+	subscriber := func(xpath string, payload string) {
+		select {
+		case received <- receivedNotification{xpath: xpath, payload: payload}:
+		default:
+		}
+	}
+	if err := reader.SubscribeNotifications(ctx, "goodkind-mwan-steering", subscriber); err != nil {
+		return failStep(log, "subscribe notifications", err)
+	}
+
+	store := selftestStore()
+	notifier := newSurfaceNotifier(log, selftestGateway())
+	store.Observe(notifier)
+	notifierCtx, stopNotifier := context.WithCancel(ctx)
+	defer stopNotifier()
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.ErrorContext(notifierCtx, "selftest notifier panicked",
+					"err", fmt.Sprint(recovered))
+			}
+		}()
+		notifier.run(notifierCtx, daemon)
+	}()
+
+	// The two transitions the acceptance names: a committed health
+	// transition, and a routing pass that installs a different tier than
+	// the baseline selftestStore wrote.
+	store.NotifyHealthTransition("att", wanstate.HealthHealthy, wanstate.HealthUnhealthy)
+	store.SetRouting(1, map[string]wanstate.MemberRouting{"att": {Carrying: false}})
+
+	byPath := map[string]string{}
+	for len(byPath) < 2 {
+		select {
+		case notification := <-received:
+			byPath[notification.xpath] = notification.payload
+		case <-time.After(selftestNotifTimeout):
+			return failStep(log, "await notifications",
+				fmt.Errorf("received %v, want health-transition and tier-change", byPath))
+		}
+	}
+	if err := checkSelftestHealthNotification(log, byPath["/goodkind-mwan-steering:health-transition"]); err != nil {
+		return failStep(log, "health-transition notification", err)
+	}
+	if err := checkSelftestTierNotification(log, byPath["/goodkind-mwan-steering:tier-change"]); err != nil {
+		return failStep(log, "tier-change notification", err)
+	}
+	return nil
+}
+
+func checkSelftestHealthNotification(log *slog.Logger, payload string) error {
+	if payload == "" {
+		return errors.New("not received")
+	}
+	root, err := unmarshalObject(log, json.RawMessage(payload), "health-transition payload")
+	if err != nil {
+		return err
+	}
+	body, err := unmarshalObject(log, root["goodkind-mwan-steering:health-transition"], "health-transition body")
+	if err != nil {
+		return err
+	}
+	if err := expectLeaf(body, "interface", `"enatt0"`, payload); err != nil {
+		return err
+	}
+	if err := expectLeaf(body, "health", `"unhealthy"`, payload); err != nil {
+		return err
+	}
+	return expectLeaf(body, "previous-health", `"healthy"`, payload)
+}
+
+func checkSelftestTierNotification(log *slog.Logger, payload string) error {
+	if payload == "" {
+		return errors.New("not received")
+	}
+	root, err := unmarshalObject(log, json.RawMessage(payload), "tier-change payload")
+	if err != nil {
+		return err
+	}
+	body, err := unmarshalObject(log, root["goodkind-mwan-steering:tier-change"], "tier-change body")
+	if err != nil {
+		return err
+	}
+	if err := expectLeaf(body, "active-tier", "1", payload); err != nil {
+		return err
+	}
+	return expectLeaf(body, "previous-tier", "0", payload)
 }
 
 // removeSelftestSHM deletes the shared-memory segments this run's prefix
