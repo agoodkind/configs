@@ -537,20 +537,23 @@ func (m *Module) emitTransition(
 		"from", event.From,
 		"to", event.To,
 	)
+	// The management surface streams the committed transition, so a
+	// subscriber learns of it at the moment it happens rather than on the
+	// next poll. Hysteresis already ran; this is never a raw probe result.
+	// It enqueues before the reconcile request so the tier change the
+	// reconcile may cause cannot reach the stream ahead of the health
+	// transition that caused it.
+	if m.Env != nil && m.Env.LiveState != nil {
+		m.Env.LiveState.NotifyHealthTransition(
+			event.WAN.Name, verdictOf(event.From), verdictOf(event.To),
+		)
+	}
 	// A health transition changes routing eligibility, so ask the daemon to
 	// reconcile now rather than wait for the periodic tick; this makes
 	// wan.routes failover event-driven.
 	if m.Env != nil && m.Env.RequestReconcile != nil {
 		m.Env.RequestReconcile(
 			"health " + event.WAN.Name + " " + string(event.From) + "->" + string(event.To),
-		)
-	}
-	// The management surface streams the committed transition, so a
-	// subscriber learns of it at the moment it happens rather than on the
-	// next poll. Hysteresis already ran; this is never a raw probe result.
-	if m.Env != nil && m.Env.LiveState != nil {
-		m.Env.LiveState.NotifyHealthTransition(
-			event.WAN.Name, verdictOf(event.From), verdictOf(event.To),
 		)
 	}
 	if m.Env == nil || m.Env.Alerts == nil {
