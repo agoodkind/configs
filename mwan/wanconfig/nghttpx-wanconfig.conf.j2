@@ -2,7 +2,15 @@
 # address only. rousette terminates cleartext HTTP/2 on ::1; this front end
 # is the sanctioned exposure per docs/superpowers/wanconfig/surface.md.
 frontend={{ mwan_config_mgmt_addr }},{{ wanconfig_restconf_port }};no-tls
-backend=::1,10080;/restconf/:/yang/:/streams/:/.well-known/;proto=h2
+backend=::1,10080;/restconf/:/yang/:/.well-known/;proto=h2
+# The notification event stream under /streams/ idles for many minutes
+# between events (a drill recorder may see nothing for an hour). nghttpx's
+# default --backend-read-timeout of 1m would cut the quiet stream, so this
+# route carries its own read timeout. rousette v2 still closes an idle
+# connection after its own hard-coded 60s deadline; until the rousette pin
+# gains keep-alive pings this route timeout alone does not keep the stream
+# open.
+backend=::1,10080;/streams/;proto=h2;read-timeout=6h
 # nghttpx refuses to start without a catch-all backend (no path pattern).
 backend=::1,10080;;proto=h2
 workers=1
