@@ -53,6 +53,10 @@ tack_store_host: "{{ service_mapping.tack.ipv6 }}"
 # the production half of phase 3.
 tack_ledger_legacy_node_present: true
 
+# Production consumers still dial the legacy node; the data guests are not
+# provisioned. The production cutover flips this as its repoint step.
+tack_ledger_consumers_repointed: false
+
 # Ledger node identity. The engine stores whatever identity a node announces
 # in its own catalog, so an announced address goes stale when the address
 # moves and the engine can no longer assemble itself. Each node announces a

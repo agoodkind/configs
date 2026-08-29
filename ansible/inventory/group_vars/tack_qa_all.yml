@@ -52,6 +52,10 @@ tack_store_host: "{{ service_mapping.tack_qa_suburban.ipv6 }}"
 # the three data guests, and the owner guest no longer deploys the service.
 tack_ledger_legacy_node_present: false
 
+# QA's app, audit consumer, and ops sidecar were repointed at the three
+# data nodes on 2026-08-24, before the retirement above.
+tack_ledger_consumers_repointed: true
+
 # Ledger node identity. The engine stores whatever identity a node announces
 # in its own catalog, so an announced address goes stale when the address
 # moves and the engine can no longer assemble itself. Each node announces a
