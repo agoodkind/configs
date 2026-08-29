@@ -125,6 +125,9 @@ func TestConfigItems_PublishesTheDaemonSettingsItHolds(t *testing.T) {
 				PingTargets: []netip.Addr{
 					netip.MustParseAddr("2606:4700:4700::1111"),
 					netip.MustParseAddr("1.1.1.1"),
+					// A zero address must publish nothing, never a value
+					// the typed leaf rejects.
+					{},
 				},
 			},
 			OOB: OOBSettings{

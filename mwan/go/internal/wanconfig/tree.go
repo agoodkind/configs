@@ -205,8 +205,13 @@ func watchdogItems(watchdog WatchdogSettings) []Item {
 		{Path: base + "/max-known-good-snapshots", Value: uintValue(uint64(watchdog.MaxKnownGoodSnapshots))},
 	}
 	// Leaf-list entries are addressed by their value, not a predicate, so
-	// the datastore keys each instance by the value itself.
+	// the datastore keys each instance by the value itself. The leaf is
+	// typed, so a zero address publishes nothing rather than a value the
+	// schema rejects.
 	for _, target := range watchdog.PingTargets {
+		if !target.IsValid() {
+			continue
+		}
 		items = append(items, Item{
 			Path:  base + "/probe-targets/ping",
 			Value: target.String(),
