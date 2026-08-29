@@ -1,0 +1,29 @@
+---
+- name: Deploy tack-ledger-export service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/services/tack-ledger-export.service.j2"
+    dest: /etc/systemd/system/tack-ledger-export.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_ledger_export_service
+
+- name: Deploy tack-ledger-export timer
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/timers/tack-ledger-export.timer.j2"
+    dest: /etc/systemd/system/tack-ledger-export.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_ledger_export_timer
+
+- name: Enable tack-ledger-export timer
+  ansible.builtin.systemd:
+    name: tack-ledger-export.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        tack_ledger_export_service.changed
+        or tack_ledger_export_timer.changed
+      }}

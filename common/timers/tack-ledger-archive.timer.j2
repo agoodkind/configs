@@ -1,0 +1,12 @@
+# Rendered by Ansible (tasks/tack-ledger-archive.yml); cadence lives in the
+# tack_all group_vars, one home. Monotonic schedule: a missed window needs
+# no catch-up because the archiver polls and no-ops when nothing is pending.
+[Unit]
+Description=Run the Tack ledger node archiver periodically
+
+[Timer]
+OnBootSec={{ tack_ledger_archive_interval }}
+OnUnitActiveSec={{ tack_ledger_archive_interval }}
+
+[Install]
+WantedBy=timers.target

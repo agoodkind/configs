@@ -1,0 +1,15 @@
+# Rendered by Ansible (tasks/tack-ledger-archive.yml); cadence lives in the
+# tack_all group_vars, one home.
+[Unit]
+Description=Archive this node's Tack ledger snapshot files for an export run
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ tack_install_dir }}
+# --execute is the audited action gate; without it the command prints its
+# plan and changes nothing. The archiver exits 0 quietly when no manifest
+# is pending, so the frequent cadence is cheap. The service identity names
+# the timer, not a human, in the compliance ledger.
+ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup yb-archive-node --execute --operator-service tack-backup
+TimeoutStartSec=1800

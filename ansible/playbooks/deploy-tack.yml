@@ -475,6 +475,16 @@
             chdir: "{{ tack_install_dir }}"
           changed_when: true
           throttle: 1
+
+        # Scheduled ledger export, per-node half (TACK-356). The archiver
+        # timer polls for a pending export manifest and no-ops quietly
+        # otherwise. Gated on the live ledger topology: production grows
+        # this timer only at its cutover, when the repoint flag flips.
+        - name: Install the ledger archive timer
+          ansible.builtin.include_tasks: tasks/tack-ledger-archive.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
       when: tack_cluster_role == 'data'
 
     # Provision and the app start run after the data-guest ledger nodes are
@@ -523,6 +533,17 @@
             cmd: docker compose up -d
             chdir: "{{ tack_install_dir }}"
           changed_when: true
+
+        # Scheduled ledger export, orchestrator half (TACK-356). The export
+        # timer runs the audited snapshot export daily with a service
+        # identity, no human in the loop. Gated on the live ledger topology:
+        # production grows this timer only at its cutover, when the repoint
+        # flag flips.
+        - name: Install the ledger export timer
+          ansible.builtin.include_tasks: tasks/tack-ledger-export.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
       when: tack_provision_owner
 
   handlers:
