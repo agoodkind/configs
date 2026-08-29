@@ -44,6 +44,12 @@ module goodkind-mwan-steering {
      adds the group's hash mode beside it. State nodes carry what is
      true right now, served from the running daemon.";
 
+  revision 2026-08-29 {
+    description
+      "Add the daemon container carrying the settings no published
+       model covers: the rollback watchdog's thresholds and probe
+       targets, the out-of-band access policy, and the tunnel tap.";
+  }
   revision 2026-08-28 {
     description
       "Add the health-transition and tier-change notifications the
@@ -277,6 +283,151 @@ module goodkind-mwan-steering {
              own text form. Served opaquely; modeling firewall rules
              structurally is out of scope for this module.";
         }
+      }
+    }
+  }
+
+  container daemon {
+    description
+      "The daemon settings no published model covers, published from
+       the configuration the daemon loaded at startup. A host whose
+       configuration does not carry a section publishes nothing under
+       it, so the tree never invents values another host owns.";
+    container watchdog {
+      description
+        "The rollback watchdog's thresholds and probe targets, as the
+         gateway's configuration carries them. The watchdog process
+         itself runs beside the hypervisor; these are the values it
+         acts on.";
+      leaf deploy-window-minutes {
+        type uint16;
+        description
+          "How long after a deploy the watchdog treats instability as
+           deploy-caused and eligible for rollback.";
+      }
+      leaf connectivity-timeout-seconds {
+        type uint16;
+        description
+          "How long a connectivity probe may run before it counts as
+           failed.";
+      }
+      leaf check-interval-healthy-seconds {
+        type uint16;
+        description
+          "Seconds between probe cycles while the gateway is healthy.";
+      }
+      leaf check-interval-degraded-seconds {
+        type uint16;
+        description
+          "Seconds between probe cycles while the gateway is degraded.";
+      }
+      leaf post-rollback-grace-seconds {
+        type uint16;
+        description
+          "How long after a rollback the watchdog holds off before
+           judging the gateway again.";
+      }
+      leaf alert-cooldown-seconds {
+        type uint16;
+        description
+          "Minimum seconds between repeated watchdog alerts.";
+      }
+      leaf deploy-grace-period-seconds {
+        type uint16;
+        description
+          "How long after a deploy the watchdog waits before probing.";
+      }
+      leaf max-rollback-attempts {
+        type uint8;
+        description
+          "How many rollbacks the watchdog attempts before freezing.";
+      }
+      leaf snapshot-healthy-threshold {
+        type uint16;
+        description
+          "How many consecutive healthy cycles qualify the running
+           state for a known-good snapshot.";
+      }
+      leaf max-known-good-snapshots {
+        type uint8;
+        description
+          "How many known-good snapshots the watchdog retains.";
+      }
+      container probe-targets {
+        description
+          "What the watchdog probes to judge the gateway.";
+        leaf-list ping {
+          type inet:ip-address;
+          description
+            "Addresses the watchdog pings, both families.";
+        }
+      }
+    }
+    container oob {
+      description
+        "The out-of-band access policy: how the host that carries the
+         OOB tunnel steers management traffic when the data path is
+         down.";
+      container ipv6 {
+        description
+          "The IPv6 half of the policy.";
+        leaf interface {
+          type string;
+          description
+            "The OOB tunnel interface.";
+        }
+        leaf address {
+          type inet:ipv6-address;
+          description
+            "The OOB address management traffic originates from.";
+        }
+        leaf table-id {
+          type uint32;
+          description
+            "The routing table the OOB policy rules select.";
+        }
+        leaf manage-slaac-rule {
+          type boolean;
+          description
+            "Whether the daemon manages the SLAAC source rule that
+             keeps OOB-sourced traffic on the OOB table.";
+        }
+        leaf slaac-rule-priority {
+          type uint32;
+          description
+            "The priority of that SLAAC source rule.";
+        }
+      }
+      container ipv4 {
+        description
+          "The IPv4 half of the policy.";
+        leaf interface {
+          type string;
+          description
+            "The OOB tunnel interface.";
+        }
+        leaf table-id {
+          type uint32;
+          description
+            "The routing table the OOB policy rules select.";
+        }
+      }
+    }
+    container tap {
+      description
+        "The tunnel tap: the daemon tails the named tunnel unit's
+         journal and re-emits its entries through the daemon's own
+         logging and alert pipeline.";
+      leaf unit {
+        type string;
+        description
+          "The systemd unit whose journal is tailed.";
+      }
+      leaf-list downgrade-pattern {
+        type string;
+        description
+          "Message patterns whose entries are downgraded below alert
+           level.";
       }
     }
   }

@@ -19,7 +19,7 @@ var selftestModelSources = []string{
 	"../../../../third_party/yang/standard/iana/iana-if-type@2026-03-17.yang",
 	"../../../../third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang",
 	"../../../../third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang",
-	"../../../yang/goodkind-mwan-steering@2026-08-28.yang",
+	"../../../yang/goodkind-mwan-steering@2026-08-29.yang",
 }
 
 // TestWanconfigSelftest_PrivateRepository runs the private selftest the

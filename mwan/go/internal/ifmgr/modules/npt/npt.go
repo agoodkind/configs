@@ -205,7 +205,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	if applyErr != nil {
 		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("apply: %w", applyErr))
 	}
-	m.publishLiveState(ctx, log, delegated, applyErr == nil)
+	m.publishLiveState(ctx, log, delegated, desired, applyErr == nil)
 	return reconcileErr
 }
 
@@ -218,11 +218,16 @@ func (m *Module) publishLiveState(
 	ctx context.Context,
 	log *slog.Logger,
 	delegated map[string]netip.Prefix,
+	desired desiredRules,
 	applied bool,
 ) {
 	if m.Env == nil || m.Env.LiveState == nil {
 		return
 	}
+	// The intended ruleset is this pass's desired rules rendered in the
+	// same text form the inspector renders live rules, so the served
+	// intent and any live listing read alike.
+	m.Env.LiveState.SetIntendedRuleset(renderIntended(desired))
 	rendered := emptyRenderedTable()
 	if applied {
 		table, err := RenderTable(ctx, log)

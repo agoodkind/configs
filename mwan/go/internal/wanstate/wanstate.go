@@ -93,27 +93,29 @@ type Observer interface {
 // Store is the concurrent snapshot store. The zero value is unusable;
 // construct with New.
 type Store struct {
-	mu          sync.RWMutex
-	health      map[string]MemberHealth
-	routing     map[string]MemberRouting
-	translation map[string]MemberTranslation
-	activeTier  uint8
-	tierValid   bool
-	bgp         BGP
-	observer    Observer
+	mu              sync.RWMutex
+	health          map[string]MemberHealth
+	routing         map[string]MemberRouting
+	translation     map[string]MemberTranslation
+	activeTier      uint8
+	tierValid       bool
+	bgp             BGP
+	intendedRuleset string
+	observer        Observer
 }
 
 // New returns an empty store.
 func New() *Store {
 	return &Store{
-		mu:          sync.RWMutex{},
-		health:      map[string]MemberHealth{},
-		routing:     map[string]MemberRouting{},
-		translation: map[string]MemberTranslation{},
-		activeTier:  0,
-		tierValid:   false,
-		bgp:         BGP{Peers: nil, ReadAt: time.Time{}, Reached: false},
-		observer:    nil,
+		mu:              sync.RWMutex{},
+		health:          map[string]MemberHealth{},
+		routing:         map[string]MemberRouting{},
+		translation:     map[string]MemberTranslation{},
+		activeTier:      0,
+		tierValid:       false,
+		bgp:             BGP{Peers: nil, ReadAt: time.Time{}, Reached: false},
+		intendedRuleset: "",
+		observer:        nil,
 	}
 }
 
@@ -177,6 +179,14 @@ func (s *Store) SetTranslation(members map[string]MemberTranslation) {
 	s.mu.Unlock()
 }
 
+// SetIntendedRuleset replaces the rendered text of the firewall rules the
+// daemon intends, written by the translation module each reconcile.
+func (s *Store) SetIntendedRuleset(text string) {
+	s.mu.Lock()
+	s.intendedRuleset = text
+	s.mu.Unlock()
+}
+
 // SetBGP replaces the routing-session snapshot.
 func (s *Store) SetBGP(bgp BGP) {
 	peers := make([]BGPPeer, len(bgp.Peers))
@@ -189,12 +199,13 @@ func (s *Store) SetBGP(bgp BGP) {
 
 // Snapshot is a complete, consistent copy of the store for one read.
 type Snapshot struct {
-	Health      map[string]MemberHealth
-	Routing     map[string]MemberRouting
-	Translation map[string]MemberTranslation
-	ActiveTier  uint8
-	TierValid   bool
-	BGP         BGP
+	Health          map[string]MemberHealth
+	Routing         map[string]MemberRouting
+	Translation     map[string]MemberTranslation
+	ActiveTier      uint8
+	TierValid       bool
+	BGP             BGP
+	IntendedRuleset string
 }
 
 // Snapshot returns a copy the caller may read without further locking.
@@ -202,12 +213,13 @@ func (s *Store) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	snap := Snapshot{
-		Health:      make(map[string]MemberHealth, len(s.health)),
-		Routing:     make(map[string]MemberRouting, len(s.routing)),
-		Translation: make(map[string]MemberTranslation, len(s.translation)),
-		ActiveTier:  s.activeTier,
-		TierValid:   s.tierValid,
-		BGP:         s.bgp,
+		Health:          make(map[string]MemberHealth, len(s.health)),
+		Routing:         make(map[string]MemberRouting, len(s.routing)),
+		Translation:     make(map[string]MemberTranslation, len(s.translation)),
+		ActiveTier:      s.activeTier,
+		TierValid:       s.tierValid,
+		BGP:             s.bgp,
+		IntendedRuleset: s.intendedRuleset,
 	}
 	maps.Copy(snap.Health, s.health)
 	maps.Copy(snap.Routing, s.routing)

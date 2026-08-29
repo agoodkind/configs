@@ -238,6 +238,41 @@ func selftestGateway() wanconfig.Gateway {
 			NPTInternal: netip.MustParsePrefix("3d06:bad:b01:210::/60"),
 			NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
 		}},
+		Daemon: wanconfig.DaemonSettings{
+			Watchdog: wanconfig.WatchdogSettings{
+				Present:                      true,
+				DeployWindowMinutes:          30,
+				ConnectivityTimeoutSeconds:   60,
+				CheckIntervalHealthySeconds:  30,
+				CheckIntervalDegradedSeconds: 10,
+				PostRollbackGraceSeconds:     120,
+				AlertCooldownSeconds:         300,
+				DeployGracePeriodSeconds:     60,
+				MaxRollbackAttempts:          3,
+				SnapshotHealthyThreshold:     20,
+				MaxKnownGoodSnapshots:        3,
+				PingTargets: []netip.Addr{
+					netip.MustParseAddr("2606:4700:4700::1111"),
+					netip.MustParseAddr("1.1.1.1"),
+				},
+			},
+			OOB: wanconfig.OOBSettings{
+				V6Present:         true,
+				V6Iface:           "enoob0",
+				V6Addr:            netip.MustParseAddr("2001:db8:ff::2"),
+				V6TableID:         500,
+				ManageSLAACRule:   true,
+				SLAACRulePriority: 7,
+				V4Present:         false,
+				V4Iface:           "",
+				V4TableID:         0,
+			},
+			Tap: wanconfig.TapSettings{
+				Present:           true,
+				Unit:              "cloudflared-oob.service",
+				DowngradePatterns: []string{"failed to sufficiently increase receive buffer size"},
+			},
+		},
 	}
 }
 
@@ -258,6 +293,7 @@ func selftestStore() *wanstate.Store {
 	store.SetTranslation(map[string]wanstate.MemberTranslation{
 		"att": {Delegated: netip.MustParsePrefix("2001:db8:a::/60"), KernelPresent: true},
 	})
+	store.SetIntendedRuleset("chain prerouting:\n  iif \"enatt0\" ip6 daddr 2001:db8:a::/60 dnat prefix to 3d06:bad:b01:210::/60\nchain postrouting:\n")
 	return store
 }
 
@@ -349,6 +385,9 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 	}
 
 	if err := checkSelftestTree(ctx, log, reader); err != nil {
+		return err
+	}
+	if err := checkSelftestDaemon(ctx, log, reader); err != nil {
 		return err
 	}
 	if err := checkSelftestNotifications(ctx, log, reader, daemon); err != nil {
@@ -610,7 +649,78 @@ func checkSelftestInterfaces(log *slog.Logger, tree json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	return expectLeaf(groupState, "active-tier", "0", "live state")
+	if err := expectLeaf(groupState, "active-tier", "0", "live state"); err != nil {
+		return err
+	}
+	if _, present := groupState["intended-ruleset"]; !present {
+		return errors.New("live state: intended-ruleset is absent")
+	}
+	return nil
+}
+
+// checkSelftestDaemon reads the steering module's own subtree from the
+// operational datastore and checks the daemon settings arrived: the
+// watchdog policy with its probe targets, the out-of-band policy, and
+// the tap.
+func checkSelftestDaemon(ctx context.Context, log *slog.Logger, reader yangpub.Publisher) error {
+	daemonJSON, found, err := reader.ExportJSON(ctx, yangpub.DatastoreOperational, "/goodkind-mwan-steering:*")
+	if err != nil {
+		return failStep(log, "operational daemon read", err)
+	}
+	if !found {
+		return errors.New("operational daemon read: nothing served")
+	}
+	root, err := unmarshalObject(log, json.RawMessage(daemonJSON), "daemon tree")
+	if err != nil {
+		return failStep(log, "daemon tree: "+daemonJSON, err)
+	}
+	daemon, err := unmarshalObject(log, root["goodkind-mwan-steering:daemon"], "daemon container")
+	if err != nil {
+		return failStep(log, "daemon tree: "+daemonJSON, err)
+	}
+	watchdog, err := unmarshalObject(log, daemon["watchdog"], "watchdog container")
+	if err != nil {
+		return err
+	}
+	if err := expectLeaf(watchdog, "deploy-window-minutes", "30", "watchdog"); err != nil {
+		return err
+	}
+	if err := expectLeaf(watchdog, "max-rollback-attempts", "3", "watchdog"); err != nil {
+		return err
+	}
+	targets, err := unmarshalObject(log, watchdog["probe-targets"], "probe targets")
+	if err != nil {
+		return err
+	}
+	pings, err := unmarshalArray(log, targets["ping"], "ping targets")
+	if err != nil {
+		return err
+	}
+	if len(pings) != 2 {
+		return fmt.Errorf("watchdog ping targets = %d, want 2", len(pings))
+	}
+	oob, err := unmarshalObject(log, daemon["oob"], "oob container")
+	if err != nil {
+		return err
+	}
+	oobV6, err := unmarshalObject(log, oob["ipv6"], "oob ipv6")
+	if err != nil {
+		return err
+	}
+	if err := expectLeaf(oobV6, "interface", `"enoob0"`, "oob"); err != nil {
+		return err
+	}
+	if err := expectLeaf(oobV6, "table-id", "500", "oob"); err != nil {
+		return err
+	}
+	if _, present := oob["ipv4"]; present {
+		return errors.New("oob ipv4 published without a config carrying it")
+	}
+	tap, err := unmarshalObject(log, daemon["tap"], "tap container")
+	if err != nil {
+		return err
+	}
+	return expectLeaf(tap, "unit", `"cloudflared-oob.service"`, "tap")
 }
 
 func checkSelftestNAT(log *slog.Logger, tree json.RawMessage) error {

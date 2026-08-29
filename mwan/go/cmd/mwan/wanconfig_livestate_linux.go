@@ -34,15 +34,19 @@ const (
 
 	steeringPrefix = "goodkind-mwan-steering"
 
-	// moduleInterfaces and moduleNAT name the modules whose subtrees the
-	// daemon publishes, provides live state for, and owns.
+	// moduleInterfaces, moduleNAT, and moduleSteering name the modules
+	// whose subtrees the daemon publishes, provides live state for, and
+	// owns.
 	moduleInterfaces = "ietf-interfaces"
 	moduleNAT        = "ietf-nat"
+	moduleSteering   = steeringPrefix
 )
 
 // publishedModules lists the modules the daemon owns in the operational
-// view, in the order they are claimed.
-var publishedModules = []string{moduleInterfaces, moduleNAT}
+// view, in the order they are claimed. The steering module carries the
+// daemon container, so owning it makes those settings readable beside
+// the live state.
+var publishedModules = []string{moduleInterfaces, moduleNAT, moduleSteering}
 
 // ownPublishedModules marks each published module's running data in use
 // so its configuration appears in the operational datastore beside the
@@ -147,6 +151,12 @@ func interfacesLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []ya
 			yangpub.Item{Path: peerBase + "/established", Value: boolValue(peer.Established)},
 			yangpub.Item{Path: peerBase + "/stale", Value: boolValue(stale)},
 		)
+	}
+	if snap.IntendedRuleset != "" {
+		items = append(items, yangpub.Item{
+			Path:  groupBase + "/intended-ruleset",
+			Value: snap.IntendedRuleset,
+		})
 	}
 	return items
 }

@@ -468,4 +468,30 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// TestRenderIntended pins the text form of the intended ruleset the
+// management surface serves: one heading per chain, rules in program
+// order, in the same wording the inspector renders live rules.
+func TestRenderIntended(t *testing.T) {
+	t.Parallel()
+	desired := desiredRules{
+		Prerouting: []natRule{{
+			Chain: chainPrerouting, Iface: "enatt0",
+			Match: netip.MustParsePrefix("2001:db8:a::/60"),
+			Op:    opDNATPrefix, ToPfx: netip.MustParsePrefix("3d06:bad:b01::/60"),
+		}},
+		Postrouting: []natRule{{
+			Chain: chainPostrouting, Iface: "enatt0",
+			Match: netip.MustParsePrefix("3d06:bad:b01::/60"),
+			Op:    opSNATPrefix, ToPfx: netip.MustParsePrefix("2001:db8:a::/60"),
+		}},
+	}
+	want := "chain prerouting:\n" +
+		"  iif \"enatt0\" ip6 daddr 2001:db8:a::/60 dnat prefix to 3d06:bad:b01::/60\n" +
+		"chain postrouting:\n" +
+		"  oif \"enatt0\" ip6 saddr 3d06:bad:b01::/60 snat prefix to 2001:db8:a::/60\n"
+	if got := renderIntended(desired); got != want {
+		t.Fatalf("renderIntended =\n%s\nwant:\n%s", got, want)
+	}
+}
+
 var _ nftReadConn = (*fakeReadConn)(nil)
