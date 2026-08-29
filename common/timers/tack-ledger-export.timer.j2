@@ -1,0 +1,12 @@
+# Rendered by Ansible (tasks/tack-ledger-export.yml); cadence lives in the
+# tack_all group_vars, one home.
+[Unit]
+Description=Run the Tack ledger export daily
+
+[Timer]
+OnCalendar={{ tack_ledger_export_oncalendar }}
+RandomizedDelaySec={{ tack_ledger_export_randomized_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

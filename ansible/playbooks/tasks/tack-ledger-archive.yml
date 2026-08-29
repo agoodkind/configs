@@ -1,0 +1,29 @@
+---
+- name: Deploy tack-ledger-archive service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/services/tack-ledger-archive.service.j2"
+    dest: /etc/systemd/system/tack-ledger-archive.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_ledger_archive_service
+
+- name: Deploy tack-ledger-archive timer
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/timers/tack-ledger-archive.timer.j2"
+    dest: /etc/systemd/system/tack-ledger-archive.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_ledger_archive_timer
+
+- name: Enable tack-ledger-archive timer
+  ansible.builtin.systemd:
+    name: tack-ledger-archive.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        tack_ledger_archive_service.changed
+        or tack_ledger_archive_timer.changed
+      }}

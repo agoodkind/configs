@@ -109,6 +109,16 @@ tack_backup_yb_master_addresses: >-
           + tack_ledger_node_addresses.yb2 + ']:7100,['
           + tack_ledger_node_addresses.yb3 + ']:7100' }}
 
+# Scheduled ledger export cadence (TACK-356). The owner guest's orchestrator
+# runs daily off-peak; each data guest's archiver polls and exits 0 quietly
+# when no manifest is pending, so its interval is short. The unit templates
+# render these values; the timers install only where the backup store exists
+# (tack_backup_enabled) and the ledger topology is live
+# (tack_ledger_consumers_repointed).
+tack_ledger_export_oncalendar: "*-*-* 03:17:00 UTC"
+tack_ledger_export_randomized_delay: 300
+tack_ledger_archive_interval: 15min
+
 tack_ledger_bootstrap: false
 tack_ledger_join_target: >-
   {{ ('' if (tack_ledger_bootstrap | bool and tack_ledger_node_name == 'yb1')
