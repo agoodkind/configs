@@ -76,6 +76,14 @@ tack_ledger_peers: >-
 # universe. The flag is explicit and never defaults on, because a
 # join-less node whose volume was wiped would create a second universe
 # beside a surviving cluster instead of rejoining it.
+# Snapshot-export paths for the backup commands. The rocksdb root is the
+# path inside the ledger container where the per-tablet
+# .snapshots/<snapshot id> directories live (verified live on the testbed
+# data guests); the overlay path is where the deploy places the patched
+# yugabyted the restore drill bind-mounts into its throwaway node.
+tack_backup_yb_rocksdb_dir: /home/yugabyte/var/data/yb-data/tserver/data/rocksdb
+tack_backup_yb_overlay_path: "{{ tack_install_dir }}/yugabyte-overlay/yugabyted"
+
 # Master quorum addresses for the backup one-shot containers (snapshot
 # create, metadata export, schema dump). One-shots run on the compose
 # network with no extra_hosts, so node names do not resolve there: while
