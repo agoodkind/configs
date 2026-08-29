@@ -249,12 +249,14 @@ func clampUint8(value int) uint8 {
 	return uint8(value)
 }
 
-// clampUint32 narrows a config int onto the model's leaf range.
+// clampUint32 narrows a config int onto the model's leaf range. The
+// comparison widens to uint64 so the bound stays representable where
+// int is 32 bits.
 func clampUint32(value int) uint32 {
 	if value < 0 {
 		return 0
 	}
-	if value > int(^uint32(0)) {
+	if uint64(value) > uint64(^uint32(0)) {
 		return ^uint32(0)
 	}
 	return uint32(value)

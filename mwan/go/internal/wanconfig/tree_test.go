@@ -148,15 +148,15 @@ func TestConfigItems_PublishesTheDaemonSettingsItHolds(t *testing.T) {
 		served[item.Path] = append(served[item.Path], item.Value)
 	}
 	want := map[string]string{
-		"/goodkind-mwan-steering:daemon/watchdog/deploy-window-minutes":     "30",
-		"/goodkind-mwan-steering:daemon/watchdog/max-rollback-attempts":     "3",
+		"/goodkind-mwan-steering:daemon/watchdog/deploy-window-minutes":      "30",
+		"/goodkind-mwan-steering:daemon/watchdog/max-rollback-attempts":      "3",
 		"/goodkind-mwan-steering:daemon/watchdog/snapshot-healthy-threshold": "20",
-		"/goodkind-mwan-steering:daemon/oob/ipv6/interface":                 "enoob0",
-		"/goodkind-mwan-steering:daemon/oob/ipv6/address":                   "2001:db8:ff::2",
-		"/goodkind-mwan-steering:daemon/oob/ipv6/table-id":                  "500",
-		"/goodkind-mwan-steering:daemon/oob/ipv6/manage-slaac-rule":         "true",
-		"/goodkind-mwan-steering:daemon/tap/unit":                           "cloudflared-oob.service",
-		"/goodkind-mwan-steering:daemon/tap/downgrade-pattern":              "receive buffer size",
+		"/goodkind-mwan-steering:daemon/oob/ipv6/interface":                  "enoob0",
+		"/goodkind-mwan-steering:daemon/oob/ipv6/address":                    "2001:db8:ff::2",
+		"/goodkind-mwan-steering:daemon/oob/ipv6/table-id":                   "500",
+		"/goodkind-mwan-steering:daemon/oob/ipv6/manage-slaac-rule":          "true",
+		"/goodkind-mwan-steering:daemon/tap/unit":                            "cloudflared-oob.service",
+		"/goodkind-mwan-steering:daemon/tap/downgrade-pattern":               "receive buffer size",
 	}
 	for path, value := range want {
 		got := served[path]

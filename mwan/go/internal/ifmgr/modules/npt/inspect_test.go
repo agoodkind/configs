@@ -402,7 +402,8 @@ func kernelSingleNATExprs(
 ) []expr.Any {
 	exprs := kernelIfaceMatchExprs(chain, ifindex)
 	exprs = append(exprs, kernelAddrMatchExprs(chain, match)...)
-	exprs = append(exprs,
+	exprs = append(
+		exprs,
 		&expr.Immediate{Register: 1, Data: addr16(to)},
 		// The kernel echoes RegAddrMax equal to RegAddrMin for a single address.
 		&expr.NAT{Type: natType, Family: unix.NFPROTO_IPV6, RegAddrMin: 1, RegAddrMax: 1},
@@ -420,7 +421,8 @@ func kernelPrefixNATExprs(
 	to = to.Masked()
 	exprs := kernelIfaceMatchExprs(chain, ifindex)
 	exprs = append(exprs, kernelAddrMatchExprs(chain, match)...)
-	exprs = append(exprs,
+	exprs = append(
+		exprs,
 		&expr.Immediate{Register: 1, Data: addr16(to.Addr())},
 		&expr.Immediate{Register: 2, Data: addr16(lastAddr(to))},
 		&expr.NAT{Type: natType, Family: unix.NFPROTO_IPV6, RegAddrMin: 1, RegAddrMax: 2, Prefix: true},

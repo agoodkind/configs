@@ -219,7 +219,8 @@ func oobItems(oob OOBSettings) []Item {
 	items := make([]Item, 0, 7)
 	if oob.V6Present {
 		base := daemonPath + "/oob/ipv6"
-		items = append(items,
+		items = append(
+			items,
 			Item{Path: base + "/interface", Value: oob.V6Iface},
 			Item{Path: base + "/table-id", Value: uintValue(uint64(oob.V6TableID))},
 			Item{Path: base + "/manage-slaac-rule", Value: boolValue(oob.ManageSLAACRule)},
@@ -233,7 +234,8 @@ func oobItems(oob OOBSettings) []Item {
 	}
 	if oob.V4Present {
 		base := daemonPath + "/oob/ipv4"
-		items = append(items,
+		items = append(
+			items,
 			Item{Path: base + "/interface", Value: oob.V4Iface},
 			Item{Path: base + "/table-id", Value: uintValue(uint64(oob.V4TableID))},
 		)

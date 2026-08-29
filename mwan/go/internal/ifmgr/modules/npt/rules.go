@@ -121,7 +121,8 @@ func buildWANRules(in wanRuleInput) []natRule {
 	noPfx := netip.Prefix{}
 
 	rules := make([]natRule, 0, 6+len(in.ExtraDNAT))
-	rules = append(rules,
+	rules = append(
+		rules,
 		natRule{Chain: chainPostrouting, Iface: in.Iface, Match: edge128, Op: opGuard, ToAddr: noAddr, ToPfx: noPfx},
 		natRule{Chain: chainPostrouting, Iface: in.Iface, Match: edge128, Op: opSNAT, ToAddr: pd1, ToPfx: noPfx},
 		natRule{Chain: chainPostrouting, Iface: in.Iface, Match: mwanbr128, Op: opSNAT, ToAddr: pd1, ToPfx: noPfx},
