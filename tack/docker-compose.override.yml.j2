@@ -8,12 +8,15 @@
 # other ledger name to the owning guest's pinned address, reached on the
 # published node ports.
 services:
-{% if tack_provision_owner %}
+{% if tack_provision_owner and tack_ledger_consumers_repointed %}
   # The app and the audit consumer reach the ledger at its permanent node
   # names, which resolve here to the owning guests' pinned addresses. The
   # multi-host database URL fails over across the three data nodes, so
   # retiring the node on this guest does not cut the app off from SQL.
   # Secrets stay compose interpolations from .env, never rendered values.
+  # Gated on the environment's repoint switch: an owner whose consumers
+  # still dial the legacy node keeps the base file's local URL, because
+  # its data guests are not provisioned and these names resolve nowhere.
   app:
     extra_hosts:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}

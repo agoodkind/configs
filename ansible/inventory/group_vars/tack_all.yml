@@ -27,15 +27,28 @@ tack_yugabyte_db: tack
 # path is shared; the key material is not.
 tack_audit_signing_key_path: /etc/tack/audit-signing.pem
 
+# Whether this environment's consumers (app, audit consumer, ops sidecar)
+# have been repointed at the three ledger data nodes. QA repointed on
+# 2026-08-24; production still runs everything against the legacy node on
+# the app guest, whose data guests are not provisioned yet, so a deploy
+# there must keep the legacy connection shape or the app dials three
+# unreachable addresses. Environment groups set the current value; the
+# production cutover flips it as its repoint step.
+tack_ledger_consumers_repointed: false
+
 # The ops sidecar runs on host networking, where the ledger node names do
-# not resolve, so it lists the three data guests' pinned addresses and the
-# driver fails over across them. Retiring the node on the app guest changes
-# nothing here. Keyword form, because the URL form rejects a comma list of
-# bracketed IPv6 hosts (invalid IP-literal).
+# not resolve. Repointed environments list the three data guests' pinned
+# addresses and the driver fails over across them, in keyword form because
+# the URL form rejects a comma list of bracketed IPv6 hosts (invalid
+# IP-literal). Legacy environments dial the guest that serves the store.
 tack_ops_database_url: >-
-  host={{ tack_ledger_node_addresses.yb1 }},{{ tack_ledger_node_addresses.yb2 }},{{ tack_ledger_node_addresses.yb3 }}
-  port=5433 user={{ tack_yugabyte_user }} password={{ tack_yugabyte_password }}
-  dbname={{ tack_yugabyte_db }} sslmode=disable
+  {{ ('host=' + tack_ledger_node_addresses.yb1 + ',' + tack_ledger_node_addresses.yb2 + ','
+      + tack_ledger_node_addresses.yb3 + ' port=5433 user=' + tack_yugabyte_user
+      + ' password=' + tack_yugabyte_password + ' dbname=' + tack_yugabyte_db
+      + ' sslmode=disable')
+     if tack_ledger_consumers_repointed
+     else ('postgres://' + tack_yugabyte_user + ':' + tack_yugabyte_password
+           + '@[' + tack_store_host + ']:5433/' + tack_yugabyte_db + '?sslmode=disable') }}
 
 tack_log_level: debug
 tack_log_max_backups: 0
