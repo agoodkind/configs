@@ -25,19 +25,31 @@ const wanconfigPublishTimeout = 10 * time.Second
 
 // wanconfigSurface is the running management surface: the snapshot store
 // the modules write, the open datastore connection whose provider
-// registrations serve reads, and the agent poller feeding BGP state.
+// registrations serve reads, the agent poller feeding BGP state, and the
+// notifier streaming transitions.
 type wanconfigSurface struct {
-	store      *wanstate.Store
-	pub        yangpub.Publisher
-	log        *slog.Logger
-	stopPoller context.CancelFunc
+	store *wanstate.Store
+	pub   yangpub.Publisher
+	log   *slog.Logger
+	stop  context.CancelFunc
+	// senderDone closes when the notifier's sender goroutine has
+	// returned. Close waits on it before releasing the connection,
+	// because a send still inside the binding when the connection is
+	// freed crashes the process.
+	senderDone <-chan struct{}
 }
 
-// Close stops the poller and releases the datastore connection with its
-// provider registrations. Safe on a surface whose parts partly failed.
+// Close stops the poller and the notifier, waits for the sender to leave
+// the binding, and releases the datastore connection with its
+// registrations. Safe on a surface whose parts partly failed. The wait
+// is bounded: a send blocks at most for sysrepo's internal subscriber
+// timeout.
 func (s *wanconfigSurface) Close() {
-	if s.stopPoller != nil {
-		s.stopPoller()
+	if s.stop != nil {
+		s.stop()
+	}
+	if s.senderDone != nil {
+		<-s.senderDone
 	}
 	if s.pub != nil {
 		if err := s.pub.Close(); err != nil {
@@ -91,27 +103,32 @@ func startWanconfigSurface(
 	ownCancel()
 
 	store := wanstate.New()
+	surfaceCtx, stopSurface := context.WithCancel(ctx)
 	surface := &wanconfigSurface{
 		store:      store,
 		pub:        pub,
 		log:        log,
-		stopPoller: nil,
+		stop:       stopSurface,
+		senderDone: nil,
 	}
+	// The notifier observes the store before any module writes, so the
+	// first real transition already streams.
+	notifier := newSurfaceNotifier(log, gateway)
+	store.Observe(notifier)
+	surface.senderDone = startNotifierSender(surfaceCtx, log, notifier, pub)
 	if err := registerLiveStateProviders(ctx, log, pub, store, gateway); err != nil {
 		log.ErrorContext(ctx, "wanconfig: provider registration failed; serving configuration only", "err", err)
 		return surface
 	}
-	pollerCtx, stopPoller := context.WithCancel(ctx)
-	surface.stopPoller = stopPoller
 	go func() {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				log.ErrorContext(pollerCtx,
+				log.ErrorContext(surfaceCtx,
 					"wanconfig: agent poller panicked; routing-session state goes stale",
 					"err", fmt.Sprint(recovered))
 			}
 		}()
-		pollAgentBGP(pollerCtx, log, cfg, store)
+		pollAgentBGP(surfaceCtx, log, cfg, store)
 	}()
 	log.InfoContext(ctx, "wanconfig: live-state providers registered",
 		"members", len(gateway.Members))

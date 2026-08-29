@@ -3,6 +3,7 @@
 package wanstate
 
 import (
+	"fmt"
 	"net/netip"
 	"testing"
 	"time"
@@ -49,6 +50,60 @@ func TestStore_SnapshotCarriesEveryWrite(t *testing.T) {
 	}
 	if !snap.BGP.Reached || len(snap.BGP.Peers) != 1 || !snap.BGP.Peers[0].Established {
 		t.Fatalf("bgp snapshot = %+v", snap.BGP)
+	}
+}
+
+// recordingObserver collects the events the store forwards.
+type recordingObserver struct {
+	health []string
+	tiers  []string
+}
+
+func (o *recordingObserver) HealthTransition(member string, from Health, to Health) {
+	o.health = append(o.health, member+":"+string(from)+">"+string(to))
+}
+
+func (o *recordingObserver) TierChange(from uint8, to uint8) {
+	o.tiers = append(o.tiers, fmt.Sprintf("%d>%d", from, to))
+}
+
+// TestStore_TierChangeReachesTheObserver pins the tier seam: the first
+// valid write is a baseline and stays silent, a write with the same tier
+// stays silent, and only a write that installs a different tier reaches
+// the observer with both tiers.
+func TestStore_TierChangeReachesTheObserver(t *testing.T) {
+	t.Parallel()
+	store := New()
+	observer := &recordingObserver{health: nil, tiers: nil}
+	store.Observe(observer)
+
+	store.SetRouting(0, map[string]MemberRouting{"att": {Carrying: true}})
+	if len(observer.tiers) != 0 {
+		t.Fatalf("baseline write produced events: %v", observer.tiers)
+	}
+	store.SetRouting(0, map[string]MemberRouting{"att": {Carrying: true}})
+	if len(observer.tiers) != 0 {
+		t.Fatalf("same-tier write produced events: %v", observer.tiers)
+	}
+	store.SetRouting(1, map[string]MemberRouting{"att": {Carrying: false}})
+	if len(observer.tiers) != 1 || observer.tiers[0] != "0>1" {
+		t.Fatalf("tier events = %v, want [0>1]", observer.tiers)
+	}
+}
+
+// TestStore_HealthTransitionForwarded pins the health seam: the health
+// module's committed transition reaches the observer unchanged, and a
+// store without an observer swallows it.
+func TestStore_HealthTransitionForwarded(t *testing.T) {
+	t.Parallel()
+	store := New()
+	store.NotifyHealthTransition("att", HealthUnknown, HealthHealthy)
+
+	observer := &recordingObserver{health: nil, tiers: nil}
+	store.Observe(observer)
+	store.NotifyHealthTransition("att", HealthHealthy, HealthUnhealthy)
+	if len(observer.health) != 1 || observer.health[0] != "att:healthy>unhealthy" {
+		t.Fatalf("health events = %v, want [att:healthy>unhealthy]", observer.health)
 	}
 }
 

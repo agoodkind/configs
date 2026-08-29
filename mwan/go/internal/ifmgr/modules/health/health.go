@@ -364,19 +364,11 @@ func (m *Module) publishLiveState(
 	for _, wan := range m.cfg.WANs {
 		status := statuses[wan.Name]
 		member := wanstate.MemberHealth{
-			Verdict:             wanstate.HealthUnknown,
+			Verdict:             verdictOf(status.State),
 			ConsecutiveFailures: 0,
 			LastTransition:      m.lastTransition[wan.Name],
 			V4:                  wanstate.ProbeNone,
 			V6:                  wanstate.ProbeNone,
-		}
-		switch status.State {
-		case StateHealthy:
-			member.Verdict = wanstate.HealthHealthy
-		case StateUnhealthy:
-			member.Verdict = wanstate.HealthUnhealthy
-		case StateUnknown:
-			member.Verdict = wanstate.HealthUnknown
 		}
 		if status.FailCount > 0 && status.FailCount <= math.MaxUint32 {
 			member.ConsecutiveFailures = uint32(status.FailCount)
@@ -389,6 +381,20 @@ func (m *Module) publishLiveState(
 		members[wan.Name] = member
 	}
 	m.Env.LiveState.SetHealth(members)
+}
+
+// verdictOf maps the module's hysteresis state onto the management
+// surface's verdict values.
+func verdictOf(state State) wanstate.Health {
+	switch state {
+	case StateHealthy:
+		return wanstate.HealthHealthy
+	case StateUnhealthy:
+		return wanstate.HealthUnhealthy
+	case StateUnknown:
+		return wanstate.HealthUnknown
+	}
+	return wanstate.HealthUnknown
 }
 
 // legResult reduces one family's probe counts to its served outcome.
@@ -531,6 +537,17 @@ func (m *Module) emitTransition(
 		"from", event.From,
 		"to", event.To,
 	)
+	// The management surface streams the committed transition, so a
+	// subscriber learns of it at the moment it happens rather than on the
+	// next poll. Hysteresis already ran; this is never a raw probe result.
+	// It enqueues before the reconcile request so the tier change the
+	// reconcile may cause cannot reach the stream ahead of the health
+	// transition that caused it.
+	if m.Env != nil && m.Env.LiveState != nil {
+		m.Env.LiveState.NotifyHealthTransition(
+			event.WAN.Name, verdictOf(event.From), verdictOf(event.To),
+		)
+	}
 	// A health transition changes routing eligibility, so ask the daemon to
 	// reconcile now rather than wait for the periodic tick; this makes
 	// wan.routes failover event-driven.

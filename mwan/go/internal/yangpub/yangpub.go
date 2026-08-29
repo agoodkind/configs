@@ -49,14 +49,35 @@ type Item struct {
 // arrives, so the served tree cannot drift from the daemon.
 type ProviderFunc func(ctx context.Context, xpath string) ([]Item, error)
 
+// NotificationFunc receives one notification: its schema path and the
+// instance printed as JSON.
+type NotificationFunc func(xpath string, payloadJSON string)
+
 // Model is one YANG module file to install, with the features to enable.
 type Model struct {
 	Path     string
 	Features []string
 }
 
+// Notifier is the notification half of the datastore handle: sending
+// the daemon's own notifications and, for the selftest, receiving them
+// the way the stack's servers do.
+type Notifier interface {
+	// SendNotification sends one notification instance: path names the
+	// notification ("/goodkind-mwan-steering:tier-change") and each item's
+	// path is a leaf relative to it. Delivery is asynchronous: the call
+	// returns once the notification is published, without waiting for any
+	// subscriber, so a slow or absent subscriber costs the caller nothing.
+	SendNotification(ctx context.Context, path string, items []Item) error
+	// SubscribeNotifications delivers every notification sent under module
+	// to fn until Close. The selftest uses it to prove a sent notification
+	// reaches a second connection the way the stack's servers receive one.
+	SubscribeNotifications(ctx context.Context, module string, fn NotificationFunc) error
+}
+
 // Publisher is the daemon's handle on the management datastore.
 type Publisher interface {
+	Notifier
 	// InstallModules installs each model into the datastore's repository
 	// in the given order, resolving imports from the colon-separated
 	// searchDirs. The selftest uses it to stand up a private repository;

@@ -44,6 +44,12 @@ module goodkind-mwan-steering {
      adds the group's hash mode beside it. State nodes carry what is
      true right now, served from the running daemon.";
 
+  revision 2026-08-28 {
+    description
+      "Add the health-transition and tier-change notifications the
+       daemon sends at the moment the verdict or the active tier
+       changes, and name the shared verdict type health-state.";
+  }
   revision 2026-08-20 {
     description
       "Add the live-state nodes the daemon serves from the operational
@@ -55,6 +61,25 @@ module goodkind-mwan-steering {
   revision 2026-08-13 {
     description
       "Initial revision.";
+  }
+
+  typedef health-state {
+    type enumeration {
+      enum healthy {
+        description
+          "The member passed its probes and is usable.";
+      }
+      enum unhealthy {
+        description
+          "The member failed its probes and carries no new traffic.";
+      }
+      enum unknown {
+        description
+          "No verdict has been recorded for the member.";
+      }
+    }
+    description
+      "A member's combined health verdict.";
   }
 
   augment "/if:interfaces/if:interface" {
@@ -95,21 +120,7 @@ module goodkind-mwan-steering {
           "The member's live steering state, answered by the running
            daemon at request time.";
         leaf health {
-          type enumeration {
-            enum healthy {
-              description
-                "The member passed its probes and is usable.";
-            }
-            enum unhealthy {
-              description
-                "The member failed its probes and carries no new
-                 traffic.";
-            }
-            enum unknown {
-              description
-                "No verdict has been recorded for the member.";
-            }
-          }
+          type health-state;
           description
             "The member's combined health verdict.";
         }
@@ -267,6 +278,50 @@ module goodkind-mwan-steering {
              structurally is out of scope for this module.";
         }
       }
+    }
+  }
+
+  notification health-transition {
+    description
+      "Sent at the moment a member's combined health verdict changes.
+       The verdict's hysteresis has already been applied, so every
+       notification is a committed transition, not a raw probe result.";
+    leaf interface {
+      type string;
+      mandatory true;
+      description
+        "The name of the member interface whose verdict changed.";
+    }
+    leaf health {
+      type health-state;
+      mandatory true;
+      description
+        "The verdict the member transitioned to.";
+    }
+    leaf previous-health {
+      type health-state;
+      mandatory true;
+      description
+        "The verdict the member transitioned from.";
+    }
+  }
+
+  notification tier-change {
+    description
+      "Sent at the moment the active tier changes: the lowest-numbered
+       tier holding at least one healthy member is now a different
+       tier, so new connections steer to a different member set.";
+    leaf active-tier {
+      type uint8;
+      mandatory true;
+      description
+        "The tier that is now active.";
+    }
+    leaf previous-tier {
+      type uint8;
+      mandatory true;
+      description
+        "The tier that was active before the change.";
     }
   }
 }

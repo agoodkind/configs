@@ -38,6 +38,9 @@ var operGetCallback = yangpubOperCB
 // moduleChangeCallback holds the change trampoline for the same reason.
 var moduleChangeCallback = yangpubChangeCB
 
+// notifCallback holds the notification trampoline for the same reason.
+var notifCallback = yangpubNotifCB
+
 // yangpubChangeCB is the C-visible trampoline for the change
 // subscriptions OwnModule holds. They exist only to mark a module's
 // running data in use; the daemon applies nothing on a change because
@@ -51,6 +54,59 @@ func yangpubChangeCB(session *C.sr_session_ctx_t, subID C.uint32_t, moduleName *
 	xpath *C.char, event C.sr_event_t, requestID C.uint32_t, privateData unsafe.Pointer,
 ) C.int {
 	return C.SR_ERR_OK
+}
+
+// callNotification hands one received notification to the registered
+// function and swallows a panic, for the same reason callProvider does:
+// this runs on a thread that entered Go from C, and an unwinding panic
+// would abort the whole process.
+func callNotification(registration *notifReg, xpath string, payload string) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			registration.log.Error("notification callback panicked",
+				"xpath", xpath, "err", fmt.Sprint(recovered))
+		}
+	}()
+	registration.fn(xpath, payload)
+}
+
+// yangpubNotifCB is the C-visible trampoline sysrepo invokes for every
+// notification a subscription receives. It recovers the Go registration
+// through the handle cell in private_data, renders the notification's
+// path and JSON body, and hands both to the registered function. Signal
+// events (replay markers, termination, suspension) carry no notification
+// data and are dropped.
+//
+//export yangpubNotifCB
+func yangpubNotifCB(session *C.sr_session_ctx_t, subID C.uint32_t, notifType C.sr_ev_notif_type_t,
+	notif *C.struct_lyd_node, timestamp *C.struct_timespec, privateData unsafe.Pointer,
+) {
+	if notifType != C.SR_EV_NOTIF_REALTIME && notifType != C.SR_EV_NOTIF_REPLAY {
+		return
+	}
+	handle := cgo.Handle(*(*C.uintptr_t)(privateData))
+	registration, ok := handle.Value().(*notifReg)
+	if !ok || notif == nil {
+		return
+	}
+
+	cPath := C.lyd_path(notif, C.LYD_PATH_STD, nil, 0)
+	if cPath == nil {
+		registration.log.Error("notification path render failed",
+			"err", "lyd_path returned no path")
+		return
+	}
+	defer C.free(unsafe.Pointer(cPath))
+
+	var printed *C.char
+	if lyErr := C.lyd_print_mem(&printed, notif, C.LYD_JSON, 0); lyFailed(lyErr) {
+		registration.log.Error("notification print failed",
+			"xpath", C.GoString(cPath), "err", fmt.Sprintf("libyang code %d", int(lyErr)))
+		return
+	}
+	defer C.free(unsafe.Pointer(printed))
+
+	callNotification(registration, C.GoString(cPath), C.GoString(printed))
 }
 
 // callProvider runs one provider with a deadline and turns a panic into
