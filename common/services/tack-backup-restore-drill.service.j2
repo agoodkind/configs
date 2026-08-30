@@ -1,0 +1,25 @@
+# Rendered by Ansible (tasks/tack-backup-restore-drill.yml); cadence lives in
+# the tack_all group_vars, one home.
+[Unit]
+Description=Rehearse recovery by restoring the Tack backups into throwaway containers
+After=docker.service
+# Only a drill whose every attempted leg passed writes the rehearsal marker the
+# staleness check dates, so a failed drill is invisible until that marker ages
+# past its threshold days later. The handler instance mails this run's journal
+# instead, so the failure arrives while the last passing rehearsal is still
+# fresh. The handler is the one the staleness alarm task deploys.
+OnFailure=tack-alarm-mail@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ tack_install_dir }}
+# --execute is the audited action gate; without it the command prints its plan
+# and exits 0, so nothing would be restored and no rehearsal marker would ever
+# be written. The service identity names the timer, not a human, in the
+# compliance ledger (--operator-service derives a stable actor id from the name
+# with no registry to seed).
+ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup restore-drill --execute --operator-service tack-backup
+# Well past a slow drill: the wait for the restored snapshot alone is bounded at
+# 5 minutes inside the command, and a cold-cache run took over 3 minutes end to
+# end. The budget covers that with room for the scratch containers and teardown.
+TimeoutStartSec=1800

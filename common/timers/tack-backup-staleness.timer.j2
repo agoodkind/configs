@@ -1,0 +1,16 @@
+# Rendered by Ansible (tasks/tack-backup-staleness.yml); cadence lives in the
+# tack_all group_vars, one home. Monotonic schedule, like the archive timer: a
+# missed window needs no catch-up because the next run re-reads the same ages.
+# The randomized delay keeps the owner guest's copy and the data guest's copy
+# from firing together, so a transport that is briefly down does not swallow
+# both alarms at once.
+[Unit]
+Description=Run the Tack backup staleness check periodically
+
+[Timer]
+OnBootSec={{ tack_backup_staleness_interval }}
+OnUnitActiveSec={{ tack_backup_staleness_interval }}
+RandomizedDelaySec={{ tack_backup_staleness_randomized_delay }}
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,37 @@
+---
+# Scheduled restore rehearsal (TACK-363): the drill timer that keeps the
+# staleness check's rehearsal metric datable. The unit's OnFailure= names the
+# tack-alarm-mail@ handler, so this file installs that handler itself rather
+# than depending on the staleness include having run first.
+
+- name: Install the tack-alarm-mail handler (restore drill)
+  ansible.builtin.include_tasks: tack-alarm-mail.yml
+
+- name: Deploy tack-backup-restore-drill service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/services/tack-backup-restore-drill.service.j2"
+    dest: /etc/systemd/system/tack-backup-restore-drill.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_backup_restore_drill_service
+
+- name: Deploy tack-backup-restore-drill timer
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/timers/tack-backup-restore-drill.timer.j2"
+    dest: /etc/systemd/system/tack-backup-restore-drill.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_backup_restore_drill_timer
+
+- name: Enable tack-backup-restore-drill timer
+  ansible.builtin.systemd:
+    name: tack-backup-restore-drill.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        tack_backup_restore_drill_service.changed
+        or tack_backup_restore_drill_timer.changed
+      }}
