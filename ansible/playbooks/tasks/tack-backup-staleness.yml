@@ -1,25 +1,12 @@
 ---
-# Backup staleness alarm (TACK-363): the check timer plus the mail handler its
-# OnFailure= names. Included on the owner guest and on one data guest, so
-# losing either guest leaves an alarm standing.
+# Backup staleness alarm (TACK-363): the check timer, plus the mail handler its
+# OnFailure= names, pulled in by the include below so this file states that
+# dependency rather than assuming another include supplied it. Included on the
+# owner guest and on one data guest, so losing either guest leaves an alarm
+# standing.
 
-- name: Deploy tack-alarm-mail script
-  ansible.builtin.copy:
-    src: "{{ repo_root }}/common/scripts/tack-alarm-mail.sh"
-    dest: /usr/local/sbin/tack-alarm-mail.sh
-    owner: root
-    group: root
-    mode: "0755"
-  register: tack_alarm_mail_script
-
-- name: Deploy tack-alarm-mail handler template
-  ansible.builtin.template:
-    src: "{{ repo_root }}/common/services/tack-alarm-mail@.service.j2"
-    dest: /etc/systemd/system/tack-alarm-mail@.service
-    owner: root
-    group: root
-    mode: "0644"
-  register: tack_alarm_mail_service
+- name: Install the tack-alarm-mail handler (staleness alarm)
+  ansible.builtin.include_tasks: tack-alarm-mail.yml
 
 - name: Deploy tack-backup-staleness service
   ansible.builtin.template:

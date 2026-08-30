@@ -40,7 +40,13 @@ if ! body="$(journalctl "${journal_scope[@]}" --no-pager --output=cat 2>&1)"; th
     body="tack-alarm-mail: could not read the journal for ${FAILED_UNIT}: ${body}"
 fi
 
-subject="[tack] ${FAILED_UNIT} failed on $(hostname -f)"
+# Naming the guest must never cost the mail. Under set -e an assignment takes
+# the exit status of its command substitution, so a guest whose short hostname
+# resolves to no fully qualified name would abort the handler here and swallow
+# the alarm entirely: the backup stale, the unit failed, and nobody told. Fall
+# back through the short name to a placeholder instead.
+host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown-host)"
+subject="[tack] ${FAILED_UNIT} failed on ${host}"
 
 printf 'To: %s\nSubject: %s\nContent-Type: text/plain; charset=utf-8\n\n%s\n' \
     "${RECIPIENT}" "${subject}" "${body}" | "${MSMTP}" -- "${RECIPIENT}"
