@@ -36,6 +36,21 @@ tack_audit_signing_key_path: /etc/tack/audit-signing.pem
 # production cutover flips it as its repoint step.
 tack_ledger_consumers_repointed: false
 
+# How long the driver spends on one ledger name before it moves to the next
+# one in a multi-host connection string. Stopping a data guest black-holes
+# its socket rather than refusing it, so with no bound the driver waits out
+# the kernel's TCP retry on the first name and never reaches a surviving
+# node; the app served 503 on /healthz for about thirty seconds after a
+# guest was stopped, against a ten-second bound (TACK-464).
+#
+# The bound applies per name, so losing one of three costs one timeout and
+# then a live connection. Whole seconds only: the driver reads this as an
+# integer count of seconds, and it consumes the key itself rather than
+# forwarding it to the server, which is what makes it safe against the
+# ledger's PostgreSQL 11 wire compatibility. Two seconds sits far above a
+# healthy same-network connect and far below the acceptance bound.
+tack_database_connect_timeout_seconds: 2
+
 # The ops sidecar runs on host networking, where the ledger node names do
 # not resolve. Repointed environments list the three data guests' pinned
 # addresses and the driver fails over across them, in keyword form because
@@ -45,7 +60,8 @@ tack_ops_database_url: >-
   {{ ('host=' + tack_ledger_node_addresses.yb1 + ',' + tack_ledger_node_addresses.yb2 + ','
       + tack_ledger_node_addresses.yb3 + ' port=5433 user=' + tack_yugabyte_user
       + ' password=' + tack_yugabyte_password + ' dbname=' + tack_yugabyte_db
-      + ' sslmode=disable')
+      + ' sslmode=disable connect_timeout='
+      + (tack_database_connect_timeout_seconds | string))
      if tack_ledger_consumers_repointed
      else ('postgres://' + tack_yugabyte_user + ':' + tack_yugabyte_password
            + '@[' + tack_store_host + ']:5433/' + tack_yugabyte_db + '?sslmode=disable') }}
