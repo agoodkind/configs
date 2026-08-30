@@ -23,8 +23,11 @@ var ErrSchemaClosed = errors.New("yangpub: schema is closed")
 // define is an error rather than a silently ignored key, and state nodes are
 // refused. Present validation checks the subtrees the file carries rather than
 // a whole datastore, so a mandatory leaf inside a present container is enforced
-// while an absent container is not. Together these are what yanglint runs as
-// `-t config`, which is what the deploy checks the same file with.
+// while an absent container is not. PRESENT is required, not a relaxation:
+// without it libyang validates every implemented module in the context, not
+// just the one the document carries. This is stricter than the deploy's
+// `yanglint -t config` check, which sets only the two NO_STATE flags and
+// ignores unknown nodes unless given `--strict`.
 const (
 	schemaParseOptions    = C.LYD_PARSE_STRICT | C.LYD_PARSE_NO_STATE
 	schemaValidateOptions = C.LYD_VALIDATE_PRESENT | C.LYD_VALIDATE_NO_STATE
