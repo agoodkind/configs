@@ -191,11 +191,9 @@ server rousette runs on drops a connection that carries no traffic for
 60 seconds, and rousette at its released version sends nothing to keep
 one open and offers no setting for the deadline. A recorder that sits
 through a quiet period therefore stops receiving without being told,
-and reconnecting is what closes that gap. Nothing is lost by doing so:
-the tree carries the current state, so a reconnected subscriber reads
-where it stands and resumes. Upstream sends a keep-alive every 55
-seconds on its development branch, which would remove the need, but no
-released version carries that work.
+and reconnecting is what closes that gap. Upstream sends a keep-alive
+every 55 seconds on its development branch, which would remove the
+need, but no released version carries that work.
 
 ## What must not change
 
