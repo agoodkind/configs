@@ -91,54 +91,54 @@ type IfMgrPolicyRulesSection struct {
 	Rule []IfMgrPolicyRuleSection `toml:"rule"`
 }
 
-// IfMgrWANEntry is one [ifmgr.wan.<name>] table: all per-WAN config, keyed by
-// WAN name. The map lives on IfMgrSection.WAN (toml:"wan") so it renders as
-// keyed sub-tables [ifmgr.wan.<name>], mirroring [ifmgr.iface.<name>]. Each WAN
-// has one home here: the interface plus the policy-routing slots wan.routes owns
-// (table_id, fw_mark, fw_mark_prio, from_prio, npt_prefix, v4_source). Modules
-// read the fields they need; npt uses only iface. The shared internal prefix and
-// edge addresses live on [ifmgr] itself (IfMgrSection.InternalPrefix,
-// OpnsenseEdgeV6, MwanbrEdgeV6) because a TOML table cannot hold both scalar keys
-// and a map of sub-tables.
+// IfMgrWANEntry is one provider's routing configuration, keyed by provider
+// name. It comes from network.json: the interface the provider rides plus the
+// policy-routing slots wan.routes owns. Modules read the fields they need; npt
+// uses only the name and interface. The shared internal prefix and edge
+// addresses live on IfMgrSection, because no single provider owns them.
 type IfMgrWANEntry struct {
-	Iface      string `toml:"iface"`
-	TableID    int    `toml:"table_id"`
-	FwMark     int    `toml:"fw_mark"`
-	FwMarkPrio int    `toml:"fw_mark_prio"`
-	FromPrio   int    `toml:"from_prio"`
-	NptPrefix  string `toml:"npt_prefix"`
-	V4Source   string `toml:"v4_source"`
+	Iface      string
+	TableID    int
+	FwMark     int
+	FwMarkPrio int
+	FromPrio   int
+	NptPrefix  string
+	V4Source   string
 }
 
-// IfMgrWANRoutesSection is the explicit TOML schema for
-// [ifmgr.modules.wan.routes]. The WAN list, shared prefixes, and per-WAN routing
-// data live in [ifmgr.wan.<name>] and on [ifmgr]; this section keeps only the
-// module-wide inputs that are not per-WAN.
+// IfMgrWANRoutesSection is the [ifmgr.modules.wan.routes] table. The health
+// state file is a filesystem path and stays in TOML; the internal link and
+// network are network values and come from network.json.
 type IfMgrWANRoutesSection struct {
-	InternalIface   string `toml:"internal_iface"`
-	InternalNetV4   string `toml:"internal_net_v4"`
+	InternalIface   string `toml:"-"`
+	InternalNetV4   string `toml:"-"`
 	HealthStateFile string `toml:"health_state_file"`
 }
 
-// IfMgrHealthSection keeps shared health settings and keyed per-WAN policy.
+// IfMgrHealthSection keeps the module's two state-file paths, which stay in
+// TOML, beside the probe timeout and the per-provider policy, which come from
+// network.json. The timeout is milliseconds because that is the unit the model
+// carries it in, and converting it back into a duration string would be the
+// value conversion this format change removes.
 type IfMgrHealthSection struct {
-	StateFile        string                           `toml:"state_file"`
-	PersistStateFile string                           `toml:"persist_state_file"`
-	Timeout          string                           `toml:"timeout"`
-	WAN              map[string]IfMgrHealthWANSection `toml:"wan"`
+	StateFile          string                           `toml:"state_file"`
+	PersistStateFile   string                           `toml:"persist_state_file"`
+	ProbeTimeoutMillis int                              `toml:"-"`
+	WAN                map[string]IfMgrHealthWANSection `toml:"-"`
 }
 
-// IfMgrHealthWANSection is one [ifmgr.modules.health.wan.<name>] table.
+// IfMgrHealthWANSection is one provider's probe policy, read from network.json.
+// The interval is seconds because that is the unit the model carries it in.
 type IfMgrHealthWANSection struct {
-	Enabled           bool     `toml:"enabled"`
-	PingCount         int      `toml:"ping_count"`
-	SuccessThreshold  int      `toml:"success_threshold"`
-	CheckInterval     string   `toml:"check_interval"`
-	FailureThreshold  int      `toml:"failure_threshold"`
-	RecoveryThreshold int      `toml:"recovery_threshold"`
-	TargetsV4         []string `toml:"targets_v4"`
-	TargetsV6         []string `toml:"targets_v6"`
-	HTTPURLs          []string `toml:"http_urls"`
+	Enabled              bool
+	PingCount            int
+	SuccessThreshold     int
+	CheckIntervalSeconds int
+	FailureThreshold     int
+	RecoveryThreshold    int
+	TargetsV4            []string
+	TargetsV6            []string
+	HTTPURLs             []string
 }
 
 // IfMgrHostIPv6PolicySection is the explicit TOML schema for

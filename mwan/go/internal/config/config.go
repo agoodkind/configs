@@ -408,18 +408,22 @@ type NotifySection struct {
 // Each role is a list of modules (see internal/ifmgr/roles.go), and the
 // module config schema is explicitly modeled in IfMgrModulesSection.
 type IfMgrSection struct {
-	Role              string                       `toml:"role"`
-	ReconcileInterval string                       `toml:"reconcile_interval"`
-	LogFile           string                       `toml:"log_file"`
-	JSONLogFile       string                       `toml:"json_log_file"`
-	Debug             bool                         `toml:"debug"`
-	InternalPrefix    string                       `toml:"internal_prefix"`
-	OpnsenseEdgeV6    string                       `toml:"opnsense_edge_v6"`
-	MwanbrEdgeV6      string                       `toml:"mwanbr_edge_v6"`
-	Iface             map[string]IfMgrIfaceSection `toml:"iface"`
-	Modules           IfMgrModulesSection          `toml:"modules"`
-	Alerts            IfMgrAlertsSection           `toml:"alerts"`
-	WAN               map[string]IfMgrWANEntry     `toml:"wan"`
+	Role              string `toml:"role"`
+	ReconcileInterval string `toml:"reconcile_interval"`
+	LogFile           string `toml:"log_file"`
+	JSONLogFile       string `toml:"json_log_file"`
+	Debug             bool   `toml:"debug"`
+	// These three translation values and the WAN map below come from
+	// /etc/mwan/network.json. The skip tag is what stops the decoder reading a
+	// stale key out of a config.toml that still carries one, so exactly one
+	// file owns them at every moment.
+	InternalPrefix string                       `toml:"-"`
+	OpnsenseEdgeV6 string                       `toml:"-"`
+	MwanbrEdgeV6   string                       `toml:"-"`
+	Iface          map[string]IfMgrIfaceSection `toml:"iface"`
+	Modules        IfMgrModulesSection          `toml:"modules"`
+	Alerts         IfMgrAlertsSection           `toml:"alerts"`
+	WAN            map[string]IfMgrWANEntry     `toml:"-"`
 }
 
 // IfMgrAlertsSection controls the per-alert repeat cadence for the

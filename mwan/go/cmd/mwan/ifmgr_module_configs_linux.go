@@ -204,15 +204,9 @@ func buildHealthConfig(
 	cfg.StateFile = section.StateFile
 	cfg.PersistStateFile = section.PersistStateFile
 
+	cfg.Timeout = time.Duration(section.ProbeTimeoutMillis) * time.Millisecond
+
 	var err error
-	cfg.Timeout, err = parseDurationSetting(
-		section.Timeout,
-		0,
-		"ifmgr.modules.health.timeout",
-	)
-	if err != nil {
-		return health.Config{}, err
-	}
 	for _, wan := range shared.WANs {
 		wanSection, ok := section.WAN[wan.Name]
 		if !ok || !wanSection.Enabled {
@@ -254,14 +248,7 @@ func buildHealthConfig(
 		if err != nil {
 			return health.Config{}, err
 		}
-		healthWAN.CheckInterval, err = parseDurationSetting(
-			wanSection.CheckInterval,
-			0,
-			fieldPrefix+".check_interval",
-		)
-		if err != nil {
-			return health.Config{}, err
-		}
+		healthWAN.CheckInterval = time.Duration(wanSection.CheckIntervalSeconds) * time.Second
 		if healthWAN.CheckInterval != 0 &&
 			(cfg.Interval == 0 || healthWAN.CheckInterval < cfg.Interval) {
 			cfg.Interval = healthWAN.CheckInterval
