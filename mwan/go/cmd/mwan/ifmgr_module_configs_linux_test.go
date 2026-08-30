@@ -761,3 +761,98 @@ ping_count = 99
 		t.Fatal("wan role must build an npt config from the two-file load")
 	}
 }
+
+// TestGatewayLoadWithoutNetworkTOML is the end state: the gateway's config.toml
+// carries no network section at all, and the wan role still builds every module
+// config from the network file plus the two state-file paths TOML keeps.
+func TestGatewayLoadWithoutNetworkTOML(t *testing.T) {
+	t.Parallel()
+
+	const configTOML = `
+[ifmgr]
+role = "wan"
+
+[ifmgr.iface.enmbrains0]
+name = "enmbrains0"
+
+[ifmgr.modules.wan.routes]
+health_state_file = "/run/mwan-health.state"
+
+[ifmgr.modules.health]
+state_file = "/run/mwan-health.state"
+persist_state_file = "/var/lib/mwan/health-state"
+`
+	var cfg config.Config
+	if err := toml.Unmarshal([]byte(configTOML), &cfg); err != nil {
+		t.Fatalf("toml.Unmarshal: %v", err)
+	}
+	network := networkjson.Config{
+		InternalPrefix:     "3d06:bad:b01:210::/60",
+		OpnsenseEdgeV6:     "3d06:bad:b01:201::2",
+		MwanbrEdgeV6:       "3d06:bad:b01:201::3",
+		InternalIface:      "enmwanbr0",
+		InternalNetV4:      "192.0.2.0/29",
+		ProbeTimeoutMillis: 2000,
+		WAN: map[string]config.IfMgrWANEntry{
+			"att": {
+				Iface:      "enatt0",
+				TableID:    100,
+				FwMark:     1,
+				FwMarkPrio: 100,
+				FromPrio:   55,
+				NptPrefix:  "3d06:bad:b01:2300::/60",
+				V4Source:   "",
+			},
+		},
+		Health: map[string]config.IfMgrHealthWANSection{
+			"att": {
+				Enabled:              true,
+				PingCount:            3,
+				SuccessThreshold:     2,
+				CheckIntervalSeconds: 10,
+				FailureThreshold:     2,
+				RecoveryThreshold:    2,
+				TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
+				TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+				HTTPURLs:             []string{"https://ifconfig.co/ip"},
+			},
+		},
+	}
+	network.Apply(&cfg)
+
+	set, err := buildIfMgrModuleConfigs(cfg.IfMgr, "wan")
+	if err != nil {
+		t.Fatalf("buildIfMgrModuleConfigs(wan): %v", err)
+	}
+	nptConfig, ok := set["npt"].(npt.Config)
+	if !ok {
+		t.Fatalf("npt config missing or wrong type: %T", set["npt"])
+	}
+	if nptConfig.InternalPrefix != "3d06:bad:b01:210::/60" {
+		t.Fatalf("npt internal prefix = %q, want the network file's value",
+			nptConfig.InternalPrefix)
+	}
+	if len(nptConfig.WANs) != 1 || nptConfig.WANs[0].Iface != "enatt0" {
+		t.Fatalf("npt WAN list did not resolve: %#v", nptConfig.WANs)
+	}
+	wr, ok := set["wan.routes"].(wanroutes.Config)
+	if !ok {
+		t.Fatalf("wan.routes config missing or wrong type: %T", set["wan.routes"])
+	}
+	if wr.InternalNetV4 != "192.0.2.0/29" {
+		t.Fatalf("wan.routes internal net = %q, want the network file's value", wr.InternalNetV4)
+	}
+	if wr.HealthStateFile != "/run/mwan-health.state" {
+		t.Fatalf("wan.routes health state file = %q, want TOML's value", wr.HealthStateFile)
+	}
+	hc, ok := set["health"].(health.Config)
+	if !ok {
+		t.Fatalf("health config missing or wrong type: %T", set["health"])
+	}
+	if hc.PersistStateFile != "/var/lib/mwan/health-state" {
+		t.Fatalf("health persist state file = %q, want TOML's value", hc.PersistStateFile)
+	}
+	if len(hc.WANs) != 1 || hc.WANs[0].CheckInterval != 10*time.Second {
+		t.Fatalf("health WAN list did not resolve: %#v", hc.WANs)
+	}
+}
