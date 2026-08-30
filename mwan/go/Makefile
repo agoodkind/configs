@@ -120,6 +120,13 @@ release: export CGO_LDFLAGS := -static
 
 .DEFAULT_GOAL := check
 
+# The collector tests execute ansible/playbooks/files/collect-deploy-verdict.sh,
+# which sits outside this module, and Go's test cache only re-checks files
+# inside it. Without this a broken collector script reports a cached PASS, and
+# those tests are the script's only guard. Reproduced: reverting the script to
+# its pre-fix version still printed "ok ... (cached)".
+test: export GOFLAGS := -count=1$(if $(strip $(GOFLAGS)), $(GOFLAGS))
+
 # ---------------------------------------------------------------------------
 # Protobuf
 # ---------------------------------------------------------------------------
@@ -291,14 +298,21 @@ endif
 # gateway's library generation and glibc. Nothing deploys its output.
 WANCONFIG_BUILDER_IMAGE := mwan-wanconfig-builder
 
-.PHONY: build-wanconfig
-build-wanconfig:
+# The image is built here and published nowhere, so `docker run` cannot pull
+# it: every target that runs the image must build it first or fail on a clean
+# checkout. Layer cache makes a repeat build a few seconds, and a changed
+# Dockerfile still rebuilds.
+.PHONY: wanconfig-builder-image
+wanconfig-builder-image:
 	docker build --platform linux/amd64 \
 		--build-arg LIBYANG_VERSION=$(WANCONFIG_LIBYANG_VERSION) \
 		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
 		--build-arg "LIBYANG_CMAKE_FLAGS=$(WANCONFIG_LIBYANG_CMAKE_FLAGS)" \
 		--build-arg "SYSREPO_CMAKE_FLAGS=$(WANCONFIG_SYSREPO_CMAKE_FLAGS)" \
 		-t $(WANCONFIG_BUILDER_IMAGE) ../wanconfig/builder
+
+.PHONY: build-wanconfig
+build-wanconfig: wanconfig-builder-image
 	@mkdir -p $(LOCAL_BIN)
 	docker run --rm --platform linux/amd64 \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
@@ -306,6 +320,25 @@ build-wanconfig:
 		-e GOWORK=off \
 		$(WANCONFIG_BUILDER_IMAGE) \
 		go build $(GO_BUILD_EXTRA_FLAGS) -ldflags='$(GO_BUILD_LDFLAGS)' -o $(LOCAL_BIN)/$(BINARY)-wanconfig $(CMD)
+
+# On macOS the host test run is not the real one: darwin cannot build the
+# cgo sysrepo binding, so every package that exercises the publishing
+# binding compiles out and `go test ./...` passes while proving nothing
+# about them. Route the whole suite through the same builder image the
+# gateway binary uses, so a mac run and a CI run exercise identical code.
+# The recipe below replaces go.mk's test target on darwin only, which is
+# why make prints an "overriding commands" warning here.
+ifeq ($(shell uname -s),Darwin)
+.PHONY: test
+test: wanconfig-builder-image
+	@echo "darwin: running the suite in $(WANCONFIG_BUILDER_IMAGE), not on the host"
+	docker run --rm --platform linux/amd64 \
+		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
+		-v mwan-wanconfig-gomod:/go/pkg/mod \
+		-e GOWORK=off \
+		$(WANCONFIG_BUILDER_IMAGE) \
+		go test -count=1 ./...
+endif
 
 # ---------------------------------------------------------------------------
 # Wanconfig management stack packages (MWAN-431)
