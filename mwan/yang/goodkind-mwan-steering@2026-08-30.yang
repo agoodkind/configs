@@ -42,8 +42,25 @@ module goodkind-mwan-steering {
      covers. A member is an interface with steering properties, not a
      parallel object, so this module augments the interface list and
      adds the group's hash mode beside it. State nodes carry what is
-     true right now, served from the running daemon.";
+     true right now, served from the running daemon.
 
+     The module also carries the gateway's network configuration: the
+     provider inventory each member rides, the health probe that
+     decides its verdict, the prefix-translation inputs, and the
+     internal link the members route toward.";
+
+  revision 2026-08-30 {
+    description
+      "Carry the gateway's network configuration, so the model's own
+       JSON encoding holds what the daemon reads about its providers.
+       Adds the per-member provider entry beside the steering
+       container, with the interface's routing table, firewall mark,
+       rule priorities, translation prefix, IPv4 source pin, and the
+       health probe that decides the member's verdict; and adds the
+       group-wide translation inputs, the internal link and network,
+       and the probe timeout. Every addition is a new node: no node
+       defined by an earlier revision changes name, type, or shape.";
+  }
   revision 2026-08-29 {
     description
       "Add the daemon container carrying the settings no published
@@ -86,6 +103,17 @@ module goodkind-mwan-steering {
     }
     description
       "A member's combined health verdict.";
+  }
+
+  typedef rule-source {
+    type union {
+      type inet:ip-address;
+      type inet:ip-prefix;
+    }
+    description
+      "A source selector for a routing policy rule. The kernel rule
+       accepts a single address or a prefix, so both forms are
+       valid.";
   }
 
   augment "/if:interfaces/if:interface" {
@@ -191,6 +219,142 @@ module goodkind-mwan-steering {
     }
   }
 
+  augment "/if:interfaces/if:interface" {
+    description
+      "The provider this interface carries, and how the gateway routes
+       and probes it.";
+    container wan {
+      presence
+        "This interface carries a provider the gateway steers.";
+      description
+        "The provider entry for this link: the name the gateway knows
+         the provider by, the routing slots that steer traffic onto
+         it, the prefix it translates onto, and the probe that decides
+         whether it is usable.";
+      leaf name {
+        type string;
+        mandatory true;
+        description
+          "The provider's name. Every part of the daemon keys on it:
+           the translation instance takes it, the health verdict is
+           recorded under it, and the routes and rules for this link
+           are grouped by it. It is required, because a provider with
+           no name cannot be joined to its verdict.";
+      }
+      leaf table-id {
+        type uint32 {
+          range "1..max";
+        }
+        description
+          "The routing table that holds this provider's default
+           route.";
+      }
+      leaf fw-mark {
+        type uint32 {
+          range "1..max";
+        }
+        description
+          "The firewall mark that selects this provider's routing
+           table. Traffic the firewall marks with it leaves over this
+           link.";
+      }
+      leaf fw-mark-prio {
+        type uint32;
+        description
+          "The priority of the routing policy rule that matches this
+           provider's firewall mark.";
+      }
+      leaf from-prio {
+        type uint32;
+        description
+          "The priority of the routing policy rule that matches
+           traffic the gateway sources from this provider's own
+           address or translated prefix.";
+      }
+      leaf npt-prefix {
+        type inet:ipv6-prefix;
+        description
+          "The IPv6 prefix this provider delegates, which the gateway
+           translates the internal prefix onto. A provider that
+           delegates nothing carries no prefix and gets no
+           translation.";
+      }
+      leaf v4-source {
+        type rule-source;
+        description
+          "This provider's static IPv4 link address. When present,
+           traffic the gateway sources from it is pinned to this
+           provider's routing table, which is the IPv4 counterpart of
+           the translated prefix's IPv6 source rule. Only a provider
+           on a static link carries one.";
+      }
+      container health {
+        presence
+          "The gateway holds a health probe for this provider.";
+        description
+          "The probe that decides this provider's verdict. A provider
+           with no probe holds no verdict and the gateway does not
+           steer on its state.";
+        leaf enabled {
+          type boolean;
+          description
+            "Whether the gateway runs the probe. A probe that is
+             present but not enabled is kept and not run, so the
+             provider holds no verdict.";
+        }
+        leaf ping-count {
+          type uint8;
+          description
+            "How many echo requests each attempt sends to a target.";
+        }
+        leaf success-threshold {
+          type uint8;
+          description
+            "How many of a cycle's targets must answer in an address
+             family for that family to pass. It cannot exceed the
+             number of targets configured for either family.";
+        }
+        leaf failure-threshold {
+          type uint8;
+          description
+            "How many consecutive failed cycles turn a healthy
+             provider unhealthy.";
+        }
+        leaf recovery-threshold {
+          type uint8;
+          description
+            "How many consecutive passing cycles turn an unhealthy
+             provider healthy again.";
+        }
+        leaf check-interval {
+          type uint32;
+          units "seconds";
+          description
+            "How long the gateway waits between probe cycles for this
+             provider. The shortest interval any provider asks for
+             sets the cadence the probe loop runs at.";
+        }
+        leaf-list targets-v4 {
+          type inet:ipv4-address;
+          description
+            "The IPv4 addresses the probe pings.";
+        }
+        leaf-list targets-v6 {
+          type inet:ipv6-address;
+          description
+            "The IPv6 addresses the probe pings.";
+        }
+        leaf-list http-urls {
+          type inet:uri;
+          description
+            "The URLs the probe fetches. They are an alternative leg
+             of the verdict, so a provider that answers pings or
+             serves a fetch passes.";
+        }
+      }
+    }
+  }
+
   augment "/if:interfaces/if:interface/ip:ipv6" {
     description
       "The delegation the provider on this interface currently holds.";
@@ -241,6 +405,62 @@ module goodkind-mwan-steering {
         description
           "How a new connection is assigned to a member of the active
            tier.";
+      }
+      container translation {
+        description
+          "The prefix translation the gateway applies on the way out.
+           One internal prefix is translated onto whichever provider
+           carries the traffic, so the internal network keeps one set
+           of addresses across a provider change.";
+        leaf internal-prefix {
+          type inet:ipv6-prefix;
+          description
+            "The IPv6 prefix the internal network holds. It is the
+             internal half of every member's translation.";
+        }
+        leaf opnsense-edge-v6 {
+          type inet:ipv6-address;
+          description
+            "The router's address on the internal link. Routes toward
+             the internal network are installed via it, so a member's
+             routing table reaches the router.";
+        }
+        leaf mwanbr-edge-v6 {
+          type inet:ipv6-address;
+          description
+            "The gateway's own address on the internal link.";
+        }
+      }
+      container routes {
+        description
+          "The internal side every member's routing table must
+           reach.";
+        leaf internal-iface {
+          type string;
+          description
+            "The link that faces the internal network.";
+        }
+        leaf internal-net-v4 {
+          type inet:ipv4-prefix;
+          description
+            "The internal IPv4 network, routed into every member's
+             table so the internal side stays reachable whichever
+             member carries traffic.";
+        }
+      }
+      container health {
+        description
+          "Probe settings shared by every member. What each member is
+           probed with sits on that member.";
+        leaf probe-timeout {
+          type uint32;
+          units "milliseconds";
+          description
+            "How long one probe attempt may take before it counts as
+             failed. The unit is milliseconds because a probe timeout
+             is the one setting here an operator tunes below a
+             second.";
+        }
       }
       container state {
         config false;

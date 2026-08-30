@@ -1,0 +1,55 @@
+{
+  "ietf-interfaces:interfaces": {
+    "interface": [
+      {
+        "name": "enwebpass0",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:wan": {
+          "name": "webpass",
+          "table-id": 200,
+          "fw-mark": 2,
+          "fw-mark-prio": 200,
+          "from-prio": 56,
+          "npt-prefix": "2001:db8:beef:200::/60",
+          "v4-source": "203.0.113.2",
+          "health": {
+            "enabled": true,
+            "ping-count": 3,
+            "success-threshold": 2,
+            "failure-threshold": 2,
+            "recovery-threshold": 2,
+            "check-interval": 10,
+            "targets-v4": ["192.0.2.10", "192.0.2.11"],
+            "targets-v6": ["2001:db8:53::1", "2001:db8:53::2"],
+            "http-urls": ["https://example.test/ip"]
+          }
+        }
+      },
+      {
+        "name": "enatt0",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:wan": {
+          "name": "att",
+          "table-id": 100,
+          "fw-mark": 1,
+          "fw-mark-prio": 100,
+          "from-prio": 55,
+          "npt-prefix": "2001:db8:beef:100::/60"
+        }
+      },
+      { "name": "enmwanbr0", "type": "iana-if-type:other" }
+    ],
+    "goodkind-mwan-steering:steering-group": {
+      "translation": {
+        "internal-prefix": "2001:db8:b01::/60",
+        "opnsense-edge-v6": "2001:db8:b01:fe::2",
+        "mwanbr-edge-v6": "2001:db8:b01:fe::3"
+      },
+      "routes": {
+        "internal-iface": "enmwanbr0",
+        "internal-net-v4": "192.0.2.0/29"
+      },
+      "health": { "probe-timeout": 2000 }
+    }
+  }
+}
