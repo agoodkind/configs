@@ -222,6 +222,11 @@ mwan_email_subject_prefix: "[MWAN-suburban]"
 mwan_email_bind_iface: ""
 mwan_email_cooldown: "5m"
 
+# How long one health probe attempt may take before it counts as failed.
+# Milliseconds, because a probe timeout is the one span here an operator tunes
+# below a second. Rendered into network.json as steering-group/health/probe-timeout.
+mwan_health_probe_timeout_ms: 2000
+
 # Health checks (same structure as production)
 mwan_health_checks:
   att:

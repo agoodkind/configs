@@ -252,6 +252,17 @@
         mode: "0600"
       notify: Restart mwan-ifmgr@wan
 
+    # The gateway's network tree in the model's own JSON encoding. Rendered only
+    # where the wan role runs, because it carries that role's sections and no
+    # other. The mode matches config.toml beside it; the file carries no secret.
+    - name: Deploy MWAN network configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/network.json.j2"
+        dest: /etc/mwan/network.json
+        mode: "0600"
+      when: mwan_ifmgr_wan_enabled | bool
+      notify: Restart mwan-ifmgr@wan
+
     - name: Discover MWAN VM runtime network (MACs + NIC presence)
       ansible.builtin.include_tasks: tasks/mwan-vm/discover-runtime-network.yml
 

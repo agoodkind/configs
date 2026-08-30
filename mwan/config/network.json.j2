@@ -1,0 +1,86 @@
+{#
+  The gateway's network tree in the model's own JSON encoding, deployed to
+  /etc/mwan/network.json and loaded by mwan-ifmgr@wan. It renders from the same
+  group_vars the TOML template reads, and every value crosses unchanged: the
+  model's time spans are integers that name their unit, and the inventory
+  already holds integers.
+
+  Each provider hangs off the interface that carries it. iana-if-type:other is
+  the type the served tree already publishes for these links, so the mandatory
+  ietf-interfaces type leaf carries no invented value.
+
+  Block tags sit at column zero on purpose. Ansible renders with trim_blocks on
+  and lstrip_blocks off, so an indented tag would emit its leading spaces into
+  the document.
+#}
+{% set providers = [
+  {
+    "name": "att",
+    "iface": mwan_att_iface ~ ("." ~ mwan_att_vlan_id if mwan_att_vlan_id else ""),
+    "npt_prefix": mwan_npt_att_prefix,
+    "v4_source": ""
+  },
+  {
+    "name": "webpass",
+    "iface": mwan_webpass_iface,
+    "npt_prefix": mwan_npt_webpass_prefix,
+    "v4_source": mwan_webpass_ipv4_addr
+  },
+  {
+    "name": "monkeybrains",
+    "iface": mwan_monkeybrains_iface,
+    "npt_prefix": mwan_npt_monkeybrains_prefix,
+    "v4_source": ""
+  }
+] %}
+{% set interfaces = [] %}
+{% for provider in providers %}
+{% set wan = {
+  "name": provider.name,
+  "table-id": mwan_rt_tables[provider.name],
+  "fw-mark": mwan_ifmgr_wan_fw_marks[provider.name],
+  "fw-mark-prio": mwan_ifmgr_wan_fw_mark_prios[provider.name],
+  "from-prio": mwan_ifmgr_wan_from_prios[provider.name],
+  "npt-prefix": provider.npt_prefix
+} %}
+{% if provider.v4_source %}
+{% set wan = wan | combine({"v4-source": provider.v4_source}) %}
+{% endif %}
+{% if provider.name in mwan_health_checks %}
+{% set check = mwan_health_checks[provider.name] %}
+{% set wan = wan | combine({"health": {
+  "enabled": check.enabled,
+  "ping-count": check.ping_count,
+  "success-threshold": check.success_threshold,
+  "failure-threshold": check.failure_threshold,
+  "recovery-threshold": check.recovery_threshold,
+  "check-interval": check.check_interval,
+  "targets-v4": check.targets_v4,
+  "targets-v6": check.targets_v6,
+  "http-urls": check.http_targets
+}}) %}
+{% endif %}
+{% set _ = interfaces.append({
+  "name": provider.iface,
+  "type": "iana-if-type:other",
+  "goodkind-mwan-steering:wan": wan
+}) %}
+{% endfor %}
+{% set _ = interfaces.append({"name": mwan_internal_iface, "type": "iana-if-type:other"}) %}
+{{ {
+  "ietf-interfaces:interfaces": {
+    "interface": interfaces,
+    "goodkind-mwan-steering:steering-group": {
+      "translation": {
+        "internal-prefix": mwan_internal_prefix,
+        "opnsense-edge-v6": mwan_opnsense_edge_ipv6,
+        "mwanbr-edge-v6": mwan_mwanbr_edge_ipv6
+      },
+      "routes": {
+        "internal-iface": mwan_internal_iface,
+        "internal-net-v4": mwan_internal_net_v4
+      },
+      "health": {"probe-timeout": mwan_health_probe_timeout_ms}
+    }
+  }
+} | to_nice_json }}
