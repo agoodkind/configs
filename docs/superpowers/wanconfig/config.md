@@ -60,12 +60,10 @@ loader stops reading a network section in the same change the JSON
 loader starts owning it, so no state exists where both files feed one
 setting.
 
-The per-provider catalogue lives in the shared inventory group, keyed by
-environment, because the rollback watchdog's probe list is rendered on
-the hypervisor and that variable group cannot read the gateway's. A
-catalogue in the gateway's own group would leave that list
-hand-maintained and free to drift, which is how it came to omit a
-provider.
+The provider values stay in the two gateway groups the TOML template
+already reads, so the JSON template and the TOML template render from one
+set of variables. Moving the catalogue into a group the hypervisor can
+read is separate work that belongs with the provider-set epic.
 
 The environment file stays. The pinned-destination refresher and the
 whole 802.1X chain read it, and it hardcodes both the variable names and
@@ -115,5 +113,6 @@ same host.
 
 Schema validation at deploy time and at load time must use the same
 schema files. Two copies of a schema is the same duplication failure in
-a new place. The deploy validates with the schema staged from the
-release, which is the same artifact the gateway installs.
+a new place. The deploy validates with the model files in the repository
+checkout, which are the same files it copies onto the gateway and the
+same files the daemon validates with at startup.

@@ -245,71 +245,12 @@ to:
 Run: `cd "$(git rev-parse --show-toplevel)/ansible" && rake syntax:all`
 Expected: PASS, exit 0.
 
-- [ ] **Step 9: Amend the epic spec page**
-
-In `docs/superpowers/wanconfig/config.md`, replace this sentence in the Scope
-section:
-
-```
-sections, the BGP speaker, the failover section, the publish gate, the
-host identity leaves, the interface manager's plumbing scalars, the
-standalone policy rules, and every credential.
-```
-
-with:
-
-```
-sections, the BGP speaker, the failover section, the publish gate, the
-host identity leaves, the interface manager's plumbing scalars, the
-standalone policy rules, which are an out-of-band and host role module,
-and every credential.
-```
-
-Replace this paragraph in the "What changes" section:
-
-```
-The per-provider catalogue lives in the shared inventory group, keyed by
-environment, because the rollback watchdog's probe list is rendered on
-the hypervisor and that variable group cannot read the gateway's. A
-catalogue in the gateway's own group would leave that list
-hand-maintained and free to drift, which is how it came to omit a
-provider.
-```
-
-with:
-
-```
-The provider values stay in the two gateway groups the TOML template
-already reads, so the JSON template and the TOML template render from one
-set of variables. Moving the catalogue into a group the hypervisor can
-read is separate work that belongs with the provider-set epic.
-```
-
-Replace the final paragraph of the "Failure modes" section:
-
-```
-Schema validation at deploy time and at load time must use the same
-schema files. Two copies of a schema is the same duplication failure in
-a new place. The deploy validates with the schema staged from the
-release, which is the same artifact the gateway installs.
-```
-
-with:
-
-```
-Schema validation at deploy time and at load time must use the same
-schema files. Two copies of a schema is the same duplication failure in
-a new place. The deploy validates with the model files in the repository
-checkout, which are the same files it copies onto the gateway and the
-same files the daemon validates with at startup.
-```
-
-- [ ] **Step 10: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add mwan/yang/goodkind-mwan-steering@2026-08-30.yang mwan/yang/instances/network-min.json mwan/go/Makefile ansible/playbooks/deploy-wanconfig-stack.yml docs/superpowers/wanconfig/config.md
-git commit -S -m "Add the gateway network configuration nodes in goodkind-mwan-steering revision 2026-08-30" -m "Carry the per-provider wan container beside steering with its routing slots, translation prefix, source pin, and health probe, and the group-wide translation, routes, and probe-timeout leaves; add a yanglint instance gate over mwan/yang/instances; point deploy-wanconfig-stack.yml at the new revision; and correct the config page's catalogue and schema-staging wording." -m "Co-authored-by: Claude <noreply@anthropic.com>"
+git add mwan/yang/goodkind-mwan-steering@2026-08-30.yang mwan/yang/instances/network-min.json mwan/go/Makefile ansible/playbooks/deploy-wanconfig-stack.yml
+git commit -S -m "Add the gateway network configuration nodes in goodkind-mwan-steering revision 2026-08-30" -m "Carry the per-provider wan container beside steering with its routing slots, translation prefix, source pin, and health probe, and the group-wide translation, routes, and probe-timeout leaves; add a yanglint instance gate over mwan/yang/instances; and point deploy-wanconfig-stack.yml at the new revision." -m "Co-authored-by: Claude <noreply@anthropic.com>"
 ```
 
 ---
@@ -1767,14 +1708,16 @@ task from Task 2 becomes three: render locally, validate, copy. The copied file
 is the validated file, so nothing renders twice and no unvalidated bytes reach
 the gateway.
 
-The brief called for the schema files staged from the release. They are not
-staged there. The release stages the binaries under `mwan_release_dir` and the
-wanconfig stack bundle under `wanconfig_stack_dir`, while the model files are
-copied to the gateway from the repository checkout by
-`ansible/playbooks/deploy-wanconfig-stack.yml:122-136`. The controller therefore
-validates with the repository's model files, which are the same files that play
-installs on the gateway and the same files the daemon validates with at load. One
-schema, two checkpoints, zero copies.
+The spec's Failure modes section says the deploy validates with the schema staged
+from the release. Nothing stages a schema there. The release stages the binaries
+under `mwan_release_dir` and the wanconfig stack bundle under
+`wanconfig_stack_dir`, while the model files are copied to the gateway from the
+repository checkout by `ansible/playbooks/deploy-wanconfig-stack.yml:122-136`. The
+controller therefore validates with the repository's model files, which are the
+same files that play installs on the gateway and the same files the daemon
+validates with at load. That satisfies the constraint the spec states, one schema
+and two checkpoints with zero copies; only the spec's account of where the files
+come from is stale.
 
 The steering model is found by glob rather than named, so a revision bump has one
 home in `mwan/yang/` and needs no matching edit here.
@@ -2348,8 +2291,8 @@ wanconfig ledger naming what shipped and what remains.
 ## Self-review
 
 **Spec coverage.** Scope: Tasks 2, 3, and 5 together put exactly the network tree
-in the file and leave everything else in TOML, and Task 1's config.md amendment
-records it. The schema: Task 1. The renderer, MWAN-347: Task 2. The loader,
+in the file and leave everything else in TOML. The schema: Task 1. The renderer,
+MWAN-347: Task 2. The loader,
 MWAN-348: Task 3. Deploy-time validation, MWAN-349: Task 4. Cutover and proof:
 Task 6, with the three-deploy testbed order, the traffic matrix, the breakage
 probe, and the production sequence under approval gates. Error handling: Task 4
@@ -2365,9 +2308,18 @@ by Task 4 and by hand in Task 6 step 5.
 
 **Placeholders.** None. Every code step carries the code, every command step
 carries the command and its expected result, and the two places where evidence
-contradicted the brief are stated with their file and line rather than deferred:
-the release does not stage the model files, and the TOML template has no provider
-loop to mirror.
+contradicts the source documents are stated with their file and line rather than
+deferred: the release does not stage the model files, and the TOML template has
+no provider loop to mirror.
+
+**Two stale statements stay in the spec.** This plan edits no documentation, so
+the spec keeps both. Its "What changes" section says the per-provider catalogue
+lives in a shared inventory group keyed by environment; the settled design leaves
+the provider values in the two gateway groups, which is what Task 2 renders from.
+Its "Failure modes" section says the deploy validates with the schema staged from
+the release; Task 4 explains where the model files actually come from. Neither
+sentence changes what any task does, and correcting them is a documentation
+change someone should make separately.
 
 **Type and name consistency.** `networkjson.Config` fields are spelled the same
 in Task 3's loader, Task 3's round-trip test, and Task 5's end-state test.
