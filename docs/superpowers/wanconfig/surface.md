@@ -75,7 +75,12 @@ the same change that writes the current values, so a reader never sees the
 tree empty or half-replaced, and nothing from a retired configuration
 survives a restart.
 
-Only values the daemon holds are published. Each steering member appears as
+Only values the daemon holds are published. The daemon settings no
+published model covers publish under the local module's daemon container:
+the rollback watchdog's thresholds and probe targets, the out-of-band
+access policy, and the tunnel tap, each only when the daemon's loaded
+configuration carries that section, so the tree never invents values
+another host owns. Each steering member appears as
 an interface entry named by its link, marked as a member with its tier and
 the name of the probe policy that decides its health. Its address-family
 containers are present and enabled, because the daemon steers and probes
@@ -139,11 +144,11 @@ What each acceptance item reads, and where the value comes from:
   existing local RPC; a dead agent yields an explicit stale marker, never
   a hang, because the cache refresh is bounded and runs outside the
   callback.
-- **Intended firewall ruleset.** The model carries one opaque leaf for
-  the ruleset the daemon would program, rendered in its own text form;
-  it is served once the daemon gains a render hook for it, with the
-  remaining modules. Modeling firewall rules structurally is its own
-  published-model project and is not this work.
+- **Intended firewall ruleset.** One opaque leaf carries the rules the
+  daemon intends, rendered as text by the translation module from each
+  reconcile's desired rule set, in the same wording a live listing
+  renders, so intent and reality read alike. Modeling firewall rules
+  structurally is its own published-model project and is not this work.
 
 Values the daemon does not hold are not served, and nothing is
 reconstructed from files or the kernel at read time beyond the

@@ -59,6 +59,7 @@ func TestInterfacesLiveItems_ServesTheSnapshot(t *testing.T) {
 		ReadAt:  time.Now(),
 		Reached: true,
 	})
+	store.SetIntendedRuleset("chain prerouting:\nchain postrouting:\n")
 
 	items := interfacesLiveItems(store.Snapshot(), liveTestGateway())
 
@@ -73,6 +74,7 @@ func TestInterfacesLiveItems_ServesTheSnapshot(t *testing.T) {
 		attBase + "/carrying":                         "true",
 		"/ietf-interfaces:interfaces/interface[name='enatt0']/ietf-ip:ipv6/goodkind-mwan-steering:delegated-prefix": "2001:db8:a::/60",
 		"/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group/state/active-tier":                       "0",
+		"/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group/state/intended-ruleset":                  "chain prerouting:\nchain postrouting:\n",
 		peerBase + "/established": "true",
 		peerBase + "/stale":       "false",
 	}

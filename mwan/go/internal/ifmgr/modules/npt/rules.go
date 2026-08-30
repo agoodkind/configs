@@ -5,6 +5,7 @@ package npt
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 )
 
 // natOp is the NAT primitive one desired rule applies. It stays independent of
@@ -120,7 +121,8 @@ func buildWANRules(in wanRuleInput) []natRule {
 	noPfx := netip.Prefix{}
 
 	rules := make([]natRule, 0, 6+len(in.ExtraDNAT))
-	rules = append(rules,
+	rules = append(
+		rules,
 		natRule{Chain: chainPostrouting, Iface: in.Iface, Match: edge128, Op: opGuard, ToAddr: noAddr, ToPfx: noPfx},
 		natRule{Chain: chainPostrouting, Iface: in.Iface, Match: edge128, Op: opSNAT, ToAddr: pd1, ToPfx: noPfx},
 		natRule{Chain: chainPostrouting, Iface: in.Iface, Match: mwanbr128, Op: opSNAT, ToAddr: pd1, ToPfx: noPfx},
@@ -147,6 +149,22 @@ func buildWANRules(in wanRuleInput) []natRule {
 type desiredRules struct {
 	Postrouting []natRule
 	Prerouting  []natRule
+}
+
+// renderIntended renders one reconcile's desired rule set as text, one
+// chain heading per chain with the rules in program order, for the
+// management surface's intended-ruleset leaf.
+func renderIntended(desired desiredRules) string {
+	var rendered strings.Builder
+	rendered.WriteString("chain prerouting:\n")
+	for _, rule := range desired.Prerouting {
+		rendered.WriteString("  " + formatRule(rule) + "\n")
+	}
+	rendered.WriteString("chain postrouting:\n")
+	for _, rule := range desired.Postrouting {
+		rendered.WriteString("  " + formatRule(rule) + "\n")
+	}
+	return rendered.String()
 }
 
 // add appends one WAN's rules into the per-chain desired contents, preserving

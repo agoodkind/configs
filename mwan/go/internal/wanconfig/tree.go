@@ -49,6 +49,59 @@ type Member struct {
 	NPTExternal netip.Prefix
 }
 
+// WatchdogSettings is the rollback watchdog's policy as the publishing
+// daemon's configuration carries it: the thresholds that decide when a
+// deploy is judged and rolled back, and the targets its probes exercise.
+// Present gates publishing, so a host whose configuration carries no
+// watchdog section publishes nothing under the container.
+type WatchdogSettings struct {
+	Present                      bool
+	DeployWindowMinutes          uint16
+	ConnectivityTimeoutSeconds   uint16
+	CheckIntervalHealthySeconds  uint16
+	CheckIntervalDegradedSeconds uint16
+	PostRollbackGraceSeconds     uint16
+	AlertCooldownSeconds         uint16
+	DeployGracePeriodSeconds     uint16
+	MaxRollbackAttempts          uint8
+	SnapshotHealthyThreshold     uint16
+	MaxKnownGoodSnapshots        uint8
+	// PingTargets are the addresses the watchdog pings, both families.
+	PingTargets []netip.Addr
+}
+
+// OOBSettings is the out-of-band access policy as the publishing daemon's
+// configuration carries it. Each family publishes only when its module
+// config is present in the daemon's role.
+type OOBSettings struct {
+	V6Present         bool
+	V6Iface           string
+	V6Addr            netip.Addr
+	V6TableID         uint32
+	ManageSLAACRule   bool
+	SLAACRulePriority uint32
+	V4Present         bool
+	V4Iface           string
+	V4TableID         uint32
+}
+
+// TapSettings is the tunnel tap as the publishing daemon's configuration
+// carries it: the unit whose journal is tailed and the patterns whose
+// entries are downgraded.
+type TapSettings struct {
+	Present           bool
+	Unit              string
+	DowngradePatterns []string
+}
+
+// DaemonSettings are the daemon settings no published model covers,
+// published under the local module's daemon container.
+type DaemonSettings struct {
+	Watchdog WatchdogSettings
+	OOB      OOBSettings
+	Tap      TapSettings
+}
+
 // Gateway is the loaded configuration the surface publishes.
 type Gateway struct {
 	// InternalIface is the link toward the router behind the gateway. It is
@@ -57,6 +110,9 @@ type Gateway struct {
 	InternalIface string
 	// Members are the steering members in a stable order.
 	Members []Member
+	// Daemon carries the settings published under the local module's
+	// daemon container.
+	Daemon DaemonSettings
 }
 
 // OwnedPaths are the subtrees the daemon owns in the configuration
@@ -65,11 +121,13 @@ type Gateway struct {
 var OwnedPaths = []string{
 	interfacesPath,
 	natPath,
+	daemonPath,
 }
 
 const (
 	interfacesPath = "/ietf-interfaces:interfaces"
 	natPath        = "/ietf-nat:nat"
+	daemonPath     = "/goodkind-mwan-steering:daemon"
 
 	// ifTypeUnspecified is the interface type published for every entry: the
 	// daemon's configuration carries no link type, and the model requires
@@ -114,7 +172,110 @@ func ConfigItems(g Gateway) ([]Item, error) {
 		instanceID++
 		items = append(items, natInstanceItems(instanceID, member)...)
 	}
+	items = append(items, daemonItems(g.Daemon)...)
 	return items, nil
+}
+
+// daemonItems describes the daemon settings the loaded configuration
+// carries. A section that is not present publishes nothing, so the tree
+// never invents values another host owns.
+func daemonItems(daemon DaemonSettings) []Item {
+	items := make([]Item, 0, 16)
+	items = append(items, watchdogItems(daemon.Watchdog)...)
+	items = append(items, oobItems(daemon.OOB)...)
+	items = append(items, tapItems(daemon.Tap)...)
+	return items
+}
+
+func watchdogItems(watchdog WatchdogSettings) []Item {
+	if !watchdog.Present {
+		return nil
+	}
+	base := daemonPath + "/watchdog"
+	items := []Item{
+		{Path: base + "/deploy-window-minutes", Value: uintValue(uint64(watchdog.DeployWindowMinutes))},
+		{Path: base + "/connectivity-timeout-seconds", Value: uintValue(uint64(watchdog.ConnectivityTimeoutSeconds))},
+		{Path: base + "/check-interval-healthy-seconds", Value: uintValue(uint64(watchdog.CheckIntervalHealthySeconds))},
+		{Path: base + "/check-interval-degraded-seconds", Value: uintValue(uint64(watchdog.CheckIntervalDegradedSeconds))},
+		{Path: base + "/post-rollback-grace-seconds", Value: uintValue(uint64(watchdog.PostRollbackGraceSeconds))},
+		{Path: base + "/alert-cooldown-seconds", Value: uintValue(uint64(watchdog.AlertCooldownSeconds))},
+		{Path: base + "/deploy-grace-period-seconds", Value: uintValue(uint64(watchdog.DeployGracePeriodSeconds))},
+		{Path: base + "/max-rollback-attempts", Value: uintValue(uint64(watchdog.MaxRollbackAttempts))},
+		{Path: base + "/snapshot-healthy-threshold", Value: uintValue(uint64(watchdog.SnapshotHealthyThreshold))},
+		{Path: base + "/max-known-good-snapshots", Value: uintValue(uint64(watchdog.MaxKnownGoodSnapshots))},
+	}
+	// Leaf-list entries are addressed by their value, not a predicate, so
+	// the datastore keys each instance by the value itself. The leaf is
+	// typed, so a zero address publishes nothing rather than a value the
+	// schema rejects.
+	for _, target := range watchdog.PingTargets {
+		if !target.IsValid() {
+			continue
+		}
+		items = append(items, Item{
+			Path:  base + "/probe-targets/ping",
+			Value: target.String(),
+		})
+	}
+	return items
+}
+
+func oobItems(oob OOBSettings) []Item {
+	items := make([]Item, 0, 7)
+	if oob.V6Present {
+		base := daemonPath + "/oob/ipv6"
+		items = append(
+			items,
+			Item{Path: base + "/interface", Value: oob.V6Iface},
+			Item{Path: base + "/table-id", Value: uintValue(uint64(oob.V6TableID))},
+			Item{Path: base + "/manage-slaac-rule", Value: boolValue(oob.ManageSLAACRule)},
+			Item{Path: base + "/slaac-rule-priority", Value: uintValue(uint64(oob.SLAACRulePriority))},
+		)
+		// The address leaf is typed; a configuration that carries none
+		// publishes none rather than an unparsable value.
+		if oob.V6Addr.IsValid() {
+			items = append(items, Item{Path: base + "/address", Value: oob.V6Addr.String()})
+		}
+	}
+	if oob.V4Present {
+		base := daemonPath + "/oob/ipv4"
+		items = append(
+			items,
+			Item{Path: base + "/interface", Value: oob.V4Iface},
+			Item{Path: base + "/table-id", Value: uintValue(uint64(oob.V4TableID))},
+		)
+	}
+	return items
+}
+
+func tapItems(tap TapSettings) []Item {
+	if !tap.Present {
+		return nil
+	}
+	base := daemonPath + "/tap"
+	items := []Item{{Path: base + "/unit", Value: tap.Unit}}
+	// Patterns carry regex text a path predicate cannot quote, so each
+	// leaf-list entry is addressed by the bare path with its value.
+	for _, pattern := range tap.DowngradePatterns {
+		items = append(items, Item{
+			Path:  base + "/downgrade-pattern",
+			Value: pattern,
+		})
+	}
+	return items
+}
+
+// uintValue renders one unsigned leaf value.
+func uintValue(value uint64) string {
+	return strconv.FormatUint(value, 10)
+}
+
+// boolValue renders one boolean leaf value.
+func boolValue(value bool) string {
+	if value {
+		return boolTrue
+	}
+	return "false"
 }
 
 // interfaceItems describes one link: the entry exists, its type is

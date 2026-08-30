@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"testing"
 )
 
@@ -45,8 +46,12 @@ func TestPublish_ReplacesOwnedSubtreesWithTheProjection(t *testing.T) {
 	if rec.calls != 1 {
 		t.Fatalf("ReplaceConfig calls = %d, want 1", rec.calls)
 	}
-	wantOwned := []string{"/ietf-interfaces:interfaces", "/ietf-nat:nat"}
-	if len(rec.ownedPaths) != len(wantOwned) || rec.ownedPaths[0] != wantOwned[0] || rec.ownedPaths[1] != wantOwned[1] {
+	wantOwned := []string{
+		"/ietf-interfaces:interfaces",
+		"/ietf-nat:nat",
+		"/goodkind-mwan-steering:daemon",
+	}
+	if !slices.Equal(rec.ownedPaths, wantOwned) {
 		t.Fatalf("ownedPaths = %v, want %v", rec.ownedPaths, wantOwned)
 	}
 	wantItems, err := ConfigItems(gateway)

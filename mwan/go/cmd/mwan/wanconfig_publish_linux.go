@@ -11,8 +11,11 @@ import (
 
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
+	"goodkind.io/mwan/internal/ifmgr/modules/cloudflaredtap"
 	"goodkind.io/mwan/internal/ifmgr/modules/health"
 	"goodkind.io/mwan/internal/ifmgr/modules/npt"
+	"goodkind.io/mwan/internal/ifmgr/modules/oobv4"
+	"goodkind.io/mwan/internal/ifmgr/modules/oobv6"
 	"goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 	"goodkind.io/mwan/internal/wanconfig"
 	"goodkind.io/mwan/internal/wanstate"
@@ -76,7 +79,7 @@ func startWanconfigSurface(
 	}
 	log := logger.With("component", "wanconfig")
 
-	gateway, ok, err := gatewayFromModuleConfigs(moduleConfigs)
+	gateway, ok, err := gatewayFromModuleConfigs(cfg, moduleConfigs)
 	if err != nil {
 		log.ErrorContext(ctx, "wanconfig: projection from module configs failed; running without a management surface", "err", err)
 		return nil
@@ -135,6 +138,130 @@ func startWanconfigSurface(
 	return surface
 }
 
+// daemonSettings projects the daemon settings the loaded configuration
+// carries: the rollback watchdog's policy from the monolith config, and
+// the out-of-band and tap module configs when this role runs them. A
+// section the configuration does not carry stays absent, so the tree
+// never invents values another host owns.
+func daemonSettings(cfg *config.Config, configs ifmgr.ModuleConfigSet) wanconfig.DaemonSettings {
+	settings := wanconfig.DaemonSettings{
+		Watchdog: watchdogSettings(cfg),
+		OOB:      oobSettings(configs),
+		Tap:      tapSettings(configs),
+	}
+	return settings
+}
+
+// watchdogSettings projects the watchdog section. The rendered section
+// always names the unit it drives, so the name doubles as presence.
+func watchdogSettings(cfg *config.Config) wanconfig.WatchdogSettings {
+	var none wanconfig.WatchdogSettings
+	if cfg == nil || cfg.Watchdog.ServiceName == "" {
+		return none
+	}
+	watchdog := wanconfig.WatchdogSettings{
+		Present:                      true,
+		DeployWindowMinutes:          clampUint16(cfg.Watchdog.DeployWindowMinutes),
+		ConnectivityTimeoutSeconds:   clampUint16(cfg.Watchdog.ConnectivityTimeoutSeconds),
+		CheckIntervalHealthySeconds:  clampUint16(cfg.Watchdog.CheckIntervalHealthy),
+		CheckIntervalDegradedSeconds: clampUint16(cfg.Watchdog.CheckIntervalDegraded),
+		PostRollbackGraceSeconds:     clampUint16(cfg.Watchdog.PostRollbackGraceSeconds),
+		AlertCooldownSeconds:         clampUint16(cfg.Watchdog.AlertCooldownSeconds),
+		DeployGracePeriodSeconds:     clampUint16(cfg.Watchdog.DeployGracePeriodSeconds),
+		MaxRollbackAttempts:          clampUint8(cfg.Watchdog.MaxRollbackAttempts),
+		SnapshotHealthyThreshold:     clampUint16(cfg.Watchdog.SnapshotHealthyThreshold),
+		MaxKnownGoodSnapshots:        clampUint8(cfg.Watchdog.MaxKnownGoodSnapshots),
+		PingTargets:                  nil,
+	}
+	// The watchdog probes exactly these two targets, one per family.
+	for _, raw := range []string{cfg.Network.PingTargetIPv6, cfg.Network.PingTargetIPv4} {
+		if raw == "" {
+			continue
+		}
+		address, err := netip.ParseAddr(raw)
+		if err != nil {
+			slog.Warn("wanconfig: watchdog ping target unparsable; not published",
+				"value", raw, "err", err)
+			continue
+		}
+		watchdog.PingTargets = append(watchdog.PingTargets, address)
+	}
+	return watchdog
+}
+
+// oobSettings projects the out-of-band module configs this role runs.
+func oobSettings(configs ifmgr.ModuleConfigSet) wanconfig.OOBSettings {
+	var oob wanconfig.OOBSettings
+	if v6, ok := configs["oobv6"].(oobv6.Config); ok && v6.Iface != "" {
+		oob.V6Present = true
+		oob.V6Iface = v6.Iface
+		oob.V6TableID = clampUint32(v6.OOBTableID)
+		oob.ManageSLAACRule = v6.ManageSLAACRule
+		oob.SLAACRulePriority = clampUint32(v6.SLAACRulePriority)
+		if v6.OOBAddr != "" {
+			address, err := netip.ParseAddr(v6.OOBAddr)
+			if err != nil {
+				slog.Warn("wanconfig: oob v6 address unparsable; not published",
+					"value", v6.OOBAddr, "err", err)
+			} else {
+				oob.V6Addr = address
+			}
+		}
+	}
+	if v4, ok := configs["oobv4"].(oobv4.Config); ok && v4.Iface != "" {
+		oob.V4Present = true
+		oob.V4Iface = v4.Iface
+		oob.V4TableID = clampUint32(v4.OOBTableID)
+	}
+	return oob
+}
+
+// tapSettings projects the tunnel-tap module config this role runs.
+func tapSettings(configs ifmgr.ModuleConfigSet) wanconfig.TapSettings {
+	var tap wanconfig.TapSettings
+	if section, ok := configs["cloudflared_tap"].(cloudflaredtap.Config); ok && section.Unit != "" {
+		tap.Present = true
+		tap.Unit = section.Unit
+		tap.DowngradePatterns = append([]string(nil), section.DowngradePatterns...)
+	}
+	return tap
+}
+
+// clampUint16 narrows a config int onto the model's leaf range.
+func clampUint16(value int) uint16 {
+	if value < 0 {
+		return 0
+	}
+	if value > int(^uint16(0)) {
+		return ^uint16(0)
+	}
+	return uint16(value)
+}
+
+// clampUint8 narrows a config int onto the model's leaf range.
+func clampUint8(value int) uint8 {
+	if value < 0 {
+		return 0
+	}
+	if value > int(^uint8(0)) {
+		return ^uint8(0)
+	}
+	return uint8(value)
+}
+
+// clampUint32 narrows a config int onto the model's leaf range. The
+// comparison widens to uint64 so the bound stays representable where
+// int is 32 bits.
+func clampUint32(value int) uint32 {
+	if value < 0 {
+		return 0
+	}
+	if uint64(value) > uint64(^uint32(0)) {
+		return ^uint32(0)
+	}
+	return uint32(value)
+}
+
 // runningReplacer adapts the sysrepo binding to the one capability the
 // projection package asks for: replace the owned subtrees of the running
 // datastore in a single transaction.
@@ -160,10 +287,11 @@ func (r runningReplacer) ReplaceConfig(ctx context.Context, ownedPaths []string,
 // configs onto the gateway the surface publishes. It reads the same values
 // the daemon is about to run with: the member list and translation prefixes
 // from the wan.routes config, the internal translation prefix from the npt
-// config, and which members are probed from the health config. It returns
-// ok=false when the set carries no wan.routes config, which is every role
-// but wan; that is a quiet no-publish, not an error.
-func gatewayFromModuleConfigs(configs ifmgr.ModuleConfigSet) (wanconfig.Gateway, bool, error) {
+// config, which members are probed from the health config, and the daemon
+// settings the loaded monolith configuration carries. It returns ok=false
+// when the set carries no wan.routes config, which is every role but wan;
+// that is a quiet no-publish, not an error.
+func gatewayFromModuleConfigs(cfg *config.Config, configs ifmgr.ModuleConfigSet) (wanconfig.Gateway, bool, error) {
 	logger := slog.Default().With("component", "wanconfig")
 	var none wanconfig.Gateway
 	routesCfg, isRoutes := configs["wan.routes"].(wanroutes.Config)
@@ -191,6 +319,7 @@ func gatewayFromModuleConfigs(configs ifmgr.ModuleConfigSet) (wanconfig.Gateway,
 	gateway := wanconfig.Gateway{
 		InternalIface: routesCfg.InternalIface,
 		Members:       make([]wanconfig.Member, 0, len(routesCfg.WANs)),
+		Daemon:        daemonSettings(cfg, configs),
 	}
 	for _, wan := range routesCfg.WANs {
 		member := wanconfig.Member{

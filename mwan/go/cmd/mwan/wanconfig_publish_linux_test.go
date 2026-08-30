@@ -64,7 +64,7 @@ func wanconfigTestModuleConfigs() ifmgr.ModuleConfigSet {
 // internal prefix and its own external prefix.
 func TestGatewayFromModuleConfigs_ProjectsTheWANRole(t *testing.T) {
 	t.Parallel()
-	gateway, ok, err := gatewayFromModuleConfigs(wanconfigTestModuleConfigs())
+	gateway, ok, err := gatewayFromModuleConfigs(nil, wanconfigTestModuleConfigs())
 	if err != nil {
 		t.Fatalf("gatewayFromModuleConfigs: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestGatewayFromModuleConfigs_ProjectsTheWANRole(t *testing.T) {
 // so enabling the publish gate on such a host is a logged no-op.
 func TestGatewayFromModuleConfigs_QuietOutsideTheWANRole(t *testing.T) {
 	t.Parallel()
-	_, ok, err := gatewayFromModuleConfigs(ifmgr.ModuleConfigSet{})
+	_, ok, err := gatewayFromModuleConfigs(nil, ifmgr.ModuleConfigSet{})
 	if err != nil {
 		t.Fatalf("gatewayFromModuleConfigs: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestGatewayFromModuleConfigs_UnprobedMemberHasNoPolicy(t *testing.T) {
 	configs := wanconfigTestModuleConfigs()
 	configs["health"] = health.Config{}
 
-	gateway, ok, err := gatewayFromModuleConfigs(configs)
+	gateway, ok, err := gatewayFromModuleConfigs(nil, configs)
 	if err != nil || !ok {
 		t.Fatalf("gatewayFromModuleConfigs: ok=%v err=%v", ok, err)
 	}
@@ -150,7 +150,7 @@ func TestGatewayFromModuleConfigs_RejectsAnUnparsableTranslationPrefix(t *testin
 	routesCfg.WANs[0].NptPrefix = "not-a-prefix"
 	configs["wan.routes"] = routesCfg
 
-	_, _, err := gatewayFromModuleConfigs(configs)
+	_, _, err := gatewayFromModuleConfigs(nil, configs)
 	if err == nil {
 		t.Fatal("err = nil, want a parse error")
 	}
