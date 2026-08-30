@@ -3,11 +3,12 @@
 [Unit]
 Description=Check how long ago each Tack backup mechanism last succeeded
 After=docker.service
-# The command exits nonzero once any mechanism is past its threshold and prints
-# the per-metric report on stdout, which systemd captures into the journal. The
-# handler instance mails that run's journal, so the failure arrives as a
-# message instead of waiting to be discovered during a restore.
-OnFailure=tack-alarm-mail@%n.service
+# The command mails its own report: a run that finds any mechanism past its
+# threshold sends the per-metric report to TACK_BACKUP_ALARM_EMAIL and then
+# exits nonzero, so the failure arrives as a message instead of waiting to be
+# discovered during a restore. There is no OnFailure= handler, because the one
+# that piped this unit's journal to msmtp sent under the guest's plain hostname,
+# which the relay accepted with 250 OK and then delivered to nobody.
 
 [Service]
 Type=oneshot

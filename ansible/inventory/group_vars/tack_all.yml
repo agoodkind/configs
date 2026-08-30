@@ -161,8 +161,9 @@ tack_backup_staleness_randomized_delay: 300
 tack_backup_restore_drill_oncalendar: "*-*-* 05:40:00 UTC"
 tack_backup_restore_drill_randomized_delay: 300
 
-# Where a failed alarm run is mailed. The unit's OnFailure= handler pipes the
-# failed run's journal to this address through the guest's msmtp. Same
+# Where a stale-backup report is mailed. The staleness check reads this as
+# TACK_BACKUP_ALARM_EMAIL and mails its own report, sending from the guest's
+# <hostname>-mailer@ address, the sender that demonstrably arrives. Same
 # recipient the MWAN notifier uses; the two paths share nothing else.
 tack_alarm_email_recipient: "alex@goodkind.io"
 
