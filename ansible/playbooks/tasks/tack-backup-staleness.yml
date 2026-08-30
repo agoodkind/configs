@@ -4,6 +4,19 @@
 # TACK_BACKUP_ALARM_EMAIL in the rendered tack .env. Included on the owner guest
 # and on one data guest, so losing either guest leaves an alarm standing.
 
+# The mail handler this alarm used before the check mailed for itself. A guest
+# deployed before that change still carries both files, and a unit file nothing
+# references is drift: it survives every later deploy, and the next reader
+# cannot tell it from a live one. Removed by name rather than left inert.
+- name: Remove the retired tack-alarm-mail handler
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/tack-alarm-mail@.service
+    - /usr/local/sbin/tack-alarm-mail.sh
+  register: tack_alarm_mail_removed
+
 - name: Deploy tack-backup-staleness service
   ansible.builtin.template:
     src: "{{ repo_root }}/common/services/tack-backup-staleness.service.j2"
@@ -31,4 +44,5 @@
       {{
         tack_backup_staleness_service.changed
         or tack_backup_staleness_timer.changed
+        or tack_alarm_mail_removed.changed
       }}
