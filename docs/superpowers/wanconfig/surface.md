@@ -185,6 +185,16 @@ abandoned subscription costs the daemon nothing. A dropped or lost
 notification loses only the event itself: the tree still carries the
 current state for any reader.
 
+A subscriber must reconnect when its connection drops, because the
+server closes an idle stream after about a minute. The embedded HTTP/2
+server rousette runs on drops a connection that carries no traffic for
+60 seconds, and rousette at its released version sends nothing to keep
+one open and offers no setting for the deadline. A recorder that sits
+through a quiet period therefore stops receiving without being told,
+and reconnecting is what closes that gap. Upstream sends a keep-alive
+every 55 seconds on its development branch, which would remove the
+need, but no released version carries that work.
+
 ## What must not change
 
 No data-path behavior. This piece adds a reader and nothing else.
