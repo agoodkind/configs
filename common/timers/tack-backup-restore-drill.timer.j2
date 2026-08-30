@@ -1,0 +1,17 @@
+# Rendered by Ansible (tasks/tack-backup-restore-drill.yml); cadence lives in
+# the tack_all group_vars, one home. Realtime schedule with catch-up, like the
+# export timer: the drill restores a specific night's export, so a window missed
+# while the guest was down is worth running late rather than skipping, and the
+# hour matters because it must land after that night's export is complete. The
+# randomized delay keeps the drill off the exact minute the export archives
+# poll on.
+[Unit]
+Description=Run the Tack restore drill daily
+
+[Timer]
+OnCalendar={{ tack_backup_restore_drill_oncalendar }}
+RandomizedDelaySec={{ tack_backup_restore_drill_randomized_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

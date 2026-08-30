@@ -571,6 +571,25 @@
           when:
             - tack_backup_enabled | bool
             - tack_ledger_consumers_repointed | bool
+
+        # Scheduled restore rehearsal (TACK-363). The staleness check above
+        # dates its rehearsal metric from a marker only a fully passing drill
+        # writes, so without this timer that metric reads unknown, which is
+        # stale, and the alarm mails on every run forever.
+        #
+        # The owner guest alone, never a data guest: the drill restores into
+        # throwaway containers, and keeping that load and those scratch
+        # resources off the guests serving the ledger is what makes a rehearsal
+        # safe to run on a schedule. The owner is also the only guest that
+        # fetches the FoundationDB overlay, so it is the only one where the
+        # drill's fdb leg could ever run. Gated on the live ledger topology
+        # like the alarm above, and placed after it because this unit's
+        # OnFailure= names the mail handler that task deploys.
+        - name: Install the scheduled restore rehearsal (owner only)
+          ansible.builtin.include_tasks: tasks/tack-backup-restore-drill.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
       when: tack_provision_owner
 
   handlers:
