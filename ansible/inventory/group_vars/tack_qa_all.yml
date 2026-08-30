@@ -1,6 +1,10 @@
 ---
 tack_domain: "tack-qa"
 
+# QA runs the production auth path first, so the token cutover is proven here
+# before production flips (TACK-261). Clients need an API token, not a user id.
+tack_env: production
+
 tack_yugabyte_password: "{{ vault_tack_qa_yugabyte_password }}"
 tack_meili_master_key: "{{ vault_tack_qa_meili_master_key }}"
 tack_audit_writer_password: "{{ vault_tack_qa_audit_writer_password }}"

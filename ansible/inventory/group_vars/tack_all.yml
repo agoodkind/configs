@@ -77,6 +77,12 @@ tack_port: 8000
 # passed at deploy time.
 tack_image_tag: latest
 
+# Auth mode rendered as ENV. development accepts a raw user UUID as the bearer
+# with no token lookup; production requires an API token. Production keeps
+# development until the token path is proven on QA and its clients hold real
+# tokens, so a deploy there changes nothing (TACK-261). QA overrides this.
+tack_env: development
+
 # Whether the legacy ledger node (name yugabyte, on the guest that serves
 # the app) still exists in this environment. While true, its name stays in
 # the peer maps and joining nodes enroll at it; once the environment retires
