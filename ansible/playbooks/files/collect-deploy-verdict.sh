@@ -172,6 +172,14 @@ function main() {
                     if (( retry_rc == 0 )); then
                         exit 0
                     fi
+                    # A transport failure on the re-read observes nothing about
+                    # the verdict, so it must not confirm death: that repeats
+                    # the very mistake this branch exists to correct. Keep
+                    # polling and let the deadline rule instead.
+                    if (( LAST_READ_RC == 255 )); then
+                        echo "Verdict re-read from ${address} lost connectivity with rc ${LAST_READ_RC}; not confirming gate death" >&2
+                        continue
+                    fi
                     status_value="${status_value:-unknown}"
                     echo "Deploy gate ${unit_name} is ${status_value} on ${address} without a verdict; gate death confirmed" >&2
                     exit 2

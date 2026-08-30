@@ -48,6 +48,19 @@ func runVerdictCollector(
 	verdictContent []byte,
 ) (int, string, string) {
 	t.Helper()
+	return runVerdictCollectorWithTransport(t, catFailures, "0", verdictContent)
+}
+
+// runVerdictCollectorWithTransport is runVerdictCollector plus the stub's
+// transport-failure threshold: reads past transportAfter fail with ssh's 255
+// instead of reaching the host.
+func runVerdictCollectorWithTransport(
+	t *testing.T,
+	catFailures string,
+	transportAfter string,
+	verdictContent []byte,
+) (int, string, string) {
+	t.Helper()
 
 	scriptPath, err := filepath.Abs(collectorScriptRelPath)
 	if err != nil {
@@ -94,6 +107,7 @@ func runVerdictCollector(
 		"PATH="+stubBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"STUB_STATE_DIR="+stateDir,
 		"STUB_CAT_FAILURES="+catFailures,
+		"STUB_CAT_TRANSPORT_AFTER="+transportAfter,
 	)
 	var stdout strings.Builder
 	var stderr strings.Builder
@@ -195,5 +209,41 @@ func TestCollectorRejectsStaleVerdictAfterInactiveUnit(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "gate death confirmed") {
 		t.Fatalf("stderr does not confirm gate death: %s", stderr)
+	}
+}
+
+// A re-read that loses connectivity observes nothing about the verdict, so it
+// must not confirm gate death: that would repeat the defect this collector fix
+// exists to correct, failing a deploy whose gate may well have recorded a
+// passing verdict. The run keeps polling and ends at the timeout instead.
+func TestCollectorDoesNotConfirmDeathWhenReReadLosesConnectivity(t *testing.T) {
+	verdict := collectorTestVerdict{
+		TraceID:    collectorTraceID,
+		OldBootID:  collectorOldBootID,
+		RebootRC:   0,
+		EgressRC:   0,
+		StartedAt:  "2026-08-29T00:00:00Z",
+		FinishedAt: "2026-08-29T00:02:00Z",
+	}
+
+	// The first read fails with ENOENT, the status probe reports the unit
+	// inactive, and every read from the second on fails with ssh's 255.
+	exitCode, stdout, stderr := runVerdictCollectorWithTransport(
+		t, "1", "1", marshalCollectorVerdict(t, verdict))
+
+	if exitCode == 2 {
+		t.Fatalf("collector confirmed gate death from a transport failure\nstderr: %s", stderr)
+	}
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1 (timeout)\nstderr: %s", exitCode, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "not confirming gate death") {
+		t.Fatalf("stderr does not report the withheld verdict: %s", stderr)
+	}
+	if strings.Contains(stderr, "gate death confirmed") {
+		t.Fatalf("stderr confirms gate death despite losing the connection: %s", stderr)
 	}
 }
