@@ -21,6 +21,14 @@ function usage() {
     echo "usage: $0 verdict_path unit_name expected_trace_id expected_boot_id budget_seconds address..." >&2
 }
 
+# shell_quote wraps one argument for a remote shell, doubling any single quote
+# into the '\'' escape. Both remote commands here run as root, so an argument
+# interpolated raw between literal quotes would let a quote in the value close
+# the string and run the rest as a command.
+function shell_quote() {
+    printf "'%s'" "${1//\'/\'\\\'\'}"
+}
+
 # try_collect reads the verdict from one address and validates it against
 # this run's identity. Returns 0 after printing a valid verdict on stdout,
 # 1 when the remote read failed (LAST_READ_RC carries the ssh exit code and
@@ -35,7 +43,7 @@ function try_collect() {
     read_rc=0
     ssh -o BatchMode=yes -o ConnectTimeout="$CONNECT_TIMEOUT_SECONDS" \
         -o StrictHostKeyChecking=accept-new "root@${address}" \
-        "cat -- '$VERDICT_PATH'" >"$STDOUT_FILE" 2>"$STDERR_FILE" || read_rc=$?
+        "cat -- $(shell_quote "$VERDICT_PATH")" >"$STDOUT_FILE" 2>"$STDERR_FILE" || read_rc=$?
     if (( read_rc != 0 )); then
         LAST_READ_RC=$read_rc
         return 1
@@ -151,7 +159,7 @@ function main() {
             if (( ssh_rc != 255 )); then
                 if ssh -o BatchMode=yes -o ConnectTimeout="$CONNECT_TIMEOUT_SECONDS" \
                     -o StrictHostKeyChecking=accept-new "root@${address}" \
-                    "systemctl is-active '$unit_name'" >"$status_stdout_file" \
+                    "systemctl is-active $(shell_quote "$unit_name")" >"$status_stdout_file" \
                     2>"$status_stderr_file"; then
                     status_rc=0
                 else

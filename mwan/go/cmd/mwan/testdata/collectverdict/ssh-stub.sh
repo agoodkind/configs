@@ -16,6 +16,7 @@ count_file="$STUB_STATE_DIR/cat-count"
 transport_after="${STUB_CAT_TRANSPORT_AFTER:-0}"
 
 if [[ "$remote_command" == cat* ]]; then
+    printf '%s' "$remote_command" >"$STUB_STATE_DIR/last-cat-command"
     count=0
     if [[ -f "$count_file" ]]; then
         count="$(cat "$count_file")"

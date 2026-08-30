@@ -298,14 +298,21 @@ endif
 # gateway's library generation and glibc. Nothing deploys its output.
 WANCONFIG_BUILDER_IMAGE := mwan-wanconfig-builder
 
-.PHONY: build-wanconfig
-build-wanconfig:
+# The image is built here and published nowhere, so `docker run` cannot pull
+# it: every target that runs the image must build it first or fail on a clean
+# checkout. Layer cache makes a repeat build a few seconds, and a changed
+# Dockerfile still rebuilds.
+.PHONY: wanconfig-builder-image
+wanconfig-builder-image:
 	docker build --platform linux/amd64 \
 		--build-arg LIBYANG_VERSION=$(WANCONFIG_LIBYANG_VERSION) \
 		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
 		--build-arg "LIBYANG_CMAKE_FLAGS=$(WANCONFIG_LIBYANG_CMAKE_FLAGS)" \
 		--build-arg "SYSREPO_CMAKE_FLAGS=$(WANCONFIG_SYSREPO_CMAKE_FLAGS)" \
 		-t $(WANCONFIG_BUILDER_IMAGE) ../wanconfig/builder
+
+.PHONY: build-wanconfig
+build-wanconfig: wanconfig-builder-image
 	@mkdir -p $(LOCAL_BIN)
 	docker run --rm --platform linux/amd64 \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
@@ -323,7 +330,7 @@ build-wanconfig:
 # why make prints an "overriding commands" warning here.
 ifeq ($(shell uname -s),Darwin)
 .PHONY: test
-test:
+test: wanconfig-builder-image
 	@echo "darwin: running the suite in $(WANCONFIG_BUILDER_IMAGE), not on the host"
 	docker run --rm --platform linux/amd64 \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \

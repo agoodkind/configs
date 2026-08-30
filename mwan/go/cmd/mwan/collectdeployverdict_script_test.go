@@ -24,6 +24,8 @@ const (
 	collectorTraceID       = "trace-1"
 	collectorOldBootID     = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	collectorTimeout       = 60 * time.Second
+
+	collectorDefaultVerdictPath = "/run/mwan-deploy-gate/" + collectorTraceID + ".json"
 )
 
 // collectorTestVerdict mirrors the gate's verdict JSON contract without
@@ -61,6 +63,22 @@ func runVerdictCollectorWithTransport(
 	verdictContent []byte,
 ) (int, string, string) {
 	t.Helper()
+	exitCode, stdout, stderr, _ := runVerdictCollectorWithPath(
+		t, collectorDefaultVerdictPath, catFailures, transportAfter, verdictContent)
+	return exitCode, stdout, stderr
+}
+
+// runVerdictCollectorWithPath is the full harness: it runs the collector
+// against verdictPath and returns the stub's state directory, where the stub
+// records the remote command it was handed.
+func runVerdictCollectorWithPath(
+	t *testing.T,
+	verdictPath string,
+	catFailures string,
+	transportAfter string,
+	verdictContent []byte,
+) (int, string, string, string) {
+	t.Helper()
 
 	scriptPath, err := filepath.Abs(collectorScriptRelPath)
 	if err != nil {
@@ -96,7 +114,7 @@ func runVerdictCollectorWithTransport(
 	ctx, cancel := context.WithTimeout(context.Background(), collectorTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, scriptPath,
-		"/run/mwan-deploy-gate/"+collectorTraceID+".json",
+		verdictPath,
 		"mwan-deploy-gate-"+collectorTraceID,
 		collectorTraceID,
 		collectorOldBootID,
@@ -123,7 +141,7 @@ func runVerdictCollectorWithTransport(
 		}
 		exitCode = exitErr.ExitCode()
 	}
-	return exitCode, stdout.String(), stderr.String()
+	return exitCode, stdout.String(), stderr.String(), stateDir
 }
 
 func marshalCollectorVerdict(t *testing.T, verdict collectorTestVerdict) []byte {
@@ -245,5 +263,25 @@ func TestCollectorDoesNotConfirmDeathWhenReReadLosesConnectivity(t *testing.T) {
 	}
 	if strings.Contains(stderr, "gate death confirmed") {
 		t.Fatalf("stderr confirms gate death despite losing the connection: %s", stderr)
+	}
+}
+
+// Both remote commands run as root, so a quote in an argument must stay data.
+// Interpolating it raw between literal quotes would close the string and run
+// whatever follows. The stub records the command it was handed, so this pins
+// the escaped form rather than the absence of a symptom.
+func TestCollectorQuotesAVerdictPathContainingAQuote(t *testing.T) {
+	verdictPath := "/run/mwan-deploy-gate/tr'ace.json"
+	wantCommand := `cat -- '/run/mwan-deploy-gate/tr'\''ace.json'`
+
+	_, _, stderr, stateDir := runVerdictCollectorWithPath(
+		t, verdictPath, "100", "0", nil)
+
+	recorded, err := os.ReadFile(filepath.Join(stateDir, "last-cat-command"))
+	if err != nil {
+		t.Fatalf("stub recorded no remote command: %v\nstderr: %s", err, stderr)
+	}
+	if string(recorded) != wantCommand {
+		t.Fatalf("remote command = %s, want %s", recorded, wantCommand)
 	}
 }
