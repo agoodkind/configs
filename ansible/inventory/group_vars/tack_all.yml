@@ -113,6 +113,12 @@ tack_ledger_peers: >-
 tack_backup_yb_rocksdb_dir: /home/yugabyte/var/data/yb-data/tserver/data/rocksdb
 tack_backup_yb_overlay_path: "{{ tack_install_dir }}/yugabyte-overlay/yugabyted"
 
+# Host path of the patched fdb.bash the deploy fetches onto the owner guest.
+# The FoundationDB restore drill bind-mounts it into its throwaway cluster so
+# that cluster boots on the IPv6-only bridge, the same role the patched
+# yugabyted plays for the ledger drill above.
+tack_backup_fdb_overlay_path: "{{ tack_install_dir }}/fdb-overlay/fdb.bash"
+
 # Master quorum addresses for the backup one-shot containers (snapshot
 # create, metadata export, schema dump). One-shots run on the compose
 # network with no extra_hosts, so node names do not resolve there: while
