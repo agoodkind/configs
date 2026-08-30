@@ -4,11 +4,10 @@
 Description=Rehearse recovery by restoring the Tack backups into throwaway containers
 After=docker.service
 # Only a drill whose every attempted leg passed writes the rehearsal marker the
-# staleness check dates, so a failed drill is invisible until that marker ages
-# past its threshold days later. The handler instance mails this run's journal
-# instead, so the failure arrives while the last passing rehearsal is still
-# fresh. The handler is the one the staleness alarm task deploys.
-OnFailure=tack-alarm-mail@%n.service
+# staleness check dates, so a failed drill surfaces through that check: the
+# marker stops advancing and the next staleness run past the rehearsal threshold
+# mails the report itself. This unit carries no OnFailure= handler, so a failed
+# drill is reported on that delay rather than at the moment it fails.
 
 [Service]
 Type=oneshot

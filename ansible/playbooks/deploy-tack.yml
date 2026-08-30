@@ -583,8 +583,7 @@
         # safe to run on a schedule. The owner is also the only guest that
         # fetches the FoundationDB overlay, so it is the only one where the
         # drill's fdb leg could ever run. Gated on the live ledger topology
-        # like the alarm above, and placed after it because this unit's
-        # OnFailure= names the mail handler that task deploys.
+        # like the alarm above.
         - name: Install the scheduled restore rehearsal (owner only)
           ansible.builtin.include_tasks: tasks/tack-backup-restore-drill.yml
           when:
