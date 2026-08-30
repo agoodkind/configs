@@ -1,0 +1,22 @@
+# Rendered by Ansible (tasks/tack-backup-staleness.yml); cadence lives in the
+# tack_all group_vars, one home.
+[Unit]
+Description=Check how long ago each Tack backup mechanism last succeeded
+After=docker.service
+# The command exits nonzero once any mechanism is past its threshold and prints
+# the per-metric report on stdout, which systemd captures into the journal. The
+# handler instance mails that run's journal, so the failure arrives as a
+# message instead of waiting to be discovered during a restore.
+OnFailure=tack-alarm-mail@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ tack_install_dir }}
+# --execute is the audited action gate; without it the command prints its plan
+# and exits 0, which would mail nothing however stale the backups got. The leaf
+# is audited as mutating because observing the cluster healthy writes the
+# replication marker. The service identity names the timer, not a human, in the
+# compliance ledger (--operator-service derives a stable actor id from the name
+# with no registry to seed).
+ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup staleness-check --execute --operator-service tack-backup
+TimeoutStartSec=900

@@ -485,6 +485,24 @@
           when:
             - tack_backup_enabled | bool
             - tack_ledger_consumers_repointed | bool
+
+        # Backup staleness alarm, data-guest copy (TACK-363). The owner guest
+        # runs the same pair below, and two copies exist so losing one guest
+        # does not take the alarm with it. Either copy alone still reports:
+        # the check reads the object store and the ledger masters, and both
+        # guests reach both. One data guest carries it rather than all three,
+        # because a third and fourth copy would only multiply the same mail.
+        # yb1 is the environment's distinguished node already, the one a
+        # from-empty rebuild bootstraps and the one every other node enrolls
+        # at once the legacy node retires, so the copy follows the topology
+        # instead of a guest named here. Gated on the live ledger topology
+        # like the archive timer above.
+        - name: Install the backup staleness alarm (data-guest copy)
+          ansible.builtin.include_tasks: tasks/tack-backup-staleness.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
+            - tack_ledger_node_name == 'yb1'
       when: tack_cluster_role == 'data'
 
     # Provision and the app start run after the data-guest ledger nodes are
@@ -541,6 +559,15 @@
         # flag flips.
         - name: Install the ledger export timer
           ansible.builtin.include_tasks: tasks/tack-ledger-export.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
+
+        # Backup staleness alarm, owner copy (TACK-363). The yb1 data guest
+        # runs the same pair; the comment on that copy explains why there are
+        # two. Gated on the live ledger topology like the export timer above.
+        - name: Install the backup staleness alarm (owner copy)
+          ansible.builtin.include_tasks: tasks/tack-backup-staleness.yml
           when:
             - tack_backup_enabled | bool
             - tack_ledger_consumers_repointed | bool

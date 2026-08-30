@@ -119,6 +119,20 @@ tack_ledger_export_oncalendar: "*-*-* 03:17:00 UTC"
 tack_ledger_export_randomized_delay: 300
 tack_ledger_archive_interval: 15min
 
+# Backup staleness alarm cadence (TACK-363). The check dates every backup
+# mechanism and exits nonzero once one is past its threshold, so it must run
+# well inside the shortest of those thresholds; the replication threshold is
+# 30 minutes, which this cadence matches. The randomized delay staggers the
+# owner guest's copy against the data guest's copy so both alarms do not
+# depend on the same instant of outbound mail.
+tack_backup_staleness_interval: 30min
+tack_backup_staleness_randomized_delay: 300
+
+# Where a failed alarm run is mailed. The unit's OnFailure= handler pipes the
+# failed run's journal to this address through the guest's msmtp. Same
+# recipient the MWAN notifier uses; the two paths share nothing else.
+tack_alarm_email_recipient: "alex@goodkind.io"
+
 tack_ledger_bootstrap: false
 tack_ledger_join_target: >-
   {{ ('' if (tack_ledger_bootstrap | bool and tack_ledger_node_name == 'yb1')
