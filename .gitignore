@@ -91,3 +91,7 @@ HANDOFF_MWAN_OPNSENSE_TESTBED.txt
 # Build scratch. The wanconfig cgo dependency sources are cloned here, outside
 # any Go module, so the Go tooling never walks into them.
 /.make/
+
+# Controller-side renders the deploy validates before copying to a gateway.
+# They carry live inventory addresses and must never be committed.
+/.cache/
