@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -19,14 +20,16 @@ import (
 )
 
 // gatewayConfigTOML is the gateway's runtime configuration as the deploy
-// renders it now that the network tree moved out: a BGP speaker with an
-// interface to install learned routes on, and the wan module sections reduced
-// to the two filesystem paths TOML still owns. The legacy provider keys are
-// present on purpose, because a gateway upgraded in place still carries them
-// and none of them may reach the parsed configuration.
+// renders it now that the network tree moved out: a BGP speaker that declares
+// it uses the wanconfig network configuration, an interface to install learned
+// routes on, and the wan module sections reduced to the two filesystem paths
+// TOML still owns. The legacy provider keys are present on purpose, because a
+// gateway upgraded in place still carries them and none of them may reach the
+// parsed configuration.
 const gatewayConfigTOML = `
 [bgp]
 enabled = true
+use_wanconfig = true
 asn = 4200000001
 router_id = "192.0.2.3"
 learned_route_iface = "enmwanbr0"
@@ -171,6 +174,9 @@ func parseGatewayConfig(t *testing.T) *config.Config {
 	if len(cfg.IfMgr.WAN) != 0 {
 		t.Fatalf("[ifmgr.wan] still decodes from TOML: %#v", cfg.IfMgr.WAN)
 	}
+	if !cfg.BGP.UseWanconfig {
+		t.Fatal("use_wanconfig did not decode from the gateway TOML")
+	}
 	return &cfg
 }
 
@@ -254,16 +260,15 @@ func TestConfigureBGPFIBRefusesAnUnreadableNetworkFile(t *testing.T) {
 	}
 }
 
-// TestConfigureBGPFIBKeepsASpeakerThatSteersNoProvider covers the failover
-// speaker: it installs learned routes on an interface but renders no wan module
-// section and receives no network file, so it must configure exactly as it does
-// today and own the main table alone.
-func TestConfigureBGPFIBKeepsASpeakerThatSteersNoProvider(t *testing.T) {
-	t.Parallel()
-
-	const failoverConfigTOML = `
+// failoverConfigTOML is the failover container's configuration: a speaker that
+// installs learned routes on an interface, declares it does not use the
+// wanconfig network configuration, and carries no provider section. The deploy
+// now renders the key explicitly, and the absent form below covers a container
+// still carrying the config.toml it had before this key existed.
+const failoverConfigTOML = `
 [bgp]
 enabled = true
+use_wanconfig = false
 asn = 4200000001
 router_id = "192.0.2.4"
 learned_route_iface = "eth1"
@@ -274,28 +279,64 @@ role = "failover"
 [ifmgr.iface.eth0]
 name = "eth0"
 `
-	var cfg config.Config
-	if err := toml.Unmarshal([]byte(failoverConfigTOML), &cfg); err != nil {
-		t.Fatalf("toml.Unmarshal: %v", err)
-	}
-	log := discardLogger()
-	speaker := newTestSpeaker(t, &cfg, log)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	err := configureBGPFIB(
-		ctx,
-		&cfg,
-		speaker,
-		log,
-		filepath.Join(t.TempDir(), "absent.json"),
-		networkSchemaDirForTest(t),
-	)
-	if err != nil {
-		t.Fatalf("configureBGPFIB rejected a speaker that steers no provider: %v", err)
+// TestConfigureBGPFIBSkipsTheLoadWhereWanconfigIsOff covers the failover
+// container, which receives no network file and must configure exactly as it
+// does today: no load attempted, no startup failure, and the main table alone.
+// Both the explicitly false key the deploy renders and the absent key an
+// un-redeployed container still carries must behave that way.
+func TestConfigureBGPFIBSkipsTheLoadWhereWanconfigIsOff(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		configTOML string
+	}{
+		{name: "key rendered false", configTOML: failoverConfigTOML},
+		{
+			name: "key absent",
+			configTOML: strings.Replace(
+				failoverConfigTOML,
+				"use_wanconfig = false\n",
+				"",
+				1,
+			),
+		},
 	}
-	want := []int{unix.RT_TABLE_MAIN}
-	if got := tablesFromConfig(&cfg); !reflect.DeepEqual(got, want) {
-		t.Fatalf("owned tables = %v, want %v", got, want)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var cfg config.Config
+			if err := toml.Unmarshal([]byte(test.configTOML), &cfg); err != nil {
+				t.Fatalf("toml.Unmarshal: %v", err)
+			}
+			if cfg.BGP.UseWanconfig {
+				t.Fatal("failover configuration must not turn the wanconfig load on")
+			}
+			log := discardLogger()
+			speaker := newTestSpeaker(t, &cfg, log)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			// Both paths point at nothing readable. Reaching the loader at all
+			// is the failure this test exists to catch.
+			err := configureBGPFIB(
+				ctx,
+				&cfg,
+				speaker,
+				log,
+				filepath.Join(t.TempDir(), "absent.json"),
+				filepath.Join(t.TempDir(), "absent-schema"),
+			)
+			if err != nil {
+				t.Fatalf("configureBGPFIB rejected a speaker that uses no wanconfig: %v", err)
+			}
+			want := []int{unix.RT_TABLE_MAIN}
+			if got := tablesFromConfig(&cfg); !reflect.DeepEqual(got, want) {
+				t.Fatalf("owned tables = %v, want %v", got, want)
+			}
+		})
 	}
 }

@@ -89,6 +89,11 @@ debug = false
 
 [bgp]
 enabled = true
+{% if mwan_ifmgr_wan_enabled | bool %}
+use_wanconfig = true
+{% else %}
+use_wanconfig = false
+{% endif %}
 asn = {{ bgp_asn }}
 router_id = "{{ bgp_router_id }}"
 next_hop_v6 = "{{ bgp_next_hop_v6 }}"

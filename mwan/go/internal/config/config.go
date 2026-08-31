@@ -293,19 +293,25 @@ type OpnsenseValidateSection struct {
 
 // BGPSection holds embedded GoBGP speaker configuration.
 type BGPSection struct {
-	Enabled           bool               `toml:"enabled"`
-	ASN               uint32             `toml:"asn"`
-	RouterID          string             `toml:"router_id"`
-	NextHopV6         string             `toml:"next_hop_v6"` // IPv6 next-hop for announced routes (optional, defaults to RouterID)
-	KeepaliveSeconds  uint32             `toml:"keepalive_seconds"`
-	HoldSeconds       uint32             `toml:"hold_seconds"`
-	ListenPort        int32              `toml:"listen_port"`
-	Neighbors         []BGPNeighbor      `toml:"neighbors"`
-	NeighborsV6       []BGPNeighbor      `toml:"neighbors_v6"`
-	DynamicNeighbors  []string           `toml:"dynamic_neighbors"`
-	LearnedRouteIface string             `toml:"learned_route_iface"`
-	Announce          BGPAnnounce        `toml:"announce"`
-	GracefulRestart   BGPGracefulRestart `toml:"graceful_restart"`
+	Enabled           bool          `toml:"enabled"`
+	ASN               uint32        `toml:"asn"`
+	RouterID          string        `toml:"router_id"`
+	NextHopV6         string        `toml:"next_hop_v6"` // IPv6 next-hop for announced routes (optional, defaults to RouterID)
+	KeepaliveSeconds  uint32        `toml:"keepalive_seconds"`
+	HoldSeconds       uint32        `toml:"hold_seconds"`
+	ListenPort        int32         `toml:"listen_port"`
+	Neighbors         []BGPNeighbor `toml:"neighbors"`
+	NeighborsV6       []BGPNeighbor `toml:"neighbors_v6"`
+	DynamicNeighbors  []string      `toml:"dynamic_neighbors"`
+	LearnedRouteIface string        `toml:"learned_route_iface"`
+	// UseWanconfig marks a host whose BGP route installer owns the
+	// per-provider routing tables. Such a host reads the provider set from
+	// /etc/mwan/network.json, the wanconfig network configuration, and refuses
+	// to start without it. The failover container leaves it unset and owns the
+	// main table only.
+	UseWanconfig    bool               `toml:"use_wanconfig"`
+	Announce        BGPAnnounce        `toml:"announce"`
+	GracefulRestart BGPGracefulRestart `toml:"graceful_restart"`
 }
 
 // BGPGracefulRestart configures BGP Graceful Restart (RFC 4724) on the

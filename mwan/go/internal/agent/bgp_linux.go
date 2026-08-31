@@ -82,26 +82,27 @@ func configureBGPFIB(
 	networkPath string,
 	schemaDir string,
 ) error {
-	if cfg.BGP.LearnedRouteIface == "" {
-		return nil
-	}
-	if steersProviders(cfg) {
+	if cfg.BGP.UseWanconfig {
 		// The per-provider tables come from the network configuration, which
 		// config.toml no longer carries. Without it the installer would own the
 		// main table alone: every route learned for a provider would go
 		// uninstalled while the speaker still looked healthy, and traffic
 		// policy-routed into those tables would leave over the WAN instead of
-		// returning to the router. A gateway that cannot read the file does not
-		// start.
+		// returning to the router. A host that declares it uses the wanconfig
+		// network configuration and cannot read it does not start.
 		if err := networkjson.ApplyFrom(cfg, networkPath, schemaDir); err != nil {
 			log.ErrorContext(
 				ctx,
 				"network configuration unusable, BGP route installer cannot own the per-provider tables",
 				"path", networkPath,
+				"schema_dir", schemaDir,
 				"error", err,
 			)
 			return fmt.Errorf("load network configuration: %w", err)
 		}
+	}
+	if cfg.BGP.LearnedRouteIface == "" {
+		return nil
 	}
 	speaker.SetFIB(bgp.NewFIB(bgp.FIBConfig{
 		Tables:        tablesFromConfig(cfg),
@@ -109,17 +110,6 @@ func configureBGPFIB(
 	}, log))
 	startStaleSweepReconciler(ctx, speaker, log, realStaleSweepClock{})
 	return nil
-}
-
-// steersProviders reports whether this host routes traffic across the
-// providers, which is what makes the network configuration required. The
-// gateway's config.toml carries [ifmgr.modules.wan] and the failover speaker's
-// does not, so the section's presence is the same signal the deploy already
-// uses when it decides whether to write the network file at all. A speaker that
-// steers no provider owns the main table alone and needs no network file, which
-// is what it does today.
-func steersProviders(cfg *config.Config) bool {
-	return cfg.IfMgr.Modules.WAN != nil
 }
 
 func startStaleSweepReconciler(
