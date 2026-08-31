@@ -279,6 +279,27 @@ func buildHealth(label string, probe *health) (*config.IfMgrHealthWANSection, er
 	}, nil
 }
 
+// ApplyFrom loads the network configuration at path, validates it against the
+// models in schemaDir, and writes it onto cfg. Every process that reads the
+// network tree goes through here rather than repeating the sequence, so one
+// file owns each value and one implementation decides what a bad file means.
+// cfg is left untouched when the load fails, so a caller that carries on with a
+// diagnostic never shows a half-filled tree.
+func ApplyFrom(cfg *config.Config, path string, schemaDir string) error {
+	loaded, err := Load(path, schemaDir)
+	if err != nil {
+		return err
+	}
+	loaded.Apply(cfg)
+	return nil
+}
+
+// ApplyDefault applies the network configuration from the paths the deploy
+// installs.
+func ApplyDefault(cfg *config.Config) error {
+	return ApplyFrom(cfg, DefaultPath, DefaultSchemaDir)
+}
+
 // Apply writes the loaded tree onto cfg, filling the fields the TOML sections
 // filled before this file owned them. The health and routes sections keep the
 // filesystem paths TOML still carries, so only the network values are written.

@@ -13,6 +13,7 @@ import (
 
 	"goodkind.io/mwan/internal/bgp"
 	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/networkjson"
 )
 
 const staleSweepReconcileInterval = time.Minute
@@ -59,15 +60,66 @@ func configurePlatformBGP(
 	cfg *config.Config,
 	speaker *bgp.Speaker,
 	log *slog.Logger,
-) {
+) error {
+	return configureBGPFIB(
+		ctx,
+		cfg,
+		speaker,
+		log,
+		networkjson.DefaultPath,
+		networkjson.DefaultSchemaDir,
+	)
+}
+
+// configureBGPFIB is configurePlatformBGP with the network configuration's
+// location named, so a test drives the same load against a fixture rather than
+// the paths the deploy installs.
+func configureBGPFIB(
+	ctx context.Context,
+	cfg *config.Config,
+	speaker *bgp.Speaker,
+	log *slog.Logger,
+	networkPath string,
+	schemaDir string,
+) error {
 	if cfg.BGP.LearnedRouteIface == "" {
-		return
+		return nil
+	}
+	if steersProviders(cfg) {
+		// The per-provider tables come from the network configuration, which
+		// config.toml no longer carries. Without it the installer would own the
+		// main table alone: every route learned for a provider would go
+		// uninstalled while the speaker still looked healthy, and traffic
+		// policy-routed into those tables would leave over the WAN instead of
+		// returning to the router. A gateway that cannot read the file does not
+		// start.
+		if err := networkjson.ApplyFrom(cfg, networkPath, schemaDir); err != nil {
+			log.ErrorContext(
+				ctx,
+				"network configuration unusable, BGP route installer cannot own the per-provider tables",
+				"path", networkPath,
+				"error", err,
+			)
+			return fmt.Errorf("load network configuration: %w", err)
+		}
 	}
 	speaker.SetFIB(bgp.NewFIB(bgp.FIBConfig{
 		Tables:        tablesFromConfig(cfg),
 		InternalIface: cfg.BGP.LearnedRouteIface,
 	}, log))
 	startStaleSweepReconciler(ctx, speaker, log, realStaleSweepClock{})
+	return nil
+}
+
+// steersProviders reports whether this host routes traffic across the
+// providers, which is what makes the network configuration required. The
+// gateway's config.toml carries [ifmgr.modules.wan] and the failover speaker's
+// does not, so the section's presence is the same signal the deploy already
+// uses when it decides whether to write the network file at all. A speaker that
+// steers no provider owns the main table alone and needs no network file, which
+// is what it does today.
+func steersProviders(cfg *config.Config) bool {
+	return cfg.IfMgr.Modules.WAN != nil
 }
 
 func startStaleSweepReconciler(

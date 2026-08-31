@@ -16,6 +16,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr/modules/npt"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/networkjson"
 	"goodkind.io/mwan/internal/pd"
 )
 
@@ -85,6 +86,7 @@ func runDebugWithWriters(
 		printDebugUsage(diagnostics)
 		return 1
 	}
+	loadDebugNetworkConfig(diagnostics, cfg)
 
 	ctx := context.Background()
 	view := debugView(args[0])
@@ -140,6 +142,23 @@ func runDebugWithWriters(
 		return 1
 	}
 	return 0
+}
+
+// loadDebugNetworkConfig fills the network tree the provider views read. A
+// diagnostic run must survive a gateway whose network configuration is missing
+// or broken, because that is one of the states an operator runs it to inspect,
+// so a failure is reported and the views that need no provider still run. The
+// tree is left untouched on failure, which is what keeps the WAN lists visibly
+// empty rather than half filled.
+func loadDebugNetworkConfig(diagnostics io.Writer, cfg *config.Config) {
+	if err := networkjson.ApplyDefault(cfg); err != nil {
+		fmt.Fprintf(
+			diagnostics,
+			"mwan debug: network configuration unreadable, "+
+				"WAN lists and route simulations will be empty: %v\n",
+			err,
+		)
+	}
 }
 
 func printDebugUsage(output io.Writer) {

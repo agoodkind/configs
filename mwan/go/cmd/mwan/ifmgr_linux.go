@@ -246,13 +246,11 @@ func loadNetworkConfig(cfg *config.Config, role string) error {
 	if !steers {
 		return nil
 	}
-	loaded, err := networkjson.Load(networkjson.DefaultPath, networkjson.DefaultSchemaDir)
-	if err != nil {
+	if err := networkjson.ApplyDefault(cfg); err != nil {
 		logger.Warn("ifmgr: load network configuration failed",
 			"path", networkjson.DefaultPath, "role", role, "err", err)
 		return fmt.Errorf("load network configuration: %w", err)
 	}
-	loaded.Apply(cfg)
 	return nil
 }
 
