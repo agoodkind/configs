@@ -510,7 +510,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.PingCount = 0
 				return s
 			},
-			wantSub: "ping_count",
+			wantSub: "health/ping-count",
 		},
 		{
 			name: "zero success_threshold",
@@ -518,7 +518,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.SuccessThreshold = 0
 				return s
 			},
-			wantSub: "success_threshold",
+			wantSub: "health/success-threshold",
 		},
 		{
 			name: "empty targets_v6",
@@ -526,7 +526,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.TargetsV6 = nil
 				return s
 			},
-			wantSub: "targets_v6",
+			wantSub: "health/targets-v6",
 		},
 		{
 			name: "success_threshold exceeds targets",
@@ -534,7 +534,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.SuccessThreshold = 3
 				return s
 			},
-			wantSub: "exceeds targets_v4",
+			wantSub: "exceeds targets-v4",
 		},
 	}
 	for _, test := range tests {

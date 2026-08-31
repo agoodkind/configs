@@ -233,17 +233,17 @@ func buildHealthConfig(
 			RecoveryThreshold: wanSection.RecoveryThreshold,
 			CheckInterval:     0,
 		}
-		fieldPrefix := "ifmgr.modules.health.wan." + wan.Name
+		fieldPrefix := "network.json wan " + wan.Name + " health"
 		healthWAN.TargetsV4, err = parseAddrList(
 			wanSection.TargetsV4,
-			fieldPrefix+".targets_v4",
+			fieldPrefix+"/targets-v4",
 		)
 		if err != nil {
 			return health.Config{}, err
 		}
 		healthWAN.TargetsV6, err = parseAddrList(
 			wanSection.TargetsV6,
-			fieldPrefix+".targets_v6",
+			fieldPrefix+"/targets-v6",
 		)
 		if err != nil {
 			return health.Config{}, err
@@ -260,47 +260,47 @@ func buildHealthConfig(
 
 // validateHealthWANSection rejects an enabled health WAN that under-specifies
 // its probe policy. Every threshold must be positive, both ping-target families
-// must be non-empty, and success_threshold must not exceed either family's
-// target count. http_urls stays optional because HTTP is only an OR fallback
-// leg of the verdict. This turns a malformed hand-edited section into a load
-// error instead of a silent inherit of the module-wide defaults.
+// must be non-empty, and success-threshold must not exceed either family's
+// target count. http-urls stays optional because HTTP is only an OR fallback
+// leg of the verdict. This turns a malformed health container in network.json
+// into a load error instead of a silent inherit of the module-wide defaults.
 func validateHealthWANSection(name string, s config.IfMgrHealthWANSection) error {
-	prefix := "ifmgr.modules.health.wan." + name
+	prefix := "network.json wan " + name + " health"
 	if s.PingCount <= 0 {
-		return fmt.Errorf("%s.ping_count must be > 0", prefix)
+		return fmt.Errorf("%s/ping-count must be > 0", prefix)
 	}
 	if s.SuccessThreshold <= 0 {
-		return fmt.Errorf("%s.success_threshold must be > 0", prefix)
+		return fmt.Errorf("%s/success-threshold must be > 0", prefix)
 	}
 	if s.FailureThreshold <= 0 {
-		return fmt.Errorf("%s.failure_threshold must be > 0", prefix)
+		return fmt.Errorf("%s/failure-threshold must be > 0", prefix)
 	}
 	if s.RecoveryThreshold <= 0 {
-		return fmt.Errorf("%s.recovery_threshold must be > 0", prefix)
+		return fmt.Errorf("%s/recovery-threshold must be > 0", prefix)
 	}
 	if len(s.TargetsV4) == 0 {
-		return fmt.Errorf("%s.targets_v4 must have at least one entry", prefix)
+		return fmt.Errorf("%s/targets-v4 must have at least one entry", prefix)
 	}
 	if len(s.TargetsV6) == 0 {
-		return fmt.Errorf("%s.targets_v6 must have at least one entry", prefix)
+		return fmt.Errorf("%s/targets-v6 must have at least one entry", prefix)
 	}
 	if s.SuccessThreshold > len(s.TargetsV4) {
 		return fmt.Errorf(
-			"%s.success_threshold %d exceeds targets_v4 count %d",
+			"%s/success-threshold %d exceeds targets-v4 count %d",
 			prefix, s.SuccessThreshold, len(s.TargetsV4),
 		)
 	}
 	if s.SuccessThreshold > len(s.TargetsV6) {
 		return fmt.Errorf(
-			"%s.success_threshold %d exceeds targets_v6 count %d",
+			"%s/success-threshold %d exceeds targets-v6 count %d",
 			prefix, s.SuccessThreshold, len(s.TargetsV6),
 		)
 	}
 	return nil
 }
 
-// buildNPTConfig projects the shared [ifmgr.wan] prefixes and WAN identity
-// list into the npt module config. The WAN list and prefixes come from the
+// buildNPTConfig projects the shared translation prefixes and WAN identity
+// list from the network configuration into the npt module config. The WAN list and prefixes come from the
 // shared inputs, so npt and wan.routes always agree on the same WAN set.
 // Reading shared.MwanbrEdgeV6 here makes it a real consumer of the shared
 // field.
@@ -647,8 +647,8 @@ func buildHostIPv6PolicyConfig(
 	return cfg, nil
 }
 
-// sharedWAN is one WAN's full config from [ifmgr.wan.<name>]: the identity
-// (WANRef) plus the policy-routing slots wan.routes consumes. npt reads only the
+// sharedWAN is one WAN's full config from its network.json wan container: the
+// identity (WANRef) plus the policy-routing slots wan.routes consumes. npt reads only the
 // embedded WANRef; wan.routes reads the routing fields. One home per WAN.
 type sharedWAN struct {
 	ifmgr.WANRef
@@ -660,8 +660,8 @@ type sharedWAN struct {
 	V4Source   string
 }
 
-// sharedWANInputs is the runtime projection of the shared [ifmgr.wan] map and
-// the [ifmgr] prefixes every ifmgr module builder reuses. WANs is sorted by name
+// sharedWANInputs is the runtime projection of the network configuration's WAN
+// map and translation prefixes that every ifmgr module builder reuses. WANs is sorted by name
 // for deterministic output. Each module builder projects the fields it needs.
 type sharedWANInputs struct {
 	WANs           []sharedWAN
@@ -680,7 +680,7 @@ func (s sharedWANInputs) refs() []ifmgr.WANRef {
 	return refs
 }
 
-// buildWANRefs turns the shared WAN map ([ifmgr.wan.<name>]) and the [ifmgr]
+// buildWANRefs turns the network configuration's WAN map and translation
 // prefixes into the shared runtime pieces module builders consume: the per-WAN
 // list (sorted by name) and the shared prefixes.
 func buildWANRefs(ifmgrCfg config.IfMgrSection) sharedWANInputs {
@@ -732,13 +732,13 @@ func buildWANRoutesConfig(
 	for _, wan := range shared.WANs {
 		if wan.FwMark < 0 {
 			return wanroutes.Config{}, fmt.Errorf(
-				"ifmgr.wan.%s.fw_mark must be >= 0",
+				"network.json wan %s fw-mark must be >= 0",
 				wan.Name,
 			)
 		}
 		if wan.FwMark > int(^uint32(0)) {
 			return wanroutes.Config{}, fmt.Errorf(
-				"ifmgr.wan.%s.fw_mark %d exceeds uint32",
+				"network.json wan %s fw-mark %d exceeds uint32",
 				wan.Name,
 				wan.FwMark,
 			)
