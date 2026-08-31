@@ -2135,7 +2135,12 @@ fallback member translated in both families, then recovering; that a pinned
 destination exits its pinned provider; and that the inbound translation paths
 reach their internal targets.
 
-- [ ] **Step 4: Deploy the render slice to the testbed**
+- [ ] **Step 4: Cut the testbed over**
+
+One release carries every slice, so this single deploy renders and validates
+`network.json`, installs the binary that reads it, and stops rendering the
+network tree into `config.toml`. Step 1 must already have installed the model
+revision, or the daemon cannot validate the file it is handed.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
@@ -2164,37 +2169,37 @@ jq '.["ietf-interfaces:interfaces"].interface[] | {name, wan: .["goodkind-mwan-s
 ```
 
 Expected: yanglint exits 0, and the four interfaces are the three providers plus
-the internal link. Compare each provider's numbers against the values still in
-`/etc/mwan/config.toml` on the same host; they must match leaf for leaf. This is
-the render slice's proof, and it is the last moment both files carry the tree.
+the internal link. Compare each provider's numbers against the values the
+before snapshot recorded and against the inventory; they must match leaf for
+leaf. This proves acceptance item one on a real gateway.
 
-- [ ] **Step 6: Confirm the render slice changed no behavior**
-
-Repeat step 2 into `/tmp/after-render-*`, then diff against the before capture.
+- [ ] **Step 6: Confirm the daemon accepted the file**
 
 ```bash
-diff /tmp/before-nft.txt /tmp/after-render-nft.txt
-diff /tmp/before-rules.txt /tmp/after-render-rules.txt
-diff /tmp/before-routes.txt /tmp/after-render-routes.txt
+ssh mwan.suburban.goodkind.io 'journalctl -u mwan-ifmgr@wan -n 80 --no-pager'
 ```
 
-Expected: empty diffs. The daemon does not read the new file yet, so anything
-else is a defect in this slice.
+Expected: no "network configuration unusable" line, and the wan modules
+reconcile as they did before. The daemon reads `network.json` from this deploy
+onward, so a load failure here is the one that stops the gateway steering.
 
 - [ ] **Step 7: Run the deploy-validation breakage probe**
 
 Run Task 4's step 4 now if it has not already been run, and record its output.
 
-- [ ] **Step 8: Deploy the loader slice to the testbed**
+- [ ] **Step 8: Confirm the cutover took**
 
 ```bash
-cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 ssh mwan.suburban.goodkind.io 'systemctl status mwan-ifmgr@wan --no-pager; journalctl -u mwan-ifmgr@wan -n 50 --no-pager'
+ssh mwan.suburban.goodkind.io 'systemctl status mwan-agent --no-pager'
+ssh mwan.suburban.goodkind.io 'grep -c "ifmgr.wan" /etc/mwan/config.toml || true'
 ```
 
-Expected: the unit is active, and the journal carries no "network configuration
-unusable" line.
+Expected: both units are active, the journal carries no "network configuration
+unusable" line, and the grep count is 0. One release carries every slice, so the
+deploy in step 4 already moved the daemon onto `network.json` and already
+removed the network tree from `config.toml`; there is no separate loader or
+deletion deploy.
 
 - [ ] **Step 9: Capture the after snapshot and compare**
 
@@ -2219,17 +2224,21 @@ Repeat step 3 in full. Every row must match the before run: same egress provider
 same translated source at the same simulator ingress, same reply path, same
 fallback behavior, same pinned destinations, same inbound paths.
 
-- [ ] **Step 11: Deploy the deletion slice to the testbed**
+- [ ] **Step 11: Prove the agent's BGP table ownership survived**
+
+The agent installs router-learned routes into the per-provider tables, and it
+reads the provider set from the same network configuration. This step is what
+would have caught the defect the whole-branch review found.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
-ssh mwan.suburban.goodkind.io 'grep -c "ifmgr.wan" /etc/mwan/config.toml || true'
-ssh mwan.suburban.goodkind.io 'systemctl status mwan-ifmgr@wan --no-pager'
+ssh mwan.suburban.goodkind.io 'journalctl -u mwan-agent -n 30 --no-pager'
+ssh mwan.suburban.goodkind.io 'for t in 100 200 300; do echo "== $t"; ip -6 route show table $t; done'
 ```
 
-Expected: the grep count is 0, and the unit is active. Repeat steps 9 and 10 once
-more; the comparisons must still be clean.
+Expected: every provider table carries the internal prefixes learned from the
+router, not just its own default route, and the same prefixes the before
+snapshot recorded in step 2. A table holding only a default route means the
+agent lost its owned-table list.
 
 #### Production
 
@@ -2253,7 +2262,10 @@ Repeat step 2 with `MGMT=3d06:bad:b01::113` and the production gateway
 `mwan.home.goodkind.io`. Add a per-provider forced-egress probe in both families
 and record the BGP session state, so the reduced live checks have a baseline.
 
-- [ ] **Step 14: Deploy the render slice to production**
+- [ ] **Step 14: Cut production over**
+
+Announce the reboot to the peer sessions first, and wait for their
+acknowledgement.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
@@ -2261,24 +2273,28 @@ go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --lim
 ```
 
 Expected: the schema validation passes, the deploy gate's reboot and egress
-verdicts pass, and the reboot window is reported. Record the exact window.
-Confirm the egress announcements reached the peer sessions before the reboot.
+verdicts pass, and the reboot window is reported. Record the exact window and
+report it to the peer sessions afterwards.
 
-- [ ] **Step 15: Deploy the loader slice to production**
+- [ ] **Step 15: Compare production against its baseline**
 
-Same command, after the render slice is confirmed and separately approved. Then
-repeat step 13's captures, compare tree and kernel state against the baseline,
-and run the per-provider forced-egress probes in both families.
+Repeat step 13's captures, compare the served tree and kernel state against the
+baseline, run the per-provider forced-egress probes in both families, and run
+step 11's per-provider table check for the agent's learned routes.
 
-Expected: identical tree and kernel state, and every provider carries traffic in
-both families. No synthetic failover drill runs on production unless the operator
+Expected: identical tree and kernel state, every provider carries traffic in
+both families, and every provider table still holds the router-learned
+prefixes. No synthetic failover drill runs on production unless the operator
 orders one.
 
-- [ ] **Step 16: Deploy the deletion slice to production**
+- [ ] **Step 16: Confirm the TOML no longer carries the network tree**
 
-Same command, after the loader slice is confirmed and separately approved. Repeat
-the comparison once more, and confirm `/etc/mwan/config.toml` on the gateway
-carries no `[ifmgr.wan` table.
+```bash
+ssh mwan.home.goodkind.io 'grep -c "ifmgr.wan" /etc/mwan/config.toml || true'
+```
+
+Expected: 0. The same deploy that moved the daemon onto `network.json` removed
+those tables, so this confirms rather than performs the deletion.
 
 - [ ] **Step 17: Record the outcome**
 
@@ -2294,8 +2310,9 @@ wanconfig ledger naming what shipped and what remains.
 in the file and leave everything else in TOML. The schema: Task 1. The renderer,
 MWAN-347: Task 2. The loader,
 MWAN-348: Task 3. Deploy-time validation, MWAN-349: Task 4. Cutover and proof:
-Task 6, with the three-deploy testbed order, the traffic matrix, the breakage
-probe, and the production sequence under approval gates. Error handling: Task 4
+Task 6, with one cutover deploy per environment, the traffic matrix run before
+and after it, the breakage probe, the agent's per-provider table check, and the
+production sequence under approval gates. Error handling: Task 4
 covers the invalid render, Task 3's `loadNetworkConfig` and its five tests cover
 the invalid or missing file at boot, and the single-schema constraint is
 structural in Tasks 3 and 4. Testing: Task 3 carries the loader's red-green set,
