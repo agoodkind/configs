@@ -202,3 +202,31 @@ func TestLoadRejectsMissingRequiredLeaf(t *testing.T) {
 		t.Fatalf("error does not name the missing leaf: %v", err)
 	}
 }
+
+func TestLoadAcceptsADisabledProbeWithNoSettings(t *testing.T) {
+	t.Parallel()
+
+	// A disabled probe is the second way a provider goes unprobed, and the
+	// daemon reads none of its settings, so a container carrying only the flag
+	// must load rather than stop the daemon over counts nobody consumes.
+	body := strings.Replace(
+		validDocument,
+		`"npt-prefix": "2001:db8:beef:100::/60"`,
+		`"npt-prefix": "2001:db8:beef:100::/60", "health": {"enabled": false}`,
+		1,
+	)
+	loaded, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err != nil {
+		t.Fatalf("Load rejected a disabled probe with no settings: %v", err)
+	}
+	probe, present := loaded.Health["att"]
+	if !present {
+		t.Fatal("att carries a disabled health container and must hold a probe entry")
+	}
+	if probe.Enabled {
+		t.Fatal("att probe loaded as enabled")
+	}
+	if probe.PingCount != 0 || len(probe.TargetsV6) != 0 {
+		t.Fatalf("disabled probe carries settings: %+v", probe)
+	}
+}

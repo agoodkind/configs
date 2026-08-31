@@ -105,17 +105,6 @@ module goodkind-mwan-steering {
       "A member's combined health verdict.";
   }
 
-  typedef rule-source {
-    type union {
-      type inet:ip-address;
-      type inet:ip-prefix;
-    }
-    description
-      "A source selector for a routing policy rule. The kernel rule
-       accepts a single address or a prefix, so both forms are
-       valid.";
-  }
-
   augment "/if:interfaces/if:interface" {
     description
       "Marks an interface as a steering member.";
@@ -280,7 +269,10 @@ module goodkind-mwan-steering {
            translation.";
       }
       leaf v4-source {
-        type rule-source;
+        type union {
+          type inet:ipv4-address;
+          type inet:ipv4-prefix;
+        }
         description
           "This provider's static IPv4 link address. When present,
            traffic the gateway sources from it is pinned to this
@@ -453,7 +445,9 @@ module goodkind-mwan-steering {
           "Probe settings shared by every member. What each member is
            probed with sits on that member.";
         leaf probe-timeout {
-          type uint32;
+          type uint32 {
+            range "1..max";
+          }
           units "milliseconds";
           description
             "How long one probe attempt may take before it counts as

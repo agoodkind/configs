@@ -233,6 +233,56 @@
         state: directory
         mode: "0755"
 
+    # The network configuration is rendered and schema-checked on the controller
+    # before any file reaches the gateway, so a rejected render stops the play
+    # while the gateway still holds a consistent set of files: config.toml no
+    # longer carries the network tree, and writing it without a validated
+    # network.json beside it would leave a gateway that cannot start its wan
+    # role on the next restart.
+    - name: Ensure the controller render directory exists
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ repo_root }}/.cache"
+        state: directory
+        mode: "0755"
+      when: mwan_ifmgr_wan_enabled | bool
+
+    - name: Render the MWAN network configuration on the controller
+      delegate_to: localhost
+      become: false
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/network.json.j2"
+        dest: "{{ mwan_network_json_local }}"
+        mode: "0600"
+      when: mwan_ifmgr_wan_enabled | bool
+
+    # The same model files this repository copies onto the gateway, checked with
+    # yanglint the way the daemon checks the file with libyang at startup. This
+    # is the pre-flight validation that replaces the ruleset parse the firewall
+    # work removes.
+    - name: Validate the rendered network configuration against the schema
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command:
+        argv:
+          - yanglint
+          - -t
+          - config
+          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-yang-types@2025-12-22.yang"
+          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-inet-types@2025-12-22.yang"
+          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/iana-if-type@2014-05-08.yang"
+          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-interfaces@2018-02-20.yang"
+          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang"
+          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-routing@2018-03-13.yang"
+          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang"
+          - "{{ mwan_steering_model }}"
+          - "{{ mwan_network_json_local }}"
+      register: mwan_network_json_validate
+      changed_when: false
+      failed_when: mwan_network_json_validate.rc != 0
+      when: mwan_ifmgr_wan_enabled | bool
+
     - name: Deploy MWAN runtime environment file
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/mwan.env.j2"
@@ -260,57 +310,11 @@
         mode: "0600"
       notify: Restart mwan-ifmgr@wan
 
-    # The gateway's network tree in the model's own JSON encoding. Rendered only
-    # where the wan role runs, because it carries that role's sections and no
-    # other. The mode matches config.toml beside it; the file carries no secret.
-    - name: Ensure the controller render directory exists
-      delegate_to: localhost
-      become: false
-      ansible.builtin.file:
-        path: "{{ repo_root }}/.cache"
-        state: directory
-        mode: "0755"
-      when: mwan_ifmgr_wan_enabled | bool
-
-    # Rendered on the controller, not on the gateway, so the schema check below
-    # runs before anything reaches the target.
-    - name: Render the MWAN network configuration on the controller
-      delegate_to: localhost
-      become: false
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/network.json.j2"
-        dest: "{{ mwan_network_json_local }}"
-        mode: "0600"
-      when: mwan_ifmgr_wan_enabled | bool
-
-    # The same model files this repository copies onto the gateway, checked with
-    # yanglint the way the daemon checks the file with libyang at startup. This
-    # is the pre-flight validation that replaces the ruleset parse the firewall
-    # work removes, so a rejected render fails the play with the gateway
-    # untouched.
-    - name: Validate the rendered network configuration against the schema
-      delegate_to: localhost
-      become: false
-      ansible.builtin.command:
-        argv:
-          - yanglint
-          - -t
-          - config
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-yang-types@2025-12-22.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-inet-types@2025-12-22.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/iana-if-type@2014-05-08.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-interfaces@2018-02-20.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-routing@2018-03-13.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang"
-          - "{{ mwan_steering_model }}"
-          - "{{ mwan_network_json_local }}"
-      register: mwan_network_json_validate
-      changed_when: false
-      failed_when: mwan_network_json_validate.rc != 0
-      when: mwan_ifmgr_wan_enabled | bool
-
-    # The validated bytes, not a second render.
+    # The gateway's network tree in the model's own JSON encoding, rendered and
+    # validated on the controller before the first gateway write above. Rendered
+    # only where the wan role runs, because it carries that role's sections and
+    # no other. The mode matches config.toml beside it; the file carries no
+    # secret. These are the validated bytes, not a second render.
     - name: Deploy MWAN network configuration
       ansible.builtin.copy:
         src: "{{ mwan_network_json_local }}"

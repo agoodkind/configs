@@ -244,10 +244,29 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 	return routing, probe, nil
 }
 
-// buildHealth reads one provider's probe. Every setting is required, matching
-// the daemon's rule that an enabled provider fully specifies its policy rather
-// than inheriting a module-wide default.
+// buildHealth reads one provider's probe. Every setting of an enabled probe is
+// required, matching the daemon's rule that an enabled provider fully specifies
+// its policy rather than inheriting a module-wide default. A disabled probe
+// needs nothing beyond the flag, because the daemon never reads its settings:
+// it is the second of the two ways a provider goes unprobed, beside carrying no
+// health container at all.
 func buildHealth(label string, probe *health) (*config.IfMgrHealthWANSection, error) {
+	if probe.Enabled == nil {
+		return nil, fmt.Errorf("%s: health/enabled is required", label)
+	}
+	if !*probe.Enabled {
+		return &config.IfMgrHealthWANSection{
+			Enabled:              false,
+			PingCount:            0,
+			SuccessThreshold:     0,
+			CheckIntervalSeconds: 0,
+			FailureThreshold:     0,
+			RecoveryThreshold:    0,
+			TargetsV4:            nil,
+			TargetsV6:            nil,
+			HTTPURLs:             nil,
+		}, nil
+	}
 	counts := []struct {
 		leaf  string
 		value *int
@@ -263,11 +282,8 @@ func buildHealth(label string, probe *health) (*config.IfMgrHealthWANSection, er
 			return nil, fmt.Errorf("%s: health/%s is required", label, count.leaf)
 		}
 	}
-	if probe.Enabled == nil {
-		return nil, fmt.Errorf("%s: health/enabled is required", label)
-	}
 	return &config.IfMgrHealthWANSection{
-		Enabled:              *probe.Enabled,
+		Enabled:              true,
 		PingCount:            *probe.PingCount,
 		SuccessThreshold:     *probe.SuccessThreshold,
 		CheckIntervalSeconds: *probe.CheckInterval,
