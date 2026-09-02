@@ -81,7 +81,9 @@ func Run(cfg *config.Config) error {
 		return err
 	}
 	if bgpSpeaker != nil {
-		configurePlatformBGP(runCtx, cfg, bgpSpeaker, logger)
+		if err := configurePlatformBGP(runCtx, cfg, bgpSpeaker, logger); err != nil {
+			return err
+		}
 		if err := bgpSpeaker.Start(runCtx); err != nil {
 			logger.Error("bgp speaker start failed", "error", err)
 			return fmt.Errorf("bgp speaker start: %w", err)

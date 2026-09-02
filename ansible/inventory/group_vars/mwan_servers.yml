@@ -204,6 +204,11 @@ mwan_static_mappings:
 # Health check configuration
 # ----------------------------------------------------------------------------
 
+# How long one health probe attempt may take before it counts as failed.
+# Milliseconds, because a probe timeout is the one span here an operator tunes
+# below a second. Rendered into network.json as steering-group/health/probe-timeout.
+mwan_health_probe_timeout_ms: 2000
+
 mwan_health_checks:
   att:
     enabled: true

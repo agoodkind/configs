@@ -10,12 +10,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/logging"
+	"goodkind.io/mwan/internal/networkjson"
 	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/tracing"
 	"goodkind.io/mwan/internal/version"
@@ -65,6 +67,11 @@ func runIfMgr(cfg *config.Config) error {
 		"dry_run", flags.dryRun,
 		"known_roles", ifmgr.KnownRoles(),
 	)
+
+	if err := loadNetworkConfig(cfg, role); err != nil {
+		logger.Error("ifmgr: network configuration unusable", "err", err)
+		return err
+	}
 
 	dcfg, err := buildIfMgrDaemonConfig(cfg, role)
 	if err != nil {
@@ -223,4 +230,40 @@ func buildIfMgrDaemonConfig(cfg *config.Config, role string) (ifmgr.DaemonConfig
 		ModuleConfigs:     moduleConfigs,
 		LiveState:         nil,
 	}, nil
+}
+
+// loadNetworkConfig fills the network tree from the gateway's network
+// configuration file for a role that steers providers. Any other role leaves
+// cfg untouched: the file describes providers, and a role that steers none has
+// nothing to read. A role that does steer them cannot start without it, which
+// is the contract a bad configuration has always had.
+func loadNetworkConfig(cfg *config.Config, role string) error {
+	logger := slog.Default().With("component", "ifmgr")
+	steers, err := roleSteersProviders(role)
+	if err != nil {
+		return err
+	}
+	if !steers {
+		return nil
+	}
+	if err := networkjson.ApplyDefault(cfg); err != nil {
+		logger.Warn("ifmgr: load network configuration failed",
+			"path", networkjson.DefaultPath, "role", role, "err", err)
+		return fmt.Errorf("load network configuration: %w", err)
+	}
+	return nil
+}
+
+// roleSteersProviders reports whether role runs the modules the network
+// configuration file configures. wan.routes is the module that programs the
+// per-provider routes and rules, so its presence is what makes the file
+// required.
+func roleSteersProviders(role string) (bool, error) {
+	logger := slog.Default().With("component", "ifmgr")
+	names, err := ifmgr.ModulesForRole(role)
+	if err != nil {
+		logger.Warn("ifmgr: modules for role failed", "role", role, "err", err)
+		return false, fmt.Errorf("ModulesForRole(%q): %w", role, err)
+	}
+	return slices.Contains(names, "wan.routes"), nil
 }

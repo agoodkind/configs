@@ -13,6 +13,7 @@ import (
 
 	"goodkind.io/mwan/internal/bgp"
 	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/networkjson"
 )
 
 const staleSweepReconcileInterval = time.Minute
@@ -59,15 +60,56 @@ func configurePlatformBGP(
 	cfg *config.Config,
 	speaker *bgp.Speaker,
 	log *slog.Logger,
-) {
+) error {
+	return configureBGPFIB(
+		ctx,
+		cfg,
+		speaker,
+		log,
+		networkjson.DefaultPath,
+		networkjson.DefaultSchemaDir,
+	)
+}
+
+// configureBGPFIB is configurePlatformBGP with the network configuration's
+// location named, so a test drives the same load against a fixture rather than
+// the paths the deploy installs.
+func configureBGPFIB(
+	ctx context.Context,
+	cfg *config.Config,
+	speaker *bgp.Speaker,
+	log *slog.Logger,
+	networkPath string,
+	schemaDir string,
+) error {
+	if cfg.BGP.UseWanconfig {
+		// The per-provider tables come from the network configuration, which
+		// config.toml no longer carries. Without it the installer would own the
+		// main table alone: every route learned for a provider would go
+		// uninstalled while the speaker still looked healthy, and traffic
+		// policy-routed into those tables would leave over the WAN instead of
+		// returning to the router. A host that declares it uses the wanconfig
+		// network configuration and cannot read it does not start.
+		if err := networkjson.ApplyFrom(cfg, networkPath, schemaDir); err != nil {
+			log.ErrorContext(
+				ctx,
+				"network configuration unusable, BGP route installer cannot own the per-provider tables",
+				"path", networkPath,
+				"schema_dir", schemaDir,
+				"error", err,
+			)
+			return fmt.Errorf("load network configuration: %w", err)
+		}
+	}
 	if cfg.BGP.LearnedRouteIface == "" {
-		return
+		return nil
 	}
 	speaker.SetFIB(bgp.NewFIB(bgp.FIBConfig{
 		Tables:        tablesFromConfig(cfg),
 		InternalIface: cfg.BGP.LearnedRouteIface,
 	}, log))
 	startStaleSweepReconciler(ctx, speaker, log, realStaleSweepClock{})
+	return nil
 }
 
 func startStaleSweepReconciler(

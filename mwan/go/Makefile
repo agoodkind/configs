@@ -167,7 +167,31 @@ yang-validate:
 	$(YANGLINT) --version
 	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_DIR)/*.yang
 
-check: yang-validate
+# A data instance carrying an interface must give it a type, and that identity
+# lives in the interface-type registry, so the instance gate needs one module
+# the schema gate does not.
+YANG_INSTANCE_MODULES := \
+	$(YANG_RFC_DIR)/ietf-yang-types@2025-12-22.yang \
+	$(YANG_RFC_DIR)/ietf-inet-types@2025-12-22.yang \
+	$(YANG_RFC_DIR)/iana-if-type@2014-05-08.yang \
+	$(YANG_RFC_DIR)/ietf-interfaces@2018-02-20.yang \
+	$(YANG_RFC_DIR)/ietf-ip@2018-02-22.yang \
+	$(YANG_RFC_DIR)/ietf-routing@2018-03-13.yang \
+	$(YANG_RFC_DIR)/ietf-nat@2019-01-10.yang
+
+YANG_INSTANCES := $(wildcard $(YANG_DIR)/instances/*.json)
+
+# Each instance is validated as configuration, the same check the deploy runs on
+# the rendered file and the daemon runs at startup. A schema change that would
+# reject the shape the gateway is configured with fails here.
+.PHONY: yang-validate-instances
+yang-validate-instances:
+	@for instance in $(YANG_INSTANCES); do \
+		echo "yanglint -t config $$instance"; \
+		$(YANGLINT) -t config $(YANG_INSTANCE_MODULES) $(YANG_DIR)/*.yang "$$instance" || exit 1; \
+	done
+
+check: yang-validate yang-validate-instances
 
 # ---------------------------------------------------------------------------
 # cgo dependencies for the publishing binding

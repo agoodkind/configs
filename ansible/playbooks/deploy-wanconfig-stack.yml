@@ -46,7 +46,7 @@
           - napt44
           - dst-nat
           - nptv6
-      - name: goodkind-mwan-steering@2026-08-29
+      - name: goodkind-mwan-steering@2026-08-30
         features: []
   tasks:
     - name: Install the front-end proxy
@@ -119,6 +119,10 @@
         enabled: false
         masked: true
 
+    # The interface-type registry rides along because the daemon validates its
+    # own network configuration against this directory, and a data instance
+    # naming an interface must give it a type from that registry. sysrepo gets
+    # its copy from rousette's directory below; this one is for the daemon.
     - name: Copy the gateway model and its IETF imports
       ansible.builtin.copy:
         src: "{{ item }}"
@@ -133,7 +137,8 @@
         - "../../third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang"
         - "../../third_party/yang/standard/ietf/RFC/ietf-routing@2018-03-13.yang"
         - "../../third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang"
-        - "../../mwan/yang/goodkind-mwan-steering@2026-08-29.yang"
+        - "../../third_party/yang/standard/ietf/RFC/iana-if-type@2014-05-08.yang"
+        - "../../mwan/yang/goodkind-mwan-steering@2026-08-30.yang"
 
     - name: List installed sysrepo modules
       ansible.builtin.command:

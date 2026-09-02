@@ -17,6 +17,7 @@ import (
 	health "goodkind.io/mwan/internal/ifmgr/modules/health"
 	npt "goodkind.io/mwan/internal/ifmgr/modules/npt"
 	wanroutes "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
+	"goodkind.io/mwan/internal/networkjson"
 )
 
 func TestBuildPolicyRuleUIDRangeUsesStaticRange(t *testing.T) {
@@ -347,31 +348,31 @@ func TestBuildHealthConfig(t *testing.T) {
 
 	shared := buildWANRefs(sharedWANForTest())
 	cfg, err := buildHealthConfig(shared, &config.IfMgrHealthSection{
-		StateFile:        "/run/health",
-		PersistStateFile: "/var/lib/health",
-		Timeout:          "3s",
+		StateFile:          "/run/health",
+		PersistStateFile:   "/var/lib/health",
+		ProbeTimeoutMillis: 3000,
 		WAN: map[string]config.IfMgrHealthWANSection{
 			"att": {
-				Enabled:           true,
-				PingCount:         4,
-				SuccessThreshold:  2,
-				CheckInterval:     "15s",
-				FailureThreshold:  3,
-				RecoveryThreshold: 4,
-				TargetsV4:         []string{"192.0.2.1", "192.0.2.2"},
-				TargetsV6:         []string{"2001:db8::1", "2001:db8::2"},
-				HTTPURLs:          []string{"https://example.com/health"},
+				Enabled:              true,
+				PingCount:            4,
+				SuccessThreshold:     2,
+				CheckIntervalSeconds: 15,
+				FailureThreshold:     3,
+				RecoveryThreshold:    4,
+				TargetsV4:            []string{"192.0.2.1", "192.0.2.2"},
+				TargetsV6:            []string{"2001:db8::1", "2001:db8::2"},
+				HTTPURLs:             []string{"https://example.com/health"},
 			},
 			"webpass": {
-				Enabled:           true,
-				PingCount:         5,
-				SuccessThreshold:  1,
-				CheckInterval:     "30s",
-				FailureThreshold:  5,
-				RecoveryThreshold: 3,
-				TargetsV4:         []string{"198.51.100.1", "198.51.100.2"},
-				TargetsV6:         []string{"2001:db8:1::1", "2001:db8:1::2"},
-				HTTPURLs:          []string{"https://example.net/health"},
+				Enabled:              true,
+				PingCount:            5,
+				SuccessThreshold:     1,
+				CheckIntervalSeconds: 30,
+				FailureThreshold:     5,
+				RecoveryThreshold:    3,
+				TargetsV4:            []string{"198.51.100.1", "198.51.100.2"},
+				TargetsV6:            []string{"2001:db8:1::1", "2001:db8:1::2"},
+				HTTPURLs:             []string{"https://example.net/health"},
 			},
 		},
 	})
@@ -435,17 +436,17 @@ func TestBuildHealthConfig(t *testing.T) {
 // enabledHealthWANSection returns a fully specified, valid enabled health WAN
 // section so filter and threshold tests do not trip the enabled-WAN policy
 // validation in buildHealthConfig.
-func enabledHealthWANSection(interval string) config.IfMgrHealthWANSection {
+func enabledHealthWANSection(intervalSeconds int) config.IfMgrHealthWANSection {
 	return config.IfMgrHealthWANSection{
-		Enabled:           true,
-		PingCount:         3,
-		SuccessThreshold:  2,
-		CheckInterval:     interval,
-		FailureThreshold:  2,
-		RecoveryThreshold: 2,
-		TargetsV4:         []string{"1.1.1.1", "8.8.8.8"},
-		TargetsV6:         []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
-		HTTPURLs:          []string{"https://ifconfig.co/ip"},
+		Enabled:              true,
+		PingCount:            3,
+		SuccessThreshold:     2,
+		CheckIntervalSeconds: intervalSeconds,
+		FailureThreshold:     2,
+		RecoveryThreshold:    2,
+		TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
+		TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+		HTTPURLs:             []string{"https://ifconfig.co/ip"},
 	}
 }
 
@@ -460,15 +461,15 @@ func TestBuildHealthConfigSkipsDisabledAndAbsentWANs(t *testing.T) {
 		{
 			name: "disabled WAN",
 			wan: map[string]config.IfMgrHealthWANSection{
-				"att":     {Enabled: false, CheckInterval: "10s"},
-				"webpass": enabledHealthWANSection("30s"),
+				"att":     {Enabled: false, CheckIntervalSeconds: 10},
+				"webpass": enabledHealthWANSection(30),
 			},
 			wantName: "webpass",
 		},
 		{
 			name: "absent WAN",
 			wan: map[string]config.IfMgrHealthWANSection{
-				"att": enabledHealthWANSection("10s"),
+				"att": enabledHealthWANSection(10),
 			},
 			wantName: "att",
 		},
@@ -497,7 +498,7 @@ func TestBuildHealthConfigSkipsDisabledAndAbsentWANs(t *testing.T) {
 func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 	t.Parallel()
 
-	base := enabledHealthWANSection("10s")
+	base := enabledHealthWANSection(10)
 	tests := []struct {
 		name    string
 		mutate  func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection
@@ -509,7 +510,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.PingCount = 0
 				return s
 			},
-			wantSub: "ping_count",
+			wantSub: "health/ping-count",
 		},
 		{
 			name: "zero success_threshold",
@@ -517,7 +518,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.SuccessThreshold = 0
 				return s
 			},
-			wantSub: "success_threshold",
+			wantSub: "health/success-threshold",
 		},
 		{
 			name: "empty targets_v6",
@@ -525,7 +526,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.TargetsV6 = nil
 				return s
 			},
-			wantSub: "targets_v6",
+			wantSub: "health/targets-v6",
 		},
 		{
 			name: "success_threshold exceeds targets",
@@ -533,7 +534,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				s.SuccessThreshold = 3
 				return s
 			},
-			wantSub: "exceeds targets_v4",
+			wantSub: "exceeds targets-v4",
 		},
 	}
 	for _, test := range tests {
@@ -602,43 +603,34 @@ func TestBuildIfMgrModuleConfigsWANRoleBuildsAll(t *testing.T) {
 	}
 }
 
-// TestIfMgrWANConfigRoundTrips parses a config.toml snippet exactly as the
-// template renders it (the shared prefixes on [ifmgr], keyed [ifmgr.wan.<name>]
-// tables carrying each WAN's full config, and the module-wide
-// [ifmgr.modules.wan.routes] scalars) and drives it through
-// buildIfMgrModuleConfigs. A render-vs-schema mismatch that the struct-built
-// fixtures cannot catch (for example the keyed WAN map failing to populate,
-// which crash-looped mwan-ifmgr@wan with "iface is required") fails here instead
-// of in production.
-func TestIfMgrWANConfigRoundTrips(t *testing.T) {
+// TestNetworkConfigOwnsTheNetworkTree drives the real two-file load path. A
+// config.toml that still carries the legacy network keys must contribute none
+// of them, and the network tree must reach the module configs from the JSON
+// loader's output instead. A render-versus-schema mismatch that struct-built
+// fixtures cannot catch fails here rather than in production.
+func TestNetworkConfigOwnsTheNetworkTree(t *testing.T) {
 	t.Parallel()
 
+	// Every network key below is one a pre-cutover config.toml carries. None of
+	// them may reach the parsed config.
 	const configTOML = `
 [ifmgr]
 role = "wan"
-internal_prefix = "3d06:bad:b01:210::/60"
-opnsense_edge_v6 = "3d06:bad:b01:201::2"
-mwanbr_edge_v6 = "3d06:bad:b01:201::3"
+internal_prefix = "3d06:bad:b01:999::/60"
+opnsense_edge_v6 = "3d06:bad:b01:999::2"
+mwanbr_edge_v6 = "3d06:bad:b01:999::3"
+
+[ifmgr.iface.enmbrains0]
+name = "enmbrains0"
 
 [ifmgr.wan.att]
-iface = "enatt0"
-table_id = 100
-fw_mark = 1
-fw_mark_prio = 100
-from_prio = 55
-npt_prefix = "3d06:bad:b01:2300::/60"
-
-[ifmgr.wan.webpass]
-iface = "enwebpass0"
-table_id = 200
-fw_mark = 2
-fw_mark_prio = 200
-from_prio = 56
-npt_prefix = "3d06:bad:b01:2200::/60"
-v4_source = "10.240.204.2"
+iface = "stale0"
+table_id = 999
 
 [ifmgr.modules.wan.routes]
-internal_iface = "enmwanbr0"
+internal_iface = "stale0"
+internal_net_v4 = "192.0.2.240/29"
+health_state_file = "/run/mwan-health.state"
 
 [ifmgr.modules.health]
 state_file = "/run/mwan-health.state"
@@ -647,73 +639,220 @@ timeout = "2s"
 
 [ifmgr.modules.health.wan.att]
 enabled = true
-ping_count = 3
-success_threshold = 2
-check_interval = "10s"
-failure_threshold = 2
-recovery_threshold = 2
-targets_v4 = ["1.1.1.1", "8.8.8.8"]
-targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
-http_urls = ["https://ifconfig.co/ip"]
-
-[ifmgr.modules.health.wan.webpass]
-enabled = true
-ping_count = 3
-success_threshold = 2
-check_interval = "30s"
-failure_threshold = 2
-recovery_threshold = 2
-targets_v4 = ["1.1.1.1", "8.8.8.8"]
-targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
-http_urls = ["https://ifconfig.co/ip"]
+ping_count = 99
 `
 	var cfg config.Config
 	if err := toml.Unmarshal([]byte(configTOML), &cfg); err != nil {
 		t.Fatalf("toml.Unmarshal: %v", err)
 	}
-	// The keyed [ifmgr.wan.<name>] tables must populate the WAN map with each
-	// WAN's full config, and the shared prefixes must land on [ifmgr] itself.
-	if got := len(cfg.IfMgr.WAN); got != 2 {
-		t.Fatalf("[ifmgr.wan] map size = %d, want 2 (render/schema mismatch)", got)
+	if len(cfg.IfMgr.WAN) != 0 {
+		t.Fatalf("[ifmgr.wan] still decodes from TOML: %#v", cfg.IfMgr.WAN)
 	}
-	if got := cfg.IfMgr.WAN["att"].Iface; got != "enatt0" {
-		t.Fatalf("cfg.IfMgr.WAN[att].Iface = %q, want enatt0", got)
+	if cfg.IfMgr.InternalPrefix != "" {
+		t.Fatalf("internal_prefix still decodes from TOML: %q", cfg.IfMgr.InternalPrefix)
 	}
-	if got := cfg.IfMgr.WAN["att"].TableID; got != 100 {
-		t.Fatalf("cfg.IfMgr.WAN[att].TableID = %d, want 100 (routing field did not fold in)", got)
+	if cfg.IfMgr.Modules.WAN.Routes.InternalIface != "" {
+		t.Fatalf("internal_iface still decodes from TOML: %q",
+			cfg.IfMgr.Modules.WAN.Routes.InternalIface)
 	}
-	if cfg.IfMgr.InternalPrefix != "3d06:bad:b01:210::/60" {
-		t.Fatalf("internal_prefix did not parse onto [ifmgr]: %q", cfg.IfMgr.InternalPrefix)
+	if len(cfg.IfMgr.Modules.Health.WAN) != 0 {
+		t.Fatalf("[ifmgr.modules.health.wan] still decodes from TOML: %#v",
+			cfg.IfMgr.Modules.Health.WAN)
 	}
+	// The two paths the network file deliberately does not carry must survive.
+	if cfg.IfMgr.Modules.Health.StateFile != "/run/mwan-health.state" {
+		t.Fatalf("health state_file did not parse: %q", cfg.IfMgr.Modules.Health.StateFile)
+	}
+	if cfg.IfMgr.Modules.WAN.Routes.HealthStateFile != "/run/mwan-health.state" {
+		t.Fatalf("wan.routes health_state_file did not parse: %q",
+			cfg.IfMgr.Modules.WAN.Routes.HealthStateFile)
+	}
+
+	network := networkjson.Config{
+		InternalPrefix:     "3d06:bad:b01:210::/60",
+		OpnsenseEdgeV6:     "3d06:bad:b01:201::2",
+		MwanbrEdgeV6:       "3d06:bad:b01:201::3",
+		InternalIface:      "enmwanbr0",
+		InternalNetV4:      "192.0.2.0/29",
+		ProbeTimeoutMillis: 2000,
+		WAN: map[string]config.IfMgrWANEntry{
+			"att": {
+				Iface:      "enatt0",
+				TableID:    100,
+				FwMark:     1,
+				FwMarkPrio: 100,
+				FromPrio:   55,
+				NptPrefix:  "3d06:bad:b01:2300::/60",
+				V4Source:   "",
+			},
+			"webpass": {
+				Iface:      "enwebpass0",
+				TableID:    200,
+				FwMark:     2,
+				FwMarkPrio: 200,
+				FromPrio:   56,
+				NptPrefix:  "3d06:bad:b01:2200::/60",
+				V4Source:   "10.240.204.2",
+			},
+		},
+		Health: map[string]config.IfMgrHealthWANSection{
+			"att": {
+				Enabled:              true,
+				PingCount:            3,
+				SuccessThreshold:     2,
+				CheckIntervalSeconds: 10,
+				FailureThreshold:     2,
+				RecoveryThreshold:    2,
+				TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
+				TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+				HTTPURLs:             []string{"https://ifconfig.co/ip"},
+			},
+			"webpass": {
+				Enabled:              true,
+				PingCount:            3,
+				SuccessThreshold:     2,
+				CheckIntervalSeconds: 30,
+				FailureThreshold:     2,
+				RecoveryThreshold:    2,
+				TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
+				TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+				HTTPURLs:             []string{"https://ifconfig.co/ip"},
+			},
+		},
+	}
+	network.Apply(&cfg)
 
 	set, err := buildIfMgrModuleConfigs(cfg.IfMgr, "wan")
 	if err != nil {
-		t.Fatalf("buildIfMgrModuleConfigs(wan) from parsed config: %v", err)
+		t.Fatalf("buildIfMgrModuleConfigs(wan): %v", err)
 	}
 	wr, ok := set["wan.routes"].(wanroutes.Config)
 	if !ok {
 		t.Fatalf("wan.routes config missing or wrong type: %T", set["wan.routes"])
+	}
+	if wr.InternalIface != "enmwanbr0" {
+		t.Fatalf("wan.routes internal iface = %q, want enmwanbr0", wr.InternalIface)
+	}
+	if wr.HealthStateFile != "/run/mwan-health.state" {
+		t.Fatalf("wan.routes health state file = %q, want /run/mwan-health.state",
+			wr.HealthStateFile)
 	}
 	byName := map[string]wanroutes.WAN{}
 	for _, w := range wr.WANs {
 		byName[w.Name] = w
 	}
 	if byName["att"].Iface != "enatt0" || byName["webpass"].Iface != "enwebpass0" {
-		t.Fatalf("wan.routes ifaces did not resolve from [ifmgr.wan]: %#v", byName)
+		t.Fatalf("wan.routes ifaces did not resolve from the network file: %#v", byName)
 	}
-	if byName["webpass"].V4Source != "10.240.204.2" || byName["att"].TableID != 100 {
-		t.Fatalf("wan.routes routing fields did not resolve from [ifmgr.wan]: %#v", byName)
+	if byName["att"].TableID != 100 || byName["webpass"].V4Source != "10.240.204.2" {
+		t.Fatalf("wan.routes routing fields did not resolve from the network file: %#v", byName)
 	}
-	if _, ok := set["npt"]; !ok {
-		t.Fatal("wan role must build an npt config from the round-tripped config")
-	}
-	healthConfig, ok := set["health"].(health.Config)
+	hc, ok := set["health"].(health.Config)
 	if !ok {
 		t.Fatalf("health config missing or wrong type: %T", set["health"])
 	}
-	if healthConfig.StateFile != "/run/mwan-health.state" ||
-		healthConfig.Interval != 10*time.Second ||
-		len(healthConfig.WANs) != 2 {
-		t.Fatalf("health config did not round-trip shared WANs and module fields: %#v", healthConfig)
+	if hc.Timeout != 2*time.Second {
+		t.Fatalf("health timeout = %s, want 2s", hc.Timeout)
+	}
+	if hc.Interval != 10*time.Second {
+		t.Fatalf("health interval = %s, want the shortest provider interval 10s", hc.Interval)
+	}
+	if _, ok := set["npt"]; !ok {
+		t.Fatal("wan role must build an npt config from the two-file load")
+	}
+}
+
+// TestGatewayLoadWithoutNetworkTOML is the end state: the gateway's config.toml
+// carries no network section at all, and the wan role still builds every module
+// config from the network file plus the two state-file paths TOML keeps.
+func TestGatewayLoadWithoutNetworkTOML(t *testing.T) {
+	t.Parallel()
+
+	const configTOML = `
+[ifmgr]
+role = "wan"
+
+[ifmgr.iface.enmbrains0]
+name = "enmbrains0"
+
+[ifmgr.modules.wan.routes]
+health_state_file = "/run/mwan-health.state"
+
+[ifmgr.modules.health]
+state_file = "/run/mwan-health.state"
+persist_state_file = "/var/lib/mwan/health-state"
+`
+	var cfg config.Config
+	if err := toml.Unmarshal([]byte(configTOML), &cfg); err != nil {
+		t.Fatalf("toml.Unmarshal: %v", err)
+	}
+	network := networkjson.Config{
+		InternalPrefix:     "3d06:bad:b01:210::/60",
+		OpnsenseEdgeV6:     "3d06:bad:b01:201::2",
+		MwanbrEdgeV6:       "3d06:bad:b01:201::3",
+		InternalIface:      "enmwanbr0",
+		InternalNetV4:      "192.0.2.0/29",
+		ProbeTimeoutMillis: 2000,
+		WAN: map[string]config.IfMgrWANEntry{
+			"att": {
+				Iface:      "enatt0",
+				TableID:    100,
+				FwMark:     1,
+				FwMarkPrio: 100,
+				FromPrio:   55,
+				NptPrefix:  "3d06:bad:b01:2300::/60",
+				V4Source:   "",
+			},
+		},
+		Health: map[string]config.IfMgrHealthWANSection{
+			"att": {
+				Enabled:              true,
+				PingCount:            3,
+				SuccessThreshold:     2,
+				CheckIntervalSeconds: 10,
+				FailureThreshold:     2,
+				RecoveryThreshold:    2,
+				TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
+				TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+				HTTPURLs:             []string{"https://ifconfig.co/ip"},
+			},
+		},
+	}
+	network.Apply(&cfg)
+
+	set, err := buildIfMgrModuleConfigs(cfg.IfMgr, "wan")
+	if err != nil {
+		t.Fatalf("buildIfMgrModuleConfigs(wan): %v", err)
+	}
+	nptConfig, ok := set["npt"].(npt.Config)
+	if !ok {
+		t.Fatalf("npt config missing or wrong type: %T", set["npt"])
+	}
+	if nptConfig.InternalPrefix != "3d06:bad:b01:210::/60" {
+		t.Fatalf("npt internal prefix = %q, want the network file's value",
+			nptConfig.InternalPrefix)
+	}
+	if len(nptConfig.WANs) != 1 || nptConfig.WANs[0].Iface != "enatt0" {
+		t.Fatalf("npt WAN list did not resolve: %#v", nptConfig.WANs)
+	}
+	wr, ok := set["wan.routes"].(wanroutes.Config)
+	if !ok {
+		t.Fatalf("wan.routes config missing or wrong type: %T", set["wan.routes"])
+	}
+	if wr.InternalNetV4 != "192.0.2.0/29" {
+		t.Fatalf("wan.routes internal net = %q, want the network file's value", wr.InternalNetV4)
+	}
+	if wr.HealthStateFile != "/run/mwan-health.state" {
+		t.Fatalf("wan.routes health state file = %q, want TOML's value", wr.HealthStateFile)
+	}
+	hc, ok := set["health"].(health.Config)
+	if !ok {
+		t.Fatalf("health config missing or wrong type: %T", set["health"])
+	}
+	if hc.PersistStateFile != "/var/lib/mwan/health-state" {
+		t.Fatalf("health persist state file = %q, want TOML's value", hc.PersistStateFile)
+	}
+	if len(hc.WANs) != 1 || hc.WANs[0].CheckInterval != 10*time.Second {
+		t.Fatalf("health WAN list did not resolve: %#v", hc.WANs)
 	}
 }

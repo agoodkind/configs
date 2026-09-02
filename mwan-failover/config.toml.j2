@@ -19,6 +19,7 @@ debug = false
 
 [bgp]
 enabled = true
+use_wanconfig = false
 asn = {{ mwan_failover_bgp_asn }}
 router_id = "{{ mwan_failover_bgp_router_id }}"
 next_hop_v6 = "{{ mwan_failover_bgp_next_hop_v6 }}"

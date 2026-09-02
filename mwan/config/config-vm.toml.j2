@@ -89,6 +89,11 @@ debug = false
 
 [bgp]
 enabled = true
+{% if mwan_ifmgr_wan_enabled | bool %}
+use_wanconfig = true
+{% else %}
+use_wanconfig = false
+{% endif %}
 asn = {{ bgp_asn }}
 router_id = "{{ bgp_router_id }}"
 next_hop_v6 = "{{ bgp_next_hop_v6 }}"
@@ -127,58 +132,18 @@ publish = {{ mwan_wanconfig_publish | ternary('true', 'false') }}
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_wan_enabled | bool %}
-[ifmgr.wan.att]
-iface = "{{ mwan_att_iface }}{% if mwan_att_vlan_id %}.{{ mwan_att_vlan_id }}{% endif %}"
-table_id = {{ mwan_rt_tables.att }}
-fw_mark = {{ mwan_ifmgr_wan_fw_marks.att }}
-fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.att }}
-from_prio = {{ mwan_ifmgr_wan_from_prios.att }}
-npt_prefix = "{{ mwan_npt_att_prefix }}"
-
-[ifmgr.wan.webpass]
-iface = "{{ mwan_webpass_iface }}"
-table_id = {{ mwan_rt_tables.webpass }}
-fw_mark = {{ mwan_ifmgr_wan_fw_marks.webpass }}
-fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.webpass }}
-from_prio = {{ mwan_ifmgr_wan_from_prios.webpass }}
-npt_prefix = "{{ mwan_npt_webpass_prefix }}"
-# Webpass is the only static-link WAN, so @wan owns its v4 source pin (the IPv4
-# twin of npt_prefix) at from_prio. AT&T and Monkeybrains are dynamic and set no
-# v4_source. See 20-webpass.network.j2, which drops the networkd [RoutingPolicyRule]
-# once @wan is authoritative.
-v4_source = "{{ mwan_webpass_ipv4_addr }}"
-
-[ifmgr.wan.monkeybrains]
-iface = "{{ mwan_monkeybrains_iface }}"
-table_id = {{ mwan_rt_tables.monkeybrains }}
-fw_mark = {{ mwan_ifmgr_wan_fw_marks.monkeybrains }}
-fw_mark_prio = {{ mwan_ifmgr_wan_fw_mark_prios.monkeybrains }}
-from_prio = {{ mwan_ifmgr_wan_from_prios.monkeybrains }}
-npt_prefix = "{{ mwan_npt_monkeybrains_prefix }}"
-
+# The provider inventory, their routing slots, translation prefixes, source
+# pins, and probe policies live in /etc/mwan/network.json, in the model's own
+# encoding. What stays here is the two filesystem paths that are not network
+# values: the health module writes its verdict to state_file and the routing
+# module reads the same path as health_state_file.
 [ifmgr.modules.wan.routes]
-internal_iface = "{{ mwan_internal_iface }}"
-internal_net_v4 = "{{ mwan_internal_net_v4 }}"
 health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 
 [ifmgr.modules.health]
 state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 persist_state_file = "/var/lib/mwan/health-state"
-timeout = "2s"
 
-{% for name, health_check in mwan_health_checks.items() %}
-[ifmgr.modules.health.wan.{{ name }}]
-enabled = {{ health_check.enabled | ternary('true', 'false') }}
-ping_count = {{ health_check.ping_count }}
-success_threshold = {{ health_check.success_threshold }}
-check_interval = "{{ health_check.check_interval }}s"
-failure_threshold = {{ health_check.failure_threshold }}
-recovery_threshold = {{ health_check.recovery_threshold }}
-targets_v4 = {{ health_check.targets_v4 | to_json }}
-targets_v6 = {{ health_check.targets_v6 | to_json }}
-http_urls = {{ health_check.http_targets | to_json }}
-
-{% endfor %}
 {% endif %}
 {% if mwan_ifmgr_host_ipv6_policy_enabled %}
 [ifmgr.modules.host_ipv6_policy]

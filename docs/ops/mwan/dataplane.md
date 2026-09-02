@@ -10,12 +10,14 @@ waiting for a periodic tick.
 ## Shared per-WAN foundation
 
 `wan.routes` and `npt` run in the `wan` role and read one WAN list from the
-`[ifmgr.wan]` config section. Each `[ifmgr.wan.<name>]` table is one WAN's full
-config: its interface plus the policy-routing slots `wan.routes` programs (table,
-fwmark, priorities, prefixes). The internal prefix and edge addresses both
-modules translate against live on `[ifmgr]` itself. Each module reads the fields
-it needs from that one per-WAN entry, so each WAN has a single home instead of a
-per-module list matched by name.
+gateway's network configuration, which the daemon loads from
+`/etc/mwan/network.json` and validates against the model before it programs
+anything. Each WAN entry hangs off the interface that carries it and holds that
+WAN's full config: its name plus the policy-routing slots `wan.routes` programs
+(table, fwmark, priorities, prefixes). The internal prefix and edge addresses
+both modules translate against are group-wide values in the same file. Each
+module reads the fields it needs from that one per-WAN entry, so each WAN has a
+single home instead of a per-module list matched by name.
 
 ## wan.routes ifmgr module
 
@@ -30,7 +32,7 @@ thrash.
 
 The `npt` module owns the runtime `table ip6 nat`. It runs as a second module
 in the `mwan-ifmgr@wan` instance alongside `wan.routes` and self-disables when
-`[ifmgr.wan]` lists no WANs.
+the network configuration lists no WANs.
 
 npt derives every WAN's `/60` from the live DHCPv6-PD delegation on that WAN's
 interface, with no static fallback. A WAN with no delegated prefix is skipped for

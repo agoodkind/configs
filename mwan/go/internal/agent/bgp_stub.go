@@ -10,4 +10,11 @@ import (
 	"goodkind.io/mwan/internal/config"
 )
 
-func configurePlatformBGP(_ context.Context, _ *config.Config, _ *bgp.Speaker, _ *slog.Logger) {}
+func configurePlatformBGP(
+	_ context.Context,
+	_ *config.Config,
+	_ *bgp.Speaker,
+	_ *slog.Logger,
+) error {
+	return nil
+}

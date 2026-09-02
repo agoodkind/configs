@@ -10,8 +10,10 @@ import (
 )
 
 // selftestModelSources are the gateway's model files as the repository
-// carries them: the IETF modules and the interface-type registry from the
-// models submodule, and the steering module from this repository.
+// carries them at a pinned revision: the IETF modules and the interface-type
+// registry from the models submodule. This repository's own steering module
+// is not here, because its filename carries a revision date that moves;
+// selftestSteeringModel finds it instead.
 var selftestModelSources = []string{
 	"../../../../third_party/yang/standard/ietf/RFC/ietf-yang-types@2025-12-22.yang",
 	"../../../../third_party/yang/standard/ietf/RFC/ietf-inet-types@2025-12-22.yang",
@@ -19,7 +21,21 @@ var selftestModelSources = []string{
 	"../../../../third_party/yang/standard/iana/iana-if-type@2026-03-17.yang",
 	"../../../../third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang",
 	"../../../../third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang",
-	"../../../yang/goodkind-mwan-steering@2026-08-29.yang",
+}
+
+// selftestSteeringModel returns the repository's steering module at whatever
+// revision it currently carries. The directory holds exactly one revision
+// file, so a revision bump does not touch this test.
+func selftestSteeringModel(t *testing.T) string {
+	t.Helper()
+	matches, err := filepath.Glob("../../../yang/goodkind-mwan-steering@*.yang")
+	if err != nil {
+		t.Fatalf("glob steering model: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("want exactly one steering model, found %d", len(matches))
+	}
+	return matches[0]
 }
 
 // TestWanconfigSelftest_PrivateRepository runs the private selftest the
@@ -31,7 +47,7 @@ var selftestModelSources = []string{
 // sysrepo reads its repository location from the process environment.
 func TestWanconfigSelftest_PrivateRepository(t *testing.T) {
 	modelsDir := t.TempDir()
-	for _, source := range selftestModelSources {
+	for _, source := range append(selftestModelSources, selftestSteeringModel(t)) {
 		absolute, err := filepath.Abs(source)
 		if err != nil {
 			t.Fatalf("resolve %s: %v", source, err)
