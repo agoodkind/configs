@@ -8,6 +8,15 @@ After=docker.service
 # marker stops advancing and the next staleness run past the rehearsal threshold
 # mails the report itself. This unit carries no OnFailure= handler, so a failed
 # drill is reported on that delay rather than at the moment it fails.
+#
+# A failed drill retries on its own first. It boots throwaway engines and
+# pulls from the object store, and a transient refusal from either used to
+# cost a day, because the next attempt was the next timer tick. Six attempts
+# ten minutes apart cover an hour of transient trouble; a drill that still
+# fails after that is failing on something real, and the rehearsal marker
+# stops advancing until it is fixed.
+StartLimitIntervalSec=4h
+StartLimitBurst=6
 
 [Service]
 Type=oneshot
@@ -22,3 +31,5 @@ ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup restore-drill --e
 # 5 minutes inside the command, and a cold-cache run took over 3 minutes end to
 # end. The budget covers that with room for the scratch containers and teardown.
 TimeoutStartSec=1800
+Restart=on-failure
+RestartSec=10min
