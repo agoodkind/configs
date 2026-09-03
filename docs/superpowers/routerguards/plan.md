@@ -50,14 +50,16 @@ hypervisors carry the rendered baseline after a deploy.
 
 ## 2. Refuse an upgrade on drift
 
-Add a verb to the FreeBSD build that asks the hypervisor for a fresh answer,
-waits inside a bound for one issued after the request, and exits non-zero
-unless that answer says the reboot is safe. The request rides the event
-stream the transport slice adds, and the answer rides the direction the host
-already dials, so neither side changes who dials whom. Reject a cached
-answer: one can sit younger than any staleness bound and still predate the
-change that matters, and a bound alone would make the dead-channel case
-depend on how recently the channel died.
+Add a verb to the FreeBSD build that asks the hypervisor for an answer and
+exits non-zero unless one comes back inside a bound saying the reboot is
+safe. The request carries an identifier the answer must echo, and the verb
+accepts only an answer bearing the identifier it sent: ordering by time
+compares two unsynchronised clocks and lets a late answer to a timed-out
+request satisfy the next run. The request rides the event stream the
+transport slice adds, and the answer rides the direction the host already
+dials, so neither side changes who dials whom. Reject a cached answer, which
+can sit younger than any staleness bound and still predate the change that
+matters.
 
 The hypervisor answers from two comparisons it alone can make. Its current
 slot order against the interface order the guest reports, which is whether
@@ -73,7 +75,7 @@ verb. A documented override marker turns the refusal into a warning and a
 zero exit. Install the hook through the same task that installs the daemon's
 other guest files.
 
-Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, and the hook half of AC4.
+Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, and the hook half of AC4.
 
 ## 3. Detect drift from the hypervisor
 

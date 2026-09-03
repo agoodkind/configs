@@ -43,12 +43,17 @@ with, while the hypervisor's current configuration determines the order it
 will boot into next. The hook refuses when those two disagree.
 
 The hypervisor is the one that knows, and it dials the guest rather than the
-other way round. So the hook asks for an answer and waits for one issued
-after it asked, inside a bound, and refuses when none arrives. A cached
-answer will not do: one can sit younger than any staleness bound and still
-predate the change that matters, and a bound alone would make the dead-channel
-case depend on how recently the channel died rather than on whether it is
-dead.
+other way round. So the hook asks for an answer and refuses unless one comes
+back, inside a bound. A cached answer will not do: one can sit younger than
+any staleness bound and still predate the change that matters, and a bound
+alone would make the dead-channel case depend on how recently the channel
+died rather than on whether it is dead.
+
+Each request carries an identifier the answer must echo, and the hook accepts
+only an answer bearing the identifier it sent. Ordering by time would not do
+either: it compares two clocks nobody synchronised, and it lets a late answer
+to a request that already timed out satisfy the next hook run, which is a
+stale verdict wearing a fresh timestamp.
 
 The hook refuses on either of two disagreements, because a reboot is when
 latent drift detonates and it is the last cheap moment to catch it. The
@@ -204,7 +209,12 @@ router's web interface aborts, naming the unreachable hypervisor as the
 reason, and proceeds when the override marker is present. The result does not
 depend on how long ago the bridge stopped.
 
-AC13: with the testbed router's declared record edited to match a device
-added at the hypervisor, and no reboot taken, an upgrade still aborts,
-because the guest has not booted into that layout and rebooting into it is
-the renumbering this guard exists to stop.
+AC13: with the testbed router's two devices exchanged between their slots at
+the hypervisor and the declared record edited to match, and no reboot taken,
+an upgrade still aborts. Declaring a layout does not make a guest that has
+not booted into it safe to reboot, and this is the case that separates the
+two comparisons: the declared one now passes while the order one refuses.
+
+AC14: with a device appended after the testbed router's existing slots and
+the declared record edited to match, an upgrade proceeds. Appending renumbers
+nothing, so a refusal here would be a false one.
