@@ -55,6 +55,12 @@ either: it compares two clocks nobody synchronised, and it lets a late answer
 to a request that already timed out satisfy the next hook run, which is a
 stale verdict wearing a fresh timestamp.
 
+The identifier must not repeat, across hook runs and across restarts of
+anything that issues one. A counter that resets, or any scheme whose values
+recur, hands a delayed answer from an earlier request a matching identifier
+on a later one and reopens the hole the echo exists to close. Draw it from a
+source with enough entropy that a collision is not a case anyone plans for.
+
 The hook refuses on either of two disagreements, because a reboot is when
 latent drift detonates and it is the last cheap moment to catch it. The
 guest's live order disagreeing with the hypervisor's current slot order means
@@ -218,3 +224,7 @@ two comparisons: the declared one now passes while the order one refuses.
 AC14: with a device appended after the testbed router's existing slots and
 the declared record edited to match, an upgrade proceeds. Appending renumbers
 nothing, so a refusal here would be a false one.
+
+AC15: an answer to a request that already timed out is refused by the next
+hook run, including when the guest daemon restarted between the two, and
+including when the answer says the reboot is safe.

@@ -55,7 +55,11 @@ exits non-zero unless one comes back inside a bound saying the reboot is
 safe. The request carries an identifier the answer must echo, and the verb
 accepts only an answer bearing the identifier it sent: ordering by time
 compares two unsynchronised clocks and lets a late answer to a timed-out
-request satisfy the next run. The request rides the event stream the
+request satisfy the next run. Draw the identifier from a source whose values
+do not recur across runs or restarts, since a resetting counter gives a
+delayed answer a matching identifier on a later request and reopens the hole
+the echo closes. Test that case directly, with a daemon restart between the
+request and the late answer. The request rides the event stream the
 transport slice adds, and the answer rides the direction the host already
 dials, so neither side changes who dials whom. Reject a cached answer, which
 can sit younger than any staleness bound and still predate the change that
@@ -75,7 +79,8 @@ verb. A documented override marker turns the refusal into a warning and a
 zero exit. Install the hook through the same task that installs the daemon's
 other guest files.
 
-Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, and the hook half of AC4.
+Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, AC15, and the hook half of
+AC4.
 
 ## 3. Detect drift from the hypervisor
 
