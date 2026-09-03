@@ -37,27 +37,34 @@ operator in the firmware log the web interface already streams.
 
 The question the hook answers is whether this reboot changes any interface
 name the guest is using, and only the hypervisor holds that answer. A FreeBSD
-interface name is its driver plus a unit number, and the driver comes from the
-adapter model the hypervisor gives the device. The unit counts within that
+interface name is its driver plus a unit number. The unit counts within that
 driver alone, assigned as devices attach in slot order at boot, and never
-reassigned on a running system. So the guest's live names record the models
+reassigned on a running system. So the guest's live names record the drivers
 and slot order it booted with, while the hypervisor's current configuration
 determines the names it will boot into next.
 
+The driver is what the adapter model resolves to, and that resolution is many
+to one. Several hypervisor models attach to a single FreeBSD driver and then
+share one unit sequence, so the model is an input to the answer rather than
+the answer itself. The hook groups by the driver each model resolves to,
+never by the model as written.
+
 The comparison is over prospective interface names, not over the two device
-lists as wholes and not over positions in one global sequence. Group the
-hypervisor's devices by adapter model, number each group in slot order, and
-read off the full name each device the guest already runs would receive. The
-hook refuses when any of those differs from the name that device carries
-today.
+lists as wholes and not over positions in one sequence spanning every driver.
+Resolve each of the hypervisor's devices to its driver, group by driver,
+number each group in slot order, and read off the full name each device the
+guest already runs would receive. The hook refuses when any of those differs
+from the name that device carries today.
 
 Per-driver numbering is what makes the answer right, in both directions. A
-device of a different model inserted anywhere counts in its own group and
-moves no name in another, so the guest passes. A device of the same model
-inserted before or between the existing slots takes a unit already in use in
-that group and pushes every later one up, so the guest refuses. Numbering
-every device in one sequence regardless of model would refuse the first case
-and would still catch the second, which trades a false refusal for nothing.
+device that resolves to a different driver, inserted anywhere, counts in its
+own group and moves no name in another, so the guest passes. A device
+resolving to the same driver, inserted before or between the existing slots,
+takes a unit already in use in that group and pushes every later one up, so
+the guest refuses. Numbering every device in one sequence would refuse the
+first case falsely, and grouping by model rather than driver would pass the
+second whenever the two devices are written as different models that resolve
+alike.
 
 Comparing names rather than numbers is what closes the other direction. Change
 one device's adapter model in place and its slot does not move, so its unit
@@ -65,9 +72,11 @@ can stay the same while its driver changes and its name with it. That guest
 loses the interface its configuration names, which is the outage in a
 different costume, and only a name comparison sees it.
 
-Both halves need the adapter model, so the record the hypervisor compares
-against carries the model beside the slot and the hardware address, and the
-answer it computes is a name rather than a position.
+Both halves need the model, so the record the hypervisor compares against
+carries it beside the slot and the hardware address, and the answer it
+computes is a name rather than a position. The model-to-driver resolution the
+hook applies is a stated table rather than an inference, and a model absent
+from it is an answer the hook cannot compute.
 
 The hypervisor is the one that knows, and it dials the guest rather than the
 other way round. So the hook asks for an answer and refuses unless one comes
@@ -120,7 +129,7 @@ upgrade is recoverable where a renumbered router is not.
 3. **The declared baseline has one home.** The per-device record lives in the
 service mapping, which already owns pinned hardware addresses, and carries the
 slot, the bridge, the hardware address, and the adapter model, because the
-model decides the driver and the driver is half of every interface name. Both consumers
+model resolves to the driver and the driver is half of every interface name. Both consumers
 read it on the hypervisor, where the live configuration it is compared against
 also lives: the drift timer reports a difference continuously, and the upgrade
 answer carries the same comparison at the moment it matters most. Nothing is
@@ -259,21 +268,32 @@ AC15: an answer to a request that already timed out is refused by the next
 hook run, including when the guest daemon restarted between the two, and
 including when the answer says the reboot is safe.
 
-AC16: with a device of the same adapter model inserted before the testbed
+AC16: with a device resolving to the same driver inserted before the testbed
 router's existing slots and the declared record edited to match, an upgrade
 aborts. The guest's own interfaces are unchanged and every one of them would
 come back under a different name, so this is the case that proves the
 numbering runs over the hypervisor's devices rather than over the ones the
 guest already has.
 
-AC17: with a device of a different adapter model inserted before the testbed
-router's existing slots and the declared record edited to match, an upgrade
-proceeds. It counts in its own driver's sequence and moves no name in another,
-so numbering every device in one sequence regardless of model would have
-refused this falsely.
+AC17: with a device resolving to a different driver inserted before the
+testbed router's existing slots and the declared record edited to match, an
+upgrade proceeds. It counts in its own driver's sequence and moves no name in
+another, so numbering every device in one sequence would have refused this
+falsely.
 
-AC18: with one of the testbed router's devices changed to a different adapter
-model in its own slot and the declared record edited to match, an upgrade
-aborts. The slot does not move and the unit can stay the same, so only a
-comparison of full interface names catches that the guest loses the interface
-its configuration names.
+AC18: with a device written as a different adapter model but resolving to the
+driver the guest already uses, inserted before the testbed router's existing
+slots and the declared record edited to match, an upgrade aborts. The two
+models differ while the driver they share does not, so grouping by the model
+as written would have passed a reboot that renumbers every interface in that
+driver's sequence.
+
+AC19: with one of the testbed router's devices changed to a model resolving to
+a different driver in its own slot, and the declared record edited to match,
+an upgrade aborts. The slot does not move and the unit can stay the same, so
+only a comparison of full interface names catches that the guest loses the
+interface its configuration names.
+
+AC20: with one of the testbed router's devices changed to a model the
+resolution table does not carry, an upgrade aborts naming the unknown model,
+because a driver the hook cannot resolve is a name it cannot predict.

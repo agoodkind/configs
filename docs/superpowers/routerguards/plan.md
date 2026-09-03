@@ -39,8 +39,10 @@ recovery.
 
 Add the router's per-device record to the service mapping: slot, bridge,
 hardware address, and adapter model per device, for the production and testbed
-routers. The model is load-bearing rather than descriptive, since it decides
-the driver and the driver is half of every FreeBSD interface name. Render
+routers. The model is load-bearing rather than descriptive, since it resolves
+to the driver and the driver is half of every FreeBSD interface name. Record
+the model as the hypervisor writes it; the resolution from model to driver
+belongs with the guard that computes names, not with the record. Render
 the record onto each hypervisor for the drift timer. Nothing is rendered onto
 the guest: a guest-local copy is written at deploy time and cannot answer
 what the hypervisor holds now, which is the question the upgrade guard asks.
@@ -68,20 +70,28 @@ can sit younger than any staleness bound and still predate the change that
 matters.
 
 The hypervisor answers from two comparisons it alone can make. The first is
-whether this reboot changes a name the guest uses: group its devices by
-adapter model, number each group in slot order, and check that every device
-the guest reports running would receive the full interface name it carries
-today. Three ways to get that comparison wrong, each of which this project
-already walked into. Comparing the two device lists as wholes fails a guest an
+whether this reboot changes a name the guest uses: resolve each of its devices
+to the FreeBSD driver its adapter model attaches to, group by driver, number
+each group in slot order, and check that every device the guest reports
+running would receive the full interface name it carries today. Carry the
+model-to-driver resolution as a stated table, and refuse on a model the table
+does not carry rather than guessing a driver.
+
+Four ways to get that comparison wrong, each of which this project already
+walked into. Comparing the two device lists as wholes fails a guest an
 appended device cannot affect. Dropping the new device before numbering passes
-a guest an inserted device of the same model does affect. Numbering every
-device in one sequence regardless of model fails a guest an inserted device of
-a different model does not affect, and comparing numbers rather than names
-passes a same-slot model change that takes an interface name away. The second
-comparison is its own configuration against the declared record, which is
-whether undeclared hardware is present. Either disagreement is a refusal,
-since an undeclared device that changes no name still must not survive into a
-reboot unexamined.
+a guest an inserted device of the same driver does affect. Numbering every
+device in one sequence regardless of driver fails a guest an inserted device
+of another driver does not affect. Grouping by the model as written rather
+than the driver it resolves to splits one shared sequence in two and passes an
+insertion that renumbers, since several models attach to a single driver. And
+comparing numbers rather than names passes a same-slot model change that takes
+an interface name away.
+
+The second comparison is its own configuration against the declared record,
+which is whether undeclared hardware is present. Either disagreement is a
+refusal, since an undeclared device that changes no name still must not
+survive into a reboot unexamined.
 
 No answer inside the bound is a refusal, as is every other failure in the
 verb. A documented override marker turns the refusal into a warning and a
@@ -89,7 +99,7 @@ zero exit. Install the hook through the same task that installs the daemon's
 other guest files.
 
 Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, AC15, AC16, AC17, AC18,
-and the hook half of AC4.
+AC19, AC20, and the hook half of AC4.
 
 ## 3. Detect drift from the hypervisor
 
