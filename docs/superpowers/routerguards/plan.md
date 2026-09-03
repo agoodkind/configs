@@ -50,27 +50,30 @@ hypervisors carry the rendered baseline after a deploy.
 
 ## 2. Refuse an upgrade on drift
 
-Have the host bridge publish the slot order it currently holds for the guest,
-on each session and on a refresh interval, over the direction it already
-dials. Add a verb to the FreeBSD build that reads that publication and the
-guest's own interface hardware addresses in interface order, and exits
-non-zero when the two disagree, printing what it found against what it
-expects to boot into. The guest's live order records the slot order it booted
-with, and FreeBSD never renumbers a running system, so that comparison is
-exactly the question of whether this reboot renumbers.
+Add a verb to the FreeBSD build that asks the hypervisor for a fresh answer,
+waits inside a bound for one issued after the request, and exits non-zero
+unless that answer says the reboot is safe. The request rides the event
+stream the transport slice adds, and the answer rides the direction the host
+already dials, so neither side changes who dials whom. Reject a cached
+answer: one can sit younger than any staleness bound and still predate the
+change that matters, and a bound alone would make the dead-channel case
+depend on how recently the channel died.
 
-A publication that is missing or older than a stated bound is a refusal,
-because that is what a dead channel looks like from inside the guest and the
-hook cannot tell a quiet hypervisor from a renumbering one. Every other
-failure inside the verb is a refusal too. A documented override marker turns
-the refusal into a warning and a zero exit. Install the hook through the same
-task that installs the daemon's other guest files.
+The hypervisor answers from two comparisons it alone can make. Its current
+slot order against the interface order the guest reports, which is whether
+this reboot renumbers, since the guest's live order records the slot order it
+booted with and FreeBSD never renumbers a running system. And its own
+configuration against the declared record, which is whether undeclared
+hardware is present. Either disagreement is a refusal, because a device
+appended after the existing slots renumbers nothing and still must not
+survive into a reboot unexamined.
 
-The publication rides the same session work as the transport slice, so order
-the two together. No declared baseline is involved here; the host answers
-from its own live configuration.
+No answer inside the bound is a refusal, as is every other failure in the
+verb. A documented override marker turns the refusal into a warning and a
+zero exit. Install the hook through the same task that installs the daemon's
+other guest files.
 
-Acceptance: AC1, AC2, AC3, AC10, AC12, and the hook half of AC4.
+Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, and the hook half of AC4.
 
 ## 3. Detect drift from the hypervisor
 
@@ -85,7 +88,9 @@ Acceptance: AC5.
 ## 4. Carry a guest event to the hypervisor
 
 Add a server-streaming subscription to the serial service that the guest
-pushes events into, and a verb the guest calls locally to publish one. The
+pushes events into, carrying both the shutdown notice and the upgrade guard's
+request for a fresh answer, and a verb the guest calls locally to publish
+one. Answers travel back over the direction the host already dials. The
 host bridge opens that subscription per session using the same session dialer
 its heartbeat already uses, and resubscribes when a session is rebuilt. On
 receiving a router shutdown event the bridge records an open change window on

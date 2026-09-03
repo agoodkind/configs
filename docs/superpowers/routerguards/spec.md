@@ -43,10 +43,22 @@ with, while the hypervisor's current configuration determines the order it
 will boot into next. The hook refuses when those two disagree.
 
 The hypervisor is the one that knows, and it dials the guest rather than the
-other way round, so it publishes its current slot order to the guest and
-refreshes that publication while the channel is up. The hook reads the most
-recent publication and refuses when it is missing or older than a stated
-bound, which is what a dead channel looks like from inside the guest.
+other way round. So the hook asks for an answer and waits for one issued
+after it asked, inside a bound, and refuses when none arrives. A cached
+answer will not do: one can sit younger than any staleness bound and still
+predate the change that matters, and a bound alone would make the dead-channel
+case depend on how recently the channel died rather than on whether it is
+dead.
+
+The hook refuses on either of two disagreements, because a reboot is when
+latent drift detonates and it is the last cheap moment to catch it. The
+guest's live order disagreeing with the hypervisor's current slot order means
+this reboot renumbers. The hypervisor's own configuration disagreeing with the
+declared baseline means hardware nobody declared is present, which is the
+condition that sat unnoticed for thirty-two days before the outage. The second
+is not always the first: a device appended after the existing slots renumbers
+nothing, and still must not survive into a reboot unexamined. The hypervisor
+holds both facts, so it answers with both.
 
 A copy of the declared baseline rendered onto the guest cannot answer this.
 That copy is written at deploy time, so a slot change made afterwards leaves
@@ -66,15 +78,13 @@ loudly and permits the upgrade. Refusing on a dead channel is deliberate: the
 hook cannot tell a quiet hypervisor from a renumbering one, and a postponed
 upgrade is recoverable where a renumbered router is not.
 
-3. **The declared baseline has one home, and it answers a different
-question.** The per-device record lives in the service mapping, which already
-owns pinned hardware addresses, and the host-side check compares the
-hypervisor's live configuration against it. That answers whether the
-hypervisor holds what was declared. The upgrade hook answers whether the guest
-is about to renumber, which is a comparison between the guest and the
-hypervisor and does not consult the declared record at all. Neither check
-substitutes for the other: a hypervisor changed to match a newly declared
-layout still renumbers a guest that has not rebooted into it.
+3. **The declared baseline has one home.** The per-device record lives in the
+service mapping, which already owns pinned hardware addresses. Both consumers
+read it on the hypervisor, where the live configuration it is compared against
+also lives: the drift timer reports a difference continuously, and the upgrade
+answer carries the same comparison at the moment it matters most. Nothing is
+rendered onto the guest, which is neither the authority on what was declared
+nor able to see what the hypervisor holds now.
 
 OpenTofu keeps ignoring this guest's network devices: its provider models
 network devices as a sequential list, the guest's devices are not sequential,
@@ -141,9 +151,12 @@ before blaming a gateway deploy.
 
 ## Acceptance criteria
 
-AC1: with a spare device added to the testbed router and no reboot taken, an
-upgrade started from that router's web interface aborts, the firmware log
-carries the hook's reason, and the guest still runs its previous firmware.
+AC1: with a spare device added to the testbed router after its existing slots
+and no reboot taken, an upgrade started from that router's web interface
+aborts naming undeclared hardware, the firmware log carries the hook's
+reason, and the guest still runs its previous firmware. This placement
+renumbers nothing, so the refusal comes from the declared comparison rather
+than the order one.
 
 AC2: with the spare device removed, the same upgrade proceeds and completes.
 
@@ -188,4 +201,10 @@ window.
 
 AC12: with the host bridge stopped, an upgrade started from the testbed
 router's web interface aborts, naming the unreachable hypervisor as the
-reason, and proceeds when the override marker is present.
+reason, and proceeds when the override marker is present. The result does not
+depend on how long ago the bridge stopped.
+
+AC13: with the testbed router's declared record edited to match a device
+added at the hypervisor, and no reboot taken, an upgrade still aborts,
+because the guest has not booted into that layout and rebooting into it is
+the renumbering this guard exists to stop.
