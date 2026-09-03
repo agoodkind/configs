@@ -37,8 +37,10 @@ recovery.
 
 ## 1. Declare the baseline
 
-Add the router's per-device record to the service mapping: slot, bridge, and
-hardware address per device, for the production and testbed routers. Render
+Add the router's per-device record to the service mapping: slot, bridge,
+hardware address, and adapter model per device, for the production and testbed
+routers. The model is load-bearing rather than descriptive, since it decides
+the driver and the driver is half of every FreeBSD interface name. Render
 the record onto each hypervisor for the drift timer. Nothing is rendered onto
 the guest: a guest-local copy is written at deploy time and cannot answer
 what the hypervisor holds now, which is the question the upgrade guard asks.
@@ -66,32 +68,36 @@ can sit younger than any staleness bound and still predate the change that
 matters.
 
 The hypervisor answers from two comparisons it alone can make. The first is
-whether this reboot renumbers: number its whole device list in slot order,
-which is the numbering the next boot produces, and check that every device the
-guest reports running would receive the unit it holds today. Number the whole
-list and drop nothing before numbering. Comparing the two lists as wholes
-fails a guest an appended device cannot renumber, and filtering the new device
-out first passes a guest an inserted device does renumber. The second
+whether this reboot changes a name the guest uses: group its devices by
+adapter model, number each group in slot order, and check that every device
+the guest reports running would receive the full interface name it carries
+today. Three ways to get that comparison wrong, each of which this project
+already walked into. Comparing the two device lists as wholes fails a guest an
+appended device cannot affect. Dropping the new device before numbering passes
+a guest an inserted device of the same model does affect. Numbering every
+device in one sequence regardless of model fails a guest an inserted device of
+a different model does not affect, and comparing numbers rather than names
+passes a same-slot model change that takes an interface name away. The second
 comparison is its own configuration against the declared record, which is
 whether undeclared hardware is present. Either disagreement is a refusal,
-since an undeclared device that renumbers nothing still must not survive into
-a reboot unexamined.
+since an undeclared device that changes no name still must not survive into a
+reboot unexamined.
 
 No answer inside the bound is a refusal, as is every other failure in the
 verb. A documented override marker turns the refusal into a warning and a
 zero exit. Install the hook through the same task that installs the daemon's
 other guest files.
 
-Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, AC15, AC16, and the hook
-half of AC4.
+Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, AC15, AC16, AC17, AC18,
+and the hook half of AC4.
 
 ## 3. Detect drift from the hypervisor
 
 Add a timer unit on each hypervisor that reads every guarded guest's live
 device list the way the existing runtime-network discovery task does, over
-SSH and never the Proxmox HTTP API, diffs each device's slot, bridge and
-hardware address against the baseline, and raises one notifier alert per
-guest on any difference. Detection only; it changes nothing on any guest.
+SSH and never the Proxmox HTTP API, diffs each device's slot, bridge, hardware
+address and adapter model against the baseline, and raises one notifier alert
+per guest on any difference. Detection only; it changes nothing on any guest.
 
 Acceptance: AC5.
 
