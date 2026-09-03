@@ -295,5 +295,8 @@ only a comparison of full interface names catches that the guest loses the
 interface its configuration names.
 
 AC20: with one of the testbed router's devices changed to a model the
-resolution table does not carry, an upgrade aborts naming the unknown model,
-because a driver the hook cannot resolve is a name it cannot predict.
+resolution table does not carry, and the declared record edited to match, an
+upgrade aborts naming the unknown model, because a driver the hook cannot
+resolve is a name it cannot predict. Editing the record is what isolates the
+cause: left unedited, the declared comparison refuses on its own and proves
+nothing about resolution.
