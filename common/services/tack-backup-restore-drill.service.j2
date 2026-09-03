@@ -15,7 +15,7 @@ After=docker.service
 # ten minutes apart cover an hour of transient trouble; a drill that still
 # fails after that is failing on something real, and the rehearsal marker
 # stops advancing until it is fixed.
-StartLimitIntervalSec=4h
+StartLimitIntervalSec=20h
 StartLimitBurst=6
 
 [Service]

@@ -9,7 +9,7 @@ After=docker.service
 # timer tick and the staleness alarm fired twelve hours after that. Six
 # attempts ten minutes apart cover an hour of transient trouble; a fault that
 # outlasts them is real, and the staleness alarm is the right way to hear it.
-StartLimitIntervalSec=4h
+StartLimitIntervalSec=20h
 StartLimitBurst=6
 
 [Service]
