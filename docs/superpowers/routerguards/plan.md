@@ -39,29 +39,38 @@ recovery.
 
 Add the router's per-device record to the service mapping: slot, bridge, and
 hardware address per device, for the production and testbed routers. Render
-the hardware addresses onto each guest as a run configuration entry beside the
-daemon's existing one, and the whole record onto each hypervisor for the drift
-timer. Leave the OpenTofu resource alone, including its ignored network
-devices, and correct its comment to name the service mapping as the baseline's
-home.
+the record onto each hypervisor for the drift timer. Nothing is rendered onto
+the guest: a guest-local copy is written at deploy time and cannot answer
+what the hypervisor holds now, which is the question the upgrade guard asks.
+Leave the OpenTofu resource alone, including its ignored network devices, and
+correct its comment to name the service mapping as the baseline's home.
 
 Acceptance: an OpenTofu plan against production comes back empty, and both
-guests and both hypervisors carry the rendered baseline after a deploy.
+hypervisors carry the rendered baseline after a deploy.
 
 ## 2. Refuse an upgrade on drift
 
-Add a verb to the FreeBSD build that reads the rendered baseline, reads the
+Have the host bridge publish the slot order it currently holds for the guest,
+on each session and on a refresh interval, over the direction it already
+dials. Add a verb to the FreeBSD build that reads that publication and the
 guest's own interface hardware addresses in interface order, and exits
-non-zero when that sequence disagrees with the slot order the baseline
-declares, printing what it found against what it expected. Compare the
-sequence, not the set: two devices that exchanged slots leave the set and the
-count unchanged and still renumber on the next boot. A missing or unreadable
-baseline is a refusal, and every failure inside the verb is a refusal. A
-documented override marker turns the refusal into a warning and a zero exit.
-Install it as the guest's upgrade-stage hook through the same task that
-installs the daemon's other guest files.
+non-zero when the two disagree, printing what it found against what it
+expects to boot into. The guest's live order records the slot order it booted
+with, and FreeBSD never renumbers a running system, so that comparison is
+exactly the question of whether this reboot renumbers.
 
-Acceptance: AC1, AC2, AC3, AC10, and the hook half of AC4.
+A publication that is missing or older than a stated bound is a refusal,
+because that is what a dead channel looks like from inside the guest and the
+hook cannot tell a quiet hypervisor from a renumbering one. Every other
+failure inside the verb is a refusal too. A documented override marker turns
+the refusal into a warning and a zero exit. Install the hook through the same
+task that installs the daemon's other guest files.
+
+The publication rides the same session work as the transport slice, so order
+the two together. No declared baseline is involved here; the host answers
+from its own live configuration.
+
+Acceptance: AC1, AC2, AC3, AC10, AC12, and the hook half of AC4.
 
 ## 3. Detect drift from the hypervisor
 
@@ -123,9 +132,13 @@ another page owns.
 
 ## Self-review
 
-Slices 1, 2, 3 and 6 deliver the prevention and depend on nothing in 4 or 5.
-Slice 5 depends on slice 4's event path and on slice 1's baseline only for the
-guest hook it shares with slice 2.
+The dependency order changed during review. Slice 2's guard was going to read
+a baseline rendered onto the guest, and that cannot work: the copy is written
+at deploy time, so a slot change made afterwards leaves the stale copy and the
+live order agreeing and the guard passes the change it exists to catch. The
+guard now compares the guest against what the hypervisor publishes, so slice 2
+depends on the session work in slice 4. Slices 1, 3 and 6 still stand alone,
+and slice 5 depends on slice 4.
 
 The spec's AC9 is residual by construction. Both routers carry two devices;
 what differs is the slot layout, consecutive on the testbed and

@@ -35,22 +35,47 @@ non-zero when they disagree. OPNsense then aborts the upgrade before the
 kernel apply and before any reboot, and the hook's reason reaches the
 operator in the firmware log the web interface already streams.
 
-The comparison is ordered, not a set. FreeBSD numbers virtio interfaces by
-the slot they occupy, so the baseline's slot order predicts the interface
-order the guest will see after its next boot. The hook compares its live
-interface sequence against that prediction. A set comparison would pass a
-guest whose two devices swapped slots while it was running, and that guest
-renumbers on reboot, which is the outage this guard exists to stop. The guest
-cannot see bridge membership, so the host-side check owns that half.
+The question the hook answers is whether this reboot will renumber the guest,
+and only the hypervisor holds that answer. FreeBSD assigns interface unit
+numbers as devices attach, in slot order at boot, and never renumbers a
+running system. So the guest's live order records the slot order it booted
+with, while the hypervisor's current configuration determines the order it
+will boot into next. The hook refuses when those two disagree.
 
-2. **The refusal fails closed and can be overridden.** A baseline the hook
-cannot read is a refusal, stated as such. An operator who has decided the
-baseline itself is the broken thing creates a documented marker file, and the
-hook then logs loudly and permits the upgrade.
+The hypervisor is the one that knows, and it dials the guest rather than the
+other way round, so it publishes its current slot order to the guest and
+refreshes that publication while the channel is up. The hook reads the most
+recent publication and refuses when it is missing or older than a stated
+bound, which is what a dead channel looks like from inside the guest.
 
-3. **The baseline has one home.** The declared per-NIC record lives in the
-service mapping, which already owns pinned hardware addresses. Ansible renders
-the address half onto the guest and the whole record onto the hypervisor.
+A copy of the declared baseline rendered onto the guest cannot answer this.
+That copy is written at deploy time, so a slot change made afterwards leaves
+the stale copy and the live order agreeing, and the guard passes the very
+change it exists to catch. The 2026-08-01 write was caught by a count only
+because a hot-added device is visible to the running kernel; two devices
+exchanging slots are not.
+
+The guest cannot see bridge membership, and it is not the authority on what
+was declared. Those belong to the host-side check.
+
+2. **The refusal fails closed and can be overridden.** An answer the hook
+cannot obtain is a refusal, stated as such, including one it cannot obtain
+because the channel is down. An operator who has decided the guard itself is
+the broken thing creates a documented marker file, and the hook then logs
+loudly and permits the upgrade. Refusing on a dead channel is deliberate: the
+hook cannot tell a quiet hypervisor from a renumbering one, and a postponed
+upgrade is recoverable where a renumbered router is not.
+
+3. **The declared baseline has one home, and it answers a different
+question.** The per-device record lives in the service mapping, which already
+owns pinned hardware addresses, and the host-side check compares the
+hypervisor's live configuration against it. That answers whether the
+hypervisor holds what was declared. The upgrade hook answers whether the guest
+is about to renumber, which is a comparison between the guest and the
+hypervisor and does not consult the declared record at all. Neither check
+substitutes for the other: a hypervisor changed to match a newly declared
+layout still renumbers a guest that has not rebooted into it.
+
 OpenTofu keeps ignoring this guest's network devices: its provider models
 network devices as a sequential list, the guest's devices are not sequential,
 and that mismatch is what wrote the placeholder NICs in the first place.
@@ -153,9 +178,14 @@ run after this ships.
 
 AC10: with the testbed router's two devices exchanged between their slots and
 no reboot taken, an upgrade started from that router's web interface aborts
-and names the reordering. The device set and count are unchanged in this
-case, so a set comparison would have let it through.
+and names the reordering. Nothing changes inside the running guest in this
+case, so neither a set nor a count nor any guest-local copy of the baseline
+would have caught it.
 
 AC11: with the host bridge stopped, a testbed router reboot still completes in
 its normal time, and the hook reports that it could not confirm a change
 window.
+
+AC12: with the host bridge stopped, an upgrade started from the testbed
+router's web interface aborts, naming the unreachable hypervisor as the
+reason, and proceeds when the override marker is present.
