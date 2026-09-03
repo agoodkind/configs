@@ -65,22 +65,25 @@ dials, so neither side changes who dials whom. Reject a cached answer, which
 can sit younger than any staleness bound and still predate the change that
 matters.
 
-The hypervisor answers from two comparisons it alone can make. Its current
-slot order against the interface order the guest reports, which is whether
-this reboot renumbers, since the guest's live order records the slot order it
-booted with and FreeBSD never renumbers a running system. And its own
-configuration against the declared record, which is whether undeclared
-hardware is present. Either disagreement is a refusal, because a device
-appended after the existing slots renumbers nothing and still must not
-survive into a reboot unexamined.
+The hypervisor answers from two comparisons it alone can make. The first is
+whether this reboot renumbers: number its whole device list in slot order,
+which is the numbering the next boot produces, and check that every device the
+guest reports running would receive the unit it holds today. Number the whole
+list and drop nothing before numbering. Comparing the two lists as wholes
+fails a guest an appended device cannot renumber, and filtering the new device
+out first passes a guest an inserted device does renumber. The second
+comparison is its own configuration against the declared record, which is
+whether undeclared hardware is present. Either disagreement is a refusal,
+since an undeclared device that renumbers nothing still must not survive into
+a reboot unexamined.
 
 No answer inside the bound is a refusal, as is every other failure in the
 verb. A documented override marker turns the refusal into a warning and a
 zero exit. Install the hook through the same task that installs the daemon's
 other guest files.
 
-Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, AC15, and the hook half of
-AC4.
+Acceptance: AC1, AC2, AC3, AC10, AC12, AC13, AC14, AC15, AC16, and the hook
+half of AC4.
 
 ## 3. Detect drift from the hypervisor
 

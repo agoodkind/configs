@@ -40,7 +40,21 @@ and only the hypervisor holds that answer. FreeBSD assigns interface unit
 numbers as devices attach, in slot order at boot, and never renumbers a
 running system. So the guest's live order records the slot order it booted
 with, while the hypervisor's current configuration determines the order it
-will boot into next. The hook refuses when those two disagree.
+will boot into next.
+
+The comparison is over unit assignments, not over the two device lists as
+wholes. Number the hypervisor's whole device list in slot order, which is the
+numbering the next boot produces, then read off the unit each device the guest
+already runs would receive. The hook refuses when any of those differs from
+the unit that device holds today.
+
+Numbering the whole list is what makes the answer right, and no device may be
+dropped before the numbering. A device appended after the existing slots takes
+the next unit and moves nothing, so the guest passes. The same device inserted
+before or between the existing slots takes a unit already in use and pushes
+every later device up one, so the guest refuses. Filtering the new device out
+first would make those two cases look identical and would call the second one
+safe.
 
 The hypervisor is the one that knows, and it dials the guest rather than the
 other way round. So the hook asks for an answer and refuses unless one comes
@@ -62,14 +76,16 @@ on a later one and reopens the hole the echo exists to close. Draw it from a
 source with enough entropy that a collision is not a case anyone plans for.
 
 The hook refuses on either of two disagreements, because a reboot is when
-latent drift detonates and it is the last cheap moment to catch it. The
-guest's live order disagreeing with the hypervisor's current slot order means
-this reboot renumbers. The hypervisor's own configuration disagreeing with the
+latent drift detonates and it is the last cheap moment to catch it. An
+existing interface that would come back under a different unit means this
+reboot renumbers. The hypervisor's own configuration disagreeing with the
 declared baseline means hardware nobody declared is present, which is the
-condition that sat unnoticed for thirty-two days before the outage. The second
-is not always the first: a device appended after the existing slots renumbers
-nothing, and still must not survive into a reboot unexamined. The hypervisor
-holds both facts, so it answers with both.
+condition that sat unnoticed for thirty-two days before the outage. Neither
+implies the other. A device appended after the existing slots and left
+undeclared renumbers nothing and still refuses, on the declared comparison
+alone. The same device once declared renumbers nothing and passes both, which
+is the case a whole-list comparison would have failed. The hypervisor holds
+both facts, so it answers with both.
 
 A copy of the declared baseline rendered onto the guest cannot answer this.
 That copy is written at deploy time, so a slot change made afterwards leaves
@@ -228,3 +244,10 @@ nothing, so a refusal here would be a false one.
 AC15: an answer to a request that already timed out is refused by the next
 hook run, including when the guest daemon restarted between the two, and
 including when the answer says the reboot is safe.
+
+AC16: with a device inserted before the testbed router's existing slots and
+the declared record edited to match, an upgrade aborts. The guest's own
+interfaces are unchanged and every one of them would come back under a
+different unit, so this is the case that proves the numbering runs over the
+hypervisor's whole device list rather than over the devices the guest already
+has.
