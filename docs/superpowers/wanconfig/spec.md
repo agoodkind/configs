@@ -72,9 +72,10 @@ checkable against the schema before it reaches the gateway.
 [config.md](config.md)
 
 **Three, the provider set becomes data.** Inventory takes the model's shape,
-routing identifiers derive from a member index, steering becomes tier and
-weight, and one renderer builds every link. Adding a provider becomes an
-inventory edit and a config deploy. [providers.md](providers.md)
+the daemon checks routing numbers instead of knowing them, steering becomes
+tier and weight owned by the daemon, and the watchdog stops holding a provider
+list. Adding a provider becomes an inventory edit and a config deploy.
+[providers.md](providers.md)
 
 **Four, translation becomes typed instances.** Each family of each provider
 declares its translation type, one-to-one mapping works in both families, and
@@ -93,9 +94,6 @@ would come with it. Both need a staged-change workflow the library does not
 provide.
 
 Quality-based steering, meaning selection on latency, jitter, or loss.
-
-Load balancing within an activated fallback tier. Mark assignment is computed
-from the top tier, so a fallback tier serves through one member at a time.
 
 Splitting the health verdict per address family. A provider with dead IPv6
 and working IPv4 currently reads healthy and keeps receiving IPv6 traffic.

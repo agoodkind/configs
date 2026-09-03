@@ -78,8 +78,8 @@ Each row is a current special case and the model element that replaces it.
 | A provider with no delegation keeps receiving IPv6 and discarding it | the IPv6 container's operational status is down when its instance cannot be realized |
 | The health verdict merges both families | unchanged in this work; the per-family containers give a later split a home, and it follows with its own ticket |
 | Forwarding is enabled globally before any firewall exists | the `forwarding` leaf, per interface per family |
-| The rollback watchdog's probe list is hand-maintained and omits one provider | derived from the member list |
-| Four routing identifiers are hand-assigned per provider | derived from the member index, and not modeled at all |
+| The rollback watchdog's probe list is hand-maintained and omits one provider | the daemon pushes its verdict to the watchdog, which holds no list |
+| Four routing identifiers are hand-assigned per provider | still typed per provider, and checked for uniqueness and collision at load |
 
 ## Prefixes of differing length
 
