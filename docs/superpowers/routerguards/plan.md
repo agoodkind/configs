@@ -51,14 +51,17 @@ guests and both hypervisors carry the rendered baseline after a deploy.
 ## 2. Refuse an upgrade on drift
 
 Add a verb to the FreeBSD build that reads the rendered baseline, reads the
-guest's own interface hardware addresses, and exits non-zero when the set or
-the count disagrees, printing what it found against what it expected. A
-missing or unreadable baseline is a refusal. A documented override marker
-turns the refusal into a warning and a zero exit. Install it as the guest's
-upgrade-stage hook through the same task that installs the daemon's other
-guest files.
+guest's own interface hardware addresses in interface order, and exits
+non-zero when that sequence disagrees with the slot order the baseline
+declares, printing what it found against what it expected. Compare the
+sequence, not the set: two devices that exchanged slots leave the set and the
+count unchanged and still renumber on the next boot. A missing or unreadable
+baseline is a refusal, and every failure inside the verb is a refusal. A
+documented override marker turns the refusal into a warning and a zero exit.
+Install it as the guest's upgrade-stage hook through the same task that
+installs the daemon's other guest files.
 
-Acceptance: AC1, AC2, AC3, and the hook half of AC4.
+Acceptance: AC1, AC2, AC3, AC10, and the hook half of AC4.
 
 ## 3. Detect drift from the hypervisor
 
@@ -77,25 +80,33 @@ pushes events into, and a verb the guest calls locally to publish one. The
 host bridge opens that subscription per session using the same session dialer
 its heartbeat already uses, and resubscribes when a session is rebuilt. On
 receiving a router shutdown event the bridge records an open change window on
-the hypervisor where the watchdog reads it. Keep the event small enough that
-it never approaches the channel's write cap.
+the hypervisor where the watchdog reads it, then answers the guest so the
+publishing verb learns the window exists rather than only that the bytes
+left. Keep the event small enough that it never approaches the channel's
+write cap.
 
 Acceptance: the bridge records a window within seconds of a testbed guest
-publishing the event by hand, and AC8 holds when the bridge is restarted
-mid-arm.
+publishing the event by hand and the verb reports the confirmation, and AC8
+holds when the bridge is restarted mid-arm.
 
 ## 5. Arm the window and cover the router
 
 Install the guest's stop-stage hook, which publishes the shutdown event and
-returns within a short bound, treating any failure as permission to continue
-the reboot. Teach the watchdog a second guarded guest: take healthy snapshots
-of the router on the terms it already uses for the gateway, suppress gateway
+waits inside a short bound for the hypervisor to confirm the window is
+recorded. Any failure, including an unconfirmed window, is permission to
+continue the reboot, and the hook says which happened. It neither persists
+the event across the reboot nor retries without bound: a queued retry here is
+a guest-to-host write held open exactly where the channel documents a wedge,
+and the window is moot once the guest is down.
+
+Teach the watchdog a second guarded guest: take healthy snapshots of the
+router on the terms it already uses for the gateway, suppress gateway
 rollback while a router change window is open, and roll the router back to its
 newest healthy snapshot when the window closes with egress still lost. Extend
 the watchdog's existing tests for the new decision branch, since that branch
 has no coverage today.
 
-Acceptance: AC6, AC7, and the stop-hook half of AC4.
+Acceptance: AC6, AC7, AC11, and the stop-hook half of AC4.
 
 ## 6. Correct the documentation this changes
 
@@ -116,10 +127,11 @@ Slices 1, 2, 3 and 6 deliver the prevention and depend on nothing in 4 or 5.
 Slice 5 depends on slice 4's event path and on slice 1's baseline only for the
 guest hook it shares with slice 2.
 
-The spec's AC9 is residual by construction: the production router's device
-count differs from the testbed's, so the production half of the baseline is
-proven by the first production drift check rather than by any testbed run.
-No slice claims to close it.
+The spec's AC9 is residual by construction. Both routers carry two devices;
+what differs is the slot layout, consecutive on the testbed and
+non-consecutive in production. The drift check's handling of a
+non-consecutive list is therefore proven by the first production run rather
+than by any testbed run, and no slice claims to close it.
 
 One known gap is carried deliberately. Slice 5 gives the router a rollback for
 a deliberate reboot that breaks egress. A router that fails on its own still

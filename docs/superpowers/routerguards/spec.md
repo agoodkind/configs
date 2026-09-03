@@ -12,19 +12,19 @@ watchdog blaming the gateway and lets it recover the router instead.
 On 2026-08-01 the hypervisor API added two virtio NICs to the router guest
 under the OpenTofu provider's token. Nothing on either host compares a guest's
 live hardware against its declared shape, and a hot-added NIC binds nothing
-until reconfigured, so the drift stayed invisible for thirty two days. On
+until reconfigured, so the drift stayed invisible for thirty-two days. On
 2026-09-02 an operator upgraded the router firmware from the web interface.
-That was the guest's first boot carrying four NICs, FreeBSD numbered them by
-PCI slot, the transit link landed on the LAN bridge, no BGP session formed,
-and the router held no default route in either family.
+That was the guest's first boot carrying four NICs. FreeBSD numbered them by
+PCI slot, so the transit link landed on the LAN bridge. No BGP session
+formed, and the router held no default route in either family.
 
 Two guards existed and neither helped. The router's own guarded upgrade path
 snapshots the guest and validates BGP sessions and kernel default routes at
 blocker severity, but it is a command line verb and the upgrade started in a
 browser, so it never ran. The watchdog did run. Its only evidence is its own
-egress probes through that router, it found a gateway deploy seven minutes
-old inside its window, and it restored a healthy gateway to a pre-deploy
-snapshot. Production lost egress for thirteen minutes and the gateway lost a
+egress probes through that router, so it found a gateway deploy seven minutes
+old inside its window and restored a healthy gateway to a pre-deploy
+snapshot. Production lost egress for thirteen minutes, and the gateway lost a
 cutover that had already passed its verdicts.
 
 ## Contract
@@ -33,9 +33,15 @@ cutover that had already passed its verdicts.
 compares the interfaces FreeBSD sees against a declared baseline and exits
 non-zero when they disagree. OPNsense then aborts the upgrade before the
 kernel apply and before any reboot, and the hook's reason reaches the
-operator in the firmware log the web interface already streams. The guest
-cannot see bridge membership, so it compares the set and count of `vtnet`
-interface hardware addresses and nothing else.
+operator in the firmware log the web interface already streams.
+
+The comparison is ordered, not a set. FreeBSD numbers virtio interfaces by
+the slot they occupy, so the baseline's slot order predicts the interface
+order the guest will see after its next boot. The hook compares its live
+interface sequence against that prediction. A set comparison would pass a
+guest whose two devices swapped slots while it was running, and that guest
+renumbers on reboot, which is the outage this guard exists to stop. The guest
+cannot see bridge membership, so the host-side check owns that half.
 
 2. **The refusal fails closed and can be overridden.** A baseline the hook
 cannot read is a refusal, stated as such. An operator who has decided the
@@ -72,10 +78,21 @@ watchdog itself took of the router, on the same terms it already takes them
 for the gateway, because a snapshot taken once the guest is already shutting
 down would capture a staged upgrade rather than the state before it.
 
-7. **The hooks never wedge the reboot.** The hook dispatcher runs each hook
-synchronously with no timeout of its own. Each hook bounds its own work and
-treats every failure as permission to continue. Losing a window costs a
-guard; a hook that hangs costs the router.
+7. **The hooks never wedge their caller, and they fail in opposite
+directions.** The hook dispatcher runs each hook synchronously with no
+timeout of its own, so each hook bounds its own work. There the two part
+company. The upgrade-stage hook treats every failure as a refusal, because
+refusing costs a postponed upgrade while proceeding blind costs the router.
+The stop-stage hook treats every failure as permission to continue, because
+losing a window costs a guard while a hook that hangs costs the reboot.
+
+8. **The window is armed before the guest goes down, or not at all.** The
+stop-stage hook waits, inside its own bound, for the hypervisor to confirm
+the window is recorded. Without that confirmation it proceeds unprotected and
+says so. It does not persist the event across the reboot and does not retry
+without bound: a queued retry on the shutdown path is a guest-to-host write
+held open exactly when the channel documents a wedge, and after the reboot
+the window it would have opened is moot.
 
 ## Boundaries
 
@@ -133,3 +150,12 @@ the testbed router occupies consecutive slots while the production router
 occupies the first and fourth. The drift check's handling of a
 non-consecutive slot list is therefore proven only by the first production
 run after this ships.
+
+AC10: with the testbed router's two devices exchanged between their slots and
+no reboot taken, an upgrade started from that router's web interface aborts
+and names the reordering. The device set and count are unchanged in this
+case, so a set comparison would have let it through.
+
+AC11: with the host bridge stopped, a testbed router reboot still completes in
+its normal time, and the hook reports that it could not confirm a change
+window.
