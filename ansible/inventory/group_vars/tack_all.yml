@@ -148,13 +148,17 @@ tack_ledger_export_randomized_delay: 300
 tack_ledger_archive_interval: 15min
 
 # Backup staleness alarm cadence (TACK-363). The check dates every backup
-# mechanism and exits nonzero once one is past its threshold, so it must run
-# well inside the shortest of those thresholds; the replication threshold is
-# 30 minutes, which this cadence matches. The randomized delay staggers the
-# owner guest's copy against the data guest's copy so both alarms do not
-# depend on the same instant of outbound mail.
-tack_backup_staleness_interval: 30min
-tack_backup_staleness_randomized_delay: 300
+# mechanism and exits nonzero once one is past its threshold. The acceptance
+# bound is that an alarm fires within its threshold plus 15 minutes, and the
+# worst-case detection lag is the interval plus the randomized delay plus the
+# run itself, so the interval has to sit well inside 15 minutes. At 30 minutes
+# the induced FoundationDB restorable-point staleness on QA alarmed 14m56s
+# late (2026-09-02, crossing 05:49:06Z, first stale check 06:19:02Z). The check is
+# four cheap probes with no data movement, so 10 minutes costs nothing. The
+# randomized delay staggers the owner guest's copy against the data guest's
+# copy so both alarms do not depend on the same instant of outbound mail.
+tack_backup_staleness_interval: 10min
+tack_backup_staleness_randomized_delay: 60
 
 # Scheduled restore rehearsal cadence (TACK-363). The staleness check dates its
 # rehearsal metric from a marker only a fully passing restore drill writes, so
