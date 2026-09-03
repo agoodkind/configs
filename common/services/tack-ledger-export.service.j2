@@ -6,9 +6,14 @@ After=docker.service
 # A failed export retries on its own before anyone hears about it. The export
 # talks to an object store and a database cluster, and a transient refusal from
 # either used to cost a whole day, because the next attempt was the next
-# timer tick and the staleness alarm fired twelve hours after that. Six
-# attempts ten minutes apart cover an hour of transient trouble; a fault that
-# outlasts them is real, and the staleness alarm is the right way to hear it.
+# timer tick and the staleness alarm fired twelve hours after that. The unit
+# may start six times in the window below: the scheduled start and five
+# retries, each ten minutes after the previous attempt ends. An attempt that
+# fails fast is retried within the hour; an attempt that runs to its full
+# TimeoutStartSec before failing stretches the six starts to about seven
+# hours, and the 20 hour window bounds that case to six starts too. A fault
+# that outlasts them is real, and the staleness alarm is the right way to
+# hear it.
 StartLimitIntervalSec=20h
 StartLimitBurst=6
 
