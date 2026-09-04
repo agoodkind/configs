@@ -49,6 +49,13 @@ module goodkind-mwan-steering {
      decides its verdict, the prefix-translation inputs, and the
      internal link the members route toward.";
 
+  revision 2026-09-02 {
+    description
+      "Carry the routing tables no provider may take, so the gateway checks a
+       provider's table against the set the operator typed rather than against
+       a copy each reader holds. Every addition is a new node: no node defined
+       by an earlier revision changes name, type, or shape.";
+  }
   revision 2026-08-30 {
     description
       "Carry the gateway's network configuration, so the model's own
@@ -397,6 +404,16 @@ module goodkind-mwan-steering {
         description
           "How a new connection is assigned to a member of the active
            tier.";
+      }
+      leaf-list reserved-tables {
+        type uint32;
+        description
+          "Routing tables the gateway holds for something other than a
+           provider: the tunnel table and the out-of-band table today. A
+           provider whose table is in this set is a configuration error, and
+           the gateway stops before it writes to the kernel. The kernel's own
+           tables are not listed here, because they are fixed rather than
+           configured.";
       }
       container translation {
         description
