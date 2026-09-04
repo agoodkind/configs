@@ -131,15 +131,12 @@ than the number.
   the state-backend keys nor the Proxmox provider tokens; the wrapper injects
   both from the vault and forwards every argument, so the apply is
   `go run goodkind.io/configs/cmd/configs tofu apply -target=module.suburban`.
-- **The NIC assertion cannot take the hardware-address form on production.**
-  AT&T rides an X710 virtual function and Webpass a full NIC passthrough, so
-  neither appears as a Proxmox network device in `qm config`, while both have
-  a `mwan_<name>_mac` variable as a DHCP identity value. Task 5 ships a
-  provider-count assertion instead: the VM's network devices plus its
-  passed-through PCI devices, minus the management link and the internal
-  link, must number at least the providers in `mwan_providers`. Whether to
-  add a per-provider key naming the Proxmox-attached providers is an operator
-  decision recorded in the open items below.
+- **The deploy stops checking the gateway's NICs.** The monkeybrains NIC
+  assertion reads a variable this epic deletes, and a per-provider
+  hardware-address form would fail on production, where AT&T rides an X710
+  virtual function and Webpass a full NIC passthrough that `qm config` never
+  lists as network devices. The operator ruled that the deploy is not the
+  place for that check, so Task 5 deletes it and adds no replacement.
 - **The published hash mode comes from the loaded configuration.** The
   routing task publishes `hash-mode` from the daemon configuration the loader
   fills, not from the steering module's config, so no task imports a package
@@ -147,10 +144,6 @@ than the number.
 
 ### Open items for the operator
 
-- The NIC assertion's final form: keep the provider-count check Task 5 ships,
-  or add a per-provider `mac` key so the check names each Proxmox-attached
-  provider. Decide before the cutover; the count form passes on both
-  environments today.
 - Three kernel-facing claims in Task 4 (the chain's rendered priority, the
   map's byte order, and the two hash modes) are proven against the library
   source and must be read back on the testbed before production, as listed
@@ -5660,13 +5653,18 @@ with:
 # at the priorities that provider's entry carries.
 ```
 
-- [ ] **Step 16: Make the NIC check read the provider list**
+- [ ] **Step 16: Delete the NIC check**
 
 `ansible/playbooks/tasks/mwan-vm/discover-runtime-network.yml:65-73` asserts
-that net2 exists when `mwan_health_checks.monkeybrains.enabled`, and both the
-variable and the provider name leave the repository in this task.
+that net2 exists when `mwan_health_checks.monkeybrains.enabled`. The variable
+and the provider name both leave the repository in this task, and the operator
+ruled that the deploy is not the place to check the VM's hardware, so the
+task is deleted rather than generalized. A provider whose NIC is missing
+surfaces where the daemon already reports it: the interface never appears,
+the routing module never finds a gateway for it, and the health module
+reports it unhealthy.
 
-Replace lines 65 to 73:
+Delete lines 65 to 73 in full:
 
 ```yaml
 - name: Ensure Monkeybrains NIC exists when enabled
@@ -5680,63 +5678,11 @@ Replace lines 65 to 73:
     - not mwan_net2_present
 ```
 
-with:
-
-```yaml
-# Two of the VM's network devices carry no provider: the management NIC and the
-# internal link to the router. Every other link, whether a virtio device or a
-# passed-through NIC, carries one. Counting them catches the case the
-# monkeybrains-specific check caught, a provider configured with no path to its
-# ISP, without naming a provider or assuming how its NIC is attached.
-- name: Count the links the provider set needs
-  delegate_to: localhost
-  ansible.builtin.set_fact:
-    mwan_provider_count: "{{ mwan_providers | length }}"
-    mwan_vm_link_count: >-
-      {{ (vm_config.stdout_lines | select('match', '^net[0-9]+:') | list | length)
-         + (vm_config.stdout_lines | select('match', '^hostpci[0-9]+:') | list | length)
-         - 2 }}
-
-- name: Ensure the VM exposes a link for every provider
-  ansible.builtin.assert:
-    that:
-      - mwan_vm_link_count | int >= mwan_provider_count | int
-    fail_msg: >-
-      VM {{ actual_vmid }} exposes {{ mwan_vm_link_count }} links that could
-      carry a provider, after setting aside the management NIC and the internal
-      link, but mwan_providers lists {{ mwan_provider_count }} providers. Attach
-      the missing NIC to the VM or remove the provider from mwan_providers.
-    success_msg: >-
-      {{ mwan_vm_link_count }} provider links for {{ mwan_provider_count }}
-      providers
-```
-
-The counts are compared through `| int` rather than as bare `| length`
-operands, because the lint rejects a `| length` comparison whose root is an
-input variable, and `mwan_providers` is one. Both `set_fact` names are runtime
-values the lint allows.
-
 Then confirm `mwan_net2_present`, set at lines 43 to 46, still has a reader.
 Search the repository for it; if this file was its only consumer, delete its
 clause from the `Parse virtio MAC addresses from VM config` task in the same
-commit.
-
-**One finding the operator must see.** Decision 15 asks for the MAC form:
-assert that each provider's interface MAC appears in `qm config` when a
-`mwan_<name>_mac` variable exists. That form fails on production. AT&T rides an
-X710 virtual function and Webpass a full NIC passthrough
-(`ansible/inventory/group_vars/mwan_servers.yml:46-49`), so neither has a
-Proxmox network device, while `mwan_att_mac`
-(`ansible/inventory/group_vars/mwan_servers.yml:125`) and `mwan_webpass_mac`
-(`:113`) exist as DHCP identity values. `qm config` on the production gateway
-lists net0, net1, and net2 only, which is why
-`discover-runtime-network.yml:25-54` parses exactly those three. The literal
-assertion would therefore fail every production deploy. The count form above is
-the generic replacement that passes in both environments and still catches a
-missing NIC. Making the MAC form work needs the inventory to say which
-providers ride a Proxmox network device, either as a `mac` key on the provider
-entry or as a separate list, which is a group-key change outside this
-contract's decision 8. Route that choice to the operator before the cutover.
+commit, and update the header comment at lines 1 to 10, which lists the
+facts this file produces.
 
 - [ ] **Step 17: Correct the routing documentation**
 
@@ -6383,7 +6329,7 @@ Expected: PASS, exit 0, and in particular no line of the form
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 git add ansible/inventory/group_vars/all/vars.yml ansible/inventory/group_vars/mwan_servers.yml ansible/inventory/group_vars/mwan_suburban_servers.yml mwan/config/network.json.j2 mwan/config/rt_tables.j2 mwan/config/mwan.env.j2 mwan/config/_ifmgr_common.toml.j2 mwan/config/config-host.toml.j2 mwan/config/config-vm.toml.j2 mwan/config/nftables.conf.j2 mwan/networkd/20-webpass.network.j2 mwan/networkd/testbed/20-webpass.network.j2 mwan/networkd/21-att-vlan.network.j2 ansible/playbooks/tasks/mwan-vm/discover-runtime-network.yml docs/ops/infra/network.md
-git commit -S -m "Collapse the per-provider gateway variables into mwan_providers" -m "Give each gateway group one provider list carrying the interface, routing numbers, tier, weight, translation prefix, source pin, static mappings, and probe policy; add mwan_hash_mode, mwan_pin_provider, and a single mwan_reserved_tables registry; render the network tree, the routing-table names, and the out-of-band table id from them; look the Webpass table up in the list from the two networkd files; replace the monkeybrains-specific NIC assertion with a provider-count check; and drop the routing and translation keys from the env file, which no consumer reads." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+git commit -S -m "Collapse the per-provider gateway variables into mwan_providers" -m "Give each gateway group one provider list carrying the interface, routing numbers, tier, weight, translation prefix, source pin, static mappings, and probe policy; add mwan_hash_mode, mwan_pin_provider, and a single mwan_reserved_tables registry; render the network tree, the routing-table names, and the out-of-band table id from them; look the Webpass table up in the list from the two networkd files; delete the monkeybrains-specific NIC assertion; and drop the routing and translation keys from the env file, which no consumer reads." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 #### Carried by this task for the proof task to use (decisions 7 and 14)
