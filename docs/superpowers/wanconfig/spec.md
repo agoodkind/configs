@@ -75,8 +75,9 @@ checkable against the schema before it reaches the gateway.
 the daemon checks routing numbers instead of knowing them, each provider
 carries a tier and a weight that the daemon turns into the balancing rule, and
 the watchdog stops holding a provider list. Adding a provider becomes an
-inventory edit, a hand-written systemd-networkd `.link` and `.network` unit
-pair, and a config deploy, with the binary unchanged.
+inventory edit, the provider's hand-written systemd-networkd units (a
+`.link` and `.network`, plus a `.netdev` when it rides a VLAN), and a config
+deploy, with the binary unchanged.
 [providers.md](providers.md)
 
 **Four, translation becomes typed instances.** Each family of each provider

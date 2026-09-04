@@ -2,12 +2,13 @@
 
 Re-tiering or re-weighting a provider becomes an inventory edit and a
 configuration deploy. Adding or removing one is the same edit and deploy plus
-its two hand-written systemd-networkd link files, which this piece leaves as
-they are. No provider name appears in Go outside tests or in an inventory
-variable the daemon or a rendered template reads by provider name, so one
-binary serves any provider set. The hardware variables the link files read
-are the one exemption, and they keep their names until those files move into
-the daemon.
+its hand-written systemd-networkd units: a `.link` and a `.network` for the
+interface, and a `.netdev` and `.network` more when the provider rides a
+VLAN. This piece leaves those units as they are. No provider name appears in
+Go outside tests or in an inventory variable the daemon or a rendered
+template reads by provider name, so one binary serves any provider set. The
+hardware variables the networkd units read are the one exemption, and they
+keep their names until those units move into the daemon.
 
 Depends on the configuration format, so the inventory is written once in its
 final shape.
@@ -141,7 +142,7 @@ A fourth provider is one more entry with `table: 600`, `mark: 4`,
 taken, so 600 is the first free hundred.
 
 The hardware values keep their own variables because the systemd-networkd
-link files read them, and this piece leaves those files as they are. The
+units read them, and this piece leaves those units as they are. The
 Webpass hardware address and DUID, its static IPv4 address and gateway, the
 AT&T EAP identity, DUID, and VLAN id, and the Monkeybrains hardware address
 keep their current variable names. Where a provider entry needs one of those
@@ -222,11 +223,14 @@ An unknown health state reads as healthy, so before the health module writes
 its first state every provider reads healthy and the first tier activates.
 That matches today's startup behavior and is preserved.
 
-## The link files stay
+## The networkd units stay
 
-The ten hand-written systemd-networkd link files and the two testbed forks
-stay as they are in this piece, so a fourth provider needs its interface file
-and network file added by hand. The daemon bringing links up itself is the
+The ten hand-written systemd-networkd units (a `.link` and `.network` pair
+for each provider interface and for the internal bridge, plus the `.netdev`
+and `.network` for the AT&T VLAN) and their four testbed forks stay as they
+are in this piece, so a fourth provider needs its `.link` and `.network`
+added by hand, and a `.netdev` as well if it rides a VLAN. The daemon
+bringing links up itself is the
 monolith epic's work (MWAN-397 to MWAN-401), gated on the daemon running its
 own delegation client (MWAN-227), and any renderer written now would be
 deleted when that lands. For the same reason the network configuration does
@@ -265,7 +269,8 @@ be readable yet.
 
 No provider name remains in Go outside tests or in an inventory variable that
 the daemon or a rendered template reads by provider name. The hardware
-variables the hand-written link files read are exempt and keep their names.
+variables the hand-written networkd units read are exempt and keep their
+names.
 
 For the current provider set, the routes, policy rules, and the served tree
 are unchanged. The firewall rules are unchanged except that the three
@@ -273,8 +278,8 @@ balancing lines move from the ruleset file into the daemon's chain, where they
 express the same half-and-half split.
 
 A fourth provider can be added, re-tiered, and removed by inventory edit, its
-two link files, and configuration deploy with the binary unchanged, and
-traffic is observed
+hand-written networkd units, and configuration deploy with the binary
+unchanged, and traffic is observed
 leaving it at the simulator's ingress in both address families. The testbed
 gets a fourth simulated provider, named astount, built the same way as the
 three that exist.
