@@ -16,6 +16,13 @@ tack_audit_operator_password: "{{ vault_tack_qa_audit_operator_password }}"
 # a recreate does not orphan the log.
 tack_kafka_cluster_id: "qsUvMozrSTCj9bmZ4_VozA"
 
+# Valid audit signer set (TACK-437): the identifiers of the signing keys this
+# environment accepts. QA's owner guest key, measured on the guest on
+# 2026-09-04 and carried by every one of its 35,737 notarizations. Adding a
+# signing guest adds its identifier; revoking a leaked key removes it.
+tack_audit_valid_signers:
+  - "ed25519:12bdb0b77570f79e"
+
 # Provision entrypoint (TACK-303). QA is disposable and recreated from empty, so
 # provision may run the one-time `fdbcli configure new` on a fresh fdb volume.
 tack_allow_fdb_init: true
