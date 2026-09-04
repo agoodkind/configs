@@ -3,8 +3,11 @@
 Re-tiering or re-weighting a provider becomes an inventory edit and a
 configuration deploy. Adding or removing one is the same edit and deploy plus
 its two hand-written systemd-networkd link files, which this piece leaves as
-they are. No provider name appears in Go outside tests or in a per-provider
-inventory variable, so one binary serves any provider set.
+they are. No provider name appears in Go outside tests or in an inventory
+variable the daemon or a rendered template reads by provider name, so one
+binary serves any provider set. The hardware variables the link files read
+are the one exemption, and they keep their names until those files move into
+the daemon.
 
 Depends on the configuration format, so the inventory is written once in its
 final shape.
@@ -260,8 +263,9 @@ be readable yet.
 
 ## Acceptance
 
-No provider name remains in Go outside tests or in a per-provider inventory
-variable.
+No provider name remains in Go outside tests or in an inventory variable that
+the daemon or a rendered template reads by provider name. The hardware
+variables the hand-written link files read are exempt and keep their names.
 
 For the current provider set, the routes, policy rules, and the served tree
 are unchanged. The firewall rules are unchanged except that the three
