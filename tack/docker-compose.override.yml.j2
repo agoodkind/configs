@@ -28,7 +28,7 @@ services:
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
     environment:
-      DATABASE_URL: postgres://${YUGABYTE_USER:?}:${YUGABYTE_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/${YUGABYTE_DB:?}?sslmode=disable&connect_timeout={{ tack_database_connect_timeout_seconds }}
+      DATABASE_URL: postgres://tack_app:${TACK_APP_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/${YUGABYTE_DB:?}?sslmode=disable&connect_timeout={{ tack_database_connect_timeout_seconds }}
   audit-consumer:
     extra_hosts:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}
