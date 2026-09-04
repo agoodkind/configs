@@ -229,7 +229,8 @@ The ten hand-written systemd-networkd units (a `.link` and `.network` pair
 for each provider interface and for the internal bridge, plus the `.netdev`
 and `.network` for the AT&T VLAN) and their four testbed forks stay as they
 are in this piece, so a fourth provider needs its `.link` and `.network`
-added by hand, and a `.netdev` as well if it rides a VLAN. The daemon
+added by hand, and a `.netdev` and a second `.network` as well if it rides a
+VLAN. The daemon
 bringing links up itself is the
 monolith epic's work (MWAN-397 to MWAN-401), gated on the daemon running its
 own delegation client (MWAN-227), and any renderer written now would be
