@@ -1,97 +1,261 @@
 # Three: the provider set becomes data
 
-Adding, removing, re-tiering, or re-weighting a provider becomes an inventory
-edit and a configuration deploy. No provider name appears in Go, in a
-template filename, or in a per-provider variable. One binary serves any
-provider set.
+Re-tiering or re-weighting a provider becomes an inventory edit and a
+configuration deploy. Adding or removing one is the same edit and deploy plus
+its hand-written systemd-networkd units: a `.link` and a `.network` for the
+interface, and a `.netdev` and `.network` more when the provider rides a
+VLAN. This piece leaves those units as they are. No provider name appears in
+Go outside tests or in an inventory variable the daemon or a rendered
+template reads by provider name, so one binary serves any provider set. The
+hardware variables the networkd units read are the one exemption, and they
+keep their names until those units move into the daemon.
 
 Depends on the configuration format, so the inventory is written once in its
 final shape.
 
-## Identifiers derive from a member index
+## Why a fourth provider is impossible today
 
-Each member declares one small integer index, never reused and never
-dependent on map order. From it the system derives the routing table number,
-the firewall mark, and both policy rule priorities. An operator never writes
-any of the four.
+Four things block it, and each one goes away in this piece.
 
-Validation rejects a duplicate index, and rejects a derived table number that
-collides with a routing table registered for something else. The reserved set
-is read from the same inventory that names the routing tables, so it cannot
-drift from the live registrations. Those are 400 for the tunnel and 500 for
-the out-of-band table, plus the kernel's own three. An earlier draft of this
-work reserved 900, which is wrong and would have let a fourth member collide.
+The daemon knows the three providers by name. It carries att, webpass, and
+monkeybrains as constants and decides the fallback by comparing against one of
+them.
 
-For the current three members every derived value equals the number assigned
-by hand today, so this changes no live state.
+The daemon accepts only the rule priorities in use. Two checks admit exactly
+100, 200, 300 and 55, 56, 57, and a failed check stops the daemon, so a
+provider with any other numbers cannot start.
 
-Two validators accept only the three current priority values and reject
-anything else, and a failed validation stops the daemon. They are what makes
-a fourth provider impossible, and they must be deleted in the same change
-that introduces derivation, not after it.
+The load balancer cannot select a third member. It is three fixed lines in the
+firewall ruleset file, one for IPv4 and two for IPv6, and each one flips a
+coin between marks 1 and 2.
+
+The network configuration renders from a template that lists the three
+providers by name, so a fourth entry in inventory is never rendered.
+
+## Inventory takes the model's shape
+
+Each gateway group carries one list with one entry per provider, and every
+value the daemon reads about a provider sits in that entry. The 34 variables
+that carry a provider name in each gateway group today collapse into the
+list.
+
+Today, in the production group:
+
+```yaml
+mwan_att_iface: "enatt0"
+mwan_webpass_iface: "enwebpass0"
+mwan_monkeybrains_iface: "enmbrains0"
+
+mwan_npt_att_prefix: "2600:1700:2f71:c80::/60"
+mwan_npt_webpass_prefix: "2604:5500:c271:be00::/60"
+mwan_npt_monkeybrains_prefix: "2607:f598:d3e8:4500::/60"
+
+mwan_rt_tables:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+  cloudflared: 400
+mwan_ifmgr_wan_fw_marks:
+  att: 1
+  webpass: 2
+  monkeybrains: 3
+mwan_ifmgr_wan_fw_mark_prios:
+  att: 100
+  webpass: 200
+  monkeybrains: 300
+mwan_ifmgr_wan_from_prios:
+  att: 55
+  webpass: 56
+  monkeybrains: 57
+
+mwan_health_checks:
+  att: { enabled: true, ping_count: 3, ... }
+  webpass: { ... }
+  monkeybrains: { ... }
+
+mwan_static_mappings:
+  att: [ { internal: ..., external: ... }, ... ]
+  webpass: [ ... ]
+```
+
+After this piece, the same group:
+
+```yaml
+mwan_providers:
+  - name: att
+    iface: enatt0
+    vlan_id: 3242
+    table: 100
+    mark: 1
+    mark_prio: 100
+    from_prio: 55
+    tier: 0
+    weight: 1
+    npt_prefix: "2600:1700:2f71:c80::/60"
+    static_mappings:
+      - { internal: "10.250.250.2", external: "104.57.226.193" }
+      # ... four more
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 2
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["1.1.1.1", "8.8.8.8"]
+      targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+      http_targets: ["https://ifconfig.co/ip"]
+
+  - name: webpass
+    iface: enwebpass0
+    table: 200
+    mark: 2
+    mark_prio: 200
+    from_prio: 56
+    tier: 0
+    weight: 1
+    v4_source: "136.25.91.242"
+    npt_prefix: "2604:5500:c271:be00::/60"
+    static_mappings: [ ... ]
+    health: { ... }
+
+  - name: monkeybrains
+    iface: enmbrains0
+    table: 300
+    mark: 3
+    mark_prio: 300
+    from_prio: 57
+    tier: 1
+    weight: 1
+    npt_prefix: "2607:f598:d3e8:4500::/60"
+    health: { ... }
+
+mwan_hash_mode: random
+mwan_reserved_tables:
+  cloudflared: 400
+  oob: 500
+mwan_pin_provider: att
+```
+
+A fourth provider is one more entry with `table: 600`, `mark: 4`,
+`mark_prio: 600`, `from_prio: 58`, and its own tier. Tables 400 and 500 are
+taken, so 600 is the first free hundred.
+
+The hardware values keep their own variables because the systemd-networkd
+units read them, and this piece leaves those units as they are. The
+Webpass hardware address and DUID, its static IPv4 address and gateway, the
+AT&T EAP identity, DUID, and VLAN id, and the Monkeybrains hardware address
+keep their current variable names. Where a provider entry needs one of those
+values (`iface`, `vlan_id`, `v4_source`), the entry references the variable
+rather than repeating the value, so each value is typed once. The example
+above shows the rendered values for readability.
+
+The pinned-destination lists lose the AT&T name. `mwan_pin_provider` names the
+provider the pins target, and the seed and name lists are named for what they
+pin. The kernel set names and the refresher timer keep their current names
+until the refresher moves into the daemon under its own ticket. The two
+WireGuard control-plane pins in the firewall ruleset file, which hardcode
+mark 1 today, take the pin provider's mark.
+
+The network configuration renders by looping over the list, and the
+three-provider literal leaves the template.
+
+## Routing numbers are typed, and only checked
+
+Each provider carries its routing table, its firewall mark, and its two policy
+rule priorities as typed values, exactly as today, and nothing derives them.
+The current numbering (100, 200, 300 for tables and mark-rule priorities; 1,
+2, 3 for marks; 55, 56, 57 for source-rule priorities) is what every operator
+of this gateway already knows, and it does not change.
+
+Validation changes because the fixed checks are the block. The two checks that
+admit only the three current priority values are deleted, and three checks
+replace them at load: every provider's table, mark, mark-rule priority, and
+source-rule priority is unique across providers; no provider's table is in the
+reserved set; every weight is at least one. Two structural checks the routing
+module already makes stay: a mark is never zero, because zero is the unmarked
+state the balancing rule's guard tests, and neither rule priority may equal
+the catch-all priority the routing module owns for itself. A failed check
+stops the daemon before it touches the kernel, which is the existing failure
+contract.
+
+The reserved set is typed once in inventory, in `mwan_reserved_tables`,
+rendered into the network configuration under the steering group, and read
+from there by the daemon. The tunnel table, 400, already sits in the inventory
+registry that names the routing tables. The out-of-band table, 500, is a bare
+literal in three daemon configuration templates today; it joins the registry,
+and those templates read the registry value. The kernel's own tables (253,
+254, 255, and 0) are always reserved. No reader carries a copy of the set.
+
+The deletion and the new checks land in one change, so no window exists where
+one layer accepts a fourth provider and another rejects it.
 
 ## Steering becomes tier and weight
 
-The active tier is the lowest-numbered tier holding at least one healthy
-member. New connections from internal sources are assigned a mark computed
-over that tier's members: a generated number modulo the sum of their weights,
-mapped onto member marks with one slot per weight unit. A weight is a
-positive integer, and validation rejects anything else, so the sum the
-modulo divides by is never zero. The hash mode selects whether that number
-is random per connection, derived from the source address, or derived from
-source and destination.
+Every provider carries a tier and a weight. The active tier is the
+lowest-numbered tier holding at least one healthy provider. New connections
+from internal sources are assigned a mark computed over that tier's healthy
+providers: a generated number modulo the sum of their weights, mapped onto
+their marks with one slot per weight unit. A weight is a positive integer, so
+the sum is never zero. The hash mode, `mwan_hash_mode`, selects whether the
+number is random per connection, derived from the source address, or derived
+from source and destination.
 
-When a tier above the first is active, the catch-all rules point at that
-tier's healthy member with the lowest index. An unhealthy member's policy
-rules are pruned and stray marked traffic falls through to the main table.
+The tiers in inventory decide fallback, and nothing else does. A provider
+alone in its tier is the sole carrier when that tier is active, which is
+today's behavior with monkeybrains alone in tier 1. Providers that share a
+tier share it by weight. The daemon carries no tie-break rule of its own, and
+the monkeybrains name check leaves it.
 
-Today the balancer is three hardcoded expressions, one for IPv4 and two for
-IPv6, each with a fixed modulus of two and a fixed pair of marks. The
-fallback member's mark appears in none of them, so the balancer can never
-select it in either family. Deriving the expression from the active tier's
-member list removes all three.
+The daemon owns the balancing rule from this piece on, because the firewall
+piece later makes the daemon own the whole ruleset and a rule built in the
+daemon now is a rule that piece keeps. A new steering module computes the
+rule from the active tier and programs it into a kernel table and chain the
+module creates, with the same apply discipline the translation module uses:
+create the table, create the chain, clear the chain, add the rules, commit
+once, and repair a flushed table through the watcher. The three fixed lines
+leave the firewall ruleset file in the same change.
+
+An unhealthy provider leaves the split on the next reconcile pass instead of
+falling through to the main table, and its policy rules are pruned as today.
 
 An unknown health state reads as healthy, so before the health module writes
-its first state every member reads healthy and the first tier activates. That
-matches today's startup behavior and must be preserved.
+its first state every provider reads healthy and the first tier activates.
+That matches today's startup behavior and is preserved.
 
-## One renderer builds every link
+## The networkd units stay
 
-The per-provider link files are replaced by one set driven by the per-family
-containers: an interface file and a network file for every member, a
-tagged-child device file where a member declares a tag, and a parent file
-plus supplicant configuration where a member declares authentication. A
-member differs from its peers in data only, never in which code path builds
-it.
+The ten hand-written systemd-networkd units (a `.link` and `.network` pair
+for each provider interface and for the internal bridge, plus the `.netdev`
+and `.network` for the AT&T VLAN) and their four testbed forks stay as they
+are in this piece, so a fourth provider needs its `.link` and `.network`
+added by hand, and a `.netdev` and a second `.network` as well if it rides a
+VLAN. The daemon
+bringing links up itself is the
+monolith epic's work (MWAN-397 to MWAN-401), gated on the daemon running its
+own delegation client (MWAN-227), and any renderer written now would be
+deleted when that lands. For the same reason the network configuration does
+not describe link bring-up in this piece.
 
-The schema must express what the current files actually do, which is more
-than a flat set of flags. Members are matched either by driver or by hardware
-address, and two of them additionally override the hardware address, one of
-those because the card reports the wrong one. A statically addressed member
-needs two route entries, one into the main table at a low metric and one into
-its own table. Router lifetime, unsolicited start, and delegated-prefix
-settings differ per member today and must remain expressible.
+## The watchdog stops holding a provider list
 
-Every per-provider link file is deleted, including both testbed forks and the
-unreferenced static copies that no playbook reads and whose comments quote
-production public addressing.
+The rollback watchdog on the hypervisor pings the internet through each
+provider interface during a diagnosis, from a list typed by hand in its
+configuration. That list omits AT&T, and the verdict it computes is discarded
+by its only caller.
 
-## The probe list is derived
+After this piece the gateway daemon pushes its per-provider health verdict to
+the watchdog. The watchdog keeps its basic egress pings and smoke checks,
+drops its per-interface pings, and holds no interface names.
 
-The rollback watchdog pings out of each configured provider interface to tell
-a real outage apart from a routing failure, and it returns healthy on the
-first interface that answers. The list is therefore a logical union, and an
-added member can only reduce false rollbacks.
-
-That list is hand-maintained today and omits one provider, so a gateway
-reachable only through that provider reads as a total outage. Deriving the
-list from the member list closes it.
-
-The watchdog computes this verdict and then discards it: its only caller
-ignores the return value, so the result reaches an operator as log lines and
-an alert body and no rollback decision reads it. Adding the missing provider
-is worth doing for the diagnosis alone. Wiring the verdict into the rollback
-decision changes the safety system and has its own ticket.
+The push is advisory and stateless. Every message carries the whole verdict,
+one entry per provider plus the active tier, so the watchdog keeps only the
+latest message and the time it arrived, and logs both during a diagnosis. A
+restart on either side, or a lost message, costs nothing to replay: the next
+probe cycle sends the whole state again, and a watchdog that has received
+nothing yet reports that it holds no verdict. No rollback decision reads the
+verdict in this piece; whether it blocks a rollback is separate work
+(MWAN-442, MWAN-332, MWAN-336).
 
 ## Carried through unchanged
 
@@ -104,26 +268,37 @@ be readable yet.
 
 ## Acceptance
 
-No provider name remains in Go outside tests, in a template filename, or in a
-per-provider variable.
+No provider name remains in Go outside tests or in an inventory variable that
+the daemon or a rendered template reads by provider name. The hardware
+variables the hand-written networkd units read are exempt and keep their
+names.
 
-For the current provider set, the firewall rules, routes, policy rules, and
-the served tree are unchanged.
+For the current provider set, the routes, policy rules, and the served tree
+are unchanged. The firewall rules are unchanged except that the three
+balancing lines move from the ruleset file into the daemon's chain, where they
+express the same half-and-half split.
 
-The rendered link files match the hand-authored ones they replace, outside
-comment text. Accept nothing less here: a wrong link file renames an
-interface, and every layer above keys on interface names.
-
-A fourth member can be added, re-tiered, and removed by inventory edit and
-configuration deploy, with the binary unchanged.
+A fourth provider can be added, re-tiered, and removed by inventory edit, its
+hand-written networkd units, and configuration deploy with the binary
+unchanged, and traffic is observed
+leaving it at the simulator's ingress in both address families. The testbed
+gets a fourth simulated provider, named astount, built the same way as the
+three that exist.
 
 ## Failure modes
 
-Deleting the priority validators and introducing derivation in separate
-changes leaves a window where a fourth member is accepted by one layer and
+Deleting the priority checks and introducing the new checks in separate
+changes leaves a window where a fourth provider is accepted by one layer and
 rejected by another. Do both in one change.
 
 The ordering within the firewall's translation chain decides behavior,
-because a translation statement stops rule evaluation. Grouping rules by
-member is equivalent to today's grouping only because every rule carries an
-outgoing-interface match. Assert that invariant rather than relying on it.
+because a translation statement stops rule evaluation. Grouping outbound
+rules by provider is equivalent to today's grouping only because every
+outbound translation rule carries an outgoing-interface match, and the
+inbound one-to-one rules match on the incoming interface instead. Assert both
+invariants rather than relying on them.
+
+The steering module's chain must run after the ruleset file's mangle chain,
+which restores the connection mark and sets the ingress marks, and its
+balancing rules must keep the `meta mark 0` guard, or the control-plane pins
+set earlier in the pass are overwritten.
