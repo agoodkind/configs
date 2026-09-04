@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Adding, removing, re-tiering, or re-weighting an internet provider on the MWAN gateway becomes an inventory edit and a configuration deploy, with the current three providers keeping every live number and behavior.
+**Goal:** Re-tiering or re-weighting an internet provider on the MWAN gateway becomes an inventory edit and a configuration deploy, adding or removing one is the same plus its two hand-written link files, and the binary never changes; the current three providers keep every live number and behavior.
 
 **Architecture:** Each gateway group carries one `mwan_providers` list, and the network configuration file renders by looping over it. The daemon stops knowing any provider by name: it checks routing numbers for uniqueness and reserved-table collisions at load, reads tier and weight per provider, and owns load balancing through a new steering module that programs the split into its own kernel chain from the active tier's healthy providers. The gateway pushes its per-provider health verdict to the hypervisor watchdog, which drops its own interface list. The systemd-networkd link files stay hand-written. The testbed gains a fourth simulated provider so a fourth member is proven by inventory alone.
 
@@ -1976,9 +1976,17 @@ func validateWAN(wan WAN) error {
 	if wan.FromPrio <= 0 {
 		return fmt.Errorf("from_prio must be > 0")
 	}
+	if wan.FwMarkPrio == catchAllPriority || wan.FromPrio == catchAllPriority {
+		return fmt.Errorf("rule priorities must not equal the catch-all priority %d", catchAllPriority)
+	}
 	return nil
 }
 ```
+
+The catch-all check is new: the module owns the rule pair at that priority
+itself, so a provider typed onto it would have its rule pruned by the cleanup
+pass. Add one subtest to the validation test in Step 5 with `FwMarkPrio: 50`
+and assert the error mentions the catch-all priority.
 
 Delete `fallbackEnabled` at `:645-649`, `findWAN` at `:651-658`,
 `isFwMarkPriority` at `:669-671`, and `isFromPriority` at `:673-675`. Keep

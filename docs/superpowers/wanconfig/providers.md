@@ -1,9 +1,10 @@
 # Three: the provider set becomes data
 
-Adding, removing, re-tiering, or re-weighting a provider becomes an inventory
-edit and a configuration deploy. No provider name appears in Go outside tests
-or in a per-provider inventory variable, so one binary serves any provider
-set.
+Re-tiering or re-weighting a provider becomes an inventory edit and a
+configuration deploy. Adding or removing one is the same edit and deploy plus
+its two hand-written systemd-networkd link files, which this piece leaves as
+they are. No provider name appears in Go outside tests or in a per-provider
+inventory variable, so one binary serves any provider set.
 
 Depends on the configuration format, so the inventory is written once in its
 final shape.
@@ -136,11 +137,14 @@ A fourth provider is one more entry with `table: 600`, `mark: 4`,
 `mark_prio: 600`, `from_prio: 58`, and its own tier. Tables 400 and 500 are
 taken, so 600 is the first free hundred.
 
-The hardware values stay outside the list because they feed the
-systemd-networkd link files, which this piece leaves as they are. The Webpass
-hardware address and DUID, its static IPv4 address and gateway, the AT&T EAP
-identity and DUID, and the Monkeybrains hardware address keep their current
-variable names.
+The hardware values keep their own variables because the systemd-networkd
+link files read them, and this piece leaves those files as they are. The
+Webpass hardware address and DUID, its static IPv4 address and gateway, the
+AT&T EAP identity, DUID, and VLAN id, and the Monkeybrains hardware address
+keep their current variable names. Where a provider entry needs one of those
+values (`iface`, `vlan_id`, `v4_source`), the entry references the variable
+rather than repeating the value, so each value is typed once. The example
+above shows the rendered values for readability.
 
 The pinned-destination lists lose the AT&T name. `mwan_pin_provider` names the
 provider the pins target, and the seed and name lists are named for what they
@@ -164,8 +168,12 @@ Validation changes because the fixed checks are the block. The two checks that
 admit only the three current priority values are deleted, and three checks
 replace them at load: every provider's table, mark, mark-rule priority, and
 source-rule priority is unique across providers; no provider's table is in the
-reserved set; every weight is at least one. A failed check stops the daemon
-before it touches the kernel, which is the existing failure contract.
+reserved set; every weight is at least one. Two structural checks the routing
+module already makes stay: a mark is never zero, because zero is the unmarked
+state the balancing rule's guard tests, and neither rule priority may equal
+the catch-all priority the routing module owns for itself. A failed check
+stops the daemon before it touches the kernel, which is the existing failure
+contract.
 
 The reserved set is typed once in inventory, in `mwan_reserved_tables`,
 rendered into the network configuration under the steering group, and read
@@ -230,9 +238,16 @@ by its only caller.
 
 After this piece the gateway daemon pushes its per-provider health verdict to
 the watchdog. The watchdog keeps its basic egress pings and smoke checks,
-drops its per-interface pings, and holds no interface names. Whether the
-pushed verdict then blocks a rollback is separate work (MWAN-442, MWAN-332,
-MWAN-336).
+drops its per-interface pings, and holds no interface names.
+
+The push is advisory and stateless. Every message carries the whole verdict,
+one entry per provider plus the active tier, so the watchdog keeps only the
+latest message and the time it arrived, and logs both during a diagnosis. A
+restart on either side, or a lost message, costs nothing to replay: the next
+probe cycle sends the whole state again, and a watchdog that has received
+nothing yet reports that it holds no verdict. No rollback decision reads the
+verdict in this piece; whether it blocks a rollback is separate work
+(MWAN-442, MWAN-332, MWAN-336).
 
 ## Carried through unchanged
 
@@ -253,8 +268,9 @@ are unchanged. The firewall rules are unchanged except that the three
 balancing lines move from the ruleset file into the daemon's chain, where they
 express the same half-and-half split.
 
-A fourth provider can be added, re-tiered, and removed by inventory edit and
-configuration deploy with the binary unchanged, and traffic is observed
+A fourth provider can be added, re-tiered, and removed by inventory edit, its
+two link files, and configuration deploy with the binary unchanged, and
+traffic is observed
 leaving it at the simulator's ingress in both address families. The testbed
 gets a fourth simulated provider, named astount, built the same way as the
 three that exist.
