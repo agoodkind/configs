@@ -184,6 +184,40 @@
             mode: "0600"
 
         # ---------------------------------------------------------------------
+        # Application database login (TACK-180). The app connects as tack_app,
+        # a non-superuser that holds the three auth tables and nothing on the
+        # ledger. Its password is generated once per host, like the signing
+        # key, and read back into the rendered env, where seed-roles sets it on
+        # the login and the app's DATABASE_URL carries it. Nothing in the vault
+        # and nothing shared between environments.
+        # ---------------------------------------------------------------------
+        - name: Generate the application database password if not present
+          ansible.builtin.shell:
+            cmd: >
+              set -o pipefail &&
+              openssl rand -hex 32 > {{ tack_app_password_path }}
+            creates: "{{ tack_app_password_path }}"
+            executable: /bin/bash
+
+        - name: Ensure the application database password has restricted permissions
+          ansible.builtin.file:
+            path: "{{ tack_app_password_path }}"
+            owner: root
+            group: root
+            mode: "0600"
+
+        - name: Read the application database password
+          ansible.builtin.slurp:
+            src: "{{ tack_app_password_path }}"
+          register: tack_app_password_file
+          no_log: true
+
+        - name: Set the application database password fact
+          ansible.builtin.set_fact:
+            tack_app_password: "{{ (tack_app_password_file.content | b64decode) | trim }}"
+          no_log: true
+
+        # ---------------------------------------------------------------------
         # FDB cluster directory (fdb service mounts it read-write to write its
         # cluster file; app mounts it read-only to find the cluster)
         # ---------------------------------------------------------------------
