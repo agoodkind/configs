@@ -4,8 +4,11 @@
 # seaweedfs_suburban_servers.yml (testbed).
 
 # Pinned weed release. Bump in lockstep with the release URL the playbook
-# builds from this version.
-seaweedfs_version: "3.71"
+# builds from this version. 3.71 carried a master bug (TACK-480): a periodic
+# grow request without the collection name left the collection's grow flag
+# set, so no new volume was ever created after the first one filled and every
+# write failed until a restart. Fixed upstream in 3.73.
+seaweedfs_version: "4.45"
 
 # On-disk layout owned by the weed server process.
 seaweedfs_data_dir: /var/lib/seaweedfs
