@@ -18,14 +18,20 @@ container_features: "nesting=1"
 
 tack_install_dir: /root/tack
 
-# Matches the live database role. Hardening to a non-superuser tack_app role
-# is tracked in TACK-180.
+# The engine's superuser, used by the ops sidecar for migrations, role
+# seeding, and backups, and by the engine's own first boot. The application
+# no longer connects as it: its DATABASE_URL uses tack_app (TACK-180).
 tack_yugabyte_user: yugabyte
 tack_yugabyte_db: tack
 
 # Each environment generates its own key at this path on first deploy. The
 # path is shared; the key material is not.
 tack_audit_signing_key_path: /etc/tack/audit-signing.pem
+
+# The application's own database login password (TACK-180), generated once
+# per host on first deploy the way the signing key is. The path is shared;
+# the value is not, and it never enters the vault.
+tack_app_password_path: /etc/tack/app-db.password
 
 # Whether this environment's consumers (app, audit consumer, ops sidecar)
 # have been repointed at the three ledger data nodes. QA repointed on
