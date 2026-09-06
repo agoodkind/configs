@@ -42,8 +42,10 @@ github_ssh_keys_user: agoodkind
 # The single source of the SSH options used by every inventory host.
 # ansible.cfg already sets host_key_checking = False repo-wide, so the strict
 # check is not disabled here for the first time; UserKnownHostsFile keeps a
-# rebuilt guest from failing on a changed key.
-ssh_base_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+# rebuilt guest from failing on a changed key. ServerAlive probes every 15 s
+# and gives up after three misses, so a connection that dies mid-play fails
+# within a minute instead of holding the play open indefinitely.
+ssh_base_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=3"
 
 # Applied to every host, so a play never has to invent connection options.
 ansible_ssh_common_args: "{{ ssh_base_args }}"
