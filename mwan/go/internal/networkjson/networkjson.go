@@ -147,7 +147,11 @@ func Load(path string, schemaDir string) (*Config, error) {
 	}
 	loaded, err := build(&doc)
 	if err != nil {
-		slog.Error("networkjson: required value missing", "err", err, "path", path)
+		// build returns both a missing required value and a provider-set
+		// conflict (a duplicate routing number, a reserved table), so the log
+		// line names neither specifically; the wrapped error text below carries
+		// the detail.
+		slog.Error("networkjson: configuration rejected", "err", err, "path", path)
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return loaded, nil
@@ -236,7 +240,12 @@ func checkProviderSet(loaded *Config) error {
 		reserved[table] = "the kernel"
 	}
 	for _, table := range loaded.ReservedTables {
-		reserved[table] = "steering-group/reserved-tables"
+		// The kernel's own reservation is the true reason a table is off limits,
+		// so inventory redundantly listing it must not overwrite that label with
+		// a less accurate one.
+		if _, alreadyReserved := reserved[table]; !alreadyReserved {
+			reserved[table] = "steering-group/reserved-tables"
+		}
 	}
 
 	names := make([]string, 0, len(loaded.WAN))
@@ -271,6 +280,12 @@ func checkProviderSet(loaded *Config) error {
 		if owner, isReserved := reserved[entry.TableID]; isReserved {
 			return fmt.Errorf("wan %s: table-id %d is reserved by %s", name, entry.TableID, owner)
 		}
+		// The schema already ranges weight at 1..max, so libyang rejects a zero
+		// before build ever runs, and no test through Load can reach this branch
+		// today. It stays as a decode-boundary guard: checkProviderSet is the
+		// one place that reasons about the whole provider set, and a schema
+		// revision that drops or loosens the range must not silently let a
+		// zero-weight provider through it.
 		if entry.Weight < 1 {
 			return fmt.Errorf("wan %s: steering/weight must be at least 1, got %d", name, entry.Weight)
 		}
