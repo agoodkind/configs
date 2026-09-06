@@ -329,16 +329,26 @@ func TestLoadRejectsDuplicateRoutingNumbers(t *testing.T) {
 	// Each of the four numbers addresses a distinct kernel slot, and two
 	// providers sharing one means the second silently takes the first's
 	// traffic. Nothing derives them, so this is the only check that catches a
-	// typo in inventory.
+	// typo in inventory. fw-mark-prio and from-prio also collide with each
+	// other, not just with their own kind, because both select an ip rule by
+	// the same numeric priority and the routing module treats them as one
+	// slot space.
 	cases := map[string]struct {
-		from string
-		to   string
-		leaf string
+		from  string
+		to    string
+		leaf  string
+		leaf2 string
 	}{
-		"table":        {from: `"table-id": 100,`, to: `"table-id": 200,`, leaf: "table-id"},
-		"mark":         {from: `"fw-mark": 1,`, to: `"fw-mark": 2,`, leaf: "fw-mark"},
+		"table":         {from: `"table-id": 100,`, to: `"table-id": 200,`, leaf: "table-id"},
+		"mark":          {from: `"fw-mark": 1,`, to: `"fw-mark": 2,`, leaf: "fw-mark"},
 		"mark priority": {from: `"fw-mark-prio": 100,`, to: `"fw-mark-prio": 200,`, leaf: "fw-mark-prio"},
 		"from priority": {from: `"from-prio": 55,`, to: `"from-prio": 56,`, leaf: "from-prio"},
+		"mark priority takes from priority": {
+			from:  `"fw-mark-prio": 100,`,
+			to:    `"fw-mark-prio": 56,`,
+			leaf:  "fw-mark-prio",
+			leaf2: "from-prio",
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -351,6 +361,9 @@ func TestLoadRejectsDuplicateRoutingNumbers(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.leaf) {
 				t.Fatalf("error does not name %s: %v", tc.leaf, err)
+			}
+			if tc.leaf2 != "" && !strings.Contains(err.Error(), tc.leaf2) {
+				t.Fatalf("error does not name %s: %v", tc.leaf2, err)
 			}
 		})
 	}

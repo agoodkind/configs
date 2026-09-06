@@ -229,11 +229,12 @@ func build(doc *document) (*Config, error) {
 }
 
 // checkProviderSet runs the checks that need the whole provider set rather than
-// one entry: every routing number is unique across providers, no provider sits
-// on a reserved table, and every weight is at least one. Nothing derives these
-// numbers, so a typo in inventory has no other place to surface. A failure here
-// stops the daemon before it writes anything to the kernel, which is the
-// existing failure contract for a bad configuration.
+// one entry: every routing number is unique across providers (fw-mark-prio and
+// from-prio share one namespace, since both select an ip rule by priority), no
+// provider sits on a reserved table, and every weight is at least one. Nothing
+// derives these numbers, so a typo in inventory has no other place to surface.
+// A failure here stops the daemon before it writes anything to the kernel,
+// which is the existing failure contract for a bad configuration.
 func checkProviderSet(loaded *Config) error {
 	reserved := make(map[int]string, len(loaded.ReservedTables)+len(kernelReservedTables))
 	for _, table := range kernelReservedTables {
@@ -260,8 +261,6 @@ func checkProviderSet(loaded *Config) error {
 	}{
 		{leaf: "table-id", value: func(entry config.IfMgrWANEntry) int { return entry.TableID }},
 		{leaf: "fw-mark", value: func(entry config.IfMgrWANEntry) int { return entry.FwMark }},
-		{leaf: "fw-mark-prio", value: func(entry config.IfMgrWANEntry) int { return entry.FwMarkPrio }},
-		{leaf: "from-prio", value: func(entry config.IfMgrWANEntry) int { return entry.FromPrio }},
 	}
 	for _, slot := range slots {
 		owner := make(map[int]string, len(names))
@@ -272,6 +271,36 @@ func checkProviderSet(loaded *Config) error {
 					name, slot.leaf, value, taken)
 			}
 			owner[value] = name
+		}
+	}
+
+	// fw-mark-prio and from-prio both select an ip rule by the same numeric
+	// priority, and the routing module already treats them as one slot space,
+	// so they are checked against one shared set rather than two independent
+	// ones. That set catches a collision across providers and a collision
+	// between a single provider's own two leaves, whichever leaf is checked
+	// second.
+	type priorityOwner struct {
+		provider string
+		leaf     string
+	}
+	priorityLeaves := []struct {
+		leaf  string
+		value func(entry config.IfMgrWANEntry) int
+	}{
+		{leaf: "fw-mark-prio", value: func(entry config.IfMgrWANEntry) int { return entry.FwMarkPrio }},
+		{leaf: "from-prio", value: func(entry config.IfMgrWANEntry) int { return entry.FromPrio }},
+	}
+	priorityOwners := make(map[int]priorityOwner, len(names)*len(priorityLeaves))
+	for _, name := range names {
+		entry := loaded.WAN[name]
+		for _, priorityLeaf := range priorityLeaves {
+			value := priorityLeaf.value(entry)
+			if taken, seen := priorityOwners[value]; seen {
+				return fmt.Errorf("wan %s: %s %d is already taken by wan %s's %s",
+					name, priorityLeaf.leaf, value, taken.provider, taken.leaf)
+			}
+			priorityOwners[value] = priorityOwner{provider: name, leaf: priorityLeaf.leaf}
 		}
 	}
 
