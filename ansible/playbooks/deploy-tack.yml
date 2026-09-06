@@ -527,9 +527,9 @@
         # does not take the alarm with it. Either copy alone still reports:
         # the check reads the object store and the ledger masters, and both
         # guests reach both. This copy is the deputy (TACK-481): the rendered
-        # env gives it the owner's health URL, and it mails a fault only when
-        # the owner does not answer, so one fault is one email while the
-        # owner is up. One data guest carries it rather than all three,
+        # env names the owner's checker, and it mails a fault only when the
+        # ledger shows no fresh run by that checker, so one fault is one email
+        # while the owner's check runs. One data guest carries it rather than all three,
         # because a third and fourth copy would only multiply the same mail.
         # yb1 is the environment's distinguished node already, the one a
         # from-empty rebuild bootstraps and the one every other node enrolls
