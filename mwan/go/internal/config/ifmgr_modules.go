@@ -92,10 +92,11 @@ type IfMgrPolicyRulesSection struct {
 }
 
 // IfMgrWANEntry is one provider's routing configuration, keyed by provider
-// name. It comes from network.json: the interface the provider rides plus the
-// policy-routing slots wan.routes owns. Modules read the fields they need; npt
-// uses only the name and interface. The shared internal prefix and edge
-// addresses live on IfMgrSection, because no single provider owns them.
+// name. It comes from network.json: the interface the provider rides, the
+// policy-routing slots wan.routes owns, and the steering properties the
+// balancer reads. Modules read the fields they need; npt uses only the name and
+// interface. The shared internal prefix and edge addresses live on
+// IfMgrSection, because no single provider owns them.
 type IfMgrWANEntry struct {
 	Iface      string
 	TableID    int
@@ -104,6 +105,13 @@ type IfMgrWANEntry struct {
 	FromPrio   int
 	NptPrefix  string
 	V4Source   string
+	// Tier is the preference tier. The lowest-numbered tier holding at least
+	// one healthy provider is the tier that carries new connections.
+	Tier uint8
+	// Weight is this provider's share of its tier, at least one. The loader
+	// refuses a missing or smaller value rather than defaulting it, because a
+	// zero share would make the balancer's divisor wrong.
+	Weight int
 }
 
 // IfMgrWANRoutesSection is the [ifmgr.modules.wan.routes] table. The health

@@ -423,9 +423,15 @@ type IfMgrSection struct {
 	// /etc/mwan/network.json. The skip tag is what stops the decoder reading a
 	// stale key out of a config.toml that still carries one, so exactly one
 	// file owns them at every moment.
-	InternalPrefix string                       `toml:"-"`
-	OpnsenseEdgeV6 string                       `toml:"-"`
-	MwanbrEdgeV6   string                       `toml:"-"`
+	InternalPrefix string `toml:"-"`
+	OpnsenseEdgeV6 string `toml:"-"`
+	MwanbrEdgeV6   string `toml:"-"`
+	// HashMode and ReservedTables come from network.json's steering group
+	// beside the WAN map, so the same skip tag keeps a stale config.toml key
+	// out of them. HashMode decides how the steering module assigns a new
+	// connection; ReservedTables is the set no provider may route into.
+	HashMode       string                       `toml:"-"`
+	ReservedTables []int                        `toml:"-"`
 	Iface          map[string]IfMgrIfaceSection `toml:"iface"`
 	Modules        IfMgrModulesSection          `toml:"modules"`
 	Alerts         IfMgrAlertsSection           `toml:"alerts"`
