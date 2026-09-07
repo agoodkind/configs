@@ -116,10 +116,10 @@ than the number.
 - **The schema revision ships before the rendered file.** The daemon parses
   `network.json` with libyang under strict parsing, so a file carrying
   `reserved-tables` against the installed `@2026-08-30` revision is rejected
-  at load. The cutover installs the model revision with
-  `deploy-wanconfig-stack` before it runs `deploy-mwan`, and that order is
-  load-bearing. Task 1 lands first for the same reason: Task 2's loader tests
-  validate a document carrying the new leaf-list.
+  at load. `deploy-mwan` installs the model revision itself before it writes
+  any gateway file (Task 10), so one command carries the order. Task 1 lands
+  first for the same reason: Task 2's loader tests validate a document
+  carrying the new leaf-list.
 - **Every template edit survives the repository's template lint.** The lint
   parses `.j2` files and playbook expressions and rejects a default or
   presence check on a declared input variable: the `default` and `d` filters,
@@ -159,7 +159,9 @@ than the number.
   from main fail a host is not ready to merge (operator ruling 2026-09-07).
   Task 2's loader requires the steering leaves, so Task 5, which renders
   them, lands and deploys (testbed, live validation, then production)
-  before Task 3 merges; Task 5 consumes only Task 1 and the loader. Each
+  before Task 3 merges; Task 5 consumes only Task 1 and the loader. Task 10
+  (the stack install folded into `deploy-mwan`) rides the Task 5 pull
+  request, so that first deploy is one command. Each
   later task follows the same cycle: merge, testbed deploy with
   `--release <tag>`, live validation, production deploy, then the next
   branch.
@@ -9459,5 +9461,164 @@ each gateway, the astound add, re-tier, and remove evidence with the simulator
 captures, and the confirmation that no reader holds a provider list any more.
 Append one entry to the wanconfig ledger naming what shipped and what remains,
 which is MWAN-442, whether a pushed verdict blocks a rollback.
+
+---
+
+### Task 10: the management stack install becomes part of deploy-mwan
+
+The gateway deploy installs the management stack itself, so one command puts
+the schema revision, the packages, and the gateway configuration on a gateway
+in the order the daemon needs. Today the stack has its own play, and an
+operator who runs `deploy-mwan` without first running `deploy-wanconfig-stack`
+after a model revision bump gets a daemon that validates its network file
+against a model directory that does not carry the new leaves. The order is
+load-bearing and lives only in a runbook, which is where such rules drift.
+
+This task lands in the Task 5 pull request before it merges (operator ruling
+2026-09-07), so the first deploy after that merge runs one play.
+
+**Files:**
+- Create: `ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml`
+- Modify: `ansible/playbooks/deploy-mwan.yml` (insert one import after the
+  "Install required packages" task; add two handlers)
+- Delete: `ansible/playbooks/deploy-wanconfig-stack.yml`
+
+**Interfaces:**
+- Consumes: the extra vars every `--release` deploy stages
+  (`mwan_release_tag`, `wanconfig_stack_dir`), which the deploy command sets
+  for any play; the model file `mwan/yang/goodkind-mwan-steering@2026-09-02.yang`.
+- Produces: a `deploy-mwan` run that installs the stack packages, the model
+  directory the daemon validates against, the sysrepo modules at the current
+  revision, the NACM policy, and the two RESTCONF units before it writes the
+  gateway configuration or restarts the daemon.
+- Removes: the standalone `deploy-wanconfig-stack` play and the two-command
+  ordering rule.
+
+- [ ] **Step 1: Move the stack tasks into a task file**
+
+Create `ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml` with exactly the
+task list of `ansible/playbooks/deploy-wanconfig-stack.yml` (its `tasks:`
+entries, from "Install the front-end proxy" through "Enable and start the
+stack services"), de-indented to top level and unchanged in content, preceded
+by this header:
+
+```yaml
+---
+# Install the wanconfig management stack on the MWAN gateway (MWAN-434).
+# The stack arrives as Debian packages built, proven, and attested by the
+# mwan release: the controller stages the bundle beside the binaries, and
+# these tasks copy the packages to the gateway and install them with apt.
+# No gateway runs a compiler, a clone, or cmake. The vendored YANG model
+# loads into the sysrepo datastore, and rousette serves RESTCONF on ::1
+# behind an nghttpx front end bound to the management address only.
+# Read-only: NACM denies every write and grants anonymous read per
+# rousette's contract.
+#
+# Imported by deploy-mwan.yml before the gateway configuration is written,
+# because the daemon validates its network file against the model directory
+# these tasks fill, and a revision bump has to reach that directory before
+# the daemon restarts. The importing play sets the variables these tasks
+# read and runs them as root.
+```
+
+The two `notify:` lines in the moved tasks keep their handler names,
+`Restart rousette` and `Restart nghttpx-wanconfig`; Step 3 gives the
+importing play those handlers.
+
+- [ ] **Step 2: Import the task file from the gateway deploy**
+
+In `ansible/playbooks/deploy-mwan.yml`, directly after the "Install required
+packages" task (the `ansible.builtin.apt` task whose list ends with
+`conntrack`) and before "Create MWAN runtime config directory", insert:
+
+```yaml
+    # The management stack goes on before any gateway file is written, so the
+    # model directory the daemon validates its network file against already
+    # carries the revision this deploy renders for. The release staged the
+    # bundle beside the binaries; reading mwan_release_tag and
+    # wanconfig_stack_dir bare makes a deploy without --release fail at load
+    # rather than install nothing.
+    - name: Install the wanconfig management stack
+      ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
+      become: true
+      vars:
+        wanconfig_deb_dir: "/var/lib/mwan-wanconfig/debs/{{ mwan_release_tag }}"
+        wanconfig_yang_dir: /usr/local/share/wanconfig/yang
+        # The rousette package ships the models its RESTCONF contract needs.
+        wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
+        # ietf-nat guards every enum value behind its nat-type features, so an
+        # install with no features enabled leaves leaves with zero valid
+        # values and libyang rejects the module. Enable exactly the
+        # translation types the model uses.
+        wanconfig_yang_modules:
+          - name: ietf-interfaces@2018-02-20
+            features: []
+          - name: ietf-ip@2018-02-22
+            features: []
+          - name: ietf-routing@2018-03-13
+            features: []
+          - name: ietf-nat@2019-01-10
+            features:
+              - basic-nat44
+              - napt44
+              - dst-nat
+              - nptv6
+          - name: goodkind-mwan-steering@2026-09-02
+            features: []
+```
+
+- [ ] **Step 3: Give the play the stack handlers**
+
+In the same file, in the `handlers:` list of the "Configure MWAN VM" play,
+directly after the "Restart mwan-ifmgr@wan" handler, append:
+
+```yaml
+    - name: Restart rousette
+      ansible.builtin.systemd:
+        name: rousette
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart nghttpx-wanconfig
+      ansible.builtin.systemd:
+        name: nghttpx-wanconfig
+        state: restarted
+        daemon_reload: true
+```
+
+- [ ] **Step 4: Delete the standalone play**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git rm ansible/playbooks/deploy-wanconfig-stack.yml
+```
+
+Nothing else in the repository names the play: the rake wrappers list five
+canonical playbooks and this is not one, the CI workflows never run it, and
+the deploy command resolves any playbook name by file.
+
+- [ ] **Step 5: Verify the play parses and the templates lint**
+
+```bash
+cd "$(git rev-parse --show-toplevel)/ansible" && rake syntax:mwan
+```
+
+Expected: PASS, exit 0. A syntax check resolves every `import_tasks`, so a
+wrong path or a task-level keyword the import rejects fails here.
+
+```bash
+cd "$(git rev-parse --show-toplevel)" && go run goodkind.io/configs/cmd/configs lint
+```
+
+Expected: PASS, exit 0. The deploy's lint scope follows `import_tasks`, so the
+moved file is linted as part of `deploy-mwan`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git add ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml ansible/playbooks/deploy-mwan.yml ansible/playbooks/deploy-wanconfig-stack.yml
+git commit -S -m "Install the wanconfig management stack from deploy-mwan" -m "Move the stack tasks into tasks/mwan-vm/wanconfig-stack.yml, import them from deploy-mwan before the gateway configuration is written with the stack variables and the two restart handlers, and delete the standalone deploy-wanconfig-stack play." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
 
 ---
