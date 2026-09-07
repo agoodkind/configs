@@ -1,6 +1,6 @@
-# Production three-node data tier and second app instance. These guests are
-# declared ahead of their apply, which waits on an operator decision about
-# hypervisor memory.
+# Production three-node data tier and second app instance. Memory is sized to
+# the ledger tserver's fixed 8 GiB ceiling (tack yugabyte-overlay/tserver.flags)
+# plus room for the system and page cache; the app guest carries no store.
 
 resource "proxmox_virtual_environment_container" "tack_data1" {
   node_name = "vault"
@@ -35,7 +35,7 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
   }
 
   memory {
-    dedicated = 16384
+    dedicated = 12288
   }
 
   cpu {
@@ -97,7 +97,7 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
   }
 
   memory {
-    dedicated = 16384
+    dedicated = 12288
   }
 
   cpu {
@@ -159,7 +159,7 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
   }
 
   memory {
-    dedicated = 16384
+    dedicated = 12288
   }
 
   cpu {
@@ -221,7 +221,7 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
   }
 
   memory {
-    dedicated = 8192
+    dedicated = 4096
   }
 
   cpu {
