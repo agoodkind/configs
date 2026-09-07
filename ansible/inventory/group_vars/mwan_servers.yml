@@ -164,14 +164,6 @@ mwan_opnsense_edge_ipv6: "3d06:bad:b01:fe::2"
 # IPv6 prefixes
 # ----------------------------------------------------------------------------
 
-# NPT targets: lower /60 from each PD
-# The ::1 address from each PD is added to WAN interfaces and used for:
-# - SNAT of fe::1 and fe::2 (single /128 translation)
-# - Source for NPT'd traffic from broader /60
-mwan_npt_att_prefix: "2600:1700:2f71:c80::/60"
-mwan_npt_webpass_prefix: "2604:5500:c271:be00::/60"
-mwan_npt_monkeybrains_prefix: "2607:f598:d3e8:4500::/60"
-
 # Delegated prefixes (DHCPv6-PD) - reference/visibility.
 # These are what the ISPs delegate; NPT targets above intentionally use /60s.
 mwan_att_pd_prefix: "2600:1700:2f71:c80::/60"
@@ -209,60 +201,14 @@ mwan_static_mappings:
 # below a second. Rendered into network.json as steering-group/health/probe-timeout.
 mwan_health_probe_timeout_ms: 2000
 
-mwan_health_checks:
-  att:
-    enabled: true
-    ping_count: 3
-    success_threshold: 2
-    check_interval: 10
-    failure_threshold: 2
-    recovery_threshold: 2
-    targets_v4:
-      - "1.1.1.1" # Cloudflare
-      - "8.8.8.8" # Google
-    targets_v6:
-      - "2606:4700:4700::1111" # Cloudflare
-      - "2001:4860:4860::8888" # Google
-    http_targets:
-      - "https://ifconfig.co/ip"
-  webpass:
-    enabled: true
-    ping_count: 3
-    success_threshold: 2
-    check_interval: 10
-    failure_threshold: 2
-    recovery_threshold: 2
-    targets_v4:
-      - "1.1.1.1"
-      - "8.8.8.8"
-    targets_v6:
-      - "2606:4700:4700::1111"
-      - "2001:4860:4860::8888"
-    http_targets:
-      - "https://ifconfig.co/ip"
-  monkeybrains:
-    enabled: true # Tertiary, all-else-failed fallback WAN
-    ping_count: 5
-    success_threshold: 1 # Lax - it's lossy
-    check_interval: 30
-    failure_threshold: 5
-    recovery_threshold: 3
-    targets_v4:
-      - "1.1.1.1"
-      - "8.8.8.8"
-    targets_v6:
-      - "2606:4700:4700::1111"
-      - "2001:4860:4860::8888"
-    http_targets:
-      - "https://ifconfig.co/ip"
-
 # ----------------------------------------------------------------------------
-# Latency-sensitive services pinned to AT&T
+# Latency-sensitive services pinned to one provider
 # ----------------------------------------------------------------------------
 
-# Seed CIDRs for the nftables set used to pin IPv4 traffic to AT&T.
-# This should be kept small and stable; dynamic sources (Zoom, Verizon DNS) are handled by a timer.
-mwan_att_pinned_v4_seed_cidrs:
+# Seed CIDRs for the nftables set that pins IPv4 traffic to the provider
+# mwan_pin_provider names. Keep it small and stable; dynamic sources (Zoom,
+# Verizon DNS) are handled by a timer.
+mwan_pinned_v4_seed_cidrs:
   # Google Meet TURN (Workspace + consumer)
   - "74.125.250.0/24"
   - "74.125.247.128/32"
@@ -296,8 +242,9 @@ mwan_att_pinned_v4_seed_cidrs:
   - "23.67.33.92/32"
   - "23.67.33.97/32"
 
-# Verizon Wi-Fi Calling: resolve these FQDNs periodically and pin their A records to AT&T.
-mwan_att_pinned_v4_fqdns:
+# Verizon Wi-Fi Calling: resolve these FQDNs periodically and pin their A
+# records to the pinned provider.
+mwan_pinned_v4_fqdns:
   - "wo.vzwwo.com"
   - "spg.vzw.com"
   - "sg.vzwfemto.com"
@@ -323,12 +270,13 @@ mwan_att_pinned_v4_fqdns:
   - "img.hulu.com"
   - "hulu.playback.edge.bamgrid.com"
 
-# Zoom: pull published IPv4 prefixes periodically and pin to AT&T.
-# This is a plain-text list of prefixes (one per line).
+# Zoom: pull published IPv4 prefixes periodically and pin them to the pinned
+# provider. This is a plain-text list of prefixes (one per line).
 mwan_zoom_ipranges_url: "https://assets.zoom.us/docs/ipranges/ZoomMeetings.txt"
 
-# AT&T ePDG infrastructure - IPv6 seed CIDRs
-mwan_att_pinned_v6_seed_cidrs:
+# IPv6 seed CIDRs for AT&T ePDG infrastructure. AT&T is the destination
+# network here, not the egress provider.
+mwan_pinned_v6_seed_cidrs:
   - "2600:1000::/28"
   - "2607:fb90::/32"
   - "2001:1890::/32"
@@ -341,7 +289,7 @@ mwan_att_pinned_v6_seed_cidrs:
   - "2600:9000:211f:ce00:15:74ef:49c0:93a1/128"
 
 # AT&T ePDG infrastructure - IPv6 FQDNs to resolve
-mwan_att_pinned_v6_fqdns:
+mwan_pinned_v6_fqdns:
   - "epdg.epc.att.net"
   - "entitlement2.mobile.att.net"
   - "tvvm.mobile.att.net"
@@ -362,15 +310,121 @@ mwan_att_pinned_v6_fqdns:
   - "hulu.playback.edge.bamgrid.com"
 
 # ----------------------------------------------------------------------------
-# Routing table IDs
+# Providers
 # ----------------------------------------------------------------------------
 
-# Used in /etc/iproute2/rt_tables and systemd-networkd configs
-mwan_rt_tables:
-  att: 100
-  webpass: 200
-  monkeybrains: 300
-  cloudflared: 400
+# One entry per provider the gateway steers. Every value the daemon reads about
+# a provider is here, so adding one is one entry and a deploy. The routing
+# numbers are typed, not derived: table, mark, mark_prio, and from_prio are the
+# numbers this gateway has always used, and the daemon checks them for
+# uniqueness and against mwan_reserved_tables rather than computing them. tier
+# decides fallback, lowest first, and weight splits a shared tier. Hardware
+# values stay in their own variables above, because the link files read them;
+# an entry references them rather than repeating a value.
+mwan_providers:
+  - name: att
+    iface: "{{ mwan_att_iface }}"
+    vlan_id: "{{ mwan_att_vlan_id }}"
+    table: 100
+    mark: 1
+    mark_prio: 100
+    from_prio: 55
+    tier: 0
+    weight: 1
+    npt_prefix: "2600:1700:2f71:c80::/60"
+    v4_source: ""
+    static_mappings:
+      - { internal: "10.250.250.2", external: "104.57.226.193" }
+      - { internal: "10.250.250.3", external: "104.57.226.194" }
+      - { internal: "10.250.250.4", external: "104.57.226.195" }
+      - { internal: "10.250.250.5", external: "104.57.226.196" }
+      - { internal: "10.250.250.6", external: "104.57.226.197" }
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 2
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4:
+        - "1.1.1.1" # Cloudflare
+        - "8.8.8.8" # Google
+      targets_v6:
+        - "2606:4700:4700::1111" # Cloudflare
+        - "2001:4860:4860::8888" # Google
+      http_targets:
+        - "https://ifconfig.co/ip"
+
+  - name: webpass
+    iface: "{{ mwan_webpass_iface }}"
+    vlan_id: ""
+    table: 200
+    mark: 2
+    mark_prio: 200
+    from_prio: 56
+    tier: 0
+    weight: 1
+    npt_prefix: "2604:5500:c271:be00::/60"
+    v4_source: "{{ mwan_webpass_ipv4_addr }}"
+    static_mappings:
+      - { internal: "10.250.250.2", external: "136.25.91.242" }
+      - { internal: "10.250.250.3", external: "136.25.91.243" }
+      - { internal: "10.250.250.4", external: "136.25.91.244" }
+      - { internal: "10.250.250.5", external: "136.25.91.245" }
+      - { internal: "10.250.250.6", external: "136.25.91.246" }
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 2
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4:
+        - "1.1.1.1"
+        - "8.8.8.8"
+      targets_v6:
+        - "2606:4700:4700::1111"
+        - "2001:4860:4860::8888"
+      http_targets:
+        - "https://ifconfig.co/ip"
+
+  # Tertiary, all-else-failed fallback WAN. Alone in tier 1, so it carries
+  # everything when both tier 0 providers are unhealthy and nothing otherwise.
+  - name: monkeybrains
+    iface: "{{ mwan_monkeybrains_iface }}"
+    vlan_id: ""
+    table: 300
+    mark: 3
+    mark_prio: 300
+    from_prio: 57
+    tier: 1
+    weight: 1
+    npt_prefix: "2607:f598:d3e8:4500::/60"
+    v4_source: ""
+    static_mappings: []
+    health:
+      enabled: true
+      ping_count: 5
+      success_threshold: 1 # Lax, because the link is lossy.
+      failure_threshold: 5
+      recovery_threshold: 3
+      check_interval: 30
+      targets_v4:
+        - "1.1.1.1"
+        - "8.8.8.8"
+      targets_v6:
+        - "2606:4700:4700::1111"
+        - "2001:4860:4860::8888"
+      http_targets:
+        - "https://ifconfig.co/ip"
+
+# How a new connection is assigned among the active tier's healthy providers.
+# random, source, or source-destination.
+mwan_hash_mode: random
+
+# The provider the pinned-destination sets and the router's WireGuard control
+# plane are pinned to.
+mwan_pin_provider: att
 
 # ----------------------------------------------------------------------------
 # Interface manager WAN route module
@@ -378,18 +432,6 @@ mwan_rt_tables:
 
 mwan_ifmgr_wan_enabled: true
 mwan_ifmgr_wan_health_state_file: "/var/run/mwan-health.state"
-mwan_ifmgr_wan_fw_marks:
-  att: 1
-  webpass: 2
-  monkeybrains: 3
-mwan_ifmgr_wan_fw_mark_prios:
-  att: 100
-  webpass: 200
-  monkeybrains: 300
-mwan_ifmgr_wan_from_prios:
-  att: 55
-  webpass: 56
-  monkeybrains: 57
 
 # ----------------------------------------------------------------------------
 # Notifications
@@ -422,11 +464,11 @@ mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"
 mwan_watchdog_state_file: "/run/mwan-rollback.state"
 mwan_watchdog_lock_file: "/run/mwan-watchdog-rollback.lock"
-# The production gateway carries the packaged wanconfig stack
-# (deploy-wanconfig-stack with --release), so its ifmgr publishes the
-# configuration into the sysrepo datastore at startup and the RESTCONF
-# surface serves it on the management address. Proven end to end on the
-# testbed (MWAN-436) before this flipped.
+# The production gateway carries the packaged wanconfig stack (deploy-mwan
+# with --release), so its ifmgr publishes the configuration into the
+# sysrepo datastore at startup and the RESTCONF surface serves it on the
+# management address. Proven end to end on the testbed (MWAN-436) before
+# this flipped.
 mwan_wanconfig_publish: true
 failover_lxc_id: "{{ service_mapping.mwan_failover.vmid }}"
 # The VM runs only the wan role, whose modules are health, wan.routes, and npt.

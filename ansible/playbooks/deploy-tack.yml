@@ -123,6 +123,28 @@
     - name: Install Docker prune timer
       ansible.builtin.include_tasks: tasks/docker-prune.yml
 
+    # -------------------------------------------------------------------------
+    # Host data-plane lockdown (TACK-327). The databases are reached through
+    # the recorded ops commands, never from the host shell: the FoundationDB
+    # client package gave the host a raw fdbcli that tack itself never uses
+    # (every fdbcli tack runs is inside a container), and the scripts below
+    # were left in root's home by sessions as unrecorded shortcuts into
+    # YugabyteDB. Both are removed on every deploy so they do not come back.
+    # The package's configuration stays: /etc/foundationdb/fdb.cluster is the
+    # live cluster file the compose stack mounts, and a purge would delete it.
+    # -------------------------------------------------------------------------
+    - name: Remove the FoundationDB client package from the host
+      ansible.builtin.apt:
+        name: foundationdb-clients
+        state: absent
+        purge: false
+
+    - name: Remove unrecorded database helper scripts from root's home
+      ansible.builtin.file:
+        path: "/root/{{ item }}"
+        state: absent
+      loop: "{{ tack_host_lockdown_removed_scripts }}"
+
   handlers:
     # Apply only this playbook's sysctl file, not `sysctl --system`. The tack
     # LXC is unprivileged, so host-namespaced kernel.* keys from the base image's

@@ -10,8 +10,13 @@
 #
 #1	inr.ruhep
 
-# Multi-WAN routing tables
-{{ mwan_rt_tables.att }}	att
-{{ mwan_rt_tables.webpass }}	webpass
-{{ mwan_rt_tables.monkeybrains }}	monkeybrains
-{{ mwan_rt_tables.cloudflared }}	cloudflared
+# One table per provider, named for the provider.
+{% for provider in mwan_providers %}
+{{ provider.table }}	{{ provider.name }}
+{% endfor %}
+
+# Tables held for something other than a provider. The daemon refuses a
+# provider whose table is one of these.
+{% for name, table in mwan_reserved_tables | dictsort(by='value') %}
+{{ table }}	{{ name }}
+{% endfor %}

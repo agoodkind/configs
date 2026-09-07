@@ -1,9 +1,9 @@
 {#
   The gateway's network tree in the model's own JSON encoding, deployed to
-  /etc/mwan/network.json and loaded by mwan-ifmgr@wan. It renders from the same
-  group_vars the TOML template reads, and every value crosses unchanged: the
-  model's time spans are integers that name their unit, and the inventory
-  already holds integers.
+  /etc/mwan/network.json and loaded by mwan-ifmgr@wan. It renders from
+  mwan_providers, the one list each gateway group carries, so a provider is one
+  entry there and nothing else. Every value crosses unchanged: the model's time
+  spans are integers that name their unit, and the inventory holds integers.
 
   Each provider hangs off the interface that carries it. iana-if-type:other is
   the type the served tree already publishes for these links, so the mandatory
@@ -13,62 +13,43 @@
   and lstrip_blocks off, so an indented tag would emit its leading spaces into
   the document.
 #}
-{% if mwan_att_vlan_id %}
-{% set att_iface = mwan_att_iface ~ "." ~ mwan_att_vlan_id %}
-{% else %}
-{% set att_iface = mwan_att_iface %}
-{% endif %}
-{% set providers = [
-  {
-    "name": "att",
-    "iface": att_iface,
-    "npt_prefix": mwan_npt_att_prefix,
-    "v4_source": ""
-  },
-  {
-    "name": "webpass",
-    "iface": mwan_webpass_iface,
-    "npt_prefix": mwan_npt_webpass_prefix,
-    "v4_source": mwan_webpass_ipv4_addr
-  },
-  {
-    "name": "monkeybrains",
-    "iface": mwan_monkeybrains_iface,
-    "npt_prefix": mwan_npt_monkeybrains_prefix,
-    "v4_source": ""
-  }
-] %}
 {% set interfaces = [] %}
-{% for provider in providers %}
+{% for provider in mwan_providers %}
+{% if provider.vlan_id %}
+{% set iface_name = provider.iface ~ "." ~ provider.vlan_id %}
+{% else %}
+{% set iface_name = provider.iface %}
+{% endif %}
 {% set wan = {
   "name": provider.name,
-  "table-id": mwan_rt_tables[provider.name],
-  "fw-mark": mwan_ifmgr_wan_fw_marks[provider.name],
-  "fw-mark-prio": mwan_ifmgr_wan_fw_mark_prios[provider.name],
-  "from-prio": mwan_ifmgr_wan_from_prios[provider.name],
-  "npt-prefix": provider.npt_prefix
+  "table-id": provider.table,
+  "fw-mark": provider.mark,
+  "fw-mark-prio": provider.mark_prio,
+  "from-prio": provider.from_prio,
+  "npt-prefix": provider.npt_prefix,
+  "health": {
+    "enabled": provider.health.enabled,
+    "ping-count": provider.health.ping_count,
+    "success-threshold": provider.health.success_threshold,
+    "failure-threshold": provider.health.failure_threshold,
+    "recovery-threshold": provider.health.recovery_threshold,
+    "check-interval": provider.health.check_interval,
+    "targets-v4": provider.health.targets_v4,
+    "targets-v6": provider.health.targets_v6,
+    "http-urls": provider.health.http_targets
+  }
 } %}
 {% if provider.v4_source %}
 {% set wan = wan | combine({"v4-source": provider.v4_source}) %}
 {% endif %}
-{% if provider.name in mwan_health_checks %}
-{% set check = mwan_health_checks[provider.name] %}
-{% set wan = wan | combine({"health": {
-  "enabled": check.enabled,
-  "ping-count": check.ping_count,
-  "success-threshold": check.success_threshold,
-  "failure-threshold": check.failure_threshold,
-  "recovery-threshold": check.recovery_threshold,
-  "check-interval": check.check_interval,
-  "targets-v4": check.targets_v4,
-  "targets-v6": check.targets_v6,
-  "http-urls": check.http_targets
-}}) %}
-{% endif %}
 {% set _ = interfaces.append({
-  "name": provider.iface,
+  "name": iface_name,
   "type": "iana-if-type:other",
-  "goodkind-mwan-steering:wan": wan
+  "goodkind-mwan-steering:wan": wan,
+  "goodkind-mwan-steering:steering": {
+    "tier": provider.tier,
+    "weight": provider.weight
+  }
 }) %}
 {% endfor %}
 {% set _ = interfaces.append({"name": mwan_internal_iface, "type": "iana-if-type:other"}) %}
@@ -76,6 +57,8 @@
   "ietf-interfaces:interfaces": {
     "interface": interfaces,
     "goodkind-mwan-steering:steering-group": {
+      "hash-mode": mwan_hash_mode,
+      "reserved-tables": mwan_reserved_tables.values() | sort,
       "translation": {
         "internal-prefix": mwan_internal_prefix,
         "opnsense-edge-v6": mwan_opnsense_edge_ipv6,
