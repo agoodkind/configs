@@ -103,7 +103,7 @@
     - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-routing@2018-03-13.yang"
     - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang"
     - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/iana-if-type@2014-05-08.yang"
-    - "{{ repo_root }}/mwan/yang/goodkind-mwan-steering@2026-09-02.yang"
+    - "{{ mwan_steering_model }}"
 
 - name: List installed sysrepo modules
   ansible.builtin.command:

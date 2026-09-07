@@ -316,7 +316,10 @@
               - napt44
               - dst-nat
               - nptv6
-          - name: goodkind-mwan-steering@2026-09-02
+          # The gateway model is the one revision file the repository holds,
+          # found by the same glob the controller-side validation uses, so
+          # the installed module and the validated document never disagree.
+          - name: "{{ mwan_steering_model | basename | regex_replace('\\.yang$', '') }}"
             features: []
 
     - name: Deploy MWAN runtime environment file
