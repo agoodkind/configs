@@ -357,7 +357,7 @@
       when: mwan_ifmgr_wan_enabled | bool
       notify: Restart mwan-ifmgr@wan
 
-    - name: Discover MWAN VM runtime network (MACs + NIC presence)
+    - name: Discover MWAN VM runtime network (MACs)
       ansible.builtin.include_tasks: tasks/mwan-vm/discover-runtime-network.yml
 
     - name: Create configuration directories
