@@ -130,12 +130,14 @@
     # (every fdbcli tack runs is inside a container), and the scripts below
     # were left in root's home by sessions as unrecorded shortcuts into
     # YugabyteDB. Both are removed on every deploy so they do not come back.
+    # The package's configuration stays: /etc/foundationdb/fdb.cluster is the
+    # live cluster file the compose stack mounts, and a purge would delete it.
     # -------------------------------------------------------------------------
     - name: Remove the FoundationDB client package from the host
       ansible.builtin.apt:
         name: foundationdb-clients
         state: absent
-        purge: true
+        purge: false
 
     - name: Remove unrecorded database helper scripts from root's home
       ansible.builtin.file:
