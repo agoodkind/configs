@@ -9573,7 +9573,9 @@ validation run first, so a rejected render leaves the gateway untouched):
 - [ ] **Step 3: Give the play the stack handlers**
 
 In the same file, in the `handlers:` list of the "Configure MWAN VM" play,
-directly after the "Restart mwan-ifmgr@wan" handler, append:
+directly before the "Restart mwan-ifmgr@wan" handler, insert (handlers run
+in definition order, so the management services restart before the daemon
+that publishes into them):
 
 ```yaml
     - name: Restart rousette

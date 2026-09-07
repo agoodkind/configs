@@ -895,13 +895,8 @@
         state: restarted
         daemon_reload: true
 
-    - name: Restart mwan-ifmgr@wan
-      ansible.builtin.systemd:
-        name: mwan-ifmgr@wan
-        state: restarted
-        daemon_reload: true
-      when: mwan_ifmgr_wan_enabled | bool
-
+    # Handlers run in definition order, so the management services the
+    # daemon publishes into restart before the daemon does.
     - name: Restart rousette
       ansible.builtin.systemd:
         name: rousette
@@ -913,6 +908,13 @@
         name: nghttpx-wanconfig
         state: restarted
         daemon_reload: true
+
+    - name: Restart mwan-ifmgr@wan
+      ansible.builtin.systemd:
+        name: mwan-ifmgr@wan
+        state: restarted
+        daemon_reload: true
+      when: mwan_ifmgr_wan_enabled | bool
 
 # The MWAN failover LXC is configured by deploy-mwan-failover.yml,
 # targeting mwan_failover_servers (prod) or mwan_failover_suburban_servers
