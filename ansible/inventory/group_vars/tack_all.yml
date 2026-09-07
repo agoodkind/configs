@@ -189,3 +189,26 @@ tack_ledger_join_target: >-
       else 'yugabyte' if tack_ledger_legacy_node_present
       else ('yb2' if tack_ledger_node_name == 'yb1' else 'yb1'))
      if tack_cluster_role == 'data' else '' }}
+
+# Host data-plane lockdown (TACK-327). These files in root's home on the tack
+# guests are unrecorded shortcuts into the ledger and auth database, left by
+# sessions during proofs. The deploy deletes them on every run; the recorded
+# path is `ops db sql`, which mails the alarm address and records the
+# statement before it runs.
+tack_host_lockdown_removed_scripts:
+  - prod_sql.sh
+  - qa_sql.sh
+  - check_nil_org.sh
+  - proof_461_prod_dry.sh
+  - proof_s0_prod.sh
+  - proof_s0_prod_followup.sh
+  - proofprod.sh
+  - proof180.sh
+  - proof437.sh
+  - diag180.sh
+  - read_foreign_org_rows.sh
+  - read_nil_strangers.sh
+  - read_stranger_identity.sh
+  - zero_org_breakdown.sh
+  - zero_org_mapping_facts.sh
+  - pk-plan.sql
