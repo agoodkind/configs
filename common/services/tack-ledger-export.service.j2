@@ -3,6 +3,19 @@
 [Unit]
 Description=Export the Tack ledger snapshot to the object store
 After=docker.service
+# A failed export retries on its own before anyone hears about it. The export
+# talks to an object store and a database cluster, and a transient refusal from
+# either used to cost a whole day, because the next attempt was the next
+# timer tick and the staleness alarm fired twelve hours after that. The unit
+# may start six times in the window below: the scheduled start and five
+# retries, each ten minutes after the previous attempt ends. An attempt that
+# fails fast is retried within the hour; an attempt that runs to its full
+# TimeoutStartSec before failing stretches the six starts to about seven
+# hours, and the 20 hour window bounds that case to six starts too. A fault
+# that outlasts them is real, and the staleness alarm is the right way to
+# hear it.
+StartLimitIntervalSec=20h
+StartLimitBurst=6
 
 [Service]
 Type=oneshot
@@ -13,3 +26,5 @@ WorkingDirectory={{ tack_install_dir }}
 # actor id from the name with no registry to seed).
 ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup yb-snapshot-export --execute --operator-service tack-backup
 TimeoutStartSec=3600
+Restart=on-failure
+RestartSec=10min
