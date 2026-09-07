@@ -100,7 +100,7 @@ The daemon reads the list and steers from it:
 
 The testbed gains a provider:
 
-- `ansible/inventory/group_vars/all/service_mapping.yml`, `opentofu/suburban/{networks,containers,vms}.tf`, `ansible/inventory/group_vars/suburban_servers.yml`, `mwan/networkd/30-astount.{link,network}.j2`.
+- `ansible/inventory/group_vars/all/service_mapping.yml`, `opentofu/suburban/{networks,containers,vms}.tf`, `ansible/inventory/group_vars/suburban_servers.yml`, `mwan/networkd/30-astound.{link,network}.j2`.
 
 ---
 
@@ -116,10 +116,10 @@ than the number.
 - **The schema revision ships before the rendered file.** The daemon parses
   `network.json` with libyang under strict parsing, so a file carrying
   `reserved-tables` against the installed `@2026-08-30` revision is rejected
-  at load. The cutover installs the model revision with
-  `deploy-wanconfig-stack` before it runs `deploy-mwan`, and that order is
-  load-bearing. Task 1 lands first for the same reason: Task 2's loader tests
-  validate a document carrying the new leaf-list.
+  at load. `deploy-mwan` installs the model revision itself before it writes
+  any gateway file (Task 10), so one command carries the order. Task 1 lands
+  first for the same reason: Task 2's loader tests validate a document
+  carrying the new leaf-list.
 - **Every template edit survives the repository's template lint.** The lint
   parses `.j2` files and playbook expressions and rejects a default or
   presence check on a declared input variable: the `default` and `d` filters,
@@ -140,9 +140,9 @@ than the number.
   a file nothing reads. Task 7 deletes the `wan_interfaces` blocks from all
   three templates anyway, because a dead loop that names providers is the
   hand-typed list this epic removes.
-- **The astount container copies the AT&T shape for its simulated link.**
+- **The astound container copies the AT&T shape for its simulated link.**
   The Monkeybrains simulator carries an IPv6 address on that link because it
-  serves SLAAC; astount serves prefix delegation only, so its link needs only
+  serves SLAAC; astound serves prefix delegation only, so its link needs only
   link-local, which is the AT&T simulator's shape.
 - **OpenTofu runs through the repository wrapper.** A bare `tofu` has neither
   the state-backend keys nor the Proxmox provider tokens; the wrapper injects
@@ -154,6 +154,17 @@ than the number.
   virtual function and Webpass a full NIC passthrough that `qm config` never
   lists as network devices. The operator ruled that the deploy is not the
   place for that check, so Task 5 deletes it and adds no replacement.
+- **Every merge leaves main deployable, and every merge is deployed before
+  the next task starts.** A pull request whose merge would make a deploy
+  from main fail a host is not ready to merge (operator ruling 2026-09-07).
+  Task 2's loader requires the steering leaves, so Task 5, which renders
+  them, lands and deploys (testbed, live validation, then production)
+  before Task 3 merges; Task 5 consumes only Task 1 and the loader. Task 10
+  (the stack install folded into `deploy-mwan`) rides the Task 5 pull
+  request, so that first deploy is one command. Each
+  later task follows the same cycle: merge, testbed deploy with
+  `--release <tag>`, live validation, production deploy, then the next
+  branch.
 - **The published hash mode comes from the loaded configuration.** The
   routing task publishes `hash-mode` from the daemon configuration the loader
   fills, not from the steering module's config, so no task imports a package
@@ -1118,7 +1129,7 @@ func TestActiveTier(t *testing.T) {
 		{Name: "att", Tier: 0},
 		{Name: "webpass", Tier: 0},
 		{Name: "monkeybrains", Tier: 1},
-		{Name: "astount", Tier: 2},
+		{Name: "astound", Tier: 2},
 	}
 	cases := []struct {
 		name       string
@@ -1136,7 +1147,7 @@ func TestActiveTier(t *testing.T) {
 			name: "one healthy member in the first tier keeps it active",
 			health: HealthStates{
 				"att": HealthStateUnhealthy, "webpass": HealthStateHealthy,
-				"monkeybrains": HealthStateHealthy, "astount": HealthStateHealthy,
+				"monkeybrains": HealthStateHealthy, "astound": HealthStateHealthy,
 			},
 			wantTier:    0,
 			wantHealthy: true,
@@ -1145,7 +1156,7 @@ func TestActiveTier(t *testing.T) {
 			name: "the first tier going unhealthy activates the next one that is not",
 			health: HealthStates{
 				"att": HealthStateUnhealthy, "webpass": HealthStateUnhealthy,
-				"monkeybrains": HealthStateHealthy, "astount": HealthStateHealthy,
+				"monkeybrains": HealthStateHealthy, "astound": HealthStateHealthy,
 			},
 			wantTier:    1,
 			wantHealthy: true,
@@ -1154,7 +1165,7 @@ func TestActiveTier(t *testing.T) {
 			name: "an empty tier is skipped rather than activated",
 			health: HealthStates{
 				"att": HealthStateUnhealthy, "webpass": HealthStateUnhealthy,
-				"monkeybrains": HealthStateUnhealthy, "astount": HealthStateHealthy,
+				"monkeybrains": HealthStateUnhealthy, "astound": HealthStateHealthy,
 			},
 			wantTier:    2,
 			wantHealthy: true,
@@ -1163,7 +1174,7 @@ func TestActiveTier(t *testing.T) {
 			name: "no healthy member anywhere activates no tier",
 			health: HealthStates{
 				"att": HealthStateUnhealthy, "webpass": HealthStateUnhealthy,
-				"monkeybrains": HealthStateUnhealthy, "astount": HealthStateUnhealthy,
+				"monkeybrains": HealthStateUnhealthy, "astound": HealthStateUnhealthy,
 			},
 			wantTier:    0,
 			wantHealthy: false,
@@ -1502,7 +1513,7 @@ func TestValidateWANAcceptsAnyPositivePriority(t *testing.T) {
 	t.Parallel()
 
 	fourth := WAN{
-		WANRef:     ifmgr.WANRef{Name: "astount", Iface: "astount0"},
+		WANRef:     ifmgr.WANRef{Name: "astound", Iface: "astound0"},
 		TableID:    600,
 		FwMark:     4,
 		FwMarkPrio: 600,
@@ -6368,31 +6379,31 @@ A fourth testbed provider therefore needs two files added by hand, plus two
 lines in the testbed group's `mwan_networkd_files`. The proof task adds these;
 they are written out here so that task carries no placeholder.
 
-Create `mwan/networkd/30-astount.link.j2`:
+Create `mwan/networkd/30-astound.link.j2`:
 
 ```jinja
-# Astount WAN Interface (testbed simulator, virtio)
+# Astound WAN Interface (testbed simulator, virtio)
 # Generated by Ansible
 # Matches on virtio MAC address from Proxmox config, assigns stable name.
 
 [Match]
-MACAddress={{ mwan_astount_mac | lower }}
+MACAddress={{ mwan_astound_mac | lower }}
 
 [Link]
-Name={{ mwan_astount_iface }}
+Name={{ mwan_astound_iface }}
 ```
 
-Create `mwan/networkd/30-astount.network.j2`:
+Create `mwan/networkd/30-astound.network.j2`:
 
 ```jinja
-# Astount WAN Interface (testbed simulator, virtio)
+# Astound WAN Interface (testbed simulator, virtio)
 # Generated by Ansible
 # The fourth simulated provider, modelled on Monkeybrains: DHCPv4 pinned to a
 # stable address by the sim's MAC reservation, plus DHCPv6-PD. The sim does not
 # check DHCPv6 identities, so no DUID is set here.
 
 [Match]
-Name={{ mwan_astount_iface }}
+Name={{ mwan_astound_iface }}
 
 [Network]
 DHCP=yes
@@ -6422,15 +6433,15 @@ Add to `mwan_networkd_files` in
 `ansible/inventory/group_vars/mwan_suburban_servers.yml`:
 
 ```yaml
-  - 30-astount.link
-  - 30-astount.network
+  - 30-astound.link
+  - 30-astound.network
 ```
 
 And append this entry to the testbed `mwan_providers` list:
 
 ```yaml
-  - name: astount
-    iface: "{{ mwan_astount_iface }}"
+  - name: astound
+    iface: "{{ mwan_astound_iface }}"
     vlan_id: ""
     table: 600
     mark: 4
@@ -6454,7 +6465,7 @@ And append this entry to the testbed `mwan_providers` list:
 ```
 
 Note for the proof task: the link files above take the address by DHCP, so
-`mwan_astount_ipv4` from decision 14 has no reader. Either drop that variable
+`mwan_astound_ipv4` from decision 14 has no reader. Either drop that variable
 or write the network file with a static address and gateway the way the testbed
 Webpass file does. The simulator's reservation pins 10.240.207.2 either way.
 
@@ -7229,7 +7240,7 @@ func TestMalformedLineLeavesTheLastGoodStatus(t *testing.T) {
 	sender.Send(context.Background(), statuspush.Status{
 		SentAt:     time.Now(),
 		ActiveTier: 2,
-		Providers:  map[string]string{"astount": "healthy"},
+		Providers:  map[string]string{"astound": "healthy"},
 	})
 	good, _ := waitForStatus(t, listener, 2)
 
@@ -8433,7 +8444,7 @@ git commit -S -m "Push the gateway provider verdict to the watchdog and delete i
 
 ---
 
-### Task 8: the fourth testbed simulator, astount
+### Task 8: the fourth testbed simulator, astound
 
 The testbed grows a fourth simulated ISP so a fourth provider can be added,
 re-tiered, and removed against real hardware. Nothing here is production, and
@@ -8450,18 +8461,18 @@ routes the delegation back via `isp.mwan_vm_ll`.
 
 Delegation is not keyed to an identity. With `ia_na: false` the DHCPv6 subnet is
 `fe80::/10` with a prefix pool, so the sim delegates to whichever client asks.
-That is why the gateway's astount network file carries no DUID and no new DUID
+That is why the gateway's astound network file carries no DUID and no new DUID
 variable is added.
 
 **Hot-adding the interface is safe.** The link files match on MAC address, so
-the sixth virtio NIC comes up as `enastount0` whenever the kernel sees it,
+the sixth virtio NIC comes up as `enastound0` whenever the kernel sees it,
 whatever order the others enumerate in. The deploy that adds it reboots the
 gateway anyway, so the naming is settled before any provider entry references
 the interface.
 
 **Files:**
 - Modify: `ansible/inventory/group_vars/all/service_mapping.yml:288` (insert the
-  `isp_astount_suburban` entry after the Monkeybrains entry)
+  `isp_astound_suburban` entry after the Monkeybrains entry)
 - Modify: `opentofu/suburban/networks.tf:62` (insert the bridge after the
   Monkeybrains bridge)
 - Modify: `opentofu/suburban/containers.tf:372` (insert the container after the
@@ -8472,17 +8483,17 @@ the interface.
   the new bridge) and `:230` (the fourth `testbed_isp_lxcs` entry)
 - Modify: `ansible/inventory/group_vars/mwan_suburban_servers.yml:39`, `:50`,
   `:58`, `:87` (interface name, networkd files, MAC, addresses)
-- Create: `mwan/networkd/30-astount.link.j2`
-- Create: `mwan/networkd/30-astount.network.j2`
+- Create: `mwan/networkd/30-astound.link.j2`
+- Create: `mwan/networkd/30-astound.network.j2`
 
 **Interfaces:**
 - Consumes: nothing from the other tasks. This task runs on its own and leaves
   the gateway's provider set at three.
 - Produces: guest 903 on bridge vmbr7 serving DHCPv4 with a reservation, plus
   DHCPv6 prefix delegation of `3d06:bad:b01:2500::/56`, reachable from the
-  gateway on `enastount0`.
-- Produces: the hardware variables `mwan_astount_iface`, `mwan_astount_mac`,
-  `mwan_astount_ipv4`, `mwan_astount_gateway`, which the provider entry Task 9
+  gateway on `enastound0`.
+- Produces: the hardware variables `mwan_astound_iface`, `mwan_astound_mac`,
+  `mwan_astound_ipv4`, `mwan_astound_gateway`, which the provider entry Task 9
   adds references by Jinja.
 
 - [ ] **Step 1: Add the simulator to the service map**
@@ -8492,8 +8503,8 @@ In `ansible/inventory/group_vars/all/service_mapping.yml`, directly after the
 `:289`, insert:
 
 ```yaml
-  isp_astount_suburban:
-    hostname: isp-astount.suburban.goodkind.io
+  isp_astound_suburban:
+    hostname: isp-astound.suburban.goodkind.io
     vmid: 903
     inventory: false
     ipv4: "10.240.207.1"
@@ -8511,7 +8522,7 @@ In `opentofu/suburban/networks.tf`, directly after the `isp_mbrains_suburban`
 bridge ending at `:62`, insert:
 
 ```hcl
-resource "proxmox_network_linux_bridge" "isp_astount_suburban" {
+resource "proxmox_network_linux_bridge" "isp_astound_suburban" {
   node_name = "hypervisor"
   name      = "vmbr7"
 
@@ -8533,17 +8544,17 @@ In `opentofu/suburban/containers.tf`, directly after the
 `isp_mbrains_suburban` container ending at `:372`, insert:
 
 ```hcl
-resource "proxmox_virtual_environment_container" "isp_astount_suburban" {
+resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
   node_name = "hypervisor"
-  vm_id     = local.service_mapping.isp_astount_suburban.vmid
+  vm_id     = local.service_mapping.isp_astound_suburban.vmid
 
   depends_on = [
-    proxmox_network_linux_bridge.isp_astount_suburban,
+    proxmox_network_linux_bridge.isp_astound_suburban,
     proxmox_network_linux_bridge.vm_management_suburban,
   ]
 
   initialization {
-    hostname = local.service_mapping.isp_astount_suburban.hostname
+    hostname = local.service_mapping.isp_astound_suburban.hostname
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
@@ -8552,16 +8563,16 @@ resource "proxmox_virtual_environment_container" "isp_astount_suburban" {
     # over link-local exactly as the AT&T sim's does.
     ip_config {
       ipv4 {
-        address = "${local.service_mapping.isp_astount_suburban.ipv4}/24"
+        address = "${local.service_mapping.isp_astound_suburban.ipv4}/24"
       }
     }
     ip_config {
       ipv4 {
-        address = "${local.service_mapping.isp_astount_suburban.ipv4_uplink}/24"
+        address = "${local.service_mapping.isp_astound_suburban.ipv4_uplink}/24"
         gateway = local.service_mapping.vmbr1_suburban.ipv4
       }
       ipv6 {
-        address = "${local.service_mapping.isp_astount_suburban.ipv6_uplink}/64"
+        address = "${local.service_mapping.isp_astound_suburban.ipv6_uplink}/64"
         gateway = local.service_mapping.vmbr1_suburban.ipv6
       }
     }
@@ -8573,7 +8584,7 @@ resource "proxmox_virtual_environment_container" "isp_astount_suburban" {
 
   network_interface {
     name        = "eth0"
-    bridge      = proxmox_network_linux_bridge.isp_astount_suburban.name
+    bridge      = proxmox_network_linux_bridge.isp_astound_suburban.name
     mac_address = "BC:24:11:A5:70:04"
   }
 
@@ -8631,7 +8642,7 @@ In `opentofu/suburban/vms.tf`, add the bridge to the dependency list. After
 `proxmox_network_linux_bridge.isp_mbrains_suburban,` at `:19`, insert:
 
 ```hcl
-    proxmox_network_linux_bridge.isp_astount_suburban,
+    proxmox_network_linux_bridge.isp_astound_suburban,
 ```
 
 Then, after the Monkeybrains `network_device` block ending at `:95` and before
@@ -8639,7 +8650,7 @@ the comment at `:97`, insert:
 
 ```hcl
   network_device {
-    bridge      = proxmox_network_linux_bridge.isp_astount_suburban.name
+    bridge      = proxmox_network_linux_bridge.isp_astound_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:A5:70:06"
   }
@@ -8663,8 +8674,8 @@ In `ansible/inventory/group_vars/suburban_servers.yml`, directly after the
 `mbrains` entry ending at `:230`, insert:
 
 ```yaml
-  - id: "{{ service_mapping.isp_astount_suburban.vmid }}"
-    name: astount
+  - id: "{{ service_mapping.isp_astound_suburban.vmid }}"
+    name: astound
     # A fourth provider that exists only to prove one can be added. It models a
     # plain dynamic link: DHCPv4 pinned by a MAC reservation and a DHCPv6-PD
     # /56, with no routed static block and no SLAAC, so nothing about it depends
@@ -8696,27 +8707,27 @@ In `ansible/inventory/group_vars/mwan_suburban_servers.yml`, after
 `mwan_monkeybrains_iface` at `:39`, insert:
 
 ```yaml
-mwan_astount_iface: "enastount0"
+mwan_astound_iface: "enastound0"
 ```
 
 After `- 30-monkeybrains.network` at `:50`, and before the mwanbr pair, insert:
 
 ```yaml
-  - 30-astount.link
-  - 30-astount.network
+  - 30-astound.link
+  - 30-astound.network
 ```
 
 After `mwan_mbrains_mac` at `:58`, insert:
 
 ```yaml
-mwan_astount_mac: "BC:24:11:A5:70:06"
+mwan_astound_mac: "BC:24:11:A5:70:06"
 ```
 
 After `mwan_monkeybrains_gateway` at `:87`, insert:
 
 ```yaml
-mwan_astount_ipv4: "10.240.207.2/24"
-mwan_astount_gateway: "10.240.207.1"
+mwan_astound_ipv4: "10.240.207.2/24"
+mwan_astound_gateway: "10.240.207.1"
 ```
 
 The address pair mirrors the Monkeybrains pair at `:86-87`, which is likewise
@@ -8724,28 +8735,28 @@ declared beside a link that takes its address by DHCP. It records what the sim's
 reservation hands out, so an operator reading inventory sees the address without
 opening the simulator's lease pool.
 
-Create `mwan/networkd/30-astount.link.j2`:
+Create `mwan/networkd/30-astound.link.j2`:
 
 ```jinja
-# Astount WAN Interface (virtio, testbed only)
+# Astound WAN Interface (virtio, testbed only)
 # Generated by Ansible
 # Matches on virtio MAC address from Proxmox config, assigns stable name.
 
 [Match]
-MACAddress={{ mwan_astount_mac | lower }}
+MACAddress={{ mwan_astound_mac | lower }}
 
 [Link]
-Name={{ mwan_astount_iface }}
+Name={{ mwan_astound_iface }}
 ```
 
-Create `mwan/networkd/30-astount.network.j2`:
+Create `mwan/networkd/30-astound.network.j2`:
 
 ```jinja
-# Astount WAN Interface (virtio, testbed only)
+# Astound WAN Interface (virtio, testbed only)
 # Generated by Ansible
 
 [Match]
-Name={{ mwan_astount_iface }}
+Name={{ mwan_astound_iface }}
 
 [Network]
 # A dynamic link: DHCPv4 for the address and DHCPv6 for the delegation.
@@ -8791,8 +8802,8 @@ go run goodkind.io/configs/cmd/configs tofu plan -target=module.suburban
 ```
 
 Expected: `validate` reports success. The plan shows exactly three changes:
-`module.suburban.proxmox_network_linux_bridge.isp_astount_suburban` added,
-`module.suburban.proxmox_virtual_environment_container.isp_astount_suburban`
+`module.suburban.proxmox_network_linux_bridge.isp_astound_suburban` added,
+`module.suburban.proxmox_virtual_environment_container.isp_astound_suburban`
 added, and one in-place update of
 `module.suburban.proxmox_virtual_environment_vm.mwan_suburban` adding the sixth
 `network_device`. Read the plan before the next step and stop if it proposes to
@@ -8804,8 +8815,8 @@ a prompt to approve.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add ansible/inventory/group_vars/all/service_mapping.yml ansible/inventory/group_vars/suburban_servers.yml ansible/inventory/group_vars/mwan_suburban_servers.yml opentofu/suburban/networks.tf opentofu/suburban/containers.tf opentofu/suburban/vms.tf mwan/networkd/30-astount.link.j2 mwan/networkd/30-astount.network.j2
-git commit -S -m "Add the astount ISP simulator to the testbed" -m "Create guest 903 on a new vmbr7 bridge serving DHCPv4 with a MAC reservation and a DHCPv6-PD /56, give the testbed gateway a sixth virtio NIC on that bridge with link files that name it enastount0, and deny router advertisements from the new bridge on the hypervisor." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+git add ansible/inventory/group_vars/all/service_mapping.yml ansible/inventory/group_vars/suburban_servers.yml ansible/inventory/group_vars/mwan_suburban_servers.yml opentofu/suburban/networks.tf opentofu/suburban/containers.tf opentofu/suburban/vms.tf mwan/networkd/30-astound.link.j2 mwan/networkd/30-astound.network.j2
+git commit -S -m "Add the astound ISP simulator to the testbed" -m "Create guest 903 on a new vmbr7 bridge serving DHCPv4 with a MAC reservation and a DHCPv6-PD /56, give the testbed gateway a sixth virtio NIC on that bridge with link files that name it enastound0, and deny router advertisements from the new bridge on the hypervisor." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 - [ ] **Step 11: Apply the infrastructure change**
@@ -8823,12 +8834,12 @@ module as well.
 
 - [ ] **Step 12: Confirm the guest and the interface exist**
 
-Resolve the guest id from `service_mapping.isp_astount_suburban.vmid` rather
+Resolve the guest id from `service_mapping.isp_astound_suburban.vmid` rather
 than typing it, and export it for every command that follows:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-SIM_ID=$(awk '/^  isp_astount_suburban:/{found=1} found && /vmid:/{print $2; exit}' \
+SIM_ID=$(awk '/^  isp_astound_suburban:/{found=1} found && /vmid:/{print $2; exit}' \
   ansible/inventory/group_vars/all/service_mapping.yml)
 echo "$SIM_ID"
 ssh suburban "pct status $SIM_ID; pct config $SIM_ID | grep -E '^net[01]:'"
@@ -8882,12 +8893,12 @@ after the reboot the sixth NIC is named by MAC rather than by enumeration order.
 - [ ] **Step 16: Confirm the gateway holds the link**
 
 ```bash
-ssh mwan.suburban.goodkind.io 'ip -brief addr show dev enastount0'
-ssh mwan.suburban.goodkind.io 'networkctl status enastount0'
+ssh mwan.suburban.goodkind.io 'ip -brief addr show dev enastound0'
+ssh mwan.suburban.goodkind.io 'networkctl status enastound0'
 ssh mwan.suburban.goodkind.io 'ip -6 route show | grep -i 2500 || echo "no delegation route yet"'
 ```
 
-Expected: `enastount0` is `UP` and holds `10.240.207.2/24` from the reservation,
+Expected: `enastound0` is `UP` and holds `10.240.207.2/24` from the reservation,
 `networkctl` shows it configured with a DHCPv6 delegated prefix inside
 `3d06:bad:b01:2500::/56`, and no provider route exists yet, because no provider
 entry names it. That last point is the state Task 9 starts from: the interface
@@ -8951,7 +8962,7 @@ table. Before the cutover they are `mwan/config/nftables.conf.j2:107` in
 `table inet mwan_steer chain prerouting`. Every other rule in the ruleset is
 byte-identical.
 
-**The added proof.** On the testbed only, with the binary unchanged, astount is
+**The added proof.** On the testbed only, with the binary unchanged, astound is
 added by inventory edit, proven to carry traffic in both families, moved into
 tier 0 and proven to join the split, then removed and proven to leave no trace.
 
@@ -9161,19 +9172,19 @@ Expected: every provider table carries the internal prefixes learned from the
 router, not just its own default route, and the same prefixes step 2 recorded. A
 table holding only a default route means the agent lost its owned-table list.
 
-#### The astount proof, testbed only, binary unchanged
+#### The astound proof, testbed only, binary unchanged
 
 Everything below runs against the binary the testbed already has. Nothing is
 rebuilt and no release tag changes.
 
-- [ ] **Step 13: Add the astount provider entry**
+- [ ] **Step 13: Add the astound provider entry**
 
 In `ansible/inventory/group_vars/mwan_suburban_servers.yml`, append to
 `mwan_providers`:
 
 ```yaml
-  - name: astount
-    iface: "{{ mwan_astount_iface }}"
+  - name: astound
+    iface: "{{ mwan_astound_iface }}"
     table: 600
     mark: 4
     mark_prio: 600
@@ -9224,14 +9235,14 @@ ssh mwan.suburban.goodkind.io 'ip -6 rule show | grep -E "^(58|600):"'
 ssh mwan.suburban.goodkind.io 'nft list table inet mwan_steer'
 ```
 
-Expected: table 600 holds a default route via `10.240.207.1` on `enastount0`.
+Expected: table 600 holds a default route via `10.240.207.1` on `enastound0`.
 `ip rule` shows a rule at priority 600 matching `fwmark 0x4 lookup 600` and a
 rule at priority 58 matching `from 10.240.207.2 lookup 600`, in both families
 where the family applies. The steering table's map is unchanged, still
-`mod 2 map { 0 : 1, 1 : 2 }`, because astount is in tier 2 and tier 0 still has
+`mod 2 map { 0 : 1, 1 : 2 }`, because astound is in tier 2 and tier 0 still has
 two healthy providers. A map that grew here means the tier was ignored.
 
-- [ ] **Step 16: Prove traffic leaves through astount in both families**
+- [ ] **Step 16: Prove traffic leaves through astound in both families**
 
 Start the capture on the simulator first, in one terminal, with `SIM_ID`
 resolved as in Task 8 step 12:
@@ -9253,9 +9264,9 @@ Mark 4 is what selects table 600, so this is the whole chain: mark, rule, table,
 route, interface, simulator ingress. Both families run every time; an IPv4
 success is never evidence for IPv6.
 
-- [ ] **Step 17: Move astount into the active tier**
+- [ ] **Step 17: Move astound into the active tier**
 
-Change the astount entry's `tier: 2` to `tier: 0`, leave `weight: 1`, announce
+Change the astound entry's `tier: 2` to `tier: 0`, leave `weight: 1`, announce
 the window, and deploy with the same tag:
 
 ```bash
@@ -9283,13 +9294,13 @@ client behind the testbed router:
 ssh suburban "pct exec $SIM_ID '--' timeout 60 tcpdump -ni eth0 'ip or ip6'"
 ```
 
-Expected: roughly a third of new connections appear at the astount simulator, in
+Expected: roughly a third of new connections appear at the astound simulator, in
 both families, with the translated source inside `3d06:bad:b01:2500::/60` for
 IPv6 and the masqueraded link address for IPv4.
 
-- [ ] **Step 18: Remove astount and prove it leaves no trace**
+- [ ] **Step 18: Remove astound and prove it leaves no trace**
 
-Delete the astount entry from `mwan_providers`, leaving the hardware variables
+Delete the astound entry from `mwan_providers`, leaving the hardware variables
 and the two link files in place, announce the window, and deploy with the same
 tag:
 
@@ -9302,14 +9313,14 @@ Then:
 
 ```bash
 ssh mwan.suburban.goodkind.io 'ip route show table 600; ip -6 route show table 600'
-ssh mwan.suburban.goodkind.io 'ip rule show | grep -E "^(58|600):" || echo "no astount rules"'
-ssh mwan.suburban.goodkind.io 'ip -6 rule show | grep -E "^(58|600):" || echo "no astount rules"'
+ssh mwan.suburban.goodkind.io 'ip rule show | grep -E "^(58|600):" || echo "no astound rules"'
+ssh mwan.suburban.goodkind.io 'ip -6 rule show | grep -E "^(58|600):" || echo "no astound rules"'
 ssh mwan.suburban.goodkind.io 'nft list table inet mwan_steer'
-ssh mwan.suburban.goodkind.io 'ip -6 rule show; ip rule show' > /tmp/astount-removed-rules.txt
-diff /tmp/after-rules.txt /tmp/astount-removed-rules.txt
+ssh mwan.suburban.goodkind.io 'ip -6 rule show; ip rule show' > /tmp/astound-removed-rules.txt
+diff /tmp/after-rules.txt /tmp/astound-removed-rules.txt
 ```
 
-Expected: table 600 is empty, both rule greps print `no astount rules`, the
+Expected: table 600 is empty, both rule greps print `no astound rules`, the
 steering map is back to `mod 2 map { 0 : 1, 1 : 2 }`, and the rule diff against
 step 7's capture is empty. The testbed is byte for byte where the cutover left
 it, and acceptance item three is proven: a provider was added, re-tiered, and
@@ -9324,7 +9335,7 @@ git status --short ansible/inventory/group_vars/mwan_suburban_servers.yml
 git diff ansible/inventory/group_vars/mwan_suburban_servers.yml
 ```
 
-Expected: no astount provider entry remains in `mwan_providers`.
+Expected: no astound provider entry remains in `mwan_providers`.
 
 #### Production
 
@@ -9446,9 +9457,173 @@ an outage, so confirm through the vault path rather than by pinging.
 
 Append to the MWAN-324 tickets: the before-and-after evidence for both
 environments, the two reboot windows, the steering table's rendered content on
-each gateway, the astount add, re-tier, and remove evidence with the simulator
+each gateway, the astound add, re-tier, and remove evidence with the simulator
 captures, and the confirmation that no reader holds a provider list any more.
 Append one entry to the wanconfig ledger naming what shipped and what remains,
 which is MWAN-442, whether a pushed verdict blocks a rollback.
+
+---
+
+### Task 10: the management stack install becomes part of deploy-mwan
+
+The gateway deploy installs the management stack itself, so one command puts
+the schema revision, the packages, and the gateway configuration on a gateway
+in the order the daemon needs. Today the stack has its own play, and an
+operator who runs `deploy-mwan` without first running `deploy-wanconfig-stack`
+after a model revision bump gets a daemon that validates its network file
+against a model directory that does not carry the new leaves. The order is
+load-bearing and lives only in a runbook, which is where such rules drift.
+
+This task lands in the Task 5 pull request before it merges (operator ruling
+2026-09-07), so the first deploy after that merge runs one play.
+
+**Files:**
+- Create: `ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml`
+- Modify: `ansible/playbooks/deploy-mwan.yml` (insert one import after the
+  controller-side schema validation task; add two handlers)
+- Delete: `ansible/playbooks/deploy-wanconfig-stack.yml`
+
+**Interfaces:**
+- Consumes: the extra vars every `--release` deploy stages
+  (`mwan_release_tag`, `wanconfig_stack_dir`), which the deploy command sets
+  for any play; the model file `mwan/yang/goodkind-mwan-steering@2026-09-02.yang`.
+- Produces: a `deploy-mwan` run that installs the stack packages, the model
+  directory the daemon validates against, the sysrepo modules at the current
+  revision, the NACM policy, and the two RESTCONF units before it writes the
+  gateway configuration or restarts the daemon.
+- Removes: the standalone `deploy-wanconfig-stack` play and the two-command
+  ordering rule.
+
+- [ ] **Step 1: Move the stack tasks into a task file**
+
+Create `ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml` with exactly the
+task list of `ansible/playbooks/deploy-wanconfig-stack.yml` (its `tasks:`
+entries, from "Install the front-end proxy" through "Enable and start the
+stack services"), de-indented to top level and unchanged in content, preceded
+by this header:
+
+```yaml
+---
+# Install the wanconfig management stack on the MWAN gateway (MWAN-434).
+# The stack arrives as Debian packages built, proven, and attested by the
+# mwan release: the controller stages the bundle beside the binaries, and
+# these tasks copy the packages to the gateway and install them with apt.
+# No gateway runs a compiler, a clone, or cmake. The vendored YANG model
+# loads into the sysrepo datastore, and rousette serves RESTCONF on ::1
+# behind an nghttpx front end bound to the management address only.
+# Read-only: NACM denies every write and grants anonymous read per
+# rousette's contract.
+#
+# Imported by deploy-mwan.yml before the gateway configuration is written,
+# because the daemon validates its network file against the model directory
+# these tasks fill, and a revision bump has to reach that directory before
+# the daemon restarts. The importing play sets the variables these tasks
+# read and runs them as root.
+```
+
+The two `notify:` lines in the moved tasks keep their handler names,
+`Restart rousette` and `Restart nghttpx-wanconfig`; Step 3 gives the
+importing play those handlers.
+
+- [ ] **Step 2: Import the task file from the gateway deploy**
+
+In `ansible/playbooks/deploy-mwan.yml`, directly after the "Validate the
+rendered network configuration against the schema" task and before "Deploy
+MWAN runtime environment file", insert (the controller-side render and
+validation run first, so a rejected render leaves the gateway untouched):
+
+```yaml
+    # The management stack goes on after the controller has validated the
+    # render and before any gateway file is written, so a rejected render
+    # leaves the gateway untouched, and the model directory the daemon
+    # validates its network file against carries the revision this deploy
+    # renders for by the time the file lands. The release staged the bundle
+    # beside the binaries; mwan_release_tag and wanconfig_stack_dir are read
+    # bare, so a deploy without --release fails at its first read of a
+    # release variable rather than installing nothing.
+    - name: Install the wanconfig management stack
+      ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
+      become: true
+      vars:
+        wanconfig_deb_dir: "/var/lib/mwan-wanconfig/debs/{{ mwan_release_tag }}"
+        wanconfig_yang_dir: /usr/local/share/wanconfig/yang
+        # The rousette package ships the models its RESTCONF contract needs.
+        wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
+        # ietf-nat guards every enum value behind its nat-type features, so an
+        # install with no features enabled leaves leaves with zero valid
+        # values and libyang rejects the module. Enable exactly the
+        # translation types the model uses.
+        wanconfig_yang_modules:
+          - name: ietf-interfaces@2018-02-20
+            features: []
+          - name: ietf-ip@2018-02-22
+            features: []
+          - name: ietf-routing@2018-03-13
+            features: []
+          - name: ietf-nat@2019-01-10
+            features:
+              - basic-nat44
+              - napt44
+              - dst-nat
+              - nptv6
+          - name: goodkind-mwan-steering@2026-09-02
+            features: []
+```
+
+- [ ] **Step 3: Give the play the stack handlers**
+
+In the same file, in the `handlers:` list of the "Configure MWAN VM" play,
+directly before the "Restart mwan-ifmgr@wan" handler, insert (handlers run
+in definition order, so the management services restart before the daemon
+that publishes into them):
+
+```yaml
+    - name: Restart rousette
+      ansible.builtin.systemd:
+        name: rousette
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart nghttpx-wanconfig
+      ansible.builtin.systemd:
+        name: nghttpx-wanconfig
+        state: restarted
+        daemon_reload: true
+```
+
+- [ ] **Step 4: Delete the standalone play**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git rm ansible/playbooks/deploy-wanconfig-stack.yml
+```
+
+Nothing else in the repository names the play: the rake wrappers list five
+canonical playbooks and this is not one, the CI workflows never run it, and
+the deploy command resolves any playbook name by file.
+
+- [ ] **Step 5: Verify the play parses and the templates lint**
+
+```bash
+cd "$(git rev-parse --show-toplevel)/ansible" && rake syntax:mwan
+```
+
+Expected: PASS, exit 0. A syntax check resolves every `import_tasks`, so a
+wrong path or a task-level keyword the import rejects fails here.
+
+```bash
+cd "$(git rev-parse --show-toplevel)" && go run goodkind.io/configs/cmd/configs lint
+```
+
+Expected: PASS, exit 0. The deploy's lint scope follows `import_tasks`, so the
+moved file is linted as part of `deploy-mwan`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git add ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml ansible/playbooks/deploy-mwan.yml ansible/playbooks/deploy-wanconfig-stack.yml
+git commit -S -m "Install the wanconfig management stack from deploy-mwan" -m "Move the stack tasks into tasks/mwan-vm/wanconfig-stack.yml, import them from deploy-mwan before the gateway configuration is written with the stack variables and the two restart handlers, and delete the standalone deploy-wanconfig-stack play." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
 
 ---
