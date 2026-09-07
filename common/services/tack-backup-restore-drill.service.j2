@@ -37,3 +37,9 @@ ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup restore-drill --e
 TimeoutStartSec=1800
 Restart=on-failure
 RestartSec=10min
+# A drill whose every leg passed but whose rehearsal marker did not land exits
+# 3 after retrying the marker put on its own for two minutes (TACK-482). That
+# is a failure of the object store, not of the restore, so the unit does not
+# repeat the ten-minute double restore for it; the marker stays where it was
+# and the staleness check reports it on the rehearsal threshold.
+RestartPreventExitStatus=3
