@@ -84,3 +84,32 @@ func TestActiveTierWithNoMembers(t *testing.T) {
 		t.Fatal("an empty member list reported a healthy tier")
 	}
 }
+
+// TestActiveTierPicksTheLowestTierRegardlessOfMemberOrder pins that the
+// function selects by tier value, not by encounter order. Production feeds
+// members in name order (att, monkeybrains, webpass), which does not match
+// ascending tier order the way TestActiveTier's shared fixture happens to; a
+// healthy tier-1 member encountered before a healthy tier-0 member must not
+// win just because it was seen first.
+func TestActiveTierPicksTheLowestTierRegardlessOfMemberOrder(t *testing.T) {
+	t.Parallel()
+
+	members := []TierMember{
+		{Name: "att", Tier: 0},
+		{Name: "monkeybrains", Tier: 1},
+		{Name: "webpass", Tier: 0},
+	}
+	health := HealthStates{
+		"att":          HealthStateUnhealthy,
+		"monkeybrains": HealthStateHealthy,
+		"webpass":      HealthStateHealthy,
+	}
+
+	gotTier, gotHealthy := ActiveTier(members, health)
+	if !gotHealthy {
+		t.Fatal("healthy = false, want true")
+	}
+	if gotTier != 0 {
+		t.Fatalf("active tier = %d, want 0", gotTier)
+	}
+}

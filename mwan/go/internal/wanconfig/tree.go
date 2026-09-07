@@ -28,12 +28,12 @@ type Item struct {
 }
 
 // Member is one steering member exactly as the daemon loaded it: the link
-// that carries it, the tier the router assigns it, the probe policy that
-// decides its health, and the prefix-translation pair it carries when its
-// configuration names one.
+// that carries it, the tier the configuration assigns it, the probe policy
+// that decides its health, and the prefix-translation pair it carries when
+// its configuration names one.
 type Member struct {
-	// Name is the member's stable name (att, webpass, monkeybrains). It
-	// names the probe policy and the translation instance.
+	// Name is the member's stable name. It names the probe policy and the
+	// translation instance.
 	Name string
 	// Iface is the link the member rides. It is the interface entry's key.
 	Iface string

@@ -262,6 +262,11 @@ func TestValidateWANAcceptsAnyPositivePriority(t *testing.T) {
 	if err := validateWAN(fourth); err == nil || !strings.Contains(err.Error(), "catch-all") {
 		t.Fatalf("validateWAN(FwMarkPrio=catchAllPriority) = %v, want an error mentioning the catch-all priority", err)
 	}
+	fourth.FwMarkPrio = 600
+	fourth.FromPrio = catchAllPriority
+	if err := validateWAN(fourth); err == nil || !strings.Contains(err.Error(), "catch-all") {
+		t.Fatalf("validateWAN(FromPrio=catchAllPriority) = %v, want an error mentioning the catch-all priority", err)
+	}
 }
 
 func TestInitReturnsDisabledSentinelWhenWANsEmpty(t *testing.T) {
