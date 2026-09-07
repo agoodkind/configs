@@ -77,6 +77,18 @@ cloudflare_dns_update_enabled: true
 # rendered there.
 mwan_ifmgr_wan_enabled: false
 
+# Routing tables the gateway holds for something other than a provider. The
+# tunnel table carries cloudflared; the out-of-band table carries management
+# traffic on the host that holds the OOB tunnel. Both gateway groups render
+# these into network.json, where the daemon reads the set it checks every
+# provider table against, and the hypervisor groups render the out-of-band id
+# into their policy rules. One definition, because both scopes read the same
+# numbers and a second copy is the one that drifts. The kernel's own tables
+# are reserved in the daemon and are not values an operator sets.
+mwan_reserved_tables:
+  cloudflared: 400
+  oob: 500
+
 # ----------------------------------------------------------------------------
 # cloudflared (Cloudflare Tunnel) systemd service defaults
 # ----------------------------------------------------------------------------
