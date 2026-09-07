@@ -47,27 +47,10 @@ docker run --rm --platform linux/amd64 \
   mwan-wanconfig-builder go test -count=1 ./internal/networkjson/ -v
 ```
 
-Replace the package path for each task. The real gates are the make targets
-`make help` lists in `mwan/go`, all run from that directory: `make check`
-(every lint gate for both shipped platforms plus the YANG model and instance
-gates; the cgo dependency hook skips itself on darwin), `make test` (routed
-through the builder image on darwin), and `make build` (vet, lint,
-govulncheck, and the Go version check, then the compile). There is no
-Makefile at the repository root. The pull request's CI runs the same gates
-on linux and is the verdict that counts when a host-only toolchain fault
-(such as a staticcheck panic on the darwin host) blocks a local lint run;
-report such a fault with its output rather than working around it. Inside
-the builder lane `go test -race` prints a false ok with zero tests run, so
-never cite a race result from it. See
-[MWAN Go standards](../../ops/mwan/go.md) for the build rules every change
-follows.
-
-This docker lane and the per-package recipe above are a stopgap that exists
-only because the Go code still lives inside this configuration repository
-and the macOS controller cannot build its cgo binding. The repository split
-(epic MWAN-379 and its siblings) moves the Go code into its own repository
-with its own native gates, and this plan's recipe retires with it. Do not
-treat it as the long-term way to build or test anything.
+Replace the package path for each task. The full repository gate is `make check`
+at the repository root, run before every commit. Inside the builder lane
+`go test -race` prints a false ok with zero tests run, so never cite a race
+result from it.
 
 Ansible is never invoked directly. Syntax checks run through the repository's
 rake wrappers (`cd ansible && rake syntax:mwan`), and deploys run through

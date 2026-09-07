@@ -72,11 +72,9 @@ Every implementation agent or person making changes must:
 - **Useful tests.** Test the real contract. Add regression coverage for the
   failure mode that motivated the change. Avoid tests that only prove
   compilation, only log output, or assert implementation trivia.
-- **Verify before reporting.** Run the project's real gates from `mwan/go`:
-  `make check`, `make test`, and `make build`; `make help` lists them. On
-  macOS `make test` runs the suite inside the builder container itself,
-  because the host cannot build the cgo binding. State exactly what was run
-  and whether it passed. If a gate could not be run, state why.
+- **Verify before reporting.** Run the project's real gates: `make check`,
+  `make test`, `make build-linux`, `make build-mwan-opnsense`. State exactly
+  what was run and whether it passed. If a gate could not be run, state why.
 - **Report honestly.** State what changed, the verification commands, and any
   residual risks. Do not claim files, symbols, commits, or behaviour that
   was not verified.

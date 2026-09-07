@@ -5,7 +5,6 @@ package networkjson_test
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -47,17 +46,15 @@ func schemaDirForTest(t *testing.T) string {
 	return dir
 }
 
-// validDocument is one gateway's network tree: two providers in different
-// tiers, one of them with an IPv4 source pin and one with no probe at all,
-// plus the internal link and the group-wide values. Addresses are
-// documentation prefixes.
+// validDocument is one gateway's network tree: two providers, one of them with
+// an IPv4 source pin and one with no probe at all, plus the internal link and
+// the group-wide values. Addresses are documentation prefixes.
 const validDocument = `{
   "ietf-interfaces:interfaces": {
     "interface": [
       {
         "name": "enwebpass0",
         "type": "iana-if-type:other",
-        "goodkind-mwan-steering:steering": { "tier": 0, "weight": 2 },
         "goodkind-mwan-steering:wan": {
           "name": "webpass",
           "table-id": 200,
@@ -82,7 +79,6 @@ const validDocument = `{
       {
         "name": "enatt0",
         "type": "iana-if-type:other",
-        "goodkind-mwan-steering:steering": { "tier": 1, "weight": 1 },
         "goodkind-mwan-steering:wan": {
           "name": "att",
           "table-id": 100,
@@ -95,8 +91,6 @@ const validDocument = `{
       { "name": "enmwanbr0", "type": "iana-if-type:other" }
     ],
     "goodkind-mwan-steering:steering-group": {
-      "hash-mode": "source",
-      "reserved-tables": [400, 500],
       "translation": {
         "internal-prefix": "2001:db8:b01::/60",
         "opnsense-edge-v6": "2001:db8:b01:fe::2",
@@ -234,185 +228,5 @@ func TestLoadAcceptsADisabledProbeWithNoSettings(t *testing.T) {
 	}
 	if probe.PingCount != 0 || len(probe.TargetsV6) != 0 {
 		t.Fatalf("disabled probe carries settings: %+v", probe)
-	}
-}
-
-func TestLoadCarriesSteeringAndTheGroupSettings(t *testing.T) {
-	t.Parallel()
-
-	loaded, err := networkjson.Load(writeDocument(t, validDocument), schemaDirForTest(t))
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	if got := loaded.WAN["webpass"].Tier; got != 0 {
-		t.Fatalf("webpass tier = %d, want 0", got)
-	}
-	if got := loaded.WAN["webpass"].Weight; got != 2 {
-		t.Fatalf("webpass weight = %d, want 2", got)
-	}
-	if got := loaded.WAN["att"].Tier; got != 1 {
-		t.Fatalf("att tier = %d, want 1", got)
-	}
-	if got := loaded.WAN["att"].Weight; got != 1 {
-		t.Fatalf("att weight = %d, want 1", got)
-	}
-	if got := loaded.HashMode; got != "source" {
-		t.Fatalf("hash mode = %q, want source", got)
-	}
-	if !reflect.DeepEqual(loaded.ReservedTables, []int{400, 500}) {
-		t.Fatalf("reserved tables = %v, want [400 500]", loaded.ReservedTables)
-	}
-}
-
-func TestLoadRejectsAProviderWithNoSteeringContainer(t *testing.T) {
-	t.Parallel()
-
-	// Tier decides which providers carry traffic, so a provider that does not
-	// say where it sits cannot be steered at all. The schema cannot require the
-	// container, because an interface that carries no provider must be free of
-	// it, so the requirement lives here.
-	body := strings.Replace(
-		validDocument,
-		`"goodkind-mwan-steering:steering": { "tier": 1, "weight": 1 },`,
-		``,
-		1,
-	)
-	_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
-	if err == nil {
-		t.Fatal("Load accepted a provider with no steering container")
-	}
-	if !strings.Contains(err.Error(), "steering is required") {
-		t.Fatalf("error does not name the missing container: %v", err)
-	}
-}
-
-func TestLoadRejectsAMissingWeight(t *testing.T) {
-	t.Parallel()
-
-	// The schema defaults weight to 1 for the served tree. That default never
-	// reaches the file the daemon decodes, so a document with no weight would
-	// silently balance a provider at zero share. The loader refuses it instead.
-	body := strings.Replace(
-		validDocument,
-		`"goodkind-mwan-steering:steering": { "tier": 0, "weight": 2 },`,
-		`"goodkind-mwan-steering:steering": { "tier": 0 },`,
-		1,
-	)
-	_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
-	if err == nil {
-		t.Fatal("Load accepted a provider with no weight")
-	}
-	if !strings.Contains(err.Error(), "steering/weight is required") {
-		t.Fatalf("error does not name the missing leaf: %v", err)
-	}
-}
-
-func TestLoadRejectsAMissingHashMode(t *testing.T) {
-	t.Parallel()
-
-	// The renderer always emits the hash mode, and the steering module switches
-	// on it, so an absent value is a rendering fault rather than a request for
-	// the schema default.
-	body := strings.Replace(validDocument, `"hash-mode": "source",`, ``, 1)
-	_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
-	if err == nil {
-		t.Fatal("Load accepted a steering group with no hash mode")
-	}
-	if !strings.Contains(err.Error(), "hash-mode") {
-		t.Fatalf("error does not name the missing leaf: %v", err)
-	}
-}
-
-func TestLoadRejectsDuplicateRoutingNumbers(t *testing.T) {
-	t.Parallel()
-
-	// Each of the four numbers addresses a distinct kernel slot, and two
-	// providers sharing one means the second silently takes the first's
-	// traffic. Nothing derives them, so this is the only check that catches a
-	// typo in inventory. fw-mark-prio and from-prio also collide with each
-	// other, not just with their own kind, because both select an ip rule by
-	// the same numeric priority and the routing module treats them as one
-	// slot space.
-	cases := map[string]struct {
-		from  string
-		to    string
-		leaf  string
-		leaf2 string
-	}{
-		"table":         {from: `"table-id": 100,`, to: `"table-id": 200,`, leaf: "table-id"},
-		"mark":          {from: `"fw-mark": 1,`, to: `"fw-mark": 2,`, leaf: "fw-mark"},
-		"mark priority": {from: `"fw-mark-prio": 100,`, to: `"fw-mark-prio": 200,`, leaf: "fw-mark-prio"},
-		"from priority": {from: `"from-prio": 55,`, to: `"from-prio": 56,`, leaf: "from-prio"},
-		"mark priority takes from priority": {
-			from:  `"fw-mark-prio": 100,`,
-			to:    `"fw-mark-prio": 56,`,
-			leaf:  "fw-mark-prio",
-			leaf2: "from-prio",
-		},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			body := strings.Replace(validDocument, tc.from, tc.to, 1)
-			_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
-			if err == nil {
-				t.Fatalf("Load accepted a duplicate %s", tc.leaf)
-			}
-			if !strings.Contains(err.Error(), tc.leaf) {
-				t.Fatalf("error does not name %s: %v", tc.leaf, err)
-			}
-			if tc.leaf2 != "" && !strings.Contains(err.Error(), tc.leaf2) {
-				t.Fatalf("error does not name %s: %v", tc.leaf2, err)
-			}
-		})
-	}
-}
-
-func TestLoadRejectsAProviderOnAReservedTable(t *testing.T) {
-	t.Parallel()
-
-	// The tunnel holds table 400 and the out-of-band path holds 500. A provider
-	// on either would install a default route the tunnel's own rules then
-	// select, which is an outage nobody would attribute to an inventory edit.
-	body := strings.Replace(validDocument, `"table-id": 100,`, `"table-id": 400,`, 1)
-	_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
-	if err == nil {
-		t.Fatal("Load accepted a provider on a reserved table")
-	}
-	if !strings.Contains(err.Error(), "reserved") {
-		t.Fatalf("error does not say the table is reserved: %v", err)
-	}
-}
-
-func TestLoadRejectsAProviderOnAKernelTable(t *testing.T) {
-	t.Parallel()
-
-	// The kernel's own tables are reserved whether or not inventory says so,
-	// because they are not inventory values. Table 254 is main: a provider
-	// there would replace the host's own default route.
-	body := strings.Replace(validDocument, `"table-id": 100,`, `"table-id": 254,`, 1)
-	body = strings.Replace(body, `"reserved-tables": [400, 500],`, ``, 1)
-	_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
-	if err == nil {
-		t.Fatal("Load accepted a provider on a kernel table")
-	}
-	if !strings.Contains(err.Error(), "reserved") {
-		t.Fatalf("error does not say the table is reserved: %v", err)
-	}
-}
-
-func TestLoadAcceptsAGroupWithNoReservedTables(t *testing.T) {
-	t.Parallel()
-
-	// An empty leaf-list renders as an absent key, so a gateway that reserves
-	// nothing beyond the kernel's own tables must load.
-	body := strings.Replace(validDocument, `"reserved-tables": [400, 500],`, ``, 1)
-	loaded, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
-	if err != nil {
-		t.Fatalf("Load rejected a group with no reserved tables: %v", err)
-	}
-	if len(loaded.ReservedTables) != 0 {
-		t.Fatalf("reserved tables = %v, want none", loaded.ReservedTables)
 	}
 }

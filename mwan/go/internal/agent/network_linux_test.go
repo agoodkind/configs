@@ -67,7 +67,6 @@ const gatewayNetworkJSON = `{
       {
         "name": "enatt0",
         "type": "iana-if-type:other",
-        "goodkind-mwan-steering:steering": { "tier": 0, "weight": 1 },
         "goodkind-mwan-steering:wan": {
           "name": "att",
           "table-id": 100,
@@ -80,7 +79,6 @@ const gatewayNetworkJSON = `{
       {
         "name": "enwebpass0",
         "type": "iana-if-type:other",
-        "goodkind-mwan-steering:steering": { "tier": 0, "weight": 1 },
         "goodkind-mwan-steering:wan": {
           "name": "webpass",
           "table-id": 200,
@@ -94,7 +92,6 @@ const gatewayNetworkJSON = `{
       {
         "name": "enmbrains0",
         "type": "iana-if-type:other",
-        "goodkind-mwan-steering:steering": { "tier": 0, "weight": 1 },
         "goodkind-mwan-steering:wan": {
           "name": "monkeybrains",
           "table-id": 300,
@@ -107,7 +104,6 @@ const gatewayNetworkJSON = `{
       { "name": "enmwanbr0", "type": "iana-if-type:other" }
     ],
     "goodkind-mwan-steering:steering-group": {
-      "hash-mode": "source",
       "translation": {
         "internal-prefix": "2001:db8:b01::/60",
         "opnsense-edge-v6": "2001:db8:b01:fe::2",
