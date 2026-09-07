@@ -227,40 +227,6 @@
           - conntrack
         state: present
 
-    # The management stack goes on before any gateway file is written, so the
-    # model directory the daemon validates its network file against already
-    # carries the revision this deploy renders for. The release staged the
-    # bundle beside the binaries; mwan_release_tag and wanconfig_stack_dir are
-    # read bare, so a deploy without --release fails at its first read of a
-    # release variable rather than installing nothing.
-    - name: Install the wanconfig management stack
-      ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
-      become: true
-      vars:
-        wanconfig_deb_dir: "/var/lib/mwan-wanconfig/debs/{{ mwan_release_tag }}"
-        wanconfig_yang_dir: /usr/local/share/wanconfig/yang
-        # The rousette package ships the models its RESTCONF contract needs.
-        wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
-        # ietf-nat guards every enum value behind its nat-type features, so an
-        # install with no features enabled leaves those leaves with zero
-        # valid values and libyang rejects the module. Enable exactly the
-        # translation types the model uses.
-        wanconfig_yang_modules:
-          - name: ietf-interfaces@2018-02-20
-            features: []
-          - name: ietf-ip@2018-02-22
-            features: []
-          - name: ietf-routing@2018-03-13
-            features: []
-          - name: ietf-nat@2019-01-10
-            features:
-              - basic-nat44
-              - napt44
-              - dst-nat
-              - nptv6
-          - name: goodkind-mwan-steering@2026-09-02
-            features: []
-
     - name: Create MWAN runtime config directory
       ansible.builtin.file:
         path: /etc/mwan
@@ -316,6 +282,42 @@
       changed_when: false
       failed_when: mwan_network_json_validate.rc != 0
       when: mwan_ifmgr_wan_enabled | bool
+
+    # The management stack goes on after the controller has validated the
+    # render and before any gateway file is written, so a rejected render
+    # leaves the gateway untouched, and the model directory the daemon
+    # validates its network file against carries the revision this deploy
+    # renders for by the time the file lands. The release staged the bundle
+    # beside the binaries; mwan_release_tag and wanconfig_stack_dir are read
+    # bare, so a deploy without --release fails at its first read of a
+    # release variable rather than installing nothing.
+    - name: Install the wanconfig management stack
+      ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
+      become: true
+      vars:
+        wanconfig_deb_dir: "/var/lib/mwan-wanconfig/debs/{{ mwan_release_tag }}"
+        wanconfig_yang_dir: /usr/local/share/wanconfig/yang
+        # The rousette package ships the models its RESTCONF contract needs.
+        wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
+        # ietf-nat guards every enum value behind its nat-type features, so an
+        # install with no features enabled leaves those leaves with zero
+        # valid values and libyang rejects the module. Enable exactly the
+        # translation types the model uses.
+        wanconfig_yang_modules:
+          - name: ietf-interfaces@2018-02-20
+            features: []
+          - name: ietf-ip@2018-02-22
+            features: []
+          - name: ietf-routing@2018-03-13
+            features: []
+          - name: ietf-nat@2019-01-10
+            features:
+              - basic-nat44
+              - napt44
+              - dst-nat
+              - nptv6
+          - name: goodkind-mwan-steering@2026-09-02
+            features: []
 
     - name: Deploy MWAN runtime environment file
       ansible.builtin.template:

@@ -9480,7 +9480,7 @@ This task lands in the Task 5 pull request before it merges (operator ruling
 **Files:**
 - Create: `ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml`
 - Modify: `ansible/playbooks/deploy-mwan.yml` (insert one import after the
-  "Install required packages" task; add two handlers)
+  controller-side schema validation task; add two handlers)
 - Delete: `ansible/playbooks/deploy-wanconfig-stack.yml`
 
 **Interfaces:**
@@ -9527,17 +9527,20 @@ importing play those handlers.
 
 - [ ] **Step 2: Import the task file from the gateway deploy**
 
-In `ansible/playbooks/deploy-mwan.yml`, directly after the "Install required
-packages" task (the `ansible.builtin.apt` task whose list ends with
-`conntrack`) and before "Create MWAN runtime config directory", insert:
+In `ansible/playbooks/deploy-mwan.yml`, directly after the "Validate the
+rendered network configuration against the schema" task and before "Deploy
+MWAN runtime environment file", insert (the controller-side render and
+validation run first, so a rejected render leaves the gateway untouched):
 
 ```yaml
-    # The management stack goes on before any gateway file is written, so the
-    # model directory the daemon validates its network file against already
-    # carries the revision this deploy renders for. The release staged the
-    # bundle beside the binaries; reading mwan_release_tag and
-    # wanconfig_stack_dir bare makes a deploy without --release fail at load
-    # rather than install nothing.
+    # The management stack goes on after the controller has validated the
+    # render and before any gateway file is written, so a rejected render
+    # leaves the gateway untouched, and the model directory the daemon
+    # validates its network file against carries the revision this deploy
+    # renders for by the time the file lands. The release staged the bundle
+    # beside the binaries; mwan_release_tag and wanconfig_stack_dir are read
+    # bare, so a deploy without --release fails at its first read of a
+    # release variable rather than installing nothing.
     - name: Install the wanconfig management stack
       ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
       become: true
