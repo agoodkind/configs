@@ -33,10 +33,6 @@ tack_allow_fdb_init: true
 # and holds the audit DSNs.
 tack_datagen_allow_target: "qa"
 
-# The name the backup alarm mail labels itself with, so a reader tells a QA
-# alarm from a production one before reading further.
-tack_alarm_environment_label: "QA"
-
 # GHCR pull token. Classic PAT with read:packages scope.
 ghcr_pull_token: "{{ vault_tack_qa_ghcr_pull_token }}"
 
