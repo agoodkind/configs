@@ -763,7 +763,7 @@ func wanFwMark(wan sharedWAN) (uint32, error) {
 	if wan.FwMark < 0 {
 		return 0, fmt.Errorf("network.json wan %s fw-mark must be >= 0", wan.Name)
 	}
-	if wan.FwMark > int(^uint32(0)) {
+	if uint64(wan.FwMark) > uint64(^uint32(0)) {
 		return 0, fmt.Errorf("network.json wan %s fw-mark %d exceeds uint32", wan.Name, wan.FwMark)
 	}
 	return uint32(wan.FwMark), nil

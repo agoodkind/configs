@@ -199,8 +199,12 @@ func TestPublishLiveStateReportsTheActiveTier(t *testing.T) {
 	}
 	want := map[string]bool{"att": false, "webpass": false, "monkeybrains": true}
 	for name, wantCarrying := range want {
-		if got := snapshot.Routing[name].Carrying; got != wantCarrying {
-			t.Fatalf("%s carrying = %v, want %v", name, got, wantCarrying)
+		routing, ok := snapshot.Routing[name]
+		if !ok {
+			t.Fatalf("%s missing from snapshot.Routing", name)
+		}
+		if routing.Carrying != wantCarrying {
+			t.Fatalf("%s carrying = %v, want %v", name, routing.Carrying, wantCarrying)
 		}
 	}
 }
