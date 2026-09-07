@@ -168,9 +168,9 @@ table inet mangle {
         type ipv4_addr;
         flags interval;
         auto-merge;
-{% if mwan_att_pinned_v4_seed_cidrs %}
+{% if mwan_pinned_v4_seed_cidrs %}
         elements = {
-{% for cidr in mwan_att_pinned_v4_seed_cidrs %}
+{% for cidr in mwan_pinned_v4_seed_cidrs %}
             {{ cidr }}{% if not loop.last %},{% endif %}
 {% endfor %}
         }
@@ -181,9 +181,9 @@ table inet mangle {
         type ipv6_addr;
         flags interval;
         auto-merge;
-{% if mwan_att_pinned_v6_seed_cidrs %}
+{% if mwan_pinned_v6_seed_cidrs %}
         elements = {
-{% for cidr in mwan_att_pinned_v6_seed_cidrs %}
+{% for cidr in mwan_pinned_v6_seed_cidrs %}
             {{ cidr }}{% if not loop.last %},{% endif %}
 {% endfor %}
         }
