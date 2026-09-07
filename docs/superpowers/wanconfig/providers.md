@@ -282,7 +282,7 @@ A fourth provider can be added, re-tiered, and removed by inventory edit, its
 hand-written networkd units, and configuration deploy with the binary
 unchanged, and traffic is observed
 leaving it at the simulator's ingress in both address families. The testbed
-gets a fourth simulated provider, named astount, built the same way as the
+gets a fourth simulated provider, named astound, built the same way as the
 three that exist.
 
 ## Failure modes
