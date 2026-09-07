@@ -183,11 +183,6 @@ tack_backup_restore_drill_randomized_delay: 300
 # recipient the MWAN notifier uses; the two paths share nothing else.
 tack_alarm_email_recipient: "alex@goodkind.io"
 
-# The zone every time in the alarm mail is rendered in: the operator reads
-# the mail against a Pacific clock. An IANA zone name; the check falls back to
-# UTC and logs when the name does not load.
-tack_alarm_time_zone: "America/Los_Angeles"
-
 tack_ledger_bootstrap: false
 tack_ledger_join_target: >-
   {{ ('' if (tack_ledger_bootstrap | bool and tack_ledger_node_name == 'yb1')
