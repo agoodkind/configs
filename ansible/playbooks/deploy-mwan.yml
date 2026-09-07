@@ -230,9 +230,9 @@
     # The management stack goes on before any gateway file is written, so the
     # model directory the daemon validates its network file against already
     # carries the revision this deploy renders for. The release staged the
-    # bundle beside the binaries; reading mwan_release_tag and
-    # wanconfig_stack_dir bare makes a deploy without --release fail at load
-    # rather than install nothing.
+    # bundle beside the binaries; mwan_release_tag and wanconfig_stack_dir are
+    # read bare, so a deploy without --release fails at its first read of a
+    # release variable rather than installing nothing.
     - name: Install the wanconfig management stack
       ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
       become: true
@@ -242,8 +242,8 @@
         # The rousette package ships the models its RESTCONF contract needs.
         wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
         # ietf-nat guards every enum value behind its nat-type features, so an
-        # install with no features enabled leaves leaves with zero valid
-        # values and libyang rejects the module. Enable exactly the
+        # install with no features enabled leaves those leaves with zero
+        # valid values and libyang rejects the module. Enable exactly the
         # translation types the model uses.
         wanconfig_yang_modules:
           - name: ietf-interfaces@2018-02-20
