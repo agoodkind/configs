@@ -230,6 +230,7 @@ func resolveSelftestModels(log *slog.Logger, dir string) ([]yangpub.Model, error
 func selftestGateway() wanconfig.Gateway {
 	return wanconfig.Gateway{
 		InternalIface: "eninternal0",
+		HashMode:      "random",
 		Members: []wanconfig.Member{{
 			Name:        "att",
 			Iface:       "enatt0",
