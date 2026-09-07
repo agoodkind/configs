@@ -13,10 +13,15 @@
   and lstrip_blocks off, so an indented tag would emit its leading spaces into
   the document.
 #}
+{% if mwan_att_vlan_id %}
+{% set att_iface = mwan_att_iface ~ "." ~ mwan_att_vlan_id %}
+{% else %}
+{% set att_iface = mwan_att_iface %}
+{% endif %}
 {% set providers = [
   {
     "name": "att",
-    "iface": mwan_att_iface ~ ("." ~ mwan_att_vlan_id if mwan_att_vlan_id else ""),
+    "iface": att_iface,
     "npt_prefix": mwan_npt_att_prefix,
     "v4_source": ""
   },

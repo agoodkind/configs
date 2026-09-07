@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/yangpub"
@@ -43,9 +44,19 @@ type interfaces struct {
 }
 
 type ifaceEntry struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-	WAN  *wan   `json:"goodkind-mwan-steering:wan"`
+	Name     string    `json:"name"`
+	Type     string    `json:"type"`
+	WAN      *wan      `json:"goodkind-mwan-steering:wan"`
+	Steering *steering `json:"goodkind-mwan-steering:steering"`
+}
+
+// steering is the member's steering properties: which tier it sits in and how
+// much of that tier's traffic it takes. Both are pointers so an absent leaf is
+// distinguishable from a zero the daemon would act on. Tier zero is the
+// preferred tier, and weight zero would make the balancer's divisor wrong.
+type steering struct {
+	Tier   *int `json:"tier"`
+	Weight *int `json:"weight"`
 }
 
 type wan struct {
@@ -72,9 +83,11 @@ type health struct {
 }
 
 type steeringGroup struct {
-	Translation translation `json:"translation"`
-	Routes      routes      `json:"routes"`
-	Health      groupHealth `json:"health"`
+	HashMode       string      `json:"hash-mode"`
+	ReservedTables []int       `json:"reserved-tables"`
+	Translation    translation `json:"translation"`
+	Routes         routes      `json:"routes"`
+	Health         groupHealth `json:"health"`
 }
 
 type translation struct {
@@ -100,6 +113,8 @@ type Config struct {
 	MwanbrEdgeV6       string
 	InternalIface      string
 	InternalNetV4      string
+	HashMode           string
+	ReservedTables     []int
 	ProbeTimeoutMillis int
 	WAN                map[string]config.IfMgrWANEntry
 	Health             map[string]config.IfMgrHealthWANSection
@@ -132,11 +147,21 @@ func Load(path string, schemaDir string) (*Config, error) {
 	}
 	loaded, err := build(&doc)
 	if err != nil {
-		slog.Error("networkjson: required value missing", "err", err, "path", path)
+		// build returns both a missing required value and a provider-set
+		// conflict (a duplicate routing number, a reserved table), so the log
+		// line names neither specifically; the wrapped error text below carries
+		// the detail.
+		slog.Error("networkjson: configuration rejected", "err", err, "path", path)
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return loaded, nil
 }
+
+// kernelReservedTables are the routing tables the kernel owns: unspecified,
+// default, main, and local. They are not inventory values, so they are reserved
+// here rather than typed into the reserved-tables leaf-list, which carries only
+// the tables this gateway's other software claims.
+var kernelReservedTables = []int{0, 253, 254, 255}
 
 // build turns the decoded document into the daemon's shape, rejecting a value
 // the schema cannot require. The schema makes a provider's name mandatory and
@@ -151,6 +176,8 @@ func build(doc *document) (*Config, error) {
 		MwanbrEdgeV6:       group.Translation.MwanbrEdgeV6,
 		InternalIface:      group.Routes.InternalIface,
 		InternalNetV4:      group.Routes.InternalNetV4,
+		HashMode:           group.HashMode,
+		ReservedTables:     group.ReservedTables,
 		ProbeTimeoutMillis: 0,
 		WAN:                make(map[string]config.IfMgrWANEntry, len(doc.Interfaces.Interface)),
 		Health:             make(map[string]config.IfMgrHealthWANSection, len(doc.Interfaces.Interface)),
@@ -164,6 +191,7 @@ func build(doc *document) (*Config, error) {
 		{leaf: "steering-group/translation/mwanbr-edge-v6", value: loaded.MwanbrEdgeV6},
 		{leaf: "steering-group/routes/internal-iface", value: loaded.InternalIface},
 		{leaf: "steering-group/routes/internal-net-v4", value: loaded.InternalNetV4},
+		{leaf: "steering-group/hash-mode", value: loaded.HashMode},
 	}
 	for _, leaf := range required {
 		if leaf.value == "" {
@@ -194,7 +222,104 @@ func build(doc *document) (*Config, error) {
 	if len(loaded.WAN) == 0 {
 		return nil, errors.New("no interface carries a provider")
 	}
+	if err := checkProviderSet(loaded); err != nil {
+		return nil, err
+	}
 	return loaded, nil
+}
+
+// checkProviderSet runs the checks that need the whole provider set rather than
+// one entry: every routing number is unique across providers (fw-mark-prio and
+// from-prio share one namespace, since both select an ip rule by priority), no
+// provider sits on a reserved table, and every weight is at least one. Nothing
+// derives these numbers, so a typo in inventory has no other place to surface.
+// A failure here stops the daemon before it writes anything to the kernel,
+// which is the existing failure contract for a bad configuration.
+func checkProviderSet(loaded *Config) error {
+	reserved := make(map[int]string, len(loaded.ReservedTables)+len(kernelReservedTables))
+	for _, table := range kernelReservedTables {
+		reserved[table] = "the kernel"
+	}
+	for _, table := range loaded.ReservedTables {
+		// The kernel's own reservation is the true reason a table is off limits,
+		// so inventory redundantly listing it must not overwrite that label with
+		// a less accurate one.
+		if _, alreadyReserved := reserved[table]; !alreadyReserved {
+			reserved[table] = "steering-group/reserved-tables"
+		}
+	}
+
+	names := make([]string, 0, len(loaded.WAN))
+	for name := range loaded.WAN {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	slots := []struct {
+		leaf  string
+		value func(entry config.IfMgrWANEntry) int
+	}{
+		{leaf: "table-id", value: func(entry config.IfMgrWANEntry) int { return entry.TableID }},
+		{leaf: "fw-mark", value: func(entry config.IfMgrWANEntry) int { return entry.FwMark }},
+	}
+	for _, slot := range slots {
+		owner := make(map[int]string, len(names))
+		for _, name := range names {
+			value := slot.value(loaded.WAN[name])
+			if taken, seen := owner[value]; seen {
+				return fmt.Errorf("wan %s: %s %d is already taken by wan %s",
+					name, slot.leaf, value, taken)
+			}
+			owner[value] = name
+		}
+	}
+
+	// fw-mark-prio and from-prio both select an ip rule by the same numeric
+	// priority, and the routing module already treats them as one slot space,
+	// so they are checked against one shared set rather than two independent
+	// ones. That set catches a collision across providers and a collision
+	// between a single provider's own two leaves, whichever leaf is checked
+	// second.
+	type priorityOwner struct {
+		provider string
+		leaf     string
+	}
+	priorityLeaves := []struct {
+		leaf  string
+		value func(entry config.IfMgrWANEntry) int
+	}{
+		{leaf: "fw-mark-prio", value: func(entry config.IfMgrWANEntry) int { return entry.FwMarkPrio }},
+		{leaf: "from-prio", value: func(entry config.IfMgrWANEntry) int { return entry.FromPrio }},
+	}
+	priorityOwners := make(map[int]priorityOwner, len(names)*len(priorityLeaves))
+	for _, name := range names {
+		entry := loaded.WAN[name]
+		for _, priorityLeaf := range priorityLeaves {
+			value := priorityLeaf.value(entry)
+			if taken, seen := priorityOwners[value]; seen {
+				return fmt.Errorf("wan %s: %s %d is already taken by wan %s's %s",
+					name, priorityLeaf.leaf, value, taken.provider, taken.leaf)
+			}
+			priorityOwners[value] = priorityOwner{provider: name, leaf: priorityLeaf.leaf}
+		}
+	}
+
+	for _, name := range names {
+		entry := loaded.WAN[name]
+		if owner, isReserved := reserved[entry.TableID]; isReserved {
+			return fmt.Errorf("wan %s: table-id %d is reserved by %s", name, entry.TableID, owner)
+		}
+		// The schema already ranges weight at 1..max, so libyang rejects a zero
+		// before build ever runs, and no test through Load can reach this branch
+		// today. It stays as a decode-boundary guard: checkProviderSet is the
+		// one place that reasons about the whole provider set, and a schema
+		// revision that drops or loosens the range must not silently let a
+		// zero-weight provider through it.
+		if entry.Weight < 1 {
+			return fmt.Errorf("wan %s: steering/weight must be at least 1, got %d", name, entry.Weight)
+		}
+	}
+	return nil
 }
 
 // buildProvider turns one interface's provider entry into the two sections the
@@ -225,6 +350,10 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 	if provider.NptPrefix == "" {
 		return config.IfMgrWANEntry{}, nil, fmt.Errorf("%s: npt-prefix is required", label)
 	}
+	tier, weight, err := buildSteering(label, entry.Steering)
+	if err != nil {
+		return config.IfMgrWANEntry{}, nil, err
+	}
 	routing := config.IfMgrWANEntry{
 		Iface:      entry.Name,
 		TableID:    *provider.TableID,
@@ -233,6 +362,8 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 		FromPrio:   *provider.FromPrio,
 		NptPrefix:  provider.NptPrefix,
 		V4Source:   provider.V4Source,
+		Tier:       tier,
+		Weight:     weight,
 	}
 	if provider.Health == nil {
 		return routing, nil, nil
@@ -242,6 +373,29 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 		return config.IfMgrWANEntry{}, nil, err
 	}
 	return routing, probe, nil
+}
+
+// buildSteering reads one provider's tier and weight. The schema cannot require
+// the container, because an interface carrying no provider must be free of it,
+// and the schema's weight default fills only the served tree rather than the
+// file this decodes. Both values are therefore required here: a provider with
+// no tier cannot be placed in the failover order, and one with no weight cannot
+// be given a share of its tier.
+func buildSteering(label string, member *steering) (uint8, int, error) {
+	if member == nil {
+		return 0, 0, fmt.Errorf("%s: steering is required", label)
+	}
+	if member.Tier == nil {
+		return 0, 0, fmt.Errorf("%s: steering/tier is required", label)
+	}
+	if member.Weight == nil {
+		return 0, 0, fmt.Errorf("%s: steering/weight is required", label)
+	}
+	tier := *member.Tier
+	if tier < 0 || tier > int(^uint8(0)) {
+		return 0, 0, fmt.Errorf("%s: steering/tier %d is outside 0 to 255", label, tier)
+	}
+	return uint8(tier), *member.Weight, nil
 }
 
 // buildHealth reads one provider's probe. Every setting of an enabled probe is
@@ -323,6 +477,8 @@ func (c *Config) Apply(cfg *config.Config) {
 	cfg.IfMgr.InternalPrefix = c.InternalPrefix
 	cfg.IfMgr.OpnsenseEdgeV6 = c.OpnsenseEdgeV6
 	cfg.IfMgr.MwanbrEdgeV6 = c.MwanbrEdgeV6
+	cfg.IfMgr.HashMode = c.HashMode
+	cfg.IfMgr.ReservedTables = c.ReservedTables
 	cfg.IfMgr.WAN = c.WAN
 
 	if cfg.IfMgr.Modules.WAN == nil {

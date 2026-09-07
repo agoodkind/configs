@@ -18,6 +18,7 @@ WorkingDirectory={{ tack_install_dir }}
 # is audited as mutating because observing the cluster healthy writes the
 # replication marker. The service identity names the timer, not a human, in the
 # compliance ledger (--operator-service derives a stable actor id from the name
-# with no registry to seed).
-ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup staleness-check --execute --operator-service tack-backup
+# with no registry to seed). The data-guest deputy runs under its own name so
+# its rows never satisfy its own primary check (TACK-481).
+ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup staleness-check --execute --operator-service {{ 'tack-backup-deputy' if tack_cluster_role == 'data' else 'tack-backup' }}
 TimeoutStartSec=900

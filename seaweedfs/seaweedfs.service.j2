@@ -9,7 +9,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={{ seaweedfs_bin_path }} server -dir={{ seaweedfs_data_dir }} -s3 -s3.config={{ seaweedfs_config_dir }}/s3.json -ip.bind=:: -master.volumeSizeLimitMB=1024
+# -volume.max=0 sizes the volume count from free disk. The default is 8, and
+# with 1 GB volumes that capped every bucket on this store at one volume once
+# the default collection had taken the other seven: production's tack-backups
+# volume filled on 2026-07-29 and every write since answered 500 "failed to
+# find writable volumes", which silently ended the FoundationDB backup stream
+# with 91 GB free on the disk.
+ExecStart={{ seaweedfs_bin_path }} server -dir={{ seaweedfs_data_dir }} -s3 -s3.config={{ seaweedfs_config_dir }}/s3.json -ip.bind=:: -master.volumeSizeLimitMB=1024 -volume.max=0
 WorkingDirectory={{ seaweedfs_data_dir }}
 Restart=on-failure
 RestartSec=5

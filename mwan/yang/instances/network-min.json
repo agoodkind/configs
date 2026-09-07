@@ -23,6 +23,10 @@
             "targets-v6": ["2001:db8:53::1", "2001:db8:53::2"],
             "http-urls": ["https://example.test/ip"]
           }
+        },
+        "goodkind-mwan-steering:steering": {
+          "tier": 0,
+          "weight": 1
         }
       },
       {
@@ -35,11 +39,17 @@
           "fw-mark-prio": 100,
           "from-prio": 55,
           "npt-prefix": "2001:db8:beef:100::/60"
+        },
+        "goodkind-mwan-steering:steering": {
+          "tier": 1,
+          "weight": 3
         }
       },
       { "name": "enmwanbr0", "type": "iana-if-type:other" }
     ],
     "goodkind-mwan-steering:steering-group": {
+      "hash-mode": "source",
+      "reserved-tables": [400, 500],
       "translation": {
         "internal-prefix": "2001:db8:b01::/60",
         "opnsense-edge-v6": "2001:db8:b01:fe::2",

@@ -11,6 +11,14 @@ tack_audit_operator_password: "{{ vault_tack_audit_operator_password }}"
 # Phase C audit cutover (TACK-232). Kafka storage uuid; distinct from QA.
 tack_kafka_cluster_id: "r8jB0c2ISFubOB2oWkKmEQ"
 
+# Valid audit signer set (TACK-437): the identifiers of the signing keys this
+# environment accepts. Production's key as measured on the app guest on
+# 2026-08-08 (TACK-437); confirm it against `audit signers` local_signer at
+# the production step before the first deploy that carries it. Adding a
+# signing guest adds its identifier; revoking a leaked key removes it.
+tack_audit_valid_signers:
+  - "ed25519:f04a5d764fecb815"
+
 # Provision entrypoint (TACK-303). NEVER auto-configure FoundationDB on prod:
 # it is already provisioned and `fdbcli configure new` is destructive. Provision
 # still runs every deploy as a safe idempotent no-op (migrate, seed roles).
