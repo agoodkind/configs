@@ -30,10 +30,6 @@ tack_allow_fdb_init: false
 # production-signature endpoint, but this marker is the primary gate.
 tack_datagen_allow_target: ""
 
-# The name the backup alarm mail labels itself with, so a reader tells a
-# production alarm from a QA one before reading further.
-tack_alarm_environment_label: "Production"
-
 # GHCR pull token. Classic PAT with read:packages scope.
 ghcr_pull_token: "{{ vault_tack_ghcr_pull_token }}"
 
