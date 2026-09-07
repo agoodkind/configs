@@ -154,6 +154,15 @@ than the number.
   virtual function and Webpass a full NIC passthrough that `qm config` never
   lists as network devices. The operator ruled that the deploy is not the
   place for that check, so Task 5 deletes it and adds no replacement.
+- **Every merge leaves main deployable, and every merge is deployed before
+  the next task starts.** A pull request whose merge would make a deploy
+  from main fail a host is not ready to merge (operator ruling 2026-09-07).
+  Task 2's loader requires the steering leaves, so Task 5, which renders
+  them, lands and deploys (testbed, live validation, then production)
+  before Task 3 merges; Task 5 consumes only Task 1 and the loader. Each
+  later task follows the same cycle: merge, testbed deploy with
+  `--release <tag>`, live validation, production deploy, then the next
+  branch.
 - **The published hash mode comes from the loaded configuration.** The
   routing task publishes `hash-mode` from the daemon configuration the loader
   fills, not from the steering module's config, so no task imports a package
