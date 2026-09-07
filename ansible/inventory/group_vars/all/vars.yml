@@ -110,10 +110,10 @@ bgp_keepalive_seconds: 10
 bgp_hold_seconds: 30
 
 # ----------------------------------------------------------------------------
-# Wanconfig management stack (epic MWAN-338), source-built on the gateway at
-# /usr/local by deploy-wanconfig-stack.yml. The stack is versioned here, not
-# by the distribution; a version change rebuilds that component on the next
-# deploy. nghttp2-asio has no release tags, so it pins a commit.
+# Wanconfig management stack (epic MWAN-338), packaged by the mwan release
+# and installed on the gateway by deploy-mwan.yml. The stack is versioned
+# here, not by the distribution; a version change rebuilds the packages on
+# the next release. nghttp2-asio has no release tags, so it pins a commit.
 # ----------------------------------------------------------------------------
 # libyang and sysrepo stay on the 3.x series: libyang-cpp v4 compiles
 # against the libyang 3.x API only (5.x renamed print/parse symbols), and
