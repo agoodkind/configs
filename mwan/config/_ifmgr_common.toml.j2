@@ -15,11 +15,11 @@ dhcp_max_backoff = "5m"
 [ifmgr.modules.oobv6]
 iface = "{{ mwan_ifmgr_iface_name }}"
 oob_addr = "{{ mwan_ifmgr_oob_addr }}"
-oob_table_id = 500
+oob_table_id = {{ mwan_reserved_tables.oob }}
 
 [ifmgr.modules.oobv4]
 iface = "{{ mwan_ifmgr_iface_name }}"
-oob_table_id = 500
+oob_table_id = {{ mwan_reserved_tables.oob }}
 
 [ifmgr.modules.ra_lost]
 iface = "{{ mwan_ifmgr_iface_name }}"

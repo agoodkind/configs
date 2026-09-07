@@ -295,8 +295,8 @@ On MWAN, grep the route table dump for the internal prefix
 ip -6 route show table all | grep '3d06:bad:b01::/60'
 ```
 
-Expected: one entry in the main table and one in each WAN table
-(`mwan_rt_tables` names the ids).
+Expected: one entry in the main table and one in each provider's routing table.
+The provider list in the MWAN group vars names the table ids.
 
 If empty, recover with `systemctl restart mwan-ifmgr@wan`, which forces a
 full reconcile pass; the pass is idempotent.

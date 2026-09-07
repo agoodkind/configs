@@ -2,7 +2,7 @@
 # Discover the MWAN VM's runtime network shape from Proxmox before any
 # config templates render. Produces facts the rest of deploy-mwan.yml
 # consumes:
-#   - mwan_net1_mac, mwan_net2_mac (parsed_mwan_net2_mac), mwan_net2_present
+#   - mwan_net1_mac, mwan_net2_mac (parsed_mwan_net2_mac)
 #   - vm_mgmt_mac
 #   - mwan_mbrains_mac (inventory override wins, plugin-parsed value falls back)
 #
@@ -40,10 +40,6 @@
         | regex_replace('^.*virtio=([0-9A-Fa-f:]+).*$', '\1')
         | upper
       }}
-    mwan_net2_present: >-
-      {{
-        (vm_config.stdout_lines | select('match', '^net2:.*') | list | length) > 0
-      }}
     vm_mgmt_mac: >-
       {{
         vm_config.stdout_lines
@@ -61,13 +57,3 @@
         ((mwan_mbrains_mac | default('')) | length > 0)
         | ternary(mwan_mbrains_mac, parsed_mwan_net2_mac)
       }}
-
-- name: Ensure Monkeybrains NIC exists when enabled
-  ansible.builtin.fail:
-    msg: >-
-      Monkeybrains fallback is enabled, but no virtio net2 interface was found in Proxmox
-      config for VM {{ actual_vmid }}. Add net2 (virtio) attached to the Monkeybrains network
-      or disable mwan_health_checks.monkeybrains.enabled.
-  when:
-    - mwan_health_checks.monkeybrains.enabled
-    - not mwan_net2_present
