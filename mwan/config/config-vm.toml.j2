@@ -174,7 +174,7 @@ family = "inet6"
 priority = 6
 from = "{{ mwan_ifmgr_policy_from_v6 }}"
 table = "oob"
-table_id = 500
+table_id = {{ mwan_reserved_tables.oob }}
 
 {% endif %}
 {% if mwan_ifmgr_cloudflared_tap_enabled | bool %}

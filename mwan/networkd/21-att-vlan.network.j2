@@ -36,12 +36,10 @@ RouterLifetimeSec=1800
 
 # Note on Routing Policy:
 # Unlike the Webpass interface (which has static IPs), this AT&T interface
-# obtains its IP and Gateway dynamically via DHCP/RA.
+# obtains its IP and Gateway dynamically via DHCP/RA, so no static [Route] or
+# [RoutingPolicyRule] section can be written here.
 #
-# We CANNOT define static [Route] or [RoutingPolicyRule] sections here because
-# we don't know the Gateway or Source IP at template time.
-#
-# Instead, we rely on the networkd-dispatcher script (50-update-routes.sh) to:
-# 1. Detect the dynamic Gateway/IP after the link comes up.
-# 2. Add the default route to table {{ mwan_rt_tables.att }}.
-# 3. Add the ip rules (fwmark/from) for policy routing.
+# The ifmgr wan.routes module owns them instead. It watches this link over
+# netlink and, on each default-route change, installs the default route in the
+# AT&T provider's routing table and the firewall-mark and source policy rules
+# at the priorities that provider's entry carries.

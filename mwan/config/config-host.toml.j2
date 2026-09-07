@@ -110,7 +110,7 @@ family = "inet6"
 priority = 5
 uid_user = "{{ mwan_ifmgr_cloudflared_oob_user }}"
 table = "oob"
-table_id = 500
+table_id = {{ mwan_reserved_tables.oob }}
 
 {% endif %}
 {% if mwan_ifmgr_oob_enabled | bool %}
@@ -119,7 +119,7 @@ family = "inet6"
 priority = 6
 from = "{{ mwan_ifmgr_policy_from_v6 }}"
 table = "oob"
-table_id = 500
+table_id = {{ mwan_reserved_tables.oob }}
 
 {% endif %}
 {% if cloudflared_oob_enabled %}
@@ -128,7 +128,7 @@ family = "inet"
 priority = 5
 uid_user = "{{ mwan_ifmgr_cloudflared_oob_user }}"
 table = "oob"
-table_id = 500
+table_id = {{ mwan_reserved_tables.oob }}
 {% endif %}
 
 {% if mwan_ifmgr_cloudflared_tap_enabled | bool %}
