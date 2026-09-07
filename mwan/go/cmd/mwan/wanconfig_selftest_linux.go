@@ -234,6 +234,7 @@ func selftestGateway() wanconfig.Gateway {
 			Name:        "att",
 			Iface:       "enatt0",
 			Tier:        0,
+			Weight:      1,
 			ProbePolicy: "att",
 			NPTInternal: netip.MustParsePrefix("3d06:bad:b01:210::/60"),
 			NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),

@@ -8,12 +8,14 @@ import (
 	"io"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/notify"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 func TestDesiredState(t *testing.T) {
@@ -22,9 +24,14 @@ func TestDesiredState(t *testing.T) {
 	baseConfig := testConfig()
 	baseGateways := testGateways()
 	allHealthy := netif.HealthStates{
-		wanNameATT:          netif.HealthStateHealthy,
-		wanNameWebpass:      netif.HealthStateHealthy,
-		wanNameMonkeybrains: netif.HealthStateHealthy,
+		"att":          netif.HealthStateHealthy,
+		"webpass":      netif.HealthStateHealthy,
+		"monkeybrains": netif.HealthStateHealthy,
+	}
+	noneHealthy := netif.HealthStates{
+		"att":          netif.HealthStateUnhealthy,
+		"webpass":      netif.HealthStateUnhealthy,
+		"monkeybrains": netif.HealthStateUnhealthy,
 	}
 
 	cases := []struct {
@@ -36,7 +43,7 @@ func TestDesiredState(t *testing.T) {
 		wantRoutes []netif.RouteSpec
 	}{
 		{
-			name:       "all WANs healthy with gateways",
+			name:       "every provider healthy with gateways",
 			cfg:        baseConfig,
 			gateways:   baseGateways,
 			health:     allHealthy,
@@ -44,17 +51,27 @@ func TestDesiredState(t *testing.T) {
 			wantRoutes: routesForGateways(baseConfig, baseGateways),
 		},
 		{
-			name: "unhealthy WAN and missing gateway drop enabled rules",
+			// No verdict has been recorded yet, so every provider reads healthy
+			// and the first tier activates. This is the startup pass.
+			name:       "no verdict recorded activates the first tier",
+			cfg:        baseConfig,
+			gateways:   baseGateways,
+			health:     netif.HealthStates{},
+			wantRules:  allHealthyRules(baseConfig),
+			wantRoutes: routesForGateways(baseConfig, baseGateways),
+		},
+		{
+			name: "unhealthy provider and missing gateway drop enabled rules",
 			cfg:  baseConfig,
 			gateways: gateways{
-				wanNameATT:          baseGateways[wanNameATT],
-				wanNameWebpass:      baseGateways[wanNameWebpass],
-				wanNameMonkeybrains: {V4: "198.51.100.1"},
+				"att":          baseGateways["att"],
+				"webpass":      baseGateways["webpass"],
+				"monkeybrains": {V4: "198.51.100.1", V6: ""},
 			},
 			health: netif.HealthStates{
-				wanNameATT:          netif.HealthStateHealthy,
-				wanNameWebpass:      netif.HealthStateUnhealthy,
-				wanNameMonkeybrains: netif.HealthStateHealthy,
+				"att":          netif.HealthStateHealthy,
+				"webpass":      netif.HealthStateUnhealthy,
+				"monkeybrains": netif.HealthStateHealthy,
 			},
 			wantRules: []netif.DesiredRule{
 				fwmarkRule(familyV4, 100, 1, 100),
@@ -63,38 +80,72 @@ func TestDesiredState(t *testing.T) {
 				fwmarkRule(familyV4, 300, 3, 300),
 			},
 			wantRoutes: routesForGateways(baseConfig, gateways{
-				wanNameATT:          baseGateways[wanNameATT],
-				wanNameWebpass:      baseGateways[wanNameWebpass],
-				wanNameMonkeybrains: {V4: "198.51.100.1"},
+				"att":          baseGateways["att"],
+				"webpass":      baseGateways["webpass"],
+				"monkeybrains": {V4: "198.51.100.1", V6: ""},
 			}),
 		},
 		{
-			name:     "both primaries unhealthy plus monkeybrains healthy adds fallback",
+			// The active tier is not the first configured tier and exactly one
+			// provider in it is healthy, so nothing else marks internal traffic
+			// and the catch-all pair carries it. This reproduces today's
+			// behavior with Monkeybrains alone in the fallback tier.
+			name:     "a lone healthy provider below the first tier gets the catch-all",
 			cfg:      baseConfig,
 			gateways: baseGateways,
 			health: netif.HealthStates{
-				wanNameATT:          netif.HealthStateUnhealthy,
-				wanNameWebpass:      netif.HealthStateUnhealthy,
-				wanNameMonkeybrains: netif.HealthStateHealthy,
+				"att":          netif.HealthStateUnhealthy,
+				"webpass":      netif.HealthStateUnhealthy,
+				"monkeybrains": netif.HealthStateHealthy,
 			},
 			wantRules: []netif.DesiredRule{
 				fwmarkRule(familyV4, 300, 3, 300),
 				fwmarkRule(familyV6, 300, 3, 300),
 				fromRule(57, "3d06:bad:b01:3300::/56", 300),
-				fallbackRule(familyV4, "vmbr250", 300),
-				fallbackRule(familyV6, "vmbr250", 300),
+				catchAllRule(familyV4, "vmbr250", 300),
+				catchAllRule(familyV6, "vmbr250", 300),
 			},
 			wantRoutes: routesForGateways(baseConfig, baseGateways),
 		},
 		{
-			name: "from-PD rule requires NPT prefix",
-			cfg:  configWithoutWebpassNPT(baseConfig),
-			gateways: gateways{
-				wanNameATT:          baseGateways[wanNameATT],
-				wanNameWebpass:      baseGateways[wanNameWebpass],
-				wanNameMonkeybrains: baseGateways[wanNameMonkeybrains],
+			// Two healthy providers share the active tier, so the steering
+			// module's marks carry the split. A catch-all would send every
+			// unmarked packet to one of them and undo it.
+			name:     "two healthy providers in the active tier get no catch-all",
+			cfg:      configWithWebpassInTierOne(baseConfig),
+			gateways: baseGateways,
+			health: netif.HealthStates{
+				"att":          netif.HealthStateUnhealthy,
+				"webpass":      netif.HealthStateHealthy,
+				"monkeybrains": netif.HealthStateHealthy,
 			},
-			health: allHealthy,
+			wantRules: []netif.DesiredRule{
+				fwmarkRule(familyV4, 200, 2, 200),
+				fromRuleV4(56, "203.0.113.2", 200),
+				fwmarkRule(familyV6, 200, 2, 200),
+				fromRule(56, "3d06:bad:b01:2200::/56", 200),
+				fwmarkRule(familyV4, 300, 3, 300),
+				fwmarkRule(familyV6, 300, 3, 300),
+				fromRule(57, "3d06:bad:b01:3300::/56", 300),
+			},
+			wantRoutes: routesForGateways(configWithWebpassInTierOne(baseConfig), baseGateways),
+		},
+		{
+			// Nothing is healthy, so no tier is active and no catch-all is
+			// installed. Sending traffic at a provider that failed its probes
+			// would be worse than letting it fall to the main table.
+			name:       "no healthy provider installs no catch-all",
+			cfg:        baseConfig,
+			gateways:   baseGateways,
+			health:     noneHealthy,
+			wantRules:  []netif.DesiredRule{},
+			wantRoutes: routesForGateways(baseConfig, baseGateways),
+		},
+		{
+			name:     "from-PD rule requires NPT prefix",
+			cfg:      configWithoutWebpassNPT(baseConfig),
+			gateways: baseGateways,
+			health:   allHealthy,
 			wantRules: []netif.DesiredRule{
 				fwmarkRule(familyV4, 100, 1, 100),
 				fwmarkRule(familyV6, 100, 1, 100),
@@ -125,6 +176,94 @@ func TestDesiredState(t *testing.T) {
 	}
 }
 
+// TestPublishLiveStateReportsTheActiveTier pins what the management surface
+// serves: the active tier the pass decided, and one carrying flag per provider
+// that is true only for a provider in that tier which is healthy and has a
+// gateway.
+func TestPublishLiveStateReportsTheActiveTier(t *testing.T) {
+	t.Parallel()
+
+	store := wanstate.New()
+	module := &Module{cfg: testConfig()}
+	module.InitBase(testEnvWithStore(store), "module", moduleName)
+
+	module.publishLiveState(testGateways(), netif.HealthStates{
+		"att":          netif.HealthStateUnhealthy,
+		"webpass":      netif.HealthStateUnhealthy,
+		"monkeybrains": netif.HealthStateHealthy,
+	})
+
+	snapshot := store.Snapshot()
+	if !snapshot.TierValid || snapshot.ActiveTier != 1 {
+		t.Fatalf("active tier = %d (valid=%v), want 1", snapshot.ActiveTier, snapshot.TierValid)
+	}
+	want := map[string]bool{"att": false, "webpass": false, "monkeybrains": true}
+	for name, wantCarrying := range want {
+		if got := snapshot.Routing[name].Carrying; got != wantCarrying {
+			t.Fatalf("%s carrying = %v, want %v", name, got, wantCarrying)
+		}
+	}
+}
+
+// TestPublishLiveStateWithNoHealthyProvider pins that a pass in which nothing is
+// healthy carries nobody, rather than reporting the first tier as if it were
+// serving traffic.
+func TestPublishLiveStateWithNoHealthyProvider(t *testing.T) {
+	t.Parallel()
+
+	store := wanstate.New()
+	module := &Module{cfg: testConfig()}
+	module.InitBase(testEnvWithStore(store), "module", moduleName)
+
+	module.publishLiveState(testGateways(), netif.HealthStates{
+		"att":          netif.HealthStateUnhealthy,
+		"webpass":      netif.HealthStateUnhealthy,
+		"monkeybrains": netif.HealthStateUnhealthy,
+	})
+
+	for name, routing := range store.Snapshot().Routing {
+		if routing.Carrying {
+			t.Fatalf("%s reported carrying with no healthy provider", name)
+		}
+	}
+}
+
+// TestValidateWANAcceptsAnyPositivePriority pins that the two fixed priority
+// checks are gone: a fourth provider's numbers are admitted, and only a
+// non-positive value is refused.
+func TestValidateWANAcceptsAnyPositivePriority(t *testing.T) {
+	t.Parallel()
+
+	fourth := WAN{
+		WANRef:     ifmgr.WANRef{Name: "astount", Iface: "astount0"},
+		TableID:    600,
+		FwMark:     4,
+		FwMarkPrio: 600,
+		FromPrio:   58,
+		NptPrefix:  "3d06:bad:b01:2500::/60",
+		V4Source:   "",
+		Tier:       2,
+		Weight:     1,
+	}
+	if err := validateWAN(fourth); err != nil {
+		t.Fatalf("validateWAN rejected a fourth provider: %v", err)
+	}
+	fourth.FwMarkPrio = 0
+	if err := validateWAN(fourth); err == nil {
+		t.Fatal("validateWAN accepted a zero fw_mark_prio")
+	}
+	fourth.FwMarkPrio = 600
+	fourth.FromPrio = 0
+	if err := validateWAN(fourth); err == nil {
+		t.Fatal("validateWAN accepted a zero from_prio")
+	}
+	fourth.FromPrio = 58
+	fourth.FwMarkPrio = catchAllPriority
+	if err := validateWAN(fourth); err == nil || !strings.Contains(err.Error(), "catch-all") {
+		t.Fatalf("validateWAN(FwMarkPrio=catchAllPriority) = %v, want an error mentioning the catch-all priority", err)
+	}
+}
+
 func TestInitReturnsDisabledSentinelWhenWANsEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -146,9 +285,9 @@ func TestDesiredStateOmitsStaticInternalRoute(t *testing.T) {
 
 	gateways := testGateways()
 	health := netif.HealthStates{
-		wanNameATT:          netif.HealthStateHealthy,
-		wanNameWebpass:      netif.HealthStateHealthy,
-		wanNameMonkeybrains: netif.HealthStateHealthy,
+		"att":          netif.HealthStateHealthy,
+		"webpass":      netif.HealthStateHealthy,
+		"monkeybrains": netif.HealthStateHealthy,
 	}
 	cfg := testConfig()
 
@@ -183,29 +322,37 @@ func testConfig() Config {
 		HealthStateFile: "/run/mwan-health.state",
 		WANs: []WAN{
 			{
-				WANRef:     ifmgr.WANRef{Name: wanNameATT, Iface: "att0"},
+				WANRef:     ifmgr.WANRef{Name: "att", Iface: "att0"},
 				TableID:    100,
 				FwMark:     1,
 				FwMarkPrio: 100,
 				FromPrio:   55,
 				NptPrefix:  "3d06:bad:b01:1100::/56",
+				V4Source:   "",
+				Tier:       0,
+				Weight:     1,
 			},
 			{
-				WANRef:     ifmgr.WANRef{Name: wanNameWebpass, Iface: "webpass0"},
+				WANRef:     ifmgr.WANRef{Name: "webpass", Iface: "webpass0"},
 				TableID:    200,
 				FwMark:     2,
 				FwMarkPrio: 200,
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/56",
 				V4Source:   "203.0.113.2",
+				Tier:       0,
+				Weight:     1,
 			},
 			{
-				WANRef:     ifmgr.WANRef{Name: wanNameMonkeybrains, Iface: "mbrains0"},
+				WANRef:     ifmgr.WANRef{Name: "monkeybrains", Iface: "mbrains0"},
 				TableID:    300,
 				FwMark:     3,
 				FwMarkPrio: 300,
 				FromPrio:   57,
 				NptPrefix:  "3d06:bad:b01:3300::/56",
+				V4Source:   "",
+				Tier:       1,
+				Weight:     1,
 			},
 		},
 	}
@@ -213,18 +360,9 @@ func testConfig() Config {
 
 func testGateways() gateways {
 	return gateways{
-		wanNameATT: {
-			V4: "192.0.2.1",
-			V6: "fe80::a",
-		},
-		wanNameWebpass: {
-			V4: "203.0.113.1",
-			V6: "fe80::b",
-		},
-		wanNameMonkeybrains: {
-			V4: "198.51.100.1",
-			V6: "fe80::c",
-		},
+		"att":          {V4: "192.0.2.1", V6: "fe80::a"},
+		"webpass":      {V4: "203.0.113.1", V6: "fe80::b"},
+		"monkeybrains": {V4: "198.51.100.1", V6: "fe80::c"},
 	}
 }
 
@@ -286,7 +424,11 @@ func fwmarkRule(family string, priority int, mark uint32, tableID int) netif.Des
 	return netif.DesiredRule{
 		Family:   family,
 		Priority: priority,
+		From:     "",
 		Mark:     mark,
+		IifName:  "",
+		UIDRange: "",
+		Table:    "",
 		TableID:  tableID,
 	}
 }
@@ -296,6 +438,10 @@ func fromRule(priority int, from string, tableID int) netif.DesiredRule {
 		Family:   familyV6,
 		Priority: priority,
 		From:     from,
+		Mark:     0,
+		IifName:  "",
+		UIDRange: "",
+		Table:    "",
 		TableID:  tableID,
 	}
 }
@@ -305,15 +451,23 @@ func fromRuleV4(priority int, from string, tableID int) netif.DesiredRule {
 		Family:   familyV4,
 		Priority: priority,
 		From:     from,
+		Mark:     0,
+		IifName:  "",
+		UIDRange: "",
+		Table:    "",
 		TableID:  tableID,
 	}
 }
 
-func fallbackRule(family string, iifName string, tableID int) netif.DesiredRule {
+func catchAllRule(family string, iifName string, tableID int) netif.DesiredRule {
 	return netif.DesiredRule{
 		Family:   family,
-		Priority: fallbackPriority,
+		Priority: catchAllPriority,
+		From:     "",
+		Mark:     0,
 		IifName:  iifName,
+		UIDRange: "",
+		Table:    "",
 		TableID:  tableID,
 	}
 }
@@ -321,6 +475,15 @@ func fallbackRule(family string, iifName string, tableID int) netif.DesiredRule 
 func configWithoutWebpassNPT(cfg Config) Config {
 	cfg.WANs = append([]WAN(nil), cfg.WANs...)
 	cfg.WANs[1].NptPrefix = ""
+	return cfg
+}
+
+// configWithWebpassInTierOne moves Webpass down beside Monkeybrains, so the
+// active tier can hold two healthy providers while not being the first
+// configured tier.
+func configWithWebpassInTierOne(cfg Config) Config {
+	cfg.WANs = append([]WAN(nil), cfg.WANs...)
+	cfg.WANs[1].Tier = 1
 	return cfg
 }
 
@@ -333,4 +496,10 @@ func testEnv() *ifmgr.Env {
 		})),
 		Alerts: ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, log, "mwan-ifmgr")),
 	}
+}
+
+func testEnvWithStore(store *wanstate.Store) *ifmgr.Env {
+	env := testEnv()
+	env.LiveState = store
+	return env
 }
