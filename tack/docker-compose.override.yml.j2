@@ -28,7 +28,7 @@ services:
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
     environment:
-      DATABASE_URL: postgres://tack_app:${TACK_APP_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/${YUGABYTE_DB:?}?sslmode=disable&connect_timeout={{ tack_database_connect_timeout_seconds }}
+      DATABASE_URL: postgres://tack_app:${TACK_APP_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/${YUGABYTE_DB:?}?{{ tack_ledger_ssl_query }}&connect_timeout={{ tack_database_connect_timeout_seconds }}
   audit-consumer:
     extra_hosts:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}
@@ -47,6 +47,14 @@ services:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
+{% if tack_ledger_tls_enabled %}
+    # This node's own certificate and the authority that issued it
+    # (TACK-460), read-only: the engine presents node.{{ tack_ledger_node_name }}.crt to
+    # clients and to its peers, and checks theirs against ca.crt in the same
+    # directory. The deploy issues the material; nothing here writes it.
+    volumes:
+      - {{ tack_ledger_certs_dir }}:/home/yugabyte/certs:ro
+{% endif %}
     # Whole-command replacement: compose replaces a command list wholesale.
     # Only the announced name and the join target differ from the base file;
     # the flagfile argument stays verbatim, because dropping it reverts the
@@ -63,4 +71,16 @@ services:
       # the engine bootstraps a second universe instead of joining.
       - --join={{ tack_ledger_join_target }}
 {% endif %}
+{% if tack_ledger_tls_enabled %}
+      # Encryption in transit, both directions (TACK-460). The engine
+      # encrypts peer traffic and client traffic and refuses an unencrypted
+      # connection, so a client that skipped its certificate is turned away
+      # rather than served in the clear. The flags go on both processes
+      # because the masters speak to each other on their own port. The
+      # tserver list keeps the flagfile first: dropping it reverts the
+      # tserver to self-sizing (the 2026-08-05 incident).
+      - --master_flags=certs_dir=/home/yugabyte/certs,use_node_to_node_encryption=true,use_client_to_server_encryption=true,certs_for_client_dir=/home/yugabyte/certs,allow_insecure_connections=false
+      - --tserver_flags=flagfile=/home/yugabyte/tserver.flags,certs_dir=/home/yugabyte/certs,use_node_to_node_encryption=true,use_client_to_server_encryption=true,certs_for_client_dir=/home/yugabyte/certs,allow_insecure_connections=false
+{% else %}
       - --tserver_flags=flagfile=/home/yugabyte/tserver.flags
+{% endif %}
