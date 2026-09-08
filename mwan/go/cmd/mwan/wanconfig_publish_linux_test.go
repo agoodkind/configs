@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/ifmgr/modules/health"
 	"goodkind.io/mwan/internal/ifmgr/modules/npt"
@@ -22,14 +23,17 @@ func wanconfigTestModuleConfigs() ifmgr.ModuleConfigSet {
 		{
 			WANRef: ifmgr.WANRef{Name: "att", Iface: "enatt0.3242"}, TableID: 100,
 			FwMark: 1, FwMarkPrio: 10, FromPrio: 20, NptPrefix: "2001:db8:a::/60", V4Source: "",
+			Tier: 0, Weight: 1,
 		},
 		{
 			WANRef: ifmgr.WANRef{Name: "monkeybrains", Iface: "enmbrains0"}, TableID: 300,
 			FwMark: 3, FwMarkPrio: 12, FromPrio: 22, NptPrefix: "", V4Source: "",
+			Tier: 1, Weight: 1,
 		},
 		{
 			WANRef: ifmgr.WANRef{Name: "webpass", Iface: "enwebpass0"}, TableID: 200,
 			FwMark: 2, FwMarkPrio: 11, FromPrio: 21, NptPrefix: "2001:db8:b::/60", V4Source: "192.0.2.2",
+			Tier: 0, Weight: 2,
 		},
 	}
 	routesCfg := wanroutes.Config{
@@ -59,12 +63,14 @@ func wanconfigTestModuleConfigs() ifmgr.ModuleConfigSet {
 }
 
 // TestGatewayFromModuleConfigs_ProjectsTheWANRole pins the projection the
-// daemon publishes: every WAN becomes a member with the router's tier, a
-// probe policy named after it, and the translation pair joined from the npt
-// internal prefix and its own external prefix.
+// daemon publishes: every WAN becomes a member with the tier the
+// configuration assigns, a probe policy named after it, and the translation
+// pair joined from the npt internal prefix and its own external prefix.
 func TestGatewayFromModuleConfigs_ProjectsTheWANRole(t *testing.T) {
 	t.Parallel()
-	gateway, ok, err := gatewayFromModuleConfigs(nil, wanconfigTestModuleConfigs())
+	cfg := &config.Config{}
+	cfg.IfMgr.HashMode = "source"
+	gateway, ok, err := gatewayFromModuleConfigs(cfg, wanconfigTestModuleConfigs())
 	if err != nil {
 		t.Fatalf("gatewayFromModuleConfigs: %v", err)
 	}
@@ -74,19 +80,22 @@ func TestGatewayFromModuleConfigs_ProjectsTheWANRole(t *testing.T) {
 	if gateway.InternalIface != "eninternal0" {
 		t.Fatalf("InternalIface = %q", gateway.InternalIface)
 	}
+	if gateway.HashMode != "source" {
+		t.Fatalf("HashMode = %q, want source", gateway.HashMode)
+	}
 
 	internal := netip.MustParsePrefix("3d06:bad:b01:210::/60")
 	want := []wanconfig.Member{
 		{
-			Name: "att", Iface: "enatt0.3242", Tier: 0, ProbePolicy: "att",
+			Name: "att", Iface: "enatt0.3242", Tier: 0, Weight: 1, ProbePolicy: "att",
 			NPTInternal: internal, NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
 		},
 		{
-			Name: "monkeybrains", Iface: "enmbrains0", Tier: 1, ProbePolicy: "monkeybrains",
+			Name: "monkeybrains", Iface: "enmbrains0", Tier: 1, Weight: 1, ProbePolicy: "monkeybrains",
 			NPTInternal: netip.Prefix{}, NPTExternal: netip.Prefix{},
 		},
 		{
-			Name: "webpass", Iface: "enwebpass0", Tier: 0, ProbePolicy: "webpass",
+			Name: "webpass", Iface: "enwebpass0", Tier: 0, Weight: 2, ProbePolicy: "webpass",
 			NPTInternal: internal, NPTExternal: netip.MustParsePrefix("2001:db8:b::/60"),
 		},
 	}
