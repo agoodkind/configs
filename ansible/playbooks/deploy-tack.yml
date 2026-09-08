@@ -221,6 +221,18 @@
         tack_app_password: "{{ (tack_app_password_file.content | b64decode) | trim }}"
       no_log: true
 
+    # Ledger transport encryption (TACK-460). Issues this environment's
+    # certificate authority and one certificate per ledger node, and places
+    # each guest's share. It runs before the env file and the compose
+    # override render below, because both name the material: the engine
+    # reads its node certificate from the rendered command, and every client
+    # reads the authority from its rendered connection string. An
+    # environment that has not turned encryption on skips it and keeps
+    # connecting in the clear.
+    - name: Issue the ledger certificates
+      ansible.builtin.include_tasks: tasks/tack-ledger-tls.yml
+      when: tack_ledger_tls_enabled | bool
+
     - block:
 
         # ---------------------------------------------------------------------
