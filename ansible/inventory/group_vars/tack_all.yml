@@ -132,16 +132,19 @@ tack_backup_yb_overlay_path: "{{ tack_install_dir }}/yugabyte-overlay/yugabyted"
 tack_backup_fdb_overlay_path: "{{ tack_install_dir }}/fdb-overlay/fdb.bash"
 
 # Master quorum addresses for the backup one-shot containers (snapshot
-# create, metadata export, schema dump). One-shots run on the compose
-# network with no extra_hosts, so node names do not resolve there: while
-# the legacy node exists the local service name works; after retirement
-# the list names the data guests' pinned addresses on the published
-# master port, bracketed because each carries a port.
+# create, metadata export, schema dump, staleness check). They run in the
+# ops sidecar on host networking, so like every other ops link they dial
+# the guests' pinned addresses on the published master port, bracketed
+# because each carries a port; a node name there would leave for site
+# DNS, where the wildcard record answers as the proxy. While the legacy
+# node exists the guest serving the store leads the quorum and heads the
+# list; the data guests follow and carry the list alone after retirement.
 tack_backup_yb_master_addresses: >-
-  {{ 'yugabyte:7100' if tack_ledger_legacy_node_present
-     else '[' + tack_ledger_node_addresses.yb1 + ']:7100,['
-          + tack_ledger_node_addresses.yb2 + ']:7100,['
-          + tack_ledger_node_addresses.yb3 + ']:7100' }}
+  {{ ('[' + tack_store_host + ']:7100,' if tack_ledger_legacy_node_present
+      else '')
+     + '[' + tack_ledger_node_addresses.yb1 + ']:7100,['
+     + tack_ledger_node_addresses.yb2 + ']:7100,['
+     + tack_ledger_node_addresses.yb3 + ']:7100' }}
 
 # Scheduled ledger export cadence (TACK-356). The owner guest's orchestrator
 # runs daily off-peak; each data guest's archiver polls and exits 0 quietly
