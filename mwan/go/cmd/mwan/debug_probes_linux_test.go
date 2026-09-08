@@ -152,7 +152,7 @@ func TestDebugConnectivityRendersOrderedWANStateAndSequentialProbes(t *testing.T
 		t.Fatalf("connectivity returned error: %v", err)
 	}
 
-	wantListCalls := []string{"enatt0", "enwebpass0", "enmonkeybrains"}
+	wantListCalls := []string{"enatt0", "enmonkeybrains", "enwebpass0"}
 	if !reflect.DeepEqual(listCalls, wantListCalls) {
 		t.Fatalf("ListAddrs calls = %v, want %v", listCalls, wantListCalls)
 	}
@@ -169,17 +169,17 @@ func TestDebugConnectivityRendersOrderedWANStateAndSequentialProbes(t *testing.T
 		{kind: "ping4", iface: "enatt0", target: "1.1.1.1"},
 		{kind: "ping6", iface: "enatt0", target: "2606:4700:4700::1111"},
 		{kind: "ping6", iface: "enatt0", target: "2606:4700:4700::1111"},
-		{kind: "ping4", iface: "enwebpass0", target: "1.1.1.1"},
-		{kind: "ping4", iface: "enwebpass0", target: "1.1.1.1"},
 		{kind: "ping6", iface: "enmonkeybrains", target: "2606:4700:4700::1111"},
 		{kind: "ping6", iface: "enmonkeybrains", target: "2606:4700:4700::1111"},
+		{kind: "ping4", iface: "enwebpass0", target: "1.1.1.1"},
+		{kind: "ping4", iface: "enwebpass0", target: "1.1.1.1"},
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("probe calls mismatch\ngot:  %#v\nwant: %#v", calls, wantCalls)
 	}
 
 	rendered := output.String()
-	assertDebugProbeOrderedText(t, rendered, "att", "webpass", "monkeybrains")
+	assertDebugProbeOrderedText(t, rendered, "att", "monkeybrains", "webpass")
 	assertDebugProbeContains(t, rendered,
 		"WAN", "IFACE", "IPv4", "IPv6", "P4", "P6", "NPT", "PD",
 		"192.0.2.10/24", "2001:db8:1::10/64",
@@ -242,7 +242,7 @@ func TestDebugPingViewsUseExpectedIfaceTargetsAndAttempts(t *testing.T) {
 		wantTargets []string
 	}{
 		{
-			name:        "ping4 defaults to att",
+			name:        "ping4 defaults to the lowest mark",
 			view:        "ping4",
 			args:        nil,
 			wantIface:   "enatt0",
@@ -346,7 +346,7 @@ func TestDebugCurlViewsForceFamilyAndContinueAfterFailure(t *testing.T) {
 		family    string
 	}{
 		{
-			name:      "curl4 defaults to att",
+			name:      "curl4 defaults to the lowest mark",
 			view:      "curl4",
 			args:      nil,
 			wantIface: "enatt0",
@@ -560,11 +560,11 @@ func TestDebugLoadBalanceIfaceViewsRotateConfiguredWANs(t *testing.T) {
 
 			ifaces := []string{
 				"enatt0",
-				"enwebpass0",
 				"enmonkeybrains",
+				"enwebpass0",
 				"enatt0",
-				"enwebpass0",
 				"enmonkeybrains",
+				"enwebpass0",
 			}
 			wantCalls := debugProbeExpectedHTTPCalls(testCase.family, ifaces)
 			if !reflect.DeepEqual(calls, wantCalls) {
@@ -574,11 +574,11 @@ func TestDebugLoadBalanceIfaceViewsRotateConfiguredWANs(t *testing.T) {
 				t,
 				output.String(),
 				"iter 1 via enatt0",
-				"iter 2 via enwebpass0",
-				"iter 3 via enmonkeybrains",
+				"iter 2 via enmonkeybrains",
+				"iter 3 via enwebpass0",
 				"iter 4 via enatt0",
-				"iter 5 via enwebpass0",
-				"iter 6 via enmonkeybrains",
+				"iter 5 via enmonkeybrains",
+				"iter 6 via enwebpass0",
 			)
 		})
 	}
@@ -648,14 +648,62 @@ func TestDebugProbeViewValidatesArguments(t *testing.T) {
 	}
 }
 
-func TestDebugProbeDefaultIfaceRequiresConfiguredAtt(t *testing.T) {
+// TestDebugProbeDefaultIfaceIsTheLowestMark pins that the default interface
+// comes from the configured mark order rather than a provider name in code, so
+// a gateway with no provider called att still has a default.
+func TestDebugProbeDefaultIfaceIsTheLowestMark(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{
 		IfMgr: config.IfMgrSection{
 			WAN: map[string]config.IfMgrWANEntry{
-				"webpass": {Iface: "enwebpass0"},
+				"monkeybrains": {Iface: "enmonkeybrains", FwMark: 3},
+				"webpass":      {Iface: "enwebpass0", FwMark: 2},
 			},
+		},
+	}
+	var calls []debugProbeTestCall
+	dependencies := debugProbeDependencies{
+		ping4: func(
+			_ context.Context,
+			iface string,
+			target netip.Addr,
+			_ time.Duration,
+		) (time.Duration, error) {
+			calls = append(calls, debugProbeTestCall{kind: "ping4", iface: iface, target: target.String()})
+			return time.Millisecond, nil
+		},
+	}
+	err := runDebugProbeViewWithDependencies(
+		context.Background(),
+		io.Discard,
+		debugProbeTestLogger(),
+		cfg,
+		"ping4",
+		nil,
+		dependencies,
+	)
+	if err != nil {
+		t.Fatalf("ping4 returned error: %v", err)
+	}
+	if len(calls) == 0 {
+		t.Fatal("ping4 made no probe")
+	}
+	for _, call := range calls {
+		if call.iface != "enwebpass0" {
+			t.Fatalf("probe used %q, want the lowest-mark interface enwebpass0", call.iface)
+		}
+	}
+}
+
+// TestDebugProbeDefaultIfaceRequiresAConfiguredProvider pins the error when the
+// configuration carries no provider with a usable interface at all.
+func TestDebugProbeDefaultIfaceRequiresAConfiguredProvider(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		IfMgr: config.IfMgrSection{
+			WAN: map[string]config.IfMgrWANEntry{"webpass": {Iface: ""}},
 		},
 	}
 	err := runDebugProbeViewWithDependencies(
@@ -667,8 +715,8 @@ func TestDebugProbeDefaultIfaceRequiresConfiguredAtt(t *testing.T) {
 		nil,
 		debugProbeDependencies{},
 	)
-	if err == nil || !strings.Contains(err.Error(), `WAN "att"`) {
-		t.Fatalf("ping4 error = %v, want missing att configuration error", err)
+	if err == nil || !strings.Contains(err.Error(), "no configured WAN has a usable interface") {
+		t.Fatalf("ping4 error = %v, want the no-usable-WAN error", err)
 	}
 }
 
@@ -676,10 +724,25 @@ func debugProbeTestConfig() *config.Config {
 	return &config.Config{
 		IfMgr: config.IfMgrSection{
 			WAN: map[string]config.IfMgrWANEntry{
-				"monkeybrains": {Iface: "enmonkeybrains"},
-				"webpass":      {Iface: "enwebpass0"},
-				"att":          {Iface: "enatt0"},
-				"unused":       {Iface: "unused0"},
+				"monkeybrains": {
+					Iface: "enmonkeybrains", TableID: 300, FwMark: 3, FwMarkPrio: 300,
+					FromPrio: 57, NptPrefix: "", V4Source: "", Tier: 1, Weight: 1,
+				},
+				"webpass": {
+					Iface: "enwebpass0", TableID: 200, FwMark: 2, FwMarkPrio: 200,
+					FromPrio: 56, NptPrefix: "", V4Source: "", Tier: 0, Weight: 1,
+				},
+				"att": {
+					Iface: "enatt0", TableID: 100, FwMark: 1, FwMarkPrio: 100,
+					FromPrio: 55, NptPrefix: "", V4Source: "", Tier: 0, Weight: 1,
+				},
+				// A provider with no interface stays in the fixture so the
+				// usable-interface filter is still exercised. Its mark is not
+				// the lowest, so it can never become the default either.
+				"noiface": {
+					Iface: "", TableID: 600, FwMark: 4, FwMarkPrio: 600,
+					FromPrio: 58, NptPrefix: "", V4Source: "", Tier: 2, Weight: 1,
+				},
 			},
 		},
 	}

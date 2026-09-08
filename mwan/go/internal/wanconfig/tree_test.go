@@ -19,14 +19,15 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 	internal := netip.MustParsePrefix("3d06:bad:b01:210::/60")
 	gateway := Gateway{
 		InternalIface: "eninternal0",
+		HashMode:      "random",
 		Members: []Member{
 			{
-				Name: "att", Iface: "enatt0.3242", Tier: 0, ProbePolicy: "att",
+				Name: "att", Iface: "enatt0.3242", Tier: 0, Weight: 1, ProbePolicy: "att",
 				NPTInternal: internal, NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
 			},
-			{Name: "monkeybrains", Iface: "enmbrains0", Tier: 1, ProbePolicy: "monkeybrains"},
+			{Name: "monkeybrains", Iface: "enmbrains0", Tier: 1, Weight: 1, ProbePolicy: "monkeybrains"},
 			{
-				Name: "webpass", Iface: "enwebpass0", Tier: 0, ProbePolicy: "webpass",
+				Name: "webpass", Iface: "enwebpass0", Tier: 0, Weight: 2, ProbePolicy: "webpass",
 				NPTInternal: internal, NPTExternal: netip.MustParsePrefix("2001:db8:b::/60"),
 			},
 		},
@@ -48,6 +49,7 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/ietf-ip:ipv4/enabled", Value: "true"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/ietf-ip:ipv6/enabled", Value: "true"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/goodkind-mwan-steering:steering/tier", Value: "0"},
+		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/goodkind-mwan-steering:steering/weight", Value: "1"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/goodkind-mwan-steering:steering/probe-policy", Value: "att"},
 
 		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/type", Value: "iana-if-type:other"},
@@ -55,6 +57,7 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/ietf-ip:ipv4/enabled", Value: "true"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/ietf-ip:ipv6/enabled", Value: "true"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/goodkind-mwan-steering:steering/tier", Value: "1"},
+		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/goodkind-mwan-steering:steering/weight", Value: "1"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/goodkind-mwan-steering:steering/probe-policy", Value: "monkeybrains"},
 
 		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/type", Value: "iana-if-type:other"},
@@ -62,7 +65,10 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/ietf-ip:ipv4/enabled", Value: "true"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/ietf-ip:ipv6/enabled", Value: "true"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/goodkind-mwan-steering:steering/tier", Value: "0"},
+		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/goodkind-mwan-steering:steering/weight", Value: "2"},
 		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/goodkind-mwan-steering:steering/probe-policy", Value: "webpass"},
+
+		{Path: "/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group/hash-mode", Value: "random"},
 
 		{Path: "/ietf-nat:nat/instances/instance[id='1']/name", Value: "att"},
 		{Path: "/ietf-nat:nat/instances/instance[id='1']/type", Value: "ietf-nat:nptv6"},
@@ -85,7 +91,7 @@ func TestConfigItems_LeavesUnprobedMemberWithoutPolicy(t *testing.T) {
 	t.Parallel()
 	items, err := ConfigItems(Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0}},
+		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
 	})
 	if err != nil {
 		t.Fatalf("ConfigItems: %v", err)
@@ -95,8 +101,8 @@ func TestConfigItems_LeavesUnprobedMemberWithoutPolicy(t *testing.T) {
 			t.Fatalf("probe-policy published for an unprobed member: %v", item)
 		}
 	}
-	if len(items) != 4+4+1 {
-		t.Fatalf("item count = %d, want 9", len(items))
+	if len(items) != 4+4+2 {
+		t.Fatalf("item count = %d, want 10", len(items))
 	}
 }
 
@@ -108,7 +114,7 @@ func TestConfigItems_PublishesTheDaemonSettingsItHolds(t *testing.T) {
 	t.Parallel()
 	gateway := Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0}},
+		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
 		Daemon: DaemonSettings{
 			Watchdog: WatchdogSettings{
 				Present:                      true,
@@ -185,7 +191,7 @@ func TestConfigItems_PublishesNoDaemonSettingsWhenAbsent(t *testing.T) {
 	t.Parallel()
 	items, err := ConfigItems(Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0}},
+		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
 	})
 	if err != nil {
 		t.Fatalf("ConfigItems: %v", err)
@@ -205,17 +211,24 @@ func TestConfigItems_RejectsWhatAPathCannotCarry(t *testing.T) {
 	internal := netip.MustParsePrefix("3d06:bad:b01:210::/60")
 	cases := map[string]Gateway{
 		"empty internal link": {InternalIface: "", Members: nil},
-		"empty member name":   {InternalIface: "eninternal0", Members: []Member{{Name: "", Iface: "enatt0"}}},
-		"quote in link":       {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "en'att0"}}},
+		"empty member name":   {InternalIface: "eninternal0", Members: []Member{{Name: "", Iface: "enatt0", Weight: 1}}},
+		"quote in link":       {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "en'att0", Weight: 1}}},
 		"duplicate link": {InternalIface: "eninternal0", Members: []Member{
-			{Name: "att", Iface: "enatt0"}, {Name: "webpass", Iface: "enatt0"},
+			{Name: "att", Iface: "enatt0", Weight: 1}, {Name: "webpass", Iface: "enatt0", Weight: 1},
 		}},
-		"member on the internal link": {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "eninternal0"}}},
-		"one translation prefix":      {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "enatt0", NPTInternal: internal}}},
+		"member on the internal link": {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "eninternal0", Weight: 1}}},
+		"one translation prefix":      {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "enatt0", Weight: 1, NPTInternal: internal}}},
 		"ipv4 translation prefix": {InternalIface: "eninternal0", Members: []Member{{
-			Name: "att", Iface: "enatt0",
+			Name: "att", Iface: "enatt0", Weight: 1,
 			NPTInternal: internal, NPTExternal: netip.MustParsePrefix("10.0.0.0/8"),
 		}}},
+		"zero weight": {InternalIface: "eninternal0", Members: []Member{
+			{Name: "att", Iface: "enatt0", Tier: 0, Weight: 0},
+		}},
+		"unknown hash mode": {
+			InternalIface: "eninternal0", HashMode: "round-robin",
+			Members: []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
+		},
 	}
 	for name, gateway := range cases {
 		t.Run(name, func(t *testing.T) {
