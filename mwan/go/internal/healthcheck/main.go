@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package healthcheck provides continuous connectivity testing with structured logging.
 //
 // It creates new connections each iteration to exercise the full routing path.

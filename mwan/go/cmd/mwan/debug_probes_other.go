@@ -9,7 +9,6 @@ import (
 	"log/slog"
 
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/netif"
 )
 
 func runDebugProbeView(
@@ -20,15 +19,5 @@ func runDebugProbeView(
 	_ string,
 	_ []string,
 ) error {
-	_, err := netif.HTTPGet(ctx, "", "", "", 0)
-	if err != nil {
-		logger.WarnContext(
-			ctx,
-			"debug: active probes are unavailable",
-			"err",
-			err,
-		)
-		return fmt.Errorf("active debug probes require Linux: %w", err)
-	}
 	return fmt.Errorf("active debug probes require Linux")
 }
