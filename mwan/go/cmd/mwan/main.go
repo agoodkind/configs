@@ -9,7 +9,6 @@ import (
 
 	"goodkind.io/mwan/internal/agent"
 	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/healthcheck"
 	"goodkind.io/mwan/internal/version"
 	"goodkind.io/mwan/internal/watchdog"
 )
@@ -82,11 +81,7 @@ func main() {
 func dispatchConfigLess(sub subcommand) dispatchResult {
 	switch sub {
 	case subcmdHealth:
-		if err := healthcheck.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "mwan health: %v\n", err)
-			return dispatchResult{handled: true, code: 1}
-		}
-		return dispatchResult{handled: true, code: 0}
+		return dispatchHealth()
 	case subcmdOPNsense:
 		return dispatchResult{handled: true, code: runOPNsense(os.Args[1:])}
 	case subcmdPD:
