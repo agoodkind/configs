@@ -5,12 +5,18 @@ package netif
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/netip"
 	"time"
 )
+
+// ErrRequiresLinux is the sentinel every raw or interface-bound probe returns
+// on a non-Linux build. Callers that need to tell a platform limit from a
+// probe failure compare against it with [errors.Is].
+var ErrRequiresLinux = errors.New("raw and interface-bound probes require Linux")
 
 // HTTPResult is the observed status and response body from HTTPGet.
 type HTTPResult struct {
@@ -22,14 +28,14 @@ type HTTPResult struct {
 func Ping4(
 	_ context.Context, _ string, _ netip.Addr, _ time.Duration,
 ) (time.Duration, error) {
-	return 0, fmt.Errorf("Ping4: raw ICMP probes require Linux")
+	return 0, ErrRequiresLinux
 }
 
 // Ping6 reports that the proven V6Probe implementation requires Linux.
 func Ping6(
 	_ context.Context, _ string, _ netip.Addr, _ time.Duration,
 ) (time.Duration, error) {
-	return 0, fmt.Errorf("Ping6: raw ICMP probes require Linux")
+	return 0, ErrRequiresLinux
 }
 
 // HTTPCheck preserves default-route HTTP probes on non-Linux builds.
@@ -64,5 +70,5 @@ func HTTPGet(
 	_ string,
 	_ time.Duration,
 ) (HTTPResult, error) {
-	return HTTPResult{}, fmt.Errorf("HTTPGet: active HTTP probes require Linux")
+	return HTTPResult{}, ErrRequiresLinux
 }
