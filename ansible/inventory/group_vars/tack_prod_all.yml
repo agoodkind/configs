@@ -62,9 +62,10 @@ tack_backup_fdb_continuous: false
 # moves the store onto the data tier changes this one line.
 tack_store_host: "{{ service_mapping.tack.ipv6 }}"
 
-# Production still runs the legacy ledger node on this guest; retiring it is
-# the production half of phase 3.
-tack_ledger_legacy_node_present: true
+# Production retired the legacy ledger node on the app guest: the ledger runs
+# only on the three data guests, and the owner guest no longer deploys the
+# service.
+tack_ledger_legacy_node_present: false
 
 # Production consumers dial the three data guests by their permanent node
 # names; the same deploy installs the backup units on every guest.
