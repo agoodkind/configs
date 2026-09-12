@@ -4,6 +4,7 @@ package steering
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -106,6 +107,26 @@ func TestReconcileWithNoHealthyProviderProgramsNothing(t *testing.T) {
 	}
 	if len(applier.last) != 0 {
 		t.Fatalf("rule count = %d, want 0", len(applier.last))
+	}
+}
+
+// TestReconcileWrapsApplyError asserts a failing applier surfaces through
+// Reconcile, so a rejected chain program reaches the daemon's reconcile loop
+// as an error rather than being mistaken for a completed pass.
+func TestReconcileWrapsApplyError(t *testing.T) {
+	t.Parallel()
+
+	module, applier := newTestModule(t, testConfig(), netif.HealthStates{
+		"att": netif.HealthStateHealthy, "webpass": netif.HealthStateHealthy,
+		"monkeybrains": netif.HealthStateHealthy,
+	})
+	applier.err = errors.New("apply rejected")
+	err := module.Reconcile(context.Background(), slog.Default())
+	if err == nil {
+		t.Fatal("Reconcile returned nil error, want the wrapped apply error")
+	}
+	if !errors.Is(err, applier.err) {
+		t.Fatalf("Reconcile error = %v, want it to wrap %v", err, applier.err)
 	}
 }
 

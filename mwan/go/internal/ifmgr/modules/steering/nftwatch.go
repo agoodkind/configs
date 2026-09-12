@@ -98,6 +98,10 @@ func (m *Module) runNFTMonitor(ctx context.Context, log *slog.Logger) error {
 func (m *Module) handleNFTEvent(
 	ctx context.Context, log *slog.Logger, event *nftables.MonitorEvent,
 ) {
+	if event == nil {
+		log.WarnContext(ctx, "steering: nft monitor delivered a nil event")
+		return
+	}
 	if event.Error != nil {
 		log.WarnContext(ctx, "steering: nft monitor event error", "err", event.Error)
 		return

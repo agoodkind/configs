@@ -5,6 +5,7 @@ package steering
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/netip"
 	"testing"
@@ -14,6 +15,47 @@ import (
 	"github.com/google/nftables/expr"
 	"golang.org/x/sys/unix"
 )
+
+// exprIndex returns the index of the first expression in exprs matching pred,
+// or -1 if none matches. Used to assert relative expression order rather than
+// mere presence.
+func exprIndex(exprs []expr.Any, pred func(expr.Any) bool) int {
+	for i, e := range exprs {
+		if pred(e) {
+			return i
+		}
+	}
+	return -1
+}
+
+func isMarkZeroGuard(e expr.Any) bool {
+	m, ok := e.(*expr.Meta)
+	return ok && m.Key == expr.MetaKeyMARK && !m.SourceRegister
+}
+
+func isCtStateGuard(e expr.Any) bool {
+	c, ok := e.(*expr.Ct)
+	return ok && c.Key == expr.CtKeySTATE
+}
+
+func isGenerator(e expr.Any) bool {
+	switch e.(type) {
+	case *expr.Numgen, *expr.Hash:
+		return true
+	default:
+		return false
+	}
+}
+
+func isLookup(e expr.Any) bool {
+	_, ok := e.(*expr.Lookup)
+	return ok
+}
+
+func isMarkWrite(e expr.Any) bool {
+	m, ok := e.(*expr.Meta)
+	return ok && m.Key == expr.MetaKeyMARK && m.SourceRegister
+}
 
 // fakeConn captures the batch the applier builds so tests can assert on the
 // table and chain creation, the flush-then-add ordering, the rules, and the
@@ -209,6 +251,29 @@ func TestApplierSpreadRuleShape(t *testing.T) {
 		t.Fatalf("set flags = map:%v anonymous:%v constant:%v, want all true",
 			fake.sets[0].IsMap, fake.sets[0].Anonymous, fake.sets[0].Constant)
 	}
+
+	// Position, not just presence: the mark-zero guard and the new-flow guard
+	// must run before the generator draws a slot, which must run before the
+	// map lookup resolves it to a mark, which must run before the mark write
+	// commits it. A rule that writes the mark and only then checks it against
+	// zero always sees its own just-written value on every later packet, so a
+	// reordering here silently stops the balancer from ever assigning a
+	// provider.
+	exprs := fake.rules[0].Exprs
+	markZeroIndex := exprIndex(exprs, isMarkZeroGuard)
+	ctStateIndex := exprIndex(exprs, isCtStateGuard)
+	generatorIndex := exprIndex(exprs, isGenerator)
+	lookupIndex := exprIndex(exprs, isLookup)
+	markWriteIndex := exprIndex(exprs, isMarkWrite)
+	if markZeroIndex < 0 || ctStateIndex < 0 || generatorIndex < 0 || lookupIndex < 0 || markWriteIndex < 0 {
+		t.Fatalf("one or more expressions missing: markZero=%d ctState=%d generator=%d lookup=%d markWrite=%d",
+			markZeroIndex, ctStateIndex, generatorIndex, lookupIndex, markWriteIndex)
+	}
+	if !(markZeroIndex < ctStateIndex && ctStateIndex < generatorIndex &&
+		generatorIndex < lookupIndex && lookupIndex < markWriteIndex) {
+		t.Fatalf("expression order wrong: markZero=%d ctState=%d generator=%d lookup=%d markWrite=%d, want strictly increasing",
+			markZeroIndex, ctStateIndex, generatorIndex, lookupIndex, markWriteIndex)
+	}
 }
 
 // TestApplierGuardsEverySpreadRule pins the two guards on every rule: the mark
@@ -243,6 +308,18 @@ func TestApplierGuardsEverySpreadRule(t *testing.T) {
 		if !sawMarkRead || !sawCtState || !sawCtMask {
 			t.Fatalf("rule %d missing a guard: mark=%v ct=%v mask=%v",
 				index, sawMarkRead, sawCtState, sawCtMask)
+		}
+
+		// Position, not just presence: the mark-zero guard must run before the
+		// new-flow guard, which must run before the balancer's own
+		// generator/lookup/mark-write sequence, or a rule that already wrote a
+		// mark could still be read as "unmarked" by a guard evaluated too late.
+		markZeroIndex := exprIndex(rule.Exprs, isMarkZeroGuard)
+		ctStateIndex := exprIndex(rule.Exprs, isCtStateGuard)
+		generatorIndex := exprIndex(rule.Exprs, isGenerator)
+		if !(markZeroIndex >= 0 && markZeroIndex < ctStateIndex && ctStateIndex < generatorIndex) {
+			t.Fatalf("rule %d guard order wrong: markZero=%d ctState=%d generator=%d, want strictly increasing",
+				index, markZeroIndex, ctStateIndex, generatorIndex)
 		}
 	}
 }
@@ -380,6 +457,23 @@ func TestApplierEmptyStillCreatesAndCommits(t *testing.T) {
 	want := []string{"addtable:mwan_steer", "addchain:prerouting", "flushchain:prerouting", "flush"}
 	if len(fake.ops) != len(want) {
 		t.Fatalf("ops = %v, want %v", fake.ops, want)
+	}
+}
+
+// TestApplierPropagatesFlushError asserts a failed commit surfaces to the
+// caller, so a rejected or partial netlink batch is never mistaken for a
+// successful reconcile.
+func TestApplierPropagatesFlushError(t *testing.T) {
+	t.Parallel()
+
+	fake, app := newFakeApplier()
+	fake.flushErr = errors.New("netlink flush rejected")
+	err := app.Apply(context.Background(), slog.Default(), spreadRulesForTest(hashModeRandom))
+	if err == nil {
+		t.Fatal("Apply returned nil error, want the wrapped flush error")
+	}
+	if !errors.Is(err, fake.flushErr) {
+		t.Fatalf("Apply error = %v, want it to wrap %v", err, fake.flushErr)
 	}
 }
 
