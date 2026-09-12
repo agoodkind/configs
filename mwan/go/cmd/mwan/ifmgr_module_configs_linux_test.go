@@ -16,6 +16,7 @@ import (
 	"goodkind.io/mwan/internal/ifmgr"
 	health "goodkind.io/mwan/internal/ifmgr/modules/health"
 	npt "goodkind.io/mwan/internal/ifmgr/modules/npt"
+	steering "goodkind.io/mwan/internal/ifmgr/modules/steering"
 	wanroutes "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 	"goodkind.io/mwan/internal/networkjson"
 )
@@ -613,6 +614,64 @@ func TestBuildIfMgrModuleConfigsWANRoleBuildsAll(t *testing.T) {
 	}
 	if _, ok := nptCfg.(npt.Config); !ok {
 		t.Fatalf("npt config type = %T, want npt.Config", nptCfg)
+	}
+}
+
+// TestBuildSteeringConfig pins that the balancer reads the same provider list,
+// internal link, and internal network the routing module reads, plus the group
+// hash mode the network configuration carries.
+func TestBuildSteeringConfig(t *testing.T) {
+	t.Parallel()
+
+	ifmgrCfg := sharedWANForTest()
+	ifmgrCfg.HashMode = "source"
+	shared := buildWANRefs(ifmgrCfg)
+	cfg, err := buildSteeringConfig(shared, ifmgrCfg, &config.IfMgrWANRoutesSection{
+		InternalIface:   "vmbr250",
+		InternalNetV4:   "10.250.250.0/29",
+		HealthStateFile: "/var/run/mwan-health.state",
+	})
+	if err != nil {
+		t.Fatalf("buildSteeringConfig returned error: %v", err)
+	}
+
+	want := steering.Config{
+		InternalIface:   "vmbr250",
+		InternalNetV4:   "10.250.250.0/29",
+		InternalPrefix:  "3d06:bad:b01::/60",
+		OpnsenseEdgeV6:  "3d06:bad:b01:201::1",
+		HashMode:        "source",
+		HealthStateFile: "/var/run/mwan-health.state",
+		Members: []steering.Member{
+			{WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"}, Mark: 1, Tier: 0, Weight: 1},
+			{WANRef: ifmgr.WANRef{Name: "webpass", Iface: "webpass0"}, Mark: 2, Tier: 1, Weight: 3},
+		},
+	}
+	if !reflect.DeepEqual(cfg, want) {
+		t.Fatalf("buildSteeringConfig mismatch\ngot:  %#v\nwant: %#v", cfg, want)
+	}
+}
+
+// TestBuildIfMgrModuleConfigsWANRoleBuildsSteering pins that the wan role builds
+// the steering config, so a gateway that runs the role programs the balancer.
+func TestBuildIfMgrModuleConfigsWANRoleBuildsSteering(t *testing.T) {
+	t.Parallel()
+
+	ifmgrCfg := ifmgrForTest(modulesWithUnresolvableUIDRule())
+	ifmgrCfg.HashMode = "random"
+	set, err := buildIfMgrModuleConfigs(ifmgrCfg, "wan")
+	if err != nil {
+		t.Fatalf("buildIfMgrModuleConfigs(wan) returned error: %v", err)
+	}
+	steeringCfg, isSteering := set["steering"].(steering.Config)
+	if !isSteering {
+		t.Fatalf("wan role built %T for steering, want steering.Config", set["steering"])
+	}
+	if steeringCfg.HashMode != "random" {
+		t.Fatalf("steering hash mode = %q, want random", steeringCfg.HashMode)
+	}
+	if len(steeringCfg.Members) != 2 {
+		t.Fatalf("steering member count = %d, want 2", len(steeringCfg.Members))
 	}
 }
 
