@@ -52,10 +52,13 @@ tack_backup_s3_secret_key: "{{ vault_seaweedfs_s3_secret_key }}"
 tack_backup_s3_region: us-east-1
 tack_backup_s3_bucket_main: tack-backups
 
-# Production does not stream the FoundationDB continuous backup yet: starting
-# the session on the production cluster awaits the operator's approval, and
-# flipping this true makes the next provision start it. TACK-465 owns that flip.
-tack_backup_fdb_continuous: false
+# Production streams the FoundationDB continuous backup to the object store
+# (TACK-465). Provision keeps the session: it reads the backup status first and
+# treats a running session on this bucket and endpoint as done, so the session
+# revived by hand on 2026-09-03 is adopted, never restarted. With this true the
+# restore rehearsal runs its FoundationDB leg and the staleness check reads the
+# restorable point.
+tack_backup_fdb_continuous: true
 
 # The guest that serves the product store for this environment. Every guest
 # reaches the store here rather than assuming it is local. The phase that
