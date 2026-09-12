@@ -648,8 +648,9 @@ func buildHostIPv6PolicyConfig(
 }
 
 // sharedWAN is one WAN's full config from its network.json wan container: the
-// identity (WANRef) plus the policy-routing slots wan.routes consumes. npt reads only the
-// embedded WANRef; wan.routes reads the routing fields. One home per WAN.
+// identity (WANRef), the policy-routing slots wan.routes consumes, and the
+// steering properties the balancer reads. npt reads only the embedded WANRef.
+// One home per WAN.
 type sharedWAN struct {
 	ifmgr.WANRef
 	TableID    int
@@ -658,6 +659,8 @@ type sharedWAN struct {
 	FromPrio   int
 	NptPrefix  string
 	V4Source   string
+	Tier       uint8
+	Weight     int
 }
 
 // sharedWANInputs is the runtime projection of the network configuration's WAN
@@ -705,6 +708,8 @@ func buildWANRefs(ifmgrCfg config.IfMgrSection) sharedWANInputs {
 			FromPrio:   entry.FromPrio,
 			NptPrefix:  entry.NptPrefix,
 			V4Source:   entry.V4Source,
+			Tier:       entry.Tier,
+			Weight:     entry.Weight,
 		})
 	}
 	return inputs
@@ -730,30 +735,38 @@ func buildWANRoutesConfig(
 	cfg.HealthStateFile = section.HealthStateFile
 	cfg.WANs = make([]wanroutes.WAN, 0, len(shared.WANs))
 	for _, wan := range shared.WANs {
-		if wan.FwMark < 0 {
-			return wanroutes.Config{}, fmt.Errorf(
-				"network.json wan %s fw-mark must be >= 0",
-				wan.Name,
-			)
-		}
-		if wan.FwMark > int(^uint32(0)) {
-			return wanroutes.Config{}, fmt.Errorf(
-				"network.json wan %s fw-mark %d exceeds uint32",
-				wan.Name,
-				wan.FwMark,
-			)
+		mark, err := wanFwMark(wan)
+		if err != nil {
+			return wanroutes.Config{}, err
 		}
 		cfg.WANs = append(cfg.WANs, wanroutes.WAN{
 			WANRef:     wan.WANRef,
 			TableID:    wan.TableID,
-			FwMark:     uint32(wan.FwMark),
+			FwMark:     mark,
 			FwMarkPrio: wan.FwMarkPrio,
 			FromPrio:   wan.FromPrio,
 			NptPrefix:  wan.NptPrefix,
 			V4Source:   wan.V4Source,
+			Tier:       wan.Tier,
+			Weight:     wan.Weight,
 		})
 	}
 	return cfg, nil
+}
+
+// wanFwMark narrows one provider's firewall mark onto the kernel's width. The
+// model bounds the leaf at 1 or higher and the loader refuses a missing value,
+// so the only case left is a value too wide for a mark. Both the routing module
+// and the steering module go through here, so a mark either module refuses is
+// refused by both.
+func wanFwMark(wan sharedWAN) (uint32, error) {
+	if wan.FwMark < 0 {
+		return 0, fmt.Errorf("network.json wan %s fw-mark must be >= 0", wan.Name)
+	}
+	if uint64(wan.FwMark) > uint64(^uint32(0)) {
+		return 0, fmt.Errorf("network.json wan %s fw-mark %d exceeds uint32", wan.Name, wan.FwMark)
+	}
+	return uint32(wan.FwMark), nil
 }
 
 func parseDurationSetting(
