@@ -114,8 +114,23 @@
     owner: root
     group: root
     mode: "0644"
-  # The owner guest restarts its whole stack; a data guest restarts only its
-  # ledger node, which is all it runs.
+  register: tack_ledger_ca_certificate_placed
+
+# A new authority restarts whatever this guest runs against the ledger: the
+# owner guest its whole stack, a data guest its ledger node. A guest that
+# runs neither (an application guest with no stack yet) only holds the
+# certificate; the ledger-node handler on it would change into an install
+# directory that does not exist and fail the run (the 2026-09-12 QA flip).
+- name: Restart what this guest runs after a new ledger authority
+  ansible.builtin.debug:
+    msg: "the ledger authority changed on {{ inventory_hostname }}"
+  changed_when: true
+  when:
+    - tack_ledger_ca_certificate_placed is changed
+    - >-
+      tack_provision_owner
+      or (tack_ledger_node_name is defined
+          and tack_ledger_node_name in tack_ledger_certificate_subjects)
   notify: "{{ 'Restart Tack' if tack_provision_owner else 'Restart Tack ledger node' }}"
 
 # This guest's own certificate and key, named for the node it announces. A
@@ -144,6 +159,7 @@
     group: root
     mode: "0644"
   when: tack_ledger_node_name in tack_ledger_certificate_subjects
+  register: tack_ledger_node_certificate_placed
   # The owner guest restarts its whole stack; a data guest restarts only its
   # ledger node, which is all it runs.
   notify: "{{ 'Restart Tack' if tack_provision_owner else 'Restart Tack ledger node' }}"
