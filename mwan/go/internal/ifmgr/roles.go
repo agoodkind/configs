@@ -78,8 +78,13 @@ var roleModules = map[string][]string{
 		// health writes the state consumed by later WAN-role modules.
 		"health",
 		"wan.routes",
+		// steering assigns each new connection to a provider of the active
+		// tier. It runs after wan.routes so the policy rules its marks select
+		// are installed before any mark is set. Self-disables when the network
+		// configuration lists no providers.
+		"steering",
 		// npt programs the ip6 nat NPT chains from the live DHCPv6-PD.
-		// Self-disables when [ifmgr.wan] lists no WANs.
+		// Self-disables when the network configuration lists no providers.
 		"npt",
 	},
 }

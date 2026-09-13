@@ -23,6 +23,7 @@ import (
 	policyrules "goodkind.io/mwan/internal/ifmgr/modules/policyrules"
 	ralost "goodkind.io/mwan/internal/ifmgr/modules/ralost"
 	slaachealth "goodkind.io/mwan/internal/ifmgr/modules/slaachealth"
+	steering "goodkind.io/mwan/internal/ifmgr/modules/steering"
 	wanroutes "goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 	wg "goodkind.io/mwan/internal/ifmgr/modules/wg"
 	"goodkind.io/mwan/internal/netif"
@@ -134,13 +135,18 @@ func buildIfMgrModuleConfigs(
 }
 
 // addWANRoleConfigs builds the wan-role module configs from the one shared
-// [ifmgr.wan] section, so health, wan.routes, and npt read the same WAN list.
+// network configuration, so health, wan.routes, steering, and npt read the same
+// provider list.
 func addWANRoleConfigs(
 	moduleConfigs ifmgr.ModuleConfigSet,
 	want map[string]bool,
 	ifmgrCfg config.IfMgrSection,
 ) error {
 	shared := buildWANRefs(ifmgrCfg)
+	var routesSection *config.IfMgrWANRoutesSection
+	if ifmgrCfg.Modules.WAN != nil {
+		routesSection = ifmgrCfg.Modules.WAN.Routes
+	}
 	if want["health"] {
 		healthConfig, err := buildHealthConfig(shared, ifmgrCfg.Modules.Health)
 		if err != nil {
@@ -149,20 +155,63 @@ func addWANRoleConfigs(
 		moduleConfigs["health"] = healthConfig
 	}
 	if want["wan.routes"] {
-		var routesSection *config.IfMgrWANRoutesSection
-		if ifmgrCfg.Modules.WAN != nil {
-			routesSection = ifmgrCfg.Modules.WAN.Routes
-		}
 		wanRoutesConfig, err := buildWANRoutesConfig(shared, routesSection)
 		if err != nil {
 			return err
 		}
 		moduleConfigs["wan.routes"] = wanRoutesConfig
 	}
+	if want["steering"] {
+		steeringConfig, err := buildSteeringConfig(shared, ifmgrCfg, routesSection)
+		if err != nil {
+			return err
+		}
+		moduleConfigs["steering"] = steeringConfig
+	}
 	if want["npt"] {
 		moduleConfigs["npt"] = buildNPTConfig(shared)
 	}
 	return nil
+}
+
+// buildSteeringConfig projects the shared provider list and the group-wide
+// steering settings onto the steering module config. The internal link and
+// network come from the same wan.routes section the routing module reads, so
+// the rules that set a mark and the rules that act on it name one link.
+func buildSteeringConfig(
+	shared sharedWANInputs,
+	ifmgrCfg config.IfMgrSection,
+	section *config.IfMgrWANRoutesSection,
+) (steering.Config, error) {
+	cfg := steering.Config{
+		InternalIface:   "",
+		InternalNetV4:   "",
+		InternalPrefix:  shared.InternalPrefix,
+		OpnsenseEdgeV6:  shared.OpnsenseEdgeV6,
+		HashMode:        ifmgrCfg.HashMode,
+		HealthStateFile: "",
+		Members:         nil,
+	}
+	if section == nil {
+		return cfg, nil
+	}
+	cfg.InternalIface = section.InternalIface
+	cfg.InternalNetV4 = section.InternalNetV4
+	cfg.HealthStateFile = section.HealthStateFile
+	cfg.Members = make([]steering.Member, 0, len(shared.WANs))
+	for _, wan := range shared.WANs {
+		mark, err := wanFwMark(wan)
+		if err != nil {
+			return steering.Config{}, err
+		}
+		cfg.Members = append(cfg.Members, steering.Member{
+			WANRef: wan.WANRef,
+			Mark:   mark,
+			Tier:   wan.Tier,
+			Weight: wan.Weight,
+		})
+	}
+	return cfg, nil
 }
 
 // buildHealthConfig joins shared WAN identities with keyed health policy.
