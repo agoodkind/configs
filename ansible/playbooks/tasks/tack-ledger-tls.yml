@@ -161,6 +161,15 @@
   # ledger node, which is all it runs.
   notify: "{{ 'Restart Tack' if tack_provision_owner else 'Restart Tack ledger node' }}"
 
+# Tells the ledger node start in deploy-tack.yml that this run changed the
+# node's certificate, so it restarts the nodes back to back instead of
+# waiting on the first one, which cannot reach quorum until its peers carry
+# the new material too.
+- name: Record that this guest's ledger node certificate changed
+  ansible.builtin.set_fact:
+    tack_ledger_node_certificate_rotated: "{{ tack_ledger_node_certificate_placed is changed }}"
+  when: tack_ledger_node_name in tack_ledger_certificate_subjects
+
 - name: Place this guest's ledger node key
   ansible.builtin.copy:
     content: "{{ tack_ledger_node_key.content | b64decode }}"
