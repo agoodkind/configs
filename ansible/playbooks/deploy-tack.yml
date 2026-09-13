@@ -555,22 +555,12 @@
         # wait, and the task below waits for all of them together. Every
         # other run keeps the rolling wait, which is what preserves quorum
         # while one node at a time restarts.
-        #
-        # The rolling wait is keyed on the node's own progress, not on a
-        # clock (TACK-488). The engine has no graceful stop: every restart
-        # replays each tablet's open log segments, and that takes as long as
-        # the data is large (five minutes on a production node holding 11 GB
-        # across 324 tablets). The script counts the tablets the node reports
-        # bootstrapped and gives up only when that count stops moving for the
-        # stall window while the node is still unhealthy, so a slow node is
-        # never marked failed and a wedged one is caught within the window.
-        # The container's own health check is a status, not the gate.
         - name: Start the ledger node and wait until it is healthy (first start joins)
-          ansible.builtin.script:
+          ansible.builtin.command:
             cmd: >-
-              {{ playbook_dir }}/files/tack-ledger-node-roll.sh
-              {{ 'nowait' if tack_ledger_node_certificate_rotated | bool else 'wait' }}
-              120
+              docker compose up -d
+              {{ '' if tack_ledger_node_certificate_rotated | bool else '--wait --wait-timeout 300' }}
+              yugabyte
             chdir: "{{ tack_install_dir }}"
           changed_when: true
           throttle: 1
