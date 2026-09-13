@@ -33,7 +33,7 @@ func TestPublish_ReplacesOwnedSubtreesWithTheProjection(t *testing.T) {
 	gateway := Gateway{
 		InternalIface: "eninternal0",
 		Members: []Member{{
-			Name: "att", Iface: "enatt0", Tier: 0, ProbePolicy: "att",
+			Name: "att", Iface: "enatt0", Tier: 0, Weight: 1, ProbePolicy: "att",
 			NPTInternal: netip.MustParsePrefix("3d06:bad:b01:210::/60"),
 			NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
 		}},
@@ -86,7 +86,7 @@ func TestPublish_SurfacesTheDatastoreFailure(t *testing.T) {
 	rec := &recordingPublisher{err: rejection}
 	err := Publish(context.Background(), slog.Default(), rec, Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0}},
+		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
 	})
 	if !errors.Is(err, rejection) {
 		t.Fatalf("err = %v, want the datastore rejection", err)

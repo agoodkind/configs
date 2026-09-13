@@ -138,6 +138,9 @@ func sharedWANForTest() config.IfMgrSection {
 				FwMarkPrio: 100,
 				FromPrio:   55,
 				NptPrefix:  "3d06:bad:b01:1100::/56",
+				V4Source:   "",
+				Tier:       0,
+				Weight:     1,
 			},
 			"webpass": {
 				Iface:      "webpass0",
@@ -147,6 +150,8 @@ func sharedWANForTest() config.IfMgrSection {
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/56",
 				V4Source:   "203.0.113.2",
+				Tier:       1,
+				Weight:     3,
 			},
 		},
 	}
@@ -179,6 +184,8 @@ func TestBuildWANRefs(t *testing.T) {
 				FwMarkPrio: 100,
 				FromPrio:   55,
 				NptPrefix:  "3d06:bad:b01:1100::/56",
+				Tier:       0,
+				Weight:     1,
 			},
 			{
 				WANRef:     ifmgr.WANRef{Name: "webpass", Iface: "webpass0"},
@@ -188,6 +195,8 @@ func TestBuildWANRefs(t *testing.T) {
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/56",
 				V4Source:   "203.0.113.2",
+				Tier:       1,
+				Weight:     3,
 			},
 		},
 	}
@@ -224,6 +233,8 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 				FwMarkPrio: 100,
 				FromPrio:   55,
 				NptPrefix:  "3d06:bad:b01:1100::/56",
+				Tier:       0,
+				Weight:     1,
 			},
 			{
 				WANRef:     ifmgr.WANRef{Name: "webpass", Iface: "webpass0"},
@@ -233,6 +244,8 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/56",
 				V4Source:   "203.0.113.2",
+				Tier:       1,
+				Weight:     3,
 			},
 		},
 	}

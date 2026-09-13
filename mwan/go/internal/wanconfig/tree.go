@@ -28,17 +28,21 @@ type Item struct {
 }
 
 // Member is one steering member exactly as the daemon loaded it: the link
-// that carries it, the tier the router assigns it, the probe policy that
-// decides its health, and the prefix-translation pair it carries when its
-// configuration names one.
+// that carries it, the tier the configuration assigns it, the probe policy
+// that decides its health, and the prefix-translation pair it carries when
+// its configuration names one.
 type Member struct {
-	// Name is the member's stable name (att, webpass, monkeybrains). It
-	// names the probe policy and the translation instance.
+	// Name is the member's stable name. It names the probe policy and the
+	// translation instance.
 	Name string
 	// Iface is the link the member rides. It is the interface entry's key.
 	Iface string
-	// Tier is the steering tier the router assigns; lower is preferred.
+	// Tier is the steering tier the configuration assigns; lower is preferred.
 	Tier uint8
+	// Weight is the member's share of its tier, at least one. The schema bounds
+	// it there, so a zero would be refused by the datastore rather than
+	// published.
+	Weight uint16
 	// ProbePolicy is the name of the health policy that decides the member's
 	// state, or empty when the daemon runs no probe for it.
 	ProbePolicy string
@@ -108,6 +112,11 @@ type Gateway struct {
 	// published as an interface entry with both families enabled, because
 	// the daemon routes both families over it.
 	InternalIface string
+	// HashMode is how a new connection is assigned to a member of the active
+	// tier. It is published because the daemon acts on it, so a reader of the
+	// tree sees the rule the kernel is running under. Empty publishes nothing,
+	// which is what a role that runs no steering module carries.
+	HashMode string
 	// Members are the steering members in a stable order.
 	Members []Member
 	// Daemon carries the settings published under the local module's
@@ -125,9 +134,10 @@ var OwnedPaths = []string{
 }
 
 const (
-	interfacesPath = "/ietf-interfaces:interfaces"
-	natPath        = "/ietf-nat:nat"
-	daemonPath     = "/goodkind-mwan-steering:daemon"
+	interfacesPath    = "/ietf-interfaces:interfaces"
+	steeringGroupPath = interfacesPath + "/goodkind-mwan-steering:steering-group"
+	natPath           = "/ietf-nat:nat"
+	daemonPath        = "/goodkind-mwan-steering:daemon"
 
 	// ifTypeUnspecified is the interface type published for every entry: the
 	// daemon's configuration carries no link type, and the model requires
@@ -158,12 +168,13 @@ func ConfigItems(g Gateway) ([]Item, error) {
 		return nil, err
 	}
 
-	items := make([]Item, 0, 8*len(g.Members)+4)
+	items := make([]Item, 0, 8*len(g.Members)+6)
 	items = append(items, interfaceItems(g.InternalIface)...)
 	for _, member := range g.Members {
 		items = append(items, interfaceItems(member.Iface)...)
 		items = append(items, steeringItems(member)...)
 	}
+	items = append(items, steeringGroupItems(g.HashMode)...)
 	instanceID := uint32(0)
 	for _, member := range g.Members {
 		if !member.NPTInternal.IsValid() {
@@ -290,17 +301,38 @@ func interfaceItems(iface string) []Item {
 	}
 }
 
-// steeringItems marks the member's link as a steering member with its tier
-// and, when the daemon probes it, the probe policy that decides its state.
+// steeringItems marks the member's link as a steering member with its tier and
+// weight and, when the daemon probes it, the probe policy that decides its
+// state.
 func steeringItems(member Member) []Item {
 	base := interfacePath(member.Iface) + "/goodkind-mwan-steering:steering"
 	items := []Item{
 		{Path: base + "/tier", Value: strconv.FormatUint(uint64(member.Tier), 10)},
+		{Path: base + "/weight", Value: strconv.FormatUint(uint64(member.Weight), 10)},
 	}
 	if member.ProbePolicy != "" {
 		items = append(items, Item{Path: base + "/probe-policy", Value: member.ProbePolicy})
 	}
 	return items
+}
+
+// steeringGroupItems describes the settings that apply to the member set as a
+// whole. A gateway whose role runs no steering module carries no hash mode and
+// publishes none, rather than a value it does not act on.
+func steeringGroupItems(hashMode string) []Item {
+	if hashMode == "" {
+		return nil
+	}
+	return []Item{{Path: steeringGroupPath + "/hash-mode", Value: hashMode}}
+}
+
+// hashModes are the values the model's enumeration accepts. A value outside the
+// set would make the datastore reject the whole replace, taking every other
+// item with it, so it is caught before the write.
+var hashModes = map[string]bool{
+	"random":             true,
+	"source":             true,
+	"source-destination": true,
 }
 
 // natInstanceItems describes the member's prefix-translation instance with
@@ -334,6 +366,9 @@ func validate(g Gateway) error {
 	if err := validateKey("internal link", g.InternalIface); err != nil {
 		return err
 	}
+	if g.HashMode != "" && !hashModes[g.HashMode] {
+		return invalid(fmt.Sprintf("hash mode %q is not one of the model's values", g.HashMode))
+	}
 	seen := map[string]string{g.InternalIface: "internal link"}
 	for _, member := range g.Members {
 		if err := validateKey("member name", member.Name); err != nil {
@@ -341,6 +376,9 @@ func validate(g Gateway) error {
 		}
 		if err := validateKey("member "+member.Name+" link", member.Iface); err != nil {
 			return err
+		}
+		if member.Weight == 0 {
+			return invalid(fmt.Sprintf("member %s weight must be at least 1", member.Name))
 		}
 		if owner, dup := seen[member.Iface]; dup {
 			return invalid(fmt.Sprintf("member %s link %q is already the %s", member.Name, member.Iface, owner))

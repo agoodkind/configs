@@ -318,6 +318,7 @@ func gatewayFromModuleConfigs(cfg *config.Config, configs ifmgr.ModuleConfigSet)
 
 	gateway := wanconfig.Gateway{
 		InternalIface: routesCfg.InternalIface,
+		HashMode:      hashModeFromConfig(cfg),
 		Members:       make([]wanconfig.Member, 0, len(routesCfg.WANs)),
 		Daemon:        daemonSettings(cfg, configs),
 	}
@@ -325,7 +326,8 @@ func gatewayFromModuleConfigs(cfg *config.Config, configs ifmgr.ModuleConfigSet)
 		member := wanconfig.Member{
 			Name:        wan.Name,
 			Iface:       wan.Iface,
-			Tier:        wanroutes.TierOf(wan.Name),
+			Tier:        wan.Tier,
+			Weight:      clampUint16(wan.Weight),
 			ProbePolicy: "",
 			NPTInternal: netip.Prefix{},
 			NPTExternal: netip.Prefix{},
@@ -348,4 +350,15 @@ func gatewayFromModuleConfigs(cfg *config.Config, configs ifmgr.ModuleConfigSet)
 		gateway.Members = append(gateway.Members, member)
 	}
 	return gateway, true, nil
+}
+
+// hashModeFromConfig reads the group's hash mode from the loaded network
+// configuration, the same value the steering module acts on. A nil
+// configuration, which a role-only projection passes, publishes no hash
+// mode rather than a guess.
+func hashModeFromConfig(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.IfMgr.HashMode
 }

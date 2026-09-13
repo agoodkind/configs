@@ -65,7 +65,7 @@ type Snapshotter interface {
 }
 
 // guard against drift: ops.SysOps must satisfy Snapshotter.
-var _ Snapshotter = (ops.SysOps)(nil)
+var _ Snapshotter = ops.SysOps(nil)
 
 // GuestExecResult mirrors [ops.GuestExecResult] but is duplicated here
 // so the Executor interface does not pull a hard dep on internal/ops.

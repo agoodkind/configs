@@ -17,13 +17,14 @@ import (
 )
 
 const (
-	moduleName          = "wan.routes"
-	familyV4            = "inet"
-	familyV6            = "inet6"
-	fallbackPriority    = 50
-	wanNameATT          = "att"
-	wanNameWebpass      = "webpass"
-	wanNameMonkeybrains = "monkeybrains"
+	moduleName = "wan.routes"
+	familyV4   = "inet"
+	familyV6   = "inet6"
+
+	// catchAllPriority is the rule pair that sends everything arriving on the
+	// internal link to one provider's table. It sits above every mark rule, so
+	// it is consulted only after those miss.
+	catchAllPriority = 50
 
 	// alertKindNextHopUnresolved is the alert kind for an internal next hop
 	// with no usable neighbour entry.
@@ -33,31 +34,6 @@ const (
 	// in-flight NDP resolution without a false alert.
 	nextHopAlertThreshold = 2
 )
-
-// Tier values the router assigns today. The balancer spreads new connections
-// across the preferred tier; the fallback tier carries traffic only while
-// every preferred member is unhealthy (see fallbackEnabled).
-const (
-	// TierPreferred is the tier the balancer uses while any member of it is
-	// healthy.
-	TierPreferred uint8 = 0
-	// TierFallback is the tier that serves only when the preferred tier has
-	// no healthy member.
-	TierFallback uint8 = 1
-)
-
-// TierOf reports the steering tier this router assigns to the named WAN.
-// Today that assignment is fixed in code: the Monkeybrains link is the
-// fallback, every other member is preferred. The management surface
-// publishes this value for each member, so it reads from the same rule the
-// router applies rather than a second copy of it; when tier becomes
-// configuration (the provider-set piece), this function reads it from there.
-func TierOf(name string) uint8 {
-	if name == wanNameMonkeybrains {
-		return TierFallback
-	}
-	return TierPreferred
-}
 
 // Config is the parsed [ifmgr.modules.wan.routes] runtime config.
 type Config struct {
@@ -73,7 +49,8 @@ func (Config) ModuleConfigName() string { return moduleName }
 
 // WAN is one configured uplink and its owned policy-routing slots. The
 // embedded ifmgr.WANRef carries the shared per-WAN identity (Name, Iface); the
-// remaining fields are the wan.routes-specific per-WAN routing data.
+// remaining fields are the wan.routes-specific per-WAN routing and steering
+// data.
 type WAN struct {
 	ifmgr.WANRef
 	TableID    int
@@ -84,9 +61,17 @@ type WAN struct {
 	// V4Source is the WAN's static IPv4 link address. When set, traffic the box
 	// sources from that address is pinned to this WAN's table via a v4 source
 	// rule at FromPrio, the IPv4 twin of the NptPrefix v6 source rule. Only
-	// static-link WANs (Webpass) set it; dynamic-link WANs (AT&T, Monkeybrains)
-	// leave it empty and get no v4 source rule.
+	// static-link WANs set it; a WAN on a dynamic link leaves it empty and gets
+	// no v4 source rule.
 	V4Source string
+	// Tier is the preference tier this provider sits in, from configuration.
+	// The lowest-numbered tier holding a healthy provider carries new
+	// connections.
+	Tier uint8
+	// Weight is this provider's share of its tier. wan.routes does not spread
+	// traffic itself, so it carries the value only to hand it to the management
+	// surface, which publishes what the daemon loaded.
+	Weight int
 }
 
 type gatewaySet struct {
@@ -200,31 +185,23 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 }
 
 // publishLiveState writes this pass's steering decision to the management
-// surface's snapshot store, when this host serves one. A member is
-// carrying when the pass installed its steering rules: it has a gateway
-// in at least one family and its health verdict allows it. The active
-// tier is the fallback tier exactly when the fallback rules engaged.
+// surface's snapshot store, when this host serves one. A provider is carrying
+// when it sits in the active tier, its verdict allows it, and it has a gateway
+// in at least one family, which is exactly the condition under which this pass
+// installed its rules.
 func (m *Module) publishLiveState(currentGateways gateways, health netif.HealthStates) {
 	if m.Env == nil || m.Env.LiveState == nil {
 		return
 	}
+	activeTier, anyHealthy := netif.ActiveTier(tierMembers(m.cfg), health)
 	members := make(map[string]wanstate.MemberRouting, len(m.cfg.WANs))
-	fallback := fallbackEnabled(health)
 	for _, wan := range m.cfg.WANs {
 		wanGateways := currentGateways[wan.Name]
-		enabled := wanEnabled(wanGateways.V4, health.State(wan.Name)) ||
+		reachable := wanEnabled(wanGateways.V4, health.State(wan.Name)) ||
 			wanEnabled(wanGateways.V6, health.State(wan.Name))
-		carrying := enabled
-		if fallback {
-			carrying = wan.Name == wanNameMonkeybrains && enabled
-		} else if TierOf(wan.Name) != TierPreferred {
-			carrying = false
+		members[wan.Name] = wanstate.MemberRouting{
+			Carrying: anyHealthy && wan.Tier == activeTier && reachable,
 		}
-		members[wan.Name] = wanstate.MemberRouting{Carrying: carrying}
-	}
-	activeTier := TierPreferred
-	if fallback {
-		activeTier = TierFallback
 	}
 	m.Env.LiveState.SetRouting(activeTier, members)
 }
@@ -310,34 +287,88 @@ func desiredState(
 		rules = appendWANRules(rules, wan, wanGateways, health)
 	}
 
-	monkeybrains := findWAN(cfg, wanNameMonkeybrains)
-	if monkeybrains != nil && fallbackEnabled(health) {
+	if carrier := catchAllCarrier(cfg, health); carrier != nil {
 		rules = append(
 			rules,
 			netif.DesiredRule{
 				Family:   familyV4,
-				Priority: fallbackPriority,
+				Priority: catchAllPriority,
 				From:     "",
 				Mark:     0,
 				IifName:  cfg.InternalIface,
 				UIDRange: "",
 				Table:    "",
-				TableID:  monkeybrains.TableID,
+				TableID:  carrier.TableID,
 			},
 			netif.DesiredRule{
 				Family:   familyV6,
-				Priority: fallbackPriority,
+				Priority: catchAllPriority,
 				From:     "",
 				Mark:     0,
 				IifName:  cfg.InternalIface,
 				UIDRange: "",
 				Table:    "",
-				TableID:  monkeybrains.TableID,
+				TableID:  carrier.TableID,
 			},
 		)
 	}
 
 	return rules, routes
+}
+
+// catchAllCarrier returns the provider the catch-all rule pair points at, or
+// nil when this pass installs none. The pair exists for one case: the active
+// tier is below the first configured tier and exactly one provider in it is
+// healthy. Nothing marks internal traffic for that provider then, so without
+// the pair the traffic would fall to the main table.
+//
+// With two or more healthy providers in the active tier the steering module's
+// marks carry the split, and a catch-all would send every unmarked packet to
+// one of them and undo it. With no healthy provider anywhere there is nothing
+// to point at.
+func catchAllCarrier(cfg Config, health netif.HealthStates) *WAN {
+	activeTier, anyHealthy := netif.ActiveTier(tierMembers(cfg), health)
+	if !anyHealthy {
+		return nil
+	}
+	if activeTier == lowestConfiguredTier(cfg) {
+		return nil
+	}
+	var carrier *WAN
+	for i := range cfg.WANs {
+		wan := &cfg.WANs[i]
+		if wan.Tier != activeTier || !netif.HealthIsHealthy(health.State(wan.Name)) {
+			continue
+		}
+		if carrier != nil {
+			return nil
+		}
+		carrier = wan
+	}
+	return carrier
+}
+
+// tierMembers projects the configured providers onto the list the shared
+// active-tier function reads.
+func tierMembers(cfg Config) []netif.TierMember {
+	members := make([]netif.TierMember, 0, len(cfg.WANs))
+	for _, wan := range cfg.WANs {
+		members = append(members, netif.TierMember{Name: wan.Name, Tier: wan.Tier})
+	}
+	return members
+}
+
+// lowestConfiguredTier returns the first tier the configuration names, whether
+// or not any of its providers is healthy. Callers reach it only after
+// netif.ActiveTier reported a healthy provider, so the list is never empty.
+func lowestConfiguredTier(cfg Config) uint8 {
+	lowest := cfg.WANs[0].Tier
+	for _, wan := range cfg.WANs[1:] {
+		if wan.Tier < lowest {
+			lowest = wan.Tier
+		}
+	}
+	return lowest
 }
 
 func appendWANDefaultRoutes(routes []netif.RouteSpec, wan WAN, gateways gatewaySet) []netif.RouteSpec {
@@ -528,8 +559,8 @@ func ownedRuleSlots(cfg Config) []ruleSlot {
 		seenSlots[slot] = true
 		slots = append(slots, slot)
 	}
-	appendSlot(ruleSlot{family: familyV4, priority: fallbackPriority})
-	appendSlot(ruleSlot{family: familyV6, priority: fallbackPriority})
+	appendSlot(ruleSlot{family: familyV4, priority: catchAllPriority})
+	appendSlot(ruleSlot{family: familyV6, priority: catchAllPriority})
 	for _, wan := range cfg.WANs {
 		appendSlot(ruleSlot{family: familyV4, priority: wan.FwMarkPrio})
 		appendSlot(ruleSlot{family: familyV6, priority: wan.FwMarkPrio})
@@ -597,6 +628,10 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
+// validateWAN checks the structure of one provider's entry. The set-wide checks
+// (unique routing numbers, no reserved table, a weight of at least one) run at
+// load time in networkjson, because they need every provider at once and the
+// reserved list beside them.
 func validateWAN(wan WAN) error {
 	if wan.Name == "" {
 		return fmt.Errorf("name is required")
@@ -610,11 +645,14 @@ func validateWAN(wan WAN) error {
 	if wan.FwMark == 0 {
 		return fmt.Errorf("fw_mark must be > 0")
 	}
-	if !isFwMarkPriority(wan.FwMarkPrio) {
-		return fmt.Errorf("fw_mark_prio must be one of 100, 200, or 300")
+	if wan.FwMarkPrio <= 0 {
+		return fmt.Errorf("fw_mark_prio must be > 0")
 	}
-	if !isFromPriority(wan.FromPrio) {
-		return fmt.Errorf("from_prio must be one of 55, 56, or 57")
+	if wan.FromPrio <= 0 {
+		return fmt.Errorf("from_prio must be > 0")
+	}
+	if wan.FwMarkPrio == catchAllPriority || wan.FromPrio == catchAllPriority {
+		return fmt.Errorf("rule priorities must not equal the catch-all priority %d", catchAllPriority)
 	}
 	return nil
 }
@@ -642,21 +680,6 @@ func wanEnabled(gateway string, healthState string) bool {
 	return netif.HealthIsHealthy(healthState)
 }
 
-func fallbackEnabled(health netif.HealthStates) bool {
-	return !netif.HealthIsHealthy(health.State(wanNameATT)) &&
-		!netif.HealthIsHealthy(health.State(wanNameWebpass)) &&
-		netif.HealthIsHealthy(health.State(wanNameMonkeybrains))
-}
-
-func findWAN(cfg Config, name string) *WAN {
-	for i := range cfg.WANs {
-		if cfg.WANs[i].Name == name {
-			return &cfg.WANs[i]
-		}
-	}
-	return nil
-}
-
 func withPrefix(value string, prefix string) string {
 	for _, char := range value {
 		if char == '/' {
@@ -664,14 +687,6 @@ func withPrefix(value string, prefix string) string {
 		}
 	}
 	return value + "/" + prefix
-}
-
-func isFwMarkPriority(priority int) bool {
-	return priority == 100 || priority == 200 || priority == 300
-}
-
-func isFromPriority(priority int) bool {
-	return priority == 55 || priority == 56 || priority == 57
 }
 
 // New is the Constructor registered with ifmgr.

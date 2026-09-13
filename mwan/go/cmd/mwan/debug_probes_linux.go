@@ -594,15 +594,20 @@ func debugProbeIface(
 		}
 		return args[0], nil
 	}
-	entry, ok := cfg.IfMgr.WAN["att"]
-	if !ok || strings.TrimSpace(entry.Iface) == "" {
-		return "", fmt.Errorf(
-			"%s: WAN %q has no usable interface",
-			view,
-			"att",
-		)
+	wans := debugActiveProbeWANs(cfg)
+	if len(wans) == 0 {
+		return "", fmt.Errorf("%s: no configured WAN has a usable interface", view)
 	}
-	return entry.Iface, nil
+	// The default is the provider with the lowest firewall mark. Nothing in the
+	// configuration says which provider a bare probe should use, and the mark
+	// order is the one an operator already reads as the provider order.
+	lowest := wans[0]
+	for _, wan := range wans[1:] {
+		if wan.FwMark < lowest.FwMark {
+			lowest = wan
+		}
+	}
+	return lowest.Iface, nil
 }
 
 func debugProbeNoArgs(view string, args []string) error {
@@ -612,20 +617,17 @@ func debugProbeNoArgs(view string, args []string) error {
 	return nil
 }
 
+// debugActiveProbeWANs returns every configured provider that has a usable
+// interface, ordered by name. The set comes from the loaded configuration
+// rather than a list of names in code, so a provider added to inventory appears
+// in every active probe view with the binary unchanged.
 func debugActiveProbeWANs(cfg *config.Config) []debugWAN {
-	names := []string{"att", "webpass", "monkeybrains"}
-	wans := make([]debugWAN, 0, len(names))
-	for _, name := range names {
-		entry, ok := cfg.IfMgr.WAN[name]
-		if !ok || strings.TrimSpace(entry.Iface) == "" {
+	wans := make([]debugWAN, 0, len(cfg.IfMgr.WAN))
+	for _, wan := range debugWANs(cfg) {
+		if strings.TrimSpace(wan.Iface) == "" {
 			continue
 		}
-		wans = append(wans, debugWAN{
-			Name:    name,
-			Iface:   entry.Iface,
-			TableID: entry.TableID,
-			FwMark:  entry.FwMark,
-		})
+		wans = append(wans, wan)
 	}
 	return wans
 }
