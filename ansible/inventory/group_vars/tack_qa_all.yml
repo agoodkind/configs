@@ -81,3 +81,10 @@ tack_ledger_node_addresses:
   yb1: "{{ service_mapping.tack_data1_suburban.ipv6 }}"
   yb2: "{{ service_mapping.tack_data2_suburban.ipv6 }}"
   yb3: "{{ service_mapping.tack_data3_suburban.ipv6 }}"
+
+# Ledger transport encryption (TACK-460). QA proves it first: the engine
+# encrypts client and peer traffic and refuses an unencrypted connection,
+# and every client dials verify-full against this environment's own
+# authority. The owner guest issues and holds that authority.
+tack_ledger_tls_enabled: true
+tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
