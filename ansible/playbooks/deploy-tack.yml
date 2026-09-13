@@ -575,15 +575,15 @@
           changed_when: true
           throttle: 1
 
-        # The same progress-keyed wait, without touching the node. On a
-        # rolling run every node is already healthy here and this returns
-        # at once. On a certificate rotation run this is the gate: every
-        # node has been started back to back above, and each one replays
-        # its tablets for as long as its data needs (TACK-488).
+        # docker ps prints the container id only while its health check
+        # passes, so an empty answer means not healthy yet.
         - name: Wait until the ledger node is healthy
-          ansible.builtin.script:
-            cmd: "{{ playbook_dir }}/files/tack-ledger-node-roll.sh waitonly 120"
-            chdir: "{{ tack_install_dir }}"
+          ansible.builtin.command:
+            cmd: docker ps --quiet --filter name=^tack-yugabyte-1$ --filter health=healthy
+          register: tack_ledger_node_health
+          until: tack_ledger_node_health.stdout != ''
+          retries: 36
+          delay: 10
           changed_when: false
 
         # Scheduled ledger export, per-node half (TACK-356). The archiver

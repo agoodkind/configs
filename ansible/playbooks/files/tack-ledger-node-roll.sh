@@ -13,13 +13,10 @@
 # count keeps rising is never given up on, and a node whose count has not
 # moved for the stall window while the health check still fails is wedged.
 #
-# Usage: tack-ledger-node-roll.sh wait|nowait|waitonly stall_seconds
-#   wait      start the node and wait for it as described above
-#   nowait    start the node and return at once (a certificate rotation,
-#             where no node can become healthy until every peer has
-#             restarted)
-#   waitonly  do not touch the node; wait for it as described above (the
-#             gate that follows a nowait start, once every peer is up)
+# Usage: tack-ledger-node-roll.sh wait|nowait stall_seconds
+#   wait    start the node and wait for it as described above
+#   nowait  start the node and return at once (a certificate rotation, where
+#           no node can become healthy until every peer has restarted)
 set -euo pipefail
 
 readonly CONTAINER=tack-yugabyte-1
@@ -27,7 +24,7 @@ readonly TSERVER_LOG=/home/yugabyte/var/logs/tserver/yb-tserver.INFO
 readonly POLL_SECONDS=5
 
 function usage() {
-    echo "usage: $0 wait|nowait|waitonly stall_seconds" >&2
+    echo "usage: $0 wait|nowait stall_seconds" >&2
 }
 
 function health_status() {
@@ -53,7 +50,7 @@ function main() {
     fi
     local mode="$1"
     local stall_seconds="$2"
-    if [[ "$mode" != "wait" && "$mode" != "nowait" && "$mode" != "waitonly" ]]; then
+    if [[ "$mode" != "wait" && "$mode" != "nowait" ]]; then
         usage
         exit 64
     fi
@@ -62,9 +59,7 @@ function main() {
         exit 64
     fi
 
-    if [[ "$mode" != "waitonly" ]]; then
-        docker compose up -d yugabyte
-    fi
+    docker compose up -d yugabyte
 
     if [[ "$mode" == "nowait" ]]; then
         echo "started without waiting (certificate rotation)"
