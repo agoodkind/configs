@@ -1,6 +1,12 @@
 ---
 tack_domain: "tack.home.goodkind.io"
 
+# Production authenticates API tokens, not raw user ids (TACK-261). The token
+# path was proven on QA first; every MCP client of this deployment must hold a
+# token minted through `ops auth token-create` before the deploy that renders
+# this, because the app refuses a raw user id once it starts in this mode.
+tack_env: production
+
 tack_yugabyte_password: "{{ vault_tack_yugabyte_password }}"
 tack_meili_master_key: "{{ vault_tack_meili_master_key }}"
 tack_audit_writer_password: "{{ vault_tack_audit_writer_password }}"
