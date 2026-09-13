@@ -57,6 +57,62 @@ tack_ledger_consumers_repointed: false
 # healthy same-network connect and far below the acceptance bound.
 tack_database_connect_timeout_seconds: 2
 
+# Ledger transport encryption (TACK-460). Repointing moved the ledger onto
+# the three data guests, so application SQL and the engine's own replication
+# now cross guest boundaries; with this false they cross in plaintext, which
+# is where every environment started. With it true the deploy issues a
+# private certificate authority and one server certificate per ledger node,
+# the engine encrypts both client and node traffic and refuses an
+# unencrypted connection, and every client dials sslmode=verify-full against
+# that authority, so a client proves the node's identity rather than
+# trusting whatever answers the address.
+#
+# Environment groups turn it on; it stays false here so a host nobody has
+# issued certificates for keeps connecting.
+tack_ledger_tls_enabled: false
+
+# Where the issued material lives on each guest. /etc/tack is already the
+# directory holding the audit signing key and the application login's
+# password, and the app and audit consumer already mount it read-only, so
+# the certificate authority reaches them at the same path it has on the
+# host. The engine reads its own node certificate from the same directory,
+# mounted into the ledger container.
+tack_ledger_certs_dir: /etc/tack/ledger-certs
+tack_ledger_ca_cert_path: "{{ tack_ledger_certs_dir }}/ca.crt"
+
+# Which guest issues this environment's certificates and keeps the
+# authority's private key. Environment groups name their own owner guest;
+# the deploy reads the material from there and copies each node's share to
+# the guest that announces that node.
+tack_ledger_ca_host: ""
+
+# The certificates to issue: every ledger node name mapped to the address
+# its guest is pinned at, plus the legacy node while the environment still
+# runs one. A node dialed by either its name or its address must present a
+# certificate carrying both, so this map is what the names in each
+# certificate come from.
+tack_ledger_certificate_subjects: >-
+  {{ tack_ledger_node_addresses
+     | combine({'yugabyte': tack_store_host} if tack_ledger_legacy_node_present else {}) }}
+
+# How long an issued certificate lasts. Ten years, because rotation here is
+# a deploy that regenerates the material and restarts the nodes, and a
+# shorter life would expire the ledger on a quiet weekend rather than at a
+# moment anyone chose. Rotation before expiry is its own ticket.
+tack_ledger_cert_days: 3650
+
+# The connection parameters every ledger client carries, in the two forms
+# the drivers accept: query parameters for a URL and keywords for the
+# host-networked ops sidecar. verify-full checks the certificate's name
+# against the name dialed, so the node certificates carry both the node name
+# and the guest's pinned address; nothing here works without that pairing.
+tack_ledger_ssl_query: >-
+  {{ 'sslmode=verify-full&sslrootcert=' + tack_ledger_ca_cert_path
+     if tack_ledger_tls_enabled else 'sslmode=disable' }}
+tack_ledger_ssl_keywords: >-
+  {{ 'sslmode=verify-full sslrootcert=' + tack_ledger_ca_cert_path
+     if tack_ledger_tls_enabled else 'sslmode=disable' }}
+
 # The ops sidecar runs on host networking, where the ledger node names do
 # not resolve. Repointed environments list the three data guests' pinned
 # addresses and the driver fails over across them, in keyword form because
@@ -66,11 +122,12 @@ tack_ops_database_url: >-
   {{ ('host=' + tack_ledger_node_addresses.yb1 + ',' + tack_ledger_node_addresses.yb2 + ','
       + tack_ledger_node_addresses.yb3 + ' port=5433 user=' + tack_yugabyte_user
       + ' password=' + tack_yugabyte_password + ' dbname=' + tack_yugabyte_db
-      + ' sslmode=disable connect_timeout='
+      + ' ' + tack_ledger_ssl_keywords + ' connect_timeout='
       + (tack_database_connect_timeout_seconds | string))
      if tack_ledger_consumers_repointed
      else ('postgres://' + tack_yugabyte_user + ':' + tack_yugabyte_password
-           + '@[' + tack_store_host + ']:5433/' + tack_yugabyte_db + '?sslmode=disable') }}
+           + '@[' + tack_store_host + ']:5433/' + tack_yugabyte_db
+           + '?' + tack_ledger_ssl_query) }}
 
 tack_log_level: debug
 tack_log_max_backups: 0
