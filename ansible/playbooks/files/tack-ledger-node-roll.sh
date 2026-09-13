@@ -41,16 +41,9 @@ function container_running() {
 }
 
 # The log does not exist until the tserver opens it, and grep exits 1 on a
-# zero count while still printing "0", so the exit status is ignored and the
-# output is reduced to its digits; anything else reads as zero progress.
+# zero count, so both read as zero progress rather than as an error.
 function bootstrap_count() {
-    local raw
-    raw=$(docker exec "$CONTAINER" grep -c 'Bootstrap complete' "$TSERVER_LOG" 2>/dev/null || true)
-    raw=$(printf '%s' "$raw" | tr -dc '0-9')
-    if [[ -z "$raw" ]]; then
-        raw=0
-    fi
-    printf '%s' "$raw"
+    docker exec "$CONTAINER" grep -c 'Bootstrap complete' "$TSERVER_LOG" 2>/dev/null || echo 0
 }
 
 function main() {
