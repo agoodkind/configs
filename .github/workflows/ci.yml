@@ -42,3 +42,24 @@ jobs:
       # gate into the compile matrix, which would otherwise dry-run platforms
       # this module never ships.
       release_platforms: linux/amd64 freebsd/amd64
+
+  # The deploy command runs this same gate over a playbook's files and refuses
+  # to deploy on a banned default or presence check, which is where such a
+  # finding used to surface: after merge, at deploy time. Running it here over
+  # the whole tree fails the pull request instead. No bypass token is set in CI,
+  # so every finding not in a committed baseline fails the job.
+  configs-lint:
+    name: configs lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: scripts/go.mod
+          cache-dependency-path: scripts/go.sum
+      # The gate hands Jinja forms its Go parser cannot read to a jinja2
+      # subprocess and fails when jinja2 is missing, so it is a hard dependency.
+      - name: Install jinja2
+        run: sudo apt-get update && sudo apt-get install -y python3-jinja2
+      - name: Lint Ansible inputs
+        run: go run goodkind.io/configs/cmd/configs lint
