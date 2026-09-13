@@ -127,23 +127,16 @@
     # Host data-plane lockdown (TACK-327). The databases are reached through
     # the recorded ops commands, never from the host shell: the FoundationDB
     # client package gave the host a raw fdbcli that tack itself never uses
-    # (every fdbcli tack runs is inside a container), and the scripts below
-    # were left in root's home by sessions as unrecorded shortcuts into
-    # YugabyteDB. Both are removed on every deploy so they do not come back.
-    # The package's configuration stays: /etc/foundationdb/fdb.cluster is the
-    # live cluster file the compose stack mounts, and a purge would delete it.
+    # (every fdbcli tack runs is inside a container), so the package stays
+    # absent on every deploy. Its configuration stays: /etc/foundationdb/
+    # fdb.cluster is the live cluster file the compose stack mounts, and a
+    # purge would delete it.
     # -------------------------------------------------------------------------
     - name: Remove the FoundationDB client package from the host
       ansible.builtin.apt:
         name: foundationdb-clients
         state: absent
         purge: false
-
-    - name: Remove unrecorded database helper scripts from root's home
-      ansible.builtin.file:
-        path: "/root/{{ item }}"
-        state: absent
-      loop: "{{ tack_host_lockdown_removed_scripts }}"
 
   handlers:
     # Apply only this playbook's sysctl file, not `sysctl --system`. The tack
@@ -175,6 +168,25 @@
 
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
+    # The operator identity every audited ops command in this play carries
+    # (TACK-328). It names the human running this deploy in the compliance
+    # ledger. The ops container has no git config, so the deploy reads the
+    # control machine's git config instead; lookups run on the control
+    # machine, never on the guest. The id is derived from the lowercased
+    # email with the same version 5 UUID namespace the application uses
+    # (internal/cli/operator_git.go), verified to produce byte-identical ids,
+    # so one person keeps one actor id everywhere. The deploy commit ties
+    # each run to the code it installed (TACK-443): the actor answers who
+    # deployed, the commit answers what. It is the same ref the
+    # docker-compose fetches below pin.
+    deploy_operator_email: "{{ lookup('pipe', 'git config user.email') | lower }}"
+    deploy_operator_name: "{{ lookup('pipe', 'git config user.name') }}"
+    deploy_operator_id: "{{ deploy_operator_email | to_uuid(namespace='0a6f7572-cafe-dead-beef-000000000004') }}"
+    tack_ops_identity_flags: >-
+      --operator-id {{ deploy_operator_id }}
+      --operator-email {{ deploy_operator_email }}
+      --operator-name "{{ deploy_operator_name }}"
+      --deploy-commit {{ tack_commit }}
 
   tasks:
     - name: Create /etc/tack directory
@@ -546,35 +558,45 @@
           changed_when: true
           no_log: true
 
+        # The restart is bracketed by two commands from the tack repo, which
+        # owns everything inside the container runtime (TACK-489).
+        # node-prepare aligns the node's saved master list with this
+        # environment's and stops the container when it had to change it.
+        # node-wait blocks until the node's health check passes, bounded by
+        # inactivity on the master quorum's counts rather than by a clock, so
+        # a node replaying a large log waits for as long as it needs
+        # (TACK-471, TACK-488). The three run as one command so one guest
+        # finishes before the next begins: as separate tasks under the linear
+        # strategy, every node would be prepared, and stopped, before any
+        # started.
+        #
         # A node that just received a new certificate cannot become healthy on
         # its own: the engine encrypts peer traffic with it, and its peers
         # still speak the old way until their own restart, so the quorum only
         # reassembles once every node has restarted (the first QA flip on
         # 2026-09-12 failed this wait on the first node and passed it on the
         # other two). On that run the nodes restart back to back without a
-        # wait, and the task below waits for all of them together. Every
-        # other run keeps the rolling wait, which is what preserves quorum
-        # while one node at a time restarts.
-        - name: Start the ledger node and wait until it is healthy (first start joins)
-          ansible.builtin.command:
+        # wait, and the task after this one waits for all of them together.
+        # Every other run keeps the rolling wait, which is what preserves
+        # quorum while one node at a time restarts.
+        - name: Prepare, start, and wait on the ledger node (one guest at a time; first start joins)
+          ansible.builtin.shell:
             cmd: >-
-              docker compose up -d
-              {{ '' if tack_ledger_node_certificate_rotated | bool else '--wait --wait-timeout 300' }}
-              yugabyte
+              docker compose run --rm tack-ops ops ledger node-prepare --execute {{ tack_ops_identity_flags }}
+              && docker compose up -d yugabyte
+              {{ '' if tack_ledger_node_certificate_rotated | bool
+                 else '&& docker compose run --rm tack-ops ops ledger node-wait --execute ' + tack_ops_identity_flags }}
             chdir: "{{ tack_install_dir }}"
+            executable: /bin/bash
           changed_when: true
           throttle: 1
 
-        # docker ps prints the container id only while its health check
-        # passes, so an empty answer means not healthy yet.
-        - name: Wait until the ledger node is healthy
+        - name: Wait until every ledger node is healthy (certificate rotation)
           ansible.builtin.command:
-            cmd: docker ps --quiet --filter name=^tack-yugabyte-1$ --filter health=healthy
-          register: tack_ledger_node_health
-          until: tack_ledger_node_health.stdout != ''
-          retries: 36
-          delay: 10
+            cmd: docker compose run --rm tack-ops ops ledger node-wait --execute {{ tack_ops_identity_flags }}
+            chdir: "{{ tack_install_dir }}"
           changed_when: false
+          when: tack_ledger_node_certificate_rotated | bool
 
         # Scheduled ledger export, per-node half (TACK-356). The archiver
         # timer polls for a pending export manifest and no-ops quietly
@@ -627,33 +649,15 @@
         # --execute is the action gate every audited operator command now
         # carries (TACK-328). Without it the command prints its plan and
         # changes nothing, so provisioning would silently no-op and the next
-        # task would start services against an unmigrated database.
-        #
-        # The operator identity names the human running this deploy in the
-        # compliance ledger. The ops container has no git config, so the
-        # deploy reads the control machine's git config instead; lookups run
-        # on the control machine, never on the guest. The id is derived from
-        # the lowercased email with the same version 5 UUID namespace the
-        # application uses (internal/cli/operator_git.go), verified to produce
-        # byte-identical ids, so one person keeps one actor id everywhere.
-        #
-        # The deploy commit ties the run to the code it installed (TACK-443):
-        # the actor answers who deployed, the commit answers what. It is the
-        # same ref the docker-compose fetch above pinned.
+        # task would start services against an unmigrated database. The
+        # identity flags are the play's, shared with the ledger node commands.
         - name: Provision (idempotent first boot; configure fresh fdb only where allowed, migrate, seed audit roles, seed product)
           ansible.builtin.command:
             cmd: >-
               docker compose run --rm tack-ops ops provision --execute
-              --operator-id {{ deploy_operator_id }}
-              --operator-email {{ deploy_operator_email }}
-              --operator-name "{{ deploy_operator_name }}"
-              --deploy-commit {{ tack_commit }}
+              {{ tack_ops_identity_flags }}
               {{ '--allow-fdb-init' if tack_allow_fdb_init else '' }}
             chdir: "{{ tack_install_dir }}"
-          vars:
-            deploy_operator_email: "{{ lookup('pipe', 'git config user.email') | lower }}"
-            deploy_operator_name: "{{ lookup('pipe', 'git config user.name') }}"
-            deploy_operator_id: "{{ deploy_operator_email | to_uuid(namespace='0a6f7572-cafe-dead-beef-000000000004') }}"
           changed_when: true
 
         - name: Start Tack services (second pass; fdb configured, app and audit-consumer come up)
