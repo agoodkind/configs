@@ -565,8 +565,6 @@
         - Reload nftables
       vars:
         actual_mgmt_iface: "{{ mwan_mgmt_iface }}"
-        actual_att_iface: "{{ mwan_att_iface }}"
-        actual_webpass_iface: "{{ mwan_webpass_iface }}"
         actual_internal_iface: "{{ mwan_internal_iface }}"
 
     # Converge the network layer here rather than at the end of the play, so
