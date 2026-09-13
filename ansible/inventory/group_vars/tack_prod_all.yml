@@ -88,10 +88,13 @@ tack_ledger_node_addresses:
   yb2: "{{ service_mapping.tack_data2.ipv6 }}"
   yb3: "{{ service_mapping.tack_data3.ipv6 }}"
 
-# Ledger transport encryption (TACK-460). Production stays on plaintext
-# until QA has run encrypted and been read back, because turning it on
-# restarts every ledger node and a client that cannot verify a node cannot
-# reach the ledger at all. The owner guest issues the authority when this
-# flips; naming it here now keeps that flip to one line.
-tack_ledger_tls_enabled: false
+# Ledger transport encryption (TACK-460). QA ran encrypted and was read
+# back on 2026-09-13 (export, restore rehearsal, plaintext and wrong-
+# authority clients refused), so production encrypts too. The deploy that
+# first renders this issues the authority on the owner guest and restarts
+# the three ledger nodes back to back, because a node on the new setting
+# cannot reach quorum until its peers carry it as well; the ledger is
+# unreachable for the length of that restart. Every client of this
+# environment dials verify-full against the authority from then on.
+tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack.hostname }}"
