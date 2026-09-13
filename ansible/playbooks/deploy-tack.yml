@@ -607,6 +607,13 @@
             - tack_ledger_consumers_repointed | bool
             - tack_ledger_node_name == 'yb1'
       when: tack_cluster_role == 'data'
+      # A node that fails to come back stops the whole run. Without this,
+      # ansible drops the failed guest and carries the roll to the next one,
+      # which took a second node down while the first was still replaying
+      # its tablets (2026-09-12 production retire: quorum lost, application
+      # unavailable for three minutes). A stopped run leaves two nodes
+      # serving and the failed one to be read by a person.
+      any_errors_fatal: true
 
     # Provision and the app start run after the data-guest ledger nodes are
     # up, because the ops and app database URLs point at the data nodes. On
