@@ -43,8 +43,8 @@ to OPNsense `:fe::2:51820`.
 same WAN suburban dialed. This is DNS-LB symmetry. It works for general
 traffic.
 - The daemon's steering chain balances OPNsense-initiated outbound traffic:
-table inet mwan_steer, chain prerouting, priority -149. The modulus is the
-weight sum of the active tier's healthy providers, not a fixed two.
+`table inet mwan_steer`, `chain prerouting`, priority `-149`. The modulus is
+the weight sum of the active tier's healthy providers, not a fixed two.
 
 Two flows that break consistency:
 
@@ -63,8 +63,10 @@ Two flows that break consistency:
 So far healthy.
 
 1. Two minutes later, OPNsense initiates a rekey. The rekey-after timer
-  fires. New conntrack from `:fe::2`. Mod-2 rule fires. 50% chance: mark 2
-   (Webpass).
+  fires. New conntrack from `:fe::2` enters the daemon's steering chain,
+   which splits it across the active tier's healthy providers by weight.
+   Today's two tier-0 providers carry equal weight, an even split, so there
+   is a 50% chance it marks Webpass (mark 2).
 2. Reply egresses Webpass. Postrouting NAT rewrites src to `:be00::1`.
 3. Packet arrives at suburban. Suburban's wg validates the packet. Key matches.
   Then it calls `SetEndpointFromPacket` with the new source `:be00::1`.
@@ -95,13 +97,14 @@ continues to that stored IP. Asymmetric routing kills the session.
 
 ### Flow C: the MWAN VM reboots or conntrack flush
 
-If the MWAN VM reboots, all flows from `:fe::2` become "ct state new"
-again on next packet. The mod-2 random LB rule re-runs. If suburban's stored
-endpoint at the time was `:c80::1` but the new mod-2 picks Webpass, OPNsense's
-reply egresses Webpass. Suburban's roaming sets endpoint to `:be00::1`. Flow
+If the MWAN VM reboots, all flows from `:fe::2` become "ct state new" again
+on next packet, and the daemon's steering chain re-splits them across the
+active tier's healthy providers by weight. If suburban's stored endpoint at
+the time was `:c80::1` but the new split picks Webpass, OPNsense's reply
+egresses Webpass. Suburban's roaming sets endpoint to `:be00::1`. Flow
 continues asymmetric to what suburban DIALS via its `Endpoint=` config. One
-cycle later if mod-2 picks AT&T again, endpoint moves back. Endpoint flapping
-in lockstep with mod-2 randomness on every conntrack flush.
+cycle later if the split picks AT&T again, endpoint moves back. Endpoint
+flapping tracks the steering chain's split on every conntrack flush.
 
 ## What CAN'T fix it
 
