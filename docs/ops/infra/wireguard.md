@@ -42,8 +42,9 @@ to OPNsense `:fe::2:51820`.
 - The MWAN VM's mangle prerouting: inbound iif sets ct mark, so reply egresses the
 same WAN suburban dialed. This is DNS-LB symmetry. It works for general
 traffic.
-- The MWAN VM's mangle prerouting also has a mod-2 random LB rule for OPNsense-initiated
-outbound: `ip6 saddr :fe::2 ct state new mark set numgen random mod 2`.
+- The daemon's steering chain balances OPNsense-initiated outbound traffic:
+table inet mwan_steer, chain prerouting, priority -149. The modulus is the
+weight sum of the active tier's healthy providers, not a fixed two.
 
 Two flows that break consistency:
 
