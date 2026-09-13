@@ -18,6 +18,18 @@ container_features: "nesting=1"
 
 tack_install_dir: /root/tack
 
+# Engine packages the deploy holds against the weekly package updater
+# (TACK-487): an unattended upgrade of any of these restarts the daemon and
+# every container with it. docker-ce-rootless-extras arrives as a recommend
+# of docker-ce and is held with it.
+tack_docker_held_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+  - docker-ce-rootless-extras
+
 # The engine's superuser, used by the ops sidecar for migrations, role
 # seeding, and backups, and by the engine's own first boot. The application
 # no longer connects as it: its DATABASE_URL uses tack_app (TACK-180).

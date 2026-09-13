@@ -62,6 +62,18 @@
         state: present
         update_cache: true
 
+    # The weekly package updater runs apt-get full-upgrade on every guest. On
+    # 2026-09-07 it upgraded the engine packages on production and the daemon
+    # restart took every tack container down with it (TACK-487). Holding the
+    # engine packages keeps the updater to the rest of the system; an engine
+    # upgrade is a deploy-time change made in an announced window by removing
+    # the hold, upgrading, and letting this task hold the new version.
+    - name: Hold the Docker engine packages against unattended upgrades
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop: "{{ tack_docker_held_packages }}"
+
     # -------------------------------------------------------------------------
     # Host-level networking: sysctl, ndppd, Docker daemon
     # -------------------------------------------------------------------------
