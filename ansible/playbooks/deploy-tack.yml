@@ -229,6 +229,13 @@
     # reads the authority from its rendered connection string. An
     # environment that has not turned encryption on skips it and keeps
     # connecting in the clear.
+    # Whether this run placed a new node certificate on this guest, which the
+    # ledger node start below reads. False until the include says otherwise,
+    # so a guest that skips the include still has a value.
+    - name: Assume no ledger node certificate changed on this run
+      ansible.builtin.set_fact:
+        tack_ledger_node_certificate_rotated: false
+
     - name: Issue the ledger certificates
       ansible.builtin.include_tasks: tasks/tack-ledger-tls.yml
       when: tack_ledger_tls_enabled | bool
@@ -539,12 +546,35 @@
           changed_when: true
           no_log: true
 
+        # A node that just received a new certificate cannot become healthy on
+        # its own: the engine encrypts peer traffic with it, and its peers
+        # still speak the old way until their own restart, so the quorum only
+        # reassembles once every node has restarted (the first QA flip on
+        # 2026-09-12 failed this wait on the first node and passed it on the
+        # other two). On that run the nodes restart back to back without a
+        # wait, and the task below waits for all of them together. Every
+        # other run keeps the rolling wait, which is what preserves quorum
+        # while one node at a time restarts.
         - name: Start the ledger node and wait until it is healthy (first start joins)
           ansible.builtin.command:
-            cmd: docker compose up -d --wait --wait-timeout 300 yugabyte
+            cmd: >-
+              docker compose up -d
+              {{ '' if tack_ledger_node_certificate_rotated | bool else '--wait --wait-timeout 300' }}
+              yugabyte
             chdir: "{{ tack_install_dir }}"
           changed_when: true
           throttle: 1
+
+        # docker ps prints the container id only while its health check
+        # passes, so an empty answer means not healthy yet.
+        - name: Wait until the ledger node is healthy
+          ansible.builtin.command:
+            cmd: docker ps --quiet --filter name=^tack-yugabyte-1$ --filter health=healthy
+          register: tack_ledger_node_health
+          until: tack_ledger_node_health.stdout != ''
+          retries: 36
+          delay: 10
+          changed_when: false
 
         # Scheduled ledger export, per-node half (TACK-356). The archiver
         # timer polls for a pending export manifest and no-ops quietly
