@@ -1,6 +1,12 @@
 ---
 tack_domain: "tack.home.goodkind.io"
 
+# Production authenticates API tokens, not raw user ids (TACK-261). The token
+# path was proven on QA first; every MCP client of this deployment must hold a
+# token minted through `ops auth token-create` before the deploy that renders
+# this, because the app refuses a raw user id once it starts in this mode.
+tack_env: production
+
 tack_yugabyte_password: "{{ vault_tack_yugabyte_password }}"
 tack_meili_master_key: "{{ vault_tack_meili_master_key }}"
 tack_audit_writer_password: "{{ vault_tack_audit_writer_password }}"
@@ -81,3 +87,11 @@ tack_ledger_node_addresses:
   yb1: "{{ service_mapping.tack_data1.ipv6 }}"
   yb2: "{{ service_mapping.tack_data2.ipv6 }}"
   yb3: "{{ service_mapping.tack_data3.ipv6 }}"
+
+# Ledger transport encryption (TACK-460). Production stays on plaintext
+# until QA has run encrypted and been read back, because turning it on
+# restarts every ledger node and a client that cannot verify a node cannot
+# reach the ledger at all. The owner guest issues the authority when this
+# flips; naming it here now keeps that flip to one line.
+tack_ledger_tls_enabled: false
+tack_ledger_ca_host: "{{ service_mapping.tack.hostname }}"

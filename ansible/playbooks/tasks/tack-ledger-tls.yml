@@ -1,0 +1,162 @@
+---
+# Ledger transport encryption (TACK-460), issued by the deploy.
+#
+# Repointing moved the ledger onto the data guests, so the engine's peer
+# traffic and every application connection cross guest boundaries. These
+# tasks give the environment a private certificate authority and one server
+# certificate per ledger node, so the engine can encrypt both and every
+# client can dial verify-full and prove which node answered.
+#
+# One authority per environment. It is issued on the guest named by
+# tack_ledger_ca_host and stays there; each node's certificate is issued
+# beside it and copied to the guest that announces that node's name, and the
+# authority's certificate goes to every guest because every client verifies
+# against it. The authority's private key never leaves its own guest.
+#
+# Every certificate names both the node name and the guest's pinned address,
+# because the app and the audit consumer dial the names while the
+# host-networked ops sidecar dials the addresses, and verify-full checks the
+# certificate against whichever one was dialed.
+#
+# Included per host from deploy-tack.yml, before the env file and the compose
+# override render, and skipped entirely where tack_ledger_tls_enabled is false.
+
+- name: Create the ledger certificate directory
+  ansible.builtin.file:
+    path: "{{ tack_ledger_certs_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create the ledger certificate authority directory
+  ansible.builtin.file:
+    path: "{{ tack_ledger_certs_dir }}/ca"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+# openssl 3 writes the key and the self-signed certificate in one command.
+# creates makes it issue once: a second authority would invalidate every
+# certificate already trusted by a running node.
+- name: Issue the ledger certificate authority
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -x509 -newkey rsa:4096 -nodes -sha256
+      -days {{ tack_ledger_cert_days }}
+      -subj "/CN=Tack ledger authority {{ tack_domain }}"
+      -addext "basicConstraints=critical,CA:TRUE"
+      -addext "keyUsage=critical,keyCertSign,cRLSign"
+      -keyout {{ tack_ledger_certs_dir }}/ca/ca.key
+      -out {{ tack_ledger_certs_dir }}/ca/ca.crt
+    creates: "{{ tack_ledger_certs_dir }}/ca/ca.crt"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+- name: Restrict the ledger authority key
+  ansible.builtin.file:
+    path: "{{ tack_ledger_certs_dir }}/ca/ca.key"
+    owner: root
+    group: root
+    mode: "0600"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+# One signing request per ledger node, named for the node and carrying both
+# the name and the guest's address, then signed by the authority above.
+# copy_extensions carries the names from the request into the certificate;
+# without it the certificate would carry no names at all and verify-full
+# would reject every connection.
+- name: Issue a signing request for each ledger node
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -new -newkey rsa:2048 -nodes -sha256
+      -subj "/CN={{ item.key }}"
+      -addext "subjectAltName=DNS:{{ item.key }},IP:{{ item.value }}"
+      -keyout {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.key
+      -out {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.csr
+    creates: "{{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.csr"
+  loop: "{{ tack_ledger_certificate_subjects | dict2items }}"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+- name: Sign each ledger node certificate
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509 -req -sha256 -days {{ tack_ledger_cert_days }}
+      -in {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.csr
+      -CA {{ tack_ledger_certs_dir }}/ca/ca.crt
+      -CAkey {{ tack_ledger_certs_dir }}/ca/ca.key
+      -CAcreateserial -copy_extensions copy
+      -out {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.crt
+    creates: "{{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.crt"
+  loop: "{{ tack_ledger_certificate_subjects | dict2items }}"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+# The authority's certificate is public material and every guest needs it:
+# the engine verifies its peers with it and every client verifies the node
+# it dialed with it.
+- name: Read the ledger authority certificate
+  ansible.builtin.slurp:
+    src: "{{ tack_ledger_certs_dir }}/ca/ca.crt"
+  register: tack_ledger_ca_certificate
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+- name: Place the ledger authority certificate on this guest
+  ansible.builtin.copy:
+    content: "{{ tack_ledger_ca_certificate.content | b64decode }}"
+    dest: "{{ tack_ledger_ca_cert_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  # The owner guest restarts its whole stack; a data guest restarts only its
+  # ledger node, which is all it runs.
+  notify: "{{ 'Restart Tack' if tack_provision_owner else 'Restart Tack ledger node' }}"
+
+# This guest's own certificate and key, named for the node it announces. A
+# guest that runs no ledger node (the application guest once its node
+# retires) skips these and keeps only the authority certificate above.
+- name: Read this guest's ledger node certificate
+  ansible.builtin.slurp:
+    src: "{{ tack_ledger_certs_dir }}/ca/node.{{ tack_ledger_node_name }}.crt"
+  register: tack_ledger_node_certificate
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  when: tack_ledger_node_name in tack_ledger_certificate_subjects
+
+- name: Read this guest's ledger node key
+  ansible.builtin.slurp:
+    src: "{{ tack_ledger_certs_dir }}/ca/node.{{ tack_ledger_node_name }}.key"
+  register: tack_ledger_node_key
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  no_log: true
+  when: tack_ledger_node_name in tack_ledger_certificate_subjects
+
+- name: Place this guest's ledger node certificate
+  ansible.builtin.copy:
+    content: "{{ tack_ledger_node_certificate.content | b64decode }}"
+    dest: "{{ tack_ledger_certs_dir }}/node.{{ tack_ledger_node_name }}.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  when: tack_ledger_node_name in tack_ledger_certificate_subjects
+  # The owner guest restarts its whole stack; a data guest restarts only its
+  # ledger node, which is all it runs.
+  notify: "{{ 'Restart Tack' if tack_provision_owner else 'Restart Tack ledger node' }}"
+
+- name: Place this guest's ledger node key
+  ansible.builtin.copy:
+    content: "{{ tack_ledger_node_key.content | b64decode }}"
+    dest: "{{ tack_ledger_certs_dir }}/node.{{ tack_ledger_node_name }}.key"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: tack_ledger_node_name in tack_ledger_certificate_subjects
+  # The owner guest restarts its whole stack; a data guest restarts only its
+  # ledger node, which is all it runs.
+  notify: "{{ 'Restart Tack' if tack_provision_owner else 'Restart Tack ledger node' }}"
