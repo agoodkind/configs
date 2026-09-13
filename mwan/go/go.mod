@@ -1,6 +1,6 @@
 module goodkind.io/mwan
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -18,8 +18,8 @@ require (
 	github.com/mdlayher/vsock v1.2.1
 	github.com/osrg/gobgp/v4 v4.7.0
 	github.com/vishvananda/netlink v1.3.1
-	golang.org/x/net v0.56.0
-	golang.org/x/sys v0.46.0
+	golang.org/x/net v0.57.0
+	golang.org/x/sys v0.47.0
 	goodkind.io/gklog v0.2.1
 	goodkind.io/send-email v0.0.0-20260604011720-40a2ede56cd9
 	google.golang.org/grpc v1.83.1
@@ -91,9 +91,9 @@ require (
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	gitlab.com/digitalxero/go-conventional-commit v1.0.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
