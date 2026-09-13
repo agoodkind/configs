@@ -229,6 +229,13 @@
     # reads the authority from its rendered connection string. An
     # environment that has not turned encryption on skips it and keeps
     # connecting in the clear.
+    # Whether this run placed a new node certificate on this guest, which the
+    # ledger node start below reads. False until the include says otherwise,
+    # so a guest that skips the include still has a value.
+    - name: Assume no ledger node certificate changed on this run
+      ansible.builtin.set_fact:
+        tack_ledger_node_certificate_rotated: false
+
     - name: Issue the ledger certificates
       ansible.builtin.include_tasks: tasks/tack-ledger-tls.yml
       when: tack_ledger_tls_enabled | bool
@@ -552,19 +559,19 @@
           ansible.builtin.command:
             cmd: >-
               docker compose up -d
-              {{ '' if (tack_ledger_node_certificate_placed is defined
-                        and tack_ledger_node_certificate_placed is changed)
-                 else '--wait --wait-timeout 300' }}
+              {{ '' if tack_ledger_node_certificate_rotated | bool else '--wait --wait-timeout 300' }}
               yugabyte
             chdir: "{{ tack_install_dir }}"
           changed_when: true
           throttle: 1
 
+        # docker ps prints the container id only while its health check
+        # passes, so an empty answer means not healthy yet.
         - name: Wait until the ledger node is healthy
           ansible.builtin.command:
-            cmd: docker inspect --format '{{ "{{" }}.State.Health.Status{{ "}}" }}' tack-yugabyte-1
+            cmd: docker ps --quiet --filter name=^tack-yugabyte-1$ --filter health=healthy
           register: tack_ledger_node_health
-          until: tack_ledger_node_health.stdout == 'healthy'
+          until: tack_ledger_node_health.stdout != ''
           retries: 36
           delay: 10
           changed_when: false
