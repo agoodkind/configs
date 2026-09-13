@@ -94,26 +94,14 @@ mwan_monkeybrains_duid_raw_data: ""
 # 104.57.226.192/29, webpass 136.25.91.240/29). Each sim routes its /29 to the
 # MWAN VM. The five mapped transit hosts are the router, the MWAN VM, the
 # failover, and two spares; .1 is the VRRP virtual address and is not mapped.
-# Each maps onto the matching host of the ISP block, so last octets line up.
+# Each provider entry maps them onto the matching host of its ISP block, so
+# last octets line up.
 mwan_static_internal_hosts:
   - "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
   - "{{ service_mapping.mwan_suburban.ipv4_transit }}"
   - "{{ service_mapping.mwan_failover_suburban.ipv4_transit }}"
   - "{{ service_mapping.opnsense_suburban.transit_v4_net | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}"
   - "{{ service_mapping.opnsense_suburban.transit_v4_net | ansible.utils.ipaddr('6') | ansible.utils.ipaddr('address') }}"
-mwan_static_mappings:
-  att:
-    - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
-    - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3" }
-    - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4" }
-    - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5" }
-    - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6" }
-  webpass:
-    - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
-    - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }
-    - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.204.4" }
-    - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.204.5" }
-    - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.204.6" }
 
 # ----------------------------------------------------------------------------
 # Internal link (to OPNsense)
