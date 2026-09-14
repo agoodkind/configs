@@ -15,7 +15,6 @@ import (
 	"goodkind.io/mwan/internal/opnsense"
 	"goodkind.io/mwan/internal/opnsense/upgrade"
 	"goodkind.io/mwan/internal/opnsense/validate"
-	"goodkind.io/mwan/internal/ops"
 )
 
 // upgradePhase enumerates `mwan opnsense upgrade <phase>` actions.
@@ -217,7 +216,7 @@ func (ui upgradeInputs) toOptions() upgrade.Options {
 func buildUpgradeDeps(cfg *config.Config, ui upgradeInputs) (upgrade.Deps, error) {
 	logger := slog.Default()
 	notifier := notify.FromConfig(cfg, logger, "mwan-opnsense-upgrade")
-	realOps := ops.NewRealOps(cfg, logger)
+	snapshotter := upgrade.NewQmSnapshotter(logger)
 
 	rpcCli, err := opnsense.Dial(ui.GRPCTarget)
 	if err != nil {
@@ -232,7 +231,7 @@ func buildUpgradeDeps(cfg *config.Config, ui upgradeInputs) (upgrade.Deps, error
 		Redial:             redial,
 	}
 	return upgrade.Deps{
-		Snap:     realOps,
+		Snap:     snapshotter,
 		Exec:     exec,
 		Validate: newValidatorAdapter(ui),
 		Notifier: notifier,
@@ -547,14 +546,13 @@ func standaloneBaseline(ctx context.Context, ui upgradeInputs, deployID string) 
 // flips it in their config and re-runs, mirroring the old --confirm
 // flag behaviour.
 func runUpgradeReset() int {
-	ui, cfg, err := resolveUpgradeInputs()
+	ui, _, err := resolveUpgradeInputs()
 	if err != nil {
 		return printAndExit("upgrade reset", err)
 	}
 	// Reset only needs the Snapshotter, not the validator or executor.
-	realOps := ops.NewRealOps(cfg, slog.Default())
 	deps := upgrade.Deps{
-		Snap:     realOps,
+		Snap:     upgrade.NewQmSnapshotter(slog.Default()),
 		Exec:     nil,
 		Validate: nil,
 		Notifier: nil,
