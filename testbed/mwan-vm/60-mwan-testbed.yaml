@@ -16,16 +16,16 @@ network:
         macaddress: 'bc:24:11:be:8e:b4'
       set-name: enwebpass0
       addresses:
-        - '10.240.204.2/24'
+        - '10.241.204.2/29'
       dhcp4: false
       dhcp6: false
       accept-ra: true
       routes:
         - to: 0.0.0.0/0
-          via: 10.240.204.1
+          via: 10.241.204.1
           metric: 10
         - to: 0.0.0.0/0
-          via: 10.240.204.1
+          via: 10.241.204.1
           table: 200
 
     enatt0:

@@ -77,9 +77,11 @@ mwan_enabled_services:
 # WAN addressing (static, ISP LXCs have no DHCPv4 server)
 # ----------------------------------------------------------------------------
 
-mwan_webpass_ipv4: "10.240.204.2/24"
-mwan_webpass_ipv4_addr: "10.240.204.2"
-mwan_webpass_gateway: "10.240.204.1"
+# The Webpass link sits inside the testbed Webpass static block, as production
+# Webpass does, and the sim holds the block's gateway address.
+mwan_webpass_ipv4: "10.241.204.2/{{ service_mapping.isp_webpass_suburban.ipv4_prefix }}"
+mwan_webpass_ipv4_addr: "10.241.204.2"
+mwan_webpass_gateway: "{{ service_mapping.isp_webpass_suburban.ipv4 }}"
 mwan_att_ipv4: "10.240.205.2/24"
 mwan_att_ipv4_addr: "10.240.205.2"
 mwan_att_gateway: "10.240.205.1"
@@ -90,10 +92,11 @@ mwan_monkeybrains_gateway: "10.240.206.1"
 mwan_webpass_duid_raw_data: ""
 mwan_monkeybrains_duid_raw_data: ""
 
-# 1:1 NAT of services to each WAN's routed static block, mirroring prod (att
-# 104.57.226.192/29, webpass 136.25.91.240/29). Each sim routes its /29 to the
-# MWAN VM. The five mapped transit hosts are the router, the MWAN VM, the
-# failover, and two spares; .1 is the VRRP virtual address and is not mapped.
+# 1:1 NAT of services to each WAN's static block, mirroring prod (att
+# 104.57.226.192/29, webpass 136.25.91.240/29). The att sim routes its /29 to
+# the MWAN VM; the webpass link sits inside its /29, so that block is on-link.
+# The five mapped transit hosts are the router, the MWAN VM, the failover, and
+# two spares; .1 is the VRRP virtual address and is not mapped.
 # Each provider entry maps them onto the matching host of its ISP block, so
 # last octets line up.
 mwan_static_internal_hosts:

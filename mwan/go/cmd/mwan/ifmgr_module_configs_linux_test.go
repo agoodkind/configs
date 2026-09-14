@@ -153,6 +153,10 @@ func sharedWANForTest() config.IfMgrSection {
 				V4Source:   "203.0.113.2",
 				Tier:       1,
 				Weight:     3,
+				StaticMappings: []config.StaticMapping{
+					{External: netip.MustParseAddr("203.0.113.2"), Internal: netip.MustParseAddr("192.0.2.2")},
+					{External: netip.MustParseAddr("203.0.113.3"), Internal: netip.MustParseAddr("192.0.2.3")},
+				},
 			},
 		},
 	}
@@ -198,6 +202,10 @@ func TestBuildWANRefs(t *testing.T) {
 				V4Source:   "203.0.113.2",
 				Tier:       1,
 				Weight:     3,
+				StaticMappings: []config.StaticMapping{
+					{External: netip.MustParseAddr("203.0.113.2"), Internal: netip.MustParseAddr("192.0.2.2")},
+					{External: netip.MustParseAddr("203.0.113.3"), Internal: netip.MustParseAddr("192.0.2.3")},
+				},
 			},
 		},
 	}
@@ -247,6 +255,10 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 				V4Source:   "203.0.113.2",
 				Tier:       1,
 				Weight:     3,
+				MappedExternals: []netip.Addr{
+					netip.MustParseAddr("203.0.113.2"),
+					netip.MustParseAddr("203.0.113.3"),
+				},
 			},
 		},
 	}
@@ -766,7 +778,7 @@ ping_count = 99
 				FwMarkPrio: 200,
 				FromPrio:   56,
 				NptPrefix:  "3d06:bad:b01:2200::/60",
-				V4Source:   "10.240.204.2",
+				V4Source:   "10.241.204.2",
 			},
 		},
 		Health: map[string]config.IfMgrHealthWANSection{
@@ -818,7 +830,7 @@ ping_count = 99
 	if byName["att"].Iface != "enatt0" || byName["webpass"].Iface != "enwebpass0" {
 		t.Fatalf("wan.routes ifaces did not resolve from the network file: %#v", byName)
 	}
-	if byName["att"].TableID != 100 || byName["webpass"].V4Source != "10.240.204.2" {
+	if byName["att"].TableID != 100 || byName["webpass"].V4Source != "10.241.204.2" {
 		t.Fatalf("wan.routes routing fields did not resolve from the network file: %#v", byName)
 	}
 	hc, ok := set["health"].(health.Config)

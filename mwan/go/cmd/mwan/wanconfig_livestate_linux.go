@@ -127,6 +127,7 @@ func interfacesLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []ya
 				Path:  base + "/carrying",
 				Value: boolValue(routing.Carrying),
 			})
+			items = append(items, ownedAddressItems(member, routing.OwnedAddresses)...)
 		}
 		if translation, known := snap.Translation[member.Name]; known && translation.Delegated.IsValid() {
 			items = append(items, yangpub.Item{
@@ -157,6 +158,25 @@ func interfacesLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []ya
 			Path:  groupBase + "/intended-ruleset",
 			Value: snap.IntendedRuleset,
 		})
+	}
+	return items
+}
+
+// ownedAddressItems serves the addresses a member's link holds for its static
+// mappings. The wan container is a presence container whose name leaf is
+// mandatory, and the configuration publish does not write that container, so
+// the provider's name is served beside the leaf-list rather than leaving a
+// container without its mandatory leaf. Leaf-list entries are addressed by
+// value, the way the configuration publish addresses its own leaf-lists.
+func ownedAddressItems(member wanconfig.Member, owned []netip.Addr) []yangpub.Item {
+	if len(owned) == 0 {
+		return nil
+	}
+	base := "/ietf-interfaces:interfaces/interface[name='" + member.Iface + "']/" + steeringPrefix + ":wan"
+	items := make([]yangpub.Item, 0, len(owned)+1)
+	items = append(items, yangpub.Item{Path: base + "/name", Value: member.Name})
+	for _, address := range owned {
+		items = append(items, yangpub.Item{Path: base + "/owned-address", Value: address.String()})
 	}
 	return items
 }

@@ -1,5 +1,7 @@
 package config
 
+import "net/netip"
+
 // IfMgrModulesSection is the explicit TOML schema for [ifmgr.modules].
 // Each field maps to one supported module table.
 type IfMgrModulesSection struct {
@@ -112,6 +114,17 @@ type IfMgrWANEntry struct {
 	// refuses a missing or smaller value rather than defaulting it, because a
 	// zero share would make the balancer's divisor wrong.
 	Weight int
+	// StaticMappings are the provider's one-to-one IPv4 translations, in the
+	// order the configuration lists them.
+	StaticMappings []StaticMapping
+}
+
+// StaticMapping is one one-to-one IPv4 translation a provider carries: traffic
+// arriving on the provider's link for External is delivered to Internal, and
+// Internal leaves that link as External.
+type StaticMapping struct {
+	External netip.Addr
+	Internal netip.Addr
 }
 
 // IfMgrWANRoutesSection is the [ifmgr.modules.wan.routes] table. The health

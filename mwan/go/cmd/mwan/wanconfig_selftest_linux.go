@@ -34,6 +34,11 @@ const (
 	selftestHashModeValue = "random"
 )
 
+// selftestOwnedAddress is the mapped address the private selftest's store
+// reports the member's link holding, so the read proves the owned-address
+// leaf-list and the wan name beside it serve through real sysrepo.
+const selftestOwnedAddress = "203.0.113.3"
+
 // restoreSelftestTimeout bounds the restore, which runs after the main
 // context has already expired.
 const restoreSelftestTimeout = 10 * time.Second
@@ -291,7 +296,10 @@ func selftestStore() *wanstate.Store {
 			V6:                  wanstate.ProbePass,
 		},
 	})
-	store.SetRouting(0, map[string]wanstate.MemberRouting{"att": {Carrying: true}})
+	store.SetRouting(0, map[string]wanstate.MemberRouting{"att": {
+		Carrying:       true,
+		OwnedAddresses: []netip.Addr{netip.MustParseAddr(selftestOwnedAddress)},
+	}})
 	store.SetTranslation(map[string]wanstate.MemberTranslation{
 		"att": {Delegated: netip.MustParsePrefix("2001:db8:a::/60"), KernelPresent: true},
 	})
@@ -464,7 +472,7 @@ func checkSelftestNotifications(
 	// transition, and a routing pass that installs a different tier than
 	// the baseline selftestStore wrote.
 	store.NotifyHealthTransition("att", wanstate.HealthHealthy, wanstate.HealthUnhealthy)
-	store.SetRouting(1, map[string]wanstate.MemberRouting{"att": {Carrying: false}})
+	store.SetRouting(1, map[string]wanstate.MemberRouting{"att": {Carrying: false, OwnedAddresses: nil}})
 
 	byPath := map[string]string{}
 	for len(byPath) < 2 {
@@ -643,6 +651,9 @@ func checkSelftestInterfaces(log *slog.Logger, tree json.RawMessage) error {
 	if err := expectLeaf(state, "carrying", "true", "live state"); err != nil {
 		return err
 	}
+	if err := checkSelftestOwnedAddresses(log, member); err != nil {
+		return err
+	}
 	group, err := unmarshalObject(log, interfaces["goodkind-mwan-steering:steering-group"], "steering group")
 	if err != nil {
 		return err
@@ -656,6 +667,29 @@ func checkSelftestInterfaces(log *slog.Logger, tree json.RawMessage) error {
 	}
 	if _, present := groupState["intended-ruleset"]; !present {
 		return errors.New("live state: intended-ruleset is absent")
+	}
+	return nil
+}
+
+// checkSelftestOwnedAddresses checks the member's wan container carries the
+// provider's name and exactly the one owned address the store reports. Both
+// are served only from the operational provider, because the configuration
+// publish writes no wan container.
+func checkSelftestOwnedAddresses(log *slog.Logger, member map[string]json.RawMessage) error {
+	wan, err := unmarshalObject(log, member["goodkind-mwan-steering:wan"], "wan container")
+	if err != nil {
+		return err
+	}
+	if err := expectLeaf(wan, "name", `"att"`, "live state"); err != nil {
+		return err
+	}
+	owned, err := unmarshalArray(log, wan["owned-address"], "owned-address leaf-list")
+	if err != nil {
+		return err
+	}
+	want := `"` + selftestOwnedAddress + `"`
+	if len(owned) != 1 || string(owned[0]) != want {
+		return fmt.Errorf("live state: owned-address = %s, want [%s]", wan["owned-address"], want)
 	}
 	return nil
 }

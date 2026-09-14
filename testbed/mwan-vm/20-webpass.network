@@ -12,10 +12,10 @@ IPv4Forwarding=yes
 IPv6Forwarding=yes
 
 [Address]
-Address=10.240.204.2/24
+Address=10.241.204.2/29
 
 [Route]
-Gateway=10.240.204.1
+Gateway=10.241.204.1
 Table=200
 
 [DHCPv6]

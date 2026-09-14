@@ -120,7 +120,7 @@ resource "proxmox_virtual_environment_container" "isp_webpass_suburban" {
     }
     ip_config {
       ipv4 {
-        address = "${local.service_mapping.isp_webpass_suburban.ipv4}/24"
+        address = "${local.service_mapping.isp_webpass_suburban.ipv4}/${local.service_mapping.isp_webpass_suburban.ipv4_prefix}"
       }
     }
     ip_config {

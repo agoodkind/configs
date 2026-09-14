@@ -861,15 +861,39 @@
         - mwan_gate_verdict.egress_rc != -1
         - mwan_pre_deploy_snapshot_name is not defined
 
+    # The gate checks owned addresses only after egress passed, inside the
+    # guest through its agent. A gateway that forwards traffic but does not
+    # hold an on-link mapped address has lost inbound reachability for that
+    # address, not egress, and rollback is reserved for lost egress, so the
+    # play fails and leaves the VM running this deploy's configuration. The
+    # gate itself emails the alert from the hypervisor through the notify
+    # settings that host's configuration carries, and its unit log records
+    # whether the send went out.
+    - name: Fail when a provider link does not hold its mapped addresses
+      ansible.builtin.fail:
+        msg: >-
+          Egress returned, but within 60s a provider link in VM
+          {{ actual_vmid }} still did not hold every mapped address inside its
+          connected subnet. The VM still runs the config this deploy wrote,
+          and no rollback was performed. The deploy gate on
+          {{ mwan_proxmox_delegate }} emailed an alert. Run
+          `mwan deploy-gate check-owned-addresses` on the gateway to list the
+          missing addresses.
+      when:
+        - mwan_gate_verdict.egress_rc == 0
+        - mwan_gate_verdict.owned_rc != 0
+
     - name: Playbook complete
       ansible.builtin.debug:
         msg: >-
-          Deploy playbook complete. The MWAN VM reboot verdict completed and
-          the egress verdict passed. The verdict file was collected over raw
-          SSH. Monitor watchdog logs on {{ mwan_proxmox_delegate }}.
+          Deploy playbook complete. The MWAN VM reboot verdict completed, the
+          egress verdict passed, and every provider link holds its on-link
+          mapped addresses. The verdict file was collected over raw SSH.
+          Monitor watchdog logs on {{ mwan_proxmox_delegate }}.
       when:
         - mwan_gate_verdict.reboot_rc in [0, 2]
         - mwan_gate_verdict.egress_rc == 0
+        - mwan_gate_verdict.owned_rc == 0
 
   handlers:
     - name: Reload networkd
