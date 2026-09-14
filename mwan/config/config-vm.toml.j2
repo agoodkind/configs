@@ -28,12 +28,6 @@ curl_target = "https://ifconfig.co/ip"
 last_deploy_path = "/var/lib/mwan/last-deploy"
 last_change_path = "/var/run/mwan-last-change"
 
-[[network.wan_interfaces]]
-name = "enwebpass0"
-
-[[network.wan_interfaces]]
-name = "enmbrains0"
-
 [watchdog]
 service_name = "{{ mwan_watchdog_service_name }}"
 deploy_window_minutes = 30
@@ -143,6 +137,11 @@ health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 [ifmgr.modules.health]
 state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 persist_state_file = "/var/lib/mwan/health-state"
+# Push the per-provider verdict to the hypervisor watchdog. Context id 2 is
+# VMADDR_CID_HOST, the kernel's fixed id for a guest's own hypervisor, so it is
+# a literal rather than an inventory value: no site can change it.
+status_push_cid = 2
+status_push_port = {{ mwan_status_push_port }}
 
 {% endif %}
 {% if mwan_ifmgr_host_ipv6_policy_enabled %}

@@ -5,12 +5,14 @@ package health
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"sync"
 	"time"
 
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/statuspush"
 )
 
 const (
@@ -191,6 +193,8 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		SuccessThreshold:  0,
 		FailureThreshold:  0,
 		RecoveryThreshold: 0,
+		StatusPushCID:     0,
+		StatusPushPort:    0,
 		WANs:              nil,
 	}
 	if cfg != nil {
@@ -201,6 +205,17 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		healthConfig = typedConfig
 	}
 	applyDefaults(&healthConfig)
+	// A zero port means no watchdog is listening for this host's verdict, which
+	// is every host but the two gateways. Building no sender there keeps a
+	// pointless dial out of every probe cycle.
+	var pusher statusSender
+	if healthConfig.StatusPushPort != 0 {
+		pusher = statuspush.NewSender(
+			healthConfig.StatusPushCID,
+			healthConfig.StatusPushPort,
+			slog.Default().With("component", "ifmgr", "module", moduleName),
+		)
+	}
 	return &Module{
 		BaseModule:       ifmgr.NewBaseModule(moduleName),
 		cfg:              healthConfig,
@@ -214,6 +229,7 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 		probeV6:          netif.Ping6,
 		probeHTTP6:       netif.HTTPCheck6,
 		probeHTTP4:       netif.HTTPCheck4,
+		pusher:           pusher,
 	}, nil
 }
 

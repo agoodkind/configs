@@ -3,6 +3,8 @@ package watchdog
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"goodkind.io/mwan/internal/tracing"
@@ -53,16 +55,59 @@ func (w *watchdog) sendTotalAlert(ctx context.Context, reason, detail string) {
 	)
 }
 
-// diagnoseNoRecentChange runs VM and ISP connectivity diagnostics when no
-// recent config change was detected. It may trigger a failover to the LXC.
-// Returns true if a failover was triggered (caller should return early).
+// logPushedStatus records what the gateway last said about its providers and
+// how old that report is. It replaces the per-interface pings this diagnosis
+// used to run through guest-exec from a hand-typed interface list: the gateway
+// probes every provider on its own cadence with hysteresis, its verdict is
+// fresher, and it covers every provider rather than the two the list named.
+func (w *watchdog) logPushedStatus(ctx context.Context) {
+	log := w.tracedLogger(ctx)
+	if w.status == nil {
+		log.InfoContext(ctx, "No gateway status listener configured")
+		w.appendProbe("Gateway status: no listener configured")
+		return
+	}
+	status, receivedAt, ok := w.status.Latest()
+	if !ok {
+		log.InfoContext(ctx, "No gateway status received yet")
+		w.appendProbe("Gateway status: none received")
+		return
+	}
+	names := make([]string, 0, len(status.Providers))
+	for name := range status.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	verdicts := make([]string, 0, len(names))
+	for _, name := range names {
+		verdicts = append(verdicts, name+"="+status.Providers[name])
+	}
+	joined := strings.Join(verdicts, " ")
+	age := w.now().Sub(receivedAt).Round(time.Second)
+	log.InfoContext(ctx,
+		"Gateway provider status",
+		"active_tier", status.ActiveTier,
+		"providers", joined,
+		"sent_at", status.SentAt.Format(time.RFC3339),
+		"age", age,
+	)
+	w.appendProbe(fmt.Sprintf(
+		"Gateway status (age %s): active tier %d, %s",
+		age, status.ActiveTier, joined,
+	))
+}
+
+// diagnoseNoRecentChange runs VM connectivity diagnostics and logs the
+// gateway's last pushed provider status when no recent config change was
+// detected. It may trigger a failover to the LXC. Returns true if a failover
+// was triggered (caller should return early).
 func (w *watchdog) diagnoseNoRecentChange(ctx context.Context) bool {
 	log := w.tracedLogger(ctx)
 	log.InfoContext(ctx,
 		"No recent config change; running diagnostics for alert context",
 	)
 	vmOK := w.testVMConnectivity(ctx)
-	w.testISP(ctx)
+	w.logPushedStatus(ctx)
 
 	var reason, detail string
 	if vmOK {

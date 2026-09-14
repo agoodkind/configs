@@ -13,28 +13,16 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// WANInterface describes one WAN uplink inside the MWAN VM.
-type WANInterface struct {
-	Name string `toml:"name"`
-}
-
-// NetworkConfig holds site-specific topology values.
+// NetworkConfig holds site-specific topology values. It carries no provider
+// list: the gateway pushes its own per-provider verdict to the watchdog, so no
+// reader here has to be told which interfaces exist.
 type NetworkConfig struct {
-	PingTargetIPv4 string         `toml:"ping_target_ipv4"`
-	PingTargetIPv6 string         `toml:"ping_target_ipv6"`
-	PingTargets    []string       `toml:"ping_targets"`
-	CurlTarget     string         `toml:"curl_target"`
-	WANInterfaces  []WANInterface `toml:"wan_interfaces"`
-	LastDeployPath string         `toml:"last_deploy_path"`
-	LastChangePath string         `toml:"last_change_path"`
-}
-
-func (nc NetworkConfig) WanIfaceNames() []string {
-	names := make([]string, len(nc.WANInterfaces))
-	for i, w := range nc.WANInterfaces {
-		names[i] = w.Name
-	}
-	return names
+	PingTargetIPv4 string   `toml:"ping_target_ipv4"`
+	PingTargetIPv6 string   `toml:"ping_target_ipv6"`
+	PingTargets    []string `toml:"ping_targets"`
+	CurlTarget     string   `toml:"curl_target"`
+	LastDeployPath string   `toml:"last_deploy_path"`
+	LastChangePath string   `toml:"last_change_path"`
 }
 
 // EmailConfig holds email notification settings.
@@ -77,6 +65,10 @@ type WatchdogSection struct {
 	VsockCID         uint32 `toml:"vsock_cid"`
 	VsockPort        uint32 `toml:"vsock_port"`
 	MwanAgentTCPAddr string `toml:"mwan_agent_tcp_addr"`
+	// StatusListenPort is the vsock port the gateway pushes its provider
+	// verdict to. Zero, the default everywhere but the two hypervisors, starts
+	// no listener at all.
+	StatusListenPort uint32 `toml:"status_listen_port"`
 
 	LogFile           string `toml:"log_file"`
 	JSONLogFile       string `toml:"json_log_file"`
@@ -556,6 +548,8 @@ func defaultConfigBase() Config {
 	cfg.Network = NetworkConfig{
 		PingTargetIPv4: "1.1.1.1",
 		PingTargetIPv6: "2606:4700:4700::1111",
+		PingTargets:    nil,
+		CurlTarget:     "",
 		LastDeployPath: "/var/lib/mwan/last-deploy",
 		LastChangePath: "/var/run/mwan-last-change",
 	}
@@ -564,9 +558,14 @@ func defaultConfigBase() Config {
 		CheckIntervalHealthy: 30, CheckIntervalDegraded: 10,
 		PostRollbackGraceSeconds: 120, AlertCooldownSeconds: 300,
 		DeployGracePeriodSeconds: 60, MaxRollbackAttempts: 3,
+		MaxIterations:            0,
 		SnapshotHealthyThreshold: 20, MaxKnownGoodSnapshots: 3,
 		HashCheckEveryNHealthy: 10, MinSnapshotIntervalSeconds: 300,
 		MaxTotalSnapshots: 15,
+		VsockCID:          0,
+		VsockPort:         0,
+		MwanAgentTCPAddr:  "",
+		StatusListenPort:  0,
 		LogFile:           "/var/log/mwan-watchdog.log", JSONLogFile: "/var/log/mwan-watchdog.jsonl",
 		RollbackStateFile: "/run/mwan-rollback.state",
 		RollbackLockFile:  "/run/mwan-watchdog-rollback.lock",
@@ -736,9 +735,6 @@ func validateWatchdog(cfg *Config, dryRun bool) error {
 	}
 	if cfg.PVE.TokenID != "" && cfg.PVE.TokenSecret == "" {
 		return errors.New("[pve] token_id set but token_secret empty")
-	}
-	if len(cfg.Network.WANInterfaces) == 0 {
-		return errors.New("[network] wan_interfaces must not be empty")
 	}
 	return nil
 }

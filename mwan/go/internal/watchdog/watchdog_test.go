@@ -1,6 +1,7 @@
 package watchdog
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -10,12 +11,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/alert"
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/ops"
+	"goodkind.io/mwan/internal/statuspush"
 )
 
 // ---------------------------------------------------------------------------
@@ -340,10 +343,6 @@ func testNC() config.NetworkConfig {
 		PingTargetIPv6: "2606:4700:4700::1111",
 		PingTargets:    []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 		CurlTarget:     "https://ifconfig.co/ip",
-		WANInterfaces: []config.WANInterface{
-			{Name: "enwebpass0"},
-			{Name: "enmbrains0"},
-		},
 		LastDeployPath: "/var/lib/mwan/last-deploy",
 		LastChangePath: "/var/run/mwan-last-change",
 	}
@@ -386,6 +385,82 @@ func newTestWatchdog(
 		coord:  &alert.Coord{},
 	}
 	return w
+}
+
+// fixedStatus is a gateway verdict already received. The listener's own
+// round-trip is proven in the statuspush package; here the question is what a
+// diagnosis does with a verdict it holds.
+type fixedStatus struct {
+	status     statuspush.Status
+	receivedAt time.Time
+	seen       bool
+}
+
+func (f fixedStatus) Latest() (statuspush.Status, time.Time, bool) {
+	return f.status, f.receivedAt, f.seen
+}
+
+// TestDiagnosisLogsThePushedStatus is what replaces the per-interface pings: a
+// diagnosis reports every provider's verdict and the age of that report, from
+// what the gateway pushed, and it names AT&T, which the hand-typed interface
+// list never did.
+func TestDiagnosisLogsThePushedStatus(t *testing.T) {
+	var logged bytes.Buffer
+	mock := &mockOps{}
+	w := newTestWatchdog(t, mock)
+	w.log = slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	now := time.Date(2026, 9, 2, 12, 0, 30, 0, time.UTC)
+	w.nowFn = func() time.Time { return now }
+	w.status = fixedStatus{
+		status: statuspush.Status{
+			SentAt:     now.Add(-20 * time.Second),
+			ActiveTier: 1,
+			Providers: map[string]string{
+				"att":          "unhealthy",
+				"webpass":      "unhealthy",
+				"monkeybrains": "healthy",
+			},
+		},
+		receivedAt: now.Add(-20 * time.Second),
+		seen:       true,
+	}
+
+	w.logPushedStatus(context.Background())
+
+	output := logged.String()
+	for _, want := range []string{
+		"Gateway provider status",
+		"att=unhealthy",
+		"webpass=unhealthy",
+		"monkeybrains=healthy",
+		"active_tier=1",
+		"age=20s",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("diagnosis log missing %q\nfull log:\n%s", want, output)
+		}
+	}
+}
+
+// TestDiagnosisSaysSoWithNoPushedStatus keeps the silent case legible: a
+// gateway that has never pushed must read as silent, not as healthy.
+func TestDiagnosisSaysSoWithNoPushedStatus(t *testing.T) {
+	var logged bytes.Buffer
+	w := newTestWatchdog(t, &mockOps{})
+	w.log = slog.New(slog.NewTextHandler(&logged, nil))
+	w.status = fixedStatus{
+		status:     statuspush.Status{},
+		receivedAt: time.Time{},
+		seen:       false,
+	}
+
+	w.logPushedStatus(context.Background())
+
+	if !strings.Contains(logged.String(), "No gateway status received yet") {
+		t.Fatalf("silent gateway not reported\nfull log:\n%s", logged.String())
+	}
 }
 
 func TestEnsureGuestThawedRecoversStuckFreeze(t *testing.T) {

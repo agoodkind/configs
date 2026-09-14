@@ -155,61 +155,6 @@ func (w *watchdog) testVMConnectivity(ctx context.Context) bool {
 	return false
 }
 
-// testISP pings through each configured WAN interface inside the VM.
-// A success on any interface means the ISP link is up, pointing to a routing
-// failure rather than a real outage.
-func (w *watchdog) testISP(ctx context.Context) bool {
-	log := w.tracedLogger(ctx)
-	ifaces := w.cfg.Network.WanIfaceNames()
-	log.InfoContext(ctx,
-		"Testing ISP reachability via WAN interfaces",
-		"wan_count", len(ifaces),
-		"interfaces", strings.Join(ifaces, ", "),
-	)
-	for _, iface := range ifaces {
-		v4ok, v4Unavailable := w.guestExecProbe(
-			ctx, "ping", "-c", "3", "-W", "3", "-I", iface, w.cfg.Network.PingTargetIPv4,
-		)
-		v6ok, v6Unavailable := w.guestExecProbe(
-			ctx, "ping6", "-c", "3", "-W", "3", "-I", iface, w.cfg.Network.PingTargetIPv6,
-		)
-		if v4ok {
-			log.DebugContext(ctx,
-				"ISP reachable from VM (IPv4 OK)",
-				"interface", iface,
-			)
-			w.appendProbe(fmt.Sprintf("WAN %s: IPv4 OK", iface))
-			return true
-		}
-		if v6ok {
-			log.DebugContext(ctx,
-				"ISP reachable from VM (IPv6 OK)",
-				"interface", iface,
-			)
-			w.appendProbe(fmt.Sprintf("WAN %s: IPv6 OK", iface))
-			return true
-		}
-		if v4Unavailable || v6Unavailable {
-			log.DebugContext(ctx,
-				"ISP probe via WAN interface unavailable due to guest-exec transport",
-				"interface", iface,
-			)
-			w.appendProbe(fmt.Sprintf(
-				"WAN %s: probe unavailable (guest-exec transport)",
-				iface,
-			))
-			continue
-		}
-		log.DebugContext(ctx,
-			"ISP unreachable from VM (IPv4 FAIL, IPv6 FAIL)",
-			"interface", iface,
-		)
-		w.appendProbe(fmt.Sprintf("WAN %s: IPv4 FAIL, IPv6 FAIL", iface))
-	}
-	log.DebugContext(ctx, "ISP unreachable from VM on all tested WAN interfaces")
-	return false
-}
-
 func (w *watchdog) readGuestUnix(ctx context.Context, path string) (int64, bool) {
 	log := w.tracedLogger(ctx)
 	parsed, err := w.ops.GuestExec(ctx, w.cfg.MwanVMID, "cat", path)
