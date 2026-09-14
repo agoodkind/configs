@@ -44,6 +44,7 @@
         src: "{{ repo_root }}/vault/sit-modules.conf"
         dest: /etc/modules-load.d/sit6.conf
         mode: "0644"
+      tags: ["sit6"]
 
     - name: Load the sit module now for the sit6 LXC tunnel
       # Asserted on every run rather than through a change-notified handler, so
@@ -52,6 +53,7 @@
       ansible.builtin.command:
         cmd: modprobe sit
       changed_when: false
+      tags: ["sit6"]
 
   handlers:
     - name: Reload sysctl settings
