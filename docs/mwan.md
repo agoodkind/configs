@@ -249,6 +249,11 @@ New unmarked flows receive a random mark for ISP-1 or ISP-2. A DSCP rule
 runs first and sets the mark, so the load balancer's unmarked-only rule
 leaves that flow alone.
 
+Each ISP entry in the gateway inventory may carry one forced DSCP value,
+and no two ISPs may share it. The rule matches only new flows arriving on
+the internal link, because senders on the internet already stamp the same
+codepoints on inbound traffic.
+
 OPNsense sets DSCP with a Normalization rule, and the filter generator
 emits `set-tos` from the TOS / DSCP field on that rule. Firewall filter
 rules can match DSCP, but they cannot set it.

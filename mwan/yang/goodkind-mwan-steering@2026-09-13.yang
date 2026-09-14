@@ -49,6 +49,13 @@ module goodkind-mwan-steering {
      decides its verdict, the prefix-translation inputs, and the
      internal link the members route toward.";
 
+  revision 2026-09-13 {
+    description
+      "Carry the DSCP value that forces a new flow onto one provider, so a
+       downstream host pins a flow to a provider by stamping that value. Every
+       addition is a new node: no node defined by an earlier revision changes
+       name, type, or shape.";
+  }
   revision 2026-09-02 {
     description
       "Carry the routing tables no provider may take, so the gateway checks a
@@ -286,6 +293,18 @@ module goodkind-mwan-steering {
            provider's routing table, which is the IPv4 counterpart of
            the translated prefix's IPv6 source rule. Only a provider
            on a static link carries one.";
+      }
+      leaf forced-dscp {
+        type inet:dscp {
+          range "1..63";
+        }
+        description
+          "The DSCP value that forces a new flow onto this provider. A
+           flow arriving from the internal link with this value takes
+           this provider's firewall mark before steering runs, so it
+           leaves over this link whichever member the balancer would
+           have chosen. Zero is excluded because every unmarked packet
+           carries it, and no two providers may share a value.";
       }
       container health {
         presence

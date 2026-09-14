@@ -369,6 +369,64 @@ func TestLoadRejectsDuplicateRoutingNumbers(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsAForcedDSCP(t *testing.T) {
+	t.Parallel()
+
+	// One provider carrying a forced DSCP value is the shape the gateway
+	// inventory renders, so the schema and the loader must both accept it.
+	body := strings.Replace(
+		validDocument,
+		`"npt-prefix": "2001:db8:beef:100::/60"`,
+		`"npt-prefix": "2001:db8:beef:100::/60", "forced-dscp": 8`,
+		1,
+	)
+	if _, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t)); err != nil {
+		t.Fatalf("Load rejected a provider with a forced DSCP value: %v", err)
+	}
+}
+
+func TestLoadRejectsAZeroForcedDSCP(t *testing.T) {
+	t.Parallel()
+
+	// Every unmarked packet carries DSCP zero, so a provider forcing it would
+	// take all internal traffic. The schema's range is what refuses it.
+	body := strings.Replace(
+		validDocument,
+		`"npt-prefix": "2001:db8:beef:100::/60"`,
+		`"npt-prefix": "2001:db8:beef:100::/60", "forced-dscp": 0`,
+		1,
+	)
+	if _, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t)); err == nil {
+		t.Fatal("Load accepted a forced DSCP value of zero")
+	}
+}
+
+func TestLoadRejectsADuplicateForcedDSCP(t *testing.T) {
+	t.Parallel()
+
+	// A later firewall rule overwrites an earlier rule's mark, so two providers
+	// sharing a value would silently send every tagged flow to the last one.
+	body := strings.Replace(
+		validDocument,
+		`"npt-prefix": "2001:db8:beef:100::/60"`,
+		`"npt-prefix": "2001:db8:beef:100::/60", "forced-dscp": 8`,
+		1,
+	)
+	body = strings.Replace(
+		body,
+		`"v4-source": "203.0.113.2",`,
+		`"v4-source": "203.0.113.2", "forced-dscp": 8,`,
+		1,
+	)
+	_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err == nil {
+		t.Fatal("Load accepted two providers sharing a forced DSCP value")
+	}
+	if !strings.Contains(err.Error(), "forced-dscp 8") {
+		t.Fatalf("error does not name the shared value: %v", err)
+	}
+}
+
 func TestLoadRejectsAProviderOnAReservedTable(t *testing.T) {
 	t.Parallel()
 

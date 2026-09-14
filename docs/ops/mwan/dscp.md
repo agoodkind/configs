@@ -1,6 +1,7 @@
 # Pinning a device or app to one WAN via DSCP
 
-Status: design plus manual PoC. Not deployed. Captured 2026-06-15.
+Status: the mwan half ships as the per-provider forced DSCP value, with AT&T on
+CS1. The OPNsense scrub half is not deployed. Captured 2026-06-15.
 
 ## Why this exists
 

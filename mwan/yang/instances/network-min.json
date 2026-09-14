@@ -38,7 +38,8 @@
           "fw-mark": 1,
           "fw-mark-prio": 100,
           "from-prio": 55,
-          "npt-prefix": "2001:db8:beef:100::/60"
+          "npt-prefix": "2001:db8:beef:100::/60",
+          "forced-dscp": 8
         },
         "goodkind-mwan-steering:steering": {
           "tier": 1,
