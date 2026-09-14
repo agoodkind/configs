@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 )
 
 // TestDeployStatusMarkHealthyClearsPending covers the RPC path the new

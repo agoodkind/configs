@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/opnsense"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 )
 
 // fileVerb enumerates `mwan opnsense file <verb>` sub-verbs.
@@ -171,10 +171,13 @@ func runFilePush(args []string) int {
 	defer func() { _ = cli.Close() }()
 
 	header := &mwanv1.TransferHeader{
-		Path:       remotePath,
-		Direction:  mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
-		FinishStep: mwanv1.FinishStep_FINISH_STEP_REPLACE,
-		TotalSize:  int64(len(payload)),
+		Path:             remotePath,
+		Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+		FinishStep:       mwanv1.FinishStep_FINISH_STEP_REPLACE,
+		ResumeTransferId: "",
+		ResumeFromOffset: 0,
+		Label:            "",
+		TotalSize:        int64(len(payload)),
 	}
 	term, err := streamUpload(ctx, cli, header, payload, chunk, stall)
 	if err != nil {
@@ -316,8 +319,13 @@ func runFilePull(args []string) int {
 	}
 	if sendErr := stream.Send(&mwanv1.UploadRequest{
 		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
-			Path:      remotePath,
-			Direction: mwanv1.TransferDirection_TRANSFER_DIRECTION_READ,
+			Path:             remotePath,
+			Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_READ,
+			FinishStep:       mwanv1.FinishStep_FINISH_STEP_UNSPECIFIED,
+			ResumeTransferId: "",
+			ResumeFromOffset: 0,
+			Label:            "",
+			TotalSize:        0,
 		}},
 	}); sendErr != nil {
 		return printAndExit("file pull", fmt.Errorf("send header: %w", sendErr))

@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/opnsense/configxform"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 )
 
 // configVerb enumerates `mwan opnsense config <verb>` sub-verbs.
@@ -122,7 +122,7 @@ func runConfigBackup(args []string) int {
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	resp, err := cli.RPC().BackupConfigXML(ctx, &mwanv1.BackupConfigXMLRequest{})
+	resp, err := cli.RPC().BackupConfigXML(ctx, &mwanv1.BackupConfigXMLRequest{Label: ""})
 	if err != nil {
 		return printAndExit("config backup", err)
 	}
@@ -147,10 +147,10 @@ func runConfigImport(args []string) int {
 	subsPath := cfg.OPNsense.ConfigImport.Substitutions
 	outputPath := cfg.OPNsense.ConfigImport.Output
 	if subsPath == "" {
-		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].substitutions is required in /etc/mwan/config.toml"))
+		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].substitutions is required in %s", cfg.Source))
 	}
 	if outputPath == "" {
-		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].output is required in /etc/mwan/config.toml"))
+		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].output is required in %s", cfg.Source))
 	}
 
 	cleanInput := filepath.Clean(source)

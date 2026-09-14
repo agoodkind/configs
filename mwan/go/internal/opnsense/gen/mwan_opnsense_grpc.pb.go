@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             (unknown)
-// source: mwan/v1/mwan_opnsense.proto
+// source: opnsense/v1/mwan_opnsense.proto
 
 package mwanv1
 
@@ -541,7 +541,7 @@ var OpnsenseService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "mwan/v1/mwan_opnsense.proto",
+	Metadata: "opnsense/v1/mwan_opnsense.proto",
 }
 
 const (
@@ -720,5 +720,5 @@ var TransferService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "mwan/v1/mwan_opnsense.proto",
+	Metadata: "opnsense/v1/mwan_opnsense.proto",
 }

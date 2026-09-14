@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"goodkind.io/mwan/internal/notify"
+	"goodkind.io/mwan/internal/opnsense/notify"
 )
 
 // ---------------------------------------------------------------------------
@@ -38,13 +38,11 @@ func (f *fakeNotifier) Notify(_ context.Context, ev notify.Event) {
 	f.events = append(f.events, recordedNotify{Kind: ev.Kind, Key: ev.Key, Level: ev.Level, Msg: ev.Message})
 }
 
-func (f *fakeNotifier) Resolve(_ context.Context, kind, key, msg string, _ ...slog.Attr) {
+func (f *fakeNotifier) Resolve(_ context.Context, kind, key, msg string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.events = append(f.events, recordedNotify{Kind: kind, Key: key, Msg: msg})
 }
-
-func (f *fakeNotifier) Active(_, _ string) bool { return false }
 
 func (f *fakeNotifier) snapshot() []recordedNotify {
 	f.mu.Lock()

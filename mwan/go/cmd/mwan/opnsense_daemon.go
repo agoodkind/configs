@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
 	"goodkind.io/mwan/internal/opnsense"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 	"goodkind.io/mwan/internal/version"
 )
 
@@ -167,7 +167,9 @@ func runDaemonState() int {
 	}
 	defer cancel()
 	defer func() { _ = cli.Close() }()
-	resp, err := cli.RPC().DeployStatus(ctx, &mwanv1.DeployStatusRequest{})
+	resp, err := cli.RPC().DeployStatus(ctx, &mwanv1.DeployStatusRequest{
+		Mark: mwanv1.DeployStatusRequest_MARK_UNSPECIFIED,
+	})
 	if err != nil {
 		return printAndExit("daemon state", err)
 	}
@@ -235,10 +237,13 @@ func runDaemonPush(args []string) int {
 	defer func() { _ = cli.Close() }()
 
 	header := &mwanv1.TransferHeader{
-		Path:       filepath.Join("/usr/local/sbin", "mwan-opnsense"),
-		Direction:  mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
-		FinishStep: mwanv1.FinishStep_FINISH_STEP_STAGE,
-		TotalSize:  int64(len(content)),
+		Path:             filepath.Join("/usr/local/sbin", "mwan-opnsense"),
+		Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+		FinishStep:       mwanv1.FinishStep_FINISH_STEP_STAGE,
+		ResumeTransferId: "",
+		ResumeFromOffset: 0,
+		Label:            "",
+		TotalSize:        int64(len(content)),
 	}
 	term, err := streamUpload(ctx, cli, header, content, chunk, stall)
 	if err != nil {
@@ -264,6 +269,7 @@ func runDaemonStage(args []string) int {
 	defer func() { _ = cli.Close() }()
 	resp, err := cli.OpnsenseClient().StageBinary(ctx, &mwanv1.StageBinaryRequest{
 		StagedSha256: stagedSHA,
+		VersionStr:   "",
 	})
 	if err != nil {
 		return printAndExit("daemon stage", err)

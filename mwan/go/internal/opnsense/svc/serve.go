@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

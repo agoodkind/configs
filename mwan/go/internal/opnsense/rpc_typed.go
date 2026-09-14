@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 )
 
 // RPC exposes typed methods for the mwan-opnsense service. Each
@@ -234,8 +234,13 @@ func (r *RPC) ReadConfigXML(ctx context.Context) (*ConfigXMLResult, error) {
 	}
 	header := &mwanv1.UploadRequest{
 		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
-			Path:      "/conf/config.xml",
-			Direction: mwanv1.TransferDirection_TRANSFER_DIRECTION_READ,
+			Path:             "/conf/config.xml",
+			Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_READ,
+			FinishStep:       mwanv1.FinishStep_FINISH_STEP_UNSPECIFIED,
+			ResumeTransferId: "",
+			ResumeFromOffset: 0,
+			Label:            "",
+			TotalSize:        0,
 		}},
 	}
 	if sendErr := stream.Send(header); sendErr != nil {
@@ -291,11 +296,13 @@ func (r *RPC) WriteConfigXML(ctx context.Context, content []byte, label string) 
 	}
 	if sendErr := stream.Send(&mwanv1.UploadRequest{
 		Body: &mwanv1.UploadRequest_Header{Header: &mwanv1.TransferHeader{
-			Path:       "/conf/config.xml",
-			Direction:  mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
-			FinishStep: mwanv1.FinishStep_FINISH_STEP_SNAPSHOT_THEN_REPLACE,
-			Label:      label,
-			TotalSize:  int64(len(content)),
+			Path:             "/conf/config.xml",
+			Direction:        mwanv1.TransferDirection_TRANSFER_DIRECTION_WRITE,
+			FinishStep:       mwanv1.FinishStep_FINISH_STEP_SNAPSHOT_THEN_REPLACE,
+			ResumeTransferId: "",
+			ResumeFromOffset: 0,
+			Label:            label,
+			TotalSize:        int64(len(content)),
 		}},
 	}); sendErr != nil {
 		return nil, logWrap(ctx, r.c.log, "WriteConfigXML send header", sendErr)
