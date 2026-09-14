@@ -66,6 +66,9 @@ func (s *QmSnapshotter) runQm(
 	defer cancel()
 	out, err := exec.CommandContext(cctx, qmRunner, args...).CombinedOutput()
 	if err != nil {
+		s.log.WarnContext(ctx, "upgrade: qm failed",
+			"args", args, "err", err,
+			"output", strings.TrimSpace(string(out)))
 		return out, fmt.Errorf("qm %s: %w", args[0], err)
 	}
 	return out, nil
