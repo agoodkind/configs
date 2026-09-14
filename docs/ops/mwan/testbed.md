@@ -45,8 +45,8 @@ IPv4-only and runs neither. Each sim declares capability flags and downstream
 subnets in the suburban group vars, with a comment beside each flag
 explaining it.
 
-The four sims differ because the real WANs do, except astound, which models no
-specific real ISP. Monkeybrains runs the full dynamic stack, so the MWAN VM
+The four sims differ because the real WANs do. Monkeybrains runs the full
+dynamic stack, so the MWAN VM
 receives a DHCPv4 lease, a DHCPv6 address, a delegated prefix, and a SLAAC
 address exactly as the real Monkeybrains delivers. AT&T offers a dynamic
 DHCPv4 link pinned stable by a MAC reservation, over which the sim routes a

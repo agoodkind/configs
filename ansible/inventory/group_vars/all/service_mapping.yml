@@ -259,10 +259,11 @@ service_mapping:
     ipv4: "10.240.4.5"
     ipv6: "3d06:bad:b01:210::5"
 
-  # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM
-  # and serves DHCPv6-PD and RA on it. They have no production counterpart, so
-  # they sit in 9xx and their addresses are gateways on their own simulated
-  # subnets that production never uses.
+  # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM.
+  # The IPv6-capable sims also serve DHCPv6-PD and RA on their link; astound is
+  # IPv4-only and serves neither. They have no production counterpart, so they
+  # sit in 9xx and their addresses are gateways on their own simulated subnets
+  # that production never uses.
   #
   # The uplink addresses sit on vmbr1 behind suburban, which routes the sims'
   # internet traffic out to Comcast and returns tunnel and testbed traffic.
