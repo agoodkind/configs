@@ -44,15 +44,21 @@ traffic out to Comcast. Each sim declares capability flags and downstream
 subnets in the suburban group vars, with a comment beside each flag
 explaining it.
 
-The three sims differ because the real WANs do. Monkeybrains runs the full
-dynamic stack, so the MWAN VM receives a DHCPv4 lease, a DHCPv6 address, a
-delegated prefix, and a SLAAC address exactly as the real Monkeybrains delivers.
-AT&T offers a dynamic DHCPv4 link pinned stable by a MAC reservation, over which
-the sim routes a static block that the MWAN VM translates one-to-one to its
-internal services; the testbed cannot reproduce 802.1X or the VLAN, so that link
-is a plain NIC. Webpass offers a static link that sits inside its own static
-block, as production Webpass does, so the MWAN VM holds its mapped addresses on
-that link and the sim routes no block.
+The four sims differ because the real WANs do, except astound, which models no
+specific real ISP. Monkeybrains runs the full dynamic stack, so the MWAN VM
+receives a DHCPv4 lease, a DHCPv6 address, a delegated prefix, and a SLAAC
+address exactly as the real Monkeybrains delivers. AT&T offers a dynamic
+DHCPv4 link pinned stable by a MAC reservation, over which the sim routes a
+static block that the MWAN VM translates one-to-one to its internal services;
+the testbed cannot reproduce 802.1X or the VLAN, so that link is a plain NIC.
+Webpass offers a static link that sits inside its own static block, as
+production Webpass does, so the MWAN VM holds its mapped addresses on that
+link and the sim routes no block. Astound offers a dynamic DHCPv4 link pinned
+stable by a MAC reservation, plus a delegated prefix, with no routed static
+block and no SLAAC address; it proves that a plain dynamic link can be added
+this way, nothing more. The gateway does not yet steer traffic through it: the
+link comes up so a provider can be added, re-tiered, and removed against real
+hardware.
 
 Prefix delegation sizes match production, and NPT translates the first `/60` of
 each delegation. The delegated prefixes deliberately avoid the `02xx` space that
