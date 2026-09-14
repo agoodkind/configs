@@ -1,6 +1,6 @@
 // Package clock is the OPNsense packages' own wall-clock source. The daemon
-// service, the upgrade runner, and the validator inject it wherever they
-// stamp or measure time, so their tests can substitute a fixed clock.
+// service and the upgrade runner inject it wherever they stamp or measure
+// time, so their tests can substitute a fixed clock.
 package clock
 
 import "time"

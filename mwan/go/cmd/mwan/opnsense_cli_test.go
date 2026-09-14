@@ -114,8 +114,6 @@ exec_timeout = ""
 upgrade_timeout = ""
 post_rollback_wait = ""
 gc_older_than = ""
-[opnsense.upgrade.validate]
-settle_after_upgrade = ""
 `)
 
 	_, err := resolveUpgradeInputs()

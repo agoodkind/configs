@@ -97,17 +97,13 @@ func TestLoadFileOverridesRenderedKeysAndDefaultsTheRest(t *testing.T) {
 	upgrade := cfg.OPNsense.Upgrade
 	if upgrade.EnvGRPCTarget != "unix:///var/run/mwan-opnsense.sock" || upgrade.StateDir != "/var/lib/mwan/upgrades" ||
 		upgrade.ExecTimeoutDuration != "60m" || upgrade.UpgradeTimeoutDuration != "30m" ||
-		upgrade.PostRollbackWaitDuration != "5m" || upgrade.GCOlderThan != "168h" ||
-		upgrade.Validate.SettleAfterUpgrade != "5m" {
+		upgrade.PostRollbackWaitDuration != "5m" || upgrade.GCOlderThan != "168h" {
 		t.Errorf("upgrade = %+v, want the defaults beside the rendered vmid", upgrade)
 	}
 	// The validate phase pings the targets the mwan watchdog pings.
 	if upgrade.Validate.PingTargetIPv4 != "1.1.1.1" || upgrade.Validate.PingTargetIPv6 != "2606:4700:4700::1111" {
 		t.Errorf("upgrade validate ping targets = %q %q, want the watchdog's targets",
 			upgrade.Validate.PingTargetIPv4, upgrade.Validate.PingTargetIPv6)
-	}
-	if cfg.OPNsense.Validate.Timeout != "10m" || cfg.OPNsense.Validate.StateDir != "/var/lib/mwan/upgrades" {
-		t.Errorf("validate = %+v, want the defaults", cfg.OPNsense.Validate)
 	}
 }
 

@@ -1,6 +1,6 @@
 // Package config loads the OPNsense tooling's own TOML configuration: the
 // Proxmox-host bridge, the chardev drainer, the probe client, the upgrade
-// orchestrator and its alert mail, the validate verb, and the config import verb.
+// orchestrator and its alert mail, and the config import verb.
 //
 // The file keeps the [opnsense.*] and [email] table names the gateway
 // configuration used, so the same decoder reads both the tooling's own file and
@@ -68,12 +68,11 @@ type EmailSection struct {
 // Section holds the [opnsense.*] subsections for the gRPC-over-virtio-serial
 // transport between the Proxmox host and the OPNsense guest.
 type Section struct {
-	Host         HostSection     `toml:"host"`
-	Drain        DrainSection    `toml:"drain"`
-	Probe        ProbeSection    `toml:"probe"`
-	Upgrade      UpgradeSection  `toml:"upgrade"`
-	Validate     ValidateSection `toml:"validate"`
-	ConfigImport ImportSection   `toml:"config_import"`
+	Host         HostSection    `toml:"host"`
+	Drain        DrainSection   `toml:"drain"`
+	Probe        ProbeSection   `toml:"probe"`
+	Upgrade      UpgradeSection `toml:"upgrade"`
+	ConfigImport ImportSection  `toml:"config_import"`
 }
 
 // ImportSection configures the `mwan opnsense config import`
@@ -134,11 +133,6 @@ type UpgradeSection struct {
 	ExecTimeoutDuration      string `toml:"exec_timeout"`
 	UpgradeTimeoutDuration   string `toml:"upgrade_timeout"`
 	PostRollbackWaitDuration string `toml:"post_rollback_wait"`
-	OPNsenseSSH              string `toml:"opnsense_ssh"`
-	OPNsenseJump             string `toml:"opnsense_jump"`
-	ProxmoxSSH               string `toml:"proxmox_ssh"`
-	LANClientSSH             string `toml:"lan_client_ssh"`
-	OPNsenseAddr             string `toml:"opnsense_addr"`
 
 	// Target is the OPNsense release the upgrade is heading toward
 	// (e.g. "26.7"). It is optional. When it names a release series other
@@ -173,53 +167,16 @@ type UpgradeSection struct {
 	// upgrade.ResetExecute.
 	ResetConfirm bool `toml:"reset_confirm"`
 
-	// DiffAgainst is an optional path to a baseline JSON file. When
-	// non-empty, the validate phase diffs the freshly captured baseline
-	// against it via validate.Diff and prints the report.
-	DiffAgainst string `toml:"diff_against"`
-
 	// Validate holds the validate phase inputs.
 	Validate UpgradeValidateSection `toml:"validate"`
 }
 
-// UpgradeValidateSection holds the validate phase inputs. The ping targets
-// decide the phase's egress checks; the remaining fields feed the check-matrix
-// baseline the validate phase also saves.
+// UpgradeValidateSection holds the validate phase inputs.
 type UpgradeValidateSection struct {
 	// PingTargetIPv4 and PingTargetIPv6 are the hosts the validate phase
 	// pings from the Proxmox host. Both must answer for validate to pass.
-	PingTargetIPv4       string `toml:"ping_target_ipv4"`
-	PingTargetIPv6       string `toml:"ping_target_ipv6"`
-	APIKey               string `toml:"api_key"`
-	APISecret            string `toml:"api_secret"`
-	BGPv4Neighbors       string `toml:"bgp_v4_neighbors"`
-	BGPv6Neighbors       string `toml:"bgp_v6_neighbors"`
-	OPNsenseLAN          string `toml:"opnsense_lan"`
-	MWANOpnsenseSocket   string `toml:"mwan_opnsense_socket"`
-	MWANOpnsenseHostSock string `toml:"mwan_opnsense_host_socket"`
-	SettleAfterUpgrade   string `toml:"settle_after_upgrade"`
-}
-
-// ValidateSection configures the standalone validate verb. The
-// CLI surface accepts no flags; every input lives here.
-type ValidateSection struct {
-	EnvTransport         string `toml:"env_transport"`
-	EnvGRPCTarget        string `toml:"env_grpc_target"`
-	StateDir             string `toml:"state_dir"`
-	OPNsenseSSH          string `toml:"opnsense_ssh"`
-	OPNsenseJump         string `toml:"opnsense_jump"`
-	ProxmoxSSH           string `toml:"proxmox_ssh"`
-	LANClientSSH         string `toml:"lan_client_ssh"`
-	OPNsenseAddr         string `toml:"opnsense_addr"`
-	APIKey               string `toml:"api_key"`
-	APISecret            string `toml:"api_secret"`
-	BGPv4Neighbors       string `toml:"bgp_v4_neighbors"`
-	BGPv6Neighbors       string `toml:"bgp_v6_neighbors"`
-	OPNsenseLAN          string `toml:"opnsense_lan"`
-	MWANOpnsenseSocket   string `toml:"mwan_opnsense_socket"`
-	MWANOpnsenseHostSock string `toml:"mwan_opnsense_host_socket"`
-	SettleAfterUpgrade   string `toml:"settle_after_upgrade"`
-	Timeout              string `toml:"timeout"`
+	PingTargetIPv4 string `toml:"ping_target_ipv4"`
+	PingTargetIPv6 string `toml:"ping_target_ipv6"`
 }
 
 // Load reads the file PathEnv names when it is set. Otherwise it reads
@@ -306,11 +263,6 @@ func defaultConfig() Config {
 				ExecTimeoutDuration:      "60m",
 				UpgradeTimeoutDuration:   "30m",
 				PostRollbackWaitDuration: "5m",
-				OPNsenseSSH:              "",
-				OPNsenseJump:             "",
-				ProxmoxSSH:               "",
-				LANClientSSH:             "",
-				OPNsenseAddr:             "",
 				Target:                   "",
 				DryRunExecute:            false,
 				UseBootEnvironment:       false,
@@ -318,39 +270,11 @@ func defaultConfig() Config {
 				KeepSnapshot:             false,
 				GCOlderThan:              "168h",
 				ResetConfirm:             false,
-				DiffAgainst:              "",
 				Validate: UpgradeValidateSection{
 					// The mwan watchdog's [network] ping targets.
-					PingTargetIPv4:       "1.1.1.1",
-					PingTargetIPv6:       "2606:4700:4700::1111",
-					APIKey:               "",
-					APISecret:            "",
-					BGPv4Neighbors:       "",
-					BGPv6Neighbors:       "",
-					OPNsenseLAN:          "",
-					MWANOpnsenseSocket:   "",
-					MWANOpnsenseHostSock: "",
-					SettleAfterUpgrade:   "5m",
+					PingTargetIPv4: "1.1.1.1",
+					PingTargetIPv6: "2606:4700:4700::1111",
 				},
-			},
-			Validate: ValidateSection{
-				EnvTransport:         "grpc",
-				EnvGRPCTarget:        "unix:///var/run/mwan-opnsense.sock",
-				StateDir:             "/var/lib/mwan/upgrades",
-				OPNsenseSSH:          "",
-				OPNsenseJump:         "",
-				ProxmoxSSH:           "",
-				LANClientSSH:         "",
-				OPNsenseAddr:         "",
-				APIKey:               "",
-				APISecret:            "",
-				BGPv4Neighbors:       "",
-				BGPv6Neighbors:       "",
-				OPNsenseLAN:          "",
-				MWANOpnsenseSocket:   "",
-				MWANOpnsenseHostSock: "",
-				SettleAfterUpgrade:   "5m",
-				Timeout:              "10m",
 			},
 			ConfigImport: ImportSection{
 				Substitutions: "",

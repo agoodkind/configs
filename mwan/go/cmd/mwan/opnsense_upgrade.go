@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,7 +12,6 @@ import (
 	opnsensecfg "goodkind.io/mwan/internal/opnsense/config"
 	opnsensenotify "goodkind.io/mwan/internal/opnsense/notify"
 	"goodkind.io/mwan/internal/opnsense/upgrade"
-	"goodkind.io/mwan/internal/opnsense/validate"
 )
 
 // upgradePhase enumerates `mwan opnsense upgrade <phase>` actions.
@@ -77,36 +74,22 @@ func runOPNsenseUpgradeCmd(args []string) int {
 // guarantees the operator sees one clear error message instead of a
 // half-completed run.
 type upgradeInputs struct {
-	VMID                string
-	StateDir            string
-	GRPCTarget          string
-	Target              string
-	ExecTimeout         time.Duration
-	UpgradeTimeout      time.Duration
-	PostRollbackWait    time.Duration
-	DryRunExecute       bool
-	UseBootEnvironment  bool
-	AcceptPartial       bool
-	KeepSnapshot        bool
-	GCOlderThan         time.Duration
-	ResetConfirm        bool
-	DiffAgainst         string
-	SettleAfterUpgrade  time.Duration
-	PingTargetIPv4      string
-	PingTargetIPv6      string
-	APIKey              string
-	APISecret           string
-	BGPv4Neighbors      string
-	BGPv6Neighbors      string
-	OPNsenseLAN         string
-	MWANOpnsenseSock    string
-	MWANOpnsenseHostSck string
-	OPNsenseSSH         string
-	OPNsenseJump        string
-	ProxmoxSSH          string
-	LANClientSSH        string
-	OPNsenseAddr        string
-	Email               opnsensecfg.EmailSection
+	VMID               string
+	StateDir           string
+	GRPCTarget         string
+	Target             string
+	ExecTimeout        time.Duration
+	UpgradeTimeout     time.Duration
+	PostRollbackWait   time.Duration
+	DryRunExecute      bool
+	UseBootEnvironment bool
+	AcceptPartial      bool
+	KeepSnapshot       bool
+	GCOlderThan        time.Duration
+	ResetConfirm       bool
+	PingTargetIPv4     string
+	PingTargetIPv6     string
+	Email              opnsensecfg.EmailSection
 }
 
 // buildRedial returns a context-free closure suitable for the
@@ -159,41 +142,23 @@ func resolveUpgradeInputs() (upgradeInputs, error) {
 	if err != nil {
 		return ui, err
 	}
-	settle, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.Validate.SettleAfterUpgrade, "[opnsense.upgrade.validate].settle_after_upgrade")
-	if err != nil {
-		return ui, err
-	}
 	ui = upgradeInputs{
-		VMID:                vmid,
-		StateDir:            stateDir,
-		GRPCTarget:          grpcTarget,
-		Target:              cfg.OPNsense.Upgrade.Target,
-		ExecTimeout:         execTimeout,
-		UpgradeTimeout:      upgradeTimeout,
-		PostRollbackWait:    postRollbackWait,
-		DryRunExecute:       cfg.OPNsense.Upgrade.DryRunExecute,
-		UseBootEnvironment:  cfg.OPNsense.Upgrade.UseBootEnvironment,
-		AcceptPartial:       cfg.OPNsense.Upgrade.AcceptPartial,
-		KeepSnapshot:        cfg.OPNsense.Upgrade.KeepSnapshot,
-		GCOlderThan:         gcOlderThan,
-		ResetConfirm:        cfg.OPNsense.Upgrade.ResetConfirm,
-		DiffAgainst:         cfg.OPNsense.Upgrade.DiffAgainst,
-		SettleAfterUpgrade:  settle,
-		PingTargetIPv4:      cfg.OPNsense.Upgrade.Validate.PingTargetIPv4,
-		PingTargetIPv6:      cfg.OPNsense.Upgrade.Validate.PingTargetIPv6,
-		APIKey:              cfg.OPNsense.Upgrade.Validate.APIKey,
-		APISecret:           cfg.OPNsense.Upgrade.Validate.APISecret,
-		BGPv4Neighbors:      cfg.OPNsense.Upgrade.Validate.BGPv4Neighbors,
-		BGPv6Neighbors:      cfg.OPNsense.Upgrade.Validate.BGPv6Neighbors,
-		OPNsenseLAN:         cfg.OPNsense.Upgrade.Validate.OPNsenseLAN,
-		MWANOpnsenseSock:    cfg.OPNsense.Upgrade.Validate.MWANOpnsenseSocket,
-		MWANOpnsenseHostSck: cfg.OPNsense.Upgrade.Validate.MWANOpnsenseHostSock,
-		OPNsenseSSH:         cfg.OPNsense.Upgrade.OPNsenseSSH,
-		OPNsenseJump:        cfg.OPNsense.Upgrade.OPNsenseJump,
-		ProxmoxSSH:          cfg.OPNsense.Upgrade.ProxmoxSSH,
-		LANClientSSH:        cfg.OPNsense.Upgrade.LANClientSSH,
-		OPNsenseAddr:        cfg.OPNsense.Upgrade.OPNsenseAddr,
-		Email:               cfg.Email,
+		VMID:               vmid,
+		StateDir:           stateDir,
+		GRPCTarget:         grpcTarget,
+		Target:             cfg.OPNsense.Upgrade.Target,
+		ExecTimeout:        execTimeout,
+		UpgradeTimeout:     upgradeTimeout,
+		PostRollbackWait:   postRollbackWait,
+		DryRunExecute:      cfg.OPNsense.Upgrade.DryRunExecute,
+		UseBootEnvironment: cfg.OPNsense.Upgrade.UseBootEnvironment,
+		AcceptPartial:      cfg.OPNsense.Upgrade.AcceptPartial,
+		KeepSnapshot:       cfg.OPNsense.Upgrade.KeepSnapshot,
+		GCOlderThan:        gcOlderThan,
+		ResetConfirm:       cfg.OPNsense.Upgrade.ResetConfirm,
+		PingTargetIPv4:     cfg.OPNsense.Upgrade.Validate.PingTargetIPv4,
+		PingTargetIPv6:     cfg.OPNsense.Upgrade.Validate.PingTargetIPv6,
+		Email:              cfg.Email,
 	}
 	return ui, nil
 }
@@ -265,28 +230,6 @@ func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 	}, nil
 }
 
-func buildBasicAuth(apiKey, apiSecret string) *validate.BasicAuth {
-	if apiKey == "" && apiSecret == "" {
-		return nil
-	}
-	return &validate.BasicAuth{Username: apiKey, Password: apiSecret}
-}
-
-func splitNonEmpty(csv string) []string {
-	if csv == "" {
-		return nil
-	}
-	parts := strings.Split(csv, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
-			out = append(out, trimmed)
-		}
-	}
-	return out
-}
-
 func upgradeExecTimeoutSeconds(d time.Duration) int32 {
 	if d <= 0 {
 		return 0
@@ -324,7 +267,7 @@ func runUpgradePhase(phase upgradePhase) int {
 		}
 		fmt.Fprintf(os.Stdout, "phase=%s\n", st.Phase)
 	case upgradePhaseValidate:
-		return runUpgradeValidatePhase(ctx, deps, opts, ui)
+		return runUpgradeValidatePhase(ctx, deps, opts)
 	case upgradePhaseRollback:
 		st, err := upgrade.Rollback(ctx, deps, opts)
 		if err != nil {
@@ -361,117 +304,16 @@ func runUpgradePhase(phase upgradePhase) int {
 	return 0
 }
 
-// runUpgradeValidatePhase runs the orchestrator's validate step and
-// also persists a standalone baseline so the operator can compare runs
-// across deploys. The orchestrator path is the source of truth for the
-// state machine; the baseline is the operator-facing artefact.
-func runUpgradeValidatePhase(ctx context.Context, deps upgrade.Deps, opts upgrade.Options, ui upgradeInputs) int {
+// runUpgradeValidatePhase runs the orchestrator's validate step and prints
+// the resulting phase and failing checks.
+func runUpgradeValidatePhase(ctx context.Context, deps upgrade.Deps, opts upgrade.Options) int {
 	st, res, err := upgrade.Validate(ctx, deps, opts)
 	if err != nil {
 		return printAndExit("upgrade validate", err)
 	}
 	fmt.Fprintf(os.Stdout, "phase=%s all_pass=%t partial=%t failing=%s\n",
 		st.Phase, res.AllPass, res.Partial, strings.Join(st.FailingCheck, ","))
-
-	if st.DeployID != "" {
-		captureAndPrintBaseline(ctx, ui, st.DeployID)
-	}
 	return 0
-}
-
-// captureAndPrintBaseline drives the standalone baseline capture and
-// emits the operator-facing summary lines. Soft failures are warned
-// and swallowed because the orchestrator's verdict is the contract;
-// the baseline is a side-channel artefact.
-func captureAndPrintBaseline(ctx context.Context, ui upgradeInputs, deployID string) {
-	baseline, runErr := standaloneBaseline(ctx, ui, deployID)
-	if runErr != nil {
-		slog.WarnContext(ctx, "upgrade validate: standalone baseline failed", "err", runErr)
-		return
-	}
-	vmid, parseErr := strconv.Atoi(ui.VMID)
-	if parseErr != nil {
-		slog.WarnContext(ctx, "upgrade validate: vmid parse", "err", parseErr, "vmid", ui.VMID)
-		return
-	}
-	if saveErr := validate.SaveBaseline(ui.StateDir, vmid, deployID, validate.PreBaselineFilename, baseline); saveErr != nil {
-		slog.WarnContext(ctx, "upgrade validate: save baseline", "err", saveErr)
-		return
-	}
-	validate.SortResultsByID(baseline.Results)
-	counts := validate.CountByOutcome(baseline.Results)
-	fmt.Fprintf(os.Stdout, "baseline: path=%s pass=%d fail=%d skip=%d error=%d\n",
-		validate.ArtefactPath(ui.StateDir, vmid, deployID),
-		counts[validate.OutcomePass],
-		counts[validate.OutcomeFail],
-		counts[validate.OutcomeSkip],
-		counts[validate.OutcomeError])
-	if ui.DiffAgainst == "" {
-		return
-	}
-	prior, loadErr := validate.LoadBaseline(ui.DiffAgainst)
-	if loadErr != nil {
-		slog.WarnContext(ctx, "upgrade validate: load prior baseline", "err", loadErr, "path", ui.DiffAgainst)
-		return
-	}
-	report := validate.Diff(prior, baseline)
-	fmt.Fprintf(os.Stdout, "diff: verdict=%s entries=%d\n", report.Verdict, len(report.Entries))
-}
-
-// standaloneBaseline runs validate.Run end-to-end and returns the
-// captured Baseline, the operator-facing artefact the validate phase
-// saves beside its verdict for cross-deploy diffs. The verdict itself
-// comes from upgrade.HealthValidator and does not read this matrix.
-func standaloneBaseline(ctx context.Context, ui upgradeInputs, deployID string) (*validate.Baseline, error) {
-	vmid, err := strconv.Atoi(ui.VMID)
-	if err != nil {
-		slog.ErrorContext(ctx, "standaloneBaseline: parse vmid", "err", err, "vmid", ui.VMID)
-		return nil, fmt.Errorf("parse vmid %q: %w", ui.VMID, err)
-	}
-	rpcCli, err := opnsense.DialContext(ctx, ui.GRPCTarget)
-	if err != nil {
-		slog.ErrorContext(ctx, "standaloneBaseline: dial", "err", err, "target", ui.GRPCTarget)
-		return nil, fmt.Errorf("dial %s: %w", ui.GRPCTarget, err)
-	}
-	cfg := validate.Config{
-		VMID:                   vmid,
-		DeployID:               deployID,
-		StateDir:               ui.StateDir,
-		BGPv4Neighbors:         splitNonEmpty(ui.BGPv4Neighbors),
-		BGPv6Neighbors:         splitNonEmpty(ui.BGPv6Neighbors),
-		OPNsenseLAN:            ui.OPNsenseLAN,
-		MWANOpnsenseSocket:     ui.MWANOpnsenseSock,
-		MWANOpnsenseHostSocket: ui.MWANOpnsenseHostSck,
-		APIAuth:                buildBasicAuth(ui.APIKey, ui.APISecret),
-		SettleAfterUpgrade:     ui.SettleAfterUpgrade,
-		SeverityFilter:         "",
-	}
-	env := &validate.GRPCEnv{
-		RPC: rpcCli.RPC(),
-		Fallback: &validate.ExecEnv{
-			OPNsenseSSHHost:     ui.OPNsenseSSH,
-			OPNsenseSSHJumpHost: ui.OPNsenseJump,
-			ProxmoxSSHHost:      ui.ProxmoxSSH,
-			LANClientSSHHost:    ui.LANClientSSH,
-			OPNsenseAddr:        ui.OPNsenseAddr,
-			HTTPClient:          nil,
-			Clock:               nil,
-		},
-		ExecTimeoutSeconds: upgradeExecTimeoutSeconds(ui.ExecTimeout),
-		Clock:              nil,
-	}
-	baseline, err := validate.Run(ctx, cfg, nil, env)
-	if err != nil {
-		slog.ErrorContext(ctx, "standaloneBaseline: validate.Run", "err", err)
-		return nil, fmt.Errorf("validate.Run: %w", err)
-	}
-	if baseline == nil {
-		return nil, errors.New("validate.Run returned nil baseline")
-	}
-	if baseline.SchemaVersion == 0 {
-		return nil, errors.New("baseline missing schema version")
-	}
-	return baseline, nil
 }
 
 // runUpgradeReset is the only phase whose semantics differ from a

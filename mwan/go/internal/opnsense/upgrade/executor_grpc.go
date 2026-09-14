@@ -16,10 +16,7 @@ type ExecResult = opnsense.ExecResult
 
 // OPNsenseRPCClient is the narrow surface the gRPC Executor needs from
 // the mwan-opnsense daemon. It is satisfied by *opnsense.RPC in
-// production and by an in-memory mock in tests. Keeping the interface
-// local to the upgrade package mirrors the validate package's
-// OPNsenseRPCClient and avoids a dependency cycle through internal/
-// opnsense.
+// production and by an in-memory mock in tests.
 type OPNsenseRPCClient interface {
 	// Exec runs a binary inside the OPNsense guest via the bidi Exec
 	// stream. The wrapper drives the stream synchronously and returns
@@ -133,9 +130,7 @@ func isClientClosedErr(err error) bool {
 }
 
 // appendDiag joins a diagnostic line onto an existing stderr blob
-// without colliding with trailing whitespace. The same shape is used
-// by the validate package's GRPCEnv so the operator-facing diagnostic
-// line format is consistent across surfaces.
+// without colliding with trailing whitespace.
 func appendDiag(stderr, diag string) string {
 	if stderr == "" {
 		return diag
