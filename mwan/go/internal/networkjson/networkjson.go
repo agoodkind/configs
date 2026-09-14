@@ -67,6 +67,7 @@ type wan struct {
 	FromPrio   *int    `json:"from-prio"`
 	NptPrefix  string  `json:"npt-prefix"`
 	V4Source   string  `json:"v4-source"`
+	ForcedDSCP *int    `json:"forced-dscp"`
 	Health     *health `json:"health"`
 }
 
@@ -203,6 +204,10 @@ func build(doc *document) (*Config, error) {
 	}
 	loaded.ProbeTimeoutMillis = *group.Health.ProbeTimeout
 
+	// The firewall renders one forced-DSCP rule per provider in list order, and
+	// a later rule overwrites an earlier rule's mark, so a shared value would
+	// silently send every tagged flow to the last provider that claims it.
+	dscpOwners := make(map[int]string, len(doc.Interfaces.Interface))
 	for _, entry := range doc.Interfaces.Interface {
 		if entry.WAN == nil {
 			continue
@@ -213,6 +218,14 @@ func build(doc *document) (*Config, error) {
 		}
 		if _, seen := loaded.WAN[entry.WAN.Name]; seen {
 			return nil, fmt.Errorf("provider %q appears on more than one interface", entry.WAN.Name)
+		}
+		if entry.WAN.ForcedDSCP != nil {
+			value := *entry.WAN.ForcedDSCP
+			if owner, taken := dscpOwners[value]; taken {
+				return nil, fmt.Errorf("wan %s: forced-dscp %d is already taken by wan %s",
+					entry.WAN.Name, value, owner)
+			}
+			dscpOwners[value] = entry.WAN.Name
 		}
 		loaded.WAN[entry.WAN.Name] = routing
 		if probe != nil {

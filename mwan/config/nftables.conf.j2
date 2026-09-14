@@ -229,6 +229,18 @@ table inet mangle {
         # guard then leaves this mark alone.
         ip6 saddr {{ mwan_opnsense_edge_ipv6 }}/128 udp sport 51820 udp dport 51821 ct state new meta mark set {{ pin_mark }}
 
+        # Force a new flow onto a provider when it arrives from the internal
+        # link carrying that provider's DSCP value. It runs before the steering
+        # chain, whose `meta mark 0` guard then leaves this mark alone. It
+        # matches only the internal link, because senders on the internet
+        # already stamp these codepoints on inbound flows.
+{% for provider in providers %}
+{% if provider.forced_dscp is defined %}
+        iifname $INTERNAL_IFACE ip dscp {{ provider.forced_dscp }} ct state new meta mark set {{ provider.mark }}
+        iifname $INTERNAL_IFACE ip6 dscp {{ provider.forced_dscp }} ct state new meta mark set {{ provider.mark }}
+{% endif %}
+{% endfor %}
+
         # Restore mark for established connections (session affinity)
         ct state established,related meta mark set ct mark
     }
