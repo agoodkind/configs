@@ -31,8 +31,9 @@ sit6_guest_source_v6: "3d06:bad:b01:b:ffff::5"
 sit6_uplink_gateway_v6: "3d06:bad:b01:fe::3"
 
 # First install only: FRR is the package that announces the prefix the guest
-# needs for IPv6 egress, so vault downloads the exact package files the guest
-# asks for and pushes them into its apt cache.
+# needs for IPv6 egress, so vault resolves and downloads it and pushes the
+# package lists and files into the guest.
 sit6_bootstrap_host: "vault"
 sit6_vmid: "{{ service_mapping.sit6.vmid }}"
 sit6_bootstrap_dir: "/var/tmp/sit6-bootstrap"
+sit6_bootstrap_script: "/root/sit6-stage-frr-packages.sh"

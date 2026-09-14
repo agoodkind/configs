@@ -23,60 +23,43 @@
 
   tasks:
     # The guest's IPv6 egress rides the prefix FRR announces, so on the first
-    # run FRR cannot come from the network. The guest lists the exact package
-    # files apt would fetch, vault downloads them, and pct push drops them into
-    # the guest's apt cache for an install with no download.
+    # run FRR cannot come from the network. Vault resolves FRR against the
+    # guest's own sources and dpkg status, then pushes fresh package lists and
+    # the package files into the guest for an install with no download. The
+    # guest's own lists can be stale, so its versions are never trusted here.
     - name: Check whether FRR is installed
       ansible.builtin.command: dpkg-query -W -f=${db:Status-Status} frr
       register: sit6_frr_status
       changed_when: false
       failed_when: false
 
-    - name: Bootstrap FRR from package files vault downloads
+    - name: Bootstrap FRR through vault
       when: sit6_frr_status.stdout != "installed"
       block:
-        - name: List the package files the FRR install needs
-          ansible.builtin.command: apt-get install --print-uris -qq frr
-          register: sit6_frr_uris
-          changed_when: false
-
-        - name: Create the bootstrap directory on vault
+        - name: Copy the FRR staging script to vault
           delegate_to: "{{ sit6_bootstrap_host }}"
-          ansible.builtin.file:
-            path: "{{ sit6_bootstrap_dir }}"
-            state: directory
+          ansible.builtin.copy:
+            src: "{{ repo_root }}/sit6/stage-frr-packages.sh"
+            dest: "{{ sit6_bootstrap_script }}"
             mode: "0755"
 
-        - name: Download each package file on vault
-          delegate_to: "{{ sit6_bootstrap_host }}"
-          ansible.builtin.get_url:
-            # Each line is: 'URL' FILENAME SIZE MD5Sum:HASH
-            url: "{{ item.split(' ')[0][1:-1] }}"
-            dest: "{{ sit6_bootstrap_dir }}/{{ item.split(' ')[1] }}"
-            checksum: "md5:{{ item.split(' ')[3] | replace('MD5Sum:', '') }}"
-            mode: "0644"
-          loop: "{{ sit6_frr_uris.stdout_lines }}"
-
-        - name: Push each package file into the guest apt cache
+        - name: Stage FRR package lists and files into the guest
           delegate_to: "{{ sit6_bootstrap_host }}"
           ansible.builtin.command:
             argv:
-              - pct
-              - push
+              - "{{ sit6_bootstrap_script }}"
               - "{{ sit6_vmid }}"
-              - "{{ sit6_bootstrap_dir }}/{{ item.split(' ')[1] }}"
-              - "/var/cache/apt/archives/{{ item.split(' ')[1] }}"
-          loop: "{{ sit6_frr_uris.stdout_lines }}"
+              - "{{ sit6_bootstrap_dir }}"
           changed_when: true
 
         - name: Install FRR from the guest apt cache
           ansible.builtin.command: apt-get install -y --no-download frr
           changed_when: true
 
-        - name: Remove the bootstrap directory on vault
+        - name: Remove the FRR staging script from vault
           delegate_to: "{{ sit6_bootstrap_host }}"
           ansible.builtin.file:
-            path: "{{ sit6_bootstrap_dir }}"
+            path: "{{ sit6_bootstrap_script }}"
             state: absent
 
     - name: Install tunnel and firewall packages
