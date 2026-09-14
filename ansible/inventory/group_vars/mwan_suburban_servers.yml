@@ -94,8 +94,9 @@ mwan_monkeybrains_duid_raw_data: ""
 
 # 1:1 NAT of services to each WAN's static block, mirroring prod (att
 # 104.57.226.192/29, webpass 136.25.91.240/29). The att sim routes its /29 to
-# the MWAN VM; the webpass link sits inside its /29, so that block is on-link. The five mapped transit hosts are the router, the MWAN VM, the
-# failover, and two spares; .1 is the VRRP virtual address and is not mapped.
+# the MWAN VM; the webpass link sits inside its /29, so that block is on-link.
+# The five mapped transit hosts are the router, the MWAN VM, the failover, and
+# two spares; .1 is the VRRP virtual address and is not mapped.
 # Each provider entry maps them onto the matching host of its ISP block, so
 # last octets line up.
 mwan_static_internal_hosts:
