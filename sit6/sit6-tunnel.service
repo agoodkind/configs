@@ -1,0 +1,15 @@
+[Unit]
+Description=6in4 tunnel to Berylax
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sit6/sit6.env
+# No ExecStop: a restart re-runs the idempotent bring-up, which changes the
+# tunnel in place instead of deleting it and withdrawing the prefix.
+ExecStart=/usr/local/sbin/sit6-tunnel-up
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

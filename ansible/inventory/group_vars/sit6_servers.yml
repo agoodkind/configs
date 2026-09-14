@@ -14,8 +14,8 @@ sit6_bgp_neighbor_v6: "3d06:bad:b01:fe::3"
 sit6_uplink_iface: "eth0"
 sit6_tunnel_iface: "sit6"
 sit6_tunnel_local_v4: "{{ service_mapping.sit6.ipv4 }}"
-# Berylax's static Astound IPv4 address.
-sit6_tunnel_remote: "76.14.114.247"
+# The tunnel remote is this name's A record, Berylax's Astound IPv4 address.
+sit6_tunnel_remote_name: "berylax.goodkind.io"
 sit6_tunnel_ttl: 64
 sit6_tunnel_link_address_v6: "fe80::1/64"
 sit6_tunnel_prefix_v6: "3d06:bad:b01:b::/64"

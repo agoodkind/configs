@@ -4,9 +4,10 @@
 # Targets sit6_servers (LXC-124 on vault). inventory/group_vars/sit6_servers.yml
 # carries every value this play reads.
 #
-# Berylax sends protocol 41 from its static IPv4 address to 104.57.226.196,
-# which MWAN DNATs to this guest. The guest routes the Berylax prefix into the
-# tunnel and announces it to MWAN over iBGP.
+# Berylax sends protocol 41 to 104.57.226.196, which MWAN DNATs to this guest.
+# The guest takes the tunnel remote from the A record of
+# sit6_tunnel_remote_name, re-resolves it every 5 minutes, routes the Berylax
+# prefix into the tunnel, and announces that prefix to MWAN over iBGP.
 #
 # Run example:
 #   go run goodkind.io/configs/cmd/configs deploy deploy-sit6 \
@@ -39,6 +40,22 @@
       notify:
         - Reload sysctl
 
+    - name: Ensure the sit6 config directory exists
+      ansible.builtin.file:
+        path: /etc/sit6
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy tunnel settings
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/sit6.env.j2"
+        dest: /etc/sit6/sit6.env
+        mode: "0644"
+      notify:
+        - Restart sit6-tunnel
+
     - name: Deploy tunnel bring-up script
       ansible.builtin.copy:
         src: "{{ repo_root }}/sit6/sit6-tunnel-up.sh"
@@ -47,14 +64,19 @@
       notify:
         - Restart sit6-tunnel
 
-    - name: Deploy sit6-tunnel systemd unit
-      ansible.builtin.template:
-        src: "{{ repo_root }}/sit6/sit6-tunnel.service.j2"
-        dest: /etc/systemd/system/sit6-tunnel.service
+    - name: Deploy sit6 tunnel systemd units
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
         mode: "0644"
+      loop:
+        - sit6-tunnel.service
+        - sit6-tunnel-refresh.service
+        - sit6-tunnel-refresh.timer
       notify:
         - Reload systemd
         - Restart sit6-tunnel
+        - Restart sit6-tunnel-refresh timer
 
     - name: Deploy nftables ruleset
       ansible.builtin.template:
@@ -96,6 +118,13 @@
         - frr
         - sit6-tunnel
 
+    - name: Enable and start the tunnel refresh timer
+      ansible.builtin.systemd:
+        name: sit6-tunnel-refresh.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd:
@@ -120,4 +149,9 @@
     - name: Restart sit6-tunnel
       ansible.builtin.systemd:
         name: sit6-tunnel
+        state: restarted
+
+    - name: Restart sit6-tunnel-refresh timer
+      ansible.builtin.systemd:
+        name: sit6-tunnel-refresh.timer
         state: restarted

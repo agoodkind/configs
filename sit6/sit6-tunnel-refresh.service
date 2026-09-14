@@ -1,0 +1,9 @@
+[Unit]
+Description=Re-resolve Berylax and update the sit6 tunnel remote
+After=network-online.target nss-lookup.target sit6-tunnel.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sit6/sit6.env
+ExecStart=/usr/local/sbin/sit6-tunnel-up
