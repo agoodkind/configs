@@ -8,15 +8,19 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/networkjson"
 	"goodkind.io/mwan/internal/ops"
 )
 
@@ -27,6 +31,15 @@ const (
 	deployGatePollInterval     = 1 * time.Second
 	deployGateRebootPoll       = 3 * time.Second
 	deployGateGuestExecTimeout = 5 * time.Second
+	// deployGateOwnedBudget bounds the wait for the routing module to hold
+	// every on-link mapped address once egress has returned. The module holds
+	// them on its first reconcile, so a minute covers a slow daemon start.
+	deployGateOwnedBudget = 60 * time.Second
+	// deployGateGuestBinary is where the deploy installs the mwan binary inside
+	// the gateway guest.
+	deployGateGuestBinary = "/usr/local/bin/mwan"
+	// deployGateHostPrefixBits is the prefix length of a single IPv4 address.
+	deployGateHostPrefixBits = 32
 
 	exitDeployGateOK           = 0
 	exitDeployGateFailed       = 1
@@ -42,15 +55,17 @@ const (
 	gateModeWaitReboot  deployGateMode = "wait-reboot"
 	gateModeWaitEgress  deployGateMode = "wait-egress"
 	gateModeWaitDeploy  deployGateMode = "wait-deploy"
+	gateModeCheckOwned  deployGateMode = "check-owned-addresses"
 )
 
 // traceIDPattern bounds the trace id because it lands in the verdict file
 // and in a systemd unit name; anything outside this shape is operator error.
 var traceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// egressNotRun marks the egress slot of a verdict whose reboot verdict was
-// definitive failure, where the egress gate deliberately does not run.
-const egressNotRun = -1
+// gateNotRun marks a verdict slot whose gate deliberately did not run: the
+// egress slot after a definitive reboot failure, and the owned-address slot
+// whenever egress did not pass.
+const gateNotRun = -1
 
 // gateVerdict is the JSON contract between wait-deploy on the hypervisor
 // and the deploy play's collector on the controller. TraceID and OldBootID
@@ -61,6 +76,7 @@ type gateVerdict struct {
 	OldBootID  string `json:"old_boot_id"`
 	RebootRC   int    `json:"reboot_rc"`
 	EgressRC   int    `json:"egress_rc"`
+	OwnedRC    int    `json:"owned_rc"`
 	StartedAt  string `json:"started_at"`
 	FinishedAt string `json:"finished_at"`
 }
@@ -80,6 +96,12 @@ type deployGateDeps struct {
 	readBootID func(ctx context.Context, vmid int) (string, error)
 	now        func() time.Time
 	sleep      func(d time.Duration)
+	// loadNetwork and listAddrs serve the owned-address check inside the guest.
+	loadNetwork func() (*networkjson.Config, error)
+	listAddrs   func(ctx context.Context, log *slog.Logger, iface string) ([]netif.CurrentAddr, error)
+	// runGuestOwnedCheck runs that check from the hypervisor through the guest
+	// agent.
+	runGuestOwnedCheck func(ctx context.Context, vmid int) (guestExecResponse, error)
 }
 
 func newDeployGateDeps() deployGateDeps {
@@ -91,6 +113,11 @@ func newDeployGateDeps() deployGateDeps {
 		readBootID: readGuestBootID,
 		now:        time.Now,
 		sleep:      time.Sleep,
+		loadNetwork: func() (*networkjson.Config, error) {
+			return networkjson.Load(networkjson.DefaultPath, networkjson.DefaultSchemaDir)
+		},
+		listAddrs:          netif.ListAddrs,
+		runGuestOwnedCheck: readGuestOwnedCheck,
 	}
 }
 
@@ -105,7 +132,9 @@ var (
 // reachability and reboot gates deploy-mwan.yml runs on the Proxmox host
 // that owns the MWAN guest. The host is the only vantage point that stays up
 // while the guest reboots, so the playbook pushes this binary there and
-// delegates the gates to it.
+// delegates the gates to it. check-owned-addresses is the one mode that runs
+// inside the guest, where wait-deploy starts it through the guest agent,
+// because only the guest can read its own link addresses.
 //
 // Exit codes: 0 on success, 1 on a definitive failure, 64 on a usage error,
 // and, for wait-reboot only, 2 when the guest is unobservable at the
@@ -129,6 +158,12 @@ func runDeployGate(args []string) int {
 			return exitDeployGateUsage
 		}
 		return checkEgress(ctx, deps)
+	case gateModeCheckOwned:
+		if len(rest) != 0 {
+			printDeployGateUsage()
+			return exitDeployGateUsage
+		}
+		return checkOwnedAddresses(ctx, deps)
 	case gateModeWaitReboot:
 		if len(rest) != 3 {
 			printDeployGateUsage()
@@ -225,8 +260,8 @@ func parseWaitDeployArgs(rest []string) (waitDeployInputs, bool) {
 	}, true
 }
 
-// waitDeploy chains the reboot and egress verdicts and records both in one
-// atomically written verdict file. The process exit code reports only
+// waitDeploy chains the reboot, egress, and owned-address verdicts and records
+// all three in one atomically written verdict file. The process exit code reports only
 // whether the verdict was recorded: the verdicts themselves travel in the
 // file, so the collector on the controller reads outcomes from there and a
 // failed transient unit always means the gate itself died.
@@ -234,18 +269,24 @@ func parseWaitDeployArgs(rest []string) (waitDeployInputs, bool) {
 // The egress gate deliberately does not run when the reboot verdict is
 // definitive failure, because the play then fails without rollback and an
 // egress verdict would have nothing to decide; that slot records the
-// not-run marker instead.
+// not-run marker instead. The owned-address check runs only after egress
+// passed, because it reaches the guest through its agent and asserts state
+// the routing module writes once the gateway is up.
 func waitDeploy(ctx context.Context, deps deployGateDeps, in waitDeployInputs) int {
 	log := slog.With("component", "deploy-gate", "op", "waitDeploy")
 	verdict := gateVerdict{
 		TraceID:   in.traceID,
 		OldBootID: in.oldBootID,
 		StartedAt: deps.now().UTC().Format(time.RFC3339),
-		EgressRC:  egressNotRun,
+		EgressRC:  gateNotRun,
+		OwnedRC:   gateNotRun,
 	}
 	verdict.RebootRC = waitReboot(ctx, deps, in.vmid, in.oldBootID, in.rebootBudget)
 	if verdict.RebootRC != exitDeployGateFailed {
 		verdict.EgressRC = waitEgress(ctx, deps, in.egressBudget)
+	}
+	if verdict.EgressRC == exitDeployGateOK {
+		verdict.OwnedRC = waitOwnedAddresses(ctx, deps, in.vmid, deployGateOwnedBudget)
 	}
 	verdict.FinishedAt = deps.now().UTC().Format(time.RFC3339)
 	if err := writeVerdictFile(in.verdictPath, verdict); err != nil {
@@ -256,9 +297,10 @@ func waitDeploy(ctx context.Context, deps deployGateDeps, in waitDeployInputs) i
 		"trace_id", verdict.TraceID,
 		"reboot_rc", verdict.RebootRC,
 		"egress_rc", verdict.EgressRC,
+		"owned_rc", verdict.OwnedRC,
 		"path", in.verdictPath)
-	fmt.Fprintf(deps.out, "verdict recorded: reboot_rc=%d egress_rc=%d path=%s\n",
-		verdict.RebootRC, verdict.EgressRC, in.verdictPath)
+	fmt.Fprintf(deps.out, "verdict recorded: reboot_rc=%d egress_rc=%d owned_rc=%d path=%s\n",
+		verdict.RebootRC, verdict.EgressRC, verdict.OwnedRC, in.verdictPath)
 	return exitDeployGateOK
 }
 
@@ -323,6 +365,7 @@ func parseVMID(raw string) (int, error) {
 func printDeployGateUsage() {
 	fmt.Fprintln(os.Stderr,
 		"usage: mwan deploy-gate check-egress"+
+			" | check-owned-addresses"+
 			" | wait-reboot <vmid> <old_boot_id> <seconds>"+
 			" | wait-egress <seconds>"+
 			" | wait-deploy <vmid> <old_boot_id> <reboot_seconds>"+
@@ -349,6 +392,113 @@ func checkEgress(ctx context.Context, deps deployGateDeps) int {
 	}
 	fmt.Fprintf(deps.out, "no egress on either family; last v4 error: %v\n", err4)
 	return exitDeployGateFailed
+}
+
+// checkOwnedAddresses runs inside the gateway. For each provider with static
+// mappings it reads the link's addresses and asserts that every mapped address
+// the link must hold, by the rule the routing module applies each reconcile, is
+// held on the link as a host address. The rule is computed from the link's
+// connected subnets rather than from what it holds, so a missing address is
+// reported rather than silently left out.
+func checkOwnedAddresses(ctx context.Context, deps deployGateDeps) int {
+	log := slog.With("component", "deploy-gate", "op", "checkOwnedAddresses")
+	network, err := deps.loadNetwork()
+	if err != nil {
+		fmt.Fprintf(deps.out, "network configuration unreadable: %v\n", err)
+		return exitDeployGateFailed
+	}
+	present := 0
+	missing := 0
+	for _, name := range slices.Sorted(maps.Keys(network.WAN)) {
+		entry := network.WAN[name]
+		if len(entry.StaticMappings) == 0 {
+			continue
+		}
+		held, err := deps.listAddrs(ctx, log, entry.Iface)
+		if err != nil {
+			fmt.Fprintf(deps.out, "addresses on %s unreadable: %v\n", entry.Iface, err)
+			return exitDeployGateFailed
+		}
+		externals := make([]netip.Addr, 0, len(entry.StaticMappings))
+		for _, mapping := range entry.StaticMappings {
+			externals = append(externals, mapping.External)
+		}
+		owned, err := wanroutes.OnLinkMappedAddresses(held, externals)
+		if err != nil {
+			fmt.Fprintf(deps.out, "addresses on %s unreadable: %v\n", entry.Iface, err)
+			return exitDeployGateFailed
+		}
+		for _, address := range owned {
+			state := "missing"
+			if holdsHostAddress(held, address) {
+				state = "present"
+				present++
+			} else {
+				missing++
+			}
+			fmt.Fprintf(deps.out, "owned address %s on %s: %s\n", address, entry.Iface, state)
+		}
+	}
+	fmt.Fprintf(deps.out, "owned addresses: %d present, %d missing\n", present, missing)
+	if missing > 0 {
+		return exitDeployGateFailed
+	}
+	return exitDeployGateOK
+}
+
+// holdsHostAddress reports whether held carries address as a /32.
+func holdsHostAddress(held []netif.CurrentAddr, address netip.Addr) bool {
+	want := netip.PrefixFrom(address, deployGateHostPrefixBits).String()
+	for _, current := range held {
+		if current.CIDR == want {
+			return true
+		}
+	}
+	return false
+}
+
+// waitOwnedAddresses polls the guest's owned-address check until it passes or
+// the budget runs out. A failing check and an unreachable agent both poll
+// again, because the routing module may not have reconciled yet; the last
+// report reaches the deploy log either way.
+func waitOwnedAddresses(ctx context.Context, deps deployGateDeps, vmid int, budget time.Duration) int {
+	deadline := deps.now().Add(budget)
+	lastReport := "no owned-address check completed"
+	for deps.now().Before(deadline) {
+		response, err := deps.runGuestOwnedCheck(ctx, vmid)
+		switch {
+		case err != nil:
+			lastReport = err.Error()
+		case response.ExitCode == exitDeployGateOK:
+			fmt.Fprintf(deps.out, "owned addresses held: %s\n", strings.TrimSpace(response.OutData))
+			return exitDeployGateOK
+		default:
+			lastReport = response.OutData
+		}
+		deps.sleep(deployGatePollInterval)
+	}
+	fmt.Fprintf(deps.out, "owned addresses not held within %s; last report: %s\n",
+		budget, strings.TrimSpace(lastReport))
+	return exitDeployGateFailed
+}
+
+// readGuestOwnedCheck runs the owned-address check inside the guest through
+// the QEMU guest agent and returns its exit code and report.
+func readGuestOwnedCheck(ctx context.Context, vmid int) (guestExecResponse, error) {
+	log := slog.With("component", "deploy-gate", "op", "readGuestOwnedCheck", "vmid", vmid)
+	raw, err := ops.GuestExecViaQm(ctx,
+		deployGateGuestExecTimeout+5*time.Second, deployGateGuestExecTimeout,
+		vmid, deployGateGuestBinary, "deploy-gate", string(gateModeCheckOwned))
+	if err != nil {
+		log.WarnContext(ctx, "deploy-gate: qm guest exec failed", "err", err)
+		return guestExecResponse{ExitCode: 0, OutData: ""}, fmt.Errorf("qm guest exec %d: %w", vmid, err)
+	}
+	var response guestExecResponse
+	if err := json.Unmarshal(raw, &response); err != nil {
+		log.WarnContext(ctx, "deploy-gate: qm guest exec response is not JSON", "err", err)
+		return guestExecResponse{ExitCode: 0, OutData: ""}, fmt.Errorf("parse qm guest exec response: %w", err)
+	}
+	return response, nil
 }
 
 // waitReboot polls the guest's boot_id until it differs from oldBootID. At the
