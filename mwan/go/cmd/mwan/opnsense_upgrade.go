@@ -10,10 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"goodkind.io/mwan/internal/config"
-	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/opnsense"
 	opnsensecfg "goodkind.io/mwan/internal/opnsense/config"
+	opnsensenotify "goodkind.io/mwan/internal/opnsense/notify"
 	"goodkind.io/mwan/internal/opnsense/upgrade"
 	"goodkind.io/mwan/internal/opnsense/validate"
 )
@@ -37,7 +36,7 @@ func upgradeUsage(out *os.File) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Phases: prepare, execute, validate, rollback, commit, run, gc, reset")
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "Every input comes from [opnsense.upgrade] in "+opnsensecfg.DefaultPath+".")
+	fmt.Fprintln(out, "Every input comes from [opnsense.upgrade] and [email] in "+opnsensecfg.DefaultPath+".")
 }
 
 func runOPNsenseUpgradeCmd(args []string) int {
@@ -105,6 +104,7 @@ type upgradeInputs struct {
 	ProxmoxSSH          string
 	LANClientSSH        string
 	OPNsenseAddr        string
+	Email               opnsensecfg.EmailSection
 }
 
 // buildRedial returns a context-free closure suitable for the
@@ -189,6 +189,7 @@ func resolveUpgradeInputs() (upgradeInputs, error) {
 		ProxmoxSSH:          cfg.OPNsense.Upgrade.ProxmoxSSH,
 		LANClientSSH:        cfg.OPNsense.Upgrade.LANClientSSH,
 		OPNsenseAddr:        cfg.OPNsense.Upgrade.OPNsenseAddr,
+		Email:               cfg.Email,
 	}
 	return ui, nil
 }
@@ -213,16 +214,15 @@ func (ui upgradeInputs) toOptions() upgrade.Options {
 
 // buildUpgradeDeps wires the production Deps. Executor and validator both ride
 // the gRPC channel. The SSH-host fields are still passed into validator probes
-// that talk to OPNsense over SSH. The alert notifier reads the [email] section
-// of the gateway config, which the OPNsense tooling config does not carry.
+// that talk to OPNsense over SSH. The alert notifier mails through send-email
+// with the [email] section of the OPNsense tooling config.
 func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 	logger := slog.Default()
-	alertCfg, err := config.Load()
+	notifier, err := opnsensenotify.New(ui.Email, logger, "mwan-opnsense-upgrade")
 	if err != nil {
-		slog.Error("opnsense upgrade: load alert config", "err", err)
-		return upgrade.Deps{}, fmt.Errorf("load alert config: %w", err)
+		slog.Error("opnsense upgrade: build alert notifier", "err", err)
+		return upgrade.Deps{}, fmt.Errorf("build alert notifier: %w", err)
 	}
-	notifier := notify.FromConfig(alertCfg, logger, "mwan-opnsense-upgrade")
 	snapshotter := upgrade.NewQmSnapshotter(logger)
 
 	rpcCli, err := opnsense.Dial(ui.GRPCTarget)
