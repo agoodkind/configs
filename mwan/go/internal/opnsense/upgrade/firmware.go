@@ -377,26 +377,6 @@ func restartWebGUI(ctx context.Context, r *guestRunner) {
 	}
 }
 
-// rebootGuest reboots the guest and waits until it answers with a boot
-// time later than the one read before the reboot. The guest closes the
-// exec channel as it shuts down, so the shutdown command's own error is
-// expected and only recorded in upgrade.log.
-func rebootGuest(ctx context.Context, clk Clock, r *guestRunner, wait rebootWait) error {
-	before, err := readBootTime(ctx, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "upgrade.Execute: read boot time before reboot failed", "err", err, "vmid", r.vmid)
-		return fmt.Errorf("read boot time before reboot: %w", err)
-	}
-	_, _ = r.run(ctx, "shutdown", "-r", "+0")
-	slog.InfoContext(ctx, "upgrade.Execute: reboot issued, waiting for a new boot",
-		"vmid", r.vmid, "boot_time", before)
-	if _, err := waitForReboot(ctx, clk, r.exec, r.vmid, before, wait); err != nil {
-		slog.ErrorContext(ctx, "upgrade.Execute: guest did not return after reboot", "err", err, "vmid", r.vmid)
-		return fmt.Errorf("post-reboot wait: %w", err)
-	}
-	return nil
-}
-
 // verifyFirmware compares the post-run state with the plan. It fails
 // only when a change that was pending did not land: the core package did
 // not reach the available version, the base or kernel set did not reach
