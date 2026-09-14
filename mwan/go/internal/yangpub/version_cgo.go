@@ -2,8 +2,11 @@
 
 package yangpub
 
+// No #cgo directive here: publisher_cgo.go supplies the package's sysrepo and
+// libyang flags. A second sysrepo entry would place -lsysrepo after -lyang on
+// the static link line and leave libsysrepo.a's libyang references unresolved.
+
 /*
-#cgo pkg-config: sysrepo
 #include <sysrepo/version.h>
 
 static const char *yangpub_sysrepo_version(void) { return SR_VERSION; }
