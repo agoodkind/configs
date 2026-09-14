@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,9 +19,11 @@ import (
 	"strings"
 	"time"
 
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr/modules/wanroutes"
 	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/networkjson"
+	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/ops"
 )
 
@@ -40,6 +43,13 @@ const (
 	deployGateGuestBinary = "/usr/local/bin/mwan"
 	// deployGateHostPrefixBits is the prefix length of a single IPv4 address.
 	deployGateHostPrefixBits = 32
+	// deployGateAlertKind names the owned-address alert in the notify state.
+	deployGateAlertKind = "deploy_gate_owned_address_missing"
+	// deployGateAlertTimeout bounds the alert send, so a wedged mail transport
+	// cannot hold the transient gate unit open.
+	deployGateAlertTimeout = 30 * time.Second
+	// deployGateAlertService identifies the gate on the outgoing alert email.
+	deployGateAlertService = "mwan-deploy-gate"
 
 	exitDeployGateOK           = 0
 	exitDeployGateFailed       = 1
@@ -102,6 +112,16 @@ type deployGateDeps struct {
 	// runGuestOwnedCheck runs that check from the hypervisor through the guest
 	// agent.
 	runGuestOwnedCheck func(ctx context.Context, vmid int) (guestExecResponse, error)
+	// alertOwnedMissing emails a failed owned-address verdict.
+	alertOwnedMissing func(ctx context.Context, alert ownedMissingAlert) error
+}
+
+// ownedMissingAlert is what the owned-address alert email carries: the guest,
+// the deploy run, and the guest's last owned-address report.
+type ownedMissingAlert struct {
+	VMID    int
+	TraceID string
+	Report  string
 }
 
 func newDeployGateDeps() deployGateDeps {
@@ -118,6 +138,7 @@ func newDeployGateDeps() deployGateDeps {
 		},
 		listAddrs:          netif.ListAddrs,
 		runGuestOwnedCheck: readGuestOwnedCheck,
+		alertOwnedMissing:  sendOwnedMissingAlert,
 	}
 }
 
@@ -271,7 +292,9 @@ func parseWaitDeployArgs(rest []string) (waitDeployInputs, bool) {
 // egress verdict would have nothing to decide; that slot records the
 // not-run marker instead. The owned-address check runs only after egress
 // passed, because it reaches the guest through its agent and asserts state
-// the routing module writes once the gateway is up.
+// the routing module writes once the gateway is up. A failed owned-address
+// verdict also sends one alert email, after the verdict file is written, so a
+// slow mail transport never delays the collector.
 func waitDeploy(ctx context.Context, deps deployGateDeps, in waitDeployInputs) int {
 	log := slog.With("component", "deploy-gate", "op", "waitDeploy")
 	verdict := gateVerdict{
@@ -285,12 +308,26 @@ func waitDeploy(ctx context.Context, deps deployGateDeps, in waitDeployInputs) i
 	if verdict.RebootRC != exitDeployGateFailed {
 		verdict.EgressRC = waitEgress(ctx, deps, in.egressBudget)
 	}
+	ownedReport := ""
 	if verdict.EgressRC == exitDeployGateOK {
-		verdict.OwnedRC = waitOwnedAddresses(ctx, deps, in.vmid, deployGateOwnedBudget)
+		verdict.OwnedRC, ownedReport = waitOwnedAddresses(ctx, deps, in.vmid, deployGateOwnedBudget)
 	}
 	verdict.FinishedAt = deps.now().UTC().Format(time.RFC3339)
-	if err := writeVerdictFile(in.verdictPath, verdict); err != nil {
-		fmt.Fprintf(os.Stderr, "mwan deploy-gate: write verdict: %v\n", err)
+	writeErr := writeVerdictFile(in.verdictPath, verdict)
+	if verdict.OwnedRC == exitDeployGateFailed {
+		alertErr := deps.alertOwnedMissing(ctx, ownedMissingAlert{
+			VMID:    in.vmid,
+			TraceID: in.traceID,
+			Report:  ownedReport,
+		})
+		if alertErr != nil {
+			fmt.Fprintf(deps.out, "owned-address alert not sent: %v\n", alertErr)
+		} else {
+			fmt.Fprintln(deps.out, "owned-address alert sent")
+		}
+	}
+	if writeErr != nil {
+		fmt.Fprintf(os.Stderr, "mwan deploy-gate: write verdict: %v\n", writeErr)
 		return exitDeployGateFailed
 	}
 	log.InfoContext(ctx, "deploy-gate: verdict recorded",
@@ -458,10 +495,13 @@ func holdsHostAddress(held []netif.CurrentAddr, address netip.Addr) bool {
 }
 
 // waitOwnedAddresses polls the guest's owned-address check until it passes or
-// the budget runs out. A failing check and an unreachable agent both poll
-// again, because the routing module may not have reconciled yet; the last
-// report reaches the deploy log either way.
-func waitOwnedAddresses(ctx context.Context, deps deployGateDeps, vmid int, budget time.Duration) int {
+// the budget runs out, and returns the verdict with the guest's last report. A
+// failing check and an unreachable agent both poll again, because the routing
+// module may not have reconciled yet; the last report reaches the deploy log
+// either way.
+func waitOwnedAddresses(
+	ctx context.Context, deps deployGateDeps, vmid int, budget time.Duration,
+) (int, string) {
 	deadline := deps.now().Add(budget)
 	lastReport := "no owned-address check completed"
 	for deps.now().Before(deadline) {
@@ -470,16 +510,56 @@ func waitOwnedAddresses(ctx context.Context, deps deployGateDeps, vmid int, budg
 		case err != nil:
 			lastReport = err.Error()
 		case response.ExitCode == exitDeployGateOK:
-			fmt.Fprintf(deps.out, "owned addresses held: %s\n", strings.TrimSpace(response.OutData))
-			return exitDeployGateOK
+			report := strings.TrimSpace(response.OutData)
+			fmt.Fprintf(deps.out, "owned addresses held: %s\n", report)
+			return exitDeployGateOK, report
 		default:
 			lastReport = response.OutData
 		}
 		deps.sleep(deployGatePollInterval)
 	}
-	fmt.Fprintf(deps.out, "owned addresses not held within %s; last report: %s\n",
-		budget, strings.TrimSpace(lastReport))
-	return exitDeployGateFailed
+	lastReport = strings.TrimSpace(lastReport)
+	fmt.Fprintf(deps.out, "owned addresses not held within %s; last report: %s\n", budget, lastReport)
+	return exitDeployGateFailed, lastReport
+}
+
+// sendOwnedMissingAlert emails a failed owned-address verdict through the
+// notify package, with the email settings the hypervisor's own daemons load
+// from its configuration. The gate runs on that hypervisor, so it reuses the
+// alert path the watchdog already sends through rather than carrying mail
+// settings of its own.
+func sendOwnedMissingAlert(ctx context.Context, alert ownedMissingAlert) error {
+	log := slog.With("component", "deploy-gate", "op", "sendOwnedMissingAlert",
+		"vmid", alert.VMID, "trace_id", alert.TraceID)
+	cfg, err := config.Load()
+	if err != nil {
+		log.ErrorContext(ctx, "deploy-gate: configuration unreadable; alert not sent", "err", err)
+		return fmt.Errorf("load configuration: %w", err)
+	}
+	// notify.FromConfig degrades to a journal-only notifier when email is
+	// unconfigured, which would drop the alert silently, so that case is named.
+	if cfg.Email.SMTP2GOAPIKey == "" || cfg.Email.AlertEmail == "" {
+		unconfigured := errors.New("email unconfigured in the hypervisor configuration")
+		log.ErrorContext(ctx, "deploy-gate: alert not sent", "err", unconfigured)
+		return unconfigured
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, deployGateAlertTimeout)
+	defer cancel()
+	notifier := notify.FromConfig(cfg, log, deployGateAlertService)
+	notifier.Notify(sendCtx, notify.Event{
+		Now:     time.Now(),
+		Level:   slog.LevelError,
+		Kind:    deployGateAlertKind,
+		Key:     alert.TraceID,
+		Message: fmt.Sprintf("deploy gate: VM %d does not hold its on-link mapped addresses", alert.VMID),
+		Fields: []slog.Attr{
+			slog.Int("vmid", alert.VMID),
+			slog.String("trace_id", alert.TraceID),
+			slog.String("report", alert.Report),
+		},
+		IsRecovery: false,
+	})
+	return nil
 }
 
 // readGuestOwnedCheck runs the owned-address check inside the guest through

@@ -865,14 +865,18 @@
     # guest through its agent. A gateway that forwards traffic but does not
     # hold an on-link mapped address has lost inbound reachability for that
     # address, not egress, and rollback is reserved for lost egress, so the
-    # play fails and leaves the VM running this deploy's configuration.
+    # play fails and leaves the VM running this deploy's configuration. The
+    # gate itself emails the alert from the hypervisor through the notify
+    # settings that host's configuration carries, and its unit log records
+    # whether the send went out.
     - name: Fail when a provider link does not hold its mapped addresses
       ansible.builtin.fail:
         msg: >-
           Egress returned, but within 60s a provider link in VM
           {{ actual_vmid }} still did not hold every mapped address inside its
           connected subnet. The VM still runs the config this deploy wrote,
-          and no rollback was performed. Run
+          and no rollback was performed. The deploy gate on
+          {{ mwan_proxmox_delegate }} emailed an alert. Run
           `mwan deploy-gate check-owned-addresses` on the gateway to list the
           missing addresses.
       when:

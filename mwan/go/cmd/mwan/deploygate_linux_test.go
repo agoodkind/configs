@@ -497,6 +497,10 @@ func TestWaitDeployRetriesOwnedAddressesUntilHeld(t *testing.T) {
 		}
 		return guestExecResponse{ExitCode: exitDeployGateOK, OutData: "owned addresses: 2 present, 0 missing\n"}, nil
 	}
+	deps.alertOwnedMissing = func(context.Context, ownedMissingAlert) error {
+		t.Fatal("owned-address alert sent although the addresses were held within the budget")
+		return nil
+	}
 	verdictPath := filepath.Join(t.TempDir(), "verdict.json")
 
 	code := waitDeploy(context.Background(), deps, waitDeployInputs{
@@ -533,6 +537,16 @@ func TestWaitDeployFailsOwnedAddressesAfterTheBudget(t *testing.T) {
 		}, nil
 	}
 	verdictPath := filepath.Join(t.TempDir(), "verdict.json")
+	var alerts []ownedMissingAlert
+	deps.alertOwnedMissing = func(_ context.Context, alert ownedMissingAlert) error {
+		// The collector must be able to read the verdict before the mail
+		// transport is touched, so the file already exists when the alert goes.
+		if _, err := os.Stat(verdictPath); err != nil {
+			t.Fatalf("alert sent before the verdict was recorded: %v", err)
+		}
+		alerts = append(alerts, alert)
+		return nil
+	}
 
 	code := waitDeploy(context.Background(), deps, waitDeployInputs{
 		vmid: 113, oldBootID: testOldBootID, rebootBudget: time.Minute, egressBudget: time.Minute,
@@ -547,6 +561,50 @@ func TestWaitDeployFailsOwnedAddressesAfterTheBudget(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "203.0.113.4 on enwebpass0: missing") {
 		t.Fatalf("output does not carry the guest's last report: %s", out.String())
+	}
+	if len(alerts) != 1 {
+		t.Fatalf("owned-address alerts = %d, want 1", len(alerts))
+	}
+	if alerts[0].VMID != 113 || alerts[0].TraceID != "trace-123" {
+		t.Fatalf("alert = %+v, want vmid 113 and trace-123", alerts[0])
+	}
+	if !strings.Contains(alerts[0].Report, "203.0.113.4 on enwebpass0: missing") {
+		t.Fatalf("alert report does not name the missing address: %q", alerts[0].Report)
+	}
+}
+
+func TestWaitDeployRecordsTheVerdictWhenTheAlertFails(t *testing.T) {
+	var out strings.Builder
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+	deps := newTestDeps(&out, clock)
+	deps.readBootID = func(context.Context, int) (string, error) { return testNewBootID, nil }
+	deps.ping6 = func(context.Context, netip.Addr, time.Duration) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	deps.ping4 = func(context.Context, string, netip.Addr, time.Duration) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	deps.runGuestOwnedCheck = func(context.Context, int) (guestExecResponse, error) {
+		return guestExecResponse{ExitCode: exitDeployGateFailed, OutData: "owned addresses: 0 present, 1 missing\n"}, nil
+	}
+	deps.alertOwnedMissing = func(context.Context, ownedMissingAlert) error {
+		return errors.New("email unconfigured")
+	}
+	verdictPath := filepath.Join(t.TempDir(), "verdict.json")
+
+	code := waitDeploy(context.Background(), deps, waitDeployInputs{
+		vmid: 113, oldBootID: testOldBootID, rebootBudget: time.Minute, egressBudget: time.Minute,
+		traceID: "trace-123", verdictPath: verdictPath,
+	})
+
+	if code != exitDeployGateOK {
+		t.Fatalf("exit code = %d, want %d\noutput: %s", code, exitDeployGateOK, out.String())
+	}
+	if verdict := readTestVerdict(t, verdictPath); verdict.OwnedRC != exitDeployGateFailed {
+		t.Fatalf("owned_rc = %d, want %d", verdict.OwnedRC, exitDeployGateFailed)
+	}
+	if !strings.Contains(out.String(), "owned-address alert not sent: email unconfigured") {
+		t.Fatalf("output does not report the failed alert: %s", out.String())
 	}
 }
 
