@@ -450,34 +450,69 @@ func openPrivateRepository(
 	// environment at connect time; a distinct prefix keeps this run apart
 	// from any datastore the host serves.
 	shmPrefix := fmt.Sprintf("mwanselftest%d", os.Getpid())
-	os.Setenv("SYSREPO_REPOSITORY_PATH", flags.repository)
-	os.Setenv("SYSREPO_SHM_PREFIX", shmPrefix)
-	// The static sysrepo compiles with the upstream group policy
-	// (SYSREPO_GROUP=sysrepo, MWAN-435), and sr_is_prod_env() gates every
-	// group chown on this variable being absent. The private repository is
-	// this run's own, so the group policy has nothing to protect here, and
-	// without this the selftest needs a sysrepo group with the running
-	// user in it on every machine that runs it.
-	os.Setenv("SR_ENV_RUN_TESTS", "1")
+	restoreEnv := setSelftestEnv([]envSetting{
+		{name: "SYSREPO_REPOSITORY_PATH", value: flags.repository},
+		{name: "SYSREPO_SHM_PREFIX", value: shmPrefix},
+		// The static sysrepo compiles with the upstream group policy
+		// (SYSREPO_GROUP=sysrepo, MWAN-435), and sr_is_prod_env() gates every
+		// group chown on this variable being absent. The private repository is
+		// this run's own, so the group policy has nothing to protect here, and
+		// without this the selftest needs a sysrepo group with the running
+		// user in it on every machine that runs it.
+		{name: "SR_ENV_RUN_TESTS", value: "1"},
+	})
 
 	models, err := resolveSelftestModels(log, flags.modelsDir)
 	if err != nil {
+		restoreEnv()
 		return nil, nil, err
 	}
 	reader, err := yangpub.New(log)
 	if err != nil {
 		removeSelftestSHM(log, shmPrefix)
+		restoreEnv()
 		return nil, nil, failStep(log, "reader connection", err)
 	}
+	// The environment goes back last, after the connection has disconnected
+	// and the shared memory is gone, so a later connection in this process
+	// reaches the datastore it reached before the selftest ran.
 	closeRepository := func() {
 		_ = reader.Close()
 		removeSelftestSHM(log, shmPrefix)
+		restoreEnv()
 	}
 	if err := reader.InstallModules(ctx, models, flags.modelsDir); err != nil {
 		closeRepository()
 		return nil, nil, failStep(log, "install models", err)
 	}
 	return reader, closeRepository, nil
+}
+
+// envSetting is one process environment variable and the value to give it.
+type envSetting struct {
+	name  string
+	value string
+}
+
+// setSelftestEnv sets each variable and returns a function that puts every
+// one back: the prior value when the variable was set, and no variable at
+// all when it was absent.
+func setSelftestEnv(settings []envSetting) func() {
+	restores := make([]func(), 0, len(settings))
+	for _, setting := range settings {
+		prior, present := os.LookupEnv(setting.name)
+		os.Setenv(setting.name, setting.value)
+		if present {
+			restores = append(restores, func() { os.Setenv(setting.name, prior) })
+		} else {
+			restores = append(restores, func() { os.Unsetenv(setting.name) })
+		}
+	}
+	return func() {
+		for _, restore := range restores {
+			restore()
+		}
+	}
 }
 
 // selftestNotifTimeout bounds the wait for each notification to reach the

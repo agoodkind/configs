@@ -74,9 +74,32 @@ func TestWanconfigSelftest_PrivateRepository(t *testing.T) {
 	modelsDir := selftestModelsDir(t)
 	repository := filepath.Join(t.TempDir(), "repository")
 
+	// The run must hand the process environment back the way it found it,
+	// or a later connection in this binary reaches the private repository.
+	// Two variables start set and one starts absent, so both restore paths
+	// are exercised.
+	const priorRepositoryPath = "/prior/repository"
+	const priorSHMPrefix = "priorprefix"
+	t.Setenv("SYSREPO_REPOSITORY_PATH", priorRepositoryPath)
+	t.Setenv("SYSREPO_SHM_PREFIX", priorSHMPrefix)
+	t.Setenv("SR_ENV_RUN_TESTS", "")
+	if err := os.Unsetenv("SR_ENV_RUN_TESTS"); err != nil {
+		t.Fatalf("unset SR_ENV_RUN_TESTS: %v", err)
+	}
+
 	code := runWanconfigSelftest([]string{"--repository", repository, "--models-dir", modelsDir})
 	if code != 0 {
 		t.Fatalf("private selftest exit code = %d, want 0", code)
+	}
+
+	if got := os.Getenv("SYSREPO_REPOSITORY_PATH"); got != priorRepositoryPath {
+		t.Fatalf("SYSREPO_REPOSITORY_PATH after the run = %q, want %q", got, priorRepositoryPath)
+	}
+	if got := os.Getenv("SYSREPO_SHM_PREFIX"); got != priorSHMPrefix {
+		t.Fatalf("SYSREPO_SHM_PREFIX after the run = %q, want %q", got, priorSHMPrefix)
+	}
+	if value, present := os.LookupEnv("SR_ENV_RUN_TESTS"); present {
+		t.Fatalf("SR_ENV_RUN_TESTS after the run = %q, want it unset", value)
 	}
 
 	// The run's shared-memory segments carry this process's prefix and
