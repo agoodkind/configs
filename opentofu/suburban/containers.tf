@@ -371,6 +371,97 @@ resource "proxmox_virtual_environment_container" "isp_mbrains_suburban" {
   }
 }
 
+resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
+  node_name = "hypervisor"
+  vm_id     = local.service_mapping.isp_astound_suburban.vmid
+
+  depends_on = [
+    proxmox_network_linux_bridge.isp_astound_suburban,
+    proxmox_network_linux_bridge.vm_management_suburban,
+  ]
+
+  initialization {
+    hostname = local.service_mapping.isp_astound_suburban.hostname
+    dns {
+      servers = ["2606:4700:4700::1111", "1.1.1.1"]
+    }
+    # The simulated link carries IPv4 and link-local only. This sim hands out no
+    # IA_NA address and advertises no SLAAC prefix, so prefix delegation runs
+    # over link-local exactly as the AT&T sim's does.
+    ip_config {
+      ipv4 {
+        address = "${local.service_mapping.isp_astound_suburban.ipv4}/24"
+      }
+    }
+    ip_config {
+      ipv4 {
+        address = "${local.service_mapping.isp_astound_suburban.ipv4_uplink}/24"
+        gateway = local.service_mapping.vmbr1_suburban.ipv4
+      }
+      ipv6 {
+        address = "${local.service_mapping.isp_astound_suburban.ipv6_uplink}/64"
+        gateway = local.service_mapping.vmbr1_suburban.ipv6
+      }
+    }
+  }
+
+  features {
+    nesting = true
+  }
+
+  network_interface {
+    name        = "eth0"
+    bridge      = proxmox_network_linux_bridge.isp_astound_suburban.name
+    mac_address = "BC:24:11:A5:70:04"
+  }
+
+  network_interface {
+    name        = "eth1"
+    bridge      = proxmox_network_linux_bridge.vm_management_suburban.name
+    mac_address = "BC:24:11:A5:70:05"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    size         = 2
+  }
+
+  memory {
+    dedicated = 128
+    swap      = 512
+  }
+
+  cpu {
+    architecture = "amd64"
+    cores        = 1
+    limit        = 0
+  }
+
+  console {
+    enabled   = true
+    tty_count = 2
+    type      = "tty"
+  }
+
+  tags = []
+
+  operating_system {
+    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    type             = "debian"
+  }
+
+  started       = true
+  start_on_boot = true
+  unprivileged  = false
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [
+      operating_system[0].template_file_id,
+    ]
+  }
+}
+
 # Router-2 simulator: an FRR speaker on the transit link that proves router
 # N+1 onboarding needs no MWAN change. One interface, on the transit bridge;
 # the announced prefix lives on its loopback, configured by

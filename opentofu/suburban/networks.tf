@@ -61,6 +61,17 @@ resource "proxmox_network_linux_bridge" "isp_mbrains_suburban" {
   }
 }
 
+resource "proxmox_network_linux_bridge" "isp_astound_suburban" {
+  node_name = "hypervisor"
+  name      = "vmbr7"
+
+  autostart = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "proxmox_network_linux_bridge" "trunk_suburban" {
   node_name = "hypervisor"
   name      = "vmbrtrunk"
