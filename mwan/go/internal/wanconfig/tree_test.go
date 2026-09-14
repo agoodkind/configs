@@ -405,7 +405,7 @@ func TestConfigItems_RejectsWhatAPathCannotCarry(t *testing.T) {
 				{External: netip.MustParseAddr("198.51.100.2"), Internal: netip.MustParseAddr("10.250.250.3")},
 			}
 		}),
-		"unparsable source pin":   withMember(func(member *Member) { member.V4Source = "not-an-address" }),
+		"unparsable source pin": withMember(func(member *Member) { member.V4Source = "not-an-address" }),
 		"ipv6 target in the ipv4 list": withMember(func(member *Member) {
 			member.Health = &ProbeSettings{Enabled: true, TargetsV4: []netip.Addr{netip.MustParseAddr("2001:db8::1")}}
 		}),
