@@ -236,6 +236,14 @@ func selftestGateway() wanconfig.Gateway {
 	return wanconfig.Gateway{
 		InternalIface: "eninternal0",
 		HashMode:      "random",
+		Group: wanconfig.GroupSettings{
+			ReservedTables:     []uint32{400, 500},
+			InternalPrefix:     netip.MustParsePrefix("3d06:bad:b01:210::/60"),
+			OpnsenseEdgeV6:     netip.MustParseAddr("2001:db8:fe::2"),
+			MwanbrEdgeV6:       netip.MustParseAddr("2001:db8:fe::3"),
+			InternalNetV4:      netip.MustParsePrefix("192.0.2.0/29"),
+			ProbeTimeoutMillis: 2000,
+		},
 		Members: []wanconfig.Member{{
 			Name:        "att",
 			Iface:       "enatt0",
@@ -244,6 +252,23 @@ func selftestGateway() wanconfig.Gateway {
 			ProbePolicy: "att",
 			NPTInternal: netip.MustParsePrefix("3d06:bad:b01:210::/60"),
 			NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
+			TableID:     100,
+			FwMark:      1,
+			FwMarkPrio:  100,
+			FromPrio:    55,
+			V4Source:    "",
+			ForcedDSCP:  8,
+			Health: &wanconfig.ProbeSettings{
+				Enabled:              true,
+				PingCount:            new(uint8(3)),
+				SuccessThreshold:     new(uint8(2)),
+				FailureThreshold:     new(uint8(2)),
+				RecoveryThreshold:    new(uint8(2)),
+				CheckIntervalSeconds: new(uint32(10)),
+				TargetsV4:            []netip.Addr{netip.MustParseAddr("192.0.2.10")},
+				TargetsV6:            []netip.Addr{netip.MustParseAddr("2001:db8:53::1")},
+				HTTPURLs:             []string{"https://example.test/ip"},
+			},
 		}},
 		Daemon: wanconfig.DaemonSettings{
 			Watchdog: wanconfig.WatchdogSettings{
@@ -329,51 +354,16 @@ func runPrivateSelftest(log *slog.Logger, flags selftestFlags) int {
 const sysrepoSHMDir = "/dev/shm"
 
 func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
-	if err := os.MkdirAll(flags.repository, 0o750); err != nil {
-		return failStep(log, "create repository", err)
-	}
-	// The repository must be this run's own. Pointing the selftest at a
-	// populated one, the host's included, would leave connection records
-	// in it and test a datastore the host may be serving.
-	entries, err := os.ReadDir(flags.repository)
-	if err != nil {
-		return failStep(log, "read repository", err)
-	}
-	if len(entries) > 0 {
-		return fmt.Errorf("repository %s is not empty; the private selftest needs a fresh directory", flags.repository)
-	}
-	// sysrepo reads its repository path and shared-memory prefix from the
-	// environment at connect time; a distinct prefix keeps this run apart
-	// from any datastore the host serves.
-	shmPrefix := fmt.Sprintf("mwanselftest%d", os.Getpid())
-	os.Setenv("SYSREPO_REPOSITORY_PATH", flags.repository)
-	os.Setenv("SYSREPO_SHM_PREFIX", shmPrefix)
-	// The static sysrepo compiles with the upstream group policy
-	// (SYSREPO_GROUP=sysrepo, MWAN-435), and sr_is_prod_env() gates every
-	// group chown on this variable being absent. The private repository is
-	// this run's own, so the group policy has nothing to protect here, and
-	// without this the selftest needs a sysrepo group with the running
-	// user in it on every machine that runs it.
-	os.Setenv("SR_ENV_RUN_TESTS", "1")
-	// Registered before the connections' own deferred closes, so it runs
-	// after both have disconnected.
-	defer removeSelftestSHM(log, shmPrefix)
-
 	ctx, cancel := context.WithTimeout(context.Background(), selftestTimeout)
 	defer cancel()
 
-	models, err := resolveSelftestModels(log, flags.modelsDir)
+	reader, closeRepository, err := openPrivateRepository(ctx, log, flags)
 	if err != nil {
 		return err
 	}
-	reader, err := yangpub.New(log)
-	if err != nil {
-		return failStep(log, "reader connection", err)
-	}
-	defer func() { _ = reader.Close() }()
-	if err := reader.InstallModules(ctx, models, flags.modelsDir); err != nil {
-		return failStep(log, "install models", err)
-	}
+	// Deferred before the daemon connection's own close, so it runs after
+	// both connections have disconnected.
+	defer closeRepository()
 
 	daemon, err := yangpub.New(log)
 	if err != nil {
@@ -423,6 +413,64 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 		return failStep(log, "interfaces tree after close: "+after, err)
 	}
 	return nil
+}
+
+// openPrivateRepository points this process's datastore at a fresh private
+// repository, installs the gateway's models into it over a reader connection,
+// and returns that connection with a cleanup that closes it and removes the
+// run's shared memory. The caller defers the cleanup before opening any other
+// connection, so the shared memory goes only after every connection has
+// disconnected.
+func openPrivateRepository(
+	ctx context.Context,
+	log *slog.Logger,
+	flags selftestFlags,
+) (yangpub.Publisher, func(), error) {
+	if err := os.MkdirAll(flags.repository, 0o750); err != nil {
+		return nil, nil, failStep(log, "create repository", err)
+	}
+	// The repository must be this run's own. Pointing the selftest at a
+	// populated one, the host's included, would leave connection records
+	// in it and test a datastore the host may be serving.
+	entries, err := os.ReadDir(flags.repository)
+	if err != nil {
+		return nil, nil, failStep(log, "read repository", err)
+	}
+	if len(entries) > 0 {
+		return nil, nil, fmt.Errorf("repository %s is not empty; the private selftest needs a fresh directory", flags.repository)
+	}
+	// sysrepo reads its repository path and shared-memory prefix from the
+	// environment at connect time; a distinct prefix keeps this run apart
+	// from any datastore the host serves.
+	shmPrefix := fmt.Sprintf("mwanselftest%d", os.Getpid())
+	os.Setenv("SYSREPO_REPOSITORY_PATH", flags.repository)
+	os.Setenv("SYSREPO_SHM_PREFIX", shmPrefix)
+	// The static sysrepo compiles with the upstream group policy
+	// (SYSREPO_GROUP=sysrepo, MWAN-435), and sr_is_prod_env() gates every
+	// group chown on this variable being absent. The private repository is
+	// this run's own, so the group policy has nothing to protect here, and
+	// without this the selftest needs a sysrepo group with the running
+	// user in it on every machine that runs it.
+	os.Setenv("SR_ENV_RUN_TESTS", "1")
+
+	models, err := resolveSelftestModels(log, flags.modelsDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	reader, err := yangpub.New(log)
+	if err != nil {
+		removeSelftestSHM(log, shmPrefix)
+		return nil, nil, failStep(log, "reader connection", err)
+	}
+	closeRepository := func() {
+		_ = reader.Close()
+		removeSelftestSHM(log, shmPrefix)
+	}
+	if err := reader.InstallModules(ctx, models, flags.modelsDir); err != nil {
+		closeRepository()
+		return nil, nil, failStep(log, "install models", err)
+	}
+	return reader, closeRepository, nil
 }
 
 // selftestNotifTimeout bounds the wait for each notification to reach the

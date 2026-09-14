@@ -3,10 +3,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"goodkind.io/mwan/internal/wanconfig"
+	"goodkind.io/mwan/internal/yangpub"
 )
 
 // selftestModelSources are the gateway's model files as the repository
@@ -38,14 +43,10 @@ func selftestSteeringModel(t *testing.T) string {
 	return matches[0]
 }
 
-// TestWanconfigSelftest_PrivateRepository runs the private selftest the
-// way an operator would, against a repository and model directory the
-// test assembles. It is the end-to-end proof of the serving contract:
-// with real libyang and sysrepo, one operational read over a second
-// connection carries the published configuration and the provided live
-// state together, and Close releases both. It is not parallel because
-// sysrepo reads its repository location from the process environment.
-func TestWanconfigSelftest_PrivateRepository(t *testing.T) {
+// selftestModelsDir links the gateway's model files into a directory the
+// private repository installs from.
+func selftestModelsDir(t *testing.T) string {
+	t.Helper()
 	modelsDir := t.TempDir()
 	for _, source := range append(selftestModelSources, selftestSteeringModel(t)) {
 		absolute, err := filepath.Abs(source)
@@ -59,6 +60,18 @@ func TestWanconfigSelftest_PrivateRepository(t *testing.T) {
 			t.Fatalf("link %s: %v", source, err)
 		}
 	}
+	return modelsDir
+}
+
+// TestWanconfigSelftest_PrivateRepository runs the private selftest the
+// way an operator would, against a repository and model directory the
+// test assembles. It is the end-to-end proof of the serving contract:
+// with real libyang and sysrepo, one operational read over a second
+// connection carries the published configuration and the provided live
+// state together, and Close releases both. It is not parallel because
+// sysrepo reads its repository location from the process environment.
+func TestWanconfigSelftest_PrivateRepository(t *testing.T) {
+	modelsDir := selftestModelsDir(t)
 	repository := filepath.Join(t.TempDir(), "repository")
 
 	code := runWanconfigSelftest([]string{"--repository", repository, "--models-dir", modelsDir})
@@ -74,5 +87,64 @@ func TestWanconfigSelftest_PrivateRepository(t *testing.T) {
 	}
 	if len(leftovers) != 0 {
 		t.Fatalf("shared memory left behind: %v", leftovers)
+	}
+}
+
+// TestPublishedTreeRoundTripsThroughSysrepo publishes each network document's
+// projection into a private repository with real libyang and sysrepo, then
+// reads the running datastore back and compares it with the document. The
+// item-level round trip cannot see a value the datastore refuses, and one
+// refused item fails the whole replace, so this proves every published leaf is
+// accepted and served unchanged. It is not parallel because sysrepo reads its
+// repository location from the process environment.
+func TestPublishedTreeRoundTripsThroughSysrepo(t *testing.T) {
+	documents, err := filepath.Glob(networkInstanceGlob)
+	if err != nil {
+		t.Fatalf("glob network documents: %v", err)
+	}
+	if len(documents) == 0 {
+		t.Fatalf("no network document matches %s", networkInstanceGlob)
+	}
+	schemaDir := networkSchemaDirForTest(t)
+	flags := selftestFlags{
+		repository: filepath.Join(t.TempDir(), "repository"),
+		modelsDir:  selftestModelsDir(t),
+	}
+	log := slog.Default()
+	ctx, cancel := context.WithTimeout(context.Background(), selftestTimeout)
+	defer cancel()
+
+	reader, closeRepository, err := openPrivateRepository(ctx, log, flags)
+	if err != nil {
+		t.Fatalf("open private repository: %v", err)
+	}
+	defer closeRepository()
+	daemon, err := yangpub.New(log)
+	if err != nil {
+		t.Fatalf("daemon connection: %v", err)
+	}
+	defer func() { _ = daemon.Close() }()
+
+	for _, document := range documents {
+		t.Run(filepath.Base(document), func(t *testing.T) {
+			items := servedConfigItems(t, document, schemaDir)
+			replacer := runningReplacer{pub: daemon}
+			if err := replacer.ReplaceConfig(ctx, wanconfig.OwnedPaths, items); err != nil {
+				t.Fatalf("publish %s: %v", document, err)
+			}
+			exported, found, err := reader.ExportJSON(ctx, yangpub.DatastoreRunning, "/ietf-interfaces:*")
+			if err != nil {
+				t.Fatalf("read running interfaces: %v", err)
+			}
+			if !found {
+				t.Fatal("read running interfaces: nothing served")
+			}
+			raw, err := os.ReadFile(document)
+			if err != nil {
+				t.Fatalf("read %s: %v", document, err)
+			}
+			served := withoutServedOnlyPairs(flattenNetworkJSON(t, []byte(exported)))
+			compareLeafSets(t, flattenNetworkJSON(t, raw), served)
+		})
 	}
 }
