@@ -1,0 +1,25 @@
+! FRR config for the sit6 LXC (rendered by deploy-sit6.yml).
+! Announces Berylax's tunnel prefix to the MWAN speaker over IPv6 iBGP. The
+! prefix is a kernel route that sit6-tunnel installs, so the announcement
+! follows the tunnel. Nothing is accepted back, because the static gateways
+! carry the default routes.
+frr defaults traditional
+hostname {{ service_mapping.sit6.hostname.split('.')[0] }}
+log syslog informational
+!
+route-map SIT6-DENY-ALL deny 10
+exit
+!
+router bgp {{ sit6_bgp_asn }}
+ bgp router-id {{ sit6_bgp_router_id }}
+ no bgp default ipv4-unicast
+ neighbor {{ sit6_bgp_neighbor_v6 }} remote-as internal
+ !
+ address-family ipv6 unicast
+  network {{ sit6_tunnel_prefix_v6 }}
+  neighbor {{ sit6_bgp_neighbor_v6 }} activate
+  neighbor {{ sit6_bgp_neighbor_v6 }} next-hop-self
+  neighbor {{ sit6_bgp_neighbor_v6 }} route-map SIT6-DENY-ALL in
+ exit-address-family
+exit
+!

@@ -1,0 +1,157 @@
+---
+# Configure the sit6 LXC, the 6in4 tunnel endpoint for Berylax.
+#
+# Targets sit6_servers (LXC-124 on vault). inventory/group_vars/sit6_servers.yml
+# carries every value this play reads.
+#
+# Berylax sends protocol 41 to 104.57.226.196, which MWAN DNATs to this guest.
+# The guest takes the tunnel remote from the A record of
+# sit6_tunnel_remote_name, re-resolves it every 5 minutes, routes the Berylax
+# prefix into the tunnel, and announces that prefix to MWAN over iBGP.
+#
+# Run example:
+#   go run goodkind.io/configs/cmd/configs deploy deploy-sit6 \
+#     --limit sit6_servers
+
+- name: Configure sit6 LXC
+  hosts: sit6_servers
+  become: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Install tunnel, firewall, and BGP packages
+      ansible.builtin.apt:
+        name:
+          - frr
+          - iproute2
+          - nftables
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Deploy sit6 sysctl config
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/sysctl.conf"
+        dest: /etc/sysctl.d/99-sit6.conf
+        mode: "0644"
+      notify:
+        - Reload sysctl
+
+    - name: Ensure the sit6 config directory exists
+      ansible.builtin.file:
+        path: /etc/sit6
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy tunnel settings
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/sit6.env.j2"
+        dest: /etc/sit6/sit6.env
+        mode: "0644"
+      notify:
+        - Restart sit6-tunnel
+
+    - name: Deploy tunnel bring-up script
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/sit6-tunnel-up.sh"
+        dest: /usr/local/sbin/sit6-tunnel-up
+        mode: "0755"
+      notify:
+        - Restart sit6-tunnel
+
+    - name: Deploy sit6 tunnel systemd units
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - sit6-tunnel.service
+        - sit6-tunnel-refresh.service
+        - sit6-tunnel-refresh.timer
+      notify:
+        - Reload systemd
+        - Restart sit6-tunnel
+        - Restart sit6-tunnel-refresh timer
+
+    - name: Deploy nftables ruleset
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/nftables.conf.j2"
+        dest: /etc/nftables.conf
+        mode: "0644"
+        validate: /usr/sbin/nft -c -f %s
+      notify:
+        - Reload nftables
+
+    - name: Deploy FRR daemons file
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/frr-daemons"
+        dest: /etc/frr/daemons
+        owner: frr
+        group: frr
+        mode: "0640"
+      notify:
+        - Restart frr
+
+    - name: Deploy FRR config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/frr.conf.j2"
+        dest: /etc/frr/frr.conf
+        owner: frr
+        group: frr
+        mode: "0640"
+        validate: /usr/bin/vtysh --dryrun --inputfile %s
+      notify:
+        - Restart frr
+
+    - name: Enable sit6 services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - nftables
+        - frr
+        - sit6-tunnel
+
+    - name: Enable and start the tunnel refresh timer
+      ansible.builtin.systemd:
+        name: sit6-tunnel-refresh.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Reload sysctl
+      # `sysctl --system` exits non-zero in the LXC because it hits
+      # host-protected keys a container cannot set, so apply just this file.
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-sit6.conf
+      changed_when: false
+
+    - name: Reload nftables
+      ansible.builtin.systemd:
+        name: nftables
+        state: reloaded
+
+    - name: Restart frr
+      ansible.builtin.systemd:
+        name: frr
+        state: restarted
+
+    - name: Restart sit6-tunnel
+      ansible.builtin.systemd:
+        name: sit6-tunnel
+        state: restarted
+
+    - name: Restart sit6-tunnel-refresh timer
+      ansible.builtin.systemd:
+        name: sit6-tunnel-refresh.timer
+        state: restarted
