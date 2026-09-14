@@ -706,19 +706,20 @@ func buildHostIPv6PolicyConfig(
 }
 
 // sharedWAN is one WAN's full config from its network.json wan container: the
-// identity (WANRef), the policy-routing slots wan.routes consumes, and the
-// steering properties the balancer reads. npt reads only the embedded WANRef.
-// One home per WAN.
+// identity (WANRef), the policy-routing slots and static mappings wan.routes
+// consumes, and the steering properties the balancer reads. npt reads only the
+// embedded WANRef. One home per WAN.
 type sharedWAN struct {
 	ifmgr.WANRef
-	TableID    int
-	FwMark     int
-	FwMarkPrio int
-	FromPrio   int
-	NptPrefix  string
-	V4Source   string
-	Tier       uint8
-	Weight     int
+	TableID        int
+	FwMark         int
+	FwMarkPrio     int
+	FromPrio       int
+	NptPrefix      string
+	V4Source       string
+	Tier           uint8
+	Weight         int
+	StaticMappings []config.StaticMapping
 }
 
 // sharedWANInputs is the runtime projection of the network configuration's WAN
@@ -759,15 +760,16 @@ func buildWANRefs(ifmgrCfg config.IfMgrSection) sharedWANInputs {
 	for _, name := range names {
 		entry := ifmgrCfg.WAN[name]
 		inputs.WANs = append(inputs.WANs, sharedWAN{
-			WANRef:     ifmgr.WANRef{Name: name, Iface: entry.Iface},
-			TableID:    entry.TableID,
-			FwMark:     entry.FwMark,
-			FwMarkPrio: entry.FwMarkPrio,
-			FromPrio:   entry.FromPrio,
-			NptPrefix:  entry.NptPrefix,
-			V4Source:   entry.V4Source,
-			Tier:       entry.Tier,
-			Weight:     entry.Weight,
+			WANRef:         ifmgr.WANRef{Name: name, Iface: entry.Iface},
+			TableID:        entry.TableID,
+			FwMark:         entry.FwMark,
+			FwMarkPrio:     entry.FwMarkPrio,
+			FromPrio:       entry.FromPrio,
+			NptPrefix:      entry.NptPrefix,
+			V4Source:       entry.V4Source,
+			Tier:           entry.Tier,
+			Weight:         entry.Weight,
+			StaticMappings: entry.StaticMappings,
 		})
 	}
 	return inputs
@@ -798,18 +800,33 @@ func buildWANRoutesConfig(
 			return wanroutes.Config{}, err
 		}
 		cfg.WANs = append(cfg.WANs, wanroutes.WAN{
-			WANRef:     wan.WANRef,
-			TableID:    wan.TableID,
-			FwMark:     mark,
-			FwMarkPrio: wan.FwMarkPrio,
-			FromPrio:   wan.FromPrio,
-			NptPrefix:  wan.NptPrefix,
-			V4Source:   wan.V4Source,
-			Tier:       wan.Tier,
-			Weight:     wan.Weight,
+			WANRef:          wan.WANRef,
+			TableID:         wan.TableID,
+			FwMark:          mark,
+			FwMarkPrio:      wan.FwMarkPrio,
+			FromPrio:        wan.FromPrio,
+			NptPrefix:       wan.NptPrefix,
+			V4Source:        wan.V4Source,
+			Tier:            wan.Tier,
+			Weight:          wan.Weight,
+			MappedExternals: mappedExternals(wan.StaticMappings),
 		})
 	}
 	return cfg, nil
+}
+
+// mappedExternals projects a provider's static mappings onto the external
+// addresses the routing module decides link ownership for. The routing module
+// never translates, so the internal half stays with the firewall render.
+func mappedExternals(mappings []config.StaticMapping) []netip.Addr {
+	if len(mappings) == 0 {
+		return nil
+	}
+	externals := make([]netip.Addr, 0, len(mappings))
+	for _, mapping := range mappings {
+		externals = append(externals, mapping.External)
+	}
+	return externals
 }
 
 // wanFwMark narrows one provider's firewall mark onto the kernel's width. The

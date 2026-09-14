@@ -291,7 +291,7 @@ func selftestStore() *wanstate.Store {
 			V6:                  wanstate.ProbePass,
 		},
 	})
-	store.SetRouting(0, map[string]wanstate.MemberRouting{"att": {Carrying: true}})
+	store.SetRouting(0, map[string]wanstate.MemberRouting{"att": {Carrying: true, OwnedAddresses: nil}})
 	store.SetTranslation(map[string]wanstate.MemberTranslation{
 		"att": {Delegated: netip.MustParsePrefix("2001:db8:a::/60"), KernelPresent: true},
 	})
@@ -464,7 +464,7 @@ func checkSelftestNotifications(
 	// transition, and a routing pass that installs a different tier than
 	// the baseline selftestStore wrote.
 	store.NotifyHealthTransition("att", wanstate.HealthHealthy, wanstate.HealthUnhealthy)
-	store.SetRouting(1, map[string]wanstate.MemberRouting{"att": {Carrying: false}})
+	store.SetRouting(1, map[string]wanstate.MemberRouting{"att": {Carrying: false, OwnedAddresses: nil}})
 
 	byPath := map[string]string{}
 	for len(byPath) < 2 {

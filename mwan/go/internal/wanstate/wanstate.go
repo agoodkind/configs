@@ -53,6 +53,9 @@ type MemberHealth struct {
 // its last pass.
 type MemberRouting struct {
 	Carrying bool
+	// OwnedAddresses are the mapped addresses the routing module holds on the
+	// member's link as host addresses, in configuration order.
+	OwnedAddresses []netip.Addr
 }
 
 // MemberTranslation is what the translation module holds for one member.

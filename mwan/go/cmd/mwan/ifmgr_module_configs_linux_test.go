@@ -153,6 +153,10 @@ func sharedWANForTest() config.IfMgrSection {
 				V4Source:   "203.0.113.2",
 				Tier:       1,
 				Weight:     3,
+				StaticMappings: []config.StaticMapping{
+					{External: netip.MustParseAddr("203.0.113.2"), Internal: netip.MustParseAddr("192.0.2.2")},
+					{External: netip.MustParseAddr("203.0.113.3"), Internal: netip.MustParseAddr("192.0.2.3")},
+				},
 			},
 		},
 	}
@@ -198,6 +202,10 @@ func TestBuildWANRefs(t *testing.T) {
 				V4Source:   "203.0.113.2",
 				Tier:       1,
 				Weight:     3,
+				StaticMappings: []config.StaticMapping{
+					{External: netip.MustParseAddr("203.0.113.2"), Internal: netip.MustParseAddr("192.0.2.2")},
+					{External: netip.MustParseAddr("203.0.113.3"), Internal: netip.MustParseAddr("192.0.2.3")},
+				},
 			},
 		},
 	}
@@ -247,6 +255,10 @@ func TestBuildWANRoutesConfig(t *testing.T) {
 				V4Source:   "203.0.113.2",
 				Tier:       1,
 				Weight:     3,
+				MappedExternals: []netip.Addr{
+					netip.MustParseAddr("203.0.113.2"),
+					netip.MustParseAddr("203.0.113.3"),
+				},
 			},
 		},
 	}

@@ -95,6 +95,45 @@ func TestInterfacesLiveItems_ServesTheSnapshot(t *testing.T) {
 	}
 }
 
+// TestInterfacesLiveItems_ServesOwnedAddresses pins where the addresses a
+// provider link answers for are served: a leaf-list under that provider's wan
+// container, beside the provider's name, and nothing for a provider that owns
+// none.
+func TestInterfacesLiveItems_ServesOwnedAddresses(t *testing.T) {
+	t.Parallel()
+	store := wanstate.New()
+	store.SetRouting(0, map[string]wanstate.MemberRouting{
+		"att": {Carrying: true, OwnedAddresses: nil},
+		"webpass": {
+			Carrying: true,
+			OwnedAddresses: []netip.Addr{
+				netip.MustParseAddr("203.0.113.3"),
+				netip.MustParseAddr("203.0.113.4"),
+			},
+		},
+	})
+
+	items := interfacesLiveItems(store.Snapshot(), liveTestGateway())
+
+	served := map[string][]string{}
+	for _, item := range items {
+		served[item.Path] = append(served[item.Path], item.Value)
+	}
+	webpassWAN := "/ietf-interfaces:interfaces/interface[name='enwebpass0']/goodkind-mwan-steering:wan"
+	if got := served[webpassWAN+"/owned-address"]; len(got) != 2 || got[0] != "203.0.113.3" || got[1] != "203.0.113.4" {
+		t.Fatalf("webpass owned-address = %v, want [203.0.113.3 203.0.113.4]", got)
+	}
+	if got := served[webpassWAN+"/name"]; len(got) != 1 || got[0] != "webpass" {
+		t.Fatalf("webpass wan name = %v, want [webpass]", got)
+	}
+	attWAN := "/ietf-interfaces:interfaces/interface[name='enatt0']/goodkind-mwan-steering:wan"
+	for path := range served {
+		if len(path) >= len(attWAN) && path[:len(attWAN)] == attWAN {
+			t.Fatalf("att owns no address but served %s", path)
+		}
+	}
+}
+
 // TestInterfacesLiveItems_MarksAStaleAgentAnswer pins the stale rule: an
 // unreached agent or an expired read serves stale=true on every peer.
 func TestInterfacesLiveItems_MarksAStaleAgentAnswer(t *testing.T) {
