@@ -30,32 +30,29 @@ DIST_DIR  := dist
 LOCAL_BIN := bin
 
 # cgo is never pinned here. Native builds keep cgo on and compile the yangpub
-# binding; the freebsd release job builds pure Go because that package is
-# linux-only.
+# binding.
 GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
 
 # go-release.mk turns every shipped artifact into a signed, checksummed,
 # attested GitHub release, which is what the deploy path installs.
 GO_MK_MODULES := go-build.mk go-release.mk
 
-# One binary per platform. The linux build links libyang and libsysrepo
-# statically; freebsd stays pure Go.
+# One linux binary, which links libyang and libsysrepo statically.
 #
 # RELEASE_PLATFORMS is a default, not an override. Each release job passes
 # its own single platform in the environment, and this must yield to it.
-# Forcing both here made every job archive both platforms, and release
+# Forcing a list here made every job archive every platform, and release
 # 202608161945-4-9244335 then failed verification on an unattested archive.
-RELEASE_PLATFORMS ?= linux/amd64 freebsd/amd64
-RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64 mwan:$(CMD):platforms=freebsd/amd64
+RELEASE_PLATFORMS ?= linux/amd64
+RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64
 
 # gobgp's only cgo symbol is a memory-reporting helper used solely by its
 # tests.
 export GO_MK_CGO_OPTIONAL := github.com/osrg/gobgp/v4/internal/pkg/table
 
-# Every lint gate runs once per shipped platform. mwan is almost entirely
-# linux-tagged with a freebsd serial path, so a single host pass would skip
-# most of the package.
-GO_MK_PLATFORMS := linux/amd64 freebsd/amd64
+# Every lint gate runs for the one shipped platform. mwan is almost entirely
+# linux-tagged, so a darwin host pass would skip most of the package.
+GO_MK_PLATFORMS := linux/amd64
 
 # ---------------------------------------------------------------------------
 # Wanconfig pins
