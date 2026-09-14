@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: mwan/v1/mwan_opnsense.proto
+// source: opnsense/v1/mwan_opnsense.proto
 
 package mwanv1
 
@@ -56,11 +56,11 @@ func (x TransferDirection) String() string {
 }
 
 func (TransferDirection) Descriptor() protoreflect.EnumDescriptor {
-	return file_mwan_v1_mwan_opnsense_proto_enumTypes[0].Descriptor()
+	return file_opnsense_v1_mwan_opnsense_proto_enumTypes[0].Descriptor()
 }
 
 func (TransferDirection) Type() protoreflect.EnumType {
-	return &file_mwan_v1_mwan_opnsense_proto_enumTypes[0]
+	return &file_opnsense_v1_mwan_opnsense_proto_enumTypes[0]
 }
 
 func (x TransferDirection) Number() protoreflect.EnumNumber {
@@ -69,7 +69,7 @@ func (x TransferDirection) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TransferDirection.Descriptor instead.
 func (TransferDirection) EnumDescriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{0}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{0}
 }
 
 // FinishStep selects how the server finalizes a WRITE transfer.
@@ -115,11 +115,11 @@ func (x FinishStep) String() string {
 }
 
 func (FinishStep) Descriptor() protoreflect.EnumDescriptor {
-	return file_mwan_v1_mwan_opnsense_proto_enumTypes[1].Descriptor()
+	return file_opnsense_v1_mwan_opnsense_proto_enumTypes[1].Descriptor()
 }
 
 func (FinishStep) Type() protoreflect.EnumType {
-	return &file_mwan_v1_mwan_opnsense_proto_enumTypes[1]
+	return &file_opnsense_v1_mwan_opnsense_proto_enumTypes[1]
 }
 
 func (x FinishStep) Number() protoreflect.EnumNumber {
@@ -128,7 +128,7 @@ func (x FinishStep) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FinishStep.Descriptor instead.
 func (FinishStep) EnumDescriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{1}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{1}
 }
 
 type DeployStatusRequest_Mark int32
@@ -161,11 +161,11 @@ func (x DeployStatusRequest_Mark) String() string {
 }
 
 func (DeployStatusRequest_Mark) Descriptor() protoreflect.EnumDescriptor {
-	return file_mwan_v1_mwan_opnsense_proto_enumTypes[2].Descriptor()
+	return file_opnsense_v1_mwan_opnsense_proto_enumTypes[2].Descriptor()
 }
 
 func (DeployStatusRequest_Mark) Type() protoreflect.EnumType {
-	return &file_mwan_v1_mwan_opnsense_proto_enumTypes[2]
+	return &file_opnsense_v1_mwan_opnsense_proto_enumTypes[2]
 }
 
 func (x DeployStatusRequest_Mark) Number() protoreflect.EnumNumber {
@@ -174,7 +174,7 @@ func (x DeployStatusRequest_Mark) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DeployStatusRequest_Mark.Descriptor instead.
 func (DeployStatusRequest_Mark) EnumDescriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{19, 0}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{19, 0}
 }
 
 type VersionRequest struct {
@@ -185,7 +185,7 @@ type VersionRequest struct {
 
 func (x *VersionRequest) Reset() {
 	*x = VersionRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[0]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -197,7 +197,7 @@ func (x *VersionRequest) String() string {
 func (*VersionRequest) ProtoMessage() {}
 
 func (x *VersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[0]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -210,7 +210,7 @@ func (x *VersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VersionRequest.ProtoReflect.Descriptor instead.
 func (*VersionRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{0}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{0}
 }
 
 type VersionResponse struct {
@@ -225,7 +225,7 @@ type VersionResponse struct {
 
 func (x *VersionResponse) Reset() {
 	*x = VersionResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[1]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -237,7 +237,7 @@ func (x *VersionResponse) String() string {
 func (*VersionResponse) ProtoMessage() {}
 
 func (x *VersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[1]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -250,7 +250,7 @@ func (x *VersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VersionResponse.ProtoReflect.Descriptor instead.
 func (*VersionResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{1}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *VersionResponse) GetVersion() string {
@@ -293,7 +293,7 @@ type ExecHeader struct {
 
 func (x *ExecHeader) Reset() {
 	*x = ExecHeader{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[2]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -305,7 +305,7 @@ func (x *ExecHeader) String() string {
 func (*ExecHeader) ProtoMessage() {}
 
 func (x *ExecHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[2]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -318,7 +318,7 @@ func (x *ExecHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecHeader.ProtoReflect.Descriptor instead.
 func (*ExecHeader) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{2}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ExecHeader) GetCommand() string {
@@ -357,7 +357,7 @@ type ExecCancel struct {
 
 func (x *ExecCancel) Reset() {
 	*x = ExecCancel{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[3]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -369,7 +369,7 @@ func (x *ExecCancel) String() string {
 func (*ExecCancel) ProtoMessage() {}
 
 func (x *ExecCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[3]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -382,7 +382,7 @@ func (x *ExecCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecCancel.ProtoReflect.Descriptor instead.
 func (*ExecCancel) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{3}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{3}
 }
 
 type ExecRequest struct {
@@ -400,7 +400,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[4]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -412,7 +412,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[4]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -425,7 +425,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{4}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExecRequest) GetBody() isExecRequest_Body {
@@ -512,7 +512,7 @@ type ExecTerminal struct {
 
 func (x *ExecTerminal) Reset() {
 	*x = ExecTerminal{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[5]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -524,7 +524,7 @@ func (x *ExecTerminal) String() string {
 func (*ExecTerminal) ProtoMessage() {}
 
 func (x *ExecTerminal) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[5]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -537,7 +537,7 @@ func (x *ExecTerminal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecTerminal.ProtoReflect.Descriptor instead.
 func (*ExecTerminal) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{5}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ExecTerminal) GetExitCode() int32 {
@@ -589,7 +589,7 @@ type ExecResponse struct {
 
 func (x *ExecResponse) Reset() {
 	*x = ExecResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[6]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -601,7 +601,7 @@ func (x *ExecResponse) String() string {
 func (*ExecResponse) ProtoMessage() {}
 
 func (x *ExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[6]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -614,7 +614,7 @@ func (x *ExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
 func (*ExecResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{6}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ExecResponse) GetBody() isExecResponse_Body {
@@ -682,7 +682,7 @@ type XPathMatch struct {
 
 func (x *XPathMatch) Reset() {
 	*x = XPathMatch{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[7]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -694,7 +694,7 @@ func (x *XPathMatch) String() string {
 func (*XPathMatch) ProtoMessage() {}
 
 func (x *XPathMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[7]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,7 +707,7 @@ func (x *XPathMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XPathMatch.ProtoReflect.Descriptor instead.
 func (*XPathMatch) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{7}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *XPathMatch) GetMatch() string {
@@ -726,7 +726,7 @@ type XPathGetRequest struct {
 
 func (x *XPathGetRequest) Reset() {
 	*x = XPathGetRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[8]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -738,7 +738,7 @@ func (x *XPathGetRequest) String() string {
 func (*XPathGetRequest) ProtoMessage() {}
 
 func (x *XPathGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[8]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -751,7 +751,7 @@ func (x *XPathGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XPathGetRequest.ProtoReflect.Descriptor instead.
 func (*XPathGetRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{8}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *XPathGetRequest) GetExpression() string {
@@ -771,7 +771,7 @@ type XPathSetRequest struct {
 
 func (x *XPathSetRequest) Reset() {
 	*x = XPathSetRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[9]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +783,7 @@ func (x *XPathSetRequest) String() string {
 func (*XPathSetRequest) ProtoMessage() {}
 
 func (x *XPathSetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[9]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +796,7 @@ func (x *XPathSetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XPathSetRequest.ProtoReflect.Descriptor instead.
 func (*XPathSetRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{9}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *XPathSetRequest) GetExpression() string {
@@ -823,7 +823,7 @@ type XPathSetResponse struct {
 
 func (x *XPathSetResponse) Reset() {
 	*x = XPathSetResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[10]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +835,7 @@ func (x *XPathSetResponse) String() string {
 func (*XPathSetResponse) ProtoMessage() {}
 
 func (x *XPathSetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[10]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +848,7 @@ func (x *XPathSetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XPathSetResponse.ProtoReflect.Descriptor instead.
 func (*XPathSetResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{10}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *XPathSetResponse) GetBackupPath() string {
@@ -874,7 +874,7 @@ type XPathDeleteRequest struct {
 
 func (x *XPathDeleteRequest) Reset() {
 	*x = XPathDeleteRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[11]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +886,7 @@ func (x *XPathDeleteRequest) String() string {
 func (*XPathDeleteRequest) ProtoMessage() {}
 
 func (x *XPathDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[11]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +899,7 @@ func (x *XPathDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XPathDeleteRequest.ProtoReflect.Descriptor instead.
 func (*XPathDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{11}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *XPathDeleteRequest) GetExpression() string {
@@ -919,7 +919,7 @@ type XPathDeleteResponse struct {
 
 func (x *XPathDeleteResponse) Reset() {
 	*x = XPathDeleteResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[12]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -931,7 +931,7 @@ func (x *XPathDeleteResponse) String() string {
 func (*XPathDeleteResponse) ProtoMessage() {}
 
 func (x *XPathDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[12]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -944,7 +944,7 @@ func (x *XPathDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XPathDeleteResponse.ProtoReflect.Descriptor instead.
 func (*XPathDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{12}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *XPathDeleteResponse) GetBackupPath() string {
@@ -970,7 +970,7 @@ type BackupConfigXMLRequest struct {
 
 func (x *BackupConfigXMLRequest) Reset() {
 	*x = BackupConfigXMLRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[13]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +982,7 @@ func (x *BackupConfigXMLRequest) String() string {
 func (*BackupConfigXMLRequest) ProtoMessage() {}
 
 func (x *BackupConfigXMLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[13]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +995,7 @@ func (x *BackupConfigXMLRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupConfigXMLRequest.ProtoReflect.Descriptor instead.
 func (*BackupConfigXMLRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{13}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *BackupConfigXMLRequest) GetLabel() string {
@@ -1015,7 +1015,7 @@ type BackupConfigXMLResponse struct {
 
 func (x *BackupConfigXMLResponse) Reset() {
 	*x = BackupConfigXMLResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[14]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1027,7 +1027,7 @@ func (x *BackupConfigXMLResponse) String() string {
 func (*BackupConfigXMLResponse) ProtoMessage() {}
 
 func (x *BackupConfigXMLResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[14]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1040,7 +1040,7 @@ func (x *BackupConfigXMLResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupConfigXMLResponse.ProtoReflect.Descriptor instead.
 func (*BackupConfigXMLResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{14}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *BackupConfigXMLResponse) GetBackupPath() string {
@@ -1065,7 +1065,7 @@ type StripGatewayV6Request struct {
 
 func (x *StripGatewayV6Request) Reset() {
 	*x = StripGatewayV6Request{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[15]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1077,7 +1077,7 @@ func (x *StripGatewayV6Request) String() string {
 func (*StripGatewayV6Request) ProtoMessage() {}
 
 func (x *StripGatewayV6Request) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[15]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1090,7 +1090,7 @@ func (x *StripGatewayV6Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StripGatewayV6Request.ProtoReflect.Descriptor instead.
 func (*StripGatewayV6Request) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{15}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{15}
 }
 
 type StripGatewayV6Response struct {
@@ -1103,7 +1103,7 @@ type StripGatewayV6Response struct {
 
 func (x *StripGatewayV6Response) Reset() {
 	*x = StripGatewayV6Response{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[16]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1115,7 +1115,7 @@ func (x *StripGatewayV6Response) String() string {
 func (*StripGatewayV6Response) ProtoMessage() {}
 
 func (x *StripGatewayV6Response) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[16]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1128,7 +1128,7 @@ func (x *StripGatewayV6Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StripGatewayV6Response.ProtoReflect.Descriptor instead.
 func (*StripGatewayV6Response) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{16}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StripGatewayV6Response) GetBackupPath() string {
@@ -1154,7 +1154,7 @@ type InjectGatewayV6Request struct {
 
 func (x *InjectGatewayV6Request) Reset() {
 	*x = InjectGatewayV6Request{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[17]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1166,7 +1166,7 @@ func (x *InjectGatewayV6Request) String() string {
 func (*InjectGatewayV6Request) ProtoMessage() {}
 
 func (x *InjectGatewayV6Request) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[17]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1179,7 +1179,7 @@ func (x *InjectGatewayV6Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InjectGatewayV6Request.ProtoReflect.Descriptor instead.
 func (*InjectGatewayV6Request) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{17}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *InjectGatewayV6Request) GetGatewayName() string {
@@ -1199,7 +1199,7 @@ type InjectGatewayV6Response struct {
 
 func (x *InjectGatewayV6Response) Reset() {
 	*x = InjectGatewayV6Response{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[18]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1211,7 +1211,7 @@ func (x *InjectGatewayV6Response) String() string {
 func (*InjectGatewayV6Response) ProtoMessage() {}
 
 func (x *InjectGatewayV6Response) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[18]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1224,7 +1224,7 @@ func (x *InjectGatewayV6Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InjectGatewayV6Response.ProtoReflect.Descriptor instead.
 func (*InjectGatewayV6Response) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{18}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *InjectGatewayV6Response) GetBackupPath() string {
@@ -1250,7 +1250,7 @@ type DeployStatusRequest struct {
 
 func (x *DeployStatusRequest) Reset() {
 	*x = DeployStatusRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[19]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1262,7 +1262,7 @@ func (x *DeployStatusRequest) String() string {
 func (*DeployStatusRequest) ProtoMessage() {}
 
 func (x *DeployStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[19]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1275,7 +1275,7 @@ func (x *DeployStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployStatusRequest.ProtoReflect.Descriptor instead.
 func (*DeployStatusRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{19}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DeployStatusRequest) GetMark() DeployStatusRequest_Mark {
@@ -1297,7 +1297,7 @@ type DeployStatusResponse struct {
 
 func (x *DeployStatusResponse) Reset() {
 	*x = DeployStatusResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[20]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1309,7 +1309,7 @@ func (x *DeployStatusResponse) String() string {
 func (*DeployStatusResponse) ProtoMessage() {}
 
 func (x *DeployStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[20]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1322,7 +1322,7 @@ func (x *DeployStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployStatusResponse.ProtoReflect.Descriptor instead.
 func (*DeployStatusResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{20}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DeployStatusResponse) GetActiveSha256() string {
@@ -1361,7 +1361,7 @@ type RevertRequest struct {
 
 func (x *RevertRequest) Reset() {
 	*x = RevertRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[21]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1373,7 +1373,7 @@ func (x *RevertRequest) String() string {
 func (*RevertRequest) ProtoMessage() {}
 
 func (x *RevertRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[21]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1386,7 +1386,7 @@ func (x *RevertRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevertRequest.ProtoReflect.Descriptor instead.
 func (*RevertRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{21}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{21}
 }
 
 type RevertResponse struct {
@@ -1398,7 +1398,7 @@ type RevertResponse struct {
 
 func (x *RevertResponse) Reset() {
 	*x = RevertResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[22]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1410,7 +1410,7 @@ func (x *RevertResponse) String() string {
 func (*RevertResponse) ProtoMessage() {}
 
 func (x *RevertResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[22]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1423,7 +1423,7 @@ func (x *RevertResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevertResponse.ProtoReflect.Descriptor instead.
 func (*RevertResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{22}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RevertResponse) GetRevertedToSha256() string {
@@ -1448,7 +1448,7 @@ type StageBinaryRequest struct {
 
 func (x *StageBinaryRequest) Reset() {
 	*x = StageBinaryRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[23]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1460,7 +1460,7 @@ func (x *StageBinaryRequest) String() string {
 func (*StageBinaryRequest) ProtoMessage() {}
 
 func (x *StageBinaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[23]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1473,7 +1473,7 @@ func (x *StageBinaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StageBinaryRequest.ProtoReflect.Descriptor instead.
 func (*StageBinaryRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{23}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *StageBinaryRequest) GetStagedSha256() string {
@@ -1500,7 +1500,7 @@ type StageBinaryResponse struct {
 
 func (x *StageBinaryResponse) Reset() {
 	*x = StageBinaryResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[24]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1512,7 +1512,7 @@ func (x *StageBinaryResponse) String() string {
 func (*StageBinaryResponse) ProtoMessage() {}
 
 func (x *StageBinaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[24]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1525,7 +1525,7 @@ func (x *StageBinaryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StageBinaryResponse.ProtoReflect.Descriptor instead.
 func (*StageBinaryResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{24}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *StageBinaryResponse) GetPreviousPath() string {
@@ -1554,7 +1554,7 @@ type RestartDaemonRequest struct {
 
 func (x *RestartDaemonRequest) Reset() {
 	*x = RestartDaemonRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1566,7 +1566,7 @@ func (x *RestartDaemonRequest) String() string {
 func (*RestartDaemonRequest) ProtoMessage() {}
 
 func (x *RestartDaemonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[25]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1579,7 +1579,7 @@ func (x *RestartDaemonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestartDaemonRequest.ProtoReflect.Descriptor instead.
 func (*RestartDaemonRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{25}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{25}
 }
 
 type RestartDaemonResponse struct {
@@ -1590,7 +1590,7 @@ type RestartDaemonResponse struct {
 
 func (x *RestartDaemonResponse) Reset() {
 	*x = RestartDaemonResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[26]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1602,7 +1602,7 @@ func (x *RestartDaemonResponse) String() string {
 func (*RestartDaemonResponse) ProtoMessage() {}
 
 func (x *RestartDaemonResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[26]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1615,7 +1615,7 @@ func (x *RestartDaemonResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestartDaemonResponse.ProtoReflect.Descriptor instead.
 func (*RestartDaemonResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{26}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{26}
 }
 
 type TransferHeader struct {
@@ -1633,7 +1633,7 @@ type TransferHeader struct {
 
 func (x *TransferHeader) Reset() {
 	*x = TransferHeader{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[27]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1645,7 +1645,7 @@ func (x *TransferHeader) String() string {
 func (*TransferHeader) ProtoMessage() {}
 
 func (x *TransferHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[27]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1658,7 +1658,7 @@ func (x *TransferHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferHeader.ProtoReflect.Descriptor instead.
 func (*TransferHeader) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{27}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *TransferHeader) GetPath() string {
@@ -1720,7 +1720,7 @@ type TransferDataChunk struct {
 
 func (x *TransferDataChunk) Reset() {
 	*x = TransferDataChunk{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[28]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1732,7 +1732,7 @@ func (x *TransferDataChunk) String() string {
 func (*TransferDataChunk) ProtoMessage() {}
 
 func (x *TransferDataChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[28]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1745,7 +1745,7 @@ func (x *TransferDataChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferDataChunk.ProtoReflect.Descriptor instead.
 func (*TransferDataChunk) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{28}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *TransferDataChunk) GetOffset() int64 {
@@ -1771,7 +1771,7 @@ type TransferFinal struct {
 
 func (x *TransferFinal) Reset() {
 	*x = TransferFinal{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[29]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1783,7 +1783,7 @@ func (x *TransferFinal) String() string {
 func (*TransferFinal) ProtoMessage() {}
 
 func (x *TransferFinal) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[29]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1796,7 +1796,7 @@ func (x *TransferFinal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferFinal.ProtoReflect.Descriptor instead.
 func (*TransferFinal) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{29}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *TransferFinal) GetSha256Hex() string {
@@ -1814,7 +1814,7 @@ type TransferCancel struct {
 
 func (x *TransferCancel) Reset() {
 	*x = TransferCancel{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[30]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1826,7 +1826,7 @@ func (x *TransferCancel) String() string {
 func (*TransferCancel) ProtoMessage() {}
 
 func (x *TransferCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[30]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1839,7 +1839,7 @@ func (x *TransferCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferCancel.ProtoReflect.Descriptor instead.
 func (*TransferCancel) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{30}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{30}
 }
 
 type UploadRequest struct {
@@ -1857,7 +1857,7 @@ type UploadRequest struct {
 
 func (x *UploadRequest) Reset() {
 	*x = UploadRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[31]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1869,7 +1869,7 @@ func (x *UploadRequest) String() string {
 func (*UploadRequest) ProtoMessage() {}
 
 func (x *UploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[31]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1882,7 +1882,7 @@ func (x *UploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadRequest.ProtoReflect.Descriptor instead.
 func (*UploadRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{31}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *UploadRequest) GetBody() isUploadRequest_Body {
@@ -1968,7 +1968,7 @@ type TransferAck struct {
 
 func (x *TransferAck) Reset() {
 	*x = TransferAck{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[32]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1980,7 +1980,7 @@ func (x *TransferAck) String() string {
 func (*TransferAck) ProtoMessage() {}
 
 func (x *TransferAck) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[32]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1993,7 +1993,7 @@ func (x *TransferAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferAck.ProtoReflect.Descriptor instead.
 func (*TransferAck) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{32}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *TransferAck) GetTransferId() string {
@@ -2038,7 +2038,7 @@ type TransferTerminal struct {
 
 func (x *TransferTerminal) Reset() {
 	*x = TransferTerminal{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[33]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2050,7 +2050,7 @@ func (x *TransferTerminal) String() string {
 func (*TransferTerminal) ProtoMessage() {}
 
 func (x *TransferTerminal) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[33]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2063,7 +2063,7 @@ func (x *TransferTerminal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferTerminal.ProtoReflect.Descriptor instead.
 func (*TransferTerminal) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{33}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *TransferTerminal) GetSha256Hex() string {
@@ -2122,7 +2122,7 @@ type TransferDataAck struct {
 
 func (x *TransferDataAck) Reset() {
 	*x = TransferDataAck{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[34]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2134,7 +2134,7 @@ func (x *TransferDataAck) String() string {
 func (*TransferDataAck) ProtoMessage() {}
 
 func (x *TransferDataAck) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[34]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2147,7 +2147,7 @@ func (x *TransferDataAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferDataAck.ProtoReflect.Descriptor instead.
 func (*TransferDataAck) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{34}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *TransferDataAck) GetCommittedOffset() int64 {
@@ -2172,7 +2172,7 @@ type UploadResponse struct {
 
 func (x *UploadResponse) Reset() {
 	*x = UploadResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[35]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2184,7 +2184,7 @@ func (x *UploadResponse) String() string {
 func (*UploadResponse) ProtoMessage() {}
 
 func (x *UploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[35]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2197,7 +2197,7 @@ func (x *UploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadResponse.ProtoReflect.Descriptor instead.
 func (*UploadResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{35}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *UploadResponse) GetBody() isUploadResponse_Body {
@@ -2280,7 +2280,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[36]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2292,7 +2292,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[36]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2305,7 +2305,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{36}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *StatusRequest) GetTransferId() string {
@@ -2328,7 +2328,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[37]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2340,7 +2340,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[37]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2353,7 +2353,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{37}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *StatusResponse) GetTransferId() string {
@@ -2400,7 +2400,7 @@ type CancelRequest struct {
 
 func (x *CancelRequest) Reset() {
 	*x = CancelRequest{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[38]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2412,7 +2412,7 @@ func (x *CancelRequest) String() string {
 func (*CancelRequest) ProtoMessage() {}
 
 func (x *CancelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[38]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2425,7 +2425,7 @@ func (x *CancelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRequest.ProtoReflect.Descriptor instead.
 func (*CancelRequest) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{38}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CancelRequest) GetTransferId() string {
@@ -2444,7 +2444,7 @@ type CancelResponse struct {
 
 func (x *CancelResponse) Reset() {
 	*x = CancelResponse{}
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[39]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2456,7 +2456,7 @@ func (x *CancelResponse) String() string {
 func (*CancelResponse) ProtoMessage() {}
 
 func (x *CancelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mwan_v1_mwan_opnsense_proto_msgTypes[39]
+	mi := &file_opnsense_v1_mwan_opnsense_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2469,7 +2469,7 @@ func (x *CancelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelResponse.ProtoReflect.Descriptor instead.
 func (*CancelResponse) Descriptor() ([]byte, []int) {
-	return file_mwan_v1_mwan_opnsense_proto_rawDescGZIP(), []int{39}
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *CancelResponse) GetWasPresent() bool {
@@ -2479,11 +2479,11 @@ func (x *CancelResponse) GetWasPresent() bool {
 	return false
 }
 
-var File_mwan_v1_mwan_opnsense_proto protoreflect.FileDescriptor
+var File_opnsense_v1_mwan_opnsense_proto protoreflect.FileDescriptor
 
-const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
+const file_opnsense_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\n" +
-	"\x1bmwan/v1/mwan_opnsense.proto\x12\amwan.v1\"\x10\n" +
+	"\x1fopnsense/v1/mwan_opnsense.proto\x12\amwan.v1\"\x10\n" +
 	"\x0eVersionRequest\"\x94\x01\n" +
 	"\x0fVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +
@@ -2677,23 +2677,23 @@ const file_mwan_v1_mwan_opnsense_proto_rawDesc = "" +
 	"\x0fTransferService\x12=\n" +
 	"\x06Upload\x12\x16.mwan.v1.UploadRequest\x1a\x17.mwan.v1.UploadResponse(\x010\x01\x129\n" +
 	"\x06Status\x12\x16.mwan.v1.StatusRequest\x1a\x17.mwan.v1.StatusResponse\x129\n" +
-	"\x06Cancel\x12\x16.mwan.v1.CancelRequest\x1a\x17.mwan.v1.CancelResponseB%Z#goodkind.io/mwan/gen/mwan/v1;mwanv1b\x06proto3"
+	"\x06Cancel\x12\x16.mwan.v1.CancelRequest\x1a\x17.mwan.v1.CancelResponseB/Z-goodkind.io/mwan/internal/opnsense/gen;mwanv1b\x06proto3"
 
 var (
-	file_mwan_v1_mwan_opnsense_proto_rawDescOnce sync.Once
-	file_mwan_v1_mwan_opnsense_proto_rawDescData []byte
+	file_opnsense_v1_mwan_opnsense_proto_rawDescOnce sync.Once
+	file_opnsense_v1_mwan_opnsense_proto_rawDescData []byte
 )
 
-func file_mwan_v1_mwan_opnsense_proto_rawDescGZIP() []byte {
-	file_mwan_v1_mwan_opnsense_proto_rawDescOnce.Do(func() {
-		file_mwan_v1_mwan_opnsense_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_mwan_v1_mwan_opnsense_proto_rawDesc), len(file_mwan_v1_mwan_opnsense_proto_rawDesc)))
+func file_opnsense_v1_mwan_opnsense_proto_rawDescGZIP() []byte {
+	file_opnsense_v1_mwan_opnsense_proto_rawDescOnce.Do(func() {
+		file_opnsense_v1_mwan_opnsense_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_opnsense_v1_mwan_opnsense_proto_rawDesc), len(file_opnsense_v1_mwan_opnsense_proto_rawDesc)))
 	})
-	return file_mwan_v1_mwan_opnsense_proto_rawDescData
+	return file_opnsense_v1_mwan_opnsense_proto_rawDescData
 }
 
-var file_mwan_v1_mwan_opnsense_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_mwan_v1_mwan_opnsense_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
-var file_mwan_v1_mwan_opnsense_proto_goTypes = []any{
+var file_opnsense_v1_mwan_opnsense_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_opnsense_v1_mwan_opnsense_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_opnsense_v1_mwan_opnsense_proto_goTypes = []any{
 	(TransferDirection)(0),          // 0: mwan.v1.TransferDirection
 	(FinishStep)(0),                 // 1: mwan.v1.FinishStep
 	(DeployStatusRequest_Mark)(0),   // 2: mwan.v1.DeployStatusRequest.Mark
@@ -2738,7 +2738,7 @@ var file_mwan_v1_mwan_opnsense_proto_goTypes = []any{
 	(*CancelRequest)(nil),           // 41: mwan.v1.CancelRequest
 	(*CancelResponse)(nil),          // 42: mwan.v1.CancelResponse
 }
-var file_mwan_v1_mwan_opnsense_proto_depIdxs = []int32{
+var file_opnsense_v1_mwan_opnsense_proto_depIdxs = []int32{
 	5,  // 0: mwan.v1.ExecRequest.header:type_name -> mwan.v1.ExecHeader
 	6,  // 1: mwan.v1.ExecRequest.cancel:type_name -> mwan.v1.ExecCancel
 	8,  // 2: mwan.v1.ExecResponse.terminal:type_name -> mwan.v1.ExecTerminal
@@ -2790,29 +2790,29 @@ var file_mwan_v1_mwan_opnsense_proto_depIdxs = []int32{
 	0,  // [0:14] is the sub-list for field type_name
 }
 
-func init() { file_mwan_v1_mwan_opnsense_proto_init() }
-func file_mwan_v1_mwan_opnsense_proto_init() {
-	if File_mwan_v1_mwan_opnsense_proto != nil {
+func init() { file_opnsense_v1_mwan_opnsense_proto_init() }
+func file_opnsense_v1_mwan_opnsense_proto_init() {
+	if File_opnsense_v1_mwan_opnsense_proto != nil {
 		return
 	}
-	file_mwan_v1_mwan_opnsense_proto_msgTypes[4].OneofWrappers = []any{
+	file_opnsense_v1_mwan_opnsense_proto_msgTypes[4].OneofWrappers = []any{
 		(*ExecRequest_Header)(nil),
 		(*ExecRequest_StdinChunk)(nil),
 		(*ExecRequest_StdinClose)(nil),
 		(*ExecRequest_Cancel)(nil),
 	}
-	file_mwan_v1_mwan_opnsense_proto_msgTypes[6].OneofWrappers = []any{
+	file_opnsense_v1_mwan_opnsense_proto_msgTypes[6].OneofWrappers = []any{
 		(*ExecResponse_StdoutChunk)(nil),
 		(*ExecResponse_StderrChunk)(nil),
 		(*ExecResponse_Terminal)(nil),
 	}
-	file_mwan_v1_mwan_opnsense_proto_msgTypes[31].OneofWrappers = []any{
+	file_opnsense_v1_mwan_opnsense_proto_msgTypes[31].OneofWrappers = []any{
 		(*UploadRequest_Header)(nil),
 		(*UploadRequest_Data)(nil),
 		(*UploadRequest_Final)(nil),
 		(*UploadRequest_Cancel)(nil),
 	}
-	file_mwan_v1_mwan_opnsense_proto_msgTypes[35].OneofWrappers = []any{
+	file_opnsense_v1_mwan_opnsense_proto_msgTypes[35].OneofWrappers = []any{
 		(*UploadResponse_Ack)(nil),
 		(*UploadResponse_Data)(nil),
 		(*UploadResponse_Terminal)(nil),
@@ -2822,18 +2822,18 @@ func file_mwan_v1_mwan_opnsense_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mwan_v1_mwan_opnsense_proto_rawDesc), len(file_mwan_v1_mwan_opnsense_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_opnsense_v1_mwan_opnsense_proto_rawDesc), len(file_opnsense_v1_mwan_opnsense_proto_rawDesc)),
 			NumEnums:      3,
 			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
-		GoTypes:           file_mwan_v1_mwan_opnsense_proto_goTypes,
-		DependencyIndexes: file_mwan_v1_mwan_opnsense_proto_depIdxs,
-		EnumInfos:         file_mwan_v1_mwan_opnsense_proto_enumTypes,
-		MessageInfos:      file_mwan_v1_mwan_opnsense_proto_msgTypes,
+		GoTypes:           file_opnsense_v1_mwan_opnsense_proto_goTypes,
+		DependencyIndexes: file_opnsense_v1_mwan_opnsense_proto_depIdxs,
+		EnumInfos:         file_opnsense_v1_mwan_opnsense_proto_enumTypes,
+		MessageInfos:      file_opnsense_v1_mwan_opnsense_proto_msgTypes,
 	}.Build()
-	File_mwan_v1_mwan_opnsense_proto = out.File
-	file_mwan_v1_mwan_opnsense_proto_goTypes = nil
-	file_mwan_v1_mwan_opnsense_proto_depIdxs = nil
+	File_opnsense_v1_mwan_opnsense_proto = out.File
+	file_opnsense_v1_mwan_opnsense_proto_goTypes = nil
+	file_opnsense_v1_mwan_opnsense_proto_depIdxs = nil
 }

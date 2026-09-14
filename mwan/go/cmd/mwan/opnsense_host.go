@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 
 	"github.com/hashicorp/yamux"
 	"google.golang.org/grpc"

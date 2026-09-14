@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package mwan.v1;
 
-option go_package = "goodkind.io/mwan/gen/mwan/v1;mwanv1";
+option go_package = "goodkind.io/mwan/internal/opnsense/gen;mwanv1";
 
 // OpnsenseService runs inside the OPNsense VM and is reached over a
 // qemu virtio-serial Unix socket. There is no TLS and no application
