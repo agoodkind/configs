@@ -10,27 +10,74 @@ import (
 	"testing"
 )
 
+// testMember returns a member carrying every value the model requires of a
+// provider, so a test that mutates one field fails on that field alone.
+func testMember(name string, iface string) Member {
+	return Member{
+		Name:       name,
+		Iface:      iface,
+		Tier:       0,
+		Weight:     1,
+		TableID:    100,
+		FwMark:     1,
+		FwMarkPrio: 100,
+		FromPrio:   55,
+	}
+}
+
 // TestConfigItems_DescribesEveryMemberAndTranslation pins the published shape
-// for a gateway like the testbed's: three members, one fallback, every member
-// probed, two carrying a translation pair. Every path here is one a RESTCONF
-// reader sees, so a change to this list is a change to the served tree.
+// for a gateway like the testbed's: three members, one fallback, a probed
+// member with a forced DSCP value, an unprobed one, a member with a disabled
+// probe and a source pin, two carrying a translation pair, and a group holding
+// every value. Every path here is one a RESTCONF reader sees, so a change to
+// this list is a change to the served tree.
 func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 	t.Parallel()
 	internal := netip.MustParsePrefix("3d06:bad:b01:210::/60")
+	att := testMember("att", "enatt0.3242")
+	att.ProbePolicy = "att"
+	att.NPTInternal = internal
+	att.NPTExternal = netip.MustParsePrefix("2001:db8:a::/60")
+	att.ForcedDSCP = 8
+	att.Health = &ProbeSettings{
+		Enabled:              true,
+		PingCount:            new(uint8(3)),
+		SuccessThreshold:     new(uint8(2)),
+		FailureThreshold:     new(uint8(2)),
+		RecoveryThreshold:    new(uint8(2)),
+		CheckIntervalSeconds: new(uint32(10)),
+		TargetsV4:            []netip.Addr{netip.MustParseAddr("192.0.2.10"), netip.MustParseAddr("192.0.2.11")},
+		TargetsV6:            []netip.Addr{netip.MustParseAddr("2001:db8:53::1")},
+		HTTPURLs:             []string{"https://example.test/ip"},
+	}
+	monkeybrains := testMember("monkeybrains", "enmbrains0")
+	monkeybrains.Tier = 1
+	monkeybrains.TableID = 300
+	monkeybrains.FwMark = 3
+	monkeybrains.FwMarkPrio = 300
+	monkeybrains.FromPrio = 57
+	webpass := testMember("webpass", "enwebpass0")
+	webpass.Weight = 2
+	webpass.NPTInternal = internal
+	webpass.NPTExternal = netip.MustParsePrefix("2001:db8:b::/60")
+	webpass.TableID = 200
+	webpass.FwMark = 2
+	webpass.FwMarkPrio = 200
+	webpass.FromPrio = 56
+	webpass.V4Source = "192.0.2.2"
+	webpass.Health = &ProbeSettings{Enabled: false}
 	gateway := Gateway{
 		InternalIface: "eninternal0",
 		HashMode:      "random",
-		Members: []Member{
-			{
-				Name: "att", Iface: "enatt0.3242", Tier: 0, Weight: 1, ProbePolicy: "att",
-				NPTInternal: internal, NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
-			},
-			{Name: "monkeybrains", Iface: "enmbrains0", Tier: 1, Weight: 1, ProbePolicy: "monkeybrains"},
-			{
-				Name: "webpass", Iface: "enwebpass0", Tier: 0, Weight: 2, ProbePolicy: "webpass",
-				NPTInternal: internal, NPTExternal: netip.MustParsePrefix("2001:db8:b::/60"),
-			},
+		Group: GroupSettings{
+			ReservedTables:     []uint32{400, 500},
+			InternalPrefix:     internal,
+			OpnsenseEdgeV6:     netip.MustParseAddr("2001:db8:fe::2"),
+			MwanbrEdgeV6:       netip.MustParseAddr("2001:db8:fe::3"),
+			InternalNetV4:      netip.MustParsePrefix("192.0.2.0/29"),
+			ProbeTimeoutMillis: 2000,
 		},
+		Members: []Member{att, monkeybrains, webpass},
 	}
 
 	items, err := ConfigItems(gateway)
@@ -38,37 +85,80 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 		t.Fatalf("ConfigItems: %v", err)
 	}
 
+	const (
+		internalLink = "/ietf-interfaces:interfaces/interface[name='eninternal0']"
+		attLink      = "/ietf-interfaces:interfaces/interface[name='enatt0.3242']"
+		mbLink       = "/ietf-interfaces:interfaces/interface[name='enmbrains0']"
+		webpassLink  = "/ietf-interfaces:interfaces/interface[name='enwebpass0']"
+		group        = "/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group"
+	)
 	want := []Item{
-		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/type", Value: "iana-if-type:other"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/ietf-ip:ipv4/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/ietf-ip:ipv6/enabled", Value: "true"},
+		{Path: internalLink + "/type", Value: "iana-if-type:other"},
+		{Path: internalLink + "/enabled", Value: "true"},
+		{Path: internalLink + "/ietf-ip:ipv4/enabled", Value: "true"},
+		{Path: internalLink + "/ietf-ip:ipv6/enabled", Value: "true"},
 
-		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/type", Value: "iana-if-type:other"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/ietf-ip:ipv4/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/ietf-ip:ipv6/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/goodkind-mwan-steering:steering/tier", Value: "0"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/goodkind-mwan-steering:steering/weight", Value: "1"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enatt0.3242']/goodkind-mwan-steering:steering/probe-policy", Value: "att"},
+		{Path: attLink + "/type", Value: "iana-if-type:other"},
+		{Path: attLink + "/enabled", Value: "true"},
+		{Path: attLink + "/ietf-ip:ipv4/enabled", Value: "true"},
+		{Path: attLink + "/ietf-ip:ipv6/enabled", Value: "true"},
+		{Path: attLink + "/goodkind-mwan-steering:steering/tier", Value: "0"},
+		{Path: attLink + "/goodkind-mwan-steering:steering/weight", Value: "1"},
+		{Path: attLink + "/goodkind-mwan-steering:steering/probe-policy", Value: "att"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/name", Value: "att"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/table-id", Value: "100"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/fw-mark", Value: "1"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/fw-mark-prio", Value: "100"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/from-prio", Value: "55"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/npt-prefix", Value: "2001:db8:a::/60"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/forced-dscp", Value: "8"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/enabled", Value: "true"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/ping-count", Value: "3"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/success-threshold", Value: "2"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/failure-threshold", Value: "2"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/recovery-threshold", Value: "2"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/check-interval", Value: "10"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/targets-v4", Value: "192.0.2.10"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/targets-v4", Value: "192.0.2.11"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/targets-v6", Value: "2001:db8:53::1"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/health/http-urls", Value: "https://example.test/ip"},
 
-		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/type", Value: "iana-if-type:other"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/ietf-ip:ipv4/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/ietf-ip:ipv6/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/goodkind-mwan-steering:steering/tier", Value: "1"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/goodkind-mwan-steering:steering/weight", Value: "1"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enmbrains0']/goodkind-mwan-steering:steering/probe-policy", Value: "monkeybrains"},
+		{Path: mbLink + "/type", Value: "iana-if-type:other"},
+		{Path: mbLink + "/enabled", Value: "true"},
+		{Path: mbLink + "/ietf-ip:ipv4/enabled", Value: "true"},
+		{Path: mbLink + "/ietf-ip:ipv6/enabled", Value: "true"},
+		{Path: mbLink + "/goodkind-mwan-steering:steering/tier", Value: "1"},
+		{Path: mbLink + "/goodkind-mwan-steering:steering/weight", Value: "1"},
+		{Path: mbLink + "/goodkind-mwan-steering:wan/name", Value: "monkeybrains"},
+		{Path: mbLink + "/goodkind-mwan-steering:wan/table-id", Value: "300"},
+		{Path: mbLink + "/goodkind-mwan-steering:wan/fw-mark", Value: "3"},
+		{Path: mbLink + "/goodkind-mwan-steering:wan/fw-mark-prio", Value: "300"},
+		{Path: mbLink + "/goodkind-mwan-steering:wan/from-prio", Value: "57"},
 
-		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/type", Value: "iana-if-type:other"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/ietf-ip:ipv4/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/ietf-ip:ipv6/enabled", Value: "true"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/goodkind-mwan-steering:steering/tier", Value: "0"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/goodkind-mwan-steering:steering/weight", Value: "2"},
-		{Path: "/ietf-interfaces:interfaces/interface[name='enwebpass0']/goodkind-mwan-steering:steering/probe-policy", Value: "webpass"},
+		{Path: webpassLink + "/type", Value: "iana-if-type:other"},
+		{Path: webpassLink + "/enabled", Value: "true"},
+		{Path: webpassLink + "/ietf-ip:ipv4/enabled", Value: "true"},
+		{Path: webpassLink + "/ietf-ip:ipv6/enabled", Value: "true"},
+		{Path: webpassLink + "/goodkind-mwan-steering:steering/tier", Value: "0"},
+		{Path: webpassLink + "/goodkind-mwan-steering:steering/weight", Value: "2"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/name", Value: "webpass"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/table-id", Value: "200"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/fw-mark", Value: "2"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/fw-mark-prio", Value: "200"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/from-prio", Value: "56"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/npt-prefix", Value: "2001:db8:b::/60"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/v4-source", Value: "192.0.2.2"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/health/enabled", Value: "false"},
 
-		{Path: "/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group/hash-mode", Value: "random"},
+		{Path: group + "/hash-mode", Value: "random"},
+		{Path: group + "/reserved-tables", Value: "400"},
+		{Path: group + "/reserved-tables", Value: "500"},
+		{Path: group + "/translation/internal-prefix", Value: "3d06:bad:b01:210::/60"},
+		{Path: group + "/translation/opnsense-edge-v6", Value: "2001:db8:fe::2"},
+		{Path: group + "/translation/mwanbr-edge-v6", Value: "2001:db8:fe::3"},
+		{Path: group + "/routes/internal-iface", Value: "eninternal0"},
+		{Path: group + "/routes/internal-net-v4", Value: "192.0.2.0/29"},
+		{Path: group + "/health/probe-timeout", Value: "2000"},
 
 		{Path: "/ietf-nat:nat/instances/instance[id='1']/name", Value: "att"},
 		{Path: "/ietf-nat:nat/instances/instance[id='1']/type", Value: "ietf-nat:nptv6"},
@@ -84,25 +174,78 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 	}
 }
 
-// TestConfigItems_LeavesUnprobedMemberWithoutPolicy pins that a member the
-// daemon runs no probe for gets a tier and no probe-policy leaf, rather than an
-// empty string the schema would accept and a reader would misread.
-func TestConfigItems_LeavesUnprobedMemberWithoutPolicy(t *testing.T) {
+// TestConfigItems_PublishesExactlyTheSettingsADisabledProbeHolds pins the
+// disabled-probe contract: the flag publishes as false, every setting the
+// loaded probe holds publishes, a zero setting publishes as zero, and a setting
+// the file left out publishes nothing.
+func TestConfigItems_PublishesExactlyTheSettingsADisabledProbeHolds(t *testing.T) {
+	t.Parallel()
+	member := testMember("att", "enatt0")
+	member.Health = &ProbeSettings{
+		Enabled:              false,
+		PingCount:            new(uint8(4)),
+		CheckIntervalSeconds: new(uint32(0)),
+		TargetsV4:            []netip.Addr{netip.MustParseAddr("192.0.2.20")},
+		HTTPURLs:             []string{"https://example.test/att"},
+	}
+	items, err := ConfigItems(Gateway{InternalIface: "eninternal0", Members: []Member{member}})
+	if err != nil {
+		t.Fatalf("ConfigItems: %v", err)
+	}
+	const health = "/ietf-interfaces:interfaces/interface[name='enatt0']/goodkind-mwan-steering:wan/health"
+	var got []Item
+	for _, item := range items {
+		if strings.HasPrefix(item.Path, health+"/") {
+			got = append(got, item)
+		}
+	}
+	want := []Item{
+		{Path: health + "/enabled", Value: "false"},
+		{Path: health + "/ping-count", Value: "4"},
+		{Path: health + "/check-interval", Value: "0"},
+		{Path: health + "/targets-v4", Value: "192.0.2.20"},
+		{Path: health + "/http-urls", Value: "https://example.test/att"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("health items differ\n got: %v\nwant: %v", got, want)
+	}
+}
+
+// TestConfigItems_PublishesOnlyWhatAnUnconfiguredGatewayHolds pins the absent
+// cases: a member with no probe gets no probe-policy and no health container, a
+// provider with no prefix, source pin, or forced DSCP value publishes none of
+// them, and a gateway holding no group values publishes only the internal link
+// under the steering group.
+func TestConfigItems_PublishesOnlyWhatAnUnconfiguredGatewayHolds(t *testing.T) {
 	t.Parallel()
 	items, err := ConfigItems(Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
+		Members:       []Member{testMember("att", "enatt0")},
 	})
 	if err != nil {
 		t.Fatalf("ConfigItems: %v", err)
 	}
-	for _, item := range items {
-		if item.Path == "/ietf-interfaces:interfaces/interface[name='enatt0']/goodkind-mwan-steering:steering/probe-policy" {
-			t.Fatalf("probe-policy published for an unprobed member: %v", item)
-		}
+	const attLink = "/ietf-interfaces:interfaces/interface[name='enatt0']"
+	want := []Item{
+		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/type", Value: "iana-if-type:other"},
+		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/enabled", Value: "true"},
+		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/ietf-ip:ipv4/enabled", Value: "true"},
+		{Path: "/ietf-interfaces:interfaces/interface[name='eninternal0']/ietf-ip:ipv6/enabled", Value: "true"},
+		{Path: attLink + "/type", Value: "iana-if-type:other"},
+		{Path: attLink + "/enabled", Value: "true"},
+		{Path: attLink + "/ietf-ip:ipv4/enabled", Value: "true"},
+		{Path: attLink + "/ietf-ip:ipv6/enabled", Value: "true"},
+		{Path: attLink + "/goodkind-mwan-steering:steering/tier", Value: "0"},
+		{Path: attLink + "/goodkind-mwan-steering:steering/weight", Value: "1"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/name", Value: "att"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/table-id", Value: "100"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/fw-mark", Value: "1"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/fw-mark-prio", Value: "100"},
+		{Path: attLink + "/goodkind-mwan-steering:wan/from-prio", Value: "55"},
+		{Path: "/ietf-interfaces:interfaces/goodkind-mwan-steering:steering-group/routes/internal-iface", Value: "eninternal0"},
 	}
-	if len(items) != 4+4+2 {
-		t.Fatalf("item count = %d, want 10", len(items))
+	if !slices.Equal(items, want) {
+		t.Fatalf("items differ\n got: %v\nwant: %v", items, want)
 	}
 }
 
@@ -114,7 +257,7 @@ func TestConfigItems_PublishesTheDaemonSettingsItHolds(t *testing.T) {
 	t.Parallel()
 	gateway := Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
+		Members:       []Member{testMember("att", "enatt0")},
 		Daemon: DaemonSettings{
 			Watchdog: WatchdogSettings{
 				Present:                      true,
@@ -191,7 +334,7 @@ func TestConfigItems_PublishesNoDaemonSettingsWhenAbsent(t *testing.T) {
 	t.Parallel()
 	items, err := ConfigItems(Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
+		Members:       []Member{testMember("att", "enatt0")},
 	})
 	if err != nil {
 		t.Fatalf("ConfigItems: %v", err)
@@ -205,30 +348,65 @@ func TestConfigItems_PublishesNoDaemonSettingsWhenAbsent(t *testing.T) {
 
 // TestConfigItems_RejectsWhatAPathCannotCarry pins the failure contract: an
 // unpublishable gateway returns ErrInvalidGateway and no items, so the caller
-// logs and keeps running rather than writing a partial tree.
+// logs and keeps running rather than writing a partial tree. Each case breaks
+// exactly one value of an otherwise valid gateway, so it fails on that value.
 func TestConfigItems_RejectsWhatAPathCannotCarry(t *testing.T) {
 	t.Parallel()
 	internal := netip.MustParsePrefix("3d06:bad:b01:210::/60")
+	withMember := func(mutate func(member *Member)) Gateway {
+		member := testMember("att", "enatt0")
+		mutate(&member)
+		return Gateway{InternalIface: "eninternal0", Members: []Member{member}}
+	}
+	withGroup := func(mutate func(group *GroupSettings)) Gateway {
+		gateway := withMember(func(*Member) {})
+		mutate(&gateway.Group)
+		return gateway
+	}
 	cases := map[string]Gateway{
 		"empty internal link": {InternalIface: "", Members: nil},
-		"empty member name":   {InternalIface: "eninternal0", Members: []Member{{Name: "", Iface: "enatt0", Weight: 1}}},
-		"quote in link":       {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "en'att0", Weight: 1}}},
+		"empty member name":   withMember(func(member *Member) { member.Name = "" }),
+		"quote in link":       withMember(func(member *Member) { member.Iface = "en'att0" }),
 		"duplicate link": {InternalIface: "eninternal0", Members: []Member{
-			{Name: "att", Iface: "enatt0", Weight: 1}, {Name: "webpass", Iface: "enatt0", Weight: 1},
+			testMember("att", "enatt0"), testMember("webpass", "enatt0"),
 		}},
-		"member on the internal link": {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "eninternal0", Weight: 1}}},
-		"one translation prefix":      {InternalIface: "eninternal0", Members: []Member{{Name: "att", Iface: "enatt0", Weight: 1, NPTInternal: internal}}},
-		"ipv4 translation prefix": {InternalIface: "eninternal0", Members: []Member{{
-			Name: "att", Iface: "enatt0", Weight: 1,
-			NPTInternal: internal, NPTExternal: netip.MustParsePrefix("10.0.0.0/8"),
-		}}},
-		"zero weight": {InternalIface: "eninternal0", Members: []Member{
-			{Name: "att", Iface: "enatt0", Tier: 0, Weight: 0},
-		}},
+		"member on the internal link": withMember(func(member *Member) { member.Iface = "eninternal0" }),
+		"one translation prefix":      withMember(func(member *Member) { member.NPTInternal = internal }),
+		"ipv4 translation prefix": withMember(func(member *Member) {
+			member.NPTInternal = internal
+			member.NPTExternal = netip.MustParsePrefix("10.0.0.0/8")
+		}),
+		"zero weight": withMember(func(member *Member) { member.Weight = 0 }),
 		"unknown hash mode": {
 			InternalIface: "eninternal0", HashMode: "round-robin",
-			Members: []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
+			Members: []Member{testMember("att", "enatt0")},
 		},
+		"zero table id":           withMember(func(member *Member) { member.TableID = 0 }),
+		"zero firewall mark":      withMember(func(member *Member) { member.FwMark = 0 }),
+		"forced dscp above range": withMember(func(member *Member) { member.ForcedDSCP = 64 }),
+		"ipv6 source pin":         withMember(func(member *Member) { member.V4Source = "2001:db8::1" }),
+		"unparsable source pin":   withMember(func(member *Member) { member.V4Source = "not-an-address" }),
+		"ipv6 target in the ipv4 list": withMember(func(member *Member) {
+			member.Health = &ProbeSettings{Enabled: true, TargetsV4: []netip.Addr{netip.MustParseAddr("2001:db8::1")}}
+		}),
+		"ipv4 target in the ipv6 list": withMember(func(member *Member) {
+			member.Health = &ProbeSettings{Enabled: true, TargetsV6: []netip.Addr{netip.MustParseAddr("192.0.2.1")}}
+		}),
+		"ipv4 internal prefix": withGroup(func(group *GroupSettings) {
+			group.InternalPrefix = netip.MustParsePrefix("10.0.0.0/8")
+		}),
+		"ipv4 router edge address": withGroup(func(group *GroupSettings) {
+			group.OpnsenseEdgeV6 = netip.MustParseAddr("192.0.2.1")
+		}),
+		"ipv4 gateway edge address": withGroup(func(group *GroupSettings) {
+			group.MwanbrEdgeV6 = netip.MustParseAddr("192.0.2.1")
+		}),
+		"ipv6 internal network": withGroup(func(group *GroupSettings) {
+			group.InternalNetV4 = netip.MustParsePrefix("2001:db8::/64")
+		}),
+	}
+	if _, err := ConfigItems(withMember(func(*Member) {})); err != nil {
+		t.Fatalf("the unbroken gateway every case starts from is rejected: %v", err)
 	}
 	for name, gateway := range cases {
 		t.Run(name, func(t *testing.T) {

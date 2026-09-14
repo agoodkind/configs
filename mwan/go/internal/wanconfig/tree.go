@@ -48,9 +48,64 @@ type Member struct {
 	ProbePolicy string
 	// NPTInternal and NPTExternal are the prefix-translation pair the member
 	// carries. Both are zero when the configuration names none; an instance
-	// is published only when both are set.
+	// is published only when both are set. The external prefix is also the
+	// provider's npt-prefix leaf.
 	NPTInternal netip.Prefix
 	NPTExternal netip.Prefix
+	// TableID, FwMark, FwMarkPrio, and FromPrio are the provider's routing
+	// numbers: the table holding its default route, the firewall mark that
+	// selects that table, and the priorities of the two policy rules. The
+	// model ranges the table and the mark from 1, so a zero is refused rather
+	// than published.
+	TableID    uint32
+	FwMark     uint32
+	FwMarkPrio uint32
+	FromPrio   uint32
+	// V4Source is the provider's static IPv4 link address exactly as loaded,
+	// an address or a prefix, or empty when the provider carries none.
+	V4Source string
+	// ForcedDSCP is the DSCP value that forces a new flow onto the provider,
+	// or zero when it carries none. The model ranges it from 1, so zero is
+	// free to mean absent.
+	ForcedDSCP uint8
+	// Health is the provider's probe as loaded, or nil when the provider
+	// carries no health container.
+	Health *ProbeSettings
+}
+
+// ProbeSettings is one provider's health probe as the loaded configuration
+// holds it. A disabled probe keeps whichever settings its file carries, so
+// each count and the interval is a pointer: nil is a leaf the file left out,
+// and publishes nothing, while zero is a value the model accepts.
+type ProbeSettings struct {
+	Enabled              bool
+	PingCount            *uint8
+	SuccessThreshold     *uint8
+	FailureThreshold     *uint8
+	RecoveryThreshold    *uint8
+	CheckIntervalSeconds *uint32
+	TargetsV4            []netip.Addr
+	TargetsV6            []netip.Addr
+	HTTPURLs             []string
+}
+
+// GroupSettings are the network values that belong to the member group as a
+// whole rather than to one provider.
+type GroupSettings struct {
+	// ReservedTables are the routing tables no provider may take.
+	ReservedTables []uint32
+	// InternalPrefix is the internal half of every member's translation.
+	InternalPrefix netip.Prefix
+	// OpnsenseEdgeV6 and MwanbrEdgeV6 are the router's and the gateway's
+	// addresses on the internal link.
+	OpnsenseEdgeV6 netip.Addr
+	MwanbrEdgeV6   netip.Addr
+	// InternalNetV4 is the internal IPv4 network routed into every member's
+	// table.
+	InternalNetV4 netip.Prefix
+	// ProbeTimeoutMillis is how long one probe attempt may take. The model
+	// ranges it from 1, so zero publishes nothing.
+	ProbeTimeoutMillis uint32
 }
 
 // WatchdogSettings is the rollback watchdog's policy as the publishing
@@ -117,6 +172,10 @@ type Gateway struct {
 	// tree sees the rule the kernel is running under. Empty publishes nothing,
 	// which is what a role that runs no steering module carries.
 	HashMode string
+	// Group carries the rest of the steering group's network values. A value
+	// left zero publishes nothing, which is what a caller holding no network
+	// configuration passes.
+	Group GroupSettings
 	// Members are the steering members in a stable order.
 	Members []Member
 	// Daemon carries the settings published under the local module's
@@ -153,6 +212,15 @@ const (
 	natPolicyID = 1
 
 	boolTrue = "true"
+
+	// maxDSCP is the largest value a six-bit DSCP field holds.
+	maxDSCP = 63
+
+	// itemsPerMember and itemsForGroup size the item slice for a member with
+	// a full probe and a group carrying every value; they are capacity hints,
+	// not limits.
+	itemsPerMember = 28
+	itemsForGroup  = 16
 )
 
 // ErrInvalidGateway means the Gateway cannot be published as given. The
@@ -162,19 +230,21 @@ var ErrInvalidGateway = errors.New("wanconfig: invalid gateway")
 // ConfigItems returns the items that describe g in the model, in a stable
 // order, or an error when g cannot be published faithfully: a member or the
 // internal link with no name, a name that cannot be quoted into a path, a
-// duplicate link, or a translation pair with only one prefix.
+// duplicate link, a translation pair with only one prefix, or a value outside
+// the range or address family its leaf accepts.
 func ConfigItems(g Gateway) ([]Item, error) {
 	if err := validate(g); err != nil {
 		return nil, err
 	}
 
-	items := make([]Item, 0, 8*len(g.Members)+6)
+	items := make([]Item, 0, itemsPerMember*len(g.Members)+itemsForGroup)
 	items = append(items, interfaceItems(g.InternalIface)...)
 	for _, member := range g.Members {
 		items = append(items, interfaceItems(member.Iface)...)
 		items = append(items, steeringItems(member)...)
+		items = append(items, wanItems(member)...)
 	}
-	items = append(items, steeringGroupItems(g.HashMode)...)
+	items = append(items, steeringGroupItems(g)...)
 	instanceID := uint32(0)
 	for _, member := range g.Members {
 		if !member.NPTInternal.IsValid() {
@@ -316,14 +386,109 @@ func steeringItems(member Member) []Item {
 	return items
 }
 
-// steeringGroupItems describes the settings that apply to the member set as a
-// whole. A gateway whose role runs no steering module carries no hash mode and
-// publishes none, rather than a value it does not act on.
-func steeringGroupItems(hashMode string) []Item {
-	if hashMode == "" {
+// wanItems describes the provider the member's link carries: its name, its
+// routing numbers, the prefix it translates onto, its source pin and forced
+// DSCP value when it carries them, and its probe when it has one.
+func wanItems(member Member) []Item {
+	base := interfacePath(member.Iface) + "/goodkind-mwan-steering:wan"
+	items := []Item{
+		{Path: base + "/name", Value: member.Name},
+		{Path: base + "/table-id", Value: uintValue(uint64(member.TableID))},
+		{Path: base + "/fw-mark", Value: uintValue(uint64(member.FwMark))},
+		{Path: base + "/fw-mark-prio", Value: uintValue(uint64(member.FwMarkPrio))},
+		{Path: base + "/from-prio", Value: uintValue(uint64(member.FromPrio))},
+	}
+	if member.NPTExternal.IsValid() {
+		items = append(items, Item{Path: base + "/npt-prefix", Value: member.NPTExternal.String()})
+	}
+	if member.V4Source != "" {
+		items = append(items, Item{Path: base + "/v4-source", Value: member.V4Source})
+	}
+	if member.ForcedDSCP != 0 {
+		items = append(items, Item{Path: base + "/forced-dscp", Value: uintValue(uint64(member.ForcedDSCP))})
+	}
+	items = append(items, probeItems(base+"/health", member.Health)...)
+	return items
+}
+
+// probeItems describes one provider's probe: the enabled flag whenever the
+// container exists, and each setting the loaded probe holds. Leaf-list entries
+// are addressed by the bare path with their value, like the watchdog targets.
+func probeItems(base string, probe *ProbeSettings) []Item {
+	if probe == nil {
 		return nil
 	}
-	return []Item{{Path: steeringGroupPath + "/hash-mode", Value: hashMode}}
+	items := []Item{{Path: base + "/enabled", Value: boolValue(probe.Enabled)}}
+	counts := []struct {
+		leaf  string
+		value *uint8
+	}{
+		{leaf: "ping-count", value: probe.PingCount},
+		{leaf: "success-threshold", value: probe.SuccessThreshold},
+		{leaf: "failure-threshold", value: probe.FailureThreshold},
+		{leaf: "recovery-threshold", value: probe.RecoveryThreshold},
+	}
+	for _, count := range counts {
+		if count.value == nil {
+			continue
+		}
+		items = append(items, Item{Path: base + "/" + count.leaf, Value: uintValue(uint64(*count.value))})
+	}
+	if probe.CheckIntervalSeconds != nil {
+		items = append(items, Item{
+			Path:  base + "/check-interval",
+			Value: uintValue(uint64(*probe.CheckIntervalSeconds)),
+		})
+	}
+	for _, target := range probe.TargetsV4 {
+		items = append(items, Item{Path: base + "/targets-v4", Value: target.String()})
+	}
+	for _, target := range probe.TargetsV6 {
+		items = append(items, Item{Path: base + "/targets-v6", Value: target.String()})
+	}
+	for _, url := range probe.HTTPURLs {
+		items = append(items, Item{Path: base + "/http-urls", Value: url})
+	}
+	return items
+}
+
+// steeringGroupItems describes the settings that apply to the member set as a
+// whole. A value the gateway does not hold publishes nothing: a role that runs
+// no steering module carries no hash mode, and a caller holding no network
+// configuration carries no group values, so the tree never shows a value the
+// daemon does not act on. The internal link is always held, because it is the
+// interface entry every member routes toward.
+func steeringGroupItems(g Gateway) []Item {
+	group := g.Group
+	items := make([]Item, 0, itemsForGroup+len(group.ReservedTables))
+	if g.HashMode != "" {
+		items = append(items, Item{Path: steeringGroupPath + "/hash-mode", Value: g.HashMode})
+	}
+	for _, table := range group.ReservedTables {
+		items = append(items, Item{Path: steeringGroupPath + "/reserved-tables", Value: uintValue(uint64(table))})
+	}
+	translation := steeringGroupPath + "/translation"
+	if group.InternalPrefix.IsValid() {
+		items = append(items, Item{Path: translation + "/internal-prefix", Value: group.InternalPrefix.String()})
+	}
+	if group.OpnsenseEdgeV6.IsValid() {
+		items = append(items, Item{Path: translation + "/opnsense-edge-v6", Value: group.OpnsenseEdgeV6.String()})
+	}
+	if group.MwanbrEdgeV6.IsValid() {
+		items = append(items, Item{Path: translation + "/mwanbr-edge-v6", Value: group.MwanbrEdgeV6.String()})
+	}
+	routes := steeringGroupPath + "/routes"
+	items = append(items, Item{Path: routes + "/internal-iface", Value: g.InternalIface})
+	if group.InternalNetV4.IsValid() {
+		items = append(items, Item{Path: routes + "/internal-net-v4", Value: group.InternalNetV4.String()})
+	}
+	if group.ProbeTimeoutMillis != 0 {
+		items = append(items, Item{
+			Path:  steeringGroupPath + "/health/probe-timeout",
+			Value: uintValue(uint64(group.ProbeTimeoutMillis)),
+		})
+	}
+	return items
 }
 
 // hashModes are the values the model's enumeration accepts. A value outside the
@@ -369,6 +534,9 @@ func validate(g Gateway) error {
 	if g.HashMode != "" && !hashModes[g.HashMode] {
 		return invalid(fmt.Sprintf("hash mode %q is not one of the model's values", g.HashMode))
 	}
+	if err := validateGroup(g.Group); err != nil {
+		return err
+	}
 	seen := map[string]string{g.InternalIface: "internal link"}
 	for _, member := range g.Members {
 		if err := validateKey("member name", member.Name); err != nil {
@@ -392,8 +560,77 @@ func validate(g Gateway) error {
 			return invalid(fmt.Sprintf("member %s translation prefixes must be IPv6 (internal %q, external %q)",
 				member.Name, member.NPTInternal, member.NPTExternal))
 		}
+		if err := validateProvider(member); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// validateProvider rejects a provider value its leaf would refuse. A refused
+// item fails the whole replace, taking every other item with it, so each one
+// is caught before the write.
+func validateProvider(member Member) error {
+	if member.TableID == 0 {
+		return invalid(fmt.Sprintf("member %s table-id must be at least 1", member.Name))
+	}
+	if member.FwMark == 0 {
+		return invalid(fmt.Sprintf("member %s fw-mark must be at least 1", member.Name))
+	}
+	if member.ForcedDSCP > maxDSCP {
+		return invalid(fmt.Sprintf("member %s forced-dscp %d exceeds %d", member.Name, member.ForcedDSCP, maxDSCP))
+	}
+	if member.V4Source != "" && !isIPv4AddressOrPrefix(member.V4Source) {
+		return invalid(fmt.Sprintf("member %s v4-source %q is not an IPv4 address or prefix", member.Name, member.V4Source))
+	}
+	return validateProbe(member.Name, member.Health)
+}
+
+// validateProbe rejects a probe target outside its leaf-list's address family.
+func validateProbe(name string, probe *ProbeSettings) error {
+	if probe == nil {
+		return nil
+	}
+	for _, target := range probe.TargetsV4 {
+		if !target.Is4() {
+			return invalid(fmt.Sprintf("member %s health target %q is not an IPv4 address", name, target))
+		}
+	}
+	for _, target := range probe.TargetsV6 {
+		if !target.Is6() {
+			return invalid(fmt.Sprintf("member %s health target %q is not an IPv6 address", name, target))
+		}
+	}
+	return nil
+}
+
+// validateGroup rejects a group value outside its leaf's address family.
+func validateGroup(group GroupSettings) error {
+	if group.InternalPrefix.IsValid() && !group.InternalPrefix.Addr().Is6() {
+		return invalid(fmt.Sprintf("internal prefix %q is not IPv6", group.InternalPrefix))
+	}
+	if group.OpnsenseEdgeV6.IsValid() && !group.OpnsenseEdgeV6.Is6() {
+		return invalid(fmt.Sprintf("router edge address %q is not IPv6", group.OpnsenseEdgeV6))
+	}
+	if group.MwanbrEdgeV6.IsValid() && !group.MwanbrEdgeV6.Is6() {
+		return invalid(fmt.Sprintf("gateway edge address %q is not IPv6", group.MwanbrEdgeV6))
+	}
+	if group.InternalNetV4.IsValid() && !group.InternalNetV4.Addr().Is4() {
+		return invalid(fmt.Sprintf("internal IPv4 network %q is not IPv4", group.InternalNetV4))
+	}
+	return nil
+}
+
+// isIPv4AddressOrPrefix reports whether value is one of the two forms the
+// v4-source leaf's union accepts.
+func isIPv4AddressOrPrefix(value string) bool {
+	if address, err := netip.ParseAddr(value); err == nil {
+		return address.Is4()
+	}
+	if prefix, err := netip.ParsePrefix(value); err == nil {
+		return prefix.Addr().Is4()
+	}
+	return false
 }
 
 // validateKey rejects an empty key or one that cannot sit inside the

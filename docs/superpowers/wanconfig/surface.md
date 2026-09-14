@@ -81,17 +81,23 @@ the rollback watchdog's thresholds and probe targets, the out-of-band
 access policy, and the tunnel tap, each only when the daemon's loaded
 configuration carries that section, so the tree never invents values
 another host owns. Each steering member appears as
-an interface entry named by its link, marked as a member with its tier and
-the name of the probe policy that decides its health. Its address-family
-containers are present and enabled, because the daemon steers and probes
-both families on every member; the internal link appears the same way. Each
-member whose loaded configuration carries a translation prefix appears as a
-prefix-translation instance with both prefixes explicit. A value the
-configuration does not carry is left to the schema default or left out: the
-interface type is published as unspecified because the configuration has no
-type, the hash mode and member weight are not published because the balancer
-that holds them is still the firewall file, and addresses, routes, and
-routing tables are not published because the daemon holds them only as live
+an interface entry named by its link, marked as a member with its tier, its
+weight, and the name of the probe policy that decides its health. Its
+address-family containers are present and enabled, because the daemon steers
+and probes both families on every member; the internal link appears the same
+way. Each member's link also carries its provider entry with every value the
+network configuration gives it: the provider's name, its routing table,
+firewall mark, and the priorities of its two policy rules, its translation
+prefix, its IPv4 source pin and forced DSCP value when it has them, and its
+health probe with every setting the loaded probe holds, including the settings
+of a probe that is present but disabled. The steering group carries the hash
+mode, the reserved routing tables, the translation inputs, the internal link
+and network, and the probe timeout. Each member whose loaded configuration
+carries a translation prefix also appears as a prefix-translation instance with
+both prefixes explicit. A value the configuration does not carry is left to the
+schema default or left out: the interface type is published as unspecified
+because the configuration has no type, and the kernel's addresses and routes
+are not published as configuration because the daemon holds them only as live
 state, which the live-state piece serves from the operational datastore.
 
 If the datastore cannot be reached or rejects the publish, the daemon logs

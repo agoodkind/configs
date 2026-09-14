@@ -285,28 +285,24 @@ func (r runningReplacer) ReplaceConfig(ctx context.Context, ownedPaths []string,
 
 // gatewayFromModuleConfigs projects the wan role's typed runtime module
 // configs onto the gateway the surface publishes. It reads the same values
-// the daemon is about to run with: the member list and translation prefixes
-// from the wan.routes config, the internal translation prefix from the npt
-// config, which members are probed from the health config, and the daemon
-// settings the loaded monolith configuration carries. It returns ok=false
-// when the set carries no wan.routes config, which is every role but wan;
-// that is a quiet no-publish, not an error.
+// the daemon is about to run with: the member list, routing numbers, and
+// translation prefixes from the wan.routes config, the internal translation
+// prefix and edge addresses from the npt config, which members are probed and
+// the probe timeout from the health config, the values no module config holds
+// from the loaded network configuration, and the daemon settings the loaded
+// monolith configuration carries. It returns ok=false when the set carries no
+// wan.routes config, which is every role but wan; that is a quiet no-publish,
+// not an error.
 func gatewayFromModuleConfigs(cfg *config.Config, configs ifmgr.ModuleConfigSet) (wanconfig.Gateway, bool, error) {
-	logger := slog.Default().With("component", "wanconfig")
 	var none wanconfig.Gateway
 	routesCfg, isRoutes := configs["wan.routes"].(wanroutes.Config)
 	if !isRoutes || len(routesCfg.WANs) == 0 {
 		return none, false, nil
 	}
 
-	internalPrefix := netip.Prefix{}
-	if nptCfg, isNPT := configs["npt"].(npt.Config); isNPT && nptCfg.InternalPrefix != "" {
-		parsed, err := netip.ParsePrefix(nptCfg.InternalPrefix)
-		if err != nil {
-			logger.Warn("wanconfig: internal prefix unparsable", "value", nptCfg.InternalPrefix, "err", err)
-			return none, false, fmt.Errorf("wanconfig: internal prefix %q: %w", nptCfg.InternalPrefix, err)
-		}
-		internalPrefix = parsed
+	group, err := groupSettings(cfg, routesCfg, configs)
+	if err != nil {
+		return none, false, err
 	}
 
 	probed := map[string]bool{}
@@ -319,37 +315,214 @@ func gatewayFromModuleConfigs(cfg *config.Config, configs ifmgr.ModuleConfigSet)
 	gateway := wanconfig.Gateway{
 		InternalIface: routesCfg.InternalIface,
 		HashMode:      hashModeFromConfig(cfg),
+		Group:         group,
 		Members:       make([]wanconfig.Member, 0, len(routesCfg.WANs)),
 		Daemon:        daemonSettings(cfg, configs),
 	}
 	for _, wan := range routesCfg.WANs {
-		member := wanconfig.Member{
-			Name:        wan.Name,
-			Iface:       wan.Iface,
-			Tier:        wan.Tier,
-			Weight:      clampUint16(wan.Weight),
-			ProbePolicy: "",
-			NPTInternal: netip.Prefix{},
-			NPTExternal: netip.Prefix{},
-		}
-		if probed[wan.Name] {
-			// The probe policy is named after the member: the health module
-			// keys its per-member policy by the same name.
-			member.ProbePolicy = wan.Name
-		}
-		if wan.NptPrefix != "" {
-			external, err := netip.ParsePrefix(wan.NptPrefix)
-			if err != nil {
-				logger.Warn("wanconfig: member npt prefix unparsable",
-					"member", wan.Name, "value", wan.NptPrefix, "err", err)
-				return none, false, fmt.Errorf("wanconfig: member %s npt prefix %q: %w", wan.Name, wan.NptPrefix, err)
-			}
-			member.NPTInternal = internalPrefix
-			member.NPTExternal = external
+		member, err := memberFromWAN(cfg, wan, group.InternalPrefix, probed[wan.Name])
+		if err != nil {
+			return none, false, err
 		}
 		gateway.Members = append(gateway.Members, member)
 	}
 	return gateway, true, nil
+}
+
+// memberFromWAN projects one provider: its identity, steering properties, and
+// routing numbers from the wan.routes entry, its forced DSCP value and probe
+// from the loaded network configuration, and its translation pair from its own
+// prefix and the group's internal prefix.
+func memberFromWAN(
+	cfg *config.Config,
+	wan wanroutes.WAN,
+	internalPrefix netip.Prefix,
+	probed bool,
+) (wanconfig.Member, error) {
+	logger := slog.Default().With("component", "wanconfig")
+	var none wanconfig.Member
+	probe, err := probeSettings(cfg, wan.Name)
+	if err != nil {
+		return none, err
+	}
+	member := wanconfig.Member{
+		Name:        wan.Name,
+		Iface:       wan.Iface,
+		Tier:        wan.Tier,
+		Weight:      clampUint16(wan.Weight),
+		ProbePolicy: "",
+		NPTInternal: netip.Prefix{},
+		NPTExternal: netip.Prefix{},
+		TableID:     clampUint32(wan.TableID),
+		FwMark:      wan.FwMark,
+		FwMarkPrio:  clampUint32(wan.FwMarkPrio),
+		FromPrio:    clampUint32(wan.FromPrio),
+		V4Source:    wan.V4Source,
+		ForcedDSCP:  forcedDSCPFromConfig(cfg, wan.Name),
+		Health:      probe,
+	}
+	if probed {
+		// The probe policy is named after the member: the health module
+		// keys its per-member policy by the same name.
+		member.ProbePolicy = wan.Name
+	}
+	if wan.NptPrefix != "" {
+		external, err := netip.ParsePrefix(wan.NptPrefix)
+		if err != nil {
+			logger.Warn("wanconfig: member npt prefix unparsable",
+				"member", wan.Name, "value", wan.NptPrefix, "err", err)
+			return none, fmt.Errorf("wanconfig: member %s npt prefix %q: %w", wan.Name, wan.NptPrefix, err)
+		}
+		member.NPTInternal = internalPrefix
+		member.NPTExternal = external
+	}
+	return member, nil
+}
+
+// groupSettings projects the steering group's network values from the module
+// configs that hold them, and the reserved tables from the loaded network
+// configuration, which no module config carries. A value no config holds stays
+// zero and publishes nothing.
+func groupSettings(
+	cfg *config.Config,
+	routesCfg wanroutes.Config,
+	configs ifmgr.ModuleConfigSet,
+) (wanconfig.GroupSettings, error) {
+	var none wanconfig.GroupSettings
+	group := wanconfig.GroupSettings{
+		ReservedTables:     reservedTablesFromConfig(cfg),
+		InternalPrefix:     netip.Prefix{},
+		OpnsenseEdgeV6:     netip.Addr{},
+		MwanbrEdgeV6:       netip.Addr{},
+		InternalNetV4:      netip.Prefix{},
+		ProbeTimeoutMillis: 0,
+	}
+	var err error
+	if nptCfg, isNPT := configs["npt"].(npt.Config); isNPT {
+		if group.InternalPrefix, err = parseGroupPrefix("internal prefix", nptCfg.InternalPrefix); err != nil {
+			return none, err
+		}
+		// npt is the only module config that holds the gateway's own edge
+		// address.
+		if group.MwanbrEdgeV6, err = parseGroupAddr("mwanbr edge address", nptCfg.MwanbrEdgeV6); err != nil {
+			return none, err
+		}
+	}
+	if group.OpnsenseEdgeV6, err = parseGroupAddr("router edge address", routesCfg.OpnsenseEdgeV6); err != nil {
+		return none, err
+	}
+	if group.InternalNetV4, err = parseGroupPrefix("internal IPv4 network", routesCfg.InternalNetV4); err != nil {
+		return none, err
+	}
+	if healthCfg, isHealth := configs["health"].(health.Config); isHealth {
+		group.ProbeTimeoutMillis = clampUint32(int(healthCfg.Timeout / time.Millisecond))
+	}
+	return group, nil
+}
+
+// parseGroupPrefix parses one group prefix the loaded configuration holds as
+// text. Empty is a value no config carries and publishes nothing; an
+// unparsable value is an error rather than a leaf silently missing.
+func parseGroupPrefix(what string, value string) (netip.Prefix, error) {
+	if value == "" {
+		return netip.Prefix{}, nil
+	}
+	prefix, err := netip.ParsePrefix(value)
+	if err != nil {
+		slog.Warn("wanconfig: group prefix unparsable", "leaf", what, "value", value, "err", err)
+		return netip.Prefix{}, fmt.Errorf("wanconfig: %s %q: %w", what, value, err)
+	}
+	return prefix, nil
+}
+
+// parseGroupAddr is parseGroupPrefix for an address.
+func parseGroupAddr(what string, value string) (netip.Addr, error) {
+	if value == "" {
+		return netip.Addr{}, nil
+	}
+	address, err := netip.ParseAddr(value)
+	if err != nil {
+		slog.Warn("wanconfig: group address unparsable", "leaf", what, "value", value, "err", err)
+		return netip.Addr{}, fmt.Errorf("wanconfig: %s %q: %w", what, value, err)
+	}
+	return address, nil
+}
+
+// reservedTablesFromConfig reads the reserved routing tables from the loaded
+// network configuration. The only reader of the set is the loader's own check,
+// so no module config holds it. A nil configuration publishes none.
+func reservedTablesFromConfig(cfg *config.Config) []uint32 {
+	if cfg == nil {
+		return nil
+	}
+	tables := make([]uint32, 0, len(cfg.IfMgr.ReservedTables))
+	for _, table := range cfg.IfMgr.ReservedTables {
+		tables = append(tables, clampUint32(table))
+	}
+	return tables
+}
+
+// forcedDSCPFromConfig reads a provider's forced DSCP value from the loaded
+// network configuration. The firewall is rendered from inventory rather than
+// by a module, so no module config holds the value. Zero means none.
+func forcedDSCPFromConfig(cfg *config.Config, name string) uint8 {
+	if cfg == nil {
+		return 0
+	}
+	return clampUint8(cfg.IfMgr.WAN[name].ForcedDSCP)
+}
+
+// probeSettings projects one provider's probe from the loaded health section.
+// The health module config holds only enabled probes, so the section is the one
+// holder of a disabled probe's settings and of whether a provider carries a
+// health container at all. A nil configuration, or a provider with no
+// container, publishes no probe.
+func probeSettings(cfg *config.Config, name string) (*wanconfig.ProbeSettings, error) {
+	if cfg == nil || cfg.IfMgr.Modules.Health == nil {
+		return nil, nil
+	}
+	section, present := cfg.IfMgr.Modules.Health.WAN[name]
+	if !present {
+		return nil, nil
+	}
+	fieldPrefix := "network.json wan " + name + " health"
+	targetsV4, err := parseAddrList(section.TargetsV4, fieldPrefix+"/targets-v4")
+	if err != nil {
+		return nil, err
+	}
+	targetsV6, err := parseAddrList(section.TargetsV6, fieldPrefix+"/targets-v6")
+	if err != nil {
+		return nil, err
+	}
+	probe := &wanconfig.ProbeSettings{
+		Enabled:              section.Enabled,
+		PingCount:            uint8Setting(section.PingCount),
+		SuccessThreshold:     uint8Setting(section.SuccessThreshold),
+		FailureThreshold:     uint8Setting(section.FailureThreshold),
+		RecoveryThreshold:    uint8Setting(section.RecoveryThreshold),
+		CheckIntervalSeconds: uint32Setting(section.CheckIntervalSeconds),
+		TargetsV4:            targetsV4,
+		TargetsV6:            targetsV6,
+		HTTPURLs:             append([]string(nil), section.HTTPURLs...),
+	}
+	return probe, nil
+}
+
+// uint8Setting narrows one optional probe setting onto its leaf's range,
+// keeping an absent setting absent.
+func uint8Setting(setting *int) *uint8 {
+	if setting == nil {
+		return nil
+	}
+	return new(clampUint8(*setting))
+}
+
+// uint32Setting is uint8Setting for a uint32 leaf.
+func uint32Setting(setting *int) *uint32 {
+	if setting == nil {
+		return nil
+	}
+	return new(clampUint32(*setting))
 }
 
 // hashModeFromConfig reads the group's hash mode from the loaded network

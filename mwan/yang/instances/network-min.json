@@ -50,6 +50,33 @@
           "weight": 3
         }
       },
+      {
+        "name": "enmbrains0",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:wan": {
+          "name": "monkeybrains",
+          "table-id": 300,
+          "fw-mark": 3,
+          "fw-mark-prio": 300,
+          "from-prio": 57,
+          "npt-prefix": "2001:db8:beef:300::/60",
+          "health": {
+            "enabled": false,
+            "ping-count": 3,
+            "success-threshold": 1,
+            "failure-threshold": 4,
+            "recovery-threshold": 5,
+            "check-interval": 30,
+            "targets-v4": ["192.0.2.12"],
+            "targets-v6": ["2001:db8:53::3"],
+            "http-urls": ["https://example.test/mb"]
+          }
+        },
+        "goodkind-mwan-steering:steering": {
+          "tier": 2,
+          "weight": 1
+        }
+      },
       { "name": "enmwanbr0", "type": "iana-if-type:other" }
     ],
     "goodkind-mwan-steering:steering-group": {
