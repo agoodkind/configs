@@ -25,46 +25,36 @@ func TestAtomicWrite_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestAtomicWrite_ParentDirFsyncCalled documents the durability
-// contract. renameio/v2 owns the inner sync of the temp file. The
-// atomicwrite helper then fsyncs the parent directory; injecting a
-// spy on the parent's Sync() call requires intercepting os.Open at
-// runtime, which is too invasive for this unit test. Instead this
-// test verifies the post-condition: the file exists with the correct
-// content after AtomicWriteFile returns. The fsync of the parent is
-// covered by the integration tests in the verification plan.
-func TestAtomicWrite_ParentDirFsyncCalled(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "out.bin")
-	if err := AtomicWriteFile(context.Background(), target, []byte("durable"), 0o600); err != nil {
-		t.Fatalf("AtomicWriteFile: %v", err)
-	}
-	info, err := os.Stat(target)
-	if err != nil {
-		t.Fatalf("stat after rename: %v", err)
-	}
-	if info.Size() != int64(len("durable")) {
-		t.Fatalf("size=%d want %d", info.Size(), len("durable"))
-	}
-}
-
+// TestAtomicWrite_CleanupOnError makes the final rename fail after
+// renameio has already written its temp file, by pointing the target at
+// an existing non-empty directory, and checks that no temp file
+// survives. renameio places the temp file in os.TempDir when that shares
+// a filesystem with the target and in the target's directory otherwise,
+// so TMPDIR is redirected to an empty directory and both are checked.
 func TestAtomicWrite_CleanupOnError(t *testing.T) {
-	// Point AtomicWriteFile at a parent directory that does not exist.
-	// renameio's NewPendingFile creates the temp file in that
-	// directory and surfaces a real error; the deferred Cleanup then
-	// runs as a no-op because no temp file was created.
-	dir := t.TempDir()
-	bogusTarget := filepath.Join(dir, "missing", "out.bin")
-	if err := AtomicWriteFile(context.Background(), bogusTarget, []byte("x"), 0o600); err == nil {
-		t.Fatalf("expected error for nonexistent parent dir")
+	tempRoot := t.TempDir()
+	parent := t.TempDir()
+	target := filepath.Join(parent, "out.bin")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatalf("mkdir target: %v", err)
 	}
-	entries, readErr := os.ReadDir(dir)
-	if readErr != nil {
-		t.Fatalf("read dir: %v", readErr)
+	if err := os.WriteFile(filepath.Join(target, "child"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed child: %v", err)
 	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".") {
-			t.Fatalf("leftover temp file after failed write: %s", entry.Name())
+	t.Setenv("TMPDIR", tempRoot)
+
+	if err := AtomicWriteFile(context.Background(), target, []byte("x"), 0o600); err == nil {
+		t.Fatal("expected error replacing a directory with a file")
+	}
+	for _, dir := range []string{tempRoot, parent} {
+		entries, readErr := os.ReadDir(dir)
+		if readErr != nil {
+			t.Fatalf("read dir %s: %v", dir, readErr)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".out.bin") {
+				t.Fatalf("leftover temp file after failed write: %s", filepath.Join(dir, entry.Name()))
+			}
 		}
 	}
 }

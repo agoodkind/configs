@@ -39,13 +39,28 @@ func TestPathValidator_AllowedBaseHits(t *testing.T) {
 }
 
 func TestPathValidator_PathTraversalRefused(t *testing.T) {
-	base := t.TempDir()
+	parent := t.TempDir()
+	base := filepath.Join(parent, "base")
+	if err := os.Mkdir(base, 0o700); err != nil {
+		t.Fatalf("mkdir base: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(parent, "secret.txt"), []byte("nope"), 0o600); err != nil {
+		t.Fatalf("seed secret: %v", err)
+	}
 	pv, cleanup := newValidatorForTest(t, []string{base}, nil)
 	defer cleanup()
 
-	traversal := filepath.Join(base, "..", "etc", "passwd")
-	if _, err := pv.OpenForRead(traversal); err == nil {
-		t.Fatalf("expected error for traversal path %q", traversal)
+	// Concatenate instead of filepath.Join, which would clean the ".."
+	// away before the validator sees it.
+	separator := string(filepath.Separator)
+	traversal := base + separator + ".." + separator + "secret.txt"
+	file, err := pv.OpenForRead(traversal)
+	if err == nil {
+		_ = file.Close()
+		t.Fatalf("expected refusal for traversal path %q", traversal)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("traversal target exists, so the error must be a refusal: %v", err)
 	}
 }
 
@@ -108,10 +123,13 @@ func TestPathValidator_DirectionAllowlists(t *testing.T) {
 	if _, _, err := pv.ResolveWrite(writeTarget); err != nil {
 		t.Fatalf("write in write allowlist must resolve: %v", err)
 	}
-	if _, err := pv.OpenForRead(writeTarget); err == nil || !errors.Is(err, os.ErrNotExist) {
-		// Read in the write-only allowlist is permitted (write is
-		// implicitly readable), so absence is the expected failure
-		// mode here, not a permission error.
-		_ = err
+	// Write roots are implicitly readable.
+	if err := os.WriteFile(writeTarget, []byte("w"), 0o600); err != nil {
+		t.Fatalf("seed write file: %v", err)
 	}
+	writeFile, err := pv.OpenForRead(writeTarget)
+	if err != nil {
+		t.Fatalf("read in write allowlist must succeed: %v", err)
+	}
+	_ = writeFile.Close()
 }
