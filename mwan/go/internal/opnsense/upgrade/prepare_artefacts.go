@@ -58,11 +58,14 @@ var errCaptureExecMissing = errors.New("upgrade: capture requires deps.Exec")
 
 // capturePreUpgradeArtefacts runs every documented capture under the
 // per-deploy directory. Returns an error only when a required artefact
-// (config.xml.pre) cannot be written; best-effort artefacts log a
-// warning and write an empty placeholder so the directory shape is
-// always uniform.
+// (config.xml.pre or firmware.pre.json) cannot be written; best-effort
+// artefacts log a warning and write an empty placeholder so the
+// directory shape is always uniform.
 func capturePreUpgradeArtefacts(ctx context.Context, deps Deps, opts Options, deployDir string) error {
 	if err := captureConfigXML(ctx, deps, opts, deployDir); err != nil {
+		return err
+	}
+	if err := captureFirmware(ctx, deps, opts, deployDir); err != nil {
 		return err
 	}
 	captureVersion(ctx, deps, opts, deployDir)

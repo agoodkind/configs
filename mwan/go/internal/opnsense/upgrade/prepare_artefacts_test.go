@@ -74,6 +74,38 @@ func TestPrepareCapturesAllArtefacts(t *testing.T) {
 	if len(bgp) == 0 {
 		t.Fatalf("bgp_status.json empty")
 	}
+
+	firmware, err := readFirmwareState(context.Background(), filepath.Join(deployDir, ArtefactFirmwarePre))
+	if err != nil {
+		t.Fatalf("read firmware.pre.json: %v", err)
+	}
+	want := firmwareState{CorePackage: "opnsense", CoreVersion: "26.7.3_8", BaseVersion: "26.7.3", KernelVersion: "26.7.3"}
+	if firmware != want {
+		t.Fatalf("firmware.pre.json = %+v, want %+v", firmware, want)
+	}
+}
+
+// TestPrepareFirmwareCaptureFailureAbortsPrepare checks that prepare
+// refuses to snapshot when it cannot read the installed firmware, since
+// execute needs that state to tell whether the update landed.
+// opnsense-update exits 1 with "Must be root." when it cannot run
+// (opnsense-update.sh.in:30-33).
+func TestPrepareFirmwareCaptureFailureAbortsPrepare(t *testing.T) {
+	t.Parallel()
+	deps, _, s, x, _ := newDeps(t)
+	x.byArgv["opnsense-update -vb"] = GuestExecResult{ExitCode: 1, Stderr: "Must be root.\n"}
+	opts := newOpts(t, "101")
+
+	st, err := Prepare(context.Background(), deps, opts)
+	if err == nil {
+		t.Fatalf("expected error from firmware capture failure")
+	}
+	if st.Phase == PhasePrepared {
+		t.Fatalf("phase = %q must not be prepared after firmware capture failure", st.Phase)
+	}
+	if len(s.snapshots) != 0 {
+		t.Fatalf("snapshot must not be taken after firmware capture failure, got %d", len(s.snapshots))
+	}
 }
 
 // TestPrepareBGPCaptureFailureWritesReasonStamp checks that a guest
@@ -224,13 +256,7 @@ func TestPrepareInterfacesPartialFailureLandsErrFields(t *testing.T) {
 func TestPrepareVersionCaptureFailureWritesEmptyFile(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
-	// byCommandSeq takes priority over byCommand; override the seq so
-	// both the Prepare capture call and any subsequent Execute call see
-	// the failure result.
-	x.byCommandSeq["opnsense-version"] = []GuestExecResult{
-		{ExitCode: 127, Stderr: "command not found"},
-	}
-	x.byCommandSeqIdx["opnsense-version"] = 0
+	x.byArgv["opnsense-version"] = GuestExecResult{ExitCode: 127, Stderr: "command not found"}
 	opts := newOpts(t, "101")
 
 	st, err := Prepare(context.Background(), deps, opts)
