@@ -2,6 +2,9 @@
 Description=6in4 tunnel to Berylax
 After=network-online.target nss-lookup.target
 Wants=network-online.target
+# The container reaches network-online before eth0 can route, so the first
+# bring-up can fail with "No route to host"; retry instead of giving up.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
@@ -10,6 +13,8 @@ EnvironmentFile=/etc/sit6/sit6.env
 # tunnel in place instead of deleting it and withdrawing the prefix.
 ExecStart=/usr/local/sbin/sit6-tunnel-up
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
