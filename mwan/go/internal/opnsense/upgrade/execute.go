@@ -105,7 +105,7 @@ func (e executeRun) firmwareChange(ctx context.Context) (State, error) {
 		return e.fail(ctx, execCtx, "apply update", err)
 	}
 	if result.RebootRequired {
-		if err := rebootGuest(ctx, e.deps, e.runner); err != nil {
+		if err := rebootGuest(ctx, e.clk, e.runner, defaultRebootWait()); err != nil {
 			return e.fail(ctx, nil, "reboot", err)
 		}
 	}
@@ -195,7 +195,9 @@ func planAttrs(plan firmwarePlan) []slog.Attr {
 }
 
 // waitForGuest is a small helper used by rollback to poll for QGA
-// liveness. It polls every 2 seconds up to deadline.
+// liveness. It polls every 2 seconds up to deadline. Any answer proves the
+// restored boot, because qm rollback stops the VM before restoring it, so
+// no guest from before the rollback is left to answer.
 func waitForGuest(ctx context.Context, deps Deps, vmid string, deadline time.Duration) error {
 	if deps.Exec == nil {
 		err := errors.New("waitForGuest: deps.Exec is required")
