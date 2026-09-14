@@ -1,6 +1,6 @@
 package validate
 
-import internalclock "goodkind.io/mwan/internal/clock"
+import internalclock "goodkind.io/mwan/internal/opnsense/internal/clock"
 
 type clock = internalclock.Clock
 

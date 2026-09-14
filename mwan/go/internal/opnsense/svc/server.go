@@ -14,7 +14,7 @@ import (
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
-	"goodkind.io/mwan/internal/version"
+	"goodkind.io/mwan/internal/opnsense/version"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
