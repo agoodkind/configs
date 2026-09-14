@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-
-	"goodkind.io/mwan/internal/rollback"
 )
 
 // Rollback reverts the VM to the prepare-phase snapshot per design
@@ -103,7 +101,7 @@ func deleteChildSnapshots(ctx context.Context, deps Deps, vmid, target string) e
 		slog.ErrorContext(ctx, "upgrade.Rollback: VMSnapshots", "err", err, "vmid", vmid)
 		return fmt.Errorf("upgrade.Rollback: VMSnapshots: %w", err)
 	}
-	children := rollback.SnapshotsAfter(listing, target)
+	children := snapshotsAfter(listing, target)
 	for _, child := range slices.Backward(children) {
 		if err := deps.Snap.VMDelSnapshot(ctx, vmid, child); err != nil {
 			if logger := deps.Log; logger != nil {
