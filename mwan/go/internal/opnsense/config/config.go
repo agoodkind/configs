@@ -119,12 +119,16 @@ type UpgradeSection struct {
 	LANClientSSH             string `toml:"lan_client_ssh"`
 	OPNsenseAddr             string `toml:"opnsense_addr"`
 
-	// Target is the OPNsense version the upgrade is heading toward
-	// (e.g. "26.7"). It is optional; phases like prepare/snapshot work
-	// without it, and execute/validate read it when present.
+	// Target is the OPNsense release the upgrade is heading toward
+	// (e.g. "26.7"). It is optional. When it names a release series other
+	// than the installed core package's, execute runs a major upgrade;
+	// otherwise execute applies the updates pending inside the installed
+	// series. Validate also receives it.
 	Target string `toml:"target"`
 
-	// DryRunExecute swaps the real upgrade for `opnsense-update -c`.
+	// DryRunExecute makes execute report the pending firmware update,
+	// and whether it would reboot, without installing anything or
+	// rebooting.
 	DryRunExecute bool `toml:"dry_run_execute"`
 
 	// UseBootEnvironment requests a bectl boot-environment alongside
