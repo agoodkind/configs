@@ -42,6 +42,9 @@
 {% if provider.v4_source %}
 {% set wan = wan | combine({"v4-source": provider.v4_source}) %}
 {% endif %}
+{% if provider.forced_dscp is defined %}
+{% set wan = wan | combine({"forced-dscp": provider.forced_dscp}) %}
+{% endif %}
 {% set _ = interfaces.append({
   "name": iface_name,
   "type": "iana-if-type:other",
