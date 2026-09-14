@@ -5,30 +5,16 @@
 Name={{ mwan_astound_iface }}
 
 [Network]
-# A dynamic link: DHCPv4 for the address and DHCPv6 for the delegation.
-DHCP=yes
-IPv6AcceptRA=yes
+# A dynamic IPv4-only link: DHCPv4 for the address. The real Astound circuit
+# carries no IPv6, so this link requests no DHCPv6 lease, no prefix
+# delegation, and accepts no router advertisements.
+DHCP=ipv4
+IPv6AcceptRA=no
 
 # Needed for policy routing / forwarding
 IPv4Forwarding=yes
-IPv6Forwarding=yes
 
 [DHCPv4]
 # The least preferred provider on the testbed, below monkeybrains at 5000, so a
 # kernel default route from this link never outranks one from another.
-RouteMetric=6000
-
-[DHCPv6]
-# Request prefix delegation so the daemon can translate the internal /60 onto
-# this provider. The simulator delegates from a /56 pool to whichever client
-# asks, so no DUID is configured here and none is needed.
-UseDelegatedPrefix=yes
-PrefixDelegationHint=::/56
-WithoutRA=solicit
-
-[IPv6PrefixDelegation]
-RouterLifetimeSec=1800
-
-[IPv6AcceptRA]
-# Matches the DHCPv4 metric: least preferred of the four.
 RouteMetric=6000

@@ -158,8 +158,14 @@ suburban_ddns_ipv6_priority_subnets:
 
 # Testbed-only: ISP LXCs simulating WANs. Consumed by deploy-testbed.yml
 # to provision the per-WAN LXCs on suburban. No production equivalent.
-# Each entry carries the full capability schema so the shared sim templates
-# (kea-dhcp6, radvd, kea-dhcp4) never reference an undefined key. Capabilities:
+# Each entry carries the full capability schema for its enabled feature set
+# so the shared sim templates (kea-dhcp6, radvd, kea-dhcp4) never reference an
+# undefined key. Capabilities:
+#   ipv6_enabled   : sim runs kea-dhcp6/radvd/pd-route and delegates a prefix,
+#                    and the nftables template renders an ip6 nat table for it.
+#                    false models an IPv4-only circuit (e.g. astound) and omits
+#                    pd_prefix, pd_len, mwan_vm_ll, ia_na, and slaac_prefix from
+#                    the entry entirely, since nothing renders them.
 #   pd_len         : DHCPv6-PD delegation length (prod parity: webpass /56, att
 #                    /60, mbrains /56). NPT uses the first /60 of the delegation.
 #   dynamic_v4     : sim runs kea-dhcp4 (DHCPv4) instead of the VM holding static v4
@@ -172,9 +178,9 @@ suburban_ddns_ipv6_priority_subnets:
 #                    link address the block routes to.
 #   mwan_vm_ll     : the MWAN VM's link-local on this sim's segment, the
 #                    next hop the sim routes the delegated prefix back to.
-# PD prefixes use the 22/23/24/25 /56-clean scheme (webpass 2200::/56, att
-# 2300::/60, mbrains 2400::/56, astound 2500::/56), kept clear of the 02xx
-# mgmt/LAN/internal/SLAAC space.
+# PD prefixes use the 22/23/24 /56-clean scheme (webpass 2200::/56, att 2300::/60,
+# mbrains 2400::/56), kept clear of the 02xx mgmt/LAN/internal/SLAAC space.
+# Astound delegates no prefix; it is IPv4-only, matching the real circuit.
 testbed_isp_lxcs:
   - id: "{{ service_mapping.isp_webpass_suburban.vmid }}"
     name: webpass
@@ -182,6 +188,7 @@ testbed_isp_lxcs:
     # MWAN VM 1:1-NATs to services, plus a DHCPv6-PD /56. The block is on-link,
     # so the sim resolves the mapped addresses on eth0 and routes no block;
     # v4_subnet is that /29, which the sim masquerades out.
+    ipv6_enabled: true
     pd_prefix: "3d06:bad:b01:2200::/56"
     pd_len: 56
     v4_subnet: "10.241.204.0/29"
@@ -194,6 +201,7 @@ testbed_isp_lxcs:
     static_v4_route_to: ""
   - id: "{{ service_mapping.isp_att_suburban.vmid }}"
     name: att
+    ipv6_enabled: true
     pd_prefix: "3d06:bad:b01:2300::/60"
     pd_len: 60
     v4_subnet: "10.240.205.0/24"
@@ -213,6 +221,7 @@ testbed_isp_lxcs:
     static_v4_route_to: "10.240.205.2"
   - id: "{{ service_mapping.isp_mbrains_suburban.vmid }}"
     name: mbrains
+    ipv6_enabled: true
     pd_prefix: "3d06:bad:b01:2400::/56"
     pd_len: 56
     v4_subnet: "10.240.206.0/24"
@@ -231,20 +240,16 @@ testbed_isp_lxcs:
     static_v4_route_to: ""
   - id: "{{ service_mapping.isp_astound_suburban.vmid }}"
     name: astound
-    # A fourth provider that exists only to prove one can be added. It models a
-    # plain dynamic link: DHCPv4 pinned by a MAC reservation and a DHCPv6-PD
-    # /56, with no routed static block and no SLAAC, so nothing about it depends
-    # on a real ISP's quirks.
-    pd_prefix: "3d06:bad:b01:2500::/56"
-    pd_len: 56
+    # A fourth provider that exists only to prove one can be added. It models
+    # the real Astound circuit: a plain dynamic IPv4 link with DHCPv4 pinned by
+    # a MAC reservation, no IPv6 delegation, no routed static block, and no
+    # SLAAC.
+    ipv6_enabled: false
     v4_subnet: "10.240.207.0/24"
-    mwan_vm_ll: "fe80::be24:11ff:fea5:7006"
     dynamic_v4: true
     v4_gateway: "10.240.207.1"
     v4_pool: "10.240.207.100 - 10.240.207.200"
     v4_dns: "1.1.1.1"
-    ia_na: false
-    slaac_prefix: ""
     v4_reservations:
       - { mac: "BC:24:11:A5:70:06", addr: "10.240.207.2" }
     static_v4_block: ""

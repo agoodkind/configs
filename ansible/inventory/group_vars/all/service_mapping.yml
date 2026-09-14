@@ -303,9 +303,10 @@ service_mapping:
     hostname: isp-astound.suburban.goodkind.io
     vmid: 903
     inventory: false
+    # IPv4-only: the real Astound circuit carries no IPv6, so this sim has no
+    # ipv6_uplink, unlike the other three ISP sims.
     ipv4: "10.240.207.1"
     ipv4_uplink: "10.240.200.94"
-    ipv6_uplink: "3d06:bad:b01:200::94"
 
   # Second-router simulator, testbed only. An FRR speaker on the transit link
   # that peers with both MWAN speakers in the iBGP AS and announces the prefix

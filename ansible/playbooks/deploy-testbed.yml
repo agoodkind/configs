@@ -234,10 +234,22 @@
       ansible.builtin.command:
         cmd: >-
           pct exec {{ item.id }} -- sh -c
+          'which nft >/dev/null 2>&1 ||
+           (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+            -o Dpkg::Options::=--force-confold nftables)'
+      loop: "{{ testbed_isp_lxcs }}"
+      changed_when: false
+      tags: ["isp-lxcs"]
+
+    - name: Install IPv6 packages on ISP LXCs (IPv6-enabled sims only)
+      ansible.builtin.command:
+        cmd: >-
+          pct exec {{ item.id }} -- sh -c
           'which kea-dhcp6 >/dev/null 2>&1 ||
            (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
-            -o Dpkg::Options::=--force-confold kea-dhcp6-server radvd nftables)'
+            -o Dpkg::Options::=--force-confold kea-dhcp6-server radvd)'
       loop: "{{ testbed_isp_lxcs }}"
+      when: item.ipv6_enabled | bool
       changed_when: false
       tags: ["isp-lxcs"]
 

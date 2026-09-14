@@ -383,11 +383,11 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
   initialization {
     hostname = local.service_mapping.isp_astound_suburban.hostname
     dns {
-      servers = ["2606:4700:4700::1111", "1.1.1.1"]
+      servers = ["1.1.1.1"]
     }
-    # The simulated link carries IPv4 and link-local only. This sim hands out no
-    # IA_NA address and advertises no SLAAC prefix, so prefix delegation runs
-    # over link-local exactly as the AT&T sim's does.
+    # The real Astound circuit carries no IPv6, so this sim is IPv4-only on
+    # both links: no IPv6 uplink address, no IPv6 gateway, and (unlike the
+    # other three sims) no IA_NA, PD, or SLAAC on the segment side either.
     ip_config {
       ipv4 {
         address = "${local.service_mapping.isp_astound_suburban.ipv4}/24"
@@ -397,10 +397,6 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
       ipv4 {
         address = "${local.service_mapping.isp_astound_suburban.ipv4_uplink}/24"
         gateway = local.service_mapping.vmbr1_suburban.ipv4
-      }
-      ipv6 {
-        address = "${local.service_mapping.isp_astound_suburban.ipv6_uplink}/64"
-        gateway = local.service_mapping.vmbr1_suburban.ipv6
       }
     }
   }
