@@ -14,8 +14,32 @@
 #   mwan_opnsense_host_binary_local      controller path of the staged released linux binary
 #   mwan_opnsense_drain_listen           relay socket path the drainer serves
 #
-# Both units read their runtime inputs from /etc/mwan/config.toml, which
-# config-host.toml.j2 renders earlier in proxmox-host.yml.
+# Both units read their runtime inputs from /etc/opnsensectl/config.toml, which
+# the first tasks below render. A binary that reads the [opnsense.*] tables from
+# /etc/mwan/config.toml instead finds them there, and a binary that reads the new
+# file falls back to that path while the new file is absent.
+
+- name: Ensure the OPNsense tooling config directory exists
+  ansible.builtin.file:
+    path: /etc/opnsensectl
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the OPNsense tooling config
+  ansible.builtin.template:
+    src: >-
+      {{ playbook_dir }}/../../opnsense/config.toml.j2
+    dest: /etc/opnsensectl/config.toml
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  notify:
+    - Restart mwan-opnsense-drain
+    - Restart mwan-opnsense-host
 
 - name: Install mwan monolith binary
   ansible.builtin.copy:
