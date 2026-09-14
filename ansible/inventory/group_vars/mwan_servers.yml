@@ -315,8 +315,8 @@ mwan_providers:
     weight: 1
     npt_prefix: "2600:1700:2f71:c80::/60"
     v4_source: ""
-    # CS1. The sit6 6in4 LXC stamps it so its tunnel always leaves as
-    # 104.57.226.196, the one address Berylax peers with.
+    # CS1. A new flow from the internal link carrying this DSCP value leaves
+    # through this provider instead of being balanced.
     forced_dscp: 8
     static_mappings:
       - { internal: "10.250.250.2", external: "104.57.226.193" }
