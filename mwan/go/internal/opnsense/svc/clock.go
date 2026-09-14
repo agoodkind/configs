@@ -1,4 +1,4 @@
-package opnsensesvc
+package svc
 
 import internalclock "goodkind.io/mwan/internal/clock"
 

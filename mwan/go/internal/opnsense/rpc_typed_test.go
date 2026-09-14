@@ -9,19 +9,19 @@ import (
 	"time"
 
 	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
-	"goodkind.io/mwan/internal/opnsensesvc"
+	"goodkind.io/mwan/internal/opnsense/svc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
 
-// startInProcessExecServer wires an opnsensesvc.Server behind a
+// startInProcessExecServer wires an svc.Server behind a
 // bufconn-backed gRPC server so the test can drive the real Exec
 // handler over the generated client stub.
 func startInProcessExecServer(t *testing.T) mwanv1.OpnsenseServiceClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
-	srv := opnsensesvc.NewServer(slog.New(slog.NewTextHandler(io.Discard, nil)), t.TempDir()+"/config.xml", t.TempDir())
+	srv := svc.NewServer(slog.New(slog.NewTextHandler(io.Discard, nil)), t.TempDir()+"/config.xml", t.TempDir())
 	grpcServer := grpc.NewServer()
 	mwanv1.RegisterOpnsenseServiceServer(grpcServer, srv)
 	go func() { _ = grpcServer.Serve(lis) }()

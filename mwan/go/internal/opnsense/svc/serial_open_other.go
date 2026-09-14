@@ -1,6 +1,6 @@
 //go:build !freebsd
 
-package opnsensesvc
+package svc
 
 import (
 	"errors"
