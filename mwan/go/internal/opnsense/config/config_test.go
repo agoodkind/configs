@@ -216,6 +216,56 @@ func TestLoadFirstPresentReadsTheGatewayFileWhenThePrimaryIsAbsent(t *testing.T)
 	if cfg.OPNsense.Host.Listen != "/run/legacy-bridge.sock" {
 		t.Errorf("host listen = %q, want the gateway file's value", cfg.OPNsense.Host.Listen)
 	}
+	if cfg.Email.AlertEmail != "alerts@example.com" {
+		t.Errorf("email alert_email = %q, want the gateway file's value", cfg.Email.AlertEmail)
+	}
+}
+
+// emailFile is the [email] table the Proxmox host deploy renders beside the
+// [opnsense.*] tables, with min_level left to its default.
+const emailFile = `
+[email]
+smtp2go_api_key = "key-from-file"
+alert_email = "opnsense-alerts@example.test"
+from = "opnsense-upgrade@example.test"
+subject_prefix = "[OPNsense-test]"
+bind_iface = "oob0"
+`
+
+func TestLoadFileReadsTheEmailSectionAndDefaultsMinLevel(t *testing.T) {
+	t.Setenv(SMTP2GOEnv, "")
+	path := writeFile(t, t.TempDir(), "config.toml", emailFile)
+
+	cfg, err := loadFile(path)
+	if err != nil {
+		t.Fatalf("loadFile: %v", err)
+	}
+
+	want := EmailSection{
+		SMTP2GOAPIKey: "key-from-file",
+		AlertEmail:    "opnsense-alerts@example.test",
+		From:          "opnsense-upgrade@example.test",
+		SubjectPrefix: "[OPNsense-test]",
+		BindIface:     "oob0",
+		MinLevel:      "ERROR",
+	}
+	if cfg.Email != want {
+		t.Errorf("email = %+v, want %+v", cfg.Email, want)
+	}
+}
+
+func TestLoadFileLetsTheSMTP2GOEnvironmentVariableReplaceTheFileKey(t *testing.T) {
+	t.Setenv(SMTP2GOEnv, "  key-from-environment  ")
+	path := writeFile(t, t.TempDir(), "config.toml", emailFile)
+
+	cfg, err := loadFile(path)
+	if err != nil {
+		t.Fatalf("loadFile: %v", err)
+	}
+
+	if cfg.Email.SMTP2GOAPIKey != "key-from-environment" {
+		t.Errorf("smtp2go_api_key = %q, want the environment value", cfg.Email.SMTP2GOAPIKey)
+	}
 }
 
 func TestLoadFirstPresentDoesNotMaskABrokenPrimaryFile(t *testing.T) {

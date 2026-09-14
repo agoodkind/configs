@@ -2,7 +2,16 @@
 # Rendered by Ansible (mwan-opnsense-host-deploy.yml), deployed to
 # /etc/opnsensectl/config.toml. Consumed by the OPNsense host bridge, the chardev
 # drainer, and the `mwan opnsense` operator verbs. The in-guest daemon reads its
-# own daemon.toml instead.
+# own daemon.toml instead. [email] carries the same values as the host's
+# /etc/mwan/config.toml, and the upgrade verb mails its alerts with them.
+
+[email]
+smtp2go_api_key = "{{ vault_smtp2go_api_key }}"
+alert_email = "{{ mwan_email_recipient }}"
+from = "{{ mwan_email_from }}"
+subject_prefix = "{{ mwan_email_subject_prefix }}"
+bind_iface = "{{ mwan_email_bind_iface }}"
+min_level = "{{ mwan_email_min_level }}"
 
 [opnsense.host]
 upstream = "{{ mwan_opnsense_host_upstream }}"

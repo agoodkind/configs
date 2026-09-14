@@ -3,9 +3,8 @@ package upgrade
 import (
 	"context"
 	"log/slog"
-	"time"
 
-	"goodkind.io/mwan/internal/notify"
+	"goodkind.io/mwan/internal/opnsense/notify"
 )
 
 // Notify kinds carry the kebab-case `opnsense-upgrade-` prefix per
@@ -46,13 +45,11 @@ func emit(
 		return
 	}
 	n.Notify(ctx, notify.Event{
-		Now:        time.Time{},
-		Level:      level,
-		Kind:       kind,
-		Key:        vmid,
-		Message:    msg,
-		Fields:     fields,
-		IsRecovery: false,
+		Level:   level,
+		Kind:    kind,
+		Key:     vmid,
+		Message: msg,
+		Fields:  fields,
 	})
 }
 

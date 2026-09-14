@@ -14,7 +14,7 @@ import (
 	"log/slog"
 	"time"
 
-	"goodkind.io/mwan/internal/notify"
+	"goodkind.io/mwan/internal/opnsense/notify"
 )
 
 // Phase is the typed lifecycle state recorded in the state file.

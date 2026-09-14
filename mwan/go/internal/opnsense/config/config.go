@@ -1,10 +1,11 @@
 // Package config loads the OPNsense tooling's own TOML configuration: the
 // Proxmox-host bridge, the chardev drainer, the probe client, the upgrade
-// orchestrator, the validate verb, and the config import verb.
+// orchestrator and its alert mail, the validate verb, and the config import verb.
 //
-// The file keeps the [opnsense.*] table names the gateway configuration used,
-// so the same decoder reads both the tooling's own file and the gateway's
-// /etc/mwan/config.toml. The in-guest daemon reads daemoncfg, not this file.
+// The file keeps the [opnsense.*] and [email] table names the gateway
+// configuration used, so the same decoder reads both the tooling's own file and
+// the gateway's /etc/mwan/config.toml. The in-guest daemon reads daemoncfg, not
+// this file.
 package config
 
 import (
@@ -29,6 +30,10 @@ const (
 	LegacyPath = "/etc/mwan/config.toml"
 	// PathEnv names one file that replaces both DefaultPath and LegacyPath.
 	PathEnv = "OPNSENSECTL_CONFIG"
+	// SMTP2GOEnv names the environment variable whose value, when set, replaces
+	// [email].smtp2go_api_key from the file, as it does for the gateway
+	// configuration.
+	SMTP2GOEnv = "SMTP2GO_API_KEY"
 )
 
 // defaultDrainSocket is the relay socket the chardev drainer listens on and the
@@ -39,9 +44,25 @@ const defaultDrainSocket = "/var/run/mwan-opnsense-drain.sock"
 // Config is the top-level shape of the OPNsense tooling configuration.
 type Config struct {
 	OPNsense Section `toml:"opnsense"`
+	// Email is the top-level [email] table, the same table the gateway
+	// configuration carries, so the upgrade alerts read it from either file.
+	Email EmailSection `toml:"email"`
 	// Source is the file Load read, so an error about a missing key names the
 	// file the operator has to edit.
 	Source string `toml:"-"`
+}
+
+// EmailSection configures the alert mail the upgrade phases send. The upgrade
+// verb mails nothing when SMTP2GOAPIKey or AlertEmail is empty. BindIface
+// names the interface a failed send retries through, and MinLevel is the
+// lowest alert level that is mailed.
+type EmailSection struct {
+	SMTP2GOAPIKey string `toml:"smtp2go_api_key"`
+	AlertEmail    string `toml:"alert_email"`
+	From          string `toml:"from"`
+	SubjectPrefix string `toml:"subject_prefix"`
+	BindIface     string `toml:"bind_iface"`
+	MinLevel      string `toml:"min_level"`
 }
 
 // Section holds the [opnsense.*] subsections for the gRPC-over-virtio-serial
@@ -233,8 +254,9 @@ func loadFirstPresent(primary, legacy string) (*Config, error) {
 	return nil, legacyErr
 }
 
-// loadFile decodes path over the defaults. Keys outside the [opnsense.*]
-// tables are ignored, which is what lets it read the gateway configuration.
+// loadFile decodes path over the defaults, then lets SMTP2GOEnv replace the
+// file's API key. Keys outside the [opnsense.*] and [email] tables are ignored,
+// which is what lets it read the gateway configuration.
 func loadFile(path string) (*Config, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
@@ -245,6 +267,9 @@ func loadFile(path string) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		slog.Error("opnsense config: parse failed", "path", path, "err", err)
 		return nil, fmt.Errorf("opnsense config: parse %s: %w", path, err)
+	}
+	if apiKey := strings.TrimSpace(os.Getenv(SMTP2GOEnv)); apiKey != "" {
+		cfg.Email.SMTP2GOAPIKey = apiKey
 	}
 	cfg.Source = path
 	return &cfg, nil
@@ -325,6 +350,14 @@ func defaultConfig() Config {
 				Substitutions: "",
 				Output:        "",
 			},
+		},
+		Email: EmailSection{
+			SMTP2GOAPIKey: "",
+			AlertEmail:    "",
+			From:          "",
+			SubjectPrefix: "",
+			BindIface:     "",
+			MinLevel:      "ERROR",
 		},
 		Source: "",
 	}
