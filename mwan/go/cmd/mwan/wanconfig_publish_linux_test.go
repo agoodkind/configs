@@ -192,18 +192,22 @@ func TestGatewayFromModuleConfigs_CarriesWhatOnlyTheLoadedConfigHolds(t *testing
 		t.Fatalf("att probe = %+v, want %+v", att.Health, wantAttProbe)
 	}
 
-	disabled := byName["monkeybrains"].Health
-	if disabled == nil || disabled.Enabled {
-		t.Fatalf("monkeybrains probe = %+v, want a disabled probe", disabled)
+	// The whole probe is compared, so any setting the loaded section did not
+	// carry fails here. The address lists are empty rather than nil because
+	// the projection parses them into fresh slices.
+	wantDisabledProbe := &wanconfig.ProbeSettings{
+		Enabled:              false,
+		PingCount:            new(uint8(4)),
+		SuccessThreshold:     nil,
+		FailureThreshold:     nil,
+		RecoveryThreshold:    nil,
+		CheckIntervalSeconds: new(uint32(0)),
+		TargetsV4:            []netip.Addr{},
+		TargetsV6:            []netip.Addr{},
+		HTTPURLs:             nil,
 	}
-	if disabled.PingCount == nil || *disabled.PingCount != 4 {
-		t.Fatalf("monkeybrains ping-count = %v, want 4", disabled.PingCount)
-	}
-	if disabled.CheckIntervalSeconds == nil || *disabled.CheckIntervalSeconds != 0 {
-		t.Fatalf("monkeybrains check-interval = %v, want an explicit 0", disabled.CheckIntervalSeconds)
-	}
-	if disabled.SuccessThreshold != nil || len(disabled.TargetsV4) != 0 || len(disabled.HTTPURLs) != 0 {
-		t.Fatalf("monkeybrains probe carries settings its file left out: %+v", disabled)
+	if disabled := byName["monkeybrains"].Health; !reflect.DeepEqual(disabled, wantDisabledProbe) {
+		t.Fatalf("monkeybrains probe = %+v, want exactly %+v", disabled, wantDisabledProbe)
 	}
 
 	webpass := byName["webpass"]
