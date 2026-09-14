@@ -64,7 +64,11 @@ func (s *QmSnapshotter) runQm(
 	s.log.DebugContext(ctx, "upgrade: runQm", "args", args, "timeout", timeout)
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return exec.CommandContext(cctx, qmRunner, args...).CombinedOutput()
+	out, err := exec.CommandContext(cctx, qmRunner, args...).CombinedOutput()
+	if err != nil {
+		return out, fmt.Errorf("qm %s: %w", args[0], err)
+	}
+	return out, nil
 }
 
 // runQmDetached runs qm inside a transient systemd scope, so that stopping
