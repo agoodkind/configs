@@ -15,6 +15,7 @@ import (
 	internalclock "goodkind.io/mwan/internal/clock"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
+	"goodkind.io/mwan/internal/statuspush"
 	"goodkind.io/mwan/internal/wanstate"
 )
 
@@ -45,9 +46,13 @@ const (
 	StateUnhealthy State = "unhealthy"
 )
 
-// WAN embeds the shared identity and carries optional health-policy overrides.
+// WAN embeds the shared identity and carries optional health-policy overrides
+// plus the provider's tier. The tier is here because the module computes the
+// active tier for the status it pushes, and it already holds the verdict half
+// of that computation.
 type WAN struct {
 	ifmgr.WANRef
+	Tier              uint8
 	TargetsV4         []netip.Addr
 	TargetsV6         []netip.Addr
 	HTTPURLs          []string
@@ -120,6 +125,8 @@ type Config struct {
 	SuccessThreshold  int
 	FailureThreshold  int
 	RecoveryThreshold int
+	StatusPushCID     uint32
+	StatusPushPort    uint32
 	WANs              []WAN
 }
 
@@ -146,6 +153,13 @@ type transition struct {
 	To   State
 }
 
+// statusSender is the push side of the status channel. The module depends on
+// the interface so a test observes what it sends without opening a socket; the
+// production implementation is statuspush.Sender.
+type statusSender interface {
+	Send(ctx context.Context, status statuspush.Status)
+}
+
 // Module serializes probe cycles so the interval loop and reconcile-triggered
 // cycle cannot advance hysteresis from overlapping observations.
 type Module struct {
@@ -166,6 +180,11 @@ type Module struct {
 	probeV6    pingFunc
 	probeHTTP6 httpFunc
 	probeHTTP4 httpFunc
+
+	// pusher delivers the cycle verdict to the hypervisor watchdog. Nil on a
+	// host with no push address configured, which is every host but the two
+	// gateways.
+	pusher statusSender
 }
 
 // Init implements ifmgr.Module and binds the steady-state loop to daemon
@@ -346,6 +365,10 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 	m.Unlock()
 	m.publishLiveState(nextStatuses, results)
 	m.emitTransitions(ctx, log, transitions)
+	// One push per cycle, after the transitions are committed, so a verdict
+	// change reaches the watchdog in the cycle that made it and a transition
+	// cycle never sends the same thing twice.
+	m.pushStatus(ctx, nextStatuses)
 	return nil
 }
 
@@ -381,6 +404,36 @@ func (m *Module) publishLiveState(
 		members[wan.Name] = member
 	}
 	m.Env.LiveState.SetHealth(members)
+}
+
+// pushStatus tells the hypervisor watchdog what this cycle decided: every
+// provider's verdict and the tier now carrying traffic. The watchdog holds no
+// provider list of its own, so this message is the whole of what it knows.
+func (m *Module) pushStatus(ctx context.Context, statuses map[string]wanStatus) {
+	if m.pusher == nil {
+		return
+	}
+	providers := make(map[string]string, len(m.cfg.WANs))
+	states := make(netif.HealthStates, len(m.cfg.WANs))
+	members := make([]netif.TierMember, 0, len(m.cfg.WANs))
+	for _, wan := range m.cfg.WANs {
+		state := StateUnknown
+		if status, ok := statuses[wan.Name]; ok && status.State.Valid() {
+			state = status.State
+		}
+		providers[wan.Name] = string(state)
+		states[wan.Name] = string(state)
+		members = append(members, netif.TierMember{Name: wan.Name, Tier: wan.Tier})
+	}
+	// ActiveTier reports false when nothing is healthy. The tier then carries
+	// no meaning and the provider map is what says so, with every entry
+	// unhealthy, so the message shape stays fixed and the reader checks the map.
+	activeTier, _ := netif.ActiveTier(members, states)
+	m.pusher.Send(ctx, statuspush.Status{
+		SentAt:     m.now(),
+		ActiveTier: activeTier,
+		Providers:  providers,
+	})
 }
 
 // verdictOf maps the module's hysteresis state onto the management
@@ -489,6 +542,15 @@ func (m *Module) snapshotStatuses() map[string]wanStatus {
 	statuses := make(map[string]wanStatus, len(m.statuses))
 	maps.Copy(statuses, m.statuses)
 	return statuses
+}
+
+// now reads the injected clock, falling back to the wall clock for a test that
+// builds the struct bare. Init installs the real clock on the daemon path.
+func (m *Module) now() time.Time {
+	if m.clock == nil {
+		return internalclock.Real{}.Now()
+	}
+	return m.clock.Now()
 }
 
 func advanceHealth(

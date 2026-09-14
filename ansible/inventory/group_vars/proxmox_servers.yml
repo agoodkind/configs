@@ -37,10 +37,6 @@ mwan_ifmgr_wg_ignore_peers: []
 mwan_watchdog_enabled: true
 mwan_watchdog_service_name: "mwan-watchdog"
 mwan_watchdog_unit_description: "MWAN Auto-Rollback Watchdog"
-mwan_watchdog_wan_interfaces:
-  - "enwebpass0"
-  - "enmbrains0"
-
 # Watchdog runtime tunables (seconds unless noted).
 mwan_watchdog_deploy_window_minutes: 30
 mwan_watchdog_connectivity_timeout: 60

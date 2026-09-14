@@ -26,7 +26,6 @@ func (w *watchdog) logStartupConfig(ctx context.Context) {
 		"Network config",
 		"ping_target_ipv4", w.cfg.Network.PingTargetIPv4,
 		"ping_target_ipv6", w.cfg.Network.PingTargetIPv6,
-		"wan_interfaces", strings.Join(w.cfg.Network.WanIfaceNames(), ", "),
 		"last_deploy_path", w.cfg.Network.LastDeployPath,
 	)
 	log.InfoContext(ctx,
@@ -95,6 +94,5 @@ func (w *watchdog) runStartupChecks(ctx context.Context) {
 		"ipv6", v6str,
 		"deploy_window_minutes", w.cfg.Watchdog.DeployWindowMinutes,
 		"check_interval_healthy", w.cfg.Watchdog.HealthyInterval(),
-		"wan_interfaces", strings.Join(w.cfg.Network.WanIfaceNames(), ","),
 	)
 }

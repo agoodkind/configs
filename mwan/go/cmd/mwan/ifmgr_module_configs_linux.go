@@ -231,12 +231,15 @@ func buildHealthConfig(
 		SuccessThreshold:  0,
 		FailureThreshold:  0,
 		RecoveryThreshold: 0,
+		StatusPushCID:     0,
+		StatusPushPort:    0,
 		WANs:              make([]health.WAN, 0, len(shared.WANs)),
 	}
 	if section == nil {
 		for _, wan := range shared.WANs {
 			cfg.WANs = append(cfg.WANs, health.WAN{
 				WANRef:            wan.WANRef,
+				Tier:              wan.Tier,
 				TargetsV4:         nil,
 				TargetsV6:         nil,
 				HTTPURLs:          nil,
@@ -252,6 +255,11 @@ func buildHealthConfig(
 
 	cfg.StateFile = section.StateFile
 	cfg.PersistStateFile = section.PersistStateFile
+	// The watchdog's address, not a network value: it names a vsock endpoint on
+	// this machine's hypervisor, which is why it comes from TOML beside the
+	// state files rather than from the network tree.
+	cfg.StatusPushCID = section.StatusPushCID
+	cfg.StatusPushPort = section.StatusPushPort
 
 	cfg.Timeout = time.Duration(section.ProbeTimeoutMillis) * time.Millisecond
 
@@ -273,6 +281,7 @@ func buildHealthConfig(
 		}
 		healthWAN := health.WAN{
 			WANRef:            wan.WANRef,
+			Tier:              wan.Tier,
 			TargetsV4:         nil,
 			TargetsV6:         nil,
 			HTTPURLs:          append([]string(nil), wanSection.HTTPURLs...),

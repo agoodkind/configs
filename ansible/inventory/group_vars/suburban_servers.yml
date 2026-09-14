@@ -81,9 +81,6 @@ mwan_watchdog_lock_file: "/run/mwan-watchdog-testbed-rollback.lock"
 mwan_watchdog_pve_token_id: "root@pam!watchdog-test2"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
 mwan_watchdog_unit_description: "MWAN Testbed Watchdog"
-mwan_watchdog_wan_interfaces:
-  - "enwebpass0"
-  - "enmbrains0"
 
 # mwan-ifmgr service on the host. Suburban has no OOB tunnel, so it enables
 # none of the OOB modules and declares no OOB interface or address. The role

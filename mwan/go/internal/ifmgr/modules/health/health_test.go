@@ -12,11 +12,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/notify"
+	"goodkind.io/mwan/internal/statuspush"
 )
 
 func TestAdvanceHealthAppliesConsecutiveThresholds(t *testing.T) {
@@ -644,6 +646,155 @@ func TestInitFailsWhenRuntimeStateUnwritable(t *testing.T) {
 	// test), so this asserts the runtime path stays load-bearing.
 	if err := module.Init(context.Background(), env); err == nil {
 		t.Fatal("Init must fail when the runtime state file cannot be written")
+	}
+}
+
+// fakeStatusSender records every push so the test asserts on what the module
+// actually put on the wire. The real Sender is exercised end to end in the
+// statuspush package's own round-trip test; here the question is what the
+// health module sends and when.
+type fakeStatusSender struct {
+	mu   sync.Mutex
+	sent []statuspush.Status
+}
+
+func (f *fakeStatusSender) Send(_ context.Context, status statuspush.Status) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, status)
+}
+
+func (f *fakeStatusSender) all() []statuspush.Status {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]statuspush.Status(nil), f.sent...)
+}
+
+// TestPushSendsOncePerCycleAndCarriesTheTransition is the contract the watchdog
+// depends on: every probe cycle puts one status on the wire, and the cycle that
+// flips a provider to unhealthy carries that verdict and the tier that took
+// over. Two providers, att alone in tier 0 and monkeybrains alone in tier 1, so
+// an att failure moves the active tier.
+func TestPushSendsOncePerCycleAndCarriesTheTransition(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	pusher := &fakeStatusSender{}
+	failing := func(
+		_ context.Context, iface string, _ netip.Addr, _ time.Duration,
+	) (time.Duration, error) {
+		if iface == "enatt0" {
+			return 0, errors.New("att is down")
+		}
+		return time.Millisecond, nil
+	}
+	noHTTP := func(
+		_ context.Context, _ string, _ string, _ time.Duration,
+	) (int, error) {
+		return 0, errors.New("no http")
+	}
+	module := &Module{
+		BaseModule: ifmgr.NewBaseModule("health"),
+		cfg: Config{
+			StateFile:         filepath.Join(tempDir, "mwan-health.state"),
+			PersistStateFile:  filepath.Join(tempDir, "health-state"),
+			TargetsV4:         []netip.Addr{netip.MustParseAddr("192.0.2.10")},
+			TargetsV6:         []netip.Addr{netip.MustParseAddr("2001:db8:53::1")},
+			Timeout:           time.Second,
+			Interval:          time.Second,
+			PingCount:         1,
+			SuccessThreshold:  1,
+			FailureThreshold:  1,
+			RecoveryThreshold: 1,
+			StatusPushCID:     statuspush.HostCID,
+			StatusPushPort:    statuspush.DefaultPort,
+			WANs: []WAN{
+				{WANRef: ifmgr.WANRef{Name: "att", Iface: "enatt0"}, Tier: 0},
+				{WANRef: ifmgr.WANRef{Name: "monkeybrains", Iface: "enmbrains0"}, Tier: 1},
+			},
+		},
+		statuses: map[string]wanStatus{
+			"att":          {State: StateHealthy},
+			"monkeybrains": {State: StateHealthy},
+		},
+		probeV4:    failing,
+		probeV6:    failing,
+		probeHTTP6: noHTTP,
+		probeHTTP4: noHTTP,
+		pusher:     pusher,
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	if err := module.runCycle(context.Background(), log); err != nil {
+		t.Fatalf("first runCycle: %v", err)
+	}
+	if got := len(pusher.all()); got != 1 {
+		t.Fatalf("pushes after one cycle = %d, want exactly 1", got)
+	}
+	first := pusher.all()[0]
+	if first.Providers["att"] != string(StateUnhealthy) {
+		t.Fatalf("att verdict = %q, want unhealthy", first.Providers["att"])
+	}
+	if first.Providers["monkeybrains"] != string(StateHealthy) {
+		t.Fatalf("monkeybrains verdict = %q, want healthy",
+			first.Providers["monkeybrains"])
+	}
+	if first.ActiveTier != 1 {
+		t.Fatalf("active tier = %d, want 1 after att failed", first.ActiveTier)
+	}
+	if first.SentAt.IsZero() {
+		t.Fatal("sent_at is zero")
+	}
+
+	// A steady cycle with no transition still reports, because the watchdog
+	// reads the age of the last status and a silent gateway must look silent.
+	if err := module.runCycle(context.Background(), log); err != nil {
+		t.Fatalf("second runCycle: %v", err)
+	}
+	if got := len(pusher.all()); got != 2 {
+		t.Fatalf("pushes after two cycles = %d, want 2", got)
+	}
+}
+
+// TestPushIsSkippedWhenUnconfigured proves a gateway with no push address does
+// not build a sender and does not fail a cycle for the lack of one.
+func TestPushIsSkippedWhenUnconfigured(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	passing := func(
+		_ context.Context, _ string, _ netip.Addr, _ time.Duration,
+	) (time.Duration, error) {
+		return time.Millisecond, nil
+	}
+	module := &Module{
+		BaseModule: ifmgr.NewBaseModule("health"),
+		cfg: Config{
+			StateFile:         filepath.Join(tempDir, "mwan-health.state"),
+			PersistStateFile:  filepath.Join(tempDir, "health-state"),
+			TargetsV4:         []netip.Addr{netip.MustParseAddr("192.0.2.10")},
+			TargetsV6:         []netip.Addr{netip.MustParseAddr("2001:db8:53::1")},
+			Timeout:           time.Second,
+			Interval:          time.Second,
+			PingCount:         1,
+			SuccessThreshold:  1,
+			FailureThreshold:  1,
+			RecoveryThreshold: 1,
+			WANs: []WAN{
+				{WANRef: ifmgr.WANRef{Name: "att", Iface: "enatt0"}, Tier: 0},
+			},
+		},
+		statuses: map[string]wanStatus{"att": {State: StateUnknown}},
+		probeV4:  passing,
+		probeV6:  passing,
+		pusher:   nil,
+	}
+
+	if err := module.runCycle(
+		context.Background(),
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	); err != nil {
+		t.Fatalf("runCycle with no pusher: %v", err)
 	}
 }
 

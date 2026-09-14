@@ -498,6 +498,8 @@ func (c *Config) Apply(cfg *config.Config) {
 		cfg.IfMgr.Modules.Health = &config.IfMgrHealthSection{
 			StateFile:          "",
 			PersistStateFile:   "",
+			StatusPushCID:      0,
+			StatusPushPort:     0,
 			ProbeTimeoutMillis: 0,
 			WAN:                nil,
 		}

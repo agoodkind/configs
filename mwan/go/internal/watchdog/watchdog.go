@@ -17,8 +17,16 @@ import (
 	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/ops"
 	"goodkind.io/mwan/internal/rollback"
+	"goodkind.io/mwan/internal/statuspush"
 	"goodkind.io/mwan/internal/tracing"
 )
+
+// statusSource is the gateway verdict a diagnosis reads. The watchdog depends
+// on the interface so a test seeds a verdict without a socket; the production
+// implementation is the statuspush listener run starts.
+type statusSource interface {
+	Latest() (statuspush.Status, time.Time, bool)
+}
 
 type connectivityState string
 
@@ -60,6 +68,11 @@ type watchdog struct {
 
 	// tracker may be nil when ops is not realOps (e.g. mock in tests).
 	tracker *ops.ChannelTracker
+
+	// status holds the gateway's last pushed provider verdict. Nil on a host
+	// with no listener port configured, which is every host but the two
+	// hypervisors.
+	status statusSource
 
 	lastConfigHash        string
 	lastManifest          map[string]string // path -> sha256hex from previous run
@@ -120,6 +133,7 @@ func newWatchdog(
 
 		probeLog: nil,
 		tracker:  nil,
+		status:   nil,
 
 		lastConfigHash:        "",
 		lastManifest:          nil,
@@ -792,6 +806,29 @@ func (w *watchdog) run(ctx context.Context) {
 	w.lastState = stateUnknown
 	w.lastHeartbeat = w.now()
 	iteration := 0
+
+	// The gateway pushes its provider verdict here. A listener that cannot bind
+	// leaves w.status reporting nothing received, which a diagnosis says out
+	// loud; it never fabricates a verdict and never stops the connectivity loop.
+	if w.cfg.Watchdog.StatusListenPort != 0 {
+		statusListener := statuspush.NewListener(
+			w.cfg.Watchdog.StatusListenPort,
+			w.log.With("component", "statuspush"),
+		)
+		w.status = statusListener
+		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.ErrorContext(ctx, "status listener panic",
+						"err", fmt.Errorf("panic: %v", recovered))
+				}
+			}()
+			// Run loops until it fails; it has no success return, so its
+			// error is always non-nil and always worth a log line.
+			runErr := statusListener.Run(ctx)
+			log.WarnContext(ctx, "status listener stopped", "err", runErr)
+		}()
+	}
 
 	go func() {
 		defer func() {

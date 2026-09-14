@@ -408,6 +408,7 @@ func TestBuildHealthConfig(t *testing.T) {
 		WANs: []health.WAN{
 			{
 				WANRef: ifmgr.WANRef{Name: "att", Iface: "att0"},
+				Tier:   0,
 				TargetsV4: []netip.Addr{
 					netip.MustParseAddr("192.0.2.1"),
 					netip.MustParseAddr("192.0.2.2"),
@@ -425,6 +426,7 @@ func TestBuildHealthConfig(t *testing.T) {
 			},
 			{
 				WANRef: ifmgr.WANRef{Name: "webpass", Iface: "webpass0"},
+				Tier:   1,
 				TargetsV4: []netip.Addr{
 					netip.MustParseAddr("198.51.100.1"),
 					netip.MustParseAddr("198.51.100.2"),
