@@ -6,4 +6,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/package-updater.sh
-TimeoutStartSec=1800
+# A kernel upgrade rebuilds the initramfs inside dpkg, and a start timeout that
+# fires there terminates dpkg mid-configure.
+TimeoutStartSec=infinity
+# A stop signals only the script, which lets its running apt-get or dpkg finish
+# before it exits. The default control-group mode would signal dpkg directly.
+KillMode=process
+TimeoutStopSec=infinity
