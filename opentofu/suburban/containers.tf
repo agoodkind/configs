@@ -401,11 +401,6 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
     }
   }
 
-  # No features block. The simulator needs no advanced container features, and
-  # Proxmox refuses feature-flag writes from non-root@pam actors on privileged
-  # containers: declaring nesting here is what made the create apply fail with
-  # HTTP 403 "Permission check failed".
-
   network_interface {
     name        = "eth0"
     bridge      = proxmox_network_linux_bridge.isp_astound_suburban.name
