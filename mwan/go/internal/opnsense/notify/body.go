@@ -22,6 +22,10 @@ const (
 func buildBody(message string, attrs []slog.Attr) string {
 	values := make(map[string]string, len(attrs))
 	for _, attr := range attrs {
+		// An attribute with no key has no label to render, so it is skipped.
+		if attr.Key == "" {
+			continue
+		}
 		values[attr.Key] = attr.Value.String()
 	}
 	sections := []string{message}
