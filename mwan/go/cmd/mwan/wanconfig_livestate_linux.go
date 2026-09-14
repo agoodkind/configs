@@ -164,10 +164,11 @@ func interfacesLiveItems(snap wanstate.Snapshot, gateway wanconfig.Gateway) []ya
 
 // ownedAddressItems serves the addresses a member's link holds for its static
 // mappings. The wan container is a presence container whose name leaf is
-// mandatory, and the configuration publish does not write that container, so
-// the provider's name is served beside the leaf-list rather than leaving a
-// container without its mandatory leaf. Leaf-list entries are addressed by
-// value, the way the configuration publish addresses its own leaf-lists.
+// mandatory. The configuration publish writes that container with its name,
+// but a provider answers an operational read on its own, so the name is served
+// beside the leaf-list rather than relying on the configuration to supply it.
+// Leaf-list entries are addressed by value, the way the configuration publish
+// addresses its own leaf-lists.
 func ownedAddressItems(member wanconfig.Member, owned []netip.Addr) []yangpub.Item {
 	if len(owned) == 0 {
 		return nil

@@ -107,6 +107,11 @@ type IfMgrWANEntry struct {
 	FromPrio   int
 	NptPrefix  string
 	V4Source   string
+	// ForcedDSCP is the DSCP value that forces a new flow onto this provider,
+	// or zero when the provider carries none. Zero is free to mean absent
+	// because the model ranges the leaf from 1, since every unmarked packet
+	// carries zero.
+	ForcedDSCP int
 	// Tier is the preference tier. The lowest-numbered tier holding at least
 	// one healthy provider is the tier that carries new connections.
 	Tier uint8
@@ -152,13 +157,19 @@ type IfMgrHealthSection struct {
 
 // IfMgrHealthWANSection is one provider's probe policy, read from network.json.
 // The interval is seconds because that is the unit the model carries it in.
+//
+// The counts and the interval are pointers because a disabled probe keeps
+// whichever settings its file carries, and the management surface serves
+// exactly those. A nil value is a leaf the file left out, which a zero could
+// not express: zero is a value the model accepts. An enabled probe always
+// carries all five, because the loader refuses one that does not.
 type IfMgrHealthWANSection struct {
 	Enabled              bool
-	PingCount            int
-	SuccessThreshold     int
-	CheckIntervalSeconds int
-	FailureThreshold     int
-	RecoveryThreshold    int
+	PingCount            *int
+	SuccessThreshold     *int
+	CheckIntervalSeconds *int
+	FailureThreshold     *int
+	RecoveryThreshold    *int
 	TargetsV4            []string
 	TargetsV6            []string
 	HTTPURLs             []string

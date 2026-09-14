@@ -30,13 +30,13 @@ func (r *recordingPublisher) ReplaceConfig(_ context.Context, ownedPaths []strin
 // one replace of exactly the owned subtrees carrying the projected items.
 func TestPublish_ReplacesOwnedSubtreesWithTheProjection(t *testing.T) {
 	t.Parallel()
+	member := testMember("att", "enatt0")
+	member.ProbePolicy = "att"
+	member.NPTInternal = netip.MustParsePrefix("3d06:bad:b01:210::/60")
+	member.NPTExternal = netip.MustParsePrefix("2001:db8:a::/60")
 	gateway := Gateway{
 		InternalIface: "eninternal0",
-		Members: []Member{{
-			Name: "att", Iface: "enatt0", Tier: 0, Weight: 1, ProbePolicy: "att",
-			NPTInternal: netip.MustParsePrefix("3d06:bad:b01:210::/60"),
-			NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
-		}},
+		Members:       []Member{member},
 	}
 	rec := &recordingPublisher{}
 
@@ -79,15 +79,19 @@ func TestPublish_NeverWritesAnInvalidGateway(t *testing.T) {
 }
 
 // TestPublish_SurfacesTheDatastoreFailure pins that a datastore rejection
-// comes back to the caller, who logs it and keeps the daemon running.
+// comes back to the caller, who logs it and keeps the daemon running. The
+// gateway is valid, so the error can only come from the datastore call.
 func TestPublish_SurfacesTheDatastoreFailure(t *testing.T) {
 	t.Parallel()
 	rejection := errors.New("session start failed")
 	rec := &recordingPublisher{err: rejection}
 	err := Publish(context.Background(), slog.Default(), rec, Gateway{
 		InternalIface: "eninternal0",
-		Members:       []Member{{Name: "att", Iface: "enatt0", Tier: 0, Weight: 1}},
+		Members:       []Member{testMember("att", "enatt0")},
 	})
+	if rec.calls != 1 {
+		t.Fatalf("ReplaceConfig calls = %d, want 1: the gateway never reached the datastore", rec.calls)
+	}
 	if !errors.Is(err, rejection) {
 		t.Fatalf("err = %v, want the datastore rejection", err)
 	}

@@ -152,11 +152,11 @@ func TestLoadValidFile(t *testing.T) {
 	if _, probed := loaded.Health["att"]; probed {
 		t.Fatal("att carries no health container and must hold no probe")
 	}
-	if got := loaded.Health["webpass"].CheckIntervalSeconds; got != 10 {
-		t.Fatalf("webpass check interval = %d, want 10", got)
+	if got := loaded.Health["webpass"].CheckIntervalSeconds; got == nil || *got != 10 {
+		t.Fatalf("webpass check interval = %v, want 10", got)
 	}
-	if got := loaded.Health["webpass"].SuccessThreshold; got != 2 {
-		t.Fatalf("webpass success threshold = %d, want 2", got)
+	if got := loaded.Health["webpass"].SuccessThreshold; got == nil || *got != 2 {
+		t.Fatalf("webpass success threshold = %v, want 2", got)
 	}
 	if got := loaded.ProbeTimeoutMillis; got != 2000 {
 		t.Fatalf("probe timeout = %d, want 2000", got)
@@ -238,8 +238,68 @@ func TestLoadAcceptsADisabledProbeWithNoSettings(t *testing.T) {
 	if probe.Enabled {
 		t.Fatal("att probe loaded as enabled")
 	}
-	if probe.PingCount != 0 || len(probe.TargetsV6) != 0 {
-		t.Fatalf("disabled probe carries settings: %+v", probe)
+	if probe.PingCount != nil || len(probe.TargetsV6) != 0 {
+		t.Fatalf("disabled probe carries settings the file left out: %+v", probe)
+	}
+}
+
+func TestLoadKeepsEverySettingOfADisabledProbe(t *testing.T) {
+	t.Parallel()
+
+	// The inventory renders all nine settings for a disabled probe, and the
+	// management surface serves the probe from the loaded section. A setting
+	// dropped here would be missing from the served tree while the file still
+	// carries it.
+	body := strings.Replace(
+		validDocument,
+		`"npt-prefix": "2001:db8:beef:100::/60"`,
+		`"npt-prefix": "2001:db8:beef:100::/60", "health": {
+            "enabled": false,
+            "ping-count": 4,
+            "success-threshold": 1,
+            "failure-threshold": 5,
+            "recovery-threshold": 6,
+            "check-interval": 0,
+            "targets-v4": ["192.0.2.20"],
+            "targets-v6": ["2001:db8:53::20"],
+            "http-urls": ["https://example.test/att"]
+          }`,
+		1,
+	)
+	loaded, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err != nil {
+		t.Fatalf("Load rejected a disabled probe carrying its settings: %v", err)
+	}
+	probe, present := loaded.Health["att"]
+	if !present || probe.Enabled {
+		t.Fatalf("att probe = %+v, present = %v, want a disabled probe", probe, present)
+	}
+	counts := map[string]*int{
+		"ping-count":         probe.PingCount,
+		"success-threshold":  probe.SuccessThreshold,
+		"failure-threshold":  probe.FailureThreshold,
+		"recovery-threshold": probe.RecoveryThreshold,
+		"check-interval":     probe.CheckIntervalSeconds,
+	}
+	want := map[string]int{
+		"ping-count":         4,
+		"success-threshold":  1,
+		"failure-threshold":  5,
+		"recovery-threshold": 6,
+		// Zero is a value the model accepts, so it must survive as a value
+		// rather than read as a leaf the file left out.
+		"check-interval": 0,
+	}
+	for leaf, value := range want {
+		got := counts[leaf]
+		if got == nil || *got != value {
+			t.Fatalf("health/%s = %v, want %d", leaf, got, value)
+		}
+	}
+	if !reflect.DeepEqual(probe.TargetsV4, []string{"192.0.2.20"}) ||
+		!reflect.DeepEqual(probe.TargetsV6, []string{"2001:db8:53::20"}) ||
+		!reflect.DeepEqual(probe.HTTPURLs, []string{"https://example.test/att"}) {
+		t.Fatalf("disabled probe lists = %+v, want the file's lists", probe)
 	}
 }
 
@@ -427,8 +487,17 @@ func TestLoadAcceptsAForcedDSCP(t *testing.T) {
 		`"npt-prefix": "2001:db8:beef:100::/60", "forced-dscp": 8`,
 		1,
 	)
-	if _, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t)); err != nil {
+	loaded, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err != nil {
 		t.Fatalf("Load rejected a provider with a forced DSCP value: %v", err)
+	}
+	// The management surface serves the value from the loaded entry, so the
+	// loader must hold it rather than only check it.
+	if got := loaded.WAN["att"].ForcedDSCP; got != 8 {
+		t.Fatalf("att forced DSCP = %d, want 8", got)
+	}
+	if got := loaded.WAN["webpass"].ForcedDSCP; got != 0 {
+		t.Fatalf("webpass forced DSCP = %d, want 0 for a provider carrying none", got)
 	}
 }
 
