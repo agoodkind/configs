@@ -117,26 +117,6 @@ type OPNsenseSection struct {
 	// Defaults to "agoodkind". OPNsense operations that need root are
 	// wrapped with "sudo" automatically.
 	SSHUser string `toml:"ssh_user"`
-
-	// Host, Probe, Upgrade, Validate, and ConfigImport are the [opnsense.*]
-	// subsections for the gRPC-over-virtio-serial transport between the Proxmox
-	// host and the OPNsense guest.
-	Host         OpnsenseHostSection         `toml:"host"`
-	Drain        OpnsenseDrainSection        `toml:"drain"`
-	Probe        OpnsenseProbeSection        `toml:"probe"`
-	Upgrade      OpnsenseUpgradeSection      `toml:"upgrade"`
-	Validate     OpnsenseValidateSection     `toml:"validate"`
-	ConfigImport OpnsenseConfigImportSection `toml:"config_import"`
-}
-
-// OpnsenseConfigImportSection configures the `mwan opnsense config import`
-// verb. Substitutions is the YAML path describing the find/replace rules
-// applied to the redacted prod XML, and Output is where the transformed
-// XML lands. The SOURCE argument is positional on the command line; only
-// Substitutions and Output are operator-tunable enough to live in TOML.
-type OpnsenseConfigImportSection struct {
-	Substitutions string `toml:"substitutions"`
-	Output        string `toml:"output"`
 }
 
 // OPNsenseBGP describes the BGP configuration to push to OPNsense via its API.
@@ -152,139 +132,6 @@ type OPNsenseBGPNeighbor struct {
 	Address     string `toml:"address"`
 	Description string `toml:"description"`
 	Preference  string `toml:"preference"` // "primary" or "backup"
-}
-
-// OpnsenseHostSection configures the mwan-opnsense-host daemon that runs
-// on the Proxmox host. Duration fields use the IfMgr style (string parsed
-// at use site via [time.ParseDuration]) so the wire format matches the
-// rest of the file.
-type OpnsenseHostSection struct {
-	Upstream                  string `toml:"upstream"`
-	Listen                    string `toml:"listen"`
-	ReconnectDuration         string `toml:"reconnect"`
-	HeartbeatIntervalDuration string `toml:"heartbeat_interval"`
-	HeartbeatTimeoutDuration  string `toml:"heartbeat_timeout"`
-}
-
-// OpnsenseDrainSection configures the mwan-opnsense-drain daemon that runs
-// on the Proxmox host. The drainer holds the qemu virtio-serial chardev open
-// and always reads it so a bridge restart never disconnects the host side and
-// strands a guest write in the kernel. Chardev is the qemu chardev unix socket
-// the drainer dials and holds; Listen is the relay socket the bridge dials in
-// place of the chardev. See docs/ops/opnsense/wedge.md.
-type OpnsenseDrainSection struct {
-	Chardev string `toml:"chardev"`
-	Listen  string `toml:"listen"`
-}
-
-// OpnsenseProbeSection configures the mwan-probe client that talks to
-// the host daemon over the local Unix socket.
-type OpnsenseProbeSection struct {
-	Target           string `toml:"target"`
-	TimeoutDuration  string `toml:"timeout"`
-	UploadChunkBytes int    `toml:"upload_chunk_bytes"`
-	// TransferStallDuration bounds file transfers by lack of progress
-	// rather than total wall-clock time. A transfer succeeds as long as
-	// bytes keep flowing and fails only after this much time with no
-	// progress. Empty falls back to a built-in default, because a large
-	// transfer must never be killed by a fixed whole-transfer deadline.
-	TransferStallDuration string `toml:"transfer_stall_timeout"`
-}
-
-// OpnsenseUpgradeSection configures the mwan upgrade orchestrator. Operator
-// tunables live here. EnvTransport is retained for forward compatibility, and
-// the CLI currently uses the gRPC path.
-type OpnsenseUpgradeSection struct {
-	VMID                     int    `toml:"vmid"`
-	EnvTransport             string `toml:"env_transport"`
-	EnvGRPCTarget            string `toml:"env_grpc_target"`
-	StateDir                 string `toml:"state_dir"`
-	ExecTimeoutDuration      string `toml:"exec_timeout"`
-	UpgradeTimeoutDuration   string `toml:"upgrade_timeout"`
-	PostRollbackWaitDuration string `toml:"post_rollback_wait"`
-	OPNsenseSSH              string `toml:"opnsense_ssh"`
-	OPNsenseJump             string `toml:"opnsense_jump"`
-	ProxmoxSSH               string `toml:"proxmox_ssh"`
-	LANClientSSH             string `toml:"lan_client_ssh"`
-	OPNsenseAddr             string `toml:"opnsense_addr"`
-
-	// Target is the OPNsense release the upgrade is heading toward
-	// (e.g. "26.7"). It is optional. When it names a release series other
-	// than the installed core package's, execute runs a major upgrade;
-	// otherwise execute applies the updates pending inside the installed
-	// series. Validate also receives it.
-	Target string `toml:"target"`
-
-	// DryRunExecute makes execute report the pending firmware update,
-	// and whether it would reboot, without installing anything or
-	// rebooting.
-	DryRunExecute bool `toml:"dry_run_execute"`
-
-	// UseBootEnvironment requests a bectl boot-environment alongside
-	// the snapshot.
-	UseBootEnvironment bool `toml:"use_boot_environment"`
-
-	// AcceptPartial treats a partial-pass validate as a manual-decision
-	// state instead of failing the phase outright.
-	AcceptPartial bool `toml:"accept_partial"`
-
-	// KeepSnapshot retains the upgrade snapshot during commit; gc sweeps
-	// it later.
-	KeepSnapshot bool `toml:"keep_snapshot"`
-
-	// GCOlderThan is the gc age threshold.
-	GCOlderThan string `toml:"gc_older_than"`
-
-	// ResetConfirm gates the reset phase's apply path. When false (the
-	// default), reset prints the plan and exits with 2 so the operator
-	// can review it; when true, reset applies the plan via
-	// upgrade.ResetExecute.
-	ResetConfirm bool `toml:"reset_confirm"`
-
-	// DiffAgainst is an optional path to a baseline JSON file. When
-	// non-empty, the validate phase diffs the freshly captured baseline
-	// against it via validate.Diff and prints the report.
-	DiffAgainst string `toml:"diff_against"`
-
-	// Validate is the inlined validator subsection so the upgrade
-	// orchestrator can drive the same matrix as the validate verb
-	// without duplicating every field.
-	Validate OpnsenseUpgradeValidateSection `toml:"validate"`
-}
-
-// OpnsenseUpgradeValidateSection holds the validator inputs the upgrade
-// phases share with the standalone validate verb.
-type OpnsenseUpgradeValidateSection struct {
-	APIKey               string `toml:"api_key"`
-	APISecret            string `toml:"api_secret"`
-	BGPv4Neighbors       string `toml:"bgp_v4_neighbors"`
-	BGPv6Neighbors       string `toml:"bgp_v6_neighbors"`
-	OPNsenseLAN          string `toml:"opnsense_lan"`
-	MWANOpnsenseSocket   string `toml:"mwan_opnsense_socket"`
-	MWANOpnsenseHostSock string `toml:"mwan_opnsense_host_socket"`
-	SettleAfterUpgrade   string `toml:"settle_after_upgrade"`
-}
-
-// OpnsenseValidateSection configures the standalone validate verb. The
-// CLI surface accepts no flags; every input lives here.
-type OpnsenseValidateSection struct {
-	EnvTransport         string `toml:"env_transport"`
-	EnvGRPCTarget        string `toml:"env_grpc_target"`
-	StateDir             string `toml:"state_dir"`
-	OPNsenseSSH          string `toml:"opnsense_ssh"`
-	OPNsenseJump         string `toml:"opnsense_jump"`
-	ProxmoxSSH           string `toml:"proxmox_ssh"`
-	LANClientSSH         string `toml:"lan_client_ssh"`
-	OPNsenseAddr         string `toml:"opnsense_addr"`
-	APIKey               string `toml:"api_key"`
-	APISecret            string `toml:"api_secret"`
-	BGPv4Neighbors       string `toml:"bgp_v4_neighbors"`
-	BGPv6Neighbors       string `toml:"bgp_v6_neighbors"`
-	OPNsenseLAN          string `toml:"opnsense_lan"`
-	MWANOpnsenseSocket   string `toml:"mwan_opnsense_socket"`
-	MWANOpnsenseHostSock string `toml:"mwan_opnsense_host_socket"`
-	SettleAfterUpgrade   string `toml:"settle_after_upgrade"`
-	Timeout              string `toml:"timeout"`
 }
 
 // BGPSection holds embedded GoBGP speaker configuration.
@@ -459,87 +306,8 @@ type IfMgrIfaceSection struct {
 	DHCPMaxBackoff     string `toml:"dhcp_max_backoff"`
 }
 
-// defaultDrainSocket is the relay socket the chardev drainer listens on and the
-// host bridge dials. [opnsense.host].upstream and [opnsense.drain].listen must
-// name the same path, so both derive from this one constant to avoid drift.
-const defaultDrainSocket = "/var/run/mwan-opnsense-drain.sock"
-
 func defaultConfig() Config {
-	cfg := defaultConfigBase()
-	// Populate the [opnsense.*] subsections outside the base Config literal.
-	cfg.OPNsense.Host = OpnsenseHostSection{
-		Upstream:                  "unix://" + defaultDrainSocket,
-		Listen:                    "/var/run/mwan-opnsense.sock",
-		ReconnectDuration:         "2s",
-		HeartbeatIntervalDuration: "30s",
-		HeartbeatTimeoutDuration:  "10s",
-	}
-	cfg.OPNsense.Drain = OpnsenseDrainSection{
-		Chardev: "unix:///var/run/qemu-server/101.mwanrpc",
-		Listen:  defaultDrainSocket,
-	}
-	cfg.OPNsense.Probe = OpnsenseProbeSection{
-		Target:                "unix:///var/run/mwan-opnsense.sock",
-		TimeoutDuration:       "10s",
-		UploadChunkBytes:      16384,
-		TransferStallDuration: "30s",
-	}
-	cfg.OPNsense.Upgrade = OpnsenseUpgradeSection{
-		VMID:                     101,
-		EnvTransport:             "grpc",
-		EnvGRPCTarget:            "unix:///var/run/mwan-opnsense.sock",
-		StateDir:                 "/var/lib/mwan/upgrades",
-		ExecTimeoutDuration:      "60m",
-		UpgradeTimeoutDuration:   "30m",
-		PostRollbackWaitDuration: "5m",
-		OPNsenseSSH:              "",
-		OPNsenseJump:             "",
-		ProxmoxSSH:               "",
-		LANClientSSH:             "",
-		OPNsenseAddr:             "",
-		Target:                   "",
-		DryRunExecute:            false,
-		UseBootEnvironment:       false,
-		AcceptPartial:            false,
-		KeepSnapshot:             false,
-		GCOlderThan:              "168h",
-		ResetConfirm:             false,
-		DiffAgainst:              "",
-		Validate: OpnsenseUpgradeValidateSection{
-			APIKey:               "",
-			APISecret:            "",
-			BGPv4Neighbors:       "",
-			BGPv6Neighbors:       "",
-			OPNsenseLAN:          "",
-			MWANOpnsenseSocket:   "",
-			MWANOpnsenseHostSock: "",
-			SettleAfterUpgrade:   "5m",
-		},
-	}
-	cfg.OPNsense.Validate = OpnsenseValidateSection{
-		EnvTransport:         "grpc",
-		EnvGRPCTarget:        "unix:///var/run/mwan-opnsense.sock",
-		StateDir:             "/var/lib/mwan/upgrades",
-		OPNsenseSSH:          "",
-		OPNsenseJump:         "",
-		ProxmoxSSH:           "",
-		LANClientSSH:         "",
-		OPNsenseAddr:         "",
-		APIKey:               "",
-		APISecret:            "",
-		BGPv4Neighbors:       "",
-		BGPv6Neighbors:       "",
-		OPNsenseLAN:          "",
-		MWANOpnsenseSocket:   "",
-		MWANOpnsenseHostSock: "",
-		SettleAfterUpgrade:   "5m",
-		Timeout:              "10m",
-	}
-	cfg.OPNsense.ConfigImport = OpnsenseConfigImportSection{
-		Substitutions: "",
-		Output:        "",
-	}
-	return cfg
+	return defaultConfigBase()
 }
 
 func defaultConfigBase() Config {
@@ -646,9 +414,6 @@ const (
 	SubAgent Subcommand = "agent"
 	// SubIfMgr routes config validation through validateIfMgr.
 	SubIfMgr Subcommand = "ifmgr"
-	// SubOpnsense routes config validation through validateOpnsense for
-	// the mwan-opnsense-host / mwan-probe / mwan-upgrade / mwan-validate family.
-	SubOpnsense Subcommand = "opnsense"
 )
 
 // Validate validates the Config for a specific subcommand.
@@ -666,15 +431,7 @@ func Validate(cfg *Config, sub string, dryRun bool) error {
 		return nil
 	case SubIfMgr:
 		return validateIfMgr(cfg)
-	case SubOpnsense:
-		return validateOpnsense(cfg)
 	}
-	return nil
-}
-
-// validateOpnsense is a no-op stub today. The [opnsense.*] subsections are
-// schema-only at this layer.
-func validateOpnsense(_ *Config) error {
 	return nil
 }
 
