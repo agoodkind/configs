@@ -582,6 +582,14 @@
         # strategy, every node would be prepared, and stopped, before any
         # started.
         #
+        # The start runs whatever node-prepare returned, because node-prepare
+        # can stop the node and still exit non-zero; skipping the start then
+        # left the node down, and the run moved on to stop the next one
+        # (TACK-497, production quorum lost on 2026-09-13). Starting a running
+        # node is a no-op. The run still fails on node-prepare's status after
+        # the start, and any_errors_fatal ends the whole run at the first
+        # failed guest so no second node is touched.
+        #
         # A node that just received a new certificate cannot become healthy on
         # its own: the engine encrypts peer traffic with it, and its peers
         # still speak the old way until their own restart, so the quorum only
@@ -594,14 +602,17 @@
         - name: Prepare, start, and wait on the ledger node (one guest at a time; first start joins)
           ansible.builtin.shell:
             cmd: >-
-              docker compose run --rm tack-ops ops ledger node-prepare --execute {{ tack_ops_identity_flags }}
-              && docker compose up -d yugabyte
+              docker compose run --rm tack-ops ops ledger node-prepare --execute {{ tack_ops_identity_flags }};
+              prepare_status=$?;
+              docker compose up -d yugabyte
+              && (exit "$prepare_status")
               {{ '' if tack_ledger_node_certificate_rotated | bool
                  else '&& docker compose run --rm tack-ops ops ledger node-wait --execute ' + tack_ops_identity_flags }}
             chdir: "{{ tack_install_dir }}"
             executable: /bin/bash
           changed_when: true
           throttle: 1
+          any_errors_fatal: true
 
         - name: Wait until every ledger node is healthy (certificate rotation)
           ansible.builtin.command:
