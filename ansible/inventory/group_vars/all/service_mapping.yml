@@ -259,14 +259,16 @@ service_mapping:
     ipv4: "10.240.4.5"
     ipv6: "3d06:bad:b01:210::5"
 
-  # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM
-  # and serves DHCPv6-PD and RA on it. They have no production counterpart, so
-  # they sit in 9xx and their addresses are gateways on their own simulated
-  # subnets that production never uses.
+  # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM.
+  # The IPv6-capable sims also serve DHCPv6-PD and RA on their link; astound is
+  # IPv4-only and serves neither. They have no production counterpart, so they
+  # sit in 9xx and their addresses are gateways on their own simulated subnets
+  # that production never uses.
   #
   # The uplink addresses sit on vmbr1 behind suburban, which routes the sims'
   # internet traffic out to Comcast and returns tunnel and testbed traffic.
-  # Uplink host suffixes are 90-92, below 100, so they can never read as VMIDs.
+  # Uplink host suffixes are 90-92 and 94 (93 is router2_suburban's, between
+  # them), below 100, so they can never read as VMIDs.
   #
   # inventory: false keeps them out of the SSH inventory. deploy-testbed.yml
   # configures them through pct from the hypervisor, so Ansible never connects
@@ -298,6 +300,14 @@ service_mapping:
     ipv4: "10.240.206.1"
     ipv4_uplink: "10.240.200.92"
     ipv6_uplink: "3d06:bad:b01:200::92"
+  isp_astound_suburban:
+    hostname: isp-astound.suburban.goodkind.io
+    vmid: 903
+    inventory: false
+    # IPv4-only: the real Astound circuit carries no IPv6, so this sim has no
+    # ipv6_uplink, unlike the other three ISP sims.
+    ipv4: "10.240.207.1"
+    ipv4_uplink: "10.240.200.94"
 
   # Second-router simulator, testbed only. An FRR speaker on the transit link
   # that peers with both MWAN speakers in the iBGP AS and announces the prefix

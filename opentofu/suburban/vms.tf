@@ -17,6 +17,7 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
     proxmox_network_linux_bridge.isp_webpass_suburban,
     proxmox_network_linux_bridge.isp_att_suburban,
     proxmox_network_linux_bridge.isp_mbrains_suburban,
+    proxmox_network_linux_bridge.isp_astound_suburban,
   ]
 
   machine       = "q35"
@@ -92,6 +93,12 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
     bridge      = proxmox_network_linux_bridge.isp_mbrains_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:3D:CE:CC"
+  }
+
+  network_device {
+    bridge      = proxmox_network_linux_bridge.isp_astound_suburban.name
+    model       = "virtio"
+    mac_address = "BC:24:11:A5:70:06"
   }
 
   # No initialization block: the VM carries no cloud-init drive or values.

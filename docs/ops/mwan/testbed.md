@@ -37,26 +37,34 @@ succeeds against it. With no id in common the same mistake fails outright.
 The [testbed OPNsense recovery guide](../opnsense/testbed/access.md) uses the
 serial channel when network access is unavailable.
 
-Each ISP simulator terminates one WAN link for the MWAN VM, serves DHCPv6-PD
-through kea-dhcp6 and router advertisements through radvd, and uplinks through
+Each ISP simulator terminates one WAN link for the MWAN VM and uplinks through
 suburban, which returns tunnel and testbed traffic and masquerades internet
-traffic out to Comcast. Each sim declares capability flags and downstream
+traffic out to Comcast. The three IPv6-capable sims also serve DHCPv6-PD
+through kea-dhcp6 and router advertisements through radvd; astound is
+IPv4-only and runs neither. Each sim declares capability flags and downstream
 subnets in the suburban group vars, with a comment beside each flag
 explaining it.
 
-The three sims differ because the real WANs do. Monkeybrains runs the full
-dynamic stack, so the MWAN VM receives a DHCPv4 lease, a DHCPv6 address, a
-delegated prefix, and a SLAAC address exactly as the real Monkeybrains delivers.
-AT&T offers a dynamic DHCPv4 link pinned stable by a MAC reservation, over which
-the sim routes a static block that the MWAN VM translates one-to-one to its
-internal services; the testbed cannot reproduce 802.1X or the VLAN, so that link
-is a plain NIC. Webpass offers a static link that sits inside its own static
-block, as production Webpass does, so the MWAN VM holds its mapped addresses on
-that link and the sim routes no block.
+The four sims differ because the real WANs do. Monkeybrains runs the full
+dynamic stack, so the MWAN VM
+receives a DHCPv4 lease, a DHCPv6 address, a delegated prefix, and a SLAAC
+address exactly as the real Monkeybrains delivers. AT&T offers a dynamic
+DHCPv4 link pinned stable by a MAC reservation, over which the sim routes a
+static block that the MWAN VM translates one-to-one to its internal services;
+the testbed cannot reproduce 802.1X or the VLAN, so that link is a plain NIC.
+Webpass offers a static link that sits inside its own static block, as
+production Webpass does, so the MWAN VM holds its mapped addresses on that
+link and the sim routes no block. Astound offers a dynamic DHCPv4 link pinned
+stable by a MAC reservation and carries no IPv6 at all: no delegated prefix,
+no routed static block, and no SLAAC address, matching the real Astound
+circuit. It proves that a plain IPv4-only link can be added this way, nothing
+more. The gateway does not yet steer traffic through it: the link comes up so
+a provider can be added, re-tiered, and removed against real hardware.
 
-Prefix delegation sizes match production, and NPT translates the first `/60` of
-each delegation. The delegated prefixes deliberately avoid the `02xx` space that
-management, LAN, internal, and SLAAC already use.
+Prefix delegation sizes match production, and NPT translates the first `/60`
+of each delegation. The delegated prefixes deliberately avoid the `02xx` space
+that management, LAN, internal, and SLAAC already use. Astound delegates no
+prefix, so NPT has nothing to translate for it.
 
 ## Production vs testbed
 

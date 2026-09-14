@@ -18,6 +18,7 @@ table ip nat {
     }
 }
 
+{% if isp.ipv6_enabled | bool %}
 # Both families masquerade only the sim's own downstream sources. Return
 # traffic the sim forwards toward suburban (tunnel and testbed destinations)
 # keeps its original source, so the far end's TCP sees the address it dialed.
@@ -31,6 +32,7 @@ table ip6 nat {
     }
 }
 
+{% endif %}
 table inet filter {
     chain forward {
         type filter hook forward priority filter; policy accept;
