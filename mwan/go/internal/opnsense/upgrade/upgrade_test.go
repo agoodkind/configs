@@ -3,9 +3,11 @@ package upgrade
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -129,95 +131,284 @@ type execCall struct {
 	Args []string
 }
 
+// fakeExec is the guest behind the Executor seam. The prepare captures
+// (cat, ifconfig, netstat, vtysh) answer from byCommand, and every
+// firmware command answers from the firmware model.
 type fakeExec struct {
 	mu sync.Mutex
 
-	calls   []execCall
-	results []GuestExecResult
-	errs    []error
-	idx     int
-	delay   time.Duration
+	calls []execCall
 
-	// byCommand overrides results for specific argv[0] values. The
-	// upgrade prepare phase issues capture commands (cat, ifconfig,
-	// netstat, vtysh, opnsense-version) before the upgrade itself; this
-	// map lets a test return a specific result for one of those without
-	// disturbing the sequential `results` slice that drives the upgrade
-	// command itself.
+	// byArgv overrides the result for one exact argv joined by spaces.
+	byArgv map[string]GuestExecResult
+	// byCommand overrides the result for every argv whose argv[0]
+	// matches.
 	byCommand map[string]GuestExecResult
 	// errByCommand mirrors byCommand for the error return.
 	errByCommand map[string]error
-	// byCommandSeq allows a test to return different results on successive
-	// calls to the same command. When a command's argv[0] appears in
-	// byCommandSeq, each call advances the per-command index; when the
-	// index is exhausted the last entry is repeated. byCommandSeq takes
-	// priority over byCommand.
-	byCommandSeq    map[string][]GuestExecResult
-	byCommandSeqIdx map[string]int
+	// firmware answers every other command the way an OPNsense guest does.
+	firmware *fakeFirmware
 }
 
-func (e *fakeExec) GuestExec(ctx context.Context, vmid string, args ...string) (GuestExecResult, error) {
+func (e *fakeExec) GuestExec(_ context.Context, vmid string, args ...string) (GuestExecResult, error) {
 	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.calls = append(e.calls, execCall{VMID: vmid, Args: append([]string(nil), args...)})
-	if len(args) > 0 {
-		if seq, ok := e.byCommandSeq[args[0]]; ok {
-			i := e.byCommandSeqIdx[args[0]]
-			if i >= len(seq) {
-				i = len(seq) - 1
-			}
-			res := seq[i]
-			if e.byCommandSeqIdx == nil {
-				e.byCommandSeqIdx = map[string]int{}
-			}
-			e.byCommandSeqIdx[args[0]] = i + 1
-			delay := e.delay
-			e.mu.Unlock()
-			if delay > 0 {
-				select {
-				case <-time.After(delay):
-				case <-ctx.Done():
-					return GuestExecResult{}, ctx.Err()
-				}
-			}
-			return res, nil
+	if len(args) == 0 {
+		return GuestExecResult{}, errors.New("fakeExec: empty argv")
+	}
+	if res, ok := e.byArgv[strings.Join(args, " ")]; ok {
+		return res, nil
+	}
+	if res, ok := e.byCommand[args[0]]; ok {
+		return res, e.errByCommand[args[0]]
+	}
+	return e.firmware.exec(args)
+}
+
+func (e *fakeExec) argvs() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]string, 0, len(e.calls))
+	for _, c := range e.calls {
+		out = append(out, strings.Join(c.Args, " "))
+	}
+	return out
+}
+
+// fakeFirmware models the firmware commands of an OPNsense guest. Outputs
+// and exit codes follow opnsense/update src/update/opnsense-update.sh.in
+// and the opnsense/core firmware scripts, and each command that installs
+// software or reboots changes the modelled state the way the guest would.
+type fakeFirmware struct {
+	corePackage      string
+	coreVersion      string
+	coreAvailable    string
+	updaterVersion   string
+	updaterAvailable string
+	baseVersion      string
+	kernelVersion    string
+	alwaysReboot     bool
+
+	// packageUpdateExit is the exit code of opnsense-update -p. A failed
+	// pkg upgrade exits 1 (opnsense-update.sh.in:786-790).
+	packageUpdateExit int
+	// coreStuck leaves the core package at its installed version even
+	// though the package update exits 0.
+	coreStuck bool
+	// bootsOldSets brings the guest back on the base and kernel it ran
+	// before opnsense-update -bk installed new ones.
+	bootsOldSets bool
+
+	stagedRelease string
+	oldBase       string
+	oldKernel     string
+	mutations     []string
+	reboots       int
+}
+
+// productionHotfix is the production router on 2026-09-14: core package
+// 26.7.3_8 installed, 26.7.3_11 offered, and no new base or kernel.
+func productionHotfix() *fakeFirmware {
+	return &fakeFirmware{
+		corePackage:      "opnsense",
+		coreVersion:      "26.7.3_8",
+		coreAvailable:    "26.7.3_11",
+		updaterVersion:   "26.7.3",
+		updaterAvailable: "26.7.3",
+		baseVersion:      "26.7.3",
+		kernelVersion:    "26.7.3",
+	}
+}
+
+const pkgCatalogueOutput = "Updating OPNsense repository catalogue...\n" +
+	"Fetching meta.conf: . done\n" +
+	"Fetching data.pkg: .......... done\n" +
+	"Processing entries: .......... done\n" +
+	"OPNsense repository update completed. 874 packages processed.\n" +
+	"All repositories are up to date.\n"
+
+func fwOK(stdout string) (GuestExecResult, error) {
+	return GuestExecResult{ExitCode: 0, Stdout: stdout, Stderr: ""}, nil
+}
+
+func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
+	command := strings.Join(args, " ")
+	switch command {
+	case "true":
+		return fwOK("")
+	case "opnsense-version":
+		return fwOK("OPNsense " + f.coreVersion + " (amd64)\n")
+	case "opnsense-version -n":
+		return fwOK(f.corePackage + "\n")
+	case guestPkg + " update":
+		return fwOK(pkgCatalogueOutput)
+	case guestPkg + " query %v " + f.corePackage:
+		return fwOK(f.coreVersion + "\n")
+	case guestPkg + " rquery %v " + f.corePackage:
+		return fwOK(f.coreAvailable + "\n")
+	case guestPkg + " rquery %v opnsense-update":
+		return fwOK(f.updaterAvailable + "\n")
+	case guestPkg + " query %n-%v":
+		return fwOK(fmt.Sprintf("opnsense-%s\nopnsense-update-%s\nos-frr-1.45\n", f.coreVersion, f.updaterVersion))
+	case guestPluginctl + " -g system.firmware.reboot":
+		if f.alwaysReboot {
+			return fwOK("1\n")
 		}
-		if res, ok := e.byCommand[args[0]]; ok {
-			err := e.errByCommand[args[0]]
-			delay := e.delay
-			e.mu.Unlock()
-			if delay > 0 {
-				select {
-				case <-time.After(delay):
-				case <-ctx.Done():
-					return GuestExecResult{}, ctx.Err()
-				}
-			}
-			return res, err
+		return fwOK("\n")
+	case "opnsense-update -v":
+		return fwOK(stripPackageRevision(f.updaterVersion) + "\n")
+	case "opnsense-update -vb":
+		return fwOK(f.baseVersion + "\n")
+	case "opnsense-update -vk":
+		return fwOK(f.kernelVersion + "\n")
+	case "opnsense-update -bk -c":
+		return f.checkSets()
+	case "opnsense-update -bk":
+		return f.installSets()
+	case "opnsense-update -p -t " + f.corePackage:
+		return f.updatePackages()
+	case guestWebGUI:
+		f.mutations = append(f.mutations, command)
+		return fwOK("")
+	case "shutdown -r +0":
+		return f.reboot()
+	}
+	if len(args) == 5 && args[0] == guestPkg && args[1] == "version" && args[2] == "-t" {
+		return fwOK(pkgVersionOrder(args[3], args[4]) + "\n")
+	}
+	if len(args) == 4 && args[0] == "opnsense-update" && args[1] == "-u" && args[2] == "-r" {
+		return f.stageRelease(args[3])
+	}
+	return GuestExecResult{ExitCode: 127, Stdout: "", Stderr: args[0] + ": not found\n"},
+		fmt.Errorf("fakeFirmware: unexpected command %q", command)
+}
+
+// checkSets mirrors opnsense-update -bk -c: exit 0 when the base or
+// kernel release differs from the installed one, 1 otherwise, with no
+// output (opnsense-update.sh.in:686-728).
+func (f *fakeFirmware) checkSets() (GuestExecResult, error) {
+	release := stripPackageRevision(f.updaterVersion)
+	if release != f.baseVersion || release != f.kernelVersion {
+		return fwOK("")
+	}
+	return GuestExecResult{ExitCode: 1, Stdout: "", Stderr: ""}, nil
+}
+
+// installSets mirrors opnsense-update -bk outside an upgrade: fetch,
+// install kernel then base, clean obsolete files, ask for a reboot
+// (opnsense-update.sh.in:917-942, 1119-1122, 1181-1221, 1240-1242).
+func (f *fakeFirmware) installSets() (GuestExecResult, error) {
+	f.mutations = append(f.mutations, "opnsense-update -bk")
+	release := stripPackageRevision(f.updaterVersion)
+	f.oldBase = f.baseVersion
+	f.oldKernel = f.kernelVersion
+	f.baseVersion = release
+	f.kernelVersion = release
+	return fwOK(fmt.Sprintf("Fetching base-%[1]s-amd64.txz: ..... done\n"+
+		"Fetching kernel-%[1]s-amd64.txz: ..... done\n"+
+		"!!!!!!!!!!!! ATTENTION !!!!!!!!!!!!!!!\n"+
+		"! A critical upgrade is in progress. !\n"+
+		"! Please do not turn off the system. !\n"+
+		"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"+
+		"Installing kernel-%[1]s-amd64.txz... done\n"+
+		"Installing base-%[1]s-amd64.txz... done\n"+
+		"Cleaning obsolete files... done\n"+
+		"Please reboot.\n", release))
+}
+
+// updatePackages mirrors opnsense-update -p: pkg update and pkg upgrade,
+// exit 1 on failure (opnsense-update.sh.in:768-805).
+func (f *fakeFirmware) updatePackages() (GuestExecResult, error) {
+	f.mutations = append(f.mutations, "opnsense-update -p")
+	if f.packageUpdateExit != 0 {
+		return GuestExecResult{
+			ExitCode: f.packageUpdateExit,
+			Stdout: "Updating OPNsense repository catalogue...\n" +
+				"pkg-static: https://pkg.opnsense.org/FreeBSD:14:amd64/26.7/latest/meta.txz: No address record\n" +
+				"Unable to update repository OPNsense\n" +
+				"Error updating repositories!\n" +
+				"Flushing temporary package files... done\n",
+			Stderr: "",
+		}, nil
+	}
+	from := f.coreVersion
+	if !f.coreStuck {
+		f.coreVersion = f.coreAvailable
+	}
+	f.updaterVersion = f.updaterAvailable
+	return fwOK(fmt.Sprintf("Updating OPNsense repository catalogue...\n"+
+		"OPNsense repository is up to date.\n"+
+		"All repositories are up to date.\n"+
+		"Checking for upgrades (2 candidates): .. done\n"+
+		"Processing candidates (2 candidates): .. done\n"+
+		"Installed packages to be UPGRADED:\n"+
+		"\topnsense: %[1]s -> %[2]s [OPNsense]\n\n"+
+		"[1/1] Upgrading opnsense from %[1]s to %[2]s...\n"+
+		"Checking integrity... done (0 conflicting)\n"+
+		"Flushing temporary package files... done\n", from, f.coreAvailable))
+}
+
+// stageRelease mirrors opnsense-update -u -r: fetch and stage the
+// release sets for the next boot (opnsense-update.sh.in:1125-1179).
+func (f *fakeFirmware) stageRelease(release string) (GuestExecResult, error) {
+	f.mutations = append(f.mutations, "opnsense-update -u -r "+release)
+	f.stagedRelease = release
+	return fwOK(fmt.Sprintf("Fetching packages-%[1]s-amd64.tar: ..... done\n"+
+		"Fetching base-%[1]s-amd64.txz: ..... done\n"+
+		"Fetching kernel-%[1]s-amd64.txz: ..... done\n"+
+		"Flushing temporary package files... done\n"+
+		"Extracting packages-%[1]s-amd64.tar... done\n"+
+		"Extracting base-%[1]s-amd64.txz... done\n"+
+		"Extracting kernel-%[1]s-amd64.txz... done\n"+
+		"Please reboot.\n", release))
+}
+
+// reboot applies staged release sets at boot and drops the exec channel,
+// which surfaces as a transport error on the shutdown call.
+func (f *fakeFirmware) reboot() (GuestExecResult, error) {
+	f.mutations = append(f.mutations, "shutdown -r +0")
+	f.reboots++
+	if f.stagedRelease != "" {
+		f.coreVersion = f.stagedRelease
+		f.updaterVersion = f.stagedRelease
+		f.baseVersion = f.stagedRelease
+		f.kernelVersion = f.stagedRelease
+		f.stagedRelease = ""
+	}
+	if f.bootsOldSets && f.oldBase != "" {
+		f.baseVersion = f.oldBase
+		f.kernelVersion = f.oldKernel
+	}
+	return GuestExecResult{}, errors.New("grpc Exec shutdown: rpc error: code = Unavailable desc = transport is closing")
+}
+
+// pkgVersionOrder compares two package versions numerically by their
+// dot and underscore separated components, the way pkg version -t
+// prints "<", "=", or ">".
+func pkgVersionOrder(left, right string) string {
+	split := func(v string) []string {
+		return strings.FieldsFunc(v, func(r rune) bool { return r == '.' || r == '_' })
+	}
+	leftParts := split(left)
+	rightParts := split(right)
+	for i := 0; i < len(leftParts) || i < len(rightParts); i++ {
+		leftNum := 0
+		rightNum := 0
+		if i < len(leftParts) {
+			leftNum, _ = strconv.Atoi(leftParts[i])
+		}
+		if i < len(rightParts) {
+			rightNum, _ = strconv.Atoi(rightParts[i])
+		}
+		if leftNum < rightNum {
+			return "<"
+		}
+		if leftNum > rightNum {
+			return ">"
 		}
 	}
-	i := e.idx
-	if i >= len(e.results) {
-		i = len(e.results) - 1
-	}
-	res := GuestExecResult{}
-	if i >= 0 && i < len(e.results) {
-		res = e.results[i]
-	}
-	var err error
-	if i >= 0 && i < len(e.errs) {
-		err = e.errs[i]
-	}
-	e.idx++
-	delay := e.delay
-	e.mu.Unlock()
-	if delay > 0 {
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return GuestExecResult{}, ctx.Err()
-		}
-	}
-	return res, err
+	return "="
 }
 
 type fakeValidator struct {
@@ -241,28 +432,16 @@ func newDeps(t *testing.T) (Deps, *fakeNotifier, *fakeSnap, *fakeExec, *fakeVali
 	t.Helper()
 	n := &fakeNotifier{}
 	s := &fakeSnap{}
-	// Default capture commands return success with a small canned
-	// stdout so Prepare's pre-upgrade artefact capture lands without
-	// disturbing the sequential `results` slice that drives the upgrade
-	// command itself.
 	x := &fakeExec{
-		results: []GuestExecResult{{ExitCode: 0}},
+		byArgv: map[string]GuestExecResult{},
 		byCommand: map[string]GuestExecResult{
 			"cat":      {ExitCode: 0, Stdout: "<config/>"},
 			"ifconfig": {ExitCode: 0, Stdout: "lo0: flags=...\n"},
 			"netstat":  {ExitCode: 0, Stdout: "Routing tables\n"},
 			"vtysh":    {ExitCode: 0, Stdout: "{}\n"},
 		},
-		// opnsense-version is called twice: once by Prepare (captureVersion)
-		// and once by Execute (post-reboot version assertion). The two calls
-		// must return different major versions so the version check passes.
-		byCommandSeq: map[string][]GuestExecResult{
-			"opnsense-version": {
-				{ExitCode: 0, Stdout: "OPNsense 25.7\n"},
-				{ExitCode: 0, Stdout: "OPNsense 26.1\n"},
-			},
-		},
-		byCommandSeqIdx: map[string]int{},
+		errByCommand: map[string]error{},
+		firmware:     productionHotfix(),
 	}
 	v := &fakeValidator{result: AggregateChecks([]CheckResult{{Name: "qga_responsive", Pass: true}})}
 	deps := Deps{
@@ -459,7 +638,7 @@ func TestExecuteHappyPathReachesExecuted(t *testing.T) {
 func TestExecuteNonZeroExitTransitionsToExecuteFailed(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
-	x.results = []GuestExecResult{{ExitCode: 1, Stderr: "boom"}}
+	x.firmware.packageUpdateExit = 1
 	opts := newOpts(t, "101")
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
 		t.Fatalf("prepare: %v", err)
@@ -471,73 +650,18 @@ func TestExecuteNonZeroExitTransitionsToExecuteFailed(t *testing.T) {
 	if st.Phase != PhaseExecuteFailed {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)
 	}
-}
-
-func TestExecuteRebootsAndChecksVersionOnCleanExit(t *testing.T) {
-	t.Parallel()
-	deps, _, _, x, _ := newDeps(t)
-	opts := newOpts(t, "101")
-
-	if _, err := Prepare(context.Background(), deps, opts); err != nil {
-		t.Fatalf("prepare: %v", err)
-	}
-
-	st, err := Execute(context.Background(), deps, opts)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if st.Phase != PhaseExecuted {
-		t.Fatalf("phase = %q, want executed", st.Phase)
-	}
-
-	// Confirm the executor received a shutdown -r +0 call during Execute.
-	x.mu.Lock()
-	calls := append([]execCall(nil), x.calls...)
-	x.mu.Unlock()
-	foundReboot := false
-	for _, c := range calls {
-		if len(c.Args) >= 2 && c.Args[0] == "shutdown" && c.Args[1] == "-r" {
-			foundReboot = true
-			break
+	for _, argv := range x.argvs() {
+		if argv == "opnsense-update -bk" || argv == "shutdown -r +0" {
+			t.Fatalf("ran %q after the package update failed", argv)
 		}
-	}
-	if !foundReboot {
-		t.Fatalf("expected shutdown -r call, got calls: %v", calls)
-	}
-}
-
-func TestExecuteVersionUnchangedTransitionsToExecuteFailed(t *testing.T) {
-	t.Parallel()
-	deps, _, _, x, _ := newDeps(t)
-	opts := newOpts(t, "101")
-
-	// Both prepare-time and post-reboot opnsense-version return the same
-	// major version, so the version assertion must fail.
-	x.byCommandSeq["opnsense-version"] = []GuestExecResult{
-		{ExitCode: 0, Stdout: "OPNsense 25.7\n"},
-		{ExitCode: 0, Stdout: "OPNsense 25.7\n"},
-	}
-	x.byCommandSeqIdx["opnsense-version"] = 0
-
-	if _, err := Prepare(context.Background(), deps, opts); err != nil {
-		t.Fatalf("prepare: %v", err)
-	}
-
-	st, err := Execute(context.Background(), deps, opts)
-	if err == nil {
-		t.Fatalf("expected error from unchanged major version")
-	}
-	if st.Phase != PhaseExecuteFailed {
-		t.Fatalf("phase = %q, want execute_failed", st.Phase)
-	}
-	if !strings.Contains(err.Error(), "major version unchanged") {
-		t.Fatalf("error %q should mention major version unchanged", err)
 	}
 }
 
 func TestExecuteWaitForGuestTimeoutTransitionsToExecuteFailed(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
+	x.firmware.coreAvailable = "26.7.4"
+	x.firmware.updaterAvailable = "26.7.4"
 	opts := newOpts(t, "101")
 
 	if _, err := Prepare(context.Background(), deps, opts); err != nil {
@@ -558,41 +682,6 @@ func TestExecuteWaitForGuestTimeoutTransitionsToExecuteFailed(t *testing.T) {
 	}
 	if st.Phase != PhaseExecuteFailed {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// upgradeCommand argv
-// ---------------------------------------------------------------------------
-
-// TestUpgradeCommandArgv pins the argv shapes emitted by upgradeCommand.
-// opnsense-update is the canonical major-release upgrade tool on OPNsense
-// 25.7 and later; opnsense-upgrade does not exist on that platform.
-// Source: opnsense/update src/update/opnsense-update.sh.in, getopts line 293,
-// -u case (DO_UPGRADE) and -r case (DO_RELEASE).
-func TestUpgradeCommandArgv(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		target  string
-		dryRun  bool
-		wantArg []string
-	}{
-		{"", false, []string{"opnsense-update", "-u"}},
-		{"26.1", false, []string{"opnsense-update", "-u", "-r", "26.1"}},
-		{"", true, []string{"opnsense-update", "-c"}},
-		{"26.1", true, []string{"opnsense-update", "-c"}},
-	}
-	for _, tc := range cases {
-		got := upgradeCommand(tc.target, tc.dryRun)
-		if len(got) != len(tc.wantArg) {
-			t.Errorf("upgradeCommand(%q, %v) = %v, want %v", tc.target, tc.dryRun, got, tc.wantArg)
-			continue
-		}
-		for i, w := range tc.wantArg {
-			if got[i] != w {
-				t.Errorf("upgradeCommand(%q, %v)[%d] = %q, want %q", tc.target, tc.dryRun, i, got[i], w)
-			}
-		}
 	}
 }
 
@@ -675,9 +764,8 @@ func TestValidatePartialAcceptedTransitionsToPartial(t *testing.T) {
 
 func TestRollbackOnValidateFailRestoresSnapshot(t *testing.T) {
 	t.Parallel()
-	deps, _, s, x, v := newDeps(t)
+	deps, _, s, _, v := newDeps(t)
 	v.result = AggregateChecks([]CheckResult{{Name: "qga_responsive", Pass: false}})
-	x.results = []GuestExecResult{{ExitCode: 0}}
 	s.running = true
 	opts := newOpts(t, "101")
 
@@ -809,7 +897,7 @@ func TestCommitIdempotent(t *testing.T) {
 
 func TestRunHappyPathReachesValidatedPass(t *testing.T) {
 	t.Parallel()
-	deps, _, _, _, _ := newDeps(t)
+	deps, _, _, x, _ := newDeps(t)
 	opts := newOpts(t, "101")
 	out, err := Run(context.Background(), deps, opts)
 	if err != nil {
@@ -820,6 +908,12 @@ func TestRunHappyPathReachesValidatedPass(t *testing.T) {
 	}
 	if out.AutoRollback {
 		t.Fatalf("auto rollback fired on happy path")
+	}
+	if x.firmware.coreVersion != "26.7.3_11" {
+		t.Fatalf("core version = %q, want the hotfix 26.7.3_11 applied", x.firmware.coreVersion)
+	}
+	if x.firmware.reboots != 0 {
+		t.Fatalf("reboots = %d, want 0 for a package-only hotfix", x.firmware.reboots)
 	}
 }
 
