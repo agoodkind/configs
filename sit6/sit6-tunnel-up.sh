@@ -65,9 +65,12 @@ apply_tunnel_routing() {
 
 # Sources the guest's own IPv6 from a host address inside the announced prefix,
 # because MWAN does not translate the mwanbr address. The /128 on lo is local,
-# so it wins over the prefix route into the tunnel.
+# so it wins over the prefix route into the tunnel. The high-metric unreachable
+# route keeps the prefix in the routing table before the tunnel exists, so FRR
+# announces it and the guest has IPv6 egress to resolve the tunnel remote.
 apply_source_routing() {
     ip -6 address replace "$SIT6_SOURCE_V6/128" dev lo
+    ip -6 route replace unreachable "$SIT6_TUNNEL_PREFIX" metric 4096
     ip -6 route replace default via "$SIT6_UPLINK_GATEWAY_V6" \
         dev "$SIT6_UPLINK_IFACE" src "$SIT6_SOURCE_V6"
 }

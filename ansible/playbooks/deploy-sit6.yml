@@ -69,6 +69,24 @@
           - nftables
         state: present
 
+    # Proxmox rewrites a container's resolv.conf at start unless this marker
+    # exists, and the resolver it writes is the home resolver the guest cannot
+    # reach from mwanbr.
+    - name: Keep Proxmox from rewriting resolv.conf
+      ansible.builtin.copy:
+        content: ""
+        dest: /etc/.pve-ignore.resolv.conf
+        mode: "0644"
+
+    - name: Deploy the public IPv6 resolvers
+      ansible.builtin.copy:
+        content: |
+          {% for resolver in sit6_resolvers_v6 %}
+          nameserver {{ resolver }}
+          {% endfor %}
+        dest: /etc/resolv.conf
+        mode: "0644"
+
     - name: Deploy sit6 sysctl config
       ansible.builtin.copy:
         src: "{{ repo_root }}/sit6/sysctl.conf"
