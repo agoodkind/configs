@@ -50,7 +50,9 @@ delegated prefix, and a SLAAC address exactly as the real Monkeybrains delivers.
 AT&T offers a dynamic DHCPv4 link pinned stable by a MAC reservation, over which
 the sim routes a static block that the MWAN VM translates one-to-one to its
 internal services; the testbed cannot reproduce 802.1X or the VLAN, so that link
-is a plain NIC. Webpass offers a static link plus its own routed static block.
+is a plain NIC. Webpass offers a static link that sits inside its own static
+block, as production Webpass does, so the MWAN VM holds its mapped addresses on
+that link and the sim routes no block.
 
 Prefix delegation sizes match production, and NPT translates the first `/60` of
 each delegation. The delegated prefixes deliberately avoid the `02xx` space that

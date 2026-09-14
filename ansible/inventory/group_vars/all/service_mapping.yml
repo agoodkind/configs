@@ -268,7 +268,12 @@ service_mapping:
     hostname: isp-webpass.suburban.goodkind.io
     vmid: 900
     inventory: false
-    ipv4: "10.240.204.1"
+    # The Webpass sim's link sits inside the testbed Webpass static block, the
+    # way production Webpass's link sits inside its /29, so the MWAN VM holds
+    # its mapped addresses on that link. ipv4 is the block's gateway and
+    # ipv4_prefix is the block's length.
+    ipv4: "10.241.204.1"
+    ipv4_prefix: 29
     ipv4_uplink: "10.240.200.90"
     ipv6_uplink: "3d06:bad:b01:200::90"
   isp_att_suburban:
