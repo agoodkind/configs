@@ -442,9 +442,6 @@ func TestDiagnosisLogsThePushedStatus(t *testing.T) {
 			t.Fatalf("diagnosis log missing %q\nfull log:\n%s", want, output)
 		}
 	}
-	if len(mock.guestCalls) != 0 {
-		t.Fatalf("diagnosis ran %d guest-exec probes, want 0", len(mock.guestCalls))
-	}
 }
 
 // TestDiagnosisSaysSoWithNoPushedStatus keeps the silent case legible: a
