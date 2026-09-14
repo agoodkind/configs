@@ -88,7 +88,8 @@ and probes both families on every member; the internal link appears the same
 way. Each member's link also carries its provider entry with every value the
 network configuration gives it: the provider's name, its routing table,
 firewall mark, and the priorities of its two policy rules, its translation
-prefix, its IPv4 source pin and forced DSCP value when it has them, and its
+prefix, its IPv4 source pin, forced DSCP value, and static address mappings
+when it has them, and its
 health probe with every setting the loaded probe holds, including the settings
 of a probe that is present but disabled. The steering group carries the hash
 mode, the reserved routing tables, the translation inputs, the internal link

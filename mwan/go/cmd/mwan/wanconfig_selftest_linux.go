@@ -258,6 +258,13 @@ func selftestGateway() wanconfig.Gateway {
 			FromPrio:    55,
 			V4Source:    "",
 			ForcedDSCP:  8,
+			// The mapping's external address is the one selftestStore reports
+			// the link owning, so the read carries the configured mapping and
+			// the live owned address under one wan container.
+			StaticMappings: []wanconfig.StaticMapping{{
+				External: netip.MustParseAddr(selftestOwnedAddress),
+				Internal: netip.MustParseAddr("192.0.2.3"),
+			}},
 			Health: &wanconfig.ProbeSettings{
 				Enabled:              true,
 				PingCount:            new(uint8(3)),
@@ -720,15 +727,30 @@ func checkSelftestInterfaces(log *slog.Logger, tree json.RawMessage) error {
 }
 
 // checkSelftestOwnedAddresses checks the member's wan container carries the
-// provider's name and exactly the one owned address the store reports. Both
-// are served only from the operational provider, because the configuration
-// publish writes no wan container.
+// provider's name, the static mapping the configuration publish wrote, and
+// exactly the one owned address the store reports. The configuration and the
+// live state both write into this container, so one read proves they merge
+// rather than one replacing the other.
 func checkSelftestOwnedAddresses(log *slog.Logger, member map[string]json.RawMessage) error {
 	wan, err := unmarshalObject(log, member["goodkind-mwan-steering:wan"], "wan container")
 	if err != nil {
 		return err
 	}
 	if err := expectLeaf(wan, "name", `"att"`, "live state"); err != nil {
+		return err
+	}
+	mappings, err := unmarshalArray(log, wan["static-mapping"], "static-mapping list")
+	if err != nil {
+		return err
+	}
+	if len(mappings) != 1 {
+		return fmt.Errorf("configuration: static-mapping = %s, want one entry", wan["static-mapping"])
+	}
+	mapping, err := unmarshalObject(log, mappings[0], "static-mapping entry")
+	if err != nil {
+		return err
+	}
+	if err := expectLeaf(mapping, "external", `"`+selftestOwnedAddress+`"`, "configuration"); err != nil {
 		return err
 	}
 	owned, err := unmarshalArray(log, wan["owned-address"], "owned-address leaf-list")

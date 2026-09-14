@@ -28,8 +28,8 @@ func testMember(name string, iface string) Member {
 // TestConfigItems_DescribesEveryMemberAndTranslation pins the published shape
 // for a gateway like the testbed's: three members, one fallback, a probed
 // member with a forced DSCP value, an unprobed one, a member with a disabled
-// probe and a source pin, two carrying a translation pair, and a group holding
-// every value. Every path here is one a RESTCONF reader sees, so a change to
+// probe, a source pin, and two static mappings, two carrying a translation
+// pair, and a group holding every value. Every path here is one a RESTCONF reader sees, so a change to
 // this list is a change to the served tree.
 func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 	t.Parallel()
@@ -65,6 +65,10 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 	webpass.FwMarkPrio = 200
 	webpass.FromPrio = 56
 	webpass.V4Source = "192.0.2.2"
+	webpass.StaticMappings = []StaticMapping{
+		{External: netip.MustParseAddr("198.51.100.2"), Internal: netip.MustParseAddr("10.250.250.2")},
+		{External: netip.MustParseAddr("198.51.100.3"), Internal: netip.MustParseAddr("10.250.250.3")},
+	}
 	webpass.Health = &ProbeSettings{Enabled: false}
 	gateway := Gateway{
 		InternalIface: "eninternal0",
@@ -148,6 +152,8 @@ func TestConfigItems_DescribesEveryMemberAndTranslation(t *testing.T) {
 		{Path: webpassLink + "/goodkind-mwan-steering:wan/from-prio", Value: "56"},
 		{Path: webpassLink + "/goodkind-mwan-steering:wan/npt-prefix", Value: "2001:db8:b::/60"},
 		{Path: webpassLink + "/goodkind-mwan-steering:wan/v4-source", Value: "192.0.2.2"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/static-mapping[external='198.51.100.2']/internal", Value: "10.250.250.2"},
+		{Path: webpassLink + "/goodkind-mwan-steering:wan/static-mapping[external='198.51.100.3']/internal", Value: "10.250.250.3"},
 		{Path: webpassLink + "/goodkind-mwan-steering:wan/health/enabled", Value: "false"},
 
 		{Path: group + "/hash-mode", Value: "random"},
@@ -385,6 +391,20 @@ func TestConfigItems_RejectsWhatAPathCannotCarry(t *testing.T) {
 		"zero firewall mark":      withMember(func(member *Member) { member.FwMark = 0 }),
 		"forced dscp above range": withMember(func(member *Member) { member.ForcedDSCP = 64 }),
 		"ipv6 source pin":         withMember(func(member *Member) { member.V4Source = "2001:db8::1" }),
+		"ipv6 mapped external": withMember(func(member *Member) {
+			member.StaticMappings = []StaticMapping{
+				{External: netip.MustParseAddr("2001:db8::2"), Internal: netip.MustParseAddr("10.250.250.2")},
+			}
+		}),
+		"missing mapped internal": withMember(func(member *Member) {
+			member.StaticMappings = []StaticMapping{{External: netip.MustParseAddr("198.51.100.2")}}
+		}),
+		"external mapped twice": withMember(func(member *Member) {
+			member.StaticMappings = []StaticMapping{
+				{External: netip.MustParseAddr("198.51.100.2"), Internal: netip.MustParseAddr("10.250.250.2")},
+				{External: netip.MustParseAddr("198.51.100.2"), Internal: netip.MustParseAddr("10.250.250.3")},
+			}
+		}),
 		"unparsable source pin":   withMember(func(member *Member) { member.V4Source = "not-an-address" }),
 		"ipv6 target in the ipv4 list": withMember(func(member *Member) {
 			member.Health = &ProbeSettings{Enabled: true, TargetsV4: []netip.Addr{netip.MustParseAddr("2001:db8::1")}}

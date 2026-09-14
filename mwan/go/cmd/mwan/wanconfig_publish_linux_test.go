@@ -130,13 +130,18 @@ func TestGatewayFromModuleConfigs_ProjectsTheWANRole(t *testing.T) {
 }
 
 // TestGatewayFromModuleConfigs_CarriesWhatOnlyTheLoadedConfigHolds pins the
-// values no module config carries: a forced DSCP value, an enabled probe's
-// settings, a disabled probe with exactly the settings its file carried, and
-// no probe at all for a provider with no health container.
+// values no module config carries: a forced DSCP value, both halves of each
+// static mapping, an enabled probe's settings, a disabled probe with exactly
+// the settings its file carried, and no probe at all for a provider with no
+// health container.
 func TestGatewayFromModuleConfigs_CarriesWhatOnlyTheLoadedConfigHolds(t *testing.T) {
 	t.Parallel()
+	mappings := []config.StaticMapping{
+		{External: netip.MustParseAddr("198.51.100.2"), Internal: netip.MustParseAddr("10.250.250.2")},
+		{External: netip.MustParseAddr("198.51.100.3"), Internal: netip.MustParseAddr("10.250.250.3")},
+	}
 	cfg := &config.Config{}
-	cfg.IfMgr.WAN = map[string]config.IfMgrWANEntry{"att": {ForcedDSCP: 8}}
+	cfg.IfMgr.WAN = map[string]config.IfMgrWANEntry{"att": {ForcedDSCP: 8, StaticMappings: mappings}}
 	cfg.IfMgr.Modules.Health = &config.IfMgrHealthSection{WAN: map[string]config.IfMgrHealthWANSection{
 		"att": {
 			Enabled:              true,
@@ -164,6 +169,13 @@ func TestGatewayFromModuleConfigs_CarriesWhatOnlyTheLoadedConfigHolds(t *testing
 	att := byName["att"]
 	if att.ForcedDSCP != 8 {
 		t.Fatalf("att forced DSCP = %d, want 8", att.ForcedDSCP)
+	}
+	wantMappings := []wanconfig.StaticMapping{
+		{External: netip.MustParseAddr("198.51.100.2"), Internal: netip.MustParseAddr("10.250.250.2")},
+		{External: netip.MustParseAddr("198.51.100.3"), Internal: netip.MustParseAddr("10.250.250.3")},
+	}
+	if !reflect.DeepEqual(att.StaticMappings, wantMappings) {
+		t.Fatalf("att static mappings = %+v, want %+v in configuration order", att.StaticMappings, wantMappings)
 	}
 	wantAttProbe := &wanconfig.ProbeSettings{
 		Enabled:              true,
@@ -195,8 +207,8 @@ func TestGatewayFromModuleConfigs_CarriesWhatOnlyTheLoadedConfigHolds(t *testing
 	}
 
 	webpass := byName["webpass"]
-	if webpass.Health != nil || webpass.ForcedDSCP != 0 {
-		t.Fatalf("webpass = %+v, want no probe and no forced DSCP", webpass)
+	if webpass.Health != nil || webpass.ForcedDSCP != 0 || webpass.StaticMappings != nil {
+		t.Fatalf("webpass = %+v, want no probe, no forced DSCP, and no static mappings", webpass)
 	}
 
 	if _, err := wanconfig.ConfigItems(gateway); err != nil {

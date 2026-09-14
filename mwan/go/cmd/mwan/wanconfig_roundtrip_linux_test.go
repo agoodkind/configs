@@ -27,7 +27,8 @@ const networkInstanceGlob = "../../../yang/instances/*.json"
 // flattener, so a model change that adds a configuration list must name its key
 // rather than be flattened into ambiguous paths.
 var networkListKeys = map[string]string{
-	"interface": "name",
+	"interface":      "name",
+	"static-mapping": "external",
 }
 
 // servedOnlyPaths match the leaves the tree publishes that a network document

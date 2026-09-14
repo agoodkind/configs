@@ -68,9 +68,19 @@ type Member struct {
 	// or zero when it carries none. The model ranges it from 1, so zero is
 	// free to mean absent.
 	ForcedDSCP uint8
+	// StaticMappings are the provider's one-to-one IPv4 translations, in the
+	// order the configuration lists them.
+	StaticMappings []StaticMapping
 	// Health is the provider's probe as loaded, or nil when the provider
 	// carries no health container.
 	Health *ProbeSettings
+}
+
+// StaticMapping is one one-to-one IPv4 translation a provider carries. The
+// model keys the list by the external address.
+type StaticMapping struct {
+	External netip.Addr
+	Internal netip.Addr
 }
 
 // ProbeSettings is one provider's health probe as the loaded configuration
@@ -407,6 +417,12 @@ func wanItems(member Member) []Item {
 	if member.ForcedDSCP != 0 {
 		items = append(items, Item{Path: base + "/forced-dscp", Value: uintValue(uint64(member.ForcedDSCP))})
 	}
+	for _, mapping := range member.StaticMappings {
+		items = append(items, Item{
+			Path:  base + "/static-mapping[external='" + mapping.External.String() + "']/internal",
+			Value: mapping.Internal.String(),
+		})
+	}
 	items = append(items, probeItems(base+"/health", member.Health)...)
 	return items
 }
@@ -583,7 +599,28 @@ func validateProvider(member Member) error {
 	if member.V4Source != "" && !isIPv4AddressOrPrefix(member.V4Source) {
 		return invalid(fmt.Sprintf("member %s v4-source %q is not an IPv4 address or prefix", member.Name, member.V4Source))
 	}
+	if err := validateMappings(member); err != nil {
+		return err
+	}
 	return validateProbe(member.Name, member.Health)
+}
+
+// validateMappings rejects a static mapping the list would refuse: an address
+// outside IPv4, or an external address the provider maps twice, which the list
+// key would collapse into one entry.
+func validateMappings(member Member) error {
+	seen := make(map[netip.Addr]bool, len(member.StaticMappings))
+	for _, mapping := range member.StaticMappings {
+		if !mapping.External.Is4() || !mapping.Internal.Is4() {
+			return invalid(fmt.Sprintf("member %s static mapping %q to %q is not IPv4",
+				member.Name, mapping.External, mapping.Internal))
+		}
+		if seen[mapping.External] {
+			return invalid(fmt.Sprintf("member %s maps external address %s twice", member.Name, mapping.External))
+		}
+		seen[mapping.External] = true
+	}
+	return nil
 }
 
 // validateProbe rejects a probe target outside its leaf-list's address family.

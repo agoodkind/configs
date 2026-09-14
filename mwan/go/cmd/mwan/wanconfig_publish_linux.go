@@ -346,20 +346,21 @@ func memberFromWAN(
 		return none, err
 	}
 	member := wanconfig.Member{
-		Name:        wan.Name,
-		Iface:       wan.Iface,
-		Tier:        wan.Tier,
-		Weight:      clampUint16(wan.Weight),
-		ProbePolicy: "",
-		NPTInternal: netip.Prefix{},
-		NPTExternal: netip.Prefix{},
-		TableID:     clampUint32(wan.TableID),
-		FwMark:      wan.FwMark,
-		FwMarkPrio:  clampUint32(wan.FwMarkPrio),
-		FromPrio:    clampUint32(wan.FromPrio),
-		V4Source:    wan.V4Source,
-		ForcedDSCP:  forcedDSCPFromConfig(cfg, wan.Name),
-		Health:      probe,
+		Name:           wan.Name,
+		Iface:          wan.Iface,
+		Tier:           wan.Tier,
+		Weight:         clampUint16(wan.Weight),
+		ProbePolicy:    "",
+		NPTInternal:    netip.Prefix{},
+		NPTExternal:    netip.Prefix{},
+		TableID:        clampUint32(wan.TableID),
+		FwMark:         wan.FwMark,
+		FwMarkPrio:     clampUint32(wan.FwMarkPrio),
+		FromPrio:       clampUint32(wan.FromPrio),
+		V4Source:       wan.V4Source,
+		ForcedDSCP:     forcedDSCPFromConfig(cfg, wan.Name),
+		StaticMappings: staticMappingsFromConfig(cfg, wan.Name),
+		Health:         probe,
 	}
 	if probed {
 		// The probe policy is named after the member: the health module
@@ -470,6 +471,25 @@ func forcedDSCPFromConfig(cfg *config.Config, name string) uint8 {
 		return 0
 	}
 	return clampUint8(cfg.IfMgr.WAN[name].ForcedDSCP)
+}
+
+// staticMappingsFromConfig reads a provider's static mappings from the loaded
+// network configuration. wan.routes holds only the external half of each
+// mapping, so the loaded entry is the one holder of both addresses. A nil
+// configuration publishes none.
+func staticMappingsFromConfig(cfg *config.Config, name string) []wanconfig.StaticMapping {
+	if cfg == nil {
+		return nil
+	}
+	loaded := cfg.IfMgr.WAN[name].StaticMappings
+	if len(loaded) == 0 {
+		return nil
+	}
+	mappings := make([]wanconfig.StaticMapping, 0, len(loaded))
+	for _, mapping := range loaded {
+		mappings = append(mappings, wanconfig.StaticMapping{External: mapping.External, Internal: mapping.Internal})
+	}
+	return mappings
 }
 
 // probeSettings projects one provider's probe from the loaded health section.
