@@ -22,3 +22,17 @@ sit6_tunnel_prefix_v6: "3d06:bad:b01:b::/64"
 # MWAN sends a new flow from the internal link carrying this codepoint out
 # AT&T, which keeps the tunnel on 104.57.226.196, the address Berylax targets.
 sit6_tunnel_dscp: "cs1"
+
+# IPv6 egress for the guest itself. MWAN translates only the internal /60, and
+# the mwanbr address sits outside it, so the guest sources its own IPv6 from a
+# host address inside the tunnel prefix it announces. The host part is chosen
+# far from Berylax's LAN hosts, which NPT maps one-to-one into that prefix.
+sit6_guest_source_v6: "3d06:bad:b01:b:ffff::5"
+sit6_uplink_gateway_v6: "3d06:bad:b01:fe::3"
+
+# First install only: FRR is the package that announces the prefix the guest
+# needs for IPv6 egress, so vault downloads the exact package files the guest
+# asks for and pushes them into its apt cache.
+sit6_bootstrap_host: "vault"
+sit6_vmid: "{{ service_mapping.sit6.vmid }}"
+sit6_bootstrap_dir: "/var/tmp/sit6-bootstrap"
