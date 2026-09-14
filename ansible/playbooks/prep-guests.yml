@@ -365,6 +365,28 @@
         group: root
         mode: "0755"
 
+    # The drop-in below points sshd at the global key file and nowhere else, so
+    # a guest whose key file is missing or empty refuses every key at its next
+    # sshd restart. The SSH key play imported at the top of this playbook writes
+    # that file from the hypervisor; this check stops the run before the drop-in
+    # lands on a guest where that play did not.
+    - name: Read the global authorized_keys file
+      ansible.builtin.stat:
+        path: /etc/ssh/authorized_keys.d/authorized_keys
+      register: global_authorized_keys_file
+
+    - name: Refuse to point sshd at a missing or empty global authorized_keys file
+      ansible.builtin.assert:
+        that:
+          - global_authorized_keys_file.stat.exists
+          - global_authorized_keys_file.stat.size > 0
+        fail_msg: >-
+          /etc/ssh/authorized_keys.d/authorized_keys is missing or empty on
+          {{ inventory_hostname }}, so sshd would refuse every key after its
+          next restart. Run deploy-ssh-keys.yml for this guest, then run this
+          deploy again.
+        quiet: true
+
     - name: Enable global authorized_keys file for all users
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/99-sshpiper-global-authorized-keys.conf

@@ -60,6 +60,30 @@ OPNsense also has a serial control channel; see
 [the OPNsense out-of-band daemon](../opnsense/daemon.md). For hypervisor
 recovery, see [emergency out-of-band access](oob.md).
 
+## 4. Recover guests that refuse every key
+
+A guest refuses every SSH key when sshd points at the global key file and
+that file is missing or empty. The audit finds these guests from the
+hypervisors and changes nothing. The redeploy in step 2 restarts sshd on each
+guest it targets.
+
+1. Run the audit. It lists each guest at risk, and separately each guest it
+   could not read because the guest is stopped or its agent did not answer.
+
+   ```bash
+   go run goodkind.io/configs/cmd/configs deploy audit-ssh-keys
+   ```
+
+2. Redeploy the keys to the service group of each listed guest. The deploy
+   writes the key file from the hypervisor, so it works while SSH is refused.
+
+   ```bash
+   go run goodkind.io/configs/cmd/configs deploy deploy-ssh-keys \
+     --limit <group> --extra-var target_hosts=<group>
+   ```
+
+3. Run the audit again, and confirm the guest no longer appears.
+
 ## Diagnostics-only SSH options
 
 Disable strict host key checking only for automation or diagnostics:

@@ -15,9 +15,17 @@
           name: "{{ inventory_hostname }}"
           type: "{{ proxmox_vmtype }}"
 
+# This play targets the guests, not localhost, and runs each task once. A
+# deploy narrowed with --limit to a guest group leaves localhost out of the
+# limit, so a localhost play matched no hosts, never wrote the key file, and
+# prep-guests then pointed sshd at a file that did not exist (MWAN-477). Every
+# task that runs a module delegates to the controller or a hypervisor, so no
+# task connects to a guest over SSH and the play still reaches a locked-out
+# guest.
 - name: Deploy SSH keys to containers/VMs via Proxmox
-  hosts: localhost
+  hosts: "{{ target_hosts }}"
   gather_facts: false
+  run_once: true
   vars:
     work_tmp_dir: "{{ playbook_dir }}/../.tmp"
     # Build the guest list from whichever hosts the gather play set guest_info
@@ -37,6 +45,7 @@
         path: "{{ work_tmp_dir }}"
         state: directory
         mode: "0755"
+      delegate_to: localhost
       check_mode: false
 
     - name: Use guest list with proxmox type
@@ -95,6 +104,7 @@
           - --extra-out
           - "{{ work_tmp_dir }}/authorized_keys.bundle"
         chdir: "{{ playbook_dir }}/../../scripts"
+      delegate_to: localhost
       changed_when: false
       check_mode: false
 
@@ -203,6 +213,11 @@
         pct exec {{ item.vmid }} -- sh -c '
           set -e
           mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
+          test -s /tmp/new_keys.pub
+          cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
+          chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
+          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
+          test -s /etc/ssh/authorized_keys.d/authorized_keys
           mv /tmp/sshd-disable-password-auth.conf \
             /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
           mv /tmp/sshd-global-authorized-keys.conf \
@@ -214,9 +229,6 @@
           fi
           mkdir -p /run/sshd
           chmod 0755 /run/sshd
-          cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
-          chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
-          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
           {% if item.name in groups['proxy_servers'] %}
           mkdir -p /etc/sshpiper
           cat /tmp/new_sshpiper_keys.pub > /etc/sshpiper/authorized_keys
@@ -253,6 +265,11 @@
         qm guest exec {{ item.vmid }} -- sh -c "
           set -e
           mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
+          echo '$KEY_B64' | base64 -d \
+            > /etc/ssh/authorized_keys.d/authorized_keys
+          chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
+          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
+          test -s /etc/ssh/authorized_keys.d/authorized_keys
           echo '$DISABLE_B64' | base64 -d \
             > /etc/ssh/sshd_config.d/99-ansible-disable-password-auth.conf
           echo '$GLOBAL_B64' | base64 -d \
@@ -264,10 +281,6 @@
           fi
           mkdir -p /run/sshd
           chmod 0755 /run/sshd
-          echo '$KEY_B64' | base64 -d \
-            > /etc/ssh/authorized_keys.d/authorized_keys
-          chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
-          chown root:root /etc/ssh/authorized_keys.d/authorized_keys
           sshd -t
           systemctl reset-failed ssh || true
           systemctl restart ssh || true

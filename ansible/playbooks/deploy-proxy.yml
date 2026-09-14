@@ -533,7 +533,9 @@
           # sshd on port 2222 for direct access
           # sshpiper on port 22 for routing
           Port 2222
-      notify: Restart sshd
+      notify:
+        - Validate sshd configuration
+        - Restart sshd
 
     - name: Install sshpiper systemd service
       ansible.builtin.copy:
@@ -577,6 +579,12 @@
       ansible.builtin.systemd:
         name: sshpiper
         state: restarted
+
+    # Handlers run in definition order, so a rejected configuration fails the
+    # play before the restart below can drop the running sshd.
+    - name: Validate sshd configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
 
     - name: Restart sshd
       ansible.builtin.systemd:

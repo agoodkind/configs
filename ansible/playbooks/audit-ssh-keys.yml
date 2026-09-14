@@ -1,0 +1,104 @@
+---
+# List every Proxmox guest whose sshd is pointed at the global authorized_keys
+# file while that file is missing or empty. Such a guest refuses every SSH key
+# at its next sshd restart. Each guest is read from its hypervisor with pct exec
+# or qm guest exec, so the audit reaches guests SSH no longer can, and it changes
+# nothing on any guest or hypervisor.
+#
+# Usage:
+#   go run goodkind.io/configs/cmd/configs deploy audit-ssh-keys
+#   go run goodkind.io/configs/cmd/configs deploy audit-ssh-keys --limit <group>
+
+- name: Audit guest sshd global authorized_keys files
+  hosts: proxmox_all_lxc:proxmox_all_qemu
+  gather_facts: false
+  vars:
+    audit_hypervisor: "{{ proxmox_node_delegates[ansible_proxmox_host] }}"
+    audit_script: >-
+      {{ lookup('ansible.builtin.file', playbook_dir ~ '/files/audit-ssh-authorized-keys.sh') }}
+    audit_at_risk_states:
+      - key-file-missing
+      - key-file-empty
+  tasks:
+    - name: Read LXC guest run state
+      ansible.builtin.command:
+        argv: [pct, status, "{{ ansible_proxmox_vmid }}"]
+      delegate_to: "{{ audit_hypervisor }}"
+      register: audit_lxc_status
+      changed_when: false
+      failed_when: false
+      when: proxmox_vmtype == 'lxc'
+
+    - name: Read LXC guest authorized_keys state
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ ansible_proxmox_vmid }}", --, sh, -c, "{{ audit_script }}"]
+      delegate_to: "{{ audit_hypervisor }}"
+      register: audit_lxc_exec
+      changed_when: false
+      failed_when: false
+      when:
+        - proxmox_vmtype == 'lxc'
+        - audit_lxc_status.rc == 0
+        - "'status: running' in audit_lxc_status.stdout"
+
+    - name: Classify LXC guest
+      ansible.builtin.set_fact:
+        audit_state: >-
+          {%- if audit_lxc_status.rc != 0 -%}status-unreadable
+          {%- elif 'status: running' not in audit_lxc_status.stdout -%}not-running
+          {%- elif audit_lxc_exec.rc != 0 -%}unreadable
+          {%- else -%}{{ audit_lxc_exec.stdout | trim }}{%- endif -%}
+      when: proxmox_vmtype == 'lxc'
+
+    - name: Read QEMU guest run state
+      ansible.builtin.command:
+        argv: [qm, status, "{{ ansible_proxmox_vmid }}"]
+      delegate_to: "{{ audit_hypervisor }}"
+      register: audit_qemu_status
+      changed_when: false
+      failed_when: false
+      when: proxmox_vmtype == 'qemu'
+
+    - name: Read QEMU guest authorized_keys state through the guest agent
+      ansible.builtin.command:
+        argv: [qm, guest, exec, "{{ ansible_proxmox_vmid }}", --, sh, -c, "{{ audit_script }}"]
+      delegate_to: "{{ audit_hypervisor }}"
+      register: audit_qemu_exec
+      changed_when: false
+      failed_when: false
+      when:
+        - proxmox_vmtype == 'qemu'
+        - audit_qemu_status.rc == 0
+        - "'status: running' in audit_qemu_status.stdout"
+
+    # qm guest exec prints the agent's JSON reply, and the script's word is in
+    # its out-data field. A VM without a responding agent exits non-zero here.
+    - name: Classify QEMU guest
+      ansible.builtin.set_fact:
+        audit_state: >-
+          {%- if audit_qemu_status.rc != 0 -%}status-unreadable
+          {%- elif 'status: running' not in audit_qemu_status.stdout -%}not-running
+          {%- elif audit_qemu_exec.rc != 0 -%}unreadable
+          {%- else -%}{{ (audit_qemu_exec.stdout | from_json)['out-data'] | trim }}{%- endif -%}
+      when: proxmox_vmtype == 'qemu'
+
+    - name: Map each audited guest to its state
+      ansible.builtin.set_fact:
+        audit_states: >-
+          {{ dict(ansible_play_hosts | zip(ansible_play_hosts | map('extract', hostvars, 'audit_state'))) }}
+      run_once: true
+
+    - name: List guests whose sshd points at a missing or empty key file
+      ansible.builtin.debug:
+        msg: >-
+          {{ audit_states | dict2items | selectattr('value', 'in', audit_at_risk_states)
+             | items2dict }}
+      run_once: true
+
+    - name: List guests the audit could not read
+      ansible.builtin.debug:
+        msg: >-
+          {{ audit_states | dict2items
+             | rejectattr('value', 'in', audit_at_risk_states + ['ok', 'no-drop-in'])
+             | items2dict }}
+      run_once: true
