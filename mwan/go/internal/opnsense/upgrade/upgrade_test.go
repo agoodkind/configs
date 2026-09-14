@@ -200,11 +200,54 @@ type fakeFirmware struct {
 	// before opnsense-update -bk installed new ones.
 	bootsOldSets bool
 
-	stagedRelease string
-	oldBase       string
-	oldKernel     string
-	mutations     []string
-	reboots       int
+	// bootID is the running boot's kern.boot_id as sysctl -x dumps it.
+	bootID string
+	// bootSeconds is the kern.boottime seconds of the running boot.
+	bootSeconds int64
+	// unseededBootIDReads is how many kern.boot_id reads fail on a new boot
+	// before the kernel's random pool is seeded, since the handler returns
+	// ENXIO until then (sys/kern/kern_mib.c:527-529).
+	unseededBootIDReads int
+	// clockStepSeconds steps the old boot's clock forward when shutdown -r
+	// +0 runs, as ntpd -g can. A clock step recomputes kern.boottime
+	// (sys/kern/kern_tc.c:1293-1311), so the old boot reports a later boot
+	// time without rebooting.
+	clockStepSeconds int64
+	// oldBootCommands is how many commands the guest still answers from
+	// the old boot after shutdown -r +0 returns, because FreeBSD shutdown
+	// exits before rc.shutdown stops the exec daemon.
+	oldBootCommands int
+	// unreachableCommands is how many commands fail after that while the
+	// guest is down.
+	unreachableCommands int
+	// rebootIgnored keeps the guest on its old boot after shutdown -r +0.
+	rebootIgnored bool
+
+	rebooting       bool
+	oldBootLeft     int
+	unreachableLeft int
+	unseededLeft    int
+	stagedRelease   string
+	oldBase         string
+	oldKernel       string
+	mutations       []string
+	reboots         int
+}
+
+// The testbed router's kern.boottime and kern.boot_id as read on
+// 2026-09-14, and the argv that reads each.
+const (
+	testbedBootSeconds      = 1786126956
+	testbedBootMicroseconds = 209257
+	testbedBootID           = "2b1d732b2c1b8134cf3b7161650b01d8"
+	bootSecondsPerReboot    = 600
+	fakeBootTimeArgv        = "/sbin/sysctl -n kern.boottime"
+	fakeBootIDArgv          = "/sbin/sysctl -nx kern.boot_id"
+)
+
+func bootTimeOutput(seconds int64) string {
+	return fmt.Sprintf("{ sec = %d, usec = %d } %s\n", seconds, testbedBootMicroseconds,
+		time.Unix(seconds, 0).UTC().Format("Mon Jan _2 15:04:05 2006"))
 }
 
 // productionHotfix is the production router on 2026-09-14: core package
@@ -218,6 +261,8 @@ func productionHotfix() *fakeFirmware {
 		updaterAvailable: "26.7.3",
 		baseVersion:      "26.7.3",
 		kernelVersion:    "26.7.3",
+		bootID:           testbedBootID,
+		bootSeconds:      testbedBootSeconds,
 	}
 }
 
@@ -234,9 +279,24 @@ func fwOK(stdout string) (GuestExecResult, error) {
 
 func (f *fakeFirmware) exec(args []string) (GuestExecResult, error) {
 	command := strings.Join(args, " ")
+	if f.rebooting {
+		switch {
+		case f.oldBootLeft > 0:
+			f.oldBootLeft--
+		case f.unreachableLeft > 0:
+			f.unreachableLeft--
+			return GuestExecResult{}, errors.New("grpc Exec " + args[0] + ": rpc error: code = Unavailable desc = connection refused")
+		default:
+			f.boot()
+		}
+	}
 	switch command {
 	case "true":
 		return fwOK("")
+	case fakeBootTimeArgv:
+		return fwOK(bootTimeOutput(f.bootSeconds))
+	case fakeBootIDArgv:
+		return f.readBootID()
 	case "opnsense-version":
 		return fwOK("OPNsense " + f.coreVersion + " (amd64)\n")
 	case "opnsense-version -n":
@@ -364,11 +424,28 @@ func (f *fakeFirmware) stageRelease(release string) (GuestExecResult, error) {
 		"Please reboot.\n", release))
 }
 
-// reboot applies staged release sets at boot and drops the exec channel,
-// which surfaces as a transport error on the shutdown call.
+// reboot starts the shutdown and drops the exec channel, which surfaces as
+// a transport error on the shutdown call. The guest boots once the old
+// boot and unreachable commands are used up.
 func (f *fakeFirmware) reboot() (GuestExecResult, error) {
 	f.mutations = append(f.mutations, "shutdown -r +0")
 	f.reboots++
+	f.bootSeconds += f.clockStepSeconds
+	if !f.rebootIgnored {
+		f.rebooting = true
+		f.oldBootLeft = f.oldBootCommands
+		f.unreachableLeft = f.unreachableCommands
+	}
+	return GuestExecResult{}, errors.New("grpc Exec shutdown: rpc error: code = Unavailable desc = transport is closing")
+}
+
+// boot starts a new boot with a new boot ID and a later boot time, and
+// applies staged release sets.
+func (f *fakeFirmware) boot() {
+	f.rebooting = false
+	f.bootID = fmt.Sprintf("%032x", f.reboots)
+	f.unseededLeft = f.unseededBootIDReads
+	f.bootSeconds += bootSecondsPerReboot
 	if f.stagedRelease != "" {
 		f.coreVersion = f.stagedRelease
 		f.updaterVersion = f.stagedRelease
@@ -380,7 +457,16 @@ func (f *fakeFirmware) reboot() (GuestExecResult, error) {
 		f.baseVersion = f.oldBase
 		f.kernelVersion = f.oldKernel
 	}
-	return GuestExecResult{}, errors.New("grpc Exec shutdown: rpc error: code = Unavailable desc = transport is closing")
+}
+
+// readBootID mirrors sysctl -nx kern.boot_id: a hex dump of the 16-byte
+// boot ID, or a failure before the new boot's random pool is seeded.
+func (f *fakeFirmware) readBootID() (GuestExecResult, error) {
+	if f.unseededLeft > 0 {
+		f.unseededLeft--
+		return GuestExecResult{ExitCode: 1, Stdout: "", Stderr: "sysctl: kern.boot_id: Device not configured\n"}, nil
+	}
+	return fwOK("Format: Length:16 Dump:0x" + f.bootID + "\n")
 }
 
 // pkgVersionOrder compares two package versions numerically by their
@@ -657,7 +743,7 @@ func TestExecuteNonZeroExitTransitionsToExecuteFailed(t *testing.T) {
 	}
 }
 
-func TestExecuteWaitForGuestTimeoutTransitionsToExecuteFailed(t *testing.T) {
+func TestExecuteRebootWaitCancelledTransitionsToExecuteFailed(t *testing.T) {
 	t.Parallel()
 	deps, _, _, x, _ := newDeps(t)
 	x.firmware.coreAvailable = "26.7.4"
@@ -668,17 +754,17 @@ func TestExecuteWaitForGuestTimeoutTransitionsToExecuteFailed(t *testing.T) {
 		t.Fatalf("prepare: %v", err)
 	}
 
-	// Make "true" (the waitForGuest liveness probe) always return a
-	// non-zero exit code so the poll loop never succeeds and falls through
-	// to the select. Run Execute under a context that expires quickly so
-	// the select fires pollCtx.Done() rather than the 2-second sleep.
-	x.byCommand["true"] = GuestExecResult{ExitCode: 1}
+	// The guest ignores the reboot, so every boot ID probe returns the
+	// old boot and the wait falls through to its select. Run Execute under
+	// a context that expires quickly so the select fires ctx.Done() rather
+	// than the 2-second pause.
+	x.firmware.rebootIgnored = true
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	st, err := Execute(ctx, deps, opts)
 	if err == nil {
-		t.Fatalf("expected error from waitForGuest timeout")
+		t.Fatalf("expected error from the cancelled reboot wait")
 	}
 	if st.Phase != PhaseExecuteFailed {
 		t.Fatalf("phase = %q, want execute_failed", st.Phase)
