@@ -624,9 +624,9 @@ resource "proxmox_virtual_environment_container" "sit6" {
     }
   }
 
-  features {
-    nesting = true
-  }
+  # No features block. The tunnel, FRR, and nftables need no container
+  # features, and Proxmox refuses feature-flag writes from any actor but
+  # root@pam on a privileged container.
 
   network_interface {
     name        = "eth0"
