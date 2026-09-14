@@ -13,6 +13,7 @@ import (
 	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/opnsense"
+	opnsensecfg "goodkind.io/mwan/internal/opnsense/config"
 	"goodkind.io/mwan/internal/opnsense/upgrade"
 	"goodkind.io/mwan/internal/opnsense/validate"
 )
@@ -36,7 +37,7 @@ func upgradeUsage(out *os.File) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Phases: prepare, execute, validate, rollback, commit, run, gc, reset")
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "Every input comes from [opnsense.upgrade] in /etc/mwan/config.toml.")
+	fmt.Fprintln(out, "Every input comes from [opnsense.upgrade] in "+opnsensecfg.DefaultPath+".")
 }
 
 func runOPNsenseUpgradeCmd(args []string) int {
@@ -122,43 +123,43 @@ func buildRedial(target string) func() (upgrade.OPNsenseRPCClient, error) {
 	}
 }
 
-func resolveUpgradeInputs() (upgradeInputs, *config.Config, error) {
+func resolveUpgradeInputs() (upgradeInputs, error) {
 	var ui upgradeInputs
 	cfg, err := loadOpnsenseConfig()
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
 	vmid, err := requireUpgradeVMID(cfg)
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
 	stateDir, err := requireUpgradeStateDir(cfg)
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
 	grpcTarget, err := requireUpgradeGRPCTarget(cfg)
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
-	execTimeout, err := parseRequiredDuration(cfg.OPNsense.Upgrade.ExecTimeoutDuration, "[opnsense.upgrade].exec_timeout")
+	execTimeout, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.ExecTimeoutDuration, "[opnsense.upgrade].exec_timeout")
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
-	upgradeTimeout, err := parseRequiredDuration(cfg.OPNsense.Upgrade.UpgradeTimeoutDuration, "[opnsense.upgrade].upgrade_timeout")
+	upgradeTimeout, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.UpgradeTimeoutDuration, "[opnsense.upgrade].upgrade_timeout")
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
-	postRollbackWait, err := parseRequiredDuration(cfg.OPNsense.Upgrade.PostRollbackWaitDuration, "[opnsense.upgrade].post_rollback_wait")
+	postRollbackWait, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.PostRollbackWaitDuration, "[opnsense.upgrade].post_rollback_wait")
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
-	gcOlderThan, err := parseRequiredDuration(cfg.OPNsense.Upgrade.GCOlderThan, "[opnsense.upgrade].gc_older_than")
+	gcOlderThan, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.GCOlderThan, "[opnsense.upgrade].gc_older_than")
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
-	settle, err := parseRequiredDuration(cfg.OPNsense.Upgrade.Validate.SettleAfterUpgrade, "[opnsense.upgrade.validate].settle_after_upgrade")
+	settle, err := parseRequiredDuration(cfg, cfg.OPNsense.Upgrade.Validate.SettleAfterUpgrade, "[opnsense.upgrade.validate].settle_after_upgrade")
 	if err != nil {
-		return ui, nil, err
+		return ui, err
 	}
 	ui = upgradeInputs{
 		VMID:                vmid,
@@ -189,7 +190,7 @@ func resolveUpgradeInputs() (upgradeInputs, *config.Config, error) {
 		LANClientSSH:        cfg.OPNsense.Upgrade.LANClientSSH,
 		OPNsenseAddr:        cfg.OPNsense.Upgrade.OPNsenseAddr,
 	}
-	return ui, cfg, nil
+	return ui, nil
 }
 
 func (ui upgradeInputs) toOptions() upgrade.Options {
@@ -212,10 +213,16 @@ func (ui upgradeInputs) toOptions() upgrade.Options {
 
 // buildUpgradeDeps wires the production Deps. Executor and validator both ride
 // the gRPC channel. The SSH-host fields are still passed into validator probes
-// that talk to OPNsense over SSH.
-func buildUpgradeDeps(cfg *config.Config, ui upgradeInputs) (upgrade.Deps, error) {
+// that talk to OPNsense over SSH. The alert notifier reads the [email] section
+// of the gateway config, which the OPNsense tooling config does not carry.
+func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 	logger := slog.Default()
-	notifier := notify.FromConfig(cfg, logger, "mwan-opnsense-upgrade")
+	alertCfg, err := config.Load()
+	if err != nil {
+		slog.Error("opnsense upgrade: load alert config", "err", err)
+		return upgrade.Deps{}, fmt.Errorf("load alert config: %w", err)
+	}
+	notifier := notify.FromConfig(alertCfg, logger, "mwan-opnsense-upgrade")
 	snapshotter := upgrade.NewQmSnapshotter(logger)
 
 	rpcCli, err := opnsense.Dial(ui.GRPCTarget)
@@ -364,11 +371,11 @@ func upgradeExecTimeoutSeconds(d time.Duration) int32 {
 }
 
 func runUpgradePhase(phase upgradePhase) int {
-	ui, cfg, err := resolveUpgradeInputs()
+	ui, err := resolveUpgradeInputs()
 	if err != nil {
 		return printAndExit("upgrade "+string(phase), err)
 	}
-	deps, err := buildUpgradeDeps(cfg, ui)
+	deps, err := buildUpgradeDeps(ui)
 	if err != nil {
 		return printAndExit("upgrade "+string(phase), err)
 	}
@@ -546,7 +553,7 @@ func standaloneBaseline(ctx context.Context, ui upgradeInputs, deployID string) 
 // flips it in their config and re-runs, mirroring the old --confirm
 // flag behaviour.
 func runUpgradeReset() int {
-	ui, _, err := resolveUpgradeInputs()
+	ui, err := resolveUpgradeInputs()
 	if err != nil {
 		return printAndExit("upgrade reset", err)
 	}
@@ -574,7 +581,7 @@ func runUpgradeReset() int {
 	if !ui.ResetConfirm {
 		printResetPlan(os.Stdout, plan)
 		fmt.Fprintln(os.Stdout, "")
-		fmt.Fprintln(os.Stdout, "set [opnsense.upgrade].reset_confirm = true in /etc/mwan/config.toml to apply.")
+		fmt.Fprintln(os.Stdout, "set [opnsense.upgrade].reset_confirm = true in the opnsense config to apply.")
 		return 2
 	}
 	if err := upgrade.ResetExecute(context.Background(), deps, plan); err != nil {

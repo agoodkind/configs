@@ -147,10 +147,10 @@ func runConfigImport(args []string) int {
 	subsPath := cfg.OPNsense.ConfigImport.Substitutions
 	outputPath := cfg.OPNsense.ConfigImport.Output
 	if subsPath == "" {
-		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].substitutions is required in /etc/mwan/config.toml"))
+		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].substitutions is required in %s", cfg.Source))
 	}
 	if outputPath == "" {
-		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].output is required in /etc/mwan/config.toml"))
+		return printAndExit("config import", fmt.Errorf("[opnsense.config.import].output is required in %s", cfg.Source))
 	}
 
 	cleanInput := filepath.Clean(source)

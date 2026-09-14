@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"goodkind.io/mwan/internal/config"
+	opnsensecfg "goodkind.io/mwan/internal/opnsense/config"
 )
 
 // writeTempTOML writes content to a tempdir-scoped config.toml and
-// returns the path. The MWAN_CONFIG env var is set so config.Load reads
-// the temp file rather than /etc/mwan/config.toml.
+// returns the path. The OPNSENSECTL_CONFIG env var is set so
+// loadOpnsenseConfig reads the temp file rather than the host's files.
 func writeTempTOML(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -20,7 +20,7 @@ func writeTempTOML(t *testing.T, content string) string {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
-	t.Setenv("MWAN_CONFIG", path)
+	t.Setenv(opnsensecfg.PathEnv, path)
 	return path
 }
 
@@ -77,23 +77,23 @@ heartbeat_timeout = "2s"
 // call through this helper before it dials anything, so an empty target
 // surfaces as a TOML-keyed error instead of a generic dial failure.
 func TestFilePushErrorsOnEmptyProbeTarget(t *testing.T) {
-	writeTempTOML(t, `
-hostname = "host-test"
-
+	path := writeTempTOML(t, `
 [opnsense.probe]
 target = ""
 timeout = "5s"
 upload_chunk_bytes = 16384
 `)
 
-	cfg, err := config.Load()
+	cfg, err := loadOpnsenseConfig()
 	if err != nil {
-		t.Fatalf("config.Load: %v", err)
+		t.Fatalf("loadOpnsenseConfig: %v", err)
 	}
 	if _, err := requireProbeTarget(cfg); err == nil {
 		t.Fatalf("requireProbeTarget returned nil error for empty target")
 	} else if !strings.Contains(err.Error(), "[opnsense.probe].target") {
 		t.Fatalf("error %q does not name the TOML key", err.Error())
+	} else if !strings.Contains(err.Error(), path) {
+		t.Fatalf("error %q does not name the file it read, %s", err.Error(), path)
 	}
 }
 
@@ -118,7 +118,7 @@ gc_older_than = ""
 settle_after_upgrade = ""
 `)
 
-	_, _, err := resolveUpgradeInputs()
+	_, err := resolveUpgradeInputs()
 	if err == nil {
 		t.Fatalf("resolveUpgradeInputs returned nil error for empty upgrade section")
 	}

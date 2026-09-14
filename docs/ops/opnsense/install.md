@@ -190,8 +190,8 @@ Confirm the named port maps to the device, with the guest agent on its own port:
 ## Verify the channel
 
 Run the host bridge on the Proxmox host and probe the daemon. The bridge reads its
-upstream and listen sockets from `[opnsense.host]` in `/etc/mwan/config.toml`, and the
-probe reads its target from `[opnsense.probe]`.
+upstream and listen sockets from `[opnsense.host]` in `/etc/opnsensectl/config.toml`, and
+the probe reads its target from `[opnsense.probe]`.
 
 ```bash
 mwan opnsense host serve

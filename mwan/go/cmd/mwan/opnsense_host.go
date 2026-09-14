@@ -59,7 +59,7 @@ func runOPNsenseHost(args []string) int {
 }
 
 // runOPNsenseHostServe runs the host-side yamux bridge. All inputs
-// come from [opnsense.host] in /etc/mwan/config.toml.
+// come from [opnsense.host] in the OPNsense tooling config.
 func runOPNsenseHostServe(args []string) int {
 	for _, a := range args {
 		if a == "-h" || a == "--help" || a == "help" {
