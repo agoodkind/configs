@@ -55,6 +55,23 @@ Three execution paths show up depending on what a task does:
 When reading a playbook, look at `hosts:`, `delegate_to:`, and any `pct` or
 `qm` commands to tell which path a task takes.
 
+## Guest SSH authorization
+
+Every Linux guest accepts SSH keys from one global file and ignores per-user
+`authorized_keys` files. That file holds the GitHub keys of the configured
+account and the SSHPiper upstream key, which only the proxy's address may
+present. The SSH-key deploy is the only writer. It builds the bundle on the
+controller, writes the key file into each guest from the hypervisor, and only
+then writes the sshd drop-in that points at the file.
+
+A drop-in without its key file locks the guest out at the next sshd restart,
+which can come days later from the weekly package updater. Guest prep
+therefore fails the run when the key file is missing or empty, before it
+writes its own copy of the drop-in. The SSH-key deploy runs inside the play
+for the targeted guests rather than in a separate controller play, because
+`--limit` on a guest group skips a controller play and the key file would
+never be written.
+
 ## Proxmox plugin name collisions
 
 Each per-hypervisor plugin file emits guests under the guest's raw Proxmox
