@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"goodkind.io/mwan/internal/notify"
-	"goodkind.io/mwan/internal/ops"
 )
 
 // Phase is the typed lifecycle state recorded in the state file.
@@ -51,10 +50,9 @@ const (
 	PhaseCommitted Phase = "committed"
 )
 
-// Snapshotter is the subset of [ops.SysOps] the upgrade package needs.
-// Defined as a narrower interface so tests do not have to implement the
-// full SysOps surface. [ops.SysOps] satisfies this interface in
-// production.
+// Snapshotter is the Proxmox guest snapshot and lifecycle surface the
+// upgrade package needs. [QmSnapshotter] satisfies this interface in
+// production; tests stub it.
 type Snapshotter interface {
 	VMSnapshot(ctx context.Context, vmid, snapName string) error
 	VMRollback(ctx context.Context, vmid, snap string) error
@@ -63,9 +61,6 @@ type Snapshotter interface {
 	VMStart(ctx context.Context, vmid string) error
 	VMStatus(ctx context.Context, vmid string) (bool, error)
 }
-
-// guard against drift: ops.SysOps must satisfy Snapshotter.
-var _ Snapshotter = ops.SysOps(nil)
 
 // GuestExecResult mirrors [ops.GuestExecResult] but is duplicated here
 // so the Executor interface does not pull a hard dep on internal/ops.
@@ -134,7 +129,7 @@ type Clock interface {
 // Deps is the dependency bundle threaded through every phase entry
 // point. It owns the Notifier, the Snapshotter, the Executor, the
 // Validator, the Clock, and the Logger. Tests construct one with
-// stubs; production constructs one with RealOps and the typed RPC.
+// stubs; production constructs one with QmSnapshotter and the typed RPC.
 type Deps struct {
 	Snap     Snapshotter
 	Exec     Executor
