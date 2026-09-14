@@ -1,0 +1,31 @@
+---
+# sit6 LXC (lxc-124 on vault) target vars, the 6in4 tunnel endpoint for
+# Berylax. Consumed by deploy-sit6.yml when targeting `sit6_servers`.
+
+# IPv6 iBGP toward the MWAN VM on mwanbr. MWAN accepts the session through its
+# dynamic transit neighbors and installs the announced prefix.
+sit6_bgp_asn: 4200000001
+sit6_bgp_router_id: "{{ service_mapping.sit6.ipv4 }}"
+sit6_bgp_neighbor_v6: "3d06:bad:b01:fe::3"
+
+# 6in4 tunnel. The kernel reserves sit0 as the fallback device in every network
+# namespace, so the tunnel takes its own name. Berylax pings the fixed link
+# address through the tunnel before it routes traffic over it.
+sit6_uplink_iface: "eth0"
+sit6_tunnel_iface: "sit6"
+sit6_tunnel_local_v4: "{{ service_mapping.sit6.ipv4 }}"
+sit6_tunnel_ttl: 64
+sit6_tunnel_link_address_v6: "fe80::1/64"
+sit6_tunnel_prefix_v6: "3d06:bad:b01:b::/64"
+sit6_tunnel_remote_file: "/var/lib/sit6/remote"
+# Berylax's Astound IPv4 when this guest was first built. The play writes it
+# only when no remote is recorded; afterwards the updater owns the file.
+sit6_tunnel_initial_remote_v4: "76.14.114.247"
+# MWAN sends a new flow from the internal link carrying this codepoint out
+# AT&T, which keeps the tunnel on 104.57.226.196, the address Berylax targets.
+sit6_tunnel_dscp: "cs1"
+
+# Updater SSH account. Berylax's key may only run sit6-set-remote.
+sit6_updater_user: "sit6update"
+sit6_updater_home: "/var/lib/sit6update"
+sit6_updater_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFsu75AExXLSIO6pfm7UVd7Az8StM3jcXLc2t91KjAOp berylax-sit6-updater"

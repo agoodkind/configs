@@ -1,0 +1,15 @@
+# Managed by Ansible (deploy-sit6.yml)
+#
+# Public-key authentication only.
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+
+# The updater account reads only its own root-owned authorized_keys, whose one
+# line forces sit6-set-remote. prep-guests.yml sets a global AuthorizedKeysFile,
+# which would otherwise let any key there log in as this account unrestricted.
+# A Match block in an included file ends at the end of that file.
+Match User {{ sit6_updater_user }}
+	AuthorizedKeysFile {{ sit6_updater_home }}/.ssh/authorized_keys
+	DisableForwarding yes
+	PermitTTY no

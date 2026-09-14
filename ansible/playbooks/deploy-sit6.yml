@@ -1,0 +1,218 @@
+---
+# Configure the sit6 LXC, the 6in4 tunnel endpoint for Berylax.
+#
+# Targets sit6_servers (LXC-124 on vault). inventory/group_vars/sit6_servers.yml
+# carries every value this play reads.
+#
+# Berylax sends protocol 41 to 104.57.226.196, which MWAN DNATs to this guest.
+# Whenever Berylax's IPv4 address changes, it connects over SSH with the updater
+# key, and the forced command records the connection's source address as the
+# tunnel remote. The guest announces the Berylax prefix to MWAN over iBGP.
+#
+# Run example:
+#   go run goodkind.io/configs/cmd/configs deploy deploy-sit6 \
+#     --limit sit6_servers
+
+- name: Configure sit6 LXC
+  hosts: sit6_servers
+  become: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+
+  tasks:
+    - name: Install tunnel, firewall, and BGP packages
+      # sudo carries the updater's one privileged step.
+      ansible.builtin.apt:
+        name:
+          - frr
+          - iproute2
+          - nftables
+          - sudo
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Deploy sit6 sysctl config
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/sysctl.conf"
+        dest: /etc/sysctl.d/99-sit6.conf
+        mode: "0644"
+      notify:
+        - Reload sysctl
+
+    - name: Ensure sit6 config and state directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /etc/sit6
+        - "{{ sit6_tunnel_remote_file | dirname }}"
+
+    - name: Seed the tunnel remote when none is recorded
+      # force: false writes only a missing file, so the address the updater
+      # recorded survives every later deploy.
+      ansible.builtin.copy:
+        content: "{{ sit6_tunnel_initial_remote_v4 }}\n"
+        dest: "{{ sit6_tunnel_remote_file }}"
+        force: false
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Restart sit6-tunnel
+
+    - name: Deploy tunnel settings
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/sit6.env.j2"
+        dest: /etc/sit6/sit6.env
+        mode: "0644"
+      notify:
+        - Restart sit6-tunnel
+
+    - name: Deploy tunnel bring-up script
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/sit6-tunnel-up.sh"
+        dest: /usr/local/sbin/sit6-tunnel-up
+        mode: "0755"
+      notify:
+        - Restart sit6-tunnel
+
+    - name: Deploy sit6-tunnel systemd unit
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/sit6-tunnel.service"
+        dest: /etc/systemd/system/sit6-tunnel.service
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart sit6-tunnel
+
+    - name: Deploy nftables ruleset
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/nftables.conf.j2"
+        dest: /etc/nftables.conf
+        mode: "0644"
+        validate: /usr/sbin/nft -c -f %s
+      notify:
+        - Reload nftables
+
+    - name: Deploy FRR daemons file
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/frr-daemons"
+        dest: /etc/frr/daemons
+        owner: frr
+        group: frr
+        mode: "0640"
+      notify:
+        - Restart frr
+
+    - name: Deploy FRR config
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/frr.conf.j2"
+        dest: /etc/frr/frr.conf
+        owner: frr
+        group: frr
+        mode: "0640"
+        validate: /usr/bin/vtysh --dryrun --inputfile %s
+      notify:
+        - Restart frr
+
+    - name: Create the updater account
+      # A forced command runs through the login shell, so the account keeps a
+      # real shell; the forced command is the only thing the key can run.
+      ansible.builtin.user:
+        name: "{{ sit6_updater_user }}"
+        system: true
+        shell: /bin/sh
+        home: "{{ sit6_updater_home }}"
+        create_home: true
+
+    - name: Ensure the updater .ssh directory is root-owned
+      ansible.builtin.file:
+        path: "{{ sit6_updater_home }}/.ssh"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy the updater authorized_keys
+      # Root-owned so the account cannot rewrite its own key restrictions.
+      ansible.builtin.copy:
+        content: |
+          restrict,command="/usr/local/sbin/sit6-set-remote" {{ sit6_updater_public_key }}
+        dest: "{{ sit6_updater_home }}/.ssh/authorized_keys"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Deploy sit6-set-remote
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/sit6/sit6-set-remote.sh"
+        dest: /usr/local/sbin/sit6-set-remote
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy sit6-set-remote sudoers rule
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/sudoers-sit6-set-remote.j2"
+        dest: /etc/sudoers.d/sit6-set-remote
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Deploy sshd drop-in
+      ansible.builtin.template:
+        src: "{{ repo_root }}/sit6/sshd-sit6.conf.j2"
+        dest: /etc/ssh/sshd_config.d/50-sit6.conf
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify:
+        - Reload ssh
+
+    - name: Enable sit6 services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - nftables
+        - frr
+        - sit6-tunnel
+        - ssh
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Reload sysctl
+      # `sysctl --system` exits non-zero in the LXC because it hits
+      # host-protected keys a container cannot set, so apply just this file.
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-sit6.conf
+      changed_when: false
+
+    - name: Reload nftables
+      ansible.builtin.systemd:
+        name: nftables
+        state: reloaded
+
+    - name: Restart frr
+      ansible.builtin.systemd:
+        name: frr
+        state: restarted
+
+    - name: Restart sit6-tunnel
+      ansible.builtin.systemd:
+        name: sit6-tunnel
+        state: restarted
+
+    - name: Reload ssh
+      ansible.builtin.systemd:
+        name: ssh
+        state: reloaded

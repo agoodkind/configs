@@ -1,0 +1,6 @@
+# Managed by Ansible (deploy-sit6.yml)
+#
+# sit6-set-remote re-executes itself as root with no arguments and reads the
+# client address from SSH_CONNECTION, so that one variable passes through.
+Defaults!/usr/local/sbin/sit6-set-remote env_keep += "SSH_CONNECTION"
+{{ sit6_updater_user }} ALL=(root) NOPASSWD: /usr/local/sbin/sit6-set-remote ""

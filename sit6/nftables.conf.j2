@@ -1,0 +1,34 @@
+#!/usr/sbin/nft -f
+# nftables ruleset for the sit6 LXC (rendered by deploy-sit6.yml).
+
+flush ruleset
+
+table inet filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		ct state established,related accept
+		iif "lo" accept
+		meta l4proto icmp accept
+		meta l4proto ipv6-icmp accept
+		# 6in4 from Berylax. The tunnel device only accepts its recorded remote.
+		ip protocol 41 accept
+		ip6 saddr {{ sit6_bgp_neighbor_v6 }} tcp dport 179 accept
+		tcp dport 22 accept
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		ct state established,related accept
+		iifname "{{ sit6_tunnel_iface }}" oifname "{{ sit6_uplink_iface }}" ip6 saddr {{ sit6_tunnel_prefix_v6 }} accept
+		iifname "{{ sit6_uplink_iface }}" oifname "{{ sit6_tunnel_iface }}" ip6 daddr {{ sit6_tunnel_prefix_v6 }} accept
+	}
+}
+
+table ip mangle {
+	chain postrouting {
+		type filter hook postrouting priority mangle; policy accept;
+		# MWAN steers a new flow from the internal link carrying this codepoint
+		# out AT&T, where 104.57.226.196 maps to this guest.
+		ip protocol 41 ip dscp set {{ sit6_tunnel_dscp }}
+	}
+}
