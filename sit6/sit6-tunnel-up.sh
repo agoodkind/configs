@@ -63,12 +63,23 @@ apply_tunnel_routing() {
     ip -6 route replace "$SIT6_TUNNEL_PREFIX" dev "$SIT6_TUNNEL_IFACE"
 }
 
+# Sources the guest's own IPv6 from a host address inside the announced prefix,
+# because MWAN does not translate the mwanbr address. The /128 on lo is local,
+# so it wins over the prefix route into the tunnel.
+apply_source_routing() {
+    ip -6 address replace "$SIT6_SOURCE_V6/128" dev lo
+    ip -6 route replace default via "$SIT6_UPLINK_GATEWAY_V6" \
+        dev "$SIT6_UPLINK_IFACE" src "$SIT6_SOURCE_V6"
+}
+
 main() {
     local tunnel_exists=false
     local previous_remote=""
     local resolved_addresses=""
     local lookup_status=0
     local chosen_remote
+
+    apply_source_routing
 
     if [[ -e "/sys/class/net/$SIT6_TUNNEL_IFACE" ]]; then
         tunnel_exists=true
