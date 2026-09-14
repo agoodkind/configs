@@ -34,3 +34,12 @@ table ip mangle {
 		ip protocol 41 ip dscp set {{ sit6_tunnel_dscp }}
 	}
 }
+
+table ip6 mangle {
+	chain postrouting {
+		type filter hook postrouting priority mangle; policy accept;
+		# Berylax LAN IPv6 leaves on the same codepoint, so MWAN sends every new
+		# flow out AT&T instead of balancing it onto Webpass.
+		oifname "{{ sit6_uplink_iface }}" ip6 saddr {{ sit6_tunnel_prefix_v6 }} ip6 dscp set {{ sit6_tunnel_dscp }}
+	}
+}
