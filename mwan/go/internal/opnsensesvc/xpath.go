@@ -120,6 +120,14 @@ func nodeToString(n *xmlquery.Node) string {
 		return n.InnerText()
 	case xmlquery.TextNode:
 		return n.Data
+	case xmlquery.DocumentNode,
+		xmlquery.DeclarationNode,
+		xmlquery.ElementNode,
+		xmlquery.CharDataNode,
+		xmlquery.CommentNode,
+		xmlquery.NotationNode,
+		xmlquery.ProcessingInstruction:
+		fallthrough
 	default:
 		// ElementNode and friends: emit XML so the caller can see
 		// children.

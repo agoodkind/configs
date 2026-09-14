@@ -110,8 +110,8 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 		cmd.Stdin = bytes.NewReader(args.StdinBytes)
 	}
 
-	stdoutBuf := &cappedBuffer{cap: maxOutputBytes}
-	stderrBuf := &cappedBuffer{cap: maxOutputBytes}
+	stdoutBuf := &cappedBuffer{cap: maxOutputBytes, buf: bytes.Buffer{}, truncated: false, bytesWrote: 0}
+	stderrBuf := &cappedBuffer{cap: maxOutputBytes, buf: bytes.Buffer{}, truncated: false, bytesWrote: 0}
 	cmd.Stdout = stdoutBuf
 	cmd.Stderr = stderrBuf
 
@@ -133,7 +133,7 @@ func runExec(ctx context.Context, args ExecArgs) (*ExecResult, error) {
 	if runErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			res.ExitCode = int32(exitErr.ExitCode())
+			res.ExitCode = clampToInt32(exitErr.ExitCode())
 			return res, nil
 		}
 		if res.TimedOut {
@@ -169,7 +169,7 @@ func validateExecArgs(args ExecArgs) error {
 	return nil
 }
 
-// cappedBuffer is an io.Writer that drops bytes after `cap` and
+// cappedBuffer is an [io.Writer] that drops bytes after `cap` and
 // records the fact via Truncated().
 type cappedBuffer struct {
 	cap        int
@@ -192,7 +192,8 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 	n, err := c.buf.Write(p)
 	c.bytesWrote += n
 	if err != nil {
-		return n, err
+		slog.Error("opnsensesvc: capped buffer write failed", "err", err)
+		return n, fmt.Errorf("capped buffer write: %w", err)
 	}
 	return want, nil
 }
@@ -205,5 +206,5 @@ func (c *cappedBuffer) Truncated() bool {
 	return c.truncated
 }
 
-// ensure cappedBuffer satisfies io.Writer
+// ensure cappedBuffer satisfies [io.Writer]
 var _ io.Writer = (*cappedBuffer)(nil)
