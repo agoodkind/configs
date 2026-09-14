@@ -45,6 +45,13 @@
 {% if provider.forced_dscp is defined %}
 {% set wan = wan | combine({"forced-dscp": provider.forced_dscp}) %}
 {% endif %}
+{% if provider.static_mappings %}
+{% set mappings = [] %}
+{% for mapping in provider.static_mappings %}
+{% set _ = mappings.append({"external": mapping.external, "internal": mapping.internal}) %}
+{% endfor %}
+{% set wan = wan | combine({"static-mapping": mappings}) %}
+{% endif %}
 {% set _ = interfaces.append({
   "name": iface_name,
   "type": "iana-if-type:other",

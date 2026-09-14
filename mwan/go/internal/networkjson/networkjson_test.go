@@ -3,12 +3,14 @@
 package networkjson_test
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/networkjson"
 )
 
@@ -66,6 +68,10 @@ const validDocument = `{
           "from-prio": 56,
           "npt-prefix": "2001:db8:beef:200::/60",
           "v4-source": "203.0.113.2",
+          "static-mapping": [
+            { "external": "203.0.113.2", "internal": "192.0.2.2" },
+            { "external": "203.0.113.3", "internal": "192.0.2.3" }
+          ],
           "health": {
             "enabled": true,
             "ping-count": 3,
@@ -234,6 +240,47 @@ func TestLoadAcceptsADisabledProbeWithNoSettings(t *testing.T) {
 	}
 	if probe.PingCount != 0 || len(probe.TargetsV6) != 0 {
 		t.Fatalf("disabled probe carries settings: %+v", probe)
+	}
+}
+
+func TestLoadCarriesStaticMappings(t *testing.T) {
+	t.Parallel()
+
+	loaded, err := networkjson.Load(writeDocument(t, validDocument), schemaDirForTest(t))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	want := []config.StaticMapping{
+		{External: netip.MustParseAddr("203.0.113.2"), Internal: netip.MustParseAddr("192.0.2.2")},
+		{External: netip.MustParseAddr("203.0.113.3"), Internal: netip.MustParseAddr("192.0.2.3")},
+	}
+	if got := loaded.WAN["webpass"].StaticMappings; !reflect.DeepEqual(got, want) {
+		t.Fatalf("webpass static mappings = %v, want %v", got, want)
+	}
+	if got := loaded.WAN["att"].StaticMappings; len(got) != 0 {
+		t.Fatalf("att static mappings = %v, want none", got)
+	}
+}
+
+func TestLoadRejectsAnExternalAddressMappedByTwoProviders(t *testing.T) {
+	t.Parallel()
+
+	// The schema keys the list inside one provider and cannot see another
+	// provider's list. Two providers translating one address would each own it
+	// wherever it is on-link, so which link carries it would be undefined.
+	body := strings.Replace(
+		validDocument,
+		`"npt-prefix": "2001:db8:beef:100::/60"`,
+		`"npt-prefix": "2001:db8:beef:100::/60",
+          "static-mapping": [{ "external": "203.0.113.3", "internal": "192.0.2.4" }]`,
+		1,
+	)
+	_, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err == nil {
+		t.Fatal("Load accepted one external address mapped by two providers")
+	}
+	if !strings.Contains(err.Error(), "static-mapping") || !strings.Contains(err.Error(), "203.0.113.3") {
+		t.Fatalf("error does not name the list and the address: %v", err)
 	}
 }
 

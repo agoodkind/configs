@@ -1,9 +1,9 @@
 //go:build linux
 
 // Package networkjson loads the gateway's network configuration: the provider
-// inventory, each provider's routing slots, translation prefix, source pin, and
-// health probe, and the group-wide translation, internal link, and probe
-// timeout. The file is written in the model's own JSON encoding and validated
+// inventory, each provider's routing slots, translation prefix, source pin,
+// static mappings, and health probe, and the group-wide translation, internal
+// link, and probe timeout. The file is written in the model's own JSON encoding and validated
 // against the installed schema before any value is read, so the file the daemon
 // loads and the tree the management surface serves describe one thing.
 //
@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"slices"
 
@@ -69,6 +70,13 @@ type wan struct {
 	V4Source   string  `json:"v4-source"`
 	ForcedDSCP *int    `json:"forced-dscp"`
 	Health     *health `json:"health"`
+
+	StaticMappings []staticMapping `json:"static-mapping"`
+}
+
+type staticMapping struct {
+	External string `json:"external"`
+	Internal string `json:"internal"`
 }
 
 type health struct {
@@ -317,6 +325,10 @@ func checkProviderSet(loaded *Config) error {
 		}
 	}
 
+	if err := checkMappedExternals(loaded, names); err != nil {
+		return err
+	}
+
 	for _, name := range names {
 		entry := loaded.WAN[name]
 		if owner, isReserved := reserved[entry.TableID]; isReserved {
@@ -333,6 +345,51 @@ func checkProviderSet(loaded *Config) error {
 		}
 	}
 	return nil
+}
+
+// checkMappedExternals refuses an external address that two providers map. The
+// schema keys the list inside one provider and cannot see another provider's
+// list, and two providers translating one address would each hold it on any
+// link it is on-link for, so which link carries it would be undefined. names
+// is sorted, so the error always names the same pair.
+func checkMappedExternals(loaded *Config, names []string) error {
+	mappedBy := make(map[netip.Addr]string, len(names))
+	for _, name := range names {
+		for _, mapping := range loaded.WAN[name].StaticMappings {
+			if taken, seen := mappedBy[mapping.External]; seen {
+				return fmt.Errorf("wan %s: static-mapping external %s is already mapped by wan %s",
+					name, mapping.External, taken)
+			}
+			mappedBy[mapping.External] = name
+		}
+	}
+	return nil
+}
+
+// buildStaticMappings parses one provider's static mappings. The schema types
+// both addresses before this runs, so an address that does not parse means the
+// document reached the loader unvalidated; it is refused rather than dropped.
+func buildStaticMappings(label string, entries []staticMapping) ([]config.StaticMapping, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	mappings := make([]config.StaticMapping, 0, len(entries))
+	for _, entry := range entries {
+		external, err := netip.ParseAddr(entry.External)
+		if err != nil {
+			slog.Error("networkjson: static-mapping external unparsable",
+				"wan", label, "external", entry.External, "err", err)
+			return nil, fmt.Errorf("%s: static-mapping external %q: %w", label, entry.External, err)
+		}
+		internal, err := netip.ParseAddr(entry.Internal)
+		if err != nil {
+			slog.Error("networkjson: static-mapping internal unparsable",
+				"wan", label, "internal", entry.Internal, "err", err)
+			return nil, fmt.Errorf("%s: static-mapping internal %q: %w", label, entry.Internal, err)
+		}
+		mappings = append(mappings, config.StaticMapping{External: external, Internal: internal})
+	}
+	return mappings, nil
 }
 
 // buildProvider turns one interface's provider entry into the two sections the
@@ -367,16 +424,21 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 	if err != nil {
 		return config.IfMgrWANEntry{}, nil, err
 	}
+	mappings, err := buildStaticMappings(label, provider.StaticMappings)
+	if err != nil {
+		return config.IfMgrWANEntry{}, nil, err
+	}
 	routing := config.IfMgrWANEntry{
-		Iface:      entry.Name,
-		TableID:    *provider.TableID,
-		FwMark:     *provider.FwMark,
-		FwMarkPrio: *provider.FwMarkPrio,
-		FromPrio:   *provider.FromPrio,
-		NptPrefix:  provider.NptPrefix,
-		V4Source:   provider.V4Source,
-		Tier:       tier,
-		Weight:     weight,
+		Iface:          entry.Name,
+		TableID:        *provider.TableID,
+		FwMark:         *provider.FwMark,
+		FwMarkPrio:     *provider.FwMarkPrio,
+		FromPrio:       *provider.FromPrio,
+		NptPrefix:      provider.NptPrefix,
+		V4Source:       provider.V4Source,
+		Tier:           tier,
+		Weight:         weight,
+		StaticMappings: mappings,
 	}
 	if provider.Health == nil {
 		return routing, nil, nil

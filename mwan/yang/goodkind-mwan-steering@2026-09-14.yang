@@ -49,6 +49,15 @@ module goodkind-mwan-steering {
      decides its verdict, the prefix-translation inputs, and the
      internal link the members route toward.";
 
+  revision 2026-09-14 {
+    description
+      "Carry each provider's static address mappings, so the gateway reads
+       which external addresses it translates from the model rather than
+       from the firewall template alone, and serve the addresses a
+       provider link answers for because they sit inside that link's
+       connected subnet. Every addition is a new node: no node defined by
+       an earlier revision changes name, type, or shape.";
+  }
   revision 2026-09-13 {
     description
       "Carry the DSCP value that forces a new flow onto one provider, so a
@@ -305,6 +314,42 @@ module goodkind-mwan-steering {
            leaves over this link whichever member the balancer would
            have chosen. Zero is excluded because every unmarked packet
            carries it, and no two providers may share a value.";
+      }
+      list static-mapping {
+        key "external";
+        description
+          "A one-to-one IPv4 translation this provider carries: traffic
+           arriving on this link for the external address is delivered
+           to the internal address, and the internal address leaves
+           this link as the external one. When the external address
+           sits inside a subnet the link is connected to, the upstream
+           gateway reaches it by address resolution on the link, so the
+           gateway holds it on the link as a host address.";
+        leaf external {
+          type inet:ipv4-address;
+          description
+            "The provider-assigned address the internal address is
+             reachable at. It keys the list, so one provider maps an
+             address once.";
+        }
+        leaf internal {
+          type inet:ipv4-address;
+          mandatory true;
+          description
+            "The internal address traffic for the external address is
+             delivered to.";
+        }
+      }
+      leaf-list owned-address {
+        config false;
+        type inet:ipv4-address;
+        description
+          "The mapped external addresses the gateway holds on this link
+           as host addresses on its last reconcile, because each sits
+           inside a subnet the link is connected to. The link's own
+           address is not listed, because the link already holds it with
+           its subnet prefix. A mapped address outside every connected
+           subnet is routed to the gateway and is not listed either.";
       }
       container health {
         presence
