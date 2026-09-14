@@ -7,6 +7,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -69,8 +71,21 @@ func addresses(values ...string) []netip.Addr {
 // newOwnershipModule gives att a routed block outside its lease's subnet and
 // webpass an on-link block whose first mapped address is the link address, the
 // two shapes the production providers have.
-func newOwnershipModule(kernel *fakeLinkAddresses, store *wanstate.Store) *Module {
+//
+// Reconcile is driven through its public entry point, so the test must stop
+// it before any real kernel write. The provider links do not exist in the test
+// process, so gateway discovery fails right after ownership; the health state
+// path sits under a regular file as a second stop, because opening it fails
+// with a not-a-directory error rather than the missing-file case the reader
+// treats as empty.
+func newOwnershipModule(t *testing.T, kernel *fakeLinkAddresses, store *wanstate.Store) *Module {
+	t.Helper()
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("create blocker file: %v", err)
+	}
 	cfg := testConfig()
+	cfg.HealthStateFile = filepath.Join(blocker, "mwan-health.state")
 	cfg.WANs = append([]WAN(nil), cfg.WANs...)
 	cfg.WANs[0].MappedExternals = addresses("198.51.100.193", "198.51.100.194")
 	cfg.WANs[1].MappedExternals = addresses("203.0.113.2", "203.0.113.3", "203.0.113.4")
@@ -81,19 +96,13 @@ func newOwnershipModule(kernel *fakeLinkAddresses, store *wanstate.Store) *Modul
 	return module
 }
 
-func (m *Module) runOwnership(ctx context.Context, log *slog.Logger) error {
-	m.Lock()
-	defer m.Unlock()
-	return m.ownMappedAddressesLocked(ctx, log)
-}
-
 func sortedCopy(values []string) []string {
 	copied := slices.Clone(values)
 	slices.Sort(copied)
 	return copied
 }
 
-func TestOwnMappedAddressesOwnsOnlyOnLinkAddresses(t *testing.T) {
+func TestReconcileOwnsOnlyOnLinkAddresses(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -106,13 +115,18 @@ func TestOwnMappedAddressesOwnsOnlyOnLinkAddresses(t *testing.T) {
 		listErr: map[string]error{},
 	}
 	store := wanstate.New()
-	module := newOwnershipModule(kernel, store)
+	module := newOwnershipModule(t, kernel, store)
 
-	// A second pass must find the /32s it added and leave both the link and the
-	// served set unchanged.
+	// Each pass ends with an error once ownership has run, because the rest of
+	// the pass cannot read gateways or health here. The /32 writes must already
+	// be in the kernel, and a second pass must find them and change nothing.
 	for pass := 1; pass <= 2; pass++ {
-		if err := module.runOwnership(ctx, module.Log); err != nil {
-			t.Fatalf("pass %d: ownership returned error: %v", pass, err)
+		err := module.Reconcile(ctx, module.Log)
+		if err == nil {
+			t.Fatalf("pass %d: Reconcile returned nil, want the gateway or health read to stop the pass", pass)
+		}
+		if strings.Contains(err.Error(), "mapped addresses") || strings.Contains(err.Error(), "list addresses") {
+			t.Fatalf("pass %d: ownership itself failed: %v", pass, err)
 		}
 	}
 	module.publishLiveState(testGateways(), netif.HealthStates{})
@@ -136,7 +150,7 @@ func TestOwnMappedAddressesOwnsOnlyOnLinkAddresses(t *testing.T) {
 	}
 }
 
-func TestOwnMappedAddressesContinuesPastAnUnreadableLink(t *testing.T) {
+func TestReconcileOwnsPastAnUnreadableLink(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -147,14 +161,17 @@ func TestOwnMappedAddressesContinuesPastAnUnreadableLink(t *testing.T) {
 		listErr: map[string]error{"att0": errors.New("link not found")},
 	}
 	store := wanstate.New()
-	module := newOwnershipModule(kernel, store)
+	module := newOwnershipModule(t, kernel, store)
 
-	err := module.runOwnership(ctx, module.Log)
-	if err == nil || !strings.Contains(err.Error(), "att0") {
-		t.Fatalf("ownership error = %v, want one naming att0", err)
+	err := module.Reconcile(ctx, module.Log)
+	if err == nil || !strings.Contains(err.Error(), "list addresses on att0") {
+		t.Fatalf("Reconcile error = %v, want one naming the unreadable att0 link", err)
 	}
 	module.publishLiveState(testGateways(), netif.HealthStates{})
 
+	if got := sortedCopy(kernel.byIface["webpass0"]); !reflect.DeepEqual(got, []string{"203.0.113.2/29", "203.0.113.3/32", "203.0.113.4/32"}) {
+		t.Fatalf("webpass0 addresses = %v, want the link plus two /32s", got)
+	}
 	routing := store.Snapshot().Routing
 	if got := routing["webpass"].OwnedAddresses; !reflect.DeepEqual(got, addresses("203.0.113.3", "203.0.113.4")) {
 		t.Fatalf("webpass owned addresses = %v, want 203.0.113.3 and 203.0.113.4", got)
