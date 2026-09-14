@@ -428,6 +428,10 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 	if err != nil {
 		return config.IfMgrWANEntry{}, nil, err
 	}
+	forcedDSCP := 0
+	if provider.ForcedDSCP != nil {
+		forcedDSCP = *provider.ForcedDSCP
+	}
 	routing := config.IfMgrWANEntry{
 		Iface:          entry.Name,
 		TableID:        *provider.TableID,
@@ -436,6 +440,7 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 		FromPrio:       *provider.FromPrio,
 		NptPrefix:      provider.NptPrefix,
 		V4Source:       provider.V4Source,
+		ForcedDSCP:     forcedDSCP,
 		Tier:           tier,
 		Weight:         weight,
 		StaticMappings: mappings,
@@ -475,26 +480,29 @@ func buildSteering(label string, member *steering) (uint8, int, error) {
 
 // buildHealth reads one provider's probe. Every setting of an enabled probe is
 // required, matching the daemon's rule that an enabled provider fully specifies
-// its policy rather than inheriting a module-wide default. A disabled probe
-// needs nothing beyond the flag, because the daemon never reads its settings:
-// it is the second of the two ways a provider goes unprobed, beside carrying no
-// health container at all.
+// its policy rather than inheriting a module-wide default. A disabled probe is
+// the second of the two ways a provider goes unprobed, beside carrying no
+// health container at all. The daemon runs none of its settings, so it needs
+// nothing beyond the flag, but it keeps every setting the file carries: the
+// management surface serves the probe from this section, and a setting dropped
+// here would make the served tree disagree with the file.
 func buildHealth(label string, probe *health) (*config.IfMgrHealthWANSection, error) {
 	if probe.Enabled == nil {
 		return nil, fmt.Errorf("%s: health/enabled is required", label)
 	}
-	if !*probe.Enabled {
-		return &config.IfMgrHealthWANSection{
-			Enabled:              false,
-			PingCount:            0,
-			SuccessThreshold:     0,
-			CheckIntervalSeconds: 0,
-			FailureThreshold:     0,
-			RecoveryThreshold:    0,
-			TargetsV4:            nil,
-			TargetsV6:            nil,
-			HTTPURLs:             nil,
-		}, nil
+	section := &config.IfMgrHealthWANSection{
+		Enabled:              *probe.Enabled,
+		PingCount:            probe.PingCount,
+		SuccessThreshold:     probe.SuccessThreshold,
+		CheckIntervalSeconds: probe.CheckInterval,
+		FailureThreshold:     probe.FailureThreshold,
+		RecoveryThreshold:    probe.RecoveryThreshold,
+		TargetsV4:            probe.TargetsV4,
+		TargetsV6:            probe.TargetsV6,
+		HTTPURLs:             probe.HTTPURLs,
+	}
+	if !section.Enabled {
+		return section, nil
 	}
 	counts := []struct {
 		leaf  string
@@ -511,17 +519,7 @@ func buildHealth(label string, probe *health) (*config.IfMgrHealthWANSection, er
 			return nil, fmt.Errorf("%s: health/%s is required", label, count.leaf)
 		}
 	}
-	return &config.IfMgrHealthWANSection{
-		Enabled:              true,
-		PingCount:            *probe.PingCount,
-		SuccessThreshold:     *probe.SuccessThreshold,
-		CheckIntervalSeconds: *probe.CheckInterval,
-		FailureThreshold:     *probe.FailureThreshold,
-		RecoveryThreshold:    *probe.RecoveryThreshold,
-		TargetsV4:            probe.TargetsV4,
-		TargetsV6:            probe.TargetsV6,
-		HTTPURLs:             probe.HTTPURLs,
-	}, nil
+	return section, nil
 }
 
 // ApplyFrom loads the network configuration at path, validates it against the

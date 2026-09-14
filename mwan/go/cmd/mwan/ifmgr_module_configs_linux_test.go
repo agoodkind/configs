@@ -380,22 +380,22 @@ func TestBuildHealthConfig(t *testing.T) {
 		WAN: map[string]config.IfMgrHealthWANSection{
 			"att": {
 				Enabled:              true,
-				PingCount:            4,
-				SuccessThreshold:     2,
-				CheckIntervalSeconds: 15,
-				FailureThreshold:     3,
-				RecoveryThreshold:    4,
+				PingCount:            new(4),
+				SuccessThreshold:     new(2),
+				CheckIntervalSeconds: new(15),
+				FailureThreshold:     new(3),
+				RecoveryThreshold:    new(4),
 				TargetsV4:            []string{"192.0.2.1", "192.0.2.2"},
 				TargetsV6:            []string{"2001:db8::1", "2001:db8::2"},
 				HTTPURLs:             []string{"https://example.com/health"},
 			},
 			"webpass": {
 				Enabled:              true,
-				PingCount:            5,
-				SuccessThreshold:     1,
-				CheckIntervalSeconds: 30,
-				FailureThreshold:     5,
-				RecoveryThreshold:    3,
+				PingCount:            new(5),
+				SuccessThreshold:     new(1),
+				CheckIntervalSeconds: new(30),
+				FailureThreshold:     new(5),
+				RecoveryThreshold:    new(3),
 				TargetsV4:            []string{"198.51.100.1", "198.51.100.2"},
 				TargetsV6:            []string{"2001:db8:1::1", "2001:db8:1::2"},
 				HTTPURLs:             []string{"https://example.net/health"},
@@ -467,11 +467,11 @@ func TestBuildHealthConfig(t *testing.T) {
 func enabledHealthWANSection(intervalSeconds int) config.IfMgrHealthWANSection {
 	return config.IfMgrHealthWANSection{
 		Enabled:              true,
-		PingCount:            3,
-		SuccessThreshold:     2,
-		CheckIntervalSeconds: intervalSeconds,
-		FailureThreshold:     2,
-		RecoveryThreshold:    2,
+		PingCount:            new(3),
+		SuccessThreshold:     new(2),
+		CheckIntervalSeconds: new(intervalSeconds),
+		FailureThreshold:     new(2),
+		RecoveryThreshold:    new(2),
 		TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
 		TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 		HTTPURLs:             []string{"https://ifconfig.co/ip"},
@@ -489,7 +489,7 @@ func TestBuildHealthConfigSkipsDisabledAndAbsentWANs(t *testing.T) {
 		{
 			name: "disabled WAN",
 			wan: map[string]config.IfMgrHealthWANSection{
-				"att":     {Enabled: false, CheckIntervalSeconds: 10},
+				"att":     {Enabled: false, CheckIntervalSeconds: new(10)},
 				"webpass": enabledHealthWANSection(30),
 			},
 			wantName: "webpass",
@@ -535,7 +535,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 		{
 			name: "zero ping_count",
 			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
-				s.PingCount = 0
+				s.PingCount = new(0)
 				return s
 			},
 			wantSub: "health/ping-count",
@@ -543,7 +543,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 		{
 			name: "zero success_threshold",
 			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
-				s.SuccessThreshold = 0
+				s.SuccessThreshold = new(0)
 				return s
 			},
 			wantSub: "health/success-threshold",
@@ -559,7 +559,7 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 		{
 			name: "success_threshold exceeds targets",
 			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
-				s.SuccessThreshold = 3
+				s.SuccessThreshold = new(3)
 				return s
 			},
 			wantSub: "exceeds targets-v4",
@@ -784,22 +784,22 @@ ping_count = 99
 		Health: map[string]config.IfMgrHealthWANSection{
 			"att": {
 				Enabled:              true,
-				PingCount:            3,
-				SuccessThreshold:     2,
-				CheckIntervalSeconds: 10,
-				FailureThreshold:     2,
-				RecoveryThreshold:    2,
+				PingCount:            new(3),
+				SuccessThreshold:     new(2),
+				CheckIntervalSeconds: new(10),
+				FailureThreshold:     new(2),
+				RecoveryThreshold:    new(2),
 				TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
 				TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 				HTTPURLs:             []string{"https://ifconfig.co/ip"},
 			},
 			"webpass": {
 				Enabled:              true,
-				PingCount:            3,
-				SuccessThreshold:     2,
-				CheckIntervalSeconds: 30,
-				FailureThreshold:     2,
-				RecoveryThreshold:    2,
+				PingCount:            new(3),
+				SuccessThreshold:     new(2),
+				CheckIntervalSeconds: new(30),
+				FailureThreshold:     new(2),
+				RecoveryThreshold:    new(2),
 				TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
 				TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 				HTTPURLs:             []string{"https://ifconfig.co/ip"},
@@ -893,11 +893,11 @@ persist_state_file = "/var/lib/mwan/health-state"
 		Health: map[string]config.IfMgrHealthWANSection{
 			"att": {
 				Enabled:              true,
-				PingCount:            3,
-				SuccessThreshold:     2,
-				CheckIntervalSeconds: 10,
-				FailureThreshold:     2,
-				RecoveryThreshold:    2,
+				PingCount:            new(3),
+				SuccessThreshold:     new(2),
+				CheckIntervalSeconds: new(10),
+				FailureThreshold:     new(2),
+				RecoveryThreshold:    new(2),
 				TargetsV4:            []string{"1.1.1.1", "8.8.8.8"},
 				TargetsV6:            []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 				HTTPURLs:             []string{"https://ifconfig.co/ip"},

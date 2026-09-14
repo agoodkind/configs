@@ -285,10 +285,10 @@ func buildHealthConfig(
 			TargetsV4:         nil,
 			TargetsV6:         nil,
 			HTTPURLs:          append([]string(nil), wanSection.HTTPURLs...),
-			PingCount:         wanSection.PingCount,
-			SuccessThreshold:  wanSection.SuccessThreshold,
-			FailureThreshold:  wanSection.FailureThreshold,
-			RecoveryThreshold: wanSection.RecoveryThreshold,
+			PingCount:         healthSettingValue(wanSection.PingCount),
+			SuccessThreshold:  healthSettingValue(wanSection.SuccessThreshold),
+			FailureThreshold:  healthSettingValue(wanSection.FailureThreshold),
+			RecoveryThreshold: healthSettingValue(wanSection.RecoveryThreshold),
 			CheckInterval:     0,
 		}
 		fieldPrefix := "network.json wan " + wan.Name + " health"
@@ -306,7 +306,7 @@ func buildHealthConfig(
 		if err != nil {
 			return health.Config{}, err
 		}
-		healthWAN.CheckInterval = time.Duration(wanSection.CheckIntervalSeconds) * time.Second
+		healthWAN.CheckInterval = time.Duration(healthSettingValue(wanSection.CheckIntervalSeconds)) * time.Second
 		if healthWAN.CheckInterval != 0 &&
 			(cfg.Interval == 0 || healthWAN.CheckInterval < cfg.Interval) {
 			cfg.Interval = healthWAN.CheckInterval
@@ -324,16 +324,17 @@ func buildHealthConfig(
 // into a load error instead of a silent inherit of the module-wide defaults.
 func validateHealthWANSection(name string, s config.IfMgrHealthWANSection) error {
 	prefix := "network.json wan " + name + " health"
-	if s.PingCount <= 0 {
+	successThreshold := healthSettingValue(s.SuccessThreshold)
+	if healthSettingValue(s.PingCount) <= 0 {
 		return fmt.Errorf("%s/ping-count must be > 0", prefix)
 	}
-	if s.SuccessThreshold <= 0 {
+	if successThreshold <= 0 {
 		return fmt.Errorf("%s/success-threshold must be > 0", prefix)
 	}
-	if s.FailureThreshold <= 0 {
+	if healthSettingValue(s.FailureThreshold) <= 0 {
 		return fmt.Errorf("%s/failure-threshold must be > 0", prefix)
 	}
-	if s.RecoveryThreshold <= 0 {
+	if healthSettingValue(s.RecoveryThreshold) <= 0 {
 		return fmt.Errorf("%s/recovery-threshold must be > 0", prefix)
 	}
 	if len(s.TargetsV4) == 0 {
@@ -342,19 +343,30 @@ func validateHealthWANSection(name string, s config.IfMgrHealthWANSection) error
 	if len(s.TargetsV6) == 0 {
 		return fmt.Errorf("%s/targets-v6 must have at least one entry", prefix)
 	}
-	if s.SuccessThreshold > len(s.TargetsV4) {
+	if successThreshold > len(s.TargetsV4) {
 		return fmt.Errorf(
 			"%s/success-threshold %d exceeds targets-v4 count %d",
-			prefix, s.SuccessThreshold, len(s.TargetsV4),
+			prefix, successThreshold, len(s.TargetsV4),
 		)
 	}
-	if s.SuccessThreshold > len(s.TargetsV6) {
+	if successThreshold > len(s.TargetsV6) {
 		return fmt.Errorf(
 			"%s/success-threshold %d exceeds targets-v6 count %d",
-			prefix, s.SuccessThreshold, len(s.TargetsV6),
+			prefix, successThreshold, len(s.TargetsV6),
 		)
 	}
 	return nil
+}
+
+// healthSettingValue reads one probe setting as the number the health module
+// takes. An absent setting reads as zero, which the enabled-probe validation
+// above refuses, so only a disabled probe, whose settings the module never
+// runs, can carry one.
+func healthSettingValue(setting *int) int {
+	if setting == nil {
+		return 0
+	}
+	return *setting
 }
 
 // buildNPTConfig projects the shared translation prefixes and WAN identity
