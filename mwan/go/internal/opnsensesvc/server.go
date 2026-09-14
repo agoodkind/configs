@@ -23,7 +23,7 @@ import (
 
 // Server hosts the OpnsenseService and TransferService gRPC handlers.
 // All mutating operations on /conf/config.xml take a snapshot first
-// via backupConfig and return the backup path so the caller can
+// via backupConfigWithLog and return the backup path so the caller can
 // immediately revert by issuing a write of the snapshot bytes.
 type Server struct {
 	mwanv1.UnimplementedOpnsenseServiceServer

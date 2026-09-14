@@ -19,10 +19,6 @@ const ConfigPath = "/conf/config.xml"
 // itself uses /conf/backup so we land alongside its native backups.
 const BackupDir = "/conf/backup"
 
-func readConfig(path string) ([]byte, error) {
-	return readConfigWithLog(context.Background(), nil, path)
-}
-
 func readConfigWithLog(ctx context.Context, log *slog.Logger, path string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -36,10 +32,6 @@ func readConfigWithLog(ctx context.Context, log *slog.Logger, path string) ([]by
 		)
 	}
 	return b, nil
-}
-
-func writeConfig(path string, content []byte) error {
-	return writeConfigWithLog(context.Background(), nil, path, content)
 }
 
 func writeConfigWithLog(ctx context.Context, log *slog.Logger, path string, content []byte) error {
@@ -95,10 +87,6 @@ func writeConfigWithLog(ctx context.Context, log *slog.Logger, path string, cont
 			slog.String("from", tmpName), slog.String("to", path))
 	}
 	return nil
-}
-
-func backupConfig(srcPath, backupDir, label string) (string, error) {
-	return backupConfigWithLog(context.Background(), nil, nil, srcPath, backupDir, label)
 }
 
 func backupConfigWithLog(
@@ -202,10 +190,6 @@ func sanitizeLabel(s string) string {
 	return string(out)
 }
 
-func stripGatewayV6(input []byte) ([]byte, bool, error) {
-	return stripGatewayV6WithLog(context.Background(), nil, input)
-}
-
 func stripGatewayV6WithLog(ctx context.Context, log *slog.Logger, input []byte) ([]byte, bool, error) {
 	doc := etree.NewDocument()
 	if err := doc.ReadFromBytes(input); err != nil {
@@ -228,10 +212,6 @@ func stripGatewayV6WithLog(ctx context.Context, log *slog.Logger, input []byte) 
 			"opnsensesvc: strip gateway serialize failed", "stripGatewayV6: serialize", err)
 	}
 	return out, true, nil
-}
-
-func injectGatewayV6(input []byte, gatewayName string) ([]byte, bool, error) {
-	return injectGatewayV6WithLog(context.Background(), nil, input, gatewayName)
 }
 
 func injectGatewayV6WithLog(

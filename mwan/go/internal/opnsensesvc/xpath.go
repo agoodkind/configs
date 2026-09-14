@@ -10,14 +10,10 @@ import (
 	"github.com/antchfx/xmlquery"
 )
 
-// xpathGet evaluates expr against the XML in input and returns string
-// representations of every matching node. Element matches are
+// xpathGetWithLog evaluates expr against the XML in input and returns
+// string representations of every matching node. Element matches are
 // serialized as XML; attribute and text matches are returned as their
 // string value.
-func xpathGet(input []byte, expr string) ([]string, error) {
-	return xpathGetWithLog(context.Background(), nil, input, expr)
-}
-
 func xpathGetWithLog(
 	ctx context.Context,
 	log *slog.Logger,
@@ -45,12 +41,8 @@ func xpathGetWithLog(
 	return out, nil
 }
 
-// xpathSet sets the InnerText of every node matched by expr to
+// xpathSetWithLog sets the InnerText of every node matched by expr to
 // newValue. Returns the new bytes and the count of changed nodes.
-func xpathSet(input []byte, expr, newValue string) ([]byte, int, error) {
-	return xpathSetWithLog(context.Background(), nil, input, expr, newValue)
-}
-
 func xpathSetWithLog(
 	ctx context.Context,
 	log *slog.Logger,
@@ -87,12 +79,8 @@ func xpathSetWithLog(
 	return out, len(nodes), nil
 }
 
-// xpathDelete removes every node matched by expr from its parent.
-// Returns new bytes and the count of deleted nodes.
-func xpathDelete(input []byte, expr string) ([]byte, int, error) {
-	return xpathDeleteWithLog(context.Background(), nil, input, expr)
-}
-
+// xpathDeleteWithLog removes every node matched by expr from its
+// parent. Returns new bytes and the count of deleted nodes.
 func xpathDeleteWithLog(
 	ctx context.Context,
 	log *slog.Logger,
@@ -142,7 +130,7 @@ func nodeToString(n *xmlquery.Node) string {
 }
 
 // stripChildText removes every child text node from n. Used by
-// xpathSet so we can replace the inner text without leaving the
+// xpathSetWithLog so we can replace the inner text without leaving the
 // previous text node in place.
 func stripChildText(n *xmlquery.Node) {
 	child := n.FirstChild
