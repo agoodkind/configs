@@ -86,7 +86,7 @@ func parseBootID(ctx context.Context, out string) (string, error) {
 	match := bootIDPattern.FindStringSubmatch(strings.TrimSpace(out))
 	if match == nil {
 		err := fmt.Errorf("%s: unrecognised output %q", sysctlBootID, out)
-		slog.WarnContext(ctx, "upgrade: boot id output not recognised", "err", err)
+		slog.DebugContext(ctx, "upgrade: boot id output not recognised", "err", err)
 		return "", err
 	}
 	return match[1], nil
