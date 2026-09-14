@@ -5,7 +5,8 @@
 # Vault carries the mbrains bridge, the Monkeybrains out-of-band uplink. The
 # bridge declaration is static; the host mwan-ifmgr oob role owns its dynamic
 # addressing. The two sysctl fragments keep RA learning on the bridge and
-# forwarding for the failover LXC transit path correct from boot.
+# forwarding for the failover LXC transit path correct from boot. The sit
+# module loads at boot for the sit6 LXC's 6in4 tunnel.
 #
 # Shared hypervisor services (mwan ifmgr, watchdog, cloudflared OOB, base
 # packages) come from deploy-proxmox.yml.
@@ -37,6 +38,20 @@
         dest: /etc/sysctl.d/99-ha-forwarding.conf
         mode: "0644"
       notify: Reload sysctl settings
+
+    - name: Load the sit module at boot for the sit6 LXC tunnel
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/vault/sit-modules.conf"
+        dest: /etc/modules-load.d/sit6.conf
+        mode: "0644"
+
+    - name: Load the sit module now for the sit6 LXC tunnel
+      # Asserted on every run rather than through a change-notified handler, so
+      # a run that writes the file and dies before its handler still loads the
+      # module on retry. modprobe is idempotent when the module is loaded.
+      ansible.builtin.command:
+        cmd: modprobe sit
+      changed_when: false
 
   handlers:
     - name: Reload sysctl settings
