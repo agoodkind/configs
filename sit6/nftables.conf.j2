@@ -10,10 +10,12 @@ table inet filter {
 		iif "lo" accept
 		meta l4proto icmp accept
 		meta l4proto ipv6-icmp accept
-		# 6in4 from Berylax. The tunnel device only accepts its recorded remote.
+		# 6in4 from Berylax. The tunnel device only accepts its configured remote.
 		ip protocol 41 accept
 		ip6 saddr {{ sit6_bgp_neighbor_v6 }} tcp dport 179 accept
-		tcp dport 22 accept
+		# Ansible management over the mwanbr address only, so SSH is not open on
+		# the IPv4 address MWAN maps from AT&T or through the tunnel.
+		iifname "{{ sit6_uplink_iface }}" ip6 daddr {{ service_mapping.sit6.ipv6 }} tcp dport 22 accept
 	}
 
 	chain forward {

@@ -1,0 +1,21 @@
+[Unit]
+Description=6in4 tunnel to Berylax
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Tunnel settings rendered by deploy-sit6.yml from group_vars/sit6_servers.yml.
+Environment=SIT6_TUNNEL_IFACE={{ sit6_tunnel_iface }}
+Environment=SIT6_TUNNEL_LOCAL={{ sit6_tunnel_local_v4 }}
+Environment=SIT6_TUNNEL_REMOTE={{ sit6_tunnel_remote }}
+Environment=SIT6_TUNNEL_TTL={{ sit6_tunnel_ttl }}
+Environment=SIT6_TUNNEL_LINK_ADDRESS={{ sit6_tunnel_link_address_v6 }}
+Environment=SIT6_TUNNEL_PREFIX={{ sit6_tunnel_prefix_v6 }}
+# No ExecStop: a restart re-runs the idempotent bring-up, which changes the
+# tunnel in place instead of deleting it and withdrawing the prefix.
+ExecStart=/usr/local/sbin/sit6-tunnel-up
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
