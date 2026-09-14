@@ -60,6 +60,13 @@ service_mapping:
     # this address is the natural Ansible SSH target). eth0 lives on mbrains
     # for the upstream-ISP iface that mwan-ifmgr monitors.
     ipv6: "3d06:bad:b01:fe::4"
+  sit6:
+    hostname: sit6.home.goodkind.io
+    vmid: 124
+    # 6in4 tunnel endpoint LXC; its only NIC is on mwanbr, the same bridge
+    # vault sits on, so this address is the natural Ansible SSH target.
+    ipv6: "3d06:bad:b01:fe::5"
+    ipv4: "10.250.250.5"
   tack:
     hostname: tack.home.goodkind.io
     vmid: 117

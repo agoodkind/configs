@@ -1,0 +1,9 @@
+[Unit]
+Description=Re-resolve Berylax every 5 minutes for the sit6 tunnel
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
