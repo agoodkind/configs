@@ -1,6 +1,6 @@
 package svc
 
-import internalclock "goodkind.io/mwan/internal/clock"
+import internalclock "goodkind.io/mwan/internal/opnsense/internal/clock"
 
 // Clock supplies wall time for operations that need testable timestamps.
 type Clock = internalclock.Clock
