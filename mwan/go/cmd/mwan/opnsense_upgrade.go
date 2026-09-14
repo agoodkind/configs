@@ -92,6 +92,8 @@ type upgradeInputs struct {
 	ResetConfirm        bool
 	DiffAgainst         string
 	SettleAfterUpgrade  time.Duration
+	PingTargetIPv4      string
+	PingTargetIPv6      string
 	APIKey              string
 	APISecret           string
 	BGPv4Neighbors      string
@@ -177,6 +179,8 @@ func resolveUpgradeInputs() (upgradeInputs, error) {
 		ResetConfirm:        cfg.OPNsense.Upgrade.ResetConfirm,
 		DiffAgainst:         cfg.OPNsense.Upgrade.DiffAgainst,
 		SettleAfterUpgrade:  settle,
+		PingTargetIPv4:      cfg.OPNsense.Upgrade.Validate.PingTargetIPv4,
+		PingTargetIPv6:      cfg.OPNsense.Upgrade.Validate.PingTargetIPv6,
 		APIKey:              cfg.OPNsense.Upgrade.Validate.APIKey,
 		APISecret:           cfg.OPNsense.Upgrade.Validate.APISecret,
 		BGPv4Neighbors:      cfg.OPNsense.Upgrade.Validate.BGPv4Neighbors,
@@ -212,10 +216,24 @@ func (ui upgradeInputs) toOptions() upgrade.Options {
 	}
 }
 
-// buildUpgradeDeps wires the production Deps. Executor and validator both ride
-// the gRPC channel. The SSH-host fields are still passed into validator probes
-// that talk to OPNsense over SSH. The alert notifier mails through send-email
-// with the [email] section of the OPNsense tooling config.
+// buildDaemonDialer returns the dialer the validate phase uses to reach the
+// host bridge. Each validate run dials afresh, so a client an earlier rollback
+// closed never carries into the checks.
+func buildDaemonDialer(target string) upgrade.DaemonDialer {
+	return func(ctx context.Context) (upgrade.DaemonRPCClient, func() error, error) {
+		client, err := opnsense.DialContext(ctx, target)
+		if err != nil {
+			slog.ErrorContext(ctx, "opnsense upgrade: validate dial", "err", err, "target", target)
+			return nil, nil, fmt.Errorf("dial %s: %w", target, err)
+		}
+		return client.RPC(), client.Close, nil
+	}
+}
+
+// buildUpgradeDeps wires the production Deps. The executor and the validator's
+// daemon checks ride the gRPC channel, and the validator's egress checks ping
+// from this host. The alert notifier mails through send-email with the [email]
+// section of the OPNsense tooling config.
 func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 	logger := slog.Default()
 	notifier, err := opnsensenotify.New(ui.Email, logger, "mwan-opnsense-upgrade")
@@ -240,74 +258,11 @@ func buildUpgradeDeps(ui upgradeInputs) (upgrade.Deps, error) {
 	return upgrade.Deps{
 		Snap:     snapshotter,
 		Exec:     exec,
-		Validate: newValidatorAdapter(ui),
+		Validate: upgrade.NewHealthValidator(buildDaemonDialer(target), ui.PingTargetIPv4, ui.PingTargetIPv6),
 		Notifier: notifier,
 		Clock:    nil,
 		Log:      logger,
 	}, nil
-}
-
-// validatorAdapter satisfies upgrade.Validator by mapping the upgrade
-// package's ValidateContext into a validate.Run call. All inputs come
-// from the loaded TOML, not flags.
-type validatorAdapter struct {
-	ui upgradeInputs
-}
-
-func newValidatorAdapter(ui upgradeInputs) *validatorAdapter {
-	return &validatorAdapter{ui: ui}
-}
-
-func (a *validatorAdapter) Validate(ctx context.Context, vctx upgrade.ValidateContext) (upgrade.ValidationResult, error) {
-	vmidInt, err := strconv.Atoi(vctx.VMID)
-	if err != nil {
-		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: parse vmid", err)
-	}
-	cfg := validate.Config{
-		VMID:                   vmidInt,
-		DeployID:               vctx.DeployID,
-		StateDir:               vctx.StateDir,
-		BGPv4Neighbors:         splitNonEmpty(a.ui.BGPv4Neighbors),
-		BGPv6Neighbors:         splitNonEmpty(a.ui.BGPv6Neighbors),
-		OPNsenseLAN:            a.ui.OPNsenseLAN,
-		MWANOpnsenseSocket:     a.ui.MWANOpnsenseSock,
-		MWANOpnsenseHostSocket: a.ui.MWANOpnsenseHostSck,
-		APIAuth:                buildBasicAuth(a.ui.APIKey, a.ui.APISecret),
-		SettleAfterUpgrade:     a.ui.SettleAfterUpgrade,
-		SeverityFilter:         "",
-	}
-	rpcCli, err := opnsense.DialContext(ctx, a.ui.GRPCTarget)
-	if err != nil {
-		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: dial "+a.ui.GRPCTarget, err)
-	}
-	env := &validate.GRPCEnv{
-		RPC: rpcCli.RPC(),
-		Fallback: &validate.ExecEnv{
-			OPNsenseSSHHost:     a.ui.OPNsenseSSH,
-			OPNsenseSSHJumpHost: a.ui.OPNsenseJump,
-			ProxmoxSSHHost:      a.ui.ProxmoxSSH,
-			LANClientSSHHost:    a.ui.LANClientSSH,
-			OPNsenseAddr:        a.ui.OPNsenseAddr,
-			HTTPClient:          nil,
-			Clock:               nil,
-		},
-		ExecTimeoutSeconds: upgradeExecTimeoutSeconds(a.ui.ExecTimeout),
-		Clock:              nil,
-	}
-	runCtx := ctx
-	if a.ui.ExecTimeout > 0 {
-		var cancel context.CancelFunc
-		runCtx, cancel = context.WithTimeout(ctx, a.ui.ExecTimeout)
-		defer cancel()
-	}
-	baseline, err := validate.Run(runCtx, cfg, nil, env)
-	if err != nil {
-		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: validate.Run", err)
-	}
-	if baseline == nil {
-		return emptyUpgradeValidation(), wrapErr(ctx, "validatorAdapter: nil baseline", errors.New("validate.Run returned nil"))
-	}
-	return upgrade.AggregateChecks(translateResults(baseline.Results)), nil
 }
 
 func buildBasicAuth(apiKey, apiSecret string) *validate.BasicAuth {
@@ -315,32 +270,6 @@ func buildBasicAuth(apiKey, apiSecret string) *validate.BasicAuth {
 		return nil
 	}
 	return &validate.BasicAuth{Username: apiKey, Password: apiSecret}
-}
-
-func translateResults(results []validate.Result) []upgrade.CheckResult {
-	checks := make([]upgrade.CheckResult, 0, len(results))
-	for _, r := range results {
-		checks = append(checks, upgrade.CheckResult{
-			Name: r.CheckID,
-			Pass: r.Outcome == validate.OutcomePass,
-			Note: noteForResult(r),
-		})
-	}
-	return checks
-}
-
-func noteForResult(r validate.Result) string {
-	if r.Outcome == validate.OutcomePass {
-		return r.ParsedValue
-	}
-	if r.Message == "" {
-		return string(r.Outcome)
-	}
-	return fmt.Sprintf("%s: %s", r.Outcome, r.Message)
-}
-
-func emptyUpgradeValidation() upgrade.ValidationResult {
-	return upgrade.ValidationResult{Checks: nil, AllPass: false, AnyFail: false, Partial: false}
 }
 
 func splitNonEmpty(csv string) []string {
@@ -490,10 +419,9 @@ func captureAndPrintBaseline(ctx context.Context, ui upgradeInputs, deployID str
 }
 
 // standaloneBaseline runs validate.Run end-to-end and returns the
-// captured Baseline. The validatorAdapter inside upgrade.Validate
-// already aggregated check results into a ValidationResult, but the
-// adapter discards the baseline metadata (capture time, plugin set,
-// pf rule counts) needed for cross-deploy diffs.
+// captured Baseline, the operator-facing artefact the validate phase
+// saves beside its verdict for cross-deploy diffs. The verdict itself
+// comes from upgrade.HealthValidator and does not read this matrix.
 func standaloneBaseline(ctx context.Context, ui upgradeInputs, deployID string) (*validate.Baseline, error) {
 	vmid, err := strconv.Atoi(ui.VMID)
 	if err != nil {

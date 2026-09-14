@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 )
 
-// Validate runs the test-matrix surface, invokes the Validator interface, and
-// translates the result into the next Phase plus a notify event.
+// Validate invokes the Validator interface and translates the result into the
+// next Phase plus a notify event.
 func Validate(ctx context.Context, deps Deps, opts Options) (State, ValidationResult, error) {
 	if err := validateOptions(opts); err != nil {
 		slog.ErrorContext(ctx, "upgrade.Validate: invalid options", "err", err)

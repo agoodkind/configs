@@ -31,9 +31,9 @@ type OPNsenseRPCClient interface {
 // the mwan-opnsense daemon over the persistent virtio-serial gRPC
 // channel. This is the OOB path used when QGA is unavailable on the
 // guest, for example on the testbed where there is no internet egress
-// to install the os-qemu-guest-agent package. The same RPC handles the
-// validator's surface (see validate/env_grpc.go), so prepare, execute,
-// rollback, and commit can all run with --env-transport=grpc.
+// to install the os-qemu-guest-agent package. The validate phase's exec
+// check rides the same RPC, so prepare, execute, validate, rollback, and
+// commit all run over the gRPC channel.
 type GRPCExecutor struct {
 	// RPC is the typed mwan-opnsense client. Required.
 	RPC OPNsenseRPCClient

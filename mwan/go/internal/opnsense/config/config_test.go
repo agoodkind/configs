@@ -101,6 +101,11 @@ func TestLoadFileOverridesRenderedKeysAndDefaultsTheRest(t *testing.T) {
 		upgrade.Validate.SettleAfterUpgrade != "5m" {
 		t.Errorf("upgrade = %+v, want the defaults beside the rendered vmid", upgrade)
 	}
+	// The validate phase pings the targets the mwan watchdog pings.
+	if upgrade.Validate.PingTargetIPv4 != "1.1.1.1" || upgrade.Validate.PingTargetIPv6 != "2606:4700:4700::1111" {
+		t.Errorf("upgrade validate ping targets = %q %q, want the watchdog's targets",
+			upgrade.Validate.PingTargetIPv4, upgrade.Validate.PingTargetIPv6)
+	}
 	if cfg.OPNsense.Validate.Timeout != "10m" || cfg.OPNsense.Validate.StateDir != "/var/lib/mwan/upgrades" {
 		t.Errorf("validate = %+v, want the defaults", cfg.OPNsense.Validate)
 	}

@@ -80,9 +80,10 @@ type Executor interface {
 	GuestExec(ctx context.Context, vmid string, args ...string) (GuestExecResult, error)
 }
 
-// Validator is the test-matrix surface. The Result type is intentionally
-// simple so the unit tests in this package can pass canned results without
-// coupling to concrete validator internals.
+// Validator decides whether the upgraded router is healthy.
+// [HealthValidator] satisfies it in production. The Result type is
+// intentionally simple so the unit tests in this package can pass canned
+// results without coupling to concrete validator internals.
 type Validator interface {
 	Validate(ctx context.Context, ctxArgs ValidateContext) (ValidationResult, error)
 }

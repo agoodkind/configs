@@ -178,15 +178,18 @@ type UpgradeSection struct {
 	// against it via validate.Diff and prints the report.
 	DiffAgainst string `toml:"diff_against"`
 
-	// Validate is the inlined validator subsection so the upgrade
-	// orchestrator can drive the same matrix as the validate verb
-	// without duplicating every field.
+	// Validate holds the validate phase inputs.
 	Validate UpgradeValidateSection `toml:"validate"`
 }
 
-// UpgradeValidateSection holds the validator inputs the upgrade
-// phases share with the standalone validate verb.
+// UpgradeValidateSection holds the validate phase inputs. The ping targets
+// decide the phase's egress checks; the remaining fields feed the check-matrix
+// baseline the validate phase also saves.
 type UpgradeValidateSection struct {
+	// PingTargetIPv4 and PingTargetIPv6 are the hosts the validate phase
+	// pings from the Proxmox host. Both must answer for validate to pass.
+	PingTargetIPv4       string `toml:"ping_target_ipv4"`
+	PingTargetIPv6       string `toml:"ping_target_ipv6"`
 	APIKey               string `toml:"api_key"`
 	APISecret            string `toml:"api_secret"`
 	BGPv4Neighbors       string `toml:"bgp_v4_neighbors"`
@@ -317,6 +320,9 @@ func defaultConfig() Config {
 				ResetConfirm:             false,
 				DiffAgainst:              "",
 				Validate: UpgradeValidateSection{
+					// The mwan watchdog's [network] ping targets.
+					PingTargetIPv4:       "1.1.1.1",
+					PingTargetIPv6:       "2606:4700:4700::1111",
 					APIKey:               "",
 					APISecret:            "",
 					BGPv4Neighbors:       "",
