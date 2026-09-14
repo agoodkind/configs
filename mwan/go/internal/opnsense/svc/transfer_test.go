@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 )
 
 // fixedClock is a Clock that returns a stable Now value plus a

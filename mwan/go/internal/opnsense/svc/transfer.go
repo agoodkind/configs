@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -395,8 +395,10 @@ func (m *TransferManager) serveRead(stream mwanv1.TransferService_UploadServer, 
 			Terminal: &mwanv1.TransferTerminal{
 				Sha256Hex:     finalSum,
 				TotalBytes:    offset,
+				BackupPath:    "",
 				StatusCode:    int32(codes.OK),
 				StatusMessage: "ok",
+				StagedPath:    "",
 			},
 		},
 	}); err != nil {

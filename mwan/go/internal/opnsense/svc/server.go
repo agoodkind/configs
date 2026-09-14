@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	mwanv1 "goodkind.io/mwan/gen/mwan/v1"
+	mwanv1 "goodkind.io/mwan/internal/opnsense/gen"
 	"goodkind.io/mwan/internal/opnsense/version"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -261,7 +261,7 @@ func (s *Server) XPathSet(ctx context.Context, req *mwanv1.XPathSetRequest) (*mw
 		return nil, status.Errorf(codes.InvalidArgument, "xpath: %v", err)
 	}
 	if n == 0 {
-		return &mwanv1.XPathSetResponse{ChangedCount: 0}, nil
+		return &mwanv1.XPathSetResponse{BackupPath: "", ChangedCount: 0}, nil
 	}
 	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "xpath-set")
 	if err != nil {
@@ -294,7 +294,7 @@ func (s *Server) XPathDelete(ctx context.Context, req *mwanv1.XPathDeleteRequest
 		return nil, status.Errorf(codes.InvalidArgument, "xpath: %v", err)
 	}
 	if n == 0 {
-		return &mwanv1.XPathDeleteResponse{DeletedCount: 0}, nil
+		return &mwanv1.XPathDeleteResponse{BackupPath: "", DeletedCount: 0}, nil
 	}
 	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "xpath-delete")
 	if err != nil {
@@ -349,7 +349,7 @@ func (s *Server) StripGatewayV6(ctx context.Context, _ *mwanv1.StripGatewayV6Req
 		return nil, status.Errorf(codes.Internal, "strip: %v", err)
 	}
 	if !changed {
-		return &mwanv1.StripGatewayV6Response{Changed: false}, nil
+		return &mwanv1.StripGatewayV6Response{BackupPath: "", Changed: false}, nil
 	}
 	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "strip-gatewayv6")
 	if err != nil {
@@ -379,7 +379,7 @@ func (s *Server) InjectGatewayV6(ctx context.Context, req *mwanv1.InjectGatewayV
 		return nil, status.Errorf(codes.Internal, "inject: %v", err)
 	}
 	if !changed {
-		return &mwanv1.InjectGatewayV6Response{Changed: false}, nil
+		return &mwanv1.InjectGatewayV6Response{BackupPath: "", Changed: false}, nil
 	}
 	backupPath, err := backupConfigWithLog(ctx, s.log, s.clock, s.configPath, s.backupDir, "inject-gatewayv6")
 	if err != nil {
