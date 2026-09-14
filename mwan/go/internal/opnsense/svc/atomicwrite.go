@@ -1,6 +1,6 @@
-// Package opnsensesvc hosts the gRPC services that the mwan-opnsense
+// Package svc hosts the gRPC services that the mwan-opnsense
 // daemon exposes over its virtio-serial transport.
-package opnsensesvc
+package svc
 
 import (
 	"context"

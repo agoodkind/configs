@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"goodkind.io/mwan/internal/opnsensesvc"
+	"goodkind.io/mwan/internal/opnsense/svc"
 )
 
 // TestReExecCurrentExecsActiveSlot verifies the restart hook re-execs
@@ -15,7 +15,7 @@ import (
 // stop. The exec function is faked so the test process is not replaced.
 func TestReExecCurrentExecsActiveSlot(t *testing.T) {
 	dir := t.TempDir()
-	current := filepath.Join(dir, opnsensesvc.BinaryCurrent)
+	current := filepath.Join(dir, svc.BinaryCurrent)
 	if err := os.WriteFile(current, []byte("\x7fELF-stub"), 0o755); err != nil {
 		t.Fatalf("write fake current: %v", err)
 	}

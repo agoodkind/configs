@@ -41,7 +41,7 @@ type GRPCExecutor struct {
 	// ExecTimeoutSeconds caps each Exec RPC's per-call timeout. Zero
 	// falls back to the daemon's default (30s); negative is rejected
 	// by the daemon at call time. The maximum honoured by the daemon
-	// is bounded by maxExecTimeout in internal/opnsensesvc/exec.go.
+	// is bounded by maxExecTimeout in internal/opnsense/svc/exec.go.
 	ExecTimeoutSeconds int32
 
 	// Redial reconnects the gRPC client and returns a fresh

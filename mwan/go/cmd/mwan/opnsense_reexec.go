@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"goodkind.io/mwan/internal/opnsensesvc"
+	"goodkind.io/mwan/internal/opnsense/svc"
 )
 
 // reExecCurrent replaces the running process image with the active
@@ -32,7 +32,7 @@ func reExecCurrent(log *slog.Logger, binaryDir string, execFn func(argv0 string,
 	if log == nil {
 		log = slog.Default()
 	}
-	target := filepath.Join(binaryDir, opnsensesvc.BinaryCurrent)
+	target := filepath.Join(binaryDir, svc.BinaryCurrent)
 	if _, err := os.Stat(target); err != nil {
 		log.Error("re-exec: stat active binary failed", "target", target, "err", err)
 		return fmt.Errorf("re-exec: stat active binary %s: %w", target, err)

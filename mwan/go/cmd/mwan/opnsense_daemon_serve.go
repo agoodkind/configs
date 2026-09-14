@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"goodkind.io/mwan/internal/daemoncfg"
-	"goodkind.io/mwan/internal/opnsensesvc"
+	"goodkind.io/mwan/internal/opnsense/daemoncfg"
+	"goodkind.io/mwan/internal/opnsense/svc"
 )
 
 const (
@@ -80,9 +80,9 @@ func runOPNsenseDaemonServe(args []string) int {
 	stateDir := cfg.Daemon.StateDir
 
 	logger := slog.Default()
-	srv := opnsensesvc.NewServer(logger, configPath, backupDir)
-	validator := opnsensesvc.NewPathValidator(logger, opnsensesvc.DefaultReadAllowlist, opnsensesvc.DefaultWriteAllowlist)
-	transferMgr, transferErr := opnsensesvc.NewTransferManager(logger, validator, stateDir, nil)
+	srv := svc.NewServer(logger, configPath, backupDir)
+	validator := svc.NewPathValidator(logger, svc.DefaultReadAllowlist, svc.DefaultWriteAllowlist)
+	transferMgr, transferErr := svc.NewTransferManager(logger, validator, stateDir, nil)
 	if transferErr != nil {
 		fmt.Fprintf(os.Stderr, "daemon serve: build transfer manager: %v\n", transferErr)
 		return 1
@@ -93,17 +93,17 @@ func runOPNsenseDaemonServe(args []string) int {
 	// returning from this subcommand.
 	srv.SetRestartHook(func() {
 		logger.Info("mwan-opnsense: RestartDaemon hook firing, re-exec onto active binary")
-		if err := reExecCurrent(logger, opnsensesvc.DefaultBinaryDir, syscall.Exec); err != nil {
+		if err := reExecCurrent(logger, svc.DefaultBinaryDir, syscall.Exec); err != nil {
 			logger.Error("mwan-opnsense: re-exec failed; falling back to ctx cancel", "err", err)
 			cancel()
 		}
 	})
 
 	openSerial := func(path string) (io.ReadWriteCloser, error) {
-		return opnsensesvc.OpenVirtioSerial(path, baud, logger)
+		return svc.OpenVirtioSerial(path, baud, logger)
 	}
 
-	opts := opnsensesvc.ServeOpts{
+	opts := svc.ServeOpts{
 		SerialPath:   serialPath,
 		OpenSerial:   openSerial,
 		Server:       srv,
@@ -127,7 +127,7 @@ func runOPNsenseDaemonServe(args []string) int {
 		"serial_path", serialPath,
 		"baud", baud)
 
-	serveErr := opnsensesvc.Serve(ctx, opts)
+	serveErr := svc.Serve(ctx, opts)
 	cancel()
 	if serveErr != nil {
 		slog.Error("daemon serve: terminated", "err", serveErr)

@@ -1,4 +1,4 @@
-package opnsensesvc
+package svc
 
 import (
 	"context"
@@ -78,37 +78,50 @@ func TestParseStateFile_TolerantToUnknownKeys(t *testing.T) {
 	}
 }
 
-func TestDeploy_RejectsEmptyBinary(t *testing.T) {
-	dm, _ := newTestDeployManager(t)
-	_, _, err := dm.Deploy(context.Background(), nil, "abc", "v1")
+// stageUpload writes payload into the staged slot, the path the
+// StageBinary handler hands to DeployFromPath.
+func stageUpload(t *testing.T, binDir string, payload []byte) string {
+	t.Helper()
+	staged := filepath.Join(binDir, BinaryStaged)
+	writeBinary(t, staged, payload)
+	return staged
+}
+
+func TestDeployFromPath_RejectsEmptyBinary(t *testing.T) {
+	dm, binDir := newTestDeployManager(t)
+	staged := stageUpload(t, binDir, nil)
+	_, _, err := dm.DeployFromPath(context.Background(), staged, "abc", "v1")
 	if err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Errorf("want empty-binary error, got %v", err)
 	}
 }
 
-func TestDeploy_RejectsMissingSHA(t *testing.T) {
-	dm, _ := newTestDeployManager(t)
-	_, _, err := dm.Deploy(context.Background(), []byte("payload"), "", "v1")
+func TestDeployFromPath_RejectsMissingSHA(t *testing.T) {
+	dm, binDir := newTestDeployManager(t)
+	staged := stageUpload(t, binDir, []byte("payload"))
+	_, _, err := dm.DeployFromPath(context.Background(), staged, "", "v1")
 	if err == nil || !strings.Contains(err.Error(), "sha256_hex required") {
 		t.Errorf("want missing-sha error, got %v", err)
 	}
 }
 
-func TestDeploy_RejectsSHAMismatch(t *testing.T) {
-	dm, _ := newTestDeployManager(t)
-	_, _, err := dm.Deploy(context.Background(), []byte("payload"), "deadbeef", "v1")
+func TestDeployFromPath_RejectsSHAMismatch(t *testing.T) {
+	dm, binDir := newTestDeployManager(t)
+	staged := stageUpload(t, binDir, []byte("payload"))
+	_, _, err := dm.DeployFromPath(context.Background(), staged, "deadbeef", "v1")
 	if err == nil || !strings.Contains(err.Error(), "mismatch") {
 		t.Errorf("want sha mismatch error, got %v", err)
 	}
 }
 
-func TestDeploy_FirstDeployNoCurrent(t *testing.T) {
+func TestDeployFromPath_FirstDeployNoCurrent(t *testing.T) {
 	dm, binDir := newTestDeployManager(t)
 	payload := []byte("new-elf")
 	sum := sha256.Sum256(payload)
 	sumHex := hex.EncodeToString(sum[:])
+	staged := stageUpload(t, binDir, payload)
 
-	_, stagedSHA, err := dm.Deploy(context.Background(), payload, sumHex, "v1.0")
+	_, stagedSHA, err := dm.DeployFromPath(context.Background(), staged, sumHex, "v1.0")
 	if err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
@@ -143,7 +156,7 @@ func TestDeploy_FirstDeployNoCurrent(t *testing.T) {
 	}
 }
 
-func TestDeploy_PreservesPreviousOnSecondDeploy(t *testing.T) {
+func TestDeployFromPath_PreservesPreviousOnSecondDeploy(t *testing.T) {
 	dm, binDir := newTestDeployManager(t)
 	original := []byte("v1-elf")
 	originalSum := sha256.Sum256(original)
@@ -152,8 +165,9 @@ func TestDeploy_PreservesPreviousOnSecondDeploy(t *testing.T) {
 	updated := []byte("v2-elf")
 	updatedSum := sha256.Sum256(updated)
 	updatedSumHex := hex.EncodeToString(updatedSum[:])
+	staged := stageUpload(t, binDir, updated)
 
-	_, _, err := dm.Deploy(context.Background(), updated, updatedSumHex, "v2.0")
+	_, _, err := dm.DeployFromPath(context.Background(), staged, updatedSumHex, "v2.0")
 	if err != nil {
 		t.Fatalf("deploy: %v", err)
 	}

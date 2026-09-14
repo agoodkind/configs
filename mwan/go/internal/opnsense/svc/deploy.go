@@ -1,4 +1,4 @@
-package opnsensesvc
+package svc
 
 import (
 	"context"
@@ -225,8 +225,8 @@ func (d *DeployManager) DeployFromPath(ctx context.Context, srcPath, sha256Hex, 
 }
 
 // finishSwap performs the .current<->.previous swap, state-file
-// update, pending-verify marker drop, and re-exec arming. Shared
-// between the in-memory Deploy and DeployFromPath paths.
+// update, pending-verify marker drop, and re-exec arming for
+// DeployFromPath.
 func (d *DeployManager) finishSwap(ctx context.Context, staged, current, previous, versionStr, computedHex string) error {
 	if _, statErr := os.Stat(current); statErr == nil {
 		if copyErr := copyFile(current, previous); copyErr != nil {
@@ -266,63 +266,6 @@ func (d *DeployManager) finishSwap(ctx context.Context, staged, current, previou
 	d.log.InfoContext(ctx, "deploy: staged binary swapped into active slot",
 		"sha256", computedHex)
 	return nil
-}
-
-// Deploy stages binary, verifies sha256, swaps .current and .previous,
-// drops pending-verify marker, and re-execs. Returns previousPath and
-// stagedSHA256. If re-exec fails, the function returns the error
-// (deploy unwound to best-effort consistency).
-func (d *DeployManager) Deploy(ctx context.Context, binary []byte, sha256Hex, versionStr string) (previousPath string, stagedSHA256 string, err error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	d.log.InfoContext(ctx, "deploy: begin",
-		"bytes", len(binary),
-		"sha256_hex", sha256Hex,
-		"version", versionStr)
-
-	if len(binary) == 0 {
-		err = errors.New("deploy: empty binary payload")
-		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
-		return "", "", err
-	}
-	if sha256Hex == "" {
-		err = errors.New("deploy: sha256_hex required")
-		d.log.ErrorContext(ctx, "deploy: invalid", "err", err)
-		return "", "", err
-	}
-
-	// Verify sha256 before any filesystem mutation.
-	computed := sha256.Sum256(binary)
-	computedHex := hex.EncodeToString(computed[:])
-	if !strings.EqualFold(computedHex, sha256Hex) {
-		err = fmt.Errorf("deploy: sha256 mismatch: got %s, want %s", computedHex, sha256Hex)
-		d.log.ErrorContext(ctx, "deploy: sha256 mismatch", "err", err, "got", computedHex, "want", sha256Hex)
-		return "", "", err
-	}
-	stagedSHA256 = computedHex
-
-	// Stage the new binary.
-	stagedTmp := d.pathOf(BinaryStagedTmp)
-	staged := d.pathOf(BinaryStaged)
-	current := d.pathOf(BinaryCurrent)
-	previous := d.pathOf(BinaryPrevious)
-	previousPath = previous
-
-	if err := writeBinaryAtomic(stagedTmp, binary); err != nil {
-		d.log.ErrorContext(ctx, "deploy: stage write failed", "err", err, "path", stagedTmp)
-		return "", "", fmt.Errorf("stage write %s: %w", stagedTmp, err)
-	}
-	if err := os.Rename(stagedTmp, staged); err != nil {
-		d.log.ErrorContext(ctx, "deploy: stage rename failed", "err", err, "from", stagedTmp, "to", staged)
-		_ = os.Remove(stagedTmp)
-		return "", "", fmt.Errorf("stage rename: %w", err)
-	}
-
-	if err := d.finishSwap(ctx, staged, current, previous, versionStr, computedHex); err != nil {
-		return "", "", err
-	}
-	return previousPath, stagedSHA256, nil
 }
 
 // MarkHealthy clears the pending-verify marker and stamps health=ok.
@@ -565,38 +508,6 @@ func atomicWriteFile(path string, content []byte, mode os.FileMode) error {
 		_ = os.Remove(tmp)
 		slog.Error("atomicWriteFile: rename failed", "from", tmp, "to", path, "err", renameErr)
 		return fmt.Errorf("rename %s into %s: %w", tmp, path, renameErr)
-	}
-	return nil
-}
-
-// writeBinaryAtomic writes the binary content to a tmp path with
-// executable permissions and fsyncs before returning.
-func writeBinaryAtomic(path string, content []byte) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, BinaryFileMode)
-	if err != nil {
-		slog.Error("writeBinaryAtomic: open failed", "path", path, "err", err)
-		return fmt.Errorf("open %s: %w", path, err)
-	}
-	if _, writeErr := file.Write(content); writeErr != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		slog.Error("writeBinaryAtomic: write failed", "path", path, "err", writeErr)
-		return fmt.Errorf("write %s: %w", path, writeErr)
-	}
-	if syncErr := file.Sync(); syncErr != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		slog.Error("writeBinaryAtomic: sync failed", "path", path, "err", syncErr)
-		return fmt.Errorf("sync %s: %w", path, syncErr)
-	}
-	if closeErr := file.Close(); closeErr != nil {
-		_ = os.Remove(path)
-		slog.Error("writeBinaryAtomic: close failed", "path", path, "err", closeErr)
-		return fmt.Errorf("close %s: %w", path, closeErr)
-	}
-	if chmodErr := os.Chmod(path, BinaryFileMode); chmodErr != nil {
-		slog.Error("writeBinaryAtomic: chmod failed", "path", path, "err", chmodErr)
-		return fmt.Errorf("chmod %s: %w", path, chmodErr)
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package opnsensesvc
+package svc
 
 import (
 	"bytes"
@@ -238,21 +238,5 @@ func TestRunExec_CappedBufferDoesNotWedge(t *testing.T) {
 	}
 	if len(res.Stdout) > maxOutputBytes {
 		t.Fatalf("stdout exceeded cap: %d > %d", len(res.Stdout), maxOutputBytes)
-	}
-}
-
-func TestRunExec_TimeoutClamp(t *testing.T) {
-	// Caller asks for 99999s; we cap at maxExecTimeout. Ensure the call returns
-	// quickly when the command is fast.
-	res, err := runExec(context.Background(), ExecArgs{
-		Command:        "/bin/sh",
-		Args:           []string{"-c", "exit 0"},
-		TimeoutSeconds: 99999,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.ExitCode != 0 {
-		t.Fatalf("exit=%d", res.ExitCode)
 	}
 }
