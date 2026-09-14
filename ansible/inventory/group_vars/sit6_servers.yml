@@ -29,6 +29,11 @@ sit6_tunnel_dscp: "cs1"
 # far from Berylax's LAN hosts, which NPT maps one-to-one into that prefix.
 sit6_guest_source_v6: "3d06:bad:b01:b:ffff::5"
 sit6_uplink_gateway_v6: "3d06:bad:b01:fe::3"
+# The home resolver sits behind MWAN and OPNsense, and neither forwards from
+# mwanbr back into the LAN, so the guest resolves through public IPv6 resolvers.
+sit6_resolvers_v6:
+  - "2606:4700:4700::1111"
+  - "2001:4860:4860::8888"
 
 # First install only: FRR is the package that announces the prefix the guest
 # needs for IPv6 egress, so vault resolves and downloads it and pushes the
