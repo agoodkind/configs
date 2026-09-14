@@ -236,6 +236,14 @@ func selftestGateway() wanconfig.Gateway {
 	return wanconfig.Gateway{
 		InternalIface: "eninternal0",
 		HashMode:      "random",
+		Group: wanconfig.GroupSettings{
+			ReservedTables:     []uint32{400, 500},
+			InternalPrefix:     netip.MustParsePrefix("3d06:bad:b01:210::/60"),
+			OpnsenseEdgeV6:     netip.MustParseAddr("2001:db8:fe::2"),
+			MwanbrEdgeV6:       netip.MustParseAddr("2001:db8:fe::3"),
+			InternalNetV4:      netip.MustParsePrefix("192.0.2.0/29"),
+			ProbeTimeoutMillis: 2000,
+		},
 		Members: []wanconfig.Member{{
 			Name:        "att",
 			Iface:       "enatt0",
@@ -244,6 +252,30 @@ func selftestGateway() wanconfig.Gateway {
 			ProbePolicy: "att",
 			NPTInternal: netip.MustParsePrefix("3d06:bad:b01:210::/60"),
 			NPTExternal: netip.MustParsePrefix("2001:db8:a::/60"),
+			TableID:     100,
+			FwMark:      1,
+			FwMarkPrio:  100,
+			FromPrio:    55,
+			V4Source:    "",
+			ForcedDSCP:  8,
+			// The mapping's external address is the one selftestStore reports
+			// the link owning, so the read carries the configured mapping and
+			// the live owned address under one wan container.
+			StaticMappings: []wanconfig.StaticMapping{{
+				External: netip.MustParseAddr(selftestOwnedAddress),
+				Internal: netip.MustParseAddr("192.0.2.3"),
+			}},
+			Health: &wanconfig.ProbeSettings{
+				Enabled:              true,
+				PingCount:            new(uint8(3)),
+				SuccessThreshold:     new(uint8(2)),
+				FailureThreshold:     new(uint8(2)),
+				RecoveryThreshold:    new(uint8(2)),
+				CheckIntervalSeconds: new(uint32(10)),
+				TargetsV4:            []netip.Addr{netip.MustParseAddr("192.0.2.10")},
+				TargetsV6:            []netip.Addr{netip.MustParseAddr("2001:db8:53::1")},
+				HTTPURLs:             []string{"https://example.test/ip"},
+			},
 		}},
 		Daemon: wanconfig.DaemonSettings{
 			Watchdog: wanconfig.WatchdogSettings{
@@ -329,51 +361,16 @@ func runPrivateSelftest(log *slog.Logger, flags selftestFlags) int {
 const sysrepoSHMDir = "/dev/shm"
 
 func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
-	if err := os.MkdirAll(flags.repository, 0o750); err != nil {
-		return failStep(log, "create repository", err)
-	}
-	// The repository must be this run's own. Pointing the selftest at a
-	// populated one, the host's included, would leave connection records
-	// in it and test a datastore the host may be serving.
-	entries, err := os.ReadDir(flags.repository)
-	if err != nil {
-		return failStep(log, "read repository", err)
-	}
-	if len(entries) > 0 {
-		return fmt.Errorf("repository %s is not empty; the private selftest needs a fresh directory", flags.repository)
-	}
-	// sysrepo reads its repository path and shared-memory prefix from the
-	// environment at connect time; a distinct prefix keeps this run apart
-	// from any datastore the host serves.
-	shmPrefix := fmt.Sprintf("mwanselftest%d", os.Getpid())
-	os.Setenv("SYSREPO_REPOSITORY_PATH", flags.repository)
-	os.Setenv("SYSREPO_SHM_PREFIX", shmPrefix)
-	// The static sysrepo compiles with the upstream group policy
-	// (SYSREPO_GROUP=sysrepo, MWAN-435), and sr_is_prod_env() gates every
-	// group chown on this variable being absent. The private repository is
-	// this run's own, so the group policy has nothing to protect here, and
-	// without this the selftest needs a sysrepo group with the running
-	// user in it on every machine that runs it.
-	os.Setenv("SR_ENV_RUN_TESTS", "1")
-	// Registered before the connections' own deferred closes, so it runs
-	// after both have disconnected.
-	defer removeSelftestSHM(log, shmPrefix)
-
 	ctx, cancel := context.WithTimeout(context.Background(), selftestTimeout)
 	defer cancel()
 
-	models, err := resolveSelftestModels(log, flags.modelsDir)
+	reader, closeRepository, err := openPrivateRepository(ctx, log, flags)
 	if err != nil {
 		return err
 	}
-	reader, err := yangpub.New(log)
-	if err != nil {
-		return failStep(log, "reader connection", err)
-	}
-	defer func() { _ = reader.Close() }()
-	if err := reader.InstallModules(ctx, models, flags.modelsDir); err != nil {
-		return failStep(log, "install models", err)
-	}
+	// Deferred before the daemon connection's own close, so it runs after
+	// both connections have disconnected.
+	defer closeRepository()
 
 	daemon, err := yangpub.New(log)
 	if err != nil {
@@ -423,6 +420,99 @@ func runPrivateSelftestSteps(log *slog.Logger, flags selftestFlags) error {
 		return failStep(log, "interfaces tree after close: "+after, err)
 	}
 	return nil
+}
+
+// openPrivateRepository points this process's datastore at a fresh private
+// repository, installs the gateway's models into it over a reader connection,
+// and returns that connection with a cleanup that closes it and removes the
+// run's shared memory. The caller defers the cleanup before opening any other
+// connection, so the shared memory goes only after every connection has
+// disconnected.
+func openPrivateRepository(
+	ctx context.Context,
+	log *slog.Logger,
+	flags selftestFlags,
+) (yangpub.Publisher, func(), error) {
+	if err := os.MkdirAll(flags.repository, 0o750); err != nil {
+		return nil, nil, failStep(log, "create repository", err)
+	}
+	// The repository must be this run's own. Pointing the selftest at a
+	// populated one, the host's included, would leave connection records
+	// in it and test a datastore the host may be serving.
+	entries, err := os.ReadDir(flags.repository)
+	if err != nil {
+		return nil, nil, failStep(log, "read repository", err)
+	}
+	if len(entries) > 0 {
+		return nil, nil, fmt.Errorf("repository %s is not empty; the private selftest needs a fresh directory", flags.repository)
+	}
+	// sysrepo reads its repository path and shared-memory prefix from the
+	// environment at connect time; a distinct prefix keeps this run apart
+	// from any datastore the host serves.
+	shmPrefix := fmt.Sprintf("mwanselftest%d", os.Getpid())
+	restoreEnv := setSelftestEnv([]envSetting{
+		{name: "SYSREPO_REPOSITORY_PATH", value: flags.repository},
+		{name: "SYSREPO_SHM_PREFIX", value: shmPrefix},
+		// The static sysrepo compiles with the upstream group policy
+		// (SYSREPO_GROUP=sysrepo, MWAN-435), and sr_is_prod_env() gates every
+		// group chown on this variable being absent. The private repository is
+		// this run's own, so the group policy has nothing to protect here, and
+		// without this the selftest needs a sysrepo group with the running
+		// user in it on every machine that runs it.
+		{name: "SR_ENV_RUN_TESTS", value: "1"},
+	})
+
+	models, err := resolveSelftestModels(log, flags.modelsDir)
+	if err != nil {
+		restoreEnv()
+		return nil, nil, err
+	}
+	reader, err := yangpub.New(log)
+	if err != nil {
+		removeSelftestSHM(log, shmPrefix)
+		restoreEnv()
+		return nil, nil, failStep(log, "reader connection", err)
+	}
+	// The environment goes back last, after the connection has disconnected
+	// and the shared memory is gone, so a later connection in this process
+	// reaches the datastore it reached before the selftest ran.
+	closeRepository := func() {
+		_ = reader.Close()
+		removeSelftestSHM(log, shmPrefix)
+		restoreEnv()
+	}
+	if err := reader.InstallModules(ctx, models, flags.modelsDir); err != nil {
+		closeRepository()
+		return nil, nil, failStep(log, "install models", err)
+	}
+	return reader, closeRepository, nil
+}
+
+// envSetting is one process environment variable and the value to give it.
+type envSetting struct {
+	name  string
+	value string
+}
+
+// setSelftestEnv sets each variable and returns a function that puts every
+// one back: the prior value when the variable was set, and no variable at
+// all when it was absent.
+func setSelftestEnv(settings []envSetting) func() {
+	restores := make([]func(), 0, len(settings))
+	for _, setting := range settings {
+		prior, present := os.LookupEnv(setting.name)
+		os.Setenv(setting.name, setting.value)
+		if present {
+			restores = append(restores, func() { os.Setenv(setting.name, prior) })
+		} else {
+			restores = append(restores, func() { os.Unsetenv(setting.name) })
+		}
+	}
+	return func() {
+		for _, restore := range restores {
+			restore()
+		}
+	}
 }
 
 // selftestNotifTimeout bounds the wait for each notification to reach the
@@ -672,15 +762,30 @@ func checkSelftestInterfaces(log *slog.Logger, tree json.RawMessage) error {
 }
 
 // checkSelftestOwnedAddresses checks the member's wan container carries the
-// provider's name and exactly the one owned address the store reports. Both
-// are served only from the operational provider, because the configuration
-// publish writes no wan container.
+// provider's name, the static mapping the configuration publish wrote, and
+// exactly the one owned address the store reports. The configuration and the
+// live state both write into this container, so one read proves they merge
+// rather than one replacing the other.
 func checkSelftestOwnedAddresses(log *slog.Logger, member map[string]json.RawMessage) error {
 	wan, err := unmarshalObject(log, member["goodkind-mwan-steering:wan"], "wan container")
 	if err != nil {
 		return err
 	}
 	if err := expectLeaf(wan, "name", `"att"`, "live state"); err != nil {
+		return err
+	}
+	mappings, err := unmarshalArray(log, wan["static-mapping"], "static-mapping list")
+	if err != nil {
+		return err
+	}
+	if len(mappings) != 1 {
+		return fmt.Errorf("configuration: static-mapping = %s, want one entry", wan["static-mapping"])
+	}
+	mapping, err := unmarshalObject(log, mappings[0], "static-mapping entry")
+	if err != nil {
+		return err
+	}
+	if err := expectLeaf(mapping, "external", `"`+selftestOwnedAddress+`"`, "configuration"); err != nil {
 		return err
 	}
 	owned, err := unmarshalArray(log, wan["owned-address"], "owned-address leaf-list")
