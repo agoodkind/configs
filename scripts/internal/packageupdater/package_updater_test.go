@@ -177,6 +177,7 @@ func TestFinishesTheRunningStepWhenStopped(t *testing.T) {
 	for !slices.Contains(h.calls(t), updateCall) {
 		if time.Now().After(deadline) {
 			_ = command.Process.Kill()
+			_ = command.Wait()
 			t.Fatalf("apt-get update never started\n%s", output.String())
 		}
 		time.Sleep(pollInterval)
