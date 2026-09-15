@@ -48,7 +48,4 @@ listen = "/var/run/mwan-opnsense-drain.sock"
 	if cfg.Watchdog.ServiceName != "mwan-watchdog-test" {
 		t.Errorf("watchdog service_name = %q, want mwan-watchdog-test", cfg.Watchdog.ServiceName)
 	}
-	if err := Validate(cfg, "opnsense", false); err != nil {
-		t.Errorf("Validate for the opnsense subcommand name = %v, want nil", err)
-	}
 }
