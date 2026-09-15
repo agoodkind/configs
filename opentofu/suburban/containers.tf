@@ -401,10 +401,6 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
     }
   }
 
-  features {
-    nesting = true
-  }
-
   network_interface {
     name        = "eth0"
     bridge      = proxmox_network_linux_bridge.isp_astound_suburban.name
