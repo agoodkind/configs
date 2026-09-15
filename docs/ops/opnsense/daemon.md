@@ -29,7 +29,7 @@ These are the load-bearing invariants, and changing any of them reopens a docume
 
 The daemon starts from rc.d, serves until its context is cancelled, then exits. A stop or self-deploy succeeds only on the round-trip: the lever comes back up and serves the intended binary, and a bad binary auto-reverts. Exiting cleanly and staying down is a failure for a break-glass lever.
 
-On self-deploy you push a new binary over the transfer service, stage it as an atomic swap of the active and previous slots plus a pending-verify marker, then ask the daemon to restart. The daemon exits and is respawned onto the new binary, and the rc.d preflight reverts to the previous slot unless the daemon stamped itself healthy, so a bad deploy heals itself. Config writes are atomic, so a hard exit never leaves a half-written config. On a clean stop the daemon closes the serial descriptor to unblock its read loop, bounds the graceful stop, and forces exit as a last resort, and it kills its process group so a wedged child can never orphan.
+On self-deploy you push a new binary over the transfer service, stage it as an atomic swap of the active and previous slots plus a pending-verify marker, then ask the daemon to restart. The daemon re-executes itself in place onto the new binary and keeps its pid, and you mark it healthy once it answers. A new binary that keeps crashing before it is marked healthy is reverted to the previous slot by the rc.d preflight on a respawn, so a bad self-deploy heals itself. Config writes are atomic, so a hard exit never leaves a half-written config. On a clean stop the daemon closes the serial descriptor to unblock its read loop, bounds the graceful stop, and forces exit as a last resort, and it kills its process group so a wedged child can never orphan.
 
 ## Session recovery after a host-side disruption
 
@@ -47,7 +47,9 @@ The daemon is one of three out-of-band channels into OPNsense, and each fits a d
 
 ### Update the binary
 
-You update the daemon over the same serial channel it serves, so the update works even when the network is down. Push the new binary to the staging slot, stage it by its hash to swap it into the active slot while keeping the previous binary as the rollback slot, restart onto it, then verify with the version and state calls. A new binary that never reports healthy auto-reverts on the next respawn, so a bad self-deploy heals itself, and `mwan opnsense daemon revert` reverts by hand.
+The OPNsense deploy installs a released binary and restarts the daemon onto it with no manual step. When the installed binary changed, or when anything other than exactly one instance named by the rc.d pidfile runs, the deploy stops every instance it finds by command line, including a supervisor the pidfile no longer names, escalating from TERM to KILL, and then starts one instance through the rc.d script. It never uses the restart call, because the in-place re-exec behind that call once left the daemon answering nothing for seven minutes. The deploy then waits for the version call from the Proxmox host to report the released commit, runs `/bin/hostname` over the exec call, confirms that exactly one instance runs, and marks the binary healthy. A failed check fails the deploy and leaves the new binary running, because the deploy arms no automatic revert. Every rc.d start, including one through `service`, gives the daemon the boot PATH.
+
+To update the daemon while the network is down, use the serial channel it serves. Push the new binary to the staging slot, stage it by its hash to swap it into the active slot while keeping the previous binary as the rollback slot, restart onto it, verify with the version and state calls, and then run `mwan opnsense daemon mark-healthy`. `mwan opnsense daemon revert` reverts by hand.
 
 ### Upgrade the firmware
 

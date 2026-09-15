@@ -8,6 +8,10 @@
 # refused, so the default `ansible_user: root` in [all:vars] fails here.
 ansible_user: agoodkind
 
+# The hypervisor that runs this router. deploy-opnsense reads the restarted
+# daemon's identity through that host's bridge.
+mwan_proxmox_delegate: suburban
+
 # OPNsense identity for MWAN-side config rendering. Use IPv6 LAN address
 # so testbed templates exercise the same URL-parsing path as production.
 opnsense_addr: "3d06:bad:b01:211::1"
