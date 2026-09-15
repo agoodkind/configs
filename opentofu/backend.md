@@ -15,17 +15,17 @@ the Ansible vault automatically:
 ./configsctl tofu apply
 ```
 
-The wrapper reads four vault secrets and exports them for the child process:
+configsctl reads four vault secrets and exports them for the child process:
 the R2 access pair (`vault_r2_tofu_access_key_id`,
 `vault_r2_tofu_secret_access_key`) authenticates the backend, and the two
 Proxmox token secrets become the provider token variables. Nothing needs a
 `terraform.tfvars` file, and no secret is exported by hand. A fresh checkout
-needs one `configs tofu init` before its first plan.
+needs one `configsctl tofu init` before its first plan.
 
 To rotate the backend credential, mint a new Cloudflare API token with the
 Workers R2 Storage Write permission, derive the S3 pair (the access key id is
 the token id, the secret is the SHA-256 hex of the token value), and feed both
-names to `configs set-secrets`. The old token can then be revoked in the
+names to `configsctl set-secrets`. The old token can then be revoked in the
 Cloudflare dashboard.
 
 The backend declaration itself lives in [backend.tf](backend.tf); its endpoint
