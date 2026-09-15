@@ -34,9 +34,10 @@ ExecStart=/usr/bin/docker compose run --rm tack-ops ops backup restore-drill --e
 # budget: the restore and scratch engine waits inside the command fail on their
 # own once nothing moves for their stall windows (TACK-471). It is a backstop
 # for the one step with no inactivity bound, the artifact download from the
-# object store, set far past any real drill and under the daily cadence so a
-# hung attempt still ends and retries before the next night's run.
-TimeoutStartSec=12h
+# object store. Six hours is far past any real drill, and it leaves room for a
+# retry and a second attempt inside the day, so a hung attempt never runs into
+# the next night's window.
+TimeoutStartSec=6h
 Restart=on-failure
 RestartSec=10min
 # A drill whose every leg passed but whose rehearsal marker did not land exits
