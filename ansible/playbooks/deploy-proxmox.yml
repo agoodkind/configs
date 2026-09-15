@@ -12,9 +12,14 @@
 # stays branchless and depends only on group membership.
 #
 # Run examples:
-#   ansible-playbook playbooks/deploy-proxmox.yml --limit vault
-#   ansible-playbook playbooks/deploy-proxmox.yml --limit suburban
-#   ansible-playbook playbooks/deploy-proxmox.yml   # both hosts
+#   ./configsctl deploy deploy-proxmox \
+#     --release <tag> --opnsensectl-release <tag> --limit vault
+#   ./configsctl deploy deploy-proxmox \
+#     --release <tag> --opnsensectl-release <tag> --limit suburban
+#
+# The mwan binary comes from the --release tag and the opnsensectl binary from
+# the --opnsensectl-release tag; a run without either fails at the first read of
+# that release's directory.
 
 - name: Configure Proxmox hypervisor
   hosts: proxmox_servers

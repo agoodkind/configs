@@ -1,8 +1,8 @@
 ---
 # Suburban hypervisor (Proxmox host) target vars.
 # Consumed by deploy-proxmox.yml when targeting `suburban` in `suburban_servers`.
-# Also consumed by deploy-testbed.yml for the suburban-only ISP LXC and
-# host-bridge work that has no production equivalent.
+# Also consumed by deploy-testbed.yml for the suburban-only ISP LXC work that
+# has no production equivalent.
 # Shared defaults live in proxmox_servers.yml.
 
 # Proxmox HTTP API host for `community.proxmox.proxmox_*` modules when

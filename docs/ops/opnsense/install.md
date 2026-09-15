@@ -153,19 +153,20 @@ curl -k -u "$KEY:$SECRET" "https://$LAN_IP/api/core/firmware/status"
 
 ## Install the daemon
 
-The daemon binary is a published release, not a local build. Stage one on the
-controller by naming its tag; the deploy command downloads it, verifies its
-GitHub attestation, and unpacks it under `.make/releases/<tag>/`:
+The daemon binary is a published opnsensectl release, not a local build. Stage
+one on the controller by naming its tag; the deploy command downloads it,
+verifies its GitHub attestation, and unpacks it under
+`.make/releases/opnsensectl/<tag>/`:
 
 ```bash
 ./configsctl deploy deploy-opnsense \
-  --release <tag> --limit opnsense_suburban_servers --check
+  --opnsensectl-release <tag> --limit opnsense_suburban_servers --check
 ```
 
 The check run stages the release without touching the guest. Copy the daemon
 binary and its service files onto the guest:
 
-- `.make/releases/<tag>/freebsd_amd64/mwan` to `/usr/local/sbin/mwan-opnsense.current`
+- `.make/releases/opnsensectl/<tag>/freebsd_amd64/opnsensectl` to `/usr/local/sbin/mwan-opnsense.current`
 - `cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense` to `/usr/local/etc/rc.d/mwan_opnsense`
 - `cmd/mwan/opnsense-src/etc/rc.conf.d/mwan_opnsense.sample` to `/etc/rc.conf.d/mwan_opnsense`
 - `cmd/mwan/opnsense-src/boot/loader.conf.d/mwan_opnsense.conf` to `/boot/loader.conf.d/mwan_opnsense.conf`
@@ -194,9 +195,9 @@ upstream and listen sockets from `[opnsense.host]` in `/etc/opnsensectl/config.t
 the probe reads its target from `[opnsense.probe]`.
 
 ```bash
-mwan opnsense host serve
-mwan opnsense daemon version
-mwan opnsense exec /bin/hostname
+opnsensectl host serve
+opnsensectl daemon version
+opnsensectl exec /bin/hostname
 ```
 
 The version call returns the daemon's build banner, and the exec returns the guest
@@ -211,7 +212,7 @@ before you judge a failure.
 ```bash
 ssh "$PVE" "qm reboot $VMID"
 ssh "$PVE" "qm guest exec $VMID -- /bin/hostname"
-mwan opnsense daemon version
+opnsensectl daemon version
 ```
 
 The install is done when the guest agent answers, the daemon reports its version, and the
