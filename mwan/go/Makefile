@@ -349,7 +349,7 @@ wanconfig-builder-image:
 build-wanconfig: wanconfig-builder-image
 	@mkdir -p $(LOCAL_BIN)
 	docker run --rm --platform linux/amd64 \
-		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
+		-v $(CURDIR):/src -w /src \
 		-v mwan-wanconfig-gomod:/go/pkg/mod \
 		-e GOWORK=off \
 		$(WANCONFIG_BUILDER_IMAGE) \
@@ -360,8 +360,10 @@ build-wanconfig: wanconfig-builder-image
 # binding compiles out and `go test ./...` passes while proving nothing
 # about them. Route the whole suite through the same builder image the
 # gateway binary uses, so a mac run and a CI run exercise identical code.
-# The recipe below replaces go.mk's test target on darwin only, which is
-# why make prints an "overriding commands" warning here.
+# The container mounts the repository root rather than this module, because
+# the suite reads the YANG models and the deploy verdict collector script
+# from outside it. The recipe below replaces go.mk's test target on darwin
+# only, which is why make prints an "overriding commands" warning here.
 ifeq ($(shell uname -s),Darwin)
 .PHONY: test
 test: wanconfig-builder-image
