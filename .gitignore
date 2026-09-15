@@ -84,13 +84,14 @@ terraform.tfvars
 /bin/
 HANDOFF_MWAN_OPNSENSE_TESTBED.txt
 
+# Controller scratch. `configs deploy --release` stages each verified release
+# here, under .make/releases/<tag>: the extracted binary for every platform and
+# the unpacked wanconfig stack packages the playbooks install. Never tracked.
+/.make/
+
 # Ansible local data home (collections/roles/modules cache), created by the
 # ansible tooling at runtime. Never tracked.
 .ansible/
-
-# Build scratch. The wanconfig cgo dependency sources are cloned here, outside
-# any Go module, so the Go tooling never walks into them.
-/.make/
 
 # Controller-side renders the deploy validates before copying to a gateway.
 # They carry live inventory addresses and must never be committed.
