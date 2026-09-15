@@ -10,7 +10,7 @@
 # the suburban hypervisor and configures the guest through pct.
 #
 # Run example:
-#   go run goodkind.io/configs/cmd/configs deploy deploy-router2-sim --limit suburban
+#   ./configsctl deploy deploy-router2-sim --limit suburban
 
 - name: Configure the router-2 simulator LXC
   hosts: suburban_servers

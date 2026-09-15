@@ -9,9 +9,8 @@ disable-model-invocation: true
 
 # Deploy Ansible Playbook
 
-The vault password file at `~/.config/ansible/vault.pass` is required. Use
-the configs binary `deploy` to run
-playbooks. Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
+The vault password file at `~/.config/ansible/vault.pass` is required. Run
+playbooks with `./configsctl deploy` from the repository root. Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
 `ansible-inventory`, or `ansible-console` directly.
 
 ## Canonical Playbooks
@@ -31,7 +30,7 @@ flags.
 ## Invocation Pattern
 
 ```bash
-go run goodkind.io/configs/cmd/configs deploy <name> [--limit <host>] [--check] [--diff]
+./configsctl deploy <name> [--limit <host>] [--check] [--diff]
 ```
 
 `<name>` is the playbook stem, such as `deploy-proxmox` or `deploy-mwan`. The
@@ -46,22 +45,22 @@ doubt.
 
 ```bash
 # Configure both Proxmox hypervisors
-go run goodkind.io/configs/cmd/configs deploy deploy-proxmox
+./configsctl deploy deploy-proxmox
 
 # Configure only vault
-go run goodkind.io/configs/cmd/configs deploy deploy-proxmox --limit vault
+./configsctl deploy deploy-proxmox --limit vault
 
 # Dry-run the MWAN VM playbook
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --check --diff
+./configsctl deploy deploy-mwan --check --diff
 
 # Configure the testbed failover LXC
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover --limit mwan_failover_suburban_servers
+./configsctl deploy deploy-mwan-failover --limit mwan_failover_suburban_servers
 
 # Configure the testbed OPNsense
-go run goodkind.io/configs/cmd/configs deploy deploy-opnsense --limit opnsense_suburban_servers
+./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers
 
 # Suburban-only testbed extras
-go run goodkind.io/configs/cmd/configs deploy deploy-testbed --limit suburban
+./configsctl deploy deploy-testbed --limit suburban
 ```
 
 ## Rake Shortcuts
