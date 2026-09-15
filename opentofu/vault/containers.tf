@@ -29,10 +29,13 @@ resource "proxmox_virtual_environment_container" "tack" {
 
   # Sized to match the live container. It was grown in place, and Proxmox cannot
   # shrink a container disk, so understating these here makes a plan propose a
-  # shrink that either fails or damages the store.
+  # shrink that either fails or damages the store. discard returns each freed
+  # block to the thin pool as it is freed, which the pool handles without
+  # passing it to the drive (TACK-498); the guest reads it at its next start.
   disk {
-    datastore_id = "local-lvm"
-    size         = 300
+    datastore_id  = "local-lvm"
+    size          = 300
+    mount_options = ["discard"]
   }
 
   memory {

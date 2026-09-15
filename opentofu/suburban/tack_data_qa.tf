@@ -1,6 +1,7 @@
 # Testbed three-node data tier and second app instance. Memory stays below
 # production because the testbed hypervisor holds 31 GB total. The testbed
-# validates topology and failover, not memory headroom.
+# validates topology and failover, not memory headroom. Every disk mounts with
+# discard, mirroring production's tack guests (TACK-498).
 
 resource "proxmox_virtual_environment_container" "tack_data1_suburban" {
   node_name = "hypervisor"
@@ -37,8 +38,9 @@ resource "proxmox_virtual_environment_container" "tack_data1_suburban" {
   }
 
   disk {
-    datastore_id = "local-zfs"
-    size         = 40
+    datastore_id  = "local-zfs"
+    size          = 40
+    mount_options = ["discard"]
   }
 
   memory {
@@ -105,8 +107,9 @@ resource "proxmox_virtual_environment_container" "tack_data2_suburban" {
   }
 
   disk {
-    datastore_id = "local-zfs"
-    size         = 40
+    datastore_id  = "local-zfs"
+    size          = 40
+    mount_options = ["discard"]
   }
 
   memory {
@@ -173,8 +176,9 @@ resource "proxmox_virtual_environment_container" "tack_data3_suburban" {
   }
 
   disk {
-    datastore_id = "local-zfs"
-    size         = 40
+    datastore_id  = "local-zfs"
+    size          = 40
+    mount_options = ["discard"]
   }
 
   memory {
@@ -241,8 +245,9 @@ resource "proxmox_virtual_environment_container" "tack_app2_suburban" {
   }
 
   disk {
-    datastore_id = "local-zfs"
-    size         = 30
+    datastore_id  = "local-zfs"
+    size          = 30
+    mount_options = ["discard"]
   }
 
   memory {
