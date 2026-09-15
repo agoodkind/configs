@@ -117,8 +117,10 @@ Rollback target order is: latest `pre-deploy-*`, then most recent
 4. At least `MIN_SNAPSHOT_INTERVAL_SECONDS` (default 300s) since the previous
    snapshot.
 
-Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 3) and
-`MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first.
+Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 2) and
+`MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first. The deploy
+playbook keeps at most 1 `pre-deploy-*` snapshot, pruning immediately after
+it creates the new one.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
 silently. Put the full intent in `--description` and keep the name short. Do
