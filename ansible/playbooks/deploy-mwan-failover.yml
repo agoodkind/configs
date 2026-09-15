@@ -9,9 +9,9 @@
 # inventory_hostname.
 #
 # Run examples:
-#   go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover \
+#   ./configsctl deploy deploy-mwan-failover \
 #     --limit mwan_failover_servers
-#   go run goodkind.io/configs/cmd/configs deploy deploy-mwan-failover \
+#   ./configsctl deploy deploy-mwan-failover \
 #     --limit mwan_failover_suburban_servers
 
 - name: Configure MWAN failover LXC

@@ -71,14 +71,14 @@ guest it targets.
    could not read because the guest is stopped or its agent did not answer.
 
    ```bash
-   go run goodkind.io/configs/cmd/configs deploy audit-ssh-keys
+   ./configsctl deploy audit-ssh-keys
    ```
 
 2. Redeploy the keys to the service group of each listed guest. The deploy
    writes the key file from the hypervisor, so it works while SSH is refused.
 
    ```bash
-   go run goodkind.io/configs/cmd/configs deploy deploy-ssh-keys \
+   ./configsctl deploy deploy-ssh-keys \
      --limit <group> --extra-var target_hosts=<group>
    ```
 

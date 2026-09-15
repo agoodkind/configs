@@ -1,6 +1,6 @@
 terraform {
   # State lives in the Cloudflare R2 bucket "tofu-state". Credentials are never
-  # written here: `configs tofu` injects them from the Ansible vault, and
+  # written here: `configsctl tofu` injects them from the Ansible vault, and
   # opentofu/backend.md documents the contract. The endpoint embeds the
   # Cloudflare account id, which is stable and non-secret.
   backend "s3" {

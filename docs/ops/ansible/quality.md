@@ -82,7 +82,7 @@ Restructure instead: declare the value, gate a task with the module's own
 `failed_when` or `changed_when`, or initialize an accumulator with `set_fact`
 before the loop.
 
-Enforced by `configs lint`: the deploy command runs it before every deploy, the
+Enforced by `configsctl lint`: the deploy command runs it before every deploy, the
 lint path runs it, and pre-commit runs it on staged files. The check flags every
 occurrence; it grants no exception, so a genuine outside-service case is the
 author's call to defend, not the check's to allow.
@@ -92,7 +92,7 @@ each default or presence construct reads. A few Ansible-Jinja forms the Go engin
 cannot parse, such as a parenthesized conditional piped into a filter, are routed
 to a jinja2 reference parser, whose resolved violations are enforced the same as
 any other. The router runs as a
-`python3` subprocess, so `configs lint` requires `python3` with the `jinja2`
+`python3` subprocess, so `configsctl lint` requires `python3` with the `jinja2`
 package on PATH. A form neither parser can read is listed for review.
 
 ## Line length
@@ -302,4 +302,4 @@ Before committing Ansible changes, verify:
    `lineinfile` instead.
 10. No `| default()` or `is defined` on an input variable. Declare it in
     group_vars and read it bare; both are allowed only on command or register
-    output. `configs lint` enforces this.
+    output. `configsctl lint` enforces this.

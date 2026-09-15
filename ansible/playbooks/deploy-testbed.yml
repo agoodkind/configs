@@ -11,8 +11,8 @@
 # the MWAN VM's WAN passthrough.
 #
 # Run examples:
-#   go run goodkind.io/configs/cmd/configs deploy deploy-testbed --limit suburban
-#   go run goodkind.io/configs/cmd/configs deploy deploy-testbed \
+#   ./configsctl deploy deploy-testbed --limit suburban
+#   ./configsctl deploy deploy-testbed \
 #     --limit suburban --tags args
 #
 # The shared Proxmox host services (mwan ifmgr, mwan watchdog, cloudflared

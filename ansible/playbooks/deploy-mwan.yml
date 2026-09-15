@@ -101,7 +101,7 @@
     # the released binary is pushed there before the first gate call. The
     # dedicated filename keeps the watchdog's own /usr/local/bin/mwan
     # untouched; deploy-proxmox.yml owns that copy. The binary comes from the
-    # release the operator named with `configs deploy --release <tag>`, which
+    # release the operator named with `configsctl deploy --release <tag>`, which
     # staged it under mwan_release_dir after verifying its attestation.
     - name: Push the deploy-gate binary to the Proxmox delegate
       delegate_to: "{{ mwan_proxmox_delegate }}"

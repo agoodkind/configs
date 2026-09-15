@@ -53,13 +53,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # The configsctl script holds the pinned version, so its hash keys the
+      # module cache and a pin change starts a fresh cache.
       - uses: actions/setup-go@v7
         with:
-          go-version-file: scripts/go.mod
-          cache-dependency-path: scripts/go.sum
+          go-version-file: go.work
+          cache-dependency-path: configsctl
       # The gate hands Jinja forms its Go parser cannot read to a jinja2
       # subprocess and fails when jinja2 is missing, so it is a hard dependency.
       - name: Install jinja2
         run: sudo apt-get update && sudo apt-get install -y python3-jinja2
       - name: Lint Ansible inputs
-        run: go run goodkind.io/configs/cmd/configs lint
+        run: ./configsctl lint
