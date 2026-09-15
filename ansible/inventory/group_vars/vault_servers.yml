@@ -70,3 +70,16 @@ cloudflared_oob_ingress:
 cloudflared_oob_nextdns_resolvers:
   - "2a07:a8c0::7d:698e"
   - "2a07:a8c1::7d:698e"
+
+# Tack guest disk reclamation (TACK-498). Vault runs the production tack
+# guests, whose nightly export and restore drill leave tens of gigabytes
+# allocated in the pool after the files are deleted. The trim runs on Sunday
+# morning, clear of the nightly export and drill windows.
+tack_guest_fstrim_enabled: true
+tack_guest_fstrim_vmids:
+  - "{{ service_mapping.tack.vmid }}"
+  - "{{ service_mapping.tack_data1.vmid }}"
+  - "{{ service_mapping.tack_data2.vmid }}"
+  - "{{ service_mapping.tack_data3.vmid }}"
+  - "{{ service_mapping.tack_app2.vmid }}"
+tack_thin_pool: "pve/data"

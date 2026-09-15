@@ -255,3 +255,7 @@
 
 - name: Install the mwan opnsense host bridge and chardev drainer
   ansible.builtin.import_tasks: mwan-opnsense-host-deploy.yml
+
+- name: Reclaim deleted tack guest blocks (thin pool mode and weekly trim)
+  ansible.builtin.import_tasks: tack-guest-fstrim.yml
+  when: tack_guest_fstrim_enabled | bool
