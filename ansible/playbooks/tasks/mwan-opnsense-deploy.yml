@@ -112,13 +112,61 @@
   when: not ansible_check_mode
   become: true
 
+# The daemon's identity is read from the hypervisor through the host bridge,
+# because any binary named mwan-opnsense* on the guest enters serve instead of
+# answering a verb. `mwan opnsense daemon version` prints exactly one line, whose
+# version field is itself the daemon's build summary:
+#   version=commit=<commit> dirty=<clean|dirty|unknown> binhash=<binhash>
+#   commit=<commit> dirty=<true|false> binhash=<binhash>
+# Output of any other shape yields an empty capture, which the hex pattern of
+# every commit check below rejects.
+- name: Set the pattern of the daemon version line
+  ansible.builtin.set_fact:
+    mwan_opnsense_version_line_pattern: >-
+      {{ '^version=commit=[0-9a-f]{7,40} dirty=(?:clean|dirty|unknown) binhash=(?:[0-9a-f]{12}|unknown)'
+      ~ ' commit=([0-9a-f]{7,40}) dirty=(?:true|false) binhash=(?:[0-9a-f]{12}|unknown)$' }}
+
+# A copy that reports ok says nothing about the running process: an earlier
+# install can have replaced the file under a daemon that was never restarted.
+# One read decides; a read that fails yields no commit.
+- name: Read the commit the running daemon reports
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - opnsense
+      - daemon
+      - version
+  register: mwan_opnsense_version_before
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  become: true
+
+# The daemon restarts when the installed binary changed, when anything other
+# than exactly one instance named by the pidfile runs, or when the running
+# daemon does not report the release commit by the same rule the assert below
+# applies, including when its version cannot be read.
+- name: Decide whether the daemon restarts onto the installed binary
+  vars:
+    mwan_opnsense_running_commit: >-
+      {{ mwan_opnsense_version_before.stdout | regex_findall(mwan_opnsense_version_line_pattern) | first | default('') }}
+  ansible.builtin.set_fact:
+    mwan_opnsense_restart_required: >-
+      {{ mwan_opnsense_binary_install is changed
+      or mwan_opnsense_instances_before.rc != 0
+      or mwan_opnsense_version_before.rc != 0
+      or mwan_opnsense_running_commit is not match('^[0-9a-f]{7,40}$')
+      or not mwan_release_commit.startswith(mwan_opnsense_running_commit) }}
+  when: not ansible_check_mode
+
 # The restart never uses the daemon's RestartDaemon RPC. That call re-executes
 # the daemon in place, and on the testbed router the re-executed daemon then
 # answered no RPC for seven minutes until an rc.d restart.
 - name: Restart the daemon onto the installed binary
   when:
     - not ansible_check_mode
-    - mwan_opnsense_binary_install is changed or mwan_opnsense_instances_before.rc != 0
+    - mwan_opnsense_restart_required
   become: true
   block:
     # The wait of 10 seconds per escalation step matches the rc.d stop timeout.
@@ -138,25 +186,13 @@
           - start
       changed_when: true
 
-# The daemon's identity is read from the hypervisor through the host bridge,
-# because any binary named mwan-opnsense* on the guest enters serve instead of
-# answering a verb. A failure here fails the deploy with the new binary still
-# running: this install writes no pending-verify marker and no .previous slot,
-# so the run shim has nothing to revert.
+# A failure here fails the deploy with the new binary still running: this
+# install writes no pending-verify marker and no .previous slot, so the run shim
+# has nothing to revert.
 - name: Verify the restarted daemon from the hypervisor
   when: not ansible_check_mode
   delegate_to: "{{ mwan_proxmox_delegate }}"
   become: true
-  vars:
-    # `mwan opnsense daemon version` prints exactly one line, whose version
-    # field is itself the daemon's build summary:
-    #   version=commit=<commit> dirty=<clean|dirty|unknown> binhash=<binhash>
-    #   commit=<commit> dirty=<true|false> binhash=<binhash>
-    # Output of any other shape yields an empty capture, which the hex pattern
-    # below rejects.
-    mwan_opnsense_version_line_pattern: >-
-      {{ '^version=commit=[0-9a-f]{7,40} dirty=(?:clean|dirty|unknown) binhash=(?:[0-9a-f]{12}|unknown)'
-      ~ ' commit=([0-9a-f]{7,40}) dirty=(?:true|false) binhash=(?:[0-9a-f]{12}|unknown)$' }}
   block:
     # The bridge rebuilds its session after the guest restart, so the first
     # reads can time out. 36 reads 5 seconds apart bound the wait to 3 minutes.
@@ -233,7 +269,7 @@
       - daemon
       - mark-healthy
   register: mwan_opnsense_mark_healthy
-  changed_when: mwan_opnsense_binary_install is changed or mwan_opnsense_instances_before.rc != 0
+  changed_when: mwan_opnsense_restart_required
   failed_when: >-
     mwan_opnsense_mark_healthy.rc != 0
     or ' health=ok ' not in mwan_opnsense_mark_healthy.stdout
