@@ -182,9 +182,15 @@ func evaluateRestartDecision(
 	t *testing.T, decision restartDecision, variables map[string]any,
 ) conditionResult {
 	t.Helper()
+	// A task file with no set_fact task before the restart leaves facts nil,
+	// which would encode as null rather than an empty list.
+	facts := decision.facts
+	if facts == nil {
+		facts = []factTask{}
+	}
 	payload, err := json.Marshal(conditionRequest{
 		Variables: variables,
-		Facts:     decision.facts,
+		Facts:     facts,
 		Conditions: map[string][]string{
 			restartConditionName:     decision.restartWhen,
 			markHealthyConditionName: decision.markHealthyWhen,
