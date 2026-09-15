@@ -117,30 +117,15 @@ mwan_status_push_port: 50053
 
 # ----------------------------------------------------------------------------
 # Wanconfig management stack (epic MWAN-338), packaged by the mwan release
-# and installed on the gateway by deploy-mwan.yml. The stack is versioned
-# here, not by the distribution; a version change rebuilds the packages on
-# the next release. nghttp2-asio has no release tags, so it pins a commit.
+# and installed on the gateway by deploy-mwan.yml. The mwan Makefile pins the
+# six component versions the release builds.
 # ----------------------------------------------------------------------------
-# libyang and sysrepo stay on the 3.x series: libyang-cpp v4 compiles
-# against the libyang 3.x API only (5.x renamed print/parse symbols), and
-# sysrepo v3.7.11 declares its libyang dependency as 3.13.x. The cpp
-# bindings' ">=" bounds state a floor, not upper compatibility.
-wanconfig_libyang_version: "v3.13.6"
-wanconfig_sysrepo_version: "v3.7.11"
-wanconfig_libyang_cpp_version: "v4"
-wanconfig_sysrepo_cpp_version: "v6"
-wanconfig_nghttp2_asio_version: "e877868abe"
-wanconfig_rousette_version: "v2"
-# Each version pin carries the full commit hash its tag pointed at when it
-# was reviewed. The packaging build refuses a tag that resolves elsewhere,
-# so a force-moved upstream tag cannot change what a release packages.
-# A version bump updates both lines together.
-wanconfig_libyang_commit: "c2ddd01b9b810a30d6a7d6749a3bc9adeb7b01fb"
-wanconfig_sysrepo_commit: "1b720b196f630f348d9e0c131d326b3fb8c6aca7"
-wanconfig_libyang_cpp_commit: "249da7280864fbda5fccb340b455b7000ebfe67d"
-wanconfig_sysrepo_cpp_commit: "01bed8d91bfb746c20cc53ae4e8d64e2c78d2a9e"
-wanconfig_nghttp2_asio_commit: "e877868abe06a83ed0a6ac6e245c07f6f20866b5"
-wanconfig_rousette_commit: "4685b3379b259bc1b4aca79c92ca47d2b1e48e5e"
+# The libsysrepo version a gateway's mwan binary must report. `mwan version`
+# prints sysrepo's library version (SR_VERSION), not its release tag: release
+# v3.7.11 is library 7.34.6. deploy-mwan.yml fails on any other value, so a
+# sysrepo bump in the mwan Makefile updates this line before that release
+# deploys.
+wanconfig_sysrepo_soversion: "7.34.6"
 # The nghttpx front end exposes rousette on the management address at this
 # port; rousette itself binds ::1:10080 only.
 wanconfig_restconf_port: 10080

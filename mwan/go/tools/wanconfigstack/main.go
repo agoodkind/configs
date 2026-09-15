@@ -3,7 +3,7 @@
 //
 // It runs as root inside a stock Debian trixie container that the mwan
 // Makefile starts from its wanconfig-stack-bundle target. Six components,
-// pinned in the ansible group_vars and passed in as flags, become Debian
+// pinned in that Makefile and passed in as flags, become Debian
 // packages that install on a gateway with apt and nothing else. The two
 // components with upstream Debian packaging (libyang, sysrepo) build through
 // their apkg deb templates, untouched, into /usr under the upstream package
@@ -54,10 +54,10 @@ const (
 type component struct {
 	name string
 	url  string
-	// pinVar is the group_vars key the pin comes from, and the flag name.
+	// pinVar is the flag name the pin arrives under.
 	pinVar string
-	// commitVar is the group_vars key of the pin's immutable commit hash,
-	// and the flag name. The clone refuses a pin that resolves elsewhere.
+	// commitVar is the flag name of the pin's immutable commit hash. The
+	// clone refuses a pin that resolves elsewhere.
 	commitVar string
 	how       packaging
 	// cmakeFlags are extra configure flags for nfpm components.

@@ -61,25 +61,37 @@ GO_MK_PLATFORMS := linux/amd64 freebsd/amd64
 # Wanconfig pins
 # ---------------------------------------------------------------------------
 
-# The six stack component versions have one home, the ansible group_vars. The
-# cgo hook builds libyang and sysrepo at these pins; the stack packaging
-# builds all six. A missing pin fails at parse.
-WANCONFIG_PINS_FILE := ../../ansible/inventory/group_vars/all/vars.yml
-wanconfig_pin = $(strip $(shell awk -F'"' '/^$(1):/ {print $$2}' $(WANCONFIG_PINS_FILE)))
+# The six stack components are versioned here, not by the distribution, and
+# this block is the only place they are pinned. The cgo hook builds libyang
+# and sysrepo at these pins; the stack packaging builds all six, so a version
+# change rebuilds the packages on the next release. nghttp2-asio has no
+# release tags, so it pins a commit.
+#
+# libyang and sysrepo stay on the 3.x series: libyang-cpp v4 compiles against
+# the libyang 3.x API only (5.x renamed print/parse symbols), and sysrepo
+# v3.7.11 declares its libyang dependency as 3.13.x. The cpp bindings' ">="
+# bounds state a floor, not upper compatibility.
+#
+# The gateway deploy fails unless the libsysrepo version the installed binary
+# reports equals the inventory's wanconfig_sysrepo_soversion, so a sysrepo
+# bump here needs that inventory value updated before the release deploys.
+WANCONFIG_LIBYANG_VERSION      := v3.13.6
+WANCONFIG_SYSREPO_VERSION      := v3.7.11
+WANCONFIG_LIBYANG_CPP_VERSION  := v4
+WANCONFIG_SYSREPO_CPP_VERSION  := v6
+WANCONFIG_NGHTTP2_ASIO_VERSION := e877868abe
+WANCONFIG_ROUSETTE_VERSION     := v2
 
-WANCONFIG_LIBYANG_VERSION      := $(call wanconfig_pin,wanconfig_libyang_version)
-WANCONFIG_SYSREPO_VERSION      := $(call wanconfig_pin,wanconfig_sysrepo_version)
-WANCONFIG_LIBYANG_CPP_VERSION  := $(call wanconfig_pin,wanconfig_libyang_cpp_version)
-WANCONFIG_SYSREPO_CPP_VERSION  := $(call wanconfig_pin,wanconfig_sysrepo_cpp_version)
-WANCONFIG_NGHTTP2_ASIO_VERSION := $(call wanconfig_pin,wanconfig_nghttp2_asio_version)
-WANCONFIG_ROUSETTE_VERSION     := $(call wanconfig_pin,wanconfig_rousette_version)
-
-WANCONFIG_LIBYANG_COMMIT      := $(call wanconfig_pin,wanconfig_libyang_commit)
-WANCONFIG_SYSREPO_COMMIT      := $(call wanconfig_pin,wanconfig_sysrepo_commit)
-WANCONFIG_LIBYANG_CPP_COMMIT  := $(call wanconfig_pin,wanconfig_libyang_cpp_commit)
-WANCONFIG_SYSREPO_CPP_COMMIT  := $(call wanconfig_pin,wanconfig_sysrepo_cpp_commit)
-WANCONFIG_NGHTTP2_ASIO_COMMIT := $(call wanconfig_pin,wanconfig_nghttp2_asio_commit)
-WANCONFIG_ROUSETTE_COMMIT     := $(call wanconfig_pin,wanconfig_rousette_commit)
+# Each version pin carries the full commit hash its tag pointed at when it was
+# reviewed. The packaging build refuses a tag that resolves elsewhere, so a
+# force-moved upstream tag cannot change what a release packages. A version
+# bump updates both lines together.
+WANCONFIG_LIBYANG_COMMIT      := c2ddd01b9b810a30d6a7d6749a3bc9adeb7b01fb
+WANCONFIG_SYSREPO_COMMIT      := 1b720b196f630f348d9e0c131d326b3fb8c6aca7
+WANCONFIG_LIBYANG_CPP_COMMIT  := 249da7280864fbda5fccb340b455b7000ebfe67d
+WANCONFIG_SYSREPO_CPP_COMMIT  := 01bed8d91bfb746c20cc53ae4e8d64e2c78d2a9e
+WANCONFIG_NGHTTP2_ASIO_COMMIT := e877868abe06a83ed0a6ac6e245c07f6f20866b5
+WANCONFIG_ROUSETTE_COMMIT     := 4685b3379b259bc1b4aca79c92ca47d2b1e48e5e
 
 WANCONFIG_PINS := \
 	$(WANCONFIG_LIBYANG_VERSION) \
@@ -94,10 +106,6 @@ WANCONFIG_PINS := \
 	$(WANCONFIG_SYSREPO_CPP_COMMIT) \
 	$(WANCONFIG_NGHTTP2_ASIO_COMMIT) \
 	$(WANCONFIG_ROUSETTE_COMMIT)
-
-ifneq ($(words $(WANCONFIG_PINS)),12)
-$(error wanconfig pins missing in $(WANCONFIG_PINS_FILE): got "$(WANCONFIG_PINS)")
-endif
 
 # go-makefile's GO_MK_CGO_DEPS hook builds libyang and sysrepo into the
 # per-os/arch prefix before every gate, so the cgo files stay fully checked
@@ -203,8 +211,10 @@ check: yang-validate yang-validate-instances
 #
 # The sources live outside this Go module on purpose. A checkout inside the
 # module makes the lint gates treat the tree as nested working trees, which
-# turns a package absent on one platform into a hard error.
-WANCONFIG_CGO_SRC := $(abspath $(CURDIR)/../../.make/wanconfig-cgo-src)
+# turns a package absent on one platform into a hard error. They go under the
+# user cache directory, keyed by this checkout's path so two checkouts never
+# clone into one tree, and nothing reads them after the install.
+WANCONFIG_CGO_SRC := $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/mwan/wanconfig-cgo-src/$(shell printf '%s' '$(CURDIR)' | cksum | cut -d' ' -f1)
 
 # sysrepo compiles its repository path into the library, so this must be
 # the path the gateway uses. A build-directory prefix makes sr_connect fail
@@ -333,7 +343,7 @@ wanconfig-builder-image:
 		--build-arg SYSREPO_VERSION=$(WANCONFIG_SYSREPO_VERSION) \
 		--build-arg "LIBYANG_CMAKE_FLAGS=$(WANCONFIG_LIBYANG_CMAKE_FLAGS)" \
 		--build-arg "SYSREPO_CMAKE_FLAGS=$(WANCONFIG_SYSREPO_CMAKE_FLAGS)" \
-		-t $(WANCONFIG_BUILDER_IMAGE) ../wanconfig/builder
+		-t $(WANCONFIG_BUILDER_IMAGE) tools/wanconfigbuilder
 
 .PHONY: build-wanconfig
 build-wanconfig: wanconfig-builder-image

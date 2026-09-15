@@ -392,6 +392,28 @@
       vars:
         mwan_installed_binary: /usr/local/bin/mwan
 
+    # The binary links sysrepo statically, and the stack installed above
+    # carries the sysrepo the same release packaged. The binary reports the
+    # library version (SR_VERSION), not the release tag, so the inventory
+    # names the library version this gateway expects, and a release built at
+    # any other sysrepo fails here. The identity line is the one the verify
+    # task above read and checked for shape; check mode skips both. The match
+    # list must be exactly the expected version, so a missing field fails too.
+    - name: Fail unless the MWAN VM binary links the expected sysrepo
+      when: not ansible_check_mode
+      vars:
+        mwan_reported_libsysrepo: >-
+          {{ mwan_installed_version.stdout
+             | regex_findall(' libsysrepo=([0-9]+[.][0-9]+[.][0-9]+)$') }}
+      ansible.builtin.assert:
+        that:
+          - mwan_reported_libsysrepo == [wanconfig_sysrepo_soversion]
+        fail_msg: >-
+          /usr/local/bin/mwan reports "{{ mwan_installed_version.stdout }}"
+          but the inventory expects libsysrepo={{ wanconfig_sysrepo_soversion }}.
+        success_msg: >-
+          /usr/local/bin/mwan links libsysrepo {{ wanconfig_sysrepo_soversion }}.
+
     - name: Deploy mwan agent systemd unit on MWAN VM
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
