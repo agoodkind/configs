@@ -21,17 +21,21 @@ flags.
 
 | Playbook | Target group | Owns |
 | --- | --- | --- |
-| [ansible/playbooks/deploy-proxmox.yml](../../../ansible/playbooks/deploy-proxmox.yml) | `proxmox_servers` | mwan-ifmgr, mwan-watchdog, cloudflared-oob, package-updater on hypervisors |
+| [ansible/playbooks/deploy-proxmox.yml](../../../ansible/playbooks/deploy-proxmox.yml) | `proxmox_servers` | mwan-ifmgr, mwan-watchdog, cloudflared-oob, package-updater, and the opnsensectl host bridge on hypervisors |
 | [ansible/playbooks/deploy-mwan.yml](../../../ansible/playbooks/deploy-mwan.yml) | `mwan_servers` | MWAN VM, prod VM 113 on vault |
 | [ansible/playbooks/deploy-mwan-failover.yml](../../../ansible/playbooks/deploy-mwan-failover.yml) | `mwan_failover_servers` or `mwan_failover_suburban_servers` | MWAN failover LXC |
 | [ansible/playbooks/deploy-opnsense.yml](../../../ansible/playbooks/deploy-opnsense.yml) | `opnsense_servers` or `opnsense_suburban_servers` | mwan-opnsense daemon on OPNsense host |
-| [ansible/playbooks/deploy-testbed.yml](../../../ansible/playbooks/deploy-testbed.yml) | `suburban_servers` | Suburban-only extras, including `qm args`, ISP LXCs, host bridge, and VFIO |
+| [ansible/playbooks/deploy-testbed.yml](../../../ansible/playbooks/deploy-testbed.yml) | `suburban_servers` | Suburban-only extras, including `qm args`, ISP LXCs, and VFIO |
 
 ## Invocation Pattern
 
 ```bash
-./configsctl deploy <name> [--limit <host>] [--check] [--diff]
+./configsctl deploy <name> [--release <tag>] [--opnsensectl-release <tag>] [--limit <host>] [--check] [--diff]
 ```
+
+`deploy-proxmox` and `deploy-opnsense` install opnsensectl and need
+`--opnsensectl-release`. Deploy the hypervisor before its router, because the
+router deploy reads the daemon through the hypervisor's opnsensectl.
 
 `<name>` is the playbook stem, such as `deploy-proxmox` or `deploy-mwan`. The
 helper resolves it to `playbooks/<name>.yml` under
@@ -45,10 +49,10 @@ doubt.
 
 ```bash
 # Configure both Proxmox hypervisors
-./configsctl deploy deploy-proxmox
+./configsctl deploy deploy-proxmox --release <tag> --opnsensectl-release <tag>
 
 # Configure only vault
-./configsctl deploy deploy-proxmox --limit vault
+./configsctl deploy deploy-proxmox --release <tag> --opnsensectl-release <tag> --limit vault
 
 # Dry-run the MWAN VM playbook
 ./configsctl deploy deploy-mwan --check --diff
@@ -57,7 +61,7 @@ doubt.
 ./configsctl deploy deploy-mwan-failover --limit mwan_failover_suburban_servers
 
 # Configure the testbed OPNsense
-./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers
+./configsctl deploy deploy-opnsense --opnsensectl-release <tag> --limit opnsense_suburban_servers
 
 # Suburban-only testbed extras
 ./configsctl deploy deploy-testbed --limit suburban

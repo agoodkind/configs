@@ -6,9 +6,8 @@
 # VM `args` ownership for the MWAN and OPNsense VMs (Proxmox API rejects `args`
 # writes for any actor other than `root@pam`, so Ansible owns them as root
 # over SSH), ISP-LXC provisioning for the four testbed WAN simulators
-# (webpass, att, monkeybrains, astound), the mwan-opnsense Unix socket bridge
-# that proxies the OPNsense VM over virtio-serial, and the VFIO host setup for
-# the MWAN VM's WAN passthrough.
+# (webpass, att, monkeybrains, astound), and the VFIO host setup for the MWAN
+# VM's WAN passthrough. The OPNsense host bridge comes from deploy-proxmox.yml.
 #
 # Run examples:
 #   ./configsctl deploy deploy-testbed --limit suburban
@@ -30,7 +29,7 @@
 
   tasks:
     # ----------------------------------------------------------------------
-    # mwan binary on suburban host (used by mwan-opnsense host bridge below)
+    # mwan binary on suburban host (used by the host mwan-ifmgr)
     # ----------------------------------------------------------------------
 
     - name: Deploy mwan binary
@@ -357,21 +356,6 @@
           {{ mwan_opnsense_vmid }} then qm start {{ mwan_opnsense_vmid }}) for
           the new args to take effect.
       tags: ["args"]
-
-    - name: Restart mwan-opnsense-drain
-      ansible.builtin.systemd:
-        name: mwan-opnsense-drain
-        state: restarted
-        daemon_reload: true
-      become: true
-      tags: ["opnsense-host-bridge"]
-
-    - name: Restart mwan-opnsense-host
-      ansible.builtin.systemd:
-        name: mwan-opnsense-host
-        state: restarted
-      become: true
-      tags: ["opnsense-host-bridge"]
 
     - name: Run DDNS 128-nj
       ansible.builtin.systemd:

@@ -16,12 +16,14 @@ script.
 
 ```bash
 ./configsctl tofu apply
-./configsctl deploy <name> [--release <tag>] [--limit <host>] [--check] [--diff]
+./configsctl deploy <name> [--release <tag>] [--opnsensectl-release <tag>] [--limit <host>] [--check] [--diff]
 ```
 
 A play that installs the MWAN binary fails at load without `--release`. After it
 copies the binary onto a Linux host, the play runs `mwan version` on that copy
-and fails unless the reported commit is a prefix of the release's commit. Use
+and fails unless the reported commit is a prefix of the release's commit. A play
+that installs opnsensectl, `deploy-proxmox` or `deploy-opnsense`, fails at load
+without `--opnsensectl-release` and checks the reported commit the same way. Use
 `--limit` on production so one command does not touch both hypervisors. Dry-run
 with `--check --diff` before a mutating run.
 
