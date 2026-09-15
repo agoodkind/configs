@@ -1,17 +1,19 @@
 ---
-# Linux-side deploy of the mwan opnsense host bridge subcommand.
+# Linux-side deploy of the opnsensectl host bridge and chardev drainer.
 #
 # Target: a Proxmox host that runs an OPNsense VM, reached as root.
 # Pairs with mwan-opnsense-deploy.yml which installs the daemon inside the
 # OPNsense guest.
 #
-# A chardev drainer (mwan opnsense host drain) sits in front of the bridge: it
+# A chardev drainer (opnsensectl host drain) sits in front of the bridge: it
 # holds the qemu chardev open and re-exposes it on a relay socket, so a bridge
 # restart never disconnects the chardev and strands a guest write in the kernel.
 # The bridge dials the relay instead of the chardev. See docs/ops/opnsense/wedge.md.
 #
 # Required vars:
-#   mwan_opnsense_host_binary_local      controller path of the staged released linux binary
+#   opnsensectl_host_binary_local        controller path of the staged released linux opnsensectl binary
+#   opnsensectl_release_tag              release tag, passed by `configsctl deploy --opnsensectl-release`
+#   opnsensectl_release_commit           commit that tag points at, passed the same way
 #   mwan_opnsense_drain_listen           relay socket path the drainer serves
 #
 # Both units read their runtime inputs from /etc/opnsensectl/config.toml, which
@@ -41,18 +43,22 @@
     - Restart mwan-opnsense-drain
     - Restart mwan-opnsense-host
 
-- name: Install mwan monolith binary
+- name: Install the opnsensectl binary
   ansible.builtin.copy:
-    src: "{{ mwan_opnsense_host_binary_local }}"
-    dest: /usr/local/bin/mwan
+    src: "{{ opnsensectl_host_binary_local }}"
+    dest: /usr/local/bin/opnsensectl
     owner: root
     group: root
     mode: "0755"
   become: true
-  register: mwan_opnsense_host_binary
   notify:
     - Restart mwan-opnsense-drain
     - Restart mwan-opnsense-host
+
+- name: Verify the hypervisor opnsensectl is the released commit
+  ansible.builtin.import_tasks: verify-opnsensectl-release.yml
+  vars:
+    opnsensectl_installed_binary: /usr/local/bin/opnsensectl
 
 - name: Install mwan-opnsense-drain systemd service
   ansible.builtin.copy:
