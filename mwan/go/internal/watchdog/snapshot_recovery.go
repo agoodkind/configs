@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -52,7 +53,77 @@ const (
 	// already gone. The MWAN guests live on ZFS, and this is the one
 	// reason a delete fails with nothing left to remove.
 	storageSnapshotMissingMarker = "could not find any snapshots to destroy"
+
+	snapshotFailedHeadline = "Rollback snapshots of the MWAN gateway are failing," +
+		" so a bad deploy could not be rolled back"
+	snapshotRecoveredHeadline = "Rollback snapshots of the MWAN gateway are working again"
+
+	// The alert email prints extra fields sorted by key, after the notifier's
+	// own alert_key, alert_kind, and transition fields. These keys are chosen
+	// so the reader sees the cause and the action first and the raw Proxmox
+	// output last, which is why the raw key starts with a letter after "t".
+	snapshotAlertCauseKey    = "cause"
+	snapshotAlertActionKey   = "do this"
+	snapshotAlertFailuresKey = "failed attempts in a row"
+	snapshotAlertNameKey     = "snapshot name"
+	snapshotAlertRawKey      = "what Proxmox printed (raw)"
 )
+
+// thinPoolFullPatterns match the LVM errors that mean the hypervisor's thin
+// pool has no room for a new snapshot. The first is lvcreate refusing a thin
+// volume once the pool crosses its autoextend threshold; the second is the
+// pool status warning once data space is exhausted. Each captures the pool
+// name as LVM prints it, for example pve/data.
+var thinPoolFullPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`free space in thin pool (\S+) reached threshold`),
+	regexp.MustCompile(`[Tt]hin pool (\S+?)(?: is failed)? is out of data space`),
+}
+
+// fullThinPool returns the thin pool a snapshot error says is too full, and
+// whether the error said so.
+func fullThinPool(errorText string) (string, bool) {
+	for _, pattern := range thinPoolFullPatterns {
+		match := pattern.FindStringSubmatch(errorText)
+		if match != nil {
+			return match[1], true
+		}
+	}
+	return "", false
+}
+
+// snapshotFailureAlert builds the headline and the explanatory fields for a
+// run of failed snapshots, so a person reading the email on a phone sees what
+// broke, why, and what to do before the raw Proxmox output.
+func snapshotFailureAlert(
+	name string, failures int, cause error,
+) (string, []slog.Attr) {
+	rawOutput := cause.Error()
+	headline := snapshotFailedHeadline
+	causeText := "Proxmox refused the snapshot for a reason the watchdog" +
+		" does not recognize."
+	actionText := "Check the raw Proxmox output below."
+	pool, poolFull := fullThinPool(rawOutput)
+	if poolFull {
+		headline = fmt.Sprintf(
+			"Rollback snapshots of the MWAN gateway are failing because disk pool"+
+				" %s on the hypervisor is too full, so a bad deploy could not be"+
+				" rolled back", pool)
+		causeText = fmt.Sprintf(
+			"The hypervisor's disk pool %s is too full to take a snapshot."+
+				" A deploy's pre-deploy snapshot will fail the same way.", pool)
+		actionText = fmt.Sprintf(
+			"Free space in disk pool %s on the hypervisor, for example by"+
+				" deleting old snapshots, or grow the pool.", pool)
+	}
+	fields := []slog.Attr{
+		slog.String(snapshotAlertCauseKey, causeText),
+		slog.String(snapshotAlertActionKey, actionText),
+		slog.Int(snapshotAlertFailuresKey, failures),
+		slog.String(snapshotAlertNameKey, name),
+		slog.String(snapshotAlertRawKey, rawOutput),
+	}
+	return headline, fields
+}
 
 // recoverableLocks are the guest locks the watchdog's own snapshot work
 // takes. A lock outside this set was set by something else and is left
@@ -107,17 +178,16 @@ func (w *watchdog) noteSnapshotFailure(
 	if w.consecutiveSnapshotFails < snapshotFailureAlertThreshold {
 		return
 	}
+	headline, fields := snapshotFailureAlert(
+		name, w.consecutiveSnapshotFails, cause,
+	)
 	w.notifierOrNull().Notify(ctx, notify.Event{
-		Now:     w.now(),
-		Level:   slog.LevelError,
-		Kind:    alertKindSnapshotFailed,
-		Key:     w.cfg.MwanVMID,
-		Message: "known-good snapshots keep failing on this guest",
-		Fields: []slog.Attr{
-			slog.String("snapshot", name),
-			slog.Int("consecutive_failures", w.consecutiveSnapshotFails),
-			slog.String("err", cause.Error()),
-		},
+		Now:        w.now(),
+		Level:      slog.LevelError,
+		Kind:       alertKindSnapshotFailed,
+		Key:        w.cfg.MwanVMID,
+		Message:    headline,
+		Fields:     fields,
 		IsRecovery: false,
 	})
 }
@@ -133,7 +203,7 @@ func (w *watchdog) noteSnapshotSuccess(ctx context.Context) {
 	w.forcedDeletes = 0
 	w.notifierOrNull().Resolve(
 		ctx, alertKindSnapshotFailed, w.cfg.MwanVMID,
-		"known-good snapshot succeeded",
+		snapshotRecoveredHeadline,
 	)
 }
 

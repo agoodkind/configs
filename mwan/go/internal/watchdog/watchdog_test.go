@@ -34,11 +34,12 @@ type notifyEvent struct {
 	Key      string
 	Message  string
 	Level    slog.Level
+	Fields   []slog.Attr
 	Resolved bool
 }
 
 // fakeNotifier records every Notify and Resolve call so failover and
-// recovery tests can assert on emitted kinds, keys, and messages
+// recovery tests can assert on emitted kinds, keys, messages, and fields
 // without going through email Sink machinery.
 type fakeNotifier struct {
 	mu     sync.Mutex
@@ -58,6 +59,7 @@ func (f *fakeNotifier) Notify(_ context.Context, ev notify.Event) {
 		Key:      ev.Key,
 		Message:  ev.Message,
 		Level:    ev.Level,
+		Fields:   ev.Fields,
 		Resolved: ev.IsRecovery,
 	})
 	if !ev.IsRecovery {
@@ -67,13 +69,15 @@ func (f *fakeNotifier) Notify(_ context.Context, ev notify.Event) {
 	}
 }
 
-func (f *fakeNotifier) Resolve(_ context.Context, kind, key, msg string, _ ...slog.Attr) {
+func (f *fakeNotifier) Resolve(_ context.Context, kind, key, msg string, fields ...slog.Attr) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.events = append(f.events, notifyEvent{
 		Kind:     kind,
 		Key:      key,
 		Message:  msg,
+		Level:    slog.LevelInfo,
+		Fields:   fields,
 		Resolved: true,
 	})
 	delete(f.active, kind+"|"+key)

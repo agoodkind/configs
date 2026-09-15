@@ -3,10 +3,13 @@ package watchdog
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"goodkind.io/mwan/internal/config"
+	"goodkind.io/mwan/internal/notify"
 )
 
 // snapshotTestWatchdog returns a watchdog whose snapshot cycle fires on the
@@ -121,6 +124,138 @@ func TestAlertFiresOnlyAfterRepeatedFailures(t *testing.T) {
 	if !fn.Active(alertKindSnapshotFailed, w.cfg.MwanVMID) {
 		t.Fatalf("no alert after %d failures in a row",
 			snapshotFailureAlertThreshold)
+	}
+}
+
+// fullThinPoolSnapshotError is the Proxmox output from the 2026-09-14 alert,
+// when the hypervisor's LVM thin pool was past its autoextend threshold.
+const fullThinPoolSnapshotError = "qm snapshot 113 known-good-20260914-231024:" +
+	" systemd-run scope qm snapshot: exit status 255: freeze guest filesystem\n" +
+	"snapshotting 'drive-scsi0' (local-lvm:vm-113-disk-1)\n" +
+	"thaw guest filesystem\n" +
+	"snapshot create failed: starting cleanup\n" +
+	"lvcreate snapshot 'pve/snap_vm-113-disk-1_known-good-20260914-231024' error:" +
+	" Cannot create new thin volume, free space in thin pool pve/data reached threshold."
+
+// lastSnapshotAlert drives noteSnapshotFailure past the alert threshold with
+// the given error and returns the event the notifier received.
+func lastSnapshotAlert(t *testing.T, cause error) notifyEvent {
+	t.Helper()
+	w := snapshotTestWatchdog(t, &mockOps{})
+	w.nowFn = func() time.Time { return time.Unix(1_700_000_000, 0) }
+	ctx := context.Background()
+	for range snapshotFailureAlertThreshold {
+		w.noteSnapshotFailure(ctx, "known-good-20260914-231024", cause)
+	}
+	events := fakeNotifierFrom(t, w).snapshot()
+	if len(events) != 1 {
+		t.Fatalf("notify events = %d, want exactly 1 alert: %+v", len(events), events)
+	}
+	return events[0]
+}
+
+// alertField returns the string value of the named field on an event.
+func alertField(t *testing.T, event notifyEvent, key string) string {
+	t.Helper()
+	for _, field := range event.Fields {
+		if field.Key == key {
+			return field.Value.String()
+		}
+	}
+	t.Fatalf("alert has no %q field: %+v", key, event.Fields)
+	return ""
+}
+
+// renderedAlertLastLine renders the event's fields through the email body
+// builder and returns the body's last line, which is what a reader reaches
+// after every explanatory field.
+func renderedAlertLastLine(event notifyEvent) string {
+	record := slog.NewRecord(time.Unix(1_700_000_000, 0), event.Level, event.Message, 0)
+	record.AddAttrs(
+		slog.String("alert_kind", event.Kind),
+		slog.String("alert_key", event.Key),
+		slog.Bool("transition", true),
+	)
+	record.AddAttrs(event.Fields...)
+	lines := strings.Split(notify.BuildEmailBody(record, nil), "\n")
+	return lines[len(lines)-1]
+}
+
+// TestSnapshotAlertNamesTheFullThinPool covers the 2026-09-14 alert: the
+// cause was a thin pool past its threshold, and the email must say that and
+// what to do in plain words, naming the pool, with the raw output last.
+func TestSnapshotAlertNamesTheFullThinPool(t *testing.T) {
+	event := lastSnapshotAlert(t, errors.New(fullThinPoolSnapshotError))
+
+	if event.Kind != alertKindSnapshotFailed || event.Key != "113" {
+		t.Fatalf("alert kind/key = %q/%q, want %q/113", event.Kind, event.Key,
+			alertKindSnapshotFailed)
+	}
+	for _, want := range []string{"MWAN gateway", "disk pool pve/data", "too full", "rolled back"} {
+		if !strings.Contains(event.Message, want) {
+			t.Fatalf("headline %q does not contain %q", event.Message, want)
+		}
+	}
+	causeText := alertField(t, event, snapshotAlertCauseKey)
+	if !strings.Contains(causeText, "disk pool pve/data is too full") {
+		t.Fatalf("cause %q does not say pool pve/data is too full", causeText)
+	}
+	actionText := alertField(t, event, snapshotAlertActionKey)
+	for _, want := range []string{"Free space in disk pool pve/data", "deleting old snapshots", "grow the pool"} {
+		if !strings.Contains(actionText, want) {
+			t.Fatalf("action %q does not contain %q", actionText, want)
+		}
+	}
+	if got := alertField(t, event, snapshotAlertFailuresKey); got != "3" {
+		t.Fatalf("failed attempts field = %q, want 3", got)
+	}
+	if got := alertField(t, event, snapshotAlertNameKey); got != "known-good-20260914-231024" {
+		t.Fatalf("snapshot name field = %q", got)
+	}
+	if got := alertField(t, event, snapshotAlertRawKey); got != fullThinPoolSnapshotError {
+		t.Fatalf("raw output field = %q, want the unmodified Proxmox output", got)
+	}
+	wantLast := "What Proxmox printed (raw): " + fullThinPoolSnapshotError
+	lastLines := strings.Split(wantLast, "\n")
+	if got := renderedAlertLastLine(event); got != lastLines[len(lastLines)-1] {
+		t.Fatalf("rendered email ends with %q, want the raw Proxmox output last", got)
+	}
+}
+
+// TestSnapshotAlertOutOfDataSpaceNamesThePool covers LVM's other wording for
+// an exhausted thin pool.
+func TestSnapshotAlertOutOfDataSpaceNamesThePool(t *testing.T) {
+	event := lastSnapshotAlert(t, errors.New(
+		"qm snapshot 113 known-good-x: exit status 255:"+
+			" WARNING: Thin pool pve/data is out of data space."))
+
+	actionText := alertField(t, event, snapshotAlertActionKey)
+	if !strings.Contains(actionText, "Free space in disk pool pve/data") {
+		t.Fatalf("action %q does not name pool pve/data", actionText)
+	}
+}
+
+// TestSnapshotAlertUnknownCauseKeepsTheRawOutput covers every other failure:
+// the email stays generic, points at the raw output, and keeps it intact.
+func TestSnapshotAlertUnknownCauseKeepsTheRawOutput(t *testing.T) {
+	rawOutput := "qm snapshot 113 known-good-x: exit status 255: storage is offline"
+	event := lastSnapshotAlert(t, errors.New(rawOutput))
+
+	if event.Message != snapshotFailedHeadline {
+		t.Fatalf("headline = %q, want the generic %q", event.Message, snapshotFailedHeadline)
+	}
+	if strings.Contains(event.Message, "disk pool") {
+		t.Fatalf("headline %q names a disk pool for an unrelated failure", event.Message)
+	}
+	actionText := alertField(t, event, snapshotAlertActionKey)
+	if !strings.Contains(actionText, "raw Proxmox output") {
+		t.Fatalf("action %q does not point at the raw output", actionText)
+	}
+	if got := alertField(t, event, snapshotAlertRawKey); got != rawOutput {
+		t.Fatalf("raw output field = %q, want %q", got, rawOutput)
+	}
+	if got := renderedAlertLastLine(event); got != "What Proxmox printed (raw): "+rawOutput {
+		t.Fatalf("rendered email ends with %q, want the raw Proxmox output last", got)
 	}
 }
 
