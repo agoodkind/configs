@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Evaluate Ansible task conditions with ansible-core's own templar.
 
-The Go test reads set_fact tasks and condition lists from a real task file and
-sends them as JSON on stdin, together with the variables and registered results
-those tasks read. This script renders each set_fact in order, with that task's
+The restart decision spec reads set_fact tasks and condition lists from a real
+task file and sends them as JSON on stdin, together with the variables and
+registered results those tasks read. This script renders each set_fact in order, with that task's
 own vars in scope, the way set_fact does. It then evaluates each named condition
 list the way a task's when or changed_when does: every item must be true, and
 evaluation stops at the first false item. It prints the verdicts and the rendered

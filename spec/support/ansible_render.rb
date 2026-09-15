@@ -15,8 +15,31 @@ module AnsibleRender
   VAULT_PASSWORD_ENV = 'ANSIBLE_VAULT_PASSWORD_FILE'
   VAULT_PASSWORD_PLACEHOLDER = "unused\n"
   SECRET_FILE_MODE = 0o600
+  SHEBANG_PREFIX = '#!'
 
   module_function
+
+  # The interpreter that runs ansible-core, read from the ansible-playbook entry
+  # point's shebang, so a script imports the same ansible-core a deploy runs.
+  # The entry point is only read, never run.
+  def ansible_python
+    entry_point = executable_on_path(PLAYBOOK_COMMAND)
+    raise "#{PLAYBOOK_COMMAND} is required: not found on PATH" if entry_point.nil?
+
+    first_line = File.open(entry_point, &:gets).to_s
+    raise "#{entry_point} has no shebang: #{first_line.inspect}" unless first_line.start_with?(SHEBANG_PREFIX)
+
+    fields = first_line.strip.delete_prefix(SHEBANG_PREFIX).split
+    raise "#{entry_point} has no shebang: #{first_line.inspect}" if fields.empty?
+    return fields.last if File.basename(fields.first) == 'env' && fields.size > 1
+
+    fields.first
+  end
+
+  def executable_on_path(command_name)
+    candidates = ENV.fetch('PATH').split(File::PATH_SEPARATOR).map { |directory| File.join(directory, command_name) }
+    candidates.find { |candidate| File.file?(candidate) && File.executable?(candidate) }
+  end
 
   def render(inventory:, playbook:, extra_vars:)
     Dir.mktmpdir('vault-password') do |password_directory|
