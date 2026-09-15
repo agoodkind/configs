@@ -10,7 +10,7 @@
 # prefix into the tunnel, and announces that prefix to MWAN over iBGP.
 #
 # Run example:
-#   go run goodkind.io/configs/cmd/configs deploy deploy-sit6 \
+#   ./configsctl deploy deploy-sit6 \
 #     --limit sit6_servers
 
 - name: Configure sit6 LXC

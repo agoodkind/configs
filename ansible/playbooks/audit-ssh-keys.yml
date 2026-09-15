@@ -6,8 +6,8 @@
 # nothing on any guest or hypervisor.
 #
 # Usage:
-#   go run goodkind.io/configs/cmd/configs deploy audit-ssh-keys
-#   go run goodkind.io/configs/cmd/configs deploy audit-ssh-keys --limit <group>
+#   ./configsctl deploy audit-ssh-keys
+#   ./configsctl deploy audit-ssh-keys --limit <group>
 
 - name: Audit guest sshd global authorized_keys files
   hosts: proxmox_all_lxc:proxmox_all_qemu

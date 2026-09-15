@@ -4,7 +4,7 @@ Ansible configures every guest in the homelab from a single controller. It
 takes a freshly provisioned container or virtual machine, brings it up to a
 running and deployable state, and keeps it there as the fleet changes.
 Each app repo owns the stack that runs on that guest, Ansible fetches that
-stack at the deployed ref, and playbooks run through the configs binary.
+stack at the deployed ref, and playbooks run through configsctl.
 
 ## Inventory layout
 

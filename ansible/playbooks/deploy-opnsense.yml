@@ -9,9 +9,9 @@
 # inventory_hostname.
 #
 # Run examples:
-#   go run goodkind.io/configs/cmd/configs deploy deploy-opnsense \
+#   ./configsctl deploy deploy-opnsense \
 #     --limit opnsense_servers
-#   go run goodkind.io/configs/cmd/configs deploy deploy-opnsense \
+#   ./configsctl deploy deploy-opnsense \
 #     --release <tag> --limit opnsense_suburban_servers
 #
 # The binary comes from the named release: the deploy command downloads it,

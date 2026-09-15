@@ -10,7 +10,7 @@
 # Required vars (typically from group_vars or playbook):
 #   mwan_opnsense_binary_local       local path to bin/mwan-opnsense
 #   mwan_proxmox_delegate            inventory host of the hypervisor running this router
-#   mwan_release_tag                 release tag, passed by `configs deploy --release`
+#   mwan_release_tag                 release tag, passed by `configsctl deploy --release`
 #   mwan_release_commit              commit that tag points at, passed the same way
 #
 # Optional rc.conf.d overrides after install. Defaults come from the sample

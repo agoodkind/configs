@@ -93,7 +93,7 @@ end
 desc 'Lint canonical playbooks with ansible-lint'
 task :lint do
   Dir.chdir(File.expand_path('..', __dir__)) do
-    sh 'go', 'run', 'goodkind.io/configs/cmd/configs', 'lint'
+    sh './configsctl', 'lint'
   end
   CANONICAL_PLAYBOOKS.each_value do |pb|
     sh 'ansible-lint', "#{LOCAL_PLAYBOOKS_DIR}/#{pb}"

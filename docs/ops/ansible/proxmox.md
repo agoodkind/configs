@@ -19,7 +19,7 @@ The per-hypervisor inventory plugins keep the API URL, username, and token ID
 in plaintext and read the token secret from the vault. When a token rotates,
 update `vault_proxmox_token_secret` for the production hypervisor or
 `vault_suburban_testbed_pve_token_secret` for suburban with
-`configs set-secrets`. Do not move the token secrets into shell startup files
+`configsctl set-secrets`. Do not move the token secrets into shell startup files
 just to satisfy inventory.
 
 ## Verification

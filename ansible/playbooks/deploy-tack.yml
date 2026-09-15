@@ -6,10 +6,10 @@
 #
 # Usage:
 #   # Production
-#   go run goodkind.io/configs/cmd/configs deploy deploy-tack --limit tack_prod_all
+#   ./configsctl deploy deploy-tack --limit tack_prod_all
 #
 #   # QA
-#   go run goodkind.io/configs/cmd/configs deploy deploy-tack \
+#   ./configsctl deploy deploy-tack \
 #     --limit tack_qa_all
 
 - name: Prepare tack guest (SSH keys, package-updater, base config)
