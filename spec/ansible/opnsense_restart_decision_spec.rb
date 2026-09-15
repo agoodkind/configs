@@ -147,7 +147,7 @@ RSpec.describe OpnsenseRestartDecision do
     it "decides the restart when #{test_case[:name]}", :aggregate_failures do
       variables = {
         'ansible_check_mode' => false,
-        'mwan_release_commit' => OpnsenseRestartDecision::RELEASE_COMMIT,
+        'opnsensectl_release_commit' => OpnsenseRestartDecision::RELEASE_COMMIT,
         'mwan_opnsense_binary_install' => { 'changed' => test_case[:binary_changed], 'failed' => false },
         'mwan_opnsense_instances_before' => described_class.command_result(test_case[:instances_exit], '', ''),
         'mwan_opnsense_version_before' => test_case[:version]
