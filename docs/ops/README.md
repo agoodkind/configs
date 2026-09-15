@@ -15,7 +15,9 @@ go run goodkind.io/configs/cmd/configs tofu apply
 go run goodkind.io/configs/cmd/configs deploy <name> [--release <tag>] [--limit <host>] [--check] [--diff]
 ```
 
-A play that installs the MWAN binary fails at load without `--release`. Use
+A play that installs the MWAN binary fails at load without `--release`. After it
+copies the binary onto a Linux host, the play runs `mwan version` on that copy
+and fails unless the reported commit is a prefix of the release's commit. Use
 `--limit` on production so one command does not touch both hypervisors. Dry-run
 with `--check --diff` before a mutating run.
 
