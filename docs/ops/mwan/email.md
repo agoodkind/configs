@@ -31,7 +31,7 @@ The vault stores `vault_smtp2go_api_key`. Deploys render an environment file
 at `/etc/mwan/secrets.env` (mode 0640, root only) on every MWAN host, and the
 systemd units load it, so the binary reads `SMTP2GO_API_KEY` from the
 environment; an environment value overrides the config field. Rotate the key
-with `configs set-secrets`, then redeploy the MWAN hosts.
+with `configsctl set-secrets`, then redeploy the MWAN hosts.
 
 ## Failure modes
 

@@ -158,7 +158,7 @@ controller by naming its tag; the deploy command downloads it, verifies its
 GitHub attestation, and unpacks it under `.make/releases/<tag>/`:
 
 ```bash
-go run goodkind.io/configs/cmd/configs deploy deploy-opnsense \
+./configsctl deploy deploy-opnsense \
   --release <tag> --limit opnsense_suburban_servers --check
 ```
 

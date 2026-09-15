@@ -11,8 +11,8 @@ Run every tofu command through the repo control tool so credentials flow from
 the Ansible vault automatically:
 
 ```bash
-go run goodkind.io/configs/cmd/configs tofu plan
-go run goodkind.io/configs/cmd/configs tofu apply
+./configsctl tofu plan
+./configsctl tofu apply
 ```
 
 The wrapper reads four vault secrets and exports them for the child process:
@@ -46,7 +46,7 @@ The Proxmox provider uses these import identifiers:
 Import the live object through the repo control tool:
 
 ```bash
-go run goodkind.io/configs/cmd/configs tofu import \
+./configsctl tofu import \
   '<resource_address>' '<provider_import_id>'
 ```
 
@@ -69,8 +69,8 @@ For a ZFS-backed guest, renaming each dataset preserves its child snapshots.
 5. Remove the resource from state, then import it with the new VMID:
 
 ```bash
-go run goodkind.io/configs/cmd/configs tofu state rm '<resource_address>'
-go run goodkind.io/configs/cmd/configs tofu import \
+./configsctl tofu state rm '<resource_address>'
+./configsctl tofu import \
   '<resource_address>' '<node_name>/<new_vmid>'
 ```
 

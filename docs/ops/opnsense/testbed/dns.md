@@ -20,7 +20,7 @@ The `dns64.suburban.goodkind.io` LXC runs bind9 and synthesizes AAAA records
 into that prefix, so an IPv4-only name resolves to an address Tayga can
 translate. Its address, resolver, and synthesis settings are group vars; deploy
 them with
-`go run goodkind.io/configs/cmd/configs deploy deploy-dns64 --limit dns64_suburban_servers`.
+`./configsctl deploy deploy-dns64 --limit dns64_suburban_servers`.
 It forwards to the testbed OPNsense's Unbound over native IPv6, so its own
 recursion does not ride the Tayga path.
 

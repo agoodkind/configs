@@ -25,6 +25,6 @@ repos:
 
       - id: ansible-input-defaults
         name: ban input-side defaults and presence checks in ansible
-        entry: go run goodkind.io/configs/cmd/configs lint
+        entry: ./configsctl lint
         language: system
         files: '(^ansible/.*\.ya?ml$|\.j2$)'

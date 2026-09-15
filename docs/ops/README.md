@@ -8,11 +8,15 @@ hypothesis, test the smallest reversible change, verify no regression, and only
 then codify the change in git. Do not bulk-change MWAN, OPNsense, or the vault
 hypervisor, and do not restart networking services without a rollback path.
 
-Run OpenTofu and Ansible through the configs binary.
+Run OpenTofu and Ansible through configsctl from the repository root. The
+[configsctl](../../configsctl) script there runs the configsctl release this
+checkout pins, so continuous integration, the pre-commit hook, and every operator
+run the same version. To move to a newer release, change the version in that
+script.
 
 ```bash
-go run goodkind.io/configs/cmd/configs tofu apply
-go run goodkind.io/configs/cmd/configs deploy <name> [--release <tag>] [--limit <host>] [--check] [--diff]
+./configsctl tofu apply
+./configsctl deploy <name> [--release <tag>] [--limit <host>] [--check] [--diff]
 ```
 
 A play that installs the MWAN binary fails at load without `--release`. After it
