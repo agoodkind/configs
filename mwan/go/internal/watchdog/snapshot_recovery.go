@@ -54,19 +54,14 @@ const (
 	// reason a delete fails with nothing left to remove.
 	storageSnapshotMissingMarker = "could not find any snapshots to destroy"
 
-	snapshotFailedHeadline = "Rollback snapshots of the MWAN gateway are failing," +
-		" so a bad deploy could not be rolled back"
-	snapshotRecoveredHeadline = "Rollback snapshots of the MWAN gateway are working again"
+	snapshotFailedHeadline    = "Gateway rollback snapshots failing"
+	snapshotRecoveredHeadline = "Gateway rollback snapshots working again"
 
-	// The alert email prints extra fields sorted by key, after the notifier's
-	// own alert_key, alert_kind, and transition fields. These keys are chosen
-	// so the reader sees the cause and the action first and the raw Proxmox
-	// output last, which is why the raw key starts with a letter after "t".
 	snapshotAlertCauseKey    = "cause"
-	snapshotAlertActionKey   = "do this"
-	snapshotAlertFailuresKey = "failed attempts in a row"
-	snapshotAlertNameKey     = "snapshot name"
-	snapshotAlertRawKey      = "what Proxmox printed (raw)"
+	snapshotAlertActionKey   = "action"
+	snapshotAlertFailuresKey = "failed attempts"
+	snapshotAlertNameKey     = "snapshot"
+	snapshotAlertRawKey      = "original error text"
 )
 
 // thinPoolFullPatterns match the LVM errors that mean the hypervisor's thin
@@ -91,29 +86,24 @@ func fullThinPool(errorText string) (string, bool) {
 	return "", false
 }
 
-// snapshotFailureAlert builds the headline and the explanatory fields for a
-// run of failed snapshots, so a person reading the email on a phone sees what
-// broke, why, and what to do before the raw Proxmox output.
+// snapshotFailureAlert builds the headline and the fields for a run of failed
+// snapshots, so a person reading the email on a phone sees what broke, why,
+// and what to do, with the original Proxmox error kept intact.
 func snapshotFailureAlert(
 	name string, failures int, cause error,
 ) (string, []slog.Attr) {
 	rawOutput := cause.Error()
 	headline := snapshotFailedHeadline
-	causeText := "Proxmox refused the snapshot for a reason the watchdog" +
-		" does not recognize."
-	actionText := "Check the raw Proxmox output below."
+	causeText := "Proxmox refused the snapshot for an unrecognized reason."
+	actionText := "Read the original error text."
 	pool, poolFull := fullThinPool(rawOutput)
 	if poolFull {
-		headline = fmt.Sprintf(
-			"Rollback snapshots of the MWAN gateway are failing because disk pool"+
-				" %s on the hypervisor is too full, so a bad deploy could not be"+
-				" rolled back", pool)
+		headline = fmt.Sprintf("%s: disk pool %s is full", snapshotFailedHeadline, pool)
 		causeText = fmt.Sprintf(
-			"The hypervisor's disk pool %s is too full to take a snapshot."+
-				" A deploy's pre-deploy snapshot will fail the same way.", pool)
+			"Disk pool %s is too full for a snapshot. Deploy snapshots will fail too.",
+			pool)
 		actionText = fmt.Sprintf(
-			"Free space in disk pool %s on the hypervisor, for example by"+
-				" deleting old snapshots, or grow the pool.", pool)
+			"Free space in %s (for example delete old snapshots) or grow it.", pool)
 	}
 	fields := []slog.Attr{
 		slog.String(snapshotAlertCauseKey, causeText),

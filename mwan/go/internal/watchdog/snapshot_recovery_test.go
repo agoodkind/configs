@@ -166,24 +166,29 @@ func alertField(t *testing.T, event notifyEvent, key string) string {
 	return ""
 }
 
-// renderedAlertLastLine renders the event's fields through the email body
-// builder and returns the body's last line, which is what a reader reaches
-// after every explanatory field.
-func renderedAlertLastLine(event notifyEvent) string {
-	record := slog.NewRecord(time.Unix(1_700_000_000, 0), event.Level, event.Message, 0)
+// renderedAlertBody renders an event through the email body builder with the
+// alert_kind, alert_key, and transition or resolved fields the notify manager
+// adds, which is the body the operator reads.
+func renderedAlertBody(event notifyEvent) string {
+	message := event.Message
+	stateField := slog.Bool("transition", true)
+	if event.Resolved {
+		message = "RECOVERED: " + message
+		stateField = slog.Bool("resolved", true)
+	}
+	record := slog.NewRecord(time.Unix(1_700_000_000, 0), event.Level, message, 0)
 	record.AddAttrs(
 		slog.String("alert_kind", event.Kind),
 		slog.String("alert_key", event.Key),
-		slog.Bool("transition", true),
+		stateField,
 	)
 	record.AddAttrs(event.Fields...)
-	lines := strings.Split(notify.BuildEmailBody(record, nil), "\n")
-	return lines[len(lines)-1]
+	return notify.BuildEmailBody(record, nil)
 }
 
 // TestSnapshotAlertNamesTheFullThinPool covers the 2026-09-14 alert: the
 // cause was a thin pool past its threshold, and the email must say that and
-// what to do in plain words, naming the pool, with the raw output last.
+// what to do, naming the pool, with the original error text intact.
 func TestSnapshotAlertNamesTheFullThinPool(t *testing.T) {
 	event := lastSnapshotAlert(t, errors.New(fullThinPoolSnapshotError))
 
@@ -191,34 +196,21 @@ func TestSnapshotAlertNamesTheFullThinPool(t *testing.T) {
 		t.Fatalf("alert kind/key = %q/%q, want %q/113", event.Kind, event.Key,
 			alertKindSnapshotFailed)
 	}
-	for _, want := range []string{"MWAN gateway", "disk pool pve/data", "too full", "rolled back"} {
-		if !strings.Contains(event.Message, want) {
-			t.Fatalf("headline %q does not contain %q", event.Message, want)
-		}
-	}
-	causeText := alertField(t, event, snapshotAlertCauseKey)
-	if !strings.Contains(causeText, "disk pool pve/data is too full") {
-		t.Fatalf("cause %q does not say pool pve/data is too full", causeText)
-	}
-	actionText := alertField(t, event, snapshotAlertActionKey)
-	for _, want := range []string{"Free space in disk pool pve/data", "deleting old snapshots", "grow the pool"} {
-		if !strings.Contains(actionText, want) {
-			t.Fatalf("action %q does not contain %q", actionText, want)
-		}
-	}
-	if got := alertField(t, event, snapshotAlertFailuresKey); got != "3" {
-		t.Fatalf("failed attempts field = %q, want 3", got)
-	}
-	if got := alertField(t, event, snapshotAlertNameKey); got != "known-good-20260914-231024" {
-		t.Fatalf("snapshot name field = %q", got)
-	}
 	if got := alertField(t, event, snapshotAlertRawKey); got != fullThinPoolSnapshotError {
-		t.Fatalf("raw output field = %q, want the unmodified Proxmox output", got)
+		t.Fatalf("original error text = %q, want the unmodified Proxmox output", got)
 	}
-	wantLast := "What Proxmox printed (raw): " + fullThinPoolSnapshotError
-	lastLines := strings.Split(wantLast, "\n")
-	if got := renderedAlertLastLine(event); got != lastLines[len(lastLines)-1] {
-		t.Fatalf("rendered email ends with %q, want the raw Proxmox output last", got)
+	wantBody := "Gateway rollback snapshots failing: disk pool pve/data is full\n" +
+		"\n" +
+		"Action: Free space in pve/data (for example delete old snapshots) or grow it.\n" +
+		"Alert_key: 113\n" +
+		"Alert_kind: snapshot-failed\n" +
+		"Cause: Disk pool pve/data is too full for a snapshot. Deploy snapshots will fail too.\n" +
+		"Failed attempts: 3\n" +
+		"Original error text: " + fullThinPoolSnapshotError + "\n" +
+		"Snapshot: known-good-20260914-231024\n" +
+		"Transition: true"
+	if got := renderedAlertBody(event); got != wantBody {
+		t.Fatalf("rendered email body:\n%s\n\nwant:\n%s", got, wantBody)
 	}
 }
 
@@ -229,33 +221,61 @@ func TestSnapshotAlertOutOfDataSpaceNamesThePool(t *testing.T) {
 		"qm snapshot 113 known-good-x: exit status 255:"+
 			" WARNING: Thin pool pve/data is out of data space."))
 
+	if want := "Gateway rollback snapshots failing: disk pool pve/data is full"; event.Message != want {
+		t.Fatalf("headline = %q, want %q", event.Message, want)
+	}
 	actionText := alertField(t, event, snapshotAlertActionKey)
-	if !strings.Contains(actionText, "Free space in disk pool pve/data") {
+	if !strings.Contains(actionText, "Free space in pve/data") {
 		t.Fatalf("action %q does not name pool pve/data", actionText)
 	}
 }
 
-// TestSnapshotAlertUnknownCauseKeepsTheRawOutput covers every other failure:
-// the email stays generic, points at the raw output, and keeps it intact.
-func TestSnapshotAlertUnknownCauseKeepsTheRawOutput(t *testing.T) {
+// TestSnapshotAlertUnknownCauseKeepsTheOriginalError covers every other
+// failure: the email stays generic, points at the original error text, and
+// keeps it intact.
+func TestSnapshotAlertUnknownCauseKeepsTheOriginalError(t *testing.T) {
 	rawOutput := "qm snapshot 113 known-good-x: exit status 255: storage is offline"
 	event := lastSnapshotAlert(t, errors.New(rawOutput))
 
-	if event.Message != snapshotFailedHeadline {
-		t.Fatalf("headline = %q, want the generic %q", event.Message, snapshotFailedHeadline)
+	wantBody := "Gateway rollback snapshots failing\n" +
+		"\n" +
+		"Action: Read the original error text.\n" +
+		"Alert_key: 113\n" +
+		"Alert_kind: snapshot-failed\n" +
+		"Cause: Proxmox refused the snapshot for an unrecognized reason.\n" +
+		"Failed attempts: 3\n" +
+		"Original error text: " + rawOutput + "\n" +
+		"Snapshot: known-good-20260914-231024\n" +
+		"Transition: true"
+	if got := renderedAlertBody(event); got != wantBody {
+		t.Fatalf("rendered email body:\n%s\n\nwant:\n%s", got, wantBody)
 	}
-	if strings.Contains(event.Message, "disk pool") {
-		t.Fatalf("headline %q names a disk pool for an unrelated failure", event.Message)
+}
+
+// TestSnapshotRecoveryAlertReadsPlainly covers the email that closes the
+// alert once a snapshot lands again.
+func TestSnapshotRecoveryAlertReadsPlainly(t *testing.T) {
+	w := snapshotTestWatchdog(t, &mockOps{})
+	w.nowFn = func() time.Time { return time.Unix(1_700_000_000, 0) }
+	ctx := context.Background()
+	for range snapshotFailureAlertThreshold {
+		w.noteSnapshotFailure(ctx, "known-good-x", errors.New("storage is offline"))
 	}
-	actionText := alertField(t, event, snapshotAlertActionKey)
-	if !strings.Contains(actionText, "raw Proxmox output") {
-		t.Fatalf("action %q does not point at the raw output", actionText)
+
+	w.noteSnapshotSuccess(ctx)
+
+	events := fakeNotifierFrom(t, w).snapshot()
+	recovery := events[len(events)-1]
+	if !recovery.Resolved {
+		t.Fatalf("last event is not a recovery: %+v", recovery)
 	}
-	if got := alertField(t, event, snapshotAlertRawKey); got != rawOutput {
-		t.Fatalf("raw output field = %q, want %q", got, rawOutput)
-	}
-	if got := renderedAlertLastLine(event); got != "What Proxmox printed (raw): "+rawOutput {
-		t.Fatalf("rendered email ends with %q, want the raw Proxmox output last", got)
+	wantBody := "RECOVERED: Gateway rollback snapshots working again\n" +
+		"\n" +
+		"Alert_key: 113\n" +
+		"Alert_kind: snapshot-failed\n" +
+		"Resolved: true"
+	if got := renderedAlertBody(recovery); got != wantBody {
+		t.Fatalf("rendered recovery body:\n%s\n\nwant:\n%s", got, wantBody)
 	}
 }
 
