@@ -89,12 +89,14 @@
       delegate_to: localhost
       check_mode: false
 
+    # The bundle builder ships in the configsctl module, so it runs at the
+    # version the configsctl script pins instead of carrying a second pin.
     - name: Build authorized_keys bundle
       ansible.builtin.command:
         argv:
           - go
           - run
-          - ./cmd/deploy-authorized-keys
+          - "goodkind.io/configsctl/cmd/deploy-authorized-keys@{{ configsctl_version }}"
           - --github-user
           - "{{ github_ssh_keys_user }}"
           - --out
@@ -103,7 +105,11 @@
           - "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
           - --extra-out
           - "{{ work_tmp_dir }}/authorized_keys.bundle"
-        chdir: "{{ playbook_dir }}/../../scripts"
+        chdir: "{{ playbook_dir }}/../.."
+      vars:
+        configsctl_version: >-
+          {{ lookup('ansible.builtin.file', playbook_dir ~ '/../../configsctl')
+             | regex_findall('CONFIGSCTL_VERSION="([^"]+)"') | first }}
       delegate_to: localhost
       changed_when: false
       check_mode: false
