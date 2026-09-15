@@ -12,18 +12,6 @@ permissions:
   contents: read
 
 jobs:
-  scripts:
-    name: scripts
-    uses: agoodkind/go-makefile/.github/workflows/_ci.yml@main
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    secrets: inherit
-    with:
-      go_version_file: scripts/go.mod
-      working_directory: scripts
-
   mwan-go:
     name: mwan/go
     uses: agoodkind/go-makefile/.github/workflows/_ci.yml@main
@@ -65,3 +53,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y python3-jinja2
       - name: Lint Ansible inputs
         run: ./configsctl lint
+
+  # These specs render the real inventory and tack group_vars through Ansible
+  # and run the real package updater script, so a change to that data or script
+  # fails the pull request. The runner image provides ansible-playbook.
+  configs-data-tests:
+    name: configs data tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Run data specs
+        run: bundle exec rspec
