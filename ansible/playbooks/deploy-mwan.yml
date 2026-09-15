@@ -141,7 +141,7 @@
       changed_when: snapshot_result.rc == 0
       when: pre_deploy_connectivity.rc == 0
 
-    - name: Prune old pre-deploy snapshots (keep last 3)
+    - name: Prune old pre-deploy snapshots (keep last 1)
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.shell:
         cmd: |
@@ -155,10 +155,10 @@
           for _ in "${snaps[@]}"; do
             count=$((count + 1))
           done
-          if [ "$count" -le 3 ]; then
+          if [ "$count" -le 1 ]; then
             exit 0
           fi
-          to_delete=$((count - 3))
+          to_delete=$((count - 1))
           for ((i=0; i<to_delete; i++)); do
             qm delsnapshot "$VMID" "${snaps[$i]}" --force
           done
