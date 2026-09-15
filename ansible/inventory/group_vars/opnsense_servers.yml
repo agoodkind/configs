@@ -9,6 +9,10 @@
 # in [all:vars] would otherwise be wrong for this host).
 ansible_user: agoodkind
 
+# The hypervisor that runs this router. deploy-opnsense reads the restarted
+# daemon's identity through that host's bridge.
+mwan_proxmox_delegate: vault
+
 # OPNsense identity for MWAN-side config rendering.
 opnsense_addr: "3d06:bad:b01::1"
 opnsense_gateway_names:
