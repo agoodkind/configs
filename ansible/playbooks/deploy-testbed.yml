@@ -226,6 +226,61 @@
     # ISP LXCs (webpass, att, mbrains, astound) via pct
     # ----------------------------------------------------------------------
 
+    # nftables.service needs LXC nesting; the API token cannot set container
+    # features, so this owns it over SSH like the qm args tasks above.
+    - name: Read current ISP LXC features
+      ansible.builtin.command:
+        cmd: pct config {{ item.id }}
+      loop: "{{ testbed_isp_lxcs }}"
+      loop_control:
+        index_var: isp_idx
+      register: isp_lxc_config
+      changed_when: false
+      check_mode: false
+      tags: ["isp-lxcs"]
+
+    - name: Enable nesting on ISP LXCs
+      ansible.builtin.command:
+        cmd: pct set {{ item.id }} --features nesting=1
+      loop: "{{ testbed_isp_lxcs }}"
+      loop_control:
+        index_var: isp_idx
+      when: isp_lxc_config.results[isp_idx].stdout is not search('features:.*nesting=1')
+      register: isp_lxc_nesting_set
+      changed_when: isp_lxc_nesting_set is not skipped and isp_lxc_nesting_set.rc == 0
+      tags: ["isp-lxcs"]
+
+    - name: Reboot ISP LXCs with newly enabled nesting
+      ansible.builtin.command:
+        cmd: pct reboot {{ item.id }}
+      loop: "{{ testbed_isp_lxcs }}"
+      loop_control:
+        index_var: isp_idx
+      when: >-
+        isp_lxc_nesting_set.results[isp_idx] is not skipped
+        and isp_lxc_nesting_set.results[isp_idx].changed
+      changed_when: true
+      tags: ["isp-lxcs"]
+
+    - name: Wait for ISP LXCs to accept exec after nesting reboot
+      ansible.builtin.shell: |
+        set -o pipefail
+        for _ in $(seq 1 20); do
+          pct exec {{ item.id }} -- true 2>/dev/null && exit 0
+          sleep 3
+        done
+        exit 1
+      args:
+        executable: /bin/bash
+      loop: "{{ testbed_isp_lxcs }}"
+      loop_control:
+        index_var: isp_idx
+      when: >-
+        isp_lxc_nesting_set.results[isp_idx] is not skipped
+        and isp_lxc_nesting_set.results[isp_idx].changed
+      changed_when: false
+      tags: ["isp-lxcs"]
+
     # apt runs non-interactively with --force-confold: kea ships a default
     # /etc/kea/*.conf conffile, and our rendered config may already be present
     # from a prior partial run, which otherwise triggers an interactive conffile
