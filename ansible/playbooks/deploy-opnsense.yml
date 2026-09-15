@@ -10,20 +10,23 @@
 #
 # Run examples:
 #   ./configsctl deploy deploy-opnsense \
-#     --limit opnsense_servers
+#     --opnsensectl-release <tag> --limit opnsense_servers
 #   ./configsctl deploy deploy-opnsense \
-#     --release <tag> --limit opnsense_suburban_servers
+#     --opnsensectl-release <tag> --limit opnsense_suburban_servers
 #
-# The binary comes from the named release: the deploy command downloads it,
-# verifies its GitHub attestation, and stages it under mwan_release_dir; a run
-# without --release fails at the first read of that variable.
+# The daemon binary comes from the named opnsensectl release: the deploy command
+# downloads it, verifies its GitHub attestation, and stages it under
+# opnsensectl_release_dir; a run without --opnsensectl-release fails at the first
+# read of that variable. The deploy reads the daemon's identity through
+# /usr/local/bin/opnsensectl on the router's hypervisor, so deploy-proxmox with
+# the same opnsensectl release runs on that hypervisor first.
 
 - name: Deploy mwan-opnsense daemon
   hosts: opnsense_servers:opnsense_suburban_servers
   gather_facts: false
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    mwan_opnsense_binary_local: "{{ mwan_release_dir }}/freebsd_amd64/mwan"
+    mwan_opnsense_binary_local: "{{ opnsensectl_release_dir }}/freebsd_amd64/opnsensectl"
   tasks:
     - name: Run in-guest install task
       ansible.builtin.include_tasks: tasks/mwan-opnsense-deploy.yml

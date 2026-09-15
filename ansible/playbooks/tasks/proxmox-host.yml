@@ -253,7 +253,7 @@
     daemon_reload: true
   when: mwan_watchdog_enabled | bool
 
-- name: Install the mwan opnsense host bridge and chardev drainer
+- name: Install the opnsensectl host bridge and chardev drainer
   ansible.builtin.import_tasks: mwan-opnsense-host-deploy.yml
 
 - name: Reclaim deleted tack guest blocks (thin pool mode and weekly trim)

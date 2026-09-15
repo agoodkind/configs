@@ -10,7 +10,7 @@ After=mwan-opnsense-drain.socket
 # All inputs are read from /etc/opnsensectl/config.toml under [opnsense.drain].
 # Override per host by templating that section, not by patching the unit.
 Type=notify
-ExecStart=/usr/local/bin/mwan opnsense host drain
+ExecStart=/usr/local/bin/opnsensectl host drain
 Restart=always
 RestartSec=0
 StandardOutput=journal

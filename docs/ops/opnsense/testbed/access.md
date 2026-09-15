@@ -11,8 +11,8 @@ from that host.
 ## Verify the channel
 
 ```sh
-mwan opnsense daemon version
-mwan opnsense exec /bin/hostname
+opnsensectl daemon version
+opnsensectl exec /bin/hostname
 ```
 
 The first command returns the running daemon's build identity. The second
@@ -23,13 +23,13 @@ returns the guest hostname. Both commands must succeed before recovery work.
 Run a guest command through the serial channel:
 
 ```sh
-mwan opnsense exec <command> [args...]
+opnsensectl exec <command> [args...]
 ```
 
 Inspect the current configuration commands before changing the router:
 
 ```sh
-mwan opnsense config --help
+opnsensectl config --help
 ```
 
 The [OPNsense serial daemon](../daemon.md) defines the channel's operating and
