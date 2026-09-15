@@ -212,9 +212,10 @@ check: yang-validate yang-validate-instances
 # The sources live outside this Go module on purpose. A checkout inside the
 # module makes the lint gates treat the tree as nested working trees, which
 # turns a package absent on one platform into a hard error. They go under the
-# user cache directory, keyed by this checkout's path so two checkouts never
-# clone into one tree, and nothing reads them after the install.
-WANCONFIG_CGO_SRC := $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/mwan/wanconfig-cgo-src/$(shell printf '%s' '$(CURDIR)' | cksum | cut -d' ' -f1)
+# user cache directory, below a copy of this checkout's path so two checkouts
+# never clone into one tree, and nothing reads them after the install. The
+# path is joined in make, so no shell quoting touches the checkout path.
+WANCONFIG_CGO_SRC := $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/mwan/wanconfig-cgo-src/$(patsubst /%,%,$(CURDIR))
 
 # sysrepo compiles its repository path into the library, so this must be
 # the path the gateway uses. A build-directory prefix makes sr_connect fail
