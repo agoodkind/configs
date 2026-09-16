@@ -40,9 +40,9 @@ type State string
 const (
 	// StateUnknown preserves the shell warmup state until a threshold is met.
 	StateUnknown State = "unknown"
-	// StateHealthy records that consecutive dual-family cycles met recovery.
+	// StateHealthy records that consecutive cycles met recovery.
 	StateHealthy State = "healthy"
-	// StateUnhealthy records that consecutive dual-family cycles met failure.
+	// StateUnhealthy records that consecutive cycles met failure.
 	StateUnhealthy State = "unhealthy"
 )
 
@@ -63,15 +63,21 @@ type WAN struct {
 	CheckInterval     time.Duration
 }
 
+// targetsV4 and targetsV6 read nil and empty differently, unlike every other
+// resolver here. A nil list is a family the provider named no targets for,
+// which inherits the module-wide list; an empty list is a family the provider
+// declared it has none of, which stays empty so the module probes nothing in
+// it. Without that distinction an IPv4-only provider would inherit the public
+// resolvers applyDefaults installs and ping them out a link with no IPv6.
 func (wan WAN) targetsV4(cfg Config) []netip.Addr {
-	if len(wan.TargetsV4) > 0 {
+	if wan.TargetsV4 != nil {
 		return wan.TargetsV4
 	}
 	return cfg.TargetsV4
 }
 
 func (wan WAN) targetsV6(cfg Config) []netip.Addr {
-	if len(wan.TargetsV6) > 0 {
+	if wan.TargetsV6 != nil {
 		return wan.TargetsV6
 	}
 	return cfg.TargetsV6
@@ -140,7 +146,12 @@ type wanStatus struct {
 }
 
 type probeResult struct {
-	Passed         bool
+	Passed bool
+	// V6Probed and V4Probed record whether the provider carries that family at
+	// all. A provider with no targets in a family is not probed in it, and its
+	// zero counts below are the absence of a probe rather than a failed one.
+	V6Probed       bool
+	V4Probed       bool
 	V6Successes    int
 	V4Successes    int
 	HTTP6Successes int
@@ -375,7 +386,9 @@ func (m *Module) runCycle(ctx context.Context, log *slog.Logger) error {
 // publishLiveState writes the cycle's outcome to the management surface's
 // snapshot store, when this host serves one. Each family's result is its
 // verdict leg, the same rule probeWAN combines: the ping success threshold
-// or at least one HTTP success in that family.
+// or at least one HTTP success in that family. A family the provider does not
+// carry keeps the unprobed value, because nothing was asked of it and reporting
+// it as failing would show an IPv4-only provider as half broken.
 func (m *Module) publishLiveState(
 	statuses map[string]wanStatus,
 	results map[string]probeResult,
@@ -396,10 +409,14 @@ func (m *Module) publishLiveState(
 		if status.FailCount > 0 && status.FailCount <= math.MaxUint32 {
 			member.ConsecutiveFailures = uint32(status.FailCount)
 		}
-		if result, probed := results[wan.Name]; probed {
+		if result, ran := results[wan.Name]; ran {
 			threshold := wan.successThreshold(m.cfg)
-			member.V6 = legResult(result.V6Successes, result.HTTP6Successes, threshold)
-			member.V4 = legResult(result.V4Successes, result.HTTP4Successes, threshold)
+			if result.V6Probed {
+				member.V6 = legResult(result.V6Successes, result.HTTP6Successes, threshold)
+			}
+			if result.V4Probed {
+				member.V4 = legResult(result.V4Successes, result.HTTP4Successes, threshold)
+			}
 		}
 		members[wan.Name] = member
 	}
@@ -459,28 +476,47 @@ func legResult(pingSuccesses int, httpSuccesses int, threshold int) wanstate.Pro
 }
 
 func (m *Module) probeWAN(ctx context.Context, wan WAN, log *slog.Logger) probeResult {
-	v6Successes := m.probeTargets(ctx, wan, wan.targetsV6(m.cfg), m.probeV6)
-	v4Successes := m.probeTargets(ctx, wan, wan.targetsV4(m.cfg), m.probeV4)
-	http6Successes := m.probeHTTPURLs(ctx, wan, "inet6", m.probeHTTP6, log)
-	http4Successes := m.probeHTTPURLs(ctx, wan, "inet", m.probeHTTP4, log)
-	// Verdict matches health-check.sh check_wan_health: each address family
-	// forms its own leg (ping threshold OR at least one HTTP success in that
-	// family), and the WAN is healthy when the IPv6 leg (preferred, the P0
-	// signal) or the IPv4 leg (fallback) passes. Both families always probe
-	// (v6 primary, v4 always); an IPv4-only HTTP success never vouches for
-	// IPv6 and the reverse.
-	successThreshold := wan.successThreshold(m.cfg)
-	passed := v6Successes >= successThreshold ||
-		http6Successes >= 1 ||
-		v4Successes >= successThreshold ||
-		http4Successes >= 1
-	return probeResult{
-		Passed:         passed,
-		V6Successes:    v6Successes,
-		V4Successes:    v4Successes,
-		HTTP6Successes: http6Successes,
-		HTTP4Successes: http4Successes,
+	// A family the provider lists no ping targets for is a family it does not
+	// carry, so neither leg of it runs: no echo request and no HTTP request
+	// forced onto it. A provider on an IPv4-only link would otherwise spend
+	// every cycle failing IPv6 probes it can never answer.
+	v6Targets := wan.targetsV6(m.cfg)
+	v4Targets := wan.targetsV4(m.cfg)
+	v6Probed := len(v6Targets) > 0
+	v4Probed := len(v4Targets) > 0
+	result := probeResult{
+		Passed:         false,
+		V6Probed:       v6Probed,
+		V4Probed:       v4Probed,
+		V6Successes:    0,
+		V4Successes:    0,
+		HTTP6Successes: 0,
+		HTTP4Successes: 0,
 	}
+	if v6Probed {
+		result.V6Successes = m.probeTargets(ctx, wan, v6Targets, m.probeV6)
+		result.HTTP6Successes = m.probeHTTPURLs(ctx, wan, "inet6", m.probeHTTP6, log)
+	}
+	if v4Probed {
+		result.V4Successes = m.probeTargets(ctx, wan, v4Targets, m.probeV4)
+		result.HTTP4Successes = m.probeHTTPURLs(ctx, wan, "inet", m.probeHTTP4, log)
+	}
+	// Verdict matches health-check.sh check_wan_health: each address family the
+	// provider carries forms its own leg (ping threshold OR at least one HTTP
+	// success in that family), and the WAN is healthy when the IPv6 leg
+	// (preferred, the P0 signal) or the IPv4 leg (fallback) passes. Every family
+	// the provider carries is probed every cycle regardless of outcome (v6
+	// primary, v4 always), so a v4 flap never fails a healthy-v6 WAN and a v6
+	// outage can still fall back to v4. An IPv4-only HTTP success never vouches
+	// for IPv6 and the reverse, and a family the provider does not carry votes
+	// neither way.
+	successThreshold := wan.successThreshold(m.cfg)
+	v6Passed := v6Probed &&
+		(result.V6Successes >= successThreshold || result.HTTP6Successes >= 1)
+	v4Passed := v4Probed &&
+		(result.V4Successes >= successThreshold || result.HTTP4Successes >= 1)
+	result.Passed = v6Passed || v4Passed
+	return result
 }
 
 // probeHTTPURLs runs every configured HTTP URL through one family-forced

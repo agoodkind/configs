@@ -271,11 +271,13 @@ func buildHealthConfig(
 		}
 		// Require an enabled WAN to fully specify its policy. Go's TOML cannot
 		// tell an omitted scalar from an explicit 0, so the health module's
-		// resolver treats 0/empty as "inherit the module-wide default". The
-		// rendered config always populates every field for every WAN, so an
-		// enabled WAN missing a threshold or a ping-target family is a config
-		// error, not an intentional inherit. Reject it here rather than let it
-		// silently fall back to the public defaults.
+		// resolver treats 0 as "inherit the module-wide default". The rendered
+		// config always populates every threshold for every WAN, so an enabled
+		// WAN missing one is a config error, not an intentional inherit. Reject
+		// it here rather than let it silently fall back to the public defaults.
+		// The two ping-target families are the exception: a provider carries at
+		// least one target across them, and a family it declares empty means it
+		// holds no address there rather than that it wants the defaults.
 		if err := validateHealthWANSection(wan.Name, wanSection); err != nil {
 			return health.Config{}, err
 		}
@@ -292,14 +294,14 @@ func buildHealthConfig(
 			CheckInterval:     0,
 		}
 		fieldPrefix := "network.json wan " + wan.Name + " health"
-		healthWAN.TargetsV4, err = parseAddrList(
+		healthWAN.TargetsV4, err = parseHealthTargets(
 			wanSection.TargetsV4,
 			fieldPrefix+"/targets-v4",
 		)
 		if err != nil {
 			return health.Config{}, err
 		}
-		healthWAN.TargetsV6, err = parseAddrList(
+		healthWAN.TargetsV6, err = parseHealthTargets(
 			wanSection.TargetsV6,
 			fieldPrefix+"/targets-v6",
 		)
@@ -317,11 +319,14 @@ func buildHealthConfig(
 }
 
 // validateHealthWANSection rejects an enabled health WAN that under-specifies
-// its probe policy. Every threshold must be positive, both ping-target families
-// must be non-empty, and success-threshold must not exceed either family's
-// target count. http-urls stays optional because HTTP is only an OR fallback
-// leg of the verdict. This turns a malformed health container in network.json
-// into a load error instead of a silent inherit of the module-wide defaults.
+// its probe policy. Every threshold must be positive, the two ping-target
+// families must hold at least one entry between them, and success-threshold
+// must not exceed the target count of a family that has targets. The model
+// requires neither family, because a provider on an IPv4-only link carries no
+// IPv6 targets; requiring both here would leave that provider unable to load.
+// http-urls stays optional because HTTP is only an OR fallback leg of the
+// verdict. This turns a malformed health container in network.json into a load
+// error instead of a silent inherit of the module-wide defaults.
 func validateHealthWANSection(name string, s config.IfMgrHealthWANSection) error {
 	prefix := "network.json wan " + name + " health"
 	successThreshold := healthSettingValue(s.SuccessThreshold)
@@ -337,19 +342,16 @@ func validateHealthWANSection(name string, s config.IfMgrHealthWANSection) error
 	if healthSettingValue(s.RecoveryThreshold) <= 0 {
 		return fmt.Errorf("%s/recovery-threshold must be > 0", prefix)
 	}
-	if len(s.TargetsV4) == 0 {
-		return fmt.Errorf("%s/targets-v4 must have at least one entry", prefix)
+	if len(s.TargetsV4) == 0 && len(s.TargetsV6) == 0 {
+		return fmt.Errorf("%s must have at least one targets-v4 or targets-v6 entry", prefix)
 	}
-	if len(s.TargetsV6) == 0 {
-		return fmt.Errorf("%s/targets-v6 must have at least one entry", prefix)
-	}
-	if successThreshold > len(s.TargetsV4) {
+	if len(s.TargetsV4) > 0 && successThreshold > len(s.TargetsV4) {
 		return fmt.Errorf(
 			"%s/success-threshold %d exceeds targets-v4 count %d",
 			prefix, successThreshold, len(s.TargetsV4),
 		)
 	}
-	if successThreshold > len(s.TargetsV6) {
+	if len(s.TargetsV6) > 0 && successThreshold > len(s.TargetsV6) {
 		return fmt.Errorf(
 			"%s/success-threshold %d exceeds targets-v6 count %d",
 			prefix, successThreshold, len(s.TargetsV6),
@@ -872,6 +874,18 @@ func parseDurationSetting(
 		return 0, fmt.Errorf("%s %q: %w", fieldName, raw, err)
 	}
 	return durationValue, nil
+}
+
+// parseHealthTargets parses one ping-target family, keeping a family the
+// provider left out distinguishable from one it declared empty. The health
+// module inherits its module-wide targets for a nil list and probes nothing for
+// an empty one, so flattening the two would ping public resolvers out a link
+// that carries no address in that family.
+func parseHealthTargets(values []string, fieldName string) ([]netip.Addr, error) {
+	if values == nil {
+		return nil, nil
+	}
+	return parseAddrList(values, fieldName)
 }
 
 func parseAddrList(values []string, fieldName string) ([]netip.Addr, error) {

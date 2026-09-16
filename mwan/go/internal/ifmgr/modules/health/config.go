@@ -144,8 +144,23 @@ func validateWANs(cfg Config) error {
 				fmt.Errorf("%s: success_threshold must be > 0", wanLabel),
 			)
 		}
-		if successThreshold > len(wan.targetsV6(cfg)) ||
-			successThreshold > len(wan.targetsV4(cfg)) {
+		// A provider must carry at least one ping target, but not one in each
+		// family: a provider on an IPv4-only link declares an empty IPv6 list
+		// and is judged on IPv4 alone. The threshold is checked against each
+		// family the provider does carry, and says nothing about one it does not.
+		targetsV6 := wan.targetsV6(cfg)
+		targetsV4 := wan.targetsV4(cfg)
+		if len(targetsV6) == 0 && len(targetsV4) == 0 {
+			validationError = errors.Join(
+				validationError,
+				fmt.Errorf(
+					"%s: at least one targets_v4 or targets_v6 entry is required",
+					wanLabel,
+				),
+			)
+		}
+		if (len(targetsV6) > 0 && successThreshold > len(targetsV6)) ||
+			(len(targetsV4) > 0 && successThreshold > len(targetsV4)) {
 			validationError = errors.Join(
 				validationError,
 				fmt.Errorf(
