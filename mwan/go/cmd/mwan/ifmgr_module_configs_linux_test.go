@@ -347,8 +347,9 @@ func TestBuildIfMgrModuleConfigsUnknownRole(t *testing.T) {
 }
 
 // TestBuildNPTConfig pins that the npt builder projects the shared [ifmgr.wan]
-// prefixes and WAN identity list. This is what makes MwanbrEdgeV6 a real
-// consumer of the shared field.
+// prefixes, the WAN identity list, and each provider's configured translation
+// prefix, which is what tells npt whether a missing delegation is a fault. This
+// is also what makes MwanbrEdgeV6 a real consumer of the shared field.
 func TestBuildNPTConfig(t *testing.T) {
 	t.Parallel()
 
@@ -359,13 +360,43 @@ func TestBuildNPTConfig(t *testing.T) {
 		InternalPrefix: "3d06:bad:b01::/60",
 		OpnsenseEdgeV6: "3d06:bad:b01:201::1",
 		MwanbrEdgeV6:   "3d06:bad:b01:200::1",
-		WANs: []ifmgr.WANRef{
-			{Name: "att", Iface: "att0"},
-			{Name: "webpass", Iface: "webpass0"},
+		WANs: []npt.WAN{
+			{
+				WANRef:    ifmgr.WANRef{Name: "att", Iface: "att0"},
+				NptPrefix: "3d06:bad:b01:1100::/56",
+			},
+			{
+				WANRef:    ifmgr.WANRef{Name: "webpass", Iface: "webpass0"},
+				NptPrefix: "3d06:bad:b01:2200::/56",
+			},
 		},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("buildNPTConfig mismatch\ngot:  %#v\nwant: %#v", cfg, want)
+	}
+}
+
+// TestBuildNPTConfigCarriesAnEmptyPrefixForAnUntranslatedProvider pins that a
+// provider the configuration assigns no npt-prefix reaches npt with an empty
+// prefix, which is what keeps npt from alerting on a delegation it never
+// expects.
+func TestBuildNPTConfigCarriesAnEmptyPrefixForAnUntranslatedProvider(t *testing.T) {
+	t.Parallel()
+
+	section := sharedWANForTest()
+	untranslated := section.WAN["webpass"]
+	untranslated.NptPrefix = ""
+	section.WAN["webpass"] = untranslated
+
+	cfg := buildNPTConfig(buildWANRefs(section))
+	if len(cfg.WANs) != 2 {
+		t.Fatalf("npt WAN count = %d, want 2", len(cfg.WANs))
+	}
+	if got := cfg.WANs[0].NptPrefix; got != "3d06:bad:b01:1100::/56" {
+		t.Fatalf("att npt prefix = %q, want the configured prefix", got)
+	}
+	if got := cfg.WANs[1].NptPrefix; got != "" {
+		t.Fatalf("webpass npt prefix = %q, want empty for a provider carrying none", got)
 	}
 }
 

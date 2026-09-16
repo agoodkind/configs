@@ -375,17 +375,17 @@ func healthSettingValue(setting *int) int {
 	return *setting
 }
 
-// buildNPTConfig projects the shared translation prefixes and WAN identity
-// list from the network configuration into the npt module config. The WAN list and prefixes come from the
-// shared inputs, so npt and wan.routes always agree on the same WAN set.
-// Reading shared.MwanbrEdgeV6 here makes it a real consumer of the shared
-// field.
+// buildNPTConfig projects the shared translation prefixes and per-WAN
+// translation configuration from the network configuration into the npt module
+// config. The WAN list and prefixes come from the shared inputs, so npt and
+// wan.routes always agree on the same WAN set. Reading shared.MwanbrEdgeV6 here
+// makes it a real consumer of the shared field.
 func buildNPTConfig(shared sharedWANInputs) npt.Config {
 	return npt.Config{
 		InternalPrefix: shared.InternalPrefix,
 		OpnsenseEdgeV6: shared.OpnsenseEdgeV6,
 		MwanbrEdgeV6:   shared.MwanbrEdgeV6,
-		WANs:           shared.refs(),
+		WANs:           shared.nptWANs(),
 	}
 }
 
@@ -750,14 +750,15 @@ type sharedWANInputs struct {
 	MwanbrEdgeV6   string
 }
 
-// refs projects the shared WAN list down to the identity list (name -> iface)
-// that npt consumes.
-func (s sharedWANInputs) refs() []ifmgr.WANRef {
-	refs := make([]ifmgr.WANRef, 0, len(s.WANs))
+// nptWANs projects the shared WAN list down to what npt consumes: each
+// provider's identity plus the translation prefix the configuration assigns
+// it, which is what tells npt whether a missing live delegation is a fault.
+func (s sharedWANInputs) nptWANs() []npt.WAN {
+	wans := make([]npt.WAN, 0, len(s.WANs))
 	for _, wan := range s.WANs {
-		refs = append(refs, wan.WANRef)
+		wans = append(wans, npt.WAN{WANRef: wan.WANRef, NptPrefix: wan.NptPrefix})
 	}
-	return refs
+	return wans
 }
 
 // buildWANRefs turns the network configuration's WAN map and translation
