@@ -284,7 +284,7 @@ module goodkind-mwan-steering {
            address or translated prefix.";
       }
       leaf npt-prefix {
-        type inet:ipv6-prefix;
+        type inet:type-the-model-cannot-resolve;
         description
           "The IPv6 prefix this provider delegates, which the gateway
            translates the internal prefix onto. A provider that
