@@ -176,9 +176,10 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 # Providers
 # ----------------------------------------------------------------------------
 
-# Mirrors mwan_servers.yml entry for entry, with the simulated ISPs' addresses.
-# The routing numbers match production on purpose, so a testbed proof exercises
-# the numbers the production gateway runs.
+# The first three mirror mwan_servers.yml entry for entry, with the simulated
+# ISPs' addresses. Their routing numbers match production on purpose, so a
+# testbed proof exercises the numbers the production gateway runs. Astound is a
+# fourth provider with no production counterpart.
 mwan_providers:
   - name: att
     iface: "{{ mwan_att_iface }}"
@@ -257,6 +258,35 @@ mwan_providers:
       check_interval: 30
       targets_v4: ["1.1.1.1", "8.8.8.8"]
       targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+      http_targets: ["https://ifconfig.co/ip"]
+
+  # Astound exists to prove a provider can be added by inventory alone: this
+  # entry and a deploy, with the binary unchanged. It models a plain dynamic
+  # IPv4 link whose address is pinned by the sim's DHCPv4 reservation, so it
+  # carries a v4 source pin. It has no IPv6 at all, so it declares an empty
+  # IPv6 target list rather than inheriting the shared defaults, and, delegating
+  # no prefix, it gets no translation and no IPv6 source rule.
+  - name: astound
+    iface: "{{ mwan_astound_iface }}"
+    vlan_id: ""
+    table: 600
+    mark: 4
+    mark_prio: 600
+    from_prio: 58
+    tier: 2
+    weight: 1
+    npt_prefix: ""
+    v4_source: "{{ mwan_astound_ipv4 | ansible.utils.ipaddr('address') }}"
+    static_mappings: []
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 2
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["1.1.1.1", "8.8.8.8"]
+      targets_v6: []
       http_targets: ["https://ifconfig.co/ip"]
 
 # How a new connection is assigned among the active tier's healthy providers.
