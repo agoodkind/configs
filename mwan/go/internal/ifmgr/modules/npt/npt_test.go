@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"goodkind.io/mwan/internal/config"
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/netif"
 	"goodkind.io/mwan/internal/notify"
@@ -430,6 +431,62 @@ func TestEvaluateAlertsResolvesWhenTheExpectedDelegationReturns(t *testing.T) {
 	}
 	if !resolved {
 		t.Fatalf("no %q resolve after the delegation returned: %v", wantResolve, notifier.resolves)
+	}
+}
+
+// TestEvaluateAlertsClearsAStaleAlertWhenTheExpectationIsRetired checks the
+// transition the no-prefix branch must not strand: a WAN alerts while it
+// expects a delegation and has none, the configuration is then changed to
+// name no npt-prefix for it, and the next EvaluateAlerts pass must clear that
+// alert rather than leave it active forever. It drives a real
+// notify.Manager (via ifmgr.WrapNotifier) rather than the recordingNotifier
+// fake, because the fake's Active always reports false and cannot exercise
+// the Active-guarded resolve this contract depends on.
+func TestEvaluateAlertsClearsAStaleAlertWhenTheExpectationIsRetired(t *testing.T) {
+	t.Parallel()
+
+	built, err := New(testConfig())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	m, ok := built.(*Module)
+	if !ok {
+		t.Fatalf("New returned %T, want *Module", built)
+	}
+	if err := m.parse(); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	alerts := ifmgr.WrapNotifier(notify.FromConfig(&config.Config{}, slog.Default(), "npt-test"))
+	m.Env = &ifmgr.Env{
+		Iface: "", Sysctl: nil, Log: slog.Default(),
+		Alerts: alerts, Monitor: nil, DHCP: nil, RA: nil,
+	}
+	m.Log = slog.Default()
+	m.src = &fakeSource{
+		prefixes: map[string]netip.Prefix{
+			"webpass0": netip.MustParsePrefix("2001:db8:1:20::/60"),
+		},
+		ok:  map[string]bool{"enatt0.3242": false, "webpass0": true},
+		err: map[string]error{},
+	}
+	m.reconcileAddrs = func(_ context.Context, _ *slog.Logger, _ string, _ []netif.AddrSpec) error { return nil }
+	m.listAddrs = func(_ context.Context, _ *slog.Logger, _ string) ([]netif.CurrentAddr, error) { return nil, nil }
+	m.apply = &fakeApplier{calls: 0, last: desiredRules{Postrouting: nil, Prerouting: nil}, err: nil}
+
+	if err := m.Reconcile(context.Background(), slog.Default()); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	m.EvaluateAlerts(context.Background(), slog.Default(), time.Now())
+	if !alerts.Active(alertKindPDMissing, "enatt0.3242") {
+		t.Fatal("setup: alert should be active before the expectation is retired")
+	}
+
+	// The operator reconfigures att as an untranslated provider: no npt-prefix.
+	m.cfg.WANs[0].NptPrefix = ""
+
+	m.EvaluateAlerts(context.Background(), slog.Default(), time.Now())
+	if alerts.Active(alertKindPDMissing, "enatt0.3242") {
+		t.Fatal("alert stayed active after att's npt-prefix was retired")
 	}
 }
 

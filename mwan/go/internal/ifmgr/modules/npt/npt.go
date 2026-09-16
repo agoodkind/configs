@@ -364,8 +364,10 @@ func (m *Module) extraGlobal128s(
 // EvaluateAlerts fires a per-iface WARN for each WAN that the configuration
 // assigns a translation prefix and that had no delegated prefix on the last
 // reconcile, and resolves it once the prefix returns. A WAN the configuration
-// assigns no prefix is skipped entirely, because it is never expected to carry
-// a delegation.
+// assigns no prefix never fires, because it is never expected to carry a
+// delegation, but any alert already active for it still clears, so a
+// provider that loses its npt-prefix mid-run does not carry a stale alert
+// forever.
 func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Time) {
 	if m.Env == nil || m.Env.Alerts == nil {
 		return
@@ -376,16 +378,22 @@ func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Ti
 	m.Unlock()
 
 	for _, wan := range m.cfg.WANs {
+		fields := []slog.Attr{slog.String("wan", wan.Name), slog.String("iface", wan.Iface)}
 		if !wan.expectsDelegation() {
 			// The configuration names no translation prefix for this provider,
-			// so a missing delegation is its steady state rather than a fault.
-			// Alerting would leave a warning that can never clear, which
-			// destroys the signal for the provider that did lose a delegation
-			// it was meant to hold. The resolve is skipped with it: a provider
-			// that never alarms has nothing to recover from.
+			// so a missing delegation is its steady state rather than a fault,
+			// and alerting on it would leave a warning that can never clear.
+			// Still clear an alert already active for it: a WAN that lost its
+			// npt-prefix mid-run, after an alert fired under the prior
+			// configuration, must not carry that alert forever. The Active
+			// guard keeps a provider that never alarmed from emitting a
+			// spurious recovery.
+			if m.Env.Alerts.Active(alertKindPDMissing, wan.Iface) {
+				m.Env.Alerts.ResolveContext(ctx, now, alertKindPDMissing, wan.Iface,
+					"npt: delegation no longer expected", fields...)
+			}
 			continue
 		}
-		fields := []slog.Attr{slog.String("wan", wan.Name), slog.String("iface", wan.Iface)}
 		if missing[wan.Iface] {
 			m.Env.Alerts.NotifyContext(ctx, now, slog.LevelWarn, alertKindPDMissing, wan.Iface,
 				"npt: no delegated prefix for WAN", fields...)
