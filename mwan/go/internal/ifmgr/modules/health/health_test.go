@@ -19,6 +19,7 @@ import (
 	"goodkind.io/mwan/internal/ifmgr"
 	"goodkind.io/mwan/internal/notify"
 	"goodkind.io/mwan/internal/statuspush"
+	"goodkind.io/mwan/internal/wanstate"
 )
 
 func TestAdvanceHealthAppliesConsecutiveThresholds(t *testing.T) {
@@ -186,6 +187,26 @@ func TestWANResolversFallBackToModuleConfig(t *testing.T) {
 	}
 }
 
+// TestWANResolversDistinguishAnEmptyTargetListFromAnOmittedOne proves the
+// distinction an IPv4-only provider rests on: a family the provider left out
+// inherits the module-wide list, and a family it declared empty does not, so
+// the module never probes public resolvers out a link that has no IPv6.
+func TestWANResolversDistinguishAnEmptyTargetListFromAnOmittedOne(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		TargetsV4: []netip.Addr{netip.MustParseAddr("192.0.2.1")},
+		TargetsV6: []netip.Addr{netip.MustParseAddr("2001:db8::1")},
+	}
+	wan := WAN{TargetsV6: []netip.Addr{}}
+	if got := wan.targetsV6(cfg); len(got) != 0 {
+		t.Fatalf("targetsV6 = %v, want none for a declared-empty list", got)
+	}
+	if !reflect.DeepEqual(wan.targetsV4(cfg), cfg.TargetsV4) {
+		t.Fatal("an omitted targetsV4 must still inherit the module-wide list")
+	}
+}
+
 func TestValidateConfigUsesResolvedPerWANPolicy(t *testing.T) {
 	t.Parallel()
 
@@ -239,6 +260,28 @@ func TestValidateConfigUsesResolvedPerWANPolicy(t *testing.T) {
 			wantError: "success_threshold exceeds an address-family target count",
 		},
 		{
+			name: "IPv4-only provider is valid",
+			wan: WAN{
+				WANRef: ifmgr.WANRef{Name: "astound", Iface: "astound0"},
+				TargetsV4: []netip.Addr{
+					netip.MustParseAddr("198.51.100.1"),
+					netip.MustParseAddr("198.51.100.2"),
+				},
+				TargetsV6:        []netip.Addr{},
+				SuccessThreshold: 2,
+			},
+			wantError: "",
+		},
+		{
+			name: "no targets in either family",
+			wan: WAN{
+				WANRef:    ifmgr.WANRef{Name: "astound", Iface: "astound0"},
+				TargetsV4: []netip.Addr{},
+				TargetsV6: []netip.Addr{},
+			},
+			wantError: "at least one targets_v4 or targets_v6 entry is required",
+		},
+		{
 			name: "negative ping count",
 			wan: WAN{
 				WANRef:    ifmgr.WANRef{Name: "att", Iface: "att0"},
@@ -287,9 +330,10 @@ func TestProbeWANVerdictIsV6OrV4AndAlwaysProbesBoth(t *testing.T) {
 	t.Parallel()
 
 	// The verdict matches health-check.sh: healthy when IPv6 meets the
-	// threshold (preferred) or IPv4 meets it (fallback). Both families are
-	// always probed regardless of outcome, so a v4 flap never fails a
-	// healthy-v6 WAN and a v6 outage can still fall back to v4.
+	// threshold (preferred) or IPv4 meets it (fallback). Both families of a
+	// provider that carries both are probed every cycle regardless of outcome,
+	// so a v4 flap never fails a healthy-v6 WAN and a v6 outage can still fall
+	// back to v4.
 	tests := []struct {
 		name     string
 		v6Passes bool
@@ -367,6 +411,106 @@ func TestProbeWANVerdictIsV6OrV4AndAlwaysProbesBoth(t *testing.T) {
 				t.Fatalf("probe calls = %v, want %v", calls, wantCalls)
 			}
 		})
+	}
+}
+
+// TestIPv4OnlyProviderValidatesProbesOneFamilyAndReadsHealthy is the contract
+// for a provider on a link with no IPv6: the configuration validates, the cycle
+// issues no IPv6 probe of either kind, the verdict rests on the IPv4 leg, and
+// the management surface reports the absent family as unprobed rather than as
+// failing. The module-wide lists carry the public resolvers applyDefaults
+// installs, so an inherited IPv6 list would show up as an IPv6 probe here.
+func TestIPv4OnlyProviderValidatesProbesOneFamilyAndReadsHealthy(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	var probed []string
+	recordPing := func(family string, reachable bool) pingFunc {
+		return func(
+			_ context.Context,
+			_ string,
+			_ netip.Addr,
+			_ time.Duration,
+		) (time.Duration, error) {
+			probed = append(probed, family)
+			if reachable {
+				return time.Millisecond, nil
+			}
+			return 0, errors.New(family + " unavailable")
+		}
+	}
+	recordHTTP := func(family string) httpFunc {
+		return func(_ context.Context, _ string, _ string, _ time.Duration) (int, error) {
+			probed = append(probed, family)
+			return 200, nil
+		}
+	}
+	cfg := Config{
+		StateFile:         filepath.Join(tempDir, "mwan-health.state"),
+		PersistStateFile:  filepath.Join(tempDir, "health-state"),
+		TargetsV4:         defaultTargetsV4(),
+		TargetsV6:         defaultTargetsV6(),
+		HTTPURLs:          []string{"https://example.test/probe"},
+		Timeout:           time.Second,
+		Interval:          10 * time.Second,
+		PingCount:         1,
+		SuccessThreshold:  1,
+		FailureThreshold:  1,
+		RecoveryThreshold: 1,
+		WANs: []WAN{
+			{
+				WANRef:    ifmgr.WANRef{Name: "astound", Iface: "enastound0"},
+				TargetsV4: []netip.Addr{netip.MustParseAddr("192.0.2.1")},
+				// Declared empty: this provider carries no IPv6 at all.
+				TargetsV6: []netip.Addr{},
+			},
+		},
+	}
+	if err := validateConfig(cfg); err != nil {
+		t.Fatalf("validateConfig rejected an IPv4-only provider: %v", err)
+	}
+
+	store := wanstate.New()
+	module := &Module{
+		BaseModule: ifmgr.NewBaseModule(moduleName),
+		cfg:        cfg,
+		clock:      fixedClock{now: time.Date(2026, time.September, 16, 0, 0, 0, 0, time.UTC)},
+		statuses:   map[string]wanStatus{"astound": {State: StateUnknown}},
+		probeV6:    recordPing("ping6", false),
+		probeV4:    recordPing("ping4", true),
+		probeHTTP6: recordHTTP("http6"),
+		probeHTTP4: recordHTTP("http4"),
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	module.InitBase(&ifmgr.Env{Log: log, LiveState: store}, "module", moduleName)
+
+	if err := module.runCycle(context.Background(), log); err != nil {
+		t.Fatalf("runCycle: %v", err)
+	}
+
+	wantProbes := []string{"ping4", "http4"}
+	if !reflect.DeepEqual(probed, wantProbes) {
+		t.Fatalf("probes issued = %v, want %v", probed, wantProbes)
+	}
+	contents, err := os.ReadFile(cfg.StateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(state): %v", err)
+	}
+	if string(contents) != "astound:healthy\n" {
+		t.Fatalf("state file = %q, want %q", contents, "astound:healthy\n")
+	}
+	member := store.Snapshot().Health["astound"]
+	if member.Verdict != wanstate.HealthHealthy {
+		t.Fatalf("verdict = %q, want %q", member.Verdict, wanstate.HealthHealthy)
+	}
+	if member.V4 != wanstate.ProbePass {
+		t.Fatalf("IPv4 leg = %q, want %q", member.V4, wanstate.ProbePass)
+	}
+	if member.V6 != wanstate.ProbeNone {
+		t.Fatalf(
+			"IPv6 leg = %q, want %q for a provider that carries no IPv6",
+			member.V6, wanstate.ProbeNone,
+		)
 	}
 }
 
