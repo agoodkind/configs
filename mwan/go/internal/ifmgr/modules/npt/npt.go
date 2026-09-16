@@ -34,13 +34,31 @@ type reconcileAddrsFunc func(context.Context, *slog.Logger, string, []netif.Addr
 
 type listAddrsFunc func(context.Context, *slog.Logger, string) ([]netif.CurrentAddr, error)
 
+// WAN is one provider as npt sees it: the shared identity plus the translation
+// prefix the configuration assigns it.
+type WAN struct {
+	ifmgr.WANRef
+	// NptPrefix is the provider's configured external translation prefix,
+	// exactly as the network configuration's npt-prefix leaf holds it, and
+	// empty when the configuration names none. npt still derives the prefix it
+	// programs from the live delegation; this value records only that a
+	// delegation is expected at all.
+	NptPrefix string
+}
+
+// expectsDelegation reports whether the configuration assigns this provider a
+// translation prefix, and so whether an absent live delegation is a fault. A
+// provider carrying none is an IPv4-only link, or one whose ISP delegates
+// nothing by DHCPv6-PD, and neither is a fault npt can alert on.
+func (w WAN) expectsDelegation() bool { return w.NptPrefix != "" }
+
 // Config is the runtime config for the npt module. The WAN list, internal
 // prefix, and edge addresses come from the shared [ifmgr.wan] section.
 type Config struct {
 	InternalPrefix string
 	OpnsenseEdgeV6 string
 	MwanbrEdgeV6   string
-	WANs           []ifmgr.WANRef
+	WANs           []WAN
 }
 
 // ModuleConfigName returns the registry key for this module's config block.
@@ -143,7 +161,7 @@ func (m *Module) parse() error {
 	return nil
 }
 
-func validateWANs(wans []ifmgr.WANRef) error {
+func validateWANs(wans []WAN) error {
 	seen := make(map[string]bool, len(wans))
 	for i, wan := range wans {
 		if wan.Name == "" {
@@ -265,7 +283,7 @@ type wanDesired struct {
 // fallback) when the PD source has no prefix or errors; err is returned only
 // for a hard address-op read failure.
 func (m *Module) buildWANDesired(
-	ctx context.Context, log *slog.Logger, wan ifmgr.WANRef,
+	ctx context.Context, log *slog.Logger, wan WAN,
 ) (wanDesired, bool, error) {
 	pfx, ok, err := m.src.Prefix(ctx, wan.Iface)
 	if err != nil {
@@ -274,7 +292,15 @@ func (m *Module) buildWANDesired(
 		return wanDesired{rules: nil, ensure: nil, pd60: netip.Prefix{}}, false, nil
 	}
 	if !ok {
-		log.WarnContext(ctx, "npt: no delegated prefix; skipping WAN",
+		// A provider the configuration assigns no translation prefix is never
+		// expected to carry a delegation, so its absence is the normal steady
+		// state rather than a fault, and it records at debug so the journal
+		// does not carry a warning every reconcile.
+		level := slog.LevelWarn
+		if !wan.expectsDelegation() {
+			level = slog.LevelDebug
+		}
+		log.Log(ctx, level, "npt: no delegated prefix; skipping WAN",
 			"wan", wan.Name, "iface", wan.Iface)
 		return wanDesired{rules: nil, ensure: nil, pd60: netip.Prefix{}}, false, nil
 	}
@@ -335,8 +361,11 @@ func (m *Module) extraGlobal128s(
 	return out, nil
 }
 
-// EvaluateAlerts fires a per-iface WARN for each WAN that had no delegated
-// prefix on the last reconcile, and resolves it once the prefix returns.
+// EvaluateAlerts fires a per-iface WARN for each WAN that the configuration
+// assigns a translation prefix and that had no delegated prefix on the last
+// reconcile, and resolves it once the prefix returns. A WAN the configuration
+// assigns no prefix is skipped entirely, because it is never expected to carry
+// a delegation.
 func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Time) {
 	if m.Env == nil || m.Env.Alerts == nil {
 		return
@@ -347,6 +376,15 @@ func (m *Module) EvaluateAlerts(ctx context.Context, _ *slog.Logger, now time.Ti
 	m.Unlock()
 
 	for _, wan := range m.cfg.WANs {
+		if !wan.expectsDelegation() {
+			// The configuration names no translation prefix for this provider,
+			// so a missing delegation is its steady state rather than a fault.
+			// Alerting would leave a warning that can never clear, which
+			// destroys the signal for the provider that did lose a delegation
+			// it was meant to hold. The resolve is skipped with it: a provider
+			// that never alarms has nothing to recover from.
+			continue
+		}
 		fields := []slog.Attr{slog.String("wan", wan.Name), slog.String("iface", wan.Iface)}
 		if missing[wan.Iface] {
 			m.Env.Alerts.NotifyContext(ctx, now, slog.LevelWarn, alertKindPDMissing, wan.Iface,

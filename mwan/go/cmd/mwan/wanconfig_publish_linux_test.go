@@ -56,7 +56,7 @@ func wanconfigTestModuleConfigs() ifmgr.ModuleConfigSet {
 		InternalPrefix: "3d06:bad:b01:210::/60",
 		OpnsenseEdgeV6: "2001:db8:fe::2",
 		MwanbrEdgeV6:   "2001:db8:fe::3",
-		WANs:           []ifmgr.WANRef{},
+		WANs:           []npt.WAN{},
 	}
 	return ifmgr.ModuleConfigSet{
 		"wan.routes": routesCfg,
