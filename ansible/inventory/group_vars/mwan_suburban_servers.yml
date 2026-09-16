@@ -259,6 +259,37 @@ mwan_providers:
       targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
       http_targets: ["https://ifconfig.co/ip"]
 
+  # Astound has no production counterpart. It is here to prove a provider can be
+  # added by inventory alone, with the binary unchanged, and it models the one
+  # provider shape the other three do not: a plain dynamic IPv4 link, with no
+  # VLAN, whose address is pinned by a DHCPv4 reservation on the sim rather than
+  # configured statically. So it carries a v4 source pin and, delegating no
+  # prefix, no translation. Its IPv6 targets are the same ones every other
+  # provider probes, because a probe cycle always runs both families; the link
+  # has no IPv6, so its IPv4 leg is the one that decides its health.
+  - name: astound
+    iface: "{{ mwan_astound_iface }}"
+    vlan_id: ""
+    table: 600
+    mark: 4
+    mark_prio: 600
+    from_prio: 58
+    tier: 2
+    weight: 1
+    npt_prefix: ""
+    v4_source: "10.240.207.2"
+    static_mappings: []
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 2
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["1.1.1.1", "8.8.8.8"]
+      targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+      http_targets: ["https://ifconfig.co/ip"]
+
 # How a new connection is assigned among the active tier's healthy providers.
 mwan_hash_mode: random
 
