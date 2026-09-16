@@ -1,0 +1,15 @@
+# Rendered by Ansible (tasks/tack-guest-fstrim.yml); cadence lives in the
+# hypervisor's group_vars, one home. Weekly and outside the ledger export and
+# restore drill windows, because a trim and a drill compete for the same pool.
+# Catch-up is on: a week the host was down still leaves blocks to reclaim, and
+# the run is cheap.
+[Unit]
+Description=Trim the Tack guest disks weekly
+
+[Timer]
+OnCalendar={{ tack_guest_fstrim_oncalendar }}
+RandomizedDelaySec={{ tack_guest_fstrim_randomized_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

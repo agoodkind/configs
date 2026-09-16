@@ -175,8 +175,11 @@ var kernelReservedTables = []int{0, 253, 254, 255}
 // build turns the decoded document into the daemon's shape, rejecting a value
 // the schema cannot require. The schema makes a provider's name mandatory and
 // bounds the table id and firewall mark; it leaves the rest optional, because a
-// leaf's type cannot see its siblings. The daemon needs them all, so the check
-// lives here.
+// leaf's type cannot see its siblings. The daemon needs every routing number
+// and every group-wide value, so those checks live here. It does not need a
+// translation prefix: a provider that delegates nothing carries none, and
+// every module that reads one already treats an absent prefix as no
+// translation.
 func build(doc *document) (*Config, error) {
 	group := doc.Interfaces.SteeringGroup
 	loaded := &Config{
@@ -396,7 +399,9 @@ func buildStaticMappings(label string, entries []staticMapping) ([]config.Static
 // daemon holds it in: the routing entry keyed by provider name, and the health
 // policy under the same name. A nil probe is how a provider the gateway does
 // not probe is expressed, which is one of the two ways the daemon already
-// declines to probe a provider.
+// declines to probe a provider. An empty npt-prefix is how a provider on an
+// IPv4-only link is expressed: it gets no IPv6 source rule and no translation
+// instance, and the modules that read the prefix already guard for it.
 func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthWANSection, error) {
 	provider := entry.WAN
 	if provider.Name == "" {
@@ -416,9 +421,6 @@ func buildProvider(entry ifaceEntry) (config.IfMgrWANEntry, *config.IfMgrHealthW
 		if number.value == nil {
 			return config.IfMgrWANEntry{}, nil, fmt.Errorf("%s: %s is required", label, number.leaf)
 		}
-	}
-	if provider.NptPrefix == "" {
-		return config.IfMgrWANEntry{}, nil, fmt.Errorf("%s: npt-prefix is required", label)
 	}
 	tier, weight, err := buildSteering(label, entry.Steering)
 	if err != nil {

@@ -82,11 +82,32 @@ cloudflared_oob_user: "cloudflared-oob"
 cloudflared_oob_bin: "/usr/local/bin/cloudflared"
 cloudflared_oob_config_dir: "/etc/cloudflared-oob"
 
+# Tack guest disk reclamation (TACK-498). Only the hypervisor that runs the
+# tack guests trims them, so this is off here and on in vault_servers.yml. The
+# other values are still declared, because a task file reads its inputs bare.
+tack_guest_fstrim_enabled: false
+tack_guest_fstrim_vmids: []
+tack_guest_fstrim_oncalendar: "Sun *-*-* 04:15:00"
+tack_guest_fstrim_randomized_delay: "10min"
+tack_thin_pool: ""
+tack_thin_pool_discards: "nopassdown"
+
+# The GitHub CLI apt repository. Neither Debian nor Proxmox packages gh, so
+# this repository is what makes the gh entry below resolvable, and until now
+# it was hand-added on each hypervisor rather than owned here. The play
+# gathers no facts, so the architecture is written out rather than read from
+# ansible_architecture; both hypervisors are amd64.
+github_cli_keyring_url: "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
+github_cli_keyring_path: "/usr/share/keyrings/githubcli-archive-keyring.gpg"
+github_cli_repo_line: >-
+  deb [arch=amd64 signed-by={{ github_cli_keyring_path }}]
+  https://cli.github.com/packages stable main
+
 # Packages both hypervisors carry. This is the superset of what vault and
 # suburban had installed by hand, minus anything Proxmox or Debian owns
-# through its own packaging. Declaring them here means a rebuilt or new
-# hypervisor gets the same toolkit instead of whatever an operator
-# remembered to install.
+# through its own packaging, plus gh from the repository declared above.
+# Declaring them here means a rebuilt or new hypervisor gets the same toolkit
+# instead of whatever an operator remembered to install.
 #
 # netcat-openbsd is load bearing rather than a convenience:
 # netcat-traditional cannot open an IPv6 socket at all, so a reachability

@@ -9,6 +9,11 @@
 # the task body stays branchless and the play definition does not depend
 # on inventory_hostname.
 
+# Ahead of the install, because that task refreshes the apt cache and apt
+# fails the whole refresh when any one index will not verify.
+- name: Manage the GitHub CLI apt repository
+  ansible.builtin.import_tasks: github-cli-apt-repo.yml
+
 - name: Install hypervisor packages
   ansible.builtin.apt:
     name: "{{ proxmox_apt_packages }}"
@@ -255,3 +260,7 @@
 
 - name: Install the opnsensectl host bridge and chardev drainer
   ansible.builtin.import_tasks: mwan-opnsense-host-deploy.yml
+
+- name: Reclaim deleted tack guest blocks (thin pool mode and weekly trim)
+  ansible.builtin.import_tasks: tack-guest-fstrim.yml
+  when: tack_guest_fstrim_enabled | bool
