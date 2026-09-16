@@ -69,6 +69,15 @@ type WAN struct {
 // declared it has none of, which stays empty so the module probes nothing in
 // it. Without that distinction an IPv4-only provider would inherit the public
 // resolvers applyDefaults installs and ping them out a link with no IPv6.
+//
+// These two lists are the only statement of whether a provider's link carries
+// an address family. Three facts about a link are independent and must not be
+// read off one another: whether the link has IPv6 at all, which these lists
+// declare; whether the ISP delegates a prefix, which npt-prefix carries; and
+// whether the link has a static IPv4 address, which v4-source carries. An ISP
+// can advertise working IPv6 on the link and delegate no prefix, and such a
+// provider is probed over IPv6 and routed over IPv6 while getting no
+// translation and no IPv6 source rule.
 func (wan WAN) targetsV4(cfg Config) []netip.Addr {
 	if wan.TargetsV4 != nil {
 		return wan.TargetsV4
@@ -479,7 +488,11 @@ func (m *Module) probeWAN(ctx context.Context, wan WAN, log *slog.Logger) probeR
 	// A family the provider lists no ping targets for is a family it does not
 	// carry, so neither leg of it runs: no echo request and no HTTP request
 	// forced onto it. A provider on an IPv4-only link would otherwise spend
-	// every cycle failing IPv6 probes it can never answer.
+	// every cycle failing IPv6 probes it can never answer. The target lists are
+	// the only input to this decision. Whether the ISP delegates a prefix is a
+	// separate fact and never decides whether a family is probed: a provider
+	// given IPv6 by router advertisement with no DHCPv6-PD delegation carries
+	// IPv6 targets and is probed over IPv6 like any other.
 	v6Targets := wan.targetsV6(m.cfg)
 	v4Targets := wan.targetsV4(m.cfg)
 	v6Probed := len(v6Targets) > 0

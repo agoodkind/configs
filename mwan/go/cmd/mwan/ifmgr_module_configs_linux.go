@@ -324,6 +324,10 @@ func buildHealthConfig(
 // must not exceed the target count of a family that has targets. The model
 // requires neither family, because a provider on an IPv4-only link carries no
 // IPv6 targets; requiring both here would leave that provider unable to load.
+// The target lists are the whole statement of which families a link carries,
+// and are independent of npt-prefix and v4-source: a provider can carry IPv6
+// with no delegated prefix, so neither of those leaves may be read as evidence
+// about a family here or anywhere else.
 // http-urls stays optional because HTTP is only an OR fallback leg of the
 // verdict. This turns a malformed health container in network.json into a load
 // error instead of a silent inherit of the module-wide defaults.
