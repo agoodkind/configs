@@ -1,0 +1,78 @@
+---
+# Reclaim deleted tack guest blocks (TACK-498): the thin pool's discard mode and
+# the weekly guest trim that frees what the guests deleted. Imported by
+# proxmox-host.yml and gated by tack_guest_fstrim_enabled, which only the
+# hypervisor that runs the tack guests sets.
+
+- name: Read the thin pool's discard mode
+  ansible.builtin.command:
+    argv: [lvs, --noheadings, -o, discards, "{{ tack_thin_pool }}"]
+  register: tack_thin_pool_discards_now
+  changed_when: false
+
+# The pool frees and reuses the chunks either way. passdown also sends one
+# discard per freed run to the NVMe, which charges about 16 ms per command and
+# stalls the ledger's own writes behind them, so a trim of a few hundred
+# gigabytes is minutes of degraded IO for a drive that reclaims on its own.
+- name: Process discards in the thin pool without passing them to the drive
+  ansible.builtin.command:
+    argv: [lvchange, --discards, "{{ tack_thin_pool_discards }}", "{{ tack_thin_pool }}"]
+  when: tack_thin_pool_discards not in tack_thin_pool_discards_now.stdout
+  changed_when: true
+
+- name: Read each tack guest's root filesystem line
+  ansible.builtin.command:
+    argv: [pct, config, "{{ item }}"]
+  loop: "{{ tack_guest_fstrim_vmids }}"
+  register: tack_guest_rootfs_lines
+  changed_when: false
+
+# The weekly trim above is the fallback. This is the path that returns a
+# deleted block while it is being deleted: ext4 issues the discard, the pool
+# frees the chunk, and nothing reaches the drive. The container reads the
+# option when it next starts, so this writes the config and waits for the next
+# planned restart rather than causing one.
+- name: Mount each tack guest's root filesystem with discard
+  ansible.builtin.command:
+    argv:
+      - pct
+      - set
+      - "{{ item.item }}"
+      - --rootfs
+      - >-
+        {{ item.stdout_lines | select('match', '^rootfs: ') | first
+           | regex_replace('^rootfs: ', '') }},mountoptions=discard
+  loop: "{{ tack_guest_rootfs_lines.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: "'mountoptions' not in (item.stdout_lines | select('match', '^rootfs: ') | first)"
+  changed_when: true
+
+- name: Deploy tack-guest-fstrim service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/services/tack-guest-fstrim.service.j2"
+    dest: /etc/systemd/system/tack-guest-fstrim.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_guest_fstrim_service
+
+- name: Deploy tack-guest-fstrim timer
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/timers/tack-guest-fstrim.timer.j2"
+    dest: /etc/systemd/system/tack-guest-fstrim.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_guest_fstrim_timer
+
+- name: Enable tack-guest-fstrim timer
+  ansible.builtin.systemd:
+    name: tack-guest-fstrim.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        tack_guest_fstrim_service.changed
+        or tack_guest_fstrim_timer.changed
+      }}

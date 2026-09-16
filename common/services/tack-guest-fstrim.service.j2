@@ -1,0 +1,23 @@
+# Rendered by Ansible (tasks/tack-guest-fstrim.yml); the guest list and cadence
+# live in the hypervisor's group_vars, one home.
+#
+# The tack guests write and delete tens of gigabytes a night for the ledger
+# export and the restore drill. Their filesystems mount without the discard
+# option today, so the thin pool keeps those freed blocks allocated until
+# something trims them, and the hypervisor's own fstrim.timer reaches only the
+# host's filesystems, never a guest's (TACK-498). This is the fallback that
+# catches whatever the per-delete discard misses.
+#
+# The pool processes these discards itself and passes none to the NVMe, so a
+# trim costs the drive nothing: the drive charges per discard command, about
+# 16 ms each, and the pool's 64 KiB chunks would otherwise turn one trim into
+# thousands of them.
+[Unit]
+Description=Trim the Tack guest disks so the thin pool reclaims deleted blocks
+After=pve-guests.service
+
+[Service]
+Type=oneshot
+{% for vmid in tack_guest_fstrim_vmids %}
+ExecStart=/usr/sbin/pct fstrim {{ vmid }}
+{% endfor %}

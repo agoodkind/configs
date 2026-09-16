@@ -1,17 +1,17 @@
 ---
-# In-guest install of mwan-opnsense, then a restart onto the installed binary
-# that the hypervisor verifies.
+# In-guest install of the opnsensectl daemon under its mwan-opnsense name, then
+# a restart onto the installed binary that the hypervisor verifies.
 #
 # Target: an OPNsense host reached as `agoodkind` with sudo. The
 # hypervisor-side virtio-serial-pci args field must already be wired, and the
-# hypervisor must run the host bridge, because the daemon's identity is read
-# through it.
+# hypervisor must run the host bridge and carry /usr/local/bin/opnsensectl,
+# because the daemon's identity is read through them.
 #
 # Required vars (typically from group_vars or playbook):
-#   mwan_opnsense_binary_local       local path to bin/mwan-opnsense
+#   mwan_opnsense_binary_local       controller path of the staged freebsd opnsensectl binary
 #   mwan_proxmox_delegate            inventory host of the hypervisor running this router
-#   mwan_release_tag                 release tag, passed by `configsctl deploy --release`
-#   mwan_release_commit              commit that tag points at, passed the same way
+#   opnsensectl_release_tag          release tag, passed by `configsctl deploy --opnsensectl-release`
+#   opnsensectl_release_commit       commit that tag points at, passed the same way
 #
 # Optional rc.conf.d overrides after install. Defaults come from the sample
 # copied below.
@@ -22,6 +22,19 @@
 #   mwan_opnsense_logfile            default "/var/log/mwan-opnsense.log"
 #   mwan_opnsense_state_dir          default "/var/lib/mwan/transfers"
 #   mwan_opnsense_stop_timeout       default "10"
+
+# The whole deploy reads the router daemon through the hypervisor's opnsensectl,
+# so a hypervisor without it fails every read below. Without this guard the play
+# installs the new binary and restarts the daemon onto it first, and only then
+# fails for three minutes on a version it cannot read, with no pending-verify
+# marker to revert. Checking the hypervisor first keeps that failure ahead of
+# any change to the guest.
+- name: Fail before touching the guest unless the hypervisor runs the released opnsensectl
+  ansible.builtin.import_tasks: verify-opnsensectl-release.yml
+  vars:
+    opnsensectl_installed_binary: /usr/local/bin/opnsensectl
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  become: true
 
 - name: Install mwan-opnsense binary as .current
   ansible.builtin.copy:
@@ -114,7 +127,7 @@
 
 # The daemon's identity is read from the hypervisor through the host bridge,
 # because any binary named mwan-opnsense* on the guest enters serve instead of
-# answering a verb. `mwan opnsense daemon version` prints exactly one line, whose
+# answering a verb. `opnsensectl daemon version` prints exactly one line, whose
 # version field is itself the daemon's build summary:
 #   version=commit=<commit> dirty=<clean|dirty|unknown> binhash=<binhash>
 #   commit=<commit> dirty=<true|false> binhash=<binhash>
@@ -132,8 +145,7 @@
 - name: Read the commit the running daemon reports
   ansible.builtin.command:
     argv:
-      - /usr/local/bin/mwan
-      - opnsense
+      - /usr/local/bin/opnsensectl
       - daemon
       - version
   register: mwan_opnsense_version_before
@@ -157,7 +169,7 @@
       or mwan_opnsense_instances_before.rc != 0
       or mwan_opnsense_version_before.rc != 0
       or mwan_opnsense_running_commit is not match('^[0-9a-f]{7,40}$')
-      or not mwan_release_commit.startswith(mwan_opnsense_running_commit) }}
+      or not opnsensectl_release_commit.startswith(mwan_opnsense_running_commit) }}
   when: not ansible_check_mode
 
 # The restart never uses the daemon's RestartDaemon RPC. That call re-executes
@@ -199,8 +211,7 @@
     - name: Wait for the daemon to report the released commit
       ansible.builtin.command:
         argv:
-          - /usr/local/bin/mwan
-          - opnsense
+          - /usr/local/bin/opnsensectl
           - daemon
           - version
       register: mwan_opnsense_daemon_version
@@ -212,7 +223,7 @@
         (mwan_opnsense_daemon_version.stdout
         | regex_findall(mwan_opnsense_version_line_pattern) | first | default(''))
         is match('^[0-9a-f]{7,40}$')
-        and mwan_release_commit.startswith(mwan_opnsense_daemon_version.stdout
+        and opnsensectl_release_commit.startswith(mwan_opnsense_daemon_version.stdout
         | regex_findall(mwan_opnsense_version_line_pattern) | first | default(''))
 
     # The reported commit must be a real short SHA (seven hex digits or more)
@@ -225,22 +236,21 @@
       ansible.builtin.assert:
         that:
           - mwan_opnsense_reported_commit is match('^[0-9a-f]{7,40}$')
-          - mwan_release_commit.startswith(mwan_opnsense_reported_commit)
+          - opnsensectl_release_commit.startswith(mwan_opnsense_reported_commit)
         fail_msg: >-
           The router daemon reports "{{ mwan_opnsense_daemon_version.stdout }}"
-          ({{ mwan_opnsense_daemon_version.stderr | trim }}) but release
-          {{ mwan_release_tag }} is commit {{ mwan_release_commit }}.
+          ({{ mwan_opnsense_daemon_version.stderr | trim }}) but opnsensectl release
+          {{ opnsensectl_release_tag }} is commit {{ opnsensectl_release_commit }}.
         success_msg: >-
-          The router daemon is release {{ mwan_release_tag }}
-          ({{ mwan_release_commit[:8] }}).
+          The router daemon is opnsensectl release {{ opnsensectl_release_tag }}
+          ({{ opnsensectl_release_commit[:8] }}).
 
     # The exec verb exits 0 whatever the guest command returned, so the guest
     # result is read from the first output line.
     - name: Run hostname on the router through the daemon
       ansible.builtin.command:
         argv:
-          - /usr/local/bin/mwan
-          - opnsense
+          - /usr/local/bin/opnsensectl
           - exec
           - /bin/hostname
       register: mwan_opnsense_exec_round_trip
@@ -264,8 +274,7 @@
 - name: Mark the running daemon binary healthy
   ansible.builtin.command:
     argv:
-      - /usr/local/bin/mwan
-      - opnsense
+      - /usr/local/bin/opnsensectl
       - daemon
       - mark-healthy
   register: mwan_opnsense_mark_healthy

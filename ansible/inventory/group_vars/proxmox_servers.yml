@@ -62,7 +62,7 @@ mwan_opnsense_vmid: "{{ service_mapping.opnsense.vmid }}"
 # The break-glass serial path into the OPNsense guest. The drainer holds the qemu
 # virtio-serial chardev open and re-exposes it on a relay socket, so a bridge
 # restart never disconnects the chardev and strands a guest write in the kernel.
-# The bridge dials that relay and serves the probe socket the `mwan opnsense`
+# The bridge dials that relay and serves the probe socket the `opnsensectl`
 # verbs connect to. See docs/ops/opnsense/wedge.md.
 mwan_opnsense_drain_chardev: "unix:///var/run/qemu-server/{{ mwan_opnsense_vmid }}.mwanrpc"
 mwan_opnsense_drain_listen: /var/run/mwan-opnsense-drain.sock
@@ -71,9 +71,9 @@ mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
 mwan_opnsense_host_reconnect: "2s"
 mwan_opnsense_host_hb_interval: "30s"
 mwan_opnsense_host_hb_timeout: "10s"
-# The released linux binary the deploy staged; mwan_release_dir comes from
-# `configsctl deploy --release <tag>` and is unset without it.
-mwan_opnsense_host_binary_local: "{{ mwan_release_dir }}/linux_amd64/mwan"
+# The released linux opnsensectl binary the deploy staged; opnsensectl_release_dir
+# comes from `configsctl deploy --opnsensectl-release <tag>` and is unset without it.
+opnsensectl_host_binary_local: "{{ opnsensectl_release_dir }}/linux_amd64/opnsensectl"
 
 # Cloudflared OOB tunnel paths (non-secret). The enabled flag and per-host
 # resolvers/credentials live in the per-hypervisor group_vars.
@@ -82,11 +82,32 @@ cloudflared_oob_user: "cloudflared-oob"
 cloudflared_oob_bin: "/usr/local/bin/cloudflared"
 cloudflared_oob_config_dir: "/etc/cloudflared-oob"
 
+# Tack guest disk reclamation (TACK-498). Only the hypervisor that runs the
+# tack guests trims them, so this is off here and on in vault_servers.yml. The
+# other values are still declared, because a task file reads its inputs bare.
+tack_guest_fstrim_enabled: false
+tack_guest_fstrim_vmids: []
+tack_guest_fstrim_oncalendar: "Sun *-*-* 04:15:00"
+tack_guest_fstrim_randomized_delay: "10min"
+tack_thin_pool: ""
+tack_thin_pool_discards: "nopassdown"
+
+# The GitHub CLI apt repository. Neither Debian nor Proxmox packages gh, so
+# this repository is what makes the gh entry below resolvable, and until now
+# it was hand-added on each hypervisor rather than owned here. The play
+# gathers no facts, so the architecture is written out rather than read from
+# ansible_architecture; both hypervisors are amd64.
+github_cli_keyring_url: "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
+github_cli_keyring_path: "/usr/share/keyrings/githubcli-archive-keyring.gpg"
+github_cli_repo_line: >-
+  deb [arch=amd64 signed-by={{ github_cli_keyring_path }}]
+  https://cli.github.com/packages stable main
+
 # Packages both hypervisors carry. This is the superset of what vault and
 # suburban had installed by hand, minus anything Proxmox or Debian owns
-# through its own packaging. Declaring them here means a rebuilt or new
-# hypervisor gets the same toolkit instead of whatever an operator
-# remembered to install.
+# through its own packaging, plus gh from the repository declared above.
+# Declaring them here means a rebuilt or new hypervisor gets the same toolkit
+# instead of whatever an operator remembered to install.
 #
 # netcat-openbsd is load bearing rather than a convenience:
 # netcat-traditional cannot open an IPv6 socket at all, so a reachability
