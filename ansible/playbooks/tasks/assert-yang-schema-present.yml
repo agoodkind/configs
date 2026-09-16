@@ -1,0 +1,80 @@
+---
+# Refuse a deploy whose checkout is missing the YANG files it needs.
+#
+# The IETF modules come from the third_party/yang submodule. A checkout that
+# never initialized it carries third_party/yang as an empty directory, so the
+# directory exists while every module file under it is missing, and libyang
+# reports only that it cannot use its search directory. Checking the module
+# files rather than the directory is what makes that state fail here.
+#
+# The caller runs these tasks once on the controller, before the deploy
+# prepares a guest, pushes the deploy-gate binary, or snapshots the gateway,
+# so a checkout without the files costs the operator nothing but this message.
+#
+# The module list is the one deploy-mwan.yml hands yanglint and
+# tasks/mwan-vm/wanconfig-stack.yml copies onto the gateway, and the caller
+# sets repo_root. A revision bump moves all three together.
+
+- name: Look for the pinned IETF schema modules
+  delegate_to: localhost
+  ansible.builtin.stat:
+    path: "{{ repo_root }}/third_party/yang/standard/ietf/RFC/{{ item }}.yang"
+  loop:
+    - ietf-yang-types@2025-12-22
+    - ietf-inet-types@2025-12-22
+    - iana-if-type@2014-05-08
+    - ietf-interfaces@2018-02-20
+    - ietf-ip@2018-02-22
+    - ietf-routing@2018-03-13
+    - ietf-nat@2019-01-10
+  register: yang_schema_modules
+
+- name: Refuse a deploy without the pinned IETF schema modules
+  delegate_to: localhost
+  vars:
+    yang_schema_missing: >-
+      {{ yang_schema_modules.results | rejectattr('stat.exists')
+         | map(attribute='item') | list }}
+  ansible.builtin.assert:
+    that:
+      - yang_schema_missing == []
+    fail_msg: >-
+      These YANG modules are missing from
+      {{ repo_root }}/third_party/yang/standard/ietf/RFC:
+      {{ yang_schema_missing | join(', ') }}.
+      This deploy validates the rendered network configuration against them
+      and copies them onto the gateway, so it cannot run without them. They
+      come from the third_party/yang submodule, which this checkout has not
+      initialized. Run "git submodule update --init third_party/yang" in
+      {{ repo_root }}, then run this deploy again.
+    success_msg: >-
+      The pinned IETF schema modules are present under
+      {{ repo_root }}/third_party/yang/standard/ietf/RFC.
+    quiet: true
+
+# The play resolves the gateway model by glob because the revision rides in
+# the file name, and it reads that glob with a filter that fails obscurely on
+# anything but one match. find reports the count as data, so the number the
+# operator needs to see is a field rather than a measurement of a lookup.
+- name: Look for the gateway model revisions
+  delegate_to: localhost
+  ansible.builtin.find:
+    paths: "{{ repo_root }}/mwan/yang"
+    patterns: goodkind-mwan-steering@*.yang
+  register: yang_steering_models
+
+- name: Refuse a deploy without exactly one gateway model revision
+  delegate_to: localhost
+  ansible.builtin.assert:
+    that:
+      - yang_steering_models.matched == 1
+    fail_msg: >-
+      {{ repo_root }}/mwan/yang holds {{ yang_steering_models.matched }}
+      goodkind-mwan-steering revision files, and this deploy validates the
+      rendered network configuration against exactly one. Leave one revision
+      file in that directory, then run this deploy again.
+    success_msg: >-
+      The gateway model this deploy validates against is
+      {{ yang_steering_models.files | map(attribute='path')
+         | map('basename') | join(', ') }}.
+    quiet: true

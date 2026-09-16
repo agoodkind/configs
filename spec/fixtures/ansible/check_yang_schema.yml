@@ -1,0 +1,13 @@
+---
+# Runs the deploy's YANG schema preflight against a checkout the test builds,
+# so a test can drive the real task file over a repository root with the
+# schema files missing and over one with them present. The deploy imports
+# these same tasks; only repo_root differs.
+- name: Check the pinned YANG schema files
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  tasks:
+    - name: Verify the pinned YANG schema files are present
+      ansible.builtin.import_tasks: ../../../ansible/playbooks/tasks/assert-yang-schema-present.yml

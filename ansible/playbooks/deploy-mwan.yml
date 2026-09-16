@@ -15,6 +15,28 @@
 # MWAN failover LXC lives in mwan_failover_servers or mwan_failover_suburban_servers
 # and is configured by deploy-mwan-failover.yml.
 
+# The schema files this deploy validates against and copies onto the gateway
+# come from a git submodule, and a checkout that never initialized it carries
+# them not at all. This play runs before the guest preparation below so that
+# checkout fails here, in a second, rather than at the validation task far
+# later, after the deploy has prepared the guest, pushed the deploy-gate
+# binary, and snapshotted the gateway.
+#
+# It targets the gateways rather than localhost because a deploy narrowed with
+# --limit to a guest group leaves localhost out of the limit, and a localhost
+# play then matches no hosts and silently does nothing (MWAN-477). Every task
+# delegates to the controller, so nothing here connects to a gateway.
+- name: Check the controller before the deploy touches a host
+  hosts: mwan_servers:mwan_suburban_servers
+  gather_facts: false
+  become: false
+  run_once: true
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+  tasks:
+    - name: Verify the pinned YANG schema files are present
+      ansible.builtin.import_tasks: tasks/assert-yang-schema-present.yml
+
 - name: Prepare MWAN VM (base packages, SSH keys, etc.)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
