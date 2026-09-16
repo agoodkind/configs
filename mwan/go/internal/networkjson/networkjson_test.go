@@ -215,6 +215,42 @@ func TestLoadRejectsMissingRequiredLeaf(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsAProviderThatDelegatesNoPrefix(t *testing.T) {
+	t.Parallel()
+
+	// A provider on an IPv4-only link delegates nothing, so it carries no
+	// npt-prefix. The model leaves the leaf optional and the routing module
+	// installs no IPv6 source rule without it, so the loader must carry the
+	// provider rather than refuse the whole file.
+	body := strings.Replace(
+		validDocument,
+		`,
+          "npt-prefix": "2001:db8:beef:100::/60"`,
+		``,
+		1,
+	)
+	if body == validDocument {
+		t.Fatal("the document still carries att's npt prefix")
+	}
+	loaded, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err != nil {
+		t.Fatalf("Load rejected a provider that delegates no prefix: %v", err)
+	}
+	if got := len(loaded.WAN); got != 2 {
+		t.Fatalf("provider count = %d, want 2", got)
+	}
+	att := loaded.WAN["att"]
+	if att.NptPrefix != "" {
+		t.Fatalf("att npt prefix = %q, want empty", att.NptPrefix)
+	}
+	if att.Iface != "enatt0" || att.TableID != 100 || att.Tier != 1 {
+		t.Fatalf("att entry = %+v, want the rest of its configuration unchanged", att)
+	}
+	if got := loaded.WAN["webpass"].NptPrefix; got != "2001:db8:beef:200::/60" {
+		t.Fatalf("webpass npt prefix = %q, want 2001:db8:beef:200::/60", got)
+	}
+}
+
 func TestLoadAcceptsADisabledProbeWithNoSettings(t *testing.T) {
 	t.Parallel()
 
