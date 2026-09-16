@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"goodkind.io/mwan/internal/agent"
 	"goodkind.io/mwan/internal/config"
@@ -22,7 +20,6 @@ const (
 	subcmdWatchdog          subcommand = "watchdog"
 	subcmdIfmgr             subcommand = "ifmgr"
 	subcmdHealth            subcommand = "health"
-	subcmdOPNsense          subcommand = "opnsense"
 	subcmdNotify            subcommand = "notify"
 	subcmdPD                subcommand = "pd"
 	subcmdDebug             subcommand = "debug"
@@ -41,14 +38,8 @@ type dispatchResult struct {
 }
 
 func main() {
-	// When invoked via the in-VM symlink (mwan-opnsense or
-	// mwan-opnsense.<sha>), the binary fast-paths directly into the
-	// daemon serve loop so rc.d can keep its existing ExecStart.
-	if invokedAsOPNsenseDaemon(os.Args[0]) {
-		os.Exit(runOPNsenseDaemonServe(os.Args[1:]))
-	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health|ifmgr|opnsense|notify|pd|debug|trace-boot|deploy-gate|wanconfig-selftest|version> [args]")
+		fmt.Fprintln(os.Stderr, "usage: mwan <agent|watchdog|health|ifmgr|notify|pd|debug|trace-boot|deploy-gate|wanconfig-selftest|version> [args]")
 		os.Exit(1)
 	}
 	sub := os.Args[1]
@@ -78,8 +69,7 @@ func main() {
 }
 
 // dispatchConfigLess handles subcommands that do not load mwan config
-// at the top level. The opnsense subtree loads its own config inside
-// the per-verb runners that need it.
+// at the top level.
 func dispatchConfigLess(sub subcommand) dispatchResult {
 	switch sub {
 	case subcmdHealth:
@@ -88,8 +78,6 @@ func dispatchConfigLess(sub subcommand) dispatchResult {
 			return dispatchResult{handled: true, code: 1}
 		}
 		return dispatchResult{handled: true, code: 0}
-	case subcmdOPNsense:
-		return dispatchResult{handled: true, code: runOPNsense(os.Args[1:])}
 	case subcmdPD:
 		return dispatchResult{handled: true, code: runPDProbe(os.Args[1:])}
 	case subcmdTrace:
@@ -127,7 +115,7 @@ func dispatchWithConfig(rawSub string, sub subcommand, cfg *config.Config) int {
 		runErr = runNotify(cfg)
 	case subcmdDebug:
 		return runDebug(os.Args[1:], cfg)
-	case subcmdHealth, subcmdOPNsense, subcmdPD, subcmdTrace, subcmdGate,
+	case subcmdHealth, subcmdPD, subcmdTrace, subcmdGate,
 		subcmdWanconfigSelftest, subcmdVersion:
 		fmt.Fprintf(os.Stderr, "internal dispatch error for subcommand %q\n", rawSub)
 		return 1
@@ -140,9 +128,4 @@ func dispatchWithConfig(rawSub string, sub subcommand, cfg *config.Config) int {
 		return 1
 	}
 	return 0
-}
-
-func invokedAsOPNsenseDaemon(argv0 string) bool {
-	binaryName := filepath.Base(argv0)
-	return binaryName == "mwan-opnsense" || strings.HasPrefix(binaryName, "mwan-opnsense.")
 }

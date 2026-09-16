@@ -1,4 +1,4 @@
-# Example substitution table for `mwan opnsense config import`.
+# Example substitution table for `opnsensectl config import`.
 
 # The concrete suburban testbed table lives in `substitutions.yaml`. This file
 # documents the same shape with minimal comments.
