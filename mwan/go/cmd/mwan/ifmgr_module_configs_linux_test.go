@@ -549,12 +549,13 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 			wantSub: "health/success-threshold",
 		},
 		{
-			name: "empty targets_v6",
+			name: "no targets in either family",
 			mutate: func(s config.IfMgrHealthWANSection) config.IfMgrHealthWANSection {
+				s.TargetsV4 = nil
 				s.TargetsV6 = nil
 				return s
 			},
-			wantSub: "health/targets-v6",
+			wantSub: "must have at least one targets-v4 or targets-v6 entry",
 		},
 		{
 			name: "success_threshold exceeds targets",
@@ -584,6 +585,64 @@ func TestBuildHealthConfigRejectsUnderspecifiedEnabledWAN(t *testing.T) {
 				t.Fatalf("error %q does not mention %q", err, test.wantSub)
 			}
 		})
+	}
+}
+
+// TestBuildHealthConfigAcceptsSingleFamilyProvider is the loader half of the
+// IPv4-only provider: the configuration loads, and the empty list the provider
+// declared reaches the module as an empty list rather than as an omission. The
+// module inherits its public ping targets on an omission, so losing the
+// distinction here would probe public resolvers out a link with no IPv6.
+func TestBuildHealthConfigAcceptsSingleFamilyProvider(t *testing.T) {
+	t.Parallel()
+
+	section := enabledHealthWANSection(10)
+	section.TargetsV6 = []string{}
+	cfg, err := buildHealthConfig(
+		buildWANRefs(sharedWANForTest()),
+		&config.IfMgrHealthSection{
+			WAN: map[string]config.IfMgrHealthWANSection{"att": section},
+		},
+	)
+	if err != nil {
+		t.Fatalf("buildHealthConfig rejected an IPv4-only provider: %v", err)
+	}
+	if len(cfg.WANs) != 1 {
+		t.Fatalf("WAN count = %d, want 1", len(cfg.WANs))
+	}
+	if cfg.WANs[0].TargetsV6 == nil {
+		t.Fatal("a declared-empty targets-v6 must reach the module as an empty list, not as nil")
+	}
+	if len(cfg.WANs[0].TargetsV6) != 0 {
+		t.Fatalf("targets-v6 = %v, want empty", cfg.WANs[0].TargetsV6)
+	}
+	if len(cfg.WANs[0].TargetsV4) != 2 {
+		t.Fatalf("targets-v4 count = %d, want 2", len(cfg.WANs[0].TargetsV4))
+	}
+}
+
+// TestBuildHealthConfigKeepsAnOmittedTargetFamilyNil preserves the inherit:
+// a family the provider names no leaf for stays nil, which the module reads as
+// "use the module-wide list".
+func TestBuildHealthConfigKeepsAnOmittedTargetFamilyNil(t *testing.T) {
+	t.Parallel()
+
+	section := enabledHealthWANSection(10)
+	section.TargetsV6 = nil
+	cfg, err := buildHealthConfig(
+		buildWANRefs(sharedWANForTest()),
+		&config.IfMgrHealthSection{
+			WAN: map[string]config.IfMgrHealthWANSection{"att": section},
+		},
+	)
+	if err != nil {
+		t.Fatalf("buildHealthConfig returned error: %v", err)
+	}
+	if len(cfg.WANs) != 1 {
+		t.Fatalf("WAN count = %d, want 1", len(cfg.WANs))
+	}
+	if cfg.WANs[0].TargetsV6 != nil {
+		t.Fatalf("targets-v6 = %v, want nil so the module inherits", cfg.WANs[0].TargetsV6)
 	}
 }
 
