@@ -14,6 +14,24 @@
 #   ./configsctl deploy deploy-mwan-failover \
 #     --limit mwan_failover_suburban_servers
 
+# The release this playbook installs is pinned in the environment's group vars
+# and pulled onto the controller before the play below connects to the LXC,
+# so a bad pin fails while the host is untouched, before facts are even
+# gathered. The play opens no connection: its tasks run on the controller or
+# set facts, and the facts it sets persist into the play below.
+- name: Pull the pinned mwan release onto the controller
+  hosts: mwan_failover_servers:mwan_failover_suburban_servers
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Pull the pinned mwan release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ mwan_release_repo }}"
+        release_tag: "{{ mwan_release_tag }}"
+        release_assets: "{{ mwan_release_assets }}"
+        release_var_prefix: mwan
+
 - name: Configure MWAN failover LXC
   hosts: mwan_failover_servers:mwan_failover_suburban_servers
   become: false
@@ -23,17 +41,6 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
-    # The release this play installs is pinned in the environment's group
-    # vars and pulled onto the controller first, so a bad pin fails before
-    # any host is touched.
-    - name: Pull the pinned mwan release
-      ansible.builtin.import_tasks: tasks/github-release.yml
-      vars:
-        release_repo: "{{ mwan_release_repo }}"
-        release_tag: "{{ mwan_release_tag }}"
-        release_assets: "{{ mwan_release_assets }}"
-        release_var_prefix: mwan
-
     - name: Ensure /etc/mwan exists
       ansible.builtin.file:
         path: /etc/mwan
