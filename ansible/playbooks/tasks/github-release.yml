@@ -73,6 +73,23 @@
   loop_control:
     label: "{{ item.name }}"
 
+# The pin is inventory data, so a pin that leaves out the binary archive, or
+# gives an archive a checksum that is not sha256:<hex>, is a group_vars
+# mistake. It fails here, on the controller, before the play reaches a host:
+# without this check an empty pin plans nothing, the facts below are still
+# set, and the deploy fails at its first copy after earlier plays have already
+# changed the host. An archive named without its platform suffix, or pinned
+# without a checksum, already fails in the plan above.
+- name: Refuse a plan of {{ release_var_prefix }} without its binary archive
+  ansible.builtin.assert:
+    that:
+      - "release_unpack_plan | map(attribute='name') | select('match', '^' ~ release_var_prefix ~ '_[^_]+_[^_]+[.]tar[.]gz$') | list | length > 0"
+      - "release_unpack_plan | map(attribute='checksum') | reject('match', '^sha256:[0-9a-f]{64}$') | list | length == 0"
+    fail_msg: >-
+      {{ release_var_prefix }}_release_assets must list the {{ release_var_prefix }}
+      binary archive ({{ release_var_prefix }}_<goos>_<goarch>.tar.gz) and give
+      each archive its sha256:<hex> checksum; got {{ release_assets | to_json }}
+
 - name: Look for the unpack marker of each archive of {{ release_var_prefix }}
   delegate_to: localhost
   become: false
