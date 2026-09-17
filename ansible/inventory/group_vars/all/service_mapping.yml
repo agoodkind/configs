@@ -370,6 +370,20 @@ group_children:
   mwan_all:
     - mwan_servers
     - mwan_suburban_servers
+  # The hosts each environment's deploys install released binaries on: the
+  # gateway, the failover, the router, and the hypervisor. The hypervisor
+  # groups come from the static hosts file and merge with these by name. The
+  # matching group_vars files pin the mwan and opnsensectl releases.
+  mwan_prod_all:
+    - mwan_servers
+    - mwan_failover_servers
+    - opnsense_servers
+    - vault_servers
+  mwan_testbed_all:
+    - mwan_suburban_servers
+    - mwan_failover_suburban_servers
+    - opnsense_suburban_servers
+    - suburban_servers
   mwan_failover_all:
     - mwan_failover_servers
     - mwan_failover_suburban_servers

@@ -116,6 +116,21 @@ bgp_hold_seconds: 30
 mwan_status_push_port: 50053
 
 # ----------------------------------------------------------------------------
+# Released binaries the deploy plays install
+# ----------------------------------------------------------------------------
+# Each play that installs a released binary pulls the pinned release onto the
+# controller first (playbooks/tasks/github-release.yml). The tags and archive
+# checksums are pinned per environment in mwan_prod_all.yml and
+# mwan_testbed_all.yml; the repositories the releases are published from and
+# the controller directory they unpack under are the same for both.
+# This repository's own release workflow publishes the mwan release until the
+# mwan module moves out (MWAN-379); opnsensectl publishes its own.
+mwan_release_repo: agoodkind/configs
+opnsensectl_release_repo: agoodkind/opnsensectl
+# Under the repository root, where .gitignore already keeps it out of the tree.
+release_stage_root: "{{ playbook_dir | dirname | dirname }}/.make/releases"
+
+# ----------------------------------------------------------------------------
 # Wanconfig management stack (epic MWAN-338), packaged by the mwan release
 # and installed on the gateway by deploy-mwan.yml. The mwan Makefile pins the
 # six component versions the release builds.

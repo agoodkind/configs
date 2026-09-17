@@ -1,0 +1,26 @@
+---
+# Releases every production deploy installs. mwan_prod_all is the parent of
+# the production gateway, failover, router, and hypervisor groups (declared
+# under group_children in group_vars/all/service_mapping.yml), so the plays
+# that install a released binary read one pin per environment;
+# mwan_testbed_all.yml carries the testbed's. Each play pulls and verifies the
+# release itself, in playbooks/tasks/github-release.yml, so a deploy names no
+# release on its command line.
+#
+# A checksum is the line the release's checksums.txt publishes for that
+# archive, written as sha256:<hex>. To move a pin: pick the tag, download its
+# checksums.txt, and copy both lines here.
+
+mwan_release_tag: "202609161500-82-7ccf9a5"
+mwan_release_assets:
+  - name: mwan_linux_amd64.tar.gz
+    checksum: "sha256:e1133d04ce79462f41a57e55d41070658852ff54e8d68bec4729fb794f2aa58e"
+  - name: wanconfig-stack_linux_amd64.tar.gz
+    checksum: "sha256:21dfc28f43cb4588bf397b289b26ff07f319e12727e2d0f627cd61df6a5bba61"
+
+opnsensectl_release_tag: "202609151528-1-a1fe548"
+opnsensectl_release_assets:
+  - name: opnsensectl_linux_amd64.tar.gz
+    checksum: "sha256:60d7e5eaa7aa8707fa66a19bb25922f2a80ce0c3b422f549f574651dbdb1da52"
+  - name: opnsensectl_freebsd_amd64.tar.gz
+    checksum: "sha256:755be32a19fe0ff0a12b5d65b4828c5be59a14136e173850c1b706c2cac23132"
