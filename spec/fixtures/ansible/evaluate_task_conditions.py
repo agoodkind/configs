@@ -72,17 +72,40 @@ def all_conditions_true(templar: Templar, conditions: list[str]) -> bool:
 
 
 def as_template(value: JsonValue) -> JsonValue:
-    """Mark a string as a template the way a task file's text is trusted. A
-    list, mapping, number, or boolean is a literal YAML value and stays one."""
+    """Mark every string in a task value as a template the way a task file's
+    text is trusted, walking lists and mappings the way Ansible templates
+    them. A number, boolean, or null is a literal and stays one."""
     if isinstance(value, str):
         return trust_as_template(value)
+    if isinstance(value, list):
+        marked_items: list[JsonValue] = []
+        for item in value:
+            marked_items.append(as_template(item))
+        return marked_items
+    if isinstance(value, dict):
+        marked_entries: dict[str, JsonValue] = {}
+        for name, item in value.items():
+            marked_entries[name] = as_template(item)
+        return marked_entries
     return value
 
 
 def render_value(templar: Templar, value: JsonValue) -> JsonValue:
-    """Render a string template; pass a literal YAML value through."""
+    """Render a task value the way Ansible does: every string in it is a
+    template, including strings nested in a list or a mapping, and a number,
+    boolean, or null passes through."""
     if isinstance(value, str):
         return templar.template(trust_as_template(value))
+    if isinstance(value, list):
+        rendered_items: list[JsonValue] = []
+        for item in value:
+            rendered_items.append(render_value(templar, item))
+        return rendered_items
+    if isinstance(value, dict):
+        rendered_entries: dict[str, JsonValue] = {}
+        for name, item in value.items():
+            rendered_entries[name] = render_value(templar, item)
+        return rendered_entries
     return value
 
 

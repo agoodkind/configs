@@ -39,9 +39,9 @@ module TaskExpressions
     [scalar_text(value)]
   end
 
-  # A mapping of task fields as YAML loaded them. A string is a template the
-  # evaluator renders; a list, mapping, number, or boolean is a literal value
-  # the way Ansible treats it, so it passes through unchanged.
+  # A mapping of task fields as YAML loaded them. The evaluator renders every
+  # string in a value as a template, including strings nested in a list or a
+  # mapping, the way Ansible does; a number, boolean, or null is a literal.
   def value_map(value)
     return {} if value.nil?
 
