@@ -20,6 +20,24 @@
 # deploy-mwan.yml and deploy-mwan-failover.yml respectively when targeted
 # with --limit mwan_suburban_servers and --limit mwan_failover_suburban_servers.
 
+# The release this playbook installs is pinned in the testbed's group_vars.
+# This play pulls it onto the controller before the hypervisor is touched, so a
+# bad pin fails first. It opens no connection.
+- name: Pull the pinned mwan release onto the controller
+  hosts: suburban_servers
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Pull the pinned mwan release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ mwan_release_repo }}"
+        release_tag: "{{ mwan_release_tag }}"
+        release_assets: "{{ mwan_release_assets }}"
+        release_required_assets:
+          - mwan_linux_amd64.tar.gz
+        release_var_prefix: mwan
+
 - name: Configure suburban testbed extras
   hosts: suburban_servers
   become: false

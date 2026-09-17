@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package cloudflaredtap implements an ifmgr log-sink module that tails
 // a configured systemd unit's journal and re-emits each entry through
 // the daemon's [slog.Logger]. The intent is to fold cloudflared-oob (or

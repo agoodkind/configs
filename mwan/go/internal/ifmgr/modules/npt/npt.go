@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package npt programs the ip6 nat prerouting and postrouting chains for
 // stateless IPv6 NPT, deriving each WAN's /60 from the live DHCPv6-PD
 // delegation and translating the internal /60 onto it. It runs as a second

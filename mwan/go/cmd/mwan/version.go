@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"goodkind.io/mwan/internal/version"
+	"goodkind.io/mwan/internal/yangpub"
 )
 
 // sysrepoVersionUnavailable is the libsysrepo field of a binary that does not
@@ -22,4 +23,12 @@ func runVersion(args []string) int {
 	fmt.Fprintf(os.Stdout, "version=%s %s libsysrepo=%s\n",
 		version.BuildVersion(), version.BuildVersionString(), linkedSysrepoVersion())
 	return 0
+}
+
+func linkedSysrepoVersion() string {
+	sysrepoVersion, err := yangpub.SysrepoVersion()
+	if err != nil {
+		return sysrepoVersionUnavailable
+	}
+	return sysrepoVersion
 }

@@ -1,5 +1,3 @@
-//go:build linux
-
 package oobv6
 
 import (

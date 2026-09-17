@@ -84,9 +84,9 @@ terraform.tfvars
 /bin/
 HANDOFF_MWAN_OPNSENSE_TESTBED.txt
 
-# Controller scratch. `configsctl deploy --release` stages each verified release
-# here, under .make/releases/<tag>: the extracted binary for every platform and
-# the unpacked wanconfig stack packages the playbooks install. Never tracked.
+# Controller scratch. Each deploy play pulls its verified release here, under
+# .make/releases/<binary>/<tag>: the archives, the extracted binary, and the
+# unpacked wanconfig stack packages the playbooks install. Never tracked.
 /.make/
 
 # Ansible local data home (collections/roles/modules cache), created by the
