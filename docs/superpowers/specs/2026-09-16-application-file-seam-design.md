@@ -2,7 +2,7 @@
 
 The gateway and router deploys copy application files out of whichever checkout runs the play. A deploy's result therefore depends on the checkout, not on the release. On 2026-09-16 a deploying checkout carried an off-pin `third_party/yang` submodule and validated a production deploy against schema files the release never saw. This design removes that class of failure by giving every file one home, decided by one rule.
 
-Links point at commit `8693b22f` of `agoodkind/configs`, `7aa0177e` of `agoodkind/opnsensectl`, and `6795d9c6` of `YangModels/yang`, so the references stay true as files move.
+Links point at commit `8693b22f` of `agoodkind/configs` and `6795d9c6` of `YangModels/yang`, so the references stay true as files move.
 
 ## The rule
 
