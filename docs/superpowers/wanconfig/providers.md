@@ -8,11 +8,15 @@ load and renders the systemd-networkd unit files for the provider's link
 from it. No provider name appears in Go outside tests, and no file is
 written by hand for a provider.
 
-One link is exempt: the AT&T physical interface, which runs 802.1X
-authentication and carries a fixed address for the fiber module. Its `.link`
-and `.network` units stay in the repository with the 802.1X services that
-reference them. The AT&T provider link is the VLAN on that interface, and the
-VLAN renders like every other provider.
+One provider is exempt: AT&T, whose link runs 802.1X authentication before the
+provider answers a lease at all. Its entry says so in one leaf and carries no
+link identity, so the daemon renders nothing for it and its four unit files
+stay in the repository: the physical `.link` and `.network`, the VLAN
+`.netdev`, and the VLAN `.network`. Those files are the description of that
+link. Nothing in the configuration file describes it a second time, and
+nothing checks them against anything, because a second description of a link
+this delicate is the thing worth avoiding. The authentication chain that
+drives them stays beside them.
 
 This piece depends on the configuration format, so the inventory is written
 once in its final shape.
@@ -56,20 +60,12 @@ mwan_providers:
     from_prio: 55
     tier: 0
     weight: 1
-    link:
-      iface: enatt0
-      vlan_id: 3242
-    ipv4:
-      forwarding: true
-      dhcp: true
-    ipv6:
-      forwarding: true
-      dhcp: true
-      accept_ra: true
-      delegation:
-        hint: "::/60"
-        duid_type: vendor
-        duid: "..."
+    # This link's four unit files are hand-authored and describe it on their
+    # own, so the entry carries no link block and no per-family addressing.
+    # It names the interface the daemon steers and says nothing about how
+    # that interface comes up.
+    link_files: hand-authored
+    iface: enatt0.3242
     npt_prefix: "2600:1700:2f71:c80::/60"
     forced_dscp: cs1
     static_mappings:
@@ -404,64 +400,43 @@ network.json: enmbrains0: networkd section DHCPv6 key PrefixDelegationHint is se
 
 ### Example: a provider on a VLAN
 
-AT&T's provider link is a VLAN on the physical 802.1X link. The entry names
-the parent and the tag:
+A provider that hands off on a tagged VLAN names its parent and its tag. The
+parent is an interface in the same document, with a link block of its own:
 
 ```json
 "goodkind-mwan-steering:link": {
-  "vlan": { "parent": "enatt0", "id": 3242 },
-  "delegation": { "hint": "::/60", "duid-type": "vendor", "duid": "..." }
+  "vlan": { "parent": "ensonic0", "id": 101 }
 }
 ```
 
-The daemon writes `21-att-vlan.netdev`:
+The daemon writes the VLAN's `.netdev`:
 
 ```ini
 [NetDev]
-Name=enatt0.3242
+Name=ensonic0.101
 Kind=vlan
 
 [VLAN]
-Id=3242
+Id=101
 ```
 
-and `21-att-vlan.network`:
+and its `.network`, from the same typed leaves every other provider uses.
 
-```ini
-[Match]
-Name=enatt0.3242
-
-[Network]
-DHCP=yes
-IPv6AcceptRA=yes
-IPv4Forwarding=yes
-IPv6Forwarding=yes
-
-[DHCPv6]
-DUIDType=vendor
-DUIDRawData=...
-PrefixDelegationHint=::/60
-```
-
-A VLAN exists only because its parent's `.network` names it. The parent
-therefore carries a line naming the child:
+A VLAN exists only because its parent's `.network` names it, with a line
+carrying the child's name:
 
 ```ini
 [Network]
-VLAN=enatt0.3242
+VLAN=ensonic0.101
 ```
 
-For AT&T that line is already in the hand-authored `20-att.network`, beside the
-802.1X match and the fiber-module address, and it stays there with the rest of
-that file. The renderer never writes the AT&T parent, so the entry and that
-file have to agree: the fidelity comparison checks that every VLAN a provider
-entry declares is named by its parent's file, whether that file is rendered or
-hand-authored, and reports a VLAN whose parent does not name it.
-
-For a VLAN on any other parent, the parent is a rendered link like any other
-and the renderer emits the naming line into its `.network` from the child's
-entry. No entry declares its own children; the child names its parent and the
+The renderer emits that line into the parent's file from the child's entry.
+No entry declares its own children; the child names its parent, and the
 renderer reads the list the other way.
+
+AT&T is not this case. Its link comes up through 802.1X authentication and its
+four unit files are hand-authored, so its entry carries no link block and the
+daemon writes nothing for it.
 
 ### Example: a shape with no typed leaf at all
 
@@ -535,8 +510,8 @@ cutover.
 The rendered systemd-networkd units for the current provider set are
 identical to the hand-authored files they replace, outside comment lines.
 This comparison runs in CI against the checked-in files before those files
-are deleted. The AT&T physical link's two units are excluded, because they
-stay.
+are deleted. AT&T's four files are excluded, because they stay and nothing in
+the configuration file describes that link.
 
 A fourth provider can be added, re-tiered, and removed by one inventory entry
 and a configuration deploy, with the binary unchanged and no file written by
@@ -560,10 +535,17 @@ there surfaces as a networkd warning on the gateway, not as a deploy failure.
 The typed leaves exist so the common shapes do not take that path.
 
 A VLAN whose parent's file does not name it is created by nothing, and the
-provider is simply absent with no error from any layer. The fidelity
-comparison checks the naming line in both directions, and the daemon fails the
+provider is simply absent with no error from any layer. The daemon fails the
 load when a provider declares a VLAN parent that no interface in the same
-document describes.
+document describes, which is the case this catches. AT&T is outside it: its
+entry declares no parent, and its hand-authored files carry the naming line
+themselves.
+
+A provider with no link identity is a provider the daemon does not bring up.
+That is the point for AT&T, whose files are hand-authored, and it is a mistake
+for anyone else. The load fails when an entry carries neither link identity
+nor an explicit statement that its files are hand-authored, so the exemption
+is written down rather than inferred from an absence.
 
 The ordering within the firewall's translation chain decides behavior,
 because a translation statement stops rule evaluation. Grouping outbound
