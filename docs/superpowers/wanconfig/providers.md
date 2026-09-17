@@ -60,8 +60,10 @@ mwan_providers:
       iface: enatt0
       vlan_id: 3242
     ipv4:
+      forwarding: true
       dhcp: true
     ipv6:
+      forwarding: true
       dhcp: true
       accept_ra: true
       delegation:
@@ -96,10 +98,12 @@ mwan_providers:
       match: { driver: igc }
       mac: "..."
     ipv4:
+      forwarding: true
       address: "136.25.91.242/29"
       gateway: "136.25.91.241"
       route_metric: 10
     ipv6:
+      forwarding: true
       dhcp: true
       accept_ra: true
       delegation:
@@ -122,9 +126,11 @@ mwan_providers:
       iface: enmbrains0
       match: { mac: "..." }
     ipv4:
+      forwarding: true
       dhcp: true
       route_metric: 5000
     ipv6:
+      forwarding: true
       dhcp: true
       accept_ra: true
       route_metric: 5000
@@ -150,6 +156,12 @@ targets. It gets no IPv6 lease, no translation, and no IPv6 source rule.
 
 Each value is typed once. Where a gateway entry and a simulator definition
 describe the same wire, both read the service map.
+
+Inventory writes an address the way an operator writes one, as a prefix in
+slash notation. The published model splits it into an address and a prefix
+length, so the template that renders the configuration file splits it too. That
+is the only shape difference between an entry and the document it produces, and
+it exists because both sides are written for their own reader.
 
 The pinned-destination lists carry no provider name. `mwan_pin_provider`
 names the provider the pins target. The seed and name lists are named for
