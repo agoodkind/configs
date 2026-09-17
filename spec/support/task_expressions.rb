@@ -21,13 +21,13 @@ module TaskExpressions
   # One set_fact task the way the evaluator renders it: its when list, its task
   # vars, and the facts it sets.
   def fact_task(task)
-    { 'when' => condition_list(task['when']), 'vars' => string_map(task['vars']), 'set_fact' => string_map(task[SET_FACT_KEY]) }
+    { 'when' => condition_list(task['when']), 'vars' => value_map(task['vars']), 'set_fact' => value_map(task[SET_FACT_KEY]) }
   end
 
   # One set of templates the evaluator renders after the facts, with the task's
   # own vars in scope.
   def render_task(task, templates)
-    { 'vars' => string_map(task['vars']), 'templates' => string_map(templates) }
+    { 'vars' => value_map(task['vars']), 'templates' => value_map(templates) }
   end
 
   # A when, changed_when, or similar field, which Ansible accepts as one
@@ -39,10 +39,13 @@ module TaskExpressions
     [scalar_text(value)]
   end
 
-  def string_map(value)
+  # A mapping of task fields as YAML loaded them. A string is a template the
+  # evaluator renders; a list, mapping, number, or boolean is a literal value
+  # the way Ansible treats it, so it passes through unchanged.
+  def value_map(value)
     return {} if value.nil?
 
-    value.transform_values { |item| scalar_text(item) }
+    value
   end
 
   def scalar_text(value)

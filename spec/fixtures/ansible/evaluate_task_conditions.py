@@ -26,19 +26,21 @@ type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, J
 
 
 class FactTask(TypedDict):
-    """One set_fact task: its when list, its task vars, and the facts it sets."""
+    """One set_fact task: its when list, its task vars, and the facts it sets.
+    A string value is a template; any other value is a literal, as YAML
+    loaded it."""
 
     when: list[str]
-    vars: dict[str, str]
-    set_fact: dict[str, str]
+    vars: dict[str, JsonValue]
+    set_fact: dict[str, JsonValue]
 
 
 class RenderTask(TypedDict):
     """One set of templates to render after the facts: the task vars in scope
     and the templates, keyed by the name each result is reported under."""
 
-    vars: dict[str, str]
-    templates: dict[str, str]
+    vars: dict[str, JsonValue]
+    templates: dict[str, JsonValue]
 
 
 class EvaluationRequest(TypedDict):
@@ -69,23 +71,38 @@ def all_conditions_true(templar: Templar, conditions: list[str]) -> bool:
     return True
 
 
+def as_template(value: JsonValue) -> JsonValue:
+    """Mark a string as a template the way a task file's text is trusted. A
+    list, mapping, number, or boolean is a literal YAML value and stays one."""
+    if isinstance(value, str):
+        return trust_as_template(value)
+    return value
+
+
+def render_value(templar: Templar, value: JsonValue) -> JsonValue:
+    """Render a string template; pass a literal YAML value through."""
+    if isinstance(value, str):
+        return templar.template(trust_as_template(value))
+    return value
+
+
 def render_templates(
     loader: DataLoader,
     variables: dict[str, JsonValue],
-    task_vars: dict[str, str],
-    templates: dict[str, str],
+    task_vars: dict[str, JsonValue],
+    templates: dict[str, JsonValue],
 ) -> dict[str, JsonValue]:
     """Render one task's templates with its task vars in scope. Every value is
     rendered before any is reported, as set_fact does, and a templated name
     (a set_fact key that carries an expression) is rendered too."""
     task_scope: dict[str, JsonValue] = dict(variables)
-    for name, template in task_vars.items():
-        task_scope[name] = trust_as_template(template)
+    for name, value in task_vars.items():
+        task_scope[name] = as_template(value)
     templar = Templar(loader=loader, variables=task_scope)
     rendered: dict[str, JsonValue] = {}
-    for name, template in templates.items():
+    for name, value in templates.items():
         rendered_name = str(templar.template(trust_as_template(name)))
-        rendered[rendered_name] = templar.template(trust_as_template(template))
+        rendered[rendered_name] = render_value(templar, value)
     return rendered
 
 
