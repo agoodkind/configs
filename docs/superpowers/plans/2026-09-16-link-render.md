@@ -724,6 +724,15 @@ static address contributes are their own repeated `[Route]` sections and are
 built rather than looked up, because a route carries three keys that travel
 together.
 
+One line has no row, because it lands on a file the spec does not own. A VLAN
+exists only when its parent's `.network` carries `VLAN=<child>`, so that line
+belongs to the parent and is built from the child's `vlan.parent` leaf rather
+than looked up from the child's own placements. When the parent is itself a
+rendered interface, `Render` emits the line into the parent's file. When the
+parent is the AT&T physical link, whose file stays hand-authored, nothing is
+emitted and Task 9's gate is what proves the hand-authored file names the
+child.
+
 `Validate(spec Spec) error` walks the free-form sections, resolves each one
 against the placements the spec's own typed leaves occupy, and returns an error
 naming the section, the key, and the leaf that already sets it. Its own test
@@ -735,7 +744,10 @@ covers both directions with no file writing involved.
 `networkd.Spec` and calls `networkd.Validate`. An interface with a `wan`
 container and neither a device match nor a VLAN fails the load, as does one whose
 family container omits `dhcp`, and so does one whose `v4-source` disagrees with
-its own static IPv4 address.
+its own static IPv4 address. A provider naming a VLAN parent that no interface
+in the same document describes also fails the load, because a VLAN whose parent
+is absent is created by nothing and the provider would be silently missing with
+no error from any layer.
 
 ```go
 if err := networkd.Validate(spec); err != nil {
@@ -1016,7 +1028,16 @@ if len(changed) > 0 {
 At boot the daemon runs first, so `ReloadIfRunning` finds the network manager
 inactive and does nothing: the manager reads the fresh files when it starts.
 After a deploy the daemon restarts while the manager is already running, and the
-reload is what makes a changed file take effect without a reboot.
+reload is what makes a changed `.network` or `.netdev` take effect without a
+reboot.
+
+A changed `.link` is not carried by that reload, because udev reads a `.link`
+when the device appears and the reload does not revisit it. `WriteDir`
+therefore returns which kinds changed, and the caller compares the name each
+rendered `.link` asks for against the name the link currently carries. A
+difference is logged at warning level naming both names and saying the new one
+takes effect at the next reboot. The daemon never attempts the rename, which
+the kernel refuses on a link that is up.
 `networkjson.ApplyDefault` stays as it is for the debug command, which reads the
 configuration and renders nothing.
 
@@ -1074,7 +1095,13 @@ one section are compared as a set so a reordering inside a section is not a
 failure. A missing file, an extra file, a missing key, or a differing value is a
 failure that prints the file, the section, and the key.
 
-The AT&T physical pair is excluded by name, because those two files stay.
+The AT&T physical pair is excluded from the content comparison, because those
+two files stay hand-authored. They are not excluded from one check: for every
+provider whose entry names a VLAN parent, the script reads that parent's file,
+rendered or hand-authored, and fails when it carries no line naming the child.
+It fails in the other direction too, when a parent names a VLAN no entry
+declares. A VLAN with no naming line is created by nothing, and the provider is
+absent with no error anywhere else.
 
 - [ ] **Step 3: run it against both gateway groups and fix what it finds**
 
@@ -1211,7 +1238,15 @@ kernel refuses to rename a link that is up, so a late `.link` file is silently
 ineffective and the interface keeps the name it was given. The symptom is an
 interface named by its driver rather than by the provider, and every layer above
 keys on the provider name. Task 2 Step 3 reads the ordering out of the journal
-rather than assuming it.
+rather than assuming it. The same limit applies at runtime: a `.link` changed
+by a reload waits for the next reboot, which the daemon logs rather than
+hiding.
+
+**A VLAN whose parent does not name it is created by nothing.** The provider is
+then absent, with no error from the network manager, the daemon, or the deploy,
+because nothing asked for a device that does not exist. Two checks cover it:
+the loader fails when a VLAN parent matches no interface in the document, and
+the gate compares the naming line in both directions against the parent's file.
 
 **A rewrite with identical content changes a modification time.** That is enough
 for udev to reconsider a device. `WriteDir` compares before it writes, and the
