@@ -153,14 +153,12 @@ curl -k -u "$KEY:$SECRET" "https://$LAN_IP/api/core/firmware/status"
 
 ## Install the daemon
 
-The daemon binary is a published opnsensectl release, not a local build. Stage
-one on the controller by naming its tag; the deploy command downloads it,
-verifies its GitHub attestation, and unpacks it under
-`.make/releases/opnsensectl/<tag>/`:
+The daemon binary is a published opnsensectl release, not a local build. The
+deploy pulls the release the testbed pins, verifies its GitHub attestation, and
+unpacks it under `.make/releases/opnsensectl/<tag>/`:
 
 ```bash
-./configsctl deploy deploy-opnsense \
-  --opnsensectl-release <tag> --limit opnsense_suburban_servers --check
+./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers --check
 ```
 
 The check run stages the release without touching the guest. Copy the daemon

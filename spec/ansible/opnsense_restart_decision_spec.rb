@@ -3,7 +3,7 @@
 require 'json'
 require 'yaml'
 require_relative '../support/ansible_render'
-require_relative '../support/command_runner'
+require_relative '../support/task_expressions'
 
 # These checks evaluate the OPNsense deploy's restart decision with ansible-core's
 # own templar. They read the set_fact tasks and the condition lists from the real
@@ -12,10 +12,8 @@ require_relative '../support/command_runner'
 # hypervisor are supplied, shaped the way those tasks register them.
 module OpnsenseRestartDecision
   TASK_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible', 'playbooks', 'tasks', 'mwan-opnsense-deploy.yml')
-  EVALUATOR = File.join(AnsibleRender::FIXTURE_DIRECTORY, 'evaluate_task_conditions.py')
   RESTART_TASK_NAME = 'Restart the daemon onto the installed binary'
   MARK_HEALTHY_TASK_NAME = 'Mark the running daemon binary healthy'
-  SET_FACT_KEY = 'ansible.builtin.set_fact'
   RESTART_CONDITION = 'restart_when'
   MARK_HEALTHY_CONDITION = 'mark_healthy_changed_when'
   RELEASE_COMMIT = '9b12ead3d6525538d098bb80601b373efae6d6d1'
@@ -34,31 +32,26 @@ module OpnsenseRestartDecision
 
   module_function
 
-  # A registered ansible.builtin.command or script result.
-  def command_result(exit_code, stdout, stderr)
-    { 'changed' => false, 'failed' => false, 'rc' => exit_code, 'stdout' => stdout, 'stderr' => stderr }
-  end
-
   CASES = [
     {
       name: 'installed binary changed', binary_changed: true, instances_exit: 0,
-      version: command_result(0, RELEASE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
+      version: TaskExpressions.command_result(0, RELEASE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
     },
     {
       name: 'instance check failed', binary_changed: false, instances_exit: 1,
-      version: command_result(0, RELEASE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
+      version: TaskExpressions.command_result(0, RELEASE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
     },
     {
       name: 'running daemon reports a stale commit', binary_changed: false, instances_exit: 0,
-      version: command_result(0, STALE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
+      version: TaskExpressions.command_result(0, STALE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
     },
     {
       name: 'version read failed', binary_changed: false, instances_exit: 0,
-      version: command_result(1, '', VERSION_READ_ERROR), want_restart: true, want_mark_changed: true
+      version: TaskExpressions.command_result(1, '', VERSION_READ_ERROR), want_restart: true, want_mark_changed: true
     },
     {
       name: 'daemon already runs the release', binary_changed: false, instances_exit: 0,
-      version: command_result(0, RELEASE_VERSION_LINE, ''), want_restart: false, want_mark_changed: false
+      version: TaskExpressions.command_result(0, RELEASE_VERSION_LINE, ''), want_restart: false, want_mark_changed: false
     }
   ].freeze
 
@@ -76,65 +69,24 @@ module OpnsenseRestartDecision
   def collect(decision, tasks)
     tasks.each do |task|
       if task['name'] == RESTART_TASK_NAME
-        decision.restart_when = condition_list(task['when'])
+        decision.restart_when = TaskExpressions.condition_list(task['when'])
         decision.found_restart = true
       elsif task['name'] == MARK_HEALTHY_TASK_NAME
-        decision.mark_healthy_when = condition_list(task['changed_when'])
+        decision.mark_healthy_when = TaskExpressions.condition_list(task['changed_when'])
         decision.found_mark_healthy = true
-      elsif !task[SET_FACT_KEY].nil? && !decision.found_restart
-        decision.facts << fact_task(task)
+      elsif !task[TaskExpressions::SET_FACT_KEY].nil? && !decision.found_restart
+        decision.facts << TaskExpressions.fact_task(task)
       end
       collect(decision, task['block'] || [])
     end
   end
 
-  def fact_task(task)
-    { 'when' => condition_list(task['when']), 'vars' => string_map(task['vars']), 'set_fact' => string_map(task[SET_FACT_KEY]) }
-  end
-
-  # A when, changed_when, or similar field, which Ansible accepts as one
-  # expression or a list of them.
-  def condition_list(value)
-    return [] if value.nil?
-    return value.map { |item| scalar_text(item) } if value.is_a?(Array)
-
-    [scalar_text(value)]
-  end
-
-  def string_map(value)
-    return {} if value.nil?
-
-    value.transform_values { |item| scalar_text(item) }
-  end
-
-  def scalar_text(value)
-    return '' if value.nil?
-
-    value.to_s
-  end
-
   def evaluate(decision, variables)
-    payload = JSON.generate(
-      'variables' => variables,
-      'facts' => decision.facts,
-      'conditions' => { RESTART_CONDITION => decision.restart_when, MARK_HEALTHY_CONDITION => decision.mark_healthy_when }
+    TaskExpressions.evaluate(
+      variables: variables,
+      facts: decision.facts,
+      conditions: { RESTART_CONDITION => decision.restart_when, MARK_HEALTHY_CONDITION => decision.mark_healthy_when }
     )
-    result = CommandRunner.capture(
-      [AnsibleRender.ansible_python, EVALUATOR],
-      stdin_data: payload,
-      chdir: AnsibleRender::REPOSITORY_ROOT,
-      timeout_seconds: AnsibleRender::PLAYBOOK_TIMEOUT_SECONDS
-    )
-    raise "evaluate conditions exceeded #{AnsibleRender::PLAYBOOK_TIMEOUT_SECONDS}s\n#{result.error_output}" if result.timed_out
-    raise "evaluate conditions: #{result.exit_status}\n#{result.error_output}" unless result.exit_status.success?
-
-    decode(result.output)
-  end
-
-  def decode(output)
-    JSON.parse(output)
-  rescue JSON::ParserError => e
-    raise "decode evaluator output: #{e.message}\n#{output}"
   end
 end
 
@@ -149,7 +101,7 @@ RSpec.describe OpnsenseRestartDecision do
         'ansible_check_mode' => false,
         'opnsensectl_release_commit' => OpnsenseRestartDecision::RELEASE_COMMIT,
         'mwan_opnsense_binary_install' => { 'changed' => test_case[:binary_changed], 'failed' => false },
-        'mwan_opnsense_instances_before' => described_class.command_result(test_case[:instances_exit], '', ''),
+        'mwan_opnsense_instances_before' => TaskExpressions.command_result(test_case[:instances_exit], '', ''),
         'mwan_opnsense_version_before' => test_case[:version]
       }
       result = described_class.evaluate(@decision, variables)

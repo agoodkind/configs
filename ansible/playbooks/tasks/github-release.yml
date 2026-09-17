@@ -1,0 +1,206 @@
+---
+# Pull one pinned GitHub release onto the controller and verify it. A deploy
+# play imports this file once per release it installs, with these vars:
+#
+#   release_repo        the GitHub repository
+#   release_tag         the release tag
+#   release_assets      a list of name and checksum; the checksum is
+#                       sha256:<hex> from the release's checksums.txt
+#   release_required_assets
+#                       the archive names the play reads; the pull refuses a
+#                       pin that lacks one of them
+#   release_var_prefix  mwan or opnsensectl
+#
+# release_stage_root and release_signer_repo are set once in group_vars/all.
+# The controller needs gh logged in.
+#
+# Every task runs on the controller, once per host in the play, because the
+# two hypervisors pin different releases. A second run downloads and unpacks
+# nothing. The unpack marker carries the archive checksum, so a changed
+# checksum under the same tag unpacks again into an emptied directory. The
+# tasks also run in check mode.
+#
+# Layout under <release_stage_root>/<prefix>/<tag>/:
+#   <name>_<goos>_<goarch>.tar.gz   each archive as published
+#   <goos>_<goarch>/                the binary archive
+#   <name>/                         any other archive, so the wanconfig stack
+#                                   lands in wanconfig-stack/
+#
+# Facts set: <prefix>_release_tag, <prefix>_release_commit, <prefix>_release_dir,
+# and for mwan wanconfig_stack_dir. release_tag_dir, release_unpack_plan, and
+# release_commit_lookup are this file's scratch.
+
+- name: Start the unpack plan of {{ release_var_prefix }}
+  ansible.builtin.set_fact:
+    release_tag_dir: "{{ release_stage_root }}/{{ release_var_prefix }}/{{ release_tag }}"
+    release_unpack_plan: []
+
+# The archive name splits at its last two underscores into the name and the
+# platform. regex_findall returns the capture group, so no backreference
+# escape passes through Jinja.
+- name: Derive the unpack directory of each archive of {{ release_var_prefix }}
+  vars:
+    release_asset_name: "{{ item.name | regex_replace('_[^_]+_[^_]+\\.tar\\.gz$', '') }}"
+    release_asset_platform: "{{ item.name | regex_findall('_([^_]+_[^_]+)\\.tar\\.gz$') | first }}"
+    release_asset_folder: >-
+      {{ release_asset_platform if release_asset_name == release_var_prefix else release_asset_name }}
+    release_asset_dir: "{{ release_tag_dir }}/{{ release_asset_folder }}"
+    # The hex after the algorithm, so the marker names the exact archive.
+    release_asset_digest: "{{ item.checksum.split(':') | last }}"
+  ansible.builtin.set_fact:
+    release_unpack_plan: >-
+      {{ release_unpack_plan + [{
+           'name': item.name,
+           'checksum': item.checksum,
+           'archive': release_tag_dir ~ '/' ~ item.name,
+           'dir': release_asset_dir,
+           'marker': release_asset_dir ~ '/.unpacked-' ~ release_asset_digest
+         }] }}
+  loop: "{{ release_assets }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# A pin that lacks an archive the play reads would still set the facts below,
+# and the deploy would fail at a host copy after earlier tasks changed the
+# host. This assert fails on the controller before any host task runs. A name
+# without its platform suffix, or an entry without a checksum, already fails
+# in the plan above.
+- name: Refuse a plan of {{ release_var_prefix }} that lacks an archive the play reads
+  ansible.builtin.assert:
+    that:
+      - release_required_assets is subset(release_unpack_plan | map(attribute='name') | list)
+      - "release_unpack_plan | map(attribute='checksum') | reject('match', '^sha256:[0-9a-f]{64}$') | list | length == 0"
+    fail_msg: >-
+      {{ release_var_prefix }}_release_assets must list
+      {{ release_required_assets | join(' and ') }} and give each archive its
+      sha256:<hex> checksum; got {{ release_assets | to_json }}
+
+- name: Look for the unpack marker of each archive of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  ansible.builtin.stat:
+    path: "{{ item.marker }}"
+  loop: "{{ release_unpack_plan }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: release_unpack_markers
+
+# An unpack directory holds the members of exactly one archive. A directory
+# without the pinned archive's marker is removed before the unpack, so no
+# member of an earlier archive reaches a host.
+- name: Remove the unpack directory of each archive not yet unpacked of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  throttle: 1
+  check_mode: false
+  ansible.builtin.file:
+    path: "{{ item.item.dir }}"
+    state: absent
+  loop: "{{ release_unpack_markers.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: not item.stat.exists
+
+- name: Create the stage directories of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  throttle: 1
+  check_mode: false
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ [release_tag_dir] + (release_unpack_plan | map(attribute='dir') | list) }}"
+
+- name: Download the release archives of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  throttle: 1
+  check_mode: false
+  ansible.builtin.get_url:
+    url: "https://github.com/{{ release_repo }}/releases/download/{{ release_tag }}/{{ item.name }}"
+    dest: "{{ item.archive }}"
+    checksum: "{{ item.checksum }}"
+    mode: "0644"
+  loop: "{{ release_unpack_plan }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# The attestation ties the archive to the workflow run that built it, so an
+# archive replaced after publication fails here even with a matching checksum.
+# The check names the release repository and the reusable workflow that signs
+# it, because gh rejects the repository match without the signer.
+- name: Verify the GitHub attestation of each archive of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  throttle: 1
+  check_mode: false
+  ansible.builtin.command:
+    argv:
+      - gh
+      - attestation
+      - verify
+      - "{{ item.archive }}"
+      - --repo
+      - "{{ release_repo }}"
+      - --signer-repo
+      - "{{ release_signer_repo }}"
+  loop: "{{ release_unpack_plan }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+
+- name: Unpack each archive of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  throttle: 1
+  check_mode: false
+  ansible.builtin.unarchive:
+    src: "{{ item.archive }}"
+    dest: "{{ item.dir }}"
+    remote_src: true
+    creates: "{{ item.marker }}"
+  loop: "{{ release_unpack_plan }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# The marker the unpack above checks. It is written only after the whole
+# archive unpacked, and its name carries that archive's checksum.
+- name: Mark each unpacked archive of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  throttle: 1
+  check_mode: false
+  ansible.builtin.copy:
+    content: "{{ item.checksum }}\n"
+    dest: "{{ item.marker }}"
+    mode: "0644"
+  loop: "{{ release_unpack_plan }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Resolve the release tag of {{ release_var_prefix }} to its commit
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  ansible.builtin.command:
+    argv:
+      - gh
+      - api
+      - "repos/{{ release_repo }}/commits/{{ release_tag }}"
+      - --jq
+      - .sha
+  register: release_commit_lookup
+  changed_when: false
+
+- name: Name the release for the play as {{ release_var_prefix }}
+  ansible.builtin.set_fact:
+    "{{ release_var_prefix }}_release_tag": "{{ release_tag }}"
+    "{{ release_var_prefix }}_release_commit": "{{ release_commit_lookup.stdout | trim }}"
+    "{{ release_var_prefix }}_release_dir": "{{ release_tag_dir }}"
+
+- name: Name the wanconfig stack directory for the play
+  ansible.builtin.set_fact:
+    wanconfig_stack_dir: "{{ release_tag_dir }}/wanconfig-stack"
+  when: release_var_prefix == 'mwan'
