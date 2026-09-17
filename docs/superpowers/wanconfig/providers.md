@@ -231,9 +231,11 @@ starts: its unit carries `DefaultDependencies=no` and orders itself before
 `.link` file when a device appears, and the kernel refuses to rename a link
 that is already up, so the files must be on disk before either happens. The
 daemon writes the unit files first, then waits on netlink for the links as it
-does today. It renders again whenever it reloads the configuration, writes a
-file only when the content differs from what is on disk, and asks
-systemd-networkd to reload after a write. Its sandbox gains a write path for
+does today. It renders again whenever it reloads the configuration, tracks
+which unit files it wrote for the current provider list, deletes any it wrote
+for a provider that list no longer names, writes a file only when the content
+differs from what is on disk, and asks systemd-networkd to reload after a
+write or a deletion. Its sandbox gains a write path for
 the network manager's unit directory. The firewall keeps loading before
 `network-pre.target`, and the daemon takes no ordering after
 `network-online.target`, which would close a cycle.
