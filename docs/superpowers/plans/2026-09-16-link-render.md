@@ -20,7 +20,7 @@ still holds.
 
 - The daemon is the only writer of a provider link's unit files. Neither the deploy nor any verb of the binary run by hand writes one.
 - systemd-networkd keeps matching, naming, addressing, and leasing every link. Nothing in this plan moves a lease or a netlink write off it.
-- The AT&T physical interface keeps its two hand-authored units, because the 802.1X services reference them. The AT&T provider link is the VLAN above it and renders like every other provider.
+- AT&T is exempt entirely. Its entry names its files hand-authored in one leaf and carries no link identity, so the daemon renders none of its four unit files and nothing compares them against the entry. A link that comes up through 802.1X authentication is described once, in the files beside the services that drive it.
 - The boot-order change lands and is proven on its own, before any renderer code reaches a gateway, so a failure in either is attributable to one of them.
 - The hand-authored per-provider unit files are deleted only in a change whose continuous integration check already proves the rendered output matches them outside comment lines.
 - A key set by both the typed layer and the free-form layer is a load-time failure, never a silent override.
@@ -356,6 +356,21 @@ A new augment beside the existing interface augments:
        device the interface is bound to, the tag a VLAN carries, or the
        identity a delegation is requested with.";
 
+    leaf link-files {
+      type enumeration {
+        enum rendered;
+        enum hand-authored;
+      }
+      description
+        "Who writes this interface's unit files. An interface carrying a
+         wan container states one or the other: rendered means it carries a
+         link container the daemon writes files from, and hand-authored
+         means its files are in the repository and this model says nothing
+         about how the link comes up. An interface that states neither
+         fails the load, so an unwritten link container is caught rather
+         than read as an exemption.";
+    }
+
     container link {
       description
         "What the device is, what it is named, and how it is created.";
@@ -383,8 +398,7 @@ A new augment beside the existing interface augments:
         type yang:mac-address;
         description
           "The address to set on the device, which is not always the
-           address it is matched by: one provider authenticates with an
-           address this gateway assigns.";
+           address it is matched by.";
       }
 
       container vlan {
@@ -724,14 +738,12 @@ static address contributes are their own repeated `[Route]` sections and are
 built rather than looked up, because a route carries three keys that travel
 together.
 
-One line has no row, because it lands on a file the spec does not own. A VLAN
+One line has no row, because it lands on another interface's file. A VLAN
 exists only when its parent's `.network` carries `VLAN=<child>`, so that line
 belongs to the parent and is built from the child's `vlan.parent` leaf rather
-than looked up from the child's own placements. When the parent is itself a
-rendered interface, `Render` emits the line into the parent's file. When the
-parent is the AT&T physical link, whose file stays hand-authored, nothing is
-emitted and Task 9's gate is what proves the hand-authored file names the
-child.
+than looked up from the child's own placements. `Render` emits it into the
+parent's file, and the loader has already failed any entry whose parent no
+interface in the document describes.
 
 `Validate(spec Spec) error` walks the free-form sections, resolves each one
 against the placements the spec's own typed leaves occupy, and returns an error
@@ -748,6 +760,11 @@ its own static IPv4 address. A provider naming a VLAN parent that no interface
 in the same document describes also fails the load, because a VLAN whose parent
 is absent is created by nothing and the provider would be silently missing with
 no error from any layer.
+
+An entry carrying neither link identity nor `link_files: hand-authored` fails
+the load too. The exemption is a stated leaf, never an inferred absence, so a
+provider whose link block someone forgot to write is caught rather than
+quietly left unrendered.
 
 ```go
 if err := networkd.Validate(spec); err != nil {
@@ -819,6 +836,11 @@ the entry references that variable rather than repeating the value:
 Read each current template under `mwan/networkd/` and carry every key it emits
 into either a typed leaf or a free-form entry. A key left behind is a key the
 gate in Task 9 will report.
+
+AT&T is the exception and gets the opposite treatment. Its entry gains
+`link_files: hand-authored`, no link block, and no per-family addressing, and
+its four templates stay exactly as they are. Nothing about that link is
+written into inventory twice.
 
 - [ ] **Step 2: emit it from the existing loop**
 
@@ -1095,13 +1117,13 @@ one section are compared as a set so a reordering inside a section is not a
 failure. A missing file, an extra file, a missing key, or a differing value is a
 failure that prints the file, the section, and the key.
 
-The AT&T physical pair is excluded from the content comparison, because those
-two files stay hand-authored. They are not excluded from one check: for every
-provider whose entry names a VLAN parent, the script reads that parent's file,
-rendered or hand-authored, and fails when it carries no line naming the child.
-It fails in the other direction too, when a parent names a VLAN no entry
-declares. A VLAN with no naming line is created by nothing, and the provider is
-absent with no error anywhere else.
+AT&T's four files are excluded outright, because its entry names them
+hand-authored and describes nothing about that link. The script reads the
+`link_files` leaf to decide, rather than carrying a provider name.
+
+For every provider whose entry does name a VLAN parent, the script reads the
+parent's rendered file and fails when it carries no line naming the child, and
+fails in the other direction when a parent names a VLAN no entry declares.
 
 - [ ] **Step 3: run it against both gateway groups and fix what it finds**
 
@@ -1130,7 +1152,7 @@ git commit -S -m "Compare rendered and hand-authored networkd unit files in CI"
 ### Task 10: the per-provider templates and the deploy loop go
 
 **Files:**
-- Delete: every file under `mwan/networkd/` except `20-att.link.j2` and `20-att.network.j2`
+- Delete: every file under `mwan/networkd/` except AT&T's four: `20-att.link.j2`, `20-att.network.j2`, `21-att-vlan.netdev.j2`, and `21-att-vlan.network.j2`
 - Modify: `ansible/inventory/group_vars/mwan_servers.yml`, `mwan_suburban_servers.yml`
 - Modify: `ansible/playbooks/deploy-mwan.yml`
 
@@ -1141,7 +1163,7 @@ git commit -S -m "Compare rendered and hand-authored networkd unit files in CI"
 - [ ] **Step 1: shorten `mwan_networkd_files` in both groups**
 
 Each group keeps the management pair, the internal bridge pair, and, for
-production, the AT&T physical pair. Every other name goes.
+production, AT&T's four files. Every other name goes.
 
 - [ ] **Step 2: delete the templates**
 
@@ -1150,9 +1172,10 @@ testbed forks and the astound pair.
 
 - [ ] **Step 3: point the gate at what remains**
 
-The gate now has only the AT&T physical pair to exclude and no per-provider
+The gate now has only AT&T's four files to exclude and no per-provider
 templates to render. It keeps running as a guard that nothing reintroduces one:
-a template under `mwan/networkd/` naming a provider is a failure.
+a template under `mwan/networkd/` for a provider whose entry does not name its
+files hand-authored is a failure.
 
 - [ ] **Step 4: run the gates**
 
@@ -1247,6 +1270,12 @@ then absent, with no error from the network manager, the daemon, or the deploy,
 because nothing asked for a device that does not exist. Two checks cover it:
 the loader fails when a VLAN parent matches no interface in the document, and
 the gate compares the naming line in both directions against the parent's file.
+
+**An exemption inferred from an absence hides a mistake.** An entry with no
+link block looks the same whether its files are deliberately hand-authored or
+its link block was never written. The `link_files` leaf makes the first case
+explicit and the second a load failure, which is why the exemption is a
+statement rather than a silence.
 
 **A rewrite with identical content changes a modification time.** That is enough
 for udev to reconsider a device. `WriteDir` compares before it writes, and the
