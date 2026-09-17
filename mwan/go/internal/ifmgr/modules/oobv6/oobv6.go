@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package oobv6 implements the oob role's IPv6 module: it ensures the
 // static OOB v6 address is present on the watched iface, mirrors the
 // RA-learned default from the main table into the OOB routing table,

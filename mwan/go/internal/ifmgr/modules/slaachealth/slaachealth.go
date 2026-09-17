@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package slaachealth implements the failover SLAAC health
 // module: detects when a global IPv6 SLAAC address has gone "deprecated"
 // (preferred_lft 0) or when probes to upstream targets fail, then escalates

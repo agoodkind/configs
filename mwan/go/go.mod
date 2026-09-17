@@ -4,15 +4,12 @@ go 1.27.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/antchfx/xmlquery v1.5.1
-	github.com/beevik/etree v1.6.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/nftables v0.3.0
 	github.com/google/renameio/v2 v2.0.2
 	github.com/goreleaser/nfpm/v2 v2.47.0
-	github.com/hashicorp/yamux v0.1.2
 	github.com/insomniacslk/dhcp v0.0.0-20260719225207-c76316d4aa82
 	github.com/mdlayher/ndp v1.1.0
 	github.com/mdlayher/vsock v1.2.1
@@ -24,7 +21,6 @@ require (
 	goodkind.io/send-email v0.0.0-20260915031807-a1cbbafb140f
 	google.golang.org/grpc v1.83.1
 	google.golang.org/protobuf v1.36.11
-	gopkg.in/yaml.v3 v3.0.1
 	pault.ag/go/debian v0.21.0
 )
 
@@ -36,7 +32,6 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
-	github.com/antchfx/xpath v1.3.6 // indirect
 	github.com/blakesmith/ar v0.0.0-20190502131153-809d4375e1fb // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect

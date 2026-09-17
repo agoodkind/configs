@@ -1,5 +1,3 @@
-//go:build linux
-
 package netif
 
 // StripPrefix returns the address half of a CIDR like "3d06:bad:b01:ff::1/128"
