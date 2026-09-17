@@ -29,7 +29,7 @@ still holds.
 - The delegation client identity is a public identifier and lives in the configuration file. No secret ever enters the JSON.
 - The daemon takes no ordering after `network-online.target`, which would close the cycle the firewall override documents.
 - Behavior for the current provider set is unchanged, judged through the served tree, the policy rules, the routing tables, the firewall, and the traffic matrix.
-- Every mwan-installing deploy requires `--release <tag>`.
+- A deploy names no release on the command line. Each play installs the release its environment pins in group variables, verifying the checksum and the attestation on the controller. Moving a pin is its own reviewed commit carrying the new tag and both checksum lines.
 - Testbed before production, always. Each production command is separately approved by the operator immediately before it runs, and every gateway reboot window is announced to the peer sessions before it opens and reported after it closes.
 - Go style: comments explain non-obvious why, never what; full-word names; struct literals enumerate every field, because the `exhaustruct` gate requires it; every wrapped error is logged with slog by the function that wraps it; no lint suppressions.
 - Tests exercise real behavior through public boundaries, with fakes at the kernel seam only. A rendering test compares real serializer output against a real checked-in file.
@@ -213,6 +213,10 @@ command, the host, and the observed output.
 - Consumes: Task 1's unit file, merged and released.
 - Produces: the recorded proof that gates the production run in Task 3.
 
+Each of the two deploys below installs the release its environment pins, so
+each is preceded by its own reviewed pin commit naming the build that carries
+this task's unit file.
+
 - [ ] **Step 1: capture the testbed before the cutover**
 
 ```bash
@@ -228,10 +232,14 @@ Take the served tree as well, from the testbed's management address.
 - [ ] **Step 2: deploy, verify the unit, reboot**
 
 ```bash
-./configsctl deploy deploy-mwan --release <tag> --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --limit mwan_suburban_servers
 ssh mwan-testbed 'systemd-analyze verify /etc/systemd/system/mwan-ifmgr@.service'
 ssh mwan-testbed 'systemctl reboot'
 ```
+
+The play installs the release the testbed group pins, so moving to the build
+that carries this task's unit file is a pin commit of its own, merged before
+this deploy runs.
 
 Expected: `systemd-analyze verify` prints nothing, which is how it reports a unit
 with no ordering cycle and no unknown directive. A cycle prints the loop it broke
@@ -294,12 +302,16 @@ only what was approved.
 - [ ] **Step 2: run the deploy in check mode**
 
 ```bash
-./configsctl deploy deploy-mwan --release <tag> --limit mwan_servers --check --diff
+./configsctl deploy deploy-mwan --limit mwan_servers --check --diff
 ```
 
 Expected: the only reported change is the ifmgr unit file, whose diff shows the
 new ordering block and the extended write path. Any other changed file is a
 finding. Stop and report it rather than proceeding.
+
+The production pin moves in its own reviewed commit before this runs, and the
+check-mode run is what shows that moving it changes the unit file and nothing
+else.
 
 - [ ] **Step 3: capture production, announce, ask, then deploy**
 
@@ -1215,7 +1227,7 @@ ssh mwan-testbed 'for f in /etc/systemd/network/*; do echo "== $f"; cat "$f"; do
 - [ ] **Step 2: deploy and reboot**
 
 ```bash
-./configsctl deploy deploy-mwan --release <tag> --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --limit mwan_suburban_servers
 ssh mwan-testbed 'systemctl reboot'
 ```
 
