@@ -22,26 +22,31 @@ module GithubRelease
   OPNSENSECTL_REPO = 'agoodkind/opnsensectl'
   OPNSENSECTL_TAG = '202609151528-1-a1fe548'
   OPNSENSECTL_COMMIT = 'a1fe5484c0c37b4097999412c607eeafd4c0a65a'
-  CHECKSUM_DIGEST = 'ddfe74f593d5ecf54f29c370d09135b106ea2684be27bed8c5159bee4a94b890'
-  CHECKSUM = "sha256:#{CHECKSUM_DIGEST}"
+  CHECKSUM_PREFIX = 'sha256:'
 
   # The task file's expressions: every set_fact task without a loop in file
   # order, the looped set_fact that plans one archive, and the download and
   # unpack fields that read that plan.
   Expressions = Struct.new(:facts, :plan, :download, :unpack, keyword_init: true)
 
+  # Each archive carries the digest its release's checksums.txt publishes for
+  # it, so the checksum that reaches the download is the one pinned for that
+  # archive and not another archive's.
   ARCHIVE_CASES = [
     {
       name: 'the binary archive', prefix: 'mwan', repo: MWAN_REPO, tag: MWAN_TAG,
-      archive: 'mwan_linux_amd64.tar.gz', want_dir: "#{STAGE_ROOT}/mwan/#{MWAN_TAG}/linux_amd64"
+      archive: 'mwan_linux_amd64.tar.gz', want_dir: "#{STAGE_ROOT}/mwan/#{MWAN_TAG}/linux_amd64",
+      digest: 'ddfe74f593d5ecf54f29c370d09135b106ea2684be27bed8c5159bee4a94b890'
     },
     {
       name: 'a data archive', prefix: 'mwan', repo: MWAN_REPO, tag: MWAN_TAG,
-      archive: 'wanconfig-stack_linux_amd64.tar.gz', want_dir: "#{STAGE_ROOT}/mwan/#{MWAN_TAG}/wanconfig-stack"
+      archive: 'wanconfig-stack_linux_amd64.tar.gz', want_dir: "#{STAGE_ROOT}/mwan/#{MWAN_TAG}/wanconfig-stack",
+      digest: '82beca3a786f1396431176de30c3752a6adcddbcbb89cd7f4e957ac94638516b'
     },
     {
       name: 'the binary archive of another platform', prefix: 'opnsensectl', repo: OPNSENSECTL_REPO, tag: OPNSENSECTL_TAG,
-      archive: 'opnsensectl_freebsd_amd64.tar.gz', want_dir: "#{STAGE_ROOT}/opnsensectl/#{OPNSENSECTL_TAG}/freebsd_amd64"
+      archive: 'opnsensectl_freebsd_amd64.tar.gz', want_dir: "#{STAGE_ROOT}/opnsensectl/#{OPNSENSECTL_TAG}/freebsd_amd64",
+      digest: '755be32a19fe0ff0a12b5d65b4828c5be59a14136e173850c1b706c2cac23132'
     }
   ].freeze
 
@@ -107,8 +112,8 @@ module GithubRelease
   end
 
   # The plan entry the looped set_fact appends for one archive.
-  def plan_entry(expressions, variables, archive)
-    plan_variables = variables.merge('item' => { 'name' => archive, 'checksum' => CHECKSUM })
+  def plan_entry(expressions, variables, archive, checksum)
+    plan_variables = variables.merge('item' => { 'name' => archive, 'checksum' => checksum })
     result = TaskExpressions.evaluate(variables: plan_variables, facts: expressions.facts, renders: [expressions.plan])
     plan = result['renders'].first.fetch(PLAN_FACT)
     raise "#{PLAN_FACT} = #{plan.inspect}, want a list of one entry" unless plan.is_a?(Array) && plan.size == 1
@@ -143,22 +148,23 @@ RSpec.describe GithubRelease do
       variables = described_class.base_variables(
         prefix: test_case[:prefix], repo: test_case[:repo], tag: test_case[:tag], commit: GithubRelease::MWAN_COMMIT
       )
-      entry = described_class.plan_entry(@expressions, variables, test_case[:archive])
+      checksum = "#{GithubRelease::CHECKSUM_PREFIX}#{test_case[:digest]}"
+      entry = described_class.plan_entry(@expressions, variables, test_case[:archive], checksum)
       want_archive = "#{GithubRelease::STAGE_ROOT}/#{test_case[:prefix]}/#{test_case[:tag]}/#{test_case[:archive]}"
       want_url = "https://github.com/#{test_case[:repo]}/releases/download/#{test_case[:tag]}/#{test_case[:archive]}"
 
       expect(entry['dir']).to eq(test_case[:want_dir]), "unpack dir = #{entry['dir'].inspect}, want #{test_case[:want_dir].inspect}"
       expect(entry['archive']).to eq(want_archive), "archive = #{entry['archive'].inspect}, want #{want_archive.inspect}"
-      expect(entry['checksum']).to eq(GithubRelease::CHECKSUM), "checksum = #{entry['checksum'].inspect}, want the pinned one"
+      expect(entry['checksum']).to eq(checksum), "checksum = #{entry['checksum'].inspect}, want the pinned #{checksum.inspect}"
 
       fields = described_class.archive_fields(@expressions, variables, entry)
       expect(fields[:download]['url']).to eq(want_url), "url = #{fields[:download]['url'].inspect}, want #{want_url.inspect}"
       expect(fields[:download]['dest']).to eq(want_archive), "download dest = #{fields[:download]['dest'].inspect}, want #{want_archive.inspect}"
-      expect(fields[:download]['checksum']).to eq(GithubRelease::CHECKSUM),
-                                               "download checksum = #{fields[:download]['checksum'].inspect}, want the pinned #{GithubRelease::CHECKSUM.inspect}"
+      expect(fields[:download]['checksum']).to eq(checksum),
+                                               "download checksum = #{fields[:download]['checksum'].inspect}, want the pinned #{checksum.inspect}"
       expect(fields[:unpack]['src']).to eq(want_archive), "unpack src = #{fields[:unpack]['src'].inspect}, want #{want_archive.inspect}"
       expect(fields[:unpack]['dest']).to eq(test_case[:want_dir]), "unpack dest = #{fields[:unpack]['dest'].inspect}, want #{test_case[:want_dir].inspect}"
-      want_marker = "#{test_case[:want_dir]}/.unpacked-#{GithubRelease::CHECKSUM_DIGEST}"
+      want_marker = "#{test_case[:want_dir]}/.unpacked-#{test_case[:digest]}"
       expect(fields[:unpack]['creates']).to eq(want_marker),
                                             "unpack creates = #{fields[:unpack]['creates'].inspect}, want the checksum marker #{want_marker.inspect}"
     end
