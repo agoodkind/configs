@@ -222,12 +222,21 @@ systemd-networkd brings links up: it matches the device, names it, sets its
 address, and runs both DHCP clients. The daemon writes its unit files. From
 the loaded network configuration it renders one `.link` and one `.network`
 per provider, plus a `.netdev` and a second `.network` for a provider on a
-VLAN. It renders at startup and whenever it reloads the configuration, writes
-a file only when the content differs from what is on disk, and asks
-systemd-networkd to reload after a write. The files persist on disk, so after
-a reboot the network manager brings the links up before the daemon starts.
-No per-provider template exists in the repository. The deploy copies no unit
-file for a provider link.
+VLAN. No per-provider template exists in the repository. The deploy copies no
+unit file for a provider link.
+
+The daemon starts before udev names the devices and before systemd-networkd
+starts: its unit carries `DefaultDependencies=no` and orders itself before
+`systemd-udev-trigger.service` and `systemd-networkd.service`. udev applies a
+`.link` file when a device appears, and the kernel refuses to rename a link
+that is already up, so the files must be on disk before either happens. The
+daemon writes the unit files first, then waits on netlink for the links as it
+does today. It renders again whenever it reloads the configuration, writes a
+file only when the content differs from what is on disk, and asks
+systemd-networkd to reload after a write. Its sandbox gains a write path for
+the network manager's unit directory. The firewall keeps loading before
+`network-pre.target`, and the daemon takes no ordering after
+`network-online.target`, which would close a cycle.
 
 The entry describes a link in two layers.
 
