@@ -42,7 +42,7 @@ Order follows the repo split goal: `MWAN-490` first, then the `mwan install` ver
 
 ## Verification that closes the plan
 
-- `deploy-mwan`, `deploy-proxmox`, `deploy-opnsense`, `deploy-testbed`, and `deploy-mwan-failover` run from `main` on the testbed and production with no `--release` flag, no `configsctl` staging, and no application file copied from the checkout except `network.json`, `config.toml`, the 802.1X chain, the console drop-ins, and, until `MWAN-341` and `MWAN-397`, the networkd files and `nftables.conf`.
+- `deploy-mwan`, `deploy-proxmox`, `deploy-opnsense`, `deploy-testbed`, and `deploy-mwan-failover` run from `main` on the testbed and production with no `--release` flag, no `configsctl` staging, and no application file copied from the checkout except `network.json`, `config.toml`, the 802.1X chain, the console drop-ins, and, until `MWAN-341`, `nftables.conf`. The per-provider networkd units are rendered by the daemon at runtime (`MWAN-491`), outside this plan.
 - `configsctl`'s command list is lint, validation, and safe running.
 - `configs` holds no `third_party/yang` submodule.
 - A deploy from a fresh shallow clone with no submodule produces a gateway byte-identical, in routes, rules, and served tree, to one deployed from a full checkout.
