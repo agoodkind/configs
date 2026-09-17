@@ -10,8 +10,8 @@
 # Required vars (typically from group_vars or playbook):
 #   mwan_opnsense_binary_local       controller path of the pulled freebsd opnsensectl binary
 #   mwan_proxmox_delegate            inventory host of the hypervisor running this router
-#   opnsensectl_release_tag          release tag the environment pins, set by github-release.yml
-#   opnsensectl_release_commit       commit that tag points at, set the same way
+#   opnsensectl_release_tag          release tag the environment pins
+#   opnsensectl_release_commit       commit that tag points at
 #
 # Optional rc.conf.d overrides after install. Defaults come from the sample
 # copied below.

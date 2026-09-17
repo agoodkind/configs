@@ -154,16 +154,15 @@ curl -k -u "$KEY:$SECRET" "https://$LAN_IP/api/core/firmware/status"
 ## Install the daemon
 
 The daemon binary is a published opnsensectl release, not a local build. The
-OPNsense deploy pulls the release the testbed pins in its group vars onto the
-controller, verifies its GitHub attestation, and unpacks it under
-`.make/releases/opnsensectl/<tag>/`; a check run stages the release without
-touching the guest:
+deploy pulls the release the testbed pins, verifies its GitHub attestation, and
+unpacks it under `.make/releases/opnsensectl/<tag>/`:
 
 ```bash
 ./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers --check
 ```
 
-Copy the daemon binary and its service files onto the guest:
+The check run stages the release without touching the guest. Copy the daemon
+binary and its service files onto the guest:
 
 - `.make/releases/opnsensectl/<tag>/freebsd_amd64/opnsensectl` to `/usr/local/sbin/mwan-opnsense.current`
 - `cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense` to `/usr/local/etc/rc.d/mwan_opnsense`

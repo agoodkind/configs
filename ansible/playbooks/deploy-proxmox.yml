@@ -15,9 +15,8 @@
 #   ./configsctl deploy deploy-proxmox --limit vault
 #   ./configsctl deploy deploy-proxmox --limit suburban
 #
-# The mwan and opnsensectl binaries come from the releases each hypervisor's
-# environment pins in group_vars (mwan_prod_all.yml, mwan_testbed_all.yml);
-# the play pulls and verifies both before it touches the host.
+# The mwan and opnsensectl binaries come from the releases the environment pins
+# in group_vars; the play pulls and verifies both before touching the host.
 
 - name: Configure Proxmox hypervisor
   hosts: proxmox_servers
@@ -29,8 +28,8 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
-    # Both pulls run per host, so a run that spans both hypervisors stages
-    # each environment's own pin.
+    # Both pulls run per host, because each hypervisor's environment pins its
+    # own release.
     - name: Pull the pinned mwan release
       ansible.builtin.import_tasks: tasks/github-release.yml
       vars:

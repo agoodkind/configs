@@ -1,8 +1,8 @@
 ---
 # Install the wanconfig management stack on the MWAN gateway (MWAN-434).
 # The stack arrives as Debian packages built, proven, and attested by the
-# mwan release: the play's release pull unpacks the bundle beside the binary,
-# and these tasks copy the packages to the gateway and install them with apt.
+# mwan release: the play pulls the bundle beside the binaries, and
+# these tasks copy the packages to the gateway and install them with apt.
 # No gateway runs a compiler, a clone, or cmake. The vendored YANG model
 # loads into the sysrepo datastore, and rousette serves RESTCONF on ::1
 # behind an nghttpx front end bound to the management address only.

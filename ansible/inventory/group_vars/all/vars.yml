@@ -118,18 +118,15 @@ mwan_status_push_port: 50053
 # ----------------------------------------------------------------------------
 # Released binaries the deploy plays install
 # ----------------------------------------------------------------------------
-# Each play that installs a released binary pulls the pinned release onto the
-# controller first (playbooks/tasks/github-release.yml). The tags and archive
-# checksums are pinned per environment in mwan_prod_all.yml and
-# mwan_testbed_all.yml; the repositories the releases are published from and
-# the controller directory they unpack under are the same for both.
-# This repository's own release workflow publishes the mwan release until the
-# mwan module moves out (MWAN-379); opnsensectl publishes its own.
+# Each deploy play pulls its pinned release onto the controller first. The tags
+# and checksums are pinned per environment in mwan_prod_all.yml and
+# mwan_testbed_all.yml. The release repositories and the unpack directory are
+# the same for both. This repository publishes the mwan release until the mwan
+# module moves out (MWAN-379); opnsensectl publishes its own.
 mwan_release_repo: agoodkind/configs
 opnsensectl_release_repo: agoodkind/opnsensectl
-# Both release workflows call the reusable release workflow of this
-# repository, so it is the workflow that signs every attestation the pull
-# verifies.
+# Both release workflows call go-makefile's reusable release workflow, so that
+# workflow signs every attestation the pull verifies.
 release_signer_repo: agoodkind/go-makefile
 # Under the repository root, where .gitignore already keeps it out of the tree.
 release_stage_root: "{{ playbook_dir | dirname | dirname }}/.make/releases"

@@ -20,15 +20,15 @@ script.
 ```
 
 A play that installs the MWAN binary or opnsensectl pulls the release its
-environment pins onto the controller first: it downloads each archive against
+environment pins onto the controller first. It downloads each archive against
 the pinned checksum, verifies the GitHub attestation, and unpacks it under the
-ignored `.make/releases` directory, so a deploy names no release on the command
-line and a check run stages the release without touching a host. After it
-copies the binary onto a Linux host, the play runs `mwan version` on that copy
-and fails unless the reported commit is a prefix of the pinned release's
-commit; `deploy-proxmox` and `deploy-opnsense` check opnsensectl the same way.
-To move an environment to a newer release, change its pin, the tag and the
-archive checksums from that release's `checksums.txt`, in
+ignored `.make/releases` directory. No release is named on the command line,
+and a check run stages the release without touching a host. After it copies
+the binary onto a Linux host, the play runs `mwan version` on that copy and
+fails unless the reported commit is a prefix of the release's commit.
+`deploy-proxmox` and `deploy-opnsense` check opnsensectl the same way. To move
+an environment to a newer release, set its tag and the archive checksums from
+that release's `checksums.txt` in
 [mwan_prod_all.yml](../../ansible/inventory/group_vars/mwan_prod_all.yml) or
 [mwan_testbed_all.yml](../../ansible/inventory/group_vars/mwan_testbed_all.yml).
 Use `--limit` on production so one command does not touch both hypervisors.

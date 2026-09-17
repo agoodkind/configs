@@ -33,10 +33,10 @@ flags.
 ./configsctl deploy <name> [--limit <host>] [--check] [--diff]
 ```
 
-A play that installs the mwan binary or opnsensectl pulls the release its
-environment pins in group vars onto the controller first, so no release is
-named on the command line. Deploy the hypervisor before its router, because the
-router deploy reads the daemon through the hypervisor's opnsensectl.
+`deploy-proxmox` and `deploy-opnsense` install opnsensectl. Each play pulls the
+release its environment pins in group_vars, so no release is named on the
+command line. Deploy the hypervisor before its router, because the router
+deploy reads the daemon through the hypervisor's opnsensectl.
 
 `<name>` is the playbook stem, such as `deploy-proxmox` or `deploy-mwan`. The
 helper resolves it to `playbooks/<name>.yml` under

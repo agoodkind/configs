@@ -1,15 +1,13 @@
 ---
-# Releases every production deploy installs. mwan_prod_all is the parent of
-# the production gateway, failover, router, and hypervisor groups (declared
-# under group_children in group_vars/all/service_mapping.yml), so the plays
-# that install a released binary read one pin per environment;
-# mwan_testbed_all.yml carries the testbed's. Each play pulls and verifies the
-# release itself, in playbooks/tasks/github-release.yml, so a deploy names no
-# release on its command line.
+# Releases every production deploy installs. mwan_prod_all holds the
+# production gateway, failover, router, and hypervisor groups, so one pin
+# covers the environment. mwan_testbed_all.yml carries the testbed's. Each
+# play pulls and verifies the release itself, so a deploy names no release on
+# the command line.
 #
-# A checksum is the line the release's checksums.txt publishes for that
-# archive, written as sha256:<hex>. To move a pin: pick the tag, download its
-# checksums.txt, and copy both lines here.
+# A checksum is the sha256:<hex> line from the release's checksums.txt. To
+# move a pin, pick the tag, download its checksums.txt, and copy both lines
+# here.
 
 mwan_release_tag: "202609161500-82-7ccf9a5"
 mwan_release_assets:

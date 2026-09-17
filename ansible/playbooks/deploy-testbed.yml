@@ -20,11 +20,9 @@
 # deploy-mwan.yml and deploy-mwan-failover.yml respectively when targeted
 # with --limit mwan_suburban_servers and --limit mwan_failover_suburban_servers.
 
-# The release this playbook installs is pinned in the testbed's group vars and
-# pulled onto the controller before the plays below connect to the hypervisor,
-# so a bad pin fails while the host is untouched, before facts are even
-# gathered. The play opens no connection: its tasks run on the controller or
-# set facts, and the facts it sets persist into the plays below.
+# The release this playbook installs is pinned in the testbed's group_vars.
+# This play pulls it onto the controller before the hypervisor is touched, so a
+# bad pin fails first. It opens no connection.
 - name: Pull the pinned mwan release onto the controller
   hosts: suburban_servers
   gather_facts: false

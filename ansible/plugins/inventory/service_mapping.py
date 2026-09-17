@@ -6,9 +6,9 @@ Reads service_mapping from group_vars/all/service_mapping.yml and creates:
   - A group named {service}_servers containing that host
   - Host vars: ansible_host (IPv6), service_ipv4 (if defined)
   - Optional parent groups declared under top-level `group_children`. A child
-    is any group name: one this plugin creates, or one another inventory
-    source declares (the static hosts file's hypervisor groups), because every
-    source fills one shared group namespace.
+    may be a group this plugin creates or a group another inventory source
+    declares, such as the hypervisor groups in the static hosts file. All
+    sources share one group namespace.
 
 An entry with `inventory: false` is skipped. That lets the mapping stay the
 single source of truth for a guest's VMID and addresses even when Ansible never

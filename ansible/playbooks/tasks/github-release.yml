@@ -1,56 +1,40 @@
 ---
-# Pull one pinned GitHub release onto the controller and verify it, so a deploy
-# installs the release its own inventory names: no --release flag and no
-# staging step outside the play. Each deploy play that installs a released
-# binary imports this file at its top, once per release it reads, with:
+# Pull one pinned GitHub release onto the controller and verify it. A deploy
+# play imports this file once per release it installs, with these vars:
 #
-#   release_repo        the GitHub repository the release is published from
+#   release_repo        the GitHub repository
 #   release_tag         the release tag
-#   release_assets      a list of {name, checksum}; checksum is sha256:<hex> as
-#                       the release's checksums.txt lists the archive
-#   release_var_prefix  mwan or opnsensectl; names the facts set at the end
+#   release_assets      a list of name and checksum; the checksum is
+#                       sha256:<hex> from the release's checksums.txt
+#   release_var_prefix  mwan or opnsensectl
 #
-# release_stage_root, the controller directory the releases unpack under, and
-# release_signer_repo, the repository whose reusable workflow signs every
-# release, are declared once in group_vars/all. The controller needs gh logged
-# in, because the attestation check and the tag lookup go through it.
+# release_stage_root and release_signer_repo are set once in group_vars/all.
+# The controller needs gh logged in.
 #
-# Every task runs on the controller, and it runs for each host of the play one
-# at a time rather than once: deploy-proxmox with no --limit spans both
-# hypervisors, whose environments pin different releases, and a run_once task
-# would stage one release for both. A second run downloads and unpacks
-# nothing: get_url skips an archive already on disk with the pinned checksum,
-# and unarchive is skipped once the marker its unpack writes exists. The
-# marker carries the archive's checksum in its name, and an unpack directory
-# without the pinned archive's marker is emptied before the unpack, so a pin
-# that moves to a different checksum under the same tag unpacks again into a
-# directory that holds nothing of the earlier archive. The controller tasks
-# also run in check mode, so a --check deploy stages the release without
-# touching a host.
+# Every task runs on the controller, once per host in the play, because the
+# two hypervisors pin different releases. A second run downloads and unpacks
+# nothing. The unpack marker carries the archive checksum, so a changed
+# checksum under the same tag unpacks again into an emptied directory. The
+# tasks also run in check mode.
 #
-# Layout under <release_stage_root>/<release_var_prefix>/<release_tag>/:
+# Layout under <release_stage_root>/<prefix>/<tag>/:
 #   <name>_<goos>_<goarch>.tar.gz   each archive as published
-#   <goos>_<goarch>/                the binary archive, whose name is the
-#                                   binary (<binary>_<goos>_<goarch>.tar.gz),
-#                                   named by its platform so the plays'
-#                                   linux_amd64/mwan and
-#                                   freebsd_amd64/opnsensectl paths hold
+#   <goos>_<goarch>/                the binary archive
 #   <name>/                         any other archive, so the wanconfig stack
 #                                   lands in wanconfig-stack/
 #
-# Facts set for the play: <prefix>_release_tag, <prefix>_release_commit (the
-# full commit the tag points at), <prefix>_release_dir (the tag directory
-# above) and, for mwan, wanconfig_stack_dir. release_tag_dir,
-# release_unpack_plan, and release_commit_lookup are this file's scratch.
+# Facts set: <prefix>_release_tag, <prefix>_release_commit, <prefix>_release_dir,
+# and for mwan wanconfig_stack_dir. release_tag_dir, release_unpack_plan, and
+# release_commit_lookup are this file's scratch.
 
 - name: Start the unpack plan of {{ release_var_prefix }}
   ansible.builtin.set_fact:
     release_tag_dir: "{{ release_stage_root }}/{{ release_var_prefix }}/{{ release_tag }}"
     release_unpack_plan: []
 
-# <name>_<goos>_<goarch>.tar.gz splits at its last two underscores into the
-# name and the platform. regex_findall returns the capture group itself, so no
-# backreference escape passes through Jinja string parsing.
+# The archive name splits at its last two underscores into the name and the
+# platform. regex_findall returns the capture group, so no backreference
+# escape passes through Jinja.
 - name: Derive the unpack directory of each archive of {{ release_var_prefix }}
   vars:
     release_asset_name: "{{ item.name | regex_replace('_[^_]+_[^_]+\\.tar\\.gz$', '') }}"
@@ -73,13 +57,10 @@
   loop_control:
     label: "{{ item.name }}"
 
-# The pin is inventory data, so a pin that leaves out the binary archive, or
-# gives an archive a checksum that is not sha256:<hex>, is a group_vars
-# mistake. It fails here, on the controller, before the play reaches a host:
-# without this check an empty pin plans nothing, the facts below are still
-# set, and the deploy fails at its first copy after earlier plays have already
-# changed the host. An archive named without its platform suffix, or pinned
-# without a checksum, already fails in the plan above.
+# An empty pin plans nothing, and the facts below would still be set. This
+# assert fails on the controller before any host task runs. A name without its
+# platform suffix, or an entry without a checksum, already fails in the plan
+# above.
 - name: Refuse a plan of {{ release_var_prefix }} without its binary archive
   ansible.builtin.assert:
     that:
@@ -101,10 +82,9 @@
     label: "{{ item.name }}"
   register: release_unpack_markers
 
-# An unpack directory holds the members of exactly one archive. Without the
-# pinned archive's marker it is removed before the unpack below, so a member
-# of an earlier archive at the same tag cannot linger beside the new ones and
-# reach a host through a whole-directory copy.
+# An unpack directory holds the members of exactly one archive. A directory
+# without the pinned archive's marker is removed before the unpack, so no
+# member of an earlier archive reaches a host.
 - name: Remove the unpack directory of each archive not yet unpacked of {{ release_var_prefix }}
   delegate_to: localhost
   become: false
@@ -144,12 +124,9 @@
     label: "{{ item.name }}"
 
 # The attestation ties the archive to the workflow run that built it, so an
-# archive replaced after publication fails here even when its checksum was
-# copied from the same replaced release. The check is scoped to the release
-# repository, so an attested artifact of another repository under the same
-# owner fails too; because the release workflow is reusable and lives in
-# another repository, that signer is named as well, or gh rejects the
-# repository match.
+# archive replaced after publication fails here even with a matching checksum.
+# The check names the release repository and the reusable workflow that signs
+# it, because gh rejects the repository match without the signer.
 - name: Verify the GitHub attestation of each archive of {{ release_var_prefix }}
   delegate_to: localhost
   become: false
@@ -184,10 +161,8 @@
   loop_control:
     label: "{{ item.name }}"
 
-# The marker the unpack above checks. It is written only after a whole archive
-# unpacked into a directory emptied for it, and its name carries that
-# archive's checksum, so a directory that holds it holds the members of
-# exactly that archive and nothing else.
+# The marker the unpack above checks. It is written only after the whole
+# archive unpacked, and its name carries that archive's checksum.
 - name: Mark each unpacked archive of {{ release_var_prefix }}
   delegate_to: localhost
   become: false

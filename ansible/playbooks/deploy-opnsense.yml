@@ -12,11 +12,10 @@
 #   ./configsctl deploy deploy-opnsense --limit opnsense_servers
 #   ./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers
 #
-# The daemon binary comes from the opnsensectl release the environment pins in
-# group_vars: the play pulls it, verifies its GitHub attestation, and unpacks it
-# under opnsensectl_release_dir before it touches the router. The deploy reads
-# the daemon's identity through /usr/local/bin/opnsensectl on the router's
-# hypervisor, so deploy-proxmox, which installs the same pin there, runs on that
+# The binary comes from the release the environment pins in group_vars; the
+# play pulls and verifies it before touching the host. The deploy reads the
+# daemon's identity through /usr/local/bin/opnsensectl on the router's
+# hypervisor, so deploy-proxmox with the same opnsensectl release runs on that
 # hypervisor first.
 
 - name: Deploy mwan-opnsense daemon

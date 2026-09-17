@@ -1,8 +1,7 @@
 ---
-# Releases every testbed deploy installs. mwan_testbed_all is the parent of
-# the testbed gateway, failover, router, and hypervisor groups (declared under
-# group_children in group_vars/all/service_mapping.yml); mwan_prod_all.yml
-# carries production's and explains the shape of a pin.
+# Releases every testbed deploy installs. mwan_testbed_all holds the testbed
+# gateway, failover, router, and hypervisor groups. mwan_prod_all.yml carries
+# production's pins and explains the shape of a pin.
 
 mwan_release_tag: "202609162332-86-8693b22"
 mwan_release_assets:
