@@ -86,7 +86,7 @@ module GithubRelease
       elsif !set_fact.nil?
         expressions.facts << TaskExpressions.fact_task(task)
       elsif !task[GET_URL_KEY].nil?
-        expressions.download = TaskExpressions.render_task(task, task[GET_URL_KEY].slice('url', 'dest'))
+        expressions.download = TaskExpressions.render_task(task, task[GET_URL_KEY].slice('url', 'dest', 'checksum'))
       elsif !task[UNARCHIVE_KEY].nil?
         expressions.unpack = TaskExpressions.render_task(task, task[UNARCHIVE_KEY].slice('src', 'dest', 'creates'))
       end
@@ -154,6 +154,8 @@ RSpec.describe GithubRelease do
       fields = described_class.archive_fields(@expressions, variables, entry)
       expect(fields[:download]['url']).to eq(want_url), "url = #{fields[:download]['url'].inspect}, want #{want_url.inspect}"
       expect(fields[:download]['dest']).to eq(want_archive), "download dest = #{fields[:download]['dest'].inspect}, want #{want_archive.inspect}"
+      expect(fields[:download]['checksum']).to eq(GithubRelease::CHECKSUM),
+                                               "download checksum = #{fields[:download]['checksum'].inspect}, want the pinned #{GithubRelease::CHECKSUM.inspect}"
       expect(fields[:unpack]['src']).to eq(want_archive), "unpack src = #{fields[:unpack]['src'].inspect}, want #{want_archive.inspect}"
       expect(fields[:unpack]['dest']).to eq(test_case[:want_dir]), "unpack dest = #{fields[:unpack]['dest'].inspect}, want #{test_case[:want_dir].inspect}"
       want_marker = "#{test_case[:want_dir]}/.unpacked-#{GithubRelease::CHECKSUM_DIGEST}"
