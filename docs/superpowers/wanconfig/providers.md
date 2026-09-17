@@ -1,54 +1,51 @@
 # Three: the provider set becomes data
 
-Adding, removing, re-tiering, or re-weighting a provider is one inventory
-entry and a configuration deploy. The entry carries everything the gateway
-needs to know about that provider: its routing numbers, its tier and weight,
-its translation prefix, its probe policy, and its link identity. The daemon
-checks the entry instead of knowing it, and the binary renders the network
-manager's unit files from it, so one binary serves any provider set and no
-provider name appears in Go outside tests.
+A provider is one entry in inventory. Adding, removing, re-tiering, or
+re-weighting a provider is an edit to that entry and a configuration deploy.
+The entry holds the provider's routing numbers, tier, weight, translation
+prefix, probe policy, and link identity. The daemon validates the entry at
+load. The binary renders the systemd-networkd unit files for the provider's
+link from the entry. No provider name appears in Go outside tests, and no
+file is written by hand for a provider.
 
-One link keeps hand-written units: the AT&T physical interface, which exists
-to run 802.1X authentication and carries a fixed address for the fiber
-module. Its `.link` and `.network` stay in the repository beside the 802.1X
-services that reference them. The AT&T provider link is the VLAN on top of
-it, and that renders like every other provider.
+One link is exempt: the AT&T physical interface, which runs 802.1X
+authentication and carries a fixed address for the fiber module. Its `.link`
+and `.network` units stay in the repository with the 802.1X services that
+reference them. The AT&T provider link is the VLAN on that interface, and the
+VLAN renders like every other provider.
 
-Depends on the configuration format, so the inventory is written once in its
-final shape.
+This piece depends on the configuration format, so the inventory is written
+once in its final shape.
 
 ## Why a fourth provider is impossible today
 
-Five things block it, and each one goes away in this piece.
+Five things block it.
 
-The daemon knows the three providers by name. It carries att, webpass, and
-monkeybrains as constants and decides the fallback by comparing against one of
-them.
+The daemon carries att, webpass, and monkeybrains as constants and decides
+the fallback by comparing against one of them.
 
-The daemon accepts only the rule priorities in use. Two checks admit exactly
-100, 200, 300 and 55, 56, 57, and a failed check stops the daemon, so a
-provider with any other numbers cannot start.
+Two validators accept only the rule priorities 100, 200, 300 and 55, 56, 57.
+A failed validation stops the daemon, so a provider with any other numbers
+cannot start.
 
-The load balancer cannot select a third member. It is three fixed lines in the
-firewall ruleset file, one for IPv4 and two for IPv6, and each one flips a
-coin between marks 1 and 2.
+The load balancer is three fixed lines in the firewall ruleset file, one for
+IPv4 and two for IPv6. Each line chooses between marks 1 and 2, so a third
+member cannot be selected.
 
-The network configuration renders from a template that lists the three
-providers by name, so a fourth entry in inventory is never rendered.
+The network configuration renders from a template that names the three
+providers, so a fourth inventory entry is not rendered.
 
-The network manager's unit files are written by hand, one pair per provider,
-each named individually in a deploy list. A fourth provider needs two to four
-new files authored from scratch, and nothing checks them against the
-provider's other values.
+The systemd-networkd unit files are written by hand, one pair per provider,
+each named in a deploy list. A fourth provider needs two to four new files,
+and nothing checks them against the provider's other values.
 
 ## Inventory takes the model's shape
 
-Each gateway group carries one list with one entry per provider, and every
-value the gateway reads about a provider sits in that entry. The per-provider
-variables that carry a provider name in each gateway group today collapse
-into the list, the hardware values included.
+Each gateway group carries one list with one entry per provider. Every value
+the gateway reads about a provider is in that entry, including the hardware
+values. No per-provider variable exists outside the list.
 
-After this piece, the production group:
+The production group after this piece:
 
 ```yaml
 mwan_providers:
@@ -147,157 +144,317 @@ mwan_pin_provider: att
 
 A fourth provider is one more entry with `table: 600`, `mark: 4`,
 `mark_prio: 600`, `from_prio: 58`, its own tier, and its own link block.
-Tables 400 and 500 are taken, so 600 is the first free hundred. An IPv4-only
-provider carries no `ipv6` block, no `npt_prefix`, and no IPv6 probe targets,
-and gets no IPv6 lease, no translation, and no IPv6 source rule.
+Tables 400 and 500 are reserved, so 600 is the first free hundred. An
+IPv4-only provider has no `ipv6` block, no `npt_prefix`, and no IPv6 probe
+targets. It gets no IPv6 lease, no translation, and no IPv6 source rule.
 
-Each value is typed once. Where the gateway's entry and a simulator's
-definition describe the same wire, both read the service map rather than
-repeating the value.
+Each value is typed once. Where a gateway entry and a simulator definition
+describe the same wire, both read the service map.
 
 The pinned-destination lists carry no provider name. `mwan_pin_provider`
-names the provider the pins target, and the seed and name lists are named for
+names the provider the pins target. The seed and name lists are named for
 what they pin. The kernel set names and the refresher timer keep their
 current names until the refresher moves into the daemon under its own ticket.
-The two WireGuard control-plane pins in the firewall ruleset file take the
-pin provider's mark.
+The two WireGuard control-plane pins in the firewall ruleset file use the pin
+provider's mark.
 
-The network configuration renders by looping over the list. No template names
-a provider.
+The network configuration renders by looping over the list. No template
+names a provider.
 
 ## Routing numbers are typed, and only checked
 
-Each provider carries its routing table, its firewall mark, and its two policy
-rule priorities as typed values, and nothing derives them. The current
-numbering (100, 200, 300 for tables and mark-rule priorities; 1, 2, 3 for
-marks; 55, 56, 57 for source-rule priorities) is what every operator of this
-gateway already knows, and it does not change.
+Each provider carries its routing table, firewall mark, and two policy rule
+priorities as typed values. Nothing derives them. The current numbering (100,
+200, 300 for tables and mark-rule priorities; 1, 2, 3 for marks; 55, 56, 57
+for source-rule priorities) does not change.
 
-Three checks run at load: every provider's table, mark, mark-rule priority,
-and source-rule priority is unique across providers; no provider's table is in
-the reserved set; every weight is at least one. Two structural checks the
-routing module makes stay: a mark is never zero, because zero is the unmarked
-state the balancing rule's guard tests, and neither rule priority may equal
-the catch-all priority the routing module owns for itself. A failed check
-stops the daemon before it touches the kernel.
+Three checks run at load. Every provider's table, mark, mark-rule priority,
+and source-rule priority is unique across providers. No provider's table is
+in the reserved set. Every weight is at least one. Two checks in the routing
+module stay: a mark is never zero, because zero is the unmarked state the
+balancing rule's guard tests, and neither rule priority equals the catch-all
+priority the routing module owns. A failed check stops the daemon before it
+touches the kernel.
 
 The reserved set is typed once in inventory, in `mwan_reserved_tables`,
 rendered into the network configuration under the steering group, and read
 from there by the daemon. The tunnel table, 400, and the out-of-band table,
-500, sit in the inventory registry that names the routing tables, and every
-template that needs one reads the registry value. The kernel's own tables
-(253, 254, 255, and 0) are always reserved. No reader carries a copy of the
-set.
+500, are in the inventory registry that names the routing tables, and every
+template that needs one reads the registry. The kernel's own tables (253,
+254, 255, and 0) are always reserved. No reader carries a copy of the set.
 
-The fixed priority checks are deleted and the new checks land in one change,
-so no window exists where one layer accepts a fourth provider and another
-rejects it.
+The fixed priority checks are deleted and the new checks land in one change.
+No state exists where one layer accepts a fourth provider and another rejects
+it.
 
 ## Steering becomes tier and weight
 
 Every provider carries a tier and a weight. The active tier is the
-lowest-numbered tier holding at least one healthy provider. New connections
-from internal sources are assigned a mark computed over that tier's healthy
+lowest-numbered tier with at least one healthy provider. A new connection
+from an internal source is assigned a mark computed over that tier's healthy
 providers: a generated number modulo the sum of their weights, mapped onto
-their marks with one slot per weight unit. A weight is a positive integer, so
-the sum is never zero. The hash mode, `mwan_hash_mode`, selects whether the
-number is random per connection, derived from the source address, or derived
-from source and destination.
+their marks with one slot per weight unit. A weight is a positive integer,
+so the sum is never zero. `mwan_hash_mode` selects whether the number is
+random per connection, derived from the source address, or derived from
+source and destination.
 
-The tiers in inventory decide fallback, and nothing else does. A provider
-alone in its tier is the sole carrier when that tier is active, which is
-today's behavior with monkeybrains alone in tier 1. Providers that share a
-tier share it by weight. The daemon carries no tie-break rule of its own.
+The tiers in inventory decide fallback. A provider alone in its tier is the
+sole carrier when that tier is active. Providers that share a tier share it
+by weight. The daemon carries no tie-break rule.
 
-The daemon owns the balancing rule, because the firewall piece later makes the
-daemon own the whole ruleset and a rule built in the daemon now is a rule that
-piece keeps. A steering module computes the rule from the active tier and
-programs it into a kernel table and chain the module creates, with the same
-apply discipline the translation module uses: create the table, create the
-chain, clear the chain, add the rules, commit once, and repair a flushed table
-through the watcher. The three fixed lines leave the firewall ruleset file in
-the same change.
+The daemon owns the balancing rule. A steering module computes the rule from
+the active tier and programs it into a kernel table and chain the module
+creates, with the same apply discipline the translation module uses: create
+the table, create the chain, clear the chain, add the rules, commit once, and
+repair a flushed table through the watcher. The three fixed lines leave the
+firewall ruleset file in the same change. The firewall piece later gives the
+daemon the whole ruleset, and this rule stays where it is.
 
-An unhealthy provider leaves the split on the next reconcile pass instead of
-falling through to the main table, and its policy rules are pruned.
+An unhealthy provider leaves the split on the next reconcile pass, and its
+policy rules are pruned. It does not fall through to the main table.
 
-An unknown health state reads as healthy, so before the health module writes
-its first state every provider reads healthy and the first tier activates.
+An unknown health state reads as healthy. Before the health module writes its
+first state, every provider reads healthy and the first tier activates.
 
 ## Link bring-up renders from the provider entry
 
-systemd-networkd keeps bringing links up: it matches the device, names it,
-sets its address, and runs both DHCP clients. What changes is where its unit
-files come from. The binary renders them from `network.json` through the
-install verb, one `.link` and one `.network` per provider, plus a `.netdev`
-and a second `.network` for a provider on a VLAN. No per-provider template
-exists in the repository, and the deploy copies no unit file for a provider
-link.
+systemd-networkd brings links up: it matches the device, names it, sets its
+address, and runs both DHCP clients. Its unit files come from the binary. The
+install verb reads `network.json` and writes one `.link` and one `.network`
+per provider, plus a `.netdev` and a second `.network` for a provider on a
+VLAN. No per-provider template exists in the repository. The deploy copies no
+unit file for a provider link.
 
 The entry describes a link in two layers.
 
 **Typed leaves.** The standard per-family containers, plus the leaves this
-piece adds for what the standard model has no name for: how the device is
+piece adds for what the published models do not name: how the device is
 matched (by driver or by hardware address), the interface name, the hardware
 address, whether each family runs a DHCP client, the delegation client's
 identity and hint, whether router advertisements are accepted, the route
-metric, and an optional VLAN parent with its tag. The schema validates every
-one of them, and the daemon reads the ones it needs for its own behavior.
-The binary turns each leaf into the unit-file key it stands for through one
-table, which is the only place a networkd key name appears in Go.
+metric, and an optional VLAN parent with its tag. The schema validates each
+one. The daemon reads the ones it needs for its own behavior. The binary maps
+each leaf to a unit-file section and key through one table. That table is the
+only place a networkd key name appears in Go.
 
 **Free-form sections.** An augment on the interface that mirrors the unit
-file format itself: for each of `link`, `network`, and `netdev`, an ordered
-list of sections, each an ordered list of key and value pairs. The schema
-validates the structure; networkd validates the keys, because it is the thing
-that knows them. Anything networkd can read, this can say: a bond, a bridge,
-a tunnel, a VLAN stack, or an option that did not exist when the model was
-written. A shape ships as free-form sections first and gains typed leaves
-later, without touching the renderer.
+file format: for each of `link`, `network`, and `netdev`, an ordered list of
+sections, each an ordered list of key and value pairs. The schema validates
+the structure. networkd validates the keys. Any shape networkd can read can be
+written here: a bond, a bridge, a tunnel, a VLAN stack, or an option added to
+networkd after the model revision. A shape can start as free-form sections
+and gain typed leaves later without a renderer change.
 
 The renderer maps the typed leaves through its table, then appends the
-free-form sections. A key set by both is a load error, never a silent
-override. The unit files are written through a maintained serializer for the
-systemd unit format, so the binary owns the mapping and nothing about the
-syntax.
+free-form sections. A section named by both layers is merged under one
+heading, because networkd treats repeated headings as one. A key named by
+both layers is a load error. The unit files are written through a maintained
+serializer for the systemd unit format, so the binary owns the mapping and
+not the syntax.
 
-The current three providers render from typed leaves alone. Their free-form
-sections are empty, and they stay the exception rather than the norm.
+The current three providers render from typed leaves except for the keys
+named in the examples below. The fidelity gate lists every free-form key the
+current providers use.
 
-A shape the renderer rejects stops the install verb before it writes
-anything, which is the same failure contract a bad configuration has always
-had.
+An entry the renderer rejects stops the install verb before it writes
+anything.
+
+### Example: a static link with a delegation client
+
+Webpass in `network.json`, link identity only. Leaf names are illustrative;
+the model revision fixes them.
+
+```json
+{
+  "name": "enwebpass0",
+  "goodkind-mwan-steering:link": {
+    "match": { "driver": "igc" },
+    "hardware-address": "...",
+    "delegation": { "hint": "::/56", "duid-type": "link-layer-time", "duid": "..." },
+    "route-metric": 10
+  },
+  "ietf-ip:ipv4": {
+    "forwarding": true,
+    "address": [ { "ip": "136.25.91.242", "prefix-length": 29 } ],
+    "goodkind-mwan-steering:gateway": "136.25.91.241"
+  },
+  "ietf-ip:ipv6": {
+    "forwarding": true,
+    "goodkind-mwan-steering:dhcp": true,
+    "goodkind-mwan-steering:accept-ra": true
+  },
+  "goodkind-mwan-steering:wan": { "table-id": 200, "...": "..." }
+}
+```
+
+The install verb writes `20-webpass.link`:
+
+```ini
+[Match]
+Driver=igc
+
+[Link]
+Name=enwebpass0
+MACAddress=...
+```
+
+and `20-webpass.network`:
+
+```ini
+[Match]
+Name=enwebpass0
+
+[Network]
+Address=136.25.91.242/29
+DHCP=ipv6
+IPv6AcceptRA=yes
+IPv4Forwarding=yes
+IPv6Forwarding=yes
+
+[DHCPv6]
+DUIDType=link-layer-time
+DUIDRawData=...
+PrefixDelegationHint=::/56
+
+[Route]
+Gateway=136.25.91.241
+Metric=10
+
+[Route]
+Gateway=136.25.91.241
+Table=200
+```
+
+Every line comes from a typed leaf. The second route's table is the
+provider's routing table, taken from `table-id`.
+
+### Example: a key with no typed leaf
+
+Monkeybrains solicits a delegation on a link where no router advertisement
+arrives, and advertises a router lifetime downstream. Neither has a typed
+leaf. The entry carries them as free-form sections:
+
+```json
+"goodkind-mwan-steering:networkd": {
+  "network": [
+    { "section": "DHCPv6", "entries": [ { "key": "WithoutRA", "value": "solicit" } ] },
+    { "section": "IPv6PrefixDelegation", "entries": [ { "key": "RouterLifetimeSec", "value": "1800" } ] }
+  ]
+}
+```
+
+The rendered `.network` file carries them after the typed keys:
+
+```ini
+[DHCPv6]
+DUIDType=link-layer-time
+DUIDRawData=...
+PrefixDelegationHint=::/56
+WithoutRA=solicit
+
+[IPv6PrefixDelegation]
+RouterLifetimeSec=1800
+```
+
+If the free-form sections also set `PrefixDelegationHint`, the install verb
+stops with:
+
+```
+network.json: enmbrains0: networkd section DHCPv6 key PrefixDelegationHint is set by the delegation hint leaf; remove one
+```
+
+### Example: a provider on a VLAN
+
+AT&T's provider link is a VLAN on the physical 802.1X link. The entry names
+the parent and the tag:
+
+```json
+"goodkind-mwan-steering:link": {
+  "vlan": { "parent": "enatt0", "id": 3242 },
+  "delegation": { "hint": "::/60", "duid-type": "vendor", "duid": "..." }
+}
+```
+
+The install verb writes `21-att-vlan.netdev`:
+
+```ini
+[NetDev]
+Name=enatt0.3242
+Kind=vlan
+
+[VLAN]
+Id=3242
+```
+
+and `21-att-vlan.network`:
+
+```ini
+[Match]
+Name=enatt0.3242
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+IPv4Forwarding=yes
+IPv6Forwarding=yes
+
+[DHCPv6]
+DUIDType=vendor
+DUIDRawData=...
+PrefixDelegationHint=::/60
+```
+
+The parent's `20-att.link` and `20-att.network` are not rendered. They carry
+the 802.1X match and the fiber-module address and stay in the repository.
+
+### Example: a shape with no typed leaf at all
+
+A bonded uplink has no typed leaves in this piece. It is one entry with
+free-form sections:
+
+```json
+"goodkind-mwan-steering:networkd": {
+  "netdev": [
+    { "section": "NetDev", "entries": [ { "key": "Name", "value": "bond0" }, { "key": "Kind", "value": "bond" } ] },
+    { "section": "Bond", "entries": [ { "key": "Mode", "value": "active-backup" } ] }
+  ],
+  "network": [
+    { "section": "Network", "entries": [ { "key": "DHCP", "value": "yes" } ] }
+  ]
+}
+```
+
+The install verb writes a `.netdev` and a `.network` with those sections.
 
 ## The watchdog holds no provider list
 
 The rollback watchdog on the hypervisor pings the internet through each
 provider interface during a diagnosis. After this piece the gateway daemon
-pushes its per-provider health verdict to the watchdog. The watchdog keeps
-its basic egress pings and smoke checks, drops its per-interface pings, and
-holds no interface names.
+pushes its per-provider health verdict to the watchdog. The watchdog keeps its
+basic egress pings and smoke checks, drops its per-interface pings, and holds
+no interface names.
 
 The push is advisory and stateless. Every message carries the whole verdict,
-one entry per provider plus the active tier, so the watchdog keeps only the
-latest message and the time it arrived, and logs both during a diagnosis. A
-restart on either side, or a lost message, costs nothing to replay: the next
-probe cycle sends the whole state again, and a watchdog that has received
-nothing yet reports that it holds no verdict. No rollback decision reads the
-verdict in this piece; whether it blocks a rollback is separate work
-(MWAN-442, MWAN-332, MWAN-336).
+one entry per provider plus the active tier. The watchdog keeps the latest
+message and the time it arrived, and logs both during a diagnosis. A restart
+on either side, or a lost message, is repaired by the next probe cycle, which
+sends the whole state again. A watchdog that has received nothing reports
+that it holds no verdict. No rollback decision reads the verdict in this
+piece. Whether it blocks a rollback is separate work (MWAN-442, MWAN-332,
+MWAN-336).
 
 ## Carried through unchanged
 
-The IPv6 source-pin prefix stays a configured value through this piece.
-Steering builds a policy rule from it, and the cleanup pass claims that rule's
-priority unconditionally, so rendering the value empty does not skip the rule,
-it deletes the live one. Moving the pin onto the live delegation is separate
-work with its own failure mode, since at daemon start the delegation may not
-be readable yet.
+The IPv6 source-pin prefix stays a configured value. Steering builds a policy
+rule from it, and the cleanup pass claims that rule's priority
+unconditionally, so rendering the value empty deletes the live rule rather
+than skipping it. Moving the pin onto the live delegation is separate work,
+because at daemon start the delegation may not be readable yet.
 
-The daemon does not create links itself and does not run its own delegation
-client. Both stay with systemd-networkd. Moving them into the daemon is the
-monolith epic's work (MWAN-305) and is gated on the daemon owning the lease
-first, because a link created by one program and leased by another has two
+The daemon does not create links and does not run its own delegation client.
+Both stay with systemd-networkd. Moving them into the daemon is the monolith
+epic's work (MWAN-305). It is gated on the daemon owning the lease first,
+because a link created by one program and leased by another has two
 authorities.
 
 ## Acceptance
@@ -310,40 +467,41 @@ are unchanged. The firewall rules are unchanged except that the three
 balancing lines move from the ruleset file into the daemon's chain, where they
 express the same half-and-half split.
 
-The rendered network manager units for the current provider set are identical
-to the hand-authored files they replace, outside comment lines, and this
-comparison runs in CI against the checked-in files before those files are
-deleted. The AT&T physical link's two units are excluded, since they stay.
+The rendered systemd-networkd units for the current provider set are
+identical to the hand-authored files they replace, outside comment lines.
+This comparison runs in CI against the checked-in files before those files
+are deleted. The AT&T physical link's two units are excluded, because they
+stay.
 
 A fourth provider can be added, re-tiered, and removed by one inventory entry
-and a configuration deploy with the binary unchanged, with no file authored
-by hand, and traffic is observed leaving it at the simulator's ingress in
-every address family the provider has. The testbed's fourth simulated
-provider, named astound, is IPv4-only, so its proof is IPv4 only.
+and a configuration deploy, with the binary unchanged and no file written by
+hand. Traffic is observed leaving it at the simulator's ingress in every
+address family the provider has. The testbed's fourth simulated provider,
+astound, is IPv4-only, so its proof is IPv4 only.
 
 ## Failure modes
 
 Deleting the priority checks and introducing the new checks in separate
-changes leaves a window where a fourth provider is accepted by one layer and
-rejected by another. Do both in one change.
+changes leaves a state where one layer accepts a fourth provider and another
+rejects it. Do both in one change.
 
 Deleting the hand-authored unit files before the rendered ones are proven
-identical leaves a gateway whose links come up differently after a reboot,
-and every layer above keys on interface names. The fidelity comparison gates
-the deletion.
+identical leaves a gateway whose links come up differently after a reboot.
+Every layer above keys on interface names. The fidelity comparison gates the
+deletion.
 
-A free-form key is not caught by the deploy's schema check. A typo there
-surfaces as a networkd warning on the gateway, not as a deploy failure. The
-typed leaves exist so that the common shapes never go through that path.
+A free-form key is not checked by the deploy's schema validation. A typo
+there surfaces as a networkd warning on the gateway, not as a deploy failure.
+The typed leaves exist so the common shapes do not take that path.
 
 The ordering within the firewall's translation chain decides behavior,
 because a translation statement stops rule evaluation. Grouping outbound
-rules by provider is equivalent to today's grouping only because every
+rules by provider is equivalent to the current grouping only because every
 outbound translation rule carries an outgoing-interface match, and the
-inbound one-to-one rules match on the incoming interface instead. Assert both
-invariants rather than relying on them.
+inbound one-to-one rules match on the incoming interface. Assert both
+invariants.
 
 The steering module's chain must run after the ruleset file's mangle chain,
-which restores the connection mark and sets the ingress marks, and its
-balancing rules must keep the `meta mark 0` guard, or the control-plane pins
-set earlier in the pass are overwritten.
+which restores the connection mark and sets the ingress marks. Its balancing
+rules must keep the `meta mark 0` guard. Otherwise the control-plane pins set
+earlier in the pass are overwritten.
