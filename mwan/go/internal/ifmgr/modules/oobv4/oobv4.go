@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package oobv4 implements the oob role's IPv4 module: applies DHCPv4
 // lease state to the watched iface and the OOB routing table. Reacts
 // to LeaseInfo events fanned out by the daemon.

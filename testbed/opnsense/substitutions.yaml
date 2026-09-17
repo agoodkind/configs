@@ -1,4 +1,4 @@
-# Concrete substitution table for `mwan opnsense config import` on the suburban
+# Concrete substitution table for `opnsensectl config import` on the suburban
 # OPNsense testbed. Values here describe the current testbed shape.
 
 # Addressing rules:

@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package wanconfig projects the configuration the gateway daemon loaded onto
 // the model it describes itself with, so the management surface serves what
 // the running process holds rather than a file on disk. The projection turns

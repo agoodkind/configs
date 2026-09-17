@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package yangpub publishes daemon state into the wanconfig management
 // datastore (sysrepo) and registers operational providers. It carries
 // exactly what publishing needs: connect, open a session, set values by
@@ -7,27 +5,13 @@
 // so the package holds no write acceptance, no validation, and no
 // transaction machinery beyond apply.
 //
-// The package is linux-only. sysrepo requires robust pthread mutexes,
-// which darwin lacks, and the FreeBSD router build has no management
-// surface to publish into, so those binaries leave the package out entirely
-// rather than carrying a stub of a feature they can never use; the one
-// caller in cmd/mwan is split by platform the same way. On linux the real
-// implementation binds libsysrepo through cgo, and the go-makefile cgo hook
-// provisions the pinned libraries where the gates run, so linux CI checks
-// these files fully. A linux build with cgo off gets a stub whose
-// constructor returns ErrUnavailable, so a development build still compiles
-// and reports why it cannot publish; the release guard rejects shipping it.
+// The package binds libsysrepo through cgo, and that binding is the only
+// implementation it has. The module ships one platform and builds with cgo
+// on, and the go-makefile cgo hook provisions the pinned libraries where the
+// gates run, so the gates check these files fully.
 package yangpub
 
-import (
-	"context"
-	"errors"
-)
-
-// ErrUnavailable means this binary was built without the sysrepo
-// binding. The caller keeps running without a management surface; the
-// data path is never gated on it.
-var ErrUnavailable = errors.New("yangpub: built without the sysrepo binding")
+import "context"
 
 // Datastore names a sysrepo datastore a publish targets.
 type Datastore string

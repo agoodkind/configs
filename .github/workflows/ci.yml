@@ -29,7 +29,7 @@ jobs:
       # Match release.yml. Adding a release workflow switches this job's build
       # gate into the compile matrix, which would otherwise dry-run platforms
       # this module never ships.
-      release_platforms: linux/amd64 freebsd/amd64
+      release_platforms: linux/amd64
 
   # The deploy command runs this same gate over a playbook's files and refuses
   # to deploy on a banned default or presence check, which is where such a
