@@ -21,8 +21,10 @@
 # would stage one release for both. A second run downloads and unpacks
 # nothing: get_url skips an archive already on disk with the pinned checksum,
 # and unarchive is skipped once the marker its unpack writes exists. The
-# marker carries the archive's checksum in its name, so a pin that moves to a
-# different checksum under the same tag unpacks again. The controller tasks
+# marker carries the archive's checksum in its name, and an unpack directory
+# without the pinned archive's marker is emptied before the unpack, so a pin
+# that moves to a different checksum under the same tag unpacks again into a
+# directory that holds nothing of the earlier archive. The controller tasks
 # also run in check mode, so a --check deploy stages the release without
 # touching a host.
 #
@@ -70,6 +72,34 @@
   loop: "{{ release_assets }}"
   loop_control:
     label: "{{ item.name }}"
+
+- name: Look for the unpack marker of each archive of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  ansible.builtin.stat:
+    path: "{{ item.marker }}"
+  loop: "{{ release_unpack_plan }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: release_unpack_markers
+
+# An unpack directory holds the members of exactly one archive. Without the
+# pinned archive's marker it is removed before the unpack below, so a member
+# of an earlier archive at the same tag cannot linger beside the new ones and
+# reach a host through a whole-directory copy.
+- name: Remove the unpack directory of each archive not yet unpacked of {{ release_var_prefix }}
+  delegate_to: localhost
+  become: false
+  throttle: 1
+  check_mode: false
+  ansible.builtin.file:
+    path: "{{ item.item.dir }}"
+    state: absent
+  loop: "{{ release_unpack_markers.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: not item.stat.exists
 
 - name: Create the stage directories of {{ release_var_prefix }}
   delegate_to: localhost
@@ -138,8 +168,9 @@
     label: "{{ item.name }}"
 
 # The marker the unpack above checks. It is written only after a whole archive
-# unpacked, and its name carries that archive's checksum, so a directory that
-# holds it holds every member of exactly that archive.
+# unpacked into a directory emptied for it, and its name carries that
+# archive's checksum, so a directory that holds it holds the members of
+# exactly that archive and nothing else.
 - name: Mark each unpacked archive of {{ release_var_prefix }}
   delegate_to: localhost
   become: false
