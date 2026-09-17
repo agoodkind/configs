@@ -127,6 +127,10 @@ mwan_status_push_port: 50053
 # mwan module moves out (MWAN-379); opnsensectl publishes its own.
 mwan_release_repo: agoodkind/configs
 opnsensectl_release_repo: agoodkind/opnsensectl
+# Both release workflows call the reusable release workflow of this
+# repository, so it is the workflow that signs every attestation the pull
+# verifies.
+release_signer_repo: agoodkind/go-makefile
 # Under the repository root, where .gitignore already keeps it out of the tree.
 release_stage_root: "{{ playbook_dir | dirname | dirname }}/.make/releases"
 
