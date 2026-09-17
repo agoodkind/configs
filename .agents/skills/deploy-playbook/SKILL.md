@@ -30,11 +30,12 @@ flags.
 ## Invocation Pattern
 
 ```bash
-./configsctl deploy <name> [--release <tag>] [--opnsensectl-release <tag>] [--limit <host>] [--check] [--diff]
+./configsctl deploy <name> [--limit <host>] [--check] [--diff]
 ```
 
-`deploy-proxmox` and `deploy-opnsense` install opnsensectl and need
-`--opnsensectl-release`. Deploy the hypervisor before its router, because the
+A play that installs the mwan binary or opnsensectl pulls the release its
+environment pins in group vars onto the controller first, so no release is
+named on the command line. Deploy the hypervisor before its router, because the
 router deploy reads the daemon through the hypervisor's opnsensectl.
 
 `<name>` is the playbook stem, such as `deploy-proxmox` or `deploy-mwan`. The
@@ -49,10 +50,10 @@ doubt.
 
 ```bash
 # Configure both Proxmox hypervisors
-./configsctl deploy deploy-proxmox --release <tag> --opnsensectl-release <tag>
+./configsctl deploy deploy-proxmox
 
 # Configure only vault
-./configsctl deploy deploy-proxmox --release <tag> --opnsensectl-release <tag> --limit vault
+./configsctl deploy deploy-proxmox --limit vault
 
 # Dry-run the MWAN VM playbook
 ./configsctl deploy deploy-mwan --check --diff
@@ -61,7 +62,7 @@ doubt.
 ./configsctl deploy deploy-mwan-failover --limit mwan_failover_suburban_servers
 
 # Configure the testbed OPNsense
-./configsctl deploy deploy-opnsense --opnsensectl-release <tag> --limit opnsense_suburban_servers
+./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers
 
 # Suburban-only testbed extras
 ./configsctl deploy deploy-testbed --limit suburban
