@@ -22,7 +22,8 @@ module GithubRelease
   OPNSENSECTL_REPO = 'agoodkind/opnsensectl'
   OPNSENSECTL_TAG = '202609151528-1-a1fe548'
   OPNSENSECTL_COMMIT = 'a1fe5484c0c37b4097999412c607eeafd4c0a65a'
-  CHECKSUM = 'sha256:ddfe74f593d5ecf54f29c370d09135b106ea2684be27bed8c5159bee4a94b890'
+  CHECKSUM_DIGEST = 'ddfe74f593d5ecf54f29c370d09135b106ea2684be27bed8c5159bee4a94b890'
+  CHECKSUM = "sha256:#{CHECKSUM_DIGEST}"
 
   # The task file's expressions: every set_fact task without a loop in file
   # order, the looped set_fact that plans one archive, and the download and
@@ -155,8 +156,9 @@ RSpec.describe GithubRelease do
       expect(fields[:download]['dest']).to eq(want_archive), "download dest = #{fields[:download]['dest'].inspect}, want #{want_archive.inspect}"
       expect(fields[:unpack]['src']).to eq(want_archive), "unpack src = #{fields[:unpack]['src'].inspect}, want #{want_archive.inspect}"
       expect(fields[:unpack]['dest']).to eq(test_case[:want_dir]), "unpack dest = #{fields[:unpack]['dest'].inspect}, want #{test_case[:want_dir].inspect}"
-      expect(fields[:unpack]['creates']).to start_with("#{test_case[:want_dir]}/"),
-                                            "unpack creates = #{fields[:unpack]['creates'].inspect}, want a marker inside #{test_case[:want_dir].inspect}"
+      want_marker = "#{test_case[:want_dir]}/.unpacked-#{GithubRelease::CHECKSUM_DIGEST}"
+      expect(fields[:unpack]['creates']).to eq(want_marker),
+                                            "unpack creates = #{fields[:unpack]['creates'].inspect}, want the checksum marker #{want_marker.inspect}"
     end
   end
 

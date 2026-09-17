@@ -20,8 +20,10 @@
 # would stage one release for both. A second run downloads and unpacks
 # nothing: get_url skips an archive already on disk with the pinned checksum,
 # and unarchive is skipped once the marker its unpack writes exists. The
-# controller tasks also run in check mode, so a --check deploy stages the
-# release without touching a host.
+# marker carries the archive's checksum in its name, so a pin that moves to a
+# different checksum under the same tag unpacks again. The controller tasks
+# also run in check mode, so a --check deploy stages the release without
+# touching a host.
 #
 # Layout under <release_stage_root>/<release_var_prefix>/<release_tag>/:
 #   <name>_<goos>_<goarch>.tar.gz   each archive as published
@@ -52,13 +54,17 @@
     release_asset_platform: "{{ item.name | regex_findall('_([^_]+_[^_]+)\\.tar\\.gz$') | first }}"
     release_asset_folder: >-
       {{ release_asset_platform if release_asset_name == release_var_prefix else release_asset_name }}
+    release_asset_dir: "{{ release_tag_dir }}/{{ release_asset_folder }}"
+    # The hex after the algorithm, so the marker names the exact archive.
+    release_asset_digest: "{{ item.checksum.split(':') | last }}"
   ansible.builtin.set_fact:
     release_unpack_plan: >-
       {{ release_unpack_plan + [{
            'name': item.name,
            'checksum': item.checksum,
            'archive': release_tag_dir ~ '/' ~ item.name,
-           'dir': release_tag_dir ~ '/' ~ release_asset_folder
+           'dir': release_asset_dir,
+           'marker': release_asset_dir ~ '/.unpacked-' ~ release_asset_digest
          }] }}
   loop: "{{ release_assets }}"
   loop_control:
@@ -119,14 +125,14 @@
     src: "{{ item.archive }}"
     dest: "{{ item.dir }}"
     remote_src: true
-    creates: "{{ item.dir }}/.unpacked"
+    creates: "{{ item.marker }}"
   loop: "{{ release_unpack_plan }}"
   loop_control:
     label: "{{ item.name }}"
 
 # The marker the unpack above checks. It is written only after a whole archive
-# unpacked, so a directory that holds it holds every member of the archive
-# whose checksum it records.
+# unpacked, and its name carries that archive's checksum, so a directory that
+# holds it holds every member of exactly that archive.
 - name: Mark each unpacked archive of {{ release_var_prefix }}
   delegate_to: localhost
   become: false
@@ -134,7 +140,7 @@
   check_mode: false
   ansible.builtin.copy:
     content: "{{ item.checksum }}\n"
-    dest: "{{ item.dir }}/.unpacked"
+    dest: "{{ item.marker }}"
     mode: "0644"
   loop: "{{ release_unpack_plan }}"
   loop_control:
