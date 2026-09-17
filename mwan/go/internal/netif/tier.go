@@ -1,5 +1,3 @@
-//go:build linux
-
 package netif
 
 // TierMember is one steering member's tier membership: the name the health

@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package steering assigns each new connection to a provider. It owns the nft
 // table and chain that carry the balancing rules, computes the split from the
 // active tier's healthy providers and their weights, and reprograms the chain on

@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package hostipv6policy keeps the suburban hypervisor's host-side IPv6
 // RA policy aligned with the intended bridge roles. Proxmox still owns
 // bridge existence and shape; this module only reconciles live kernel

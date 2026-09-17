@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package bridgeprobe implements an alert-only module for the
 // failover role: when the watched iface has been silent
 // (no RA observed AND no DHCP-server reply) for longer than a

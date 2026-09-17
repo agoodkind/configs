@@ -1,5 +1,3 @@
-//go:build linux && cgo
-
 package yangpub
 
 // No #cgo directive here: publisher_cgo.go supplies the package's sysrepo and

@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package policyrules implements the ifmgr policy-rules module: keeps a
 // configured list of `ip rule` entries present in the kernel. Each rule
 // is an (priority, family, selector, table) tuple. Foreign rules at
