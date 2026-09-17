@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package ifmgr implements the mwan interface-manager daemon.
 //
 // One daemon binary, one subcommand (`mwan ifmgr`), serves multiple

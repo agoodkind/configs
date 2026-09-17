@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package networkjson loads the gateway's network configuration: the provider
 // inventory, each provider's routing slots, translation prefix, source pin,
 // static mappings, and health probe, and the group-wide translation, internal

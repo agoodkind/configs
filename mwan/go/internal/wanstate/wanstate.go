@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package wanstate holds the live steering state the management surface
 // serves. Modules write a snapshot of what they just reconciled; the
 // operational-datastore provider reads it at request time. The store is
