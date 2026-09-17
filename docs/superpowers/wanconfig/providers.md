@@ -252,6 +252,18 @@ the network manager's unit directory. The firewall keeps loading before
 `network-pre.target`, and the daemon takes no ordering after
 `network-online.target`, which would close a cycle.
 
+A reload does not carry a changed `.link` file. udev reads that file when the
+device appears, and the network manager's reload does not revisit it, so a
+device already present keeps the name and the address it was given at boot.
+The daemon writes the new file, compares the name it asks for against the name
+the link currently has, and logs the difference rather than renaming a live
+link, which the kernel refuses anyway. Changing an existing provider's
+interface name or device match therefore takes effect at the next reboot. A
+provider whose device is attached after the deploy is not affected, because
+udev reads the new file when that device appears. A changed `.network` or
+`.netdev` does take effect on reload, so addressing, routing, and the
+delegation change without a reboot.
+
 The entry describes a link in two layers.
 
 **Typed leaves.** The standard per-family containers, plus the leaves this
@@ -431,8 +443,25 @@ DUIDRawData=...
 PrefixDelegationHint=::/60
 ```
 
-The parent's `20-att.link` and `20-att.network` are not rendered. They carry
-the 802.1X match and the fiber-module address and stay in the repository.
+A VLAN exists only because its parent's `.network` names it. The parent
+therefore carries a line naming the child:
+
+```ini
+[Network]
+VLAN=enatt0.3242
+```
+
+For AT&T that line is already in the hand-authored `20-att.network`, beside the
+802.1X match and the fiber-module address, and it stays there with the rest of
+that file. The renderer never writes the AT&T parent, so the entry and that
+file have to agree: the fidelity comparison checks that every VLAN a provider
+entry declares is named by its parent's file, whether that file is rendered or
+hand-authored, and reports a VLAN whose parent does not name it.
+
+For a VLAN on any other parent, the parent is a rendered link like any other
+and the renderer emits the naming line into its `.network` from the child's
+entry. No entry declares its own children; the child names its parent and the
+renderer reads the list the other way.
 
 ### Example: a shape with no typed leaf at all
 
@@ -529,6 +558,12 @@ deletion.
 A free-form key is not checked by the deploy's schema validation. A typo
 there surfaces as a networkd warning on the gateway, not as a deploy failure.
 The typed leaves exist so the common shapes do not take that path.
+
+A VLAN whose parent's file does not name it is created by nothing, and the
+provider is simply absent with no error from any layer. The fidelity
+comparison checks the naming line in both directions, and the daemon fails the
+load when a provider declares a VLAN parent that no interface in the same
+document describes.
 
 The ordering within the firewall's translation chain decides behavior,
 because a translation statement stops rule evaluation. Grouping outbound
