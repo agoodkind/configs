@@ -36,7 +36,7 @@ Nothing else under third_party is deployed. Once the schema is embedded, the sub
 
 ## The install verb
 
-`mwan install` runs on the host as root after the binary is in place. It reads config.toml and network.json, renders every embedded template, writes each file to its path only when the content differs, and then applies what it wrote through library calls, not shell scripts:
+`mwan install` with no flags prints its help and exits without touching the host. `mwan install --apply` runs on the host as root after the binary is in place. It reads config.toml and network.json, renders every embedded template, writes each file to its path only when the content differs, and then applies what it wrote through library calls, not shell scripts:
 
 - systemd units and drop-ins: daemon-reload, then enable, through the systemd D-Bus API already in the module's dependencies.
 - sysctl: each key written through the sysctl runner the module already has.
@@ -45,7 +45,7 @@ Nothing else under third_party is deployed. Once the schema is embedded, the sub
 
 The verb prints one line per file that changed and exits non-zero on any failure. Running it twice changes nothing the second time. It never restarts the daemon that runs it; the playbook keeps the restart decision.
 
-`opnsensectl install` has the same contract on the router (rc.d script, run shim, rc.conf defaults, loader entry) and on the hypervisor (the two host units), using the same idempotent write and the platform's service manager.
+`opnsensectl install` has the same contract, help by default and `--apply` to act, on the router (rc.d script, run shim, rc.conf defaults, loader entry) and on the hypervisor (the two host units), using the same idempotent write and the platform's service manager.
 
 The templates are files in each repository, embedded with go:embed. They are not Go string literals. A reviewer reads a unit file as a unit file.
 
