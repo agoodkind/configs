@@ -6,6 +6,9 @@
 #   release_tag         the release tag
 #   release_assets      a list of name and checksum; the checksum is
 #                       sha256:<hex> from the release's checksums.txt
+#   release_required_assets
+#                       the archive names the play reads; the pull refuses a
+#                       pin that lacks one of them
 #   release_var_prefix  mwan or opnsensectl
 #
 # release_stage_root and release_signer_repo are set once in group_vars/all.
@@ -57,19 +60,20 @@
   loop_control:
     label: "{{ item.name }}"
 
-# An empty pin plans nothing, and the facts below would still be set. This
-# assert fails on the controller before any host task runs. A name without its
-# platform suffix, or an entry without a checksum, already fails in the plan
-# above.
-- name: Refuse a plan of {{ release_var_prefix }} without its binary archive
+# A pin that lacks an archive the play reads would still set the facts below,
+# and the deploy would fail at a host copy after earlier tasks changed the
+# host. This assert fails on the controller before any host task runs. A name
+# without its platform suffix, or an entry without a checksum, already fails
+# in the plan above.
+- name: Refuse a plan of {{ release_var_prefix }} that lacks an archive the play reads
   ansible.builtin.assert:
     that:
-      - "release_unpack_plan | map(attribute='name') | select('match', '^' ~ release_var_prefix ~ '_[^_]+_[^_]+[.]tar[.]gz$') | list | length > 0"
+      - release_required_assets is subset(release_unpack_plan | map(attribute='name') | list)
       - "release_unpack_plan | map(attribute='checksum') | reject('match', '^sha256:[0-9a-f]{64}$') | list | length == 0"
     fail_msg: >-
-      {{ release_var_prefix }}_release_assets must list the {{ release_var_prefix }}
-      binary archive ({{ release_var_prefix }}_<goos>_<goarch>.tar.gz) and give
-      each archive its sha256:<hex> checksum; got {{ release_assets | to_json }}
+      {{ release_var_prefix }}_release_assets must list
+      {{ release_required_assets | join(' and ') }} and give each archive its
+      sha256:<hex> checksum; got {{ release_assets | to_json }}
 
 - name: Look for the unpack marker of each archive of {{ release_var_prefix }}
   delegate_to: localhost

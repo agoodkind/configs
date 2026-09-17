@@ -31,6 +31,8 @@
         release_repo: "{{ opnsensectl_release_repo }}"
         release_tag: "{{ opnsensectl_release_tag }}"
         release_assets: "{{ opnsensectl_release_assets }}"
+        release_required_assets:
+          - opnsensectl_freebsd_amd64.tar.gz
         release_var_prefix: opnsensectl
 
     - name: Run in-guest install task

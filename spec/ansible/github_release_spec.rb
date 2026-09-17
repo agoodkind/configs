@@ -46,19 +46,40 @@ module GithubRelease
       'checksum' => "#{CHECKSUM_PREFIX}755be32a19fe0ff0a12b5d65b4828c5be59a14136e173850c1b706c2cac23132" }
   ].freeze
 
+  # The archives each play reads, as the importing play declares them.
+  MWAN_GATEWAY_REQUIRED = ['mwan_linux_amd64.tar.gz', 'wanconfig-stack_linux_amd64.tar.gz'].freeze
+  OPNSENSECTL_ROUTER_REQUIRED = ['opnsensectl_freebsd_amd64.tar.gz'].freeze
+
   # A pin is refused on the controller, before the play reaches a host, unless
-  # its plan holds the binary archive and every archive carries a sha256
-  # checksum. An empty pin would otherwise plan nothing while the release facts
-  # are still set.
+  # its plan holds every archive the play reads and every archive carries a
+  # sha256 checksum. An empty pin would otherwise plan nothing while the
+  # release facts are still set.
   PIN_CASES = [
-    { name: 'the pinned mwan archives', prefix: 'mwan', assets: MWAN_ASSETS, want: true },
-    { name: 'the pinned opnsensectl archives', prefix: 'opnsensectl', assets: OPNSENSECTL_ASSETS, want: true },
-    { name: 'no archive', prefix: 'mwan', assets: [], want: false },
-    { name: 'the data archive without the binary archive', prefix: 'mwan', assets: [MWAN_ASSETS.last], want: false },
+    { name: 'the pinned mwan archives', prefix: 'mwan', assets: MWAN_ASSETS, required: MWAN_GATEWAY_REQUIRED, want: true },
+    {
+      name: 'the pinned opnsensectl archives', prefix: 'opnsensectl', assets: OPNSENSECTL_ASSETS,
+      required: OPNSENSECTL_ROUTER_REQUIRED, want: true
+    },
+    { name: 'no archive', prefix: 'mwan', assets: [], required: MWAN_GATEWAY_REQUIRED, want: false },
+    {
+      name: 'the data archive without the binary archive', prefix: 'mwan', assets: [MWAN_ASSETS.last],
+      required: MWAN_GATEWAY_REQUIRED, want: false
+    },
+    {
+      name: 'the binary archive without the data archive', prefix: 'mwan', assets: [MWAN_ASSETS.first],
+      required: MWAN_GATEWAY_REQUIRED, want: false
+    },
+    {
+      name: 'the binary archive of another platform', prefix: 'opnsensectl', assets: [OPNSENSECTL_ASSETS.first],
+      required: OPNSENSECTL_ROUTER_REQUIRED, want: false
+    },
     {
       name: 'a checksum without its algorithm', prefix: 'mwan',
-      assets: [{ 'name' => MWAN_ASSETS.first['name'], 'checksum' => MWAN_ASSETS.first['checksum'].delete_prefix(CHECKSUM_PREFIX) }],
-      want: false
+      assets: [
+        { 'name' => MWAN_ASSETS.first['name'], 'checksum' => MWAN_ASSETS.first['checksum'].delete_prefix(CHECKSUM_PREFIX) },
+        MWAN_ASSETS.last
+      ],
+      required: MWAN_GATEWAY_REQUIRED, want: false
     }
   ].freeze
 
@@ -149,11 +170,11 @@ module GithubRelease
 
   # The verdict of the assert that accepts or refuses a pin, evaluated against
   # the plan the looped set_fact builds from the pinned archives, one entry per
-  # archive in pin order.
-  def pin_accepted?(expressions, variables, assets)
+  # archive in pin order, and the archives the play declares it reads.
+  def pin_accepted?(expressions, variables, assets, required)
     plan = assets.map { |asset| plan_entry(expressions, variables, asset['name'], asset['checksum']) }
     result = TaskExpressions.evaluate(
-      variables: variables.merge(PLAN_FACT => plan),
+      variables: variables.merge(PLAN_FACT => plan, 'release_required_assets' => required),
       facts: [],
       conditions: { PIN_CONDITION => expressions.pin }
     )
@@ -200,10 +221,11 @@ RSpec.describe GithubRelease do
       variables = described_class.base_variables(
         prefix: test_case[:prefix], repo: GithubRelease::MWAN_REPO, tag: GithubRelease::MWAN_TAG, commit: GithubRelease::MWAN_COMMIT
       )
-      accepted = described_class.pin_accepted?(@expressions, variables, test_case[:assets])
+      accepted = described_class.pin_accepted?(@expressions, variables, test_case[:assets], test_case[:required])
 
       expect(accepted).to be(test_case[:want]),
-                          "pin accepted = #{accepted}, want #{test_case[:want]} (that #{@expressions.pin.inspect}, assets #{test_case[:assets].inspect})"
+                          "pin accepted = #{accepted}, want #{test_case[:want]} (that #{@expressions.pin.inspect}, " \
+                          "assets #{test_case[:assets].inspect}, required #{test_case[:required].inspect})"
     end
   end
 

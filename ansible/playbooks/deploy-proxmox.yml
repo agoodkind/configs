@@ -36,6 +36,8 @@
         release_repo: "{{ mwan_release_repo }}"
         release_tag: "{{ mwan_release_tag }}"
         release_assets: "{{ mwan_release_assets }}"
+        release_required_assets:
+          - mwan_linux_amd64.tar.gz
         release_var_prefix: mwan
 
     - name: Pull the pinned opnsensectl release
@@ -44,6 +46,8 @@
         release_repo: "{{ opnsensectl_release_repo }}"
         release_tag: "{{ opnsensectl_release_tag }}"
         release_assets: "{{ opnsensectl_release_assets }}"
+        release_required_assets:
+          - opnsensectl_linux_amd64.tar.gz
         release_var_prefix: opnsensectl
 
     - name: Configure Proxmox host services
