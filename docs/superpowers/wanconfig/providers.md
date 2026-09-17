@@ -480,6 +480,15 @@ are unchanged. The firewall rules are unchanged except that the three
 balancing lines move from the ruleset file into the daemon's chain, where they
 express the same half-and-half split.
 
+The daemon's move before udev and the network manager is proven on the
+testbed before it reaches production: a cutover with a reboot that records
+the daemon starting before both, every provider link up with its name and
+lease, and rules, routes, firewall and served tree unchanged; a failover
+exercise (the fallback drill in both families, a reboot with one link
+absent, the AT&T 802.1X path, and a daemon restart while links are up); and
+a check-mode run against the production gateway before the production
+cutover.
+
 The rendered systemd-networkd units for the current provider set are
 identical to the hand-authored files they replace, outside comment lines.
 This comparison runs in CI against the checked-in files before those files
