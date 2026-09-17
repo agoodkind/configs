@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package ralost implements the ifmgr ra-lost alert module: emits WARN
 // when no RA has been observed on the watched iface for longer than a
 // configured threshold. Works on every role; for oob it consumes the

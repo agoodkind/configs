@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package mainv4 applies DHCPv4 lease state to the watched interface and
 // to the main routing table. This is the failover analogue of oobv4
 // (which applies to a separate OOB table for vault).
