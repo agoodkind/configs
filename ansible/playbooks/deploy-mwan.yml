@@ -38,6 +38,18 @@
       {{ query('fileglob', repo_root ~ '/mwan/yang/goodkind-mwan-steering@*.yang') | first }}
 
   tasks:
+    # The release this play installs is pinned in the environment's group
+    # vars and pulled onto the controller first, so a bad pin fails before
+    # any host is touched and every later read of a release variable sees
+    # the release it names.
+    - name: Pull the pinned mwan release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ mwan_release_repo }}"
+        release_tag: "{{ mwan_release_tag }}"
+        release_assets: "{{ mwan_release_assets }}"
+        release_var_prefix: mwan
+
     - name: Generate deploy trace ID (early)
       ansible.builtin.set_fact:
         mwan_deploy_trace_id: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}-deploy-{{ 999999 | random }}"
@@ -101,8 +113,8 @@
     # the released binary is pushed there before the first gate call. The
     # dedicated filename keeps the watchdog's own /usr/local/bin/mwan
     # untouched; deploy-proxmox.yml owns that copy. The binary comes from the
-    # release the operator named with `configsctl deploy --release <tag>`, which
-    # staged it under mwan_release_dir after verifying its attestation.
+    # release the environment pins, pulled and verified at the top of this
+    # play and unpacked under mwan_release_dir.
     - name: Push the deploy-gate binary to the Proxmox delegate
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.copy:
@@ -287,10 +299,9 @@
     # render and before any gateway file is written, so a rejected render
     # leaves the gateway untouched, and the model directory the daemon
     # validates its network file against carries the revision this deploy
-    # renders for by the time the file lands. The release staged the bundle
-    # beside the binaries; mwan_release_tag and wanconfig_stack_dir are read
-    # bare, so a deploy without --release fails at its first read of a
-    # release variable rather than installing nothing.
+    # renders for by the time the file lands. The release pull at the top of
+    # this play unpacked the bundle beside the binary and named it
+    # wanconfig_stack_dir.
     - name: Install the wanconfig management stack
       ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
       become: true

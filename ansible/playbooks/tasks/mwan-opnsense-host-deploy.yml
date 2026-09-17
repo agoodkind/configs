@@ -11,9 +11,9 @@
 # The bridge dials the relay instead of the chardev. See docs/ops/opnsense/wedge.md.
 #
 # Required vars:
-#   opnsensectl_host_binary_local        controller path of the staged released linux opnsensectl binary
-#   opnsensectl_release_tag              release tag, passed by `configsctl deploy --opnsensectl-release`
-#   opnsensectl_release_commit           commit that tag points at, passed the same way
+#   opnsensectl_host_binary_local        controller path of the pulled released linux opnsensectl binary
+#   opnsensectl_release_tag              release tag the environment pins, set by github-release.yml
+#   opnsensectl_release_commit           commit that tag points at, set the same way
 #   mwan_opnsense_drain_listen           relay socket path the drainer serves
 #
 # Both units read their runtime inputs from /etc/opnsensectl/config.toml, which

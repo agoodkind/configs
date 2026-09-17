@@ -23,6 +23,17 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
+    # The release this play installs is pinned in the environment's group
+    # vars and pulled onto the controller first, so a bad pin fails before
+    # any host is touched.
+    - name: Pull the pinned mwan release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ mwan_release_repo }}"
+        release_tag: "{{ mwan_release_tag }}"
+        release_assets: "{{ mwan_release_assets }}"
+        release_var_prefix: mwan
+
     - name: Ensure /etc/mwan exists
       ansible.builtin.file:
         path: /etc/mwan

@@ -1,8 +1,8 @@
 ---
 # Install the wanconfig management stack on the MWAN gateway (MWAN-434).
 # The stack arrives as Debian packages built, proven, and attested by the
-# mwan release: the controller stages the bundle beside the binaries, and
-# these tasks copy the packages to the gateway and install them with apt.
+# mwan release: the play's release pull unpacks the bundle beside the binary,
+# and these tasks copy the packages to the gateway and install them with apt.
 # No gateway runs a compiler, a clone, or cmake. The vendored YANG model
 # loads into the sysrepo datastore, and rousette serves RESTCONF on ::1
 # behind an nghttpx front end bound to the management address only.
@@ -59,7 +59,7 @@
   ansible.builtin.assert:
     that:
       - wanconfig_debs.files | length > 0
-    fail_msg: "no .deb files under {{ wanconfig_deb_dir }}; stage the release with --release"
+    fail_msg: "no .deb files under {{ wanconfig_deb_dir }}; the pulled release holds no packages"
 
 # apt resolves the packages' interdependencies in one transaction. A
 # same-version reinstall is a no-op, which apt reports as 0 upgraded

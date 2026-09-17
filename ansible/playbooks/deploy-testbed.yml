@@ -32,6 +32,17 @@
     # mwan binary on suburban host (used by the host mwan-ifmgr)
     # ----------------------------------------------------------------------
 
+    # The release this play installs is pinned in the testbed's group vars
+    # and pulled onto the controller first, so a bad pin fails before the
+    # host is touched.
+    - name: Pull the pinned mwan release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ mwan_release_repo }}"
+        release_tag: "{{ mwan_release_tag }}"
+        release_assets: "{{ mwan_release_assets }}"
+        release_var_prefix: mwan
+
     - name: Deploy mwan binary
       ansible.builtin.copy:
         src: "{{ mwan_release_dir }}/linux_amd64/mwan"
