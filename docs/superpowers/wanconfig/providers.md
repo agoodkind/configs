@@ -4,9 +4,9 @@ A provider is one entry in inventory. Adding, removing, re-tiering, or
 re-weighting a provider is an edit to that entry and a configuration deploy.
 The entry holds the provider's routing numbers, tier, weight, translation
 prefix, probe policy, and link identity. The daemon validates the entry at
-load. The binary renders the systemd-networkd unit files for the provider's
-link from the entry. No provider name appears in Go outside tests, and no
-file is written by hand for a provider.
+load and renders the systemd-networkd unit files for the provider's link
+from it. No provider name appears in Go outside tests, and no file is
+written by hand for a provider.
 
 One link is exempt: the AT&T physical interface, which runs 802.1X
 authentication and carries a fixed address for the fiber module. Its `.link`
@@ -219,11 +219,15 @@ first state, every provider reads healthy and the first tier activates.
 ## Link bring-up renders from the provider entry
 
 systemd-networkd brings links up: it matches the device, names it, sets its
-address, and runs both DHCP clients. Its unit files come from the binary. The
-install verb reads `network.json` and writes one `.link` and one `.network`
+address, and runs both DHCP clients. The daemon writes its unit files. From
+the loaded network configuration it renders one `.link` and one `.network`
 per provider, plus a `.netdev` and a second `.network` for a provider on a
-VLAN. No per-provider template exists in the repository. The deploy copies no
-unit file for a provider link.
+VLAN. It renders at startup and whenever it reloads the configuration, writes
+a file only when the content differs from what is on disk, and asks
+systemd-networkd to reload after a write. The files persist on disk, so after
+a reboot the network manager brings the links up before the daemon starts.
+No per-provider template exists in the repository. The deploy copies no unit
+file for a provider link.
 
 The entry describes a link in two layers.
 
@@ -233,8 +237,8 @@ matched (by driver or by hardware address), the interface name, the hardware
 address, whether each family runs a DHCP client, the delegation client's
 identity and hint, whether router advertisements are accepted, the route
 metric, and an optional VLAN parent with its tag. The schema validates each
-one. The daemon reads the ones it needs for its own behavior. The binary maps
-each leaf to a unit-file section and key through one table. That table is the
+one. The daemon reads the ones it needs for its own behavior and maps each
+leaf to a unit-file section and key through one table. That table is the
 only place a networkd key name appears in Go.
 
 **Free-form sections.** An augment on the interface that mirrors the unit
@@ -249,15 +253,15 @@ The renderer maps the typed leaves through its table, then appends the
 free-form sections. A section named by both layers is merged under one
 heading, because networkd treats repeated headings as one. A key named by
 both layers is a load error. The unit files are written through a maintained
-serializer for the systemd unit format, so the binary owns the mapping and
+serializer for the systemd unit format, so the daemon owns the mapping and
 not the syntax.
 
 The current three providers render from typed leaves except for the keys
 named in the examples below. The fidelity gate lists every free-form key the
 current providers use.
 
-An entry the renderer rejects stops the install verb before it writes
-anything.
+An entry the renderer rejects stops the daemon at load, before it writes any
+file or touches the kernel.
 
 ### Example: a static link with a delegation client
 
@@ -287,7 +291,7 @@ the model revision fixes them.
 }
 ```
 
-The install verb writes `20-webpass.link`:
+The daemon writes `20-webpass.link`:
 
 ```ini
 [Match]
@@ -356,8 +360,8 @@ WithoutRA=solicit
 RouterLifetimeSec=1800
 ```
 
-If the free-form sections also set `PrefixDelegationHint`, the install verb
-stops with:
+If the free-form sections also set `PrefixDelegationHint`, the daemon stops
+at load with:
 
 ```
 network.json: enmbrains0: networkd section DHCPv6 key PrefixDelegationHint is set by the delegation hint leaf; remove one
@@ -375,7 +379,7 @@ the parent and the tag:
 }
 ```
 
-The install verb writes `21-att-vlan.netdev`:
+The daemon writes `21-att-vlan.netdev`:
 
 ```ini
 [NetDev]
@@ -424,7 +428,7 @@ free-form sections:
 }
 ```
 
-The install verb writes a `.netdev` and a `.network` with those sections.
+The daemon writes a `.netdev` and a `.network` with those sections.
 
 ## The watchdog holds no provider list
 

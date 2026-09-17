@@ -74,7 +74,7 @@ checkable against the schema before it reaches the gateway.
 **Three, the provider set becomes data.** Inventory takes the model's shape,
 the daemon checks routing numbers instead of knowing them, each provider
 carries a tier and a weight that the daemon turns into the balancing rule, and
-the watchdog stops holding a provider list, and the binary renders the
+the watchdog stops holding a provider list, and the daemon renders the
 network manager's unit files from the provider entry. Adding a provider
 becomes one inventory entry and a config deploy, with the binary unchanged
 and no file authored by hand.
