@@ -160,6 +160,12 @@ YANG_DIR     ?= ../yang
 YANG_RFC_DIR ?= ../../third_party/yang/standard/ietf/RFC
 YANGLINT     ?= yanglint
 
+# Both gates resolve their inputs through make rather than a shell glob in the
+# recipe, so an empty result is a value each gate can refuse. A shell glob that
+# matches nothing expands to itself and reaches yanglint as a literal path,
+# which fails for the wrong reason and names no cause.
+YANG_MODELS := $(wildcard $(YANG_DIR)/*.yang)
+
 YANG_IETF_MODULES := \
 	$(YANG_RFC_DIR)/ietf-yang-types@2025-12-22.yang \
 	$(YANG_RFC_DIR)/ietf-inet-types@2025-12-22.yang \
@@ -170,8 +176,12 @@ YANG_IETF_MODULES := \
 
 .PHONY: yang-validate
 yang-validate:
+	@if [ -z "$(strip $(YANG_MODELS))" ]; then \
+		echo "yang-validate: no model files match $(YANG_DIR)/*.yang; restore them or fix YANG_DIR" >&2; \
+		exit 1; \
+	fi
 	$(YANGLINT) --version
-	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_DIR)/*.yang
+	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_MODELS)
 
 # A data instance carrying an interface must give it a type, and that identity
 # lives in the interface-type registry, so the instance gate needs one module
@@ -190,11 +200,19 @@ YANG_INSTANCES := $(wildcard $(YANG_DIR)/instances/*.json)
 # Each instance is validated as configuration, the same check the deploy runs on
 # the rendered file and the daemon runs at startup. A schema change that would
 # reject the shape the gateway is configured with fails here.
+#
+# The loop body runs once per document, so an empty list would run it zero times
+# and report success. This gate refuses that: a run that validated nothing is
+# not a passing run.
 .PHONY: yang-validate-instances
 yang-validate-instances:
+	@if [ -z "$(strip $(YANG_INSTANCES))" ]; then \
+		echo "yang-validate-instances: no instance documents match $(YANG_DIR)/instances/*.json; restore them or fix YANG_DIR" >&2; \
+		exit 1; \
+	fi
 	@for instance in $(YANG_INSTANCES); do \
 		echo "yanglint -t config $$instance"; \
-		$(YANGLINT) -t config $(YANG_INSTANCE_MODULES) $(YANG_DIR)/*.yang "$$instance" || exit 1; \
+		$(YANGLINT) -t config $(YANG_INSTANCE_MODULES) $(YANG_MODELS) "$$instance" || exit 1; \
 	done
 
 check: yang-validate yang-validate-instances
