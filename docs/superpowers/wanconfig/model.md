@@ -54,6 +54,23 @@ source and destination.
 A member is an interface with steering properties, not a parallel object.
 That keeps one identity per link.
 
+The module also gives each interface what the network manager needs to
+bring it up and the published models do not name. Typed leaves carry how
+the device is matched (by driver or by hardware address), the hardware
+address, whether each family runs a DHCP client, the delegation client's
+identity and hint, whether the delegation is solicited without a router
+advertisement, whether the delegated prefix is applied to the link, the
+downstream router lifetime, whether router advertisements are accepted, the
+route metric, an optional VLAN parent with its tag, and any extra addresses
+the provider's source pin covers beyond the link's own. One leaf states
+whether the interface's unit files are rendered from these leaves or
+hand-authored, and an interface carrying a provider states one or the other.
+A `networkd` container carries free-form unit-file sections, one ordered
+list of sections for each of `link`, `network`, and `netdev`, each section
+an ordered list of key and value pairs keyed by position, so a link shape
+with no typed leaf is still expressible. The schema validates the free-form
+structure and networkd validates its keys.
+
 The module also carries the daemon settings that no published model covers
 and the surface serves: the rollback watchdog's thresholds and probe
 targets, the out-of-band access policy, and the tunnel tap. They are plain
