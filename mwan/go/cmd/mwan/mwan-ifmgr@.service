@@ -46,9 +46,10 @@ ProtectSystem=strict
 ProtectHome=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-# PrivateTmp is absent because it adds an ordering after
-# systemd-tmpfiles-setup.service, which runs after local-fs.target. The daemon
-# writes nothing under /tmp.
+# PrivateTmp is absent because it orders the unit after
+# systemd-tmpfiles-setup.service, and that ordering stalls the boot 90 seconds:
+# the service waits for local-fs.target, which waits for the /boot/efi device
+# the coldplug trigger creates. The daemon writes nothing under /tmp.
 
 # ProtectKernelTunables: vault keeps the default true since its oob
 # instance does not need to write any sysctls. The failover role uses
@@ -71,8 +72,10 @@ ProtectKernelTunables=true
 # entry on hosts without the wanconfig stack (sysrepo's shared memory under
 # /dev/shm is already writable, since ProtectSystem leaves /dev alone).
 #
-# StateDirectory is absent for the same reason as PrivateTmp. The tmpfiles rule
-# in mwan/config/tmpfiles-mwan.conf creates /var/lib/mwan instead.
+# StateDirectory is absent because it orders the unit after
+# systemd-tmpfiles-setup.service, and that ordering stalls the boot 90 seconds:
+# the service waits for local-fs.target, which waits for the /boot/efi device
+# the coldplug trigger creates. A tmpfiles rule creates /var/lib/mwan instead.
 ReadWritePaths=/var/log /var/run /run /var/lib/mwan /etc/systemd/network -/etc/sysrepo
 # The static sysrepo inside the binary follows the upstream access policy:
 # repository files are group sysrepo with umask 007. The daemon joins that
