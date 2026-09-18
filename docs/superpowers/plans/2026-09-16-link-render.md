@@ -555,21 +555,61 @@ The same three leaves are added to the IPv6 augment, plus:
         }
         description "The client identity, as colon-separated octets.";
       }
+      leaf without-ra {
+        type enumeration {
+          enum no;
+          enum solicit;
+          enum information-request;
+        }
+        description
+          "Whether the client starts without waiting for a router
+           advertisement, and which exchange it starts with.";
+      }
+      leaf use-delegated-prefix {
+        type boolean;
+        description
+          "Whether the network manager applies the delegated prefix to
+           this link.";
+      }
+      leaf router-lifetime-seconds {
+        type uint32;
+        description
+          "The lifetime the link advertises to downstream routers, in
+           seconds.";
+      }
     }
 ```
 
-Everything else a provider needs today, including whether a delegation is
-solicited without a router advertisement and how long a downstream router
-lifetime runs, has no typed leaf and is carried as free-form sections. That is
-deliberate: the escape hatch is exercised by the current provider set from the
-first deploy, so it cannot rot unnoticed.
+The IPv4 augment also gains the source pin's extension:
+
+```yang
+    leaf-list source-addresses {
+      type inet:ipv4-address;
+      description
+        "Addresses beyond the link's own that traffic sourced from this
+         interface's provider may carry. The routing module pins the
+         link's static address on its own; this list adds to it and
+         never replaces it, because a source the provider does not route
+         back is dropped at its edge.";
+    }
+```
+
+Every line the current providers' unit files carry now has a typed leaf. The
+free-form layer starts empty for every current provider and is exercised by
+the instance document in Step 4 and the tests in Task 7.
+
+The `v4-source` leaf the earlier revision defined keeps its name and type,
+because no node an earlier revision defined changes shape. Its description
+changes to say the daemon fills it from the static address, so the served
+tree reports the same value it always has while inventory stops typing it.
 
 - [ ] **Step 4: add an instance that exercises the free-form path**
 
 `mwan/yang/instances/network-freeform.json` carries one interface with a link
 container, a static IPv4 address, a delegation, and a free-form `[DHCPv6]`
-section with one key no typed leaf names. `network-min.json` gains a link
-container so the minimum document still validates against the new nodes.
+section carrying `UseDNS=no`, a key no typed leaf names. `network-min.json`
+gains a link container so the minimum document still validates against the
+new nodes.
 
 - [ ] **Step 5: run the schema gates**
 
@@ -637,8 +677,10 @@ func TestLoadRejectsAKeySetByBothLayers(t *testing.T) {
 ```
 
 A second test loads the same document with the free-form key changed to
-`WithoutRA` and asserts the load succeeds and the section survives into
-`Config.Links`.
+`UseDNS` and asserts the load succeeds and the section survives into
+`Config.Links`. A third loads a document whose fixed-address provider carries
+no `v4-source` and asserts the built WAN entry's `V4Source` equals the
+address leaf, and that a leased-link provider's stays empty.
 
 - [ ] **Step 2: run it and watch it fail**
 
@@ -741,8 +783,15 @@ var placements = map[string]placement{
 	"delegation.duid-type":   {FileNetwork, "DHCPv6", "DUIDType"},
 	"delegation.duid":        {FileNetwork, "DHCPv6", "DUIDRawData"},
 	"delegation.hint":        {FileNetwork, "DHCPv6", "PrefixDelegationHint"},
+	"delegation.without-ra":  {FileNetwork, "DHCPv6", "WithoutRA"},
+	"delegation.use-delegated-prefix": {FileNetwork, "DHCPv6", "UseDelegatedPrefix"},
+	"delegation.router-lifetime-seconds": {FileNetwork, "IPv6PrefixDelegation", "RouterLifetimeSec"},
 }
 ```
+
+`source-addresses` has no row. It never reaches a unit file; the routing
+module reads it and adds one source rule per address at the provider's source
+priority, beside the rule the link address already gets.
 
 The two `DHCP` rows fold into one emitted key, because the network manager takes
 one value naming the families: `yes`, `ipv4`, `ipv6`, or `no`. The routes a
@@ -767,8 +816,11 @@ covers both directions with no file writing involved.
 `build` gains a pass that turns each interface carrying a `wan` container into a
 `networkd.Spec` and calls `networkd.Validate`. An interface with a `wan`
 container and neither a device match nor a VLAN fails the load, as does one whose
-family container omits `dhcp`, and so does one whose `v4-source` disagrees with
-its own static IPv4 address. A provider naming a VLAN parent that no interface
+family container omits `dhcp`. A fixed-address provider's `V4Source` is set
+from its address leaf, never read from the document; a leased-link provider's
+stays empty, which is the routing module's existing contract. A document that
+still carries `v4-source` fails the load naming the leaf, so inventory cannot
+keep typing a value the daemon now derives. A provider naming a VLAN parent that no interface
 in the same document describes also fails the load, because a VLAN whose parent
 is absent is created by nothing and the provider would be silently missing with
 no error from any layer.
@@ -815,39 +867,43 @@ git commit -S -m "Decode link identity and free-form unit sections in the networ
 
 - [ ] **Step 1: add a link block to each provider entry**
 
-Each entry in `mwan_providers` gains a `link` mapping, a per-family `dhcp`, and
-the delegation and free-form content its current unit files carry. Where a
-hardware value is also read by the environment file the 802.1X chain sources,
-the entry references that variable rather than repeating the value:
+Each rendered entry in `mwan_providers` gains a `link` mapping, a per-family
+`dhcp` and `forwarding`, and the delegation its current unit file carries.
+Where a hardware value is also read by the environment file, the entry
+references that variable rather than repeating the value. Monkeybrains, whose
+file carries every delegation key the model names:
 
 ```yaml
-  - name: att
+  - name: monkeybrains
+    link_files: rendered
     link:
-      iface: "{{ mwan_att_iface }}"
-      vlan: { parent: "{{ mwan_att_iface }}", id: "{{ mwan_att_vlan_id }}" }
+      iface: "{{ mwan_monkeybrains_iface }}"
+      match: { mac: "{{ mwan_mbrains_mac | lower }}" }
     ipv4:
+      forwarding: true
       dhcp: true
+      route_metric: 5000
     ipv6:
+      forwarding: true
       dhcp: true
       accept_ra: true
+      route_metric: 5000
       delegation:
-        hint: "::/60"
-        duid_type: vendor
-        duid: "{{ mwan_att_duid_raw_data }}"
-    networkd:
-      network:
-        - name: DHCPv6
-          entries:
-            - { key: UseDelegatedPrefix, value: "yes" }
-            - { key: WithoutRA, value: solicit }
-        - name: IPv6PrefixDelegation
-          entries:
-            - { key: RouterLifetimeSec, value: "1800" }
+        hint: "::/56"
+        duid_type: link-layer-time
+        duid: "{{ mwan_monkeybrains_duid_raw_data }}"
+        use_delegated_prefix: true
+        without_ra: solicit
+        router_lifetime_seconds: 1800
 ```
 
+Webpass drops its `v4_source` line: the daemon now takes the pin from the
+address leaf, and a document that still carries the value fails the load.
+
 Read each current template under `mwan/networkd/` and carry every key it emits
-into either a typed leaf or a free-form entry. A key left behind is a key the
-gate in Task 9 will report.
+into a typed leaf. Every key the current providers carry has one, so no entry
+carries a free-form block, and a key left behind is a key the gate in Task 9
+will report.
 
 AT&T is the exception and gets the opposite treatment. Its entry gains
 `link_files: hand-authored`, no link block, and no per-family addressing, and
@@ -1307,9 +1363,11 @@ file it replaced.
 come up differently after a reboot.** Task 10 depends on Task 9 for exactly this
 reason, and Task 11's file comparison is the second check on the same risk.
 
-**The IPv4 source pin and the static address describe the same address.** A
-provider with a static address carries both `v4-source`, which the routing module
-puts in a policy rule, and the address leaf, which the renderer puts in the unit
-file. They are typed separately and can disagree. The loader compares them when
-both are present and fails the load when they differ, which is the same
-treatment a doubled unit-file key gets.
+**The IPv4 source pin is the static address, so it is never typed twice.** The
+routing module's own contract defines the pin as the link's static address.
+The loader fills `V4Source` from the address leaf and refuses a document that
+still carries `v4-source`, so the two cannot drift. A provider that must source
+traffic from further addresses lists them in `source-addresses`; a listed
+address the provider does not route back is dropped at the provider's edge
+with no error on the gateway, which the daemon cannot detect and the operator
+can.
