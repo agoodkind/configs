@@ -71,8 +71,8 @@ mwan_opnsense_host_listen_path: /var/run/mwan-opnsense.sock
 mwan_opnsense_host_reconnect: "2s"
 mwan_opnsense_host_hb_interval: "30s"
 mwan_opnsense_host_hb_timeout: "10s"
-# The released linux opnsensectl binary the deploy staged; opnsensectl_release_dir
-# comes from `configsctl deploy --opnsensectl-release <tag>` and is unset without it.
+# The released linux opnsensectl binary the play pulled; deploy-proxmox sets
+# opnsensectl_release_dir from the environment's pin.
 opnsensectl_host_binary_local: "{{ opnsensectl_release_dir }}/linux_amd64/opnsensectl"
 
 # Cloudflared OOB tunnel paths (non-secret). The enabled flag and per-host

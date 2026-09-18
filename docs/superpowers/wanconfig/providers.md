@@ -106,7 +106,6 @@ mwan_providers:
         hint: "::/56"
         duid_type: link-layer-time
         duid: "..."
-    v4_source: "136.25.91.242"
     npt_prefix: "2604:5500:c271:be00::/60"
     static_mappings: [ ... ]
     health: { ... }
@@ -134,6 +133,9 @@ mwan_providers:
         hint: "::/56"
         duid_type: link-layer-time
         duid: "..."
+        use_delegated_prefix: true
+        without_ra: solicit
+        router_lifetime_seconds: 1800
     npt_prefix: "2607:f598:d3e8:4500::/60"
     health: { ... }
 
@@ -152,6 +154,16 @@ targets. It gets no IPv6 lease, no translation, and no IPv6 source rule.
 
 Each value is typed once. Where a gateway entry and a simulator definition
 describe the same wire, both read the service map.
+
+The IPv4 source pin is not typed at all. The routing module pins traffic the
+gateway sources from a provider's own address to that provider's table, and
+that address is the link's static address, so the daemon takes the pin from
+the address leaf. A leased link has no static address and gets no pin, as
+today. A provider that must also source traffic from other addresses, such as
+the rest of a delegated block held on the link or a routed prefix on a
+loopback, lists them under `source_addresses`, and the pin covers the link
+address plus that list. The list adds to the link address; it never replaces
+it, because a source the provider does not route back is dropped at its edge.
 
 Inventory writes an address the way an operator writes one, as a prefix in
 slash notation. The published model splits it into an address and a prefix
@@ -266,11 +278,15 @@ The entry describes a link in two layers.
 piece adds for what the published models do not name: how the device is
 matched (by driver or by hardware address), the interface name, the hardware
 address, whether each family runs a DHCP client, the delegation client's
-identity and hint, whether router advertisements are accepted, the route
-metric, and an optional VLAN parent with its tag. The schema validates each
-one. The daemon reads the ones it needs for its own behavior and maps each
-leaf to a unit-file section and key through one table. That table is the
-only place a networkd key name appears in Go.
+identity and hint, whether the delegation is solicited without a router
+advertisement, whether the delegated prefix is applied to the link, the
+downstream router lifetime, whether router advertisements are accepted, the
+route metric, and an optional VLAN parent with its tag. The schema validates
+each one. The daemon reads the ones it needs for its own behavior and maps
+each leaf to a unit-file section and key through one table. That table is the
+only place a networkd key name appears in Go. Every line the current
+providers' files carry has a typed leaf, so their free-form sections are
+empty.
 
 **Free-form sections.** An augment on the interface that mirrors the unit
 file format: for each of `link`, `network`, and `netdev`, an ordered list of
@@ -365,30 +381,31 @@ provider's routing table, taken from `table-id`.
 
 ### Example: a key with no typed leaf
 
-Monkeybrains solicits a delegation on a link where no router advertisement
-arrives, and advertises a router lifetime downstream. Neither has a typed
-leaf. The entry carries them as free-form sections:
+A provider whose DHCPv6 lease must not supply resolvers needs `UseDNS=no`
+under `[DHCPv6]`. No typed leaf names it. The entry carries it as a
+free-form section, keyed by position:
 
 ```json
 "goodkind-mwan-steering:networkd": {
-  "network": [
-    { "section": "DHCPv6", "entries": [ { "key": "WithoutRA", "value": "solicit" } ] },
-    { "section": "IPv6PrefixDelegation", "entries": [ { "key": "RouterLifetimeSec", "value": "1800" } ] }
+  "file": [
+    { "kind": "network", "section": [
+      { "index": 0, "name": "DHCPv6", "entry": [
+        { "index": 0, "key": "UseDNS", "value": "no" }
+      ] }
+    ] }
   ]
 }
 ```
 
-The rendered `.network` file carries them after the typed keys:
+The rendered `.network` file carries it after the typed keys under the same
+heading:
 
 ```ini
 [DHCPv6]
 DUIDType=link-layer-time
 DUIDRawData=...
 PrefixDelegationHint=::/56
-WithoutRA=solicit
-
-[IPv6PrefixDelegation]
-RouterLifetimeSec=1800
+UseDNS=no
 ```
 
 If the free-form sections also set `PrefixDelegationHint`, the daemon stops
@@ -482,6 +499,11 @@ unconditionally, so rendering the value empty deletes the live rule rather
 than skipping it. Moving the pin onto the live delegation is separate work,
 because at daemon start the delegation may not be readable yet.
 
+The IPv4 source pin is different: its value is the link's static address,
+which the entry already carries, so it is derived rather than typed. The
+served tree keeps reporting it under the same leaf, now filled by the daemon
+from the address, so a reader of the served tree sees no change.
+
 The daemon does not create links and does not run its own delegation client.
 Both stay with systemd-networkd. Moving them into the daemon is the monolith
 epic's work (MWAN-305). It is gated on the daemon owning the lease first,
@@ -532,7 +554,15 @@ deletion.
 
 A free-form key is not checked by the deploy's schema validation. A typo
 there surfaces as a networkd warning on the gateway, not as a deploy failure.
-The typed leaves exist so the common shapes do not take that path.
+Every line the current providers need has a typed leaf, so no current
+provider takes that path, and the free-form layer is exercised only by its
+tests until a provider needs it.
+
+A source address the provider does not route back is dropped at the
+provider's edge as spoofed, with no error on the gateway. `source_addresses`
+therefore only adds to the link address and never replaces it, and a listed
+address must sit on the link or in a prefix the provider routes to the
+gateway. The daemon cannot check the second condition; the operator can.
 
 A VLAN whose parent's file does not name it is created by nothing, and the
 provider is simply absent with no error from any layer. The daemon fails the

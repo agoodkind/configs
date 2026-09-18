@@ -16,16 +16,23 @@ script.
 
 ```bash
 ./configsctl tofu apply
-./configsctl deploy <name> [--release <tag>] [--opnsensectl-release <tag>] [--limit <host>] [--check] [--diff]
+./configsctl deploy <name> [--limit <host>] [--check] [--diff]
 ```
 
-A play that installs the MWAN binary fails at load without `--release`. After it
-copies the binary onto a Linux host, the play runs `mwan version` on that copy
-and fails unless the reported commit is a prefix of the release's commit. A play
-that installs opnsensectl, `deploy-proxmox` or `deploy-opnsense`, fails at load
-without `--opnsensectl-release` and checks the reported commit the same way. Use
-`--limit` on production so one command does not touch both hypervisors. Dry-run
-with `--check --diff` before a mutating run.
+A play that installs the MWAN binary or opnsensectl pulls the release its
+environment pins onto the controller first. It downloads each archive against
+the pinned checksum, verifies the GitHub attestation, and unpacks it under the
+ignored `.make/releases` directory. No release is named on the command line,
+and a check run stages the release without touching a host. After it copies
+the binary onto a Linux host, the play runs `mwan version` on that copy and
+fails unless the reported commit is a prefix of the release's commit.
+`deploy-proxmox` and `deploy-opnsense` check opnsensectl the same way. To move
+an environment to a newer release, set its tag and the archive checksums from
+that release's `checksums.txt` in
+[mwan_prod_all.yml](../../ansible/inventory/group_vars/mwan_prod_all.yml) or
+[mwan_testbed_all.yml](../../ansible/inventory/group_vars/mwan_testbed_all.yml).
+Use `--limit` on production so one command does not touch both hypervisors.
+Dry-run with `--check --diff` before a mutating run.
 
 ## Run logs
 

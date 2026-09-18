@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package wanroutes ports the MWAN update-routes policy-routing inventory into
 // an ifmgr module.
 package wanroutes

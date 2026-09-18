@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package wg polls a WireGuard interface and reports per-peer
 // handshake age plus byte-rate health. Two modes:
 //

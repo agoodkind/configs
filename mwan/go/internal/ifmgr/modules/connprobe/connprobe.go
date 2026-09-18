@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package connprobe runs periodic active connectivity probes against
 // configured targets and publishes a healthy/unhealthy state. Used by
 // the failover role to verify upstream actually works,
