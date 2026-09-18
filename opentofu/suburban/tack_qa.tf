@@ -33,8 +33,9 @@ resource "proxmox_virtual_environment_container" "tack_qa_suburban" {
   }
 
   disk {
-    datastore_id = "local-zfs"
-    size         = 40
+    datastore_id  = "local-zfs"
+    size          = 40
+    mount_options = ["discard"]
   }
 
   memory {
