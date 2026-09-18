@@ -1,8 +1,19 @@
 [Unit]
 Description=MWAN ifmgr (interface manager) daemon for role %i
 Documentation=https://github.com/agoodkind/configs
-After=networking.service
-Wants=networking.service
+# The daemon writes each provider link's systemd-networkd unit files from
+# /etc/mwan/network.json. udev applies a .link file when the device appears and
+# the kernel refuses to rename a link that is already up, so a file written
+# after udev's coldplug trigger has no effect until the next boot. The daemon
+# therefore runs ahead of that trigger and of networkd, writes the files, and
+# then waits on netlink for the links as it always has.
+DefaultDependencies=no
+After=local-fs.target systemd-journald.socket
+Before=systemd-udev-trigger.service systemd-networkd.service shutdown.target
+# DefaultDependencies=no drops the implicit shutdown ordering along with the
+# rest, so the unit states it. Without this the daemon is killed at shutdown
+# rather than stopped.
+Conflicts=shutdown.target
 
 [Service]
 Type=simple
@@ -56,7 +67,7 @@ ProtectKernelTunables=true
 # entry on hosts without the wanconfig stack (sysrepo's shared memory under
 # /dev/shm is already writable, since ProtectSystem leaves /dev alone).
 StateDirectory=mwan
-ReadWritePaths=/var/log /var/run /run /var/lib/mwan -/etc/sysrepo
+ReadWritePaths=/var/log /var/run /run /var/lib/mwan /etc/systemd/network -/etc/sysrepo
 # The static sysrepo inside the binary follows the upstream access policy:
 # repository files are group sysrepo with umask 007. The daemon joins that
 # group so its files and the packaged tools' files stay mutually readable.
