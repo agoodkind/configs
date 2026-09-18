@@ -1,6 +1,9 @@
 # Production three-node data tier and second app instance. Memory is sized to
 # the ledger tserver's fixed 8 GiB ceiling (tack yugabyte-overlay/tserver.flags)
 # plus room for the system and page cache; the app guest carries no store.
+# Every disk mounts with discard: the nightly export archives and deletes
+# gigabytes of tablet files, which the thin pool otherwise keeps allocated
+# (TACK-498). A guest reads the option at its next start.
 
 resource "proxmox_virtual_environment_container" "tack_data1" {
   node_name = "vault"
@@ -30,8 +33,9 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
   }
 
   disk {
-    datastore_id = "local-lvm"
-    size         = 60
+    datastore_id  = "local-lvm"
+    size          = 60
+    mount_options = ["discard"]
   }
 
   memory {
@@ -92,8 +96,9 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
   }
 
   disk {
-    datastore_id = "local-lvm"
-    size         = 60
+    datastore_id  = "local-lvm"
+    size          = 60
+    mount_options = ["discard"]
   }
 
   memory {
@@ -154,8 +159,9 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
   }
 
   disk {
-    datastore_id = "local-lvm"
-    size         = 60
+    datastore_id  = "local-lvm"
+    size          = 60
+    mount_options = ["discard"]
   }
 
   memory {
@@ -216,8 +222,9 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
   }
 
   disk {
-    datastore_id = "local-lvm"
-    size         = 40
+    datastore_id  = "local-lvm"
+    size          = 40
+    mount_options = ["discard"]
   }
 
   memory {
