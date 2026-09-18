@@ -12,14 +12,11 @@
 # stays branchless and depends only on group membership.
 #
 # Run examples:
-#   ./configsctl deploy deploy-proxmox \
-#     --release <tag> --opnsensectl-release <tag> --limit vault
-#   ./configsctl deploy deploy-proxmox \
-#     --release <tag> --opnsensectl-release <tag> --limit suburban
+#   ./configsctl deploy deploy-proxmox --limit vault
+#   ./configsctl deploy deploy-proxmox --limit suburban
 #
-# The mwan binary comes from the --release tag and the opnsensectl binary from
-# the --opnsensectl-release tag; a run without either fails at the first read of
-# that release's directory.
+# The mwan and opnsensectl binaries come from the releases the environment pins
+# in group_vars; the play pulls and verifies both before touching the host.
 
 - name: Configure Proxmox hypervisor
   hosts: proxmox_servers
@@ -31,6 +28,28 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
+    # Both pulls run per host, because each hypervisor's environment pins its
+    # own release.
+    - name: Pull the pinned mwan release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ mwan_release_repo }}"
+        release_tag: "{{ mwan_release_tag }}"
+        release_assets: "{{ mwan_release_assets }}"
+        release_required_assets:
+          - mwan_linux_amd64.tar.gz
+        release_var_prefix: mwan
+
+    - name: Pull the pinned opnsensectl release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ opnsensectl_release_repo }}"
+        release_tag: "{{ opnsensectl_release_tag }}"
+        release_assets: "{{ opnsensectl_release_assets }}"
+        release_required_assets:
+          - opnsensectl_linux_amd64.tar.gz
+        release_var_prefix: opnsensectl
+
     - name: Configure Proxmox host services
       ansible.builtin.import_tasks: tasks/proxmox-host.yml
 
