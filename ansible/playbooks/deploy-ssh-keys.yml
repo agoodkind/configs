@@ -89,29 +89,71 @@
       delegate_to: localhost
       check_mode: false
 
-    # The bundle builder ships in the configsctl module, so it runs at the
-    # version the configsctl script pins instead of carrying a second pin.
-    - name: Build authorized_keys bundle
-      ansible.builtin.command:
-        argv:
-          - go
-          - run
-          - "goodkind.io/configsctl/cmd/deploy-authorized-keys@{{ configsctl_version }}"
-          - --github-user
-          - "{{ github_ssh_keys_user }}"
-          - --out
-          - "{{ work_tmp_dir }}/github_authorized_keys.bundle"
-          - --extra-pubkey
-          - "{{ work_tmp_dir }}/sshpiper_restricted_key.pub"
-          - --extra-out
-          - "{{ work_tmp_dir }}/authorized_keys.bundle"
-        chdir: "{{ playbook_dir }}/../.."
-      vars:
-        configsctl_version: >-
-          {{ lookup('ansible.builtin.file', playbook_dir ~ '/../../configsctl')
-             | regex_findall('CONFIGSCTL_VERSION="([^"]+)"') | first }}
+    # The tasks below build both bundles on the controller from the GitHub keys
+    # of github_ssh_keys_user. A bundle holds the trimmed, non-empty lines of
+    # its sources, deduplicated and sorted byte-wise, one per line. The second
+    # bundle adds the lines of the restricted key file written above, so its
+    # comment line sorts in with the keys.
+    - name: Fetch the GitHub SSH keys
+      ansible.builtin.uri:
+        url: "https://github.com/{{ github_ssh_keys_user }}.keys"
+        return_content: true
+        headers:
+          Accept: text/plain
+      register: github_ssh_keys_response
       delegate_to: localhost
-      changed_when: false
+      check_mode: false
+
+    # The lines are split with a regex because the regex engine reads '\n' as
+    # a newline, while the split filter would read it as a backslash and an n.
+    # unique and sort fold case unless told otherwise, and key bodies are
+    # mixed-case base64.
+    - name: Sort and deduplicate the GitHub SSH keys
+      ansible.builtin.set_fact:
+        github_authorized_keys_lines: >-
+          {{ github_ssh_keys_response.content
+             | regex_replace('\r', '')
+             | regex_findall('[^\n]+')
+             | map('trim')
+             | reject('equalto', '')
+             | unique(case_sensitive=true)
+             | sort(case_sensitive=true) }}
+
+    - name: Refuse to build a bundle without GitHub SSH keys
+      ansible.builtin.assert:
+        that:
+          - github_authorized_keys_lines | length > 0
+        fail_msg: "GitHub returned no SSH keys for {{ github_ssh_keys_user }}"
+        quiet: true
+
+    - name: Sort and deduplicate the GitHub SSH keys with the restricted key
+      ansible.builtin.set_fact:
+        authorized_keys_lines: >-
+          {{ (github_authorized_keys_lines + sshpiper_restricted_key_lines)
+             | map('trim')
+             | reject('equalto', '')
+             | unique(case_sensitive=true)
+             | sort(case_sensitive=true) }}
+      vars:
+        sshpiper_restricted_key_lines: >-
+          {{ lookup('ansible.builtin.file', work_tmp_dir ~ '/sshpiper_restricted_key.pub')
+             | regex_replace('\r', '')
+             | regex_findall('[^\n]+') }}
+
+    - name: Write the GitHub authorized_keys bundle
+      ansible.builtin.copy:
+        content: "{{ github_authorized_keys_lines | join('\n') }}\n"
+        dest: "{{ work_tmp_dir }}/github_authorized_keys.bundle"
+        mode: "0644"
+      delegate_to: localhost
+      check_mode: false
+
+    - name: Write the authorized_keys bundle with the restricted key
+      ansible.builtin.copy:
+        content: "{{ authorized_keys_lines | join('\n') }}\n"
+        dest: "{{ work_tmp_dir }}/authorized_keys.bundle"
+        mode: "0644"
+      delegate_to: localhost
       check_mode: false
 
     - name: Copy bundle to Proxmox hosts
