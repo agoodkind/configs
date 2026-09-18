@@ -60,61 +60,48 @@
   vars:
     opnsensectl_installed_binary: /usr/local/bin/opnsensectl
 
-- name: Install mwan-opnsense-drain systemd service
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-drain.service
-    dest: /etc/systemd/system/mwan-opnsense-drain.service
-    owner: root
-    group: root
-    mode: "0644"
+# The install verb writes the drain and bridge units, stops, disables, and
+# deletes a leftover mwan-opnsense-drain.socket, enables both units, and reloads
+# systemd. It starts and restarts nothing. It prints one line per change and
+# ends with "install: no change" when it changed nothing. The drainer binds
+# [opnsense.drain].listen itself, so no socket unit replaces the deleted one.
+- name: Install and enable the drain and bridge units with opnsensectl
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/opnsensectl
+      - install
+  register: opnsensectl_host_install
+  changed_when: "'install: no change' not in opnsensectl_host_install.stdout_lines"
   become: true
-  register: mwan_opnsense_drain_unit
+
+# A rewritten drain unit, or a deleted socket unit whose listener the running
+# drainer still holds, needs a drainer restart; a rewritten bridge unit needs a
+# bridge restart. An enable alone needs neither.
+- name: Restart the drainer when install changed its units
+  ansible.builtin.debug:
+    msg: "{{ opnsensectl_host_install.stdout_lines }}"
+  changed_when: >-
+    'wrote /etc/systemd/system/mwan-opnsense-drain.service' in opnsensectl_host_install.stdout_lines
+    or 'removed /etc/systemd/system/mwan-opnsense-drain.socket' in opnsensectl_host_install.stdout_lines
+  when: not ansible_check_mode
   notify: Restart mwan-opnsense-drain
 
-- name: Install mwan-opnsense-drain systemd socket
-  ansible.builtin.template:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-drain.socket.j2
-    dest: /etc/systemd/system/mwan-opnsense-drain.socket
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  register: mwan_opnsense_drain_socket
-  notify: Restart mwan-opnsense-drain
-
-- name: Install systemd unit
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-host.service
-    dest: /etc/systemd/system/mwan-opnsense-host.service
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  register: mwan_opnsense_host_unit
+- name: Restart the bridge when install changed its unit
+  ansible.builtin.debug:
+    msg: "{{ opnsensectl_host_install.stdout_lines }}"
+  changed_when: >-
+    'wrote /etc/systemd/system/mwan-opnsense-host.service' in opnsensectl_host_install.stdout_lines
+  when: not ansible_check_mode
   notify: Restart mwan-opnsense-host
 
-- name: Enable and start mwan-opnsense-drain socket
-  ansible.builtin.systemd:
-    name: mwan-opnsense-drain.socket
-    enabled: true
-    state: started
-    daemon_reload: true
-  become: true
-
-- name: Enable and start mwan-opnsense-drain service
+- name: Start mwan-opnsense-drain service
   ansible.builtin.systemd:
     name: mwan-opnsense-drain.service
-    enabled: true
     state: started
   become: true
 
-- name: Enable and start mwan-opnsense-host
+- name: Start mwan-opnsense-host
   ansible.builtin.systemd:
     name: mwan-opnsense-host
-    enabled: true
     state: started
-    daemon_reload: true
   become: true
