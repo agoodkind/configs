@@ -447,6 +447,24 @@
         name: sysrepo
         system: true
 
+    # The ifmgr unit starts before the coldplug trigger, which rules out
+    # StateDirectory= because that orders it after systemd-tmpfiles-setup.
+    # This rule creates the same directory with the same owner and mode.
+    - name: Deploy the ifmgr state directory rule on MWAN VM
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/config/tmpfiles-mwan.conf"
+        dest: /etc/tmpfiles.d/mwan.conf
+        mode: "0644"
+      register: mwan_ifmgr_tmpfiles
+      when: mwan_ifmgr_wan_enabled | bool
+
+    - name: Create the ifmgr state directory from the rule
+      ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/mwan.conf
+      changed_when: false
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - mwan_ifmgr_tmpfiles is changed
+
     - name: Deploy mwan ifmgr instanced systemd unit on MWAN VM
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-ifmgr@.service"
