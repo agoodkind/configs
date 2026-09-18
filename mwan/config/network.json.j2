@@ -26,7 +26,6 @@
   "fw-mark": provider.mark,
   "fw-mark-prio": provider.mark_prio,
   "from-prio": provider.from_prio,
-  "npt-prefix": provider.npt_prefix,
   "health": {
     "enabled": provider.health.enabled,
     "ping-count": provider.health.ping_count,
@@ -39,6 +38,12 @@
     "http-urls": provider.health.http_targets
   }
 } %}
+{# A provider that delegates nothing carries no prefix and gets no
+   translation, so the leaf is omitted rather than rendered null, which its
+   ipv6-prefix type would reject. #}
+{% if provider.npt_prefix is defined and provider.npt_prefix %}
+{% set wan = wan | combine({"npt-prefix": provider.npt_prefix}) %}
+{% endif %}
 {% if provider.v4_source %}
 {% set wan = wan | combine({"v4-source": provider.v4_source}) %}
 {% endif %}

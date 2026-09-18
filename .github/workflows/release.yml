@@ -5,11 +5,11 @@ name: Release
 # binary is built.
 #
 # cgo stays off at the workflow level on purpose. The release set declares
-# which binary links libyang and libsysrepo through its own cgo=1 flag, so the
-# linux artifact carries the publishing binding, statically linked, and the
-# freebsd artifact stays pure Go. The C libraries are still provisioned,
-# because the release engine runs the cgo-deps hook for any consumer that
-# declares GO_MK_CGO_DEPS regardless of this input.
+# that the binary links libyang and libsysrepo through its own cgo=1 flag, so
+# the linux artifact carries the publishing binding, statically linked. The C
+# libraries are still provisioned, because the release engine runs the
+# cgo-deps hook for any consumer that declares GO_MK_CGO_DEPS regardless of
+# this input.
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
       working_directory: mwan/go
       submodules: "true"
       apt_packages: libpcre2-dev
-      platforms: linux/amd64 freebsd/amd64
+      platforms: linux/amd64
       # One binary name, verified after publish for every platform, so a
       # release that dropped an archive fails the run instead of shipping a
       # partial set.

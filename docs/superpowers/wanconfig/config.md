@@ -15,11 +15,15 @@ the model's and the served tree is how the change is verified.
 
 `network.json` carries exactly the gateway daemon's network tree: the
 provider inventory, each provider's routing numbers, translation prefix,
-IPv4 source pin, and health probe settings, and the group-wide
-translation, internal-link, and probe-timeout values. Each provider's
-configuration hangs off the interface that carries it, and health
-settings live inside the provider they probe, one to one, with no shared
-policy object.
+IPv4 source pin, health probe settings, and link identity, and the
+group-wide translation, internal-link, and probe-timeout values. Each
+provider's configuration hangs off the interface that carries it, and
+health settings live inside the provider they probe, one to one, with no
+shared policy object. Link identity is what the network manager needs to
+bring the link up: how the device is matched, its name and hardware
+address, each family's addressing, the delegation client's identity and
+hint, and any free-form unit-file sections the provider needs. The
+delegation client identity is a public identifier, not a secret.
 
 Everything else stays in `config.toml` with no schema node: alert mail,
 notify cadence, the agent, the watchdog, the Proxmox API, the OPNsense

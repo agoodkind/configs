@@ -1,0 +1,39 @@
+---
+# The GitHub CLI apt repository on the hypervisors. Imported by
+# proxmox-host.yml ahead of the package install, and reading its values from
+# proxmox_servers.yml.
+#
+# GitHub rotates this repository's signing key. apt fails an entire cache
+# refresh when it cannot verify one index, so a keyring left at a superseded
+# key stops the deploy at its first task rather than only when gh upgrades.
+# Refetching the key every run is what makes the next rotation self-healing,
+# and force is what makes the refetch happen at all: without it get_url leaves
+# an existing destination alone and the stale key survives.
+#
+# The install path follows
+# https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+
+- name: Ensure keyrings dir exists
+  ansible.builtin.file:
+    path: "{{ github_cli_keyring_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the GitHub CLI apt signing key
+  ansible.builtin.get_url:
+    url: "{{ github_cli_keyring_url }}"
+    dest: "{{ github_cli_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    force: true
+
+- name: Add the GitHub CLI apt repo
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/github-cli.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ github_cli_repo_line }}\n"

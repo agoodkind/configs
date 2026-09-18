@@ -4,15 +4,15 @@ Standards for the MWAN Go code. Violations block merge.
 
 ## Monolith contract
 
-All Go infrastructure code ships as one binary. The linux/amd64 build is
-`mwan` on targets. The freebsd/amd64 build is `mwan-opnsense` and runs only on
-OPNsense, where it auto-dispatches into the opnsense daemon based on
-`argv[0]`.
+All gateway Go code ships as one binary, `mwan`, built for linux/amd64 only.
+The OPNsense tooling, including the daemon inside the OPNsense guest, is a
+separate module and binary, `opnsensectl`, in
+[agoodkind/opnsensectl](https://github.com/agoodkind/opnsensectl).
 
-New tools become subcommands of this binary, never separate binaries. Run
-`mwan` with no arguments for the current subcommand set. Subcommands are of
-two kinds: long-running daemons (the agent, the watchdog, the interface
-manager, and the opnsense config daemon) and one-shot operator tools (health
+New gateway tools become subcommands of this binary, never separate binaries.
+Run `mwan` with no arguments for the current subcommand set. Subcommands are of
+two kinds: long-running daemons (the agent, the watchdog, and the interface
+manager) and one-shot operator tools (health
 probes, delegated-prefix and firewall-state inspection, and an alert
 self-test). The interface manager's behavior comes from its configured role.
 

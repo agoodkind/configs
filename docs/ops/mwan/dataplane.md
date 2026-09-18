@@ -36,7 +36,14 @@ the network configuration lists no WANs.
 
 npt derives every WAN's `/60` from the live DHCPv6-PD delegation on that WAN's
 interface, with no static fallback. A WAN with no delegated prefix is skipped for
-that reconcile and alerted, rather than translated against a guessed prefix.
+that reconcile, rather than translated against a guessed prefix.
+
+npt alerts on a missing delegation only when the network configuration assigns
+that provider a translation prefix, and clears the alert once the delegation
+returns. A provider the configuration assigns no prefix is never expected to
+carry one, because its link is IPv4-only or its ISP delegates nothing by
+DHCPv6-PD, so npt raises nothing for it. That keeps the alert meaningful for the
+case it exists to catch: a provider that should hold a delegation and lost it.
 
 npt owns the `prerouting` and `postrouting` chains and replaces each chain's
 full rule set in one atomic `google/nftables` transaction, so no packet sees an

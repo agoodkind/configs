@@ -29,7 +29,7 @@ jobs:
       # Match release.yml. Adding a release workflow switches this job's build
       # gate into the compile matrix, which would otherwise dry-run platforms
       # this module never ships.
-      release_platforms: linux/amd64 freebsd/amd64
+      release_platforms: linux/amd64
 
   # The deploy command runs this same gate over a playbook's files and refuses
   # to deploy on a banned default or presence check, which is where such a
@@ -67,3 +67,42 @@ jobs:
           bundler-cache: true
       - name: Run data specs
         run: bundle exec rspec
+
+  # The mwan/go job above never runs these. mwan/go/Makefile hangs the two
+  # schema gates off `check`, and the go-makefile quality matrix runs a fixed
+  # list of nine commands that does not include it, so until this job existed
+  # nothing validated the model outside a developer's own machine. The gates
+  # run here as their own named check, because a schema failure and a Go
+  # failure are different problems and a red check should say which one broke.
+  #
+  # The deploy runs this same yanglint validation against the rendered network
+  # configuration before it writes anything to the gateway, so a model or an
+  # instance document that fails here would fail a deploy instead.
+  configs-yang:
+    name: configs yang gates
+    runs-on: ubuntu-latest
+    steps:
+      # The IETF modules the gates validate against are pinned in the
+      # third_party/yang submodule, which the other two configs jobs do not
+      # need and do not check out.
+      - uses: actions/checkout@v7
+        with:
+          submodules: "true"
+      # The gates are make targets in mwan/go, and that Makefile resolves the
+      # Go environment while make parses it, so Go is a hard dependency even
+      # though this job compiles nothing.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: mwan/go/go.mod
+          cache-dependency-path: mwan/go/go.sum
+      # libyang2-tools provides yanglint, which both gates run.
+      - name: Install yanglint
+        run: sudo apt-get update && sudo apt-get install -y libyang2-tools
+      # mwan/go/Makefile fetches go-makefile through gh while make parses it,
+      # so the token keeps that fetch on the authenticated API path instead of
+      # its anonymous raw fallback.
+      - name: Validate the YANG model and its instance documents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make yang-validate yang-validate-instances
+        working-directory: mwan/go

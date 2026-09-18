@@ -1,5 +1,3 @@
-//go:build linux
-
 package networkjson_test
 
 import (
@@ -212,6 +210,42 @@ func TestLoadRejectsMissingRequiredLeaf(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "table-id") {
 		t.Fatalf("error does not name the missing leaf: %v", err)
+	}
+}
+
+func TestLoadAcceptsAProviderThatDelegatesNoPrefix(t *testing.T) {
+	t.Parallel()
+
+	// A provider on an IPv4-only link delegates nothing, so it carries no
+	// npt-prefix. The model leaves the leaf optional and the routing module
+	// installs no IPv6 source rule without it, so the loader must carry the
+	// provider rather than refuse the whole file.
+	body := strings.Replace(
+		validDocument,
+		`,
+          "npt-prefix": "2001:db8:beef:100::/60"`,
+		``,
+		1,
+	)
+	if body == validDocument {
+		t.Fatal("the document still carries att's npt prefix")
+	}
+	loaded, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err != nil {
+		t.Fatalf("Load rejected a provider that delegates no prefix: %v", err)
+	}
+	if got := len(loaded.WAN); got != 2 {
+		t.Fatalf("provider count = %d, want 2", got)
+	}
+	att := loaded.WAN["att"]
+	if att.NptPrefix != "" {
+		t.Fatalf("att npt prefix = %q, want empty", att.NptPrefix)
+	}
+	if att.Iface != "enatt0" || att.TableID != 100 || att.Tier != 1 {
+		t.Fatalf("att entry = %+v, want the rest of its configuration unchanged", att)
+	}
+	if got := loaded.WAN["webpass"].NptPrefix; got != "2001:db8:beef:200::/60" {
+		t.Fatalf("webpass npt prefix = %q, want 2001:db8:beef:200::/60", got)
 	}
 }
 
@@ -588,5 +622,56 @@ func TestLoadAcceptsAGroupWithNoReservedTables(t *testing.T) {
 	}
 	if len(loaded.ReservedTables) != 0 {
 		t.Fatalf("reserved tables = %v, want none", loaded.ReservedTables)
+	}
+}
+
+// TestLoadCarriesADeclaredEmptyIPv6TargetList is the loader half of the
+// IPv4-only provider. The health module reads nil and empty differently: a
+// family the provider named no targets for inherits the module-wide public
+// resolvers, and a family it declared empty stays empty. That distinction only
+// holds if an empty targets-v6 leaf-list survives the schema and the decode as
+// an empty list rather than as an absent leaf, so this pins the schema's answer
+// to an empty JSON array and the shape the daemon receives. Losing either would
+// make a provider on a link with no IPv6 ping public resolvers out that link.
+func TestLoadCarriesADeclaredEmptyIPv6TargetList(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Replace(
+		validDocument,
+		`"targets-v6": ["2001:db8:53::1", "2001:db8:53::2"],`,
+		`"targets-v6": [],`,
+		1,
+	)
+	if body == validDocument {
+		t.Fatal("the document still carries webpass's IPv6 targets")
+	}
+	loaded, err := networkjson.Load(writeDocument(t, body), schemaDirForTest(t))
+	if err != nil {
+		t.Fatalf("Load rejected a provider declaring no IPv6 targets: %v", err)
+	}
+	probe, present := loaded.Health["webpass"]
+	if !present {
+		t.Fatal("webpass carries a health container and must hold a probe entry")
+	}
+	if probe.TargetsV6 == nil {
+		t.Fatal("a declared-empty targets-v6 must load as an empty list, not as nil")
+	}
+	if len(probe.TargetsV6) != 0 {
+		t.Fatalf("targets-v6 = %v, want empty", probe.TargetsV6)
+	}
+	if !reflect.DeepEqual(probe.TargetsV4, []string{"192.0.2.10", "192.0.2.11"}) {
+		t.Fatalf("targets-v4 = %v, want the file's list", probe.TargetsV4)
+	}
+
+	// Apply is the hop the daemon takes next, and it is where a copy could drop
+	// the distinction before any module config is built.
+	var cfg config.Config
+	loaded.Apply(&cfg)
+	applied := cfg.IfMgr.Modules.Health.WAN["webpass"]
+	if applied.TargetsV6 == nil {
+		t.Fatal("Apply turned a declared-empty targets-v6 into nil")
+	}
+	if len(applied.TargetsV6) != 0 {
+		t.Fatalf("applied targets-v6 = %v, want empty", applied.TargetsV6)
 	}
 }

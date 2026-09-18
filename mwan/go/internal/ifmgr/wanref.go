@@ -1,5 +1,3 @@
-//go:build linux
-
 package ifmgr
 
 // WANRef is the per-WAN identity every ifmgr module keys on: the WAN's stable

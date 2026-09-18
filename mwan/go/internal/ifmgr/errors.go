@@ -1,5 +1,3 @@
-//go:build linux
-
 package ifmgr
 
 import "errors"

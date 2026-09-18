@@ -30,32 +30,29 @@ DIST_DIR  := dist
 LOCAL_BIN := bin
 
 # cgo is never pinned here. Native builds keep cgo on and compile the yangpub
-# binding; the freebsd release job builds pure Go because that package is
-# linux-only.
+# binding.
 GO_BUILD_EXTRA_FLAGS := -trimpath -buildvcs=false
 
 # go-release.mk turns every shipped artifact into a signed, checksummed,
 # attested GitHub release, which is what the deploy path installs.
 GO_MK_MODULES := go-build.mk go-release.mk
 
-# One binary per platform. The linux build links libyang and libsysrepo
-# statically; freebsd stays pure Go.
+# One linux binary, which links libyang and libsysrepo statically.
 #
 # RELEASE_PLATFORMS is a default, not an override. Each release job passes
 # its own single platform in the environment, and this must yield to it.
-# Forcing both here made every job archive both platforms, and release
+# Forcing a list here made every job archive every platform, and release
 # 202608161945-4-9244335 then failed verification on an unattested archive.
-RELEASE_PLATFORMS ?= linux/amd64 freebsd/amd64
-RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64 mwan:$(CMD):platforms=freebsd/amd64
+RELEASE_PLATFORMS ?= linux/amd64
+RELEASE_BINS      := mwan:$(CMD):cgo=1,platforms=linux/amd64
 
 # gobgp's only cgo symbol is a memory-reporting helper used solely by its
 # tests.
 export GO_MK_CGO_OPTIONAL := github.com/osrg/gobgp/v4/internal/pkg/table
 
-# Every lint gate runs once per shipped platform. mwan is almost entirely
-# linux-tagged with a freebsd serial path, so a single host pass would skip
-# most of the package.
-GO_MK_PLATFORMS := linux/amd64 freebsd/amd64
+# Every lint gate runs for the one shipped platform. mwan is almost entirely
+# linux-tagged, so a darwin host pass would skip most of the package.
+GO_MK_PLATFORMS := linux/amd64
 
 # ---------------------------------------------------------------------------
 # Wanconfig pins
@@ -163,6 +160,12 @@ YANG_DIR     ?= ../yang
 YANG_RFC_DIR ?= ../../third_party/yang/standard/ietf/RFC
 YANGLINT     ?= yanglint
 
+# Both gates resolve their inputs through make rather than a shell glob in the
+# recipe, so an empty result is a value each gate can refuse. A shell glob that
+# matches nothing expands to itself and reaches yanglint as a literal path,
+# which fails for the wrong reason and names no cause.
+YANG_MODELS := $(wildcard $(YANG_DIR)/*.yang)
+
 YANG_IETF_MODULES := \
 	$(YANG_RFC_DIR)/ietf-yang-types@2025-12-22.yang \
 	$(YANG_RFC_DIR)/ietf-inet-types@2025-12-22.yang \
@@ -173,8 +176,12 @@ YANG_IETF_MODULES := \
 
 .PHONY: yang-validate
 yang-validate:
+	@if [ -z "$(strip $(YANG_MODELS))" ]; then \
+		echo "yang-validate: no model files match $(YANG_DIR)/*.yang; restore them or fix YANG_DIR" >&2; \
+		exit 1; \
+	fi
 	$(YANGLINT) --version
-	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_DIR)/*.yang
+	$(YANGLINT) $(YANG_IETF_MODULES) $(YANG_MODELS)
 
 # A data instance carrying an interface must give it a type, and that identity
 # lives in the interface-type registry, so the instance gate needs one module
@@ -193,11 +200,19 @@ YANG_INSTANCES := $(wildcard $(YANG_DIR)/instances/*.json)
 # Each instance is validated as configuration, the same check the deploy runs on
 # the rendered file and the daemon runs at startup. A schema change that would
 # reject the shape the gateway is configured with fails here.
+#
+# The loop body runs once per document, so an empty list would run it zero times
+# and report success. This gate refuses that: a run that validated nothing is
+# not a passing run.
 .PHONY: yang-validate-instances
 yang-validate-instances:
+	@if [ -z "$(strip $(YANG_INSTANCES))" ]; then \
+		echo "yang-validate-instances: no instance documents match $(YANG_DIR)/instances/*.json; restore them or fix YANG_DIR" >&2; \
+		exit 1; \
+	fi
 	@for instance in $(YANG_INSTANCES); do \
 		echo "yanglint -t config $$instance"; \
-		$(YANGLINT) -t config $(YANG_INSTANCE_MODULES) $(YANG_DIR)/*.yang "$$instance" || exit 1; \
+		$(YANGLINT) -t config $(YANG_INSTANCE_MODULES) $(YANG_MODELS) "$$instance" || exit 1; \
 	done
 
 check: yang-validate yang-validate-instances

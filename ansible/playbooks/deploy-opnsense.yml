@@ -9,17 +9,14 @@
 # inventory_hostname.
 #
 # Run examples:
-#   ./configsctl deploy deploy-opnsense \
-#     --opnsensectl-release <tag> --limit opnsense_servers
-#   ./configsctl deploy deploy-opnsense \
-#     --opnsensectl-release <tag> --limit opnsense_suburban_servers
+#   ./configsctl deploy deploy-opnsense --limit opnsense_servers
+#   ./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers
 #
-# The daemon binary comes from the named opnsensectl release: the deploy command
-# downloads it, verifies its GitHub attestation, and stages it under
-# opnsensectl_release_dir; a run without --opnsensectl-release fails at the first
-# read of that variable. The deploy reads the daemon's identity through
-# /usr/local/bin/opnsensectl on the router's hypervisor, so deploy-proxmox with
-# the same opnsensectl release runs on that hypervisor first.
+# The binary comes from the release the environment pins in group_vars; the
+# play pulls and verifies it before touching the host. The deploy reads the
+# daemon's identity through /usr/local/bin/opnsensectl on the router's
+# hypervisor, so deploy-proxmox with the same opnsensectl release runs on that
+# hypervisor first.
 
 - name: Deploy mwan-opnsense daemon
   hosts: opnsense_servers:opnsense_suburban_servers
@@ -28,6 +25,16 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
     mwan_opnsense_binary_local: "{{ opnsensectl_release_dir }}/freebsd_amd64/opnsensectl"
   tasks:
+    - name: Pull the pinned opnsensectl release
+      ansible.builtin.import_tasks: tasks/github-release.yml
+      vars:
+        release_repo: "{{ opnsensectl_release_repo }}"
+        release_tag: "{{ opnsensectl_release_tag }}"
+        release_assets: "{{ opnsensectl_release_assets }}"
+        release_required_assets:
+          - opnsensectl_freebsd_amd64.tar.gz
+        release_var_prefix: opnsensectl
+
     - name: Run in-guest install task
       ansible.builtin.include_tasks: tasks/mwan-opnsense-deploy.yml
 
