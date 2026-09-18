@@ -10,9 +10,9 @@ mwan_release_assets:
   - name: wanconfig-stack_linux_amd64.tar.gz
     checksum: "sha256:447b4ff24a3aa9ab7cf8a90bf0cfb862dd359adf6de42952729c99978426b55f"
 
-opnsensectl_release_tag: "202609151528-1-a1fe548"
+opnsensectl_release_tag: "202609181958-5-2704936"
 opnsensectl_release_assets:
   - name: opnsensectl_linux_amd64.tar.gz
-    checksum: "sha256:60d7e5eaa7aa8707fa66a19bb25922f2a80ce0c3b422f549f574651dbdb1da52"
+    checksum: "sha256:31cc3d3b9fba1bb753a659a31194c26c911661422cff22a2bff9822d6d4cbda2"
   - name: opnsensectl_freebsd_amd64.tar.gz
-    checksum: "sha256:755be32a19fe0ff0a12b5d65b4828c5be59a14136e173850c1b706c2cac23132"
+    checksum: "sha256:b8f0fceb108efe80c295a56abb53614146031fc08575b7a7925d10160b3d2c09"
