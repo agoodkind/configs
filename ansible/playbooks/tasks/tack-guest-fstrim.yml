@@ -20,34 +20,10 @@
   when: tack_thin_pool_discards not in tack_thin_pool_discards_now.stdout
   changed_when: true
 
-- name: Read each tack guest's root filesystem line
-  ansible.builtin.command:
-    argv: [pct, config, "{{ item }}"]
-  loop: "{{ tack_guest_fstrim_vmids }}"
-  register: tack_guest_rootfs_lines
-  changed_when: false
-
-# The weekly trim above is the fallback. This is the path that returns a
-# deleted block while it is being deleted: ext4 issues the discard, the pool
-# frees the chunk, and nothing reaches the drive. The container reads the
-# option when it next starts, so this writes the config and waits for the next
-# planned restart rather than causing one.
-- name: Mount each tack guest's root filesystem with discard
-  ansible.builtin.command:
-    argv:
-      - pct
-      - set
-      - "{{ item.item }}"
-      - --rootfs
-      - >-
-        {{ item.stdout_lines | select('match', '^rootfs: ') | first
-           | regex_replace('^rootfs: ', '') }},mountoptions=discard
-  loop: "{{ tack_guest_rootfs_lines.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-  when: "'mountoptions' not in (item.stdout_lines | select('match', '^rootfs: ') | first)"
-  changed_when: true
-
+# The per-delete path, ext4 discarding blocks as it frees them, is the guest's
+# root filesystem mount option, which OpenTofu owns with the rest of the guest
+# shape (opentofu/*/tack*.tf). The weekly trim below is the fallback for what
+# that path misses.
 - name: Deploy tack-guest-fstrim service
   ansible.builtin.template:
     src: "{{ repo_root }}/common/services/tack-guest-fstrim.service.j2"
