@@ -8,7 +8,15 @@ Documentation=https://github.com/agoodkind/configs
 # therefore runs ahead of that trigger and of networkd, writes the files, and
 # then waits on netlink for the links as it always has.
 DefaultDependencies=no
-After=local-fs.target systemd-journald.socket
+# Ordering after local-fs.target deadlocks this unit. That target waits for
+# every fstab mount, this gateway mounts /boot/efi by PARTUUID, and the symlink
+# that names it is created by the coldplug trigger this unit runs before. The
+# boot then stalls until the device unit times out after 90 seconds, which
+# fails local-fs.target and every target above it, so ssh and the rest of
+# multi-user never start. The daemon needs nothing from that target: the binary,
+# the configuration file, and the schema directory are all on the root
+# filesystem, which the initramfs mounts before this unit exists.
+After=systemd-journald.socket
 Before=systemd-udev-trigger.service systemd-networkd.service shutdown.target
 # DefaultDependencies=no drops the implicit shutdown ordering along with the
 # rest, so the unit states it. Without this the daemon is killed at shutdown
