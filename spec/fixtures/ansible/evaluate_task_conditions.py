@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Evaluate Ansible task conditions with ansible-core's own templar.
+"""Evaluate Ansible task expressions with ansible-core's own templar.
 
-The restart decision spec reads set_fact tasks and condition lists from a real
+A spec reads set_fact tasks, condition lists, and other task fields from a real
 task file and sends them as JSON on stdin, together with the variables and
-registered results those tasks read. This script renders each set_fact in order, with that task's
-own vars in scope, the way set_fact does. It then evaluates each named condition
+registered results those tasks read. This script renders each set_fact in
+order, with that task's own vars in scope, the way set_fact does, templating
+the fact names as well as their values. It then evaluates each named condition
 list the way a task's when or changed_when does: every item must be true, and
-evaluation stops at the first false item. It prints the verdicts and the rendered
-facts as JSON on stdout.
+evaluation stops at the first false item. Last it renders each requested set of
+templates against the variables and the facts, with that set's own task vars
+in scope. It prints the verdicts, the rendered facts, and the rendered
+templates as JSON on stdout.
 """
 
 from __future__ import annotations
@@ -23,27 +26,40 @@ type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, J
 
 
 class FactTask(TypedDict):
-    """One set_fact task: its when list, its task vars, and the facts it sets."""
+    """One set_fact task: its when list, its task vars, and the facts it sets.
+    A string value is a template; any other value is a literal, as YAML
+    loaded it."""
 
     when: list[str]
-    vars: dict[str, str]
-    set_fact: dict[str, str]
+    vars: dict[str, JsonValue]
+    set_fact: dict[str, JsonValue]
+
+
+class RenderTask(TypedDict):
+    """One set of templates to render after the facts: the task vars in scope
+    and the templates, keyed by the name each result is reported under."""
+
+    vars: dict[str, JsonValue]
+    templates: dict[str, JsonValue]
 
 
 class EvaluationRequest(TypedDict):
-    """The variables in scope, the set_fact tasks in file order, and the
-    condition lists to evaluate after them."""
+    """The variables in scope, the set_fact tasks in file order, the condition
+    lists to evaluate after them, and the template sets to render last."""
 
     variables: dict[str, JsonValue]
     facts: list[FactTask]
     conditions: dict[str, list[str]]
+    renders: list[RenderTask]
 
 
 class EvaluationResult(TypedDict):
-    """The verdict of each condition list and the value of each rendered fact."""
+    """The verdict of each condition list, the value of each rendered fact, and
+    the rendered templates of each requested set."""
 
     conditions: dict[str, bool]
     facts: dict[str, JsonValue]
+    renders: list[dict[str, JsonValue]]
 
 
 def all_conditions_true(templar: Templar, conditions: list[str]) -> bool:
@@ -55,23 +71,67 @@ def all_conditions_true(templar: Templar, conditions: list[str]) -> bool:
     return True
 
 
-def render_fact_task(
-    loader: DataLoader, variables: dict[str, JsonValue], fact_task: FactTask
+def as_template(value: JsonValue) -> JsonValue:
+    """Mark every string in a task value as a template the way a task file's
+    text is trusted, walking lists and mappings the way Ansible templates
+    them. A number, boolean, or null is a literal and stays one."""
+    if isinstance(value, str):
+        return trust_as_template(value)
+    if isinstance(value, list):
+        marked_items: list[JsonValue] = []
+        for item in value:
+            marked_items.append(as_template(item))
+        return marked_items
+    if isinstance(value, dict):
+        marked_entries: dict[str, JsonValue] = {}
+        for name, item in value.items():
+            marked_entries[name] = as_template(item)
+        return marked_entries
+    return value
+
+
+def render_value(templar: Templar, value: JsonValue) -> JsonValue:
+    """Render a task value the way Ansible does: every string in it is a
+    template, including strings nested in a list or a mapping, and a number,
+    boolean, or null passes through."""
+    if isinstance(value, str):
+        return templar.template(trust_as_template(value))
+    if isinstance(value, list):
+        rendered_items: list[JsonValue] = []
+        for item in value:
+            rendered_items.append(render_value(templar, item))
+        return rendered_items
+    if isinstance(value, dict):
+        rendered_entries: dict[str, JsonValue] = {}
+        for name, item in value.items():
+            rendered_entries[name] = render_value(templar, item)
+        return rendered_entries
+    return value
+
+
+def render_templates(
+    loader: DataLoader,
+    variables: dict[str, JsonValue],
+    task_vars: dict[str, JsonValue],
+    templates: dict[str, JsonValue],
 ) -> dict[str, JsonValue]:
-    """Render one set_fact task's values with its task vars in scope. Every value
-    is rendered before any is set, as set_fact does."""
+    """Render one task's templates with its task vars in scope. Every value is
+    rendered before any is reported, as set_fact does, and a templated name
+    (a set_fact key that carries an expression) is rendered too."""
     task_scope: dict[str, JsonValue] = dict(variables)
-    for name, template in fact_task["vars"].items():
-        task_scope[name] = trust_as_template(template)
+    for name, value in task_vars.items():
+        task_scope[name] = as_template(value)
     templar = Templar(loader=loader, variables=task_scope)
     rendered: dict[str, JsonValue] = {}
-    for name, template in fact_task["set_fact"].items():
-        rendered[name] = templar.template(trust_as_template(template))
+    for name, value in templates.items():
+        rendered_name = str(templar.template(trust_as_template(name)))
+        rendered[rendered_name] = render_value(templar, value)
     return rendered
 
 
 def evaluate(request: EvaluationRequest) -> EvaluationResult:
-    """Render the set_fact tasks in order, then evaluate every condition list."""
+    """Render the set_fact tasks in order, evaluate every condition list, then
+    render every requested template set."""
     loader = DataLoader()
     variables: dict[str, JsonValue] = dict(request["variables"])
     facts: dict[str, JsonValue] = {}
@@ -79,14 +139,17 @@ def evaluate(request: EvaluationRequest) -> EvaluationResult:
         when_templar = Templar(loader=loader, variables=variables)
         if not all_conditions_true(when_templar, fact_task["when"]):
             continue
-        rendered = render_fact_task(loader, variables, fact_task)
+        rendered = render_templates(loader, variables, fact_task["vars"], fact_task["set_fact"])
         variables.update(rendered)
         facts.update(rendered)
     templar = Templar(loader=loader, variables=variables)
     verdicts: dict[str, bool] = {}
     for name, conditions in request["conditions"].items():
         verdicts[name] = all_conditions_true(templar, conditions)
-    return {"conditions": verdicts, "facts": facts}
+    renders: list[dict[str, JsonValue]] = []
+    for render_task in request["renders"]:
+        renders.append(render_templates(loader, variables, render_task["vars"], render_task["templates"]))
+    return {"conditions": verdicts, "facts": facts, "renders": renders}
 
 
 def main() -> int:
