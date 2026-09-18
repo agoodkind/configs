@@ -12,7 +12,9 @@
 #   release_var_prefix  mwan or opnsensectl
 #
 # release_stage_root and release_signer_repo are set once in group_vars/all.
-# The controller needs gh logged in.
+# The controller needs gh logged in and GNU tar on its path, because the
+# unarchive module refuses bsdtar. On macOS, `brew install gnu-tar` provides
+# gtar and the module finds it.
 #
 # Every task runs on the controller, once per host in the play, because the
 # two hypervisors pin different releases. A second run downloads and unpacks
