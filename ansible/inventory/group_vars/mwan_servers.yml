@@ -304,10 +304,22 @@ mwan_pinned_v6_fqdns:
 # decides fallback, lowest first, and weight splits a shared tier. Hardware
 # values stay in their own variables above, because the link files read them;
 # an entry references them rather than repeating a value.
+#
+# link_files says who writes the link's systemd-networkd unit files. A
+# rendered entry carries a link block (how the device is matched and named)
+# and per-family addressing (dhcp, forwarding, the static address and
+# gateway, route metrics, and the DHCPv6 delegation), which network.json.j2
+# renders into the interface tree and the daemon writes unit files from. A
+# hand-authored entry carries neither, and its files stay under mwan/networkd/.
 mwan_providers:
   - name: att
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
+    # This link runs 802.1X on the parent before AT&T answers a lease on the
+    # VLAN, so its four unit files are hand-authored and describe it on their
+    # own. The entry names the interface the daemon steers and says nothing
+    # about how that interface comes up.
+    link_files: hand-authored
     table: 100
     mark: 1
     mark_prio: 100
@@ -344,6 +356,31 @@ mwan_providers:
   - name: webpass
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
+    link_files: rendered
+    # The I226-V passthrough is matched by driver and given the Webpass
+    # registered address, because the NIC's own address is not the one
+    # Webpass provisioned.
+    link:
+      match: { driver: igc }
+      hardware_address: "{{ mwan_webpass_mac }}"
+    # Static IPv4 inside the Webpass block; the default route carries a
+    # metric so it does not contend with the management link.
+    ipv4:
+      forwarding: true
+      dhcp: false
+      address: "{{ mwan_webpass_ipv4 }}"
+      gateway: "{{ mwan_webpass_gateway }}"
+      route_metric: 10
+    # DHCPv6 for prefix delegation under the Webpass DUID; changing that
+    # identity breaks service.
+    ipv6:
+      forwarding: true
+      dhcp: true
+      accept_ra: true
+      delegation:
+        hint: "::/56"
+        duid_type: link-layer-time
+        duid: "{{ mwan_webpass_duid_raw_data }}"
     table: 200
     mark: 2
     mark_prio: 200
@@ -379,6 +416,28 @@ mwan_providers:
   - name: monkeybrains
     iface: "{{ mwan_monkeybrains_iface }}"
     vlan_id: ""
+    link_files: rendered
+    # A virtio device, matched by the address Proxmox assigned it.
+    link:
+      match: { hardware_address: "{{ mwan_mbrains_mac | lower }}" }
+    # Both families lease, and both default routes carry a metric above the
+    # primary providers' so this link only carries traffic when steered onto.
+    ipv4:
+      forwarding: true
+      dhcp: true
+      route_metric: 5000
+    ipv6:
+      forwarding: true
+      dhcp: true
+      accept_ra: true
+      route_metric: 5000
+      delegation:
+        hint: "::/56"
+        duid_type: link-layer-time
+        duid: "{{ mwan_monkeybrains_duid_raw_data }}"
+        use_delegated_prefix: true
+        without_ra: solicit
+        router_lifetime_seconds: 1800
     table: 300
     mark: 3
     mark_prio: 300

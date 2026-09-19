@@ -9,10 +9,43 @@
   the type the served tree already publishes for these links, so the mandatory
   ietf-interfaces type leaf carries no invented value.
 
+  An entry that carries link identity renders it in two layers: the typed link
+  container and per-family leaves, and the free-form networkd container that
+  mirrors the unit-file format. Each is emitted only when the entry carries it,
+  so a hand-authored link renders neither. Inventory names a leaf with
+  underscores where the model names it with hyphens; the tables below map one
+  to the other, and an unset inventory key emits no leaf.
+
   Block tags sit at column zero on purpose. Ansible renders with trim_blocks on
   and lstrip_blocks off, so an indented tag would emit its leading spaces into
   the document.
 #}
+{% set match_leaves = [
+  ["driver", "driver"],
+  ["hardware_address", "hardware-address"]
+] %}
+{% set ipv4_leaves = [
+  ["forwarding", "forwarding"],
+  ["dhcp", "goodkind-mwan-steering:dhcp"],
+  ["gateway", "goodkind-mwan-steering:gateway"],
+  ["route_metric", "goodkind-mwan-steering:route-metric"],
+  ["source_addresses", "goodkind-mwan-steering:source-addresses"]
+] %}
+{% set ipv6_leaves = [
+  ["forwarding", "forwarding"],
+  ["dhcp", "goodkind-mwan-steering:dhcp"],
+  ["gateway", "goodkind-mwan-steering:gateway"],
+  ["route_metric", "goodkind-mwan-steering:route-metric"],
+  ["accept_ra", "goodkind-mwan-steering:accept-ra"]
+] %}
+{% set delegation_leaves = [
+  ["hint", "hint"],
+  ["duid_type", "duid-type"],
+  ["duid", "duid"],
+  ["without_ra", "without-ra"],
+  ["use_delegated_prefix", "use-delegated-prefix"],
+  ["router_lifetime_seconds", "router-lifetime-seconds"]
+] %}
 {% set interfaces = [] %}
 {% for provider in mwan_providers %}
 {% if provider.vlan_id %}
@@ -57,7 +90,7 @@
 {% endfor %}
 {% set wan = wan | combine({"static-mapping": mappings}) %}
 {% endif %}
-{% set _ = interfaces.append({
+{% set entry = {
   "name": iface_name,
   "type": "iana-if-type:other",
   "goodkind-mwan-steering:wan": wan,
@@ -65,7 +98,76 @@
     "tier": provider.tier,
     "weight": provider.weight
   }
-}) %}
+} %}
+{% if provider.link_files is defined %}
+{% set _ = entry.update({"goodkind-mwan-steering:link-files": provider.link_files}) %}
+{% endif %}
+{% if provider.link is defined %}
+{% set link = {} %}
+{% if provider.link.match is defined %}
+{% set match = {} %}
+{% for key, node in match_leaves if provider.link.match[key] is defined %}
+{% set _ = match.update({node: provider.link.match[key]}) %}
+{% endfor %}
+{% set _ = link.update({"match": match}) %}
+{% endif %}
+{% if provider.link.hardware_address is defined %}
+{% set _ = link.update({"hardware-address": provider.link.hardware_address}) %}
+{% endif %}
+{% if provider.link.vlan is defined %}
+{% set _ = link.update({"vlan": {"parent": provider.link.vlan.parent, "id": provider.link.vlan.id}}) %}
+{% endif %}
+{% set _ = entry.update({"goodkind-mwan-steering:link": link}) %}
+{% endif %}
+{# The static address is typed as one string in inventory, as the unit file
+   carries it, and split into the model's address entry here. #}
+{% if provider.ipv4 is defined %}
+{% set ipv4 = {} %}
+{% for key, node in ipv4_leaves if provider.ipv4[key] is defined %}
+{% set _ = ipv4.update({node: provider.ipv4[key]}) %}
+{% endfor %}
+{% if provider.ipv4.address is defined %}
+{% set address_parts = provider.ipv4.address.split("/") %}
+{% set _ = ipv4.update({"address": [{"ip": address_parts[0], "prefix-length": address_parts[1] | int}]}) %}
+{% endif %}
+{% set _ = entry.update({"ietf-ip:ipv4": ipv4}) %}
+{% endif %}
+{# A delegation leaf whose inventory value is empty is omitted: the testbed
+   types no DUID, and the duid pattern rejects an empty string. #}
+{% if provider.ipv6 is defined %}
+{% set ipv6 = {} %}
+{% for key, node in ipv6_leaves if provider.ipv6[key] is defined %}
+{% set _ = ipv6.update({node: provider.ipv6[key]}) %}
+{% endfor %}
+{% if provider.ipv6.delegation is defined %}
+{% set delegation = {} %}
+{% for key, node in delegation_leaves if provider.ipv6.delegation[key] is defined and provider.ipv6.delegation[key] != "" %}
+{% set _ = delegation.update({node: provider.ipv6.delegation[key]}) %}
+{% endfor %}
+{% set _ = ipv6.update({"goodkind-mwan-steering:delegation": delegation}) %}
+{% endif %}
+{% set _ = entry.update({"ietf-ip:ipv6": ipv6}) %}
+{% endif %}
+{# Free-form unit-file content, one list per file kind, each section a heading
+   and its lines in file order. The positional keys the model requires come
+   from the loop, because inventory carries the lines in order and nothing
+   else. #}
+{% if provider.networkd is defined %}
+{% set files = [] %}
+{% for kind in ["link", "network", "netdev"] if provider.networkd[kind] is defined %}
+{% set sections = [] %}
+{% for section in provider.networkd[kind] %}
+{% set entries = [] %}
+{% for line in section.entries %}
+{% set _ = entries.append({"index": loop.index0, "key": line.key, "value": line.value | string}) %}
+{% endfor %}
+{% set _ = sections.append({"index": loop.index0, "name": section.name, "entry": entries}) %}
+{% endfor %}
+{% set _ = files.append({"kind": kind, "section": sections}) %}
+{% endfor %}
+{% set _ = entry.update({"goodkind-mwan-steering:networkd": {"file": files}}) %}
+{% endif %}
+{% set _ = interfaces.append(entry) %}
 {% endfor %}
 {% set _ = interfaces.append({"name": mwan_internal_iface, "type": "iana-if-type:other"}) %}
 {{ {
