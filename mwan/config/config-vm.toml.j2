@@ -123,6 +123,7 @@ notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | terna
 [wanconfig]
 publish = {{ mwan_wanconfig_publish | ternary('true', 'false') }}
 
+[ifmgr]
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_wan_enabled | bool %}

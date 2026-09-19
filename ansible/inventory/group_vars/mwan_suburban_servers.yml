@@ -1,7 +1,7 @@
 ---
 # Testbed MWAN VM (VM 213 on suburban) target vars.
 # Consumed by deploy-mwan.yml when targeting `mwan_suburban_servers`.
-# Uses the same variable names as mwan_servers.yml so config.toml.j2
+# Uses the same variable names as mwan_servers.yml so config-vm.toml.j2
 # and other shared templates render correctly for both environments.
 
 # ----------------------------------------------------------------------------
@@ -285,7 +285,7 @@ mwan_email_script: "/opt/scripts/send-email"
 mwan_email_sender_name: "MWAN-TESTBED"
 mwan_debug_logging: true
 
-# Variables consumed by mwan/config/config.toml.j2 [email] block.
+# Variables consumed by mwan/config/config-vm.toml.j2 [email] block.
 mwan_email_min_level: "ERROR"
 mwan_email_subject_prefix: "[MWAN-suburban]"
 mwan_email_bind_iface: ""
@@ -334,7 +334,7 @@ mwan_bgp_graceful_restart_enabled: true
 mwan_bgp_graceful_restart_time_seconds: 30
 mwan_bgp_graceful_restart_notification_enabled: true
 
-# Shared runtime config values consumed by mwan/config/config.toml.j2.
+# Shared runtime config values consumed by mwan/config/config-vm.toml.j2.
 mwan_config_hostname: "suburban-testbed"
 mwan_config_mgmt_addr: "3d06:bad:b01:210::213"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
@@ -351,7 +351,6 @@ mwan_wanconfig_publish: true
 # The VM runs only the wan role, whose modules are health, wan.routes, and npt.
 # There is no OOB tunnel on the testbed, so the VM declares no OOB interface or
 # address and renders none of the OOB modules.
-mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: false
 mwan_ifmgr_iface_key: "enmbrains0"
 mwan_ifmgr_iface_name: "enmbrains0"

@@ -76,6 +76,10 @@ vmid = {{ mwan_opnsense_vmid }}
 chardev = "{{ mwan_opnsense_drain_chardev }}"
 listen = "{{ mwan_opnsense_drain_listen }}"
 
+[ifmgr]
+{# mwan-ifmgr.service runs `mwan ifmgr` without --role, so the host daemon reads
+   its role here. #}
+role = "{{ mwan_ifmgr_role }}"
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_host_ipv6_policy_enabled %}

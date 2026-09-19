@@ -98,7 +98,8 @@ mwan_enabled_services:
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "f8:9b:6e:f8:86:11"
 
-# Certificates must be manually uploaded to /etc/wpa_supplicant/ on mwan VM
+# The deploy writes the 802.1X certificates to /etc/wpa_supplicant/ from vault
+# (tasks/mwan-vm/att-8021x.yml).
 
 # ----------------------------------------------------------------------------
 # DHCP identity spoofing / DUIDs
@@ -431,7 +432,7 @@ mwan_email_script: "/opt/scripts/send-email"
 mwan_email_from: "mwan@goodkind.io"
 mwan_email_sender_name: "MWAN"
 
-# Variables consumed by mwan/config/config.toml.j2 [email] block.
+# Variables consumed by mwan/config/config-vm.toml.j2 [email] block.
 mwan_email_min_level: "ERROR"
 mwan_email_subject_prefix: "[MWAN-vault]"
 mwan_email_bind_iface: "enmbrains0"
@@ -459,7 +460,6 @@ failover_lxc_id: "{{ service_mapping.mwan_failover.vmid }}"
 # The VM runs only the wan role, whose modules are health, wan.routes, and npt.
 # The OOB tunnel lives on the hypervisor, so the VM declares no OOB interface
 # or address and renders none of the OOB modules.
-mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: false
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"

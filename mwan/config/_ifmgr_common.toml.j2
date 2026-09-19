@@ -1,5 +1,5 @@
-[ifmgr]
-role = "{{ mwan_ifmgr_role }}"
+{# Included directly under an [ifmgr] header. The role key is not here because
+   the gateway unit takes its role from the systemd instance name. #}
 reconcile_interval = "60s"
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
