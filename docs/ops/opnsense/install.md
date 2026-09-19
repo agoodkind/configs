@@ -161,18 +161,18 @@ unpacks it under `.make/releases/opnsensectl/<tag>/`:
 ./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers --check
 ```
 
-The check run stages the release without touching the guest. Copy the daemon
-binary and its service files onto the guest:
+The check run stages the release without touching the guest. Copy
+`.make/releases/opnsensectl/<tag>/freebsd_amd64/opnsensectl` onto the guest as
+`/usr/local/sbin/mwan-opnsense.current`.
 
-- `.make/releases/opnsensectl/<tag>/freebsd_amd64/opnsensectl` to `/usr/local/sbin/mwan-opnsense.current`
-- `cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense` to `/usr/local/etc/rc.d/mwan_opnsense`
-- `cmd/mwan/opnsense-src/etc/rc.conf.d/mwan_opnsense.sample` to `/etc/rc.conf.d/mwan_opnsense`
-- `cmd/mwan/opnsense-src/boot/loader.conf.d/mwan_opnsense.conf` to `/boot/loader.conf.d/mwan_opnsense.conf`
-
-Point the daemon at the named port, symlink the active slot, and start it:
+Write the service files, symlink the active slot, and start the daemon. `install`
+writes the rc.d script, the run shim, the loader entry, the rc.conf.d settings,
+and `/usr/local/etc/opnsensectl.conf`, whose defaults point the daemon at the
+named port:
 
 ```sh
-chmod 0555 /usr/local/sbin/mwan-opnsense.current /usr/local/etc/rc.d/mwan_opnsense
+chmod 0755 /usr/local/sbin/mwan-opnsense.current
+/usr/local/sbin/mwan-opnsense.current install
 ln -sf /usr/local/sbin/mwan-opnsense.current /usr/local/sbin/mwan-opnsense
 sysrc mwan_opnsense_enable=YES
 service mwan_opnsense start
@@ -193,7 +193,7 @@ upstream and listen sockets from `[opnsense.host]` in `/etc/opnsensectl/config.t
 the probe reads its target from `[opnsense.probe]`.
 
 ```bash
-opnsensectl host serve
+opnsensectl host serve --config /etc/opnsensectl/config.toml
 opnsensectl daemon version
 opnsensectl exec /bin/hostname
 ```

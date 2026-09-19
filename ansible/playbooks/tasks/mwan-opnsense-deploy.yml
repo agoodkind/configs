@@ -13,15 +13,11 @@
 #   opnsensectl_release_tag          release tag the environment pins
 #   opnsensectl_release_commit       commit that tag points at
 #
-# Optional rc.conf.d overrides after install. Defaults come from the sample
-# copied below.
-#   mwan_opnsense_listen_serial      default "/dev/ttyV0.1"
-#   mwan_opnsense_baud               default "115200"
-#   mwan_opnsense_config_xml         default "/conf/config.xml"
-#   mwan_opnsense_backup_dir         default "/conf/backup"
-#   mwan_opnsense_logfile            default "/var/log/mwan-opnsense.log"
-#   mwan_opnsense_state_dir          default "/var/lib/mwan/transfers"
-#   mwan_opnsense_stop_timeout       default "10"
+# The rc.d script starts the daemon as
+#   /usr/local/sbin/mwan-opnsense daemon serve --config /usr/local/etc/opnsensectl.conf
+# through the run shim. `opnsensectl install` writes the rc.d script and the
+# shim, and writes /usr/local/etc/opnsensectl.conf and
+# /etc/rc.conf.d/mwan_opnsense with their defaults only when they are absent.
 
 # The whole deploy reads the router daemon through the hypervisor's opnsensectl,
 # so a hypervisor without it fails every read below. Without this guard the play
@@ -36,68 +32,40 @@
   delegate_to: "{{ mwan_proxmox_delegate }}"
   become: true
 
-- name: Install mwan-opnsense binary as .current
+# The release lands as .incoming and .current stays the running binary, so a
+# crash respawn, a restart RPC, or a self re-exec before the swap below still
+# runs the binary the installed rc.d script and shim were written for. The name
+# is outside the mwan-opnsense prefix the instance script matches.
+- name: Copy the opnsensectl release beside the active binary
   ansible.builtin.copy:
     src: "{{ mwan_opnsense_binary_local }}"
-    dest: /usr/local/sbin/mwan-opnsense.current
+    dest: /usr/local/sbin/opnsensectl.incoming
     owner: root
     group: wheel
     mode: "0755"
-  register: mwan_opnsense_binary_install
+  become: true
+
+- name: Read the checksums of the active and incoming binaries
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - /usr/local/sbin/mwan-opnsense.current
+    - /usr/local/sbin/opnsensectl.incoming
+  register: mwan_opnsense_binaries
   become: true
 
 # /usr/local/sbin/mwan-opnsense always points at the active binary.
-# Self-deploy RPC swaps .current atomically; the symlink stays put.
+# Self-deploy RPC swaps .current atomically; the symlink stays put. force lets a
+# guest that has no .current yet get the link before the swap creates it.
 - name: Symlink mwan-opnsense to .current
   ansible.builtin.file:
     src: mwan-opnsense.current
     dest: /usr/local/sbin/mwan-opnsense
     state: link
+    force: true
     owner: root
     group: wheel
-  become: true
-
-- name: Install rc.d script
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/etc/rc.d/mwan_opnsense
-    dest: /usr/local/etc/rc.d/mwan_opnsense
-    owner: root
-    group: wheel
-    mode: "0755"
-  become: true
-
-# The supervised entry point for daemon(8) -r. rc.d launches this shim, which
-# runs the deploy preflight (revert a bad self-deploy to .previous) before
-# exec'ing the daemon on every (re)spawn.
-- name: Install mwan-opnsense-run preflight shim
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/usr/local/libexec/mwan-opnsense-run
-    dest: /usr/local/libexec/mwan-opnsense-run
-    owner: root
-    group: wheel
-    mode: "0755"
-  become: true
-
-- name: Install rc.conf.d settings
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/etc/rc.conf.d/mwan_opnsense.sample
-    dest: /etc/rc.conf.d/mwan_opnsense
-    owner: root
-    group: wheel
-    mode: "0644"
-  become: true
-
-- name: Install loader.conf.d entry (virtio_console autoload)
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/opnsense-src/boot/loader.conf.d/mwan_opnsense.conf
-    dest: /boot/loader.conf.d/mwan_opnsense.conf
-    owner: root
-    group: wheel
-    mode: "0644"
   become: true
 
 - name: Enable mwan_opnsense in rc.conf
@@ -125,9 +93,8 @@
   when: not ansible_check_mode
   become: true
 
-# The daemon's identity is read from the hypervisor through the host bridge,
-# because any binary named mwan-opnsense* on the guest enters serve instead of
-# answering a verb. `opnsensectl daemon version` prints exactly one line, whose
+# The running daemon's identity is read from the hypervisor through the host
+# bridge. `opnsensectl daemon version` prints exactly one line, whose
 # version field is itself the daemon's build summary:
 #   version=commit=<commit> dirty=<clean|dirty|unknown> binhash=<binhash>
 #   commit=<commit> dirty=<true|false> binhash=<binhash>
@@ -155,27 +122,37 @@
   delegate_to: "{{ mwan_proxmox_delegate }}"
   become: true
 
-# The daemon restarts when the installed binary changed, when anything other
-# than exactly one instance named by the pidfile runs, or when the running
-# daemon does not report the release commit by the same rule the assert below
-# applies, including when its version cannot be read.
-- name: Decide whether the daemon restarts onto the installed binary
+# The daemon restarts when the incoming binary differs from .current, when
+# anything other than exactly one instance named by the pidfile runs, or when
+# the running daemon does not report the release commit by the same rule the
+# assert below applies, including when its version cannot be read. A router
+# still on a release before explicit service commands always restarts here,
+# because its daemon reports an older commit.
+- name: Decide whether the daemon restarts onto the incoming binary
   vars:
     mwan_opnsense_running_commit: >-
       {{ mwan_opnsense_version_before.stdout | regex_findall(mwan_opnsense_version_line_pattern) | first | default('') }}
   ansible.builtin.set_fact:
     mwan_opnsense_restart_required: >-
-      {{ mwan_opnsense_binary_install is changed
+      {{ (mwan_opnsense_binaries.results[0].stat.checksum | default(''))
+      != mwan_opnsense_binaries.results[1].stat.checksum
       or mwan_opnsense_instances_before.rc != 0
       or mwan_opnsense_version_before.rc != 0
       or mwan_opnsense_running_commit is not match('^[0-9a-f]{7,40}$')
       or not opnsensectl_release_commit.startswith(mwan_opnsense_running_commit) }}
   when: not ansible_check_mode
 
+# An old and a new binary never run under each other's rc.d script and shim:
+# an old binary rejects the new shim's `daemon serve --config` command, and a
+# new binary started with no command prints help and exits, which daemon(8) -r
+# respawns forever. The binary, the rc.d script, and the shim therefore change
+# only while no instance runs, and the first start of the new binary goes
+# through rc.d.
+#
 # The restart never uses the daemon's RestartDaemon RPC. That call re-executes
 # the daemon in place, and on the testbed router the re-executed daemon then
 # answered no RPC for seven minutes until an rc.d restart.
-- name: Restart the daemon onto the installed binary
+- name: Restart the daemon onto the incoming binary
   when:
     - not ansible_check_mode
     - mwan_opnsense_restart_required
@@ -191,6 +168,41 @@
         executable: /bin/sh
       changed_when: true
 
+    # install writes the rc.d script, the run shim, and the loader.conf.d entry,
+    # and writes /etc/rc.conf.d/mwan_opnsense and
+    # /usr/local/etc/opnsensectl.conf only when they are absent. On FreeBSD it
+    # only writes files. It prints "wrote <path>" for each file it writes.
+    - name: Write the router service files with the incoming binary
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/opnsensectl.incoming
+          - install
+      register: mwan_opnsense_install
+      changed_when: >-
+        mwan_opnsense_install.stdout_lines | select('match', '^wrote ') | list | length > 0
+
+    # The run shim's preflight copies .previous over .current when a staged
+    # binary fails its first start. A .previous from before explicit service
+    # commands cannot run the new shim's command, so .previous gets the
+    # incoming binary too.
+    - name: Copy the incoming binary to .previous
+      ansible.builtin.copy:
+        src: /usr/local/sbin/opnsensectl.incoming
+        dest: /usr/local/sbin/mwan-opnsense.previous
+        remote_src: true
+        owner: root
+        group: wheel
+        mode: "0755"
+
+    - name: Rename the incoming binary to .current
+      ansible.builtin.command:
+        argv:
+          - mv
+          - -f
+          - /usr/local/sbin/opnsensectl.incoming
+          - /usr/local/sbin/mwan-opnsense.current
+      changed_when: true
+
     - name: Start one mwan-opnsense instance through rc.d
       ansible.builtin.command:
         argv:
@@ -198,9 +210,19 @@
           - start
       changed_when: true
 
+# Without a restart, .current already holds the release, so the incoming copy
+# is not needed.
+- name: Remove the unused incoming binary
+  ansible.builtin.file:
+    path: /usr/local/sbin/opnsensectl.incoming
+    state: absent
+  when:
+    - not ansible_check_mode
+    - not mwan_opnsense_restart_required
+  become: true
+
 # A failure here fails the deploy with the new binary still running: this
-# install writes no pending-verify marker and no .previous slot, so the run shim
-# has nothing to revert.
+# install writes no pending-verify marker, so the run shim reverts nothing.
 - name: Verify the restarted daemon from the hypervisor
   when: not ansible_check_mode
   delegate_to: "{{ mwan_proxmox_delegate }}"
