@@ -123,18 +123,6 @@ type Module struct {
 	// replaced whole each pass, so a published snapshot never shares a slice a
 	// later pass writes.
 	ownedAddresses map[string][]netip.Addr
-
-	// defaultGateway reads one link's main-table default gateway in one
-	// family. Injectable for tests; Init fills it with the netif implementation.
-	defaultGateway func(family string, iface string) (string, error)
-
-	// reconcileTableDefault, reconcileTableRoute, reconcileRules and
-	// removeRuleAtPriority write the pass's routes and rules. Injectable for
-	// tests; Init fills them with the netif implementations.
-	reconcileTableDefault func(ctx context.Context, log *slog.Logger, want netif.RouteSpec) error
-	reconcileTableRoute   func(ctx context.Context, log *slog.Logger, want netif.RouteSpec) error
-	reconcileRules        func(ctx context.Context, log *slog.Logger, desired []netif.DesiredRule) error
-	removeRuleAtPriority  func(ctx context.Context, log *slog.Logger, family string, priority int) error
 }
 
 // gatewayDiscovery is one pass's gateway read. A provider whose link does not
@@ -170,21 +158,6 @@ func (m *Module) Init(ctx context.Context, env *ifmgr.Env) error {
 	}
 	if m.reconcileAddrs == nil {
 		m.reconcileAddrs = netif.ReconcileAddrs
-	}
-	if m.defaultGateway == nil {
-		m.defaultGateway = netif.IfaceDefaultGateway
-	}
-	if m.reconcileTableDefault == nil {
-		m.reconcileTableDefault = netif.ReconcileTableDefault
-	}
-	if m.reconcileTableRoute == nil {
-		m.reconcileTableRoute = netif.ReconcileTableRoute
-	}
-	if m.reconcileRules == nil {
-		m.reconcileRules = netif.ReconcileRules
-	}
-	if m.removeRuleAtPriority == nil {
-		m.removeRuleAtPriority = netif.RemoveRuleAtPriority
 	}
 
 	ifmgr.StartIfaceMonitors(ctx, log, moduleName, watchedIfaces(m.cfg), m.onMonitorEvent)
@@ -228,7 +201,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 	reconcileErr := errors.Join(ownershipErr, discovery.missingLinks)
 	for _, route := range routes {
 		if route.Dest == "default" {
-			if err := m.reconcileTableDefault(ctx, log, route); err != nil {
+			if err := netif.ReconcileTableDefault(ctx, log, route); err != nil {
 				reconcileErr = errors.Join(reconcileErr, fmt.Errorf(
 					"reconcile default route table=%d family=%s: %w",
 					route.TableID,
@@ -238,7 +211,7 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			}
 			continue
 		}
-		if err := m.reconcileTableRoute(ctx, log, route); err != nil {
+		if err := netif.ReconcileTableRoute(ctx, log, route); err != nil {
 			reconcileErr = errors.Join(reconcileErr, fmt.Errorf(
 				"reconcile route table=%d family=%s dest=%s: %w",
 				route.TableID,
@@ -248,10 +221,10 @@ func (m *Module) Reconcile(ctx context.Context, log *slog.Logger) error {
 			))
 		}
 	}
-	if err := m.reconcileRules(ctx, log, rules); err != nil {
+	if err := netif.ReconcileRules(ctx, log, rules); err != nil {
 		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("reconcile rules: %w", err))
 	}
-	if err := removeDisabledRuleSlots(ctx, log, m.cfg, rules, m.removeRuleAtPriority); err != nil {
+	if err := removeDisabledRuleSlots(ctx, log, m.cfg, rules); err != nil {
 		reconcileErr = errors.Join(reconcileErr, err)
 	}
 	m.checkNextHopLocked(ctx, log)
@@ -665,7 +638,7 @@ func (m *Module) discoverGateways(ctx context.Context, log *slog.Logger) (gatewa
 	for _, wan := range m.cfg.WANs {
 		wanGateways := gatewaySet{V4: "", V6: ""}
 		for _, family := range []string{familyV4, familyV6} {
-			gateway, err := m.defaultGateway(family, wan.Iface)
+			gateway, err := netif.IfaceDefaultGateway(family, wan.Iface)
 			if err == nil {
 				if family == familyV4 {
 					wanGateways.V4 = gateway
@@ -703,7 +676,6 @@ func removeDisabledRuleSlots(
 	log *slog.Logger,
 	cfg Config,
 	rules []netif.DesiredRule,
-	removeRuleAtPriority func(ctx context.Context, log *slog.Logger, family string, priority int) error,
 ) error {
 	desiredSlots := desiredRuleSlots(rules)
 	var removeErr error
@@ -711,7 +683,7 @@ func removeDisabledRuleSlots(
 		if desiredSlots[slot] {
 			continue
 		}
-		if err := removeRuleAtPriority(ctx, log, slot.family, slot.priority); err != nil {
+		if err := netif.RemoveRuleAtPriority(ctx, log, slot.family, slot.priority); err != nil {
 			removeErr = errors.Join(removeErr, fmt.Errorf(
 				"remove disabled rule family=%s priority=%d: %w",
 				slot.family,
@@ -893,18 +865,13 @@ func New(cfg ifmgr.ModuleConfig) (ifmgr.Module, error) {
 	return &Module{
 		BaseModule: ifmgr.NewBaseModule(moduleName),
 		cfg:        c,
-		// Init fills the seams with the netif implementations; the counter
-		// starts at zero misses, and no pass has owned an address yet.
-		resolveNextHop:        nil,
-		nextHopMisses:         0,
-		listAddrs:             nil,
-		reconcileAddrs:        nil,
-		ownedAddresses:        nil,
-		defaultGateway:        nil,
-		reconcileTableDefault: nil,
-		reconcileTableRoute:   nil,
-		reconcileRules:        nil,
-		removeRuleAtPriority:  nil,
+		// Init fills the three seams with the netif implementations; the
+		// counter starts at zero misses, and no pass has owned an address yet.
+		resolveNextHop: nil,
+		nextHopMisses:  0,
+		listAddrs:      nil,
+		reconcileAddrs: nil,
+		ownedAddresses: nil,
 	}, nil
 }
 

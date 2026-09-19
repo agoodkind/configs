@@ -92,7 +92,6 @@ func newOwnershipModule(t *testing.T, kernel *fakeLinkAddresses, store *wanstate
 	module.InitBase(testEnvWithStore(store), "module", moduleName)
 	module.listAddrs = kernel.list
 	module.reconcileAddrs = kernel.reconcile
-	module.defaultGateway = netif.IfaceDefaultGateway
 	return module
 }
 

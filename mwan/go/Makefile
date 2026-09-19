@@ -380,11 +380,15 @@ build-wanconfig: wanconfig-builder-image
 # The container mounts the repository root rather than this module, because
 # the suite reads the YANG models and the deploy scripts from outside it. The recipe below replaces go.mk's test target on darwin
 # only, which is why make prints an "overriding commands" warning here.
+# The container gets CAP_SYS_ADMIN and CAP_NET_ADMIN because the wan.routes
+# tests create a private network namespace and build links, routes and rules
+# inside it.
 ifeq ($(shell uname -s),Darwin)
 .PHONY: test
 test: wanconfig-builder-image
 	@echo "darwin: running the suite in $(WANCONFIG_BUILDER_IMAGE), not on the host"
 	docker run --rm --platform linux/amd64 \
+		--cap-add SYS_ADMIN --cap-add NET_ADMIN \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
 		-v mwan-wanconfig-gomod:/go/pkg/mod \
 		-e GOWORK=off \
