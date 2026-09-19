@@ -22,7 +22,7 @@ hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
 | Testbed cutover with reboot | Passed 2026-09-18 16:15, fourth attempt | 202609182217-9c-7cbeb2cd |
 | Fallback in both families | Passed 2026-09-18 16:11 | 9c |
 | Link absent at boot | Failed 16:17 (MWAN-504), passed on rerun 21:57 | 202609190338-9f-0ce2fd73 |
-| AT&T 802.1X path | Not runnable on the testbed | |
+| AT&T 802.1X path | Not runnable on the testbed; on production the order is unchanged from the old unit (2026-09-19 09:47 boot) | 9f |
 | Daemon restart with links up | Passed 2026-09-18 16:15 | 9c |
 | Production check mode | Passed 2026-09-18 22:59 | main 5112babf |
 | Production cutover | Two runs stopped 2026-09-18 at the networkd reload; passed 2026-09-19 09:47 | 9f, main 0d205b67 |
@@ -175,6 +175,26 @@ Monkeybrains rules (300, and 57 for inet6) and `monkeybrains:healthy` by
 Not runnable on the testbed. The testbed's AT&T is a direct link with no VLAN
 and no 802.1X; only production has the supplicant, the path unit, and the
 VLAN. AT&T leaves service about 2026-10-18.
+
+Production shows the sequence on every boot. Gateway, read with `qm guest
+exec` on vault, for the cutover boot and the three boots before it, which ran
+the old unit:
+
+```bash
+journalctl -b <n> -o short-monotonic -u mwan-ifmgr@wan -u wpa_supplicant-mwan -u systemd-networkd -u bringup-att-vlan
+```
+
+| Boot | Daemon started | networkd started | VLAN DHCPv4 lease | Supplicant AUTHENTICATED |
+| --- | --- | --- | --- | --- |
+| 2026-09-19 09:47, new unit | 3.64 | 5.14 | 5.53 | 9.38 |
+| previous, old unit | 4.70 | 4.78 | 5.10 | 9.07 |
+| two before, old unit | 4.19 | 4.39 | 4.70 | 8.76 |
+| three before, old unit | 4.48 | 4.62 | 4.93 | 8.98 |
+
+The daemon's earlier start left the sequence unchanged. The plan expected the
+VLAN to take its lease only after AUTHENTICATED; on production the VLAN has
+always leased about four seconds before the supplicant authenticates, with the
+old unit as with the new one.
 
 ### Case 4: a daemon restart with links up
 
