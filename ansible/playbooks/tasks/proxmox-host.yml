@@ -85,14 +85,28 @@
     - Restart mwan-opnsense-host
   when: proxmox_mwan_host_role_enabled | bool
 
-- name: Deploy mwan-ifmgr service
-  ansible.builtin.copy:
-    src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-ifmgr.service"
-    dest: /etc/systemd/system/mwan-ifmgr.service
-    mode: "0644"
-  register: proxmox_mwan_ifmgr_unit
+# The released binary writes the ifmgr unit it embeds and enables it. It
+# reloads systemd only when the file changed and restarts nothing, so the
+# handler keeps the restart decision. It prints one line per change, each
+# starting with one of the prefixes below, and prints "no change" when it
+# wrote no file. The binary lands only where the host role is on.
+- name: Install the ifmgr unit the mwan binary embeds
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - install
+      - --role
+      - host
+      - --apply
+  register: proxmox_mwan_install
+  changed_when: >-
+    proxmox_mwan_install.stdout_lines
+    | select('match', '^(wrote|installed module|updated module|imported the) ')
+    | list | length > 0
   notify: Restart mwan-ifmgr
-  when: mwan_ifmgr_enabled | bool
+  when:
+    - proxmox_mwan_host_role_enabled | bool
+    - mwan_ifmgr_enabled | bool
 
 - name: Ensure mwan-ifmgr drop-in directory exists
   ansible.builtin.file:
@@ -214,12 +228,12 @@
     daemon_reload: true
   when: cloudflared_oob_enabled | bool
 
-- name: Ensure mwan-ifmgr service is enabled and started
+# The install enables the unit and starts nothing, so a stopped ifmgr starts
+# here.
+- name: Ensure mwan-ifmgr service is started
   ansible.builtin.systemd:
     name: mwan-ifmgr
-    enabled: true
     state: started
-    daemon_reload: true
   when: mwan_ifmgr_enabled | bool
 
 - name: Ensure mwan-watchdog config directory exists

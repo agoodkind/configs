@@ -13,6 +13,8 @@ The `mwan` binary is a monolith whose subcommands each do one job, and a host ru
 
 The ISP-simulator containers and the unrelated service containers on these hosts run no MWAN command.
 
+Each host's MWAN units come from the released binary, not from this repository. After the deploy installs the binary, it runs `mwan install --role <role> --apply`, which writes the files the binary embeds for that role, enables its units, and restarts nothing. The deploy's handlers decide the restarts. The roles are `wan` for the MWAN VM, `failover` for the failover LXC, and `host` for a Proxmox host. The `wan` role also writes the YANG schema, installs it into sysrepo, and imports the read-only RESTCONF access policy. `mwan install` with no flags prints what each role writes.
+
 ## Binary rollout order
 
 Roll a new MWAN binary onto the testbed first and production second, and verify each host before moving to the next.

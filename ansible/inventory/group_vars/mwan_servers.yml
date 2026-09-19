@@ -84,9 +84,9 @@ mwan_networkd_files:
 mwan_att_8021x_enabled: true
 
 # systemd units enabled at the end of the deploy. Prod includes the AT&T 802.1X
-# units; the testbed list omits them (gated off there).
+# units; the testbed list omits them (gated off there). mwan install enables the
+# units the mwan binary embeds, so none of them is listed here.
 mwan_enabled_services:
-  - mwan-trace-boot
   - mwan-update-att-pinned-dests.timer
   - bringup-att-vlan
   - systemd-networkd

@@ -312,31 +312,41 @@ file or touches the kernel.
 
 ### Example: a static link with a delegation client
 
-Webpass in `network.json`, link identity only. Leaf names are illustrative;
-the model revision fixes them.
+Webpass in `network.json`, link identity only. Node names are the ones the
+model defines.
 
 ```json
 {
   "name": "enwebpass0",
+  "type": "iana-if-type:other",
   "goodkind-mwan-steering:link": {
     "match": { "driver": "igc" },
-    "hardware-address": "...",
-    "delegation": { "hint": "::/56", "duid-type": "link-layer-time", "duid": "..." },
-    "route-metric": 10
+    "hardware-address": "00:00:00:00:00:00"
   },
   "ietf-ip:ipv4": {
     "forwarding": true,
     "address": [ { "ip": "136.25.91.242", "prefix-length": 29 } ],
-    "goodkind-mwan-steering:gateway": "136.25.91.241"
+    "goodkind-mwan-steering:dhcp": false,
+    "goodkind-mwan-steering:gateway": "136.25.91.241",
+    "goodkind-mwan-steering:route-metric": 10
   },
   "ietf-ip:ipv6": {
     "forwarding": true,
     "goodkind-mwan-steering:dhcp": true,
-    "goodkind-mwan-steering:accept-ra": true
+    "goodkind-mwan-steering:accept-ra": true,
+    "goodkind-mwan-steering:delegation": {
+      "hint": "::/56",
+      "duid-type": "link-layer-time",
+      "duid": "00:00:00:00:00:00:00:00:00:00:00:00"
+    }
   },
-  "goodkind-mwan-steering:wan": { "table-id": 200, "...": "..." }
+  "goodkind-mwan-steering:wan": { "name": "webpass", "table-id": 200 }
 }
 ```
+
+The route metric and the delegation client sit on the family they address,
+`ietf-ip:ipv4` and `ietf-ip:ipv6`, not on the `link` container. The `link`
+container carries only what identifies and creates the device.
 
 The daemon writes `20-webpass.link`:
 
@@ -346,7 +356,7 @@ Driver=igc
 
 [Link]
 Name=enwebpass0
-MACAddress=...
+MACAddress=00:00:00:00:00:00
 ```
 
 and `20-webpass.network`:
@@ -364,7 +374,7 @@ IPv6Forwarding=yes
 
 [DHCPv6]
 DUIDType=link-layer-time
-DUIDRawData=...
+DUIDRawData=00:00:00:00:00:00:00:00:00:00:00:00
 PrefixDelegationHint=::/56
 
 [Route]
@@ -403,7 +413,7 @@ heading:
 ```ini
 [DHCPv6]
 DUIDType=link-layer-time
-DUIDRawData=...
+DUIDRawData=00:00:00:00:00:00:00:00:00:00:00:00
 PrefixDelegationHint=::/56
 UseDNS=no
 ```
@@ -462,12 +472,21 @@ free-form sections:
 
 ```json
 "goodkind-mwan-steering:networkd": {
-  "netdev": [
-    { "section": "NetDev", "entries": [ { "key": "Name", "value": "bond0" }, { "key": "Kind", "value": "bond" } ] },
-    { "section": "Bond", "entries": [ { "key": "Mode", "value": "active-backup" } ] }
-  ],
-  "network": [
-    { "section": "Network", "entries": [ { "key": "DHCP", "value": "yes" } ] }
+  "file": [
+    { "kind": "netdev", "section": [
+      { "index": 0, "name": "NetDev", "entry": [
+        { "index": 0, "key": "Name", "value": "bond0" },
+        { "index": 1, "key": "Kind", "value": "bond" }
+      ] },
+      { "index": 1, "name": "Bond", "entry": [
+        { "index": 0, "key": "Mode", "value": "active-backup" }
+      ] }
+    ] },
+    { "kind": "network", "section": [
+      { "index": 0, "name": "Network", "entry": [
+        { "index": 0, "key": "DHCP", "value": "yes" }
+      ] }
+    ] }
   ]
 }
 ```
