@@ -96,6 +96,8 @@
           ✓ {{ ansible_distribution }}
           {{ ansible_distribution_version }}
 
+    # The lookup runs under check mode too, because `qm list` only reads and
+    # every later task that names the guest reads its id from this result.
     - name: Get actual VMID from Proxmox
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.shell:
@@ -106,6 +108,7 @@
       register: vmid_lookup
       changed_when: false
       failed_when: vmid_lookup.stdout | length == 0
+      check_mode: false
 
     - name: Set actual VMID
       ansible.builtin.set_fact:
@@ -258,6 +261,10 @@
     # longer carries the network tree, and writing it without a validated
     # network.json beside it would leave a gateway that cannot start its wan
     # role on the next restart.
+    #
+    # These three tasks run under check mode too, because they write only the
+    # controller's .cache directory, and a check run needs the rendered file
+    # to diff it against the gateway's copy.
     - name: Ensure the controller render directory exists
       delegate_to: localhost
       become: false
@@ -266,6 +273,7 @@
         state: directory
         mode: "0755"
       when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
 
     - name: Render the MWAN network configuration on the controller
       delegate_to: localhost
@@ -275,6 +283,7 @@
         dest: "{{ mwan_network_json_local }}"
         mode: "0600"
       when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
 
     # The same model files this repository copies onto the gateway, checked with
     # yanglint the way the daemon checks the file with libyang at startup. This
@@ -301,6 +310,7 @@
       changed_when: false
       failed_when: mwan_network_json_validate.rc != 0
       when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
 
     # The management stack goes on after the controller has validated the
     # render and before any gateway file is written, so a rejected render
@@ -758,6 +768,12 @@
     # ============================================================================
     # All services are enabled and will start on boot.
     # Watchdog monitors post-reboot and auto-rolls back if connectivity fails.
+
+    # A check run stops here, because every task below reboots the VM or reads
+    # the verdict of a reboot, and a check run performs neither.
+    - name: End a check run before the reboot
+      ansible.builtin.meta: end_host
+      when: ansible_check_mode
 
     - name: Deploy complete - scheduling reboot
       ansible.builtin.debug:
