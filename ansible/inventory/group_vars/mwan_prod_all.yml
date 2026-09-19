@@ -9,12 +9,12 @@
 # move a pin, pick the tag, download its checksums.txt, and copy both lines
 # here.
 
-mwan_release_tag: "202609171718-8a-a638ccb9"
+mwan_release_tag: "202609190338-9f-0ce2fd73"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:568acca91c78d9f853432ece26812220914336f38960e1bad14ab1b30c688a8b"
+    checksum: "sha256:1db5c88daab34b988fc179e6210d59f551a4c69a2b7b8fcdd703536d56d12d31"
   - name: wanconfig-stack_linux_amd64.tar.gz
-    checksum: "sha256:5c0099996cd612b88fa9bd31162f860d293cf43b654ca8896c4004364ec5d454"
+    checksum: "sha256:e8342f1faf1dff3a2ea94298ab5470454037a2efd5ed55d6acffc3218f5e2e51"
 
 opnsensectl_release_tag: "202609151528-1-a1fe548"
 opnsensectl_release_assets:
