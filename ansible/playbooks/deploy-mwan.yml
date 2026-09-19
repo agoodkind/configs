@@ -550,13 +550,13 @@
         state: directory
         mode: "0755"
 
-    # Only regular files are listed, because state: absent on a directory
-    # removes it and everything beneath it, and a drop-in directory under
-    # this path is not this deploy's to delete.
+    # Files and symlinks are pruned, directories never, because state: absent
+    # on a directory removes it and everything beneath it, and a drop-in
+    # directory under this path is not this deploy's to delete.
     - name: List the networkd files on the gateway
       ansible.builtin.find:
         paths: /etc/systemd/network
-        file_type: file
+        file_type: any
       register: mwan_networkd_present
 
     - name: Remove networkd files this deploy does not render
@@ -566,7 +566,9 @@
       loop: "{{ mwan_networkd_present.files }}"
       loop_control:
         label: "{{ item.path }}"
-      when: (item.path | basename) not in mwan_networkd_rendered
+      when:
+        - not item.isdir
+        - (item.path | basename) not in mwan_networkd_rendered
       vars:
         mwan_networkd_rendered: >-
           {{ ['10-mgmt.link', '10-mgmt.network']
