@@ -25,7 +25,7 @@ hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
 | AT&T 802.1X path | Not runnable on the testbed | |
 | Daemon restart with links up | Passed 2026-09-18 16:15 | 9c |
 | Production check mode | Passed 2026-09-18 22:59 | main 5112babf |
-| Production cutover | Not finished; two runs stopped at the networkd reload (see below) | |
+| Production cutover | Two runs stopped 2026-09-18 at the networkd reload; passed 2026-09-19 09:47 | 9f, main 0d205b67 |
 
 ## Testbed cutover
 
@@ -246,7 +246,62 @@ Production after the two runs: the pre-9f daemon still running under the new
 unit file, the 9f binary and the twelve networkd files on disk, no reboot,
 three providers healthy, and policy rules equal to the pre-deploy capture.
 
+### Proof of the deploy fix on the testbed
+
+Controller, 2026-09-19 09:26, a deploy from main 0d205b67 to the testbed
+gateway: `ok=196 changed=15 failed=0`. Every networkd file reported `ok`, the
+prune task removed nothing, and no "Reload networkd" handler ran. Gateway,
+after its reboot: the previous boot's networkd journal has no "Reloading"
+and no "Reconfiguring" line, and the twelve files keep their 2026-09-18
+timestamps.
+
+### Check mode, second run
+
+Controller, 2026-09-19 09:40, from main 0d205b67:
+
+```bash
+./configsctl deploy deploy-mwan --limit mwan_servers --check --diff
+```
+
+`failed=0`. Changes: `/etc/mwan/mwan.env`, `/etc/mwan/config.toml` and the
+sysctl file from #440, the daemon restart handler they notify, apt lists, the
+deploy timestamp, and `/etc/msmtprc` with its password hidden. All ten
+networkd files reported unchanged and no reload handler was queued.
+
 ### Cutover
 
-Not yet run. It follows a testbed deploy from main with #441 whose networkd
-journal shows no "Reconfiguring" line for `enmwanbr0`.
+Controller, 2026-09-19 09:40, from main 0d205b67:
+
+```bash
+./configsctl deploy deploy-mwan --limit mwan_servers
+```
+
+`ok=212 changed=15 failed=0`; the play's reboot verdict completed, the egress
+verdict passed, and every provider link held its mapped addresses. The daemon
+restart handler ran at 09:46:51 and the reboot at 09:47:26.
+
+Gateway, after the reboot, read with `qm guest exec` on vault:
+
+```bash
+systemctl is-system-running
+systemctl is-active local-fs.target basic.target multi-user.target ssh mwan-ifmgr@wan systemd-networkd
+systemctl list-jobs
+systemctl --failed
+systemctl show mwan-ifmgr@wan -p WantedBy -p ExecMainStartTimestamp
+journalctl -b -o short-monotonic -u mwan-ifmgr@wan -u systemd-udev-trigger -u systemd-networkd -u systemd-remount-fs
+```
+
+Observed: `running`; every listed unit `active`; no jobs; 0 failed units;
+`WantedBy=multi-user.target`; the running binary is release 9f (0ce2fd73).
+Monotonic: `systemd-remount-fs.service` finished at 3.618, the daemon started
+at 3.644, the udev trigger started at 3.720 and finished at 4.002, networkd
+started at 4.780. Read-only failures in the daemon's journal: 0. Three
+providers healthy.
+
+The Step 1 captures repeated against the pre-deploy baseline: policy rules,
+links and addresses, and the unit directory listing all 0 changed lines; the
+firewall ruleset differed only in the elements of the pinned-address sets,
+which the refresher timer rewrites.
+
+Vault's and mini's cloudflared tunnels lost their connections from 09:47:31
+to 09:47:42, the reboot itself, and none at the daemon restart.
