@@ -137,32 +137,28 @@
       notify:
         - Reload nftables
 
-    - name: Deploy mwan-agent systemd unit
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
-        dest: /etc/systemd/system/mwan-agent.service
-        mode: "0644"
+    # The released binary writes the agent unit, the shared ifmgr unit, and
+    # the drop-in that relaxes the ifmgr sandbox for slaac_health, then
+    # enables both units. It reloads systemd only when a file changed and
+    # restarts nothing, so the handlers keep the restart decision. It prints
+    # one line per change, each starting with one of the prefixes below, and
+    # prints "no change" when it wrote no file.
+    - name: Install the units the mwan binary embeds
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/mwan
+          - install
+          - --role
+          - failover
+          - --apply
+      register: mwan_install
+      changed_when: >-
+        mwan_install.stdout_lines
+        | select('match', '^(wrote|installed module|updated module|imported the) ')
+        | list | length > 0
       notify:
-        - Reload systemd
         - Restart mwan-agent
-
-    - name: Deploy mwan-ifmgr systemd unit
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan-failover/mwan-ifmgr.service"
-        dest: /etc/systemd/system/mwan-ifmgr.service
-        mode: "0644"
-      notify:
-        - Reload systemd
         - Restart mwan-ifmgr
-
-    - name: Enable mwan services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        enabled: true
-        daemon_reload: true
-      loop:
-        - mwan-agent
-        - mwan-ifmgr
 
     - name: Enable nftables
       ansible.builtin.systemd:
@@ -171,10 +167,6 @@
         daemon_reload: true
 
   handlers:
-    - name: Reload systemd
-      ansible.builtin.systemd:
-        daemon_reload: true
-
     - name: Reload nftables
       ansible.builtin.systemd:
         name: nftables
