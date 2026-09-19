@@ -48,7 +48,7 @@ same run is `cd mwan/go && go test -count=1 ./internal/networkjson/ -v`.
 
 Ansible is never invoked directly. Syntax checks run through the repository's
 rake wrappers (`cd ansible && rake syntax:mwan`), and deploys run through
-`go run goodkind.io/configs/cmd/configs deploy <play> --release <tag> --limit <group>`.
+`./configsctl deploy <play> --release <tag> --limit <group>`.
 
 The controller needs `yanglint` on PATH for both `make yang-validate` and the new
 deploy-time check. It comes from the `libyang` Homebrew formula on macOS and the
@@ -1837,7 +1837,7 @@ ssh mwan.suburban.goodkind.io 'sha256sum /etc/mwan/network.json; stat -c %y /etc
 #    ansible/inventory/group_vars/mwan_suburban_servers.yml and set the att
 #    entry of mwan_ifmgr_wan_fw_marks to 0.
 # 3. Deploy the testbed and watch it fail.
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 # 4. Confirm the gateway is untouched.
 ssh mwan.suburban.goodkind.io 'sha256sum /etc/mwan/network.json; stat -c %y /etc/mwan/network.json'
 # 5. Revert the inventory edit.
@@ -2094,7 +2094,7 @@ the resolved guest id of the simulator being observed.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-wanconfig-stack --release "$TAG" --limit mwan_suburban_servers
 ssh mwan.suburban.goodkind.io 'sysrepoctl --list; ls /usr/local/share/wanconfig/yang'
 ```
 
@@ -2144,7 +2144,7 @@ revision, or the daemon cannot validate the file it is handed.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 ```
 
 Expected: the play passes, including "Validate the rendered network
@@ -2250,7 +2250,7 @@ command like it succeeded.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-wanconfig-stack --release "$TAG" --limit mwan_servers
+./configsctl deploy deploy-wanconfig-stack --release "$TAG" --limit mwan_servers
 ```
 
 Expected: `sysrepoctl --list` on the gateway shows `goodkind-mwan-steering |
@@ -2269,7 +2269,7 @@ acknowledgement.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_servers
 ```
 
 Expected: the schema validation passes, the deploy gate's reboot and egress

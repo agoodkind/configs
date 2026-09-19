@@ -71,7 +71,7 @@ treat it as the long-term way to build or test anything.
 
 Ansible is never invoked directly. Syntax checks run through the repository's
 rake wrappers (`cd ansible && rake syntax:mwan`), and deploys run through
-`go run goodkind.io/configs/cmd/configs deploy <play> --release <tag> --limit <group>`.
+`./configsctl deploy <play> --release <tag> --limit <group>`.
 The deploy tool runs its own template lint that bans self-ternary presence
 checks (`x if x else ""`) in templates; use a block `if`.
 
@@ -147,7 +147,7 @@ than the number.
 - **OpenTofu runs through the repository wrapper.** A bare `tofu` has neither
   the state-backend keys nor the Proxmox provider tokens; the wrapper injects
   both from the vault and forwards every argument, so the apply is
-  `go run goodkind.io/configs/cmd/configs tofu apply -target=module.suburban`.
+  `./configsctl tofu apply -target=module.suburban`.
 - **The deploy stops checking the gateway's NICs.** The monkeybrains NIC
   assertion reads a variable this epic deletes, and a per-provider
   hardware-address form would fail on production, where AT&T rides an X710
@@ -6353,7 +6353,7 @@ cd "$(git rev-parse --show-toplevel)/ansible" && rake syntax:mwan
 Expected: PASS, exit 0.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && go run goodkind.io/configs/cmd/configs lint
+cd "$(git rev-parse --show-toplevel)" && ./configsctl lint
 ```
 
 Expected: PASS, exit 0, and in particular no line of the form
@@ -6998,7 +6998,7 @@ cd "$(git rev-parse --show-toplevel)/ansible" && rake syntax:mwan
 Expected: PASS, exit 0.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && go run goodkind.io/configs/cmd/configs lint
+cd "$(git rev-parse --show-toplevel)" && ./configsctl lint
 ```
 
 Expected: PASS, exit 0.
@@ -8797,8 +8797,8 @@ Expected: PASS, exit 0.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs tofu validate
-go run goodkind.io/configs/cmd/configs tofu plan -target=module.suburban
+./configsctl tofu validate
+./configsctl tofu plan -target=module.suburban
 ```
 
 Expected: `validate` reports success. The plan shows exactly three changes:
@@ -8825,7 +8825,7 @@ Operator-run. The apply prompts for approval and keeps the terminal.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs tofu apply -target=module.suburban
+./configsctl tofu apply -target=module.suburban
 ```
 
 Expected: `Apply complete! Resources: 2 added, 1 changed, 0 destroyed.` The
@@ -8858,7 +8858,7 @@ installs no mwan binary.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-testbed --limit suburban_servers
+./configsctl deploy deploy-testbed --limit suburban_servers
 ```
 
 Expected: the play passes. "Install packages on ISP LXCs", "Install kea-dhcp4 on
@@ -8884,7 +8884,7 @@ Task 9's announcement step describes.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 ```
 
 Expected: the play passes and reports its reboot window. The link files land, so
@@ -9032,7 +9032,7 @@ the inbound translation paths reach their internal targets.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 ```
 
 Expected: the play passes, including "Validate the rendered network
@@ -9217,7 +9217,7 @@ then run:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 ```
 
 Expected: the play passes with the same release tag as step 4. The schema
@@ -9271,7 +9271,7 @@ the window, and deploy with the same tag:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 ```
 
 Then:
@@ -9306,7 +9306,7 @@ tag:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_suburban_servers
 ```
 
 Then:
@@ -9371,7 +9371,7 @@ acknowledgement from all three.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-go run goodkind.io/configs/cmd/configs deploy deploy-mwan --release "$TAG" --limit mwan_servers
+./configsctl deploy deploy-mwan --release "$TAG" --limit mwan_servers
 ```
 
 Expected: the schema validation passes, the deploy gate's reboot and egress
@@ -9612,7 +9612,7 @@ Expected: PASS, exit 0. A syntax check resolves every `import_tasks`, so a
 wrong path or a task-level keyword the import rejects fails here.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && go run goodkind.io/configs/cmd/configs lint
+cd "$(git rev-parse --show-toplevel)" && ./configsctl lint
 ```
 
 Expected: PASS, exit 0. The deploy's lint scope follows `import_tasks`, so the
