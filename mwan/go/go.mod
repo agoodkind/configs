@@ -18,7 +18,7 @@ require (
 	golang.org/x/net v0.57.0
 	golang.org/x/sys v0.47.0
 	goodkind.io/gklog v0.2.1
-	goodkind.io/send-email v0.0.0-20260604011720-40a2ede56cd9
+	goodkind.io/send-email v0.0.0-20260915031807-a1cbbafb140f
 	google.golang.org/grpc v1.83.1
 	google.golang.org/protobuf v1.36.11
 	pault.ag/go/debian v0.21.0
