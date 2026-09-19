@@ -92,6 +92,27 @@ tack_guest_fstrim_randomized_delay: "10min"
 tack_thin_pool: ""
 tack_thin_pool_discards: "nopassdown"
 
+# Slow storage tier (TACK-495). Each hypervisor keeps its latency-sensitive
+# guests on its fast pool and places the object store and the owner guest's
+# backup staging on a slower drive. proxmox_slow_storage is the Proxmox storage
+# id of that tier, and OpenTofu names the same id as the moved guests'
+# datastore. Only suburban builds its tier as a ZFS pool here; vault's tier is a
+# directory storage that predates this repo's management of it.
+proxmox_slow_zpool_enabled: false
+proxmox_slow_zpool_name: ""
+proxmox_slow_zpool_devices: []
+proxmox_slow_storage: ""
+# Copy rate for every move onto the tier, in KiB/s, passed to Proxmox as
+# --bwlimit and to rsync. The ledger shares the fast pool with every move's
+# reads, so the rate stays a few percent of what that pool reads; 50 MiB/s
+# still copies a 25 GiB volume in under ten minutes.
+proxmox_slow_storage_bwlimit_kib: 51200
+# One-shot migration inputs, read only by move-slow-tier.yml. Each volume move
+# names a guest and the pct volume key to move; each scratch mount names the
+# owner guest, the free mount key, the path, and the size in GiB.
+proxmox_slow_storage_volume_moves: []
+proxmox_slow_storage_scratch_mounts: []
+
 # The GitHub CLI apt repository. Neither Debian nor Proxmox packages gh, so
 # this repository is what makes the gh entry below resolvable, and until now
 # it was hand-added on each hypervisor rather than owned here. The play

@@ -1,0 +1,235 @@
+---
+# One-shot migration (TACK-495): give an owner guest's backup root its own
+# volume on the slow storage tier. Included by move-slow-tier.yml once per
+# entry in proxmox_slow_storage_scratch_mounts, with the entry in
+# slow_tier_scratch. Remove with that playbook.
+#
+# The backup root holds the ledger export staging and the restore drill's
+# staged artifacts. OpenTofu cannot add the volume: the provider marks the
+# whole mount point list as forcing replacement, which the guest's
+# prevent_destroy guard refuses. Proxmox mounts a new volume into a running
+# container, so the guest keeps serving; only its tack backup timers pause
+# while the existing files move onto the new volume.
+#
+# The old files sit at <path>.hot-pool between the set-aside and the delete,
+# so a rerun after a failure resumes from whichever step failed.
+
+- name: Read the guest's current config for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.command:
+    argv: [pct, config, "{{ slow_tier_scratch.vmid }}", --current, "1"]
+  register: slow_tier_scratch_config
+  changed_when: false
+
+- name: Find any volume already mounted at the backup root for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.set_fact:
+    slow_tier_scratch_existing: >-
+      {{
+        slow_tier_scratch_config.stdout_lines
+        | select('match', '^mp[0-9]+: (.*,)?mp=' ~ slow_tier_scratch.path ~ '(,|$)')
+        | list
+      }}
+
+- name: Refuse a backup root mounted from another storage for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        (slow_tier_scratch_existing
+        | map('regex_findall', '^mp[0-9]+: (?:.*,)?(?:volume=)?([^,=:]+):')
+        | map('first') | list) == [proxmox_slow_storage]
+    fail_msg: >-
+      Guest {{ slow_tier_scratch.vmid }} already mounts
+      {{ slow_tier_scratch.path }} from another storage:
+      {{ slow_tier_scratch_existing }}
+    quiet: true
+  when: slow_tier_scratch_existing | length > 0
+
+- name: Read the guest's run state for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.command:
+    argv: [pct, status, "{{ slow_tier_scratch.vmid }}"]
+  register: slow_tier_scratch_status
+  changed_when: false
+
+# The hot plug and every step inside the guest need it running.
+- name: Refuse a guest that is not running for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.assert:
+    that:
+      - "slow_tier_scratch_status.stdout == 'status: running'"
+    fail_msg: "Guest {{ slow_tier_scratch.vmid }} is not running."
+    quiet: true
+
+- name: Read whether the old backup root is still set aside for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ slow_tier_scratch.vmid }}"
+      - --
+      - find
+      - "{{ slow_tier_scratch.path | dirname }}"
+      - -maxdepth
+      - "1"
+      - -name
+      - "{{ slow_tier_scratch.path | basename }}.hot-pool"
+  register: slow_tier_scratch_aside
+  changed_when: false
+
+- name: Move the backup root onto a slow tier volume for {{ slow_tier_scratch.vmid }}
+  when: slow_tier_scratch_existing | length == 0 or slow_tier_scratch_aside.stdout | length > 0
+  block:
+    - name: Read the tack backup jobs running in the guest for {{ slow_tier_scratch.vmid }}
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ slow_tier_scratch.vmid }}"
+          - --
+          - systemctl
+          - list-units
+          # The backup services are oneshot units, which read as activating
+          # for as long as their job runs.
+          - --state=activating,active
+          - --no-legend
+          - --plain
+          - tack-*.service
+      register: slow_tier_scratch_jobs
+      changed_when: false
+
+    # A running backup job would write into the directory while its files
+    # move, and a taken mount key would make pct set replace another volume.
+    - name: Refuse a busy guest or a taken mount key for {{ slow_tier_scratch.vmid }}
+      ansible.builtin.assert:
+        that:
+          - slow_tier_scratch_jobs.stdout | length == 0
+          - >-
+            slow_tier_scratch_existing | length > 0
+            or slow_tier_scratch_config.stdout_lines
+            | select('match', '^' ~ slow_tier_scratch.key ~ ': ')
+            | list | length == 0
+        fail_msg: >-
+          Guest {{ slow_tier_scratch.vmid }} must have no tack backup job
+          active, and {{ slow_tier_scratch.key }} must be free.
+        quiet: true
+
+    - name: Copy the backup root onto the new volume with the timers paused for {{ slow_tier_scratch.vmid }}
+      block:
+        - name: Pause the tack backup timers for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ slow_tier_scratch.vmid }}"
+              - --
+              - systemctl
+              - stop
+              - tack-*.timer
+          changed_when: true
+
+        - name: Set the existing backup root aside for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ slow_tier_scratch.vmid }}"
+              - --
+              - mv
+              - -T
+              - "{{ slow_tier_scratch.path }}"
+              - "{{ slow_tier_scratch.path }}.hot-pool"
+          when: slow_tier_scratch_aside.stdout | length == 0
+          changed_when: true
+
+        - name: Create the empty mount directory for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ slow_tier_scratch.vmid }}"
+              - --
+              - install
+              - -d
+              - -m
+              - "0755"
+              - "{{ slow_tier_scratch.path }}"
+          when: slow_tier_scratch_existing | length == 0
+          changed_when: true
+
+        # backup=0 keeps the staging volume out of vzdump archives: everything
+        # on it is a copy of data the object store already holds.
+        - name: Allocate and hot plug the slow tier volume for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - set
+              - "{{ slow_tier_scratch.vmid }}"
+              - "--{{ slow_tier_scratch.key }}"
+              - "{{ proxmox_slow_storage }}:{{ slow_tier_scratch.size_gib }},mp={{ slow_tier_scratch.path }},backup=0"
+          when: slow_tier_scratch_existing | length == 0
+          changed_when: true
+
+        # pct set records a failed hot plug as a pending change and still
+        # exits 0, so the copy below starts only after the guest itself shows
+        # the new mount.
+        - name: Read the mount at the backup root inside the guest for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ slow_tier_scratch.vmid }}"
+              - --
+              - findmnt
+              - --noheadings
+              - --output
+              - TARGET
+              - --mountpoint
+              - "{{ slow_tier_scratch.path }}"
+          register: slow_tier_scratch_mount
+          changed_when: false
+
+        - name: Confirm the guest mounts the new volume for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.assert:
+            that:
+              - slow_tier_scratch_mount.stdout == slow_tier_scratch.path
+            fail_msg: >-
+              Guest {{ slow_tier_scratch.vmid }} does not mount
+              {{ slow_tier_scratch.path }}; the old files stay in
+              {{ slow_tier_scratch.path }}.hot-pool.
+            quiet: true
+
+        - name: Copy the existing backup files onto the new volume for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ slow_tier_scratch.vmid }}"
+              - --
+              - rsync
+              - -aHAX
+              - "--bwlimit={{ proxmox_slow_storage_bwlimit_kib }}"
+              - "{{ slow_tier_scratch.path }}.hot-pool/"
+              - "{{ slow_tier_scratch.path }}/"
+          changed_when: true
+
+        - name: Delete the old backup root from the root disk for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ slow_tier_scratch.vmid }}"
+              - --
+              - rm
+              - -rf
+              - --one-file-system
+              - "{{ slow_tier_scratch.path }}.hot-pool"
+          changed_when: true
+      always:
+        - name: Resume the tack backup timers for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ slow_tier_scratch.vmid }}"
+              - --
+              - systemctl
+              - start
+              - tack-*.timer
+          changed_when: true

@@ -1,0 +1,87 @@
+---
+# One-shot migration (TACK-495): move one guest volume onto the slow storage
+# tier with Proxmox's own pct move-volume. Included by move-slow-tier.yml once
+# per entry in proxmox_slow_storage_volume_moves, with the entry in
+# slow_tier_move. Remove with that playbook.
+#
+# OpenTofu cannot make this move: the provider marks a container disk's
+# datastore as forcing replacement and has no volume move, so the guest's
+# prevent_destroy guard refuses the plan. Proxmox refuses to move a volume of a
+# running container, so a running guest is shut down for the copy and started
+# again afterwards, whether or not the copy succeeded.
+
+- name: Read the guest's current config for {{ slow_tier_move.vmid }}
+  ansible.builtin.command:
+    argv: [pct, config, "{{ slow_tier_move.vmid }}", --current, "1"]
+  register: slow_tier_move_config
+  changed_when: false
+
+# The volume value is either "<storage>:<volume>,..." or carries the volume
+# as "volume=<storage>:<volume>" among its other options.
+- name: Find where the volume lives now for {{ slow_tier_move.vmid }}
+  ansible.builtin.set_fact:
+    slow_tier_move_storage: >-
+      {{
+        slow_tier_move_config.stdout_lines
+        | select('match', '^' ~ slow_tier_move.volume ~ ': ')
+        | first
+        | regex_findall('^[a-z0-9]+: (?:.*,)?(?:volume=)?([^,=:]+):')
+        | first
+      }}
+
+- name: Move the volume onto the slow tier for {{ slow_tier_move.vmid }}
+  when: slow_tier_move_storage != proxmox_slow_storage
+  block:
+    - name: Read the guest's run state for {{ slow_tier_move.vmid }}
+      ansible.builtin.command:
+        argv: [pct, status, "{{ slow_tier_move.vmid }}"]
+      register: slow_tier_move_status
+      changed_when: false
+
+    - name: Shut the guest down for the copy for {{ slow_tier_move.vmid }}
+      ansible.builtin.command:
+        argv: [pct, shutdown, "{{ slow_tier_move.vmid }}", --timeout, "180"]
+      when: "slow_tier_move_status.stdout == 'status: running'"
+      changed_when: true
+
+    - name: Copy the volume to the slow tier and delete the source for {{ slow_tier_move.vmid }}
+      block:
+        - name: Run pct move-volume for {{ slow_tier_move.vmid }}
+          ansible.builtin.command:
+            argv:
+              - pct
+              - move-volume
+              - "{{ slow_tier_move.vmid }}"
+              - "{{ slow_tier_move.volume }}"
+              - "{{ proxmox_slow_storage }}"
+              - --bwlimit
+              - "{{ proxmox_slow_storage_bwlimit_kib }}"
+              - --delete
+              - "1"
+          changed_when: true
+      always:
+        - name: Start the guest again for {{ slow_tier_move.vmid }}
+          ansible.builtin.command:
+            argv: [pct, start, "{{ slow_tier_move.vmid }}"]
+          when: "slow_tier_move_status.stdout == 'status: running'"
+          changed_when: true
+
+    - name: Read the guest's config after the move for {{ slow_tier_move.vmid }}
+      ansible.builtin.command:
+        argv: [pct, config, "{{ slow_tier_move.vmid }}", --current, "1"]
+      register: slow_tier_move_config_after
+      changed_when: false
+
+    - name: Confirm the volume now lives on the slow tier for {{ slow_tier_move.vmid }}
+      ansible.builtin.assert:
+        that:
+          - >-
+            (slow_tier_move_config_after.stdout_lines
+            | select('match', '^' ~ slow_tier_move.volume ~ ': ')
+            | first
+            | regex_findall('^[a-z0-9]+: (?:.*,)?(?:volume=)?([^,=:]+):')
+            | first) == proxmox_slow_storage
+        fail_msg: >-
+          Guest {{ slow_tier_move.vmid }} {{ slow_tier_move.volume }} is not on
+          {{ proxmox_slow_storage }} after the move.
+        quiet: true

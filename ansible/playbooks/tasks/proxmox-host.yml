@@ -264,3 +264,7 @@
 - name: Reclaim deleted tack guest blocks (thin pool mode and weekly trim)
   ansible.builtin.import_tasks: tack-guest-fstrim.yml
   when: tack_guest_fstrim_enabled | bool
+
+- name: Build the slow storage tier pool and register it as guest storage
+  ansible.builtin.import_tasks: proxmox-slow-zpool.yml
+  when: proxmox_slow_zpool_enabled | bool

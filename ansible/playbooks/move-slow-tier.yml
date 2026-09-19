@@ -1,0 +1,58 @@
+---
+# One-shot migration (TACK-495): place each hypervisor's slow, asynchronous IO
+# on its slow storage tier and leave the latency-sensitive guests on the fast
+# pool. Remove this playbook, tasks/slow-tier-volume-move.yml,
+# tasks/slow-tier-scratch-mount.yml, and the proxmox_slow_storage_volume_moves
+# and proxmox_slow_storage_scratch_mounts variables once suburban and vault
+# have both run it.
+#
+# Per hypervisor, the play builds the slow tier pool where the host defines
+# one, moves each listed guest volume onto the tier (shutting that guest down
+# for the copy), and gives each listed owner guest's backup root its own volume
+# on the tier (hot plugged, no restart). Every step skips work already done, so
+# a rerun after a failure resumes.
+#
+# Run suburban first and check QA before production:
+#   ./configsctl deploy move-slow-tier --limit suburban
+#   ./configsctl deploy move-slow-tier --limit vault
+
+- name: Move slow IO onto the slow storage tier
+  hosts: proxmox_servers
+  gather_facts: false
+  serial: 1
+
+  tasks:
+    - name: Build the slow storage tier pool
+      ansible.builtin.import_tasks: tasks/proxmox-slow-zpool.yml
+      when: proxmox_slow_zpool_enabled | bool
+
+    - name: Read the slow tier storage status
+      ansible.builtin.command:
+        argv: [pvesm, status, --storage, "{{ proxmox_slow_storage }}"]
+      register: slow_tier_storage_status
+      changed_when: false
+
+    - name: Refuse to move anything onto an inactive slow tier
+      ansible.builtin.assert:
+        that:
+          - >-
+            slow_tier_storage_status.stdout
+            is search('(?m)^' ~ proxmox_slow_storage ~ ' +[a-z]+ +active ')
+        fail_msg: >-
+          Storage {{ proxmox_slow_storage }} is not active on
+          {{ inventory_hostname }}.
+        quiet: true
+
+    - name: Move each listed guest volume onto the slow tier
+      ansible.builtin.include_tasks: tasks/slow-tier-volume-move.yml
+      loop: "{{ proxmox_slow_storage_volume_moves }}"
+      loop_control:
+        loop_var: slow_tier_move
+        label: "{{ slow_tier_move.vmid }} {{ slow_tier_move.volume }}"
+
+    - name: Mount a slow tier volume at each listed owner guest's backup root
+      ansible.builtin.include_tasks: tasks/slow-tier-scratch-mount.yml
+      loop: "{{ proxmox_slow_storage_scratch_mounts }}"
+      loop_control:
+        loop_var: slow_tier_scratch
+        label: "{{ slow_tier_scratch.vmid }} {{ slow_tier_scratch.path }}"
