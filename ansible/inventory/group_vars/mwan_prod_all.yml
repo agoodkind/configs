@@ -12,12 +12,12 @@
 # both lines here.
 
 mwan_release_repo: agoodkind/mwan
-mwan_release_tag: "202609190615-4-803351a"
+mwan_release_tag: "202609191802-8-085fc2b"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:b9bbd0a0b9a434b1b4df6e7b06f2054dc191215280069c373b00d25f7a37c275"
+    checksum: "sha256:89826fad67592b386dc84859e2fa7deccc41b5405b65aefe5111e4512146e9be"
   - name: wanconfig-stack_linux_amd64.tar.gz
-    checksum: "sha256:de26144fdcc628d8cc56d4b8fcbb48f292cab66d719a6a37aa31e0b25cf1a48b"
+    checksum: "sha256:0bebcc18e2566e83864b3c9a62a9a09397481bc1744d1880fb57997b3fb2be78"
 
 opnsensectl_release_tag: "202609190337-7-7db20fb"
 opnsensectl_release_assets:
