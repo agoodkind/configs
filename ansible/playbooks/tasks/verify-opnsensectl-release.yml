@@ -1,14 +1,13 @@
 ---
-# Confirms the opnsensectl binary just installed on a Proxmox host is the one the
-# play pulled: it must report the commit the release tag points at.
+# Confirms an opnsensectl binary on a Proxmox host is the one the play pulled:
+# it must report the commit the release tag points at.
 #
 # The play's release pull downloaded the pinned release, verified its GitHub
 # attestations, unpacked it, and set opnsensectl_release_commit from the tag.
-# The caller sets opnsensectl_installed_binary to the path it just copied to.
+# The caller sets opnsensectl_installed_binary to the path it checks.
 #
-# Not used inside the OPNsense guest: there the binary is installed under a
-# mwan-opnsense name, and that name fast-paths straight into the daemon serve
-# loop, so its identity is read through the daemon's Version RPC instead.
+# Not used inside the OPNsense guest: the router deploy reads the running
+# daemon's identity from the hypervisor through the daemon's Version RPC.
 
 - name: Read installed opnsensectl build identity
   ansible.builtin.command:
