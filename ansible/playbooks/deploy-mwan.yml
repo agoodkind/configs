@@ -550,10 +550,13 @@
         state: directory
         mode: "0755"
 
+    # Only regular files are listed, because state: absent on a directory
+    # removes it and everything beneath it, and a drop-in directory under
+    # this path is not this deploy's to delete.
     - name: List the networkd files on the gateway
       ansible.builtin.find:
         paths: /etc/systemd/network
-        file_type: any
+        file_type: file
       register: mwan_networkd_present
 
     - name: Remove networkd files this deploy does not render
