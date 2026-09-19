@@ -44,6 +44,8 @@
       status: allowed
     return_content: true
     status_code: [200, 400, 409]
+  # The request holds the API key and the new password.
+  no_log: true
   register: smtp2go_add_user
   changed_when: (smtp2go_add_user.status | default(0)) == 200
   failed_when: >-
@@ -100,6 +102,8 @@
       status: allowed
     return_content: true
     status_code: [200]
+  # The request holds the API key and the new password.
+  no_log: true
   when:
     - (smtp_enabled | string) != '0'
     - smtp2go_user_exists
@@ -114,7 +118,10 @@
     smtp_effective_from: "{{ service_hostname.split('.')[0] }}@{{ smtp_from_domain }}"
   when: (smtp_enabled | string) != '0'
 
+# The file holds the SMTP password, so a --diff run must not print it.
 - name: Deploy /etc/msmtprc
+  diff: false
+  no_log: true
   ansible.builtin.copy:
     dest: /etc/msmtprc
     mode: "0600"
