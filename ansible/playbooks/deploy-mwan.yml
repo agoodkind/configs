@@ -51,10 +51,9 @@
     # on the exact bytes the gateway receives. One file per host, because a play
     # against both gateways renders two different trees.
     mwan_network_json_local: "{{ repo_root }}/.cache/network-{{ inventory_hostname }}.json"
-    # The model file carries its revision in its name and the directory holds
-    # exactly one, so a revision bump keeps one home.
-    mwan_steering_model: >-
-      {{ query('fileglob', repo_root ~ '/mwan/yang/goodkind-mwan-steering@*.yang') | first }}
+    # The schema modules the pinned release embeds, printed by that release's
+    # binary and fetched here, one directory per host for the same reason.
+    mwan_schema_local: "{{ repo_root }}/.cache/mwan-schema-{{ inventory_hostname }}"
 
   tasks:
     - name: Generate deploy trace ID (early)
@@ -262,9 +261,10 @@
     # network.json beside it would leave a gateway that cannot start its wan
     # role on the next restart.
     #
-    # These three tasks run under check mode too, because they write only the
-    # controller's .cache directory, and a check run needs the rendered file
-    # to diff it against the gateway's copy.
+    # The render and validation tasks run under check mode too, because they
+    # write only the controller's .cache directory and a scratch directory on
+    # the Proxmox delegate, and a check run needs the rendered file to diff it
+    # against the gateway's copy.
     - name: Ensure the controller render directory exists
       delegate_to: localhost
       become: false
@@ -285,27 +285,89 @@
       when: mwan_ifmgr_wan_enabled | bool
       check_mode: false
 
-    # The same model files this repository copies onto the gateway, checked with
-    # yanglint the way the daemon checks the file with libyang at startup. This
-    # is the pre-flight validation that replaces the ruleset parse the firewall
-    # work removes.
+    # The schema the gateway installs is embedded in the released binary, so the
+    # controller validates against the modules that binary prints rather than a
+    # copy in this repository. The controller cannot run the linux binary, so
+    # the Proxmox delegate prints them with the deploy-gate copy pushed above
+    # and the controller fetches the files. A check run skipped that push, so
+    # it validates against the schema of whatever deploy-gate binary the
+    # delegate already holds. The directory is emptied first because each
+    # revision is a new file name, and a leftover revision would load as a
+    # second module.
+    - name: Empty the controller schema directory
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ mwan_schema_local }}"
+        state: absent
+      when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
+
+    - name: Create a schema directory on the Proxmox delegate
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -mwan-schema
+      register: mwan_schema_remote
+      when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
+
+    - name: Print the released schema on the Proxmox delegate
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/mwan-deploy-gate
+          - install
+          - --print-schema
+          - "{{ mwan_schema_remote.path }}"
+      changed_when: false
+      when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
+
+    - name: List the printed schema modules
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.find:
+        paths: "{{ mwan_schema_remote.path }}"
+        patterns: "*.yang"
+      register: mwan_schema_printed
+      when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
+
+    - name: Fetch the printed schema modules to the controller
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ mwan_schema_local }}/"
+        flat: true
+      loop: "{{ mwan_schema_printed.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
+
+    - name: Remove the schema directory on the Proxmox delegate
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.file:
+        path: "{{ mwan_schema_remote.path }}"
+        state: absent
+      when: mwan_ifmgr_wan_enabled | bool
+      check_mode: false
+
+    # The released modules, checked with yanglint the way the daemon checks the
+    # file with libyang at startup. This is the pre-flight validation that
+    # replaces the ruleset parse the firewall work removes. The search path
+    # resolves each module's imports from the same directory, so the order the
+    # files are named in does not matter.
     - name: Validate the rendered network configuration against the schema
       delegate_to: localhost
       become: false
       ansible.builtin.command:
-        argv:
-          - yanglint
-          - -t
-          - config
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-yang-types@2025-12-22.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-inet-types@2025-12-22.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/iana-if-type@2014-05-08.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-interfaces@2018-02-20.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-ip@2018-02-22.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-routing@2018-03-13.yang"
-          - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/ietf-nat@2019-01-10.yang"
-          - "{{ mwan_steering_model }}"
-          - "{{ mwan_network_json_local }}"
+        argv: >-
+          {{
+            ['yanglint', '-p', mwan_schema_local, '-t', 'config']
+            + (query('fileglob', mwan_schema_local ~ '/*.yang') | sort)
+            + [mwan_network_json_local]
+          }}
       register: mwan_network_json_validate
       changed_when: false
       failed_when: mwan_network_json_validate.rc != 0
@@ -314,40 +376,16 @@
 
     # The management stack goes on after the controller has validated the
     # render and before any gateway file is written, so a rejected render
-    # leaves the gateway untouched, and the model directory the daemon
-    # validates its network file against carries the revision this deploy
-    # renders for by the time the file lands. The first play unpacked the
-    # bundle beside the binary and set wanconfig_stack_dir.
+    # leaves the gateway untouched. The packages it installs carry the sysrepo
+    # that the mwan install below writes the schema into. The first play
+    # unpacked the bundle beside the binary and set wanconfig_stack_dir.
     - name: Install the wanconfig management stack
       ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
       become: true
       vars:
         wanconfig_deb_dir: "/var/lib/mwan-wanconfig/debs/{{ mwan_release_tag }}"
-        wanconfig_yang_dir: /usr/local/share/wanconfig/yang
         # The rousette package ships the models its RESTCONF contract needs.
         wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
-        # ietf-nat guards every enum value behind its nat-type features, so an
-        # install with no features enabled leaves those leaves with zero
-        # valid values and libyang rejects the module. Enable exactly the
-        # translation types the model uses.
-        wanconfig_yang_modules:
-          - name: ietf-interfaces@2018-02-20
-            features: []
-          - name: ietf-ip@2018-02-22
-            features: []
-          - name: ietf-routing@2018-03-13
-            features: []
-          - name: ietf-nat@2019-01-10
-            features:
-              - basic-nat44
-              - napt44
-              - dst-nat
-              - nptv6
-          # The gateway model is the one revision file the repository holds,
-          # found by the same glob the controller-side validation uses, so
-          # the installed module and the validated document never disagree.
-          - name: "{{ mwan_steering_model | basename | regex_replace('\\.yang$', '') }}"
-            features: []
 
     - name: Deploy MWAN runtime environment file
       ansible.builtin.template:
@@ -441,12 +479,6 @@
         success_msg: >-
           /usr/local/bin/mwan links libsysrepo {{ wanconfig_sysrepo_soversion }}.
 
-    - name: Deploy mwan agent systemd unit on MWAN VM
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-agent.service"
-        dest: /etc/systemd/system/mwan-agent.service
-        mode: "0644"
-
     # The ifmgr unit joins group sysrepo (upstream sysrepo access policy,
     # MWAN-435), and a unit naming an absent group fails to start, so the
     # group exists on every gateway. Where the packaged stack installs,
@@ -475,34 +507,54 @@
         - mwan_ifmgr_wan_enabled | bool
         - mwan_ifmgr_tmpfiles is changed
 
-    - name: Deploy mwan ifmgr instanced systemd unit on MWAN VM
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/go/cmd/mwan/mwan-ifmgr@.service"
-        dest: /etc/systemd/system/mwan-ifmgr@.service
-        mode: "0644"
-      notify: Restart mwan-ifmgr@wan
-      when: mwan_ifmgr_wan_enabled | bool
+    # The released binary writes the files it embeds: its own units, the
+    # rousette and nghttpx units, the nftables and systemd-networkd drop-ins,
+    # the quiet console sysctl file, and the schema modules. It installs or
+    # updates the modules in sysrepo, imports the read-only NACM policy, and
+    # enables its units. It reloads systemd only when a file changed and
+    # restarts nothing, so the handlers keep the restart decision. It prints
+    # one line per change, each starting with one of the prefixes below, and
+    # prints "no change" when it wrote no file.
+    - name: Install the units and schema the mwan binary embeds
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/mwan
+          - install
+          - --role
+          - wan
+          - --apply
+      register: mwan_install
+      changed_when: >-
+        mwan_install.stdout_lines
+        | select('match', '^(wrote|installed module|updated module|imported the) ')
+        | list | length > 0
+      notify:
+        - Restart rousette
+        - Restart nghttpx-wanconfig
+        - Restart mwan-ifmgr@wan
 
-    - name: Enable mwan-agent service
+    # The install enables its units and starts none, so a unit that is
+    # stopped starts here.
+    - name: Start the mwan agent and the RESTCONF units
       ansible.builtin.systemd:
-        name: mwan-agent
-        enabled: true
-        daemon_reload: true
+        name: "{{ item }}"
         state: started
+      loop:
+        - mwan-agent
+        - rousette
+        - nghttpx-wanconfig
 
-    - name: Enable mwan-ifmgr@wan service
+    - name: Start mwan-ifmgr@wan
       ansible.builtin.systemd:
         name: mwan-ifmgr@wan
-        enabled: true
-        daemon_reload: true
         state: started
       when: mwan_ifmgr_wan_enabled | bool
 
-    # Baseline / pre-cutover teardown. Gating the deploy+enable above is not
-    # enough: a prior dual-write deploy leaves mwan-ifmgr@wan running and
-    # enabled, so flipping mwan_ifmgr_wan_enabled back to false must actively
-    # stop, disable, and remove the instanced unit to return the host to a
-    # never-cut-over baseline.
+    # Baseline / pre-cutover teardown. The wan role of mwan install writes and
+    # enables the instanced unit on every gateway, and a prior deploy leaves
+    # mwan-ifmgr@wan running, so flipping mwan_ifmgr_wan_enabled to false must
+    # actively stop, disable, and remove the instanced unit to return the host
+    # to a never-cut-over baseline.
     - name: Check for instanced ifmgr unit (teardown path)
       ansible.builtin.stat:
         path: /etc/systemd/system/mwan-ifmgr@.service
@@ -634,12 +686,6 @@
         dest: /etc/sysctl.d/99-mwan.conf
         mode: "0644"
 
-    - name: Deploy quiet console sysctl config to prevent nftables logging noise
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/config/99-quiet-console.conf"
-        dest: /etc/sysctl.d/99-quiet-console.conf
-        mode: "0644"
-
     - name: Deploy routing tables
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/rt_tables.j2"
@@ -668,30 +714,6 @@
     # run rendered, and a reload failure stops the deploy at its cause.
     - name: Apply pending network reloads
       ansible.builtin.meta: flush_handlers
-
-    - name: Create systemd override for nftables
-      ansible.builtin.file:
-        path: /etc/systemd/system/nftables.service.d
-        state: directory
-        mode: "0755"
-
-    - name: Deploy nftables systemd override
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/overrides/nftables.service.d-override.conf"
-        dest: /etc/systemd/system/nftables.service.d/override.conf
-        mode: "0644"
-
-    - name: Create systemd override for systemd-networkd
-      ansible.builtin.file:
-        path: /etc/systemd/system/systemd-networkd.service.d
-        state: directory
-        mode: "0755"
-
-    - name: Deploy systemd-networkd debug override
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/overrides/systemd-networkd.service.d-override.conf"
-        dest: /etc/systemd/system/systemd-networkd.service.d/override.conf
-        mode: "0644"
 
     - name: Create systemd override for getty@tty1 (physical console auto-login)
       ansible.builtin.file:
@@ -741,12 +763,6 @@
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/timers/mwan-update-att-pinned-dests.timer"
         dest: /etc/systemd/system/mwan-update-att-pinned-dests.timer
-        mode: "0644"
-
-    - name: Deploy mwan boot trace service
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan/services/mwan-trace-boot.service"
-        dest: /etc/systemd/system/mwan-trace-boot.service
         mode: "0644"
 
     - name: Ensure local build cache directory exists

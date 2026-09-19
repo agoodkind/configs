@@ -71,9 +71,9 @@ mwan_att_vlan_id: ""
 
 # systemd units enabled at the end of the deploy. No AT&T 802.1X units on the
 # testbed (wpa_supplicant-mwan, wpa-cli-action, wpa-authenticated.path,
-# bringup-att-vlan are prod-only).
+# bringup-att-vlan are prod-only). mwan install enables the units the mwan binary
+# embeds, so none of them is listed here.
 mwan_enabled_services:
-  - mwan-trace-boot
   - mwan-update-att-pinned-dests.timer
   - systemd-networkd
   - networkd-dispatcher

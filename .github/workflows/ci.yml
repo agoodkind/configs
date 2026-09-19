@@ -75,9 +75,10 @@ jobs:
   # run here as their own named check, because a schema failure and a Go
   # failure are different problems and a red check should say which one broke.
   #
-  # The deploy runs this same yanglint validation against the rendered network
-  # configuration before it writes anything to the gateway, so a model or an
-  # instance document that fails here would fail a deploy instead.
+  # The deploy runs the same yanglint validation against the rendered network
+  # configuration before it writes anything to the gateway. It reads the schema
+  # the pinned mwan release embeds, not these copies, so this job proves the
+  # copies and their instance documents and not the release's schema.
   configs-yang:
     name: configs yang gates
     runs-on: ubuntu-latest
