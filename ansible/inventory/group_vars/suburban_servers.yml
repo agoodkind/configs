@@ -9,7 +9,7 @@
 # operating against suburban.
 proxmox_api_host: "3d06:bad:b01:200::1"
 
-# MWAN host-side identity. Used by config.toml.j2 to populate the
+# MWAN host-side identity. Used by config-host.toml.j2 to populate the
 # /etc/mwan/config.toml that suburban's `mwan ifmgr` and `mwan watchdog`
 # services read.
 mwan_config_hostname: "suburban-testbed"

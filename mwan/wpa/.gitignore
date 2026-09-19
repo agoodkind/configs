@@ -1,8 +1,0 @@
-# Ignore AT&T 802.1X certificates (sensitive)
-*.pem
-*.key
-*.crt
-*.cer
-
-# Keep the README
-!README.md

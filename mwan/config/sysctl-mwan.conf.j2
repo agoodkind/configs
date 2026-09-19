@@ -20,7 +20,6 @@ net.ipv6.conf.{{ mwan_webpass_iface }}.autoconf = 0
 net.ipv6.conf.{{ mwan_internal_iface }}.accept_ra = 2
 
 # Increase connection tracking table size for multi-WAN
-# Note: nf_conntrack module must be loaded first (done in handler)
 net.netfilter.nf_conntrack_max = 262144
 
 # Enable reverse path filtering (helps with multi-path routing)
