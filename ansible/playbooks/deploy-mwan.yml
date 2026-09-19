@@ -688,13 +688,6 @@
         dest: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
         mode: "0644"
 
-    - name: Deploy templated helper scripts
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/{{ item }}.j2"
-        dest: /usr/local/bin/{{ item | basename }}
-        mode: "0755"
-      loop: []
-
     - name: Deploy static helper scripts
       ansible.builtin.copy:
         src: "{{ repo_root }}/mwan/{{ item }}"
