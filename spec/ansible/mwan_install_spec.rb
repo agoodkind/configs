@@ -47,7 +47,7 @@ module MwanInstall
 
   # Each role, the task list that installs it, the host paths the verb writes
   # for it, and the units it enables, as `mwan install` with no flags prints
-  # them for release 202609191719-7-253bc9c.
+  # them for release 202609191802-8-085fc2b.
   ROLES = [
     {
       role: 'wan', file: 'deploy-mwan.yml', play: 'Configure MWAN VM',
@@ -93,10 +93,10 @@ module MwanInstall
     { name: 'a run that wrote a unit', roles: %w[wan failover host],
       lines: ["wrote #{UNIT_DIRECTORY}/mwan-ifmgr.service", 'enabled mwan-ifmgr.service'], want: true },
     { name: 'a run that installed a schema module into an emptied repository', roles: %w[wan],
-      lines: ['no change', 'installed module goodkind-mwan-steering@2026-09-14', 'enabled mwan-agent.service'],
+      lines: ['no change', 'installed module goodkind-mwan-steering@2026-09-19', 'enabled mwan-agent.service'],
       want: true },
     { name: 'a run that updated a schema module', roles: %w[wan],
-      lines: ['no change', 'updated module goodkind-mwan-steering from 2026-09-02 to 2026-09-14',
+      lines: ['no change', 'updated module goodkind-mwan-steering from 2026-09-14 to 2026-09-19',
               'enabled mwan-agent.service'],
       want: true },
     { name: 'a run that imported the access policy into a reset datastore', roles: %w[wan],
