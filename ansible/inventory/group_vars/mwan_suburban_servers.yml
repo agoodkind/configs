@@ -178,11 +178,17 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 
 # Mirrors mwan_servers.yml entry for entry, with the simulated ISPs' addresses.
 # The routing numbers match production on purpose, so a testbed proof exercises
-# the numbers the production gateway runs.
+# the numbers the production gateway runs. link_files and the link and
+# per-family blocks are described there; the testbed's links are virtio
+# devices matched by the address Proxmox assigned, so no entry matches by
+# driver or sets a hardware address.
 mwan_providers:
   - name: att
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
+    # Hand-authored as in production, so the testbed exercises the same
+    # exemption; its two direct-link unit files stay under mwan/networkd/testbed/.
+    link_files: hand-authored
     table: 100
     mark: 1
     mark_prio: 100
@@ -211,6 +217,23 @@ mwan_providers:
   - name: webpass
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
+    link_files: rendered
+    link:
+      match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
+    ipv4:
+      forwarding: true
+      dhcp: false
+      address: "{{ mwan_webpass_ipv4 }}"
+      gateway: "{{ mwan_webpass_gateway }}"
+      route_metric: 10
+    # The simulated ISP checks no DUID, so the delegation carries only the
+    # hint; a DUID typed here renders only when the value is non-empty.
+    ipv6:
+      forwarding: true
+      dhcp: true
+      accept_ra: true
+      delegation:
+        hint: "::/56"
     table: 200
     mark: 2
     mark_prio: 200
@@ -239,6 +262,28 @@ mwan_providers:
   - name: monkeybrains
     iface: "{{ mwan_monkeybrains_iface }}"
     vlan_id: ""
+    link_files: rendered
+    link:
+      match: { hardware_address: "{{ mwan_mbrains_mac | lower }}" }
+    ipv4:
+      forwarding: true
+      dhcp: true
+      route_metric: 5000
+    # The shared 30-monkeybrains.network template emits DUIDType and an empty
+    # DUIDRawData here, because mwan_monkeybrains_duid_raw_data is empty on the
+    # testbed. The entry types the same identity; the empty DUID is omitted.
+    ipv6:
+      forwarding: true
+      dhcp: true
+      accept_ra: true
+      route_metric: 5000
+      delegation:
+        hint: "::/56"
+        duid_type: link-layer-time
+        duid: "{{ mwan_monkeybrains_duid_raw_data }}"
+        use_delegated_prefix: true
+        without_ra: solicit
+        router_lifetime_seconds: 1800
     table: 300
     mark: 3
     mark_prio: 300
