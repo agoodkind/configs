@@ -5,16 +5,19 @@
 # play pulls and verifies the release itself, so a deploy names no release on
 # the command line.
 #
-# A checksum is the sha256:<hex> line from the release's checksums.txt. To
-# move a pin, pick the tag, download its checksums.txt, and copy both lines
-# here.
+# An mwan pin names the repository that publishes the release, because
+# agoodkind/configs published the mwan release before agoodkind/mwan did. A
+# checksum is the sha256:<hex> line from the release's checksums.txt. To move
+# a pin, pick the repository and the tag, download its checksums.txt, and copy
+# both lines here.
 
-mwan_release_tag: "202609190338-9f-0ce2fd73"
+mwan_release_repo: agoodkind/mwan
+mwan_release_tag: "202609190615-4-803351a"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:1db5c88daab34b988fc179e6210d59f551a4c69a2b7b8fcdd703536d56d12d31"
+    checksum: "sha256:b9bbd0a0b9a434b1b4df6e7b06f2054dc191215280069c373b00d25f7a37c275"
   - name: wanconfig-stack_linux_amd64.tar.gz
-    checksum: "sha256:e8342f1faf1dff3a2ea94298ab5470454037a2efd5ed55d6acffc3218f5e2e51"
+    checksum: "sha256:de26144fdcc628d8cc56d4b8fcbb48f292cab66d719a6a37aa31e0b25cf1a48b"
 
 opnsensectl_release_tag: "202609190337-7-7db20fb"
 opnsensectl_release_assets:
