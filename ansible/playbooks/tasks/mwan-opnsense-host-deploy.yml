@@ -16,10 +16,8 @@
 #   opnsensectl_release_commit           commit that tag points at
 #   mwan_opnsense_drain_listen           relay socket path the drainer serves
 #
-# Both units read their runtime inputs from /etc/opnsensectl/config.toml, which
-# the first tasks below render. A binary that reads the [opnsense.*] tables from
-# /etc/mwan/config.toml instead finds them there, and a binary that reads the new
-# file falls back to that path while the new file is absent.
+# Both units start their service with --config /etc/opnsensectl/config.toml and
+# read nothing else, so the first tasks below render every key they need.
 
 - name: Ensure the OPNsense tooling config directory exists
   ansible.builtin.file:
@@ -43,78 +41,106 @@
     - Restart mwan-opnsense-drain
     - Restart mwan-opnsense-host
 
-- name: Install the opnsensectl binary
+# The release lands beside the live binary and is verified there, so a bad
+# release never replaces the binary the running units execute.
+- name: Copy the opnsensectl release beside the installed binary
   ansible.builtin.copy:
     src: "{{ opnsensectl_host_binary_local }}"
-    dest: /usr/local/bin/opnsensectl
+    dest: /usr/local/bin/opnsensectl.incoming
     owner: root
     group: root
     mode: "0755"
   become: true
-  notify:
-    - Restart mwan-opnsense-drain
-    - Restart mwan-opnsense-host
 
-- name: Verify the hypervisor opnsensectl is the released commit
+- name: Verify the incoming opnsensectl is the released commit
   ansible.builtin.import_tasks: verify-opnsensectl-release.yml
   vars:
-    opnsensectl_installed_binary: /usr/local/bin/opnsensectl
+    opnsensectl_installed_binary: /usr/local/bin/opnsensectl.incoming
 
-- name: Install mwan-opnsense-drain systemd service
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-drain.service
-    dest: /etc/systemd/system/mwan-opnsense-drain.service
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  register: mwan_opnsense_drain_unit
-  notify: Restart mwan-opnsense-drain
-
-- name: Install mwan-opnsense-drain systemd socket
-  ansible.builtin.template:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-drain.socket.j2
-    dest: /etc/systemd/system/mwan-opnsense-drain.socket
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  register: mwan_opnsense_drain_socket
-  notify: Restart mwan-opnsense-drain
-
-- name: Install systemd unit
-  ansible.builtin.copy:
-    src: >-
-      {{ playbook_dir }}/../../mwan/go/cmd/mwan/mwan-opnsense-host.service
-    dest: /etc/systemd/system/mwan-opnsense-host.service
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  register: mwan_opnsense_host_unit
-  notify: Restart mwan-opnsense-host
-
-- name: Enable and start mwan-opnsense-drain socket
-  ansible.builtin.systemd:
-    name: mwan-opnsense-drain.socket
-    enabled: true
-    state: started
-    daemon_reload: true
+- name: Read the checksums of the installed and incoming opnsensectl
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - /usr/local/bin/opnsensectl
+    - /usr/local/bin/opnsensectl.incoming
+  register: opnsensectl_host_binaries
   become: true
 
-- name: Enable and start mwan-opnsense-drain service
+# A service that restarts between the rename and the install below starts the
+# new binary from the old unit, which fails without --config and retries until
+# the restart at the end of this block. The play's restart handlers are the only
+# other restart that can land in that window: deploy-proxmox forces handlers
+# after a failure, and the config template above notifies them. They run only
+# while opnsensectl_host_restart_safe is true, which this block clears before
+# the rename and sets again once install has written the units.
+- name: Move the hypervisor onto the incoming opnsensectl
+  when: not ansible_check_mode
+  become: true
+  block:
+    - name: Hold the drain and bridge restart handlers until install writes the units
+      ansible.builtin.set_fact:
+        opnsensectl_host_restart_safe: false
+
+    - name: Rename the incoming opnsensectl over the installed binary
+      ansible.builtin.command:
+        argv:
+          - mv
+          - -f
+          - /usr/local/bin/opnsensectl.incoming
+          - /usr/local/bin/opnsensectl
+      register: opnsensectl_host_rename
+      changed_when: >-
+        (opnsensectl_host_binaries.results[0].stat.checksum | default(''))
+        != opnsensectl_host_binaries.results[1].stat.checksum
+
+    # The install verb writes the drain and bridge units, stops, disables, and
+    # deletes a leftover mwan-opnsense-drain.socket, enables both units, and
+    # reloads systemd. It starts and restarts nothing. It prints one line per
+    # change and ends with "install: no change" when it changed nothing. The
+    # drainer binds [opnsense.drain].listen itself, so no socket unit replaces
+    # the deleted one.
+    - name: Install and enable the drain and bridge units with opnsensectl
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/opnsensectl
+          - install
+      register: opnsensectl_host_install
+      changed_when: "'install: no change' not in opnsensectl_host_install.stdout_lines"
+
+    - name: Release the drain and bridge restart handlers
+      ansible.builtin.set_fact:
+        opnsensectl_host_restart_safe: true
+
+    # A restart, unlike a stop and start, hands the stored chardev fd to the new
+    # drainer. The drainer restarts on a new binary, a rewritten unit, or a
+    # deleted socket unit whose listener it still holds; the bridge restarts on
+    # a new binary or a rewritten unit.
+    - name: Restart the drainer onto the installed binary and unit
+      ansible.builtin.systemd:
+        name: mwan-opnsense-drain.service
+        state: restarted
+      when: >-
+        opnsensectl_host_rename is changed
+        or 'wrote /etc/systemd/system/mwan-opnsense-drain.service' in opnsensectl_host_install.stdout_lines
+        or 'removed /etc/systemd/system/mwan-opnsense-drain.socket' in opnsensectl_host_install.stdout_lines
+
+    - name: Restart the bridge onto the installed binary and unit
+      ansible.builtin.systemd:
+        name: mwan-opnsense-host.service
+        state: restarted
+      when: >-
+        opnsensectl_host_rename is changed
+        or 'wrote /etc/systemd/system/mwan-opnsense-host.service' in opnsensectl_host_install.stdout_lines
+
+- name: Start mwan-opnsense-drain service
   ansible.builtin.systemd:
     name: mwan-opnsense-drain.service
-    enabled: true
     state: started
   become: true
 
-- name: Enable and start mwan-opnsense-host
+- name: Start mwan-opnsense-host
   ansible.builtin.systemd:
     name: mwan-opnsense-host
-    enabled: true
     state: started
-    daemon_reload: true
   become: true

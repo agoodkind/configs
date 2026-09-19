@@ -1,8 +1,10 @@
 # OPNsense tooling config for Proxmox hypervisor hosts.
 # Rendered by Ansible (mwan-opnsense-host-deploy.yml), deployed to
 # /etc/opnsensectl/config.toml. Consumed by the OPNsense host bridge, the chardev
-# drainer, and the `opnsensectl` operator verbs. The in-guest daemon reads its
-# own daemon.toml instead. [email] carries the same values as the host's
+# drainer, and the `opnsensectl` operator verbs. The bridge and the drainer read
+# only this file and apply no defaults, so every key they use must be set here.
+# The in-guest daemon reads its own /usr/local/etc/opnsensectl.conf instead.
+# [email] carries the same values as the host's
 # /etc/mwan/config.toml, and the upgrade verb mails its alerts with them.
 
 [email]

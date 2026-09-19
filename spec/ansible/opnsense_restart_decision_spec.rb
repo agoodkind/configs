@@ -12,7 +12,7 @@ require_relative '../support/task_expressions'
 # hypervisor are supplied, shaped the way those tasks register them.
 module OpnsenseRestartDecision
   TASK_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible', 'playbooks', 'tasks', 'mwan-opnsense-deploy.yml')
-  RESTART_TASK_NAME = 'Restart the daemon onto the installed binary'
+  RESTART_TASK_NAME = 'Restart the daemon onto the incoming binary'
   MARK_HEALTHY_TASK_NAME = 'Mark the running daemon binary healthy'
   RESTART_CONDITION = 'restart_when'
   MARK_HEALTHY_CONDITION = 'mark_healthy_changed_when'
@@ -24,6 +24,8 @@ module OpnsenseRestartDecision
   RELEASE_VERSION_LINE = 'version=commit=9b12ead dirty=clean binhash=059926869ac5 ' \
                          'commit=9b12ead dirty=false binhash=059926869ac5'
   VERSION_READ_ERROR = 'rpc error: code = DeadlineExceeded desc = context deadline exceeded'
+  RELEASE_CHECKSUM = '2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881'
+  OLDER_CHECKSUM = '18ac3e7343f016890c510e93f935261169d9e3f565436429830faf0934f4f8e4'
 
   # The part of the task file that decides whether the daemon restarts: every
   # set_fact task before the restart block, in file order, the restart block's
@@ -34,26 +36,39 @@ module OpnsenseRestartDecision
 
   CASES = [
     {
-      name: 'installed binary changed', binary_changed: true, instances_exit: 0,
+      name: 'incoming binary differs from .current', current_checksum: OLDER_CHECKSUM, instances_exit: 0,
       version: TaskExpressions.command_result(0, RELEASE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
     },
     {
-      name: 'instance check failed', binary_changed: false, instances_exit: 1,
+      name: 'guest has no .current', current_checksum: nil, instances_exit: 0,
       version: TaskExpressions.command_result(0, RELEASE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
     },
     {
-      name: 'running daemon reports a stale commit', binary_changed: false, instances_exit: 0,
+      name: 'instance check failed', current_checksum: RELEASE_CHECKSUM, instances_exit: 1,
+      version: TaskExpressions.command_result(0, RELEASE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
+    },
+    {
+      name: 'running daemon reports a stale commit', current_checksum: RELEASE_CHECKSUM, instances_exit: 0,
       version: TaskExpressions.command_result(0, STALE_VERSION_LINE, ''), want_restart: true, want_mark_changed: true
     },
     {
-      name: 'version read failed', binary_changed: false, instances_exit: 0,
+      name: 'version read failed', current_checksum: RELEASE_CHECKSUM, instances_exit: 0,
       version: TaskExpressions.command_result(1, '', VERSION_READ_ERROR), want_restart: true, want_mark_changed: true
     },
     {
-      name: 'daemon already runs the release', binary_changed: false, instances_exit: 0,
+      name: 'daemon already runs the release', current_checksum: RELEASE_CHECKSUM, instances_exit: 0,
       version: TaskExpressions.command_result(0, RELEASE_VERSION_LINE, ''), want_restart: false, want_mark_changed: false
     }
   ].freeze
+
+  # The looped stat result for .current then .incoming, shaped the way the stat
+  # task registers it. A missing .current has no checksum key.
+  def binaries_result(current_checksum)
+    current_stat = { 'exists' => false }
+    current_stat = { 'exists' => true, 'checksum' => current_checksum } unless current_checksum.nil?
+    incoming_stat = { 'exists' => true, 'checksum' => RELEASE_CHECKSUM }
+    { 'results' => [{ 'stat' => current_stat }, { 'stat' => incoming_stat }], 'changed' => false }
+  end
 
   def read_decision
     decision = Decision.new(facts: [], restart_when: [], mark_healthy_when: [], found_restart: false, found_mark_healthy: false)
@@ -100,7 +115,7 @@ RSpec.describe OpnsenseRestartDecision do
       variables = {
         'ansible_check_mode' => false,
         'opnsensectl_release_commit' => OpnsenseRestartDecision::RELEASE_COMMIT,
-        'mwan_opnsense_binary_install' => { 'changed' => test_case[:binary_changed], 'failed' => false },
+        'mwan_opnsense_binaries' => described_class.binaries_result(test_case[:current_checksum]),
         'mwan_opnsense_instances_before' => TaskExpressions.command_result(test_case[:instances_exit], '', ''),
         'mwan_opnsense_version_before' => test_case[:version]
       }
