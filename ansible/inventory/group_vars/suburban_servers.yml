@@ -121,6 +121,26 @@ suburban_vmbrtrunk_hwaddress: "2e:00:00:21:00:05"
 
 # Cloudflared OOB stays off on suburban (no host OOB tunnel today).
 
+# Slow storage tier (TACK-495): a ZFS mirror on the two Crucial BX500 drives,
+# separate from rpool. Both drives left rpool on 2026-09-13 because their
+# DRAM-less writes stalled every guest there (TACK-491), so they hold only this
+# tier's asynchronous IO. The pool uses each drive's third partition; the first
+# two keep the boot partitions proxmox-boot-tool still syncs.
+proxmox_slow_zpool_enabled: true
+proxmox_slow_zpool_name: slowpool
+proxmox_slow_zpool_devices:
+  - /dev/disk/by-id/ata-CT1000BX500SSD1_2512E9B1D242-part3
+  - /dev/disk/by-id/ata-CT1000BX500SSD1_2508E9AB59F7-part3
+proxmox_slow_storage: slow-zfs
+proxmox_slow_storage_volume_moves:
+  - vmid: "{{ service_mapping.seaweedfs_suburban.vmid }}"
+    volume: rootfs
+proxmox_slow_storage_scratch_mounts:
+  - vmid: "{{ service_mapping.tack_qa_suburban.vmid }}"
+    key: mp0
+    path: /root/backups
+    size_gib: 40
+
 # Suburban is the only host with a WireGuard interface, so it is the only one
 # that watches peer handshake age. Local-exec mode: an empty ssh_host makes the
 # module run `wg show` on this host instead of over SSH, and the daemon already
