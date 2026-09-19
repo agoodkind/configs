@@ -1,0 +1,91 @@
+---
+# Slow storage tier pool (TACK-495): a ZFS mirror on the hypervisor's slower
+# drives, registered as Proxmox storage for guest volumes. Imported by
+# proxmox-host.yml and by move-slow-tier.yml, gated by
+# proxmox_slow_zpool_enabled, which only a hypervisor that builds its tier as a
+# pool sets.
+
+- name: Read the imported ZFS pools
+  ansible.builtin.command:
+    argv: [zpool, list, -H, -o, name]
+  register: slow_zpool_imported
+  changed_when: false
+
+# Every step below that writes to a drive runs only while the pool is absent,
+# so a host that already has it never reaches the label clear or the create.
+- name: Build the slow tier pool
+  when: proxmox_slow_zpool_name not in slow_zpool_imported.stdout_lines
+  block:
+    - name: Resolve each slow tier device to its kernel name
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop: "{{ proxmox_slow_zpool_devices }}"
+      register: slow_zpool_device_links
+
+    - name: Read every imported pool's member devices by kernel name
+      ansible.builtin.command:
+        argv: [zpool, status, -LP]
+      register: slow_zpool_members
+      changed_when: false
+
+    - name: Read the mounted block devices
+      ansible.builtin.command:
+        argv: [findmnt, --list, --noheadings, --output, SOURCE]
+      register: slow_zpool_mounted
+      changed_when: false
+
+    # zpool status -L prints each member by its resolved kernel path, which is
+    # what the by-id links point at. A device in any imported pool or mounted
+    # anywhere is live data, so the play stops before it clears a label.
+    - name: Refuse a device that an imported pool or a mount still uses
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.islnk
+          - item.stat.lnk_source not in slow_zpool_members.stdout.split()
+          - item.stat.lnk_source not in slow_zpool_mounted.stdout_lines
+        fail_msg: >-
+          {{ item.item }} is absent, in an imported pool, or mounted, so the
+          slow tier pool is not built on it.
+        quiet: true
+      loop: "{{ slow_zpool_device_links.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # A drive removed from rpool keeps that pool's label, and zpool create
+    # refuses a device whose label names a pool. The assert above proved the
+    # label is stale.
+    - name: Clear the stale ZFS label from each slow tier device
+      ansible.builtin.command:
+        argv: [zpool, labelclear, -f, "{{ item }}"]
+      loop: "{{ proxmox_slow_zpool_devices }}"
+      changed_when: true
+
+    - name: Create the slow tier mirror pool
+      ansible.builtin.command:
+        argv: "{{ ['zpool', 'create', '-o', 'ashift=12', '-O', 'compression=on',
+          proxmox_slow_zpool_name, 'mirror'] + proxmox_slow_zpool_devices }}"
+      changed_when: true
+
+- name: Read the Proxmox storage definitions
+  ansible.builtin.command:
+    argv: [pvesm, status]
+  register: slow_zpool_storages
+  changed_when: false
+
+- name: Register the slow tier pool as Proxmox guest storage
+  ansible.builtin.command:
+    argv:
+      - pvesm
+      - add
+      - zfspool
+      - "{{ proxmox_slow_storage }}"
+      - --pool
+      - "{{ proxmox_slow_zpool_name }}"
+      - --content
+      - rootdir,images
+  when: >-
+    proxmox_slow_storage not in
+    (slow_zpool_storages.stdout_lines | map('split') | map('first') | list)
+  changed_when: true

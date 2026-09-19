@@ -83,3 +83,17 @@ tack_guest_fstrim_vmids:
   - "{{ service_mapping.tack_data3.vmid }}"
   - "{{ service_mapping.tack_app2.vmid }}"
 tack_thin_pool: "pve/data"
+
+# Slow storage tier (TACK-495): the Samsung 870 EVO directory storage beside
+# the P310 thin pool. The object store's root disk moves there, and the owner
+# guest's backup root gets its own volume there. The owner guest's root disk
+# stays on the thin pool.
+proxmox_slow_storage: storage
+proxmox_slow_storage_volume_moves:
+  - vmid: "{{ service_mapping.seaweedfs.vmid }}"
+    volume: rootfs
+proxmox_slow_storage_scratch_mounts:
+  - vmid: "{{ service_mapping.tack.vmid }}"
+    key: mp0
+    path: /root/backups
+    size_gib: 100
