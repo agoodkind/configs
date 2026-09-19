@@ -41,6 +41,23 @@
     shell: /usr/sbin/nologin
     create_home: false
 
+# The package list is read from the pulled release on the controller, not
+# from the gateway after the copy, because check mode does not copy and a
+# gateway-side listing would then find nothing and fail the run.
+- name: List the pulled stack packages
+  ansible.builtin.find:
+    paths: "{{ wanconfig_stack_dir }}/debs"
+    patterns: "*.deb"
+  delegate_to: localhost
+  become: false
+  register: wanconfig_debs
+
+- name: Refuse a stage with no packages
+  ansible.builtin.assert:
+    that:
+      - wanconfig_debs.files | length > 0
+    fail_msg: "no .deb files under {{ wanconfig_stack_dir }}/debs; the pulled release holds no packages"
+
 - name: Copy the staged stack packages
   ansible.builtin.copy:
     src: "{{ wanconfig_stack_dir }}/debs/"
@@ -48,18 +65,6 @@
     owner: root
     group: root
     mode: "0644"
-
-- name: List the copied packages
-  ansible.builtin.find:
-    paths: "{{ wanconfig_deb_dir }}"
-    patterns: "*.deb"
-  register: wanconfig_debs
-
-- name: Refuse a stage with no packages
-  ansible.builtin.assert:
-    that:
-      - wanconfig_debs.files | length > 0
-    fail_msg: "no .deb files under {{ wanconfig_deb_dir }}; the pulled release holds no packages"
 
 # apt resolves the packages' interdependencies in one transaction. A
 # same-version reinstall is a no-op, which apt reports as 0 upgraded
@@ -69,7 +74,8 @@
     argv: >-
       {{
         ['apt-get', 'install', '--yes', '--no-install-recommends']
-        + (wanconfig_debs.files | map(attribute='path') | sort)
+        + (wanconfig_debs.files | map(attribute='path') | map('basename')
+           | map('regex_replace', '^', wanconfig_deb_dir ~ '/') | sort)
       }}
   register: wanconfig_apt_install
   changed_when: "'0 upgraded, 0 newly installed' not in wanconfig_apt_install.stdout"
@@ -105,6 +111,8 @@
     - "{{ repo_root }}/third_party/yang/standard/ietf/RFC/iana-if-type@2014-05-08.yang"
     - "{{ mwan_steering_model }}"
 
+# The listing runs under check mode too, because it only reads and the
+# install and update tasks below decide from its output.
 - name: List installed sysrepo modules
   ansible.builtin.command:
     argv:
@@ -112,6 +120,7 @@
       - --list
   register: wanconfig_sysrepo_modules
   changed_when: false
+  check_mode: false
 
 - name: Install rousette's required models into sysrepo
   ansible.builtin.command:
