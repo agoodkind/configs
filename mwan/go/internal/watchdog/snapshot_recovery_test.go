@@ -3,6 +3,7 @@ package watchdog
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +122,51 @@ func TestAlertFiresOnlyAfterRepeatedFailures(t *testing.T) {
 	if !fn.Active(alertKindSnapshotFailed, w.cfg.MwanVMID) {
 		t.Fatalf("no alert after %d failures in a row",
 			snapshotFailureAlertThreshold)
+	}
+}
+
+// lastSnapshotAlert drives noteSnapshotFailure past the alert threshold with
+// the given error and returns the event the notifier received.
+func lastSnapshotAlert(t *testing.T, cause error) notifyEvent {
+	t.Helper()
+	w := snapshotTestWatchdog(t, &mockOps{})
+	w.nowFn = func() time.Time { return time.Unix(1_700_000_000, 0) }
+	ctx := context.Background()
+	for range snapshotFailureAlertThreshold {
+		w.noteSnapshotFailure(ctx, "known-good-20260914-231024", cause)
+	}
+	events := fakeNotifierFrom(t, w).snapshot()
+	if len(events) != 1 {
+		t.Fatalf("notify events = %d, want exactly 1 alert: %+v", len(events), events)
+	}
+	return events[0]
+}
+
+// alertField returns the string value of the named field on an event.
+func alertField(t *testing.T, event notifyEvent, key string) string {
+	t.Helper()
+	for _, field := range event.Fields {
+		if field.Key == key {
+			return field.Value.String()
+		}
+	}
+	t.Fatalf("alert has no %q field: %+v", key, event.Fields)
+	return ""
+}
+
+// TestSnapshotAlertOutOfDataSpaceNamesThePool covers LVM's other wording for
+// an exhausted thin pool.
+func TestSnapshotAlertOutOfDataSpaceNamesThePool(t *testing.T) {
+	event := lastSnapshotAlert(t, errors.New(
+		"qm snapshot 113 known-good-x: exit status 255:"+
+			" WARNING: Thin pool pve/data is out of data space."))
+
+	if want := "Gateway rollback snapshots failing: disk pool pve/data is full"; event.Message != want {
+		t.Fatalf("headline = %q, want %q", event.Message, want)
+	}
+	actionText := alertField(t, event, snapshotAlertActionKey)
+	if !strings.Contains(actionText, "Free space in pve/data") {
+		t.Fatalf("action %q does not name pool pve/data", actionText)
 	}
 }
 
