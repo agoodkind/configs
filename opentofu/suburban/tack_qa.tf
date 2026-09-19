@@ -63,6 +63,10 @@ resource "proxmox_virtual_environment_container" "tack_qa_suburban" {
       # the configured keys as an addition that forces replacement.
       initialization[0].user_account,
       operating_system[0].template_file_id,
+      # The backup root's volume on the slow storage tier (TACK-495). The
+      # provider replaces a container to change its mount points, so the
+      # volume is hot plugged with pct set and OpenTofu leaves it alone.
+      mount_point,
     ]
   }
 }

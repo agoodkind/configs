@@ -32,8 +32,10 @@ resource "proxmox_virtual_environment_container" "seaweedfs_suburban" {
     mac_address = "BC:24:11:04:10:00"
   }
 
+  # The object store's IO is asynchronous backup traffic, so its disk lives on
+  # the slow BX500 mirror rather than rpool (TACK-495).
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = "slow-zfs"
     size         = 100
   }
 
@@ -62,6 +64,10 @@ resource "proxmox_virtual_environment_container" "seaweedfs_suburban" {
       # the configured keys as an addition that forces replacement.
       initialization[0].user_account,
       operating_system[0].template_file_id,
+      # The provider replaces a container to change its disk's datastore and
+      # has no volume move. The disk moves with pct move-volume on the
+      # hypervisor instead, and OpenTofu never plans the change itself.
+      disk[0].datastore_id,
     ]
   }
 }

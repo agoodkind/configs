@@ -64,6 +64,10 @@ resource "proxmox_virtual_environment_container" "tack" {
       # stored in pct config, so both read as changes that force replacement.
       initialization[0].user_account,
       operating_system[0].template_file_id,
+      # The backup root's volume on the slow storage tier (TACK-495). The
+      # provider replaces a container to change its mount points, so the
+      # volume is hot plugged with pct set and OpenTofu leaves it alone.
+      mount_point,
     ]
   }
 }
@@ -228,8 +232,10 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
     mac_address = "BC:24:11:00:01:18"
   }
 
+  # The object store's IO is asynchronous backup traffic, so its disk lives on
+  # the slow 870 EVO directory storage rather than the P310 thin pool (TACK-495).
   disk {
-    datastore_id = "local-lvm"
+    datastore_id = "storage"
     size         = 100
   }
 
@@ -257,6 +263,10 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
     ignore_changes = [
       initialization[0].user_account,
       operating_system[0].template_file_id,
+      # The provider replaces a container to change its disk's datastore and
+      # has no volume move. The disk moves with pct move-volume on the
+      # hypervisor instead, and OpenTofu never plans the change itself.
+      disk[0].datastore_id,
     ]
   }
 }
