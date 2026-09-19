@@ -460,7 +460,6 @@ failover_lxc_id: "{{ service_mapping.mwan_failover.vmid }}"
 # The VM runs only the wan role, whose modules are health, wan.routes, and npt.
 # The OOB tunnel lives on the hypervisor, so the VM declares no OOB interface
 # or address and renders none of the OOB modules.
-mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: false
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"

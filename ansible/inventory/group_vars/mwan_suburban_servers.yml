@@ -351,7 +351,6 @@ mwan_wanconfig_publish: true
 # The VM runs only the wan role, whose modules are health, wan.routes, and npt.
 # There is no OOB tunnel on the testbed, so the VM declares no OOB interface or
 # address and renders none of the OOB modules.
-mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: false
 mwan_ifmgr_iface_key: "enmbrains0"
 mwan_ifmgr_iface_name: "enmbrains0"
