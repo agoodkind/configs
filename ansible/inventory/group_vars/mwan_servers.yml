@@ -431,7 +431,7 @@ mwan_email_script: "/opt/scripts/send-email"
 mwan_email_from: "mwan@goodkind.io"
 mwan_email_sender_name: "MWAN"
 
-# Variables consumed by mwan/config/config.toml.j2 [email] block.
+# Variables consumed by mwan/config/config-vm.toml.j2 [email] block.
 mwan_email_min_level: "ERROR"
 mwan_email_subject_prefix: "[MWAN-vault]"
 mwan_email_bind_iface: "enmbrains0"
