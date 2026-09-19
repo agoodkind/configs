@@ -7,14 +7,14 @@
 # operating against vault. The dynamic inventory plugin uses its own URL.
 proxmox_api_host: "3d06:bad:b01::254"
 
-# MWAN host-side identity. Used by config.toml.j2 to populate the
+# MWAN host-side identity. Used by config-host.toml.j2 to populate the
 # /etc/mwan/config.toml that vault's `mwan ifmgr` and `mwan watchdog`
 # services read. Distinct from the MWAN VM's own /etc/mwan/config.toml
 # rendered by deploy-mwan.yml against mwan_servers.
 mwan_config_hostname: "vault"
 mwan_config_mgmt_addr: "3d06:bad:b01::113"
 # VMID of the MWAN VM that vault's mwan-watchdog monitors and that the
-# config.toml template references via mwan_vmid and vsock_cid.
+# config-host.toml.j2 template references via mwan_vmid and vsock_cid.
 mwan_vmid: "{{ service_mapping.mwan.vmid }}"
 
 # mwan-watchdog service on the host (separate from the BGP watchdog in
