@@ -676,6 +676,10 @@ func (m *Module) discoverGateways(ctx context.Context, log *slog.Logger) (gatewa
 			}
 			wrapped := fmt.Errorf("%s %s default gateway: %w", wan.Name, family, err)
 			if netif.IsLinkNotFound(err) {
+				// The provider keeps an empty gateway, so this pass installs no
+				// rules for it and writes nothing to its table default. No write
+				// is needed there because the kernel removed every route through
+				// the device, including that default, when the device went away.
 				log.WarnContext(ctx, "wan.routes: provider link missing; treating it as having no gateway",
 					"wan", wan.Name, "iface", wan.Iface, "family", family, "err", err)
 				discovery.missingLinks = errors.Join(discovery.missingLinks, wrapped)
