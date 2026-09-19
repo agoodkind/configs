@@ -538,16 +538,38 @@
       ansible.builtin.include_tasks: tasks/mwan-vm/att-8021x.yml
       when: mwan_att_8021x_enabled | bool
 
-    - name: Empty systemd-networkd directory
-      ansible.builtin.file:
-        path: /etc/systemd/network
-        state: absent
-
+    # The directory is pruned by list, never emptied, because emptying it makes
+    # every file new to networkd and the reload then reconfigures every link.
+    # Reconfiguring enmwanbr0 deletes the routes and rules the daemon and BGP
+    # installed on it, and the gateway forwards nothing for the LAN until the
+    # daemon's next pass. Writing in place touches only files whose content
+    # changed, so the reload reconfigures only those links.
     - name: Ensure systemd-networkd directory exists
       ansible.builtin.file:
         path: /etc/systemd/network
         state: directory
         mode: "0755"
+
+    - name: List the networkd files on the gateway
+      ansible.builtin.find:
+        paths: /etc/systemd/network
+        file_type: any
+      register: mwan_networkd_present
+
+    - name: Remove networkd files this deploy does not render
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ mwan_networkd_present.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when: (item.path | basename) not in mwan_networkd_rendered
+      vars:
+        mwan_networkd_rendered: >-
+          {{ ['10-mgmt.link', '10-mgmt.network']
+             + (mwan_networkd_files | map('basename') | list) }}
+      notify:
+        - Reload networkd
 
     - name: Set variables for management interface templates
       ansible.builtin.set_fact:
@@ -566,6 +588,8 @@
       loop:
         - 10-mgmt.link
         - 10-mgmt.network
+      notify:
+        - Reload networkd
 
     - name: Deploy systemd-networkd configuration files
       # Reloaded by handler: networkctl reload applies changed .network files
