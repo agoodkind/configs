@@ -110,18 +110,61 @@
           active, and {{ slow_tier_scratch.key }} must be free.
         quiet: true
 
+    # The timers are named from the enabled unit files, not a glob: systemctl
+    # start matches a glob only against units loaded in memory, and a stopped
+    # timer is unloaded, so a glob start after a glob stop starts nothing.
+    - name: Read the enabled tack backup timers for {{ slow_tier_scratch.vmid }}
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ slow_tier_scratch.vmid }}"
+          - --
+          - systemctl
+          - list-unit-files
+          - --type=timer
+          - --state=enabled
+          - --no-legend
+          - tack-*.timer
+      register: slow_tier_scratch_timer_files
+      changed_when: false
+
+    - name: Name the tack backup timers for {{ slow_tier_scratch.vmid }}
+      ansible.builtin.set_fact:
+        slow_tier_scratch_timers: >-
+          {{ slow_tier_scratch_timer_files.stdout_lines
+             | map('split') | map('first') | list }}
+
+    - name: Refuse a guest with no enabled tack backup timer for {{ slow_tier_scratch.vmid }}
+      ansible.builtin.assert:
+        that:
+          - slow_tier_scratch_timers | length > 0
+        fail_msg: >-
+          Guest {{ slow_tier_scratch.vmid }} has no enabled tack backup timer;
+          the pause and resume below would have nothing to restore.
+        quiet: true
+
+    # The copy runs inside the guest, whose image does not ship rsync.
+    - name: Install rsync in the guest for {{ slow_tier_scratch.vmid }}
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ slow_tier_scratch.vmid }}"
+          - --
+          - apt-get
+          - install
+          - --yes
+          - --no-install-recommends
+          - rsync
+      register: slow_tier_scratch_rsync_install
+      changed_when: "'Setting up rsync' in slow_tier_scratch_rsync_install.stdout"
+
     - name: Copy the backup root onto the new volume with the timers paused for {{ slow_tier_scratch.vmid }}
       block:
         - name: Pause the tack backup timers for {{ slow_tier_scratch.vmid }}
           ansible.builtin.command:
-            argv:
-              - pct
-              - exec
-              - "{{ slow_tier_scratch.vmid }}"
-              - --
-              - systemctl
-              - stop
-              - tack-*.timer
+            argv: "{{ ['pct', 'exec', slow_tier_scratch.vmid | string, '--', 'systemctl', 'stop'] + slow_tier_scratch_timers }}"
           changed_when: true
 
         - name: Set the existing backup root aside for {{ slow_tier_scratch.vmid }}
@@ -224,12 +267,12 @@
       always:
         - name: Resume the tack backup timers for {{ slow_tier_scratch.vmid }}
           ansible.builtin.command:
-            argv:
-              - pct
-              - exec
-              - "{{ slow_tier_scratch.vmid }}"
-              - --
-              - systemctl
-              - start
-              - tack-*.timer
+            argv: "{{ ['pct', 'exec', slow_tier_scratch.vmid | string, '--', 'systemctl', 'start'] + slow_tier_scratch_timers }}"
           changed_when: true
+
+        - name: Read the tack backup timers back for {{ slow_tier_scratch.vmid }}
+          ansible.builtin.command:
+            argv: "{{ ['pct', 'exec', slow_tier_scratch.vmid | string, '--', 'systemctl', 'is-active'] + slow_tier_scratch_timers }}"
+          register: slow_tier_scratch_timers_active
+          changed_when: false
+          failed_when: slow_tier_scratch_timers_active.stdout_lines | reject('equalto', 'active') | list | length > 0
