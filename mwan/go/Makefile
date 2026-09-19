@@ -380,20 +380,43 @@ build-wanconfig: wanconfig-builder-image
 # The container mounts the repository root rather than this module, because
 # the suite reads the YANG models and the deploy scripts from outside it. The recipe below replaces go.mk's test target on darwin
 # only, which is why make prints an "overriding commands" warning here.
-# The container gets CAP_SYS_ADMIN and CAP_NET_ADMIN because the wan.routes
-# tests create a private network namespace and build links, routes and rules
-# inside it.
 ifeq ($(shell uname -s),Darwin)
 .PHONY: test
 test: wanconfig-builder-image
 	@echo "darwin: running the suite in $(WANCONFIG_BUILDER_IMAGE), not on the host"
 	docker run --rm --platform linux/amd64 \
-		--cap-add SYS_ADMIN --cap-add NET_ADMIN \
 		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
 		-v mwan-wanconfig-gomod:/go/pkg/mod \
 		-e GOWORK=off \
 		$(WANCONFIG_BUILDER_IMAGE) \
 		go test -count=1 ./...
+endif
+
+# ---------------------------------------------------------------------------
+# Network namespace tests
+# ---------------------------------------------------------------------------
+
+# The netns-tagged tests create a private network namespace and build links,
+# routes and policy rules inside it, so they need CAP_SYS_ADMIN and
+# CAP_NET_ADMIN. `make test` runs unprivileged and leaves them out; this
+# target always runs them with that privilege. On linux it runs them as root.
+# On macOS it runs them in a linux/arm64 container, because the amd64 builder
+# runs under qemu, and qemu does not translate policy rule netlink messages.
+NETNS_TEST_PACKAGES := ./internal/ifmgr/modules/wanroutes/...
+NETNS_GO_VERSION    := $(shell awk '/^go /{print $$2}' go.mod)
+
+.PHONY: test-netns
+ifeq ($(shell uname -s),Darwin)
+test-netns:
+	docker run --rm --platform linux/arm64 \
+		--cap-add SYS_ADMIN --cap-add NET_ADMIN \
+		-v $(abspath $(CURDIR)/../..):/src -w /src/mwan/go \
+		-e GOWORK=off -e CGO_ENABLED=0 \
+		golang:$(NETNS_GO_VERSION) \
+		go test -count=1 -tags netns $(NETNS_TEST_PACKAGES)
+else
+test-netns:
+	sudo -E env "PATH=$$PATH" go test -count=1 -tags netns $(NETNS_TEST_PACKAGES)
 endif
 
 # ---------------------------------------------------------------------------

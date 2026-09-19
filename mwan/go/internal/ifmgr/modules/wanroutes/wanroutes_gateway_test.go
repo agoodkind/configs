@@ -1,3 +1,5 @@
+//go:build linux && netns
+
 package wanroutes
 
 import (

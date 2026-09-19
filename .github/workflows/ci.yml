@@ -106,3 +106,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: make yang-validate yang-validate-instances
         working-directory: mwan/go
+
+  # This job exists because the netns-tagged tests create a private network
+  # namespace and build links, routes and policy rules inside it, which needs
+  # root. The mwan/go job above runs its tests as the unprivileged runner user,
+  # so it builds without the tag and never runs them.
+  mwan-netns-tests:
+    name: mwan netns tests
+    runs-on: ubuntu-latest
+    steps:
+      # The submodules match the mwan/go job's checkout, because the Makefile
+      # this job runs is the same one.
+      - uses: actions/checkout@v7
+        with:
+          submodules: "true"
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: mwan/go/go.mod
+          cache-dependency-path: mwan/go/go.sum
+      # mwan/go/Makefile fetches go-makefile through gh while make parses it,
+      # so the token keeps that fetch on the authenticated API path instead of
+      # its anonymous raw fallback.
+      - name: Run the network namespace tests as root
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make test-netns
+        working-directory: mwan/go
