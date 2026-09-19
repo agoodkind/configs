@@ -416,7 +416,7 @@ test-netns:
 		go test -count=1 -tags netns $(NETNS_TEST_PACKAGES)
 else
 test-netns:
-	sudo -E env "PATH=$$PATH" go test -count=1 -tags netns $(NETNS_TEST_PACKAGES)
+	sudo -E env "PATH=$$PATH" go test -v -count=1 -tags netns $(NETNS_TEST_PACKAGES)
 endif
 
 # ---------------------------------------------------------------------------
