@@ -26,6 +26,11 @@
     DEBIAN_FRONTEND: noninteractive
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
+    # mwan-opnsense-host-deploy.yml clears this between renaming a new
+    # opnsensectl into place and installing its units. A forced handler that
+    # restarted the drainer or bridge in that window would start the new binary
+    # from the old unit, which exits without --config until systemd gives up.
+    opnsensectl_host_restart_safe: true
 
   tasks:
     # Both pulls run per host, because each hypervisor's environment pins its
@@ -84,6 +89,7 @@
         enabled: true
         state: restarted
         daemon_reload: true
+      when: opnsensectl_host_restart_safe | bool
 
     - name: Restart mwan-opnsense-host
       ansible.builtin.systemd:
@@ -91,3 +97,4 @@
         enabled: true
         state: restarted
         daemon_reload: true
+      when: opnsensectl_host_restart_safe | bool
