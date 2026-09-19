@@ -5,10 +5,13 @@
 # play pulls and verifies the release itself, so a deploy names no release on
 # the command line.
 #
-# A checksum is the sha256:<hex> line from the release's checksums.txt. To
-# move a pin, pick the tag, download its checksums.txt, and copy both lines
-# here.
+# An mwan pin names the repository that publishes the release, because the
+# mwan module is moving from agoodkind/configs to agoodkind/mwan and each
+# environment moves when its pin does. A checksum is the sha256:<hex> line
+# from the release's checksums.txt. To move a pin, pick the repository and the
+# tag, download its checksums.txt, and copy both lines here.
 
+mwan_release_repo: agoodkind/configs
 mwan_release_tag: "202609190338-9f-0ce2fd73"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz

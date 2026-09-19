@@ -120,12 +120,12 @@ mwan_status_push_port: 50053
 # ----------------------------------------------------------------------------
 # Each deploy play pulls its pinned release onto the controller first. The tags
 # and checksums are pinned per environment in mwan_prod_all.yml and
-# mwan_testbed_all.yml. The release repositories and the unpack directory are
-# the same for both. This repository publishes the mwan release until the mwan
-# module moves out (MWAN-379); opnsensectl publishes its own.
-mwan_release_repo: agoodkind/configs
+# mwan_testbed_all.yml. The mwan release repository is pinned there too,
+# because the mwan module is moving out of this repository (MWAN-379) and each
+# environment moves when its pin does. The opnsensectl repository and the
+# unpack directory are the same for both.
 opnsensectl_release_repo: agoodkind/opnsensectl
-# Both release workflows call go-makefile's reusable release workflow, so that
+# Every release workflow calls go-makefile's reusable release workflow, so that
 # workflow signs every attestation the pull verifies.
 release_signer_repo: agoodkind/go-makefile
 # Under the repository root, where .gitignore already keeps it out of the tree.

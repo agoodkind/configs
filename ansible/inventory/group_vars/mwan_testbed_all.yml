@@ -3,12 +3,13 @@
 # gateway, failover, router, and hypervisor groups. mwan_prod_all.yml carries
 # production's pins and explains the shape of a pin.
 
-mwan_release_tag: "202609190338-9f-0ce2fd73"
+mwan_release_repo: agoodkind/mwan
+mwan_release_tag: "202609190526-1-188a634"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:1db5c88daab34b988fc179e6210d59f551a4c69a2b7b8fcdd703536d56d12d31"
+    checksum: "sha256:b5cd81107a4fa1f958f76a0ffd556a6341703079954da734d2fe9a8300d93003"
   - name: wanconfig-stack_linux_amd64.tar.gz
-    checksum: "sha256:e8342f1faf1dff3a2ea94298ab5470454037a2efd5ed55d6acffc3218f5e2e51"
+    checksum: "sha256:68f254994e2dda3cea9c4adc941cbb9ce12f5741df09ad7cd51ed0f95b475b43"
 
 opnsensectl_release_tag: "202609190337-7-7db20fb"
 opnsensectl_release_assets:
