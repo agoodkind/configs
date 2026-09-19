@@ -66,6 +66,16 @@ module SlowTierDecision
       want_mount: false, want_accept: false }
   ].freeze
 
+  # systemctl list-unit-files --type=timer --state=enabled --no-legend
+  # 'tack-*.timer' as the QA owner guest printed it on 2026-09-19, with the
+  # timers stopped: the unit files stay listed after a stop.
+  TIMER_FILE_LINES = [
+    'tack-backup-restore-drill.timer enabled enabled',
+    'tack-backup-staleness.timer     enabled enabled',
+    'tack-ledger-export.timer        enabled enabled'
+  ].freeze
+  TIMER_NAMES = %w[tack-backup-restore-drill.timer tack-backup-staleness.timer tack-ledger-export.timer].freeze
+
   POOL_TASK_FILE = File.join(TASK_DIRECTORY, 'proxmox-slow-zpool.yml')
   POOL_BLOCK_NAME = 'Build the slow tier pool'
   POOL_REFUSE_NAME = 'Refuse a device that an imported pool or a mount still uses'
@@ -184,7 +194,8 @@ RSpec.describe SlowTierDecision do
           'proxmox_slow_storage' => 'storage',
           'slow_tier_scratch' => { 'vmid' => 117, 'key' => 'mp0', 'path' => SlowTierDecision::BACKUP_ROOT, 'size_gib' => 100 },
           'slow_tier_scratch_config' => described_class.config_result(SlowTierDecision::COMMON_LINES + test_case[:mount_lines]),
-          'slow_tier_scratch_aside' => TaskExpressions.command_result(0, test_case[:aside], '')
+          'slow_tier_scratch_aside' => TaskExpressions.command_result(0, test_case[:aside], ''),
+          'slow_tier_scratch_timer_files' => described_class.config_result(SlowTierDecision::TIMER_FILE_LINES)
         }
         conditions = { 'mount' => @mount_when, 'refuse_runs' => @refuse_when }
         conditions['accept'] = @refuse_that unless test_case[:want_accept].nil?
@@ -192,6 +203,9 @@ RSpec.describe SlowTierDecision do
 
         expect(result['conditions']['mount']).to be(test_case[:want_mount]),
                                                   "mount = #{result['conditions']['mount']}, facts #{result['facts']}"
+        # The pause and resume name these timers; a glob would start nothing
+        # once the stop unloaded them.
+        expect(result['facts']['slow_tier_scratch_timers']).to eq(SlowTierDecision::TIMER_NAMES)
         expect(result['conditions']['refuse_runs']).to be(!test_case[:want_accept].nil?)
         expect(result['conditions']['accept']).to be(test_case[:want_accept]) unless test_case[:want_accept].nil?
       end
