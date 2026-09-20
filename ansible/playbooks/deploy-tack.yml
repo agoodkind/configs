@@ -264,6 +264,33 @@
       ansible.builtin.include_tasks: tasks/tack-ledger-tls.yml
       when: tack_ledger_tls_enabled | bool
 
+    # -------------------------------------------------------------------------
+    # Product store cluster file (TACK-408). Every guest has one, whether it
+    # runs a store process or only clients, and every process on the guest
+    # reads that one file: the store process, the app, the audit consumer, the
+    # backup agent, and the ops sidecar. The cluster owns the file once it
+    # exists, writing each coordinator change into it, so the seed runs only
+    # where the file is absent. A deploy that rewrote it would replace the live
+    # coordinator list with whatever the inventory last declared.
+    # -------------------------------------------------------------------------
+    - name: Ensure the product store cluster directory exists
+      ansible.builtin.file:
+        path: /etc/foundationdb
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Seed the product store cluster file where this guest has none
+      ansible.builtin.copy:
+        dest: /etc/foundationdb/fdb.cluster
+        content: "{{ tack_store_cluster_file_contents }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+        force: false
+      when: tack_store_bootstrap_coordinators | length > 0
+
     - block:
 
         # ---------------------------------------------------------------------
@@ -283,18 +310,6 @@
             owner: root
             group: root
             mode: "0600"
-
-        # ---------------------------------------------------------------------
-        # FDB cluster directory (fdb service mounts it read-write to write its
-        # cluster file; app mounts it read-only to find the cluster)
-        # ---------------------------------------------------------------------
-        - name: Ensure /etc/foundationdb directory exists
-          ansible.builtin.file:
-            path: /etc/foundationdb
-            state: directory
-            owner: root
-            group: root
-            mode: "0755"
 
         # ---------------------------------------------------------------------
         # Tack install directory and files
@@ -490,6 +505,32 @@
             group: root
             mode: "0750"
 
+        - name: Create Tack fdb-overlay directory (data guest)
+          ansible.builtin.file:
+            path: "{{ tack_install_dir }}/fdb-overlay"
+            state: directory
+            owner: root
+            group: root
+            mode: "0750"
+
+        # The data guests run a store process too (TACK-408), so they need the
+        # patched startup script the owner guest has always fetched: it keeps
+        # the cluster file the cluster wrote, announces this guest's pinned
+        # address, and names the guest as the fault domain.
+        - name: Fetch fdb-overlay/fdb.bash from the tack repo SOT (data guest)
+          ansible.builtin.get_url:
+            url: "https://api.github.com/repos/agoodkind/tack/contents/fdb-overlay/fdb.bash?ref={{ tack_commit }}"
+            dest: "{{ tack_install_dir }}/fdb-overlay/fdb.bash"
+            headers:
+              Authorization: "Bearer {{ tack_repo_read_token }}"
+              Accept: "application/vnd.github.raw"
+            owner: root
+            group: root
+            mode: "0755"
+            force: true
+          no_log: true
+          notify: Restart Tack data guest services
+
         - name: Create Tack yugabyte-overlay directory (ledger node)
           ansible.builtin.file:
             path: "{{ tack_install_dir }}/yugabyte-overlay"
@@ -621,6 +662,28 @@
           changed_when: false
           when: tack_ledger_node_certificate_rotated | bool
 
+        # The product store process and its backup agent on this data guest
+        # (TACK-408). The process announces the guest's pinned address from the
+        # rendered env and starts from the cluster file seeded above, so its
+        # first start enrolls it in the environment's existing cluster rather
+        # than creating a second one. Starting it changes no cluster
+        # configuration: raising the redundancy and moving the coordinators are
+        # deliberate `ops store` commands an operator runs afterwards.
+        #
+        # One backup agent runs per data guest. Agents divide one session's
+        # work between themselves, so this is the count that keeps the stream
+        # running while any one guest is down.
+        - name: Start the product store process and its backup agent
+          ansible.builtin.command:
+            cmd: >-
+              docker compose up -d fdb
+              {{ 'fdb-backup-agent' if tack_backup_enabled | bool else '' }}
+            chdir: "{{ tack_install_dir }}"
+          changed_when: true
+          when:
+            - tack_store_node_present | bool
+            - tack_store_bootstrap_coordinators | length > 0
+
         # Scheduled ledger export, per-node half (TACK-356). The archiver
         # timer polls for a pending export manifest and no-ops quietly
         # otherwise. Gated on the live ledger topology: production grows
@@ -726,6 +789,20 @@
           when:
             - tack_backup_enabled | bool
             - tack_ledger_consumers_repointed | bool
+
+        # A service parked in an inactive profile is unmanaged, not an orphan,
+        # so --remove-orphans leaves its container running; remove the retired
+        # store process and its backup agent explicitly, the same way the
+        # retired ledger node is removed above. Idempotent when absent. Safe
+        # only after `ops store exclude` has moved every copy of a key off this
+        # guest's process, which the migration plan does before the flag flips.
+        - name: Remove the retired product store containers
+          ansible.builtin.command:
+            cmd: docker compose --profile retired rm -sf fdb fdb-backup-agent
+            chdir: "{{ tack_install_dir }}"
+          register: tack_store_retired_rm
+          changed_when: "'Removed' in tack_store_retired_rm.stderr"
+          when: not tack_store_legacy_node_present
       when: tack_provision_owner
 
   handlers:
@@ -742,10 +819,25 @@
         chdir: "{{ tack_install_dir }}"
       changed_when: true
 
-    # Data guests run only the ledger node; a full compose up here would start
-    # the whole stack on a guest that must serve nothing else.
+    # Data guests run the ledger node and the product store process; a full
+    # compose up here would start the whole stack on a guest that must serve
+    # nothing else.
     - name: Restart Tack ledger node
       ansible.builtin.command:
         cmd: docker compose up -d yugabyte
         chdir: "{{ tack_install_dir }}"
       changed_when: true
+
+    # The product store process on a data guest, restarted when its startup
+    # script changed. The cluster file survives the restart, because the
+    # patched script keeps the file the cluster wrote (TACK-408).
+    - name: Restart Tack data guest services
+      ansible.builtin.command:
+        cmd: >-
+          docker compose up -d fdb
+          {{ 'fdb-backup-agent' if tack_backup_enabled | bool else '' }}
+        chdir: "{{ tack_install_dir }}"
+      changed_when: true
+      when:
+        - tack_store_node_present | bool
+        - tack_store_bootstrap_coordinators | length > 0

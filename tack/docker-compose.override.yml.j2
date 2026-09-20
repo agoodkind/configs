@@ -8,6 +8,26 @@
 # other ledger name to the owning guest's pinned address, reached on the
 # published node ports.
 services:
+{% if tack_store_node_present | bool %}
+  # The product store on this data guest (TACK-408). Host networking, because
+  # the process has to bind the address it announces: the cluster records that
+  # address, a client dials it from another guest, and a container address is
+  # replaced on the next recreate. The pinned address, the fault domain, and
+  # the seeded coordinator list are rendered into .env beside this file.
+  fdb:
+    network_mode: host
+{% endif %}
+{% if tack_provision_owner and not tack_store_legacy_node_present %}
+  # Retired on this guest: the store runs one process per data guest, and the
+  # inactive profile keeps every compose up from starting one here. The deploy
+  # removes the stopped containers. Retire only after `ops store exclude` has
+  # moved every copy of a key off this guest's process, which the migration
+  # plan does before this value flips.
+  fdb:
+    profiles: ["retired"]
+  fdb-backup-agent:
+    profiles: ["retired"]
+{% endif %}
 {% if tack_provision_owner and tack_ledger_consumers_repointed %}
   # The app and the audit consumer reach the ledger at its permanent node
   # names, which resolve here to the owning guests' pinned addresses. The

@@ -148,6 +148,72 @@ tack_log_max_size_mb: 100
 tack_fdb_version: "7.4.6"
 tack_port: 8000
 
+# ---------------------------------------------------------------------------
+# Product store (FoundationDB), phase 4 (TACK-408)
+# ---------------------------------------------------------------------------
+
+# The port every store process listens on and announces.
+tack_store_port: 4500
+
+# Whether this guest runs a store process in the distributed shape: one per
+# data guest, announcing that guest's pinned address. A guest that runs one
+# uses host networking, because the process has to bind the address it
+# announces and a container address is replaced on the next recreate.
+#
+# False here, so a deploy changes nothing until an environment turns it on at
+# the migration step that starts the data guests' processes. The deploy starts
+# a process only where this is true and tack_store_bootstrap_coordinators names
+# the live coordinators, because a process with neither is its own coordinator
+# and would create a second cluster beside the real one.
+tack_store_node_present: false
+
+# Whether the owner guest still runs the original store process, the one that
+# announces its container address. It stays true until the environment has
+# migrated and the process has been excluded; false retires the service and
+# its backup agent on the owner. Environment groups set the current value, the
+# same way tack_ledger_legacy_node_present does for the ledger.
+tack_store_legacy_node_present: true
+
+# The coordinator list a store process starts from the first time it runs on a
+# guest. It must name the coordinators the cluster uses right now, not the ones
+# the migration will end at: a process handed addresses that answer nothing
+# creates a second cluster beside the real one instead of joining it. The
+# migration updates this value at the step that moves the coordinators.
+#
+# An empty list leaves the guest with no seeded file, which is what a store
+# that has never been configured needs: the first process is its own
+# coordinator.
+tack_store_bootstrap_coordinators: []
+
+# The cluster's description and id. Both halves are identity, not settings:
+# a process given different ones joins a different cluster. docker:docker is
+# what the image's own entrypoint wrote when each environment's store was
+# first configured, so every existing cluster file names it.
+tack_store_cluster_id: "docker:docker"
+
+# The seeded cluster file, assembled from the two values above. Each address is
+# bracketed because a port follows it.
+tack_store_cluster_file_contents: >-
+  {{ tack_store_cluster_id }}@
+  {%- for address in tack_store_bootstrap_coordinators -%}
+  [{{ address }}]:{{ tack_store_port }}{{ ',' if not loop.last else '' }}
+  {%- endfor %}
+
+# How long one product-store transaction may run, its retries included. The
+# client resets nothing on a retry at this API version, so the one value bounds
+# the whole retry loop. Without it a transaction issued while the store elects
+# a new leader retries without end. Five seconds sits above a healthy
+# cross-guest commit and below the ten-second bound a guest loss is measured
+# against.
+tack_store_transaction_timeout: 5s
+
+# How many copies of every key the store keeps. double survives the loss of one
+# data guest; triple needs all three guests live, so on three guests it would
+# turn one guest's loss into an outage. Only `ops provision` on a store that
+# has never been configured and a deliberate `ops store set-redundancy` read
+# this, so changing it here changes nothing on a configured cluster.
+tack_store_redundancy_mode: single
+
 # Container image tag. Production uses latest; QA overrides with a branch SHA
 # passed at deploy time.
 tack_image_tag: latest
