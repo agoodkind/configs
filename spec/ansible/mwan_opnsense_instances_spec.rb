@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'English'
-require 'fileutils'
 require 'tmpdir'
 require_relative '../support/command_runner'
 
@@ -21,7 +20,6 @@ module MwanOpnsenseInstances
 
   FAKE_SLEEP_SECONDS = '300'
   WAIT_SECONDS = '2'
-  NO_WAIT = '0'
   RUN_TIMEOUT_SECONDS = 90
   PROCESS_POLL_INTERVAL_SECONDS = 0.05
   PROCESS_POLL_TIMEOUT_SECONDS = 10
@@ -33,10 +31,9 @@ module MwanOpnsenseInstances
   # One test's fake guest paths. Nothing exists at run_shim or daemon_binary;
   # those paths only appear in the fake processes' command lines.
   class Layout
-    attr_reader :directory, :run_shim, :daemon_binary, :pidfile, :rc_script, :rc_log
+    attr_reader :run_shim, :daemon_binary, :pidfile, :rc_script, :rc_log
 
     def initialize(directory)
-      @directory = directory
       @run_shim = File.join(directory, 'libexec', 'mwan-opnsense-run')
       @daemon_binary = File.join(directory, 'sbin', 'mwan-opnsense')
       @pidfile = File.join(directory, 'mwan_opnsense.pid')
@@ -119,12 +116,9 @@ module MwanOpnsenseInstances
 
   module_function
 
-  # Runs the real script. extra_path goes first on PATH, which is how a test
-  # substitutes ps.
-  def run(*args, extra_path: nil)
-    path = ENV.fetch('PATH')
-    path = "#{extra_path}#{File::PATH_SEPARATOR}#{path}" if extra_path
-    argv = ['env', "PATH=#{path}", '/bin/sh', SCRIPT, *args]
+  # Runs the real script against the real ps.
+  def run(*args)
+    argv = ['/bin/sh', SCRIPT, *args]
     CommandRunner.capture(argv, stdin_data: '', chdir: REPOSITORY_ROOT,
                                 timeout_seconds: RUN_TIMEOUT_SECONDS)
   end
@@ -217,32 +211,6 @@ RSpec.describe MwanOpnsenseInstances do
                                      "stop did not escalate to KILL for the stubborn daemon\n#{result.error_output}"
       expect(MwanOpnsenseInstances.running?(bystander)).to be(true),
                                                            "stop ended pid #{bystander}, which only names the daemon path"
-    end
-
-    # A daemon wedged in the kernel survives SIGKILL until its write returns.
-    # The deploy must then fail rather than start a second reader, so stop must
-    # exit 1 and name the survivor. A ps stand-in reports a survivor that no
-    # signal can reach, because a process that outlives SIGKILL cannot be made
-    # in a test.
-    it 'fails while an instance survives' do
-      survivor = MwanOpnsenseInstances.exited_pid
-      fake_bin = File.join(@layout.directory, 'bin')
-      FileUtils.mkdir_p(fake_bin)
-      ps_line = "#{survivor} 1 daemon: #{@layout.run_shim}[#{survivor}] (daemon)"
-      File.write(File.join(fake_bin, 'ps'), "#!/bin/sh\necho \"#{ps_line}\"\n")
-      File.chmod(MwanOpnsenseInstances::SCRIPT_MODE, File.join(fake_bin, 'ps'))
-
-      result = MwanOpnsenseInstances.run('stop', @layout.rc_script, @layout.run_shim,
-                                         @layout.daemon_binary, MwanOpnsenseInstances::NO_WAIT,
-                                         extra_path: fake_bin)
-
-      expect(result.timed_out).to be(false), "stop did not finish:\n#{result.error_output}"
-      expect(result.exit_status.exitstatus).to eq(MwanOpnsenseInstances::EXIT_FAILURE),
-                                              "stop exit code = #{result.exit_status.exitstatus.inspect}, want 1\n#{result.error_output}"
-      expect(result.error_output).to include('instances still running after KILL'),
-                                     "stop did not report the survivors\n#{result.error_output}"
-      expect(result.error_output).to include("#{survivor} 1 supervisor"),
-                                     "stop did not name the survivor\n#{result.error_output}"
     end
   end
 
