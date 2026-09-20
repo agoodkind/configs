@@ -314,7 +314,10 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 6000
+    # The real Astound circuit runs no IPv6. The loader rejects an ipv6 block
+    # that omits dhcp. This block declares both keys false.
     ipv6:
+      dhcp: false
       accept_ra: false
     table: 600
     mark: 4
