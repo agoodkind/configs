@@ -23,6 +23,8 @@ Prefer non-disruptive actions on the MWAN VM. Avoid
   variables, prefer one templated env file (for example `/etc/mwan/mwan.env`)
   and make the script static. Source the env via `. /etc/mwan/mwan.env`. For
   systemd units, prefer `EnvironmentFile=/etc/mwan/mwan.env`.
+- A TOML template reads each secret as its `vault_` name rather than as a
+  literal value; the vault contract is in [secrets.md](../ansible/secrets.md).
 
 ## WAN state terminology
 
