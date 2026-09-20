@@ -5,11 +5,11 @@
 # play pulls and verifies the release itself, so a deploy names no release on
 # the command line.
 #
-# An mwan pin names the repository that publishes the release, because
-# agoodkind/configs published the mwan release before agoodkind/mwan did. A
-# checksum is the sha256:<hex> line from the release's checksums.txt. To move
-# a pin, pick the repository and the tag, download its checksums.txt, and copy
-# both lines here.
+# An mwan pin names the repository that publishes the release. agoodkind/mwan
+# is the only one that does: this repository published the mwan release until
+# its Go module moved out, and it now builds nothing. A checksum is the
+# sha256:<hex> line from the release's checksums.txt. To move a pin, pick the
+# tag, download its checksums.txt, and copy both lines here.
 
 mwan_release_repo: agoodkind/mwan
 mwan_release_tag: "202609191802-8-085fc2b"

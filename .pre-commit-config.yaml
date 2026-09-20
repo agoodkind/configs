@@ -17,12 +17,6 @@ repos:
 
   - repo: local
     hooks:
-      - id: mwan-lint
-        name: mwan golangci-lint
-        entry: bash -c 'cd mwan/go && golangci-lint run ./...'
-        language: system
-        files: 'mwan/go/.*\.go$'
-
       - id: ansible-input-defaults
         name: ban input-side defaults and presence checks in ansible
         entry: ./configsctl lint
