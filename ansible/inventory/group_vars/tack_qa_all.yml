@@ -89,9 +89,8 @@ tack_ledger_node_addresses:
 tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
 
-# Phase 4 QA migration (TACK-408). Each data guest seeds its cluster file
-# from this list on first start; the current coordinator is the owner
-# guest's transitional store process at ::217.
+# Phase 4 QA migration (TACK-408). A data guest with no cluster file receives a
+# copy of the live one during the deploy. The deploy reads that copy from the
+# first guest of the run that runs a store process: the owner guest while its
+# transitional process exists, and a data guest once that process retires.
 tack_store_seed_cluster_file: true
-tack_store_bootstrap_coordinators:
-  - "3d06:bad:b01:210::217"
