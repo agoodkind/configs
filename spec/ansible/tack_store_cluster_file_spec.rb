@@ -5,14 +5,8 @@ require 'yaml'
 require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
 
-# A FoundationDB cluster file states the cluster's identity in its description
-# and key, and a process given a different key joins a different cluster.
-# `fdbcli coordinators` generates a new key and writes it into the cluster file
-# of every connected client, and no inventory value reproduces a generated key.
-# On QA on 2026-09-20 three data guests seeded from a fixed docker:docker
-# literal elected their own cluster controller and ran a second cluster beside
-# the real one. These checks read the real seed tasks and render the real
-# environment template. The deploy's own text decides each verdict.
+# A guest seeded with an assembled cluster file joins a different cluster. These
+# checks prove the deploy copies the live file and the environment repeats it.
 module TackStoreClusterFile
   PLAYBOOK_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible', 'playbooks', 'deploy-tack.yml')
   GROUP_VARS_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible', 'inventory', 'group_vars', 'tack_all.yml')
