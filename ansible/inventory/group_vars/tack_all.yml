@@ -152,19 +152,15 @@ tack_port: 8000
 # Product store (FoundationDB), phase 4 (TACK-408)
 # ---------------------------------------------------------------------------
 
-# The port every store process listens on and announces.
-tack_store_port: 4500
-
 # Whether this guest runs a store process in the distributed shape: one per
 # data guest, announcing that guest's pinned address. A guest that runs one
 # uses host networking, because the process has to bind the address it
 # announces and a container address is replaced on the next recreate.
 #
-# False here, so a deploy changes nothing until an environment turns it on at
-# the migration step that starts the data guests' processes. Turn it on in the
-# same change that fills tack_store_bootstrap_coordinators and sets
-# tack_store_seed_cluster_file, because a process with no cluster file is its
-# own coordinator and creates a second cluster beside the real one.
+# False here. A deploy changes nothing until an environment turns it on at the
+# migration step that starts the data guests' processes. Turn it on in the same
+# change that sets tack_store_seed_cluster_file: a process with no cluster file
+# is its own coordinator and creates a second cluster beside the real one.
 tack_store_node_present: false
 
 # Whether the owner guest still runs the original store process, the one that
@@ -174,34 +170,27 @@ tack_store_node_present: false
 # same way tack_ledger_legacy_node_present does for the ledger.
 tack_store_legacy_node_present: true
 
-# The coordinator list a store process starts from the first time it runs on a
-# guest. It must name the coordinators the cluster uses right now, not the ones
-# the migration will end at: a process handed addresses that answer nothing
-# creates a second cluster beside the real one instead of joining it. The
-# migration updates this value at the step that moves the coordinators.
-#
-tack_store_bootstrap_coordinators: []
-
-# Whether the deploy writes the seeded cluster file on a guest that has none,
-# and whether the rendered environment repeats that seed for the container. An
-# environment turns it on in the same change that fills the list above, and
-# leaves it off while that list is empty, because a file assembled from an
-# empty list names no coordinator at all.
+# Whether the deploy copies the live cluster file onto a guest that has none.
 tack_store_seed_cluster_file: false
 
-# The cluster's description and id. Both halves are identity, not settings:
-# a process given different ones joins a different cluster. docker:docker is
-# what the image's own entrypoint wrote when each environment's store was
-# first configured, so every existing cluster file names it.
-tack_store_cluster_id: "docker:docker"
+# The guests of this run that run a store process, the owner guest first.
+tack_store_process_hosts: >-
+  {{ (ansible_play_hosts_all | map('extract', hostvars)
+      | selectattr('tack_provision_owner', 'true')
+      | map(attribute='inventory_hostname') | list
+      if tack_store_legacy_node_present else [])
+     + (ansible_play_hosts_all | map('extract', hostvars)
+        | selectattr('tack_store_node_present', 'true')
+        | map(attribute='inventory_hostname') | sort | list) }}
 
-# The seeded cluster file, assembled from the two values above. Each address is
-# bracketed because a port follows it.
-tack_store_cluster_file_contents: >-
-  {{ tack_store_cluster_id }}@
-  {%- for address in tack_store_bootstrap_coordinators -%}
-  [{{ address }}]:{{ tack_store_port }}{{ ',' if not loop.last else '' }}
-  {%- endfor %}
+# The guest this run copies the cluster file from, empty when that list is empty.
+tack_store_cluster_file_source: "{{ tack_store_process_hosts[:1] | join('') }}"
+
+# The live cluster file contents for this guest, empty until the run copies it.
+tack_store_live_cluster_file: ""
+
+# Whether this run may start a store process with no cluster file to copy.
+tack_store_bootstrap: false
 
 # How long one product-store transaction may run, its retries included. The
 # client resets nothing on a retry at this API version, so the one value bounds

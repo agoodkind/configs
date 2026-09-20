@@ -265,13 +265,9 @@
       when: tack_ledger_tls_enabled | bool
 
     # -------------------------------------------------------------------------
-    # Product store cluster file (TACK-408). Every guest has one, whether it
-    # runs a store process or only clients, and every process on the guest
-    # reads that one file: the store process, the app, the audit consumer, the
-    # backup agent, and the ops sidecar. The cluster owns the file once it
-    # exists, writing each coordinator change into it, so the seed runs only
-    # where the file is absent. A deploy that rewrote it would replace the live
-    # coordinator list with whatever the inventory last declared.
+    # Product store cluster file (TACK-408). The cluster owns
+    # /etc/foundationdb/fdb.cluster once it exists. These tasks copy that file
+    # from tack_store_cluster_file_source onto a guest that has none.
     # -------------------------------------------------------------------------
     - name: Ensure the product store cluster directory exists
       ansible.builtin.file:
@@ -281,15 +277,78 @@
         group: root
         mode: "0755"
 
+    - name: Look for this environment's live product store cluster file
+      ansible.builtin.stat:
+        path: /etc/foundationdb/fdb.cluster
+      delegate_to: "{{ tack_store_cluster_file_source }}"
+      run_once: true
+      register: tack_store_cluster_file_stat
+      when:
+        - tack_store_seed_cluster_file | bool
+        - tack_store_cluster_file_source != ''
+
+    # With no file to copy, the run stops unless --extra-var
+    # tack_store_bootstrap=true declares a from-empty environment.
+    - name: Fail when no guest of this run runs the product store
+      ansible.builtin.fail:
+        msg: >-
+          No guest of this run declares tack_store_node_present, and the owner
+          guest's original store process is retired. This run has no guest to
+          read the cluster identity from. Deploy the whole environment rather
+          than a subset of its guests. A from-empty environment creates its
+          first cluster by passing --extra-var tack_store_bootstrap=true.
+      when:
+        - tack_store_seed_cluster_file | bool
+        - not tack_store_bootstrap | bool
+        - tack_store_cluster_file_source == ''
+
+    - name: Fail when the guest running the product store has no cluster file
+      ansible.builtin.fail:
+        msg: >-
+          {{ tack_store_cluster_file_source }} runs the product store and has no
+          /etc/foundationdb/fdb.cluster. This run cannot copy the cluster
+          identity onto the guests that lack it. Read that guest before
+          deploying again. A from-empty environment creates its first cluster by
+          passing --extra-var tack_store_bootstrap=true.
+      when:
+        - tack_store_seed_cluster_file | bool
+        - not tack_store_bootstrap | bool
+        - tack_store_cluster_file_source != ''
+        - not tack_store_cluster_file_stat.stat.exists
+
+    - name: Read this environment's live product store cluster file
+      ansible.builtin.slurp:
+        src: /etc/foundationdb/fdb.cluster
+      delegate_to: "{{ tack_store_cluster_file_source }}"
+      run_once: true
+      register: tack_store_cluster_file_read
+      when:
+        - tack_store_seed_cluster_file | bool
+        - tack_store_cluster_file_source != ''
+        - tack_store_cluster_file_stat.stat.exists
+
+    # Per guest rather than run_once: each guest renders this value into its .env.
+    - name: Record the live product store cluster file for this guest
+      ansible.builtin.set_fact:
+        tack_store_live_cluster_file: >-
+          {{ (tack_store_cluster_file_read.content | b64decode) | trim }}
+      when:
+        - tack_store_seed_cluster_file | bool
+        - tack_store_cluster_file_source != ''
+        - tack_store_cluster_file_stat.stat.exists
+
     - name: Seed the product store cluster file where this guest has none
       ansible.builtin.copy:
         dest: /etc/foundationdb/fdb.cluster
-        content: "{{ tack_store_cluster_file_contents }}\n"
+        content: "{{ tack_store_live_cluster_file }}\n"
         owner: root
         group: root
         mode: "0644"
         force: false
-      when: tack_store_seed_cluster_file | bool
+      when:
+        - tack_store_seed_cluster_file | bool
+        - tack_store_cluster_file_source != ''
+        - tack_store_cluster_file_stat.stat.exists
 
     - block:
 
