@@ -683,13 +683,8 @@
           changed_when: true
           when: tack_store_node_present | bool
 
-        # The broker on this data guest (TACK-409). It advertises the guest's
-        # pinned address from the rendered env and reads the declared voter
-        # set, so its first start enrolls it in the environment's existing
-        # KRaft cluster rather than creating a second one. Starting it changes
-        # no topic: raising the copy count on the audit topic and on the
-        # consumer-position topic is a deliberate `ops queue set-replication`
-        # an operator runs afterwards.
+        # Starting a broker changes no topic. `ops queue set-replication`
+        # raises the copy count on the audit and consumer-position topics.
         - name: Start the event queue broker
           ansible.builtin.command:
             cmd: docker compose up -d kafka
@@ -817,11 +812,9 @@
           changed_when: "'Removed' in tack_store_retired_rm.stderr"
           when: not tack_store_legacy_node_present
 
-        # The retired broker on this guest, removed the same way (TACK-409).
-        # Idempotent when absent. Safe only after `ops queue status` reports
-        # every partition of the audit topic and of the consumer-position topic
-        # holding its copies on the data guests, which the migration plan reads
-        # before the flag flips.
+        # Confirm with `ops queue status` that every partition of both topics
+        # stores its copies on the data guests before setting
+        # tack_queue_legacy_node_present to false.
         - name: Remove the retired event queue broker
           ansible.builtin.command:
             cmd: docker compose --profile retired rm -sf kafka
