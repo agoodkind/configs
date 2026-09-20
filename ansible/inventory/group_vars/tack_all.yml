@@ -218,6 +218,58 @@ tack_store_transaction_timeout: 5s
 # this, so changing it here changes nothing on a configured cluster.
 tack_store_redundancy_mode: single
 
+# ---------------------------------------------------------------------------
+# Event queue (Apache Kafka), phase 5 (TACK-409)
+# ---------------------------------------------------------------------------
+
+tack_queue_client_port: 9092
+tack_queue_controller_port: 9093
+
+# A broker binds the address it advertises, so a guest that runs one uses host
+# networking. Set this true in the same change that fills tack_queue_node_ids.
+tack_queue_node_present: false
+
+tack_queue_legacy_node_present: true
+
+# Set this true in the same change that fills tack_queue_bootstrap_addresses
+# and tack_queue_controller_voters.
+tack_queue_distributed: false
+
+# Inventory host name to KRaft node id. A node id is permanent: two brokers
+# under one id each treat the other's partitions as their own.
+tack_queue_node_ids: {}
+
+# Entries in the form id@host:port. Every broker reads the same static set.
+tack_queue_controller_voters: []
+
+# One pinned guest address per broker, without a port.
+tack_queue_bootstrap_addresses: []
+
+tack_queue_bootstrap_list: >-
+  {%- if tack_queue_distributed | bool -%}
+  {%- for address in tack_queue_bootstrap_addresses -%}
+  [{{ address }}]:{{ tack_queue_client_port }}{{ ',' if not loop.last else '' }}
+  {%- endfor -%}
+  {%- else -%}
+  kafka:{{ tack_queue_client_port }}
+  {%- endif -%}
+
+tack_queue_controller_voter_list: >-
+  {%- if tack_queue_distributed | bool -%}
+  {{ tack_queue_controller_voters | join(',') }}
+  {%- else -%}
+  1@kafka:{{ tack_queue_controller_port }}
+  {%- endif -%}
+
+# The broker applies both counts to topics it creates from here on.
+tack_queue_replication_factor: 1
+tack_queue_min_insync_replicas: 1
+
+# The audit-consumer writes this onto the audit topic on every start. A value
+# above that topic's copy count fails every write with NOT_ENOUGH_REPLICAS, so
+# raise it only after `ops queue set-replication` finishes. Zero writes nothing.
+tack_queue_audit_topic_min_insync: 0
+
 # Container image tag. Production uses latest; QA overrides with a branch SHA
 # passed at deploy time.
 tack_image_tag: latest

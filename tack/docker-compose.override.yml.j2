@@ -28,6 +28,16 @@ services:
   fdb-backup-agent:
     profiles: ["retired"]
 {% endif %}
+{% if tack_queue_node_present | bool %}
+  # A broker binds the address it advertises, and clients on other guests dial
+  # that address (TACK-409).
+  kafka:
+    network_mode: host
+{% elif tack_provision_owner and not tack_queue_legacy_node_present %}
+  # The inactive profile stops every compose up from starting a broker here.
+  kafka:
+    profiles: ["retired"]
+{% endif %}
 {% if tack_provision_owner and tack_ledger_consumers_repointed %}
   # The app and the audit consumer reach the ledger at its permanent node
   # names, which resolve here to the owning guests' pinned addresses. The

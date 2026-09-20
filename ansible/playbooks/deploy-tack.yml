@@ -472,7 +472,8 @@
             cmd: >-
               docker compose up -d --wait --wait-timeout 300
               {{ 'yugabyte' if tack_ledger_legacy_node_present else '' }}
-              meilisearch temporal-db temporal kafka clickhouse
+              {{ 'kafka' if tack_queue_legacy_node_present else '' }}
+              meilisearch temporal-db temporal clickhouse
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
@@ -682,6 +683,15 @@
           changed_when: true
           when: tack_store_node_present | bool
 
+        # Starting a broker changes no topic. `ops queue set-replication`
+        # raises the copy count on the audit and consumer-position topics.
+        - name: Start the event queue broker
+          ansible.builtin.command:
+            cmd: docker compose up -d kafka
+            chdir: "{{ tack_install_dir }}"
+          changed_when: true
+          when: tack_queue_node_present | bool
+
         # Scheduled ledger export, per-node half (TACK-356). The archiver
         # timer polls for a pending export manifest and no-ops quietly
         # otherwise. Gated on the live ledger topology: production grows
@@ -801,6 +811,17 @@
           register: tack_store_retired_rm
           changed_when: "'Removed' in tack_store_retired_rm.stderr"
           when: not tack_store_legacy_node_present
+
+        # Confirm with `ops queue status` that every partition of both topics
+        # stores its copies on the data guests before setting
+        # tack_queue_legacy_node_present to false.
+        - name: Remove the retired event queue broker
+          ansible.builtin.command:
+            cmd: docker compose --profile retired rm -sf kafka
+            chdir: "{{ tack_install_dir }}"
+          register: tack_queue_retired_rm
+          changed_when: "'Removed' in tack_queue_retired_rm.stderr"
+          when: not tack_queue_legacy_node_present
       when: tack_provision_owner
 
   handlers:
