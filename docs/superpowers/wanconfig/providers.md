@@ -553,8 +553,11 @@ cutover.
 
 The rendered systemd-networkd units for the current provider set are
 identical to the hand-authored files they replace, outside comment lines.
-This comparison runs in CI against the checked-in files before those files
-are deleted. AT&T's four files are excluded, because they stay and nothing in
+The comparison ran once, by operator ruling, against the checked-in files
+before those files were deleted (agoodkind/mwan Actions run 35522419921), and
+again on each gateway after its cutover by comparing every file in
+`/etc/systemd/network` with the capture taken before it. No permanent CI gate
+exists. AT&T's four files are excluded, because they stay and nothing in
 the configuration file describes that link.
 
 A fourth provider can be added, re-tiered, and removed by one inventory entry
