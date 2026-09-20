@@ -1,5 +1,7 @@
 # Application files belong to the binary; site files belong to configs
 
+Every file a gateway or router runs has one home, so a deploy's result depends on the pinned release rather than on the checkout that runs the play.
+
 ## The rule
 
 Would the file change if the same binary were deployed to a different site, meaning another network with its own ISPs, interface names, addresses, and keys?
