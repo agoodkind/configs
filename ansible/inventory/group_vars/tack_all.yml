@@ -163,11 +163,12 @@ tack_port: 8000
 # is its own coordinator and creates a second cluster beside the real one.
 tack_store_node_present: false
 
-# Whether the owner guest still runs the original store process, the one that
-# announces its container address. It stays true until the environment has
-# migrated and the process has been excluded; false retires the service and
-# its backup agent on the owner. Environment groups set the current value, the
-# same way tack_ledger_legacy_node_present does for the ledger.
+# The product store is made of nodes. A node is one running copy of the store
+# program, and each node runs on one guest. The legacy node is the node on the
+# owner guest, the guest that also runs the app; before the migration it was
+# the whole store. true: the owner guest still runs it, and the data guests'
+# nodes join it. false: the owner guest runs no node, and the data guests'
+# nodes are the whole store.
 tack_store_legacy_node_present: true
 
 # Whether the deploy copies the live cluster file onto a guest that has none.
@@ -200,11 +201,11 @@ tack_store_bootstrap: false
 # against.
 tack_store_transaction_timeout: 5s
 
-# How many copies of every key the store keeps. double survives the loss of one
-# data guest; triple needs all three guests live, so on three guests it would
-# turn one guest's loss into an outage. Only `ops provision` on a store that
-# has never been configured and a deliberate `ops store set-redundancy` read
-# this, so changing it here changes nothing on a configured cluster.
+# How many copies of every record the store keeps. single is one copy. double
+# is two copies on two different guests, and the store loses nothing when one
+# guest is lost. triple is three copies and needs all three data guests up at
+# once. Only `ops provision` on a store that has never been configured and
+# `ops store set-redundancy` read this value.
 tack_store_redundancy_mode: single
 
 # Container image tag. Production uses latest; QA overrides with a branch SHA
