@@ -50,7 +50,8 @@ same run is `cd mwan/go && go test -count=1 ./internal/networkjson/ -v`.
 
 Ansible is never invoked directly. Syntax checks run through the repository's
 rake wrappers (`cd ansible && rake syntax:mwan`), and deploys run through
-`./configsctl deploy <play> --release <tag> --limit <group>`.
+`./configsctl deploy <play> --limit <group>`. The play pulls the release its
+environment pins in group_vars, so no release is named on the command line.
 
 The controller needs `yanglint` on PATH for both `make yang-validate` and the new
 deploy-time check. It comes from the `libyang` Homebrew formula on macOS and the

@@ -3,7 +3,7 @@
 #
 # NOTE: After initial deployment, sshpiper runs on port 22 and sshd moves to 2222.
 # For subsequent runs, you'll need to connect to the proxy container on port 2222:
-#   ansible-playbook deploy-proxy.yml -e "service_ssh_port=2222"
+#   ./configsctl deploy deploy-proxy --extra-var service_ssh_port=2222
 # Or uncomment `service_ssh_port: 2222` in inventory/group_vars/proxy_servers.yml
 #
 # To manually SSH to the proxy container after deployment:
