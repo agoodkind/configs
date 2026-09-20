@@ -22,11 +22,14 @@ services:
   # inactive profile keeps every compose up from starting one here. The deploy
   # removes the stopped containers. Retire only after `ops store exclude` has
   # moved every copy of a key off this guest's process, which the migration
-  # plan does before this value flips.
+  # plan does before this value flips. The stack file gives the backup agent
+  # the backup profile, which COMPOSE_PROFILES enables, and compose starts a
+  # service when any one of its profiles is active. The override replaces the
+  # list instead of adding to it.
   fdb:
-    profiles: ["retired"]
+    profiles: !override ["retired"]
   fdb-backup-agent:
-    profiles: ["retired"]
+    profiles: !override ["retired"]
 {% endif %}
 {% if tack_provision_owner and tack_ledger_consumers_repointed %}
   # The app and the audit consumer reach the ledger at its permanent node
