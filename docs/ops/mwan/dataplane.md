@@ -59,8 +59,8 @@ stops, and no swap leaves a chain empty or double-programmed.
 ## Health state and the email guard
 
 The `health` module writes one state file, `/var/run/mwan-health.state`. The
-`wan.routes` and `steering` modules and `--status` consumers read it, and every
-verdict change rewrites it atomically.
+`wan.routes` and `steering` modules read it on every reconcile, and every verdict
+change rewrites it atomically.
 
 Every daemon start puts each configured provider at `unknown` and probes it from
 scratch, so a verdict rests on the probes of the run that reports it. No file
