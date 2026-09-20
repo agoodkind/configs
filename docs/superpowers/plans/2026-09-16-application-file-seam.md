@@ -31,11 +31,9 @@ Order follows the repo split goal: `MWAN-490` first, then the `mwan install` ver
 3. [`deploy-mwan.yml`](https://github.com/agoodkind/configs/blob/8693b22f892bc745fa16631e4b1fc874fb9ee53e/ansible/playbooks/deploy-mwan.yml#L264-L284) and [`wanconfig-stack.yml`](https://github.com/agoodkind/configs/blob/8693b22f892bc745fa16631e4b1fc874fb9ee53e/ansible/playbooks/tasks/mwan-vm/wanconfig-stack.yml#L91-L192) stop copying those files and run `mwan install --apply` after installing the binary; the `yanglint` validation reads the printed schema directory. Remove the `third_party/yang` submodule from `configs` once nothing reads it.
 4. Prove on the testbed: a deploy from a checkout with no submodule initialized succeeds; installed files hash-equal the embedded copies; a reboot converges; capture comparison unchanged. Then production.
 
-## Slice 5. `mwan install` verb, rendered files (`MWAN-382` to `MWAN-386`)
+## Slice 5. Cancelled (`MWAN-382` to `MWAN-386`)
 
-1. Embed `sysctl-mwan.conf`, `rt_tables`, and `nghttpx-wanconfig.conf` as templates rendered from the loaded `config.toml` and `network.json`. Add `restconf_port` under `[wanconfig]` in [`config-vm.toml.j2`](https://github.com/agoodkind/configs/blob/8693b22f892bc745fa16631e4b1fc874fb9ee53e/mwan/config/config-vm.toml.j2#L123-L124), the one value those templates need that `config.toml` does not carry yet.
-2. `mwan install --apply` renders and writes them and applies sysctl through the sysctl runner.
-3. `deploy-mwan.yml` stops templating them. Prove as in slice 4.
+`sysctl-mwan.conf`, `rt_tables` and `nghttpx-wanconfig.conf` need site values, so they stay in `configs` under the rule. `deploy-mwan.yml` keeps templating all three.
 
 ## Slice 6. `opnsensectl install` verb (`MWAN-410`)
 
@@ -44,7 +42,7 @@ Order follows the repo split goal: `MWAN-490` first, then the `mwan install` ver
 
 ## Verification that closes the plan
 
-- `deploy-mwan`, `deploy-proxmox`, `deploy-opnsense`, `deploy-testbed`, and `deploy-mwan-failover` run from `main` on the testbed and production with no `--release` flag, no `configsctl` staging, and no application file copied from the checkout except `network.json`, `config.toml`, the 802.1X chain, the console drop-ins, and, until `MWAN-341`, `nftables.conf`. The per-provider networkd units are rendered by the daemon at runtime (`MWAN-491`), outside this plan.
+- `deploy-mwan`, `deploy-proxmox`, `deploy-opnsense`, `deploy-testbed`, and `deploy-mwan-failover` run from `main` on the testbed and production with no `--release` flag, no `configsctl` staging, and no static application file copied from the checkout. The deploy keeps rendering the templated files: `network.json`, `config.toml`, `sysctl-mwan.conf`, `rt_tables`, `nghttpx-wanconfig.conf`, the 802.1X chain, the console drop-ins, and, until `MWAN-341`, `nftables.conf`. The daemon renders the per-provider networkd units at runtime under `MWAN-491`, outside this plan.
 - `configsctl`'s command list is lint, validation, and safe running.
 - `configs` holds no `third_party/yang` submodule.
 - A deploy from a fresh shallow clone with no submodule produces a gateway byte-identical, in routes, rules, and served tree, to one deployed from a full checkout.
