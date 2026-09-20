@@ -289,7 +289,7 @@
         group: root
         mode: "0644"
         force: false
-      when: tack_store_bootstrap_coordinators | length > 0
+      when: tack_store_seed_cluster_file | bool
 
     - block:
 
@@ -680,9 +680,7 @@
               {{ 'fdb-backup-agent' if tack_backup_enabled | bool else '' }}
             chdir: "{{ tack_install_dir }}"
           changed_when: true
-          when:
-            - tack_store_node_present | bool
-            - tack_store_bootstrap_coordinators | length > 0
+          when: tack_store_node_present | bool
 
         # Scheduled ledger export, per-node half (TACK-356). The archiver
         # timer polls for a pending export manifest and no-ops quietly
@@ -838,6 +836,4 @@
           {{ 'fdb-backup-agent' if tack_backup_enabled | bool else '' }}
         chdir: "{{ tack_install_dir }}"
       changed_when: true
-      when:
-        - tack_store_node_present | bool
-        - tack_store_bootstrap_coordinators | length > 0
+      when: tack_store_node_present | bool
