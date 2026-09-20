@@ -1,8 +1,5 @@
 ---
-# Renders the real tack environment file against the real tack group_vars, so a
-# test can assert on the values the deploy actually writes into .env. Only the
-# per-environment and per-guest values arrive as extra variables; every shared
-# value comes from the group_vars file this play loads.
+# Renders the real tack environment file against the real tack group_vars.
 - name: Render the tack environment file
   hosts: localhost
   gather_facts: false

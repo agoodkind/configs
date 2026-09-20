@@ -265,25 +265,9 @@
       when: tack_ledger_tls_enabled | bool
 
     # -------------------------------------------------------------------------
-    # Product store cluster file (TACK-408). Every guest has one, whether it
-    # runs a store process or only clients, and every process on the guest
-    # reads that one file: the store process, the app, the audit consumer, the
-    # backup agent, and the ops sidecar.
-    #
-    # The file states the cluster's identity in its description and key, and a
-    # process given a different key joins a different cluster. `fdbcli
-    # coordinators` generates a new key and writes it into the cluster file of
-    # every connected client, and no inventory value reproduces a generated key.
-    # These tasks copy the live bytes off the first guest of this run that runs
-    # a store process (tack_store_cluster_file_source, derived from each guest's
-    # own declaration). QA measured the alternative on 2026-09-20: three data
-    # guests seeded from a fixed docker:docker literal elected their own cluster
-    # controller and ran a second cluster beside the real one.
-    #
-    # The cluster owns the file once it exists, writing each coordinator change
-    # into it. The copy therefore runs only where the file is absent. A deploy
-    # that rewrote it would replace the live coordinator list with a list read
-    # at the start of the run.
+    # Product store cluster file (TACK-408). The cluster owns
+    # /etc/foundationdb/fdb.cluster once it exists. These tasks copy that file
+    # from tack_store_cluster_file_source onto a guest that has none.
     # -------------------------------------------------------------------------
     - name: Ensure the product store cluster directory exists
       ansible.builtin.file:
@@ -303,16 +287,8 @@
         - tack_store_seed_cluster_file | bool
         - tack_store_cluster_file_source != ''
 
-    # Two shapes of the same fault, each with its own reading. In the first, no
-    # guest of the run runs a store process. No guest of the run then has the
-    # cluster identity. In the second, the guest that runs one has no cluster
-    # file. A run that continued through either would let each store process
-    # create a cluster of its own.
-    #
-    # A from-empty environment is the one legitimate case, and it declares
-    # itself with --extra-var tack_store_bootstrap=true. That run writes no
-    # cluster file at all: its first store process writes its own and becomes
-    # the coordinator, and the next deploy copies that file to the other guests.
+    # With no file to copy, the run stops unless --extra-var
+    # tack_store_bootstrap=true declares a from-empty environment.
     - name: Fail when no guest of this run runs the product store
       ansible.builtin.fail:
         msg: >-
@@ -351,8 +327,7 @@
         - tack_store_cluster_file_source != ''
         - tack_store_cluster_file_stat.stat.exists
 
-    # Per guest rather than run_once, because every guest renders these bytes
-    # into its own environment file below.
+    # Per guest rather than run_once: each guest renders this value into its .env.
     - name: Record the live product store cluster file for this guest
       ansible.builtin.set_fact:
         tack_store_live_cluster_file: >-
