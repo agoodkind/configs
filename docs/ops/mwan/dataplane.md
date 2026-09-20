@@ -56,23 +56,21 @@ npt does not tear its rules down when the module stops. A binary swap or an
 and the next reconcile after restart re-applies them atomically. Forwarding never
 stops, and no swap leaves a chain empty or double-programmed.
 
-## Health state persistence and email guard
+## Health state and the email guard
 
-The `health` module keeps two state files:
+The `health` module writes one state file, `/var/run/mwan-health.state`. The
+`wan.routes` and `steering` modules and `--status` consumers read it, and every
+verdict change rewrites it atomically.
 
-- **Runtime state** at `/var/run/mwan-health.state`, the file `--status`
-  consumers read.
-- **Persistent state** at `/var/lib/mwan/health-state`, the module's memory of
-  last-known WAN states across daemon restarts.
+Every daemon start puts each configured provider at `unknown` and probes it from
+scratch, so a verdict rests on the probes of the run that reports it. No file
+records a verdict across a restart.
 
-On start, the runtime file is seeded from the persistent file when it exists,
-and only WANs missing from the persistent file get `unknown`. Both files are
-written atomically on every verdict change.
-
-The persistent seed keeps restarts honest: a brand-new host has no persistent
-file, so first-ever transitions read `unknown -> X` and email correctly stays
-off, while every subsequent restart sees the prior state and emails real
-transitions.
+The warmup state decides the first email after a restart. A provider that comes
+back healthy transitions `unknown -> healthy`, which has no earlier alert to
+resolve and sends nothing. A provider that is broken at startup transitions
+`unknown -> unhealthy` and raises its alert immediately, rather than staying
+silent until it has been healthy once.
 
 Failure modes worth knowing:
 
