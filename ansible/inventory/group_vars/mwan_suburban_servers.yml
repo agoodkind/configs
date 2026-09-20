@@ -323,10 +323,9 @@ mwan_providers:
     mark: 4
     mark_prio: 600
     from_prio: 58
-    tier: 2
+    tier: 1
     weight: 1
     npt_prefix: ""
-    v4_source: "10.240.207.2"
     static_mappings: []
     health:
       enabled: true
