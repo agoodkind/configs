@@ -25,7 +25,10 @@ hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
 | Rendered files against the files they replaced | Passed 2026-09-20 11:35, eleven of twelve pairs identical | e |
 | Boot ordering with the renderer | Passed 2026-09-20 11:20 | e |
 | Deploy prune against the daemon's files | Failed check mode 2026-09-20 10:05, fixed in #457 | main 429a6f62, fix 10846744 |
-| Failure cases rerun | Not run | |
+| Fallback in both families | Passed 2026-09-20 10:54 | e |
+| Daemon restart with links up | Passed 2026-09-20 10:50 | e |
+| Link absent at boot | Not run | |
+| AT&T 802.1X path | Not runnable on the testbed | |
 | Production check mode and cutover | Not run | |
 
 ## Testbed cutover
@@ -161,9 +164,61 @@ those paths. Controller, from that branch:
 Observed: `ok=159 changed=19 failed=0`, and the prune task skipped all twelve
 files.
 
+## Failure cases
+
+MWAN-492 ran these against a gateway where the deploy wrote the provider files.
+They run again here because a different writer owns those files.
+
+### A daemon restart with links up
+
+Gateway, 10:50:48:
+
+```bash
+systemctl restart mwan-ifmgr@wan
+```
+
+The daemon logged `ifmgr: starting` at 10:50:49.141, `ifmgr: networkd unit
+files written` with `changed=null` at .178, and `ifmgr: Daemon ready` with
+`module_count` 4 at .216. Zero rename lines and zero reload lines. Every link
+kept its name and the four rendered files kept their 09:54 mtimes.
+
+Health passed through `att:unknown`, `monkeybrains:unknown` and
+`webpass:unknown`, which is the startup state MWAN-329 requires, and returned
+to all three healthy about 37 seconds after the restart.
+
+### Fallback in both families
+
+Suburban, 10:52:08, cutting the AT&T and webpass simulators' upstream:
+
+```bash
+ip link set veth900i1 down
+ip link set veth901i1 down
+```
+
+Gateway at 10:54:22: `att:unhealthy`, `webpass:unhealthy`,
+`monkeybrains:healthy`. In both families the LAN rule became `50: from all iif
+enmwanbr0 lookup monkeybrains`, and IPv6 kept `57: from 3d06:bad:b01:2400::/60
+lookup monkeybrains`.
+
+Suburban, 10:54:50: both links set up again. The gateway returned all three
+providers to healthy, and its 15 policy rules matched the pre-drill capture in
+both families with 0 changed lines. The four rendered files kept their 09:54
+mtimes throughout, so a health transition rewrites no unit file.
+
+A `curl` from the gateway itself proves nothing about this drill and returned
+`000` in both families during it. The rule the drill moves selects traffic
+arriving on the internal bridge, and the gateway's own sockets use the main
+table instead. Observe LAN fallback from a LAN host, as the 2026-09-18 drill
+did from the QA guest and the testbed router at the simulator ingress
+`veth902i0`.
+
 ## Not yet proven
 
-The four failure cases from MWAN-492 have not been rerun against a gateway
-where the daemon owns these files: fallback in both families, a link absent at
-boot, the AT&T 802.1X path, and a daemon restart with links up. Production
-still runs the earlier release and has not taken this change.
+A link absent at boot has not been rerun. That case detaches a provider NIC at
+the hypervisor and reboots the gateway, which needs its own window.
+
+The AT&T 802.1X path is not runnable on the testbed. The testbed's AT&T is a
+direct link with no VLAN and no supplicant, and MWAN-492 settled that case from
+production boots.
+
+Production still runs the earlier release and has not taken this change.
