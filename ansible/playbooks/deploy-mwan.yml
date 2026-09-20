@@ -213,8 +213,9 @@
 
     # ============================================================================
     # WATCHDOG: Proxmox-host watchdog config + binary deploy live in
-    # deploy-proxmox.yml / tasks/proxmox-host.yml. The mwan binary was built
-    # in the pre-deploy section above, before the first deploy gate.
+    # deploy-proxmox.yml / tasks/proxmox-host.yml. The mwan binary was pulled
+    # from the pinned release by the first play and pushed to the Proxmox
+    # delegate in the pre-deploy section above, before the first deploy gate.
     # ============================================================================
 
     # ============================================================================
