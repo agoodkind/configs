@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
+
 **Goal:** Re-tiering or re-weighting an internet provider on the MWAN gateway becomes an inventory edit and a configuration deploy, adding or removing one is the same plus its two hand-written link files, and the binary never changes; the current three providers keep every live number and behavior.
 
 **Architecture:** Each gateway group carries one `mwan_providers` list, and the network configuration file renders by looping over it. The daemon stops knowing any provider by name: it checks routing numbers for uniqueness and reserved-table collisions at load, reads tier and weight per provider, and owns load balancing through a new steering module that programs the split into its own kernel chain from the active tier's healthy providers. The gateway pushes its per-provider health verdict to the hypervisor watchdog, which drops its own interface list. The systemd-networkd link files stay hand-written. The testbed gains a fourth simulated provider so a fourth member is proven by inventory alone.

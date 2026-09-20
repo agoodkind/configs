@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical.** The `configs` command moved out of this repository into agoodkind/configsctl. The `scripts/` paths on this page refer to the tree as it was.
+
 **Goal:** No `configs` subcommand can print a vault secret; all stdout/stderr is filtered through an overlap-safe redactor installed once in `main`, and `secret` writes its value to a hardened temp file instead of printing it.
 
 **Architecture:** A dependency-free `internal/redact` package implements an Aho-Corasick automaton that finds every secret occurrence in a stream, merges overlapping/touching spans, and rewrites each merged span to `<redacted:KEY>`. `main` reads and validates the vault before dispatch (fail-closed), then routes `os.Stdout`/`os.Stderr` through two mutex-shared redactors so every command and child process is covered. `secret` writes to a `0600` file in a `0700` temp dir.

@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
+
 **Goal:** The gateway daemon writes every provider link's systemd-networkd unit files from the network configuration it already loads, so a provider is one inventory entry and a deploy with no file authored by hand.
 
 **Architecture:** The provider entry gains link identity in two layers: typed leaves for what the published models do not name, and a free-form container that mirrors the unit-file format so any shape networkd reads is expressible. The daemon maps typed leaves to unit-file keys through one table, appends the free-form sections, and writes the files through a maintained serializer. Because udev applies a `.link` file when a device appears and the kernel refuses to rename a link that is already up, the daemon's unit moves ahead of udev's coldplug trigger and of systemd-networkd, writes the files, and then waits on netlink as it does today. The hand-authored per-provider files are deleted only after a continuous integration check proves the rendered output matches them byte for byte outside comment lines.

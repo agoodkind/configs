@@ -1,5 +1,9 @@
 # Deploy gate outage survival: implementation plan
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs
+> commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on
+> this page refer to the tree as it was.
+
 Six slices, each verified before the next. The overall acceptance bar is the
 spec's criteria: a testbed deploy survives a simulated 120-second controller
 outage spanning the reboot and reports the true verdict (AC1), while the

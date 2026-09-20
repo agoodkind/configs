@@ -4,6 +4,10 @@
 > superpowers:subagent-driven-development to implement this plan slice by
 > slice. Each slice is one reviewed change.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs
+> commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on
+> this page refer to the tree as it was.
+
 **Goal:** Refuse a web-interface firmware upgrade when the router's virtual
 hardware has drifted, and open a change window on every deliberate router
 reboot so the watchdog stops blaming the gateway and can recover the router.

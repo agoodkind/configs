@@ -23,6 +23,8 @@ Prefer non-disruptive actions on the MWAN VM. Avoid
   variables, prefer one templated env file (for example `/etc/mwan/mwan.env`)
   and make the script static. Source the env via `. /etc/mwan/mwan.env`. For
   systemd units, prefer `EnvironmentFile=/etc/mwan/mwan.env`.
+- A TOML template reads each secret as its `vault_` name rather than as a
+  literal value; the vault contract is in [secrets.md](../ansible/secrets.md).
 
 ## WAN state terminology
 
@@ -88,11 +90,11 @@ with multi-line `$( ... )`.
 
 ## nftables and runtime rules
 
-Assume an `nftables` reload flushes runtime rules. Any dynamic runtime rule
-programming (for example NPT) must be re-applied via:
-
-- `networkd-dispatcher` hooks, and
-- a boot or deploy safety-net systemd unit.
+The rendered `nftables.conf` opens with `flush ruleset`, so a reload drops every
+rule that was programmed at runtime. The gateway daemon reprograms the rules it
+owns, including prefix translation, without help from this repository. A script
+here that programs nftables restores its own rules in one idempotent `nft -f`
+transaction under the shared lock, because nothing else restores them.
 
 ## Documentation constraints
 

@@ -4,6 +4,8 @@ The gateway and router deploys copy application files out of whichever checkout 
 
 Links point at commit `8693b22f` of `agoodkind/configs` and `6795d9c6` of `YangModels/yang`, so the references stay true as files move.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
+
 ## The rule
 
 Would the file change if the same binary were deployed to a different site, meaning another network with its own ISPs, interface names, addresses, and keys?
