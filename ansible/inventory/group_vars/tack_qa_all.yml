@@ -94,8 +94,5 @@ tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
 # first guest of the run that runs a store process: the owner guest while its
 # transitional process exists, and a data guest once that process retires.
 tack_store_seed_cluster_file: true
-
-# QA's product store runs on the three data guests only, rebuilt from empty on
-# 2026-09-20. The owner guest runs no store process.
 tack_store_legacy_node_present: false
 tack_store_redundancy_mode: double
