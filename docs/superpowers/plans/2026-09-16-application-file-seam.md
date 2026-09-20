@@ -2,6 +2,8 @@
 
 Design: [Application files belong to the binary; site files belong to configs](../specs/2026-09-16-application-file-seam-design.md). Links point at commit `8693b22f` of `agoodkind/configs` and `fe3724d6` of `agoodkind/configsctl`.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
+
 Order follows the repo split goal: `MWAN-490` first, then the `mwan install` verb under `MWAN-305`, then `opnsensectl` under `MWAN-410`. Each slice is one reviewed pull request, deployed to the testbed from `main` and validated live before the next, then to production on explicit approval per command. Every slice keeps routes, rules, and the served wanconfig tree byte-identical to a capture taken before it.
 
 ## Slice 1. Playbooks pull and verify the releases (`MWAN-490`)
