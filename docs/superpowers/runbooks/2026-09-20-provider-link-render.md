@@ -29,7 +29,8 @@ hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
 | Daemon restart with links up | Passed 2026-09-20 10:50 | e |
 | Link absent at boot | Not run | |
 | AT&T 802.1X path | Not runnable on the testbed | |
-| Production check mode and cutover | Not run | |
+| Production check mode | Passed 2026-09-20 12:34 | main bfb3fa02 |
+| Production cutover | Passed 2026-09-20 12:56 | main bfb3fa02, release e |
 
 ## Testbed cutover
 
@@ -212,13 +213,70 @@ table instead. Observe LAN fallback from a LAN host, as the 2026-09-18 drill
 did from the QA guest and the testbed router at the simulator ingress
 `veth902i0`.
 
+## Production
+
+### Check mode
+
+Controller, 2026-09-20 12:34, from main bfb3fa02:
+
+```bash
+./configsctl deploy deploy-mwan --limit mwan_servers --check --diff
+```
+
+`ok=175 changed=18 failed=0`. The change list matched the testbed's from
+09:00. The prune reported deleting `20-webpass.link`, `20-webpass.network`,
+`30-monkeybrains.link` and `30-monkeybrains.network`. Release 085fc2b writes
+those four templates without a marker line, and the other eight files in
+`/etc/systemd/network` are `10-mgmt`, `40-mwanbr`, and AT&T's four, which the
+shortened `mwan_networkd_files` still names.
+
+### Cutover
+
+Controller, 2026-09-20 12:56, from main bfb3fa02:
+
+```bash
+./configsctl deploy deploy-mwan --limit mwan_servers
+```
+
+`ok=211 changed=27 failed=0`. `Reload networkd` completed before
+`Restart mwan-ifmgr@wan`; both handlers succeeded. The VM rebooted after both.
+
+Gateway 113 after the reboot, read with `qm guest exec` on vault:
+
+```bash
+uptime -p
+systemctl is-system-running
+systemctl is-active mwan-ifmgr@wan
+mwan version
+cat /var/run/mwan-health.state
+ls /etc/systemd/network
+```
+
+`up 0 minutes`, `running`, `active`, `commit=16dd8f1`, all three providers
+healthy, twelve networkd files. AT&T's `20-att.link`, `20-att.network`,
+`21-att-vlan.netdev` and `21-att-vlan.network` are the deploy's templates,
+unchanged. `20-enwebpass0.link`, `20-enwebpass0.network`, `20-enmbrains0.link`
+and `20-enmbrains0.network` are the daemon's renders.
+
+### State compared with the pre-deploy capture
+
+```bash
+ip rule show; ip -6 rule show
+ip -br link; ip -br addr
+nft list ruleset
+```
+
+Policy rules: 0 changed lines in both families. Links and addresses: 0
+changed lines. The nftables ruleset structure is unchanged; only the
+pinned-address set elements differ because the refresher timer rewrites them
+every six hours.
+
 ## Not yet proven
 
-A link absent at boot has not been rerun. That case detaches a provider NIC at
-the hypervisor and reboots the gateway, which needs its own window.
+A link absent at boot has not been rerun on the render release. That case
+detaches a provider NIC at the hypervisor and reboots the gateway, which needs
+its own window.
 
 The AT&T 802.1X path is not runnable on the testbed. The testbed's AT&T is a
-direct link with no VLAN and no supplicant, and MWAN-492 settled that case from
-production boots.
-
-Production still runs the earlier release and has not taken this change.
+direct link with no VLAN and no supplicant, and MWAN-492 settled that case
+from production boots.
