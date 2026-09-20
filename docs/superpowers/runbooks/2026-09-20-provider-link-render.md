@@ -10,8 +10,9 @@ happen.
 The daemon writes one `.link` and one `.network` per rendered provider from its
 entry in `/etc/mwan/network.json`, names each file after the interface with one
 fixed numeric prefix, and opens each file with a marker line. AT&T keeps four
-hand-authored files. Astound keeps two on the testbed until a separate change
-adds its provider entry.
+hand-authored files. Astound kept two on the testbed until its provider entry
+was added later the same day; that proof is on
+[the fourth-provider page](2026-09-20-fourth-provider.md).
 
 The testbed gateway is the guest named `mwan.suburban.goodkind.io` on the
 hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
