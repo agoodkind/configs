@@ -59,8 +59,8 @@ on linux and is the verdict that counts when a host-only toolchain fault
 report such a fault with its output rather than working around it. Inside
 the builder lane `go test -race` prints a false ok with zero tests run, so
 never cite a race result from it. See
-[MWAN Go standards](../../ops/mwan/go.md) for the build rules every change
-follows.
+[agoodkind/mwan](https://github.com/agoodkind/mwan) for the build rules every
+change follows.
 
 This docker lane and the per-package recipe above are a stopgap that exists
 only because the Go code still lives inside this configuration repository
