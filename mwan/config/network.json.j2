@@ -77,9 +77,6 @@
 {% if provider.npt_prefix is defined and provider.npt_prefix %}
 {% set wan = wan | combine({"npt-prefix": provider.npt_prefix}) %}
 {% endif %}
-{% if provider.v4_source %}
-{% set wan = wan | combine({"v4-source": provider.v4_source}) %}
-{% endif %}
 {% if provider.forced_dscp is defined %}
 {% set wan = wan | combine({"forced-dscp": provider.forced_dscp}) %}
 {% endif %}

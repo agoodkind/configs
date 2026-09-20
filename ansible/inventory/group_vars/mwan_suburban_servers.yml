@@ -241,7 +241,6 @@ mwan_providers:
     tier: 0
     weight: 1
     npt_prefix: "3d06:bad:b01:2200::/60"
-    v4_source: "{{ mwan_webpass_ipv4_addr }}"
     static_mappings:
       - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
       - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }

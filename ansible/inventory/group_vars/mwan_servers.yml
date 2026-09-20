@@ -388,7 +388,6 @@ mwan_providers:
     tier: 0
     weight: 1
     npt_prefix: "2604:5500:c271:be00::/60"
-    v4_source: "{{ mwan_webpass_ipv4_addr }}"
     static_mappings:
       - { internal: "10.250.250.2", external: "136.25.91.242" }
       - { internal: "10.250.250.3", external: "136.25.91.243" }
