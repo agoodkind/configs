@@ -510,12 +510,19 @@
 
     # The released binary writes the files it embeds: its own units, the
     # rousette and nghttpx units, the nftables and systemd-networkd drop-ins,
-    # the quiet console sysctl file, and the schema modules. It installs or
-    # updates the modules in sysrepo, imports the read-only NACM policy, and
-    # enables its units. It reloads systemd only when a file changed and
-    # restarts nothing, so the handlers keep the restart decision. It prints
-    # one line per change, each starting with one of the prefixes below, and
-    # prints "no change" when it wrote no file.
+    # the quiet console sysctl file, and the schema modules. It also renders
+    # three files from the config.toml and network.json written above:
+    # /etc/sysctl.d/99-mwan.conf, /etc/iproute2/rt_tables and
+    # /etc/nghttpx/wanconfig.conf. It installs or updates the modules in
+    # sysrepo, imports the read-only NACM policy, and enables its units. It
+    # reloads systemd only when a file changed and restarts nothing, so the
+    # handlers keep the restart decision. It prints one line per change, each
+    # starting with one of the prefixes below, and prints "no change" when it
+    # changed nothing.
+    #
+    # "applied" is one of those prefixes because the verb reads each kernel
+    # tunable before it writes it: a converged file whose live value drifted
+    # is a change the verb made without writing a file.
     - name: Install the units and schema the mwan binary embeds
       ansible.builtin.command:
         argv:
@@ -527,7 +534,7 @@
       register: mwan_install
       changed_when: >-
         mwan_install.stdout_lines
-        | select('match', '^(wrote|installed module|updated module|imported the) ')
+        | select('match', '^(wrote|installed module|updated module|imported the|applied) ')
         | list | length > 0
       notify:
         - Restart rousette
@@ -680,18 +687,6 @@
         name: networkd-dispatcher
         enabled: true
         daemon_reload: true
-
-    - name: Deploy sysctl config
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/sysctl-mwan.conf.j2"
-        dest: /etc/sysctl.d/99-mwan.conf
-        mode: "0644"
-
-    - name: Deploy routing tables
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/rt_tables.j2"
-        dest: /etc/iproute2/rt_tables
-        mode: "0644"
 
     - name: Deploy nftables config
       # Reloaded by handler: without it the file lands on disk and the kernel

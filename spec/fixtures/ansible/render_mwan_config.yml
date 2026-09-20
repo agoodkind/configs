@@ -1,0 +1,23 @@
+---
+# Renders the real MWAN gateway runtime configuration against the real
+# group_vars, so a test can assert on the keys `mwan install` reads out of the
+# file the deploy writes. The three variable files are listed in the order
+# group_vars applies them, shared first and the environment's group file last,
+# so an environment override wins here the way it wins on a deploy. The vaulted
+# values arrive as extra variables holding placeholders, because no key under
+# test is a secret and this play decrypts nothing.
+- name: Render the MWAN gateway runtime configuration
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  vars_files:
+    - "{{ service_mapping_file }}"
+    - "{{ shared_vars_file }}"
+    - "{{ group_vars_file }}"
+  tasks:
+    - name: Render the runtime configuration
+      ansible.builtin.template:
+        src: "{{ template_file }}"
+        dest: "{{ output_file }}"
+        mode: "0600"

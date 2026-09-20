@@ -120,8 +120,35 @@ notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | terna
 # management datastore (sysrepo) at startup. Only a gateway carrying the
 # wanconfig stack turns this on; everywhere else the daemon never opens a
 # datastore connection.
+#
+# restconf_port is the port the nghttpx front end exposes rousette on, on the
+# management address. `mwan install --role wan --apply` renders
+# /etc/nghttpx/wanconfig.conf from this key and mwan_mgmt_addr above; rousette
+# binds ::1 at its own port, which is the binary's number rather than a site's.
 [wanconfig]
 publish = {{ mwan_wanconfig_publish | ternary('true', 'false') }}
+restconf_port = {{ wanconfig_restconf_port }}
+
+# The routing tables the gateway holds for something other than a provider.
+# `mwan install` lists these beside the provider tables from network.json in
+# /etc/iproute2/rt_tables. The provider tables are not repeated here: the
+# network configuration already carries each provider's table number, and a
+# second copy is the one that drifts.
+[routing.reserved_tables]
+{% for name, table in mwan_reserved_tables | dictsort(by='value') %}
+{{ name }} = {{ table }}
+{% endfor %}
+
+# The interfaces whose kernel tunables /etc/sysctl.d/99-mwan.conf overrides,
+# which `mwan install` renders and applies. Neither list is derivable from the
+# provider set: SLAAC goes off only on a link whose upstream sends router
+# advertisements the gateway must ignore, and reverse path filtering goes off
+# only where policy routing would otherwise drop a provider's return traffic.
+# Both hold kernel interface names, so the AT&T link is named with its VLAN id
+# where the environment tags it.
+[sysctl]
+disable_slaac_ifaces = ["{{ mwan_webpass_iface }}"]
+disable_rp_filter_ifaces = ["{{ mwan_webpass_iface }}", "{{ mwan_att_iface }}{% if mwan_att_vlan_id %}.{{ mwan_att_vlan_id }}{% endif %}"]
 
 [ifmgr]
 {% include "_ifmgr_common.toml.j2" %}

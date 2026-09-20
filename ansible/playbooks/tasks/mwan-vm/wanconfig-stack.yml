@@ -8,12 +8,12 @@
 # Read-only: NACM denies every write and grants anonymous read per
 # rousette's contract.
 #
-# The gateway model, its IETF imports, the NACM policy, and the rousette and
-# nghttpx units are embedded in the mwan binary, and `mwan install --role
-# wan --apply` in deploy-mwan.yml writes them, installs the models into
-# sysrepo, imports the policy, and enables the units. These tasks install
-# the packages that sysrepo and rousette come from, the models rousette's
-# own package ships, and the nghttpx configuration rendered from inventory.
+# The gateway model, its IETF imports, the NACM policy, the rousette and
+# nghttpx units, and the nghttpx front-end configuration are all the mwan
+# binary's, and `mwan install --role wan --apply` in deploy-mwan.yml writes
+# them, installs the models into sysrepo, imports the policy, and enables the
+# units. These tasks install the packages that sysrepo and rousette come from
+# and the models rousette's own package ships.
 #
 # Imported by deploy-mwan.yml before the gateway configuration is written.
 # The importing play sets the variables these tasks read and runs them as
@@ -121,12 +121,3 @@
     - iana-if-type@2014-05-08
   when: item.split('@')[0] not in wanconfig_sysrepo_modules.stdout
   changed_when: true
-
-- name: Render the nghttpx front-end configuration
-  ansible.builtin.template:
-    src: "{{ repo_root }}/mwan/wanconfig/nghttpx-wanconfig.conf.j2"
-    dest: /etc/nghttpx/wanconfig.conf
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart nghttpx-wanconfig

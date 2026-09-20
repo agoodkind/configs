@@ -47,7 +47,10 @@ module MwanInstall
 
   # Each role, the task list that installs it, the host paths the verb writes
   # for it, and the units it enables, as `mwan install` with no flags prints
-  # them for release 202609191802-8-085fc2b.
+  # them for release 202609191802-8-085fc2b. The wan role's last three paths
+  # are the files the verb renders from config.toml and network.json rather
+  # than files it embeds, so they arrive with the release that carries the
+  # rendering (MWAN-382) and not with that one.
   ROLES = [
     {
       role: 'wan', file: 'deploy-mwan.yml', play: 'Configure MWAN VM',
@@ -61,6 +64,9 @@ module MwanInstall
         #{UNIT_DIRECTORY}/systemd-networkd.service.d/override.conf
         /etc/sysctl.d/99-quiet-console.conf
         /etc/sysrepo-nacm-anonymous.xml
+        /etc/sysctl.d/99-mwan.conf
+        /etc/iproute2/rt_tables
+        /etc/nghttpx/wanconfig.conf
       ],
       enabled: %w[mwan-agent mwan-ifmgr@wan mwan-trace-boot rousette nghttpx-wanconfig]
     },
@@ -102,7 +108,23 @@ module MwanInstall
     { name: 'a run that imported the access policy into a reset datastore', roles: %w[wan],
       lines: ['no change', 'imported the ietf-netconf-acm policy into startup and running',
               'enabled mwan-agent.service'],
-      want: true }
+      want: true },
+    # The verb reads each kernel tunable before it writes it, so a converged
+    # file whose live value drifted is a change it made without writing a
+    # file. Missing this line leaves the handlers unnotified after the verb
+    # has already changed the running kernel.
+    { name: 'a run that applied a drifted kernel tunable and wrote no file', roles: %w[wan],
+      lines: ['applied net.ipv4.conf.enwebpass0.rp_filter = 0', 'enabled mwan-agent.service'],
+      want: true },
+    # A skip and an absent kernel key are both steady state: the verb changed
+    # nothing, so a deploy that reports them must not restart the gateway's
+    # services.
+    { name: 'a run that skipped a rendered file and found a key the kernel lacks', roles: %w[wan],
+      lines: ['no change',
+              'skipped /etc/sysctl.d/99-mwan.conf: config.toml carries no [sysctl] table',
+              'left net.ipv4.conf.enatt0.rp_filter unset: the running kernel has no such key',
+              'enabled mwan-agent.service'],
+      want: false }
   ].freeze
 
   module_function
