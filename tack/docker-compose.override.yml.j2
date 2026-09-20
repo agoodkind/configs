@@ -28,6 +28,23 @@ services:
   fdb-backup-agent:
     profiles: ["retired"]
 {% endif %}
+{% if tack_queue_node_present | bool %}
+  # The broker on this data guest (TACK-409). Host networking, for the same
+  # reason the store process uses it: a broker binds the address it advertises,
+  # clients and peer brokers dial that address from other guests, and a
+  # container address is replaced on the next recreate. The node id, the
+  # advertised listener, the voter set, and the per-broker health probe are
+  # rendered into .env beside this file.
+  kafka:
+    network_mode: host
+{% elif tack_provision_owner and not tack_queue_legacy_node_present %}
+  # Retired on this guest: the queue runs one broker per data guest, and the
+  # inactive profile keeps every compose up from starting one here. The deploy
+  # removes the stopped container. Retire only after `ops queue status` reports
+  # every partition of both topics holding its copies on the data guests.
+  kafka:
+    profiles: ["retired"]
+{% endif %}
 {% if tack_provision_owner and tack_ledger_consumers_repointed %}
   # The app and the audit consumer reach the ledger at its permanent node
   # names, which resolve here to the owning guests' pinned addresses. The

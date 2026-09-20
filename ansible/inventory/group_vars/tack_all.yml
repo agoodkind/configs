@@ -218,6 +218,95 @@ tack_store_transaction_timeout: 5s
 # this, so changing it here changes nothing on a configured cluster.
 tack_store_redundancy_mode: single
 
+# ---------------------------------------------------------------------------
+# Event queue (Apache Kafka), phase 5 (TACK-409)
+# ---------------------------------------------------------------------------
+
+# The two ports every broker listens on and announces: clients on the first,
+# the controller quorum on the second.
+tack_queue_client_port: 9092
+tack_queue_controller_port: 9093
+
+# Whether this guest runs a broker in the distributed shape: one per data
+# guest, announcing that guest's pinned address. A guest that runs one uses
+# host networking, because a broker has to bind the address it advertises and
+# a container address is replaced on the next recreate.
+#
+# False here, and a deploy then changes nothing until an environment turns it
+# on at the migration step that starts the data guests' brokers. Turn it on in
+# the same change that fills tack_queue_node_ids and
+# tack_queue_controller_voters.
+tack_queue_node_present: false
+
+# Whether the owner guest still runs the original broker, node id 1, the one
+# that advertises the Docker service name kafka. It stays true until the
+# environment has migrated and the topics hold copies on the data guests;
+# false retires the service on the owner. Environment groups set the current
+# value, the same way tack_ledger_legacy_node_present does for the ledger.
+tack_queue_legacy_node_present: true
+
+# Whether this environment's clients dial the declared broker list and every
+# broker reads the declared voter set. False keeps the stack file's single
+# broker at the Docker service name kafka. It turns on in the same change that
+# fills tack_queue_bootstrap_addresses and tack_queue_controller_voters,
+# because a client handed an empty list has nowhere to dial.
+tack_queue_distributed: false
+
+# The node id every guest's broker announces, keyed by inventory host name.
+# A KRaft node id is permanent: the cluster records it, and two brokers that
+# claimed the same id would each believe the other's partitions are their own.
+# Empty until an environment declares its brokers.
+tack_queue_node_ids: {}
+
+# The controller quorum, as id@host:port entries. The KRaft quorum on every
+# existing tack cluster was formatted static, so every broker must name the
+# same voter set and the set changes only by a deliberate migration. Empty
+# keeps the single voter the stack file declares.
+tack_queue_controller_voters: []
+
+# The addresses clients bootstrap against, one per broker. The Docker service
+# name kafka resolves inside one guest's bridge only, so an environment with
+# brokers on more than one guest lists the guests' pinned addresses here and
+# every producer and consumer receives that list. Empty keeps kafka:9092.
+tack_queue_bootstrap_addresses: []
+
+# The bootstrap list every producer and consumer on this guest dials, assembled
+# from the two values above. Each address is bracketed because a port follows
+# it. The single-broker value is the Docker service name the stack file already
+# advertises.
+tack_queue_bootstrap_list: >-
+  {%- if tack_queue_distributed | bool -%}
+  {%- for address in tack_queue_bootstrap_addresses -%}
+  [{{ address }}]:{{ tack_queue_client_port }}{{ ',' if not loop.last else '' }}
+  {%- endfor -%}
+  {%- else -%}
+  kafka:{{ tack_queue_client_port }}
+  {%- endif -%}
+
+# The voter set every broker reads, assembled the same way.
+tack_queue_controller_voter_list: >-
+  {%- if tack_queue_distributed | bool -%}
+  {{ tack_queue_controller_voters | join(',') }}
+  {%- else -%}
+  1@kafka:{{ tack_queue_controller_port }}
+  {%- endif -%}
+
+# How many copies of a topic the broker creates when the caller names no count.
+# The broker applies it at creation only. An existing topic keeps the copies it
+# was created with, and `ops queue set-replication` raises those.
+tack_queue_replication_factor: 1
+
+# How many copies must be in sync before an acks=all write is acknowledged, as
+# the broker-wide default for topics created from here on.
+tack_queue_min_insync_replicas: 1
+
+# The same minimum written onto the audit topic itself on every consumer start,
+# existing topic included. Raising it above that topic's copy count stops every
+# write to it with NOT_ENOUGH_REPLICAS, so an environment sets it only after
+# `ops queue set-replication` reports the copies on every partition. Zero
+# leaves the topic's own setting alone.
+tack_queue_audit_topic_min_insync: 0
+
 # Container image tag. Production uses latest; QA overrides with a branch SHA
 # passed at deploy time.
 tack_image_tag: latest

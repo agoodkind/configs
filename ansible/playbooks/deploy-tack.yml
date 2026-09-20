@@ -472,7 +472,8 @@
             cmd: >-
               docker compose up -d --wait --wait-timeout 300
               {{ 'yugabyte' if tack_ledger_legacy_node_present else '' }}
-              meilisearch temporal-db temporal kafka clickhouse
+              {{ 'kafka' if tack_queue_legacy_node_present else '' }}
+              meilisearch temporal-db temporal clickhouse
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
@@ -682,6 +683,20 @@
           changed_when: true
           when: tack_store_node_present | bool
 
+        # The broker on this data guest (TACK-409). It advertises the guest's
+        # pinned address from the rendered env and reads the declared voter
+        # set, so its first start enrolls it in the environment's existing
+        # KRaft cluster rather than creating a second one. Starting it changes
+        # no topic: raising the copy count on the audit topic and on the
+        # consumer-position topic is a deliberate `ops queue set-replication`
+        # an operator runs afterwards.
+        - name: Start the event queue broker
+          ansible.builtin.command:
+            cmd: docker compose up -d kafka
+            chdir: "{{ tack_install_dir }}"
+          changed_when: true
+          when: tack_queue_node_present | bool
+
         # Scheduled ledger export, per-node half (TACK-356). The archiver
         # timer polls for a pending export manifest and no-ops quietly
         # otherwise. Gated on the live ledger topology: production grows
@@ -801,6 +816,19 @@
           register: tack_store_retired_rm
           changed_when: "'Removed' in tack_store_retired_rm.stderr"
           when: not tack_store_legacy_node_present
+
+        # The retired broker on this guest, removed the same way (TACK-409).
+        # Idempotent when absent. Safe only after `ops queue status` reports
+        # every partition of the audit topic and of the consumer-position topic
+        # holding its copies on the data guests, which the migration plan reads
+        # before the flag flips.
+        - name: Remove the retired event queue broker
+          ansible.builtin.command:
+            cmd: docker compose --profile retired rm -sf kafka
+            chdir: "{{ tack_install_dir }}"
+          register: tack_queue_retired_rm
+          changed_when: "'Removed' in tack_queue_retired_rm.stderr"
+          when: not tack_queue_legacy_node_present
       when: tack_provision_owner
 
   handlers:
