@@ -238,8 +238,8 @@ Controller, 2026-09-20 12:56, from main bfb3fa02:
 ./configsctl deploy deploy-mwan --limit mwan_servers
 ```
 
-`ok=211 changed=27 failed=0`. Handlers ran in definition order: `Reload
-networkd` before `Restart mwan-ifmgr@wan`. The VM rebooted after both.
+`ok=211 changed=27 failed=0`. `Reload networkd` completed before
+`Restart mwan-ifmgr@wan`; both handlers succeeded. The VM rebooted after both.
 
 Gateway 113 after the reboot, read with `qm guest exec` on vault:
 
@@ -267,9 +267,9 @@ nft list ruleset
 ```
 
 Policy rules: 0 changed lines in both families. Links and addresses: 0
-changed lines. nftables ruleset: 0 structural changes, with the pinned-address
-set elements differing because the refresher timer rewrites them every six
-hours.
+changed lines. The nftables ruleset structure is unchanged; only the
+pinned-address set elements differ because the refresher timer rewrites them
+every six hours.
 
 ## Not yet proven
 
