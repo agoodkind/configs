@@ -88,3 +88,10 @@ tack_ledger_node_addresses:
 # authority. The owner guest issues and holds that authority.
 tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
+
+# Phase 4 QA migration (TACK-408). Each data guest seeds its cluster file
+# from this list on first start; the current coordinator is the owner
+# guest's transitional store process at ::217.
+tack_store_seed_cluster_file: true
+tack_store_bootstrap_coordinators:
+  - "3d06:bad:b01:210::217"
