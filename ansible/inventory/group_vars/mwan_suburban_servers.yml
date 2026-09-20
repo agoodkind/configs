@@ -39,18 +39,14 @@ mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
 
-# systemd-networkd files deployed to the testbed gateway. Testbed AT&T/webpass/
+# systemd-networkd files deployed to the testbed gateway. Testbed AT&T and
 # astound are direct links (no VLAN, no 802.1X) from mwan/networkd/testbed/;
-# monkeybrains and the internal mwanbr link reuse the shared prod templates (no
-# prod-only vars). Astound has no prod counterpart, so it has no shared
-# template to reuse.
+# the internal mwanbr link reuses the shared prod template. The daemon writes
+# every rendered provider's files from network.json. No provider entry declares
+# astound yet; these two files are the only thing bringing that link up.
 mwan_networkd_files:
   - testbed/20-att.link
   - testbed/20-att.network
-  - testbed/20-webpass.link
-  - testbed/20-webpass.network
-  - 30-monkeybrains.link
-  - 30-monkeybrains.network
   - testbed/30-astound.link
   - testbed/30-astound.network
   - 40-mwanbr.link
@@ -241,7 +237,6 @@ mwan_providers:
     tier: 0
     weight: 1
     npt_prefix: "3d06:bad:b01:2200::/60"
-    v4_source: "{{ mwan_webpass_ipv4_addr }}"
     static_mappings:
       - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
       - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }
@@ -269,9 +264,9 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 5000
-    # The shared 30-monkeybrains.network template emits DUIDType and an empty
-    # DUIDRawData here, because mwan_monkeybrains_duid_raw_data is empty on the
-    # testbed. The entry types the same identity; the empty DUID is omitted.
+    # mwan_monkeybrains_duid_raw_data is empty on the testbed. The daemon
+    # renders DUIDType and omits the DUIDRawData line; networkd applies the
+    # same default for an absent key and for an empty assignment.
     ipv6:
       forwarding: true
       dhcp: true

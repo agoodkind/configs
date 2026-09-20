@@ -1,5 +1,9 @@
 # Wedge-proof the mwan-opnsense break-glass channel
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs
+> commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on
+> this page refer to the tree as it was.
+
 ## Goal
 
 The OOB serial channel must never PERMANENTLY wedge the OPNsense guest. A brief,

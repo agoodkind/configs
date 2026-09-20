@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
+
 **Goal:** Make the mwan-opnsense break-glass channel impossible to permanently wedge, and bound the transient.
 
 **Architecture:** Two invariants in the host drainer (`mwan/go/cmd/mwan/opnsense_drain.go`) and its systemd unit. Invariant 1: the chardev fd never closes while the VM is up, so qemu never strands the descriptor (no permanent wedge). Invariant 2: the chardev reader never blocks on the client, so a hung bridge cannot stall the drain (bounded transient).

@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
+
 **Goal:** Re-tiering or re-weighting an internet provider on the MWAN gateway becomes an inventory edit and a configuration deploy, adding or removing one is the same plus its two hand-written link files, and the binary never changes; the current three providers keep every live number and behavior.
 
 **Architecture:** Each gateway group carries one `mwan_providers` list, and the network configuration file renders by looping over it. The daemon stops knowing any provider by name: it checks routing numbers for uniqueness and reserved-table collisions at load, reads tier and weight per provider, and owns load balancing through a new steering module that programs the split into its own kernel chain from the active tier's healthy providers. The gateway pushes its per-provider health verdict to the hypervisor watchdog, which drops its own interface list. The systemd-networkd link files stay hand-written. The testbed gains a fourth simulated provider so a fourth member is proven by inventory alone.
@@ -71,7 +73,8 @@ treat it as the long-term way to build or test anything.
 
 Ansible is never invoked directly. Syntax checks run through the repository's
 rake wrappers (`cd ansible && rake syntax:mwan`), and deploys run through
-`./configsctl deploy <play> --release <tag> --limit <group>`.
+`./configsctl deploy <play> --limit <group>`. The play pulls the release its
+environment pins in group_vars, so no release is named on the command line.
 The deploy tool runs its own template lint that bans self-ternary presence
 checks (`x if x else ""`) in templates; use a block `if`.
 
@@ -162,9 +165,8 @@ than the number.
   before Task 3 merges; Task 5 consumes only Task 1 and the loader. Task 10
   (the stack install folded into `deploy-mwan`) rides the Task 5 pull
   request, so that first deploy is one command. Each
-  later task follows the same cycle: merge, testbed deploy with
-  `--release <tag>`, live validation, production deploy, then the next
-  branch.
+  later task follows the same cycle: merge, testbed deploy, live validation,
+  production deploy, then the next branch.
 - **The published hash mode comes from the loaded configuration.** The
   routing task publishes `hash-mode` from the daemon configuration the loader
   fills, not from the steering module's config, so no task imports a package

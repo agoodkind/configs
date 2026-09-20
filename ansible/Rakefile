@@ -6,10 +6,16 @@ require 'fileutils'
 # directory (`ansible/`) or pass --working-dir; `ansible.cfg` here resolves
 # inventory automatically.
 #
-# Vault password file defaults to ~/.config/ansible/vault.pass.
-# Override with VAULT_PASS_FILE=... or pass `nopass=1` to skip.
+# The deploy and check tasks run `./configsctl deploy` from the repository
+# root, because that is the only sanctioned way to run a play: it gates the
+# playbook's reachable files through the input-default linter, redacts every
+# vault value from the output, and writes the play's output to a run log.
+# configsctl reads the vault password from ~/.config/ansible/vault.pass and
+# accepts no override. The play pulls the release its environment pins in
+# group_vars, so no release is named on the command line.
 
-VAULT_PASS_FILE = ENV.fetch('VAULT_PASS_FILE', File.expand_path('~/.config/ansible/vault.pass'))
+REPOSITORY_ROOT = File.expand_path('..', __dir__)
+CONFIGSCTL = './configsctl'
 LOCAL_PLAYBOOKS_DIR = 'playbooks'
 
 CANONICAL_PLAYBOOKS = {
@@ -21,43 +27,43 @@ CANONICAL_PLAYBOOKS = {
 }.freeze
 
 ##
-# Build the ansible-playbook command for a given playbook name.
+# Run a command from the repository root, where the `configsctl` script sits
+# and from where configsctl resolves every path.
 #
-# @param playbook [String] playbook filename relative to playbooks/
-# @param extras  [Array<String>] additional ansible-playbook args
-# @return [Array<String>] argv ready for `sh`
-def ansible_playbook_argv(playbook, extras = [])
-  argv = ['ansible-playbook']
-  if ENV['nopass'].to_s == '1' || !File.exist?(VAULT_PASS_FILE)
-    argv += ['--vault-password-file', VAULT_PASS_FILE] if File.exist?(VAULT_PASS_FILE)
-  else
-    argv += ['--vault-password-file', VAULT_PASS_FILE]
+# @param argv [Array<String>] command and arguments
+# @return [void]
+def sh_in_repository_root(*argv)
+  Dir.chdir(REPOSITORY_ROOT) do
+    sh(*argv)
   end
-  argv << "#{LOCAL_PLAYBOOKS_DIR}/#{playbook}"
-  argv.concat(extras) if extras && !extras.empty?
-  argv
 end
 
 ##
-# Run a canonical playbook with optional --limit and --check passthrough.
+# Run a canonical playbook through configsctl with optional --limit and
+# --check passthrough.
 #
-# Tasks accept rake args: rake proxmox[vault] runs with --limit vault.
-# Add :check tasks for --check --diff dry runs.
+# Tasks accept rake args: rake deploy:proxmox[vault] runs with --limit vault.
+# The :check tasks add --check --diff for dry runs.
+#
+# configsctl is given the playbook stem, not a path: a stem resolves to
+# `ansible/playbooks/<stem>.yml` for the lint gate and to
+# `playbooks/<stem>.yml` for the play, while a bare `playbooks/<name>.yml`
+# would resolve for the play and miss the lint gate.
 #
 # @param playbook [String] playbook filename
 # @param limit    [String, nil] --limit target (e.g. "vault")
 # @param check    [Boolean] add --check --diff
 # @return [void]
 def run_playbook(playbook, limit: nil, check: false)
-  extras = []
-  extras += ['--limit', limit] if limit && !limit.empty?
-  extras += ['--check', '--diff'] if check
-  sh(*ansible_playbook_argv(playbook, extras))
+  argv = [CONFIGSCTL, 'deploy', File.basename(playbook, '.yml')]
+  argv += ['--limit', limit] if limit && !limit.empty?
+  argv += ['--check', '--diff'] if check
+  sh_in_repository_root(*argv)
 end
 
 namespace :deploy do
   CANONICAL_PLAYBOOKS.each do |key, playbook|
-    desc "Run #{playbook}; optional rake deploy:#{key}[<limit>]"
+    desc "Run #{playbook} through configsctl; optional rake deploy:#{key}[<limit>]"
     task key, [:limit] do |_t, args|
       run_playbook(playbook, limit: args[:limit])
     end
@@ -92,9 +98,7 @@ end
 
 desc 'Lint canonical playbooks with ansible-lint'
 task :lint do
-  Dir.chdir(File.expand_path('..', __dir__)) do
-    sh './configsctl', 'lint'
-  end
+  sh_in_repository_root(CONFIGSCTL, 'lint')
   CANONICAL_PLAYBOOKS.each_value do |pb|
     sh 'ansible-lint', "#{LOCAL_PLAYBOOKS_DIR}/#{pb}"
   end
@@ -102,7 +106,7 @@ end
 
 desc 'Help: list canonical playbook shortcuts'
 task :help do
-  puts 'Ansible canonical playbook shortcuts (local, no remote rsync).'
+  puts 'Ansible canonical playbook shortcuts. Every deploy runs ./configsctl deploy.'
   puts ''
   puts 'Run a playbook:'
   CANONICAL_PLAYBOOKS.each do |k, v|
@@ -125,7 +129,7 @@ task :help do
   puts 'Inventory shape (read-only):'
   puts '  rake inventory'
   puts ''
-  puts 'Set VAULT_PASS_FILE=/path/to/passfile, or nopass=1 to skip vault decryption.'
+  puts 'The vault password file is ~/.config/ansible/vault.pass.'
 end
 
 task default: :help

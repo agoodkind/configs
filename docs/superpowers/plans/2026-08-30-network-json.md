@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
+
 **Goal:** Move the gateway's network configuration into `/etc/mwan/network.json` in the model's own JSON encoding, validated against the same schema at deploy time and at load time, with the TOML file keeping every non-network section.
 
 **Architecture:** One additive revision of the steering module adds the per-provider `wan` container and the group-wide translation, routes, and health leaves. Ansible renders the network tree from the same group_vars the TOML template reads, the deploy validates the rendered file with yanglint on the controller before it reaches the gateway, and `mwan ifmgr` validates it again with libyang at startup and fills the same internal structures the TOML sections filled. The TOML struct fields for those sections stop being decoded in the same change the JSON loader starts filling them, so exactly one file owns each section at every moment.
@@ -48,7 +50,8 @@ same run is `cd mwan/go && go test -count=1 ./internal/networkjson/ -v`.
 
 Ansible is never invoked directly. Syntax checks run through the repository's
 rake wrappers (`cd ansible && rake syntax:mwan`), and deploys run through
-`./configsctl deploy <play> --release <tag> --limit <group>`.
+`./configsctl deploy <play> --limit <group>`. The play pulls the release its
+environment pins in group_vars, so no release is named on the command line.
 
 The controller needs `yanglint` on PATH for both `make yang-validate` and the new
 deploy-time check. It comes from the `libyang` Homebrew formula on macOS and the
