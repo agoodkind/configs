@@ -26,7 +26,7 @@ still holds.
 - The boot-order change lands and is proven on its own, before any renderer code reaches a gateway, so a failure in either is attributable to one of them.
 - The hand-authored per-provider unit files are deleted only in a change whose continuous integration check already proves the rendered output matches them outside comment lines.
 - A key set by both the typed layer and the free-form layer is a load-time failure, never a silent override.
-- A missing value is a load-time failure, never a defaulted one.
+- A missing value is never defaulted. A missing group-wide value fails the load. A missing value inside one provider entry rejects that entry alone: the daemon logs the rejection and steers the remaining providers (MWAN-506).
 - Deploy-time and load-time validation use the same schema files, never copies; the repository keeps exactly one revision file.
 - The delegation client identity is a public identifier and lives in the configuration file. No secret ever enters the JSON.
 - The daemon takes no ordering after `network-online.target`, which would close the cycle the firewall override documents.

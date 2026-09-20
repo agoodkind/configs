@@ -149,8 +149,11 @@ mwan_pin_provider: att
 A fourth provider is one more entry with `table: 600`, `mark: 4`,
 `mark_prio: 600`, `from_prio: 58`, its own tier, and its own link block.
 Tables 400 and 500 are reserved, so 600 is the first free hundred. An
-IPv4-only provider has no `ipv6` block, no `npt_prefix`, and no IPv6 probe
-targets. It gets no IPv6 lease, no translation, and no IPv6 source rule.
+IPv4-only provider has no `npt_prefix` and no IPv6 probe targets. It gets no
+IPv6 lease, no translation, and no IPv6 source rule. Its `ipv6` block states
+`dhcp: false` and `accept_ra: false`, which renders `IPv6AcceptRA=no` into its
+unit file. The loader rejects any entry with an `ipv4` or `ipv6` block that
+omits `dhcp`.
 
 Each value is typed once. Where a gateway entry and a simulator definition
 describe the same wire, both read the service map.
@@ -592,9 +595,16 @@ themselves.
 
 A provider with no link identity is a provider the daemon does not bring up.
 That is the point for AT&T, whose files are hand-authored, and it is a mistake
-for anyone else. The load fails when an entry carries neither link identity
-nor an explicit statement that its files are hand-authored, so the exemption
-is written down rather than inferred from an absence.
+for anyone else. The loader rejects any entry that has no link block and no
+`link_files: hand-authored` leaf. The exemption is written down rather than
+inferred from an absence.
+
+The loader rejects any provider entry with a defect inside it, logs the
+interface name, the provider name and the reason at error level, and runs on
+the remaining entries. The daemon does not start on a missing group-wide
+value, a routing number two providers share, a reserved table, or a document
+with no loadable provider. systemd-networkd keeps every other link configured
+when one `.network` file is bad (MWAN-506).
 
 The ordering within the firewall's translation chain decides behavior,
 because a translation statement stops rule evaluation. Grouping outbound
