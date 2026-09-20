@@ -117,6 +117,6 @@ same host.
 
 Schema validation at deploy time and at load time must use the same
 schema files. Two copies of a schema is the same duplication failure in
-a new place. The deploy validates with the model files in the repository
-checkout, which are the same files it copies onto the gateway and the
-same files the daemon validates with at startup.
+a new place. The released binary carries the modules, so the deploy
+validates with the modules that binary prints and the daemon validates
+with the copies that binary installed.
