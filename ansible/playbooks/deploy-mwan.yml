@@ -612,11 +612,11 @@
         file_type: any
       register: mwan_networkd_present
 
-    # The daemon renders one file per provider link and opens each one with
-    # this marker line, which is also how the daemon prunes its own stale
-    # files. This deploy keeps every file carrying it: deleting one strips a
-    # live provider of its addressing until the daemon's next write, and the
-    # reload below would apply that gap to the link.
+    # Deleting a daemon-written file removes addressing from the provider
+    # link until the daemon writes the file again, and the reload below
+    # applies that gap immediately. This task therefore skips every file that
+    # contains the marker line. The daemon opens each file it renders with
+    # that line and prunes its own stale files by the same line.
     - name: List the networkd files the daemon renders
       ansible.builtin.find:
         paths: /etc/systemd/network
