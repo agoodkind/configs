@@ -1,8 +1,11 @@
 # AGENTS
 
-This repository provisions guests with OpenTofu, configures them with Ansible,
-and ships the MWAN runtime. Read [docs/README.md](docs/README.md) for area
-pages and operator runbooks.
+This repository provisions guests with OpenTofu and configures them with
+Ansible. It holds no Go module, and the deploy installs the `mwan` and
+`opnsensectl` binaries from the pinned releases of
+[agoodkind/mwan](https://github.com/agoodkind/mwan) and
+[agoodkind/opnsensectl](https://github.com/agoodkind/opnsensectl). Read
+[docs/README.md](docs/README.md) for area pages and operator runbooks.
 
 Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
 `ansible-inventory`, or `ansible-console` directly, do not pipe decrypted vault

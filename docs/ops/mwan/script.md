@@ -88,11 +88,11 @@ with multi-line `$( ... )`.
 
 ## nftables and runtime rules
 
-Assume an `nftables` reload flushes runtime rules. Any dynamic runtime rule
-programming (for example NPT) must be re-applied via:
-
-- `networkd-dispatcher` hooks, and
-- a boot or deploy safety-net systemd unit.
+The rendered `nftables.conf` opens with `flush ruleset`, so a reload drops every
+rule that was programmed at runtime. The gateway daemon reprograms the rules it
+owns, including prefix translation, without help from this repository. A script
+here that programs nftables restores its own rules in one idempotent `nft -f`
+transaction under the shared lock, because nothing else restores them.
 
 ## Documentation constraints
 
