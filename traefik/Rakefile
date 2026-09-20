@@ -20,19 +20,14 @@ task :validate do
   puts '✅ All Traefik configuration files are valid'
 end
 
+# Traefik is configured by the proxy play. The deploy runs through configsctl
+# from the repository root, which gates the play's files through the linter,
+# redacts vault values, and writes a run log.
 desc 'Deploy Traefik configuration'
 task :deploy do
-  sh 'ansible-playbook ../ansible/playbooks/deploy-traefik.yml'
-end
-
-desc 'Update Traefik configuration only'
-task :update do
-  sh 'ansible-playbook ../ansible/playbooks/update-traefik-config.yml'
-end
-
-desc 'Check Traefik status'
-task :status do
-  sh 'ansible proxy_servers -m systemd -a "name=traefik state=status"'
+  Dir.chdir(File.expand_path('..', __dir__)) do
+    sh './configsctl', 'deploy', 'deploy-proxy'
+  end
 end
 
 task default: :validate

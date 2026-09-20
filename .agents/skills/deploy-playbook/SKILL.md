@@ -70,7 +70,9 @@ doubt.
 
 ## Rake Shortcuts
 
-The [ansible/Rakefile](../../../ansible/Rakefile) wraps the same invocations:
+The [ansible/Rakefile](../../../ansible/Rakefile) wraps the same invocations.
+Its `deploy` and `check` tasks run `./configsctl deploy` from the repository
+root, so a rake deploy and a direct deploy are the same run:
 
 ```bash
 rake help
@@ -82,8 +84,8 @@ rake inventory
 
 ## Notes
 
-- The helper sets `cwd` to [ansible/](../../../ansible/) so `ansible.cfg` and
-  dynamic inventory resolve. The rake tasks do the same.
+- configsctl runs the play from [ansible/](../../../ansible/) so `ansible.cfg`
+  and dynamic inventory resolve.
 - The vault password file is `~/.config/ansible/vault.pass`.
 - For a single deploy of a non-MWAN service, such as proxy, adguard, ddns, or
   tack, pass the matching `deploy-<service>` stem to the helper.

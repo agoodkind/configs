@@ -73,7 +73,8 @@ treat it as the long-term way to build or test anything.
 
 Ansible is never invoked directly. Syntax checks run through the repository's
 rake wrappers (`cd ansible && rake syntax:mwan`), and deploys run through
-`./configsctl deploy <play> --release <tag> --limit <group>`.
+`./configsctl deploy <play> --limit <group>`. The play pulls the release its
+environment pins in group_vars, so no release is named on the command line.
 The deploy tool runs its own template lint that bans self-ternary presence
 checks (`x if x else ""`) in templates; use a block `if`.
 
@@ -164,9 +165,8 @@ than the number.
   before Task 3 merges; Task 5 consumes only Task 1 and the loader. Task 10
   (the stack install folded into `deploy-mwan`) rides the Task 5 pull
   request, so that first deploy is one command. Each
-  later task follows the same cycle: merge, testbed deploy with
-  `--release <tag>`, live validation, production deploy, then the next
-  branch.
+  later task follows the same cycle: merge, testbed deploy, live validation,
+  production deploy, then the next branch.
 - **The published hash mode comes from the loaded configuration.** The
   routing task publishes `hash-mode` from the daemon configuration the loader
   fills, not from the steering module's config, so no task imports a package

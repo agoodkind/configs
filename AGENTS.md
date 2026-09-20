@@ -7,6 +7,8 @@ Ansible. It holds no Go module, and the deploy installs the `mwan` and
 [agoodkind/opnsensectl](https://github.com/agoodkind/opnsensectl). Read
 [docs/README.md](docs/README.md) for area pages and operator runbooks.
 
+Run every deploy as `./configsctl deploy <name>` from the repository root, and
+run OpenTofu as `./configsctl tofu`. A rake deploy task runs the same command.
 Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
 `ansible-inventory`, or `ansible-console` directly, do not pipe decrypted vault
 contents into chat.
