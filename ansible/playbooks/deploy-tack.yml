@@ -274,10 +274,11 @@
     # process given a different key joins a different cluster. `fdbcli
     # coordinators` generates a new key and writes it into the cluster file of
     # every connected client, and no inventory value reproduces a generated key.
-    # These tasks copy the live bytes off the guest that already runs the store
-    # (tack_store_cluster_file_host). QA measured the alternative on 2026-09-20:
-    # three data guests seeded from a fixed docker:docker literal elected their
-    # own cluster controller and ran a second cluster beside the real one.
+    # These tasks copy the live bytes off the first guest of this run that runs
+    # a store process (tack_store_cluster_file_source, derived from each guest's
+    # own declaration). QA measured the alternative on 2026-09-20: three data
+    # guests seeded from a fixed docker:docker literal elected their own cluster
+    # controller and ran a second cluster beside the real one.
     #
     # The cluster owns the file once it exists, writing each coordinator change
     # into it. The copy therefore runs only where the file is absent. A deploy
@@ -295,41 +296,60 @@
     - name: Look for this environment's live product store cluster file
       ansible.builtin.stat:
         path: /etc/foundationdb/fdb.cluster
-      delegate_to: "{{ tack_store_cluster_file_host }}"
+      delegate_to: "{{ tack_store_cluster_file_source }}"
       run_once: true
-      register: tack_store_cluster_file_source
-      when: tack_store_seed_cluster_file | bool
+      register: tack_store_cluster_file_stat
+      when:
+        - tack_store_seed_cluster_file | bool
+        - tack_store_cluster_file_source != ''
 
-    # A missing file on that guest means the environment runs no store there:
-    # either the guest is the wrong one, or its file was lost, or this is a
-    # from-empty environment that has no cluster yet. The first two cases are
-    # faults, and a run that continued through them would let each store process
-    # create a cluster of its own. A from-empty environment declares itself with
-    # --extra-var tack_store_bootstrap=true, and that run writes no cluster file
-    # at all: its first store process writes its own and becomes the
-    # coordinator, and the next deploy copies that file to the other guests.
-    - name: Fail when this environment has no live product store cluster file
+    # Two shapes of the same fault, each with its own reading. In the first, no
+    # guest of the run runs a store process. No guest of the run then has the
+    # cluster identity. In the second, the guest that runs one has no cluster
+    # file. A run that continued through either would let each store process
+    # create a cluster of its own.
+    #
+    # A from-empty environment is the one legitimate case, and it declares
+    # itself with --extra-var tack_store_bootstrap=true. That run writes no
+    # cluster file at all: its first store process writes its own and becomes
+    # the coordinator, and the next deploy copies that file to the other guests.
+    - name: Fail when no guest of this run runs the product store
       ansible.builtin.fail:
         msg: >-
-          {{ tack_store_cluster_file_host }} has no /etc/foundationdb/fdb.cluster,
-          so this run cannot copy the cluster identity onto the guests that lack
-          it. Confirm that tack_store_cluster_file_host declares the guest
-          running the store. A from-empty environment creates its first cluster
-          by passing --extra-var tack_store_bootstrap=true.
+          No guest of this run declares tack_store_node_present, and the owner
+          guest's original store process is retired. This run has no guest to
+          read the cluster identity from. Deploy the whole environment rather
+          than a subset of its guests. A from-empty environment creates its
+          first cluster by passing --extra-var tack_store_bootstrap=true.
       when:
         - tack_store_seed_cluster_file | bool
         - not tack_store_bootstrap | bool
-        - not tack_store_cluster_file_source.stat.exists
+        - tack_store_cluster_file_source == ''
+
+    - name: Fail when the guest running the product store has no cluster file
+      ansible.builtin.fail:
+        msg: >-
+          {{ tack_store_cluster_file_source }} runs the product store and has no
+          /etc/foundationdb/fdb.cluster. This run cannot copy the cluster
+          identity onto the guests that lack it. Read that guest before
+          deploying again. A from-empty environment creates its first cluster by
+          passing --extra-var tack_store_bootstrap=true.
+      when:
+        - tack_store_seed_cluster_file | bool
+        - not tack_store_bootstrap | bool
+        - tack_store_cluster_file_source != ''
+        - not tack_store_cluster_file_stat.stat.exists
 
     - name: Read this environment's live product store cluster file
       ansible.builtin.slurp:
         src: /etc/foundationdb/fdb.cluster
-      delegate_to: "{{ tack_store_cluster_file_host }}"
+      delegate_to: "{{ tack_store_cluster_file_source }}"
       run_once: true
       register: tack_store_cluster_file_read
       when:
         - tack_store_seed_cluster_file | bool
-        - tack_store_cluster_file_source.stat.exists
+        - tack_store_cluster_file_source != ''
+        - tack_store_cluster_file_stat.stat.exists
 
     # Per guest rather than run_once, because every guest renders these bytes
     # into its own environment file below.
@@ -339,7 +359,8 @@
           {{ (tack_store_cluster_file_read.content | b64decode) | trim }}
       when:
         - tack_store_seed_cluster_file | bool
-        - tack_store_cluster_file_source.stat.exists
+        - tack_store_cluster_file_source != ''
+        - tack_store_cluster_file_stat.stat.exists
 
     - name: Seed the product store cluster file where this guest has none
       ansible.builtin.copy:
@@ -351,7 +372,8 @@
         force: false
       when:
         - tack_store_seed_cluster_file | bool
-        - tack_store_cluster_file_source.stat.exists
+        - tack_store_cluster_file_source != ''
+        - tack_store_cluster_file_stat.stat.exists
 
     - block:
 

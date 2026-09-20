@@ -90,7 +90,7 @@ tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
 
 # Phase 4 QA migration (TACK-408). A data guest with no cluster file receives a
-# copy of the live one during the deploy. The owner guest runs QA's transitional
-# store process and has the file the running cluster wrote.
+# copy of the live one during the deploy. The deploy reads that copy from the
+# first guest of the run that runs a store process: the owner guest while its
+# transitional process exists, and a data guest once that process retires.
 tack_store_seed_cluster_file: true
-tack_store_cluster_file_host: "{{ service_mapping.tack_qa_suburban.hostname }}"

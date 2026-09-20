@@ -152,9 +152,6 @@ tack_port: 8000
 # Product store (FoundationDB), phase 4 (TACK-408)
 # ---------------------------------------------------------------------------
 
-# The port every store process listens on and announces.
-tack_store_port: 4500
-
 # Whether this guest runs a store process in the distributed shape: one per
 # data guest, announcing that guest's pinned address. A guest that runs one
 # uses host networking, because the process has to bind the address it
@@ -162,9 +159,11 @@ tack_store_port: 4500
 #
 # False here. A deploy changes nothing until an environment turns it on at the
 # migration step that starts the data guests' processes. Turn it on in the same
-# change that sets tack_store_seed_cluster_file and names
-# tack_store_cluster_file_host: a process with no cluster file is its own
-# coordinator and creates a second cluster beside the real one.
+# change that sets tack_store_seed_cluster_file: a process with no cluster file
+# is its own coordinator and creates a second cluster beside the real one.
+#
+# The seed below also reads this value on every guest of the run, to find the
+# guests that run a store process.
 tack_store_node_present: false
 
 # Whether the owner guest still runs the original store process, the one that
@@ -180,17 +179,33 @@ tack_store_legacy_node_present: true
 # That guest is what the copy reads.
 tack_store_seed_cluster_file: false
 
-# The guest that already runs the store in this environment. A cluster file
-# states the cluster's identity in its description and key. A process given a
-# different key joins a different cluster. `fdbcli coordinators` generates a new
-# key and writes it into the cluster file of every connected client. No
-# inventory value reproduces a generated key. On QA on 2026-09-20 three data
-# guests seeded from a fixed docker:docker literal elected their own cluster
-# controller and ran a second cluster beside the real one. The deploy reads the
-# live bytes off this guest rather than assembling them. Environment groups
-# declare their own guest, the same way tack_ledger_ca_host declares the guest
-# that issues the ledger authority.
-tack_store_cluster_file_host: ""
+# The guests of this run that run a store process, in the order the seed
+# prefers them: the owner guest while it still runs the original process, then
+# every guest that declares tack_store_node_present, sorted by name. The run's
+# own hosts and each guest's own declaration produce this set. The retirement
+# of the owner's process then moves the source onto the data guests, with no
+# second name to maintain. A deploy limited to fewer guests than the
+# environment reads only the guests it runs.
+tack_store_process_hosts: >-
+  {{ (ansible_play_hosts_all | map('extract', hostvars)
+      | selectattr('tack_provision_owner', 'true')
+      | map(attribute='inventory_hostname') | list
+      if tack_store_legacy_node_present else [])
+     + (ansible_play_hosts_all | map('extract', hostvars)
+        | selectattr('tack_store_node_present', 'true')
+        | map(attribute='inventory_hostname') | sort | list) }}
+
+# The guest this run reads the live cluster file from: the first of those, so
+# every guest of one run reads one guest. A cluster file states the cluster's
+# identity in its description and key. A process given a different key joins a
+# different cluster. `fdbcli coordinators` generates a new key and writes it
+# into the cluster file of every connected client. No inventory value
+# reproduces a generated key. On QA on 2026-09-20 three data guests seeded from
+# a fixed docker:docker literal elected their own cluster controller and ran a
+# second cluster beside the real one. The deploy reads the live bytes off this
+# guest rather than assembling them. The value is empty while no guest of this
+# run runs a store process.
+tack_store_cluster_file_source: "{{ tack_store_process_hosts[:1] | join('') }}"
 
 # The bytes read off that guest during the run. The deploy replaces this value
 # per guest before it seeds the cluster file and renders the environment. A run

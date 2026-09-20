@@ -19,15 +19,32 @@ module TackStoreClusterFile
   ENV_TEMPLATE_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'tack', 'tack.env.j2')
   RECORD_TASK_NAME = 'Record the live product store cluster file for this guest'
   READ_TASK_NAME = "Read this environment's live product store cluster file"
-  FAIL_TASK_NAME = 'Fail when this environment has no live product store cluster file'
+  NO_STORE_TASK_NAME = 'Fail when no guest of this run runs the product store'
+  NO_FILE_TASK_NAME = 'Fail when the guest running the product store has no cluster file'
   SEED_TASK_NAME = 'Seed the product store cluster file where this guest has none'
   COPY_MODULE = 'ansible.builtin.copy'
   CONTENTS_SETTING = 'FDB_CLUSTER_FILE_CONTENTS'
+  PROCESS_HOSTS_VAR = 'tack_store_process_hosts'
+  SOURCE_VAR = 'tack_store_cluster_file_source'
+
+  # Every verdict a case asserts. A task name maps to the label the result uses.
+  CONDITION_TASKS = {
+    'read' => READ_TASK_NAME,
+    'seed' => SEED_TASK_NAME,
+    'no_store' => NO_STORE_TASK_NAME,
+    'no_file' => NO_FILE_TASK_NAME
+  }.freeze
 
   # A cluster file as a cluster writes it after a coordinator move: the
   # description, the generated key, and the coordinator the cluster runs.
   LIVE_CLUSTER_FILE = 'docker:Q7vRnT4pXz2mBw8sLd6h@[3d06:bad:b01:210::217]:4500'
-  STORE_GUEST = 'tack-qa'
+  OWNER_GUEST = 'tack-qa'
+  DATA_GUESTS = %w[tack-data1 tack-data2 tack-data3].freeze
+
+  # A registered result as Ansible leaves it where the task did not run. It
+  # includes no stat member, and a condition list that evaluated one would fail
+  # the run with an undefined error.
+  SKIPPED_TASK = { 'changed' => false, 'skipped' => true }.freeze
 
   # The per-environment and per-guest values the environment template reads on a
   # guest that runs no store process and no backup timers. Every other value
@@ -69,7 +86,7 @@ module TackStoreClusterFile
   end
 
   # The registered result of the stat that looks for the live cluster file.
-  def source_result(exists)
+  def stat_result(exists)
     { 'changed' => false, 'failed' => false, 'stat' => { 'exists' => exists } }
   end
 
@@ -78,15 +95,55 @@ module TackStoreClusterFile
     { 'changed' => false, 'failed' => false, 'content' => [contents].pack('m0'), 'encoding' => 'base64' }
   end
 
-  def seed_variables(source:, read: nil, bootstrap: false, seed: true)
+  def seed_variables(stat:, read: nil, source: OWNER_GUEST, bootstrap: false, seed: true)
     {
       'tack_store_seed_cluster_file' => seed,
       'tack_store_bootstrap' => bootstrap,
-      'tack_store_cluster_file_host' => STORE_GUEST,
       'tack_store_live_cluster_file' => '',
-      'tack_store_cluster_file_source' => source,
+      SOURCE_VAR => source,
+      'tack_store_cluster_file_stat' => stat,
       'tack_store_cluster_file_read' => read
     }.compact
+  end
+
+  # One guest's own declarations, the two the source selection reads.
+  def guest_vars(name, owner:, store:)
+    { 'inventory_hostname' => name, 'tack_provision_owner' => owner, 'tack_store_node_present' => store }
+  end
+
+  # An inventory of one owner guest and three data guests, with the store
+  # processes the migration has started so far.
+  def play_hostvars(data_guests_run_store:)
+    guests = { OWNER_GUEST => guest_vars(OWNER_GUEST, owner: true, store: false) }
+    DATA_GUESTS.each do |name|
+      guests[name] = guest_vars(name, owner: false, store: data_guests_run_store)
+    end
+    guests
+  end
+
+  # The when list of each task above, read from the playbook.
+  def task_conditions(tasks)
+    conditions = {}
+    CONDITION_TASKS.each do |label, name|
+      conditions[label] = TaskExpressions.condition_list(task_named(tasks, name)['when'])
+    end
+    conditions
+  end
+
+  # Evaluates the real source selection from tack_all.yml against one
+  # inventory, the way a play resolves it.
+  def selected_source(hostvars, legacy_present:)
+    group_vars = YAML.safe_load_file(GROUP_VARS_FILE, aliases: true)
+    render = {
+      'vars' => {
+        'ansible_play_hosts_all' => hostvars.keys,
+        'hostvars' => hostvars,
+        'tack_store_legacy_node_present' => legacy_present,
+        PROCESS_HOSTS_VAR => group_vars.fetch(PROCESS_HOSTS_VAR)
+      },
+      'templates' => { 'source' => group_vars.fetch(SOURCE_VAR) }
+    }
+    TaskExpressions.evaluate(variables: {}, facts: [], renders: [render])['renders'][0]['source']
   end
 
   # Renders the environment file for a guest, from the cluster file the run read
@@ -116,72 +173,89 @@ RSpec.describe TackStoreClusterFile do
       tasks = described_class.playbook_tasks
       @record_fact = TaskExpressions.fact_task(described_class.task_named(tasks, TackStoreClusterFile::RECORD_TASK_NAME))
       seed_task = described_class.task_named(tasks, TackStoreClusterFile::SEED_TASK_NAME)
-      @seed_when = TaskExpressions.condition_list(seed_task['when'])
       @seed_render = TaskExpressions.render_task(
         seed_task, 'content' => seed_task.dig(TackStoreClusterFile::COPY_MODULE, 'content')
       )
-      @read_when = TaskExpressions.condition_list(
-        described_class.task_named(tasks, TackStoreClusterFile::READ_TASK_NAME)['when']
-      )
-      @fail_when = TaskExpressions.condition_list(
-        described_class.task_named(tasks, TackStoreClusterFile::FAIL_TASK_NAME)['when']
+      @conditions = described_class.task_conditions(tasks)
+    end
+
+    def verdicts(variables, renders: [])
+      TaskExpressions.evaluate(
+        variables: variables, facts: [@record_fact], conditions: @conditions, renders: renders
       )
     end
 
     it 'writes the live bytes the run read off the guest running the store', :aggregate_failures do
       live = TackStoreClusterFile::LIVE_CLUSTER_FILE
       variables = described_class.seed_variables(
-        source: described_class.source_result(true), read: described_class.read_result("#{live}\n")
+        stat: described_class.stat_result(true), read: described_class.read_result("#{live}\n")
       )
 
-      result = TaskExpressions.evaluate(
-        variables: variables, facts: [@record_fact],
-        conditions: { 'read' => @read_when, 'seed' => @seed_when, 'fail' => @fail_when },
-        renders: [@seed_render]
-      )
+      result = verdicts(variables, renders: [@seed_render])
 
       expect(result['facts']['tack_store_live_cluster_file']).to eq(live),
                                                                  'the run must keep the generated key of the live file'
       expect(result['renders'][0]['content']).to eq("#{live}\n")
-      expect(result['conditions']).to eq('read' => true, 'seed' => true, 'fail' => false)
+      expect(result['conditions']).to eq('read' => true, 'seed' => true, 'no_store' => false, 'no_file' => false)
     end
 
     it 'stops the run when the guest running the store has no cluster file' do
-      variables = described_class.seed_variables(source: described_class.source_result(false))
+      result = verdicts(described_class.seed_variables(stat: described_class.stat_result(false)))
 
-      result = TaskExpressions.evaluate(
-        variables: variables, facts: [@record_fact],
-        conditions: { 'read' => @read_when, 'seed' => @seed_when, 'fail' => @fail_when }
-      )
+      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'no_store' => false, 'no_file' => true)
+    end
 
-      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'fail' => true)
+    it 'stops the run when no guest of the run runs a store process' do
+      variables = described_class.seed_variables(stat: TackStoreClusterFile::SKIPPED_TASK, source: '')
+
+      result = verdicts(variables)
+
+      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'no_store' => true, 'no_file' => false)
     end
 
     it 'seeds nothing on a from-empty environment that declares the bootstrap' do
-      variables = described_class.seed_variables(source: described_class.source_result(false), bootstrap: true)
+      variables = described_class.seed_variables(stat: TackStoreClusterFile::SKIPPED_TASK, source: '', bootstrap: true)
 
-      result = TaskExpressions.evaluate(
-        variables: variables, facts: [@record_fact],
-        conditions: { 'read' => @read_when, 'seed' => @seed_when, 'fail' => @fail_when }
-      )
+      result = verdicts(variables)
 
-      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'fail' => false)
+      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'no_store' => false, 'no_file' => false)
     end
 
     # Production leaves the seed off. Ansible skips the stat on that run, and
     # the registered result then includes no stat at all. Every condition list
     # reads the flag first and stops on it.
     it 'skips the seed where the environment has not turned it on' do
-      variables = described_class.seed_variables(
-        source: { 'changed' => false, 'skipped' => true }, seed: false
-      )
+      result = verdicts(described_class.seed_variables(stat: TackStoreClusterFile::SKIPPED_TASK, seed: false))
 
-      result = TaskExpressions.evaluate(
-        variables: variables, facts: [@record_fact],
-        conditions: { 'read' => @read_when, 'seed' => @seed_when, 'fail' => @fail_when }
-      )
+      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'no_store' => false, 'no_file' => false)
+    end
+  end
 
-      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'fail' => false)
+  # The guest a run reads is derived from each guest's own declarations. The
+  # source follows the migration rather than naming one guest forever.
+  describe 'the guest the run reads the cluster file from' do
+    it 'is the owner guest while its original store process runs' do
+      hostvars = described_class.play_hostvars(data_guests_run_store: true)
+
+      source = described_class.selected_source(hostvars, legacy_present: true)
+
+      expect(source).to eq(TackStoreClusterFile::OWNER_GUEST)
+    end
+
+    it 'is the first data guest once the owner guest retires its process' do
+      hostvars = described_class.play_hostvars(data_guests_run_store: true)
+
+      source = described_class.selected_source(hostvars, legacy_present: false)
+
+      expect(source).to eq(TackStoreClusterFile::DATA_GUESTS.first)
+    end
+
+    it 'is empty where no guest of the run runs a store process' do
+      hostvars = described_class.play_hostvars(data_guests_run_store: false)
+
+      source = described_class.selected_source(hostvars, legacy_present: false)
+
+      expect(source).to eq('')
     end
   end
 
