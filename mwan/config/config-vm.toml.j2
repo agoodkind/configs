@@ -137,7 +137,6 @@ health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 
 [ifmgr.modules.health]
 state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
-persist_state_file = "/var/lib/mwan/health-state"
 # Push the per-provider verdict to the hypervisor watchdog. Context id 2 is
 # VMADDR_CID_HOST, the kernel's fixed id for a guest's own hypervisor, so it is
 # a literal rather than an inventory value: no site can change it.

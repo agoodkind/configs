@@ -62,15 +62,13 @@ mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 
 # systemd-networkd files deployed to the VM (under mwan/networkd/). Prod AT&T is
-# an 802.1X VLAN (21-att-vlan.*); the testbed overrides att/webpass with the
-# direct-link variants under mwan/networkd/testbed/.
+# an 802.1X VLAN (21-att-vlan.*); the testbed overrides att with the direct-link
+# variant under mwan/networkd/testbed/. The daemon writes every rendered
+# provider's files from network.json. This list names only the hand-authored
+# AT&T files and the internal mwanbr link.
 mwan_networkd_files:
   - 20-att.link
   - 20-att.network
-  - 20-webpass.link
-  - 20-webpass.network
-  - 30-monkeybrains.link
-  - 30-monkeybrains.network
   - 21-att-vlan.netdev
   - 21-att-vlan.network
   - 40-mwanbr.link
@@ -388,7 +386,6 @@ mwan_providers:
     tier: 0
     weight: 1
     npt_prefix: "2604:5500:c271:be00::/60"
-    v4_source: "{{ mwan_webpass_ipv4_addr }}"
     static_mappings:
       - { internal: "10.250.250.2", external: "136.25.91.242" }
       - { internal: "10.250.250.3", external: "136.25.91.243" }
