@@ -39,16 +39,13 @@ mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
 
-# systemd-networkd files deployed to the testbed gateway. Testbed AT&T and
-# astound are direct links (no VLAN, no 802.1X) from mwan/networkd/testbed/;
-# the internal mwanbr link reuses the shared prod template. The daemon writes
-# every rendered provider's files from network.json. No provider entry declares
-# astound yet; these two files are the only thing bringing that link up.
+# systemd-networkd files deployed to the testbed gateway. Testbed AT&T is a
+# direct link (no VLAN, no 802.1X) from mwan/networkd/testbed/; the internal
+# mwanbr link reuses the shared prod template. The daemon writes every rendered
+# provider's files from network.json, astound among them.
 mwan_networkd_files:
   - testbed/20-att.link
   - testbed/20-att.network
-  - testbed/30-astound.link
-  - testbed/30-astound.network
   - 40-mwanbr.link
   - 40-mwanbr.network
 
@@ -295,6 +292,46 @@ mwan_providers:
       failure_threshold: 5
       recovery_threshold: 3
       check_interval: 30
+      targets_v4: ["1.1.1.1", "8.8.8.8"]
+      targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+      http_targets: ["https://ifconfig.co/ip"]
+
+  # Astound has no production counterpart. It proves a provider can be added by
+  # inventory alone with the binary unchanged, and it models the one shape the
+  # other three do not: a dynamic IPv4-only link with no VLAN. A DHCPv4
+  # reservation on the simulator pins its address to 10.240.207.2. This entry
+  # declares no translation prefix, which excludes it from translation and from
+  # the IPv6 source rules. Its IPv4 leg alone decides its health, because the
+  # link runs no IPv6. Its IPv6 probe targets match the other providers, which a
+  # probe cycle requires of every entry.
+  - name: astound
+    iface: "{{ mwan_astound_iface }}"
+    vlan_id: ""
+    link_files: rendered
+    link:
+      match: { hardware_address: "{{ mwan_astound_mac | lower }}" }
+    ipv4:
+      forwarding: true
+      dhcp: true
+      route_metric: 6000
+    ipv6:
+      accept_ra: false
+    table: 600
+    mark: 4
+    mark_prio: 600
+    from_prio: 58
+    tier: 2
+    weight: 1
+    npt_prefix: ""
+    v4_source: "10.240.207.2"
+    static_mappings: []
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 2
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
       targets_v4: ["1.1.1.1", "8.8.8.8"]
       targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
       http_targets: ["https://ifconfig.co/ip"]
