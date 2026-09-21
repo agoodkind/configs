@@ -4,6 +4,8 @@
 
 > **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
 
+> **Completed.** MWAN-324 shipped on both gateways in release `202609210222-10-0b079b8`. [The MWAN-506 completion plan](2026-09-21-mwan-506-completion.md) covers the remaining provider-rejection visibility and deployment validation. MWAN-340 and MWAN-341 remain the next two epics.
+
 **Goal:** Re-tiering or re-weighting an internet provider on the MWAN gateway becomes an inventory edit and a configuration deploy, adding or removing one is the same plus its two hand-written link files, and the binary never changes; the current three providers keep every live number and behavior.
 
 **Architecture:** Each gateway group carries one `mwan_providers` list, and the network configuration file renders by looping over it. The daemon stops knowing any provider by name: it checks routing numbers for uniqueness and reserved-table collisions at load, reads tier and weight per provider, and owns load balancing through a new steering module that programs the split into its own kernel chain from the active tier's healthy providers. The gateway pushes its per-provider health verdict to the hypervisor watchdog, which drops its own interface list. The systemd-networkd link files stay hand-written. The testbed gains a fourth simulated provider so a fourth member is proven by inventory alone.

@@ -4,6 +4,8 @@
 
 > **Historical.** The gateway Go module moved to agoodkind/mwan in configs commit 6f18c39d. The `mwan/go`, `mwan/yang` and `third_party/yang` paths on this page refer to the tree as it was.
 
+> **Completed.** MWAN-492 and MWAN-491 run on both gateways in release `202609210222-10-0b079b8`. [The MWAN-506 completion plan](2026-09-21-mwan-506-completion.md) finishes the provider-local failure contract introduced during this work.
+
 **Goal:** The gateway daemon writes every provider link's systemd-networkd unit files from the network configuration it already loads, so a provider is one inventory entry and a deploy with no file authored by hand.
 
 **Architecture:** The provider entry gains link identity in two layers: typed leaves for what the published models do not name, and a free-form container that mirrors the unit-file format so any shape networkd reads is expressible. The daemon maps typed leaves to unit-file keys through one table, appends the free-form sections, and writes the files through a maintained serializer. Because udev applies a `.link` file when a device appears and the kernel refuses to rename a link that is already up, the daemon's unit moves ahead of udev's coldplug trigger and of systemd-networkd, writes the files, and then waits on netlink as it does today. The hand-authored per-provider files are deleted only after a continuous integration check proves the rendered output matches them byte for byte outside comment lines.
@@ -26,7 +28,7 @@ still holds.
 - The boot-order change lands and is proven on its own, before any renderer code reaches a gateway, so a failure in either is attributable to one of them.
 - The hand-authored per-provider unit files are deleted only in a change whose continuous integration check already proves the rendered output matches them outside comment lines.
 - A key set by both the typed layer and the free-form layer is a load-time failure, never a silent override.
-- A missing value is never defaulted. A missing group-wide value fails the load. A missing value inside one provider entry rejects that entry alone: the daemon logs the rejection and steers the remaining providers (MWAN-506).
+- A missing value is never defaulted. A missing group-wide value fails the load. After schema validation succeeds, a missing value inside one provider entry rejects that entry alone: the daemon reports the rejection and steers the remaining providers (MWAN-506).
 - Deploy-time and load-time validation use the same schema files, never copies; the repository keeps exactly one revision file.
 - The delegation client identity is a public identifier and lives in the configuration file. No secret ever enters the JSON.
 - The daemon takes no ordering after `network-online.target`, which would close the cycle the firewall override documents.
