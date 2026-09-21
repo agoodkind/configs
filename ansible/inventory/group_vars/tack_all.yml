@@ -61,13 +61,17 @@ tack_ledger_consumers_repointed: false
 # node; the app served 503 on /healthz for about thirty seconds after a
 # guest was stopped, against a ten-second bound (TACK-464).
 #
-# The bound applies per name, so losing one of three costs one timeout and
-# then a live connection. Whole seconds only: the driver reads this as an
-# integer count of seconds, and it consumes the key itself rather than
-# forwarding it to the server, which is what makes it safe against the
-# ledger's PostgreSQL 11 wire compatibility. Two seconds sits far above a
-# healthy same-network connect and far below the acceptance bound.
-tack_database_connect_timeout_seconds: 2
+# The bound applies per name. Losing one of three costs one timeout and then
+# a live connection. Whole seconds only: the driver reads this as an integer
+# count of seconds, and it consumes the key itself rather than forwarding it
+# to the server, which keeps it safe against the ledger's PostgreSQL 11 wire
+# compatibility. The app's /healthz probe runs under a two-second deadline,
+# and that deadline has to cover one timeout on a stopped name plus the
+# connect and TLS handshake to the next name. At two seconds the probe
+# expired on the stopped name alone, and /healthz served 503 for ten to
+# fourteen seconds after a ledger guest stopped. One second sits far above
+# a healthy same-network connect.
+tack_database_connect_timeout_seconds: 1
 
 # Ledger transport encryption (TACK-460). Repointing moved the ledger onto
 # the three data guests, so application SQL and the engine's own replication
