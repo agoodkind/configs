@@ -28,7 +28,7 @@ hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
 | Deploy prune against the daemon's files | Failed check mode 2026-09-20 10:05, fixed in #457 | main 429a6f62, fix 10846744 |
 | Fallback in both families | Passed 2026-09-20 10:54 | e |
 | Daemon restart with links up | Passed 2026-09-20 10:50 | e |
-| Link absent at boot | Not run | |
+| Link absent at boot | Passed 2026-09-20 16:56 | e |
 | AT&T 802.1X path | Not runnable on the testbed | |
 | Production check mode | Passed 2026-09-20 12:34 | main bfb3fa02 |
 | Production cutover | Passed 2026-09-20 12:56 | main bfb3fa02, release e |
@@ -214,6 +214,49 @@ table instead. Observe LAN fallback from a LAN host, as the 2026-09-18 drill
 did from the QA guest and the testbed router at the simulator ingress
 `veth902i0`.
 
+### A link absent at boot
+
+Run at 16:54 after the astound proof, with three providers in inventory.
+Suburban, 16:54:27, detaching the monkeybrains NIC:
+
+```bash
+qm set 213 --delete net4
+```
+
+Gateway, 16:54:34: `systemctl reboot`.
+
+Gateway at 16:55:18:
+
+```bash
+systemctl is-system-running
+systemctl is-active mwan-ifmgr@wan
+systemctl list-jobs
+systemctl --failed
+cat /var/run/mwan-health.state
+ip -br link
+ip rule show; ip -6 rule show
+journalctl -b -u mwan-ifmgr@wan -o cat
+```
+
+Observed: `running`, `active`, no jobs, 0 failed units; `att:healthy`,
+`monkeybrains:unknown`, `webpass:healthy`; `enmbrains0` absent; IPv4 rules 56,
+100 and 200 and IPv6 rules 55, 56, 100 and 200. The daemon logged
+`networkd unit files written` with `changed=null` at 16:54:49, `Daemon ready`
+with `module_count` 4, and then `wan.routes: provider link missing; treating
+it as having no gateway` for monkeybrains in both families.
+
+Suburban, 16:55:38, reattaching:
+
+```bash
+qm set 213 --net4 virtio=BC:24:11:3D:CE:CC,bridge=vmbr6,firewall=0
+```
+
+Gateway at 16:56:16, `uptime -p` reporting 1 minute and no reboot: udev named
+the device `enmbrains0` from the daemon-written `20-enmbrains0.link`; the link
+leased `10.240.206.100/24` and its IPv6 addresses; `monkeybrains:healthy`;
+rules 300 and 57 present again and the full rule set equal to the pre-detach
+capture in both families.
+
 ## Production
 
 ### Check mode
@@ -272,11 +315,7 @@ changed lines. The nftables ruleset structure is unchanged; only the
 pinned-address set elements differ because the refresher timer rewrites them
 every six hours.
 
-## Not yet proven
-
-A link absent at boot has not been rerun on the render release. That case
-detaches a provider NIC at the hypervisor and reboots the gateway, which needs
-its own window.
+## Not runnable
 
 The AT&T 802.1X path is not runnable on the testbed. The testbed's AT&T is a
 direct link with no VLAN and no supplicant, and MWAN-492 settled that case
