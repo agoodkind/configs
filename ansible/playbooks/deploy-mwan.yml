@@ -47,13 +47,9 @@
   vars:
     mwan_config_dir: /etc/mwan
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    # The network configuration is rendered here first so the schema check runs
-    # on the exact bytes the gateway receives. One file per host, because a play
-    # against both gateways renders two different trees.
+    # The controller renders one network document per host. The released loader
+    # validates these exact bytes before the deploy installs the MWAN management stack.
     mwan_network_json_local: "{{ repo_root }}/.cache/network-{{ inventory_hostname }}.json"
-    # The schema modules the pinned release embeds, printed by that release's
-    # binary and fetched here, one directory per host for the same reason.
-    mwan_schema_local: "{{ repo_root }}/.cache/mwan-schema-{{ inventory_hostname }}"
 
   tasks:
     - name: Generate deploy trace ID (early)
@@ -118,18 +114,17 @@
     # PRE-DEPLOY: Auto-rollback setup
     # ============================================================================
 
-    # The deploy gates run through the mwan binary on the Proxmox delegate, so
-    # the released binary is pushed there before the first gate call. The
-    # dedicated filename keeps the watchdog's own /usr/local/bin/mwan
-    # untouched; deploy-proxmox.yml owns that copy. The binary comes from the
-    # release the environment pins. The first play pulled and verified it under
-    # mwan_release_dir.
+    # The deploy gates use the pinned mwan release on the Proxmox delegate. Check
+    # mode also copies this binary so validation never uses an older helper. The
+    # dedicated filename leaves the watchdog binary unchanged. The first play
+    # downloaded and verified the release under mwan_release_dir.
     - name: Push the deploy-gate binary to the Proxmox delegate
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.copy:
         src: "{{ mwan_release_dir }}/linux_amd64/mwan"
         dest: /usr/local/sbin/mwan-deploy-gate
         mode: "0755"
+      check_mode: false
 
     - name: Verify the deploy-gate binary is the released commit
       delegate_to: "{{ mwan_proxmox_delegate }}"
@@ -255,17 +250,9 @@
         state: directory
         mode: "0755"
 
-    # The network configuration is rendered and schema-checked on the controller
-    # before any file reaches the gateway, so a rejected render stops the play
-    # while the gateway still holds a consistent set of files: config.toml no
-    # longer carries the network tree, and writing it without a validated
-    # network.json beside it would leave a gateway that cannot start its wan
-    # role on the next restart.
-    #
-    # The render and validation tasks run under check mode too, because they
-    # write only the controller's .cache directory and a scratch directory on
-    # the Proxmox delegate, and a check run needs the rendered file to diff it
-    # against the gateway's copy.
+    # The controller renders the network document before any gateway write. The
+    # released loader validates the document on the Proxmox delegate. Validation
+    # runs in check mode because the check must reject an invalid deployment too.
     - name: Ensure the controller render directory exists
       delegate_to: localhost
       become: false
@@ -286,100 +273,65 @@
       when: mwan_ifmgr_wan_enabled | bool
       check_mode: false
 
-    # The schema the gateway installs is embedded in the released binary, so the
-    # controller validates against the modules that binary prints rather than a
-    # copy in this repository. The controller cannot run the linux binary, so
-    # the Proxmox delegate prints them with the deploy-gate copy pushed above
-    # and the controller fetches the files. A check run skipped that push, so
-    # it validates against the schema of whatever deploy-gate binary the
-    # delegate already holds. The directory is emptied first because each
-    # revision is a new file name, and a leftover revision would load as a
-    # second module.
-    - name: Empty the controller schema directory
-      delegate_to: localhost
-      become: false
-      ansible.builtin.file:
-        path: "{{ mwan_schema_local }}"
-        state: absent
-      when: mwan_ifmgr_wan_enabled | bool
-      check_mode: false
+    # The pinned binary prints its embedded schema and validates the rendered
+    # document in one temporary directory. The loader performs schema validation
+    # before it checks group-wide and provider-specific rules. Cleanup runs after
+    # both successful and rejected documents.
+    - name: Validate the rendered network configuration with the released loader
+      block:
+        - name: Create a schema directory on the Proxmox delegate
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: -mwan-schema
+          register: mwan_schema_remote
+          check_mode: false
 
-    - name: Create a schema directory on the Proxmox delegate
-      delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.tempfile:
-        state: directory
-        suffix: -mwan-schema
-      register: mwan_schema_remote
-      when: mwan_ifmgr_wan_enabled | bool
-      check_mode: false
+        - name: Print the released schema on the Proxmox delegate
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.command:
+            argv:
+              - /usr/local/sbin/mwan-deploy-gate
+              - install
+              - --print-schema
+              - "{{ mwan_schema_remote.path }}"
+          changed_when: false
+          check_mode: false
 
-    - name: Print the released schema on the Proxmox delegate
-      delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.command:
-        argv:
-          - /usr/local/sbin/mwan-deploy-gate
-          - install
-          - --print-schema
-          - "{{ mwan_schema_remote.path }}"
-      changed_when: false
-      when: mwan_ifmgr_wan_enabled | bool
-      check_mode: false
+        - name: Copy the rendered network configuration to the Proxmox delegate
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.copy:
+            src: "{{ mwan_network_json_local }}"
+            dest: "{{ mwan_schema_remote.path }}/network.json"
+            mode: "0600"
+          check_mode: false
 
-    - name: List the printed schema modules
-      delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.find:
-        paths: "{{ mwan_schema_remote.path }}"
-        patterns: "*.yang"
-      register: mwan_schema_printed
+        - name: Run the released loader against the rendered network configuration
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.command:
+            argv:
+              - /usr/local/sbin/mwan-deploy-gate
+              - deploy-gate
+              - check-network
+              - "{{ mwan_schema_remote.path }}/network.json"
+              - "{{ mwan_schema_remote.path }}"
+          changed_when: false
+          check_mode: false
+      always:
+        - name: Remove the schema directory on the Proxmox delegate
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.file:
+            path: "{{ mwan_schema_remote.path }}"
+            state: absent
+          when:
+            - mwan_schema_remote is defined
+            - mwan_schema_remote.path is defined
+          check_mode: false
       when: mwan_ifmgr_wan_enabled | bool
-      check_mode: false
 
-    - name: Fetch the printed schema modules to the controller
-      delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.fetch:
-        src: "{{ item.path }}"
-        dest: "{{ mwan_schema_local }}/"
-        flat: true
-      loop: "{{ mwan_schema_printed.files }}"
-      loop_control:
-        label: "{{ item.path | basename }}"
-      when: mwan_ifmgr_wan_enabled | bool
-      check_mode: false
-
-    - name: Remove the schema directory on the Proxmox delegate
-      delegate_to: "{{ mwan_proxmox_delegate }}"
-      ansible.builtin.file:
-        path: "{{ mwan_schema_remote.path }}"
-        state: absent
-      when: mwan_ifmgr_wan_enabled | bool
-      check_mode: false
-
-    # The released modules, checked with yanglint the way the daemon checks the
-    # file with libyang at startup. This is the pre-flight validation that
-    # replaces the ruleset parse the firewall work removes. The search path
-    # resolves each module's imports from the same directory, so the order the
-    # files are named in does not matter.
-    - name: Validate the rendered network configuration against the schema
-      delegate_to: localhost
-      become: false
-      ansible.builtin.command:
-        argv: >-
-          {{
-            ['yanglint', '-p', mwan_schema_local, '-t', 'config']
-            + (query('fileglob', mwan_schema_local ~ '/*.yang') | sort)
-            + [mwan_network_json_local]
-          }}
-      register: mwan_network_json_validate
-      changed_when: false
-      failed_when: mwan_network_json_validate.rc != 0
-      when: mwan_ifmgr_wan_enabled | bool
-      check_mode: false
-
-    # The management stack goes on after the controller has validated the
-    # render and before any gateway file is written, so a rejected render
-    # leaves the gateway untouched. The packages it installs carry the sysrepo
-    # that the mwan install below writes the schema into. The first play
-    # unpacked the bundle beside the binary and set wanconfig_stack_dir.
+    # The management stack installs after the released loader accepts the
+    # document. A rejected document stops the play before this installation.
+    # The first play unpacked this bundle beside the binary.
     - name: Install the wanconfig management stack
       ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
       become: true
