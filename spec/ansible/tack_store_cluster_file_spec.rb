@@ -16,6 +16,7 @@ module TackStoreClusterFile
   NO_STORE_TASK_NAME = 'Fail when this guest has no cluster file and no guest of this run runs the product store'
   NO_FILE_TASK_NAME = 'Fail when the guest running the product store has no cluster file'
   SEED_TASK_NAME = 'Seed the product store cluster file where this guest has none'
+  START_STORES_TASK_NAME = 'Start the other stores and wait until they are healthy'
   COPY_MODULE = 'ansible.builtin.copy'
   CONTENTS_SETTING = 'FDB_CLUSTER_FILE_CONTENTS'
   PROCESS_HOSTS_VAR = 'tack_store_process_hosts'
@@ -46,7 +47,6 @@ module TackStoreClusterFile
   ENVIRONMENT_VARS = {
     'tack_store_host' => '3d06:bad:b01:210::217',
     'tack_yugabyte_password' => 'render-only-ledger-login',
-    'tack_meili_master_key' => 'render-only-search-login',
     'tack_audit_writer_password' => 'render-only-writer-login',
     'tack_audit_reader_password' => 'render-only-reader-login',
     'tack_audit_redactor_password' => 'render-only-redactor-login',
@@ -143,9 +143,9 @@ module TackStoreClusterFile
     TaskExpressions.evaluate(variables: {}, facts: [], renders: [render])['renders'][0]['source']
   end
 
-  # Renders the environment file for a guest, from the cluster file the run read
-  # off the guest running the store, and returns the value of one setting.
-  def rendered_environment_setting(live_cluster_file, setting)
+  # Renders the environment file for a guest from the cluster file the run read
+  # off the guest running the store.
+  def rendered_environment(live_cluster_file)
     Dir.mktmpdir('tack-env') do |output_directory|
       output_file = File.join(output_directory, '.env')
       AnsibleRender.render(
@@ -158,9 +158,26 @@ module TackStoreClusterFile
           'output_file' => output_file
         )
       )
-      setting_line = File.readlines(output_file, chomp: true).find { |line| line.start_with?("#{setting}=") }
-      setting_line.to_s.delete_prefix("#{setting}=")
+      File.read(output_file)
     end
+  end
+
+  def rendered_environment_setting(live_cluster_file, setting)
+    setting_line = rendered_environment(live_cluster_file).lines(chomp: true).find do |line|
+      line.start_with?("#{setting}=")
+    end
+    setting_line.to_s.delete_prefix("#{setting}=")
+  end
+
+  def rendered_start_stores_command
+    task = task_named(playbook_tasks, START_STORES_TASK_NAME)
+    render = TaskExpressions.render_task(
+      task, 'command' => task.dig('ansible.builtin.command', 'cmd')
+    )
+    result = TaskExpressions.evaluate(
+      variables: { 'tack_ledger_legacy_node_present' => false }, facts: [], renders: [render]
+    )
+    result['renders'][0]['command']
   end
 end
 
@@ -282,6 +299,22 @@ RSpec.describe TackStoreClusterFile do
       rendered = described_class.rendered_environment_setting('', TackStoreClusterFile::CONTENTS_SETTING)
 
       expect(rendered).to eq('')
+    end
+  end
+
+  describe 'search removal in the rendered deployment' do
+    it 'renders no search credential' do
+      environment = described_class.rendered_environment('')
+
+      expect(environment).not_to include('MEILI_')
+    end
+
+    it 'starts the remaining stores without a search service' do
+      command = described_class.rendered_start_stores_command
+
+      expect(command.split).to eq(
+        %w[docker compose up -d --wait --wait-timeout 300 temporal-db temporal kafka clickhouse]
+      )
     end
   end
 end

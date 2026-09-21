@@ -543,7 +543,7 @@
             cmd: >-
               docker compose up -d --wait --wait-timeout 300
               {{ 'yugabyte' if tack_ledger_legacy_node_present else '' }}
-              meilisearch temporal-db temporal kafka clickhouse
+              temporal-db temporal kafka clickhouse
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
