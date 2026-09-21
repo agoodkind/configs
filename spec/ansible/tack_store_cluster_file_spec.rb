@@ -309,11 +309,11 @@ RSpec.describe TackStoreClusterFile do
       expect(environment).not_to include('MEILI_')
     end
 
-    it 'starts the remaining stores without a search service' do
+    it 'starts the remaining stores without a search service or a workflow engine' do
       command = described_class.rendered_start_stores_command
 
       expect(command.split).to eq(
-        %w[docker compose up -d --wait --wait-timeout 300 temporal-db temporal kafka clickhouse]
+        %w[docker compose up -d --wait --wait-timeout 300 kafka clickhouse]
       )
     end
   end
