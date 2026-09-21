@@ -47,20 +47,22 @@ remove. A model that describes the daemon while the daemon loads a
 differently shaped file recreates it one layer up, and the two drift the
 moment someone edits one of them.
 
-There is a second gain. A file in the model's encoding can be checked
-against the schema before it ever reaches the gateway. That matters
-because the piece that moves firewall ownership into the daemon deletes
-the only pre-flight validation that exists today, a check-mode parse of
-the rendered ruleset on the target before it lands. Schema validation of
-the rendered configuration replaces it.
+There is a second gain. The released production loader checks a file in the
+model's encoding before the deploy changes the gateway. It checks the schema
+first, then applies the relationships the schema cannot express. The piece
+that moves firewall ownership into the daemon deletes the only pre-flight
+validation that exists today, a check-mode parse of the rendered ruleset on
+the target before installation. Schema validation of the rendered
+configuration and the loader's additional rules replace it.
 
 ## What changes
 
 Inventory renders `network.json` in the model's encoding. The daemon
 loads it at startup and validates it against the schema before acting on
-any of it. A file that does not validate stops the daemon before it
-programs anything, which is the existing failure contract. The TOML
-loader stops reading a network section in the same change the JSON
+any of it. The deploy runs that same loader against the rendered bytes before
+it changes the gateway. A file that does not satisfy the schema stops the
+daemon before it programs anything, which is the existing failure contract.
+The TOML loader stops reading a network section in the same change the JSON
 loader starts owning it, so no state exists where both files feed one
 setting.
 

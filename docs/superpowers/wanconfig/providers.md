@@ -604,10 +604,16 @@ inferred from an absence.
 
 The loader rejects any provider entry with a defect inside it, logs the
 interface name, the provider name and the reason at error level, and runs on
-the remaining entries. The daemon does not start on a missing group-wide
-value, a routing number two providers share, a reserved table, or a document
-with no loadable provider. systemd-networkd keeps every other link configured
-when one `.network` file is bad (MWAN-506).
+the remaining entries. The served steering state reports each rejected entry
+with the same identity and reason. The deploy runs the production loader and
+rejects the entire intended change when the runtime would omit any provider.
+
+Schema validation runs before these provider-local checks. A schema-invalid
+document remains fatal because it is not an accepted configuration tree. The
+daemon also does not start on a missing group-wide value, a routing number two
+providers share, a reserved table, or a document with no loadable provider.
+systemd-networkd keeps every other link configured when one `.network` file is
+bad (MWAN-506).
 
 The ordering within the firewall's translation chain decides behavior,
 because a translation statement stops rule evaluation. Grouping outbound
