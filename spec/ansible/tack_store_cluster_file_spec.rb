@@ -13,7 +13,7 @@ module TackStoreClusterFile
   ENV_TEMPLATE_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'tack', 'tack.env.j2')
   RECORD_TASK_NAME = 'Record the live product store cluster file for this guest'
   READ_TASK_NAME = "Read this environment's live product store cluster file"
-  NO_STORE_TASK_NAME = 'Fail when no guest of this run runs the product store'
+  NO_STORE_TASK_NAME = 'Fail when this guest has no cluster file and no guest of this run runs the product store'
   NO_FILE_TASK_NAME = 'Fail when the guest running the product store has no cluster file'
   SEED_TASK_NAME = 'Seed the product store cluster file where this guest has none'
   COPY_MODULE = 'ansible.builtin.copy'
@@ -89,12 +89,15 @@ module TackStoreClusterFile
     { 'changed' => false, 'failed' => false, 'content' => [contents].pack('m0'), 'encoding' => 'base64' }
   end
 
-  def seed_variables(stat:, read: nil, source: OWNER_GUEST, bootstrap: false, seed: true)
+  # own is the stat of this guest's own cluster file; a guest with none is the
+  # default, the case every seed decision is about.
+  def seed_variables(stat:, read: nil, source: OWNER_GUEST, bootstrap: false, seed: true, own: stat_result(false))
     {
       'tack_store_seed_cluster_file' => seed,
       'tack_store_bootstrap' => bootstrap,
       'tack_store_live_cluster_file' => '',
       SOURCE_VAR => source,
+      'tack_store_own_cluster_file' => own,
       'tack_store_cluster_file_stat' => stat,
       'tack_store_cluster_file_read' => read
     }.compact
@@ -205,6 +208,19 @@ RSpec.describe TackStoreClusterFile do
       result = verdicts(variables)
 
       expect(result['conditions']).to eq('read' => false, 'seed' => false, 'no_store' => true, 'no_file' => false)
+    end
+
+    # A deploy limited to guests that already have their cluster file, the
+    # owner guest alone after the data guests took the store, has no source and
+    # nothing to seed.
+    it 'seeds nothing and stops nothing on a guest that already has its cluster file when the run has no source' do
+      variables = described_class.seed_variables(
+        stat: TackStoreClusterFile::SKIPPED_TASK, source: '', own: described_class.stat_result(true)
+      )
+
+      result = verdicts(variables)
+
+      expect(result['conditions']).to eq('read' => false, 'seed' => false, 'no_store' => false, 'no_file' => false)
     end
 
     it 'seeds nothing on a from-empty environment that declares the bootstrap' do

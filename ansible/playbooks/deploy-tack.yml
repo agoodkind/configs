@@ -277,22 +277,33 @@
         group: root
         mode: "0755"
 
+    - name: Look for this guest's own product store cluster file
+      ansible.builtin.stat:
+        path: /etc/foundationdb/fdb.cluster
+      register: tack_store_own_cluster_file
+      when: tack_store_seed_cluster_file | bool
+
+    # Ansible resolves delegate_to before when, and refuses an empty name, so
+    # the delegate falls back to this guest on a run with no source; the when
+    # still skips the task.
     - name: Look for this environment's live product store cluster file
       ansible.builtin.stat:
         path: /etc/foundationdb/fdb.cluster
-      delegate_to: "{{ tack_store_cluster_file_source }}"
+      delegate_to: "{{ tack_store_cluster_file_source or inventory_hostname }}"
       run_once: true
       register: tack_store_cluster_file_stat
       when:
         - tack_store_seed_cluster_file | bool
         - tack_store_cluster_file_source != ''
 
-    # With no file to copy, the run stops unless --extra-var
-    # tack_store_bootstrap=true declares a from-empty environment.
-    - name: Fail when no guest of this run runs the product store
+    # A guest that already has its cluster file needs no source. With no file
+    # and no source, the run stops unless --extra-var tack_store_bootstrap=true
+    # declares a from-empty environment.
+    - name: Fail when this guest has no cluster file and no guest of this run runs the product store
       ansible.builtin.fail:
         msg: >-
-          No guest of this run declares tack_store_node_present, and the owner
+          {{ inventory_hostname }} has no /etc/foundationdb/fdb.cluster, no
+          guest of this run declares tack_store_node_present, and the owner
           guest's original store process is retired. This run has no guest to
           read the cluster identity from. Deploy the whole environment rather
           than a subset of its guests. A from-empty environment creates its
@@ -301,6 +312,7 @@
         - tack_store_seed_cluster_file | bool
         - not tack_store_bootstrap | bool
         - tack_store_cluster_file_source == ''
+        - not tack_store_own_cluster_file.stat.exists
 
     - name: Fail when the guest running the product store has no cluster file
       ansible.builtin.fail:
@@ -319,7 +331,7 @@
     - name: Read this environment's live product store cluster file
       ansible.builtin.slurp:
         src: /etc/foundationdb/fdb.cluster
-      delegate_to: "{{ tack_store_cluster_file_source }}"
+      delegate_to: "{{ tack_store_cluster_file_source or inventory_hostname }}"
       run_once: true
       register: tack_store_cluster_file_read
       when:
