@@ -47,6 +47,7 @@ module TackStoreClusterFile
   ENVIRONMENT_VARS = {
     'tack_store_host' => '3d06:bad:b01:210::217',
     'tack_yugabyte_password' => 'render-only-ledger-login',
+    'tack_meili_master_key' => 'render-only-search-login',
     'tack_audit_writer_password' => 'render-only-writer-login',
     'tack_audit_reader_password' => 'render-only-reader-login',
     'tack_audit_redactor_password' => 'render-only-redactor-login',
@@ -303,10 +304,13 @@ RSpec.describe TackStoreClusterFile do
   end
 
   describe 'search removal in the rendered deployment' do
-    it 'renders no search credential' do
+    # The tack stack file declares MEILI_MASTER_KEY required on three
+    # services, so a deploy without it fails at `docker compose pull`. This
+    # expectation flips to absence in the change that stops tack declaring it.
+    it 'renders the search credential the stack file requires' do
       environment = described_class.rendered_environment('')
 
-      expect(environment).not_to include('MEILI_')
+      expect(environment).to include('MEILI_MASTER_KEY=')
     end
 
     it 'starts the remaining stores without a search service or a workflow engine' do
