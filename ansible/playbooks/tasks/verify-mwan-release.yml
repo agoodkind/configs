@@ -16,8 +16,8 @@
   register: mwan_installed_version
   changed_when: false
 
-# In check mode the copy above did not happen and the command did not run, so
-# there is nothing to assert; the real run is where the identity is checked.
+# Command tasks do not run in check mode, so there is no output to assert. A
+# caller may still copy the pinned binary for other check-mode validation.
 # `mwan version` prints exactly one line:
 #   version=<commit>[-dirty]+<binhash> commit=<commit> dirty=<clean|dirty|unknown>
 #   binhash=<binhash> libsysrepo=<major.minor.micro>

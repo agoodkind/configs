@@ -251,15 +251,38 @@ RSpec.describe MwanInstall do
     end
   end
 
-  it 'validates the gateway render against the schema the release prints' do
+  it 'validates the gateway render before installing the MWAN management stack' do
     tasks = described_class.role_tasks(MwanInstall::ROLES.first)
+    deploy_gate_copy = tasks.index { |task| task['name'] == 'Push the deploy-gate binary to the Proxmox delegate' }
     printed = tasks.index { |task| Array(described_class.command_argv(task)).include?('--print-schema') }
-    validate = tasks.index { |task| task['name'] == 'Validate the rendered network configuration against the schema' }
-    first_gateway_write = tasks.index { |task| task['ansible.builtin.import_tasks'] == 'tasks/mwan-vm/wanconfig-stack.yml' }
+    render_copy = tasks.index { |task| task['name'] == 'Copy the rendered network configuration to the Proxmox delegate' }
+    loader_check = tasks.index { |task| Array(described_class.command_argv(task)).include?('check-network') }
+    cleanup = tasks.index { |task| task['name'] == 'Remove the schema directory on the Proxmox delegate' }
+    management_stack_install = tasks.index { |task| task['ansible.builtin.import_tasks'] == 'tasks/mwan-vm/wanconfig-stack.yml' }
 
-    expect([printed, validate, first_gateway_write]).to all(be_a(Integer))
-    expect(printed).to be < validate
-    expect(validate).to be < first_gateway_write
+    expected_tasks = [deploy_gate_copy, printed, render_copy, loader_check, cleanup, management_stack_install]
+    expect(expected_tasks).to all(be_a(Integer))
+    expect(tasks[deploy_gate_copy]['check_mode']).to be(false)
+    expect(printed).to be < render_copy
+    expect(render_copy).to be < loader_check
+    expect(described_class.module_field(tasks[render_copy], MwanInstall::COPY_KEY, 'src')).to eq(
+      '{{ mwan_network_json_local }}'
+    )
+    expect(described_class.module_field(tasks[render_copy], MwanInstall::COPY_KEY, 'dest')).to eq(
+      '{{ mwan_schema_remote.path }}/network.json'
+    )
+    expect(tasks[loader_check]['check_mode']).to be(false)
+    expect(loader_check).to be < cleanup
+    expect(cleanup).to be < management_stack_install
+    expect(described_class.command_argv(tasks[loader_check])).to eq(
+      [
+        '/usr/local/sbin/mwan-deploy-gate',
+        'deploy-gate',
+        'check-network',
+        '{{ mwan_schema_remote.path }}/network.json',
+        '{{ mwan_schema_remote.path }}'
+      ]
+    )
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
