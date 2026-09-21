@@ -101,3 +101,4 @@ tack_ledger_node_addresses:
 # environment dials verify-full against the authority from then on.
 tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack.hostname }}"
+tack_store_seed_cluster_file: true
