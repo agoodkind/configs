@@ -1,0 +1,35 @@
+http:
+  routers:
+    tack-search:
+      entryPoints: [search]
+      rule: PathPrefix(`/`)
+      service: tack-search
+      middlewares: [tack-search-auth]
+      tls: {}
+  services:
+    tack-search:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+{% for backend in tack_search_proxy_backends %}
+          - url: "{{ backend.url }}"
+{% endfor %}
+        serversTransport: tack-search-tls
+  middlewares:
+    tack-search-auth:
+      basicAuth:
+        usersFile: /etc/tack-search-proxy/users
+
+serversTransports:
+  tack-search-tls:
+    serverName: opensearch
+    rootCAs:
+      - {{ tack_search_proxy_ca_file }}
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS13
+  certificates:
+    - certFile: {{ tack_search_proxy_cert_file }}
+      keyFile: {{ tack_search_proxy_key_file }}

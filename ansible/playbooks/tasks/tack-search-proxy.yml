@@ -1,0 +1,83 @@
+---
+# Install the stable TLS endpoint for the OpenSearch cluster. The hypervisor
+# terminates client TLS and re-encrypts each backend connection.
+- name: Create the Tack search proxy directory
+  ansible.builtin.file:
+    path: /etc/tack-search-proxy
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  when: tack_search_proxy_enabled | bool
+
+- name: Install the Tack search proxy CA
+  ansible.builtin.copy:
+    content: "{{ tack_search_proxy_ca }}\n"
+    dest: "{{ tack_search_proxy_ca_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Restart tack-search-proxy
+  when: tack_search_proxy_enabled | bool
+
+- name: Install the Tack search proxy certificate
+  ansible.builtin.copy:
+    content: "{{ tack_search_proxy_certificate }}\n"
+    dest: "{{ tack_search_proxy_cert_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Restart tack-search-proxy
+  when: tack_search_proxy_enabled | bool
+
+- name: Install the Tack search proxy private key
+  ansible.builtin.copy:
+    content: "{{ tack_search_proxy_private_key }}\n"
+    dest: "{{ tack_search_proxy_key_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart tack-search-proxy
+  when: tack_search_proxy_enabled | bool
+
+- name: Install the Tack search proxy credentials
+  ansible.builtin.copy:
+    content: "{{ tack_search_proxy_users_file }}\n"
+    dest: /etc/tack-search-proxy/users
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart tack-search-proxy
+  when: tack_search_proxy_enabled | bool
+
+- name: Render the Tack search proxy configuration
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/config/tack-search-proxy.yml.j2"
+    dest: /etc/tack-search-proxy/traefik.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart tack-search-proxy
+  when: tack_search_proxy_enabled | bool
+
+- name: Render the Tack search proxy service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/services/tack-search-proxy.service.j2"
+    dest: /etc/systemd/system/tack-search-proxy.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart tack-search-proxy
+  when: tack_search_proxy_enabled | bool
+
+- name: Enable the Tack search proxy
+  ansible.builtin.systemd:
+    name: tack-search-proxy
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: tack_search_proxy_enabled | bool
