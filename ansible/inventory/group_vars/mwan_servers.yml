@@ -307,9 +307,9 @@ mwan_pinned_v6_fqdns:
 # rendered entry carries a link block (how the device is matched and named)
 # and per-family addressing (dhcp, forwarding, the static address and
 # gateway, route metrics, and the DHCPv6 delegation), which network.json.j2
-# renders into the interface tree and the daemon writes unit files from. A
-# A hand-authored entry declares translation and delegation metadata while
-# its existing files under mwan/networkd/ still configure the link.
+# renders into the interface tree and the daemon writes unit files from.
+# A hand-authored entry supplies translation policy and DHCPv6 delegation settings.
+# The renderer emits those fields but omits link configuration for that entry.
 mwan_providers:
   - name: att
     iface: "{{ mwan_att_iface }}"
