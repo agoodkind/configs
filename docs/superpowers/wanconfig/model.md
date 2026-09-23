@@ -152,6 +152,14 @@ both same-ASN sessions (iBGP) and different-ASN sessions (eBGP) through that
 shared configuration. Permit several connections to use the
 same ASN. Preserve existing internal router sessions and their separate role.
 
+Configure advertisement policy per prefix and session. The policy can
+advertise a prefix through every eligible session, prefer some advertised
+paths over others, or advertise a backup path only when its configured
+condition becomes true. Provider-specific communities and other supported
+BGP attributes are policy values. No provider, connection, or policy is the
+hardcoded primary. Changing the production policy requires configuration and
+deployment, not a binary change.
+
 Keep the route to a remote tunnel endpoint on its intended underlying ISP
 connection. Never select that tunnel as the route to its own endpoint.
 Specify how route selection and connection weights interact before enabling
