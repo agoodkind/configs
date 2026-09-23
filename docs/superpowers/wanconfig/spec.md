@@ -56,10 +56,31 @@ stays small because this work only publishes and never accepts edits:
 connect, open a session, set values by path, apply. Nothing protocol-shaped
 is written from scratch.
 
+## Language and scope of the extension
+
+Use plain terms in every related ticket, specification, implementation plan,
+and operator message. Explain the behavior before the protocol term. Define
+an unfamiliar provider term on first use, and use the shared model's provider
+terms consistently. Do not require a provider topology choice when the shared
+implementation can support the alternatives through configuration.
+
+MWAN-507 extends this saga with direct and tunneled IPv6 routing. Its shared
+requirements apply to the remaining translation and firewall designs. The
+model specifies the supported arrangements and provider vocabulary.
+
+The pre-move goal is implementation and testbed readiness. Generic provider
+onboarding already passed its testbed exercise. New ISP production exercises
+cannot occur until after October 2026. Record those later results separately.
+
+The completed migration deferred separate IPv4 and IPv6 health decisions.
+That deferral does not apply to MWAN-507: its shared model requires separate
+family eligibility before mixed direct and tunneled paths are enabled.
+
 ## The five pieces
 
-Each has its own specification and its own implementation plan. They are
-listed in dependency order, and each one is deployable on its own.
+Each has its own specification. The completed migrations have historical
+implementation plans; translation and firewall ownership still need their
+executable plans. The pieces are listed in dependency order.
 
 **One, the model and the read-only surface.** Define the model for the whole
 daemon, bind it, and serve it against today's configuration. Changes no
@@ -97,14 +118,6 @@ would come with it. Both need a staged-change workflow the library does not
 provide.
 
 Quality-based steering, meaning selection on latency, jitter, or loss.
-
-Splitting the health verdict per address family. A provider with dead IPv6
-and working IPv4 currently reads healthy and keeps receiving IPv6 traffic.
-Fixing it changes the health state file format and every consumer's
-signature, which would break the behavioral equivalence the migration relies
-on. It has its own ticket and follows this work. Until it lands, steering
-reads the combined verdict, and the probe policy sits on the interface; the
-per-family containers only give the later split a home.
 
 The daemon running its own delegation client, and moving link creation off
 systemd networkd. The second is gated on the first, because splitting link

@@ -41,6 +41,20 @@ needs one.
 One-to-one mapping becomes available on any member in either family, which
 removes both the two-provider limit and the IPv4-only limit in one change.
 
+## Direct and tunneled IPv6 routing
+
+Apply the same translation choices to physical and tunnel interfaces.
+An IPv6 prefix routed to the gateway can use no translation whether routes
+are configured or learned through BGP. BGP exchanges routes between routers;
+it does not allocate a prefix through DHCP. Require a DHCP delegation only
+when the selected translation configuration depends on one.
+
+Test untranslated IPv6 forwarding and return traffic through direct and
+tunnel interfaces while ordinary IPv4 translation continues independently.
+Remove a required IPv6 route and verify that steering excludes the affected
+IPv6 path without disabling working IPv4. Reuse the shared path eligibility
+work instead of adding a separate BGP translation model.
+
 ## Prefixes of differing length
 
 Apply the standard's rule: when the internal and external prefixes differ in
