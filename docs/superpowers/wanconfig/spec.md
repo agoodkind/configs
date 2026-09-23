@@ -64,9 +64,10 @@ an unfamiliar provider term on first use, and use the shared model's provider
 terms consistently. Do not require a provider topology choice when the shared
 implementation can support the alternatives through configuration.
 
-MWAN-507 extends this saga with direct and tunneled IPv6 routing. Its shared
-requirements apply to the remaining translation and firewall designs. The
-model specifies the supported arrangements and provider vocabulary.
+MWAN-507 extends the WAN configuration work with direct and tunneled IPv6
+routing. Its shared requirements apply to the remaining translation and
+firewall designs. The model specifies the supported arrangements and provider
+vocabulary.
 
 "Drop in" means provider-specific facts are configuration, not code. The
 implementation and testbed use representative interface names, addresses,
@@ -77,9 +78,10 @@ prefix authorization, provider credentials, and final endpoints gate only
 production activation. A new tunnel protocol that the implementation does
 not support still requires its own implementation and acceptance work.
 
-The pre-move goal is implementation and testbed readiness. Generic provider
-onboarding already passed its testbed exercise. New ISP production exercises
-cannot occur until after October 2026. Record those later results separately.
+Generic provider onboarding passed its testbed exercise. MWAN-507 requires
+implementation and testbed verification before production activation. New ISP
+production exercises cannot occur until after October 2026. Their results
+require separate acceptance evidence.
 
 The completed migration deferred separate IPv4 and IPv6 health decisions.
 That deferral does not apply to MWAN-507: its shared model requires separate
@@ -87,9 +89,9 @@ family eligibility before mixed direct and tunneled paths are enabled.
 
 ## The five pieces
 
-Each has its own specification. The completed migrations have historical
-implementation plans; translation and firewall ownership still need their
-executable plans. The pieces are listed in dependency order.
+Each has its own specification. Translation has an implementation plan.
+Firewall requires an implementation plan before work begins. The pieces are
+listed in dependency order.
 
 **One, the model and the read-only surface.** Define the model for the whole
 daemon, bind it, and serve it against today's configuration. Changes no

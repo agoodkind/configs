@@ -40,9 +40,9 @@ and the schema's time spans are integers that name their unit. Writing
 configuration over the management API, with `network.json` becoming the
 source of truth, is deferred work (MWAN-440).
 
-## Planned routing extension
+## Routing extension requirements
 
-The BGP speaker remains in TOML under the completed migration above.
+The completed JSON migration leaves the BGP speaker in TOML.
 MWAN-507 must represent new tunnel and routing configuration through the
 shared model. Its implementation plan must assign one authoritative source
 to every setting and define any migration of existing speaker settings.

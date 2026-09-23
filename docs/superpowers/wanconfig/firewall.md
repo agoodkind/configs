@@ -124,8 +124,9 @@ in configuration, and the connection mark save and restore.
 Generate rules from the shared interface and routing configuration. Restrict
 tunnel packets to configured endpoints and protocols. Restrict BGP sessions
 to configured peers.
-BGP exchanges routes between routers; its session needs firewall permission
-separately from the ordinary traffic forwarded through the tunnel.
+BGP exchanges routes between routers. A BGP session requires firewall
+permission separate from the permission for ordinary traffic forwarded through
+the tunnel.
 
 Test a tunnel with configured routes, a tunnel with a BGP session, and a
 physical connection with BGP. Preserve ordinary IPv4 on each underlying ISP.

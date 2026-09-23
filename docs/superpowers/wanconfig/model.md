@@ -84,14 +84,11 @@ the daemon sends them is the surface specification's streaming section.
 
 ## Direct connections and tunnels
 
-This section specifies the planned extension under MWAN-507. It does not
-claim that these capabilities are implemented. The completed provider-set
-work remains the starting point.
+The provider-set migration is complete. MWAN-507 requires direct and tunneled
+IPv6 routing. Those external routing capabilities are not implemented yet.
 
-A tunnel encapsulates packets for transport between routers. BGP, or Border
-Gateway Protocol, exchanges route announcements between routers. A VPS is a
-virtual private server that can run routing software. An autonomous system
-number (ASN) identifies a routing network. A prefix is an address block.
+A tunnel encapsulates packets for transport between routers. The Provider terms
+table defines BGP, VPS, ASN, and prefix.
 
 All three arrangements use the same interface and routing model. Selecting a
 remote provider changes configuration and acceptance tests, not the MWAN
@@ -104,7 +101,7 @@ architecture.
 | A tunnel connects MWAN to a VPS BGP peer. | MWAN exchanges routes with the VPS through the tunnel. | The VPS runs a separate BGP session with its upstream provider and applies policy between the sessions. |
 
 Every arrangement transports ordinary IPv6 packets through the tunnel.
-Arrangements with a local BGP session also transport its protocol packets.
+Arrangements with a local BGP session also transport BGP protocol packets.
 A default route handles destinations without a more specific route and can
 be configured or learned through BGP. A full table supplies the provider's
 available internet destination routes. Receiving one is a separate policy
@@ -114,12 +111,13 @@ Etheric uses the same BGP implementation directly on its physical connection.
 Sonic and Astound first operate as ordinary MWAN providers, like the current
 Webpass and AT&T connections. Their onboarding, IPv4 service, and any native
 IPv6 service do not depend on a tunnel, ASN, portable prefix, or external BGP.
-A later tunnel references one of those working provider connections and adds
-an IPv6 path without replacing the ordinary provider path. Failure of that
-tunnel or its BGP session removes only the dependent IPv6 path. A second
-Sonic circuit has its own connection identity. Neither ISP names nor local or
-remote ASNs must be unique across connections; interface identities and
-allocated routing identifiers remain distinct.
+A later tunnel depends on one of those working provider connections and
+provides an additional IPv6 forwarding path without removing the ordinary
+provider path. Failure of that tunnel or its BGP session removes only the
+dependent IPv6 path. A second Sonic circuit has its own connection identity.
+Configuration permits repeated ISP names and local or remote ASNs across
+connections. Interface identities and allocated routing identifiers must be
+unique.
 
 The first deployment exchanges only IPv6 routes through external BGP. IPv4
 keeps ordinary ISP addressing, routing, translation, and steering. The
@@ -135,12 +133,11 @@ prove the same behavior with different values. A production deploy requires
 the selected upstreams to authorize the configured prefix, but obtaining that
 authorization is not an implementation prerequisite.
 
-WireGuard is excluded from this work. Additional encryption is not required.
+WireGuard is excluded from MWAN-507. Additional encryption is not required.
 The selected tunnel protocol must demonstrate the required throughput;
 unencrypted encapsulation alone does not prove line-rate performance. The
 protocol, provider endpoints, packet-size limit, and throughput target remain
-open until the service requirements are known. Generic support does not mean
-implementing every possible tunnel protocol.
+open until the service requirements are known.
 
 ## Shared routing requirements
 
@@ -163,8 +160,8 @@ BGP attributes are policy values. No provider, connection, or policy is the
 hardcoded primary. Changing the production policy requires configuration and
 deployment, not a binary change.
 
-Keep the route to a remote tunnel endpoint on its intended underlying ISP
-connection. Never select that tunnel as the route to its own endpoint.
+Install the route to the tunnel endpoint's remote address in the underlying
+ISP provider table. The tunnel's routing table must not route its own endpoint.
 Specify how route selection and connection weights interact before enabling
 multiple paths. Only select paths that support the packet's source address
 and destination. Use the translation specification for address changes.
@@ -175,7 +172,7 @@ Loss of an IPv6 BGP session must leave working ordinary IPv4 usable. Loss of
 a physical circuit disables all paths that depend on that circuit. Expose
 the failed dependency and recovery state through the existing served model.
 
-The first release proves the happy path. A new external IPv6 path starts as
+The first release validates path readiness. A new external IPv6 path starts as
 unavailable. It becomes eligible after its configured physical link and
 optional tunnel are ready, its required routes exist, its BGP session is
 established when configured, and one IPv6 forwarding probe succeeds through
@@ -207,16 +204,15 @@ separately. Do not assume identical timing for the two BGP arrangements.
 
 ## Provider terms
 
-Use these meanings when reading service descriptions. An ASN identifies a
-routing network; a prefix identifies an address block. Sharing an ASN does
-not by itself require every connection to advertise the same prefix.
+The following terms have these meanings in service descriptions. Sharing an
+ASN does not by itself require every connection to advertise the same prefix.
 
 | Term | Plain meaning |
 |---|---|
 | ISP circuit | An ISP circuit is a physical internet connection, such as one Sonic service. |
 | Interface | An interface is a named physical or logical network connection on MWAN. |
 | Tunnel | A tunnel encapsulates packets for transport between two endpoints. |
-| Underlay | The underlay consists of the ISP connection and routes that deliver the tunnel's outer packets. |
+| Underlay | The underlay consists of the ISP connection and routes that forward the tunnel's outer packets to the remote endpoint. |
 | Overlay | The overlay is the logical network provided by the tunnel. |
 | Encapsulation | One packet is placed inside another packet for transport. |
 | 6in4 | IPv6 packets are encapsulated inside IPv4 packets. |
@@ -254,7 +250,7 @@ Each row is a current special case and the model element that replaces it.
 | Nothing checks the two prefix lengths against each other | both are modeled, so the check is schema-level |
 | The load balancer is hardcoded in three expressions and cannot select the fallback provider | derived from the member list of the active tier |
 | A provider with no delegation keeps receiving IPv6 and discarding it | the IPv6 container's operational status is down when its instance cannot be realized |
-| The health verdict merges both families | The planned extension evaluates each family and its required link, routing, and translation state separately. |
+| The health verdict merges both families | MWAN-507 evaluates each family and its required link, routing, and translation state separately. |
 | Forwarding is enabled globally before any firewall exists | the `forwarding` leaf, per interface per family |
 | The rollback watchdog's probe list is hand-maintained and omits one provider | the daemon pushes its verdict to the watchdog, which holds no list |
 | Four routing identifiers are hand-assigned per provider | still typed per provider, and checked for uniqueness and collision at load |
