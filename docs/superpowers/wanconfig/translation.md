@@ -1,9 +1,10 @@
 # Four: translation becomes typed instances
 
 Each address family of each provider declares how its traffic is translated,
-or that it is not translated at all. One-to-one mapping works in both
-families. Prefixes of differing length follow the standard's rule instead of
-a hardcoded length.
+or that it is not translated at all. IPv4 static mappings compose with the
+family's default masquerade. IPv6 NPTv6 maps one prefix to another one to one.
+Prefixes of differing length follow the standard's rule instead of a
+hardcoded length.
 
 Depends on the provider set being data, because an instance attaches to a
 member.
@@ -23,29 +24,68 @@ override prefix translation through rule ordering. Two behaviors that cannot
 coexist, with nothing in configuration saying which applies, is the shape of
 a bug waiting for a fourth provider.
 
-IPv4 has the mirror gap. One-to-one mapping exists, but the template loops
-two provider keys by name, so a third key renders nothing and fails silently,
-and there is no IPv6 equivalent at all.
+IPv4 has the mirror gap. Static one-to-one mapping exists as a separate
+provider field, outside any typed per-family translation policy. The firewall
+template combines it with masquerade through rule order.
 
 ## What each family declares
 
-An instance type per family per member: prefix translation, address
-masquerade, one-to-one mapping, or none. No instance means no translation,
-which is the case a member with globally routed addresses needs.
+Each family on each member declares one base mode: native, NPTv6, or NAPT44
+masquerade. Native mode forwards addresses unchanged. NPTv6 translates one
+IPv6 prefix into another. NAPT44 masquerade translates IPv4 sources to the
+address of the outgoing interface.
 
-A member whose type is none routes that family without translation and raises
-no missing-delegation alert. Today the absence of a delegation is always an
-error; under the model it is only an error for a member that declared it
-needs one.
+Static one-to-one mappings are entries within the IPv4 NAPT44 configuration.
+They are not a fourth exclusive mode. A matching static mapping takes
+precedence over masquerade. This composition preserves the current IPv4
+behavior and follows RFC 8512's mapping-table structure. NPTv6 already
+provides stateless one-to-one translation for every address in its configured
+prefixes, so it needs no separate static mapping table.
 
-One-to-one mapping becomes available on any member in either family, which
-removes both the two-provider limit and the IPv4-only limit in one change.
+A member whose mode is native routes that family without translation and
+raises no missing-delegation alert. Today the absence of a delegation is
+always an error; under the model it is only an error for a member that
+declared delegated NPTv6.
+
+IPv4 static mappings become entries in the member's typed NAPT44 policy. The
+implementation selects them through the containing interface and family.
+
+## Direct and tunneled IPv6 routing
+
+Apply the same translation choices to physical and tunnel interfaces.
+An IPv6 prefix routed to the gateway can use no translation whether routes
+are configured or learned through BGP. BGP exchanges routes between routers;
+it does not allocate a prefix through DHCP. Require a DHCP delegation only
+when the selected translation configuration depends on one.
+
+Test untranslated IPv6 forwarding and return traffic through direct and
+tunnel interfaces while ordinary IPv4 translation continues independently.
+Remove a required IPv6 route and verify that steering excludes the affected
+IPv6 path without disabling working IPv4. Reuse the shared path eligibility
+work instead of adding a separate BGP translation model.
 
 ## Prefixes of differing length
 
-Apply the standard's rule: when the internal and external prefixes differ in
-length, extend the shorter with zeroes so they match, then translate. Do not
-force either prefix to a fixed length.
+Apply the complete RFC 6296 algorithm. First extend the shorter prefix with
+zeroes until both prefixes have the same length. Then extend both to `/64`,
+calculate the one's-complement checksum adjustment, replace the prefix, and
+apply the adjustment to the address word the RFC selects. Do not force either
+prefix to a fixed length.
+
+The translation is stateless. An inbound packet reverses the address mapping
+without a prior outbound packet or a connection-tracking entry. The translated
+address keeps the same transport pseudo-header checksum as the internal
+address.
+
+Internal clients can use each other's external addresses. For that case, the
+translator maps the packet's internal source to its external address and maps
+its external destination to the peer's internal address before forwarding the
+packet internally. Both directions use the translator for the entire session.
+
+For prefixes of `/48` or shorter, apply the adjustment to bits 48 through 63.
+For longer prefixes, inspect the four 16-bit interface-identifier words in
+order and use the first word that is not `0xffff`. Drop addresses and subnets
+that RFC 6296 excludes instead of creating another mapping.
 
 The current implementation forces the delegation to a fixed length regardless
 of what was delegated, with no upper bound check, so a provider delegating a
@@ -53,8 +93,10 @@ shorter prefix produces translation onto address space the gateway does not
 hold. Only one of the four delegation probes filters by length, and it is not
 the one that runs first.
 
-Reject rather than silently accept the case the standard cannot resolve, and
-say which member and which pair of prefixes in the error.
+Reject an unsupported prefix pair before programming rules, and report the
+member and both prefixes. Do not call a stateful NETMAP rule NPTv6. A stateful
+rule depends on connection tracking and does not implement RFC 6296's checksum
+adjustment.
 
 ## Translation never matches a firewall mark
 
@@ -98,16 +140,29 @@ than leaving to be discovered.
 
 ## Acceptance
 
-Each of the four types is expressible and produces the rules it should, in
-both families where the type applies.
+Each base mode is expressible and produces the rules it should. IPv4 static
+mappings compose with NAPT44 and take precedence for their configured
+addresses. NPTv6 translates every address in its configured prefixes one to
+one.
 
-For the current provider set the programmed rules are unchanged, since every
-member today is prefix translation on IPv6 and address masquerade with
-one-to-one mapping on IPv4.
+For the current provider set, IPv4 packet behavior is unchanged. IPv6 keeps
+the same connectivity and inbound reachability policy. RFC 6296 checksum
+adjustment can change the non-prefix portion of an external IPv6 address
+compared with the current stateful NETMAP result. Record every externally
+published IPv6 address that needs a configuration or DNS update before a
+production cutover.
 
 A member with a delegation shorter than the internal prefix translates
 correctly under the standard's rule rather than onto space the gateway does
 not hold.
+
+An inbound packet reverses NPTv6 after connection-tracking state is cleared.
+TCP and UDP packets retain valid transport checksums. An address that RFC 6296
+excludes is dropped with the required ICMPv6 error where the kernel supports
+it.
+
+Two internal clients can complete TCP, UDP, and ICMPv6 exchanges through their
+external addresses without forwarding a packet to an ISP interface.
 
 A member whose IPv6 cannot be realized receives no IPv6 traffic, and its
 per-family status reports down.
