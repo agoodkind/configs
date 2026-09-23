@@ -5,7 +5,8 @@
 # isp fields: id, name, ipv6_enabled, routed_ipv6_enabled, routed_ipv6_prefix,
 #   v4_subnet, dynamic_v4, static_v4_block, static_v4_route_to, v4_reservations.
 # DHCPv6/RA uses pd_prefix, pd_len, ia_na, slaac_prefix, and optional ia_na_pool.
-# Both delegated and configured IPv6 routes use mwan_vm_ll as their next hop.
+# The return-route service installs delegated and configured IPv6 routes
+# with mwan_vm_ll as the next-hop address.
 # DHCPv4 uses v4_gateway, v4_pool, and v4_dns.
 #   repo_root is set in the parent play.
 

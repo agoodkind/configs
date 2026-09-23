@@ -181,11 +181,13 @@ suburban_ddns_ipv6_priority_subnets:
 # Each entry carries the full capability schema for its enabled feature set
 # so the shared sim templates (kea-dhcp6, radvd, kea-dhcp4) never reference an
 # undefined key. Capabilities:
-#   ipv6_enabled   : sim runs DHCPv6 and router advertisements with delegation.
+#   ipv6_enabled   : sim runs kea-dhcp6-server and radvd and delegates a
+#                    prefix via DHCPv6-PD.
 #                    false omits pd_prefix, pd_len, ia_na, and slaac_prefix.
 #   routed_ipv6_enabled: sim routes a configured prefix without DHCPv6 or RA.
-#   routed_ipv6_prefix: configured prefix; empty while the capability is disabled.
-#                    Enablement also requires mwan_vm_ll, the existing next hop.
+#   routed_ipv6_prefix: prefix routed without DHCPv6 or RA; empty when
+#                    routed_ipv6_enabled is false. The route requires
+#                    mwan_vm_ll as its next-hop address.
 #   pd_len         : DHCPv6-PD delegation length (prod parity: webpass /56, att
 #                    /60, mbrains /56). NPT uses the first /60 of the delegation.
 #   dynamic_v4     : sim runs kea-dhcp4 (DHCPv4) instead of the VM holding static v4
