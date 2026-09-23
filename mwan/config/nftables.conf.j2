@@ -82,7 +82,7 @@ table inet filter {
         # Allow established/related
         ct state established,related accept
 
-        # NPTv6 marks translated internal hairpin packets with this selector.
+        # Accept NPTv6-translated hairpin packets returning to the internal interface.
         iifname $INTERNAL_IFACE oifname $INTERNAL_IFACE meta priority & 0xffff0000 == 0x4e500000 accept
 
         # Allow forwarding from internal to every provider.
@@ -138,7 +138,7 @@ table ip nat {
 {% endfor %}
 {% endfor %}
 
-        # Unmapped traffic uses the selected interface even with a stale mark.
+        # Masquerade internal IPv4 traffic without a static mapping on each NAPT44 provider.
 {% for provider in providers if provider.ipv4.translation.mode == "ietf-nat:napt44" %}
         oifname "{{ provider.ifname }}" ip saddr $INTERNAL_NET masquerade
 {% endfor %}
@@ -149,14 +149,14 @@ table ip6 nat {
     chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
 
-        # The daemon programs inbound edge-address exceptions here.
+        # The daemon inserts DNAT rules for IPv6 WAN address exceptions here.
     }
 
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
 
-        # The daemon programs outbound edge-address exceptions here.
-        # The eBPF translator performs prefix translation.
+        # The daemon inserts SNAT rules for IPv6 edge addresses here.
+        # The eBPF program translates each configured internal prefix to its provider prefix.
     }
 }
 
@@ -190,7 +190,7 @@ table inet mangle {
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
 
-        # Hairpin traffic uses internal routing before any provider pin.
+        # Clear the provider mark on NPTv6 hairpin packets before policy routing.
         iifname $INTERNAL_IFACE meta priority & 0xffff0000 == 0x4e500000 meta mark set 0 return
 
         # Mark inbound NEW flows by ingress provider, which keeps replies
