@@ -108,16 +108,29 @@ available internet destination routes. Receiving one is a separate policy
 and capacity decision.
 
 Etheric uses the same BGP implementation directly on its physical connection.
-Sonic and Astound use tunnel interfaces. A second Sonic circuit has its own
-connection identity. Neither ISP names nor local or remote ASNs must be unique
-across connections; interface identities and allocated routing identifiers
-remain distinct.
+Sonic and Astound first operate as ordinary MWAN providers, like the current
+Webpass and AT&T connections. Their onboarding, IPv4 service, and any native
+IPv6 service do not depend on a tunnel, ASN, portable prefix, or external BGP.
+A later tunnel references one of those working provider connections and adds
+an IPv6 path without replacing the ordinary provider path. Failure of that
+tunnel or its BGP session removes only the dependent IPv6 path. A second
+Sonic circuit has its own connection identity. Neither ISP names nor local or
+remote ASNs must be unique across connections; interface identities and
+allocated routing identifiers remain distinct.
 
 The first deployment exchanges only IPv6 routes through external BGP. IPv4
 keeps ordinary ISP addressing, routing, translation, and steering. The
 address family of the tunnel's outer packets does not determine the address
 families supported inside it. The BGP session's transport addresses likewise
 do not select the route families it exchanges.
+
+The design does not depend on a known production IPv6 prefix. Configuration
+supplies one or more prefixes when they become available and states which
+sessions may advertise each prefix. The model must not embed a specific
+prefix, prefix length, provider, or ASN. Tests use documentation prefixes and
+prove the same behavior with different values. A production deploy requires
+the selected upstreams to authorize the configured prefix, but obtaining that
+authorization is not an implementation prerequisite.
 
 WireGuard is excluded from this work. Additional encryption is not required.
 The selected tunnel protocol must demonstrate the required throughput;

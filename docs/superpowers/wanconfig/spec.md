@@ -68,6 +68,15 @@ MWAN-507 extends this saga with direct and tunneled IPv6 routing. Its shared
 requirements apply to the remaining translation and firewall designs. The
 model specifies the supported arrangements and provider vocabulary.
 
+"Drop in" means provider-specific facts are configuration, not code. The
+implementation and testbed use representative interface names, addresses,
+prefixes, ASNs, peers, and tunnel endpoints before production values exist.
+Adding a connection that uses a supported link and routing type requires a
+configuration change and deploy, not a binary change. A production circuit,
+prefix authorization, provider credentials, and final endpoints gate only
+production activation. A new tunnel protocol that the implementation does
+not support still requires its own implementation and acceptance work.
+
 The pre-move goal is implementation and testbed readiness. Generic provider
 onboarding already passed its testbed exercise. New ISP production exercises
 cannot occur until after October 2026. Record those later results separately.
