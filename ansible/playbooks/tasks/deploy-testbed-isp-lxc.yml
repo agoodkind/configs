@@ -2,9 +2,11 @@
 # Render and push config files to a single ISP LXC.
 # Called from deploy-testbed.yml with loop_var: isp
 #
-# isp fields: id, name, ipv6_enabled, v4_subnet, dynamic_v4, ia_na,
-#   slaac_prefix, v4_reservations (and v4_gateway/v4_pool/v4_dns/ia_na_pool
-#   when dynamic_v4/ia_na; pd_prefix/pd_len/mwan_vm_ll when ipv6_enabled).
+# isp fields: id, name, ipv6_enabled, routed_ipv6_enabled, routed_ipv6_prefix,
+#   v4_subnet, dynamic_v4, static_v4_block, static_v4_route_to, v4_reservations.
+# DHCPv6/RA uses pd_prefix, pd_len, ia_na, slaac_prefix, and optional ia_na_pool.
+# Both delegated and configured IPv6 routes use mwan_vm_ll as their next hop.
+# DHCPv4 uses v4_gateway, v4_pool, and v4_dns.
 #   repo_root is set in the parent play.
 
 - name: Render ISP nftables config to suburban /tmp
@@ -13,7 +15,7 @@
     dest: "/tmp/isp-{{ isp.id }}-nftables.conf"
     mode: "0644"
 
-- name: Render ISP IPv6 templates to suburban /tmp (IPv6-enabled sims only)
+- name: Render ISP DHCPv6 and RA templates to suburban /tmp
   ansible.builtin.template:
     src: "{{ repo_root }}/testbed/isp-lxc/{{ item.src }}"
     dest: "/tmp/isp-{{ isp.id }}-{{ item.name }}"
@@ -21,8 +23,14 @@
   loop:
     - { src: kea-dhcp6.conf.j2, name: kea-dhcp6.conf }
     - { src: radvd.conf.j2, name: radvd.conf }
-    - { src: pd-route.service.j2, name: pd-route.service }
   when: isp.ipv6_enabled | bool
+
+- name: Render ISP return routes to suburban /tmp
+  ansible.builtin.template:
+    src: "{{ repo_root }}/testbed/isp-lxc/pd-route.service.j2"
+    dest: "/tmp/isp-{{ isp.id }}-pd-route.service"
+    mode: "0644"
+  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool
 
 - name: Render ISP kea-dhcp4 config (dynamic-v4 ISPs only)
   ansible.builtin.template:
@@ -58,7 +66,7 @@
     - { tmp: sysctl-isp.conf, dest: /etc/sysctl.d/99-isp.conf }
   changed_when: true
 
-- name: Push ISP IPv6 configs into LXC (IPv6-enabled sims only)
+- name: Push ISP DHCPv6 and RA configs into LXC
   ansible.builtin.command:
     cmd: >-
       pct push {{ isp.id }}
@@ -67,8 +75,18 @@
   loop:
     - { tmp: kea-dhcp6.conf, dest: /etc/kea/kea-dhcp6.conf }
     - { tmp: radvd.conf, dest: /etc/radvd.conf }
-    - { tmp: pd-route.service, dest: /etc/systemd/system/pd-route.service }
   when: isp.ipv6_enabled | bool
+  changed_when: true
+
+- name: Push ISP return routes into LXC
+  ansible.builtin.command:
+    argv:
+      - pct
+      - push
+      - "{{ isp.id }}"
+      - "/tmp/isp-{{ isp.id }}-pd-route.service"
+      - /etc/systemd/system/pd-route.service
+  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool
   changed_when: true
 
 - name: Push ISP kea-rebind watcher into LXC
@@ -118,13 +136,22 @@
       && systemctl restart nftables kea-rebind'
   changed_when: true
 
-- name: Enable and restart IPv6 ISP services (IPv6-enabled sims only)
+- name: Enable and restart ISP DHCPv6 and RA services
   ansible.builtin.command:
     cmd: >-
       pct exec {{ isp.id }} -- sh -c
-      'systemctl enable --now kea-dhcp6-server radvd pd-route
-      && systemctl restart kea-dhcp6-server radvd pd-route'
+      'systemctl enable --now kea-dhcp6-server radvd
+      && systemctl restart kea-dhcp6-server radvd'
   when: isp.ipv6_enabled | bool
+  changed_when: true
+
+- name: Enable and restart ISP return routes
+  ansible.builtin.command:
+    cmd: >-
+      pct exec {{ isp.id }} -- sh -c
+      'systemctl enable --now pd-route
+      && systemctl restart pd-route'
+  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool
   changed_when: true
 
 - name: Enable and restart kea-dhcp4 (dynamic-v4 ISPs only)

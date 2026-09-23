@@ -313,7 +313,7 @@
       changed_when: false
       tags: ["isp-lxcs"]
 
-    - name: Install IPv6 packages on ISP LXCs (IPv6-enabled sims only)
+    - name: Install DHCPv6 and RA packages on ISP LXCs
       ansible.builtin.command:
         cmd: >-
           pct exec {{ item.id }} -- sh -c

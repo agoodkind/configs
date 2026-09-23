@@ -18,16 +18,21 @@ table ip nat {
     }
 }
 
-{% if isp.ipv6_enabled | bool %}
+{% if isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool %}
 # Both families masquerade only the sim's own downstream sources. Return
 # traffic the sim forwards toward suburban (tunnel and testbed destinations)
 # keeps its original source, so the far end's TCP sees the address it dialed.
 table ip6 nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
+{% if isp.ipv6_enabled | bool %}
         oifname "eth1" ip6 saddr {{ isp.pd_prefix }} masquerade
 {% if isp.slaac_prefix %}
         oifname "eth1" ip6 saddr {{ isp.slaac_prefix }} masquerade
+{% endif %}
+{% endif %}
+{% if isp.routed_ipv6_enabled | bool %}
+        oifname "eth1" ip6 saddr {{ isp.routed_ipv6_prefix }} masquerade
 {% endif %}
     }
 }

@@ -181,11 +181,11 @@ suburban_ddns_ipv6_priority_subnets:
 # Each entry carries the full capability schema for its enabled feature set
 # so the shared sim templates (kea-dhcp6, radvd, kea-dhcp4) never reference an
 # undefined key. Capabilities:
-#   ipv6_enabled   : sim runs kea-dhcp6/radvd/pd-route and delegates a prefix,
-#                    and the nftables template renders an ip6 nat table for it.
-#                    false models an IPv4-only circuit (e.g. astound) and omits
-#                    pd_prefix, pd_len, mwan_vm_ll, ia_na, and slaac_prefix from
-#                    the entry entirely, since nothing renders them.
+#   ipv6_enabled   : sim runs DHCPv6 and router advertisements with delegation.
+#                    false omits pd_prefix, pd_len, ia_na, and slaac_prefix.
+#   routed_ipv6_enabled: sim routes a configured prefix without DHCPv6 or RA.
+#   routed_ipv6_prefix: configured prefix; empty while the capability is disabled.
+#                    Enablement also requires mwan_vm_ll, the existing next hop.
 #   pd_len         : DHCPv6-PD delegation length (prod parity: webpass /56, att
 #                    /60, mbrains /56). NPT uses the first /60 of the delegation.
 #   dynamic_v4     : sim runs kea-dhcp4 (DHCPv4) instead of the VM holding static v4
@@ -209,6 +209,8 @@ testbed_isp_lxcs:
     # so the sim resolves the mapped addresses on eth0 and routes no block;
     # v4_subnet is that /29, which the sim masquerades out.
     ipv6_enabled: true
+    routed_ipv6_enabled: false
+    routed_ipv6_prefix: ""
     pd_prefix: "3d06:bad:b01:2200::/56"
     pd_len: 56
     v4_subnet: "10.241.204.0/29"
@@ -222,6 +224,8 @@ testbed_isp_lxcs:
   - id: "{{ service_mapping.isp_att_suburban.vmid }}"
     name: att
     ipv6_enabled: true
+    routed_ipv6_enabled: false
+    routed_ipv6_prefix: ""
     pd_prefix: "3d06:bad:b01:2300::/60"
     pd_len: 60
     v4_subnet: "10.240.205.0/24"
@@ -242,6 +246,8 @@ testbed_isp_lxcs:
   - id: "{{ service_mapping.isp_mbrains_suburban.vmid }}"
     name: mbrains
     ipv6_enabled: true
+    routed_ipv6_enabled: false
+    routed_ipv6_prefix: ""
     pd_prefix: "3d06:bad:b01:2400::/56"
     pd_len: 56
     v4_subnet: "10.240.206.0/24"
@@ -265,6 +271,8 @@ testbed_isp_lxcs:
     # a MAC reservation, no IPv6 delegation, no routed static block, and no
     # SLAAC.
     ipv6_enabled: false
+    routed_ipv6_enabled: false
+    routed_ipv6_prefix: ""
     v4_subnet: "10.240.207.0/24"
     dynamic_v4: true
     v4_gateway: "10.240.207.1"
