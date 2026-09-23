@@ -178,7 +178,7 @@ suburban_ddns_ipv6_priority_subnets:
 
 # Testbed-only: ISP LXCs simulating WANs. Consumed by deploy-testbed.yml
 # to provision the per-WAN LXCs on suburban. No production equivalent.
-# Each entry carries the full capability schema for its enabled feature set
+# Each entry includes the full capability schema for its enabled feature set
 # so the shared sim templates (kea-dhcp6, radvd, kea-dhcp4) never reference an
 # undefined key. Capabilities:
 #   ipv6_enabled   : sim runs kea-dhcp6-server and radvd and delegates a
