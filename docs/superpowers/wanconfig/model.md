@@ -26,9 +26,12 @@ holding an `instances/instance` list, each with a `type` drawn from
 identities including `napt44`, `basic-nat44`, `dst-nat`, and `nptv6`. An
 instance carries a `policy`, which for prefix translation holds
 `nptv6-prefixes` as an explicit internal and external pair, and a
-`mapping-table` whose entries may be `static`. Address masquerade, prefix
-translation, one-to-one mapping, and no translation at all become values of
-one field.
+`mapping-table` whose entries may be `static`. The local interface model
+declares native, NPTv6, or NAPT44 as each family's base mode and references
+the applicable RFC 8512 data. IPv4 static mappings are entries within NAPT44,
+not an exclusive mode. NPTv6 itself maps the configured IPv6 prefixes one to
+one. Native mode is explicit because RFC 8512 models NAT instances and has no
+instance type for unchanged forwarding.
 
 **Routing.** RFC 8349 defines control-plane protocols and routing tables,
 which covers the per-provider tables and the learned routes.
@@ -245,8 +248,8 @@ Each row is a current special case and the model element that replaces it.
 | Today | In the model |
 |---|---|
 | IPv4 and IPv6 translation are different code paths in different components | two instances on one interface, types `napt44` and `nptv6` |
-| One-to-one mapping exists only for IPv4, and only for the two providers named in a template | `mapping-table` entries of type `static`, on any interface, either family |
-| No way to express address masquerade, a statically routed prefix, or no translation | the instance `type`; no instance means no translation |
+| IPv4 static mapping is separate from the family's translation type | `mapping-table` entries of type `static` on the interface's NAPT44 instance |
+| No way to express address masquerade, a statically routed prefix, or no translation | the family's explicit base mode: NAPT44, NPTv6, or native |
 | A delegation is forced to a fixed length, and a shorter one is widened onto space the gateway does not hold | both prefixes are explicit leaves, and RFC 6296 defines the rest |
 | Nothing checks the two prefix lengths against each other | both are modeled, so the check is schema-level |
 | The load balancer is hardcoded in three expressions and cannot select the fallback provider | derived from the member list of the active tier |
@@ -258,16 +261,18 @@ Each row is a current special case and the model element that replaces it.
 
 ## Prefixes of differing length
 
-RFC 6296 does not require the internal and external prefixes to match. It
-specifies what to do when they differ: the translation function first ensures
-they are the same length, extending the shorter of the two with zeroes. It
-also defines the translation as stateless and checksum-neutral, which is why
-no per-flow state is kept and why transport checksums need no repair.
+RFC 6296 does not require the internal and external prefixes to match. The
+translation function first extends the shorter prefix with zeroes until both
+prefixes have the same length. It then computes a one's-complement adjustment
+from the two prefixes and applies that adjustment to a selected 16-bit address
+word. This produces a stateless, checksum-neutral mapping. A stateful NETMAP
+rule that only replaces prefix bits does not satisfy this contract.
 
-The current implementation does neither. It forces the delegation to a fixed
-length regardless of what the provider delegated, so a shorter delegation is
-widened onto address space the gateway does not hold. The model carries both
-prefixes explicitly, so the standard's rule can be applied as written.
+The current implementation forces the delegation to a fixed length and uses a
+stateful NAT prefix rule. A shorter delegation is widened onto address space
+the gateway does not have, and the rule does not apply RFC 6296's checksum
+adjustment. The model includes both prefixes explicitly, so the implementation
+can calculate the complete mapping.
 
 ## Toolchain
 
