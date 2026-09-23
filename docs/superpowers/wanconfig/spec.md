@@ -56,10 +56,42 @@ stays small because this work only publishes and never accepts edits:
 connect, open a session, set values by path, apply. Nothing protocol-shaped
 is written from scratch.
 
+## Language and scope of the extension
+
+Use plain terms in every related ticket, specification, implementation plan,
+and operator message. Explain the behavior before the protocol term. Define
+an unfamiliar provider term on first use, and use the shared model's provider
+terms consistently. Do not require a provider topology choice when the shared
+implementation can support the alternatives through configuration.
+
+MWAN-507 extends the WAN configuration work with direct and tunneled IPv6
+routing. Its shared requirements apply to the remaining translation and
+firewall designs. The model specifies the supported arrangements and provider
+vocabulary.
+
+"Drop in" means provider-specific facts are configuration, not code. The
+implementation and testbed use representative interface names, addresses,
+prefixes, ASNs, peers, and tunnel endpoints before production values exist.
+Adding a connection that uses a supported link and routing type requires a
+configuration change and deploy, not a binary change. A production circuit,
+prefix authorization, provider credentials, and final endpoints gate only
+production activation. A new tunnel protocol that the implementation does
+not support still requires its own implementation and acceptance work.
+
+Generic provider onboarding passed its testbed exercise. MWAN-507 requires
+implementation and testbed verification before production activation. New ISP
+production exercises cannot occur until after October 2026. Their results
+require separate acceptance evidence.
+
+The completed migration deferred separate IPv4 and IPv6 health decisions.
+That deferral does not apply to MWAN-507: its shared model requires separate
+family eligibility before mixed direct and tunneled paths are enabled.
+
 ## The five pieces
 
-Each has its own specification and its own implementation plan. They are
-listed in dependency order, and each one is deployable on its own.
+Each has its own specification. Translation has an implementation plan.
+Firewall requires an implementation plan before work begins. The pieces are
+listed in dependency order.
 
 **One, the model and the read-only surface.** Define the model for the whole
 daemon, bind it, and serve it against today's configuration. Changes no
@@ -97,14 +129,6 @@ would come with it. Both need a staged-change workflow the library does not
 provide.
 
 Quality-based steering, meaning selection on latency, jitter, or loss.
-
-Splitting the health verdict per address family. A provider with dead IPv6
-and working IPv4 currently reads healthy and keeps receiving IPv6 traffic.
-Fixing it changes the health state file format and every consumer's
-signature, which would break the behavioral equivalence the migration relies
-on. It has its own ticket and follows this work. Until it lands, steering
-reads the combined verdict, and the probe policy sits on the interface; the
-per-family containers only give the later split a home.
 
 The daemon running its own delegation client, and moving link creation off
 systemd networkd. The second is gated on the first, because splitting link
