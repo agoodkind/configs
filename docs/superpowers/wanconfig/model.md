@@ -178,8 +178,10 @@ optional tunnel are ready, its required routes exist, its BGP session is
 established when configured, and one IPv6 forwarding probe succeeds through
 that path. MWAN may then select the path and apply its advertisement policy.
 Report `starting`, `ready`, or `unavailable` with one plain reason. Detailed
-failure classification and recovery-time optimization can follow without
-changing the configuration model.
+history records every readiness transition, its failed dependency, its
+reason, and its time. Reuse the existing configurable failure and recovery
+thresholds. Additional failure classification and recovery-time optimization
+can follow without changing the configuration model.
 
 A configured route alone does not prove that a remote router can still
 deliver traffic. Test failure detection for configured routes as well as BGP
