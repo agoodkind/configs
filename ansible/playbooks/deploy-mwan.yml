@@ -486,6 +486,21 @@
         - Restart nghttpx-wanconfig
         - Restart mwan-ifmgr@wan
 
+    - name: Create the ifmgr capability override directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/mwan-ifmgr@.service.d
+        state: directory
+        mode: "0755"
+      when: mwan_ifmgr_wan_enabled | bool
+
+    - name: Grant the ifmgr verifier capabilities for NPTv6
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/overrides/mwan-ifmgr-perfmon.conf"
+        dest: /etc/systemd/system/mwan-ifmgr@.service.d/perfmon.conf
+        mode: "0644"
+      when: mwan_ifmgr_wan_enabled | bool
+      notify: Restart mwan-ifmgr@wan
+
     # The install enables its units and starts none, so a unit that is
     # stopped starts here.
     - name: Start the mwan agent and the RESTCONF units
