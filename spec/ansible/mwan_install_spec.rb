@@ -288,7 +288,7 @@ RSpec.describe MwanInstall do
 
   it 'accepts the rendered testbed document through the compatible mwan loader' do
     binary = ENV['MWAN_TRANSLATION_TEST_BINARY']
-    skip 'Set MWAN_TRANSLATION_TEST_BINARY to a compatible mwan executable' unless binary
+    skip 'Set MWAN_TRANSLATION_TEST_BINARY to an mwan executable that accepts typed translation with deploy-gate check-network' unless binary
 
     binary = File.expand_path(binary, AnsibleRender::REPOSITORY_ROOT)
     expect(File.executable?(binary)).to be(true), "mwan executable is missing: #{binary}"
