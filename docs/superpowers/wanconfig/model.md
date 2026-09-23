@@ -172,6 +172,15 @@ Loss of an IPv6 BGP session must leave working ordinary IPv4 usable. Loss of
 a physical circuit disables all paths that depend on that circuit. Expose
 the failed dependency and recovery state through the existing served model.
 
+The first release proves the happy path. A new external IPv6 path starts as
+unavailable. It becomes eligible after its configured physical link and
+optional tunnel are ready, its required routes exist, its BGP session is
+established when configured, and one IPv6 forwarding probe succeeds through
+that path. MWAN may then select the path and apply its advertisement policy.
+Report `starting`, `ready`, or `unavailable` with one plain reason. Detailed
+failure classification and recovery-time optimization can follow without
+changing the configuration model.
+
 A configured route alone does not prove that a remote router can still
 deliver traffic. Test failure detection for configured routes as well as BGP
 withdrawals. Define when a remote VPS stops advertising the home prefix if
