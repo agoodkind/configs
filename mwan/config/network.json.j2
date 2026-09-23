@@ -71,21 +71,8 @@
     "http-urls": provider.health.http_targets
   }
 } %}
-{# A provider that delegates nothing carries no prefix and gets no
-   translation, so the leaf is omitted rather than rendered null, which its
-   ipv6-prefix type would reject. #}
-{% if provider.npt_prefix is defined and provider.npt_prefix %}
-{% set wan = wan | combine({"npt-prefix": provider.npt_prefix}) %}
-{% endif %}
 {% if provider.forced_dscp is defined %}
 {% set wan = wan | combine({"forced-dscp": provider.forced_dscp}) %}
-{% endif %}
-{% if provider.static_mappings %}
-{% set mappings = [] %}
-{% for mapping in provider.static_mappings %}
-{% set _ = mappings.append({"external": mapping.external, "internal": mapping.internal}) %}
-{% endfor %}
-{% set wan = wan | combine({"static-mapping": mappings}) %}
 {% endif %}
 {% set entry = {
   "name": iface_name,
@@ -119,7 +106,17 @@
 {# The static address is typed as one string in inventory, as the unit file
    carries it, and split into the model's address entry here. #}
 {% if provider.ipv4 is defined %}
-{% set ipv4 = {} %}
+{% set translation = {"mode": provider.ipv4.translation.mode} %}
+{% if provider.ipv4.translation.mode == "ietf-nat:napt44" %}
+{% set mappings = [] %}
+{% for mapping in provider.ipv4.translation.static_mappings %}
+{% set _ = mappings.append({"external": mapping.external, "internal": mapping.internal}) %}
+{% endfor %}
+{% if mappings %}
+{% set _ = translation.update({"static-mapping": mappings}) %}
+{% endif %}
+{% endif %}
+{% set ipv4 = {"goodkind-mwan-steering:translation": translation} %}
 {% for key, node in ipv4_leaves if provider.ipv4[key] is defined %}
 {% set _ = ipv4.update({node: provider.ipv4[key]}) %}
 {% endfor %}
@@ -132,7 +129,15 @@
 {# A delegation leaf whose inventory value is empty is omitted: the testbed
    types no DUID, and the duid pattern rejects an empty string. #}
 {% if provider.ipv6 is defined %}
-{% set ipv6 = {} %}
+{% set translation = {"mode": provider.ipv6.translation.mode} %}
+{% if provider.ipv6.translation.mode == "ietf-nat:nptv6" %}
+{% set nptv6 = {} %}
+{% for key, value in provider.ipv6.translation.nptv6.items() %}
+{% set _ = nptv6.update({key | replace("_", "-"): value}) %}
+{% endfor %}
+{% set _ = translation.update({"nptv6": nptv6}) %}
+{% endif %}
+{% set ipv6 = {"goodkind-mwan-steering:translation": translation} %}
 {% for key, node in ipv6_leaves if provider.ipv6[key] is defined %}
 {% set _ = ipv6.update({node: provider.ipv6[key]}) %}
 {% endfor %}

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'tmpdir'
 require 'yaml'
 require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
@@ -283,6 +284,32 @@ RSpec.describe MwanInstall do
         '{{ mwan_schema_remote.path }}'
       ]
     )
+  end
+
+  it 'accepts the rendered testbed document through the compatible mwan loader' do
+    binary = ENV['MWAN_TRANSLATION_TEST_BINARY']
+    skip 'Set MWAN_TRANSLATION_TEST_BINARY to a compatible mwan executable' unless binary
+
+    binary = File.expand_path(binary, AnsibleRender::REPOSITORY_ROOT)
+    expect(File.executable?(binary)).to be(true), "mwan executable is missing: #{binary}"
+    Dir.mktmpdir('mwan-translation-contract') do |directory|
+      network = File.join(directory, 'network.json')
+      schema = File.join(directory, 'schema')
+      Dir.mkdir(schema)
+      AnsibleRender.render(
+        inventory: 'localhost,', playbook: 'render_mwan_network.yml',
+        extra_vars: { 'repository_root' => AnsibleRender::REPOSITORY_ROOT, 'network_output' => network }
+      )
+      commands = [
+        [binary, 'install', '--print-schema', schema],
+        [binary, 'deploy-gate', 'check-network', network, schema]
+      ]
+      commands.each do |command|
+        result = CommandRunner.run({}, command, chdir: AnsibleRender::REPOSITORY_ROOT, timeout_seconds: 60)
+        expect(result.timed_out).to be(false), "#{command.join(' ')} timed out\n#{result.output}"
+        expect(result.exit_status.success?).to be(true), "#{command.join(' ')} failed\n#{result.output}"
+      end
+    end
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|

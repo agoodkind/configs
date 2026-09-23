@@ -182,20 +182,33 @@ mwan_providers:
     # Hand-authored as in production, so the testbed exercises the same
     # exemption; its two direct-link unit files stay under mwan/networkd/testbed/.
     link_files: hand-authored
+    ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings:
+          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
+          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3" }
+          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4" }
+          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5" }
+          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6" }
+    ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "3d06:bad:b01:2300::/60"
+      dhcp: true
+      delegation:
+        hint: "::/60"
+        use_delegated_prefix: true
+        without_ra: solicit
     table: 100
     mark: 1
     mark_prio: 100
     from_prio: 55
     tier: 0
     weight: 1
-    npt_prefix: "3d06:bad:b01:2300::/60"
-    v4_source: ""
-    static_mappings:
-      - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
-      - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3" }
-      - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4" }
-      - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5" }
-      - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6" }
     health:
       enabled: true
       ping_count: 3
@@ -214,6 +227,14 @@ mwan_providers:
     link:
       match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
     ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings:
+          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
+          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }
+          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.204.4" }
+          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.204.5" }
+          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.204.6" }
       forwarding: true
       dhcp: false
       address: "{{ mwan_webpass_ipv4 }}"
@@ -222,6 +243,12 @@ mwan_providers:
     # The simulated ISP checks no DUID, so the delegation carries only the
     # hint; a DUID typed here renders only when the value is non-empty.
     ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "3d06:bad:b01:2200::/60"
       forwarding: true
       dhcp: true
       accept_ra: true
@@ -233,13 +260,6 @@ mwan_providers:
     from_prio: 56
     tier: 0
     weight: 1
-    npt_prefix: "3d06:bad:b01:2200::/60"
-    static_mappings:
-      - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
-      - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }
-      - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.204.4" }
-      - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.204.5" }
-      - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.204.6" }
     health:
       enabled: true
       ping_count: 3
@@ -258,6 +278,9 @@ mwan_providers:
     link:
       match: { hardware_address: "{{ mwan_mbrains_mac | lower }}" }
     ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings: []
       forwarding: true
       dhcp: true
       route_metric: 5000
@@ -265,6 +288,12 @@ mwan_providers:
     # renders DUIDType and omits the DUIDRawData line; networkd applies the
     # same default for an absent key and for an empty assignment.
     ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "3d06:bad:b01:2400::/60"
       forwarding: true
       dhcp: true
       accept_ra: true
@@ -282,9 +311,7 @@ mwan_providers:
     from_prio: 57
     tier: 1
     weight: 1
-    npt_prefix: "3d06:bad:b01:2400::/60"
-    v4_source: ""
-    static_mappings: []
+
     health:
       enabled: true
       ping_count: 5

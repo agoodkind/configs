@@ -1,0 +1,16 @@
+---
+- name: Render the real testbed network document
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  vars_files:
+    - "{{ repository_root }}/ansible/inventory/group_vars/all/vars.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/all/service_mapping.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/mwan_suburban_servers.yml"
+  tasks:
+    - name: Render the MWAN network configuration
+      ansible.builtin.template:
+        src: "{{ repository_root }}/mwan/config/network.json.j2"
+        dest: "{{ network_output }}"
+        mode: "0600"
