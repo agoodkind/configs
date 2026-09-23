@@ -146,7 +146,7 @@
   when: isp.ipv6_enabled | bool
   changed_when: true
 
-- name: Read DHCPv6 and RA service states when delegation is disabled
+- name: Read DHCPv6 and RA service states
   ansible.builtin.command:
     argv:
       - pct
@@ -164,7 +164,7 @@
   register: isp_ipv6_service_states
   changed_when: false
 
-- name: Stop DHCPv6 and RA services when delegation is disabled
+- name: Stop and disable DHCPv6 and RA services
   ansible.builtin.command:
     argv:
       - pct
