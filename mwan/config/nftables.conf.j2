@@ -27,7 +27,6 @@
 {% endif %}
 {% endfor %}
 {% set wan_ifnames = providers | map(attribute='ifname') | join('", "') %}
-{% set lowest_tier = providers | map(attribute='tier') | min %}
 {% set pin_mark = (providers | selectattr('name', 'equalto', mwan_pin_provider) | first).mark %}
 flush ruleset
 
@@ -83,6 +82,9 @@ table inet filter {
         # Allow established/related
         ct state established,related accept
 
+        # NPTv6 marks translated internal hairpin packets with this selector.
+        iifname $INTERNAL_IFACE oifname $INTERNAL_IFACE meta priority & 0xffff0000 == 0x4e500000 accept
+
         # Allow forwarding from internal to every provider.
         iifname $INTERNAL_IFACE oifname { "{{ wan_ifnames }}" } accept
 
@@ -117,8 +119,8 @@ table ip nat {
         # OPNsense (and downstream) can receive inbound traffic. Every rule
         # matches on the incoming interface, which is what keeps these separate
         # from the outbound rules below.
-{% for provider in providers %}
-{% for mapping in provider.static_mappings %}
+{% for provider in providers if provider.ipv4.translation.mode == "ietf-nat:napt44" %}
+{% for mapping in provider.ipv4.translation.static_mappings %}
         iifname "{{ provider.ifname }}" ip daddr {{ mapping.external }} dnat to {{ mapping.internal }}
 {% endfor %}
 {% endfor %}
@@ -130,26 +132,15 @@ table ip nat {
         # 1:1 NAT for static IPs, per provider. These come first, so a host
         # with a mapped address keeps its own external address rather than
         # falling into the masquerade below.
-{% for provider in providers %}
-{% for mapping in provider.static_mappings %}
+{% for provider in providers if provider.ipv4.translation.mode == "ietf-nat:napt44" %}
+{% for mapping in provider.ipv4.translation.static_mappings %}
         oifname "{{ provider.ifname }}" ip saddr {{ mapping.internal }} snat to {{ mapping.external }}
 {% endfor %}
 {% endfor %}
 
-        # Default SNAT for other LAN traffic, selected by the provider's mark.
-{% for provider in providers %}
-        oifname "{{ provider.ifname }}" meta mark {{ provider.mark }} ip saddr $INTERNAL_NET masquerade
-{% endfor %}
-
-        # Emergency fallback SNAT for a provider outside the preferred tier:
-        # traffic routed out of it with any mark, or none, still translates.
-        # This renders only for a provider whose tier is above the lowest
-        # tier in mwan_providers, so promoting a reserve provider to the
-        # lowest tier removes its catch-all rule on the next deploy.
-{% for provider in providers %}
-{% if provider.tier > lowest_tier %}
+        # Unmapped traffic uses the selected interface even with a stale mark.
+{% for provider in providers if provider.ipv4.translation.mode == "ietf-nat:napt44" %}
         oifname "{{ provider.ifname }}" ip saddr $INTERNAL_NET masquerade
-{% endif %}
 {% endfor %}
     }
 }
@@ -158,19 +149,14 @@ table ip6 nat {
     chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
 
-        # Inbound NPT is programmed at runtime by the ifmgr npt module.
+        # The daemon programs inbound edge-address exceptions here.
     }
 
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
 
-        # Outbound NPT is programmed at runtime by the ifmgr npt module: the
-        # internal /60 onto each provider's delegated /60.
-        #
-        # NOTE:
-        # Avoid NAT66 on a provider link. IPv6 uses the same /60 NPT mechanism
-        # on every provider. A static masquerade here would override the NPT
-        # rules through rule order.
+        # The daemon programs outbound edge-address exceptions here.
+        # The eBPF translator performs prefix translation.
     }
 }
 
@@ -203,6 +189,9 @@ table inet mangle {
 
     chain prerouting {
         type filter hook prerouting priority mangle; policy accept;
+
+        # Hairpin traffic uses internal routing before any provider pin.
+        iifname $INTERNAL_IFACE meta priority & 0xffff0000 == 0x4e500000 meta mark set 0 return
 
         # Mark inbound NEW flows by ingress provider, which keeps replies
         # symmetric through policy routing.

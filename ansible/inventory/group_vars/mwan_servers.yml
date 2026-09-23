@@ -308,7 +308,8 @@ mwan_pinned_v6_fqdns:
 # and per-family addressing (dhcp, forwarding, the static address and
 # gateway, route metrics, and the DHCPv6 delegation), which network.json.j2
 # renders into the interface tree and the daemon writes unit files from. A
-# hand-authored entry carries neither, and its files stay under mwan/networkd/.
+# A hand-authored entry declares translation and delegation metadata while
+# its existing files under mwan/networkd/ still configure the link.
 mwan_providers:
   - name: att
     iface: "{{ mwan_att_iface }}"
@@ -318,23 +319,36 @@ mwan_providers:
     # own. The entry names the interface the daemon steers and says nothing
     # about how that interface comes up.
     link_files: hand-authored
+    ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings:
+          - { internal: "10.250.250.2", external: "104.57.226.193" }
+          - { internal: "10.250.250.3", external: "104.57.226.194" }
+          - { internal: "10.250.250.4", external: "104.57.226.195" }
+          - { internal: "10.250.250.5", external: "104.57.226.196" }
+          - { internal: "10.250.250.6", external: "104.57.226.197" }
+    ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "2600:1700:2f71:c80::/60"
+      dhcp: true
+      delegation:
+        hint: "::/60"
+        use_delegated_prefix: true
+        without_ra: solicit
     table: 100
     mark: 1
     mark_prio: 100
     from_prio: 55
     tier: 0
     weight: 1
-    npt_prefix: "2600:1700:2f71:c80::/60"
-    v4_source: ""
     # CS1. A new flow from the internal link carrying this DSCP value leaves
     # through this provider instead of being balanced.
     forced_dscp: 8
-    static_mappings:
-      - { internal: "10.250.250.2", external: "104.57.226.193" }
-      - { internal: "10.250.250.3", external: "104.57.226.194" }
-      - { internal: "10.250.250.4", external: "104.57.226.195" }
-      - { internal: "10.250.250.5", external: "104.57.226.196" }
-      - { internal: "10.250.250.6", external: "104.57.226.197" }
     health:
       enabled: true
       ping_count: 3
@@ -364,6 +378,14 @@ mwan_providers:
     # Static IPv4 inside the Webpass block; the default route carries a
     # metric so it does not contend with the management link.
     ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings:
+          - { internal: "10.250.250.2", external: "136.25.91.242" }
+          - { internal: "10.250.250.3", external: "136.25.91.243" }
+          - { internal: "10.250.250.4", external: "136.25.91.244" }
+          - { internal: "10.250.250.5", external: "136.25.91.245" }
+          - { internal: "10.250.250.6", external: "136.25.91.246" }
       forwarding: true
       dhcp: false
       address: "{{ mwan_webpass_ipv4 }}"
@@ -372,6 +394,12 @@ mwan_providers:
     # DHCPv6 for prefix delegation under the Webpass DUID; changing that
     # identity breaks service.
     ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "2604:5500:c271:be00::/60"
       forwarding: true
       dhcp: true
       accept_ra: true
@@ -385,13 +413,6 @@ mwan_providers:
     from_prio: 56
     tier: 0
     weight: 1
-    npt_prefix: "2604:5500:c271:be00::/60"
-    static_mappings:
-      - { internal: "10.250.250.2", external: "136.25.91.242" }
-      - { internal: "10.250.250.3", external: "136.25.91.243" }
-      - { internal: "10.250.250.4", external: "136.25.91.244" }
-      - { internal: "10.250.250.5", external: "136.25.91.245" }
-      - { internal: "10.250.250.6", external: "136.25.91.246" }
     health:
       enabled: true
       ping_count: 3
@@ -420,10 +441,19 @@ mwan_providers:
     # Both families lease, and both default routes carry a metric above the
     # primary providers' so this link only carries traffic when steered onto.
     ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings: []
       forwarding: true
       dhcp: true
       route_metric: 5000
     ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "2607:f598:d3e8:4500::/60"
       forwarding: true
       dhcp: true
       accept_ra: true
@@ -441,9 +471,7 @@ mwan_providers:
     from_prio: 57
     tier: 1
     weight: 1
-    npt_prefix: "2607:f598:d3e8:4500::/60"
-    v4_source: ""
-    static_mappings: []
+
     health:
       enabled: true
       ping_count: 5
