@@ -27,15 +27,14 @@ RSpec.describe 'ISP simulator IPv6 routing' do
   end
 
   it 'renders a configured return route and IPv6 egress without delegation or router advertisements' do
-    provider = providers.find { |entry| entry.fetch('name') == 'webpass' }.reject do |key, _|
-      %w[pd_prefix pd_len ia_na slaac_prefix].include?(key)
-    end.merge('ipv6_enabled' => false, 'routed_ipv6_enabled' => true, 'routed_ipv6_prefix' => '2001:db8:340::/48')
+    provider = providers.find { |entry| entry.fetch('name') == 'routed' }
     result = render_simulator(provider)
     rendered = result.fetch('renders').first
-    route = "ExecStart=/sbin/ip -6 route replace 2001:db8:340::/48 via #{provider.fetch('mwan_vm_ll')} dev eth0"
+    prefix = provider.fetch('routed_ipv6_prefix')
+    route = "ExecStart=/sbin/ip -6 route replace #{prefix} via #{provider.fetch('mwan_vm_ll')} dev eth0"
 
     expect(rendered.fetch('routes').lines.grep(/^ExecStart=/).map(&:strip)).to eq([route])
-    expect(rendered.fetch('firewall')).to include('oifname "eth1" ip6 saddr 2001:db8:340::/48 masquerade')
+    expect(rendered.fetch('firewall')).to include("oifname \"eth1\" ip6 saddr #{prefix} masquerade")
     expect(rendered.fetch('firewall')).to include("oifname \"eth1\" ip saddr #{provider.fetch('v4_subnet')} masquerade")
     %w[Render Push].each do |verb|
       name = result.fetch('conditions').keys.find { |key| key.start_with?("#{verb} ISP return routes") }

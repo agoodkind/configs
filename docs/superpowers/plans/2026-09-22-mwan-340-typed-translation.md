@@ -432,17 +432,19 @@ installs the binary, and restarts the daemon in that order.
 
 **Files:**
 
-- Modify `ansible/inventory/group_vars/suburban_servers.yml` only for a routed
-  IPv6 simulator capability that is independent of DHCP prefix delegation.
-- Modify `testbed/isp-lxc/` templates only where the simulator needs that
-  routed prefix and packet observation point.
-- Modify `ansible/playbooks/deploy-testbed.yml` only for those simulator
-  inputs.
+- Add a separate routed IPv6 simulator in the service mapping and suburban
+  OpenTofu resources. Give it its own bridge, LXC, and MWAN WAN interface.
+- Add the simulator and a native IPv6 provider to the testbed inventory.
+  Preserve the Webpass, AT&T, Monkeybrains, and Astound simulator policies.
+- Use the existing routed-prefix simulator templates and check the rendered
+  return route and firewall through the public Configs test boundary.
 
-Deploy the ISP simulators before the gateway when the new routed-prefix case
-requires them:
+Provision the new bridge, LXC, and VM interface before configuring the new
+simulator and gateway:
 
 ```bash
+./configsctl tofu plan
+./configsctl tofu apply
 ./configsctl deploy deploy-testbed --limit suburban
 ./configsctl deploy deploy-mwan --limit mwan_suburban_servers
 ```
