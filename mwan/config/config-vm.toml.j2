@@ -59,6 +59,8 @@ url = "https://{% if ':' in opnsense_addr and not opnsense_addr.startswith('[') 
 api_key = "{{ vault_suburban_testbed_opnsense_api_key if mwan_environment == 'testbed' else vault_prod_opnsense_api_key }}"
 api_secret = "{{ vault_suburban_testbed_opnsense_api_secret if mwan_environment == 'testbed' else vault_prod_opnsense_api_secret }}"
 insecure = true
+nptv6_hairpin_alias = "{{ mwan_nptv6_hairpin_alias }}"
+nptv6_hairpin_ca_file = "{{ mwan_nptv6_hairpin_ca_file }}"
 gateway_names = {{ opnsense_gateway_names | to_json }}
 
 [opnsense.bgp]

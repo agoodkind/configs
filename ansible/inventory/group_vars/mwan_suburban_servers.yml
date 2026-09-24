@@ -123,6 +123,8 @@ mwan_internal_net_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
 mwan_opnsense_internal_v4: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_mwanbr_edge_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
+mwan_nptv6_hairpin_alias: "mwan_npt_hairpin_sources"
+mwan_nptv6_hairpin_ca_file: "/etc/mwan/opnsense-testbed.pem"
 
 # OPNsense addresses (testbed OPNsense).
 mwan_opnsense_edge_ipv6: "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
