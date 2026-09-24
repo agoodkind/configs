@@ -455,6 +455,12 @@ Capture packets at the ISP simulator ingress. Traffic beyond the simulator
 does not prove which source address MWAN produced because the simulator also
 masquerades traffic.
 
+Run each load-balancing request as a separate `qm guest exec` call to the
+testbed router. Record packets on both simulator ingress links for the entire
+sample. Require one completed command and one distinct captured flow per
+request. Rerun that family's sample when any command result or capture is
+missing.
+
 Record these acceptance results:
 
 1. Current providers retain IPv6 NPTv6, IPv4 masquerade, and static mapping
@@ -473,6 +479,11 @@ Record these acceptance results:
    translator with its configured service capability set.
 10. Two internal testbed clients use each other's external NPTv6 addresses
     without sending packets to an ISP simulator.
+11. With AT&T and Webpass eligible in the same tier, send 100 fresh unmarked
+    downstream flows per family. Capture each selected provider at the gateway
+    before simulator masquerade and confirm every reply. Each provider must
+    receive 35 to 65 of 100 flows when weights are equal. Verify the
+    distribution by comparing captured counts against the configured weights.
 
 The testbed result can complete implementation acceptance. Record production
 new-circuit exercises as deferred until after October 2026. Do not mark an
@@ -492,6 +503,9 @@ MWAN-340 is ready to close after all of these facts are recorded:
   stateless return traffic, fallback translation, checksum validity, and
   per-family exclusion;
 - internal captures prove RFC 6296 hairpin translation in both directions;
+- testbed captures prove that the gateway assigns fresh IPv4 and IPv6 flows
+  to both eligible providers at the configured weights and each flow receives
+  a reply;
 - the installed service proves the deployed capability set can load and attach
   the embedded translator;
 - current providers retain connectivity and inbound policy, with any changed
