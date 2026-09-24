@@ -103,3 +103,26 @@ tack_ledger_ca_host: "{{ service_mapping.tack.hostname }}"
 tack_store_seed_cluster_file: true
 tack_store_legacy_node_present: false
 tack_store_redundancy_mode: double
+
+# OpenSearch production uses one stable TLS endpoint on the vault hypervisor.
+# The member list remains reusable for the later scale-out release.
+tack_search_members:
+  - tack_search1
+tack_search_urls:
+  - "https://[{{ service_mapping.vault_hypervisor.ipv6 }}]:9200"
+tack_search_endpoint: "https://[{{ service_mapping.vault_hypervisor.ipv6 }}]:9200"
+tack_search_discovery_seed_hosts: "{{ tack_search_members | join(',') }}"
+tack_search_initial_cluster_manager_nodes:
+  - tack_search1
+tack_search_single_node: false
+tack_search_username: "{{ vault_tack_search_username }}"
+tack_search_password: "{{ vault_tack_search_password }}"
+tack_search_ca: "{{ vault_tack_search_ca }}"
+tack_search_heap: "2g"
+tack_search_ca_path: /etc/tack/search-ca.crt
+tack_search_model_id: "amazon/neural-sparse/opensearch-neural-sparse-encoding-doc-v3-gte"
+tack_search_model_version: "1.0.0"
+tack_search_public_enabled: false
+tack_search_shards: 1
+tack_search_routing_shards: 1
+tack_search_replicas: 0

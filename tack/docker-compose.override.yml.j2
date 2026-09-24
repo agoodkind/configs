@@ -8,6 +8,29 @@
 # other ledger name to the owning guest's pinned address, reached on the
 # published node ports.
 services:
+{% if tack_cluster_role == 'search' %}
+  opensearch:
+    image: {{ tack_search_image }}
+    environment:
+      OPENSEARCH_JAVA_OPTS: {{ tack_search_java_opts }}
+      discovery.type: {{ 'single-node' if tack_search_single_node else '' }}
+      discovery.seed_hosts: {{ tack_search_discovery_seed_hosts }}
+      cluster.initial_cluster_manager_nodes: {{ tack_search_initial_cluster_manager_nodes | join(',') }}
+      plugins.ml_commons.only_run_on_ml_node: "true"
+      plugins.ml_commons.ml_task_dispatch_policy: least_load
+      plugins.ml_commons.native_memory_threshold: "95"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:{{ tack_search_data_dir }}
+      - {{ tack_search_ca_path }}:/usr/share/opensearch/config/root-ca.pem:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+{% endif %}
 {% if tack_store_node_present | bool %}
   # The product store on this data guest (TACK-408). Host networking, because
   # the process has to bind the address it announces: the cluster records that
@@ -106,4 +129,9 @@ services:
       - --tserver_flags=flagfile=/home/yugabyte/tserver.flags,certs_dir=/home/yugabyte/certs,use_node_to_node_encryption=true,use_client_to_server_encryption=true,certs_for_client_dir=/home/yugabyte/certs,allow_insecure_connections=false
 {% else %}
       - --tserver_flags=flagfile=/home/yugabyte/tserver.flags
+{% endif %}
+{% if tack_cluster_role == 'search' %}
+
+volumes:
+  opensearch-data:
 {% endif %}

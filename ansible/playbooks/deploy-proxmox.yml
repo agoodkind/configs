@@ -62,6 +62,9 @@
     - name: Configure Proxmox host services
       ansible.builtin.import_tasks: tasks/proxmox-host.yml
 
+    - name: Configure the Tack OpenSearch proxy
+      ansible.builtin.import_tasks: tasks/tack-search-proxy.yml
+
   handlers:
     - name: Restart cloudflared-oob
       ansible.builtin.systemd:
@@ -102,3 +105,11 @@
         state: restarted
         daemon_reload: true
       when: opnsensectl_host_restart_safe | bool
+
+    - name: Restart tack-search-proxy
+      ansible.builtin.systemd:
+        name: tack-search-proxy
+        enabled: true
+        state: restarted
+        daemon_reload: true
+      when: tack_search_proxy_enabled | bool

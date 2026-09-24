@@ -97,3 +97,21 @@ proxmox_slow_storage_scratch_mounts:
     key: mp0
     path: /root/backups
     size_gib: 100
+
+# Stable production OpenSearch endpoint. The proxy configuration remains
+# reusable when later search members are added.
+tack_search_proxy_enabled: true
+tack_search_proxy_bind_ipv6: "{{ service_mapping.vault_hypervisor.ipv6 }}"
+tack_search_proxy_port: 9200
+tack_search_proxy_ca_file: /etc/tack-search-proxy/ca.crt
+tack_search_proxy_cert_file: /etc/tack-search-proxy/server.crt
+tack_search_proxy_key_file: /etc/tack-search-proxy/server.key
+tack_search_proxy_username: "{{ vault_tack_search_username }}"
+tack_search_proxy_password: "{{ vault_tack_search_password }}"
+tack_search_proxy_users_file: "{{ vault_tack_search_proxy_users_file }}"
+tack_search_proxy_ca: "{{ vault_tack_search_proxy_ca }}"
+tack_search_proxy_certificate: "{{ vault_tack_search_proxy_certificate }}"
+tack_search_proxy_private_key: "{{ vault_tack_search_proxy_private_key }}"
+tack_search_proxy_backends:
+  - name: tack_search1
+    url: "https://[{{ service_mapping.tack_search1.ipv6 }}]:9200"

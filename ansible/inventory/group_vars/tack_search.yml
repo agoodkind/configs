@@ -1,0 +1,29 @@
+---
+# Common settings for the OpenSearch guests. Environment groups provide the
+# endpoint, credentials, member list, and single-node formation mode.
+tack_cluster_role: search
+tack_provision_owner: false
+tack_store_node_present: false
+tack_search_image: "opensearchproject/opensearch:3.8.0"
+tack_search_java_opts: "-Xms2g -Xmx2g"
+tack_search_data_dir: /var/lib/opensearch
+tack_search_memory_map_count: 262144
+tack_search_memory: 8192
+tack_search_cores: 2
+tack_search_disk_size: 40
+tack_search_replicas: 0
+tack_search_shards: 1
+tack_search_routing_shards: 1
+tack_search_model_id: "amazon/neural-sparse/opensearch-neural-sparse-encoding-doc-v3-gte"
+tack_search_model_version: "1.0.0"
+tack_search_public_enabled: false
+tack_search_ca_path: /etc/tack/search-ca.crt
+tack_search_client_cert_path: /etc/tack/search-client.crt
+tack_search_client_key_path: /etc/tack/search-client.key
+tack_search_proxy_port: 9200
+tack_search_backend_port: 9200
+tack_search_proxy_allowed_sources:
+  - "{{ service_mapping.tack.ipv6 }}/128"
+  - "{{ service_mapping.tack_app2.ipv6 }}/128"
+  - "{{ service_mapping.tack_qa_suburban.ipv6 }}/128"
+  - "{{ service_mapping.tack_app2_suburban.ipv6 }}/128"
