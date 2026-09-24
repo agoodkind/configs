@@ -455,6 +455,11 @@ Capture packets at the ISP simulator ingress. Traffic beyond the simulator
 does not prove which source address MWAN produced because the simulator also
 masquerades traffic.
 
+Send load-balancing requests serially through the testbed router's QEMU Guest
+Agent. Keep both simulator ingress captures for the full sample and verify
+that every request has a command result. A missing result or an incomplete
+capture invalidates that family's sample; rerun it.
+
 Record these acceptance results:
 
 1. Current providers retain IPv6 NPTv6, IPv4 masquerade, and static mapping
