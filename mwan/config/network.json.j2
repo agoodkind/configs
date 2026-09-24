@@ -141,6 +141,10 @@
 {% for key, node in ipv6_leaves if provider.ipv6[key] is defined %}
 {% set _ = ipv6.update({node: provider.ipv6[key]}) %}
 {% endfor %}
+{% if provider.ipv6.address is defined %}
+{% set address_parts = provider.ipv6.address.split("/") %}
+{% set _ = ipv6.update({"address": [{"ip": address_parts[0], "prefix-length": address_parts[1] | int}]}) %}
+{% endif %}
 {% if provider.ipv6.delegation is defined %}
 {% set delegation = {} %}
 {% for key, node in delegation_leaves if provider.ipv6.delegation[key] is defined and provider.ipv6.delegation[key] != "" %}
