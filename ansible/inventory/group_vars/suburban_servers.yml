@@ -110,6 +110,7 @@ mwan_ifmgr_host_ipv6_denied_ra_ifaces:
   - "vmbr5"
   - "vmbr6"
   - "vmbr7"
+  - "vmbr8"
   - "vmbrtrunk"
 
 # Pinned locally administered MAC for the vmbrtrunk bridge. Without a pin the
@@ -282,6 +283,17 @@ testbed_isp_lxcs:
     v4_dns: "1.1.1.1"
     v4_reservations:
       - { mac: "BC:24:11:A5:70:06", addr: "10.240.207.2" }
+    static_v4_block: ""
+    static_v4_route_to: ""
+  - id: "{{ service_mapping.isp_routed_suburban.vmid }}"
+    name: routed
+    ipv6_enabled: false
+    routed_ipv6_enabled: true
+    routed_ipv6_prefix: "3d06:bad:b01:210::/60"
+    v4_subnet: "10.240.208.0/24"
+    mwan_vm_ll: "fe80::be24:11ff:fea5:7008"
+    dynamic_v4: false
+    v4_reservations: []
     static_v4_block: ""
     static_v4_route_to: ""
 

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'json'
 require 'tmpdir'
 require 'yaml'
 require_relative '../support/ansible_render'
@@ -309,6 +310,24 @@ RSpec.describe MwanInstall do
         expect(result.timed_out).to be(false), "#{command.join(' ')} timed out\n#{result.output}"
         expect(result.exit_status.success?).to be(true), "#{command.join(' ')} failed\n#{result.output}"
       end
+    end
+  end
+
+  it 'renders the routed provider static IPv6 address and valid health target count' do
+    Dir.mktmpdir('mwan-routed-render') do |directory|
+      network = File.join(directory, 'network.json')
+      AnsibleRender.render(
+        inventory: 'localhost,', playbook: 'render_mwan_network.yml',
+        extra_vars: { 'repository_root' => AnsibleRender::REPOSITORY_ROOT, 'network_output' => network }
+      )
+      interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
+      routed = interfaces.find { |entry| entry.fetch('name') == 'enrouted0' }
+      ipv6 = routed.fetch('ietf-ip:ipv6')
+      health = routed.fetch('goodkind-mwan-steering:wan').fetch('health')
+
+      expect(ipv6.fetch('address')).to eq([{ 'ip' => '3d06:bad:b01:260::2', 'prefix-length' => 64 }])
+      expect(health.fetch('success-threshold')).to be <= health.fetch('targets-v4').length
+      expect(health.fetch('success-threshold')).to be <= health.fetch('targets-v6').length
     end
   end
 
