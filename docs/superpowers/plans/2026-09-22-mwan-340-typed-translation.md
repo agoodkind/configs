@@ -419,8 +419,8 @@ packet tests pass.
 Merge the reviewed MWAN change, wait for its signed release, and verify the
 downloaded archives and attestations. Pin the testbed release in
 `ansible/inventory/group_vars/mwan_testbed_all.yml`. Keep the production pin
-unchanged until testbed acceptance. Pin production to the accepted release in
-a separate change before the production deploy.
+unchanged until testbed acceptance. Before the production deploy, pin
+production to the accepted release in a separate change.
 
 Do not deploy a new document with an older loader or a new loader with the old
 document shape. `deploy-mwan.yml` already copies the rendered document to the
