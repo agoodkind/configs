@@ -502,8 +502,9 @@ MWAN-340 is ready to close after all of these facts are recorded:
   stateless return traffic, fallback translation, checksum validity, and
   per-family exclusion;
 - internal captures prove RFC 6296 hairpin translation in both directions;
-- testbed captures prove that fresh IPv4 and IPv6 flows use both eligible
-  providers at the configured weights and receive replies;
+- testbed captures prove that the gateway assigns fresh IPv4 and IPv6 flows
+  to both eligible providers at the configured weights and each flow receives
+  a reply;
 - the installed service proves the deployed capability set can load and attach
   the embedded translator;
 - current providers retain connectivity and inbound policy, with any changed
