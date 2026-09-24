@@ -489,6 +489,8 @@ resource "proxmox_virtual_environment_container" "isp_routed_suburban" {
     }
   }
 
+  # deploy-testbed.yml sets nesting through pct because the API token cannot
+  # change feature flags on a privileged container.
   network_interface {
     name        = "eth0"
     bridge      = proxmox_network_linux_bridge.isp_routed_suburban.name
