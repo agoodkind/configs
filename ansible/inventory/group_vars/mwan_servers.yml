@@ -152,6 +152,9 @@ mwan_mwanbr_edge_ipv6: "3d06:bad:b01:fe::3"
 # Internal prefix for NPT (LAN -> PD)
 # Keep LAN /64 on the bridge, but NPT the broader /60
 mwan_internal_prefix: "3d06:bad:b01::/60"
+mwan_nptv6_hairpin_alias: ""
+mwan_nptv6_hairpin_ca_file: ""
+mwan_nptv6_hairpin_router_host: ""
 
 
 # OPNsense IPv6 address on the MWAN link (DNAT target for "hairpinned" WAN /128 interface addresses).

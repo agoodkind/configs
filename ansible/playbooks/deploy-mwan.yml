@@ -363,6 +363,25 @@
       no_log: true
       notify: Restart mwan-ifmgr@wan
 
+    - name: Read the testbed OPNsense web certificate
+      ansible.builtin.command:
+        cmd: openssl x509 -in /usr/local/etc/lighttpd_webgui/cert.pem -outform PEM
+      delegate_to: "{{ mwan_nptv6_hairpin_router_host }}"
+      become: true
+      register: mwan_nptv6_hairpin_certificate
+      changed_when: false
+      when: mwan_environment == 'testbed'
+
+    - name: Trust the testbed OPNsense API certificate for hairpin alias updates
+      ansible.builtin.copy:
+        content: "{{ mwan_nptv6_hairpin_certificate.stdout }}\n"
+        dest: /etc/mwan/opnsense-testbed.pem
+        owner: root
+        group: root
+        mode: "0644"
+      when: mwan_environment == 'testbed'
+      notify: Restart mwan-ifmgr@wan
+
     - name: Deploy MWAN runtime config
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/config-vm.toml.j2"
