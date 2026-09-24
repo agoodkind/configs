@@ -146,6 +146,41 @@
   when: isp.ipv6_enabled | bool
   changed_when: true
 
+- name: Read DHCPv6 and RA service states
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ isp.id }}"
+      - --
+      - systemctl
+      - show
+      - "{{ item }}"
+      - --property=LoadState,ActiveState,UnitFileState
+      - --no-pager
+  loop:
+    - kea-dhcp6-server.service
+    - radvd.service
+  register: isp_ipv6_service_states
+  changed_when: false
+
+- name: Stop and disable DHCPv6 and RA services
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ isp.id }}"
+      - --
+      - systemctl
+      - disable
+      - --now
+      - "{{ item.item }}"
+  loop: >-
+    {{ isp_ipv6_service_states.results
+       | selectattr('stdout', 'search', 'LoadState=loaded') | list }}
+  when: not isp.ipv6_enabled | bool
+  changed_when: "'ActiveState=active' in item.stdout or 'UnitFileState=enabled' in item.stdout"
+
 - name: Enable and restart ISP return routes
   ansible.builtin.command:
     cmd: >-
