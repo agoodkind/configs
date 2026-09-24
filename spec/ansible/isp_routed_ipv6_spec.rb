@@ -46,7 +46,7 @@ RSpec.describe 'ISP simulator IPv6 routing' do
     expect(result.fetch('conditions').fetch('Enable and restart ISP DHCPv6 and RA services')).to be(false)
   end
 
-  it 'renders each configured delegated, routed, and IPv4-only simulator' do
+  it 'selects return routes, DHCPv6 services, and firewall rules by simulator mode' do
     providers.each do |provider|
       result = render_simulator(provider)
       rendered = result.fetch('renders').first
