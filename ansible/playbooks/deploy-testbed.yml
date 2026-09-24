@@ -241,7 +241,9 @@
       notify: Note OPNsense VM args reboot required
       tags: ["args"]
 
-    # Preserve existing Kea configuration during unattended package installs.
+    # Kea installs default /etc/kea/*.conf files. A prior deploy may leave a
+    # rendered file at that path. --force-confold prevents an interactive prompt
+    # that would block unattended installation.
     - name: Install packages on ISP LXCs
       ansible.builtin.command:
         cmd: >-

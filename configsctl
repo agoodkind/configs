@@ -5,6 +5,6 @@ set -euo pipefail
 readonly CONFIGSCTL_PACKAGE="goodkind.io/configsctl/cmd/configsctl"
 readonly CONFIGSCTL_VERSION="v0.0.0-20260924070550-2fbe636a2b9b"
 
-# Run from the repository root so configsctl can resolve inventory and playbooks.
+# configsctl reads inventory and playbook paths relative to its working directory.
 cd "$(dirname "${BASH_SOURCE[0]}")"
 exec go run "${CONFIGSCTL_PACKAGE}@${CONFIGSCTL_VERSION}" "$@"
