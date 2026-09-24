@@ -458,8 +458,8 @@ masquerades traffic.
 Run each load-balancing request as a separate `qm guest exec` call to the
 testbed router. Record packets on both simulator ingress links for the entire
 sample. Require one completed command and one distinct captured flow per
-request. If any command result or capture is missing, rerun that family's
-sample.
+request. Rerun that family's sample when any command result or capture is
+missing.
 
 Record these acceptance results:
 
