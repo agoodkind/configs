@@ -189,8 +189,8 @@ suburban_ddns_ipv6_priority_subnets:
 #   routed_ipv6_prefix: prefix routed without DHCPv6 or RA; empty when
 #                    routed_ipv6_enabled is false. The route requires
 #                    mwan_vm_ll as its next-hop address.
-#   routed_ipv4_prefix: source prefix returned to the MWAN VM without gateway
-#                    translation; empty for ordinary translated providers.
+#   routed_ipv4_prefix: prefix the ISP simulator routes to the MWAN VM without
+#                    NAT; empty for ordinary translated providers.
 #                    routed_ipv4_route_to is the VM's IPv4 link address.
 #   pd_len         : DHCPv6-PD delegation length (prod parity: webpass /56, att
 #                    /60, mbrains /56). NPT uses the first /60 of the delegation.
