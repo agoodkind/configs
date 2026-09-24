@@ -104,7 +104,7 @@ insert_elements:
         <proto>IPv6</proto>
         <counters>0</counters>
         <content/>
-        <description>Live NPTv6 external prefixes used by MWAN hairpin traffic</description>
+        <description>NPTv6 external prefixes that MWAN updates for hairpin source matching</description>
       </alias>
   - name: "MWAN NPT hairpin pass rule"
     parent_xpath: "//opnsense/filter"
