@@ -3,10 +3,10 @@
 # Called from deploy-testbed.yml with loop_var: isp
 #
 # isp fields: id, name, ipv6_enabled, routed_ipv6_enabled, routed_ipv6_prefix,
-#   v4_subnet, dynamic_v4, static_v4_block, static_v4_route_to, v4_reservations.
+#   routed_ipv4_prefix, routed_ipv4_route_to, v4_subnet, dynamic_v4,
+#   static_v4_block, static_v4_route_to, v4_reservations.
 # DHCPv6/RA uses pd_prefix, pd_len, ia_na, slaac_prefix, and optional ia_na_pool.
-# The return-route service installs delegated and configured IPv6 routes
-# with mwan_vm_ll as the next-hop address.
+# The return-route service installs delegated IPv6 and configured family routes.
 # DHCPv4 uses v4_gateway, v4_pool, and v4_dns.
 #   repo_root is set in the parent play.
 
@@ -31,7 +31,7 @@
     src: "{{ repo_root }}/testbed/isp-lxc/pd-route.service.j2"
     dest: "/tmp/isp-{{ isp.id }}-pd-route.service"
     mode: "0644"
-  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool
+  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool or isp.routed_ipv4_prefix != '' or isp.static_v4_block != ''
 
 - name: Render ISP kea-dhcp4 config (dynamic-v4 ISPs only)
   ansible.builtin.template:
@@ -87,7 +87,7 @@
       - "{{ isp.id }}"
       - "/tmp/isp-{{ isp.id }}-pd-route.service"
       - /etc/systemd/system/pd-route.service
-  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool
+  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool or isp.routed_ipv4_prefix != '' or isp.static_v4_block != ''
   changed_when: true
 
 - name: Push ISP kea-rebind watcher into LXC
@@ -187,7 +187,7 @@
       pct exec {{ isp.id }} -- sh -c
       'systemctl enable --now pd-route
       && systemctl restart pd-route'
-  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool
+  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool or isp.routed_ipv4_prefix != '' or isp.static_v4_block != ''
   changed_when: true
 
 - name: Enable and restart kea-dhcp4 (dynamic-v4 ISPs only)

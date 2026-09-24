@@ -3,7 +3,7 @@
 require 'yaml'
 require_relative '../support/task_expressions'
 
-RSpec.describe 'ISP simulator IPv6 routing' do
+RSpec.describe 'ISP simulator routing' do
   let(:root) { AnsibleRender::REPOSITORY_ROOT }
   let(:providers) do
     YAML.safe_load_file(File.join(root, 'ansible/inventory/group_vars/suburban_servers.yml')).fetch('testbed_isp_lxcs')
@@ -17,7 +17,8 @@ RSpec.describe 'ISP simulator IPv6 routing' do
       [task.fetch('name'), TaskExpressions.condition_list(task['when'])]
     end
     templates = { 'firewall' => File.read(File.join(root, 'testbed/isp-lxc/nftables.conf.j2')) }
-    if provider.fetch('ipv6_enabled') || provider.fetch('routed_ipv6_enabled')
+    if provider.fetch('ipv6_enabled') || provider.fetch('routed_ipv6_enabled') ||
+       !provider.fetch('routed_ipv4_prefix').empty? || !provider.fetch('static_v4_block').empty?
       templates['routes'] = File.read(File.join(root, 'testbed/isp-lxc/pd-route.service.j2'))
     end
     TaskExpressions.evaluate(
@@ -26,16 +27,19 @@ RSpec.describe 'ISP simulator IPv6 routing' do
     )
   end
 
-  it 'renders a configured return route and IPv6 egress without delegation or router advertisements' do
+  it 'renders native IPv4 and IPv6 return routes without delegation or router advertisements' do
     provider = providers.find { |entry| entry.fetch('name') == 'routed' }
     result = render_simulator(provider)
     rendered = result.fetch('renders').first
     prefix = provider.fetch('routed_ipv6_prefix')
-    route = "ExecStart=/sbin/ip -6 route replace #{prefix} via #{provider.fetch('mwan_vm_ll')} dev eth0"
+    ipv6_route = "ExecStart=/sbin/ip -6 route replace #{prefix} via #{provider.fetch('mwan_vm_ll')} dev eth0"
+    ipv4_prefix = provider.fetch('routed_ipv4_prefix')
+    ipv4_route = "ExecStart=/sbin/ip -4 route replace #{ipv4_prefix} via #{provider.fetch('routed_ipv4_route_to')} dev eth0"
 
-    expect(rendered.fetch('routes').lines.grep(/^ExecStart=/).map(&:strip)).to eq([route])
+    expect(rendered.fetch('routes').lines.grep(/^ExecStart=/).map(&:strip)).to eq([ipv6_route, ipv4_route])
     expect(rendered.fetch('firewall')).to include("oifname \"eth1\" ip6 saddr #{prefix} masquerade")
     expect(rendered.fetch('firewall')).to include("oifname \"eth1\" ip saddr #{provider.fetch('v4_subnet')} masquerade")
+    expect(rendered.fetch('firewall')).to include("oifname \"eth1\" ip saddr #{ipv4_prefix} masquerade")
     %w[Render Push].each do |verb|
       name = result.fetch('conditions').keys.find { |key| key.start_with?("#{verb} ISP return routes") }
       expect(result.fetch('conditions').fetch(name)).to be(true)
@@ -52,7 +56,11 @@ RSpec.describe 'ISP simulator IPv6 routing' do
       rendered = result.fetch('renders').first
       delegated = provider.fetch('ipv6_enabled')
       routed = provider.fetch('routed_ipv6_enabled')
-      expect(result.fetch('conditions').fetch('Enable and restart ISP return routes')).to eq(delegated || routed)
+      routed_ipv4 = !provider.fetch('routed_ipv4_prefix').empty?
+      static_ipv4 = !provider.fetch('static_v4_block').empty?
+      expect(result.fetch('conditions').fetch('Enable and restart ISP return routes')).to eq(
+        delegated || routed || routed_ipv4 || static_ipv4
+      )
       expect(result.fetch('conditions').fetch('Enable and restart ISP DHCPv6 and RA services')).to eq(delegated)
       expect(rendered.fetch('firewall').include?('table ip6 nat')).to eq(delegated || routed)
       next unless delegated || routed
