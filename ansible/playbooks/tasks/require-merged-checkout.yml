@@ -1,0 +1,55 @@
+---
+- name: Verify the controller checkout before deploying
+  block:
+    - name: Read the controller checkout status
+      ansible.builtin.command:
+        argv:
+          - git
+          - status
+          - --porcelain
+          - --untracked-files=normal
+        chdir: "{{ playbook_dir | dirname | dirname }}"
+      register: deploy_checkout_status
+      changed_when: false
+
+    - name: Require a clean controller checkout
+      ansible.builtin.assert:
+        that: deploy_checkout_status.stdout == ""
+        fail_msg: >-
+          Deploy refused: the controller checkout has uncommitted files.
+          Commit or remove them before deploying.
+
+    - name: Fetch the current main branch
+      ansible.builtin.command:
+        argv:
+          - git
+          - fetch
+          - --quiet
+          - origin
+          - +refs/heads/main:refs/remotes/origin/main
+        chdir: "{{ playbook_dir | dirname | dirname }}"
+      changed_when: false
+
+    - name: Check whether the deploy commit is merged
+      ansible.builtin.command:
+        argv:
+          - git
+          - merge-base
+          - --is-ancestor
+          - HEAD
+          - refs/remotes/origin/main
+        chdir: "{{ playbook_dir | dirname | dirname }}"
+      register: deploy_commit_merged
+      changed_when: false
+      failed_when: deploy_commit_merged.rc not in [0, 1]
+
+    - name: Require a merged deploy commit
+      ansible.builtin.assert:
+        that: deploy_commit_merged.rc == 0
+        fail_msg: >-
+          Deploy refused: HEAD is not merged into origin/main.
+  delegate_to: localhost
+  run_once: true
+  become: false
+  check_mode: false
+  tags: [always, merged-checkout]

@@ -24,6 +24,9 @@
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
     mwan_opnsense_binary_local: "{{ opnsensectl_release_dir }}/freebsd_amd64/opnsensectl"
+  pre_tasks:
+    - name: Require a merged controller checkout
+      ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
   tasks:
     - name: Pull the pinned opnsensectl release
       ansible.builtin.import_tasks: tasks/github-release.yml
