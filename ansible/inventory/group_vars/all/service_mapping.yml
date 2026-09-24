@@ -261,7 +261,8 @@ service_mapping:
 
   # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM.
   # Webpass, AT&T, and Monkeybrains serve DHCPv6-PD and RA. Astound is IPv4-only;
-  # the routed simulator supplies IPv6 without delegation or RA. These guests
+  # the routed simulator provides a statically addressed native IPv6 prefix
+  # without DHCPv6-PD or RA. These guests
   # sit in 9xx and their addresses are gateways on their own simulated subnets
   # that production never uses.
   #

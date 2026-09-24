@@ -436,11 +436,12 @@ installs the binary, and restarts the daemon in that order.
   OpenTofu resources. Give it its own bridge, LXC, and MWAN WAN interface.
 - Add the simulator and a native IPv6 provider to the testbed inventory.
   Preserve the Webpass, AT&T, Monkeybrains, and Astound simulator policies.
-- Use the existing routed-prefix simulator templates and check the rendered
-  return route and firewall through the public Configs test boundary.
+- The public Configs render test checks the routed simulator's return route
+  and firewall rules.
 
-Provision the new bridge, LXC, and VM interface before configuring the new
-simulator and gateway:
+Merge the simulator and testbed release pin changes before deployment. The new
+bridge, LXC, and VM interface must exist before the simulator and gateway
+playbooks run:
 
 ```bash
 ./configsctl tofu plan
