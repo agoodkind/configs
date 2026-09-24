@@ -162,6 +162,20 @@ service_mapping:
     vmid: 224
     ipv6: "3d06:bad:b01:210::224"
     mac_address: "BC:24:11:04:02:24"
+  mwan_test_client_a_suburban:
+    inventory: false
+    hostname: mwan-client-a.suburban.goodkind.io
+    vmid: 225
+    ipv4: "10.240.1.241"
+    ipv6: "3d06:bad:b01:211::225"
+    mac_address: "BC:24:11:04:02:25"
+  mwan_test_client_b_suburban:
+    inventory: false
+    hostname: mwan-client-b.suburban.goodkind.io
+    vmid: 226
+    ipv4: "10.240.1.242"
+    ipv6: "3d06:bad:b01:211::226"
+    mac_address: "BC:24:11:04:02:26"
 
   # Static Hosts (different subnet or external)
   mini:
@@ -216,6 +230,8 @@ service_mapping:
     # because every guest on the segment points at it as their default route.
     ipv4_vmnet: "10.240.4.1"
     ipv6_vmnet: &opnsense_suburban_vmnet_v6 "3d06:bad:b01:210::1"
+    ipv4_privileged: "10.240.1.1"
+    ipv6_privileged: "3d06:bad:b01:211::1"
     # The inventory plugin reads ipv6 as its default ansible_host, so it aliases
     # the VMNET address rather than repeating it.
     ipv6: *opnsense_suburban_vmnet_v6

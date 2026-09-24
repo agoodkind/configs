@@ -37,3 +37,14 @@ output "dns64_suburban_ipv6" {
   description = "IPv6 address assigned to the suburban DNS64 LXC."
   value       = local.service_mapping.dns64_suburban.ipv6
 }
+
+output "mwan_test_clients" {
+  description = "The suburban VLAN 100 test clients use these VMIDs and addresses."
+  value = {
+    for name, client in local.mwan_test_clients : name => {
+      vmid = proxmox_virtual_environment_container.mwan_test_client_suburban[name].vm_id
+      ipv4 = client.ipv4
+      ipv6 = client.ipv6
+    }
+  }
+}
