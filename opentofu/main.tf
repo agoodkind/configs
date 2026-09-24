@@ -29,7 +29,8 @@ module "suburban" {
   source = "./suburban"
 
   providers = {
-    proxmox = proxmox.suburban
+    proxmox      = proxmox.suburban
+    proxmox.root = proxmox.suburban_root
   }
 
   ssh_keys = trimspace(data.http.github_ssh_keys.response_body)

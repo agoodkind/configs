@@ -105,6 +105,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
 }
 
 resource "proxmox_virtual_environment_container" "isp_webpass_suburban" {
+  provider  = proxmox.root
   node_name = "hypervisor"
   vm_id     = local.service_mapping.isp_webpass_suburban.vmid
 
@@ -193,6 +194,7 @@ resource "proxmox_virtual_environment_container" "isp_webpass_suburban" {
 }
 
 resource "proxmox_virtual_environment_container" "isp_att_suburban" {
+  provider  = proxmox.root
   node_name = "hypervisor"
   vm_id     = local.service_mapping.isp_att_suburban.vmid
 
@@ -281,6 +283,7 @@ resource "proxmox_virtual_environment_container" "isp_att_suburban" {
 }
 
 resource "proxmox_virtual_environment_container" "isp_mbrains_suburban" {
+  provider  = proxmox.root
   node_name = "hypervisor"
   vm_id     = local.service_mapping.isp_mbrains_suburban.vmid
 
@@ -372,6 +375,7 @@ resource "proxmox_virtual_environment_container" "isp_mbrains_suburban" {
 }
 
 resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
+  provider  = proxmox.root
   node_name = "hypervisor"
   vm_id     = local.service_mapping.isp_astound_suburban.vmid
 
@@ -399,6 +403,10 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
         gateway = local.service_mapping.vmbr1_suburban.ipv4
       }
     }
+  }
+
+  features {
+    nesting = true
   }
 
   network_interface {
@@ -450,12 +458,12 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
     prevent_destroy = true
     ignore_changes = [
       operating_system[0].template_file_id,
-      features,
     ]
   }
 }
 
 resource "proxmox_virtual_environment_container" "isp_routed_suburban" {
+  provider  = proxmox.root
   node_name = "hypervisor"
   vm_id     = local.service_mapping.isp_routed_suburban.vmid
 
@@ -489,8 +497,10 @@ resource "proxmox_virtual_environment_container" "isp_routed_suburban" {
     }
   }
 
-  # deploy-testbed.yml sets nesting through pct because the API token cannot
-  # change feature flags on a privileged container.
+  features {
+    nesting = true
+  }
+
   network_interface {
     name        = "eth0"
     bridge      = proxmox_network_linux_bridge.isp_routed_suburban.name
