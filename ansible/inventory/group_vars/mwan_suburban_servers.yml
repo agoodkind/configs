@@ -175,10 +175,10 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 # Providers
 # ----------------------------------------------------------------------------
 
-# The production provider entries use the simulated ISPs' addresses. The routed
-# entry tests native IPv6 independently. Production routing numbers stay the
-# same in the matching entries. link_files and the link and
-# per-family blocks are described there; the testbed's links are virtio
+# The existing provider entries use the simulated ISPs' addresses. The routed
+# entry tests native IPv4 and IPv6. Production routing numbers stay the same
+# in the matching entries. link_files, the link block, and the per-family
+# blocks are described there; the testbed's links are virtio
 # devices matched by the address Proxmox assigned, so no entry matches by
 # driver or sets a hardware address.
 mwan_providers:
@@ -337,8 +337,7 @@ mwan_providers:
       match: { hardware_address: "{{ mwan_routed_mac | lower }}" }
     ipv4:
       translation:
-        mode: ietf-nat:napt44
-        static_mappings: []
+        mode: native
       forwarding: true
       dhcp: false
       address: "{{ mwan_routed_ipv4 }}"

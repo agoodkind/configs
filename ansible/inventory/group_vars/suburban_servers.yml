@@ -189,6 +189,9 @@ suburban_ddns_ipv6_priority_subnets:
 #   routed_ipv6_prefix: prefix routed without DHCPv6 or RA; empty when
 #                    routed_ipv6_enabled is false. The route requires
 #                    mwan_vm_ll as its next-hop address.
+#   routed_ipv4_prefix: prefix the ISP simulator routes to the MWAN VM without
+#                    NAT; empty for ordinary translated providers.
+#                    routed_ipv4_route_to is the VM's IPv4 link address.
 #   pd_len         : DHCPv6-PD delegation length (prod parity: webpass /56, att
 #                    /60, mbrains /56). NPT uses the first /60 of the delegation.
 #   dynamic_v4     : sim runs kea-dhcp4 (DHCPv4) instead of the VM holding static v4
@@ -224,6 +227,7 @@ testbed_isp_lxcs:
     v4_reservations: []
     static_v4_block: ""
     static_v4_route_to: ""
+    routed_ipv4_prefix: ""
   - id: "{{ service_mapping.isp_att_suburban.vmid }}"
     name: att
     ipv6_enabled: true
@@ -246,6 +250,7 @@ testbed_isp_lxcs:
       - { mac: "BC:24:11:C0:D7:60", addr: "10.240.205.2" }
     static_v4_block: "10.241.205.0/29"
     static_v4_route_to: "10.240.205.2"
+    routed_ipv4_prefix: ""
   - id: "{{ service_mapping.isp_mbrains_suburban.vmid }}"
     name: mbrains
     ipv6_enabled: true
@@ -267,6 +272,7 @@ testbed_isp_lxcs:
     v4_reservations: []
     static_v4_block: ""
     static_v4_route_to: ""
+    routed_ipv4_prefix: ""
   - id: "{{ service_mapping.isp_astound_suburban.vmid }}"
     name: astound
     # A fourth provider that exists only to prove one can be added. It models
@@ -285,6 +291,7 @@ testbed_isp_lxcs:
       - { mac: "BC:24:11:A5:70:06", addr: "10.240.207.2" }
     static_v4_block: ""
     static_v4_route_to: ""
+    routed_ipv4_prefix: ""
   - id: "{{ service_mapping.isp_routed_suburban.vmid }}"
     name: routed
     ipv6_enabled: false
@@ -296,6 +303,8 @@ testbed_isp_lxcs:
     v4_reservations: []
     static_v4_block: ""
     static_v4_route_to: ""
+    routed_ipv4_prefix: "10.240.0.0/16"
+    routed_ipv4_route_to: "10.240.208.2"
 
 # Testbed-only: testbed failover LXC id used by deploy-testbed.yml
 failover_lxc_id: "{{ service_mapping.mwan_failover_suburban.vmid }}"

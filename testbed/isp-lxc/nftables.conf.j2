@@ -15,6 +15,9 @@ table ip nat {
         # that traffic egresses with a private source and is dropped.
         oifname "eth1" ip saddr {{ isp.static_v4_block }} masquerade
 {% endif %}
+{% if isp.routed_ipv4_prefix %}
+        oifname "eth1" ip saddr {{ isp.routed_ipv4_prefix }} masquerade
+{% endif %}
     }
 }
 
