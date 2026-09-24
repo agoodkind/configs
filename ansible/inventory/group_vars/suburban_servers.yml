@@ -246,8 +246,7 @@ testbed_isp_lxcs:
     static_v4_route_to: "10.240.205.2"
   - id: "{{ service_mapping.isp_mbrains_suburban.vmid }}"
     name: mbrains
-    # This testbed link routes native IPv6 without DHCPv6-PD or RA. Production
-    # Monkeybrains still delegates a prefix and uses NPTv6.
+    # This testbed link routes native IPv6 without DHCPv6-PD or RA.
     ipv6_enabled: false
     routed_ipv6_enabled: true
     routed_ipv6_prefix: "3d06:bad:b01:210::/60"

@@ -279,7 +279,6 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 5000
-    # The simulator routes the internal prefix without DHCPv6-PD or RA.
     ipv6:
       translation:
         mode: native
