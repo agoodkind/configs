@@ -16,6 +16,12 @@ variable "suburban_proxmox_api_token" {
   sensitive   = true
 }
 
+variable "suburban_proxmox_root_password" {
+  description = "Root password for privileged container feature changes on the suburban testbed"
+  type        = string
+  sensitive   = true
+}
+
 variable "suburban_proxmox_endpoint" {
   description = "Proxmox API base URL for the suburban testbed host including port"
   type        = string

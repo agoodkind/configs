@@ -4,14 +4,14 @@
 # Continuous integration, the pre-commit hook, the rake tasks, and operators all
 # run this script, so CONFIGSCTL_VERSION is the one place the pin lives.
 #
-# CONFIGSCTL_VERSION is the Go module version of configsctl commit e5956204.
+# CONFIGSCTL_VERSION is the Go module version of configsctl commit 2fbe636a.
 # A canonical module version is resolved once and kept in the module cache, and
 # the Go checksum database fixes the source behind it.
 
 set -euo pipefail
 
 readonly CONFIGSCTL_PACKAGE="goodkind.io/configsctl/cmd/configsctl"
-readonly CONFIGSCTL_VERSION="v0.0.0-20260918153122-e5956204f66b"
+readonly CONFIGSCTL_VERSION="v0.0.0-20260924070550-2fbe636a2b9b"
 
 # configsctl resolves every path from its working directory, which must be the
 # repository root this script sits in.

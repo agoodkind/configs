@@ -24,3 +24,11 @@ provider "proxmox" {
   api_token = var.suburban_proxmox_api_token
   insecure  = true
 }
+
+provider "proxmox" {
+  alias    = "suburban_root"
+  endpoint = var.suburban_proxmox_endpoint
+  username = "root@pam"
+  password = var.suburban_proxmox_root_password
+  insecure = true
+}
