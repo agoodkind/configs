@@ -360,7 +360,7 @@ mwan_providers:
     health:
       enabled: true
       ping_count: 3
-      success_threshold: 2
+      success_threshold: 1
       failure_threshold: 2
       recovery_threshold: 2
       check_interval: 10
