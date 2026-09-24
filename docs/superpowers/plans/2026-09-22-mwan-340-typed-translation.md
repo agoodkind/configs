@@ -48,9 +48,10 @@ requires it.
 - Configs remains the IPv4 NAT writer during MWAN-340. The daemon remains the
   IPv6 NPT writer. MWAN-341 later transfers the remaining firewall writes
   without changing this configuration model.
-- One deployable Configs change updates inventory, the JSON renderer, the
-  IPv4 firewall renderer, and both release pins together. The deploy validates
-  the new document with the new released loader before restarting the daemon.
+- Configs updates the inventory, JSON renderer, and IPv4 firewall renderer
+  before deployment. Separate release pin changes install the released loader
+  in the testbed first and production after testbed acceptance. The deploy
+  validates the new document before restarting the daemon.
 
 ## Scope limits
 
@@ -403,7 +404,7 @@ Expected: Configs passes its lint gate, the rendered testbed document passes
 the released loader, and the deploy still validates the document before the
 management stack and daemon restart.
 
-## Task 5: Release MWAN and pin one compatible Configs change
+## Task 5: Release MWAN and pin the compatible testbed build
 
 Finish the MWAN repository gates before creating the release:
 
@@ -416,10 +417,10 @@ Expected: schema validation, Go checks, private sysrepo publication, and real
 packet tests pass.
 
 Merge the reviewed MWAN change, wait for its signed release, and verify the
-downloaded archives and attestations. Update these pins together:
-
-- `ansible/inventory/group_vars/mwan_testbed_all.yml`
-- `ansible/inventory/group_vars/mwan_prod_all.yml`
+downloaded archives and attestations. Pin the testbed release in
+`ansible/inventory/group_vars/mwan_testbed_all.yml`. Keep the production pin
+unchanged until testbed acceptance. Before the production deploy, pin
+production to the accepted release in a separate change.
 
 Do not deploy a new document with an older loader or a new loader with the old
 document shape. `deploy-mwan.yml` already copies the rendered document to the
