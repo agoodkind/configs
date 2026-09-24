@@ -455,10 +455,11 @@ Capture packets at the ISP simulator ingress. Traffic beyond the simulator
 does not prove which source address MWAN produced because the simulator also
 masquerades traffic.
 
-Send load-balancing requests serially through the testbed router's QEMU Guest
-Agent. Keep both simulator ingress captures for the full sample and verify
-that every request has a command result. A missing result or an incomplete
-capture invalidates that family's sample; rerun it.
+Run each load-balancing request as a separate `qm guest exec` call to the
+testbed router. Record packets on both simulator ingress links for the entire
+sample. Require one completed command and one distinct captured flow per
+request. If any command result or capture is missing, rerun that family's
+sample.
 
 Record these acceptance results:
 
