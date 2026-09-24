@@ -27,6 +27,9 @@
   hosts: suburban_servers
   gather_facts: false
   become: false
+  pre_tasks:
+    - name: Require a merged controller checkout
+      ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
   tasks:
     - name: Pull the pinned mwan release
       ansible.builtin.import_tasks: tasks/github-release.yml
