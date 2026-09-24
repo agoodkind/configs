@@ -481,9 +481,9 @@ Record these acceptance results:
     without sending packets to an ISP simulator.
 11. With AT&T and Webpass eligible in the same tier, send 100 fresh unmarked
     downstream flows per family. Capture each selected provider at the gateway
-    before simulator masquerade and confirm every reply. Compare the counts
-    with the configured weights; for equal weights, each provider must receive
-    35 to 65 of 100 flows.
+    before simulator masquerade and confirm every reply. Each provider must
+    receive 35 to 65 of 100 flows when weights are equal. Verify the
+    distribution by comparing captured counts against the configured weights.
 
 The testbed result can complete implementation acceptance. Record production
 new-circuit exercises as deferred until after October 2026. Do not mark an
