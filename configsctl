@@ -16,4 +16,7 @@ readonly CONFIGSCTL_VERSION="v0.0.0-20260918153122-e5956204f66b"
 # configsctl resolves every path from its working directory, which must be the
 # repository root this script sits in.
 cd "$(dirname "${BASH_SOURCE[0]}")"
+if [[ "${1:-}" == "deploy" ]]; then
+    ./scripts/require-merged-commit.sh
+fi
 exec go run "${CONFIGSCTL_PACKAGE}@${CONFIGSCTL_VERSION}" "$@"
