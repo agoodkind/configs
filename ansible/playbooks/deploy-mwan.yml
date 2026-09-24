@@ -363,7 +363,7 @@
       no_log: true
       notify: Restart mwan-ifmgr@wan
 
-    - name: Read the testbed OPNsense web certificate
+    - name: Current testbed OPNsense web certificate is available for hairpin CA trust
       ansible.builtin.command:
         cmd: openssl x509 -in /usr/local/etc/lighttpd_webgui/cert.pem -outform PEM
       delegate_to: "{{ mwan_nptv6_hairpin_router_host }}"
