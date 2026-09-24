@@ -473,6 +473,11 @@ Record these acceptance results:
    translator with its configured service capability set.
 10. Two internal testbed clients use each other's external NPTv6 addresses
     without sending packets to an ISP simulator.
+11. With AT&T and Webpass eligible in the same tier, send 100 fresh unmarked
+    downstream flows per family. Capture each selected provider at the gateway
+    before simulator masquerade and confirm every reply. Compare the counts
+    with the configured weights; for equal weights, each provider must receive
+    35 to 65 of 100 flows.
 
 The testbed result can complete implementation acceptance. Record production
 new-circuit exercises as deferred until after October 2026. Do not mark an
@@ -492,6 +497,8 @@ MWAN-340 is ready to close after all of these facts are recorded:
   stateless return traffic, fallback translation, checksum validity, and
   per-family exclusion;
 - internal captures prove RFC 6296 hairpin translation in both directions;
+- testbed captures prove that fresh IPv4 and IPv6 flows use both eligible
+  providers at the configured weights and receive replies;
 - the installed service proves the deployed capability set can load and attach
   the embedded translator;
 - current providers retain connectivity and inbound policy, with any changed
