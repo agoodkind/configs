@@ -5,7 +5,7 @@
 # configures sysctl, the masquerade interface stub, and suburban DDNS.
 # Proxmox rejects VM `args` writes from non-root API users, so Ansible sets
 # MWAN and OPNsense VM `args` over SSH as root.
-# The play provisions testbed ISP LXCs and configures VFIO for MWAN WAN passthrough.
+# The play configures testbed ISP LXCs and VFIO for MWAN WAN passthrough.
 # The OPNsense host bridge comes from deploy-proxmox.yml.
 #
 # Run examples:
@@ -241,14 +241,7 @@
       notify: Note OPNsense VM args reboot required
       tags: ["args"]
 
-    # ----------------------------------------------------------------------
-    # ISP LXCs via pct
-    # ----------------------------------------------------------------------
-
-    # apt runs non-interactively with --force-confold: kea ships a default
-    # /etc/kea/*.conf conffile, and our rendered config may already be present
-    # from a prior partial run, which otherwise triggers an interactive conffile
-    # prompt that hangs the deploy. Our config is pushed after install regardless.
+    # Preserve existing Kea configuration during unattended package installs.
     - name: Install packages on ISP LXCs
       ansible.builtin.command:
         cmd: >-
