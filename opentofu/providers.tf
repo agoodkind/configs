@@ -8,9 +8,16 @@ terraform {
       source  = "hashicorp/http"
       version = ">= 3.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = ">= 5.0.0"
+    }
   }
   required_version = ">= 1.9"
 }
+
+# The provider reads CLOUDFLARE_API_TOKEN from the environment inherited by configsctl.
+provider "cloudflare" {}
 
 provider "proxmox" {
   endpoint  = var.proxmox_endpoint
