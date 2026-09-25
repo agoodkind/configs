@@ -1,4 +1,4 @@
-# Existing DNS records from the Cloudflare API. ACME challenges are created and deleted by certificate automation.
+# Cloudflare DNS records. Certificate automation manages ACME challenges separately.
 locals {
   cloudflare_zone_ids = {
     "goodkind.io"      = "13ccc5ba064b1661495c0ec86511e9a7"
