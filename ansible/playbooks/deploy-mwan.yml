@@ -143,6 +143,16 @@
       changed_when: false
       failed_when: false
 
+    - name: Stop production deploy when the rollback baseline is unhealthy
+      ansible.builtin.fail:
+        msg: >-
+          Production egress failed before the deploy. The playbook requires
+          healthy egress to create a rollback snapshot. Restore egress and
+          rerun the deploy.
+      when:
+        - mwan_environment == "prod"
+        - pre_deploy_connectivity.rc != 0
+
     - name: Set pre-deploy snapshot name for this run
       ansible.builtin.set_fact:
         mwan_pre_deploy_snapshot_name: >-
