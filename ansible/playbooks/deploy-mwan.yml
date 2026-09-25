@@ -736,6 +736,14 @@
     - name: Apply pending network reloads
       ansible.builtin.meta: flush_handlers
 
+    # A production ifmgr restart interrupted the controller's SSH connection.
+    # Wait for reconnection before running another task on the guest.
+    - name: Wait for the controller connection after network reloads
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 300
+
     - name: Create systemd override for getty@tty1 (physical console auto-login)
       ansible.builtin.file:
         path: /etc/systemd/system/getty@tty1.service.d
