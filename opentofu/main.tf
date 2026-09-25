@@ -65,7 +65,7 @@ module "cloudflare" {
   # a split-tunnel list by position, so reordering an entry makes it send one
   # object holding both an address and a host, which the API rejects.
   #
-  # The Berylax list still splits the site prefix into six fragments that add up
+  # The Berylax list still splits the site prefix into eight fragments that add up
   # to the /48 minus 3d06:bad:b01:300::/56. Rewriting it as explicit /56 entries
   # is a content change, so it stays out of this import.
   berylax_include = [

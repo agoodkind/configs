@@ -46,7 +46,12 @@ variable "berylax_include" {
 }
 
 variable "tun_only_include" {
-  description = "Split-tunnel include list for the away profile, in the exact order Cloudflare stores it."
+  description = <<-EOT
+    Split-tunnel include list for the away profile, in the exact order
+    Cloudflare stores it. The provider diffs this list by position. A reordered
+    list can make it send one entry with both an address and a host, which the
+    API rejects with error 2049.
+  EOT
   type = list(object({
     address     = optional(string)
     host        = optional(string)
