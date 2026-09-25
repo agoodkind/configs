@@ -8,6 +8,10 @@ terraform {
       source  = "hashicorp/http"
       version = ">= 3.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
   }
   required_version = ">= 1.9"
 }
@@ -17,6 +21,8 @@ provider "proxmox" {
   api_token = var.proxmox_api_token
   insecure  = true
 }
+
+provider "cloudflare" {}
 
 provider "proxmox" {
   alias     = "suburban"
