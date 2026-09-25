@@ -16,9 +16,7 @@ terraform {
   required_version = ">= 1.9"
 }
 
-# Reads CLOUDFLARE_API_TOKEN from the environment. configsctl passes its own
-# environment through to the tofu child process, so exporting the token before
-# running configsctl is enough until configsctl reads it from the vault itself.
+# The provider reads CLOUDFLARE_API_TOKEN from the environment inherited by configsctl.
 provider "cloudflare" {}
 
 provider "proxmox" {

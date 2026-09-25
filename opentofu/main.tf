@@ -62,8 +62,8 @@ module "cloudflare" {
   dns_search_suffix = "home.goodkind.io"
 
   # Both lists below are in the order Cloudflare stores them. The provider diffs
-  # a split-tunnel list by position, so reordering an entry makes it send one
-  # object holding both an address and a host, which the API rejects.
+  # a split-tunnel list by position. Reordering an entry can make the provider
+  # send one object with both address and host set, which the API rejects.
   #
   # The Berylax list still splits the site prefix into eight fragments that add up
   # to the /48 minus 3d06:bad:b01:300::/56. Rewriting it as explicit /56 entries
