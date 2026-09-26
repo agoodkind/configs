@@ -19,6 +19,8 @@ mwan_proxmox_delegate: vault
 mwan_gate_collect_addresses:
   - "{{ service_mapping.vault_hypervisor.ipv6 }}"
   - "{{ service_mapping.vault_hypervisor.ipv6_oob }}"
+mwan_deploy_gate_families: "ipv4,ipv6"
+mwan_deploy_gate_consecutive_rounds: "3"
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
 # Override the dynamic inventory plugin's IPv4-first compose so SSH targets
