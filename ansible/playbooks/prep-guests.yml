@@ -431,6 +431,12 @@
         (configure_auto_login.changed | default(false)) or
         (lower_shutdown_timeout.changed | default(false))
 
+    - name: Apply guest service restarts
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for the controller connection after SSH restarts
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
+
   handlers:
     - name: Restart getty service
       ansible.builtin.systemd:
