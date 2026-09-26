@@ -63,14 +63,6 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/A/mom6.suburban.goodkind.io/5fec0286" = {
-      zone    = "goodkind.io"
-      name    = "mom6.suburban.goodkind.io"
-      type    = "A"
-      content = "174.166.126.204"
-      ttl     = 120
-      proxied = false
-    }
     "goodkind.io/A/router.suburban.goodkind.io/6161dd31" = {
       zone    = "goodkind.io"
       name    = "router.suburban.goodkind.io"
@@ -165,14 +157,6 @@ locals {
       type    = "AAAA"
       content = "2607:f598:d3e8:3100::1"
       ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/mom6.suburban.goodkind.io/98f56ad5" = {
-      zone    = "goodkind.io"
-      name    = "mom6.suburban.goodkind.io"
-      type    = "AAAA"
-      content = "2601:84:837c:a160:3dcd:8aef:e3a:bcf8"
-      ttl     = 120
       proxied = false
     }
     "goodkind.io/AAAA/nas-jetkvm.goodkind.io/383f88d9" = {
@@ -439,17 +423,6 @@ locals {
       content = "6e73b6d4-2e0a-4a0c-b72f-b8b70d20f909.cfargotunnel.com"
       ttl     = 1
       proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/suburban.goodkind.io/0f8c1e70" = {
-      zone    = "goodkind.io"
-      name    = "suburban.goodkind.io"
-      type    = "CNAME"
-      content = "128-nj.goodkind.io"
-      ttl     = 1
-      proxied = false
       settings = {
         flatten_cname = false
       }
@@ -809,30 +782,6 @@ locals {
   }
 
   cloudflare_dynamic_dns_records = {
-    "goodkind.io/A/128-nj.goodkind.io/05f15b50" = {
-      zone    = "goodkind.io"
-      name    = "128-nj.goodkind.io"
-      type    = "A"
-      content = "174.166.126.204"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/128-nj6.goodkind.io/c492b155" = {
-      zone    = "goodkind.io"
-      name    = "128-nj6.goodkind.io"
-      type    = "AAAA"
-      content = "2601:84:837c:a160:f66d:4ff:fe66:b6de"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/hypervisor6.suburban.goodkind.io/40d44ad6" = {
-      zone    = "goodkind.io"
-      name    = "hypervisor6.suburban.goodkind.io"
-      type    = "AAAA"
-      content = "2601:84:837c:a160:f66d:4ff:fe66:b6de"
-      ttl     = 1
-      proxied = false
-    }
   }
 }
 

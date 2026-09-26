@@ -8,7 +8,7 @@ steering, and resetting only suburban's learned OPNsense endpoint.
 Capture the learned endpoints and handshake times before changing either peer:
 
 ```bash
-ssh root@hypervisor6.suburban.goodkind.io \
+ssh suburban \
   'wg show wg0 endpoints; wg show wg0 latest-handshakes'
 ssh agoodkind@router.home.goodkind.io \
   'sudo wg show all endpoints; sudo wg show all latest-handshakes'
@@ -23,7 +23,7 @@ previously active peer crossed the handshake-age threshold, but it does not
 identify which WAN path failed.
 
 ```bash
-ssh root@hypervisor6.suburban.goodkind.io \
+ssh suburban \
   'journalctl -u mwan-ifmgr@host -n 200 --no-pager'
 ```
 
@@ -54,7 +54,7 @@ configuration. Use the OPNsense peer public key shown by the first suburban
 command:
 
 ```bash
-ssh root@hypervisor6.suburban.goodkind.io
+ssh suburban
 wg set wg0 peer <opnsense-public-key> endpoint home.goodkind.io:51820
 ping6 -c 3 <opnsense-address-across-the-tunnel>
 ```
