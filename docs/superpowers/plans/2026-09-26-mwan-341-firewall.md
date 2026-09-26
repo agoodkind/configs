@@ -10,6 +10,10 @@ additional configuration and rule inputs.
 Implement the behavior in the [firewall specification](../wanconfig/firewall.md).
 This plan covers MWAN-325, MWAN-330, MWAN-335, MWAN-354, and MWAN-355.
 
+Before execution or resuming after context loss, read the
+[epic goal and standing rules](2026-09-26-mwan-341-goal.md).
+Follow its mandatory language rules and ledger procedure throughout the epic.
+
 ## Current behavior
 
 The starting point is MWAN-340 and MWAN-333 deployed to both gateways.
