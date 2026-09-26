@@ -1,198 +1,178 @@
-# Five: the daemon owns the firewall
+# Gateway firewall ownership
 
-The daemon becomes the only thing that writes firewall state. The ruleset
-file is deleted and the firewall service is masked. Every rule is generated
-from the model.
+MWAN-341 makes the gateway daemon responsible for installing and maintaining
+its firewall rules. Configs continues to deploy configuration and released
+binaries. It stops installing a ruleset file or running a service that loads
+that file.
 
-Depends on translation being typed, because the rules the daemon generates
-are the model's rules. This is the only piece that touches live traffic.
+This specification defines the required behavior. The
+[implementation plan](../plans/2026-09-26-mwan-341-firewall.md) defines the code
+changes, tests, and deployment sequence.
 
-## Why there is no file
+## Current behavior
 
-Two authorities on one set of kernel tables is the problem, and every reason
-to keep a small file turns out to be removable.
+Configs generates filtering, IPv4 address translation, and packet marking
+rules. Its ruleset also creates the IPv6 translation chains. Loading that
+file deletes the existing ruleset before installing the generated rules.
 
-The reload path is the clearest case. The rendered file begins by flushing
-the entire ruleset, so every reload destroys rules the daemon programmed, and
-a watcher exists solely to repair that. Stopping the firewall service leaves
-the ruleset empty with nothing to repair it. Deleting the file removes both.
+The daemon separately maintains IPv6 edge-address exceptions and steering
+rules. IPv6 prefix translation already uses a kernel packet program installed
+by MWAN-340. That translator remains responsible for prefix translation.
 
-The empty translation table the file declares exists only because the
-translation module never creates its own table or chains; it sends chain
-references with no hook, priority, or type, and its own comments record that
-it cannot recover from a bare flush. Teaching it to create them removes the
-reason.
+The daemon already starts before device discovery and the network manager.
+Its service currently reports startup before a successful firewall apply.
+Its IPv6 edge-rule writer also requires chains created by the ruleset file.
 
-The address-request accepts matter only during a window between the file
-loading early and the daemon starting late. Moving the daemon earlier removes
-the window rather than the need.
+## Rule ownership
 
-## Boot
+Each table has one rule writer within the gateway daemon:
 
-The daemon takes the slot the firewall service occupies today, before any
-interface is configured. This repo's own drop-in records that the stock
-firewall service carries that ordering because the firewall must load before
-networking, and warns that ordering on the network being up creates a
-dependency cycle. The daemon must not wait for the network, which it can
-avoid because its rules match interfaces by name and a name match does not
-require the interface to exist.
+| Component | Responsibility |
+| --- | --- |
+| The firewall module | It maintains input and forwarding policy, IPv4 address translation, packet marking, and destination-set definitions. |
+| The translation module | It maintains IPv6 edge-address exceptions and the existing kernel prefix translator. |
+| The steering module | It assigns providers to connections and excludes paths that cannot serve an address family. |
 
-The daemon signals readiness only after its first successful apply, so units
-that order themselves after it get the guarantee they already assume.
+Each component creates the tables and chains it needs. It replaces only its
+own rules. Moving the remaining rules into the daemon does not require
+combining these components or changing the translation configuration.
 
-Startup validates the whole configuration before touching the kernel, then
-runs two transactions. The first programs the closed baseline: drop policy,
-established traffic, loopback, the control messages each family needs,
-management access, and the internal routing protocol. The second programs
-the full ruleset. Invalid configuration stops the daemon after the first,
-so the gateway is closed and reachable rather than open. The baseline is
-programmed only when the few values it is built from, the management and
-internal interface names among them, are themselves valid; when they are
-not, the daemon stops without touching the kernel, so a wrong baseline
-never replaces rules already protecting the gateway.
+The destination refresher continues to update the addresses in the configured
+destination sets. The daemon creates missing sets and preserves their
+existing elements during reconciliation. Set definitions retain support for
+address ranges and automatic merging of overlapping ranges.
 
-The accepted residual is narrow and stated deliberately: if the binary cannot
-execute at all, nothing is programmed. The deploy gate and the snapshot
-rollback are the recovery for that case.
+The gateway role enables firewall ownership. The failover container and
+hypervisor roles retain their existing firewall arrangements.
 
-The daemon cannot load kernel modules, because its unit forbids it. Creating
-an address-translation chain normally pulls the backend in on demand, and
-today the ruleset file does that as a side effect. The backends must be
-declared for load at boot instead. The same gap already bites silently: a
-comment claims connection tracking is loaded by a handler, and no such
-handler exists anywhere in the tree, so a connection-tracking setting applies
-only because the file happened to load the module first.
+## Startup and failure behavior
 
-## Apply discipline
+The daemon installs protective rules before it writes or reloads network
+configuration. These rules allow management access, loopback, established
+connections, address acquisition, and internal routing messages. Unmatched
+input and forwarded traffic are dropped. The existing outbound policy is
+preserved.
 
-Add the table, add the chain, clear the chain, add the rules, commit once.
-Never delete a table or a chain, and never clear a whole table. Both add
-operations create without requiring absence, so repeating them updates in
-place and emits no delete events, which is what stops the module's own writes
-from waking its own watcher. Create on every pass rather than once at
-startup, so a cleared ruleset is fully repaired by the watcher instead of
-needing a restart.
+The protective rules depend only on validated local configuration. They must
+not wait for an interface to appear, a DHCP lease, a routing session, a
+tunnel, or the management datastore.
 
-One trap: a firewall transaction is all or nothing, and the kernel rejects a
-chain creation that changes an existing chain's hook, priority, or type. The
-day a release changes a priority, every pass would fail and the kernel would
-keep whatever it had, silently. Read the live chains at startup, compare, and
-fail loudly with the manual remedy.
+The daemon first validates the configuration needed for those rules. It
+then installs them and validates the remaining configuration before applying
+the full policy. If that remaining configuration is invalid, startup fails
+with the protective rules still installed. Invalid JSON or invalid management
+settings cannot supply trustworthy protective rules; that case leaves the
+existing kernel rules unchanged and reports the configuration error.
 
-The watcher matches only table and chain deletions on the owned tables. Rule
-deletions are emitted by the module's own chain clears, and matching them is
-an endless loop. Set element deletions are emitted by the pinned-destination
-refresher every six hours.
+Service readiness requires successful application and inspection of the
+protective rules and completion of the required link-file writes. It does
+not require working ISP connections. The current ordering before device
+discovery and the network manager remains in effect.
 
-No stop or exit path flushes. Rules live in the kernel, not the process, so
-a stopped daemon leaves its last programmed ruleset protecting the gateway.
+Kernel modules required by the firewall load before the daemon. The daemon
+retains its existing restriction against loading kernel modules itself.
 
-## Address sets
+Stopping the daemon preserves its installed rules. If the binary cannot run,
+it cannot install protective rules. The deployment gate and snapshot rollback
+remain the recovery for that failure.
 
-Create each pinned-destination set if absent and never write its contents.
-The refresher owns the contents and its timer runs every six hours, so a
-module that rewrote them each pass would destroy every resolved name within
-one reconcile interval and leave the pin degraded to its seeds until the next
-refresh.
+## Rule updates and repair
 
-Create each set with interval matching and automatic merging. That merging is
-metadata the refresher's own transaction reads to combine overlapping ranges,
-and the refresher guarantees overlaps by adding single addresses inside
-ranges it also adds. Without it the whole refresh fails with a duplicate
-entry error.
+Each rule writer applies a complete update to its chains in one kernel
+transaction. Ordinary reconciliation creates missing structures without
+deleting existing tables or clearing entire tables.
 
-Move the refresher's ordering onto the daemon and give it restart on failure.
-It orders itself after the firewall service today, exits non-zero when its
-sets are absent, and first fires two minutes after boot, so with the sets
-moving to the daemon its ordering must move with them.
+A change to a chain's hook, priority, or type requires an explicit migration.
+An existing, tested atomic migration may replace that owned chain. Otherwise
+the update fails without partially changing the rules and reports the
+incompatible chain and required action.
 
-## What the daemon programs
+Deleting an owned table or chain requests reconciliation. The daemon recreates
+the missing structures and their rules without restarting. Deleting an
+individual rule is repaired by periodic reconciliation. Rule replacement and
+destination-set refreshes must not trigger a continuous reconciliation loop.
 
-The filter tables, with the fixed accepts, the per-member address-request
-accepts narrowed to the configured interfaces, and forwarding permitted
-between the internal interface and each member.
+The destination refresher starts after the daemon creates its sets and retries
+failed refreshes. After a complete ruleset deletion, the daemon recreates the
+set definitions and the refresher repopulates their contents. Acceptance
+checks set recovery separately from rule recovery.
 
-The address-translation tables, with each member's instances as
-[translation.md](translation.md) defines them, and the steering mark rules.
+Drift detection watches the authoritative daemon configuration instead of the
+retired ruleset file. Temporary manual rule changes are replaced during
+reconciliation; operator instructions must explain how to make a configured
+change persist.
 
-The marking tables, with per-member ingress marks for reply symmetry, the
-pinned-destination sets, the control-plane pin whose target member is named
-in configuration, and the connection mark save and restore.
+## Packet behavior
 
-## Direct and tunneled routing
+The cutover preserves the existing providers' filtering, inbound access,
+translation, and connection affinity. Static IPv4 mappings retain precedence
+over masquerade. Native routing preserves addresses. IPv6 edge exceptions,
+including the published edge address, retain their existing behavior.
 
-Generate rules from the shared interface and routing configuration. Restrict
-tunnel packets to configured endpoints and protocols. Restrict BGP sessions
-to configured peers.
-BGP exchanges routes between routers. A BGP session requires firewall
-permission separate from the permission for ordinary traffic forwarded through
-the tunnel.
+The existing translation policy also governs physical and logical interfaces.
+The [translation specification](translation.md) defines that policy and its
+packet requirements. Firewall ownership preserves the translator's kernel
+attachments and packet metadata, including internal clients communicating
+through their external IPv6 addresses.
 
-Test a tunnel with configured routes, a tunnel with a BGP session, and a
-physical connection with BGP. Preserve ordinary IPv4 on each underlying ISP.
-Do not require a tunnel or BGP session to become available before programming
-the closed startup rules. Verify packet-size error handling for the selected
-tunnel and preserve management access during path failures.
+Steering continues to consume the shared result for each connection and
+address family. The firewall does not create a second health decision.
 
-## Losing the pre-flight check
+## Extension for MWAN-507
 
-Deleting the file deletes the only pre-flight validation that exists, a
-check-mode parse of the rendered ruleset on the target before it lands.
-Nothing else in the deploy validates a firewall ruleset.
+The [shared routing model](model.md) defines direct BGP and tunnel arrangements.
+BGP exchanges route announcements between routers. A tunnel encapsulates
+ordinary packets between endpoints.
 
-Replace it with a check that programs the intended ruleset into a throwaway
-network namespace and compares it against a stored reference per environment.
-That reference doubles as this piece's equivalence artifact. The comparison
-excludes kernel handles and counters, which change on every program, and
-excludes the refresher-owned set contents, which the refresher rewrites
-every six hours; set membership is checked separately, for freshness rather
-than equality.
+The firewall accepts typed connection data for permitted local protocol
+traffic and forwarded traffic. A connection's identity remains independent
+of its ISP name or autonomous system number. Rules match configured
+interfaces, addresses, protocols, and ports.
 
-The deploy gate is not a substitute and must be hardened before this piece
-lands, not after. It decides on IPv6 alone and returns on its first
-successful probe, so a ruleset with no working IPv4 translation passes it,
-and a half-broken balancer passes as soon as the retry loop reaches the
-working member. Require both families and several consecutive successes, and
-assert the intended ruleset against the kernel on the guest after the reboot.
+MWAN-507 adds peer and tunnel configuration to those inputs. It must preserve
+the table ownership, startup sequence, translation modes, and shared
+eligibility decision established by MWAN-341. Its changes must not require
+another firewall cutover or a replacement translation implementation.
 
-The namespace check proves the ruleset's shape, not that the host stays
-reachable. Management reachability is the deploy gate's job: its post-reboot
-probes ride the management path, and the snapshot rollback restores the
-previous state when they fail, so a valid but wrong management rule is
-caught by the gate instead of becoming a lockout.
+Peer permissions restrict BGP traffic to the configured interface and peer.
+Tunnel permissions restrict the outer packets to the configured physical
+connection, endpoints, and protocol. Ordinary IPv6 forwarding through a
+tunnel has its own permission. The address family of the outer packet does
+not select the address family of the enclosed packet.
 
-## Drift detection
+Protocol permissions exist before a session or tunnel becomes ready.
+Readiness controls traffic selection through the shared routing and steering
+state. Loss of a later IPv6 path must leave working ordinary IPv4 available.
 
-Add the daemon's configuration file to the watchdog's watched paths. It
-hashes the ruleset file today and not the configuration, so moving the
-ruleset into configuration without that change leaves the watchdog watching a
-file that never changes again. Expect one benign hash change on the deploy
-that adds it.
+MWAN-341 does not select a tunnel protocol or implement external BGP.
+MWAN-507 supplies those implementations and their integrated acceptance tests.
+The firewall design must support them without requiring production peer
+addresses, prefixes, or circuit details during development.
 
 ## Acceptance
 
-The ruleset the daemon intends matches the kernel, verified on the testbed
-and again on production after the reboot.
+MWAN-354 strengthens the deployment gate before the ownership cutover.
+Success requires both configured address families and consecutive successful
+probe rounds. A testbed IPv4 translation failure must fail the gate even
+when IPv6 works.
 
-For the current provider set the rules are unchanged from the file they
-replace, one for one.
+MWAN-355 validates generated rules before deployment using the production
+writers in an isolated Linux network namespace. Comparison includes rule
+order, chain properties, and set definitions. It excludes changing kernel
+handles, counters, and refresher-owned set contents. Real packet checks
+verify filtering and translation in addition to the ruleset comparison.
 
-A bare ruleset flush is fully repaired, including the tables the translation
-module owns, which it cannot do today.
+Testbed acceptance must demonstrate startup protection, management access,
+reboot, daemon restart, invalid configuration, full ruleset repair,
+destination-set recovery, and preservation of the current packet behavior.
+Downstream clients must demonstrate both address families, balancing,
+provider fallback, inbound replies, and the existing translation modes.
 
-The gateway is closed and reachable when configuration is invalid. A
-stopped daemon leaves its last programmed ruleset in the kernel, so the
-gateway stays closed and reachable then too.
+Production acceptance uses the same released binary after testbed acceptance.
+It compares intended rules with the kernel and verifies downstream traffic
+after reboot. The ruleset file is absent and its loading service is masked.
 
-The firewall service is masked and no path reloads a file.
-
-## Failure modes
-
-The module is listed only in the gateway role. The failover container runs
-the same daemon and ships its own ruleset, so a module that claimed the
-tables everywhere would fight it.
-
-An operator page tells a human to add rules by hand and says they survive
-until the next reload. After this piece they are removed within one reconcile
-interval. That page needs correcting in the same change, or the next incident
-gets an instruction that quietly stops working.
+MWAN-507 later verifies direct BGP, tunnels with configured routes, and BGP
+over tunnels against this firewall. Its tests include packet-size errors and
+independent IPv4 operation. New-circuit production acceptance remains after
+October 2026.
