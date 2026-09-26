@@ -236,10 +236,7 @@
         cloudflared_token: "{{ vault_mwan_cloudflared_token }}"
 
     - name: Wait for the controller connection after cloudflared starts
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        sleep: 5
-        timeout: 300
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
     - name: Install required packages
       ansible.builtin.apt:
@@ -264,10 +261,7 @@
         state: present
 
     - name: Wait for the controller connection after network packages install
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        sleep: 5
-        timeout: 300
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
     - name: Create MWAN runtime config directory
       ansible.builtin.file:
@@ -571,10 +565,7 @@
       when: mwan_ifmgr_wan_enabled | bool
 
     - name: Wait for the controller connection after ifmgr starts
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        sleep: 5
-        timeout: 300
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
       when: mwan_ifmgr_wan_enabled | bool
 
     # Baseline / pre-cutover teardown. The wan role of mwan install writes and
@@ -598,10 +589,7 @@
         - ifmgr_instanced_unit.stat.exists
 
     - name: Wait for the controller connection after ifmgr stops
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        sleep: 5
-        timeout: 300
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
       when:
         - not (mwan_ifmgr_wan_enabled | bool)
         - ifmgr_instanced_unit.stat.exists
@@ -720,10 +708,7 @@
       failed_when: false
 
     - name: Wait for the controller connection after net udev events
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        sleep: 5
-        timeout: 300
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
     # The ifmgr modules own reconvergence after network events: wan.routes
     # through its iface monitors and npt through its nft watcher, so no
@@ -770,13 +755,8 @@
     - name: Apply pending network reloads
       ansible.builtin.meta: flush_handlers
 
-    # A production ifmgr restart interrupted the controller's SSH connection.
-    # Wait for reconnection before running another task on the guest.
     - name: Wait for the controller connection after network reloads
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        sleep: 5
-        timeout: 300
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
     - name: Create systemd override for getty@tty1 (physical console auto-login)
       ansible.builtin.file:

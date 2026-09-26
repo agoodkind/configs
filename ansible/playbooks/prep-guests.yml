@@ -435,10 +435,7 @@
       ansible.builtin.meta: flush_handlers
 
     - name: Wait for the controller connection after SSH restarts
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        sleep: 5
-        timeout: 300
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
   handlers:
     - name: Restart getty service
