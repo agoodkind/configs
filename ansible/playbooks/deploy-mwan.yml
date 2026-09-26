@@ -138,7 +138,11 @@
     - name: Verify internet connectivity before deploy
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.command:
-        cmd: /usr/local/sbin/mwan-deploy-gate deploy-gate check-egress
+        argv:
+          - /usr/local/sbin/mwan-deploy-gate
+          - deploy-gate
+          - check-egress
+          - "{{ mwan_deploy_gate_families }}"
       register: pre_deploy_connectivity
       changed_when: false
       failed_when: false
@@ -1020,6 +1024,8 @@
           - "180"
           - "{{ mwan_deploy_trace_id }}"
           - "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}.json"
+          - "{{ mwan_deploy_gate_families }}"
+          - "{{ mwan_deploy_gate_consecutive_rounds }}"
       changed_when: true
 
     # systemd owns the reboot timer, so the trigger survives the SSH session
@@ -1124,7 +1130,9 @@
     - name: Fail playbook after rollback
       ansible.builtin.fail:
         msg: >-
-          IPv6 egress never returned within 180s of the reboot, probed from
+          {{ mwan_deploy_gate_families }} egress never passed
+          {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
+          180s of the reboot, probed from
           {{ mwan_proxmox_delegate }}. Rolled back to
           {{ mwan_pre_deploy_snapshot_name }}.
       when:
@@ -1135,7 +1143,9 @@
     - name: Fail when health gate failed without rollback snapshot
       ansible.builtin.fail:
         msg: >-
-          IPv6 egress never returned within 180s of the reboot and no
+          {{ mwan_deploy_gate_families }} egress never passed
+          {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
+          180s of the reboot and no
           pre-deploy snapshot exists, because connectivity was already broken
           before the deploy. Restore the VM manually.
       when:

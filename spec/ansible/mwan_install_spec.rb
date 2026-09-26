@@ -348,6 +348,30 @@ RSpec.describe MwanInstall do
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
+    it "renders the required deploy gate policy for #{group_file}" do
+      group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
+      tasks = described_class.role_tasks(MwanInstall::ROLES.first)
+      baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
+      recovery = tasks.find { |task| task['name'] == 'Start hypervisor-local MWAN deploy gate before reboot' }
+      expect(baseline).not_to be_nil
+      expect(recovery).not_to be_nil
+
+      variables = group_vars.slice('mwan_deploy_gate_families', 'mwan_deploy_gate_consecutive_rounds').merge(
+        'actual_vmid' => '213',
+        'mwan_pre_reboot_boot_id' => { 'stdout' => 'old-boot-id' },
+        'mwan_deploy_trace_id' => 'test-trace'
+      )
+      renders = [baseline, recovery].map do |task|
+        TaskExpressions.render_task(task, 'argv' => described_class.command_argv(task))
+      end
+      rendered = TaskExpressions.evaluate(variables: variables, facts: [], renders: renders).fetch('renders')
+
+      expect(rendered[0].fetch('argv')).to eq(
+        ['/usr/local/sbin/mwan-deploy-gate', 'deploy-gate', 'check-egress', 'ipv4,ipv6']
+      )
+      expect(rendered[1].fetch('argv').last(2)).to eq(['ipv4,ipv6', '3'])
+    end
+
     it "leaves the verb's units out of the enable list in #{group_file}" do
       services = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file)).fetch('mwan_enabled_services')
       doubled = services.map { |name| described_class.unit_name(name) } & MwanInstall::ROLES.first[:enabled]
