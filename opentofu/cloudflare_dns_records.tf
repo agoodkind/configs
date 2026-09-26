@@ -167,14 +167,6 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/AAAA/mini.home.goodkind.io/cfb5f2da" = {
-      zone    = "goodkind.io"
-      name    = "mini.home.goodkind.io"
-      type    = "AAAA"
-      content = "3d06:bad:b01:1:6e1f:f7ff:fe5b:f431"
-      ttl     = 1
-      proxied = false
-    }
     "goodkind.io/AAAA/mom6.suburban.goodkind.io/98f56ad5" = {
       zone    = "goodkind.io"
       name    = "mom6.suburban.goodkind.io"
@@ -352,28 +344,6 @@ locals {
         flatten_cname = false
       }
     }
-    "goodkind.io/CNAME/holy.goodkind.io/841fdde4" = {
-      zone    = "goodkind.io"
-      name    = "holy.goodkind.io"
-      type    = "CNAME"
-      content = "4b602332-6413-4f95-8874-561ed6d9b266.cfargotunnel.com"
-      ttl     = 1
-      proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/home-assistant-ext.goodkind.io/a948ecb4" = {
-      zone    = "goodkind.io"
-      name    = "home-assistant-ext.goodkind.io"
-      type    = "CNAME"
-      content = "4b602332-6413-4f95-8874-561ed6d9b266.cfargotunnel.com"
-      ttl     = 1
-      proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
     "goodkind.io/CNAME/home.goodkind.io/da2d9a8d" = {
       zone    = "goodkind.io"
       name    = "home.goodkind.io"
@@ -412,39 +382,6 @@ locals {
       name    = "mail.goodkind.io"
       type    = "CNAME"
       content = "ghs.googlehosted.com"
-      ttl     = 1
-      proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/mdm.goodkind.io/591778ce" = {
-      zone    = "goodkind.io"
-      name    = "mdm.goodkind.io"
-      type    = "CNAME"
-      content = "4b602332-6413-4f95-8874-561ed6d9b266.cfargotunnel.com"
-      ttl     = 1
-      proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/moto.goodkind.io/3fa38444" = {
-      zone    = "goodkind.io"
-      name    = "moto.goodkind.io"
-      type    = "CNAME"
-      content = "edge.sfo.the-cupcake-factory.com"
-      ttl     = 1
-      proxied = false
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/plane.goodkind.io/16728285" = {
-      zone    = "goodkind.io"
-      name    = "plane.goodkind.io"
-      type    = "CNAME"
-      content = "4b602332-6413-4f95-8874-561ed6d9b266.cfargotunnel.com"
       ttl     = 1
       proxied = true
       settings = {
