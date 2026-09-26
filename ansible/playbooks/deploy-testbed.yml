@@ -2,7 +2,7 @@
 # Testbed-only suburban work that has no production equivalent.
 #
 # Targets the `suburban` hypervisor (in suburban_servers group). The play
-# configures sysctl, the masquerade interface stub, and suburban DDNS.
+# configures sysctl and the masquerade interface stub.
 # Proxmox rejects VM `args` writes from non-root API users, so Ansible sets
 # MWAN and OPNsense VM `args` over SSH as root.
 # The play configures testbed ISP LXCs and VFIO for MWAN WAN passthrough.
@@ -175,7 +175,7 @@
           via: "{{ service_mapping.opnsense_suburban.ipv4_vmnet }}"
       changed_when: false
 
-    - name: Deploy suburban DDNS
+    - name: Remove suburban DDNS
       ansible.builtin.import_tasks: tasks/suburban-ddns.yml
       tags: ["ddns"]
 
@@ -316,18 +316,6 @@
           {{ mwan_opnsense_vmid }} then qm start {{ mwan_opnsense_vmid }}) for
           the new args to take effect.
       tags: ["args"]
-
-    - name: Run DDNS 128-nj
-      ansible.builtin.systemd:
-        name: 'cloudflare-dynamic-dns@128\x2dnj.service'
-        state: restarted
-      tags: ["ddns"]
-
-    - name: Run DDNS 128-nj6
-      ansible.builtin.systemd:
-        name: 'cloudflare-dynamic-dns@128\x2dnj6.service'
-        state: restarted
-      tags: ["ddns"]
 
 # ----------------------------------------------------------------------------
 # VFIO host-side passthrough for Radeon R7 360 on suburban.
