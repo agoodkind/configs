@@ -1,4 +1,9 @@
 ---
+- name: Check whether the suburban DDNS timer unit remains installed
+  ansible.builtin.stat:
+    path: /etc/systemd/system/cloudflare-dynamic-dns@.timer
+  register: suburban_ddns_timer_unit
+
 - name: Stop and disable suburban DDNS timers
   ansible.builtin.systemd:
     name: "{{ item }}"
@@ -9,12 +14,19 @@
     - 'cloudflare-dynamic-dns@128\x2dnj6.timer'
     - cloudflare-dynamic-dns@128-nj.timer
     - cloudflare-dynamic-dns@128-nj6.timer
+  when: suburban_ddns_timer_unit.stat.exists
+
+- name: Check whether suburban ddclient remains installed
+  ansible.builtin.stat:
+    path: /usr/bin/ddclient
+  register: suburban_ddclient_binary
 
 - name: Stop and disable suburban ddclient
   ansible.builtin.systemd:
     name: ddclient.service
     enabled: false
     state: stopped
+  when: suburban_ddclient_binary.stat.exists
 
 - name: Remove suburban DDNS configuration
   ansible.builtin.file:
