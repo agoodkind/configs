@@ -171,7 +171,7 @@ locals {
       zone    = "goodkind.io"
       name    = "mom6.suburban.goodkind.io"
       type    = "AAAA"
-      content = "2601:84:837c:a160:2030:94d9:51b1:497c"
+      content = "2601:84:837c:a160:3dcd:8aef:e3a:bcf8"
       ttl     = 120
       proxied = false
     }
