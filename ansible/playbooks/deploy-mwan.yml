@@ -235,6 +235,12 @@
       vars:
         cloudflared_token: "{{ vault_mwan_cloudflared_token }}"
 
+    - name: Wait for the controller connection after cloudflared starts
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 300
+
     - name: Install required packages
       ansible.builtin.apt:
         name:
@@ -256,6 +262,12 @@
           - fping
           - conntrack
         state: present
+
+    - name: Wait for the controller connection after network packages install
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 300
 
     - name: Create MWAN runtime config directory
       ansible.builtin.file:
@@ -558,6 +570,13 @@
         state: started
       when: mwan_ifmgr_wan_enabled | bool
 
+    - name: Wait for the controller connection after ifmgr starts
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 300
+      when: mwan_ifmgr_wan_enabled | bool
+
     # Baseline / pre-cutover teardown. The wan role of mwan install writes and
     # enables the instanced unit on every gateway, and a prior deploy leaves
     # mwan-ifmgr@wan running, so flipping mwan_ifmgr_wan_enabled to false must
@@ -574,6 +593,15 @@
         name: mwan-ifmgr@wan
         state: stopped
         enabled: false
+      when:
+        - not (mwan_ifmgr_wan_enabled | bool)
+        - ifmgr_instanced_unit.stat.exists
+
+    - name: Wait for the controller connection after ifmgr stops
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 300
       when:
         - not (mwan_ifmgr_wan_enabled | bool)
         - ifmgr_instanced_unit.stat.exists
@@ -691,6 +719,12 @@
       changed_when: false
       failed_when: false
 
+    - name: Wait for the controller connection after net udev events
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 300
+
     # The ifmgr modules own reconvergence after network events: wan.routes
     # through its iface monitors and npt through its nft watcher, so no
     # networkd-dispatcher hooks exist. The dispatcher itself stays enabled for
@@ -735,6 +769,14 @@
     # run rendered, and a reload failure stops the deploy at its cause.
     - name: Apply pending network reloads
       ansible.builtin.meta: flush_handlers
+
+    # A production ifmgr restart interrupted the controller's SSH connection.
+    # Wait for reconnection before running another task on the guest.
+    - name: Wait for the controller connection after network reloads
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 300
 
     - name: Create systemd override for getty@tty1 (physical console auto-login)
       ansible.builtin.file:
