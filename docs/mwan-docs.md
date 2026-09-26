@@ -14,7 +14,8 @@ The MWAN-341 documents now use these locations:
 - Apply the [epic goal and standing rules](https://github.com/agoodkind/mwan/blob/main/docs/plans/2026-09-26-mwan-341-goal.md) throughout execution.
 - Update the [execution ledger](https://github.com/agoodkind/mwan/blob/main/docs/plans/2026-09-26-mwan-341-ledger.md) when work advances or context changes.
 
-The additional copied documents remain here as migration snapshots.
+The migrated implementation plans have been removed from Configs.
+The other copied documents remain here as migration snapshots.
 Make future MWAN documentation changes in the MWAN repository.
 Configs continues to contain deployment code, inventory, and general
 infrastructure documentation. Run Configs deployment and OpenTofu commands
