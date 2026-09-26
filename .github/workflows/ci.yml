@@ -49,5 +49,7 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
+      - name: Install Ansible IP address filter dependency
+        run: pipx inject ansible-core netaddr
       - name: Run data specs
         run: bundle exec rspec

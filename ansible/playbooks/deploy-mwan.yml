@@ -22,6 +22,9 @@
   hosts: mwan_servers:mwan_suburban_servers
   gather_facts: false
   become: false
+  pre_tasks:
+    - name: Require a merged controller checkout
+      ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
   tasks:
     - name: Pull the pinned mwan release
       ansible.builtin.import_tasks: tasks/github-release.yml
@@ -140,6 +143,16 @@
       changed_when: false
       failed_when: false
 
+    - name: Stop production deploy when the rollback baseline is unhealthy
+      ansible.builtin.fail:
+        msg: >-
+          Production egress failed before the deploy. The playbook requires
+          healthy egress to create a rollback snapshot. Restore egress and
+          rerun the deploy.
+      when:
+        - mwan_environment == "prod"
+        - pre_deploy_connectivity.rc != 0
+
     - name: Set pre-deploy snapshot name for this run
       ansible.builtin.set_fact:
         mwan_pre_deploy_snapshot_name: >-
@@ -222,6 +235,9 @@
       vars:
         cloudflared_token: "{{ vault_mwan_cloudflared_token }}"
 
+    - name: Wait for the controller connection after cloudflared starts
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
+
     - name: Install required packages
       ansible.builtin.apt:
         name:
@@ -243,6 +259,9 @@
           - fping
           - conntrack
         state: present
+
+    - name: Wait for the controller connection after network packages install
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
     - name: Create MWAN runtime config directory
       ansible.builtin.file:
@@ -358,6 +377,48 @@
         group: root
         mode: "0640"
       no_log: true
+      notify: Restart mwan-ifmgr@wan
+
+    - name: Current testbed OPNsense web certificate is available for hairpin CA trust
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.command:
+        argv:
+          - qm
+          - guest
+          - exec
+          - "{{ service_mapping.opnsense_suburban.vmid }}"
+          - --
+          - openssl
+          - x509
+          - -in
+          - /usr/local/etc/lighttpd_webgui/cert.pem
+          - -outform
+          - PEM
+      register: mwan_nptv6_hairpin_certificate
+      changed_when: false
+      check_mode: false
+      when: mwan_environment == 'testbed'
+
+    - name: Verify the testbed OPNsense web certificate read
+      vars:
+        certificate_result: "{{ mwan_nptv6_hairpin_certificate.stdout | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - certificate_result.exited == 1
+          - certificate_result.exitcode == 0
+          - certificate_result['out-truncated'] == 0
+          - certificate_result['out-data'].startswith('-----BEGIN CERTIFICATE-----')
+          - certificate_result['out-data'].strip().endswith('-----END CERTIFICATE-----')
+      when: mwan_environment == 'testbed'
+
+    - name: Trust the testbed OPNsense API certificate for hairpin alias updates
+      ansible.builtin.copy:
+        content: "{{ (mwan_nptv6_hairpin_certificate.stdout | from_json)['out-data'] }}"
+        dest: /etc/mwan/opnsense-testbed.pem
+        owner: root
+        group: root
+        mode: "0644"
+      when: mwan_environment == 'testbed'
       notify: Restart mwan-ifmgr@wan
 
     - name: Deploy MWAN runtime config
@@ -503,6 +564,10 @@
         state: started
       when: mwan_ifmgr_wan_enabled | bool
 
+    - name: Wait for the controller connection after ifmgr starts
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
+      when: mwan_ifmgr_wan_enabled | bool
+
     # Baseline / pre-cutover teardown. The wan role of mwan install writes and
     # enables the instanced unit on every gateway, and a prior deploy leaves
     # mwan-ifmgr@wan running, so flipping mwan_ifmgr_wan_enabled to false must
@@ -519,6 +584,12 @@
         name: mwan-ifmgr@wan
         state: stopped
         enabled: false
+      when:
+        - not (mwan_ifmgr_wan_enabled | bool)
+        - ifmgr_instanced_unit.stat.exists
+
+    - name: Wait for the controller connection after ifmgr stops
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
       when:
         - not (mwan_ifmgr_wan_enabled | bool)
         - ifmgr_instanced_unit.stat.exists
@@ -636,6 +707,9 @@
       changed_when: false
       failed_when: false
 
+    - name: Wait for the controller connection after net udev events
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
+
     # The ifmgr modules own reconvergence after network events: wan.routes
     # through its iface monitors and npt through its nft watcher, so no
     # networkd-dispatcher hooks exist. The dispatcher itself stays enabled for
@@ -680,6 +754,9 @@
     # run rendered, and a reload failure stops the deploy at its cause.
     - name: Apply pending network reloads
       ansible.builtin.meta: flush_handlers
+
+    - name: Wait for the controller connection after network reloads
+      ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
     - name: Create systemd override for getty@tty1 (physical console auto-login)
       ansible.builtin.file:

@@ -94,6 +94,56 @@ remove_elements:
 # transit networks. Without these, suburban and the workstation reach neither
 # the MWAN VM nor the failover.
 insert_elements:
+  - name: "MWAN NPT hairpin source alias"
+    parent_xpath: "//opnsense/OPNsense/Firewall/Alias/aliases"
+    xml: |
+      <alias uuid="3c0c2776-d887-4f88-bde6-a3eb7480f181">
+        <enabled>1</enabled>
+        <name>mwan_npt_hairpin_sources</name>
+        <type>external</type>
+        <proto>IPv6</proto>
+        <counters>0</counters>
+        <content/>
+        <description>NPTv6 external prefixes that MWAN updates for hairpin source matching</description>
+      </alias>
+  - name: "MWAN NPT hairpin pass rule"
+    parent_xpath: "//opnsense/filter"
+    xml: |
+      <rule uuid="59002850-36ea-4c52-9f3d-6a9bb5c3bd96">
+        <type>pass</type>
+        <interface>wan</interface>
+        <ipprotocol>inet6</ipprotocol>
+        <statetype>keep state</statetype>
+        <descr>Allow MWAN NPTv6 hairpin traffic to internal IPv6 clients</descr>
+        <direction>in</direction>
+        <quick>1</quick>
+        <source>
+          <address>mwan_npt_hairpin_sources</address>
+        </source>
+        <destination>
+          <address>3d06:bad:b01:210::/60</address>
+        </destination>
+      </rule>
+  - name: "MWAN to OPNsense alias API pass rule"
+    parent_xpath: "//opnsense/filter"
+    xml: |
+      <rule uuid="7604389f-d7b3-47eb-b27f-70672951374d">
+        <type>pass</type>
+        <interface>opt6</interface>
+        <ipprotocol>inet6</ipprotocol>
+        <protocol>tcp</protocol>
+        <statetype>keep state</statetype>
+        <descr>Allow testbed MWAN VM to update the NPTv6 hairpin alias</descr>
+        <direction>in</direction>
+        <quick>1</quick>
+        <source>
+          <address>3d06:bad:b01:210::213</address>
+        </source>
+        <destination>
+          <address>3d06:bad:b01:210::1</address>
+          <port>443</port>
+        </destination>
+      </rule>
   - name: "VMNET to transit pass rule, IPv6"
     parent_xpath: "//opnsense/filter"
     xml: |

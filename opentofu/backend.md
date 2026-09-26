@@ -15,12 +15,15 @@ the Ansible vault automatically:
 ./configsctl tofu apply
 ```
 
-configsctl reads four vault secrets and exports them for the child process:
+configsctl reads five vault secrets and exports them for the child process:
 the R2 access pair (`vault_r2_tofu_access_key_id`,
 `vault_r2_tofu_secret_access_key`) authenticates the backend, and the two
-Proxmox token secrets become the provider token variables. Nothing needs a
-`terraform.tfvars` file, and no secret is exported by hand. A fresh checkout
-needs one `configsctl tofu init` before its first plan.
+Proxmox token secrets authenticate ordinary resources. The
+`vault_suburban_proxmox_root_password` secret authenticates `root@pam` for
+privileged testbed ISP containers because Proxmox rejects feature changes
+from API tokens. Add that secret to the encrypted vault before running OpenTofu.
+Nothing needs a `terraform.tfvars` file, and no secret is exported by hand. A
+fresh checkout needs one `configsctl tofu init` before its first plan.
 
 To rotate the backend credential, mint a new Cloudflare API token with the
 Workers R2 Storage Write permission, derive the S3 pair (the access key id is

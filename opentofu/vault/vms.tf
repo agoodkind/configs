@@ -14,6 +14,9 @@ resource "proxmox_virtual_environment_vm" "opnsense" {
   name      = "router.home.goodkind.io"
   tags      = ["legacyv4", "noramusage"]
 
+  # The provider may recalculate guest-agent addresses and interface names
+  # after detecting a power or NIC diff. A computed-only plan does not restart
+  # this VM; check for configured field changes before applying one.
   machine         = "q35"
   bios            = "ovmf"
   scsi_hardware   = "virtio-scsi-single"

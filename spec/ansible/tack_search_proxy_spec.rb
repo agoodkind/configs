@@ -2,9 +2,9 @@
 
 require 'yaml'
 
-REPOSITORY_ROOT = File.expand_path('../..', __dir__)
-PROXY_TEMPLATE = File.join(REPOSITORY_ROOT, 'proxmox', 'config', 'tack-search-proxy.yml.j2')
-PROXY_TASKS = File.join(REPOSITORY_ROOT, 'ansible', 'playbooks', 'tasks', 'tack-search-proxy.yml')
+PROXY_REPOSITORY_ROOT = File.expand_path('../..', __dir__)
+PROXY_TEMPLATE = File.join(PROXY_REPOSITORY_ROOT, 'proxmox', 'config', 'tack-search-proxy.yml.j2')
+PROXY_TASKS = File.join(PROXY_REPOSITORY_ROOT, 'ansible', 'playbooks', 'tasks', 'tack-search-proxy.yml')
 
 RSpec.describe 'Tack OpenSearch proxy configuration' do
   it 'defines TLS, authenticated routing, and re-encrypted backends' do
@@ -26,7 +26,7 @@ RSpec.describe 'Tack OpenSearch proxy configuration' do
   end
 
   it 'keeps the proxy service on the stable search port' do
-    service = File.read(File.join(REPOSITORY_ROOT, 'proxmox', 'services', 'tack-search-proxy.service.j2'))
+    service = File.read(File.join(PROXY_REPOSITORY_ROOT, 'proxmox', 'services', 'tack-search-proxy.service.j2'))
 
     expect(service).to include('entryPoints.search.address=')
     expect(service).to include('{{ tack_search_proxy_port }}')

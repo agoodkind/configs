@@ -22,14 +22,22 @@ RSpec.describe 'Tack OpenSearch inventory and environment' do
       'docker_v6_subnet' => '3d06:bad:b01:0:7b1::/96'
     )
     expect(qa).to include(
-      'vmid' => 225,
-      'ipv6' => '3d06:bad:b01:210::225',
-      'mac_address' => 'BC:24:11:04:02:25',
+      'vmid' => 227,
+      'ipv6' => '3d06:bad:b01:210::227',
+      'mac_address' => 'BC:24:11:04:02:27',
       'docker_v6_subnet' => '3d06:bad:b01:210:7b1::/96'
     )
     expect(service_mapping.fetch('tack_data1').fetch('vmid')).to eq(120)
     expect(service_mapping.fetch('tack_data2').fetch('vmid')).to eq(121)
     expect(service_mapping.fetch('tack_data3').fetch('vmid')).to eq(122)
+  end
+
+  it 'assigns every guest a distinct VMID and MAC address' do
+    vmids = service_mapping.values.filter_map { |entry| entry['vmid'] }
+    macs = service_mapping.values.filter_map { |entry| entry['mac_address']&.upcase }
+
+    expect(vmids.tally.select { |_, count| count > 1 }.keys).to be_empty
+    expect(macs.tally.select { |_, count| count > 1 }.keys).to be_empty
   end
 
   it 'renders one stable endpoint and disables public search initially' do

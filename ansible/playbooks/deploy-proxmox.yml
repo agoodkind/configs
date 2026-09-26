@@ -32,6 +32,10 @@
     # from the old unit, which exits without --config until systemd gives up.
     opnsensectl_host_restart_safe: true
 
+  pre_tasks:
+    - name: Require a merged controller checkout
+      ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
+
   tasks:
     # Both pulls run per host, because each hypervisor's environment pins its
     # own release.

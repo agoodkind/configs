@@ -38,6 +38,7 @@ mwan_webpass_iface: "enwebpass0"
 mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
+mwan_routed_iface: "enrouted0"
 
 # systemd-networkd files deployed to the testbed gateway. Testbed AT&T is a
 # direct link (no VLAN, no 802.1X) from mwan/networkd/testbed/; the internal
@@ -55,6 +56,7 @@ mwan_att_mac: "BC:24:11:C0:D7:60"
 mwan_webpass_mac: "BC:24:11:BE:8E:B4"
 mwan_mbrains_mac: "BC:24:11:3D:CE:CC"
 mwan_astound_mac: "BC:24:11:A5:70:06"
+mwan_routed_mac: "BC:24:11:A5:70:08"
 mwan_net1_mac: "BC:24:11:49:5D:94"
 
 # AT&T on the testbed is a simulated ISP LXC on a direct link: no 802.1X, no
@@ -88,6 +90,8 @@ mwan_monkeybrains_ipv4: "10.240.206.2/24"
 mwan_monkeybrains_gateway: "10.240.206.1"
 mwan_astound_ipv4: "10.240.207.2/24"
 mwan_astound_gateway: "10.240.207.1"
+mwan_routed_ipv4: "10.240.208.2/24"
+mwan_routed_gateway: "{{ service_mapping.isp_routed_suburban.ipv4 }}"
 
 # DHCPv6 DUIDs (not needed for testbed, ISP LXCs don't check)
 mwan_webpass_duid_raw_data: ""
@@ -119,6 +123,8 @@ mwan_internal_net_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
 mwan_opnsense_internal_v4: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_mwanbr_edge_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
+mwan_nptv6_hairpin_alias: "mwan_npt_hairpin_sources"
+mwan_nptv6_hairpin_ca_file: "/etc/mwan/opnsense-testbed.pem"
 
 # OPNsense addresses (testbed OPNsense).
 mwan_opnsense_edge_ipv6: "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
@@ -169,10 +175,10 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 # Providers
 # ----------------------------------------------------------------------------
 
-# Mirrors mwan_servers.yml entry for entry, with the simulated ISPs' addresses.
-# The routing numbers match production on purpose, so a testbed proof exercises
-# the numbers the production gateway runs. link_files and the link and
-# per-family blocks are described there; the testbed's links are virtio
+# The existing provider entries use the simulated ISPs' addresses. The routed
+# entry tests native IPv4 and IPv6. Production routing numbers stay the same
+# in the matching entries. link_files, the link block, and the per-family
+# blocks are described there; the testbed's links are virtio
 # devices matched by the address Proxmox assigned, so no entry matches by
 # driver or sets a hardware address.
 mwan_providers:
@@ -182,20 +188,33 @@ mwan_providers:
     # Hand-authored as in production, so the testbed exercises the same
     # exemption; its two direct-link unit files stay under mwan/networkd/testbed/.
     link_files: hand-authored
+    ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings:
+          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
+          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3" }
+          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4" }
+          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5" }
+          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6" }
+    ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "3d06:bad:b01:2300::/60"
+      dhcp: true
+      delegation:
+        hint: "::/60"
+        use_delegated_prefix: true
+        without_ra: solicit
     table: 100
     mark: 1
     mark_prio: 100
     from_prio: 55
     tier: 0
     weight: 1
-    npt_prefix: "3d06:bad:b01:2300::/60"
-    v4_source: ""
-    static_mappings:
-      - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
-      - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3" }
-      - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4" }
-      - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5" }
-      - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6" }
     health:
       enabled: true
       ping_count: 3
@@ -214,6 +233,14 @@ mwan_providers:
     link:
       match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
     ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings:
+          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
+          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }
+          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.204.4" }
+          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.204.5" }
+          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.204.6" }
       forwarding: true
       dhcp: false
       address: "{{ mwan_webpass_ipv4 }}"
@@ -222,6 +249,12 @@ mwan_providers:
     # The simulated ISP checks no DUID, so the delegation carries only the
     # hint; a DUID typed here renders only when the value is non-empty.
     ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "3d06:bad:b01:2200::/60"
       forwarding: true
       dhcp: true
       accept_ra: true
@@ -233,13 +266,6 @@ mwan_providers:
     from_prio: 56
     tier: 0
     weight: 1
-    npt_prefix: "3d06:bad:b01:2200::/60"
-    static_mappings:
-      - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
-      - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }
-      - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.204.4" }
-      - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.204.5" }
-      - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.204.6" }
     health:
       enabled: true
       ping_count: 3
@@ -258,6 +284,9 @@ mwan_providers:
     link:
       match: { hardware_address: "{{ mwan_mbrains_mac | lower }}" }
     ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings: []
       forwarding: true
       dhcp: true
       route_metric: 5000
@@ -265,6 +294,12 @@ mwan_providers:
     # renders DUIDType and omits the DUIDRawData line; networkd applies the
     # same default for an absent key and for an empty assignment.
     ipv6:
+      translation:
+        mode: ietf-nat:nptv6
+        nptv6:
+          internal_prefix: "{{ mwan_internal_prefix }}"
+          external_source: delegated
+          expected_prefix: "3d06:bad:b01:2400::/60"
       forwarding: true
       dhcp: true
       accept_ra: true
@@ -282,9 +317,7 @@ mwan_providers:
     from_prio: 57
     tier: 1
     weight: 1
-    npt_prefix: "3d06:bad:b01:2400::/60"
-    v4_source: ""
-    static_mappings: []
+
     health:
       enabled: true
       ping_count: 5
@@ -294,6 +327,46 @@ mwan_providers:
       check_interval: 30
       targets_v4: ["1.1.1.1", "8.8.8.8"]
       targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+      http_targets: ["https://ifconfig.co/ip"]
+
+  - name: routed
+    iface: "{{ mwan_routed_iface }}"
+    vlan_id: ""
+    link_files: rendered
+    link:
+      match: { hardware_address: "{{ mwan_routed_mac | lower }}" }
+    ipv4:
+      translation:
+        mode: native
+      forwarding: true
+      dhcp: false
+      address: "{{ mwan_routed_ipv4 }}"
+      gateway: "{{ mwan_routed_gateway }}"
+      route_metric: 6000
+    ipv6:
+      translation:
+        mode: native
+      forwarding: true
+      dhcp: false
+      accept_ra: false
+      address: "3d06:bad:b01:260::2/64"
+      gateway: "{{ service_mapping.isp_routed_suburban.ipv6 }}"
+      route_metric: 6000
+    table: 600
+    mark: 4
+    mark_prio: 400
+    from_prio: 58
+    tier: 2
+    weight: 1
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["{{ service_mapping.isp_routed_suburban.ipv4 }}"]
+      targets_v6: ["{{ service_mapping.isp_routed_suburban.ipv6 }}"]
       http_targets: ["https://ifconfig.co/ip"]
 
 # How a new connection is assigned among the active tier's healthy providers.

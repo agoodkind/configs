@@ -8,9 +8,16 @@ terraform {
       source  = "hashicorp/http"
       version = ">= 3.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = ">= 5.0.0"
+    }
   }
   required_version = ">= 1.9"
 }
+
+# The provider reads CLOUDFLARE_API_TOKEN from the environment inherited by configsctl.
+provider "cloudflare" {}
 
 provider "proxmox" {
   endpoint  = var.proxmox_endpoint
@@ -23,4 +30,12 @@ provider "proxmox" {
   endpoint  = var.suburban_proxmox_endpoint
   api_token = var.suburban_proxmox_api_token
   insecure  = true
+}
+
+provider "proxmox" {
+  alias    = "suburban_root"
+  endpoint = var.suburban_proxmox_endpoint
+  username = "root@pam"
+  password = var.suburban_proxmox_root_password
+  insecure = true
 }

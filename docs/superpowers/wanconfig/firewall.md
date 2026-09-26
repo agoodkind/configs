@@ -119,6 +119,21 @@ The marking tables, with per-member ingress marks for reply symmetry, the
 pinned-destination sets, the control-plane pin whose target member is named
 in configuration, and the connection mark save and restore.
 
+## Direct and tunneled routing
+
+Generate rules from the shared interface and routing configuration. Restrict
+tunnel packets to configured endpoints and protocols. Restrict BGP sessions
+to configured peers.
+BGP exchanges routes between routers. A BGP session requires firewall
+permission separate from the permission for ordinary traffic forwarded through
+the tunnel.
+
+Test a tunnel with configured routes, a tunnel with a BGP session, and a
+physical connection with BGP. Preserve ordinary IPv4 on each underlying ISP.
+Do not require a tunnel or BGP session to become available before programming
+the closed startup rules. Verify packet-size error handling for the selected
+tunnel and preserve management access during path failures.
+
 ## Losing the pre-flight check
 
 Deleting the file deletes the only pre-flight validation that exists, a

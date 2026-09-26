@@ -169,11 +169,27 @@ service_mapping:
     vmid: 224
     ipv6: "3d06:bad:b01:210::224"
     mac_address: "BC:24:11:04:02:24"
+  mwan_test_client_a_suburban:
+    inventory: false
+    hostname: mwan-client-a.suburban.goodkind.io
+    vmid: 225
+    ipv4: "10.240.1.241"
+    ipv6: "3d06:bad:b01:211::225"
+    mac_address: "BC:24:11:04:02:25"
+  mwan_test_client_b_suburban:
+    inventory: false
+    hostname: mwan-client-b.suburban.goodkind.io
+    vmid: 226
+    ipv4: "10.240.1.242"
+    ipv6: "3d06:bad:b01:211::226"
+    mac_address: "BC:24:11:04:02:26"
+  # Uses 227 rather than its counterpart's 125 plus 100, because
+  # mwan_test_client_a_suburban already uses 225.
   tack_search1_suburban:
     hostname: tack-search1.suburban.goodkind.io
-    vmid: 225
-    ipv6: "3d06:bad:b01:210::225"
-    mac_address: "BC:24:11:04:02:25"
+    vmid: 227
+    ipv6: "3d06:bad:b01:210::227"
+    mac_address: "BC:24:11:04:02:27"
     docker_v6_subnet: "3d06:bad:b01:210:7b1::/96"
     docker_v6_gateway: "3d06:bad:b01:210:7b1::1"
 
@@ -230,6 +246,8 @@ service_mapping:
     # because every guest on the segment points at it as their default route.
     ipv4_vmnet: "10.240.4.1"
     ipv6_vmnet: &opnsense_suburban_vmnet_v6 "3d06:bad:b01:210::1"
+    ipv4_privileged: "10.240.1.1"
+    ipv6_privileged: "3d06:bad:b01:211::1"
     # The inventory plugin reads ipv6 as its default ansible_host, so it aliases
     # the VMNET address rather than repeating it.
     ipv6: *opnsense_suburban_vmnet_v6
@@ -274,14 +292,15 @@ service_mapping:
     ipv6: "3d06:bad:b01:210::5"
 
   # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM.
-  # The IPv6-capable sims also serve DHCPv6-PD and RA on their link; astound is
-  # IPv4-only and serves neither. They have no production counterpart, so they
+  # Webpass, AT&T, and Monkeybrains serve DHCPv6-PD and RA. Astound is IPv4-only;
+  # the routed simulator provides a statically addressed native IPv6 prefix
+  # without DHCPv6-PD or RA. These guests
   # sit in 9xx and their addresses are gateways on their own simulated subnets
   # that production never uses.
   #
   # The uplink addresses sit on vmbr1 behind suburban, which routes the sims'
   # internet traffic out to Comcast and returns tunnel and testbed traffic.
-  # Uplink host suffixes are 90-92 and 94 (93 is router2_suburban's, between
+  # Uplink host suffixes are 90-92 and 94-95 (93 is router2_suburban's, between
   # them), below 100, so they can never read as VMIDs.
   #
   # inventory: false keeps them out of the SSH inventory. deploy-testbed.yml
@@ -319,9 +338,17 @@ service_mapping:
     vmid: 903
     inventory: false
     # IPv4-only: the real Astound circuit carries no IPv6, so this sim has no
-    # ipv6_uplink, unlike the other three ISP sims.
+    # ipv6_uplink, unlike the IPv6-capable ISP sims.
     ipv4: "10.240.207.1"
     ipv4_uplink: "10.240.200.94"
+  isp_routed_suburban:
+    hostname: isp-routed.suburban.goodkind.io
+    vmid: 904
+    inventory: false
+    ipv4: "10.240.208.1"
+    ipv6: "3d06:bad:b01:260::1"
+    ipv4_uplink: "10.240.200.95"
+    ipv6_uplink: "3d06:bad:b01:200::95"
 
   # Second-router simulator, testbed only. An FRR speaker on the transit link
   # that peers with both MWAN speakers in the iBGP AS and announces the prefix
