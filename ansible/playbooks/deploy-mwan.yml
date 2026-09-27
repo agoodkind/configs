@@ -1236,10 +1236,9 @@
         daemon_reload: true
 
     - name: Restart mwan-ifmgr@wan
-      ansible.builtin.systemd:
-        name: mwan-ifmgr@wan
-        state: restarted
-        daemon_reload: true
+      ansible.builtin.include_tasks: tasks/restart-mwan-ifmgr.yml
+      vars:
+        mwan_ifmgr_restart_timeout_seconds: 120
       when: mwan_ifmgr_wan_enabled | bool
 
 # The MWAN failover LXC is configured by deploy-mwan-failover.yml,
