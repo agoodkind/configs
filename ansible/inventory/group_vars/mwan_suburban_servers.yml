@@ -419,7 +419,7 @@ mwan_firewall_management_services:
   - { protocol: tcp, port: 50052 }
   - { protocol: tcp, port: "{{ wanconfig_restconf_port }}" }
 
-# Keep the destination-set identities used by the existing refresher.
+# The firewall and destination refresher use these same kernel set names.
 mwan_pinned_set_v4_name: att_pinned_v4
 mwan_pinned_set_v6_name: att_pinned_v6
 mwan_pinned_source_port: 51820
