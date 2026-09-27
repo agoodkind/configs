@@ -1,0 +1,17 @@
+---
+# OpenSearch memory-map prerequisite for the hypervisor's search guests. The
+# kernel keeps one vm.max_map_count per host, and an unprivileged LXC cannot
+# write it. The hypervisor sets it for every guest. Each search guest reads
+# the value back before it starts OpenSearch. Imported by deploy-proxmox.yml
+# and gated by tack_search_proxy_enabled.
+
+- name: Configure the OpenSearch memory-map limit
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-tack-search.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (deploy-proxmox.yml)
+      vm.max_map_count = {{ tack_search_memory_map_count }}
+  notify: Apply the OpenSearch memory-map limit

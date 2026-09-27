@@ -201,6 +201,20 @@
       --deploy-commit {{ tack_commit }}
 
   tasks:
+    # OpenSearch never places a replica on the guest that stores its primary.
+    # One replica therefore needs two members, and the single-node discovery
+    # mode admits exactly one member.
+    - name: Refuse a search topology the members cannot place
+      ansible.builtin.assert:
+        that:
+          - (tack_search_replicas | int) < (tack_search_members | length)
+          - not (tack_search_single_node | bool) or (tack_search_members | length) == 1
+        fail_msg: >-
+          {{ tack_search_replicas }} search replicas across
+          {{ tack_search_members | length }} members
+          (single-node {{ tack_search_single_node }}). Every replica needs a
+          distinct member, and single-node discovery runs exactly one.
+
     - name: Create /etc/tack directory
       ansible.builtin.file:
         path: /etc/tack
@@ -208,6 +222,17 @@
         owner: root
         group: root
         mode: "0750"
+
+    # The app verifies the search endpoint against this authority, and every
+    # search member verifies its peers against it.
+    - name: Install the OpenSearch certificate authority
+      ansible.builtin.copy:
+        content: "{{ tack_search_ca }}\n"
+        dest: "{{ tack_search_ca_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: tack_cluster_role in ['app', 'search']
 
     # -------------------------------------------------------------------------
     # Application database login (TACK-180). The app connects as tack_app, a
@@ -874,77 +899,9 @@
           when: not tack_store_legacy_node_present
       when: tack_provision_owner
 
-    # OpenSearch guests run only the pinned search service. Configuration is
-    # rendered by this playbook; release validation performs model deployment
-    # and cluster checks after the guest is provisioned.
-    - name: Create Tack install directory for the OpenSearch guest
-      ansible.builtin.file:
-        path: "{{ tack_install_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0750"
-      when: tack_cluster_role == 'search'
-
-    - name: Fetch docker-compose.yml for the OpenSearch guest
-      ansible.builtin.get_url:
-        url: "https://api.github.com/repos/agoodkind/tack/contents/docker-compose.yml?ref={{ tack_commit }}"
-        dest: "{{ tack_install_dir }}/docker-compose.yml"
-        headers:
-          Authorization: "Bearer {{ tack_repo_read_token }}"
-          Accept: "application/vnd.github.raw"
-        owner: root
-        group: root
-        mode: "0644"
-        force: true
-      no_log: true
-      when: tack_cluster_role == 'search'
-
-    - name: Render Tack environment for the OpenSearch guest
-      ansible.builtin.template:
-        src: "{{ repo_root }}/tack/tack.env.j2"
-        dest: "{{ tack_install_dir }}/.env"
-        owner: root
-        group: root
-        mode: "0600"
-      when: tack_cluster_role == 'search'
-
-    - name: Install the OpenSearch trust anchor
-      ansible.builtin.copy:
-        content: "{{ tack_search_ca }}\n"
-        dest: "{{ tack_search_ca_path }}"
-        owner: root
-        group: root
-        mode: "0644"
-      no_log: true
-      when: tack_cluster_role == 'search'
-
-    - name: Render Tack compose override for the OpenSearch guest
-      ansible.builtin.template:
-        src: "{{ repo_root }}/tack/docker-compose.override.yml.j2"
-        dest: "{{ tack_install_dir }}/docker-compose.override.yml"
-        owner: root
-        group: root
-        mode: "0644"
-      when: tack_cluster_role == 'search'
-
-    - name: Configure the OpenSearch memory-map limit
-      ansible.builtin.copy:
-        dest: /etc/sysctl.d/99-tack-search.conf
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          # Managed by Ansible (deploy-tack.yml)
-          vm.max_map_count = {{ tack_search_memory_map_count }}
-      notify: Apply OpenSearch sysctl
-      when: tack_cluster_role == 'search'
-
-    - name: Start the OpenSearch service
-      ansible.builtin.command:
-        cmd: docker compose up -d opensearch
-        chdir: "{{ tack_install_dir }}"
-      changed_when: true
+    # The search guests run one OpenSearch member each (TACK-539).
+    - name: Run the OpenSearch member
+      ansible.builtin.include_tasks: tasks/tack-search-node.yml
       when: tack_cluster_role == 'search'
 
   handlers:
@@ -982,6 +939,9 @@
       changed_when: true
       when: tack_store_node_present | bool
 
-    - name: Apply OpenSearch sysctl
-      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-tack-search.conf
+    # A new certificate, key, or setting takes effect only in a new container.
+    - name: Restart the OpenSearch member
+      ansible.builtin.command:
+        cmd: docker compose up -d --force-recreate opensearch
+        chdir: "{{ tack_install_dir }}"
       changed_when: true

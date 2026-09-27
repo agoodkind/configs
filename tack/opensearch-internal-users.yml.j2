@@ -1,0 +1,15 @@
+---
+# Rendered by Ansible from tack/opensearch-internal-users.yml.j2. The first
+# start of a member reads this file into the security index. The admin
+# backend role maps to all_access in the image's default role mapping, which
+# lets the application create indexes, manage the model, and read cluster
+# health.
+_meta:
+  type: internalusers
+  config_version: 2
+{{ tack_search_username }}:
+  hash: "{{ tack_search_password_hash }}"
+  reserved: true
+  backend_roles:
+    - admin
+  description: Tack application and operator commands

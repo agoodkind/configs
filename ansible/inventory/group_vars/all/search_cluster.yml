@@ -1,0 +1,27 @@
+---
+# OpenSearch cluster membership and guest shape for both environments. Every
+# consumer reads these values here: the environment groups render the member
+# list into each node's discovery settings, the hypervisor groups render it
+# into the proxy backends, and OpenTofu reads the guest shape.
+
+# Members of each environment's cluster, keyed by their service mapping names.
+# A new member here gains a seed address on every node and a backend on the
+# environment's proxy. The application endpoint does not change.
+tack_search_production_members:
+  - tack_search1
+tack_search_qa_members:
+  - tack_search1_suburban
+
+# The port the proxy listens on and every member serves HTTPS on.
+tack_search_port: 9200
+
+# OpenSearch refuses to start in production mode below this memory-map
+# count. The kernel keeps one value for every container on a hypervisor. The
+# hypervisor sets it, and each search guest checks it before start.
+tack_search_memory_map_count: 262144
+
+# Per-guest floor for a combined-role member that runs the sparse model: the
+# model workload opened the ML memory breaker at 4 GiB and completed at 8 GiB.
+tack_search_guest_memory_mib: 8192
+tack_search_guest_cores: 2
+tack_search_guest_disk_gib: 40

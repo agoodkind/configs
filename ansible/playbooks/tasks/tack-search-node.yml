@@ -1,0 +1,109 @@
+---
+# One OpenSearch member on a search guest (TACK-539). deploy-tack.yml includes
+# this file on each guest with tack_cluster_role search. The guest runs only
+# this service from the Tack compose file. Model deployment, index
+# provisioning, and cluster checks belong to the audited ops commands the
+# release runs afterwards.
+
+# The hypervisor sets the limit (deploy-proxmox.yml). OpenSearch refuses to
+# start below it once it binds a routable address. The guest checks the value
+# first and reports the command that raises it.
+- name: Read the memory-map limit the hypervisor sets
+  ansible.builtin.slurp:
+    src: /proc/sys/vm/max_map_count
+  register: tack_search_memory_map_count_read
+
+- name: Refuse to start OpenSearch below its memory-map limit
+  ansible.builtin.assert:
+    that:
+      - (tack_search_memory_map_count_read.content | b64decode | trim | int) >= tack_search_memory_map_count
+    fail_msg: >-
+      {{ inventory_hostname }} reads vm.max_map_count
+      {{ tack_search_memory_map_count_read.content | b64decode | trim }},
+      below the {{ tack_search_memory_map_count }} OpenSearch needs. Run
+      deploy-proxmox on this guest's hypervisor, then deploy again.
+
+- name: Create the OpenSearch node directory
+  ansible.builtin.file:
+    path: "{{ tack_search_node_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the OpenSearch node certificate
+  ansible.builtin.copy:
+    content: "{{ tack_search_node_certificate }}\n"
+    dest: "{{ tack_search_node_dir }}/node.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the OpenSearch member
+
+- name: Install the OpenSearch node private key
+  ansible.builtin.copy:
+    content: "{{ tack_search_node_private_key }}\n"
+    dest: "{{ tack_search_node_dir }}/node.key"
+    owner: "{{ tack_search_container_uid }}"
+    group: "{{ tack_search_container_uid }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart the OpenSearch member
+
+# Read on the first start only, when the security index does not exist yet.
+- name: Install the OpenSearch user file
+  ansible.builtin.template:
+    src: "{{ repo_root }}/tack/opensearch-internal-users.yml.j2"
+    dest: "{{ tack_search_node_dir }}/internal_users.yml"
+    owner: "{{ tack_search_container_uid }}"
+    group: "{{ tack_search_container_uid }}"
+    mode: "0600"
+  no_log: true
+
+- name: Create Tack install directory (search guest)
+  ansible.builtin.file:
+    path: "{{ tack_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+# The compose file requires the environment's variables even for a guest that
+# runs one service from it.
+- name: Deploy Tack environment file (search guest)
+  ansible.builtin.template:
+    src: "{{ repo_root }}/tack/tack.env.j2"
+    dest: "{{ tack_install_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart the OpenSearch member
+
+- name: Deploy Tack compose override (search member)
+  ansible.builtin.template:
+    src: "{{ repo_root }}/tack/docker-compose.override.yml.j2"
+    dest: "{{ tack_install_dir }}/docker-compose.override.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the OpenSearch member
+
+- name: Fetch docker-compose.yml from the tack repo SOT (search guest)
+  ansible.builtin.get_url:
+    url: "https://api.github.com/repos/agoodkind/tack/contents/docker-compose.yml?ref={{ tack_commit }}"
+    dest: "{{ tack_install_dir }}/docker-compose.yml"
+    headers:
+      Authorization: "Bearer {{ tack_repo_read_token }}"
+      Accept: "application/vnd.github.raw"
+    owner: root
+    group: root
+    mode: "0644"
+    force: true
+  no_log: true
+  notify: Restart the OpenSearch member
+
+- name: Start the OpenSearch member
+  ansible.builtin.command:
+    cmd: docker compose up -d opensearch
+    chdir: "{{ tack_install_dir }}"
+  changed_when: true

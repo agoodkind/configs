@@ -373,9 +373,9 @@ service_mapping:
 group_children:
   tack_all:
     - tack_servers
-    - tack_search_servers
+    - tack_search1_servers
     - tack_qa_suburban_servers
-    - tack_search_suburban_servers
+    - tack_search1_suburban_servers
     - tack_data1_servers
     - tack_data2_servers
     - tack_data3_servers
@@ -386,14 +386,14 @@ group_children:
     - tack_app2_suburban_servers
   tack_prod_all:
     - tack_servers
-    - tack_search_servers
+    - tack_search1_servers
     - tack_app2_servers
     - tack_data1_servers
     - tack_data2_servers
     - tack_data3_servers
   tack_qa_all:
     - tack_qa_suburban_servers
-    - tack_search_suburban_servers
+    - tack_search1_suburban_servers
     - tack_app2_suburban_servers
     - tack_data1_suburban_servers
     - tack_data2_suburban_servers
@@ -413,8 +413,8 @@ group_children:
     - tack_qa_suburban_servers
     - tack_app2_suburban_servers
   tack_search:
-    - tack_search_servers
-    - tack_search_suburban_servers
+    - tack_search1_servers
+    - tack_search1_suburban_servers
   mwan_all:
     - mwan_servers
     - mwan_suburban_servers

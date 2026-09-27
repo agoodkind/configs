@@ -1,35 +1,53 @@
+# Rendered by Ansible from proxmox/config/tack-search-proxy.yml.j2. Traefik
+# dynamic configuration for the environment's stable search endpoint.
 http:
   routers:
     tack-search:
       entryPoints: [search]
       rule: PathPrefix(`/`)
+      middlewares: [tack-search-callers]
       service: tack-search
-      middlewares: [tack-search-auth]
       tls: {}
+  middlewares:
+    # The host-networked ops sidecar dials from the guest's own address. The
+    # app container dials from its routed address in the guest's Docker
+    # subnet.
+    tack-search-callers:
+      ipAllowList:
+        sourceRange:
+{% for caller in tack_search_proxy_callers %}
+          - "{{ service_mapping[caller].ipv6 }}/128"
+          - "{{ service_mapping[caller].docker_v6_subnet }}"
+{% endfor %}
   services:
     tack-search:
       loadBalancer:
-        passHostHeader: true
+        serversTransport: tack-search-members
+        healthCheck:
+          path: {{ tack_search_proxy_health_path }}
+          interval: {{ tack_search_proxy_health_interval }}
+          timeout: {{ tack_search_proxy_health_timeout }}
+          headers:
+            Authorization: "Basic {{ (tack_search_proxy_username ~ ':' ~ tack_search_proxy_password) | b64encode }}"
         servers:
-{% for backend in tack_search_proxy_backends %}
-          - url: "{{ backend.url }}"
+{% for member in tack_search_proxy_members %}
+          - url: "https://[{{ service_mapping[member].ipv6 }}]:{{ tack_search_port }}"
 {% endfor %}
-        serversTransport: tack-search-tls
-  middlewares:
-    tack-search-auth:
-      basicAuth:
-        usersFile: /etc/tack-search-proxy/users
+  # Each member URL is an address. Traefik verifies the member's certificate
+  # against that address and the search authority.
+  serversTransports:
+    tack-search-members:
+      rootCAs:
+        - {{ tack_search_proxy_dir }}/ca.crt
 
-serversTransports:
-  tack-search-tls:
-    serverName: opensearch
-    rootCAs:
-      - {{ tack_search_proxy_ca_file }}
-
+# The application dials an address and sends no server name. Traefik answers
+# it with the default certificate.
 tls:
   options:
     default:
       minVersion: VersionTLS13
-  certificates:
-    - certFile: {{ tack_search_proxy_cert_file }}
-      keyFile: {{ tack_search_proxy_key_file }}
+  stores:
+    default:
+      defaultCertificate:
+        certFile: {{ tack_search_proxy_dir }}/server.crt
+        keyFile: {{ tack_search_proxy_dir }}/server.key

@@ -1,3 +1,13 @@
+# QA OpenSearch member. The guest shape comes from the search cluster
+# group_vars, which the render tests read too. The disk sits on rpool beside
+# the other tack guests and mounts with discard. QA runs exactly one member.
+
+locals {
+  tack_search = yamldecode(
+    file("${path.module}/../../ansible/inventory/group_vars/all/search_cluster.yml")
+  )
+}
+
 resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
   node_name = "hypervisor"
   vm_id     = local.service_mapping.tack_search1_suburban.vmid
@@ -33,20 +43,20 @@ resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
   }
 
   disk {
-    datastore_id = "local-zfs"
-    size          = 40
+    datastore_id  = "local-zfs"
+    size          = local.tack_search.tack_search_guest_disk_gib
     mount_options = ["discard"]
   }
 
   memory {
-    dedicated = 8192
+    dedicated = local.tack_search.tack_search_guest_memory_mib
   }
 
   cpu {
-    cores = 2
+    cores = local.tack_search.tack_search_guest_cores
   }
 
-  tags = ["lxc", "tack", "qa", "search", "docker"]
+  tags = ["lxc", "tack", "tack-search", "qa", "docker"]
 
   operating_system {
     template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
@@ -59,9 +69,10 @@ resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      # Proxmox does not return injected SSH keys, so a re-import would read
+      # the configured keys as an addition that forces replacement.
       initialization[0].user_account,
       operating_system[0].template_file_id,
-      mount_point,
     ]
   }
 }

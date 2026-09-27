@@ -142,22 +142,28 @@ proxmox_slow_storage_scratch_mounts:
     path: /root/backups
     size_gib: 40
 
-# Stable QA OpenSearch endpoint on the suburban trunk.
+# QA search endpoint. The proxy listens on suburban's trunk address, accepts
+# only the QA application guests, and selects the QA member. The proxy
+# certificate lists the trunk address as an IP subject alternative name,
+# because the application dials that address.
 tack_search_proxy_enabled: true
 tack_search_proxy_bind_ipv6: "{{ service_mapping.vmbrtrunk_suburban.ipv6 }}"
-tack_search_proxy_port: 9200
-tack_search_proxy_ca_file: /etc/tack-search-proxy/ca.crt
-tack_search_proxy_cert_file: /etc/tack-search-proxy/server.crt
-tack_search_proxy_key_file: /etc/tack-search-proxy/server.key
+tack_search_proxy_members: "{{ tack_search_qa_members }}"
+tack_search_proxy_callers:
+  - tack_qa_suburban
+  - tack_app2_suburban
 tack_search_proxy_username: "{{ vault_tack_qa_search_username }}"
 tack_search_proxy_password: "{{ vault_tack_qa_search_password }}"
-tack_search_proxy_users_file: "{{ vault_tack_qa_search_proxy_users_file }}"
-tack_search_proxy_ca: "{{ vault_tack_qa_search_proxy_ca }}"
+tack_search_proxy_ca: "{{ vault_tack_qa_search_ca }}"
 tack_search_proxy_certificate: "{{ vault_tack_qa_search_proxy_certificate }}"
 tack_search_proxy_private_key: "{{ vault_tack_qa_search_proxy_private_key }}"
-tack_search_proxy_backends:
-  - name: tack_search1_suburban
-    url: "https://[{{ service_mapping.tack_search1_suburban.ipv6 }}]:9200"
+
+# QA capacity gate. The final sparse-model workload used about 3.4 GiB after
+# it finished, and nobody measured its peak. The final validation plan
+# measures this host through the complete QA indexing, query, and rebuild
+# workload and fails QA activation when available memory drops below this
+# value at any point.
+tack_search_qa_host_min_available_gib: 6.26
 
 # Suburban is the only host with a WireGuard interface, so it is the only one
 # that watches peer handshake age. Local-exec mode: an empty ssh_host makes the

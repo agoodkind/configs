@@ -57,7 +57,14 @@ module TackStoreClusterFile
     'tack_datagen_allow_target' => 'qa',
     'tack_docker_v6_subnet' => '3d06:bad:b01:210:1::/96',
     'tack_docker_v6_gateway' => '3d06:bad:b01:210:1::1',
-    'tack_backup_enabled' => false
+    'tack_backup_enabled' => false,
+    'tack_search_endpoint' => 'https://[3d06:bad:b01:210::5]:9200',
+    'tack_search_username' => 'render-only-search-login',
+    'tack_search_password' => 'render-only-search-password',
+    'tack_search_shards' => 1,
+    'tack_search_routing_shards' => 1,
+    'tack_search_replicas' => 0,
+    'tack_search_public_enabled' => false
   }.freeze
 
   module_function

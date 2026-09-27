@@ -1,3 +1,14 @@
+# Production OpenSearch member. The guest shape comes from the search cluster
+# group_vars, which the render tests read too. The disk sits on the P310 thin
+# pool beside the other tack guests and mounts with discard (TACK-498).
+# Production starts with this one member; later members are separate guests.
+
+locals {
+  tack_search = yamldecode(
+    file("${path.module}/../../ansible/inventory/group_vars/all/search_cluster.yml")
+  )
+}
+
 resource "proxmox_virtual_environment_container" "tack_search1" {
   node_name = "vault"
   vm_id     = local.service_mapping.tack_search1.vmid
@@ -9,9 +20,6 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
         address = "${local.service_mapping.tack_search1.ipv6}/64"
         gateway = local.service_mapping.opnsense.ipv6
       }
-    }
-    dns {
-      servers = [local.service_mapping.dns64.ipv6]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -29,20 +37,20 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
   }
 
   disk {
-    datastore_id = "local-lvm"
-    size          = 40
+    datastore_id  = "local-lvm"
+    size          = local.tack_search.tack_search_guest_disk_gib
     mount_options = ["discard"]
   }
 
   memory {
-    dedicated = 8192
+    dedicated = local.tack_search.tack_search_guest_memory_mib
   }
 
   cpu {
-    cores = 2
+    cores = local.tack_search.tack_search_guest_cores
   }
 
-  tags = ["lxc", "tack", "search", "docker"]
+  tags = ["lxc", "tack", "tack-search", "docker"]
 
   operating_system {
     template_file_id = "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
@@ -55,6 +63,7 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
 
   lifecycle {
     prevent_destroy = true
+    # Proxmox returns neither the injected SSH keys nor the template name.
     ignore_changes = [
       initialization[0].user_account,
       operating_system[0].template_file_id,

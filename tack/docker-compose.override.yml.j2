@@ -9,27 +9,59 @@
 # published node ports.
 services:
 {% if tack_cluster_role == 'search' %}
+  # This guest's OpenSearch member (TACK-539). A search guest runs no ledger
+  # node, and this is the only service its override defines. Host networking,
+  # because the node announces the guest's pinned address to its peers and the
+  # proxy dials that address. A container address changes on every recreate.
   opensearch:
     image: {{ tack_search_image }}
+    network_mode: host
     environment:
-      OPENSEARCH_JAVA_OPTS: {{ tack_search_java_opts }}
-      discovery.type: {{ 'single-node' if tack_search_single_node else '' }}
-      discovery.seed_hosts: {{ tack_search_discovery_seed_hosts }}
-      cluster.initial_cluster_manager_nodes: {{ tack_search_initial_cluster_manager_nodes | join(',') }}
-      plugins.ml_commons.only_run_on_ml_node: "true"
-      plugins.ml_commons.ml_task_dispatch_policy: least_load
-      plugins.ml_commons.native_memory_threshold: "95"
+      OPENSEARCH_JAVA_OPTS: "{{ tack_search_java_opts }}"
       DISABLE_INSTALL_DEMO_CONFIG: "true"
-    ports:
-      - "9200:9200"
-      - "9600:9600"
+      cluster.name: {{ tack_search_cluster_name }}
+      node.name: {{ tack_search_node_name }}
+      node.roles: "{{ tack_search_node_roles }}"
+      network.host: "{{ service_mapping[service_name].ipv6 }}"
+      http.port: "{{ tack_search_port }}"
+{% if tack_search_single_node %}
+      discovery.type: single-node
+{% else %}
+      discovery.seed_hosts: "{{ tack_search_members | map('extract', service_mapping, 'ipv6') | join(',') }}"
+{% if tack_search_bootstrap_cluster and service_name == tack_search_members | first %}
+      # First formation only. The release removes it once the cluster forms.
+      cluster.initial_cluster_manager_nodes: {{ tack_search_node_name }}
+{% endif %}
+{% endif %}
+      # Only ML nodes run model work. OpenSearch dispatches each task to the
+      # least-loaded ML node and redeploys the model after a node restarts or
+      # joins.
+      plugins.ml_commons.only_run_on_ml_node: "true"
+      plugins.ml_commons.task_dispatch_policy: least_load
+      plugins.ml_commons.model_auto_redeploy.enable: "true"
+      # TLS on both layers with this member's certificate, verified against
+      # the search authority. A peer joins only when its certificate subject
+      # matches a member. The first start creates the security index from the
+      # mounted user file.
+      plugins.security.ssl.http.enabled: "true"
+      plugins.security.ssl.http.pemcert_filepath: tack-search/node.crt
+      plugins.security.ssl.http.pemkey_filepath: tack-search/node.key
+      plugins.security.ssl.http.pemtrustedcas_filepath: tack-search/ca.crt
+      plugins.security.ssl.transport.pemcert_filepath: tack-search/node.crt
+      plugins.security.ssl.transport.pemkey_filepath: tack-search/node.key
+      plugins.security.ssl.transport.pemtrustedcas_filepath: tack-search/ca.crt
+      plugins.security.nodes_dn: "{{ tack_search_members | map('extract', service_mapping, 'hostname') | map('regex_replace', '^', 'CN=') | join(',') }}"
+      plugins.security.allow_default_init_securityindex: "true"
     volumes:
-      - opensearch-data:{{ tack_search_data_dir }}
-      - {{ tack_search_ca_path }}:/usr/share/opensearch/config/root-ca.pem:ro
+      - opensearch-data:/usr/share/opensearch/data
+      - {{ tack_search_node_dir }}/node.crt:/usr/share/opensearch/config/tack-search/node.crt:ro
+      - {{ tack_search_node_dir }}/node.key:/usr/share/opensearch/config/tack-search/node.key:ro
+      - {{ tack_search_ca_path }}:/usr/share/opensearch/config/tack-search/ca.crt:ro
+      - {{ tack_search_node_dir }}/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
     ulimits:
       nofile:
-        soft: 65536
-        hard: 65536
+        soft: {{ tack_search_nofile_limit }}
+        hard: {{ tack_search_nofile_limit }}
 {% endif %}
 {% if tack_store_node_present | bool %}
   # The product store on this data guest (TACK-408). Host networking, because
@@ -81,6 +113,7 @@ services:
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
 {% endif %}
+{% if tack_cluster_role != 'search' %}
   yugabyte:
 {% if tack_provision_owner and not tack_ledger_legacy_node_present %}
     # Retired on this guest: the inactive profile keeps every compose up
@@ -130,7 +163,7 @@ services:
 {% else %}
       - --tserver_flags=flagfile=/home/yugabyte/tserver.flags
 {% endif %}
-{% if tack_cluster_role == 'search' %}
+{% else %}
 
 volumes:
   opensearch-data:

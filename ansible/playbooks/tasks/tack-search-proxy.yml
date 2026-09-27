@@ -1,68 +1,89 @@
 ---
-# Install the stable TLS endpoint for the OpenSearch cluster. The hypervisor
-# terminates client TLS and re-encrypts each backend connection.
+# The environment's one stable HTTPS search endpoint, on the hypervisor that
+# runs its OpenSearch guests. Traefik terminates the application's TLS with a
+# certificate the search authority signed, admits only the environment's
+# application guests, and opens a new TLS connection to a ready member that it
+# verifies against the same authority. Imported by deploy-proxmox.yml and
+# gated by tack_search_proxy_enabled.
+
 - name: Create the Tack search proxy directory
   ansible.builtin.file:
-    path: /etc/tack-search-proxy
+    path: "{{ tack_search_proxy_dir }}"
     state: directory
     owner: root
     group: root
-    mode: "0750"
-  when: tack_search_proxy_enabled | bool
+    mode: "0700"
 
-- name: Install the Tack search proxy CA
-  ansible.builtin.copy:
-    content: "{{ tack_search_proxy_ca }}\n"
-    dest: "{{ tack_search_proxy_ca_file }}"
+- name: Create the Tack search proxy release directory
+  ansible.builtin.file:
+    path: "{{ tack_search_proxy_release_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# get_url reads the expected digest for the archive from the release's
+# checksum file, so a changed or truncated archive fails the download.
+- name: Download the pinned Traefik release for the Tack search proxy
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/traefik/traefik/releases/download/v{{ tack_search_proxy_traefik_version
+      }}/traefik_v{{ tack_search_proxy_traefik_version }}_linux_amd64.tar.gz
+    checksum: >-
+      sha256:https://github.com/traefik/traefik/releases/download/v{{ tack_search_proxy_traefik_version
+      }}/traefik_v{{ tack_search_proxy_traefik_version }}_checksums.txt
+    dest: "{{ tack_search_proxy_release_dir }}/traefik.tar.gz"
     owner: root
     group: root
     mode: "0644"
-  no_log: true
+
+- name: Unpack the pinned Traefik release for the Tack search proxy
+  ansible.builtin.unarchive:
+    src: "{{ tack_search_proxy_release_dir }}/traefik.tar.gz"
+    dest: "{{ tack_search_proxy_release_dir }}"
+    remote_src: true
+    creates: "{{ tack_search_proxy_release_dir }}/traefik"
   notify: Restart tack-search-proxy
-  when: tack_search_proxy_enabled | bool
+
+- name: Install the search certificate authority for the Tack search proxy
+  ansible.builtin.copy:
+    content: "{{ tack_search_proxy_ca }}\n"
+    dest: "{{ tack_search_proxy_dir }}/ca.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart tack-search-proxy
 
 - name: Install the Tack search proxy certificate
   ansible.builtin.copy:
     content: "{{ tack_search_proxy_certificate }}\n"
-    dest: "{{ tack_search_proxy_cert_file }}"
+    dest: "{{ tack_search_proxy_dir }}/server.crt"
     owner: root
     group: root
     mode: "0644"
-  no_log: true
   notify: Restart tack-search-proxy
-  when: tack_search_proxy_enabled | bool
 
 - name: Install the Tack search proxy private key
   ansible.builtin.copy:
     content: "{{ tack_search_proxy_private_key }}\n"
-    dest: "{{ tack_search_proxy_key_file }}"
+    dest: "{{ tack_search_proxy_dir }}/server.key"
     owner: root
     group: root
     mode: "0600"
   no_log: true
   notify: Restart tack-search-proxy
-  when: tack_search_proxy_enabled | bool
 
-- name: Install the Tack search proxy credentials
-  ansible.builtin.copy:
-    content: "{{ tack_search_proxy_users_file }}\n"
-    dest: /etc/tack-search-proxy/users
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  notify: Restart tack-search-proxy
-  when: tack_search_proxy_enabled | bool
-
+# The rendered file contains the readiness request's credentials. Only root
+# reads it, and the task logs nothing.
 - name: Render the Tack search proxy configuration
   ansible.builtin.template:
     src: "{{ repo_root }}/proxmox/config/tack-search-proxy.yml.j2"
-    dest: /etc/tack-search-proxy/traefik.yml
+    dest: "{{ tack_search_proxy_dir }}/traefik.yml"
     owner: root
     group: root
-    mode: "0644"
+    mode: "0600"
+  no_log: true
   notify: Restart tack-search-proxy
-  when: tack_search_proxy_enabled | bool
 
 - name: Render the Tack search proxy service
   ansible.builtin.template:
@@ -72,7 +93,6 @@
     group: root
     mode: "0644"
   notify: Restart tack-search-proxy
-  when: tack_search_proxy_enabled | bool
 
 - name: Enable the Tack search proxy
   ansible.builtin.systemd:
@@ -80,4 +100,3 @@
     enabled: true
     state: started
     daemon_reload: true
-  when: tack_search_proxy_enabled | bool
