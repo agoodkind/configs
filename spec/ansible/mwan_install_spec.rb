@@ -356,20 +356,26 @@ RSpec.describe MwanInstall do
       expect(baseline).not_to be_nil
       expect(recovery).not_to be_nil
 
-      variables = group_vars.slice('mwan_deploy_gate_families', 'mwan_deploy_gate_consecutive_rounds').merge(
-        'actual_vmid' => '213',
-        'mwan_pre_reboot_boot_id' => { 'stdout' => 'old-boot-id' },
-        'mwan_deploy_trace_id' => 'test-trace'
-      )
-      renders = [baseline, recovery].map do |task|
-        TaskExpressions.render_task(task, 'argv' => described_class.command_argv(task))
-      end
-      rendered = TaskExpressions.evaluate(variables: variables, facts: [], renders: renders).fetch('renders')
+      configured = group_vars.slice('mwan_deploy_gate_families', 'mwan_deploy_gate_consecutive_rounds')
+      alternate = configured.merge('mwan_deploy_gate_families' => 'ipv4', 'mwan_deploy_gate_consecutive_rounds' => '5')
+      [configured, alternate].each do |gate_settings|
+        variables = gate_settings.merge(
+          'actual_vmid' => '213',
+          'mwan_pre_reboot_boot_id' => { 'stdout' => 'old-boot-id' },
+          'mwan_deploy_trace_id' => 'test-trace'
+        )
+        renders = [baseline, recovery].map do |task|
+          TaskExpressions.render_task(task, 'argv' => described_class.command_argv(task))
+        end
+        rendered = TaskExpressions.evaluate(variables: variables, facts: [], renders: renders).fetch('renders')
+        families = gate_settings.fetch('mwan_deploy_gate_families')
+        rounds = gate_settings.fetch('mwan_deploy_gate_consecutive_rounds')
 
-      expect(rendered[0].fetch('argv')).to eq(
-        ['/usr/local/sbin/mwan-deploy-gate', 'deploy-gate', 'check-egress', 'ipv4,ipv6']
-      )
-      expect(rendered[1].fetch('argv').last(2)).to eq(['ipv4,ipv6', '3'])
+        expect(rendered[0].fetch('argv')).to eq(
+          ['/usr/local/sbin/mwan-deploy-gate', 'deploy-gate', 'check-egress', families]
+        )
+        expect(rendered[1].fetch('argv').last(2)).to eq([families, rounds])
+      end
     end
 
     it "leaves the verb's units out of the enable list in #{group_file}" do
