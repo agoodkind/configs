@@ -1142,11 +1142,11 @@
     - name: Fail when health gate failed without rollback snapshot
       ansible.builtin.fail:
         msg: >-
-          Egress checks for the configured address families ({{ mwan_deploy_gate_families }}) did not pass for
-          {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
-          180s of the reboot and no
-          pre-deploy snapshot exists, because connectivity was already broken
-          before the deploy. Restore the VM manually.
+          The egress gate did not record {{ mwan_deploy_gate_consecutive_rounds }}
+          consecutive successful rounds for address families
+          {{ mwan_deploy_gate_families }} within 180 seconds after reboot.
+          No pre-deploy snapshot exists because connectivity was already broken
+          before deployment. Restore the VM manually.
       when:
         - mwan_gate_verdict.egress_rc != 0
         - mwan_gate_verdict.egress_rc != -1
