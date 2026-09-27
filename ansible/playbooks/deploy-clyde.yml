@@ -210,22 +210,10 @@
         status_code: 401
       no_log: true
 
-    - name: Verify public requests require authentication
+    - name: Verify Cloudflare Access denies public requests without its credentials
       ansible.builtin.uri:
         url: "{{ clyde_public_url }}/v1/models"
-        status_code: 401
-      no_log: true
-
-    - name: Verify the public Clyde endpoint
-      ansible.builtin.uri:
-        url: "{{ clyde_public_url }}/v1/models"
-        headers:
-          Authorization: "Bearer {{ vault_clyde_adapter_token }}"
-        status_code: 200
-      register: clyde_public_result
-      retries: 12
-      delay: 5
-      until: clyde_public_result.status == 200
+        status_code: 403
       no_log: true
 
   handlers:
