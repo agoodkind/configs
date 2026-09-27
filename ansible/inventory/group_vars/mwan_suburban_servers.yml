@@ -369,6 +369,43 @@ mwan_providers:
       targets_v6: ["{{ service_mapping.isp_routed_suburban.ipv6 }}"]
       http_targets: ["https://ifconfig.co/ip"]
 
+  # Astound remains available as an IPv4-only DHCP provider in the testbed.
+  # Its routing identifiers differ from the routed-provider simulator.
+  - name: astound
+    iface: "{{ mwan_astound_iface }}"
+    vlan_id: ""
+    link_files: rendered
+    link:
+      match: { hardware_address: "{{ mwan_astound_mac | lower }}" }
+    ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings: []
+      forwarding: true
+      dhcp: true
+      route_metric: 7000
+    ipv6:
+      translation:
+        mode: native
+      dhcp: false
+      accept_ra: false
+    table: 700
+    mark: 5
+    mark_prio: 500
+    from_prio: 59
+    tier: 1
+    weight: 1
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 2
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["1.1.1.1", "8.8.8.8"]
+      targets_v6: []
+      http_targets: ["https://ifconfig.co/ip"]
+
 # How a new connection is assigned among the active tier's healthy providers.
 mwan_hash_mode: random
 
@@ -406,11 +443,13 @@ mwan_email_cooldown: "5m"
 # below a second. Rendered into network.json as steering-group/health/probe-timeout.
 mwan_health_probe_timeout_ms: 2000
 
-# Destination pinning is not exercised on the testbed, so every list is empty
-# and the nft sets render with no elements.
-mwan_pinned_v4_seed_cidrs: []
+# These dedicated probe destinations exercise destination pinning and set
+# recovery without changing the load-balancing probes.
+mwan_pinned_v4_seed_cidrs:
+  - "1.0.0.1/32"
 mwan_pinned_v4_fqdns: []
-mwan_pinned_v6_seed_cidrs: []
+mwan_pinned_v6_seed_cidrs:
+  - "2606:4700:4700::1001/128"
 mwan_pinned_v6_fqdns: []
 mwan_zoom_ipranges_url: ""
 
