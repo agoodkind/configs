@@ -143,7 +143,7 @@
         mode: "0700"
       check_mode: false
 
-    - name: Write the downstream egress probe configuration
+    - name: Render the OPNsense egress probe JSON for deploy gate
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan/config/deploy-gate-probe.json.j2"

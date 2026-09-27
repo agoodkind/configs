@@ -348,7 +348,7 @@ RSpec.describe MwanInstall do
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
-    it "renders both deploy-gate commands with their egress policy in #{group_file}" do
+    it "passes the selected families and probe path to both deploy-gate commands in #{group_file}" do
       group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
       tasks = described_class.role_tasks(MwanInstall::ROLES.first)
       baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
