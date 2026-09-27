@@ -135,6 +135,22 @@
       vars:
         mwan_installed_binary: /usr/local/sbin/mwan-deploy-gate
 
+    - name: Ensure the hypervisor deploy-gate directory exists
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.file:
+        path: /run/mwan-deploy-gate
+        state: directory
+        mode: "0700"
+      check_mode: false
+
+    - name: Write the downstream egress probe configuration
+      delegate_to: "{{ mwan_proxmox_delegate }}"
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan/config/deploy-gate-probe.json.j2"
+        dest: "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}-probe.json"
+        mode: "0600"
+      check_mode: false
+
     - name: Verify internet connectivity before deploy
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.command:
@@ -143,6 +159,7 @@
           - deploy-gate
           - check-egress
           - "{{ mwan_deploy_gate_families }}"
+          - "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}-probe.json"
       register: pre_deploy_connectivity
       changed_when: false
       failed_when: false
@@ -1026,6 +1043,7 @@
           - "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}.json"
           - "{{ mwan_deploy_gate_families }}"
           - "{{ mwan_deploy_gate_consecutive_rounds }}"
+          - "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}-probe.json"
       changed_when: true
 
     # systemd owns the reboot timer, so the trigger survives the SSH session
