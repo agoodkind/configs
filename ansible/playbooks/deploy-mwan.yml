@@ -113,6 +113,9 @@
         actual_vmid: "{{ vmid_lookup.stdout | trim }}"
         mwan_vmid: "{{ vmid_lookup.stdout | trim }}" # Override group_vars
 
+    - name: Discover MWAN VM runtime network (MACs)
+      ansible.builtin.include_tasks: tasks/mwan-vm/discover-runtime-network.yml
+
     # ============================================================================
     # PRE-DEPLOY: Auto-rollback setup
     # ============================================================================
@@ -487,9 +490,6 @@
         mode: "0600"
       when: mwan_ifmgr_wan_enabled | bool
       notify: Restart mwan-ifmgr@wan
-
-    - name: Discover MWAN VM runtime network (MACs)
-      ansible.builtin.include_tasks: tasks/mwan-vm/discover-runtime-network.yml
 
     - name: Create configuration directories
       ansible.builtin.file:
