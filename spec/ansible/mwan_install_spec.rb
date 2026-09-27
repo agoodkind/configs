@@ -348,7 +348,7 @@ RSpec.describe MwanInstall do
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
-    it "renders the family and consecutive-round arguments in both deploy gate commands in #{group_file}" do
+    it "passes the selected families and probe path to both deploy-gate commands in #{group_file}" do
       group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
       tasks = described_class.role_tasks(MwanInstall::ROLES.first)
       baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
@@ -370,11 +370,12 @@ RSpec.describe MwanInstall do
         rendered = TaskExpressions.evaluate(variables: variables, facts: [], renders: renders).fetch('renders')
         families = gate_settings.fetch('mwan_deploy_gate_families')
         rounds = gate_settings.fetch('mwan_deploy_gate_consecutive_rounds')
+        probe_path = '/run/mwan-deploy-gate/test-trace-probe.json'
 
         expect(rendered[0].fetch('argv')).to eq(
-          ['/usr/local/sbin/mwan-deploy-gate', 'deploy-gate', 'check-egress', families]
+          ['/usr/local/sbin/mwan-deploy-gate', 'deploy-gate', 'check-egress', families, probe_path]
         )
-        expect(rendered[1].fetch('argv').last(2)).to eq([families, rounds])
+        expect(rendered[1].fetch('argv').last(3)).to eq([families, rounds, probe_path])
       end
     end
 

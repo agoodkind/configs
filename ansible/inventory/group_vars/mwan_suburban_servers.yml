@@ -20,6 +20,12 @@ mwan_gate_collect_addresses:
   - "{{ service_mapping.suburban_hypervisor.ipv6 }}"
 mwan_deploy_gate_families: "ipv4,ipv6"
 mwan_deploy_gate_consecutive_rounds: "3"
+mwan_deploy_probe:
+  opnsense_vmid: "{{ service_mapping.opnsense_suburban.vmid }}"
+  ipv4_source: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
+  ipv4_next_hop: "{{ service_mapping.mwan_suburban.ipv4_transit }}"
+  ipv6_source: "{{ service_mapping.opnsense_suburban.ipv6_transit }}"
+  ipv6_next_hop: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 
 # prep-guests sets the guest hostname to the first label.
 service_hostname: "{{ service_mapping.mwan_suburban.hostname }}"
@@ -216,6 +222,7 @@ mwan_providers:
     from_prio: 55
     tier: 0
     weight: 1
+    forced_dscp: 8
     health:
       enabled: true
       ping_count: 3

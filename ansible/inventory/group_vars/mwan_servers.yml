@@ -21,6 +21,12 @@ mwan_gate_collect_addresses:
   - "{{ service_mapping.vault_hypervisor.ipv6_oob }}"
 mwan_deploy_gate_families: "ipv4,ipv6"
 mwan_deploy_gate_consecutive_rounds: "3"
+mwan_deploy_probe:
+  opnsense_vmid: "{{ service_mapping.opnsense.vmid }}"
+  ipv4_source: "{{ mwan_opnsense_internal_v4 }}"
+  ipv4_next_hop: "{{ bgp_router_id }}"
+  ipv6_source: "{{ mwan_opnsense_edge_ipv6 }}"
+  ipv6_next_hop: "{{ bgp_next_hop_v6 }}"
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
 # Override the dynamic inventory plugin's IPv4-first compose so SSH targets
