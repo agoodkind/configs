@@ -203,7 +203,8 @@
   tasks:
     # OpenSearch never places a replica on the guest that stores its primary.
     # One replica therefore needs two members, and the single-node discovery
-    # mode admits exactly one member.
+    # mode admits exactly one member. An environment with search off renders
+    # no topology and skips this check.
     - name: Refuse a search topology the members cannot place
       ansible.builtin.assert:
         that:
@@ -214,6 +215,7 @@
           {{ tack_search_members | length }} members
           (single-node {{ tack_search_single_node }}). Every replica needs a
           distinct member, and single-node discovery runs exactly one.
+      when: tack_search_enabled | bool
 
     - name: Create /etc/tack directory
       ansible.builtin.file:
@@ -224,7 +226,9 @@
         mode: "0750"
 
     # The app verifies the search endpoint against this authority, and every
-    # search member verifies its peers against it.
+    # search member verifies its peers against it. An application guest
+    # installs it only while search is on. A search guest exists only after an
+    # explicit OpenTofu apply and always installs it.
     - name: Install the OpenSearch certificate authority
       ansible.builtin.copy:
         content: "{{ tack_search_ca }}\n"
@@ -232,7 +236,9 @@
         owner: root
         group: root
         mode: "0644"
-      when: tack_cluster_role in ['app', 'search']
+      when: >-
+        tack_cluster_role == 'search'
+        or (tack_cluster_role == 'app' and tack_search_enabled | bool)
 
     # -------------------------------------------------------------------------
     # Application database login (TACK-180). The app connects as tack_app, a

@@ -62,15 +62,16 @@ module TackSearchInventory
 
   module_function
 
-  # One render per environment, member count, and public search switch, shared
-  # by every spec file in the run and removed when the run ends. A render with
-  # public_enabled overrides the committed switch with an extra variable.
-  def rendered(environment, member_count: 1, public_enabled: false)
+  # One render per environment, member count, and set of overrides, shared by
+  # every spec file in the run and removed when the run ends. Each override is
+  # an extra variable that replaces the committed inventory value, such as
+  # tack_search_enabled or tack_search_public_enabled.
+  def rendered(environment, member_count: 1, overrides: {})
     @rendered ||= {}
-    @rendered[[environment, member_count, public_enabled]] ||= render(environment, member_count, public_enabled)
+    @rendered[[environment, member_count, overrides]] ||= render(environment, member_count, overrides)
   end
 
-  def render(environment, member_count, public_enabled)
+  def render(environment, member_count, overrides)
     work_directory = Dir.mktmpdir('tack-search-render')
     at_exit { FileUtils.remove_entry(work_directory) }
     inventory_directory = copy_inventory(work_directory)
@@ -79,7 +80,6 @@ module TackSearchInventory
     output_directory = File.join(work_directory, 'rendered')
     FileUtils.mkdir_p(output_directory)
     result = Rendered.new(directory: output_directory, environment: environment, members: members)
-    overrides = public_enabled ? { 'tack_search_public_enabled' => true } : {}
     run(inventory_directory, output_directory, host_templates(result), overrides)
     result
   end

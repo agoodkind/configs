@@ -108,6 +108,11 @@ tack_store_redundancy_mode: double
 # hypervisor, and the proxy there selects a member. Production runs normal
 # cluster discovery from its first start, so a later member joins by name
 # without a change to the endpoint.
+#
+# Search stays off in production until a release turns it on. While it is
+# off, the env file has no OPENSEARCH_* setting, the application guests get
+# no search authority, and deploy-tack skips the topology check.
+tack_search_enabled: false
 tack_search_members: "{{ tack_search_production_members }}"
 tack_search_endpoint: "https://[{{ service_mapping.vault_hypervisor.ipv6 }}]:{{ tack_search_port }}"
 tack_search_single_node: false

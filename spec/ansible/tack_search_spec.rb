@@ -18,6 +18,9 @@ module TackSearchEnvironment
     OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS OPENSEARCH_USERNAME
   ].freeze
   PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
+  # Extra variables that turn on search, and search with public results.
+  ENABLED = { 'tack_search_enabled' => true }.freeze
+  PUBLIC = ENABLED.merge('tack_search_public_enabled' => true).freeze
 
   module_function
 
@@ -63,9 +66,19 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.duplicates(guests.filter_map { |entry| entry['docker_v6_subnet'] })).to be_empty
   end
 
+  it 'renders no search setting in production while search is off', :aggregate_failures do
+    [
+      TackSearchInventory.rendered(:production),
+      TackSearchInventory.rendered(:production, member_count: 3),
+      TackSearchInventory.rendered(:production, overrides: { 'tack_search_public_enabled' => true })
+    ].each do |rendered|
+      expect(described_class.search_settings(rendered)).to be_empty
+    end
+  end
+
   it 'keeps one application endpoint while production members grow' do
-    one = TackSearchInventory.rendered(:production, member_count: 1)
-    three = TackSearchInventory.rendered(:production, member_count: 3)
+    one = TackSearchInventory.rendered(:production, member_count: 1, overrides: TackSearchEnvironment::ENABLED)
+    three = TackSearchInventory.rendered(:production, member_count: 3, overrides: TackSearchEnvironment::ENABLED)
 
     endpoint = one.settings(one.owner).fetch('OPENSEARCH_ENDPOINT')
 
@@ -73,12 +86,14 @@ RSpec.describe TackSearchEnvironment do
     expect(three.settings(three.owner).fetch('OPENSEARCH_ENDPOINT')).to eq(endpoint)
   end
 
+  # QA renders its committed inventory. Production renders with search turned
+  # on, the value a later release sets.
   {
-    production: TackSearchEnvironment::PRODUCTION_ENDPOINT,
-    qa: TackSearchEnvironment::QA_ENDPOINT
-  }.each do |environment, endpoint|
+    production: [TackSearchEnvironment::PRODUCTION_ENDPOINT, TackSearchEnvironment::ENABLED],
+    qa: [TackSearchEnvironment::QA_ENDPOINT, {}]
+  }.each do |environment, (endpoint, overrides)|
     it "renders the #{environment} search settings Tack reads, with public search off and no replica" do
-      rendered = TackSearchInventory.rendered(environment)
+      rendered = TackSearchInventory.rendered(environment, overrides: overrides)
       prefix = environment == :qa ? 'vault_tack_qa' : 'vault_tack'
 
       expect(described_class.search_settings(rendered)).to eq(
@@ -95,7 +110,7 @@ RSpec.describe TackSearchEnvironment do
     end
 
     it "renders the #{environment} cursor key from the vault when public search is on" do
-      rendered = TackSearchInventory.rendered(environment, public_enabled: true)
+      rendered = TackSearchInventory.rendered(environment, overrides: TackSearchEnvironment::PUBLIC)
       prefix = environment == :qa ? 'vault_tack_qa' : 'vault_tack'
       settings = described_class.search_settings(rendered)
 
