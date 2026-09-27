@@ -223,10 +223,9 @@
     # OpenSearch places each replica on a member other than the one that
     # stores its primary. One replica requires two members. Single-node
     # discovery admits exactly one member. An environment with search off
-    # renders no topology and skips this check. The member list has more
-    # entries than the replica count when a member remains after the first
-    # replica-count entries. The list has exactly one entry when it is not
-    # empty and nothing follows its first entry.
+    # renders no topology and skips this check. The member list must contain
+    # at least one more member than the replica count. Single-node discovery
+    # requires exactly one member.
     - name: Refuse a search topology the members cannot place
       ansible.builtin.assert:
         that:
@@ -253,9 +252,10 @@
     # search member verifies its peers against it. An application guest
     # installs it only while search is on. This play runs on a search guest
     # only while its environment has search on, and that guest always
-    # installs the authority. Both processes read the
-    # file at start. A changed file restarts the app on an owner guest and
-    # recreates the member on a search guest; each handler checks the role.
+    # installs the authority. Both processes read the file at start. After a
+    # change to the file, the app handler restarts the app when
+    # tack_provision_owner is true. The member handler recreates the member
+    # when tack_cluster_role is search.
     - name: Install the OpenSearch certificate authority
       ansible.builtin.copy:
         content: "{{ tack_search_ca }}\n"
