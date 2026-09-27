@@ -1,0 +1,40 @@
+- name: Wait for the controller connection before ifmgr restarts
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 5
+    sleep: 5
+    timeout: 300
+
+- name: Check the ifmgr restart
+  ansible.builtin.systemd:
+    name: mwan-ifmgr@wan
+    state: restarted
+    daemon_reload: true
+  when: ansible_check_mode
+
+- name: Start the ifmgr restart without waiting on SSH
+  ansible.builtin.systemd:
+    name: mwan-ifmgr@wan
+    state: restarted
+    daemon_reload: true
+  async: "{{ mwan_ifmgr_restart_timeout_seconds }}"
+  poll: 0
+  register: mwan_ifmgr_restart_job
+  when: not ansible_check_mode
+
+- name: Wait for the controller connection after ifmgr restarts
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 5
+    # The first usable SSH connection must follow the async job deadline.
+    delay: "{{ mwan_ifmgr_restart_timeout_seconds }}"
+    sleep: 5
+    timeout: 300
+  when: not ansible_check_mode
+
+- name: Verify the ifmgr restart completed
+  ansible.builtin.async_status:
+    jid: "{{ mwan_ifmgr_restart_job.ansible_job_id }}"
+  register: mwan_ifmgr_restart_result
+  until: mwan_ifmgr_restart_result is finished
+  retries: 24
+  delay: 5
+  when: not ansible_check_mode
