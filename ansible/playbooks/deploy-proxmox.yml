@@ -117,3 +117,4 @@
     - name: Apply the OpenSearch memory-map limit
       ansible.builtin.command: sysctl -p /etc/sysctl.d/99-tack-search.conf
       changed_when: true
+      when: tack_search_proxy_enabled | bool
