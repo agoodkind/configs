@@ -406,11 +406,13 @@ mwan_email_cooldown: "5m"
 # below a second. Rendered into network.json as steering-group/health/probe-timeout.
 mwan_health_probe_timeout_ms: 2000
 
-# Destination pinning is not exercised on the testbed, so every list is empty
-# and the nft sets render with no elements.
-mwan_pinned_v4_seed_cidrs: []
+# These dedicated probe destinations exercise destination pinning and set
+# recovery without changing the load-balancing probes.
+mwan_pinned_v4_seed_cidrs:
+  - "1.0.0.1/32"
 mwan_pinned_v4_fqdns: []
-mwan_pinned_v6_seed_cidrs: []
+mwan_pinned_v6_seed_cidrs:
+  - "2606:4700:4700::1001/128"
 mwan_pinned_v6_fqdns: []
 mwan_zoom_ipranges_url: ""
 
