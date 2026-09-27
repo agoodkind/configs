@@ -22,6 +22,7 @@ module TackSearchInventory
     'env' => 'tack/tack.env.j2',
     'override' => 'tack/docker-compose.override.yml.j2',
     'users' => 'tack/opensearch-internal-users.yml.j2',
+    'roles_mapping' => 'tack/opensearch-roles-mapping.yml.j2',
     'proxy' => 'proxmox/config/tack-search-proxy.yml.j2',
     'proxy_service' => 'proxmox/services/tack-search-proxy.service.j2'
   }.freeze
@@ -92,7 +93,7 @@ module TackSearchInventory
 
   def host_templates(result)
     templates = { result.owner => %w[env], result.hypervisor => %w[proxy proxy_service] }
-    result.members.each { |member| templates[result.member_host(member)] = %w[override users env] }
+    result.members.each { |member| templates[result.member_host(member)] = %w[override users roles_mapping env] }
     templates.transform_values { |names| names.map { |name| { 'name' => name, 'src' => TEMPLATES.fetch(name) } } }
   end
 

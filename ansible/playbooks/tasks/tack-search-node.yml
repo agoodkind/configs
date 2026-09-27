@@ -50,7 +50,8 @@
   no_log: true
   notify: Restart the OpenSearch member
 
-# Read on the first start only, when the security index does not exist yet.
+# OpenSearch reads the user, role, and role mapping files on the first start
+# only, when the security index does not exist yet.
 - name: Install the OpenSearch user file
   ansible.builtin.template:
     src: "{{ repo_root }}/tack/opensearch-internal-users.yml.j2"
@@ -59,6 +60,22 @@
     group: "{{ tack_search_container_uid }}"
     mode: "0600"
   no_log: true
+
+- name: Install the OpenSearch role file
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/tack/opensearch-roles.yml"
+    dest: "{{ tack_search_node_dir }}/roles.yml"
+    owner: "{{ tack_search_container_uid }}"
+    group: "{{ tack_search_container_uid }}"
+    mode: "0600"
+
+- name: Install the OpenSearch role mapping file
+  ansible.builtin.template:
+    src: "{{ repo_root }}/tack/opensearch-roles-mapping.yml.j2"
+    dest: "{{ tack_search_node_dir }}/roles_mapping.yml"
+    owner: "{{ tack_search_container_uid }}"
+    group: "{{ tack_search_container_uid }}"
+    mode: "0600"
 
 - name: Create Tack install directory (search guest)
   ansible.builtin.file:

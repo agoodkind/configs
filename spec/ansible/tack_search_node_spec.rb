@@ -4,8 +4,8 @@ require 'yaml'
 require_relative '../support/tack_search_inventory'
 require_relative '../support/task_expressions'
 
-# Each OpenSearch member as a deploy renders it, and the checks the deploy runs
-# before it starts one.
+# These examples read each OpenSearch member as a deploy renders it, and they
+# evaluate the checks the deploy runs before it starts a member.
 module TackSearchNode
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'deploy-tack.yml')
   NODE_TASKS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tasks', 'tack-search-node.yml')
@@ -83,12 +83,15 @@ RSpec.describe TackSearchNode do
     expect(rendered.settings(host)).to include('TACK_SEARCH_NODE_NAME' => 'tack-search1')
   end
 
-  it 'grants the application user the admin backend role' do
+  it 'maps the application user to the tack_search role and no backend role' do
     rendered = TackSearchInventory.rendered(:production)
-    users = rendered.yaml(rendered.member_host('tack_search1'), 'users')
+    host = rendered.member_host('tack_search1')
+    user = rendered.yaml(host, 'users').fetch('render-only-vault_tack_search_username')
 
-    expect(users.fetch('render-only-vault_tack_search_username')).to include(
-      'hash' => 'render-only-vault_tack_search_password_hash', 'backend_roles' => ['admin']
+    expect(user).to include('hash' => 'render-only-vault_tack_search_password_hash')
+    expect(user.keys).not_to include('backend_roles')
+    expect(rendered.yaml(host, 'roles_mapping').fetch('tack_search')).to include(
+      'users' => ['render-only-vault_tack_search_username']
     )
   end
 

@@ -9,10 +9,11 @@
 # published node ports.
 services:
 {% if tack_cluster_role == 'search' %}
-  # This guest's OpenSearch member (TACK-539). A search guest runs no ledger
-  # node, and this is the only service its override defines. Host networking,
-  # because the node announces the guest's pinned address to its peers and the
-  # proxy dials that address. A container address changes on every recreate.
+  # This service is the guest's OpenSearch member (TACK-539). A search guest
+  # runs no ledger node, and this is the only service its override defines.
+  # The opensearch service uses host networking. The node announces the
+  # guest's pinned address to its peers, and the proxy dials that address. A
+  # container address changes on every recreate.
   opensearch:
     image: {{ tack_search_image }}
     network_mode: host
@@ -31,10 +32,11 @@ services:
       plugins.ml_commons.only_run_on_ml_node: "true"
       plugins.ml_commons.task_dispatch_policy: least_load
       plugins.ml_commons.model_auto_redeploy.enable: "true"
-      # TLS on both layers with this member's certificate, verified against
-      # the search authority. A peer joins only when its certificate subject
-      # matches a member. The first start creates the security index from the
-      # mounted user file.
+      # Both layers use TLS with this member's certificate, and each side
+      # verifies the other against the search authority. A peer joins only
+      # when its certificate subject matches a member. The first start creates
+      # the security index from the mounted user, role, and role mapping
+      # files.
       plugins.security.ssl.http.enabled: "true"
       plugins.security.ssl.http.pemcert_filepath: tack-search/node.crt
       plugins.security.ssl.http.pemkey_filepath: tack-search/node.key
@@ -50,6 +52,8 @@ services:
       - {{ tack_search_node_dir }}/node.key:/usr/share/opensearch/config/tack-search/node.key:ro
       - {{ tack_search_ca_path }}:/usr/share/opensearch/config/tack-search/ca.crt:ro
       - {{ tack_search_node_dir }}/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
+      - {{ tack_search_node_dir }}/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
+      - {{ tack_search_node_dir }}/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
     ulimits:
       nofile:
         soft: {{ tack_search_nofile_limit }}
