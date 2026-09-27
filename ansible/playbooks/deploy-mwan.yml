@@ -138,7 +138,11 @@
     - name: Verify internet connectivity before deploy
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.command:
-        cmd: /usr/local/sbin/mwan-deploy-gate deploy-gate check-egress
+        argv:
+          - /usr/local/sbin/mwan-deploy-gate
+          - deploy-gate
+          - check-egress
+          - "{{ mwan_deploy_gate_families }}"
       register: pre_deploy_connectivity
       changed_when: false
       failed_when: false
@@ -263,6 +267,20 @@
     - name: Wait for the controller connection after network packages install
       ansible.builtin.include_tasks: tasks/wait-for-connection.yml
 
+    - name: Declare gateway firewall modules for boot
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan/config/modules-load.conf"
+        dest: /etc/modules-load.d/mwan-firewall.conf
+        mode: "0644"
+
+    - name: Load gateway firewall modules before the daemon starts
+      ansible.builtin.command:
+        argv:
+          - modprobe
+          - "{{ item }}"
+      loop: "{{ lookup('file', repo_root ~ '/mwan/config/modules-load.conf').splitlines() }}"
+      changed_when: false
+
     - name: Create MWAN runtime config directory
       ansible.builtin.file:
         path: /etc/mwan
@@ -332,6 +350,18 @@
               - /usr/local/sbin/mwan-deploy-gate
               - deploy-gate
               - check-network
+              - "{{ mwan_schema_remote.path }}/network.json"
+              - "{{ mwan_schema_remote.path }}"
+          changed_when: false
+          check_mode: false
+
+        - name: Check the rendered firewall in a private network namespace
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.command:
+            argv:
+              - /usr/local/sbin/mwan-deploy-gate
+              - deploy-gate
+              - check-firewall
               - "{{ mwan_schema_remote.path }}/network.json"
               - "{{ mwan_schema_remote.path }}"
           changed_when: false
@@ -732,26 +762,6 @@
         dest: /etc/iproute2/rt_tables
         mode: "0644"
 
-    - name: Deploy nftables config
-      # Reloaded by handler: without it the file lands on disk and the kernel
-      # keeps the previous ruleset, so a renumber renders correctly and never
-      # takes effect. The ifmgr npt module reprograms its own ip6 nat rules on
-      # its next reconcile after the flush.
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan/config/nftables.conf.j2"
-        dest: /etc/nftables.conf
-        mode: "0644"
-        backup: true
-        validate: /usr/sbin/nft -c -f %s
-      notify:
-        - Reload nftables
-      vars:
-        actual_mgmt_iface: "{{ mwan_mgmt_iface }}"
-        actual_internal_iface: "{{ mwan_internal_iface }}"
-
-    # Converge the network layer here rather than at the end of the play, so
-    # the services deployed below start against the addresses and rules this
-    # run rendered, and a reload failure stops the deploy at its cause.
     - name: Apply pending network reloads
       ansible.builtin.meta: flush_handlers
 
@@ -844,6 +854,128 @@
         daemon_reload: true
       loop: "{{ mwan_enabled_services }}"
 
+    - name: Transfer firewall ownership from nftables to mwan-ifmgr
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - not ansible_check_mode
+      block:
+        - name: Read the retired nftables service state
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - is-enabled
+              - nftables.service
+          register: mwan_nftables_enabled
+          changed_when: false
+          failed_when: false
+
+        - name: Create nftables handoff drop-in directory
+          ansible.builtin.file:
+            path: /etc/systemd/system/nftables.service.d
+            state: directory
+            mode: "0755"
+          when: mwan_nftables_enabled.stdout | trim != 'masked'
+
+        - name: Preserve installed rules when stopping the retired nftables service
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/nftables.service.d/99-mwan-handoff.conf
+            mode: "0644"
+            content: |
+              [Service]
+              ExecStop=
+          when: mwan_nftables_enabled.stdout | trim != 'masked'
+
+        - name: Load the nftables handoff drop-in
+          ansible.builtin.systemd:
+            daemon_reload: true
+          when: mwan_nftables_enabled.stdout | trim != 'masked'
+
+        - name: Read the nftables stop action before handoff
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - show
+              - --property=ExecStop
+              - --value
+              - nftables.service
+          register: mwan_nftables_stop_action
+          changed_when: false
+          when: mwan_nftables_enabled.stdout | trim != 'masked'
+
+        - name: Require an empty nftables stop action before handoff
+          ansible.builtin.assert:
+            that:
+              - mwan_nftables_stop_action.stdout | trim == ''
+            fail_msg: nftables still has an ExecStop action that could clear gateway rules
+          when: mwan_nftables_enabled.stdout | trim != 'masked'
+
+        - name: Stop and disable the retired nftables service without deleting rules
+          ansible.builtin.systemd:
+            name: nftables
+            state: stopped
+            enabled: false
+          when: mwan_nftables_enabled.stdout | trim != 'masked'
+
+        - name: Read the retired nftables service activity
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - show
+              - --property=ActiveState
+              - --value
+              - nftables.service
+          register: mwan_nftables_activity
+          changed_when: false
+
+        - name: Require the retired nftables service to be inactive
+          ansible.builtin.assert:
+            that:
+              - mwan_nftables_activity.stdout | trim == 'inactive'
+            fail_msg: nftables remains active after the firewall handoff
+
+        - name: Confirm gateway readiness after the nftables service stops
+          ansible.builtin.systemd:
+            name: mwan-ifmgr@wan
+            state: started
+
+        - name: Inspect the active gateway firewall after nftables stops
+          ansible.builtin.command:
+            argv:
+              - /usr/local/bin/mwan
+              - deploy-gate
+              - inspect-firewall
+              - /etc/mwan/network.json
+              - /usr/local/share/wanconfig/yang
+          register: mwan_firewall_inspect
+          until: mwan_firewall_inspect.rc == 0
+          retries: 30
+          delay: 2
+          changed_when: false
+
+        - name: Mask the retired nftables service
+          ansible.builtin.systemd:
+            name: nftables
+            masked: true
+
+        - name: Remove the temporary nftables handoff drop-in
+          ansible.builtin.file:
+            path: /etc/systemd/system/nftables.service.d/99-mwan-handoff.conf
+            state: absent
+
+        - name: Remove the retired nftables service override
+          ansible.builtin.file:
+            path: /etc/systemd/system/nftables.service.d/override.conf
+            state: absent
+
+        - name: Remove the retired gateway ruleset file
+          ansible.builtin.file:
+            path: /etc/nftables.conf
+            state: absent
+
+        - name: Reload systemd after the nftables handoff
+          ansible.builtin.systemd:
+            daemon_reload: true
+
     # ============================================================================
     # POST-DEPLOY: Reboot for clean state
     # ============================================================================
@@ -892,6 +1024,8 @@
           - "180"
           - "{{ mwan_deploy_trace_id }}"
           - "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}.json"
+          - "{{ mwan_deploy_gate_families }}"
+          - "{{ mwan_deploy_gate_consecutive_rounds }}"
       changed_when: true
 
     # systemd owns the reboot timer, so the trigger survives the SSH session
@@ -996,9 +1130,10 @@
     - name: Fail playbook after rollback
       ansible.builtin.fail:
         msg: >-
-          IPv6 egress never returned within 180s of the reboot, probed from
-          {{ mwan_proxmox_delegate }}. Rolled back to
-          {{ mwan_pre_deploy_snapshot_name }}.
+          Address-family egress checks ({{ mwan_deploy_gate_families }}) failed to pass
+          {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
+          180 seconds after reboot. {{ mwan_proxmox_delegate }} ran the probes
+          and restored the VM from {{ mwan_pre_deploy_snapshot_name }}.
       when:
         - mwan_gate_verdict.egress_rc != 0
         - mwan_gate_verdict.egress_rc != -1
@@ -1007,9 +1142,11 @@
     - name: Fail when health gate failed without rollback snapshot
       ansible.builtin.fail:
         msg: >-
-          IPv6 egress never returned within 180s of the reboot and no
-          pre-deploy snapshot exists, because connectivity was already broken
-          before the deploy. Restore the VM manually.
+          The egress gate did not record {{ mwan_deploy_gate_consecutive_rounds }}
+          consecutive successful rounds for address families
+          {{ mwan_deploy_gate_families }} within 180 seconds after reboot.
+          No pre-deploy snapshot exists because connectivity was already broken
+          before deployment. Restore the VM manually.
       when:
         - mwan_gate_verdict.egress_rc != 0
         - mwan_gate_verdict.egress_rc != -1
@@ -1053,11 +1190,6 @@
     - name: Reload networkd
       ansible.builtin.command: networkctl reload
       changed_when: true
-
-    - name: Reload nftables
-      ansible.builtin.systemd:
-        name: nftables
-        state: reloaded
 
     - name: Restart wpa_supplicant
       ansible.builtin.systemd:

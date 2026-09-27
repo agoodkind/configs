@@ -19,6 +19,8 @@ mwan_proxmox_delegate: vault
 mwan_gate_collect_addresses:
   - "{{ service_mapping.vault_hypervisor.ipv6 }}"
   - "{{ service_mapping.vault_hypervisor.ipv6_oob }}"
+mwan_deploy_gate_families: "ipv4,ipv6"
+mwan_deploy_gate_consecutive_rounds: "3"
 service_ipv6_address: "{{ service_mapping.mwan.ipv6 }}/64"
 
 # Override the dynamic inventory plugin's IPv4-first compose so SSH targets
@@ -89,7 +91,6 @@ mwan_enabled_services:
   - bringup-att-vlan
   - systemd-networkd
   - networkd-dispatcher
-  - nftables
   - wpa_supplicant-mwan
   - wpa-cli-action
   - wpa-authenticated.path
@@ -498,6 +499,18 @@ mwan_hash_mode: random
 # The provider the pinned-destination sets and the router's WireGuard control
 # plane are pinned to.
 mwan_pin_provider: att
+
+# The gateway permits these services on its management interface.
+mwan_firewall_management_services:
+  - { protocol: tcp, port: 22 }
+  - { protocol: tcp, port: 50052 }
+  - { protocol: tcp, port: "{{ wanconfig_restconf_port }}" }
+
+# The firewall and destination refresher use these same kernel set names.
+mwan_pinned_set_v4_name: att_pinned_v4
+mwan_pinned_set_v6_name: att_pinned_v6
+mwan_pinned_source_port: 51820
+mwan_pinned_destination_port: 51821
 
 # ----------------------------------------------------------------------------
 # Interface manager WAN route module

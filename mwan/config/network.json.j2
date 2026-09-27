@@ -176,6 +176,27 @@
 {% set _ = interfaces.append(entry) %}
 {% endfor %}
 {% set _ = interfaces.append({"name": mwan_internal_iface, "type": "iana-if-type:other"}) %}
+{% set _ = interfaces.append({"name": mwan_mgmt_iface, "type": "iana-if-type:other"}) %}
+{% set management_services = [] %}
+{% for service in mwan_firewall_management_services %}
+{% set permit = {"protocol": service.protocol, "port": service.port | int} %}
+{% if service.allowed_source is defined %}
+{% set _ = permit.update({"allowed-source": service.allowed_source}) %}
+{% endif %}
+{% set _ = management_services.append(permit) %}
+{% endfor %}
+{% set firewall = {
+  "management-interface": mwan_mgmt_iface,
+  "management-service": management_services,
+  "pinned-provider": mwan_pin_provider,
+  "pinned-source-v4": mwan_opnsense_internal_v4,
+  "pinned-source-port": mwan_pinned_source_port,
+  "pinned-destination-port": mwan_pinned_destination_port,
+  "pinned-set-v4-name": mwan_pinned_set_v4_name,
+  "pinned-set-v6-name": mwan_pinned_set_v6_name,
+  "pinned-v4": mwan_pinned_v4_seed_cidrs,
+  "pinned-v6": mwan_pinned_v6_seed_cidrs
+} %}
 {{ {
   "ietf-interfaces:interfaces": {
     "interface": interfaces,
@@ -191,6 +212,7 @@
         "internal-iface": mwan_internal_iface,
         "internal-net-v4": mwan_internal_net_v4
       },
+      "firewall": firewall,
       "health": {"probe-timeout": mwan_health_probe_timeout_ms}
     }
   }
