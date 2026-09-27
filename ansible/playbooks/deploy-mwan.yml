@@ -1132,8 +1132,8 @@
         msg: >-
           Address-family egress checks ({{ mwan_deploy_gate_families }}) failed to pass
           {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
-          180 seconds after reboot. {{ mwan_proxmox_delegate }} ran the probes. Rolled back to
-          {{ mwan_pre_deploy_snapshot_name }}.
+          180 seconds after reboot. {{ mwan_proxmox_delegate }} ran the probes
+          and restored the VM from {{ mwan_pre_deploy_snapshot_name }}.
       when:
         - mwan_gate_verdict.egress_rc != 0
         - mwan_gate_verdict.egress_rc != -1
