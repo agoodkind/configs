@@ -34,7 +34,7 @@ module TackSearchInventory
   SECRET_NAMES = %w[
     yugabyte_password audit_writer_password audit_reader_password audit_redactor_password
     audit_operator_password search_username search_password search_password_hash search_ca
-    search_proxy_certificate search_proxy_private_key
+    search_proxy_certificate search_proxy_private_key search_cursor_key
   ].freeze
   SHARED_SECRETS = %w[vault_seaweedfs_s3_access_key vault_seaweedfs_s3_secret_key].freeze
 
@@ -62,14 +62,15 @@ module TackSearchInventory
 
   module_function
 
-  # One render per environment and member count, shared by every spec file in
-  # the run and removed when the run ends.
-  def rendered(environment, member_count: 1)
+  # One render per environment, member count, and public search switch, shared
+  # by every spec file in the run and removed when the run ends. A render with
+  # public_enabled overrides the committed switch with an extra variable.
+  def rendered(environment, member_count: 1, public_enabled: false)
     @rendered ||= {}
-    @rendered[[environment, member_count]] ||= render(environment, member_count)
+    @rendered[[environment, member_count, public_enabled]] ||= render(environment, member_count, public_enabled)
   end
 
-  def render(environment, member_count)
+  def render(environment, member_count, public_enabled)
     work_directory = Dir.mktmpdir('tack-search-render')
     at_exit { FileUtils.remove_entry(work_directory) }
     inventory_directory = copy_inventory(work_directory)
@@ -78,7 +79,8 @@ module TackSearchInventory
     output_directory = File.join(work_directory, 'rendered')
     FileUtils.mkdir_p(output_directory)
     result = Rendered.new(directory: output_directory, environment: environment, members: members)
-    run(inventory_directory, output_directory, host_templates(result))
+    overrides = public_enabled ? { 'tack_search_public_enabled' => true } : {}
+    run(inventory_directory, output_directory, host_templates(result), overrides)
     result
   end
 
@@ -131,7 +133,7 @@ module TackSearchInventory
     File.write(cluster_path, YAML.dump(cluster.merge('tack_search_production_members' => members)))
   end
 
-  def run(inventory_directory, output_directory, templates)
+  def run(inventory_directory, output_directory, templates, overrides)
     AnsibleRender.render(
       inventory: inventory_directory,
       playbook: PLAYBOOK,
@@ -142,7 +144,7 @@ module TackSearchInventory
         'output_directory' => output_directory,
         'tack_app_password' => APP_PASSWORD,
         'ansible_become' => false
-      }
+      }.merge(overrides)
     )
   end
 end

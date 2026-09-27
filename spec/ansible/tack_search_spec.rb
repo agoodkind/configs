@@ -11,10 +11,13 @@ module TackSearchEnvironment
   QA_ENDPOINT = 'https://[3d06:bad:b01:210::5]:9200'
   # Every variable Tack's config package reads for search that has no
   # compiled default, plus the public switch the deployment plan requires.
+  # Tack reads the cursor key only while public search is on. The env file
+  # with public search on adds it.
   SETTING_NAMES = %w[
     OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_PASSWORD OPENSEARCH_PUBLIC_ENABLED
     OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS OPENSEARCH_USERNAME
   ].freeze
+  PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
 
   module_function
 
@@ -89,6 +92,18 @@ RSpec.describe TackSearchEnvironment do
         'OPENSEARCH_PUBLIC_ENABLED' => 'false'
       )
       expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::SETTING_NAMES)
+    end
+
+    it "renders the #{environment} cursor key from the vault when public search is on" do
+      rendered = TackSearchInventory.rendered(environment, public_enabled: true)
+      prefix = environment == :qa ? 'vault_tack_qa' : 'vault_tack'
+      settings = described_class.search_settings(rendered)
+
+      expect(settings).to include(
+        'OPENSEARCH_PUBLIC_ENABLED' => 'true',
+        'OPENSEARCH_CURSOR_KEY' => "render-only-#{prefix}_search_cursor_key"
+      )
+      expect(settings.keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
     end
   end
 

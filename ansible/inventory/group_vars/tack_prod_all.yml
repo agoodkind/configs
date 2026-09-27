@@ -122,6 +122,9 @@ tack_search_username: "{{ vault_tack_search_username }}"
 tack_search_password: "{{ vault_tack_search_password }}"
 tack_search_password_hash: "{{ vault_tack_search_password_hash }}"
 tack_search_ca: "{{ vault_tack_search_ca }}"
+# The standard base64 key that signs search continuation cursors. The env
+# template renders it only while tack_search_public_enabled is true.
+tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
 
 # Index topology that `ops search provision` applies. OpenSearch never places
 # a replica on the guest that stores its primary, so one replica needs a
