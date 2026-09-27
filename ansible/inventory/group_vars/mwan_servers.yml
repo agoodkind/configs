@@ -89,7 +89,6 @@ mwan_enabled_services:
   - bringup-att-vlan
   - systemd-networkd
   - networkd-dispatcher
-  - nftables
   - wpa_supplicant-mwan
   - wpa-cli-action
   - wpa-authenticated.path
@@ -498,6 +497,18 @@ mwan_hash_mode: random
 # The provider the pinned-destination sets and the router's WireGuard control
 # plane are pinned to.
 mwan_pin_provider: att
+
+# The gateway permits these services on its management interface.
+mwan_firewall_management_services:
+  - { protocol: tcp, port: 22 }
+  - { protocol: tcp, port: 50052 }
+  - { protocol: tcp, port: "{{ wanconfig_restconf_port }}" }
+
+# Keep the destination-set identities used by the existing refresher.
+mwan_pinned_set_v4_name: att_pinned_v4
+mwan_pinned_set_v6_name: att_pinned_v6
+mwan_pinned_source_port: 51820
+mwan_pinned_destination_port: 51821
 
 # ----------------------------------------------------------------------------
 # Interface manager WAN route module
