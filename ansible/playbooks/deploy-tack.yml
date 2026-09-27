@@ -949,7 +949,7 @@
       changed_when: true
 
     # This handler restarts the app container because the app reads the search
-    # authority file through its /etc/tack mount only at start. A compose up
+    # authority file from its /etc/tack mount only at start. A compose up
     # leaves the container running when its compose configuration is
     # unchanged. The play starts the app only on the owner guest.
     - name: Restart the Tack app for a new search authority
