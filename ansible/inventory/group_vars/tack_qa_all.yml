@@ -119,8 +119,9 @@ tack_search_cursor_key: "{{ vault_tack_qa_search_cursor_key }}"
 # The `ops search provision` command applies this index topology. One member
 # cannot place a replica. The routing-shard count divides by every approved
 # split target (2, 4, and 8), and Tack refuses any other value. Public search
-# is enabled.
+# stays off until the QA projection backfill and the empty rebuild from
+# FoundationDB pass.
 tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0
-tack_search_public_enabled: true
+tack_search_public_enabled: false
