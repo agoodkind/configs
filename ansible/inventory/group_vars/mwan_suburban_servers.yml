@@ -216,6 +216,7 @@ mwan_providers:
     from_prio: 55
     tier: 0
     weight: 1
+    forced_dscp: 8
     health:
       enabled: true
       ping_count: 3
