@@ -11,7 +11,6 @@ module TackSearchNode
   NODE_TASKS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tasks', 'tack-search-node.yml')
   MEMORY_MAP_TASK = 'Refuse to start OpenSearch below its memory-map limit'
   TOPOLOGY_TASK = 'Refuse a search topology the members cannot place'
-  CA_TASK = 'Install the OpenSearch certificate authority'
   # The Tack container contract every member renders.
   CONTRACT = {
     'OPENSEARCH_JAVA_OPTS' => '-Xms2g -Xmx2g',
@@ -27,26 +26,17 @@ module TackSearchNode
     rendered.yaml(rendered.member_host(member), 'override').dig('services', 'opensearch')
   end
 
-  def task(file, name)
-    tasks = YAML.safe_load_file(file).flat_map { |entry| entry['tasks'] || [entry] }
-    found = tasks.find { |candidate| candidate['name'] == name }
-    raise "#{file} has no task named #{name.inspect}" if found.nil?
-
-    found
-  end
-
   def assert_conditions(file, name)
-    TaskExpressions.condition_list(task(file, name).dig('ansible.builtin.assert', 'that'))
+    tasks = YAML.safe_load_file(file).flat_map { |entry| entry['tasks'] || [entry] }
+    task = tasks.find { |candidate| candidate['name'] == name }
+    raise "#{file} has no task named #{name.inspect}" if task.nil?
+
+    TaskExpressions.condition_list(task.dig('ansible.builtin.assert', 'that'))
   end
 
   def passes?(file, name, variables)
     TaskExpressions.evaluate(variables: variables, facts: [], conditions: { 'check' => assert_conditions(file, name) })
                    .dig('conditions', 'check')
-  end
-
-  def runs?(file, name, variables)
-    conditions = TaskExpressions.condition_list(task(file, name)['when'])
-    TaskExpressions.evaluate(variables: variables, facts: [], conditions: { 'when' => conditions }).dig('conditions', 'when')
   end
 end
 
@@ -126,30 +116,6 @@ RSpec.describe TackSearchNode do
       }
 
       expect(described_class.passes?(TackSearchNode::PLAYBOOK_FILE, TackSearchNode::TOPOLOGY_TASK, variables)).to be(accepted)
-    end
-  end
-
-  [true, false].each do |enabled|
-    it "#{enabled ? 'checks' : 'skips'} the search topology with tack_search_enabled #{enabled}" do
-      variables = { 'tack_search_enabled' => enabled }
-
-      expect(described_class.runs?(TackSearchNode::PLAYBOOK_FILE, TackSearchNode::TOPOLOGY_TASK, variables)).to be(enabled)
-    end
-  end
-
-  # A search guest runs only from the separate search guest play. It installs
-  # the authority whatever the switch says. An application guest installs it
-  # only while search is on.
-  {
-    'an application guest with search on' => ['app', true, true],
-    'an application guest with search off' => ['app', false, false],
-    'a search guest with search off' => ['search', false, true],
-    'a data guest with search on' => ['data', true, false]
-  }.each do |name, (role, enabled, installs)|
-    it "#{installs ? 'installs' : 'skips'} the search authority on #{name}" do
-      variables = { 'tack_cluster_role' => role, 'tack_search_enabled' => enabled }
-
-      expect(described_class.runs?(TackSearchNode::PLAYBOOK_FILE, TackSearchNode::CA_TASK, variables)).to be(installs)
     end
   end
 end

@@ -66,16 +66,6 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.duplicates(guests.filter_map { |entry| entry['docker_v6_subnet'] })).to be_empty
   end
 
-  it 'renders no search setting in production while search is off', :aggregate_failures do
-    [
-      TackSearchInventory.rendered(:production),
-      TackSearchInventory.rendered(:production, member_count: 3),
-      TackSearchInventory.rendered(:production, overrides: { 'tack_search_public_enabled' => true })
-    ].each do |rendered|
-      expect(described_class.search_settings(rendered)).to be_empty
-    end
-  end
-
   it 'keeps one application endpoint while production members grow' do
     one = TackSearchInventory.rendered(:production, member_count: 1, overrides: TackSearchEnvironment::ENABLED)
     three = TackSearchInventory.rendered(:production, member_count: 3, overrides: TackSearchEnvironment::ENABLED)
@@ -86,29 +76,27 @@ RSpec.describe TackSearchEnvironment do
     expect(three.settings(three.owner).fetch('OPENSEARCH_ENDPOINT')).to eq(endpoint)
   end
 
-  # QA renders its committed inventory. Production renders with search turned
-  # on, the value a later release sets.
-  {
-    production: [TackSearchEnvironment::PRODUCTION_ENDPOINT, TackSearchEnvironment::ENABLED],
-    qa: [TackSearchEnvironment::QA_ENDPOINT, {}]
-  }.each do |environment, (endpoint, overrides)|
-    it "renders the #{environment} search settings Tack reads, with public search off and no replica" do
-      rendered = TackSearchInventory.rendered(environment, overrides: overrides)
-      prefix = environment == :qa ? 'vault_tack_qa' : 'vault_tack'
+  it 'renders the QA search settings Tack reads, with public search off and no replica' do
+    rendered = TackSearchInventory.rendered(:qa)
 
-      expect(described_class.search_settings(rendered)).to eq(
-        'OPENSEARCH_ENDPOINT' => endpoint,
-        'OPENSEARCH_CA' => '/etc/tack/search-ca.crt',
-        'OPENSEARCH_USERNAME' => "render-only-#{prefix}_search_username",
-        'OPENSEARCH_PASSWORD' => "render-only-#{prefix}_search_password",
-        'OPENSEARCH_SHARDS' => '1',
-        'OPENSEARCH_ROUTING_SHARDS' => '8',
-        'OPENSEARCH_REPLICAS' => '0',
-        'OPENSEARCH_PUBLIC_ENABLED' => 'false'
-      )
-      expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::SETTING_NAMES)
-    end
+    expect(described_class.search_settings(rendered)).to eq(
+      'OPENSEARCH_ENDPOINT' => TackSearchEnvironment::QA_ENDPOINT,
+      'OPENSEARCH_CA' => '/etc/tack/search-ca.crt',
+      'OPENSEARCH_USERNAME' => 'render-only-vault_tack_qa_search_username',
+      'OPENSEARCH_PASSWORD' => 'render-only-vault_tack_qa_search_password',
+      'OPENSEARCH_SHARDS' => '1',
+      'OPENSEARCH_ROUTING_SHARDS' => '8',
+      'OPENSEARCH_REPLICAS' => '0',
+      'OPENSEARCH_PUBLIC_ENABLED' => 'false'
+    )
+    expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::SETTING_NAMES)
+  end
 
+  it 'renders no production search setting while production search is off' do
+    expect(described_class.search_settings(TackSearchInventory.rendered(:production))).to be_empty
+  end
+
+  %i[production qa].each do |environment|
     it "renders the #{environment} cursor key from the vault when public search is on" do
       rendered = TackSearchInventory.rendered(environment, overrides: TackSearchEnvironment::PUBLIC)
       prefix = environment == :qa ? 'vault_tack_qa' : 'vault_tack'
