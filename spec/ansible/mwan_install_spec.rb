@@ -348,7 +348,7 @@ RSpec.describe MwanInstall do
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
-    it "The deploy gate policy for #{group_file} requires both address families for three consecutive rounds" do
+    it "passes both family and consecutive round settings to both deploy gate commands in #{group_file}" do
       group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
       tasks = described_class.role_tasks(MwanInstall::ROLES.first)
       baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
