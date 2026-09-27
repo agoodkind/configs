@@ -1,0 +1,18 @@
+---
+# This playbook renders the Tack search templates for real inventory hosts.
+# Each host renders its templates with the group variables that host
+# resolves. The spec lists each host and the templates that host renders.
+- name: Render the Tack search templates
+  hosts: "{{ render_hosts }}"
+  gather_facts: false
+  connection: local
+  become: false
+  tasks:
+    - name: Render each template this host receives
+      ansible.builtin.template:
+        src: "{{ repository_root }}/{{ item.src }}"
+        dest: "{{ output_directory }}/{{ inventory_hostname }}-{{ item.name }}"
+        mode: "0600"
+      loop: "{{ render_templates[inventory_hostname] }}"
+      loop_control:
+        label: "{{ item.name }}"

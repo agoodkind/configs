@@ -8,6 +8,65 @@
 # other ledger name to the owning guest's pinned address, reached on the
 # published node ports.
 services:
+{% if tack_cluster_role == 'search' %}
+  # This service is the guest's OpenSearch member (TACK-539). A search guest
+  # runs no ledger node, and this is the only service its override defines.
+  # The opensearch service uses host networking. The node announces the
+  # guest's pinned address to its peers, and the proxy dials that address. A
+  # container address changes on every recreate.
+  opensearch:
+    image: {{ tack_search_image }}
+    network_mode: host
+    environment:
+      OPENSEARCH_JAVA_OPTS: "{{ tack_search_java_opts }}"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      cluster.name: {{ tack_search_cluster_name }}
+      # This map sets no node.name or discovery key. Compose merges this map
+      # with the opensearch environment in the Tack base file. The base file
+      # sets node.name, discovery.type, discovery.seed_hosts, and
+      # cluster.initial_cluster_manager_nodes from the TACK_SEARCH_* values in
+      # the rendered .env.
+      node.roles: "{{ tack_search_node_roles }}"
+      network.host: "{{ service_mapping[service_name].ipv6 }}"
+      http.port: "{{ tack_search_port }}"
+      # Every member blocks automatic creation of node-pages-* indices and
+      # allows automatic creation of every other index. Tack creates each
+      # node-pages-* index with an explicit mapping and does not change this
+      # setting at runtime.
+      action.auto_create_index: "-node-pages-*,+*"
+      # Only ML nodes run model work. OpenSearch dispatches each task to the
+      # least-loaded ML node and redeploys the model after a node restarts or
+      # joins.
+      plugins.ml_commons.only_run_on_ml_node: "true"
+      plugins.ml_commons.task_dispatch_policy: least_load
+      plugins.ml_commons.model_auto_redeploy.enable: "true"
+      # Both layers use TLS with this member's certificate, and each side
+      # verifies the other against the search authority. A peer joins only
+      # when its certificate subject matches a member. The first start creates
+      # the security index from the mounted user, role, and role mapping
+      # files.
+      plugins.security.ssl.http.enabled: "true"
+      plugins.security.ssl.http.pemcert_filepath: tack-search/node.crt
+      plugins.security.ssl.http.pemkey_filepath: tack-search/node.key
+      plugins.security.ssl.http.pemtrustedcas_filepath: tack-search/ca.crt
+      plugins.security.ssl.transport.pemcert_filepath: tack-search/node.crt
+      plugins.security.ssl.transport.pemkey_filepath: tack-search/node.key
+      plugins.security.ssl.transport.pemtrustedcas_filepath: tack-search/ca.crt
+      plugins.security.nodes_dn: "{{ tack_search_members | map('extract', service_mapping, 'hostname') | map('regex_replace', '^', 'CN=') | join(',') }}"
+      plugins.security.allow_default_init_securityindex: "true"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+      - {{ tack_search_node_dir }}/node.crt:/usr/share/opensearch/config/tack-search/node.crt:ro
+      - {{ tack_search_node_dir }}/node.key:/usr/share/opensearch/config/tack-search/node.key:ro
+      - {{ tack_search_ca_path }}:/usr/share/opensearch/config/tack-search/ca.crt:ro
+      - {{ tack_search_node_dir }}/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
+      - {{ tack_search_node_dir }}/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
+      - {{ tack_search_node_dir }}/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+    ulimits:
+      nofile:
+        soft: {{ tack_search_nofile_limit }}
+        hard: {{ tack_search_nofile_limit }}
+{% endif %}
 {% if tack_store_node_present | bool %}
   # The product store on this data guest (TACK-408). Host networking, because
   # the process has to bind the address it announces: the cluster records that
@@ -58,6 +117,7 @@ services:
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
 {% endif %}
+{% if tack_cluster_role != 'search' %}
   yugabyte:
 {% if tack_provision_owner and not tack_ledger_legacy_node_present %}
     # Retired on this guest: the inactive profile keeps every compose up
@@ -106,4 +166,9 @@ services:
       - --tserver_flags=flagfile=/home/yugabyte/tserver.flags,certs_dir=/home/yugabyte/certs,use_node_to_node_encryption=true,use_client_to_server_encryption=true,certs_for_client_dir=/home/yugabyte/certs,allow_insecure_connections=false
 {% else %}
       - --tserver_flags=flagfile=/home/yugabyte/tserver.flags
+{% endif %}
+{% else %}
+
+volumes:
+  opensearch-data:
 {% endif %}

@@ -1,0 +1,12 @@
+---
+# Ansible renders this file from tack/opensearch-internal-users.yml.j2. The
+# first start of a member reads this file into the security index. The user
+# has no backend role. The role mapping file maps the user to the tack_search
+# role by name.
+_meta:
+  type: internalusers
+  config_version: 2
+{{ tack_search_username }}:
+  hash: "{{ tack_search_password_hash }}"
+  reserved: true
+  description: The Tack application and the Tack operator commands use this user.

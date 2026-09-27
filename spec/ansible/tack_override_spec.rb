@@ -16,6 +16,7 @@ module TackOverride
   LEDGER_NAMES = 'yb1:5433,yb2:5433,yb3:5433'
   # A repointed owner guest: the app dials the three data nodes.
   OWNER_GUEST_VARS = {
+    'tack_cluster_role' => 'app',
     'tack_provision_owner' => true,
     'tack_ledger_consumers_repointed' => true,
     'tack_ledger_legacy_node_present' => false,

@@ -1,0 +1,30 @@
+---
+# This file defines OpenSearch cluster membership and guest shape for both
+# environments. The environment groups render the member list into each
+# node's discovery settings. The hypervisor groups render the member list
+# into the proxy backends. OpenTofu reads the guest shape.
+
+# Each list contains the service mapping keys of its environment's cluster
+# members. A new entry in a list adds that member's seed address to every
+# node and adds its backend to the environment's proxy. The
+# OPENSEARCH_ENDPOINT value in the application environment does not change.
+tack_search_production_members:
+  - tack_search1
+tack_search_qa_members:
+  - tack_search1_suburban
+
+# The proxy listens on this port, and every member serves HTTPS on it.
+tack_search_port: 9200
+
+# OpenSearch refuses to start in production mode when vm.max_map_count is
+# below this value. The hypervisor kernel has one vm.max_map_count value that
+# applies to every container on that hypervisor. The hypervisor sets the
+# value, and each search guest reads it before OpenSearch starts.
+tack_search_memory_map_count: 262144
+
+# This value sets the per-guest memory floor for a combined-role member that
+# runs the sparse model. The model workload opened the ML memory breaker at
+# 4 GiB and completed at 8 GiB.
+tack_search_guest_memory_mib: 8192
+tack_search_guest_cores: 2
+tack_search_guest_disk_gib: 40

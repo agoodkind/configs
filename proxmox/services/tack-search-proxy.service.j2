@@ -1,0 +1,19 @@
+[Unit]
+Description=Tack OpenSearch TLS proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{ tack_search_proxy_release_dir }}/traefik --entryPoints.search.address=[{{ tack_search_proxy_bind_ipv6 }}]:{{ tack_search_port }} --providers.file.filename={{ tack_search_proxy_dir }}/traefik.yml --global.checkNewVersion=false --global.sendAnonymousUsage=false --log.level=INFO
+Restart=on-failure
+RestartSec=5s
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

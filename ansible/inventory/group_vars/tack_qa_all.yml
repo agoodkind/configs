@@ -95,3 +95,32 @@ tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
 tack_store_seed_cluster_file: true
 tack_store_legacy_node_present: false
 tack_store_redundancy_mode: double
+
+# These values configure QA OpenSearch. The application dials one HTTPS
+# endpoint on the suburban trunk, and the proxy there selects the member. QA
+# runs one member in single-node discovery mode. The suburban host has
+# capacity for exactly one 8 GiB search guest. QA does not add another
+# member.
+tack_search_enabled: true
+tack_search_members: "{{ tack_search_qa_members }}"
+tack_search_endpoint: "https://[{{ service_mapping.vmbrtrunk_suburban.ipv6 }}]:{{ tack_search_port }}"
+tack_search_single_node: true
+tack_search_cluster_name: tack-search-qa
+tack_search_bootstrap_cluster: false
+
+tack_search_username: "{{ vault_tack_qa_search_username }}"
+tack_search_password: "{{ vault_tack_qa_search_password }}"
+tack_search_password_hash: "{{ vault_tack_qa_search_password_hash }}"
+tack_search_ca: "{{ vault_tack_qa_search_ca }}"
+# Tack signs search continuation cursors with this base64-encoded key. The
+# env template renders it only while tack_search_public_enabled is true.
+tack_search_cursor_key: "{{ vault_tack_qa_search_cursor_key }}"
+
+# The `ops search provision` command applies this index topology. One member
+# cannot place a replica. The routing-shard count divides by every approved
+# split target (2, 4, and 8), and Tack refuses any other value. Public search
+# is disabled.
+tack_search_shards: 1
+tack_search_routing_shards: 8
+tack_search_replicas: 0
+tack_search_public_enabled: false

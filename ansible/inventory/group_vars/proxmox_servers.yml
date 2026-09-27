@@ -92,6 +92,28 @@ tack_guest_fstrim_randomized_delay: "10min"
 tack_thin_pool: ""
 tack_thin_pool_discards: "nopassdown"
 
+# These values configure the Tack search endpoint on a hypervisor. A
+# hypervisor that runs an environment's OpenSearch guests sets
+# tack_search_proxy_enabled to true in its own group_vars. That hypervisor
+# then sets the memory-map prerequisite for those guests and runs the
+# environment's HTTPS proxy. Every hypervisor declares the other values
+# because the proxy task file reads each input without a default.
+tack_search_proxy_enabled: false
+tack_search_proxy_bind_ipv6: ""
+tack_search_proxy_members: []
+tack_search_proxy_callers: []
+tack_search_proxy_dir: /etc/tack-search-proxy
+# This variable pins the Traefik release that the proxy runs. The download
+# task verifies the archive against the checksum file of that release.
+tack_search_proxy_traefik_version: "3.0.0"
+tack_search_proxy_release_dir: "/usr/local/lib/tack-search-proxy/traefik-{{ tack_search_proxy_traefik_version }}"
+# The proxy sends an authenticated request to this path on every member to
+# check readiness. A member answers the request after it joins a cluster
+# that has an elected cluster manager.
+tack_search_proxy_health_path: /_cluster/health
+tack_search_proxy_health_interval: 10s
+tack_search_proxy_health_timeout: 5s
+
 # Slow storage tier (TACK-495). Each hypervisor keeps its latency-sensitive
 # guests on its fast pool and places the object store and the owner guest's
 # backup staging on a slower drive. proxmox_slow_storage is the Proxmox storage

@@ -282,3 +282,11 @@
 - name: Build the slow storage tier pool and register it as guest storage
   ansible.builtin.import_tasks: proxmox-slow-zpool.yml
   when: proxmox_slow_zpool_enabled | bool
+
+- name: Set the OpenSearch memory-map prerequisite for the search guests
+  ansible.builtin.import_tasks: tack-search-memory-map.yml
+  when: tack_search_proxy_enabled | bool
+
+- name: Run the Tack search endpoint proxy
+  ansible.builtin.import_tasks: tack-search-proxy.yml
+  when: tack_search_proxy_enabled | bool

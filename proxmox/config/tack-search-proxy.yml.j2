@@ -1,0 +1,55 @@
+# This file is the Traefik dynamic configuration for the environment's search
+# endpoint.
+http:
+  routers:
+    tack-search:
+      entryPoints: [search]
+      rule: PathPrefix(`/`)
+      middlewares: [tack-search-callers]
+      service: tack-search
+      tls: {}
+  middlewares:
+    # The host-networked ops sidecar dials from the guest's own address. The
+    # app container dials from its routed address in the guest's Docker
+    # subnet.
+    tack-search-callers:
+      ipAllowList:
+        sourceRange:
+{% for caller in tack_search_proxy_callers %}
+          - "{{ service_mapping[caller].ipv6 }}/128"
+          - "{{ service_mapping[caller].docker_v6_subnet }}"
+{% endfor %}
+  services:
+    tack-search:
+      loadBalancer:
+        serversTransport: tack-search-members
+        healthCheck:
+          path: {{ tack_search_proxy_health_path }}
+          interval: {{ tack_search_proxy_health_interval }}
+          timeout: {{ tack_search_proxy_health_timeout }}
+          headers:
+            Authorization: "Basic {{ (tack_search_proxy_username ~ ':' ~ tack_search_proxy_password) | b64encode }}"
+        servers:
+{% for member in tack_search_proxy_members %}
+          - url: "https://[{{ service_mapping[member].ipv6 }}]:{{ tack_search_port }}"
+{% endfor %}
+  # Each member URL is an address. Traefik verifies each member certificate
+  # against that member address and against the search CA in ca.crt. That
+  # file contains the same search CA that the Tack deploy installs on the
+  # application and search guests.
+  serversTransports:
+    tack-search-members:
+      rootCAs:
+        - {{ tack_search_proxy_dir }}/ca.crt
+
+# The application dials an address and sends no server name. Traefik
+# presents the default certificate on that connection.
+tls:
+  options:
+    default:
+      minVersion: VersionTLS13
+  stores:
+    default:
+      defaultCertificate:
+        certFile: {{ tack_search_proxy_dir }}/server.crt
+        keyFile: {{ tack_search_proxy_dir }}/server.key

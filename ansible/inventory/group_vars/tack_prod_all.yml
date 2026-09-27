@@ -103,3 +103,42 @@ tack_ledger_ca_host: "{{ service_mapping.tack.hostname }}"
 tack_store_seed_cluster_file: true
 tack_store_legacy_node_present: false
 tack_store_redundancy_mode: double
+
+# These values configure production OpenSearch. The application dials one
+# HTTPS endpoint on the vault hypervisor, and the proxy there selects a
+# member. Production runs normal cluster discovery from its first start. A
+# later member joins the cluster by name, and the application endpoint stays
+# the same.
+#
+# Production search is disabled. While tack_search_enabled is false, the env
+# file has no OPENSEARCH_* setting, the application guests receive no search
+# authority, and deploy-tack skips the topology check.
+tack_search_enabled: false
+tack_search_members: "{{ tack_search_production_members }}"
+tack_search_endpoint: "https://[{{ service_mapping.vault_hypervisor.ipv6 }}]:{{ tack_search_port }}"
+tack_search_single_node: false
+tack_search_cluster_name: tack-search-production
+
+# This value controls the first formation of the cluster. While it is true,
+# the env file of the first member sets that member as the initial cluster
+# manager. A formed cluster requires false. Later members discover the
+# existing cluster.
+tack_search_bootstrap_cluster: true
+
+tack_search_username: "{{ vault_tack_search_username }}"
+tack_search_password: "{{ vault_tack_search_password }}"
+tack_search_password_hash: "{{ vault_tack_search_password_hash }}"
+tack_search_ca: "{{ vault_tack_search_ca }}"
+# Tack signs search continuation cursors with this base64-encoded key. The
+# env template renders it only while tack_search_public_enabled is true.
+tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
+
+# The `ops search provision` command applies this index topology. OpenSearch
+# places each replica on a member other than the one that stores its
+# primary. One replica requires a second member. The routing-shard count
+# divides by every approved split target (2, 4, and 8), and Tack refuses any
+# other value. Public search is disabled.
+tack_search_shards: 1
+tack_search_routing_shards: 8
+tack_search_replicas: 0
+tack_search_public_enabled: false
