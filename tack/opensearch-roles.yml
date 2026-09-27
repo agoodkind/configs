@@ -1,6 +1,6 @@
 ---
-# Ansible copies this file from tack/opensearch-roles.yml. The first start of
-# a member reads it into the security index. The tack_search role grants
+# Ansible copies this file from tack/opensearch-roles.yml. A member reads it
+# into the security index on its first start. The tack_search role grants
 # only the operations the Tack search adapter sends. The proxy readiness
 # request uses cluster:monitor/health with the same credential.
 _meta:
@@ -52,9 +52,9 @@ tack_search:
         - indices:data/read/search*
         - indices:data/read/point_in_time/create
         - indices:data/read/point_in_time/delete
-    # The alias lookup specifies only the alias. OpenSearch evaluates that
-    # lookup against every index. This grant reads alias metadata and no
-    # documents.
+    # This grant lets the alias lookup read alias metadata on every index and
+    # grants no document read. OpenSearch evaluates a lookup that specifies
+    # only the alias against every index.
     - index_patterns:
         - "*"
       allowed_actions:

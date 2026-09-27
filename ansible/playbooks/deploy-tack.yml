@@ -1,6 +1,6 @@
 ---
-# Deploy Tack host preparation and provisioning on every host in
-# tack_deploy_targets, which the first play selects from tack_all.
+# This playbook prepares and provisions every Tack host in
+# tack_deploy_targets. The first play selects that group from tack_all.
 # Container creation is handled by OpenTofu (opentofu/vault/ for
 # production; opentofu/suburban/ for QA). This playbook runs after the LXC
 # is provisioned and reachable via SSH.
@@ -13,13 +13,12 @@
 #   ./configsctl deploy deploy-tack \
 #     --limit tack_qa_all
 
-# This play runs group_by on every tack_all host. group_by adds each host to
-# tack_deploy_targets, except a search guest in an environment with
-# tack_search_enabled false, which it adds to tack_deploy_skipped. Every
-# later play in this playbook runs only on tack_deploy_targets. A search
-# guest in a disabled environment joins no later play, and no deploy-tack
-# run starts its OpenSearch member. The group_by task runs on the controller
-# and opens no connection to the guest.
+# This play adds each application guest, and each search guest in an
+# environment with tack_search_enabled true, to tack_deploy_targets. It adds
+# each search guest in an environment with tack_search_enabled false to
+# tack_deploy_skipped. Every later play runs only on tack_deploy_targets. No
+# deploy-tack run starts the OpenSearch member on a skipped guest. The
+# group_by task runs on the controller and opens no connection to a guest.
 - name: Select the Tack deploy targets
   hosts: tack_all
   gather_facts: false
@@ -220,11 +219,11 @@
       --deploy-commit {{ tack_commit }}
 
   tasks:
-    # OpenSearch places each replica on a member other than the one that
-    # stores its primary. The member list must contain at least one more
-    # member than the replica count. Single-node discovery requires exactly
-    # one member. An environment with search off renders no topology and
-    # skips this check.
+    # This check refuses a replica count that is not below the member count
+    # because OpenSearch places each replica on a member other than the one
+    # that stores its primary. It also refuses single-node discovery with any
+    # member count other than one. An environment with search off skips this
+    # check.
     - name: Refuse a search topology the members cannot place
       ansible.builtin.assert:
         that:
@@ -233,10 +232,10 @@
             not (tack_search_single_node | bool)
             or (tack_search_members != [] and tack_search_members[1:] == [])
         fail_msg: >-
-          {{ tack_search_replicas }} search replicas across the members
-          {{ tack_search_members | join(', ') }}
-          (single-node {{ tack_search_single_node }}). Every replica needs a
-          distinct member, and single-node discovery runs exactly one.
+          The search topology sets {{ tack_search_replicas }} replicas across
+          the members {{ tack_search_members | join(', ') }} with single-node
+          discovery {{ tack_search_single_node }}. Every replica needs a
+          distinct member, and single-node discovery runs exactly one member.
       when: tack_search_enabled | bool
 
     - name: Create /etc/tack directory
@@ -247,14 +246,11 @@
         group: root
         mode: "0750"
 
-    # The app verifies the search endpoint against this authority, and every
-    # search member verifies its peers against it. An application guest
-    # installs it only while search is on. This play runs on a search guest
-    # only while its environment has search on, and that guest always
-    # installs the authority. Both processes read the file at start. After a
-    # change to the file, the app handler restarts the app when
-    # tack_provision_owner is true. The member handler recreates the member
-    # when tack_cluster_role is search.
+    # A search guest always installs the authority, and an application guest
+    # installs it only while search is on. The app and the OpenSearch member
+    # read the file only at start. A changed file notifies both restart
+    # handlers. The app handler runs only on the owner guest, and the member
+    # handler runs only on a search guest.
     - name: Install the OpenSearch certificate authority
       ansible.builtin.copy:
         content: "{{ tack_search_ca }}\n"
@@ -953,10 +949,10 @@
         chdir: "{{ tack_install_dir }}"
       changed_when: true
 
-    # The app reads the search authority file at start through its /etc/tack
-    # mount. A compose up leaves the app container running when its compose
-    # configuration is unchanged. This handler restarts the app container.
-    # This play starts the app only on the owner guest.
+    # This handler restarts the app container because the app reads the search
+    # authority file from its /etc/tack mount only at start. A compose up
+    # leaves the container running when its compose configuration is
+    # unchanged. The play starts the app only on the owner guest.
     - name: Restart the Tack app for a new search authority
       ansible.builtin.command:
         cmd: docker compose restart app
@@ -985,9 +981,9 @@
       changed_when: true
       when: tack_store_node_present | bool
 
-    # A new certificate, key, or setting takes effect only in a new container.
-    # This handler recreates a member only when tack_cluster_role is search.
-    # An application guest that installs a new search authority skips it.
+    # This handler recreates the OpenSearch container because a new
+    # certificate, key, or setting takes effect only in a new container. An
+    # application guest that installs a new search authority skips it.
     - name: Restart the OpenSearch member
       ansible.builtin.command:
         cmd: docker compose up -d --force-recreate opensearch

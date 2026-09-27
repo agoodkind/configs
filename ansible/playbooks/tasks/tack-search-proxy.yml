@@ -1,10 +1,10 @@
 ---
-# These tasks install the environment's HTTPS search endpoint on the
+# tasks/proxmox-host.yml imports this file when tack_search_proxy_enabled is
+# true. These tasks install the environment's HTTPS search endpoint on the
 # hypervisor that runs its OpenSearch guests. Traefik terminates the
 # application's TLS with a certificate the search authority signed, admits
 # only the environment's application guests, and opens a new TLS connection
 # to a ready member. Traefik verifies that member against the same authority.
-# deploy-proxmox.yml imports this file when tack_search_proxy_enabled is true.
 
 - name: Create the Tack search proxy directory
   ansible.builtin.file:
@@ -22,8 +22,8 @@
     group: root
     mode: "0755"
 
-# The release checksum file supplies the expected digest. get_url fails the
-# download when the archive digest does not match that digest.
+# get_url fails the download when the archive digest does not match the
+# digest in the release checksum file.
 - name: Download the pinned Traefik release for the Tack search proxy
   ansible.builtin.get_url:
     url: >-
@@ -37,11 +37,10 @@
     group: root
     mode: "0644"
 
-# tack_search_proxy_release_dir contains the Traefik version. The download
-# and unpack tasks write a new version into a new directory. The `creates`
-# check reads that new directory and finds no binary there. The service unit
-# starts the binary from that directory. A changed unit notifies the proxy
-# restart handler.
+# A new Traefik version unpacks into its own directory because
+# tack_search_proxy_release_dir includes the version, and the `creates` check
+# finds no binary there. The service unit starts the binary from that
+# directory, and the changed unit notifies the proxy restart handler.
 - name: Unpack the pinned Traefik release for the Tack search proxy
   ansible.builtin.unarchive:
     src: "{{ tack_search_proxy_release_dir }}/traefik.tar.gz"
@@ -78,8 +77,7 @@
   no_log: true
   notify: Restart tack-search-proxy
 
-# The rendered file contains the readiness request credentials. The file mode
-# restricts reads to root, and the task logs nothing.
+# The rendered file contains the readiness request credentials.
 - name: Render the Tack search proxy configuration
   ansible.builtin.template:
     src: "{{ repo_root }}/proxmox/config/tack-search-proxy.yml.j2"

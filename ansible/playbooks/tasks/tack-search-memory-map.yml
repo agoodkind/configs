@@ -1,9 +1,9 @@
 ---
-# These tasks set the OpenSearch memory-map prerequisite on the hypervisor for
-# its search guests. The hypervisor kernel has one vm.max_map_count value for
-# every container, and an unprivileged LXC cannot write it. Each search guest
-# reads the value before it starts OpenSearch. deploy-proxmox.yml imports this
-# file when tack_search_proxy_enabled is true.
+# tasks/proxmox-host.yml imports this file when tack_search_proxy_enabled is
+# true. The hypervisor sets vm.max_map_count for its OpenSearch guests because an
+# unprivileged LXC cannot write it. The hypervisor kernel applies one value to
+# every container. Each search guest checks the value before it starts
+# OpenSearch.
 
 - name: Configure the OpenSearch memory-map limit
   ansible.builtin.copy:

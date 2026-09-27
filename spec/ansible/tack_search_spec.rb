@@ -3,16 +3,17 @@
 require 'yaml'
 require_relative '../support/tack_search_inventory'
 
-# These examples read the search guest identities, the application search
-# settings, and the QA capacity gate from the files a deploy renders.
+# These examples check the search guest identities in the service mapping,
+# the application search settings a deploy renders, and the QA capacity
+# values.
 module TackSearchEnvironment
   GROUP_VARS_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars')
   PRODUCTION_ENDPOINT = 'https://[3d06:bad:b01::254]:9200'
   QA_ENDPOINT = 'https://[3d06:bad:b01:210::5]:9200'
-  # This list contains the search settings that Tack reads without a compiled
-  # default, plus the public search switch that the deployment plan requires.
-  # Tack reads OPENSEARCH_CURSOR_KEY only while public search is on, and the
-  # env file renders OPENSEARCH_CURSOR_KEY only while public search is on.
+  # Tack reads these settings without a compiled default, and the deployment
+  # plan requires the public search switch. PUBLIC_SETTING_NAMES adds
+  # OPENSEARCH_CURSOR_KEY. Tack reads that key and the env file renders it only
+  # while public search is on.
   SETTING_NAMES = %w[
     OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_PASSWORD OPENSEARCH_PUBLIC_ENABLED
     OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS OPENSEARCH_USERNAME
@@ -66,7 +67,7 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.duplicates(guests.filter_map { |entry| entry['docker_v6_subnet'] })).to be_empty
   end
 
-  it 'keeps one application endpoint while production members grow' do
+  it 'keeps one application endpoint while the production member count grows' do
     one = TackSearchInventory.rendered(:production, member_count: 1, overrides: TackSearchEnvironment::ENABLED)
     three = TackSearchInventory.rendered(:production, member_count: 3, overrides: TackSearchEnvironment::ENABLED)
 
@@ -110,7 +111,7 @@ RSpec.describe TackSearchEnvironment do
     end
   end
 
-  it 'keeps QA inside the suburban capacity gate', :aggregate_failures do
+  it 'keeps QA at one single-node search guest within the suburban capacity', :aggregate_failures do
     cluster = described_class.group_vars(File.join('all', 'search_cluster.yml'))
     rendered = TackSearchInventory.rendered(:qa)
     settings = rendered.settings(rendered.member_host('tack_search1_suburban'))

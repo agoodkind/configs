@@ -96,11 +96,10 @@ tack_store_seed_cluster_file: true
 tack_store_legacy_node_present: false
 tack_store_redundancy_mode: double
 
-# These values configure QA OpenSearch. The application dials one HTTPS
-# endpoint on the suburban trunk, and the proxy there selects the member. QA
-# runs one member in single-node discovery mode. The suburban host has
-# capacity for exactly one 8 GiB search guest. QA does not add another
-# member.
+# The application dials one HTTPS endpoint on the suburban trunk, and the
+# proxy there selects the member. QA runs one member in single-node discovery
+# mode because the suburban host has capacity for exactly one 8 GiB search
+# guest.
 tack_search_enabled: true
 tack_search_members: "{{ tack_search_qa_members }}"
 tack_search_endpoint: "https://[{{ service_mapping.vmbrtrunk_suburban.ipv6 }}]:{{ tack_search_port }}"
@@ -117,10 +116,10 @@ tack_search_ca: "{{ vault_tack_qa_search_ca }}"
 tack_search_cursor_key: "{{ vault_tack_qa_search_cursor_key }}"
 
 # The `ops search provision` command applies this index topology. One member
-# cannot place a replica. The routing-shard count divides by every approved
-# split target (2, 4, and 8), and Tack refuses any other value. Public search
-# stays off until the QA projection backfill and the empty rebuild from
-# FoundationDB pass.
+# cannot place a replica. Tack requires the routing shard count to be a
+# multiple of the primary shard count. A routing shard count of 8 allows later
+# splits to 2, 4, and 8 primary shards. Public search stays off until the QA
+# projection backfill and the empty rebuild from FoundationDB pass.
 tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0

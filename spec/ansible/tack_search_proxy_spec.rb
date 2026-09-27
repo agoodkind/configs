@@ -55,7 +55,7 @@ RSpec.describe TackSearchProxy do
       let(:rendered) { TackSearchInventory.rendered(environment) }
       let(:proxy) { rendered.yaml(rendered.hypervisor, 'proxy') }
 
-      it 'listens on the hypervisor guest-segment address with the pinned Traefik' do
+      it 'listens on the hypervisor search address with the pinned Traefik release' do
         exec_start = rendered.file(rendered.hypervisor, 'proxy_service').lines.grep(/\AExecStart=/).first
 
         expect(exec_start.split).to include(
@@ -99,7 +99,7 @@ RSpec.describe TackSearchProxy do
     end
   end
 
-  it 'writes the proxy secrets root-only without logging them', :aggregate_failures do
+  it 'writes the proxy secrets readable only by root and does not log them', :aggregate_failures do
     TackSearchProxy::SECRET_TASKS.each do |name|
       task = described_class.tasks.find { |candidate| candidate['name'] == name }
       module_arguments = task.fetch(task.keys.find { |key| key.start_with?('ansible.builtin.') })

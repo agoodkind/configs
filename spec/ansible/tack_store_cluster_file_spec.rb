@@ -152,8 +152,8 @@ module TackStoreClusterFile
     TaskExpressions.evaluate(variables: {}, facts: [], renders: [render])['renders'][0]['source']
   end
 
-  # Renders the environment file for a guest from the cluster file the run read
-  # off the guest running the store.
+  # Renders the environment file for a guest from the cluster file that the run
+  # read from the guest running the store.
   def rendered_environment(live_cluster_file)
     Dir.mktmpdir('tack-env') do |output_directory|
       output_file = File.join(output_directory, '.env')

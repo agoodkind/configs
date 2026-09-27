@@ -1,7 +1,6 @@
-# This resource defines the QA OpenSearch member guest. The shared search
-# cluster variables define its memory, cores, and disk size. The disk uses
-# rpool beside the other tack guests and mounts with discard. QA runs exactly
-# one member.
+# This guest is the only QA OpenSearch member. The shared search cluster
+# variables set its memory, cores, and disk size. Its disk uses rpool beside
+# the other tack guests.
 
 locals {
   tack_search = yamldecode(

@@ -1,5 +1,5 @@
-# This file is the Traefik dynamic configuration for the environment's search
-# endpoint.
+# Traefik reads this file as the dynamic configuration for the environment's
+# search endpoint.
 http:
   routers:
     tack-search:
@@ -9,9 +9,9 @@ http:
       service: tack-search
       tls: {}
   middlewares:
-    # The host-networked ops sidecar dials from the guest's own address. The
-    # app container dials from its routed address in the guest's Docker
-    # subnet.
+    # Each caller guest has two entries. The host-networked ops sidecar dials
+    # from the guest address, and the app container dials from its routed
+    # address in the guest's Docker subnet.
     tack-search-callers:
       ipAllowList:
         sourceRange:
@@ -33,16 +33,15 @@ http:
 {% for member in tack_search_proxy_members %}
           - url: "https://[{{ service_mapping[member].ipv6 }}]:{{ tack_search_port }}"
 {% endfor %}
-  # Each member URL is an address. Traefik verifies each member certificate
-  # against that member address and against the search CA in ca.crt. That
-  # file contains the same search CA that the Tack deploy installs on the
-  # application and search guests.
+  # Traefik verifies each member certificate against the IP address in the
+  # member URL and against the search authority in ca.crt. The Tack deploy
+  # installs the same authority on the application and search guests.
   serversTransports:
     tack-search-members:
       rootCAs:
         - {{ tack_search_proxy_dir }}/ca.crt
 
-# The application dials an address and sends no server name. Traefik
+# The application dials an IP address and sends no TLS server name. Traefik
 # presents the default certificate on that connection.
 tls:
   options:
