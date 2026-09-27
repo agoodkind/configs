@@ -6,8 +6,8 @@
 
 # Each list contains the service mapping keys of its environment's cluster
 # members. A new entry in a list adds that member's seed address to every
-# node and adds its backend to the environment's proxy. The application
-# endpoint stays the same.
+# node and adds its backend to the environment's proxy. The
+# OPENSEARCH_ENDPOINT value in the application environment does not change.
 tack_search_production_members:
   - tack_search1
 tack_search_qa_members:
