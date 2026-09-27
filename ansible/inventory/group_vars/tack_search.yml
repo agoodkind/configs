@@ -17,6 +17,22 @@ tack_search_nofile_limit: 65536
 # tack_search1 announces tack-search1.
 tack_search_node_name: "{{ service_mapping[service_name].hostname.split('.') | first }}"
 
+# Discovery values the env file renders as the TACK_SEARCH_* variables that
+# the Tack compose file reads. An empty value leaves that OpenSearch setting
+# unset. QA runs single-node discovery. Production seeds every member from
+# the member list, and the first member names itself the initial cluster
+# manager only while tack_search_bootstrap_cluster is true.
+tack_search_discovery_type: "{{ 'single-node' if tack_search_single_node | bool else '' }}"
+tack_search_seed_hosts: >-
+  {{ '' if tack_search_single_node | bool
+     else tack_search_members | map('extract', service_mapping, 'ipv6') | join(',') }}
+tack_search_initial_cluster_manager_nodes: >-
+  {{ tack_search_node_name
+     if (not tack_search_single_node | bool
+         and tack_search_bootstrap_cluster | bool
+         and service_name == tack_search_members | first)
+     else '' }}
+
 # This node's certificate and key. The node presents them to the proxy and to
 # its peers. Each member has its own pair in the vault, named for its service
 # mapping key. The proxy dials the guest's address and verifies the

@@ -59,22 +59,28 @@ RSpec.describe TackSearchNode do
     rendered = TackSearchInventory.rendered(:production, member_count: 3)
     seeds = '3d06:bad:b01::125,3d06:bad:b01::126,3d06:bad:b01::127'
 
-    first, *later = rendered.members.map { |member| described_class.service(rendered, member).fetch('environment') }
+    first, *later = rendered.members.map { |member| rendered.settings(rendered.member_host(member)) }
 
-    expect(first).to include('discovery.seed_hosts' => seeds, 'cluster.initial_cluster_manager_nodes' => 'tack-search1')
-    expect(first).not_to include('discovery.type')
-    later.each do |environment|
-      expect(environment).to include('discovery.seed_hosts' => seeds)
-      expect(environment.keys).not_to include('cluster.initial_cluster_manager_nodes', 'discovery.type')
+    expect(first).to include(
+      'TACK_SEARCH_SEED_HOSTS' => seeds, 'TACK_SEARCH_INITIAL_CLUSTER_MANAGER_NODES' => 'tack-search1',
+      'TACK_SEARCH_DISCOVERY_TYPE' => ''
+    )
+    later.each do |settings|
+      expect(settings).to include(
+        'TACK_SEARCH_SEED_HOSTS' => seeds, 'TACK_SEARCH_INITIAL_CLUSTER_MANAGER_NODES' => '',
+        'TACK_SEARCH_DISCOVERY_TYPE' => ''
+      )
     end
   end
 
   it 'announces each member at its own pinned address on host networking' do
     rendered = TackSearchInventory.rendered(:production)
+    host = rendered.member_host('tack_search1')
     service = described_class.service(rendered, 'tack_search1')
 
     expect(service.fetch('network_mode')).to eq('host')
-    expect(service.fetch('environment')).to include('network.host' => '3d06:bad:b01::125', 'node.name' => 'tack-search1')
+    expect(service.fetch('environment')).to include('network.host' => '3d06:bad:b01::125')
+    expect(rendered.settings(host)).to include('TACK_SEARCH_NODE_NAME' => 'tack-search1')
   end
 
   it 'grants the application user the admin backend role' do

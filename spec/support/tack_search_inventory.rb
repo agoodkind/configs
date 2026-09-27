@@ -92,7 +92,7 @@ module TackSearchInventory
 
   def host_templates(result)
     templates = { result.owner => %w[env], result.hypervisor => %w[proxy proxy_service] }
-    result.members.each { |member| templates[result.member_host(member)] = %w[override users] }
+    result.members.each { |member| templates[result.member_host(member)] = %w[override users env] }
     templates.transform_values { |names| names.map { |name| { 'name' => name, 'src' => TEMPLATES.fetch(name) } } }
   end
 

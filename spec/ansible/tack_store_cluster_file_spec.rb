@@ -58,6 +58,7 @@ module TackStoreClusterFile
     'tack_docker_v6_subnet' => '3d06:bad:b01:210:1::/96',
     'tack_docker_v6_gateway' => '3d06:bad:b01:210:1::1',
     'tack_backup_enabled' => false,
+    'tack_cluster_role' => 'app',
     'tack_search_enabled' => true,
     'tack_search_endpoint' => 'https://[3d06:bad:b01:210::5]:9200',
     'tack_search_username' => 'render-only-search-login',

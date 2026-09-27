@@ -113,15 +113,16 @@ RSpec.describe TackSearchEnvironment do
   it 'keeps QA inside the suburban capacity gate', :aggregate_failures do
     cluster = described_class.group_vars(File.join('all', 'search_cluster.yml'))
     rendered = TackSearchInventory.rendered(:qa)
-    environment = rendered.yaml(rendered.member_host('tack_search1_suburban'), 'override')
-                          .dig('services', 'opensearch', 'environment')
+    settings = rendered.settings(rendered.member_host('tack_search1_suburban'))
 
     expect(described_class.group_vars('suburban_servers.yml').fetch('tack_search_qa_host_min_available_gib')).to eq(6.26)
     expect(cluster.fetch('tack_search_guest_memory_mib')).to eq(8192)
     expect(cluster.fetch('tack_search_guest_disk_gib')).to eq(40)
     expect(cluster.fetch('tack_search_guest_cores')).to eq(2)
     expect(cluster.fetch('tack_search_qa_members')).to eq(['tack_search1_suburban'])
-    expect(environment).to include('discovery.type' => 'single-node')
-    expect(environment.keys).not_to include('discovery.seed_hosts', 'cluster.initial_cluster_manager_nodes')
+    expect(settings).to include(
+      'TACK_SEARCH_DISCOVERY_TYPE' => 'single-node', 'TACK_SEARCH_SEED_HOSTS' => '',
+      'TACK_SEARCH_INITIAL_CLUSTER_MANAGER_NODES' => ''
+    )
   end
 end

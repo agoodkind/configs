@@ -20,19 +20,11 @@ services:
       OPENSEARCH_JAVA_OPTS: "{{ tack_search_java_opts }}"
       DISABLE_INSTALL_DEMO_CONFIG: "true"
       cluster.name: {{ tack_search_cluster_name }}
-      node.name: {{ tack_search_node_name }}
+      # The node name and discovery come from the TACK_SEARCH_* variables in
+      # the rendered .env, which the Tack compose file reads.
       node.roles: "{{ tack_search_node_roles }}"
       network.host: "{{ service_mapping[service_name].ipv6 }}"
       http.port: "{{ tack_search_port }}"
-{% if tack_search_single_node %}
-      discovery.type: single-node
-{% else %}
-      discovery.seed_hosts: "{{ tack_search_members | map('extract', service_mapping, 'ipv6') | join(',') }}"
-{% if tack_search_bootstrap_cluster and service_name == tack_search_members | first %}
-      # First formation only. The release removes it once the cluster forms.
-      cluster.initial_cluster_manager_nodes: {{ tack_search_node_name }}
-{% endif %}
-{% endif %}
       # Only ML nodes run model work. OpenSearch dispatches each task to the
       # least-loaded ML node and redeploys the model after a node restarts or
       # joins.
