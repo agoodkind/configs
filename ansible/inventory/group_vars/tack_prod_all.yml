@@ -104,10 +104,11 @@ tack_store_seed_cluster_file: true
 tack_store_legacy_node_present: false
 tack_store_redundancy_mode: double
 
-# OpenSearch. The application dials one HTTPS endpoint on the vault
-# hypervisor, and the proxy there selects a member. Production runs normal
-# cluster discovery from its first start, so a later member joins by name
-# without a change to the endpoint.
+# These values configure production OpenSearch. The application dials one
+# HTTPS endpoint on the vault hypervisor, and the proxy there selects a
+# member. Production runs normal cluster discovery from its first start. A
+# later member joins the cluster by name, and the application endpoint stays
+# the same.
 #
 # Search stays off in production until a release turns it on. While it is
 # off, the env file has no OPENSEARCH_* setting, the application guests get
@@ -118,24 +119,25 @@ tack_search_endpoint: "https://[{{ service_mapping.vault_hypervisor.ipv6 }}]:{{ 
 tack_search_single_node: false
 tack_search_cluster_name: tack-search-production
 
-# The first formation of the cluster. With this true, the first member names
-# itself as the initial cluster manager. The release turns it off once the
-# cluster has formed, and later members discover the existing cluster.
+# This value controls the first formation of the cluster. While it is true,
+# the env file of the first member sets that member as the initial cluster
+# manager. The release sets this value to false after the cluster forms.
+# Later members discover the existing cluster.
 tack_search_bootstrap_cluster: true
 
 tack_search_username: "{{ vault_tack_search_username }}"
 tack_search_password: "{{ vault_tack_search_password }}"
 tack_search_password_hash: "{{ vault_tack_search_password_hash }}"
 tack_search_ca: "{{ vault_tack_search_ca }}"
-# The standard base64 key that signs search continuation cursors. The env
-# template renders it only while tack_search_public_enabled is true.
+# Tack signs search continuation cursors with this standard base64 key. The
+# env template renders it only while tack_search_public_enabled is true.
 tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
 
-# Index topology that `ops search provision` applies. OpenSearch never places
-# a replica on the guest that stores its primary, so one replica needs a
-# second member. The routing-shard count divides by every approved split
-# target (2, 4, and 8), and Tack refuses any other value. Public search stays
-# off until the rebuild passes.
+# The `ops search provision` command applies this index topology. OpenSearch
+# never places a replica on the guest that stores its primary. One replica
+# therefore requires a second member. The routing-shard count divides by
+# every approved split target (2, 4, and 8), and Tack refuses any other
+# value. Public search stays off until the rebuild passes.
 tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0

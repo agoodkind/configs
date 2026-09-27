@@ -1,6 +1,7 @@
-# QA OpenSearch member. The guest shape comes from the search cluster
-# group_vars, which the render tests read too. The disk sits on rpool beside
-# the other tack guests and mounts with discard. QA runs exactly one member.
+# This resource defines the QA OpenSearch member guest. The guest shape comes
+# from the search cluster group_vars, which the render tests also read. The
+# disk uses rpool beside the other tack guests and mounts with discard. QA
+# runs exactly one member.
 
 locals {
   tack_search = yamldecode(

@@ -1,7 +1,8 @@
-# Production OpenSearch member. The guest shape comes from the search cluster
-# group_vars, which the render tests read too. The disk sits on the P310 thin
-# pool beside the other tack guests and mounts with discard (TACK-498).
-# Production starts with this one member; later members are separate guests.
+# This resource defines the production OpenSearch member guest. The guest
+# shape comes from the search cluster group_vars, which the render tests also
+# read. The disk uses the P310 thin pool beside the other tack guests and
+# mounts with discard (TACK-498). Production starts with this one member.
+# Each later member is a separate guest.
 
 locals {
   tack_search = yamldecode(

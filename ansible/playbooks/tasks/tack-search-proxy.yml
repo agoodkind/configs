@@ -1,10 +1,10 @@
 ---
-# The environment's one stable HTTPS search endpoint, on the hypervisor that
-# runs its OpenSearch guests. Traefik terminates the application's TLS with a
-# certificate the search authority signed, admits only the environment's
-# application guests, and opens a new TLS connection to a ready member that it
-# verifies against the same authority. Imported by deploy-proxmox.yml and
-# gated by tack_search_proxy_enabled.
+# These tasks install the environment's HTTPS search endpoint on the
+# hypervisor that runs its OpenSearch guests. Traefik terminates the
+# application's TLS with a certificate the search authority signed, admits
+# only the environment's application guests, and opens a new TLS connection
+# to a ready member. Traefik verifies that member against the same authority.
+# deploy-proxmox.yml imports this file when tack_search_proxy_enabled is true.
 
 - name: Create the Tack search proxy directory
   ansible.builtin.file:

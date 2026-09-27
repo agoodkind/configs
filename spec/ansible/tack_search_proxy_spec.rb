@@ -3,8 +3,8 @@
 require 'yaml'
 require_relative '../support/tack_search_inventory'
 
-# The stable search endpoint on each hypervisor, read from the Traefik
-# configuration and unit a deploy renders there.
+# These examples read the Traefik configuration and systemd unit that a
+# deploy renders for the search endpoint on each hypervisor.
 module TackSearchProxy
   TASKS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tasks', 'tack-search-proxy.yml')
   PROXY_DIRECTORY = '/etc/tack-search-proxy'

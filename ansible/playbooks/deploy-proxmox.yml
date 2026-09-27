@@ -6,11 +6,10 @@
 # live in inventory/group_vars/vault_servers.yml and suburban_servers.yml,
 # auto-loaded by group_vars. Shared defaults live in proxmox_servers.yml.
 #
-# All task gating happens inside tasks/proxmox-host.yml via group_vars
-# feature flags (cloudflared_oob_enabled, mwan_ifmgr_enabled,
-# mwan_watchdog_enabled, proxmox_mwan_host_role_enabled,
-# tack_search_proxy_enabled) so this play body stays branchless and depends
-# only on group membership.
+# tasks/proxmox-host.yml gates every task on group_vars feature flags
+# (cloudflared_oob_enabled, mwan_ifmgr_enabled, mwan_watchdog_enabled,
+# proxmox_mwan_host_role_enabled, tack_search_proxy_enabled). This play body
+# has no branches and selects hosts by group membership only.
 #
 # Run examples:
 #   ./configsctl deploy deploy-proxmox --limit vault
@@ -112,8 +111,9 @@
         daemon_reload: true
       when: tack_search_proxy_enabled | bool
 
-    # Applies only this file. The running guests read the new value at once,
-    # and the file keeps it across a reboot.
+    # The command applies only /etc/sysctl.d/99-tack-search.conf, and the
+    # running guests see the new value at once. systemd-sysctl applies the
+    # same file again at every boot.
     - name: Apply the OpenSearch memory-map limit
       ansible.builtin.command: sysctl -p /etc/sysctl.d/99-tack-search.conf
       changed_when: true

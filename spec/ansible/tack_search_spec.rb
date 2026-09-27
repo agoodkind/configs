@@ -3,8 +3,8 @@
 require 'yaml'
 require_relative '../support/tack_search_inventory'
 
-# The search guests' identities, the application's view of the search
-# endpoint, and the QA capacity gate, read from the files a deploy renders.
+# These examples read the search guest identities, the application search
+# settings, and the QA capacity gate from the files a deploy renders.
 module TackSearchEnvironment
   GROUP_VARS_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars')
   PRODUCTION_ENDPOINT = 'https://[3d06:bad:b01::254]:9200'

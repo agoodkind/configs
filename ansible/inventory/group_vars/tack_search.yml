@@ -1,13 +1,13 @@
 ---
-# Settings for every OpenSearch guest. The environment groups provide the
-# member list, the endpoint, the credentials, and the discovery mode.
+# These values configure every OpenSearch guest. The environment groups set
+# the member list, the endpoint, the credentials, and the discovery mode.
 tack_cluster_role: search
 tack_provision_owner: false
 
 # A search guest runs no ledger node.
 tack_ledger_node_name: ""
 
-# The container OpenSearch runs as, pinned to the Tack container contract.
+# These values pin the OpenSearch container to the Tack container contract.
 tack_search_image: "opensearchproject/opensearch:3.8.0"
 tack_search_java_opts: "-Xms2g -Xmx2g"
 tack_search_node_roles: "cluster_manager,data,ingest,ml"
@@ -17,11 +17,11 @@ tack_search_nofile_limit: 65536
 # tack_search1 announces tack-search1.
 tack_search_node_name: "{{ service_mapping[service_name].hostname.split('.') | first }}"
 
-# Discovery values the env file renders as the TACK_SEARCH_* variables that
-# the Tack compose file reads. An empty value leaves that OpenSearch setting
-# unset. QA runs single-node discovery. Production seeds every member from
-# the member list, and the first member names itself the initial cluster
-# manager only while tack_search_bootstrap_cluster is true.
+# The env file renders these discovery values as the TACK_SEARCH_* variables
+# that the Tack compose file reads. An empty value leaves that OpenSearch
+# setting unset. QA runs single-node discovery. Production seeds every member
+# from the member list. The first production member sets itself as the
+# initial cluster manager only while tack_search_bootstrap_cluster is true.
 tack_search_discovery_type: "{{ 'single-node' if tack_search_single_node | bool else '' }}"
 tack_search_seed_hosts: >-
   {{ '' if tack_search_single_node | bool
@@ -33,15 +33,16 @@ tack_search_initial_cluster_manager_nodes: >-
          and service_name == tack_search_members | first)
      else '' }}
 
-# This node's certificate and key. The node presents them to the proxy and to
-# its peers. Each member has its own pair in the vault, named for its service
-# mapping key. The proxy dials the guest's address and verifies the
-# certificate against it. Each certificate lists the guest's address as an IP
-# subject alternative name.
+# These values locate this node's certificate and key. The node presents them
+# to the proxy and to its peers. Each member has its own pair in the vault,
+# named for its service mapping key. The proxy dials the guest's address and
+# verifies the certificate against that address. Each certificate lists the
+# guest's address as an IP subject alternative name.
 tack_search_node_dir: /etc/tack/search
 tack_search_node_certificate: "{{ lookup('vars', 'vault_' ~ service_name ~ '_certificate') }}"
 tack_search_node_private_key: "{{ lookup('vars', 'vault_' ~ service_name ~ '_private_key') }}"
 
-# The OpenSearch image runs as this user. The node reads its key and the user
-# file through bind mounts, and both files belong to this user.
+# The OpenSearch image runs as this user. The node reads its key and its
+# security configuration files through bind mounts, and those files belong to
+# this user.
 tack_search_container_uid: 1000
