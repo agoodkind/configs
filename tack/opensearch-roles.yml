@@ -14,9 +14,6 @@ tack_search:
     - cluster:monitor/main
     # The index green wait and the proxy readiness check read cluster health.
     - cluster:monitor/health
-    # This permission lets Tack update the persistent action.auto_create_index
-    # setting. That setting blocks automatic creation of node-pages-* indices.
-    - cluster:admin/settings/update
     # OpenSearch checks bulk, multi-get, and alias requests at the cluster
     # level. The index permissions below cover each item in those requests.
     - indices:data/write/bulk
