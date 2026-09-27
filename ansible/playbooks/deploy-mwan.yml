@@ -1002,10 +1002,9 @@
     - name: Fail playbook after rollback
       ansible.builtin.fail:
         msg: >-
-          Egress checks for the configured address families ({{ mwan_deploy_gate_families }}) did not pass for
+          Address-family egress checks ({{ mwan_deploy_gate_families }}) failed to pass
           {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
-          180s of the reboot, probed from
-          {{ mwan_proxmox_delegate }}. Rolled back to
+          180 seconds after reboot. {{ mwan_proxmox_delegate }} ran the probes. Rolled back to
           {{ mwan_pre_deploy_snapshot_name }}.
       when:
         - mwan_gate_verdict.egress_rc != 0
