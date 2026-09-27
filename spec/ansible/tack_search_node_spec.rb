@@ -11,7 +11,7 @@ module TackSearchNode
   NODE_TASKS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tasks', 'tack-search-node.yml')
   MEMORY_MAP_TASK = 'Refuse to start OpenSearch below its memory-map limit'
   TOPOLOGY_TASK = 'Refuse a search topology the members cannot place'
-  # Every member renders this Tack container contract.
+  # Every member renders these OpenSearch container settings that Tack requires.
   CONTRACT = {
     'OPENSEARCH_JAVA_OPTS' => '-Xms2g -Xmx2g',
     'node.roles' => 'cluster_manager,data,ingest,ml',
@@ -41,7 +41,7 @@ module TackSearchNode
 end
 
 RSpec.describe TackSearchNode do
-  it 'renders the pinned role-capable container on every member', :aggregate_failures do
+  it 'renders the pinned OpenSearch image and settings on every member', :aggregate_failures do
     [TackSearchInventory.rendered(:production, member_count: 3), TackSearchInventory.rendered(:qa)].each do |rendered|
       rendered.members.each do |member|
         service = described_class.service(rendered, member)
@@ -55,7 +55,7 @@ RSpec.describe TackSearchNode do
     end
   end
 
-  it 'forms production from the member list and bootstraps only on the first member', :aggregate_failures do
+  it 'seeds production from the member list and sets the initial cluster manager only on the first member', :aggregate_failures do
     rendered = TackSearchInventory.rendered(:production, member_count: 3)
     seeds = '3d06:bad:b01::125,3d06:bad:b01::126,3d06:bad:b01::127'
 
@@ -96,9 +96,9 @@ RSpec.describe TackSearchNode do
   end
 
   {
-    'the default 65530' => ['65530', false],
-    'exactly the prerequisite' => ['262144', true],
-    'a higher host value' => ['1048576', true]
+    'the default limit 65530' => ['65530', false],
+    'exactly the required limit' => ['262144', true],
+    'a higher hypervisor limit' => ['1048576', true]
   }.each do |name, (host_value, starts)|
     it "#{starts ? 'starts' : 'refuses to start'} OpenSearch with #{name}" do
       variables = {

@@ -1,8 +1,7 @@
-# This resource defines the production OpenSearch member guest. The shared
-# search cluster variables define its memory, cores, and disk size. The disk
-# uses the P310 thin pool beside the other tack guests and mounts with
-# discard (TACK-498). Production starts with this one member. Each later
-# member is a separate guest.
+# This guest is the first production OpenSearch member, and each later member
+# is a separate guest. The shared search cluster variables set its memory,
+# cores, and disk size. Its disk uses the P310 thin pool beside the other
+# tack guests and mounts with discard (TACK-498).
 
 locals {
   tack_search = yamldecode(

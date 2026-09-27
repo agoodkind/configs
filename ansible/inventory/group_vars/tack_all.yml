@@ -97,9 +97,9 @@ tack_ledger_certs_dir: /etc/tack/ledger-certs
 tack_ledger_ca_cert_path: "{{ tack_ledger_certs_dir }}/ca.crt"
 
 # The deploy writes the OpenSearch certificate authority to this path on each
-# application and search guest. The app reads the file through its /etc/tack
-# mount and verifies the search endpoint against it. A search node verifies
-# its peers against the same file.
+# search guest, and on each application guest while search is on. The app
+# reads the file through its /etc/tack mount and verifies the search endpoint
+# against it. A search node verifies its peers against the same file.
 tack_search_ca_path: /etc/tack/search-ca.crt
 
 # Which guest issues this environment's certificates and keeps the
