@@ -1,5 +1,6 @@
 ---
-# These tasks install the environment's HTTPS search endpoint on the
+# tasks/proxmox-host.yml imports this file when tack_search_proxy_enabled is
+# true. These tasks install the environment's HTTPS search endpoint on the
 # hypervisor that runs its OpenSearch guests. Traefik terminates the
 # application's TLS with a certificate the search authority signed, admits
 # only the environment's application guests, and opens a new TLS connection

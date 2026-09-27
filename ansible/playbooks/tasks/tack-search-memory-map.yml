@@ -1,5 +1,6 @@
 ---
-# The hypervisor sets vm.max_map_count for its OpenSearch guests because an
+# tasks/proxmox-host.yml imports this file when tack_search_proxy_enabled is
+# true. The hypervisor sets vm.max_map_count for its OpenSearch guests because an
 # unprivileged LXC cannot write it. The hypervisor kernel applies one value to
 # every container. Each search guest checks the value before it starts
 # OpenSearch.
