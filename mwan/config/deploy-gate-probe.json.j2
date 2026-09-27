@@ -1,0 +1,7 @@
+{
+  "opnsense_vmid": {{ mwan_deploy_probe.opnsense_vmid | int }},
+  "ipv4_source": {{ mwan_deploy_probe.ipv4_source | to_json }},
+  "ipv4_next_hop": {{ mwan_deploy_probe.ipv4_next_hop | to_json }},
+  "ipv6_source": {{ mwan_deploy_probe.ipv6_source | to_json }},
+  "ipv6_next_hop": {{ mwan_deploy_probe.ipv6_next_hop | to_json }}
+}
