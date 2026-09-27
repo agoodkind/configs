@@ -259,10 +259,11 @@ RSpec.describe MwanInstall do
     printed = tasks.index { |task| Array(described_class.command_argv(task)).include?('--print-schema') }
     render_copy = tasks.index { |task| task['name'] == 'Copy the rendered network configuration to the Proxmox delegate' }
     loader_check = tasks.index { |task| Array(described_class.command_argv(task)).include?('check-network') }
+    firewall_check = tasks.index { |task| Array(described_class.command_argv(task)).include?('check-firewall') }
     cleanup = tasks.index { |task| task['name'] == 'Remove the schema directory on the Proxmox delegate' }
     management_stack_install = tasks.index { |task| task['ansible.builtin.import_tasks'] == 'tasks/mwan-vm/wanconfig-stack.yml' }
 
-    expected_tasks = [deploy_gate_copy, printed, render_copy, loader_check, cleanup, management_stack_install]
+    expected_tasks = [deploy_gate_copy, printed, render_copy, loader_check, firewall_check, cleanup, management_stack_install]
     expect(expected_tasks).to all(be_a(Integer))
     expect(tasks[deploy_gate_copy]['check_mode']).to be(false)
     expect(printed).to be < render_copy
@@ -274,7 +275,9 @@ RSpec.describe MwanInstall do
       '{{ mwan_schema_remote.path }}/network.json'
     )
     expect(tasks[loader_check]['check_mode']).to be(false)
-    expect(loader_check).to be < cleanup
+    expect(loader_check).to be < firewall_check
+    expect(tasks[firewall_check]['check_mode']).to be(false)
+    expect(firewall_check).to be < cleanup
     expect(cleanup).to be < management_stack_install
     expect(described_class.command_argv(tasks[loader_check])).to eq(
       [
@@ -285,11 +288,20 @@ RSpec.describe MwanInstall do
         '{{ mwan_schema_remote.path }}'
       ]
     )
+    expect(described_class.command_argv(tasks[firewall_check])).to eq(
+      [
+        '/usr/local/sbin/mwan-deploy-gate',
+        'deploy-gate',
+        'check-firewall',
+        '{{ mwan_schema_remote.path }}/network.json',
+        '{{ mwan_schema_remote.path }}'
+      ]
+    )
   end
 
-  it 'accepts the rendered testbed document through the compatible mwan loader' do
+  it 'accepts both gateway renders through the compatible mwan validators' do
     binary = ENV['MWAN_TRANSLATION_TEST_BINARY']
-    skip 'Set MWAN_TRANSLATION_TEST_BINARY to an mwan executable that accepts typed translation with deploy-gate check-network' unless binary
+    skip 'Set MWAN_TRANSLATION_TEST_BINARY to a Linux mwan executable with network and firewall checks' unless binary
 
     binary = File.expand_path(binary, AnsibleRender::REPOSITORY_ROOT)
     expect(File.executable?(binary)).to be(true), "mwan executable is missing: #{binary}"
@@ -297,18 +309,22 @@ RSpec.describe MwanInstall do
       network = File.join(directory, 'network.json')
       schema = File.join(directory, 'schema')
       Dir.mkdir(schema)
-      AnsibleRender.render(
-        inventory: 'localhost,', playbook: 'render_mwan_network.yml',
-        extra_vars: { 'repository_root' => AnsibleRender::REPOSITORY_ROOT, 'network_output' => network }
-      )
-      commands = [
-        [binary, 'install', '--print-schema', schema],
-        [binary, 'deploy-gate', 'check-network', network, schema]
-      ]
-      commands.each do |command|
-        result = CommandRunner.run({}, command, chdir: AnsibleRender::REPOSITORY_ROOT, timeout_seconds: 60)
-        expect(result.timed_out).to be(false), "#{command.join(' ')} timed out\n#{result.output}"
-        expect(result.exit_status.success?).to be(true), "#{command.join(' ')} failed\n#{result.output}"
+      schema_command = [binary, 'install', '--print-schema', schema]
+      schema_result = CommandRunner.run({}, schema_command, chdir: AnsibleRender::REPOSITORY_ROOT, timeout_seconds: 60)
+      expect(schema_result.timed_out).to be(false), "#{schema_command.join(' ')} timed out\n#{schema_result.output}"
+      expect(schema_result.exit_status.success?).to be(true), "#{schema_command.join(' ')} failed\n#{schema_result.output}"
+
+      %w[render_mwan_network.yml render_mwan_prod_network.yml].each do |playbook|
+        AnsibleRender.render(
+          inventory: 'localhost,', playbook: playbook,
+          extra_vars: { 'repository_root' => AnsibleRender::REPOSITORY_ROOT, 'network_output' => network }
+        )
+        %w[check-network check-firewall].each do |check|
+          command = [binary, 'deploy-gate', check, network, schema]
+          result = CommandRunner.run({}, command, chdir: AnsibleRender::REPOSITORY_ROOT, timeout_seconds: 60)
+          expect(result.timed_out).to be(false), "#{playbook}: #{command.join(' ')} timed out\n#{result.output}"
+          expect(result.exit_status.success?).to be(true), "#{playbook}: #{command.join(' ')} failed\n#{result.output}"
+        end
       end
     end
   end
@@ -332,6 +348,36 @@ RSpec.describe MwanInstall do
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
+    it "renders the family and consecutive-round arguments in both deploy gate commands in #{group_file}" do
+      group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
+      tasks = described_class.role_tasks(MwanInstall::ROLES.first)
+      baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
+      recovery = tasks.find { |task| task['name'] == 'Start hypervisor-local MWAN deploy gate before reboot' }
+      expect(baseline).not_to be_nil
+      expect(recovery).not_to be_nil
+
+      configured = group_vars.slice('mwan_deploy_gate_families', 'mwan_deploy_gate_consecutive_rounds')
+      alternate = configured.merge('mwan_deploy_gate_families' => 'ipv4', 'mwan_deploy_gate_consecutive_rounds' => '5')
+      [configured, alternate].each do |gate_settings|
+        variables = gate_settings.merge(
+          'actual_vmid' => '213',
+          'mwan_pre_reboot_boot_id' => { 'stdout' => 'old-boot-id' },
+          'mwan_deploy_trace_id' => 'test-trace'
+        )
+        renders = [baseline, recovery].map do |task|
+          TaskExpressions.render_task(task, 'argv' => described_class.command_argv(task))
+        end
+        rendered = TaskExpressions.evaluate(variables: variables, facts: [], renders: renders).fetch('renders')
+        families = gate_settings.fetch('mwan_deploy_gate_families')
+        rounds = gate_settings.fetch('mwan_deploy_gate_consecutive_rounds')
+
+        expect(rendered[0].fetch('argv')).to eq(
+          ['/usr/local/sbin/mwan-deploy-gate', 'deploy-gate', 'check-egress', families]
+        )
+        expect(rendered[1].fetch('argv').last(2)).to eq([families, rounds])
+      end
+    end
+
     it "leaves the verb's units out of the enable list in #{group_file}" do
       services = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file)).fetch('mwan_enabled_services')
       doubled = services.map { |name| described_class.unit_name(name) } & MwanInstall::ROLES.first[:enabled]
