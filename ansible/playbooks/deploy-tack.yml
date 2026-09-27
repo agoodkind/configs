@@ -1,5 +1,6 @@
 ---
-# Deploy Tack host preparation and provisioning on every host in tack_all.
+# Deploy Tack host preparation and provisioning on every host in
+# tack_deploy_targets, which the first play selects from tack_all.
 # Container creation is handled by OpenTofu (opentofu/vault/ for
 # production; opentofu/suburban/ for QA). This playbook runs after the LXC
 # is provisioned and reachable via SSH.
@@ -12,13 +13,30 @@
 #   ./configsctl deploy deploy-tack \
 #     --limit tack_qa_all
 
+# This play adds every tack_all host to tack_deploy_targets except a search
+# guest in an environment with tack_search_enabled false. Every later play in
+# this playbook runs only on tack_deploy_targets. A deploy-tack run skips
+# every task on the production search guest while production search is
+# disabled, and no deploy-tack run starts that guest's OpenSearch member. The
+# group_by task runs on the controller and opens no connection to the guest.
+- name: Select the Tack deploy targets
+  hosts: tack_all
+  gather_facts: false
+  tasks:
+    - name: Group each host by whether this deploy configures it
+      ansible.builtin.group_by:
+        key: >-
+          {{ 'tack_deploy_targets'
+             if (tack_cluster_role != 'search' or tack_search_enabled | bool)
+             else 'tack_deploy_skipped' }}
+
 - name: Prepare tack guest (SSH keys, package-updater, base config)
   ansible.builtin.import_playbook: prep-guests.yml
   vars:
-    target_hosts: tack_all
+    target_hosts: tack_deploy_targets
 
 - name: Prepare Tack hosts
-  hosts: tack_all
+  hosts: tack_deploy_targets
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive
@@ -173,7 +191,7 @@
         state: restarted
 
 - name: Provision Tack via Docker Compose
-  hosts: tack_all
+  hosts: tack_deploy_targets
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive
@@ -232,8 +250,9 @@
 
     # The app verifies the search endpoint against this authority, and every
     # search member verifies its peers against it. An application guest
-    # installs it only while search is on. A search guest exists only after an
-    # explicit OpenTofu apply and always installs it. Both processes read the
+    # installs it only while search is on. This play runs on a search guest
+    # only while its environment has search on, and that guest always
+    # installs the authority. Both processes read the
     # file at start. A changed file restarts the app on an owner guest and
     # recreates the member on a search guest; each handler checks the role.
     - name: Install the OpenSearch certificate authority
