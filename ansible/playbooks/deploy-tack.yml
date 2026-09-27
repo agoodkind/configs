@@ -233,7 +233,9 @@
     # The app verifies the search endpoint against this authority, and every
     # search member verifies its peers against it. An application guest
     # installs it only while search is on. A search guest exists only after an
-    # explicit OpenTofu apply and always installs it.
+    # explicit OpenTofu apply and always installs it. Both processes read the
+    # file at start. A changed file restarts the app on an owner guest and
+    # recreates the member on a search guest; each handler checks the role.
     - name: Install the OpenSearch certificate authority
       ansible.builtin.copy:
         content: "{{ tack_search_ca }}\n"
@@ -244,6 +246,9 @@
       when: >-
         tack_cluster_role == 'search'
         or (tack_cluster_role == 'app' and tack_search_enabled | bool)
+      notify:
+        - Restart the Tack app for a new search authority
+        - Restart the OpenSearch member
 
     # -------------------------------------------------------------------------
     # Application database login (TACK-180). The app connects as tack_app, a
@@ -929,6 +934,17 @@
         chdir: "{{ tack_install_dir }}"
       changed_when: true
 
+    # The app reads the search authority file at start through its /etc/tack
+    # mount. A compose up leaves the app container running when its compose
+    # configuration is unchanged. This handler restarts the app container.
+    # This play starts the app only on the owner guest.
+    - name: Restart the Tack app for a new search authority
+      ansible.builtin.command:
+        cmd: docker compose restart app
+        chdir: "{{ tack_install_dir }}"
+      changed_when: true
+      when: tack_provision_owner | bool
+
     # Data guests run the ledger node and the product store process; a full
     # compose up here would start the whole stack on a guest that must serve
     # nothing else.
@@ -951,8 +967,11 @@
       when: tack_store_node_present | bool
 
     # A new certificate, key, or setting takes effect only in a new container.
+    # The role check keeps an application guest that installed a new search
+    # authority from starting a member.
     - name: Restart the OpenSearch member
       ansible.builtin.command:
         cmd: docker compose up -d --force-recreate opensearch
         chdir: "{{ tack_install_dir }}"
       changed_when: true
+      when: tack_cluster_role == 'search'
