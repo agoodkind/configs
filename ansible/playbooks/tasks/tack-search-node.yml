@@ -1,13 +1,14 @@
 ---
-# One OpenSearch member on a search guest (TACK-539). deploy-tack.yml includes
-# this file on each guest with tack_cluster_role search. The guest runs only
-# this service from the Tack compose file. Model deployment, index
-# provisioning, and cluster checks belong to the audited ops commands the
-# release runs afterwards.
+# These tasks run one OpenSearch member on a search guest (TACK-539).
+# deploy-tack.yml includes this file on each guest with tack_cluster_role
+# search. The guest runs only this service from the Tack compose file. These
+# tasks do not deploy the model, provision the index, or check the cluster.
+# The audited ops commands perform those steps.
 
-# The hypervisor sets the limit (deploy-proxmox.yml). OpenSearch refuses to
-# start below it once it binds a routable address. The guest checks the value
-# first and reports the command that raises it.
+# deploy-proxmox.yml sets the limit on the hypervisor. OpenSearch refuses to
+# start below the limit when it binds a routable address. The guest reads the
+# value first, and the failure message tells the operator to run
+# deploy-proxmox.
 - name: Read the memory-map limit the hypervisor sets
   ansible.builtin.slurp:
     src: /proc/sys/vm/max_map_count
@@ -20,7 +21,7 @@
     fail_msg: >-
       {{ inventory_hostname }} reads vm.max_map_count
       {{ tack_search_memory_map_count_read.content | b64decode | trim }},
-      below the {{ tack_search_memory_map_count }} OpenSearch needs. Run
+      below the {{ tack_search_memory_map_count }} required by OpenSearch. Run
       deploy-proxmox on this guest's hypervisor, then deploy again.
 
 - name: Create the OpenSearch node directory
@@ -85,8 +86,8 @@
     group: root
     mode: "0750"
 
-# The compose file requires the environment's variables even for a guest that
-# runs one service from it.
+# The compose file requires the environment variables on every guest,
+# including a guest that runs one service from it.
 - name: Deploy Tack environment file (search guest)
   ansible.builtin.template:
     src: "{{ repo_root }}/tack/tack.env.j2"

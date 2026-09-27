@@ -22,8 +22,8 @@
     group: root
     mode: "0755"
 
-# get_url reads the expected digest for the archive from the release's
-# checksum file, so a changed or truncated archive fails the download.
+# The release checksum file supplies the expected digest. get_url fails the
+# download when the archive digest does not match that digest.
 - name: Download the pinned Traefik release for the Tack search proxy
   ansible.builtin.get_url:
     url: >-
@@ -37,6 +37,10 @@
     group: root
     mode: "0644"
 
+# tack_search_proxy_release_dir contains the Traefik version. A new version
+# therefore unpacks into a new directory where `creates` finds no binary. The
+# service unit starts the binary from that directory, and the changed unit
+# restarts the proxy.
 - name: Unpack the pinned Traefik release for the Tack search proxy
   ansible.builtin.unarchive:
     src: "{{ tack_search_proxy_release_dir }}/traefik.tar.gz"
@@ -73,8 +77,8 @@
   no_log: true
   notify: Restart tack-search-proxy
 
-# The rendered file contains the readiness request's credentials. Only root
-# reads it, and the task logs nothing.
+# The rendered file contains the readiness request credentials. The file mode
+# restricts reads to root, and the task logs nothing.
 - name: Render the Tack search proxy configuration
   ansible.builtin.template:
     src: "{{ repo_root }}/proxmox/config/tack-search-proxy.yml.j2"

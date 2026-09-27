@@ -33,11 +33,12 @@ tack_search_initial_cluster_manager_nodes: >-
          and service_name == tack_search_members | first)
      else '' }}
 
-# These values locate this node's certificate and key. The node presents them
-# to the proxy and to its peers. Each member has its own pair in the vault,
-# named for its service mapping key. The proxy dials the guest's address and
-# verifies the certificate against that address. Each certificate lists the
-# guest's address as an IP subject alternative name.
+# These values locate this node's certificate and private key. The node
+# presents its certificate to the proxy and to its peers, and it uses its
+# private key locally to complete those TLS handshakes. Each member has its
+# own pair in the vault under its service mapping key. The proxy dials the
+# guest's address and verifies the certificate against that address. Each
+# certificate lists the guest's address as an IP subject alternative name.
 tack_search_node_dir: /etc/tack/search
 tack_search_node_certificate: "{{ lookup('vars', 'vault_' ~ service_name ~ '_certificate') }}"
 tack_search_node_private_key: "{{ lookup('vars', 'vault_' ~ service_name ~ '_private_key') }}"

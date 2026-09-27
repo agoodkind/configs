@@ -103,10 +103,9 @@ proxmox_slow_storage_scratch_mounts:
 # listens on the vault guest-segment address, accepts only the production
 # application guests, and selects a ready member from the production member
 # list. The application dials the vault address. The proxy certificate lists
-# that address as an IP subject alternative name. Production search stays
-# off until a release turns it on. While tack_search_proxy_enabled is false,
-# deploy-proxmox installs neither the proxy nor the memory-map prerequisite
-# on vault.
+# that address as an IP subject alternative name. Production search is
+# disabled. While tack_search_proxy_enabled is false, deploy-proxmox installs
+# neither the proxy nor the memory-map prerequisite on vault.
 tack_search_proxy_enabled: false
 tack_search_proxy_bind_ipv6: "{{ service_mapping.vault_hypervisor.ipv6 }}"
 tack_search_proxy_members: "{{ tack_search_production_members }}"

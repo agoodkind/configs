@@ -10,19 +10,19 @@ tack_search:
   reserved: true
   description: Tack application and operator commands
   cluster_permissions:
-    # GET / for the endpoint ping and the server version read.
+    # The endpoint ping and the server version read send GET /.
     - cluster:monitor/main
-    # Cluster health for the index green wait and the proxy readiness check.
+    # The index green wait and the proxy readiness check read cluster health.
     - cluster:monitor/health
-    # The persistent action.auto_create_index setting that blocks automatic
-    # creation of node-pages-* indices.
+    # This permission lets Tack update the persistent action.auto_create_index
+    # setting. That setting blocks automatic creation of node-pages-* indices.
     - cluster:admin/settings/update
-    # Request-level checks for bulk, multi-get, and alias actions. The index
-    # permissions below cover each item.
+    # OpenSearch checks bulk, multi-get, and alias requests at the cluster
+    # level. The index permissions below cover each item in those requests.
     - indices:data/write/bulk
     - indices:data/read/mget
     - indices:admin/aliases
-    # ML Commons calls for the pinned sparse model.
+    # Tack sends these ML Commons requests for the pinned sparse model.
     - cluster:admin/opensearch/ml/models/search
     - cluster:admin/opensearch/ml/register_model
     - cluster:admin/opensearch/ml/deploy_model
@@ -31,8 +31,8 @@ tack_search:
     - cluster:admin/opensearch/ml/profile/nodes
     - cluster:admin/opensearch/ml/predict
   index_permissions:
-    # node-pages is the public alias, and node-pages-* names each physical
-    # index.
+    # node-pages is the public alias, and each physical index matches
+    # node-pages-*.
     - index_patterns:
         - node-pages
         - node-pages-*
@@ -55,8 +55,9 @@ tack_search:
         - indices:data/read/search*
         - indices:data/read/point_in_time/create
         - indices:data/read/point_in_time/delete
-    # The alias lookup names only the alias, so OpenSearch evaluates it
-    # against every index. This grant reads alias metadata and no documents.
+    # The alias lookup specifies only the alias. OpenSearch evaluates that
+    # lookup against every index. This grant reads alias metadata and no
+    # documents.
     - index_patterns:
         - "*"
       allowed_actions:

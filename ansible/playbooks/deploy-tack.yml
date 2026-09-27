@@ -967,8 +967,8 @@
       when: tack_store_node_present | bool
 
     # A new certificate, key, or setting takes effect only in a new container.
-    # The role check keeps an application guest that installed a new search
-    # authority from starting a member.
+    # This handler recreates a member only when tack_cluster_role is search.
+    # An application guest that installs a new search authority skips it.
     - name: Restart the OpenSearch member
       ansible.builtin.command:
         cmd: docker compose up -d --force-recreate opensearch

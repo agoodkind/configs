@@ -5,11 +5,11 @@ require 'tmpdir'
 require 'yaml'
 require_relative 'ansible_render'
 
-# Renders the Tack search templates for real inventory hosts. Each render
-# copies the repository inventory, replaces the encrypted vault with
-# placeholders named after the vault variables the templates read, and can
-# add test-only production members, so every file resolves its group
-# variables the way a deploy does.
+# This helper renders the Tack search templates for real inventory hosts.
+# Each render copies the repository inventory, replaces the encrypted vault
+# with placeholder values, and can add test-only production members. Ansible
+# resolves each template's group variables from that inventory copy with the
+# same group structure a deploy uses.
 module TackSearchInventory
   INVENTORY_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory')
   COPIED_ENTRIES = %w[hosts service_mapping.yml group_vars].freeze
@@ -26,8 +26,8 @@ module TackSearchInventory
     'proxy' => 'proxmox/config/tack-search-proxy.yml.j2',
     'proxy_service' => 'proxmox/services/tack-search-proxy.service.j2'
   }.freeze
-  # The owner guest, the hypervisor, and the member name prefix of each
-  # environment.
+  # These values identify the owner guest, the hypervisor, and the domain of
+  # each environment.
   ENVIRONMENTS = {
     production: { owner: 'tack.home.goodkind.io', hypervisor: 'vault', domain: 'home.goodkind.io' },
     qa: { owner: 'tack-qa.suburban.goodkind.io', hypervisor: 'suburban', domain: 'suburban.goodkind.io' }
@@ -63,10 +63,10 @@ module TackSearchInventory
 
   module_function
 
-  # One render per environment, member count, and set of overrides, shared by
-  # every spec file in the run and removed when the run ends. Each override is
-  # an extra variable that replaces the committed inventory value, such as
-  # tack_search_enabled or tack_search_public_enabled.
+  # The helper shares one render for each environment, member count, and
+  # override set across the spec files and removes the render directory when
+  # the run ends. Each override is an extra variable that replaces a committed
+  # inventory value, such as tack_search_enabled or tack_search_public_enabled.
   def rendered(environment, member_count: 1, overrides: {})
     @rendered ||= {}
     @rendered[[environment, member_count, overrides]] ||= render(environment, member_count, overrides)
@@ -107,15 +107,17 @@ module TackSearchInventory
     inventory_directory
   end
 
-  # Every vault variable the rendered files read, set to a value that names it.
+  # The helper sets every vault variable that the rendered files read to a
+  # placeholder value that contains the variable's own name.
   def placeholder_secrets
     names = SHARED_SECRETS.dup
     SECRET_NAMES.each { |name| names.push("vault_tack_#{name}", "vault_tack_qa_#{name}") }
     names.to_h { |name| [name, "render-only-#{name}"] }
   end
 
-  # Test-only production members beyond tack_search1, each with its own
-  # address and group, listed in the production member list.
+  # The helper adds test-only production members after tack_search1. Each
+  # added member has its own address and group, and the helper appends it to
+  # the production member list.
   def add_production_members(inventory_directory, members)
     mapping_path = File.join(inventory_directory, MAPPING_FILE)
     mapping = YAML.safe_load_file(mapping_path, aliases: true)

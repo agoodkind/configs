@@ -110,9 +110,9 @@ tack_store_redundancy_mode: double
 # later member joins the cluster by name, and the application endpoint stays
 # the same.
 #
-# Search stays off in production until a release turns it on. While it is
-# off, the env file has no OPENSEARCH_* setting, the application guests get
-# no search authority, and deploy-tack skips the topology check.
+# Production search is disabled. While tack_search_enabled is false, the env
+# file has no OPENSEARCH_* setting, the application guests receive no search
+# authority, and deploy-tack skips the topology check.
 tack_search_enabled: false
 tack_search_members: "{{ tack_search_production_members }}"
 tack_search_endpoint: "https://[{{ service_mapping.vault_hypervisor.ipv6 }}]:{{ tack_search_port }}"
@@ -121,15 +121,15 @@ tack_search_cluster_name: tack-search-production
 
 # This value controls the first formation of the cluster. While it is true,
 # the env file of the first member sets that member as the initial cluster
-# manager. The release sets this value to false after the cluster forms.
-# Later members discover the existing cluster.
+# manager. A formed cluster requires false. Later members discover the
+# existing cluster.
 tack_search_bootstrap_cluster: true
 
 tack_search_username: "{{ vault_tack_search_username }}"
 tack_search_password: "{{ vault_tack_search_password }}"
 tack_search_password_hash: "{{ vault_tack_search_password_hash }}"
 tack_search_ca: "{{ vault_tack_search_ca }}"
-# Tack signs search continuation cursors with this standard base64 key. The
+# Tack signs search continuation cursors with this base64-encoded key. The
 # env template renders it only while tack_search_public_enabled is true.
 tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
 
@@ -137,7 +137,7 @@ tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
 # never places a replica on the guest that stores its primary. One replica
 # therefore requires a second member. The routing-shard count divides by
 # every approved split target (2, 4, and 8), and Tack refuses any other
-# value. Public search stays off until the rebuild passes.
+# value. Public search is disabled.
 tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0

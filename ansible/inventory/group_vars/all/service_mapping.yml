@@ -183,8 +183,8 @@ service_mapping:
     ipv4: "10.240.1.242"
     ipv6: "3d06:bad:b01:211::226"
     mac_address: "BC:24:11:04:02:26"
-  # Uses 227 rather than its counterpart's 125 plus 100, because
-  # mwan_test_client_a_suburban already uses 225.
+  # The QA search guest uses VMID 227. The production VMID plus 100 is 225,
+  # and mwan_test_client_a_suburban already uses 225.
   tack_search1_suburban:
     hostname: tack-search1.suburban.goodkind.io
     vmid: 227

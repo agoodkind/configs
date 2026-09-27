@@ -11,7 +11,7 @@ module TackSearchNode
   NODE_TASKS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tasks', 'tack-search-node.yml')
   MEMORY_MAP_TASK = 'Refuse to start OpenSearch below its memory-map limit'
   TOPOLOGY_TASK = 'Refuse a search topology the members cannot place'
-  # The Tack container contract every member renders.
+  # Every member renders this Tack container contract.
   CONTRACT = {
     'OPENSEARCH_JAVA_OPTS' => '-Xms2g -Xmx2g',
     'node.roles' => 'cluster_manager,data,ingest,ml',

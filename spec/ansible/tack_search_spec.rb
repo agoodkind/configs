@@ -9,16 +9,16 @@ module TackSearchEnvironment
   GROUP_VARS_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars')
   PRODUCTION_ENDPOINT = 'https://[3d06:bad:b01::254]:9200'
   QA_ENDPOINT = 'https://[3d06:bad:b01:210::5]:9200'
-  # Every variable Tack's config package reads for search that has no
-  # compiled default, plus the public switch the deployment plan requires.
-  # Tack reads the cursor key only while public search is on. The env file
-  # with public search on adds it.
+  # This list contains the search settings that Tack reads without a compiled
+  # default, plus the public search switch that the deployment plan requires.
+  # Tack reads OPENSEARCH_CURSOR_KEY only while public search is on, and the
+  # env file renders OPENSEARCH_CURSOR_KEY only while public search is on.
   SETTING_NAMES = %w[
     OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_PASSWORD OPENSEARCH_PUBLIC_ENABLED
     OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS OPENSEARCH_USERNAME
   ].freeze
   PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
-  # Extra variables that turn on search, and search with public results.
+  # ENABLED turns on search. PUBLIC turns on search and public search results.
   ENABLED = { 'tack_search_enabled' => true }.freeze
   PUBLIC = ENABLED.merge('tack_search_public_enabled' => true).freeze
 

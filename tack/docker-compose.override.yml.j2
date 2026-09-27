@@ -21,8 +21,11 @@ services:
       OPENSEARCH_JAVA_OPTS: "{{ tack_search_java_opts }}"
       DISABLE_INSTALL_DEMO_CONFIG: "true"
       cluster.name: {{ tack_search_cluster_name }}
-      # The node name and discovery come from the TACK_SEARCH_* variables in
-      # the rendered .env, which the Tack compose file reads.
+      # This map sets no node.name or discovery key. Compose merges this map
+      # with the opensearch environment in the Tack base file. The base file
+      # sets node.name, discovery.type, discovery.seed_hosts, and
+      # cluster.initial_cluster_manager_nodes from the TACK_SEARCH_* values in
+      # the rendered .env.
       node.roles: "{{ tack_search_node_roles }}"
       network.host: "{{ service_mapping[service_name].ipv6 }}"
       http.port: "{{ tack_search_port }}"
