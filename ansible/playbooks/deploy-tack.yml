@@ -13,12 +13,13 @@
 #   ./configsctl deploy deploy-tack \
 #     --limit tack_qa_all
 
-# This play adds every tack_all host to tack_deploy_targets except a search
-# guest in an environment with tack_search_enabled false. Every later play in
-# this playbook runs only on tack_deploy_targets. A deploy-tack run skips
-# every task on the production search guest while production search is
-# disabled, and no deploy-tack run starts that guest's OpenSearch member. The
-# group_by task runs on the controller and opens no connection to the guest.
+# This play runs group_by on every tack_all host. group_by adds each host to
+# tack_deploy_targets, except a search guest in an environment with
+# tack_search_enabled false, which it adds to tack_deploy_skipped. Every
+# later play in this playbook runs only on tack_deploy_targets. A search
+# guest in a disabled environment joins no later play, and no deploy-tack
+# run starts its OpenSearch member. The group_by task runs on the controller
+# and opens no connection to the guest.
 - name: Select the Tack deploy targets
   hosts: tack_all
   gather_facts: false

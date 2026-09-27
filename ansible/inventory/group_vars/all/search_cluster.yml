@@ -4,8 +4,8 @@
 # node's discovery settings. The hypervisor groups render the member list
 # into the proxy backends. OpenTofu reads the guest shape.
 
-# These lists name the members of each environment's cluster by service
-# mapping key. A new entry in a list adds that member's seed address to every
+# Each list contains the service mapping keys of its environment's cluster
+# members. A new entry in a list adds that member's seed address to every
 # node and adds its backend to the environment's proxy. The application
 # endpoint stays the same.
 tack_search_production_members:
