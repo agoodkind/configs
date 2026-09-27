@@ -204,15 +204,20 @@
     # OpenSearch never places a replica on the guest that stores its primary.
     # One replica therefore needs two members, and the single-node discovery
     # mode admits exactly one member. An environment with search off renders
-    # no topology and skips this check.
+    # no topology and skips this check. The member list has more entries than
+    # the replica count when a member remains after the first replica-count
+    # entries. The list has exactly one entry when it is not empty and nothing
+    # follows its first entry.
     - name: Refuse a search topology the members cannot place
       ansible.builtin.assert:
         that:
-          - (tack_search_replicas | int) < (tack_search_members | length)
-          - not (tack_search_single_node | bool) or (tack_search_members | length) == 1
+          - tack_search_members[(tack_search_replicas | int):] != []
+          - >-
+            not (tack_search_single_node | bool)
+            or (tack_search_members != [] and tack_search_members[1:] == [])
         fail_msg: >-
-          {{ tack_search_replicas }} search replicas across
-          {{ tack_search_members | length }} members
+          {{ tack_search_replicas }} search replicas across the members
+          {{ tack_search_members | join(', ') }}
           (single-node {{ tack_search_single_node }}). Every replica needs a
           distinct member, and single-node discovery runs exactly one.
       when: tack_search_enabled | bool
