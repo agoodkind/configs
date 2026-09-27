@@ -221,11 +221,10 @@
 
   tasks:
     # OpenSearch places each replica on a member other than the one that
-    # stores its primary. One replica requires two members. Single-node
-    # discovery admits exactly one member. An environment with search off
-    # renders no topology and skips this check. The member list must contain
-    # at least one more member than the replica count. Single-node discovery
-    # requires exactly one member.
+    # stores its primary. The member list must contain at least one more
+    # member than the replica count. Single-node discovery requires exactly
+    # one member. An environment with search off renders no topology and
+    # skips this check.
     - name: Refuse a search topology the members cannot place
       ansible.builtin.assert:
         that:
