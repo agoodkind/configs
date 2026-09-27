@@ -1,4 +1,3 @@
-# Ansible renders this file from proxmox/config/tack-search-proxy.yml.j2.
 # This file is the Traefik dynamic configuration for the environment's search
 # endpoint.
 http:
@@ -34,15 +33,17 @@ http:
 {% for member in tack_search_proxy_members %}
           - url: "https://[{{ service_mapping[member].ipv6 }}]:{{ tack_search_port }}"
 {% endfor %}
-  # Each member URL is an address. Traefik verifies the member's certificate
-  # against that address and the search authority.
+  # Each member URL is an address. Traefik verifies each member certificate
+  # against that member address and against the search CA in ca.crt. That
+  # file contains the same search CA that the Tack deploy installs on the
+  # application and search guests.
   serversTransports:
     tack-search-members:
       rootCAs:
         - {{ tack_search_proxy_dir }}/ca.crt
 
-# The application dials an address and sends no server name. Traefik answers
-# it with the default certificate.
+# The application dials an address and sends no server name. Traefik
+# presents the default certificate on that connection.
 tls:
   options:
     default:

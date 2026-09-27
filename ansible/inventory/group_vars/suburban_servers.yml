@@ -159,12 +159,10 @@ tack_search_proxy_ca: "{{ vault_tack_qa_search_ca }}"
 tack_search_proxy_certificate: "{{ vault_tack_qa_search_proxy_certificate }}"
 tack_search_proxy_private_key: "{{ vault_tack_qa_search_proxy_private_key }}"
 
-# This value sets the minimum available host memory, in GiB, for QA search
-# activation. The final sparse-model workload used about 3.4 GiB after it
-# finished, and no measurement recorded its peak. The final validation plan
-# measures this host through the complete QA indexing, query, and rebuild
-# workload. QA activation fails when available memory drops below this value
-# at any point.
+# This value sets the minimum available suburban host memory, in GiB, for
+# the QA search workload. No playbook task reads or enforces it. The search
+# render spec checks the value. The final sparse-model workload used about
+# 3.4 GiB after it finished, and no measurement recorded its peak.
 tack_search_qa_host_min_available_gib: 6.26
 
 # Suburban is the only host with a WireGuard interface, so it is the only one
