@@ -45,5 +45,5 @@ tack_search_node_private_key: "{{ lookup('vars', 'vault_' ~ service_name ~ '_pri
 
 # The OpenSearch image runs as this user ID. The deploy gives this user the
 # node key and the security configuration files because the node reads them
-# through bind mounts.
+# from bind mounts.
 tack_search_container_uid: 1000

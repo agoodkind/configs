@@ -13,11 +13,12 @@
 #   ./configsctl deploy deploy-tack \
 #     --limit tack_qa_all
 
-# This play adds each tack_all host to tack_deploy_targets, and every later
-# play runs only on that group. A search guest in an environment with
-# tack_search_enabled false joins tack_deploy_skipped instead. No deploy-tack
-# run starts the OpenSearch member on that guest. The group_by task runs on
-# the controller and opens no connection to the guest.
+# This play adds each application guest, and each search guest in an
+# environment with tack_search_enabled true, to tack_deploy_targets. It adds
+# each search guest in an environment with tack_search_enabled false to
+# tack_deploy_skipped. Every later play runs only on tack_deploy_targets. No
+# deploy-tack run starts the OpenSearch member on a skipped guest. The
+# group_by task runs on the controller and opens no connection to a guest.
 - name: Select the Tack deploy targets
   hosts: tack_all
   gather_facts: false
