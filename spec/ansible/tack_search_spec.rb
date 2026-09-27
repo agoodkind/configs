@@ -76,7 +76,7 @@ RSpec.describe TackSearchEnvironment do
     expect(three.settings(three.owner).fetch('OPENSEARCH_ENDPOINT')).to eq(endpoint)
   end
 
-  it 'renders the QA search settings Tack reads, with public search off and no replica' do
+  it 'renders the QA search settings Tack reads, with public search on and no replica' do
     rendered = TackSearchInventory.rendered(:qa)
 
     expect(described_class.search_settings(rendered)).to eq(
@@ -87,9 +87,10 @@ RSpec.describe TackSearchEnvironment do
       'OPENSEARCH_SHARDS' => '1',
       'OPENSEARCH_ROUTING_SHARDS' => '8',
       'OPENSEARCH_REPLICAS' => '0',
-      'OPENSEARCH_PUBLIC_ENABLED' => 'false'
+      'OPENSEARCH_PUBLIC_ENABLED' => 'true',
+      'OPENSEARCH_CURSOR_KEY' => 'render-only-vault_tack_qa_search_cursor_key'
     )
-    expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::SETTING_NAMES)
+    expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
   end
 
   it 'renders no production search setting while production search is off' do
