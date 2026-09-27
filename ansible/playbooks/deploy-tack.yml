@@ -201,13 +201,13 @@
       --deploy-commit {{ tack_commit }}
 
   tasks:
-    # OpenSearch never places a replica on the guest that stores its primary.
-    # One replica therefore needs two members, and the single-node discovery
-    # mode admits exactly one member. An environment with search off renders
-    # no topology and skips this check. The member list has more entries than
-    # the replica count when a member remains after the first replica-count
-    # entries. The list has exactly one entry when it is not empty and nothing
-    # follows its first entry.
+    # OpenSearch places each replica on a member other than the one that
+    # stores its primary. One replica requires two members. Single-node
+    # discovery admits exactly one member. An environment with search off
+    # renders no topology and skips this check. The member list has more
+    # entries than the replica count when a member remains after the first
+    # replica-count entries. The list has exactly one entry when it is not
+    # empty and nothing follows its first entry.
     - name: Refuse a search topology the members cannot place
       ansible.builtin.assert:
         that:

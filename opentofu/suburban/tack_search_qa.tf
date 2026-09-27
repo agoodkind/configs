@@ -70,8 +70,8 @@ resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
-      # Proxmox does not return injected SSH keys, so a re-import would read
-      # the configured keys as an addition that forces replacement.
+      # Proxmox does not return injected SSH keys. A re-import reads the
+      # configured keys as an addition, and an addition forces replacement.
       initialization[0].user_account,
       operating_system[0].template_file_id,
     ]

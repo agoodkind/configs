@@ -37,10 +37,11 @@
     group: root
     mode: "0644"
 
-# tack_search_proxy_release_dir contains the Traefik version. A new version
-# therefore unpacks into a new directory where `creates` finds no binary. The
-# service unit starts the binary from that directory, and the changed unit
-# restarts the proxy.
+# tack_search_proxy_release_dir contains the Traefik version. The download
+# and unpack tasks write a new version into a new directory. The `creates`
+# check reads that new directory and finds no binary there. The service unit
+# starts the binary from that directory. A changed unit notifies the proxy
+# restart handler.
 - name: Unpack the pinned Traefik release for the Tack search proxy
   ansible.builtin.unarchive:
     src: "{{ tack_search_proxy_release_dir }}/traefik.tar.gz"
