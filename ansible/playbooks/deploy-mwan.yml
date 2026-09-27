@@ -1002,7 +1002,7 @@
     - name: Fail playbook after rollback
       ansible.builtin.fail:
         msg: >-
-          {{ mwan_deploy_gate_families }} egress never passed
+          Egress checks for the configured address families ({{ mwan_deploy_gate_families }}) did not pass for
           {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
           180s of the reboot, probed from
           {{ mwan_proxmox_delegate }}. Rolled back to
@@ -1015,7 +1015,7 @@
     - name: Fail when health gate failed without rollback snapshot
       ansible.builtin.fail:
         msg: >-
-          {{ mwan_deploy_gate_families }} egress never passed
+          Egress checks for the configured address families ({{ mwan_deploy_gate_families }}) did not pass for
           {{ mwan_deploy_gate_consecutive_rounds }} consecutive rounds within
           180s of the reboot and no
           pre-deploy snapshot exists, because connectivity was already broken
