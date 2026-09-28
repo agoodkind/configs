@@ -118,6 +118,11 @@ enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
 restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
 notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
 
+[bgp.forwarding_readiness]
+socket_path = "{{ mwan_bgp_forwarding_readiness_socket_path }}"
+poll_interval_milliseconds = {{ mwan_bgp_forwarding_readiness_poll_interval_milliseconds }}
+read_timeout_milliseconds = {{ mwan_bgp_forwarding_readiness_read_timeout_milliseconds }}
+
 # Gates whether ifmgr publishes its loaded configuration into the wanconfig
 # management datastore (sysrepo) at startup. Only a gateway carrying the
 # wanconfig stack turns this on; everywhere else the daemon never opens a
