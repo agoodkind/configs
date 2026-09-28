@@ -280,7 +280,10 @@
       tags: ["isp-lxcs"]
 
     - name: Render and push ISP LXC configs
-      ansible.builtin.include_tasks: tasks/deploy-testbed-isp-lxc.yml
+      ansible.builtin.include_tasks:
+        file: tasks/deploy-testbed-isp-lxc.yml
+        apply:
+          tags: ["isp-lxcs"]
       loop: "{{ testbed_isp_lxcs }}"
       loop_control:
         loop_var: isp
