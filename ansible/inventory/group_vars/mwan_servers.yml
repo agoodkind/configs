@@ -696,3 +696,6 @@ mwan_bgp_dynamic_neighbors:
 mwan_bgp_graceful_restart_enabled: true
 mwan_bgp_graceful_restart_time_seconds: 30
 mwan_bgp_graceful_restart_notification_enabled: true
+mwan_bgp_forwarding_readiness_socket_path: "/run/mwan-forwarding-ready.sock"
+mwan_bgp_forwarding_readiness_poll_interval_milliseconds: 1000
+mwan_bgp_forwarding_readiness_read_timeout_milliseconds: 500
