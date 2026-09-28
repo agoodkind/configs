@@ -688,12 +688,9 @@ mwan_bgp_dynamic_neighbors:
   - "{{ mwan_internal_net_v4 }}"
   - "3d06:bad:b01:fe::/64"
 
-# BGP Graceful Restart (RFC 4724). When enabled the embedded GoBGP speaker
-# negotiates the GR capability so a planned restart of mwan-agent does not
-# cause immediate route withdrawal on the OPNsense FRR helper. The
-# restart_time is the helper-side hold timer in seconds. Keep it deliberately
-# shorter than the GoBGP default of 120s.
-mwan_bgp_graceful_restart_enabled: true
+# Withdraw the primary defaults when its BGP session disconnects. OPNsense
+# selects the backup while the primary waits for forwarding readiness.
+mwan_bgp_graceful_restart_enabled: false
 mwan_bgp_graceful_restart_time_seconds: 30
 mwan_bgp_graceful_restart_notification_enabled: true
 mwan_bgp_forwarding_readiness_socket_path: "/run/mwan-forwarding-ready.sock"
