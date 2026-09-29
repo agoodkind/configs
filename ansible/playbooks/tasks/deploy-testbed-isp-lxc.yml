@@ -1,6 +1,6 @@
 ---
 # Render and push config files to a single ISP LXC.
-# Called from deploy-testbed.yml with loop_var: isp
+# Called from deploy-testbed.yml with a merged isp variable.
 #
 # isp fields: id, name, ipv6_enabled, routed_ipv6_enabled, routed_ipv6_prefix,
 #   routed_ipv4_prefix, routed_ipv4_route_to, v4_subnet, dynamic_v4,
