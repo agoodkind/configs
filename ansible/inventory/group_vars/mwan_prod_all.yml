@@ -12,10 +12,10 @@
 # tag, download its checksums.txt, and copy both lines here.
 
 mwan_release_repo: agoodkind/mwan
-mwan_release_tag: "202609291301-67-acb81bb"
+mwan_release_tag: "202609291633-6b-eb03497"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:0c384891baa6a607f6c13b14e9cafc4abfc759b75e93f20efca8831a9252e57e"
+    checksum: "sha256:ee146b20e1bd990f78e5a22d72b745f6f8f422215e4edaf20add101ad4faaacc"
   - name: wanconfig-stack_linux_amd64.tar.gz
     checksum: "sha256:7b29e980a2113d9ca34548f4aa1f8a0e6e01e67693d6d56f21fb3698c06bae56"
 
