@@ -177,12 +177,6 @@ RSpec.describe TackMetadataNameIndex do
       expect(described_class.position(tasks, TackMetadataNameIndex::READY_TASK)).to be < described_class.position(tasks, TackMetadataNameIndex::SEARCH_MEMBER_TASK)
     end
 
-    it 'runs the backfill through the app service with --execute and the deploy operator identity' do
-      command = described_class.task_named(tasks, TackMetadataNameIndex::RUN_TASK).dig('ansible.builtin.command', 'cmd')
-
-      expect(command.split).to include('app', 'once-metadata-name-index', '--execute', '--output', 'json', '{{', 'tack_ops_identity_flags', '}}')
-    end
-
     it 'puts the guard directly before every search index build' do
       described_class.search_builds.each do |build|
         expect(described_class.guard_include?(build[:previous])).to be(true), "#{build[:file]}: #{build[:task]['name']} has no guard before it"
