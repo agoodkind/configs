@@ -1,0 +1,181 @@
+---
+# tasks/tack-search-node.yml imports this file after it starts the member. A
+# member reads the user, role, and role mapping files into its security index
+# only on its first start. These tasks write the installed files into the
+# security index of a running member through the security REST API. The
+# member treats a request that presents the admin certificate as a super admin
+# request, and only a super admin request can change a reserved entry.
+#
+# The deploy host sends the security API requests directly to the member URL.
+# It writes the admin certificate and key from the vault into a temporary
+# directory, uses them, and removes the directory after the requests. The
+# guest never receives the admin key.
+#
+# After a successful write, the guest records the checksums of the three
+# files. A later deploy writes the files again only when a checksum differs
+# from the record. A failed write leaves the record unchanged, and the next
+# deploy writes the files again.
+
+# A pending handler recreates the member with a new certificate or setting,
+# such as the admin certificate subject. The writes need the recreated member.
+- name: Recreate the OpenSearch member before the security writes
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the checksum record of the applied OpenSearch security files
+  ansible.builtin.stat:
+    path: "{{ tack_search_security_record_path }}"
+    get_checksum: true
+    checksum_algorithm: sha1
+  register: tack_search_security_record
+
+# A check-mode run skips the writes because it sends no request to the member.
+- name: Write the OpenSearch security files into the running member
+  vars:
+    tack_search_security_checksums: >-
+      {{ [tack_search_users_file.checksum, tack_search_roles_file.checksum,
+          tack_search_roles_mapping_file.checksum] | join(' ') }}
+  when:
+    - not ansible_check_mode
+    - >-
+      not tack_search_security_record.stat.exists
+      or tack_search_security_record.stat.checksum
+         != (tack_search_security_checksums | hash('sha1'))
+  block:
+    - name: Read the installed OpenSearch role file
+      ansible.builtin.slurp:
+        src: "{{ tack_search_node_dir }}/roles.yml"
+      register: tack_search_roles_read
+
+    - name: Read the installed OpenSearch role mapping file
+      ansible.builtin.slurp:
+        src: "{{ tack_search_node_dir }}/roles_mapping.yml"
+      register: tack_search_roles_mapping_read
+
+    # The user file contains the password hash.
+    - name: Read the installed OpenSearch user file
+      ansible.builtin.slurp:
+        src: "{{ tack_search_node_dir }}/internal_users.yml"
+      register: tack_search_users_read
+      no_log: true
+
+    # tempfile creates the directory with mode 0700.
+    - name: Create the admin credential directory on the deploy host
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -tack-search-admin
+      register: tack_search_admin_directory
+      delegate_to: localhost
+      become: false
+
+    - name: Send the security API requests from the deploy host
+      delegate_to: localhost
+      become: false
+      vars:
+        tack_search_admin_ca_file: "{{ tack_search_admin_directory.path }}/ca.crt"
+        tack_search_admin_certificate_file: "{{ tack_search_admin_directory.path }}/admin.crt"
+        tack_search_admin_key_file: "{{ tack_search_admin_directory.path }}/admin.key"
+      block:
+        - name: Write the search authority and the admin certificate on the deploy host
+          ansible.builtin.copy:
+            content: "{{ item.content }}\n"
+            dest: "{{ item.dest }}"
+            mode: "0644"
+          loop:
+            - { content: "{{ tack_search_ca }}", dest: "{{ tack_search_admin_ca_file }}" }
+            - { content: "{{ tack_search_admin_certificate }}", dest: "{{ tack_search_admin_certificate_file }}" }
+          loop_control:
+            label: "{{ item.dest }}"
+
+        - name: Write the admin private key on the deploy host
+          ansible.builtin.copy:
+            content: "{{ tack_search_admin_private_key }}\n"
+            dest: "{{ tack_search_admin_key_file }}"
+            mode: "0600"
+          no_log: true
+
+        # The security API answers 503 until the member loads its security
+        # index. A member that loaded the index answers 200 to the admin
+        # certificate and 401 or 403 to a certificate that
+        # plugins.security.authcz.admin_dn omits.
+        - name: Wait for the OpenSearch security API to answer the admin certificate
+          ansible.builtin.uri:
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/roles/tack_search"
+            method: GET
+            ca_path: "{{ tack_search_admin_ca_file }}"
+            client_cert: "{{ tack_search_admin_certificate_file }}"
+            client_key: "{{ tack_search_admin_key_file }}"
+            status_code: [200, 401, 403]
+          register: tack_search_security_ready
+          until: tack_search_security_ready.status in [200, 401, 403]
+          retries: "{{ tack_search_security_ready_retries }}"
+          delay: "{{ tack_search_security_ready_delay_seconds }}"
+          no_log: true
+
+        - name: Refuse a member that does not accept the admin certificate
+          ansible.builtin.assert:
+            that:
+              - tack_search_security_ready.status == 200
+            fail_msg: >-
+              The member at {{ tack_search_member_url }} answered
+              {{ tack_search_security_ready.status }} to the admin certificate.
+              Its plugins.security.authcz.admin_dn setting must list
+              {{ tack_search_admin_dn }}, the subject of the admin certificate.
+
+        - name: Write each OpenSearch role into the security index
+          ansible.builtin.uri:
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/roles/{{ item.key }}"
+            method: PUT
+            body_format: json
+            body: "{{ item.value }}"
+            ca_path: "{{ tack_search_admin_ca_file }}"
+            client_cert: "{{ tack_search_admin_certificate_file }}"
+            client_key: "{{ tack_search_admin_key_file }}"
+            status_code: [200, 201]
+          loop: >-
+            {{ tack_search_roles_read.content | b64decode | from_yaml | dict2items
+               | rejectattr('key', 'equalto', '_meta') | list }}
+          no_log: true
+
+        - name: Write each OpenSearch role mapping into the security index
+          ansible.builtin.uri:
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/rolesmapping/{{ item.key }}"
+            method: PUT
+            body_format: json
+            body: "{{ item.value }}"
+            ca_path: "{{ tack_search_admin_ca_file }}"
+            client_cert: "{{ tack_search_admin_certificate_file }}"
+            client_key: "{{ tack_search_admin_key_file }}"
+            status_code: [200, 201]
+          loop: >-
+            {{ tack_search_roles_mapping_read.content | b64decode | from_yaml | dict2items
+               | rejectattr('key', 'equalto', '_meta') | list }}
+          no_log: true
+
+        - name: Write each OpenSearch user into the security index
+          ansible.builtin.uri:
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/internalusers/{{ item.key }}"
+            method: PUT
+            body_format: json
+            body: "{{ item.value }}"
+            ca_path: "{{ tack_search_admin_ca_file }}"
+            client_cert: "{{ tack_search_admin_certificate_file }}"
+            client_key: "{{ tack_search_admin_key_file }}"
+            status_code: [200, 201]
+          loop: >-
+            {{ tack_search_users_read.content | b64decode | from_yaml | dict2items
+               | rejectattr('key', 'equalto', '_meta') | list }}
+          no_log: true
+      always:
+        - name: Remove the admin credential directory from the deploy host
+          ansible.builtin.file:
+            path: "{{ tack_search_admin_directory.path }}"
+            state: absent
+          no_log: true
+
+    - name: Record the checksums of the applied OpenSearch security files
+      ansible.builtin.copy:
+        content: "{{ tack_search_security_checksums }}"
+        dest: "{{ tack_search_security_record_path }}"
+        owner: root
+        group: root
+        mode: "0644"

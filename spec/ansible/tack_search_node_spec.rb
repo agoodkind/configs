@@ -83,6 +83,22 @@ RSpec.describe TackSearchNode do
     expect(rendered.settings(host)).to include('TACK_SEARCH_NODE_NAME' => 'tack-search1')
   end
 
+  {
+    production: ['tack_search1', 'CN=tack-search-production-admin'],
+    qa: ['tack_search1_suburban', 'CN=tack-search-qa-admin']
+  }.each do |environment, (member, admin_dn)|
+    it "accepts the #{environment} admin certificate on the HTTP layer as #{admin_dn}" do
+      service = described_class.service(TackSearchInventory.rendered(environment), member)
+
+      expect(service.fetch('environment')).to include(
+        'plugins.security.authcz.admin_dn' => admin_dn,
+        'plugins.security.ssl.http.pemtrustedcas_filepath' => 'tack-search/http-ca.crt',
+        'plugins.security.ssl.transport.pemtrustedcas_filepath' => 'tack-search/ca.crt'
+      )
+      expect(service.fetch('volumes')).to include('/etc/tack/search/http-ca.crt:/usr/share/opensearch/config/tack-search/http-ca.crt:ro')
+    end
+  end
+
   it 'maps the application user to the tack_search role and no backend role' do
     rendered = TackSearchInventory.rendered(:production)
     host = rendered.member_host('tack_search1')

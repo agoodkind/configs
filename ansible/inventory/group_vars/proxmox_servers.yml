@@ -109,9 +109,16 @@ tack_search_proxy_release_dir: "/usr/local/lib/tack-search-proxy/traefik-{{ tack
 # The proxy sends an authenticated request to this path on every member to
 # check readiness. A member answers the request after it joins a cluster
 # that has an elected cluster manager.
+#
+# Traefik 3.0 removes a member from rotation after one failed check. A
+# refused connection or an error status fails the check without waiting for
+# the timeout. The proxy checks every 10 seconds. During a model download on
+# the two-core QA guest, two answers took longer than a 5 second timeout,
+# Traefik removed the only member, and one request got 503. The timeout is 30
+# seconds. A busy member that answers within 30 seconds stays in rotation.
 tack_search_proxy_health_path: /_cluster/health
 tack_search_proxy_health_interval: 10s
-tack_search_proxy_health_timeout: 5s
+tack_search_proxy_health_timeout: 30s
 
 # Slow storage tier (TACK-495). Each hypervisor keeps its latency-sensitive
 # guests on its fast pool and places the object store and the owner guest's

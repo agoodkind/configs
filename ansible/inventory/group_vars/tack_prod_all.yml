@@ -127,6 +127,8 @@ tack_search_username: "{{ vault_tack_search_username }}"
 tack_search_password: "{{ vault_tack_search_password }}"
 tack_search_password_hash: "{{ vault_tack_search_password_hash }}"
 tack_search_ca: "{{ vault_tack_search_ca }}"
+tack_search_admin_certificate: "{{ vault_tack_search_admin_certificate }}"
+tack_search_admin_private_key: "{{ vault_tack_search_admin_private_key }}"
 # Tack signs search continuation cursors with this base64-encoded key. The
 # env template renders it only while tack_search_public_enabled is true.
 tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
