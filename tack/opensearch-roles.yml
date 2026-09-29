@@ -14,6 +14,9 @@ tack_search:
     - cluster:monitor/main
     # The index green wait and the proxy readiness check read cluster health.
     - cluster:monitor/health
+    # The index settings read takes the routing shard count from the index
+    # metadata in the cluster state.
+    - cluster:monitor/state
     # OpenSearch checks bulk, multi-get, and alias requests at the cluster
     # level. The index permissions below cover each item in those requests.
     - indices:data/write/bulk
@@ -23,10 +26,16 @@ tack_search:
     - cluster:admin/opensearch/ml/models/search
     - cluster:admin/opensearch/ml/register_model
     - cluster:admin/opensearch/ml/deploy_model
+    # A model deploy request runs its per-node deploy action as the calling
+    # user.
+    - cluster:admin/opensearch/ml/deploy_model_on_nodes
     - cluster:admin/opensearch/ml/models/get
     - cluster:admin/opensearch/ml/tasks/get
     - cluster:admin/opensearch/ml/profile/nodes
     - cluster:admin/opensearch/ml/predict
+    # Under the least_load dispatch policy, a predict request reads ML node
+    # statistics as the calling user to choose a node.
+    - cluster:admin/opensearch/ml/stats/nodes
   index_permissions:
     # node-pages is the public alias, and each physical index matches
     # node-pages-*.
