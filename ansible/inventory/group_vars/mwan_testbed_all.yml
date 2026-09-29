@@ -4,10 +4,10 @@
 # production's pins and explains the shape of a pin.
 
 mwan_release_repo: agoodkind/mwan
-mwan_release_tag: "202609290823-61-3945636"
+mwan_release_tag: "202609291053-65-3191615"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:46d3e135bcb4dd043beaaed4cc518074884d91daf8f0ddc3fcc2106fdf9c6f3e"
+    checksum: "sha256:d73245860563976ec85ae60e58769d451f309c8381e8022892c5c5790947bf35"
   - name: wanconfig-stack_linux_amd64.tar.gz
     checksum: "sha256:7b29e980a2113d9ca34548f4aa1f8a0e6e01e67693d6d56f21fb3698c06bae56"
 
