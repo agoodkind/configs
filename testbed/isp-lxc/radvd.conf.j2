@@ -1,8 +1,8 @@
 interface eth0
 {
     AdvSendAdvert on;
-    MinRtrAdvInterval 30;
-    MaxRtrAdvInterval 100;
+    MinRtrAdvInterval {{ isp.ra_min_interval_seconds }};
+    MaxRtrAdvInterval {{ isp.ra_max_interval_seconds }};
     AdvManagedFlag on;
     AdvOtherConfigFlag on;
 {% if isp.slaac_prefix %}
@@ -14,6 +14,12 @@ interface eth0
         AdvOnLink on;
         AdvAutonomous on;
         AdvRouterAddr off;
+{% if isp.ra_prefix_valid_lifetime_seconds != 0 %}
+        AdvValidLifetime {{ isp.ra_prefix_valid_lifetime_seconds }};
+{% endif %}
+{% if isp.ra_prefix_preferred_lifetime_seconds != 0 %}
+        AdvPreferredLifetime {{ isp.ra_prefix_preferred_lifetime_seconds }};
+{% endif %}
     };
 {% endif %}
 };

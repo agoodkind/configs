@@ -284,9 +284,11 @@
         file: tasks/deploy-testbed-isp-lxc.yml
         apply:
           tags: ["isp-lxcs"]
+      vars:
+        isp: "{{ testbed_isp_protocol_defaults | combine(isp_entry) }}"
       loop: "{{ testbed_isp_lxcs }}"
       loop_control:
-        loop_var: isp
+        loop_var: isp_entry
       tags: ["isp-lxcs"]
 
   handlers:
