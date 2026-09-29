@@ -48,6 +48,16 @@ mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
 mwan_routed_iface: "enrouted0"
 
+mwan_non_provider_connections:
+  - name: "{{ mwan_internal_iface }}"
+    connection_id: enmwanbr0
+    owner: networkd
+    link_files: hand-authored
+  - name: "{{ mwan_mgmt_iface }}"
+    connection_id: enmgmt0
+    owner: networkd
+    link_files: hand-authored
+
 # systemd-networkd files deployed to the testbed gateway. Testbed AT&T is a
 # direct link (no VLAN, no 802.1X) from mwan/networkd/testbed/; the internal
 # mwanbr link reuses the shared prod template. The daemon writes every rendered
@@ -190,6 +200,8 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 # driver or sets a hardware address.
 mwan_providers:
   - name: att
+    connection_id: att
+    owner: networkd
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
     # Hand-authored as in production, so the testbed exercises the same
@@ -235,6 +247,8 @@ mwan_providers:
       http_targets: ["https://ifconfig.co/ip"]
 
   - name: webpass
+    connection_id: webpass
+    owner: networkd
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
     link_files: rendered
@@ -286,6 +300,8 @@ mwan_providers:
       http_targets: ["https://ifconfig.co/ip"]
 
   - name: monkeybrains
+    connection_id: monkeybrains
+    owner: networkd
     iface: "{{ mwan_monkeybrains_iface }}"
     vlan_id: ""
     link_files: rendered
@@ -338,6 +354,8 @@ mwan_providers:
       http_targets: ["https://ifconfig.co/ip"]
 
   - name: routed
+    connection_id: routed
+    owner: networkd
     iface: "{{ mwan_routed_iface }}"
     vlan_id: ""
     link_files: rendered
@@ -380,6 +398,8 @@ mwan_providers:
   # Astound remains available as an IPv4-only DHCP provider in the testbed.
   # Its routing identifiers differ from the routed-provider simulator.
   - name: astound
+    connection_id: astound
+    owner: networkd
     iface: "{{ mwan_astound_iface }}"
     vlan_id: ""
     link_files: rendered
