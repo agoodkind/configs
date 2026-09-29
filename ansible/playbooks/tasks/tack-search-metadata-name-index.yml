@@ -1,0 +1,18 @@
+---
+# This guard stops a search index build that would read metadata without its
+# name index entries (TACK-542). Include it directly before every task that
+# runs `ops search provision`, `ops search reindex`, or
+# `ops search access-rollout`. deploy-tack sets tack_metadata_name_index_ready
+# to false on every guest, and the metadata name index backfill sets it to true
+# on the owner guest after the backfill runs. Remove this file together with
+# the backfill tasks and the Tack command, which Tack removes by 2026-11-30.
+- name: Refuse a search index build without the metadata name index backfill
+  ansible.builtin.assert:
+    that:
+      - tack_metadata_name_index_ready | bool
+    fail_msg: >-
+      The metadata name index backfill did not run on {{ inventory_hostname }}
+      in this deploy, so search would read node types and property
+      definitions without their name index entries. Deploy a Tack commit that
+      includes ops backfill once-metadata-name-index, then run this search
+      step again.

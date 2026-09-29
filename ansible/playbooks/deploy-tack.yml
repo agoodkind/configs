@@ -316,6 +316,15 @@
       ansible.builtin.set_fact:
         tack_ledger_node_certificate_rotated: false
 
+    # This fact records whether the metadata name index backfill (TACK-542)
+    # ran on this guest. tasks/tack-search-metadata-name-index.yml reads it
+    # before a search index build and fails while it is false. Only the
+    # backfill on the owner guest sets it to true. Remove this task with the
+    # backfill tasks below.
+    - name: Assume the metadata name index backfill has not run
+      ansible.builtin.set_fact:
+        tack_metadata_name_index_ready: false
+
     - name: Issue the ledger certificates
       ansible.builtin.include_tasks: tasks/tack-ledger-tls.yml
       when: tack_ledger_tls_enabled | bool
@@ -870,6 +879,99 @@
               {{ '--allow-fdb-init' if tack_allow_fdb_init else '' }}
             chdir: "{{ tack_install_dir }}"
           changed_when: true
+
+        # Metadata name index backfill (TACK-542). Remove the next seven tasks,
+        # the task "Assume the metadata name index backfill has not run",
+        # tasks/tack-search-metadata-name-index.yml, and
+        # spec/ansible/tack_metadata_name_index_spec.rb together with the Tack
+        # command `ops backfill once-metadata-name-index`, which Tack removes
+        # by 2026-11-30.
+        #
+        # Search reads node types by type key and property definitions by
+        # name through two FoundationDB indexes. Metadata written before Tack
+        # commit 18c15ad has no entries in them, and a search rebuild fails on
+        # it. The backfill writes the missing entries and reports zero on a
+        # rerun. It runs in an app service container because that container
+        # connects to FoundationDB. It runs after provision because provision
+        # confirms the store is available and creates the audit login the
+        # command records through. It runs before the app starts because the
+        # app's search worker builds indexes.
+        #
+        # The listing gate reads whether the pinned image includes the
+        # command. When it does not and search is on, the deploy stops before
+        # the app starts: that image cannot serve search on the old metadata,
+        # and the app's search worker retries a failing rebuild step without
+        # end. When it does not and search is off, the deploy finishes and
+        # records that the backfill did not run. The guard in
+        # tasks/tack-search-metadata-name-index.yml then fails every search
+        # provision or rebuild step.
+        - name: List the backfills in the pinned Tack image
+          ansible.builtin.command:
+            cmd: docker compose run --rm app ops backfill --help
+            chdir: "{{ tack_install_dir }}"
+          register: tack_backfill_commands
+          changed_when: false
+
+        - name: Record whether the pinned Tack image includes the metadata name index backfill
+          ansible.builtin.set_fact:
+            tack_metadata_name_index_backfill_present: >-
+              {{ tack_backfill_commands.stdout is search('^ +once-metadata-name-index ', multiline=True) }}
+
+        - name: Report whether this deploy runs the metadata name index backfill
+          ansible.builtin.debug:
+            msg: >-
+              {% if tack_metadata_name_index_backfill_present | bool %}The Tack
+              image for {{ tack_commit }} includes ops backfill
+              once-metadata-name-index. This deploy runs it with --execute.{% else %}The
+              Tack image for {{ tack_commit }} does not include ops backfill
+              once-metadata-name-index. The metadata name index backfill did
+              not run, and every later search provision or rebuild step of
+              this deploy fails.{% endif %}
+
+        - name: Stop the deploy when search is on and the pinned Tack image lacks the metadata name index backfill
+          ansible.builtin.fail:
+            msg: >-
+              The Tack image for {{ tack_commit }} does not include ops backfill
+              once-metadata-name-index. The metadata name index backfill did
+              not run, and every later search provision or rebuild step of
+              this deploy fails. Search is on for this environment. The deploy
+              stops before the app starts. Deploy a Tack commit that includes
+              the command.
+          when:
+            - not tack_metadata_name_index_backfill_present | bool
+            - tack_search_enabled | bool
+
+        # The command writes its log to the log volume instead of stdout, so
+        # stdout contains only the JSON result the next task reads.
+        - name: Write the missing metadata name index entries
+          ansible.builtin.command:
+            cmd: >-
+              docker compose run --rm -e LOG_DISABLE_STDOUT=true app
+              ops backfill once-metadata-name-index --execute --output json
+              {{ tack_ops_identity_flags }}
+            chdir: "{{ tack_install_dir }}"
+          register: tack_metadata_name_index_backfill
+          changed_when: >-
+            (tack_metadata_name_index_backfill.stdout | from_json).result.result.node_types.missing
+            + (tack_metadata_name_index_backfill.stdout | from_json).result.result.property_definitions.missing
+            > 0
+          when: tack_metadata_name_index_backfill_present | bool
+
+        - name: Report the metadata name index entries the backfill wrote
+          ansible.builtin.debug:
+            msg: >-
+              The backfill scanned {{ counts.node_types.scanned }} node types
+              and wrote {{ counts.node_types.missing }} type-key entries. It
+              scanned {{ counts.property_definitions.scanned }} property
+              definitions and wrote {{ counts.property_definitions.missing }}
+              property-name entries.
+          vars:
+            counts: "{{ (tack_metadata_name_index_backfill.stdout | from_json).result.result }}"
+          when: tack_metadata_name_index_backfill_present | bool
+
+        - name: Record whether search may build an index on this deploy
+          ansible.builtin.set_fact:
+            tack_metadata_name_index_ready: "{{ tack_metadata_name_index_backfill_present | bool }}"
 
         - name: Start Tack services (second pass; fdb configured, app and audit-consumer come up)
           ansible.builtin.command:
