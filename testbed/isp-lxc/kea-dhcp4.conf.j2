@@ -3,10 +3,10 @@
         "interfaces-config": { "interfaces": ["eth0"] },
         "lease-database": { "type": "memfile", "persist": false },
         "valid-lifetime": {{ isp.dhcp4_valid_lifetime_seconds }},
-{% if isp.dhcp4_renew_seconds != 0 %}
+{% if isp.dhcp4_renew_seconds != 'omit' %}
         "renew-timer": {{ isp.dhcp4_renew_seconds }},
 {% endif %}
-{% if isp.dhcp4_rebind_seconds != 0 %}
+{% if isp.dhcp4_rebind_seconds != 'omit' %}
         "rebind-timer": {{ isp.dhcp4_rebind_seconds }},
 {% endif %}
         "subnet4": [{

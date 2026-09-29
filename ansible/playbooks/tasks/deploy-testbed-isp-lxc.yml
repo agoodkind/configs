@@ -10,6 +10,22 @@
 # DHCPv4 uses v4_gateway, v4_pool, and v4_dns.
 #   repo_root is set in the parent play.
 
+- name: Validate optional ISP protocol timings
+  ansible.builtin.assert:
+    that:
+      - isp.dhcp4_renew_seconds == 'omit' or isp.dhcp4_renew_seconds > 0
+      - isp.dhcp4_rebind_seconds == 'omit' or isp.dhcp4_rebind_seconds > 0
+      - isp.dhcp6_renew_seconds == 'omit' or isp.dhcp6_renew_seconds > 0
+      - isp.dhcp6_rebind_seconds == 'omit' or isp.dhcp6_rebind_seconds > 0
+      - isp.ra_prefix_preferred_lifetime_seconds == 'omit' or isp.ra_prefix_preferred_lifetime_seconds >= 0
+      - isp.ra_prefix_valid_lifetime_seconds == 'omit' or isp.ra_prefix_valid_lifetime_seconds >= 0
+      - >-
+        (isp.ra_prefix_preferred_lifetime_seconds == 'omit') ==
+        (isp.ra_prefix_valid_lifetime_seconds == 'omit')
+      - >-
+        isp.ra_prefix_valid_lifetime_seconds == 'omit' or
+        isp.ra_prefix_preferred_lifetime_seconds <= isp.ra_prefix_valid_lifetime_seconds
+
 - name: Render ISP nftables config to suburban /tmp
   ansible.builtin.template:
     src: "{{ repo_root }}/testbed/isp-lxc/nftables.conf.j2"

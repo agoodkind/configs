@@ -205,19 +205,19 @@ mwan_ifmgr_wg_sudo: false
 # mbrains 2400::/56), kept clear of the 02xx mgmt/LAN/internal/SLAAC space.
 # Astound delegates no prefix; it is IPv4-only, matching the real circuit.
 # Provider entries can override these protocol timings for an isolated test
-# scenario. Zero omits an optional Kea timer or RA prefix lifetime.
+# scenario. The explicit value "omit" excludes an optional timer or RA lifetime.
 testbed_isp_protocol_defaults:
   dhcp4_valid_lifetime_seconds: 4000
-  dhcp4_renew_seconds: 0
-  dhcp4_rebind_seconds: 0
+  dhcp4_renew_seconds: omit
+  dhcp4_rebind_seconds: omit
   dhcp6_preferred_lifetime_seconds: 3000
   dhcp6_valid_lifetime_seconds: 4000
-  dhcp6_renew_seconds: 0
-  dhcp6_rebind_seconds: 0
+  dhcp6_renew_seconds: omit
+  dhcp6_rebind_seconds: omit
   ra_min_interval_seconds: 30
   ra_max_interval_seconds: 100
-  ra_prefix_preferred_lifetime_seconds: 0
-  ra_prefix_valid_lifetime_seconds: 0
+  ra_prefix_preferred_lifetime_seconds: omit
+  ra_prefix_valid_lifetime_seconds: omit
 
 testbed_isp_lxcs:
   - id: "{{ service_mapping.isp_webpass_suburban.vmid }}"

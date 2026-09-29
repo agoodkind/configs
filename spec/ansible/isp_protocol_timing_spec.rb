@@ -36,6 +36,17 @@ RSpec.describe 'ISP simulator protocol timing' do
     result.fetch('renders').first
   end
 
+  def valid_protocol_timing?(isp_entry)
+    tasks = YAML.safe_load_file(File.join(root, 'ansible/playbooks/tasks/deploy-testbed-isp-lxc.yml'))
+    assertions = tasks.first.fetch('ansible.builtin.assert').fetch('that')
+    provider_values = inventory.fetch('testbed_isp_protocol_defaults').merge(isp_entry)
+    result = TaskExpressions.evaluate(
+      variables: { 'isp' => provider_values }, facts: [],
+      conditions: { 'protocol timing' => assertions }
+    )
+    result.fetch('conditions').fetch('protocol timing')
+  end
+
   it 'preserves the current provider timing when no override is set' do
     rendered = render_protocols(provider)
     dhcp4 = JSON.parse(rendered.fetch('dhcp4')).fetch('Dhcp4')
@@ -79,5 +90,23 @@ RSpec.describe 'ISP simulator protocol timing' do
     expect(rendered.fetch('ra')).to include('MaxRtrAdvInterval 9;')
     expect(rendered.fetch('ra')).to include('AdvPreferredLifetime 12;')
     expect(rendered.fetch('ra')).to include('AdvValidLifetime 7200;')
+  end
+
+  it 'advertises an explicit zero preferred lifetime for prefix deprecation' do
+    scenario = provider.merge(
+      'ra_prefix_preferred_lifetime_seconds' => 0,
+      'ra_prefix_valid_lifetime_seconds' => 7200
+    )
+    rendered = render_protocols(scenario)
+
+    expect(rendered.fetch('ra')).to include('AdvPreferredLifetime 0;')
+    expect(rendered.fetch('ra')).to include('AdvValidLifetime 7200;')
+    expect(valid_protocol_timing?(scenario)).to be(true)
+  end
+
+  it 'rejects a valid RA lifetime without an explicit preferred lifetime' do
+    scenario = provider.merge('ra_prefix_valid_lifetime_seconds' => 0)
+
+    expect(valid_protocol_timing?(scenario)).to be(false)
   end
 end
