@@ -69,6 +69,16 @@ mwan_internal_iface: "enmwanbr0"
 # Monkeybrains fallback WAN (virtio)
 mwan_monkeybrains_iface: "enmbrains0"
 
+mwan_non_provider_connections:
+  - name: "{{ mwan_internal_iface }}"
+    connection_id: enmwanbr0
+    owner: networkd
+    link_files: hand-authored
+  - name: "{{ mwan_mgmt_iface }}"
+    connection_id: enmgmt0
+    owner: networkd
+    link_files: hand-authored
+
 # systemd-networkd files deployed to the VM (under mwan/networkd/). Prod AT&T is
 # an 802.1X VLAN (21-att-vlan.*); the testbed overrides att with the direct-link
 # variant under mwan/networkd/testbed/. The daemon writes every rendered
@@ -322,6 +332,8 @@ mwan_pinned_v6_fqdns:
 # The renderer emits those fields but omits link configuration for that entry.
 mwan_providers:
   - name: att
+    connection_id: att
+    owner: networkd
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
     # This link runs 802.1X on the parent before AT&T answers a lease on the
@@ -376,6 +388,8 @@ mwan_providers:
         - "https://ifconfig.co/ip"
 
   - name: webpass
+    connection_id: webpass
+    owner: networkd
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
     link_files: rendered
@@ -442,6 +456,8 @@ mwan_providers:
   # Tertiary, all-else-failed fallback WAN. Alone in tier 1, so it carries
   # everything when both tier 0 providers are unhealthy and nothing otherwise.
   - name: monkeybrains
+    connection_id: monkeybrains
+    owner: networkd
     iface: "{{ mwan_monkeybrains_iface }}"
     vlan_id: ""
     link_files: rendered

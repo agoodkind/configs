@@ -1,24 +1,10 @@
 {#
-  The gateway's network tree in the model's own JSON encoding, deployed to
-  /etc/mwan/network.json and loaded by mwan-ifmgr@wan. It renders from
-  mwan_providers, the one list each gateway group carries, so a provider is one
-  entry there and nothing else. Every value crosses unchanged: the model's time
-  spans are integers that name their unit, and the inventory holds integers.
+  The gateway renders providers and independent connections into one network document.
+  Each inventory entry sets its stable identity and owner. The daemon validates
+  the document and writes unit files only for rendered networkd links.
 
-  Each provider hangs off the interface that carries it. iana-if-type:other is
-  the type the served tree already publishes for these links, so the mandatory
-  ietf-interfaces type leaf carries no invented value.
-
-  An entry that carries link identity renders it in two layers: the typed link
-  container and per-family leaves, and the free-form networkd container that
-  mirrors the unit-file format. Each is emitted only when the entry carries it,
-  so a hand-authored link renders neither. Inventory names a leaf with
-  underscores where the model names it with hyphens; the tables below map one
-  to the other, and an unset inventory key emits no leaf.
-
-  Block tags sit at column zero on purpose. Ansible renders with trim_blocks on
-  and lstrip_blocks off, so an indented tag would emit its leading spaces into
-  the document.
+  Block tags start at column zero because Ansible uses trim_blocks without
+  lstrip_blocks.
 #}
 {% set match_leaves = [
   ["driver", "driver"],
@@ -77,6 +63,8 @@
 {% set entry = {
   "name": iface_name,
   "type": "iana-if-type:other",
+  "goodkind-mwan-steering:connection-id": provider.connection_id,
+  "goodkind-mwan-steering:owner": provider.owner,
   "goodkind-mwan-steering:wan": wan,
   "goodkind-mwan-steering:steering": {
     "tier": provider.tier,
@@ -175,8 +163,15 @@
 {% endif %}
 {% set _ = interfaces.append(entry) %}
 {% endfor %}
-{% set _ = interfaces.append({"name": mwan_internal_iface, "type": "iana-if-type:other"}) %}
-{% set _ = interfaces.append({"name": mwan_mgmt_iface, "type": "iana-if-type:other"}) %}
+{% for connection in mwan_non_provider_connections %}
+{% set _ = interfaces.append({
+  "name": connection.name,
+  "type": "iana-if-type:other",
+  "goodkind-mwan-steering:connection-id": connection.connection_id,
+  "goodkind-mwan-steering:owner": connection.owner,
+  "goodkind-mwan-steering:link-files": connection.link_files
+}) %}
+{% endfor %}
 {% set management_services = [] %}
 {% for service in mwan_firewall_management_services %}
 {% set permit = {"protocol": service.protocol, "port": service.port | int} %}

@@ -329,6 +329,41 @@ RSpec.describe MwanInstall do
     end
   end
 
+  {
+    'render_mwan_network.yml' => {
+      'enatt0' => 'att', 'enwebpass0' => 'webpass', 'enmbrains0' => 'monkeybrains',
+      'enrouted0' => 'routed', 'enastound0' => 'astound',
+      'enmwanbr0' => 'enmwanbr0', 'enmgmt0' => 'enmgmt0'
+    },
+    'render_mwan_prod_network.yml' => {
+      'enatt0.3242' => 'att', 'enwebpass0' => 'webpass', 'enmbrains0' => 'monkeybrains',
+      'enmwanbr0' => 'enmwanbr0', 'enmgmt0' => 'enmgmt0'
+    }
+  }.each do |playbook, expected_ids|
+    it "renders unique networkd connection identities in #{playbook}" do
+      Dir.mktmpdir('mwan-connection-identity') do |directory|
+        network = File.join(directory, 'network.json')
+        AnsibleRender.render(
+          inventory: 'localhost,', playbook: playbook,
+          extra_vars: { 'repository_root' => AnsibleRender::REPOSITORY_ROOT, 'network_output' => network }
+        )
+        interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
+        identities = interfaces.to_h do |entry|
+          expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('networkd')
+          [entry.fetch('name'), entry.fetch('goodkind-mwan-steering:connection-id')]
+        end
+
+        expect(interfaces.length).to eq(expected_ids.length)
+        expect(identities).to eq(expected_ids)
+        expect(identities.values.uniq).to eq(identities.values)
+        %w[enmwanbr0 enmgmt0].each do |name|
+          entry = interfaces.find { |candidate| candidate.fetch('name') == name }
+          expect(entry.fetch('goodkind-mwan-steering:link-files')).to eq('hand-authored')
+        end
+      end
+    end
+  end
+
   it 'renders the routed provider static IPv6 address and valid health target count' do
     Dir.mktmpdir('mwan-routed-render') do |directory|
       network = File.join(directory, 'network.json')
