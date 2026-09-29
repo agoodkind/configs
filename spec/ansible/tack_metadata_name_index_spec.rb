@@ -19,12 +19,13 @@ module TackMetadataNameIndex
   LIST_TASK = 'List the backfills in the pinned Tack image'
   PRESENT_TASK = 'Record whether the pinned Tack image includes the metadata name index backfill'
   BRANCH_TASK = 'Report whether this deploy runs the metadata name index backfill'
+  STOP_TASK = 'Stop the deploy when search is on and the pinned Tack image lacks the metadata name index backfill'
   RUN_TASK = 'Write the missing metadata name index entries'
   COUNTS_TASK = 'Report the metadata name index entries the backfill wrote'
   READY_TASK = 'Record whether search may build an index on this deploy'
   APP_START_TASK = 'Start Tack services (second pass; fdb configured, app and audit-consumer come up)'
   SEARCH_MEMBER_TASK = 'Run the OpenSearch member'
-  BACKFILL_TASKS = [LIST_TASK, PRESENT_TASK, BRANCH_TASK, RUN_TASK, COUNTS_TASK, READY_TASK].freeze
+  BACKFILL_TASKS = [LIST_TASK, PRESENT_TASK, BRANCH_TASK, STOP_TASK, RUN_TASK, COUNTS_TASK, READY_TASK].freeze
   # A task that runs one of these commands builds or rebuilds a search index.
   SEARCH_BUILD_COMMAND = /\bops search (?:provision|reindex|access-rollout)\b/
   COMMAND_MODULES = %w[ansible.builtin.command ansible.builtin.shell].freeze
@@ -120,27 +121,32 @@ module TackMetadataNameIndex
 
   # Evaluates the gate tasks as the deploy runs them. A skipped run task leaves
   # a registered result without stdout.
-  def gate(listing, backfill = { 'changed' => false, 'skipped' => true })
+  def gate(listing, backfill = { 'changed' => false, 'skipped' => true }, search_enabled: false)
     tasks = playbook_tasks
     branch = task_named(tasks, BRANCH_TASK)
+    stop = task_named(tasks, STOP_TASK)
     counts = task_named(tasks, COUNTS_TASK)
     run = task_named(tasks, RUN_TASK)
     guard = YAML.safe_load_file(GUARD_FILE).first
     conditions = {
       'run' => TaskExpressions.condition_list(run['when']),
       'counts' => TaskExpressions.condition_list(counts['when']),
-      'guard' => TaskExpressions.condition_list(guard.dig('ansible.builtin.assert', 'that'))
+      'guard' => TaskExpressions.condition_list(guard.dig('ansible.builtin.assert', 'that')),
+      'stop' => TaskExpressions.condition_list(stop['when'])
     }
     present = TaskExpressions.condition_list(run['when'])
     conditions['changed'] = present + TaskExpressions.condition_list(run['changed_when'])
     TaskExpressions.evaluate(
       variables: {
         'tack_commit' => '9f3c2ab', 'tack_backfill_commands' => TaskExpressions.command_result(0, listing, ''),
-        'tack_metadata_name_index_backfill' => backfill
+        'tack_metadata_name_index_backfill' => backfill, 'tack_search_enabled' => search_enabled
       },
       facts: [ASSUME_TASK, PRESENT_TASK, READY_TASK].map { |name| TaskExpressions.fact_task(task_named(tasks, name)) },
       conditions: conditions,
-      renders: [TaskExpressions.render_task(branch, 'msg' => branch.dig('ansible.builtin.debug', 'msg'))]
+      renders: [
+        TaskExpressions.render_task(branch, 'msg' => branch.dig('ansible.builtin.debug', 'msg')),
+        TaskExpressions.render_task(stop, 'msg' => stop.dig('ansible.builtin.fail', 'msg'))
+      ]
     )
   end
 
@@ -186,10 +192,10 @@ RSpec.describe TackMetadataNameIndex do
 
   describe 'the gate on the pinned Tack image' do
     it 'runs the backfill and allows search index builds when the image lists the command', :aggregate_failures do
-      result = described_class.gate(TackMetadataNameIndex::LISTING_WITH_COMMAND, described_class.backfill_result(3, 7))
+      result = described_class.gate(TackMetadataNameIndex::LISTING_WITH_COMMAND, described_class.backfill_result(3, 7), search_enabled: true)
 
       expect(result['facts']).to eq('tack_metadata_name_index_backfill_present' => true, 'tack_metadata_name_index_ready' => true)
-      expect(result['conditions']).to eq('run' => true, 'counts' => true, 'guard' => true, 'changed' => true)
+      expect(result['conditions']).to eq('run' => true, 'counts' => true, 'guard' => true, 'stop' => false, 'changed' => true)
       expect(result['renders'][0]['msg']).to eq(
         'The Tack image for 9f3c2ab includes ops backfill once-metadata-name-index. This deploy runs it with --execute.'
       )
@@ -209,14 +215,27 @@ RSpec.describe TackMetadataNameIndex do
       )
     end
 
-    it 'skips the backfill, says so, and fails search index builds when the image lacks the command', :aggregate_failures do
-      result = described_class.gate(TackMetadataNameIndex::LISTING_WITHOUT_COMMAND)
+    it 'finishes the deploy, says so, and fails search index builds when search is off and the image lacks the command', :aggregate_failures do
+      result = described_class.gate(TackMetadataNameIndex::LISTING_WITHOUT_COMMAND, search_enabled: false)
 
       expect(result['facts']).to eq('tack_metadata_name_index_backfill_present' => false, 'tack_metadata_name_index_ready' => false)
-      expect(result['conditions']).to eq('run' => false, 'counts' => false, 'guard' => false, 'changed' => false)
+      expect(result['conditions']).to eq('run' => false, 'counts' => false, 'guard' => false, 'stop' => false, 'changed' => false)
       expect(result['renders'][0]['msg']).to eq(
         'The Tack image for 9f3c2ab does not include ops backfill once-metadata-name-index. The metadata name index ' \
         'backfill did not run, and every later search provision or rebuild step of this deploy fails.'
+      )
+    end
+
+    it 'stops the deploy before the app starts when search is on and the image lacks the command', :aggregate_failures do
+      result = described_class.gate(TackMetadataNameIndex::LISTING_WITHOUT_COMMAND, search_enabled: true)
+      names = described_class.owner_block(described_class.playbook_tasks)['block'].map { |task| task['name'] }
+
+      expect(result['conditions']).to include('run' => false, 'stop' => true)
+      expect(names.index(TackMetadataNameIndex::STOP_TASK)).to be < names.index(TackMetadataNameIndex::APP_START_TASK)
+      expect(result['renders'][1]['msg']).to eq(
+        'The Tack image for 9f3c2ab does not include ops backfill once-metadata-name-index. The metadata name index ' \
+        'backfill did not run, and every later search provision or rebuild step of this deploy fails. Search is on for ' \
+        'this environment. The deploy stops before the app starts. Deploy a Tack commit that includes the command.'
       )
     end
 

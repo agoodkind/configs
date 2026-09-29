@@ -880,7 +880,7 @@
             chdir: "{{ tack_install_dir }}"
           changed_when: true
 
-        # Metadata name index backfill (TACK-542). Remove the next six tasks,
+        # Metadata name index backfill (TACK-542). Remove the next seven tasks,
         # the task "Assume the metadata name index backfill has not run",
         # tasks/tack-search-metadata-name-index.yml, and
         # spec/ansible/tack_metadata_name_index_spec.rb together with the Tack
@@ -897,10 +897,14 @@
         # command records through. It runs before the app starts because the
         # app's search worker builds indexes.
         #
-        # The listing gate lets a deploy of a Tack commit older than the
-        # command finish. That deploy records that the backfill did not run,
-        # and the guard in tasks/tack-search-metadata-name-index.yml then
-        # fails every search provision or rebuild step.
+        # The listing gate reads whether the pinned image includes the
+        # command. When it does not and search is on, the deploy stops before
+        # the app starts: that image cannot serve search on the old metadata,
+        # and the app's search worker retries a failing rebuild step without
+        # end. When it does not and search is off, the deploy finishes and
+        # records that the backfill did not run. The guard in
+        # tasks/tack-search-metadata-name-index.yml then fails every search
+        # provision or rebuild step.
         - name: List the backfills in the pinned Tack image
           ansible.builtin.command:
             cmd: docker compose run --rm app ops backfill --help
@@ -923,6 +927,19 @@
               once-metadata-name-index. The metadata name index backfill did
               not run, and every later search provision or rebuild step of
               this deploy fails.{% endif %}
+
+        - name: Stop the deploy when search is on and the pinned Tack image lacks the metadata name index backfill
+          ansible.builtin.fail:
+            msg: >-
+              The Tack image for {{ tack_commit }} does not include ops backfill
+              once-metadata-name-index. The metadata name index backfill did
+              not run, and every later search provision or rebuild step of
+              this deploy fails. Search is on for this environment. The deploy
+              stops before the app starts. Deploy a Tack commit that includes
+              the command.
+          when:
+            - not tack_metadata_name_index_backfill_present | bool
+            - tack_search_enabled | bool
 
         # The command writes its log to the log volume instead of stdout, so
         # stdout contains only the JSON result the next task reads.
