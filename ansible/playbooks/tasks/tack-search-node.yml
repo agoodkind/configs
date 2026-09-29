@@ -48,8 +48,40 @@
   no_log: true
   notify: Restart the OpenSearch member
 
-# OpenSearch reads the user, role, and role mapping files on the first start
-# only, when the security index does not exist yet.
+# The member accepts the admin certificate on its HTTP port only. The HTTP
+# trust file lists the search authority, which signs the proxy and member
+# certificates, and the self-signed admin certificate. The admin certificate
+# key stays with root on the guest because only the deploy uses it.
+- name: Install the OpenSearch HTTP trust file
+  ansible.builtin.copy:
+    content: "{{ tack_search_ca }}\n{{ tack_search_admin_certificate }}\n"
+    dest: "{{ tack_search_node_dir }}/http-ca.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the OpenSearch member
+
+- name: Install the OpenSearch admin certificate
+  ansible.builtin.copy:
+    content: "{{ tack_search_admin_certificate }}\n"
+    dest: "{{ tack_search_admin_certificate_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the OpenSearch admin private key
+  ansible.builtin.copy:
+    content: "{{ tack_search_admin_private_key }}\n"
+    dest: "{{ tack_search_admin_private_key_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+# OpenSearch reads the user, role, and role mapping files into the security
+# index on the first start, when the security index does not exist yet.
+# tasks/tack-search-security.yml writes changed files into the index of a
+# running member.
 - name: Install the OpenSearch user file
   ansible.builtin.template:
     src: "{{ repo_root }}/tack/opensearch-internal-users.yml.j2"
@@ -57,6 +89,7 @@
     owner: "{{ tack_search_container_uid }}"
     group: "{{ tack_search_container_uid }}"
     mode: "0600"
+  register: tack_search_users_file
   no_log: true
 
 - name: Install the OpenSearch role file
@@ -66,6 +99,7 @@
     owner: "{{ tack_search_container_uid }}"
     group: "{{ tack_search_container_uid }}"
     mode: "0600"
+  register: tack_search_roles_file
 
 - name: Install the OpenSearch role mapping file
   ansible.builtin.template:
@@ -74,6 +108,7 @@
     owner: "{{ tack_search_container_uid }}"
     group: "{{ tack_search_container_uid }}"
     mode: "0600"
+  register: tack_search_roles_mapping_file
 
 - name: Create Tack install directory (search guest)
   ansible.builtin.file:
@@ -122,3 +157,6 @@
     cmd: docker compose up -d opensearch
     chdir: "{{ tack_install_dir }}"
   changed_when: true
+
+- name: Apply the OpenSearch security files to the running member
+  ansible.builtin.import_tasks: tack-search-security.yml

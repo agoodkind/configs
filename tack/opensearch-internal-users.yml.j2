@@ -1,8 +1,9 @@
 ---
 # Ansible renders this file from tack/opensearch-internal-users.yml.j2. A
-# member reads it into the security index on its first start. The user has
-# no backend role because the role mapping file maps it to the tack_search
-# role by user name.
+# member reads it into the security index on its first start. After the file
+# changes, the deploy writes its entries into the security index of the
+# running member. The user has no backend role because the role mapping file
+# maps it to the tack_search role by user name.
 _meta:
   type: internalusers
   config_version: 2

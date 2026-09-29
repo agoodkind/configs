@@ -1,8 +1,10 @@
 ---
 # Ansible copies this file from tack/opensearch-roles.yml. A member reads it
-# into the security index on its first start. The tack_search role grants
-# only the operations the Tack search adapter sends. The proxy readiness
-# request uses cluster:monitor/health with the same credential.
+# into the security index on its first start. After the file changes, the
+# deploy writes its entries into the security index of the running member.
+# The tack_search role grants only the operations the Tack search adapter
+# sends. The proxy readiness request uses cluster:monitor/health with the same
+# credential.
 _meta:
   type: roles
   config_version: 2

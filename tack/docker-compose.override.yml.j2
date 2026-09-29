@@ -43,11 +43,15 @@ services:
       # certificate, and each side verifies the other against the search
       # authority. A peer joins only when its certificate subject matches a
       # member hostname. The first start creates the security index from the
-      # mounted user, role, and role mapping files.
+      # mounted user, role, and role mapping files. The HTTP layer also trusts
+      # the self-signed admin certificate, and a request that presents it is a
+      # super admin request. The deploy uses that certificate to write changed
+      # security files into the running member.
       plugins.security.ssl.http.enabled: "true"
       plugins.security.ssl.http.pemcert_filepath: tack-search/node.crt
       plugins.security.ssl.http.pemkey_filepath: tack-search/node.key
-      plugins.security.ssl.http.pemtrustedcas_filepath: tack-search/ca.crt
+      plugins.security.ssl.http.pemtrustedcas_filepath: tack-search/http-ca.crt
+      plugins.security.authcz.admin_dn: "{{ tack_search_admin_dn }}"
       plugins.security.ssl.transport.pemcert_filepath: tack-search/node.crt
       plugins.security.ssl.transport.pemkey_filepath: tack-search/node.key
       plugins.security.ssl.transport.pemtrustedcas_filepath: tack-search/ca.crt
@@ -58,6 +62,7 @@ services:
       - {{ tack_search_node_dir }}/node.crt:/usr/share/opensearch/config/tack-search/node.crt:ro
       - {{ tack_search_node_dir }}/node.key:/usr/share/opensearch/config/tack-search/node.key:ro
       - {{ tack_search_ca_path }}:/usr/share/opensearch/config/tack-search/ca.crt:ro
+      - {{ tack_search_node_dir }}/http-ca.crt:/usr/share/opensearch/config/tack-search/http-ca.crt:ro
       - {{ tack_search_node_dir }}/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - {{ tack_search_node_dir }}/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - {{ tack_search_node_dir }}/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
