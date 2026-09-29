@@ -117,7 +117,40 @@
     mode: "0755"
   when:
     - mwan_ifmgr_enabled | bool
-    - mwan_ifmgr_host_ipv6_policy_enabled | bool
+
+- name: Ensure OOB DHCPv4 journal directory exists
+  ansible.builtin.file:
+    path: /var/lib/mwan
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  when:
+    - mwan_ifmgr_enabled | bool
+    - mwan_ifmgr_oob_enabled | bool
+    - mwan_ifmgr_iface_dhcp_v4 | bool
+
+- name: Deploy OOB DHCPv4 ownership drop-in
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/proxmox/services/mwan-ifmgr-oob-dhcpv4.conf"
+    dest: /etc/systemd/system/mwan-ifmgr.service.d/oob-dhcpv4.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart mwan-ifmgr
+  when:
+    - mwan_ifmgr_enabled | bool
+    - mwan_ifmgr_oob_enabled | bool
+    - mwan_ifmgr_iface_dhcp_v4 | bool
+
+- name: Remove OOB DHCPv4 ownership drop-in when disabled
+  ansible.builtin.file:
+    path: /etc/systemd/system/mwan-ifmgr.service.d/oob-dhcpv4.conf
+    state: absent
+  notify: Restart mwan-ifmgr
+  when:
+    - mwan_ifmgr_enabled | bool
+    - not (mwan_ifmgr_oob_enabled | bool and mwan_ifmgr_iface_dhcp_v4 | bool)
 
 - name: Deploy suburban host IPv6 policy drop-in
   ansible.builtin.copy:
