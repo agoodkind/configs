@@ -50,8 +50,7 @@
 
 # The member accepts the admin certificate on its HTTP port only. The HTTP
 # trust file lists the search authority, which signs the proxy and member
-# certificates, and the self-signed admin certificate. The admin certificate
-# key stays with root on the guest because only the deploy uses it.
+# certificates, and the self-signed admin certificate.
 - name: Install the OpenSearch HTTP trust file
   ansible.builtin.copy:
     content: "{{ tack_search_ca }}\n{{ tack_search_admin_certificate }}\n"
@@ -61,22 +60,16 @@
     mode: "0644"
   notify: Restart the OpenSearch member
 
-- name: Install the OpenSearch admin certificate
-  ansible.builtin.copy:
-    content: "{{ tack_search_admin_certificate }}\n"
-    dest: "{{ tack_search_admin_certificate_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Install the OpenSearch admin private key
-  ansible.builtin.copy:
-    content: "{{ tack_search_admin_private_key }}\n"
-    dest: "{{ tack_search_admin_private_key_path }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
+# The admin private key exists only in the vault and, during a deploy, in a
+# temporary file on the deploy host. The guest keeps no admin certificate or
+# key file.
+- name: Remove the OpenSearch admin certificate and key from the guest
+  ansible.builtin.file:
+    path: "{{ tack_search_node_dir }}/{{ item }}"
+    state: absent
+  loop:
+    - admin.crt
+    - admin.key
 
 # OpenSearch reads the user, role, and role mapping files into the security
 # index on the first start, when the security index does not exist yet.

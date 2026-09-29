@@ -51,19 +51,18 @@ tack_search_node_private_key: "{{ lookup('vars', 'vault_' ~ service_name ~ '_pri
 # from bind mounts.
 tack_search_container_uid: 1000
 
-# The deploy writes changed security files into a running member at this
-# address. The member certificate lists the address as an IP subject
-# alternative name.
+# The deploy host connects to a running member at this address to write
+# changed security files. The member binds the address on the guest, and the
+# member certificate lists it as an IP subject alternative name.
 tack_search_member_url: "https://[{{ service_mapping[service_name].ipv6 }}]:{{ tack_search_port }}"
 
-# The deploy presents this self-signed certificate to the member as a super
-# admin. The environment groups read the certificate and key from the vault.
-# The certificate subject must equal this value, which the member lists in
-# plugins.security.authcz.admin_dn. OpenSearch splits that setting at commas,
-# so the subject has one attribute.
+# The deploy host presents this self-signed certificate to the member as a
+# super admin. The environment groups read the certificate and key from the
+# vault. The certificate subject must equal this value, which the member lists
+# in plugins.security.authcz.admin_dn. OpenSearch splits that setting at
+# commas, and the subject has one attribute. Each environment has its own
+# cluster name, certificate, and subject.
 tack_search_admin_dn: "CN={{ tack_search_cluster_name }}-admin"
-tack_search_admin_certificate_path: "{{ tack_search_node_dir }}/admin.crt"
-tack_search_admin_private_key_path: "{{ tack_search_node_dir }}/admin.key"
 
 # The guest records the checksums of the security files it last wrote into
 # the member in this file.
