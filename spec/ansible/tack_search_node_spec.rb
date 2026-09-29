@@ -13,7 +13,7 @@ module TackSearchNode
   TOPOLOGY_TASK = 'Refuse a search topology the members cannot place'
   # Every member renders these OpenSearch container settings that Tack requires.
   CONTRACT = {
-    'OPENSEARCH_JAVA_OPTS' => '-Xms2g -Xmx2g',
+    'OPENSEARCH_JAVA_OPTS' => '-Xms2g -Xmx2g -Djava.net.preferIPv6Addresses=true',
     'node.roles' => 'cluster_manager,data,ingest,ml',
     'plugins.ml_commons.only_run_on_ml_node' => 'true',
     'plugins.ml_commons.task_dispatch_policy' => 'least_load',

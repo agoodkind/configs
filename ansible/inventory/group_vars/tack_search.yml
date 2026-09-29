@@ -7,9 +7,12 @@ tack_provision_owner: false
 # A search guest runs no ledger node.
 tack_ledger_node_name: ""
 
-# Tack requires these OpenSearch container settings.
+# Tack requires these OpenSearch container settings. The search guests have
+# no IPv4 route. java.net.preferIPv6Addresses makes the JVM connect to the
+# IPv6 address of a dual-stack host, such as the model artifact host
+# artifacts.opensearch.org that ML Commons downloads the pinned model from.
 tack_search_image: "opensearchproject/opensearch:3.8.0"
-tack_search_java_opts: "-Xms2g -Xmx2g"
+tack_search_java_opts: "-Xms2g -Xmx2g -Djava.net.preferIPv6Addresses=true"
 tack_search_node_roles: "cluster_manager,data,ingest,ml"
 tack_search_nofile_limit: 65536
 
