@@ -1,0 +1,143 @@
+---
+- name: Exercise role activation on actual systemd and networkd
+  hosts: "{{ role_test_host }}"
+  gather_facts: false
+  become: false
+  vars:
+    ansible_connection: community.docker.docker
+    ansible_python_interpreter: /usr/bin/python3
+    mwan_role_job_timeout_seconds: 3
+    mwan_ifmgr_restart_timeout_seconds: 3
+    vm_mgmt_mac: "{{ mwan_mgmt_mac }}"
+    vm_mgmt_iface: "{{ mwan_mgmt_iface }}"
+    vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
+    vm_mgmt_ipv6_prefix: "64"
+    vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
+    vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
+    hostname: "{{ service_hostname }}"
+  vars_files:
+    - "{{ repository_root }}/ansible/inventory/group_vars/all/vars.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/all/service_mapping.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/mwan_suburban_servers.yml"
+  tasks:
+    - name: Prepare the actual guest fixture
+      when: role_test_phase == 'prepare'
+      block:
+        - name: Stop the prior fixture daemon
+          ansible.builtin.systemd:
+            name: mwan-ifmgr@wan
+            state: stopped
+          when: role_test_prepared
+
+        - name: Create fixture runtime directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - /etc/mwan
+            - /var/lib/mwan
+            - /etc/systemd/network
+            - /usr/local/share/wanconfig/yang
+            - /etc/systemd/system/mwan-ifmgr@wan.service.d
+
+        - name: Create the actual sysrepo access group
+          ansible.builtin.group:
+            name: sysrepo
+            system: true
+
+        - name: Create real role links
+          ansible.builtin.command:
+            argv: [ip, link, add, "{{ item }}", type, dummy]
+          loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
+          when: not role_test_prepared
+          changed_when: true
+
+        - name: Set actual role hardware addresses
+          ansible.builtin.command:
+            argv: [ip, link, set, "{{ item.name }}", address, "{{ item.address }}", up]
+          loop:
+            - {name: "{{ mwan_mgmt_iface }}", address: "{{ mwan_mgmt_mac }}"}
+            - {name: "{{ mwan_internal_iface }}", address: "{{ mwan_net1_mac }}"}
+          changed_when: true
+
+        - name: Install actual embedded schema
+          ansible.builtin.command:
+            argv: [/usr/local/bin/mwan, install, --print-schema, /usr/local/share/wanconfig/yang]
+          changed_when: true
+
+        - name: Install production source service and notify drop-in
+          ansible.builtin.copy:
+            remote_src: true
+            src: "{{ item.source }}"
+            dest: "{{ item.destination }}"
+            mode: "0644"
+          loop:
+            - {source: /src/cmd/mwan/mwan-ifmgr@.service, destination: /etc/systemd/system/mwan-ifmgr@.service}
+            - source: /src/cmd/mwan/mwan-ifmgr-wan.conf
+              destination: /etc/systemd/system/mwan-ifmgr@wan.service.d/firewall.conf
+
+        - name: Install the bounded fixture startup deadline
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/mwan-ifmgr@wan.service.d/test.conf
+            mode: "0644"
+            content: |
+              [Service]
+              TimeoutStartSec=8s
+
+        - name: Install real daemon configuration
+          ansible.builtin.copy:
+            dest: /etc/mwan/config.toml
+            mode: "0600"
+            src: "{{ repository_root }}/spec/fixtures/ansible/mwan_role_runtime.toml"
+
+        - name: Install the actual prior network document
+          ansible.builtin.copy:
+            src: "{{ role_test_prior_network }}"
+            dest: /etc/mwan/network.json
+            mode: "0600"
+
+        - name: Remove only prior generated fixture role units
+          ansible.builtin.file:
+            path: "/etc/systemd/network/20-{{ item }}.network"
+            state: absent
+          loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
+
+        - name: Install actual legacy management template
+          ansible.builtin.template:
+            src: "{{ repository_root }}/ansible/templates/vm/10-mgmt.network.j2"
+            dest: /etc/systemd/network/10-mgmt.network
+            mode: "0644"
+
+        - name: Install actual legacy transit template
+          ansible.builtin.template:
+            src: "{{ repository_root }}/mwan/networkd/40-mwanbr.network.j2"
+            dest: /etc/systemd/network/40-mwanbr.network
+            mode: "0644"
+
+        - name: Start the real daemon and networkd
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: restarted
+            daemon_reload: true
+          loop: [mwan-ifmgr@wan, systemd-networkd]
+
+        - name: Wait for role addresses to finish configuration
+          ansible.builtin.command:
+            argv: [networkctl, status, "{{ mwan_mgmt_iface }}", --json=short]
+          register: role_test_management
+          until: (role_test_management.stdout | from_json).AdministrativeState == 'configured'
+          retries: 30
+          delay: 1
+          changed_when: false
+
+    - name: Exercise the actual staging and activation boundary
+      ansible.builtin.include_tasks: "{{ repository_root }}/ansible/playbooks/tasks/stage-and-activate-mwan-roles.yml"
+      vars:
+        repo_root: "{{ repository_root }}"
+        mwan_role_staging_task_file: "{{ repository_root }}/spec/fixtures/ansible/stage_mwan_role_inputs.yml"
+      when: role_test_phase != "prepare"
+
+  handlers:
+    - name: Restart mwan-ifmgr@wan
+      ansible.builtin.include_tasks: "{{ repository_root }}/ansible/playbooks/tasks/restart-mwan-ifmgr.yml"

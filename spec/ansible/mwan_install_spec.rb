@@ -52,7 +52,7 @@ module MwanInstall
   # them for release 202609191802-8-085fc2b.
   ROLES = [
     {
-      role: 'wan', file: 'deploy-mwan.yml', play: 'Configure MWAN VM',
+      role: 'wan', file: 'tasks/stage-mwan-role-inputs.yml', play: nil,
       owned: %W[
         #{UNIT_DIRECTORY}/mwan-agent.service
         #{UNIT_DIRECTORY}/mwan-ifmgr@.service
@@ -254,7 +254,7 @@ RSpec.describe MwanInstall do
   end
 
   it 'validates the gateway render before installing the MWAN management stack' do
-    tasks = described_class.role_tasks(MwanInstall::ROLES.first)
+    tasks = described_class.role_tasks(file: "deploy-mwan.yml", play: "Configure MWAN VM")
     deploy_gate_copy = tasks.index { |task| task['name'] == 'Push the deploy-gate binary to the Proxmox delegate' }
     printed = tasks.index { |task| Array(described_class.command_argv(task)).include?('--print-schema') }
     render_copy = tasks.index { |task| task['name'] == 'Copy the rendered network configuration to the Proxmox delegate' }
@@ -426,7 +426,7 @@ RSpec.describe MwanInstall do
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
     it "passes the selected families and probe path to both deploy-gate commands in #{group_file}" do
       group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
-      tasks = described_class.role_tasks(MwanInstall::ROLES.first)
+      tasks = described_class.role_tasks(file: "deploy-mwan.yml", play: "Configure MWAN VM")
       baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
       recovery = tasks.find { |task| task['name'] == 'Start hypervisor-local MWAN deploy gate before reboot' }
       expect(baseline).not_to be_nil

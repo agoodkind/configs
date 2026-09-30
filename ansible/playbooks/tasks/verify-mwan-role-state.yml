@@ -1,0 +1,104 @@
+- name: Read selected management and transit units
+  ansible.builtin.command:
+    argv: [networkctl, status, "{{ item }}", --json=short]
+  loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
+  register: mwan_role_active_state
+  changed_when: false
+
+- name: Read management and transit addresses
+  ansible.builtin.command:
+    argv: [ip, -json, address, show, dev, "{{ item }}"]
+  loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
+  register: mwan_role_active_addresses
+  changed_when: false
+
+- name: Read the transit IPv6 return routes
+  ansible.builtin.command:
+    argv: [ip, -6, -json, route, show, table, main, dev, "{{ mwan_internal_iface }}"]
+  register: mwan_role_active_routes
+  changed_when: false
+
+- name: Read transit forwarding settings
+  ansible.builtin.command:
+    argv: [cat, "/proc/sys/net/{{ item }}/conf/{{ mwan_internal_iface }}/forwarding"]
+  loop: [ipv4, ipv6]
+  register: mwan_role_active_forwarding
+  changed_when: false
+
+- name: Verify generated role units and applied configuration
+  vars:
+    management: "{{ mwan_role_active_state.results[0].stdout | from_json }}"
+    transit: "{{ mwan_role_active_state.results[1].stdout | from_json }}"
+    actual_dns: >-
+      {% set numbers = [] %}
+      {% for server in management.DNS %}
+      {% set value = namespace(number=0) %}
+      {% for byte in server.Address %}
+      {% set value.number = value.number * 256 + byte %}
+      {% endfor %}
+      {% set _ = numbers.append(value.number) %}
+      {% endfor %}
+      {{ numbers }}
+    expected_dns: >-
+      {{ mwan_dns_servers.split() | map('ansible.utils.ipaddr', 'int') | map('int') | list }}
+    return_routes: "{{ mwan_role_active_routes.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - management.NetworkFile == '/etc/systemd/network/20-' ~ mwan_mgmt_iface ~ '.network'
+      - transit.NetworkFile == '/etc/systemd/network/20-' ~ mwan_internal_iface ~ '.network'
+      - actual_dns | from_json | sort == expected_dns | sort
+      - mwan_dns_domain in (management.SearchDomains | map(attribute='Domain') | list)
+      - mwan_role_active_forwarding.results[0].stdout | trim == '1'
+      - mwan_role_active_forwarding.results[1].stdout | trim == '1'
+    fail_msg: The generated role units did not apply the configured management and transit state.
+
+- name: Verify configured role address prefixes
+  vars:
+    management_intent: >-
+      {{ (mwan_non_provider_connections | selectattr('name', 'equalto', mwan_mgmt_iface) | list)[0] }}
+    transit_intent: >-
+      {{ (mwan_non_provider_connections | selectattr('name', 'equalto', mwan_internal_iface) | list)[0] }}
+    actual_addresses: >-
+      {{ (mwan_role_active_addresses.results[item.index].stdout | from_json)[0].addr_info }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item.cidr.split('/')[0] | ansible.utils.ipaddr('int') | int) in
+        (actual_addresses | selectattr('prefixlen', 'equalto', item.cidr.split('/')[1] | int)
+         | map(attribute='local') | map('ansible.utils.ipaddr', 'int') | map('int') | list)
+    fail_msg: The configured role address and prefix did not apply.
+  loop:
+    - {index: 0, cidr: "{{ management_intent.ipv6.address }}"}
+    - {index: 1, cidr: "{{ transit_intent.ipv4.address }}"}
+    - {index: 1, cidr: "{{ transit_intent.ipv6.address }}"}
+
+- name: Verify the configured transit return route
+  vars:
+    transit_intent: >-
+      {{ (mwan_non_provider_connections | selectattr('name', 'equalto', mwan_internal_iface) | list)[0] }}
+    transit: "{{ mwan_role_active_state.results[1].stdout | from_json }}"
+    actual_routes: >-
+      {% set routes = [] %}
+      {% for route in transit.Routes | selectattr('ConfigSource', 'equalto', 'static') %}
+      {% set value = namespace(destination=0, gateway=0) %}
+      {% for byte in route.Destination %}
+      {% set value.destination = value.destination * 256 + byte %}
+      {% endfor %}
+      {% for byte in route.Gateway %}
+      {% set value.gateway = value.gateway * 256 + byte %}
+      {% endfor %}
+      {% set _ = routes.append([value.destination, route.DestinationPrefixLength,
+                                value.gateway, route.Table, route.Priority]) %}
+      {% endfor %}
+      {{ routes }}
+    effective_metric: "{{ 1024 if item.metric | int == 0 else item.metric | int }}"
+    expected_route: >-
+      {{ [item.destination | ansible.utils.ipaddr('network') | ansible.utils.ipaddr('int') | int,
+          item.destination.split('/')[1] | int,
+          item.gateway | ansible.utils.ipaddr('int') | int, item.table_id | int,
+          effective_metric | int] }}
+  ansible.builtin.assert:
+    that:
+      - expected_route in (actual_routes | from_json)
+    fail_msg: The configured transit return route did not apply.
+  loop: "{{ transit_intent.ipv6.routes }}"

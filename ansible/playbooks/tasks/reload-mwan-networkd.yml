@@ -1,0 +1,25 @@
+- name: Reload networkd without waiting on SSH
+  ansible.builtin.command:
+    argv: [networkctl, reload]
+  async: "{{ mwan_role_job_timeout_seconds }}"
+  poll: 0
+  register: mwan_networkd_reload_job
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Reconnect after the networkd reload deadline
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 5
+    delay: "{{ mwan_role_job_timeout_seconds }}"
+    sleep: 5
+    timeout: 300
+  when: not ansible_check_mode
+
+- name: Verify the networkd reload completed
+  ansible.builtin.async_status:
+    jid: "{{ mwan_networkd_reload_job.ansible_job_id }}"
+  register: mwan_networkd_reload_result
+  until: mwan_networkd_reload_result is finished
+  retries: 24
+  delay: 5
+  when: not ansible_check_mode

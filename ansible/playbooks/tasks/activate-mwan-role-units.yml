@@ -1,0 +1,49 @@
+- name: Apply pending restarts after installing all daemon inputs
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the installed WAN writer without waiting on SSH
+  ansible.builtin.systemd:
+    name: mwan-ifmgr@wan
+    state: started
+    daemon_reload: true
+  async: "{{ mwan_role_job_timeout_seconds }}"
+  poll: 0
+  register: mwan_role_writer_job
+
+- name: Reconnect after the WAN writer startup deadline
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 5
+    delay: "{{ mwan_role_job_timeout_seconds }}"
+    sleep: 5
+    timeout: 300
+
+- name: Verify the WAN writer startup completed
+  ansible.builtin.async_status:
+    jid: "{{ mwan_role_writer_job.ansible_job_id }}"
+  register: mwan_role_writer_result
+  until: mwan_role_writer_result is finished
+  retries: 24
+  delay: 5
+
+- name: Verify the installed generated networkd units
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - deploy-gate
+      - check-networkd
+      - /etc/mwan/network.json
+      - /usr/local/share/wanconfig/yang
+      - /etc/systemd/network
+  changed_when: false
+
+- name: Retire verified legacy role network files
+  ansible.builtin.file:
+    path: "/etc/systemd/network/{{ item }}"
+    state: absent
+  loop: [10-mgmt.network, 40-mwanbr.network]
+
+- name: Apply generated management and transit units
+  ansible.builtin.include_tasks: reload-mwan-networkd.yml
+
+- name: Verify applied management and transit state
+  ansible.builtin.include_tasks: verify-mwan-role-state.yml
