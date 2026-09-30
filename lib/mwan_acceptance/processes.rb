@@ -83,15 +83,16 @@ module MwanAcceptance
     end
 
     def cleanup
-      @children.each_key do |pid|
-        signal_group(pid, 'TERM') unless reap_child?(pid, Process::WNOHANG)
+      groups = @children.keys
+      groups.each do |pid|
+        reap_child?(pid, Process::WNOHANG)
+        signal_group(pid, 'TERM')
       end
-      sleep 0.1 unless @children.empty?
-      @children.each_key do |pid|
-        next if reap_child?(pid, Process::WNOHANG)
-
+      sleep 0.1 unless groups.empty?
+      groups.each do |pid|
+        reap_child?(pid, Process::WNOHANG) if @children.key?(pid)
         signal_group(pid, 'KILL')
-        reap_child?(pid, 0)
+        reap_child?(pid, 0) if @children.key?(pid)
       end
     end
 
