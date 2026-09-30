@@ -907,10 +907,13 @@
         # provision or rebuild step.
         - name: List the backfills in the pinned Tack image
           ansible.builtin.command:
-            cmd: docker compose run --rm app ops backfill --help
+            cmd: docker compose run --rm --no-deps app ops backfill --help
             chdir: "{{ tack_install_dir }}"
+          environment:
+            TACK_IMAGE_TAG: "{{ tack_image_tag }}"
           register: tack_backfill_commands
           changed_when: false
+          check_mode: false
 
         - name: Record whether the pinned Tack image includes the metadata name index backfill
           ansible.builtin.set_fact:
@@ -967,7 +970,9 @@
               property-name entries.
           vars:
             counts: "{{ (tack_metadata_name_index_backfill.stdout | from_json).result.result }}"
-          when: tack_metadata_name_index_backfill_present | bool
+          when:
+            - tack_metadata_name_index_backfill_present | bool
+            - tack_metadata_name_index_backfill is not skipped
 
         - name: Record whether search may build an index on this deploy
           ansible.builtin.set_fact:
