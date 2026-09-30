@@ -519,7 +519,7 @@ resource "proxmox_virtual_environment_container" "isp_routed_suburban" {
   }
 
   memory {
-    dedicated = 128
+    dedicated = 256
     swap      = 512
   }
 
