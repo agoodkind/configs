@@ -28,6 +28,11 @@
     - name: Require a merged controller checkout
       ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
   tasks:
+    - name: Provision the testbed mapping endpoint
+      ansible.builtin.import_tasks: tasks/testbed-mapping-endpoint.yml
+      when: "'opnsense_suburban_servers' in group_names"
+      tags: [never, isp-acceptance-fixture]
+
     - name: Pull the pinned opnsensectl release
       ansible.builtin.import_tasks: tasks/github-release.yml
       vars:

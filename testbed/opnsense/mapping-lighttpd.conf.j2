@@ -1,0 +1,9 @@
+server.bind = "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
+server.port = 1406
+server.document-root = "/conf/mwan-mapping-www"
+server.pid-file = "/var/run/lighttpd_mwan_mapping.pid"
+server.errorlog = "/var/log/mwan-mapping-lighttpd.log"
+server.username = "www"
+server.groupname = "www"
+server.modules = ( "mod_staticfile" )
+mimetype.assign = ( "" => "text/plain" )

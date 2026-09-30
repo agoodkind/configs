@@ -379,7 +379,7 @@
               - "14"
               - --write-out
               - "\nMWAN-RESULT:%{json}\n"
-              - "http://{{ item.external }}:80/"
+              - "http://{{ item.external }}:1406/cf_check"
             strip_empty_ends: false
           loop: "{{ isp_mapping_probes }}"
           register: isp_mapping_responses
@@ -416,8 +416,8 @@
               external: "{{ item.item.external }}"
               internal: "10.240.240.2"
               family: 4
-              port: 80
-              path: /
+              port: 1406
+              path: /cf_check
               response: >-
                 {{ item.stdout.rsplit('\nMWAN-RESULT:', 1)[1] | from_json }}
               response_sha256: >-
@@ -429,7 +429,11 @@
           ansible.builtin.assert:
             that:
               - (item.stdout.rsplit('\nMWAN-RESULT:', 1)[1] | from_json).http_code == 200
-            fail_msg: "{{ item.item.provider }}: mapped endpoint did not return HTTP 200"
+              - >-
+                (item.stdout.rsplit('\nMWAN-RESULT:', 1)[0] | hash('sha256')) ==
+                (lookup('ansible.builtin.file', repo_root ~ '/testbed/opnsense/cf_check',
+                rstrip=false) | hash('sha256'))
+            fail_msg: "{{ item.item.provider }}: mapped endpoint status or body differs"
           loop: "{{ isp_mapping_responses.results }}"
 
     - name: Install DHCPv6 and RA packages on ISP LXCs
