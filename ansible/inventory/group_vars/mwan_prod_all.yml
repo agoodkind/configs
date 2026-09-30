@@ -12,6 +12,7 @@
 # tag, download its checksums.txt, and copy both lines here.
 
 mwan_release_repo: agoodkind/mwan
+mwan_ifmgr_lease_recovery_enabled: false
 mwan_release_tag: "202609292152-70-d442ba1"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
