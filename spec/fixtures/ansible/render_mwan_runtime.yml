@@ -1,0 +1,33 @@
+---
+- name: Render gateway runtime inputs for isolated startup
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  vars:
+    vm_mgmt_mac: "{{ mwan_runtime_management_mac }}"
+    mwan_net1_mac: "{{ mwan_runtime_transit_mac }}"
+    vault_smtp2go_api_key: isolated-runtime-test
+    vault_suburban_testbed_pve_token_secret: isolated-runtime-test
+    vault_mwan_watchdog_pve_token_secret: isolated-runtime-test
+    vault_suburban_testbed_opnsense_api_key: isolated-runtime-test
+    vault_suburban_testbed_opnsense_api_secret: isolated-runtime-test
+    vault_prod_opnsense_api_key: isolated-runtime-test
+    vault_prod_opnsense_api_secret: isolated-runtime-test
+  vars_files:
+    - "{{ repository_root }}/ansible/inventory/group_vars/all/vars.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/all/service_mapping.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/{{ mwan_runtime_parent_group_file }}"
+    - "{{ repository_root }}/ansible/inventory/group_vars/{{ mwan_runtime_group_file }}"
+  tasks:
+    - name: Render the gateway runtime configuration
+      ansible.builtin.template:
+        src: "{{ repository_root }}/mwan/config/config-vm.toml.j2"
+        dest: "{{ runtime_output }}"
+        mode: "0600"
+
+    - name: Render the gateway network configuration
+      ansible.builtin.template:
+        src: "{{ repository_root }}/mwan/config/network.json.j2"
+        dest: "{{ network_output }}"
+        mode: "0600"
