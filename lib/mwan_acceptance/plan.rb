@@ -285,9 +285,14 @@ module MwanAcceptance
     private
 
     def read_settings(document)
-      %w[transit network_json binary binary_sha256 network_sha256 sysrepo capture_seconds timeout_seconds].each do |key|
-        instance_variable_set("@#{key}", document.fetch(key))
-      end
+      @transit = document.fetch('transit')
+      @network_json = document.fetch('network_json')
+      @binary = document.fetch('binary')
+      @binary_sha256 = document.fetch('binary_sha256')
+      @network_sha256 = document.fetch('network_sha256')
+      @sysrepo = document.fetch('sysrepo')
+      @capture_seconds = document.fetch('capture_seconds')
+      @timeout_seconds = document.fetch('timeout_seconds')
     end
 
     def validate
