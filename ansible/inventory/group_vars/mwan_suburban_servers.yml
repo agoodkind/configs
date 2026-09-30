@@ -52,11 +52,40 @@ mwan_non_provider_connections:
   - name: "{{ mwan_internal_iface }}"
     connection_id: enmwanbr0
     owner: networkd
-    link_files: hand-authored
+    link_files: rendered
+    link:
+      match:
+        hardware_address: "{{ mwan_net1_mac }}"
+    ipv4:
+      address: "{{ mwan_internal_ipv4 }}"
+      forwarding: true
+    ipv6:
+      address: "{{ mwan_internal_ipv6 }}"
+      forwarding: true
+      routes:
+        - destination: "{{ mwan_internal_prefix }}"
+          gateway: "{{ mwan_opnsense_edge_ipv6 }}"
+          table_id: 254
+          metric: 0
   - name: "{{ mwan_mgmt_iface }}"
     connection_id: enmgmt0
     owner: networkd
-    link_files: hand-authored
+    link_files: rendered
+    link:
+      match:
+        hardware_address: "{{ vm_mgmt_mac }}"
+    ipv4:
+      dhcp: false
+      resolver:
+        dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv4('address') }}"
+        search: []
+    ipv6:
+      address: "{{ mwan_config_mgmt_addr }}/64"
+      dhcp: false
+      accept_ra: false
+      resolver:
+        dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
+        search: ["{{ mwan_dns_domain }}"]
 
 # systemd-networkd files deployed to the testbed gateway. Testbed AT&T is a
 # direct link (no VLAN, no 802.1X) from mwan/networkd/testbed/; the internal

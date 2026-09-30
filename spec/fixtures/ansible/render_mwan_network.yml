@@ -4,6 +4,8 @@
   gather_facts: false
   connection: local
   become: false
+  vars:
+    vm_mgmt_mac: "{{ mwan_mgmt_mac }}"
   vars_files:
     - "{{ repository_root }}/ansible/inventory/group_vars/all/vars.yml"
     - "{{ repository_root }}/ansible/inventory/group_vars/all/service_mapping.yml"

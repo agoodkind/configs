@@ -358,8 +358,49 @@ RSpec.describe MwanInstall do
         expect(identities.values.uniq).to eq(identities.values)
         %w[enmwanbr0 enmgmt0].each do |name|
           entry = interfaces.find { |candidate| candidate.fetch('name') == name }
-          expect(entry.fetch('goodkind-mwan-steering:link-files')).to eq('hand-authored')
+          expect(entry.fetch('goodkind-mwan-steering:link-files')).to eq('rendered')
         end
+      end
+    end
+  end
+
+  {
+    'render_mwan_prod_network.yml' => {
+      management_mac: 'BC:24:11:25:62:39', transit_mac: 'BC:24:11:72:00:C1',
+      management: '3d06:bad:b01::113', dns_v4: ['10.250.0.1'], dns_v6: ['3d06:bad:b01::1'],
+      transit_v4: '10.250.250.3', transit_v6: '3d06:bad:b01:fe::3',
+      return_prefix: '3d06:bad:b01::/60', return_gateway: '3d06:bad:b01:fe::2'
+    },
+    'render_mwan_network.yml' => {
+      management_mac: 'BC:24:11:B3:9E:46', transit_mac: 'BC:24:11:49:5D:94',
+      management: '3d06:bad:b01:210::213', dns_v4: [], dns_v6: ['3d06:bad:b01:210::1'],
+      transit_v4: '10.240.240.3', transit_v6: '3d06:bad:b01:201::3',
+      return_prefix: '3d06:bad:b01:210::/60', return_gateway: '3d06:bad:b01:201::2'
+    }
+  }.each do |playbook, expected|
+    it "renders management and transit settings in #{playbook}" do
+      Dir.mktmpdir('mwan-role-settings') do |directory|
+        network = File.join(directory, 'network.json')
+        AnsibleRender.render(inventory: 'localhost,', playbook: playbook,
+                             extra_vars: { 'repository_root' => AnsibleRender::REPOSITORY_ROOT, 'network_output' => network })
+        interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
+        management = interfaces.find { |entry| entry.fetch('name') == 'enmgmt0' }
+        transit = interfaces.find { |entry| entry.fetch('name') == 'enmwanbr0' }
+        [management, transit].each { |entry| expect(entry.fetch('type')).to eq('iana-if-type:other') }
+        expect(management.dig('goodkind-mwan-steering:link', 'match', 'hardware-address')).to eq(expected.fetch(:management_mac))
+        expect(transit.dig('goodkind-mwan-steering:link', 'match', 'hardware-address')).to eq(expected.fetch(:transit_mac))
+        expect(management.dig('ietf-ip:ipv6', 'address')).to eq([{ 'ip' => expected.fetch(:management), 'prefix-length' => 64 }])
+        expect(management.dig('ietf-ip:ipv4', 'goodkind-mwan-steering:dhcp')).to be(false)
+        expect(management.dig('ietf-ip:ipv6', 'goodkind-mwan-steering:dhcp')).to be(false)
+        expect(management.dig('ietf-ip:ipv6', 'goodkind-mwan-steering:accept-ra')).to be(false)
+        expect(management.dig('ietf-ip:ipv4', 'goodkind-mwan-steering:resolver', 'dns')).to eq(expected.fetch(:dns_v4))
+        expect(management.dig('ietf-ip:ipv6', 'goodkind-mwan-steering:resolver')).to eq('dns' => expected.fetch(:dns_v6), 'search' => ['home.goodkind.io'])
+        expect(transit.dig('ietf-ip:ipv4', 'address')).to eq([{ 'ip' => expected.fetch(:transit_v4), 'prefix-length' => 29 }])
+        expect(transit.dig('ietf-ip:ipv6', 'address')).to eq([{ 'ip' => expected.fetch(:transit_v6), 'prefix-length' => 64 }])
+        %w[ipv4 ipv6].each { |family| expect(transit.dig("ietf-ip:#{family}", 'forwarding')).to be(true) }
+        expect(transit.dig('ietf-ip:ipv6', 'goodkind-mwan-steering:route')).to eq(
+          [{ 'destination' => expected.fetch(:return_prefix), 'gateway' => expected.fetch(:return_gateway), 'table-id' => 254, 'metric' => 0 }]
+        )
       end
     end
   end

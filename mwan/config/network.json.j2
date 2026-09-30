@@ -164,13 +164,45 @@
 {% set _ = interfaces.append(entry) %}
 {% endfor %}
 {% for connection in mwan_non_provider_connections %}
-{% set _ = interfaces.append({
+{% set entry = {
   "name": connection.name,
   "type": "iana-if-type:other",
   "goodkind-mwan-steering:connection-id": connection.connection_id,
   "goodkind-mwan-steering:owner": connection.owner,
   "goodkind-mwan-steering:link-files": connection.link_files
-}) %}
+} %}
+{% set match = {} %}
+{% for key, value in connection.link.match.items() %}
+{% set _ = match.update({key | replace("_", "-"): value}) %}
+{% endfor %}
+{% set _ = entry.update({"goodkind-mwan-steering:link": {"match": match}}) %}
+{% for family_name, family in connection.items() if family_name in ["ipv4", "ipv6"] %}
+{% set family_entry = {} %}
+{% for key, value in family.items() %}
+{% if key == "address" %}
+{% set address_parts = value.split("/") %}
+{% set _ = family_entry.update({"address": [{"ip": address_parts[0], "prefix-length": address_parts[1] | int}]}) %}
+{% elif key == "resolver" %}
+{% set _ = family_entry.update({"goodkind-mwan-steering:resolver": {"dns": value.dns, "search": value.search}}) %}
+{% elif key == "routes" %}
+{% set routes = [] %}
+{% for route in value %}
+{% set route_entry = {} %}
+{% for route_key, route_value in route.items() %}
+{% set _ = route_entry.update({route_key | replace("_", "-"): route_value}) %}
+{% endfor %}
+{% set _ = routes.append(route_entry) %}
+{% endfor %}
+{% set _ = family_entry.update({"goodkind-mwan-steering:route": routes}) %}
+{% elif key == "forwarding" %}
+{% set _ = family_entry.update({key: value}) %}
+{% else %}
+{% set _ = family_entry.update({"goodkind-mwan-steering:" ~ key | replace("_", "-"): value}) %}
+{% endif %}
+{% endfor %}
+{% set _ = entry.update({"ietf-ip:" ~ family_name: family_entry}) %}
+{% endfor %}
+{% set _ = interfaces.append(entry) %}
 {% endfor %}
 {% set management_services = [] %}
 {% for service in mwan_firewall_management_services %}
