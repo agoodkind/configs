@@ -225,8 +225,78 @@ class MwanAcceptanceBGPFixture < MwanAcceptanceFixture
   end
 end
 
+# The destination updater uses the production service in the gateway namespace.
+module MwanAcceptanceUpdater
+  def setup_updater
+    service_path = '/etc/systemd/system/mwan-update-att-pinned-dests.service'
+    script_path = '/usr/local/bin/update-att-pinned-dests.sh'
+    environment_path = '/etc/mwan/mwan.env'
+    drop_in = "#{service_path}.d"
+    paths = [service_path, script_path, environment_path, drop_in]
+    raise 'The private fixture updater paths must be absent' if paths.any? { |path| File.exist?(path) }
+
+    @updater_paths = paths
+    sources = File.expand_path('../../mwan', __dir__)
+    FileUtils.cp(File.join(sources, 'services/mwan-update-att-pinned-dests.service'), service_path)
+    FileUtils.cp(File.join(sources, 'scripts/update-att-pinned-dests.sh'), script_path)
+    FileUtils.chmod(0o755, script_path)
+    write_updater_environment(environment_path)
+    FileUtils.mkdir_p(drop_in)
+    write_updater_unit(File.join(drop_in, 'fixture.conf'))
+    command('systemctl', 'daemon-reload')
+  end
+
+  def write_updater_environment(path)
+    File.write(path, <<~ENVIRONMENT)
+      MWAN_PINNED_SET_V4_NAME=fixture_pinned_v4
+      MWAN_PINNED_SET_V6_NAME=fixture_pinned_v6
+      MWAN_ATT_PINNED_V4_SEED_CIDRS=192.0.2.0/24
+      MWAN_ATT_PINNED_V6_SEED_CIDRS=2001:db8:100::/48
+    ENVIRONMENT
+    FileUtils.chmod(0o600, path)
+  end
+
+  def write_updater_unit(path)
+    File.write(path, <<~UNIT)
+      [Unit]
+      Wants=
+      Wants=network-online.target #{service}.service
+      After=
+      After=network-online.target #{service}.service
+      [Service]
+      NetworkNamespacePath=/run/netns/#{namespaces.fetch('gateway')}
+    UNIT
+  end
+
+  def wait_updater
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 20
+    loop do
+      status = command('systemctl', 'show', 'mwan-update-att-pinned-dests.service', '--property=Result', '--property=ActiveState')
+      sets = command('ip', 'netns', 'exec', namespaces.fetch('gateway'), 'nft', 'list', 'table', 'inet', 'mangle')
+      return if status.include?("Result=success\n") && status.include?("ActiveState=inactive\n") &&
+                sets.include?('192.0.2.0/24') && sets.include?('2001:db8:100::/48')
+      raise command('journalctl', '-u', 'mwan-update-att-pinned-dests.service', '--no-pager', '-n', '30') if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep 0.1
+    end
+  end
+
+  def teardown
+    errors = []
+    if @updater_paths
+      cleanup(errors) { command('systemctl', 'stop', 'mwan-update-att-pinned-dests.service') }
+      @updater_paths.each { |path| cleanup(errors) { FileUtils.remove_entry(path) } }
+      cleanup(errors) { command('systemctl', 'daemon-reload') }
+    end
+    super
+    raise errors.join("\n") unless errors.empty?
+  end
+end
+
 # This fixture runs the production daemon against real namespace routes.
 class MwanAcceptanceDaemonFixture < MwanAcceptanceBGPFixture
+  include MwanAcceptanceUpdater
+
   attr_reader :service, :binary
 
   def setup
@@ -240,9 +310,11 @@ class MwanAcceptanceDaemonFixture < MwanAcceptanceBGPFixture
     write_daemon_config
     @service = unit('daemon', ['ip', 'netns', 'exec', namespaces.fetch('gateway'), 'env', "MWAN_CONFIG=#{root}/config.toml",
                                "SYSREPO_REPOSITORY_PATH=#{root}/installation/etc/sysrepo", "SYSREPO_SHM_PREFIX=#{shm_prefix}", binary, 'ifmgr', '--role', 'wan'])
+    setup_updater
     server
     bgp
     wait_ready
+    wait_updater
     wait_learned_route
   end
 
@@ -253,6 +325,8 @@ class MwanAcceptanceDaemonFixture < MwanAcceptanceBGPFixture
       reconcile_interval = "100ms"
       json_log_file = #{File.join(root, 'ifmgr.jsonl').inspect}
       [ifmgr.iface.enmwanbr0]
+      [ifmgr.modules.addresses]
+      state_file = #{File.join(root, 'owned-addresses.json').inspect}
       [ifmgr.modules.health]
       state_file = #{File.join(root, 'health.json').inspect}
       [ifmgr.modules.wan.routes]
@@ -264,13 +338,11 @@ class MwanAcceptanceDaemonFixture < MwanAcceptanceBGPFixture
   end
 
   def network
-    mac = JSON.parse(command('ip', '-n', namespaces.fetch('gateway'), '-j', 'link', 'show', 'enprovider0')).first.fetch('address')
     provider = { 'name' => 'enprovider0', 'type' => 'iana-if-type:other', 'goodkind-mwan-steering:owner' => 'networkd',
-                 'goodkind-mwan-steering:link-files' => 'rendered', 'goodkind-mwan-steering:link' => { 'match' => { 'hardware-address' => mac } },
-                 'ietf-ip:ipv4' => { 'goodkind-mwan-steering:dhcp' => false,
-                                     'goodkind-mwan-steering:translation' => { 'mode' => 'ietf-nat:napt44', 'static-mapping' => [{ 'external' => '10.251.1.5', 'internal' => '10.251.254.2' }] } },
-                 'ietf-ip:ipv6' => { 'goodkind-mwan-steering:dhcp' => false,
-                                     'goodkind-mwan-steering:translation' => { 'mode' => 'ietf-nat:nptv6',
+                 'goodkind-mwan-steering:link-files' => 'hand-authored',
+                 'ietf-ip:ipv4' => { 'goodkind-mwan-steering:translation' => { 'mode' => 'ietf-nat:napt44',
+                                                                               'static-mapping' => [{ 'external' => '10.251.1.5', 'internal' => '10.251.254.2' }] } },
+                 'ietf-ip:ipv6' => { 'goodkind-mwan-steering:translation' => { 'mode' => 'ietf-nat:nptv6',
                                                                                'nptv6' => { 'internal-prefix' => 'fd51::/64', 'external-source' => 'configured', 'external-prefix' => 'fd53::/64' } } },
                  'goodkind-mwan-steering:wan' => { 'name' => 'provider', 'table-id' => 201, 'fw-mark' => 1, 'fw-mark-prio' => 201, 'from-prio' => 51, 'health' => health },
                  'goodkind-mwan-steering:steering' => { 'tier' => 0, 'weight' => 1 } }
@@ -281,6 +353,8 @@ class MwanAcceptanceDaemonFixture < MwanAcceptanceBGPFixture
                                                                                                         'mwanbr-edge-v6' => 'fd51:fe::1' },
                                                                                      'firewall' => { 'management-interface' => 'enmgmt0',
                                                                                                      'management-service' => [{ 'protocol' => 'tcp', 'port' => 22 }],
+                                                                                                     'pinned-provider' => 'provider', 'pinned-source-v4' => '10.251.254.2',
+                                                                                                     'pinned-source-port' => 51_820, 'pinned-destination-port' => 51_821,
                                                                                                      'pinned-set-v4-name' => 'fixture_pinned_v4', 'pinned-set-v6-name' => 'fixture_pinned_v6' },
                                                                                      'health' => { 'probe-timeout' => 500 } } } }
   end
