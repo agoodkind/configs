@@ -179,6 +179,7 @@ module MwanAcceptance
       @run_id = run_id
       @observers = []
       @finished = {}
+      @runner_status = {}
     end
 
     def start(target, interface, label, port)
@@ -222,16 +223,16 @@ module MwanAcceptance
 
     private
 
-    def capture_pid(observer)
+    def capture_pid(observer, cleanup: false)
       guest = observer.target.adapter == 'proxmox'
       command = ['systemctl', 'show', observer.unit, '--property=Id,LoadState,ActiveState,MainPID']
-      state = @remote.read(observer.target, command, "#{observer.label}-active", guest: guest).lines.to_h { |line| line.strip.split('=', 2) }
+      state = @remote.read(observer.target, command, "#{observer.label}-active", guest: guest, cleanup: cleanup).lines.to_h { |line| line.strip.split('=', 2) }
       unless state['Id'] == "#{observer.unit}.service" && state['LoadState'] == 'loaded' && state['ActiveState'] == 'active' && /\A[1-9]\d*\z/.match?(state['MainPID'].to_s)
         raise Failure, "#{observer.label}: capture unit is not active with a process: #{state}"
       end
 
       pid = Integer(state.fetch('MainPID'))
-      executable = @remote.read(observer.target, ['readlink', "/proc/#{pid}/exe"], "#{observer.label}-executable", guest: guest).strip
+      executable = @remote.read(observer.target, ['readlink', "/proc/#{pid}/exe"], "#{observer.label}-executable", guest: guest, cleanup: cleanup).strip
       raise Failure, "#{observer.label}: capture process is #{executable}" unless File.basename(executable) == 'tcpdump'
 
       File.write("#{observer.stem}.capture.json", JSON.generate({ unit: observer.unit, pid: pid, executable: executable, guest: guest }))
@@ -242,19 +243,37 @@ module MwanAcceptance
       return if @finished[observer.unit]
 
       guest = observer.target.adapter == 'proxmox'
-      @remote.read(observer.target, ['systemctl', 'stop', observer.unit], "#{observer.label}-stop", guest: guest, cleanup: true)
-      status = @processes.wait(observer.pid, @plan.timeout_seconds, cleanup: true)
-      raise Failure, "#{observer.label}: capture exited #{status.exitstatus}" unless status.success?
+      errors = []
+      begin
+        pid = observer.capture_pid || capture_pid(observer, cleanup: true)
+      rescue Failure => e
+        errors.push(e.message)
+      end
+      stop_runner(observer, errors)
+      raise Failure, errors.join("\n") unless errors.empty?
 
       counters = File.read("#{observer.stem}.stderr")
       raise Failure, "#{observer.label}: capture omitted kernel drop counters" unless counters.match?(/^0 packets dropped by kernel$/)
-      raise Failure, "#{observer.label}: capture has no verified process" unless observer.capture_pid
 
-      command = ['find', '/proc', '-maxdepth', '1', '-mindepth', '1', '-name', observer.capture_pid.to_s, '-print']
+      command = ['find', '/proc', '-maxdepth', '1', '-mindepth', '1', '-name', pid.to_s, '-print']
       remaining = @remote.read(observer.target, command, "#{observer.label}-process-absent", guest: guest, cleanup: true)
-      raise Failure, "#{observer.label}: capture process #{observer.capture_pid} remains" unless remaining.empty?
+      raise Failure, "#{observer.label}: capture process #{pid} remains" unless remaining.empty?
 
       @finished[observer.unit] = true
+    end
+
+    def stop_runner(observer, errors)
+      begin
+        @remote.read(observer.target, ['systemctl', 'stop', observer.unit], "#{observer.label}-stop", guest: observer.target.adapter == 'proxmox', cleanup: true)
+      rescue Failure => e
+        errors.push(e.message)
+      end
+      begin
+        status = @runner_status[observer.unit] ||= @processes.wait(observer.pid, @plan.timeout_seconds, cleanup: true)
+        raise Failure, "#{observer.label}: capture exited #{status.exitstatus}" unless status.success?
+      rescue Failure => e
+        errors.push(e.message)
+      end
     end
   end
 end
