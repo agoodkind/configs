@@ -1,0 +1,232 @@
+---
+- name: Configure the isolated mapping listener
+  become: true
+  when: not ansible_check_mode
+  block:
+    - name: Read the administration GUI process
+      ansible.builtin.slurp:
+        src: /var/run/lighty-webConfigurator.pid
+      register: mapping_gui_pid_before
+
+    - name: Read the administration GUI configuration
+      ansible.builtin.slurp:
+        src: /usr/local/etc/lighttpd_webgui/lighttpd.conf
+      register: mapping_gui_config_before
+      no_log: true
+
+    - name: Read configured lighttpd instances
+      ansible.builtin.command:
+        argv: [sysrc, -s, lighttpd, -n, -i, lighttpd_instances]
+      register: mapping_instances_before
+      changed_when: false
+
+    - name: Define the mapping instance assignments
+      ansible.builtin.set_fact:
+        mapping_rc_assignments: >-
+          {{ lookup('ansible.builtin.file',
+          repo_root ~ '/testbed/opnsense/mapping-lighttpd-rc.conf').splitlines() +
+          ['lighttpd_instances=' ~
+          ((mapping_instances_before.stdout.split() + ['mwan_mapping']) |
+          unique | join(' '))] }}
+
+    - name: Read current lighttpd instance values
+      ansible.builtin.command:
+        argv: [sysrc, -s, lighttpd, -n, -i, "{{ item.split('=', 1)[0] }}"]
+      loop: "{{ mapping_rc_assignments }}"
+      register: mapping_rc_before
+      changed_when: false
+
+    - name: Create the lighttpd configuration directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: wheel
+        mode: "0755"
+      loop:
+        - /etc/rc.conf.d
+        - /usr/local/etc/lighttpd
+        - /conf/mwan-mapping-www
+
+    - name: Install the mapping listener configuration
+      ansible.builtin.template:
+        src: "{{ repo_root }}/testbed/opnsense/mapping-lighttpd.conf.j2"
+        dest: /usr/local/etc/lighttpd/mwan_mapping.conf
+        owner: root
+        group: wheel
+        mode: "0644"
+      register: mapping_listener_config
+
+    - name: Install the fixed mapping response
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/testbed/opnsense/cf_check"
+        dest: /conf/mwan-mapping-www/cf_check
+        owner: root
+        group: wheel
+        mode: "0644"
+
+    - name: Merge the mapping instance into native lighttpd configuration
+      ansible.builtin.command:
+        argv: [sysrc, -f, /etc/rc.conf.d/lighttpd, "{{ item.item }}"]
+      loop: "{{ mapping_rc_before.results }}"
+      when: item.stdout != item.item.split('=', 1)[1]
+      register: mapping_rc_update
+      changed_when: true
+
+    - name: Validate the real mapping listener configuration
+      ansible.builtin.command:
+        argv: [service, lighttpd, configtest, mwan_mapping]
+      changed_when: false
+
+    - name: Read the mapping listener service state
+      ansible.builtin.command:
+        argv: [service, lighttpd, status, mwan_mapping]
+      register: mapping_listener_before
+      changed_when: false
+      failed_when: mapping_listener_before.rc not in [0, 1]
+
+    - name: Activate only the mapping listener instance
+      ansible.builtin.command:
+        argv:
+          - service
+          - lighttpd
+          - "{{ 'restart' if mapping_listener_before.rc == 0 else 'start' }}"
+          - mwan_mapping
+      async: 45
+      poll: 0
+      register: mapping_listener_activation
+      changed_when: true
+      when: >-
+        mapping_listener_before.rc != 0 or mapping_listener_config.changed or
+        (mapping_rc_update.results | selectattr('changed') | list | length > 0)
+
+    - name: Reconnect after mapping listener activation
+      ansible.builtin.wait_for_connection:
+        timeout: 45
+      when: mapping_listener_activation.changed
+
+    - name: Require completed mapping listener activation
+      ansible.builtin.async_status:
+        jid: "{{ mapping_listener_activation.ansible_job_id }}"
+      register: mapping_listener_completion
+      until: mapping_listener_completion.finished
+      retries: 15
+      delay: 1
+      when: mapping_listener_activation.changed
+
+    - name: Install the native mapping rule updater
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/files/testbed-mapping-endpoint.php"
+        dest: /usr/local/libexec/testbed-mapping-endpoint.php
+        owner: root
+        group: wheel
+        mode: "0644"
+        validate: /usr/local/bin/php -l %s
+
+    - name: Reconcile the two simulator mapping rules
+      ansible.builtin.command:
+        argv: [/usr/local/bin/php, /usr/local/libexec/testbed-mapping-endpoint.php]
+      register: mapping_rule_update
+      changed_when: (mapping_rule_update.stdout | from_json).changed
+
+    - name: Apply changed mapping rules through the native filter reload
+      ansible.builtin.command:
+        argv: [configctl, filter, reload]
+      async: 45
+      poll: 0
+      register: mapping_filter_reload
+      changed_when: true
+      when: mapping_rule_update.changed
+
+    - name: Reconnect after mapping filter reload
+      ansible.builtin.wait_for_connection:
+        timeout: 45
+      when: mapping_rule_update.changed
+
+    - name: Require completed mapping filter reload
+      ansible.builtin.async_status:
+        jid: "{{ mapping_filter_reload.ansible_job_id }}"
+      register: mapping_filter_completion
+      until: mapping_filter_completion.finished
+      retries: 15
+      delay: 1
+      when: mapping_rule_update.changed
+
+    - name: Require an active mapping listener instance
+      ansible.builtin.command:
+        argv: [service, lighttpd, status, mwan_mapping]
+      changed_when: false
+
+    - name: Read the dedicated mapping listener process
+      ansible.builtin.slurp:
+        src: /var/run/lighttpd_mwan_mapping.pid
+      register: mapping_listener_pid
+
+    - name: Read the actual mapping listener command
+      ansible.builtin.command:
+        argv:
+          - ps
+          - -p
+          - "{{ mapping_listener_pid.content | b64decode | trim }}"
+          - -o
+          - command=
+      register: mapping_listener_command
+      changed_when: false
+
+    - name: Require the isolated listener executable and configuration
+      ansible.builtin.assert:
+        that:
+          - >-
+            mapping_listener_command.stdout | trim ==
+            '/usr/local/sbin/lighttpd -f /usr/local/etc/lighttpd/mwan_mapping.conf'
+
+    - name: Read the applied PF rules
+      ansible.builtin.command:
+        argv: [pfctl, -sr]
+      register: mapping_applied_rules
+      changed_when: false
+
+    - name: Require both simulator-specific mapping passes
+      ansible.builtin.assert:
+        that:
+          - >-
+            mapping_applied_rules.stdout is search(
+            'pass in quick on vtnet1 inet proto tcp from ' ~ (item | regex_escape) ~
+            ' to \\(vtnet1:1\\) port = 1406')
+        fail_msg: "The applied mapping pass for {{ item }} is missing"
+      loop: [10.240.205.1, 10.241.204.1]
+
+    - name: Read the local mapping response
+      ansible.builtin.uri:
+        url: "http://{{ service_mapping.opnsense_suburban.ipv4_transit }}:1406/cf_check"
+        return_content: true
+        use_proxy: false
+        timeout: 3
+        status_code: 200
+      register: mapping_local_response
+
+    - name: Require the fixed mapping response bytes
+      ansible.builtin.assert:
+        that:
+          - >-
+            (mapping_local_response.content | hash('sha256')) ==
+            (lookup('ansible.builtin.file', repo_root ~ '/testbed/opnsense/cf_check',
+            rstrip=false) | hash('sha256'))
+
+    - name: Read the administration GUI process after activation
+      ansible.builtin.slurp:
+        src: /var/run/lighty-webConfigurator.pid
+      register: mapping_gui_pid_after
+
+    - name: Read the administration GUI configuration after activation
+      ansible.builtin.slurp:
+        src: /usr/local/etc/lighttpd_webgui/lighttpd.conf
+      register: mapping_gui_config_after
+      no_log: true
+
+    - name: Require the original administration GUI process
+      ansible.builtin.assert:
+        that:
+          - mapping_gui_pid_after.content == mapping_gui_pid_before.content
+          - mapping_gui_config_after.content == mapping_gui_config_before.content
+        fail_msg: The mapping fixture changed the administration GUI process
