@@ -4,6 +4,10 @@
   gather_facts: false
   connection: local
   become: false
+  vars:
+    # The deploy discovers net0 and net1 from qm config 113 on vault.
+    vm_mgmt_mac: "BC:24:11:25:62:39"
+    mwan_net1_mac: "BC:24:11:72:00:C1"
   vars_files:
     - "{{ repository_root }}/ansible/inventory/group_vars/all/vars.yml"
     - "{{ repository_root }}/ansible/inventory/group_vars/all/service_mapping.yml"
