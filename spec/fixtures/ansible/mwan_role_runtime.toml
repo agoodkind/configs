@@ -1,0 +1,12 @@
+[ifmgr]
+role = "wan"
+reconcile_interval = "1h"
+[ifmgr.iface.enmwanbr0]
+[ifmgr.modules.links]
+state_file = "/var/lib/mwan/test-links.json"
+[ifmgr.modules.addresses]
+state_file = "/var/lib/mwan/test-addresses.json"
+[ifmgr.modules.autoconfiguration]
+state_file = "/var/lib/mwan/test-kernel.json"
+[wanconfig]
+publish = false

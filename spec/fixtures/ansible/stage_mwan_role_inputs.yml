@@ -9,19 +9,7 @@
   ansible.builtin.copy:
     dest: /etc/mwan/config.toml
     mode: "0600"
-    content: |
-      [ifmgr]
-      role = "wan"
-      reconcile_interval = "1h"
-      [ifmgr.iface.enmwanbr0]
-      [ifmgr.modules.links]
-      state_file = "/var/lib/mwan/test-links.json"
-      [ifmgr.modules.addresses]
-      state_file = "/var/lib/mwan/test-addresses.json"
-      [ifmgr.modules.autoconfiguration]
-      state_file = "/var/lib/mwan/test-kernel.json"
-      [wanconfig]
-      publish = false
+    src: "{{ repository_root }}/spec/fixtures/ansible/mwan_role_runtime.toml"
   when: mwan_role_first_install | bool
   notify: Restart mwan-ifmgr@wan
 
