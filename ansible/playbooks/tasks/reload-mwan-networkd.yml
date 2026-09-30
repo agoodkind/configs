@@ -1,9 +1,3 @@
-- name: Check the networkd reload
-  ansible.builtin.command:
-    argv: [networkctl, reload]
-  changed_when: true
-  when: ansible_check_mode
-
 - name: Reload networkd without waiting on SSH
   ansible.builtin.command:
     argv: [networkctl, reload]

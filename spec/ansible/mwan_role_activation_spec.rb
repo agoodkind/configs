@@ -137,6 +137,20 @@ RSpec.describe 'MWAN role activation with actual systemd' do
     end
   end
 
+  it 'reports the original rejection and failed recovery while retaining the backup' do
+    with_real_network do |directory, prior, current|
+      expect do
+        activation_play(directory, 'recovery_failure', prior, current, prepared: true, corrupt: false,
+                                                                       domain: 'home.goodkind.io')
+      end.to raise_error(RuntimeError) { |error|
+        expect(error.message).to match(/Role activation failed: Reject the deliberately invalid input/)
+        expect(error.message).to match(/Recovery failed: Restore prior role inputs within the guest/)
+        backup_path = error.message.match(%r{The role input backup remains at (/var/lib/mwan/role-inputs-\w+)})[1]
+        expect(JSON.parse(guest('cat', "#{backup_path}/network.json"))).to eq(JSON.parse(File.read(prior)))
+      }
+    end
+  end
+
   def remove_initial_role_configuration
     guest('systemctl', 'disable', '--now', 'mwan-ifmgr@wan')
     guest('rm', '-f', '/etc/mwan/config.toml', '/etc/mwan/network.json',

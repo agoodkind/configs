@@ -1,7 +1,3 @@
-- name: Record the activation failure before recovery
-  ansible.builtin.set_fact:
-    mwan_role_activation_failure: "{{ ansible_failed_task.name }}: {{ ansible_failed_result.msg }}"
-
 - name: Check the newly installed writer unit before first-install recovery
   ansible.builtin.stat:
     path: /etc/systemd/system/mwan-ifmgr@.service
@@ -91,9 +87,3 @@
   ansible.builtin.file:
     path: "{{ mwan_role_backup.path }}"
     state: absent
-
-- name: Fail after restoring the prior role configuration
-  ansible.builtin.fail:
-    msg: >-
-      Role activation failed: {{ mwan_role_activation_failure }}.
-      The prior role inputs and applied state passed recovery verification.

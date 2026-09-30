@@ -192,18 +192,9 @@
   notify:
     - Reload networkd
 
-- name: Reload udev rules
-  ansible.builtin.command: udevadm control --reload
-  changed_when: false
-  failed_when: false
-
-- name: Trigger net udev events
-  ansible.builtin.command: udevadm trigger --action=add --subsystem-match=net
-  changed_when: false
-  failed_when: false
-
-- name: Wait for the controller connection after net udev events
-  ansible.builtin.include_tasks: wait-for-connection.yml
+- name: Apply link naming and verify the udev job
+  ansible.builtin.include_tasks: apply-mwan-link-naming.yml
+  when: not ansible_check_mode
 
 # AT&T WPA action units still require networkd-dispatcher.
 - name: Enable networkd-dispatcher

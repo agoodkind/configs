@@ -57,33 +57,8 @@
         mode: "0644"
       loop: [40-mwanbr.link, 40-mwanbr.network]
 
-    - name: Reload role naming rules
-      ansible.builtin.command:
-        argv: [udevadm, control, --reload]
-      changed_when: false
-
-    - name: Apply role naming without waiting on SSH
-      ansible.builtin.command:
-        argv: [udevadm, trigger, --action=add, --subsystem-match=net]
-      async: "{{ mwan_role_job_timeout_seconds }}"
-      poll: 0
-      register: mwan_role_naming_job
-      changed_when: true
-
-    - name: Reconnect after initial role naming
-      ansible.builtin.wait_for_connection:
-        connect_timeout: 5
-        delay: "{{ mwan_role_job_timeout_seconds }}"
-        sleep: 5
-        timeout: 300
-
-    - name: Verify initial role naming completed
-      ansible.builtin.async_status:
-        jid: "{{ mwan_role_naming_job.ansible_job_id }}"
-      register: mwan_role_naming_result
-      until: mwan_role_naming_result is finished
-      retries: 24
-      delay: 5
+    - name: Apply the initial role naming and verify the udev job
+      ansible.builtin.include_tasks: apply-mwan-link-naming.yml
 
     - name: Wait for the initial network device events
       ansible.builtin.command:

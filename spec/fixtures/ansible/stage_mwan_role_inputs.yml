@@ -36,7 +36,13 @@
     dest: /run/mwan-role-invalid.json
     content: '{'
     mode: "0600"
-  when: role_test_phase == 'stage_failure'
+  when: role_test_phase in ['stage_failure', 'recovery_failure']
+
+- name: Remove a real captured input for the failed-recovery control
+  ansible.builtin.file:
+    path: "{{ mwan_role_backup.path }}/config.toml"
+    state: absent
+  when: role_test_phase == 'recovery_failure'
 
 - name: Reject the deliberately invalid input through the released loader
   ansible.builtin.command:
@@ -47,7 +53,7 @@
       - /run/mwan-role-invalid.json
       - /usr/local/share/wanconfig/yang
   changed_when: false
-  when: role_test_phase == 'stage_failure'
+  when: role_test_phase in ['stage_failure', 'recovery_failure']
 
 - name: Corrupt a real generated unit for the verifier control
   ansible.builtin.lineinfile:

@@ -1,0 +1,27 @@
+- name: Reload udev rules
+  ansible.builtin.command:
+    argv: [udevadm, control, --reload]
+  changed_when: false
+
+- name: Trigger net udev events without waiting on SSH
+  ansible.builtin.command:
+    argv: [udevadm, trigger, --action=add, --subsystem-match=net]
+  async: "{{ mwan_role_job_timeout_seconds }}"
+  poll: 0
+  register: mwan_udev_trigger_job
+  changed_when: true
+
+- name: Reconnect after the net udev trigger deadline
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 5
+    delay: "{{ mwan_role_job_timeout_seconds }}"
+    sleep: 5
+    timeout: 300
+
+- name: Verify the net udev trigger completed
+  ansible.builtin.async_status:
+    jid: "{{ mwan_udev_trigger_job.ansible_job_id }}"
+  register: mwan_udev_trigger_result
+  until: mwan_udev_trigger_result is finished
+  retries: 24
+  delay: 5

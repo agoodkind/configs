@@ -30,8 +30,31 @@
         - not ansible_check_mode
 
   rescue:
-    - name: Restore the captured role inputs after staging or activation fails
-      ansible.builtin.include_tasks: recover-mwan-role-inputs.yml
+    - name: Record the rejected configuration stage
+      ansible.builtin.set_fact:
+        mwan_role_activation_failure: "{{ ansible_failed_task.name }}: {{ ansible_failed_result.msg }}"
+
+    - name: Recover the captured role inputs
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - not ansible_check_mode
+        - mwan_role_snapshot_ready | bool
+      block:
+        - name: Restore the captured role inputs after staging or activation fails
+          ansible.builtin.include_tasks: recover-mwan-role-inputs.yml
+      rescue:
+        - name: Fail with the configuration and recovery errors
+          ansible.builtin.fail:
+            msg: >-
+              Role activation failed: {{ mwan_role_activation_failure }}.
+              Recovery failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg }}.
+              The role input backup remains at {{ mwan_role_backup.path }}.
+
+    - name: Fail after restoring the prior role configuration
+      ansible.builtin.fail:
+        msg: >-
+          Role activation failed: {{ mwan_role_activation_failure }}.
+          The prior role inputs and applied state passed recovery verification.
       when:
         - mwan_ifmgr_wan_enabled | bool
         - not ansible_check_mode
@@ -39,5 +62,4 @@
 
     - name: Fail the rejected configuration stage
       ansible.builtin.fail:
-        msg: "{{ ansible_failed_result.msg }}"
-
+        msg: "{{ mwan_role_activation_failure }}"
