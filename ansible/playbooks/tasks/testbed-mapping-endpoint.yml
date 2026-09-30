@@ -19,6 +19,10 @@
         argv: [sysrc, -s, lighttpd, -n, -i, lighttpd_instances]
       register: mapping_instances_before
       changed_when: false
+      failed_when: >-
+        mapping_instances_before.rc != 0 and not
+        (mapping_instances_before.rc == 1 and mapping_instances_before.stdout == ''
+        and mapping_instances_before.stderr == '')
 
     - name: Define the mapping instance assignments
       ansible.builtin.set_fact:
@@ -35,6 +39,10 @@
       loop: "{{ mapping_rc_assignments }}"
       register: mapping_rc_before
       changed_when: false
+      failed_when: >-
+        mapping_rc_before.rc != 0 and not
+        (mapping_rc_before.rc == 1 and mapping_rc_before.stdout == ''
+        and mapping_rc_before.stderr == '')
 
     - name: Create the lighttpd configuration directories
       ansible.builtin.file:
