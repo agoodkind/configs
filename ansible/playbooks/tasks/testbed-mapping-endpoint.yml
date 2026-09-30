@@ -56,6 +56,14 @@
         - /usr/local/etc/lighttpd
         - /conf/mwan-mapping-www
 
+    - name: Create the writable mapping listener log directory
+      ansible.builtin.file:
+        path: /var/log/mwan-mapping
+        state: directory
+        owner: www
+        group: www
+        mode: "0750"
+
     - name: Install the mapping listener configuration
       ansible.builtin.template:
         src: "{{ repo_root }}/testbed/opnsense/mapping-lighttpd.conf.j2"
