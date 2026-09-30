@@ -83,14 +83,16 @@ module MwanAcceptance
     end
 
     def cleanup
-      @children.each_key { |pid| signal_group(pid, 'TERM') }
+      @children.each_key do |pid|
+        signal_group(pid, 'TERM') unless reap_child?(pid, Process::WNOHANG)
+      end
       sleep 0.1 unless @children.empty?
       @children.each_key do |pid|
+        next if reap_child?(pid, Process::WNOHANG)
+
         signal_group(pid, 'KILL')
-        _child, status = Process.wait2(pid)
-        record_status(pid, status, true)
+        reap_child?(pid, 0)
       end
-      @children.clear
     end
 
     def monotonic
@@ -98,6 +100,15 @@ module MwanAcceptance
     end
 
     private
+
+    def reap_child?(pid, flags)
+      pair = Process.wait2(pid, flags)
+      return false unless pair
+
+      record_status(pid, pair[1], true)
+      @children.delete(pid)
+      true
+    end
 
     def signal_group(pid, signal)
       Process.kill(signal, -pid)
