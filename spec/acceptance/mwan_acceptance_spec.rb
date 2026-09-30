@@ -671,8 +671,11 @@ RSpec.describe 'MWAN downstream acceptance command' do
       expect(report.fetch('results').fetch('history').fetch('retained_transitions')).not_to be_empty
       reject_history_overrun(fixture)
     ensure
-      fault&.join
-      fixture.teardown
+      begin
+        fault&.join
+      ensure
+        fixture.teardown
+      end
     end
   end
 end

@@ -66,7 +66,7 @@ module MwanAcceptance
         attributed.concat(parser.attribute(requests, transit, providers, simulators))
         @captures = nil
       end
-      Packets.new(nil).verify_counts(attributed, calibration)
+      Packets.verify_counts(attributed, calibration)
     end
 
     def captures(port)

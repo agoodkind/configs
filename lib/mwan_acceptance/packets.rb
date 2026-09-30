@@ -76,7 +76,7 @@ module MwanAcceptance
       end
     end
 
-    def verify_counts(attributed, calibration)
+    def self.verify_counts(attributed, calibration)
       raise Failure, 'sample count differs from reviewed calibration' unless attributed.size == calibration.count
 
       counts = attributed.map { |entry| entry[1] }.tally
@@ -92,7 +92,7 @@ module MwanAcceptance
       counts
     end
 
-    def verify_sticky(attributed, calibration)
+    def self.verify_sticky(attributed, calibration)
       groups = attributed.group_by do |request, _provider, source|
         address = source.rpartition('.')[0]
         calibration.mode == 'source' ? address : [address, request.destination.rpartition('.')[0]]
