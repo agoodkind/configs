@@ -1,6 +1,9 @@
 {# Included directly under an [ifmgr] header. The role key is not here because
    the gateway unit takes its role from the systemd instance name. #}
 reconcile_interval = "60s"
+{% if mwan_ifmgr_lease_recovery_enabled | bool %}
+lease_directory = "/var/lib/mwan"
+{% endif %}
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
 
