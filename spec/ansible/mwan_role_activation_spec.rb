@@ -20,7 +20,7 @@ RSpec.describe 'MWAN role activation with actual systemd' do
 
   def activation_play(directory, phase, prior, current, options)
     inventory = File.join(directory, 'inventory.ini')
-    File.write(inventory, "[role_tests]\n#{@container}\n")
+    File.write(inventory, "[role_tests]\n#{@container} ansible_pipelining=true\n")
     AnsibleRender.render(
       inventory: inventory, playbook: 'activate_mwan_roles.yml', timeout_seconds: 120,
       extra_vars: {
