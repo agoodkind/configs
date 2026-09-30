@@ -134,11 +134,9 @@ publish = {{ mwan_wanconfig_publish | ternary('true', 'false') }}
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_wan_enabled | bool %}
-# The provider inventory, their routing slots, translation prefixes, source
-# pins, and probe policies live in /etc/mwan/network.json, in the model's own
-# encoding. What stays here is the two filesystem paths that are not network
-# values: the health module writes its verdict to state_file and the routing
-# module reads the same path as health_state_file.
+[ifmgr.modules.addresses]
+state_file = "/var/lib/mwan/owned-addresses.json"
+
 [ifmgr.modules.wan.routes]
 health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 
