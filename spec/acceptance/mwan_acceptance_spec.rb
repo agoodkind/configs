@@ -253,6 +253,8 @@ class MwanAcceptanceDaemonFixture < MwanAcceptanceBGPFixture
       reconcile_interval = "100ms"
       json_log_file = #{File.join(root, 'ifmgr.jsonl').inspect}
       [ifmgr.iface.enmwanbr0]
+      [ifmgr.modules.addresses]
+      state_file = #{File.join(root, 'owned-addresses.json').inspect}
       [ifmgr.modules.health]
       state_file = #{File.join(root, 'health.json').inspect}
       [ifmgr.modules.wan.routes]
