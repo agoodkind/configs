@@ -33,12 +33,29 @@ module MwanAcceptance
     end
 
     def run(argv, label, seconds, cleanup: false)
+      unless cleanup
+        check_deadline
+        seconds = [seconds, @deadline - monotonic].min if @deadline
+      end
       pid, stem = start(argv, label)
       status = wait(pid, seconds, cleanup: cleanup)
+      check_deadline unless cleanup
       result = ProcessResult.new(stdout: File.binread("#{stem}.stdout"), stderr: File.binread("#{stem}.stderr"), status: status)
       raise Failure, "#{label} failed (#{status.exitstatus}): #{result.stderr[-2000..] || result.stderr}" unless status.success?
 
       result
+    end
+
+    def with_deadline(deadline)
+      previous = @deadline
+      @deadline = previous ? [previous, deadline].min : deadline
+      yield
+    ensure
+      @deadline = previous
+    end
+
+    def check_deadline
+      raise Failure, 'acceptance observation exceeded its deadline' if @deadline && monotonic >= @deadline
     end
 
     def wait(pid, seconds, cleanup: false)

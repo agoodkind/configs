@@ -392,7 +392,7 @@ class MwanAcceptancePlanFixture < MwanAcceptanceDaemonFixture
 
     destination = File.join(ENV.fetch('MWAN_ACCEPTANCE_ARTIFACT_DIR'), File.basename(root))
     FileUtils.mkdir_p(destination)
-    Dir.glob(File.join(root, '*.{pcap,jsonl,json,stderr}')).each { |path| FileUtils.cp(path, destination) }
+    Dir.glob(File.join(root, '*.{pcap,jsonl,jsonl.gz,json,stderr}')).each { |path| FileUtils.cp(path, destination) }
     FileUtils.cp_r(File.join(root, label), destination) if label
   end
 
@@ -437,7 +437,7 @@ class MwanAcceptancePlanFixture < MwanAcceptanceDaemonFixture
       'endpoints' => [endpoint(4), endpoint(6)], 'calibrations' => [4, 6].map { |family| calibration(family, baseline) },
       'mappings' => [{ 'provider' => 'provider', 'family' => 4, 'source' => '10.251.1.2', 'external' => '10.251.1.5', 'internal' => '10.251.254.2',
                        'port' => 18_080, 'path' => '/', 'response_sha256' => Digest::SHA256.hexdigest("mwan-acceptance\n") }],
-      'history' => { 'directory' => root, 'pattern' => 'ifmgr*.jsonl', 'service' => service, 'connection' => 'provider', 'family' => 'ipv4',
+      'history' => { 'directory' => root, 'pattern' => 'ifmgr*.jsonl*', 'service' => service, 'connection' => 'provider', 'family' => 'ipv4',
                      'dependency' => 'wan-routes', 'reason' => 'routing readiness changed', 'seconds' => 30 },
       'transit' => 'enmwanbr0', 'network_json' => '/etc/mwan/network.json', 'binary' => binary, 'binary_sha256' => Digest::SHA256.file(binary).hexdigest,
       'network_sha256' => Digest::SHA256.file('/etc/mwan/network.json').hexdigest, 'capture_seconds' => 60, 'timeout_seconds' => 5,
@@ -526,8 +526,49 @@ RSpec.describe 'MWAN downstream acceptance command' do
         sleep 0.05
       end
       fixture.command('ip', '-n', fixture.namespaces.fetch('gateway'), 'route', 'add', 'default', 'via', '10.251.1.2')
-      File.rename(log, File.join(fixture.root, 'ifmgr-rotated.jsonl'))
-      fixture.command('systemctl', 'restart', fixture.service)
+      restart_with_rotated_history(fixture, log, deadline)
+    end
+  end
+
+  def restart_with_rotated_history(fixture, log, deadline)
+    File.open(log, 'a') { |file| file.write("\n" * (5 * 1024 * 1024)) }
+    fixture.command('systemctl', 'restart', fixture.service)
+    until Dir.glob(File.join(fixture.root, 'ifmgr-*.jsonl.gz')).any?
+      raise 'The product did not compress its rotated history' if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep 0.05
+    end
+  end
+
+  def reject_history_overrun(fixture)
+    archive = Dir.glob(File.join(fixture.root, 'ifmgr-*.jsonl.gz')).first
+    copies = Array.new(100) { |index| File.join(fixture.root, "ifmgr-repeat-#{index}.jsonl.gz") }
+    copies.each { |path| FileUtils.cp(archive, path) }
+    document = Marshal.load(Marshal.dump(fixture.plan))
+    document.fetch('history')['seconds'] = 1
+    observation = mark_current_archives(fixture, copies)
+    result, report = fixture.invoke('history-deadline', document)
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - observation.value
+    expect(result.exit_status.exitstatus).to eq(1)
+    expect(report.fetch('failure')).to include('deadline')
+    expect(report.fetch('cleanup_errors')).to be_empty
+    expect(elapsed).to be < 3
+  ensure
+    observation&.join
+  end
+
+  def mark_current_archives(fixture, copies)
+    phase = File.join(fixture.root, 'history-deadline/phase.json')
+    Thread.new do
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+      until File.exist?(phase)
+        raise 'The public CLI did not begin the deadline control' if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+        sleep 0.01
+      end
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      copies.each { |path| File.utime(Time.now, Time.now, path) }
+      started
     end
   end
 
@@ -628,6 +669,7 @@ RSpec.describe 'MWAN downstream acceptance command' do
       expect(report.fetch('cleanup_errors')).to be_empty
       expect(report.fetch('results').fetch('history').fetch('restart_observed')).to be(true)
       expect(report.fetch('results').fetch('history').fetch('retained_transitions')).not_to be_empty
+      reject_history_overrun(fixture)
     ensure
       fault&.join
       fixture.teardown
