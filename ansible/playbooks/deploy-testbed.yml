@@ -255,6 +255,53 @@
       changed_when: false
       tags: ["isp-lxcs"]
 
+    - name: Read the ISP acceptance HTTP client version
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ item.id }}", --, curl, --version]
+      loop: "{{ testbed_isp_lxcs }}"
+      register: mwan_isp_http_clients
+      changed_when: false
+      failed_when: mwan_isp_http_clients.rc not in [0, 127]
+      check_mode: false
+      tags: ["isp-lxcs", "isp-clients"]
+
+    - name: Refresh package metadata for missing ISP acceptance clients
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ item.item.id }}", --, apt-get, update, -qq]
+      loop: "{{ mwan_isp_http_clients.results }}"
+      when: item.rc == 127
+      changed_when: false
+      tags: ["isp-lxcs", "isp-clients"]
+
+    - name: Install the missing ISP acceptance HTTP client
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ item.item.id }}"
+          - --
+          - env
+          - DEBIAN_FRONTEND=noninteractive
+          - apt-get
+          - install
+          - -y
+          - -qq
+          - -o
+          - Dpkg::Options::=--force-confold
+          - curl
+      loop: "{{ mwan_isp_http_clients.results }}"
+      when: item.rc == 127
+      changed_when: true
+      tags: ["isp-lxcs", "isp-clients"]
+
+    - name: Verify the installed ISP acceptance HTTP client
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ item.id }}", --, curl, --version]
+      loop: "{{ testbed_isp_lxcs }}"
+      changed_when: false
+      when: not ansible_check_mode
+      tags: ["isp-lxcs", "isp-clients"]
+
     - name: Install DHCPv6 and RA packages on ISP LXCs
       ansible.builtin.command:
         cmd: >-
