@@ -41,17 +41,17 @@ module AnsibleRender
     candidates.find { |candidate| File.file?(candidate) && File.executable?(candidate) }
   end
 
-  def render(inventory:, playbook:, extra_vars:)
+  def render(inventory:, playbook:, extra_vars:, timeout_seconds: PLAYBOOK_TIMEOUT_SECONDS)
     Dir.mktmpdir('vault-password') do |password_directory|
       password_file = File.join(password_directory, 'vault-password')
       File.write(password_file, VAULT_PASSWORD_PLACEHOLDER, perm: SECRET_FILE_MODE)
-      result = run_playbook(password_file, inventory, playbook, extra_vars)
-      raise "render #{playbook} exceeded #{PLAYBOOK_TIMEOUT_SECONDS}s\n#{result.output}" if result.timed_out
+      result = run_playbook(password_file, inventory, playbook, extra_vars, timeout_seconds)
+      raise "render #{playbook} exceeded #{timeout_seconds}s\n#{result.output}" if result.timed_out
       raise "render #{playbook}: #{result.exit_status}\n#{result.output}" unless result.exit_status.success?
     end
   end
 
-  def run_playbook(password_file, inventory, playbook, extra_vars)
+  def run_playbook(password_file, inventory, playbook, extra_vars, timeout_seconds)
     argv = [
       PLAYBOOK_COMMAND,
       '--inventory', inventory,
@@ -62,7 +62,7 @@ module AnsibleRender
       { VAULT_PASSWORD_ENV => password_file },
       argv,
       chdir: ANSIBLE_DIRECTORY,
-      timeout_seconds: PLAYBOOK_TIMEOUT_SECONDS
+      timeout_seconds: timeout_seconds
     )
   rescue Errno::ENOENT => e
     raise "#{PLAYBOOK_COMMAND} is required: #{e.message}"

@@ -1,0 +1,43 @@
+- name: Establish the initial role configuration when needed
+  ansible.builtin.include_tasks: prepare-mwan-role-inputs.yml
+  when:
+    - mwan_ifmgr_wan_enabled | bool
+    - not ansible_check_mode
+
+- name: Stage and activate management and transit inputs
+  block:
+    - name: Preserve prior role inputs before staging
+      ansible.builtin.include_tasks: capture-mwan-role-inputs.yml
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - not ansible_check_mode
+
+    - name: Install all MWAN runtime inputs
+      ansible.builtin.include_tasks: "{{ mwan_role_staging_task_file }}"
+
+    - name: Activate verified management and transit units
+      ansible.builtin.include_tasks: activate-mwan-role-units.yml
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - not ansible_check_mode
+
+    - name: Remove the accepted role input backup
+      ansible.builtin.file:
+        path: "{{ mwan_role_backup.path }}"
+        state: absent
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - not ansible_check_mode
+
+  rescue:
+    - name: Restore the captured role inputs after staging or activation fails
+      ansible.builtin.include_tasks: recover-mwan-role-inputs.yml
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - not ansible_check_mode
+        - mwan_role_snapshot_ready | bool
+
+    - name: Fail the rejected configuration stage
+      ansible.builtin.fail:
+        msg: "{{ ansible_failed_result.msg }}"
+

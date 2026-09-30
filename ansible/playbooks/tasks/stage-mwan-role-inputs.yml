@@ -1,0 +1,320 @@
+- name: Deploy MWAN runtime config
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/config-vm.toml.j2"
+    dest: /etc/mwan/config.toml
+    mode: "0600"
+  notify: Restart mwan-ifmgr@wan
+
+# Copy the controller-validated bytes without rendering the document again.
+- name: Deploy MWAN network configuration
+  ansible.builtin.copy:
+    src: "{{ mwan_network_json_local }}"
+    dest: /etc/mwan/network.json
+    mode: "0600"
+  when: mwan_ifmgr_wan_enabled | bool
+  notify: Restart mwan-ifmgr@wan
+
+- name: Create configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ mwan_config_dir }}"
+    - /etc/sysctl.d
+    - /etc/iproute2
+    - /usr/local/bin
+    - /etc/wpa_supplicant
+    - /etc/dhcp
+    - /etc/systemd/network
+    - /etc/networkd-dispatcher/routable.d
+
+- name: Deploy mwan unified binary to MWAN VM
+  ansible.builtin.copy:
+    src: "{{ mwan_release_dir }}/linux_amd64/mwan"
+    dest: /usr/local/bin/mwan
+    mode: "0755"
+  notify: Restart mwan-ifmgr@wan
+
+- name: Verify the MWAN VM binary is the released commit
+  ansible.builtin.import_tasks: verify-mwan-release.yml
+  vars:
+    mwan_installed_binary: /usr/local/bin/mwan
+
+# SR_VERSION reports the linked library version independently of the release tag.
+- name: Fail unless the MWAN VM binary links the expected sysrepo
+  when: not ansible_check_mode
+  vars:
+    mwan_reported_libsysrepo: >-
+      {{ mwan_installed_version.stdout
+         | regex_findall(' libsysrepo=([0-9]+[.][0-9]+[.][0-9]+)$') }}
+  ansible.builtin.assert:
+    that:
+      - mwan_reported_libsysrepo == [wanconfig_sysrepo_soversion]
+    fail_msg: >-
+      /usr/local/bin/mwan reports "{{ mwan_installed_version.stdout }}"
+      but the inventory expects libsysrepo={{ wanconfig_sysrepo_soversion }}.
+    success_msg: >-
+      /usr/local/bin/mwan links libsysrepo {{ wanconfig_sysrepo_soversion }}.
+
+- name: Create the sysrepo access group
+  ansible.builtin.group:
+    name: sysrepo
+    system: true
+
+# The unit starts before coldplug. StateDirectory would order startup after
+# systemd-tmpfiles-setup.
+- name: Deploy the ifmgr state directory rule on MWAN VM
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/config/tmpfiles-mwan.conf"
+    dest: /etc/tmpfiles.d/mwan.conf
+    mode: "0644"
+  register: mwan_ifmgr_tmpfiles
+  when: mwan_ifmgr_wan_enabled | bool
+
+- name: Create the ifmgr state directory from the rule
+  ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/mwan.conf
+  changed_when: false
+  when:
+    - mwan_ifmgr_wan_enabled | bool
+    - mwan_ifmgr_tmpfiles is changed
+
+# The installer enables units without starting them. Restart handlers apply
+# changed inputs after staging.
+- name: Install the units and schema the mwan binary embeds
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - install
+      - --role
+      - wan
+      - --apply
+  register: mwan_install
+  changed_when: >-
+    mwan_install.stdout_lines
+    | select('match', '^(wrote|installed module|updated module|imported the) ')
+    | list | length > 0
+  notify:
+    - Restart rousette
+    - Restart nghttpx-wanconfig
+    - Restart mwan-ifmgr@wan
+
+- name: Start the mwan agent and the RESTCONF units
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - mwan-agent
+    - rousette
+    - nghttpx-wanconfig
+
+# The installer enables the WAN instance even when inventory disables WAN.
+- name: Check for instanced ifmgr unit (teardown path)
+  ansible.builtin.stat:
+    path: /etc/systemd/system/mwan-ifmgr@.service
+  register: ifmgr_instanced_unit
+  when: not (mwan_ifmgr_wan_enabled | bool)
+
+- name: Stop and disable mwan-ifmgr@wan when WAN module disabled
+  ansible.builtin.systemd:
+    name: mwan-ifmgr@wan
+    state: stopped
+    enabled: false
+  when:
+    - not (mwan_ifmgr_wan_enabled | bool)
+    - ifmgr_instanced_unit.stat.exists
+
+- name: Wait for the controller connection after ifmgr stops
+  ansible.builtin.include_tasks: wait-for-connection.yml
+  when:
+    - not (mwan_ifmgr_wan_enabled | bool)
+    - ifmgr_instanced_unit.stat.exists
+
+- name: Remove instanced ifmgr unit when WAN module disabled
+  ansible.builtin.file:
+    path: /etc/systemd/system/mwan-ifmgr@.service
+    state: absent
+  register: ifmgr_unit_removed
+  when:
+    - not (mwan_ifmgr_wan_enabled | bool)
+    - ifmgr_instanced_unit.stat.exists
+
+- name: Reload systemd after removing instanced ifmgr unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - not (mwan_ifmgr_wan_enabled | bool)
+    - ifmgr_unit_removed is changed
+
+- name: Configure AT&T 802.1X, ONT, and VLAN bringup (prod WAN only)
+  ansible.builtin.include_tasks: mwan-vm/att-8021x.yml
+  when: mwan_att_8021x_enabled | bool
+
+# Recreating unchanged units causes networkd to reconfigure their links
+# and remove routes until the daemon reconciles them.
+- name: Ensure systemd-networkd directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/network
+    state: directory
+    mode: "0755"
+
+- name: Set variables for management interface templates
+  ansible.builtin.set_fact:
+    vm_mgmt_iface: "{{ mwan_mgmt_iface }}"
+    vm_mgmt_ipv6_prefix: "64"
+    vm_mgmt_dns_servers: "{{ mwan_dns_servers }}"
+    vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
+    vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
+    hostname: "{{ service_hostname }}"
+
+- name: Deploy management interface networkd configuration
+  ansible.builtin.template:
+    src: "{{ repo_root }}/ansible/templates/vm/{{ item }}.j2"
+    dest: /etc/systemd/network/{{ item }}
+    mode: "0644"
+  loop:
+    - 10-mgmt.link
+    - 10-mgmt.network
+  when: item != '10-mgmt.network' or not (mwan_ifmgr_wan_enabled | bool)
+  notify:
+    - Reload networkd
+
+- name: Deploy systemd-networkd configuration files
+  # Reloaded by handler: networkctl reload applies changed .network files
+  # without bouncing an interface, so an address change converges on the
+  # deploy that renders it rather than on the next manual intervention.
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/networkd/{{ item }}.j2"
+    dest: /etc/systemd/network/{{ item | basename }}
+    mode: "0644"
+  loop: "{{ mwan_networkd_files }}"
+  when: (item | basename) != '40-mwanbr.network' or not (mwan_ifmgr_wan_enabled | bool)
+  notify:
+    - Reload networkd
+
+- name: Reload udev rules
+  ansible.builtin.command: udevadm control --reload
+  changed_when: false
+  failed_when: false
+
+- name: Trigger net udev events
+  ansible.builtin.command: udevadm trigger --action=add --subsystem-match=net
+  changed_when: false
+  failed_when: false
+
+- name: Wait for the controller connection after net udev events
+  ansible.builtin.include_tasks: wait-for-connection.yml
+
+# AT&T WPA action units still require networkd-dispatcher.
+- name: Enable networkd-dispatcher
+  ansible.builtin.systemd:
+    name: networkd-dispatcher
+    enabled: true
+    daemon_reload: true
+
+- name: Deploy sysctl config
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/sysctl-mwan.conf.j2"
+    dest: /etc/sysctl.d/99-mwan.conf
+    mode: "0644"
+
+- name: Deploy routing tables
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/rt_tables.j2"
+    dest: /etc/iproute2/rt_tables
+    mode: "0644"
+
+- name: Apply pending network reloads
+  ansible.builtin.meta: flush_handlers
+  when: not (mwan_ifmgr_wan_enabled | bool)
+
+- name: Wait for the controller connection after network reloads
+  ansible.builtin.include_tasks: wait-for-connection.yml
+  when: not (mwan_ifmgr_wan_enabled | bool)
+
+- name: Create systemd override for getty@tty1 (physical console auto-login)
+  ansible.builtin.file:
+    path: /etc/systemd/system/getty@tty1.service.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy getty@tty1 systemd override (physical console auto-login)
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/overrides/getty@tty1.service.d-override.conf"
+    dest: /etc/systemd/system/getty@tty1.service.d/override.conf
+    mode: "0644"
+
+- name: Create systemd override for serial-getty@ttyS0 (serial console auto-login)
+  ansible.builtin.file:
+    path: /etc/systemd/system/serial-getty@ttyS0.service.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy serial-getty@ttyS0 systemd override (serial console auto-login)
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/overrides/serial-getty@ttyS0.service.d-override.conf"
+    dest: /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
+    mode: "0644"
+
+- name: Deploy static helper scripts
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/{{ item }}"
+    dest: /usr/local/bin/{{ item | basename }}
+    mode: "0755"
+  loop:
+    - scripts/wpa-wait-att-iface.sh
+
+- name: Deploy pinned destination refresher (nft set)
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/scripts/update-att-pinned-dests.sh"
+    dest: /usr/local/bin/update-att-pinned-dests.sh
+    mode: "0755"
+
+- name: Deploy pinned destination updater service
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/services/mwan-update-att-pinned-dests.service"
+    dest: /etc/systemd/system/mwan-update-att-pinned-dests.service
+    mode: "0644"
+
+- name: Deploy pinned destination updater timer
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/mwan/timers/mwan-update-att-pinned-dests.timer"
+    dest: /etc/systemd/system/mwan-update-att-pinned-dests.timer
+    mode: "0644"
+
+- name: Ensure local build cache directory exists
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ repo_root }}/.cache"
+    state: directory
+    mode: "0755"
+
+- name: Stat scripts-updater unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/scripts-updater.service
+  register: scripts_updater_svc
+
+- name: Ensure scripts-updater drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/scripts-updater.service.d
+    state: directory
+    mode: "0755"
+  when: scripts_updater_svc.stat.exists
+
+- name: Touch mwan-last-change after scripts-updater runs
+  ansible.builtin.copy:
+    dest: >-
+      /etc/systemd/system/scripts-updater.service.d/mwan-last-change.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStartPost=/bin/sh -c 'date +%s > /var/run/mwan-last-change'
+  when: scripts_updater_svc.stat.exists
+
+- name: Enable services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    daemon_reload: true
+  loop: "{{ mwan_enabled_services }}"
+
