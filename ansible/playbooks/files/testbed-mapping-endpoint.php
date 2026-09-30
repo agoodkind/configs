@@ -26,7 +26,6 @@ function mappingRule(string $uuid, string $source, string $description): array
 $native = Config::getInstance();
 try {
     $native->lock();
-    $native->forceReload();
     $config = parse_config();
     if ($config['interfaces']['wan']['ipaddr'] !== '10.240.240.2') {
         throw new RuntimeException('The mapping endpoint requires the testbed WAN address');
