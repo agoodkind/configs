@@ -302,6 +302,136 @@
       when: not ansible_check_mode
       tags: ["isp-lxcs", "isp-clients"]
 
+    - name: Measure ISP static mapping HTTP responses
+      tags: [never, isp-acceptance]
+      when: not ansible_check_mode
+      vars:
+        isp_mapping_probes:
+          - provider: att
+            vmid: "{{ service_mapping.isp_att_suburban.vmid }}"
+            source: "{{ service_mapping.isp_att_suburban.ipv4 }}"
+            external: "10.241.205.2"
+          - provider: webpass
+            vmid: "{{ service_mapping.isp_webpass_suburban.vmid }}"
+            source: "{{ service_mapping.isp_webpass_suburban.ipv4 }}"
+            external: "10.241.204.2"
+      block:
+        - name: Audit ISP simulator package completion
+          ansible.builtin.command:
+            argv: [pct, exec, "{{ item.id }}", --, dpkg, --audit]
+          loop: "{{ testbed_isp_lxcs }}"
+          register: isp_package_audits
+          changed_when: false
+
+        - name: Require completed ISP simulator packages
+          ansible.builtin.assert:
+            that:
+              - item.rc == 0
+              - item.stdout == ""
+            fail_msg: "{{ item.item.name }}: dpkg reports incomplete packages"
+          loop: "{{ isp_package_audits.results }}"
+
+        - name: Read the source-selected ISP mapping route
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ item.vmid }}"
+              - --
+              - ip
+              - -4
+              - -j
+              - route
+              - get
+              - "{{ item.external }}"
+              - from
+              - "{{ item.source }}"
+          loop: "{{ isp_mapping_probes }}"
+          register: isp_mapping_routes
+          changed_when: false
+
+        - name: Require the provider-facing ISP mapping route
+          ansible.builtin.assert:
+            that:
+              - (item.stdout | from_json | map(attribute='dev') | list) == ['eth0']
+            fail_msg: "{{ item.item.provider }}: mapping route does not select eth0"
+          loop: "{{ isp_mapping_routes.results }}"
+
+        - name: Request the mapped router HTTP endpoint from each ISP
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ item.vmid }}"
+              - --
+              - curl
+              - -4
+              - --interface
+              - "{{ item.source }}"
+              - --noproxy
+              - "*"
+              - --silent
+              - --show-error
+              - --http1.1
+              - --header
+              - "Connection: close"
+              - --max-time
+              - "14"
+              - --write-out
+              - "\nMWAN-RESULT:%{json}\n"
+              - "http://{{ item.external }}:80/"
+            strip_empty_ends: false
+          loop: "{{ isp_mapping_probes }}"
+          register: isp_mapping_responses
+          changed_when: false
+          failed_when: false
+
+        - name: Report ISP mapping transport failures
+          ansible.builtin.debug:
+            msg:
+              provider: "{{ item.item.provider }}"
+              source: "{{ item.item.source }}"
+              external: "{{ item.item.external }}"
+              rc: "{{ item.rc }}"
+              stdout: "{{ item.stdout }}"
+              stderr: "{{ item.stderr }}"
+          loop: "{{ isp_mapping_responses.results }}"
+          when: item.rc != 0
+
+        - name: Require completed ISP mapping requests
+          ansible.builtin.assert:
+            that:
+              - item.rc == 0
+              - >-
+                '\nMWAN-RESULT:' in item.stdout
+            fail_msg: "{{ item.item.provider }}: mapped HTTP request failed"
+          loop: "{{ isp_mapping_responses.results }}"
+
+        - name: Report measured ISP mapping HTTP responses
+          ansible.builtin.debug:
+            msg:
+              provider: "{{ item.item.provider }}"
+              source: "{{ item.item.source }}"
+              interface: eth0
+              external: "{{ item.item.external }}"
+              internal: "10.240.240.2"
+              family: 4
+              port: 80
+              path: /
+              response: >-
+                {{ item.stdout.rsplit('\nMWAN-RESULT:', 1)[1] | from_json }}
+              response_sha256: >-
+                {{ item.stdout.rsplit('\nMWAN-RESULT:', 1)[0] | hash('sha256') }}
+              packet_capture_verified: false
+          loop: "{{ isp_mapping_responses.results }}"
+
+        - name: Require HTTP 200 from each mapped router endpoint
+          ansible.builtin.assert:
+            that:
+              - (item.stdout.rsplit('\nMWAN-RESULT:', 1)[1] | from_json).http_code == 200
+            fail_msg: "{{ item.item.provider }}: mapped endpoint did not return HTTP 200"
+          loop: "{{ isp_mapping_responses.results }}"
+
     - name: Install DHCPv6 and RA packages on ISP LXCs
       ansible.builtin.command:
         cmd: >-
