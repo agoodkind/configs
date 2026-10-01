@@ -33,6 +33,41 @@
   when: isp_management_missing_packages != []
   changed_when: true
 
+- name: Read simulator SSH socket activation state
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           systemctl, show, ssh.socket, "--property=ActiveState,UnitFileState"]
+  register: isp_management_ssh_socket
+  changed_when: false
+
+- name: Disable simulator SSH socket activation
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           systemctl, disable, ssh.socket]
+  when: "'UnitFileState=disabled' not in isp_management_ssh_socket.stdout_lines"
+  changed_when: true
+
+- name: Stop the simulator SSH activation listener
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           systemctl, stop, ssh.socket]
+  when: "'ActiveState=inactive' not in isp_management_ssh_socket.stdout_lines"
+  changed_when: true
+
+- name: Verify simulator SSH socket activation state
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           systemctl, show, ssh.socket, "--property=ActiveState,UnitFileState"]
+  register: isp_management_ssh_socket_after
+  changed_when: false
+
+- name: Require disabled simulator SSH socket activation
+  ansible.builtin.assert:
+    that:
+      - "'UnitFileState=disabled' in isp_management_ssh_socket_after.stdout_lines"
+      - "'ActiveState=inactive' in isp_management_ssh_socket_after.stdout_lines"
+    fail_msg: The simulator SSH socket still enables activation or owns a listener
+
 - name: Read simulator management SSH directories
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --,
@@ -157,7 +192,7 @@
 - name: Read the simulator SSH service state
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --,
-           systemctl, show, ssh.service, --property=ActiveState,UnitFileState]
+           systemctl, show, ssh.service, "--property=ActiveState,UnitFileState"]
   register: isp_management_ssh_service
   changed_when: false
 
@@ -185,6 +220,28 @@
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --, systemctl, is-active, ssh.service]
   changed_when: false
+
+- name: Read the simulator SSH daemon process
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           systemctl, show, ssh.service, --property=MainPID, --value]
+  register: isp_management_ssh_process
+  changed_when: false
+
+- name: Read simulator TCP listener ownership
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           ss, -H, -ltnp, "sport = :22"]
+  register: isp_management_tcp_listeners
+  changed_when: false
+
+- name: Require the simulator SSH daemon listener
+  ansible.builtin.assert:
+    that:
+      - >-
+        '("sshd",pid=' ~ isp_management_ssh_process.stdout | trim ~ ','
+        in isp_management_tcp_listeners.stdout
+    fail_msg: The active simulator SSH daemon does not own a TCP listener
 
 - name: Read the actual simulator hostname
   ansible.builtin.command:
