@@ -340,7 +340,7 @@ RSpec.describe MwanInstall do
       'enmwanbr0' => 'enmwanbr0', 'enmgmt0' => 'enmgmt0'
     }
   }.each do |playbook, expected_ids|
-    it "renders unique networkd connection identities in #{playbook}" do
+    it "renders unique connection identities and configured owners in #{playbook}" do
       Dir.mktmpdir('mwan-connection-identity') do |directory|
         network = File.join(directory, 'network.json')
         AnsibleRender.render(
@@ -349,7 +349,11 @@ RSpec.describe MwanInstall do
         )
         interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
         identities = interfaces.to_h do |entry|
-          expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('networkd')
+          if playbook == 'render_mwan_network.yml' && entry.fetch('name') == 'enwebpass0'
+            expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('mwan')
+          else
+            expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('networkd')
+          end
           [entry.fetch('name'), entry.fetch('goodkind-mwan-steering:connection-id')]
         end
 
