@@ -210,7 +210,7 @@
           - >-
             mapping_applied_rules.stdout is search(
             'pass in quick on vtnet1 inet proto tcp from ' ~ (item | regex_escape) ~
-            ' to \\(vtnet1:1\\) port = 1406')
+            ' to [(]vtnet1[)] port = 1406')
         fail_msg: "The applied mapping pass for {{ item }} is missing"
       loop: [10.240.205.1, 10.241.204.1]
 
