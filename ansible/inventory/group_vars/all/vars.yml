@@ -76,6 +76,8 @@ cloudflare_dns_update_enabled: true
 # ifmgr consumer (the hypervisor host oob role) leaves this false, so neither is
 # rendered there.
 mwan_ifmgr_wan_enabled: false
+mwan_links_state_file: ""
+mwan_autoconfiguration_state_file: ""
 
 # Routing tables the gateway holds for something other than a provider. The
 # tunnel table carries cloudflared; the out-of-band table carries management
