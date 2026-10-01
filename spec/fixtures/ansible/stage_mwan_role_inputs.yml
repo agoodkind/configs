@@ -1,6 +1,6 @@
 - name: Stage the real network document
   ansible.builtin.copy:
-    src: "{{ role_test_current_network }}"
+    src: "{{ mwan_role_install_network }}"
     dest: /etc/mwan/network.json
     mode: "0600"
   notify: Restart mwan-ifmgr@wan

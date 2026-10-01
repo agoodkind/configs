@@ -16,7 +16,10 @@
 - name: Restore prior role inputs within the guest
   ansible.builtin.copy:
     remote_src: true
-    src: "{{ mwan_role_backup.path }}/{{ item.item | basename }}"
+    src: >-
+      {{ mwan_role_backup.path ~ '/' ~
+         ('transfer-source.json' if mwan_transfer_recovery_excluded | bool
+          and item.item == '/etc/mwan/network.json' else item.item | basename) }}
     dest: "{{ item.item }}"
     mode: "{{ item.stat.mode }}"
     owner: "{{ item.stat.uid }}"
@@ -30,7 +33,12 @@
     path: "{{ item.item }}"
     state: absent
   loop: "{{ mwan_role_prior_inputs.results }}"
-  when: not item.stat.exists
+  when:
+    - not item.stat.exists
+    - >-
+      not (mwan_transfer_recovery_excluded | bool) or
+      mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd' or
+      item.item != '/etc/systemd/network/00-mwan-release-' ~ mwan_transfer_connection_id ~ '.network'
 
 - name: Restart the writer with restored role inputs
   ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
@@ -87,3 +95,4 @@
   ansible.builtin.file:
     path: "{{ mwan_role_backup.path }}"
     state: absent
+  when: not (mwan_transfer_recovery_excluded | bool)

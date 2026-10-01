@@ -20,6 +20,7 @@ mwan_gate_collect_addresses:
   - "{{ service_mapping.suburban_hypervisor.ipv6 }}"
 mwan_deploy_gate_families: "ipv4,ipv6"
 mwan_deploy_gate_consecutive_rounds: "3"
+mwan_transfer_packet_checks: []
 mwan_deploy_probe:
   opnsense_vmid: "{{ service_mapping.opnsense_suburban.vmid }}"
   ipv4_source: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"

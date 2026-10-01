@@ -1,0 +1,16 @@
+{% set interfaces = [] %}
+{% for entry in mwan_transfer_document['ietf-interfaces:interfaces']['interface'] %}
+{% if entry['goodkind-mwan-steering:connection-id'] == mwan_transfer_connection_id %}
+{% set selected = entry | combine({'goodkind-mwan-steering:owner': mwan_transfer_owner}) %}
+{% if mwan_transfer_owner == 'external' %}
+{% set selected = selected | dict2items | rejectattr('key', 'in', ['goodkind-mwan-steering:link-files', 'goodkind-mwan-steering:networkd']) | items2dict %}
+{% endif %}
+{% if 'goodkind-mwan-steering:steering' in selected and mwan_transfer_excluded %}
+{% set selected = selected | combine({'goodkind-mwan-steering:steering': selected['goodkind-mwan-steering:steering'] | combine({'enabled': false})}) %}
+{% endif %}
+{% set _ = interfaces.append(selected) %}
+{% else %}
+{% set _ = interfaces.append(entry) %}
+{% endif %}
+{% endfor %}
+{{ mwan_transfer_document | combine({'ietf-interfaces:interfaces': mwan_transfer_document['ietf-interfaces:interfaces'] | combine({'interface': interfaces})}) | to_nice_json }}

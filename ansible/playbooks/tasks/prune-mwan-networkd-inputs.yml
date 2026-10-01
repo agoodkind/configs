@@ -1,0 +1,26 @@
+- name: Record this deployment's exact managed networkd inputs
+  ansible.builtin.set_fact:
+    mwan_networkd_current_inputs: >-
+      {{ ['10-mgmt.link'] + (['10-mgmt.network'] if not (mwan_ifmgr_wan_enabled | bool) else [])
+         + (mwan_networkd_files | map('basename')
+            | reject('equalto', '40-mwanbr.network') | list)
+         + (['40-mwanbr.network'] if not (mwan_ifmgr_wan_enabled | bool) else []) }}
+
+- name: Retire only inputs recorded by the prior deployment
+  ansible.builtin.file:
+    path: "/etc/systemd/network/{{ item }}"
+    state: absent
+  loop: "{{ mwan_networkd_previous_inputs | difference(mwan_networkd_current_inputs) }}"
+  notify: Reload networkd
+
+- name: Create the managed networkd inventory directory
+  ansible.builtin.file:
+    path: /var/lib/mwan
+    state: directory
+    mode: "0755"
+
+- name: Store the accepted deployment's managed networkd inventory
+  ansible.builtin.copy:
+    dest: /var/lib/mwan/networkd-inputs.json
+    content: "{{ mwan_networkd_current_inputs | to_nice_json }}\n"
+    mode: "0600"
