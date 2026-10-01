@@ -33,13 +33,17 @@ RSpec.describe 'MWAN connection selection configuration' do
         network = File.join(directory, 'network.json')
         render_network(network, enabled)
         interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
-        interfaces.select { |entry| entry.key?('goodkind-mwan-steering:steering') }.each do |entry|
-          steering = entry.fetch('goodkind-mwan-steering:steering')
-          if entry.fetch('goodkind-mwan-steering:connection-id') == 'webpass' && !enabled.nil?
-            expect(steering.fetch('enabled')).to be(enabled)
-          else
-            expect(steering).not_to have_key('enabled')
-          end
+        connections = interfaces.to_h { |entry| [entry.fetch('goodkind-mwan-steering:connection-id'), entry] }
+        steering = connections.fetch('webpass').fetch('goodkind-mwan-steering:steering')
+        if enabled.nil?
+          expect(steering).not_to have_key('enabled')
+        else
+          expect(steering.fetch('enabled')).to be(enabled)
+        end
+        connections.except('webpass').each_value do |entry|
+          next unless entry.key?('goodkind-mwan-steering:steering')
+
+          expect(entry.fetch('goodkind-mwan-steering:steering')).not_to have_key('enabled')
         end
       end
     end
