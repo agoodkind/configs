@@ -33,12 +33,27 @@
   when: isp_management_missing_packages != []
   changed_when: true
 
+- name: Read simulator management SSH directories
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           env, LC_ALL=C, stat, -c, "%a:%F:%u:%g", "{{ item }}"]
+  loop: [/etc/ssh/authorized_keys.d, /etc/ssh/sshd_config.d, /run/sshd]
+  register: isp_management_directories
+  changed_when: false
+  failed_when: >-
+    isp_management_directories.rc != 0
+    and not (isp_management_directories.rc == 1
+             and 'No such file or directory' in isp_management_directories.stderr)
+
 - name: Create simulator management SSH directories
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --,
-           install, -d, -m, "0755", /etc/ssh/authorized_keys.d,
-           /etc/ssh/sshd_config.d, /run/sshd]
-  changed_when: false
+           install, -d, -m, "0755", -o, "0", -g, "0", "{{ item.item }}"]
+  loop: "{{ isp_management_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.rc != 0 or item.stdout != '755:directory:0:0'
+  changed_when: true
 
 - name: Read the current simulator SSH configuration
   ansible.builtin.command:
