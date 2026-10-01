@@ -1,12 +1,3 @@
-- name: Initialize the connection transfer boundary
-  ansible.builtin.set_fact:
-    mwan_transfer_active: false
-    mwan_transfer_snapshot_ready: false
-    mwan_transfer_controller_created: false
-    mwan_transfer_capture_paths: []
-    mwan_transfer_recovery_excluded: false
-    mwan_role_install_network: "{{ mwan_network_json_local }}"
-
 - name: Compare installed and requested connection owners
   when: not (mwan_role_first_install | bool)
   block:
@@ -76,12 +67,20 @@
              | rejectattr('key', 'equalto', 'interface') | list) ==
             (mwan_transfer_target_document['ietf-interfaces:interfaces'] | dict2items
              | rejectattr('key', 'equalto', 'interface') | list)
-          - >-
-            (mwan_transfer_packet_checks | map(attribute='phase') | unique | sort | list) ==
-            ['acquired', 'excluded', 'recovered', 'selected']
         fail_msg: >-
           A transfer requires one unchanged connection identity, unchanged unrelated
-          configuration, and the phase's explicit downstream packet checks.
+          configuration, and explicit downstream packet checks.
+
+    - name: Require every transfer packet phase
+      vars:
+        required_phases: ['acquired', 'excluded', 'recovered', 'selected']
+        supplied_phases: "{{ mwan_transfer_packet_checks | map(attribute='phase') | unique | list }}"
+      ansible.builtin.assert:
+        that: supplied_phases | sort == required_phases
+        fail_msg: >-
+          The active ownership transfer is missing packet phases:
+          {{ required_phases | difference(supplied_phases) | join(', ') }}.
+          Unexpected phases: {{ supplied_phases | difference(required_phases) | join(', ') }}.
 
     - name: Validate each explicit packet operation
       ansible.builtin.assert:

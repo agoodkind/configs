@@ -139,9 +139,7 @@ RSpec.describe 'MWAN role activation with actual systemd' do
       end
       manifest = File.join(directory, 'networkd-inputs.json')
       File.write(manifest, JSON.generate(['91-retired.network']))
-      copied = CommandRunner.run({}, ['docker', 'cp', manifest, "#{@container}:/var/lib/mwan/networkd-inputs.json"],
-                                 chdir: AnsibleRender::REPOSITORY_ROOT, timeout_seconds: 30)
-      raise copied.output unless copied.exit_status.success? && !copied.timed_out
+      copy_to_guest(manifest, '/var/lib/mwan/networkd-inputs.json')
 
       preserved = guest('sha256sum', '/etc/systemd/network/90-unrelated.network',
                         '/etc/systemd/network/00-mwan-release-other.network')
@@ -424,7 +422,7 @@ RSpec.describe 'MWAN role activation with actual systemd' do
                                                              packet_checks: packet_checks)
       expect(role_state('enwebpass0').fetch('AdministrativeState')).to eq('unmanaged')
       journal = JSON.parse(guest('cat', '/var/lib/mwan/test-addresses.json'))
-      expect(journal.fetch('boot_id')).to eq(guest('cat', '/proc/sys/kernel/random/boot_id'))
+      expect(journal.fetch('boot_id')).to eq(guest('cat', '/proc/sys/kernel/random/boot_id').strip)
       recorded = journal.fetch('objects').select do |entry|
         entry.fetch('connection_id') == 'webpass' && !entry.key?('scope') && entry.key?('prefix')
       end
