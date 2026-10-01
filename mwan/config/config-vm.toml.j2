@@ -134,6 +134,16 @@ publish = {{ mwan_wanconfig_publish | ternary('true', 'false') }}
 {% include "_ifmgr_common.toml.j2" %}
 
 {% if mwan_ifmgr_wan_enabled | bool %}
+{% if mwan_links_state_file %}
+[ifmgr.modules.links]
+state_file = {{ mwan_links_state_file | to_json }}
+
+{% endif %}
+{% if mwan_autoconfiguration_state_file %}
+[ifmgr.modules.autoconfiguration]
+state_file = {{ mwan_autoconfiguration_state_file | to_json }}
+
+{% endif %}
 [ifmgr.modules.addresses]
 state_file = "/var/lib/mwan/owned-addresses.json"
 

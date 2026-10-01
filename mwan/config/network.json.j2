@@ -26,6 +26,7 @@
 ] %}
 {% set delegation_leaves = [
   ["hint", "hint"],
+  ["iaid", "iaid"],
   ["duid_type", "duid-type"],
   ["duid", "duid"],
   ["without_ra", "without-ra"],
@@ -98,7 +99,11 @@
 {% if provider.ipv4.translation.mode == "ietf-nat:napt44" %}
 {% set mappings = [] %}
 {% for mapping in provider.ipv4.translation.static_mappings %}
-{% set _ = mappings.append({"external": mapping.external, "internal": mapping.internal}) %}
+{% set rendered_mapping = {"external": mapping.external, "internal": mapping.internal} %}
+{% if mapping.delivery is defined %}
+{% set _ = rendered_mapping.update({"delivery": mapping.delivery}) %}
+{% endif %}
+{% set _ = mappings.append(rendered_mapping) %}
 {% endfor %}
 {% if mappings %}
 {% set _ = translation.update({"static-mapping": mappings}) %}
