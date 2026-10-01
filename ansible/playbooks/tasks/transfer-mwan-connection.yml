@@ -1,0 +1,108 @@
+- name: Preserve every validated connection transition document
+  ansible.builtin.copy:
+    src: "{{ mwan_transfer_controller_directory.path }}/{{ item }}.json"
+    dest: "{{ mwan_role_backup.path }}/transfer-{{ item }}.json"
+    mode: "0600"
+  loop: [source, external, replacement]
+
+- name: Validate each staged transition through the installed loader
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - deploy-gate
+      - check-network
+      - "{{ mwan_role_backup.path }}/transfer-{{ item }}.json"
+      - /usr/local/share/wanconfig/yang
+  loop: [source, external, replacement]
+  changed_when: false
+
+- name: Apply source exclusion before transferring ownership
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the source daemon has stopped selecting the connection
+  ansible.builtin.include_tasks: read-mwan-transfer-state.yml
+  vars:
+    mwan_transfer_expected_owner: "{{ mwan_transfer_previous['goodkind-mwan-steering:owner'] }}"
+    mwan_transfer_excluded: true
+
+- name: Require usable source assignments before recording owner release
+  ansible.builtin.include_tasks: verify-mwan-transfer-acquisition.yml
+  vars:
+    mwan_transfer_acquisition_connection: "{{ mwan_transfer_previous }}"
+
+- name: Verify downstream forwarding through the unaffected connection
+  ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
+  vars:
+    mwan_transfer_packet_phase: excluded
+
+- name: Set the previous writer for forward release and recovery
+  ansible.builtin.set_fact:
+    mwan_transfer_release_owner: "{{ mwan_transfer_previous['goodkind-mwan-steering:owner'] }}"
+    mwan_transfer_snapshot_ready: true
+
+- name: Release the source owner through external ownership
+  ansible.builtin.include_tasks: release-mwan-connection.yml
+
+- name: Set the replacement writer for any subsequent recovery
+  ansible.builtin.set_fact:
+    mwan_transfer_release_owner: "{{ mwan_transfer_replacement['goodkind-mwan-steering:owner'] }}"
+
+- name: Install the excluded replacement connection
+  ansible.builtin.copy:
+    remote_src: true
+    src: "{{ mwan_role_backup.path }}/transfer-replacement.json"
+    dest: /etc/mwan/network.json
+    mode: "0600"
+
+- name: Restore networkd authority only after the previous owner released
+  ansible.builtin.file:
+    path: "/etc/systemd/network/00-mwan-release-{{ mwan_transfer_connection_id }}.network"
+    state: absent
+  when: mwan_transfer_release_owner == 'networkd'
+
+- name: Start the complete replacement connection
+  ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
+  vars:
+    mwan_ifmgr_restart_timeout_seconds: "{{ mwan_role_job_timeout_seconds }}"
+
+- name: Apply replacement networkd configuration
+  ansible.builtin.include_tasks: reload-mwan-networkd.yml
+  when: mwan_transfer_release_owner == 'networkd'
+
+- name: Verify loaded replacement ownership before restoring selection
+  ansible.builtin.include_tasks: read-mwan-transfer-state.yml
+  vars:
+    mwan_transfer_expected_owner: "{{ mwan_transfer_release_owner }}"
+    mwan_transfer_excluded: true
+
+- name: Require the phase's acquired assignments and downstream replies
+  ansible.builtin.include_tasks: verify-mwan-transfer-acquisition.yml
+  vars:
+    mwan_transfer_acquisition_connection: "{{ mwan_transfer_replacement }}"
+
+- name: Require the phase's downstream replies after verified acquisition
+  ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
+  vars:
+    mwan_transfer_packet_phase: acquired
+
+- name: Restore the validated target selection policy
+  ansible.builtin.copy:
+    src: "{{ mwan_network_json_local }}"
+    dest: /etc/mwan/network.json
+    mode: "0600"
+
+- name: Restart with the accepted target selection policy
+  ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
+  vars:
+    mwan_ifmgr_restart_timeout_seconds: "{{ mwan_role_job_timeout_seconds }}"
+
+- name: Verify the accepted replacement serves its configured owner
+  ansible.builtin.include_tasks: read-mwan-transfer-state.yml
+  vars:
+    mwan_transfer_expected_owner: "{{ mwan_transfer_release_owner }}"
+    mwan_transfer_excluded: false
+
+- name: Verify downstream replies after restoring selection
+  ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
+  vars:
+    mwan_transfer_packet_phase: selected

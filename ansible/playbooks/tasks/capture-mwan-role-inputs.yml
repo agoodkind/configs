@@ -15,13 +15,14 @@
 - name: Record prior role input presence
   ansible.builtin.stat:
     path: "{{ item }}"
-  loop:
-    - /etc/mwan/config.toml
-    - /etc/mwan/network.json
-    - /etc/systemd/network/10-mgmt.network
-    - /etc/systemd/network/40-mwanbr.network
-    - "/etc/systemd/network/20-{{ mwan_mgmt_iface }}.network"
-    - "/etc/systemd/network/20-{{ mwan_internal_iface }}.network"
+  loop: >-
+    {{ (['/etc/mwan/config.toml', '/etc/mwan/network.json', '/var/lib/mwan/networkd-inputs.json',
+         '/etc/systemd/network/10-mgmt.network', '/etc/systemd/network/40-mwanbr.network',
+         '/etc/systemd/network/20-' ~ mwan_mgmt_iface ~ '.network',
+         '/etc/systemd/network/20-' ~ mwan_internal_iface ~ '.network']
+        + mwan_transfer_capture_paths
+        + (mwan_networkd_previous_inputs | map('regex_replace', '^', '/etc/systemd/network/') | list))
+       | unique | list }}
   register: mwan_role_prior_inputs
 
 - name: Copy prior role inputs within the guest

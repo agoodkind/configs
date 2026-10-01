@@ -8,7 +8,7 @@
 # Copy the controller-validated bytes without rendering the document again.
 - name: Deploy MWAN network configuration
   ansible.builtin.copy:
-    src: "{{ mwan_network_json_local }}"
+    src: "{{ mwan_role_install_network }}"
     dest: /etc/mwan/network.json
     mode: "0600"
   when: mwan_ifmgr_wan_enabled | bool
@@ -308,4 +308,3 @@
     enabled: true
     daemon_reload: true
   loop: "{{ mwan_enabled_services }}"
-

@@ -1,0 +1,9 @@
+- name: Verify the phase's downstream packet results
+  ansible.builtin.command:
+    argv: "{{ item.argv }}"
+  delegate_to: "{{ item.host }}"
+  loop: "{{ mwan_transfer_packet_checks | selectattr('phase', 'equalto', mwan_transfer_packet_phase) | list }}"
+  loop_control:
+    label: "{{ item.description }}"
+  changed_when: false
+

@@ -1,0 +1,30 @@
+- name: Read the prior deployment's managed networkd inventory
+  ansible.builtin.stat:
+    path: /var/lib/mwan/networkd-inputs.json
+  register: mwan_networkd_inventory
+
+- name: Initialize the first deployment's managed networkd inventory
+  ansible.builtin.set_fact:
+    mwan_networkd_previous_inputs: []
+
+- name: Decode the prior deployment's managed networkd inventory
+  when: mwan_networkd_inventory.stat.exists
+  block:
+    - name: Read the recorded managed networkd inputs
+      ansible.builtin.slurp:
+        src: /var/lib/mwan/networkd-inputs.json
+      register: mwan_networkd_previous_inventory
+
+    - name: Decode the recorded managed networkd inputs
+      ansible.builtin.set_fact:
+        mwan_networkd_previous_inputs: >-
+          {{ mwan_networkd_previous_inventory.content | b64decode | from_json }}
+
+- name: Require exact top-level managed filenames before retirement
+  ansible.builtin.assert:
+    that:
+      - item == (item | basename)
+      - item is match('^[A-Za-z0-9_.-]+[.](link|network|netdev)$')
+      - not item.startswith('00-mwan-release-')
+    fail_msg: The managed networkd inventory contains an invalid retirement filename.
+  loop: "{{ mwan_networkd_previous_inputs }}"
