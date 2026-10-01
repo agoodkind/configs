@@ -20,7 +20,63 @@ mwan_gate_collect_addresses:
   - "{{ service_mapping.suburban_hypervisor.ipv6 }}"
 mwan_deploy_gate_families: "ipv4,ipv6"
 mwan_deploy_gate_consecutive_rounds: "3"
-mwan_transfer_packet_checks: []
+mwan_links_state_file: "/var/lib/mwan/owned-links.json"
+mwan_autoconfiguration_state_file: "/var/lib/mwan/owned-kernel.json"
+mwan_transfer_ssh_argv:
+  - ssh
+  - -o
+  - BatchMode=yes
+  - -o
+  - StrictHostKeyChecking=yes
+  - -o
+  - ControlMaster=no
+  - -o
+  - ControlPath=none
+  - -o
+  - ControlPersist=no
+  - -o
+  - ConnectTimeout=10
+  - -J
+  - "root@[{{ service_mapping.suburban_hypervisor.ipv6 }}]"
+mwan_webpass_transfer_packet_checks_json: >-
+  {% set checks = [] %}
+  {% set providers = [
+    {'id': 'att', 'coverage': 'unaffected', 'host': 'root@10.240.200.91',
+     'http': 'curl --fail --silent --show-error --max-time 10 --interface 10.240.205.1 http://10.241.205.2:1406/cf_check',
+     'ping': 'ping -6 -n -I eth0 -c 3 -W 2 3d06:bad:b01:2300::1'},
+    {'id': 'webpass', 'coverage': 'selected', 'host': 'root@10.240.200.90',
+     'http': 'curl --fail --silent --show-error --max-time 10 --interface 10.241.204.1 http://10.241.204.2:1406/cf_check',
+     'ping': 'ping -6 -n -I eth0 -c 3 -W 2 3d06:bad:b01:2200::1'}
+  ] %}
+  {% for phase in ['excluded', 'acquired', 'recovered', 'selected'] %}
+  {% for provider in providers if phase != 'excluded' or provider.coverage == 'unaffected' %}
+  {% for family, operation, description in [
+    ('ipv4', provider.http, 'mapped HTTP reply'),
+    ('ipv6', provider.ping, 'NPT edge reply')
+  ] %}
+  {% set _ = checks.append({'phase': phase, 'family': family,
+    'coverage': provider.coverage, 'connection_id': provider.id, 'host': 'localhost',
+    'argv': mwan_transfer_ssh_argv + [provider.host, operation],
+    'description': phase ~ ' ' ~ provider.id ~ ' ' ~ description}) %}
+  {% endfor %}
+  {% endfor %}
+  {% endfor %}
+  {% for host, address4, address6 in [
+    ('root@10.240.1.241', '10.240.1.241', '3d06:bad:b01:211::225'),
+    ('root@10.240.1.242', '10.240.1.242', '3d06:bad:b01:211::226')
+  ] %}
+  {% for family, operation in [
+    ('ipv4', 'ping -4 -n -I ' ~ address4 ~ ' -c 3 -W 2 1.1.1.1'),
+    ('ipv6', 'ping -6 -n -I ' ~ address6 ~ ' -c 3 -W 2 2606:4700:4700::1111')
+  ] %}
+  {% set _ = checks.append({'phase': 'excluded', 'family': family,
+    'coverage': 'unaffected', 'connection_id': 'att', 'host': 'localhost',
+    'argv': mwan_transfer_ssh_argv + [host, operation],
+    'description': 'excluded AT&T downstream ' ~ host ~ ' ' ~ family ~ ' replies'}) %}
+  {% endfor %}
+  {% endfor %}
+  {{ checks | to_json }}
+mwan_transfer_packet_checks: "{{ mwan_webpass_transfer_packet_checks_json | from_json }}"
 mwan_deploy_probe:
   opnsense_vmid: "{{ service_mapping.opnsense_suburban.vmid }}"
   ipv4_source: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
@@ -278,28 +334,25 @@ mwan_providers:
 
   - name: webpass
     connection_id: webpass
-    owner: networkd
+    owner: mwan
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
-    link_files: rendered
     link:
       match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
     ipv4:
       translation:
         mode: ietf-nat:napt44
         static_mappings:
-          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2" }
-          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3" }
-          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.204.4" }
-          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.204.5" }
-          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.204.6" }
+          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.204.2", delivery: local }
+          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.204.3", delivery: local }
+          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.204.4", delivery: local }
+          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.204.5", delivery: local }
+          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.204.6", delivery: local }
       forwarding: true
       dhcp: false
       address: "{{ mwan_webpass_ipv4 }}"
       gateway: "{{ mwan_webpass_gateway }}"
       route_metric: 10
-    # The simulated ISP checks no DUID, so the delegation carries only the
-    # hint; a DUID typed here renders only when the value is non-empty.
     ipv6:
       translation:
         mode: ietf-nat:nptv6
@@ -310,8 +363,18 @@ mwan_providers:
       forwarding: true
       dhcp: true
       accept_ra: true
+      autoconf: false
+      accept_ra_default_route: true
+      use_ra_dns: false
       delegation:
         hint: "::/56"
+      dhcpv6_client:
+        duid: "00:02:00:00:ab:11:11:18:28:f5:2b:50:d8:af"
+        prefix_iaid: 1370549548
+        request_address: false
+        request_prefix: true
+        without_ra: solicit
+        use_dns: false
     table: 200
     mark: 2
     mark_prio: 200
