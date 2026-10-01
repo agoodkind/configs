@@ -25,6 +25,21 @@
       {% set _ = checks.append(true in matches) %}
       {% endfor %}
       {% endif %}
+      {% if 'goodkind-mwan-steering:dhcp' in intent and intent['goodkind-mwan-steering:dhcp']
+            and (family == 2 or 'goodkind-mwan-steering:delegation' not in intent) %}
+      {% set source = 'DHCPv4' if family == 2 else 'DHCPv6' %}
+      {% set _ = checks.append((addresses | selectattr('ConfigSource', 'equalto', source) | list) != []) %}
+      {% endif %}
+      {% if family == 10 and
+         (('goodkind-mwan-steering:accept-ra' in intent and intent['goodkind-mwan-steering:accept-ra'])
+          or ('goodkind-mwan-steering:accept-ra' not in intent
+              and not ('forwarding' in intent and intent.forwarding))) %}
+      {% set ra_addresses = addresses | selectattr('ConfigSource', 'equalto', 'NDisc') | list %}
+      {% set ra_routes = observed.Routes | selectattr('Family', 'equalto', 10)
+         | selectattr('ConfigSource', 'equalto', 'NDisc')
+         | selectattr('ConfigState', 'equalto', 'configured') | list %}
+      {% set _ = checks.append(ra_addresses != [] or ra_routes != []) %}
+      {% endif %}
       {% endif %}
       {% endfor %}
       {{ checks | to_json }}
@@ -63,6 +78,9 @@
          or 'goodkind-mwan-steering:delegation' in intent %}
       {% if acquires %}
       {% set state = selected[family]['goodkind-mwan-steering:ownership-family-state'] %}
+      {% if 'goodkind-mwan-steering:delegation' in intent %}
+      {% set _ = checks.append('goodkind-mwan-steering:delegated-prefix' in selected[family]) %}
+      {% endif %}
       {% if owner == 'mwan' %}
       {% set _ = checks.append(state['assignment-validity'] == 'valid') %}
       {% set _ = checks.append(state['last-apply'].result == 'ready') %}
