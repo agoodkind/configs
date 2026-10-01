@@ -38,7 +38,13 @@
       {% set ra_routes = observed.Routes | selectattr('Family', 'equalto', 10)
          | selectattr('ConfigSource', 'equalto', 'NDisc')
          | selectattr('ConfigState', 'equalto', 'configured') | list %}
-      {% set _ = checks.append(ra_addresses != [] or ra_routes != []) %}
+      {% set ra_next_hops = [] %}
+      {% if 'NextHops' in observed %}
+      {% set ra_next_hops = observed.NextHops | selectattr('Family', 'equalto', 10)
+         | selectattr('ConfigSource', 'equalto', 'NDisc')
+         | selectattr('ConfigState', 'equalto', 'configured') | list %}
+      {% endif %}
+      {% set _ = checks.append(ra_addresses != [] or ra_routes != [] or ra_next_hops != []) %}
       {% endif %}
       {% endif %}
       {% endfor %}
