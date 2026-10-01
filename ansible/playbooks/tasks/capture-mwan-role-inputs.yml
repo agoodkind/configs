@@ -35,32 +35,45 @@
   when: item.stat.exists
   no_log: true
 
-- name: Read prior management and transit state
-  ansible.builtin.command:
-    argv: [networkctl, status, "{{ item }}", --json=short]
-  loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
-  register: mwan_role_prior_state
-  changed_when: false
+- name: Read prior role state through the owning services and kernel
+  ansible.builtin.include_tasks: read-mwan-role-state.yml
+
+- name: Capture prior role kernel and resolver state
+  ansible.builtin.set_fact:
+    mwan_role_prior_state: "{{ mwan_role_observed_networkd }}"
+    mwan_role_prior_addresses: "{{ mwan_role_observed_addresses }}"
+    mwan_role_prior_routes: "{{ mwan_role_observed_routes }}"
+    mwan_role_prior_forwarding: "{{ mwan_role_observed_forwarding }}"
+    mwan_role_prior_resolver: "{{ mwan_role_observed_resolver }}"
+    mwan_role_prior_owners_json: >-
+      {% set owners = {} %}
+      {% for name in [mwan_mgmt_iface, mwan_internal_iface] %}
+      {% if mwan_role_first_install | bool %}
+      {% set _ = owners.update({name: 'networkd'}) %}
+      {% else %}
+      {% for connection in mwan_transfer_prior_document['ietf-interfaces:interfaces']['interface'] %}
+      {% if connection.name == name %}
+      {% set _ = owners.update({name: connection['goodkind-mwan-steering:owner']}) %}
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+      {% endfor %}
+      {{ owners | to_json }}
 
 - name: Require selected role units before staging
+  vars:
+    observed: "{{ mwan_role_prior_state.results[item.index].stdout | from_json }}"
+    owner: "{{ (mwan_role_prior_owners_json | from_json)[item.name] }}"
   ansible.builtin.assert:
     that:
       - >-
-        (mwan_role_prior_state.results[0].stdout | from_json).NetworkFile in
-        ['/etc/systemd/network/10-mgmt.network',
-         '/etc/systemd/network/20-' ~ mwan_mgmt_iface ~ '.network']
-      - >-
-        (mwan_role_prior_state.results[1].stdout | from_json).NetworkFile in
-        ['/etc/systemd/network/40-mwanbr.network',
-         '/etc/systemd/network/20-' ~ mwan_internal_iface ~ '.network']
+        (owner == 'networkd' and 'NetworkFile' in observed and observed.NetworkFile in
+         [item.legacy, '/etc/systemd/network/20-' ~ item.name ~ '.network']) or
+        (owner == 'mwan' and observed.AdministrativeState == 'unmanaged')
     fail_msg: The selected management or transit unit is outside the role preparation boundary.
-
-- name: Read prior transit forwarding settings
-  ansible.builtin.command:
-    argv: [cat, "/proc/sys/net/{{ item }}/conf/{{ mwan_internal_iface }}/forwarding"]
-  loop: [ipv4, ipv6]
-  register: mwan_role_prior_forwarding
-  changed_when: false
+  loop:
+    - {index: 0, name: "{{ mwan_mgmt_iface }}", legacy: /etc/systemd/network/10-mgmt.network}
+    - {index: 1, name: "{{ mwan_internal_iface }}", legacy: /etc/systemd/network/40-mwanbr.network}
 
 - name: Mark the role recovery snapshot complete
   ansible.builtin.set_fact:

@@ -1,0 +1,62 @@
+- name: Read management and transit networkd state
+  ansible.builtin.command:
+    argv: [networkctl, status, "{{ item }}", --json=short]
+  loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
+  register: mwan_role_observed_networkd
+  changed_when: false
+
+- name: Read management and transit kernel addresses
+  ansible.builtin.command:
+    argv: [ip, -json, address, show, dev, "{{ item }}"]
+  loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
+  register: mwan_role_observed_addresses
+  changed_when: false
+
+- name: Read transit kernel return routes
+  ansible.builtin.command:
+    argv: [ip, -6, -json, route, show, table, main]
+  register: mwan_role_observed_route_table
+  changed_when: false
+
+- name: Select the actual transit route interface
+  ansible.builtin.set_fact:
+    mwan_role_observed_routes:
+      stdout: >-
+        {{ mwan_role_observed_route_table.stdout | from_json | selectattr('dev', 'defined')
+           | selectattr('dev', 'equalto', mwan_internal_iface) | list | to_json }}
+
+- name: Read transit kernel forwarding
+  ansible.builtin.command:
+    argv: [cat, "/proc/sys/net/{{ item }}/conf/{{ mwan_internal_iface }}/forwarding"]
+  loop: [ipv4, ipv6]
+  register: mwan_role_observed_forwarding
+  changed_when: false
+
+- name: Resolve the actual management resolver link
+  ansible.builtin.command:
+    argv:
+      - busctl
+      - --json=short
+      - call
+      - org.freedesktop.resolve1
+      - /org/freedesktop/resolve1
+      - org.freedesktop.resolve1.Manager
+      - GetLink
+      - i
+      - "{{ (mwan_role_observed_networkd.results[0].stdout | from_json).Index }}"
+  register: mwan_role_resolved_link
+  changed_when: false
+
+- name: Read the actual management DNS and search domains
+  ansible.builtin.command:
+    argv:
+      - busctl
+      - --json=short
+      - get-property
+      - org.freedesktop.resolve1
+      - "{{ (mwan_role_resolved_link.stdout | from_json).data[0] }}"
+      - org.freedesktop.resolve1.Link
+      - "{{ item }}"
+  loop: [DNSEx, Domains]
+  register: mwan_role_observed_resolver
+  changed_when: false
