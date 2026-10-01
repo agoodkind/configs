@@ -39,8 +39,9 @@
       {% if 'resolved-external-prefix' in translation %}
       {% set matches = [] %}
       {% for prefix in prefixes %}
-      {% set _ = matches.append((translation['resolved-external-prefix']
-         | ansible.utils.ipaddr(prefix)) != false) %}
+      {% if translation['resolved-external-prefix'] | ansible.utils.ipaddr(prefix) %}
+      {% set _ = matches.append(true) %}
+      {% endif %}
       {% endfor %}
       {% set _ = checks.append(true in matches) %}
       {% endif %}
@@ -127,8 +128,9 @@
       {% if 'resolved-external-prefix' in translation %}
       {% set matches = [] %}
       {% for prefix in prefixes %}
-      {% set _ = matches.append((translation['resolved-external-prefix']
-         | ansible.utils.ipaddr(prefix)) != false) %}
+      {% if translation['resolved-external-prefix'] | ansible.utils.ipaddr(prefix) %}
+      {% set _ = matches.append(true) %}
+      {% endif %}
       {% endfor %}
       {% set _ = checks.append(true in matches) %}
       {% endif %}
