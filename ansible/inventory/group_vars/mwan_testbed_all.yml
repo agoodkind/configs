@@ -5,10 +5,10 @@
 
 mwan_release_repo: agoodkind/mwan
 mwan_ifmgr_lease_recovery_enabled: true
-mwan_release_tag: "202610011614-9b-7436c5c"
+mwan_release_tag: "202610012210-9c-e90b629"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:50feb5cec5198e5668012b7c3b214331879ce878e09fd627ef21a6b86b21175a"
+    checksum: "sha256:d1251fddd0d97b029b8ff4b46bade6384b49b695d8b9fe9b6fd167c731af3e64"
   - name: wanconfig-stack_linux_amd64.tar.gz
     checksum: "sha256:42a64b1246432bacc6300c19f1c78a7419f6bad240df05bbadf74a9bed7d0bf6"
 
