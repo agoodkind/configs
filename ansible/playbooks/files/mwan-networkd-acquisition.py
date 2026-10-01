@@ -5,10 +5,13 @@ import json
 import subprocess
 import sys
 import time
+from typing import TypeAlias
 
 NANOSECONDS_PER_MICROSECOND = 1000
 
-type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+JsonValue: TypeAlias = (
+    str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+)
 
 
 def main() -> None:
