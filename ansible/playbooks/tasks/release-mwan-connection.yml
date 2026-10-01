@@ -104,19 +104,20 @@
   delay: 1
   changed_when: false
 
-- name: Require recorded networkd static assignments and routes to finish removal
+- name: Require recorded networkd assignments and routes to finish removal
   vars:
+    networkd_sources: [static, DHCPv4, DHCPv6, DHCP-PD, NDisc]
     source: "{{ mwan_transfer_networkd_source.stdout | from_json }}"
     released: "{{ mwan_transfer_networkd_released.stdout | from_json }}"
     release_complete_json: >-
       {% set retained = [] %}
-      {% for address in source.Addresses | selectattr('ConfigSource', 'equalto', 'static') %}
+      {% for address in source.Addresses | selectattr('ConfigSource', 'in', networkd_sources) %}
       {% for current in released.Addresses %}
       {% set _ = retained.append(address.Family == current.Family
          and address.Address == current.Address and address.PrefixLength == current.PrefixLength) %}
       {% endfor %}
       {% endfor %}
-      {% for route in source.Routes | selectattr('ConfigSource', 'equalto', 'static') %}
+      {% for route in source.Routes | selectattr('ConfigSource', 'in', networkd_sources) %}
       {% for current in released.Routes %}
       {% set identity = namespace(matches=true) %}
       {% for key in ['Family', 'Destination', 'DestinationPrefixLength', 'Gateway', 'Table', 'Priority', 'Protocol'] %}
@@ -136,4 +137,3 @@
   delay: 1
   changed_when: false
   when: mwan_transfer_release_owner == 'networkd'
-

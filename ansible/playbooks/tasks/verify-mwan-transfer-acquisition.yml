@@ -57,6 +57,9 @@
       {% set acquires = ('address' in intent and intent.address != [])
          or ('goodkind-mwan-steering:dhcp' in intent and intent['goodkind-mwan-steering:dhcp'])
          or ('goodkind-mwan-steering:accept-ra' in intent and intent['goodkind-mwan-steering:accept-ra'])
+         or (family == 'ietf-ip:ipv6' and owner == 'networkd'
+             and 'goodkind-mwan-steering:accept-ra' not in intent
+             and not ('forwarding' in intent and intent.forwarding))
          or 'goodkind-mwan-steering:delegation' in intent %}
       {% if acquires %}
       {% set state = selected[family]['goodkind-mwan-steering:ownership-family-state'] %}

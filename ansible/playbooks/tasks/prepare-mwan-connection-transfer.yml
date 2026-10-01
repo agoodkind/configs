@@ -117,6 +117,9 @@
           {% set _ = result.append(('address' in family and family.address != [])
              or ('goodkind-mwan-steering:dhcp' in family and family['goodkind-mwan-steering:dhcp'])
              or ('goodkind-mwan-steering:accept-ra' in family and family['goodkind-mwan-steering:accept-ra'])
+             or (item.1 == 'ipv6' and connection['goodkind-mwan-steering:owner'] == 'networkd'
+                 and 'goodkind-mwan-steering:accept-ra' not in family
+                 and not ('forwarding' in family and family.forwarding))
              or 'goodkind-mwan-steering:delegation' in family) %}
           {% endif %}
           {% endfor %}
