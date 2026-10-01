@@ -365,7 +365,7 @@ mwan_providers:
       accept_ra: true
       autoconf: false
       accept_ra_default_route: true
-      use_ra_dns: false
+      use_ra_dns: true
       delegation:
         hint: "::/56"
       dhcpv6_client:
@@ -374,7 +374,7 @@ mwan_providers:
         request_address: false
         request_prefix: true
         without_ra: solicit
-        use_dns: false
+        use_dns: true
     table: 200
     mark: 2
     mark_prio: 200
