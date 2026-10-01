@@ -14,7 +14,8 @@
 
 - name: Read transit kernel return routes
   ansible.builtin.command:
-    argv: [ip, -6, -json, route, show, table, main]
+    argv: [ip, "{{ item }}", -json, route, show, table, main]
+  loop: ["-4", "-6"]
   register: mwan_role_observed_route_table
   changed_when: false
 
@@ -22,7 +23,8 @@
   ansible.builtin.set_fact:
     mwan_role_observed_routes:
       stdout: >-
-        {{ mwan_role_observed_route_table.stdout | from_json | selectattr('dev', 'defined')
+        {{ mwan_role_observed_route_table.results | map(attribute='stdout') | map('from_json')
+           | flatten | selectattr('dev', 'defined')
            | selectattr('dev', 'equalto', mwan_internal_iface) | list | to_json }}
 
 - name: Read transit kernel forwarding
