@@ -49,47 +49,86 @@
 - name: Reload the restored role units
   ansible.builtin.include_tasks: reload-mwan-networkd.yml
 
-- name: Read restored management and transit state
-  ansible.builtin.command:
-    argv: [networkctl, status, "{{ item }}", --json=short]
-  loop: ["{{ mwan_mgmt_iface }}", "{{ mwan_internal_iface }}"]
-  register: mwan_role_restored_state
-  changed_when: false
+- name: Read restored role state through the owning services and kernel
+  ansible.builtin.include_tasks: read-mwan-role-state.yml
+
+- name: Read restored role ownership
+  ansible.builtin.slurp:
+    src: /etc/mwan/network.json
+  register: mwan_role_restored_document
+  no_log: true
+  when: not (mwan_role_first_install | bool)
+
+- name: Verify restored ownership after an existing installation
+  when: not (mwan_role_first_install | bool)
+  block:
+    - name: Require restored MWAN role acquisition
+      vars:
+        restored_connections: >-
+          {{ (mwan_role_restored_document.content | b64decode | from_json)
+             ['ietf-interfaces:interfaces']['interface'] }}
+        mwan_transfer_acquisition_connection: "{{ item }}"
+        mwan_transfer_connection_id: "{{ item['goodkind-mwan-steering:connection-id'] }}"
+      ansible.builtin.include_tasks: verify-mwan-transfer-acquisition.yml
+      loop: "{{ restored_connections | selectattr('name', 'in', [mwan_mgmt_iface, mwan_internal_iface]) | list }}"
+      when: item['goodkind-mwan-steering:owner'] == 'mwan'
 
 - name: Verify prior role selection and static addressing
   vars:
-    before: "{{ mwan_role_prior_state.results[item].stdout | from_json }}"
-    after: "{{ mwan_role_restored_state.results[item].stdout | from_json }}"
+    before: "{{ mwan_role_prior_state.results[item.index].stdout | from_json }}"
+    after: "{{ mwan_role_observed_networkd.results[item.index].stdout | from_json }}"
+    owner: "{{ (mwan_role_prior_owners_json | from_json)[item.name] }}"
   ansible.builtin.assert:
     that:
-      - after.NetworkFile == before.NetworkFile
       - >-
+        (owner == 'networkd' and 'NetworkFile' in after and after.NetworkFile == before.NetworkFile) or
+        (owner == 'mwan' and after.AdministrativeState == 'unmanaged')
+      - >-
+        owner != 'networkd' or
         (after.Addresses | selectattr('ConfigSource', 'equalto', 'static') | list) ==
         (before.Addresses | selectattr('ConfigSource', 'equalto', 'static') | list)
       - >-
+        owner != 'networkd' or
         (after | dict2items | selectattr('key', 'in', ['DNS', 'SearchDomains']) | list) ==
         (before | dict2items | selectattr('key', 'in', ['DNS', 'SearchDomains']) | list)
-  loop: [0, 1]
-
-- name: Read restored transit forwarding settings
-  ansible.builtin.command:
-    argv: [cat, "/proc/sys/net/{{ item }}/conf/{{ mwan_internal_iface }}/forwarding"]
-  loop: [ipv4, ipv6]
-  register: mwan_role_restored_forwarding
-  changed_when: false
+  loop:
+    - {index: 0, name: "{{ mwan_mgmt_iface }}"}
+    - {index: 1, name: "{{ mwan_internal_iface }}"}
 
 - name: Verify prior forwarding and return routes
   vars:
     before: "{{ mwan_role_prior_state.results[1].stdout | from_json }}"
-    after: "{{ mwan_role_restored_state.results[1].stdout | from_json }}"
+    after: "{{ mwan_role_observed_networkd.results[1].stdout | from_json }}"
+    owner: "{{ (mwan_role_prior_owners_json | from_json)[mwan_internal_iface] }}"
   ansible.builtin.assert:
     that:
       - >-
+        owner != 'networkd' or
         (after.Routes | selectattr('ConfigSource', 'equalto', 'static') | list) ==
         (before.Routes | selectattr('ConfigSource', 'equalto', 'static') | list)
       - >-
-        (mwan_role_restored_forwarding.results | map(attribute='stdout') | list) ==
+        (mwan_role_observed_forwarding.results | map(attribute='stdout') | list) ==
         (mwan_role_prior_forwarding.results | map(attribute='stdout') | list)
+
+- name: Verify restored role kernel address identities
+  ansible.builtin.assert:
+    that: >-
+      (mwan_role_prior_address_identities_json | from_json)[item]['all'] ==
+      (mwan_role_address_identities_json | from_json)[item]['usable']
+  loop: [0, 1]
+
+- name: Verify restored resolver tuples and kernel return routes
+  ansible.builtin.assert:
+    that:
+      - >-
+        (mwan_role_observed_resolver.results[0].stdout | from_json).data ==
+        (mwan_role_prior_resolver.results[0].stdout | from_json).data
+      - >-
+        (mwan_role_observed_resolver.results[1].stdout | from_json).data ==
+        (mwan_role_prior_resolver.results[1].stdout | from_json).data
+      - >-
+        mwan_role_route_identities_json | from_json ==
+        mwan_role_prior_route_identities_json | from_json
 
 - name: Remove the recovered role input backup
   ansible.builtin.file:
