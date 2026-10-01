@@ -68,6 +68,15 @@
       - "'ActiveState=inactive' in isp_management_ssh_socket_after.stdout_lines"
     fail_msg: The simulator SSH socket still enables activation or owns a listener
 
+- name: Stop the simulator SSH process after socket activation
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           systemctl, stop, ssh.service]
+  when: >-
+    'ActiveState=active' in isp_management_ssh_socket.stdout_lines
+    or 'UnitFileState=enabled' in isp_management_ssh_socket.stdout_lines
+  changed_when: true
+
 - name: Read simulator management SSH directories
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --,
