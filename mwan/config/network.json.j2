@@ -72,6 +72,9 @@
     "weight": provider.weight
   }
 } %}
+{% if provider.selection_enabled is defined %}
+{% set _ = entry["goodkind-mwan-steering:steering"].update({"enabled": provider.selection_enabled}) %}
+{% endif %}
 {% if provider.link_files is defined %}
 {% set _ = entry.update({"goodkind-mwan-steering:link-files": provider.link_files}) %}
 {% endif %}
