@@ -41,8 +41,8 @@
 - name: Capture prior role kernel and resolver state
   ansible.builtin.set_fact:
     mwan_role_prior_state: "{{ mwan_role_observed_networkd }}"
-    mwan_role_prior_addresses: "{{ mwan_role_observed_addresses }}"
-    mwan_role_prior_routes: "{{ mwan_role_observed_routes }}"
+    mwan_role_prior_address_identities_json: "{{ mwan_role_address_identities_json }}"
+    mwan_role_prior_route_identities_json: "{{ mwan_role_route_identities_json }}"
     mwan_role_prior_forwarding: "{{ mwan_role_observed_forwarding }}"
     mwan_role_prior_resolver: "{{ mwan_role_observed_resolver }}"
     mwan_role_prior_owners_json: >-

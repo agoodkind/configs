@@ -12,6 +12,27 @@
   register: mwan_role_observed_addresses
   changed_when: false
 
+- name: Normalize role kernel address identities
+  ansible.builtin.set_fact:
+    mwan_role_address_identities_json: >-
+      {% set links = [] %}
+      {% for result in mwan_role_observed_addresses.results %}
+      {% set identities = [] %}
+      {% set usable = [] %}
+      {% for address in (result.stdout | from_json)[0].addr_info %}
+      {% if address.scope == 'global' %}
+      {% set identity = [address.family, address.local | ansible.utils.ipaddr('int') | int,
+                         address.prefixlen] %}
+      {% set _ = identities.append(identity) %}
+      {% if 'tentative' not in address and 'dadfailed' not in address %}
+      {% set _ = usable.append(identity) %}
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+      {% set _ = links.append({'all': identities | sort, 'usable': usable | sort}) %}
+      {% endfor %}
+      {{ links | to_json }}
+
 - name: Read transit kernel return routes
   ansible.builtin.command:
     argv: [ip, "{{ item }}", -json, route, show, table, main]
@@ -26,6 +47,16 @@
         {{ mwan_role_observed_route_table.results | map(attribute='stdout') | map('from_json')
            | flatten | selectattr('dev', 'defined')
            | selectattr('dev', 'equalto', mwan_internal_iface) | list | to_json }}
+
+- name: Normalize transit route snapshots
+  ansible.builtin.set_fact:
+    mwan_role_route_identities_json: >-
+      {% set routes = [] %}
+      {% for route in mwan_role_observed_routes.stdout | from_json %}
+      {% set _ = routes.append(route | dict2items | rejectattr('key', 'in', ['expires', 'cache'])
+                               | items2dict) %}
+      {% endfor %}
+      {{ routes | to_json }}
 
 - name: Read transit kernel forwarding
   ansible.builtin.command:

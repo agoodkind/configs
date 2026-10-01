@@ -78,38 +78,6 @@
     - {index: 1, cidr: "{{ transit_intent.ipv4.address }}"}
     - {index: 1, cidr: "{{ transit_intent.ipv6.address }}"}
 
-- name: Verify the configured transit return route
-  vars:
-    transit_intent: >-
-      {{ (mwan_non_provider_connections | selectattr('name', 'equalto', mwan_internal_iface) | list)[0] }}
-    transit: "{{ mwan_role_observed_networkd.results[1].stdout | from_json }}"
-    actual_routes: >-
-      {% set routes = [] %}
-      {% for route in transit.Routes | selectattr('ConfigSource', 'equalto', 'static') %}
-      {% set value = namespace(destination=0, gateway=0) %}
-      {% for byte in route.Destination %}
-      {% set value.destination = value.destination * 256 + byte %}
-      {% endfor %}
-      {% for byte in route.Gateway %}
-      {% set value.gateway = value.gateway * 256 + byte %}
-      {% endfor %}
-      {% set _ = routes.append([value.destination, route.DestinationPrefixLength,
-                                value.gateway, route.Table, route.Priority]) %}
-      {% endfor %}
-      {{ routes }}
-    effective_metric: "{{ 1024 if item.metric | int == 0 else item.metric | int }}"
-    expected_route: >-
-      {{ [item.destination | ansible.utils.ipaddr('network') | ansible.utils.ipaddr('int') | int,
-          item.destination.split('/')[1] | int,
-          item.gateway | ansible.utils.ipaddr('int') | int, item.table_id | int,
-          effective_metric | int] }}
-  ansible.builtin.assert:
-    that:
-      - expected_route in (actual_routes | from_json)
-    fail_msg: The configured transit return route did not apply.
-  loop: "{{ transit_intent.ipv6.routes }}"
-  when: transit_intent.owner == 'networkd'
-
 - name: Verify configured return routes in the kernel for either owner
   vars:
     transit_intent: >-
