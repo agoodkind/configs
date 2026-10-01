@@ -17,25 +17,21 @@ RSpec.describe 'MWAN connection selection configuration' do
     expect(result.exit_status.success?).to be(true), result.output
   end
 
-  it 'validates omitted, enabled, and excluded connections through the real loader' do
-    binary = ENV['MWAN_TRANSLATION_TEST_BINARY']
-    skip 'Set MWAN_TRANSLATION_TEST_BINARY to a Linux mwan executable with connection selection support' unless binary
+  def render_network(network, enabled)
+    configured = providers.map(&:dup)
+    webpass = configured.find { |provider| provider.fetch('connection_id') == 'webpass' }
+    webpass['selection_enabled'] = enabled unless enabled.nil?
+    AnsibleRender.render(
+      inventory: 'localhost,', playbook: 'render_mwan_network.yml',
+      extra_vars: { 'repository_root' => root, 'network_output' => network, 'mwan_providers' => configured }
+    )
+  end
 
-    binary = File.expand_path(binary, root)
+  it 'renders omitted, enabled, and excluded connections without changing other connections' do
     Dir.mktmpdir('mwan-selection-render') do |directory|
-      schema = File.join(directory, 'schema')
-      Dir.mkdir(schema)
-      run_mwan(binary, 'install', '--print-schema', schema)
-
       [nil, true, false].each do |enabled|
-        configured = providers.map(&:dup)
-        webpass = configured.find { |provider| provider.fetch('connection_id') == 'webpass' }
-        webpass['selection_enabled'] = enabled unless enabled.nil?
         network = File.join(directory, 'network.json')
-        AnsibleRender.render(
-          inventory: 'localhost,', playbook: 'render_mwan_network.yml',
-          extra_vars: { 'repository_root' => root, 'network_output' => network, 'mwan_providers' => configured }
-        )
+        render_network(network, enabled)
         interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
         interfaces.select { |entry| entry.key?('goodkind-mwan-steering:steering') }.each do |entry|
           steering = entry.fetch('goodkind-mwan-steering:steering')
@@ -45,6 +41,22 @@ RSpec.describe 'MWAN connection selection configuration' do
             expect(steering).not_to have_key('enabled')
           end
         end
+      end
+    end
+  end
+
+  it 'accepts all selection settings through the real loader' do
+    binary = ENV['MWAN_TRANSLATION_TEST_BINARY']
+    skip 'Set MWAN_TRANSLATION_TEST_BINARY to a Linux mwan executable with connection selection support' unless binary
+
+    binary = File.expand_path(binary, root)
+    Dir.mktmpdir('mwan-selection-loader') do |directory|
+      schema = File.join(directory, 'schema')
+      Dir.mkdir(schema)
+      run_mwan(binary, 'install', '--print-schema', schema)
+      [nil, true, false].each do |enabled|
+        network = File.join(directory, 'network.json')
+        render_network(network, enabled)
         run_mwan(binary, 'deploy-gate', 'check-network', network, schema)
       end
     end
