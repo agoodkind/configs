@@ -116,6 +116,9 @@ resource "proxmox_virtual_environment_container" "isp_webpass_suburban" {
 
   initialization {
     hostname = local.service_mapping.isp_webpass_suburban.hostname
+    user_account {
+      keys = [var.ssh_keys]
+    }
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
@@ -188,6 +191,7 @@ resource "proxmox_virtual_environment_container" "isp_webpass_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
@@ -205,6 +209,9 @@ resource "proxmox_virtual_environment_container" "isp_att_suburban" {
 
   initialization {
     hostname = local.service_mapping.isp_att_suburban.hostname
+    user_account {
+      keys = [var.ssh_keys]
+    }
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
@@ -277,6 +284,7 @@ resource "proxmox_virtual_environment_container" "isp_att_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
@@ -294,6 +302,9 @@ resource "proxmox_virtual_environment_container" "isp_mbrains_suburban" {
 
   initialization {
     hostname = local.service_mapping.isp_mbrains_suburban.hostname
+    user_account {
+      keys = [var.ssh_keys]
+    }
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
@@ -369,6 +380,7 @@ resource "proxmox_virtual_environment_container" "isp_mbrains_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
@@ -386,6 +398,9 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
 
   initialization {
     hostname = local.service_mapping.isp_astound_suburban.hostname
+    user_account {
+      keys = [var.ssh_keys]
+    }
     dns {
       servers = ["1.1.1.1"]
     }
@@ -457,6 +472,7 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
@@ -474,6 +490,9 @@ resource "proxmox_virtual_environment_container" "isp_routed_suburban" {
 
   initialization {
     hostname = local.service_mapping.isp_routed_suburban.hostname
+    user_account {
+      keys = [var.ssh_keys]
+    }
     dns {
       servers = ["2606:4700:4700::1111", "1.1.1.1"]
     }
@@ -549,6 +568,7 @@ resource "proxmox_virtual_environment_container" "isp_routed_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
