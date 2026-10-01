@@ -22,7 +22,10 @@
   ["dhcp", "goodkind-mwan-steering:dhcp"],
   ["gateway", "goodkind-mwan-steering:gateway"],
   ["route_metric", "goodkind-mwan-steering:route-metric"],
-  ["accept_ra", "goodkind-mwan-steering:accept-ra"]
+  ["accept_ra", "goodkind-mwan-steering:accept-ra"],
+  ["autoconf", "goodkind-mwan-steering:autoconf"],
+  ["accept_ra_default_route", "goodkind-mwan-steering:accept-ra-default-route"],
+  ["use_ra_dns", "goodkind-mwan-steering:use-ra-dns"]
 ] %}
 {% set delegation_leaves = [
   ["hint", "hint"],
@@ -122,8 +125,6 @@
 {% endif %}
 {% set _ = entry.update({"ietf-ip:ipv4": ipv4}) %}
 {% endif %}
-{# A delegation leaf whose inventory value is empty is omitted: the testbed
-   types no DUID, and the duid pattern rejects an empty string. #}
 {% if provider.ipv6 is defined %}
 {% set translation = {"mode": provider.ipv6.translation.mode} %}
 {% if provider.ipv6.translation.mode == "ietf-nat:nptv6" %}
@@ -147,6 +148,13 @@
 {% set _ = delegation.update({node: provider.ipv6.delegation[key]}) %}
 {% endfor %}
 {% set _ = ipv6.update({"goodkind-mwan-steering:delegation": delegation}) %}
+{% endif %}
+{% if "dhcpv6_client" in provider.ipv6 %}
+{% set client = {} %}
+{% for key, value in provider.ipv6.dhcpv6_client.items() %}
+{% set _ = client.update({key | replace("_", "-"): value}) %}
+{% endfor %}
+{% set _ = ipv6.update({"goodkind-mwan-steering:dhcpv6-client": client}) %}
 {% endif %}
 {% set _ = entry.update({"ietf-ip:ipv6": ipv6}) %}
 {% endif %}
