@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once('/usr/local/etc/inc/config.inc');
+require_once('/usr/local/etc/inc/util.inc');
 
 use OPNsense\Core\Config;
 

@@ -143,7 +143,9 @@
       ansible.builtin.command:
         argv: [/usr/local/bin/php, /usr/local/libexec/testbed-mapping-endpoint.php]
       register: mapping_rule_update
-      changed_when: (mapping_rule_update.stdout | from_json).changed
+      changed_when:
+        - mapping_rule_update.rc == 0
+        - (mapping_rule_update.stdout | from_json).changed
 
     - name: Apply changed mapping rules through the native filter reload
       ansible.builtin.command:
