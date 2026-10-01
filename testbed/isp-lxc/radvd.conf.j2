@@ -5,6 +5,12 @@ interface eth0
     MaxRtrAdvInterval {{ isp.ra_max_interval_seconds }};
     AdvManagedFlag on;
     AdvOtherConfigFlag on;
+{% if isp.ra_dns_servers %}
+    RDNSS {{ isp.ra_dns_servers | join(' ') }}
+    {
+        AdvRDNSSLifetime {{ isp.ra_dns_lifetime_seconds }};
+    };
+{% endif %}
 {% if isp.slaac_prefix %}
     # SLAAC /64 (AdvAutonomous on) so the WAN VM autoconfigures a global address,
     # mirroring prod where the ISP RA yields a SLAAC mngtmpaddr. The PD prefix is

@@ -214,14 +214,27 @@ testbed_isp_protocol_defaults:
   dhcp6_valid_lifetime_seconds: 4000
   dhcp6_renew_seconds: omit
   dhcp6_rebind_seconds: omit
+  dhcp6_dns_servers: []
   ra_min_interval_seconds: 30
   ra_max_interval_seconds: 100
+  ra_dns_servers: []
+  ra_dns_lifetime_seconds: omit
   ra_prefix_preferred_lifetime_seconds: omit
   ra_prefix_valid_lifetime_seconds: omit
 
 testbed_isp_lxcs:
   - id: "{{ service_mapping.isp_webpass_suburban.vmid }}"
     name: webpass
+    dhcp6_preferred_lifetime_seconds: 180
+    dhcp6_valid_lifetime_seconds: 240
+    dhcp6_renew_seconds: 60
+    dhcp6_rebind_seconds: 120
+    dhcp6_dns_servers:
+      - "2001:4860:4860::8888"
+      - "2001:4860:4860::8844"
+    ra_dns_servers:
+      - "2606:4700:4700::1111"
+    ra_dns_lifetime_seconds: 240
     # Models prod Webpass: the static v4 link itself sits inside the /29 the
     # MWAN VM 1:1-NATs to services, plus a DHCPv6-PD /56. The block is on-link,
     # so the sim resolves the mapped addresses on eth0 and routes no block;
