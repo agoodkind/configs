@@ -17,6 +17,10 @@
       - isp.dhcp4_rebind_seconds == 'omit' or isp.dhcp4_rebind_seconds > 0
       - isp.dhcp6_renew_seconds == 'omit' or isp.dhcp6_renew_seconds > 0
       - isp.dhcp6_rebind_seconds == 'omit' or isp.dhcp6_rebind_seconds > 0
+      - isp.dhcp6_dns_servers | type_debug == 'list'
+      - isp.ra_dns_servers | type_debug == 'list'
+      - isp.ra_dns_servers == [] or isp.ra_dns_lifetime_seconds != 'omit'
+      - isp.ra_dns_lifetime_seconds == 'omit' or isp.ra_dns_lifetime_seconds > 0
       - isp.ra_prefix_preferred_lifetime_seconds == 'omit' or isp.ra_prefix_preferred_lifetime_seconds >= 0
       - isp.ra_prefix_valid_lifetime_seconds == 'omit' or isp.ra_prefix_valid_lifetime_seconds >= 0
       - >-

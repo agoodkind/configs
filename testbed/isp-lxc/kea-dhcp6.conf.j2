@@ -10,6 +10,12 @@
 {% if isp.dhcp6_rebind_seconds != 'omit' %}
         "rebind-timer": {{ isp.dhcp6_rebind_seconds }},
 {% endif %}
+{% if isp.dhcp6_dns_servers %}
+        "option-data": [{
+            "name": "dns-servers",
+            "data": {{ isp.dhcp6_dns_servers | join(', ') | to_json }}
+        }],
+{% endif %}
         "subnet6": [{
             "id": 1,
 {% if isp.ia_na %}
