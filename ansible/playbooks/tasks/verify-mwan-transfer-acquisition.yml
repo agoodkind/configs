@@ -1,63 +1,3 @@
-- name: Require actual networkd acquisition before restoring selection
-  vars:
-    networkd_readiness_json: >-
-      {% set observed = mwan_transfer_acquired_networkd.stdout | from_json %}
-      {% set checks = [observed.AdministrativeState == 'configured'] %}
-      {% for key, intent in mwan_transfer_acquisition_connection.items() %}
-      {% if key in ['ietf-ip:ipv4', 'ietf-ip:ipv6'] %}
-      {% set family = 2 if key == 'ietf-ip:ipv4' else 10 %}
-      {% set addresses = observed.Addresses | selectattr('Family', 'equalto', family)
-         | selectattr('Scope', 'equalto', 0)
-         | rejectattr('FlagsString', 'search', 'tentative|dadfailed')
-         | selectattr('ConfigState', 'equalto', 'configured') | list %}
-      {% if 'address' in intent and intent.address != [] %}
-      {% for assignment in intent.address %}
-      {% set matches = [] %}
-      {% for address in addresses %}
-      {% set integer = namespace(value=0) %}
-      {% for octet in address.Address %}
-      {% set integer.value = integer.value * 256 + octet %}
-      {% endfor %}
-      {% set _ = matches.append(address.ConfigSource == 'static'
-         and address.PrefixLength == assignment['prefix-length']
-         and integer.value == assignment.ip | ansible.utils.ipaddr('int')) %}
-      {% endfor %}
-      {% set _ = checks.append(true in matches) %}
-      {% endfor %}
-      {% endif %}
-      {% if 'goodkind-mwan-steering:dhcp' in intent and intent['goodkind-mwan-steering:dhcp']
-            and (family == 2 or 'goodkind-mwan-steering:delegation' not in intent) %}
-      {% set source = 'DHCPv4' if family == 2 else 'DHCPv6' %}
-      {% set _ = checks.append((addresses | selectattr('ConfigSource', 'equalto', source) | list) != []) %}
-      {% endif %}
-      {% if family == 10 and
-         (('goodkind-mwan-steering:accept-ra' in intent and intent['goodkind-mwan-steering:accept-ra'])
-          or ('goodkind-mwan-steering:accept-ra' not in intent
-              and not ('forwarding' in intent and intent.forwarding))) %}
-      {% set ra_addresses = addresses | selectattr('ConfigSource', 'equalto', 'NDisc') | list %}
-      {% set ra_routes = observed.Routes | selectattr('Family', 'equalto', 10)
-         | selectattr('ConfigSource', 'equalto', 'NDisc')
-         | selectattr('ConfigState', 'equalto', 'configured') | list %}
-      {% set ra_next_hops = [] %}
-      {% if 'NextHops' in observed %}
-      {% set ra_next_hops = observed.NextHops | selectattr('Family', 'equalto', 10)
-         | selectattr('ConfigSource', 'equalto', 'NDisc')
-         | selectattr('ConfigState', 'equalto', 'configured') | list %}
-      {% endif %}
-      {% set _ = checks.append(ra_addresses != [] or ra_routes != [] or ra_next_hops != []) %}
-      {% endif %}
-      {% endif %}
-      {% endfor %}
-      {{ checks | to_json }}
-  ansible.builtin.command:
-    argv: [networkctl, status, "{{ mwan_transfer_acquisition_connection.name }}", --json=short]
-  register: mwan_transfer_acquired_networkd
-  until: false not in (networkd_readiness_json | from_json)
-  retries: 30
-  delay: 1
-  changed_when: false
-  when: mwan_transfer_acquisition_connection['goodkind-mwan-steering:owner'] == 'networkd'
-
 - name: Require the replacement's applied assignments before restoring selection
   vars:
     selected: >-
@@ -84,8 +24,27 @@
          or 'goodkind-mwan-steering:delegation' in intent %}
       {% if acquires %}
       {% set state = selected[family]['goodkind-mwan-steering:ownership-family-state'] %}
-      {% if 'goodkind-mwan-steering:delegation' in intent %}
-      {% set _ = checks.append('goodkind-mwan-steering:delegated-prefix' in selected[family]) %}
+      {% if owner == 'mwan' and 'goodkind-mwan-steering:delegation' in intent %}
+      {% set prefixes = [] %}
+      {% if 'assignment' in state %}
+      {% for assignment in state.assignment %}
+      {% if assignment.kind == 'dhcpv6-ia-pd' and assignment.source == 'dhcpv6' and assignment.valid %}
+      {% set _ = prefixes.append(assignment.value | ansible.utils.ipv6('net')) %}
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+      {% set _ = checks.append(false not in prefixes and prefixes != []) %}
+      {% if 'goodkind-mwan-steering:translation' in selected[family] %}
+      {% set translation = selected[family]['goodkind-mwan-steering:translation'].state %}
+      {% if 'resolved-external-prefix' in translation %}
+      {% set matches = [] %}
+      {% for prefix in prefixes %}
+      {% set _ = matches.append((translation['resolved-external-prefix']
+         | ansible.utils.ipaddr(prefix)) != false) %}
+      {% endfor %}
+      {% set _ = checks.append(true in matches) %}
+      {% endif %}
+      {% endif %}
       {% endif %}
       {% if owner == 'mwan' %}
       {% set _ = checks.append(state['assignment-validity'] == 'valid') %}
@@ -114,3 +73,99 @@
   retries: 30
   delay: 1
   changed_when: false
+
+- name: Require actual networkd acquisition before restoring selection
+  vars:
+    selected: >-
+      {{ ((mwan_transfer_acquisition.stdout | from_json)['ietf-interfaces:interfaces']['interface']
+          | selectattr('goodkind-mwan-steering:ownership-state.connection-id',
+                       'equalto', mwan_transfer_connection_id) | list)[0] }}
+    networkd_readiness_json: >-
+      {% set sample = mwan_transfer_acquired_networkd.stdout | from_json %}
+      {% set observed = sample.networkd %}
+      {% set checks = [observed.AdministrativeState == 'configured'] %}
+      {% for key, intent in mwan_transfer_acquisition_connection.items() %}
+      {% if key in ['ietf-ip:ipv4', 'ietf-ip:ipv6'] %}
+      {% set family = 2 if key == 'ietf-ip:ipv4' else 10 %}
+      {% set addresses = observed.Addresses | selectattr('Family', 'equalto', family)
+         | selectattr('Scope', 'equalto', 0)
+         | rejectattr('FlagsString', 'search', 'tentative|dadfailed')
+         | selectattr('ConfigState', 'equalto', 'configured') | list %}
+      {% if 'address' in intent and intent.address != [] %}
+      {% for assignment in intent.address %}
+      {% set matches = [] %}
+      {% for address in addresses %}
+      {% set integer = namespace(value=0) %}
+      {% for octet in address.Address %}
+      {% set integer.value = integer.value * 256 + octet %}
+      {% endfor %}
+      {% set _ = matches.append(address.ConfigSource == 'static'
+         and address.PrefixLength == assignment['prefix-length']
+         and integer.value == assignment.ip | ansible.utils.ipaddr('int')) %}
+      {% endfor %}
+      {% set _ = checks.append(true in matches) %}
+      {% endfor %}
+      {% endif %}
+      {% if family == 10 and 'goodkind-mwan-steering:delegation' in intent %}
+      {% set prefixes = [] %}
+      {% if 'DHCPv6Client' in observed and 'Prefixes' in observed.DHCPv6Client %}
+      {% for delegation in observed.DHCPv6Client.Prefixes %}
+      {% set integer = namespace(value=0) %}
+      {% for octet in delegation.Prefix %}
+      {% set integer.value = integer.value * 256 + octet %}
+      {% endfor %}
+      {% set prefix = ((integer.value | ansible.utils.ipv6('address')) ~ '/' ~ delegation.PrefixLength)
+         | ansible.utils.ipv6('net') %}
+      {% if prefix and delegation.ValidLifetimeUSec > sample.boot_time_usec %}
+      {% set _ = prefixes.append(prefix) %}
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+      {% set _ = checks.append(prefixes != []) %}
+      {% if 'goodkind-mwan-steering:translation' in selected[key] %}
+      {% set translation = selected[key]['goodkind-mwan-steering:translation'].state %}
+      {% if 'resolved-external-prefix' in translation %}
+      {% set matches = [] %}
+      {% for prefix in prefixes %}
+      {% set _ = matches.append((translation['resolved-external-prefix']
+         | ansible.utils.ipaddr(prefix)) != false) %}
+      {% endfor %}
+      {% set _ = checks.append(true in matches) %}
+      {% endif %}
+      {% endif %}
+      {% endif %}
+      {% if 'goodkind-mwan-steering:dhcp' in intent and intent['goodkind-mwan-steering:dhcp']
+            and (family == 2 or 'goodkind-mwan-steering:delegation' not in intent) %}
+      {% set source = 'DHCPv4' if family == 2 else 'DHCPv6' %}
+      {% set _ = checks.append((addresses | selectattr('ConfigSource', 'equalto', source) | list) != []) %}
+      {% endif %}
+      {% if family == 10 and
+         (('goodkind-mwan-steering:accept-ra' in intent and intent['goodkind-mwan-steering:accept-ra'])
+          or ('goodkind-mwan-steering:accept-ra' not in intent
+              and not ('forwarding' in intent and intent.forwarding))) %}
+      {% set ra_addresses = addresses | selectattr('ConfigSource', 'equalto', 'NDisc') | list %}
+      {% set ra_routes = observed.Routes | selectattr('Family', 'equalto', 10)
+         | selectattr('ConfigSource', 'equalto', 'NDisc')
+         | selectattr('ConfigState', 'equalto', 'configured') | list %}
+      {% set ra_next_hops = [] %}
+      {% if 'NextHops' in observed %}
+      {% set ra_next_hops = observed.NextHops | selectattr('Family', 'equalto', 10)
+         | selectattr('ConfigSource', 'equalto', 'NDisc')
+         | selectattr('ConfigState', 'equalto', 'configured') | list %}
+      {% endif %}
+      {% set _ = checks.append(ra_addresses != [] or ra_routes != [] or ra_next_hops != []) %}
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+      {{ checks | to_json }}
+  ansible.builtin.script:
+    cmd: >-
+      {{ playbook_dir }}/files/mwan-networkd-acquisition.py
+      {{ mwan_transfer_acquisition_connection.name | quote }}
+    executable: /usr/bin/python3
+  register: mwan_transfer_acquired_networkd
+  until: false not in (networkd_readiness_json | from_json)
+  retries: 30
+  delay: 1
+  changed_when: false
+  when: mwan_transfer_acquisition_connection['goodkind-mwan-steering:owner'] == 'networkd'
