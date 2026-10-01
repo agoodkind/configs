@@ -125,7 +125,7 @@ module MwanAcceptance
     end
   end
 
-  # Mapping probes require served configuration and matching response content.
+  # Mapping probes require deployed intent, current readiness and matching response content.
   class MappingProbes
     def initialize(remote, plan, product)
       @remote = remote
@@ -148,7 +148,10 @@ module MwanAcceptance
       tree = @product.snapshot.fetch('ietf-interfaces:interfaces')
       member = tree.fetch('interface').find { |entry| entry.fetch('name') == provider.interface }
       translation = member.fetch("ietf-ip:ipv#{mapping.family}").fetch('goodkind-mwan-steering:translation')
-      configured = translation.fetch('static-mapping').any? { |entry| entry.fetch('external') == mapping.external && entry.fetch('internal') == mapping.internal }
+      intent = @remote.json(@plan.gateway, ['cat', @plan.network_json], 'mapping-intent').fetch('ietf-interfaces:interfaces')
+      configured_member = intent.fetch('interface').find { |entry| entry.fetch('name') == provider.interface }
+      mappings = configured_member.fetch("ietf-ip:ipv#{mapping.family}").fetch('goodkind-mwan-steering:translation').fetch('static-mapping')
+      configured = mappings.any? { |entry| entry.fetch('external') == mapping.external && entry.fetch('internal') == mapping.internal }
       raise Failure, "#{provider.id}: mapping is not served" unless configured && translation.fetch('state').fetch('ready')
     end
 
