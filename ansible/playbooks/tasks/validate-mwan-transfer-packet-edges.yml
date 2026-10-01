@@ -1,0 +1,17 @@
+- name: Validate each requested runtime IPv6 translation edge
+  ansible.builtin.assert:
+    that:
+      - item.family == 'ipv6'
+      - item.ipv6_translation_edge is mapping
+      - item.ipv6_translation_edge.argument_index is integer
+      - item.ipv6_translation_edge.argument_index > 0
+      - item.ipv6_translation_edge.argument_index < item.argv | length
+      - item.ipv6_translation_edge.prefix is string
+      - item.ipv6_translation_edge.suffix is string
+    fail_msg: >-
+      An IPv6 translation edge requires an IPv6 packet check, an argument index
+      greater than zero within argv, and string prefix and suffix fields.
+  loop: "{{ mwan_transfer_packet_checks }}"
+  loop_control:
+    label: "{{ item.description }}"
+  when: "'ipv6_translation_edge' in item"

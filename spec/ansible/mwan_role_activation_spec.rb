@@ -72,6 +72,43 @@ RSpec.describe 'MWAN role activation with actual systemd' do
     JSON.parse(guest('networkctl', 'status', name, '--json=short'))
   end
 
+  def packet_play(directory, checks)
+    inventory = File.join(directory, 'packet-inventory.ini')
+    File.write(inventory, "[role_tests]\n#{@container}\n")
+    AnsibleRender.render(
+      inventory: inventory, playbook: 'run_mwan_transfer_packets.yml',
+      extra_vars: { 'repository_root' => AnsibleRender::REPOSITORY_ROOT,
+                    'mwan_transfer_packet_checks' => checks }
+    )
+  end
+
+  it 'resolves a ready operational IPv6 edge and rejects invalid runtime targets' do
+    skip 'The actual NPT operational publisher fixture is required' unless ENV['MWAN_TRANSFER_PACKET_RUNTIME'] == '1'
+
+    Dir.mktmpdir('mwan-transfer-packets') do |directory|
+      check = {
+        'phase' => 'selected', 'host' => @container, 'family' => 'ipv6',
+        'connection_id' => 'webpass', 'description' => 'Current IPv6 translation endpoint reply',
+        'argv' => ['ping', '-6', '-c', '1', '-W', '2', '2001:db8:ffff::1'],
+        'ipv6_translation_edge' => { 'argument_index' => 6, 'prefix' => '', 'suffix' => '' }
+      }
+      packet_play(directory, [check])
+      literal = check.reject { |key, _value| key == 'ipv6_translation_edge' }
+      literal['argv'] = ['ping', '-6', '-c', '1', '-W', '2', '::1']
+      packet_play(directory, [literal])
+      expect do
+        packet_play(directory, [check.merge('connection_id' => 'absent-connection')])
+      end.to raise_error(RuntimeError, /exactly one operational connection identity/)
+      expect do
+        packet_play(directory, [check.merge('family' => 'ipv4')])
+      end.to raise_error(RuntimeError, /An IPv6 translation edge requires an IPv6 packet check/)
+      edge = check.fetch('ipv6_translation_edge').merge('argument_index' => 0)
+      expect do
+        packet_play(directory, [check.merge('ipv6_translation_edge' => edge)])
+      end.to raise_error(RuntimeError, /An IPv6 translation edge requires an IPv6 packet check/)
+    end
+  end
+
   def with_real_network(legacy_transit: false, provider_transfer: false)
     Dir.mktmpdir('mwan-role-activation') do |directory|
       current = File.join(directory, 'current.json')
