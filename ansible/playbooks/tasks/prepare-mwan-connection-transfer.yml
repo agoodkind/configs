@@ -105,6 +105,9 @@
       loop_control:
         label: "{{ item.description | default('invalid packet operation') }}"
 
+    - name: Validate requested runtime IPv6 translation edges before staging
+      ansible.builtin.include_tasks: validate-mwan-transfer-packet-edges.yml
+
     - name: Require packet coverage for each configured acquired family
       vars:
         connection: >-

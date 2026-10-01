@@ -1,0 +1,64 @@
+- name: Set the packet operation's literal arguments
+  ansible.builtin.set_fact:
+    mwan_transfer_packet_argv: "{{ mwan_transfer_packet_check.argv }}"
+
+- name: Resolve the current IPv6 translation edge
+  when: "'ipv6_translation_edge' in mwan_transfer_packet_check"
+  block:
+    - name: Read the current operational interfaces for the packet operation
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/sysrepocfg
+          - --export
+          - --datastore
+          - operational
+          - --format
+          - json
+          - --xpath
+          - /ietf-interfaces:interfaces
+      register: mwan_transfer_packet_operational
+      changed_when: false
+
+    - name: Select the packet operation's exact connection identity
+      ansible.builtin.set_fact:
+        mwan_transfer_packet_connections: >-
+          {{ (mwan_transfer_packet_operational.stdout | from_json)
+             ['ietf-interfaces:interfaces']['interface']
+             | selectattr('goodkind-mwan-steering:ownership-state.connection-id',
+                          'equalto', mwan_transfer_packet_check.connection_id) | list }}
+
+    - name: Require one operational connection for the packet operation
+      ansible.builtin.assert:
+        that: mwan_transfer_packet_connections | length == 1
+        fail_msg: The packet operation requires exactly one operational connection identity.
+
+    - name: Require the current ready IPv6 translation network
+      vars:
+        translation: >-
+          {{ mwan_transfer_packet_connections[0]['ietf-ip:ipv6']
+             ['goodkind-mwan-steering:translation'].state }}
+      ansible.builtin.assert:
+        that:
+          - translation.ready == true
+          - translation['resolved-external-prefix'] is string
+          - (translation['resolved-external-prefix'] | ansible.utils.ipv6('net')) is string
+          - (translation['resolved-external-prefix'] | ansible.utils.nthhost(1)) is string
+        fail_msg: The packet operation requires a ready IPv6 translation network with host offset 1.
+
+    - name: Replace the selected argument with the current translation edge
+      vars:
+        edge: "{{ mwan_transfer_packet_check.ipv6_translation_edge }}"
+        network: >-
+          {{ mwan_transfer_packet_connections[0]['ietf-ip:ipv6']
+             ['goodkind-mwan-steering:translation'].state['resolved-external-prefix'] }}
+      ansible.builtin.set_fact:
+        mwan_transfer_packet_argv: >-
+          {{ mwan_transfer_packet_check.argv[:edge.argument_index]
+             + [edge.prefix ~ (network | ansible.utils.nthhost(1)) ~ edge.suffix]
+             + mwan_transfer_packet_check.argv[edge.argument_index + 1:] }}
+
+- name: Verify the downstream packet result
+  ansible.builtin.command:
+    argv: "{{ mwan_transfer_packet_argv }}"
+  delegate_to: "{{ mwan_transfer_packet_check.host }}"
+  changed_when: false
