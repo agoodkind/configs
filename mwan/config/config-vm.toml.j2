@@ -147,6 +147,11 @@ state_file = {{ mwan_autoconfiguration_state_file | to_json }}
 [ifmgr.modules.addresses]
 state_file = "/var/lib/mwan/owned-addresses.json"
 
+{% if mwan_resolver_state_file %}
+[ifmgr.modules.resolver]
+state_file = {{ mwan_resolver_state_file | to_json }}
+
+{% endif %}
 [ifmgr.modules.wan.routes]
 health_state_file = "{{ mwan_ifmgr_wan_health_state_file }}"
 

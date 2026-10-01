@@ -78,6 +78,7 @@ cloudflare_dns_update_enabled: true
 mwan_ifmgr_wan_enabled: false
 mwan_links_state_file: ""
 mwan_autoconfiguration_state_file: ""
+mwan_resolver_state_file: "/var/lib/mwan/owned-resolver.json"
 
 # Routing tables the gateway holds for something other than a provider. The
 # tunnel table carries cloudflared; the out-of-band table carries management
