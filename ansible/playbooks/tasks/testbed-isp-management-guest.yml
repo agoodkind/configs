@@ -192,7 +192,7 @@
 - name: Read the simulator SSH service state
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --,
-           systemctl, show, ssh.service, --property=ActiveState,UnitFileState]
+           systemctl, show, ssh.service, "--property=ActiveState,UnitFileState"]
   register: isp_management_ssh_service
   changed_when: false
 
@@ -230,7 +230,8 @@
 
 - name: Read simulator TCP listener ownership
   ansible.builtin.command:
-    argv: [pct, exec, "{{ isp_management_guest.id }}", --, ss, -H, -ltnp]
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --,
+           ss, -H, -ltnp, "sport = :22"]
   register: isp_management_tcp_listeners
   changed_when: false
 
