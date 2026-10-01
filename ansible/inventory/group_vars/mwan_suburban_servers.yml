@@ -334,7 +334,8 @@ mwan_providers:
 
   - name: webpass
     connection_id: webpass
-    owner: mwan
+    owner: networkd
+    link_files: rendered
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
     link:
@@ -363,18 +364,24 @@ mwan_providers:
       forwarding: true
       dhcp: true
       accept_ra: true
-      autoconf: false
-      accept_ra_default_route: true
-      use_ra_dns: false
       delegation:
         hint: "::/56"
-      dhcpv6_client:
-        duid: "00:02:00:00:ab:11:11:18:28:f5:2b:50:d8:af"
-        prefix_iaid: 1370549548
-        request_address: false
-        request_prefix: true
+        duid_type: vendor
+        duid: "00:00:ab:11:11:18:28:f5:2b:50:d8:af"
         without_ra: solicit
-        use_dns: false
+        use_delegated_prefix: true
+    networkd:
+      network:
+        - name: DHCPv6
+          entries:
+            - { key: IAID, value: "1370549548" }
+            - { key: UseAddress, value: "no" }
+            - { key: UseDNS, value: "no" }
+        - name: IPv6AcceptRA
+          entries:
+            - { key: UseAutonomousPrefix, value: "no" }
+            - { key: UseGateway, value: "yes" }
+            - { key: UseDNS, value: "no" }
     table: 200
     mark: 2
     mark_prio: 200

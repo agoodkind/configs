@@ -349,11 +349,7 @@ RSpec.describe MwanInstall do
         )
         interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
         identities = interfaces.to_h do |entry|
-          if playbook == 'render_mwan_network.yml' && entry.fetch('name') == 'enwebpass0'
-            expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('mwan')
-          else
-            expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('networkd')
-          end
+          expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('networkd')
           [entry.fetch('name'), entry.fetch('goodkind-mwan-steering:connection-id')]
         end
 
