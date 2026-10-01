@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
 
 NANOSECONDS_PER_MICROSECOND = 1000
+
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
 
 def main() -> None:
@@ -21,10 +24,17 @@ def main() -> None:
     sys.stderr.write(result.stderr)
     if result.returncode != 0:
         sys.exit(result.returncode)
+    document: JsonValue = json.loads(result.stdout)
+    if not isinstance(document, dict):
+        raise ValueError("networkctl status must return a JSON object")
     boot_time_usec = (
         time.clock_gettime_ns(time.CLOCK_BOOTTIME) // NANOSECONDS_PER_MICROSECOND
     )
-    print(f'{{"networkd":{result.stdout},"boot_time_usec":{boot_time_usec}}}')
+    sample: dict[str, JsonValue] = {
+        "networkd": document,
+        "boot_time_usec": boot_time_usec,
+    }
+    print(json.dumps(sample))
 
 
 if __name__ == "__main__":
