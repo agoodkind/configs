@@ -242,8 +242,8 @@ testbed_isp_lxcs:
     ipv6_enabled: true
     routed_ipv6_enabled: false
     routed_ipv6_prefix: ""
-    pd_prefix: "3d06:bad:b01:2500::/60"
-    pd_len: 60
+    pd_prefix: "3d06:bad:b01:2200::/56"
+    pd_len: 56
     v4_subnet: "10.241.204.0/29"
     mwan_vm_ll: "fe80::be24:11ff:febe:8eb4"
     dynamic_v4: false
