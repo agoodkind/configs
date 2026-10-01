@@ -341,6 +341,14 @@ RSpec.describe MwanInstall do
     }
   }.each do |playbook, expected_ids|
     it "renders unique connection identities and configured owners in #{playbook}" do
+      group_files = {
+        'render_mwan_network.yml' => 'mwan_suburban_servers.yml',
+        'render_mwan_prod_network.yml' => 'mwan_servers.yml'
+      }
+      group = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_files.fetch(playbook)))
+      configured_connections = (group.fetch('mwan_providers') + group.fetch('mwan_non_provider_connections')).to_h do |connection|
+        [connection.fetch('connection_id'), connection]
+      end
       Dir.mktmpdir('mwan-connection-identity') do |directory|
         network = File.join(directory, 'network.json')
         AnsibleRender.render(
@@ -349,10 +357,13 @@ RSpec.describe MwanInstall do
         )
         interfaces = JSON.parse(File.read(network)).fetch('ietf-interfaces:interfaces').fetch('interface')
         identities = interfaces.to_h do |entry|
-          if playbook == 'render_mwan_network.yml' && entry.fetch('name') == 'enwebpass0'
-            expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('mwan')
+          configured = configured_connections.fetch(expected_ids.fetch(entry.fetch('name')))
+          owner = configured.fetch('owner')
+          expect(entry.fetch('goodkind-mwan-steering:owner')).to eq(owner)
+          if owner == 'mwan'
+            expect(entry).not_to have_key('goodkind-mwan-steering:link-files')
           else
-            expect(entry.fetch('goodkind-mwan-steering:owner')).to eq('networkd')
+            expect(entry.fetch('goodkind-mwan-steering:link-files')).to eq(configured.fetch('link_files'))
           end
           [entry.fetch('name'), entry.fetch('goodkind-mwan-steering:connection-id')]
         end
