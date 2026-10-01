@@ -48,6 +48,11 @@
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
   tasks:
+    - name: Provision ISP simulator management SSH
+      ansible.builtin.import_tasks: tasks/testbed-isp-management.yml
+      when: not ansible_check_mode
+      tags: ["isp-lxcs", "isp-management"]
+
     # ----------------------------------------------------------------------
     # mwan binary on suburban host (used by the host mwan-ifmgr)
     # ----------------------------------------------------------------------

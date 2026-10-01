@@ -1,0 +1,57 @@
+---
+- name: Fetch the simulator management public keys
+  ansible.builtin.uri:
+    url: "https://github.com/{{ github_ssh_keys_user }}.keys"
+    return_content: true
+    headers:
+      Accept: text/plain
+  register: isp_management_public_keys
+  delegate_to: localhost
+  check_mode: false
+
+- name: Define the simulator management public key bundle
+  ansible.builtin.set_fact:
+    isp_management_newline: "\n"
+    isp_management_key_lines: >-
+      {{ isp_management_public_keys.content.splitlines()
+         | map('trim')
+         | reject('equalto', '')
+         | unique(case_sensitive=true)
+         | sort(case_sensitive=true) }}
+
+- name: Require valid simulator management public keys
+  ansible.builtin.assert:
+    that:
+      - isp_management_key_lines != []
+      - >-
+        isp_management_key_lines | select('match',
+        '^(ssh-[A-Za-z0-9@._+-]+|ecdsa-[A-Za-z0-9@._+-]+|sk-[A-Za-z0-9@._+-]+) '
+        ~ '[A-Za-z0-9+/]+={0,3}( .*)?$') | list == isp_management_key_lines
+    fail_msg: GitHub returned invalid simulator management public keys
+
+- name: Define the simulator management public key bytes
+  ansible.builtin.set_fact:
+    isp_management_key_bundle: >-
+      {{ isp_management_key_lines | join(isp_management_newline) }}{{ isp_management_newline }}
+
+- name: Create the simulator management staging directory
+  ansible.builtin.file:
+    path: /var/lib/mwan-testbed/management-ssh
+    state: directory
+    mode: "0700"
+
+- name: Stage the simulator management public key bundle
+  ansible.builtin.copy:
+    dest: /var/lib/mwan-testbed/management-ssh/authorized_keys
+    content: "{{ isp_management_key_bundle }}"
+    mode: "0600"
+
+- name: Reconcile each simulator management service
+  ansible.builtin.include_tasks:
+    file: testbed-isp-management-guest.yml
+    apply:
+      tags: ["isp-lxcs", "isp-management"]
+  loop: "{{ testbed_isp_lxcs }}"
+  loop_control:
+    loop_var: isp_management_guest
+    label: "{{ isp_management_guest.name }}"
