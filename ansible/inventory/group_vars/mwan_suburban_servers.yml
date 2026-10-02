@@ -334,11 +334,20 @@ mwan_providers:
 
   - name: webpass
     connection_id: webpass
-    owner: mwan
+    owner: networkd
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
+    link_files: rendered
     link:
-      match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
+      match: { driver: virtio_net }
+      hardware_address: "{{ mwan_webpass_mac | lower }}"
+    # Reproduce the legacy driver selector without matching every virtio link.
+    networkd:
+      link:
+        - name: Match
+          entries:
+            - key: MACAddress
+              value: "{{ mwan_webpass_mac | lower }}"
     ipv4:
       translation:
         mode: ietf-nat:napt44
