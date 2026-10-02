@@ -334,9 +334,10 @@ mwan_providers:
 
   - name: webpass
     connection_id: webpass
-    owner: mwan
+    owner: networkd
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
+    link_files: rendered
     link:
       match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
     ipv4:
