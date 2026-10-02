@@ -138,6 +138,50 @@ module SlowTierDecision
   def read(file)
     tasks_in(YAML.safe_load_file(file))
   end
+
+  # The when list of every task inside the backup root move block, each joined
+  # with the conditions of the blocks around it, keyed by task name.
+  def block_task_conditions(block, inherited = [])
+    own = inherited + TaskExpressions.condition_list(block['when'])
+    ((block['block'] || []) + (block['always'] || [])).each_with_object({}) do |task, conditions|
+      if task['block']
+        conditions.merge!(block_task_conditions(task, own))
+      else
+        conditions[task['name']] = own + TaskExpressions.condition_list(task['when'])
+      end
+    end
+  end
+
+  # The task names in the move block that run only when the guest has backup
+  # files to move.
+  FILE_MOVE_TASKS = [
+    'Read the enabled tack backup timers', 'Name the tack backup timers',
+    'Refuse a guest with no enabled tack backup timer', 'Install rsync in the guest',
+    'Pause the tack backup timers', 'Set the existing backup root aside',
+    'Copy the existing backup files onto the new volume', 'Delete the old backup root from the root disk',
+    'Resume the tack backup timers', 'Read the tack backup timers back'
+  ].freeze
+  # The task names in the move block that mount the new volume in every case.
+  MOUNT_TASKS = [
+    'Read the tack backup jobs running in the guest', 'Refuse a busy guest or a taken mount key',
+    'Create the empty mount directory', 'Allocate and hot plug the slow tier volume',
+    'Read the mount at the backup root inside the guest', 'Confirm the guest mounts the new volume'
+  ].freeze
+
+  # Evaluates each move block task for one guest with no tier volume mounted.
+  # root_exit is the exit code of test -d on the backup root.
+  def scratch_task_runs(conditions, facts, root_exit:, aside:)
+    variables = {
+      'proxmox_slow_storage' => 'storage',
+      'slow_tier_scratch' => { 'vmid' => 117, 'key' => 'mp0', 'path' => BACKUP_ROOT, 'size_gib' => 100 },
+      'slow_tier_scratch_config' => config_result(COMMON_LINES),
+      'slow_tier_scratch_aside' => TaskExpressions.command_result(0, aside, ''),
+      'slow_tier_scratch_root' => TaskExpressions.command_result(root_exit, '', ''),
+      'slow_tier_scratch_timer_files' => config_result(TIMER_FILE_LINES)
+    }
+    result = TaskExpressions.evaluate(variables: variables, facts: facts, conditions: conditions)
+    result['conditions'].transform_keys { |name| name.sub(/ for \{\{ slow_tier_scratch\.vmid \}\}\z/, '') }
+  end
 end
 
 RSpec.describe SlowTierDecision do
@@ -195,6 +239,7 @@ RSpec.describe SlowTierDecision do
           'slow_tier_scratch' => { 'vmid' => 117, 'key' => 'mp0', 'path' => SlowTierDecision::BACKUP_ROOT, 'size_gib' => 100 },
           'slow_tier_scratch_config' => described_class.config_result(SlowTierDecision::COMMON_LINES + test_case[:mount_lines]),
           'slow_tier_scratch_aside' => TaskExpressions.command_result(0, test_case[:aside], ''),
+          'slow_tier_scratch_root' => TaskExpressions.command_result(0, '', ''),
           'slow_tier_scratch_timer_files' => described_class.config_result(SlowTierDecision::TIMER_FILE_LINES)
         }
         conditions = { 'mount' => @mount_when, 'refuse_runs' => @refuse_when }
@@ -208,6 +253,43 @@ RSpec.describe SlowTierDecision do
         expect(result['facts']['slow_tier_scratch_timers']).to eq(SlowTierDecision::TIMER_NAMES)
         expect(result['conditions']['refuse_runs']).to be(!test_case[:want_accept].nil?)
         expect(result['conditions']['accept']).to be(test_case[:want_accept]) unless test_case[:want_accept].nil?
+      end
+    end
+  end
+
+  describe 'backup root move on a guest with and without a backup root' do
+    before(:all) do
+      top = YAML.safe_load_file(SlowTierDecision::SCRATCH_TASK_FILE)
+      block = described_class.task_named(top, SlowTierDecision::SCRATCH_BLOCK_NAME, SlowTierDecision::SCRATCH_TASK_FILE)
+      @conditions = described_class.block_task_conditions(block)
+      @facts = described_class.fact_tasks(described_class.read(SlowTierDecision::SCRATCH_TASK_FILE))
+    end
+
+    def runs(root_exit:, aside:)
+      described_class.scratch_task_runs(@conditions, @facts, root_exit: root_exit, aside: aside)
+    end
+
+    it 'mounts the volume and moves no files when the backup root is absent', :aggregate_failures do
+      result = runs(root_exit: 1, aside: '')
+
+      SlowTierDecision::MOUNT_TASKS.each { |name| expect(result.fetch(name)).to be(true), name }
+      SlowTierDecision::FILE_MOVE_TASKS.each { |name| expect(result.fetch(name)).to be(false), name }
+    end
+
+    it 'pauses the timers, sets the files aside, mounts, copies, and deletes when the backup root exists', :aggregate_failures do
+      result = runs(root_exit: 0, aside: '')
+
+      (SlowTierDecision::MOUNT_TASKS + SlowTierDecision::FILE_MOVE_TASKS).each do |name|
+        expect(result.fetch(name)).to be(true), name
+      end
+    end
+
+    it 'copies the set-aside files without a second set-aside after an earlier run failed', :aggregate_failures do
+      result = runs(root_exit: 1, aside: SlowTierDecision::ASIDE)
+
+      expect(result.fetch('Set the existing backup root aside')).to be(false)
+      (SlowTierDecision::FILE_MOVE_TASKS - ['Set the existing backup root aside']).each do |name|
+        expect(result.fetch(name)).to be(true), name
       end
     end
   end
