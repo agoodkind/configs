@@ -1,0 +1,92 @@
+- name: Initialize the exact observer staging path and copy completion
+  ansible.builtin.set_fact:
+    mwan_observer_stage_path: "/usr/local/sbin/mwan-observe-{{ mwan_deploy_trace_id }}"
+    mwan_observer_copy_completed: false
+
+# pct push truncates existing files and cannot overwrite an executing binary.
+- name: Replace the observer executable through a verified new inode
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  check_mode: false
+  block:
+    - name: Stage the released executable beside the active observer
+      ansible.builtin.command:
+        argv:
+          - pct
+          - push
+          - "{{ mwan_operation_observer_vmid | string }}"
+          - /usr/local/sbin/mwan-observe
+          - "{{ mwan_observer_stage_path }}"
+          - --perms
+          - "0755"
+      register: mwan_observer_copy
+      changed_when: true
+      timeout: "{{ mwan_operation_copy_timeout_seconds }}"
+
+    # The CLI reaps its copy worker but discards the worker's failure exit code.
+    - name: Record the proved native copy completion
+      ansible.builtin.set_fact:
+        mwan_observer_copy_completed: true
+
+    - name: Verify the staged observer executable digest
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ mwan_operation_observer_vmid | string }}"
+          - --
+          - sha256sum
+          - --
+          - "{{ mwan_observer_stage_path }}"
+      register: mwan_observer_stage_digest
+      failed_when: >-
+        mwan_observer_stage_digest.rc != 0 or mwan_observer_stage_digest.stdout | trim
+        != mwan_operation_observer_candidate.stat.checksum ~ '  ' ~ mwan_observer_stage_path
+      changed_when: false
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+
+    - name: Verify the staged observer executable version
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ mwan_operation_observer_vmid | string }}"
+          - --
+          - "{{ mwan_observer_stage_path }}"
+          - version
+      register: mwan_observer_stage_version
+      failed_when: >-
+        mwan_observer_stage_version.rc != 0 or ' commit=' ~ mwan_release_commit[:7]
+        not in mwan_observer_stage_version.stdout
+      changed_when: false
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+
+    - name: Atomically replace the verified observer executable
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ mwan_operation_observer_vmid | string }}"
+          - --
+          - mv
+          - --force
+          - --no-target-directory
+          - "{{ mwan_observer_stage_path }}"
+          - /usr/local/sbin/mwan-observe
+      changed_when: true
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+
+  always:
+    - name: Remove the exact staging path after proved copy completion
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ mwan_operation_observer_vmid | string }}"
+          - --
+          - rm
+          - --force
+          - --
+          - "{{ mwan_observer_stage_path }}"
+      changed_when: false
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+      when: mwan_observer_copy_completed | bool
