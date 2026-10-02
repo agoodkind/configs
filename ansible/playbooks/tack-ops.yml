@@ -1,0 +1,136 @@
+---
+# This playbook runs one reviewed Tack ops command on one QA guest with the
+# operator identity flags that deploy-tack renders (tack_ops_identity_flags).
+# The QA reset runs its hand-run ops commands only through this playbook. Each
+# row those commands record then includes the agent service, session,
+# accountable operator, and deploy commit.
+#
+# Usage, with every value explicit:
+#   ./configsctl deploy tack-ops --limit <one QA Tack guest> \
+#     --extra-var tack_commit=<40-character Tack commit the guest runs> \
+#     --extra-var 'tack_ops_command="ops search verify"' \
+#     --extra-var '{"tack_ops_args": ["--mode=full"]}' \
+#     --extra-var tack_ops_execute=true \
+#     --extra-var tack_ops_agent_service=<agent> \
+#     --extra-var tack_ops_agent_session=<session> \
+#     --extra-var tack_ops_accountable_email=<accountable operator email>
+#
+# Each run first runs ops deploy verify --tag <tack_commit>. The command
+# compares the image digest each running app and audit-consumer container
+# runs with the registry digest the guest Docker daemon stores for the image
+# at that tag, and fails when they differ or the daemon stores none; a failure
+# stops the run. The run then prints the dry run of the
+# command, and with tack_ops_execute true runs it with --execute. A run with
+# --check runs the verification and the dry run only.
+#
+# Extra vars override every play and group variable. The allowed commands,
+# the service of each command, and the command lines are literals in the
+# tasks below for that reason.
+
+- name: Check the Tack ops request
+  hosts: tack_all
+  gather_facts: false
+  tasks:
+    - name: Check the operator identity
+      ansible.builtin.import_tasks: tasks/tack-ops-identity-guard.yml
+
+    # The command runs through the command module, not a shell. Each extra
+    # argument is one --flag or --flag=value token from a closed character
+    # set, which leaves no room for a second command, a quoted SQL string, or
+    # a shell operator. The play adds --execute and the identity flags itself,
+    # and an argument may not set them.
+    - name: Refuse a Tack ops request outside the reviewed commands, guests, or arguments
+      ansible.builtin.assert:
+        that:
+          - tack_commit is match('[0-9a-f]{40}\Z')
+          - >-
+            tack_ops_command in ['ops deploy verify', 'audit signers',
+            'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
+            'ops backfill once-search-projections',
+            'ops search provision', 'ops search reindex', 'ops search verify']
+          - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
+          - tack_ops_args | reject('match', '--[a-z][a-z0-9-]*(=[A-Za-z0-9._/:@-]+)?\Z') | list == []
+          - tack_ops_args | select('match', '--(execute|operator-|deploy-commit)') | list == []
+          - ansible_play_hosts_all | difference(groups['tack_qa_all']) | list == []
+          - ansible_play_hosts_all | intersect(groups['tack_prod_all']) | list == []
+          - ansible_play_hosts_all | unique | list | count == 1
+        fail_msg: >-
+          tack-ops runs one reviewed Tack ops command on exactly one QA guest
+          and never on a production guest. tack_commit is the 40-character Tack
+          commit the guest runs. Each extra argument is one --flag or
+          --flag=value token and never --execute, --operator-*, or
+          --deploy-commit. Command "{{ tack_ops_command }}", arguments
+          {{ tack_ops_args }}, commit "{{ tack_commit }}", guests
+          {{ ansible_play_hosts_all }}.
+        quiet: true
+      any_errors_fatal: true
+
+- name: Run the Tack ops command
+  hosts: tack_all
+  gather_facts: false
+  become: true
+  environment:
+    TACK_IMAGE_TAG: "{{ tack_commit }}"
+  tasks:
+    - name: Verify that the guest runs the Tack images for tack_commit
+      ansible.builtin.command:
+        cmd: >-
+          docker compose run --rm tack-ops ops deploy verify --execute
+          --tag {{ tack_commit }} {{ tack_ops_identity_flags }}
+        chdir: "{{ tack_install_dir }}"
+      changed_when: false
+      check_mode: false
+
+    # ops search provision and ops search reindex read node types and
+    # property definitions through the metadata name index (TACK-542). The
+    # dry run of the backfill counts the records without an index entry and
+    # writes nothing. The guard that follows refuses both commands unless the
+    # dry run reports zero missing entries of both kinds. A Tack image without
+    # the backfill fails this read and stops the run.
+    - name: Read whether the metadata name index is complete
+      ansible.builtin.command:
+        cmd: >-
+          docker compose run --rm -e LOG_DISABLE_STDOUT=true app
+          ops backfill once-metadata-name-index --output json
+          {{ tack_ops_identity_flags }}
+        chdir: "{{ tack_install_dir }}"
+      register: tack_metadata_name_index_read
+      changed_when: false
+      check_mode: false
+      when: &tack_ops_index_build tack_ops_command in ['ops search provision', 'ops search reindex']
+
+    - name: Record whether search may build an index on this guest
+      ansible.builtin.set_fact:
+        tack_metadata_name_index_ready: >-
+          {{ counts.dry_run | bool
+             and counts.result.node_types.missing == 0
+             and counts.result.property_definitions.missing == 0 }}
+      vars:
+        counts: "{{ (tack_metadata_name_index_read.stdout_lines | last | from_json).result }}"
+      when: *tack_ops_index_build
+
+    - name: Refuse a search index build without a complete metadata name index
+      ansible.builtin.include_tasks: tasks/tack-search-metadata-name-index.yml
+      when: *tack_ops_index_build
+
+    - name: Print the dry run of the Tack ops command
+      ansible.builtin.command:
+        cmd: >-
+          docker compose run --rm
+          {{ 'tack-ops' if tack_ops_command == 'ops deploy verify' else 'app' }}
+          {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
+          {{ tack_ops_identity_flags }}
+        chdir: "{{ tack_install_dir }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Run the Tack ops command with --execute
+      ansible.builtin.command:
+        cmd: >-
+          docker compose run --rm
+          {{ 'tack-ops' if tack_ops_command == 'ops deploy verify' else 'app' }}
+          {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
+          {{ tack_ops_identity_flags }} --execute
+        chdir: "{{ tack_install_dir }}"
+      changed_when: true
+      when: tack_ops_execute | bool

@@ -57,6 +57,13 @@ tack_ops_identity_flags: >-
   --operator-name "{{ deploy_operator_name }}"
   {% endif %}--deploy-commit {{ tack_commit }}
 
+# Inputs of the tack-ops playbook. A run passes the command and its arguments
+# as extra vars; the playbook refuses an empty command. tack_ops_execute true
+# adds --execute after the dry run.
+tack_ops_command: ""
+tack_ops_args: []
+tack_ops_execute: false
+
 # Engine packages the deploy holds against the weekly package updater
 # (TACK-487): an unattended upgrade of any of these restarts the daemon and
 # every container with it. docker-ce-rootless-extras arrives as a recommend
