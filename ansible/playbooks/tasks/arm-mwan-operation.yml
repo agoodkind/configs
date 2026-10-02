@@ -60,20 +60,20 @@
     mode: "0755"
   check_mode: false
 
-- name: Provision observation executables without changing observer networking
+- name: Hash the released observation executable on the hypervisor
   delegate_to: "{{ mwan_proxmox_delegate }}"
-  ansible.builtin.command:
-    argv:
-      - pct
-      - push
-      - "{{ item | string }}"
-      - /usr/local/sbin/mwan-observe
-      - /usr/local/sbin/mwan-observe
-      - --perms
-      - "0755"
-  loop: "{{ mwan_operation_observer_vmids }}"
-  changed_when: true
+  ansible.builtin.stat:
+    path: /usr/local/sbin/mwan-observe
+    checksum_algorithm: sha256
+  register: mwan_operation_observer_candidate
+  timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
   check_mode: false
+
+- name: Provision observation executables without changing observer networking
+  ansible.builtin.include_tasks: install-mwan-observer.yml
+  loop: "{{ mwan_operation_observer_vmids }}"
+  loop_control:
+    loop_var: mwan_operation_observer_vmid
 
 - name: Read the actual application observer identities
   delegate_to: "{{ mwan_proxmox_delegate }}"
