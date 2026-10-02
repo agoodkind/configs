@@ -23,6 +23,24 @@
   hosts: tack_all
   gather_facts: false
   tasks:
+    # A ledger bootstrap run skips node-prepare and node-wait on the data
+    # guests, which removes the rolling wait that keeps quorum on a running
+    # cluster (TACK-497). The check runs here, before any task changes a
+    # guest, and refuses the flag when the run includes a production guest.
+    - name: Refuse the ledger bootstrap on a run with a production guest
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (tack_ledger_bootstrap | bool
+                 and (ansible_play_hosts_all | intersect(groups['tack_prod_all'] | default([]))) | length > 0)
+        fail_msg: >-
+          tack_ledger_bootstrap=true skips node-prepare and node-wait, and this
+          run includes a production guest. The flag is only for a from-empty
+          rebuild outside production.
+        quiet: true
+      run_once: true
+      delegate_to: localhost
+
     - name: Group each host by whether this deploy configures it
       ansible.builtin.group_by:
         key: >-
@@ -828,15 +846,27 @@
         # wait, and the task after this one waits for all of them together.
         # Every other run keeps the rolling wait, which is what preserves
         # quorum while one node at a time restarts.
+        #
+        # A from-empty rebuild (tack_ledger_bootstrap) only starts the node.
+        # node-prepare and node-wait record to the ledger's audit outbox
+        # before they run, and on that run no ledger node, outbox, or
+        # operator login exists until provision creates them. On a fresh node
+        # node-prepare finds no saved config and changes nothing. The next run
+        # without the flag runs both commands against the provisioned ledger.
+        # The first play refuses the flag on a run with a production guest.
         - name: Prepare, start, and wait on the ledger node (one guest at a time; first start joins)
           ansible.builtin.shell:
             cmd: >-
+              {% if tack_ledger_bootstrap | bool %}
+              docker compose up -d yugabyte
+              {% else %}
               docker compose run --rm tack-ops ops ledger node-prepare --execute {{ tack_ops_identity_flags }};
               prepare_status=$?;
               docker compose up -d yugabyte
               && (exit "$prepare_status")
               {{ '' if tack_ledger_node_certificate_rotated | bool
                  else '&& docker compose run --rm tack-ops ops ledger node-wait --execute ' + tack_ops_identity_flags }}
+              {% endif %}
             chdir: "{{ tack_install_dir }}"
             executable: /bin/bash
           changed_when: true
@@ -848,7 +878,9 @@
             cmd: docker compose run --rm tack-ops ops ledger node-wait --execute {{ tack_ops_identity_flags }}
             chdir: "{{ tack_install_dir }}"
           changed_when: false
-          when: tack_ledger_node_certificate_rotated | bool
+          when:
+            - tack_ledger_node_certificate_rotated | bool
+            - not (tack_ledger_bootstrap | bool)
 
         # The product store process and its backup agent on this data guest
         # (TACK-408). The process announces the guest's pinned address from the
