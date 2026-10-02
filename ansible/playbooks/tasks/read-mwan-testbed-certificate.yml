@@ -1,0 +1,33 @@
+- name: Current testbed OPNsense web certificate is available for hairpin CA trust
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - qm
+      - guest
+      - exec
+      - "{{ service_mapping.opnsense_suburban.vmid }}"
+      - --
+      - openssl
+      - x509
+      - -in
+      - /usr/local/etc/lighttpd_webgui/cert.pem
+      - -outform
+      - PEM
+  register: mwan_nptv6_hairpin_certificate
+  changed_when: false
+  check_mode: false
+  when: mwan_environment == 'testbed'
+
+- name: Verify the testbed OPNsense web certificate read
+  vars:
+    certificate_result: "{{ mwan_nptv6_hairpin_certificate.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - certificate_result.exited == 1
+      - certificate_result.exitcode == 0
+      - certificate_result['out-truncated'] == 0
+      - certificate_result['out-data'].startswith('-----BEGIN CERTIFICATE-----')
+      - certificate_result['out-data'].strip().endswith('-----END CERTIFICATE-----')
+  when: mwan_environment == 'testbed'
+

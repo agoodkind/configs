@@ -59,106 +59,19 @@
     - /etc/systemd/network
     - /etc/networkd-dispatcher/routable.d
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+- name: Install the shared daemon runtime
+  ansible.builtin.include_tasks: install-mwan-core-runtime.yml
   vars:
-    mwan_operation_phase: gateway-preparation
-
-- name: Deploy mwan unified binary to MWAN VM
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.copy:
-    src: "{{ mwan_release_dir }}/linux_amd64/mwan"
-    dest: /usr/local/bin/mwan
-    mode: "0755"
-  notify: Restart mwan-ifmgr@wan
-
-- name: Verify the MWAN VM binary is the released commit
-  ansible.builtin.import_tasks: verify-mwan-release.yml
-  vars:
-    mwan_installed_binary: /usr/local/bin/mwan
-
-# SR_VERSION reports the linked library version independently of the release tag.
-- name: Fail unless the MWAN VM binary links the expected sysrepo
-  when: not ansible_check_mode
-  vars:
-    mwan_reported_libsysrepo: >-
-      {{ mwan_installed_version.stdout
-         | regex_findall(' libsysrepo=([0-9]+[.][0-9]+[.][0-9]+)$') }}
-  ansible.builtin.assert:
-    that:
-      - mwan_reported_libsysrepo == [wanconfig_sysrepo_soversion]
-    fail_msg: >-
-      /usr/local/bin/mwan reports "{{ mwan_installed_version.stdout }}"
-      but the inventory expects libsysrepo={{ wanconfig_sysrepo_soversion }}.
-    success_msg: >-
-      /usr/local/bin/mwan links libsysrepo {{ wanconfig_sysrepo_soversion }}.
+    mwan_install_operation_phase: gateway-preparation
+    mwan_install_reuse_lease: false
+    mwan_install_notify_wan: true
+  when: not mwan_core_runtime_activated | bool
 
 - name: Authorize the next gateway mutation
   ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
   vars:
     mwan_operation_phase: gateway-preparation
-
-- name: Create the sysrepo access group
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.group:
-    name: sysrepo
-    system: true
-
-# The unit starts before coldplug. StateDirectory would order startup after
-# systemd-tmpfiles-setup.
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: gateway-preparation
-
-- name: Deploy the ifmgr state directory rule on MWAN VM
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.copy:
-    src: "{{ repo_root }}/mwan/config/tmpfiles-mwan.conf"
-    dest: /etc/tmpfiles.d/mwan.conf
-    mode: "0644"
-  register: mwan_ifmgr_tmpfiles
-  when: mwan_ifmgr_wan_enabled | bool
-
-- name: Create the ifmgr state directory from the rule
-  ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/mwan.conf
-  changed_when: false
-  when:
-    - mwan_ifmgr_wan_enabled | bool
-    - mwan_ifmgr_tmpfiles is changed
-
-# The installer enables units without starting them. Restart handlers apply
-# changed inputs after staging.
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: gateway-preparation
-
-- name: Install the units and schema the mwan binary embeds
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  async: "{{ mwan_operation_task_timeout_seconds }}"
-  poll: 5
-  ansible.builtin.command:
-    argv:
-      - /usr/local/bin/mwan
-      - install
-      - --role
-      - wan
-      - --apply
-  register: mwan_install
-  changed_when: >-
-    mwan_install.stdout_lines
-    | select('match', '^(wrote|installed module|updated module|imported the) ')
-    | list | length > 0
-  notify:
-    - Restart rousette
-    - Restart nghttpx-wanconfig
-    - Restart mwan-ifmgr@wan
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: gateway-preparation
+    mwan_operation_reuse_lease: false
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (3) + 30 }}"
     mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
 
