@@ -122,6 +122,10 @@
 - name: Initialize remote mutation completion
   ansible.builtin.set_fact:
     mwan_legacy_mutation_pending: false
+    mwan_legacy_capture_result: {}
+    mwan_legacy_adopt_result: {}
+    mwan_legacy_stop_result: {}
+    mwan_legacy_start_result: {}
 
 - name: Complete normal WAN activation under the original adoption lease
   block:
@@ -135,29 +139,35 @@
       ansible.builtin.set_fact:
         mwan_legacy_mutation_pending: true
 
-    - name: Capture legacy NPT state before replacing any runtime input
-      ansible.builtin.command:
-        argv:
-          - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/mwan"
-          - ifmgr
-          - --role
-          - wan
-          - --config
-          - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/config.toml"
-          - --capture-legacy-npt
-          - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/legacy-npt.json"
-          - --producer-pid
-          - "{{ mwan_legacy_producer_pid.stdout | trim }}"
-          - --producer-sha256
-          - "{{ mwan_operation_baseline_files.results[0].stat.checksum }}"
-      timeout: "{{ mwan_operation_native_timeout_seconds }}"
-      async: "{{ mwan_operation_native_timeout_seconds }}"
-      poll: 5
-      changed_when: true
-
-    - name: Record verified remote mutation completion
-      ansible.builtin.set_fact:
-        mwan_legacy_mutation_pending: false
+    - name: Account for terminal legacy capture failures
+      block:
+        - name: Capture legacy NPT state before replacing any runtime input
+          ansible.builtin.command:
+            argv:
+              - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/mwan"
+              - ifmgr
+              - --role
+              - wan
+              - --config
+              - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/config.toml"
+              - --capture-legacy-npt
+              - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/legacy-npt.json"
+              - --producer-pid
+              - "{{ mwan_legacy_producer_pid.stdout | trim }}"
+              - --producer-sha256
+              - "{{ mwan_operation_baseline_files.results[0].stat.checksum }}"
+          timeout: "{{ mwan_operation_native_timeout_seconds }}"
+          async: "{{ mwan_operation_native_timeout_seconds }}"
+          poll: 5
+          changed_when: true
+          register: mwan_legacy_capture_result
+      always:
+        - name: Record proved capture completion
+          ansible.builtin.set_fact:
+            mwan_legacy_mutation_pending: false
+          when:
+            - "mwan_legacy_capture_result is finished"
+            - "'rc' in mwan_legacy_capture_result"
 
     - name: Install the runtime environment after verified capture
       ansible.builtin.include_tasks: install-mwan-runtime-environment.yml
@@ -206,18 +216,28 @@
         mwan_operation_reuse_lease: true
         mwan_operation_budget_seconds: "{{ mwan_legacy_poll_budget_seconds }}"
 
-    - name: Verify the legacy stop completed
-      timeout: "{{ mwan_legacy_status_timeout_seconds }}"
-      ansible.builtin.async_status:
-        jid: "{{ mwan_legacy_stop_job.ansible_job_id }}"
-      register: mwan_legacy_stop_result
-      until: mwan_legacy_stop_result is finished
-      retries: "{{ mwan_legacy_status_retries }}"
-      delay: 5
-
-    - name: Record verified remote mutation completion
-      ansible.builtin.set_fact:
-        mwan_legacy_mutation_pending: false
+    - name: Account for terminal legacy stop failures
+      block:
+        - name: Verify the legacy stop completed
+          timeout: "{{ mwan_legacy_status_timeout_seconds }}"
+          ansible.builtin.async_status:
+            jid: "{{ mwan_legacy_stop_job.ansible_job_id }}"
+          register: mwan_legacy_stop_result
+          until: mwan_legacy_stop_result is finished
+          retries: "{{ mwan_legacy_status_retries }}"
+          delay: 5
+      always:
+        - name: Record proved stop completion
+          ansible.builtin.set_fact:
+            mwan_legacy_mutation_pending: false
+          when:
+            - "mwan_legacy_stop_result is finished"
+            - "'invocation' in mwan_legacy_stop_result"
+            - "'module_args' in mwan_legacy_stop_result.invocation"
+            - "'name' in mwan_legacy_stop_result.invocation.module_args"
+            - "'state' in mwan_legacy_stop_result.invocation.module_args"
+            - "mwan_legacy_stop_result.invocation.module_args.name == 'mwan-ifmgr@wan'"
+            - "mwan_legacy_stop_result.invocation.module_args.state == 'stopped'"
 
     - name: Verify the live lease before reading the stopped process
       ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
@@ -242,25 +262,31 @@
       ansible.builtin.set_fact:
         mwan_legacy_mutation_pending: true
 
-    - name: Adopt the captured legacy NPT receipts before normal activation
-      ansible.builtin.command:
-        argv:
-          - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/mwan"
-          - ifmgr
-          - --role
-          - wan
-          - --config
-          - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/config.toml"
-          - --adopt-legacy-npt
-          - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/legacy-npt.json"
-      timeout: "{{ mwan_operation_native_timeout_seconds }}"
-      async: "{{ mwan_operation_native_timeout_seconds }}"
-      poll: 5
-      changed_when: true
-
-    - name: Record verified remote mutation completion
-      ansible.builtin.set_fact:
-        mwan_legacy_mutation_pending: false
+    - name: Account for terminal legacy adoption failures
+      block:
+        - name: Adopt the captured legacy NPT receipts before normal activation
+          ansible.builtin.command:
+            argv:
+              - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/mwan"
+              - ifmgr
+              - --role
+              - wan
+              - --config
+              - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/config.toml"
+              - --adopt-legacy-npt
+              - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/legacy-npt.json"
+          timeout: "{{ mwan_operation_native_timeout_seconds }}"
+          async: "{{ mwan_operation_native_timeout_seconds }}"
+          poll: 5
+          changed_when: true
+          register: mwan_legacy_adopt_result
+      always:
+        - name: Record proved adopt completion
+          ansible.builtin.set_fact:
+            mwan_legacy_mutation_pending: false
+          when:
+            - "mwan_legacy_adopt_result is finished"
+            - "'rc' in mwan_legacy_adopt_result"
 
     - name: Verify the exact lease before replacing the runtime
       ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
@@ -336,18 +362,28 @@
           {{ mwan_legacy_start_poll_budget_seconds | int + mwan_operation_observation_timeout_seconds | int
              + mwan_legacy_health_budget_seconds | int }}
 
-    - name: Require the normal WAN writer startup to complete
-      ansible.builtin.async_status:
-        jid: "{{ mwan_legacy_start_job.ansible_job_id }}"
-      register: mwan_legacy_start_result
-      until: mwan_legacy_start_result is finished
-      retries: "{{ mwan_legacy_start_status_retries }}"
-      delay: 5
-      timeout: "{{ mwan_legacy_status_timeout_seconds }}"
-
-    - name: Record verified remote mutation completion
-      ansible.builtin.set_fact:
-        mwan_legacy_mutation_pending: false
+    - name: Account for terminal WAN startup failures
+      block:
+        - name: Require the normal WAN writer startup to complete
+          ansible.builtin.async_status:
+            jid: "{{ mwan_legacy_start_job.ansible_job_id }}"
+          register: mwan_legacy_start_result
+          until: mwan_legacy_start_result is finished
+          retries: "{{ mwan_legacy_start_status_retries }}"
+          delay: 5
+          timeout: "{{ mwan_legacy_status_timeout_seconds }}"
+      always:
+        - name: Record proved start completion
+          ansible.builtin.set_fact:
+            mwan_legacy_mutation_pending: false
+          when:
+            - "mwan_legacy_start_result is finished"
+            - "'invocation' in mwan_legacy_start_result"
+            - "'module_args' in mwan_legacy_start_result.invocation"
+            - "'name' in mwan_legacy_start_result.invocation.module_args"
+            - "'state' in mwan_legacy_start_result.invocation.module_args"
+            - "mwan_legacy_start_result.invocation.module_args.name == 'mwan-ifmgr@wan'"
+            - "mwan_legacy_start_result.invocation.module_args.state == 'started'"
 
     - name: Verify the exact lease before fresh application observations
       ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
