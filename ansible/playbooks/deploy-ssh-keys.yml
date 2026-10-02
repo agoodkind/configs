@@ -261,6 +261,9 @@
         pct exec {{ item.vmid }} -- sh -c '
           set -e
           mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
+          {% if guest_prep_invalidate_revision | bool %}
+          rm -f "{{ guest_prep_revision_file }}"
+          {% endif %}
           test -s /tmp/new_keys.pub
           cat /tmp/new_keys.pub > /etc/ssh/authorized_keys.d/authorized_keys
           chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys
@@ -313,6 +316,9 @@
         qm guest exec {{ item.vmid }} -- sh -c "
           set -e
           mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
+          {% if guest_prep_invalidate_revision | bool %}
+          rm -f '{{ guest_prep_revision_file }}'
+          {% endif %}
           echo '$KEY_B64' | base64 -d \
             > /etc/ssh/authorized_keys.d/authorized_keys
           chmod 0644 /etc/ssh/authorized_keys.d/authorized_keys

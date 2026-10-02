@@ -7,6 +7,8 @@
 
 - name: Deploy SSH keys to CT/VM guests
   ansible.builtin.import_playbook: deploy-ssh-keys.yml
+  vars:
+    guest_prep_invalidate_revision: true
 
 - name: Prepare CT/VM guests
   hosts: "{{ target_hosts }}"
@@ -40,20 +42,15 @@
     - name: Gather facts
       ansible.builtin.setup:
 
-    - name: Invalidate the previous guest preparation revision
-      ansible.builtin.file:
-        path: "{{ guest_prep_revision_file }}"
-        state: absent
-      when: not ansible_check_mode
-
     - name: Detect if running in LXC container or VM
       ansible.builtin.set_fact:
         is_lxc: "{{ ansible_facts['virtualization_type'] == 'lxc' }}"
         is_vm: "{{ ansible_facts['virtualization_type'] in ['kvm', 'qemu'] }}"
 
     - name: Compute effective prep-guests service name and login directory
+      tags: [guest-debug]
       ansible.builtin.set_fact:
-        prep_ct_service_effective: "{{ target_hosts | regex_replace('_servers$', '') | trim }}"
+        prep_ct_service_effective: "{{ service_name }}"
         login_dir_effective: "{{ login_dir }}"
 
     - name: Set the guest hostname to its canonical service name
@@ -290,19 +287,21 @@
           fi
 
     - name: Install debug helper command (service-specific)
+      tags: [guest-debug]
       ansible.builtin.template:
         src: >-
           {{ repo_root }}/{{ prep_ct_service_effective | lower -}}/debug-{{-
           prep_ct_service_effective | lower }}.sh.j2
-        dest: /usr/local/bin/debug
+        dest: "{{ guest_debug_command_file }}"
         mode: "0755"
       when:
         - prep_ct_service_effective | lower in ['adguard', 'traefik', 'powerdns']
 
     - name: Install debug helper command (generic fallback)
+      tags: [guest-debug]
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/debug/debug-generic.sh.j2"
-        dest: /usr/local/bin/debug
+        dest: "{{ guest_debug_command_file }}"
         mode: "0755"
       when: prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns']
 

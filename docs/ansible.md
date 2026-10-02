@@ -17,8 +17,8 @@ not detect later changes inside the guest.
 
 OpenTofu configures guest resources and supports initial hostname, networking,
 DNS, and root SSH keys for LXCs. Ansible configures packages, global SSH
-authorization, and services inside the guests. The MWAN VMs have no cloud-init
-initialization. Installing cloud-init and configuring first-boot data would
+authorization, and services inside the guests. OpenTofu does not configure
+cloud-init for the MWAN VMs. Installing cloud-init and configuring first-boot data would
 require a separate migration of those guests.
 
 For a new guest, an existing guest without a preparation revision, or a required
