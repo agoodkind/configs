@@ -9,23 +9,27 @@ module GuestPreparation
   REPOSITORY_ROOT = File.expand_path('../..', __dir__)
   TASK_DIRECTORY = File.join(REPOSITORY_ROOT, 'ansible', 'playbooks', 'tasks')
   FIXTURE_PLAYBOOK = File.join(REPOSITORY_ROOT, 'spec', 'fixtures', 'ansible', 'guest_preparation.yml')
+  GROUP_FIXTURE_PLAYBOOK = File.join(REPOSITORY_ROOT, 'spec', 'fixtures', 'ansible', 'guest_preparation_group.yml')
+  GROUP_HOSTS = %w[prepared_guest stale_guest].freeze
   EXPECTED_REVISION = '1'
   RUN_TIMEOUT_SECONDS = 120
 
   class Harness
-    attr_reader :revision_file, :service_file, :debug_file
+    attr_reader :revision_file, :service_file, :debug_file, :group_service_files
 
     def initialize(directory)
       @directory = directory
       @revision_file = File.join(directory, 'guest', 'guest-prep-revision')
       @service_file = File.join(directory, 'service-artifact')
       @debug_file = File.join(directory, 'debug')
+      @group_service_files = GROUP_HOSTS.map { |host| File.join(directory, 'services', host) }
       ansible_directory = File.join(directory, 'ansible')
       playbook_directory = File.join(ansible_directory, 'playbooks')
       FileUtils.mkdir_p(playbook_directory)
       FileUtils.cp_r(File.join(REPOSITORY_ROOT, 'ansible', 'playbooks', '.'), playbook_directory)
       FileUtils.cp(File.join(REPOSITORY_ROOT, 'configsctl'), File.join(directory, 'configsctl'))
       FileUtils.cp(FIXTURE_PLAYBOOK, File.join(playbook_directory, 'guest-preparation.yml'))
+      FileUtils.cp(GROUP_FIXTURE_PLAYBOOK, File.join(playbook_directory, 'guest-preparation-group.yml'))
       File.write(File.join(ansible_directory, 'inventory.ini'), "localhost ansible_connection=local\n")
       File.write(File.join(ansible_directory, 'ansible.cfg'), "[defaults]\ninventory = inventory.ini\ninterpreter_python = auto_silent\n")
     end
@@ -61,6 +65,23 @@ module GuestPreparation
         'adguard_data_dir' => File.join(@directory, 'data')
       }
       run_deploy(['./configsctl', 'deploy', 'prep-guests', '--tags', 'guest-debug', '--extra-var', JSON.generate(variables)])
+    end
+
+    def deploy_group
+      revision_directory = File.join(@directory, 'revisions')
+      service_directory = File.join(@directory, 'services')
+      FileUtils.mkdir_p([revision_directory, service_directory])
+      File.write(File.join(revision_directory, GROUP_HOSTS.first), "#{EXPECTED_REVISION}\n")
+      File.write(File.join(revision_directory, GROUP_HOSTS.last), "0\n")
+      inventory = "[preparation_guests]\n"
+      GROUP_HOSTS.each { |host| inventory += "#{host} ansible_connection=local\n" }
+      File.write(File.join(@directory, 'ansible', 'inventory.ini'), inventory)
+      variables = {
+        'guest_prep_revision' => EXPECTED_REVISION,
+        'guest_prep_revision_file' => File.join(revision_directory, '{{ inventory_hostname }}'),
+        'preparation_test_service_directory' => service_directory
+      }
+      run_deploy(['./configsctl', 'deploy', 'guest-preparation-group', '--extra-var', JSON.generate(variables)])
     end
 
     def run_deploy(argv)
@@ -140,5 +161,16 @@ RSpec.describe 'the guest preparation deployment boundary' do
     command = File.read(@harness.debug_file)
     expect(command).to include('echo "service=adguard"', 'systemctl status AdGuardHome --no-pager')
     expect(command).to include('journalctl -u AdGuardHome')
+  end
+
+  it 'rejects service writes for every guest when one preparation revision is stale' do
+    result = @harness.deploy_group
+
+    expect(result.timed_out).to be(false), result.output
+    expect(result.exit_status).not_to be_success, result.output
+    expect(result.output).to include('Guest preparation is outdated on stale_guest'), result.output
+    @harness.group_service_files.each do |path|
+      expect(File.exist?(path)).to be(false), result.output
+    end
   end
 end

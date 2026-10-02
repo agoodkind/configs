@@ -1,0 +1,16 @@
+---
+- name: Require preparation for every service guest
+  ansible.builtin.import_playbook: require-prepared-guests.yml
+  vars:
+    target_hosts: preparation_guests
+
+- name: Configure service artifacts after preparation succeeds
+  hosts: preparation_guests
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Write a subsequent service artifact for each guest
+      ansible.builtin.copy:
+        dest: "{{ preparation_test_service_directory }}/{{ inventory_hostname }}"
+        content: "service configured\n"
+        mode: "0600"
