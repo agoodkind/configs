@@ -4,13 +4,27 @@
 # ONT, while the testbed AT&T is a simulated ISP LXC on a direct link with no
 # 802.1X. Included by deploy-mwan.yml gated on mwan_att_8021x_enabled.
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy wpa_supplicant config for AT&T 802.1X
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.template:
     src: "{{ repo_root }}/mwan/config/wpa_supplicant.conf.j2"
     dest: /etc/wpa_supplicant/wpa_supplicant.conf
     mode: "0600"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (3) + 30 }}"
+    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+
 - name: Deploy AT&T 802.1X certificates from vault
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     content: "{{ item.content }}"
     dest: "/etc/wpa_supplicant/{{ item.name }}"
@@ -26,80 +40,166 @@
   no_log: true
   notify: Restart wpa_supplicant
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy OpenSSL config for legacy provider support
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/config/openssl.cnf"
     dest: /etc/wpa_supplicant/openssl.cnf
     mode: "0644"
   notify: Restart wpa_supplicant
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy legacy SSH client config for the ONT SFP stick
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/config/ssh_config.d/10-ont-sfp-stick-ssh.conf"
     dest: /etc/ssh/ssh_config.d/10-ont-sfp-stick-ssh.conf
     mode: "0644"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy wpa_supplicant systemd service
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/services/wpa_supplicant.service"
     dest: /etc/systemd/system/wpa_supplicant-mwan.service
     mode: "0644"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Enable wpa_supplicant service
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.systemd:
     name: wpa_supplicant-mwan
     enabled: true
     daemon_reload: true
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy wpa-cli-action service
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/services/wpa-cli-action.service"
     dest: /etc/systemd/system/wpa-cli-action.service
     mode: "0644"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Enable wpa-cli-action service
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.systemd:
     name: wpa-cli-action
     enabled: true
     daemon_reload: true
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy wpa_supplicant action script
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/scripts/wpa-action.sh"
     dest: /usr/local/bin/wpa-action.sh
     mode: "0755"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy wpa-authenticated path unit
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/paths/wpa-authenticated.path"
     dest: /etc/systemd/system/wpa-authenticated.path
     mode: "0644"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy wpa-authenticated service unit
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/services/wpa-authenticated.service"
     dest: /etc/systemd/system/wpa-authenticated.service
     mode: "0644"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Enable wpa-authenticated path unit
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.systemd:
     name: wpa-authenticated.path
     enabled: true
     daemon_reload: true
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy AT&T VLAN bringup script
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/scripts/bringup-att-vlan.sh"
     dest: /usr/local/bin/bringup-att-vlan.sh
     mode: "0755"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Deploy AT&T VLAN bringup systemd service
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/services/bringup-att-vlan.service"
     dest: /etc/systemd/system/bringup-att-vlan.service
     mode: "0644"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Enable AT&T VLAN bringup service
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.systemd:
     name: bringup-att-vlan
     enabled: true

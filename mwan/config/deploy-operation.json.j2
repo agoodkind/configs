@@ -1,0 +1,65 @@
+{% set identity = {'machine_id': mwan_operation_guest_machine.stdout | trim,
+                   'boot_id': mwan_operation_guest_boot.stdout | trim} %}
+{% set baseline = identity | combine({
+    'executable_sha256': mwan_operation_baseline_files.results[0].stat.checksum,
+    'network_sha256': mwan_operation_baseline_files.results[1].stat.checksum,
+    'runtime_sha256': mwan_operation_baseline_files.results[2].stat.checksum}) %}
+{% set target = identity | combine({
+    'executable_sha256': mwan_operation_target_files.results[0].stat.checksum,
+    'network_sha256': mwan_operation_target_files.results[1].stat.checksum,
+    'runtime_sha256': mwan_operation_target_files.results[2].stat.checksum}) %}
+{% set families = mwan_deploy_gate_families.split(',') %}
+{% set required_checks = [] %}
+{% set restored_checks = [] %}
+{% for inputs, output in [
+    (mwan_operation_inbound_checks + mwan_operation_downstream_checks, required_checks),
+    (mwan_operation_restored_inbound_checks + mwan_operation_restored_downstream_checks, restored_checks)] %}
+{% for input in inputs %}
+{% if input.observer_vmid | int == 0 %}
+{% set observer = {'kind': 'local', 'machine_id': mwan_operation_host_machine.stdout | trim} %}
+{% else %}
+{% set machines = mwan_operation_observer_identities.results
+    | selectattr('item', 'equalto', input.observer_vmid) | list %}
+{% set machine = machines[0] %}
+{% set observer = {'kind': 'lxc', 'vmid': input.observer_vmid | int,
+                   'machine_id': machine.stdout | trim,
+                   'host_machine_id': mwan_operation_host_machine.stdout | trim} %}
+{% endif %}
+{% set check = input | dict2items | rejectattr('key', 'equalto', 'observer_vmid')
+    | items2dict | combine({
+      'observer': observer,
+      'timeout_seconds': mwan_operation_check_timeout_seconds,
+      'max_age_seconds': mwan_operation_check_max_age_seconds}) %}
+{% if input.operation == 'http' %}
+{% set check = check | combine({'http_method': 'GET', 'expected_http_status': [200]}) %}
+{% endif %}
+{% if input.operation == 'http' and input.dimension == 'inbound_application' %}
+{% set check = check | combine({'expected_body': 'mwan-testbed-mapping-ok\n'}) %}
+{% endif %}
+{% set _ = output.append(check) %}
+{% endfor %}
+{% endfor %}
+{{ {
+  'operation_id': mwan_deploy_trace_id,
+  'generation': mwan_operation_generation,
+  'vmid': actual_vmid | string,
+  'snapshot': mwan_pre_deploy_snapshot_name,
+  'baseline': baseline,
+  'target': target,
+  'paths': {'executable': '/usr/local/bin/mwan',
+            'network': '/etc/mwan/network.json',
+            'runtime': '/etc/mwan/config.toml'},
+  'deadline': mwan_operation_deadline.stdout | trim,
+  'watch_unit': 'mwan-operation-' ~ mwan_deploy_trace_id ~ '.service',
+  'poll_seconds': mwan_operation_poll_seconds,
+  'observation_timeout_seconds': mwan_operation_observation_timeout_seconds,
+  'recovery_timeout_seconds': mwan_operation_recovery_timeout_seconds,
+  'failure_threshold': mwan_operation_failure_threshold,
+  'required_families': families,
+  'required_checks': required_checks,
+  'restored_required_checks': restored_checks,
+  'observation': {'machine_id_path': '/etc/machine-id',
+                  'probe_binary': '/usr/local/sbin/mwan-observe',
+                  'transport_overhead_seconds': 5,
+                  'paths': []}
+} | to_nice_json }}

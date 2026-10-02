@@ -8,6 +8,115 @@
 # Service identity (derives from service_mapping)
 service_hostname: "{{ service_mapping.mwan.hostname }}"
 mwan_environment: "prod"
+mwan_bootstrap_guest: false
+mwan_controller_artifact_root: "/Volumes/Chaos Storage/Codex/mwan305/configs-integration/controller"
+mwan_operation_armed: false
+mwan_operation_lease_id: ""
+mwan_operation_acquire: true
+mwan_operation_reuse_lease: false
+mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+mwan_operation_handover_lease_seconds: 1800
+mwan_operation_task_timeout_seconds: 120
+mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds }}"
+mwan_operation_reconnect_timeout_seconds: 120
+mwan_operation_poll_budget_seconds: 120
+mwan_operation_duration_seconds: 7200
+mwan_operation_poll_seconds: 5
+mwan_operation_observation_timeout_seconds: 15
+mwan_operation_restore_budget_seconds: 600
+mwan_operation_max_lease_seconds: >-
+  {{ [mwan_operation_task_timeout_seconds | int * 8
+      + mwan_operation_reconnect_timeout_seconds | int
+      + mwan_operation_poll_budget_seconds | int + 60,
+      mwan_operation_task_timeout_seconds | int * (mwan_networkd_files | length) + 60,
+      mwan_operation_task_timeout_seconds | int * (mwan_enabled_services | length) + 60,
+      mwan_operation_task_timeout_seconds | int * 2 + 480] | max }}
+mwan_operation_recovery_timeout_seconds: >-
+  {{ mwan_operation_max_lease_seconds | int + mwan_operation_restore_budget_seconds | int }}
+mwan_operation_failure_threshold: 3
+mwan_operation_check_timeout_seconds: 10
+mwan_operation_check_max_age_seconds: 180
+mwan_operation_observer_vmids:
+  - "{{ service_mapping.debianct.vmid }}"
+  - "{{ service_mapping.unifi.vmid }}"
+mwan_operation_inbound_ssh_version: "SSH-2.0-OpenSSH_10.5 FreeBSD-openssh-portable-10.5.p1_1,1"
+mwan_operation_local_ipv4_source: "158.247.70.47"
+mwan_operation_local_ipv6_source: "2607:f598:d3e0:131:6662:66ff:fe23:f982"
+mwan_operation_inbound_checks:
+  - id: inbound-webpass-ipv4
+    operation: ssh_banner
+    dimension: inbound_application
+    family: ipv4
+    observer_vmid: 0
+    interface: mbrains
+    source: "{{ mwan_operation_local_ipv4_source }}"
+    target: "136.25.91.242:22"
+    expected_next_hop: "158.247.70.1"
+    expected_ssh_version: "{{ mwan_operation_inbound_ssh_version }}"
+  - id: inbound-webpass-ipv6
+    operation: ssh_banner
+    dimension: inbound_application
+    family: ipv6
+    observer_vmid: 0
+    interface: mbrains
+    source: "{{ mwan_operation_local_ipv6_source }}"
+    target: "[2604:5500:c271:be00::1]:22"
+    expected_next_hop: "fe80::f61e:57ff:fe06:4983"
+    expected_ssh_version: "{{ mwan_operation_inbound_ssh_version }}"
+  - id: inbound-att-ipv4
+    operation: ssh_banner
+    dimension: inbound_application
+    family: ipv4
+    observer_vmid: 0
+    interface: mbrains
+    source: "{{ mwan_operation_local_ipv4_source }}"
+    target: "104.57.226.193:22"
+    expected_next_hop: "158.247.70.1"
+    expected_ssh_version: "{{ mwan_operation_inbound_ssh_version }}"
+  - id: inbound-att-ipv6
+    operation: ssh_banner
+    dimension: inbound_application
+    family: ipv6
+    observer_vmid: 0
+    interface: mbrains
+    source: "{{ mwan_operation_local_ipv6_source }}"
+    target: "[2600:1700:2f71:c80::1]:22"
+    expected_next_hop: "fe80::f61e:57ff:fe06:4983"
+    expected_ssh_version: "{{ mwan_operation_inbound_ssh_version }}"
+mwan_operation_downstream_checks:
+  - id: downstream-unifi-ipv4
+    operation: http
+    dimension: downstream_application
+    family: ipv4
+    observer_vmid: "{{ service_mapping.unifi.vmid }}"
+    interface: eth0
+    source: "{{ service_mapping.unifi.ipv4 }}"
+    target: "https://www.cloudflare.com/cdn-cgi/trace"
+    expected_next_hop: "10.250.0.1"
+  - id: downstream-unifi-ipv6
+    operation: http
+    dimension: downstream_application
+    family: ipv6
+    observer_vmid: "{{ service_mapping.unifi.vmid }}"
+    interface: eth0
+    source: "{{ service_mapping.unifi.ipv6 }}"
+    target: "https://www.cloudflare.com/cdn-cgi/trace"
+    expected_next_hop: "{{ service_mapping.opnsense.ipv6 }}"
+  - id: downstream-debianct-ipv6
+    operation: http
+    dimension: downstream_application
+    family: ipv6
+    observer_vmid: "{{ service_mapping.debianct.vmid }}"
+    interface: eth0
+    source: "{{ service_mapping.debianct.ipv6 }}"
+    target: "https://www.cloudflare.com/cdn-cgi/trace"
+    expected_next_hop: "{{ service_mapping.opnsense.ipv6 }}"
+mwan_operation_restored_inbound_checks: "{{ mwan_operation_inbound_checks }}"
+mwan_operation_restored_downstream_checks: "{{ mwan_operation_downstream_checks }}"
+mwan_legacy_npt_adoption_required: true
+mwan_legacy_npt_producers:
+  - commit: d442ba1
+    executable_sha256: "1c79542f6f9e56fc0ad0f101b0688a84f95bfc41706ebebf36982e0f4f8726fa"
 
 # VM details (known/static)
 # Derived from service_mapping (single source of truth)
