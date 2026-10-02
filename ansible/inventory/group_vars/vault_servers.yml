@@ -48,6 +48,8 @@ mwan_email_cooldown: "5m"
 # own mbrains link, so it is the one host that enables the OOB modules.
 mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: true
+mwan_ifmgr_oob_ipv4_source_policy_enabled: true
+mwan_ifmgr_oob_ipv4_source: "158.247.70.47/32"
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
 mwan_ifmgr_iface_dhcp_v4: true

@@ -11,6 +11,8 @@ mwan_ifmgr_enabled: true
 # the OOB-source policy rule, so a host without a tunnel renders none of them
 # and those modules self-disable at Init.
 mwan_ifmgr_oob_enabled: false
+mwan_ifmgr_oob_ipv4_source_policy_enabled: false
+mwan_ifmgr_oob_ipv4_source: ""
 # The daemon needs exactly one iface section naming the interface its kernel
 # event monitor watches. These decide whether it also runs a DHCPv4 client and
 # a router solicitor there.

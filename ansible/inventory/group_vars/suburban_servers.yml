@@ -17,6 +17,8 @@ mwan_config_mgmt_addr: "3d06:bad:b01:210::213"
 
 # Shared testbed MWAN topology values consumed by the suburban host config.
 mwan_environment: "testbed"
+mwan_ifmgr_oob_ipv4_source_policy_enabled: false
+mwan_ifmgr_oob_ipv4_source: ""
 mwan_vmid: "{{ service_mapping.mwan_suburban.vmid }}"
 # The testbed router. Overrides the 101 in proxmox_servers.yml, which is vault's
 # production router, so the drainer's chardev path and the upgrade target both
