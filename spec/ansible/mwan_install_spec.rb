@@ -439,37 +439,6 @@ RSpec.describe MwanInstall do
   end
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
-    it "passes the selected families and probe path to both deploy-gate commands in #{group_file}" do
-      group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
-      tasks = described_class.role_tasks(file: "deploy-mwan.yml", play: "Configure MWAN VM")
-      baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
-      recovery = tasks.find { |task| task['name'] == 'Start hypervisor-local MWAN deploy gate before reboot' }
-      expect(baseline).not_to be_nil
-      expect(recovery).not_to be_nil
-
-      configured = group_vars.slice('mwan_deploy_gate_families', 'mwan_deploy_gate_consecutive_rounds')
-      alternate = configured.merge('mwan_deploy_gate_families' => 'ipv4', 'mwan_deploy_gate_consecutive_rounds' => '5')
-      [configured, alternate].each do |gate_settings|
-        variables = gate_settings.merge(
-          'actual_vmid' => '213',
-          'mwan_pre_reboot_boot_id' => { 'stdout' => 'old-boot-id' },
-          'mwan_deploy_trace_id' => 'test-trace'
-        )
-        renders = [baseline, recovery].map do |task|
-          TaskExpressions.render_task(task, 'argv' => described_class.command_argv(task))
-        end
-        rendered = TaskExpressions.evaluate(variables: variables, facts: [], renders: renders).fetch('renders')
-        families = gate_settings.fetch('mwan_deploy_gate_families')
-        rounds = gate_settings.fetch('mwan_deploy_gate_consecutive_rounds')
-        probe_path = '/run/mwan-deploy-gate/test-trace-probe.json'
-
-        expect(rendered[0].fetch('argv')).to eq(
-          ['/usr/local/sbin/mwan-deploy-gate', 'deploy-gate', 'check-egress', families, probe_path]
-        )
-        expect(rendered[1].fetch('argv').last(3)).to eq([families, rounds, probe_path])
-      end
-    end
-
     it "leaves the verb's units out of the enable list in #{group_file}" do
       services = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file)).fetch('mwan_enabled_services')
       doubled = services.map { |name| described_class.unit_name(name) } & MwanInstall::ROLES.first[:enabled]

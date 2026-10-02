@@ -50,6 +50,9 @@ mwan_ifmgr_role: "oob"
 mwan_ifmgr_oob_enabled: true
 mwan_ifmgr_oob_ipv4_source_policy_enabled: true
 mwan_ifmgr_oob_ipv4_source: "158.247.70.47/32"
+mwan_host_observer_policy_target: "136.25.91.242:22"
+mwan_host_observer_policy_next_hop: "158.247.70.1"
+mwan_host_observer_policy_ssh_version: "SSH-2.0-OpenSSH_10.5 FreeBSD-openssh-portable-10.5.p1_1,1"
 mwan_ifmgr_iface_key: "mbrains"
 mwan_ifmgr_iface_name: "mbrains"
 mwan_ifmgr_iface_dhcp_v4: true
