@@ -1,0 +1,152 @@
+- name: Reserve one bounded lease for legacy capture and adoption
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_budget_seconds: >-
+      {{ mwan_operation_task_timeout_seconds | int * 8
+         + mwan_operation_reconnect_timeout_seconds | int
+         + mwan_operation_poll_budget_seconds | int + 30 }}
+
+- name: Verify the live lease before the next legacy mutation
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+
+- name: Create the one-shot transition directory
+  ansible.builtin.file:
+    path: "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}"
+    state: directory
+    mode: "0700"
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+
+- name: Verify the live lease before the next legacy mutation
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+
+- name: Stage the candidate without replacing the running executable
+  ansible.builtin.copy:
+    src: "{{ mwan_release_dir }}/linux_amd64/mwan"
+    dest: "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/mwan"
+    mode: "0755"
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+
+- name: Verify the live lease before the next legacy mutation
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+
+- name: Stage the transition runtime with the unchanged installed network intent
+  ansible.builtin.copy:
+    src: "{{ mwan_controller_artifact_root }}/runtime-{{ inventory_hostname }}.toml"
+    dest: "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/config.toml"
+    mode: "0600"
+  no_log: true
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+
+- name: Read the exact original WAN producer PID
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  ansible.builtin.command:
+    argv: [systemctl, show, mwan-ifmgr@wan, --property=MainPID, --value]
+  register: mwan_legacy_producer_pid
+  changed_when: false
+
+- name: Verify the live lease before the next legacy mutation
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+
+- name: Capture legacy NPT state before replacing any runtime input
+  ansible.builtin.command:
+    argv:
+      - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/mwan"
+      - ifmgr
+      - --role
+      - wan
+      - --config
+      - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/config.toml"
+      - --capture-legacy-npt
+      - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/legacy-npt.json"
+      - --producer-pid
+      - "{{ mwan_legacy_producer_pid.stdout | trim }}"
+      - --producer-sha256
+      - "{{ mwan_operation_baseline_files.results[0].stat.checksum }}"
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  changed_when: true
+
+- name: Verify the live lease before the next legacy mutation
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+    mwan_operation_budget_seconds: >-
+      {{ mwan_operation_task_timeout_seconds
+         + mwan_operation_reconnect_timeout_seconds
+         + mwan_operation_poll_budget_seconds
+         + mwan_operation_task_timeout_seconds }}
+
+- name: Stop the exact legacy WAN writer without waiting on SSH
+  ansible.builtin.systemd:
+    name: mwan-ifmgr@wan
+    state: stopped
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 0
+  register: mwan_legacy_stop_job
+
+- name: Reconnect after the bounded legacy stop
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 5
+    sleep: 5
+    timeout: "{{ mwan_operation_reconnect_timeout_seconds }}"
+
+- name: Verify the exact live operation before reading the stopped producer
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+    mwan_operation_budget_seconds: "{{ mwan_operation_poll_budget_seconds }}"
+
+- name: Verify the legacy stop completed
+  ansible.builtin.async_status:
+    jid: "{{ mwan_legacy_stop_job.ansible_job_id }}"
+  register: mwan_legacy_stop_result
+  until: mwan_legacy_stop_result is finished
+  retries: 24
+  delay: 5
+
+- name: Verify the live lease before reading the stopped process
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+
+- name: Require the captured legacy process to be absent
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  ansible.builtin.stat:
+    path: "/proc/{{ mwan_legacy_producer_pid.stdout | trim }}"
+  register: mwan_legacy_producer_after_stop
+  failed_when: mwan_legacy_producer_after_stop.stat.exists
+
+- name: Verify the live lease before the next legacy mutation
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+  vars:
+    mwan_operation_phase: legacy-npt-adoption
+    mwan_operation_reuse_lease: true
+
+- name: Adopt the captured legacy NPT receipts before normal activation
+  ansible.builtin.command:
+    argv:
+      - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/mwan"
+      - ifmgr
+      - --role
+      - wan
+      - --config
+      - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/config.toml"
+      - --adopt-legacy-npt
+      - "/var/lib/mwan/deploy-{{ mwan_deploy_trace_id }}/legacy-npt.json"
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  changed_when: true

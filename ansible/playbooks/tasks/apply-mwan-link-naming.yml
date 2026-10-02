@@ -1,9 +1,24 @@
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Reload udev rules
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.command:
     argv: [udevadm, control, --reload]
   changed_when: false
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+    mwan_operation_budget_seconds: "{{ mwan_role_job_timeout_seconds | int * 2 + 300 + 120 + 30 }}"
+
 - name: Trigger net udev events without waiting on SSH
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.command:
     argv: [udevadm, trigger, --action=add, --subsystem-match=net]
   async: "{{ mwan_role_job_timeout_seconds }}"

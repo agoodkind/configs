@@ -1,20 +1,20 @@
 - name: Authorize the next gateway mutation
   ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
   vars:
-    mwan_operation_phase: networkd-reload
+    mwan_operation_phase: "restart-{{ mwan_deployment_restart_unit }}"
     mwan_operation_budget_seconds: "{{ mwan_role_job_timeout_seconds | int * 2 + 300 + 120 + 30 }}"
 
-- name: Reload networkd without waiting on SSH
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.command:
-    argv: [networkctl, reload]
+- name: Restart the deployment unit without waiting on SSH
+  ansible.builtin.systemd:
+    name: "{{ mwan_deployment_restart_unit }}"
+    state: restarted
+    daemon_reload: true
   async: "{{ mwan_role_job_timeout_seconds }}"
   poll: 0
-  register: mwan_networkd_reload_job
-  changed_when: true
+  register: mwan_deployment_restart_job
   when: not ansible_check_mode
 
-- name: Reconnect after the networkd reload deadline
+- name: Reconnect after the bounded deployment unit restart
   ansible.builtin.wait_for_connection:
     connect_timeout: 5
     delay: "{{ mwan_role_job_timeout_seconds }}"
@@ -22,11 +22,11 @@
     timeout: 300
   when: not ansible_check_mode
 
-- name: Verify the networkd reload completed
+- name: Verify the bounded deployment unit restart completed
   ansible.builtin.async_status:
-    jid: "{{ mwan_networkd_reload_job.ansible_job_id }}"
-  register: mwan_networkd_reload_result
-  until: mwan_networkd_reload_result is finished
+    jid: "{{ mwan_deployment_restart_job.ansible_job_id }}"
+  register: mwan_deployment_restart_result
+  until: mwan_deployment_restart_result is finished
   retries: 24
   delay: 5
   when: not ansible_check_mode

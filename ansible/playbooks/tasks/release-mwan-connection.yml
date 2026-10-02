@@ -11,7 +11,13 @@
   register: mwan_transfer_previous_pid
   changed_when: false
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Install the selected networkd exclusion sentinel
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     dest: "/etc/systemd/network/00-mwan-release-{{ mwan_transfer_connection_id }}.network"
     mode: "0644"
@@ -22,7 +28,13 @@
       [Link]
       Unmanaged=yes
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Install validated external ownership before releasing the previous owner
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     remote_src: true
     src: "{{ mwan_role_backup.path }}/transfer-external.json"
@@ -37,7 +49,13 @@
 - name: Apply the selected networkd exclusion
   ansible.builtin.include_tasks: reload-mwan-networkd.yml
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Reconfigure the selected networkd link without waiting on SSH
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.command:
     argv: [networkctl, reconfigure, "{{ mwan_transfer_previous.name }}"]
   async: "{{ mwan_role_job_timeout_seconds }}"

@@ -132,6 +132,15 @@ table = "oob"
 table_id = {{ mwan_reserved_tables.oob }}
 {% endif %}
 
+{% if mwan_ifmgr_oob_ipv4_source_policy_enabled | bool %}
+[[ifmgr.modules.policy_rules.rule]]
+family = "inet"
+priority = 6
+from = "{{ mwan_ifmgr_oob_ipv4_source }}"
+table = "oob"
+table_id = {{ mwan_reserved_tables.oob }}
+{% endif %}
+
 {% if mwan_ifmgr_cloudflared_tap_enabled | bool %}
 [ifmgr.modules.cloudflared_tap]
 unit = "{{ mwan_ifmgr_cloudflared_tap_unit }}"

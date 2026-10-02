@@ -1,5 +1,7 @@
 ---
 # Shared non-secret variables only
+deployment_prewrite_checkpoint_task: ""
+deployment_mutation_timeout_seconds: 0
 
 # Proxmox API credentials (shared across all playbooks)
 proxmox_api_host: 3d06:bad:b01::254

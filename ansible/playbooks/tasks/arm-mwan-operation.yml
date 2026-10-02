@@ -1,0 +1,230 @@
+- name: Require explicit application checks before gateway preparation
+  ansible.builtin.assert:
+    that:
+      - not mwan_bootstrap_guest | bool
+      - mwan_operation_inbound_checks != []
+      - mwan_operation_downstream_checks != []
+      - mwan_operation_restored_inbound_checks != []
+      - mwan_operation_restored_downstream_checks != []
+      - mwan_operation_observer_vmids != []
+    fail_msg: >-
+      Gateway upgrades require configured inbound and downstream application
+      checks with verified observers. Bootstrap is a separate deployment.
+
+- name: Read the hypervisor machine identity
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv: [cat, /etc/machine-id]
+  register: mwan_operation_host_machine
+  changed_when: false
+  check_mode: false
+
+- name: Read the actual production observer interface addresses
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv: [ip, -json, address, show, dev, mbrains]
+  register: mwan_operation_local_addresses
+  changed_when: false
+  check_mode: false
+  when: mwan_environment == 'prod'
+
+- name: Require the declared external sources on the actual observer interface
+  vars:
+    addresses: >-
+      {{ (mwan_operation_local_addresses.stdout | from_json)[0].addr_info
+         | map(attribute='local') | list }}
+  ansible.builtin.assert:
+    that:
+      - mwan_operation_local_ipv4_source in addresses
+      - mwan_operation_local_ipv6_source in addresses
+    fail_msg: >-
+      The declared external observer addresses do not match mbrains.
+      Update the source policy and application checks before deploying.
+  when: mwan_environment == 'prod'
+
+- name: Verify each application observer is a running LXC
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv: [pct, status, "{{ item | string }}"]
+  loop: "{{ mwan_operation_observer_vmids }}"
+  register: mwan_operation_observer_status
+  changed_when: false
+  failed_when: "mwan_operation_observer_status.stdout | trim != 'status: running'"
+  check_mode: false
+
+- name: Install the released observation executable on the hypervisor
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.copy:
+    src: "{{ mwan_release_dir }}/linux_amd64/mwan"
+    dest: /usr/local/sbin/mwan-observe
+    mode: "0755"
+  check_mode: false
+
+- name: Provision observation executables without changing observer networking
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - pct
+      - push
+      - "{{ item | string }}"
+      - /usr/local/sbin/mwan-observe
+      - /usr/local/sbin/mwan-observe
+      - --perms
+      - "0755"
+  loop: "{{ mwan_operation_observer_vmids }}"
+  changed_when: true
+  check_mode: false
+
+- name: Read the actual application observer identities
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ item | string }}", --, cat, /etc/machine-id]
+  loop: "{{ mwan_operation_observer_vmids }}"
+  register: mwan_operation_observer_identities
+  changed_when: false
+  check_mode: false
+
+- name: Verify the released executable runs on each actual observer
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ item | string }}", --, /usr/local/sbin/mwan-observe, version]
+  loop: "{{ mwan_operation_observer_vmids }}"
+  register: mwan_operation_observer_versions
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    mwan_operation_observer_versions.rc != 0 or ' commit=' ~ mwan_release_commit[:7]
+    not in mwan_operation_observer_versions.stdout
+
+- name: Read the gateway machine identity
+  ansible.builtin.command:
+    argv: [cat, /etc/machine-id]
+  register: mwan_operation_guest_machine
+  changed_when: false
+  check_mode: false
+
+- name: Read the gateway baseline boot identity
+  ansible.builtin.command:
+    argv: [cat, /proc/sys/kernel/random/boot_id]
+  register: mwan_operation_guest_boot
+  changed_when: false
+  check_mode: false
+
+- name: Hash the installed gateway baseline files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop: [/usr/local/bin/mwan, /etc/mwan/network.json, /etc/mwan/config.toml]
+  register: mwan_operation_baseline_files
+  check_mode: false
+
+- name: Read the original gateway producer build identity
+  ansible.builtin.command:
+    argv: [/usr/local/bin/mwan, version]
+  register: mwan_operation_producer_version
+  changed_when: false
+  check_mode: false
+
+- name: Identify allowlisted original producers by commit and executable digest
+  ansible.builtin.set_fact:
+    mwan_operation_producer_commit: >-
+      {{ (mwan_operation_producer_version.stdout
+          | regex_findall(' commit=([0-9a-f]{7,40}) '))[0] }}
+    mwan_operation_matching_producers: >-
+      {{ mwan_legacy_npt_producers
+         | selectattr('executable_sha256', 'equalto',
+             mwan_operation_baseline_files.results[0].stat.checksum)
+         | list }}
+
+- name: Reject a changed executable claiming an original producer identity
+  ansible.builtin.assert:
+    that:
+      - >-
+        mwan_operation_producer_commit
+        not in mwan_legacy_npt_producers | map(attribute='commit') | list
+        or mwan_operation_matching_producers != []
+    fail_msg: >-
+      The original producer build identity does not match its verified
+      executable digest. Gateway preparation has not started.
+
+- name: Select one-shot adoption only for verified original producers
+  ansible.builtin.set_fact:
+    mwan_legacy_npt_adoption_needed: >-
+      {{ mwan_legacy_npt_adoption_required | bool
+         and mwan_operation_matching_producers != []
+         and mwan_operation_producer_commit
+           in mwan_operation_matching_producers | map(attribute='commit') | list }}
+
+- name: Render the exact target runtime configuration before gateway writes
+  delegate_to: localhost
+  become: false
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/config-vm.toml.j2"
+    dest: "{{ mwan_controller_artifact_root }}/runtime-{{ inventory_hostname }}.toml"
+    mode: "0600"
+  no_log: true
+  check_mode: false
+
+- name: Hash the exact target gateway files
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - "{{ mwan_release_dir }}/linux_amd64/mwan"
+    - "{{ mwan_network_json_local }}"
+    - "{{ mwan_controller_artifact_root }}/runtime-{{ inventory_hostname }}.toml"
+  register: mwan_operation_target_files
+  check_mode: false
+
+- name: Generate the exact operation generation on the hypervisor
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv: [cat, /proc/sys/kernel/random/uuid]
+  register: mwan_operation_generation_read
+  changed_when: false
+  check_mode: false
+
+- name: Record the exact operation generation
+  ansible.builtin.set_fact:
+    mwan_operation_generation: "{{ mwan_operation_generation_read.stdout | trim }}"
+
+- name: Set the operation deadline from the hypervisor clock
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - date
+      - --utc
+      - "--date=+{{ mwan_operation_duration_seconds }} seconds"
+      - +%Y-%m-%dT%H:%M:%SZ
+  register: mwan_operation_deadline
+  changed_when: false
+  check_mode: false
+
+- name: Render the hypervisor deployment operation manifest
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/deploy-operation.json.j2"
+    dest: "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}-operation.json"
+    mode: "0600"
+  check_mode: false
+
+- name: Arm independent application observation before gateway preparation
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - deploy-gate
+      - arm
+      - "/run/mwan-deploy-gate/{{ mwan_deploy_trace_id }}-operation.json"
+      - --config
+      - /etc/mwan/config.toml
+  register: mwan_operation_arm
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Record the armed deployment operation
+  ansible.builtin.set_fact:
+    mwan_operation_armed: true
+  when: not ansible_check_mode

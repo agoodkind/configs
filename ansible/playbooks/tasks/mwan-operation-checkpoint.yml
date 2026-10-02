@@ -1,0 +1,181 @@
+- name: Read the exact deployment operation before another mutation
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - deploy-gate
+      - status
+      - "{{ mwan_deploy_trace_id }}"
+      - "{{ mwan_operation_generation }}"
+      - --config
+      - /etc/mwan/config.toml
+  register: mwan_operation_checkpoint_status
+  changed_when: false
+  check_mode: false
+  when: mwan_operation_armed | bool
+
+- name: Require the exact operation before releasing completed work
+  vars:
+    operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - operation.operation_id == mwan_deploy_trace_id
+      - operation.generation == mwan_operation_generation
+      - operation.status in ['armed', 'recovering']
+    fail_msg: >-
+      The exact deployment operation no longer permits gateway writes.
+      Inspect its hypervisor record before resuming deployment.
+  when: mwan_operation_armed | bool
+
+- name: Release the completed mutation lease
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - deploy-gate
+      - release
+      - "{{ mwan_deploy_trace_id }}"
+      - "{{ mwan_operation_generation }}"
+      - "{{ mwan_operation_lease_id }}"
+      - --config
+      - /etc/mwan/config.toml
+  changed_when: true
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_lease_id != ''
+    - not mwan_operation_reuse_lease | bool
+
+- name: Record the completed mutation lease
+  ansible.builtin.set_fact:
+    mwan_operation_lease_id: ""
+  when:
+    - mwan_operation_armed | bool
+    - not mwan_operation_reuse_lease | bool
+
+- name: Reject additional writes after deployment recovery starts
+  vars:
+    operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - operation.status == 'armed'
+    fail_msg: The completed lease was released but recovery prohibits additional gateway writes.
+  when: mwan_operation_armed | bool
+
+- name: Require recovery time for the complete outstanding lease
+  ansible.builtin.assert:
+    that:
+      - mwan_operation_lease_seconds | int <= mwan_operation_max_lease_seconds | int
+      - >-
+        mwan_operation_recovery_timeout_seconds | int
+        >= mwan_operation_lease_seconds | int + mwan_operation_restore_budget_seconds | int
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
+    - not mwan_operation_reuse_lease | bool
+
+- name: Acquire a bounded lease for the next gateway mutation
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - deploy-gate
+      - lease
+      - "{{ mwan_deploy_trace_id }}"
+      - "{{ mwan_operation_generation }}"
+      - "{{ mwan_operation_phase }}"
+      - "{{ mwan_operation_lease_seconds | string }}"
+      - --config
+      - /etc/mwan/config.toml
+  register: mwan_operation_grant
+  changed_when: true
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
+    - not mwan_operation_reuse_lease | bool
+
+- name: Record the exact granted mutation lease
+  ansible.builtin.set_fact:
+    mwan_operation_lease_id: "{{ (mwan_operation_grant.stdout | from_json).id }}"
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
+    - not mwan_operation_reuse_lease | bool
+
+- name: Read the granted operation immediately before the mutation
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - deploy-gate
+      - status
+      - "{{ mwan_deploy_trace_id }}"
+      - "{{ mwan_operation_generation }}"
+      - --config
+      - /etc/mwan/config.toml
+  register: mwan_operation_checkpoint_status
+  changed_when: false
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
+
+- name: Verify the actual registered watch before the mutation
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  vars:
+    operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - "{{ operation.watch.unit }}"
+      - "--property={{ item }}"
+      - --value
+  loop: [ActiveState, InvocationID, MainPID]
+  register: mwan_operation_reuse_watch
+  changed_when: false
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
+
+- name: Require the same running watch invocation and process
+  vars:
+    operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - mwan_operation_reuse_watch.results[0].stdout | trim == 'active'
+      - mwan_operation_reuse_watch.results[1].stdout | trim == operation.watch.invocation_id
+      - mwan_operation_reuse_watch.results[2].stdout | trim | int == operation.watch.pid
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
+
+- name: Read the required mutation deadline from the hypervisor clock
+  delegate_to: "{{ mwan_proxmox_delegate }}"
+  ansible.builtin.command:
+    argv:
+      - date
+      - --utc
+      - "--date=+{{ mwan_operation_budget_seconds }} seconds"
+      - +%Y-%m-%dT%H:%M:%SZ
+  register: mwan_operation_reuse_deadline
+  changed_when: false
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
+
+- name: Require enough live lease time for the complete mutation
+  vars:
+    operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - operation.operation_id == mwan_deploy_trace_id
+      - operation.generation == mwan_operation_generation
+      - operation.status == 'armed'
+      - operation.lease.id == mwan_operation_lease_id
+      - operation.lease.phase == mwan_operation_phase
+      - >-
+        operation.lease.expires_at | regex_replace('[.][0-9]+Z$', 'Z')
+        > mwan_operation_reuse_deadline.stdout | trim
+    fail_msg: The granted mutation lease cannot cover the next bounded operation.
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool

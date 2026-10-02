@@ -18,7 +18,15 @@
 # Imported by deploy-mwan.yml before the gateway configuration is written.
 # The importing play sets the variables these tasks read and runs them as
 # root.
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Install the front-end proxy
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
@@ -26,7 +34,15 @@
       - nghttp2-proxy
     state: present
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (2) + 30 }}"
+    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+
 - name: Create stack directories
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -37,7 +53,13 @@
     - "{{ wanconfig_deb_dir }}"
     - /etc/nghttpx
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Create the anonymous-access system user
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.user:
     name: yangnobody
     system: true
@@ -61,7 +83,13 @@
       - wanconfig_debs.files | length > 0
     fail_msg: "no .deb files under {{ wanconfig_stack_dir }}/debs; the pulled release holds no packages"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Copy the staged stack packages
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ wanconfig_stack_dir }}/debs/"
     dest: "{{ wanconfig_deb_dir }}/"
@@ -72,7 +100,15 @@
 # apt resolves the packages' interdependencies in one transaction. A
 # same-version reinstall is a no-op, which apt reports as 0 upgraded
 # and 0 newly installed.
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Install the stack packages with apt
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.command:
     argv: >-
       {{
@@ -86,7 +122,15 @@
 # sysrepo-tools ships a sysrepo-plugind unit that debhelper enables and
 # starts on install. Nothing on the gateway uses plugins; the daemon
 # would only hold the shared memory open across deploys.
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Mask the sysrepo plugin daemon
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.systemd:
     name: sysrepo-plugind.service
     state: stopped
@@ -104,7 +148,17 @@
   changed_when: false
   check_mode: false
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (6) + 30 }}"
+    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+
 - name: Install rousette's required models into sysrepo
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
   ansible.builtin.command:
     argv:
       - /usr/bin/sysrepoctl
@@ -122,7 +176,13 @@
   when: item.split('@')[0] not in wanconfig_sysrepo_modules.stdout
   changed_when: true
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Render the nghttpx front-end configuration
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.template:
     src: "{{ repo_root }}/mwan/wanconfig/nghttpx-wanconfig.conf.j2"
     dest: /etc/nghttpx/wanconfig.conf

@@ -1,4 +1,12 @@
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (3) + 30 }}"
+    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+
 - name: Preserve every validated connection transition document
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ mwan_transfer_controller_directory.path }}/{{ item }}.json"
     dest: "{{ mwan_role_backup.path }}/transfer-{{ item }}.json"
@@ -47,14 +55,26 @@
   ansible.builtin.set_fact:
     mwan_transfer_release_owner: "{{ mwan_transfer_replacement['goodkind-mwan-steering:owner'] }}"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Install the excluded replacement connection
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     remote_src: true
     src: "{{ mwan_role_backup.path }}/transfer-replacement.json"
     dest: /etc/mwan/network.json
     mode: "0600"
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Restore networkd authority only after the previous owner released
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.file:
     path: "/etc/systemd/network/00-mwan-release-{{ mwan_transfer_connection_id }}.network"
     state: absent
@@ -85,7 +105,13 @@
   vars:
     mwan_transfer_packet_phase: acquired
 
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: gateway-preparation
+
 - name: Restore the validated target selection policy
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ mwan_network_json_local }}"
     dest: /etc/mwan/network.json

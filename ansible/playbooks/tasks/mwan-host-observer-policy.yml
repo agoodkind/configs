@@ -1,0 +1,212 @@
+- name: Require the declared host OOB policy boundary
+  ansible.builtin.assert:
+    that:
+      - proxmox_mwan_host_role_enabled | bool
+      - mwan_ifmgr_enabled | bool
+      - mwan_ifmgr_oob_enabled | bool
+      - mwan_ifmgr_oob_ipv4_source_policy_enabled | bool
+
+- name: Read the current physical OOB IPv4 address
+  ansible.builtin.command:
+    argv: [ip, -json, -4, address, show, dev, "{{ mwan_ifmgr_iface_name }}"]
+  register: mwan_host_observer_addresses
+  changed_when: false
+  check_mode: false
+
+- name: Require the declared source on the physical OOB interface
+  ansible.builtin.assert:
+    that:
+      - >-
+        mwan_ifmgr_oob_ipv4_source | regex_replace('/32$', '')
+        in (mwan_host_observer_addresses.stdout | from_json)[0].addr_info
+        | map(attribute='local') | list
+
+- name: Render the candidate host runtime for review
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/config/config-host.toml.j2"
+    dest: /etc/mwan/config.observer-candidate.toml
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Read current and candidate runtime digests
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop: [/etc/mwan/config.toml, /etc/mwan/config.observer-candidate.toml]
+  register: mwan_host_observer_runtimes
+
+- name: Report the runtime digests for review
+  ansible.builtin.debug:
+    msg:
+      current_sha256: "{{ mwan_host_observer_runtimes.results[0].stat.checksum }}"
+      target_sha256: "{{ mwan_host_observer_runtimes.results[1].stat.checksum }}"
+
+- name: Verify and preserve the exact reviewed host runtime
+  when:
+    - mwan_host_observer_policy_apply | bool
+    - not ansible_check_mode
+  block:
+    - name: Read the installed host observation runtime version
+      ansible.builtin.command:
+        argv: [/usr/local/bin/mwan, version]
+      register: mwan_host_observer_version
+      changed_when: false
+
+    - name: Require the published observation runtime before host network changes
+      ansible.builtin.assert:
+        that:
+          - "' commit=' ~ mwan_release_tag.split('-')[-1] in mwan_host_observer_version.stdout"
+
+    - name: Require both reviewed runtime digests
+      ansible.builtin.assert:
+        that:
+          - mwan_host_observer_runtimes.results[0].stat.checksum == mwan_host_observer_policy_current_sha256
+          - mwan_host_observer_runtimes.results[1].stat.checksum == mwan_host_observer_policy_target_sha256
+
+    - name: Preserve the exact current host runtime
+      ansible.builtin.copy:
+        src: /etc/mwan/config.toml
+        dest: /etc/mwan/config.observer-previous.toml
+        remote_src: true
+        mode: "0600"
+      no_log: true
+
+- name: Apply only the exact reviewed host runtime
+  when:
+    - mwan_host_observer_policy_apply | bool
+    - not ansible_check_mode
+  block:
+    - name: Install the reviewed observer runtime
+      ansible.builtin.copy:
+        src: /etc/mwan/config.observer-candidate.toml
+        dest: /etc/mwan/config.toml
+        remote_src: true
+        mode: "0600"
+      no_log: true
+
+    - name: Restart only the host interface manager asynchronously
+      ansible.builtin.systemd:
+        name: mwan-ifmgr
+        state: restarted
+      async: "{{ mwan_host_observer_policy_timeout_seconds }}"
+      poll: 0
+      register: mwan_host_observer_restart
+
+    - name: Reconnect after the host observer restart deadline
+      ansible.builtin.wait_for_connection:
+        delay: "{{ mwan_host_observer_policy_timeout_seconds }}"
+        timeout: 300
+
+    - name: Require the host observer restart to complete
+      ansible.builtin.async_status:
+        jid: "{{ mwan_host_observer_restart.ansible_job_id }}"
+      register: mwan_host_observer_restart_result
+      until: mwan_host_observer_restart_result is finished
+      retries: 24
+      delay: 5
+
+    - name: Require the interface manager to remain active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, mwan-ifmgr]
+      changed_when: false
+
+    - name: Read the actual source-selected public route
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -json
+          - -4
+          - route
+          - get
+          - "{{ mwan_host_observer_policy_target.split(':')[0] }}"
+          - from
+          - "{{ mwan_ifmgr_oob_ipv4_source | regex_replace('/32$', '') }}"
+      register: mwan_host_observer_route
+      changed_when: false
+
+    - name: Require the physical OOB interface, gateway, and routing table
+      vars:
+        route: "{{ (mwan_host_observer_route.stdout | from_json)[0] }}"
+      ansible.builtin.assert:
+        that:
+          - route.dev == mwan_ifmgr_iface_name
+          - route.gateway == mwan_host_observer_policy_next_hop
+          - route.table in ['oob', mwan_reserved_tables.oob | int]
+
+    - name: Read the actual public observer identity
+      ansible.builtin.command:
+        argv: [cat, /etc/machine-id]
+      register: mwan_host_observer_machine
+      changed_when: false
+
+    - name: Verify the allowed public SSH application through the OOB source
+      vars:
+        observation:
+          id: host-observer-public-ipv4
+          dimension: inbound_application
+          operation: ssh_banner
+          observer:
+            kind: local
+            machine_id: "{{ mwan_host_observer_machine.stdout | trim }}"
+          family: ipv4
+          interface: "{{ mwan_ifmgr_iface_name }}"
+          source: "{{ mwan_ifmgr_oob_ipv4_source | regex_replace('/32$', '') }}"
+          target: "{{ mwan_host_observer_policy_target }}"
+          expected_next_hop: "{{ mwan_host_observer_policy_next_hop }}"
+          expected_ssh_version: "{{ mwan_host_observer_policy_ssh_version }}"
+          timeout_seconds: "{{ mwan_host_observer_policy_probe_timeout_seconds }}"
+          max_age_seconds: 30
+      ansible.builtin.command:
+        argv: [/usr/local/bin/mwan, observe]
+        stdin: "{{ observation | to_json }}"
+      register: mwan_host_observer_application
+      changed_when: false
+
+    - name: Require the actual public application and source-selected path
+      vars:
+        observation: "{{ mwan_host_observer_application.stdout | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - observation.availability == 'complete'
+          - observation.outcome == 'pass'
+          - observation.observer.machine_id == mwan_host_observer_machine.stdout | trim
+          - observation.ssh_version == mwan_host_observer_policy_ssh_version
+          - observation.path.source == mwan_ifmgr_oob_ipv4_source | regex_replace('/32$', '')
+          - observation.path.interface == mwan_ifmgr_iface_name
+          - observation.path.next_hop == mwan_host_observer_policy_next_hop
+
+  rescue:
+    - name: Restore the previous host runtime
+      ansible.builtin.copy:
+        src: /etc/mwan/config.observer-previous.toml
+        dest: /etc/mwan/config.toml
+        remote_src: true
+        mode: "0600"
+      no_log: true
+
+    - name: Restart only the host interface manager after recovery
+      ansible.builtin.systemd:
+        name: mwan-ifmgr
+        state: restarted
+      async: "{{ mwan_host_observer_policy_timeout_seconds }}"
+      poll: 0
+      register: mwan_host_observer_recovery
+
+    - name: Reconnect after the host recovery deadline
+      ansible.builtin.wait_for_connection:
+        delay: "{{ mwan_host_observer_policy_timeout_seconds }}"
+        timeout: 300
+
+    - name: Require the host recovery restart to complete
+      ansible.builtin.async_status:
+        jid: "{{ mwan_host_observer_recovery.ansible_job_id }}"
+      register: mwan_host_observer_recovery_result
+      until: mwan_host_observer_recovery_result is finished
+      retries: 24
+      delay: 5
+
+    - name: Reject the failed host policy update
+      ansible.builtin.fail:
+        msg: The host observer policy failed and the previous runtime was restored.

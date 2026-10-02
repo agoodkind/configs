@@ -36,8 +36,13 @@
   pre_tasks:
     - name: Require a merged controller checkout
       ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
+      tags: [always]
 
   tasks:
+    - name: Apply the reviewed MWAN host observer policy
+      ansible.builtin.include_tasks: tasks/mwan-host-observer-policy.yml
+      tags: [never, mwan-observer-policy]
+
     # Both pulls run per host, because each hypervisor's environment pins its
     # own release.
     - name: Pull the pinned mwan release
