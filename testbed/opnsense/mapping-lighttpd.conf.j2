@@ -7,3 +7,6 @@ server.username = "www"
 server.groupname = "www"
 server.modules = ( "mod_staticfile" )
 mimetype.assign = ( "" => "text/plain" )
+
+$SERVER["socket"] == "[{{ service_mapping.opnsense_suburban.ipv6_transit }}]:1406" {
+}

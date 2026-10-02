@@ -139,7 +139,7 @@
         mode: "0644"
         validate: /usr/local/bin/php -l %s
 
-    - name: Reconcile the two simulator mapping rules
+    - name: Reconcile the simulator mapping rules
       ansible.builtin.command:
         argv: [/usr/local/bin/php, /usr/local/libexec/testbed-mapping-endpoint.php]
       register: mapping_rule_update
@@ -214,6 +214,18 @@
         fail_msg: "The applied mapping pass for {{ item }} is missing"
       loop: [10.240.205.1, 10.241.204.1]
 
+    - name: Require both simulator-specific IPv6 mapping passes
+      ansible.builtin.assert:
+        that:
+          - >-
+            mapping_applied_rules.stdout is search(
+            'pass in quick on vtnet1 inet6 proto tcp from ' ~ (item | regex_escape) ~
+            ' to [(]vtnet1[)] port = 1406')
+        fail_msg: "The applied IPv6 mapping pass for {{ item }} is missing"
+      loop:
+        - "{{ service_mapping.isp_webpass_suburban.ipv6_uplink }}"
+        - "{{ service_mapping.isp_att_suburban.ipv6_uplink }}"
+
     - name: Read the local mapping response
       ansible.builtin.uri:
         url: "http://{{ service_mapping.opnsense_suburban.ipv4_transit }}:1406/cf_check"
@@ -228,6 +240,23 @@
         that:
           - >-
             (mapping_local_response.content | hash('sha256')) ==
+            (lookup('ansible.builtin.file', repo_root ~ '/testbed/opnsense/cf_check',
+            rstrip=false) | hash('sha256'))
+
+    - name: Read the local IPv6 mapping response
+      ansible.builtin.uri:
+        url: "http://[{{ service_mapping.opnsense_suburban.ipv6_transit }}]:1406/cf_check"
+        return_content: true
+        use_proxy: false
+        timeout: 3
+        status_code: 200
+      register: mapping_local_ipv6_response
+
+    - name: Require the fixed IPv6 mapping response bytes
+      ansible.builtin.assert:
+        that:
+          - >-
+            (mapping_local_ipv6_response.content | hash('sha256')) ==
             (lookup('ansible.builtin.file', repo_root ~ '/testbed/opnsense/cf_check',
             rstrip=false) | hash('sha256'))
 
