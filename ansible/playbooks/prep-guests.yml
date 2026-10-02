@@ -1,13 +1,85 @@
 ---
-# Prepare CT/VM guest for use (SSH-based configuration)
+# Guest preparation configures SSH access, base packages, and maintenance services.
+# Set target_hosts to the inventory host or group to configure.
 #
-# Required vars (provided via import_playbook):
-#   target_hosts: inventory hostname or group to configure
-#
-# Example:
-#   - ansible.builtin.import_playbook: prep-guests.yml
-#     vars:
-#       target_hosts: my_servers
+# Run preparation before the first service deploy or after a required revision change.
+# ./configsctl deploy prep-guests --limit my_servers --extra-var target_hosts=my_servers
+
+- name: Invalidate previous guest preparation
+  hosts: "{{ target_hosts }}"
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [guest-preparation]
+  vars:
+    preparation_hypervisor: "{{ proxmox_node_delegates[ansible_proxmox_host] }}"
+    preparation_guest_command: "{{ 'pct' if proxmox_vmtype == 'lxc' else 'qm' }}"
+  tasks:
+    # Use Proxmox because guest SSH access may be broken before preparation.
+    - name: Remove the previous completion marker before preparation changes
+      when: not ansible_check_mode
+      block:
+        - name: Require a supported Proxmox guest type
+          ansible.builtin.assert:
+            that:
+              - proxmox_vmtype in ['lxc', 'qemu']
+            quiet: true
+
+        - name: Read the guest power state
+          ansible.builtin.command:
+            argv: ["{{ preparation_guest_command }}", status, "{{ ansible_proxmox_vmid }}"]
+          delegate_to: "{{ preparation_hypervisor }}"
+          register: preparation_guest_status
+          changed_when: false
+
+        - name: Start the guest before removing its preparation marker
+          ansible.builtin.command:
+            argv: ["{{ preparation_guest_command }}", start, "{{ ansible_proxmox_vmid }}"]
+          delegate_to: "{{ preparation_hypervisor }}"
+          when: "preparation_guest_status.stdout | trim != 'status: running'"
+          changed_when: true
+
+        - name: Remove the LXC preparation marker through Proxmox
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ ansible_proxmox_vmid }}"
+              - '--'
+              - rm
+              - '-f'
+              - "{{ guest_prep_revision_file }}"
+          delegate_to: "{{ preparation_hypervisor }}"
+          when: proxmox_vmtype == 'lxc'
+          changed_when: true
+
+        - name: Remove the VM preparation marker through its guest agent
+          ansible.builtin.command:
+            argv:
+              - qm
+              - guest
+              - exec
+              - "{{ ansible_proxmox_vmid }}"
+              - '--'
+              - rm
+              - '-f'
+              - "{{ guest_prep_revision_file }}"
+          delegate_to: "{{ preparation_hypervisor }}"
+          when: proxmox_vmtype == 'qemu'
+          register: preparation_marker_removal
+          retries: 12
+          delay: 5
+          until: preparation_marker_removal.rc == 0
+          changed_when: true
+
+        # qm reports the guest command status in JSON, separately from its own status.
+        - name: Require successful marker removal inside the VM
+          ansible.builtin.assert:
+            that:
+              - (preparation_marker_removal.stdout | from_json).exited | bool
+              - (preparation_marker_removal.stdout | from_json).exitcode == 0
+            fail_msg: "VM preparation marker removal failed: {{ preparation_marker_removal.stdout }}"
+            quiet: true
+          when: proxmox_vmtype == 'qemu'
 
 - name: Deploy SSH keys to CT/VM guests
   ansible.builtin.import_playbook: deploy-ssh-keys.yml
@@ -50,8 +122,9 @@
         is_vm: "{{ ansible_facts['virtualization_type'] in ['kvm', 'qemu'] }}"
 
     - name: Compute effective prep-guests service name and login directory
+      tags: [guest-debug]
       ansible.builtin.set_fact:
-        prep_ct_service_effective: "{{ target_hosts | regex_replace('_servers$', '') | trim }}"
+        prep_ct_service_effective: "{{ service_name }}"
         login_dir_effective: "{{ login_dir }}"
 
     - name: Set the guest hostname to its canonical service name
@@ -68,6 +141,7 @@
     - name: Update package lists
       ansible.builtin.apt:
         update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time }}"
       environment:
         DEBIAN_FRONTEND: noninteractive
 
@@ -287,19 +361,21 @@
           fi
 
     - name: Install debug helper command (service-specific)
+      tags: [guest-debug]
       ansible.builtin.template:
         src: >-
           {{ repo_root }}/{{ prep_ct_service_effective | lower -}}/debug-{{-
           prep_ct_service_effective | lower }}.sh.j2
-        dest: /usr/local/bin/debug
+        dest: "{{ guest_debug_command_file }}"
         mode: "0755"
       when:
         - prep_ct_service_effective | lower in ['adguard', 'traefik', 'powerdns']
 
     - name: Install debug helper command (generic fallback)
+      tags: [guest-debug]
       ansible.builtin.template:
         src: "{{ repo_root }}/ansible/templates/debug/debug-generic.sh.j2"
-        dest: /usr/local/bin/debug
+        dest: "{{ guest_debug_command_file }}"
         mode: "0755"
       when: prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns']
 
@@ -436,6 +512,9 @@
 
     - name: Wait for the controller connection after SSH restarts
       ansible.builtin.include_tasks: tasks/wait-for-connection.yml
+
+    - name: Mark the guest preparation complete
+      ansible.builtin.import_tasks: tasks/mark-prepared-guest.yml
 
   handlers:
     - name: Restart getty service

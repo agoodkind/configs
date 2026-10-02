@@ -1,0 +1,19 @@
+---
+- name: Exercise the guest preparation boundary on localhost
+  hosts: localhost
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Publish the production preparation revision
+      ansible.builtin.import_tasks: "{{ production_task_dir }}/mark-prepared-guest.yml"
+      when: preparation_test_publish
+
+    - name: Require the production preparation revision
+      ansible.builtin.import_tasks: "{{ production_task_dir }}/require-prepared-guest.yml"
+      when: preparation_test_verify
+
+    - name: Write a subsequent service artifact
+      ansible.builtin.copy:
+        dest: "{{ preparation_test_service_file }}"
+        content: "service configured\n"
+        mode: "0600"

@@ -1,0 +1,30 @@
+---
+- name: Inspect the guest preparation revision
+  ansible.builtin.stat:
+    path: "{{ guest_prep_revision_file }}"
+  register: guest_prep_revision_status
+
+- name: Require completed guest preparation
+  ansible.builtin.assert:
+    that: guest_prep_revision_status.stat.exists
+    fail_msg: >-
+      Guest preparation has not completed on {{ inventory_hostname }}.
+      Run ./configsctl deploy prep-guests --limit {{ inventory_hostname }}
+      --extra-var target_hosts={{ inventory_hostname }}, then retry the service deploy.
+    quiet: true
+
+- name: Read the completed guest preparation revision
+  ansible.builtin.slurp:
+    src: "{{ guest_prep_revision_file }}"
+  register: guest_prep_completed_revision
+
+- name: Require the current guest preparation revision
+  ansible.builtin.assert:
+    that: >-
+      (guest_prep_completed_revision.content | b64decode | trim)
+      == (guest_prep_revision | string)
+    fail_msg: >-
+      Guest preparation is outdated on {{ inventory_hostname }}.
+      Run ./configsctl deploy prep-guests --limit {{ inventory_hostname }}
+      --extra-var target_hosts={{ inventory_hostname }}, then retry the service deploy.
+    quiet: true

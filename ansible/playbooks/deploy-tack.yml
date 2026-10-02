@@ -30,8 +30,8 @@
              if (tack_cluster_role != 'search' or tack_search_enabled | bool)
              else 'tack_deploy_skipped' }}
 
-- name: Prepare tack guest (SSH keys, package-updater, base config)
-  ansible.builtin.import_playbook: prep-guests.yml
+- name: Verify Tack guest preparation
+  ansible.builtin.import_playbook: require-prepared-guests.yml
   vars:
     target_hosts: tack_deploy_targets
 
@@ -57,6 +57,7 @@
           - ndppd
         state: present
         update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time }}"
 
     - name: Add Docker apt repository (deb822 format)
       ansible.builtin.deb822_repository:
@@ -68,6 +69,7 @@
         architectures: amd64
         signed_by: https://download.docker.com/linux/debian/gpg
         state: present
+      register: tack_docker_repository
 
     - name: Install Docker CE
       ansible.builtin.apt:
@@ -79,6 +81,7 @@
           - docker-compose-plugin
         state: present
         update_cache: true
+        cache_valid_time: "{{ 0 if tack_docker_repository.changed else apt_cache_valid_time }}"
 
     # The weekly package updater runs apt-get full-upgrade on every guest. On
     # 2026-09-07 it upgraded the engine packages on production and the daemon

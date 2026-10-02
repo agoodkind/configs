@@ -32,6 +32,7 @@
     url: https://pkg.cloudflare.com/cloudflare-public-v2.gpg
     dest: /usr/share/keyrings/cloudflare-public-v2.gpg
     mode: "0644"
+  register: cloudflared_apt_key
 
 - name: Verify the caller deployment checkpoint
   ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
@@ -44,6 +45,7 @@
     mode: "0644"
     content: |
       deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
+  register: cloudflared_apt_repository
 
 - name: Verify the caller deployment checkpoint
   ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
@@ -55,6 +57,9 @@
   poll: 5
   ansible.builtin.apt:
     update_cache: true
+    cache_valid_time: >-
+      {{ 0 if (cloudflared_apt_key.changed or cloudflared_apt_repository.changed)
+         else apt_cache_valid_time }}
 
 - name: Verify the caller deployment checkpoint
   ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
