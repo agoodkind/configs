@@ -14,6 +14,7 @@ require_relative '../support/task_expressions'
 module TackOpsIdentityFlags
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'deploy-tack.yml')
   GROUP_VARS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars', 'tack_all.yml')
+  GUARD_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tasks', 'tack-ops-identity-guard.yml')
   FIRST_PLAY = 'Select the Tack deploy targets'
   GUARD = 'Refuse an operator identity the ops commands cannot record truthfully'
   IDENTITY_VARS = %w[tack_ops_agent_run deploy_operator_email deploy_operator_name deploy_operator_id
@@ -56,8 +57,9 @@ module TackOpsIdentityFlags
     rendered.fetch('renders').first.fetch('flags').split
   end
 
+  # deploy-tack and tack-ops import the guard from its own task file.
   def guard
-    plays.find { |play| play['name'] == FIRST_PLAY }.fetch('tasks').find { |task| task['name'] == GUARD }
+    YAML.safe_load_file(GUARD_FILE).find { |task| task['name'] == GUARD }
   end
 
   # The one host is a search guest in an environment with search off. The

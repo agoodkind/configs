@@ -1,0 +1,30 @@
+---
+# deploy-tack and tack-ops import this check into their first play, before any
+# play changes a guest. The operator identity flags (group_vars/tack_all.yml)
+# go to every audited ops command. An agent shell without an agent service
+# would record the human from the control machine's git config as the actor
+# of every ops command. The ops tasks split the session and the operator email
+# into command arguments; each must be one token: a session of letters,
+# digits, and hyphens, and an email with one @. An empty email leaves
+# --operator-email without a value, and the command line then reads
+# --deploy-commit as the email.
+- name: Refuse an operator identity the ops commands cannot record truthfully
+  ansible.builtin.assert:
+    that:
+      - (tack_ops_agent_service == '') == (tack_ops_agent_session == '')
+      - not (tack_ops_agent_run | bool) or tack_ops_agent_service != ''
+      - tack_ops_agent_service == '' or tack_ops_agent_service is match('[a-z][a-z0-9-]*\Z')
+      - tack_ops_agent_session == '' or tack_ops_agent_session is match('[A-Za-z0-9-]{1,64}\Z')
+      - tack_ops_agent_service != '' or tack_ops_accountable_email == ''
+      - deploy_operator_email is match('[^@\s]+@[^@\s]+\Z')
+    fail_msg: >-
+      An agent deploy sets tack_ops_agent_service (lowercase letters,
+      digits, hyphens) and tack_ops_agent_session (letters, digits,
+      hyphens, at most 64), and a deploy from an agent shell sets them.
+      tack_ops_accountable_email applies only to an agent deploy. The
+      operator email must be one address. Service
+      "{{ tack_ops_agent_service }}", session "{{ tack_ops_agent_session }}",
+      accountable email "{{ tack_ops_accountable_email }}", operator email
+      "{{ deploy_operator_email }}", agent shell {{ tack_ops_agent_run }}.
+  run_once: true
+  delegate_to: localhost
