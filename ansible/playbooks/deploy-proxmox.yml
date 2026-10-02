@@ -124,3 +124,33 @@
       ansible.builtin.command: sysctl -p /etc/sysctl.d/99-tack-search.conf
       changed_when: true
       when: tack_search_proxy_enabled | bool
+
+    # Only a change to the managed modprobe file notifies these handlers. The
+    # running module takes the new ceiling at once. At zero the handler writes
+    # proxmox_zfs_arc_rollback_bytes, the value the remaining modprobe files
+    # set at the next boot.
+    - name: Apply the ZFS ARC ceiling
+      ansible.builtin.command:
+        argv: [tee, /sys/module/zfs/parameters/zfs_arc_max]
+        stdin: "{{ proxmox_zfs_arc_expected_c_max }}"
+      changed_when: true
+
+    # A root-on-ZFS host loads the zfs module from the initramfs, and the
+    # initramfs contains its own copy of /etc/modprobe.d.
+    - name: Rebuild the initramfs for the ZFS ARC ceiling
+      ansible.builtin.command: update-initramfs -u -k all
+      changed_when: true
+
+    # Ansible runs handlers in the order this section defines them. This read
+    # runs after the write above. OpenZFS ignores a runtime zfs_arc_max at or
+    # below zfs_arc_min or 64 MiB, and tee still succeeds. The ARC statistics
+    # c_max reports the ceiling the module accepted. An expected value of 0 (a
+    # host without a rollback value) changes nothing until the next module
+    # load and has no check.
+    - name: Verify the ZFS ARC ceiling the module accepted
+      ansible.builtin.command:
+        argv: [awk, '$1 == "c_max" {print $3}', /proc/spl/kstat/zfs/arcstats]
+      register: proxmox_zfs_arc_c_max
+      changed_when: false
+      failed_when: proxmox_zfs_arc_c_max.rc != 0 or proxmox_zfs_arc_c_max.stdout | trim | int != proxmox_zfs_arc_expected_c_max | int
+      when: proxmox_zfs_arc_expected_c_max | int > 0

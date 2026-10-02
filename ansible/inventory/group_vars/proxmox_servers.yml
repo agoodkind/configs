@@ -130,6 +130,24 @@ tack_search_proxy_health_path: /_cluster/health
 tack_search_proxy_health_interval: 10s
 tack_search_proxy_health_timeout: 30s
 
+# ZFS ARC ceiling in bytes. A host group sets a value to cap the ARC. Zero
+# removes the managed modprobe file (only a file that starts with the managed
+# header); the remaining modprobe files set the ceiling at the next boot.
+proxmox_zfs_arc_max_bytes: 0
+# The value the rollback writes into the running module. A host with an
+# installer zfs.conf sets that file's value. A runtime write of 0 changes
+# nothing; the module default returns only at the next module load.
+proxmox_zfs_arc_rollback_bytes: 0
+# The ceiling the handlers write and then require in the ARC statistics c_max.
+proxmox_zfs_arc_expected_c_max: >-
+  {{ proxmox_zfs_arc_max_bytes | int
+     if proxmox_zfs_arc_max_bytes | int > 0
+     else proxmox_zfs_arc_rollback_bytes | int }}
+# modprobe reads /etc/modprobe.d in name order and the last zfs_arc_max wins.
+# The name sorts after the Proxmox installer's zfs.conf.
+proxmox_zfs_arc_modprobe_path: /etc/modprobe.d/zz-zfs-arc-ansible.conf
+proxmox_zfs_arc_managed_header: "# Managed by Ansible (deploy-proxmox.yml, proxmox_zfs_arc_max_bytes)"
+
 # Slow storage tier (TACK-495). Each hypervisor keeps its latency-sensitive
 # guests on its fast pool and places the object store and the owner guest's
 # backup staging on a slower drive. proxmox_slow_storage is the Proxmox storage

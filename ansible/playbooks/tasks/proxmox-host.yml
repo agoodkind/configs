@@ -320,6 +320,9 @@
   ansible.builtin.import_tasks: proxmox-storage-recording.yml
   when: proxmox_storage_recording_enabled | bool
 
+- name: Set or remove the ZFS ARC ceiling
+  ansible.builtin.import_tasks: proxmox-zfs-arc.yml
+
 - name: Set the OpenSearch memory-map prerequisite for the search guests
   ansible.builtin.import_tasks: tack-search-memory-map.yml
   when: tack_search_proxy_enabled | bool
