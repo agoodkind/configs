@@ -277,7 +277,7 @@
 
         - name: Derive only descendants of the exact selected snapshot
           ansible.builtin.set_fact:
-            mwan_original_descendants: >-
+            mwan_original_descendants_json: >-
               {% set snapshots = mwan_original_settled_snapshots.stdout | from_json
                                  | rejectattr('name', 'equalto', 'current') | list %}
               {% set descendants = [mwan_original_snapshot] %}
@@ -291,7 +291,11 @@
               {% endfor %}
               {{ snapshots | selectattr('name', 'in', descendants)
                  | rejectattr('name', 'equalto', mwan_original_snapshot)
-                 | sort(attribute='snaptime', reverse=true) | map(attribute='name') | list }}
+                 | sort(attribute='snaptime', reverse=true) | map(attribute='name') | list | to_json }}
+
+        - name: Decode the selected descendants into native snapshot arguments
+          ansible.builtin.set_fact:
+            mwan_original_descendants: "{{ mwan_original_descendants_json | from_json }}"
 
         - name: Report descendant snapshots required for selected ZFS restoration
           ansible.builtin.debug:
@@ -437,7 +441,8 @@
                 'bdd916f95e3e44568e6a5d3096cf2dea'
               - >-
                 mwan_original_version.stdout is
-                search('commit=(?:d442ba1|' ~ mwan_original_commit ~ ')(?: |$)')
+                search('commit=(?:' ~ mwan_original_commit[:7] ~ '|'
+                       ~ mwan_original_commit ~ ')(?: |$)')
               - mwan_original_executable.stat.checksum == mwan_original_sha256
               - mwan_original_running_sha256.stdout.split()[0] == mwan_original_sha256
             fail_msg: The restored snapshot is not the exact original d442 testbed baseline.
