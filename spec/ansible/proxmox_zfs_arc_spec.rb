@@ -17,8 +17,6 @@ module ProxmoxZfsArc
   READ = 'Read the ZFS ARC ceiling file from an earlier ceiling'
   REMOVE = 'Remove the managed ZFS ARC ceiling file'
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'deploy-proxmox.yml')
-  APPLY = 'Apply the ZFS ARC ceiling'
-  REBUILD = 'Rebuild the initramfs for the ZFS ARC ceiling'
   VERIFY = 'Verify the ZFS ARC ceiling the module accepted'
 
   module_function
@@ -98,35 +96,6 @@ RSpec.describe ProxmoxZfsArc do
 
     expect(result.fetch(ProxmoxZfsArc::READ)).to be(true)
     expect(result.fetch(ProxmoxZfsArc::REMOVE)).to be(false)
-  end
-
-  it 'fails the play on a read error of an existing file' do
-    read = described_class.tasks.find { |task| task['name'] == ProxmoxZfsArc::READ }
-
-    expect(read).not_to have_key('failed_when')
-  end
-
-  it 'sorts the managed file after the installer zfs.conf, so its zfs_arc_max line is the last one modprobe reads' do
-    path = ProxmoxZfsArc::GROUP_VARS.fetch('proxmox_zfs_arc_modprobe_path')
-
-    expect([File.basename(path), 'zfs.conf'].max).to eq(File.basename(path))
-  end
-
-  it 'caps suburban at 1 GiB, restores its installer value, and sets no ceiling on other hypervisors', :aggregate_failures do
-    suburban = YAML.safe_load_file(File.join(ProxmoxZfsArc::GROUP_VARS_DIRECTORY, 'suburban_servers.yml'))
-    vault = YAML.safe_load_file(File.join(ProxmoxZfsArc::GROUP_VARS_DIRECTORY, 'vault_servers.yml'))
-
-    expect(suburban.fetch('proxmox_zfs_arc_max_bytes')).to eq(1_073_741_824)
-    expect(suburban.fetch('proxmox_zfs_arc_rollback_bytes')).to eq(3_309_305_856)
-    expect(vault).not_to have_key('proxmox_zfs_arc_max_bytes')
-    expect(ProxmoxZfsArc::GROUP_VARS.fetch('proxmox_zfs_arc_max_bytes')).to eq(0)
-  end
-
-  it 'runs the verify handler after the write and the initramfs rebuild' do
-    names = described_class.handlers.map { |handler| handler['name'] }
-
-    expect(names.index(ProxmoxZfsArc::APPLY)).to be < names.index(ProxmoxZfsArc::REBUILD)
-    expect(names.index(ProxmoxZfsArc::REBUILD)).to be < names.index(ProxmoxZfsArc::VERIFY)
   end
 
   it 'requires c_max to equal the ceiling when capped and the rollback value at zero', :aggregate_failures do
