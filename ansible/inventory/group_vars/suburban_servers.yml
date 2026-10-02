@@ -144,6 +144,18 @@ proxmox_slow_storage_scratch_mounts:
     path: /root/backups
     size_gib: 40
 
+# Per-minute storage recording (TACK-483). QA FoundationDB on the data guests
+# crashed together on disk IO timeouts 39 times from 2026-09-27 to 2026-10-02,
+# and the host kept no per-minute device latency to place a stall in time.
+proxmox_storage_recording_enabled: true
+proxmox_storage_recording_pools:
+  - rpool
+  - "{{ proxmox_slow_zpool_name }}"
+proxmox_storage_recording_fdb_vmids:
+  - "{{ service_mapping.tack_data1_suburban.vmid }}"
+  - "{{ service_mapping.tack_data2_suburban.vmid }}"
+  - "{{ service_mapping.tack_data3_suburban.vmid }}"
+
 # The QA search proxy on suburban listens on the trunk address, accepts only
 # the QA application guests, and selects the QA member. The application dials
 # the trunk address, and the proxy certificate lists that address as an IP

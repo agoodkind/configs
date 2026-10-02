@@ -1,0 +1,10 @@
+# Rendered by Ansible (tasks/proxmox-storage-recording.yml).
+[Unit]
+Description=Record per-dataset ZFS write deltas every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

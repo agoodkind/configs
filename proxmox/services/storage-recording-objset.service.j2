@@ -1,0 +1,10 @@
+# Rendered by Ansible (tasks/proxmox-storage-recording.yml). Appends one JSON
+# line per dataset with its ZFS write and read counters and the change since
+# the previous run. The per-minute changes show which guest wrote.
+[Unit]
+Description=Record per-dataset ZFS write deltas
+After=zfs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/storage-recording-objset.sh {{ proxmox_storage_recording_dir }}/objset.state {{ proxmox_storage_recording_dir }}/objset-writes.jsonl /proc/spl/kstat/zfs {{ proxmox_storage_recording_pools | join(' ') }}

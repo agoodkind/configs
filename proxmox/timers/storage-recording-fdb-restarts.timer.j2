@@ -1,0 +1,10 @@
+# Rendered by Ansible (tasks/proxmox-storage-recording.yml).
+[Unit]
+Description=Record FoundationDB container restart counts daily
+
+[Timer]
+OnCalendar={{ proxmox_storage_recording_fdb_oncalendar }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

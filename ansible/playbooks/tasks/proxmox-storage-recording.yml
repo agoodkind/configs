@@ -1,0 +1,90 @@
+---
+# Per-minute storage recording (TACK-483). Imported by proxmox-host.yml and gated
+# by proxmox_storage_recording_enabled, which only suburban sets. Every unit
+# reads state and appends to a file under proxmox_storage_recording_dir; none
+# changes a pool, a device, or a guest.
+
+- name: Create the storage recording directory
+  ansible.builtin.file:
+    path: "{{ proxmox_storage_recording_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the storage recording scripts
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/proxmox/scripts/{{ item }}"
+    dest: "/usr/local/sbin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - storage-recording-objset.sh
+    - storage-recording-fdb-restarts.sh
+  register: storage_recording_scripts
+
+- name: Deploy the storage recording units
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - services/storage-recording-iostat.service
+    - services/storage-recording-objset.service
+    - services/storage-recording-histogram.service
+    - services/storage-recording-fdb-restarts.service
+    - timers/storage-recording-fdb-restarts.timer
+  register: storage_recording_units
+
+- name: Deploy the static storage recording timers
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/proxmox/timers/{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - storage-recording-objset.timer
+    - storage-recording-histogram.timer
+  register: storage_recording_static_timers
+
+- name: Deploy the storage recording log rotation
+  ansible.builtin.template:
+    src: "{{ repo_root }}/proxmox/config/storage-recording.logrotate.j2"
+    dest: /etc/logrotate.d/storage-recording
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Start the per-minute zpool iostat recorder
+  ansible.builtin.systemd:
+    name: storage-recording-iostat.service
+    enabled: true
+    state: started
+    daemon_reload: "{{ storage_recording_units.changed }}"
+
+# A changed unit restarts the recorder; an unchanged one keeps appending.
+- name: Restart the zpool iostat recorder after its unit changed
+  ansible.builtin.systemd:
+    name: storage-recording-iostat.service
+    state: restarted
+  when: storage_recording_units.results[0].changed
+
+- name: Enable the storage recording timers
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        storage_recording_units.changed
+        or storage_recording_static_timers.changed
+        or storage_recording_scripts.changed
+      }}
+  loop:
+    - storage-recording-objset.timer
+    - storage-recording-histogram.timer
+    - storage-recording-fdb-restarts.timer

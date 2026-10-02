@@ -151,6 +151,20 @@ proxmox_slow_storage_bwlimit_kib: 51200
 proxmox_slow_storage_volume_moves: []
 proxmox_slow_storage_scratch_mounts: []
 
+# Per-minute storage recording (TACK-483). A hypervisor that
+# sets proxmox_storage_recording_enabled to true appends per-device ZFS wait
+# times every minute, per-dataset write deltas every minute, an hourly latency
+# histogram, and a daily FoundationDB restart count per data guest under
+# proxmox_storage_recording_dir. The other values are declared here because the
+# task file reads each input bare.
+proxmox_storage_recording_enabled: false
+proxmox_storage_recording_pools: []
+proxmox_storage_recording_dir: /var/log/storage-recording
+proxmox_storage_recording_retention_days: 30
+proxmox_storage_recording_fdb_vmids: []
+proxmox_storage_recording_fdb_container: tack-fdb-1
+proxmox_storage_recording_fdb_oncalendar: "*-*-* 16:00:00 UTC"
+
 # The GitHub CLI apt repository. Neither Debian nor Proxmox packages gh, so
 # this repository is what makes the gh entry below resolvable, and until now
 # it was hand-added on each hypervisor rather than owned here. The play
