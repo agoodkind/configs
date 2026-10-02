@@ -73,6 +73,23 @@
   register: slow_tier_scratch_aside
   changed_when: false
 
+# A freshly created guest has no backup root and no tack backup timers yet.
+# test exits 1 when the directory is absent.
+- name: Read whether the backup root exists for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ slow_tier_scratch.vmid }}", --, test, -d, "{{ slow_tier_scratch.path }}"]
+  register: slow_tier_scratch_root
+  changed_when: false
+  failed_when: slow_tier_scratch_root.rc not in [0, 1]
+
+# With no backup root and nothing set aside, the guest has no files to move:
+# the run creates the mount directory and mounts the new volume, and skips the
+# timer pause, the set-aside, the copy, and the delete.
+- name: Record whether the guest has backup files to move for {{ slow_tier_scratch.vmid }}
+  ansible.builtin.set_fact:
+    slow_tier_scratch_moves_files: >-
+      {{ slow_tier_scratch_aside.stdout | length > 0 or slow_tier_scratch_root.rc == 0 }}
+
 - name: Move the backup root onto a slow tier volume for {{ slow_tier_scratch.vmid }}
   when: slow_tier_scratch_existing | length == 0 or slow_tier_scratch_aside.stdout | length > 0
   block:
@@ -128,12 +145,14 @@
           - tack-*.timer
       register: slow_tier_scratch_timer_files
       changed_when: false
+      when: slow_tier_scratch_moves_files | bool
 
     - name: Name the tack backup timers for {{ slow_tier_scratch.vmid }}
       ansible.builtin.set_fact:
         slow_tier_scratch_timers: >-
           {{ slow_tier_scratch_timer_files.stdout_lines
              | map('split') | map('first') | list }}
+      when: slow_tier_scratch_moves_files | bool
 
     - name: Refuse a guest with no enabled tack backup timer for {{ slow_tier_scratch.vmid }}
       ansible.builtin.assert:
@@ -143,6 +162,7 @@
           Guest {{ slow_tier_scratch.vmid }} has no enabled tack backup timer;
           the pause and resume below would have nothing to restore.
         quiet: true
+      when: slow_tier_scratch_moves_files | bool
 
     # The copy runs inside the guest, whose image does not ship rsync.
     - name: Install rsync in the guest for {{ slow_tier_scratch.vmid }}
@@ -159,6 +179,7 @@
           - rsync
       register: slow_tier_scratch_rsync_install
       changed_when: "'Setting up rsync' in slow_tier_scratch_rsync_install.stdout"
+      when: slow_tier_scratch_moves_files | bool
 
     - name: Copy the backup root onto the new volume with the timers paused for {{ slow_tier_scratch.vmid }}
       block:
@@ -166,6 +187,7 @@
           ansible.builtin.command:
             argv: "{{ ['pct', 'exec', slow_tier_scratch.vmid | string, '--', 'systemctl', 'stop'] + slow_tier_scratch_timers }}"
           changed_when: true
+          when: slow_tier_scratch_moves_files | bool
 
         - name: Set the existing backup root aside for {{ slow_tier_scratch.vmid }}
           ansible.builtin.command:
@@ -178,7 +200,9 @@
               - -T
               - "{{ slow_tier_scratch.path }}"
               - "{{ slow_tier_scratch.path }}.hot-pool"
-          when: slow_tier_scratch_aside.stdout | length == 0
+          when:
+            - slow_tier_scratch_moves_files | bool
+            - slow_tier_scratch_aside.stdout | length == 0
           changed_when: true
 
         - name: Create the empty mount directory for {{ slow_tier_scratch.vmid }}
@@ -251,6 +275,7 @@
               - "{{ slow_tier_scratch.path }}.hot-pool/"
               - "{{ slow_tier_scratch.path }}/"
           changed_when: true
+          when: slow_tier_scratch_moves_files | bool
 
         - name: Delete the old backup root from the root disk for {{ slow_tier_scratch.vmid }}
           ansible.builtin.command:
@@ -264,11 +289,13 @@
               - --one-file-system
               - "{{ slow_tier_scratch.path }}.hot-pool"
           changed_when: true
+          when: slow_tier_scratch_moves_files | bool
       always:
         - name: Resume the tack backup timers for {{ slow_tier_scratch.vmid }}
           ansible.builtin.command:
             argv: "{{ ['pct', 'exec', slow_tier_scratch.vmid | string, '--', 'systemctl', 'start'] + slow_tier_scratch_timers }}"
           changed_when: true
+          when: slow_tier_scratch_moves_files | bool
 
         - name: Read the tack backup timers back for {{ slow_tier_scratch.vmid }}
           ansible.builtin.command:
@@ -276,3 +303,4 @@
           register: slow_tier_scratch_timers_active
           changed_when: false
           failed_when: slow_tier_scratch_timers_active.stdout_lines | reject('equalto', 'active') | list | length > 0
+          when: slow_tier_scratch_moves_files | bool
