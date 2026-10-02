@@ -34,7 +34,7 @@
 {% set check = check | combine({'http_method': 'GET', 'expected_http_status': [200]}) %}
 {% endif %}
 {% if input.operation == 'http' and input.dimension == 'inbound_application' %}
-{% set check = check | combine({'expected_body': 'mwan-testbed-mapping-ok\n'}) %}
+{% set check = check | combine({'expected_body': 'mwan-testbed-mapping-ok'}) %}
 {% endif %}
 {% set _ = output.append(check) %}
 {% endfor %}
